@@ -1136,6 +1136,592 @@
           "offset": null
         }
       }
+    },
+    {
+      "name": "sugar: implicit collect directive",
+      "tags": [
+        "sugar",
+        "collect"
+      ],
+      "query": "r { n > 1 }",
+      "spans": true,
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "r",
+            "span": [
+              0,
+              1
+            ]
+          },
+          "from": [],
+          "where": {
+            "kind": "scalar",
+            "expr": {
+              "kind": "binary",
+              "op": ">",
+              "left": {
+                "kind": "ident",
+                "name": "n",
+                "span": [
+                  4,
+                  5
+                ]
+              },
+              "right": {
+                "kind": "lit",
+                "value": 1,
+                "span": [
+                  8,
+                  9
+                ]
+              },
+              "span": [
+                4,
+                9
+              ]
+            },
+            "span": [
+              4,
+              9
+            ]
+          },
+          "select": [],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null,
+          "span": [
+            0,
+            11
+          ]
+        }
+      }
+    },
+    {
+      "name": "sugar: a bracket spans the sugar as written",
+      "tags": [
+        "sugar",
+        "brackets"
+      ],
+      "query": "select j: jobs[pay > 2] from people",
+      "spans": true,
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "people",
+            "span": [
+              29,
+              35
+            ]
+          },
+          "from": [],
+          "where": null,
+          "select": [
+            {
+              "kind": "collect",
+              "name": "j",
+              "op": {
+                "kind": "op",
+                "receiver": {
+                  "kind": "ident",
+                  "name": "jobs",
+                  "span": [
+                    10,
+                    14
+                  ]
+                },
+                "op": "first",
+                "sub": {
+                  "kind": "subquery",
+                  "from": [],
+                  "where": {
+                    "kind": "scalar",
+                    "expr": {
+                      "kind": "binary",
+                      "op": ">",
+                      "left": {
+                        "kind": "ident",
+                        "name": "pay",
+                        "span": [
+                          15,
+                          18
+                        ]
+                      },
+                      "right": {
+                        "kind": "lit",
+                        "value": 2,
+                        "span": [
+                          21,
+                          22
+                        ]
+                      },
+                      "span": [
+                        15,
+                        22
+                      ]
+                    },
+                    "span": [
+                      15,
+                      22
+                    ]
+                  },
+                  "select": [],
+                  "orderBy": null,
+                  "follow": null,
+                  "values": false,
+                  "limit": null,
+                  "offset": null,
+                  "span": [
+                    14,
+                    23
+                  ]
+                },
+                "countCmp": null,
+                "distinct": false,
+                "span": [
+                  10,
+                  23
+                ]
+              },
+              "span": [
+                7,
+                23
+              ]
+            }
+          ],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null,
+          "span": [
+            0,
+            35
+          ]
+        }
+      }
+    },
+    {
+      "name": "sugar: a required single spans through the !",
+      "tags": [
+        "sugar",
+        "brackets",
+        "required"
+      ],
+      "query": "select j: jobs[pay > 2]! from r",
+      "spans": true,
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "r",
+            "span": [
+              30,
+              31
+            ]
+          },
+          "from": [],
+          "where": null,
+          "select": [
+            {
+              "kind": "field",
+              "name": "j",
+              "expr": {
+                "kind": "required",
+                "expr": {
+                  "kind": "op",
+                  "receiver": {
+                    "kind": "ident",
+                    "name": "jobs",
+                    "span": [
+                      10,
+                      14
+                    ]
+                  },
+                  "op": "single",
+                  "sub": {
+                    "kind": "subquery",
+                    "from": [],
+                    "where": {
+                      "kind": "scalar",
+                      "expr": {
+                        "kind": "binary",
+                        "op": ">",
+                        "left": {
+                          "kind": "ident",
+                          "name": "pay",
+                          "span": [
+                            15,
+                            18
+                          ]
+                        },
+                        "right": {
+                          "kind": "lit",
+                          "value": 2,
+                          "span": [
+                            21,
+                            22
+                          ]
+                        },
+                        "span": [
+                          15,
+                          22
+                        ]
+                      },
+                      "span": [
+                        15,
+                        22
+                      ]
+                    },
+                    "select": [],
+                    "orderBy": null,
+                    "follow": null,
+                    "values": false,
+                    "limit": null,
+                    "offset": null,
+                    "span": [
+                      14,
+                      23
+                    ]
+                  },
+                  "countCmp": null,
+                  "distinct": false,
+                  "span": [
+                    10,
+                    24
+                  ]
+                },
+                "span": [
+                  10,
+                  24
+                ]
+              },
+              "lift": 0,
+              "span": [
+                7,
+                24
+              ]
+            }
+          ],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null,
+          "span": [
+            0,
+            31
+          ]
+        }
+      }
+    },
+    {
+      "name": "sugar: a required index spans the index then the !",
+      "tags": [
+        "sugar",
+        "brackets",
+        "required"
+      ],
+      "query": "select v: jobs[2]! from r",
+      "spans": true,
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "r",
+            "span": [
+              24,
+              25
+            ]
+          },
+          "from": [],
+          "where": null,
+          "select": [
+            {
+              "kind": "field",
+              "name": "v",
+              "expr": {
+                "kind": "required",
+                "expr": {
+                  "kind": "op",
+                  "receiver": {
+                    "kind": "ident",
+                    "name": "jobs",
+                    "span": [
+                      10,
+                      14
+                    ]
+                  },
+                  "op": "first",
+                  "sub": {
+                    "kind": "subquery",
+                    "from": [],
+                    "where": null,
+                    "select": [],
+                    "orderBy": null,
+                    "follow": null,
+                    "values": false,
+                    "limit": null,
+                    "offset": {
+                      "kind": "lit",
+                      "value": 2,
+                      "span": [
+                        15,
+                        16
+                      ]
+                    },
+                    "span": [
+                      14,
+                      17
+                    ]
+                  },
+                  "countCmp": null,
+                  "distinct": false,
+                  "span": [
+                    10,
+                    17
+                  ]
+                },
+                "span": [
+                  10,
+                  18
+                ]
+              },
+              "lift": 0,
+              "span": [
+                7,
+                18
+              ]
+            }
+          ],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null,
+          "span": [
+            0,
+            25
+          ]
+        }
+      }
+    },
+    {
+      "name": "sugar: required spans its operand through the !",
+      "tags": [
+        "sugar",
+        "required"
+      ],
+      "query": "select v: x! from r",
+      "spans": true,
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "r",
+            "span": [
+              18,
+              19
+            ]
+          },
+          "from": [],
+          "where": null,
+          "select": [
+            {
+              "kind": "field",
+              "name": "v",
+              "expr": {
+                "kind": "required",
+                "expr": {
+                  "kind": "ident",
+                  "name": "x",
+                  "span": [
+                    10,
+                    11
+                  ]
+                },
+                "span": [
+                  10,
+                  12
+                ]
+              },
+              "lift": 0,
+              "span": [
+                7,
+                12
+              ]
+            }
+          ],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null,
+          "span": [
+            0,
+            19
+          ]
+        }
+      }
+    },
+    {
+      "name": "sugar: both unary nodes of is x span the sugar",
+      "tags": [
+        "sugar",
+        "is"
+      ],
+      "query": "select v: is x from r",
+      "spans": true,
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "r",
+            "span": [
+              20,
+              21
+            ]
+          },
+          "from": [],
+          "where": null,
+          "select": [
+            {
+              "kind": "field",
+              "name": "v",
+              "expr": {
+                "kind": "unary",
+                "op": "!",
+                "expr": {
+                  "kind": "unary",
+                  "op": "!",
+                  "expr": {
+                    "kind": "ident",
+                    "name": "x",
+                    "span": [
+                      13,
+                      14
+                    ]
+                  },
+                  "span": [
+                    10,
+                    14
+                  ]
+                },
+                "span": [
+                  10,
+                  14
+                ]
+              },
+              "lift": 0,
+              "span": [
+                7,
+                14
+              ]
+            }
+          ],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null,
+          "span": [
+            0,
+            21
+          ]
+        }
+      }
+    },
+    {
+      "name": "sugar: is not spans both operands",
+      "tags": [
+        "sugar",
+        "is"
+      ],
+      "query": "select v: a is not b from r",
+      "spans": true,
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "r",
+            "span": [
+              26,
+              27
+            ]
+          },
+          "from": [],
+          "where": null,
+          "select": [
+            {
+              "kind": "field",
+              "name": "v",
+              "expr": {
+                "kind": "binary",
+                "op": "is not",
+                "left": {
+                  "kind": "ident",
+                  "name": "a",
+                  "span": [
+                    10,
+                    11
+                  ]
+                },
+                "right": {
+                  "kind": "ident",
+                  "name": "b",
+                  "span": [
+                    19,
+                    20
+                  ]
+                },
+                "span": [
+                  10,
+                  20
+                ]
+              },
+              "lift": 0,
+              "span": [
+                7,
+                20
+              ]
+            }
+          ],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null,
+          "span": [
+            0,
+            27
+          ]
+        }
+      }
     }
   ]
 }

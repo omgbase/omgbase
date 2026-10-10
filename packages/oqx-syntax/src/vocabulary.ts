@@ -10,10 +10,15 @@
 // tests in `test/` pin it to the specification text so it cannot drift silently.
 
 /** The OQX language version (`spec/oqx/VERSION`, `major.minor`) this vocabulary describes. */
-export const LANGUAGE_VERSION = "0.16";
+export const LANGUAGE_VERSION = "0.17";
 
-/** Reserved words: never usable as a bare field name (GRAMMAR §1). */
-export const KEYWORDS = ["from", "where", "select"] as const;
+/** Reserved words: never usable as a bare field name (GRAMMAR §1). `is`, `not`,
+ * `and`, `or` are the word operators (GRAMMAR §4, since 0.17). */
+export const KEYWORDS = ["from", "where", "select", "is", "not", "and", "or"] as const;
+
+/** The word operators among the keywords: prefix `is`/`not`, infix `is`/`is not`,
+ * `and`/`or` (synonyms of `&&`/`||`). Highlighted as operators, not clauses. */
+export const WORD_OPERATORS = ["is", "not", "and", "or"] as const;
 
 /** Contextual words: syntax only in position, otherwise ordinary field names
  * (GRAMMAR §1). The order is the specification's. */
@@ -41,6 +46,7 @@ export const LITERALS = ["true", "false", "null"] as const;
 /** Operators, longest first (GRAMMAR §1; the lexer's MULTI_OPS then SINGLE_OPS). */
 export const OPERATORS = {
   comparison: ["==", "!=", "<=", ">=", "<", ">"],
+  /** `!` is also the postfix required operator (`x!`, GRAMMAR §4) — lexically one token. */
   logical: ["&&", "||", "!"],
   arithmetic: ["+", "-", "*", "/", "%"],
   /** `..` inclusive, `...` exclusive high end; scanned before `.` (GRAMMAR §1). */
@@ -49,8 +55,9 @@ export const OPERATORS = {
   membership: ["in"],
 } as const;
 
-/** Punctuation (GRAMMAR §1). `^` is the outer-reference / lift marker. */
-export const PUNCTUATION = ["(", ")", "{", "}", ",", ":", ".", "^"] as const;
+/** Punctuation (GRAMMAR §1). `^` is the outer-reference / lift marker; `[`/`]`
+ * are the bracket lookup (since 0.17). */
+export const PUNCTUATION = ["(", ")", "{", "}", "[", "]", ",", ":", ".", "^"] as const;
 
 /** Free functions defined by the language (SEMANTICS §11). */
 export const BUILTIN_FUNCTIONS = ["list", "size", "has", "range", "entries"] as const;
@@ -67,9 +74,9 @@ export const INTRINSICS = ["$it", "$key", "$depth", "$stop", "$leaf", "$frontier
 /** Identifier shape (GRAMMAR §1): `[A-Za-z_$][A-Za-z0-9_$]*`. */
 export const IDENTIFIER = "[A-Za-z_$][A-Za-z0-9_$]*";
 
-/** Characters that are lex errors anywhere (GRAMMAR §1): there are no comments,
- * no index syntax, no single `=`/`&`/`|`. */
-export const ILLEGAL_CHARACTERS = ["[", "]", "=", "&", "|", "@", ";", "#", "`", "~", "?", "\\"] as const;
+/** Characters that are lex errors anywhere (GRAMMAR §1): there are no comments
+ * and no single `=`/`&`/`|`. */
+export const ILLEGAL_CHARACTERS = ["=", "&", "|", "@", ";", "#", "`", "~", "?", "\\"] as const;
 
 /** Language metadata shared by every editor integration. */
 export const LANGUAGE = {
@@ -148,8 +155,11 @@ export const TOKEN_CLASSES = {
   operator: { textmate: "keyword.operator.oqx", monarch: "operator", codemirror: "operator", legacy: "operator", prism: "operator" },
   range: { textmate: "keyword.operator.range.oqx", monarch: "operator.range", codemirror: "operator", legacy: "operator", prism: "operator" },
   membership: { textmate: "keyword.operator.membership.oqx", monarch: "keyword.operator.membership", codemirror: "operatorKeyword", legacy: "keyword", prism: "keyword" },
+  wordOperator: { textmate: "keyword.operator.word.oqx", monarch: "keyword.operator.word", codemirror: "operatorKeyword", legacy: "keyword", prism: "keyword" },
   braceOpen: { textmate: "punctuation.section.block.begin.oqx", monarch: "delimiter.curly", codemirror: "brace", legacy: "bracket", prism: "punctuation" },
   braceClose: { textmate: "punctuation.section.block.end.oqx", monarch: "delimiter.curly", codemirror: "brace", legacy: "bracket", prism: "punctuation" },
+  bracketOpen: { textmate: "punctuation.section.brackets.begin.oqx", monarch: "delimiter.square", codemirror: "squareBracket", legacy: "bracket", prism: "punctuation" },
+  bracketClose: { textmate: "punctuation.section.brackets.end.oqx", monarch: "delimiter.square", codemirror: "squareBracket", legacy: "bracket", prism: "punctuation" },
   parenOpen: { textmate: "punctuation.section.group.begin.oqx", monarch: "delimiter.parenthesis", codemirror: "paren", legacy: "bracket", prism: "punctuation" },
   parenClose: { textmate: "punctuation.section.group.end.oqx", monarch: "delimiter.parenthesis", codemirror: "paren", legacy: "bracket", prism: "punctuation" },
   comma: { textmate: "punctuation.separator.comma.oqx", monarch: "delimiter.comma", codemirror: "separator", legacy: "punctuation", prism: "punctuation" },

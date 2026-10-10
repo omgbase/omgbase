@@ -139,7 +139,7 @@
     },
     {
       "name": "alias chain resolves through",
-      "notes": "`s` inlines to `senior`'s expression in `where`; as a projected value `s` is the row field `senior`, which is absent.",
+      "notes": "Since 0.17 `s: senior` names the alias to its left, so the projected `s` is the alias value (it was the absent row field).",
       "roots": {
         "people": [
           {
@@ -198,7 +198,8 @@
       "expect": {
         "result": [
           {
-            "senior": true
+            "senior": true,
+            "s": true
           }
         ]
       }
@@ -679,24 +680,17 @@
       }
     },
     {
-      "name": "unreferenced swap is fine",
-      "roots": {
-        "xs": [
-          {
-            "a": 1,
-            "b": 2
-          }
-        ]
-      },
+      "name": "a swap of two aliases is a cycle",
       "query": "select a: b, b: a from xs",
       "expect": {
-        "result": [
-          {
-            "a": 2,
-            "b": 1
-          }
-        ]
-      }
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "select aliases form a cycle: a → b → a"
+          ]
+        }
+      },
+      "notes": "Since 0.17 a select item may reference the items to its left, so `a: b` names the alias `b` (defined later) rather than the row field; the pair is a cycle whether or not `where` uses it."
     },
     {
       "name": "order by is not rewritten: unknown alias is absent",

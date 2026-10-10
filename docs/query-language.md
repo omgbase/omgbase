@@ -57,12 +57,15 @@ is a parse error that names the order (`` `select` must come before `from` — O
 clause order is select, from, where, follow, order by, limit, offset ``). **Only
 `select` may drop its keyword, and only when it is the first clause written**
 (`$path, era from docs where …`; in a block, `nodes collect { value }` projects
-`value`). Every other clause always carries its keyword — a predicate is never
-implicit: `nodes exists { where kind == "md:task" }` (not `{ kind == "md:task" }`,
-which is an error pointing at `where`), and `from docs count` is an error rather
-than a projection of a field called `count` (write `$repo.docs count { … }`, or
-`select count from docs`). **`where` may reference the same body's `select`
-aliases** (`select $path, old: era < 1000 from docs where old`): the alias's
+`value`). Every other clause always carries its keyword — with the 0.17 sugar
+that a **block** whose leading expression is syntactically a predicate is a
+`where`-first body: `nodes exists { kind == "md:task" }` ≡
+`nodes exists { where kind == "md:task" }` (§3.6; a bare name still projects, a
+predicate after a projection still needs `where`). At the top level a predicate
+always needs `where`, and `from docs count` is an error rather than a projection
+of a field called `count` (write `$repo.docs count { … }`, or
+`select count from docs`). **`where` (and, since 0.17, a later `select` item) may
+reference the same body's `select` aliases** (`select $path, old: era < 1000 from docs where old`): the alias's
 expression is substituted before evaluation (`resolveAliases`, once, ahead of
 the runner's own rewrites — the parsed tree keeps the alias), so the pushdown
 planner sees an ordinary predicate; an alias shadows a same-named field inside `where`; a cycle among
@@ -167,11 +170,15 @@ Everything inside `where`/`select`/`order by` that isn't structural navigation i
 a scalar expression evaluated by `@omgbase/oqx`'s `semantics.ts`.
 
 ### 3.1 Grammar
-Comparisons (`== != < <= > >=`), boolean `&& || !` + grouping, `in`, arithmetic
-(`+ - * / %`), Ruby-style range literals (`lo..hi`, `lo...hi`, `..hi`, `lo..`;
-§3.5), method calls (`x.contains("s")`), free functions (`list(x)`, `size(x)`,
-`has(x)` + omgbase's domain functions §5), field/intrinsic access with `.`/`[…]`
-navigation, and outer references (`^name`, `^^name`).
+Comparisons (`== != < <= > >=`), identity (`is`, `is not`; §3.6), boolean
+`&& || !` + grouping (`and`/`or` are synonyms of `&&`/`||`; prefix `is x` ≡ `!!x`,
+`not x` ≡ `!x`), `in`, arithmetic (`+ - * / %`), Ruby-style range literals
+(`lo..hi`, `lo...hi`, `..hi`, `lo..`; §3.5), method calls (`x.contains("s")`),
+free functions (`list(x)`, `size(x)`, `has(x)` + omgbase's domain functions §5),
+field/intrinsic access with `.` navigation, bracket lookups (`refs(x)[0]`,
+`$repo.docs[$path == ^company]`; §3.6), the postfix required operator (`title!`;
+§3.6), and outer references (`^name`, `^^name`). Reserved words (never a bare
+field name): `from where select is not and or`, `true false null`.
 **[was CEL: arithmetic, ternary, and `in` without `list()` were rejected — now
 arithmetic and general `in` are supported.]**
 
@@ -221,6 +228,28 @@ A Ruby-style range is a value, used most often as the right side of `in`:
     an index substrate for a future pushdown of `in range(prop)`, never changing
     an answer. So the promotion is safe: meaning is set by `range(...)`, not by
     what the value happens to look like.
+
+### 3.6 Sugar (OQX 0.17)
+Every form below is shorthand for an explicit directive and **desugars in the
+parser** (the AST, `print`, the planner and the optimizer see the explicit form):
+
+| Written | Means |
+| --- | --- |
+| `nodes { kind == "md:task" }` | `nodes collect { where kind == "md:task" }` — a receiver block without a consumer is `collect`; a block whose *leading* expression is syntactically a predicate (a comparison, `in`, `&&`/`||`, a prefix `!`/`is`/`not`, an infix `is`, a call, a literal, a binding, a parenthesized expression, a consumer test, a bracket chain or `x!` — anything but a bare name, a dotted path or a `^`-lift) is `where`-first. `nodes { name }` still projects; `nodes { is checked }` is the bare-field filter; `{ name where kind == "md:task" }` keeps the keyword. Not after `follow`: `follow children { depth 2 }` is the options block. |
+| `refs(x)[0]`, `refs(x)[${i}]` | `refs(x) first { offset 0 }` — positional (an integer literal or a binding; out of range ⇒ absent); `refs(x)[0].$title` navigates the row |
+| `$repo.docs[$path == ^company]` | `$repo.docs first { where $path == ^company }` — the first match or absent |
+| `$repo.docs[$path == ^company]!` | `$repo.docs single { where $path == ^company }!` — exactly one match; zero or many is `filter_invalid` |
+| `title!` | required: `title`, or `filter_invalid` naming the expression (`` `title!` is absent on "d_…" ``). Never a filter, never a coercion (`0!`, `""!` are values); tightest precedence (`refs(c)[0]!.name` vs `refs(c)[0].name!`). `select $id!, status from docs` insists on identity before a write. |
+| `is x`, `not x` | `!!x`, `!x` (truthiness) |
+| `x is y`, `x is not y` | identity: a row's `id` when present, else structural — so `$it is ^$it` compares rows (which `==` leaves unspecified); `owner is null` is absent; for scalars `is` ≡ `==`. Comparison precedence, no chaining. Never pushed down (residual). |
+| `a and b`, `a or b` | exactly `a && b`, `a || b` (precedence, short-circuit, value: `title or $path` coalesces) |
+| `boss: $repo.docs[$path == ^manager], bossName: boss.$title` | a `select` item may use the items to its left (inlined like a `where` alias; a reference to an item to its right is a parse error) |
+
+The top level is unchanged: `type == "x" from docs` stays the parse error it was
+(`where` would precede `from`). There is no `expand`/`unnest` and no automatic
+dereference of a path-valued field: the body-level `from` chain flat-maps
+(`$repo.docs collect { from nodes … }`) and `refs(x)[0].$title` is the
+dereference.
 
 ### 3.4 Correlation (`^`) and lifts
 - **Bare names are local.** A bare identifier resolves against the **current row
@@ -441,13 +470,13 @@ nested/correlated scopes:
 
 ## 8b. Reflection: the AST
 A parsed query is a first-class tree shared by both engines
-(`spec/oqx/AST.md`, language 0.16): every node carries `kind` and a code-point
+(`spec/oqx/AST.md`, language 0.16, extended in 0.17): every node carries `kind` and a code-point
 `span`, optionals are materialized, and `where` keeps its surface form (a
 `select` alias stays an identifier; `resolveAliases` substitutes it before
 evaluation — omgbase's runner does this once, before it injects `$id`/`$path`
 and renames a `values` item). `@omgbase/oqx` exports `visit`/`transform` (one
 child-key table drives both), `print`/`printTemplate` (canonical source, with
-the round-trip law both spec runners enforce), `toJSON` (`{ "oqx": "0.16",
+the round-trip law both spec runners enforce), `toJSON` (`{ "oqx": "0.17",
 "kind": "query", … }`) and `build.*`; the Rust crate mirrors them (`walk`,
 `print`, `build`, serde under `json`). omgbase uses them where it used to
 hand-roll walks: the runner's `$self` rewrite is a `transform`, the

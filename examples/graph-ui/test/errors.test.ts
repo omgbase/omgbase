@@ -14,7 +14,8 @@ describe("describeOqxError", () => {
 
   it("reads the lexer's `at N` position", () => {
     let err: unknown;
-    try { parse('select $path from docs where $path in ["a"]'); } catch (e) { err = e; }
+    // An unterminated string is a lex error (since 0.17 `[` is a token, not a lex error).
+    try { parse('select $path from docs where $path == "a'); } catch (e) { err = e; }
     const info = describeOqxError(err);
     expect(info.stage).toBe("lex");
     expect(info.offset).toBe(38);

@@ -342,15 +342,33 @@ fn out_of_order_clauses_fail_naming_the_fixed_order() {
 }
 
 #[test]
-fn a_bare_predicate_in_a_block_fails_asking_for_where() {
+fn a_leading_predicate_in_a_block_is_where_first_but_an_error_at_the_top_level() {
+    // 0.17: a block whose leading expression is syntactically a predicate drops
+    // the `where` keyword (GRAMMAR §2) — the tree is the explicit form's.
+    let same = |sugar: &str, explicit: &str| assert_eq!(parse(sugar), parse(explicit));
+    same(
+        "people exists { age > 50 }",
+        "people exists { where age > 50 }",
+    );
+    same(
+        "people exists { !active }",
+        "people exists { where !active }",
+    );
+    same(
+        "name from people where jobs exists { employer == \"X\" && !end_date }",
+        "name from people where jobs exists { where employer == \"X\" && !end_date }",
+    );
+    same(
+        "people exists { jobs count {} >= 2 }",
+        "people exists { where jobs count {} >= 2 }",
+    );
+    // a projection followed by a predicate still needs the keyword
+    assert_parse_error("people exists { name, age > 50 }", &["write `where "]);
+    // …and a bare leading predicate at the top level is still an error: `where`
+    // would precede `from`
     let wants_where = |src: &str| {
         assert_parse_error(src, &["write `where ", "never implicit"]);
     };
-    wants_where("people exists { age > 50 }");
-    wants_where("people exists { !active }");
-    wants_where("name from people where jobs exists { employer == \"X\" && !end_date }");
-    wants_where("people exists { jobs count {} >= 2 }");
-    // …and a bare leading predicate at the top level is the same mistake
     wants_where("!active from people");
     wants_where("age > 40 from people");
     // a bare NAME is a projection, at the top level and in a block alike
@@ -551,12 +569,13 @@ fn a_cycle_among_aliases_referenced_from_where_is_a_parse_error() {
         "select a: b + 1, b: c, c: a from people where c > 1",
         &["cycle: c → a → b → c"],
     );
-    // unreferenced, the same select is fine (it swaps two fields)
-    let q = parse("select a: b, b: a from xs");
-    assert_eq!(
-        q.select,
-        vec![field("a", ident("b")), field("b", ident("a"))]
+    // unreferenced it is the same cycle (0.17: `a: b` names the alias to its right)
+    assert_parse_error(
+        "select a: b, b: a from xs",
+        &["select aliases form a cycle: a → b → a"],
     );
+    // a reference to an item to the right that does not come back is a forward reference
+    assert_parse_error("select a: b + 1, b: 1 from xs", &["'b'", "to its left"]);
 }
 
 #[test]
@@ -874,9 +893,11 @@ fn stray_tokens_after_a_complete_clause_name_where_the_body_ends() {
         "name from people where a > 1 +",
         &["unexpected end of query — expected a value"],
     );
+    // (`a > 1 !` is no longer stray: a `!` after an operand is the postfix
+    // required operator, 0.17 — so `1!` is `required(1)`.)
     assert_parse_error(
-        "name from people where a > 1 !",
-        &["unexpected '!' after the query"],
+        "name from people where a > 1 )",
+        &["unexpected ')' after the query"],
     );
     assert_parse_error(
         "people exists { name from jobs ) }",
@@ -1654,8 +1675,13 @@ fn values_takes_exactly_one_item_and_rejects_lifts() {
 fn an_unaliased_non_navigation_item_needs_an_alias_unless_values() {
     assert_parse_error("size(jobs) from people", &["needs an alias"]);
     assert_parse_error("select age > 40 from people", &["needs an alias"]);
-    // a call-shaped leading expression is a projection, not an implicit where
-    assert_parse_error("people exists { has(budget) }", &["needs an alias"]);
+    // a call-shaped leading expression in a block is a predicate (0.17); after a
+    // projection it is an unnamed item
+    assert_eq!(
+        parse("people exists { has(budget) }"),
+        parse("people exists { where has(budget) }")
+    );
+    assert_parse_error("people first { name, has(budget) }", &["needs an alias"]);
     assert_parse_error("1 from xs", &["needs an alias"]);
     assert_parse_error("\"s\" from xs", &["needs an alias"]);
     assert_parse_error("(a + 1) from xs", &["needs an alias"]);

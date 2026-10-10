@@ -20,6 +20,8 @@ export const member = (recv: Expr, name: string): Expr => ({ kind: "member", spa
 export const path = (first: string, ...rest: string[]): Expr => rest.reduce<Expr>((e, n) => member(e, n), ident(first));
 export const call = (recv: Expr | null, name: string, args: Expr[] = []): Expr => ({ kind: "call", span: span(), recv, name, args });
 export const unary = (op: UnaryOp, expr: Expr): Expr => ({ kind: "unary", span: span(), op, expr });
+/** `expr!` — the required value (SEMANTICS §5b). */
+export const required = (expr: Expr): Expr => ({ kind: "required", span: span(), expr });
 export const binary = (op: BinaryOp, left: Expr, right: Expr): Expr => ({ kind: "binary", span: span(), op, left, right });
 export const logical = (op: LogicalOp, left: Expr, right: Expr): Expr => ({ kind: "logical", span: span(), op, left, right });
 export const inOp = (left: Expr, right: Expr): Expr => ({ kind: "in", span: span(), left, right });

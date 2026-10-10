@@ -333,6 +333,150 @@
           ]
         }
       }
+    },
+    {
+      "name": "a required value that is absent",
+      "tags": [
+        "sugar",
+        "required"
+      ],
+      "roots": {
+        "people": [
+          {
+            "id": 7,
+            "name": "Bob"
+          }
+        ]
+      },
+      "query": "title! from people",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "`title!` is absent",
+            "on 7"
+          ]
+        }
+      }
+    },
+    {
+      "name": "a required value that is absent on an id-less row",
+      "tags": [
+        "sugar",
+        "required"
+      ],
+      "roots": {
+        "q": [
+          {
+            "a": {}
+          }
+        ]
+      },
+      "query": "v: a.b! from q",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "`a.b!` is absent"
+          ]
+        }
+      }
+    },
+    {
+      "name": "a required single with many matches",
+      "tags": [
+        "sugar",
+        "brackets",
+        "required"
+      ],
+      "roots": {
+        "q": [
+          {
+            "xs": [
+              {
+                "n": 1
+              },
+              {
+                "n": 2
+              }
+            ]
+          }
+        ]
+      },
+      "query": "j: xs[n > 0]! from q",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "single",
+            "matched 2 rows"
+          ]
+        }
+      }
+    },
+    {
+      "name": "a required single with no match",
+      "tags": [
+        "sugar",
+        "brackets",
+        "required"
+      ],
+      "roots": {
+        "q": [
+          {
+            "id": "q1",
+            "xs": [
+              {
+                "n": 1
+              }
+            ]
+          }
+        ]
+      },
+      "query": "j: xs[n > 5]! from q",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "`xs single { where n > 5 }!` is absent",
+            "on \"q1\""
+          ]
+        }
+      }
+    },
+    {
+      "name": "a bracket index binding must be a non-negative integer",
+      "tags": [
+        "sugar",
+        "brackets"
+      ],
+      "roots": {
+        "q": [
+          {
+            "xs": [
+              1,
+              2
+            ]
+          }
+        ]
+      },
+      "template": {
+        "strings": [
+          "j: xs[",
+          "] from q"
+        ],
+        "values": [
+          1.5
+        ]
+      },
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "offset must be a non-negative integer"
+          ]
+        }
+      }
     }
   ]
 }

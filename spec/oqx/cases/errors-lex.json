@@ -2,18 +2,6 @@
   "suite": "errors-lex",
   "cases": [
     {
-      "name": "square bracket",
-      "query": "from r where a[0] == 1",
-      "expect": {
-        "error": {
-          "stage": "lex",
-          "includes": [
-            "unexpected character"
-          ]
-        }
-      }
-    },
-    {
       "name": "single equals",
       "query": "from r where a = 1",
       "expect": {

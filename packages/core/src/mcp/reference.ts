@@ -20,10 +20,33 @@ each at most once; an out-of-order clause is a parse error naming the order.
 Only \`select\` may drop its keyword, and only as the first clause
 (\`$path, era from docs where …\`). Every other clause always carries its keyword:
 a predicate is NEVER implicit (\`nodes exists { where kind == "md:task" }\`, not
-\`{ kind == "md:task" }\`), and \`from docs count\` is an error (write
-\`$repo.docs count { … }\`). \`where\` may use the same body's \`select\` aliases
+\`{ name, kind == "md:task" }\` — but a block may LEAD with a predicate, see Sugar),
+and \`from docs count\` is an error (write \`$repo.docs count { … }\`). \`where\` and
+later \`select\` items may use the same body's \`select\` aliases
 (\`select $path, old: era < 1000 from docs where old\`; an alias shadows a
 same-named field there).
+
+## Sugar (OQX 0.17)
+
+Every form here is shorthand for an explicit directive (the AST is the explicit form):
+  nodes { kind == "md:task" }        ≡ nodes collect { where kind == "md:task" } — a receiver block with
+                                       no consumer is collect; a block whose LEADING expression is a predicate
+                                       (comparison, call, !/is/not, in, literal, (…), a consumer test — anything
+                                       but a bare name, a dotted path or a ^lift) is where-first. Bare names still
+                                       project: nodes { name } ≡ nodes collect { name }; filter a bare field with
+                                       nodes { is checked }. Not after follow: follow children { depth 2 } is options.
+  refs(x)[0]                          ≡ refs(x) first { offset 0 }   positional (integer literal or \${binding});
+                                       out of range ⇒ absent; refs(x)[0].$path navigates the row
+  $repo.docs[$path == ^company]       ≡ $repo.docs first { where $path == ^company }   first match or absent
+  $repo.docs[$path == ^company]!      ≡ … single { … } required: exactly one, else filter_invalid
+  title!                              required: title, or an error naming the expression (and the row's $id)
+                                       — never a filter, never a coercion (0!, ""! are values); tightest: a!.b vs a.b!
+  is x / not x                        ≡ !!x / !x (truthiness)
+  x is y / x is not y                 identity (a row's id, else structural) — compares rows, which == does not;
+                                       x is null = absent; for scalars is ≡ ==; comparison precedence, no chaining
+  a and b / a or b                    ≡ a && b / a || b (same precedence, short-circuit, value: title or $path coalesces)
+  boss: $repo.docs[$path == ^manager], bossName: boss.$title   a select item may use the items to its LEFT
+  Reserved words (never a bare field name): from where select is not and or, true false null.
 
 Results are LEAN hits — {id, path} + whatever \`select\` projects (or \`values\`,
 \`count\`, \`exists\`, \`none\`). Hydrate full content by id via nodes_get/docs_read.

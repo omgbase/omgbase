@@ -216,6 +216,10 @@ fn expr_may_raise(e: &Expr, target: Target, root: bool) -> bool {
                 || again(recv)
         }
         Expr::Unary { expr, .. } => again(expr),
+        // `x!` raises when absent; a value-position directive may `single`-fail
+        // or read anything its block reads.
+        Expr::Required { .. } => true,
+        Expr::Op(op) => op_may_raise(op, target, root),
         Expr::Binary { left, right, .. }
         | Expr::Logical { left, right, .. }
         | Expr::In { left, right, .. } => again(left) || again(right),

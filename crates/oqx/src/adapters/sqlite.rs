@@ -228,8 +228,11 @@ impl<'c> SqliteTable<'c> {
             Expr::Logical { left, right, .. } => {
                 self.translatable(left) && self.translatable(right)
             }
-            // Every binary op (comparison and arithmetic) translates.
-            Expr::Binary { left, right, .. } => self.translatable(left) && self.translatable(right),
+            // Every comparison and arithmetic op translates; identity (`is`) is
+            // the engine's structural notion and stays residual.
+            Expr::Binary {
+                op, left, right, ..
+            } => !op.is_identity() && self.translatable(left) && self.translatable(right),
             // member/index/call/in/range/outer(^) → residual
             _ => false,
         }
@@ -340,6 +343,7 @@ fn binary_sql(op: BinaryOp) -> &'static str {
         BinaryOp::Le => "<=",
         BinaryOp::Gt => ">",
         BinaryOp::Ge => ">=",
+        BinaryOp::Is | BinaryOp::IsNot => unreachable!("identity operators are never pushed"),
         BinaryOp::Add => "+",
         BinaryOp::Sub => "-",
         BinaryOp::Mul => "*",

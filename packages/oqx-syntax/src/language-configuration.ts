@@ -16,16 +16,19 @@ export const oqxLanguageConfiguration: LanguageConfiguration = {
   brackets: [
     ["{", "}"],
     ["(", ")"],
+    ["[", "]"],
   ],
   autoClosingPairs: [
     { open: "{", close: "}" },
     { open: "(", close: ")" },
+    { open: "[", close: "]" },
     { open: '"', close: '"', notIn: ["string"] },
     { open: "'", close: "'", notIn: ["string"] },
   ],
   surroundingPairs: [
     ["{", "}"],
     ["(", ")"],
+    ["[", "]"],
     ['"', '"'],
     ["'", "'"],
   ],

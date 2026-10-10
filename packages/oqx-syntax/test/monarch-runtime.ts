@@ -136,6 +136,7 @@ export function classOfMonarchType(type: string, text: string): TokenClass | nul
   const bare = type.replace(/\.oqx$/, "");
   if (bare === "delimiter.curly") return text === "{" ? "braceOpen" : "braceClose";
   if (bare === "delimiter.parenthesis") return text === "(" ? "parenOpen" : "parenClose";
+  if (bare === "delimiter.square") return text === "[" ? "bracketOpen" : "bracketClose";
   for (const [token, cls] of byToken) if (bare === token) return cls;
   throw new Error(`Monarch type ${type} names no token class`);
 }

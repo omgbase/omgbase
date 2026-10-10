@@ -75,16 +75,16 @@
     },
     {
       "name": "consumer after a projection is not a predicate",
-      "query": "people first { jobs exists { } }",
+      "query": "people first { name, jobs exists { } }",
       "expect": {
         "error": {
           "stage": "parse",
           "includes": [
-            "write `where <relation> exists { … }`",
-            "never implicit"
+            "write `where <relation> exists { … }`"
           ]
         }
-      }
+      },
+      "notes": "After a projection a consumer test still needs `where`; a block may lead with a predicate only when nothing is projected (0.17)."
     },
     {
       "name": "nested block in a projection needs a name",
@@ -320,6 +320,135 @@
           "stage": "parse",
           "includes": [
             "after '.'"
+          ]
+        }
+      }
+    },
+    {
+      "name": "a comma after a where-first predicate",
+      "tags": [
+        "sugar",
+        "where-first"
+      ],
+      "query": "people count { age >= 18, name }",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "where age >= 18"
+          ]
+        }
+      }
+    },
+    {
+      "name": "a top-level leading predicate is never implicit where",
+      "tags": [
+        "sugar",
+        "top-level"
+      ],
+      "query": "age > 15 from people",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "needs an alias",
+            "never implicit"
+          ]
+        }
+      }
+    },
+    {
+      "name": "a negative bracket index",
+      "tags": [
+        "sugar",
+        "brackets"
+      ],
+      "query": "j: jobs[-1] from people",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "negative indices are not supported"
+          ]
+        }
+      }
+    },
+    {
+      "name": "is does not chain",
+      "tags": [
+        "sugar",
+        "is"
+      ],
+      "query": "from r where a is b is c",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "comparisons do not chain"
+          ]
+        }
+      }
+    },
+    {
+      "name": "a select alias used before its definition",
+      "tags": [
+        "sugar",
+        "aliases"
+      ],
+      "query": "a: b, b: 1 from r",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "to its left"
+          ]
+        }
+      }
+    },
+    {
+      "name": "a select alias cycle",
+      "tags": [
+        "sugar",
+        "aliases"
+      ],
+      "query": "a: b, b: a from r",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "select aliases form a cycle"
+          ]
+        }
+      }
+    },
+    {
+      "name": "a bare bracket lookup in where",
+      "tags": [
+        "sugar",
+        "brackets"
+      ],
+      "query": "from people where jobs[pay > 2]",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "select-position lookup"
+          ]
+        }
+      }
+    },
+    {
+      "name": "a literal bracket receiver",
+      "tags": [
+        "sugar",
+        "brackets"
+      ],
+      "query": "v: null[0] from r",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "`null` is a literal"
           ]
         }
       }

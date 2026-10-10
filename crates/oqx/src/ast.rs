@@ -169,8 +169,9 @@ impl RelOp {
 }
 serde_as_word!(RelOp);
 
-/// The `op` of a `binary` expression: arithmetic + comparison. The TS keeps
-/// this as a string; `as_str()` is that string.
+/// The `op` of a `binary` expression: arithmetic, comparison, or identity
+/// (`is` / `is not`, SEMANTICS §5b, since 0.17). The TS keeps this as a
+/// string; `as_str()` is that string.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum BinaryOp {
     Eq,
@@ -179,6 +180,8 @@ pub enum BinaryOp {
     Le,
     Gt,
     Ge,
+    Is,
+    IsNot,
     Add,
     Sub,
     Mul,
@@ -187,8 +190,9 @@ pub enum BinaryOp {
 }
 
 impl BinaryOp {
-    const WORDS: &'static [&'static str] =
-        &["==", "!=", "<", "<=", ">", ">=", "+", "-", "*", "/", "%"];
+    const WORDS: &'static [&'static str] = &[
+        "==", "!=", "<", "<=", ">", ">=", "is", "is not", "+", "-", "*", "/", "%",
+    ];
 
     pub fn as_str(self) -> &'static str {
         match self {
@@ -198,6 +202,8 @@ impl BinaryOp {
             BinaryOp::Le => "<=",
             BinaryOp::Gt => ">",
             BinaryOp::Ge => ">=",
+            BinaryOp::Is => "is",
+            BinaryOp::IsNot => "is not",
             BinaryOp::Add => "+",
             BinaryOp::Sub => "-",
             BinaryOp::Mul => "*",
@@ -214,6 +220,8 @@ impl BinaryOp {
             "<=" => BinaryOp::Le,
             ">" => BinaryOp::Gt,
             ">=" => BinaryOp::Ge,
+            "is" => BinaryOp::Is,
+            "is not" => BinaryOp::IsNot,
             "+" => BinaryOp::Add,
             "-" => BinaryOp::Sub,
             "*" => BinaryOp::Mul,
@@ -224,12 +232,17 @@ impl BinaryOp {
     }
 
     /// True for the six comparison operators (the ones `relate` handles);
-    /// false for the arithmetic ones (`arith`).
+    /// false for the identity and arithmetic ones.
     pub fn is_comparison(self) -> bool {
         matches!(
             self,
             BinaryOp::Eq | BinaryOp::Ne | BinaryOp::Lt | BinaryOp::Le | BinaryOp::Gt | BinaryOp::Ge
         )
+    }
+
+    /// True for `is` / `is not` (SEMANTICS §5b: identity, never `relate`).
+    pub fn is_identity(self) -> bool {
+        matches!(self, BinaryOp::Is | BinaryOp::IsNot)
     }
 }
 serde_as_word!(BinaryOp);
@@ -332,7 +345,9 @@ pub enum Expr {
         expr: Box<Expr>,
         span: Span,
     },
-    /// Arithmetic + comparison.
+    /// `x!` — the value of `expr`, or an eval error when it is absent (since 0.17).
+    Required { expr: Box<Expr>, span: Span },
+    /// Arithmetic, comparison, identity.
     Binary {
         op: BinaryOp,
         left: Box<Expr>,
@@ -361,6 +376,11 @@ pub enum Expr {
         exclusive_end: bool,
         span: Span,
     },
+    /// A value-position directive (since 0.17): `recv first { … }.pay`, and
+    /// what a bracket lookup `x[…]` desugars to. Serializes as the bare
+    /// `OpNode` (`kind: "op"`): an op is an expression only by position.
+    #[cfg_attr(feature = "json", serde(untagged))]
+    Op(Box<OpNode>),
 }
 
 impl Expr {
@@ -374,10 +394,12 @@ impl Expr {
             | Expr::Member { span, .. }
             | Expr::Call { span, .. }
             | Expr::Unary { span, .. }
+            | Expr::Required { span, .. }
             | Expr::Binary { span, .. }
             | Expr::Logical { span, .. }
             | Expr::In { span, .. }
             | Expr::Range { span, .. } => *span,
+            Expr::Op(op) => op.span,
         }
     }
 
@@ -397,10 +419,12 @@ impl Expr {
             | Expr::Member { span, .. }
             | Expr::Call { span, .. }
             | Expr::Unary { span, .. }
+            | Expr::Required { span, .. }
             | Expr::Binary { span, .. }
             | Expr::Logical { span, .. }
             | Expr::In { span, .. }
             | Expr::Range { span, .. } => span,
+            Expr::Op(op) => &mut op.span,
         }
     }
 
@@ -414,6 +438,8 @@ impl Expr {
             Expr::Member { .. } => "member",
             Expr::Call { .. } => "call",
             Expr::Unary { .. } => "unary",
+            Expr::Required { .. } => "required",
+            Expr::Op(_) => "op",
             Expr::Binary { .. } => "binary",
             Expr::Logical { .. } => "logical",
             Expr::In { .. } => "in",

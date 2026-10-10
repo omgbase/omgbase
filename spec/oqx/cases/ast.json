@@ -3890,6 +3890,1005 @@
           "offset": null
         }
       }
+    },
+    {
+      "name": "sugar: implicit collect directive form",
+      "tags": [
+        "sugar",
+        "collect"
+      ],
+      "query": "r { n > 1 }",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "r"
+          },
+          "from": [],
+          "where": {
+            "kind": "scalar",
+            "expr": {
+              "kind": "binary",
+              "op": ">",
+              "left": {
+                "kind": "ident",
+                "name": "n"
+              },
+              "right": {
+                "kind": "lit",
+                "value": 1
+              }
+            }
+          },
+          "select": [],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "sugar: implicit collect in select",
+      "tags": [
+        "sugar",
+        "collect"
+      ],
+      "query": "select js: jobs { employer } from people",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "people"
+          },
+          "from": [],
+          "where": null,
+          "select": [
+            {
+              "kind": "collect",
+              "name": "js",
+              "op": {
+                "kind": "op",
+                "receiver": {
+                  "kind": "ident",
+                  "name": "jobs"
+                },
+                "op": "collect",
+                "sub": {
+                  "kind": "subquery",
+                  "from": [],
+                  "where": null,
+                  "select": [
+                    {
+                      "kind": "field",
+                      "name": "employer",
+                      "expr": {
+                        "kind": "ident",
+                        "name": "employer"
+                      },
+                      "lift": 0
+                    }
+                  ],
+                  "orderBy": null,
+                  "follow": null,
+                  "values": false,
+                  "limit": null,
+                  "offset": null
+                },
+                "countCmp": null,
+                "distinct": false
+              }
+            }
+          ],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "sugar: where-first body",
+      "tags": [
+        "sugar",
+        "where-first"
+      ],
+      "query": "people count { age > 50 }",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "people"
+          },
+          "from": [],
+          "where": {
+            "kind": "scalar",
+            "expr": {
+              "kind": "binary",
+              "op": ">",
+              "left": {
+                "kind": "ident",
+                "name": "age"
+              },
+              "right": {
+                "kind": "lit",
+                "value": 50
+              }
+            }
+          },
+          "select": [],
+          "orderBy": null,
+          "consumer": "count",
+          "follow": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "sugar: where-first body with a consumer test",
+      "tags": [
+        "sugar",
+        "where-first"
+      ],
+      "query": "people count { jobs exists { } }",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "people"
+          },
+          "from": [],
+          "where": {
+            "kind": "op",
+            "receiver": {
+              "kind": "ident",
+              "name": "jobs"
+            },
+            "op": "exists",
+            "sub": {
+              "kind": "subquery",
+              "from": [],
+              "where": null,
+              "select": [],
+              "orderBy": null,
+              "follow": null,
+              "values": false,
+              "limit": null,
+              "offset": null
+            },
+            "countCmp": null,
+            "distinct": false
+          },
+          "select": [],
+          "orderBy": null,
+          "consumer": "count",
+          "follow": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "sugar: bracket predicate is first",
+      "tags": [
+        "sugar",
+        "brackets"
+      ],
+      "query": "select j: jobs[pay > 2] from people",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "people"
+          },
+          "from": [],
+          "where": null,
+          "select": [
+            {
+              "kind": "collect",
+              "name": "j",
+              "op": {
+                "kind": "op",
+                "receiver": {
+                  "kind": "ident",
+                  "name": "jobs"
+                },
+                "op": "first",
+                "sub": {
+                  "kind": "subquery",
+                  "from": [],
+                  "where": {
+                    "kind": "scalar",
+                    "expr": {
+                      "kind": "binary",
+                      "op": ">",
+                      "left": {
+                        "kind": "ident",
+                        "name": "pay"
+                      },
+                      "right": {
+                        "kind": "lit",
+                        "value": 2
+                      }
+                    }
+                  },
+                  "select": [],
+                  "orderBy": null,
+                  "follow": null,
+                  "values": false,
+                  "limit": null,
+                  "offset": null
+                },
+                "countCmp": null,
+                "distinct": false
+              }
+            }
+          ],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "sugar: bracket index is first with offset",
+      "tags": [
+        "sugar",
+        "brackets"
+      ],
+      "query": "select j: jobs[3] from people",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "people"
+          },
+          "from": [],
+          "where": null,
+          "select": [
+            {
+              "kind": "collect",
+              "name": "j",
+              "op": {
+                "kind": "op",
+                "receiver": {
+                  "kind": "ident",
+                  "name": "jobs"
+                },
+                "op": "first",
+                "sub": {
+                  "kind": "subquery",
+                  "from": [],
+                  "where": null,
+                  "select": [],
+                  "orderBy": null,
+                  "follow": null,
+                  "values": false,
+                  "limit": null,
+                  "offset": {
+                    "kind": "lit",
+                    "value": 3
+                  }
+                },
+                "countCmp": null,
+                "distinct": false
+              }
+            }
+          ],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "sugar: bracket predicate with ! is a required single",
+      "tags": [
+        "sugar",
+        "brackets",
+        "required"
+      ],
+      "query": "select j: jobs[pay > 2]! from people",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "people"
+          },
+          "from": [],
+          "where": null,
+          "select": [
+            {
+              "kind": "field",
+              "name": "j",
+              "expr": {
+                "kind": "required",
+                "expr": {
+                  "kind": "op",
+                  "receiver": {
+                    "kind": "ident",
+                    "name": "jobs"
+                  },
+                  "op": "single",
+                  "sub": {
+                    "kind": "subquery",
+                    "from": [],
+                    "where": {
+                      "kind": "scalar",
+                      "expr": {
+                        "kind": "binary",
+                        "op": ">",
+                        "left": {
+                          "kind": "ident",
+                          "name": "pay"
+                        },
+                        "right": {
+                          "kind": "lit",
+                          "value": 2
+                        }
+                      }
+                    },
+                    "select": [],
+                    "orderBy": null,
+                    "follow": null,
+                    "values": false,
+                    "limit": null,
+                    "offset": null
+                  },
+                  "countCmp": null,
+                  "distinct": false
+                }
+              },
+              "lift": 0
+            }
+          ],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "sugar: bracket index with ! is a required first",
+      "tags": [
+        "sugar",
+        "brackets",
+        "required"
+      ],
+      "query": "select j: jobs[3]! from people",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "people"
+          },
+          "from": [],
+          "where": null,
+          "select": [
+            {
+              "kind": "field",
+              "name": "j",
+              "expr": {
+                "kind": "required",
+                "expr": {
+                  "kind": "op",
+                  "receiver": {
+                    "kind": "ident",
+                    "name": "jobs"
+                  },
+                  "op": "first",
+                  "sub": {
+                    "kind": "subquery",
+                    "from": [],
+                    "where": null,
+                    "select": [],
+                    "orderBy": null,
+                    "follow": null,
+                    "values": false,
+                    "limit": null,
+                    "offset": {
+                      "kind": "lit",
+                      "value": 3
+                    }
+                  },
+                  "countCmp": null,
+                  "distinct": false
+                }
+              },
+              "lift": 0
+            }
+          ],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "sugar: bracket then navigation",
+      "tags": [
+        "sugar",
+        "brackets"
+      ],
+      "query": "select jobs[0].pay from r",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "r"
+          },
+          "from": [],
+          "where": null,
+          "select": [
+            {
+              "kind": "field",
+              "name": "pay",
+              "expr": {
+                "kind": "member",
+                "recv": {
+                  "kind": "op",
+                  "receiver": {
+                    "kind": "ident",
+                    "name": "jobs"
+                  },
+                  "op": "first",
+                  "sub": {
+                    "kind": "subquery",
+                    "from": [],
+                    "where": null,
+                    "select": [],
+                    "orderBy": null,
+                    "follow": null,
+                    "values": false,
+                    "limit": null,
+                    "offset": {
+                      "kind": "lit",
+                      "value": 0
+                    }
+                  },
+                  "countCmp": null,
+                  "distinct": false
+                },
+                "name": "pay"
+              },
+              "lift": 0
+            }
+          ],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "sugar: the explicit value-position directive is the same tree",
+      "tags": [
+        "sugar",
+        "brackets"
+      ],
+      "query": "select pay: jobs first { offset 0 }.pay from r",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "r"
+          },
+          "from": [],
+          "where": null,
+          "select": [
+            {
+              "kind": "field",
+              "name": "pay",
+              "expr": {
+                "kind": "member",
+                "recv": {
+                  "kind": "op",
+                  "receiver": {
+                    "kind": "ident",
+                    "name": "jobs"
+                  },
+                  "op": "first",
+                  "sub": {
+                    "kind": "subquery",
+                    "from": [],
+                    "where": null,
+                    "select": [],
+                    "orderBy": null,
+                    "follow": null,
+                    "values": false,
+                    "limit": null,
+                    "offset": {
+                      "kind": "lit",
+                      "value": 0
+                    }
+                  },
+                  "countCmp": null,
+                  "distinct": false
+                },
+                "name": "pay"
+              },
+              "lift": 0
+            }
+          ],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "sugar: is x is !!x",
+      "tags": [
+        "sugar",
+        "is"
+      ],
+      "query": "select v: is x from r",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "r"
+          },
+          "from": [],
+          "where": null,
+          "select": [
+            {
+              "kind": "field",
+              "name": "v",
+              "expr": {
+                "kind": "unary",
+                "op": "!",
+                "expr": {
+                  "kind": "unary",
+                  "op": "!",
+                  "expr": {
+                    "kind": "ident",
+                    "name": "x"
+                  }
+                }
+              },
+              "lift": 0
+            }
+          ],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "sugar: not x is !x",
+      "tags": [
+        "sugar",
+        "not"
+      ],
+      "query": "select v: not x from r",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "r"
+          },
+          "from": [],
+          "where": null,
+          "select": [
+            {
+              "kind": "field",
+              "name": "v",
+              "expr": {
+                "kind": "unary",
+                "op": "!",
+                "expr": {
+                  "kind": "ident",
+                  "name": "x"
+                }
+              },
+              "lift": 0
+            }
+          ],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "sugar: the required node",
+      "tags": [
+        "sugar",
+        "required"
+      ],
+      "query": "select v: x! from r",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "r"
+          },
+          "from": [],
+          "where": null,
+          "select": [
+            {
+              "kind": "field",
+              "name": "v",
+              "expr": {
+                "kind": "required",
+                "expr": {
+                  "kind": "ident",
+                  "name": "x"
+                }
+              },
+              "lift": 0
+            }
+          ],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "sugar: an unaliased required keys by its navigation",
+      "tags": [
+        "sugar",
+        "required"
+      ],
+      "query": "select a.b! from r",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "r"
+          },
+          "from": [],
+          "where": null,
+          "select": [
+            {
+              "kind": "field",
+              "name": "b",
+              "expr": {
+                "kind": "required",
+                "expr": {
+                  "kind": "member",
+                  "recv": {
+                    "kind": "ident",
+                    "name": "a"
+                  },
+                  "name": "b"
+                }
+              },
+              "lift": 0
+            }
+          ],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "sugar: is and is not are binary operators",
+      "tags": [
+        "sugar",
+        "is"
+      ],
+      "query": "select a: x is y, b: x is not y from r",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "r"
+          },
+          "from": [],
+          "where": null,
+          "select": [
+            {
+              "kind": "field",
+              "name": "a",
+              "expr": {
+                "kind": "binary",
+                "op": "is",
+                "left": {
+                  "kind": "ident",
+                  "name": "x"
+                },
+                "right": {
+                  "kind": "ident",
+                  "name": "y"
+                }
+              },
+              "lift": 0
+            },
+            {
+              "kind": "field",
+              "name": "b",
+              "expr": {
+                "kind": "binary",
+                "op": "is not",
+                "left": {
+                  "kind": "ident",
+                  "name": "x"
+                },
+                "right": {
+                  "kind": "ident",
+                  "name": "y"
+                }
+              },
+              "lift": 0
+            }
+          ],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "sugar: a bracket query as the whole query",
+      "tags": [
+        "sugar",
+        "brackets"
+      ],
+      "query": "r[n > 1]",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "r"
+          },
+          "from": [],
+          "where": {
+            "kind": "scalar",
+            "expr": {
+              "kind": "binary",
+              "op": ">",
+              "left": {
+                "kind": "ident",
+                "name": "n"
+              },
+              "right": {
+                "kind": "lit",
+                "value": 1
+              }
+            }
+          },
+          "select": [],
+          "orderBy": null,
+          "consumer": "first",
+          "follow": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "sugar: an alias reference keeps the surface form",
+      "tags": [
+        "sugar",
+        "aliases"
+      ],
+      "query": "select a: n, b: a from r",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "r"
+          },
+          "from": [],
+          "where": null,
+          "select": [
+            {
+              "kind": "field",
+              "name": "a",
+              "expr": {
+                "kind": "ident",
+                "name": "n"
+              },
+              "lift": 0
+            },
+            {
+              "kind": "field",
+              "name": "b",
+              "expr": {
+                "kind": "ident",
+                "name": "a"
+              },
+              "lift": 0
+            }
+          ],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "sugar: and/or parse to the && / || where nodes",
+      "tags": [
+        "sugar",
+        "and-or"
+      ],
+      "query": "people count { a and b or c }",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "people"
+          },
+          "from": [],
+          "where": {
+            "kind": "or",
+            "parts": [
+              {
+                "kind": "and",
+                "parts": [
+                  {
+                    "kind": "scalar",
+                    "expr": {
+                      "kind": "ident",
+                      "name": "a"
+                    }
+                  },
+                  {
+                    "kind": "scalar",
+                    "expr": {
+                      "kind": "ident",
+                      "name": "b"
+                    }
+                  }
+                ]
+              },
+              {
+                "kind": "scalar",
+                "expr": {
+                  "kind": "ident",
+                  "name": "c"
+                }
+              }
+            ]
+          },
+          "select": [],
+          "orderBy": null,
+          "consumer": "count",
+          "follow": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "sugar: and/or in value position are the logical nodes",
+      "tags": [
+        "sugar",
+        "and-or"
+      ],
+      "query": "select v: a or b and c from r",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "r"
+          },
+          "from": [],
+          "where": null,
+          "select": [
+            {
+              "kind": "field",
+              "name": "v",
+              "expr": {
+                "kind": "logical",
+                "op": "||",
+                "left": {
+                  "kind": "ident",
+                  "name": "a"
+                },
+                "right": {
+                  "kind": "logical",
+                  "op": "&&",
+                  "left": {
+                    "kind": "ident",
+                    "name": "b"
+                  },
+                  "right": {
+                    "kind": "ident",
+                    "name": "c"
+                  }
+                }
+              },
+              "lift": 0
+            }
+          ],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
     }
   ]
 }

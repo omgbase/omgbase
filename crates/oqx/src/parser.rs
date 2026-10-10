@@ -22,9 +22,21 @@
 //! receiver-plus-consumer form `<receiver> <consumer> { block }` supplies the
 //! source itself, so its block's `from` is an optional re-projection). Only
 //! `select` may drop its keyword, and only when it is the first clause written
-//! (`name, age from people`); every other clause always carries its keyword, so
-//! a predicate is never implicit — a block filters with `where`. An out-of-order
-//! clause is a parse error naming the order. `where` may reference the same
+//! (`name, age from people`); every other clause always carries its keyword. A
+//! BLOCK may instead lead with a predicate (since 0.17): a leading expression
+//! that is syntactically a predicate — not a bare name, a dotted navigation or a
+//! lift — opens a `where`-first body (`people exists { age > 50 }`); at the top
+//! level a leading predicate is still an error, since `where` would precede
+//! `from`. An out-of-order clause is a parse error naming the order.
+//!
+//! Sugar (0.17) desugars HERE, to existing nodes: `x { … }` is `x collect { … }`
+//! (not in `follow` destination position, where a brace is the options block);
+//! `x[p]` is `x first { where p }`, `x[n]` is `x first { offset n }`, with a
+//! trailing `!` making the first a `single` (predicate) or a `required` (index);
+//! `is x` is `!!x`, `not x` is `!x`. Two shapes are new: the postfix `required`
+//! (`x!`, tightest) and the identity operators `is` / `is not` (comparison
+//! level). A directive may stand in value position (`jobs first { }.pay`), which
+//! is how the canonical printer writes a bracket chain back. `where` may reference the same
 //! body's `select` aliases: the parser VALIDATES those references (a cycle or a
 //! block alias inside an expression is a parse error) but keeps the surface
 //! form; [`crate::resolve::resolve_aliases`] substitutes them before evaluation.
@@ -60,8 +72,10 @@ use crate::ast::{
 };
 use crate::errors::{OqxError, Result};
 use crate::lexer::{TokType, Token, lex_string, lex_template};
-use crate::resolve::resolve_where;
+use crate::print::print_template;
+use crate::resolve::{resolve_select, resolve_where};
 use crate::value::Value;
+use crate::walk::Node;
 
 const CONSUMERS: [&str; 6] = ["collect", "exists", "none", "count", "first", "single"];
 
@@ -191,12 +205,27 @@ struct BodyClauses {
 struct Parser {
     tokens: Vec<Token>,
     pos: usize,
+    /// While a block's leading run is read speculatively as a predicate, a bare
+    /// `first`/`single` leaf is not rejected on sight: the body decides after
+    /// the run is classified (`reject_bare_lookups`).
+    defer_lookup: bool,
+}
+
+/// The keyword-less run that opens a body: a `where`-first predicate or the
+/// projection.
+enum LeadingRun {
+    Where(Where),
+    Projection(Vec<SelectItem>, bool),
 }
 
 impl Parser {
     fn new(tokens: Vec<Token>) -> Self {
         debug_assert!(tokens.last().is_some_and(|t| t.kind == TokType::Eof));
-        Self { tokens, pos: 0 }
+        Self {
+            tokens,
+            pos: 0,
+            defer_lookup: false,
+        }
     }
 
     // ---- cursor helpers -------------------------------------------------------
@@ -250,28 +279,43 @@ impl Parser {
     fn parse_query(&mut self) -> Result<Query> {
         let start = self.start();
         // Directive form: `<receiver> <consumer> { … }` consuming the whole query.
-        if let Some(directive) = self.try_op(false)? {
+        if let Some(mut directive) = self.try_op(false)? {
+            if !self.at(TokType::Eof) && (self.at(TokType::LBracket) || self.at_value_directive()) {
+                // A longer chain whose outermost node is still a directive
+                // (`people first { } first { }` — how `people[p][0]` prints back).
+                let save = self.pos;
+                match self.parse_postfix(Some(Expr::Op(Box::new(directive.clone())))) {
+                    Ok(Expr::Op(op)) if self.at(TokType::Eof) => directive = *op,
+                    Ok(_) => self.pos = save,
+                    Err(e) if e.stage == crate::errors::Stage::Parse => self.pos = save,
+                    Err(e) => return Err(e),
+                }
+            }
             if self.at(TokType::Eof) {
-                let sub = directive.sub;
-                return Ok(Query {
-                    source: directive.receiver,
-                    from: sub.from,
-                    r#where: sub.r#where,
-                    select: sub.select,
-                    order_by: sub.order_by,
-                    consumer: directive.op,
-                    follow: sub.follow,
-                    distinct: directive.distinct,
-                    values: sub.values,
-                    limit: sub.limit,
-                    offset: sub.offset,
-                    span: self.sp(start),
-                });
+                return Ok(self.query_from_op(directive, start));
             }
             return self.fail(format!(
                 "unexpected {} after the top-level directive",
                 self.tok_desc()
             ));
+        }
+        // A bracket chain whose outermost node is a directive is the whole query
+        // too (`people[age > 40]` ≡ `people first { where age > 40 }`). Read
+        // speculatively: anything else is the body form's business.
+        if matches!(
+            self.peek().kind,
+            TokType::Ident | TokType::Caret | TokType::Binding
+        ) {
+            let save = self.pos;
+            match self.parse_postfix(None) {
+                Ok(Expr::Op(op)) if self.at(TokType::Eof) => {
+                    return Ok(self.query_from_op(*op, start));
+                }
+                Ok(_) => {}
+                Err(e) if e.stage == crate::errors::Stage::Parse => {}
+                Err(e) => return Err(e),
+            }
+            self.pos = save;
         }
 
         // Body form: the fixed clause list; its `from` is the source.
@@ -302,6 +346,26 @@ impl Parser {
             offset: body.offset,
             span: self.sp(start),
         })
+    }
+
+    // The whole-query form of a directive: its receiver is the source, its block
+    // the body, its consumer the query's.
+    fn query_from_op(&self, directive: OpNode, start: usize) -> Query {
+        let sub = directive.sub;
+        Query {
+            source: directive.receiver,
+            from: sub.from,
+            r#where: sub.r#where,
+            select: sub.select,
+            order_by: sub.order_by,
+            consumer: directive.op,
+            follow: sub.follow,
+            distinct: directive.distinct,
+            values: sub.values,
+            limit: sub.limit,
+            offset: sub.offset,
+            span: self.sp(start),
+        }
     }
 
     fn tok_desc(&self) -> String {
@@ -388,30 +452,90 @@ impl Parser {
                 continue;
             }
             // A keyword-less run. Before any clause it is the projection (`select` is
-            // the one keyword that may be dropped, and only in first position); after
-            // any clause it is an error — a predicate is never implicit.
+            // the one keyword that may be dropped, and only in first position) — or,
+            // in a block, a leading predicate that opens a `where`-first body. After
+            // any clause it is an error.
             if stage.is_none()
                 && (self.at(TokType::Ident)
                     || self.at(TokType::Binding)
                     || self.at(TokType::Caret)
                     || self.can_start_value())
             {
-                self.enter(&mut stage, Clause::Select)?;
-                let (items, values) = self.parse_projection(ctx)?;
-                body.select = items;
-                body.values = values;
+                match self.parse_leading_run(ctx)? {
+                    LeadingRun::Where(w) => {
+                        self.enter(&mut stage, Clause::Where)?;
+                        body.r#where = Some(w);
+                    }
+                    LeadingRun::Projection(items, values) => {
+                        self.enter(&mut stage, Clause::Select)?;
+                        body.select = items;
+                        body.values = values;
+                    }
+                }
                 continue;
             }
             return self.fail_unexpected_in_body(stage, ctx);
         }
-        // Validate the alias references of this body's `where` (cycles, a block
-        // alias inside an expression); the surface form is kept.
+        // Validate the alias references of this body (cycles, a block alias inside
+        // a `where` expression, a `select` item naming an item to its right); the
+        // surface form is kept. `where` first: its cycle report follows its own path.
         if let Some(w) = &body.r#where {
             if let Err(msg) = resolve_where(&body.select, w.clone()) {
                 return self.fail(msg);
             }
         }
+        if let Err(msg) = resolve_select(&body.select) {
+            return self.fail(msg);
+        }
         Ok(body)
+    }
+
+    // The keyword-less run that opens a body. At the top level it is always the
+    // projection. In a block it is a `where`-first body when the leading
+    // expression is SYNTACTICALLY a predicate (GRAMMAR §2): the run is read as a
+    // where tree first; if that tree is predicate-shaped — anything but a bare
+    // name, a dotted navigation or a lift, with a parenthesized expression
+    // counting as a predicate — and is not the item of a `values` projection, it
+    // is the `where`. Otherwise the tokens are re-read as the projection. When
+    // both readings fail, the error that got further wins (the farthest-failure
+    // rule), so a mistake deep inside `{ jobs exists { … } }` is reported where it is.
+    fn parse_leading_run(&mut self, ctx: BodyCtx) -> Result<LeadingRun> {
+        if ctx != BodyCtx::Top {
+            let save = self.pos;
+            let first_kind = self.peek().kind;
+            self.defer_lookup = true;
+            let speculative = self.parse_where();
+            self.defer_lookup = false;
+            let mut spec_err: Option<(OqxError, usize)> = None;
+            match speculative {
+                Ok(w) => {
+                    if predicate_shaped(&w, first_kind) && !self.at_word(TokType::Ident, "values") {
+                        if self.at(TokType::Comma) {
+                            return self.fail(format!(
+                                "a leading predicate starts a `where`-first body, which has no projection — write the projection first: `{{ <projection> where {} }}`",
+                                describe(Node::Where(&w))
+                            ));
+                        }
+                        self.reject_bare_lookups(&w)?;
+                        return Ok(LeadingRun::Where(w));
+                    }
+                }
+                Err(e) if e.stage == crate::errors::Stage::Parse => spec_err = Some((e, self.pos)),
+                Err(e) => return Err(e),
+            }
+            self.pos = save;
+            if let Some((err, spec_pos)) = spec_err {
+                return match self.parse_projection(ctx) {
+                    Ok((items, values)) => Ok(LeadingRun::Projection(items, values)),
+                    Err(e) if e.stage == crate::errors::Stage::Parse && self.pos < spec_pos => {
+                        Err(err)
+                    }
+                    Err(e) => Err(e),
+                };
+            }
+        }
+        let (items, values) = self.parse_projection(ctx)?;
+        Ok(LeadingRun::Projection(items, values))
     }
 
     fn enter(&self, stage: &mut Option<Clause>, clause: Clause) -> Result<()> {
@@ -497,10 +621,10 @@ impl Parser {
                 "unexpected {} after `from` — a predicate needs `where` (there is no implicit where), and a projection goes before `from` (`select … from …`); expected {remaining}",
                 self.tok_desc()
             )),
-            // `{ rel exists { … } }` / `{ rel count { … } >= 2 }`: the leading `rel` was
-            // read as the projection, so the consumer word is where the mistake shows.
+            // `{ name, rel exists { … } }`: the leading items were read as the
+            // projection, so the consumer word is where the mistake shows.
             Some(Clause::Select) if consumer_word => self.fail(format!(
-                "unexpected `{v}` after a projection — a consumer test is a predicate: write `where <relation> {v} {{ … }}` — a predicate is never implicit; a nested block in a projection needs a name (`name: <relation> collect {{ … }}`)"
+                "unexpected `{v}` after a projection — a consumer test is a predicate: write `where <relation> {v} {{ … }}` after the projection (a block may lead with a predicate only when nothing is projected); a nested block in a projection needs a name (`name: <relation> collect {{ … }}`)"
             )),
             None => self.fail(format!(
                 "unexpected {} — expected a projection or {remaining}",
@@ -622,7 +746,7 @@ impl Parser {
                 follow.depth = Some(v as u32);
             } else {
                 return self.fail(format!(
-                    "unexpected {} in follow block — expected where/frontier/depth/by",
+                    "unexpected {} in follow block — expected where/frontier/depth/by (a brace after the last destination is the options block; a destination block needs its consumer: `follow <relation> collect {{ … }}`)",
                     self.tok_desc()
                 ));
             }
@@ -774,8 +898,18 @@ impl Parser {
             let mut seen: HashSet<String> = HashSet::new();
             for it in &items {
                 if it.name().is_empty() {
+                    if matches!(it, SelectItem::Collect { .. }) {
+                        return self.fail(
+                            "a nested block in a projection needs a name (`name: <relation> collect { … }`); as a predicate, a consumer test is written `where <relation> exists { … }`",
+                        );
+                    }
+                    if ctx == BodyCtx::Top {
+                        return self.fail(
+                            "a leading expression is a projection (select): an item that is not a plain name needs an alias (`name: expr`) or `values`; to filter by it write `where …` after `from` — at the top level a predicate is never implicit (the clause order puts `from` first)",
+                        );
+                    }
                     return self.fail(
-                        "a leading expression is a projection (select): an item that is not a plain name needs an alias (`name: expr`) or `values`; to filter by it write `where …` — a predicate is never implicit",
+                        "an item that is not a plain name needs an alias (`name: expr`) or `values`; to filter by it write `where …` after the projection (a block may lead with a predicate only when nothing is projected: `{ age > 18 }`)",
                     );
                 }
                 let lift = match it {
@@ -819,6 +953,11 @@ impl Parser {
             let name = self.next().value;
             self.next(); // ':'
             if let Some(op) = self.try_op(false)? {
+                // `name: jobs first { }.pay`: the directive is the head of a longer value.
+                if self.at_scalar_continuation() || self.at_value_directive() {
+                    let expr = self.parse_or(Some(Expr::Op(Box::new(op))))?;
+                    return self.finish_item(name, expr, lift, start);
+                }
                 if !matches!(
                     op.op,
                     Consumer::Collect | Consumer::First | Consumer::Single
@@ -828,31 +967,41 @@ impl Parser {
                         op.op.as_str()
                     ));
                 }
-                if lift > 0 {
-                    return self.fail(format!(
-                        "a lift (^{name}) value must be a scalar expression, not {} {{ … }}",
-                        op.op.as_str()
-                    ));
-                }
-                return Ok(SelectItem::Collect {
-                    name,
-                    op: Box::new(op),
-                    span: self.sp(start),
-                });
+                return self.finish_item(name, Expr::Op(Box::new(op)), lift, start);
             }
             let expr = self.parse_value_expr()?;
-            return Ok(SelectItem::Field {
+            return self.finish_item(name, expr, lift, start);
+        }
+        // Unaliased item: a bare/dotted navigation (under any `!`) keys by its
+        // last segment; any other expression is unnamed ("") — legal only under
+        // `values` (checked by parse_projection, which sees the whole list).
+        let expr = self.parse_value_expr()?;
+        let name = nav_key(&expr).unwrap_or("").to_string();
+        self.finish_item(name, expr, lift, start)
+    }
+
+    // An item from its value: exactly a directive (written out, or the bracket
+    // sugar) is the `collect` item kind; anything else is a `field`.
+    fn finish_item(
+        &self,
+        name: String,
+        expr: Expr,
+        lift: usize,
+        start: usize,
+    ) -> Result<SelectItem> {
+        if let Expr::Op(op) = expr {
+            if lift > 0 {
+                return self.fail(format!(
+                    "a lift (^{name}) value must be a scalar expression, not {} {{ … }}",
+                    op.op.as_str()
+                ));
+            }
+            return Ok(SelectItem::Collect {
                 name,
-                expr,
-                lift,
+                op,
                 span: self.sp(start),
             });
         }
-        // Unaliased item: a bare/dotted navigation keys by its last segment; any
-        // other expression is unnamed ("") — legal only under `values` (checked by
-        // parse_projection, which sees the whole list).
-        let expr = self.parse_value_expr()?;
-        let name = nav_key(&expr).unwrap_or("").to_string();
         Ok(SelectItem::Field {
             name,
             expr,
@@ -899,11 +1048,11 @@ impl Parser {
     fn parse_where_or(&mut self) -> Result<Where> {
         let start = self.start();
         let left = self.parse_where_and()?;
-        if !self.at_op("||") {
+        if !self.at_or() {
             return Ok(left);
         }
         let mut parts = vec![left];
-        while self.at_op("||") {
+        while self.at_or() {
             self.next();
             parts.push(self.parse_where_and()?);
         }
@@ -916,11 +1065,11 @@ impl Parser {
     fn parse_where_and(&mut self) -> Result<Where> {
         let start = self.start();
         let left = self.parse_where_primary()?;
-        if !self.at_op("&&") {
+        if !self.at_and() {
             return Ok(left);
         }
         let mut parts = vec![left];
-        while self.at_op("&&") {
+        while self.at_and() {
             self.next();
             parts.push(self.parse_where_primary()?);
         }
@@ -928,6 +1077,15 @@ impl Parser {
             parts,
             span: self.sp(start),
         })
+    }
+
+    // `&&` / `and` and `||` / `or` are one operator each (0.17): the words are
+    // exact synonyms of the symbols, parsed to the same nodes.
+    fn at_and(&self) -> bool {
+        self.at_op("&&") || self.at_word(TokType::Kw, "and")
+    }
+    fn at_or(&self) -> bool {
+        self.at_op("||") || self.at_word(TokType::Kw, "or")
     }
 
     // A where operand: `[!…] ( where )`, `[!…] <receiver> <consumer> { … }`, or a
@@ -941,9 +1099,18 @@ impl Parser {
     // predicate.
     fn parse_where_primary(&mut self) -> Result<Where> {
         let start = self.pos;
+        // Leading negations: `!`, `not` (one each) and `is` (two — `is x` ≡ `!!x`).
         let mut not_starts: Vec<usize> = Vec::new();
-        while self.at_op("!") {
-            not_starts.push(self.next().pos);
+        loop {
+            if self.at_op("!") || self.at_word(TokType::Kw, "not") {
+                not_starts.push(self.next().pos);
+            } else if self.at_word(TokType::Kw, "is") {
+                let p = self.next().pos;
+                not_starts.push(p);
+                not_starts.push(p);
+            } else {
+                break;
+            }
         }
         if self.at(TokType::LParen) {
             let lparen = self.next().pos;
@@ -970,7 +1137,12 @@ impl Parser {
             }
             return Ok(wrap_not(inner.with_span(group), &not_starts));
         }
-        if let Some(op) = self.try_op(true)? {
+        // A `first`/`single` directive is a value, never a test: the scalar
+        // grammar reads it (as a value-position directive) with whatever follows
+        // it, and `reject_bare_lookup` turns a bare one into the lookup error.
+        if let Some(op) = self.try_op(true)?
+            && !matches!(op.op, Consumer::First | Consumer::Single)
+        {
             let op = self.finish_where_op(op)?;
             return Ok(wrap_not(Where::Op(Box::new(op)), &not_starts));
         }
@@ -979,18 +1151,67 @@ impl Parser {
         // a negation keeps the `not` node shape (`where !active`).
         self.pos = start;
         let expr = self.parse_cmp(None)?;
-        Ok(scalar_leaf(expr))
+        let leaf = scalar_leaf(expr);
+        if !self.defer_lookup {
+            self.reject_bare_lookup(&leaf)?;
+        }
+        Ok(leaf)
     }
 
-    // Whether the token after a `)` continues a scalar expression.
+    // A where leaf that is exactly a `first`/`single` directive (under any `!`)
+    // is the select-position lookup error: a lookup is a value, and alone in
+    // `where` the writer almost certainly meant `exists`.
+    fn reject_bare_lookup(&self, w: &Where) -> Result<()> {
+        let mut core = w;
+        while let Where::Not { expr, .. } = core {
+            core = expr;
+        }
+        let Where::Scalar { expr, .. } = core else {
+            return Ok(());
+        };
+        let mut e = expr;
+        while let Expr::Unary {
+            op: UnaryOp::Not,
+            expr,
+            ..
+        } = e
+        {
+            e = expr;
+        }
+        if let Expr::Op(op) = e
+            && matches!(op.op, Consumer::First | Consumer::Single)
+        {
+            return self.fail(format!(
+                "{} {{ … }} is a select-position lookup; in where use exists {{ … }} / none {{ … }} or count {{ … }} <op> N (`x[p]` is `x first {{ where p }}`; a lookup is a value — compare it, navigate it or require it: `x[p].name == …`, `x[0]!`)",
+                op.op.as_str()
+            ));
+        }
+        Ok(())
+    }
+
+    // `reject_bare_lookup` over every leaf of a tree read with `defer_lookup` on.
+    fn reject_bare_lookups(&self, w: &Where) -> Result<()> {
+        match w {
+            Where::And { parts, .. } | Where::Or { parts, .. } => {
+                parts.iter().try_for_each(|p| self.reject_bare_lookups(p))
+            }
+            Where::Not { .. } | Where::Scalar { .. } => self.reject_bare_lookup(w),
+            Where::Op(_) => Ok(()),
+        }
+    }
+
+    // Whether the token after a `)` (or a directive) continues a scalar
+    // expression: an operator, `.`-navigation, a bracket, a postfix `!`, a
+    // range, `in`, or `is`.
     fn at_scalar_continuation(&self) -> bool {
         let t = self.peek();
         match t.kind {
             TokType::Op => {
                 let v = t.value.as_str();
-                CMP_OPS.contains(&v) || ADD_OPS.contains(&v) || MUL_OPS.contains(&v)
+                CMP_OPS.contains(&v) || ADD_OPS.contains(&v) || MUL_OPS.contains(&v) || v == "!"
             }
-            TokType::Dot | TokType::Range => true,
+            TokType::Kw => t.value == "is",
+            TokType::Dot | TokType::Range | TokType::LBracket => true,
             TokType::Ident => t.value == "in",
             _ => false,
         }
@@ -1113,16 +1334,137 @@ impl Parser {
             return Ok(None);
         };
 
-        if let Some(op) = self.at_consumer_block() {
-            if let Expr::Ident { name, .. } = &receiver
-                && LITERAL_WORDS.contains(&name.as_str())
-            {
-                return self.fail(format!("`{name}` is a literal, not a collection"));
+        let op = if self.at(TokType::LBrace) {
+            Some(Consumer::Collect) // the implicit-`collect` form `x { … }`
+        } else {
+            self.at_consumer_block()
+        };
+        if let Some(op) = op {
+            if let Expr::Ident { name, .. } = &receiver {
+                if LITERAL_WORDS.contains(&name.as_str()) {
+                    return self.fail(format!("`{name}` is a literal, not a collection"));
+                }
+                // `count { }` with nothing before it: the consumer word is not a receiver.
+                if op == Consumer::Collect && CONSUMERS.contains(&name.as_str()) {
+                    return self.fail(format!(
+                        "unexpected '{{' after `{name}` — a consumer needs a receiver: `<collection> {name} {{ … }}`"
+                    ));
+                }
             }
             return Ok(Some(self.parse_consumer_block(receiver, op, in_where)?));
         }
         self.pos = start;
         Ok(None)
+    }
+
+    // The cursor is at a consumer word that opens a VALUE-position block —
+    // `collect`/`first`/`single` then `{` or `distinct {`. Consumes nothing.
+    fn at_value_directive(&self) -> bool {
+        matches!(
+            self.at_consumer_block(),
+            Some(Consumer::Collect | Consumer::First | Consumer::Single)
+        )
+    }
+
+    // A bracket suffix on `recv` (GRAMMAR §4): `[n]` / `[${…}]` is positional —
+    // `recv first { offset n }` — and anything else a predicate —
+    // `recv first { where p }`; a trailing `!` makes the index required and the
+    // predicate a `single` (required too, so that zero matches is an error).
+    fn parse_bracket(&mut self, recv: Expr) -> Result<Expr> {
+        if matches!(recv, Expr::Lit { .. }) {
+            return self.fail(format!(
+                "`{}` is a literal, not a collection",
+                describe(Node::Expr(&recv))
+            ));
+        }
+        let start = recv.span().start;
+        let lbracket = self.next().pos; // '['
+        let mut index: Option<Expr> = None;
+        let mut r#where: Option<Where> = None;
+        let next_is = |p: &Self, n: usize, k: TokType| p.peek_at(n).is_some_and(|t| t.kind == k);
+        if self.at(TokType::Number) && next_is(self, 1, TokType::RBracket) {
+            let t = self.next();
+            let v = number_value(&t.value);
+            if !is_integer(v) {
+                return self.fail(format!(
+                    "an index is a non-negative integer literal or a binding (got {})",
+                    t.value
+                ));
+            }
+            index = Some(Expr::Lit {
+                value: Value::Number(v),
+                span: Span::new(t.pos, t.end),
+            });
+        } else if self.at(TokType::Binding) && next_is(self, 1, TokType::RBracket) {
+            index = Some(binding_node(&self.next()));
+        } else if self.at_op("-")
+            && next_is(self, 1, TokType::Number)
+            && next_is(self, 2, TokType::RBracket)
+        {
+            return self.fail(
+                "negative indices are not supported (`x[-1]`): an index is a non-negative integer literal or a binding",
+            );
+        } else {
+            let defer = self.defer_lookup;
+            self.defer_lookup = false;
+            let w = self.parse_where();
+            self.defer_lookup = defer;
+            r#where = Some(w?);
+        }
+        if !self.at(TokType::RBracket) {
+            return self.fail("expected ']' to close the bracket");
+        }
+        self.next();
+        let sub_span = Span::new(lbracket, self.end());
+        let sub = |r#where: Option<Where>, offset: Option<Expr>| Subquery {
+            from: Vec::new(),
+            r#where,
+            select: Vec::new(),
+            order_by: None,
+            follow: None,
+            values: false,
+            limit: None,
+            offset,
+            span: sub_span,
+        };
+        let bang = if self.at_op("!") {
+            Some(self.next())
+        } else {
+            None
+        };
+        let op = |consumer: Consumer, sub: Subquery, end: usize| OpNode {
+            receiver: recv,
+            op: consumer,
+            sub,
+            count_cmp: None,
+            distinct: false,
+            span: Span::new(start, end),
+        };
+        if let Some(index) = index {
+            let first = op(Consumer::First, sub(None, Some(index)), sub_span.end);
+            return Ok(match bang {
+                Some(b) => Expr::Required {
+                    expr: Box::new(Expr::Op(Box::new(first))),
+                    span: Span::new(start, b.end),
+                },
+                None => Expr::Op(Box::new(first)),
+            });
+        }
+        Ok(match bang {
+            Some(b) => Expr::Required {
+                expr: Box::new(Expr::Op(Box::new(op(
+                    Consumer::Single,
+                    sub(r#where, None),
+                    b.end,
+                )))),
+                span: Span::new(start, b.end),
+            },
+            None => Expr::Op(Box::new(op(
+                Consumer::First,
+                sub(r#where, None),
+                sub_span.end,
+            ))),
+        })
     }
 
     // The cursor is at a consumer word that opens a block — `<op> {` or
@@ -1140,10 +1482,10 @@ impl Parser {
         (op_then_brace || op_distinct_brace).then_some(op)
     }
 
-    // `<op> [distinct] { <sub> }` over an already-parsed receiver; the cursor is
-    // at the consumer word (`at_consumer_block` returned `op`). `in_where` says
-    // whether the op sits in where position, where a `collect` block may bind
-    // lifts.
+    // `[<op>] [distinct] { <sub> }` over an already-parsed receiver; the cursor
+    // is at the consumer word, or at the `{` of the implicit `collect`.
+    // `in_where` says whether the op sits in where position, where a `collect`
+    // block may bind lifts.
     fn parse_consumer_block(
         &mut self,
         receiver: Expr,
@@ -1151,7 +1493,9 @@ impl Parser {
         in_where: bool,
     ) -> Result<OpNode> {
         let start = receiver.span().start;
-        self.next(); // the consumer word
+        if self.at(TokType::Ident) {
+            self.next(); // the consumer word (absent for `x { … }`)
+        }
         let mut distinct = false;
         if self.at_word(TokType::Ident, "distinct") {
             self.next();
@@ -1162,7 +1506,11 @@ impl Parser {
             op,
             lifts_allowed: in_where && op == Consumer::Collect,
         };
-        let body = self.parse_body(ctx)?;
+        let defer = self.defer_lookup;
+        self.defer_lookup = false;
+        let body = self.parse_body(ctx);
+        self.defer_lookup = defer;
+        let body = body?;
         if !self.at(TokType::RBrace) {
             return self.fail(format!(
                 "expected '}}' to close the {} {{ … }} block",
@@ -1192,16 +1540,19 @@ impl Parser {
     }
 
     // ---- expression Pratt parser ----------------------------------------------
-    // Value position (select/order/follow/source): full boolean+arithmetic.
+    // Value position (select/order/follow/source): full boolean+arithmetic. Each
+    // level takes an optional already-parsed `left` operand (a directive read by
+    // `try_op`, a promoted where-group), so it continues into the operator tail
+    // without re-reading its tokens.
     fn parse_value_expr(&mut self) -> Result<Expr> {
-        self.parse_or()
+        self.parse_or(None)
     }
 
-    fn parse_or(&mut self) -> Result<Expr> {
-        let mut left = self.parse_and()?;
-        while self.at_op("||") {
+    fn parse_or(&mut self, left: Option<Expr>) -> Result<Expr> {
+        let mut left = self.parse_and(left)?;
+        while self.at_or() {
             self.next();
-            let right = self.parse_and()?;
+            let right = self.parse_and(None)?;
             let span = Span::new(left.span().start, right.span().end);
             left = Expr::Logical {
                 op: LogicalOp::Or,
@@ -1213,9 +1564,9 @@ impl Parser {
         Ok(left)
     }
 
-    fn parse_and(&mut self) -> Result<Expr> {
-        let mut left = self.parse_cmp(None)?;
-        while self.at_op("&&") {
+    fn parse_and(&mut self, left: Option<Expr>) -> Result<Expr> {
+        let mut left = self.parse_cmp(left)?;
+        while self.at_and() {
             self.next();
             let right = self.parse_cmp(None)?;
             let span = Span::new(left.span().start, right.span().end);
@@ -1242,6 +1593,13 @@ impl Parser {
             return Ok(lhs);
         }
         let first = self.next().value;
+        // `is` / `is not` — identity (SEMANTICS §5b); `is not` is the compound.
+        let word = if first == "is" && self.at_word(TokType::Kw, "not") {
+            self.next();
+            "is not".to_string()
+        } else {
+            first.clone()
+        };
         let rhs = self.parse_range(None)?;
         let span = Span::new(lhs.span().start, rhs.span().end);
         let result = if first == "in" {
@@ -1252,7 +1610,7 @@ impl Parser {
             }
         } else {
             Expr::Binary {
-                op: BinaryOp::from_word(&first).expect("CMP_OPS membership was checked"),
+                op: BinaryOp::from_word(&word).expect("CMP_OPS membership was checked"),
                 left: Box::new(lhs),
                 right: Box::new(rhs),
                 span,
@@ -1267,11 +1625,12 @@ impl Parser {
         Ok(result)
     }
 
-    // Whether the current token is a comparison operator or `in`.
+    // Whether the current token is a comparison operator, `in`, or `is`.
     fn at_cmp(&self) -> bool {
         let t = self.peek();
         (t.kind == TokType::Op && CMP_OPS.contains(&t.value.as_str()))
             || self.at_word(TokType::Ident, "in")
+            || self.at_word(TokType::Kw, "is")
     }
 
     // Range literal: `lo..hi` / `lo...hi` and the open-ended forms `..hi`, `lo..`.
@@ -1327,6 +1686,7 @@ impl Parser {
         let t = self.peek();
         match t.kind {
             TokType::Ident => !CLAUSE_WORDS.contains(&t.value.as_str()),
+            TokType::Kw => t.value == "is" || t.value == "not", // the prefix operators
             TokType::Number
             | TokType::Str
             | TokType::Binding
@@ -1375,11 +1735,32 @@ impl Parser {
         if left.is_some() {
             return self.parse_postfix(left);
         }
-        if self.at_op("!") || self.at_op("-") {
+        if self.at_op("!")
+            || self.at_op("-")
+            || self.at_word(TokType::Kw, "is")
+            || self.at_word(TokType::Kw, "not")
+        {
             let tok = self.next();
-            let op = UnaryOp::from_word(&tok.value).expect("checked above");
             let expr = self.parse_unary(None)?;
             let span = Span::new(tok.pos, expr.span().end);
+            // `is x` ≡ `!!x`, `not x` ≡ `!x`: pure sugar, both nodes spanning the sugar.
+            if tok.kind == TokType::Kw {
+                let not = Expr::Unary {
+                    op: UnaryOp::Not,
+                    expr: Box::new(expr),
+                    span,
+                };
+                return Ok(if tok.value == "is" {
+                    Expr::Unary {
+                        op: UnaryOp::Not,
+                        expr: Box::new(not),
+                        span,
+                    }
+                } else {
+                    not
+                });
+            }
+            let op = UnaryOp::from_word(&tok.value).expect("checked above");
             return Ok(Expr::Unary {
                 op,
                 expr: Box::new(expr),
@@ -1433,9 +1814,31 @@ impl Parser {
                     args,
                     span: self.sp(start),
                 };
+            } else if self.at(TokType::LBracket) {
+                expr = self.parse_bracket(expr)?;
+            } else if self.at_op("!") {
+                // Postfix `!`: a `!` right after a complete chain is `required` — OQX
+                // never places two operands side by side, so it cannot begin one here.
+                let bang = self.next();
+                expr = Expr::Required {
+                    expr: Box::new(expr),
+                    span: Span::new(start, bang.end),
+                };
+            } else if self.at_value_directive() {
+                // A value-position directive, `recv first { … }` — how a bracket
+                // chain prints back; exists/none/count have no value form and are
+                // left to the body's own error.
+                if matches!(expr, Expr::Lit { .. }) {
+                    return self.fail(format!(
+                        "`{}` is a literal, not a collection",
+                        describe(Node::Expr(&expr))
+                    ));
+                }
+                let op = self.at_consumer_block().expect("checked above");
+                expr = Expr::Op(Box::new(self.parse_consumer_block(expr, op, false)?));
             } else {
-                // `{` is a consumer block boundary — not part of a value expression;
-                // anything else ends the postfix chain too.
+                // A bare `{` is a consumer block boundary — not part of a value
+                // expression; anything else ends the postfix chain too.
                 break;
             }
         }
@@ -1577,6 +1980,42 @@ fn nav_key(e: &Expr) -> Option<&str> {
         Expr::Ident { name, .. } | Expr::Outer { name, .. } | Expr::Member { name, .. } => {
             Some(name)
         }
+        Expr::Required { expr, .. } => nav_key(expr),
         _ => None,
     }
+}
+
+// Whether a block's leading run, read as a where tree, is syntactically a
+// predicate (GRAMMAR §2): anything but a bare name, a dotted navigation or a
+// lift (an `Outer`), with a parenthesized leading expression always a predicate.
+fn predicate_shaped(w: &Where, first: TokType) -> bool {
+    if first == TokType::LParen {
+        return true;
+    }
+    match w {
+        Where::Scalar { expr, .. } => !is_navigation(expr),
+        _ => true,
+    }
+}
+
+fn is_navigation(e: &Expr) -> bool {
+    match e {
+        Expr::Ident { .. } | Expr::Outer { .. } => true,
+        Expr::Member { recv, .. } => is_navigation(recv),
+        _ => false,
+    }
+}
+
+// The canonical text of a node for an error message; a binding shows as its
+// `${n}` marker (the printer refuses to turn a bound value into source).
+fn describe(node: Node<'_>) -> String {
+    let t = print_template(node);
+    let mut out = String::new();
+    for (i, s) in t.strings.iter().enumerate() {
+        out.push_str(s);
+        if i < t.count {
+            out.push_str(&format!("${{{}}}", t.indices[i]));
+        }
+    }
+    out
 }

@@ -57,6 +57,14 @@ pub fn call(recv: Option<Expr>, name: &str, args: Vec<Expr>) -> Expr {
         span: Span::EMPTY,
     }
 }
+/// `expr!` — the required value (SEMANTICS §5b).
+pub fn required(expr: Expr) -> Expr {
+    Expr::Required {
+        expr: Box::new(expr),
+        span: Span::EMPTY,
+    }
+}
+
 pub fn unary(op: UnaryOp, expr: Expr) -> Expr {
     Expr::Unary {
         op,

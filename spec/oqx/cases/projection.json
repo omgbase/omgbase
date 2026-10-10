@@ -903,8 +903,8 @@
       }
     },
     {
-      "name": "call in a block is a projection needing an alias",
-      "query": "people exists { has(budget) }",
+      "name": "call after a projection in a block needs an alias",
+      "query": "people first { name, has(budget) }",
       "expect": {
         "error": {
           "stage": "parse",
@@ -912,7 +912,8 @@
             "needs an alias"
           ]
         }
-      }
+      },
+      "notes": "A leading call alone would be a where-first body (0.17); after a projection it is an unnamed item."
     },
     {
       "name": "projection may not use exists",

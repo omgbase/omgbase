@@ -29,6 +29,7 @@ import {
   relate, arith, membership, truthy, compareForSort, compare, canonicalKey, makeRange, isEntry, isRange,
 } from "./semantics.ts";
 import type { BlockPlan, Correlation, Rule, RowIndex } from "./optimize/index.ts";
+import { printTemplate } from "./print.ts";
 import { DEFAULT_RULES, HashIndex, intersectPositions, lookupOrder, planFor, residualWithout } from "./optimize/index.ts";
 
 /** The shaped result of a top-level query, discriminated by consumer. */
@@ -725,9 +726,24 @@ export class InMemoryEngine implements Engine {
         if (e.op === "!") return !truthy(v);
         return v == null ? undefined : -(v as number);
       }
+      // `x!` — the value, or an eval error naming the expression (and the row's
+      // identity when it has a scalar one). Never a filter, never a coercion.
+      case "required": {
+        const v = this.evalExpr(e.expr, scope);
+        if (v == null) throw new OqxError(`\`${describe(e.expr)}!\` is absent${this.rowIdentity(scope)}`, "eval");
+        return v;
+      }
+      // A value-position directive (`jobs first { … }.pay`, the desugared `x[…]`).
+      case "op": return this.evalCollectValue(e, scope);
       case "binary": {
         const l = this.evalExpr(e.left, scope);
         const r = this.evalExpr(e.right, scope);
+        if (e.op === "is" || e.op === "is not") {
+          // Identity (SEMANTICS §5b): the context's identity of each side,
+          // compared structurally — the key `distinct` and `follow` use.
+          const same = canonicalKey(this.ctx.identity(l)) === canonicalKey(this.ctx.identity(r));
+          return e.op === "is" ? same : !same;
+        }
         return isRelOp(e.op) ? relate(e.op, l, r) : arith(e.op, l, r);
       }
       case "logical": {
@@ -770,6 +786,14 @@ export class InMemoryEngine implements Engine {
     if (scope.lifts && Object.hasOwn(scope.lifts, name)) return scope.lifts[name];
     if (scope.parent === null) return this.ctx.root(name);
     return this.ctx.get(scope.row, name);
+  }
+
+  // ` on <identity>` for a required-value error when the scope has a row with a
+  // scalar identity (its `id`, through the context); empty otherwise.
+  private rowIdentity(scope: Scope): string {
+    if (scope.parent === null || scope.row == null) return "";
+    const id = this.ctx.identity(scope.row);
+    return typeof id === "string" || typeof id === "number" ? ` on ${JSON.stringify(id)}` : "";
   }
 
   private evalCall(e: Extract<Expr, { kind: "call" }>, scope: Scope): unknown {
@@ -868,6 +892,13 @@ function boundedCount(n: number, b: Bound): number {
   return b.limit == null ? rest : Math.min(rest, b.limit);
 }
 
+// The canonical text of an expression for an error message; a binding shows as
+// its `${n}` marker (the printer refuses to turn a bound value into source).
+function describe(e: Expr): string {
+  const t = printTemplate(e);
+  return t.strings.map((s, i) => (i < t.count ? `${s}\${${t.indices[i]}}` : s)).join("");
+}
+
 function describeReceiver(e: Expr): string {
   if (e.kind === "ident") return e.name;
   if (e.kind === "member") return `${describeReceiver(e.recv)}.${e.name}`;
@@ -903,7 +934,7 @@ function exprHasRecur(e: Expr): boolean {
     case "ident": return RECUR.has(e.name);
     case "member": return exprHasRecur(e.recv);
     case "call": return (e.recv ? exprHasRecur(e.recv) : false) || e.args.some(exprHasRecur);
-    case "unary": return exprHasRecur(e.expr);
+    case "unary": case "required": return exprHasRecur(e.expr);
     case "binary": case "logical": case "in": return exprHasRecur(e.left) || exprHasRecur(e.right);
     case "range": return (e.lo != null && exprHasRecur(e.lo)) || (e.hi != null && exprHasRecur(e.hi));
     default: return false;

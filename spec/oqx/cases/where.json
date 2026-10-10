@@ -839,56 +839,176 @@
       }
     },
     {
-      "name": "bare predicate in a block wants where",
+      "name": "a leading predicate in a block is where-first",
       "query": "people exists { age > 50 }",
       "expect": {
-        "error": {
-          "stage": "parse",
-          "includes": [
-            "write `where",
-            "never implicit"
-          ]
-        }
-      }
+        "result": true
+      },
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "age": 41,
+            "active": true,
+            "jobs": [
+              {
+                "employer": "X",
+                "end_date": "1990"
+              },
+              {
+                "employer": "X"
+              }
+            ]
+          },
+          {
+            "name": "Alice",
+            "age": 52,
+            "active": true,
+            "jobs": [
+              {
+                "employer": "Y"
+              }
+            ]
+          },
+          {
+            "name": "Carol",
+            "age": 29,
+            "active": false,
+            "jobs": []
+          }
+        ]
+      },
+      "notes": "Since 0.17 a block whose leading expression is syntactically a predicate is a `where`-first body (GRAMMAR §2); the same query at the top level stays an error."
     },
     {
-      "name": "bare negation in a block wants where",
+      "name": "a leading negation in a block is where-first",
       "query": "people exists { !active }",
       "expect": {
-        "error": {
-          "stage": "parse",
-          "includes": [
-            "write `where",
-            "never implicit"
-          ]
-        }
-      }
+        "result": true
+      },
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "age": 41,
+            "active": true,
+            "jobs": [
+              {
+                "employer": "X",
+                "end_date": "1990"
+              },
+              {
+                "employer": "X"
+              }
+            ]
+          },
+          {
+            "name": "Alice",
+            "age": 52,
+            "active": true,
+            "jobs": [
+              {
+                "employer": "Y"
+              }
+            ]
+          },
+          {
+            "name": "Carol",
+            "age": 29,
+            "active": false,
+            "jobs": []
+          }
+        ]
+      },
+      "notes": "Since 0.17 a block whose leading expression is syntactically a predicate is a `where`-first body (GRAMMAR §2); the same query at the top level stays an error."
     },
     {
-      "name": "bare predicate in a nested block wants where",
+      "name": "a leading predicate in a nested block is where-first",
       "query": "name from people where jobs exists { employer == \"X\" && !end_date }",
       "expect": {
-        "error": {
-          "stage": "parse",
-          "includes": [
-            "write `where",
-            "never implicit"
-          ]
-        }
-      }
+        "result": [
+          {
+            "name": "Bob"
+          }
+        ]
+      },
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "age": 41,
+            "active": true,
+            "jobs": [
+              {
+                "employer": "X",
+                "end_date": "1990"
+              },
+              {
+                "employer": "X"
+              }
+            ]
+          },
+          {
+            "name": "Alice",
+            "age": 52,
+            "active": true,
+            "jobs": [
+              {
+                "employer": "Y"
+              }
+            ]
+          },
+          {
+            "name": "Carol",
+            "age": 29,
+            "active": false,
+            "jobs": []
+          }
+        ]
+      },
+      "notes": "Since 0.17 a block whose leading expression is syntactically a predicate is a `where`-first body (GRAMMAR §2); the same query at the top level stays an error."
     },
     {
-      "name": "bare count test in a block wants where",
+      "name": "a leading count test in a block is where-first",
       "query": "people exists { jobs count {} >= 2 }",
       "expect": {
-        "error": {
-          "stage": "parse",
-          "includes": [
-            "write `where",
-            "never implicit"
-          ]
-        }
-      }
+        "result": true
+      },
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "age": 41,
+            "active": true,
+            "jobs": [
+              {
+                "employer": "X",
+                "end_date": "1990"
+              },
+              {
+                "employer": "X"
+              }
+            ]
+          },
+          {
+            "name": "Alice",
+            "age": 52,
+            "active": true,
+            "jobs": [
+              {
+                "employer": "Y"
+              }
+            ]
+          },
+          {
+            "name": "Carol",
+            "age": 29,
+            "active": false,
+            "jobs": []
+          }
+        ]
+      },
+      "notes": "Since 0.17 a block whose leading expression is syntactically a predicate is a `where`-first body (GRAMMAR §2); the same query at the top level stays an error."
     },
     {
       "name": "bare negation at the top level wants where",

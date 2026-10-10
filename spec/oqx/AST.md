@@ -25,7 +25,7 @@ guess the default of.
 | --- | --- | --- |
 | `query` | the top-level query | the root |
 | `subquery` | a block body, the `{ … }` of a directive | `op.sub` |
-| `op` | a consumer directive `<receiver> <consumer> [distinct] { … } [<relop> N]` | a `where` leaf (a consumer test), a `collect` item's value, a `follow` destination block |
+| `op` | a consumer directive `<receiver> <consumer> [distinct] { … } [<relop> N]` | a `where` leaf (a consumer test), a `collect` item's value, a `follow` destination block, and — since 0.17 — an expression (a value-position `collect`/`first`/`single`, which is what a bracket lookup `x[…]` desugars to: `jobs[0].pay` is a `member` over an `op`) |
 | `follow` | the `follow` clause | `query.follow`, `subquery.follow` |
 | `order` | one `order by` term | `orderBy[]` |
 | `field` | a projection item `[^…]name: expr` / `name` | `select[]` |
@@ -39,8 +39,9 @@ guess the default of.
 | `binding` | a `${n}` bound value of a template | expressions |
 | `member` | `.name` navigation on `recv` | expressions |
 | `call` | `name(args)` (`recv: null`) or `recv.name(args)` | expressions |
-| `unary` | `!x`, `-x` | expressions |
-| `binary` | arithmetic or comparison, `op` the source operator | expressions |
+| `unary` | `!x`, `-x` (also what `is x` ≡ `!!x` and `not x` ≡ `!x` parse to) | expressions |
+| `required` | `x!` — the value, or an eval error when absent (since 0.17) | expressions |
+| `binary` | arithmetic, comparison, or identity (`is`, `is not`), `op` the source operator | expressions |
 | `logical` | `&&`, `||` in value position | expressions |
 | `in` | membership | expressions |
 | `range` | `lo..hi`, `lo...hi`, `..hi`, `lo..` | expressions |
@@ -51,9 +52,17 @@ leaves, while `logical` is `&&`/`||` *as a value* (`(a || b) == 5`). A
 where-position consumer test is the `op` node itself; discriminate a `where`
 node on `kind`.
 
-There is no `index` node: the grammar has no `a[0]` syntax (GRAMMAR §4). The
-`Expr.index` variant the pre-0.16 types declared was never produced and is
-removed.
+There is no `index` node and no node for any other sugar: a bracket lookup
+`x[n]` / `x[p]` is parsed straight to the `op` (`first { offset n }`,
+`first { where p }`; `single` under `!`), `x { … }` to a `collect` op, `is x`
+and `not x` to `unary` nodes (GRAMMAR §4). The only shapes 0.17 adds are
+`required` and the `is`/`is not` operators of `binary`. The `Expr.index`
+variant the pre-0.16 types declared was never produced and was removed in 0.16.
+
+`isExpr` (TypeScript) is true for the scalar expression kinds listed above; an
+`op` is an expression only by position (its `kind` stays `"op"`), so
+`transform` maps the expressions *inside* an `op` and rebuilds the `op` itself
+rather than handing it to the mapping function.
 
 ## 2. Fields
 
@@ -82,7 +91,8 @@ as their source words (`"=="`, `"&&"`, `"collect"`).
 | `member` | `recv: Expr`; `name: string` |
 | `call` | `recv: Expr \| null`; `name: string`; `args: Expr[]` |
 | `unary` | `op: "!" \| "-"`; `expr: Expr` |
-| `binary` | `op: "==" \| "!=" \| "<" \| "<=" \| ">" \| ">=" \| "+" \| "-" \| "*" \| "/" \| "%"`; `left: Expr`; `right: Expr` |
+| `required` | `expr: Expr` |
+| `binary` | `op: "==" \| "!=" \| "<" \| "<=" \| ">" \| ">=" \| "is" \| "is not" \| "+" \| "-" \| "*" \| "/" \| "%"`; `left: Expr`; `right: Expr` |
 | `logical` | `op: "&&" \| "\|\|"`; `left: Expr`; `right: Expr` |
 | `in` | `left: Expr`; `right: Expr` |
 | `range` | `lo: Expr \| null`; `hi: Expr \| null`; `exclusiveEnd: boolean` |
@@ -91,7 +101,17 @@ Shape rules the parser guarantees (and `cases/ast.json` pins):
 
 - The two spellings of one construct are one tree: `name from x` ≡ `select name
   from x`; `x collect { … }` ≡ `select … from x …`; `jobs collect distinct { e }`
-  ≡ `jobs collect { select distinct e }`; parentheses leave no node.
+  ≡ `jobs collect { select distinct e }`; parentheses leave no node. **Sugar
+  desugars in the parser** (since 0.17): `x { … }` is the `collect` op;
+  `people exists { age > 50 }` is `where age > 50`; `x[p]` is the op
+  `first { where p }`, `x[n]` the op `first { offset n }`, `x[p]!` a `required`
+  over `single { where p }`, `x[n]!` a `required` over `first { offset n }`;
+  `is x` is `!!x` (two `unary` nodes), `not x` is `!x`. A `select` item whose
+  value is exactly a directive is the `collect` item kind whatever spelling
+  produced it (`boss: ^people[id == ^manager]`); one that navigates or operates
+  on a directive (`jobs[0].pay`) is a `field` whose expression contains the
+  `op`. An unaliased `field` keys by the last segment of the navigation under
+  any `required` (`name!` → `name`, `jobs[0].pay` → `pay`).
 - `where` keeps its **surface form**: a `select` alias referenced in `where` is
   an `ident` in the tree. The substitution (SEMANTICS §14) is the pure function
   `resolveAliases` / `resolve_aliases`, applied by the run entry points exactly
@@ -125,7 +145,12 @@ last:
 - `field`/`collect`: the leading carets or the name through the value;
   `order`: the expression through `asc`/`desc`;
 - `and`/`or`: the first part to the last; `not`: the `!` through its operand;
-  `scalar`: its expression;
+  `scalar`: its expression; `required`: its operand through the `!`;
+- a **desugared node spans the sugar as written**: the `op` of `x[p]` runs from
+  `x` through `]` (through the `!` for `x[p]!`'s `single`, with the `required`
+  spanning the same range), its `subquery` is the brackets inclusive; both
+  `unary` nodes of `is x` span `is x`; the `collect` op of `x { … }` spans `x`
+  through `}` as a written directive would;
 - `outer`: the carets through the name; `lit`: a string's quotes inclusive;
   `binding`: its `${n}` marker;
 - a **parenthesized operand** takes the span of its parentheses (`(a + 1) > 2`:
@@ -163,7 +188,7 @@ canonical source order: for `query` — `select`, `source`, `from`, `where`,
 `follow`, `orderBy`, `limit`, `offset`; for `subquery` the same without
 `source`; for `op` — `receiver`, `sub`; for `follow` — `destinations`,
 `where`, `frontier`, `by`; then the obvious slots of the smaller nodes
-(`expr`, `parts`, `recv`, `args`, `left`/`right`, `lo`/`hi`).
+(`expr`, `parts`, `recv`, `args`, `left`/`right`, `lo`/`hi`; `required` — `expr`).
 
 - **`visit(root, { enter?(node, ctx), leave?(node, ctx) })`** — depth-first.
   `enter` may return `false` to skip the node's children (`leave` is still
@@ -199,7 +224,12 @@ double-quoted strings with the GRAMMAR §1 escapes; the minimal parentheses
 the precedence table (GRAMMAR §4) requires, and the predicate/scalar group
 rule of GRAMMAR §3 for `where`; `distinct` on a directive spelled
 `<op> distinct { … }`; follow options in the order `where`, `frontier`,
-`depth`, `by`; an empty block as `{ }`.
+`depth`, `by`; an empty block as `{ }`. **Sugar prints as the explicit form**
+it parsed to (since 0.17): `x { p }` as `x collect { where p }`, `jobs[0].pay`
+as `jobs first { offset 0 }.pay`, `x[p]!` as `x single { where p }!`, `is x` as
+`!!x`, `not x` as `!x`, `and` / `or` as `&&` / `||`; `x!` prints as written,
+with its operand parenthesized below postfix level (`(a + 1)!`); `x is y` /
+`x is not y` print as written.
 
 Form: a `collect` query prints in body form (`select … from S …`) — unless it
 carries body-level `from` re-projections, which only a block can hold, in
@@ -247,3 +277,4 @@ document says which `major.minor` produced it.
 | --- | --- |
 | 0.14 | `follow.receiver` → `follow.destinations` (a list). |
 | 0.16 | `index` expression node removed (never produced). `limit`/`offset`/`countCmp` materialized as `null`, `distinct`/`values` as `false` (they were optional). `kind` added to `query`, `subquery`, `follow`, `order`; `span` added to every node. `where` is no longer alias-inlined at parse time (see §2). |
+| 0.17 | Added (minor): the `required` expression node; `"is"` / `"is not"` as `binary` operators; an `op` may appear in expression position (`member.recv`, operands, `required.expr`, a `field`'s value). Nothing renamed or removed. |

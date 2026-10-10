@@ -24,7 +24,7 @@ use crate::errors::{OqxError, Result};
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum TokType {
     Ident,
-    /// `from` | `where` | `select`
+    /// `from` | `where` | `select` | `is` | `not` | `and` | `or`
     Kw,
     Str,
     Number,
@@ -32,6 +32,9 @@ pub enum TokType {
     RParen,
     LBrace,
     RBrace,
+    /// `[` / `]` — a bracket lookup (since 0.17).
+    LBracket,
+    RBracket,
     Comma,
     Colon,
     /// `^` — one-scope lift marker
@@ -59,6 +62,8 @@ impl TokType {
             TokType::RParen => "rparen",
             TokType::LBrace => "lbrace",
             TokType::RBrace => "rbrace",
+            TokType::LBracket => "lbracket",
+            TokType::RBracket => "rbracket",
             TokType::Comma => "comma",
             TokType::Colon => "colon",
             TokType::Caret => "caret",
@@ -87,7 +92,7 @@ pub struct Token {
     pub index: Option<usize>,
 }
 
-const KEYWORDS: [&str; 3] = ["from", "where", "select"];
+const KEYWORDS: [&str; 7] = ["from", "where", "select", "is", "not", "and", "or"];
 
 // Multi-char operators, longest first (the scanner tries these before singles).
 const MULTI_OPS: [&str; 6] = ["==", "!=", "<=", ">=", "&&", "||"];
@@ -189,6 +194,8 @@ fn lex_fragment(src: &str, base: usize, out: &mut Vec<Token>) -> Result<()> {
             ')' => Some(TokType::RParen),
             '{' => Some(TokType::LBrace),
             '}' => Some(TokType::RBrace),
+            '[' => Some(TokType::LBracket),
+            ']' => Some(TokType::RBracket),
             ',' => Some(TokType::Comma),
             ':' => Some(TokType::Colon),
             '^' => Some(TokType::Caret),
@@ -475,6 +482,25 @@ mod tests {
     }
 
     #[test]
+    fn brackets_are_tokens_and_is_not_are_keywords() {
+        use TokType::*;
+        assert_eq!(
+            kinds("x[0]! is not y"),
+            vec![
+                tok(Ident, "x"),
+                tok(LBracket, "["),
+                tok(Number, "0"),
+                tok(RBracket, "]"),
+                tok(Op, "!"),
+                tok(Kw, "is"),
+                tok(Kw, "not"),
+                tok(Ident, "y"),
+                tok(Eof, ""),
+            ]
+        );
+    }
+
+    #[test]
     fn dollar_identifiers() {
         use TokType::*;
         assert_eq!(
@@ -678,7 +704,7 @@ mod tests {
         assert_eq!(lex_err("a = b").message, "unexpected character \"=\" at 2");
         assert_eq!(lex_err("a & b").message, "unexpected character \"&\" at 2");
         assert_eq!(lex_err("a | b").message, "unexpected character \"|\" at 2");
-        assert_eq!(lex_err("x[0]").message, "unexpected character \"[\" at 1");
+        // `[`/`]` are tokens since 0.17 (see `brackets_are_tokens`).
         assert_eq!(lex_err("a # b").message, "unexpected character \"#\" at 2");
         // Only space/tab/newline/CR are whitespace; other blanks are errors (as in the TS).
         assert_eq!(

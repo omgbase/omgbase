@@ -133,8 +133,9 @@ The grammar follows `spec/oqx/GRAMMAR.md` §1. It distinguishes:
 | members | `variable.other.member.oqx` | `identifier.member` | `.slug` in `meta.slug` |
 | operators | `keyword.operator.oqx` | `operator` | `== != < <= > >= && \|\| ! + - * / %` |
 | range, membership | `keyword.operator.range.oqx`, `keyword.operator.membership.oqx` | `operator.range`, `keyword.operator.membership` | `..` `...` `in` |
-| punctuation | `punctuation.*.oqx` | `delimiter.*` | `{ } ( ) , : .` |
-| lex errors | `invalid.illegal.oqx` | `invalid` | `[` `=` `&` `\|` `@` `;` `#` — OQX has no comments |
+| word operators | `keyword.operator.word.oqx` | `keyword.operator.word` | `is` `not` `and` `or` (0.17; reserved words) |
+| punctuation | `punctuation.*.oqx` | `delimiter.*` | `{ } ( ) [ ] , : .` — `[ ]` is the bracket lookup (0.17) |
+| lex errors | `invalid.illegal.oqx` | `invalid` | `=` `&` `\|` `@` `;` `#` — OQX has no comments |
 
 **Contextual words are colored only in position.** `count` is a consumer before
 `{`, `limit` a clause before a number, `in` an operator before a value, `asc` a

@@ -166,11 +166,12 @@
     },
     {
       "name": "implicit-where-in-block",
-      "query": "from docs where nodes exists { kind == \"md:task\" }",
+      "query": "from docs where nodes exists { kind == \"md:task\", name }",
       "expect": {
         "error": "filter_invalid",
         "message_includes": "where"
-      }
+      },
+      "notes": "OQX 0.17: a block may lead with a predicate (`{ kind == \"md:task\" }` is `where kind == \"md:task\"`); a predicate followed by a projection item is still the loud error pointing at `where`."
     },
     {
       "name": "implicit-where-after-from",

@@ -87,6 +87,7 @@ export const CHILDREN: { readonly [K in AstKind]: readonly ChildKey[] } = {
   member: [{ key: "recv" }],
   call: [{ key: "recv" }, { key: "args" }],
   unary: [{ key: "expr" }],
+  required: [{ key: "expr" }],
   binary: [{ key: "left" }, { key: "right" }],
   logical: [{ key: "left" }, { key: "right" }],
   in: [{ key: "left" }, { key: "right" }],

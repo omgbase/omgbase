@@ -76,6 +76,7 @@ export function buildMonarchGrammar(): MonarchGrammar {
     brackets: [
       { open: "{", close: "}", token: token("braceOpen") },
       { open: "(", close: ")", token: token("parenOpen") },
+      { open: "[", close: "]", token: token("bracketOpen") },
     ],
     ...lists,
     tokenizer,

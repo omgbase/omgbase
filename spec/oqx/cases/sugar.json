@@ -1,0 +1,5632 @@
+{
+  "suite": "sugar",
+  "cases": [
+    {
+      "name": "implicit collect in select position",
+      "tags": [
+        "sugar",
+        "collect",
+        "select"
+      ],
+      "roots": {
+        "people": [
+          {
+            "id": 1,
+            "name": "Bob",
+            "age": 41,
+            "active": true,
+            "manager": 2,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "pay": 3
+              },
+              {
+                "employer": "Initech",
+                "pay": 1
+              }
+            ]
+          },
+          {
+            "id": 2,
+            "name": "Alice",
+            "age": 52,
+            "active": true,
+            "jobs": [
+              {
+                "employer": "Initech",
+                "pay": 5
+              }
+            ]
+          },
+          {
+            "id": 3,
+            "name": "Carol",
+            "age": 29,
+            "active": false,
+            "manager": 2,
+            "jobs": []
+          }
+        ]
+      },
+      "query": "name, js: jobs { employer } from people",
+      "expect": {
+        "result": [
+          {
+            "name": "Bob",
+            "js": [
+              {
+                "employer": "Globocorp"
+              },
+              {
+                "employer": "Initech"
+              }
+            ]
+          },
+          {
+            "name": "Alice",
+            "js": [
+              {
+                "employer": "Initech"
+              }
+            ]
+          },
+          {
+            "name": "Carol",
+            "js": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "implicit collect in where position binds lifts",
+      "tags": [
+        "sugar",
+        "collect",
+        "where",
+        "lifts"
+      ],
+      "roots": {
+        "people": [
+          {
+            "id": 1,
+            "name": "Bob",
+            "age": 41,
+            "active": true,
+            "manager": 2,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "pay": 3
+              },
+              {
+                "employer": "Initech",
+                "pay": 1
+              }
+            ]
+          },
+          {
+            "id": 2,
+            "name": "Alice",
+            "age": 52,
+            "active": true,
+            "jobs": [
+              {
+                "employer": "Initech",
+                "pay": 5
+              }
+            ]
+          },
+          {
+            "id": 3,
+            "name": "Carol",
+            "age": 29,
+            "active": false,
+            "manager": 2,
+            "jobs": []
+          }
+        ]
+      },
+      "query": "name, e from people where jobs { ^e: employer }",
+      "expect": {
+        "result": [
+          {
+            "name": "Bob",
+            "e": [
+              "Globocorp",
+              "Initech"
+            ]
+          },
+          {
+            "name": "Alice",
+            "e": [
+              "Initech"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "implicit collect as the whole query",
+      "tags": [
+        "sugar",
+        "collect",
+        "directive"
+      ],
+      "roots": {
+        "r": [
+          {
+            "n": 1,
+            "ok": true
+          },
+          {
+            "n": 2,
+            "ok": false
+          },
+          {
+            "n": 3
+          }
+        ]
+      },
+      "query": "r { n > 1 }",
+      "expect": {
+        "result": [
+          {
+            "n": 2,
+            "ok": false
+          },
+          {
+            "n": 3
+          }
+        ]
+      }
+    },
+    {
+      "name": "implicit collect as the whole query with a projection",
+      "tags": [
+        "sugar",
+        "collect",
+        "directive"
+      ],
+      "roots": {
+        "r": [
+          {
+            "n": 1,
+            "ok": true
+          },
+          {
+            "n": 2,
+            "ok": false
+          },
+          {
+            "n": 3
+          }
+        ]
+      },
+      "query": "r { n }",
+      "expect": {
+        "result": [
+          {
+            "n": 1
+          },
+          {
+            "n": 2
+          },
+          {
+            "n": 3
+          }
+        ]
+      }
+    },
+    {
+      "name": "implicit collect over a binding receiver",
+      "tags": [
+        "sugar",
+        "collect",
+        "bindings"
+      ],
+      "template": {
+        "strings": [
+          "",
+          " { n > 2 }"
+        ],
+        "values": [
+          [
+            {
+              "n": 1,
+              "ok": true
+            },
+            {
+              "n": 2,
+              "ok": false
+            },
+            {
+              "n": 3
+            }
+          ]
+        ]
+      },
+      "expect": {
+        "result": [
+          {
+            "n": 3
+          }
+        ]
+      }
+    },
+    {
+      "name": "implicit collect takes distinct inside the body",
+      "tags": [
+        "sugar",
+        "collect",
+        "distinct"
+      ],
+      "roots": {
+        "jobs": [
+          {
+            "employer": "A"
+          },
+          {
+            "employer": "B"
+          },
+          {
+            "employer": "A"
+          }
+        ]
+      },
+      "query": "jobs { select distinct employer }",
+      "expect": {
+        "result": [
+          {
+            "employer": "A"
+          },
+          {
+            "employer": "B"
+          }
+        ]
+      }
+    },
+    {
+      "name": "distinct still needs its consumer word",
+      "tags": [
+        "sugar",
+        "collect",
+        "distinct"
+      ],
+      "notes": "`x distinct { … }` is the error it was: write `x collect distinct { … }` or `x { select distinct … }`.",
+      "roots": {
+        "r": [
+          {
+            "n": 1,
+            "ok": true
+          },
+          {
+            "n": 2,
+            "ok": false
+          },
+          {
+            "n": 3
+          }
+        ]
+      },
+      "query": "r distinct { n }",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "unexpected 'distinct'"
+          ]
+        }
+      }
+    },
+    {
+      "name": "a brace after the last follow destination is the options block",
+      "tags": [
+        "sugar",
+        "follow"
+      ],
+      "roots": {
+        "t": [
+          {
+            "id": 1,
+            "children": [
+              {
+                "id": 2,
+                "children": [
+                  {
+                    "id": 3
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "query": "select id from t where id == 1 follow children { depth 2 }",
+      "expect": {
+        "result": [
+          {
+            "id": 1
+          },
+          {
+            "id": 2
+          }
+        ]
+      }
+    },
+    {
+      "name": "a predicate in the follow brace is the options error",
+      "tags": [
+        "sugar",
+        "follow"
+      ],
+      "notes": "The implicit-collect sugar never applies to a destination: the brace is the options block, and a destination block keeps its consumer.",
+      "roots": {
+        "t": [
+          {
+            "id": 1,
+            "children": [
+              {
+                "id": 2,
+                "children": [
+                  {
+                    "id": 3
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "query": "select id from t where id == 1 follow children { id > 1 }",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "expected where/frontier/depth/by",
+            "collect { … }"
+          ]
+        }
+      }
+    },
+    {
+      "name": "an outer-reference destination with a brace is the outer-reference error",
+      "tags": [
+        "sugar",
+        "follow",
+        "outer-refs"
+      ],
+      "notes": "`^t` is read as a plain destination (not allowed) and the brace as its options; the message names the destination-block spelling.",
+      "roots": {
+        "t": [
+          {
+            "id": 1,
+            "children": [
+              {
+                "id": 2,
+                "children": [
+                  {
+                    "id": 3
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "query": "select id from t where id == 1 follow ^t { where id == 2 }",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "follow ^name collect { … }"
+          ]
+        }
+      }
+    },
+    {
+      "name": "where-first: a comparison",
+      "tags": [
+        "sugar",
+        "where-first"
+      ],
+      "roots": {
+        "r": [
+          {
+            "n": 1,
+            "ok": true
+          },
+          {
+            "n": 2,
+            "ok": false
+          },
+          {
+            "n": 3
+          }
+        ]
+      },
+      "query": "r collect { n > 1 }",
+      "expect": {
+        "result": [
+          {
+            "n": 2,
+            "ok": false
+          },
+          {
+            "n": 3
+          }
+        ]
+      }
+    },
+    {
+      "name": "where-first: a conjunction",
+      "tags": [
+        "sugar",
+        "where-first"
+      ],
+      "roots": {
+        "r": [
+          {
+            "n": 1,
+            "ok": true
+          },
+          {
+            "n": 2,
+            "ok": false
+          },
+          {
+            "n": 3
+          }
+        ]
+      },
+      "query": "r collect { n > 1 && ok == false }",
+      "expect": {
+        "result": [
+          {
+            "n": 2,
+            "ok": false
+          }
+        ]
+      }
+    },
+    {
+      "name": "where-first: a disjunction",
+      "tags": [
+        "sugar",
+        "where-first"
+      ],
+      "roots": {
+        "r": [
+          {
+            "n": 1,
+            "ok": true
+          },
+          {
+            "n": 2,
+            "ok": false
+          },
+          {
+            "n": 3
+          }
+        ]
+      },
+      "query": "r collect { n == 1 || n == 3 }",
+      "expect": {
+        "result": [
+          {
+            "n": 1,
+            "ok": true
+          },
+          {
+            "n": 3
+          }
+        ]
+      }
+    },
+    {
+      "name": "where-first: prefix !",
+      "tags": [
+        "sugar",
+        "where-first"
+      ],
+      "roots": {
+        "r": [
+          {
+            "n": 1,
+            "ok": true
+          },
+          {
+            "n": 2,
+            "ok": false
+          },
+          {
+            "n": 3
+          }
+        ]
+      },
+      "query": "r collect { !ok }",
+      "expect": {
+        "result": [
+          {
+            "n": 2,
+            "ok": false
+          },
+          {
+            "n": 3
+          }
+        ]
+      }
+    },
+    {
+      "name": "where-first: prefix not",
+      "tags": [
+        "sugar",
+        "where-first",
+        "not"
+      ],
+      "roots": {
+        "r": [
+          {
+            "n": 1,
+            "ok": true
+          },
+          {
+            "n": 2,
+            "ok": false
+          },
+          {
+            "n": 3
+          }
+        ]
+      },
+      "query": "r collect { not ok }",
+      "expect": {
+        "result": [
+          {
+            "n": 2,
+            "ok": false
+          },
+          {
+            "n": 3
+          }
+        ]
+      }
+    },
+    {
+      "name": "where-first: prefix is",
+      "tags": [
+        "sugar",
+        "where-first",
+        "is"
+      ],
+      "roots": {
+        "r": [
+          {
+            "n": 1,
+            "ok": true
+          },
+          {
+            "n": 2,
+            "ok": false
+          },
+          {
+            "n": 3
+          }
+        ]
+      },
+      "query": "r collect { is ok }",
+      "expect": {
+        "result": [
+          {
+            "n": 1,
+            "ok": true
+          }
+        ]
+      }
+    },
+    {
+      "name": "where-first: membership",
+      "tags": [
+        "sugar",
+        "where-first"
+      ],
+      "roots": {
+        "r": [
+          {
+            "n": 1,
+            "ok": true
+          },
+          {
+            "n": 2,
+            "ok": false
+          },
+          {
+            "n": 3
+          }
+        ]
+      },
+      "query": "r collect { n in 2..3 }",
+      "expect": {
+        "result": [
+          {
+            "n": 2,
+            "ok": false
+          },
+          {
+            "n": 3
+          }
+        ]
+      }
+    },
+    {
+      "name": "where-first: infix is",
+      "tags": [
+        "sugar",
+        "where-first",
+        "is"
+      ],
+      "roots": {
+        "r": [
+          {
+            "n": 1,
+            "ok": true
+          },
+          {
+            "n": 2,
+            "ok": false
+          },
+          {
+            "n": 3
+          }
+        ]
+      },
+      "query": "r collect { ok is false }",
+      "expect": {
+        "result": [
+          {
+            "n": 2,
+            "ok": false
+          }
+        ]
+      }
+    },
+    {
+      "name": "where-first: infix is not",
+      "tags": [
+        "sugar",
+        "where-first",
+        "is"
+      ],
+      "roots": {
+        "r": [
+          {
+            "n": 1,
+            "ok": true
+          },
+          {
+            "n": 2,
+            "ok": false
+          },
+          {
+            "n": 3
+          }
+        ]
+      },
+      "query": "r collect { ok is not false }",
+      "expect": {
+        "result": [
+          {
+            "n": 1,
+            "ok": true
+          },
+          {
+            "n": 3
+          }
+        ]
+      }
+    },
+    {
+      "name": "where-first: a free call",
+      "tags": [
+        "sugar",
+        "where-first"
+      ],
+      "roots": {
+        "r": [
+          {
+            "n": 1,
+            "ok": true
+          },
+          {
+            "n": 2,
+            "ok": false
+          },
+          {
+            "n": 3
+          }
+        ]
+      },
+      "query": "r collect { has(ok) }",
+      "expect": {
+        "result": [
+          {
+            "n": 1,
+            "ok": true
+          },
+          {
+            "n": 2,
+            "ok": false
+          }
+        ]
+      }
+    },
+    {
+      "name": "where-first: a method call",
+      "tags": [
+        "sugar",
+        "where-first"
+      ],
+      "roots": {
+        "s": [
+          {
+            "t": "ab"
+          },
+          {
+            "t": "ba"
+          }
+        ]
+      },
+      "query": "s collect { t.startsWith(\"a\") }",
+      "expect": {
+        "result": [
+          {
+            "t": "ab"
+          }
+        ]
+      }
+    },
+    {
+      "name": "where-first: literal true keeps every row",
+      "tags": [
+        "sugar",
+        "where-first"
+      ],
+      "roots": {
+        "r": [
+          {
+            "n": 1,
+            "ok": true
+          },
+          {
+            "n": 2,
+            "ok": false
+          },
+          {
+            "n": 3
+          }
+        ]
+      },
+      "query": "r collect { true }",
+      "expect": {
+        "result": [
+          {
+            "n": 1,
+            "ok": true
+          },
+          {
+            "n": 2,
+            "ok": false
+          },
+          {
+            "n": 3
+          }
+        ]
+      }
+    },
+    {
+      "name": "where-first: literal false keeps none",
+      "tags": [
+        "sugar",
+        "where-first"
+      ],
+      "roots": {
+        "r": [
+          {
+            "n": 1,
+            "ok": true
+          },
+          {
+            "n": 2,
+            "ok": false
+          },
+          {
+            "n": 3
+          }
+        ]
+      },
+      "query": "r collect { false }",
+      "expect": {
+        "result": []
+      }
+    },
+    {
+      "name": "where-first: a binding",
+      "tags": [
+        "sugar",
+        "where-first",
+        "bindings"
+      ],
+      "roots": {
+        "r": [
+          {
+            "n": 1,
+            "ok": true
+          },
+          {
+            "n": 2,
+            "ok": false
+          },
+          {
+            "n": 3
+          }
+        ]
+      },
+      "template": {
+        "strings": [
+          "r collect { ",
+          " }"
+        ],
+        "values": [
+          false
+        ]
+      },
+      "expect": {
+        "result": []
+      }
+    },
+    {
+      "name": "where-first: a parenthesized expression",
+      "tags": [
+        "sugar",
+        "where-first"
+      ],
+      "roots": {
+        "r": [
+          {
+            "n": 1,
+            "ok": true
+          },
+          {
+            "n": 2,
+            "ok": false
+          },
+          {
+            "n": 3
+          }
+        ]
+      },
+      "query": "r collect { (n > 1) }",
+      "expect": {
+        "result": [
+          {
+            "n": 2,
+            "ok": false
+          },
+          {
+            "n": 3
+          }
+        ]
+      }
+    },
+    {
+      "name": "where-first: a parenthesized name is a predicate",
+      "tags": [
+        "sugar",
+        "where-first"
+      ],
+      "notes": "Parentheses make the leading expression predicate-shaped; `(n) from r` at the top level still projects.",
+      "roots": {
+        "r": [
+          {
+            "n": 1,
+            "ok": true
+          },
+          {
+            "n": 2,
+            "ok": false
+          },
+          {
+            "n": 3
+          }
+        ]
+      },
+      "query": "r collect { (ok) }",
+      "expect": {
+        "result": [
+          {
+            "n": 1,
+            "ok": true
+          }
+        ]
+      }
+    },
+    {
+      "name": "where-first: a consumer test",
+      "tags": [
+        "sugar",
+        "where-first",
+        "consumers"
+      ],
+      "roots": {
+        "people": [
+          {
+            "id": 1,
+            "name": "Bob",
+            "age": 41,
+            "active": true,
+            "manager": 2,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "pay": 3
+              },
+              {
+                "employer": "Initech",
+                "pay": 1
+              }
+            ]
+          },
+          {
+            "id": 2,
+            "name": "Alice",
+            "age": 52,
+            "active": true,
+            "jobs": [
+              {
+                "employer": "Initech",
+                "pay": 5
+              }
+            ]
+          },
+          {
+            "id": 3,
+            "name": "Carol",
+            "age": 29,
+            "active": false,
+            "manager": 2,
+            "jobs": []
+          }
+        ]
+      },
+      "query": "people count { jobs exists { } }",
+      "expect": {
+        "result": 2
+      }
+    },
+    {
+      "name": "where-first: a count comparison",
+      "tags": [
+        "sugar",
+        "where-first",
+        "consumers"
+      ],
+      "roots": {
+        "people": [
+          {
+            "id": 1,
+            "name": "Bob",
+            "age": 41,
+            "active": true,
+            "manager": 2,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "pay": 3
+              },
+              {
+                "employer": "Initech",
+                "pay": 1
+              }
+            ]
+          },
+          {
+            "id": 2,
+            "name": "Alice",
+            "age": 52,
+            "active": true,
+            "jobs": [
+              {
+                "employer": "Initech",
+                "pay": 5
+              }
+            ]
+          },
+          {
+            "id": 3,
+            "name": "Carol",
+            "age": 29,
+            "active": false,
+            "manager": 2,
+            "jobs": []
+          }
+        ]
+      },
+      "query": "people count { jobs count { } >= 2 }",
+      "expect": {
+        "result": 1
+      }
+    },
+    {
+      "name": "where-first: a required value",
+      "tags": [
+        "sugar",
+        "where-first",
+        "required"
+      ],
+      "roots": {
+        "r": [
+          {
+            "n": 1,
+            "ok": true
+          },
+          {
+            "n": 2,
+            "ok": false
+          },
+          {
+            "n": 3
+          }
+        ]
+      },
+      "query": "r count { n! }",
+      "expect": {
+        "result": 3
+      }
+    },
+    {
+      "name": "where-first in an explicit consumer block",
+      "tags": [
+        "sugar",
+        "where-first"
+      ],
+      "roots": {
+        "jobs": [
+          {
+            "pay": 1
+          },
+          {
+            "pay": 3
+          }
+        ]
+      },
+      "query": "jobs collect { pay > 2 }",
+      "expect": {
+        "result": [
+          {
+            "pay": 3
+          }
+        ]
+      }
+    },
+    {
+      "name": "where-first then order by and limit",
+      "tags": [
+        "sugar",
+        "where-first",
+        "order",
+        "limit"
+      ],
+      "roots": {
+        "r": [
+          {
+            "n": 1,
+            "ok": true
+          },
+          {
+            "n": 2,
+            "ok": false
+          },
+          {
+            "n": 3
+          }
+        ]
+      },
+      "query": "r collect { n > 0 order by n desc limit 2 }",
+      "expect": {
+        "result": [
+          {
+            "n": 3
+          },
+          {
+            "n": 2,
+            "ok": false
+          }
+        ]
+      }
+    },
+    {
+      "name": "where-first then from is the clause-order error",
+      "tags": [
+        "sugar",
+        "where-first",
+        "clause-order"
+      ],
+      "roots": {
+        "r": [
+          {
+            "n": 1,
+            "ok": true
+          },
+          {
+            "n": 2,
+            "ok": false
+          },
+          {
+            "n": 3
+          }
+        ]
+      },
+      "query": "r collect { n > 0 from x }",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "`from` must come before `where`"
+          ]
+        }
+      }
+    },
+    {
+      "name": "where-first nested in select",
+      "tags": [
+        "sugar",
+        "where-first",
+        "collect"
+      ],
+      "roots": {
+        "people": [
+          {
+            "id": 1,
+            "name": "Bob",
+            "age": 41,
+            "active": true,
+            "manager": 2,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "pay": 3
+              },
+              {
+                "employer": "Initech",
+                "pay": 1
+              }
+            ]
+          },
+          {
+            "id": 2,
+            "name": "Alice",
+            "age": 52,
+            "active": true,
+            "jobs": [
+              {
+                "employer": "Initech",
+                "pay": 5
+              }
+            ]
+          },
+          {
+            "id": 3,
+            "name": "Carol",
+            "age": 29,
+            "active": false,
+            "manager": 2,
+            "jobs": []
+          }
+        ]
+      },
+      "query": "name, big: jobs { pay > 2 } from people",
+      "expect": {
+        "result": [
+          {
+            "name": "Bob",
+            "big": [
+              {
+                "employer": "Globocorp",
+                "pay": 3
+              }
+            ]
+          },
+          {
+            "name": "Alice",
+            "big": [
+              {
+                "employer": "Initech",
+                "pay": 5
+              }
+            ]
+          },
+          {
+            "name": "Carol",
+            "big": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "a comma after the leading predicate is an error",
+      "tags": [
+        "sugar",
+        "where-first"
+      ],
+      "roots": {
+        "r": [
+          {
+            "n": 1,
+            "ok": true
+          },
+          {
+            "n": 2,
+            "ok": false
+          },
+          {
+            "n": 3
+          }
+        ]
+      },
+      "query": "r collect { n > 1, ok }",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "where n > 1"
+          ]
+        }
+      }
+    },
+    {
+      "name": "a bare name in a block is still a projection",
+      "tags": [
+        "sugar",
+        "projection"
+      ],
+      "roots": {
+        "r": [
+          {
+            "n": 1,
+            "ok": true
+          },
+          {
+            "n": 2,
+            "ok": false
+          },
+          {
+            "n": 3
+          }
+        ]
+      },
+      "query": "r collect { ok }",
+      "expect": {
+        "result": [
+          {
+            "ok": true
+          },
+          {
+            "ok": false
+          },
+          {}
+        ]
+      }
+    },
+    {
+      "name": "a dotted navigation in a block is still a projection",
+      "tags": [
+        "sugar",
+        "projection"
+      ],
+      "roots": {
+        "q": [
+          {
+            "a": {
+              "b": 1
+            }
+          }
+        ]
+      },
+      "query": "q collect { a.b }",
+      "expect": {
+        "result": [
+          {
+            "b": 1
+          }
+        ]
+      }
+    },
+    {
+      "name": "a values projection keeps any shape",
+      "tags": [
+        "sugar",
+        "values"
+      ],
+      "roots": {
+        "r": [
+          {
+            "n": 1,
+            "ok": true
+          },
+          {
+            "n": 2,
+            "ok": false
+          },
+          {
+            "n": 3
+          }
+        ]
+      },
+      "query": "r collect { n * 2 values }",
+      "expect": {
+        "result": [
+          2,
+          4,
+          6
+        ]
+      }
+    },
+    {
+      "name": "a literal under values projects",
+      "tags": [
+        "sugar",
+        "values"
+      ],
+      "roots": {
+        "r": [
+          {
+            "n": 1,
+            "ok": true
+          },
+          {
+            "n": 2,
+            "ok": false
+          },
+          {
+            "n": 3
+          }
+        ]
+      },
+      "query": "r collect { true values }",
+      "expect": {
+        "result": [
+          true,
+          true,
+          true
+        ]
+      }
+    },
+    {
+      "name": "projection plus filter keeps the keyword",
+      "tags": [
+        "sugar",
+        "projection",
+        "where"
+      ],
+      "roots": {
+        "people": [
+          {
+            "id": 1,
+            "name": "Bob",
+            "age": 41,
+            "active": true,
+            "manager": 2,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "pay": 3
+              },
+              {
+                "employer": "Initech",
+                "pay": 1
+              }
+            ]
+          },
+          {
+            "id": 2,
+            "name": "Alice",
+            "age": 52,
+            "active": true,
+            "jobs": [
+              {
+                "employer": "Initech",
+                "pay": 5
+              }
+            ]
+          },
+          {
+            "id": 3,
+            "name": "Carol",
+            "age": 29,
+            "active": false,
+            "manager": 2,
+            "jobs": []
+          }
+        ]
+      },
+      "query": "people collect { name where age > 40 }",
+      "expect": {
+        "result": [
+          {
+            "name": "Bob"
+          },
+          {
+            "name": "Alice"
+          }
+        ]
+      }
+    },
+    {
+      "name": "an aliased leading item is a projection",
+      "tags": [
+        "sugar",
+        "projection"
+      ],
+      "roots": {
+        "r": [
+          {
+            "n": 1,
+            "ok": true
+          },
+          {
+            "n": 2,
+            "ok": false
+          },
+          {
+            "n": 3
+          }
+        ]
+      },
+      "query": "r collect { big: n > 1 }",
+      "expect": {
+        "result": [
+          {
+            "big": false
+          },
+          {
+            "big": true
+          },
+          {
+            "big": true
+          }
+        ]
+      }
+    },
+    {
+      "name": "a nested block with no name in a block is still an error",
+      "tags": [
+        "sugar",
+        "projection"
+      ],
+      "roots": {
+        "people": [
+          {
+            "id": 1,
+            "name": "Bob",
+            "age": 41,
+            "active": true,
+            "manager": 2,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "pay": 3
+              },
+              {
+                "employer": "Initech",
+                "pay": 1
+              }
+            ]
+          },
+          {
+            "id": 2,
+            "name": "Alice",
+            "age": 52,
+            "active": true,
+            "jobs": [
+              {
+                "employer": "Initech",
+                "pay": 5
+              }
+            ]
+          },
+          {
+            "id": 3,
+            "name": "Carol",
+            "age": 29,
+            "active": false,
+            "manager": 2,
+            "jobs": []
+          }
+        ]
+      },
+      "query": "people first { jobs collect { } }",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "needs a name"
+          ]
+        }
+      }
+    },
+    {
+      "name": "top level: a leading predicate is still an error",
+      "tags": [
+        "sugar",
+        "top-level",
+        "clause-order"
+      ],
+      "notes": "A predicate before `from` would be a `where` written out of order; the top-level projection is the only keyword-less clause.",
+      "roots": {
+        "people": [
+          {
+            "id": 1,
+            "name": "Bob",
+            "age": 41,
+            "active": true,
+            "manager": 2,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "pay": 3
+              },
+              {
+                "employer": "Initech",
+                "pay": 1
+              }
+            ]
+          },
+          {
+            "id": 2,
+            "name": "Alice",
+            "age": 52,
+            "active": true,
+            "jobs": [
+              {
+                "employer": "Initech",
+                "pay": 5
+              }
+            ]
+          },
+          {
+            "id": 3,
+            "name": "Carol",
+            "age": 29,
+            "active": false,
+            "manager": 2,
+            "jobs": []
+          }
+        ]
+      },
+      "query": "age > 15 from people",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "needs an alias",
+            "never implicit"
+          ]
+        }
+      }
+    },
+    {
+      "name": "top level: a parenthesized name still projects",
+      "tags": [
+        "sugar",
+        "top-level",
+        "projection"
+      ],
+      "roots": {
+        "r": [
+          {
+            "n": 1,
+            "ok": true
+          },
+          {
+            "n": 2,
+            "ok": false
+          },
+          {
+            "n": 3
+          }
+        ]
+      },
+      "query": "(n) from r",
+      "expect": {
+        "result": [
+          {
+            "n": 1
+          },
+          {
+            "n": 2
+          },
+          {
+            "n": 3
+          }
+        ]
+      }
+    },
+    {
+      "name": "bracket predicate is first",
+      "tags": [
+        "sugar",
+        "brackets"
+      ],
+      "roots": {
+        "people": [
+          {
+            "id": 1,
+            "name": "Bob",
+            "age": 41,
+            "active": true,
+            "manager": 2,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "pay": 3
+              },
+              {
+                "employer": "Initech",
+                "pay": 1
+              }
+            ]
+          },
+          {
+            "id": 2,
+            "name": "Alice",
+            "age": 52,
+            "active": true,
+            "jobs": [
+              {
+                "employer": "Initech",
+                "pay": 5
+              }
+            ]
+          },
+          {
+            "id": 3,
+            "name": "Carol",
+            "age": 29,
+            "active": false,
+            "manager": 2,
+            "jobs": []
+          }
+        ]
+      },
+      "query": "name, j: jobs[pay > 2] from people",
+      "expect": {
+        "result": [
+          {
+            "name": "Bob",
+            "j": {
+              "employer": "Globocorp",
+              "pay": 3
+            }
+          },
+          {
+            "name": "Alice",
+            "j": {
+              "employer": "Initech",
+              "pay": 5
+            }
+          },
+          {
+            "name": "Carol",
+            "j": null
+          }
+        ]
+      }
+    },
+    {
+      "name": "bracket predicate with no match is absent",
+      "tags": [
+        "sugar",
+        "brackets",
+        "values"
+      ],
+      "roots": {
+        "people": [
+          {
+            "id": 1,
+            "name": "Bob",
+            "age": 41,
+            "active": true,
+            "manager": 2,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "pay": 3
+              },
+              {
+                "employer": "Initech",
+                "pay": 1
+              }
+            ]
+          },
+          {
+            "id": 2,
+            "name": "Alice",
+            "age": 52,
+            "active": true,
+            "jobs": [
+              {
+                "employer": "Initech",
+                "pay": 5
+              }
+            ]
+          },
+          {
+            "id": 3,
+            "name": "Carol",
+            "age": 29,
+            "active": false,
+            "manager": 2,
+            "jobs": []
+          }
+        ]
+      },
+      "query": "jobs[pay > 10] values from people",
+      "expect": {
+        "result": [
+          null,
+          null,
+          null
+        ]
+      }
+    },
+    {
+      "name": "bracket predicate with ! is single",
+      "tags": [
+        "sugar",
+        "brackets",
+        "required"
+      ],
+      "roots": {
+        "people": [
+          {
+            "id": 1,
+            "name": "Bob",
+            "age": 41,
+            "active": true,
+            "manager": 2,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "pay": 3
+              },
+              {
+                "employer": "Initech",
+                "pay": 1
+              }
+            ]
+          },
+          {
+            "id": 2,
+            "name": "Alice",
+            "age": 52,
+            "active": true,
+            "jobs": [
+              {
+                "employer": "Initech",
+                "pay": 5
+              }
+            ]
+          },
+          {
+            "id": 3,
+            "name": "Carol",
+            "age": 29,
+            "active": false,
+            "manager": 2,
+            "jobs": []
+          }
+        ]
+      },
+      "query": "name, j: jobs[employer == \"Initech\"]! from people where id == 1",
+      "expect": {
+        "result": [
+          {
+            "name": "Bob",
+            "j": {
+              "employer": "Initech",
+              "pay": 1
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "bracket single with many matches is the single error",
+      "tags": [
+        "sugar",
+        "brackets",
+        "required"
+      ],
+      "roots": {
+        "people": [
+          {
+            "id": 1,
+            "name": "Bob",
+            "age": 41,
+            "active": true,
+            "manager": 2,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "pay": 3
+              },
+              {
+                "employer": "Initech",
+                "pay": 1
+              }
+            ]
+          },
+          {
+            "id": 2,
+            "name": "Alice",
+            "age": 52,
+            "active": true,
+            "jobs": [
+              {
+                "employer": "Initech",
+                "pay": 5
+              }
+            ]
+          },
+          {
+            "id": 3,
+            "name": "Carol",
+            "age": 29,
+            "active": false,
+            "manager": 2,
+            "jobs": []
+          }
+        ]
+      },
+      "query": "name, j: jobs[pay > 0]! from people where id == 1",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "single",
+            "matched 2 rows"
+          ]
+        }
+      }
+    },
+    {
+      "name": "bracket single with no match is the required error",
+      "tags": [
+        "sugar",
+        "brackets",
+        "required"
+      ],
+      "roots": {
+        "people": [
+          {
+            "id": 1,
+            "name": "Bob",
+            "age": 41,
+            "active": true,
+            "manager": 2,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "pay": 3
+              },
+              {
+                "employer": "Initech",
+                "pay": 1
+              }
+            ]
+          },
+          {
+            "id": 2,
+            "name": "Alice",
+            "age": 52,
+            "active": true,
+            "jobs": [
+              {
+                "employer": "Initech",
+                "pay": 5
+              }
+            ]
+          },
+          {
+            "id": 3,
+            "name": "Carol",
+            "age": 29,
+            "active": false,
+            "manager": 2,
+            "jobs": []
+          }
+        ]
+      },
+      "query": "name, j: jobs[pay > 10]! from people where id == 1",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "`jobs single { where pay > 10 }!` is absent",
+            "on 1"
+          ]
+        }
+      }
+    },
+    {
+      "name": "positional index",
+      "tags": [
+        "sugar",
+        "brackets",
+        "index"
+      ],
+      "roots": {
+        "people": [
+          {
+            "id": 1,
+            "name": "Bob",
+            "age": 41,
+            "active": true,
+            "manager": 2,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "pay": 3
+              },
+              {
+                "employer": "Initech",
+                "pay": 1
+              }
+            ]
+          },
+          {
+            "id": 2,
+            "name": "Alice",
+            "age": 52,
+            "active": true,
+            "jobs": [
+              {
+                "employer": "Initech",
+                "pay": 5
+              }
+            ]
+          },
+          {
+            "id": 3,
+            "name": "Carol",
+            "age": 29,
+            "active": false,
+            "manager": 2,
+            "jobs": []
+          }
+        ]
+      },
+      "query": "name, j: jobs[1] from people where id == 1",
+      "expect": {
+        "result": [
+          {
+            "name": "Bob",
+            "j": {
+              "employer": "Initech",
+              "pay": 1
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "positional index 0",
+      "tags": [
+        "sugar",
+        "brackets",
+        "index"
+      ],
+      "roots": {
+        "people": [
+          {
+            "id": 1,
+            "name": "Bob",
+            "age": 41,
+            "active": true,
+            "manager": 2,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "pay": 3
+              },
+              {
+                "employer": "Initech",
+                "pay": 1
+              }
+            ]
+          },
+          {
+            "id": 2,
+            "name": "Alice",
+            "age": 52,
+            "active": true,
+            "jobs": [
+              {
+                "employer": "Initech",
+                "pay": 5
+              }
+            ]
+          },
+          {
+            "id": 3,
+            "name": "Carol",
+            "age": 29,
+            "active": false,
+            "manager": 2,
+            "jobs": []
+          }
+        ]
+      },
+      "query": "j: jobs[0] from people",
+      "expect": {
+        "result": [
+          {
+            "j": {
+              "employer": "Globocorp",
+              "pay": 3
+            }
+          },
+          {
+            "j": {
+              "employer": "Initech",
+              "pay": 5
+            }
+          },
+          {
+            "j": null
+          }
+        ]
+      }
+    },
+    {
+      "name": "positional index out of range is absent",
+      "tags": [
+        "sugar",
+        "brackets",
+        "index"
+      ],
+      "roots": {
+        "people": [
+          {
+            "id": 1,
+            "name": "Bob",
+            "age": 41,
+            "active": true,
+            "manager": 2,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "pay": 3
+              },
+              {
+                "employer": "Initech",
+                "pay": 1
+              }
+            ]
+          },
+          {
+            "id": 2,
+            "name": "Alice",
+            "age": 52,
+            "active": true,
+            "jobs": [
+              {
+                "employer": "Initech",
+                "pay": 5
+              }
+            ]
+          },
+          {
+            "id": 3,
+            "name": "Carol",
+            "age": 29,
+            "active": false,
+            "manager": 2,
+            "jobs": []
+          }
+        ]
+      },
+      "query": "jobs[5] values from people",
+      "expect": {
+        "result": [
+          null,
+          null,
+          null
+        ]
+      }
+    },
+    {
+      "name": "positional index from a binding",
+      "tags": [
+        "sugar",
+        "brackets",
+        "index",
+        "bindings"
+      ],
+      "roots": {
+        "people": [
+          {
+            "id": 1,
+            "name": "Bob",
+            "age": 41,
+            "active": true,
+            "manager": 2,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "pay": 3
+              },
+              {
+                "employer": "Initech",
+                "pay": 1
+              }
+            ]
+          },
+          {
+            "id": 2,
+            "name": "Alice",
+            "age": 52,
+            "active": true,
+            "jobs": [
+              {
+                "employer": "Initech",
+                "pay": 5
+              }
+            ]
+          },
+          {
+            "id": 3,
+            "name": "Carol",
+            "age": 29,
+            "active": false,
+            "manager": 2,
+            "jobs": []
+          }
+        ]
+      },
+      "template": {
+        "strings": [
+          "j: jobs[",
+          "] from people where id == 1"
+        ],
+        "values": [
+          1
+        ]
+      },
+      "expect": {
+        "result": [
+          {
+            "j": {
+              "employer": "Initech",
+              "pay": 1
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "a binding index must be a non-negative integer",
+      "tags": [
+        "sugar",
+        "brackets",
+        "index",
+        "bindings"
+      ],
+      "roots": {
+        "people": [
+          {
+            "id": 1,
+            "name": "Bob",
+            "age": 41,
+            "active": true,
+            "manager": 2,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "pay": 3
+              },
+              {
+                "employer": "Initech",
+                "pay": 1
+              }
+            ]
+          },
+          {
+            "id": 2,
+            "name": "Alice",
+            "age": 52,
+            "active": true,
+            "jobs": [
+              {
+                "employer": "Initech",
+                "pay": 5
+              }
+            ]
+          },
+          {
+            "id": 3,
+            "name": "Carol",
+            "age": 29,
+            "active": false,
+            "manager": 2,
+            "jobs": []
+          }
+        ]
+      },
+      "template": {
+        "strings": [
+          "j: jobs[",
+          "] from people"
+        ],
+        "values": [
+          "x"
+        ]
+      },
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "offset"
+          ]
+        }
+      }
+    },
+    {
+      "name": "a negative binding index is the offset error",
+      "tags": [
+        "sugar",
+        "brackets",
+        "index",
+        "bindings"
+      ],
+      "roots": {
+        "people": [
+          {
+            "id": 1,
+            "name": "Bob",
+            "age": 41,
+            "active": true,
+            "manager": 2,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "pay": 3
+              },
+              {
+                "employer": "Initech",
+                "pay": 1
+              }
+            ]
+          },
+          {
+            "id": 2,
+            "name": "Alice",
+            "age": 52,
+            "active": true,
+            "jobs": [
+              {
+                "employer": "Initech",
+                "pay": 5
+              }
+            ]
+          },
+          {
+            "id": 3,
+            "name": "Carol",
+            "age": 29,
+            "active": false,
+            "manager": 2,
+            "jobs": []
+          }
+        ]
+      },
+      "template": {
+        "strings": [
+          "j: jobs[",
+          "] from people"
+        ],
+        "values": [
+          -1
+        ]
+      },
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "offset"
+          ]
+        }
+      }
+    },
+    {
+      "name": "a negative index literal is a parse error",
+      "tags": [
+        "sugar",
+        "brackets",
+        "index"
+      ],
+      "roots": {
+        "people": [
+          {
+            "id": 1,
+            "name": "Bob",
+            "age": 41,
+            "active": true,
+            "manager": 2,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "pay": 3
+              },
+              {
+                "employer": "Initech",
+                "pay": 1
+              }
+            ]
+          },
+          {
+            "id": 2,
+            "name": "Alice",
+            "age": 52,
+            "active": true,
+            "jobs": [
+              {
+                "employer": "Initech",
+                "pay": 5
+              }
+            ]
+          },
+          {
+            "id": 3,
+            "name": "Carol",
+            "age": 29,
+            "active": false,
+            "manager": 2,
+            "jobs": []
+          }
+        ]
+      },
+      "query": "j: jobs[-1] from people",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "negative indices are not supported"
+          ]
+        }
+      }
+    },
+    {
+      "name": "a fractional index literal is a parse error",
+      "tags": [
+        "sugar",
+        "brackets",
+        "index"
+      ],
+      "roots": {
+        "people": [
+          {
+            "id": 1,
+            "name": "Bob",
+            "age": 41,
+            "active": true,
+            "manager": 2,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "pay": 3
+              },
+              {
+                "employer": "Initech",
+                "pay": 1
+              }
+            ]
+          },
+          {
+            "id": 2,
+            "name": "Alice",
+            "age": 52,
+            "active": true,
+            "jobs": [
+              {
+                "employer": "Initech",
+                "pay": 5
+              }
+            ]
+          },
+          {
+            "id": 3,
+            "name": "Carol",
+            "age": 29,
+            "active": false,
+            "manager": 2,
+            "jobs": []
+          }
+        ]
+      },
+      "query": "j: jobs[1.5] from people",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "non-negative integer"
+          ]
+        }
+      }
+    },
+    {
+      "name": "required positional index present",
+      "tags": [
+        "sugar",
+        "brackets",
+        "index",
+        "required"
+      ],
+      "roots": {
+        "people": [
+          {
+            "id": 1,
+            "name": "Bob",
+            "age": 41,
+            "active": true,
+            "manager": 2,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "pay": 3
+              },
+              {
+                "employer": "Initech",
+                "pay": 1
+              }
+            ]
+          },
+          {
+            "id": 2,
+            "name": "Alice",
+            "age": 52,
+            "active": true,
+            "jobs": [
+              {
+                "employer": "Initech",
+                "pay": 5
+              }
+            ]
+          },
+          {
+            "id": 3,
+            "name": "Carol",
+            "age": 29,
+            "active": false,
+            "manager": 2,
+            "jobs": []
+          }
+        ]
+      },
+      "query": "j: jobs[0]! from people where id == 2",
+      "expect": {
+        "result": [
+          {
+            "j": {
+              "employer": "Initech",
+              "pay": 5
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "required positional index absent",
+      "tags": [
+        "sugar",
+        "brackets",
+        "index",
+        "required"
+      ],
+      "roots": {
+        "people": [
+          {
+            "id": 1,
+            "name": "Bob",
+            "age": 41,
+            "active": true,
+            "manager": 2,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "pay": 3
+              },
+              {
+                "employer": "Initech",
+                "pay": 1
+              }
+            ]
+          },
+          {
+            "id": 2,
+            "name": "Alice",
+            "age": 52,
+            "active": true,
+            "jobs": [
+              {
+                "employer": "Initech",
+                "pay": 5
+              }
+            ]
+          },
+          {
+            "id": 3,
+            "name": "Carol",
+            "age": 29,
+            "active": false,
+            "manager": 2,
+            "jobs": []
+          }
+        ]
+      },
+      "query": "j: jobs[0]! from people where id == 3",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "`jobs first { offset 0 }!` is absent",
+            "on 3"
+          ]
+        }
+      }
+    },
+    {
+      "name": "brackets chain",
+      "tags": [
+        "sugar",
+        "brackets"
+      ],
+      "roots": {
+        "people": [
+          {
+            "id": 1,
+            "name": "Bob",
+            "age": 41,
+            "active": true,
+            "manager": 2,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "pay": 3
+              },
+              {
+                "employer": "Initech",
+                "pay": 1
+              }
+            ]
+          },
+          {
+            "id": 2,
+            "name": "Alice",
+            "age": 52,
+            "active": true,
+            "jobs": [
+              {
+                "employer": "Initech",
+                "pay": 5
+              }
+            ]
+          },
+          {
+            "id": 3,
+            "name": "Carol",
+            "age": 29,
+            "active": false,
+            "manager": 2,
+            "jobs": []
+          }
+        ]
+      },
+      "query": "j: jobs[pay > 2][0] from people where id == 1",
+      "expect": {
+        "result": [
+          {
+            "j": {
+              "employer": "Globocorp",
+              "pay": 3
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "a bracket then a navigation keys by the last segment",
+      "tags": [
+        "sugar",
+        "brackets",
+        "projection"
+      ],
+      "roots": {
+        "c": [
+          {
+            "company": [
+              {
+                "name": "Globocorp"
+              },
+              {
+                "name": "Initech"
+              }
+            ]
+          }
+        ]
+      },
+      "query": "company[0].name from c",
+      "expect": {
+        "result": [
+          {
+            "name": "Globocorp"
+          }
+        ]
+      }
+    },
+    {
+      "name": "a bracket predicate reads the enclosing row through ^",
+      "tags": [
+        "sugar",
+        "brackets",
+        "outer-refs"
+      ],
+      "roots": {
+        "people": [
+          {
+            "id": 1,
+            "name": "Bob",
+            "age": 41,
+            "active": true,
+            "manager": 2,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "pay": 3
+              },
+              {
+                "employer": "Initech",
+                "pay": 1
+              }
+            ]
+          },
+          {
+            "id": 2,
+            "name": "Alice",
+            "age": 52,
+            "active": true,
+            "jobs": [
+              {
+                "employer": "Initech",
+                "pay": 5
+              }
+            ]
+          },
+          {
+            "id": 3,
+            "name": "Carol",
+            "age": 29,
+            "active": false,
+            "manager": 2,
+            "jobs": []
+          }
+        ]
+      },
+      "query": "name, boss: ^people[id == ^manager].name from people",
+      "expect": {
+        "result": [
+          {
+            "name": "Bob",
+            "boss": "Alice"
+          },
+          {
+            "name": "Alice"
+          },
+          {
+            "name": "Carol",
+            "boss": "Alice"
+          }
+        ]
+      }
+    },
+    {
+      "name": "a bracket predicate may be a consumer test",
+      "tags": [
+        "sugar",
+        "brackets",
+        "consumers"
+      ],
+      "roots": {
+        "w": [
+          {
+            "n": 1,
+            "xs": []
+          },
+          {
+            "n": 2,
+            "xs": [
+              1
+            ]
+          }
+        ]
+      },
+      "query": "w[xs exists { }]",
+      "expect": {
+        "result": {
+          "n": 2,
+          "xs": [
+            1
+          ]
+        }
+      }
+    },
+    {
+      "name": "a bracket predicate can be the whole query",
+      "tags": [
+        "sugar",
+        "brackets",
+        "directive"
+      ],
+      "roots": {
+        "r": [
+          {
+            "n": 1,
+            "ok": true
+          },
+          {
+            "n": 2,
+            "ok": false
+          },
+          {
+            "n": 3
+          }
+        ]
+      },
+      "query": "r[n > 1]",
+      "expect": {
+        "result": {
+          "n": 2,
+          "ok": false
+        }
+      }
+    },
+    {
+      "name": "a bracket index can be the whole query",
+      "tags": [
+        "sugar",
+        "brackets",
+        "directive"
+      ],
+      "roots": {
+        "r": [
+          {
+            "n": 1,
+            "ok": true
+          },
+          {
+            "n": 2,
+            "ok": false
+          },
+          {
+            "n": 3
+          }
+        ]
+      },
+      "query": "r[0]",
+      "expect": {
+        "result": {
+          "n": 1,
+          "ok": true
+        }
+      }
+    },
+    {
+      "name": "a bracket index out of range as the whole query is null",
+      "tags": [
+        "sugar",
+        "brackets",
+        "directive"
+      ],
+      "roots": {
+        "r": [
+          {
+            "n": 1,
+            "ok": true
+          },
+          {
+            "n": 2,
+            "ok": false
+          },
+          {
+            "n": 3
+          }
+        ]
+      },
+      "query": "r[9]",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "name": "a literal is not a bracket receiver",
+      "tags": [
+        "sugar",
+        "brackets"
+      ],
+      "roots": {
+        "r": [
+          {
+            "n": 1,
+            "ok": true
+          },
+          {
+            "n": 2,
+            "ok": false
+          },
+          {
+            "n": 3
+          }
+        ]
+      },
+      "query": "j: true[0] from r",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "is a literal, not a collection"
+          ]
+        }
+      }
+    },
+    {
+      "name": "brackets apply to a call",
+      "tags": [
+        "sugar",
+        "brackets"
+      ],
+      "roots": {
+        "q": [
+          {
+            "xs": [
+              7,
+              8
+            ]
+          }
+        ]
+      },
+      "query": "v: list(xs)[1] from q",
+      "expect": {
+        "result": [
+          {
+            "v": 8
+          }
+        ]
+      }
+    },
+    {
+      "name": "a bracket in where with a continuation",
+      "tags": [
+        "sugar",
+        "brackets",
+        "where"
+      ],
+      "roots": {
+        "people": [
+          {
+            "id": 1,
+            "name": "Bob",
+            "age": 41,
+            "active": true,
+            "manager": 2,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "pay": 3
+              },
+              {
+                "employer": "Initech",
+                "pay": 1
+              }
+            ]
+          },
+          {
+            "id": 2,
+            "name": "Alice",
+            "age": 52,
+            "active": true,
+            "jobs": [
+              {
+                "employer": "Initech",
+                "pay": 5
+              }
+            ]
+          },
+          {
+            "id": 3,
+            "name": "Carol",
+            "age": 29,
+            "active": false,
+            "manager": 2,
+            "jobs": []
+          }
+        ]
+      },
+      "query": "name from people where jobs[0].pay > 2",
+      "expect": {
+        "result": [
+          {
+            "name": "Bob"
+          },
+          {
+            "name": "Alice"
+          }
+        ]
+      }
+    },
+    {
+      "name": "a bare bracket in where is the lookup error",
+      "tags": [
+        "sugar",
+        "brackets",
+        "where"
+      ],
+      "notes": "`x[p]` is `x first { where p }`, a value; alone in `where` it is the select-position lookup error, like the explicit form.",
+      "roots": {
+        "people": [
+          {
+            "id": 1,
+            "name": "Bob",
+            "age": 41,
+            "active": true,
+            "manager": 2,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "pay": 3
+              },
+              {
+                "employer": "Initech",
+                "pay": 1
+              }
+            ]
+          },
+          {
+            "id": 2,
+            "name": "Alice",
+            "age": 52,
+            "active": true,
+            "jobs": [
+              {
+                "employer": "Initech",
+                "pay": 5
+              }
+            ]
+          },
+          {
+            "id": 3,
+            "name": "Carol",
+            "age": 29,
+            "active": false,
+            "manager": 2,
+            "jobs": []
+          }
+        ]
+      },
+      "query": "name from people where jobs[pay > 2]",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "select-position lookup"
+          ]
+        }
+      }
+    },
+    {
+      "name": "a required bracket in where",
+      "tags": [
+        "sugar",
+        "brackets",
+        "where",
+        "required"
+      ],
+      "roots": {
+        "people": [
+          {
+            "id": 1,
+            "name": "Bob",
+            "age": 41,
+            "active": true,
+            "manager": 2,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "pay": 3
+              },
+              {
+                "employer": "Initech",
+                "pay": 1
+              }
+            ]
+          },
+          {
+            "id": 2,
+            "name": "Alice",
+            "age": 52,
+            "active": true,
+            "jobs": [
+              {
+                "employer": "Initech",
+                "pay": 5
+              }
+            ]
+          },
+          {
+            "id": 3,
+            "name": "Carol",
+            "age": 29,
+            "active": false,
+            "manager": 2,
+            "jobs": []
+          }
+        ]
+      },
+      "query": "name from people where jobs[0]!",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "`jobs first { offset 0 }!` is absent",
+            "on 3"
+          ]
+        }
+      }
+    },
+    {
+      "name": "the explicit value-position directive parses in where",
+      "tags": [
+        "sugar",
+        "brackets",
+        "where"
+      ],
+      "roots": {
+        "people": [
+          {
+            "id": 1,
+            "name": "Bob",
+            "age": 41,
+            "active": true,
+            "manager": 2,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "pay": 3
+              },
+              {
+                "employer": "Initech",
+                "pay": 1
+              }
+            ]
+          },
+          {
+            "id": 2,
+            "name": "Alice",
+            "age": 52,
+            "active": true,
+            "jobs": [
+              {
+                "employer": "Initech",
+                "pay": 5
+              }
+            ]
+          },
+          {
+            "id": 3,
+            "name": "Carol",
+            "age": 29,
+            "active": false,
+            "manager": 2,
+            "jobs": []
+          }
+        ]
+      },
+      "query": "name from people where jobs first { }.pay > 2",
+      "expect": {
+        "result": [
+          {
+            "name": "Bob"
+          },
+          {
+            "name": "Alice"
+          }
+        ]
+      }
+    },
+    {
+      "name": "the explicit value-position directive parses in select",
+      "tags": [
+        "sugar",
+        "brackets",
+        "select"
+      ],
+      "roots": {
+        "people": [
+          {
+            "id": 1,
+            "name": "Bob",
+            "age": 41,
+            "active": true,
+            "manager": 2,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "pay": 3
+              },
+              {
+                "employer": "Initech",
+                "pay": 1
+              }
+            ]
+          },
+          {
+            "id": 2,
+            "name": "Alice",
+            "age": 52,
+            "active": true,
+            "jobs": [
+              {
+                "employer": "Initech",
+                "pay": 5
+              }
+            ]
+          },
+          {
+            "id": 3,
+            "name": "Carol",
+            "age": 29,
+            "active": false,
+            "manager": 2,
+            "jobs": []
+          }
+        ]
+      },
+      "query": "j: jobs first { offset 1 }.employer from people where id == 1",
+      "expect": {
+        "result": [
+          {
+            "j": "Initech"
+          }
+        ]
+      }
+    },
+    {
+      "name": "required present",
+      "tags": [
+        "sugar",
+        "required"
+      ],
+      "roots": {
+        "people": [
+          {
+            "id": 1,
+            "name": "Bob",
+            "age": 41,
+            "active": true,
+            "manager": 2,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "pay": 3
+              },
+              {
+                "employer": "Initech",
+                "pay": 1
+              }
+            ]
+          },
+          {
+            "id": 2,
+            "name": "Alice",
+            "age": 52,
+            "active": true,
+            "jobs": [
+              {
+                "employer": "Initech",
+                "pay": 5
+              }
+            ]
+          },
+          {
+            "id": 3,
+            "name": "Carol",
+            "age": 29,
+            "active": false,
+            "manager": 2,
+            "jobs": []
+          }
+        ]
+      },
+      "query": "name! from people",
+      "expect": {
+        "result": [
+          {
+            "name": "Bob"
+          },
+          {
+            "name": "Alice"
+          },
+          {
+            "name": "Carol"
+          }
+        ]
+      }
+    },
+    {
+      "name": "required absent names the expression and the row id",
+      "tags": [
+        "sugar",
+        "required"
+      ],
+      "roots": {
+        "people": [
+          {
+            "id": 1,
+            "name": "Bob",
+            "age": 41,
+            "active": true,
+            "manager": 2,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "pay": 3
+              },
+              {
+                "employer": "Initech",
+                "pay": 1
+              }
+            ]
+          },
+          {
+            "id": 2,
+            "name": "Alice",
+            "age": 52,
+            "active": true,
+            "jobs": [
+              {
+                "employer": "Initech",
+                "pay": 5
+              }
+            ]
+          },
+          {
+            "id": 3,
+            "name": "Carol",
+            "age": 29,
+            "active": false,
+            "manager": 2,
+            "jobs": []
+          }
+        ]
+      },
+      "query": "title! from people",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "`title!` is absent",
+            "on 1"
+          ]
+        }
+      }
+    },
+    {
+      "name": "required absent with a string id",
+      "tags": [
+        "sugar",
+        "required"
+      ],
+      "roots": {
+        "d": [
+          {
+            "id": "d1"
+          }
+        ]
+      },
+      "query": "x! from d",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "`x!` is absent",
+            "on \"d1\""
+          ]
+        }
+      }
+    },
+    {
+      "name": "required absent on an id-less row",
+      "tags": [
+        "sugar",
+        "required"
+      ],
+      "roots": {
+        "q": [
+          {}
+        ]
+      },
+      "query": "x! from q",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "`x!` is absent"
+          ]
+        }
+      }
+    },
+    {
+      "name": "required is not a coercion",
+      "tags": [
+        "sugar",
+        "required"
+      ],
+      "roots": {
+        "z": [
+          {
+            "zero": 0,
+            "empty": "",
+            "f": false
+          }
+        ]
+      },
+      "query": "z: zero!, e: empty!, f: f! from z",
+      "expect": {
+        "result": [
+          {
+            "z": 0,
+            "e": "",
+            "f": false
+          }
+        ]
+      }
+    },
+    {
+      "name": "required over a navigation",
+      "tags": [
+        "sugar",
+        "required"
+      ],
+      "roots": {
+        "q": [
+          {
+            "a": {
+              "b": 1
+            }
+          }
+        ]
+      },
+      "query": "v: a.b! from q",
+      "expect": {
+        "result": [
+          {
+            "v": 1
+          }
+        ]
+      }
+    },
+    {
+      "name": "required over an absent navigation",
+      "tags": [
+        "sugar",
+        "required"
+      ],
+      "roots": {
+        "q": [
+          {
+            "a": {}
+          }
+        ]
+      },
+      "query": "v: a.b! from q",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "`a.b!` is absent"
+          ]
+        }
+      }
+    },
+    {
+      "name": "required before a navigation",
+      "tags": [
+        "sugar",
+        "required"
+      ],
+      "roots": {
+        "q": [
+          {}
+        ]
+      },
+      "query": "v: a!.b from q",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "`a!` is absent"
+          ]
+        }
+      }
+    },
+    {
+      "name": "required binds tighter than unary minus",
+      "tags": [
+        "sugar",
+        "required",
+        "precedence"
+      ],
+      "roots": {
+        "r": [
+          {
+            "n": 1,
+            "ok": true
+          },
+          {
+            "n": 2,
+            "ok": false
+          },
+          {
+            "n": 3
+          }
+        ]
+      },
+      "query": "v: -n! from r",
+      "expect": {
+        "result": [
+          {
+            "v": -1
+          },
+          {
+            "v": -2
+          },
+          {
+            "v": -3
+          }
+        ]
+      }
+    },
+    {
+      "name": "required binds tighter than prefix !",
+      "tags": [
+        "sugar",
+        "required",
+        "precedence"
+      ],
+      "roots": {
+        "q": [
+          {
+            "ok": true
+          },
+          {
+            "ok": false
+          }
+        ]
+      },
+      "query": "v: !ok! from q",
+      "expect": {
+        "result": [
+          {
+            "v": false
+          },
+          {
+            "v": true
+          }
+        ]
+      }
+    },
+    {
+      "name": "required in a comparison",
+      "tags": [
+        "sugar",
+        "required"
+      ],
+      "roots": {
+        "r": [
+          {
+            "n": 1,
+            "ok": true
+          },
+          {
+            "n": 2,
+            "ok": false
+          },
+          {
+            "n": 3
+          }
+        ]
+      },
+      "query": "v: n! == 1 from r",
+      "expect": {
+        "result": [
+          {
+            "v": true
+          },
+          {
+            "v": false
+          },
+          {
+            "v": false
+          }
+        ]
+      }
+    },
+    {
+      "name": "required in where",
+      "tags": [
+        "sugar",
+        "required",
+        "where"
+      ],
+      "roots": {
+        "people": [
+          {
+            "id": 1,
+            "name": "Bob",
+            "age": 41,
+            "active": true,
+            "manager": 2,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "pay": 3
+              },
+              {
+                "employer": "Initech",
+                "pay": 1
+              }
+            ]
+          },
+          {
+            "id": 2,
+            "name": "Alice",
+            "age": 52,
+            "active": true,
+            "jobs": [
+              {
+                "employer": "Initech",
+                "pay": 5
+              }
+            ]
+          },
+          {
+            "id": 3,
+            "name": "Carol",
+            "age": 29,
+            "active": false,
+            "manager": 2,
+            "jobs": []
+          }
+        ]
+      },
+      "query": "name from people where age! > 40",
+      "expect": {
+        "result": [
+          {
+            "name": "Bob"
+          },
+          {
+            "name": "Alice"
+          }
+        ]
+      }
+    },
+    {
+      "name": "required in where names the failing row",
+      "tags": [
+        "sugar",
+        "required",
+        "where"
+      ],
+      "roots": {
+        "people": [
+          {
+            "id": 1,
+            "name": "Bob",
+            "age": 41,
+            "active": true,
+            "manager": 2,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "pay": 3
+              },
+              {
+                "employer": "Initech",
+                "pay": 1
+              }
+            ]
+          },
+          {
+            "id": 2,
+            "name": "Alice",
+            "age": 52,
+            "active": true,
+            "jobs": [
+              {
+                "employer": "Initech",
+                "pay": 5
+              }
+            ]
+          },
+          {
+            "id": 3,
+            "name": "Carol",
+            "age": 29,
+            "active": false,
+            "manager": 2,
+            "jobs": []
+          }
+        ]
+      },
+      "query": "name from people where manager! == 2",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "`manager!` is absent",
+            "on 2"
+          ]
+        }
+      }
+    },
+    {
+      "name": "required on a $-named property",
+      "tags": [
+        "sugar",
+        "required"
+      ],
+      "roots": {
+        "q": [
+          {
+            "$id": "a"
+          },
+          {
+            "$id": "b"
+          }
+        ]
+      },
+      "query": "$id! from q",
+      "expect": {
+        "result": [
+          {
+            "$id": "a"
+          },
+          {
+            "$id": "b"
+          }
+        ]
+      }
+    },
+    {
+      "name": "required before a method call",
+      "tags": [
+        "sugar",
+        "required"
+      ],
+      "roots": {
+        "people": [
+          {
+            "id": 1,
+            "name": "Bob",
+            "age": 41,
+            "active": true,
+            "manager": 2,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "pay": 3
+              },
+              {
+                "employer": "Initech",
+                "pay": 1
+              }
+            ]
+          },
+          {
+            "id": 2,
+            "name": "Alice",
+            "age": 52,
+            "active": true,
+            "jobs": [
+              {
+                "employer": "Initech",
+                "pay": 5
+              }
+            ]
+          },
+          {
+            "id": 3,
+            "name": "Carol",
+            "age": 29,
+            "active": false,
+            "manager": 2,
+            "jobs": []
+          }
+        ]
+      },
+      "query": "v: name!.lower() from people where id == 1",
+      "expect": {
+        "result": [
+          {
+            "v": "bob"
+          }
+        ]
+      }
+    },
+    {
+      "name": "required after a call",
+      "tags": [
+        "sugar",
+        "required"
+      ],
+      "roots": {
+        "people": [
+          {
+            "id": 1,
+            "name": "Bob",
+            "age": 41,
+            "active": true,
+            "manager": 2,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "pay": 3
+              },
+              {
+                "employer": "Initech",
+                "pay": 1
+              }
+            ]
+          },
+          {
+            "id": 2,
+            "name": "Alice",
+            "age": 52,
+            "active": true,
+            "jobs": [
+              {
+                "employer": "Initech",
+                "pay": 5
+              }
+            ]
+          },
+          {
+            "id": 3,
+            "name": "Carol",
+            "age": 29,
+            "active": false,
+            "manager": 2,
+            "jobs": []
+          }
+        ]
+      },
+      "query": "v: size(jobs)! from people where id == 3",
+      "expect": {
+        "result": [
+          {
+            "v": 0
+          }
+        ]
+      }
+    },
+    {
+      "name": "required over a parenthesized expression",
+      "tags": [
+        "sugar",
+        "required"
+      ],
+      "roots": {
+        "r": [
+          {
+            "n": 1,
+            "ok": true
+          },
+          {
+            "n": 2,
+            "ok": false
+          },
+          {
+            "n": 3
+          }
+        ]
+      },
+      "query": "v: (n + 1)! from r",
+      "expect": {
+        "result": [
+          {
+            "v": 2
+          },
+          {
+            "v": 3
+          },
+          {
+            "v": 4
+          }
+        ]
+      }
+    },
+    {
+      "name": "a required binding",
+      "tags": [
+        "sugar",
+        "required",
+        "bindings"
+      ],
+      "roots": {
+        "r": [
+          {
+            "n": 1,
+            "ok": true
+          },
+          {
+            "n": 2,
+            "ok": false
+          },
+          {
+            "n": 3
+          }
+        ]
+      },
+      "template": {
+        "strings": [
+          "v: ",
+          "! from r"
+        ],
+        "values": [
+          null
+        ]
+      },
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "`${0}!` is absent"
+          ]
+        }
+      }
+    },
+    {
+      "name": "required of a required",
+      "tags": [
+        "sugar",
+        "required"
+      ],
+      "roots": {
+        "r": [
+          {
+            "n": 1,
+            "ok": true
+          },
+          {
+            "n": 2,
+            "ok": false
+          },
+          {
+            "n": 3
+          }
+        ]
+      },
+      "query": "v: n!! from r",
+      "expect": {
+        "result": [
+          {
+            "v": 1
+          },
+          {
+            "v": 2
+          },
+          {
+            "v": 3
+          }
+        ]
+      }
+    },
+    {
+      "name": "prefix is is truthiness",
+      "tags": [
+        "sugar",
+        "is"
+      ],
+      "roots": {
+        "r": [
+          {
+            "n": 1,
+            "ok": true
+          },
+          {
+            "n": 2,
+            "ok": false
+          },
+          {
+            "n": 3
+          }
+        ]
+      },
+      "query": "v: is ok from r",
+      "expect": {
+        "result": [
+          {
+            "v": true
+          },
+          {
+            "v": false
+          },
+          {
+            "v": false
+          }
+        ]
+      }
+    },
+    {
+      "name": "prefix not is negation",
+      "tags": [
+        "sugar",
+        "not"
+      ],
+      "roots": {
+        "r": [
+          {
+            "n": 1,
+            "ok": true
+          },
+          {
+            "n": 2,
+            "ok": false
+          },
+          {
+            "n": 3
+          }
+        ]
+      },
+      "query": "v: not ok from r",
+      "expect": {
+        "result": [
+          {
+            "v": false
+          },
+          {
+            "v": true
+          },
+          {
+            "v": true
+          }
+        ]
+      }
+    },
+    {
+      "name": "prefix not over a consumer test",
+      "tags": [
+        "sugar",
+        "not",
+        "consumers"
+      ],
+      "roots": {
+        "people": [
+          {
+            "id": 1,
+            "name": "Bob",
+            "age": 41,
+            "active": true,
+            "manager": 2,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "pay": 3
+              },
+              {
+                "employer": "Initech",
+                "pay": 1
+              }
+            ]
+          },
+          {
+            "id": 2,
+            "name": "Alice",
+            "age": 52,
+            "active": true,
+            "jobs": [
+              {
+                "employer": "Initech",
+                "pay": 5
+              }
+            ]
+          },
+          {
+            "id": 3,
+            "name": "Carol",
+            "age": 29,
+            "active": false,
+            "manager": 2,
+            "jobs": []
+          }
+        ]
+      },
+      "query": "name from people where not jobs exists { }",
+      "expect": {
+        "result": [
+          {
+            "name": "Carol"
+          }
+        ]
+      }
+    },
+    {
+      "name": "prefix not over a group",
+      "tags": [
+        "sugar",
+        "not"
+      ],
+      "roots": {
+        "people": [
+          {
+            "id": 1,
+            "name": "Bob",
+            "age": 41,
+            "active": true,
+            "manager": 2,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "pay": 3
+              },
+              {
+                "employer": "Initech",
+                "pay": 1
+              }
+            ]
+          },
+          {
+            "id": 2,
+            "name": "Alice",
+            "age": 52,
+            "active": true,
+            "jobs": [
+              {
+                "employer": "Initech",
+                "pay": 5
+              }
+            ]
+          },
+          {
+            "id": 3,
+            "name": "Carol",
+            "age": 29,
+            "active": false,
+            "manager": 2,
+            "jobs": []
+          }
+        ]
+      },
+      "query": "name from people where not (age > 40)",
+      "expect": {
+        "result": [
+          {
+            "name": "Carol"
+          }
+        ]
+      }
+    },
+    {
+      "name": "prefix is over a group",
+      "tags": [
+        "sugar",
+        "is"
+      ],
+      "roots": {
+        "people": [
+          {
+            "id": 1,
+            "name": "Bob",
+            "age": 41,
+            "active": true,
+            "manager": 2,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "pay": 3
+              },
+              {
+                "employer": "Initech",
+                "pay": 1
+              }
+            ]
+          },
+          {
+            "id": 2,
+            "name": "Alice",
+            "age": 52,
+            "active": true,
+            "jobs": [
+              {
+                "employer": "Initech",
+                "pay": 5
+              }
+            ]
+          },
+          {
+            "id": 3,
+            "name": "Carol",
+            "age": 29,
+            "active": false,
+            "manager": 2,
+            "jobs": []
+          }
+        ]
+      },
+      "query": "name from people where is (age > 40)",
+      "expect": {
+        "result": [
+          {
+            "name": "Bob"
+          },
+          {
+            "name": "Alice"
+          }
+        ]
+      }
+    },
+    {
+      "name": "infix is over scalars is equality",
+      "tags": [
+        "sugar",
+        "is"
+      ],
+      "roots": {
+        "r": [
+          {
+            "n": 1,
+            "ok": true
+          },
+          {
+            "n": 2,
+            "ok": false
+          },
+          {
+            "n": 3
+          }
+        ]
+      },
+      "query": "a: n is 1, b: n is \"1\", c: ok is true from r",
+      "expect": {
+        "result": [
+          {
+            "a": true,
+            "b": false,
+            "c": true
+          },
+          {
+            "a": false,
+            "b": false,
+            "c": false
+          },
+          {
+            "a": false,
+            "b": false,
+            "c": false
+          }
+        ]
+      }
+    },
+    {
+      "name": "infix is over absent",
+      "tags": [
+        "sugar",
+        "is",
+        "absent"
+      ],
+      "roots": {
+        "r": [
+          {
+            "n": 1,
+            "ok": true
+          },
+          {
+            "n": 2,
+            "ok": false
+          },
+          {
+            "n": 3
+          }
+        ]
+      },
+      "query": "a: nope is null, b: null is nope, c: nope is not null, d: ok is null from r",
+      "expect": {
+        "result": [
+          {
+            "a": true,
+            "b": true,
+            "c": false,
+            "d": false
+          },
+          {
+            "a": true,
+            "b": true,
+            "c": false,
+            "d": false
+          },
+          {
+            "a": true,
+            "b": true,
+            "c": false,
+            "d": true
+          }
+        ]
+      }
+    },
+    {
+      "name": "is compares rows by id",
+      "tags": [
+        "sugar",
+        "is",
+        "identity"
+      ],
+      "notes": "Two rows with id 1 are the same row whatever else they hold; both see two matches, the id-2 row one.",
+      "roots": {
+        "q": [
+          {
+            "id": 1,
+            "x": 1
+          },
+          {
+            "id": 1,
+            "x": 2
+          },
+          {
+            "id": 2,
+            "x": 1
+          }
+        ]
+      },
+      "query": "q count { ^q count { $it is ^$it } == 2 }",
+      "expect": {
+        "result": 2
+      }
+    },
+    {
+      "name": "is compares id-less rows structurally",
+      "tags": [
+        "sugar",
+        "is",
+        "identity"
+      ],
+      "roots": {
+        "q": [
+          {
+            "x": 1
+          },
+          {
+            "x": 1
+          },
+          {
+            "x": 2
+          }
+        ]
+      },
+      "query": "q count { ^q count { $it is ^$it } == 2 }",
+      "expect": {
+        "result": 2
+      }
+    },
+    {
+      "name": "is compares arrays and objects structurally",
+      "tags": [
+        "sugar",
+        "is",
+        "identity"
+      ],
+      "roots": {
+        "q": [
+          {
+            "a": [
+              1,
+              2
+            ],
+            "b": [
+              1,
+              2
+            ],
+            "c": [
+              2,
+              1
+            ],
+            "o": {
+              "k": 1,
+              "m": 2
+            },
+            "p": {
+              "m": 2,
+              "k": 1
+            }
+          }
+        ]
+      },
+      "query": "x: a is b, y: a is c, z: o is p from q",
+      "expect": {
+        "result": [
+          {
+            "x": true,
+            "y": false,
+            "z": true
+          }
+        ]
+      }
+    },
+    {
+      "name": "is never conflates types",
+      "tags": [
+        "sugar",
+        "is"
+      ],
+      "roots": {
+        "r": [
+          {
+            "n": 1,
+            "ok": true
+          },
+          {
+            "n": 2,
+            "ok": false
+          },
+          {
+            "n": 3
+          }
+        ]
+      },
+      "query": "x: n is true, y: n is \"1\", z: ok is 1 from r",
+      "expect": {
+        "result": [
+          {
+            "x": false,
+            "y": false,
+            "z": false
+          },
+          {
+            "x": false,
+            "y": false,
+            "z": false
+          },
+          {
+            "x": false,
+            "y": false,
+            "z": false
+          }
+        ]
+      }
+    },
+    {
+      "name": "is not",
+      "tags": [
+        "sugar",
+        "is"
+      ],
+      "roots": {
+        "r": [
+          {
+            "n": 1,
+            "ok": true
+          },
+          {
+            "n": 2,
+            "ok": false
+          },
+          {
+            "n": 3
+          }
+        ]
+      },
+      "query": "v: n is not 1 from r",
+      "expect": {
+        "result": [
+          {
+            "v": false
+          },
+          {
+            "v": true
+          },
+          {
+            "v": true
+          }
+        ]
+      }
+    },
+    {
+      "name": "is does not chain",
+      "tags": [
+        "sugar",
+        "is"
+      ],
+      "roots": {
+        "r": [
+          {
+            "n": 1,
+            "ok": true
+          },
+          {
+            "n": 2,
+            "ok": false
+          },
+          {
+            "n": 3
+          }
+        ]
+      },
+      "query": "from r where a is b is c",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "comparisons do not chain"
+          ]
+        }
+      }
+    },
+    {
+      "name": "is does not chain with ==",
+      "tags": [
+        "sugar",
+        "is"
+      ],
+      "roots": {
+        "r": [
+          {
+            "n": 1,
+            "ok": true
+          },
+          {
+            "n": 2,
+            "ok": false
+          },
+          {
+            "n": 3
+          }
+        ]
+      },
+      "query": "from r where a == b is c",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "comparisons do not chain"
+          ]
+        }
+      }
+    },
+    {
+      "name": "is after a group in where",
+      "tags": [
+        "sugar",
+        "is",
+        "where"
+      ],
+      "roots": {
+        "r": [
+          {
+            "n": 1,
+            "ok": true
+          },
+          {
+            "n": 2,
+            "ok": false
+          },
+          {
+            "n": 3
+          }
+        ]
+      },
+      "query": "n values from r where (n || 0) is 1",
+      "expect": {
+        "result": [
+          1
+        ]
+      }
+    },
+    {
+      "name": "is as a where leaf",
+      "tags": [
+        "sugar",
+        "is",
+        "where"
+      ],
+      "roots": {
+        "people": [
+          {
+            "id": 1,
+            "name": "Bob",
+            "age": 41,
+            "active": true,
+            "manager": 2,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "pay": 3
+              },
+              {
+                "employer": "Initech",
+                "pay": 1
+              }
+            ]
+          },
+          {
+            "id": 2,
+            "name": "Alice",
+            "age": 52,
+            "active": true,
+            "jobs": [
+              {
+                "employer": "Initech",
+                "pay": 5
+              }
+            ]
+          },
+          {
+            "id": 3,
+            "name": "Carol",
+            "age": 29,
+            "active": false,
+            "manager": 2,
+            "jobs": []
+          }
+        ]
+      },
+      "query": "name from people where active is true",
+      "expect": {
+        "result": [
+          {
+            "name": "Bob"
+          },
+          {
+            "name": "Alice"
+          }
+        ]
+      }
+    },
+    {
+      "name": "is is a reserved word",
+      "tags": [
+        "sugar",
+        "is",
+        "keywords"
+      ],
+      "roots": {
+        "q": [
+          {
+            "is": 1
+          }
+        ]
+      },
+      "query": "is from q",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "expected a value"
+          ]
+        }
+      }
+    },
+    {
+      "name": "not is a reserved word",
+      "tags": [
+        "sugar",
+        "not",
+        "keywords"
+      ],
+      "roots": {
+        "q": [
+          {
+            "not": 1
+          }
+        ]
+      },
+      "query": "select not from q",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "expected a value"
+          ]
+        }
+      }
+    },
+    {
+      "name": "is not followed by a value is the prefix chain",
+      "tags": [
+        "sugar",
+        "is"
+      ],
+      "notes": "`is not` is the compound infix operator, never `a is (not b)`.",
+      "roots": {
+        "q": [
+          {
+            "a": 1,
+            "b": 1
+          },
+          {
+            "a": 1,
+            "b": 2
+          }
+        ]
+      },
+      "query": "v: a is not b from q",
+      "expect": {
+        "result": [
+          {
+            "v": false
+          },
+          {
+            "v": true
+          }
+        ]
+      }
+    },
+    {
+      "name": "a select item may use an earlier alias",
+      "tags": [
+        "sugar",
+        "aliases"
+      ],
+      "roots": {
+        "people": [
+          {
+            "id": 1,
+            "name": "Bob",
+            "age": 41,
+            "active": true,
+            "manager": 2,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "pay": 3
+              },
+              {
+                "employer": "Initech",
+                "pay": 1
+              }
+            ]
+          },
+          {
+            "id": 2,
+            "name": "Alice",
+            "age": 52,
+            "active": true,
+            "jobs": [
+              {
+                "employer": "Initech",
+                "pay": 5
+              }
+            ]
+          },
+          {
+            "id": 3,
+            "name": "Carol",
+            "age": 29,
+            "active": false,
+            "manager": 2,
+            "jobs": []
+          }
+        ]
+      },
+      "query": "name, up: name.upper(), both: up + \"!\" from people where id == 1",
+      "expect": {
+        "result": [
+          {
+            "name": "Bob",
+            "up": "BOB",
+            "both": "BOB!"
+          }
+        ]
+      }
+    },
+    {
+      "name": "alias chains resolve left to right",
+      "tags": [
+        "sugar",
+        "aliases"
+      ],
+      "roots": {
+        "r": [
+          {
+            "n": 1,
+            "ok": true
+          },
+          {
+            "n": 2,
+            "ok": false
+          },
+          {
+            "n": 3
+          }
+        ]
+      },
+      "query": "a: n + 1, b: a * 2, c: b - 1 from r",
+      "expect": {
+        "result": [
+          {
+            "a": 2,
+            "b": 4,
+            "c": 3
+          },
+          {
+            "a": 3,
+            "b": 6,
+            "c": 5
+          },
+          {
+            "a": 4,
+            "b": 8,
+            "c": 7
+          }
+        ]
+      }
+    },
+    {
+      "name": "an alias shadows a row field in later items",
+      "tags": [
+        "sugar",
+        "aliases"
+      ],
+      "notes": "Inside its own expression `n` is the row field; in the items after it, the alias.",
+      "roots": {
+        "r": [
+          {
+            "n": 1,
+            "ok": true
+          },
+          {
+            "n": 2,
+            "ok": false
+          },
+          {
+            "n": 3
+          }
+        ]
+      },
+      "query": "n: n * 10, m: n from r",
+      "expect": {
+        "result": [
+          {
+            "n": 10,
+            "m": 10
+          },
+          {
+            "n": 20,
+            "m": 20
+          },
+          {
+            "n": 30,
+            "m": 30
+          }
+        ]
+      }
+    },
+    {
+      "name": "a forward reference is an error",
+      "tags": [
+        "sugar",
+        "aliases"
+      ],
+      "roots": {
+        "r": [
+          {
+            "n": 1,
+            "ok": true
+          },
+          {
+            "n": 2,
+            "ok": false
+          },
+          {
+            "n": 3
+          }
+        ]
+      },
+      "query": "a: b + 1, b: 1 from r",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "'b'",
+            "to its left"
+          ]
+        }
+      }
+    },
+    {
+      "name": "an alias cycle is an error",
+      "tags": [
+        "sugar",
+        "aliases"
+      ],
+      "roots": {
+        "r": [
+          {
+            "n": 1,
+            "ok": true
+          },
+          {
+            "n": 2,
+            "ok": false
+          },
+          {
+            "n": 3
+          }
+        ]
+      },
+      "query": "a: b, b: a from r",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "cycle"
+          ]
+        }
+      }
+    },
+    {
+      "name": "a block alias inlines as a value",
+      "tags": [
+        "sugar",
+        "aliases",
+        "brackets"
+      ],
+      "roots": {
+        "people": [
+          {
+            "id": 1,
+            "name": "Bob",
+            "age": 41,
+            "active": true,
+            "manager": 2,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "pay": 3
+              },
+              {
+                "employer": "Initech",
+                "pay": 1
+              }
+            ]
+          },
+          {
+            "id": 2,
+            "name": "Alice",
+            "age": 52,
+            "active": true,
+            "jobs": [
+              {
+                "employer": "Initech",
+                "pay": 5
+              }
+            ]
+          },
+          {
+            "id": 3,
+            "name": "Carol",
+            "age": 29,
+            "active": false,
+            "manager": 2,
+            "jobs": []
+          }
+        ]
+      },
+      "query": "boss: ^people[id == ^manager], bossName: boss.name from people where id == 1",
+      "expect": {
+        "result": [
+          {
+            "boss": {
+              "id": 2,
+              "name": "Alice",
+              "age": 52,
+              "active": true,
+              "jobs": [
+                {
+                  "employer": "Initech",
+                  "pay": 5
+                }
+              ]
+            },
+            "bossName": "Alice"
+          }
+        ]
+      }
+    },
+    {
+      "name": "an alias reused in a later item and in where",
+      "tags": [
+        "sugar",
+        "aliases",
+        "where"
+      ],
+      "roots": {
+        "r": [
+          {
+            "n": 1,
+            "ok": true
+          },
+          {
+            "n": 2,
+            "ok": false
+          },
+          {
+            "n": 3
+          }
+        ]
+      },
+      "query": "a: n * 10, b: a + 1 from r where b > 25",
+      "expect": {
+        "result": [
+          {
+            "a": 30,
+            "b": 31
+          }
+        ]
+      }
+    },
+    {
+      "name": "nested blocks do not see the enclosing aliases",
+      "tags": [
+        "sugar",
+        "aliases",
+        "scopes"
+      ],
+      "roots": {
+        "q": [
+          {
+            "n": 1,
+            "a": 1
+          },
+          {
+            "n": 2
+          }
+        ]
+      },
+      "query": "a: n, js: ^q { a == 1 } from q",
+      "expect": {
+        "result": [
+          {
+            "a": 1,
+            "js": [
+              {
+                "n": 1,
+                "a": 1
+              }
+            ]
+          },
+          {
+            "a": 2,
+            "js": [
+              {
+                "n": 1,
+                "a": 1
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "an alias keeps the surface form in the tree",
+      "tags": [
+        "sugar",
+        "aliases"
+      ],
+      "notes": "Resolution happens in resolveAliases, not the parser (AST.md §2); the result is the resolved value.",
+      "roots": {
+        "r": [
+          {
+            "n": 1,
+            "ok": true
+          },
+          {
+            "n": 2,
+            "ok": false
+          },
+          {
+            "n": 3
+          }
+        ]
+      },
+      "query": "a: n, b: a from r",
+      "expect": {
+        "result": [
+          {
+            "a": 1,
+            "b": 1
+          },
+          {
+            "a": 2,
+            "b": 2
+          },
+          {
+            "a": 3,
+            "b": 3
+          }
+        ]
+      }
+    },
+    {
+      "name": "and is &&",
+      "tags": [
+        "sugar",
+        "and-or"
+      ],
+      "roots": {
+        "r": [
+          {
+            "n": 1,
+            "ok": true
+          },
+          {
+            "n": 2,
+            "ok": false
+          },
+          {
+            "n": 3
+          }
+        ]
+      },
+      "query": "r collect { n > 1 and ok == false }",
+      "expect": {
+        "result": [
+          {
+            "n": 2,
+            "ok": false
+          }
+        ]
+      }
+    },
+    {
+      "name": "or is ||",
+      "tags": [
+        "sugar",
+        "and-or"
+      ],
+      "roots": {
+        "r": [
+          {
+            "n": 1,
+            "ok": true
+          },
+          {
+            "n": 2,
+            "ok": false
+          },
+          {
+            "n": 3
+          }
+        ]
+      },
+      "query": "r collect { n == 1 or n == 3 }",
+      "expect": {
+        "result": [
+          {
+            "n": 1,
+            "ok": true
+          },
+          {
+            "n": 3
+          }
+        ]
+      }
+    },
+    {
+      "name": "and with a consumer test",
+      "tags": [
+        "sugar",
+        "and-or",
+        "consumers"
+      ],
+      "roots": {
+        "people": [
+          {
+            "id": 1,
+            "name": "Bob",
+            "age": 41,
+            "active": true,
+            "manager": 2,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "pay": 3
+              },
+              {
+                "employer": "Initech",
+                "pay": 1
+              }
+            ]
+          },
+          {
+            "id": 2,
+            "name": "Alice",
+            "age": 52,
+            "active": true,
+            "jobs": [
+              {
+                "employer": "Initech",
+                "pay": 5
+              }
+            ]
+          },
+          {
+            "id": 3,
+            "name": "Carol",
+            "age": 29,
+            "active": false,
+            "manager": 2,
+            "jobs": []
+          }
+        ]
+      },
+      "query": "people count { jobs exists { } and age > 40 }",
+      "expect": {
+        "result": 2
+      }
+    },
+    {
+      "name": "and with is not",
+      "tags": [
+        "sugar",
+        "and-or",
+        "is"
+      ],
+      "roots": {
+        "r": [
+          {
+            "n": 1,
+            "ok": true
+          },
+          {
+            "n": 2,
+            "ok": false
+          },
+          {
+            "n": 3
+          }
+        ]
+      },
+      "query": "r collect { ok is not true and n > 1 }",
+      "expect": {
+        "result": [
+          {
+            "n": 2,
+            "ok": false
+          },
+          {
+            "n": 3
+          }
+        ]
+      }
+    },
+    {
+      "name": "or with prefix not and infix is",
+      "tags": [
+        "sugar",
+        "and-or",
+        "is",
+        "not"
+      ],
+      "roots": {
+        "r": [
+          {
+            "n": 1,
+            "ok": true
+          },
+          {
+            "n": 2,
+            "ok": false
+          },
+          {
+            "n": 3
+          }
+        ]
+      },
+      "query": "r collect { not ok or n is 1 }",
+      "expect": {
+        "result": [
+          {
+            "n": 1,
+            "ok": true
+          },
+          {
+            "n": 2,
+            "ok": false
+          },
+          {
+            "n": 3
+          }
+        ]
+      }
+    },
+    {
+      "name": "or in value position coalesces",
+      "tags": [
+        "sugar",
+        "and-or",
+        "values"
+      ],
+      "roots": {
+        "q": [
+          {
+            "title": "T",
+            "path": "p1"
+          },
+          {
+            "path": "p2"
+          }
+        ]
+      },
+      "query": "v: title or path from q",
+      "expect": {
+        "result": [
+          {
+            "v": "T"
+          },
+          {
+            "v": "p2"
+          }
+        ]
+      }
+    },
+    {
+      "name": "and in value position yields the deciding operand",
+      "tags": [
+        "sugar",
+        "and-or"
+      ],
+      "roots": {
+        "r": [
+          {
+            "n": 1,
+            "ok": true
+          },
+          {
+            "n": 2,
+            "ok": false
+          },
+          {
+            "n": 3
+          }
+        ]
+      },
+      "query": "v: ok and n from r",
+      "expect": {
+        "result": [
+          {
+            "v": 1
+          },
+          {
+            "v": false
+          },
+          {}
+        ]
+      }
+    },
+    {
+      "name": "and binds tighter than or, as && does",
+      "tags": [
+        "sugar",
+        "and-or",
+        "precedence"
+      ],
+      "roots": {
+        "r": [
+          {
+            "n": 1,
+            "ok": true
+          },
+          {
+            "n": 2,
+            "ok": false
+          },
+          {
+            "n": 3
+          }
+        ]
+      },
+      "query": "r collect { n == 1 or n == 2 and ok == false }",
+      "expect": {
+        "result": [
+          {
+            "n": 1,
+            "ok": true
+          },
+          {
+            "n": 2,
+            "ok": false
+          }
+        ]
+      }
+    },
+    {
+      "name": "the words and the symbols mix",
+      "tags": [
+        "sugar",
+        "and-or"
+      ],
+      "roots": {
+        "r": [
+          {
+            "n": 1,
+            "ok": true
+          },
+          {
+            "n": 2,
+            "ok": false
+          },
+          {
+            "n": 3
+          }
+        ]
+      },
+      "query": "r collect { n > 1 && ok == false or n == 1 }",
+      "expect": {
+        "result": [
+          {
+            "n": 1,
+            "ok": true
+          },
+          {
+            "n": 2,
+            "ok": false
+          }
+        ]
+      }
+    },
+    {
+      "name": "and short-circuits like &&",
+      "tags": [
+        "sugar",
+        "and-or",
+        "logical"
+      ],
+      "notes": "The right operand is never evaluated, so the unknown function never raises.",
+      "roots": {
+        "r": [
+          {
+            "n": 1,
+            "ok": true
+          },
+          {
+            "n": 2,
+            "ok": false
+          },
+          {
+            "n": 3
+          }
+        ]
+      },
+      "query": "r count { false and foo(1) }",
+      "expect": {
+        "result": 0
+      }
+    },
+    {
+      "name": "or short-circuits like ||",
+      "tags": [
+        "sugar",
+        "and-or",
+        "logical"
+      ],
+      "roots": {
+        "r": [
+          {
+            "n": 1,
+            "ok": true
+          },
+          {
+            "n": 2,
+            "ok": false
+          },
+          {
+            "n": 3
+          }
+        ]
+      },
+      "query": "r count { true or foo(1) }",
+      "expect": {
+        "result": 3
+      }
+    },
+    {
+      "name": "and and or are reserved words",
+      "tags": [
+        "sugar",
+        "and-or",
+        "keywords"
+      ],
+      "roots": {
+        "q": [
+          {
+            "and": 1
+          }
+        ]
+      },
+      "query": "select and from q",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "expected a projection name"
+          ]
+        }
+      }
+    },
+    {
+      "name": "and in a top-level where",
+      "tags": [
+        "sugar",
+        "and-or",
+        "where"
+      ],
+      "roots": {
+        "people": [
+          {
+            "id": 1,
+            "name": "Bob",
+            "age": 41,
+            "active": true,
+            "manager": 2,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "pay": 3
+              },
+              {
+                "employer": "Initech",
+                "pay": 1
+              }
+            ]
+          },
+          {
+            "id": 2,
+            "name": "Alice",
+            "age": 52,
+            "active": true,
+            "jobs": [
+              {
+                "employer": "Initech",
+                "pay": 5
+              }
+            ]
+          },
+          {
+            "id": 3,
+            "name": "Carol",
+            "age": 29,
+            "active": false,
+            "manager": 2,
+            "jobs": []
+          }
+        ]
+      },
+      "query": "name from people where age > 40 and active",
+      "expect": {
+        "result": [
+          {
+            "name": "Bob"
+          },
+          {
+            "name": "Alice"
+          }
+        ]
+      }
+    },
+    {
+      "name": "and inside a bracket predicate",
+      "tags": [
+        "sugar",
+        "and-or",
+        "brackets"
+      ],
+      "roots": {
+        "people": [
+          {
+            "id": 1,
+            "name": "Bob",
+            "age": 41,
+            "active": true,
+            "manager": 2,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "pay": 3
+              },
+              {
+                "employer": "Initech",
+                "pay": 1
+              }
+            ]
+          },
+          {
+            "id": 2,
+            "name": "Alice",
+            "age": 52,
+            "active": true,
+            "jobs": [
+              {
+                "employer": "Initech",
+                "pay": 5
+              }
+            ]
+          },
+          {
+            "id": 3,
+            "name": "Carol",
+            "age": 29,
+            "active": false,
+            "manager": 2,
+            "jobs": []
+          }
+        ]
+      },
+      "query": "j: jobs[pay > 1 and employer == \"Initech\"] from people where id == 2",
+      "expect": {
+        "result": [
+          {
+            "j": {
+              "employer": "Initech",
+              "pay": 5
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "and in a follow where option",
+      "tags": [
+        "sugar",
+        "and-or",
+        "follow"
+      ],
+      "roots": {
+        "t": [
+          {
+            "id": 1,
+            "children": [
+              {
+                "id": 2,
+                "children": [
+                  {
+                    "id": 3
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "query": "select id from t where id == 1 follow children { where id > 1 and id < 3 }",
+      "expect": {
+        "result": [
+          {
+            "id": 1
+          },
+          {
+            "id": 2
+          }
+        ]
+      }
+    }
+  ]
+}

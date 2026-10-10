@@ -113,7 +113,37 @@ by code point (case-sensitive), booleans by value. **Two absent values are
 equal** (`nope == null` is true), and absent equals nothing else. `!=` is the
 exact negation, so `nope != 5` is true and `nope != null` is false.
 Equality between two arrays or two objects is **not specified** (the reference
-uses host reference identity; fixtures do not rely on it). [`scalar-equality`]
+uses host reference identity; fixtures do not rely on it) — compare them with
+`is` (§5b). [`scalar-equality`]
+
+### 5b. Identity comparison (`is`, `is not`) and the required value (`x!`)
+
+(since 0.17) `x is y` is true iff the two operands have the **same identity**
+as §16 defines it — the notion `distinct` and `follow` already use: each side
+is taken through the context's `identity` (a row's `id` property when the row is
+an object with one, else the value itself) and the two identities compare
+**structurally** (absent ≡ `null`; numbers as doubles; strings by code point;
+arrays element-wise; objects by own keys, order ignored; types never conflated).
+`x is not y` is the exact negation. Consequences: for scalars `is` and `==`
+coincide (`1 is 1`, `"a" is "a"`, `1 is "1"` is false, `nope is null` is
+true and `nope is not null` false); two rows carrying the same `id` are the
+same whatever else they hold; id-less rows are the same iff structurally equal,
+in both implementations (so `$it is ^$it` compares rows, which `==` leaves
+unspecified). `is` is at comparison precedence and does not chain. The prefix
+forms are sugar: `is x` ≡ `!!x` (truthiness, §4), `not x` ≡ `!x`. Whether `in`
+over rows should compare identities is **deferred** — it still uses `==` (§9).
+[`sugar`]
+
+`x!` — the **required** value — is `x` when `x` is present, and an **eval
+error** when `x` is absent (`null` or missing), whose message is
+`` `<x>!` is absent `` with `<x>` the canonical print of the expression
+(AST.md §6) and, when the current scope's row has a scalar identity (its `id`
+property), the suffix `` on <identity> `` (`on 7`, `on "d_1"`). It is never a
+filter and never a coercion: `0!`, `""!` and `false!` are the values. It binds
+tightest (`-a!` is `-(a!)`, `!a!` is `!(a!)`, `a!.b` requires `a`, `a.b!`
+requires `a.b`). Over a bracket lookup, `x[n]!` requires the positional row and
+`x[p]!` requires exactly one match (GRAMMAR §4): zero is this error over the
+`single` directive, many is the `single` error. [`sugar`, `errors-eval`]
 
 ## 6. Ordering comparisons (`<`, `<=`, `>`, `>=`)
 
@@ -155,7 +185,8 @@ not appear in a fixture. [`arithmetic`]
 
 Outside the `where` tree, `&&` and `||` are value-producing: `a && b` yields
 `a` when `a` is falsy, else `b`; `a || b` yields `a` when `a` is truthy, else
-`b`. `!x` yields a boolean. Evaluation is **strictly left to right and
+`b`. The words `and` / `or` are exact synonyms of the symbols (since 0.17) —
+one operator each, so `title or $path` coalesces. `!x` yields a boolean. Evaluation is **strictly left to right and
 short-circuits**: the right operand is never evaluated when the left decides,
 so `false && foo()` is `false` even though `foo` is unknown. [`projection`,
 `logical`]
@@ -344,28 +375,34 @@ The rows a test sees are the receiver's rows (§3), re-projected by the block's
 `from`, filtered by its `where`, ordered, deduped by `distinct`, and bounded by
 `limit`/`offset` (§18) — so `exists { offset 1 }` asks for a second row.
 
-**`&&` and `||` evaluate strictly left to right and short-circuit**, in `where`
-exactly as in value position (§8). The engine never reorders conjuncts — not
+**`&&` and `||` (`and` / `or`) evaluate strictly left to right and
+short-circuit**, in `where` exactly as in value position (§8). The engine never reorders conjuncts — not
 even to run a cheap scalar before a consumer test — because evaluation order is
 observable through errors: `false && foo(1)` is false, `xs none { } && foo(1)`
 is false when `xs` has rows, and `true && foo(1)` raises `unknown function`. A
 query may therefore guard an operand by position (`has(s) && s.matches(re)`).
 [`where`, `logical`, `consumers`, `limit-offset`]
 
-## 14. Select aliases in `where`
+## 14. Select aliases in `where` and in later `select` items
 
 A bare identifier in a body's `where` that names an alias of the **same body's**
-`select` is replaced by that alias's expression before evaluation. The parser
+`select` is replaced by that alias's expression before evaluation. Since 0.17
+the same holds for a bare identifier in a `select` item that names an item **to
+its left** (`boss: ^people[id == ^manager], bossName: boss.name`; a nested
+directive alias inlines as a value-position directive): items resolve left to
+right, each against the already-resolved items before it; a reference to an
+item to its right is a parse error, as is a chain that returns to an item. The parser
 keeps the identifier in the tree and only validates the reference (AST.md §2);
 the substitution is the pure function `resolveAliases` / `resolve_aliases`,
 which the run entry points apply exactly once (it is not idempotent:
 `name: name.upper() … where name` resolves to `name.upper()`, whose `name` is
 the row field). An engine evaluates the query it is given. Rules:
 
-- an alias shadows a same-named row field inside `where`;
+- an alias shadows a same-named row field inside `where` and in the items after it;
 - an unaliased dotted item is an alias for its key (`meta.slug` → `slug`);
 - inside an alias's own expression its name is the row field (not recursion);
-  a chain of aliases that returns to one being resolved is a parse error;
+  a chain of aliases that returns to one being resolved is a parse error, and
+  so is a `select` item naming an item to its right;
 - an alias whose value is a nested `collect`/`first`/`single` block may stand
   alone as a leaf (meaning "non-empty") but not appear inside an expression;
 - nested blocks rewrite only against their own `select`; `^name` is never an
@@ -540,7 +577,8 @@ pinned by the reference's own tests. [`bindings`]
 
 Every failure is an `OqxError` whose `stage` is `lex`, `parse`, or `eval`
 (GRAMMAR §6); a host exception never escapes. Eval errors: unknown function or
-method; `single` with more than one row; an invalid `limit`/`offset` value;
+method; `single` with more than one row; a required value that is absent
+(§5b); an invalid `limit`/`offset` value (a bracket index is an `offset`);
 `follow` in a where-position directive; an invalid or unsupported regex or
 regex flag (§11);
 a range in a result (§1); a binding out of range (§22). Evaluation is otherwise

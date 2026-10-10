@@ -12,8 +12,29 @@ The `query` tool takes ONE plain OQX string (+ optional `limit`/`cursor`).
 
 CLAUSE ORDER IS FIXED: select, from, where, follow, order by, limit, offset —
 each at most once. Only `select` may drop its keyword, and only as the first
-clause. A predicate is never implicit: blocks filter with `where`
-(`nodes exists { where kind == "md:task" }`).
+clause; a block may instead LEAD with a predicate (see Sugar). `where` and later
+`select` items may use the body's `select` aliases.
+
+## Sugar (OQX 0.17)
+
+Every form is shorthand for an explicit directive (the AST is the explicit form):
+  nodes { kind == "md:task" }     ≡ nodes collect { where kind == "md:task" } — a receiver block
+                                    with no consumer is collect; a block whose LEADING expression is a
+                                    predicate (comparison, call, !/is/not, in, literal, (…), a consumer
+                                    test — anything but a bare name, a dotted path or a ^lift) is
+                                    where-first. Bare names still project (nodes { name }); filter a bare
+                                    field with nodes { is checked }. Not after follow: a brace there is options.
+  refs(x)[0]                       ≡ refs(x) first { offset 0 } (integer literal or ${binding}; out of
+                                    range ⇒ absent); refs(x)[0].$path navigates the row
+  $repo.docs[$path == ^company]    ≡ $repo.docs first { where $path == ^company } — first match or absent
+  $repo.docs[$path == ^company]!   ≡ … single { … } required: exactly one, else filter_invalid
+  title!                           required: title, or an error naming the expression (and the row's $id);
+                                    never a filter or a coercion; tightest (a!.b vs a.b!)
+  is x / not x                     ≡ !!x / !x;   x is y / x is not y  = identity (row id, else structural;
+                                    x is null = absent; scalars: is ≡ ==); comparison precedence, no chaining
+  a and b / a or b                 ≡ a && b / a || b (same precedence, short-circuit, value semantics)
+  boss: $repo.docs[$path == ^manager], bossName: boss.$title   a select item may use the items to its LEFT
+  Reserved words (never a bare field name): from where select is not and or, true false null.
 
 Results are LEAN hits — {id, path} + whatever `select` projects (or `values`,
 `count`, `exists`, `none`). Hydrate by id via nodes_get / docs_read.

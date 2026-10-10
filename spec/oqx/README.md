@@ -11,7 +11,7 @@ owned by neither of them.
 
 The spec is four artifacts, versioned together by `VERSION`:
 
-- `GRAMMAR.md` — the surface syntax: clause order, keywords, expressions, blocks, `follow`.
+- `GRAMMAR.md` — the surface syntax: clause order, keywords, expressions, blocks, `follow`, and the 0.17 sugar (implicit `collect`, where-first bodies, brackets, postfix `!`, `is`/`not`).
 - `SEMANTICS.md` — the scalar and collection rules: equality, ordering, absent handling, truthiness, arithmetic, membership, ranges, builtins (including the regex baseline), `distinct`, `limit`/`offset`, consumers.
 - `AST.md` — the abstract syntax tree as a contract (since 0.16): the node and field tables, spans, the JSON shape both implementations produce, the traversal and canonical-printer laws.
 - `cases/*.json` — the executable fixtures. **When prose and fixtures disagree, the fixtures win**, and the prose gets fixed.

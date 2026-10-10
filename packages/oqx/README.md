@@ -16,7 +16,7 @@ JavaScript tagged template.
 > OQX is a language with more than one implementation; the specification is
 > [`spec/oqx`](https://github.com/omgbase/omgbase/tree/main/spec/oqx). The
 > language version is the package version's `major.minor` (`LANGUAGE_VERSION`,
-> `"0.16"`); the patch digit is this implementation's own.
+> `"0.17"`); the patch digit is this implementation's own.
 > Requirements: Node ≥ 22.13 for `@omgbase/oqx/sqlite`; Node ≥ 22.18 to run the
 > test suite (see [Requirements](#requirements)).
 
@@ -65,9 +65,12 @@ from <collection>          from ${people}
 
 **`select` is the only keyword you may drop, and only when the projection comes
 first** (`name, id from ${people}`). Every other clause always carries its
-keyword — in particular a predicate is never implicit, so a block filters with
-`where` (`jobs exists { where !end }`), and `from ${people} count` is an error
-rather than a projection of a field called `count`. Writing a clause out of
+keyword — with one piece of sugar (0.17): a **block** whose leading expression
+is syntactically a predicate is a `where`-first body (`jobs exists { !end }` ≡
+`jobs exists { where !end }`; a bare name still projects, so `jobs { employer }`
+projects and `jobs { is current }` filters — see §10). At the top level a
+predicate always needs `where`, and `from ${people} count` is an error rather
+than a projection of a field called `count`. Writing a clause out of
 order is a parse error that names the order (`` `select` must come before
 `from` — OQX clause order is select, from, where, follow, order by, limit,
 offset ``). The same body grammar applies inside every consumer block
@@ -643,14 +646,60 @@ with `^` the enclosing scope, as the body does. Give `follow` a stable identity
 (`.id` or `by`) when your relation returns fresh objects rather than shared
 references.
 
+### 10. Sugar (0.17)
+
+Every form below is shorthand for an explicit directive — it **desugars in the
+parser** to the nodes you already know (`print` writes the explicit form, the
+optimizer and any pushdown planner see it), so nothing here has semantics of its
+own except the postfix `!` and the infix `is`:
+
+```js
+// A receiver block without a consumer is `collect`; a block whose LEADING
+// expression is syntactically a predicate drops `where`.
+oqx`name, current: jobs { !end_date } from ${people}`
+//   ≡ name, current: jobs collect { where !end_date } from ${people}
+oqx`${people} { age > 40 }`                  // ≡ ${people} collect { where age > 40 }
+oqx`${people} count { jobs exists { } }`     // a consumer test is predicate-shaped too
+oqx`${people} first { name }`                // a bare name still projects — unchanged
+oqx`${people} first { is active }`           // the bare-field filter: `is x` ≡ `!!x`, `not x` ≡ `!x`
+
+// Brackets: `[p]` is `first { where p }`, `[n]` is `first { offset n }`;
+// a trailing `!` requires the result (and makes the predicate form `single`).
+oqx`name, boss: ^people[id == ^manager].name from ${people}`   // the first match, navigated
+oqx`name, first_job: jobs[0], primary: jobs[pay > 2]! from ${people}`
+//   jobs[0]          ≡ jobs first { offset 0 }        (out of range ⇒ absent)
+//   jobs[pay > 2]!   ≡ jobs single { where pay > 2 }!  (zero or many matches ⇒ an eval error)
+
+// Postfix `!` — required: the value, or an eval error naming the expression
+// (and the row's id). Never a filter, never a coercion: 0! and ""! are values.
+oqx`select id!, title from ${docs}`           // insist on an identity before a write
+// Tightest precedence: `refs(c)[0]!.name` requires the lookup, `refs(c)[0].name!` the name.
+
+// `is` / `is not` compare IDENTITY (a row's id when present, else structurally):
+oqx`name from ${people} where manager is null`            // absent (same as == null)
+oqx`${people} count { ^people exists { $it is ^$it } }`   // rows compare; `==` leaves that unspecified
+// `and` / `or` are exact synonyms of `&&` / `||`: `title or path` coalesces.
+
+// A select item may use the items to its left (inlined like a `where` alias):
+oqx`boss: ^people[id == ^manager], bossName: boss.name from ${people}`
+```
+
+Reserved words, never a bare field name: `from where select is not and or` and
+the literal words `true false null`. The top level is unchanged — `age > 15
+from ${people}` stays an error, because `where` would precede `from`.
+
 ### Cheat-sheet
 
 ```
 select … from … where … follow … order by … limit N offset N   the fixed clause order (each at most once)
 name, alias: expr, nested: rel collect { … }   projection (`select` may be dropped only here, in first position)
 from ${source}                                  source collection (required at the top level)
-where a == b && rel exists { where … } || !c    predicate tree + nested ops (`where` is never implicit)
-where alias                                      `where` may use this body's select aliases (resolved before evaluation; an alias shadows a field)
+where a == b && rel exists { where … } || !c    predicate tree + nested ops (`and`/`or` ≡ `&&`/`||`)
+rel { pay > 2 }  /  rel { employer }            a block without a consumer is collect; a leading predicate is where-first, a bare name projects
+rel[p]  /  rel[p]!  /  rel[0]  /  rel[0]!       first match / exactly one (required) / positional / required positional
+x!                                               required: the value, or an error when absent (tightest; `a!.b` vs `a.b!`)
+is x / not x  /  x is y / x is not y             truthiness (≡ !!x / !x) / identity (a row's id, else structural; absent ≡ null)
+where alias  /  a: expr, b: a                    `where` and later items may use this body's select aliases (resolved before evaluation; an alias shadows a field)
 where rel none { … }                             zero rows (≡ !rel exists { … }; "all" = none over the complement)
 where x in lo..hi / lo...hi / ..hi / lo..        range membership (incl. / excl. / open-ended)
 where x in range(field)                          coerce a string field to a range, then test coverage
@@ -713,7 +762,7 @@ const rewritten = transform(q, (e) => (e.kind === "ident" && e.name === "name" ?
 print(rewritten);
 // 'select name: person.name, n: jobs collect { employer: employer } from people where jobs exists { where !end }'
 
-toJSON(q);        // { oqx: "0.16", kind: "query", span: [0, 93], … } — the shared JSON document
+toJSON(q);        // { oqx: "0.17", kind: "query", span: [0, 93], … } — the shared JSON document
 stripSpans(q);    // the same tree without spans, for shape comparisons
 ```
 
@@ -1122,7 +1171,7 @@ adapter lives on the `@omgbase/oqx/sqlite` subpath.
   the display source of a template.
 - `build` — the node builders (`build.query`, `build.op`, `build.subquery`,
   `build.field`, `build.ident`, …).
-- `LANGUAGE_VERSION` — the `spec/oqx/VERSION` this implementation conforms to (`"0.16"`).
+- `LANGUAGE_VERSION` — the `spec/oqx/VERSION` this implementation conforms to (`"0.17"`).
 
 **Types**
 

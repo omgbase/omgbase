@@ -243,7 +243,11 @@ fn children<'a>(node: Node<'a>) -> Vec<Child<'a>> {
                 }
                 out.extend(args.iter().map(|a| child(Node::Expr(a), None, 0)));
             }
-            Expr::Unary { expr, .. } => out.push(child(Node::Expr(expr), None, 0)),
+            Expr::Unary { expr, .. } | Expr::Required { expr, .. } => {
+                out.push(child(Node::Expr(expr), None, 0))
+            }
+            // A value-position directive: its receiver, then its body one deeper.
+            Expr::Op(op) => return children(Node::Op(op)),
             Expr::Binary { left, right, .. }
             | Expr::Logical { left, right, .. }
             | Expr::In { left, right, .. } => {
@@ -551,6 +555,16 @@ where
                 expr: Box::new(self.expr(expr, clause, depth)),
                 span: *span,
             },
+            Expr::Required { expr, span } => Expr::Required {
+                expr: Box::new(self.expr(expr, clause, depth)),
+                span: *span,
+            },
+            // An op is an expression only by position: its parts are mapped and
+            // the op rebuilt; `f` never sees the op itself (AST.md §1).
+            Expr::Op(op) => {
+                self.path.pop();
+                return Expr::Op(Box::new(self.op(op, clause, depth)));
+            }
             Expr::Binary {
                 op,
                 left,
@@ -602,10 +616,7 @@ where
 /// fixtures and the round-trip law compare stripped trees; a tree from
 /// [`crate::build`] is already stripped).
 pub fn strip_spans(q: &Query) -> Query {
-    let mut q = transform(q, &mut |mut e, _| {
-        *e.span_mut() = Span::EMPTY;
-        e
-    });
+    let mut q = q.clone();
     strip_query_spans(&mut q);
     q
 }
@@ -613,6 +624,8 @@ pub fn strip_spans(q: &Query) -> Query {
 fn strip_query_spans(q: &mut Query) {
     q.span = Span::EMPTY;
     q.select.iter_mut().for_each(strip_item_spans);
+    strip_expr_spans(&mut q.source);
+    q.from.iter_mut().for_each(strip_expr_spans);
     if let Some(w) = &mut q.r#where {
         strip_where_spans(w);
     }
@@ -620,13 +633,20 @@ fn strip_query_spans(q: &mut Query) {
         strip_follow_spans(f);
     }
     if let Some(o) = &mut q.order_by {
-        o.iter_mut().for_each(|s| s.span = Span::EMPTY);
+        o.iter_mut().for_each(strip_order_spans);
+    }
+    if let Some(e) = &mut q.limit {
+        strip_expr_spans(e);
+    }
+    if let Some(e) = &mut q.offset {
+        strip_expr_spans(e);
     }
 }
 
 fn strip_sub_spans(s: &mut Subquery) {
     s.span = Span::EMPTY;
     s.select.iter_mut().for_each(strip_item_spans);
+    s.from.iter_mut().for_each(strip_expr_spans);
     if let Some(w) = &mut s.r#where {
         strip_where_spans(w);
     }
@@ -634,18 +654,33 @@ fn strip_sub_spans(s: &mut Subquery) {
         strip_follow_spans(f);
     }
     if let Some(o) = &mut s.order_by {
-        o.iter_mut().for_each(|x| x.span = Span::EMPTY);
+        o.iter_mut().for_each(strip_order_spans);
     }
+    if let Some(e) = &mut s.limit {
+        strip_expr_spans(e);
+    }
+    if let Some(e) = &mut s.offset {
+        strip_expr_spans(e);
+    }
+}
+
+fn strip_order_spans(o: &mut OrderSpec) {
+    o.span = Span::EMPTY;
+    strip_expr_spans(&mut o.expr);
 }
 
 fn strip_op_spans(op: &mut OpNode) {
     op.span = Span::EMPTY;
+    strip_expr_spans(&mut op.receiver);
     strip_sub_spans(&mut op.sub);
 }
 
 fn strip_item_spans(it: &mut SelectItem) {
     match it {
-        SelectItem::Field { span, .. } => *span = Span::EMPTY,
+        SelectItem::Field { expr, span, .. } => {
+            *span = Span::EMPTY;
+            strip_expr_spans(expr);
+        }
         SelectItem::Collect { op, span, .. } => {
             *span = Span::EMPTY;
             strip_op_spans(op);
@@ -656,9 +691,16 @@ fn strip_item_spans(it: &mut SelectItem) {
 fn strip_follow_spans(f: &mut Follow) {
     f.span = Span::EMPTY;
     for d in &mut f.destinations {
-        if let FollowDestination::Block(op) = d {
-            strip_op_spans(op);
+        match d {
+            FollowDestination::Block(op) => strip_op_spans(op),
+            FollowDestination::Relation(e) => strip_expr_spans(e),
         }
+    }
+    for e in [&mut f.r#where, &mut f.frontier, &mut f.by]
+        .into_iter()
+        .flatten()
+    {
+        strip_expr_spans(e);
     }
 }
 
@@ -672,7 +714,47 @@ fn strip_where_spans(w: &mut Where) {
             *span = Span::EMPTY;
             strip_where_spans(expr);
         }
-        Where::Scalar { span, .. } => *span = Span::EMPTY,
+        Where::Scalar { expr, span } => {
+            *span = Span::EMPTY;
+            strip_expr_spans(expr);
+        }
         Where::Op(op) => strip_op_spans(op),
+    }
+}
+
+/// Every span inside an expression, including the blocks of value-position
+/// directives (which `transform` rebuilds but does not hand to its mapping).
+fn strip_expr_spans(e: &mut Expr) {
+    match e {
+        Expr::Op(op) => strip_op_spans(op),
+        other => {
+            *other.span_mut() = Span::EMPTY;
+            match other {
+                Expr::Lit { .. }
+                | Expr::Ident { .. }
+                | Expr::Outer { .. }
+                | Expr::Binding { .. } => {}
+                Expr::Member { recv, .. } => strip_expr_spans(recv),
+                Expr::Call { recv, args, .. } => {
+                    if let Some(r) = recv {
+                        strip_expr_spans(r);
+                    }
+                    args.iter_mut().for_each(strip_expr_spans);
+                }
+                Expr::Unary { expr, .. } | Expr::Required { expr, .. } => strip_expr_spans(expr),
+                Expr::Binary { left, right, .. }
+                | Expr::Logical { left, right, .. }
+                | Expr::In { left, right, .. } => {
+                    strip_expr_spans(left);
+                    strip_expr_spans(right);
+                }
+                Expr::Range { lo, hi, .. } => {
+                    for b in [lo, hi].into_iter().flatten() {
+                        strip_expr_spans(b);
+                    }
+                }
+                Expr::Op(_) => unreachable!("handled above"),
+            }
+        }
     }
 }

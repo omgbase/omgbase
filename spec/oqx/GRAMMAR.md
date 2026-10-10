@@ -16,15 +16,15 @@ Tokens:
 | Token | Form |
 | --- | --- |
 | identifier | `[A-Za-z_$][A-Za-z0-9_$]*` — `$it`, `$key`, `$depth` are ordinary identifiers with intrinsic meaning |
-| keyword | `from`, `where`, `select` — **reserved**; never usable as a bare field name (`select where from r` is a parse error) |
+| keyword | `from`, `where`, `select`, `is`, `not`, `and`, `or` — **reserved**; never usable as a bare field name (`select where from r` is a parse error). `is`, `not`, `and`, `or` are operators (§4, since 0.17) |
 | number | `digits [ "." digits ] [ ("e"\|"E") ["+"\|"-"] digits ]`. A `.` is a decimal point only when a digit follows, so `1..5` lexes as `1`, `..`, `5` and `1.5..2` as `1.5`, `..`, `2`. A **malformed number is a lex error** whose message names `malformed number`: a trailing decimal point (`1.`, `1.x`), an exponent without digits (`1e`, `1e+`), and a leading-dot numeral (`.5` — write `0.5`; `xs.0` is the same error, since a property name cannot be a digit and there is no index access) [`errors-lex`, `lexing`] |
 | string | `"…"` or `'…'`, the two quotes interchangeable. Escapes: `\n` `\t` `\r` `\0` and `\<c>` for any other character `<c>` itself (`\"`, `\'`, `\\`). An unterminated string is a lex error |
-| punctuation | `(` `)` `{` `}` `,` `:` `.` `^` |
+| punctuation | `(` `)` `{` `}` `[` `]` `,` `:` `.` `^` — `[`/`]` since 0.17 (brackets, §4) |
 | range | `..` (inclusive) and `...` (exclusive high end), scanned before `.` |
-| operator | `==` `!=` `<=` `>=` `<` `>` `&&` `\|\|` `!` `+` `-` `*` `/` `%` |
+| operator | `==` `!=` `<=` `>=` `<` `>` `&&` `\|\|` `!` `+` `-` `*` `/` `%` — `!=` is one token, so `a! == b` (a required value compared) needs the space: `a!==b` lexes as `a`, `!=`, `=` |
 | binding | a `${…}` interpolation of the tagged-template form; index `n` names the n-th bound value |
 
-Any other character (`[`, `]`, `=`, `&`, `\|`, `@`, `;`, …) is a lex error
+Any other character (`=`, `&`, `\|`, `@`, `;`, `#`, …) is a lex error
 `unexpected character …` [`errors-lex`].
 
 Keywords and identifiers are **case-sensitive**; `FROM` is an identifier
@@ -43,6 +43,12 @@ never a receiver or relation (`true exists { … }`, `follow null` are parse
 errors `… is a literal, not a collection`). A row property literally named
 `true`/`false`/`null` is unreachable by name [`errors-parse`].
 
+**Reserved words** (the one list): the keywords `from where select is not and
+or` and the literal words `true false null`. A row property with one of these
+names is unreachable by bare name. Every other word — including the contextual
+`in` (omgbase's `docs` have an `in` relation: `follow in`, `in exists { }`) and
+the consumer words — is a field name outside its position. [`sugar`]
+
 ### Bindings
 
 A query may be given as a tagged template: a list of string fragments with a
@@ -59,11 +65,25 @@ A query is one of two forms:
 ```
 query      = body                      ; the body's `from` is the source ("collect")
            | receiver consumer [ "distinct" ] "{" body "}"    ; directive form
+           | receiver "{" body "}"                             ; ≡ receiver collect { body }   (0.17)
+           | receiver bracket                                   ; `people[age > 40]` ≡ people first { where age > 40 }   (0.17)
 ```
 
 The **directive form** consumes the whole query with the named consumer; nothing
 may follow its closing brace. The **body form** always has the `collect`
 consumer and must contain `from`.
+
+**A receiver block without a consumer is `collect`** (since 0.17): `x { … }` ≡
+`x collect { … }` wherever a directive may stand — the top-level directive form
+(`docs { age > 15 }` as a whole query), select position (`js: jobs { employer }`)
+and where position (`where jobs { ^e: employer }`). The `distinct` modifier still
+needs the consumer word before it or inside the body (`x distinct { … }` is the
+parse error it was; write `x collect distinct { … }` or `x { select distinct … }`).
+**Carve-out:** in `follow` destination position a brace block after the **last**
+destination is the options block (`follow children { depth 2 }` is unchanged), so
+a destination block there keeps its explicit consumer (§`follow`). A bracket
+chain (§4) whose outermost node is a directive may also be the whole query:
+`people[age > 40]` is `people first { where age > 40 }`. [`sugar`, `ast`]
 
 ### The fixed clause order (ADR-020)
 
@@ -83,9 +103,32 @@ select  from  where  follow  order by  limit  offset
   receiver already supplied the rows.
 - **Only `select` may drop its keyword, and only when it is the first clause
   written.** `name, id from people` ≡ `select name, id from people`. After any
-  clause, a keyword-less run is an error: there is **no implicit `where`**
-  (`from people active`, `people exists { age > 50 }` are parse errors whose
-  message says to write `where`). The same rule applies inside every block.
+  clause, a keyword-less run is an error: there is **no implicit `where` after a
+  clause** (`from people active`, `people exists { name age > 50 }` are parse
+  errors whose message says to write `where`).
+- **A where-first body** (since 0.17, blocks only): a block body whose **leading
+  expression is syntactically a predicate** drops the `where` keyword instead —
+  `people exists { age > 50 }` ≡ `people exists { where age > 50 }`,
+  `jobs collect { pay > 2 }` ≡ `jobs collect { where pay > 2 }`. Such a body has
+  **no `select` and no `from`** (a `from`/`select` after it is the ordinary
+  clause-order error) and may continue with `follow`, `order by`, `limit`,
+  `offset`. *Syntactically a predicate* is decided by shape, never by type: a
+  comparison or `in`, `&&`/`||`, a prefix `!`/`is`/`not`, an infix `is`/`is not`,
+  a call (free or method), a literal, a binding, a parenthesized expression, a
+  postfix `!` or a bracket chain, a consumer test (`jobs exists { }`) — anything
+  that is **not** a bare name, a dotted navigation (`a.b.c`), or a `^`-lift
+  (`^name`, `^name: expr`). A bare name stays a projection
+  (`jobs collect { employer }` is unchanged; the bare-field filter is
+  `docs { is active }`), and so does the single item of a `values` projection
+  whatever its shape (`{ n * 2 values }`, `{ true values }`). Projection plus
+  filter keeps the keyword: `docs { name where age >= 18 }`. A comma after the
+  leading predicate (`{ age >= 18, name }`) is a parse error whose message
+  suggests `{ <projection> where age >= 18 }`.
+- **The top level is unchanged**: `age > 15 from people` stays the parse error
+  it was (`… needs an alias … at the top level a predicate is never implicit`),
+  because a predicate there would be a `where` written *before* `from`, which the
+  clause order forbids; the top-level projection is the only keyword-less
+  clause. [`sugar`, `errors-parse`]
 - A consumer word directly after `from` gets a specific hint
   (`` unexpected `count` after `from` — a whole-query consumer is written `<collection> count { … }` … ``).
 - **Only `}` ends a block, and only the end of input ends the query.** A stray
@@ -107,15 +150,28 @@ item       = { "^" } ident ":" ( directive | expr )      ; alias (carets = lift)
            | { "^" } expr                               ; unaliased
 ```
 
-- An unaliased item must be a plain navigation (`name`, `meta.slug`, `$it`);
-  its key is the **last segment**. Any other unaliased expression (a call,
-  arithmetic, a comparison) is a parse error `… needs an alias …` unless the
-  projection is in `values` mode.
+- An unaliased item must be a plain navigation (`name`, `meta.slug`, `$it`),
+  optionally required (`name!`, `jobs[0].employer`, §4); its key is the **last
+  segment** of the navigation. Any other unaliased expression (a call,
+  arithmetic, a comparison, a bare bracket lookup `jobs[0]`) is a parse error
+  `… needs an alias …` unless the projection is in `values` mode.
+- **An item may reference the aliases of the items to its left** (since 0.17):
+  `boss: ^people[id == ^manager], bossName: boss.name`. The reference is inlined
+  by `resolveAliases` exactly as a `where` alias is (SEMANTICS §14): an alias
+  shadows a same-named row field in the items after it; inside its own
+  expression an alias's name is the row field; a reference to an item **to its
+  right** is a parse error (`… is used before it is defined — a select item may
+  reference only the items to its left`), and a chain of references that returns
+  to an item is the alias-cycle error. The tree keeps the surface form.
+  [`sugar`, `aliases`]
 - `select distinct …` marks the body distinct (see SEMANTICS §distinct).
 - `values` after the list requires **exactly one** item and turns off record
   wrapping; an alias is accepted and ignored; a lift is rejected.
-- An aliased item may be a **nested directive** `name: receiver (collect|first|single) [distinct] { body }`;
-  `exists`/`none`/`count` are rejected there.
+- An aliased item may be a **nested directive** `name: receiver (collect|first|single) [distinct] { body }`
+  — or its sugar `name: receiver { body }` (collect), `name: receiver[…]` (§4);
+  `exists`/`none`/`count` are rejected there. An item whose value is exactly a
+  directive is the `collect` item kind (AST.md); a directive navigated or
+  operated on further (`jobs[0].pay`, `jobs[0]!`) is an ordinary `field`.
 - **Projection names are unique** within one `select`. `a: 1, a: 2`,
   `name, name`, and a dotted default colliding with an alias (`meta.slug, slug: x`)
   are parse errors `duplicate projection name '<name>'` — the record would
@@ -144,8 +200,8 @@ scalar predicates:
 
 ```
 where    = or
-or       = and { "||" and }
-and      = primary { "&&" primary }
+or       = and { ("||" | "or") and }
+and      = primary { ("&&" | "and") primary }
 primary  = { "!" } group
          | { "!" } receiver consumer [ "distinct" ] "{" body "}" [ relop integer ]   ; consumer test
          | cmp                                                                    ; a scalar leaf (its own `!` is unary, §4)
@@ -171,12 +227,18 @@ group    = "(" where ")"                       ; a predicate group …
   `(jobs exists { }) && a`). A group containing a consumer test can only be a
   predicate: `(xs count { }) > 1` is a parse error (`… is a predicate, not a
   value …`; write `xs count { } > 1` without the parentheses).
-- Consumer tests: `exists`, `none`, `count` are legal; `first`/`single` are a
-  parse error (`… is a select-position lookup …`); `collect` is legal only when
-  every item it projects is a lift. Only `count { … }` may be followed by a
+- Consumer tests: `exists`, `none`, `count` are legal; `collect` is legal only
+  when every item it projects is a lift. Only `count { … }` may be followed by a
   comparison, and the right side must be a non-negative **integer literal**.
+  A `first`/`single` directive (or its bracket sugar, §4) is a **value**, never
+  a test: as a bare leaf — alone, or under `!` — it is the parse error
+  `… is a select-position lookup …` (write `exists`), while followed by a
+  scalar continuation (`.name`, `[…]`, `!`, a comparison, arithmetic, `in`, a
+  range) it is a scalar operand: `where jobs[0].pay > 2`,
+  `where jobs first { }.pay > 2`, `where jobs[0]!`.
 - Aliases: a bare identifier in `where` may name an alias of the same body's
-  `select` (SEMANTICS §14). The parser validates the reference — an alias
+  `select` (SEMANTICS §14); a `select` item may likewise name the items to its
+  left (§`select`). The parser validates the reference — an alias
   cycle, or a block alias inside an expression, is a parse error — but keeps
   the identifier in the tree (AST.md §2); `resolveAliases` substitutes it
   before evaluation.
@@ -193,7 +255,15 @@ option      = "where" expr | "frontier" expr | "depth" integer | "by" expr
 ```
 
 `follow` is a clause when an identifier, a binding, or a `^` follows the word;
-otherwise it is a field name (`select follow from r`). After `follow`,
+otherwise it is a field name (`select follow from r`). **The implicit-`collect`
+sugar does not apply to destinations:** a `{` after the last destination always
+opens the **options block** — `follow children { depth 2 }` is a depth cap, and
+`follow children { age > 1 }` is the options error (`… expected
+where/frontier/depth/by …`, which also says a destination block needs its
+consumer); `follow ^people { where ^$path in list(after) }` is the outer-reference
+error below (`… it may only head a destination block (follow ^name collect { … })`),
+because `^people` is read as a plain destination and the brace as its options.
+[`sugar`] After `follow`,
 **`distinct` is a keyword**: `follow distinct <relation>` sets the flag, and
 `follow distinct {` or `follow distinct` at the end of the input is a parse
 error `` expected a relation after `follow distinct` ``. A relation literally
@@ -248,29 +318,35 @@ options) accepts the full grammar. Precedence, loosest to tightest:
 
 | Level | Operators | Notes |
 | --- | --- | --- |
-| or | `\|\|` | left-assoc; yields an operand (SEMANTICS §logical) |
-| and | `&&` | left-assoc |
-| cmp | `== != < <= > >=` `in` | **non-associative**: a second comparison in a row is a parse error `comparisons do not chain` (`a == b == c`, `a == b in c`) |
+| or | `\|\|` `or` | left-assoc; yields an operand (SEMANTICS §logical). `or` is an exact synonym of `\|\|` (since 0.17): the same node, the same short-circuit, the same value (`title or $path` coalesces); `print` writes `\|\|` |
+| and | `&&` `and` | left-assoc; `and` is an exact synonym of `&&` (since 0.17) |
+| cmp | `== != < <= > >=` `in` `is` `is not` | **non-associative**: a second comparison in a row is a parse error `comparisons do not chain` (`a == b == c`, `a == b in c`, `a is b is c`). `x is y` is identity, `x is not y` its negation (SEMANTICS §5; since 0.17) |
 | range | `lo..hi` `lo...hi` `..hi` `lo..` | binds looser than arithmetic, tighter than comparison: `n in 1+1..2*3` is `n in (2..6)`. At least one bound is required |
 | add | `+ -` | left-assoc |
 | mul | `* / %` | left-assoc |
-| unary | `!` `-` | prefix, right-assoc (`--5`); `!` has this same precedence in `where` (§3) |
-| postfix | `.name` `.name(args)` `name(args)` | navigation, method call, free-function call |
+| unary | `!` `-` `is` `not` | prefix, right-assoc (`--5`); `!` has this same precedence in `where` (§3). `is x` ≡ `!!x`, `not x` ≡ `!x` — pure sugar, desugared in the parser (since 0.17) |
+| postfix | `.name` `.name(args)` `name(args)` `x!` `x[…]` `x <consumer> { … }` | navigation, method call, free-function call, the required operator, a bracket lookup, a value-position directive — left to right, tightest of all: `refs(c)[0]!.name` requires the lookup, `refs(c)[0].name!` the name |
 | primary | literal, identifier, `^…name`, binding, `( expr )` | |
 
 ```
 expr     = or
-or       = and { "||" and }
-and      = cmp { "&&" cmp }
-cmp      = range [ relop range | "in" range ]
+or       = and { ("||" | "or") and }
+and      = cmp { ("&&" | "and") cmp }
+cmp      = range [ relop range | "in" range | "is" [ "not" ] range ]
 range    = ( ".." | "..." ) add                     ; open low end; the high bound is required
          | add [ ( ".." | "..." ) [ add ] ]          ; the high bound is omitted when the next
                                                      ; token cannot start a value (clause words included)
 add      = mul { ("+" | "-") mul }
 mul      = unary { ("*" | "/" | "%") unary }
-unary    = "!" unary | "-" unary | postfix
-postfix  = primary { "." ident [ "(" args ")" ] }
-         | ident "(" args ")" { "." ident [ "(" args ")" ] }
+unary    = "!" unary | "-" unary | "is" unary | "not" unary | postfix
+postfix  = head { suffix }
+head     = primary | ident "(" args ")"                     ; a free-function call
+suffix   = "." ident [ "(" args ")" ]                       ; navigation, method call
+         | "!"                                               ; required (0.17)
+         | bracket                                           ; lookup (0.17)
+         | ("collect" | "first" | "single") [ "distinct" ] "{" body "}"   ; value-position directive (0.17)
+bracket  = "[" ( integer | binding ) "]" [ "!" ]            ; positional
+         | "[" where "]" [ "!" ]                             ; predicate
 primary  = number | string | "true" | "false" | "null"
          | ident                                     ; a property of the CURRENT scope only
          | "^" { "^" } ident                         ; an outer reference, exactly N scopes out
@@ -287,8 +363,55 @@ not begin a value, so `where age in 18.. order by name` parses as intended and
 (`a range needs at least one bound`) rather than a range up to `order`.
 [`ranges`, `where`]
 
-There is **no index syntax** (`a[0]`) and no array or object literal; bound
-values (bindings) and named roots are how collections enter a query.
+There is no array or object literal; bound values (bindings) and named roots
+are how collections enter a query.
+
+### Postfix `!` — required (since 0.17)
+
+`x!` is `x`, or an eval error when `x` is absent (SEMANTICS §5b). **A `!` token
+that immediately follows a complete postfix chain** — a head and any run of
+suffixes (`.name`, `.name(args)`, `[…]`, `!`, a value-position directive) — **is
+the postfix required operator; a `!` anywhere else is the prefix negation.** The
+two never compete: a `!` can only begin an operand where an operand can begin
+(after an operator, a keyword, `(`, `[`, `,`, a range operator, or at the start
+of a clause), and OQX never places two operands side by side, so a `!` after an
+operand cannot start one. Hence `age! - 1` is `(age!) - 1`, `-a!` is `-(a!)`,
+`!a!` is `!(a!)`, `a!.b` requires `a` and `a.b!` requires `a.b`, and `!=` stays
+one token (`a! == b` needs its space). In `where`, a `!` before a consumer test or
+a group is still the predicate negation (`!jobs exists { }`, `!(a > 1)`); `x[p]!`
+is the bracket's own `!` (below). Precedence: postfix, tightest of all.
+
+### Brackets (since 0.17)
+
+A bracket suffix applies to any postfix chain — a bare name, a dotted navigation,
+a free-function call, an outer reference, a binding, a required value, and the
+result of a prior bracket or navigation (`refs(company)[0].name`,
+`jobs[pay > 2][0]`) — but not to a literal (`true[0]` is `… is a literal, not a
+collection`). What is inside decides the form, **syntactically**:
+
+| Written | Means | |
+| --- | --- | --- |
+| `x[n]`, `n` an integer literal or a `${…}` binding | `x first { offset n }` | positional; out of range is absent; a binding must evaluate to a non-negative integer, else the `offset` eval error |
+| `x[n]!` | `(x first { offset n })!` | required positional |
+| `x[p]`, anything else | `x first { where p }` | the first match or absent; `p` is a full `where` tree (consumer tests, `!`, groups), read in the rows' scope with `^` the enclosing row — exactly the block it desugars to |
+| `x[p]!` | `(x single { where p })!` | exactly one match: many is the `single` eval error, none the required error |
+
+A negative literal (`x[-1]`) is a parse error (`negative indices are not
+supported`), and so is a non-integer one (`x[1.5]`: `an index is a non-negative
+integer literal or a binding`). Every bracket desugars in the parser to the
+directive it means (AST.md §2): there is no bracket node, `print` writes the
+directive, and the directive's span covers the sugar as written.
+
+### Value-position directives (since 0.17)
+
+`recv first { … }`, `recv single { … }` and `recv collect { … }` may stand
+where a value stands — as the receiver of a navigation (`jobs first { }.pay`), an
+operand (`jobs first { }.pay > 2`), a required value (`jobs single { }!`) — and
+may themselves be navigated or bracketed further. This is how the canonical
+printer writes a bracket chain back (`jobs[0].pay` prints as
+`jobs first { offset 0 }.pay`). `exists`/`none`/`count` are predicates and have
+no value form. In `where`, a value-position directive is a scalar operand only
+with a continuation (§3). [`sugar`, `ast`]
 
 ## 5. Receivers
 
@@ -316,10 +439,14 @@ Every failure is an `OqxError` with a `stage`:
 - `lex` — an unexpected character, an unterminated string, or a malformed number.
 - `parse` — everything the grammar above rejects, including clause order,
   duplicates, missing `where`, projection naming (unnamed and duplicate items),
-  misplaced lifts, alias cycles, `follow` options, chained comparisons, a
-  top-level `limit ^n`, and `count` comparisons.
-- `eval` — unknown functions/methods, `single` matching several rows, an
-  invalid `limit`/`offset` value, `follow` inside a where-position directive.
+  a comma after a where-first predicate, misplaced lifts, alias cycles and
+  forward references, `follow` options, chained comparisons, a top-level
+  `limit ^n`, `count` comparisons, a negative or fractional index, a bare
+  `first`/`single` in `where`.
+- `eval` — unknown functions/methods, `single` matching several rows, a required
+  value that is absent (`` `x!` is absent ``), an invalid `limit`/`offset` value
+  (including a bracket index binding), `follow` inside a where-position
+  directive.
 
 Messages carry a `(at offset N)` suffix for lex/parse errors; `N` counts
 Unicode code points over the raw source, the unit of every AST span (AST.md

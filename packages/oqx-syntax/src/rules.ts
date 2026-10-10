@@ -27,6 +27,7 @@ import {
   LITERALS,
   OMGBASE,
   OPERATORS,
+  WORD_OPERATORS,
   alternation,
   type TokenClass,
 } from "./vocabulary.js";
@@ -52,8 +53,9 @@ export interface Rule {
  * not do — `$` is an identifier character in OQX but not a regex word character. */
 export const END = "(?![A-Za-z0-9_$])";
 
-/** Words that cannot begin a value (GRAMMAR §4): the keywords and the contextual words. */
-const NON_VALUE_WORDS = [...KEYWORDS, ...CONTEXTUAL_WORDS];
+/** Words that cannot begin a value (GRAMMAR §4): the keywords — except the prefix
+ * operators `is` and `not`, which begin one — and the contextual words. */
+const NON_VALUE_WORDS = [...KEYWORDS.filter((k) => k !== "is" && k !== "not"), ...CONTEXTUAL_WORDS];
 
 /** Lookahead: the rest of the line begins a value — an identifier, an
  * intrinsic or binding (`$`), an outer reference, a group, a string, a number,
@@ -89,6 +91,9 @@ export const RULES: readonly Rule[] = [
   { name: "select-distinct", regex: `(select)([ \\t]+)(distinct)${END}`, groups: ["keyword", "whitespace", "modifier"] },
   { name: "follow-distinct", regex: `(follow)([ \\t]+)(distinct)${END}`, groups: ["clause", "whitespace", "modifier"] },
   { name: "order-by", regex: `(order)([ \\t]+)(by)${END}`, groups: ["clause", "whitespace", "clause"] },
+  // The word operators (`is`, `not`, `and`, `or`) are keywords too (GRAMMAR §1),
+  // highlighted as operators; before the keyword rule so it never claims them.
+  { name: "word-operator", regex: words(WORD_OPERATORS), groups: ["wordOperator"] },
   { name: "keyword", regex: words(KEYWORDS), groups: ["keyword"] },
   {
     name: "consumer",
@@ -148,8 +153,10 @@ export const RULES: readonly Rule[] = [
   { name: "brace-close", regex: "\\}", groups: ["braceClose"] },
   { name: "paren-open", regex: "\\(", groups: ["parenOpen"] },
   { name: "paren-close", regex: "\\)", groups: ["parenClose"] },
+  { name: "bracket-open", regex: "\\[", groups: ["bracketOpen"] },
+  { name: "bracket-close", regex: "\\]", groups: ["bracketClose"] },
 
-  // Anything else is a lex error (GRAMMAR §1): `[`, `=`, `&`, `|`, `@`, `;`, `#`, …
+  // Anything else is a lex error (GRAMMAR §1): `=`, `&`, `|`, `@`, `;`, `#`, …
   { name: "illegal", regex: "[^ \\t\\r\\n]", groups: ["illegal"] },
 ];
 

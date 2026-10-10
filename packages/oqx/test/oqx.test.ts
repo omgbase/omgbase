@@ -105,13 +105,18 @@ test("out-of-order clauses fail naming the fixed order", () => {
   assert.throws(() => parse("name from people where a where b"), (e: unknown) => e instanceof OqxError && /duplicate `where`/.test(e.message));
 });
 
-test("a bare predicate in a block fails asking for `where` (there is no implicit where)", () => {
+test("a leading predicate in a block is a where-first body; at the top level it is an error", () => {
+  // 0.17: a block whose leading expression is syntactically a predicate drops
+  // the `where` keyword (GRAMMAR §2) — the tree is the explicit form's.
+  const same = (sugar: string, explicit: string) => assert.deepEqual(stripSpans(parse(sugar)), stripSpans(parse(explicit)));
+  same("people exists { age > 50 }", "people exists { where age > 50 }");
+  same("people exists { !active }", "people exists { where !active }");
+  same('name from people where jobs exists { employer == "X" && !end_date }', 'name from people where jobs exists { where employer == "X" && !end_date }');
+  same("people exists { jobs count {} >= 2 }", "people exists { where jobs count {} >= 2 }");
+  // a projection followed by a predicate still needs the keyword
+  assert.throws(() => parse("people exists { name, age > 50 }"), (e: unknown) => e instanceof OqxError && /write `where /.test(e.message));
+  // …and a bare leading predicate at the top level is still an error: `where` would precede `from`
   const wantsWhere = (e: unknown) => e instanceof OqxError && /write `where /.test(e.message) && /never implicit/.test(e.message);
-  assert.throws(() => parse("people exists { age > 50 }"), wantsWhere);
-  assert.throws(() => parse("people exists { !active }"), wantsWhere);
-  assert.throws(() => parse('name from people where jobs exists { employer == "X" && !end_date }'), wantsWhere);
-  assert.throws(() => parse("people exists { jobs count {} >= 2 }"), wantsWhere);
-  // …and a bare leading predicate at the top level is the same mistake
   assert.throws(() => parse("!active from people"), wantsWhere);
   assert.throws(() => parse("age > 40 from people"), wantsWhere);
   // a bare NAME is a projection, at the top level and in a block alike
@@ -161,7 +166,7 @@ test("`where` may reference `select` aliases (kept in surface form; resolved bef
     ],
   });
   // an alias chain resolves through (b → a's expression)
-  assert.deepEqual(oqx`select senior: age > 50, s: senior from ${people} where s`, [{ senior: true, s: undefined }]);
+  assert.deepEqual(oqx`select senior: age > 50, s: senior from ${people} where s`, [{ senior: true, s: true }]); // 0.17: `s: senior` names the alias to its left
   // an unaliased dotted item is an alias for its key
   const data = [{ meta: { slug: "a" } }, { meta: { slug: "b" } }];
   assert.deepEqual(oqx`select meta.slug from ${data} where slug == "b"`, [{ slug: "b" }]);
@@ -203,8 +208,8 @@ test("a cycle among aliases referenced from `where` is a parse error", () => {
     () => parse("select a: b + 1, b: c, c: a from people where c > 1"),
     (e: unknown) => e instanceof OqxError && /cycle: c → a → b → c/.test(e.message),
   );
-  // unreferenced, the same select is fine (it swaps two fields)
-  assert.deepEqual(oqx`select a: b, b: a from ${[{ a: 1, b: 2 }]}`, [{ a: 2, b: 1 }]);
+  // unreferenced it is the same cycle (0.17: `a: b` names the alias to its right)
+  assert.throws(() => parse("select a: b, b: a from people"), (e: unknown) => e instanceof OqxError && /select aliases form a cycle: a → b → a/.test(e.message));
 });
 
 test("`order by` resolves against the row, not the select aliases (unchanged)", () => {
@@ -745,9 +750,10 @@ test("values takes exactly one item, and rejects lifts", () => {
 test("an unaliased non-navigation projection item is an error unless followed by values", () => {
   assert.throws(() => parse("size(jobs) from people"), (e: unknown) => e instanceof OqxError && /needs an alias/.test(e.message));
   assert.throws(() => parse("select age > 40 from people"), (e: unknown) => e instanceof OqxError && /needs an alias/.test(e.message));
-  // a call-shaped leading expression is a projection, not an implicit where —
-  // say `where` to filter by it
-  assert.throws(() => parse("people exists { has(budget) }"), (e: unknown) => e instanceof OqxError && /needs an alias/.test(e.message));
+  // a call-shaped leading expression in a block is a predicate (0.17); after a
+  // projection it is an unnamed item
+  assert.deepEqual(stripSpans(parse("people exists { has(budget) }")), stripSpans(parse("people exists { where has(budget) }")));
+  assert.throws(() => parse("people first { name, has(budget) }"), (e: unknown) => e instanceof OqxError && /needs an alias/.test(e.message));
   assert.deepEqual(oqx`n: size(jobs) from ${people}`, [{ n: 2 }, { n: 2 }, { n: 1 }]);
 });
 

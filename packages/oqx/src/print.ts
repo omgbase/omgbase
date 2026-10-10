@@ -65,7 +65,7 @@ const OR = 1, AND = 2, CMP = 3, RANGE = 4, ADD = 5, MUL = 6, UNARY = 7, POSTFIX 
 function prec(e: Expr): number {
   switch (e.kind) {
     case "lit": case "ident": case "outer": case "binding": return PRIMARY;
-    case "member": case "call": return POSTFIX;
+    case "member": case "call": case "required": case "op": return POSTFIX;
     case "unary": return UNARY;
     case "binary": return e.op === "+" || e.op === "-" ? ADD : e.op === "*" || e.op === "/" || e.op === "%" ? MUL : CMP;
     case "in": return CMP;
@@ -149,7 +149,8 @@ function projection(items: SelectItem[], values: boolean): Out {
 }
 
 function item(it: SelectItem): Out {
-  if (it.kind === "collect") return cat(`${it.name}: `, op(it.op));
+  // An unnamed directive item exists only under `values` (`jobs[0] values`).
+  if (it.kind === "collect") return it.name === "" ? op(it.op) : cat(`${it.name}: `, op(it.op));
   return cat("^".repeat(it.lift), it.name === "" ? "" : `${it.name}: `, expr(it.expr));
 }
 
@@ -159,7 +160,7 @@ function order(o: OrderSpec): Out {
 
 function op(o: OpNode): Out {
   return cat(
-    expr(o.receiver),
+    receiver(o.receiver),
     ` ${o.op}${o.distinct ? " distinct" : ""} `,
     block(o.sub),
     o.countCmp ? ` ${o.countCmp.op} ${number(o.countCmp.value)}` : "",
@@ -208,6 +209,9 @@ function expr(e: Expr): Out {
       return e.recv === null ? cat(e.name, args) : cat(receiver(e.recv), `.${e.name}`, args);
     }
     case "unary": return cat(e.op, operand(e.expr, UNARY));
+    // Postfix, tightest: anything below postfix level is grouped (`(a + 1)!`).
+    case "required": return cat(operand(e.expr, POSTFIX), "!");
+    case "op": return op(e);
     case "binary": {
       const p = prec(e);
       // Left-associative arithmetic keeps an equal-level left operand bare and

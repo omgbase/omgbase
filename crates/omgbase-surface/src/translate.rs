@@ -580,7 +580,16 @@ fn is_op(op: BinaryOp) -> Option<&'static str> {
         BinaryOp::Le => "<=",
         BinaryOp::Gt => ">",
         BinaryOp::Ge => ">=",
-        BinaryOp::Add | BinaryOp::Sub | BinaryOp::Mul | BinaryOp::Div | BinaryOp::Mod => {
+        // Identity (`is` / `is not`, SEMANTICS §5b) compares the engine's
+        // structural identities — not provably SQL's `IS` over typed cells —
+        // so it stays residual, like arithmetic in predicate position.
+        BinaryOp::Is
+        | BinaryOp::IsNot
+        | BinaryOp::Add
+        | BinaryOp::Sub
+        | BinaryOp::Mul
+        | BinaryOp::Div
+        | BinaryOp::Mod => {
             return None;
         }
     })

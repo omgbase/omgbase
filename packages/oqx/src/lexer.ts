@@ -23,13 +23,15 @@ import type { Span } from "./ast.ts";
 
 export type TokType =
   | "ident"
-  | "kw" // from | where | select
+  | "kw" // from | where | select | is | not | and | or
   | "string"
   | "number"
   | "lparen"
   | "rparen"
   | "lbrace"
   | "rbrace"
+  | "lbracket" // [ — a bracket lookup (since 0.17)
+  | "rbracket"
   | "comma"
   | "colon"
   | "caret" // ^ — one-scope lift marker
@@ -52,7 +54,7 @@ export interface Token {
   index?: number; // binding tokens only
 }
 
-const KEYWORDS = new Set(["from", "where", "select"]);
+const KEYWORDS = new Set(["from", "where", "select", "is", "not", "and", "or"]);
 
 // Multi-char operators, longest first (the scanner tries these before singles).
 const MULTI_OPS = ["==", "!=", "<=", ">=", "&&", "||"];
@@ -121,6 +123,8 @@ function lexFragment(src: string, base: number, out: Token[]): void {
     if (c === ")") { push("rparen", c, i, i + 1); i++; continue; }
     if (c === "{") { push("lbrace", c, i, i + 1); i++; continue; }
     if (c === "}") { push("rbrace", c, i, i + 1); i++; continue; }
+    if (c === "[") { push("lbracket", c, i, i + 1); i++; continue; }
+    if (c === "]") { push("rbracket", c, i, i + 1); i++; continue; }
     if (c === ",") { push("comma", c, i, i + 1); i++; continue; }
     if (c === ":") { push("colon", c, i, i + 1); i++; continue; }
     if (c === "^") { push("caret", c, i, i + 1); i++; continue; }

@@ -23,8 +23,11 @@ export type Consumer = "collect" | "exists" | "none" | "count" | "first" | "sing
 /** Comparison operators usable in a `count { … } <op> <int>` test. */
 export type RelOp = "==" | "!=" | "<" | "<=" | ">" | ">=";
 
-/** The operator of a `binary` expression: a comparison or arithmetic. */
-export type BinaryOp = RelOp | "+" | "-" | "*" | "/" | "%";
+/** The identity operators (SEMANTICS §5b, since 0.17). */
+export type IdentityOp = "is" | "is not";
+
+/** The operator of a `binary` expression: a comparison, an identity test, or arithmetic. */
+export type BinaryOp = RelOp | IdentityOp | "+" | "-" | "*" | "/" | "%";
 
 /** The operator of a `unary` expression. */
 export type UnaryOp = "!" | "-";
@@ -41,13 +44,19 @@ export type Expr =
   | { kind: "member"; span: Span; recv: Expr; name: string } // .prop navigation on the value to its left
   | { kind: "call"; span: Span; recv: Expr | null; name: string; args: Expr[] } // fn / method
   | { kind: "unary"; span: Span; op: UnaryOp; expr: Expr }
-  | { kind: "binary"; span: Span; op: BinaryOp; left: Expr; right: Expr } // arithmetic + comparison
+  // `x!` — the value of `expr`, or an eval error when it is absent (since 0.17).
+  | { kind: "required"; span: Span; expr: Expr }
+  | { kind: "binary"; span: Span; op: BinaryOp; left: Expr; right: Expr } // arithmetic + comparison + identity
   | { kind: "logical"; span: Span; op: LogicalOp; left: Expr; right: Expr }
   | { kind: "in"; span: Span; left: Expr; right: Expr }
   // A Ruby-style range value. `lo`/`hi` are null for the open-ended forms
   // (`..5` / `5..`); `exclusiveEnd` distinguishes `1...5` from `1..5`. Evaluates
   // to a runtime range value (see semantics.makeRange); primarily the RHS of `in`.
-  | { kind: "range"; span: Span; lo: Expr | null; hi: Expr | null; exclusiveEnd: boolean };
+  | { kind: "range"; span: Span; lo: Expr | null; hi: Expr | null; exclusiveEnd: boolean }
+  // A value-position directive (since 0.17): `recv first { … }.pay`, and what a
+  // bracket lookup `x[…]` desugars to. `isExpr` is false for it — an op is an
+  // expression only by position; discriminate on `kind === "op"`.
+  | OpNode;
 
 /** One `order by` term. */
 export interface OrderSpec {
@@ -167,10 +176,11 @@ export type AstKind = AstNode["kind"];
 
 /** The expression kinds (`Expr["kind"]`), for `isExpr`. */
 const EXPR_KINDS: ReadonlySet<string> = new Set([
-  "lit", "ident", "outer", "binding", "member", "call", "unary", "binary", "logical", "in", "range",
+  "lit", "ident", "outer", "binding", "member", "call", "unary", "required", "binary", "logical", "in", "range",
 ]);
 
-/** Whether a node is an `Expr`. */
+/** Whether a node is a scalar `Expr` (an `op` in expression position is not: it
+ * is an expression only by position, see AST.md §1). */
 export function isExpr(node: AstNode): node is Expr {
   return EXPR_KINDS.has(node.kind);
 }

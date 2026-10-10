@@ -5,7 +5,7 @@
   "fileTypes": [
     "oqx"
   ],
-  "version": "0.16",
+  "version": "0.17",
   "patterns": [
     {
       "include": "#expression"
@@ -166,9 +166,14 @@
         }
       }
     },
+    "word-operator": {
+      "comment": "word-operator",
+      "match": "(?:and|not|is|or)(?![A-Za-z0-9_$])",
+      "name": "keyword.operator.word.oqx"
+    },
     "keyword": {
       "comment": "keyword",
-      "match": "(?:select|where|from)(?![A-Za-z0-9_$])",
+      "match": "(?:select|where|from|and|not|is|or)(?![A-Za-z0-9_$])",
       "name": "keyword.control.oqx"
     },
     "consumer": {
@@ -188,7 +193,7 @@
     },
     "follow-option": {
       "comment": "follow-option",
-      "match": "(?:frontier|depth|by)(?![A-Za-z0-9_$])(?![ \\t]*(?:distinct|frontier|collect|exists|follow|offset|select|single|values|count|depth|first|limit|order|where|desc|from|none|asc|by|in)(?![A-Za-z0-9_$]))(?=[ \\t]*(?:[A-Za-z_$^(\"'0-9!\\-]|\\.\\.))",
+      "match": "(?:frontier|depth|by)(?![A-Za-z0-9_$])(?![ \\t]*(?:distinct|frontier|collect|exists|follow|offset|select|single|values|count|depth|first|limit|order|where|desc|from|none|and|asc|by|in|or)(?![A-Za-z0-9_$]))(?=[ \\t]*(?:[A-Za-z_$^(\"'0-9!\\-]|\\.\\.))",
       "name": "keyword.control.follow.oqx"
     },
     "order-direction": {
@@ -208,7 +213,7 @@
     },
     "membership": {
       "comment": "membership",
-      "match": "in(?![A-Za-z0-9_$])(?![ \\t]*(?:distinct|frontier|collect|exists|follow|offset|select|single|values|count|depth|first|limit|order|where|desc|from|none|asc|by|in)(?![A-Za-z0-9_$]))(?=[ \\t]*(?:[A-Za-z_$^(\"'0-9!\\-]|\\.\\.))",
+      "match": "in(?![A-Za-z0-9_$])(?![ \\t]*(?:distinct|frontier|collect|exists|follow|offset|select|single|values|count|depth|first|limit|order|where|desc|from|none|and|asc|by|in|or)(?![A-Za-z0-9_$]))(?=[ \\t]*(?:[A-Za-z_$^(\"'0-9!\\-]|\\.\\.))",
       "name": "keyword.operator.membership.oqx"
     },
     "literal": {
@@ -286,6 +291,16 @@
       "match": "\\)",
       "name": "punctuation.section.group.end.oqx"
     },
+    "bracket-open": {
+      "comment": "bracket-open",
+      "match": "\\[",
+      "name": "punctuation.section.brackets.begin.oqx"
+    },
+    "bracket-close": {
+      "comment": "bracket-close",
+      "match": "\\]",
+      "name": "punctuation.section.brackets.end.oqx"
+    },
     "illegal": {
       "comment": "illegal",
       "match": "[^ \\t\\r\\n]",
@@ -337,6 +352,9 @@
         },
         {
           "include": "#order-by"
+        },
+        {
+          "include": "#word-operator"
         },
         {
           "include": "#keyword"
@@ -409,6 +427,12 @@
         },
         {
           "include": "#paren-close"
+        },
+        {
+          "include": "#bracket-open"
+        },
+        {
+          "include": "#bracket-close"
         },
         {
           "include": "#illegal"

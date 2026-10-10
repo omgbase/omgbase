@@ -132,7 +132,7 @@ fn prec(e: &Expr) -> u8 {
         Expr::Lit { .. } | Expr::Ident { .. } | Expr::Outer { .. } | Expr::Binding { .. } => {
             PRIMARY
         }
-        Expr::Member { .. } | Expr::Call { .. } => POSTFIX,
+        Expr::Member { .. } | Expr::Call { .. } | Expr::Required { .. } | Expr::Op(_) => POSTFIX,
         Expr::Unary { .. } => UNARY,
         Expr::Binary { op, .. } => match op {
             BinaryOp::Add | BinaryOp::Sub => ADD,
@@ -296,6 +296,8 @@ fn projection(items: &[SelectItem], values: bool) -> Out {
 
 fn item(it: &SelectItem) -> Out {
     match it {
+        // An unnamed directive item exists only under `values` (`jobs[0] values`).
+        SelectItem::Collect { name, op, .. } if name.is_empty() => op_node(op),
         SelectItem::Collect { name, op, .. } => cat(vec![text(format!("{name}: ")), op_node(op)]),
         SelectItem::Field {
             name,
@@ -320,7 +322,7 @@ fn order(o: &OrderSpec) -> Out {
 
 fn op_node(o: &OpNode) -> Out {
     cat(vec![
-        expr(&o.receiver),
+        receiver(&o.receiver),
         text(format!(
             " {}{} ",
             o.op.as_str(),
@@ -433,6 +435,9 @@ fn expr(e: &Expr) -> Out {
             }
         }
         Expr::Unary { op, expr: x, .. } => cat(vec![text(op.as_str()), operand(x, UNARY)]),
+        // Postfix, tightest: anything below postfix level is grouped (`(a + 1)!`).
+        Expr::Required { expr: x, .. } => cat(vec![operand(x, POSTFIX), text("!")]),
+        Expr::Op(op) => op_node(op),
         Expr::Binary {
             op, left, right, ..
         } => {

@@ -43,8 +43,8 @@ use std::rc::Rc;
 
 use crate::Result;
 use crate::ast::{
-    Consumer, CountCmp, Expr, Follow, FollowDestination, LogicalOp, OpNode, OrderSpec, Query,
-    SelectItem, Subquery, UnaryOp, Where,
+    BinaryOp, Consumer, CountCmp, Expr, Follow, FollowDestination, LogicalOp, OpNode, OrderSpec,
+    Query, SelectItem, Subquery, UnaryOp, Where,
 };
 use crate::context::DataContext;
 use crate::errors::OqxError;
@@ -52,11 +52,13 @@ use crate::optimize::{
     BlockPlan, Correlation, DEFAULT_RULES, HashIndex, RowIndex, Rule, RuleContext,
     intersect_positions, lookup_order, optimize_block, residual_without,
 };
+use crate::print::print_template;
 use crate::semantics::{
     arith, canonical_key, compare, compare_for_sort_dir, entries_of, equals, is_range, make_range,
     membership, relate, to_number,
 };
 use crate::value::{Object, Value, js_number_to_string};
+use crate::walk::Node;
 
 /// A query's result, shaped by its consumer. [`OqxResult::into_value`] gives
 /// the consumer-shaped plain value the tagged-template API and the spec
@@ -1476,11 +1478,35 @@ impl<'e, C: DataContext> Exec<'e, C> {
                     UnaryOp::Neg => Value::Number(-to_number(&v)),
                 })
             }
+            // `x!` — the value, or an eval error naming the expression (and the
+            // row's identity when it has a scalar one). Never a filter, never a
+            // coercion.
+            Expr::Required { expr, .. } => {
+                let v = self.eval_expr(expr, scope)?;
+                if v.is_absent() {
+                    return Err(OqxError::eval(format!(
+                        "`{}!` is absent{}",
+                        describe(expr),
+                        self.row_identity(scope)
+                    )));
+                }
+                Ok(v)
+            }
+            // A value-position directive (`jobs first { … }.pay`, the desugared `x[…]`).
+            Expr::Op(op) => self.eval_collect_value(op, scope),
             Expr::Binary {
                 op, left, right, ..
             } => {
                 let l = self.eval_expr(left, scope)?;
                 let r = self.eval_expr(right, scope)?;
+                if op.is_identity() {
+                    // Identity (SEMANTICS §5b): the context's identity of each
+                    // side, compared structurally — the key `distinct` and
+                    // `follow` use.
+                    let same = canonical_key(&self.ctx.identity(&l))
+                        == canonical_key(&self.ctx.identity(&r));
+                    return Ok(Value::Bool(if *op == BinaryOp::Is { same } else { !same }));
+                }
                 if op.is_comparison() {
                     Ok(Value::Bool(relate(op.as_str(), &l, &r)?))
                 } else {
@@ -1552,6 +1578,23 @@ impl<'e, C: DataContext> Exec<'e, C> {
     // inner row happens to have. Present-but-falsy values need no special case —
     // there is no "absent, so look outward" rule. The only failure is the
     // context's own: `DataContext::get` may reject the read.
+    // ` on <identity>` for a required-value error when the scope has a row with
+    // a scalar identity (its `id`, through the context); empty otherwise.
+    fn row_identity(&self, scope: &Scope<'_>) -> String {
+        if scope.is_root() || scope.row.is_absent() {
+            return String::new();
+        }
+        match self.ctx.identity(&scope.row) {
+            Value::Str(s) => {
+                let mut q = String::new();
+                json_quote(&s, &mut q);
+                format!(" on {q}")
+            }
+            Value::Number(n) => format!(" on {}", js_number_to_string(n)),
+            _ => String::new(),
+        }
+    }
+
     fn resolve_in(&self, name: &str, scope: &Scope<'_>) -> Result<Value> {
         if name == "$it" {
             return Ok(if scope.is_root() {
@@ -1679,6 +1722,20 @@ fn component_rank(v: &Value) -> u8 {
     }
 }
 
+// The canonical text of an expression for an error message; a binding shows as
+// its `${n}` marker (the printer refuses to turn a bound value into source).
+fn describe(e: &Expr) -> String {
+    let t = print_template(Node::Expr(e));
+    let mut out = String::new();
+    for (i, s) in t.strings.iter().enumerate() {
+        out.push_str(s);
+        if i < t.count {
+            out.push_str(&format!("${{{}}}", t.indices[i]));
+        }
+    }
+    out
+}
+
 fn describe_receiver(e: &Expr) -> String {
     match e {
         Expr::Ident { name, .. } => name.clone(),
@@ -1727,7 +1784,8 @@ fn expr_has_recur(e: &Expr) -> bool {
         Expr::Call { recv, args, .. } => {
             recv.as_deref().is_some_and(expr_has_recur) || args.iter().any(expr_has_recur)
         }
-        Expr::Unary { expr, .. } => expr_has_recur(expr),
+        Expr::Unary { expr, .. } | Expr::Required { expr, .. } => expr_has_recur(expr),
+        Expr::Op(_) => false,
         Expr::Binary { left, right, .. }
         | Expr::Logical { left, right, .. }
         | Expr::In { left, right, .. } => expr_has_recur(left) || expr_has_recur(right),

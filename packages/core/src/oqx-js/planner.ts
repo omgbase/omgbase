@@ -104,6 +104,10 @@ function exprMayRaise(e: Expr, target: Target, root: boolean): boolean {
       if (e.recv.kind === "ident" && e.recv.name === "doc" && RESERVED_DOC_BASENAMES.has(e.name)) return true;
       return exprMayRaise(e.recv, target, root);
     case "unary": return exprMayRaise(e.expr, target, root);
+    // `x!` raises when absent; a value-position directive may `single`-fail or
+    // read anything its block reads.
+    case "required": return true;
+    case "op": return opMayRaise(e, target, root);
     case "binary": case "logical": case "in":
       return exprMayRaise(e.left, target, root) || exprMayRaise(e.right, target, root);
     case "range":

@@ -520,8 +520,9 @@ describe("alchemy corpus — the fixed clause order (ADR-020)", () => {
     ]);
   });
 
-  it("there is no implicit `where`: a bare predicate in a block or after `from` is a loud error", () => {
-    expect(() => paths('from docs where nodes exists { kind == "md:task" }')).toThrow(/write `where /);
+  it("a block may lead with a predicate (oqx 0.17); after `from` or after a projection a predicate is still a loud error", () => {
+    expect(paths('from docs where nodes exists { kind == "md:task" }')).toEqual(paths('from docs where nodes exists { where kind == "md:task" }'));
+    expect(() => paths('from docs where nodes exists { kind == "md:task", name }')).toThrow(/<projection> where kind == "md:task"/);
     expect(() => paths('from docs type == "substance"')).toThrow(/unexpected 'type' after `from`/);
     expect(() => paths('from docs type == "lab-note" && nodes exists { kind == "md:task" && !attrs.checked }')).toThrow(/no implicit where/);
     // …and the footgun is closed: `from docs count` no longer projects a field called count

@@ -19,7 +19,7 @@ describe("Monaco adapter", () => {
     const [, config] = calls[2]![1] as [string, { wordPattern: RegExp; brackets: unknown[] }];
     expect(config.wordPattern).toBeInstanceOf(RegExp);
     expect("abc$1 x".match(config.wordPattern)).toEqual(["abc$1", "x"]);
-    expect(config.brackets).toHaveLength(2);
+    expect(config.brackets).toHaveLength(3);
   });
 
   it("the Monarch grammar has Monaco's required shape", () => {
