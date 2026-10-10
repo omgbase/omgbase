@@ -5,7 +5,7 @@
   "fileTypes": [
     "oqx"
   ],
-  "version": "0.18",
+  "version": "0.19",
   "patterns": [
     {
       "include": "#expression"

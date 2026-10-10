@@ -37,7 +37,9 @@ Every form here is shorthand for an explicit directive (the AST is the explicit 
                                        (comparison, call, !/is/not, in, literal, (…), a consumer test — anything
                                        but a bare name, a dotted path or a ^lift) is where-first. Bare names still
                                        project: nodes { name } ≡ nodes collect { name }; filter a bare field with
-                                       nodes { is checked }. Not after follow: follow children { depth 2 } is options.
+                                       nodes { is checked }. After follow only over an outer-reference receiver (0.19):
+                                       follow ^docs { where … } is a destination block (collect); follow children { depth 2 }
+                                       and follow refs(x) { depth 2 } are the options block.
   refs(x)[0]                          ≡ refs(x) first { offset 0 }   positional (integer literal or \${binding});
                                        out of range ⇒ absent; refs(x)[0].$path navigates the row
   ^docs[$path == ^company]            ≡ ^docs first { where $path == ^company }   first match or absent
@@ -200,7 +202,7 @@ edges:  (the authored link graph as rows — one per open edge)
                        follow refs(before), refs(after) walks a timeline both ways.
                        The reverse direction needs no function: a document's
                        $path is already the reference form, so
-                       ^docs collect { where ^$path in list(after) } is
+                       ^docs { where ^$path in list(after) } is
                        "the documents whose \`after\` names me".
   A HIT IS A STORE ROW: a top-level row that is not a doc/block/node/edge fails
                        (filter_invalid). \`follow before\` over a list of paths
@@ -266,16 +268,28 @@ edges:  (the authored link graph as rows — one per open edge)
                                                    (^^ = the walk's enclosing scope)
     follow doc.out, doc.in                         several destinations: their union
                                                    (one step dedups by identity)
-    follow ^docs collect { where doc.out exists { where $path == ^^$path } }
+    follow ^docs { where doc.out exists { where $path == ^^$path } }
                                                    a destination block, re-read per
                                                    frontier row (^ = that row; ^docs
                                                    is the root's documents) = doc.in
     follow doc.out { frontier type == "practitioner" }   cut, keeping the frontier row
     follow distinct doc.out / follow doc.out { by group } identity control
+    follow refs(before), ^docs { where ^$path in list(after) }   forward over \`before\`, backward
+                                                   over every doc whose \`after\` names me
   Per-occurrence metadata: $depth (seed = 1), $stop (interior|leaf|frontier|
   depth|cycle), $leaf/$frontier, $ordinal — usable in select/order by and the
   top-level post-walk where, NOT metadata of the candidates the follow-local
   where/frontier read.
+  Outer-reference destinations (OQX 0.19): a destination whose receiver is headed
+  by an outer reference (^docs, ^^docs, 0^docs, ^$it.docs, with any member chain)
+  can never be a relation of the current row, so a brace right after it is a
+  destination block with the implicit collect — follow refs(before), ^docs { where
+  ^$path in list(after) } walks \`before\` forward and, backward, every document
+  whose \`after\` names the frontier row (the 0.17 body rules apply: where-first,
+  projections). After children / doc.out / refs(x) / a binding a brace is still
+  the options block (an error when that destination is not the last); an options
+  block may follow a trailing block: follow ^docs { where … } { depth 2 }. A bare
+  follow ^docs (no brace, no consumer) is an error naming both block spellings.
   Type-preserving relations: doc.out/doc.in, block.children, section.children,
   section.subsections.
   from edges where $dst_path == "/notes/x.md"      inbound edges to a doc, as rows

@@ -57,7 +57,7 @@ once, and every one is optional except `from` at the top level:
 [ [select] projection ]    name, id, title: label        (or: select distinct …, … values)
 from <collection>          from ${people}
 [ where <predicate> ]      where age >= 18 and jobs exists { where not end }
-[ follow <dest>, … ]       follow children { depth 4 }     (or: follow before, after; follow ^people collect { … })
+[ follow <dest>, … ]       follow children { depth 4 }     (or: follow before, after; follow ^people { where … })
 [ order by <expr> … ]      order by age desc, name
 [ limit N ]                limit 10
 [ offset N ]               offset 20
@@ -618,16 +618,23 @@ runaway. `follow distinct` collapses occurrences to reached nodes (the minimal
 
 **Destinations** (language 0.14) are comma-separated; the walk is their union.
 A **plain destination** is a relation of the current row (`children`, `doc.out`
-— an outer reference `^rel` or a literal is a parse error). A **destination
-block** is a receiver followed by `collect`, `first` or `single` (optionally
-`distinct`) and a block — the same directive you would write in `select`,
-re-evaluated per frontier row with `^` bound to that row. Its receiver *may* be
-an outer reference, so a walk can compute successors from a named root:
+— an outer reference `^rel` on its own or a literal is a parse error). A
+**destination block** is a receiver followed by `collect`, `first` or `single`
+(optionally `distinct`) and a block — the same directive you would write in
+`select`, re-evaluated per frontier row with `^` bound to that row. Its receiver
+*may* be an outer reference, so a walk can compute successors from a named root
+— and over such a receiver the `collect` is implicit (language 0.19): `follow
+^people { where manager == ^id }` is `follow ^people collect { … }`, because
+`^people` can never be a relation of the current row, so its brace cannot be
+the options block. After a bare relation or a call (`follow children { depth 2
+}`, `follow entries(kids) { depth 2 }`) a brace is still the options block:
 
 ```js
 const people = [{ id: 1, manager: null }, { id: 2, manager: 1 }, { id: 3, manager: 1 }, { id: 4, manager: 2 }];
-oqx`id values from ${people} where id == 1 follow ^people collect { where manager == ^id } order by $ordinal`;
+oqx`id values from ${people} where id == 1 follow ^people { where manager == ^id } order by $ordinal`;
 // [1, 2, 3, 4] — the reporting tree under person 1 (`^people` names the root from a top-level walk)
+oqx`id values from ${people} where id == 1 follow ^people { where manager == ^id } { depth 2 } order by $ordinal`;
+// [1, 2, 3] — an options block may follow a trailing destination block
 
 const chain = [{ id: "a" }, { id: "b", prev: "a" }, { id: "c", prev: "b" }];
 oqx`id values from ${chain} where id == "b" follow distinct ^chain collect { where id == ^prev }, ^chain collect { where prev == ^id } order by $ordinal`;
@@ -696,9 +703,11 @@ oqx`boss: ^people[id == ^manager], bossName: boss.name from ${people}`
 Reserved words, never a bare field name: `from where select is not and or` and
 the literal words `true false null`. The top level is unchanged — `age > 15
 from ${people}` stays an error, because `where` would precede `from`. One
-carve-out: after the last `follow` destination a brace is still the **options**
-block (`follow children { depth 2 }`), never a collect; a destination block keeps
-its consumer (`follow ^people collect { … }`).
+carve-out: after a `follow` destination that is a relation of the current row
+(a bare name, a call, a binding) a brace is still the **options** block (`follow
+children { depth 2 }`), never a collect; only over an outer-reference receiver,
+which cannot be a plain destination, is the brace a destination block with the
+implicit `collect` (`follow ^people { where … }`, language 0.19).
 
 ### Cheat-sheet
 
@@ -727,7 +736,7 @@ order by expr desc, expr2                        ordering
 limit n / offset n                               bound the row set (after where/order/distinct, before the consumer)
 follow rel { where … frontier … depth n by … }  recursion ($depth/$stop/$leaf/$frontier); `^name` in the where is the frontier row
 follow before, after                             several destinations: the union of their rows (per step, by identity)
-follow ^people collect { where manager == ^id } a destination block: successors computed per frontier row (`^` = that row)
+follow ^people { where manager == ^id }         a destination block: successors computed per frontier row (`^` = that row; `collect` implicit over `^…`, 0.19)
 ${source} <collect|exists|none|count|first|single> { … }   whole-query consumer
 ```
 

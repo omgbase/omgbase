@@ -33,7 +33,9 @@ Every form here is shorthand for an explicit directive (the AST is the explicit 
                                        (comparison, call, !/is/not, in, literal, (…), a consumer test — anything
                                        but a bare name, a dotted path or a ^lift) is where-first. Bare names still
                                        project: nodes { name } ≡ nodes collect { name }; filter a bare field with
-                                       nodes { is checked }. Not after follow: follow children { depth 2 } is options.
+                                       nodes { is checked }. After follow only over an outer-reference receiver (0.19):
+                                       follow ^docs { where … } is a destination block (collect); follow children { depth 2 }
+                                       and follow refs(x) { depth 2 } are the options block.
   refs(x)[0]                          ≡ refs(x) first { offset 0 }   positional (integer literal or ${binding});
                                        out of range ⇒ absent; refs(x)[0].$path navigates the row
   ^docs[$path == ^company]            ≡ ^docs first { where $path == ^company }   first match or absent
@@ -98,7 +100,7 @@ to that doc's row; dangling and non-string elements are dropped. Yields docs
 rows, so it is a source, a receiver or a follow destination:
 `follow refs(before), refs(after)` walks a timeline both ways. The reverse
 direction needs no function: a document's $path is already the reference
-form, so `^docs collect { where ^$path in list(after) }` is "the
+form, so `^docs { where ^$path in list(after) }` is "the
 documents whose `after` names me". A HIT IS A STORE ROW: a top-level row that is not
 a doc/block/node/edge fails (filter_invalid) — `follow before` over a list of
 paths reaches the STRINGS; write `follow refs(before)`.
@@ -128,5 +130,15 @@ row; one step's successors are unioned by identity. Inside the follow-local
 `where` and inside a destination block `^` is the row being expanded (`^^`
 the walk's enclosing scope): `follow doc.in { where ^$path in list(before) }`,
 `follow doc.out, ^docs collect { where ^$path in list(after) }`.
+Outer-reference destinations (OQX 0.19): a destination whose receiver is headed
+by an outer reference (^docs, ^^docs, 0^docs, ^$it.docs, with any member chain)
+can never be a relation of the current row, so a brace right after it is a
+destination block with the implicit collect — follow refs(before), ^docs { where
+^$path in list(after) } walks `before` forward and, backward, every document
+whose `after` names the frontier row (the 0.17 body rules apply: where-first,
+projections). After children / doc.out / refs(x) / a binding a brace is still
+the options block (an error when that destination is not the last); an options
+block may follow a trailing block: follow ^docs { where … } { depth 2 }. A bare
+follow ^docs (no brace, no consumer) is an error naming both block spellings.
 A custom `order by` disables the keyset cursor.
 "#;

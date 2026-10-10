@@ -79,9 +79,11 @@ consumer and must contain `from`.
 and where position (`where jobs { ^e: employer }`). The `distinct` modifier still
 needs the consumer word before it or inside the body (`x distinct { … }` is the
 parse error it was; write `x collect distinct { … }` or `x { select distinct … }`).
-**Carve-out:** in `follow` destination position a brace block after the **last**
-destination is the options block (`follow children { depth 2 }` is unchanged), so
-a destination block there keeps its explicit consumer (§`follow`). A bracket
+**Carve-out:** in `follow` destination position a brace after the **last**
+destination is the options block (`follow children { depth 2 }` is unchanged) —
+unless the destination's receiver is headed by an outer reference, which can
+never be a plain destination: `follow ^docs { where … }` is the destination
+block `follow ^docs collect { where … }` (since 0.19, §`follow`). A bracket
 chain (§4) whose outermost node is a directive may also be the whole query:
 `people[age > 40]` is `people first { where age > 40 }`. [`sugar`, `ast`]
 
@@ -253,43 +255,59 @@ group    = "(" where ")"                       ; a predicate group …
 ### `follow` — recursion
 
 ```
-follow      = "follow" [ "distinct" ] destination { "," destination } [ "{" { option } "}" ]
-destination = receiver                                                      ; a relation of the current row
-            | receiver ("collect" | "first" | "single") [ "distinct" ] "{" body "}"   ; a destination block
-option      = "where" expr | "frontier" expr | "depth" integer | "by" expr
+follow         = "follow" [ "distinct" ] destination { "," destination } [ "{" { option } "}" ]
+destination    = receiver                                                   ; a relation of the current row (never headed by an outer reference)
+               | receiver ("collect" | "first" | "single") [ "distinct" ] "{" body "}"   ; a destination block
+               | outer-receiver "{" body "}"                                ; ≡ outer-receiver collect { body }   (0.19)
+outer-receiver = scoperef ident { "." ident }                               ; a receiver whose head is an outer reference: ^docs, ^^root.rel, 0^docs, ^$it.docs
+option         = "where" expr | "frontier" expr | "depth" integer | "by" expr
 ```
 
 `follow` is a clause when an identifier, a binding, or a scope reference (`^`,
-`0^`) follows the word; otherwise it is a field name (`select follow from r`). **The implicit-`collect`
-sugar does not apply to destinations:** a `{` after the last destination always
-opens the **options block** — `follow children { depth 2 }` is a depth cap, and
-`follow children { age > 1 }` is the options error (`… expected
-where/frontier/depth/by …`, which also says a destination block needs its
-consumer); `follow ^people { where ^$path in list(after) }` is the outer-reference
-error below (`… it may only head a destination block (follow ^name collect { … })`),
-because `^people` is read as a plain destination and the brace as its options.
-[`sugar`] After `follow`,
-**`distinct` is a keyword**: `follow distinct <relation>` sets the flag, and
-`follow distinct {` or `follow distinct` at the end of the input is a parse
-error `` expected a relation after `follow distinct` ``. A relation literally
-named `distinct` is therefore not supported.
+`0^`) follows the word; otherwise it is a field name (`select follow from r`).
+**A brace after a destination reads by the destination's receiver** (since
+0.19). A receiver that *could* be a relation of the current row — a bare or
+dotted name (`children`, `doc.out`), a free-function call (`refs(before)`,
+`entries(kids)`), a binding — keeps the 0.17 carve-out: a `{` after it opens
+the **options block** when it is the last destination (`follow children { depth
+2 }` is a depth cap, `follow a, children { depth 2 }` too; `follow children {
+age > 1 }` and `follow a, children { id != 1 }` are the options error `…
+expected where/frontier/depth/by …`, which also says a destination block needs
+its consumer). A receiver whose **head is an outer reference** (`^docs`,
+`^^root.rel`, `0^docs`, `^$it.docs` — with any `.member` chain) can never be a
+plain destination, so a `{` right after it opens a **destination block** with
+the implicit `collect`: `follow ^docs { where ^$path in list(after) }` is
+exactly `follow ^docs collect { where ^$path in list(after) }`, with the 0.17
+body rules (`follow ^docs { ^$path in list(after) }` is where-first; `follow
+^docs { title where … }` projects). An options block may still follow a
+trailing destination block, implicit or explicit: `follow ^docs { where … } {
+depth 2 }`. [`follow`, `sugar`, `ast`] After `follow`, **`distinct` is a
+keyword**: `follow distinct <relation>` sets the flag, and `follow distinct {`
+or `follow distinct` at the end of the input is a parse error `` expected a
+relation after `follow distinct` ``. A relation literally named `distinct` is
+therefore not supported.
 
 **Destinations** (since 0.14) are one or more, comma-separated; the walk is
 their union (SEMANTICS §20). A **plain destination** is a relation **of the
-current row**: an outer reference (`follow ^rel`) is a parse error (`` `follow`
-takes a relation of the current row … ``), and so is a literal word (`follow
-null`). A **destination block** is a receiver immediately followed by `collect`,
-`first` or `single` (optionally `distinct`) and `{`: an ordinary select-position
-block (§`select`), re-read per frontier row with `^` bound to that row. Its
-receiver **may** be an outer reference — `follow ^people collect { where
-manager == ^id }` (or `follow 0^people collect { … }`, §4) reads the named root
-`people` from a top-level walk — since the block, not the receiver, is what
-varies per row. `exists`, `none` and
-`count` are not destinations (`` a follow destination must use
-collect/first/single, not `exists` … ``). A comma not followed by a destination
-is a parse error (`` expected a relation after ',' ``). The options block, when
-present, follows the last destination. `depth` must be an integer literal in
-1..8. Each option at most once; any other word in the block is a parse error.
+current row**: an outer reference with no block (`follow ^rel`, `follow
+children, ^others`, `follow distinct ^rel`) is a parse error — `` `follow`
+takes a relation of the current row (`follow <relation>`); an outer reference
+walks a root collection only as a destination block — `follow ^docs { where …
+}` or `follow ^docs collect { … }` `` — and so is a literal word (`follow
+null`). A **destination block** is a receiver followed by `collect`, `first` or
+`single` (optionally `distinct`) and `{` — or, when the receiver is headed by
+an outer reference, by `{` alone (the implicit `collect`, since 0.19): an
+ordinary select-position block (§`select`), re-read per frontier row with `^`
+bound to that row. Its receiver **may** be an outer reference — `follow
+^people collect { where manager == ^id }`, `follow ^people { where manager ==
+^id }` (or `follow 0^people { … }`, §4) reads the named root `people` from a
+top-level walk — since the block, not the receiver, is what varies per row.
+`exists`, `none` and `count` are not destinations, with or without a caret
+(`` a follow destination must use collect/first/single, not `exists` … ``). A
+comma not followed by a destination is a parse error (`` expected a relation
+after ',' ``). The options block, when present, follows the last destination
+(or that destination's block). `depth` must be an integer literal in 1..8.
+Each option at most once; any other word in the block is a parse error.
 Semantics in SEMANTICS §follow. [`follow`, `errors-parse`]
 
 ### `order by`

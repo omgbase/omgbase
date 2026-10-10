@@ -2058,6 +2058,774 @@
           ]
         }
       }
+    },
+    {
+      "name": "an outer-reference destination with a brace is a destination block (implicit collect)",
+      "tags": [
+        "follow",
+        "outer-refs",
+        "sugar",
+        "0.19"
+      ],
+      "notes": "Since 0.19 a receiver headed by an outer reference can never be a plain destination, so its brace opens a destination block — `^docs { … }` ≡ `^docs collect { … }` — not the options block. `^path` inside the block is the frontier row's path: the walk reaches every document whose `after` names the row being expanded.",
+      "roots": {
+        "docs": [
+          {
+            "id": 1,
+            "path": "/p/kickoff",
+            "title": "Kickoff"
+          },
+          {
+            "id": 2,
+            "path": "/p/design",
+            "title": "Design",
+            "after": [
+              "/p/kickoff"
+            ]
+          },
+          {
+            "id": 3,
+            "path": "/p/build",
+            "title": "Build",
+            "after": [
+              "/p/design"
+            ]
+          },
+          {
+            "id": 4,
+            "path": "/q/other",
+            "title": "Other",
+            "after": [
+              "/p/kickoff"
+            ]
+          }
+        ]
+      },
+      "query": "path values from docs where path == \"/p/kickoff\" follow ^docs { where ^path in list(after) } order by $ordinal",
+      "expect": {
+        "result": [
+          "/p/kickoff",
+          "/p/design",
+          "/q/other",
+          "/p/build"
+        ]
+      }
+    },
+    {
+      "name": "an outer-reference destination block may lead with its predicate (where-first)",
+      "tags": [
+        "follow",
+        "outer-refs",
+        "sugar",
+        "0.19"
+      ],
+      "notes": "The 0.17 body rules apply inside the block: a leading `in` predicate opens a `where`-first body.",
+      "roots": {
+        "docs": [
+          {
+            "id": 1,
+            "path": "/p/kickoff",
+            "title": "Kickoff"
+          },
+          {
+            "id": 2,
+            "path": "/p/design",
+            "title": "Design",
+            "after": [
+              "/p/kickoff"
+            ]
+          },
+          {
+            "id": 3,
+            "path": "/p/build",
+            "title": "Build",
+            "after": [
+              "/p/design"
+            ]
+          },
+          {
+            "id": 4,
+            "path": "/q/other",
+            "title": "Other",
+            "after": [
+              "/p/kickoff"
+            ]
+          }
+        ]
+      },
+      "query": "path values from docs where path == \"/p/kickoff\" follow ^docs { ^path in list(after) } order by $ordinal",
+      "expect": {
+        "result": [
+          "/p/kickoff",
+          "/p/design",
+          "/q/other",
+          "/p/build"
+        ]
+      }
+    },
+    {
+      "name": "an outer-reference destination block projects its successors",
+      "tags": [
+        "follow",
+        "outer-refs",
+        "sugar",
+        "0.19"
+      ],
+      "notes": "A projection inside the block shapes the walked rows like any destination block, and the projected records are what gets expanded next — so the projection keeps `path`, which the block reads through `^path` at the following step. The seed keeps its own shape.",
+      "roots": {
+        "docs": [
+          {
+            "id": 1,
+            "path": "/p/kickoff",
+            "title": "Kickoff"
+          },
+          {
+            "id": 2,
+            "path": "/p/design",
+            "title": "Design",
+            "after": [
+              "/p/kickoff"
+            ]
+          },
+          {
+            "id": 3,
+            "path": "/p/build",
+            "title": "Build",
+            "after": [
+              "/p/design"
+            ]
+          },
+          {
+            "id": 4,
+            "path": "/q/other",
+            "title": "Other",
+            "after": [
+              "/p/kickoff"
+            ]
+          }
+        ]
+      },
+      "query": "title, d: $depth from docs where id == 1 follow ^docs { title, path where ^path in list(after) } order by $ordinal",
+      "expect": {
+        "result": [
+          {
+            "title": "Kickoff",
+            "d": 1
+          },
+          {
+            "title": "Design",
+            "d": 2
+          },
+          {
+            "title": "Other",
+            "d": 2
+          },
+          {
+            "title": "Build",
+            "d": 3
+          }
+        ]
+      }
+    },
+    {
+      "name": "an absolute-reference destination with a brace is a destination block",
+      "tags": [
+        "follow",
+        "absolute",
+        "sugar",
+        "0.19"
+      ],
+      "notes": "`0^docs` is `^docs` from a top-level walk (the receiver is read in the frontier row's scope, depth 1); inside the block (depth 2) `1^path` is `^path`, the frontier row.",
+      "roots": {
+        "docs": [
+          {
+            "id": 1,
+            "path": "/p/kickoff",
+            "title": "Kickoff"
+          },
+          {
+            "id": 2,
+            "path": "/p/design",
+            "title": "Design",
+            "after": [
+              "/p/kickoff"
+            ]
+          },
+          {
+            "id": 3,
+            "path": "/p/build",
+            "title": "Build",
+            "after": [
+              "/p/design"
+            ]
+          },
+          {
+            "id": 4,
+            "path": "/q/other",
+            "title": "Other",
+            "after": [
+              "/p/kickoff"
+            ]
+          }
+        ]
+      },
+      "query": "path values from docs where id == 1 follow 0^docs { where 1^path in list(after) } order by $ordinal",
+      "expect": {
+        "result": [
+          "/p/kickoff",
+          "/p/design",
+          "/q/other",
+          "/p/build"
+        ]
+      }
+    },
+    {
+      "name": "a two-caret destination with a brace is a destination block inside a nested collect's follow",
+      "tags": [
+        "follow",
+        "outer-refs",
+        "sugar",
+        "0.19"
+      ],
+      "notes": "The nested block's rows are depth 2, so `^^people` read in the frontier row's scope is the root; inside the destination block `^id` is the frontier row (the walked person) and `^^lead` would be the team row.",
+      "roots": {
+        "teams": [
+          {
+            "id": "t",
+            "lead": 1
+          }
+        ],
+        "people": [
+          {
+            "id": 1,
+            "manager": null
+          },
+          {
+            "id": 2,
+            "manager": 1
+          },
+          {
+            "id": 3,
+            "manager": 2
+          }
+        ]
+      },
+      "query": "id, chain: ^people collect { id values where id == ^lead follow ^^people { where manager == ^id } order by $ordinal } from teams",
+      "expect": {
+        "result": [
+          {
+            "id": "t",
+            "chain": [
+              1,
+              2,
+              3
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "a member chain over an outer reference with a brace is a destination block",
+      "tags": [
+        "follow",
+        "outer-refs",
+        "sugar",
+        "0.19"
+      ],
+      "notes": "The rule is about the receiver's head: `^$it.people` is an outer reference with a member chain, so its brace is a destination block.",
+      "roots": {
+        "people": [
+          {
+            "id": 1,
+            "manager": null
+          },
+          {
+            "id": 2,
+            "manager": 1
+          },
+          {
+            "id": 3,
+            "manager": 1
+          },
+          {
+            "id": 4,
+            "manager": 2
+          }
+        ]
+      },
+      "query": "id values from people where id == 1 follow ^$it.people { where manager == ^id } order by $ordinal",
+      "expect": {
+        "result": [
+          1,
+          2,
+          3,
+          4
+        ]
+      }
+    },
+    {
+      "name": "an options block after a trailing destination block (implicit collect)",
+      "tags": [
+        "follow",
+        "outer-refs",
+        "sugar",
+        "0.19"
+      ],
+      "notes": "The brace right after `^people` is the block; the brace after the block's `}` is the options block, as it has been since 0.14 for an explicit consumer.",
+      "roots": {
+        "people": [
+          {
+            "id": 1,
+            "manager": null
+          },
+          {
+            "id": 2,
+            "manager": 1
+          },
+          {
+            "id": 3,
+            "manager": 1
+          },
+          {
+            "id": 4,
+            "manager": 2
+          }
+        ]
+      },
+      "query": "id, s: $stop from people where id == 1 follow ^people { where manager == ^id } { depth 2 } order by $ordinal",
+      "expect": {
+        "result": [
+          {
+            "id": 1,
+            "s": "interior"
+          },
+          {
+            "id": 2,
+            "s": "depth"
+          },
+          {
+            "id": 3,
+            "s": "depth"
+          }
+        ]
+      }
+    },
+    {
+      "name": "an options block after a trailing destination block (explicit collect)",
+      "tags": [
+        "follow",
+        "outer-refs",
+        "0.19"
+      ],
+      "roots": {
+        "people": [
+          {
+            "id": 1,
+            "manager": null
+          },
+          {
+            "id": 2,
+            "manager": 1
+          },
+          {
+            "id": 3,
+            "manager": 1
+          },
+          {
+            "id": 4,
+            "manager": 2
+          }
+        ]
+      },
+      "query": "id, s: $stop from people where id == 1 follow ^people collect { where manager == ^id } { depth 2 } order by $ordinal",
+      "expect": {
+        "result": [
+          {
+            "id": 1,
+            "s": "interior"
+          },
+          {
+            "id": 2,
+            "s": "depth"
+          },
+          {
+            "id": 3,
+            "s": "depth"
+          }
+        ]
+      }
+    },
+    {
+      "name": "the options where applies on top of a destination block's own where",
+      "tags": [
+        "follow",
+        "outer-refs",
+        "sugar",
+        "0.19"
+      ],
+      "roots": {
+        "people": [
+          {
+            "id": 1,
+            "manager": null
+          },
+          {
+            "id": 2,
+            "manager": 1
+          },
+          {
+            "id": 3,
+            "manager": 1
+          },
+          {
+            "id": 4,
+            "manager": 2
+          }
+        ]
+      },
+      "query": "id values from people where id == 1 follow ^people { where manager == ^id } { where id != 3 } order by $ordinal",
+      "expect": {
+        "result": [
+          1,
+          2,
+          4
+        ]
+      }
+    },
+    {
+      "name": "two destinations: a plain relation and an outer-reference block, unioned by identity",
+      "tags": [
+        "follow",
+        "outer-refs",
+        "sugar",
+        "0.19"
+      ],
+      "notes": "Both destinations reach `b` from `a` (the nested `kids` row and the root row share the identity `b`); one step keeps it once. From that `b` only the block finds `c`.",
+      "roots": {
+        "nodes": [
+          {
+            "id": "a",
+            "kids": [
+              {
+                "id": "b"
+              }
+            ]
+          },
+          {
+            "id": "b",
+            "parent": "a"
+          },
+          {
+            "id": "c",
+            "parent": "b"
+          }
+        ]
+      },
+      "query": "id values from nodes where id == \"a\" follow kids, ^nodes { where parent == ^id } order by $ordinal",
+      "expect": {
+        "result": [
+          "a",
+          "b",
+          "c"
+        ]
+      }
+    },
+    {
+      "name": "two outer-reference blocks walk both directions of a chain (implicit collect)",
+      "tags": [
+        "follow",
+        "outer-refs",
+        "sugar",
+        "0.19"
+      ],
+      "notes": "The implicit-collect spelling of \"a relation and a block walk both directions of a chain\".",
+      "roots": {
+        "chain": [
+          {
+            "id": "a"
+          },
+          {
+            "id": "b",
+            "prev": "a"
+          },
+          {
+            "id": "c",
+            "prev": "b"
+          }
+        ]
+      },
+      "query": "id values from chain where id == \"b\" follow distinct ^chain { where id == ^prev }, ^chain { where prev == ^id } order by $ordinal",
+      "expect": {
+        "result": [
+          "b",
+          "a",
+          "c"
+        ]
+      }
+    },
+    {
+      "name": "the options where after an explicit destination block",
+      "tags": [
+        "follow",
+        "outer-refs",
+        "0.19"
+      ],
+      "notes": "Pinned alongside the implicit form: the second brace after `^chain collect { … }` is the options block, as it has been since 0.14.",
+      "roots": {
+        "chain": [
+          {
+            "id": "a"
+          },
+          {
+            "id": "b",
+            "prev": "a"
+          },
+          {
+            "id": "c",
+            "prev": "b"
+          }
+        ]
+      },
+      "query": "id values from chain where id == \"a\" follow ^chain collect { where prev == ^id } { where id != \"c\" } order by $ordinal",
+      "expect": {
+        "result": [
+          "a",
+          "b"
+        ]
+      }
+    },
+    {
+      "name": "a brace after a plain destination of several is still the options block",
+      "tags": [
+        "follow",
+        "sugar",
+        "0.19"
+      ],
+      "notes": "`children` is the last destination and a relation of the current row, so `{ depth 2 }` caps the walk (it is not a block).",
+      "roots": {
+        "tree": [
+          {
+            "id": "root",
+            "a": [],
+            "children": [
+              {
+                "id": "x",
+                "children": [
+                  {
+                    "id": "x1"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "query": "id, s: $stop from tree follow a, children { depth 2 } order by $ordinal",
+      "expect": {
+        "result": [
+          {
+            "id": "root",
+            "s": "interior"
+          },
+          {
+            "id": "x",
+            "s": "depth"
+          }
+        ]
+      }
+    },
+    {
+      "name": "a brace after a free-function destination is the options block: depth",
+      "tags": [
+        "follow",
+        "entries",
+        "sugar",
+        "0.19"
+      ],
+      "notes": "A call receiver (`entries(kids)`) is read in the current row, so its brace is the options block, like a bare relation's.",
+      "roots": {
+        "tree": [
+          {
+            "id": "root",
+            "kids": {
+              "a": {
+                "id": "a",
+                "kids": {
+                  "a1": {
+                    "id": "a1"
+                  }
+                }
+              },
+              "b": {
+                "id": "b"
+              }
+            }
+          }
+        ]
+      },
+      "query": "id, s: $stop from tree follow entries(kids) { depth 2 } order by $ordinal",
+      "expect": {
+        "result": [
+          {
+            "id": "root",
+            "s": "interior"
+          },
+          {
+            "id": "a",
+            "s": "depth"
+          },
+          {
+            "id": "b",
+            "s": "depth"
+          }
+        ]
+      }
+    },
+    {
+      "name": "a brace after a free-function destination is the options block: where",
+      "tags": [
+        "follow",
+        "entries",
+        "sugar",
+        "0.19"
+      ],
+      "roots": {
+        "tree": [
+          {
+            "id": "root",
+            "kids": {
+              "a": {
+                "id": "a",
+                "kids": {
+                  "a1": {
+                    "id": "a1"
+                  }
+                }
+              },
+              "b": {
+                "id": "b"
+              }
+            }
+          }
+        ]
+      },
+      "query": "id values from tree follow entries(kids) { where id != \"a\" } order by $ordinal",
+      "expect": {
+        "result": [
+          "root",
+          "b"
+        ]
+      }
+    },
+    {
+      "name": "a predicate in the brace after a plain destination of several is the options error",
+      "tags": [
+        "follow",
+        "sugar",
+        "errors",
+        "0.19"
+      ],
+      "notes": "`children` is a relation of the current row, so its brace is the options block; the message says a destination block needs its consumer.",
+      "roots": {
+        "tree": [
+          {
+            "id": "root",
+            "a": [],
+            "children": []
+          }
+        ]
+      },
+      "query": "id from tree follow a, children { id != \"root\" }",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "expected where/frontier/depth/by",
+            "a destination block needs its consumer"
+          ]
+        }
+      }
+    },
+    {
+      "name": "a plain outer-reference destination is an error naming the block spellings",
+      "tags": [
+        "follow",
+        "outer-refs",
+        "errors",
+        "0.19"
+      ],
+      "notes": "No brace and no consumer: `^children` cannot be a relation of the current row. The message offers both block spellings.",
+      "roots": {
+        "tree": [
+          {
+            "id": "root",
+            "children": []
+          }
+        ]
+      },
+      "query": "id from tree follow ^children",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "`follow` takes a relation of the current row",
+            "walks a root collection only as a destination block",
+            "follow ^docs { where … }",
+            "follow ^docs collect { … }"
+          ]
+        }
+      }
+    },
+    {
+      "name": "a destination block over an outer reference still rejects exists",
+      "tags": [
+        "follow",
+        "outer-refs",
+        "errors",
+        "0.19"
+      ],
+      "roots": {
+        "tree": [
+          {
+            "id": "root"
+          }
+        ]
+      },
+      "query": "id from tree follow ^tree exists { parent == ^id }",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "collect/first/single",
+            "exists"
+          ]
+        }
+      }
+    },
+    {
+      "name": "an implicit destination block is closed before the options block",
+      "tags": [
+        "follow",
+        "outer-refs",
+        "errors",
+        "0.19"
+      ],
+      "roots": {
+        "tree": [
+          {
+            "id": "root"
+          }
+        ]
+      },
+      "query": "id from tree follow ^tree { where parent == ^id } { depth 2",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "expected '}' to close the follow block"
+          ]
+        }
+      }
     }
   ]
 }

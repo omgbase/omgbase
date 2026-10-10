@@ -3101,6 +3101,301 @@
       }
     },
     {
+      "name": "follow: an outer-reference destination with a brace parses to the collect block",
+      "tags": [
+        "follow",
+        "sugar",
+        "0.19"
+      ],
+      "notes": "Same tree as the explicit `^people collect { … }` case above: the implicit `collect` desugars in the parser.",
+      "query": "id from people where id == 1 follow ^people { where manager == ^id }",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "people"
+          },
+          "from": [],
+          "where": {
+            "kind": "scalar",
+            "expr": {
+              "kind": "binary",
+              "op": "==",
+              "left": {
+                "kind": "ident",
+                "name": "id"
+              },
+              "right": {
+                "kind": "lit",
+                "value": 1
+              }
+            }
+          },
+          "select": [
+            {
+              "kind": "field",
+              "name": "id",
+              "expr": {
+                "kind": "ident",
+                "name": "id"
+              },
+              "lift": 0
+            }
+          ],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": {
+            "kind": "follow",
+            "destinations": [
+              {
+                "kind": "op",
+                "receiver": {
+                  "kind": "outer",
+                  "levels": 1,
+                  "name": "people"
+                },
+                "op": "collect",
+                "sub": {
+                  "kind": "subquery",
+                  "from": [],
+                  "where": {
+                    "kind": "scalar",
+                    "expr": {
+                      "kind": "binary",
+                      "op": "==",
+                      "left": {
+                        "kind": "ident",
+                        "name": "manager"
+                      },
+                      "right": {
+                        "kind": "outer",
+                        "levels": 1,
+                        "name": "id"
+                      }
+                    }
+                  },
+                  "select": [],
+                  "orderBy": null,
+                  "follow": null,
+                  "values": false,
+                  "limit": null,
+                  "offset": null
+                },
+                "countCmp": null,
+                "distinct": false
+              }
+            ],
+            "distinct": false,
+            "where": null,
+            "frontier": null,
+            "depth": null,
+            "by": null
+          },
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "follow: an outer-reference destination block, where-first",
+      "tags": [
+        "follow",
+        "sugar",
+        "0.19"
+      ],
+      "query": "id from people where id == 1 follow ^people { manager == ^id }",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "people"
+          },
+          "from": [],
+          "where": {
+            "kind": "scalar",
+            "expr": {
+              "kind": "binary",
+              "op": "==",
+              "left": {
+                "kind": "ident",
+                "name": "id"
+              },
+              "right": {
+                "kind": "lit",
+                "value": 1
+              }
+            }
+          },
+          "select": [
+            {
+              "kind": "field",
+              "name": "id",
+              "expr": {
+                "kind": "ident",
+                "name": "id"
+              },
+              "lift": 0
+            }
+          ],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": {
+            "kind": "follow",
+            "destinations": [
+              {
+                "kind": "op",
+                "receiver": {
+                  "kind": "outer",
+                  "levels": 1,
+                  "name": "people"
+                },
+                "op": "collect",
+                "sub": {
+                  "kind": "subquery",
+                  "from": [],
+                  "where": {
+                    "kind": "scalar",
+                    "expr": {
+                      "kind": "binary",
+                      "op": "==",
+                      "left": {
+                        "kind": "ident",
+                        "name": "manager"
+                      },
+                      "right": {
+                        "kind": "outer",
+                        "levels": 1,
+                        "name": "id"
+                      }
+                    }
+                  },
+                  "select": [],
+                  "orderBy": null,
+                  "follow": null,
+                  "values": false,
+                  "limit": null,
+                  "offset": null
+                },
+                "countCmp": null,
+                "distinct": false
+              }
+            ],
+            "distinct": false,
+            "where": null,
+            "frontier": null,
+            "depth": null,
+            "by": null
+          },
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "follow: an options block after an implicit destination block",
+      "tags": [
+        "follow",
+        "sugar",
+        "0.19"
+      ],
+      "query": "id from people where id == 1 follow ^people { where manager == ^id } { depth 2 }",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "people"
+          },
+          "from": [],
+          "where": {
+            "kind": "scalar",
+            "expr": {
+              "kind": "binary",
+              "op": "==",
+              "left": {
+                "kind": "ident",
+                "name": "id"
+              },
+              "right": {
+                "kind": "lit",
+                "value": 1
+              }
+            }
+          },
+          "select": [
+            {
+              "kind": "field",
+              "name": "id",
+              "expr": {
+                "kind": "ident",
+                "name": "id"
+              },
+              "lift": 0
+            }
+          ],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": {
+            "kind": "follow",
+            "destinations": [
+              {
+                "kind": "op",
+                "receiver": {
+                  "kind": "outer",
+                  "levels": 1,
+                  "name": "people"
+                },
+                "op": "collect",
+                "sub": {
+                  "kind": "subquery",
+                  "from": [],
+                  "where": {
+                    "kind": "scalar",
+                    "expr": {
+                      "kind": "binary",
+                      "op": "==",
+                      "left": {
+                        "kind": "ident",
+                        "name": "manager"
+                      },
+                      "right": {
+                        "kind": "outer",
+                        "levels": 1,
+                        "name": "id"
+                      }
+                    }
+                  },
+                  "select": [],
+                  "orderBy": null,
+                  "follow": null,
+                  "values": false,
+                  "limit": null,
+                  "offset": null
+                },
+                "countCmp": null,
+                "distinct": false
+              }
+            ],
+            "distinct": false,
+            "where": null,
+            "frontier": null,
+            "depth": 2,
+            "by": null
+          },
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
       "name": "follow: relations and blocks mixed",
       "tags": [
         "follow"

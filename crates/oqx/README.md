@@ -19,10 +19,13 @@ consumer is `collect` (`jobs { pay > 2 }`), a block may lead with a predicate
 (bare names still project), brackets `x[p]` / `x[p]!` / `x[n]` (first match /
 exactly one, required / positional), postfix `x!` (required), `is x` / `not x`,
 `x is y` / `x is not y` (identity; `x is null` is absence), and a `select` item
-may use the items to its left; after a `follow` destination a brace is still
-the options block. Since 0.18 the root scope is a row (`^$it` from a top-level
-row is the host's root object) and `N^name` is an absolute outer reference
-(`0^people`). The TypeScript README's tutorial (§10 "Sugar") and `spec/oqx`
+may use the items to its left; after a `follow` destination that is a relation
+of the current row a brace is still the options block. Since 0.18 the root scope
+is a row (`^$it` from a top-level row is the host's root object) and `N^name` is
+an absolute outer reference (`0^people`). Since 0.19 an outer-reference follow
+destination followed by a brace is a destination block with the implicit
+`collect` (`follow ^docs { where … }`), since `^docs` can never be a relation of
+the current row. The TypeScript README's tutorial (§10 "Sugar") and `spec/oqx`
 (`GRAMMAR.md` §4, `SEMANTICS.md`) are the full account; both implementations
 run the same fixtures.
 
@@ -36,7 +39,7 @@ repository, and each reports the spec version it conforms to.
 ## Status
 
 Conformance-first, and conformant: `tests/spec.rs` runs every fixture in
-`spec/oqx/cases` (1163 cases in 33 files at language version 0.18) and all of them
+`spec/oqx/cases` (1188 cases in 33 files at language version 0.19) and all of them
 pass, so `cargo test -p oqx` requires every case to pass. Published on crates.io
 as `oqx`.
 
@@ -71,9 +74,11 @@ Mirrors the reference so the two can be read side by side:
   optional field is materialized, and `where` keeps its surface form. `follow` takes a comma-separated list
   of destinations (`Follow.destinations`, since 0.14): a relation of the
   current row, or a destination block — `^people collect { where manager ==
-  ^id }`, a select-position directive re-read per frontier row with `^` bound
-  to that row; the walk is their union, successors unioned by identity within a
-  step, and the follow `where` reads the frontier row through `^`.
+  ^id }`, or `^people { … }` with the `collect` implicit over an outer-reference
+  receiver (0.19) — a select-position directive re-read per frontier row with
+  `^` bound to that row; the walk is their union, successors unioned by
+  identity within a step, and the follow `where` reads the frontier row through
+  `^`.
 - `semantics` — the scalar contract every backend obeys: typed equality with no
   coercion, absent-aware ordering (absent sorts last both ways), membership,
   ranges, arithmetic, builtins.

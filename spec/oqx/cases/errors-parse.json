@@ -250,6 +250,44 @@
       }
     },
     {
+      "name": "follow outer reference without a brace: the message names both block spellings",
+      "tags": [
+        "follow",
+        "outer-refs",
+        "0.19"
+      ],
+      "query": "id from tree follow ^children",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "`follow` takes a relation of the current row (`follow <relation>`)",
+            "only as a destination block",
+            "follow ^docs { where … }",
+            "follow ^docs collect { … }"
+          ]
+        }
+      }
+    },
+    {
+      "name": "follow: a later outer-reference destination without a brace is the same error",
+      "tags": [
+        "follow",
+        "outer-refs",
+        "0.19"
+      ],
+      "query": "id from tree follow children, ^others order by id",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "`follow` takes a relation of the current row",
+            "only as a destination block"
+          ]
+        }
+      }
+    },
+    {
       "name": "stray closing parenthesis after the query",
       "query": "name from people )",
       "expect": {

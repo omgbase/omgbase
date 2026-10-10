@@ -390,13 +390,50 @@
       }
     },
     {
-      "name": "an outer-reference destination with a brace is the outer-reference error",
+      "name": "an outer-reference destination with a brace is a destination block",
       "tags": [
         "sugar",
         "follow",
-        "outer-refs"
+        "outer-refs",
+        "0.19"
       ],
-      "notes": "`^t` is read as a plain destination (not allowed) and the brace as its options; the message names the destination-block spelling.",
+      "notes": "Until 0.18 this was the outer-reference error (`^t` read as a plain destination, the brace as its options). Since 0.19 an outer-reference receiver can only head a destination block, so the brace is the block with the implicit `collect`: successors are the root rows whose id is one more than the frontier row's.",
+      "roots": {
+        "t": [
+          {
+            "id": 1
+          },
+          {
+            "id": 2
+          },
+          {
+            "id": 3
+          }
+        ]
+      },
+      "query": "select id from t where id == 1 follow ^t { where id == ^id + 1 }",
+      "expect": {
+        "result": [
+          {
+            "id": 1
+          },
+          {
+            "id": 2
+          },
+          {
+            "id": 3
+          }
+        ]
+      }
+    },
+    {
+      "name": "a brace after a plain destination keeps the options reading: where",
+      "tags": [
+        "sugar",
+        "follow",
+        "0.19"
+      ],
+      "notes": "The pair to the case above: `children` is a relation of the current row, so its brace is the options block.",
       "roots": {
         "t": [
           {
@@ -414,14 +451,19 @@
           }
         ]
       },
-      "query": "select id from t where id == 1 follow ^t { where id == 2 }",
+      "query": "select id from t where id == 1 follow children { where id > 1 }",
       "expect": {
-        "error": {
-          "stage": "parse",
-          "includes": [
-            "follow ^name collect { … }"
-          ]
-        }
+        "result": [
+          {
+            "id": 1
+          },
+          {
+            "id": 2
+          },
+          {
+            "id": 3
+          }
+        ]
       }
     },
     {

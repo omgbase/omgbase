@@ -1242,11 +1242,12 @@ fn follow_block_errors() {
     assert_parse_error("from tree follow 1", &["unexpected 'follow' after `from`"]);
     // a `^`-headed relation IS recognized as a follow clause, and rejected: a
     // plain destination is one of the current row's relations (an outer
-    // reference is only a destination block's receiver)
+    // reference is only a destination block's receiver — with or without the
+    // consumer word, since 0.19)
     assert_parse_error(
         "from tree follow ^rel",
         &[
-            "`follow` takes a relation of the current row (`follow <relation>`); an outer reference `^name` is not allowed there — it may only head a destination block (`follow ^name collect { … }`)",
+            "`follow` takes a relation of the current row (`follow <relation>`); an outer reference walks a root collection only as a destination block — `follow ^docs { where … }` or `follow ^docs collect { … }`",
         ],
     );
     assert_parse_error(

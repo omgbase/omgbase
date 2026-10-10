@@ -528,7 +528,9 @@ after` steps once into a node both name). A row with no successors is a leaf.
 
 - A **plain destination** (`children`, `doc.out`) is read in the row's own
   scope, like a body-level `from`.
-- A **destination block** (`^people collect { where manager == ^id }`) is
+- A **destination block** (`^people collect { where manager == ^id }`, or with
+  the `collect` implicit after an outer-reference receiver, `^people { where
+  manager == ^id }` — since 0.19, GRAMMAR §`follow`) is
   evaluated as a select-position directive **in the row's scope**: its receiver
   is read there (so `^people` from a top-level walk is the named root), and
   inside the block `^` reads the **frontier row** — the row being expanded —

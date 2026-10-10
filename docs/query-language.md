@@ -247,7 +247,7 @@ parser** (the AST, `print`, the planner and the optimizer see the explicit form)
 
 | Written | Means |
 | --- | --- |
-| `nodes { kind == "md:task" }` | `nodes collect { where kind == "md:task" }` — a receiver block without a consumer is `collect`; a block whose *leading* expression is syntactically a predicate (a comparison, `in`, `&&`/`||`, a prefix `!`/`is`/`not`, an infix `is`, a call, a literal, a binding, a parenthesized expression, a consumer test, a bracket chain or `x!` — anything but a bare name, a dotted path or a `^`-lift) is `where`-first. `nodes { name }` still projects; `nodes { is checked }` is the bare-field filter; `{ name where kind == "md:task" }` keeps the keyword. Not after `follow`: `follow children { depth 2 }` is the options block. |
+| `nodes { kind == "md:task" }` | `nodes collect { where kind == "md:task" }` — a receiver block without a consumer is `collect`; a block whose *leading* expression is syntactically a predicate (a comparison, `in`, `&&`/`||`, a prefix `!`/`is`/`not`, an infix `is`, a call, a literal, a binding, a parenthesized expression, a consumer test, a bracket chain or `x!` — anything but a bare name, a dotted path or a `^`-lift) is `where`-first. `nodes { name }` still projects; `nodes { is checked }` is the bare-field filter; `{ name where kind == "md:task" }` keeps the keyword. After `follow` only over an outer-reference receiver (spec/oqx 0.19): `follow ^docs { where ^$path in list(after) }` is `follow ^docs collect { … }`, while `follow children { depth 2 }` and `follow refs(before) { depth 2 }` are the options block. |
 | `refs(x)[0]`, `refs(x)[${i}]` | `refs(x) first { offset 0 }` — positional (an integer literal or a binding; out of range ⇒ absent); `refs(x)[0].$title` navigates the row |
 | `^docs[$path == ^company]` | `^docs first { where $path == ^company }` — the first match or absent |
 | `^docs[$path == ^company]!` | `^docs single { where $path == ^company }!` — exactly one match; zero or many is `filter_invalid` |
@@ -349,7 +349,18 @@ nested/correlated scopes:
   rows as `follow doc.in`). Inside the block `^` is the frontier row (the
   destination is read in that row's scope, so `^docs` there is the root's
   documents); `first`/`single` yield at
-  most one successor; `exists`/`none`/`count` are not destinations.
+  most one successor; `exists`/`none`/`count` are not destinations. Since
+  spec/oqx 0.19 the `collect` is **implicit when the receiver is headed by an
+  outer reference** (`^docs`, `^^docs`, `0^docs`, `^$it.docs`, with any member
+  chain): such a receiver can never be a relation of the current row, so its
+  brace is the block, not the options block — `follow refs(before), ^docs {
+  where ^$path in list(after) }` walks `before` references forward and,
+  backward, every document whose `after` names the frontier row. After any
+  other receiver (`children`, `doc.out`, `refs(before)`, a binding) a brace is
+  still the options block (an error when that destination is not the last),
+  and an options block may follow a trailing destination block: `follow ^docs
+  { where … } { depth 2 }`. A bare `follow ^docs` (no brace, no consumer) is a
+  parse error naming both block spellings.
 - **Correlated successor `where`:** inside the follow-local `where`, a bare name
   is the candidate's own property, `^name` is the **frontier row** being
   expanded, and `^^name` the walk's enclosing scope — `follow doc.out { where
@@ -493,7 +504,7 @@ A parsed query is a first-class tree shared by both engines
 evaluation — omgbase's runner does this once, before it injects `$id`/`$path`
 and renames a `values` item). `@omgbase/oqx` exports `visit`/`transform` (one
 child-key table drives both), `print`/`printTemplate` (canonical source, with
-the round-trip law both spec runners enforce), `toJSON` (`{ "oqx": "0.18",
+the round-trip law both spec runners enforce), `toJSON` (`{ "oqx": "0.19",
 "kind": "query", … }`) and `build.*`; the Rust crate mirrors them (`walk`,
 `print`, `build`, serde under `json`). omgbase uses them where it used to
 hand-roll walks: the runner's `$self` rewrite is a `transform`, the

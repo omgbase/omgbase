@@ -69,6 +69,9 @@
 //! MAY be an outer reference — followed by `collect`/`first`/`single`
 //! [`distinct`] `{ body }`, exactly what `try_op` recognizes in select position
 //! (`exists`/`none`/`count` are rejected: they are where-position tests).
+//! Since 0.19 an outer-reference receiver followed by a bare `{` is that block
+//! with the implicit `collect` (`follow ^docs { where … }`); after any other
+//! destination a brace is still the options block.
 //!
 //! Error messages are the TS messages verbatim (the conformance fixtures and
 //! the reference tests assert on fragments of them).
@@ -837,11 +840,21 @@ impl Parser {
 
     // One `follow` destination. The receiver is parsed first so that a block over an
     // outer reference (`^people collect { … }`) is recognized before the plain-form
-    // rule — a relation of the current row, never `^rel` — rejects the caret.
+    // rule — a relation of the current row, never `^rel` — rejects the caret. A
+    // receiver headed by an outer reference (`^docs`, `^^root.rel`, `0^docs`, with
+    // any member chain) followed directly by `{` is a destination block with the
+    // implicit `collect` (since 0.19): such a receiver can never be a plain
+    // destination, so the brace cannot be its options block. After any other
+    // receiver a brace keeps the 0.17 reading — the options block.
     fn parse_follow_destination(&mut self) -> Result<FollowDestination> {
         let outer = self.at_scope_ref_at(0);
         let receiver = self.parse_receiver()?;
-        if let Some(op) = self.at_consumer_block() {
+        let op = match self.at_consumer_block() {
+            Some(op) => Some(op),
+            None if outer && self.at(TokType::LBrace) => Some(Consumer::Collect),
+            None => None,
+        };
+        if let Some(op) = op {
             if !matches!(op, Consumer::Collect | Consumer::First | Consumer::Single) {
                 return self.fail(format!(
                     "a follow destination must use collect/first/single, not `{}` (exists/none/count are where-position tests)",
@@ -853,7 +866,7 @@ impl Parser {
         }
         if outer {
             return self.fail(
-                "`follow` takes a relation of the current row (`follow <relation>`); an outer reference `^name` is not allowed there — it may only head a destination block (`follow ^name collect { … }`)",
+                "`follow` takes a relation of the current row (`follow <relation>`); an outer reference walks a root collection only as a destination block — `follow ^docs { where … }` or `follow ^docs collect { … }`",
             );
         }
         Ok(FollowDestination::Relation(receiver))

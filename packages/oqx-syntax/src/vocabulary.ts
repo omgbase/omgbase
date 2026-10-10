@@ -10,7 +10,7 @@
 // tests in `test/` pin it to the specification text so it cannot drift silently.
 
 /** The OQX language version (`spec/oqx/VERSION`, `major.minor`) this vocabulary describes. */
-export const LANGUAGE_VERSION = "0.18";
+export const LANGUAGE_VERSION = "0.19";
 
 /** Reserved words: never usable as a bare field name (GRAMMAR §1). `is`, `not`,
  * `and`, `or` are the word operators (GRAMMAR §4, since 0.17). */
