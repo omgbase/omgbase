@@ -25,6 +25,9 @@ import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+
+/** SDK messages for the optional GET notification stream being unavailable. */
+const NO_STREAM = /Failed to (open|reconnect) SSE stream|Maximum reconnection attempts/;
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { OMG, WORKSPACE } from "./dev-workspace.mjs";
 import { RemoteAuth, configDir, deleteTokenFile, listTokenFiles, tokenFilePath } from "./lib/remote-auth.mjs";
@@ -87,7 +90,13 @@ function stdioUpstream({ omg, workspace }) {
 /** A remote gateway: one upstream Streamable HTTP session per browser session, bearer added per request. */
 function remoteUpstream(remote) {
   return async () => {
-    const transport = new StreamableHTTPClientTransport(new URL(remote.serverUrl), { fetch: remote.fetchWithAuth() });
+    // The standalone GET notification stream is optional in Streamable HTTP; a
+    // gateway may decline it (405 per spec, 404 from rmcp behind host-my-mcp).
+    // Requests and responses ride POST regardless, so never retry the GET.
+    const transport = new StreamableHTTPClientTransport(new URL(remote.serverUrl), {
+      fetch: remote.fetchWithAuth(),
+      reconnectionOptions: { maxRetries: 0, initialReconnectionDelay: 1000, maxReconnectionDelay: 1000, reconnectionDelayGrowFactor: 1 },
+    });
     await transport.start();
     return {
       transport,
@@ -171,7 +180,15 @@ export async function startBridge(opts = {}) {
       log(`upstream closed${session.id ? ` (session ${session.id})` : ""}`);
       void http.close();
     };
-    up.transport.onerror = (err) => log(`upstream error: ${err.message}`);
+    // A declined notification stream is not an error worth repeating: say so once per session.
+    let noStreamNoted = false;
+    up.transport.onerror = (err) => {
+      if (NO_STREAM.test(err.message)) {
+        if (!noStreamNoted) { noStreamNoted = true; log(`upstream offers no GET notification stream (${err.message.replace(/^.*: /, "")}); requests continue over POST`); }
+        return;
+      }
+      log(`upstream error: ${err.message}`);
+    };
     await http.start();
     return session;
   }
