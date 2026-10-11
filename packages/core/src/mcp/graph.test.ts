@@ -108,10 +108,10 @@ describe("graph — neighborhood macro over OQX follow", () => {
 
   it("edges carry provenance and preserve external + phantom endpoints", async () => {
     const r = await graph({ roots: ["a.md"], degrees: 1, direction: "out" });
-    const byKind = (k: string) => r.edges.filter((e) => e.dst_kind === k);
+    const byKind = (k: string) => r.links.filter((e) => e.dst_kind === k);
 
     // a → b appears twice: a depends_on (frontmatter) + a references (link).
-    const toB = r.edges.filter((e) => e.dst_path === "/b.md");
+    const toB = r.links.filter((e) => e.dst_path === "/b.md");
     expect(toB.map((e) => e.predicate).sort()).toEqual(["depends_on", "references"]);
     expect(toB.map((e) => e.provenance).sort()).toEqual(["frontmatter", "link"]);
 
@@ -123,7 +123,7 @@ describe("graph — neighborhood macro over OQX follow", () => {
     expect(ext[0]!.dst_path).toBeNull();
 
     // Phantom (dangling internal) endpoint is preserved: dst_kind document, null path.
-    const phantom = r.edges.filter((e) => e.dst_kind === "document" && e.dst_path === null);
+    const phantom = r.links.filter((e) => e.dst_kind === "document" && e.dst_path === null);
     expect(phantom).toHaveLength(1);
     expect(String(phantom[0]!.dst_id)).toContain("missing.md");
   });
@@ -132,7 +132,7 @@ describe("graph — neighborhood macro over OQX follow", () => {
     // degrees 1 out reaches a, b. b → c is NOT traversed (c beyond the boundary),
     // so no edge to c.md is kept (but a's external/phantom stubs remain).
     const r = await graph({ roots: ["a.md"], degrees: 1, direction: "out" });
-    expect(r.edges.some((e) => e.dst_path === "/c.md")).toBe(false);
+    expect(r.links.some((e) => e.dst_path === "/c.md")).toBe(false);
   });
 
   // `predicate` restricts the NEIGHBORHOOD to predicate-reachable docs (recomputed
@@ -143,9 +143,9 @@ describe("graph — neighborhood macro over OQX follow", () => {
     const r = await graph({ roots: ["a.md"], degrees: 2, direction: "out", predicate: "depends_on" });
     expect(r.queries[0]).not.toMatch(/\bvia\b(?!_id)/); // no via clause is emitted (`via_id` is a projected edge field)
     expect(r.documents.map((d) => d.path).sort()).toEqual(["/a.md", "/b.md"]);
-    expect(r.edges).toHaveLength(1);
-    expect(r.edges[0]!.predicate).toBe("depends_on");
-    expect(r.edges[0]!.dst_path).toBe("/b.md");
+    expect(r.links).toHaveLength(1);
+    expect(r.links[0]!.predicate).toBe("depends_on");
+    expect(r.links[0]!.dst_path).toBe("/b.md");
     // c is reachable only via `references`, so it is NOT in a depends_on neighborhood.
     expect(r.documents.map((d) => d.path)).not.toContain("/c.md");
   });
@@ -166,7 +166,7 @@ describe("graph — neighborhood macro over OQX follow", () => {
     expect(r.documents.map((d) => d.path)).toContain("/a.md");
     // edges never reference a doc that was capped out of the set.
     const ids = new Set(r.documents.map((d) => d.id));
-    for (const e of r.edges) {
+    for (const e of r.links) {
       const dangling = e.dst_kind === "external" || (e.dst_kind === "document" && e.dst_path === null);
       expect(ids.has(e.doc_id)).toBe(true);
       expect(ids.has(e.dst_id) || dangling).toBe(true);

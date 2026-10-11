@@ -23,7 +23,7 @@ import { translatePredicate, type Target, type TranslateCtx } from "./sql/transl
 import { ALIAS, COLS, FROM, ORDER, guards } from "./sql/scan.js";
 import { REACH_THROUGH, TARGETS, isTargetRelationOf } from "./root-row.js";
 
-// The root collection a query scans, if it is a bare `docs|blocks|nodes|edges`
+// The root collection a query scans, if it is a bare `docs|blocks|nodes|links`
 // source at the root scope (else null — not a pushable shape; a nested `^docs`
 // is a block's receiver, never the query's source). run.ts also asks: a bare
 // root scan's rows are store rows by construction.
@@ -46,9 +46,9 @@ export function rootTarget(source: Expr): Target | null {
  *   • a bare reserved docs basename (`id path updated_at hash raw`): as
  *     an `ident` at the ROOT scope when the target is `docs`, or as `doc.<name>`
  *     on any target at any depth (the reach-through row is a doc)
- *   • a bare target name (`docs blocks nodes edges`, root-row.ts) read as a
+ *   • a bare target name (`docs blocks nodes links`, root-row.ts) read as a
  *     property: as an `ident` at the ROOT scope when it is not a relation of
- *     the target's rows (`blocks` on blocks, `nodes` on nodes, any on edges),
+ *     the target's rows (`blocks` on blocks, `nodes` on nodes, any on links),
  *     as an `ident` at any depth below (the rows there are unknown), or as
  *     `<head>.<name>` unless the head is a reach-through whose row has that
  *     relation (`doc.nodes`, `doc.blocks`, `block.nodes`, `section.blocks`)

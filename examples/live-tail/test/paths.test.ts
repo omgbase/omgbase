@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { attr, bareArguments, bareAttributes, docForeign, docLocator } from "../src/lib/paths.ts";
+import { attr, bareArguments, bareAttributes, diffUnifiedTool, docLocator } from "../src/lib/paths.ts";
 
-describe("docLocator / docForeign — the document argument by surface version (spec/surface §4 Arguments)", () => {
-  it("spells `id`/`path` (and `doc_id`/`doc_path`) on 3.0 and `doc` before", () => {
+describe("docLocator — the document argument by surface version (spec/surface §4 Arguments)", () => {
+  it("spells `id`/`path` on 3.0 and `doc` before", () => {
     expect(bareArguments("3.0")).toBe(true);
     expect(bareArguments("2.0")).toBe(false);
     expect(bareArguments(null)).toBe(false);
@@ -11,9 +11,17 @@ describe("docLocator / docForeign — the document argument by surface version (
     expect(docLocator("3.0", "/notes/a.md")).toEqual({ path: "/notes/a.md" });
     expect(docLocator("2.0", "/notes/a.md")).toEqual({ doc: "/notes/a.md" });
     expect(docLocator("2.0", "d_0")).toEqual({ doc: "d_0" });
-    expect(docForeign("3.0", "d_0")).toEqual({ doc_id: "d_0" });
-    expect(docForeign("3.0", "a.md")).toEqual({ doc_path: "a.md" });
-    expect(docForeign(null, "a.md")).toEqual({ doc: "a.md" });
+    expect(docLocator(null, "a.md")).toEqual({ doc: "a.md" });
+  });
+});
+
+describe("diffUnifiedTool — the unified-diff tool's name by surface version (spec/surface §3)", () => {
+  it("is `docs_diff_unified` on 3.0 and later, `diff_unified` before and while unknown", () => {
+    expect(diffUnifiedTool("3.0")).toBe("docs_diff_unified");
+    expect(diffUnifiedTool("3.1")).toBe("docs_diff_unified");
+    expect(diffUnifiedTool("2.0")).toBe("diff_unified");
+    expect(diffUnifiedTool("1.5")).toBe("diff_unified");
+    expect(diffUnifiedTool(null)).toBe("diff_unified");
   });
 });
 import { LEGACY_SURFACE, hitId, hitPath, rooted, surfaceMajor, surfaceOf } from "../src/lib/paths.ts";

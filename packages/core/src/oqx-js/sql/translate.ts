@@ -46,7 +46,7 @@ import { storagePath } from "../../core/paths.js";
 import { TARGETS } from "../root-row.js";
 
 /** SQL row domain, matching the store's tables. */
-export type Target = "docs" | "blocks" | "nodes" | "edges";
+export type Target = "docs" | "blocks" | "nodes" | "links";
 
 /** The SQL aliases the compiler assigned to the current scope's row (`self`) and
  * its owning document (`doc`). On the `docs` target the row IS the document, so
@@ -112,10 +112,10 @@ export interface Operand extends Frag {
  * `translate.test.ts` asserts this set against the store context.
  */
 export const NON_PROPERTY_NAMES: Readonly<Record<Target, ReadonlySet<string>>> = {
-  docs: new Set(["doc", "nodes", "blocks", "out", "in", "out_edges", "in_edges", "data", "frontmatter", "inline"]),
-  blocks: new Set(["block", "doc", "children", "nodes", "out_edges", "section", "attrs"]),
+  docs: new Set(["doc", "nodes", "blocks", "out", "in", "out_links", "in_links", "data", "frontmatter", "inline"]),
+  blocks: new Set(["block", "doc", "children", "nodes", "out_links", "section", "attrs"]),
   nodes: new Set(["section", "doc", "block", "blocks", "subsections", "children", "attrs"]),
-  edges: new Set(["doc"]),
+  links: new Set(["doc"]),
 };
 
 // ---- engine attributes ------------------------------------------------------
@@ -143,7 +143,7 @@ export const ROW_ATTRIBUTES: Readonly<Record<Target, ReadonlySet<string>>> = {
   docs: new Set(["id", "path", "raw", "hash", "updated_at", "title", "tags"]),
   blocks: new Set(["id", "path", "raw", "hash", "updated_at"]),
   nodes: new Set(["id", "path"]),
-  edges: new Set(["id", "path"]),
+  links: new Set(["id", "path"]),
 };
 function attributeSql(name: string, ctx: TranslateCtx): Operand | null {
   const { self, doc, target } = ctx;
@@ -163,14 +163,14 @@ function attributeSql(name: string, ctx: TranslateCtx): Operand | null {
     case "id": return text(`${self}.node_id`);
     case "path": return pathColumn(`${doc}.path`);
   }
-  else if (target === "edges") switch (name) {
+  else if (target === "links") switch (name) {
     case "id": return text(`${self}.edge_id`);
     case "path": return pathColumn(`${doc}.path`);
   }
   return null;
 }
 
-/** The edges target's plain fields → the store's columns (spec/surface §1.2,
+/** The links target's plain fields → the store's columns (spec/surface §1.2,
  * 3.0: a foreign key is named for what it is, never `$`-prefixed). `dst_path`
  * and `uri` are correlated subqueries; `dst_path` is the reference form. */
 function edgeField(name: string, self: string): Operand | null {
@@ -303,7 +303,7 @@ export function translateOperand(e: Expr, ctx: TranslateCtx): Operand | null {
         // Bare non-structural identifier flattens into attrs (see blocks above).
         return jsonExtract(`${self}.attrs`, [e.name]);
       }
-      if (target === "edges") return edgeField(e.name, self);
+      if (target === "links") return edgeField(e.name, self);
       return null;
     }
     case "member": {
@@ -328,7 +328,7 @@ export function translateOperand(e: Expr, ctx: TranslateCtx): Operand | null {
       if (head === "doc") {
         if (rest.length !== 1) return null;
         const k = rest[0]!;
-        if (k === "id") return text(target === "edges" ? `${self}.src_doc` : `${self}.doc_id`);
+        if (k === "id") return text(target === "links" ? `${self}.src_doc` : `${self}.doc_id`);
         if (k === "path") return pathColumn(`${doc}.path`);
         if (k === "hash") return text(`lower(hex(${doc}.file_hash))`);
         if (k === "updated_at") return text(`(SELECT c.ts FROM revisions r JOIN commits c ON c.commit_id = r.commit_id WHERE r.rev_id = ${doc}.current_rev)`);

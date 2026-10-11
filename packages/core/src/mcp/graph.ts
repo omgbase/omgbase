@@ -6,7 +6,7 @@
 // / `doc.in` query (the exact recursive-CTE walk the `query` tool exposes),
 // runs it through the shared runner (oqxRunAsync), and then only SHAPES the
 // walk's own output (its `$depth`/`$stop` intrinsics and projected edges) into
-// the { documents, edges, frontier } envelope. Every hop, cycle-guard and depth
+// the { documents, links, frontier } envelope. Every hop, cycle-guard and depth
 // bound is `follow`'s; nothing here re-implements BFS/DFS.
 //
 // Mapping (args → follow query):
@@ -18,11 +18,11 @@
 //   select     → extra doc projections spliced into the walk's `select`
 //   max_documents → a post-walk cap on the distinct document set
 //
-// Edges are surfaced by projecting the reached doc's `doc.out_edges`/`doc.in_edges`
+// Edges are surfaced by projecting the reached doc's `doc.out_links`/`doc.in_links`
 // in the SAME walk (a select-position collect), then keeping the induced-subgraph
 // edges (both endpoints in the neighborhood) plus dangling stubs to external/
 // phantom targets — so external (`x_…`) and phantom endpoints are never dropped,
-// exactly as `from edges` surfaces them.
+// exactly as `from links` surfaces them.
 
 import { build, parse, print, OqxError } from "@omgbase/oqx";
 import type { Query, SelectItem } from "@omgbase/oqx";
@@ -59,7 +59,7 @@ export interface GraphArgs {
   max_documents?: number | undefined;
 }
 
-/** A traversed edge: a row of the `edges` target under its own field names
+/** A traversed edge: a row of the `links` target under its own field names
  *  (spec/surface §1.2, 3.0 — `id` the edge, `doc_id`/`block_id` the source,
  *  `via_id`, `dst_id` the destination node, `dst_path`/`uri` its path or URI,
  *  `field` the authoring key). No rename table: what the walk projects is what
@@ -96,7 +96,7 @@ export interface GraphResult {
   degrees: number;
   direction: GraphDirection;
   documents: GraphDoc[];
-  edges: GraphEdge[];
+  links: GraphEdge[];
   frontier: { id: string; path: string; degree: number }[];
   truncated: boolean;
   /** the exact OQX `follow` query/queries this macro generated — it delegates. */
@@ -148,7 +148,7 @@ function userItems(src: string, alias: string): SelectItem[] {
   return q.select;
 }
 
-// The edge fields projected from doc.out_edges/doc.in_edges — the `edges`
+// The edge fields projected from doc.out_links/doc.in_links — the `links`
 // target's own names, projected under themselves (spec/surface §1.2, 3.0: no
 // rename between the language and the result) — identical for both directions
 // so a single filter handles either scan (an edge is a directional fact
@@ -161,10 +161,10 @@ const EDGE_FIELDS: (keyof GraphEdge)[] = [
 // The walk, as an AST (spec/oqx/AST.md §7) printed canonically — never spliced
 // strings: the seed ids are literals, the caller's projections parsed items.
 //
-//   select _depth: $depth, _stop: $stop, _edges: doc.<dir>_edges collect { <edge fields> } <user items>
+//   select _depth: $depth, _stop: $stop, _links: doc.<dir>_links collect { <edge fields> } <user items>
 //   from docs where id == <root> or … follow distinct doc.<dir> { depth <depth> }
 function buildQuery(rootIds: readonly string[], dir: "out" | "in", depth: number, userSelect: SelectItem[]): string {
-  const edges = build.op(build.path("doc", `${dir}_edges`), "collect", build.subquery({
+  const edges = build.op(build.path("doc", `${dir}_links`), "collect", build.subquery({
     select: EDGE_FIELDS.map((name) => build.field(name, build.ident(name))),
   }));
   const seed = rootIds.map((id) => build.scalar(build.binary("==", build.ident("id"), build.lit(id))));
@@ -172,7 +172,7 @@ function buildQuery(rootIds: readonly string[], dir: "out" | "in", depth: number
     select: [
       build.field("_depth", build.ident("$depth")),
       build.field("_stop", build.ident("$stop")),
-      build.collect("_edges", edges),
+      build.collect("_links", edges),
       ...userSelect,
     ],
     where: seed.length === 1 ? seed[0]! : build.or(seed),
@@ -184,7 +184,7 @@ function buildQuery(rootIds: readonly string[], dir: "out" | "in", depth: number
 /**
  * Run the `graph` neighborhood macro: compile the args into OQX `follow`
  * query(ies), execute via the shared runner, and shape the walk output into
- * { documents, edges, frontier }. Throws EngineError (doc_missing/target_missing)
+ * { documents, links, frontier }. Throws EngineError (doc_missing/target_missing)
  * for an empty or unresolvable roots list — never a silent empty result.
  */
 export async function graphNeighborhood(
@@ -244,7 +244,7 @@ export async function graphNeighborhood(
       }
       // Gather this node's edges; dedup by edge id (an a→b edge is reachable as
       // a's out-edge AND b's in-edge in "both" mode).
-      const raw = (hit._edges as GraphEdge[] | null) ?? [];
+      const raw = (hit._links as GraphEdge[] | null) ?? [];
       for (const e of raw) if (!edgeMap.has(e.id)) edgeMap.set(e.id, e);
     }
   }
@@ -304,7 +304,7 @@ export async function graphNeighborhood(
 
   // Keep the induced-subgraph edges (both endpoints in the neighborhood) plus
   // dangling stubs to external/phantom targets, so external (x_…) and phantom
-  // endpoints survive the way `from edges` surfaces them. A `predicate` filter
+  // endpoints survive the way `from links` surfaces them. A `predicate` filter
   // keeps only that predicate's edges (the neighborhood was already restricted to
   // predicate-reachable docs above).
   const edges: GraphEdge[] = [];
@@ -322,7 +322,7 @@ export async function graphNeighborhood(
     degrees: effectiveDegrees,
     direction,
     documents,
-    edges,
+    links: edges,
     frontier,
     truncated,
     queries,

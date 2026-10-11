@@ -707,7 +707,7 @@
     },
     {
       "name": "relation-out-edges",
-      "query": "select e: out_edges collect { predicate, dp: dst_path } from blocks where path == \"index.md\" && type == \"paragraph\" && has_edge(\"references\")",
+      "query": "select e: out_links collect { predicate, dp: dst_path } from blocks where path == \"index.md\" && type == \"paragraph\" && has_edge(\"references\")",
       "expect": {
         "hits": [
           {

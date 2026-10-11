@@ -84,6 +84,9 @@ returns no hits).
 
 ### 1.3 `text_search(repo, query, limit = 50)`
 
+The MCP tool rendering this operation is `blocks_search` (surface 3.0; the
+tool was named `text_search` before) — `text_search` stays this layer's name.
+
 If the sanitized query is empty → no hits. Otherwise the live blocks of the
 repo whose FTS row matches, ordered by `bm25(blocks_fts)` ascending (best
 first), ties in SQLite's order — the fixtures pin only cases without ties —
@@ -213,6 +216,9 @@ blocks are two hits. Hit: `{ block_id, doc_id, path, cosine }`.
 ties by `doc_id`.
 
 ## 4. Fusion and boosts
+
+The MCP tool rendering `resolve` (below) is `blocks_resolve` (surface 3.0; the
+tool was named `resolve` before) — `resolve` stays this layer's name.
 
 `hybrid(repo, text?, vector?, terms?, limit = 50)`:
 

@@ -83,7 +83,7 @@ pub static COMMANDS: &[Command] = &[
     cmd(
         "links",
         &[],
-        "Open edges touching a node",
+        "Open links touching a node",
         cmd::links::links,
     ),
     cmd(

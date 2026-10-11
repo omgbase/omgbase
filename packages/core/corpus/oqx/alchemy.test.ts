@@ -1418,7 +1418,7 @@ describe("alchemy corpus — sugar, refs() and the root row", () => {
     const root = hits("select n: size(^docs), repo: ^id from docs limit 1").hits[0]!;
     expect(root.n).toBe(20);
     expect(root.repo).toBe(repoId);
-    expect(hits("select ks: entries(^$it) collect { $key values } from docs limit 1").hits[0]!.ks).toEqual(["docs", "blocks", "nodes", "edges"]);
+    expect(hits("select ks: entries(^$it) collect { $key values } from docs limit 1").hits[0]!.ks).toEqual(["docs", "blocks", "nodes", "links"]);
     // two scopes down: ^^docs and the absolute 0^docs agree
     const deep = hits('select a: nodes first { select c: size(^^docs) values where kind == "md:section" }, b: nodes first { select c: size(0^docs) values where kind == "md:section" } from docs where path == "/index.md"').hits[0]!;
     expect([deep.a, deep.b]).toEqual([20, 20]);

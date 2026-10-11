@@ -34,8 +34,8 @@ describe("translate — equality is absence-normalized (IS / IS NOT)", () => {
     // not under a relational op, not for a bare literal, not for `dst_path` (a subquery)
     expect(translatePredicate(pred('path < "/m"'), DOCS)).toEqual({ sql: "(('/' || d.path) < ?)", params: ["/m"] });
     expect(translatePredicate(pred('path == "index.md"'), DOCS)).toEqual({ sql: "(('/' || d.path) IS ?)", params: ["index.md"] });
-    const edges: TranslateCtx = { target: "edges", self: "e", doc: "d", params: [] };
-    expect(translatePredicate(predOn('edges', 'dst_path == "/a.md"'), edges)).toEqual({
+    const edges: TranslateCtx = { target: "links", self: "e", doc: "d", params: [] };
+    expect(translatePredicate(predOn('links', 'dst_path == "/a.md"'), edges)).toEqual({
       sql: "((SELECT '/' || dd.path FROM docs dd WHERE dd.doc_id = e.dst_node) IS ?)",
       params: ["/a.md"],
     });
@@ -206,8 +206,8 @@ describe("translate — conjunction and bindings via constructed AST", () => {
 
 const BLOCKS: TranslateCtx = { target: "blocks", self: "b", doc: "d", params: [] };
 const NODES: TranslateCtx = { target: "nodes", self: "n", doc: "d", params: [] };
-const EDGES: TranslateCtx = { target: "edges", self: "e", doc: "d", params: [] };
-const CTX: Record<string, TranslateCtx> = { docs: DOCS, blocks: BLOCKS, nodes: NODES, edges: EDGES };
+const EDGES: TranslateCtx = { target: "links", self: "e", doc: "d", params: [] };
+const CTX: Record<string, TranslateCtx> = { docs: DOCS, blocks: BLOCKS, nodes: NODES, links: EDGES };
 
 // Parse `from <target> where <src>` and return the single scalar predicate Expr.
 describe("decline (a) — the operand-kind comparison matrix", () => {
@@ -408,7 +408,7 @@ describe("decline (a) — the operand-kind comparison matrix", () => {
     expect(translatePredicate(predOn("blocks", "checked == null"), BLOCKS)).toEqual({ sql: "(json_extract(b.attrs, '$.checked') IS ?)", params: [null] });
     expect(translatePredicate(predOn("blocks", "attrs.level != null"), BLOCKS)).toEqual({ sql: "(json_extract(b.attrs, '$.level') IS NOT ?)", params: [null] });
     expect(translatePredicate(predOn("docs", "updated_at != null"), DOCS)).not.toBeNull();
-    expect(translatePredicate(predOn("edges", "anchor == null"), EDGES)).toEqual({ sql: "(e.anchor IS ?)", params: [null] });
+    expect(translatePredicate(predOn("links", "anchor == null"), EDGES)).toEqual({ sql: "(e.anchor IS ?)", params: [null] });
   });
 });
 
@@ -447,10 +447,10 @@ describe("source handles (3.0) — a key read through a handle is pushed, the wh
 
 describe("decline (b) — relation, reach-through and source-handle names are not property reads", () => {
   it("the name sets per target", () => {
-    expect([...NON_PROPERTY_NAMES.docs].sort()).toEqual(["blocks", "data", "doc", "frontmatter", "in", "inline", "nodes", "out", "out_edges", "in_edges"].sort());
-    expect([...NON_PROPERTY_NAMES.blocks].sort()).toEqual(["attrs", "block", "children", "doc", "nodes", "out_edges", "section"].sort());
+    expect([...NON_PROPERTY_NAMES.docs].sort()).toEqual(["blocks", "data", "doc", "frontmatter", "in", "inline", "nodes", "out", "out_links", "in_links"].sort());
+    expect([...NON_PROPERTY_NAMES.blocks].sort()).toEqual(["attrs", "block", "children", "doc", "nodes", "out_links", "section"].sort());
     expect([...NON_PROPERTY_NAMES.nodes].sort()).toEqual(["attrs", "block", "blocks", "children", "doc", "section", "subsections"].sort());
-    expect([...NON_PROPERTY_NAMES.edges].sort()).toEqual(["doc"]);
+    expect([...NON_PROPERTY_NAMES.links].sort()).toEqual(["doc"]);
   });
 
   it("every name in the set resolves to a non-scalar in the store context (a row, an array, an object)", () => {
@@ -462,7 +462,7 @@ describe("decline (b) — relation, reach-through and source-handle names are no
         docs: { doc_id: "d_x", repo_id: repoId, path: "a.md", format: "markdown" },
         blocks: { block_id: "b_x", doc_id: "d_x", repo_id: repoId, __path: "a.md", type: "paragraph", text: "t", attrs: "{}", ordinal: 0, depth: 0, parent_block: null },
         nodes: { node_id: "n_x", doc_id: "d_x", repo_id: repoId, __path: "a.md", block_id: "b_x", kind: "md:section", name: "s", value: null, attrs: "{}" },
-        edges: { edge_id: "e_x", repo_id: repoId, __path: "a.md", src_doc: "d_x", dst_node: "d_y", predicate: "references", anchor: null },
+        links: { edge_id: "e_x", repo_id: repoId, __path: "a.md", src_doc: "d_x", dst_node: "d_y", predicate: "references", anchor: null },
       };
       for (const target of Object.keys(NON_PROPERTY_NAMES) as (keyof typeof NON_PROPERTY_NAMES)[]) {
         const [row] = tagRows([rows[target]!], target);
@@ -474,7 +474,7 @@ describe("decline (b) — relation, reach-through and source-handle names are no
           expect((typeof v === "object" && v !== null) || (reach && v === undefined), `${target}.${name} resolved to ${JSON.stringify(v)}`).toBe(true);
         }
         // and a plain key is a scalar/absent read, so the set is not over-wide
-        const plain = target === "docs" ? "era" : target === "edges" ? "anchor" : "checked";
+        const plain = target === "docs" ? "era" : target === "links" ? "anchor" : "checked";
         const pv = ctx.get(row, plain);
         expect(pv === undefined || pv === null || typeof pv !== "object", `${target}.${plain}`).toBe(true);
       }
@@ -493,7 +493,7 @@ describe("decline (b) — relation, reach-through and source-handle names are no
   });
 
   it("a docs relation or handle behind `doc.` declines on every target", () => {
-    for (const target of ["docs", "blocks", "nodes", "edges"]) {
+    for (const target of ["docs", "blocks", "nodes", "links"]) {
       expect(translatePredicate(predOn(target, "doc.nodes == null"), CTX[target]!), target).toBeNull();
       expect(translatePredicate(predOn(target, 'doc.frontmatter != "x"'), CTX[target]!), target).toBeNull();
     }
@@ -502,7 +502,7 @@ describe("decline (b) — relation, reach-through and source-handle names are no
   it("the same names remain ordinary attributes where the context reads them as such", () => {
     // `section`/`children` are not in the docs or edges sets: on docs they are property keys (pushable as text).
     expect(translatePredicate(predOn("docs", 'section == "x"'), DOCS)).not.toBeNull();
-    expect(translatePredicate(predOn("nodes", 'out_edges == "x"'), NODES)).not.toBeNull(); // nodes have no out_edges relation → attrs.out_edges
+    expect(translatePredicate(predOn("nodes", 'out_links == "x"'), NODES)).not.toBeNull(); // nodes have no out_links relation → attrs.out_links
   });
 });
 
@@ -511,14 +511,14 @@ describe("foreign-key elimination (spec/surface §1, 3.0) — a reach-through to
     expect(translatePredicate(predOn("blocks", 'doc.id == "d_1"'), BLOCKS)).toEqual({ sql: "(b.doc_id IS ?)", params: ["d_1"] });
     expect(translatePredicate(predOn("blocks", 'doc_id == "d_1"'), BLOCKS)).toEqual({ sql: "(b.doc_id IS ?)", params: ["d_1"] });
     expect(translatePredicate(predOn("nodes", 'doc.id == "d_1"'), NODES)).toEqual({ sql: "(n.doc_id IS ?)", params: ["d_1"] });
-    expect(translatePredicate(predOn("edges", 'doc.id == "d_1"'), EDGES)).toEqual({ sql: "(e.src_doc IS ?)", params: ["d_1"] });
-    expect(translatePredicate(predOn("edges", 'doc_id == "d_1"'), EDGES)).toEqual({ sql: "(e.src_doc IS ?)", params: ["d_1"] });
+    expect(translatePredicate(predOn("links", 'doc.id == "d_1"'), EDGES)).toEqual({ sql: "(e.src_doc IS ?)", params: ["d_1"] });
+    expect(translatePredicate(predOn("links", 'doc_id == "d_1"'), EDGES)).toEqual({ sql: "(e.src_doc IS ?)", params: ["d_1"] });
     expect(translatePredicate(pred('doc.id == "d_1"'), DOCS)).toEqual({ sql: "(d.doc_id IS ?)", params: ["d_1"] });
   });
 
   it("doc.path / doc.hash / doc.updated_at read the scan's joined document columns (no subquery for the join)", () => {
     expect(translatePredicate(predOn("blocks", 'doc.path == "/a.md"'), BLOCKS)).toEqual({ sql: "(d.path IS ?)", params: ["a.md"] });
-    expect(translatePredicate(predOn("edges", 'doc.path == "/a.md"'), EDGES)).toEqual({ sql: "(d.path IS ?)", params: ["a.md"] });
+    expect(translatePredicate(predOn("links", 'doc.path == "/a.md"'), EDGES)).toEqual({ sql: "(d.path IS ?)", params: ["a.md"] });
     expect(translatePredicate(predOn("blocks", 'doc.hash == "ab"'), BLOCKS)).toEqual({ sql: "(lower(hex(d.file_hash)) IS ?)", params: ["ab"] });
     expect(translatePredicate(predOn("nodes", 'doc.updated_at >= "2026"'), NODES)?.sql).toContain("r.rev_id = d.current_rev");
   });
@@ -531,15 +531,15 @@ describe("foreign-key elimination (spec/surface §1, 3.0) — a reach-through to
     expect(translatePredicate(predOn("nodes", 'block.text == "x"'), NODES)?.sql).toContain("SELECT bb.text FROM blocks bb");
   });
 
-  it("the edges target's plain fields are the store's columns under the surface's names", () => {
-    expect(translatePredicate(predOn("edges", 'block_id == "b_1"'), EDGES)).toEqual({ sql: "(e.src_block IS ?)", params: ["b_1"] });
-    expect(translatePredicate(predOn("edges", 'via_id == null'), EDGES)).toEqual({ sql: "(e.via_node IS ?)", params: [null] });
-    expect(translatePredicate(predOn("edges", 'dst_id == "d_2"'), EDGES)).toEqual({ sql: "(e.dst_node IS ?)", params: ["d_2"] });
-    expect(translatePredicate(predOn("edges", 'field == "before"'), EDGES)).toEqual({ sql: "(e.src_field IS ?)", params: ["before"] });
-    expect(translatePredicate(predOn("edges", 'uri == "https://x"'), EDGES)?.sql).toContain("FROM external_nodes xn");
+  it("the links target's plain fields are the store's columns under the surface's names", () => {
+    expect(translatePredicate(predOn("links", 'block_id == "b_1"'), EDGES)).toEqual({ sql: "(e.src_block IS ?)", params: ["b_1"] });
+    expect(translatePredicate(predOn("links", 'via_id == null'), EDGES)).toEqual({ sql: "(e.via_node IS ?)", params: [null] });
+    expect(translatePredicate(predOn("links", 'dst_id == "d_2"'), EDGES)).toEqual({ sql: "(e.dst_node IS ?)", params: ["d_2"] });
+    expect(translatePredicate(predOn("links", 'field == "before"'), EDGES)).toEqual({ sql: "(e.src_field IS ?)", params: ["before"] });
+    expect(translatePredicate(predOn("links", 'uri == "https://x"'), EDGES)?.sql).toContain("FROM external_nodes xn");
     // the dropped names are no longer intrinsics: an unknown `$x` declines, `from_commit` is gone
-    expect(translatePredicate(predOn("edges", '$src == "d_1"'), EDGES)).toBeNull();
-    expect(translatePredicate(predOn("edges", '$from_commit == "c_1"'), EDGES)).toBeNull();
+    expect(translatePredicate(predOn("links", '$src == "d_1"'), EDGES)).toBeNull();
+    expect(translatePredicate(predOn("links", '$from_commit == "c_1"'), EDGES)).toBeNull();
     expect(translatePredicate(predOn("blocks", '$doc == "d_1"'), BLOCKS)).toBeNull();
   });
 });

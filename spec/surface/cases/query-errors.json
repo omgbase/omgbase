@@ -53,13 +53,31 @@
       "notes": "§1.2: `body` is not an engine attribute (the bytes are `raw`), so it is an ordinary property read — absent on every document."
     },
     {
-      "name": "text-on-edges",
-      "notes": "§1.3: text() is not available on edges.",
-      "query": "from edges where text(\"x\")",
+      "name": "text-on-links",
+      "notes": "§1.3: text() is not available on links.",
+      "query": "from links where text(\"x\")",
       "expect": {
         "error": "filter_invalid",
-        "message_includes": "edges"
+        "message_includes": "text(...) is not available on the links target"
       }
+    },
+    {
+      "name": "edges-is-not-a-target",
+      "notes": "§1.1 (3.0 name pass): the row kind is `links`; `edges` is no target name — a query saying `from edges` gets the ordinary unknown-target error, in both engines.",
+      "query": "from edges",
+      "expect": {
+        "error": "filter_invalid",
+        "message_includes": "`edges` is not a target — the repository's collections are `docs`, `blocks`, `nodes`, `links` (`edges` was renamed `links` in surface 3.0)"
+      }
+    },
+    {
+      "name": "unknown-target-is-loud",
+      "query": "from nope",
+      "expect": {
+        "error": "filter_invalid",
+        "message_includes": "`nope` is not a target — the repository's collections are `docs`, `blocks`, `nodes`, `links`"
+      },
+      "notes": "§1.1 (3.0): a top-level `from <name>` that is no collection is refused (before, it scanned an absent root and returned an empty result)."
     },
     {
       "name": "under-on-docs",

@@ -54,7 +54,7 @@ b_cmb5nds p    Sulphur combines directly with most metals on heating, producing 
 
 Where `cat` gives bytes and `outline` gives structure, `show` gives the derived
 metadata: frontmatter and inline (`key:: value`) properties, plus the document's
-open edges. Mercury declares a symbol, a melting point, its toxicity, and links
+open links. Mercury declares a symbol, a melting point, its toxicity, and links
 out to other pages:
 
 ```console
@@ -74,7 +74,7 @@ $ omg show substances/mercury.md
     verified = true
   computed
     title = Mercury
-  out edges
+  out links
 ...
 ```
 
@@ -93,7 +93,7 @@ $ omg links processes/magnum-opus.md --in
     d_lk5i0j1 > references ×1
 ```
 
-`links` without a direction shows both in- and out-edges; `--out` shows only the
+`links` without a direction shows both in- and out-links; `--out` shows only the
 documents this one cites. For transitive reach (a document's whole citation
 closure), use OQX `follow` — see
 [oqx-tutorial/graph-traversal.md](./oqx-tutorial/graph-traversal.md).

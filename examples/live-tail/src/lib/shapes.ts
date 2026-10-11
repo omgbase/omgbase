@@ -11,8 +11,12 @@
 //   docs_history docs[]      3.0 { id, path, deleted, currentRev, versions }   2.x { docId, path, … }
 //   …versions[]              3.0 { rev, seq, commit, updated_at, origin, actor, hash, isCurrent }
 //                            2.x { rev, seq, commit, ts, origin, actor, contentHash, isCurrent }
-//   diff_unified             3.0 { id, path, from, to, diff }                2.x { doc, path, from, to, diff }
+//   docs_diff_unified        3.0 { id, path, from, to, diff }                2.x (as `diff_unified`) { doc, path, from, to, diff }
 //   docs_read_at             3.0 { id, path, rev, raw, … }                   2.x { path, docId, rev, content, … }
+//
+// The unified-diff TOOL is itself named per version (`docs_diff_unified` on
+// 3.0, `diff_unified` before — lib/paths.ts `diffUnifiedTool`); its result is
+// read here under either name.
 
 import type { ChangesSince, Digest, DocVersion, DocVersions, Revision } from "./feed.ts";
 import { surfaceMajor } from "./paths.ts";
@@ -70,7 +74,7 @@ export function docVersionsOf(surface: string | null, d: Wire): DocVersions {
 
 export interface UnifiedDiff { doc: string; path: string; from: string; to: string; diff: string }
 
-/** A `diff_unified` result. */
+/** A `docs_diff_unified` (3.0) / `diff_unified` (before) result. */
 export function unifiedOf(surface: string | null, r: Wire): UnifiedDiff {
   return { doc: str(surface3(surface) ? r.id : r.doc), path: str(r.path), from: str(r.from), to: str(r.to), diff: str(r.diff) };
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { parse } from "@omgbase/oqx";
-import { DOC_ATTRIBUTES, HIT_ENVELOPE_KEYS, LEGACY_SURFACE, attr, bareArguments, bareAttributes, docArg, docForeign, docLocator, hitId, hitPath, outerPathOperand, pathExpr, pathOperand, rooted, rootsPaths, rowRef, samePath, serverPath, surfaceMajor, surfaceOf, unrooted } from "../src/lib/paths.ts";
+import { DOC_ATTRIBUTES, HIT_ENVELOPE_KEYS, LEGACY_SURFACE, attr, bareArguments, bareAttributes, docArg, docLocator, hitId, hitPath, outerPathOperand, pathExpr, pathOperand, rooted, rootsPaths, rowRef, samePath, serverPath, surfaceMajor, surfaceOf, unrooted } from "../src/lib/paths.ts";
 
 describe("hitId / hitPath / rowRef — the hit envelope (`id`/`path` on every surface version)", () => {
   it("reads `id`/`path` as returned", () => {
@@ -148,8 +148,5 @@ describe("serverPath / docArg", () => {
     expect(docLocator("2.0", "/timeline/kickoff.md")).toEqual({ doc: "/timeline/kickoff.md" });
     expect(docLocator("1.5", "/timeline/kickoff.md")).toEqual({ doc: "timeline/kickoff.md" });
     expect(docLocator("2.0", "d_77ptprj")).toEqual({ doc: "d_77ptprj" });
-    expect(docForeign("3.0", "d_77ptprj")).toEqual({ doc_id: "d_77ptprj" });
-    expect(docForeign("3.0", "a.md")).toEqual({ doc_path: "a.md" });
-    expect(docForeign("2.0", "a.md")).toEqual({ doc: "a.md" });
   });
 });

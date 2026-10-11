@@ -390,7 +390,7 @@
     },
     {
       "name": "cat-block-json",
-      "notes": "blocks_get at raw",
+      "notes": "blocks_read at raw",
       "workspace": "alchemy",
       "argv": [
         "cat",
@@ -538,7 +538,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "  omgbase  >  /texts/mutus-liber.md\n  ----------------------------------------\n  properties\n    length = fifteen plates\n    attributed_to = altus\n    type = text\n    layer = draft\n    tradition = western\n    era = 1677\n    tags = [\"text\",\"images\"]\n    verified = false\n  computed\n    title = Mutus Liber\n  out edges\n    references > d_13 ×1\n  backlinks\n    d_0 > references ×1\n"
+        "stdout": "  omgbase  >  /texts/mutus-liber.md\n  ----------------------------------------\n  properties\n    length = fifteen plates\n    attributed_to = altus\n    type = text\n    layer = draft\n    tradition = western\n    era = 1677\n    tags = [\"text\",\"images\"]\n    verified = false\n  computed\n    title = Mutus Liber\n  out links\n    references > d_13 ×1\n  backlinks\n    d_0 > references ×1\n"
       }
     },
     {
@@ -606,7 +606,7 @@
     },
     {
       "name": "show-doc-json",
-      "notes": "§6: the `read_ref` result for a document (`kind: \"document\"` + docs_read)",
+      "notes": "§6: the docs_read result tagged with its kind (`kind: \"document\"` + docs_read; the read_ref result before surface 3.0)",
       "workspace": "alchemy",
       "argv": [
         "show",

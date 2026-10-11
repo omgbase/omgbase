@@ -16,7 +16,9 @@ blocks** with stable identities, keeps the **history** of every block, and
 derives a **graph** of the relationships your text asserts. On top of the blocks
 it projects **nodes** — the meaningful things inside them (a link, a task, a
 heading-as-section) — which is what you *read and query*. The relationships
-between things are **edges**. Four words carry the whole model:
+between things are **edges** — at the query surface the row kind is `links`
+(`from links`, `out_links`/`in_links`, `^links`; surface 3.0), while the storage
+table and the graph layer keep the name `edges`. Four words carry the whole model:
 
 ```
 Document   a file (markdown / yaml / json) — the unit of identity + history
@@ -49,7 +51,7 @@ document-level trivia (leading whitespace, the frontmatter separator).
 
 > **Surface:** `new` / `mv` / `rm --doc` / `meta` (lifecycle:
 > `docs_create`/`docs_move`/`docs_delete`/`docs_set_meta`), `cat` / `ls` /
-> `outline` (reads: `read_ref`/`docs_read`, `docs_tree`, `docs_list`, `docs_outline`),
+> `outline` (reads: `docs_read`, `docs_tree`, `docs_list`, `docs_outline`),
 > `update <doc>` (whole-document identity-preserving reconcile: `docs_update`).
 
 ---
@@ -99,8 +101,8 @@ compare-and-swap — there is no other way to write (`mutation-and-concurrency.m
 > **Surface:** `insert` / `update <block>` / `move` / `rm <blocks>` / `split` /
 > `merge` (tools `blocks_insert`/`blocks_update`/`blocks_move`/`blocks_remove`/
 > `blocks_split`/`blocks_merge`), `apply` (the raw changeset primitive), and the
-> macros `done` (`tasks_complete`) / `append` (`blocks_append`). Read a block
-> with `blocks_get` (see the next section for why the read is named for *nodes*).
+> macros `done` (`blocks_check`) / `append` (`blocks_append`). Read a block
+> with `blocks_read` (see the next section for why the read is named for *nodes*).
 
 ---
 
@@ -117,10 +119,10 @@ block is "a paragraph of source bytes," its nodes are "the link to `/design.md`
 at offset 12" and "the task that is unchecked."
 
 This is the answer to *why writes are `blocks_*` but the block read is
-`blocks_get`*: **you edit the anchor (a block); you read the projection (its
-nodes).** The two names track the two layers on purpose. `blocks_get` keys off a
+`blocks_read`*: **you edit the anchor (a block); you read the projection (its
+nodes).** The two names track the two layers on purpose. `blocks_read` keys off a
 block id and hydrates that block's projected view — which is also why a separate
-`blocks_get` would be redundant.
+`blocks_read` would be redundant.
 
 Nodes are read-only, with **one deliberate exception**: `node set` edits an
 *editable property* of a node (a link's target, a task's `checked`) by rewriting
@@ -129,8 +131,8 @@ the underlying block's span — i.e. it resolves node → block and emits one
 projection is a view of.
 
 > **Surface:** `query "from nodes …"` (the projection query surface),
-> `blocks_get` / `blocks_get_many` (hydrate a block's node view), `node set`
-> (`node_set` — the editable-property escape hatch), `node props` (list what's
+> `blocks_read` / `blocks_read_many` (hydrate a block's node view), `node set`
+> (`nodes_set` — the editable-property escape hatch), `node props` (list what's
 > editable, local-only).
 
 ---
@@ -171,7 +173,8 @@ https://example.com                  →  b_9 —references→ x_(example.com)  
 > `query "… follow refs(before)"` (walk the document references a frontmatter
 > relation holds — `refs(field)` resolves them to live documents; the reverse is
 > `^docs { ^path in list(before) }`, `^docs` being the repository's documents
-> from inside a row), `from edges where …` (the edges as rows),
+> from inside a row), `from links where …` (the edges as `links` rows — one per
+> relation; the `md:link` node is the occurrence in the text, `via_id` points at it),
 > `links` (`links_stale`), `retarget` (`links_retarget`), `links_repair`. Edges
 > aren't created by an "add edge" call — you write a link/field in a block and the
 > engine extracts the edge.
@@ -185,7 +188,7 @@ omgbase uses "node" in two nearby senses; keep them apart:
 1. **Graph node / vertex** — the things edges connect: documents, blocks,
    external URIs, collections. This is the sense in "the knowledge graph."
 2. **Projected node** — a row in the projections layer (`from nodes`,
-   `blocks_get`): a semantic view over a block (`md:link`, `md:task`). This is the
+   `blocks_read`): a semantic view over a block (`md:link`, `md:task`). This is the
    sense in the four-word model above.
 
 They meet at links: a link is a projected **node** *and* an edge to a graph
@@ -229,10 +232,10 @@ walled off from the things that must stay correct (graph, search, bytes).
 
 | Layer | You… | CLI | MCP |
 |---|---|---|---|
-| **Document** | create/rename/delete/retitle, read whole | `new` `mv` `rm --doc` `meta` `cat` `ls` `outline` `update <doc>` | `docs_*`, `read_ref`, `docs_tree`, `docs_list`, `docs_outline`, `docs_update` |
-| **Block** | edit structure (the anchors) | `insert` `update <block>` `move` `rm <blocks>` `split` `merge` `done` `append` `apply` | `blocks_*`, `tasks_complete`, `blocks_append`, `apply` |
-| **Node** | read/query projections; edit one property | `query "from nodes"` `node set` | `query`, `blocks_get(_many)`, `node_set` |
-| **Edge** | assert (by writing links/fields); traverse; retarget | `query "… follow"` `links` `retarget` | `query`, `links_stale`, `links_retarget`, `links_repair` |
+| **Document** | create/rename/delete/retitle, read whole | `new` `mv` `rm --doc` `meta` `cat` `ls` `outline` `update <doc>` | `docs_*`, `docs_read`, `docs_tree`, `docs_list`, `docs_outline`, `docs_update` |
+| **Block** | edit structure (the anchors) | `insert` `update <block>` `move` `rm <blocks>` `split` `merge` `done` `append` `apply` | `blocks_*`, `blocks_check`, `blocks_append`, `apply` |
+| **Node** | read/query projections; edit one property | `query "from nodes"` `node set` | `query`, `blocks_read(_many)`, `nodes_set` |
+| **Edge** (`links` rows) | assert (by writing links/fields); traverse; retarget | `query "… follow"` `query "from links"` `links` `retarget` | `query`, `graph`, `links_stale`, `links_retarget`, `links_repair` |
 
 The full, authoritative correspondence — every operation across library, CLI, and
 MCP, plus what runs over `--server` — is `surface-map.md`.

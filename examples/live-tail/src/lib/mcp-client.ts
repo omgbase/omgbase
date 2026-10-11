@@ -15,6 +15,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import type { WhoAmI } from "webdevproxy";
+import { diffUnifiedTool } from "./paths.ts";
 /** A tool result as the server spelled it (lib/shapes.ts reads it per version). */
 export type Wire = Record<string, unknown>;
 /** A `changes_since` page on the wire: the digests are read per version, the paging keys did not change. */
@@ -145,8 +146,8 @@ export class OmgClient {
   }
 
   // The document argument arrives spelled for the connected server
-  // (lib/paths.ts `docLocator` / `docForeign`: `{ id }`/`{ path }` and
-  // `{ doc_id }`/`{ doc_path }` on 3.0, `{ doc }` before — spec/surface §4).
+  // (lib/paths.ts `docLocator`: `{ id }`/`{ path }` on 3.0, `{ doc }` before —
+  // spec/surface §4).
 
   /** One document's version list (oldest → newest). */
   async docsHistory(locator: Record<string, string>, repo: string): Promise<Wire | null> {
@@ -154,8 +155,12 @@ export class OmgClient {
     return r.docs[0] ?? null;
   }
 
-  diffUnified(foreign: Record<string, string>, fromRev: string, toRev: string, repo: string): Promise<Wire> {
-    return this.call("diff_unified", { ...foreign, from_rev: fromRev, to_rev: toRev, repo });
+  /** The unified diff between two revisions of one document. The TOOL is
+   * named per server (lib/paths.ts `diffUnifiedTool`): `docs_diff_unified` on
+   * surface ≥ 3.0, `diff_unified` before (spec/surface §3); `from_rev`/`to_rev`
+   * are the same on both. */
+  diffUnified(surface: string | null, locator: Record<string, string>, fromRev: string, toRev: string, repo: string): Promise<Wire> {
+    return this.call(diffUnifiedTool(surface), { ...locator, from_rev: fromRev, to_rev: toRev, repo });
   }
 
   docsReadAt(locator: Record<string, string>, rev: string, repo: string): Promise<Wire> {

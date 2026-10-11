@@ -17,7 +17,7 @@
 // with `⋯` — one compact line per elision, never two in a row, none at an edge
 // the document's first or last block is shown at.
 //
-//   properties: diff     the unified diff text (`diff_unified`'s `diff`, or `createdDiff`)
+//   properties: diff     the unified diff text (`docs_diff_unified`'s `diff`, or `createdDiff`)
 //               oldText  the full text of the `from` revision (null while unknown)
 //               newText  the full text of the `to` revision (null while unknown)
 //               wrap     word-wrap in code blocks (the page's wrap switch)

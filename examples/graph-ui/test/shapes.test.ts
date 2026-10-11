@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { docOf, docOpOf, docReadOf, surface3, edgeFields, edgeOf } from "../src/lib/shapes.ts";
+import { docOf, docOpOf, docReadOf, surface3, edgeFields, edgeOf, graphEdgeRows, linkRelations, linksTarget } from "../src/lib/shapes.ts";
 
 describe("surface3 — which generation of tool shapes the server speaks", () => {
   it("is 3.0 and later; unknown and 1.x/2.x are the old spellings", () => {
@@ -12,7 +12,20 @@ describe("surface3 — which generation of tool shapes the server speaks", () =>
   });
 });
 
-describe("edgeFields — the `edges` target's names in generated OQX", () => {
+describe("linksTarget / linkRelations — the link rows' kind in generated OQX (spec/surface §1.1)", () => {
+  it("`links` and `out_links`/`in_links` on 3.0; `edges` and `out_edges`/`in_edges` through 2.x and while unknown", () => {
+    expect(linksTarget("3.0")).toBe("links");
+    expect(linksTarget("3.4")).toBe("links");
+    expect(linksTarget("2.0")).toBe("edges");
+    expect(linksTarget("1.5")).toBe("edges");
+    expect(linksTarget(null)).toBe("edges");
+    expect(linkRelations("3.0")).toEqual({ out: "out_links", in: "in_links" });
+    expect(linkRelations("2.0")).toEqual({ out: "out_edges", in: "in_edges" });
+    expect(linkRelations(null)).toEqual(linkRelations("1.5"));
+  });
+});
+
+describe("edgeFields — the link rows' field names in generated OQX", () => {
   it("3.0 plain fields vs the 2.x intrinsics", () => {
     expect(edgeFields("3.0")).toEqual({ path: "path", dstPath: "dst_path", field: "field", docId: "doc_id", dstId: "dst_id", uri: "uri" });
     expect(edgeFields("2.0")).toEqual({ path: "$path", dstPath: "$dst_path", field: "src_field", docId: "$src", dstId: "$dst", uri: "$dst_uri" });
@@ -23,6 +36,16 @@ describe("edgeFields — the `edges` target's names in generated OQX", () => {
 describe("edgeOf — a `graph` tool edge under both shapes", () => {
   const v3 = { id: "e_1", doc_id: "d_a", block_id: "b_7", via_id: null, dst_id: "d_b", dst_path: "b.md", uri: null, dst_kind: "document", predicate: "before", provenance: "frontmatter", anchor: null, field: "before" };
   const v2 = { id: "e_1", src: "d_a", dst: "d_b", dst_path: "/b.md", dst_uri: null, dst_kind: "document", predicate: "before", provenance: "frontmatter", anchor: null, src_field: "before" };
+  it("graphEdgeRows: the result's `links[]` on 3.0, `edges[]` before; the other generation's key is not read", () => {
+    expect(graphEdgeRows("3.0", { documents: [], links: [v3], frontier: [] })).toEqual([v3]);
+    expect(graphEdgeRows("2.0", { documents: [], edges: [v2], frontier: [] })).toEqual([v2]);
+    expect(graphEdgeRows(null, { edges: [v2] })).toEqual([v2]);
+    expect(graphEdgeRows("3.0", { edges: [v2] })).toEqual([]);
+    expect(graphEdgeRows("2.0", { links: [v3] })).toEqual([]);
+    expect(graphEdgeRows("3.0", { links: "nope" })).toEqual([]);
+    expect(graphEdgeRows("3.0", { links: [v3, null, 3] })).toEqual([v3]);
+    expect(graphEdgeRows("3.0", { links: [v3] }).map((e) => edgeOf("3.0", e))).toEqual([edgeOf("3.0", v3)]);
+  });
   it("reads each generation by the server's version and roots the destination path; 2.x has no block/via", () => {
     expect(edgeOf("3.0", v3)).toEqual({ id: "e_1", docId: "d_a", blockId: "b_7", viaId: null, dstId: "d_b", dstPath: "/b.md", uri: null, dstKind: "document", predicate: "before", provenance: "frontmatter", anchor: null, field: "before" });
     expect(edgeOf("2.0", v2)).toEqual({ ...edgeOf("3.0", v3)!, blockId: null, viaId: null });

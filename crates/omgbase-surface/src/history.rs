@@ -1,5 +1,5 @@
 //! History (`spec/surface/README.md` §3): `blocks_history`, the block-grain
-//! `diff`, the Myers unified `diff_unified` over the two revisions'
+//! `diff`, the Myers unified `docs_diff_unified` over the two revisions'
 //! reconstructed files (§3; positional before 1.1, §9), `docs_history`. Port
 //! of `packages/core/src/graph/history.ts`; `changes_since` is the store's.
 
@@ -45,7 +45,7 @@ pub fn blocks_history(store: &Store, block_id: &str, limit: Option<i64>) -> Resu
 }
 
 /// §9: an unknown revision is `target_missing` (never an empty tree or an
-/// empty file). One constructor so `diff` and `diff_unified` report it with
+/// empty file). One constructor so `diff` and `docs_diff_unified` report it with
 /// the same message and `data`.
 fn unknown_revision(doc_id: &str, rev_id: &str) -> crate::error::SurfaceError {
     crate::error::SurfaceError::with_data(
@@ -148,7 +148,7 @@ pub fn diff_blocks(store: &Store, doc_id: &str, from_rev: &str, to_rev: &str) ->
     Ok(Json::Array(entries))
 }
 
-/// §3 `diff_unified`: a unified diff of the two revisions' reconstructed
+/// §3 `docs_diff_unified`: a unified diff of the two revisions' reconstructed
 /// files — what `docs_read_at` returns (`spec/store` §6.2: leading trivia,
 /// the revision's frontmatter, then each top-level block's raw and trivia,
 /// children not walked since a container's raw already holds them) — via
@@ -480,7 +480,7 @@ pub fn docs_history(
     Ok(json!({ "docs": docs, "truncated": truncated }))
 }
 
-// spec/surface §3 `diff_unified`. The expected strings below are copied
+// spec/surface §3 `docs_diff_unified`. The expected strings below are copied
 // verbatim from packages/core/src/graph/history.test.ts so the two engines pin
 // each other byte for byte.
 #[cfg(test)]
@@ -593,7 +593,7 @@ mod tests {
         );
     }
 
-    // ---- diff_unified over a store --------------------------------------------
+    // ---- docs_diff_unified over a store --------------------------------------------
     // The bug this pins: a list container's raw already carries every item, so
     // diffing "every live raw at every depth" showed an appended bullet twice
     // (at the end of the container's raw, reading as an insertion before the

@@ -1,5 +1,5 @@
 //! `cat` (§6): the bytes — a document's exact content, a block's raw
-//! markdown (or its `blocks_get` field at another resolution).
+//! markdown (or its `blocks_read` field at another resolution).
 
 use omgbase_surface::read::{ResolvedRef, resolve_ref};
 use serde_json::{Value as Json, json};
@@ -9,7 +9,7 @@ use crate::cli::context::Cli;
 use crate::cli::help::{render_help_for, wants_help};
 use crate::cli::output::{CliError, EXIT_OK, Result};
 
-use super::machine_out;
+use super::{doc_locator, machine_out};
 
 /// One ref → its text, its `--json` object, and what the shell captures.
 struct CatOne {
@@ -18,7 +18,7 @@ struct CatOne {
     capture: Json,
 }
 
-/// `raw ?? text ?? label` of a `blocks_get` object (3.0: the block's bytes are `raw`).
+/// `raw ?? text ?? label` of a `blocks_read` object (3.0: the block's bytes are `raw`).
 pub fn node_text(node: &Json) -> String {
     for k in ["raw", "text", "label"] {
         if let Some(s) = node.get(k).and_then(Json::as_str) {
@@ -28,40 +28,41 @@ pub fn node_text(node: &Json) -> String {
     String::new()
 }
 
-/// §2.3: the polymorphic `read_ref` classifies and reads the ref server-side
-/// — `{ kind: "document", ...docs_read }` or `{ kind: "block", ...blocks_get }`.
-/// The document's `--json` is the `docs_read` result (`kind` dropped, the
-/// other keys in their order); a block's is the `read_ref` result as it came
-/// (with `kind`), as the reference renders it.
+/// A ref that names a block: a `b_` block id, an `n_` node id (its block), or
+/// a `path#type[n]` locator — everything else is a document (a `d_` id or a
+/// path).
+pub fn is_block_ref(r: &str) -> bool {
+    r.starts_with("b_") || r.starts_with("n_") || r.contains('#')
+}
+
+/// §2.3: remotely the ref's SHAPE picks the tool (ids carry their kind, a path
+/// is a document): a block ref is `blocks_read` (an `n_` id dereferences to
+/// its block server-side, as on every block-level tool), anything else is
+/// `docs_read` — the same two results the local run renders (the polymorphic
+/// `read_ref` classified server-side before surface 3.0).
 fn cat_one_remote(cli: &mut Cli, r: &str, resolution: &str) -> Result<CatOne> {
-    let mut req = serde_json::Map::new();
-    req.insert("ref".to_owned(), json!(r));
-    if resolution != "raw" {
-        req.insert("resolution".to_owned(), json!(resolution));
-    }
-    let res = cli.call("read_ref", Json::Object(req))?;
-    if res.get("kind").and_then(Json::as_str) == Some("document") {
-        if resolution != "raw" {
-            warn_doc_resolution(cli, r, resolution);
-        }
-        let text = res
-            .get("raw")
-            .and_then(Json::as_str)
-            .unwrap_or("")
-            .to_owned();
-        let doc = match res {
-            Json::Object(m) => Json::Object(m.into_iter().filter(|(k, _)| k != "kind").collect()),
-            other => other,
-        };
+    if is_block_ref(r) {
+        let node = cli.call("blocks_read", json!({ "id": r, "resolution": resolution }))?;
         return Ok(CatOne {
-            capture: Json::String(text.clone()),
-            text,
-            json: doc,
+            text: node_text(&node),
+            capture: node.clone(),
+            json: node,
         });
     }
+    let mut req = serde_json::Map::new();
+    doc_locator(&mut req, r);
+    let res = cli.call("docs_read", Json::Object(req))?;
+    if resolution != "raw" {
+        warn_doc_resolution(cli, r, resolution);
+    }
+    let text = res
+        .get("raw")
+        .and_then(Json::as_str)
+        .unwrap_or("")
+        .to_owned();
     Ok(CatOne {
-        text: node_text(&res),
-        capture: res.clone(),
+        capture: Json::String(text.clone()),
+        text,
         json: res,
     })
 }
@@ -102,7 +103,7 @@ fn cat_one(cli: &mut Cli, r: &str, resolution: &str) -> Result<CatOne> {
         }
         ResolvedRef::Block { block_id, .. } => {
             let node = cli.call(
-                "blocks_get",
+                "blocks_read",
                 json!({ "id": block_id, "resolution": resolution }),
             )?;
             Ok(CatOne {

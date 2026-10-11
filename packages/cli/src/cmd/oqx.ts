@@ -50,7 +50,7 @@ async function runOqx(cli: Cli, args: string[]): Promise<number> {
   if (values.help) {
     renderHelp(cli, {
       name: "query",
-      summary: "Composable OQX query: from <docs|blocks|nodes|edges> where … select … [order by …] [follow …] (alias: q)",
+      summary: "Composable OQX query: from <docs|blocks|nodes|links> where … select … [order by …] [follow …] (alias: q)",
       usage: ["query <source> [-n <N>] [--cursor <c>] [--ids|--json|--jsonl]", "query -f <file|-> [-n <N>] [--cursor <c>]"],
       options: [
         ["<source>", "the OQX query text (quote it); `from` may be omitted inside blocks"],
@@ -68,7 +68,7 @@ async function runOqx(cli: Cli, args: string[]): Promise<number> {
     cli.io.out("  e.g. query 'from docs where nodes count { where kind == \"md:task\" } >= 2'");
     cli.io.out("       query 'select items: section.blocks collect { where type == \"list_item\" } from nodes where kind == \"md:section\"'");
     cli.io.out("       query 'select path, open from docs where nodes collect { ^open: value where kind == \"md:task\" and not attrs.checked }'");
-    cli.io.out("       query 'select owner_id, owner: ^nodes single { where kind == \"person\" and attrs.id == ^owner_id } from docs'   # ^docs/^nodes/^blocks/^edges: the repository (the root row) from inside a row; 0^docs from any depth; ^id / 0^id = the repository id");
+    cli.io.out("       query 'select owner_id, owner: ^nodes single { where kind == \"person\" and attrs.id == ^owner_id } from docs'   # ^docs/^nodes/^blocks/^links: the repository (the root row) from inside a row; 0^docs from any depth; ^id / 0^id = the repository id");
     cli.io.out("       query 'docs count { where layer == \"canon\" }'   # scalar; also <target> exists/none/first/single { … } at the top level");
     cli.io.out("       query 'from docs where nodes none { where kind == \"md:task\" and not checked }'   # none = zero rows (≡ not … exists; \"every\" = none over the complement)");
     cli.io.out("       query 'from docs where era is not null and (layer == \"canon\" or layer == \"working\")'   # and / or / not are the connectives (&& || ! accepted); x is y / x is not y = identity, x is null = absent");
@@ -88,7 +88,7 @@ async function runOqx(cli: Cli, args: string[]): Promise<number> {
     cli.io.out("       query 'from nodes where name == \"Overview\" follow section.subsections { depth 3 }'   # follow [distinct] <rel> [{ where … frontier … depth n by … }]");
     cli.io.out("       query 'select p: path, d: $depth, s: $stop from docs where path == \"/index.md\" follow doc.out'   # citation graph (cyclic-safe: $stop=cycle)");
     cli.io.out("       query 'from blocks where type == \"list_item\" and $leaf follow block.children'   # $leaf/$depth/$stop filter the walk result post-walk");
-    cli.io.out("       query 'select src: doc_id, to: dst_path from edges where predicate == \"depends_on\"'   # the edges target: predicate/provenance/dst_kind + doc_id/dst_path/uri");
+    cli.io.out("       query 'select src: doc_id, to: dst_path from links where predicate == \"depends_on\"'   # the links target: predicate/provenance/dst_kind + doc_id/dst_path/uri");
     return EXIT_OK;
   }
 

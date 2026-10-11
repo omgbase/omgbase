@@ -1,4 +1,4 @@
-//! `find` (§6): `resolve` — ranked `{ id, locator, preview, evidence }`.
+//! `find` (§6): `blocks_resolve` — ranked `{ id, locator, preview, evidence }`.
 
 use serde_json::{Value as Json, json};
 
@@ -36,7 +36,7 @@ pub fn find(cli: &mut Cli, args: &[String]) -> Result<i32> {
     // server ranks with its own provider, if any — the flag has no effect.
     let semantic = !a.flag("no-semantic");
     let hits = cli.call_with(
-        "resolve",
+        "blocks_resolve",
         json!({ "query": text, "limit": limit }),
         semantic,
     )?;

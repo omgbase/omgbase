@@ -548,7 +548,7 @@
           ],
           "expect": {
             "exit": 0,
-            "stdout": "  omgbase  >  /texts/mutus-liber.md\n  ----------------------------------------\n  properties\n    length = fifteen plates\n    attributed_to = altus\n    type = text\n    layer = canon\n    era = 1702\n    tags = [\"text\",\"plates\"]\n    verified = true\n  computed\n    title = Mutus Liber\n  out edges\n    references > d_13 ×1\n  backlinks\n    d_0 > references ×1\n"
+            "stdout": "  omgbase  >  /texts/mutus-liber.md\n  ----------------------------------------\n  properties\n    length = fifteen plates\n    attributed_to = altus\n    type = text\n    layer = canon\n    era = 1702\n    tags = [\"text\",\"plates\"]\n    verified = true\n  computed\n    title = Mutus Liber\n  out links\n    references > d_13 ×1\n  backlinks\n    d_0 > references ×1\n"
           }
         }
       ]

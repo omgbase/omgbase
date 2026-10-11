@@ -91,7 +91,7 @@ export function surfaceObserveDeleteResult(res: ObserveDeleteResult): SurfaceObs
   return { id: docId, path: referencePath(path), ...rest };
 }
 
-/** `text_search` hits (`path` rooted). */
+/** `blocks_search` hits (`path` rooted). */
 export function surfaceTextSearch(res: TextSearchResult): TextSearchResult {
   return { ...res, hits: res.hits.map((h) => ({ ...h, path: referencePath(h.path) })) };
 }

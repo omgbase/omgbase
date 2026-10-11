@@ -7,6 +7,7 @@ import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import type { JSONRPCMessage } from "@modelcontextprotocol/sdk/types.js";
 import { LATEST_PROTOCOL_VERSION } from "@modelcontextprotocol/sdk/types.js";
 import { OmgClient, OmgError, isSessionLost, whoamiUrl } from "../src/lib/mcp-client.ts";
+import { docLocator } from "../src/lib/paths.ts";
 
 /** What the proxy's 404 looks like once the SDK has wrapped it. */
 class FakeStreamableHTTPError extends Error {
@@ -16,7 +17,7 @@ class FakeStreamableHTTPError extends Error {
 }
 const UNKNOWN_SESSION = new FakeStreamableHTTPError(404, 'Error POSTing to endpoint: {"jsonrpc":"2.0","error":{"code":-32000,"message":"unknown session (expired or the proxy restarted) — send initialize again"},"id":null}');
 
-interface Call { method: string; name?: string }
+interface Call { method: string; name?: string; args?: Record<string, unknown> }
 
 /** An MCP server with one tool (`ping`) and a switch that makes it forget the session. */
 class FakeTransport implements Transport {
@@ -30,8 +31,8 @@ class FakeTransport implements Transport {
   async start(): Promise<void> { this.log.push(`${this.name}: start`); }
   async close(): Promise<void> { this.closed = true; this.log.push(`${this.name}: close`); this.onclose?.(); }
   async send(message: JSONRPCMessage): Promise<void> {
-    const msg = message as { id?: number | string; method?: string; params?: { name?: string } };
-    if (msg.method) this.calls.push({ method: msg.method, ...(msg.params?.name ? { name: msg.params.name } : {}) });
+    const msg = message as { id?: number | string; method?: string; params?: { name?: string; arguments?: Record<string, unknown> } };
+    if (msg.method) this.calls.push({ method: msg.method, ...(msg.params?.name ? { name: msg.params.name } : {}), ...(msg.params?.arguments ? { args: msg.params.arguments } : {}) });
     if (msg.method === "initialize") {
       this.state.lost = false;
       this.reply(msg.id!, { protocolVersion: LATEST_PROTOCOL_VERSION, capabilities: { tools: {} }, serverInfo: { name: "fake", version: "0" } });
@@ -132,6 +133,22 @@ describe("OmgClient session recovery", () => {
     await expect(h2.client.call("boom", {})).rejects.toBeInstanceOf(OmgError);
     expect(h2.transports).toHaveLength(1);
     expect(h2.client.recoveries).toBe(0);
+  });
+});
+
+describe("OmgClient.diffUnified — the tool and its locator by surface version", () => {
+  it("calls `docs_diff_unified { id | path, from_rev, to_rev }` on 3.0 and `diff_unified { doc, … }` before", async () => {
+    const h = harness();
+    await h.client.diffUnified("3.0", docLocator("3.0", "d_a"), "r_1", "r_2", "notes");
+    await h.client.diffUnified("3.0", docLocator("3.0", "/notes/alpha.md"), "r_1", "r_2", "notes");
+    await h.client.diffUnified("2.0", docLocator("2.0", "d_a"), "r_1", "r_2", "notes");
+    await h.client.diffUnified(null, docLocator(null, "/notes/alpha.md"), "r_1", "r_2", "notes");
+    expect(h.transports[0]!.calls.filter((c) => c.method === "tools/call")).toEqual([
+      { method: "tools/call", name: "docs_diff_unified", args: { id: "d_a", from_rev: "r_1", to_rev: "r_2", repo: "notes" } },
+      { method: "tools/call", name: "docs_diff_unified", args: { path: "/notes/alpha.md", from_rev: "r_1", to_rev: "r_2", repo: "notes" } },
+      { method: "tools/call", name: "diff_unified", args: { doc: "d_a", from_rev: "r_1", to_rev: "r_2", repo: "notes" } },
+      { method: "tools/call", name: "diff_unified", args: { doc: "/notes/alpha.md", from_rev: "r_1", to_rev: "r_2", repo: "notes" } },
+    ]);
   });
 });
 

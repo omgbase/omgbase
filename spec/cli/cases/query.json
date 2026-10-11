@@ -388,11 +388,11 @@
         "from nope"
       ],
       "expect": {
-        "exit": 0,
+        "exit": 1,
         "stdout": "",
-        "stderr": "  no hits\n"
+        "stderr": "error[filter_invalid]: `nope` is not a target — the repository's collections are `docs`, `blocks`, `nodes`, `links`\n  {\n    \"reason\": \"`nope` is not a target — the repository's collections are `docs`, `blocks`, `nodes`, `links`\",\n    \"hint\": \"OQX\"\n  }\n"
       },
-      "notes": "§9: an unknown root is silently empty",
+      "notes": "§9: an unknown root is `filter_invalid` naming the four collections (surface 3.0 name pass; silently empty before)",
       "pin_stderr": true
     },
     {
@@ -495,11 +495,11 @@
       }
     },
     {
-      "name": "edges",
+      "name": "links",
       "workspace": "alchemy",
       "argv": [
         "q",
-        "select predicate, to: dst_path from edges where doc_id == \"d_17\""
+        "select predicate, to: dst_path from links where doc_id == \"d_17\""
       ],
       "expect": {
         "exit": 0,

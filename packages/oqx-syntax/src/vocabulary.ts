@@ -102,7 +102,7 @@ export const LANGUAGE = {
  */
 export const OMGBASE = {
   /** The named roots of the repository (the root row: `^docs` from a row, bare `docs` at the top). */
-  roots: ["docs", "blocks", "nodes", "edges"],
+  roots: ["docs", "blocks", "nodes", "links"],
   /** Row functions written as free calls, evaluated against the current row. */
   rowFunctions: [
     "text", "semantic",
@@ -121,13 +121,13 @@ export const OMGBASE = {
     docs: ["id", "path", "raw", "hash", "updated_at", "title", "tags", "format"],
     blocks: ["id", "path", "doc_id", "raw", "hash", "updated_at", "type", "text", "attrs", "depth", "ordinal"],
     nodes: ["id", "path", "doc_id", "block_id", "kind", "name", "value", "attrs"],
-    edges: ["id", "path", "doc_id", "block_id", "via_id", "dst_id", "dst_path", "uri", "field", "dst_kind", "predicate", "provenance", "anchor"],
+    links: ["id", "path", "doc_id", "block_id", "via_id", "dst_id", "dst_path", "uri", "field", "dst_kind", "predicate", "provenance", "anchor"],
   },
   /** The source handles of a document (`data.<k>` the merged authored view, `frontmatter.<k>` / `inline.<k>` one source; `entries(x)` over any). */
   handles: ["data", "frontmatter", "inline"],
   /** Relations reachable from a row (`follow children`, `nodes exists { … }`). */
   relations: [
-    "nodes", "blocks", "out", "in", "out_edges", "in_edges",
+    "nodes", "blocks", "out", "in", "out_links", "in_links",
     "children", "section", "subsections", "doc", "block",
   ],
 } as const;

@@ -72,7 +72,7 @@ preserved: 37  updated: 4  moved: 2  created: 3  removed: 1  split: 0  merged: 0
 
 ## 3. Planning (`planUpdate`)
 
-`planUpdate(store, repoId, rootPath, docRef, content) → Opset` (also `docs_plan_update` MCP tool, and the read half of `docs update`/`docs_update`):
+`planUpdate(store, repoId, rootPath, docRef, content) → Opset` (the read half of `omg update`/`docs_update`; the MCP call is `docs_update { dry_run: true }` — `docs_plan_update` was removed in surface 3.0, it was exactly this dry run):
 
 1. Resolve `docRef` (id or path) to the existing document; load its current tree (`MutDoc`). A missing document is `doc_missing` — creation is `docs_create`'s job.
 2. Record the precondition: `baseRevision` (current_rev) and `hash` (sha256 of current rendered bytes).
@@ -103,7 +103,7 @@ Byte-fidelity and nested-identity concerns are handled at the op layer (op *sema
 - **`move` seam healing.** Trivia is positional tiling, not owned by a block; a block that was last in a sibling list carried a lone `"\n"` that, once interior, would soft-merge with its neighbour (two paragraphs → one). `move` now re-tiles top-level seams (source gap + destination seam) so relocated blocks are never rendered jammed together. This fixes a latent corruption for hand-authored moves too.
 - **`update { trivia }`.** An `update` may set a block's trailing trivia. Attr- and trivia-only updates change no block content, so they carry no content-CAS requirement (a supplied `expect.content_hash` is still honoured); a content edit (`markdown`) still requires content CAS (04 §1.2).
 - **`update { childIds }`.** A container update may carry a positional-key → block-id map (keys relative to the container's children, `"/0"`, `"/1"`, `"/0/0"`, …). After the container's markdown is re-parsed, those ids are threaded onto the resulting subtree (positions absent from the map mint fresh), and the container is rendered **verbatim from its op-supplied raw** rather than rebuilt from children — the splice renderer's child-rebuild cannot reproduce nested/loose list formatting, so verbatim emission is both exact and identity-preserving. This is how within-container item identity survives a whole-container update; the children exist (clean) only to carry the threaded ids for the commit re-parse.
-- **Faithful list-item ops.** Independent of the whole-document planner, the six kernel ops now render list items correctly (they previously corrupted): the mutate renderer reconstructs a dirty list from its items (`renderList`/`renderItem` — item raws are self-contained, ordered lists renumber); `remove`/`move` mark the containing list dirty (and drop an emptied list); `insert` into a list unwraps `- x` into sibling items rather than nesting; and `update` of a `list_item` unwraps to a single item, keeping it a list item and re-marking. So `lists_insert_item`, `node_set` on an item, a task toggle, and hand-authored item ops all round-trip.
+- **Faithful list-item ops.** Independent of the whole-document planner, the six kernel ops now render list items correctly (they previously corrupted): the mutate renderer reconstructs a dirty list from its items (`renderList`/`renderItem` — item raws are self-contained, ordered lists renumber); `remove`/`move` mark the containing list dirty (and drop an emptied list); `insert` into a list unwraps `- x` into sibling items rather than nesting; and `update` of a `list_item` unwraps to a single item, keeping it a list item and re-marking. So `lists_insert_item`, `nodes_set` on an item, a task toggle, and hand-authored item ops all round-trip.
 
 Frontmatter is a document-level materialization unit (rendered before the block tree), not one of the six block ops; when the proposed content changes it, the opset carries `frontmatter.raw` and `apply` sets it via `ApplyRequest.setFrontmatter`.
 
@@ -123,7 +123,7 @@ When a lowering diverges, its diagnostic names **where**: the first differing by
 2. Validate the **precondition**: the document must still be at `baseRevision` and `hash`. A drift fails `stale_plan` (retriable), carrying current truth (`current: { revision, hash }`); the caller re-plans against the new state. This is the whole-document analogue of the block-level CAS in 04 §1.2.
 3. Replay the opset's kernel ops through `apply` (the single write path: file-CAS, atomic write, known-id identity threading, one commit).
 
-`docs.update(..., dry_run=true)` returns the opset (plan) without executing — identical to `docs_plan_update`.
+`docs_update { dry_run: true }` returns `{ opset, plan, result: null }` — the plan without executing (the planner call; the removed `docs_plan_update` was this).
 
 ## 7. CLI
 

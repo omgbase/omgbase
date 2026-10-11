@@ -10,29 +10,29 @@
 //     `checkRootSpellings`);
 //   • a bare target name at scope depth ≥ 1 (inside a block, or in a top-level
 //     row's clauses), where a bare name reads a property of the current row,
-//     which has none: `docs` and `edges` are no row's relation, so they are
+//     which has none: `docs` and `links` are no row's relation, so they are
 //     refused statically by the same walk; `blocks` and `nodes` ARE relations
 //     of some rows (`docs.blocks`, `docs.nodes`, `blocks.nodes`,
 //     `section.blocks`), so the context raises the same error at read time on a
 //     row that lacks the relation (context.ts). A frontmatter key named after a
 //     target is unreachable by bare name (use `frontmatter.<k>`).
 
-export type Target = "docs" | "blocks" | "nodes" | "edges";
+export type Target = "docs" | "blocks" | "nodes" | "links";
 
-export const TARGETS: ReadonlySet<string> = new Set<Target>(["docs", "blocks", "nodes", "edges"]);
+export const TARGETS: ReadonlySet<string> = new Set<Target>(["docs", "blocks", "nodes", "links"]);
 
 /** The target names that are a relation of each target's rows (§1.2). */
 export const TARGET_RELATIONS: Readonly<Record<Target, ReadonlySet<string>>> = {
   docs: new Set(["nodes", "blocks"]),
   blocks: new Set(["nodes"]),
   nodes: new Set(["blocks"]),
-  edges: new Set(),
+  links: new Set(),
 };
 
 /** The reach-through heads and the target of the row they reach (`doc.x`, `block.x`, `section.x`). */
 export const REACH_THROUGH: Readonly<Record<string, Target>> = { doc: "docs", block: "blocks", section: "nodes" };
 
-const NOUN: Record<Target, string> = { docs: "documents", blocks: "blocks", nodes: "nodes", edges: "edges" };
+const NOUN: Record<Target, string> = { docs: "documents", blocks: "blocks", nodes: "nodes", links: "links" };
 
 export const REPO_REMOVED_MESSAGE =
   "`$repo` was removed in surface 2.0 — reach the repository's collections through the root row: `^docs` from a top-level row (one caret per enclosing block, or the absolute `0^docs`), and the repository id as `^id` / `0^id`";
@@ -57,6 +57,17 @@ export function bareTargetMessage(name: string, depth: number | null): string {
 export function pastRootMessage(name: string, levels: number): string {
   const t = name as Target;
   return `\`${"^".repeat(levels)}${name}\` reaches past the root — there is no enclosing row at this depth; at the top level the repository's ${NOUN[t]} are the bare \`${name}\` (\`${name} count { … }\`, \`from ${name}\`, \`entries(${name})\`)`;
+}
+
+/**
+ * The unknown-target error (3.0 name pass): a top-level `from <name>` whose name
+ * is not one of the four collections would read an absent root and return an
+ * empty result — refused instead, naming the collections; `edges`, the links
+ * target's name before 3.0, gets its new name spelled out.
+ */
+export function unknownTargetMessage(name: string): string {
+  const was = name === "edges" ? " (`edges` was renamed `links` in surface 3.0)" : "";
+  return `\`${name}\` is not a target — the repository's collections are \`docs\`, \`blocks\`, \`nodes\`, \`links\`${was}`;
 }
 
 /** Whether `name`, read as `<head>.<name>` or bare on a row of `target`, is one of that row's relations named after a target. */

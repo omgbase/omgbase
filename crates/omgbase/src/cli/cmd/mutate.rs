@@ -147,7 +147,7 @@ pub fn block_id(cli: &mut Cli, r: &str) -> Result<String> {
 }
 
 /// A block argument for a ref-accepting tool: remotely (§2.3) the ref as
-/// given — the `blocks_*` / `tasks_complete` / `blocks_append` tools
+/// given — the `blocks_*` / `blocks_check` / `blocks_append` tools
 /// resolve refs and pin CAS server-side; locally its resolved block id.
 pub fn block_arg(cli: &mut Cli, r: &str) -> Result<String> {
     if cli.remote_mode() {
@@ -519,7 +519,7 @@ pub fn edit(cli: &mut Cli, args: &[String]) -> Result<i32> {
     };
     let r = r.to_owned();
     let (_, block) = block_ref(cli, &r)?;
-    let node = cli.call("blocks_get", json!({ "id": block, "resolution": "raw" }))?;
+    let node = cli.call("blocks_read", json!({ "id": block, "resolution": "raw" }))?;
     let before = str_of(&node, "raw");
     // Pin the CAS BEFORE the editor opens.
     let pre_hash = node
@@ -705,7 +705,7 @@ pub fn done(cli: &mut Cli, args: &[String]) -> Result<i32> {
             "done requires one or more task blocks (or - for stdin)",
         ));
     }
-    // §2.3: remotely `tasks_complete` resolves the refs; the task-type check
+    // §2.3: remotely `blocks_check` resolves the refs; the task-type check
     // below is the local path's (the reference's remote branch skips it).
     let mut blocks = Vec::with_capacity(refs.len());
     for r in &refs {
@@ -717,11 +717,11 @@ pub fn done(cli: &mut Cli, args: &[String]) -> Result<i32> {
         blocks.push(task_block(cli, r, id)?);
     }
     let mut m = Map::new();
-    m.insert("blocks".to_owned(), json!(blocks));
+    m.insert("ids".to_owned(), json!(blocks));
     if a.flag("undo") {
         m.insert("checked".to_owned(), json!(false));
     }
-    run_tool(cli, "tasks_complete", m, a.value("actor"))
+    run_tool(cli, "blocks_check", m, a.value("actor"))
 }
 
 /// §9 Fixed: `done` addresses task blocks only — any other live type is

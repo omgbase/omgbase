@@ -3,7 +3,7 @@ import { parse } from "@omgbase/oqx";
 import { checkRootSpellings } from "./run.js";
 import { REPO_REMOVED_MESSAGE, bareTargetMessage, pastRootMessage } from "./root-row.js";
 
-// The root row (spec/surface §1.1, 2.0): `$repo` and a bare `docs`/`edges` at
+// The root row (spec/surface §1.1, 2.0): `$repo` and a bare `docs`/`links` at
 // depth ≥ 1 are refused before evaluation; the fixtures (`query-root.json`) pin
 // the engine behavior, this pins the walk's depth counting and the messages.
 describe("root-row spellings", () => {
@@ -21,10 +21,10 @@ describe("root-row spellings", () => {
     }
   });
 
-  it("refuses a bare docs/edges at depth ≥ 1, the hint counting the carets", () => {
+  it("refuses a bare docs/links at depth ≥ 1, the hint counting the carets", () => {
     expect(() => checkRootSpellings(parse("select x: docs collect { } from docs"))).toThrow(bareTargetMessage("docs", 1));
     expect(bareTargetMessage("docs", 1)).toBe("`docs` inside a block reads a property of the current row, which has none — did you mean `^docs` (the repository's documents)?");
-    expect(() => checkRootSpellings(parse("select x: nodes collect { select y: size(edges) } from docs"))).toThrow("did you mean `^^edges` (the repository's edges)?");
+    expect(() => checkRootSpellings(parse("select x: nodes collect { select y: size(links) } from docs"))).toThrow("did you mean `^^links` (the repository's links)?");
     expect(() => checkRootSpellings(parse("docs collect { from docs }"))).toThrow("`^docs`");
     expect(() => checkRootSpellings(parse('from docs where path == "/index.md" follow docs'))).toThrow("`^docs`");
     // the read-time message spells out the rule
@@ -34,7 +34,7 @@ describe("root-row spellings", () => {
   it("refuses a ^target that reaches past the root", () => {
     expect(() => checkRootSpellings(parse("^docs count { }"))).toThrow(pastRootMessage("docs", 1));
     expect(pastRootMessage("docs", 1)).toBe("`^docs` reaches past the root — there is no enclosing row at this depth; at the top level the repository's documents are the bare `docs` (`docs count { … }`, `from docs`, `entries(docs)`)");
-    expect(() => checkRootSpellings(parse("select path from docs where ^^edges exists { }"))).toThrow("`^^edges` reaches past the root");
+    expect(() => checkRootSpellings(parse("select path from docs where ^^links exists { }"))).toThrow("`^^links` reaches past the root");
     expect(() => checkRootSpellings(parse("select n: size(^docs) from docs"))).not.toThrow();
   });
 
@@ -43,7 +43,7 @@ describe("root-row spellings", () => {
       "docs count { }",
       "from docs where nodes exists { }",
       "entries(docs) first { }",
-      "select n: size(^docs), id: ^id, k: size(0^edges) from docs",
+      "select n: size(^docs), id: ^id, k: size(0^links) from docs",
       "from blocks where blocks exists { }", // blocks/nodes are judged by the context at read time
     ]) {
       expect(() => checkRootSpellings(parse(q)), q).not.toThrow();

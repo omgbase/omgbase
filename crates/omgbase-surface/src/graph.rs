@@ -1,6 +1,6 @@
 //! The `graph` neighborhood macro (`spec/surface/README.md` §4): compiled to
 //! an OQX `follow doc.out` / `doc.in` walk run through the shared runner and
-//! shaped into `{ documents, edges, frontier }`. Port of
+//! shaped into `{ documents, links, frontier }`. Port of
 //! `packages/core/src/mcp/graph.ts`; nothing here walks the graph itself.
 
 use std::cmp::Ordering;
@@ -32,7 +32,7 @@ pub struct GraphArgs {
     pub max_documents: Option<i64>,
 }
 
-/// The edge fields projected from `doc.out_edges`/`doc.in_edges` — the `edges`
+/// The edge fields projected from `doc.out_links`/`doc.in_links` — the `links`
 /// target's own names, projected under themselves (`spec/surface` §1.2, 3.0:
 /// no rename between the language and the result) — identical for both
 /// directions so a single filter handles either scan (an edge is a directional
@@ -103,7 +103,7 @@ fn build_user_select(select: &[String]) -> Result<(Vec<SelectItem>, Vec<Option<S
 /// items.
 ///
 /// ```text
-/// select _depth: $depth, _stop: $stop, _edges: doc.<dir>_edges collect { <edge fields> } <user items>
+/// select _depth: $depth, _stop: $stop, _links: doc.<dir>_links collect { <edge fields> } <user items>
 /// from docs where id == <root> or … follow distinct doc.<dir> { depth <depth> }
 /// ```
 fn build_query(root_ids: &[String], dir: &str, depth: u32, user_select: &[SelectItem]) -> String {
@@ -113,7 +113,7 @@ fn build_query(root_ids: &[String], dir: &str, depth: u32, user_select: &[Select
         .map(|name| build::field(name, build::ident(name)))
         .collect();
     let edges = build::op(
-        build::path(&["doc", &format!("{dir}_edges")]),
+        build::path(&["doc", &format!("{dir}_links")]),
         Consumer::Collect,
         edges_body,
     );
@@ -131,7 +131,7 @@ fn build_query(root_ids: &[String], dir: &str, depth: u32, user_select: &[Select
     q.select = vec![
         build::field("_depth", build::ident("$depth")),
         build::field("_stop", build::ident("$stop")),
-        build::collect("_edges", edges),
+        build::collect("_links", edges),
     ];
     q.select.extend(user_select.iter().cloned());
     q.r#where = Some(if seed.len() == 1 {
@@ -259,7 +259,7 @@ pub fn graph_neighborhood(
                     }
                 }
             }
-            if let Some(raw) = hit["_edges"].as_array() {
+            if let Some(raw) = hit["_links"].as_array() {
                 for e in raw {
                     let eid = e["id"].as_str().unwrap_or_default();
                     if !edges.iter().any(|x| x["id"].as_str() == Some(eid)) {
@@ -382,7 +382,7 @@ pub fn graph_neighborhood(
         "degrees": effective_degrees,
         "direction": direction,
         "documents": documents,
-        "edges": kept,
+        "links": kept,
         "frontier": frontier,
         "truncated": truncated,
         "queries": queries,
@@ -428,7 +428,7 @@ mod tests {
     fn query_shape() {
         let q = build_query(&["d_0".to_owned()], "out", 2, &[]);
         assert!(
-            q.starts_with("select _depth: $depth, _stop: $stop, _edges: doc.out_edges collect {")
+            q.starts_with("select _depth: $depth, _stop: $stop, _links: doc.out_links collect {")
         );
         assert!(q.ends_with("from docs where id == \"d_0\" follow distinct doc.out { depth 2 }"));
         assert!(oqx::parse_string(&q).is_ok());
@@ -438,7 +438,7 @@ mod tests {
         let q = build_query(&["d_14".to_owned(), "d_15".to_owned()], "in", 8, &[]);
         assert_eq!(
             q,
-            "select _depth: $depth, _stop: $stop, _edges: doc.in_edges collect { id: id, doc_id: doc_id, block_id: block_id, via_id: via_id, dst_id: dst_id, dst_path: dst_path, uri: uri, dst_kind: dst_kind, predicate: predicate, provenance: provenance, anchor: anchor, field: field } from docs where id == \"d_14\" or id == \"d_15\" follow distinct doc.in { depth 8 }"
+            "select _depth: $depth, _stop: $stop, _links: doc.in_links collect { id: id, doc_id: doc_id, block_id: block_id, via_id: via_id, dst_id: dst_id, dst_path: dst_path, uri: uri, dst_kind: dst_kind, predicate: predicate, provenance: provenance, anchor: anchor, field: field } from docs where id == \"d_14\" or id == \"d_15\" follow distinct doc.in { depth 8 }"
         );
     }
 

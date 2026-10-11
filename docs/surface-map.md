@@ -46,13 +46,12 @@ Legend: `--server` = is this CLI command remote-capable? ✅ wired · ▫️ pla
 | Query (OQX) | `oqxRun` | `query` / `q` | `query` | ✅ |
 | Query syntax help | — | (help text) | `query_syntax` | — |
 | Document outline | `docsOutline` | `outline` / `ol` | `docs_outline` | ✅ |
-| Read any ref → bytes | `resolveRef`+`docsRead`/`nodesGet` | `cat` | **`read_ref`** | ✅ |
-| Read whole document | `docsRead` | `cat` (doc) | `docs_read` | ✅ (via `read_ref`) |
-| Read many documents | `docsReadMany` | — | `docs_get_many` | — |
-| Hydrate a block | `nodesGet` | `cat`/`show` (block) | `blocks_get` | ✅ `cat` · ▫️ `show` |
-| Hydrate many blocks | `nodesGetMany` | — | `blocks_get_many` | — |
-| Metadata card | `nodesGet`(full)+`docLinks`+`docProps` | `show` | **`read_ref`** (kind=card) | ▫️ |
-| Find / rank | `resolveThing`/`textSearch` | `find` | `resolve` (+`text_search`) | ✅ |
+| Read whole document | `docsRead` | `cat` (doc) | `docs_read` | ✅ |
+| Read many documents | `docsReadMany` | — | `docs_read_many` | — |
+| Hydrate a block | `nodesGet` | `cat`/`show` (block; the CLI dispatches on the ref's shape — `b_`/`n_` → `blocks_read`, else `docs_read`) | `blocks_read` | ✅ `cat` · ▫️ `show` |
+| Hydrate many blocks | `nodesGetMany` | — | `blocks_read_many` | — |
+| Metadata card | `nodesGet`(full)+`docLinks`+`docProps` | `show` | `blocks_read` (block) / `docs_read` (document; `{ kind: "document", … }` composed client-side) | ▫️ |
+| Find / rank | `resolveThing`/`textSearch` | `find` | `blocks_resolve` (+`blocks_search`) | ✅ |
 | List documents (paged) | `docsList` | `ls` (walks every page) | **`docs_list`** | ✅ |
 | Repo shape (dir tree + totals) | `docsTree` | — | **`docs_tree`** | — |
 | Graph neighborhood | `graphNeighborhood` | (`query … follow`) | `graph` | — |
@@ -64,7 +63,7 @@ Legend: `--server` = is this CLI command remote-capable? ✅ wired · ▫️ pla
 |---|---|---|---|---|
 | Commit feed | `changesSince` | `log` | `changes_since` | ✅ |
 | Block biography | `historyNode` | `hist` | `blocks_history` | ✅ |
-| Diff two revisions | `diffBlocks`/`diffUnified` | `diff` | `diff` (block-grain) + **`diff_unified`** | ✅ |
+| Diff two revisions | `diffBlocks`/`diffUnified` | `diff` (`--blocks`) | **`docs_diff_unified`** + `docs_diff` (block-grain) | ✅ |
 | Read doc at a revision | `readDocumentAtRevision` | (`cat --rev` ✳️) | `docs_read_at` | ▫️ |
 | Per-document version list | `docHistory` | — | `docs_history` | — |
 
@@ -87,10 +86,10 @@ Legend: `--server` = is this CLI command remote-capable? ✅ wired · ▫️ pla
 | Remove block(s) | `apply` ops | `rm` (blocks) | `blocks_remove` | ✅ |
 | Split a block | `apply` ops | `split` | `blocks_split` | ✅ |
 | Merge blocks | `apply` ops | `merge` | `blocks_merge` | ✅ |
-| Complete tasks | `tasksComplete` | `done` | `tasks_complete` | ✅ |
+| Complete tasks | `tasksComplete` | `done` | `blocks_check` | ✅ |
 | Append to a doc / into a block | `docsAppend`/`sectionsAppend` | `append` (block) | `docs_append { section? }` / `blocks_append` | ✅ |
-| Set a node property | `nodeSet` | `node set` | `node_set` | ✅ |
-| Whole-document update | `docsUpdate`/`planUpdate` | `update` | `docs_update` / `docs_plan_update` | ✅ |
+| Set a node property | `nodeSet` | `node set` | `nodes_set` | ✅ |
+| Whole-document update | `docsUpdate`/`planUpdate` | `update` (`--dry-run` plans) | `docs_update` (`dry_run: true` is the plan-only call; `docs_plan_update` removed in 3.0) | ✅ |
 | Edit a block in `$EDITOR` (CAS pinned) | `apply` ops | `edit` | `blocks_update` (same op as `update` on a `b_` target) | 🔒 local (spawns `$EDITOR`; not in `REMOTE_OK`) |
 
 ### Document lifecycle
@@ -145,12 +144,13 @@ files for the same inputs (verified per-op). The block sugar is backed by
 **`blocks_insert`/`blocks_update`/`blocks_move`/`blocks_remove`/`blocks_split`/
 `blocks_merge`** — ref-accepting peers of the `apply` primitive that resolve refs
 and pin CAS **server-side**, so a remote client needs no local store. The read
-gap tools are in place too: **`read_ref`** (polymorphic doc/block/card read backs
-`cat`), **`docs_list`** (backs `ls`), **`diff_unified`** (backs `diff`), and
-`find`→`resolve`.
+gap tools are in place too: `cat` picks **`docs_read`** / **`blocks_read`** by the
+ref's shape (ids carry their kind; the polymorphic `read_ref` was removed in 3.0),
+**`docs_list`** (backs `ls`), **`docs_diff_unified`** (backs `diff`), and
+`find`→`blocks_resolve`.
 
-**Deferred (`▫️`)** — a few remaining reads: `show` (metadata card via `read_ref`
-kind=card), `run` (OQX-fence fetch+run), `links` (→`links_stale`), `repos`
+**Deferred (`▫️`)** — a few remaining reads: `show` (the metadata card's links and
+merged properties), `run` (OQX-fence fetch+run), `links` (→`links_stale`), `repos`
 (→`repos`), and the optional `cat --rev`→`docs_read_at` time-travel verb.
 
 **Inherently local (`🔒`)** — `status`'s watcher/sync-process state,

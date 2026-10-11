@@ -83,7 +83,7 @@ describe("trace suite", () => {
     const { payload: q } = await call("query", { query: 'from blocks where type == "task" && !attrs.checked && under_heading("Launch")' });
     const hits = q.hits as { id: string }[];
     expect(hits.length).toBe(2);
-    const { payload: res } = await call("tasks_complete", { blocks: hits.map((h) => h.id) });
+    const { payload: res } = await call("blocks_check", { ids: hits.map((h) => h.id) });
     expect(res.committed).toBe(true);
     expect(turns).toBeLessThanOrEqual(2);
     expect(readFileSync(join(dir, "tasks.md"), "utf8")).toContain("- [x] deploy");

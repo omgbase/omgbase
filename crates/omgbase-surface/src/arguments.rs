@@ -11,7 +11,7 @@
 //! no arguments"):
 //!
 //! ```text
-//! unknown argument `q`; did you mean `query`? (text_search takes limit?, q, repo?)
+//! unknown argument `q`; did you mean `query`? (blocks_search takes limit?, q, repo?)
 //! `doc` is no longer an argument — pass `id` or `path` (docs_read takes …)
 //! `query` is required (query takes …)
 //! `limit` must be an integer (query takes …)
@@ -108,8 +108,8 @@ pub fn validate_arguments(tool: &str, schema: &Json, args: &Json) -> Result<()> 
 }
 
 /// What to say about an argument name the tool does not take: the names 3.0
-/// retired are called out with their replacement (`doc` → `id`/`path` or
-/// `doc_id`/`doc_path`, `block`/`node` → `id`, `heading` → `section`,
+/// retired are called out with their replacement (`doc` → `id`/`path`,
+/// `block`/`node` → `id`, `heading` → `section`,
 /// `markdown` → `text`) when the tool has the replacement; otherwise the
 /// nearest valid name (Levenshtein ≤ 2, or one a prefix of the other).
 #[must_use]
@@ -119,9 +119,6 @@ pub fn unknown_argument_message(key: &str, props: &Map<String, Json>) -> String 
         |replacement: &str| format!("`{key}` is no longer an argument — pass {replacement}");
     if key == "doc" && has("id") && has("path") {
         return retired("`id` or `path`");
-    }
-    if key == "doc" && has("doc_id") && has("doc_path") {
-        return retired("`doc_id` or `doc_path`");
     }
     if (key == "block" || key == "node") && has("id") {
         return retired("`id`");
@@ -322,20 +319,20 @@ mod tests {
         let e = validate_arguments("docs_read", &s, &json!({ "zzz": true })).unwrap_err();
         assert!(e.message.starts_with("unknown argument `zzz` ("));
         let q = json!({ "type": "object", "properties": { "q": { "type": "string" }, "limit": { "type": "integer" } }, "required": ["q"] });
-        let e = validate_arguments("text_search", &q, &json!({ "query": "x" })).unwrap_err();
+        let e = validate_arguments("blocks_search", &q, &json!({ "query": "x" })).unwrap_err();
         assert!(
             e.message
                 .starts_with("unknown argument `query`; did you mean `q`?")
         );
-        let e = validate_arguments("text_search", &q, &json!({})).unwrap_err();
-        assert_eq!(e.message, "`q` is required (text_search takes limit?, q)");
-        let e =
-            validate_arguments("text_search", &q, &json!({ "q": "x", "limit": "5" })).unwrap_err();
+        let e = validate_arguments("blocks_search", &q, &json!({})).unwrap_err();
+        assert_eq!(e.message, "`q` is required (blocks_search takes limit?, q)");
+        let e = validate_arguments("blocks_search", &q, &json!({ "q": "x", "limit": "5" }))
+            .unwrap_err();
         assert_eq!(
             e.message,
-            "`limit` must be an integer (text_search takes limit?, q)"
+            "`limit` must be an integer (blocks_search takes limit?, q)"
         );
-        assert!(validate_arguments("text_search", &q, &json!({ "q": "x", "limit": 5 })).is_ok());
+        assert!(validate_arguments("blocks_search", &q, &json!({ "q": "x", "limit": 5 })).is_ok());
     }
 
     #[test]

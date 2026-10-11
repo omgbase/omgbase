@@ -1,5 +1,5 @@
 // Store-backed equality indexes for the OQX engine (`DataContext.indexFor`):
-// when a nested block's receiver is a ROOT SCAN (`^docs`, `^edges`,
+// when a nested block's receiver is a ROOT SCAN (`^docs`, `^links`,
 // a bare `docs` at the root scope) and its correlated or constant equality is on
 // a column or property SQLite can look up — `where path == ^^path`,
 // `where customer == ^path`, `where dst_id == ^id`, `where type == "order"` —
@@ -73,7 +73,7 @@ const COLUMN_PROBES: Record<Target, Record<string, string>> = {
   docs: { id: "d.doc_id = ?", path: "d.path = ?" },
   blocks: { id: "b.block_id = ?", doc_id: "b.doc_id = ?", type: "b.type = ?", path: "d.path = ?" },
   nodes: { id: "n.node_id = ?", doc_id: "n.doc_id = ?", kind: "n.kind = ?", name: "n.name = ?", path: "d.path = ?" },
-  edges: {
+  links: {
     id: "e.edge_id = ?", doc_id: "e.src_doc = ?", dst_id: "e.dst_node = ?", path: "d.path = ?",
     // `dst_path` is the destination document's path (deleted or not — the
     // field reads `docs` by id without a liveness guard). A destination is

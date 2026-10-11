@@ -136,7 +136,7 @@ impl Cli {
     //   * call `cli.capture(&value)` exactly once, with the `--json` document
     //     (`query`: the scalar for count/exists/none, the `values` list, else
     //     the whole result; `cat`: the content string for a document, the
-    //     `blocks_get` object for a block, a list of those for several refs;
+    //     `blocks_read` object for a block, a list of those for several refs;
     //     `show`: the card payload or a list of them; `ls`: the rows; `find`:
     //     the hits; `links`: `{ out, in }`; the block mutators: the
     //     `ApplyResult` — its `results[*].ids` become the frame);

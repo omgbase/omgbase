@@ -583,9 +583,11 @@ fn ls_over_the_reference_server_renders_like_local() {
 /// byte for byte as the same verb run locally: `query` in each consumer
 /// shape, `outline`, `hist`, `cat` (a document, blocks, a resolution),
 /// `diff` (unified, `--blocks`, `--json`), `find`, `log` and the modes —
-/// plus the two places the reference's own remote branch differs from its
-/// local one, pinned as they are: `outline <d_id>` heads with the ref as
-/// typed, `cat --json <block>` is the `read_ref` result with its `kind`.
+/// plus the one place the reference's own remote branch differs from its
+/// local one, pinned as it is: `outline <d_id>` heads with the ref as typed.
+/// `cat --json <block>` is the same `blocks_read` object in both modes (3.0:
+/// the ref's shape picks `blocks_read`/`docs_read` client-side; the
+/// polymorphic `read_ref` and its `kind` are gone).
 #[test]
 fn every_read_over_the_reference_server_renders_like_local() {
     let Some(omg) = ts_omg() else {
@@ -690,13 +692,13 @@ fn every_read_over_the_reference_server_renders_like_local() {
         ro.lines().skip(1).collect::<Vec<_>>()
     );
 
-    // The reference's remote `cat --json <block>` is the `read_ref` result,
-    // `kind` included; the local run prints the bare `blocks_get` object.
+    // `cat --json <block>` is the `blocks_read` object in both modes (3.0: a
+    // `b_` ref is dispatched to `blocks_read` client-side; before, the remote
+    // run printed the `read_ref` result with its `kind`).
     let (l, r) = p.both(&server, &["--json", "cat", &alpha], None);
     let lv: serde_json::Value = serde_json::from_str(text(&l.stdout).trim()).unwrap();
-    let mut rv: serde_json::Value = serde_json::from_str(text(&r.stdout).trim()).unwrap();
-    assert_eq!(rv["kind"], "block");
-    rv.as_object_mut().unwrap().remove("kind");
+    let rv: serde_json::Value = serde_json::from_str(text(&r.stdout).trim()).unwrap();
+    assert!(rv.get("kind").is_none(), "{rv}");
     assert_eq!(rv, lv);
 
     // `--since` needs the local commits table: refused remotely, as the reference does.

@@ -673,7 +673,7 @@
     {
       "name": "no-relations-beyond-section",
       "notes": "an unknown navigation resolves to no rows / undefined, not an error — unless it is spelled like a target (`nodes` on a node row is the §1.1 bare-target error: `query-root::bare-target-nodes-on-node-row`).",
-      "query": "select x: out_edges from nodes where kind == \"md:section\" && name == \"Supplies\"",
+      "query": "select x: out_links from nodes where kind == \"md:section\" && name == \"Supplies\"",
       "expect": {
         "hits": [
           {

@@ -205,8 +205,8 @@ pub fn non_property_handles(t: Target) -> &'static [&'static str] {
             "nodes",
             "out",
             "in",
-            "out_edges",
-            "in_edges",
+            "out_links",
+            "in_links",
             "data",
             "frontmatter",
             "inline",
@@ -216,7 +216,7 @@ pub fn non_property_handles(t: Target) -> &'static [&'static str] {
             "doc",
             "children",
             "nodes",
-            "out_edges",
+            "out_links",
             "section",
             "attrs",
         ],
@@ -229,7 +229,7 @@ pub fn non_property_handles(t: Target) -> &'static [&'static str] {
             "children",
             "attrs",
         ],
-        Target::Edges => &["doc"],
+        Target::Links => &["doc"],
     }
 }
 
@@ -243,7 +243,7 @@ pub(crate) fn row_attributes(t: Target) -> &'static [&'static str] {
     match t {
         Target::Docs => &["id", "path", "raw", "hash", "updated_at", "title", "tags"],
         Target::Blocks => &["id", "path", "raw", "hash", "updated_at"],
-        Target::Nodes | Target::Edges => &["id", "path"],
+        Target::Nodes | Target::Links => &["id", "path"],
     }
 }
 
@@ -269,14 +269,14 @@ fn attribute_sql(name: &str, ctx: &TranslateCtx<'_>) -> Option<(String, Ty)> {
         (Target::Blocks, "hash") => format!("lower(hex({s}.raw_hash))"),
         (Target::Nodes, "id") => format!("{s}.node_id"),
         (Target::Nodes, "path") => format!("('/' || {d}.path)"),
-        (Target::Edges, "id") => format!("{s}.edge_id"),
-        (Target::Edges, "path") => format!("('/' || {d}.path)"),
+        (Target::Links, "id") => format!("{s}.edge_id"),
+        (Target::Links, "path") => format!("('/' || {d}.path)"),
         _ => return None,
     };
     Some((sql, Ty::Text))
 }
 
-/// The edges target's plain fields → the store's columns (`spec/surface`
+/// The links target's plain fields → the store's columns (`spec/surface`
 /// §1.2, 3.0: a foreign key is named for what it is, never `$`-prefixed).
 /// `dst_path` and `uri` are correlated subqueries; `dst_path` is the
 /// reference form.
@@ -541,7 +541,7 @@ fn operand(e: &Expr, ctx: &TranslateCtx<'_>) -> Option<Operand> {
                     }
                     Operand::json(format!("{s}.attrs"), &[name])
                 }
-                Target::Edges => edge_field(name, s),
+                Target::Links => edge_field(name, s),
             }
         }
         Expr::Member { .. } => {
@@ -584,7 +584,7 @@ fn operand(e: &Expr, ctx: &TranslateCtx<'_>) -> Option<Operand> {
                 }
                 let k = rest[0];
                 if k == "id" {
-                    return Operand::text(if target == Target::Edges {
+                    return Operand::text(if target == Target::Links {
                         format!("{s}.src_doc")
                     } else {
                         format!("{s}.doc_id")
@@ -606,7 +606,7 @@ fn operand(e: &Expr, ctx: &TranslateCtx<'_>) -> Option<Operand> {
                 }
                 // `doc.raw` / `doc.title` / `doc.tags` are the attribute, not
                 // pushable; `doc.nodes`, `doc.data`, `doc.doc`… are the doc's
-                // handles, not its properties; `doc.docs` / `doc.edges` raise.
+                // handles, not its properties; `doc.docs` / `doc.links` raise.
                 if k.starts_with('$')
                     || row_attributes(Target::Docs).contains(&k)
                     || non_property_handles(Target::Docs).contains(&k)
@@ -1677,7 +1677,7 @@ mod tests {
             ..DOCS
         };
         let edges = TranslateCtx {
-            target: Target::Edges,
+            target: Target::Links,
             self_alias: "e",
             ..DOCS
         };
@@ -1685,7 +1685,7 @@ mod tests {
             (&DOCS, Target::Docs),
             (&blocks, Target::Blocks),
             (&nodes, Target::Nodes),
-            (&edges, Target::Edges),
+            (&edges, Target::Links),
         ] {
             for name in non_property_handles(target) {
                 let src = format!("{name} == null");
@@ -1760,7 +1760,7 @@ mod tests {
             .expect("observe");
         let ctx = StoreContext::new(store.conn(), &repo, HashMap::new());
 
-        let mut universe: Vec<&str> = [Target::Docs, Target::Blocks, Target::Nodes, Target::Edges]
+        let mut universe: Vec<&str> = [Target::Docs, Target::Blocks, Target::Nodes, Target::Links]
             .into_iter()
             .flat_map(|t| non_property_handles(t).iter().copied())
             .collect();
@@ -1784,7 +1784,7 @@ mod tests {
         universe.dedup();
 
         let is_shape = |v: &Value| matches!(v, Value::Array(_) | Value::Object(_));
-        for target in [Target::Docs, Target::Blocks, Target::Nodes, Target::Edges] {
+        for target in [Target::Docs, Target::Blocks, Target::Nodes, Target::Links] {
             // a root is a lazy scan marker; `to_rows` reads it
             let rows = ctx.to_rows(&ctx.root(target.as_str()));
             assert!(!rows.is_empty(), "{target:?} has rows");
@@ -2154,7 +2154,7 @@ mod tests {
     #[test]
     fn edges_push_their_plain_fields_under_the_surface_names() {
         let edges = TranslateCtx {
-            target: Target::Edges,
+            target: Target::Links,
             self_alias: "e",
             ..DOCS
         };
@@ -2226,7 +2226,7 @@ mod tests {
             ..DOCS
         };
         let edges = TranslateCtx {
-            target: Target::Edges,
+            target: Target::Links,
             self_alias: "e",
             ..DOCS
         };

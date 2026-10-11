@@ -284,7 +284,7 @@ describe("rendering helpers", () => {
     expect(diff.split("\n").map(diffLineKind)).toEqual(["hunk", "ctx", "del", "add", "add", "ctx"]);
     expect(diffStats(diff)).toEqual({ added: 2, removed: 1 });
     expect(diffStats("")).toEqual({ added: 0, removed: 0 });
-    expect(diffLineKind("--- a line that starts with dashes")).toBe("del"); // no file headers exist in diff_unified output
+    expect(diffLineKind("--- a line that starts with dashes")).toBe("del"); // no file headers exist in docs_diff_unified output
   });
   it("formats times relative to today and leaves junk alone", () => {
     const now = new Date(2026, 9, 10, 15, 0, 0);

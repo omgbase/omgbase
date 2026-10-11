@@ -77,7 +77,7 @@
     {
       "name": "root-targets-depth-1",
       "notes": "§1.1: every target is a root-row collection.",
-      "query": "select b: size(^blocks), n: size(^nodes), e: size(^edges) from docs where path == \"/index.md\"",
+      "query": "select b: size(^blocks), n: size(^nodes), e: size(^links) from docs where path == \"/index.md\"",
       "expect": {
         "hits": [
           {
@@ -142,7 +142,7 @@
               "docs",
               "blocks",
               "nodes",
-              "edges"
+              "links"
             ]
           }
         ],
@@ -372,11 +372,11 @@
       }
     },
     {
-      "name": "bare-target-edges-in-where",
-      "query": "from docs where edges exists { }",
+      "name": "bare-target-links-in-where",
+      "query": "from docs where links exists { }",
       "expect": {
         "error": "filter_invalid",
-        "message_includes": "`edges` inside a block reads a property of the current row, which has none — did you mean `^edges` (the repository's edges)?"
+        "message_includes": "`links` inside a block reads a property of the current row, which has none — did you mean `^links` (the repository's links)?"
       }
     },
     {
@@ -415,7 +415,7 @@
     },
     {
       "name": "bare-target-in-unreached-branch",
-      "notes": "static for `docs`/`edges`: no row reaches the conjunct, the query still fails.",
+      "notes": "static for `docs`/`links`: no row reaches the conjunct, the query still fails.",
       "query": "from docs where path == \"nope\" && docs exists { }",
       "expect": {
         "error": "filter_invalid",
@@ -441,7 +441,7 @@
     },
     {
       "name": "bare-target-nodes-on-edge-row",
-      "query": "select x: nodes from edges limit 1",
+      "query": "select x: nodes from links limit 1",
       "expect": {
         "error": "filter_invalid",
         "message_includes": "`nodes` inside a block reads a property of the current row, which has none — did you mean `^nodes` (the repository's nodes; one caret per enclosing block, or the absolute `0^nodes`)?"
@@ -467,10 +467,10 @@
     },
     {
       "name": "root-caret-past-the-root-from-a-row",
-      "query": "select path from docs where ^^edges exists { }",
+      "query": "select path from docs where ^^links exists { }",
       "expect": {
         "error": "filter_invalid",
-        "message_includes": "`^^edges` reaches past the root — there is no enclosing row at this depth; at the top level the repository's edges are the bare `edges` (`edges count { … }`, `from edges`, `entries(edges)`)"
+        "message_includes": "`^^links` reaches past the root — there is no enclosing row at this depth; at the top level the repository's links are the bare `links` (`links count { … }`, `from links`, `entries(links)`)"
       }
     }
   ]

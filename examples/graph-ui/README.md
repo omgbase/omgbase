@@ -253,30 +253,36 @@ as `1.x`. The result is the `serverSurface` signal, shown in the header
 | `pathExpr(surface, ref = attr(surface, "path"))` | the OQX that yields the rooted path of `ref`: the attribute itself on ≥ 2.0, `"/" + $path` before (`pathOperand` parenthesizes the latter; `outerPathOperand` is the enclosing row's — `^path` / `^$path` / `("/" + ^$path)`) |
 | `serverPath(surface, p)` | a `path == "…"` literal in the server's form: bare on 1.x, rooted on 2.0 |
 | `docArg(surface, doc)` | a pre-3.0 tool's `doc` argument: a path is de-rooted for 1.x; an id passes through |
-| `docLocator(surface, doc)` / `docForeign(surface, doc)` | the document argument in the server's spelling: `{ id }`/`{ path }` (`{ doc_id }`/`{ doc_path }` for `diff`) on ≥ 3.0 — `spec/surface` §4 "Arguments" — else `{ doc }` via `docArg` |
+| `docLocator(surface, doc)` | the document argument in the server's spelling: `{ id }`/`{ path }` on ≥ 3.0 — `spec/surface` §4 "Arguments" — else `{ doc }` via `docArg` |
 | `surfaceOf(versionResult)` | `specs.surface`, else `"1.x"` |
 | `hitId(hit)` / `hitPath(hit)` | a query hit's identity — the envelope's `id`/`path`, the same under every version |
 | `rowRef(v)` | a row that surfaced as a value — `{ id, path }` — rooted, else null |
 | `HIT_ENVELOPE_KEYS` | `id` and `path`; neither is a projectable field |
 
-and every other tool result — and the `edges` target's field names, which 3.0
-also renamed (`spec/surface` §1.2: `$path` → `path`, `$dst_path` → `dst_path`,
-`src_field` → `field`, `$src`/`$dst`/`$dst_uri` → `doc_id`/`dst_id`/`uri`) — through its
+and every other tool result — and the link rows' names, which 3.0 also
+renamed: the row kind itself (`spec/surface` §1.1: `from links`, `^links`,
+`out_links`/`in_links` — a 2.x server says `from edges`, `^edges`,
+`out_edges`/`in_edges`, and each refuses the other's spelling) and its fields
+(`spec/surface` §1.2: `$path` → `path`, `$dst_path` → `dst_path`, `src_field` →
+`field`, `$src`/`$dst`/`$dst_uri` → `doc_id`/`dst_id`/`uri`) — through its
 sibling `src/lib/shapes.ts`, keyed on the same version (an unknown version
 reads as 2.x):
 
 | | |
 | --- | --- |
 | `surface3(surface)` | does the server spell rows the 3.0 way (`id`/`path`/`raw`/`hash` on every tool, plain foreign keys)? false for 1.x/2.x and while unknown |
-| `edgeFields(surface)` | the `edges` target's names in generated OQX (`edgeQueries` spells its `dst:` projection and the `field ==` test with them) |
-| `edgeOf(surface, e)` / `docOf(surface, d)` | a `graph` tool edge / document under either generation, normalised — this demo fetches edges through `query`, not `graph`, so these are for a consumer that does |
+| `linksTarget(surface)` / `linkRelations(surface)` | the link rows' kind in generated OQX — `links` on ≥ 3.0, `edges` before — and the doc relations that yield them (`out_links`/`in_links` vs `out_edges`/`in_edges`) |
+| `edgeFields(surface)` | the link rows' field names in generated OQX (`edgeQueries` spells its `dst:` projection and the `field ==` test with them) |
+| `graphEdgeRows(surface, result)` / `edgeOf(surface, e)` / `docOf(surface, d)` | the `graph` tool's link rows (`links[]` on ≥ 3.0, `edges[]` before), one such row, and a document under either generation, normalised — this demo fetches edges through `query`, not `graph`, so these are for a consumer that does |
 | `docReadOf(surface, r)` / `docOpOf(surface, r)` | `docs_read` (`id`/`path`/`raw` vs `docId`/`path`/`content`) and a document op's result (`id`/`path` vs `docId`/`path`); the demo itself needs only `properties.frontmatter`, spelled the same on both |
 
 Candidate inference and the editor's path hints read both spellings of the
 path attribute (`path` / `$path`), an edge's field (`field` / `src_field`) and
-destination path (`dst_path` / `$dst_path`) in a query's AST, since the query
-is the user's; a bare 3.0 attribute (`path`, `title`, `updated_at`, …) is never
-taken for a frontmatter relation or an `order by` sequence key.
+destination path (`dst_path` / `$dst_path`), and both spellings of the link
+rows (`in_links`/`out_links`/`^links` and `in_edges`/`out_edges`/`edges`) in a
+query's AST, since the query is the user's and the server decides which
+spelling is valid; a bare 3.0 attribute (`path`, `title`, `updated_at`, …) is
+never taken for a frontmatter relation or an `order by` sequence key.
 
 The **hit envelope** (`spec/surface` §1.4) is `{ id, path, ...projection }`
 under every surface version — on 3.0 these are the attributes' own names, so a
@@ -427,22 +433,25 @@ needs the dev origin in **Allowed Web Origins** and this page's URL
 Requesting `offline_access` needs *Allow Offline Access* on the API that the
 `resource` maps to.
 
-**Edges** are fetched with generated OQX over the `edges` target:
+**Edges** are fetched with generated OQX over the link rows:
 
 ```oqx
-select src: path, dst: dst_path from edges
+select src: path, dst: dst_path from links
 where field == "after" && provenance == "frontmatter"
   && (path == "/timeline/kickoff.md" || path == "/timeline/alpha.md" || …)
 ```
 
-in chunks of 40 paths (the literals bare against a 1.x server — see [Server
-versions](#server-versions)), then filtered client-side to edges whose both
-ends are shown. OQX has no array literal (`path in [...]` is a lex error) and `in` only
-takes a lifted set or a range, hence the disjunction. The nested alternative
-(`select path, out: doc.out_edges collect { select dst: dst_path, field }
-from docs where …`) also works against the engine (against a pre-3.0 server the
-edge fields are `$path`/`$dst_path`/`src_field` — the demo spells them by the server's
-surface version, like the paths below); the flat rows were simpler to
+(a 2.x server still calls the kind `edges` — `from edges`, `out_edges`,
+`in_edges`, `^edges` — and the demo spells it by the server's surface version,
+`linksTarget`) in chunks of 40 paths (the literals bare against a 1.x server —
+see [Server versions](#server-versions)), then filtered client-side to edges
+whose both ends are shown. OQX has no array literal (`path in [...]` is a lex
+error) and `in` only takes a lifted set or a range, hence the disjunction. The
+nested alternative (`select path, out: doc.out_links collect { select dst:
+dst_path, field } from docs where …`) also works against the engine (against a
+pre-3.0 server the relation is `doc.out_edges` and the edge fields are
+`$path`/`$dst_path`/`src_field` — the demo spells them by the server's surface
+version, like the paths below); the flat rows were simpler to
 merge across chunks and page with the tool's cursor. Links (`doc.out`) and
 backlinks (`doc.in`) use the same query with `provenance == "link"`; backlinks
 are the same rows reversed. A sequence candidate (an `order by` key) needs no
@@ -717,8 +726,9 @@ module becomes the fallback.
    `before`, *forward*; a `refs()` receiver of a nested directive follows the
    same two cases (`refs(after) exists { where path == ^^path }` → `after` *backward*,
    `refs(^before) exists { … }` → `before` *forward*); a `field == "x"` (`src_field` pre-3.0) /
-   `predicate == "x"` literal under `doc.in_edges` / `doc.out_edges` / `edges`
-   names `x` (*forward* for in_edges, *backward* for out_edges).
+   `predicate == "x"` literal under `doc.in_links` / `doc.out_links` / `^links`
+   (or their pre-3.0 spellings `doc.in_edges` / `doc.out_edges` / `edges`)
+   names `x` (*forward* for in_links, *backward* for out_links).
 2. **`order by` keys** that are not `$`-intrinsics become *sequence*
    candidates (edges = consecutive rows; `desc` → backward).
 3. **Inferred from rows**: a projected field whose values are a doc path or a

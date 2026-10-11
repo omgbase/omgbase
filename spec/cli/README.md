@@ -509,18 +509,21 @@ with the op's payload (`op_index`, …).
 
 ### `cat`
 
-`cat <node…|-> [--resolution raw|text|outline|skeleton|full]` — `read_ref`.
+`cat <node…|-> [--resolution raw|text|outline|skeleton|full]` — `docs_read` or
+`blocks_read`, chosen by the ref's shape on the client (`b_`, `n_` or
+`path#type[n]` → `blocks_read`, a `d_` id or a path → `docs_read`; ids carry
+their kind, so there is no polymorphic `read_ref` tool since surface 3.0).
 Each ref (a block id, doc id, node id or document path in either form; `-` reads refs
 from stdin one per line, a `-` with empty stdin is
 `usage: cat requires a <node> (or - to read refs from stdin)`) prints, in
 order: a document → its exact bytes (`docs_read`); a block → its raw
-markdown, or at `--resolution text|outline|skeleton|full` the `blocks_get`
+markdown, or at `--resolution text|outline|skeleton|full` the `blocks_read`
 field `raw ?? text ?? label`. `--resolution` other than `raw` on a document
 ref warns on stderr
 `  --resolution <r> ignored for <ref>: a document is always its exact bytes (resolutions apply to block refs)`
 and prints the bytes. `--json`: one ref → the object, several → an array;
 `--jsonl` one object per line (`--ids`: the same document — a read has no
-id list); a block's object is `blocks_get` at the resolution
+id list); a block's object is `blocks_read` at the resolution
 (`{ id, type, raw, hash }` at raw), a document's is the `docs_read`
 result `{ id, path, rev, properties: { frontmatter, inline, computed },
 raw }` (3.0 — the row rule of `spec/surface` §1.2). Unknown ref →
@@ -550,14 +553,14 @@ string verbatim, anything else as JSON, an absent key as an empty line
 
 ### `diff`
 
-`diff <doc> [--from <rev>] [--to <rev>] [--blocks]` — `diff_unified`.
+`diff <doc> [--from <rev>] [--to <rev>] [--blocks]` — `docs_diff_unified`.
 `--to` defaults to the document's current revision, `--from` to the one
 before it (or the current one again when there is only one → an empty
 diff, stderr `  no changes`). Human: the unified diff's lines
 (`spec/surface` §3, no header); `--json` the tool's result
 `{ id, path, from, to, diff }` (the reference and the tool share one
 function); `--jsonl`/`--ids` the same document. `--blocks` is the
-block-grain `diff` tool over the same resolved pair: human one line per
+block-grain `docs_diff` tool over the same resolved pair: human one line per
 entry, `+ <id>  <first line of after>` (added), `- <id>  <first line of
 before>` (removed), `~ <id>  <first line of after>` (changed), none → stderr
 `  no changes`; `--json` the entry array
@@ -582,7 +585,7 @@ FTS check holds after a deletion (observed or `rm --doc`) and after
 
 ### `done`
 
-`done <blocks…|-> [--undo] [--actor <s>] [--dry-run]` — `tasks_complete`
+`done <blocks…|-> [--undo] [--actor <s>] [--dry-run]` — `blocks_check { ids }`
 (`--undo`: an `update` with `attrs.checked = false`, CAS pinned from the
 live row). Every block must be a live `task` block, checked before any op
 is built: another type →
@@ -620,8 +623,8 @@ provider the status figures and the drain depend on the model — unpinned;
 
 ### `find`
 
-`find <text> [-n <N>] [-1] [-v] [--no-semantic]` — `resolve` (`spec/search`
-§4); the positionals join with a space; `-n` (default 10) is the limit;
+`find <text> [-n <N>] [-1] [-v] [--no-semantic]` — `blocks_resolve`
+(`spec/search` §4 `resolve`); the positionals join with a space; `-n` (default 10) is the limit;
 hybrid ranking when a provider is configured, FTS-only with `--no-semantic`
 or without one. Human: `<id>  <locator>  <preview>` per hit; `-v` adds
 `    <evidence as JSON>` on **stderr** under each; none → stderr
@@ -809,7 +812,7 @@ verbatim). Confirmation (§4) `created <path>`; `--json`
 ### `node`
 
 `node set <nodeId> <prop> <value> [--actor <s>] [--dry-run]` ·
-`node props <nodeId>` — `node_set` / `editablePropsFor`. `props`: human
+`node props <nodeId>` — `nodes_set` / `editablePropsFor`. `props`: human
 `  <kind> editable: <p, p>` (or stderr `  <kind> has no editable properties`),
 `--json` `{ node, kind, editable }`; unknown node →
 `block_missing: no node <id>`. `set`: the value is the remaining positionals
@@ -851,7 +854,8 @@ An empty or missing source is
 (lex, parse, eval) and an invalid `--cursor` are `filter_invalid` — the
 OQX message, `data { reason: <message>, hint: "OQX" }`; `invalid cursor`,
 `data { reason: "cursor was not issued by query", hint: … }` — as the
-`query` tool reports them; an unknown root is silently empty (§9).
+`query` tool reports them; an unknown root is `filter_invalid` naming the four
+collections (surface 3.0 name pass, §9).
 `semantic(...)` without a provider →
 `error[provider_unavailable]: semantic(...) needs an embedding provider`
 with the hint `omg config set embedding.provider <command|url>`.
@@ -916,7 +920,7 @@ See §7.
 `show <node…|-> [--include history]` — the metadata card. A document: the
 wordmark with its path, the rule, `  properties` and
 `    <key> = <value>` (strings verbatim, else JSON) for every merged property
-including the computed `title`, then `  out edges` / `  backlinks` as
+including the computed `title`, then `  out links` / `  backlinks` as
 `links` renders them (each section only when non-empty). A block:
 `  <type glyph> <type>  <id>`, the rule,
 `  placement  parent=<parent_id|—> ordinal=<n> depth=<n>` (the row's
@@ -924,10 +928,10 @@ including the computed `title`, then `  out edges` / `  backlinks` as
 `    <k> = <v>` lines when any, `  text  <text>` when any, and with
 `--include history` `  history` then `    #<seq> <kind> <origin> <ts>` for the
 last five changes. Several refs print one card after another. `--json`: a
-block's `blocks_get` at `full` (+ `history` when included); a document's the
-`read_ref` result `{ kind: "document", id, path, rev, properties:
-{ frontmatter, inline, computed }, raw }` (the card's merged properties
-and edges are the human rendering only); one ref → the object, several →
+block's `blocks_read` at `full` (+ `history` when included); a document's
+`{ kind: "document", id, path, rev, properties: { frontmatter, inline,
+computed }, raw }` — `docs_read`'s result under `kind`, composed by the CLI
+(the card's merged properties and links are the human rendering only); one ref → the object, several →
 an array; `--jsonl` one object per line; `--ids` the same as `--json`.
 
 ### `source`
@@ -1041,7 +1045,8 @@ CAS is pinned from the live row and stderr says
 markdown; confirmation (§4). **Anything else** — a document id or a path —
 is the whole-document update of
 `docs/update-opsets.md`: the bytes are reconciled against the current tree
-and the derived opset committed. `--plan` or `--dry-run`: stderr
+and the derived opset committed (`docs_update`). `--plan` or `--dry-run` —
+`docs_update { dry_run: true }`, the plan-only call: stderr
 `  plan for <path>` (`— DOES NOT CONVERGE (will not apply)` appended when it
 would not), stdout the rendered opset (`renderOpsetPlan`: one
 `<OP> <target>     <disposition> [<reason>]` line per op, an empty line, the
@@ -1095,7 +1100,7 @@ empty). Collections: `query`/`run` hits (row ref = `id`, label `path`;
 card or scalar (`show`, `cat`, a count) sets `@_` and leaves the frame.
 **Not captured** at all (they leave `@_` and the frame untouched): `log`,
 `hist`, `outline`, `diff`, `status`, `repos`, `sync`, the admin verbs (§9).
-`cat` captures the bytes (a string) for a document, the `blocks_get` object
+`cat` captures the bytes (a string) for a document, the `blocks_read` object
 for a block; `show` a document captures the card object.
 
 Substitution coerces a row to its ref; a scalar to its string; an object
@@ -1254,7 +1259,8 @@ non-list result prints the `--json` document, `--ids` on a result without an
 id list prints the `--json` document, and the truncation footer is printed in
 every mode but `--json` (whose document carries `truncated`/`cursor`);
 `--json` is the mapped tool's result shape for `cat` (doc →
-`docs_read`), `show` (doc → `read_ref`), `diff` (→ `diff_unified`), `repos`
+`docs_read`), `show` (doc → `{ kind: "document", ...docs_read }`, composed
+client-side), `diff` (→ `docs_diff_unified`; `--blocks` → `docs_diff`), `repos`
 (→ `repos`), `retarget`'s plan (→ `links_retarget` dry run) and `status`
 (`{ ...repos_status, sync: sync_status, watcher, embedQueue }`);
 empty-result notes go to stderr; a commit whose revisions were all deleted or
@@ -1360,7 +1366,7 @@ fixture change and a version bump, or keep). None was fixed here.
   (`mutate::node`, `mutate::node-set-dry-run`).
 - **Fixed — `done` on a non-task block is `type_mismatch`**
   (`not a task: <ref> is a <type>`, `data { block, type }`), checked by the
-  CLI before any op is built; the `tasks_complete` macro (`spec/mutate` §5)
+  CLI before any op is built; the `blocks_check` macro (`spec/mutate` §5)
   is unchanged (`mutate::done-on-paragraph`).
 - **Fixed (mutate 1.2) — `insert` to a heading id destroyed the heading.**
   The as-built rendering looked like "the block lands right after the
@@ -1415,10 +1421,11 @@ fixture change and a version bump, or keep). None was fixed here.
   library function the MCP server calls so the shapes cannot drift: `cat`
   on a document → `docs_read` (`read::cat-doc-json`, `cat-many-json`,
   `cat-many-jsonl`, the shell's `cat @1 --json`); `show` on a document →
-  `read_ref` (`{ kind: "document", ...docs_read }`; `read::show-doc-json`,
-  `shell::previous-result`); `diff` → `diff_unified`'s
+  `{ kind: "document", ...docs_read }` (composed by the CLI; the `read_ref`
+  tool's shape before 3.0; `read::show-doc-json`,
+  `shell::previous-result`); `diff` → `docs_diff_unified`'s
   `{ doc, path, from, to, diff }` (`docDiffUnified`; `diff --blocks` → the
-  `diff` tool's entries); `repos` → the `repos` tool's
+  `docs_diff` tool's entries); `repos` → the `repos` tool's
   `{ repos: [{ slug, hasSource }] }` (`reposList`; the human table keeps the
   root and counts it always showed; `read::repos-json`, `repos-jsonl`,
   `admin::empty-workspace-reads`); `status` →
@@ -1488,8 +1495,12 @@ fixture change and a version bump, or keep). None was fixed here.
 - **Pinned — heading text is not a CLI ref**: `append Contents` is
   `block_missing: no block with id "Contents"`; the MCP tools' `heading` text
   resolution (and therefore `ambiguous_heading`) is unreachable from the CLI.
-- **Pinned — an unknown OQX root is silently empty** (`q 'from nope'` prints
-  `  no hits`, exit 0; `query::unknown-root`).
+- **Fixed (cli 3.0, with the surface 3.0 name pass) — an unknown OQX root was
+  silently empty** (`q 'from nope'` printed `  no hits`, exit 0). The surface
+  now refuses a top-level `from <name>` that is no collection — `` `nope` is
+  not a target — the repository's collections are `docs`, `blocks`, `nodes`,
+  `links` `` (`from edges` adds that `edges` was renamed `links`) — and the
+  CLI renders it as every `filter_invalid`, exit 1 (`query::unknown-root`).
 
 **Engine behavior surfaced through the CLI**
 
@@ -1534,8 +1545,9 @@ was `b_314`).
   `spec/surface` minor. Also unpinned, observed while proving `--server` both
   ways: the reference client spawns its stdio engine with the MCP SDK's
   safelisted environment, so `OMGBASE_SPEC_*` never reach an `omg --server`
-  child (the Rust client inherits the whole environment); `cat --json <block>`
-  remotely carries `read_ref`'s `kind`; `outline <d_id>` remotely heads with
+  child (the Rust client inherits the whole environment); before 3.0
+  `cat --json <block>` remotely carried `read_ref`'s `kind` (`cat` now calls
+  `blocks_read` directly in both modes); `outline <d_id>` remotely heads with
   the id; block sugar `--json` remotely prints the tool's decorated result;
   `retarget --apply` remotely prints `ok retargeted N block(s)`; the Rust
   client keeps `--dry-run` on `retarget --apply` a preview and still says
@@ -1616,9 +1628,19 @@ was `b_314`).
   (or a frontmatter relation) leaves. A flag added: a minor
   (`docs::mv`, `mv-json`, `mv-dry-run`, `mv-dry-run-json`, `mv-no-retarget`,
   `mv-no-retarget-json`, `invoke::help-card-mv`).
+- 2026-10-11, cli 3.0 (surface 3.0 tool-name pass): the verbs follow the
+  catalog's renames — `cat`/`show` pick `docs_read` or `blocks_read` by the
+  ref's shape (the polymorphic `read_ref` is gone; `show --json` on a document
+  still prints `{ kind: "document", ...docs_read }`, composed client-side),
+  `diff` → `docs_diff_unified` / `docs_diff` (`--blocks`), `find` →
+  `blocks_resolve`, `done` → `blocks_check { ids }`, `node set` → `nodes_set`,
+  `update <doc> --dry-run` → `docs_update { dry_run: true }` (`docs_plan_update`
+  is gone); the `show` card says `out links`, the `query` help names the
+  targets `docs|blocks|nodes|links` and the root collections `^links`
+  (`from edges` is an unknown target). Renderings unchanged otherwise.
 - 2026-10-11, cli 3.0 (surface 3.0 batch 2): the verbs send the surface's
   3.0 argument names — a `d_` ref is `id`, anything else `path` (`doc_id` /
-  `doc_path` from `diff`), `blocks_get`/`blocks_get_many`/`blocks_history`
+  `doc_path` from `diff`), `blocks_read`/`blocks_read_many`/`blocks_history`
   behind `cat`/`show`/`hist`, `append <block>` renders `blocks_append` (a
   heading's section or a container's children; a leaf is
   `block_not_container`), `omg query`'s no-provider error is

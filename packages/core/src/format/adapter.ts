@@ -22,7 +22,7 @@ export interface ProjectedNode {
   /**
    * `[spanStart, spanEnd)` of the feature within the block's raw, as JavaScript
    * string indices (UTF-16 code units). Ingest converts to UTF-8 byte offsets
-   * before the `nodes` row is written (spec/graph §2.3), and `node_set`
+   * before the `nodes` row is written (spec/graph §2.3), and `nodes_set`
    * converts back before an editor slices the raw.
    */
   spanStart?: number | undefined;

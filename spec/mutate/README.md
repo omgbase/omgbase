@@ -301,7 +301,11 @@ commit of the *n*-th document leaves the earlier documents committed (§10).
 ## 5. Macros
 
 Each expands to kernel ops, deterministically, and the expansion is what
-runs and what the caller sees:
+runs and what the caller sees. The names below are the macros'; the MCP tools
+rendering them (surface 3.0) are `blocks_check { ids }` for `tasks_complete`,
+`nodes_set { id }` for `node_set`, and — `sections_append` has no tool of its
+own since 3.0 — `docs_append { section }` and `blocks_append { id }` for
+`sections_append`:
 
 | Macro | Expansion |
 | --- | --- |

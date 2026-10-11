@@ -12,7 +12,7 @@ import { EngineError } from "./errors.js";
 // Message forms (the `(… takes …)` tail lists the tool's arguments in bytewise
 // order, optional ones marked `?`; a tool without arguments "takes no
 // arguments"):
-//   unknown argument `q`; did you mean `query`? (text_search takes limit?, q, repo?)
+//   unknown argument `q`; did you mean `query`? (blocks_search takes limit?, q, repo?)
 //   `doc` is no longer an argument — pass `id` or `path` (docs_read takes …)
 //   `query` is required (query takes …)
 //   `limit` must be an integer (query takes …)
@@ -80,8 +80,8 @@ function issueMessage(key: string, schema: z.ZodTypeAny, issues: readonly { code
 
 /**
  * What to say about an argument name the tool does not take. The names 3.0
- * retired are called out with their replacement (`doc` → `id`/`path` or
- * `doc_id`/`doc_path`, `block`/`node` → `id`, `heading` → `section`,
+ * retired are called out with their replacement (`doc` → `id`/`path`,
+ * `block`/`node` → `id`, `heading` → `section`,
  * `markdown` → `text`) when the tool has the replacement; otherwise the
  * nearest valid name (Levenshtein ≤ 2, or one a prefix of the other).
  */
@@ -89,7 +89,6 @@ export function unknownArgumentMessage(key: string, shape: ArgShape): string {
   const has = (n: string) => n in shape;
   const retired = (replacement: string) => `\`${key}\` is no longer an argument — pass ${replacement}`;
   if (key === "doc" && has("id") && has("path")) return retired("`id` or `path`");
-  if (key === "doc" && has("doc_id") && has("doc_path")) return retired("`doc_id` or `doc_path`");
   if ((key === "block" || key === "node") && has("id")) return retired("`id`");
   if (key === "heading" && has("section")) return retired("`section` (the heading's text), or blocks_append with the heading's `id`");
   if (key === "markdown" && has("text")) return retired("`text`");

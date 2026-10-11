@@ -91,7 +91,7 @@ Every doc here is maintained as an **as-built** description of the code (last ve
 | --- | --- |
 | `docs/README.md` | docs index, CI-enforced invariants, glossary |
 | `docs/architecture.md` | system shape, kernel concepts, identity/canonicality rules |
-| `docs/object-model.md` | **orientation**: the docs/blocks/nodes/edges mental model and which layer each verb touches (conceptual; specs are authoritative) |
+| `docs/object-model.md` | **orientation**: the docs/blocks/nodes/edges (`links` at the query surface) mental model and which layer each verb touches (conceptual; specs are authoritative) |
 | `docs/data-model.md` | SQLite DDL, ID/hash conventions, rebuild/GC rules (authoritative schema is `core/store/schema.ts`) |
 | `docs/reconciliation-spec.md` | parser contract, round-trip law, matcher phases/thresholds |
 | `docs/mutation-and-concurrency.md` | six-op kernel, changesets, CAS, conflict objects, write protocol |
@@ -104,4 +104,4 @@ Every doc here is maintained as an **as-built** description of the code (last ve
 | `docs/sync-plugins.md` | external-source stdio adapter protocol + `@omgbase/fs-adapter`; the adapters/sources/attachments registry (wired — `omg source`), sourceless repos |
 | `docs/sync-service-design.md` | ADR-014 design rationale + stage record (**implemented**, all six stages): `@omgbase/sync` as a standalone MCP-client service, `DocStore` seam, `observe*` tools, `attach`-as-sugar, `root_path` removal (schema v13) |
 | `docs/surface-map.md` | the **Rosetta stone**: one operation catalog across library / `omg` CLI / MCP tool, the exception set, and the gap list that makes `--server` (remote-over-MCP) feel local |
-| `docs/update-opsets.md` | whole-document update planner (`docs_update`/`docs_plan_update`, `omg update`) |
+| `docs/update-opsets.md` | whole-document update planner (`docs_update`, whose `dry_run` is the plan-only call; `omg update`) |

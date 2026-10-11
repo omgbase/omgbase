@@ -53,7 +53,7 @@ const QUERIES: &[(&str, Push)] = &[
     ("from docs where path != \"index.md\"", Planned),
     ("from blocks where path.startsWith(\"lab/\")", Planned),
     ("from nodes where path.startsWith(\"processes/\")", Planned),
-    ("from edges where path.startsWith(\"index\")", Planned),
+    ("from links where path.startsWith(\"index\")", Planned),
     // pushable composed with a non-pushable residual (mixed); a call in the
     // residual could raise, so the whole query declines (surface 1.1 patch)
     (
@@ -249,9 +249,9 @@ const QUERIES: &[(&str, Push)] = &[
         "select path, open from docs where nodes collect { ^open: value where kind == \"md:task\" && !attrs.checked }",
         Declined,
     ),
-    // edges target
+    // links target
     (
-        "select doc_id, dst_path from edges where predicate == \"references\"",
+        "select doc_id, dst_path from links where predicate == \"references\"",
         Planned,
     ),
     // row functions rewrite to `$self.fn(…)`, which the translator declines;
@@ -354,19 +354,19 @@ const QUERIES: &[(&str, Push)] = &[
     ),
     // the other targets as receivers: an edges-target correlated block, blocks by doc_id, nodes by kind
     (
-        "select path, inbound: ^edges collect { doc_id where dst_id == ^id } from docs",
+        "select path, inbound: ^links collect { doc_id where dst_id == ^id } from docs",
         Declined,
     ),
     (
-        "select path, outbound: ^edges collect { dst_path values where path == ^path } from docs",
+        "select path, outbound: ^links collect { dst_path values where path == ^path } from docs",
         Declined,
     ),
     (
-        "from docs where ^edges count { where path == ^path } > 2",
+        "from docs where ^links count { where path == ^path } > 2",
         Declined,
     ),
     (
-        "select doc_id, same_dst: ^edges collect { doc_id values where dst_path == ^dst_path && id != ^id } from edges where predicate == \"references\"",
+        "select doc_id, same_dst: ^links collect { doc_id values where dst_path == ^dst_path && id != ^id } from links where predicate == \"references\"",
         Planned,
     ),
     (

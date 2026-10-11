@@ -4,7 +4,7 @@ import type { Command } from "../commands.js";
 import type { Cli } from "../context.js";
 import { CliUsageError, EngineErrorLike, EXIT_OK, emitMachine, renderHelp } from "../output.js";
 
-// `omg links <node>` (11 §5.4) — open edges touching the node; default both
+// `omg links <node>` (11 §5.4) — open links touching the node; default both
 // directions, grouped; doc-grain by default, --blocks for block-grain (one row
 // per edge, naming the source block). Backlinks = --in.
 
@@ -23,13 +23,13 @@ function runLinks(cli: Cli, args: string[]): number {
   if (values.help) {
     return renderHelp(cli, {
       name: "links",
-      summary: "Open edges touching a node, grouped by predicate (both directions by default)",
+      summary: "Open links touching a node, grouped by predicate (both directions by default)",
       usage: "links <node> [--in|--out] [--pred <p,p>] [--blocks]",
       options: [
-        ["--in", "incoming edges only (backlinks)"],
-        ["--out", "outgoing edges only"],
+        ["--in", "incoming links only (backlinks)"],
+        ["--out", "outgoing links only"],
         ["--pred <p,p>", "keep only these predicates"],
-        ["--blocks", "block-grain edges (default: doc-grain)"],
+        ["--blocks", "block-grain links (default: doc-grain)"],
       ],
     });
   }
@@ -77,4 +77,4 @@ function runLinks(cli: Cli, args: string[]): number {
   return EXIT_OK;
 }
 
-export const cmdLinks: Command = { name: "links", summary: "Open edges touching a node", run: (cli, a) => runLinks(cli, a) };
+export const cmdLinks: Command = { name: "links", summary: "Open links touching a node", run: (cli, a) => runLinks(cli, a) };

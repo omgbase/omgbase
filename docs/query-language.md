@@ -34,7 +34,7 @@ The `query` MCP tool takes a single OQX **string** plus pagination:
 ```
 
 Every concern folds into the expression: `select <expr>, name: <expr>, …`
-(projection), `from docs|blocks|nodes|edges` (source), `where <predicate>`,
+(projection), `from docs|blocks|nodes|links` (source), `where <predicate>`,
 receiver-constrained nested queries (`nodes exists { … }`, `collect { … }`),
 correlation/joins (the `^` sigil, with `^docs`/`^nodes`/`^blocks` reaching the
 root row's collections), bounded traversal (`follow`), `order by <expr> [asc|desc]`, and
@@ -108,16 +108,16 @@ error). A foreign key is named for what it is (`doc_id`, `block_id`, `via_id`,
 `ordinal`, `kind`, `predicate`, `field`). **Same value, same name, everywhere:**
 tool results and arguments spell a row the same way (`id`, `path`, `raw`,
 `hash`, `updated_at`, `doc_id`, …), so a key read from any result pastes into a
-query and into a tool's `id` argument. On the closed `blocks`/`nodes`/`edges`
+query and into a tool's `id` argument. On the closed `blocks`/`nodes`/`links`
 targets an unknown bare field reads as absent; on the open `docs` target a bare
 key that is not an attribute, a handle or a relation is a document property.
 
 | kind | attributes | handles / self / relations |
 | --- | --- | --- |
-| docs | `id` `path` `raw` `hash` `updated_at` `title` `tags` `format` | `data` `frontmatter` `inline`; `doc`; `blocks` `nodes` `out` `in` `out_edges` `in_edges` |
-| blocks | `id` `path` `doc_id` `raw` `hash` `updated_at` `type` `text` `attrs` `depth` `ordinal` | `block` `doc`; `children` `nodes` `out_edges` `section` |
+| docs | `id` `path` `raw` `hash` `updated_at` `title` `tags` `format` | `data` `frontmatter` `inline`; `doc`; `blocks` `nodes` `out` `in` `out_links` `in_links` |
+| blocks | `id` `path` `doc_id` `raw` `hash` `updated_at` `type` `text` `attrs` `depth` `ordinal` | `block` `doc`; `children` `nodes` `out_links` `section` |
 | nodes | `id` `path` `doc_id` `block_id` `kind` `name` `value` `attrs` | `section` `doc` `block`; `blocks` `subsections` `children` |
-| edges | `id` `path` `doc_id` `block_id` `via_id` `dst_id` `dst_path` `uri` `field` `dst_kind` `predicate` `provenance` `anchor` | `doc` |
+| links | `id` `path` `doc_id` `block_id` `via_id` `dst_id` `dst_path` `uri` `field` `dst_kind` `predicate` `provenance` `anchor` | `doc` |
 
 Language words that can never be a bare field: `select from where is not and
 or`, the literals `true false null`. The contextual words (`limit order offset
@@ -129,14 +129,15 @@ or node).
 **[was, before 3.0: the attributes were `$`-prefixed (`$id`, `$path`, …) with
 `$body`/`$content_hash`; blocks `$doc`, `$ordinal`/`$depth` (colliding with the
 `follow` recursion intrinsics, which shadowed them inside a walk); nodes
-`$doc_id`/`$block_id`/`$node_id`; edges `$src`/`$dst`/`$src_block`/`$via`/
+`$doc_id`/`$block_id`/`$node_id`; the `links` target was `edges` (its relations
+`out_edges`/`in_edges`, its root collection `^edges`) with `$src`/`$dst`/`$src_block`/`$via`/
 `$dst_path`/`$dst_uri`/`$from_commit` and the field `src_field`. `$from_commit`
 is gone outright — a query sees open edges only.]**
 
 **Paths (spec/surface 2.0).** omgbase stores a document's path repo-relative
 (`projects/oqx.md`), but every reference an author writes is root-absolute
 (`[x](/projects/oqx.md)`, `before: [/timeline/kickoff.md]`). The surface
-speaks the reference form: `path` on every target, `dst_path` on edges, the
+speaks the reference form: `path` on every target, `dst_path` on links, the
 `path` of every hit and of a row rendered as `{ id, path }` are `/`-rooted.
 Every path the surface accepts tolerates both forms — tool arguments, `refs(x)`,
 `within(…)`, and a **string literal** compared with `path`/`dst_path` by
@@ -172,7 +173,7 @@ column) so pushed SQL and the in-memory engine agree.
   body `#hashtags`, deduped, authored first; the authored list alone is
   `data.tags`), `format` (`"markdown"`/`"yaml"`/`"json"`).
 - **The root row** (spec/oqx 0.18, surface 2.0): the repository is the root
-  scope's row. From a top-level row `^docs` / `^blocks` / `^nodes` / `^edges` are
+  scope's row. From a top-level row `^docs` / `^blocks` / `^nodes` / `^links` are
   the explicit root scans (§3.4; one caret per enclosing block, or the absolute
   `0^docs` from any depth), `^id` / `0^id` the repository id, and `^$it` the
   root object itself — `^$it.docs` ≡ `^docs`, `entries(^$it)` names the four
@@ -183,14 +184,14 @@ column) so pushed SQL and the in-memory engine agree.
   too — "did you mean `^docs`" — not an empty property read, and so is a
   `^docs` with more carets than enclosing scopes (`^docs count { }` at the top
   level — write the bare `docs`); a frontmatter key named
-  `docs`/`blocks`/`nodes`/`edges` is reachable only as `frontmatter.<k>`.]**
+  `docs`/`blocks`/`nodes`/`links` is reachable only as `frontmatter.<k>`.]**
 - **`$it`** (every scope, oqx ≥ 0.8): the current item **itself** — the row
   when scanning a target, or the scalar element when a block's receiver is a
   list-valued property (`tags exists { where $it == "pricing" }`,
   `tags collect { $it values }`). Inside a block `^$it` is the enclosing
   row. It is engine-owned (never a stored field) and never pushed to SQL.
 - **Relations:** `nodes`, `blocks`, `doc.out`/`doc.in` (the citation graph),
-  `doc.out_edges`/`doc.in_edges` (a doc's edges as rows).
+  `doc.out_links`/`doc.in_links` (a doc's links as rows).
 
 ### `blocks`
 - **Bare fields:** `doc_id` (the owning document), `type`, `text` (the
@@ -211,7 +212,7 @@ column) so pushed SQL and the in-memory engine agree.
   the row's own `doc_id` / joined path — no owner lookup in memory, the FK
   column in SQL — so `doc.id == "d_1"` and `doc_id == "d_1"` plan to the same
   statement.
-- **Relations:** `block.children`, `block.nodes`, `block.out_edges`, `section`
+- **Relations:** `block.children`, `block.nodes`, `block.out_links`, `section`
   (enclosing `md:section` node(s)). **Structural functions:** §5.
 
 ### `nodes`
@@ -229,8 +230,13 @@ column) so pushed SQL and the in-memory engine agree.
   heading), `section.children` (immediate child sections), `section.subsections`
   (all contained sections).
 
-### `edges`
-The authored link graph as first-class rows (open edges, `to_commit IS NULL`).
+### `links`
+The authored link graph as first-class rows — one row per link RELATION (the
+open `edges` rows of the storage table, `to_commit IS NULL`; the target was named
+`edges` before the 3.0 name pass). Distinct from the `md:link`/`md:wikilink`
+NODE, which is a link's syntactic occurrence in the text: the `links` row is the
+relation it establishes, `via_id` points at that node, and a frontmatter or
+inline-field link has a row and no node.
 - **Bare fields:** `doc_id` (the **source** document), `block_id` (the source
   block; null for a frontmatter edge), `via_id` (null unless derived through
   another node), `dst_id` (the destination node id: a doc id, an external node
@@ -242,7 +248,7 @@ The authored link graph as first-class rows (open edges, `to_commit IS NULL`).
   `from_commit`: a query sees open edges only; the creating commit is history
   (`blocks_history`, `changes_since`).
 - Source-document reach-through: `doc.<key>` / `doc.id` / `doc.path`.
-  `text()`/`semantic()` are unavailable (edges carry no text/embedding).
+  `text()`/`semantic()` are unavailable (links carry no text/embedding).
 
 ## 3. Scalar semantics (`@omgbase/oqx` contract)
 
@@ -435,7 +441,7 @@ nested/correlated scopes:
   expanded, and `^^name` the walk's enclosing scope — `follow doc.out { where
   doc.out exists { where path == ^^path } }` keeps only mutual citations
   (before 0.14 `^` skipped the frontier row and such predicates matched nothing).
-- **Edges as rows:** `from edges …`, or a doc's `doc.out_edges`/`doc.in_edges`.
+- **Links as rows:** `from links …`, or a doc's `doc.out_links`/`doc.in_links`.
 - **`distinct`** on any consumer dedups the rows it reduces by their **projected
   value**: `select distinct type`, `nodes collect distinct { select kind }`,
   `nodes count distinct { select kind } == 3`. Empty projection → dedup by
@@ -531,7 +537,7 @@ nested/correlated scopes:
   `residualMayRaise`).
 - **Nested blocks over a root scan are answered from SQLite indexes**
   (`oqx-js/store-index.ts`, Rust `omgbase-surface::store_index`). A root scan
-  (`^docs`, `^edges`, …, or a bare `docs` at the root scope) is handed
+  (`^docs`, `^links`, …, or a bare `docs` at the root scope) is handed
   to the engine as a *lazy* handle — one per target per run — that runs its
   `SELECT` only when something reads it whole (a `Proxy` over an array in
   TypeScript; in Rust a marker the engine resolves through
@@ -551,7 +557,7 @@ nested/correlated scopes:
   rule and **typed**: a string probe matches only a `type = 'string'` row by
   `val_text`, a number only `type = 'number'` by `val_num`, a boolean only
   `type = 'bool'`, so `1` never meets `"1"`); blocks `id`, `doc_id`, `type`,
-  `path`; nodes `id`, `doc_id`, `kind`, `name`, `path`; edges `id`,
+  `path`; nodes `id`, `doc_id`, `kind`, `name`, `path`; links `id`,
   `doc_id`, `dst_id`, `path`, `dst_path`. A `path` probe on a joined
   target drives from `docs (repo_id, path)` into the target's `doc_id` index. An
   **absent** probe (`key == null`, `name == ^missing`) is an anti-join SQLite has
@@ -612,9 +618,9 @@ projected-query fence (ADR-011, deferred).
 | Two most recent practitioners | `from docs where type == "practitioner" order by era desc limit 2` |
 | Each doc's first section heading | `select h: nodes first { name values where kind == "md:section" order by first_ordinal } from docs` |
 | Each substance's tags minus one | `select tags: tags collect { $it values where $it != "substance" } from docs where type == "substance"` |
-| Docs with ≥2 distinct link predicates | `from docs where doc.out_edges count distinct { select predicate } >= 2` |
+| Docs with ≥2 distinct link predicates | `from docs where doc.out_links count distinct { select predicate } >= 2` |
 | Unchecked tasks under a heading (working docs) | `from blocks where type == "task" and not checked and under_heading("Launch") and doc.layer == "working"` |
 | Blocks about a concept (semantic top-K) | `from blocks order by semantic("identity preservation across edits") desc` |
 | Everything a note transitively cites | `from docs where path == "/index.md" follow doc.out` |
 | The documents whose `after` names this one | `select next: ^docs collect { path where ^path in list(after) } from docs where path == "/timeline/kickoff.md"` |
-| Every `depends_on` edge, both endpoints | `select doc_id, dst_path from edges where predicate == "depends_on"` |
+| Every `depends_on` link, both endpoints | `select doc_id, dst_path from links where predicate == "depends_on"` |

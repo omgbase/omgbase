@@ -178,7 +178,7 @@
         },
         {
           "read": {
-            "tool": "docs_get_many",
+            "tool": "docs_read_many",
             "args": {
               "docs": [
                 "notes/one.md",
@@ -192,7 +192,7 @@
         },
         {
           "read": {
-            "tool": "docs_get_many",
+            "tool": "docs_read_many",
             "args": {
               "docs": [
                 "notes/one.md",
@@ -785,7 +785,7 @@
     },
     {
       "name": "resolution-ladders",
-      "notes": "§2: blocks_get at every resolution, blocks_get_many (request order, unresolved, scoping, budget), read_ref polymorphism.",
+      "notes": "§2: blocks_read at every resolution, blocks_read_many (request order, unresolved, scoping, budget), blocks_read over block REFS (an `n_` node id dereferences to its block, a locator names one; what the removed read_ref did before 3.0) and docs_read by id and path.",
       "steps": [
         {
           "observe": {
@@ -804,7 +804,7 @@
         },
         {
           "read": {
-            "tool": "blocks_get",
+            "tool": "blocks_read",
             "args": {
               "id": "b_4",
               "resolution": "skeleton"
@@ -813,7 +813,7 @@
         },
         {
           "read": {
-            "tool": "blocks_get",
+            "tool": "blocks_read",
             "args": {
               "id": "b_4",
               "resolution": "outline"
@@ -822,7 +822,7 @@
         },
         {
           "read": {
-            "tool": "blocks_get",
+            "tool": "blocks_read",
             "args": {
               "id": "b_4",
               "resolution": "text"
@@ -831,7 +831,7 @@
         },
         {
           "read": {
-            "tool": "blocks_get",
+            "tool": "blocks_read",
             "args": {
               "id": "b_4",
               "resolution": "raw"
@@ -840,7 +840,7 @@
         },
         {
           "read": {
-            "tool": "blocks_get",
+            "tool": "blocks_read",
             "args": {
               "id": "b_4",
               "resolution": "full"
@@ -849,7 +849,7 @@
         },
         {
           "read": {
-            "tool": "blocks_get",
+            "tool": "blocks_read",
             "args": {
               "id": "b_9"
             }
@@ -857,7 +857,7 @@
         },
         {
           "read": {
-            "tool": "blocks_get",
+            "tool": "blocks_read",
             "args": {
               "id": "b_0",
               "resolution": "skeleton"
@@ -866,7 +866,7 @@
         },
         {
           "read": {
-            "tool": "blocks_get",
+            "tool": "blocks_read",
             "args": {
               "id": "b_14",
               "resolution": "text"
@@ -875,7 +875,7 @@
         },
         {
           "read": {
-            "tool": "blocks_get",
+            "tool": "blocks_read",
             "args": {
               "id": "b_9"
             }
@@ -883,7 +883,7 @@
         },
         {
           "read": {
-            "tool": "blocks_get",
+            "tool": "blocks_read",
             "args": {
               "id": "b_99"
             }
@@ -891,7 +891,7 @@
         },
         {
           "read": {
-            "tool": "blocks_get_many",
+            "tool": "blocks_read_many",
             "args": {
               "ids": [
                 "b_9",
@@ -905,7 +905,7 @@
         },
         {
           "read": {
-            "tool": "blocks_get_many",
+            "tool": "blocks_read_many",
             "args": {
               "ids": [
                 "b_9",
@@ -917,7 +917,7 @@
         },
         {
           "read": {
-            "tool": "blocks_get_many",
+            "tool": "blocks_read_many",
             "args": {
               "ids": [
                 "b_1",
@@ -931,7 +931,7 @@
         },
         {
           "read": {
-            "tool": "blocks_get_many",
+            "tool": "blocks_read_many",
             "args": {
               "ids": []
             }
@@ -939,75 +939,74 @@
         },
         {
           "read": {
-            "tool": "read_ref",
+            "tool": "docs_read",
             "args": {
-              "ref": "guide.md"
+              "path": "guide.md"
             }
           }
         },
         {
           "read": {
-            "tool": "read_ref",
+            "tool": "docs_read",
             "args": {
-              "ref": "d_1",
-              "resolution": "skeleton"
+              "id": "d_1"
             }
           }
         },
         {
           "read": {
-            "tool": "read_ref",
+            "tool": "blocks_read",
             "args": {
-              "ref": "b_9"
+              "id": "b_9"
             }
           }
         },
         {
           "read": {
-            "tool": "read_ref",
+            "tool": "blocks_read",
             "args": {
-              "ref": "b_4",
+              "id": "b_4",
               "resolution": "text"
             }
           }
         },
         {
           "read": {
-            "tool": "read_ref",
+            "tool": "blocks_read",
             "args": {
-              "ref": "n_7f86eccd7a7c"
+              "id": "n_7f86eccd7a7c"
             }
           }
         },
         {
           "read": {
-            "tool": "read_ref",
+            "tool": "blocks_read",
             "args": {
-              "ref": "n_000000000000"
+              "id": "n_000000000000"
             }
           }
         },
         {
           "read": {
-            "tool": "read_ref",
+            "tool": "docs_read",
             "args": {
-              "ref": "nope.md"
+              "path": "nope.md"
             }
           }
         },
         {
           "read": {
-            "tool": "read_ref",
+            "tool": "blocks_read",
             "args": {
-              "ref": "b_99"
+              "id": "b_99"
             }
           }
         },
         {
           "read": {
-            "tool": "read_ref",
+            "tool": "blocks_read",
             "args": {
-              "ref": "guide.md#Setup"
+              "id": "guide.md#Setup"
             }
           }
         }
@@ -1273,7 +1272,6 @@
             "unresolved": []
           },
           {
-            "kind": "document",
             "id": "d_0",
             "path": "/guide.md",
             "rev": "r_0",
@@ -1295,7 +1293,6 @@
             "raw": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n"
           },
           {
-            "kind": "document",
             "id": "d_1",
             "path": "/notes/one.md",
             "rev": "r_1",
@@ -1309,14 +1306,19 @@
             "raw": "# One\n\nBack to [guide](/guide.md).\n\n## Setup\n\nAlso a setup section.\n"
           },
           {
-            "kind": "block",
             "id": "b_9",
             "type": "task",
             "raw": "- [ ] open task",
-            "hash": "cfef6a468aa11b127940c8c6dd34e3c8128029ce52b8793b6d15b8927a6bf188"
+            "hash": "cfef6a468aa11b127940c8c6dd34e3c8128029ce52b8793b6d15b8927a6bf188",
+            "text": "open task",
+            "attrs": {
+              "checked": false
+            },
+            "ordinal": 0,
+            "depth": 1,
+            "parent_id": "b_8"
           },
           {
-            "kind": "block",
             "id": "b_4",
             "type": "list",
             "text": "first item second item",
@@ -1334,42 +1336,46 @@
             ]
           },
           {
-            "kind": "block",
             "id": "b_1",
             "type": "paragraph",
             "raw": "Intro paragraph with a [link](/notes/one.md) and [[two]].",
-            "hash": "15d1319612cc44fbad82e62ad5abd8dd4d892ecf58264891e01d611a1abac9d9"
+            "hash": "15d1319612cc44fbad82e62ad5abd8dd4d892ecf58264891e01d611a1abac9d9",
+            "text": "Intro paragraph with a [link](/notes/one.md) and [[two]].",
+            "attrs": {},
+            "ordinal": 1,
+            "depth": 0,
+            "parent_id": null
           },
           {
-            "error": "doc_missing",
+            "error": "block_missing",
             "retriable": false,
-            "message": "no document or block with id or path \"n_000000000000\"",
+            "message": "no block with id \"n_000000000000\"",
             "data": {
-              "ref": "n_000000000000"
+              "id": "n_000000000000"
             }
           },
           {
             "error": "doc_missing",
             "retriable": false,
-            "message": "no document or block with id or path \"nope.md\"",
+            "message": "no document with id or path \"nope.md\"",
             "data": {
-              "ref": "nope.md"
+              "path": "nope.md"
             }
           },
           {
-            "error": "doc_missing",
+            "error": "block_missing",
             "retriable": false,
-            "message": "no document or block with id or path \"b_99\"",
+            "message": "no block with id \"b_99\"",
             "data": {
-              "ref": "b_99"
+              "id": "b_99"
             }
           },
           {
-            "error": "doc_missing",
+            "error": "block_missing",
             "retriable": false,
-            "message": "no document or block with id or path \"guide.md#Setup\"",
+            "message": "no block with id \"guide.md#Setup\"",
             "data": {
-              "ref": "guide.md#Setup"
+              "id": "guide.md#Setup"
             }
           }
         ]
@@ -1451,9 +1457,9 @@
         },
         {
           "read": {
-            "tool": "diff",
+            "tool": "docs_diff",
             "args": {
-              "doc_path": "guide.md",
+              "path": "guide.md",
               "from_rev": "r_0",
               "to_rev": "r_2"
             }
@@ -1461,9 +1467,9 @@
         },
         {
           "read": {
-            "tool": "diff",
+            "tool": "docs_diff",
             "args": {
-              "doc_id": "d_0",
+              "id": "d_0",
               "from_rev": "r_2",
               "to_rev": "r_0"
             }
@@ -1471,9 +1477,9 @@
         },
         {
           "read": {
-            "tool": "diff",
+            "tool": "docs_diff",
             "args": {
-              "doc_id": "d_0",
+              "id": "d_0",
               "from_rev": "r_0",
               "to_rev": "r_zz"
             }
@@ -1481,9 +1487,9 @@
         },
         {
           "read": {
-            "tool": "diff",
+            "tool": "docs_diff",
             "args": {
-              "doc_path": "nope.md",
+              "path": "nope.md",
               "from_rev": "r_0",
               "to_rev": "r_2"
             }
@@ -1491,17 +1497,17 @@
         },
         {
           "read": {
-            "tool": "diff_unified",
+            "tool": "docs_diff_unified",
             "args": {
-              "doc_path": "guide.md"
+              "path": "guide.md"
             }
           }
         },
         {
           "read": {
-            "tool": "diff_unified",
+            "tool": "docs_diff_unified",
             "args": {
-              "doc_id": "d_0",
+              "id": "d_0",
               "from_rev": "r_0",
               "to_rev": "r_2"
             }
@@ -1509,9 +1515,9 @@
         },
         {
           "read": {
-            "tool": "diff_unified",
+            "tool": "docs_diff_unified",
             "args": {
-              "doc_id": "d_0",
+              "id": "d_0",
               "from_rev": "r_2",
               "to_rev": "r_2"
             }
@@ -1519,9 +1525,9 @@
         },
         {
           "read": {
-            "tool": "diff_unified",
+            "tool": "docs_diff_unified",
             "args": {
-              "doc_path": "notes/one.md"
+              "path": "notes/one.md"
             }
           }
         },
@@ -1834,9 +1840,9 @@
           {
             "error": "doc_missing",
             "retriable": false,
-            "message": "no document with doc_id or doc_path \"nope.md\"",
+            "message": "no document with id or path \"nope.md\"",
             "data": {
-              "doc_path": "nope.md"
+              "path": "nope.md"
             }
           },
           {
@@ -1863,9 +1869,9 @@
           {
             "error": "doc_missing",
             "retriable": false,
-            "message": "no document with doc_id or doc_path \"notes/one.md\"",
+            "message": "no document with id or path \"notes/one.md\"",
             "data": {
-              "doc_path": "notes/one.md"
+              "path": "notes/one.md"
             }
           },
           {
@@ -2256,7 +2262,7 @@
     },
     {
       "name": "diff-unified-list-append",
-      "notes": "§3 diff_unified diffs the two revisions' RECONSTRUCTED FILE TEXT (what docs_read_at returns), not the Merkle-tree walk (§9, 1.4 patch). A heading over a LOOSE list (items separated by blank lines), then docs_append of a tight pair of bullets (r_1) and of one more bullet (r_2). The default diff (r_1 → r_2) must be ONE hunk with the one appended bullet at the end of the list — under the tree walk the container's raw and every child's raw were emitted, so the appended line showed up twice, the first time before the list's first item. docs_read_at pins the texts being diffed; the frontmatter appears as context because it is part of the file.",
+      "notes": "§3 docs_diff_unified diffs the two revisions' RECONSTRUCTED FILE TEXT (what docs_read_at returns), not the Merkle-tree walk (§9, 1.4 patch). A heading over a LOOSE list (items separated by blank lines), then docs_append of a tight pair of bullets (r_1) and of one more bullet (r_2). The default diff (r_1 → r_2) must be ONE hunk with the one appended bullet at the end of the list — under the tree walk the container's raw and every child's raw were emitted, so the appended line showed up twice, the first time before the list's first item. docs_read_at pins the texts being diffed; the frontmatter appears as context because it is part of the file.",
       "workspace": true,
       "steps": [
         {
@@ -2310,17 +2316,17 @@
         },
         {
           "read": {
-            "tool": "diff_unified",
+            "tool": "docs_diff_unified",
             "args": {
-              "doc_path": "log.md"
+              "path": "log.md"
             }
           }
         },
         {
           "read": {
-            "tool": "diff_unified",
+            "tool": "docs_diff_unified",
             "args": {
-              "doc_path": "log.md",
+              "path": "log.md",
               "from_rev": "r_0",
               "to_rev": "r_2"
             }
@@ -2328,9 +2334,9 @@
         },
         {
           "read": {
-            "tool": "diff",
+            "tool": "docs_diff",
             "args": {
-              "doc_path": "log.md",
+              "path": "log.md",
               "from_rev": "r_1",
               "to_rev": "r_2"
             }
@@ -2498,7 +2504,7 @@
         },
         {
           "read": {
-            "tool": "blocks_get",
+            "tool": "blocks_read",
             "args": {
               "id": "b_99"
             }
@@ -2506,7 +2512,7 @@
         },
         {
           "read": {
-            "tool": "blocks_get",
+            "tool": "blocks_read",
             "args": {
               "id": "b_0"
             }
@@ -2582,15 +2588,15 @@
         },
         {
           "read": {
-            "tool": "diff_unified",
+            "tool": "docs_diff_unified",
             "args": {
-              "doc_path": "nope.md"
+              "path": "nope.md"
             }
           }
         },
         {
           "read": {
-            "tool": "text_search",
+            "tool": "blocks_search",
             "args": {
               "q": "paragraph",
               "repo": "nope"
@@ -2881,9 +2887,9 @@
           {
             "error": "doc_missing",
             "retriable": false,
-            "message": "no document with doc_id or doc_path \"nope.md\"",
+            "message": "no document with id or path \"nope.md\"",
             "data": {
-              "doc_path": "nope.md"
+              "path": "nope.md"
             }
           },
           {
@@ -3163,7 +3169,7 @@
     },
     {
       "name": "budgets",
-      "notes": "§2 (1.2): one list contract for every budgeted read — docs_get_many and blocks_get_many always return the first item even when it alone exceeds budget_tokens, and report truncated only because more remained (before 1.2 they returned zero items); docs_list and docs_tree already did. budget_tokens: 1 is below any item's cost. An unresolved id ahead of the first resolved node does not consume the floor.",
+      "notes": "§2 (1.2): one list contract for every budgeted read — docs_read_many and blocks_read_many always return the first item even when it alone exceeds budget_tokens, and report truncated only because more remained (before 1.2 they returned zero items); docs_list and docs_tree already did. budget_tokens: 1 is below any item's cost. An unresolved id ahead of the first resolved node does not consume the floor.",
       "steps": [
         {
           "observe": {
@@ -3182,7 +3188,7 @@
         },
         {
           "read": {
-            "tool": "docs_get_many",
+            "tool": "docs_read_many",
             "args": {
               "docs": [
                 "a.md",
@@ -3194,7 +3200,7 @@
         },
         {
           "read": {
-            "tool": "docs_get_many",
+            "tool": "docs_read_many",
             "args": {
               "docs": [
                 "a.md"
@@ -3205,7 +3211,7 @@
         },
         {
           "read": {
-            "tool": "blocks_get_many",
+            "tool": "blocks_read_many",
             "args": {
               "ids": [
                 "b_0",
@@ -3218,7 +3224,7 @@
         },
         {
           "read": {
-            "tool": "blocks_get_many",
+            "tool": "blocks_read_many",
             "args": {
               "ids": [
                 "b_9",
@@ -3680,7 +3686,7 @@
         },
         {
           "read": {
-            "tool": "node_set",
+            "tool": "nodes_set",
             "args": {
               "id": "n_7f86eccd7a7c",
               "prop": "value",
@@ -3691,7 +3697,7 @@
         },
         {
           "read": {
-            "tool": "node_set",
+            "tool": "nodes_set",
             "args": {
               "id": "n_7f86eccd7a7c",
               "prop": "nope",
@@ -3748,10 +3754,11 @@
         },
         {
           "read": {
-            "tool": "docs_plan_update",
+            "tool": "docs_update",
             "args": {
               "path": "notes/one.md",
-              "content": "# One\n\nBack to [guide](/guide.md), edited.\n\n## Setup\n\nAlso a setup section.\n"
+              "content": "# One\n\nBack to [guide](/guide.md), edited.\n\n## Setup\n\nAlso a setup section.\n",
+              "dry_run": true
             }
           }
         },
@@ -3777,9 +3784,9 @@
         },
         {
           "read": {
-            "tool": "tasks_complete",
+            "tool": "blocks_check",
             "args": {
-              "blocks": [
+              "ids": [
                 "b_10"
               ],
               "checked": false
@@ -4621,7 +4628,8 @@
               "converges": true,
               "diagnostics": []
             },
-            "plan": "REMOVE b_18      deleted [tombstone]\nINSERT (new)     inserted\nRETILE b_17      retiled\nRETILE (new)     retiled\n\npreserved: 3  updated: 0  moved: 0  created: 1  removed: 1  split: 0  merged: 0  ambiguous: 0"
+            "plan": "REMOVE b_18      deleted [tombstone]\nINSERT (new)     inserted\nRETILE b_17      retiled\nRETILE (new)     retiled\n\npreserved: 3  updated: 0  moved: 0  created: 1  removed: 1  split: 0  merged: 0  ambiguous: 0",
+            "result": null
           },
           {
             "opset": {
@@ -5281,7 +5289,7 @@
         },
         {
           "read": {
-            "tool": "text_search",
+            "tool": "blocks_search",
             "args": {
               "q": "aqua regia",
               "limit": 3
@@ -5290,7 +5298,7 @@
         },
         {
           "read": {
-            "tool": "resolve",
+            "tool": "blocks_resolve",
             "args": {
               "query": "Salt",
               "limit": 3
@@ -5380,7 +5388,7 @@
         },
         {
           "read": {
-            "tool": "docs_get_many",
+            "tool": "docs_read_many",
             "args": {
               "docs": [
                 "/substances/salt.md",
@@ -5392,9 +5400,9 @@
         },
         {
           "read": {
-            "tool": "read_ref",
+            "tool": "docs_read",
             "args": {
-              "ref": "/texts/mutus-liber.md"
+              "path": "/texts/mutus-liber.md"
             }
           }
         },
@@ -5767,7 +5775,7 @@
                 "frontier": true
               }
             ],
-            "edges": [
+            "links": [
               {
                 "id": "e_0",
                 "doc_id": "d_0",
@@ -6463,7 +6471,7 @@
             ],
             "truncated": false,
             "queries": [
-              "select _depth: $depth, _stop: $stop, _edges: doc.out_edges collect { id: id, doc_id: doc_id, block_id: block_id, via_id: via_id, dst_id: dst_id, dst_path: dst_path, uri: uri, dst_kind: dst_kind, predicate: predicate, provenance: provenance, anchor: anchor, field: field } from docs where id == \"d_0\" follow distinct doc.out { depth 2 }"
+              "select _depth: $depth, _stop: $stop, _links: doc.out_links collect { id: id, doc_id: doc_id, block_id: block_id, via_id: via_id, dst_id: dst_id, dst_path: dst_path, uri: uri, dst_kind: dst_kind, predicate: predicate, provenance: provenance, anchor: anchor, field: field } from docs where id == \"d_0\" follow distinct doc.out { depth 2 }"
             ]
           },
           {
@@ -6510,7 +6518,7 @@
                 "frontier": true
               }
             ],
-            "edges": [
+            "links": [
               {
                 "id": "e_12",
                 "doc_id": "d_0",
@@ -6709,7 +6717,7 @@
             ],
             "truncated": false,
             "queries": [
-              "select _depth: $depth, _stop: $stop, _edges: doc.in_edges collect { id: id, doc_id: doc_id, block_id: block_id, via_id: via_id, dst_id: dst_id, dst_path: dst_path, uri: uri, dst_kind: dst_kind, predicate: predicate, provenance: provenance, anchor: anchor, field: field } from docs where id == \"d_10\" follow distinct doc.in { depth 2 }"
+              "select _depth: $depth, _stop: $stop, _links: doc.in_links collect { id: id, doc_id: doc_id, block_id: block_id, via_id: via_id, dst_id: dst_id, dst_path: dst_path, uri: uri, dst_kind: dst_kind, predicate: predicate, provenance: provenance, anchor: anchor, field: field } from docs where id == \"d_10\" follow distinct doc.in { depth 2 }"
             ]
           },
           {
@@ -6726,7 +6734,7 @@
                 "frontier": true
               }
             ],
-            "edges": [
+            "links": [
               {
                 "id": "e_0",
                 "doc_id": "d_0",
@@ -6779,8 +6787,8 @@
             ],
             "truncated": false,
             "queries": [
-              "select _depth: $depth, _stop: $stop, _edges: doc.out_edges collect { id: id, doc_id: doc_id, block_id: block_id, via_id: via_id, dst_id: dst_id, dst_path: dst_path, uri: uri, dst_kind: dst_kind, predicate: predicate, provenance: provenance, anchor: anchor, field: field } from docs where id == \"d_0\" follow distinct doc.out { depth 1 }",
-              "select _depth: $depth, _stop: $stop, _edges: doc.in_edges collect { id: id, doc_id: doc_id, block_id: block_id, via_id: via_id, dst_id: dst_id, dst_path: dst_path, uri: uri, dst_kind: dst_kind, predicate: predicate, provenance: provenance, anchor: anchor, field: field } from docs where id == \"d_0\" follow distinct doc.in { depth 1 }"
+              "select _depth: $depth, _stop: $stop, _links: doc.out_links collect { id: id, doc_id: doc_id, block_id: block_id, via_id: via_id, dst_id: dst_id, dst_path: dst_path, uri: uri, dst_kind: dst_kind, predicate: predicate, provenance: provenance, anchor: anchor, field: field } from docs where id == \"d_0\" follow distinct doc.out { depth 1 }",
+              "select _depth: $depth, _stop: $stop, _links: doc.in_links collect { id: id, doc_id: doc_id, block_id: block_id, via_id: via_id, dst_id: dst_id, dst_path: dst_path, uri: uri, dst_kind: dst_kind, predicate: predicate, provenance: provenance, anchor: anchor, field: field } from docs where id == \"d_0\" follow distinct doc.in { depth 1 }"
             ]
           },
           {
@@ -6821,7 +6829,7 @@
                 "frontier": false
               }
             ],
-            "edges": [
+            "links": [
               {
                 "id": "e_4",
                 "doc_id": "d_0",
@@ -6994,8 +7002,8 @@
             "frontier": [],
             "truncated": true,
             "queries": [
-              "select _depth: $depth, _stop: $stop, _edges: doc.out_edges collect { id: id, doc_id: doc_id, block_id: block_id, via_id: via_id, dst_id: dst_id, dst_path: dst_path, uri: uri, dst_kind: dst_kind, predicate: predicate, provenance: provenance, anchor: anchor, field: field } from docs where id == \"d_12\" follow distinct doc.out { depth 3 }",
-              "select _depth: $depth, _stop: $stop, _edges: doc.in_edges collect { id: id, doc_id: doc_id, block_id: block_id, via_id: via_id, dst_id: dst_id, dst_path: dst_path, uri: uri, dst_kind: dst_kind, predicate: predicate, provenance: provenance, anchor: anchor, field: field } from docs where id == \"d_12\" follow distinct doc.in { depth 3 }"
+              "select _depth: $depth, _stop: $stop, _links: doc.out_links collect { id: id, doc_id: doc_id, block_id: block_id, via_id: via_id, dst_id: dst_id, dst_path: dst_path, uri: uri, dst_kind: dst_kind, predicate: predicate, provenance: provenance, anchor: anchor, field: field } from docs where id == \"d_12\" follow distinct doc.out { depth 3 }",
+              "select _depth: $depth, _stop: $stop, _links: doc.in_links collect { id: id, doc_id: doc_id, block_id: block_id, via_id: via_id, dst_id: dst_id, dst_path: dst_path, uri: uri, dst_kind: dst_kind, predicate: predicate, provenance: provenance, anchor: anchor, field: field } from docs where id == \"d_12\" follow distinct doc.in { depth 3 }"
             ]
           },
           {
@@ -7046,7 +7054,7 @@
                 "era": null
               }
             ],
-            "edges": [
+            "links": [
               {
                 "id": "e_59",
                 "doc_id": "d_16",
@@ -7184,7 +7192,7 @@
             ],
             "truncated": false,
             "queries": [
-              "select _depth: $depth, _stop: $stop, _edges: doc.out_edges collect { id: id, doc_id: doc_id, block_id: block_id, via_id: via_id, dst_id: dst_id, dst_path: dst_path, uri: uri, dst_kind: dst_kind, predicate: predicate, provenance: provenance, anchor: anchor, field: field }, _u0: type, _u1: path, _u2: era from docs where id == \"d_16\" follow distinct doc.out { depth 2 }"
+              "select _depth: $depth, _stop: $stop, _links: doc.out_links collect { id: id, doc_id: doc_id, block_id: block_id, via_id: via_id, dst_id: dst_id, dst_path: dst_path, uri: uri, dst_kind: dst_kind, predicate: predicate, provenance: provenance, anchor: anchor, field: field }, _u0: type, _u1: path, _u2: era from docs where id == \"d_16\" follow distinct doc.out { depth 2 }"
             ]
           },
           {
@@ -7201,12 +7209,12 @@
                 "frontier": false
               }
             ],
-            "edges": [],
+            "links": [],
             "frontier": [],
             "truncated": false,
             "queries": [
-              "select _depth: $depth, _stop: $stop, _edges: doc.out_edges collect { id: id, doc_id: doc_id, block_id: block_id, via_id: via_id, dst_id: dst_id, dst_path: dst_path, uri: uri, dst_kind: dst_kind, predicate: predicate, provenance: provenance, anchor: anchor, field: field } from docs where id == \"d_0\" follow distinct doc.out { depth 2 }",
-              "select _depth: $depth, _stop: $stop, _edges: doc.in_edges collect { id: id, doc_id: doc_id, block_id: block_id, via_id: via_id, dst_id: dst_id, dst_path: dst_path, uri: uri, dst_kind: dst_kind, predicate: predicate, provenance: provenance, anchor: anchor, field: field } from docs where id == \"d_0\" follow distinct doc.in { depth 2 }"
+              "select _depth: $depth, _stop: $stop, _links: doc.out_links collect { id: id, doc_id: doc_id, block_id: block_id, via_id: via_id, dst_id: dst_id, dst_path: dst_path, uri: uri, dst_kind: dst_kind, predicate: predicate, provenance: provenance, anchor: anchor, field: field } from docs where id == \"d_0\" follow distinct doc.out { depth 2 }",
+              "select _depth: $depth, _stop: $stop, _links: doc.in_links collect { id: id, doc_id: doc_id, block_id: block_id, via_id: via_id, dst_id: dst_id, dst_path: dst_path, uri: uri, dst_kind: dst_kind, predicate: predicate, provenance: provenance, anchor: anchor, field: field } from docs where id == \"d_0\" follow distinct doc.in { depth 2 }"
             ]
           },
           {
@@ -7296,7 +7304,7 @@
                 "frontier": false
               }
             ],
-            "edges": [
+            "links": [
               {
                 "id": "e_15",
                 "doc_id": "d_1",
@@ -7833,7 +7841,7 @@
             "frontier": [],
             "truncated": false,
             "queries": [
-              "select _depth: $depth, _stop: $stop, _edges: doc.out_edges collect { id: id, doc_id: doc_id, block_id: block_id, via_id: via_id, dst_id: dst_id, dst_path: dst_path, uri: uri, dst_kind: dst_kind, predicate: predicate, provenance: provenance, anchor: anchor, field: field } from docs where id == \"d_14\" or id == \"d_15\" follow distinct doc.out { depth 8 }"
+              "select _depth: $depth, _stop: $stop, _links: doc.out_links collect { id: id, doc_id: doc_id, block_id: block_id, via_id: via_id, dst_id: dst_id, dst_path: dst_path, uri: uri, dst_kind: dst_kind, predicate: predicate, provenance: provenance, anchor: anchor, field: field } from docs where id == \"d_14\" or id == \"d_15\" follow distinct doc.out { depth 8 }"
             ]
           },
           {
@@ -7868,7 +7876,7 @@
                 "frontier": true
               }
             ],
-            "edges": [
+            "links": [
               {
                 "id": "e_34",
                 "doc_id": "d_10",
@@ -7987,7 +7995,7 @@
             ],
             "truncated": false,
             "queries": [
-              "select _depth: $depth, _stop: $stop, _edges: doc.out_edges collect { id: id, doc_id: doc_id, block_id: block_id, via_id: via_id, dst_id: dst_id, dst_path: dst_path, uri: uri, dst_kind: dst_kind, predicate: predicate, provenance: provenance, anchor: anchor, field: field } from docs where id == \"d_13\" follow distinct doc.out { depth 2 }"
+              "select _depth: $depth, _stop: $stop, _links: doc.out_links collect { id: id, doc_id: doc_id, block_id: block_id, via_id: via_id, dst_id: dst_id, dst_path: dst_path, uri: uri, dst_kind: dst_kind, predicate: predicate, provenance: provenance, anchor: anchor, field: field } from docs where id == \"d_13\" follow distinct doc.out { depth 2 }"
             ]
           },
           {
@@ -8546,7 +8554,6 @@
             "truncated": false
           },
           {
-            "kind": "document",
             "id": "d_17",
             "path": "/texts/mutus-liber.md",
             "rev": "r_17",
@@ -8710,7 +8717,7 @@
                 "frontier": true
               }
             ],
-            "edges": [
+            "links": [
               {
                 "id": "e_0",
                 "doc_id": "d_0",
@@ -8763,8 +8770,8 @@
             ],
             "truncated": false,
             "queries": [
-              "select _depth: $depth, _stop: $stop, _edges: doc.out_edges collect { id: id, doc_id: doc_id, block_id: block_id, via_id: via_id, dst_id: dst_id, dst_path: dst_path, uri: uri, dst_kind: dst_kind, predicate: predicate, provenance: provenance, anchor: anchor, field: field } from docs where id == \"d_0\" follow distinct doc.out { depth 1 }",
-              "select _depth: $depth, _stop: $stop, _edges: doc.in_edges collect { id: id, doc_id: doc_id, block_id: block_id, via_id: via_id, dst_id: dst_id, dst_path: dst_path, uri: uri, dst_kind: dst_kind, predicate: predicate, provenance: provenance, anchor: anchor, field: field } from docs where id == \"d_0\" follow distinct doc.in { depth 1 }"
+              "select _depth: $depth, _stop: $stop, _links: doc.out_links collect { id: id, doc_id: doc_id, block_id: block_id, via_id: via_id, dst_id: dst_id, dst_path: dst_path, uri: uri, dst_kind: dst_kind, predicate: predicate, provenance: provenance, anchor: anchor, field: field } from docs where id == \"d_0\" follow distinct doc.out { depth 1 }",
+              "select _depth: $depth, _stop: $stop, _links: doc.in_links collect { id: id, doc_id: doc_id, block_id: block_id, via_id: via_id, dst_id: dst_id, dst_path: dst_path, uri: uri, dst_kind: dst_kind, predicate: predicate, provenance: provenance, anchor: anchor, field: field } from docs where id == \"d_0\" follow distinct doc.in { depth 1 }"
             ]
           }
         ]
@@ -8772,7 +8779,7 @@
     },
     {
       "name": "hit-envelope-round-trip",
-      "notes": "§1.4 (3.0) through the `query` tool: every hit is `{ id, path, ...projection }`. The script reads the collection, copies `d_0` (guide.md's `id` from the first hit) into `where id == …` with no translation, projects `id`/`path` (they collapse onto the envelope keys), pages with the keyset cursor (its tuple carries values, not key names — unchanged by the rename), renders a block row as a value (`{ id, path }`), and reads `values` (no hits, so untouched). The other tools' envelopes are not hits and keep their names: `docs_list` items `{ path }`, `blocks_get` `id`.",
+      "notes": "§1.4 (3.0) through the `query` tool: every hit is `{ id, path, ...projection }`. The script reads the collection, copies `d_0` (guide.md's `id` from the first hit) into `where id == …` with no translation, projects `id`/`path` (they collapse onto the envelope keys), pages with the keyset cursor (its tuple carries values, not key names — unchanged by the rename), renders a block row as a value (`{ id, path }`), and reads `values` (no hits, so untouched). The other tools' envelopes are not hits and keep their names: `docs_list` items `{ path }`, `blocks_read` `id`.",
       "steps": [
         {
           "observe": {
@@ -8872,7 +8879,7 @@
         },
         {
           "read": {
-            "tool": "blocks_get",
+            "tool": "blocks_read",
             "args": {
               "id": "b_0",
               "resolution": "text"
@@ -9133,7 +9140,7 @@
         },
         {
           "read": {
-            "tool": "diff",
+            "tool": "docs_diff",
             "args": {
               "doc": "a.md",
               "from_rev": "r_0",
@@ -9143,9 +9150,9 @@
         },
         {
           "read": {
-            "tool": "diff",
+            "tool": "docs_diff",
             "args": {
-              "doc_path": "nope.md",
+              "path": "nope.md",
               "from_rev": "r_0",
               "to_rev": "r_0"
             }
@@ -9153,7 +9160,7 @@
         },
         {
           "read": {
-            "tool": "diff_unified",
+            "tool": "docs_diff_unified",
             "args": {
               "from_rev": "r_0"
             }
@@ -9161,7 +9168,7 @@
         },
         {
           "read": {
-            "tool": "text_search",
+            "tool": "blocks_search",
             "args": {
               "query": "body"
             }
@@ -9184,7 +9191,7 @@
         },
         {
           "read": {
-            "tool": "blocks_get",
+            "tool": "blocks_read",
             "args": {
               "id": "b_1",
               "doc": "a.md"
@@ -9193,7 +9200,7 @@
         },
         {
           "read": {
-            "tool": "blocks_get",
+            "tool": "blocks_read",
             "args": {
               "id": "b_zzz"
             }
@@ -9201,7 +9208,7 @@
         },
         {
           "read": {
-            "tool": "blocks_get",
+            "tool": "blocks_read",
             "args": {
               "id": "b_1",
               "resolution": "giant"
@@ -9210,7 +9217,7 @@
         },
         {
           "read": {
-            "tool": "blocks_get_many",
+            "tool": "blocks_read_many",
             "args": {
               "ids": [
                 "b_1",
@@ -9239,7 +9246,7 @@
         },
         {
           "read": {
-            "tool": "node_set",
+            "tool": "nodes_set",
             "args": {
               "node": "n_000000000000",
               "prop": "name",
@@ -9393,25 +9400,25 @@
           {
             "error": "filter_invalid",
             "retriable": false,
-            "message": "`doc` is no longer an argument — pass `doc_id` or `doc_path` (diff takes doc_id?, doc_path?, from_rev, repo?, to_rev)"
+            "message": "`doc` is no longer an argument — pass `id` or `path` (docs_diff takes from_rev, id?, path?, repo?, to_rev)"
           },
           {
             "error": "doc_missing",
             "retriable": false,
-            "message": "no document with doc_id or doc_path \"nope.md\"",
+            "message": "no document with id or path \"nope.md\"",
             "data": {
-              "doc_path": "nope.md"
+              "path": "nope.md"
             }
           },
           {
             "error": "filter_invalid",
             "retriable": false,
-            "message": "pass doc_id or doc_path (diff_unified takes doc_id?, doc_path?, from_rev?, repo?, to_rev?)"
+            "message": "pass id or path (docs_diff_unified takes from_rev?, id?, path?, repo?, to_rev?)"
           },
           {
             "error": "filter_invalid",
             "retriable": false,
-            "message": "unknown argument `query`; did you mean `q`? (text_search takes limit?, q, repo?)"
+            "message": "unknown argument `query`; did you mean `q`? (blocks_search takes limit?, q, repo?)"
           },
           {
             "error": "filter_invalid",
@@ -9426,7 +9433,7 @@
           {
             "error": "filter_invalid",
             "retriable": false,
-            "message": "unknown argument `doc` (blocks_get takes id, repo?, resolution?)"
+            "message": "unknown argument `doc` (blocks_read takes id, repo?, resolution?)"
           },
           {
             "error": "block_missing",
@@ -9439,12 +9446,12 @@
           {
             "error": "filter_invalid",
             "retriable": false,
-            "message": "`resolution` must be one of skeleton, outline, text, raw, full (blocks_get takes id, repo?, resolution?)"
+            "message": "`resolution` must be one of skeleton, outline, text, raw, full (blocks_read takes id, repo?, resolution?)"
           },
           {
             "error": "filter_invalid",
             "retriable": false,
-            "message": "unknown argument `path` (blocks_get_many takes budget_tokens?, ids, repo?, resolution?)"
+            "message": "unknown argument `path` (blocks_read_many takes budget_tokens?, ids, repo?, resolution?)"
           },
           [
             {
@@ -9465,7 +9472,7 @@
           {
             "error": "filter_invalid",
             "retriable": false,
-            "message": "`node` is no longer an argument — pass `id` (node_set takes dry_run?, id, prop, repo?, value)"
+            "message": "`node` is no longer an argument — pass `id` (nodes_set takes dry_run?, id, prop, repo?, value)"
           },
           {
             "error": "filter_invalid",

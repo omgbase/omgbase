@@ -146,7 +146,7 @@ const QUERY_EXAMPLES: &[&str] = &[
     "  e.g. query 'from docs where nodes count { where kind == \"md:task\" } >= 2'",
     "       query 'select items: section.blocks collect { where type == \"list_item\" } from nodes where kind == \"md:section\"'",
     "       query 'select path, open from docs where nodes collect { ^open: value where kind == \"md:task\" and not attrs.checked }'",
-    "       query 'select owner_id, owner: ^nodes single { where kind == \"person\" and attrs.id == ^owner_id } from docs'   # ^docs/^nodes/^blocks/^edges: the repository (the root row) from inside a row; 0^docs from any depth; ^id / 0^id = the repository id",
+    "       query 'select owner_id, owner: ^nodes single { where kind == \"person\" and attrs.id == ^owner_id } from docs'   # ^docs/^nodes/^blocks/^links: the repository (the root row) from inside a row; 0^docs from any depth; ^id / 0^id = the repository id",
     "       query 'docs count { where layer == \"canon\" }'   # scalar; also <target> exists/none/first/single { … } at the top level",
     "       query 'from docs where nodes none { where kind == \"md:task\" and not checked }'   # none = zero rows (≡ not … exists; \"every\" = none over the complement)",
     "       query 'from docs where era is not null and (layer == \"canon\" or layer == \"working\")'   # and / or / not are the connectives (&& || ! accepted); x is y / x is not y = identity, x is null = absent",
@@ -166,7 +166,7 @@ const QUERY_EXAMPLES: &[&str] = &[
     "       query 'from nodes where name == \"Overview\" follow section.subsections { depth 3 }'   # follow [distinct] <rel> [{ where … frontier … depth n by … }]",
     "       query 'select p: path, d: $depth, s: $stop from docs where path == \"/index.md\" follow doc.out'   # citation graph (cyclic-safe: $stop=cycle)",
     "       query 'from blocks where type == \"list_item\" and $leaf follow block.children'   # $leaf/$depth/$stop filter the walk result post-walk",
-    "       query 'select src: doc_id, to: dst_path from edges where predicate == \"depends_on\"'   # the edges target: predicate/provenance/dst_kind + doc_id/dst_path/uri",
+    "       query 'select src: doc_id, to: dst_path from links where predicate == \"depends_on\"'   # the links target: predicate/provenance/dst_kind + doc_id/dst_path/uri",
 ];
 
 fn s(x: &str) -> String {
@@ -317,7 +317,7 @@ pub fn card(name: &'static str, prog: &str) -> Option<HelpSpec> {
         ),
         "show" => spec(
             s(
-                "Metadata card for a node: attrs, placement, open edges, last change (`cat` is the bytes)",
+                "Metadata card for a node: attrs, placement, open links, last change (`cat` is the bytes)",
             ),
             vec![s("show <node…|-> [--include history]")],
             vec![
@@ -363,7 +363,7 @@ pub fn card(name: &'static str, prog: &str) -> Option<HelpSpec> {
         ),
         "query" => spec(
             s(
-                "Composable OQX query: from <docs|blocks|nodes|edges> where … select … [order by …] [follow …] (alias: q)",
+                "Composable OQX query: from <docs|blocks|nodes|links> where … select … [order by …] [follow …] (alias: q)",
             ),
             vec![
                 s("query <source> [-n <N>] [--cursor <c>] [--ids|--json|--jsonl]"),
@@ -444,19 +444,19 @@ pub fn card(name: &'static str, prog: &str) -> Option<HelpSpec> {
                 ("--to <rev>", "newer revision id (default: current)"),
                 (
                     "--blocks",
-                    "block-grain: which blocks were added, removed or changed (the `diff` tool)",
+                    "block-grain: which blocks were added, removed or changed (the `docs_diff` tool)",
                 ),
             ]),
             vec![],
         ),
         "links" => spec(
-            s("Open edges touching a node, grouped by predicate (both directions by default)"),
+            s("Open links touching a node, grouped by predicate (both directions by default)"),
             vec![s("links <node> [--in|--out] [--pred <p,p>] [--blocks]")],
             opts(&[
-                ("--in", "incoming edges only (backlinks)"),
-                ("--out", "outgoing edges only"),
+                ("--in", "incoming links only (backlinks)"),
+                ("--out", "outgoing links only"),
                 ("--pred <p,p>", "keep only these predicates"),
-                ("--blocks", "block-grain edges (default: doc-grain)"),
+                ("--blocks", "block-grain links (default: doc-grain)"),
             ]),
             vec![],
         ),

@@ -1,4 +1,4 @@
-//! `node` (§6): `node set <nodeId> <prop> <value>` — `node_set`, one
+//! `node` (§6): `node set <nodeId> <prop> <value>` — `nodes_set`, one
 //! surgical update of a projected node's editable property; `node props
 //! <nodeId>` — the editable properties of the node's kind (a local lookup
 //! with no tool). No subcommand, `help` or `--help` prints the card.
@@ -45,7 +45,7 @@ fn set(cli: &mut Cli, rest: &[String]) -> Result<i32> {
     m.insert("id".to_owned(), json!(node_id));
     m.insert("prop".to_owned(), json!(prop));
     m.insert("value".to_owned(), json!(value));
-    run_tool(cli, "node_set", m, a.value("actor"))
+    run_tool(cli, "nodes_set", m, a.value("actor"))
 }
 
 fn props(cli: &mut Cli, rest: &[String]) -> Result<i32> {

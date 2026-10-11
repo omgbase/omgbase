@@ -34,7 +34,7 @@ import {
   RECENT_LIMIT, advanceCursor, createdDiff, diffLineKind, diffStats, digestPaths, entryCard, filterStateAfter, formatStats, formatTime, hiddenLine, latestChange, latestPair, loadDiffView, matchQuery, pairForCommit, partitionByFilter, pollMs, prependDigests, recentCard, recentFromHits, recentQuery, saveDiffView, startCursor, titlesByPath,
   type Card, type Digest, type DiffPair, type DiffView, type DocVersions, type EntryChange, type FeedEntry, type FilterState, type RecentDoc, type Stats,
 } from "./lib/feed.ts";
-import { LEGACY_SURFACE, attr, docForeign, docLocator, surfaceOf } from "./lib/paths.ts";
+import { LEGACY_SURFACE, attr, docLocator, surfaceOf } from "./lib/paths.ts";
 import { changesOf, docVersionsOf, readAtOf, unifiedOf } from "./lib/shapes.ts";
 
 const MCP_URL = "/mcp";
@@ -145,7 +145,8 @@ async function fetchPair(key: string, doc: string, pair: DiffPair): Promise<Diff
     setSource(key, { status: "ready", before: "", after: content }); // the markdown view's sides, already in hand
     return text === "" ? { status: "none", note: "created empty" } : { status: "ready", pair, text, doc };
   }
-  const d = unifiedOf(surface.get(), await client.diffUnified(docForeign(surface.get(), doc), pair.from, pair.to, r));
+  const s = surface.get();
+  const d = unifiedOf(s, await client.diffUnified(s, docLocator(s, doc), pair.from, pair.to, r));
   return d.diff === "" ? { status: "none", note: "no textual change between the two revisions" } : { status: "ready", pair, text: d.diff, doc };
 }
 

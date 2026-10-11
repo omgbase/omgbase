@@ -34,11 +34,12 @@ beforeEach(async () => {
 });
 afterEach(() => { store.close(); rmSync(dir, { recursive: true, force: true }); });
 
-describe("MCP docs_plan_update / docs_update", () => {
-  it("docs_plan_update returns an inspectable opset without writing", async () => {
+describe("MCP docs_update (dry run = the plan)", () => {
+  it("docs_update { dry_run: true } returns an inspectable opset without writing (docs_plan_update before 3.0)", async () => {
     const before = readFileSync(join(dir, "notes.md"), "utf8");
-    const { payload, isError } = await call("docs_plan_update", {
+    const { payload, isError } = await call("docs_update", {
       path: "notes.md",
+      dry_run: true,
       content: "# Risks\n\nStable identity is a genuinely hard engineering problem indeed.\n\nA second paragraph with its own separate content to keep.\n",
     });
     expect(isError).toBe(false);

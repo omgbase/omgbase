@@ -120,9 +120,9 @@ fn index_for_answers_for_a_root_scan_marker_on_an_indexable_path_and_for_nothing
         ctx.index_for(&docs, &["meta".to_owned(), "id".to_owned()])
             .is_none()
     ); // multi-segment
-    assert!(ctx.index_for(&ctx.root("edges"), &p("dst_id")).is_some()); // a bare root
+    assert!(ctx.index_for(&ctx.root("links"), &p("dst_id")).is_some()); // a bare root
     assert!(
-        ctx.index_for(&ctx.get(&repo_root, "edges").unwrap(), &p("predicate"))
+        ctx.index_for(&ctx.get(&repo_root, "links").unwrap(), &p("predicate"))
             .is_none()
     ); // no leading index
     assert!(
@@ -139,7 +139,7 @@ fn index_for_answers_for_a_root_scan_marker_on_an_indexable_path_and_for_nothing
     let out = ctx.get(&rows[0], "out").unwrap();
     assert!(ctx.index_for(&out, &p("path")).is_none());
     assert_eq!(
-        indexable_paths(Target::Edges),
+        indexable_paths(Target::Links),
         ["id", "doc_id", "dst_id", "path", "dst_path"]
     );
     // the scan is read once per run
@@ -188,10 +188,10 @@ fn the_other_targets_are_probed_from_their_indexes() {
         return;
     };
     for q in [
-        "select path, inbound: ^edges collect { doc_id values where dst_id == ^id } from docs",
+        "select path, inbound: ^links collect { doc_id values where dst_id == ^id } from docs",
         "select id, paragraphs: ^blocks collect { ordinal values where doc_id == ^doc_id && type == \"paragraph\" } from blocks where type == \"heading\"",
         "select name, same_kind: ^nodes collect { name values where kind == ^kind && doc_id == ^doc_id } from nodes where kind == \"md:section\"",
-        "select path, outbound: ^edges collect { dst_path values where path == ^path } from docs",
+        "select path, outbound: ^links collect { dst_path values where path == ^path } from docs",
     ] {
         let (out, scans, naive) = run(&store, &repo, q);
         assert_eq!(out, naive, "{q}");
@@ -305,7 +305,7 @@ fn reach_through_identity_runs_no_owner_statement() {
             .cloned()
             .unwrap_or(Value::Undefined)
     };
-    for target in ["blocks", "edges"] {
+    for target in ["blocks", "links"] {
         let (out, statements) = count(&format!(
             "select a: doc.id, b: doc_id, c: doc.path, d: path from {target}"
         ));

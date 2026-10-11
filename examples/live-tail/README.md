@@ -80,11 +80,12 @@ dev proxy); nothing imports `@omgbase/core`. On load:
    updated_at desc limit 25` (the attributes spelled for the server: bare on
    3.0, `$path`/`$title`/`$updated_at` on 2.x — `lib/paths.ts` `attr`); for
    each hit `docs_history { id | path }` gives
-   the version list and the last two versions are diffed with `diff_unified
-   { doc_id | doc_path, from_rev, to_rev }`; a document with one version is
-   **created** and `docs_read_at { id | path, rev }` gives its content (the
-   argument names are 3.0's — `spec/surface` §4 "Arguments"; a 2.x server gets
-   `doc`, `lib/paths.ts` `docLocator`/`docForeign`), shown as a pure-addition
+   the version list and the last two versions are diffed with
+   `docs_diff_unified { id | path, from_rev, to_rev }`; a document with one
+   version is **created** and `docs_read_at { id | path, rev }` gives its
+   content (the tool and argument names are 3.0's — `spec/surface` §4; a 2.x
+   server gets `diff_unified { doc, … }`, `lib/paths.ts` `docLocator` /
+   `diffUnifiedTool`), shown as a pure-addition
    diff (`createdDiff`: one `@@ -0,0 +1,N @@` hunk, every line `+`, so
    frontmatter fences and dash bullets are green, not subtractions; `+N −0`).
    Four documents at a time; the first three cards start open, the rest open
@@ -149,7 +150,7 @@ prose), at a nested list item (the indentation context is gone), at a table
 row (a row without the header and alignment rows is not a table). Rendering
 the hunk's lines as Markdown would break all three. So the element does not
 render the excerpt. When the markdown view is on, the page fetches both
-revisions' full text — `docs_read_at { id | path, rev }` for `diff_unified`'s
+revisions' full text — `docs_read_at { id | path, rev }` for `docs_diff_unified`'s
 `from` and `to` (a created document already has its content: the before side
 is empty) — and `lib/markdown-diff.ts` renders the **documents**, using the
 hunks only to decide what to show and how to colour it:
@@ -157,7 +158,7 @@ hunks only to decide what to show and how to colour it:
 1. `parseUnified` reads the hunks; `alignRows` lays the two texts side by side
    as one sequence of rows — every line of either revision, `ctx` / `del` /
    `add`, with its old and/or new line number and the hunk it came from. Lines
-   are counted the way `diff_unified` counts them (`raw.split("\n")`, so a
+   are counted the way `docs_diff_unified` counts them (`raw.split("\n")`, so a
    trailing newline is an empty last line; `createdDiff`'s count without it is
    accepted too); texts that do not match the diff fall back to the excerpt.
 2. markdown-it parses each revision; its block tokens carry `map` (source line
@@ -300,7 +301,8 @@ OQX (the parser rejects `{` after the target), which is why the frame uses
 
 **Both generations.** The server may be surface 2.x (`docs_history`
 `docId`/`path`/`ts`/`contentHash`, `changes_since` revisions `{ doc, path,
-contentHash }`, `docs_read_at` `content`, `diff_unified` `{ doc, path, … }`,
+contentHash }`, `docs_read_at` `content`, `diff_unified` `{ doc, path, … }` (the
+tool is `docs_diff_unified` on 3.0),
 `docs_list` `{ path, blocks, ts }`; `$path`/`$title`/`$updated_at` in the
 language) or 3.0, where every tool spells a row the way the language does and
 the language's attributes are bare (`id`/`path`/`updated_at`/`hash`/`raw`
@@ -351,7 +353,7 @@ reconnected* in the header; only a second failure is shown.
   `holeText`, `holeState`); only `@codemirror/state`, so it is tested with
   plain `EditorState`s.
 - `src/lib/paths.ts` — `surfaceOf`, `surfaceMajor`, `hitId`, `hitPath`,
-  `attr`/`bareAttributes`, `docLocator`/`docForeign`, `rooted`.
+  `attr`/`bareAttributes`, `docLocator`, `diffUnifiedTool`, `rooted`.
 - `src/lib/shapes.ts` — the tool results under both generations, read by the
   server's `specs.surface` into the one shape `feed.ts` keeps: `changesOf`
   (`revisionOf`/`digestOf`), `docVersionsOf` (`versionOf`), `unifiedOf`,
@@ -415,8 +417,8 @@ block, the created documents all green). Switch off → the `<pre>`s back and
 errors (Lit's dev-mode warning only).
 
 Surface 3.0 batch 2 (the argument names — `docs_history { id | path }`,
-`diff_unified { doc_id | doc_path }`, `docs_read_at { id | path, rev }`, chosen
-by the server's version): the same headless run passed against the current
+`docs_read_at { id | path, rev }`, then the name pass's `docs_diff_unified { id
+| path }`, chosen by the server's version): the same headless run passed against the current
 build (proxy 18902, Vite 15902; `surface 3.0`) and against a `surface-2.0` omg
 built from its tag into a temporary worktree (proxy 18904, Vite 15904;
 `surface 2.0`, the `doc` spelling): five cards; `omg meta notes/alpha.md --set

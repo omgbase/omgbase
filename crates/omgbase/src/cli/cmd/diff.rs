@@ -1,4 +1,4 @@
-//! `diff` (§6): `diff_unified` between two revisions (default: previous →
+//! `diff` (§6): `docs_diff_unified` between two revisions (default: previous →
 //! current); `--blocks` is the block-grain `diff` tool over the same pair.
 
 use omgbase_surface::read::find_doc_by_ref;
@@ -9,7 +9,7 @@ use crate::cli::context::Cli;
 use crate::cli::help::{render_help_for, wants_help};
 use crate::cli::output::{CliError, EXIT_OK, Result};
 
-use super::{doc_foreign, machine_out, str_of};
+use super::{doc_locator, machine_out, str_of};
 
 pub fn diff(cli: &mut Cli, args: &[String]) -> Result<i32> {
     if wants_help(args) {
@@ -32,22 +32,22 @@ pub fn diff(cli: &mut Cli, args: &[String]) -> Result<i32> {
             .doc_id
     };
     let mut req = serde_json::Map::new();
-    doc_foreign(&mut req, &doc);
+    doc_locator(&mut req, &doc);
     if let Some(f) = a.value("from") {
         req.insert("from_rev".to_owned(), json!(f));
     }
     if let Some(t) = a.value("to") {
         req.insert("to_rev".to_owned(), json!(t));
     }
-    let result = cli.call("diff_unified", Json::Object(req))?;
+    let result = cli.call("docs_diff_unified", Json::Object(req))?;
     let style = cli.style;
     if a.flag("blocks") {
         // Block-grain over the same resolved revision pair.
         let mut req = serde_json::Map::new();
-        doc_foreign(&mut req, &doc);
+        doc_locator(&mut req, &doc);
         req.insert("from_rev".to_owned(), json!(str_of(&result, "from")));
         req.insert("to_rev".to_owned(), json!(str_of(&result, "to")));
-        let entries = cli.call("diff", Json::Object(req))?;
+        let entries = cli.call("docs_diff", Json::Object(req))?;
         let items: Vec<Json> = entries.as_array().cloned().unwrap_or_default();
         let ids: Vec<String> = items.iter().map(|e| str_of(e, "id")).collect();
         if let Some(code) = machine_out(cli, &entries, Some(&items), Some(&ids)) {
@@ -77,7 +77,7 @@ pub fn diff(cli: &mut Cli, args: &[String]) -> Result<i32> {
         }
         return Ok(EXIT_OK);
     }
-    // §9 Fixed: every machine mode prints the `diff_unified` document.
+    // §9 Fixed: every machine mode prints the `docs_diff_unified` document.
     if let Some(code) = machine_out(cli, &result, None, None) {
         return code;
     }

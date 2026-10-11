@@ -51,7 +51,7 @@ describe("MCP server skeleton", () => {
   it("lists the full tool surface", async () => {
     const tools = await client.listTools();
     const names = tools.tools.map((t) => t.name).sort();
-    for (const t of ["docs_tree", "docs_list", "docs_outline", "docs_read", "docs_get_many", "blocks_get", "blocks_get_many", "query", "query_syntax", "graph", "text_search", "resolve", "apply", "blocks_insert", "blocks_update", "blocks_move", "blocks_remove", "blocks_split", "blocks_merge", "tasks_complete", "node_set", "blocks_append", "docs_append", "links_retarget", "links_stale", "links_repair", "docs_create", "docs_move", "docs_delete", "docs_set_meta", "docs_plan_update", "docs_update", "blocks_history", "diff", "docs_read_at", "docs_history", "changes_since", "repos_status", "sync_status"]) {
+    for (const t of ["docs_tree", "docs_list", "docs_outline", "docs_read", "docs_read_many", "blocks_read", "blocks_read_many", "query", "query_syntax", "graph", "blocks_search", "blocks_resolve", "apply", "blocks_insert", "blocks_update", "blocks_move", "blocks_remove", "blocks_split", "blocks_merge", "blocks_check", "nodes_set", "blocks_append", "docs_append", "links_retarget", "links_stale", "links_repair", "docs_create", "docs_move", "docs_delete", "docs_set_meta", "docs_update", "blocks_history", "docs_diff", "docs_diff_unified", "docs_read_at", "docs_history", "changes_since", "repos_status", "sync_status"]) {
       expect(names, `missing tool ${t}`).toContain(t);
     }
   });
@@ -131,9 +131,9 @@ describe("MCP server skeleton", () => {
     expect(payload.error).toBe("doc_missing");
   });
 
-  it("docs_get_many hydrates several docs and lands misses in errors", async () => {
+  it("docs_read_many hydrates several docs and lands misses in errors", async () => {
     ingestFile(store, repoId, "guide.md", "# Guide\n\nread me first\n");
-    const { payload, isError } = (await call("docs_get_many", { docs: ["notes.md", "guide.md", "nope.md"] })) as {
+    const { payload, isError } = (await call("docs_read_many", { docs: ["notes.md", "guide.md", "nope.md"] })) as {
       payload: { items: { path: string; raw: string }[]; errors: { ref: string; error: string }[]; truncated: boolean };
       isError: boolean;
     };
@@ -144,8 +144,8 @@ describe("MCP server skeleton", () => {
     expect(payload.truncated).toBe(false);
   });
 
-  it("docs_get_many collapses duplicate refs and supports include_ids", async () => {
-    const { payload } = (await call("docs_get_many", { docs: ["notes.md", "notes.md"], include_ids: true })) as {
+  it("docs_read_many collapses duplicate refs and supports include_ids", async () => {
+    const { payload } = (await call("docs_read_many", { docs: ["notes.md", "notes.md"], include_ids: true })) as {
       payload: { items: { path: string; ids: string[] }[] };
     };
     expect(payload.items.map((i) => i.path)).toEqual(["/notes.md"]);
@@ -199,11 +199,11 @@ describe("MCP server skeleton", () => {
     expect(payload.error).toBe("doc_missing");
   });
 
-  it("diff resolves `doc_path` and returns the real block-grain diff (not silent-empty)", async () => {
+  it("docs_diff resolves `path` and returns the real block-grain diff (not silent-empty)", async () => {
     const rev1 = (store.db.prepare("SELECT current_rev FROM docs WHERE path='notes.md'").get() as { current_rev: string }).current_rev;
     ingestFile(store, repoId, "notes.md", "---\nlayer: working\n---\n\n# Risks\n\nStable identity is hard.\n\n- [ ] decide write-back\n\nAdded tail.\n");
     const rev2 = (store.db.prepare("SELECT current_rev FROM docs WHERE path='notes.md'").get() as { current_rev: string }).current_rev;
-    const { payload, isError } = (await call("diff", { doc_path: "notes.md", from_rev: rev1, to_rev: rev2 })) as {
+    const { payload, isError } = (await call("docs_diff", { path: "notes.md", from_rev: rev1, to_rev: rev2 })) as {
       payload: { kind: string }[]; isError: boolean;
     };
     expect(isError).toBe(false);
@@ -212,7 +212,7 @@ describe("MCP server skeleton", () => {
   });
 
   it("diff with an unresolvable doc errors doc_missing (not an empty diff)", async () => {
-    const { payload, isError } = (await call("diff", { doc_path: "nope.md", from_rev: "r_a", to_rev: "r_b" })) as { payload: { error: string }; isError: boolean };
+    const { payload, isError } = (await call("docs_diff", { path: "nope.md", from_rev: "r_a", to_rev: "r_b" })) as { payload: { error: string }; isError: boolean };
     expect(isError).toBe(true);
     expect(payload.error).toBe("doc_missing");
   });
@@ -274,27 +274,27 @@ describe("MCP server skeleton", () => {
       embeddedWith = text;
       return { model: "test-1", vec: new Float32Array([0, 1, 0, 0]) };
     });
-    await call("resolve", { query: "why isn't severity shown to artists" });
+    await call("blocks_resolve", { query: "why isn't severity shown to artists" });
     expect(embeddedWith).toBe("why isn't severity shown to artists");
   });
 
-  it("blocks_get hydrates a block by id at a resolution", async () => {
+  it("blocks_read hydrates a block by id at a resolution", async () => {
     const { payload: read } = (await call("docs_read", { path: "notes.md", include_ids: true })) as { payload: { ids: string[] } };
     const headingId = read.ids[0]!;
-    const { payload } = (await call("blocks_get", { id: headingId, resolution: "raw" })) as { payload: { raw: string } };
+    const { payload } = (await call("blocks_read", { id: headingId, resolution: "raw" })) as { payload: { raw: string } };
     expect(payload.raw).toBe("# Risks");
   });
 
-  it("blocks_get infers the document from the block id", async () => {
+  it("blocks_read infers the document from the block id", async () => {
     const { payload: read } = (await call("docs_read", { path: "notes.md", include_ids: true })) as { payload: { ids: string[] } };
     const headingId = read.ids[0]!;
-    const { payload, isError } = (await call("blocks_get", { id: headingId, resolution: "raw" })) as { payload: { raw: string }; isError: boolean };
+    const { payload, isError } = (await call("blocks_read", { id: headingId, resolution: "raw" })) as { payload: { raw: string }; isError: boolean };
     expect(isError).toBe(false);
     expect(payload.raw).toBe("# Risks");
   });
 
-  it("text_search returns bm25 hits", async () => {
-    const { payload } = (await call("text_search", { q: "identity" })) as { payload: { hits: unknown[] } };
+  it("blocks_search returns bm25 hits", async () => {
+    const { payload } = (await call("blocks_search", { q: "identity" })) as { payload: { hits: unknown[] } };
     expect(payload.hits.length).toBeGreaterThan(0);
   });
 
@@ -314,7 +314,7 @@ describe("MCP server skeleton", () => {
   });
 });
 
-describe("blocks_get_many spans documents (ids are globally unique)", () => {
+describe("blocks_read_many spans documents (ids are globally unique)", () => {
   it("without doc/path returns ids from three docs in request order and lists bogus ids as unresolved", async () => {
     ingestFile(store, repoId, "a.md", "# A\n\npara a\n");
     ingestFile(store, repoId, "b.md", "# B\n\npara b\n");
@@ -325,7 +325,7 @@ describe("blocks_get_many spans documents (ids are globally unique)", () => {
     const b = idsOf("b.md");
     const ids = [b[1]!, notes[0]!, "b_bogus", a[1]!, notes[1]!, a[0]!, b[0]!];
 
-    const { payload, isError } = (await call("blocks_get_many", { ids })) as {
+    const { payload, isError } = (await call("blocks_read_many", { ids })) as {
       payload: { nodes: { id: string }[]; truncated: boolean; unresolved: string[] };
       isError: boolean;
     };
@@ -338,12 +338,12 @@ describe("blocks_get_many spans documents (ids are globally unique)", () => {
   it("a `path` scope is no longer an argument (3.0): the shape error names the valid ones", async () => {
     ingestFile(store, repoId, "a.md", "# A\n");
     const aId = (store.db.prepare("SELECT block_id FROM blocks WHERE doc_id = (SELECT doc_id FROM docs WHERE path = 'a.md')").get() as { block_id: string }).block_id;
-    const { payload, isError } = (await call("blocks_get_many", { path: "notes.md", ids: [aId] })) as {
+    const { payload, isError } = (await call("blocks_read_many", { path: "notes.md", ids: [aId] })) as {
       payload: { error: string; message: string; data: { hint: string } }; isError: boolean;
     };
     expect(isError).toBe(true);
     expect(payload.error).toBe("filter_invalid");
-    expect(payload.message).toBe("unknown argument `path` (blocks_get_many takes budget_tokens?, ids, repo?, resolution?)");
+    expect(payload.message).toBe("unknown argument `path` (blocks_read_many takes budget_tokens?, ids, repo?, resolution?)");
     expect(payload.data.hint).toBe("arguments");
   });
 });
@@ -628,12 +628,12 @@ describe("apply op schema + blocks_append / docs_append section resolution", () 
     const { payload: read } = (await call("docs_read", { path: "notes.md", include_ids: true })) as {
       payload: { ids: string[]; hashes: Record<string, string> };
     };
-    // Pick the "intro body" paragraph via blocks_get, then update it through the
+    // Pick the "intro body" paragraph via blocks_read, then update it through the
     // RAW apply kernel using ONLY the hash the same read handed back — no
-    // blocks_get_many(resolution:"full") hydration round trip.
+    // blocks_read_many(resolution:"full") hydration round trip.
     let target = "";
     for (const id of read.ids) {
-      const { payload } = (await call("blocks_get", { id, resolution: "raw" })) as { payload: { raw?: string } };
+      const { payload } = (await call("blocks_read", { id, resolution: "raw" })) as { payload: { raw?: string } };
       if (payload.raw === "intro body") { target = id; break; }
     }
     expect(target).not.toBe("");
@@ -653,7 +653,7 @@ describe("apply op schema + blocks_append / docs_append section resolution", () 
     };
     let target = "";
     for (const id of read.ids) {
-      const { payload } = (await call("blocks_get", { id, resolution: "raw" })) as { payload: { raw?: string } };
+      const { payload } = (await call("blocks_read", { id, resolution: "raw" })) as { payload: { raw?: string } };
       if (payload.raw === "intro body") { target = id; break; }
     }
     const { payload, isError } = (await call("apply", {
@@ -675,10 +675,10 @@ describe("apply op schema + blocks_append / docs_append section resolution", () 
 
   it("blocks_append on a heading appends into its section", async () => {
     const { payload: read } = (await call("docs_read", { path: "notes.md", include_ids: true })) as { payload: { ids: string[] } };
-    // pick the id whose block is the Launch heading via blocks_get
+    // pick the id whose block is the Launch heading via blocks_read
     let headingId = "";
     for (const id of read.ids) {
-      const { payload } = (await call("blocks_get", { id, resolution: "raw" })) as { payload: { raw?: string } };
+      const { payload } = (await call("blocks_read", { id, resolution: "raw" })) as { payload: { raw?: string } };
       if (payload.raw === "## Launch") { headingId = id; break; }
     }
     expect(headingId).not.toBe("");
@@ -731,8 +731,8 @@ describe("apply op schema + blocks_append / docs_append section resolution", () 
     const retired = (await call("docs_read", { doc: "notes.md" })) as { payload: { error: string; message: string } };
     expect(retired.payload.error).toBe("filter_invalid");
     expect(retired.payload.message).toBe("`doc` is no longer an argument — pass `id` or `path` (docs_read takes id?, include_ids?, path?, repo?)");
-    const typo = (await call("text_search", { query: "x" })) as { payload: { message: string } };
-    expect(typo.payload.message).toBe("unknown argument `query`; did you mean `q`? (text_search takes limit?, q, repo?)");
+    const typo = (await call("blocks_search", { query: "x" })) as { payload: { message: string } };
+    expect(typo.payload.message).toBe("unknown argument `query`; did you mean `q`? (blocks_search takes limit?, q, repo?)");
     const missing = (await call("query", {})) as { payload: { message: string } };
     expect(missing.payload.message).toBe("`query` is required (query takes cursor?, limit?, query, repo?)");
     const typed = (await call("query", { query: "from docs", limit: "5" })) as { payload: { message: string } };
@@ -822,7 +822,7 @@ describe("block-level MCP tools (blocks_* — ref resolution + CAS server-side)"
     const { payload } = (await call("docs_read", { path: "notes.md", include_ids: true })) as { payload: { ids: string[] } };
     const out: { id: string; raw: string }[] = [];
     for (const id of payload.ids) {
-      const { payload: n } = (await call("blocks_get", { id, resolution: "raw" })) as { payload: { raw?: string } };
+      const { payload: n } = (await call("blocks_read", { id, resolution: "raw" })) as { payload: { raw?: string } };
       out.push({ id: id, raw: n.raw ?? "" });
     }
     return out;
@@ -960,7 +960,7 @@ describe("block-level MCP tools (blocks_* — ref resolution + CAS server-side)"
     expect(read.raw).not.toContain("PREVIEW ONLY");
   });
 
-  it("tasks_complete checks and unchecks a task by ref", async () => {
+  it("blocks_check checks and unchecks a task by ref", async () => {
     // The task is a list item nested under a ul — resolve its id from the
     // outline (which lists nested block ids), not the top-level docs_read ids.
     const taskId = async () => {
@@ -968,11 +968,11 @@ describe("block-level MCP tools (blocks_* — ref resolution + CAS server-side)"
       const line = payload.text.split("\n").find((l) => l.includes("wire it"))!;
       return line.trim().split(/\s+/)[0]!;
     };
-    await call("tasks_complete", { blocks: [await taskId()] });
+    await call("blocks_check", { ids: [await taskId()] });
     let { payload } = (await call("docs_read", { path: "notes.md" })) as { payload: { raw: string } };
     expect(payload.raw).toMatch(/- \[x\] wire it/i);
     // uncheck — re-resolve (the id may change after the write)
-    await call("tasks_complete", { blocks: [await taskId()], checked: false });
+    await call("blocks_check", { ids: [await taskId()], checked: false });
     ({ payload } = (await call("docs_read", { path: "notes.md" })) as { payload: { raw: string } });
     expect(payload.raw).toContain("- [ ] wire it");
   });

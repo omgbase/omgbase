@@ -5,9 +5,13 @@
 // engine-provided name is a plain snake_case field (`doc_id`, `block_id`,
 // `dst_id`, `dst_path`, `uri`, `field`). Before 3.0 each tool had its own
 // spelling (`docId`/`path`, `content`, `src`/`dst`/`dst_uri`/`src_field`, …)
-// and the `edges` target's intrinsics were `$path`/`$dst_path`/`$src`/`$dst`/
-// `$dst_uri` with the field `src_field`. Brendan's remote may lag the local
-// build, so every reader here is keyed on the connected server's surface
+// and the link rows' intrinsics were `$path`/`$dst_path`/`$src`/`$dst`/
+// `$dst_uri` with the field `src_field`. 3.0 also renamed the ROW KIND the
+// link relations scan (spec/surface §1.1): `from links` / `^links` /
+// `out_links` / `in_links` where every earlier server said `edges` (`from
+// edges` is an unknown target on 3.0), and the `graph` tool's array of them
+// is `links[]` (`edges[]` before). Brendan's remote may lag the local build,
+// so every reader here is keyed on the connected server's surface
 // (`surfaceMajor`, lib/paths.ts) and normalises to ONE internal shape; nothing
 // else in the demo spells a wire key. An unknown version (`null`) reads as 2.x
 // — what a server without the `version` tool is.
@@ -23,9 +27,24 @@ export function surface3(surface: string | null): boolean {
 const str = (v: unknown): string | null => (typeof v === "string" ? v : null);
 const num = (v: unknown): number | null => (typeof v === "number" ? v : null);
 
-// ---- the `edges` target in a query -----------------------------------------------
+// ---- the link rows (`links` / `edges`) in a query --------------------------------------
 
-/** The `edges` target's field spellings on the connected server: the OQX the
+/** The row kind the link relations scan, as the connected server names it in
+ * OQX (spec/surface §1.1): `links` on ≥ 3.0 (`from links`, `^links`), `edges`
+ * before — a 3.0 server refuses `from edges` as an unknown target and a 2.x
+ * one knows no `links`. The row's attribute names are `edgeFields`'. */
+export function linksTarget(surface: string | null): "links" | "edges" {
+  return surface3(surface) ? "links" : "edges";
+}
+
+/** The doc relations that yield link rows, per server: `out_links`/`in_links`
+ * on ≥ 3.0, `out_edges`/`in_edges` before (`out`/`in` — the documents at the
+ * other end — did not change). */
+export function linkRelations(surface: string | null): { out: string; in: string } {
+  return surface3(surface) ? { out: "out_links", in: "in_links" } : { out: "out_edges", in: "in_edges" };
+}
+
+/** The link rows' field spellings on the connected server: the OQX the
  * demo generates (lib/edges.ts) names the destination path and the authored
  * field, which 3.0 renamed. */
 export interface EdgeFields {
@@ -51,10 +70,18 @@ export function edgeFields(surface: string | null): EdgeFields {
 
 // ---- the `graph` tool ----------------------------------------------------------------
 
-/** A `graph` edge, normalised: `{ id, doc_id, block_id, via_id, dst_id,
- * dst_path, uri, dst_kind, predicate, provenance, anchor, field }` on ≥ 3.0,
- * `{ id, src, dst, dst_path, dst_uri, dst_kind, predicate, provenance, anchor,
- * src_field }` before (no block/via there). Paths are rooted. */
+/** The `graph` result's link rows, under whichever key the server used:
+ * `links[]` on ≥ 3.0, `edges[]` before (the same row shape, `edgeOf`). */
+export function graphEdgeRows(surface: string | null, result: Record<string, unknown>): Record<string, unknown>[] {
+  const rows = result[linksTarget(surface)];
+  return Array.isArray(rows) ? rows.filter((r): r is Record<string, unknown> => r !== null && typeof r === "object") : [];
+}
+
+/** A `graph` edge (one `links[]` / `edges[]` row), normalised: `{ id, doc_id,
+ * block_id, via_id, dst_id, dst_path, uri, dst_kind, predicate, provenance,
+ * anchor, field }` on ≥ 3.0, `{ id, src, dst, dst_path, dst_uri, dst_kind,
+ * predicate, provenance, anchor, src_field }` before (no block/via there).
+ * Paths are rooted. */
 export interface GraphToolEdge {
   id: string;
   docId: string;

@@ -48,7 +48,7 @@ describe("the unified diff", () => {
     expect(parseUnified("@@ -0,0 +1,2 @@\n+a\n+")).toEqual([{ oldStart: 0, oldCount: 0, newStart: 0, newCount: 2, lines: [{ kind: "add", text: "a" }, { kind: "add", text: "" }] }]);
     expect(parseUnified("")).toEqual([]);
   });
-  it("splitLines is the server's verbatim split (a trailing newline is an empty last line, as diff_unified counts it); dropTrailingEmpty is createdDiff's count", () => {
+  it("splitLines is the server's verbatim split (a trailing newline is an empty last line, as docs_diff_unified counts it); dropTrailingEmpty is createdDiff's count", () => {
     expect(splitLines("a\nb\n")).toEqual(["a", "b", ""]);
     expect(splitLines("a\nb")).toEqual(["a", "b"]);
     expect(splitLines("")).toEqual([]);

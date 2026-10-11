@@ -59,9 +59,9 @@ be `id` or `path` must be aliased — `select data.path` is refused ("projection
 `path` collides with the hit envelope — alias it (`p: data.path`)"); a row
 surfacing as a value (an empty `collect { }`) is the same `{ id, path }`. Every
 other tool spells a row the same way (`docs_read` → `{ id, path, rev, properties,
-raw }`, `blocks_get` → `{ id, type, text, raw, hash, … }`, `docs_list` → `{ id,
+raw }`, `blocks_read` → `{ id, type, text, raw, hash, … }`, `docs_list` → `{ id,
 path, updated_at, blocks }`, a revision → `{ id, path, hash }`): hydrate by id via
-blocks_get/docs_read.
+blocks_read/docs_read.
 
 ## Paths
 
@@ -96,13 +96,13 @@ read a bare non-colliding key performs), `frontmatter.<k>`, `inline.<k>`. So
 `tags` is your tags ∪ the body #hashtags and `data.tags` the authored list alone;
 `title` the computed title (the first H1) and `data.title` your `title:`;
 `entries(data)` lists every authored top-level key. Same value, same name
-everywhere: a hit's `id` is docs_read's `id` and the `id` argument of blocks_get.
+everywhere: a hit's `id` is docs_read's `id` and the `id` argument of blocks_read.
 
   Reserved bare names per kind (engine attributes; handles; self; relations):
-    docs    id path raw hash updated_at title tags format | data frontmatter inline | doc | blocks nodes out in out_edges in_edges
-    blocks  id path doc_id raw hash updated_at type text attrs depth ordinal | block doc | children nodes out_edges section
+    docs    id path raw hash updated_at title tags format | data frontmatter inline | doc | blocks nodes out in out_links in_links
+    blocks  id path doc_id raw hash updated_at type text attrs depth ordinal | block doc | children nodes out_links section
     nodes   id path doc_id block_id kind name value attrs | section doc block | blocks subsections children
-    edges   id path doc_id block_id via_id dst_id dst_path uri field dst_kind predicate provenance anchor | doc
+    links   id path doc_id block_id via_id dst_id dst_path uri field dst_kind predicate provenance anchor | doc
   A key of yours with any of these names is `data.<k>` (or frontmatter.<k> /
   inline.<k> by source; attrs.<k> on a block or node).
 
@@ -123,7 +123,7 @@ docs:
                        has(format) is always true and `format == "yaml"` is the
                        filter).
   - relations        = nodes, blocks, doc.out / doc.in (citation graph),
-                       doc.out_edges / doc.in_edges (a doc's edges as rows).
+                       doc.out_links / doc.in_links (a doc's links as rows).
 
 blocks:
   - bare fields      = doc_id (the owning doc), type, text (normalized), ordinal
@@ -138,7 +138,7 @@ blocks:
   - reach-through    = doc.<key> / doc.path / doc.id / doc.format = the
                        CONTAINING doc (doc.id and doc.path cost nothing — they
                        read the row's own doc_id / joined path, no lookup).
-  - relations        = block.children, block.nodes, block.out_edges, section.
+  - relations        = block.children, block.nodes, block.out_links, section.
   NOTE: inside a `follow`, $depth/$ordinal are ALWAYS the walk's metadata; a
   block's own nesting is `depth` / `ordinal` (no $) everywhere.
 
@@ -164,7 +164,7 @@ edges:  (the authored link graph as rows — one per open edge)
   - attributes       = id, path (the SOURCE doc's path); doc.<key> reaches the
                        source document. There is no from_commit: a query sees
                        open edges only (history is blocks_history/changes_since).
-  - text()/semantic() are N/A on edges.
+  - text()/semantic() are N/A on links.
 
 ## Scoping (ADR-015; the root row since surface 2.0): bare names are LOCAL
 
@@ -172,7 +172,7 @@ edges:  (the authored link graph as rows — one per open edge)
                 or the repository; an absent field is simply absent.
   ^name         one scope OUT (the enclosing row's fields/intrinsics/lifts);
                 ^^name two scopes out. `^path` = the enclosing row's path.
-  ^docs ^nodes ^blocks ^edges
+  ^docs ^nodes ^blocks ^links
                 THE ROOT ROW (surface 2.0, oqx 0.18): the repository is the root
                 scope's row, one scope out from a top-level row, so ^docs there is
                 the whole documents scan (uncorrelated until you add a ^ predicate);
@@ -258,7 +258,7 @@ edges:  (the authored link graph as rows — one per open edge)
 ## Nested queries & consumers
 
   <receiver> collect|exists|none|count|first|single { <block> }
-    receiver = a relation (nodes, blocks, doc.out_edges, section.blocks, …), a
+    receiver = a relation (nodes, blocks, doc.out_links, section.blocks, …), a
     list property (tags), entries(x), or a root collection (^docs; 0^docs at depth ≥ 2).
     block    = [select …] [where …] [follow …] [order by …] [limit N] [offset N]
                — the same fixed order as the top level (`from` optional; the
@@ -307,7 +307,7 @@ edges:  (the authored link graph as rows — one per open edge)
   cursor                           opaque keyset on (path,id); a custom order by
                                    disables it (you get the top page + truncated)
 
-## Graph traversal (follow) and edges
+## Graph traversal (follow) and links
 
   from docs where <seed> follow doc.out            docs the seed links TO
   from docs where <seed> follow doc.in             backlinks
@@ -341,9 +341,9 @@ edges:  (the authored link graph as rows — one per open edge)
   follow ^docs (no brace, no consumer) is an error naming both block spellings.
   Type-preserving relations: doc.out/doc.in, block.children, section.children,
   section.subsections.
-  from edges where dst_path == "/notes/x.md"       inbound edges to a doc, as rows
-  from edges where predicate == "depends_on" select doc_id, dst_path
-  from docs where not doc.in_edges exists { }      orphans (nothing links in)
+  from links where dst_path == "/notes/x.md"       inbound links to a doc, as rows
+  from links where predicate == "depends_on" select doc_id, dst_path
+  from docs where not doc.in_links exists { }      orphans (nothing links in)
   (The `graph` tool is a convenience wrapper that compiles to a follow query.)
 
 ## semantic grain
@@ -375,7 +375,7 @@ text()/where prune the candidate set; only order by reweights.
   select path, back: nodes first { select p: 0^docs collect { path where ^^path in list(after) } values } from docs where type == "milestone"
   select path, prior: refs(before) collect { path, when } from docs where type == "milestone"
   from blocks order by semantic("identity preservation across edits") desc limit 10
-  from edges where dst_kind == "external" select uri
+  from links where dst_kind == "external" select uri
   docs count { where layer == "canon" }
 
 Common mistake: `$path`/`$id` (the 2.x spelling) — omgbase has no $ names; write

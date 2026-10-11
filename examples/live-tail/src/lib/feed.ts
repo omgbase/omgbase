@@ -11,7 +11,7 @@
 // `title`/`updated_at` on ≥ 3.0, `$path`/`$title`/`$updated_at` before):
 //   changes_since → { digests: [{ commit, seq, ts, origin, actor, summary, revisions: [{ doc, path, contentHash }] }], cursor, truncated, head }
 //   docs_history  → { docs: [{ docId, path, deleted, currentRev, versions: [{ rev, seq, commit, ts, origin, actor, contentHash, isCurrent }] }], truncated }
-//   diff_unified  → { doc, path, from, to, diff }
+//   diff_unified  → { doc, path, from, to, diff }   (the tool is `docs_diff_unified` on 3.0)
 //   docs_read_at  → { path, docId, rev, content, … }
 
 import { attr, hitId, hitPath, rooted } from "./paths.ts";
@@ -416,7 +416,7 @@ export function createdDiff(content: string): string {
 export type DiffLineKind = "hunk" | "add" | "del" | "ctx";
 
 /** Classify a unified-diff line by its first character (no file header is
- * ever present: `diff_unified` emits hunks only). */
+ * ever present: `docs_diff_unified` — `diff_unified` before 3.0 — emits hunks only). */
 export function diffLineKind(line: string): DiffLineKind {
   if (line.startsWith("@@")) return "hunk";
   if (line.startsWith("+")) return "add";

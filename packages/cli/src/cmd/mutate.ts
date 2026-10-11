@@ -237,7 +237,7 @@ async function runRm(cli: Cli, args: string[]): Promise<number> {
   return runOps(cli, ws, repo, [op], actorOf(values));
 }
 
-// ---- done (tasks_complete) --------------------------------------------------
+// ---- done (blocks_check) --------------------------------------------------
 
 async function runDone(cli: Cli, args: string[]): Promise<number> {
   const { values, positionals } = parseArgs({
@@ -259,7 +259,7 @@ async function runDone(cli: Cli, args: string[]): Promise<number> {
   }
   const refs = expandBlockArgs(positionals);
   if (refs.length === 0) throw new CliUsageError("done requires one or more task blocks (or - for stdin)");
-  if (cli.flags.server) return runOpsRemote(cli, "tasks_complete", { blocks: refs, ...(values.undo ? { checked: false } : {}) });
+  if (cli.flags.server) return runOpsRemote(cli, "blocks_check", { ids: refs, ...(values.undo ? { checked: false } : {}) });
   const ws = cli.workspace();
   const repo = cli.repo(ws);
   const blocks = refs.map((r) => taskBlock(ws, r, block(cli, ws, repo.repoId, r)));

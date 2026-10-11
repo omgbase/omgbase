@@ -78,7 +78,7 @@ Macros expand server-side into kernel ops **within the same changeset**, and res
 
 | Macro | Expansion |
 |---|---|
-| `tasks_complete { blocks[] }` | `update(attrs: {checked:true})` per block |
+| `blocks_check { blocks[] }` | `update(attrs: {checked:true})` per block |
 | `sections_append { heading, markdown }` | `insert(to: {parent:{heading,scope:"section"}, at:"end"})` |
 | `sections_rename { heading, title, expect }` | `update(heading block markdown)` |
 | `sections_move { heading, to }` | `move(range resolved from section)` |
@@ -103,7 +103,7 @@ Every conflict is a typed error **carrying current truth** so the caller can ret
 }
 ```
 
-The `current` payload is op-specific: `checkContentHash` throws `{ hash, markdown }` (the block's current hash under the row rule of `spec/surface` §1.2; the caller's argument is still echoed as `expected_content_hash`); a `parent_children_hash` mismatch carries `{ parent_children_hash }`; the whole-document planner's `stale_plan` carries `{ revision, hash }` (`ops.ts`, `plan-update.ts`). A **missing** `expect.content_hash` (not just a mismatched one) throws `stale_expectation` with the same `{ hash, markdown }` `current` payload and `retriable: true`, so an op that omitted the CAS token is retriable straight from the error — no separate hydration read. (Better still, ask for it up front: `docs_read`/`docs_get_many` with `include_ids:true` return a `hashes` map giving every block's current content hash alongside its id.)
+The `current` payload is op-specific: `checkContentHash` throws `{ hash, markdown }` (the block's current hash under the row rule of `spec/surface` §1.2; the caller's argument is still echoed as `expected_content_hash`); a `parent_children_hash` mismatch carries `{ parent_children_hash }`; the whole-document planner's `stale_plan` carries `{ revision, hash }` (`ops.ts`, `plan-update.ts`). A **missing** `expect.content_hash` (not just a mismatched one) throws `stale_expectation` with the same `{ hash, markdown }` `current` payload and `retriable: true`, so an op that omitted the CAS token is retriable straight from the error — no separate hydration read. (Better still, ask for it up front: `docs_read`/`docs_read_many` with `include_ids:true` return a `hashes` map giving every block's current content hash alongside its id.)
 
 Error codes actually thrown by the write path (codes are stable per `mcp/errors.ts`): `stale_expectation`, `block_missing`, `target_missing` (anchor/placeholder not found), `parent_missing`, `doc_missing`, `cycle_move`, `not_contiguous`, `type_mismatch`, `path_taken` (`docs_create`/`docs_rename`), `ambiguous_heading` (a `{heading}` locator matching >1 heading), `node_not_editable` (a macro targeting a node with no editable block), `stale_plan` (the doc changed since the plan was computed), and `sync_conflict` (file changed on disk — retriable).
 

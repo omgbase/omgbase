@@ -7,10 +7,10 @@ import { referencePath } from "../paths.js";
 
 // Whole-document read (06 §3). The one-shot cold-start read: reconstruct a
 // document's full file bytes in a single call, so an agent can "read the guide
-// before doing anything" without a docs_outline → blocks_get_many(raw) → join
+// before doing anything" without a docs_outline → blocks_read_many(raw) → join
 // round trip. `content` is the reconstructed source (leading trivia + the
 // serialized metadata head + each top-level block raw + its trailing trivia) —
-// fences, tables, and list markers preserved verbatim, matching blocks_get raw
+// fences, tables, and list markers preserved verbatim, matching blocks_read raw
 // fidelity. `metadata` is the document's structured property bag as the ingest
 // adapter produced it: for markdown, parsed frontmatter (see docs.metadata
 // in ingest.ts); for YAML/JSON, the parsed object; other formats extract per
@@ -45,7 +45,7 @@ export interface DocsReadResult {
    * `ids` (include_ids). This is the exact value the raw `apply` kernel wants in
    * an update/split/merge/remove op's `expect.content_hash`, so a single read
    * yields both the stable ids AND the CAS tokens to mutate them — no follow-up
-   * blocks_get_many(resolution:"full") hydration round trip.
+   * blocks_read_many(resolution:"full") hydration round trip.
    */
   hashes?: Record<string, string>;
   /**

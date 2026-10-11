@@ -12,14 +12,14 @@ export const ALIAS: Record<Target, { self: string; doc: string }> = {
   docs: { self: "d", doc: "d" },
   blocks: { self: "b", doc: "d" },
   nodes: { self: "n", doc: "d" },
-  edges: { self: "e", doc: "d" },
+  links: { self: "e", doc: "d" },
 };
 
 export const FROM: Record<Target, string> = {
   docs: "docs d",
   blocks: "blocks b JOIN docs d ON d.doc_id = b.doc_id",
   nodes: "nodes n JOIN docs d ON d.doc_id = n.doc_id",
-  edges: "edges e JOIN docs d ON d.doc_id = e.src_doc",
+  links: "edges e JOIN docs d ON d.doc_id = e.src_doc",
 };
 
 /** Row columns + the owning-doc path as `__path` (matches the context roots so
@@ -28,7 +28,7 @@ export const COLS: Record<Target, string> = {
   docs: "d.*",
   blocks: "b.*, d.path AS __path",
   nodes: "n.*, d.path AS __path",
-  edges: "e.*, d.path AS __path",
+  links: "e.*, d.path AS __path",
 };
 
 /** The joined targets driven FROM the document: the same rows and columns as
@@ -38,14 +38,14 @@ export const COLS: Record<Target, string> = {
 export const FROM_BY_DOC: Record<Exclude<Target, "docs">, string> = {
   blocks: "docs d CROSS JOIN blocks b ON b.doc_id = d.doc_id",
   nodes: "docs d CROSS JOIN nodes n ON n.doc_id = d.doc_id",
-  edges: "docs d CROSS JOIN edges e ON e.src_doc = d.doc_id",
+  links: "docs d CROSS JOIN edges e ON e.src_doc = d.doc_id",
 };
 
 export const ORDER: Record<Target, string> = {
   docs: "d.path, d.doc_id",
   blocks: "d.path, b.block_id",
   nodes: "d.path, n.node_id",
-  edges: "d.path, e.edge_id",
+  links: "d.path, e.edge_id",
 };
 
 /** The live-row and repository guards of a target scan. */
@@ -54,7 +54,7 @@ export function guards(target: Target, repoId: string): { sql: string; params: u
     case "docs": return { sql: "d.repo_id = ? AND d.deleted_commit IS NULL", params: [repoId] };
     case "blocks": return { sql: "b.repo_id = ? AND b.deleted_commit IS NULL AND d.deleted_commit IS NULL", params: [repoId] };
     case "nodes": return { sql: "n.repo_id = ? AND d.deleted_commit IS NULL", params: [repoId] };
-    case "edges": return { sql: "e.repo_id = ? AND e.to_commit IS NULL AND d.deleted_commit IS NULL", params: [repoId] };
+    case "links": return { sql: "e.repo_id = ? AND e.to_commit IS NULL AND d.deleted_commit IS NULL", params: [repoId] };
   }
 }
 
@@ -65,6 +65,6 @@ export function guardsByDoc(target: Exclude<Target, "docs">, repoId: string): { 
   switch (target) {
     case "blocks": return { sql: "d.repo_id = ? AND +b.repo_id = ? AND b.deleted_commit IS NULL AND d.deleted_commit IS NULL", params: [repoId, repoId] };
     case "nodes": return { sql: "d.repo_id = ? AND +n.repo_id = ? AND d.deleted_commit IS NULL", params: [repoId, repoId] };
-    case "edges": return { sql: "d.repo_id = ? AND +e.repo_id = ? AND e.to_commit IS NULL AND d.deleted_commit IS NULL", params: [repoId, repoId] };
+    case "links": return { sql: "d.repo_id = ? AND +e.repo_id = ? AND e.to_commit IS NULL AND d.deleted_commit IS NULL", params: [repoId, repoId] };
   }
 }

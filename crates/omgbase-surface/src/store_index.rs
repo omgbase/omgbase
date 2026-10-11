@@ -1,5 +1,5 @@
 //! Store-backed equality indexes for the OQX engine (`DataContext::index_for`):
-//! when a nested block's receiver is a ROOT SCAN (`^docs`, `^edges`,
+//! when a nested block's receiver is a ROOT SCAN (`^docs`, `^links`,
 //! a bare `docs` at the root scope — a lazy [`crate::context`] marker) and its
 //! correlated or constant equality is on a column or property SQLite can look
 //! up — `where path == ^^path`, `where customer == ^path`, `where dst_id ==
@@ -90,11 +90,11 @@ fn column_probe(t: Target, key: &str) -> Option<&'static str> {
         (Target::Nodes, "kind") => "n.kind = ?",
         (Target::Nodes, "name") => "n.name = ?",
         (Target::Nodes, "path") => "d.path = ?",
-        (Target::Edges, "id") => "e.edge_id = ?",
-        (Target::Edges, "doc_id") => "e.src_doc = ?",
-        (Target::Edges, "dst_id") => "e.dst_node = ?",
-        (Target::Edges, "path") => "d.path = ?",
-        (Target::Edges, "dst_path") => {
+        (Target::Links, "id") => "e.edge_id = ?",
+        (Target::Links, "doc_id") => "e.src_doc = ?",
+        (Target::Links, "dst_id") => "e.dst_node = ?",
+        (Target::Links, "path") => "d.path = ?",
+        (Target::Links, "dst_path") => {
             "e.dst_node IN (SELECT doc_id FROM docs WHERE repo_id = ?r AND path = ?)"
         }
         _ => return None,
@@ -146,7 +146,7 @@ pub fn indexable_paths(t: Target) -> &'static [&'static str] {
         Target::Docs => &["id", "path", "title", "<property key>"],
         Target::Blocks => &["id", "doc_id", "type", "path"],
         Target::Nodes => &["id", "doc_id", "kind", "name", "path"],
-        Target::Edges => &["id", "doc_id", "dst_id", "path", "dst_path"],
+        Target::Links => &["id", "doc_id", "dst_id", "path", "dst_path"],
     }
 }
 

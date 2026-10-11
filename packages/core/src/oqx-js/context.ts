@@ -28,7 +28,7 @@ import { ctxHashHex } from "../search/embeddings.js";
 import { makeBlockContextResolver, type BlockContextResolver } from "../search/tasks.js";
 import type { SemanticVec } from "../search/cel/compile.js";
 
-export type Target = "docs" | "blocks" | "nodes" | "edges";
+export type Target = "docs" | "blocks" | "nodes" | "links";
 
 const TARGET = Symbol("oqx.target");
 type Row = Record<string, unknown> & { [TARGET]?: Target };
@@ -67,7 +67,7 @@ function tagAll(rows: Record<string, unknown>[], t: Target): Row[] {
 // authored title. There is no loud-error set: a bare `id`/`path`/`updated_at`/
 // `hash`/`raw` is simply the engine's attribute (before this batch of 3.0 the
 // attributes were `$`-prefixed and the bare spelling was an error, §9). A bare
-// target name — `docs`, `edges`, … — is a loud error of its own (root-row.ts).
+// target name — `docs`, `links`, … — is a loud error of its own (root-row.ts).
 const DOC_ATTRIBUTES = new Set(["id", "path", "raw", "hash", "updated_at", "title", "tags", "format"]);
 const BLOCK_ATTRIBUTES = new Set(["id", "path", "raw", "hash", "updated_at", "doc_id", "type", "text", "attrs", "depth", "ordinal"]);
 const NODE_ATTRIBUTES = new Set(["id", "path", "doc_id", "block_id", "kind", "name", "value", "attrs"]);
@@ -75,7 +75,7 @@ const EDGE_ATTRIBUTES = new Set(["id", "path", "doc_id", "block_id", "via_id", "
 /** The engine attributes per kind (spec/surface §1.2 table). Exported so the
  * translator's tests pin the two against each other. */
 export const ATTRIBUTES: Readonly<Record<Target, ReadonlySet<string>>> = {
-  docs: DOC_ATTRIBUTES, blocks: BLOCK_ATTRIBUTES, nodes: NODE_ATTRIBUTES, edges: EDGE_ATTRIBUTES,
+  docs: DOC_ATTRIBUTES, blocks: BLOCK_ATTRIBUTES, nodes: NODE_ATTRIBUTES, links: EDGE_ATTRIBUTES,
 };
 /** The source handles of a document (§1.2): `data` is the merged authored view
  * (frontmatter + inline), the other two one source each. */
@@ -117,7 +117,7 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
   // iteration, indexing, `length`, rendering all see a plain array of tagged
   // rows) that runs its SELECT on first use. The engine's optimizer asks
   // `indexFor` about a nested block's receiver BEFORE reading it, so a
-  // correlated probe on `^docs` / `^edges` / … is answered from the
+  // correlated probe on `^docs` / `^links` / … is answered from the
   // store's indexes (store-index.ts) and the scan never runs; anything else
   // (a top-level `from docs`, a `count { }`, a non-indexable path) reads it
   // whole exactly as before. One handle per target per context: a context lives
@@ -156,7 +156,7 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
   };
 
   const rootFns: Record<string, () => Row[]> = {
-    docs: () => lazyRoot("docs"), blocks: () => lazyRoot("blocks"), nodes: () => lazyRoot("nodes"), edges: () => lazyRoot("edges"),
+    docs: () => lazyRoot("docs"), blocks: () => lazyRoot("blocks"), nodes: () => lazyRoot("nodes"), links: () => lazyRoot("links"),
   };
   // The root row (spec/surface §1.1, 2.0; spec/oqx 0.18 `rootObject`): the
   // repository, reached as `^$it` from a top-level row (`0^$it` from any depth).
@@ -168,7 +168,7 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
     docs: { enumerable: true, get: () => lazyRoot("docs") },
     blocks: { enumerable: true, get: () => lazyRoot("blocks") },
     nodes: { enumerable: true, get: () => lazyRoot("nodes") },
-    edges: { enumerable: true, get: () => lazyRoot("edges") },
+    links: { enumerable: true, get: () => lazyRoot("links") },
   });
 
   // ---- attrs / property decoding --------------------------------------------
@@ -312,15 +312,15 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
       in: (r) => tagAll(all(
         `SELECT DISTINCT d2.* FROM docs d2 JOIN edges e ON e.src_doc = d2.doc_id
          WHERE e.dst_node = ? AND e.to_commit IS NULL AND d2.repo_id = ? AND d2.deleted_commit IS NULL ORDER BY d2.path, d2.doc_id`, r.doc_id, repoId), "docs"),
-      out_edges: (r) => tagAll(all(`SELECT e.*, ? AS __path FROM edges e WHERE e.src_doc = ? AND e.to_commit IS NULL ORDER BY e.predicate, e.edge_id`, r.path, r.doc_id), "edges"),
-      in_edges: (r) => tagAll(all(
+      out_links: (r) => tagAll(all(`SELECT e.*, ? AS __path FROM edges e WHERE e.src_doc = ? AND e.to_commit IS NULL ORDER BY e.predicate, e.edge_id`, r.path, r.doc_id), "links"),
+      in_links: (r) => tagAll(all(
         `SELECT e.*, d.path AS __path FROM edges e JOIN docs d ON d.doc_id = e.src_doc
-         WHERE e.dst_node = ? AND e.to_commit IS NULL AND d.deleted_commit IS NULL ORDER BY e.predicate, e.edge_id`, r.doc_id), "edges"),
+         WHERE e.dst_node = ? AND e.to_commit IS NULL AND d.deleted_commit IS NULL ORDER BY e.predicate, e.edge_id`, r.doc_id), "links"),
     },
     blocks: {
       children: (r) => tagAll(all(`SELECT b.*, ? AS __path FROM blocks b WHERE b.parent_block = ? AND b.deleted_commit IS NULL ORDER BY b.ordinal, b.block_id`, r.__path, r.block_id), "blocks"),
       nodes: (r) => tagAll(all(`SELECT n.*, ? AS __path FROM nodes n WHERE n.block_id = ? ORDER BY n.span_start, n.node_id`, r.__path, r.block_id), "nodes"),
-      out_edges: (r) => tagAll(all(`SELECT e.*, ? AS __path FROM edges e WHERE e.src_block = ? AND e.to_commit IS NULL ORDER BY e.predicate, e.edge_id`, r.__path, r.block_id), "edges"),
+      out_links: (r) => tagAll(all(`SELECT e.*, ? AS __path FROM edges e WHERE e.src_block = ? AND e.to_commit IS NULL ORDER BY e.predicate, e.edge_id`, r.__path, r.block_id), "links"),
       // enclosing section node(s): md:section whose range contains this block's top ordinal.
       section: (r) => {
         const top = topOrdinal(r);
@@ -364,7 +364,7 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
           r.__path, r.doc_id, lvl, f, l, lvl), "nodes");
       },
     },
-    edges: {},
+    links: {},
   };
 
   const jattr = (row: Row, k: string): unknown => {
@@ -477,7 +477,7 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
       case "value": return row.value;
       case "attrs": return parseJson(row.attrs);
     }
-    if (t === "edges") switch (name) {
+    if (t === "links") switch (name) {
       // the store's columns under the surface's names (spec/surface §1.2).
       case "id": return row.edge_id;
       case "path": return referencePath(String(row.__path));
@@ -558,7 +558,7 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
     if (rels[key]) return rels[key]!(r);
     // A bare target name that is not one of this row's relations reads a
     // property the row has none of (spec/surface §1.1, 2.0): loud, naming the
-    // root-row spelling. `docs`/`edges` never get here (run.ts refuses them
+    // root-row spelling. `docs`/`links` never get here (run.ts refuses them
     // statically); `blocks` on a block or edge row and `nodes` on a node or
     // edge row do.
     if (TARGETS.has(key)) throw new FilterInvalid(bareTargetMessage(key, null), "OQX");
@@ -617,7 +617,7 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
   };
 
   const textMatch = (t: Target | undefined, r: Row, terms: string): boolean => {
-    if (t === "edges") throw new FilterInvalid("text(...) is not available on the edges target", "10 §5");
+    if (t === "links") throw new FilterInvalid("text(...) is not available on the links target", "10 §5");
     const match = sanitizeFtsQuery(terms);
     if (match === "") return false;
     if (t === "docs") return !!one(`SELECT 1 FROM blocks_fts JOIN blocks b ON b.rowid = blocks_fts.rowid WHERE b.doc_id = ? AND blocks_fts MATCH ? LIMIT 1`, r.doc_id, match);
@@ -638,7 +638,7 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
     return one(`SELECT vec FROM embeddings WHERE content_hash = ? AND ctx_hash = ? AND model = ?`, r.raw_hash, Buffer.from(ctxHashHex(ctx), "hex"), model);
   };
   const semanticScore = (t: Target | undefined, r: Row, phrase: string): number | null => {
-    if (t === "nodes" || t === "edges") throw new FilterInvalid("semantic(...) is available on the docs and blocks targets", "OQX semantic");
+    if (t === "nodes" || t === "links") throw new FilterInvalid("semantic(...) is available on the docs and blocks targets", "OQX semantic");
     const resolved = sv?.get(phrase);
     if (!resolved) throw new FilterInvalid(`semantic(${JSON.stringify(phrase)}) needs an embedding provider; none is configured for this query`, "OQX semantic");
     const row = t === "docs"
@@ -723,7 +723,7 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
     if (t === "docs") return (row as Row).doc_id;
     if (t === "blocks") return (row as Row).block_id;
     if (t === "nodes") return (row as Row).node_id;
-    if (t === "edges") return (row as Row).edge_id;
+    if (t === "links") return (row as Row).edge_id;
     return row;
   };
 

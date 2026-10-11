@@ -68,12 +68,6 @@ export function docLocator(ref: string): { id: string } | { path: string } {
   return isValidId(ref, "d") ? { id: ref } : { path: ref };
 }
 
-/** The same document as a FOREIGN reference from a tool whose rows are not
- *  documents (`diff`, `diff_unified`): `doc_id` / `doc_path`. */
-export function docForeign(ref: string): { doc_id: string } | { doc_path: string } {
-  return isValidId(ref, "d") ? { doc_id: ref } : { doc_path: ref };
-}
-
 /** The live document a ref names, for a LOCAL verb, or the surface's own
  *  `doc_missing` ("no document with id or path "<ref>"", `data` the locator) —
  *  the same wording the `docs_*` tools give a remote caller (spec/surface §4

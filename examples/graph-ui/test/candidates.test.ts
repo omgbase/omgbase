@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { parse } from "@omgbase/oqx";
-import { detectPairs, inferCandidates, pairName, pathValuedFields, reciprocal, refsField, relationKind } from "../src/lib/candidates.ts";
+import { STRUCTURAL_RELATIONS, detectPairs, inferCandidates, linkRowsReceiver, pairName, pathValuedFields, reciprocal, refsField, relationKind } from "../src/lib/candidates.ts";
 
 const TIMELINE = `select $path, title, before, after
 from docs
@@ -28,16 +28,51 @@ describe("inferCandidates", () => {
     expect(c[0]!.defaults.layout).toBe(true);
   });
 
-  it("reads src_field literals under in_edges / out_edges", () => {
+  it("reads src_field literals under in_edges / out_edges (the pre-3.0 spelling of the link rows)", () => {
     const q = parse(`$path from docs where $path == "a.md" follow $repo.docs collect { where doc.in_edges exists { where src_field == "before" && $path == ^^$path } }`);
     expect(inferCandidates(q, []).map((x) => [x.name, x.defaults.direction])).toEqual([["before", "forward"]]);
     const q2 = parse(`$path from docs where $path == "a.md" follow $repo.docs collect { where doc.out_edges exists { where predicate == "after" && $dst_path == ^^$path } }`);
     expect(inferCandidates(q2, []).map((x) => [x.name, x.defaults.direction])).toEqual([["after", "backward"]]);
-    // Surface 3.0 spells the authored field `field` and the destination path `dst_path` (spec/surface §1.2): the same reading.
+    // The field `field` and the destination path `dst_path` (spec/surface §1.2): the same reading.
     const q3 = parse(`$path from docs where $path == "a.md" follow ^docs collect { where doc.in_edges exists { where field == "before" && $path == ^^$path } }`);
     expect(inferCandidates(q3, []).map((x) => [x.name, x.defaults.direction])).toEqual([["before", "forward"]]);
     const q4 = parse(`$path from docs where $path == "a.md" follow ^docs collect { where doc.out_edges exists { where predicate == "after" && dst_path == ^^$path } }`);
     expect(inferCandidates(q4, []).map((x) => [x.name, x.defaults.direction])).toEqual([["after", "backward"]]);
+    // The whole scan, `$repo.edges` (1.x) and `^edges` (2.0), with a bare `predicate` literal.
+    const q5 = parse(`$path from docs where $path == "a.md" follow $repo.docs collect { where $repo.edges exists { where predicate == "owner" && $dst_path == ^^$path } }`);
+    expect(inferCandidates(q5, []).map((x) => [x.name, x.defaults.direction])).toEqual([["owner", "forward"]]);
+    const q6 = parse(`$path from docs where $path == "a.md" follow ^docs collect { where ^^edges exists { where predicate == "owner" && $dst_path == ^^$path } }`);
+    expect(inferCandidates(q6, []).map((x) => [x.name, x.defaults.direction])).toEqual([["owner", "forward"]]);
+  });
+
+  it("reads the same literals under the 3.0 spellings in_links / out_links / ^links (spec/surface §1.1) — both generations are accepted, the server decides which is valid", () => {
+    const q = parse(`path from docs where path == "a.md" follow ^docs collect { where doc.in_links exists { where field == "before" && path == ^^path } }`);
+    expect(inferCandidates(q, []).map((x) => [x.name, x.defaults.direction])).toEqual([["before", "forward"]]);
+    const q2 = parse(`path from docs where path == "a.md" follow ^docs collect { where doc.out_links exists { where predicate == "after" && dst_path == ^^path } }`);
+    expect(inferCandidates(q2, []).map((x) => [x.name, x.defaults.direction])).toEqual([["after", "backward"]]);
+    const q3 = parse(`path from docs where path == "a.md" follow ^docs collect { where $it.in_links exists { where field == "before" } }`);
+    expect(inferCandidates(q3, []).map((x) => [x.name, x.defaults.direction])).toEqual([["before", "forward"]]);
+    const q4 = parse(`path from docs where path == "a.md" follow ^docs collect { where ^^links exists { where predicate == "owner" && dst_path == ^^path } }`);
+    expect(inferCandidates(q4, []).map((x) => [x.name, x.defaults.direction])).toEqual([["owner", "forward"]]);
+    // `in`/`out` walk to documents, not link rows: a literal under them names nothing.
+    const q5 = parse(`path from docs where path == "a.md" follow ^docs collect { where doc.out exists { where field == "x" } }`);
+    expect(inferCandidates(q5, [])).toEqual([]);
+  });
+
+  it("linkRowsReceiver / STRUCTURAL_RELATIONS know both spellings of the link rows", () => {
+    expect(linkRowsReceiver("doc.in_links")).toBe("in");
+    expect(linkRowsReceiver("doc.in_edges")).toBe("in");
+    expect(linkRowsReceiver("$it.out_links")).toBe("out");
+    expect(linkRowsReceiver("out_edges")).toBe("out");
+    expect(linkRowsReceiver("^links")).toBe("all");
+    expect(linkRowsReceiver("^^edges")).toBe("all");
+    expect(linkRowsReceiver("$repo.edges")).toBe("all");
+    expect(linkRowsReceiver("links")).toBe("all");
+    expect(linkRowsReceiver("doc.out")).toBeNull();
+    expect(linkRowsReceiver("doc.in")).toBeNull();
+    expect(linkRowsReceiver("my_links")).toBeNull();
+    expect(linkRowsReceiver("")).toBeNull();
+    for (const r of ["in_links", "out_links", "in_edges", "out_edges", "in", "out"]) expect(STRUCTURAL_RELATIONS.has(r), r).toBe(true);
   });
 
   it("maps plain destinations: doc.out → links, doc.in → backlinks, a bare name → frontmatter", () => {

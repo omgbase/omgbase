@@ -112,7 +112,7 @@ describe("doc-level: new / meta / mv / rm --doc", () => {
     expect(existsSync(join(vault, "notes/fresh.md"))).toBe(true);
 
     omg(["meta", "notes/fresh.md", "--set", "status=active", "--set", "priority=3"]);
-    // `show --json` on a document is the `read_ref` result: properties grouped by source.
+    // `show --json` on a document is the docs_read result tagged `kind: "document"`: properties grouped by source.
     const meta = JSON.parse(omg(["show", "notes/fresh.md", "--json"])) as { kind: string; properties: { frontmatter: Record<string, unknown> } };
     expect(meta.kind).toBe("document");
     expect(meta.properties.frontmatter.status).toBe("active");

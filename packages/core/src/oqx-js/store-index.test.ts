@@ -73,14 +73,14 @@ describe("store-backed indexes for correlated blocks over a root scan", () => {
     expect(ctx.indexFor!(docs, ["raw"])).toBeUndefined(); // an attribute without an index, never a property probe
     expect(ctx.indexFor!(docs, ["data"])).toBeUndefined(); // a source handle
     expect(ctx.indexFor!(docs, ["meta", "id"])).toBeUndefined(); // multi-segment
-    expect(ctx.indexFor!(ctx.root("edges"), ["dst_id"])).toBeDefined(); // a bare root at the root scope
-    expect(ctx.indexFor!(ctx.get(repo, "edges"), ["predicate"])).toBeUndefined(); // no leading index
+    expect(ctx.indexFor!(ctx.root("links"), ["dst_id"])).toBeDefined(); // a bare root at the root scope
+    expect(ctx.indexFor!(ctx.get(repo, "links"), ["predicate"])).toBeUndefined(); // no leading index
     expect(ctx.indexFor!(ctx.get(repo, "blocks"), ["doc_id"])).toBeDefined();
     expect(ctx.indexFor!(ctx.get(repo, "nodes"), ["name"])).toBeDefined();
     // a relation's rows are an ordinary array: the engine indexes those itself
     const index = ctx.get((docs as unknown[])[0], "out");
     expect(ctx.indexFor!(index, ["path"])).toBeUndefined();
-    expect(indexablePaths("edges")).toEqual(["id", "doc_id", "dst_id", "path", "dst_path"]);
+    expect(indexablePaths("links")).toEqual(["id", "doc_id", "dst_id", "path", "dst_path"]);
   });
 
   it("a correlated block over ^docs probes SQLite per outer row and never runs the docs scan", () => {
@@ -110,7 +110,7 @@ describe("store-backed indexes for correlated blocks over a root scan", () => {
 
   it("an edges-target correlated block is answered from idx_edges_dst; blocks from idx_blocks_doc; nodes from idx_nodes_kind", () => {
     const cases: [string, RegExp][] = [
-      ['select path, inbound: ^edges collect { doc_id values where dst_id == ^id } from docs', /e\.dst_node = \? ORDER BY/],
+      ['select path, inbound: ^links collect { doc_id values where dst_id == ^id } from docs', /e\.dst_node = \? ORDER BY/],
       ['select id, paragraphs: ^blocks collect { ordinal values where doc_id == ^doc_id && type == "paragraph" } from blocks where type == "heading"', /b\.doc_id = \? ORDER BY/],
       ['select name, same_kind: ^nodes collect { name values where kind == ^kind && doc_id == ^doc_id } from nodes where kind == "md:section"', /n\.kind = \? ORDER BY/],
     ];
@@ -185,7 +185,7 @@ describe("foreign-key elimination (spec/surface §1, 3.0) — the owner's identi
   const blockLoad = /^SELECT b\.\*, d\.path AS __path FROM blocks b JOIN docs d ON d\.doc_id = b\.doc_id WHERE b\.block_id = \?$/;
 
   it("doc.id / doc.path on blocks and edges read the row's own columns; doc.<column> still loads the document", () => {
-    for (const target of ["blocks", "edges"]) {
+    for (const target of ["blocks", "links"]) {
       const q = `select a: doc.id, b: doc_id, c: doc.path, d: path from ${target}`;
       let out!: { result: OqxResult; events: TraceEvent[] };
       const sql = prepared(store, () => { out = engineRun(store, repoId, q); });

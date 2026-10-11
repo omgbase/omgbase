@@ -15,7 +15,7 @@ const peers = {
 const calls = [
   ["docs_tree", { depth: 2 }],
   ["docs_list", { limit: 200 }],
-  ["text_search", { q: "crucible tincture", limit: 20 }],
+  ["blocks_search", { q: "crucible tincture", limit: 20 }],
   ["query", { query: 'select path, type from docs where path.startsWith("journal/") order by path desc', limit: 50 }],
   ["query", { query: "select path, text from blocks where checked == false", limit: 50 }],
   ["query", { query: 'select path, text from blocks where type == "task"', limit: 50 }],

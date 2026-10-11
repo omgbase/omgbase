@@ -70,18 +70,18 @@ pub enum Target {
     Docs,
     Blocks,
     Nodes,
-    Edges,
+    Links,
 }
 
 impl Target {
-    /// The root name: `docs` | `blocks` | `nodes` | `edges`.
+    /// The root name: `docs` | `blocks` | `nodes` | `links`.
     #[must_use]
     pub fn as_str(self) -> &'static str {
         match self {
             Target::Docs => "docs",
             Target::Blocks => "blocks",
             Target::Nodes => "nodes",
-            Target::Edges => "edges",
+            Target::Links => "links",
         }
     }
 
@@ -92,7 +92,7 @@ impl Target {
             "docs" => Target::Docs,
             "blocks" => Target::Blocks,
             "nodes" => Target::Nodes,
-            "edges" => Target::Edges,
+            "links" => Target::Links,
             _ => return None,
         })
     }
@@ -118,7 +118,7 @@ impl Target {
 /// There is no loud-error set: a bare `id`/`path`/`updated_at`/`hash`/`raw`
 /// is simply the engine's attribute (before this batch of 3.0 the attributes
 /// were `$`-prefixed and the bare spelling was an error, §9). A bare target
-/// name — `docs`, `edges`, … — is a loud error of its own (`crate::query`).
+/// name — `docs`, `links`, … — is a loud error of its own (`crate::query`).
 const DOC_ATTRIBUTES: [&str; 8] = [
     "id",
     "path",
@@ -167,7 +167,7 @@ pub fn attributes(t: Target) -> &'static [&'static str] {
         Target::Docs => &DOC_ATTRIBUTES,
         Target::Blocks => &BLOCK_ATTRIBUTES,
         Target::Nodes => &NODE_ATTRIBUTES,
-        Target::Edges => &EDGE_ATTRIBUTES,
+        Target::Links => &EDGE_ATTRIBUTES,
     }
 }
 /// The source handles of a document (§1.2): `data` is the merged authored
@@ -316,7 +316,7 @@ fn scan_marker(t: Target) -> Value {
 }
 
 /// The four targets, in the order the root object lists them.
-const ALL_TARGETS: [Target; 4] = [Target::Docs, Target::Blocks, Target::Nodes, Target::Edges];
+const ALL_TARGETS: [Target; 4] = [Target::Docs, Target::Blocks, Target::Nodes, Target::Links];
 
 /// Whether `row` is the root object ([`StoreContext::root_object`]): a plain
 /// object whose own keys are exactly the four collections, each the lazy
@@ -377,7 +377,7 @@ pub fn render_row_values(v: Value) -> Value {
                     Target::Docs => ("doc_id", "path"),
                     Target::Blocks => ("block_id", "__path"),
                     Target::Nodes => ("node_id", "__path"),
-                    Target::Edges => ("edge_id", "__path"),
+                    Target::Links => ("edge_id", "__path"),
                 };
                 let mut out = Object::with_capacity(2);
                 out.insert(crate::query::HIT_ID, Value::Str(col_str(&row, id_col)));
@@ -651,7 +651,7 @@ impl<'a> StoreContext<'a> {
                 "SELECT n.*, d.path AS __path FROM docs d CROSS JOIN nodes n ON n.doc_id = d.doc_id
                  WHERE d.repo_id = ?1 AND +n.repo_id = ?1 AND d.deleted_commit IS NULL ORDER BY d.path, n.node_id"
             }
-            Target::Edges => {
+            Target::Links => {
                 "SELECT e.*, d.path AS __path FROM docs d CROSS JOIN edges e ON e.src_doc = d.doc_id
                  WHERE d.repo_id = ?1 AND +e.repo_id = ?1 AND e.to_commit IS NULL AND d.deleted_commit IS NULL
                  ORDER BY d.path, e.edge_id"
@@ -930,20 +930,20 @@ impl<'a> StoreContext<'a> {
                 )?,
                 Target::Docs,
             ),
-            (Target::Docs, "out_edges") => Self::tag_all(
+            (Target::Docs, "out_links") => Self::tag_all(
                 self.all(
                     "SELECT e.*, ?1 AS __path FROM edges e WHERE e.src_doc = ?2 AND e.to_commit IS NULL ORDER BY e.predicate, e.edge_id",
                     &[doc_path(), doc_id()],
                 )?,
-                Target::Edges,
+                Target::Links,
             ),
-            (Target::Docs, "in_edges") => Self::tag_all(
+            (Target::Docs, "in_links") => Self::tag_all(
                 self.all(
                     "SELECT e.*, d.path AS __path FROM edges e JOIN docs d ON d.doc_id = e.src_doc
                      WHERE e.dst_node = ?1 AND e.to_commit IS NULL AND d.deleted_commit IS NULL ORDER BY e.predicate, e.edge_id",
                     &[doc_id()],
                 )?,
-                Target::Edges,
+                Target::Links,
             ),
             (Target::Blocks, "children") => Self::tag_all(
                 self.all(
@@ -959,12 +959,12 @@ impl<'a> StoreContext<'a> {
                 )?,
                 Target::Nodes,
             ),
-            (Target::Blocks, "out_edges") => Self::tag_all(
+            (Target::Blocks, "out_links") => Self::tag_all(
                 self.all(
                     "SELECT e.*, ?1 AS __path FROM edges e WHERE e.src_block = ?2 AND e.to_commit IS NULL ORDER BY e.predicate, e.edge_id",
                     &[path(), block_id()],
                 )?,
-                Target::Edges,
+                Target::Links,
             ),
             (Target::Blocks, "section") => {
                 let top = to_sql(&self.top_ordinal(row)?);
@@ -1152,10 +1152,10 @@ impl<'a> StoreContext<'a> {
                         | "doc"
                         | "children"
                         | "nodes"
-                        | "out_edges"
+                        | "out_links"
                 ) && Target::parse(key).is_none()
             }
-            Target::Nodes | Target::Edges => true,
+            Target::Nodes | Target::Links => true,
         }
     }
 
@@ -1258,25 +1258,25 @@ impl<'a> StoreContext<'a> {
             (Target::Nodes, "block_id") => Self::null_if_absent(c("block_id")),
             // edges: the store's columns under the surface's names (a foreign
             // key is named for what it is, the `src_field` column is `field`).
-            (Target::Edges, "id") => c("edge_id"),
-            (Target::Edges, "path") => rooted("__path"),
-            (Target::Edges, "doc_id") => c("src_doc"),
-            (Target::Edges, "block_id") => Self::null_if_absent(c("src_block")),
-            (Target::Edges, "via_id") => Self::null_if_absent(c("via_node")),
-            (Target::Edges, "dst_id") => c("dst_node"),
-            (Target::Edges, "dst_path") => match self.scalar(
+            (Target::Links, "id") => c("edge_id"),
+            (Target::Links, "path") => rooted("__path"),
+            (Target::Links, "doc_id") => c("src_doc"),
+            (Target::Links, "block_id") => Self::null_if_absent(c("src_block")),
+            (Target::Links, "via_id") => Self::null_if_absent(c("via_node")),
+            (Target::Links, "dst_id") => c("dst_node"),
+            (Target::Links, "dst_path") => match self.scalar(
                 "SELECT path FROM docs WHERE doc_id = ?1",
                 &[to_sql(&c("dst_node"))],
             )? {
                 Value::Undefined | Value::Null => Value::Null,
                 p => Value::Str(reference_path(&js_string(&p))),
             },
-            (Target::Edges, "uri") => Self::null_if_absent(self.scalar(
+            (Target::Links, "uri") => Self::null_if_absent(self.scalar(
                 "SELECT uri FROM external_nodes WHERE node_id = ?1",
                 &[to_sql(&c("dst_node"))],
             )?),
-            (Target::Edges, "field") => Self::null_if_absent(c("src_field")),
-            (Target::Edges, "predicate" | "provenance" | "dst_kind" | "anchor") => c(name),
+            (Target::Links, "field") => Self::null_if_absent(c("src_field")),
+            (Target::Links, "predicate" | "provenance" | "dst_kind" | "anchor") => c(name),
             _ => Value::Undefined,
         })
     }
@@ -1456,9 +1456,9 @@ impl<'a> StoreContext<'a> {
     }
 
     fn text_match(&self, t: Target, row: &Value, terms: &str) -> oqx::Result<Value> {
-        if t == Target::Edges {
+        if t == Target::Links {
             return Err(OqxError::eval(
-                "text(...) is not available on the edges target",
+                "text(...) is not available on the links target",
             ));
         }
         let m = sanitize_fts_query(terms);
@@ -1516,7 +1516,7 @@ impl<'a> StoreContext<'a> {
     }
 
     fn semantic_score(&self, t: Target, row: &Value, phrase: &str) -> oqx::Result<Value> {
-        if matches!(t, Target::Nodes | Target::Edges) {
+        if matches!(t, Target::Nodes | Target::Links) {
             return Err(OqxError::eval(
                 "semantic(...) is available on the docs and blocks targets",
             ));
@@ -1693,7 +1693,7 @@ impl DataContext for StoreContext<'_> {
         }
         // A bare target name that is not one of this row's relations reads a
         // property the row has none of (`spec/surface` §1.1, 2.0): loud, naming
-        // the root-row spelling. `docs`/`edges` never get here (the runner
+        // the root-row spelling. `docs`/`links` never get here (the runner
         // refuses them statically); `blocks` on a block or edge row and `nodes`
         // on a node or edge row do. The reference throws from `get` too.
         if let Some(named) = Target::parse(key) {
@@ -1719,7 +1719,7 @@ impl DataContext for StoreContext<'_> {
             // `attrs.<k>` (the attributes above win on collision); an absent
             // key is undefined, matching a doc's missing frontmatter key.
             Target::Blocks | Target::Nodes => Self::jattr(row, key),
-            Target::Edges => Value::Undefined,
+            Target::Links => Value::Undefined,
         })
     }
 
@@ -1756,7 +1756,7 @@ impl DataContext for StoreContext<'_> {
             Some(Target::Docs) => col(row, "doc_id").clone(),
             Some(Target::Blocks) => col(row, "block_id").clone(),
             Some(Target::Nodes) => col(row, "node_id").clone(),
-            Some(Target::Edges) => col(row, "edge_id").clone(),
+            Some(Target::Links) => col(row, "edge_id").clone(),
             None => row.clone(),
         }
     }
@@ -1829,7 +1829,7 @@ impl DataContext for StoreContext<'_> {
                 | "child_count"
                 | "parent_type"
         ) {
-            return Self::filter_invalid(format!("{name}() needs a docs/blocks/nodes/edges row"));
+            return Self::filter_invalid(format!("{name}() needs a docs/blocks/nodes/links row"));
         }
         if name == "matches" {
             if let Some(r) = self.matches_memoized(recv, args) {
@@ -1901,7 +1901,7 @@ mod tests {
         // An id column that is not a string still renders as its string form.
         let mut edge = Object::new();
         edge.insert("edge_id", Value::Number(7.0));
-        let e = render_row_values(tag_row(edge, Target::Edges));
+        let e = render_row_values(tag_row(edge, Target::Links));
         assert_eq!(
             e.as_object().unwrap().get("id"),
             Some(&Value::Str("7".into()))

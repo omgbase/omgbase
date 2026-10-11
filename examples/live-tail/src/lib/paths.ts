@@ -50,10 +50,9 @@ export function attr(surface: string | null, name: "id" | "path" | "title" | "up
   return bareAttributes(surface) ? name : `$${name}`;
 }
 
-/** The `/`-rooted form: exactly one leading slash. Idempotent. */
 /** Does the server take the 3.0 argument names (`spec/surface` §4 "Arguments":
- * a `docs_*` tool addresses its document by `id` or `path`, a foreign
- * reference by `doc_id`/`doc_path`; `doc` is gone)? Before 3.0 every document
+ * a `docs_*` tool addresses its document by `id` or `path`; `doc` is gone, and
+ * no tool takes a foreign `doc_id`/`doc_path`)? Before 3.0 every document
  * argument was `doc` (id-or-path). An unknown version is taken as 2.x. */
 export function bareArguments(surface: string | null): boolean {
   return (surfaceMajor(surface) ?? 1) >= 3;
@@ -62,19 +61,23 @@ export function bareArguments(surface: string | null): boolean {
 const DOC_ID = /^d_[0-9a-z]{1,7}$/;
 
 /** A document ref (an id or a path) as the arguments a `docs_*` tool takes on
- * the connected server: `{ id }` / `{ path }` on ≥ 3.0, `{ doc }` before. */
+ * the connected server: `{ id }` / `{ path }` on ≥ 3.0, `{ doc }` before. The
+ * unified diff's document is one of these too (`docs_diff_unified { id? | path?
+ * }` on 3.0, `diff_unified { doc }` before — `diffUnifiedTool`). */
 export function docLocator(surface: string | null, doc: string): Record<string, string> {
   if (!bareArguments(surface)) return { doc };
   return DOC_ID.test(doc) ? { id: doc } : { path: doc };
 }
 
-/** The same document as a FOREIGN reference (`diff_unified`): `{ doc_id }` /
- * `{ doc_path }` on ≥ 3.0, `{ doc }` before. */
-export function docForeign(surface: string | null, doc: string): Record<string, string> {
-  if (!bareArguments(surface)) return { doc };
-  return DOC_ID.test(doc) ? { doc_id: doc } : { doc_path: doc };
+/** The unified-diff tool's name on the connected server (spec/surface §3–§4):
+ * `docs_diff_unified` on ≥ 3.0 — a `docs_*` tool, its document `id`/`path` —
+ * and `diff_unified` before (its document `doc`). An unknown version is taken
+ * as 2.x, like the arguments. */
+export function diffUnifiedTool(surface: string | null): "docs_diff_unified" | "diff_unified" {
+  return bareArguments(surface) ? "docs_diff_unified" : "diff_unified";
 }
 
+/** The `/`-rooted form: exactly one leading slash. Idempotent. */
 export function rooted(path: string): string {
   return `/${path.replace(/^\/+/, "")}`;
 }

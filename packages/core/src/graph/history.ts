@@ -97,7 +97,7 @@ function blocksAtRevision(store: Store, docId: string, revId: string): Map<strin
 }
 
 /**
- * `diff_unified` (spec/surface §3): a unified diff of the two revisions'
+ * `docs_diff_unified` (spec/surface §3): a unified diff of the two revisions'
  * **reconstructed file text** — exactly the bytes `docs_read_at` returns for
  * each revision ({@link readDocumentAtRevision}: frontmatter, trivia and
  * top-level order included) — via {@link unifiedDiff}, so hunk line numbers
@@ -115,7 +115,7 @@ export function diffUnified(store: Store, docId: string, fromRev: string, toRev:
   return unifiedDiff(rendered(fromRev), rendered(toRev));
 }
 
-/** The `diff_unified` tool's result (spec/surface §3): the resolved revision pair and the diff. */
+/** The `docs_diff_unified` tool's result (spec/surface §3): the resolved revision pair and the diff. */
 export interface DocDiffUnified {
   id: string;
   path: string;
@@ -125,7 +125,7 @@ export interface DocDiffUnified {
 }
 
 /**
- * `diff_unified` over a resolved document: `to` defaults to the current revision,
+ * `docs_diff_unified` over a resolved document: `to` defaults to the current revision,
  * `from` to the one before it (or the current one again when there is only one:
  * an empty diff). Shared by the MCP tool and `omg diff` so the shape cannot
  * drift. `label` is how the caller named the document, for the error message.

@@ -30,10 +30,13 @@
 //          receiver of a nested directive (`refs(after) exists { where path ==
 //          ^^path }`) → the
 //          same two cases (`refs(after)` backward, `refs(^before)` forward); a
-//          literal compared with `src_field` / `predicate` under `doc.in_edges`
-//          / `doc.out_edges` / `edges` → that relation (`in_edges` forward,
-//          `out_edges` backward; the field is `field` since surface 3.0 and
-//          `src_field` before — both are read).
+//          literal compared with `field` / `predicate` under `doc.in_links` /
+//          `doc.out_links` / `^links` (surface 3.0, spec/surface §1.1–§1.2) or
+//          their pre-3.0 spellings `doc.in_edges` / `doc.out_edges` / `edges`
+//          → that relation (`in_*` forward, `out_*` backward; the field is
+//          `field` since 3.0 and `src_field` before). The query is the user's,
+//          so BOTH spellings are read here — which one is valid is the
+//          server's call, not this module's.
 //   2. `order by` keys — a key that is not an engine attribute (`$updated_at`,
 //        or 3.0's bare `updated_at`/`path`/…) is a SEQUENCE candidate: edges
 //        are consecutive pairs in result order (no fetch), direction forward.
@@ -76,7 +79,7 @@ import { DOC_ATTRIBUTES, HIT_ENVELOPE_KEYS, hitPath, rowRef } from "./paths.ts";
 export type Direction = "forward" | "backward";
 export type CandidateSource = "follow" | "order by" | "inferred" | "builtin" | "pair";
 export type CandidateKind =
-  | "frontmatter" // a frontmatter relation: edges rows whose authored field (`field`; `src_field` before 3.0) == name
+  | "frontmatter" // a frontmatter relation: link rows (`links`; `edges` before 3.0) whose authored field (`field`; `src_field` before 3.0) == name
   | "links" // doc.out — authored links
   | "backlinks" // doc.in — authored links, reversed
   | "sequence"; // an order-by key (consecutive result rows) or an inverse pair (both fields, one direction)
@@ -142,8 +145,24 @@ export function isAttributeName(name: string): boolean {
 }
 
 /** Relations of a row that yield rows by themselves (spec/surface §1.2) — a
- * `follow` over one of these is not a frontmatter field, so no `refs()` hint. */
-export const STRUCTURAL_RELATIONS = new Set(["in", "out", "in_edges", "out_edges", "children", "subsections", "nodes", "blocks", "section", "doc"]);
+ * `follow` over one of these is not a frontmatter field, so no `refs()` hint.
+ * The link-row relations are listed in both spellings: `in_links`/`out_links`
+ * (surface 3.0) and `in_edges`/`out_edges` (before) — the query is the user's
+ * and the server decides which is valid. */
+export const STRUCTURAL_RELATIONS = new Set(["in", "out", "in_links", "out_links", "in_edges", "out_edges", "children", "subsections", "nodes", "blocks", "section", "doc"]);
+
+/** Does a dotted receiver path name the inbound / outbound link rows of a doc
+ * (`doc.in_links`, `in_edges`, `$it.out_links`, …) or the link rows themselves
+ * (`^links`, `^^links`, `$repo.edges`, `edges`), in either generation's
+ * spelling? `in`/`out` walk to the documents at the other end, not the rows,
+ * and are not matched here. */
+export function linkRowsReceiver(receiverPath: string): "in" | "out" | "all" | null {
+  const last = receiverPath.split(".").pop() ?? "";
+  if (last === "in_links" || last === "in_edges") return "in";
+  if (last === "out_links" || last === "out_edges") return "out";
+  if (/^\^*(links|edges)$/.test(last)) return "all";
+  return null;
+}
 
 interface Mention {
   name: string;
@@ -370,11 +389,11 @@ function destinationBlockMentions(op: OpNode): Mention[] {
       out.push({ name: ref.name, kind: "frontmatter", source: "follow", span: inner.receiver.span, direction: ref.outer ? "forward" : "backward" });
       return;
     }
-    // `doc.in_edges exists { where field == "before" … }` (`src_field` before 3.0; or out_edges / $repo.edges).
-    const receiverPath = dottedPath(inner.receiver) ?? "";
-    const viaIn = receiverPath.endsWith("in_edges");
-    const viaOut = receiverPath.endsWith("out_edges");
-    if (!viaIn && !viaOut && !receiverPath.endsWith("edges")) return;
+    // `doc.in_links exists { where field == "before" … }` (3.0; `doc.in_edges`
+    // and `src_field` before; or out_links / out_edges / ^links / $repo.edges).
+    const via = linkRowsReceiver(receiverPath(inner.receiver));
+    if (via === null) return;
+    const viaOut = via === "out";
     if (!inner.sub.where) return;
     forEachScalar(inner.sub.where, (expr) => {
       const lit = fieldLiteral(expr, ["field", "src_field", "predicate"]);
@@ -472,6 +491,13 @@ export function dottedPath(expr: Expr): string | null {
     return base ? `${base}.${expr.name}` : null;
   }
   return null;
+}
+
+/** A directive's receiver as text: `dottedPath`, or a root-row reference
+ * (`^links`, `^^edges` — an `outer` read, spec/surface §1.1) with its carets. */
+function receiverPath(expr: Expr): string {
+  if (expr.kind === "outer") return `${"^".repeat(expr.levels)}${expr.name}`;
+  return dottedPath(expr) ?? "";
 }
 
 function identName(expr: Expr): string | null {

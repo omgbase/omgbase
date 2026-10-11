@@ -11,7 +11,7 @@
 //! differential gate (planned == in-memory over every corpus-backed query
 //! case and the conformance list). Deliberately conservative: only simple
 //! top-level target scans (no `follow`, no `from E` re-projection) whose
-//! source is a bare `docs|blocks|nodes|edges` or `<target>`, with at
+//! source is a bare `docs|blocks|nodes|links` or `<target>`, with at
 //! least one pushable scalar conjunct, are planned; everything else declines
 //! to a full in-memory run.
 //!
@@ -38,7 +38,7 @@ fn aliases(t: Target) -> (&'static str, &'static str) {
         Target::Docs => ("d", "d"),
         Target::Blocks => ("b", "d"),
         Target::Nodes => ("n", "d"),
-        Target::Edges => ("e", "d"),
+        Target::Links => ("e", "d"),
     }
 }
 
@@ -47,7 +47,7 @@ pub(crate) fn from_clause(t: Target) -> &'static str {
         Target::Docs => "docs d",
         Target::Blocks => "blocks b JOIN docs d ON d.doc_id = b.doc_id",
         Target::Nodes => "nodes n JOIN docs d ON d.doc_id = n.doc_id",
-        Target::Edges => "edges e JOIN docs d ON d.doc_id = e.src_doc",
+        Target::Links => "edges e JOIN docs d ON d.doc_id = e.src_doc",
     }
 }
 
@@ -58,7 +58,7 @@ pub(crate) fn columns(t: Target) -> &'static str {
         Target::Docs => "d.*",
         Target::Blocks => "b.*, d.path AS __path",
         Target::Nodes => "n.*, d.path AS __path",
-        Target::Edges => "e.*, d.path AS __path",
+        Target::Links => "e.*, d.path AS __path",
     }
 }
 
@@ -68,7 +68,7 @@ pub(crate) fn order_clause(t: Target) -> &'static str {
         Target::Docs => "d.path, d.doc_id",
         Target::Blocks => "d.path, b.block_id",
         Target::Nodes => "d.path, n.node_id",
-        Target::Edges => "d.path, e.edge_id",
+        Target::Links => "d.path, e.edge_id",
     }
 }
 
@@ -78,7 +78,7 @@ pub(crate) fn guards(t: Target) -> &'static str {
         Target::Docs => "d.repo_id = ? AND d.deleted_commit IS NULL",
         Target::Blocks => "b.repo_id = ? AND b.deleted_commit IS NULL AND d.deleted_commit IS NULL",
         Target::Nodes => "n.repo_id = ? AND d.deleted_commit IS NULL",
-        Target::Edges => "e.repo_id = ? AND e.to_commit IS NULL AND d.deleted_commit IS NULL",
+        Target::Links => "e.repo_id = ? AND e.to_commit IS NULL AND d.deleted_commit IS NULL",
     }
 }
 
@@ -92,7 +92,7 @@ pub(crate) fn from_by_doc(t: Target) -> &'static str {
         Target::Docs => from_clause(t),
         Target::Blocks => "docs d CROSS JOIN blocks b ON b.doc_id = d.doc_id",
         Target::Nodes => "docs d CROSS JOIN nodes n ON n.doc_id = d.doc_id",
-        Target::Edges => "docs d CROSS JOIN edges e ON e.src_doc = d.doc_id",
+        Target::Links => "docs d CROSS JOIN edges e ON e.src_doc = d.doc_id",
     }
 }
 
@@ -107,13 +107,13 @@ pub(crate) fn guards_by_doc(t: Target) -> &'static str {
             "d.repo_id = ? AND +b.repo_id = ? AND b.deleted_commit IS NULL AND d.deleted_commit IS NULL"
         }
         Target::Nodes => "d.repo_id = ? AND +n.repo_id = ? AND d.deleted_commit IS NULL",
-        Target::Edges => {
+        Target::Links => {
             "d.repo_id = ? AND +e.repo_id = ? AND e.to_commit IS NULL AND d.deleted_commit IS NULL"
         }
     }
 }
 
-/// The root collection a query scans, if it is a bare `docs|blocks|nodes|edges`
+/// The root collection a query scans, if it is a bare `docs|blocks|nodes|links`
 /// source at the root scope (else `None` — not a pushable shape; a nested
 /// `^docs` is a block's receiver, never the query's source). The runner asks
 /// too: a bare root scan's rows are store rows by construction.
@@ -412,7 +412,7 @@ mod tests {
         ));
         assert!(n.sql.ends_with("ORDER BY d.path, n.node_id"));
         let e = compile(
-            &parse("from edges where predicate == \"references\""),
+            &parse("from links where predicate == \"references\""),
             &[],
             "r",
         )

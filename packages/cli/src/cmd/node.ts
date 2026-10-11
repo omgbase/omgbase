@@ -44,12 +44,12 @@ async function runNode(cli: Cli, args: string[]): Promise<number> {
     const [nodeId, prop, ...valueParts] = positionals;
     if (!nodeId || !prop || valueParts.length === 0) throw new CliUsageError("node set <nodeId> <prop> <value>");
     const value = valueParts.join(" ");
-    // Remote: node_set resolves node → block + rewrites the span server-side.
-    if (cli.flags.server) return runOpsRemote(cli, "node_set", { id: nodeId, prop, value });
+    // Remote: nodes_set resolves node → block + rewrites the span server-side.
+    if (cli.flags.server) return runOpsRemote(cli, "nodes_set", { id: nodeId, prop, value });
     const ws = cli.workspace();
     const repo = cli.repo(ws);
     const ops = nodeSet(ws.store, requireNode(ws.store, repo.repoId, nodeId), prop, value);
-    return runOps(cli, ws, repo, ops, { reason: `node_set ${prop}`, ...(values.actor ? { actor: values.actor } : {}) });
+    return runOps(cli, ws, repo, ops, { reason: `nodes_set ${prop}`, ...(values.actor ? { actor: values.actor } : {}) });
   }
 
   if (sub === "props") {

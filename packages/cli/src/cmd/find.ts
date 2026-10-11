@@ -43,9 +43,9 @@ async function runFind(cli: Cli, args: string[]): Promise<number> {
 
   let hits: FindHit[];
   if (cli.flags.server) {
-    // Remote: the `resolve` tool does the hybrid ranking server-side (using the
+    // Remote: the `blocks_resolve` tool does the hybrid ranking server-side (using the
     // server's embedder if configured). Same ranked-hit shape → render unchanged.
-    hits = await remoteCall<FindHit[]>(cli, "resolve", { query: text, limit });
+    hits = await remoteCall<FindHit[]>(cli, "blocks_resolve", { query: text, limit });
   } else {
     const ws = cli.workspace();
     const repo = cli.repo(ws);

@@ -63,7 +63,7 @@ describe("diff (block grain)", () => {
   });
 });
 
-// spec/surface §3 `diff_unified`. The expected strings below are copied
+// spec/surface §3 `docs_diff_unified`. The expected strings below are copied
 // verbatim into crates/omgbase-surface/src/history.rs's tests so the two
 // engines pin each other byte for byte.
 describe("unifiedDiff (spec/surface §3: Myers script + unified hunks)", () => {

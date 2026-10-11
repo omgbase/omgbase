@@ -1,5 +1,5 @@
 {
-  "suite": "query-edges",
+  "suite": "query-links",
   "corpus": {
     "index.md": "---\ntype: hub\nlayer: canon\ntitle: Alchemy\ntags: [alchemy, index]\nverified: true\n---\n\n# Alchemy\n\nThe art of transformation — part proto-chemistry, part philosophy, part\ncontemplative practice. This repository collects notes on its substances,\nprocesses, practitioners, and primary texts.\n\n## The tria prima\n\nParacelsus reduced the material world to three principles:\n\n- [[mercury]] — the volatile spirit\n- [[sulphur]] — the combustible soul\n- [[salt]] — the fixed body\n\n## Substances\n\n- [prima materia](/substances/prima-materia.md) — the undifferentiated first matter\n- [the philosophers' stone](/substances/philosophers-stone.md) — the goal of the Great Work\n\n## Processes\n\nThe [magnum opus](/processes/magnum-opus.md) organizes the operations into\nstages. Individual operations are documented separately:\n\n- [calcination](/processes/calcination.md)\n- [dissolution](/processes/dissolution.md)\n- [coagulation](/processes/coagulation.md)\n\n## Practitioners\n\n| Practitioner | Tradition | Approximate era |\n|---|---|---|\n| [Maria Prophetissa](/practitioners/maria-prophetissa.md) | Alexandrian | 3rd century |\n| [Jabir ibn Hayyan](/practitioners/jabir-ibn-hayyan.md) | Islamic | 8th century |\n| [Paracelsus](/practitioners/paracelsus.md) | Western | 16th century |\n| [Isaac Newton](/practitioners/newton.md) | Western | 17th century |\n\n## Texts\n\n- [The Emerald Tablet](/texts/emerald-tablet.md)\n- [Mutus Liber](/texts/mutus-liber.md)\n\n## Laboratory\n\nWorking notes live under `lab/`.\n",
     "lab/2026-01-notes.md": "---\ntype: lab-note\nlayer: working\ntags: [lab, calcination]\nverified: true\nmonth: 1\nsubject: calcination\nwindow: 2026-01-01..2026-01-31\n---\n\n# Laboratory notes — January\n\nBench work on [calcination](/processes/calcination.md), chasing the weight gain.\n\noperator:: bb\nbalance:: analytical\n\n## Setup\n\nLead sheet cut into 2 g pieces, crucible pre-fired to constant weight, muffle at\n600 °C. Weighings after cooling in a desiccator.\n\n```text\ntare crucible → weigh Pb → 600C 2h → cool in desiccator → reweigh\n```\n\n## Results\n\n| Run | Pb in (g) | Calx out (g) | Change |\n|---|---|---|---|\n| 1 | 2.001 | 2.140 | +0.139 |\n| 2 | 2.004 | 2.147 | +0.143 |\n| 3 | 1.998 | 2.138 | +0.140 |\n\nConsistent gain of about 7% by mass. The colour went yellow then, on longer\nheating, red — massicot to minium, as expected.\n\nThe gain is real and reproducible on a bench with 1830s-grade equipment. Anyone\ndoing this carefully before Lavoisier had the fact in hand; what was missing was\na framework that could accept it.\n\n## Side work\n\nBurned a batch of wormwood to ash and leached it while the muffle was up to\ntemperature: 40 g dried herb gave 1.1 g of crude salt after a single\nrecrystallization. That is the [[salt]] of the tria prima, obtained in an\nafternoon, and it is easy to see why the operation carried evidential weight.\n\nSulphide colours are next — sulphur over the same metals, recording colour\nagainst stoichiometry.\n\n## Safety\n\nMercury work deferred — see [[mercury]] for the toxicity notes. Not handling it\nwithout a fume hood.\n\n## Tasks\n\n- [x] Pre-fire crucibles to constant weight\n- [x] Three replicate runs on lead\n- [x] Record the colour sequence\n- [x] Extract the salt of wormwood and weigh the yield\n- [ ] Repeat the series with copper\n- [ ] Plot mass gain against heating time\n- [ ] Tabulate the metal sulphides by colour\n",
@@ -26,7 +26,7 @@
     {
       "name": "root-order",
       "notes": "§1.1: open edges of live source docs in (source path, edge_id) order.",
-      "query": "select p: predicate from edges where path == \"index.md\"",
+      "query": "select p: predicate from links where path == \"index.md\"",
       "expect": {
         "hits": [
           {
@@ -112,7 +112,7 @@
     },
     {
       "name": "fields",
-      "query": "select predicate, provenance, dst_kind, anchor, field from edges where path == \"substances/prima-materia.md\"",
+      "query": "select predicate, provenance, dst_kind, anchor, field from links where path == \"substances/prima-materia.md\"",
       "expect": {
         "hits": [
           {
@@ -160,7 +160,7 @@
     {
       "name": "foreign-keys",
       "notes": "§1.2 (3.0): an edge's `$` names are id/path only; doc_id/dst_id/block_id/via_id/dst_path/uri are plain fields (foreign keys named for what they are); the creating commit is not a field. The dangling [[nigredo]] is a phantom with no dst_path.",
-      "query": "select s: doc_id, d: dst_id, sb: block_id, v: via_id, dp: dst_path, du: uri from edges where path == \"substances/prima-materia.md\"",
+      "query": "select s: doc_id, d: dst_id, sb: block_id, v: via_id, dp: dst_path, du: uri from links where path == \"substances/prima-materia.md\"",
       "expect": {
         "hits": [
           {
@@ -211,7 +211,7 @@
     },
     {
       "name": "doc-reach-through",
-      "query": "select dt: doc.type from edges where path == \"substances/salt.md\"",
+      "query": "select dt: doc.type from links where path == \"substances/salt.md\"",
       "expect": {
         "hits": [
           {
@@ -242,7 +242,7 @@
     },
     {
       "name": "doc-reach-through-filter",
-      "query": "edges count { where doc.type == \"lab-note\" }",
+      "query": "links count { where doc.type == \"lab-note\" }",
       "expect": {
         "hits": [],
         "truncated": false,
@@ -253,7 +253,7 @@
     },
     {
       "name": "count-all",
-      "query": "edges count { }",
+      "query": "links count { }",
       "expect": {
         "hits": [],
         "truncated": false,
@@ -264,7 +264,7 @@
     },
     {
       "name": "count-by-provenance",
-      "query": "edges count { where provenance == \"link\" }",
+      "query": "links count { where provenance == \"link\" }",
       "expect": {
         "hits": [],
         "truncated": false,
@@ -275,7 +275,7 @@
     },
     {
       "name": "distinct-provenance",
-      "query": "select distinct provenance values from edges",
+      "query": "select distinct provenance values from links",
       "expect": {
         "hits": [],
         "truncated": false,
@@ -289,7 +289,7 @@
     },
     {
       "name": "distinct-predicate",
-      "query": "select distinct predicate values from edges",
+      "query": "select distinct predicate values from links",
       "expect": {
         "hits": [],
         "truncated": false,
@@ -306,7 +306,7 @@
     {
       "name": "phantom-targets",
       "notes": "spec/graph: a wikilink resolves by path, so every [[slug]] here is a phantom — dst_kind document, dst_id `phantom:<value>`, null dst_path.",
-      "query": "select d: dst_id from edges where dst_kind == \"document\" && dst_path == null",
+      "query": "select d: dst_id from links where dst_kind == \"document\" && dst_path == null",
       "expect": {
         "hits": [
           {
@@ -437,7 +437,7 @@
     },
     {
       "name": "external-targets-none",
-      "query": "edges count { where uri != null }",
+      "query": "links count { where uri != null }",
       "expect": {
         "hits": [],
         "truncated": false,
@@ -447,8 +447,8 @@
       }
     },
     {
-      "name": "edges-into-a-doc",
-      "query": "select path, provenance from edges where dst_path == \"processes/magnum-opus.md\"",
+      "name": "links-into-a-doc",
+      "query": "select path, provenance from links where dst_path == \"processes/magnum-opus.md\"",
       "expect": {
         "hits": [
           {
@@ -485,7 +485,7 @@
     {
       "name": "no-relations",
       "notes": "§1.2: edges have no relations — a navigation by a name that is not a target's yields undefined (a target name there is the §1.1 bare-target error: `query-root::bare-target-nodes-on-edge-row`).",
-      "query": "select x: children, y: out_edges from edges where path == \"index.md\" limit 1",
+      "query": "select x: children, y: out_links from links where path == \"index.md\" limit 1",
       "expect": {
         "hits": [
           {
@@ -499,8 +499,8 @@
       }
     },
     {
-      "name": "edges-page",
-      "query": "from edges where path.startsWith(\"substances/\")",
+      "name": "links-page",
+      "query": "from links where path.startsWith(\"substances/\")",
       "limit": 6,
       "expect": {
         "hits": [
@@ -537,7 +537,7 @@
     {
       "name": "dst-path-rooted-literal",
       "notes": "§1 Paths (2.0): `dst_path` is the reference form; a rooted literal matches it (and the planner's `dst_path` probe de-roots it).",
-      "query": "select path, dst_path from edges where dst_path == \"/processes/magnum-opus.md\"",
+      "query": "select path, dst_path from links where dst_path == \"/processes/magnum-opus.md\"",
       "expect": {
         "hits": [
           {
@@ -574,7 +574,7 @@
     {
       "name": "dst-path-bare-literal",
       "notes": "§1 Paths: the bare spelling is rooted first — the same edges.",
-      "query": "select path, dst_path from edges where dst_path == \"processes/magnum-opus.md\"",
+      "query": "select path, dst_path from links where dst_path == \"processes/magnum-opus.md\"",
       "expect": {
         "hits": [
           {
@@ -611,7 +611,7 @@
     {
       "name": "reach-through-identity-is-the-foreign-key",
       "notes": "§1 foreign-key elimination (3.0): `doc.id` on an edge is its `doc_id` (the source document), `doc.path` its `path` — no owner lookup, the same SQL when planned.",
-      "query": "select a: doc.id, b: doc_id, c: doc.path, t: doc.type from edges where path == \"substances/prima-materia.md\" && predicate == \"references\"",
+      "query": "select a: doc.id, b: doc_id, c: doc.path, t: doc.type from links where path == \"substances/prima-materia.md\" && predicate == \"references\"",
       "expect": {
         "hits": [
           {

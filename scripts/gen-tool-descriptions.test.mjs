@@ -15,8 +15,8 @@ test("a raw string literal grows its hash run until the text cannot close it ear
 
 test("tool names become SCREAMING_SNAKE constants in file order", () => {
   assert.equal(constName("docs_read"), "DOCS_READ");
-  const text = render({ docs_read: "Read.", blocks_get: "Get." });
-  assert.match(text, /pub const DOCS_READ: &str = r#"Read\."#;\n\n\/\/\/ `blocks_get`\npub const BLOCKS_GET/);
+  const text = render({ docs_read: "Read.", blocks_read: "Get." });
+  assert.match(text, /pub const DOCS_READ: &str = r#"Read\."#;\n\n\/\/\/ `blocks_read`\npub const BLOCKS_GET/);
 });
 
 test("the checked-in descriptions.rs is generated from spec/surface/tool-descriptions.json", () => {

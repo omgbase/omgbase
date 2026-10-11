@@ -309,7 +309,7 @@ pub fn bare_target_message(t: Target, depth: Option<usize>) -> String {
         Target::Docs => "documents",
         Target::Blocks => "blocks",
         Target::Nodes => "nodes",
-        Target::Edges => "edges",
+        Target::Links => "links",
     };
     let carets = "^".repeat(depth.unwrap_or(1));
     let how = if depth.is_none() {
@@ -319,6 +319,22 @@ pub fn bare_target_message(t: Target, depth: Option<usize>) -> String {
     };
     format!(
         "`{name}` inside a block reads a property of the current row, which has none — did you mean `{carets}{name}` (the repository's {noun}{how})?"
+    )
+}
+
+/// The unknown-target error (3.0 name pass): a top-level `from <name>` whose
+/// name is not one of the four collections would read an absent root and
+/// return an empty result — refused instead, naming the collections; `edges`,
+/// the links target's name before 3.0, gets its new name spelled out.
+#[must_use]
+pub fn unknown_target_message(name: &str) -> String {
+    let was = if name == "edges" {
+        " (`edges` was renamed `links` in surface 3.0)"
+    } else {
+        ""
+    };
+    format!(
+        "`{name}` is not a target — the repository's collections are `docs`, `blocks`, `nodes`, `links`{was}"
     )
 }
 
@@ -332,7 +348,7 @@ pub fn past_root_message(t: Target, levels: usize) -> String {
         Target::Docs => "documents",
         Target::Blocks => "blocks",
         Target::Nodes => "nodes",
-        Target::Edges => "edges",
+        Target::Links => "links",
     };
     let carets = "^".repeat(levels);
     format!(
@@ -346,7 +362,7 @@ pub fn past_root_message(t: Target, levels: usize) -> String {
 /// before evaluation, by one walk over the parsed tree, so the error does not
 /// depend on which rows the data holds and the planned and in-memory paths
 /// agree trivially: `$repo` anywhere (bare, as a member head, `^$repo`,
-/// `0^$repo`), and a bare `docs`/`edges` at scope depth ≥ 1 — a property read
+/// `0^$repo`), and a bare `docs`/`links` at scope depth ≥ 1 — a property read
 /// of a row that has none. `blocks`/`nodes` are relations of some rows
 /// (`docs.blocks`, `docs.nodes`, `blocks.nodes`, `section.blocks`) and are
 /// judged by the context at read time with the same message. A `^<target>`
@@ -354,6 +370,17 @@ pub fn past_root_message(t: Target, levels: usize) -> String {
 /// would read absent and count 0: refused too, naming the bare spelling. Port
 /// of the reference's `checkRootSpellings`.
 pub fn check_root_spellings(q: &Query) -> Result<()> {
+    // A top-level `from <name>` that is no collection (`from edges`, the links
+    // target's name before 3.0) would scan an absent root and come back empty:
+    // refused, naming the four collections.
+    if let Expr::Ident { name, .. } = &q.source {
+        if Target::parse(name).is_none() {
+            return Err(SurfaceError::filter_invalid(
+                unknown_target_message(name),
+                "OQX",
+            ));
+        }
+    }
     struct Check(Option<SurfaceError>);
     impl Visitor for Check {
         fn enter(&mut self, node: Node<'_>, ctx: &VisitContext<'_>) -> bool {
@@ -367,7 +394,7 @@ pub fn check_root_spellings(q: &Query) -> Result<()> {
                     self.0 = Some(SurfaceError::filter_invalid(REPO_REMOVED_MESSAGE, "OQX"));
                 }
                 Node::Expr(Expr::Ident { name, .. })
-                    if ctx.depth >= 1 && matches!(name.as_str(), "docs" | "edges") =>
+                    if ctx.depth >= 1 && matches!(name.as_str(), "docs" | "links") =>
                 {
                     let t = Target::parse(name).expect("a target name");
                     self.0 = Some(SurfaceError::filter_invalid(
@@ -968,7 +995,7 @@ mod tests {
             assert_eq!(e.code, "filter_invalid", "{q}");
             assert_eq!(e.message, REPO_REMOVED_MESSAGE, "{q}");
         }
-        // a bare `docs`/`edges` at depth ≥ 1; the hint counts the carets
+        // a bare `docs`/`links` at depth ≥ 1; the hint counts the carets
         let e = check_root_spellings(&parse("select x: docs collect { } from docs")).unwrap_err();
         assert_eq!(e.message, bare_target_message(Target::Docs, Some(1)));
         assert!(
@@ -976,12 +1003,12 @@ mod tests {
                 .contains("did you mean `^docs` (the repository's documents)?")
         );
         let e = check_root_spellings(&parse(
-            "select x: nodes collect { select y: size(edges) } from docs",
+            "select x: nodes collect { select y: size(links) } from docs",
         ))
         .unwrap_err();
         assert!(
             e.message
-                .contains("did you mean `^^edges` (the repository's edges)?")
+                .contains("did you mean `^^links` (the repository's links)?")
         );
         let e = check_root_spellings(&parse("docs collect { from docs }")).unwrap_err();
         assert!(e.message.contains("`^docs`"));
@@ -990,7 +1017,7 @@ mod tests {
             "docs count { }",
             "from docs where nodes exists { }",
             "entries(docs) first { }",
-            "select n: size(^docs), id: ^id, k: size(0^edges) from docs",
+            "select n: size(^docs), id: ^id, k: size(0^links) from docs",
             "from blocks where blocks exists { }", // judged by the context at read time
         ] {
             check_root_spellings(&parse(q)).unwrap_or_else(|e| panic!("{q}: {e}"));
@@ -1002,10 +1029,10 @@ mod tests {
             e.message,
             "`^docs` reaches past the root — there is no enclosing row at this depth; at the top level the repository's documents are the bare `docs` (`docs count { … }`, `from docs`, `entries(docs)`)"
         );
-        let e = check_root_spellings(&parse("select path from docs where ^^edges exists { }"))
+        let e = check_root_spellings(&parse("select path from docs where ^^links exists { }"))
             .unwrap_err();
         assert!(
-            e.message.contains("`^^edges` reaches past the root"),
+            e.message.contains("`^^links` reaches past the root"),
             "{}",
             e.message
         );
@@ -1086,7 +1113,7 @@ mod tests {
         ))));
         assert!(is_path_read(&left(pred("from docs where ^path == \"x\""))));
         assert!(is_path_read(&left(pred(
-            "from edges where dst_path == \"x\""
+            "from links where dst_path == \"x\""
         ))));
         assert!(!is_path_read(&left(pred(
             "from docs where data.path == \"x\""

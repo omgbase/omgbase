@@ -25,7 +25,7 @@
   "cases": [
     {
       "name": "read-documents",
-      "notes": "§2/§4 document reads over the seeded corpus: docs_outline (both resolutions, depth, budget), docs_read (ids, hashes, parents; a miss is doc_missing), docs_get_many (dedup, a miss in errors, budget truncation), read_ref (document, block, node → block, path; a miss). Ids are the fixture minter's: d_0 = index.md, b_0.. in pre-order (§6, §7.2).",
+      "notes": "§2/§4 document reads over the seeded corpus: docs_outline (both resolutions, depth, budget), docs_read (ids, hashes, parents; a miss is doc_missing), docs_read_many (dedup, a miss in errors, budget truncation), docs_read/blocks_read by the ref's kind (document, block, node → block, path; a miss). Ids are the fixture minter's: d_0 = index.md, b_0.. in pre-order (§6, §7.2).",
       "reads": [
         {
           "tool": "docs_outline",
@@ -68,7 +68,7 @@
           }
         },
         {
-          "tool": "docs_get_many",
+          "tool": "docs_read_many",
           "args": {
             "docs": [
               "index.md",
@@ -79,7 +79,7 @@
           }
         },
         {
-          "tool": "docs_get_many",
+          "tool": "docs_read_many",
           "args": {
             "docs": [
               "texts/emerald-tablet.md",
@@ -90,35 +90,34 @@
           }
         },
         {
-          "tool": "read_ref",
+          "tool": "docs_read",
           "args": {
-            "ref": "d_17"
+            "id": "d_17"
           }
         },
         {
-          "tool": "read_ref",
+          "tool": "blocks_read",
           "args": {
-            "ref": "b_5"
+            "id": "b_5"
           }
         },
         {
-          "tool": "read_ref",
+          "tool": "blocks_read",
           "args": {
-            "ref": "n_9e25b3a6f1e2",
+            "id": "n_9e25b3a6f1e2",
             "resolution": "text"
           }
         },
         {
-          "tool": "read_ref",
+          "tool": "docs_read",
           "args": {
-            "ref": "substances/salt.md",
-            "resolution": "text"
+            "path": "substances/salt.md"
           }
         },
         {
-          "tool": "read_ref",
+          "tool": "docs_read",
           "args": {
-            "ref": "nope"
+            "path": "nope"
           }
         }
       ],
@@ -429,7 +428,6 @@
             "truncated": true
           },
           {
-            "kind": "document",
             "id": "d_17",
             "path": "/texts/mutus-liber.md",
             "rev": "r_17",
@@ -456,20 +454,22 @@
             "raw": "---\ntype: text\nlayer: draft\ntradition: western\nera: 1677\ntags: [text, images]\nverified: false\n---\n\n# Mutus Liber\n\nThe \"silent book,\" La Rochelle, 1677: fifteen engraved plates and essentially no\ntext. The entire Great Work, allegedly, in pictures.\n\nlength:: fifteen plates\nattributed_to:: altus\n\n## Contents\n\nThe plates show a couple gathering dew in sheets stretched between poles,\nprocessing it through vessels, and attending a furnace, framed by angels and\nzodiacal signs. A sequence is clearly intended. What it instructs is not clear.\n\nThe dew-gathering is the one concretely readable operation, and it connects to a\nreal strand of practice: dew was held to be a celestial condensate and a candidate\n[prima materia](/substances/prima-materia.md).\n\n## Status of these notes\n\nDraft. I have not worked through the plates in order against a commentary, and\nthe secondary literature disagrees about even the number of stages depicted.\n\n- [ ] Obtain a facsimile with plate numbering\n- [ ] Compare the 1677 and 1702 plate sequences\n- [ ] Decide whether the dew operation is literal\n"
           },
           {
-            "kind": "block",
             "id": "b_5",
             "type": "list_item",
             "raw": "- [[mercury]] — the volatile spirit",
-            "hash": "510b69146a14233c3d5bc125e57084966266f7ef443c140cbfd5273ab72e0691"
+            "hash": "510b69146a14233c3d5bc125e57084966266f7ef443c140cbfd5273ab72e0691",
+            "text": "[[mercury]] — the volatile spirit",
+            "attrs": {},
+            "ordinal": 0,
+            "depth": 1,
+            "parent_id": "b_4"
           },
           {
-            "kind": "block",
             "id": "b_5",
             "type": "list_item",
             "text": "[[mercury]] — the volatile spirit"
           },
           {
-            "kind": "document",
             "id": "d_14",
             "path": "/substances/salt.md",
             "rev": "r_14",
@@ -500,9 +500,9 @@
           {
             "error": "doc_missing",
             "retriable": false,
-            "message": "no document or block with id or path \"nope\"",
+            "message": "no document with id or path \"nope\"",
             "data": {
-              "ref": "nope"
+              "path": "nope"
             }
           }
         ]
@@ -510,63 +510,63 @@
     },
     {
       "name": "read-blocks",
-      "notes": "§2 block reads: blocks_get at every resolution incl. children, an id outside an explicit doc scope (block_missing), an unknown id (doc_missing, §9); blocks_get_many across documents, scoped with an unresolved id, and budget-truncated.",
+      "notes": "§2 block reads: blocks_read at every resolution incl. children, an id outside an explicit doc scope (block_missing), an unknown id (doc_missing, §9); blocks_read_many across documents, scoped with an unresolved id, and budget-truncated.",
       "reads": [
         {
-          "tool": "blocks_get",
+          "tool": "blocks_read",
           "args": {
             "id": "b_4",
             "resolution": "full"
           }
         },
         {
-          "tool": "blocks_get",
+          "tool": "blocks_read",
           "args": {
             "id": "b_19",
             "resolution": "text"
           }
         },
         {
-          "tool": "blocks_get",
+          "tool": "blocks_read",
           "args": {
             "id": "b_51"
           }
         },
         {
-          "tool": "blocks_get",
+          "tool": "blocks_read",
           "args": {
             "id": "b_50",
             "resolution": "skeleton"
           }
         },
         {
-          "tool": "blocks_get",
+          "tool": "blocks_read",
           "args": {
             "id": "b_38",
             "resolution": "outline"
           }
         },
         {
-          "tool": "blocks_get",
+          "tool": "blocks_read",
           "args": {
             "id": "b_36",
             "resolution": "raw"
           }
         },
         {
-          "tool": "blocks_get",
+          "tool": "blocks_read",
           "args": {
             "id": "b_31"
           }
         },
         {
-          "tool": "blocks_get",
+          "tool": "blocks_read",
           "args": {
             "id": "b_999"
           }
         },
         {
-          "tool": "blocks_get_many",
+          "tool": "blocks_read_many",
           "args": {
             "ids": [
               "b_1",
@@ -577,7 +577,7 @@
           }
         },
         {
-          "tool": "blocks_get_many",
+          "tool": "blocks_read_many",
           "args": {
             "ids": [
               "b_1",
@@ -587,7 +587,7 @@
           }
         },
         {
-          "tool": "blocks_get_many",
+          "tool": "blocks_read_many",
           "args": {
             "ids": [
               "b_1",
@@ -1446,7 +1446,7 @@
         {
           "tool": "query",
           "args": {
-            "query": "select predicate, dst_kind, dst_path from edges where path == \"substances/prima-materia.md\""
+            "query": "select predicate, dst_kind, dst_path from links where path == \"substances/prima-materia.md\""
           }
         },
         {
@@ -1872,7 +1872,7 @@
                   "docs",
                   "blocks",
                   "nodes",
-                  "edges"
+                  "links"
                 ]
               }
             ],
@@ -1927,7 +1927,7 @@
     },
     {
       "name": "read-graph-search",
-      "notes": "§4 graph (backlinks with a projection; both directions bounded by max_documents; degrees 0), text_search and resolve (spec/search §1.3, §4; no provider so FTS only), links_stale (rows, summary, a glob with a limit; spec/graph §6).",
+      "notes": "§4 graph (backlinks with a projection; both directions bounded by max_documents; degrees 0), blocks_search and resolve (spec/search §1.3, §4; no provider so FTS only), links_stale (rows, summary, a glob with a limit; spec/graph §6).",
       "reads": [
         {
           "tool": "graph",
@@ -1963,28 +1963,28 @@
           }
         },
         {
-          "tool": "text_search",
+          "tool": "blocks_search",
           "args": {
             "q": "calcination weight",
             "limit": 5
           }
         },
         {
-          "tool": "text_search",
+          "tool": "blocks_search",
           "args": {
             "q": "mercury",
             "limit": 3
           }
         },
         {
-          "tool": "resolve",
+          "tool": "blocks_resolve",
           "args": {
             "query": "mercury",
             "limit": 3
           }
         },
         {
-          "tool": "resolve",
+          "tool": "blocks_resolve",
           "args": {
             "query": "emerald tablet"
           }
@@ -2053,7 +2053,7 @@
                 "layer": "draft"
               }
             ],
-            "edges": [
+            "links": [
               {
                 "id": "e_14",
                 "doc_id": "d_0",
@@ -2219,7 +2219,7 @@
             ],
             "truncated": false,
             "queries": [
-              "select _depth: $depth, _stop: $stop, _edges: doc.in_edges collect { id: id, doc_id: doc_id, block_id: block_id, via_id: via_id, dst_id: dst_id, dst_path: dst_path, uri: uri, dst_kind: dst_kind, predicate: predicate, provenance: provenance, anchor: anchor, field: field }, _u0: layer from docs where id == \"d_13\" follow distinct doc.in { depth 2 }"
+              "select _depth: $depth, _stop: $stop, _links: doc.in_links collect { id: id, doc_id: doc_id, block_id: block_id, via_id: via_id, dst_id: dst_id, dst_path: dst_path, uri: uri, dst_kind: dst_kind, predicate: predicate, provenance: provenance, anchor: anchor, field: field }, _u0: layer from docs where id == \"d_13\" follow distinct doc.in { depth 2 }"
             ]
           },
           {
@@ -2266,7 +2266,7 @@
                 "frontier": false
               }
             ],
-            "edges": [
+            "links": [
               {
                 "id": "e_3",
                 "doc_id": "d_0",
@@ -2411,8 +2411,8 @@
             "frontier": [],
             "truncated": true,
             "queries": [
-              "select _depth: $depth, _stop: $stop, _edges: doc.out_edges collect { id: id, doc_id: doc_id, block_id: block_id, via_id: via_id, dst_id: dst_id, dst_path: dst_path, uri: uri, dst_kind: dst_kind, predicate: predicate, provenance: provenance, anchor: anchor, field: field } from docs where id == \"d_7\" follow distinct doc.out { depth 3 }",
-              "select _depth: $depth, _stop: $stop, _edges: doc.in_edges collect { id: id, doc_id: doc_id, block_id: block_id, via_id: via_id, dst_id: dst_id, dst_path: dst_path, uri: uri, dst_kind: dst_kind, predicate: predicate, provenance: provenance, anchor: anchor, field: field } from docs where id == \"d_7\" follow distinct doc.in { depth 3 }"
+              "select _depth: $depth, _stop: $stop, _links: doc.out_links collect { id: id, doc_id: doc_id, block_id: block_id, via_id: via_id, dst_id: dst_id, dst_path: dst_path, uri: uri, dst_kind: dst_kind, predicate: predicate, provenance: provenance, anchor: anchor, field: field } from docs where id == \"d_7\" follow distinct doc.out { depth 3 }",
+              "select _depth: $depth, _stop: $stop, _links: doc.in_links collect { id: id, doc_id: doc_id, block_id: block_id, via_id: via_id, dst_id: dst_id, dst_path: dst_path, uri: uri, dst_kind: dst_kind, predicate: predicate, provenance: provenance, anchor: anchor, field: field } from docs where id == \"d_7\" follow distinct doc.in { depth 3 }"
             ]
           },
           {
@@ -2429,7 +2429,7 @@
                 "frontier": true
               }
             ],
-            "edges": [
+            "links": [
               {
                 "id": "e_0",
                 "doc_id": "d_0",
@@ -2482,8 +2482,8 @@
             ],
             "truncated": false,
             "queries": [
-              "select _depth: $depth, _stop: $stop, _edges: doc.out_edges collect { id: id, doc_id: doc_id, block_id: block_id, via_id: via_id, dst_id: dst_id, dst_path: dst_path, uri: uri, dst_kind: dst_kind, predicate: predicate, provenance: provenance, anchor: anchor, field: field } from docs where id == \"d_0\" follow distinct doc.out { depth 1 }",
-              "select _depth: $depth, _stop: $stop, _edges: doc.in_edges collect { id: id, doc_id: doc_id, block_id: block_id, via_id: via_id, dst_id: dst_id, dst_path: dst_path, uri: uri, dst_kind: dst_kind, predicate: predicate, provenance: provenance, anchor: anchor, field: field } from docs where id == \"d_0\" follow distinct doc.in { depth 1 }"
+              "select _depth: $depth, _stop: $stop, _links: doc.out_links collect { id: id, doc_id: doc_id, block_id: block_id, via_id: via_id, dst_id: dst_id, dst_path: dst_path, uri: uri, dst_kind: dst_kind, predicate: predicate, provenance: provenance, anchor: anchor, field: field } from docs where id == \"d_0\" follow distinct doc.out { depth 1 }",
+              "select _depth: $depth, _stop: $stop, _links: doc.in_links collect { id: id, doc_id: doc_id, block_id: block_id, via_id: via_id, dst_id: dst_id, dst_path: dst_path, uri: uri, dst_kind: dst_kind, predicate: predicate, provenance: provenance, anchor: anchor, field: field } from docs where id == \"d_0\" follow distinct doc.in { depth 1 }"
             ]
           },
           {
@@ -3040,7 +3040,7 @@
     },
     {
       "name": "read-history-admin",
-      "notes": "§3 history over a one-commit-per-document corpus (blocks_history, diff of a revision with itself and with a foreign one → target_missing, diff_unified with a single revision, docs_read_at incl. an unknown rev, docs_history by doc and by glob, changes_since paging/filters) and the §4 admin tools (repos_status/sync_status with the fs source — disk scan of the workspace — and repos).",
+      "notes": "§3 history over a one-commit-per-document corpus (blocks_history, diff of a revision with itself and with a foreign one → target_missing, docs_diff_unified with a single revision, docs_read_at incl. an unknown rev, docs_history by doc and by glob, changes_since paging/filters) and the §4 admin tools (repos_status/sync_status with the fs source — disk scan of the workspace — and repos).",
       "reads": [
         {
           "tool": "blocks_history",
@@ -3056,31 +3056,31 @@
           }
         },
         {
-          "tool": "diff",
+          "tool": "docs_diff",
           "args": {
-            "doc_id": "d_0",
+            "id": "d_0",
             "from_rev": "r_0",
             "to_rev": "r_0"
           }
         },
         {
-          "tool": "diff",
+          "tool": "docs_diff",
           "args": {
-            "doc_path": "index.md",
+            "path": "index.md",
             "from_rev": "r_0",
             "to_rev": "r_1"
           }
         },
         {
-          "tool": "diff_unified",
+          "tool": "docs_diff_unified",
           "args": {
-            "doc_id": "d_1"
+            "id": "d_1"
           }
         },
         {
-          "tool": "diff_unified",
+          "tool": "docs_diff_unified",
           "args": {
-            "doc_path": "index.md",
+            "path": "index.md",
             "from_rev": "r_0",
             "to_rev": "r_0"
           }
@@ -3736,7 +3736,7 @@
     },
     {
       "name": "write-apply",
-      "notes": "§4 apply (spec/mutate §4): one changeset with an insert at the document top level and a CAS-pinned update, then a dry run (no commit; dry runs consume minted ids, §9). Reads show the new revision r_18 / commit c_18 through docs_read, docs_history, changes_since, diff, diff_unified, blocks_history of the minted block, docs_read_at of the old revision, and the admin tools' view of the working tree the apply wrote (§7.3).",
+      "notes": "§4 apply (spec/mutate §4): one changeset with an insert at the document top level and a CAS-pinned update, then a dry run (no commit; dry runs consume minted ids, §9). Reads show the new revision r_18 / commit c_18 through docs_read, docs_history, changes_since, diff, docs_diff_unified, blocks_history of the minted block, docs_read_at of the old revision, and the admin tools' view of the working tree the apply wrote (§7.3).",
       "writes": [
         {
           "tool": "apply",
@@ -3801,17 +3801,17 @@
           }
         },
         {
-          "tool": "diff",
+          "tool": "docs_diff",
           "args": {
-            "doc_path": "index.md",
+            "path": "index.md",
             "from_rev": "r_0",
             "to_rev": "r_20"
           }
         },
         {
-          "tool": "diff_unified",
+          "tool": "docs_diff_unified",
           "args": {
-            "doc_path": "index.md"
+            "path": "index.md"
           }
         },
         {
@@ -4222,7 +4222,7 @@
           }
         },
         {
-          "tool": "blocks_get",
+          "tool": "blocks_read",
           "args": {
             "id": "b_149",
             "resolution": "text"
@@ -4523,7 +4523,7 @@
           }
         },
         {
-          "tool": "blocks_get",
+          "tool": "blocks_read",
           "args": {
             "id": "b_56",
             "resolution": "full"
@@ -4548,17 +4548,17 @@
           }
         },
         {
-          "tool": "diff",
+          "tool": "docs_diff",
           "args": {
-            "doc_id": "d_0",
+            "id": "d_0",
             "from_rev": "r_0",
             "to_rev": "r_20"
           }
         },
         {
-          "tool": "diff_unified",
+          "tool": "docs_diff_unified",
           "args": {
-            "doc_path": "index.md"
+            "path": "index.md"
           }
         },
         {
@@ -4878,17 +4878,17 @@
           }
         },
         {
-          "tool": "diff",
+          "tool": "docs_diff",
           "args": {
-            "doc_path": "index.md",
+            "path": "index.md",
             "from_rev": "r_0",
             "to_rev": "r_21"
           }
         },
         {
-          "tool": "diff_unified",
+          "tool": "docs_diff_unified",
           "args": {
-            "doc_path": "index.md",
+            "path": "index.md",
             "from_rev": "r_0",
             "to_rev": "r_21"
           }
@@ -5115,7 +5115,7 @@
           }
         },
         {
-          "tool": "blocks_get",
+          "tool": "blocks_read",
           "args": {
             "id": "b_327",
             "resolution": "raw"
@@ -5140,9 +5140,9 @@
           }
         },
         {
-          "tool": "diff",
+          "tool": "docs_diff",
           "args": {
-            "doc_path": "lab/2026-01-notes.md",
+            "path": "lab/2026-01-notes.md",
             "from_rev": "r_1",
             "to_rev": "r_22"
           }
@@ -5509,36 +5509,36 @@
     },
     {
       "name": "write-tasks-node-set",
-      "notes": "§4 tasks_complete (check two, uncheck one, a non-task block) and node_set (a link's name, a wikilink's value, an uneditable prop → node_not_editable). Reads: the task list's text, an OQX read of the task nodes, the edited document, links_stale summary (the retargeted wikilink), the graph out of index.md, the api feed.",
+      "notes": "§4 blocks_check (check two, uncheck one, a non-task block) and nodes_set (a link's name, a wikilink's value, an uneditable prop → node_not_editable). Reads: the task list's text, an OQX read of the task nodes, the edited document, links_stale summary (the retargeted wikilink), the graph out of index.md, the api feed.",
       "writes": [
         {
-          "tool": "tasks_complete",
+          "tool": "blocks_check",
           "args": {
-            "blocks": [
+            "ids": [
               "b_56",
               "b_57"
             ]
           }
         },
         {
-          "tool": "tasks_complete",
+          "tool": "blocks_check",
           "args": {
-            "blocks": [
+            "ids": [
               "b_52"
             ],
             "checked": false
           }
         },
         {
-          "tool": "tasks_complete",
+          "tool": "blocks_check",
           "args": {
-            "blocks": [
+            "ids": [
               "b_1"
             ]
           }
         },
         {
-          "tool": "node_set",
+          "tool": "nodes_set",
           "args": {
             "id": "n_c7ebbf77d614",
             "prop": "name",
@@ -5546,7 +5546,7 @@
           }
         },
         {
-          "tool": "node_set",
+          "tool": "nodes_set",
           "args": {
             "id": "n_9e25b3a6f1e2",
             "prop": "value",
@@ -5554,7 +5554,7 @@
           }
         },
         {
-          "tool": "node_set",
+          "tool": "nodes_set",
           "args": {
             "id": "n_7524a6e40952",
             "prop": "name",
@@ -5564,7 +5564,7 @@
       ],
       "reads": [
         {
-          "tool": "blocks_get",
+          "tool": "blocks_read",
           "args": {
             "id": "b_51",
             "resolution": "text"
@@ -5988,7 +5988,7 @@
                 "frontier": true
               }
             ],
-            "edges": [
+            "links": [
               {
                 "id": "e_0",
                 "doc_id": "d_0",
@@ -6684,7 +6684,7 @@
             ],
             "truncated": false,
             "queries": [
-              "select _depth: $depth, _stop: $stop, _edges: doc.out_edges collect { id: id, doc_id: doc_id, block_id: block_id, via_id: via_id, dst_id: dst_id, dst_path: dst_path, uri: uri, dst_kind: dst_kind, predicate: predicate, provenance: provenance, anchor: anchor, field: field } from docs where id == \"d_0\" follow distinct doc.out { depth 2 }"
+              "select _depth: $depth, _stop: $stop, _links: doc.out_links collect { id: id, doc_id: doc_id, block_id: block_id, via_id: via_id, dst_id: dst_id, dst_path: dst_path, uri: uri, dst_kind: dst_kind, predicate: predicate, provenance: provenance, anchor: anchor, field: field } from docs where id == \"d_0\" follow distinct doc.out { depth 2 }"
             ]
           },
           {
@@ -7291,7 +7291,7 @@
         {
           "tool": "query",
           "args": {
-            "query": "select predicate, dst_kind, dst_path, uri from edges where path == \"substances/philosophers-stone.md\""
+            "query": "select predicate, dst_kind, dst_path, uri from links where path == \"substances/philosophers-stone.md\""
           }
         },
         {
@@ -7944,7 +7944,7 @@
                 "frontier": true
               }
             ],
-            "edges": [
+            "links": [
               {
                 "id": "e_10",
                 "doc_id": "d_0",
@@ -8242,7 +8242,7 @@
             ],
             "truncated": false,
             "queries": [
-              "select _depth: $depth, _stop: $stop, _edges: doc.in_edges collect { id: id, doc_id: doc_id, block_id: block_id, via_id: via_id, dst_id: dst_id, dst_path: dst_path, uri: uri, dst_kind: dst_kind, predicate: predicate, provenance: provenance, anchor: anchor, field: field } from docs where id == \"d_11\" follow distinct doc.in { depth 2 }"
+              "select _depth: $depth, _stop: $stop, _links: doc.in_links collect { id: id, doc_id: doc_id, block_id: block_id, via_id: via_id, dst_id: dst_id, dst_path: dst_path, uri: uri, dst_kind: dst_kind, predicate: predicate, provenance: provenance, anchor: anchor, field: field } from docs where id == \"d_11\" follow distinct doc.in { depth 2 }"
             ]
           },
           {
@@ -9020,7 +9020,7 @@
                 "frontier": true
               }
             ],
-            "edges": [
+            "links": [
               {
                 "id": "e_38",
                 "doc_id": "d_11",
@@ -9087,7 +9087,7 @@
             ],
             "truncated": false,
             "queries": [
-              "select _depth: $depth, _stop: $stop, _edges: doc.out_edges collect { id: id, doc_id: doc_id, block_id: block_id, via_id: via_id, dst_id: dst_id, dst_path: dst_path, uri: uri, dst_kind: dst_kind, predicate: predicate, provenance: provenance, anchor: anchor, field: field } from docs where id == \"d_20\" follow distinct doc.out { depth 2 }"
+              "select _depth: $depth, _stop: $stop, _links: doc.out_links collect { id: id, doc_id: doc_id, block_id: block_id, via_id: via_id, dst_id: dst_id, dst_path: dst_path, uri: uri, dst_kind: dst_kind, predicate: predicate, provenance: provenance, anchor: anchor, field: field } from docs where id == \"d_20\" follow distinct doc.out { depth 2 }"
             ]
           },
           {
@@ -9915,13 +9915,14 @@
     },
     {
       "name": "write-docs-update",
-      "notes": "§4 docs_plan_update (the opset + rendered plan for an edited paragraph and a replaced task) then docs_update applying the same content, then docs_update with content already current (spec/mutate §7). Reads: the document with ids (stable ids for untouched blocks), the outline, the edited paragraph's biography, docs_history, block-grain and unified diffs, the api feed.",
+      "notes": "§4 docs_update { dry_run: true } (the plan-only call — the opset + rendered plan for an edited paragraph and a replaced task) then docs_update applying the same content, then docs_update with content already current (spec/mutate §7). Reads: the document with ids (stable ids for untouched blocks), the outline, the edited paragraph's biography, docs_history, block-grain and unified diffs, the api feed.",
       "writes": [
         {
-          "tool": "docs_plan_update",
+          "tool": "docs_update",
           "args": {
             "path": "practitioners/newton.md",
-            "content": "---\ntype: practitioner\nlayer: working\ntradition: western\nera: 1680\ntags: [practitioner, transmutation]\nverified: true\n---\n\n# Isaac Newton\n\n1643–1727. Wrote more on alchemy than on physics, and published almost none of it.\n\nknown_for:: unpublished alchemical corpus\ncentury:: 17\n\n## Scale of the work\n\nRoughly a million words of alchemical manuscript survive: transcriptions,\nindexes of authors, and his own laboratory records with quantities and dates. He\nkept furnaces at Trinity for decades and ran the work himself rather than\ndelegating it.\n\nKeynes, who bought a large part of the papers at auction in 1936, called him\n\"the last of the magicians.\" The phrase is memorable and slightly unfair — the\nnotebooks are methodical, quantitative, and unmystical in tone.\n\n## The index of authors\n\nHis *Index Chemicus* cross-references hundreds of alchemical texts by topic. It\nis a serious piece of scholarship on a corpus he expected to contain a real\nsecret, encoded.\n\nThat expectation was the error, and it was not a careless one: the tradition\n*claimed* to encode a secret, and Newton took the claim at face value and tested\nit with the most rigorous method available. The method was sound; the corpus was\nempty.\n\n## Why it matters here\n\nNewton is the clean case against reading alchemy as mere credulity. The most\ncapable investigator of the era worked the programme for thirty years with full\nrigour and got nothing, because there was nothing there. That is a result, and\nthe [magnum opus](/processes/magnum-opus.md) framework does not survive it.\n\n- [x] Read the Index Chemicus entries on [[mercury]]\n- [ ] Compare Keynes's catalogue with the Sotheby's lot list\n"
+            "content": "---\ntype: practitioner\nlayer: working\ntradition: western\nera: 1680\ntags: [practitioner, transmutation]\nverified: true\n---\n\n# Isaac Newton\n\n1643–1727. Wrote more on alchemy than on physics, and published almost none of it.\n\nknown_for:: unpublished alchemical corpus\ncentury:: 17\n\n## Scale of the work\n\nRoughly a million words of alchemical manuscript survive: transcriptions,\nindexes of authors, and his own laboratory records with quantities and dates. He\nkept furnaces at Trinity for decades and ran the work himself rather than\ndelegating it.\n\nKeynes, who bought a large part of the papers at auction in 1936, called him\n\"the last of the magicians.\" The phrase is memorable and slightly unfair — the\nnotebooks are methodical, quantitative, and unmystical in tone.\n\n## The index of authors\n\nHis *Index Chemicus* cross-references hundreds of alchemical texts by topic. It\nis a serious piece of scholarship on a corpus he expected to contain a real\nsecret, encoded.\n\nThat expectation was the error, and it was not a careless one: the tradition\n*claimed* to encode a secret, and Newton took the claim at face value and tested\nit with the most rigorous method available. The method was sound; the corpus was\nempty.\n\n## Why it matters here\n\nNewton is the clean case against reading alchemy as mere credulity. The most\ncapable investigator of the era worked the programme for thirty years with full\nrigour and got nothing, because there was nothing there. That is a result, and\nthe [magnum opus](/processes/magnum-opus.md) framework does not survive it.\n\n- [x] Read the Index Chemicus entries on [[mercury]]\n- [ ] Compare Keynes's catalogue with the Sotheby's lot list\n",
+            "dry_run": true
           }
         },
         {
@@ -9967,17 +9968,17 @@
           }
         },
         {
-          "tool": "diff",
+          "tool": "docs_diff",
           "args": {
-            "doc_id": "d_5",
+            "id": "d_5",
             "from_rev": "r_5",
             "to_rev": "r_20"
           }
         },
         {
-          "tool": "diff_unified",
+          "tool": "docs_diff_unified",
           "args": {
-            "doc_path": "practitioners/newton.md"
+            "path": "practitioners/newton.md"
           }
         },
         {
@@ -10060,7 +10061,8 @@
               "converges": true,
               "diagnostics": []
             },
-            "plan": "UPDATE b_109     edited ~0.91 [context_unique]\nUPDATE b_119     edited ~0.85 [context_children]\n\npreserved: 10  updated: 2  moved: 0  created: 0  removed: 0  split: 0  merged: 0  ambiguous: 0"
+            "plan": "UPDATE b_109     edited ~0.91 [context_unique]\nUPDATE b_119     edited ~0.85 [context_children]\n\npreserved: 10  updated: 2  moved: 0  created: 0  removed: 0  split: 0  merged: 0  ambiguous: 0",
+            "result": null
           },
           {
             "opset": {

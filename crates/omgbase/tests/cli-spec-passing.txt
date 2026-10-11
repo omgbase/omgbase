@@ -337,7 +337,7 @@ query::cursor-continue
 query::cursor-from-1x
 query::cursor-invalid
 query::cursor-invalid-json
-query::edges
+query::links
 query::empty-source
 query::exists
 query::follow

@@ -142,7 +142,7 @@ export function runOps(cli: Cli, ws: Workspace, repo: RepoRow, ops: Op[], opts: 
 
 /**
  * Remote peer of runOps: call the changeset-producing tool that mirrors this
- * command (blocks_insert, tasks_complete, …) against the `--server` engine — the
+ * command (blocks_insert, blocks_check, …) against the `--server` engine — the
  * server resolves refs + pins CAS + applies — then render the returned
  * ApplyResult with the SAME renderers as local. --dry-run is threaded as the
  * tool's dry_run so the preview comes back without committing.

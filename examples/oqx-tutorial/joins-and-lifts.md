@@ -107,7 +107,7 @@ $ omg query 'select subject, process: ^docs single { select p: path, layer where
 
 Where does `^docs` come from? OQX scopes are rows, and the **root** scope's row
 is the repository itself: an object whose entries are the four collections
-(`docs`, `blocks`, `nodes`, `edges`) and whose `id` is the repository id. A
+(`docs`, `blocks`, `nodes`, `links`) and whose `id` is the repository id. A
 top-level row sits one scope inside it, so `^docs` from a row is the root's
 documents, `^id` the repository id, and `^$it` the root object:
 
@@ -115,7 +115,7 @@ documents, `^id` the repository id, and `^$it` the root object:
 $ omg query 'select n: size(^docs), repo: ^id from docs limit 1' --jsonl
 {"id":"d_sz1e8z0","path":"/index.md","n":20,"repo":"rp_7k2m9xq"}
 $ omg query 'select collections: entries(^$it) collect { $key values } from docs limit 1' --jsonl
-{"id":"d_sz1e8z0","path":"/index.md","collections":["docs","blocks","nodes","edges"]}
+{"id":"d_sz1e8z0","path":"/index.md","collections":["docs","blocks","nodes","links"]}
 ```
 
 Carets count scopes — from a block's rows the root is two out (`^^docs`). The

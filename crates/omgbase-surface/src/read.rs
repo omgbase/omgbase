@@ -16,7 +16,7 @@ use crate::cursor::{decode_path_cursor, encode_cursor};
 use crate::error::Result;
 use crate::paths::{reference_path, storage_path};
 
-/// Max refs honored per `docs_read_many` / `blocks_get_many` call.
+/// Max refs honored per `docs_read_many` / `blocks_read_many` call.
 pub const MANY_CAP: usize = 100;
 /// `docs_list` / `docs_tree` default page size.
 pub const LIST_DEFAULT_LIMIT: usize = 200;
@@ -415,7 +415,7 @@ pub fn docs_read_at(store: &Store, doc_id: &str, rev: &str) -> Result<Option<Jso
     })))
 }
 
-// ---- blocks_get ----------------------------------------------------------------------------
+// ---- blocks_read ----------------------------------------------------------------------------
 
 /// The resolution ladder.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -511,9 +511,9 @@ fn project(
     Ok(Json::Object(m))
 }
 
-/// §2 `blocks_get`: one block subtree at a resolution; `None` when the block
+/// §2 `blocks_read`: one block subtree at a resolution; `None` when the block
 /// is not live in `doc_id`.
-pub fn blocks_get(
+pub fn blocks_read(
     store: &Store,
     doc_id: &str,
     block_id: &str,
@@ -526,8 +526,8 @@ pub fn blocks_get(
     }
 }
 
-/// §2 `blocks_get_many`: `{ nodes, truncated, unresolved }`.
-pub fn blocks_get_many(
+/// §2 `blocks_read_many`: `{ nodes, truncated, unresolved }`.
+pub fn blocks_read_many(
     store: &Store,
     doc_id: Option<&str>,
     block_ids: &[String],

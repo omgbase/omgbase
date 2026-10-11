@@ -9,7 +9,7 @@ These documents are maintained as **as-built** references to the implementation 
 | Doc | Contents | You need it when… |
 |---|---|---|
 | `architecture.md` | System shape, canonicality, kernel concepts, identity rules, all subsystem summaries | always — read first |
-| `object-model.md` | Orientation: the documents/blocks/nodes/edges mental model and which layer each verb touches | getting oriented, or explaining the model to a user |
+| `object-model.md` | Orientation: the documents/blocks/nodes/edges (`links` at the surface) mental model and which layer each verb touches | getting oriented, or explaining the model to a user |
 | `data-model.md` | ID/hash conventions, full SQLite DDL, canonical serializations, rebuild & GC rules | touching `core/` or any storage |
 | `reconciliation-spec.md` | Parser contract, round-trip law, trivia policy, matcher phases/thresholds, eval harness, sync pipeline | touching `core/parse`, `reconcile/`, `sync/` |
 | `mutation-and-concurrency.md` | Six-op kernel, changesets, CAS vocabulary, conflict objects, write protocol, deletion | touching `mutate/` |
@@ -22,7 +22,7 @@ These documents are maintained as **as-built** references to the implementation 
 | `sync-plugins.md` | External-source reconciliation: the stdio adapter protocol (handshake + enumerate/fetch/watch/write), identity inferred\|borne, `@omgbase/fs-adapter`, the `sha256`-vs-`file_hash` freshness gate. The adapter/source/attachment registry is wired (`sync/sources.ts`, `omg source`); sourceless repos | touching `sync/`, the adapter protocol, or writing an adapter |
 | `sync-service-design.md` | ADR-014 design rationale + stage record (implemented): `@omgbase/sync` as a standalone MCP-client service, the `DocStore` seam, `observe*` tools, `attach`-as-sugar, `root_path` removal | touching `packages/sync/`, `omg sync --server`, or the observe/ingest path |
 | `surface-map.md` | The Rosetta stone: one operation catalog across library / `omg` CLI / MCP tool, the exception set, and `--server` coverage | adding or renaming an operation on any surface |
-| `update-opsets.md` | Whole-document update: reconcile a proposed complete document into an explicit, serializable, self-verifying opset (kernel ops + identity dispositions + preconditions); `planUpdate`/`applyOpset`/`docsUpdate`, `docs_plan_update`/`docs_update`, `omg update` | touching whole-document update, the `mutate/` planner, or the move/trivia kernel extensions |
+| `update-opsets.md` | Whole-document update: reconcile a proposed complete document into an explicit, serializable, self-verifying opset (kernel ops + identity dispositions + preconditions); `planUpdate`/`applyOpset`/`docsUpdate`, `docs_update` (`dry_run` plans), `omg update` | touching whole-document update, the `mutate/` planner, or the move/trivia kernel extensions |
 
 ## Rules for implementation agents
 
@@ -58,7 +58,7 @@ These documents are maintained as **as-built** references to the implementation 
 | **Disposition** | The engine's recorded belief about one block across an observed transition (kind, confidence, reason) |
 | **Checkpoint** | One debounced batch of filesystem changes (`cp_`) |
 | **Section** | Derived range from a heading block to its next peer — never a stored entity |
-| **Root row** | The repository as OQX's root-scope row (surface 2.0): `^docs`/`^blocks`/`^nodes`/`^edges` reach its collections from a top-level row (one caret per enclosing block, or `0^docs` from any depth), `^id` is the repository id; `$repo` is gone |
+| **Root row** | The repository as OQX's root-scope row (surface 2.0): `^docs`/`^blocks`/`^nodes`/`^links` reach its collections from a top-level row (one caret per enclosing block, or `0^docs` from any depth), `^id` is the repository id; `$repo` is gone |
 | **Locator** | Human-readable address (`path#Heading/p[2]`) — emitted alongside `id` in output for legibility; **not accepted as input** (nothing parses it — refs are ids or document paths, `core/read/refs.ts`) |
 | **Opaque block** | Unrecognized syntax preserved byte-perfectly; refuses typed edits |
 | **Splice rendering** | Emitting untouched blocks' retained bytes verbatim; only changed blocks serialize anew |

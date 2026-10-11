@@ -1314,8 +1314,8 @@
     },
     {
       "name": "relation-out-edges",
-      "notes": "§1.2: `out_edges` in (predicate, edge_id) order; the dangling [[nigredo]] has no dst_path.",
-      "query": "select oe: out_edges collect { predicate, provenance, dp: dst_path } from docs where path == \"substances/prima-materia.md\"",
+      "notes": "§1.2: `out_links` in (predicate, edge_id) order; the dangling [[nigredo]] has no dst_path.",
+      "query": "select oe: out_links collect { predicate, provenance, dp: dst_path } from docs where path == \"substances/prima-materia.md\"",
       "expect": {
         "hits": [
           {
@@ -1352,7 +1352,7 @@
     },
     {
       "name": "relation-in-edges-count",
-      "query": "select n: size(in_edges) from docs where type == \"substance\"",
+      "query": "select n: size(in_links) from docs where type == \"substance\"",
       "expect": {
         "hits": [
           {

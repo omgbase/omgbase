@@ -52,7 +52,7 @@ describe("docs_history", () => {
   });
 });
 
-describe("diff_unified / docs_read_at", () => {
+describe("docs_diff_unified (`diff_unified` before 3.0) / docs_read_at", () => {
   it("the unified diff: `id` vs `doc`; `path` and the diff text are the same", () => {
     const want = { doc: "d_a", path: "/notes/alpha.md", from: "r_1", to: "r_2", diff: "@@ -1 +1 @@\n-a\n+b" };
     expect(unifiedOf("3.0", { id: "d_a", path: "/notes/alpha.md", from: "r_1", to: "r_2", diff: want.diff })).toEqual(want);

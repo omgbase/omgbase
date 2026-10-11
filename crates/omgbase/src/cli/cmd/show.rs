@@ -55,8 +55,16 @@ fn show_one(cli: &mut Cli, r: &str, include_history: bool) -> Result<Card> {
                     links,
                 )
             };
-            // §9 Fixed: `--json` is the `read_ref` result.
-            let payload = cli.call("read_ref", json!({ "ref": doc_id }))?;
+            // §9 Fixed: `--json` is the `docs_read` result tagged with its kind
+            // (`{ kind: "document", ...docs_read }`; the `read_ref` result before
+            // surface 3.0).
+            let read = cli.call("docs_read", json!({ "id": doc_id }))?;
+            let mut tagged = serde_json::Map::new();
+            tagged.insert("kind".to_owned(), json!("document"));
+            if let Json::Object(m) = read {
+                tagged.extend(m);
+            }
+            let payload = Json::Object(tagged);
             Ok(Card::Document {
                 payload,
                 path,
@@ -66,7 +74,7 @@ fn show_one(cli: &mut Cli, r: &str, include_history: bool) -> Result<Card> {
         }
         ResolvedRef::Block { block_id, .. } => {
             let node = cli.call(
-                "blocks_get",
+                "blocks_read",
                 json!({ "id": block_id, "resolution": "full" }),
             )?;
             let history = if include_history {
@@ -87,7 +95,7 @@ fn show_one(cli: &mut Cli, r: &str, include_history: bool) -> Result<Card> {
 /// `data` view), skipping every stored `$` key (the computed rows' storage
 /// spelling), then — when the document has computed rows — a `computed`
 /// section with the keys spelled bare (`title`, `tags`: the re-keyed
-/// `properties.computed` the `read_ref` payload carries, `spec/surface` §1.2,
+/// `properties.computed` the `docs_read` payload carries, `spec/surface` §1.2,
 /// 3.0: the store's `$title`/`$tags` never reach the terminal), then the open
 /// edges.
 fn render_doc_card(cli: &Cli, path: &str, properties: &Json, payload: &Json, links: &Json) {
@@ -123,7 +131,7 @@ fn render_doc_card(cli: &Cli, path: &str, properties: &Json, payload: &Json, lin
             line(k, v);
         }
     }
-    render_link_groups(cli, links, "  out edges", "  backlinks");
+    render_link_groups(cli, links, "  out links", "  backlinks");
 }
 
 fn render_block_card(cli: &Cli, node: &Json, history: Option<&Json>) {

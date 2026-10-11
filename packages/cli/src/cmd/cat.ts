@@ -3,7 +3,7 @@ import { resolveRef, nodesGet, docsRead } from "@omgbase/core";
 import type { Command } from "../commands.js";
 import type { Cli } from "../context.js";
 import { CliUsageError, EngineErrorLike, EXIT_OK, emitMachine, renderHelp } from "../output.js";
-import { remoteCall } from "./_remote.js";
+import { remoteCall, docLocator } from "./_remote.js";
 import { expandBlockArgs } from "./_mutate.js";
 
 // `omg cat <node…|->` (11 §5.2) — content only, default raw exact bytes, pipe-clean.
@@ -11,12 +11,18 @@ import { expandBlockArgs } from "./_mutate.js";
 // (subtree at raw). No decoration on stdout: cat is the bytes. Several refs (or
 // `-` = refs from stdin, one per line — the counterpart of `--ids`, same
 // convention as the mutators) are cat'ed in order, like unix cat. `--json` is
-// the mapped tool's result: `docs_read` for a document, `blocks_get` for a block.
+// the mapped tool's result: `docs_read` for a document, `blocks_read` for a block.
 //
 // Refs are what `resolveRef` accepts: a block/doc/node id or a document path
-// in either form (`/notes/x.md`, `notes/x.md`). `--resolution` is a block-level notion (blocks_get); a document
+// in either form (`/notes/x.md`, `notes/x.md`). `--resolution` is a block-level notion (blocks_read); a document
 // is always its exact bytes (docs_read has no resolution ladder), so asking for
 // another resolution on a document ref is warned about, not silently ignored.
+
+/** A ref that names a block: a `b_` block id, an `n_` node id (its block), or a
+ *  `path#type[n]` locator — everything else is a document (a `d_` id or a path). */
+export function isBlockRef(ref: string): boolean {
+  return ref.startsWith("b_") || ref.startsWith("n_") || ref.includes("#");
+}
 
 type Resolution = "raw" | "text" | "outline" | "skeleton" | "full";
 
@@ -35,17 +41,19 @@ function warnDocResolution(cli: Cli, ref: string, resolution: Resolution): void 
 }
 
 async function catOne(cli: Cli, ref: string, resolution: Resolution): Promise<CatOne> {
-  // Remote: the polymorphic `read_ref` tool classifies + reads server-side.
+  // Remote: the ref's SHAPE picks the tool (ids carry their kind, a path is a
+  // document): a `b_`/`n_` id or a `path#type[n]` locator is `blocks_read`
+  // (an `n_` id dereferences to its block server-side, as on every block-level
+  // tool), a `d_` id or a path is `docs_read` — the same two results the local
+  // run renders (`read_ref` classified server-side before surface 3.0).
   if (cli.flags.server) {
-    const r = await remoteCall<Record<string, unknown> & { kind: string }>(cli, "read_ref", { ref, ...(resolution !== "raw" ? { resolution } : {}) });
-    if (r.kind === "document") {
-      warnDocResolution(cli, ref, resolution);
-      // The `docs_read` result is the `read_ref` document result without `kind`.
-      const { kind: _kind, ...doc } = r;
-      void _kind;
-      return { text: String(r.raw ?? ""), json: doc, capture: r.raw };
+    if (isBlockRef(ref)) {
+      const r = await remoteCall<Record<string, unknown>>(cli, "blocks_read", { id: ref, resolution });
+      return { text: String(r.raw ?? r.text ?? r.label ?? ""), json: r, capture: r };
     }
-    return { text: String(r.raw ?? r.text ?? r.label ?? ""), json: r, capture: r };
+    const r = await remoteCall<Record<string, unknown>>(cli, "docs_read", docLocator(ref));
+    warnDocResolution(cli, ref, resolution);
+    return { text: String(r.raw ?? ""), json: r, capture: r.raw };
   }
 
   const ws = cli.workspace();

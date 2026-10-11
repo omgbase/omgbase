@@ -23,8 +23,8 @@ function showOne(cli: Cli, ref: string, include: string[]): ShowOne {
   if (!resolved) throw new EngineErrorLike("doc_missing", `no node ${ref}`);
 
   if (resolved.kind === "document") {
-    // The card reads the merged properties + open edges; `--json` is the
-    // `read_ref` result for a document (`{ kind: "document", ...docs_read }`).
+    // The card reads the merged properties + open links; `--json` is the
+    // `docs_read` result tagged with its kind (`{ kind: "document", ...docs_read }`).
     const res = docsRead(ws.store, resolved.docId);
     if (!res) throw new EngineErrorLike("doc_missing", `no document ${ref}`);
     const links = docLinks(ws.store, resolved.docId, { direction: "both" });
@@ -53,7 +53,7 @@ function runShow(cli: Cli, args: string[]): number {
   if (values.help) {
     return renderHelp(cli, {
       name: "show",
-      summary: "Metadata card for a node: attrs, placement, open edges, last change (`cat` is the bytes)",
+      summary: "Metadata card for a node: attrs, placement, open links, last change (`cat` is the bytes)",
       usage: "show <node…|-> [--include history]",
       options: [
         ["<node…>", "one or more refs: a block id (`b_…`), a doc id (`d_…`), a node id (`n_…`), or a doc path (`/notes/x.md`; the leading `/` is optional)"],
@@ -95,7 +95,7 @@ function renderDocCard(cli: Cli, path: string, fm: Record<string, unknown>, comp
     for (const k of computedKeys) io.out(`    ${style.accent(k)} ${style.dim("=")} ${fmt(computed[k])}`);
   }
   if (links.out.length > 0) {
-    io.out(`  ${style.dim("out edges")}`);
+    io.out(`  ${style.dim("out links")}`);
     for (const e of links.out) io.out(`    ${style.accent(e.predicate)} ${style.dim(render.g.arrow)} ${style.id(e.doc_id)} ${style.dim(`×${e.count}`)}`);
   }
   if (links.in.length > 0) {

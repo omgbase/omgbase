@@ -79,7 +79,7 @@ export interface Hunk {
 
 const HUNK = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/;
 
-/** The hunks of a unified diff without file headers (what `diff_unified` emits). */
+/** The hunks of a unified diff without file headers (what `docs_diff_unified` emits). */
 export function parseUnified(diff: string): Hunk[] {
   const hunks: Hunk[] = [];
   if (diff === "") return hunks;
@@ -104,7 +104,7 @@ export function parseUnified(diff: string): Hunk[] {
   return hunks;
 }
 
-/** A text's lines as `diff_unified` counts them: `raw.split("\n")` verbatim, so
+/** A text's lines as `docs_diff_unified` counts them: `raw.split("\n")` verbatim, so
  * a text ending in a newline has an empty last line (its hunks say so: a
  * trailing `+` line for a created document's final newline). Empty text → []. */
 export function splitLines(text: string): string[] {
