@@ -2,7 +2,7 @@
   "name": "live-tail",
   "version": "0.0.0",
   "private": true,
-  "description": "omgbase live-tail demo: the most recently updated documents with the unified diff of their latest change, then every commit as it lands — `changes_since` polled with a cursor, each digest prepended with its revisions' diffs (Lit 3 + signals, Shoelace, MCP over Streamable HTTP through webdevproxy)",
+  "description": "omgbase live-tail demo: the most recently updated documents with the unified diff of their latest change, then every commit as it lands — `changes_since` polled with a cursor, each digest prepended with its revisions' diffs, an OQX where-clause filter over docs narrowing both (Lit 3 + signals, Shoelace, MCP over Streamable HTTP through webdevproxy)",
   "license": "MIT",
   "type": "module",
   "engines": {
@@ -22,8 +22,14 @@
     "lint:fix": "eslint . --fix"
   },
   "dependencies": {
+    "@codemirror/commands": "^6.8.1",
+    "@codemirror/language": "^6.12.4",
+    "@codemirror/state": "^6.5.2",
+    "@codemirror/view": "^6.38.0",
+    "@lezer/highlight": "^1.2.4",
     "@lit-labs/signals": "^0.3.0",
     "@modelcontextprotocol/sdk": "^1.30.0",
+    "@omgbase/oqx-syntax": "workspace:^",
     "@shoelace-style/shoelace": "^2.20.1",
     "lit": "^3.3.0"
   },

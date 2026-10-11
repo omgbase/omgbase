@@ -42,7 +42,7 @@ carry it.
 Not tutorials, but also here:
 
 - **[graph-ui/](./graph-ui/README.md)** — a Lit demo that runs an OQX query over MCP and renders the result as a graph, with the relationships that draw edges and lay the graph out inferred from the query (a probe of the reflection API).
-- **[live-tail/](./live-tail/README.md)** — a Lit demo of the change feed: the most recently updated documents with the unified diff of their latest change, then every commit as it lands (`changes_since` polled with a cursor, each digest prepended with its revisions' diffs).
+- **[live-tail/](./live-tail/README.md)** — a Lit demo of the change feed: the most recently updated documents with the unified diff of their latest change, then every commit as it lands (`changes_since` polled with a cursor, each digest prepended with its revisions' diffs), both narrowed by an OQX `where` filter typed into the hole of the recent query itself (a CodeMirror editor whose frame is read-only).
 - **[webdevproxy/](./webdevproxy/README.md)** — the development-only local web proxy the browser demos use to reach an omgbase MCP server (a local `omg mcp`, or a remote gateway behind OAuth) from a Vite dev server without CORS or OAuth setup on the server side. Private, unpublished, loopback only.
 
 ## The corpus

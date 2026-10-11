@@ -242,12 +242,30 @@ importers:
 
   examples/live-tail:
     dependencies:
+      '@codemirror/commands':
+        specifier: ^6.8.1
+        version: 6.11.1
+      '@codemirror/language':
+        specifier: ^6.12.4
+        version: 6.12.4
+      '@codemirror/state':
+        specifier: ^6.5.2
+        version: 6.7.6
+      '@codemirror/view':
+        specifier: ^6.38.0
+        version: 6.43.13
+      '@lezer/highlight':
+        specifier: ^1.2.4
+        version: 1.2.4
       '@lit-labs/signals':
         specifier: ^0.3.0
         version: 0.3.0
       '@modelcontextprotocol/sdk':
         specifier: ^1.30.0
         version: 1.30.0(supports-color@7.2.0)(zod@4.5.4)
+      '@omgbase/oqx-syntax':
+        specifier: workspace:^
+        version: link:../../packages/oqx-syntax
       '@shoelace-style/shoelace':
         specifier: ^2.20.1
         version: 2.20.1(@floating-ui/utils@0.2.12)(@types/react@19.3.0)

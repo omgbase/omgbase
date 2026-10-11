@@ -1,7 +1,8 @@
 // The pure side of the live tail: the change feed's cursor, a `changes_since`
 // digest as the page shows it, which two revisions to diff for a change, the
-// recent-documents query and its hits (either envelope), and the diff's lines.
-// Nothing here touches the network or the DOM.
+// recent-documents query and its hits (either envelope), the OQX filter (the
+// queries it shapes and what it hides), and the diff's lines. Nothing here
+// touches the network or the DOM.
 //
 // Tool shapes (packages/core/src/mcp/server.ts, graph/history.ts):
 //   changes_since → { digests: [{ commit, seq, ts, origin, actor, summary, revisions: [{ doc, path, contentHash }] }], cursor, truncated, head }
@@ -26,9 +27,53 @@ export interface ChangesSince { digests: Digest[]; cursor: number; truncated: bo
 export interface DocVersion { rev: string; seq: number; commit: string; ts: string; origin: string; actor: string | null; contentHash: string; isCurrent: boolean }
 export interface DocVersions { docId: string; path: string; deleted: boolean; currentRev: string | null; versions: DocVersion[] }
 
-/** The query behind the initial view. `$title`/`$updated_at` are projected under both envelopes. */
-export const RECENT_QUERY = "select $path, $title, $updated_at from docs order by $updated_at desc limit 25";
 export const RECENT_LIMIT = 25;
+
+const RECENT_SELECT = "select $path, $title, $updated_at from docs";
+const RECENT_TAIL = `order by $updated_at desc limit ${RECENT_LIMIT}`;
+
+/** The query behind the initial view, narrowed by the filter (an OQX `where`
+ * predicate over `docs`) when there is one; one line, for the server. With a
+ * filter its tokens are exactly the framed field's (`frameFor`, which lays the
+ * same text out on three lines); without one the `where` clause is omitted (an
+ * empty `where` would not parse). `$title`/`$updated_at` are projected under
+ * both envelopes. */
+export function recentQuery(filter = ""): string {
+  const f = filter.trim();
+  return f ? `${RECENT_SELECT} where ${f} ${RECENT_TAIL}` : `${RECENT_SELECT} ${RECENT_TAIL}`;
+}
+/** The unfiltered initial view. */
+export const RECENT_QUERY = recentQuery();
+
+/** The read-only frame the field shows around the hole when there is a `where`
+ * line — the `select … from docs` line, `where ` + the hole, the `order by …
+ * limit` line. */
+export const FRAME_BEFORE = `${RECENT_SELECT}\nwhere `;
+export const FRAME_AFTER = `\n${RECENT_TAIL}`;
+
+export interface Frame {
+  text: string;
+  /** The editable range (UTF-16 offsets, as CodeMirror counts). */
+  hole: { from: number; to: number };
+  /** Whether the `where` line is shown (the hole lives on it); without it nothing is editable. */
+  where: boolean;
+}
+
+/** The framed field's text and the hole in it. With a filter, or while the
+ * field is being edited, three lines: the filter between `FRAME_BEFORE` and
+ * `FRAME_AFTER`, so the second line is `where <filter>` (an empty filter is an
+ * empty hole after `where `, where the caret waits). Idle and empty, two lines
+ * with no `where` at all and a closed, zero-width hole at the end of the first.
+ * Joined with spaces instead of its newlines the text is `recentQuery(filter)`
+ * in every state. */
+export function frameFor(filter: string, { editing = false }: { editing?: boolean } = {}): Frame {
+  if (filter === "" && !editing) {
+    const at = RECENT_SELECT.length;
+    return { text: `${RECENT_SELECT}${FRAME_AFTER}`, hole: { from: at, to: at }, where: false };
+  }
+  const from = FRAME_BEFORE.length;
+  return { text: `${FRAME_BEFORE}${filter}${FRAME_AFTER}`, hole: { from, to: from + filter.length }, where: true };
+}
 
 // ---- the cursor --------------------------------------------------------------------
 
@@ -147,6 +192,63 @@ export function recentFromHits(hits: readonly Record<string, unknown>[]): Recent
     });
   }
   return out;
+}
+
+// ---- the filter ---------------------------------------------------------------------
+
+/** How the filter stands: absent, applied, or refused by the server (`filter_invalid`)
+ * — while invalid nothing is hidden and the page says so. */
+export type FilterState =
+  | { kind: "off" }
+  | { kind: "on"; filter: string }
+  | { kind: "invalid"; filter: string; message: string };
+
+/** The state after running a query with `filter`: empty → off; the server took
+ * it → on; it refused it → invalid with its message. Any other failure (the
+ * network, the repo) says nothing about the filter, so it is taken as `on`. */
+export function filterStateAfter(filter: string, error: { code?: string; message: string } | null): FilterState {
+  const f = filter.trim();
+  if (f === "") return { kind: "off" };
+  if (error && error.code === "filter_invalid") return { kind: "invalid", filter: f, message: error.message };
+  return { kind: "on", filter: f };
+}
+
+/** ONE query asking which of these documents the filter admits: the filter
+ * and-ed with the paths or-ed together (OQX has no array literal). Paths are
+ * `/`-rooted and deduped; null when there is nothing to ask about. The hits
+ * come back under either envelope — read them with `hitPath`. */
+export function matchQuery(filter: string, paths: readonly string[]): string | null {
+  const unique = [...new Set(paths.map(rooted))];
+  if (unique.length === 0) return null;
+  const alternatives = unique.map((p) => `$path == ${JSON.stringify(p)}`).join(" or ");
+  return `select $path from docs where (${filter.trim()}) and (${alternatives})`;
+}
+
+/** The paths a page of digests touches (`/`-rooted, deduped, in order). */
+export function digestPaths(digests: readonly Digest[]): string[] {
+  return [...new Set(digests.flatMap((d) => d.revisions.map((r) => rooted(r.path))))];
+}
+
+/** Digests through the filter: a revision stays when its document is in
+ * `matching` (the match query's `$path`s, rooted), the rest are dropped; a
+ * digest left without revisions — including one that had none, a deletion or a
+ * move, whose documents are no longer in `docs` to be evaluated — is hidden
+ * and counted. */
+export function partitionByFilter(digests: readonly Digest[], matching: ReadonlySet<string>): { kept: Digest[]; hidden: number } {
+  const kept: Digest[] = [];
+  let hidden = 0;
+  for (const d of digests) {
+    const revisions = d.revisions.filter((r) => matching.has(rooted(r.path)));
+    if (revisions.length === 0) hidden++;
+    else kept.push({ ...d, revisions });
+  }
+  return { kept, hidden };
+}
+
+/** The muted line under the feed heading. */
+export function hiddenLine(hidden: number): string | null {
+  if (hidden <= 0) return null;
+  return `${hidden} change${hidden === 1 ? "" : "s"} hidden by the filter`;
 }
 
 // ---- rendering helpers -------------------------------------------------------------

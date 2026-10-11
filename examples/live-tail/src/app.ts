@@ -4,10 +4,13 @@
 //     → recent documents (query) with the unified diff of each one's latest change
 //     → the change feed: `changes_since` from the repo's head, polled every N seconds,
 //       every digest prepended as it lands with its revisions' diffs (fetched when shown)
+//     → an OQX filter (a `where` fragment over docs) narrows the recent list and, through
+//       one match query per poll, which arriving revisions are shown
 //
 // The data path is MCP only (lib/mcp-client.ts) through the dev proxy at the
 // same-origin /mcp; the pure parts (cursor, digests → entries, which revisions
-// to diff, hits under either envelope, diff lines) are lib/feed.ts.
+// to diff, hits under either envelope, the filter's queries and partition, diff
+// lines) are lib/feed.ts.
 
 import { LitElement, css, html, nothing } from "lit";
 import { customElement } from "lit/decorators.js";
@@ -16,16 +19,25 @@ import { SignalWatcher, computed, signal } from "@lit-labs/signals";
 import type { WhoAmI } from "webdevproxy";
 import "@shoelace-style/shoelace/dist/themes/light.css";
 import "@shoelace-style/shoelace/dist/components/details/details.js";
-import { OmgClient, fetchWhoAmI } from "./lib/mcp-client.ts";
+import "@shoelace-style/shoelace/dist/components/switch/switch.js";
+import type SlSwitch from "@shoelace-style/shoelace/dist/components/switch/switch.js";
+import "./elements/oqx-framed-filter.ts";
+import type { FilterDetail } from "./elements/oqx-framed-filter.ts";
+import { OmgClient, OmgError, fetchWhoAmI } from "./lib/mcp-client.ts";
 import {
-  RECENT_LIMIT, RECENT_QUERY, advanceCursor, byline, diffLineKind, diffStats, formatTime, latestPair, pairForCommit, pollMs, prependDigests, recentFromHits, startCursor,
-  type DiffPair, type EntryChange, type FeedEntry, type RecentDoc,
+  RECENT_LIMIT, advanceCursor, byline, diffLineKind, diffStats, digestPaths, filterStateAfter, formatTime, hiddenLine, latestPair, matchQuery, pairForCommit, partitionByFilter, pollMs, prependDigests, recentFromHits, recentQuery, startCursor,
+  type Digest, type DiffPair, type EntryChange, type FeedEntry, type FilterState, type RecentDoc,
 } from "./lib/feed.ts";
-import { LEGACY_SURFACE, surfaceOf } from "./lib/paths.ts";
+import { LEGACY_SURFACE, hitPath, rooted, surfaceOf } from "./lib/paths.ts";
 
 const MCP_URL = "/mcp";
 const REPO_KEY = "omgbase-live-tail.repo";
 const POLL_KEY = "omgbase-live-tail.poll";
+const FILTER_KEY = "omgbase-live-tail.filter";
+const WRAP_KEY = "omgbase-live-tail.wrap";
+/** How long after the last keystroke the filter is applied (Enter, blur and clear apply at once). */
+const FILTER_DEBOUNCE_MS = 600;
+const FILTER_PLACEHOLDER = 'status == "active"';
 /** How many recent documents' diffs are fetched at once. */
 const DIFF_CONCURRENCY = 4;
 /** The first N recent cards start open; the rest open on click. */
@@ -48,6 +60,14 @@ const surface = signal<string | null>(null);
 const repos = signal<string[]>([]);
 const repo = signal<string>(localStorage.getItem(REPO_KEY) ?? "");
 const pollSeconds = signal<number>(pollMs(localStorage.getItem(POLL_KEY)) / 1000);
+/** The OQX `where` fragment over docs the user typed (trimmed; "" = no filter). */
+const filter = signal<string>((localStorage.getItem(FILTER_KEY) ?? "").trim());
+/** Whether the server took the filter; `invalid` carries its message and hides nothing. */
+const filterState = signal<FilterState>(filter.get() ? { kind: "on", filter: filter.get() } : { kind: "off" });
+/** Digests the filter dropped since it was last changed. */
+const hiddenCount = signal(0);
+/** Word-wrap in every diff view. */
+const wrap = signal<boolean>(localStorage.getItem(WRAP_KEY) === "1");
 
 const recent = signal<RecentDoc[]>([]);
 const recentLoading = signal(false);
@@ -129,10 +149,19 @@ async function loadChangeDiff(entry: FeedEntry, change: EntryChange): Promise<vo
   }
 }
 
+let recentGeneration = 0;
+
+/** The recent list under the current filter. This is also how the filter is
+ * validated: a `filter_invalid` answer marks it invalid (its message shows
+ * under the field, the list on screen is kept); any other answer marks it on. */
 async function loadRecent(): Promise<void> {
+  const generation = ++recentGeneration;
+  const f = filter.get();
   recentLoading.set(true);
   try {
-    const result = await client.query(RECENT_QUERY, repo.get(), RECENT_LIMIT);
+    const result = await client.query(recentQuery(f), repo.get(), RECENT_LIMIT);
+    if (generation !== recentGeneration) return; // the filter or repo changed meanwhile
+    filterState.set(filterStateAfter(f, null));
     const docs = recentFromHits(result.hits);
     recent.set(docs);
     // A few at a time: 25 documents are 50 calls.
@@ -141,10 +170,54 @@ async function loadRecent(): Promise<void> {
       for (let d = queue.shift(); d; d = queue.shift()) await loadLatestDiff(d);
     }));
   } catch (e) {
-    feedError.set(`recent documents: ${describe(e)}`);
+    if (generation !== recentGeneration) return;
+    if (e instanceof OmgError && e.code === "filter_invalid") filterState.set(filterStateAfter(f, e));
+    else feedError.set(`recent documents: ${describe(e)}`);
   } finally {
-    recentLoading.set(false);
+    if (generation === recentGeneration) recentLoading.set(false);
   }
+}
+
+/** A new filter: persist it, forget the hidden count, re-run the recent view
+ * (which validates it). The feed's cursor is untouched — the filter is a view
+ * over what arrives, not a position in the log. */
+function applyFilter(value: string): void {
+  const f = value.trim();
+  if (f === filter.get()) return;
+  filter.set(f);
+  localStorage.setItem(FILTER_KEY, f);
+  hiddenCount.set(0);
+  if (f === "") filterState.set({ kind: "off" });
+  if (connection.get() === "ok") void loadRecent();
+}
+
+/** The digests of one poll through the filter: one query asks which of their
+ * documents it admits (`matchQuery`); revisions of the rest are dropped and a
+ * digest left empty is counted as hidden. While the filter is off or invalid
+ * everything passes; a `filter_invalid` answer here marks it invalid too. */
+async function filterDigests(digests: Digest[]): Promise<Digest[]> {
+  const state = filterState.get();
+  if (state.kind !== "on" || digests.length === 0) return digests;
+  const paths = digestPaths(digests);
+  const q = matchQuery(state.filter, paths);
+  let matching = new Set<string>();
+  if (q !== null) {
+    try {
+      const result = await client.query(q, repo.get(), paths.length);
+      matching = new Set(result.hits.map(hitPath).filter((p): p is string => p !== null).map(rooted));
+    } catch (e) {
+      if (e instanceof OmgError && e.code === "filter_invalid") { filterState.set(filterStateAfter(state.filter, e)); return digests; }
+      throw e;
+    }
+  }
+  const { kept, hidden } = partitionByFilter(digests, matching);
+  if (hidden) hiddenCount.set(hiddenCount.get() + hidden);
+  return kept;
+}
+
+function setWrap(on: boolean): void {
+  wrap.set(on);
+  localStorage.setItem(WRAP_KEY, on ? "1" : "0");
 }
 
 // ---- the feed ------------------------------------------------------------------------
@@ -169,9 +242,19 @@ async function poll(): Promise<void> {
     cursor.set(next.cursor);
     if (next.reset) feedError.set(`the cursor (${c}) was beyond this repo's head (${page.head}) — restarted from the head`);
     else feedError.set(null);
-    if (page.digests.length) {
+    let digests = page.digests;
+    if (digests.length) {
+      try {
+        digests = await filterDigests(digests);
+      } catch (e) {
+        // The match query failed for a reason other than the filter: say so and show the page unfiltered.
+        feedError.set(`filter: ${describe(e)}`);
+      }
+      if (generation !== feedGeneration) return;
+    }
+    if (digests.length) {
       const before = new Set(entries.get().map((e) => e.key));
-      const merged = prependDigests(entries.get(), page.digests);
+      const merged = prependDigests(entries.get(), digests);
       entries.set(merged);
       // New entries arrive open: fetch their diffs now.
       for (const e of merged) if (!before.has(e.key)) for (const ch of e.changes) void loadChangeDiff(e, ch);
@@ -292,6 +375,7 @@ export class LiveTailApp extends SignalWatcher(LitElement) {
     .pill.live .dot { width: 8px; height: 8px; border-radius: 50%; background: #2e7d32; animation: blink 1.6s infinite; }
     .pill.paused { background: #fff3e0; color: #8a5a00; }
     .pill.polling .dot { background: #1565c0; animation: none; }
+    .pill.invalid { background: #fdecea; color: #8c1d18; }
     @keyframes blink { 50% { opacity: 0.35; } }
     .controls { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-left: auto; font-size: 13px; }
     select, input { font: inherit; font-size: 13px; padding: 2px 6px; border: 1px solid #c9cdd6; border-radius: 4px; background: #fff; }
@@ -300,6 +384,14 @@ export class LiveTailApp extends SignalWatcher(LitElement) {
     button:hover { background: #f4f6fa; }
     .banner { padding: 8px 12px; border-radius: 6px; margin: 0 0 12px; font-size: 13px; }
     .banner.err { background: #fdecea; color: #8c1d18; border: 1px solid #f3c4c0; }
+    .filterbar { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; margin: 0 0 12px; }
+    .filterbar oqx-framed-filter { flex: 1 1 100%; }
+    .filterbar .hint { flex: 1 0 100%; color: #6a7382; font-size: 12.5px; }
+    .filterbar .hint code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+    .filterbar .hint.err { color: #b3261e; }
+    .hidden-line { color: #6a7382; font-size: 12.5px; margin: -4px 0 8px; }
+    sl-switch { font-size: 13px; }
+    sl-switch::part(label) { font-size: 13px; }
     h2 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; color: #5a6270; margin: 22px 0 8px; }
     .empty { color: #6a7382; font-size: 13px; padding: 14px; border: 1px dashed #d4d8e0; border-radius: 6px; background: #fff; }
     .entry { background: #fff; border: 1px solid #e3e6ec; border-radius: 6px; padding: 10px 12px; margin-bottom: 8px; }
@@ -323,7 +415,8 @@ export class LiveTailApp extends SignalWatcher(LitElement) {
     .stats .del { color: #b3261e; }
     .kind { margin-left: 8px; font-size: 11px; padding: 0 6px; border-radius: 9px; background: #e8eaef; color: #4a5160; }
     .kind.created { background: #e6f4ea; color: #1e6b2e; }
-    pre { margin: 0; padding: 8px 10px; overflow-x: auto; font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; background: #fff; border-top: 1px solid #e8eaef; }
+    pre { margin: 0; padding: 8px 10px; overflow-x: auto; white-space: pre; font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; background: #fff; border-top: 1px solid #e8eaef; }
+    pre.wrap { white-space: pre-wrap; overflow-wrap: anywhere; }
     pre .add { background: #e6ffed; color: #1a4d1f; display: block; }
     pre .del { background: #ffeef0; color: #7a1c1c; display: block; }
     pre .hunk { color: #6f42c1; display: block; }
@@ -360,13 +453,16 @@ export class LiveTailApp extends SignalWatcher(LitElement) {
               if (live.get()) schedulePoll();
             }} /> s
           </label>
+          <sl-switch size="small" ?checked=${wrap.get()} @sl-change=${(e: Event) => setWrap((e.target as SlSwitch).checked)}>wrap</sl-switch>
           <button @click=${() => setLive(!live.get())} ?disabled=${state !== "ok"}>${live.get() ? "pause" : "resume"}</button>
           ${this.renderPill()}
         </div>
       </header>
+      ${this.renderFilter()}
       ${err ? html`<div class="banner err">${err}</div>` : nothing}
 
       <h2>changes since the page opened${entries.get().length ? ` (${entries.get().length})` : ""}</h2>
+      ${hiddenLine(hiddenCount.get()) ? html`<div class="hidden-line">${hiddenLine(hiddenCount.get())}</div>` : nothing}
       ${entries.get().length
         ? repeat(entries.get(), (e) => e.key, (e) => this.renderEntry(e))
         : html`<div class="empty">${state === "ok"
@@ -385,7 +481,31 @@ export class LiveTailApp extends SignalWatcher(LitElement) {
     if (state !== "ok") return html`<span class="pill">${state}</span>`;
     if (!live.get()) return html`<span class="pill paused">paused</span>`;
     const last = lastPoll.get();
-    return html`<span class="pill live ${polling.get() ? "polling" : ""}" title=${last ? `last poll ${formatTime(last)}` : ""}><span class="dot"></span>live · ${pollSeconds.get()} s</span>`;
+    const title = last ? `last poll ${formatTime(last)}` : "";
+    if (filterState.get().kind === "invalid") return html`<span class="pill invalid" title=${title}>filter invalid — showing everything</span>`;
+    return html`<span class="pill live ${polling.get() ? "polling" : ""}" title=${title}><span class="dot"></span>live · ${pollSeconds.get()} s</span>`;
+  }
+
+  private filterTimer: ReturnType<typeof setTimeout> | null = null;
+
+  /** The OQX filter: the recent query with an editable `where` hole, applied on Enter, blur, clear, or a pause in typing. */
+  private renderFilter() {
+    const fs = filterState.get();
+    const apply = (value: string) => { if (this.filterTimer) { clearTimeout(this.filterTimer); this.filterTimer = null; } applyFilter(value); };
+    return html`
+      <div class="filterbar">
+        <oqx-framed-filter .value=${filter.get()} ?invalid=${fs.kind === "invalid"} placeholder=${FILTER_PLACEHOLDER}
+          @filter-input=${(e: CustomEvent<FilterDetail>) => {
+            const { value } = e.detail;
+            if (this.filterTimer) clearTimeout(this.filterTimer);
+            this.filterTimer = setTimeout(() => { this.filterTimer = null; applyFilter(value); }, FILTER_DEBOUNCE_MS);
+          }}
+          @filter-change=${(e: CustomEvent<FilterDetail>) => apply(e.detail.value)}></oqx-framed-filter>
+        ${fs.kind === "invalid"
+          ? html`<span class="hint err">${fs.message}</span>`
+          : html`<span class="hint">click into the query to add a <code>where</code> predicate — an OQX expression over <code>docs</code> such as <code>${FILTER_PLACEHOLDER}</code> or <code>$path.startsWith("/notes/")</code>; it narrows the recent list and what arrives from now on (Enter applies, Escape leaves)</span>`}
+      </div>
+    `;
   }
 
   private renderEntry(e: FeedEntry) {
@@ -428,7 +548,7 @@ export class LiveTailApp extends SignalWatcher(LitElement) {
       <sl-details ?open=${open} @sl-show=${() => { const s = diffs.get()[key]; if (!s || s.status === "idle" || s.status === "error") void load(); }}>
         <span slot="summary">${summary}</span>
         ${state.status === "ready"
-          ? html`<pre>${state.text.split("\n").map((line) => html`<span class=${diffLineKind(line)}>${line}</span>`)}</pre>`
+          ? html`<pre class=${wrap.get() ? "wrap" : ""}>${state.text.split("\n").map((line) => html`<span class=${diffLineKind(line)}>${line}</span>`)}</pre>`
           : state.status === "none" ? html`<div class="note">${state.note}</div>`
           : state.status === "error" ? html`<div class="note err">${state.message}</div>`
           : html`<div class="note">${state.status === "loading" ? "fetching…" : "open to fetch"}</div>`}

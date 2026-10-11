@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  RECENT_QUERY, advanceCursor, byline, diffLineKind, diffStats, entryFromDigest, formatTime, latestPair, pairForCommit, pollMs, prependDigests, recentFromHits, startCursor,
+  FRAME_AFTER, FRAME_BEFORE, RECENT_QUERY, advanceCursor, byline, diffLineKind, diffStats, digestPaths, entryFromDigest, filterStateAfter, formatTime, frameFor, hiddenLine, latestPair, matchQuery, pairForCommit, partitionByFilter, pollMs, prependDigests, recentFromHits, recentQuery, startCursor,
   type Digest, type DocVersion, type FeedEntry,
 } from "../src/lib/feed.ts";
 
@@ -73,6 +73,89 @@ describe("recent documents", () => {
   it("roots a bare path, drops an empty title, skips a hit without a path", () => {
     expect(recentFromHits([{ id: "d_b", path: "notes/beta.md", $title: "  ", $updated_at: null }, { $id: "d_x" }]))
       .toEqual([{ id: "d_b", path: "/notes/beta.md", title: null, updatedAt: null }]);
+  });
+});
+
+describe("the filter", () => {
+  it("recentQuery: the filter becomes the where clause; none or blank leaves the plain query (no empty where)", () => {
+    expect(recentQuery('status == "active"')).toBe('select $path, $title, $updated_at from docs where status == "active" order by $updated_at desc limit 25');
+    expect(recentQuery("  a == 1 or b == 2  ")).toBe("select $path, $title, $updated_at from docs where a == 1 or b == 2 order by $updated_at desc limit 25");
+    expect(recentQuery("")).toBe("select $path, $title, $updated_at from docs order by $updated_at desc limit 25");
+    expect(recentQuery("   ")).toBe(RECENT_QUERY);
+    expect(recentQuery()).toBe(RECENT_QUERY);
+  });
+  it("frameFor, filled (idle or editing): three lines, the filter in the hole on the where line; the same tokens as recentQuery", () => {
+    for (const editing of [false, true]) {
+      const f = frameFor('status == "active"', { editing });
+      expect(f.text).toBe('select $path, $title, $updated_at from docs\nwhere status == "active"\norder by $updated_at desc limit 25');
+      expect(f.where).toBe(true);
+      expect(f.text.split("\n")).toHaveLength(3);
+      expect(f.text.replace(/\n/g, " ")).toBe(recentQuery('status == "active"'));
+      expect(f.text.slice(f.hole.from, f.hole.to)).toBe('status == "active"');
+      expect(f.text.slice(0, f.hole.from)).toBe(FRAME_BEFORE);
+      expect(f.text.slice(f.hole.to)).toBe(FRAME_AFTER);
+      expect(f.text.split("\n")[1]).toBe('where status == "active"'); // the hole lives on the second line alone
+    }
+    const astral = frameFor('$title == "𝒜"'); // offsets are UTF-16, as CodeMirror counts
+    expect(astral.text.slice(astral.hole.from, astral.hole.to)).toBe('$title == "𝒜"');
+  });
+  it("frameFor, empty + editing: the where line with an empty hole after `where `, for the caret", () => {
+    const f = frameFor("", { editing: true });
+    expect(f.text).toBe("select $path, $title, $updated_at from docs\nwhere \norder by $updated_at desc limit 25");
+    expect(f.where).toBe(true);
+    expect(f.hole).toEqual({ from: FRAME_BEFORE.length, to: FRAME_BEFORE.length });
+    expect(f.text.split("\n")[1]).toBe("where ");
+  });
+  it("frameFor, empty + idle: two lines, no where at all, a closed zero-width hole; the same tokens as recentQuery('')", () => {
+    const f = frameFor("");
+    expect(f.text).toBe("select $path, $title, $updated_at from docs\norder by $updated_at desc limit 25");
+    expect(f.where).toBe(false);
+    expect(f.text.split("\n")).toHaveLength(2);
+    expect(f.text.replace(/\n/g, " ")).toBe(recentQuery(""));
+    expect(f.hole).toEqual({ from: "select $path, $title, $updated_at from docs".length, to: "select $path, $title, $updated_at from docs".length });
+    expect(frameFor("", { editing: false })).toEqual(f);
+  });
+  it("matchQuery: ONE query, the filter and-ed with the paths or-ed together, rooted, deduped, JSON-quoted; null without paths", () => {
+    expect(matchQuery('status == "active"', ["/notes/alpha.md", "notes/beta.md", "/notes/alpha.md"]))
+      .toBe('select $path from docs where (status == "active") and ($path == "/notes/alpha.md" or $path == "/notes/beta.md")');
+    expect(matchQuery("x", ['/odd "quoted" name.md'])).toBe('select $path from docs where (x) and ($path == "/odd \\"quoted\\" name.md")');
+    expect(matchQuery('status == "active"', [])).toBeNull();
+  });
+  it("digestPaths: every revision's path, rooted and deduped, in order", () => {
+    const page = [
+      digest(1, "c_1", [{ doc: "d_a", path: "notes/alpha.md", contentHash: "a1" }]),
+      digest(2, "c_2", [{ doc: "d_b", path: "/notes/beta.md", contentHash: "b1" }, { doc: "d_a", path: "/notes/alpha.md", contentHash: "a2" }]),
+      digest(3, "c_3", []),
+    ];
+    expect(digestPaths(page)).toEqual(["/notes/alpha.md", "/notes/beta.md"]);
+  });
+  it("partitionByFilter: keeps matching revisions, drops the rest, hides and counts a digest left empty (deletions and moves included)", () => {
+    const page = [
+      digest(1, "c_1", [{ doc: "d_a", path: "notes/alpha.md", contentHash: "a1" }]),
+      digest(2, "c_2", [{ doc: "d_b", path: "/notes/beta.md", contentHash: "b1" }, { doc: "d_a", path: "/notes/alpha.md", contentHash: "a2" }]),
+      digest(3, "c_3", [{ doc: "d_g", path: "/notes/gamma.md", contentHash: "g1" }]),
+      { ...digest(4, "c_4", []), summary: "delete /notes/alpha.md" },
+    ];
+    const { kept, hidden } = partitionByFilter(page, new Set(["/notes/alpha.md"]));
+    expect(kept.map((d) => d.commit)).toEqual(["c_1", "c_2"]);
+    expect(kept[1]!.revisions).toEqual([{ doc: "d_a", path: "/notes/alpha.md", contentHash: "a2" }]);
+    expect(hidden).toBe(2);
+    expect(partitionByFilter(page, new Set())).toEqual({ kept: [], hidden: 4 });
+    expect(partitionByFilter([], new Set(["/x.md"]))).toEqual({ kept: [], hidden: 0 });
+  });
+  it("filterStateAfter: off for an empty filter, on when the server took it, invalid with the message when it refused it, on when something else failed", () => {
+    expect(filterStateAfter("", null)).toEqual({ kind: "off" });
+    expect(filterStateAfter("  ", { code: "filter_invalid", message: "x" })).toEqual({ kind: "off" });
+    expect(filterStateAfter(' status == "active" ', null)).toEqual({ kind: "on", filter: 'status == "active"' });
+    expect(filterStateAfter("status ==", { code: "filter_invalid", message: "unexpected ')' — expected a value (at offset 39)" }))
+      .toEqual({ kind: "invalid", filter: "status ==", message: "unexpected ')' — expected a value (at offset 39)" });
+    expect(filterStateAfter("status == 1", { message: "fetch failed" })).toEqual({ kind: "on", filter: "status == 1" });
+    expect(filterStateAfter("status == 1", { code: "repo_not_found", message: "no such repo" })).toEqual({ kind: "on", filter: "status == 1" });
+  });
+  it("hiddenLine: a muted count, singular and plural, nothing for zero", () => {
+    expect(hiddenLine(0)).toBeNull();
+    expect(hiddenLine(1)).toBe("1 change hidden by the filter");
+    expect(hiddenLine(3)).toBe("3 changes hidden by the filter");
   });
 });
 
