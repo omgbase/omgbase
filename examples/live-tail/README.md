@@ -74,8 +74,8 @@ dev proxy); nothing imports `@omgbase/core`. On load:
    `docs_read_at { doc, rev }` gives its content, shown as a pure-addition
    diff (`createdDiff`: one `@@ -0,0 +1,N @@` hunk, every line `+`, so
    frontmatter fences and dash bullets are green, not subtractions; `+N −0`).
-   Four documents at a time; the
-   first three cards start open, the rest open on click.
+   Four documents at a time; the first three cards start open, the rest open
+   on click.
 4. **The feed** — one `changes_since { repo, limit: 1 }` for the repo's `head`,
    which is the starting cursor (what happened before the page opened is the
    recent view's business). Then every N seconds (default 2, editable,
@@ -88,6 +88,33 @@ dev proxy); nothing imports `@omgbase/core`. On load:
    against its predecessor); a digest with no revisions (a deletion, a move)
    shows its summary alone. New entries arrive open, so their diffs are fetched
    at once; anything collapsed is fetched when shown.
+
+### The cards
+
+Both kinds — a recent document, a feed entry — are one card (`recentCard` /
+`entryCard` → `Card`, rendered by one `renderCard`): an `<sl-details>` whose
+summary bar *is* the header, carrying every value exactly once and no filler
+words (no "latest change", no "created" badge, no digest summary line):
+
+```
+09:05:07  Alpha  /notes/alpha.md   seq 6 · c_761p702   api   +1 −0
+```
+
+— the update's time (a recent document's `$updated_at`, a digest's `ts`;
+`HH:MM:SS` today, else `YYYY-MM-DD HH:MM`), `$title` prominent, `$path`
+secondary (the path alone when the title is null or the same), the change's
+`seq` and commit id (a recent card takes them, with the actor, from
+`docs_history`'s latest version, fetched anyway for the diff pair), who made
+it (`origin · actor`, or one of them when the actor already carries the
+origin), and the lines `+N −M` (`+N −0` for a created document, whose hunk
+header says the rest). The server's digest `summary` (`api(?): /notes/alpha.md
+— 2 inserted`) restates origin, path and a count and is not shown — except for
+a digest **without revisions** (a deletion, a move), where it is the only
+statement of what happened and becomes the card's note. A digest touching
+several documents keeps the digest's values and the **total** `+N −M` in the
+header and gives each document a slim row (title/path and its own stats) above
+its diff. `cardFields(card)` lists everything a card shows, flat, and a test
+asserts no value appears twice. The chevron alone signals that a card opens.
 
 **pause** stops the polling (the cursor is kept); **resume** polls at once, so
 everything committed meanwhile arrives in one page. The pill says `live · N s`,
@@ -192,6 +219,7 @@ reconnected* in the header; only a second failure is shown.
   `recentQuery`/`frameFor`/`recentFromHits`, the poll's lookup
   `matchQuery`/`digestPaths`/`titlesByPath`, the filter's
   `partitionByFilter`/`filterStateAfter`/`hiddenLine`,
+  `latestChange`/`recentCard`/`entryCard`/`cardFields`/`sumStats`/`formatStats` (the card),
   `createdDiff`/`diffLineKind`/`diffStats`/`formatTime`/`pollMs`.
 - `src/lib/hole.ts` — the hole as CodeMirror state (`holeField`, `holeOnly`,
   `mapHole`, `changesInside`, `insertsNewline`, `reframe`/`reframeSpec`,
@@ -203,7 +231,7 @@ reconnected* in the header; only a second failure is shown.
 - `scripts/dev.mjs`, `scripts/dev-args.mjs`, `scripts/dev-workspace.mjs` —
   the proxy + Vite dev script and the sample workspace.
 - `test/` — vitest over the pure parts, the hole's transaction filter, the dev
-  arguments and the client's session recovery (a fake transport; 43 tests).
+  arguments and the client's session recovery (a fake transport; 50 tests).
 
 ## Verified headlessly
 

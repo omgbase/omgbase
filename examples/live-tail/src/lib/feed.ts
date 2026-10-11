@@ -143,9 +143,13 @@ export function prependDigests(entries: readonly FeedEntry[], digests: readonly 
   return [...fresh, ...entries];
 }
 
-/** `origin · actor` for the entry's byline (`actor` is often null for observed changes). */
+/** Who made the change, once: `origin · actor`; the origin alone when there is
+ * no actor (observed changes), the actor alone when it already carries the
+ * origin (`api` + `api:cli` → `api:cli`). */
 export function byline(e: Pick<FeedEntry, "origin" | "actor">): string {
-  return e.actor ? `${e.origin} · ${e.actor}` : e.origin;
+  if (!e.actor) return e.origin;
+  if (e.actor === e.origin || e.actor.startsWith(`${e.origin}:`)) return e.actor;
+  return `${e.origin} · ${e.actor}`;
 }
 
 // ---- which revisions to diff --------------------------------------------------------
@@ -171,12 +175,22 @@ export function pairForCommit(versions: readonly DocVersion[], commit: string): 
 
 // ---- recent documents ---------------------------------------------------------------
 
+/** A document's latest change, from `docs_history`'s last version (for a recent card's header). */
+export interface LatestChange { seq: number; commit: string; origin: string; actor: string | null }
+
 export interface RecentDoc {
   id: string | null;
   /** `/`-rooted. */
   path: string;
   title: string | null;
   updatedAt: string | null;
+  /** Filled once the document's history is fetched (with its diff pair). */
+  latest: LatestChange | null;
+}
+
+export function latestChange(versions: readonly DocVersion[]): LatestChange | null {
+  const v = versions[versions.length - 1];
+  return v ? { seq: v.seq, commit: v.commit, origin: v.origin, actor: v.actor } : null;
 }
 
 /** The recent-documents hits as the page shows them; a hit without a path is skipped. */
@@ -192,8 +206,97 @@ export function recentFromHits(hits: readonly Record<string, unknown>[]): Recent
       path: rooted(path),
       title: typeof title === "string" && title.trim() ? title : null,
       updatedAt: typeof updated === "string" ? updated : null,
+      latest: null,
     });
   }
+  return out;
+}
+
+// ---- the card -----------------------------------------------------------------------
+//
+// Both card kinds — a recent document and a feed entry — are one view model: a
+// header that carries every value exactly once (the update's time, `$title`
+// prominent, `$path` secondary — or the path alone when the title is null or
+// the same —, the change's `seq` and commit id, who made it, the lines added
+// and removed), with no label words ("latest change", "created", the digest's
+// summary) that restate what is already there. A change touching several
+// documents keeps the digest's values in the header and gives each document a
+// slim row of its own (title/path and its own +N −M only).
+
+export interface Stats { added: number; removed: number }
+
+export interface CardRow { title: string | null; path: string; stats: Stats | null }
+
+export interface Card {
+  /** The update's time: a recent document's `$updated_at`, a digest's `ts`. */
+  ts: string | null;
+  /** The document, when the card is about one (null for a multi-document digest; a deletion names nothing). */
+  title: string | null;
+  path: string | null;
+  seq: number | null;
+  commit: string | null;
+  by: string | null;
+  /** The lines added/removed — the total over the rows for a multi-document digest; null while unknown. */
+  stats: Stats | null;
+  /** One per document when the change touched several; otherwise empty. */
+  rows: CardRow[];
+  /** The server's summary — kept ONLY when the digest has no revisions (a deletion or a move), where it is the sole statement of what happened. */
+  note: string | null;
+}
+
+/** Add up the stats that are known; null until at least one is. */
+export function sumStats(parts: readonly (Stats | null)[]): Stats | null {
+  const known = parts.filter((s): s is Stats => s !== null);
+  if (known.length === 0) return null;
+  return known.reduce((a, s) => ({ added: a.added + s.added, removed: a.removed + s.removed }), { added: 0, removed: 0 });
+}
+
+/** A recent document's card: the document, its latest change (once the history is in), the diff's stats. */
+export function recentCard(doc: RecentDoc, stats: Stats | null): Card {
+  return {
+    ts: doc.updatedAt, title: doc.title, path: doc.path,
+    seq: doc.latest?.seq ?? null, commit: doc.latest?.commit ?? null, by: doc.latest ? byline(doc.latest) : null,
+    stats, rows: [], note: null,
+  };
+}
+
+/** A feed entry's card; `statsByDoc` has each change's stats (by `doc`) as far as its diff is in. */
+export function entryCard(e: FeedEntry, statsByDoc: ReadonlyMap<string, Stats | null>): Card {
+  const stats = e.changes.map((ch) => statsByDoc.get(ch.doc) ?? null);
+  const one = e.changes.length === 1 ? e.changes[0]! : null;
+  return {
+    ts: e.ts, title: one?.title ?? null, path: one?.path ?? null,
+    seq: e.seq, commit: e.key, by: byline(e),
+    stats: sumStats(stats),
+    rows: e.changes.length > 1 ? e.changes.map((ch, i) => ({ title: ch.title, path: ch.path, stats: stats[i]! })) : [],
+    note: e.changes.length === 0 ? e.summary : null,
+  };
+}
+
+export function formatStats(s: Stats): string {
+  return `+${s.added} −${s.removed}`;
+}
+
+/** Everything a card shows, flat and in reading order — the header, then each
+ * row — so a test can assert no value is rendered twice. The title is omitted
+ * when it is null or equals the path (the path is then shown once). */
+export function cardFields(card: Card, now: Date = new Date()): { label: string; value: string }[] {
+  const out: { label: string; value: string }[] = [];
+  const doc = (title: string | null, path: string | null, prefix = "") => {
+    if (title !== null && title !== path) out.push({ label: `${prefix}title`, value: title });
+    if (path !== null) out.push({ label: `${prefix}path`, value: path });
+  };
+  if (card.ts !== null) out.push({ label: "time", value: formatTime(card.ts, now) });
+  doc(card.title, card.path);
+  if (card.seq !== null) out.push({ label: "seq", value: `seq ${card.seq}` });
+  if (card.commit !== null) out.push({ label: "commit", value: card.commit });
+  if (card.by !== null) out.push({ label: "by", value: card.by });
+  if (card.stats !== null) out.push({ label: "stats", value: formatStats(card.stats) });
+  if (card.note !== null) out.push({ label: "note", value: card.note });
+  card.rows.forEach((r, i) => {
+    doc(r.title, r.path, `row ${i + 1} `);
+    if (r.stats !== null) out.push({ label: `row ${i + 1} stats`, value: formatStats(r.stats) });
+  });
   return out;
 }
 

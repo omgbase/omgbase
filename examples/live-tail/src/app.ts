@@ -26,8 +26,8 @@ import "./elements/oqx-framed-filter.ts";
 import type { FilterDetail } from "./elements/oqx-framed-filter.ts";
 import { OmgClient, OmgError, fetchWhoAmI } from "./lib/mcp-client.ts";
 import {
-  RECENT_LIMIT, advanceCursor, byline, createdDiff, diffLineKind, diffStats, digestPaths, filterStateAfter, formatTime, hiddenLine, latestPair, matchQuery, pairForCommit, partitionByFilter, pollMs, prependDigests, recentFromHits, recentQuery, startCursor, titlesByPath,
-  type Digest, type DiffPair, type EntryChange, type FeedEntry, type FilterState, type RecentDoc,
+  RECENT_LIMIT, advanceCursor, createdDiff, diffLineKind, diffStats, digestPaths, entryCard, filterStateAfter, formatStats, formatTime, hiddenLine, latestChange, latestPair, matchQuery, pairForCommit, partitionByFilter, pollMs, prependDigests, recentCard, recentFromHits, recentQuery, startCursor, titlesByPath,
+  type Card, type Digest, type DiffPair, type EntryChange, type FeedEntry, type FilterState, type RecentDoc, type Stats,
 } from "./lib/feed.ts";
 import { LEGACY_SURFACE, surfaceOf } from "./lib/paths.ts";
 
@@ -121,12 +121,22 @@ async function fetchPair(doc: string, pair: DiffPair): Promise<DiffState> {
   return d.diff === "" ? { status: "none", note: "no textual change between the two revisions" } : { status: "ready", pair, text: d.diff };
 }
 
-/** The diff for a document's latest change (a recent card). */
+/** The lines a diff state accounts for: known once it is ready (or known to be empty), else null. */
+function statsOf(state: DiffState | undefined): Stats | null {
+  if (!state) return null;
+  if (state.status === "ready") return diffStats(state.text);
+  if (state.status === "none") return { added: 0, removed: 0 };
+  return null;
+}
+
+/** The diff for a document's latest change (a recent card), and that change's seq/commit/actor for the header. */
 async function loadLatestDiff(doc: RecentDoc): Promise<void> {
   const key = doc.id ?? doc.path;
   setDiff(key, { status: "loading" });
   try {
     const history = await client.docsHistory(key, repo.get());
+    const latest = history ? latestChange(history.versions) : null;
+    if (latest) recent.set(recent.get().map((d) => ((d.id ?? d.path) === key ? { ...d, latest } : d)));
     const pair = history ? latestPair(history.versions) : null;
     if (!pair) { setDiff(key, { status: "none", note: "no stored revisions" }); return; }
     setDiff(key, await fetchPair(key, pair));
@@ -399,29 +409,25 @@ export class LiveTailApp extends SignalWatcher(LitElement) {
     sl-switch::part(label) { font-size: 13px; }
     h2 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; color: #5a6270; margin: 22px 0 8px; }
     .empty { color: #6a7382; font-size: 13px; padding: 14px; border: 1px dashed #d4d8e0; border-radius: 6px; background: #fff; }
-    .entry { background: #fff; border: 1px solid #e3e6ec; border-radius: 6px; padding: 10px 12px; margin-bottom: 8px; }
-    .entry.fresh { animation: arrive 1.5s ease-out; }
+    .card { margin-bottom: 8px; }
+    .card.fresh { animation: arrive 1.5s ease-out; border-radius: 6px; }
     @keyframes arrive { from { box-shadow: 0 0 0 3px #a5d6a7; } to { box-shadow: 0 0 0 0 transparent; } }
-    .meta { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: baseline; font-size: 13px; }
-    .meta .time { font-variant-numeric: tabular-nums; color: #1565c0; font-weight: 600; }
-    .meta .by { color: #5a6270; }
-    .meta .seq { color: #8a94a6; font-size: 12px; }
-    .summary { margin: 4px 0 6px; }
-    .card { background: #fff; border: 1px solid #e3e6ec; border-radius: 6px; padding: 10px 12px; margin-bottom: 8px; }
-    .card .title { font-weight: 600; }
+    .card.plain { background: #fff; border: 1px solid #e3e6ec; border-radius: 6px; padding: 7px 12px; }
+    .card.plain .note { padding: 2px 0 0; border: 0; }
     .path { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; color: #333; }
-    .when { color: #5a6270; font-size: 12.5px; }
-    sl-details { margin-top: 6px; }
-    sl-details::part(base) { border: 1px solid #e8eaef; border-radius: 5px; background: #fafbfc; }
-    sl-details::part(header) { padding: 5px 9px; font-size: 12.5px; }
-    sl-details [slot=summary] { display: inline-flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; }
-    sl-details .title { font-weight: 600; color: #222; }
+    sl-details::part(base) { border: 1px solid #e3e6ec; border-radius: 6px; background: #fff; }
+    sl-details::part(header) { padding: 7px 12px; font-size: 13px; }
+    sl-details [slot=summary] { display: inline-flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; }
+    .hdr .time { font-variant-numeric: tabular-nums; color: #1565c0; font-weight: 600; }
+    .hdr .title { font-weight: 600; color: #222; }
+    .hdr .seq, .hdr .by { color: #8a94a6; font-size: 12px; }
+    .row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; padding: 6px 10px 2px; border-top: 1px solid #e8eaef; font-size: 12.5px; background: #fafbfc; }
+    .row .title { font-weight: 600; }
     sl-details::part(content) { padding: 0; }
-    .stats { margin-left: 8px; font-size: 12px; }
+    .stats { font-size: 12px; font-variant-numeric: tabular-nums; }
     .stats .add { color: #1e6b2e; }
     .stats .del { color: #b3261e; }
-    .kind { margin-left: 8px; font-size: 11px; padding: 0 6px; border-radius: 9px; background: #e8eaef; color: #4a5160; }
-    .kind.created { background: #e6f4ea; color: #1e6b2e; }
+    .kind { font-size: 11px; padding: 0 6px; border-radius: 9px; background: #e8eaef; color: #4a5160; }
     pre { margin: 0; padding: 8px 10px; overflow-x: auto; white-space: pre; font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; background: #fff; border-top: 1px solid #e8eaef; }
     pre.wrap { white-space: pre-wrap; overflow-wrap: anywhere; }
     pre .add { background: #e6ffed; color: #1a4d1f; display: block; }
@@ -515,57 +521,69 @@ export class LiveTailApp extends SignalWatcher(LitElement) {
     `;
   }
 
+  /** A feed entry: one card whose header is the digest; a multi-document digest gives each document a slim row above its diff. */
   private renderEntry(e: FeedEntry) {
-    return html`
-      <article class="entry fresh">
-        <div class="meta">
-          <span class="time">${formatTime(e.ts)}</span>
-          <span class="by">${byline(e)}</span>
-          <span class="seq">seq ${e.seq} · ${e.key}</span>
-        </div>
-        <div class="summary">${e.summary}</div>
-        ${e.changes.map((ch) => this.renderDiff(`${e.key}:${ch.doc}`, ch.title === null ? html`<span class="path">${ch.path}</span>` : html`<span class="title">${ch.title}</span><span class="path">${ch.path}</span>`, true, () => loadChangeDiff(e, ch)))}
-      </article>
-    `;
+    const states = new Map(e.changes.map((ch) => [ch.doc, diffs.get()[`${e.key}:${ch.doc}`]] as const));
+    const card = entryCard(e, new Map(e.changes.map((ch) => [ch.doc, statsOf(states.get(ch.doc))])));
+    if (e.changes.length === 0) {
+      return html`<article class="card plain fresh"><div class="hdr">${this.renderHeader(card, false)}</div><div class="note">${card.note}</div></article>`;
+    }
+    const loading = e.changes.some((ch) => states.get(ch.doc)?.status === "loading");
+    const body = e.changes.map((ch, i) => html`
+      ${card.rows.length ? this.renderRow(card.rows[i]!) : nothing}
+      ${this.renderBody(states.get(ch.doc))}`);
+    return this.renderCard(card, loading, body, true, "fresh", () => { for (const ch of e.changes) { const s = states.get(ch.doc); if (!s || s.status === "idle" || s.status === "error") void loadChangeDiff(e, ch); } });
   }
 
+  /** A recent document: one card whose header is the document and its latest change. */
   private renderRecent(d: RecentDoc, index: number) {
     const key = d.id ?? d.path;
-    return html`
-      <article class="card">
-        <div class="meta">
-          <span class="title">${d.title ?? d.path}</span>
-          <span class="path">${d.path}</span>
-          <span class="when">${d.updatedAt ? `updated ${formatTime(d.updatedAt)}` : ""}</span>
-        </div>
-        ${this.renderDiff(key, html`<span class="path">latest change</span>`, index < OPEN_RECENT, () => loadLatestDiff(d))}
-      </article>
-    `;
+    const state = diffs.get()[key];
+    const card = recentCard(d, statsOf(state));
+    return this.renderCard(card, state?.status === "loading", this.renderBody(state), index < OPEN_RECENT, "", () => { if (!state || state.status === "idle" || state.status === "error") void loadLatestDiff(d); });
   }
 
-  /** A collapsible diff under `label` (a feed change's title + path, or a recent card's "latest change"); `load` runs when it is first shown (and again after an error). */
-  private renderDiff(key: string, label: unknown, open: boolean, load: () => Promise<void>) {
-    const state = diffs.get()[key] ?? { status: "idle" as const };
-    const summary = state.status === "ready"
-      ? state.pair.kind === "created"
-        ? html`${label}<span class="kind created">created</span>${this.renderStats(state.text)}`
-        : html`${label}${this.renderStats(state.text)}`
-      : html`${label}${state.status === "loading" ? html`<span class="kind">loading…</span>` : nothing}`;
+  /** The card: an `sl-details` whose summary IS the header (every value once; the chevron alone says it opens); `onShow` fetches what is not in yet. */
+  private renderCard(card: Card, loading: boolean, body: unknown, open: boolean, cls: string, onShow: () => void) {
     return html`
-      <sl-details ?open=${open} @sl-show=${() => { const s = diffs.get()[key]; if (!s || s.status === "idle" || s.status === "error") void load(); }}>
-        <span slot="summary">${summary}</span>
-        ${state.status === "ready"
-          ? html`<pre class=${wrap.get() ? "wrap" : ""}>${state.text.split("\n").map((line) => html`<span class=${diffLineKind(line)}>${line}</span>`)}</pre>`
-          : state.status === "none" ? html`<div class="note">${state.note}</div>`
-          : state.status === "error" ? html`<div class="note err">${state.message}</div>`
-          : html`<div class="note">${state.status === "loading" ? "fetching…" : "open to fetch"}</div>`}
+      <sl-details class="card ${cls}" ?open=${open} @sl-show=${onShow}>
+        <span slot="summary" class="hdr">${this.renderHeader(card, loading)}</span>
+        ${body}
       </sl-details>
     `;
   }
 
-  private renderStats(diff: string) {
-    const { added, removed } = diffStats(diff);
-    return html`<span class="stats"><span class="add">+${added}</span> <span class="del">−${removed}</span></span>`;
+  /** time · title · path · seq · commit · by · +N −M — each once; the title only when it adds to the path. */
+  private renderHeader(card: Card, loading: boolean) {
+    return html`
+      ${card.ts !== null ? html`<span class="time">${formatTime(card.ts)}</span>` : nothing}
+      ${this.renderDoc(card.title, card.path)}
+      ${card.seq !== null ? html`<span class="seq">seq ${card.seq}${card.commit !== null ? ` · ${card.commit}` : ""}</span>` : nothing}
+      ${card.by !== null ? html`<span class="by">${card.by}</span>` : nothing}
+      ${card.stats !== null ? this.renderStats(card.stats) : loading ? html`<span class="kind">loading…</span>` : nothing}
+    `;
+  }
+
+  private renderDoc(title: string | null, path: string | null) {
+    return html`${title !== null && title !== path ? html`<span class="title">${title}</span>` : nothing}${path !== null ? html`<span class="path">${path}</span>` : nothing}`;
+  }
+
+  /** One document of a multi-document digest: its title/path and its own stats, nothing the header already says. */
+  private renderRow(row: Card["rows"][number]) {
+    return html`<div class="row">${this.renderDoc(row.title, row.path)}${row.stats !== null ? this.renderStats(row.stats) : nothing}</div>`;
+  }
+
+  private renderBody(state: DiffState | undefined) {
+    if (!state || state.status === "idle") return html`<div class="note">open to fetch</div>`;
+    if (state.status === "loading") return html`<div class="note">fetching…</div>`;
+    if (state.status === "none") return html`<div class="note">${state.note}</div>`;
+    if (state.status === "error") return html`<div class="note err">${state.message}</div>`;
+    return html`<pre class=${wrap.get() ? "wrap" : ""}>${state.text.split("\n").map((line) => html`<span class=${diffLineKind(line)}>${line}</span>`)}</pre>`;
+  }
+
+  private renderStats(s: Stats) {
+    const [add, del] = formatStats(s).split(" ");
+    return html`<span class="stats"><span class="add">${add}</span> <span class="del">${del}</span></span>`;
   }
 }
 

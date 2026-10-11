@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  FRAME_AFTER, FRAME_BEFORE, RECENT_QUERY, advanceCursor, byline, createdDiff, diffLineKind, diffStats, digestPaths, entryFromDigest, filterStateAfter, formatTime, frameFor, hiddenLine, latestPair, matchQuery, pairForCommit, partitionByFilter, pollMs, prependDigests, recentFromHits, recentQuery, startCursor, titlesByPath,
-  type Digest, type DocVersion, type FeedEntry,
+  FRAME_AFTER, FRAME_BEFORE, RECENT_QUERY, advanceCursor, byline, cardFields, createdDiff, diffLineKind, diffStats, digestPaths, entryCard, entryFromDigest, filterStateAfter, formatStats, formatTime, frameFor, hiddenLine, latestChange, latestPair, matchQuery, pairForCommit, partitionByFilter, pollMs, prependDigests, recentCard, recentFromHits, recentQuery, startCursor, sumStats, titlesByPath,
+  type Digest, type DocVersion, type FeedEntry, type RecentDoc,
 } from "../src/lib/feed.ts";
 
 const digest = (seq: number, commit = `c_${seq}`, revisions: Digest["revisions"] = [{ doc: "d_a", path: "/notes/alpha.md", contentHash: "aa" }]): Digest => ({
@@ -29,6 +29,8 @@ describe("digests → entries", () => {
     });
     expect(byline(e)).toBe("api · agent:mcp");
     expect(byline({ origin: "observed", actor: null })).toBe("observed");
+    expect(byline({ origin: "api", actor: "api:cli" })).toBe("api:cli"); // the actor already carries the origin
+    expect(byline({ origin: "api", actor: "api" })).toBe("api");
   });
   it("gives each change its title from the poll's lookup, by rooted path; a document the lookup lacks (deleted, moved away) keeps the path alone", () => {
     const titles = new Map([["/notes/alpha.md", "Alpha"], ["/notes/beta.md", null]]);
@@ -74,13 +76,83 @@ describe("recent documents", () => {
   it("reads hits under the 3.0 envelope ($id/$path) and the 2.x one (id/path) alike", () => {
     const v3 = { $id: "d_a", $path: "/notes/alpha.md", $title: "Alpha", $updated_at: "2026-10-10T12:00:00Z" };
     const v2 = { id: "d_a", path: "/notes/alpha.md", $path: "/notes/alpha.md", $title: "Alpha", $updated_at: "2026-10-10T12:00:00Z" };
-    const expected = [{ id: "d_a", path: "/notes/alpha.md", title: "Alpha", updatedAt: "2026-10-10T12:00:00Z" }];
+    const expected = [{ id: "d_a", path: "/notes/alpha.md", title: "Alpha", updatedAt: "2026-10-10T12:00:00Z", latest: null }];
     expect(recentFromHits([v3])).toEqual(expected);
     expect(recentFromHits([v2])).toEqual(expected);
   });
   it("roots a bare path, drops an empty title, skips a hit without a path", () => {
     expect(recentFromHits([{ id: "d_b", path: "notes/beta.md", $title: "  ", $updated_at: null }, { $id: "d_x" }]))
-      .toEqual([{ id: "d_b", path: "/notes/beta.md", title: null, updatedAt: null }]);
+      .toEqual([{ id: "d_b", path: "/notes/beta.md", title: null, updatedAt: null, latest: null }]);
+  });
+  it("latestChange: the last version's seq/commit/origin/actor for the card header; null without versions", () => {
+    expect(latestChange([version(1, "c_1"), { ...version(2, "c_2"), origin: "api", actor: "agent:mcp" }])).toEqual({ seq: 2, commit: "c_2", origin: "api", actor: "agent:mcp" });
+    expect(latestChange([])).toBeNull();
+  });
+});
+
+describe("the card", () => {
+  const now = new Date(2026, 9, 10, 15, 0, 0);
+  const today = new Date(2026, 9, 10, 9, 5, 7).toISOString();
+  const values = (fields: { value: string }[]) => fields.map((f) => f.value);
+  const noDuplicates = (fields: { label: string; value: string }[]) => {
+    const seen = new Map<string, string>();
+    for (const f of fields) {
+      expect(seen.has(f.value), `"${f.value}" is shown twice (${seen.get(f.value)} and ${f.label})`).toBe(false);
+      seen.set(f.value, f.label);
+    }
+  };
+
+  it("a recent card: time, title, path, seq · commit, by, stats — each once; before the history is in, the document alone", () => {
+    const doc: RecentDoc = { id: "d_a", path: "/notes/alpha.md", title: "Alpha", updatedAt: today, latest: { seq: 6, commit: "c_761p702", origin: "api", actor: null } };
+    const fields = cardFields(recentCard(doc, { added: 1, removed: 0 }), now);
+    expect(fields).toEqual([
+      { label: "time", value: "09:05:07" }, { label: "title", value: "Alpha" }, { label: "path", value: "/notes/alpha.md" },
+      { label: "seq", value: "seq 6" }, { label: "commit", value: "c_761p702" }, { label: "by", value: "api" }, { label: "stats", value: "+1 −0" },
+    ]);
+    noDuplicates(fields);
+    expect(values(cardFields(recentCard({ ...doc, latest: null }, null), now))).toEqual(["09:05:07", "Alpha", "/notes/alpha.md"]);
+  });
+  it("the title is shown only when it adds to the path: a null title or one equal to the path leaves the path once", () => {
+    const base: RecentDoc = { id: "d_r", path: "/README.md", title: null, updatedAt: null, latest: null };
+    expect(values(cardFields(recentCard(base, null), now))).toEqual(["/README.md"]);
+    expect(values(cardFields(recentCard({ ...base, title: "/README.md" }, null), now))).toEqual(["/README.md"]);
+  });
+  it("a single-document feed entry: the digest's time/seq/commit/by with that document's title/path and stats; the summary is NOT shown", () => {
+    const e = entryFromDigest({ ...digest(6, "c_761p702"), ts: today, actor: null, summary: "api(?): /notes/alpha.md — 1 inserted" }, new Map([["/notes/alpha.md", "Alpha"]]));
+    const card = entryCard(e, new Map([["d_a", { added: 1, removed: 0 }]]));
+    expect(card.rows).toEqual([]);
+    expect(card.note).toBeNull();
+    const fields = cardFields(card, now);
+    expect(values(fields)).toEqual(["09:05:07", "Alpha", "/notes/alpha.md", "seq 6", "c_761p702", "api", "+1 −0"]);
+    expect(fields.map((f) => f.value).join(" ")).not.toContain("inserted");
+    noDuplicates(fields);
+    expect(entryCard(e, new Map()).stats).toBeNull(); // the diff is not in yet
+  });
+  it("a multi-document digest: the header carries the digest's values and the TOTAL stats; each document gets a row with its title/path and its own stats, nothing repeated", () => {
+    const e = entryFromDigest({ ...digest(9, "c_9", [{ doc: "d_a", path: "/notes/alpha.md", contentHash: "a" }, { doc: "d_b", path: "/notes/beta.md", contentHash: "b" }]), ts: today }, new Map([["/notes/alpha.md", "Alpha"]]));
+    const card = entryCard(e, new Map([["d_a", { added: 2, removed: 1 }], ["d_b", { added: 1, removed: 0 }]]));
+    expect(card.title).toBeNull();
+    expect(card.path).toBeNull();
+    expect(card.stats).toEqual({ added: 3, removed: 1 });
+    expect(card.rows).toEqual([{ title: "Alpha", path: "/notes/alpha.md", stats: { added: 2, removed: 1 } }, { title: null, path: "/notes/beta.md", stats: { added: 1, removed: 0 } }]);
+    const fields = cardFields(card, now);
+    expect(values(fields)).toEqual(["09:05:07", "seq 9", "c_9", "api · agent:mcp", "+3 −1", "Alpha", "/notes/alpha.md", "+2 −1", "/notes/beta.md", "+1 −0"]);
+    noDuplicates(fields);
+    expect(entryCard(e, new Map([["d_a", { added: 2, removed: 1 }]])).stats).toEqual({ added: 2, removed: 1 }); // the total over what is known so far
+  });
+  it("a digest without revisions (a deletion, a move) keeps the server's summary as the card's note — the only statement of what happened", () => {
+    const e = entryFromDigest({ ...digest(4, "c_4", []), ts: today, actor: null, summary: "api(?): deleted /notes/old.md" });
+    const card = entryCard(e, new Map());
+    expect(card.note).toBe("api(?): deleted /notes/old.md");
+    const fields = cardFields(card, now);
+    expect(values(fields)).toEqual(["09:05:07", "seq 4", "c_4", "api", "api(?): deleted /notes/old.md"]);
+    noDuplicates(fields);
+  });
+  it("sumStats and formatStats", () => {
+    expect(sumStats([])).toBeNull();
+    expect(sumStats([null, null])).toBeNull();
+    expect(sumStats([{ added: 1, removed: 2 }, null, { added: 3, removed: 0 }])).toEqual({ added: 4, removed: 2 });
+    expect(formatStats({ added: 10, removed: 0 })).toBe("+10 −0");
   });
 });
 
