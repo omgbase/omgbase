@@ -2,6 +2,7 @@ packages:
   - "packages/*"
   - "examples/graph-ui"
   - "examples/webdevproxy"
+  - "examples/live-tail"
 
 allowBuilds:
   better-sqlite3: true

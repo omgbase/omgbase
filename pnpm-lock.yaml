@@ -240,6 +240,28 @@ importers:
         specifier: workspace:^
         version: link:../webdevproxy
 
+  examples/live-tail:
+    dependencies:
+      '@lit-labs/signals':
+        specifier: ^0.3.0
+        version: 0.3.0
+      '@modelcontextprotocol/sdk':
+        specifier: ^1.30.0
+        version: 1.30.0(supports-color@7.2.0)(zod@4.5.4)
+      '@shoelace-style/shoelace':
+        specifier: ^2.20.1
+        version: 2.20.1(@floating-ui/utils@0.2.12)(@types/react@19.3.0)
+      lit:
+        specifier: ^3.3.0
+        version: 3.3.3
+    devDependencies:
+      vite:
+        specifier: ^7.1.0
+        version: 7.3.7(@types/node@22.20.4)(yaml@2.9.1)
+      webdevproxy:
+        specifier: workspace:^
+        version: link:../webdevproxy
+
   examples/webdevproxy:
     dependencies:
       '@modelcontextprotocol/sdk':
@@ -5392,6 +5414,19 @@ snapshots:
       tinyglobby: 0.2.17
     optionalDependencies:
       '@types/node': 22.20.1
+      fsevents: 2.3.3
+      yaml: 2.9.1
+
+  vite@7.3.7(@types/node@22.20.4)(yaml@2.9.1):
+    dependencies:
+      esbuild: 0.28.2
+      fdir: 6.5.0(picomatch@4.0.7)
+      picomatch: 4.0.7
+      postcss: 8.5.26
+      rollup: 4.63.1
+      tinyglobby: 0.2.17
+    optionalDependencies:
+      '@types/node': 22.20.4
       fsevents: 2.3.3
       yaml: 2.9.1
 

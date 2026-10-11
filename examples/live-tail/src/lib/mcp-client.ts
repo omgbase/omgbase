@@ -1,0 +1,167 @@
+// The ONLY data path: omgbase's MCP server over the Streamable HTTP transport,
+// through the dev proxy (the `webdevproxy` workspace package) at the same-origin
+// `/mcp`. Nothing here imports @omgbase/core; there is no browser-side OAuth —
+// the proxy signs in to a remote on the page's behalf (GET /whoami says how far
+// it got).
+//
+// Session recovery: the proxy forgets a session after `--idle` seconds without
+// a request or when it restarts, and answers the next POST with 404 `-32000
+// unknown session` — the spec's cue to `initialize` again. The SDK's client
+// does not, so `OmgClient` does: a lost session drops the client, opens a fresh
+// one against the same URL and retries the call once (`isSessionLost`); only a
+// second failure reaches the caller. Same helper as graph-ui's.
+
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
+import type { WhoAmI } from "webdevproxy";
+import type { ChangesSince, DocVersions } from "./feed.ts";
+
+export interface OmgClientOptions {
+  url: string;
+  /** Called once per recovered session (the server forgot ours; a fresh one was opened and the call retried). */
+  onSessionLost?: (error: Error) => void;
+  /** The transport to connect over (tests inject a fake; the default is the SDK's Streamable HTTP client). */
+  transportFactory?: () => Transport;
+}
+
+export interface QueryResult {
+  hits: Record<string, unknown>[];
+  truncated: boolean;
+  cursor: string | null;
+}
+
+export class OmgError extends Error {
+  constructor(public code: string, message: string, public data?: unknown) {
+    super(message);
+  }
+}
+
+/** Is this error the server saying it no longer knows our session? A 404 on
+ * POST (`StreamableHTTPError.code`), or the proxy's `-32000 unknown session`
+ * body relayed in the message. */
+export function isSessionLost(e: unknown): e is Error {
+  if (!(e instanceof Error)) return false;
+  if ((e as { code?: unknown }).code === 404) return true;
+  return /unknown session/i.test(e.message) || /HTTP 404\b/.test(e.message);
+}
+
+export function absoluteServerUrl(url: string, base: string | undefined = typeof location === "undefined" ? undefined : location.href): string {
+  return new URL(url, base).href;
+}
+
+export class OmgClient {
+  private client: Client | null = null;
+  private connecting: Promise<Client> | null = null;
+  /** How many times the server forgot our session and a fresh one was opened. */
+  recoveries = 0;
+
+  constructor(readonly options: Readonly<OmgClientOptions>) {}
+
+  private transport(): Transport {
+    if (this.options.transportFactory) return this.options.transportFactory();
+    // The SDK types `sessionId?: string` on the class but `string` on the
+    // interface; under exactOptionalPropertyTypes that needs a cast.
+    return new StreamableHTTPClientTransport(new URL(absoluteServerUrl(this.options.url))) as unknown as Transport;
+  }
+
+  private connect(): Promise<Client> {
+    if (this.client) return Promise.resolve(this.client);
+    this.connecting ??= (async () => {
+      const client = new Client({ name: "omgbase-live-tail", version: "0.0.0" });
+      await client.connect(this.transport());
+      this.client = client;
+      return client;
+    })().finally(() => { this.connecting = null; });
+    return this.connecting;
+  }
+
+  /** Run `fn` over the connected client; when the server has forgotten the
+   * session, open a fresh one and run it once more. */
+  private async withSession<T>(fn: (client: Client) => Promise<T>): Promise<T> {
+    const client = await this.connect();
+    try {
+      return await fn(client);
+    } catch (e) {
+      if (!isSessionLost(e)) throw e;
+      // Several calls may fail together: whoever is first drops the stale
+      // client; the rest find it gone and share the one reconnect.
+      if (this.client === client) this.client = null;
+      void client.close().catch(() => undefined);
+      this.recoveries++;
+      this.options.onSessionLost?.(e);
+      return fn(await this.connect());
+    }
+  }
+
+  async close(): Promise<void> {
+    const c = this.client;
+    this.client = null;
+    this.connecting = null;
+    await c?.close().catch(() => undefined);
+  }
+
+  /** Call a tool and decode omgbase's JSON-text envelope (`{content:[{text}]}`,
+   * `isError` → the `{error, message}` body). */
+  async call<T>(name: string, args: Record<string, unknown>): Promise<T> {
+    type ToolResult = { content?: { type: string; text?: string }[]; isError?: boolean };
+    const result = await this.withSession((client) => client.callTool({ name, arguments: args }) as Promise<ToolResult>);
+    const text = result.content?.find((c) => c.type === "text")?.text ?? "";
+    let body: unknown;
+    try {
+      body = JSON.parse(text);
+    } catch {
+      body = text;
+    }
+    if (result.isError) {
+      const b = (body ?? {}) as { error?: string; message?: string; data?: unknown };
+      throw new OmgError(b.error ?? "error", b.message ?? text, b.data);
+    }
+    return body as T;
+  }
+
+  repos(): Promise<{ repos: { slug: string; hasSource: boolean }[] }> {
+    return this.call("repos", {});
+  }
+
+  version(): Promise<Record<string, unknown>> {
+    return this.call("version", {});
+  }
+
+  query(query: string, repo: string, limit?: number): Promise<QueryResult> {
+    return this.call<QueryResult>("query", { query, repo, ...(limit !== undefined ? { limit } : {}) });
+  }
+
+  changesSince(repo: string, cursor?: number, limit = 50): Promise<ChangesSince> {
+    return this.call<ChangesSince>("changes_since", { repo, limit, ...(cursor !== undefined ? { cursor } : {}) });
+  }
+
+  /** One document's version list (oldest → newest), by id or path. */
+  async docsHistory(doc: string, repo: string): Promise<DocVersions | null> {
+    const r = await this.call<{ docs: DocVersions[] }>("docs_history", { doc, repo, include_deleted: true });
+    return r.docs[0] ?? null;
+  }
+
+  diffUnified(doc: string, fromRev: string, toRev: string, repo: string): Promise<{ doc: string; path: string; from: string; to: string; diff: string }> {
+    return this.call("diff_unified", { doc, from_rev: fromRev, to_rev: toRev, repo });
+  }
+
+  docsReadAt(doc: string, rev: string, repo: string): Promise<{ path: string; docId: string; rev: string; content: string }> {
+    return this.call("docs_read_at", { doc, rev, repo });
+  }
+}
+
+/** The proxy's status endpoint for an MCP endpoint URL: same origin, path `/whoami`. */
+export function whoamiUrl(mcpUrl: string, base?: string): string {
+  const u = new URL(mcpUrl, base);
+  u.pathname = "/whoami";
+  u.search = "";
+  u.hash = "";
+  return u.href;
+}
+
+export async function fetchWhoAmI(mcpUrl: string, fetchFn: typeof fetch = (...a) => fetch(...a)): Promise<WhoAmI> {
+  const res = await fetchFn(whoamiUrl(mcpUrl, typeof location === "undefined" ? undefined : location.href), { headers: { accept: "application/json" } });
+  if (!res.ok) throw new Error(`whoami: HTTP ${res.status}`);
+  return (await res.json()) as WhoAmI;
+}
