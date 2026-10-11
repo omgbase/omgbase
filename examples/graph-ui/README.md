@@ -31,7 +31,7 @@ pnpm install                                                  # at the repositor
 pnpm --filter graph-ui dev --remote https://mcp.example.com/omg
 ```
 
-(`GRAPH_UI_REMOTE=<mcp-url>` is the same as `--remote`.) Open
+(`WEBDEVPROXY_REMOTE=<mcp-url>` is the same as `--remote`.) Open
 <http://localhost:5173>; the page talks to the bridge either way and the
 *MCP settings* mode **follows the bridge**: when `GET /whoami` says `mode:
 "remote"` the header reads `via local proxy → <upstream host>` with the
@@ -73,8 +73,10 @@ panel becomes a banner). The footer repeats it (`0 rows · matched nothing —
 has been in flight for more than 300 ms a *running the query…* / *fetching
 edges and laying out…* pill shows at the top of the graph area.
 
-**What happens on the first run.** The dev bridge (`scripts/dev-mcp.mjs`) is
-itself the OAuth client. It sends the gateway one unauthenticated `initialize`,
+**What happens on the first run.** The dev bridge is the
+[`webdevproxy`](../webdevproxy/README.md) workspace package — a development-only
+local web proxy for MCP servers, started by `scripts/dev.mjs` with `startProxy`
+(and wired into Vite with `viteProxy()`) — and it is itself the OAuth client. It sends the gateway one unauthenticated `initialize`,
 gets the `401` with `WWW-Authenticate: Bearer resource_metadata=…`, follows it
 to the protected-resource metadata and the issuer's metadata, registers a
 public client (dynamic client registration, PKCE, loopback redirect URIs
@@ -82,11 +84,11 @@ public client (dynamic client registration, PKCE, loopback redirect URIs
 prints the authorization URL and opens your browser **once**:
 
 ```
-[mcp-bridge] sign-in required for https://mcp.example.com/omg
-[mcp-bridge] issuer: https://dev-….us.auth0.com/
-[mcp-bridge] open this URL in your browser if it does not open by itself:
-[mcp-bridge]   https://dev-….us.auth0.com/authorize?response_type=code&client_id=…&redirect_uri=http%3A%2F%2F127.0.0.1%3A51763%2Fcallback&scope=offline_access&prompt=consent&resource=https%3A%2F%2Fmcp.example.com%2Fomg
-[mcp-bridge] waiting for the sign-in to finish (listening on http://127.0.0.1:51763/callback)…
+[webdevproxy] sign-in required for https://mcp.example.com/omg
+[webdevproxy] issuer: https://dev-….us.auth0.com/
+[webdevproxy] open this URL in your browser if it does not open by itself:
+[webdevproxy]   https://dev-….us.auth0.com/authorize?response_type=code&client_id=…&redirect_uri=http%3A%2F%2F127.0.0.1%3A51763%2Fcallback&scope=offline_access&prompt=consent&resource=https%3A%2F%2Fmcp.example.com%2Fomg
+[webdevproxy] waiting for the sign-in to finish (listening on http://127.0.0.1:51763/callback)…
 ```
 
 Meanwhile the page's status line says *waiting for sign-in in your browser*
@@ -96,19 +98,31 @@ every browser session gets its own upstream session at the gateway, JSON-RPC is
 relayed verbatim both ways, and the browser sees the remote's own
 capabilities and tool list.
 
-**Where the tokens live.** `~/.config/omgbase-graph-ui/<sha256 of the url, 16 hex>.json`
-(`$XDG_CONFIG_HOME` honoured; `GRAPH_UI_TOKEN_FILE=<path>` or `--token-file`
-override), mode `0600`, shaped
+**Where the tokens live.** `~/.config/omgbase-webdevproxy/<sha256 of the url, 16 hex>.json`
+(`$XDG_CONFIG_HOME` honoured; `WEBDEVPROXY_TOKEN_FILE=<path>` or `--token-file`
+override; a sign-in made by this demo's former bridge under
+`~/.config/omgbase-graph-ui/` is copied into place on the first start, so
+nothing is lost), mode `0600`, shaped
 `{ serverUrl, redirectPort, clientInformation, tokens, tokensSavedAt, codeVerifier?, state?, discovery }`.
 Later runs need no browser: the access token is refreshed with the refresh
 token (`offline_access`) whenever the gateway answers `401`, and only if the
 refresh is rejected does the browser flow run again. Nothing in the file is ever
 logged.
 
-**Logging out.** `pnpm --filter graph-ui logout` deletes every token file under
-the config dir; `pnpm --filter graph-ui logout --remote <url>` deletes just that
-server's. `--no-browser` (or `GRAPH_UI_NO_BROWSER=1`) prints the URL without
-launching anything — handy over SSH.
+**Logging out.** `pnpm --filter graph-ui logout` (= `webdevproxy --logout`)
+deletes every token file under both config dirs; `pnpm --filter graph-ui logout
+--remote <url>` deletes just that server's. `--no-browser` (or
+`WEBDEVPROXY_NO_BROWSER=1`) prints the URL without launching anything — handy
+over SSH.
+
+**When the session expires.** The proxy closes a browser session (and its
+upstream) after `--idle` seconds without a request (default 3600), and forgets
+every session when it restarts; the page's next request then gets a `404` with
+`-32000 unknown session (expired or the proxy restarted) — send initialize
+again`. The page handles that by itself (`src/lib/mcp-client.ts`,
+`isSessionLost`): it opens a fresh MCP session against the same URL, retries the
+call once and notes *session expired at the server — reconnected* in the status
+line; only a second failure is shown as an error.
 
 **Why no CORS or Auth0 setup is needed.** The browser never talks to the
 gateway or to Auth0: it talks to `localhost` (same origin, via Vite's proxy at
@@ -140,11 +154,12 @@ MCP-conformant gateway with these three behaves the same.)
 
 ```sh
 pnpm install && pnpm build          # at the repository root (the demo spawns the built `omg`)
-pnpm --filter graph-ui dev          # copies ./sample into .dev-workspace/sample and indexes it, starts the MCP bridge, starts Vite
+pnpm --filter graph-ui dev          # copies ./sample into .dev-workspace/sample and indexes it, starts the MCP proxy, starts Vite
 ```
 
 Open <http://localhost:5173>. Vite proxies `/mcp` and `/whoami` to the bridge
-(port 8787, `GRAPH_UI_MCP_PORT`), so the page's default server URL is just
+(port 8787, `--port`/`WEBDEVPROXY_PORT`; `viteProxy()` in `vite.config.ts` reads
+the port the dev script exports), so the page's default server URL is just
 `/mcp` and *MCP settings* starts in **local sample** mode (the bridge reports
 `mode: "local"`). In the sample workspace — the `sample` slug with
 `/timeline/kickoff.md` present — the default query walks the sample's release
@@ -266,12 +281,17 @@ fields, and the three `loop-*` notes trigger the cycle banner); `follow doc.out`
 for the link graph; `order by phase` for a sequence axis; `follow before` to
 see the hint and the server's error (with the `refs()` fix) in the status line.
 
-Scripts: `dev [--remote <url>]` (all of it; the bridge's flags are consumed,
-anything else goes to Vite), `dev:workspace [--force]` (just the workspace),
-`dev:mcp [--port 8787] [--path /mcp] [--idle 600] [--workspace <dir>]
-[--remote <url>] [--no-browser] [--token-file <f>]` (just the bridge),
-`logout [--remote <url>]`, `build` (`tsc --noEmit` + `vite build`), `test`
-(vitest over the pure modules and the bridge's helpers), `lint`.
+Scripts: `dev [--remote <url>]` (all of it; the proxy's flags — `--port 8787`,
+`--path /mcp`, `--idle 3600`, `--origin <o>`, `--omg <path>`, `--remote <url>`,
+`--no-browser`, `--token-file <f>`, plus this demo's `--workspace <dir>` for the
+proxy's `--local` — are consumed by `scripts/dev-args.mjs`, anything else goes
+to Vite; `GRAPH_UI_*` variables from earlier runs still work as fallbacks for
+their `WEBDEVPROXY_*` names), `dev:workspace [--force]` (just the workspace),
+`dev:mcp [same flags]` (just the proxy, = `dev --proxy-only`), `logout
+[--remote <url>]` (= `webdevproxy --logout`), `build` (`tsc --noEmit` + `vite
+build`), `test` (vitest over the pure modules, the MCP client's session recovery
+and the dev script's arguments; the proxy's own behaviour is tested in
+[`examples/webdevproxy`](../webdevproxy/README.md)), `lint`.
 
 ### Data access
 
@@ -282,14 +302,14 @@ Nothing imports `@omgbase/core`.
 
 The *MCP settings* panel offers three ways to reach a server:
 
-- **local sample** — `scripts/dev-mcp.mjs` spawns `omg mcp -C .dev-workspace`
-  (stdio) per MCP session and relays JSON-RPC to a
-  `StreamableHTTPServerTransport` on `localhost:8787/mcp`, with CORS headers
-  (`Mcp-Session-Id` exposed). It is the same shape as
+- **local sample** — the proxy (`webdevproxy --local .dev-workspace`) spawns
+  `omg mcp -C .dev-workspace` (stdio) per MCP session and relays JSON-RPC to a
+  `StreamableHTTPServerTransport` on `127.0.0.1:8787/mcp`, with CORS headers
+  for loopback origins (`Mcp-Session-Id` exposed). It is the same shape as
   [usergenic/stdio-mcp-to-http](https://github.com/usergenic/stdio-mcp-to-http);
   that proxy is not on npm and sends no CORS headers, so the browser could not
   use it directly.
-- **via local proxy** — the same bridge started with `--remote <mcp-url>`:
+- **via local proxy** — the same proxy started with `--remote <mcp-url>`:
   one upstream `StreamableHTTPClientTransport` session per browser session,
   the bridge holding the OAuth tokens (see [Try it against a remote
   omgbase](#try-it-against-a-remote-omgbase)). The panel shows the upstream URL
@@ -304,9 +324,11 @@ The *MCP settings* panel offers three ways to reach a server:
   origins in Auth0 — see [Direct mode: the browser as the OAuth
   client](#direct-mode-the-browser-as-the-oauth-client-for-hosted-deployments).
 
-The bridge's session table maps each browser-facing `Mcp-Session-Id` to its
+The proxy's session table maps each browser-facing `Mcp-Session-Id` to its
 upstream (`omg mcp` pid, or the gateway's session id); a browser `DELETE` ends
-the upstream session too, and sessions idle for `--idle` seconds are closed.
+the upstream session too, and sessions idle for `--idle` seconds are closed
+(the page then re-initializes on its own — see [When the session
+expires](#try-it-against-a-remote-omgbase)).
 
 ### Direct mode: the browser as the OAuth client (for hosted deployments)
 

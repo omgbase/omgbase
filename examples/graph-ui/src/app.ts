@@ -252,7 +252,13 @@ let client: OmgClient | null = null;
 function clientFor(url: string): OmgClient {
   if (!client || client.options.url !== url) {
     void client?.close();
-    client = new OmgClient({ url, authProvider: providerFor(url) });
+    client = new OmgClient({
+      url,
+      authProvider: providerFor(url),
+      // The proxy forgot our session (idle timeout, or it restarted): the client
+      // has already opened a fresh one and retried; just say so in the status line.
+      onSessionLost: () => { if (connection.get() === "ok") connectionMessage.set("session expired at the server — reconnected"); },
+    });
   }
   return client;
 }

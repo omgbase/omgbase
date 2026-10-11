@@ -1,25 +1,15 @@
-// What the local bridge (scripts/dev-mcp.mjs) says about itself on GET /whoami:
-// which upstream it serves (the local sample, or a remote gateway it signed in
-// to on the user's behalf) and where its sign-in stands. The page uses it to
-// label the connection and to show "waiting for sign-in in your browser".
+// What the local bridge — the `webdevproxy` workspace package started by
+// scripts/dev.mjs — says about itself on GET /whoami: which upstream it serves
+// (the local sample, or a remote gateway it signed in to on the user's behalf)
+// and where its sign-in stands. The page uses it to label the connection and
+// to show "waiting for sign-in in your browser". The shape is the proxy's own
+// (`WhoAmI` in webdevproxy's index.d.ts; a type-only import, nothing of the
+// proxy reaches the browser bundle).
 
-import type { Identity } from "./oauth-shared.mjs";
+import type { WhoAmI } from "webdevproxy";
 
-export interface BridgeAuth {
-  state: "none" | "unknown" | "ok" | "waiting" | "error";
-  issuer?: string;
-  authorizationUrl?: string;
-  error?: string;
-}
-
-export interface BridgeInfo {
-  mode: "local" | "remote";
-  upstream: string;
-  identity: Identity | null;
-  auth: BridgeAuth;
-  tokenFile: string | null;
-  sessions: { id: string; upstream: string | null }[];
-}
+export type BridgeAuth = WhoAmI["auth"];
+export type BridgeInfo = WhoAmI;
 
 /** The bridge's status endpoint for an MCP endpoint URL: same origin, path `/whoami`. */
 export function whoamiUrl(bridgeUrl: string, base?: string): string {

@@ -1,17 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-  FileOAuthProvider, configDir, deleteTokenFile, listTokenFiles, loopbackRedirectUrls, parseLoopbackCallback, readTokenFile,
-  serverUrlHash, startLoopback, tokenFilePath, writeTokenFile,
-} from "../scripts/lib/remote-auth.mjs";
-import { normalizeServerUrl } from "../src/lib/oauth-shared.mjs";
+  FileOAuthProvider, RemoteAuth, configDir, deleteTokenFile, legacyConfigDir, legacyTokenFilePath, listTokenFiles, loopbackRedirectUrls,
+  migrateLegacyTokenFile, parseLoopbackCallback, readTokenFile, serverUrlHash, startLoopback, tokenFilePath, writeTokenFile,
+} from "../src/remote-auth.mjs";
+import { normalizeServerUrl } from "../src/oauth-shared.mjs";
 
 const SERVER = "https://mcp.example.com/omg";
 
 let dir: string;
-beforeEach(() => { dir = mkdtempSync(join(tmpdir(), "graph-ui-auth-")); });
+beforeEach(() => { dir = mkdtempSync(join(tmpdir(), "webdevproxy-auth-")); });
 afterEach(() => { rmSync(dir, { recursive: true, force: true }); });
 
 describe("token file path", () => {
@@ -22,12 +22,18 @@ describe("token file path", () => {
     expect(serverUrlHash("https://mcp.example.com/other")).not.toBe(serverUrlHash(SERVER));
     expect(normalizeServerUrl(`${SERVER}/`)).toBe(SERVER);
   });
-  it("lives under $XDG_CONFIG_HOME or ~/.config, unless GRAPH_UI_TOKEN_FILE overrides it", () => {
-    expect(configDir({ HOME: "/home/u" })).toBe("/home/u/.config/omgbase-graph-ui");
-    expect(configDir({ HOME: "/home/u", XDG_CONFIG_HOME: "/xdg" })).toBe("/xdg/omgbase-graph-ui");
-    expect(tokenFilePath(SERVER, { env: { HOME: "/home/u" } })).toBe(`/home/u/.config/omgbase-graph-ui/${serverUrlHash(SERVER)}.json`);
-    expect(tokenFilePath(SERVER, { env: { HOME: "/home/u", GRAPH_UI_TOKEN_FILE: "/tmp/t.json" } })).toBe("/tmp/t.json");
+  it("lives under $XDG_CONFIG_HOME or ~/.config/omgbase-webdevproxy, unless WEBDEVPROXY_TOKEN_FILE overrides it", () => {
+    expect(configDir({ HOME: "/home/u" })).toBe("/home/u/.config/omgbase-webdevproxy");
+    expect(configDir({ HOME: "/home/u", XDG_CONFIG_HOME: "/xdg" })).toBe("/xdg/omgbase-webdevproxy");
+    expect(tokenFilePath(SERVER, { env: { HOME: "/home/u" } })).toBe(`/home/u/.config/omgbase-webdevproxy/${serverUrlHash(SERVER)}.json`);
+    expect(tokenFilePath(SERVER, { env: { HOME: "/home/u", WEBDEVPROXY_TOKEN_FILE: "/tmp/t.json" } })).toBe("/tmp/t.json");
     expect(tokenFilePath(SERVER, { env: {}, dir })).toBe(join(dir, `${serverUrlHash(SERVER)}.json`));
+  });
+  it("knows the graph-ui bridge's old location for the same server", () => {
+    expect(legacyConfigDir({ HOME: "/home/u" })).toBe("/home/u/.config/omgbase-graph-ui");
+    expect(legacyTokenFilePath(SERVER, { env: { HOME: "/home/u" } })).toBe(`/home/u/.config/omgbase-graph-ui/${serverUrlHash(SERVER)}.json`);
+    // The override does not apply to the legacy path: it names where the NEW file is.
+    expect(legacyTokenFilePath(SERVER, { env: { HOME: "/home/u", WEBDEVPROXY_TOKEN_FILE: "/tmp/t.json" } })).toBe(`/home/u/.config/omgbase-graph-ui/${serverUrlHash(SERVER)}.json`);
   });
 });
 
@@ -45,6 +51,49 @@ describe("token file round trip", () => {
     expect(deleteTokenFile(file)).toBe(false);
     expect(readTokenFile(file)).toBeNull();
     expect(listTokenFiles(join(dir, "does-not-exist"))).toEqual([]);
+  });
+});
+
+describe("legacy graph-ui token file", () => {
+  it("is copied into place once, never overwriting, and left where it was", () => {
+    const env = { HOME: dir };
+    const file = tokenFilePath(SERVER, { env });
+    const legacy = legacyTokenFilePath(SERVER, { env });
+    expect(migrateLegacyTokenFile(file, legacy)).toBe(false); // nothing to migrate
+    const data = { serverUrl: SERVER, tokens: { access_token: "old", refresh_token: "r" }, clientInformation: { client_id: "cid" }, redirectPort: 4242 };
+    writeTokenFile(legacy, data);
+    expect(migrateLegacyTokenFile(file, legacy)).toBe(true);
+    expect(readTokenFile(file)).toEqual(data);
+    expect(existsSync(legacy)).toBe(true);
+    if (process.platform !== "win32") expect(statSync(file).mode & 0o777).toBe(0o600);
+    // The new file now wins; a changed legacy file is not copied over it.
+    writeTokenFile(legacy, { ...data, tokens: { access_token: "newer" } });
+    expect(migrateLegacyTokenFile(file, legacy)).toBe(false);
+    expect(readTokenFile(file)?.tokens?.access_token).toBe("old");
+    // The same path on both sides is a no-op.
+    expect(migrateLegacyTokenFile(file, file)).toBe(false);
+  });
+
+  it("RemoteAuth.start() performs the migration (and reuses the registered loopback port)", async () => {
+    const env = { HOME: dir };
+    const legacy = legacyTokenFilePath(SERVER, { env });
+    writeTokenFile(legacy, { serverUrl: SERVER, clientInformation: { client_id: "cid" }, tokens: { access_token: "a", refresh_token: "r" } });
+    const logs: string[] = [];
+    const ra = await new RemoteAuth({ serverUrl: SERVER, env, log: (m: string) => logs.push(m), noBrowser: true }).start();
+    try {
+      expect(ra.file).toBe(tokenFilePath(SERVER, { env }));
+      expect(ra.legacyFile).toBe(legacy);
+      expect(readTokenFile(ra.file)).toMatchObject({ clientInformation: { client_id: "cid" }, tokens: { refresh_token: "r" } });
+      expect(logs.join("\n")).toMatch(/copied the graph-ui bridge's tokens/);
+      expect(logs.join("\n")).not.toMatch(/"a"|"r"/);
+      expect(ra.bearer()).toBe("a");
+      expect(ra.status).toEqual({ state: "unknown" });
+    } finally {
+      await ra.close();
+    }
+    // An explicit --token-file disables the fallback.
+    const explicit = new RemoteAuth({ serverUrl: SERVER, env, file: join(dir, "mine.json") });
+    expect(explicit.legacyFile).toBeNull();
   });
 });
 

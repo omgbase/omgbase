@@ -39,7 +39,10 @@ carry it.
 4. **[interactive-shell.md](./interactive-shell.md)** — `omg shell`: a persistent session with `@`-addressable results.
 5. **[oqx-tutorial/](./oqx-tutorial/README.md)** — the OQX query language, end to end: filtering, targets, shaping, correlated subqueries, joins & lifts (and the repository as the root row), aggregates, full-text, graph traversal, and the sugar forms with `refs()` (eight pages).
 
-Not a tutorial, but also here: **[graph-ui/](./graph-ui/README.md)** — a Lit demo that runs an OQX query over MCP and renders the result as a graph, with the relationships that draw edges and lay the graph out inferred from the query (a probe of the reflection API).
+Not tutorials, but also here:
+
+- **[graph-ui/](./graph-ui/README.md)** — a Lit demo that runs an OQX query over MCP and renders the result as a graph, with the relationships that draw edges and lay the graph out inferred from the query (a probe of the reflection API).
+- **[webdevproxy/](./webdevproxy/README.md)** — the development-only local web proxy the browser demos use to reach an omgbase MCP server (a local `omg mcp`, or a remote gateway behind OAuth) from a Vite dev server without CORS or OAuth setup on the server side. Private, unpublished, loopback only.
 
 ## The corpus
 

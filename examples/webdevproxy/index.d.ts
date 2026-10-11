@@ -1,0 +1,202 @@
+// Hand-written types for the plain-JS package (no build step), so a TypeScript
+// Vite config or dev script can import it under `strict`.
+
+export interface ProxyArgs {
+  /** Workspace directory for `omg mcp -C <dir>`. */
+  local: string | null;
+  /** The `omg` entry (`.js`, run with node) or binary. */
+  omg: string;
+  /** The upstream MCP URL. */
+  remote: string | null;
+  port: number;
+  path: string;
+  idleSeconds: number;
+  /** Extra allowed browser origins (loopback origins are always allowed). */
+  origins: string[];
+  tokenFile: string | null;
+  noBrowser: boolean;
+  logout: boolean;
+  help: boolean;
+  /** argv without the proxy's own flags. */
+  rest: string[];
+}
+
+export interface Identity {
+  email: string | null;
+  name: string | null;
+  subject: string | null;
+}
+
+export interface WhoAmI {
+  mode: "local" | "remote";
+  upstream: string;
+  identity: Identity | null;
+  auth: { state: "none" | "unknown" | "ok" | "waiting" | "error"; issuer?: string; authorizationUrl?: string; error?: string };
+  tokenFile: string | null;
+  sessions: { id: string; upstream: string | null }[];
+}
+
+export interface Proxy {
+  /** `http://localhost:<port><path>` */
+  url: string;
+  port: number;
+  path: string;
+  mode: "local" | "remote";
+  whoami(): WhoAmI;
+  /** Resolves once the remote sign-in (or refresh) attempted at startup has settled; never rejects. */
+  ready: Promise<void>;
+  close(): Promise<void>;
+}
+
+export type StartProxyOptions = Partial<ProxyArgs> & {
+  log?: (message: string) => void;
+  /** Parsed for defaults when given; `options` override. */
+  argv?: string[];
+  env?: Record<string, string | undefined>;
+};
+
+export function startProxy(options?: StartProxyOptions): Promise<Proxy>;
+/** The message in the 404 `-32000` body for a session id the proxy does not know (expired after `--idle`, or the proxy restarted). */
+export const UNKNOWN_SESSION_MESSAGE: string;
+export function logout(options: { remote?: string | null; tokenFile?: string | null; env?: Record<string, string | undefined> }, log?: (message: string) => void): string[];
+
+export interface ViteProxyEntry {
+  target: string;
+  changeOrigin: false;
+}
+/** Vite `server.proxy` entries for the MCP path (default `/mcp`) and `/whoami`. */
+export function viteProxy(options?: { port?: number | string; path?: string; env?: Record<string, string | undefined> }): Record<string, ViteProxyEntry>;
+
+export function parseArgs(argv?: string[], env?: Record<string, string | undefined>): ProxyArgs;
+export function validateArgs(args: ProxyArgs): string | null;
+export function defaultOmg(env?: Record<string, string | undefined>, exists?: (path: string) => boolean): string;
+export function omgCommand(omg: string): { command: string; args: string[] };
+export const USAGE: string;
+export const DEFAULT_PORT: number;
+export const DEFAULT_PATH: string;
+export const DEFAULT_IDLE_SECONDS: number;
+export const LISTEN_HOST: string;
+export const MONOREPO_OMG: string;
+
+export const LOOPBACK_ORIGINS: string[];
+export function originMatches(origin: string, pattern: string): boolean;
+export function allowOrigin(origin: string | undefined, extra?: string[]): string | null;
+export function corsHeaders(origin: string): Record<string, string>;
+
+export interface TokenFile {
+  serverUrl: string;
+  redirectPort?: number;
+  clientInformation?: Record<string, unknown>;
+  tokens?: Record<string, unknown> & { access_token?: string; refresh_token?: string; id_token?: string };
+  tokensSavedAt?: number;
+  codeVerifier?: string;
+  state?: string;
+  discovery?: Record<string, unknown> & { authorizationServerUrl?: string };
+}
+
+export const APP_DIR_NAME: string;
+export const LEGACY_APP_DIR_NAME: string;
+export const TOKEN_FILE_ENV: string;
+export function configDir(env?: Record<string, string | undefined>, appDir?: string): string;
+export function legacyConfigDir(env?: Record<string, string | undefined>): string;
+export function serverUrlHash(serverUrl: string): string;
+export function tokenFilePath(serverUrl: string, opts?: { env?: Record<string, string | undefined>; dir?: string }): string;
+export function legacyTokenFilePath(serverUrl: string, opts?: { env?: Record<string, string | undefined>; dir?: string }): string;
+export function migrateLegacyTokenFile(file: string, legacyFile: string): boolean;
+export function readTokenFile(file: string): TokenFile | null;
+export function writeTokenFile(file: string, data: TokenFile): void;
+export function deleteTokenFile(file: string): boolean;
+export function listTokenFiles(dir?: string): string[];
+
+export const CALLBACK_PATH: string;
+export function loopbackRedirectUrls(port: number): string[];
+export type LoopbackOutcome =
+  | { kind: "code"; code: string }
+  | { kind: "error"; status: number; message: string }
+  | { kind: "mismatch" | "ignore"; status: number; message: string };
+export function parseLoopbackCallback(requestUrl: string, expectedState: string | undefined): LoopbackOutcome;
+export interface Loopback {
+  port: number;
+  redirectUrls: string[];
+  redirectUrl: string;
+  waitForCallback(state: string | undefined): Promise<{ code: string }>;
+  close(): Promise<void>;
+}
+export function startLoopback(opts?: { port?: number; host?: string }): Promise<Loopback>;
+export function openBrowser(url: string): Promise<boolean>;
+
+export class FileOAuthProvider {
+  constructor(opts: {
+    serverUrl: string;
+    file: string;
+    redirectUrls: string[];
+    clientName?: string;
+    log?: (message: string) => void;
+    openBrowser?: (url: string) => Promise<boolean>;
+    noBrowser?: boolean;
+  });
+  serverUrl: string;
+  file: string;
+  redirectUrls: string[];
+  pending: { url: string; state: string | undefined } | null;
+  readonly redirectUrl: string;
+  readonly clientMetadata: Record<string, unknown>;
+  read(): TokenFile;
+  patch(p: Partial<TokenFile> & Record<string, unknown>): void;
+  state(): string;
+  clientInformation(): Record<string, unknown> | undefined;
+  saveClientInformation(info: Record<string, unknown>): void;
+  tokens(): TokenFile["tokens"];
+  saveTokens(tokens: Record<string, unknown>): void;
+  saveCodeVerifier(v: string): void;
+  codeVerifier(): string;
+  saveDiscoveryState(d: Record<string, unknown>): void;
+  discoveryState(): TokenFile["discovery"];
+  invalidateCredentials(scope: "all" | "client" | "tokens" | "verifier" | "discovery"): void;
+  redirectToAuthorization(url: URL): Promise<void>;
+  identity(): Identity | null;
+}
+
+export class RemoteAuth {
+  constructor(opts: {
+    serverUrl: string;
+    file?: string;
+    legacyFile?: string | null;
+    log?: (message: string) => void;
+    fetch?: typeof globalThis.fetch;
+    openBrowser?: (url: string) => Promise<boolean>;
+    noBrowser?: boolean;
+    env?: Record<string, string | undefined>;
+  });
+  serverUrl: string;
+  file: string;
+  legacyFile: string | null;
+  status: WhoAmI["auth"];
+  start(): Promise<this>;
+  close(): Promise<void>;
+  bearer(): string | undefined;
+  identity(): Identity | null;
+  issuer(): string | undefined;
+  ensure(): Promise<void>;
+  authorize(response?: Response): Promise<void>;
+  fetchWithAuth(): typeof globalThis.fetch;
+  logout(): boolean;
+}
+
+export class SessionTable<S extends { id: string | null; upstreamId?: () => string | undefined; timer?: unknown } = { id: string | null; upstreamId?: () => string | undefined; timer?: unknown }> {
+  constructor(opts?: { idleMs?: number; onIdle?: (session: S) => void; setTimer?: typeof setTimeout; clearTimer?: typeof clearTimeout });
+  add(session: S): S;
+  get(id: unknown): S | undefined;
+  has(id: unknown): boolean;
+  remove(id: string): S | undefined;
+  touch(session: S): void;
+  upstreamIdFor(id: string): string | undefined;
+  readonly size: number;
+  values(): S[];
+  describe(): { id: string; upstream: string | null }[];
+}
+
+export function normalizeServerUrl(serverUrl: string): string;
+export function callbackParams(href: string | URL): { code: string | null; state: string | null; error: string | null; errorDescription: string | null };
+export function decodeJwtClaims(jwt: string | null | undefined): Record<string, unknown> | null;
+export function identityFromTokens(tokens: { access_token?: string; id_token?: string; [k: string]: unknown } | null | undefined): Identity | null;

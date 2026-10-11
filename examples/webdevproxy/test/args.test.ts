@@ -1,0 +1,68 @@
+import { describe, expect, it } from "vitest";
+import { DEFAULT_PORT, MONOREPO_OMG, defaultOmg, omgCommand, parseArgs, validateArgs, USAGE } from "../src/args.mjs";
+
+const REMOTE = "https://mcp.example.com/omg";
+
+describe("parseArgs", () => {
+  it("defaults: 8787, /mcp, 3600 s idle, nothing to proxy, foreign flags kept in rest", () => {
+    const o = parseArgs(["--open", "--host"], {});
+    expect(o).toMatchObject({ local: null, remote: null, port: DEFAULT_PORT, path: "/mcp", idleSeconds: 3600, origins: [], tokenFile: null, noBrowser: false, logout: false, help: false, rest: ["--open", "--host"] });
+    expect(validateArgs(o)).toMatch(/nothing to proxy/);
+  });
+
+  it("consumes its own flags (both `--k v` and `--k=v`) and leaves Vite's", () => {
+    const o = parseArgs(["--remote", REMOTE, "--port=9000", "--no-browser", "--token-file", "/t.json", "--origin", "http://app.local:3000", "--origin=http://other:*", "--open", "--idle", "30"], {});
+    expect(o).toMatchObject({ remote: REMOTE, port: 9000, noBrowser: true, tokenFile: "/t.json", idleSeconds: 30, origins: ["http://app.local:3000", "http://other:*"], rest: ["--open"] });
+    expect(validateArgs(o)).toBeNull();
+  });
+
+  it("resolves --local to an absolute path and reads the env fallbacks", () => {
+    const o = parseArgs(["--local", "ws"], { WEBDEVPROXY_OMG: "/x/omg" });
+    expect(o.local).toMatch(/\/ws$/);
+    expect(o.local!.startsWith("/")).toBe(true);
+    expect(o.omg).toBe("/x/omg");
+    const e = parseArgs([], { WEBDEVPROXY_REMOTE: ` ${REMOTE} `, WEBDEVPROXY_PORT: "8800", WEBDEVPROXY_PATH: "/x", WEBDEVPROXY_TOKEN_FILE: "/env.json", WEBDEVPROXY_NO_BROWSER: "1", WEBDEVPROXY_ORIGIN: "http://a:1, http://b:*" });
+    expect(e).toMatchObject({ remote: REMOTE, port: 8800, path: "/x", tokenFile: "/env.json", noBrowser: true, origins: ["http://a:1", "http://b:*"] });
+    expect(parseArgs(["--remote", "https://flag.example.com/omg"], { WEBDEVPROXY_REMOTE: REMOTE }).remote).toBe("https://flag.example.com/omg");
+    expect(parseArgs(["--logout"], {}).logout).toBe(true);
+    expect(parseArgs(["--help"], {}).help).toBe(true);
+  });
+});
+
+describe("validateArgs", () => {
+  it("refuses both modes at once, a non-URL remote, a bad port or path", () => {
+    expect(validateArgs(parseArgs(["--local", "a", "--remote", REMOTE], {}))).toMatch(/exclusive/);
+    expect(validateArgs(parseArgs(["--remote", "not a url"], {}))).toMatch(/http\(s\) URL/);
+    expect(validateArgs(parseArgs(["--remote", "ftp://x/omg"], {}))).toMatch(/http\(s\) URL/);
+    expect(validateArgs(parseArgs(["--local", "a", "--port", "70000"], {}))).toMatch(/--port/);
+    expect(validateArgs(parseArgs(["--local", "a", "--port", "abc"], {}))).toMatch(/--port/);
+    expect(validateArgs(parseArgs(["--local", "a", "--path", "mcp"], {}))).toMatch(/--path/);
+    expect(validateArgs(parseArgs(["--local", "a", "--idle", "-1"], {}))).toMatch(/--idle/);
+    expect(validateArgs(parseArgs(["--local", "a", "--port", "0"], {}))).toBeNull(); // 0 = ephemeral, for tests
+    // --logout and --help need no mode.
+    expect(validateArgs(parseArgs(["--logout"], {}))).toBeNull();
+    expect(validateArgs(parseArgs(["--help"], {}))).toBeNull();
+  });
+});
+
+describe("omg", () => {
+  it("runs a .js entry with node and anything else as a binary", () => {
+    expect(omgCommand("/repo/packages/cli/dist/src/main.js")).toEqual({ command: process.execPath, args: ["/repo/packages/cli/dist/src/main.js"] });
+    expect(omgCommand("/usr/local/bin/omgbase")).toEqual({ command: "/usr/local/bin/omgbase", args: [] });
+    expect(omgCommand("omg")).toEqual({ command: "omg", args: [] });
+  });
+  it("defaults to the env, else the monorepo build when present, else `omg` on PATH", () => {
+    expect(defaultOmg({ WEBDEVPROXY_OMG: "/x" }, () => true)).toBe("/x");
+    expect(defaultOmg({}, () => true)).toBe(MONOREPO_OMG);
+    expect(MONOREPO_OMG).toMatch(/packages\/cli\/dist\/src\/main\.js$/);
+    expect(defaultOmg({}, () => false)).toBe("omg");
+  });
+});
+
+describe("USAGE", () => {
+  it("warns that the proxy is dev-only and loopback-bound", () => {
+    expect(USAGE).toMatch(/dev-only; do not expose beyond localhost/);
+    expect(USAGE).toMatch(/127\.0\.0\.1/);
+    expect(USAGE).not.toMatch(/0\.0\.0\.0/);
+  });
+});

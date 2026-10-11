@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { SessionTable } from "../scripts/lib/sessions.mjs";
+import { SessionTable } from "../src/sessions.mjs";
 
 describe("SessionTable", () => {
   it("maps the browser session id to its upstream and forgets it on remove", () => {

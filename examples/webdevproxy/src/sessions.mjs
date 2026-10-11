@@ -1,4 +1,4 @@
-// The bridge's session table: the browser-facing `Mcp-Session-Id` (minted by
+// The proxy's session table: the browser-facing `Mcp-Session-Id` (minted by
 // the SDK's server transport) mapped to the upstream for that session — an
 // `omg mcp` child, or one remote Streamable HTTP session — plus the idle timer.
 // Pure (timers injectable) so the mapping is unit-testable.

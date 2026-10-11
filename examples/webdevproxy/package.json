@@ -1,0 +1,37 @@
+{
+  "name": "webdevproxy",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Development-only local web proxy for MCP servers: lets the browser demos in this repository reach an omgbase MCP server (a remote gateway with OAuth, or a local `omg mcp` process) from a Vite dev server without CORS or OAuth setup on the server side. Private, unpublished, not for production.",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "bin": {
+    "webdevproxy": "./bin/webdevproxy.mjs"
+  },
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "default": "./src/index.mjs"
+    }
+  },
+  "types": "./index.d.ts",
+  "files": [
+    "bin",
+    "src",
+    "index.d.ts"
+  ],
+  "scripts": {
+    "start": "node bin/webdevproxy.mjs",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "zod": "^4.5.4"
+  }
+}

@@ -1,6 +1,7 @@
 packages:
   - "packages/*"
   - "examples/graph-ui"
+  - "examples/webdevproxy"
 
 allowBuilds:
   better-sqlite3: true

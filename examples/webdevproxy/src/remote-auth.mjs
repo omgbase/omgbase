@@ -1,7 +1,6 @@
-// The bridge as an OAuth client (native app). Used by scripts/dev-mcp.mjs in
-// --remote mode: the browser talks to the bridge on localhost without any
-// auth; the bridge signs in to the remote omg MCP gateway the way Claude Code
-// does —
+// The proxy as an OAuth client (native app). Used in --remote mode: the browser
+// talks to the proxy on localhost without any auth; the proxy signs in to the
+// remote MCP gateway the way Claude Code does —
 //
 //   401 + `WWW-Authenticate: Bearer resource_metadata=…`
 //     → protected-resource metadata → the issuer's metadata        (SDK `auth()`)
@@ -13,30 +12,39 @@
 //     → later runs refresh silently (`offline_access` → refresh token);
 //       a failed refresh re-runs the browser flow.
 //
-// Pure helpers (token-file path hashing, read/write, callback parsing) are
-// exported for the tests; the network-touching parts take injectable `fetch`,
-// `openBrowser` and `log`.
+// Pure helpers (token-file path hashing, read/write, the legacy graph-ui file
+// fallback, callback parsing) are exported for the tests; the network-touching
+// parts take injectable `fetch`, `openBrowser` and `log`.
 
 import { createHash, randomBytes } from "node:crypto";
 import { spawn } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { auth, extractWWWAuthenticateParams } from "@modelcontextprotocol/sdk/client/auth.js";
-import { callbackParams, identityFromTokens, normalizeServerUrl } from "../../src/lib/oauth-shared.mjs";
+import { callbackParams, identityFromTokens, normalizeServerUrl } from "./oauth-shared.mjs";
 
 // ---- the token file -------------------------------------------------------------
 
-export const APP_DIR_NAME = "omgbase-graph-ui";
+export const APP_DIR_NAME = "omgbase-webdevproxy";
+/** Where the graph-ui bridge kept its tokens before the proxy was extracted; read (and copied) so nobody signs in twice. */
+export const LEGACY_APP_DIR_NAME = "omgbase-graph-ui";
+export const TOKEN_FILE_ENV = "WEBDEVPROXY_TOKEN_FILE";
 
 /**
- * `$XDG_CONFIG_HOME` or `~/.config`, then our app directory.
+ * `$XDG_CONFIG_HOME` or `~/.config`, then the app directory.
  * @param {Record<string, string | undefined>} [env]
+ * @param {string} [appDir]
  */
-export function configDir(env = process.env) {
+export function configDir(env = process.env, appDir = APP_DIR_NAME) {
   const base = env.XDG_CONFIG_HOME && env.XDG_CONFIG_HOME.trim() ? env.XDG_CONFIG_HOME : join(env.HOME ?? homedir(), ".config");
-  return join(base, APP_DIR_NAME);
+  return join(base, appDir);
+}
+
+/** The graph-ui bridge's config dir (pre-extraction), for the fallback. */
+export function legacyConfigDir(env = process.env) {
+  return configDir(env, LEGACY_APP_DIR_NAME);
 }
 
 /** The first 16 hex chars of sha256 over the normalized server URL. */
@@ -45,14 +53,41 @@ export function serverUrlHash(serverUrl) {
 }
 
 /**
- * Where the tokens for `serverUrl` live: `GRAPH_UI_TOKEN_FILE` wins, else
+ * Where the tokens for `serverUrl` live: `WEBDEVPROXY_TOKEN_FILE` wins, else
  * `<configDir>/<hash of url>.json`.
  * @param {string} serverUrl
  * @param {{ env?: Record<string, string | undefined>, dir?: string }} [opts]
  */
 export function tokenFilePath(serverUrl, { env = process.env, dir } = {}) {
-  if (env.GRAPH_UI_TOKEN_FILE && env.GRAPH_UI_TOKEN_FILE.trim()) return env.GRAPH_UI_TOKEN_FILE;
+  const override = env[TOKEN_FILE_ENV];
+  if (override && override.trim()) return override;
   return join(dir ?? configDir(env), `${serverUrlHash(serverUrl)}.json`);
+}
+
+/**
+ * The graph-ui bridge's token file for the same server (same hash, old dir).
+ * @param {string} serverUrl
+ * @param {{ env?: Record<string, string | undefined>, dir?: string }} [opts]
+ */
+export function legacyTokenFilePath(serverUrl, { env = process.env, dir } = {}) {
+  return join(dir ?? legacyConfigDir(env), `${serverUrlHash(serverUrl)}.json`);
+}
+
+/**
+ * When `file` is absent and `legacyFile` holds a readable token file, copy it
+ * into place (mode 0600). The legacy file is left alone, so an older graph-ui
+ * checkout keeps working. Returns true when a copy was made.
+ * @param {string} file
+ * @param {string} legacyFile
+ */
+export function migrateLegacyTokenFile(file, legacyFile) {
+  if (existsSync(file) || file === legacyFile) return false;
+  const data = readTokenFile(legacyFile);
+  if (!data) return false;
+  mkdirSync(dirname(file), { recursive: true, mode: 0o700 });
+  copyFileSync(legacyFile, file);
+  chmodSync(file, 0o600);
+  return true;
 }
 
 /**
@@ -93,7 +128,7 @@ export function deleteTokenFile(file) {
   return existed;
 }
 
-/** Every token file in the config dir (for `--logout` without a URL). */
+/** Every token file in a config dir (for `--logout` without a URL). */
 export function listTokenFiles(dir = configDir()) {
   if (!existsSync(dir)) return [];
   return readdirSync(dir).filter((f) => f.endsWith(".json")).map((f) => join(dir, f));
@@ -148,12 +183,12 @@ export function startLoopback({ port = 0, host = "127.0.0.1" } = {}) {
     }
     if (!pending) {
       res.writeHead(409, { "content-type": "text/html; charset=utf-8" });
-      res.end(CALLBACK_PAGE("No sign-in in progress", "The bridge was not waiting for a sign-in. Reload the graph UI and try again."));
+      res.end(CALLBACK_PAGE("No sign-in in progress", "The proxy was not waiting for a sign-in. Reload the page and try again."));
       return;
     }
     if (outcome.kind === "mismatch") {
       res.writeHead(outcome.status, { "content-type": "text/html; charset=utf-8" });
-      res.end(CALLBACK_PAGE("Not this sign-in", `${outcome.message}. The bridge is still waiting for the one it started.`));
+      res.end(CALLBACK_PAGE("Not this sign-in", `${outcome.message}. The proxy is still waiting for the one it started.`));
       return;
     }
     const p = pending;
@@ -165,7 +200,7 @@ export function startLoopback({ port = 0, host = "127.0.0.1" } = {}) {
       return;
     }
     res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
-    res.end(CALLBACK_PAGE("Signed in", "The graph UI bridge has your authorization. You can close this tab and return to the page."));
+    res.end(CALLBACK_PAGE("Signed in", "The local dev proxy has your authorization. You can close this tab and return to the page."));
     p.resolve({ code: outcome.code });
   });
   return new Promise((resolve, reject) => {
@@ -218,7 +253,7 @@ export class FileOAuthProvider {
    * @param {{ serverUrl: string, file: string, redirectUrls: string[], clientName?: string, log?: (m: string) => void,
    *   openBrowser?: (url: string) => Promise<boolean>, noBrowser?: boolean }} opts
    */
-  constructor({ serverUrl, file, redirectUrls, clientName = "omgbase graph UI (local bridge)", log = () => {}, openBrowser: open = openBrowser, noBrowser = false }) {
+  constructor({ serverUrl, file, redirectUrls, clientName = "omgbase webdevproxy (local dev proxy)", log = () => {}, openBrowser: open = openBrowser, noBrowser = false }) {
     this.serverUrl = serverUrl;
     this.file = file;
     this.redirectUrls = redirectUrls;
@@ -330,18 +365,20 @@ export class FileOAuthProvider {
 // ---- orchestration ---------------------------------------------------------------
 
 /**
- * One remote per bridge: owns the loopback listener, the provider, and the
- * sign-in state the bridge reports on /whoami. `authorize(response)` is the
+ * One remote per proxy: owns the loopback listener, the provider, and the
+ * sign-in state the proxy reports on /whoami. `authorize(response)` is the
  * serialized "we got a 401" handler the forwarding fetch calls.
  */
 export class RemoteAuth {
   /**
-   * @param {{ serverUrl: string, file?: string, log?: (m: string) => void, fetch?: typeof globalThis.fetch,
-   *   openBrowser?: (url: string) => Promise<boolean>, noBrowser?: boolean }} opts
+   * @param {{ serverUrl: string, file?: string, legacyFile?: string | null, log?: (m: string) => void, fetch?: typeof globalThis.fetch,
+   *   openBrowser?: (url: string) => Promise<boolean>, noBrowser?: boolean, env?: Record<string, string | undefined> }} opts
    */
-  constructor({ serverUrl, file, log = () => {}, fetch: fetchFn = globalThis.fetch, openBrowser: open = openBrowser, noBrowser = false }) {
+  constructor({ serverUrl, file, legacyFile, log = () => {}, fetch: fetchFn = globalThis.fetch, openBrowser: open = openBrowser, noBrowser = false, env = process.env }) {
     this.serverUrl = normalizeServerUrl(serverUrl);
-    this.file = file ?? tokenFilePath(serverUrl);
+    this.file = file ?? tokenFilePath(serverUrl, { env });
+    // The graph-ui bridge's file for the same server, unless the caller named a file of its own.
+    this.legacyFile = legacyFile === undefined ? (file ? null : legacyTokenFilePath(serverUrl, { env })) : legacyFile;
     this.log = log;
     this.fetch = fetchFn;
     this.open = open;
@@ -354,6 +391,9 @@ export class RemoteAuth {
   }
 
   async start() {
+    if (this.legacyFile && migrateLegacyTokenFile(this.file, this.legacyFile)) {
+      this.log(`copied the graph-ui bridge's tokens from ${this.legacyFile} to ${this.file}`);
+    }
     const stored = readTokenFile(this.file);
     const wantPort = stored?.clientInformation && stored.redirectPort ? stored.redirectPort : 0;
     this.loopback = await startLoopback({ port: wantPort }).catch((e) => {
@@ -398,7 +438,7 @@ export class RemoteAuth {
     const res = await this.fetch(this.serverUrl, {
       method: "POST",
       headers: { "content-type": "application/json", accept: "application/json, text/event-stream" },
-      body: JSON.stringify({ jsonrpc: "2.0", id: 0, method: "initialize", params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "omgbase-graph-ui-bridge", version: "0.0.0" } } }),
+      body: JSON.stringify({ jsonrpc: "2.0", id: 0, method: "initialize", params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "omgbase-webdevproxy", version: "0.0.0" } } }),
     });
     await res.body?.cancel().catch(() => undefined);
     if (res.status !== 401) {

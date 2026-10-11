@@ -1,6 +1,14 @@
 // The ONLY data path: omgbase's MCP server over the Streamable HTTP transport
-// (the dev bridge in scripts/dev-mcp.mjs, or a remote gateway behind OAuth).
-// Nothing here imports @omgbase/core.
+// (the dev proxy — the `webdevproxy` workspace package — or a remote gateway
+// behind OAuth). Nothing here imports @omgbase/core.
+//
+// Session recovery: a Streamable HTTP server forgets a session (the proxy after
+// `--idle` seconds without a request, or when it restarts; a gateway likewise)
+// and answers the next POST with 404 — the spec's signal to start over with
+// `initialize`. The SDK's client does not do that by itself, so `OmgClient`
+// does: a call that fails with a lost session drops the client, opens a fresh
+// one against the same URL and retries the call once (`isSessionLost`); only a
+// second failure reaches the caller. `onSessionLost` lets the page say so.
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
@@ -32,8 +40,22 @@ export function absoluteServerUrl(url: string, base: string | undefined = typeof
 export interface OmgClientOptions {
   url: string;
   /** When set, a 401 runs the MCP OAuth flow (discovery, DCR, PKCE, refresh);
-   * the local bridge never answers 401, so it stays auth-free. */
+   * the local proxy never answers 401, so it stays auth-free. */
   authProvider?: OAuthClientProvider;
+  /** Called once per recovered session (the server forgot ours; a fresh one was opened and the call retried). */
+  onSessionLost?: (error: Error) => void;
+  /** The transport to connect over (tests inject a fake; the default is the SDK's Streamable HTTP client). */
+  transportFactory?: () => Transport;
+}
+
+/** Is this error the server saying it no longer knows our session? A 404 on
+ * POST (`StreamableHTTPError.code`), or the proxy's `-32000 unknown session`
+ * body relayed in the message (`Error POSTing to endpoint: {"jsonrpc":"2.0",
+ * "error":{"code":-32000,"message":"unknown session …"},"id":null}`). */
+export function isSessionLost(e: unknown): e is Error {
+  if (!(e instanceof Error)) return false;
+  if ((e as { code?: unknown }).code === 404) return true;
+  return /unknown session/i.test(e.message) || /HTTP 404\b/.test(e.message);
 }
 
 export interface QueryResult {
@@ -63,26 +85,54 @@ export class AuthRequiredError extends Error {
 export class OmgClient {
   private client: Client | null = null;
   private connecting: Promise<Client> | null = null;
+  /** How many times the server forgot our session and a fresh one was opened. */
+  recoveries = 0;
 
   constructor(readonly options: Readonly<OmgClientOptions>) {}
 
-  private transport(): StreamableHTTPClientTransport {
+  private transport(): Transport {
+    if (this.options.transportFactory) return this.options.transportFactory();
     const { url, authProvider } = this.options;
-    return new StreamableHTTPClientTransport(new URL(absoluteServerUrl(url)), authProvider ? { authProvider } : {});
+    // The SDK types `sessionId?: string` on the class but `string` on the
+    // interface; under exactOptionalPropertyTypes that needs a cast.
+    return new StreamableHTTPClientTransport(new URL(absoluteServerUrl(url)), authProvider ? { authProvider } : {}) as unknown as Transport;
   }
 
-  private async open(transport: StreamableHTTPClientTransport): Promise<Client> {
+  private async open(transport: Transport): Promise<Client> {
     const client = new Client({ name: "omgbase-graph-ui", version: "0.0.0" });
     try {
-      // The SDK types `sessionId?: string` on the class but `string` on the
-      // interface; under exactOptionalPropertyTypes that needs a cast.
-      await client.connect(transport as unknown as Transport);
+      await client.connect(transport);
     } catch (e) {
       if (e instanceof UnauthorizedError) throw new AuthRequiredError(e.message);
       throw e;
     }
     this.client = client;
     return client;
+  }
+
+  /** Run `fn` over the connected client; when the server has forgotten the
+   * session, open a fresh one and run it once more. 401s become AuthRequiredError. */
+  private async withSession<T>(fn: (client: Client) => Promise<T>): Promise<T> {
+    const client = await this.connect();
+    try {
+      return await fn(client);
+    } catch (e) {
+      if (e instanceof UnauthorizedError) throw new AuthRequiredError(e.message);
+      if (!isSessionLost(e)) throw e;
+      // Several calls may fail together: whoever is first drops the stale
+      // client; the rest find it gone and share the one reconnect.
+      if (this.client === client) this.client = null;
+      void client.close().catch(() => undefined);
+      this.recoveries++;
+      this.options.onSessionLost?.(e);
+      const fresh = await this.connect();
+      try {
+        return await fn(fresh);
+      } catch (e2) {
+        if (e2 instanceof UnauthorizedError) throw new AuthRequiredError(e2.message);
+        throw e2;
+      }
+    }
   }
 
   private connect(): Promise<Client> {
@@ -93,9 +143,9 @@ export class OmgClient {
 
   /** Back from the authorization server: exchange the code, then connect. */
   async finishAuth(code: string): Promise<void> {
-    const transport = this.transport();
+    const transport = this.transport() as StreamableHTTPClientTransport;
     await transport.finishAuth(code);
-    await this.open(transport);
+    await this.open(transport as unknown as Transport);
   }
 
   async close(): Promise<void> {
@@ -108,14 +158,8 @@ export class OmgClient {
   /** Call a tool and decode omgbase's JSON-text envelope (`{content:[{text}]}`,
    * `isError` → the `{error, message}` body). */
   async call<T>(name: string, args: Record<string, unknown>): Promise<T> {
-    const client = await this.connect();
-    let result: { content?: { type: string; text?: string }[]; isError?: boolean };
-    try {
-      result = (await client.callTool({ name, arguments: args })) as typeof result;
-    } catch (e) {
-      if (e instanceof UnauthorizedError) throw new AuthRequiredError(e.message);
-      throw e;
-    }
+    type ToolResult = { content?: { type: string; text?: string }[]; isError?: boolean };
+    const result = await this.withSession((client) => client.callTool({ name, arguments: args }) as Promise<ToolResult>);
     const text = result.content?.find((c) => c.type === "text")?.text ?? "";
     let body: unknown;
     try {
@@ -136,14 +180,8 @@ export class OmgClient {
 
   /** The tool names the server (or the gateway in front of it) offers. */
   async tools(): Promise<string[]> {
-    const client = await this.connect();
-    try {
-      const { tools } = await client.listTools();
-      return tools.map((t) => t.name);
-    } catch (e) {
-      if (e instanceof UnauthorizedError) throw new AuthRequiredError(e.message);
-      throw e;
-    }
+    const { tools } = await this.withSession((client) => client.listTools());
+    return tools.map((t) => t.name);
   }
 
   /** `docs_read`: the whole document; `properties.frontmatter` is the parsed fence. */
