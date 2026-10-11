@@ -1,7 +1,7 @@
 //! Reads (`spec/surface/README.md` §2): ref resolution, whole-document reads,
 //! block hydration at a resolution, the outline wire format, and the two
 //! path-ordered list surfaces. Port of `packages/core/src/core/read/*`.
-//! Result keys follow the reference's spelling (`$id`, `$path`, `$raw`, the row
+//! Result keys follow the reference's spelling (`id`, `path`, `raw`, the row
 //! rule of §1.2; `renderedHashMatch`, …) — the fixtures are generated from it.
 
 use std::collections::{BTreeMap, HashMap};
@@ -289,7 +289,25 @@ pub fn block_raw(conn: &Connection, raw_hash_hex: &str) -> Result<String> {
 
 // ---- docs_read ---------------------------------------------------------------------------
 
-/// §2 `docs_read`: `{ $id, $path, rev, properties, $raw }` (+ `ids`,
+/// The surface's `properties` (§2, 3.0): the `spec/properties` §5 grouped
+/// shape with the computed group's keys spelled as the attributes that read
+/// them — the store writes the computed rows under `$title`/`$tags`
+/// (`spec/properties` §3.3, unchanged), the surface has no `$` names, so
+/// `properties.computed` is `{ title, tags }`. Authored groups are untouched
+/// (an authored `$x:` key keeps its sigil, as `frontmatter.$x` reads it). The
+/// reference's `surfaceProperties`.
+fn surface_properties(mut grouped: Json) -> Json {
+    if let Some(computed) = grouped.get_mut("computed").and_then(Json::as_object_mut) {
+        let rekeyed: Map<String, Json> = std::mem::take(computed)
+            .into_iter()
+            .map(|(k, v)| (k.strip_prefix('$').map_or(k.clone(), str::to_owned), v))
+            .collect();
+        *computed = rekeyed;
+    }
+    grouped
+}
+
+/// §2 `docs_read`: `{ id, path, rev, properties, raw }` (+ `ids`,
 /// `hashes`, `parents` with ids) — the document's row attributes under the
 /// surface's names (§1.2, 3.0); `None` for a missing doc.
 pub fn docs_read(store: &Store, doc_id: &str, include_ids: bool) -> Result<Option<Json>> {
@@ -301,11 +319,14 @@ pub fn docs_read(store: &Store, doc_id: &str, include_ids: bool) -> Result<Optio
         return Ok(None);
     };
     let mut m = Map::new();
-    m.insert("$id".to_owned(), json!(info.doc_id));
-    m.insert("$path".to_owned(), json!(reference_path(&info.path)));
+    m.insert("id".to_owned(), json!(info.doc_id));
+    m.insert("path".to_owned(), json!(reference_path(&info.path)));
     m.insert("rev".to_owned(), json!(info.current_rev));
-    m.insert("properties".to_owned(), store.properties_grouped(doc_id)?);
-    m.insert("$raw".to_owned(), json!(content));
+    m.insert(
+        "properties".to_owned(),
+        surface_properties(store.properties_grouped(doc_id)?),
+    );
+    m.insert("raw".to_owned(), json!(content));
     if include_ids {
         let mut ids = Vec::new();
         let mut hashes = Map::new();
@@ -384,12 +405,12 @@ pub fn docs_read_at(store: &Store, doc_id: &str, rev: &str) -> Result<Option<Jso
         return Ok(None);
     };
     Ok(Some(json!({
-        "$id": doc_id,
-        "$path": reference_path(&r.path),
+        "id": doc_id,
+        "path": reference_path(&r.path),
         "rev": rev,
-        "$raw": r.content,
+        "raw": r.content,
         "renderedHashMatch": r.rendered_hash_match,
-        "properties": store.properties_grouped(doc_id)?,
+        "properties": surface_properties(store.properties_grouped(doc_id)?),
         "propertiesAreCurrent": true,
     })))
 }
@@ -438,11 +459,11 @@ fn project(
     resolution: Resolution,
     include_children: bool,
 ) -> Result<Json> {
-    // A block row under the surface's names (§1.2, 3.0): `$id`, the raw bytes
-    // `$raw` and their hash `$hash`; the placement is the plain fields
+    // A block row under the surface's names (§1.2, 3.0): `id`, the raw bytes
+    // `raw` and their hash `hash`; the placement is the plain fields
     // `ordinal`/`depth`/`parent_id` on the row.
     let mut m = Map::new();
-    m.insert("$id".to_owned(), json!(node.block_id));
+    m.insert("id".to_owned(), json!(node.block_id));
     m.insert("type".to_owned(), json!(node.kind));
     match resolution {
         Resolution::Skeleton => {
@@ -461,17 +482,17 @@ fn project(
         }
         Resolution::Raw => {
             m.insert(
-                "$raw".to_owned(),
+                "raw".to_owned(),
                 json!(block_raw(conn, &node.raw_hash_hex)?),
             );
-            m.insert("$hash".to_owned(), json!(node.raw_hash_hex));
+            m.insert("hash".to_owned(), json!(node.raw_hash_hex));
         }
         Resolution::Full => {
             m.insert(
-                "$raw".to_owned(),
+                "raw".to_owned(),
                 json!(block_raw(conn, &node.raw_hash_hex)?),
             );
-            m.insert("$hash".to_owned(), json!(node.raw_hash_hex));
+            m.insert("hash".to_owned(), json!(node.raw_hash_hex));
             m.insert("text".to_owned(), json!(node.text));
             m.insert("attrs".to_owned(), node.attrs.clone());
             m.insert("ordinal".to_owned(), json!(node.ordinal));
@@ -685,10 +706,10 @@ pub struct DocListRow {
 }
 
 impl DocListRow {
-    /// The wire row (§2, 3.0): `{ $id, $path, $updated_at, blocks }` — the
+    /// The wire row (§2, 3.0): `{ id, path, updated_at, blocks }` — the
     /// document's row attributes, the path in the reference form (§1 "Paths").
     fn to_json(&self) -> Json {
-        json!({ "$id": self.doc_id, "$path": reference_path(&self.path), "$updated_at": self.ts, "blocks": self.blocks })
+        json!({ "id": self.doc_id, "path": reference_path(&self.path), "updated_at": self.ts, "blocks": self.blocks })
     }
 }
 
@@ -902,18 +923,18 @@ pub fn docs_tree(
     let entries: Vec<(String, Json)> = by_path
         .into_iter()
         .map(|e| {
-            // §2 (3.0): a `doc` entry is `{ $id, $path, kind, docs, blocks,
-            // $updated_at }`, a `dir` the same without the `$id`.
+            // §2 (3.0): a `doc` entry is `{ id, path, kind, docs, blocks,
+            // updated_at }`, a `dir` the same without the `id`.
             let path = reference_path(&e.path);
             let mut m = Map::new();
             if let Some(id) = &e.doc_id {
-                m.insert("$id".to_owned(), json!(id));
+                m.insert("id".to_owned(), json!(id));
             }
-            m.insert("$path".to_owned(), json!(path));
+            m.insert("path".to_owned(), json!(path));
             m.insert("kind".to_owned(), json!(if e.dir { "dir" } else { "doc" }));
             m.insert("docs".to_owned(), json!(e.docs));
             m.insert("blocks".to_owned(), json!(e.blocks));
-            m.insert("$updated_at".to_owned(), json!(e.ts));
+            m.insert("updated_at".to_owned(), json!(e.ts));
             (path, Json::Object(m))
         })
         .collect();

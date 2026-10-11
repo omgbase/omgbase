@@ -1103,7 +1103,7 @@ impl Surface {
     /// normalized heading text of the named document's live headings (an
     /// ATX-looking value, "## Title", loses its hashes). Zero →
     /// `parent_missing` naming the heading; several → `ambiguous_heading` with
-    /// the candidates `[{ $id, doc_id }]` (pass the heading's id to
+    /// the candidates `[{ id, doc_id }]` (pass the heading's id to
     /// `blocks_append` instead). Never an id lookup — the id form is
     /// `blocks_append`'s (§9).
     fn resolve_section_heading(
@@ -1145,7 +1145,7 @@ impl Surface {
                 json!({
                     "section": section,
                     "path": shown,
-                    "candidates": matches.iter().map(|(b, d, _)| json!({ "$id": b, "doc_id": d })).collect::<Vec<_>>(),
+                    "candidates": matches.iter().map(|(b, d, _)| json!({ "id": b, "doc_id": d })).collect::<Vec<_>>(),
                 }),
             )),
         }
@@ -1472,7 +1472,7 @@ impl Surface {
                         .text_search(&repo, &q, arg_usize(args, "limit")?.unwrap_or(50))?;
                 Ok(json!({
                     "hits": res.hits.iter().map(|h| json!({
-                        "$id": h.block_id, "doc_id": h.doc_id, "$path": reference_path(&h.path), "type": h.block_type, "text": h.text, "score": h.score,
+                        "id": h.block_id, "doc_id": h.doc_id, "path": reference_path(&h.path), "type": h.block_type, "text": h.text, "score": h.score,
                     })).collect::<Vec<_>>(),
                     "truncated": res.truncated,
                 }))
@@ -1499,7 +1499,7 @@ impl Surface {
                     None => l.to_owned(),
                 };
                 Ok(Json::Array(hits.iter().map(|h| json!({
-                    "$id": h.id, "locator": locator(&h.locator), "preview": h.preview, "evidence": evidence_json(&h.evidence),
+                    "id": h.id, "locator": locator(&h.locator), "preview": h.preview, "evidence": evidence_json(&h.evidence),
                 })).collect()))
             }
             "apply" => {
@@ -1594,7 +1594,7 @@ impl Surface {
                     .map_or_else(|| vec![block.clone()], |r| r.ids.clone());
                 let mut m = Map::new();
                 m.insert(
-                    "$id".to_owned(),
+                    "id".to_owned(),
                     json!(ids.first().cloned().unwrap_or(block)),
                 );
                 m.insert("ids".to_owned(), json!(ids));
@@ -1888,7 +1888,7 @@ impl Surface {
                 let mut m = Map::new();
                 m.insert(
                     "hits".to_owned(),
-                    Json::Array(plan.hits.iter().map(|h| json!({ "$id": h.block, "$path": reference_path(&h.path), "oldRaw": h.old_raw, "newRaw": h.new_raw })).collect()),
+                    Json::Array(plan.hits.iter().map(|h| json!({ "id": h.block, "path": reference_path(&h.path), "oldRaw": h.old_raw, "newRaw": h.new_raw })).collect()),
                 );
                 m.insert(
                     "pairs".to_owned(),
@@ -1949,17 +1949,17 @@ impl Surface {
                 if !dry {
                     self.notify();
                 }
-                // `{ $id, $path, committed, diffs?, dangling, retargeted }` — the
+                // `{ id, path, committed, diffs?, dangling, retargeted }` — the
                 // reference spreads the planned/moved record before the link report.
                 let mut m = Map::new();
-                m.insert("$id".to_owned(), json!(res.doc_id));
-                m.insert("$path".to_owned(), json!(reference_path(&res.path)));
+                m.insert("id".to_owned(), json!(res.doc_id));
+                m.insert("path".to_owned(), json!(reference_path(&res.path)));
                 m.insert("committed".to_owned(), json!(res.committed));
                 if let Some(diffs) = &res.diffs {
                     m.insert("diffs".to_owned(), reference_keyed(&diffs_json(diffs)));
                 }
                 // Each dangling link is an edge row under the `edges` target's
-                // names (§1.2, 3.0) with its source `$path` rooted; its `target`
+                // names (§1.2, 3.0) with its source `path` rooted; its `target`
                 // stays as authored — that is what the link says.
                 m.insert(
                     "dangling".to_owned(),
@@ -2102,7 +2102,7 @@ impl Surface {
                 let out = self.store.observe_delete(&repo, &path, &ts)?;
                 self.notify();
                 Ok(
-                    json!({ "$id": out.doc_id, "$path": reference_path(&out.path), "deleted": out.deleted() }),
+                    json!({ "id": out.doc_id, "path": reference_path(&out.path), "deleted": out.deleted() }),
                 )
             }
             "blocks_history" => history::blocks_history(
@@ -2152,7 +2152,7 @@ impl Surface {
                     .optional()?;
                 let diff = history::diff_unified_text(&self.store, &doc_id, &from, &to)?;
                 Ok(
-                    json!({ "$id": doc_id, "$path": path.as_deref().map_or_else(String::new, reference_path), "from": from, "to": to, "diff": diff }),
+                    json!({ "id": doc_id, "path": path.as_deref().map_or_else(String::new, reference_path), "from": from, "to": to, "diff": diff }),
                 )
             }
             "docs_read_at" => {
@@ -2312,14 +2312,14 @@ pub fn apply_json(res: &ApplyResult) -> Json {
                 .collect(),
         ),
     );
-    // §1 Paths: `revisions[].$path` and the dry-run `diffs` keys in the
-    // reference form; a revision is `{ $id, $path, $hash }` (§4, 3.0).
+    // §1 Paths: `revisions[].path` and the dry-run `diffs` keys in the
+    // reference form; a revision is `{ id, path, hash }` (§4, 3.0).
     m.insert(
         "revisions".to_owned(),
         Json::Array(
             res.revisions
                 .iter()
-                .map(|r| json!({ "$id": r.doc, "$path": reference_path(&r.path), "$hash": r.hash }))
+                .map(|r| json!({ "id": r.doc, "path": reference_path(&r.path), "hash": r.hash }))
                 .collect(),
         ),
     );
@@ -2338,12 +2338,12 @@ pub fn apply_json(res: &ApplyResult) -> Json {
 }
 
 /// A dangling inbound link as an edge row (`spec/surface` §4 `docs_move`, 3.0):
-/// `{ doc_id, $path, block_id, target, anchor, field? }` — the source `$path`
+/// `{ doc_id, path, block_id, target, anchor, field? }` — the source `path`
 /// rooted, the `target` as authored.
 fn dangling_json(l: &omgbase_store::InboundLink) -> Json {
     let mut m = Map::new();
     m.insert("doc_id".to_owned(), json!(l.doc));
-    m.insert("$path".to_owned(), json!(reference_path(&l.path)));
+    m.insert("path".to_owned(), json!(reference_path(&l.path)));
     m.insert("block_id".to_owned(), json!(l.block));
     m.insert("target".to_owned(), json!(l.target));
     m.insert("anchor".to_owned(), json!(l.anchor));
@@ -2353,13 +2353,13 @@ fn dangling_json(l: &omgbase_store::InboundLink) -> Json {
     Json::Object(m)
 }
 
-/// A document operation's result on the wire: `{ $id, $path, committed,
+/// A document operation's result on the wire: `{ id, path, committed,
 /// diffs? }` — the store's `{ doc, path }` re-shaped under the row rule
 /// (§1.2, 3.0); `diffs` only on a dry run (1.3).
 fn doc_op_json(res: &omgbase_store::DocOpResult) -> Json {
     let mut m = Map::new();
-    m.insert("$id".to_owned(), json!(res.doc_id));
-    m.insert("$path".to_owned(), json!(reference_path(&res.path)));
+    m.insert("id".to_owned(), json!(res.doc_id));
+    m.insert("path".to_owned(), json!(reference_path(&res.path)));
     m.insert("committed".to_owned(), json!(res.committed));
     if let Some(diffs) = &res.diffs {
         m.insert("diffs".to_owned(), reference_keyed(&diffs_json(diffs)));
@@ -2381,7 +2381,7 @@ fn root_changes_page(mut page: Json) -> Json {
     for d in digests.iter_mut() {
         if let Some(revs) = d.get_mut("revisions").and_then(Json::as_array_mut) {
             for r in revs.iter_mut() {
-                root_field(r, "$path");
+                root_field(r, "path");
             }
         }
         if let Some(summary) = d.get("summary").and_then(Json::as_str) {
@@ -2431,20 +2431,20 @@ pub fn opset_json(opset: &Opset) -> Json {
     let mut m = Map::new();
     m.insert("version".to_owned(), json!(1));
     m.insert("kind".to_owned(), json!("doc_update"));
-    // §1 Paths: the target's and the precondition's `$path` in the reference
-    // form; the document under the row rule (§1.2, 3.0): `{ $id, $path }` and
-    // `{ $id, $path, baseRevision, $hash }`.
+    // §1 Paths: the target's and the precondition's `path` in the reference
+    // form; the document under the row rule (§1.2, 3.0): `{ id, path }` and
+    // `{ id, path, baseRevision, hash }`.
     m.insert(
         "target".to_owned(),
-        json!({ "$id": opset.target_doc, "$path": reference_path(&opset.target_path) }),
+        json!({ "id": opset.target_doc, "path": reference_path(&opset.target_path) }),
     );
     m.insert(
         "precondition".to_owned(),
         json!({
-            "$id": opset.precondition.doc,
-            "$path": reference_path(&opset.precondition.path),
+            "id": opset.precondition.doc,
+            "path": reference_path(&opset.precondition.path),
             "baseRevision": opset.precondition.base_revision,
-            "$hash": opset.precondition.hash,
+            "hash": opset.precondition.hash,
         }),
     );
     m.insert("matcherV".to_owned(), json!(opset.matcher_v));
@@ -2506,14 +2506,14 @@ fn evidence_json(e: &omgbase_store::Evidence) -> Json {
     Json::Object(m)
 }
 
-/// The public `observe` result: `{ $id, $path, rev, commitId, converged,
+/// The public `observe` result: `{ id, path, rev, commitId, converged,
 /// echo, conflicted, dispositions: [{ kind, count }] }` — the store's own
 /// `{ doc, commit, rev }` outcome (`spec/store` §9) re-shaped under the row
 /// rule (§1.2, 3.0).
 fn observe_json(o: &omgbase_store::ObserveOutcome) -> Json {
     json!({
-        "$id": o.doc_id,
-        "$path": reference_path(&o.path),
+        "id": o.doc_id,
+        "path": reference_path(&o.path),
         "rev": o.rev,
         "commitId": o.commit_id,
         "converged": o.converged,
@@ -2655,14 +2655,14 @@ mod tests {
         let mut s = surface();
         let out = s.call("observe", json!({ "path": "a.md", "content": "---\nlayer: canon\n---\n# Title\n\nHello world.\n\n- [ ] task one\n" }));
         assert!(!out.is_error, "{}", out.body);
-        assert_eq!(out.body["$id"], "d_0");
+        assert_eq!(out.body["id"], "d_0");
         assert_eq!(out.body["echo"], false);
         let read = s.call("docs_read", json!({ "path": "a.md", "include_ids": true }));
         assert!(!read.is_error, "{}", read.body);
-        assert_eq!(read.body["$path"], "/a.md");
+        assert_eq!(read.body["path"], "/a.md");
         // either form names the document (§1 Paths)
         assert_eq!(
-            s.call("docs_read", json!({ "path": "/a.md" })).body["$path"],
+            s.call("docs_read", json!({ "path": "/a.md" })).body["path"],
             "/a.md"
         );
         // §4 "Arguments": the retired `doc` is refused with its replacement.
@@ -2678,35 +2678,38 @@ mod tests {
             "pass id or path (docs_read takes id?, include_ids?, path?, repo?)"
         );
         assert_eq!(
-            s.call("docs_read", json!({ "path": "//a.md" })).body["$id"],
+            s.call("docs_read", json!({ "path": "//a.md" })).body["id"],
             "d_0"
         );
         assert_eq!(read.body["properties"]["frontmatter"]["layer"], "canon");
         assert!(read.body["ids"].as_array().unwrap().len() >= 3);
-        let q = s.call("query", json!({ "query": "select $title, layer, t: nodes collect { value where kind == \"md:task\" } from docs where layer == \"canon\" && nodes count { where kind == \"md:task\" } == 1" }));
+        let q = s.call("query", json!({ "query": "select title, layer, t: nodes collect { value where kind == \"md:task\" } from docs where layer == \"canon\" && nodes count { where kind == \"md:task\" } == 1" }));
         assert!(!q.is_error, "{}", q.body);
-        assert_eq!(q.body["hits"][0]["$title"], "Title");
+        assert_eq!(q.body["hits"][0]["title"], "Title");
         assert_eq!(q.body["hits"][0]["layer"], "canon");
         assert_eq!(q.body["hits"][0]["t"][0]["value"], "task one");
-        assert_eq!(q.body["hits"][0]["$id"], "d_0");
-        assert_eq!(q.body["hits"][0]["$path"], "/a.md");
+        assert_eq!(q.body["hits"][0]["id"], "d_0");
+        assert_eq!(q.body["hits"][0]["path"], "/a.md");
         assert_eq!(q.body["consumer"], "collect");
         let c = s.call(
             "query",
             json!({ "query": "blocks count { where text(\"hello\") }" }),
         );
         assert_eq!(c.body["count"], 1);
-        let bad = s.call(
+        // 3.0: a bare `path` is the attribute (no loud-error set); a
+        // projection landing on the envelope must be aliased.
+        let ok = s.call(
             "query",
             json!({ "query": "from docs where path == \"a.md\"" }),
         );
+        assert!(!ok.is_error, "{}", ok.body);
+        assert_eq!(ok.body["hits"][0]["id"], "d_0");
+        let bad = s.call("query", json!({ "query": "select data.path from docs" }));
         assert!(bad.is_error);
         assert_eq!(bad.body["error"], "filter_invalid");
-        assert!(
-            bad.body["message"]
-                .as_str()
-                .unwrap()
-                .contains("did you mean the intrinsic $path")
+        assert_eq!(
+            bad.body["message"],
+            "projection `path` collides with the hit envelope — alias it (`p: data.path`)"
         );
         let sem = s.call(
             "query",
@@ -2761,7 +2764,7 @@ mod tests {
         assert!(!ok.is_error, "{}", ok.body);
         assert_eq!(ok.body["committed"], true);
         let read = s.call("docs_read", json!({ "path": "a.md" }));
-        assert_eq!(read.body["$raw"], "# T\n\nOne.\n\nTwo.\n\nThree.\n");
+        assert_eq!(read.body["raw"], "# T\n\nOne.\n\nTwo.\n\nThree.\n");
         // blocks_move: the destination is checked once for the whole run.
         let stale = s.call(
             "blocks_move",
@@ -2778,7 +2781,7 @@ mod tests {
         );
         assert!(!ok.is_error, "{}", ok.body);
         let read = s.call("docs_read", json!({ "path": "a.md" }));
-        assert_eq!(read.body["$raw"], "# T\n\nThree.\n\nOne.\n\nTwo.\n\n");
+        assert_eq!(read.body["raw"], "# T\n\nThree.\n\nOne.\n\nTwo.\n\n");
         // A `dry_run` still runs the CAS.
         let dry = s.call(
             "blocks_move",
@@ -2797,7 +2800,7 @@ mod tests {
             "{}",
             many.body
         );
-        assert_eq!(many.body["items"][0]["$path"], "/a.md");
+        assert_eq!(many.body["items"][0]["path"], "/a.md");
         assert_eq!(many.body["truncated"], true);
         let one = s.call(
             "docs_get_many",
@@ -2815,7 +2818,7 @@ mod tests {
             "{}",
             nodes.body
         );
-        assert_eq!(nodes.body["nodes"][0]["$id"], "b_1");
+        assert_eq!(nodes.body["nodes"][0]["id"], "b_1");
         assert_eq!(nodes.body["truncated"], true);
         assert_eq!(nodes.body["unresolved"], json!(["b_zzz"]));
     }
@@ -2843,13 +2846,13 @@ mod tests {
         assert!(!wet.is_error, "{}", wet.body);
         assert_eq!(fired.get(), 2);
         let read = s.call("docs_read", json!({ "id": "d_0" }));
-        assert_eq!(read.body["$raw"], "# T\n\nOne.\n\nTwo.\n");
+        assert_eq!(read.body["raw"], "# T\n\nOne.\n\nTwo.\n");
         let upd = s.call(
             "blocks_update",
             json!({ "id": "b_1", "markdown": "One, edited." }),
         );
         assert!(!upd.is_error, "{}", upd.body);
-        assert_eq!(upd.body["$id"], "b_1");
+        assert_eq!(upd.body["id"], "b_1");
         let app = s.call(
             "docs_append",
             json!({ "path": "a.md", "section": "T", "text": "Three." }),
@@ -2889,9 +2892,9 @@ mod tests {
         let b_src = "# B\n\nTarget.\n";
         let a_src = "# A\n\nSee [b](b.md).\n";
         let b = s.call("docs_create", json!({ "path": "b.md", "markdown": b_src }));
-        assert_eq!(b.body["$id"], "d_0", "{}", b.body);
+        assert_eq!(b.body["id"], "d_0", "{}", b.body);
         let a = s.call("docs_create", json!({ "path": "a.md", "markdown": a_src }));
-        assert_eq!(a.body["$id"], "d_1", "{}", a.body);
+        assert_eq!(a.body["id"], "d_1", "{}", a.body);
         assert_eq!(fired.get(), 2);
         let count = |s: &Surface, table: &str| -> i64 {
             s.store
@@ -2918,7 +2921,7 @@ mod tests {
         assert!(!c.is_error, "{}", c.body);
         assert_eq!(
             serde_json::to_string(&c.body).unwrap(),
-            r#"{"$id":"d_2","$path":"/c.md","committed":false,"diffs":{"/c.md":{"before":"","after":"---\ntitle: C\n---\n\n# C\n"}}}"#,
+            r#"{"id":"d_2","path":"/c.md","committed":false,"diffs":{"/c.md":{"before":"","after":"---\ntitle: C\n---\n\n# C\n"}}}"#,
             "the reference's key order, byte for byte"
         );
 
@@ -2934,18 +2937,11 @@ mod tests {
         // over the same two documents under the sequential minter.
         assert_eq!(
             serde_json::to_string(&m.body).unwrap(),
-            r##"{"$id":"d_0","$path":"/notes/b.md","committed":false,"diffs":{"/b.md":{"before":"# B\n\nTarget.\n","after":""},"/notes/b.md":{"before":"","after":"# B\n\nTarget.\n"},"/a.md":{"before":"# A\n\nSee [b](b.md).\n","after":"# A\n\nSee [b](notes/b.md).\n"}},"dangling":[],"retargeted":{"blocks":["b_3"],"docs":["d_1"]}}"##
+            r##"{"id":"d_0","path":"/notes/b.md","committed":false,"diffs":{"/b.md":{"before":"# B\n\nTarget.\n","after":""},"/notes/b.md":{"before":"","after":"# B\n\nTarget.\n"},"/a.md":{"before":"# A\n\nSee [b](b.md).\n","after":"# A\n\nSee [b](notes/b.md).\n"}},"dangling":[],"retargeted":{"blocks":["b_3"],"docs":["d_1"]}}"##
         );
         assert_eq!(
             keys(&m.body),
-            [
-                "$id",
-                "$path",
-                "committed",
-                "diffs",
-                "dangling",
-                "retargeted"
-            ]
+            ["id", "path", "committed", "diffs", "dangling", "retargeted"]
         );
         assert_eq!(keys(&m.body["diffs"]), ["/b.md", "/notes/b.md", "/a.md"]);
         assert_eq!(
@@ -2960,7 +2956,7 @@ mod tests {
         );
         assert_eq!(
             serde_json::to_string(&plain.body).unwrap(),
-            r##"{"$id":"d_0","$path":"/notes/b.md","committed":false,"diffs":{"/b.md":{"before":"# B\n\nTarget.\n","after":""},"/notes/b.md":{"before":"","after":"# B\n\nTarget.\n"}},"dangling":[{"doc_id":"d_1","$path":"/a.md","block_id":"b_3","target":"b.md","anchor":null}],"retargeted":null}"##
+            r##"{"id":"d_0","path":"/notes/b.md","committed":false,"diffs":{"/b.md":{"before":"# B\n\nTarget.\n","after":""},"/notes/b.md":{"before":"","after":"# B\n\nTarget.\n"}},"dangling":[{"doc_id":"d_1","path":"/a.md","block_id":"b_3","target":"b.md","anchor":null}],"retargeted":null}"##
         );
 
         // docs_delete: the file → `""`.
@@ -2968,9 +2964,9 @@ mod tests {
         assert!(!d.is_error, "{}", d.body);
         assert_eq!(
             d.body,
-            json!({ "$id": "d_1", "$path": "/a.md", "committed": false, "diffs": { "/a.md": { "before": a_src, "after": "" } } })
+            json!({ "id": "d_1", "path": "/a.md", "committed": false, "diffs": { "/a.md": { "before": a_src, "after": "" } } })
         );
-        assert_eq!(keys(&d.body), ["$id", "$path", "committed", "diffs"]);
+        assert_eq!(keys(&d.body), ["id", "path", "committed", "diffs"]);
 
         // docs_set_meta: before → after.
         let sm = s.call(
@@ -2980,18 +2976,18 @@ mod tests {
         assert!(!sm.is_error, "{}", sm.body);
         assert_eq!(
             sm.body,
-            json!({ "$id": "d_1", "$path": "/a.md", "committed": false, "diffs": { "/a.md": { "before": a_src, "after": "---\nstatus: open\n---\n\n# A\n\nSee [b](b.md).\n" } } })
+            json!({ "id": "d_1", "path": "/a.md", "committed": false, "diffs": { "/a.md": { "before": a_src, "after": "---\nstatus: open\n---\n\n# A\n\nSee [b](b.md).\n" } } })
         );
 
         // Nothing committed, no hook, no row changed; the checks still run.
         assert_eq!(fired.get(), 2, "dry runs never fire the mutation hook");
         assert_eq!(snapshot(&s), before);
         assert_eq!(
-            s.call("docs_read", json!({ "id": "d_0" })).body["$path"],
+            s.call("docs_read", json!({ "id": "d_0" })).body["path"],
             "/b.md"
         );
         assert_eq!(
-            s.call("docs_read", json!({ "id": "d_1" })).body["$raw"],
+            s.call("docs_read", json!({ "id": "d_1" })).body["raw"],
             a_src
         );
         let taken = s.call(
@@ -3008,7 +3004,7 @@ mod tests {
         );
         assert_eq!(
             real.body,
-            json!({ "$id": "d_3", "$path": "/c.md", "committed": true })
+            json!({ "id": "d_3", "path": "/c.md", "committed": true })
         );
         assert_eq!(fired.get(), 3);
     }
@@ -3031,10 +3027,10 @@ mod tests {
         assert_eq!(root_summary("observed: "), "observed: ");
         assert_eq!(root_summary("nonsense"), "nonsense");
         let page = root_changes_page(json!({
-            "digests": [{ "summary": "observed: a.md", "revisions": [{ "$id": "d_0", "$path": "a.md", "$hash": "ff" }] }],
+            "digests": [{ "summary": "observed: a.md", "revisions": [{ "id": "d_0", "path": "a.md", "hash": "ff" }] }],
             "cursor": 1, "truncated": false, "head": 1
         }));
-        assert_eq!(page["digests"][0]["revisions"][0]["$path"], "/a.md");
+        assert_eq!(page["digests"][0]["revisions"][0]["path"], "/a.md");
         assert_eq!(page["digests"][0]["summary"], "observed: /a.md");
     }
 }

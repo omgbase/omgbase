@@ -172,7 +172,7 @@ class RecordingEngine implements EngineClient {
     if (!row) return Promise.resolve(null);
     const res = docsRead(this.store, row.doc_id);
     if (!res) return Promise.resolve(null);
-    return Promise.resolve({ content: res.$raw, contentHash: row.file_hash?.toString("hex") ?? "" });
+    return Promise.resolve({ content: res.raw, contentHash: row.file_hash?.toString("hex") ?? "" });
   }
   close(): Promise<void> {
     return Promise.resolve();

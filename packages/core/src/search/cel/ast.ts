@@ -48,7 +48,7 @@ export interface Quantifier {
   predicate: Node;
 }
 
-/** dotted field path; `$` set when intrinsic ($id, $path, doc.$path handled by segments) */
+/** dotted field path; `$` set when intrinsic (id, path, doc.path handled by segments) */
 export interface FieldRef { kind: "field"; segments: string[]; intrinsic: boolean }
 
 export interface Literal { kind: "literal"; value: string | number | boolean | null; type: "string" | "int" | "double" | "bool" | "null" }

@@ -153,7 +153,7 @@ pub struct OpsetPrecondition {
     pub path: String,
     /// The current revision at plan time; `None` for a doc with no revision.
     pub base_revision: Option<String>,
-    /// `hex(sha256(render(doc)))` at plan time — the document's `$hash`
+    /// `hex(sha256(render(doc)))` at plan time — the document's `hash`
     /// (`spec/surface` §1.2, 3.0; `base_content_hash` before mutate 2.0).
     pub hash: String,
 }
@@ -188,18 +188,18 @@ impl Opset {
         m.insert("version".to_owned(), json!(1));
         m.insert("kind".to_owned(), json!("doc_update"));
         // The document under the surface's row rule (`spec/surface` §1.2, 3.0):
-        // identity `$id`/`$path`, its hash `$hash`; `base_revision` names a role.
+        // identity `id`/`path`, its hash `hash`; `base_revision` names a role.
         m.insert(
             "target".to_owned(),
-            json!({ "$id": self.target_doc, "$path": self.target_path }),
+            json!({ "id": self.target_doc, "path": self.target_path }),
         );
         m.insert(
             "precondition".to_owned(),
             json!({
-                "$id": self.precondition.doc,
-                "$path": self.precondition.path,
+                "id": self.precondition.doc,
+                "path": self.precondition.path,
                 "base_revision": self.precondition.base_revision,
-                "$hash": self.precondition.hash,
+                "hash": self.precondition.hash,
             }),
         );
         m.insert("matcher_v".to_owned(), json!(self.matcher_v));

@@ -8,18 +8,19 @@
 // backlinks (`$it.in`; a `/`-rooted frontmatter reference is extracted as an
 // edge, so every such document is among them) narrowed to the ones whose `after`
 // really says so. The correlation compares the frontier's path with an authored
-// reference, which is where the server versions differ: `^$path` is rooted on
-// 2.0 and needs `"/" +` before.
+// reference, which is where the server versions differ: the path attribute is
+// `path` on 3.0 and `$path` before, rooted since 2.0 and needing `"/" +` on 1.x.
 
-import { LEGACY_SURFACE, pathOperand, serverPath } from "./paths.ts";
+import { LEGACY_SURFACE, attr, outerPathOperand, serverPath } from "./paths.ts";
 
 export const DEFAULT_START = "timeline/kickoff.md";
 
 export function defaultQuery(surface: string | null): string {
-  return `select $path, title, phase, before, after
+  const path = attr(surface, "path");
+  return `select ${path}, title, phase, before, after
 from docs
-where $path == ${JSON.stringify(serverPath(surface, DEFAULT_START))}
-follow distinct refs(before), $it.in collect { where ${pathOperand(surface, "^$path")} in list(after) }
+where ${path} == ${JSON.stringify(serverPath(surface, DEFAULT_START))}
+follow distinct refs(before), $it.in collect { where ${outerPathOperand(surface)} in list(after) }
 order by $ordinal`;
 }
 
@@ -35,5 +36,5 @@ order by $ordinal`,
 /** Is `source` one of the defaults — the current one for any server version,
  * or an earlier one — rather than something the user wrote? */
 export function isDefaultQuery(source: string): boolean {
-  return source === defaultQuery(LEGACY_SURFACE) || source === defaultQuery("2.0") || PREVIOUS_DEFAULT_QUERIES.includes(source);
+  return source === defaultQuery(LEGACY_SURFACE) || source === defaultQuery("2.0") || source === defaultQuery("3.0") || PREVIOUS_DEFAULT_QUERIES.includes(source);
 }

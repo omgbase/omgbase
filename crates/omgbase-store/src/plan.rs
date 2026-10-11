@@ -280,7 +280,7 @@ impl Store {
                 json!({
                     "doc": opset.precondition.doc,
                     "expected_revision": opset.precondition.base_revision,
-                    "current": { "revision": current_rev, "$hash": fh },
+                    "current": { "revision": current_rev, "hash": fh },
                     "retriable": true,
                 }),
             )

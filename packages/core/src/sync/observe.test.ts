@@ -108,20 +108,20 @@ describe("observeMany (batch)", () => {
   });
 });
 
-describe("changesSince $hash enrichment", () => {
+describe("changesSince hash enrichment", () => {
   it("carries the revision's rendered hash in each digest's revisions[]", () => {
     const res = observeFile(store, repoId, "a.md", "# Hello\n");
     const feed = changesSince(store, repoId, {});
     const digest = feed.digests.find((d) => d.commit === res.commitId);
     expect(digest).toBeDefined();
-    const rev = digest!.revisions.find((r) => r.$path === "/a.md"); // the feed speaks the reference form
+    const rev = digest!.revisions.find((r) => r.path === "/a.md"); // the feed speaks the reference form
     expect(rev).toBeDefined();
-    expect(rev!.$hash).toMatch(/^[0-9a-f]{64}$/);
+    expect(rev!.hash).toMatch(/^[0-9a-f]{64}$/);
 
     // It equals the doc's stored file_hash (bytes converged), so a puller can
     // compare it against what it last wrote to detect an echo.
     const doc = store.db.prepare("SELECT file_hash FROM docs WHERE doc_id = ?").get(res.docId) as { file_hash: Buffer };
-    expect(rev!.$hash).toBe(doc.file_hash.toString("hex"));
+    expect(rev!.hash).toBe(doc.file_hash.toString("hex"));
   });
 });
 

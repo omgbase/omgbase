@@ -21,8 +21,8 @@
 //! let mut surface = Surface::new(store, &repo, None);
 //! let out = surface.call("observe", json!({ "path": "a.md", "content": "# Title\n\nFirst.\n" }));
 //! assert!(!out.is_error);
-//! let res = surface.call("query", json!({ "query": "select $title from docs" }));
-//! assert_eq!(res.body["hits"][0]["$title"], "Title");
+//! let res = surface.call("query", json!({ "query": "select title from docs" }));
+//! assert_eq!(res.body["hits"][0]["title"], "Title");
 //! # Ok::<(), omgbase_store::Error>(())
 //! ```
 

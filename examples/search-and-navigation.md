@@ -72,7 +72,8 @@ $ omg show substances/mercury.md
     element = mercury
     tags = substance
     verified = true
-    $title = Mercury
+  computed
+    title = Mercury
   out edges
 ...
 ```

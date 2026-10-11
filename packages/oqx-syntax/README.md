@@ -124,7 +124,7 @@ The grammar follows `spec/oqx/GRAMMAR.md` §1. It distinguishes:
 | malformed numbers | `invalid.illegal.number.oqx` | `invalid.number` | `1.` `1e` `.5` |
 | strings, escapes | `string.quoted.{double,single}.oqx`, `constant.character.escape.oqx` | `string`, `string.escape` | `"a\"b"` `'x'` |
 | bindings | `variable.other.binding.oqx` | `variable.binding` | `${0}` (the tagged-template form) |
-| intrinsics | `variable.language.oqx` | `variable.predefined` | `$it` `$key` `$depth` `$path` `$repo` — any `$name` |
+| intrinsics | `variable.language.oqx` | `variable.predefined` | `$it` `$key` `$depth` `$stop` — any `$name` (OQX's own; omgbase's attributes `id`/`path`/… are plain identifiers) |
 | lift / outer reference | `keyword.operator.lift.oqx` | `operator.lift` | `^budget` `^name:` |
 | aliases | `variable.other.alias.oqx` | `identifier.alias` | `label:` |
 | builtin functions / methods | `support.function.builtin.oqx`, `support.function.method.oqx` | `predefined.function`, `predefined.method` | `size(…)` `entries(…)` `.lower()` `.matches(…)` |
@@ -160,7 +160,7 @@ the Prism grammar is written to agree with them rather than to be cleverer.
 `OPERATORS`, `BUILTIN_FUNCTIONS`, `BUILTIN_METHODS`, `INTRINSICS`), the identifier
 shape, the language metadata (`LANGUAGE`, `LANGUAGE_VERSION`) and — kept apart,
 because it is not part of the language — the **omgbase host vocabulary**
-(`OMGBASE`: roots, row functions, intrinsics per target, relations). Completion
+(`OMGBASE`: roots, row functions, attributes per target, source handles, relations). Completion
 providers and documentation tooling can build on the same lists the grammars do.
 
 ## How it stays honest

@@ -1,6 +1,6 @@
 // What the page says when a query runs and matches nothing. `0 rows` in the
 // footer is not feedback: the panel names the repository, quotes the first
-// `where` clause, says which `$path == "…"` literal is not in the repository
+// `where` clause, says which `path == "…"` literal is not in the repository
 // (probed with `existsQuery`), and offers the starter query. Pure helpers; the
 // probe takes an `exists` function so it is testable without a server.
 
@@ -9,7 +9,7 @@ import { visit } from "@omgbase/oqx";
 import { codePointToUtf16 } from "./errors.ts";
 import { rooted } from "./paths.ts";
 
-/** The source text of the query's top-level `where` clause (`$path == "…"`),
+/** The source text of the query's top-level `where` clause (`path == "…"`),
  * null when it has none. Spans are code points. */
 export function firstWhereText(source: string, query: Query | null): string | null {
   const where: Where | null = query?.where ?? null;
@@ -17,8 +17,10 @@ export function firstWhereText(source: string, query: Query | null): string | nu
   return source.slice(codePointToUtf16(source, where.span[0]), codePointToUtf16(source, where.span[1])).trim() || null;
 }
 
-/** Every string literal compared with `$path` by `==` anywhere in the query, as
- * the author spelled it, deduped and in source order. */
+/** Every string literal compared with the path attribute (`path`, or `$path` on
+ * a pre-3.0 server) by `==` anywhere in the query, as the author spelled it,
+ * deduped and in source order. */
+const PATH_ATTRIBUTE = new Set(["path", "$path"]);
 export function pathLiterals(query: Query | null): string[] {
   if (!query) return [];
   const out: string[] = [];
@@ -28,7 +30,7 @@ export function pathLiterals(query: Query | null): string[] {
       if (e.kind !== "binary" || e.op !== "==") return;
       const sides: [Expr, Expr][] = [[e.left, e.right], [e.right, e.left]];
       for (const [a, b] of sides) {
-        if (a.kind === "ident" && a.name === "$path" && b.kind === "lit" && typeof b.value === "string" && !out.includes(b.value)) out.push(b.value);
+        if (a.kind === "ident" && PATH_ATTRIBUTE.has(a.name) && b.kind === "lit" && typeof b.value === "string" && !out.includes(b.value)) out.push(b.value);
       }
     },
   });

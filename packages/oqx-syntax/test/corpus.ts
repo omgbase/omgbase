@@ -78,9 +78,9 @@ export const CORPUS: Sample[] = [
   {
     name: "omgbase: $repo, row functions, `in` as a receiver, builtin method",
     valid: true,
-    source: "path: $path from $repo.docs where text(\"alchemy\") && semantic('gold') > 0.5 && in exists { where $path.startsWith(\"a/\") }",
+    source: "path: $it from $repo.docs where text(\"alchemy\") && semantic('gold') > 0.5 && in exists { where $it.startsWith(\"a/\") }",
     tokens:
-      "alias(path) colon(:) intrinsic($path) keyword(from) intrinsic($repo) accessor(.) member(docs) keyword(where) hostFunction(text) parenOpen(() string(\"alchemy\") parenClose()) operator(&&) hostFunction(semantic) parenOpen(() string('gold') parenClose()) operator(>) number(0.5) operator(&&) identifier(in) consumer(exists) braceOpen({) keyword(where) intrinsic($path) accessor(.) builtinMethod(startsWith) parenOpen(() string(\"a/\") parenClose()) braceClose(})",
+      "alias(path) colon(:) intrinsic($it) keyword(from) intrinsic($repo) accessor(.) member(docs) keyword(where) hostFunction(text) parenOpen(() string(\"alchemy\") parenClose()) operator(&&) hostFunction(semantic) parenOpen(() string('gold') parenClose()) operator(>) number(0.5) operator(&&) identifier(in) consumer(exists) braceOpen({) keyword(where) intrinsic($it) accessor(.) builtinMethod(startsWith) parenOpen(() string(\"a/\") parenClose()) braceClose(})",
   },
   {
     name: "builtins, methods, string escape, every range form",

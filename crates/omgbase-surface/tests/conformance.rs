@@ -37,31 +37,31 @@ enum Push {
 }
 use Push::{Declined, Planned};
 
-/// Queries spanning the surface: pushable scalar leaves (`$path ==` /
+/// Queries spanning the surface: pushable scalar leaves (`path ==` /
 /// `startsWith`, bare properties, columns, flattened attrs), non-pushable
 /// (ranges, negation, nested ops, `follow`), every consumer, order by,
 /// distinct, correlation, and each target. Each must agree planned vs
 /// in-memory; the verdict is the reference's (`translate.ts`).
 const QUERIES: &[(&str, Push)] = &[
-    // pushable $path predicates (the planner reduces the scan in SQL)
-    ("from docs where $path == \"index.md\"", Planned),
-    ("from docs where $path.startsWith(\"substances/\")", Planned),
+    // pushable path predicates (the planner reduces the scan in SQL)
+    ("from docs where path == \"index.md\"", Planned),
+    ("from docs where path.startsWith(\"substances/\")", Planned),
     (
-        "from docs where $path.startsWith(\"substances/\") && $path.endsWith(\"mercury.md\")",
+        "from docs where path.startsWith(\"substances/\") && path.endsWith(\"mercury.md\")",
         Planned,
     ),
-    ("from docs where $path != \"index.md\"", Planned),
-    ("from blocks where $path.startsWith(\"lab/\")", Planned),
-    ("from nodes where $path.startsWith(\"processes/\")", Planned),
-    ("from edges where $path.startsWith(\"index\")", Planned),
+    ("from docs where path != \"index.md\"", Planned),
+    ("from blocks where path.startsWith(\"lab/\")", Planned),
+    ("from nodes where path.startsWith(\"processes/\")", Planned),
+    ("from edges where path.startsWith(\"index\")", Planned),
     // pushable composed with a non-pushable residual (mixed); a call in the
     // residual could raise, so the whole query declines (surface 1.1 patch)
     (
-        "from docs where $path.startsWith(\"substances/\") && \"substance\" in list(tags)",
+        "from docs where path.startsWith(\"substances/\") && \"substance\" in list(tags)",
         Declined,
     ),
     (
-        "from docs where $path.startsWith(\"processes/\") && nodes exists { where kind == \"md:task\" }",
+        "from docs where path.startsWith(\"processes/\") && nodes exists { where kind == \"md:task\" }",
         Planned,
     ),
     // bare document properties push via the properties table; a number
@@ -134,21 +134,21 @@ const QUERIES: &[(&str, Push)] = &[
         Declined,
     ),
     (
-        "select $path, checked from nodes where kind == \"md:task\" && checked == false",
+        "select path, checked from nodes where kind == \"md:task\" && checked == false",
         Planned,
     ),
     // consumers
     (
-        "docs count { where $path.startsWith(\"substances/\") }",
+        "docs count { where path.startsWith(\"substances/\") }",
         Planned,
     ),
-    ("docs exists { where $path == \"index.md\" }", Planned),
+    ("docs exists { where path == \"index.md\" }", Planned),
     (
         "docs first { where type == \"practitioner\" order by era desc }",
         Planned,
     ),
     (
-        "select $path, layer from docs where type == \"substance\"",
+        "select path, layer from docs where type == \"substance\"",
         Planned,
     ),
     // order by + pagination surface
@@ -156,11 +156,11 @@ const QUERIES: &[(&str, Push)] = &[
         "from docs where type == \"practitioner\" order by era asc",
         Planned,
     ),
-    ("from docs order by $path", Declined),
+    ("from docs order by path", Declined),
     // distinct
     ("select distinct type from docs", Declined),
     (
-        "select k: nodes collect distinct { select kind } from docs where $path == \"processes/magnum-opus.md\"",
+        "select k: nodes collect distinct { select kind } from docs where path == \"processes/magnum-opus.md\"",
         Planned,
     ),
     (
@@ -174,7 +174,7 @@ const QUERIES: &[(&str, Push)] = &[
     ),
     ("select distinct type values from docs", Declined),
     (
-        "docs first { select $path values where type == \"practitioner\" order by era desc }",
+        "docs first { select path values where type == \"practitioner\" order by era desc }",
         Planned,
     ),
     (
@@ -205,12 +205,12 @@ const QUERIES: &[(&str, Push)] = &[
         Declined,
     ),
     (
-        "docs first { select $path values where type == \"practitioner\" order by era asc offset 1 }",
+        "docs first { select path values where type == \"practitioner\" order by era asc offset 1 }",
         Planned,
     ),
     // entries() / $key (a free call → residual; the context materializes frontmatter/inline)
     (
-        "select fm: entries(frontmatter) collect { k: $key, v: $it } from docs where $path == \"substances/salt.md\"",
+        "select fm: entries(frontmatter) collect { k: $key, v: $it } from docs where path == \"substances/salt.md\"",
         Planned,
     ),
     (
@@ -223,16 +223,16 @@ const QUERIES: &[(&str, Push)] = &[
     ),
     // (a call in the residual block's receiver: the whole query declines)
     (
-        "select $path from nodes where kind == \"md:task\" && entries(attrs) exists { where $key == \"checked\" && $it }",
+        "select path from nodes where kind == \"md:task\" && entries(attrs) exists { where $key == \"checked\" && $it }",
         Declined,
     ),
     (
-        "select h: nodes collect { select name values where kind == \"md:section\" order by first_ordinal limit 2 } from docs where $path == \"processes/magnum-opus.md\"",
+        "select h: nodes collect { select name values where kind == \"md:section\" order by first_ordinal limit 2 } from docs where path == \"processes/magnum-opus.md\"",
         Planned,
     ),
     // follow (planner declines → in-memory both ways, still must agree)
     (
-        "from docs where $path == \"substances/philosophers-stone.md\" follow distinct doc.out",
+        "from docs where path == \"substances/philosophers-stone.md\" follow distinct doc.out",
         Declined,
     ),
     (
@@ -246,7 +246,7 @@ const QUERIES: &[(&str, Push)] = &[
         Declined,
     ),
     (
-        "select $path, open from docs where nodes collect { ^open: value where kind == \"md:task\" && !attrs.checked }",
+        "select path, open from docs where nodes collect { ^open: value where kind == \"md:task\" && !attrs.checked }",
         Declined,
     ),
     // edges target
@@ -264,41 +264,41 @@ const QUERIES: &[(&str, Push)] = &[
     ),
     // `||` at the top is the whole residual; `.lower()` pushes explicitly
     (
-        "from docs where $path == \"index.md\" || layer == \"canon\"",
+        "from docs where path == \"index.md\" || layer == \"canon\"",
         Declined,
     ),
     (
-        "from docs where $path.lower().startsWith(\"SUBSTANCES/\".lower())",
+        "from docs where path.lower().startsWith(\"SUBSTANCES/\".lower())",
         Planned,
     ),
-    ("from docs where $path.matches(\"^lab/\")", Declined),
-    ("from docs where $hash != null", Planned),
-    ("from docs where $updated_at >= \"2026-01-01\"", Planned),
+    ("from docs where path.matches(\"^lab/\")", Declined),
+    ("from docs where hash != null", Planned),
+    ("from docs where updated_at >= \"2026-01-01\"", Planned),
     // nested blocks over a ROOT SCAN with a correlated / constant equality: the
     // store answers these from SQLite indexes (`store_index`) instead of
     // materializing `^<target>` — results must not move an inch
     (
-        "select $path, cited: ^docs collect { $path where doc.out exists { where $path == ^^$path } } from docs",
+        "select path, cited: ^docs collect { path where doc.out exists { where path == ^^path } } from docs",
         Declined,
     ),
     (
-        "select name, orders: ^docs collect { $path where type == \"order\" && customer == ^$path } from docs where type == \"customer\"",
+        "select name, orders: ^docs collect { path where type == \"order\" && customer == ^path } from docs where type == \"customer\"",
         Planned,
     ),
     (
-        "from docs where $path == \"index.md\" follow doc.out, ^docs collect { where after.contains(^$path) }",
+        "from docs where path == \"index.md\" follow doc.out, ^docs collect { where after.contains(^path) }",
         Declined,
     ),
     (
-        "select $path, same_type: ^docs collect { $path where type == ^type && $path != ^$path } from docs",
+        "select path, same_type: ^docs collect { path where type == ^type && path != ^path } from docs",
         Declined,
     ),
     (
-        "select $path, same_era: ^docs collect { $path where era == ^era } from docs where type == \"practitioner\"",
+        "select path, same_era: ^docs collect { path where era == ^era } from docs where type == \"practitioner\"",
         Planned,
     ),
     (
-        "select $path, same_layer: ^docs collect { $path values where layer == ^layer } from docs",
+        "select path, same_layer: ^docs collect { path values where layer == ^layer } from docs",
         Declined,
     ),
     (
@@ -306,30 +306,30 @@ const QUERIES: &[(&str, Push)] = &[
         Declined,
     ),
     (
-        "from docs where ^docs exists { where $title == ^$title && $id != ^$id }",
+        "from docs where ^docs exists { where title == ^title && id != ^id }",
         Declined,
     ),
     (
-        "select $path, by_title: ^docs collect { $path values where $title == ^$title } from docs where type == \"process\"",
+        "select path, by_title: ^docs collect { path values where title == ^title } from docs where type == \"process\"",
         Planned,
     ),
     (
-        "select $path, self: ^docs first { $path values where $path == ^$path } from docs",
+        "select path, self: ^docs first { path values where path == ^path } from docs",
         Declined,
     ),
     (
-        "select $path, by_id: ^docs single { $path values where $id == ^$id } from docs where type == \"substance\"",
+        "select path, by_id: ^docs single { path values where id == ^id } from docs where type == \"substance\"",
         Planned,
     ),
     // mixed value kinds on one property: a number probe against a string
     // property (and the reverse) matches nothing; an absent probe matches the
     // documents lacking the key (the in-memory fallback)
     (
-        "select $path, s: ^docs collect { $path where slug == ^era } from docs where type == \"practitioner\"",
+        "select path, s: ^docs collect { path where slug == ^era } from docs where type == \"practitioner\"",
         Planned,
     ),
     (
-        "select $path, e: ^docs collect { $path where era == ^slug } from docs where type == \"substance\"",
+        "select path, e: ^docs collect { path where era == ^slug } from docs where type == \"substance\"",
         Planned,
     ),
     (
@@ -337,40 +337,40 @@ const QUERIES: &[(&str, Push)] = &[
         Declined,
     ),
     (
-        "select $path, no_era: ^docs collect { $path values where era == ^nope } from docs where $path == \"index.md\"",
+        "select path, no_era: ^docs collect { path values where era == ^nope } from docs where path == \"index.md\"",
         Planned,
     ),
     (
-        "select $path, no_slug: ^docs collect { $path where slug == null } from docs where type == \"text\"",
+        "select path, no_slug: ^docs collect { path where slug == null } from docs where type == \"text\"",
         Planned,
     ),
     (
-        "select $path, l: ^docs collect { $path values where tags == ^tags } from docs",
+        "select path, l: ^docs collect { path values where tags == ^tags } from docs",
         Declined,
     ),
     (
-        "select $path, l: ^docs collect { $path values where layer == ^tags } from docs",
+        "select path, l: ^docs collect { path values where layer == ^tags } from docs",
         Declined,
     ),
     // the other targets as receivers: an edges-target correlated block, blocks by doc_id, nodes by kind
     (
-        "select $path, inbound: ^edges collect { doc_id where dst_id == ^$id } from docs",
+        "select path, inbound: ^edges collect { doc_id where dst_id == ^id } from docs",
         Declined,
     ),
     (
-        "select $path, outbound: ^edges collect { dst_path values where $path == ^$path } from docs",
+        "select path, outbound: ^edges collect { dst_path values where path == ^path } from docs",
         Declined,
     ),
     (
-        "from docs where ^edges count { where $path == ^$path } > 2",
+        "from docs where ^edges count { where path == ^path } > 2",
         Declined,
     ),
     (
-        "select doc_id, same_dst: ^edges collect { doc_id values where dst_path == ^dst_path && $id != ^$id } from edges where predicate == \"references\"",
+        "select doc_id, same_dst: ^edges collect { doc_id values where dst_path == ^dst_path && id != ^id } from edges where predicate == \"references\"",
         Planned,
     ),
     (
-        "select $id, paragraphs: ^blocks collect { ordinal values where doc_id == ^doc_id && type == \"paragraph\" } from blocks where type == \"heading\"",
+        "select id, paragraphs: ^blocks collect { ordinal values where doc_id == ^doc_id && type == \"paragraph\" } from blocks where type == \"heading\"",
         Planned,
     ),
     (
@@ -386,11 +386,11 @@ const QUERIES: &[(&str, Push)] = &[
         Planned,
     ),
     (
-        "select $path, by_name: ^nodes collect { $id where name == ^name } from nodes where kind == \"md:section\" && name == \"Preparation\"",
+        "select path, by_name: ^nodes collect { id where name == ^name } from nodes where kind == \"md:section\" && name == \"Preparation\"",
         Planned,
     ),
     (
-        "select $path, nameless: ^nodes collect { kind values where name == ^nope } from nodes where kind == \"md:section\" && name == \"Preparation\"",
+        "select path, nameless: ^nodes collect { kind values where name == ^nope } from nodes where kind == \"md:section\" && name == \"Preparation\"",
         Planned,
     ),
 ];
@@ -522,10 +522,10 @@ fn planned_queries_actually_reduce_the_scan() {
     let Some((store, repo)) = alchemy_store() else {
         return;
     };
-    // A planned `$path ==` produces exactly the matching row for the residual;
+    // A planned `path ==` produces exactly the matching row for the residual;
     // a full scan of docs is larger.
     let parsed = rewrite_query(
-        &oqx::parse_string("from docs where $path == \"index.md\" && layer == \"canon\"").unwrap(),
+        &oqx::parse_string("from docs where path == \"index.md\" && layer == \"canon\"").unwrap(),
     );
     let planner = omgbase_surface::SqlitePlanner::new(store.conn(), &repo);
     let plan = planner
@@ -541,14 +541,14 @@ fn planned_queries_actually_reduce_the_scan() {
     let res = run(
         &store,
         &repo,
-        "select $title, n: nodes collect { select kind } from docs where $path == \"index.md\"",
+        "select title, n: nodes collect { select kind } from docs where path == \"index.md\"",
         100,
         None,
         false,
     )
     .unwrap();
     assert_eq!(res.hits.len(), 1);
-    assert!(res.hits[0]["$title"].is_string(), "{}", res.hits[0]);
+    assert!(res.hits[0]["title"].is_string(), "{}", res.hits[0]);
     assert!(
         res.hits[0]["n"].as_array().is_some_and(|a| !a.is_empty()),
         "{}",
@@ -576,7 +576,7 @@ fn agrees_across_a_paginated_sweep() {
     // The same sweep over a planned scan (a pushed predicate that keeps most rows).
     let (mut cur_p, mut cur_m): (Option<String>, Option<String>) = (None, None);
     for _ in 0..6 {
-        let q = "from docs where $path != \"index.md\"";
+        let q = "from docs where path != \"index.md\"";
         let p = run(&store, &repo, q, 5, cur_p.as_deref(), false).unwrap();
         let m = run(&store, &repo, q, 5, cur_m.as_deref(), true).unwrap();
         assert_eq!(p, m);

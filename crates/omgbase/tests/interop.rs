@@ -585,17 +585,17 @@ fn check_seed(outcome: &Json, paths: &[&String], writer: Engine) -> Result<(), S
     for (i, (o, path)) in items.iter().zip(paths).enumerate() {
         // Every path a tool returns is the reference form (spec/surface §1 "Paths", 2.0).
         let want = format!("/{path}");
-        if o.get("$path").and_then(Json::as_str) != Some(want.as_str()) {
+        if o.get("path").and_then(Json::as_str) != Some(want.as_str()) {
             return Err(bad(format!(
                 "outcome {i} is for {}, expected {want}",
-                o["$path"]
+                o["path"]
             )));
         }
         let want = format!("d_{i}");
-        if o.get("$id").and_then(Json::as_str) != Some(want.as_str()) {
+        if o.get("id").and_then(Json::as_str) != Some(want.as_str()) {
             return Err(bad(format!(
                 "outcome {i} minted {}, expected {want} (is the minter seam active?)",
-                o["$id"]
+                o["id"]
             )));
         }
         if o.get("echo") != Some(&Json::Bool(false)) {

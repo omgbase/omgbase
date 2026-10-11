@@ -13,7 +13,7 @@
 //
 //   • oqx-js string ops are CASE-SENSITIVE, but SQLite `LIKE` is case-insensitive
 //     for ASCII. So `startsWith`/`contains`/`endsWith` translate to
-//     `substr`/`instr`, NEVER `LIKE`. `$path.lower().startsWith("lab/")` becomes
+//     `substr`/`instr`, NEVER `LIKE`. `path.lower().startsWith("lab/")` becomes
 //     `substr(lower(d.path), 1, length(?)) = ?` — the lowercasing is explicit and
 //     the match is byte-exact, matching the in-memory path.
 //   • oqx-js `==`/`!=` are absence-NORMALIZED (two absent values are equal;
@@ -27,8 +27,9 @@
 //     `card='scalar'` row (reads NULL). So a comparison is only pushed when the
 //     KINDS of its two operands are provably compared the same way — see
 //     `comparable` (the spec/surface §1 decline (a)) — and a name that is a relation, reach-through
-//     or source handle is never read as a property (decline (b),
-//     `NON_PROPERTY_NAMES`). A bool or num literal against a JSON or property
+//     or WHOLE source handle is never read as a property (decline (b),
+//     `NON_PROPERTY_NAMES`; a key read THROUGH a handle — `data.k`,
+//     `frontmatter.k` — is a property read, `handleRead`). A bool or num literal against a JSON or property
 //     read is a TYPED push (the 1.2 patch): the stored type is tested in SQL
 //     before the value (`json_type(x) = 'true'`, `p.type = 'number' AND
 //     p.val_num >= ?`) and the whole test is wrapped `(…) IS 1` / `IS NOT 1`,
@@ -73,7 +74,7 @@ export interface Frag {
  * decline (a)):
  *
  *   text  a string literal/binding, a text column or intrinsic, `.lower()`/`.upper()`
- *   int   an integer-typed intrinsic column (blocks `$ordinal`, `$depth`)
+ *   int   an integer-typed column (blocks `ordinal`, `depth`)
  *   num   a number literal/binding
  *   bool  a boolean literal/binding
  *   null  a null (or undefined) literal/binding
@@ -90,9 +91,9 @@ export type OperandKind = "text" | "int" | "num" | "bool" | "null" | "json" | "p
 export interface Operand extends Frag {
   kind: OperandKind;
   json?: { col: string; path: string };
-  prop?: { docAlias: string; key: string };
+  prop?: { docAlias: string; key: string; source?: string };
   value?: unknown;
-  /** The storage-form path column behind a `$path` / `doc.$path` read
+  /** The storage-form path column behind a `path` / `doc.path` read
    * (`d.path`): the operand's SQL is the rooted `'/' || <col>`, and an
    * equality against a rooted text constant is re-shaped onto the bare,
    * indexed column (`pathEquality`). */
@@ -111,50 +112,60 @@ export interface Operand extends Frag {
  * `translate.test.ts` asserts this set against the store context.
  */
 export const NON_PROPERTY_NAMES: Readonly<Record<Target, ReadonlySet<string>>> = {
-  docs: new Set(["doc", "nodes", "blocks", "out", "in", "out_edges", "in_edges", "frontmatter", "inline"]),
+  docs: new Set(["doc", "nodes", "blocks", "out", "in", "out_edges", "in_edges", "data", "frontmatter", "inline"]),
   blocks: new Set(["block", "doc", "children", "nodes", "out_edges", "section", "attrs"]),
   nodes: new Set(["section", "doc", "block", "blocks", "subsections", "children", "attrs"]),
   edges: new Set(["doc"]),
 };
 
-// ---- intrinsics -------------------------------------------------------------
+// ---- engine attributes ------------------------------------------------------
 
-// A `$`-namespaced intrinsic → a param-free SQL scalar, per target, with its kind.
-// The vocabulary is exactly the engine names that contend with user names
-// (spec/surface §1.2, 3.0: `$id`, `$path`, `$raw`, `$hash`, `$updated_at`,
-// `$title`, `$tags`); foreign keys and columns are plain fields, translated in
-// `translateOperand`. Anything not mapped (`$raw`, reconstructed or a blob;
-// `$title`/`$tags`, computed) returns null → residual. `$updated_at` is a
-// correlated subquery. `$path` (and the edge field `dst_path`) is the REFERENCE
-// form on the surface (spec/surface §1 "Paths", 2.0) — `'/' || <storage column>`
-// in SQL — so every comparison, `startsWith`, `contains`, `lower()`… sees
-// exactly the string the in-memory intrinsic yields; `pathColumn` keeps the bare
-// indexed column at hand for the equality fast path.
+// The engine attributes (spec/surface §1.2, 3.0: bare, snake_case, winning on
+// collision — `id`, `path`, `raw`, `hash`, `updated_at` on docs and blocks,
+// `title`/`tags` on docs, `id`/`path` on nodes and edges) → a param-free SQL
+// scalar, per target, with its kind. The structural columns and foreign keys are
+// translated in `translateOperand`. Anything not mapped (`raw`, reconstructed or
+// a blob; `title`, computed; `tags`, the union of the authored list and the
+// computed hashtags) returns null → residual, and the caller must NOT fall
+// through to a property read of the same name (the attribute wins in memory).
+// `updated_at` is a correlated subquery. `path` (and the edge field `dst_path`)
+// is the REFERENCE form on the surface (spec/surface §1 "Paths", 2.0) — `'/' ||
+// <storage column>` in SQL — so every comparison, `startsWith`, `contains`,
+// `lower()`… sees exactly the string the in-memory attribute yields;
+// `pathColumn` keeps the bare indexed column at hand for the equality fast path.
 /** The rooted path read over a storage path column. */
 export function pathColumn(col: string): Operand {
   return { sql: `('/' || ${col})`, params: [], kind: "text", pathCol: col };
 }
-function intrinsicSql(name: string, ctx: TranslateCtx): Operand | null {
+/** The identity/bytes/time attributes per kind — the names `attributeSql` owns
+ * (the structural columns are handled per target in `translateOperand`). */
+export const ROW_ATTRIBUTES: Readonly<Record<Target, ReadonlySet<string>>> = {
+  docs: new Set(["id", "path", "raw", "hash", "updated_at", "title", "tags"]),
+  blocks: new Set(["id", "path", "raw", "hash", "updated_at"]),
+  nodes: new Set(["id", "path"]),
+  edges: new Set(["id", "path"]),
+};
+function attributeSql(name: string, ctx: TranslateCtx): Operand | null {
   const { self, doc, target } = ctx;
   const text = (sql: string): Operand => ({ sql, params: [], kind: "text" });
   if (target === "docs") switch (name) {
-    case "$id": return text(`${self}.doc_id`);
-    case "$path": return pathColumn(`${doc}.path`);
-    case "$hash": return text(`lower(hex(${self}.file_hash))`);
-    case "$updated_at": return text(`(SELECT c.ts FROM revisions r JOIN commits c ON c.commit_id = r.commit_id WHERE r.rev_id = ${self}.current_rev)`);
+    case "id": return text(`${self}.doc_id`);
+    case "path": return pathColumn(`${doc}.path`);
+    case "hash": return text(`lower(hex(${self}.file_hash))`);
+    case "updated_at": return text(`(SELECT c.ts FROM revisions r JOIN commits c ON c.commit_id = r.commit_id WHERE r.rev_id = ${self}.current_rev)`);
   }
   else if (target === "blocks") switch (name) {
-    case "$id": return text(`${self}.block_id`);
-    case "$path": return pathColumn(`${doc}.path`);
-    case "$hash": return text(`lower(hex(${self}.raw_hash))`);
+    case "id": return text(`${self}.block_id`);
+    case "path": return pathColumn(`${doc}.path`);
+    case "hash": return text(`lower(hex(${self}.raw_hash))`);
   }
   else if (target === "nodes") switch (name) {
-    case "$id": return text(`${self}.node_id`);
-    case "$path": return pathColumn(`${doc}.path`);
+    case "id": return text(`${self}.node_id`);
+    case "path": return pathColumn(`${doc}.path`);
   }
   else if (target === "edges") switch (name) {
-    case "$id": return text(`${self}.edge_id`);
-    case "$path": return pathColumn(`${doc}.path`);
+    case "id": return text(`${self}.edge_id`);
+    case "path": return pathColumn(`${doc}.path`);
   }
   return null;
 }
@@ -177,35 +188,46 @@ function edgeField(name: string, self: string): Operand | null {
   }
 }
 
-/** docs intrinsics whose BARE (non-$) form is a loud error in-memory (the `$`
- * rule, spec/surface §1.2: the bare spelling of an engine name that shares the
- * frontmatter namespace is a typo for the intrinsic) — not pushable, so the
- * residual raises it (and the planner keeps the whole query unplanned when one
- * is residual: spec/surface §1 decline (c)). */
-export const RESERVED_DOC_BASENAMES: ReadonlySet<string> = new Set(["id", "path", "updated_at", "hash", "raw"]);
 const SEG = /^[A-Za-z_][A-Za-z0-9_]*$/; // injection-safe inlined identifier
 
 // The single-scalar-row scope of a document property (the CEL scalar-in-scope
 // rule): the row for `key` on the document only when the key has exactly one
 // row in scope and it is card='scalar' — a list-valued or nested key has none.
-// `select` is the projected expression over the alias `p`.
-function propSubquery(docAlias: string, key: string, select: string): string {
+// `select` is the projected expression over the alias `p`. `source` narrows
+// the scope to one authored source — the read `frontmatter.<k>` / `inline.<k>`
+// performs (spec/surface §1.2; the in-memory `docProp(docId, key, source)`):
+// both the row and the count are of that source's rows only. The merged
+// `data.<k>` read is the bare read, so it passes no source.
+function propSubquery(docAlias: string, key: string, select: string, source?: string): string {
+  const src = source ? ` AND p.source = '${source}'` : "";
+  const src2 = source ? ` AND p2.source = '${source}'` : "";
   return `(SELECT ${select} FROM properties p
-           WHERE p.doc_id = ${docAlias}.doc_id AND p.key = '${key}' AND p.card = 'scalar' AND p.deleted_commit IS NULL
-             AND (SELECT COUNT(*) FROM properties p2 WHERE p2.doc_id = ${docAlias}.doc_id AND p2.key = '${key}' AND p2.deleted_commit IS NULL) = 1
+           WHERE p.doc_id = ${docAlias}.doc_id AND p.key = '${key}' AND p.card = 'scalar' AND p.deleted_commit IS NULL${src}
+             AND (SELECT COUNT(*) FROM properties p2 WHERE p2.doc_id = ${docAlias}.doc_id AND p2.key = '${key}' AND p2.deleted_commit IS NULL${src2}) = 1
            LIMIT 1)`;
 }
 
 // A single-valued document property: the scalar value of its one row in scope,
 // else NULL — matching the store context's `docProp` for a scalar read.
-function propScalar(docAlias: string, key: string): Operand | null {
+function propScalar(docAlias: string, key: string, source?: string): Operand | null {
   if (!SEG.test(key)) return null;
   return {
-    sql: propSubquery(docAlias, key, "COALESCE(p.val_text, p.val_num, p.val_bool)"),
+    sql: propSubquery(docAlias, key, "COALESCE(p.val_text, p.val_num, p.val_bool)", source),
     params: [],
     kind: "prop",
-    prop: { docAlias, key },
+    prop: source ? { docAlias, key, source } : { docAlias, key },
   };
+}
+
+// A key read through a source handle (spec/surface §1.2, 3.0): `data.<k>` is
+// the merged authored read — exactly the bare property `<k>`; `frontmatter.<k>`
+// / `inline.<k>` the same read scoped to one source. Pushed since 3.0 (batch 3;
+// before, every handle member was residual). A whole-handle reference
+// (`frontmatter == null`) and `entries(<handle>)` still decline.
+const SOURCE_HANDLES: Readonly<Record<string, string | undefined>> = { data: undefined, frontmatter: "frontmatter", inline: "inline" };
+function handleRead(docAlias: string, handle: string, key: string): Operand | null {
+  if (!(handle in SOURCE_HANDLES)) return null;
+  return propScalar(docAlias, key, SOURCE_HANDLES[handle]);
 }
 
 // json_extract path from validated segments, or null if any segment is unsafe.
@@ -254,7 +276,12 @@ export function translateOperand(e: Expr, ctx: TranslateCtx): Operand | null {
     case "binding":
       return constOperand(ctx.params[e.index]);
     case "ident": {
-      if (e.name.startsWith("$")) return intrinsicSql(e.name, ctx);
+      // An OQX `$` name (`$it`, `$key`, the follow intrinsics) is the language's,
+      // never a column; omgbase adds no `$` names (spec/surface §1.2, 3.0).
+      if (e.name.startsWith("$")) return null;
+      // The row's own attributes win on collision (§1.2): translated or declined
+      // (`raw`, `title`, `tags`), never read as a property or an attr.
+      if (ROW_ATTRIBUTES[target].has(e.name)) return attributeSql(e.name, ctx);
       // A relation, reach-through, source handle or the whole attrs object is not a
       // scalar read (decline (b)); a bare target name is a relation or a loud
       // error (root-row.ts), never a property.
@@ -262,7 +289,6 @@ export function translateOperand(e: Expr, ctx: TranslateCtx): Operand | null {
       // Bare field per target.
       if (target === "docs") {
         if (e.name === "format") return text(`${self}.format`); // a column, not a property
-        if (RESERVED_DOC_BASENAMES.has(e.name)) return null; // residual raises the guard
         return propScalar(doc, e.name);
       }
       if (target === "blocks") {
@@ -288,33 +314,38 @@ export function translateOperand(e: Expr, ctx: TranslateCtx): Operand | null {
       if (head === "attrs" && (target === "blocks" || target === "nodes")) {
         return jsonExtract(`${self}.attrs`, rest);
       }
+      // <handle>.<k> on docs — `data.layer`, `frontmatter.layer`, `inline.element`
+      // — and `doc.<handle>.<k>` through the owning document on the other
+      // targets: a property read, scoped to the handle's source.
+      if (target === "docs" && head in SOURCE_HANDLES && rest.length === 1) return handleRead(doc, head, rest[0]!);
+      if (head === "doc" && rest.length === 2 && rest[0]! in SOURCE_HANDLES) return handleRead(doc, rest[0]!, rest[1]!);
       // doc.<x> reach-through — the owning doc (alias `doc`, which is `d`). On the
       // docs target `doc` is the row itself; either way it resolves against `doc`.
-      // FOREIGN-KEY ELIMINATION (spec/surface §1, 3.0): `doc.$id` is the row's
-      // own FK column (`b.doc_id`, `n.doc_id`, `e.src_doc`) and `doc.$path` /
-      // `doc.$hash` / `doc.$updated_at` the scan's already-joined document
+      // FOREIGN-KEY ELIMINATION (spec/surface §1, 3.0): `doc.id` is the row's
+      // own FK column (`b.doc_id`, `n.doc_id`, `e.src_doc`) and `doc.path` /
+      // `doc.hash` / `doc.updated_at` the scan's already-joined document
       // columns — no extra join, the same SQL as the bare `doc_id`.
       if (head === "doc") {
         if (rest.length !== 1) return null;
         const k = rest[0]!;
-        if (k === "$id") return text(target === "edges" ? `${self}.src_doc` : `${self}.doc_id`);
-        if (k === "$path") return pathColumn(`${doc}.path`);
-        if (k === "$hash") return text(`lower(hex(${doc}.file_hash))`);
-        if (k === "$updated_at") return text(`(SELECT c.ts FROM revisions r JOIN commits c ON c.commit_id = r.commit_id WHERE r.rev_id = ${doc}.current_rev)`);
+        if (k === "id") return text(target === "edges" ? `${self}.src_doc` : `${self}.doc_id`);
+        if (k === "path") return pathColumn(`${doc}.path`);
+        if (k === "hash") return text(`lower(hex(${doc}.file_hash))`);
+        if (k === "updated_at") return text(`(SELECT c.ts FROM revisions r JOIN commits c ON c.commit_id = r.commit_id WHERE r.rev_id = ${doc}.current_rev)`);
         if (k === "format") return text(`${doc}.format`);
         if (k.startsWith("$")) return null;
-        if (RESERVED_DOC_BASENAMES.has(k)) return null;
-        if (NON_PROPERTY_NAMES.docs.has(k) || TARGETS.has(k)) return null; // `doc.nodes`, `doc.frontmatter`, `doc.docs` … (decline (b))
+        if (ROW_ATTRIBUTES.docs.has(k)) return null; // `doc.raw`, `doc.title`, `doc.tags`: the attribute, not pushable
+        if (NON_PROPERTY_NAMES.docs.has(k) || TARGETS.has(k)) return null; // `doc.nodes`, `doc.data`, `doc.docs` … (decline (b))
         return propScalar(doc, k);
       }
       // block.<x> reach-through from a node: the block's identity is the node's
-      // FK (`block.$id` → `n.block_id`, `block.$path` → the joined `d.path`,
+      // FK (`block.id` → `n.block_id`, `block.path` → the joined `d.path`,
       // `block.doc_id` → `n.doc_id` — FK elimination again); `type`/`text` are
       // a correlated read of the block row.
       if (head === "block" && target === "nodes" && rest.length === 1) {
         const k = rest[0]!;
-        if (k === "$id") return text(`${self}.block_id`);
-        if (k === "$path") return pathColumn(`${doc}.path`);
+        if (k === "id") return text(`${self}.block_id`);
+        if (k === "path") return pathColumn(`${doc}.path`);
         if (k === "doc_id") return text(`${self}.doc_id`);
         if (k === "type" || k === "text") return text(`(SELECT bb.${k} FROM blocks bb WHERE bb.block_id = ${self}.block_id)`);
         return null;
@@ -377,7 +408,7 @@ const IS_OP: Record<string, string> = {
  *     ordered, exactly as in memory.
  *   Every other pair declines: SQLite sees JSON `true` and `1`, `val_bool` and
  *     `val_num` alike (`$ordinal == checked`, `true == 1`), orders every
- *     integer before every text (`$ordinal < "3"`, `level < "x"`, `$path > 5`),
+ *     integer before every text (`$ordinal < "3"`, `level < "x"`, `path > 5`),
  *     and two JSON or property reads carry no type at plan time
  *     (`attrs.a == attrs.b`, `era == stages`).
  *
@@ -472,7 +503,7 @@ function translateComparison(e: Extract<Expr, { kind: "binary" }>, ctx: Translat
 const FLIP: Record<string, string> = { "<": ">", "<=": ">=", ">": "<", ">=": "<=" };
 
 /**
- * The path equality fast path: `$path == "/a.md"` (or `!=`, either side) against
+ * The path equality fast path: `path == "/a.md"` (or `!=`, either side) against
  * a rooted text constant is `d.path IS ?` with the constant's storage form, so
  * the `(repo_id, path)` index serves it; `'/' || d.path IS ?` — what the general
  * form would emit — is the same predicate without the index. Only a constant
@@ -524,9 +555,9 @@ function typedComparison(op: string, read: Operand, constant: Operand): Frag | n
     };
   }
   if (read.prop) {
-    const { docAlias, key } = read.prop;
+    const { docAlias, key, source } = read.prop;
     const test = constant.kind === "bool" ? `p.type = 'bool' AND p.val_bool = ?` : `p.type = 'number' AND p.val_num ${cmp} ?`;
-    return { sql: `(${propSubquery(docAlias, key, test)} ${wrap})`, params: [...constant.params] };
+    return { sql: `(${propSubquery(docAlias, key, test, source)} ${wrap})`, params: [...constant.params] };
   }
   return null;
 }

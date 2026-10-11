@@ -86,7 +86,7 @@ export function hybridSearch(store: Store, input: HybridInput): HybridHit[] {
   const ftsRanks = new Map<string, number>();
   if (input.text) {
     textSearch(store, input.repoId, input.text, { limit: 200 }).hits.forEach((h, i) => {
-      if (!ftsRanks.has(h.$id)) ftsRanks.set(h.$id, i + 1);
+      if (!ftsRanks.has(h.id)) ftsRanks.set(h.id, i + 1);
     });
   }
 

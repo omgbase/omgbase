@@ -186,8 +186,8 @@ export class OmgClient {
 
   /** `docs_read`: `locator` is the document argument in the server's spelling
    * (lib/paths.ts `docLocator`: `{ id }`/`{ path }` on ≥ 3.0, `{ doc }` before);
-   * the whole document as the server spells it — `{ $id, $path,
-   * rev, properties, $raw }` on surface ≥ 3.0, `{ path, docId, rev, properties,
+   * the whole document as the server spells it — `{ id, path,
+   * rev, properties, raw }` on surface ≥ 3.0, `{ path, docId, rev, properties,
    * content }` before (lib/shapes.ts `docReadOf` reads either); the demo uses
    * `properties.frontmatter`, the parsed fence, spelled the same on both. */
   docsRead(locator: Record<string, string>, repo?: string): Promise<Record<string, unknown> & { properties?: { frontmatter?: Record<string, unknown> } }> {
@@ -196,7 +196,7 @@ export class OmgClient {
 
   /** `docs_set_meta`: set and/or unset frontmatter keys on one document (its
    * argument from `docLocator`)
-   * (re-ingested server-side; no CAS). The result is `{ $id, $path, committed }`
+   * (re-ingested server-side; no CAS). The result is `{ id, path, committed }`
    * on ≥ 3.0, `{ docId, path, committed }` before (lib/shapes.ts `docOpOf`). */
   docsSetMeta(locator: Record<string, string>, patch: { set?: Record<string, unknown>; unset?: string[] }, repo?: string): Promise<Record<string, unknown>> {
     return this.call("docs_set_meta", { ...locator, ...patch, ...(repo ? { repo } : {}) });

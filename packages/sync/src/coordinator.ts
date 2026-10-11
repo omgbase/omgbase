@@ -87,9 +87,9 @@ export class Coordinator {
       for (const digest of page.digests) {
         if (digest.origin === "observed") continue; // came from a source; don't echo back
         for (const rev of digest.revisions) {
-          // `changes_since` reports the reference form (`$path`, spec/surface
+          // `changes_since` reports the reference form (`path`, spec/surface
           // §1.2); the source takes storage paths.
-          const path = storagePath(rev.$path);
+          const path = storagePath(rev.path);
           const doc = await this.engine.readDoc(path);
           if (doc) {
             await this.source.write(path, doc.content);

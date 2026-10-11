@@ -81,9 +81,9 @@ describe("trace suite", () => {
     save("tasks.md", "# Work\n\n## Launch\n\n- [ ] deploy the service now\n- [ ] write the launch docs\n");
     await connect();
     const { payload: q } = await call("query", { query: 'from blocks where type == "task" && !attrs.checked && under_heading("Launch")' });
-    const hits = q.hits as { $id: string }[];
+    const hits = q.hits as { id: string }[];
     expect(hits.length).toBe(2);
-    const { payload: res } = await call("tasks_complete", { blocks: hits.map((h) => h.$id) });
+    const { payload: res } = await call("tasks_complete", { blocks: hits.map((h) => h.id) });
     expect(res.committed).toBe(true);
     expect(turns).toBeLessThanOrEqual(2);
     expect(readFileSync(join(dir, "tasks.md"), "utf8")).toContain("- [x] deploy");
@@ -103,8 +103,8 @@ describe("trace suite", () => {
     save("src.md", "# Src\n\ncites [target](/target.md) in this paragraph\n");
     await connect();
     // Backlinks via OQX `follow doc.in`: seed the target, walk incoming edges.
-    const { payload } = await call("query", { query: 'from docs where $path == "target.md" follow doc.in' });
-    expect((arr(payload.hits) as { $path: string }[]).map((h) => h.$path)).toContain("/src.md");
+    const { payload } = await call("query", { query: 'from docs where path == "target.md" follow doc.in' });
+    expect((arr(payload.hits) as { path: string }[]).map((h) => h.path)).toContain("/src.md");
     expect(turns).toBe(1);
   });
 

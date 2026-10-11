@@ -771,9 +771,9 @@
           {
             "hits": [
               {
-                "$id": "b_1",
+                "id": "b_1",
                 "doc_id": "d_0",
-                "$path": "a.md",
+                "path": "a.md",
                 "type": "paragraph",
                 "text": "alpha bravo charlie delta echo foxtrot golf hotel india juliet kilo lima mike november oscar papa quebec romeo sierra tango uniform victor whiskey xray",
                 "score": 0.6407617559789477
@@ -3167,7 +3167,7 @@
           {
             "hits": [
               {
-                "$id": "b_0",
+                "id": "b_0",
                 "locator": "a.md#heading[0]",
                 "preview": "Harbor",
                 "evidence": {
@@ -3179,7 +3179,7 @@
                 }
               },
               {
-                "$id": "b_1",
+                "id": "b_1",
                 "locator": "a.md#paragraph[1]",
                 "preview": "alpha bravo charlie harbor echo foxtrot golf hotel india juliet kilo lima…",
                 "evidence": {
@@ -3191,7 +3191,7 @@
                 }
               },
               {
-                "$id": "b_3",
+                "id": "b_3",
                 "locator": "a.md#list_item[0]",
                 "preview": "kilo lima mike harbor oscar papa quebec romeo sierra tango uniform victor…",
                 "evidence": {
@@ -3313,7 +3313,7 @@
           {
             "hits": [
               {
-                "$id": "b_0",
+                "id": "b_0",
                 "locator": "a.md#paragraph[0]",
                 "preview": "alpha bravo charlie harbor echo foxtrot golf hotel india juliet kilo lima…",
                 "evidence": {
@@ -3325,7 +3325,7 @@
                 }
               },
               {
-                "$id": "b_1",
+                "id": "b_1",
                 "locator": "b.md#paragraph[0]",
                 "preview": "kilo lima mike november oscar papa quebec romeo sierra tango uniform victor…",
                 "evidence": {

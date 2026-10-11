@@ -115,7 +115,7 @@ class Parser {
     while (this.peek().type === "dot") {
       this.next();
       // A `$`-segment after a dot is an intrinsic reach-through continuation
-      // (`doc.$path`, `doc.$updated_at`): the lexer emits it as a `field` token
+      // (`doc.path`, `doc.updated_at`): the lexer emits it as a `field` token
       // (value keeps the `$`). It is never a method receiver, so append it as a
       // field segment directly. The compiler routes `doc.$…` to docs intrinsics.
       if (this.peek().type === "field") {

@@ -266,8 +266,8 @@ client** (in-process or over MCP) with no reconciliation logic of its own.
 - The engine's **change feed**, `changes_since(cursor = 0, limit = 50,
   origin?)`: the repo's commits with `seq > cursor` (optionally of one
   origin), in `seq` order, `limit + 1` fetched to set `truncated`; each
-  digest `{ commit, seq, ts, origin, actor, summary, revisions: [{ $id,
-  $path, $hash = hex(rendered_hash) }] }` (2.0 — the document, its path as
+  digest `{ commit, seq, ts, origin, actor, summary, revisions: [{ id,
+  path, hash = hex(rendered_hash) }] }` (2.0 — the document, its path as
   of the commit and the revision's rendered hash, spelled as the row
   attributes of `spec/surface` §1.2; `{ doc, path, content_hash }` before,
   `contentHash` on the MCP wire); the page's `cursor` is the
@@ -470,6 +470,11 @@ also rewrites `out` lines from the engine's actual requests. **Allowlist
 
 ## Decisions
 
+- 2026-10-11, sync 2.0 (surface 3.0 batch 3): a change-feed revision is
+  `{ id, path, hash }` — bare, because `spec/surface` §1.2's final rule gives
+  omgbase no `$` names (`$` is OQX's); the entry below described the `$id`/
+  `$path`/`$hash` interim spelling of the same unshipped 2.0 line. The §6
+  engine clients read the bare keys. Fixtures: re-keyed again, nothing else.
 - 2026-10-11, sync 2.0: a change-feed revision is `{ $id, $path, $hash }`
   (`spec/surface` §1.2, 3.0 — the row rule: `$` marks the engine-provided
   names that contend with user names, a result key carrying a row attribute

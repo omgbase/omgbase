@@ -5,16 +5,16 @@ what a client sees of an omgbase repository.
 
 - **The query binding** (`context`, `query`): an `oqx` `DataContext` over
   `omgbase_store::Store` — the `docs` / `blocks` / `nodes` / `edges` roots,
-  the root row (`^docs`, `^$id`, `^$it`), the per-target intrinsics,
+  the root row (`^docs`, `^id`, `^$it`), the per-target intrinsics,
   reach-through and relations, the
   property rule (`spec/properties`), the row functions (`text`, `under`,
-  `within`, `has_edge`, `semantic`, …) — and the §1.4 runner: `{ $id, $path }`
+  `within`, `has_edge`, `semantic`, …) — and the §1.4 runner: `{ id, path }`
   injection, `distinct` by projection, top-level `limit`/`offset`, keyset
   paging with the base64url cursor, `values`, the consumer scalars, error
   normalization to `filter_invalid`.
 - **The pushdown planner** (`planner`, `translate`): the tier-3 seam of
   `oqx` (`QueryPlanner` / `Plan` / `ROWS_ROOT`) over the store — a simple
-  top-level scan's pushable `where` conjuncts (`$path` and the mapped
+  top-level scan's pushable `where` conjuncts (`path` and the mapped
   intrinsics, doc columns and scalar properties, `attrs.<k>` and flattened
   attrs via `json_extract`, `==`/`!=` as null-safe `IS`/`IS NOT`, the
   relational ops, case-sensitive `startsWith`/`endsWith`/`contains`) become
@@ -45,8 +45,8 @@ let mut store = Store::open_in_memory()?;
 let repo = store.create_repo("notes")?;
 let mut surface = Surface::new(store, &repo, None);
 surface.call("observe", json!({ "path": "a.md", "content": "# Title\n\nFirst.\n" }));
-let res = surface.call("query", json!({ "query": "select $title from docs" }));
-assert_eq!(res.body["hits"][0]["$title"], "Title");
+let res = surface.call("query", json!({ "query": "select title from docs" }));
+assert_eq!(res.body["hits"][0]["title"], "Title");
 # Ok::<(), omgbase_store::Error>(())
 ```
 

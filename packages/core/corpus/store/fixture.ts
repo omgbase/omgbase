@@ -595,7 +595,7 @@ export function checkInvariants(store: Store, repoId: string, lastSource: Readon
       const atRev = readDocumentAtRevision(store, d.doc_id, d.current_rev);
       if (!atRev) problems.push(`I1: ${at} reconstruct at ${d.current_rev} returned nothing`);
       else {
-        if (atRev.$raw !== source) problems.push(`I1: ${at} reconstruct at ${d.current_rev} != source`);
+        if (atRev.raw !== source) problems.push(`I1: ${at} reconstruct at ${d.current_rev} != source`);
         if (!atRev.renderedHashMatch) problems.push(`I1: ${at} rendered_hash_match is false at the current revision`);
       }
     }

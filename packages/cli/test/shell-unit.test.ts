@@ -68,10 +68,10 @@ describe("deriveRows", () => {
     const legacy = deriveRows({ out: [{ node: "d_1", predicate: "references" }], in: [{ node: "d_2" }] });
     expect(legacy?.map((r) => r.ref)).toEqual(["d_1", "d_2"]);
   });
-  it("a 3.0 row's `$id` is the ref and `$path` the label (ls rows, hits, docs_read)", () => {
-    const rows = deriveRows([{ $id: "d_1", $path: "/a.md", $updated_at: null, blocks: 3 }]);
+  it("a 3.0 row's `id` is the ref and `path` the label (ls rows, hits, docs_read)", () => {
+    const rows = deriveRows([{ id: "d_1", path: "/a.md", updated_at: null, blocks: 3 }]);
     expect(rows?.[0]).toMatchObject({ ref: "d_1", label: "/a.md" });
-    expect(coerce({ $id: "d_1", $path: "/a.md", rev: "r_1" })).toBe("d_1");
+    expect(coerce({ id: "d_1", path: "/a.md", rev: "r_1" })).toBe("d_1");
     // an edge row (links --blocks, dangling): the far doc leads, the block is next
     expect(coerce({ doc_id: "d_2", block_id: "b_7", predicate: "references" })).toBe("d_2");
     expect(coerce({ block_id: "b_7", target: "/x.md" })).toBe("b_7");

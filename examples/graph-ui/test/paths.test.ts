@@ -1,34 +1,50 @@
 import { describe, expect, it } from "vitest";
 import { parse } from "@omgbase/oqx";
-import { HIT_ENVELOPE_KEYS, LEGACY_SURFACE, bareArguments, docArg, docForeign, docLocator, hitId, hitPath, pathExpr, pathOperand, rooted, rootsPaths, rowRef, samePath, serverPath, surfaceMajor, surfaceOf, unrooted } from "../src/lib/paths.ts";
+import { DOC_ATTRIBUTES, HIT_ENVELOPE_KEYS, LEGACY_SURFACE, attr, bareArguments, bareAttributes, docArg, docForeign, docLocator, hitId, hitPath, outerPathOperand, pathExpr, pathOperand, rooted, rootsPaths, rowRef, samePath, serverPath, surfaceMajor, surfaceOf, unrooted } from "../src/lib/paths.ts";
 
-describe("hitId / hitPath / rowRef — the hit envelope across surface generations", () => {
-  it("reads `$id`/`$path` (surface ≥ 3.0) and falls back to `id`/`path` (1.x/2.x)", () => {
-    expect(hitId({ $id: "d_1", $path: "/a.md" })).toBe("d_1");
-    expect(hitPath({ $id: "d_1", $path: "/a.md" })).toBe("/a.md");
+describe("hitId / hitPath / rowRef — the hit envelope (`id`/`path` on every surface version)", () => {
+  it("reads `id`/`path` as returned", () => {
+    expect(hitId({ id: "d_1", path: "/a.md" })).toBe("d_1");
+    expect(hitPath({ id: "d_1", path: "/a.md" })).toBe("/a.md");
     expect(hitId({ id: "d_1", path: "a.md" })).toBe("d_1");
     expect(hitPath({ id: "d_1", path: "a.md" })).toBe("a.md");
-    // A 3.0 hit whose projection aliased `id`/`path` to something else: the `$` keys win.
-    expect(hitId({ $id: "d_1", $path: "/a.md", id: 7, path: "x" })).toBe("d_1");
-    expect(hitPath({ $id: "d_1", $path: "/a.md", id: 7, path: "x" })).toBe("/a.md");
+    // The unreleased `$id`/`$path` interlude is not read: a 3.0 server spells the envelope bare.
+    expect(hitId({ $id: "d_1", $path: "/a.md" })).toBeNull();
   });
   it("is null for a hit without an identity, a non-string value, or no hit", () => {
     expect(hitId({ title: "A" })).toBeNull();
-    expect(hitPath({ $path: 3 })).toBeNull();
+    expect(hitPath({ path: 3 })).toBeNull();
     expect(hitId(null)).toBeNull();
     expect(hitPath(undefined)).toBeNull();
   });
-  it("rowRef recognizes a row surfacing as a value in either spelling, rooted, and nothing else", () => {
-    expect(rowRef({ $id: "b_0", $path: "/a.md" })).toEqual({ id: "b_0", path: "/a.md" });
+  it("rowRef recognizes a row surfacing as a value, rooted, and nothing else", () => {
+    expect(rowRef({ id: "b_0", path: "/a.md" })).toEqual({ id: "b_0", path: "/a.md" });
     expect(rowRef({ id: "d_1", path: "a.md" })).toEqual({ id: "d_1", path: "/a.md" });
     expect(rowRef("/a.md")).toBeNull();
-    expect(rowRef({ $id: "d_1", $path: "/a.md", title: "A" })).toBeNull(); // a hit with a projection is not a bare ref
-    expect(rowRef({ $id: "d_1" })).toBeNull();
-    expect(rowRef([{ $id: "d_1", $path: "/a.md" }])).toBeNull();
+    expect(rowRef({ id: "d_1", path: "/a.md", title: "A" })).toBeNull(); // a hit with a projection is not a bare ref
+    expect(rowRef({ id: "d_1" })).toBeNull();
+    expect(rowRef([{ id: "d_1", path: "/a.md" }])).toBeNull();
     expect(rowRef(null)).toBeNull();
   });
-  it("names both spellings as the envelope", () => {
-    expect([...HIT_ENVELOPE_KEYS].sort()).toEqual(["$id", "$path", "id", "path"]);
+  it("names the envelope", () => {
+    expect([...HIT_ENVELOPE_KEYS].sort()).toEqual(["id", "path"]);
+  });
+});
+
+describe("attr / bareAttributes — the attribute spelling in the language (spec/surface §1.2)", () => {
+  it("is bare on 3.0 and later, `$`-prefixed before and while unknown", () => {
+    expect(bareAttributes("3.0")).toBe(true);
+    expect(bareAttributes("3.2")).toBe(true);
+    expect(bareAttributes("2.0")).toBe(false);
+    expect(bareAttributes(LEGACY_SURFACE)).toBe(false);
+    expect(bareAttributes(null)).toBe(false);
+    expect(attr("3.0", "path")).toBe("path");
+    expect(attr("3.0", "updated_at")).toBe("updated_at");
+    expect(attr("2.0", "path")).toBe("$path");
+    expect(attr(null, "title")).toBe("$title");
+  });
+  it("lists the docs attributes a bare name reads on 3.0", () => {
+    expect([...DOC_ATTRIBUTES].sort()).toEqual(["format", "hash", "id", "path", "raw", "tags", "title", "updated_at"]);
   });
 });
 
@@ -85,8 +101,9 @@ describe("samePath", () => {
   });
 });
 
-describe("pathExpr / pathOperand", () => {
-  it("yields the intrinsic alone on 2.0 and a slash-prefixed one before", () => {
+describe("pathExpr / pathOperand / outerPathOperand", () => {
+  it("yields the attribute alone on ≥ 2.0 (bare on 3.0) and a slash-prefixed one before", () => {
+    expect(pathExpr("3.0")).toBe("path");
     expect(pathExpr("2.0")).toBe("$path");
     expect(pathExpr("2.0", "^$path")).toBe("^$path");
     expect(pathExpr("1.5")).toBe('"/" + $path');
@@ -94,11 +111,15 @@ describe("pathExpr / pathOperand", () => {
     expect(pathExpr(LEGACY_SURFACE, "^^$dst_path")).toBe('"/" + ^^$dst_path');
     expect(pathExpr(null)).toBe('"/" + $path'); // unknown → the conservative form
   });
-  it("parenthesizes the 1.x form as an operand, and both forms parse", () => {
+  it("parenthesizes the 1.x form as an operand, and every form parses", () => {
+    expect(pathOperand("3.0", "^path")).toBe("^path");
     expect(pathOperand("2.0", "^$path")).toBe("^$path");
     expect(pathOperand("1.5", "^$path")).toBe('("/" + ^$path)');
-    for (const surface of ["1.5", "2.0"]) {
-      expect(() => parse(`select $path from docs follow $it.in collect { where ${pathOperand(surface, "^$path")} in list(after) }`)).not.toThrow();
+    expect(outerPathOperand("3.0")).toBe("^path");
+    expect(outerPathOperand("2.0")).toBe("^$path");
+    expect(outerPathOperand("1.5")).toBe('("/" + ^$path)');
+    for (const surface of ["1.5", "2.0", "3.0"]) {
+      expect(() => parse(`select ${attr(surface, "path")} from docs follow $it.in collect { where ${outerPathOperand(surface)} in list(after) }`)).not.toThrow();
     }
   });
 });

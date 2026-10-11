@@ -11,7 +11,7 @@ describe("edgeQueries", () => {
     expect(qs[0]).toMatch(/^select src: \$path, dst: \$dst_path from edges where src_field == "before" && provenance == "frontmatter" && \(\$path == "d\/0\.md" \|\| /);
   });
 
-  it("spells the edge fields per server: `$dst_path`/`src_field` through 2.x, `dst_path`/`field` on 3.0 (spec/surface §1.2); the aliases are the demo's own", () => {
+  it("spells the edge fields per server: `$path`/`$dst_path`/`src_field` through 2.x, `path`/`dst_path`/`field` on 3.0 (spec/surface §1.2); the aliases are the demo's own", () => {
     const keys = ["/a.md"];
     for (const surface of [null, "1.5", "2.0"]) {
       const q = edgeQueries({ name: "before", kind: "frontmatter" }, keys, surface)[0]!;
@@ -20,12 +20,11 @@ describe("edgeQueries", () => {
     }
     for (const surface of ["3.0", "3.2"]) {
       const q = edgeQueries({ name: "before", kind: "frontmatter" }, keys, surface)[0]!;
-      expect(q, surface).toBe('select src: $path, dst: dst_path from edges where field == "before" && provenance == "frontmatter" && ($path == "/a.md")');
+      expect(q, surface).toBe('select src: path, dst: dst_path from edges where field == "before" && provenance == "frontmatter" && (path == "/a.md")');
       expect(() => parse(q)).not.toThrow();
-      expect(q).not.toContain("$dst_path");
-      expect(q).not.toContain("src_field");
+      expect(q).not.toContain("$");
     }
-    expect(edgeQueries({ name: "doc.out", kind: "links" }, keys, "3.0")[0]).toBe('select src: $path, dst: dst_path from edges where provenance == "link" && dst_kind == "document" && ($path == "/a.md")');
+    expect(edgeQueries({ name: "doc.out", kind: "links" }, keys, "3.0")[0]).toBe('select src: path, dst: dst_path from edges where provenance == "link" && dst_kind == "document" && (path == "/a.md")');
   });
 
   it("spells the path literals in the server's form: bare for 1.x (and unknown), rooted for 2.0", () => {

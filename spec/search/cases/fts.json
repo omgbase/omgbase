@@ -41,25 +41,25 @@
           {
             "hits": [
               {
-                "$id": "b_3",
+                "id": "b_3",
                 "doc_id": "d_0",
-                "$path": "a.md",
+                "path": "a.md",
                 "type": "paragraph",
                 "text": "apple apple apple harvest festival season",
                 "score": 0.35290962269233633
               },
               {
-                "$id": "b_2",
+                "id": "b_2",
                 "doc_id": "d_0",
-                "$path": "a.md",
+                "path": "a.md",
                 "type": "paragraph",
                 "text": "apple apple orchard tour",
                 "score": 0.34199489209360434
               },
               {
-                "$id": "b_1",
+                "id": "b_1",
                 "doc_id": "d_0",
-                "$path": "a.md",
+                "path": "a.md",
                 "type": "paragraph",
                 "text": "apple pie recipe",
                 "score": 0.2764458711089968
@@ -127,25 +127,25 @@
           {
             "hits": [
               {
-                "$id": "b_0",
+                "id": "b_0",
                 "doc_id": "d_0",
-                "$path": "a.md",
+                "path": "a.md",
                 "type": "paragraph",
                 "text": "apple",
                 "score": 0.3485277458107696
               },
               {
-                "$id": "b_1",
+                "id": "b_1",
                 "doc_id": "d_0",
-                "$path": "a.md",
+                "path": "a.md",
                 "type": "paragraph",
                 "text": "application form",
                 "score": 0.2952334545824238
               },
               {
-                "$id": "b_2",
+                "id": "b_2",
                 "doc_id": "d_0",
-                "$path": "a.md",
+                "path": "a.md",
                 "type": "paragraph",
                 "text": "apply now please",
                 "score": 0.2560761753430707
@@ -156,9 +156,9 @@
           {
             "hits": [
               {
-                "$id": "b_0",
+                "id": "b_0",
                 "doc_id": "d_0",
-                "$path": "a.md",
+                "path": "a.md",
                 "type": "paragraph",
                 "text": "apple",
                 "score": 2.0335448174671025
@@ -226,9 +226,9 @@
           {
             "hits": [
               {
-                "$id": "b_0",
+                "id": "b_0",
                 "doc_id": "d_0",
-                "$path": "a.md",
+                "path": "a.md",
                 "type": "paragraph",
                 "text": "red apple",
                 "score": 1.78821593755296
@@ -239,25 +239,25 @@
           {
             "hits": [
               {
-                "$id": "b_0",
+                "id": "b_0",
                 "doc_id": "d_0",
-                "$path": "a.md",
+                "path": "a.md",
                 "type": "paragraph",
                 "text": "red apple",
                 "score": 0.6129620201973323
               },
               {
-                "$id": "b_1",
+                "id": "b_1",
                 "doc_id": "d_0",
-                "$path": "a.md",
+                "path": "a.md",
                 "type": "paragraph",
                 "text": "apple red today",
                 "score": 0.537832434064196
               },
               {
-                "$id": "b_2",
+                "id": "b_2",
                 "doc_id": "d_0",
-                "$path": "a.md",
+                "path": "a.md",
                 "type": "paragraph",
                 "text": "red delicious apple pie",
                 "score": 0.47910896206065307
@@ -336,17 +336,17 @@
           {
             "hits": [
               {
-                "$id": "b_1",
+                "id": "b_1",
                 "doc_id": "d_0",
-                "$path": "a.md",
+                "path": "a.md",
                 "type": "paragraph",
                 "text": "gamma gamma function values table",
                 "score": 0.755112795786664
               },
               {
-                "$id": "b_0",
+                "id": "b_0",
                 "doc_id": "d_0",
-                "$path": "a.md",
+                "path": "a.md",
                 "type": "paragraph",
                 "text": "gamma ray burst",
                 "score": 0.6547497026757783
@@ -373,9 +373,9 @@
           {
             "hits": [
               {
-                "$id": "b_0",
+                "id": "b_0",
                 "doc_id": "d_0",
-                "$path": "a.md",
+                "path": "a.md",
                 "type": "paragraph",
                 "text": "gamma ray burst",
                 "score": 1.2021464310556804
@@ -459,9 +459,9 @@
           {
             "hits": [
               {
-                "$id": "b_0",
+                "id": "b_0",
                 "doc_id": "d_0",
-                "$path": "a.md",
+                "path": "a.md",
                 "type": "paragraph",
                 "text": "The cats sleep all day on the warm windowsill while the house stays quiet.",
                 "score": 0.7108667750205416
@@ -491,9 +491,9 @@
           {
             "hits": [
               {
-                "$id": "b_0",
+                "id": "b_0",
                 "doc_id": "d_0",
-                "$path": "a.md",
+                "path": "a.md",
                 "type": "paragraph",
                 "text": "The dogs sleep all day on the warm windowsill while the house stays quiet.",
                 "score": 0.7108667750205416
@@ -563,17 +563,17 @@
           {
             "hits": [
               {
-                "$id": "b_1",
+                "id": "b_1",
                 "doc_id": "d_0",
-                "$path": "a.md",
+                "path": "a.md",
                 "type": "paragraph",
                 "text": "kiwi kiwi fruit",
                 "score": 0.3653160177298052
               },
               {
-                "$id": "b_0",
+                "id": "b_0",
                 "doc_id": "d_0",
-                "$path": "a.md",
+                "path": "a.md",
                 "type": "paragraph",
                 "text": "kiwi",
                 "score": 0.35848342388199084
@@ -584,25 +584,25 @@
           {
             "hits": [
               {
-                "$id": "b_1",
+                "id": "b_1",
                 "doc_id": "d_0",
-                "$path": "a.md",
+                "path": "a.md",
                 "type": "paragraph",
                 "text": "kiwi kiwi fruit",
                 "score": 0.3653160177298052
               },
               {
-                "$id": "b_0",
+                "id": "b_0",
                 "doc_id": "d_0",
-                "$path": "a.md",
+                "path": "a.md",
                 "type": "paragraph",
                 "text": "kiwi",
                 "score": 0.35848342388199084
               },
               {
-                "$id": "b_2",
+                "id": "b_2",
                 "doc_id": "d_0",
-                "$path": "a.md",
+                "path": "a.md",
                 "type": "paragraph",
                 "text": "kiwi kiwi kiwi fruit salad bowl",
                 "score": 0.3489122645065008
@@ -739,9 +739,9 @@
           {
             "hits": [
               {
-                "$id": "b_0",
+                "id": "b_0",
                 "doc_id": "d_0",
-                "$path": "a.md",
+                "path": "a.md",
                 "type": "paragraph",
                 "text": "running shoes",
                 "score": 1.5755085004414189
@@ -809,9 +809,9 @@
           {
             "hits": [
               {
-                "$id": "b_0",
+                "id": "b_0",
                 "doc_id": "d_0",
-                "$path": "a.md",
+                "path": "a.md",
                 "type": "paragraph",
                 "text": "Café menu",
                 "score": 1.342748352816579
@@ -822,9 +822,9 @@
           {
             "hits": [
               {
-                "$id": "b_0",
+                "id": "b_0",
                 "doc_id": "d_0",
-                "$path": "a.md",
+                "path": "a.md",
                 "type": "paragraph",
                 "text": "Café menu",
                 "score": 1.342748352816579
@@ -887,9 +887,9 @@
           {
             "hits": [
               {
-                "$id": "b_0",
+                "id": "b_0",
                 "doc_id": "d_0",
-                "$path": "a.md",
+                "path": "a.md",
                 "type": "paragraph",
                 "text": "guides onboarding checklist",
                 "score": 1.5690377195260405
@@ -952,17 +952,17 @@
           {
             "hits": [
               {
-                "$id": "b_0",
+                "id": "b_0",
                 "doc_id": "d_0",
-                "$path": "a.md",
+                "path": "a.md",
                 "type": "heading",
                 "text": "Kelp forests",
                 "score": 1.1586516734978363
               },
               {
-                "$id": "b_2",
+                "id": "b_2",
                 "doc_id": "d_0",
-                "$path": "a.md",
+                "path": "a.md",
                 "type": "list_item",
                 "text": "kelp grows fast",
                 "score": 1.0148190519601736
@@ -1057,17 +1057,17 @@
           {
             "hits": [
               {
-                "$id": "b_3",
+                "id": "b_3",
                 "doc_id": "d_1",
-                "$path": "b.md",
+                "path": "b.md",
                 "type": "paragraph",
                 "text": "zephyr zephyr breeze report",
                 "score": 0.7880574676250017
               },
               {
-                "$id": "b_0",
+                "id": "b_0",
                 "doc_id": "d_0",
-                "$path": "a.md",
+                "path": "a.md",
                 "type": "paragraph",
                 "text": "zephyr winds",
                 "score": 0.7220526543467656
@@ -1085,9 +1085,9 @@
           {
             "hits": [
               {
-                "$id": "b_3",
+                "id": "b_3",
                 "doc_id": "d_1",
-                "$path": "b.md",
+                "path": "b.md",
                 "type": "paragraph",
                 "text": "zephyr zephyr breeze report",
                 "score": 0.7023852326782373
@@ -1193,9 +1193,9 @@
           {
             "hits": [
               {
-                "$id": "b_0",
+                "id": "b_0",
                 "doc_id": "d_0",
-                "$path": "a.md",
+                "path": "a.md",
                 "type": "paragraph",
                 "text": "quartz crystal",
                 "score": 1.027432051178184
@@ -1258,9 +1258,9 @@
           {
             "hits": [
               {
-                "$id": "b_8",
+                "id": "b_8",
                 "doc_id": "d_0",
-                "$path": "a.md",
+                "path": "a.md",
                 "type": "list_item",
                 "text": "zooxanthellae photosynthesize inside coral tissue",
                 "score": 1.5099764582874884
@@ -1336,9 +1336,9 @@
           {
             "hits": [
               {
-                "$id": "b_8",
+                "id": "b_8",
                 "doc_id": "d_0",
-                "$path": "a.md",
+                "path": "a.md",
                 "type": "list_item",
                 "text": "zooxanthellae photosynthesize inside coral tissue",
                 "score": 1.5099764582874884
@@ -1352,9 +1352,9 @@
           {
             "hits": [
               {
-                "$id": "b_8",
+                "id": "b_8",
                 "doc_id": "d_0",
-                "$path": "a.md",
+                "path": "a.md",
                 "type": "list_item",
                 "text": "zooxanthellae photosynthesize inside coral tissue",
                 "score": 1.5099764582874884
@@ -1365,17 +1365,17 @@
           {
             "hits": [
               {
-                "$id": "b_3",
+                "id": "b_3",
                 "doc_id": "d_0",
-                "$path": "a.md",
+                "path": "a.md",
                 "type": "paragraph",
                 "text": "corals build reefs",
                 "score": 1.1868936332932258
               },
               {
-                "$id": "b_8",
+                "id": "b_8",
                 "doc_id": "d_0",
-                "$path": "a.md",
+                "path": "a.md",
                 "type": "list_item",
                 "text": "zooxanthellae photosynthesize inside coral tissue",
                 "score": 0.9563459491283546

@@ -28,9 +28,14 @@ function showOne(cli: Cli, ref: string, include: string[]): ShowOne {
     const res = docsRead(ws.store, resolved.docId);
     if (!res) throw new EngineErrorLike("doc_missing", `no document ${ref}`);
     const links = docLinks(ws.store, resolved.docId, { direction: "both" });
-    const properties = docPropertiesMerged(ws.store.db, resolved.docId);
+    // The authored keys, merged (frontmatter + inline — the `data` view); the
+    // computed rows are rendered under their surface names (`title`/`tags`,
+    // spec/surface §1.2 — the store's `$title`/`$tags` keys never reach the
+    // terminal) from the re-keyed `properties.computed` the read carries.
+    const properties = Object.fromEntries(Object.entries(docPropertiesMerged(ws.store.db, resolved.docId)).filter(([k]) => !k.startsWith("$")));
+    const computed = res.properties.computed ?? {};
     const payload = { kind: "document", ...res };
-    return { payload, render: () => renderDocCard(cli, res.$path, properties, links) };
+    return { payload, render: () => renderDocCard(cli, res.path, properties, computed, links) };
   }
 
   const node = nodesGet(ws.store, resolved.docId, resolved.blockId!, { resolution: "full" });
@@ -73,7 +78,7 @@ function runShow(cli: Cli, args: string[]): number {
   return EXIT_OK;
 }
 
-function renderDocCard(cli: Cli, path: string, fm: Record<string, unknown>, links: ReturnType<typeof docLinks>): void {
+function renderDocCard(cli: Cli, path: string, fm: Record<string, unknown>, computed: Record<string, unknown>, links: ReturnType<typeof docLinks>): void {
   const { render, style, io } = cli;
   io.out(render.wordmark(path));
   io.out(render.rule(40));
@@ -81,6 +86,13 @@ function renderDocCard(cli: Cli, path: string, fm: Record<string, unknown>, link
   if (keys.length > 0) {
     io.out(`  ${style.dim("properties")}`);
     for (const k of keys) io.out(`    ${style.accent(k)} ${style.dim("=")} ${fmt(fm[k])}`);
+  }
+  // The computed rows under their surface names (`title`, `tags` — spec/surface
+  // §1.2), their own section so a computed title never masquerades as authored.
+  const computedKeys = Object.keys(computed);
+  if (computedKeys.length > 0) {
+    io.out(`  ${style.dim("computed")}`);
+    for (const k of computedKeys) io.out(`    ${style.accent(k)} ${style.dim("=")} ${fmt(computed[k])}`);
   }
   if (links.out.length > 0) {
     io.out(`  ${style.dim("out edges")}`);
@@ -94,7 +106,7 @@ function renderDocCard(cli: Cli, path: string, fm: Record<string, unknown>, link
 
 function renderBlockCard(cli: Cli, node: import("@omgbase/core").GetNode, history?: import("@omgbase/core").NodeChange[]): void {
   const { render, style, io } = cli;
-  io.out(`  ${render.typeGlyph(node.type)} ${style.bold(node.type)}  ${style.id(node.$id)}`);
+  io.out(`  ${render.typeGlyph(node.type)} ${style.bold(node.type)}  ${style.id(node.id)}`);
   io.out(render.rule(40));
   // The placement is flattened onto the row (3.0: `parent_id`/`ordinal`/`depth`); the line reads the same.
   if (node.ordinal !== undefined) io.out(`  ${style.dim("placement")}  parent=${style.id(node.parent_id ?? "—")} ordinal=${node.ordinal} depth=${node.depth}`);

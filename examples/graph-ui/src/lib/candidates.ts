@@ -23,25 +23,27 @@
 //          `refs(<field>)` receiver names `<field>` `forward` (the frontier's
 //          field); then every frontmatter-looking property its correlated
 //          `where` reads — a bare ident on the candidate row
-//          (`after.contains("/" + ^$path)`, `("/" + ^$path) in list(after)`) →
-//          `after`, direction `backward` (the edge lives on the successor and
-//          points at the frontier); an outer ref (`("/" + $path) in ^before`) →
-//          `before`, direction `forward`; a `refs(<field>)` receiver of a nested
-//          directive (`refs(after) exists { where $path == ^^$path }`) → the
+//          (`after.contains(^path)`, `^path in list(after)`, the 1.x `("/" +
+//          ^$path) in list(after)`) → `after`, direction `backward` (the edge
+//          lives on the successor and points at the frontier); an outer ref
+//          (`path in ^before`) → `before`, direction `forward`; a `refs(<field>)`
+//          receiver of a nested directive (`refs(after) exists { where path ==
+//          ^^path }`) → the
 //          same two cases (`refs(after)` backward, `refs(^before)` forward); a
 //          literal compared with `src_field` / `predicate` under `doc.in_edges`
 //          / `doc.out_edges` / `edges` → that relation (`in_edges` forward,
 //          `out_edges` backward; the field is `field` since surface 3.0 and
 //          `src_field` before — both are read).
-//   2. `order by` keys — a non-intrinsic key is a SEQUENCE candidate: edges are
-//        consecutive pairs in result order (no fetch), direction forward.
+//   2. `order by` keys — a key that is not an engine attribute (`$updated_at`,
+//        or 3.0's bare `updated_at`/`path`/…) is a SEQUENCE candidate: edges
+//        are consecutive pairs in result order (no fetch), direction forward.
 //   3. inferred from rows — a projected field whose value is a doc path or a
 //        list of doc paths (`*.md`, `/`-rooted) is a frontmatter relation;
 //        a name in the "looks-backward" vocabulary (`after`, `prev`, `parent`,
 //        `depends_on`, …) defaults to `backward`.
 //   4. builtin — a query WITHOUT a `follow` always gets the authored link graph
 //        to choose from: `doc.out` (links) and `doc.in` (backlinks), so a query
-//        that projects no relationship (the starter: `select $path, $title …`)
+//        that projects no relationship (the starter: `select path, title …`)
 //        still has edges to draw and relationships in the picker.
 //   5. inverse PAIRS — two frontmatter candidates that are one sequence read
 //        from both ends (`before`/`after`, `prev`/`next`, `previous`/`next`,
@@ -69,7 +71,7 @@
 // looks only at name, kind and the rows).
 
 import type { Expr, Follow, OpNode, Query, Span, Where } from "@omgbase/oqx";
-import { HIT_ENVELOPE_KEYS, hitPath, rowRef } from "./paths.ts";
+import { DOC_ATTRIBUTES, HIT_ENVELOPE_KEYS, hitPath, rowRef } from "./paths.ts";
 
 export type Direction = "forward" | "backward";
 export type CandidateSource = "follow" | "order by" | "inferred" | "builtin" | "pair";
@@ -126,9 +128,18 @@ export function pairName(pair: Pick<InversePair, "forward" | "backward">): strin
 }
 const PAIR_NAME_ORDER: readonly [string, string][] = [["before", "after"], ["prev", "next"], ["previous", "next"], ["predecessor", "successor"]];
 const TIMELINE_WORDS = /^(before|after|next|prev(ious)?|follows?|precedes?|succeeds?|then|parent|child(ren)?)$/i;
-// The hit envelope under both spellings (`$id`/`$path` since surface 3.0,
-// `id`/`path` before — lib/paths.ts `HIT_ENVELOPE_KEYS`) plus the walk intrinsics.
+// The hit envelope (`id`/`path` — lib/paths.ts `HIT_ENVELOPE_KEYS`) plus the
+// walk intrinsics.
 const ROW_META = new Set([...HIT_ENVELOPE_KEYS, "$depth", "$stop", "$leaf", "$frontier", "$ordinal", "$doc_id"]);
+
+/** Is `name` an engine attribute rather than an authored field — a `$`-name
+ * (the pre-3.0 spelling, or OQX's own) or one of 3.0's bare docs attributes
+ * (spec/surface §1.2: `path`, `title`, `updated_at`, …)? A bare `path` was a
+ * loud error before 3.0, so treating it as the engine's on every version is
+ * never wrong about an authored field. */
+export function isAttributeName(name: string): boolean {
+  return name.startsWith("$") || DOC_ATTRIBUTES.has(name);
+}
 
 /** Relations of a row that yield rows by themselves (spec/surface §1.2) — a
  * `follow` over one of these is not a frontmatter field, so no `refs()` hint. */
@@ -150,7 +161,7 @@ export function inferCandidates(query: Query | null, rows: readonly Row[] = []):
   if (query?.orderBy) {
     for (const spec of query.orderBy) {
       const name = identName(spec.expr);
-      if (name && !name.startsWith("$")) {
+      if (name && !isAttributeName(name)) {
         mentions.push({ name, kind: "sequence", source: "order by", span: spec.span, direction: spec.desc ? "backward" : "forward" });
       }
     }
@@ -175,7 +186,7 @@ export function inferCandidates(query: Query | null, rows: readonly Row[] = []):
  * sequence vocabulary, then by reciprocal rows for the fields left over. Each
  * field is in at most one pair; a field never pairs with itself. */
 export function detectPairs(candidates: readonly Pick<Candidate, "name" | "kind" | "defaults">[], rows: readonly Row[] = []): InversePair[] {
-  const fields = candidates.filter((c) => c.kind === "frontmatter" && !c.name.includes(".") && !c.name.startsWith("$")).map((c) => c.name);
+  const fields = candidates.filter((c) => c.kind === "frontmatter" && !c.name.includes(".") && !isAttributeName(c.name)).map((c) => c.name);
   const present = new Set(fields);
   const taken = new Set<string>();
   const out: InversePair[] = [];
@@ -229,7 +240,7 @@ export function reciprocal(rows: readonly Row[], a: string, b: string): boolean 
 }
 
 /** The rooted paths a field value references: path strings, and rows that
- * surfaced as values (`{ $id, $path }` since 3.0, `{ id, path }` before). */
+ * surfaced as values (`{ id, path }`). */
 function refsOf(v: unknown): string[] {
   const one = (x: unknown): string | null => (looksLikeDocPath(x) ? rootedPath(x as string) : rowRef(x)?.path ?? null);
   if (Array.isArray(v)) return v.map(one).filter((p): p is string => p !== null);
@@ -351,7 +362,7 @@ function destinationBlockMentions(op: OpNode): Mention[] {
     }
   });
   forEachOp(where, (inner) => {
-    // `refs(after) exists { where $path == ^^$path }` — the candidate row's field
+    // `refs(after) exists { where path == ^^path }` — the candidate row's field
     // names the frontier (backward); `refs(^before) exists { … }` — the frontier's
     // field names the candidate (forward).
     const ref = refsField(inner.receiver);
@@ -384,12 +395,12 @@ export function relationKind(path: string): CandidateKind {
 
 /** `refs(<field>)` / `refs(^<field>)`: the field whose document references are
  * resolved, and whether it is read one scope out. Null for anything else
- * (another function, a method call, a `$`-intrinsic argument, a literal). */
+ * (another function, a method call, an attribute argument, a literal). */
 export function refsField(expr: Expr): { name: string; outer: boolean } | null {
   if (expr.kind !== "call" || expr.recv !== null || expr.name !== "refs" || expr.args.length !== 1) return null;
   const arg = expr.args[0]!;
-  if (arg.kind === "ident" && !arg.name.startsWith("$")) return { name: arg.name, outer: false };
-  if (arg.kind === "outer" && !arg.name.startsWith("$")) return { name: arg.name, outer: true };
+  if (arg.kind === "ident" && !isAttributeName(arg.name)) return { name: arg.name, outer: false };
+  if (arg.kind === "outer" && !isAttributeName(arg.name)) return { name: arg.name, outer: true };
   return null;
 }
 
@@ -439,16 +450,16 @@ function mentionsOuter(expr: Expr): boolean {
 function rowProps(expr: Expr): string[] {
   const names: string[] = [];
   walk(expr, (e) => {
-    if (e.kind === "ident" && !e.name.startsWith("$")) names.push(e.name);
+    if (e.kind === "ident" && !isAttributeName(e.name)) names.push(e.name);
   });
   return [...new Set(names)];
 }
 
-/** `^name` reads that are properties (not `^$path`-style intrinsics). */
+/** `^name` reads that are properties (not `^path`/`^$path`-style attributes). */
 function outerProps(expr: Expr): string[] {
   const names: string[] = [];
   walk(expr, (e) => {
-    if (e.kind === "outer" && !e.name.startsWith("$")) names.push(e.name);
+    if (e.kind === "outer" && !isAttributeName(e.name)) names.push(e.name);
   });
   return [...new Set(names)];
 }

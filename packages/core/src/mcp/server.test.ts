@@ -58,7 +58,7 @@ describe("MCP server skeleton", () => {
 
   it("query_syntax returns the reference doc", async () => {
     const { payload: q } = (await call("query_syntax", {})) as { payload: { syntax: string } };
-    expect(q.syntax).toContain("$path.startsWith");
+    expect(q.syntax).toContain("path.startsWith");
     expect(q.syntax).toContain("select");
   });
 
@@ -66,32 +66,32 @@ describe("MCP server skeleton", () => {
     ingestFile(store, repoId, "projects/a.md", "# a\n");
     ingestFile(store, repoId, "projects/deep/b.md", "# b\n\ntext\n");
     const { payload } = (await call("docs_tree", {})) as {
-      payload: { prefix: string; depth: number; total: { docs: number; blocks: number }; entries: { $path: string; kind: string; docs: number }[]; truncated: boolean; cursor: string | null };
+      payload: { prefix: string; depth: number; total: { docs: number; blocks: number }; entries: { path: string; kind: string; docs: number }[]; truncated: boolean; cursor: string | null };
     };
     expect(payload.prefix).toBe("/");
     expect(payload.depth).toBe(1);
     expect(payload.total.docs).toBe(3);
-    expect(payload.entries.map((e) => [e.$path, e.kind, e.docs])).toEqual([["/notes.md", "doc", 1], ["/projects/", "dir", 2]]);
+    expect(payload.entries.map((e) => [e.path, e.kind, e.docs])).toEqual([["/notes.md", "doc", 1], ["/projects/", "dir", 2]]);
     expect(payload.truncated).toBe(false);
     expect(payload.cursor).toBeNull();
 
-    const { payload: scoped } = (await call("docs_tree", { path: "projects", depth: 1, limit: 1 })) as { payload: { entries: { $path: string }[]; truncated: boolean; cursor: string | null } };
-    expect(scoped.entries.map((e) => e.$path)).toEqual(["/projects/a.md"]);
+    const { payload: scoped } = (await call("docs_tree", { path: "projects", depth: 1, limit: 1 })) as { payload: { entries: { path: string }[]; truncated: boolean; cursor: string | null } };
+    expect(scoped.entries.map((e) => e.path)).toEqual(["/projects/a.md"]);
     expect(scoped.truncated).toBe(true);
-    const { payload: rest } = (await call("docs_tree", { path: "projects", depth: 1, limit: 1, cursor: scoped.cursor })) as { payload: { entries: { $path: string; kind: string }[]; truncated: boolean } };
-    expect(rest.entries.map((e) => [e.$path, e.kind])).toEqual([["/projects/deep/", "dir"]]);
+    const { payload: rest } = (await call("docs_tree", { path: "projects", depth: 1, limit: 1, cursor: scoped.cursor })) as { payload: { entries: { path: string; kind: string }[]; truncated: boolean } };
+    expect(rest.entries.map((e) => [e.path, e.kind])).toEqual([["/projects/deep/", "dir"]]);
     expect(rest.truncated).toBe(false);
   });
 
   it("docs_list is a page under the uniform list contract (items + truncated + cursor)", async () => {
     ingestFile(store, repoId, "b.md", "# b\n");
     ingestFile(store, repoId, "c.md", "# c\n");
-    const { payload } = (await call("docs_list", { limit: 2 })) as { payload: { items: { $id: string; $path: string; $updated_at: string | null; blocks: number }[]; truncated: boolean; cursor: string | null } };
-    expect(payload.items.map((r) => r.$path)).toEqual(["/b.md", "/c.md"]);
+    const { payload } = (await call("docs_list", { limit: 2 })) as { payload: { items: { id: string; path: string; updated_at: string | null; blocks: number }[]; truncated: boolean; cursor: string | null } };
+    expect(payload.items.map((r) => r.path)).toEqual(["/b.md", "/c.md"]);
     expect(payload.truncated).toBe(true);
     expect(payload.cursor).not.toBeNull();
-    const { payload: next } = (await call("docs_list", { limit: 2, cursor: payload.cursor })) as { payload: { items: { $path: string }[]; truncated: boolean; cursor: string | null } };
-    expect(next.items.map((r) => r.$path)).toEqual(["/notes.md"]);
+    const { payload: next } = (await call("docs_list", { limit: 2, cursor: payload.cursor })) as { payload: { items: { path: string }[]; truncated: boolean; cursor: string | null } };
+    expect(next.items.map((r) => r.path)).toEqual(["/notes.md"]);
     expect(next.truncated).toBe(false);
     expect(next.cursor).toBeNull();
 
@@ -109,10 +109,10 @@ describe("MCP server skeleton", () => {
 
   it("docs_read returns the whole file bytes plus properties grouped by source", async () => {
     const { payload } = (await call("docs_read", { path: "notes.md" })) as {
-      payload: { $id: string; $path: string; $raw: string; properties: Record<string, Record<string, unknown>>; rev: string; ids?: unknown };
+      payload: { id: string; path: string; raw: string; properties: Record<string, Record<string, unknown>>; rev: string; ids?: unknown };
     };
-    expect(payload.$path).toBe("/notes.md");
-    expect(payload.$raw).toBe("---\nlayer: working\n---\n\n# Risks\n\nStable identity is hard.\n\n- [ ] decide write-back\n");
+    expect(payload.path).toBe("/notes.md");
+    expect(payload.raw).toBe("---\nlayer: working\n---\n\n# Risks\n\nStable identity is hard.\n\n- [ ] decide write-back\n");
     expect(payload.properties.frontmatter).toEqual({ layer: "working" });
     expect(payload.ids).toBeUndefined();
   });
@@ -134,21 +134,21 @@ describe("MCP server skeleton", () => {
   it("docs_get_many hydrates several docs and lands misses in errors", async () => {
     ingestFile(store, repoId, "guide.md", "# Guide\n\nread me first\n");
     const { payload, isError } = (await call("docs_get_many", { docs: ["notes.md", "guide.md", "nope.md"] })) as {
-      payload: { items: { $path: string; $raw: string }[]; errors: { ref: string; error: string }[]; truncated: boolean };
+      payload: { items: { path: string; raw: string }[]; errors: { ref: string; error: string }[]; truncated: boolean };
       isError: boolean;
     };
     expect(isError).toBe(false);
-    expect(payload.items.map((i) => i.$path)).toEqual(["/notes.md", "/guide.md"]);
-    expect(payload.items[1]!.$raw).toBe("# Guide\n\nread me first\n");
+    expect(payload.items.map((i) => i.path)).toEqual(["/notes.md", "/guide.md"]);
+    expect(payload.items[1]!.raw).toBe("# Guide\n\nread me first\n");
     expect(payload.errors).toEqual([{ ref: "nope.md", error: "doc_not_found" }]);
     expect(payload.truncated).toBe(false);
   });
 
   it("docs_get_many collapses duplicate refs and supports include_ids", async () => {
     const { payload } = (await call("docs_get_many", { docs: ["notes.md", "notes.md"], include_ids: true })) as {
-      payload: { items: { $path: string; ids: string[] }[] };
+      payload: { items: { path: string; ids: string[] }[] };
     };
-    expect(payload.items.map((i) => i.$path)).toEqual(["/notes.md"]);
+    expect(payload.items.map((i) => i.path)).toEqual(["/notes.md"]);
     expect(payload.items[0]!.ids.length).toBeGreaterThan(0);
   });
 
@@ -157,9 +157,9 @@ describe("MCP server skeleton", () => {
     // Edit the doc so the current revision differs from rev1.
     ingestFile(store, repoId, "notes.md", "---\nlayer: working\n---\n\n# Risks\n\nStable identity is hard.\n\n- [ ] decide write-back\n\nA freshly added tail paragraph.\n");
     const { payload } = (await call("docs_read_at", { path: "notes.md", rev: rev1 })) as {
-      payload: { $raw: string; rev: string; renderedHashMatch: boolean };
+      payload: { raw: string; rev: string; renderedHashMatch: boolean };
     };
-    expect(payload.$raw).toBe("---\nlayer: working\n---\n\n# Risks\n\nStable identity is hard.\n\n- [ ] decide write-back\n");
+    expect(payload.raw).toBe("---\nlayer: working\n---\n\n# Risks\n\nStable identity is hard.\n\n- [ ] decide write-back\n");
     expect(payload.rev).toBe(rev1);
     expect(payload.renderedHashMatch).toBe(true);
   });
@@ -174,15 +174,15 @@ describe("MCP server skeleton", () => {
   // (findDocByRef), and never silent-empty on an unresolvable ref.
   it("docs_read / docs_outline take a d_ id as `id`", async () => {
     const docId = (store.db.prepare("SELECT doc_id FROM docs WHERE path='notes.md'").get() as { doc_id: string }).doc_id;
-    const { payload: read } = (await call("docs_read", { id: docId })) as { payload: { $path: string } };
-    expect(read.$path).toBe("/notes.md");
+    const { payload: read } = (await call("docs_read", { id: docId })) as { payload: { path: string } };
+    expect(read.path).toBe("/notes.md");
     const { payload: outline } = (await call("docs_outline", { id: docId })) as { payload: { text: string } };
     expect(outline.text).toContain("§");
   });
 
   it("docs_read / docs_outline take a path as `path`", async () => {
-    const { payload: read } = (await call("docs_read", { path: "notes.md" })) as { payload: { $path: string } };
-    expect(read.$path).toBe("/notes.md");
+    const { payload: read } = (await call("docs_read", { path: "notes.md" })) as { payload: { path: string } };
+    expect(read.path).toBe("/notes.md");
     const { payload: outline } = (await call("docs_outline", { path: "notes.md" })) as { payload: { text: string } };
     expect(outline.text).toContain("§");
   });
@@ -223,10 +223,10 @@ describe("MCP server skeleton", () => {
     ingestFile(store, repoId, "journal/y.md", "# Y\n\nonly version of y\n");
     ingestFile(store, repoId, "other/z.md", "# Z\n");
     const { payload } = (await call("docs_history", { path_glob: "journal/*" })) as {
-      payload: { docs: { $path: string; versions: { seq: number; isCurrent: boolean }[] }[]; truncated: boolean };
+      payload: { docs: { path: string; versions: { seq: number; isCurrent: boolean }[] }[]; truncated: boolean };
     };
-    expect(payload.docs.map((d) => d.$path)).toEqual(["/journal/x.md", "/journal/y.md"]);
-    const x = payload.docs.find((d) => d.$path === "/journal/x.md")!;
+    expect(payload.docs.map((d) => d.path)).toEqual(["/journal/x.md", "/journal/y.md"]);
+    const x = payload.docs.find((d) => d.path === "/journal/x.md")!;
     expect(x.versions.length).toBe(2);
     expect(x.versions[0]!.seq).toBeLessThan(x.versions[1]!.seq);
     expect(x.versions.filter((v) => v.isCurrent)).toHaveLength(1);
@@ -239,17 +239,17 @@ describe("MCP server skeleton", () => {
     expect(payload.error).toBe("target_missing");
   });
 
-  it("query select projects $raw (whole document bytes) on docs", async () => {
-    const { payload } = (await call("query", { query: 'select $raw from docs where layer == "working"' })) as {
-      payload: { hits: { $path: string; $raw: string }[] };
+  it("query select projects raw (whole document bytes) on docs", async () => {
+    const { payload } = (await call("query", { query: 'select raw from docs where layer == "working"' })) as {
+      payload: { hits: { path: string; raw: string }[] };
     };
-    expect(payload.hits[0]!.$raw).toContain("# Risks");
-    expect(payload.hits[0]!.$raw).toContain("---\nlayer: working\n---");
+    expect(payload.hits[0]!.raw).toContain("# Risks");
+    expect(payload.hits[0]!.raw).toContain("---\nlayer: working\n---");
   });
 
   it("query returns projected hits with truncated + cursor", async () => {
-    const { payload } = (await call("query", { query: 'from docs where layer == "working"' })) as { payload: { hits: { $path: string }[]; truncated: boolean } };
-    expect(payload.hits.map((h) => h.$path)).toEqual(["/notes.md"]);
+    const { payload } = (await call("query", { query: 'from docs where layer == "working"' })) as { payload: { hits: { path: string }[]; truncated: boolean } };
+    expect(payload.hits.map((h) => h.path)).toEqual(["/notes.md"]);
     expect(payload.truncated).toBe(false);
   });
 
@@ -281,16 +281,16 @@ describe("MCP server skeleton", () => {
   it("blocks_get hydrates a block by id at a resolution", async () => {
     const { payload: read } = (await call("docs_read", { path: "notes.md", include_ids: true })) as { payload: { ids: string[] } };
     const headingId = read.ids[0]!;
-    const { payload } = (await call("blocks_get", { id: headingId, resolution: "raw" })) as { payload: { $raw: string } };
-    expect(payload.$raw).toBe("# Risks");
+    const { payload } = (await call("blocks_get", { id: headingId, resolution: "raw" })) as { payload: { raw: string } };
+    expect(payload.raw).toBe("# Risks");
   });
 
   it("blocks_get infers the document from the block id", async () => {
     const { payload: read } = (await call("docs_read", { path: "notes.md", include_ids: true })) as { payload: { ids: string[] } };
     const headingId = read.ids[0]!;
-    const { payload, isError } = (await call("blocks_get", { id: headingId, resolution: "raw" })) as { payload: { $raw: string }; isError: boolean };
+    const { payload, isError } = (await call("blocks_get", { id: headingId, resolution: "raw" })) as { payload: { raw: string }; isError: boolean };
     expect(isError).toBe(false);
-    expect(payload.$raw).toBe("# Risks");
+    expect(payload.raw).toBe("# Risks");
   });
 
   it("text_search returns bm25 hits", async () => {
@@ -326,11 +326,11 @@ describe("blocks_get_many spans documents (ids are globally unique)", () => {
     const ids = [b[1]!, notes[0]!, "b_bogus", a[1]!, notes[1]!, a[0]!, b[0]!];
 
     const { payload, isError } = (await call("blocks_get_many", { ids })) as {
-      payload: { nodes: { $id: string }[]; truncated: boolean; unresolved: string[] };
+      payload: { nodes: { id: string }[]; truncated: boolean; unresolved: string[] };
       isError: boolean;
     };
     expect(isError).toBe(false);
-    expect(payload.nodes.map((n) => n.$id)).toEqual([b[1], notes[0], a[1], notes[1], a[0], b[0]]);
+    expect(payload.nodes.map((n) => n.id)).toEqual([b[1], notes[0], a[1], notes[1], a[0], b[0]]);
     expect(payload.unresolved).toEqual(["b_bogus"]);
     expect(payload.truncated).toBe(false);
   });
@@ -370,11 +370,11 @@ describe("doc-level MCP tools (docs_create/move/delete/set_meta)", () => {
       path: "sub/fresh.md",
       markdown: "# Fresh\n\nbody\n",
       frontmatter: { title: "Fresh", status: "draft" },
-    })) as { payload: { $id: string; $path: string }; isError: boolean };
+    })) as { payload: { id: string; path: string }; isError: boolean };
     expect(isError).toBe(false);
-    expect(payload.$path).toBe("/sub/fresh.md");
-    const { payload: q } = (await call("query", { query: 'from docs where status == "draft"' })) as { payload: { hits: { $path: string }[] } };
-    expect(q.hits.map((h) => h.$path)).toContain("/sub/fresh.md");
+    expect(payload.path).toBe("/sub/fresh.md");
+    const { payload: q } = (await call("query", { query: 'from docs where status == "draft"' })) as { payload: { hits: { path: string }[] } };
+    expect(q.hits.map((h) => h.path)).toContain("/sub/fresh.md");
   });
 
   it("docs_create fails path_taken on an existing path", async () => {
@@ -386,16 +386,16 @@ describe("doc-level MCP tools (docs_create/move/delete/set_meta)", () => {
   it("docs_set_meta patches frontmatter, preserving other keys", async () => {
     const { isError } = (await call("docs_set_meta", { path: "notes.md", set: { status: "active", priority: 2 } })) as { isError: boolean };
     expect(isError).toBe(false);
-    const { payload } = (await call("query", { query: 'from docs where layer == "working" && status == "active"' })) as { payload: { hits: { $path: string }[] } };
-    expect(payload.hits.map((h) => h.$path)).toContain("/notes.md");
+    const { payload } = (await call("query", { query: 'from docs where layer == "working" && status == "active"' })) as { payload: { hits: { path: string }[] } };
+    expect(payload.hits.map((h) => h.path)).toContain("/notes.md");
   });
 
   it("docs_move renames the document", async () => {
-    const { payload, isError } = (await call("docs_move", { path: "notes.md", to_path: "moved/notes.md" })) as { payload: { $path: string }; isError: boolean };
+    const { payload, isError } = (await call("docs_move", { path: "notes.md", to_path: "moved/notes.md" })) as { payload: { path: string }; isError: boolean };
     expect(isError).toBe(false);
-    expect(payload.$path).toBe("/moved/notes.md");
-    const { payload: q } = (await call("query", { query: 'from docs where layer == "working"' })) as { payload: { hits: { $path: string }[] } };
-    expect(q.hits.map((h) => h.$path)).toContain("/moved/notes.md");
+    expect(payload.path).toBe("/moved/notes.md");
+    const { payload: q } = (await call("query", { query: 'from docs where layer == "working"' })) as { payload: { hits: { path: string }[] } };
+    expect(q.hits.map((h) => h.path)).toContain("/moved/notes.md");
   });
 
   it("docs_move with retarget_inbound:false reports dangling inbound links; the default rewrites them; destination phantoms are adopted", async () => {
@@ -408,17 +408,17 @@ describe("doc-level MCP tools (docs_create/move/delete/set_meta)", () => {
 
     // Opted-out move: b's link dangles and is reported; a's phantom resolves.
     const { payload, isError } = (await call("docs_move", { path: "notes.md", to_path: "moved/notes.md", retarget_inbound: false })) as {
-      payload: { $path: string; dangling: { doc_id: string; $path: string; block_id: string | null; target: string; anchor: string | null }[]; retargeted: unknown };
+      payload: { path: string; dangling: { doc_id: string; path: string; block_id: string | null; target: string; anchor: string | null }[]; retargeted: unknown };
       isError: boolean;
     };
     expect(isError).toBe(false);
-    expect(payload.$path).toBe("/moved/notes.md");
+    expect(payload.path).toBe("/moved/notes.md");
     expect(payload.dangling).toHaveLength(1);
-    expect(payload.dangling[0]).toMatchObject({ $path: "/b.md", target: "/notes.md", anchor: "Risks" });
+    expect(payload.dangling[0]).toMatchObject({ path: "/b.md", target: "/notes.md", anchor: "Risks" });
     expect(payload.retargeted).toBeNull();
-    const staleAfter = (await call("links_stale", {})) as { payload: { stale: { $path: string; target: string }[] } };
+    const staleAfter = (await call("links_stale", {})) as { payload: { stale: { path: string; target: string }[] } };
     expect(staleAfter.payload.stale).toHaveLength(1);
-    expect(staleAfter.payload.stale[0]).toMatchObject({ $path: "/b.md", target: "/notes.md" });
+    expect(staleAfter.payload.stale[0]).toMatchObject({ path: "/b.md", target: "/notes.md" });
 
     // Move again with the default (retarget_inbound omitted): zero dangling, file rewritten, code span untouched.
     const { payload: p2 } = (await call("docs_move", { path: "moved/notes.md", to_path: "final/notes.md" })) as {
@@ -426,15 +426,15 @@ describe("doc-level MCP tools (docs_create/move/delete/set_meta)", () => {
     };
     expect(p2.dangling).toEqual([]);
     expect(p2.retargeted!.blocks).toHaveLength(1);
-    const { payload: a } = (await call("docs_read", { path: "a.md" })) as { payload: { $raw: string } };
-    expect(a.$raw).toBe("# A\n\nSoon [moved](/final/notes.md).\n");
-    const staleEnd = (await call("links_stale", {})) as { payload: { stale: { $path: string; target: string }[] } };
+    const { payload: a } = (await call("docs_read", { path: "a.md" })) as { payload: { raw: string } };
+    expect(a.raw).toBe("# A\n\nSoon [moved](/final/notes.md).\n");
+    const staleEnd = (await call("links_stale", {})) as { payload: { stale: { path: string; target: string }[] } };
     // b's link was dangling at notes.md (not the moved-from path), so it stays stale — only what pointed at the moved doc is retargeted.
-    expect(staleEnd.payload.stale.map((s) => `${s.$path}→${s.target}`)).toEqual(["/b.md→/notes.md"]);
+    expect(staleEnd.payload.stale.map((s) => `${s.path}→${s.target}`)).toEqual(["/b.md→/notes.md"]);
   });
 
   it("dry_run on the document tools validates and returns diffs without writing", async () => {
-    const created = (await call("docs_create", { path: "sub/fresh.md", markdown: "# Fresh\n", dry_run: true })) as { payload: { $id: string; committed: boolean; diffs: Record<string, { before: string; after: string }> }; isError: boolean };
+    const created = (await call("docs_create", { path: "sub/fresh.md", markdown: "# Fresh\n", dry_run: true })) as { payload: { id: string; committed: boolean; diffs: Record<string, { before: string; after: string }> }; isError: boolean };
     expect(created.isError).toBe(false);
     expect(created.payload.committed).toBe(false);
     expect(created.payload.diffs).toEqual({ "/sub/fresh.md": { before: "", after: "# Fresh\n" } });
@@ -474,9 +474,9 @@ describe("doc-level MCP tools (docs_create/move/delete/set_meta)", () => {
     const docId = (store.db.prepare("SELECT doc_id FROM docs WHERE path='notes.md'").get() as { doc_id: string }).doc_id;
     const { isError: metaErr } = (await call("docs_set_meta", { id: docId, set: { status: "byid" } })) as { isError: boolean };
     expect(metaErr).toBe(false);
-    const { payload, isError } = (await call("docs_move", { id: docId, to_path: "moved/byid.md" })) as { payload: { $path: string }; isError: boolean };
+    const { payload, isError } = (await call("docs_move", { id: docId, to_path: "moved/byid.md" })) as { payload: { path: string }; isError: boolean };
     expect(isError).toBe(false);
-    expect(payload.$path).toBe("/moved/byid.md");
+    expect(payload.path).toBe("/moved/byid.md");
   });
 });
 
@@ -500,13 +500,13 @@ describe("link health MCP tools (links_stale / links_repair)", () => {
 
   it("links_stale returns the LinkHealth shape with a dangling doc link", async () => {
     const { payload, isError } = (await call("links_stale", {})) as {
-      payload: { stale: { target: string; $path: string; reason: string }[]; externalCount: number; totalOpenEdges: number; truncated: boolean };
+      payload: { stale: { target: string; path: string; reason: string }[]; externalCount: number; totalOpenEdges: number; truncated: boolean };
       isError: boolean;
     };
     expect(isError).toBe(false);
     expect(payload.stale).toHaveLength(1);
     expect(payload.stale[0]!.target).toBe("/b.md");
-    expect(payload.stale[0]!.$path).toBe("/a.md");
+    expect(payload.stale[0]!.path).toBe("/a.md");
     expect(payload.stale[0]!.reason).toBe("dangling_doc");
     expect(payload.externalCount).toBeGreaterThanOrEqual(1);
     expect(payload.truncated).toBe(false);
@@ -559,8 +559,8 @@ describe("onMutation fires for writes (embed-drain trigger)", () => {
   });
 
   it("fires once for a successful apply", async () => {
-    const { payload: q } = (await call("query", { query: 'select $path from docs where layer == "working"' })) as { payload: { hits: { $id: string }[] } };
-    const docId = q.hits[0]!.$id;
+    const { payload: q } = (await call("query", { query: 'select path from docs where layer == "working"' })) as { payload: { hits: { id: string }[] } };
+    const docId = q.hits[0]!.id;
     const { isError } = (await call("apply", { ops: [{ op: "insert", doc: docId, to: { parent: { doc: true }, at: "end" }, markdown: "appended paragraph" }] })) as { isError: boolean };
     expect(isError).toBe(false);
     expect(mutations).toBe(1);
@@ -573,8 +573,8 @@ describe("onMutation fires for writes (embed-drain trigger)", () => {
   });
 
   it("does not fire for a dry-run apply", async () => {
-    const { payload: q } = (await call("query", { query: 'select $path from docs where layer == "working"' })) as { payload: { hits: { $id: string }[] } };
-    const docId = q.hits[0]!.$id;
+    const { payload: q } = (await call("query", { query: 'select path from docs where layer == "working"' })) as { payload: { hits: { id: string }[] } };
+    const docId = q.hits[0]!.id;
     const { isError } = (await call("apply", { ops: [{ op: "insert", doc: docId, to: { parent: { doc: true }, at: "end" }, markdown: "preview only" }], dry_run: true })) as { isError: boolean };
     expect(isError).toBe(false);
     expect(mutations).toBe(0);
@@ -633,8 +633,8 @@ describe("apply op schema + blocks_append / docs_append section resolution", () 
     // blocks_get_many(resolution:"full") hydration round trip.
     let target = "";
     for (const id of read.ids) {
-      const { payload } = (await call("blocks_get", { id, resolution: "raw" })) as { payload: { $raw?: string } };
-      if (payload.$raw === "intro body") { target = id; break; }
+      const { payload } = (await call("blocks_get", { id, resolution: "raw" })) as { payload: { raw?: string } };
+      if (payload.raw === "intro body") { target = id; break; }
     }
     expect(target).not.toBe("");
     expect(read.hashes[target]).toMatch(/^[0-9a-f]{64}$/);
@@ -643,8 +643,8 @@ describe("apply op schema + blocks_append / docs_append section resolution", () 
     })) as { payload: { committed: boolean }; isError: boolean };
     expect(isError).toBe(false);
     expect(payload.committed).toBe(true);
-    const { payload: after } = (await call("docs_read", { path: "notes.md" })) as { payload: { $raw: string } };
-    expect(after.$raw).toContain("rewritten intro");
+    const { payload: after } = (await call("docs_read", { path: "notes.md" })) as { payload: { raw: string } };
+    expect(after.raw).toContain("rewritten intro");
   });
 
   it("raw apply update without expect.content_hash returns the current hash so the error is directly retriable", async () => {
@@ -653,24 +653,24 @@ describe("apply op schema + blocks_append / docs_append section resolution", () 
     };
     let target = "";
     for (const id of read.ids) {
-      const { payload } = (await call("blocks_get", { id, resolution: "raw" })) as { payload: { $raw?: string } };
-      if (payload.$raw === "intro body") { target = id; break; }
+      const { payload } = (await call("blocks_get", { id, resolution: "raw" })) as { payload: { raw?: string } };
+      if (payload.raw === "intro body") { target = id; break; }
     }
     const { payload, isError } = (await call("apply", {
       ops: [{ op: "update", block: target, markdown: "no hash supplied" }],
-    })) as { payload: { error: string; data: { retriable?: boolean; current?: { $hash?: string } } }; isError: boolean };
+    })) as { payload: { error: string; data: { retriable?: boolean; current?: { hash?: string } } }; isError: boolean };
     expect(isError).toBe(true);
     expect(payload.error).toBe("stale_expectation");
     expect(payload.data.retriable).toBe(true);
     // The current hash is handed back and matches what the read reported.
-    expect(payload.data.current!.$hash).toBe(read.hashes[target]);
+    expect(payload.data.current!.hash).toBe(read.hashes[target]);
   });
 
   it("docs_append with `section` resolves heading text inside the named document", async () => {
     const { isError } = (await call("docs_append", { path: "notes.md", section: "Launch", text: "appended item" })) as { isError: boolean };
     expect(isError).toBe(false);
-    const { payload } = (await call("docs_read", { path: "notes.md" })) as { payload: { $raw: string } };
-    expect(payload.$raw).toContain("appended item");
+    const { payload } = (await call("docs_read", { path: "notes.md" })) as { payload: { raw: string } };
+    expect(payload.raw).toContain("appended item");
   });
 
   it("blocks_append on a heading appends into its section", async () => {
@@ -678,14 +678,14 @@ describe("apply op schema + blocks_append / docs_append section resolution", () 
     // pick the id whose block is the Launch heading via blocks_get
     let headingId = "";
     for (const id of read.ids) {
-      const { payload } = (await call("blocks_get", { id, resolution: "raw" })) as { payload: { $raw?: string } };
-      if (payload.$raw === "## Launch") { headingId = id; break; }
+      const { payload } = (await call("blocks_get", { id, resolution: "raw" })) as { payload: { raw?: string } };
+      if (payload.raw === "## Launch") { headingId = id; break; }
     }
     expect(headingId).not.toBe("");
     const { isError } = (await call("blocks_append", { id: headingId, text: "byid item" })) as { isError: boolean };
     expect(isError).toBe(false);
-    const { payload } = (await call("docs_read", { path: "notes.md" })) as { payload: { $raw: string } };
-    expect(payload.$raw).toContain("launch note\n\nbyid item");
+    const { payload } = (await call("docs_read", { path: "notes.md" })) as { payload: { raw: string } };
+    expect(payload.raw).toContain("launch note\n\nbyid item");
   });
 
   it("blocks_append on a container appends to its children; on a leaf it is block_not_container", async () => {
@@ -696,8 +696,8 @@ describe("apply op schema + blocks_append / docs_append section resolution", () 
     const para = rows.filter((r) => r.type === "paragraph").at(-1)!.block_id;
     const { isError } = (await call("blocks_append", { id: list, text: "- three" })) as { isError: boolean };
     expect(isError).toBe(false);
-    const { payload } = (await call("docs_read", { path: "list.md" })) as { payload: { $raw: string } };
-    expect(payload.$raw).toContain("- two\n- three");
+    const { payload } = (await call("docs_read", { path: "list.md" })) as { payload: { raw: string } };
+    expect(payload.raw).toContain("- two\n- three");
     const leaf = (await call("blocks_append", { id: para, text: "x" })) as { payload: { error: string; message: string; data: { id: string; type: string } }; isError: boolean };
     expect(leaf.isError).toBe(true);
     expect(leaf.payload.error).toBe("block_not_container");
@@ -709,7 +709,7 @@ describe("apply op schema + blocks_append / docs_append section resolution", () 
     writeFileSync(join(root, "twice.md"), "## Launch\n\na\n\n## Launch\n\nb\n");
     ingestFile(store, repoId, "twice.md", "## Launch\n\na\n\n## Launch\n\nb\n");
     const { payload, isError } = (await call("docs_append", { path: "twice.md", section: "Launch", text: "x" })) as {
-      payload: { error: string; message: string; data: { section: string; candidates: { $id: string; doc_id: string }[] } }; isError: boolean;
+      payload: { error: string; message: string; data: { section: string; candidates: { id: string; doc_id: string }[] } }; isError: boolean;
     };
     expect(isError).toBe(true);
     expect(payload.error).toBe("ambiguous_heading");
@@ -748,20 +748,20 @@ describe("apply op schema + blocks_append / docs_append section resolution", () 
 
   it("docs_append appends to the end of the document, preserving every existing block id", async () => {
     const { payload: before } = (await call("docs_read", { path: "notes.md", include_ids: true })) as {
-      payload: { ids: string[]; $raw: string };
+      payload: { ids: string[]; raw: string };
     };
     const { payload, isError } = (await call("docs_append", { path: "notes.md", text: "a fresh trailing note\n" })) as {
-      payload: { committed: boolean; results: { ids: string[] }[]; revisions: { $id: string; $path: string; $hash: string }[] }; isError: boolean;
+      payload: { committed: boolean; results: { ids: string[] }[]; revisions: { id: string; path: string; hash: string }[] }; isError: boolean;
     };
     expect(isError).toBe(false);
     expect(payload.committed).toBe(true);
     // sibling-macro shape: revision(s) + the single inserted block id
-    expect(payload.revisions[0]!.$path).toBe("/notes.md");
+    expect(payload.revisions[0]!.path).toBe("/notes.md");
     expect(payload.results[0]!.ids).toHaveLength(1);
     const newId = payload.results[0]!.ids[0]!;
 
     const { payload: after } = (await call("docs_read", { path: "notes.md", include_ids: true })) as {
-      payload: { ids: string[]; $raw: string };
+      payload: { ids: string[]; raw: string };
     };
     // IDENTITY STABILITY: every pre-existing block id is still present and in the
     // same leading order; the appended block id is new (not one of the old ones).
@@ -770,9 +770,9 @@ describe("apply op schema + blocks_append / docs_append section resolution", () 
     expect(after.ids).toContain(newId);
     expect(after.ids.length).toBe(before.ids.length + 1);
     // additive, not a whole-body replace: the prior body is intact, new text after
-    expect(after.$raw.startsWith(before.$raw.trimEnd())).toBe(true);
-    expect(after.$raw).toContain("a fresh trailing note");
-    expect(after.$raw.indexOf("a fresh trailing note")).toBeGreaterThan(after.$raw.indexOf("launch note"));
+    expect(after.raw.startsWith(before.raw.trimEnd())).toBe(true);
+    expect(after.raw).toContain("a fresh trailing note");
+    expect(after.raw.indexOf("a fresh trailing note")).toBeGreaterThan(after.raw.indexOf("launch note"));
   });
 
   it("docs_append inserts MULTI-block markdown as multiple new top-level blocks, none re-minted", async () => {
@@ -783,22 +783,22 @@ describe("apply op schema + blocks_append / docs_append section resolution", () 
     expect(isError).toBe(false);
     // three new top-level blocks: heading + two paragraphs
     expect(payload.results[0]!.ids.length).toBe(3);
-    const { payload: after } = (await call("docs_read", { path: "notes.md", include_ids: true })) as { payload: { ids: string[]; $raw: string } };
+    const { payload: after } = (await call("docs_read", { path: "notes.md", include_ids: true })) as { payload: { ids: string[]; raw: string } };
     // no existing block was re-minted (all still present, in order)
     expect(after.ids.slice(0, before.ids.length)).toEqual(before.ids);
     for (const id of payload.results[0]!.ids) expect(before.ids).not.toContain(id);
     expect(after.ids.length).toBe(before.ids.length + 3);
-    expect(after.$raw).toContain("## New Section");
-    expect(after.$raw).toContain("first para");
-    expect(after.$raw).toContain("second para");
+    expect(after.raw).toContain("## New Section");
+    expect(after.raw).toContain("first para");
+    expect(after.raw).toContain("second para");
   });
 
   it("docs_append takes a d_ id as `id`", async () => {
     const docId = (store.db.prepare("SELECT doc_id FROM docs WHERE path='notes.md'").get() as { doc_id: string }).doc_id;
     const { isError } = (await call("docs_append", { id: docId, text: "by-id append\n" })) as { isError: boolean };
     expect(isError).toBe(false);
-    const { payload } = (await call("docs_read", { path: "notes.md" })) as { payload: { $raw: string } };
-    expect(payload.$raw).toContain("by-id append");
+    const { payload } = (await call("docs_read", { path: "notes.md" })) as { payload: { raw: string } };
+    expect(payload.raw).toContain("by-id append");
   });
 
   it("docs_append on a missing doc errors doc_missing (never auto-creates)", async () => {
@@ -818,16 +818,16 @@ describe("block-level MCP tools (blocks_* — ref resolution + CAS server-side)"
 
   // Return the ordered top-level block ids of notes.md, and the raw of each,
   // so tests can target a block by content without knowing its minted id.
-  async function ids(): Promise<{ $id: string; $raw: string }[]> {
+  async function ids(): Promise<{ id: string; raw: string }[]> {
     const { payload } = (await call("docs_read", { path: "notes.md", include_ids: true })) as { payload: { ids: string[] } };
-    const out: { $id: string; $raw: string }[] = [];
+    const out: { id: string; raw: string }[] = [];
     for (const id of payload.ids) {
-      const { payload: n } = (await call("blocks_get", { id, resolution: "raw" })) as { payload: { $raw?: string } };
-      out.push({ $id: id, $raw: n.$raw ?? "" });
+      const { payload: n } = (await call("blocks_get", { id, resolution: "raw" })) as { payload: { raw?: string } };
+      out.push({ id: id, raw: n.raw ?? "" });
     }
     return out;
   }
-  const idOf = async (raw: string) => (await ids()).find((b) => b.$raw === raw)!.$id;
+  const idOf = async (raw: string) => (await ids()).find((b) => b.raw === raw)!.id;
 
   beforeEach(async () => {
     root = mkdtempSync(join(tmpdir(), "omg-mcpblocks-"));
@@ -847,8 +847,8 @@ describe("block-level MCP tools (blocks_* — ref resolution + CAS server-side)"
     const alpha = await idOf("Alpha para.");
     const { isError } = (await call("blocks_insert", { to: "notes.md", markdown: "Inserted child.", at: { after: alpha } })) as { isError: boolean };
     expect(isError).toBe(false);
-    const { payload } = (await call("docs_read", { path: "notes.md" })) as { payload: { $raw: string } };
-    expect(payload.$raw).toContain("Alpha para.\n\nInserted child.");
+    const { payload } = (await call("docs_read", { path: "notes.md" })) as { payload: { raw: string } };
+    expect(payload.raw).toContain("Alpha para.\n\nInserted child.");
   });
 
   it("blocks_insert into a leaf block is type_mismatch (spec/mutate 1.2) and touches nothing", async () => {
@@ -857,18 +857,18 @@ describe("block-level MCP tools (blocks_* — ref resolution + CAS server-side)"
     expect(r.isError).toBe(true);
     expect(r.payload.error).toBe("type_mismatch");
     expect(r.payload.data?.type).toBe("paragraph");
-    const { payload } = (await call("docs_read", { path: "notes.md" })) as { payload: { $raw: string } };
-    expect(payload.$raw).toContain("Alpha para.");
-    expect(payload.$raw).not.toContain("Inserted child.");
+    const { payload } = (await call("docs_read", { path: "notes.md" })) as { payload: { raw: string } };
+    expect(payload.raw).toContain("Alpha para.");
+    expect(payload.raw).not.toContain("Inserted child.");
   });
 
   it("blocks_update resolves a ref and pins CAS from current bytes server-side", async () => {
     const beta = await idOf("Beta para.");
     const { isError } = (await call("blocks_update", { id: beta, markdown: "Beta, edited." })) as { isError: boolean };
     expect(isError).toBe(false);
-    const { payload } = (await call("docs_read", { path: "notes.md" })) as { payload: { $raw: string } };
-    expect(payload.$raw).toContain("Beta, edited.");
-    expect(payload.$raw).not.toContain("Beta para.");
+    const { payload } = (await call("docs_read", { path: "notes.md" })) as { payload: { raw: string } };
+    expect(payload.raw).toContain("Beta, edited.");
+    expect(payload.raw).not.toContain("Beta para.");
   });
 
   it("blocks_update honors a caller-supplied stale expect (CAS conflict)", async () => {
@@ -881,8 +881,8 @@ describe("block-level MCP tools (blocks_* — ref resolution + CAS server-side)"
     const alpha = await idOf("Alpha para.");
     const { isError } = (await call("blocks_remove", { blocks: [alpha] })) as { isError: boolean };
     expect(isError).toBe(false);
-    const { payload } = (await call("docs_read", { path: "notes.md" })) as { payload: { $raw: string } };
-    expect(payload.$raw).not.toContain("Alpha para.");
+    const { payload } = (await call("docs_read", { path: "notes.md" })) as { payload: { raw: string } };
+    expect(payload.raw).not.toContain("Alpha para.");
   });
 
   it("blocks_remove accepts a container together with its children (flat include_ids set)", async () => {
@@ -897,30 +897,30 @@ describe("block-level MCP tools (blocks_* — ref resolution + CAS server-side)"
     };
     expect(isError).toBe(false);
     expect(payload.results[0]!.removed.sort()).toEqual([list, ...items].sort());
-    const { payload: after } = (await call("docs_read", { path: "notes.md" })) as { payload: { $raw: string } };
-    expect(after.$raw).not.toContain("wire it");
+    const { payload: after } = (await call("docs_read", { path: "notes.md" })) as { payload: { raw: string } };
+    expect(after.raw).not.toContain("wire it");
   });
 
   it("blocks_insert accepts a DOCUMENT path as `to` and inserts at the top level", async () => {
     const { isError } = (await call("blocks_insert", { to: "notes.md", markdown: "## Appended\n\nBy path." })) as { isError: boolean };
     expect(isError).toBe(false);
     const { payload } = (await call("docs_read", { path: "notes.md", include_ids: true })) as {
-      payload: { $raw: string; ids: string[]; parents: Record<string, string | null> };
+      payload: { raw: string; ids: string[]; parents: Record<string, string | null> };
     };
-    expect(payload.$raw.trimEnd().endsWith("## Appended\n\nBy path.")).toBe(true);
+    expect(payload.raw.trimEnd().endsWith("## Appended\n\nBy path.")).toBe(true);
     // `at: "start"` on a document parent lands before the first top-level block.
     const { isError: e2 } = (await call("blocks_insert", { to: "notes.md", markdown: "Preamble.", at: "start" })) as { isError: boolean };
     expect(e2).toBe(false);
-    const { payload: p2 } = (await call("docs_read", { path: "notes.md" })) as { payload: { $raw: string } };
-    expect(p2.$raw.startsWith("Preamble.")).toBe(true);
+    const { payload: p2 } = (await call("docs_read", { path: "notes.md" })) as { payload: { raw: string } };
+    expect(p2.raw.startsWith("Preamble.")).toBe(true);
   });
 
   it("blocks_move accepts the source document as `to` (top level) and refuses another document's root", async () => {
     const alpha = await idOf("Alpha para.");
     const { isError } = (await call("blocks_move", { blocks: [alpha], to: "notes.md", at: "end" })) as { isError: boolean };
     expect(isError).toBe(false);
-    const { payload } = (await call("docs_read", { path: "notes.md" })) as { payload: { $raw: string } };
-    expect(payload.$raw.trimEnd().endsWith("Alpha para.")).toBe(true);
+    const { payload } = (await call("docs_read", { path: "notes.md" })) as { payload: { raw: string } };
+    expect(payload.raw.trimEnd().endsWith("Alpha para.")).toBe(true);
     writeFileSync(join(root, "other.md"), "# Other\n");
     ingestFile(store, repoId, "other.md", "# Other\n");
     const { payload: bad, isError: e2 } = (await call("blocks_move", { blocks: [alpha], to: "other.md" })) as { payload: { error: string }; isError: boolean };
@@ -932,8 +932,8 @@ describe("block-level MCP tools (blocks_* — ref resolution + CAS server-side)"
     const alpha = await idOf("Alpha para.");
     const { isError } = (await call("blocks_split", { id: alpha, at: [5] })) as { isError: boolean };
     expect(isError).toBe(false);
-    const { payload } = (await call("docs_read", { path: "notes.md" })) as { payload: { $raw: string } };
-    expect(payload.$raw).toContain("Alpha");
+    const { payload } = (await call("docs_read", { path: "notes.md" })) as { payload: { raw: string } };
+    expect(payload.raw).toContain("Alpha");
   });
 
   it("blocks_merge joins adjacent blocks", async () => {
@@ -956,8 +956,8 @@ describe("block-level MCP tools (blocks_* — ref resolution + CAS server-side)"
     };
     expect(isError).toBe(false);
     expect(payload.diffs).toBeTruthy();
-    const { payload: read } = (await call("docs_read", { path: "notes.md" })) as { payload: { $raw: string } };
-    expect(read.$raw).not.toContain("PREVIEW ONLY");
+    const { payload: read } = (await call("docs_read", { path: "notes.md" })) as { payload: { raw: string } };
+    expect(read.raw).not.toContain("PREVIEW ONLY");
   });
 
   it("tasks_complete checks and unchecks a task by ref", async () => {
@@ -969,18 +969,18 @@ describe("block-level MCP tools (blocks_* — ref resolution + CAS server-side)"
       return line.trim().split(/\s+/)[0]!;
     };
     await call("tasks_complete", { blocks: [await taskId()] });
-    let { payload } = (await call("docs_read", { path: "notes.md" })) as { payload: { $raw: string } };
-    expect(payload.$raw).toMatch(/- \[x\] wire it/i);
+    let { payload } = (await call("docs_read", { path: "notes.md" })) as { payload: { raw: string } };
+    expect(payload.raw).toMatch(/- \[x\] wire it/i);
     // uncheck — re-resolve (the id may change after the write)
     await call("tasks_complete", { blocks: [await taskId()], checked: false });
-    ({ payload } = (await call("docs_read", { path: "notes.md" })) as { payload: { $raw: string } });
-    expect(payload.$raw).toContain("- [ ] wire it");
+    ({ payload } = (await call("docs_read", { path: "notes.md" })) as { payload: { raw: string } });
+    expect(payload.raw).toContain("- [ ] wire it");
   });
 });
 
 describe("link maintenance tools: honest dry run, authored targets, summary, scoping, multi-block update", () => {
   let root: string;
-  type Repair = { hits: { $id: string; $path: string; oldRaw: string; newRaw: string }[]; pairs: { from: string; to: string; hits: number }[]; applied: boolean; committed: boolean; diffs?: Record<string, { before: string; after: string }> };
+  type Repair = { hits: { id: string; path: string; oldRaw: string; newRaw: string }[]; pairs: { from: string; to: string; hits: number }[]; applied: boolean; committed: boolean; diffs?: Record<string, { before: string; after: string }> };
 
   beforeEach(async () => {
     root = mkdtempSync(join(tmpdir(), "omg-mcplinks2-"));
@@ -1006,7 +1006,7 @@ describe("link maintenance tools: honest dry run, authored targets, summary, sco
     expect(after).toContain("- item [b](/c.md) here");
     expect(after).toContain("[b](/c.md#Top) and `[b](/b.md)`.");
     // list (its item hit collapsed) + paragraph; the inline-code mention is not a hit
-    expect(dry.hits.map((h) => h.$path)).toEqual(["/list.md", "/list.md"]);
+    expect(dry.hits.map((h) => h.path)).toEqual(["/list.md", "/list.md"]);
     expect(dry.pairs).toEqual([{ from: "b.md", to: "/c.md", hits: 2 }]);
     expect(readFileSync(join(root, "list.md"), "utf8")).not.toContain("/c.md");
 
@@ -1028,7 +1028,7 @@ describe("link maintenance tools: honest dry run, authored targets, summary, sco
     const { payload } = (await call("links_retarget", { from_target: "/b.md", to_target: "/c.md", path_glob: "other.md" })) as { payload: Repair };
     expect(payload.applied).toBe(false);
     expect(payload.committed).toBe(false);
-    expect(payload.hits.map((h) => h.$path)).toEqual(["/other.md"]);
+    expect(payload.hits.map((h) => h.path)).toEqual(["/other.md"]);
     expect(payload.pairs).toEqual([{ from: "/b.md", to: "/c.md", hits: 1 }]);
     expect(Object.keys(payload.diffs!)).toEqual(["/other.md"]);
   });
@@ -1041,12 +1041,12 @@ describe("link maintenance tools: honest dry run, authored targets, summary, sco
     for (const s of payload.stale) expect(s.target).toBe("/b.md");
 
     const { payload: sum } = (await call("links_stale", { summary: true })) as {
-      payload: { staleCount: number; byTarget: { target: string; count: number }[]; bySource: { $path: string; count: number }[]; externalCount: number; totalOpenEdges: number; stale?: unknown };
+      payload: { staleCount: number; byTarget: { target: string; count: number }[]; bySource: { path: string; count: number }[]; externalCount: number; totalOpenEdges: number; stale?: unknown };
     };
     expect(sum.stale).toBeUndefined();
     expect(sum.staleCount).toBe(payload.stale.length);
     expect(sum.byTarget).toEqual([{ target: "/b.md", count: payload.stale.length }]);
-    expect(sum.bySource).toEqual([{ $path: "/list.md", count: payload.stale.length }]);
+    expect(sum.bySource).toEqual([{ path: "/list.md", count: payload.stale.length }]);
     expect(sum.externalCount).toBe(0);
   });
 
@@ -1055,15 +1055,15 @@ describe("link maintenance tools: honest dry run, authored targets, summary, sco
     const { payload: before } = (await call("docs_read", { path: "m.md", include_ids: true })) as { payload: { ids: string[] } };
     const [headId, bodyId, tailId] = before.ids as [string, string, string];
     const { payload, isError } = (await call("blocks_update", { id: bodyId, markdown: "Body, edited.\n\nExtra para.\n\n- li" })) as {
-      payload: { $id: string; ids: string[]; committed: boolean }; isError: boolean;
+      payload: { id: string; ids: string[]; committed: boolean }; isError: boolean;
     };
     expect(isError).toBe(false);
     expect(payload.committed).toBe(true);
-    expect(payload.$id).toBe(bodyId);
+    expect(payload.id).toBe(bodyId);
     expect(payload.ids).toHaveLength(3);
     expect(payload.ids[0]).toBe(bodyId);
-    const { payload: after } = (await call("docs_read", { path: "m.md", include_ids: true })) as { payload: { ids: string[]; $raw: string } };
-    expect(after.$raw).toBe("# M\n\nBody, edited.\n\nExtra para.\n\n- li\n\nTail.\n");
+    const { payload: after } = (await call("docs_read", { path: "m.md", include_ids: true })) as { payload: { ids: string[]; raw: string } };
+    expect(after.raw).toBe("# M\n\nBody, edited.\n\nExtra para.\n\n- li\n\nTail.\n");
     // include_ids flattens children: head, body, extra, list, (its item), tail
     expect(after.ids).toHaveLength(6);
     expect(after.ids.slice(0, 4)).toEqual([headId, ...payload.ids]);

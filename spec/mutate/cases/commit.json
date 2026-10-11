@@ -78,9 +78,9 @@
             ],
             "revisions": [
               {
-                "$id": "d_0",
-                "$path": "a.md",
-                "$hash": "d28843e84fc69a09388ee3b305ca4438ea4abdb3e9a274503f2212876a6a1196"
+                "id": "d_0",
+                "path": "a.md",
+                "hash": "d28843e84fc69a09388ee3b305ca4438ea4abdb3e9a274503f2212876a6a1196"
               }
             ],
             "committed": true
@@ -348,9 +348,9 @@
             ],
             "revisions": [
               {
-                "$id": "d_0",
-                "$path": "a.md",
-                "$hash": "3fc913c811a3f6946c1fcbecc6e2e217b7e0848e756d1a411a8dff93539a7c10"
+                "id": "d_0",
+                "path": "a.md",
+                "hash": "3fc913c811a3f6946c1fcbecc6e2e217b7e0848e756d1a411a8dff93539a7c10"
               }
             ],
             "committed": true
@@ -578,9 +578,9 @@
             ],
             "revisions": [
               {
-                "$id": "d_0",
-                "$path": "a.md",
-                "$hash": "8862d7fc463d2602374df63d98e7d2958273d21094b29d718efabe5ab64d9e49"
+                "id": "d_0",
+                "path": "a.md",
+                "hash": "8862d7fc463d2602374df63d98e7d2958273d21094b29d718efabe5ab64d9e49"
               }
             ],
             "committed": true
@@ -1696,9 +1696,9 @@
             ],
             "revisions": [
               {
-                "$id": "d_0",
-                "$path": "a.md",
-                "$hash": "2b1a60e4fe0f724c49e734eb209d932a9457db2aec86d58ef308745a945e0cfc"
+                "id": "d_0",
+                "path": "a.md",
+                "hash": "2b1a60e4fe0f724c49e734eb209d932a9457db2aec86d58ef308745a945e0cfc"
               }
             ],
             "committed": true
@@ -1952,9 +1952,9 @@
             ],
             "revisions": [
               {
-                "$id": "d_0",
-                "$path": "a.md",
-                "$hash": "03b8181b7db74e22f96f1b341ec8e1d74c776bfe0e6335d811e406edd472dd46"
+                "id": "d_0",
+                "path": "a.md",
+                "hash": "03b8181b7db74e22f96f1b341ec8e1d74c776bfe0e6335d811e406edd472dd46"
               }
             ],
             "committed": true

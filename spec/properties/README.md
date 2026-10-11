@@ -2,7 +2,9 @@
 
 A document's **properties** are the typed, indexed rows the engine derives
 from three authored-or-computed sources — the YAML frontmatter fence, inline
-`key:: value` fields in the body, and engine-computed `$`-intrinsics — and
+`key:: value` fields in the body, and engine-computed values stored under
+`$`-prefixed keys (`$title`, `$tags`; the surface reads them as the bare
+attributes `title`/`tags`, `spec/surface` §1.2) — and
 stores in the `properties` table (`spec/store` §3.1) so that filters,
 projections and `docs_read` see one uniform surface. This directory
 specifies the mapping from a document's bytes to those rows, and the two read
@@ -21,7 +23,7 @@ The spec is two artifacts, versioned together by `VERSION`:
 - `cases/*.json` — the executable fixtures. **When prose and fixtures
   disagree, the fixtures win**, and the prose gets fixed.
 
-The design rationale (why one table, why `card`, why `$`-intrinsics) is
+The design rationale (why one table, why `card`, why the computed rows are `$`-keyed) is
 `docs/properties-table.md`; this document is the as-built contract.
 
 ## Versioning
@@ -305,7 +307,10 @@ as `Infinity`/`-Infinity`; NaN reads as `null` (its `val_num` is NULL).
 
 - **grouped** (`docs_read.properties`): `{ frontmatter: {key: shape}, inline:
   {…}, computed: {…} }` — each source's rows shaped separately (every
-  source present, possibly `{}`).
+  source present, possibly `{}`). The rows keep their stored keys here; the
+  surface re-keys the `computed` group's `$title`/`$tags` to `title`/`tags` at
+  the tool boundary (`spec/surface` §1.2, 3.0 — omgbase's surface has no `$`
+  names), leaving the authored groups untouched.
 - **merged** (the query layer's bag): `{ key: shape }` over **all** rows of
   the document, authored sources and computed alike, keyed by the stored key
   (`$title` keeps its sigil).

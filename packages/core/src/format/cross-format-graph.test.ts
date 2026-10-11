@@ -37,8 +37,8 @@ function docId(path: string): string {
 // replacement for the retired graph_traverse. Default depth (8) covers these
 // short chains; the walk crosses format boundaries because edges are doc-grain.
 function reachable(seed: string, dir: "out" | "in"): string[] {
-  const hits = oqxRun(store, repoId, `from docs where $path == "${seed}" follow doc.${dir}`, { limit: 100 }).hits;
-  return hits.map((h) => h.$path);
+  const hits = oqxRun(store, repoId, `from docs where path == "${seed}" follow doc.${dir}`, { limit: 100 }).hits;
+  return hits.map((h) => h.path);
 }
 
 describe("cross-format graph: markdown → yaml → json", () => {

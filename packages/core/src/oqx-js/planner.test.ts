@@ -21,29 +21,37 @@ afterAll(() => store.close());
 const planned = (q: string): boolean => planner.plan(parse(q), []) !== null;
 
 describe("planner — decline (c): a residual that could raise sends the whole query unplanned", () => {
-  it("a bare reserved docs basename in the residual", () => {
-    expect(planned('from docs where path == "x" && $path == "nope.md"')).toBe(false);
-    expect(planned('from docs where $path == "nope.md" && raw')).toBe(false);
-    expect(planned('from docs where $path == "nope.md" && updated_at')).toBe(false);
+  it("a bare attribute is never a raise (3.0: no loud-error set) — `path` pushes, `raw`/`updated_at` are plain residuals", () => {
+    expect(planned('from docs where path == "x" && path == "nope.md"')).toBe(true);
+    expect(planned('from docs where path == "nope.md" && raw')).toBe(true);
+    expect(planned('from docs where path == "nope.md" && updated_at')).toBe(true);
+    expect(planned('from docs where path == "nope.md" && tags')).toBe(true);
   });
 
-  it("`doc.<reserved>` on any target, at any depth", () => {
-    expect(planned('from blocks where doc.path == "x" && $path == "nope.md"')).toBe(false);
-    expect(planned('from docs where $path == "nope.md" && nodes exists { where doc.path == "x" }')).toBe(false);
+  it("`doc.<attribute>` on any target, at any depth, is a plain read too", () => {
+    expect(planned('from blocks where doc.path == "x" && path == "nope.md"')).toBe(true);
+    expect(planned('from docs where path == "nope.md" && nodes exists { where doc.path == "x" }')).toBe(true);
+  });
+
+  it("a key read through a source handle is pushed (3.0: data/frontmatter/inline), the whole handle is residual", () => {
+    expect(planned('from docs where data.layer == "canon"')).toBe(true);
+    expect(planned('from docs where frontmatter.layer == "canon" && inline.element == "fire"')).toBe(true);
+    expect(planned('from blocks where doc.inline.element == "fire"')).toBe(true);
+    expect(planned('from docs where frontmatter == null && path == "x"')).toBe(true); // the whole handle is a declined conjunct (residual), not a raise
   });
 
   it("a method or function call in the residual (bad regex, unknown function, domain fn)", () => {
-    expect(planned('from docs where $path.matches("[") && $path == "nope.md"')).toBe(false);
-    expect(planned('from docs where nope("x") && $path == "nope.md"')).toBe(false);
-    expect(planned('from docs where text("x") && $path == "nope.md"')).toBe(false);
-    expect(planned('from docs where $path == "nope.md" && nodes exists { where text("x") }')).toBe(false);
-    expect(planned('from docs where $path == "nope.md" && nodes count { order by name.lower() } > 0')).toBe(false);
+    expect(planned('from docs where path.matches("[") && path == "nope.md"')).toBe(false);
+    expect(planned('from docs where nope("x") && path == "nope.md"')).toBe(false);
+    expect(planned('from docs where text("x") && path == "nope.md"')).toBe(false);
+    expect(planned('from docs where path == "nope.md" && nodes exists { where text("x") }')).toBe(false);
+    expect(planned('from docs where path == "nope.md" && nodes count { order by name.lower() } > 0')).toBe(false);
   });
 
   it("a `^`-escaped name in the residual (outer reference or lift)", () => {
-    expect(planned('from docs where ^x == 1 && $path == "nope.md"')).toBe(false);
-    expect(planned('from docs where $path == "nope.md" && nodes exists { where value == ^slug }')).toBe(false);
-    expect(planned('from docs where $path == "nope.md" && nodes collect { ^open: value where kind == "md:task" }')).toBe(false);
+    expect(planned('from docs where ^x == 1 && path == "nope.md"')).toBe(false);
+    expect(planned('from docs where path == "nope.md" && nodes exists { where value == ^slug }')).toBe(false);
+    expect(planned('from docs where path == "nope.md" && nodes collect { ^open: value where kind == "md:task" }')).toBe(false);
   });
 
   it("a nested block with the `single` consumer (only reachable in select position)", () => {
@@ -55,13 +63,13 @@ describe("planner — decline (c): a residual that could raise sends the whole q
   });
 
   it("a residual of comparisons, logic, in/ranges, !, literals, bindings and plain reads keeps the push", () => {
-    expect(planned('from docs where $path == "index.md" && era in 800..1000')).toBe(true);
-    expect(planned('from docs where $path == "index.md" && !verified')).toBe(true);
-    expect(planned('from docs where $path == "index.md" && (era == 800 || verified == true)')).toBe(true);
-    expect(planned('from docs where $path == "index.md" && nodes exists { where kind == "md:task" && !checked }')).toBe(true);
-    expect(planned('from docs where $path == "index.md" && nodes count { where kind == "md:section" } > 1')).toBe(true);
-    expect(planned('from blocks where $path == "index.md" && checked == true')).toBe(true);
-    expect(planned('from blocks where $path == "index.md" && nodes exists { where id == "x" }')).toBe(true); // `id` is not reserved inside a nodes block
+    expect(planned('from docs where path == "index.md" && era in 800..1000')).toBe(true);
+    expect(planned('from docs where path == "index.md" && !verified')).toBe(true);
+    expect(planned('from docs where path == "index.md" && (era == 800 || verified == true)')).toBe(true);
+    expect(planned('from docs where path == "index.md" && nodes exists { where kind == "md:task" && !checked }')).toBe(true);
+    expect(planned('from docs where path == "index.md" && nodes count { where kind == "md:section" } > 1')).toBe(true);
+    expect(planned('from blocks where path == "index.md" && checked == true')).toBe(true);
+    expect(planned('from blocks where path == "index.md" && nodes exists { where id == "x" }')).toBe(true); // `id` is not reserved inside a nodes block
   });
 
   it("no pushable conjunct at all → unplanned (as before)", () => {
@@ -80,15 +88,15 @@ describe("planner — decline (c): a residual that could raise sends the whole q
 // (before the patch every one of these was residual → unplanned).
 describe("planner — typed pushes (1.2): a bool or num literal against a json or prop read plans", () => {
   it("the query-blocks::planned-typed-* fixtures", () => {
-    expect(planned('select $path, checked from blocks where checked == true')).toBe(true);
+    expect(planned('select path, checked from blocks where checked == true')).toBe(true);
     expect(planned('blocks count { where checked != true }')).toBe(true);
-    expect(planned('select $path, level from blocks where level >= 2')).toBe(true);
+    expect(planned('select path, level from blocks where level >= 2')).toBe(true);
     expect(planned('blocks count { where level != 2 }')).toBe(true);
   });
 
   it("the query-docs::planned-typed-* fixtures", () => {
-    expect(planned('select $path, verified from docs where verified == true')).toBe(true);
-    expect(planned('select $path, era from docs where era >= 800')).toBe(true);
+    expect(planned('select path, verified from docs where verified == true')).toBe(true);
+    expect(planned('select path, era from docs where era >= 800')).toBe(true);
     expect(planned('docs count { where era != 800 }')).toBe(true);
   });
 

@@ -82,7 +82,7 @@ command. Here are the February note's open tasks, the input to a bulk
 `omg done -` (see [editing-and-history.md](../editing-and-history.md)):
 
 ```console
-$ omg query 'from blocks where type == "task" and not attrs.checked and $path == "/lab/2026-02-notes.md"' --ids
+$ omg query 'from blocks where type == "task" and not attrs.checked and path == "/lab/2026-02-notes.md"' --ids
 b_46t8ere
 b_dkgxmxr
 ```

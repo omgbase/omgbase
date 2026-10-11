@@ -146,11 +146,13 @@ d_9px29y1  /practitioners/maria-prophetissa.md
 
 ## Match on the path
 
-`$`-prefixed names are **intrinsics** — properties of the row itself rather than
-its frontmatter. `$path` is the document's path, with the usual string methods:
+Some bare names are **engine attributes** — facts about the row itself rather
+than its frontmatter — and they always win: `path` is the document's `/`-rooted
+path (a frontmatter `path:` key of your own is `data.path`), with the usual
+string methods:
 
 ```console
-$ omg query 'from docs where $path.startsWith("/practitioners/")'
+$ omg query 'from docs where path.startsWith("/practitioners/")'
 d_nzb61j9  /practitioners/jabir-ibn-hayyan.md
 d_9px29y1  /practitioners/maria-prophetissa.md
 d_rw4ygr0  /practitioners/newton.md
@@ -159,20 +161,20 @@ d_t5nvj1g  /practitioners/paracelsus.md
 
 Paths on the query surface are **`/`-rooted** — the form a reference is written
 in (`[x](/timeline/kickoff.md)`, `before: [/timeline/kickoff.md]`): every path a
-query returns starts with `/`, and `$path` is that form. Inputs are forgiving —
-a string literal compared with `$path` by `==`/`!=` or passed to its
+query returns starts with `/`, and `path` is that form. Inputs are forgiving —
+a string literal compared with `path` by `==`/`!=` or passed to its
 `startsWith(…)` is rooted before the comparison, so both spellings match:
 
 ```console
-$ omg query 'from docs where $path == "/timeline/kickoff.md"'
+$ omg query 'from docs where path == "/timeline/kickoff.md"'
 d_q3f4m8t  /timeline/kickoff.md
-$ omg query 'from docs where $path == "timeline/kickoff.md"'
+$ omg query 'from docs where path == "timeline/kickoff.md"'
 d_q3f4m8t  /timeline/kickoff.md
 ```
 
 Write the rooted form; it is also what a frontmatter reference holds, so the two
 compare directly (see [sugar.md](./sugar.md) for `refs()` and
-`^$path in list(before)`).
+`^path in list(before)`).
 
 ## `list()` — one test for scalar-or-list fields
 
@@ -210,11 +212,11 @@ scalar-authored `tags: substance` is one element, so mercury's list empties):
 
 ```console
 $ omg query 'select tags: tags collect { $it values where $it != "substance" } from docs where type == "substance"' --jsonl
-{"$id":"d_0vsapzt","$path":"/substances/mercury.md","tags":[]}
-{"$id":"d_1rren8z","$path":"/substances/philosophers-stone.md","tags":["goal","legendary"]}
-{"$id":"d_prj3j7a","$path":"/substances/prima-materia.md","tags":["theory"]}
-{"$id":"d_h73rhv8","$path":"/substances/salt.md","tags":["tria-prima"]}
-{"$id":"d_5zmf9f7","$path":"/substances/sulphur.md","tags":["tria-prima"]}
+{"id":"d_0vsapzt","path":"/substances/mercury.md","tags":[]}
+{"id":"d_1rren8z","path":"/substances/philosophers-stone.md","tags":["goal","legendary"]}
+{"id":"d_prj3j7a","path":"/substances/prima-materia.md","tags":["theory"]}
+{"id":"d_h73rhv8","path":"/substances/salt.md","tags":["tria-prima"]}
+{"id":"d_5zmf9f7","path":"/substances/sulphur.md","tags":["tria-prima"]}
 ```
 
 ## `entries()` — a record as rows, with `$key`
@@ -225,8 +227,8 @@ key and `$it` the value. Salt's frontmatter as `{k, v}` rows — the list key
 comes back as an array, exactly as a bare `tags` reads:
 
 ```console
-$ omg query 'select fm: entries(frontmatter) collect { k: $key, v: $it } from docs where $path == "/substances/salt.md"' --jsonl
-{"$id":"d_h73rhv8","$path":"/substances/salt.md","fm":[{"k":"element","v":"salt"},{"k":"layer","v":"canon"},{"k":"slug","v":"salt"},{"k":"tags","v":["substance","tria-prima"]},{"k":"tradition","v":"western"},{"k":"type","v":"substance"},{"k":"verified","v":true}]}
+$ omg query 'select fm: entries(frontmatter) collect { k: $key, v: $it } from docs where path == "/substances/salt.md"' --jsonl
+{"id":"d_h73rhv8","path":"/substances/salt.md","fm":[{"k":"element","v":"salt"},{"k":"layer","v":"canon"},{"k":"slug","v":"salt"},{"k":"tags","v":["substance","tria-prima"]},{"k":"tradition","v":"western"},{"k":"type","v":"substance"},{"k":"verified","v":true}]}
 ```
 
 Keys are queryable too, so you can filter on a key you name at query time

@@ -201,9 +201,7 @@ pub fn apply_result_of(v: Json) -> Json {
     match v {
         Json::Object(m) => Json::Object(
             m.into_iter()
-                .filter(|(k, _)| {
-                    !matches!(k.as_str(), "$id" | "ids" | "hits" | "pairs" | "applied")
-                })
+                .filter(|(k, _)| !matches!(k.as_str(), "id" | "ids" | "hits" | "pairs" | "applied"))
                 .collect(),
         ),
         other => other,
@@ -467,7 +465,7 @@ fn update_doc(cli: &mut Cli, args: &[String]) -> Result<i32> {
     }
     let path = opset
         .get("target")
-        .map(|t| str_of(t, "$path"))
+        .map(|t| str_of(t, "path"))
         .unwrap_or_default();
     if dry_run || result.is_null() {
         let converges = opset
@@ -522,10 +520,10 @@ pub fn edit(cli: &mut Cli, args: &[String]) -> Result<i32> {
     let r = r.to_owned();
     let (_, block) = block_ref(cli, &r)?;
     let node = cli.call("blocks_get", json!({ "id": block, "resolution": "raw" }))?;
-    let before = str_of(&node, "$raw");
+    let before = str_of(&node, "raw");
     // Pin the CAS BEFORE the editor opens.
     let pre_hash = node
-        .get("$hash")
+        .get("hash")
         .and_then(Json::as_str)
         .filter(|h| !h.is_empty())
         .map(str::to_owned);
@@ -688,9 +686,9 @@ fn rm_doc(cli: &mut Cli, doc: &str, actor: Option<&str>) -> Result<i32> {
     cli.io.err(&cli.style.dim(&format!(
         "  {} deleted {}",
         cli.style.ok(cli.style.glyphs().ok),
-        cli.style.accent(&str_of(&res, "$path"))
+        cli.style.accent(&str_of(&res, "path"))
     )));
-    cli.io.out(&str_of(&res, "$id"));
+    cli.io.out(&str_of(&res, "id"));
     Ok(EXIT_OK)
 }
 
@@ -868,7 +866,7 @@ mod tests {
     #[test]
     fn strips_tool_decorations() {
         let r = apply_result_of(
-            json!({ "$id": "b_1", "ids": ["b_1"], "results": [], "revisions": [], "committed": true }),
+            json!({ "id": "b_1", "ids": ["b_1"], "results": [], "revisions": [], "committed": true }),
         );
         assert_eq!(
             js_json(&r),

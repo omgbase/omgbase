@@ -144,7 +144,7 @@ by origin — **no schema change** for the observe tool.
 ## 4. New / changed MCP surface
 
 The pull side is nearly complete already: `changes_since` (cursor feed),
-`docs_read` / `docs_read_at` (exact bytes, `$raw`), `docs_history` (`$hash` per version — `contentHash` when this was written; surface 3.0 spells a revision's hash as the row attribute). Gaps:
+`docs_read` / `docs_read_at` (exact bytes, `raw`), `docs_history` (`hash` per version — `contentHash` when this was written; surface 3.0 spells a revision's hash as the row attribute). Gaps:
 
 ### 4.1 `observe` (NEW — the real write-side gap)
 
@@ -171,7 +171,7 @@ intent. `origin` is load-bearing for loop prevention (§6).
 Add per-revision `contentHash` (hex of `rendered_hash`) to each digest's
 `revisions[]` so a puller can decide "changed vs echo" without a follow-up
 `docs_read`/`docs_history` round-trip. Purely additive to the payload.
-(As built since surface 3.0 / sync 2.0 the revision is `{ $id, $path, $hash }` —
+(As built since surface 3.0 / sync 2.0 the revision is `{ id, path, hash }` —
 the same key as every other row's hash; `contentHash` was the 1.x spelling.)
 
 ### 4.3 `subscribe` (NEW — optional, low-latency; poll works without it)

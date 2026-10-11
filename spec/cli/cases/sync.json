@@ -54,7 +54,7 @@
           },
           "expect": {
             "exit": 0,
-            "stdout": "{\"$id\":\"rp_0\",\"slug\":\"fixture\",\"rootPath\":\"<workspace>/vault\",\"docs\":20,\"blocks\":327,\"commits\":20,\"openEdges\":69,\"unconverged\":0,\"disk\":{\"changed\":1,\"deleted\":0,\"untracked\":0,\"checked\":true},\"sync\":{\"lastCommitSeq\":20,\"lastCheckpoint\":\"cp_0\",\"convergent\":false,\"diskChecked\":true,\"disk\":{\"changed\":1,\"deleted\":0,\"untracked\":0,\"checked\":true}},\"watcher\":\"none\",\"embedQueue\":60}\n"
+            "stdout": "{\"id\":\"rp_0\",\"slug\":\"fixture\",\"rootPath\":\"<workspace>/vault\",\"docs\":20,\"blocks\":327,\"commits\":20,\"openEdges\":69,\"unconverged\":0,\"disk\":{\"changed\":1,\"deleted\":0,\"untracked\":0,\"checked\":true},\"sync\":{\"lastCommitSeq\":20,\"lastCheckpoint\":\"cp_0\",\"convergent\":false,\"diskChecked\":true,\"disk\":{\"changed\":1,\"deleted\":0,\"untracked\":0,\"checked\":true}},\"watcher\":\"none\",\"embedQueue\":60}\n"
           }
         },
         {
@@ -73,7 +73,7 @@
           ],
           "expect": {
             "exit": 0,
-            "stdout": "{\"$id\":\"rp_0\",\"slug\":\"fixture\",\"rootPath\":\"<workspace>/vault\",\"docs\":20,\"blocks\":317,\"commits\":21,\"openEdges\":68,\"unconverged\":0,\"disk\":{\"changed\":0,\"deleted\":0,\"untracked\":0,\"checked\":true},\"sync\":{\"lastCommitSeq\":21,\"lastCheckpoint\":\"cp_0\",\"convergent\":true,\"diskChecked\":true,\"disk\":{\"changed\":0,\"deleted\":0,\"untracked\":0,\"checked\":true}},\"watcher\":\"none\",\"embedQueue\":57}\n"
+            "stdout": "{\"id\":\"rp_0\",\"slug\":\"fixture\",\"rootPath\":\"<workspace>/vault\",\"docs\":20,\"blocks\":317,\"commits\":21,\"openEdges\":68,\"unconverged\":0,\"disk\":{\"changed\":0,\"deleted\":0,\"untracked\":0,\"checked\":true},\"sync\":{\"lastCommitSeq\":21,\"lastCheckpoint\":\"cp_0\",\"convergent\":true,\"diskChecked\":true,\"disk\":{\"changed\":0,\"deleted\":0,\"untracked\":0,\"checked\":true}},\"watcher\":\"none\",\"embedQueue\":57}\n"
           }
         },
         {
@@ -176,7 +176,7 @@
           },
           "expect": {
             "exit": 0,
-            "stdout": "{\"$id\":\"rp_0\",\"slug\":\"fixture\",\"rootPath\":\"<workspace>/vault\",\"docs\":20,\"blocks\":327,\"commits\":20,\"openEdges\":69,\"unconverged\":0,\"disk\":{\"changed\":0,\"deleted\":0,\"untracked\":1,\"checked\":true},\"sync\":{\"lastCommitSeq\":20,\"lastCheckpoint\":\"cp_0\",\"convergent\":false,\"diskChecked\":true,\"disk\":{\"changed\":0,\"deleted\":0,\"untracked\":1,\"checked\":true}},\"watcher\":\"none\",\"embedQueue\":60}\n"
+            "stdout": "{\"id\":\"rp_0\",\"slug\":\"fixture\",\"rootPath\":\"<workspace>/vault\",\"docs\":20,\"blocks\":327,\"commits\":20,\"openEdges\":69,\"unconverged\":0,\"disk\":{\"changed\":0,\"deleted\":0,\"untracked\":1,\"checked\":true},\"sync\":{\"lastCommitSeq\":20,\"lastCheckpoint\":\"cp_0\",\"convergent\":false,\"diskChecked\":true,\"disk\":{\"changed\":0,\"deleted\":0,\"untracked\":1,\"checked\":true}},\"watcher\":\"none\",\"embedQueue\":60}\n"
           }
         },
         {
@@ -228,7 +228,7 @@
           },
           "expect": {
             "exit": 0,
-            "stdout": "{\"$id\":\"rp_0\",\"slug\":\"fixture\",\"rootPath\":\"<workspace>/vault\",\"docs\":20,\"blocks\":327,\"commits\":20,\"openEdges\":69,\"unconverged\":0,\"disk\":{\"changed\":0,\"deleted\":1,\"untracked\":0,\"checked\":true},\"sync\":{\"lastCommitSeq\":20,\"lastCheckpoint\":\"cp_0\",\"convergent\":false,\"diskChecked\":true,\"disk\":{\"changed\":0,\"deleted\":1,\"untracked\":0,\"checked\":true}},\"watcher\":\"none\",\"embedQueue\":60}\n"
+            "stdout": "{\"id\":\"rp_0\",\"slug\":\"fixture\",\"rootPath\":\"<workspace>/vault\",\"docs\":20,\"blocks\":327,\"commits\":20,\"openEdges\":69,\"unconverged\":0,\"disk\":{\"changed\":0,\"deleted\":1,\"untracked\":0,\"checked\":true},\"sync\":{\"lastCommitSeq\":20,\"lastCheckpoint\":\"cp_0\",\"convergent\":false,\"diskChecked\":true,\"disk\":{\"changed\":0,\"deleted\":1,\"untracked\":0,\"checked\":true}},\"watcher\":\"none\",\"embedQueue\":60}\n"
           }
         },
         {
@@ -268,7 +268,7 @@
           ],
           "expect": {
             "exit": 0,
-            "stdout": "{\"$id\":\"rp_0\",\"slug\":\"fixture\",\"rootPath\":\"<workspace>/vault\",\"docs\":19,\"blocks\":315,\"commits\":21,\"openEdges\":69,\"unconverged\":0,\"disk\":{\"changed\":0,\"deleted\":0,\"untracked\":0,\"checked\":true},\"sync\":{\"lastCommitSeq\":21,\"lastCheckpoint\":\"cp_0\",\"convergent\":true,\"diskChecked\":true,\"disk\":{\"changed\":0,\"deleted\":0,\"untracked\":0,\"checked\":true}},\"watcher\":\"none\",\"embedQueue\":57}\n"
+            "stdout": "{\"id\":\"rp_0\",\"slug\":\"fixture\",\"rootPath\":\"<workspace>/vault\",\"docs\":19,\"blocks\":315,\"commits\":21,\"openEdges\":69,\"unconverged\":0,\"disk\":{\"changed\":0,\"deleted\":0,\"untracked\":0,\"checked\":true},\"sync\":{\"lastCommitSeq\":21,\"lastCheckpoint\":\"cp_0\",\"convergent\":true,\"diskChecked\":true,\"disk\":{\"changed\":0,\"deleted\":0,\"untracked\":0,\"checked\":true}},\"watcher\":\"none\",\"embedQueue\":57}\n"
           }
         },
         {
@@ -326,7 +326,7 @@
           ],
           "expect": {
             "exit": 0,
-            "stdout": "{\"$id\":\"rp_0\",\"slug\":\"fixture\",\"rootPath\":\"\",\"docs\":20,\"blocks\":327,\"commits\":20,\"openEdges\":69,\"unconverged\":0,\"disk\":{\"changed\":0,\"deleted\":0,\"untracked\":0,\"checked\":false},\"sync\":{\"lastCommitSeq\":20,\"lastCheckpoint\":\"cp_0\",\"convergent\":false,\"diskChecked\":false,\"disk\":{\"changed\":0,\"deleted\":0,\"untracked\":0,\"checked\":false}},\"watcher\":\"none\",\"embedQueue\":60}\n"
+            "stdout": "{\"id\":\"rp_0\",\"slug\":\"fixture\",\"rootPath\":\"\",\"docs\":20,\"blocks\":327,\"commits\":20,\"openEdges\":69,\"unconverged\":0,\"disk\":{\"changed\":0,\"deleted\":0,\"untracked\":0,\"checked\":false},\"sync\":{\"lastCommitSeq\":20,\"lastCheckpoint\":\"cp_0\",\"convergent\":false,\"diskChecked\":false,\"disk\":{\"changed\":0,\"deleted\":0,\"untracked\":0,\"checked\":false}},\"watcher\":\"none\",\"embedQueue\":60}\n"
           }
         },
         {
@@ -421,7 +421,7 @@
           ],
           "expect": {
             "exit": 0,
-            "stdout": "{\"$id\":\"rp_0\",\"slug\":\"fixture\",\"rootPath\":\"<workspace>/vault\",\"docs\":20,\"blocks\":327,\"commits\":20,\"openEdges\":69,\"unconverged\":0,\"disk\":{\"changed\":0,\"deleted\":0,\"untracked\":0,\"checked\":true},\"sync\":{\"lastCommitSeq\":20,\"lastCheckpoint\":\"cp_0\",\"convergent\":true,\"diskChecked\":true,\"disk\":{\"changed\":0,\"deleted\":0,\"untracked\":0,\"checked\":true}},\"watcher\":\"none\",\"embedQueue\":60}\n"
+            "stdout": "{\"id\":\"rp_0\",\"slug\":\"fixture\",\"rootPath\":\"<workspace>/vault\",\"docs\":20,\"blocks\":327,\"commits\":20,\"openEdges\":69,\"unconverged\":0,\"disk\":{\"changed\":0,\"deleted\":0,\"untracked\":0,\"checked\":true},\"sync\":{\"lastCommitSeq\":20,\"lastCheckpoint\":\"cp_0\",\"convergent\":true,\"diskChecked\":true,\"disk\":{\"changed\":0,\"deleted\":0,\"untracked\":0,\"checked\":true}},\"watcher\":\"none\",\"embedQueue\":60}\n"
           }
         }
       ]

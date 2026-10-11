@@ -74,7 +74,10 @@ describe("vocabulary", () => {
     const rowFns = s13.match(/Row\s+functions \(([^)]+)\)/)?.[1] ?? "";
     expect(sorted(rowFns.match(/`(\w+)`/g)!.map((m) => m.slice(1, -1)))).toEqual(sorted(OMGBASE.rowFunctions));
     const s1 = surface.slice(surface.indexOf("## 1."), surface.indexOf("### 1.4"));
-    for (const list of Object.values(OMGBASE.intrinsics)) for (const name of list) expect(s1, name).toContain(`\`${name}\``);
+    for (const list of Object.values(OMGBASE.attributes)) for (const name of list) expect(s1, name).toContain(`\`${name}\``);
+    for (const h of OMGBASE.handles) expect(s1, h).toContain(`\`${h}\``);
+    // omgbase adds no `$` names (§1.2, 3.0): every host name is bare.
+    for (const list of Object.values(OMGBASE.attributes)) for (const name of list) expect(name).not.toMatch(/^\$/);
     for (const rel of OMGBASE.relations) expect(s1, rel).toContain(`\`${rel}\``);
     for (const root of OMGBASE.roots) expect(s1, root).toContain(`\`${root}\``);
   });

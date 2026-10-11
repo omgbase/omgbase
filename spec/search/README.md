@@ -88,10 +88,11 @@ If the sanitized query is empty → no hits. Otherwise the live blocks of the
 repo whose FTS row matches, ordered by `bm25(blocks_fts)` ascending (best
 first), ties in SQLite's order — the fixtures pin only cases without ties —
 limited to `limit`, `truncated` = more than `limit` matched. A hit is
-`{ $id, doc_id, $path, type, text, score = −bm25 }` (higher is better) —
-the block row's own names (`spec/surface` §1.2, 2.0: `$id` the block id,
-`$path` its document's path in this spec's storage form, which the surface
-roots; before 2.0 the hit spelled `block_id`/`path`). bm25 is SQLite's; a
+`{ id, doc_id, path, type, text, score = −bm25 }` (higher is better) —
+the block row's own names (`spec/surface` §1.2, 3.0: `id` the block id,
+`path` its document's path in this spec's storage form, which the surface
+roots; before 2.0 the hit spelled `block_id`/`path`, and for a few days of the
+2.0 line `$id`/`$path` — Decisions). bm25 is SQLite's; a
 runner compares scores within 1e-6.
 
 ## 2. Embeddings
@@ -237,7 +238,7 @@ ties by `doc_id`.
    `limit`. Each hit carries `evidence = { fts_rank?,
    vector_rank?, cosine?, rrf, boosts }`.
 
-`resolve(repo, query, vector?, limit = 10)` is `hybrid` reshaped: `{ $id
+`resolve(repo, query, vector?, limit = 10)` is `hybrid` reshaped: `{ id
 (the block), locator = path + "#" + type + "[" + ordinal + "]", preview = the
 first 12 whitespace-separated words of the text (+ "…" when cut), evidence }`
 (`id` before 2.0; `locator` names a role, not a row attribute, and keeps its
@@ -297,7 +298,7 @@ ordering, fusion) and is exactly reproducible.
     the query embedded with the fixture embedder **and rounded to float32**
     like a stored vector, `vector_search` hits (`cosine` within 1e-9); both
     → `hybrid` hits with evidence (`boosts` holds only the applied keys);
-    for `{ "resolve": { query, semantic?, limit? } }` → `{ hits: [{ $id,
+    for `{ "resolve": { query, semantic?, limit? } }` → `{ hits: [{ id,
     locator, preview, evidence }] }`.
   - `embed_tasks`: every embeddable block's `{ block_id, content_hash, ctx }`
     in `(path, ordinal, block_id bytewise)` order (nested blocks share
@@ -400,6 +401,12 @@ provider. **Allowlist (Rust).** `crates/omgbase-search/tests/spec-passing.txt`
 
 ## Decisions
 
+- 2026-10-11, search 2.0 (surface 3.0 batch 3): the renamed hit keys are
+  bare — `text_search` `{ id, doc_id, path, … }`, `resolve` `{ id, locator,
+  … }` — because `spec/surface` §1.2's final rule gives omgbase no `$` names
+  (`$` is OQX's); the entry below described the `$id`/`$path` interim spelling
+  of the same unshipped 2.0 line. Fixtures: the two hit shapes re-keyed again,
+  nothing else.
 - 2026-10-11, search 2.0: the `text_search` and `resolve` hits name the
   block row the way the surface's row rule does (`spec/surface` §1.2, 3.0:
   `$` marks the engine-provided names that contend with user names, every

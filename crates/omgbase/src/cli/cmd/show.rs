@@ -83,19 +83,44 @@ fn show_one(cli: &mut Cli, r: &str, include_history: bool) -> Result<Card> {
     }
 }
 
-fn render_doc_card(cli: &Cli, path: &str, properties: &Json, links: &Json) {
+/// The document card: the MERGED authored keys (frontmatter + inline — the
+/// `data` view), skipping every stored `$` key (the computed rows' storage
+/// spelling), then — when the document has computed rows — a `computed`
+/// section with the keys spelled bare (`title`, `tags`: the re-keyed
+/// `properties.computed` the `read_ref` payload carries, `spec/surface` §1.2,
+/// 3.0: the store's `$title`/`$tags` never reach the terminal), then the open
+/// edges.
+fn render_doc_card(cli: &Cli, path: &str, properties: &Json, payload: &Json, links: &Json) {
     let style = cli.style;
     cli.io.out(&style.wordmark(path));
     cli.io.out(&style.rule());
-    if let Some(m) = properties.as_object().filter(|m| !m.is_empty()) {
+    let line = |k: &str, v: &Json| {
+        cli.io.out(&format!(
+            "    {} {} {}",
+            style.accent(k),
+            style.dim("="),
+            fmt_value(v)
+        ));
+    };
+    let authored: Vec<(&String, &Json)> = properties
+        .as_object()
+        .map(|m| m.iter().filter(|(k, _)| !k.starts_with('$')).collect())
+        .unwrap_or_default();
+    if !authored.is_empty() {
         cli.io.out(&format!("  {}", style.dim("properties")));
+        for (k, v) in authored {
+            line(k, v);
+        }
+    }
+    let computed = payload
+        .get("properties")
+        .and_then(|p| p.get("computed"))
+        .and_then(Json::as_object)
+        .filter(|m| !m.is_empty());
+    if let Some(m) = computed {
+        cli.io.out(&format!("  {}", style.dim("computed")));
         for (k, v) in m {
-            cli.io.out(&format!(
-                "    {} {} {}",
-                style.accent(k),
-                style.dim("="),
-                fmt_value(v)
-            ));
+            line(k, v);
         }
     }
     render_link_groups(cli, links, "  out edges", "  backlinks");
@@ -108,7 +133,7 @@ fn render_block_card(cli: &Cli, node: &Json, history: Option<&Json>) {
         "  {} {}  {}",
         type_glyph(&style, &kind),
         style.bold(&kind),
-        style.id(&str_of(node, "$id"))
+        style.id(&str_of(node, "id"))
     ));
     cli.io.out(&style.rule());
     // The placement is flattened onto the row (3.0: `parent_id`/`ordinal`/`depth`);
@@ -197,11 +222,11 @@ pub fn show(cli: &mut Cli, args: &[String]) -> Result<i32> {
     for c in &cards {
         match c {
             Card::Document {
+                payload,
                 path,
                 properties,
                 links,
-                ..
-            } => render_doc_card(cli, path, properties, links),
+            } => render_doc_card(cli, path, properties, payload, links),
             Card::Block { payload, history } => render_block_card(cli, payload, history.as_ref()),
         }
     }

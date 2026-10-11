@@ -36,7 +36,7 @@ const ROOT_ROW = Symbol("oqx.rootRow");
 const PROP_SOURCE = Symbol("oqx.propSource");
 
 interface RootRow { [ROOT_ROW]: true }
-interface PropSourceRef { [PROP_SOURCE]: true; docId: string; source: string }
+interface PropSourceRef { [PROP_SOURCE]: true; docId: string; source: string | null }
 
 function tag(row: Record<string, unknown> | undefined, t: Target): Row | undefined {
   if (!row) return undefined;
@@ -48,25 +48,38 @@ function tagAll(rows: Record<string, unknown>[], t: Target): Row[] {
   return rows as Row[];
 }
 
-// WHY `$` (spec/surface §1.2, 3.0). A `$`-prefixed name is a name the engine adds
-// to a namespace it SHARES with user-generated content — frontmatter keys and
-// inline properties on a document, `attrs` keys on a block or node — prefixed so
-// the author's field names keep priority and the two can never collide: a
-// frontmatter `id:` reads as `id`, the engine's identity as `$id`. That bounds the
-// vocabulary to exactly the engine-provided names that contend with user names:
-// every row's `$id`/`$path`; docs' and blocks' `$raw`/`$hash`/`$updated_at`; the
-// computed `$title`/`$tags`. Everything else the engine provides is a plain
-// snake_case field — a foreign key named for what it is (`doc_id`, `block_id`,
-// `via_id`, `dst_id`, `dst_path`, `uri`), a column its column (`depth`,
-// `ordinal`, `field`) — because nothing of the author's lives in those namespaces.
-//
-// The bare spelling of a docs `$` name (`path`, `id`, …) is almost always a typo
-// for the intrinsic — it would otherwise read an absent frontmatter key and
-// silently match nothing — so it is a LOUD error here and in run.ts. `title`/
-// `tags` are not in the set: `$title`/`$tags` are computed and never shadow an
-// authored key. (A bare target name — `docs`, `edges`, … — is a loud error of its
-// own, root-row.ts; `repo` is just an ordinary frontmatter key.)
-const RESERVED_DOC_BASENAMES = new Set(["id", "path", "updated_at", "hash", "raw"]);
+// THE NAME RULE (spec/surface §1.2, 3.0). `$` belongs to OQX: `$it`, `$key`,
+// `$depth`, `$stop`, `$leaf`, `$frontier`, `$ordinal` are values the LANGUAGE
+// injects into a scope; omgbase adds no `$` names. Every engine attribute is a
+// bare snake_case name that WINS on collision — the convention the relations
+// (`children`, `blocks`, `out`, `in`, `doc`, `frontmatter`, …) always followed:
+// a bare name that is an engine attribute reads the engine's value, never the
+// author's. The attributes: every row's `id`/`path`; docs' and blocks' `raw`/
+// `hash`/`updated_at`; docs' `title` (the computed title) and `tags` (authored
+// tags ∪ body hashtags) and `format`; a foreign key named for what it is
+// (`doc_id`, `block_id`, `via_id`, `dst_id`, `dst_path`, `uri`), a column its
+// column (`type`, `text`, `depth`, `ordinal`, `kind`, `predicate`, `field`).
+// User data is bare too, read by any non-colliding key; where it collides it is
+// reached through a source handle — `data` (the merged authored view:
+// frontmatter + inline by the property rule, exactly the read a bare
+// non-colliding key performs), `frontmatter`, `inline` — so `data.path` is the
+// author's `path:` key, `data.tags` the authored list alone, `data.title` the
+// authored title. There is no loud-error set: a bare `id`/`path`/`updated_at`/
+// `hash`/`raw` is simply the engine's attribute (before this batch of 3.0 the
+// attributes were `$`-prefixed and the bare spelling was an error, §9). A bare
+// target name — `docs`, `edges`, … — is a loud error of its own (root-row.ts).
+const DOC_ATTRIBUTES = new Set(["id", "path", "raw", "hash", "updated_at", "title", "tags", "format"]);
+const BLOCK_ATTRIBUTES = new Set(["id", "path", "raw", "hash", "updated_at", "doc_id", "type", "text", "attrs", "depth", "ordinal"]);
+const NODE_ATTRIBUTES = new Set(["id", "path", "doc_id", "block_id", "kind", "name", "value", "attrs"]);
+const EDGE_ATTRIBUTES = new Set(["id", "path", "doc_id", "block_id", "via_id", "dst_id", "dst_path", "uri", "field", "dst_kind", "predicate", "provenance", "anchor"]);
+/** The engine attributes per kind (spec/surface §1.2 table). Exported so the
+ * translator's tests pin the two against each other. */
+export const ATTRIBUTES: Readonly<Record<Target, ReadonlySet<string>>> = {
+  docs: DOC_ATTRIBUTES, blocks: BLOCK_ATTRIBUTES, nodes: NODE_ATTRIBUTES, edges: EDGE_ATTRIBUTES,
+};
+/** The source handles of a document (§1.2): `data` is the merged authored view
+ * (frontmatter + inline), the other two one source each. */
+export const SOURCE_HANDLES: ReadonlySet<string> = new Set(["data", "frontmatter", "inline"]);
 
 export interface StoreContextOptions {
   /** Pre-computed query vectors for `semantic("phrase")`, keyed by phrase (the
@@ -149,8 +162,8 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
   // repository, reached as `^$it` from a top-level row (`0^$it` from any depth).
   // Its own enumerable keys are the four collections — lazy getters, so
   // `entries(^$it)` names them without running a scan and `^$it.docs` is the
-  // same handle as `^docs` — and `get` answers `$id` with the repository id (an
-  // intrinsic, not an entry). Tagged so `get` recognizes it.
+  // same handle as `^docs` — and `get` answers `id` with the repository id (an
+  // attribute, not an entry). Tagged so `get` recognizes it.
   const rootRow: RootRow = Object.defineProperties({ [ROOT_ROW]: true } as RootRow, {
     docs: { enumerable: true, get: () => lazyRoot("docs") },
     blocks: { enumerable: true, get: () => lazyRoot("blocks") },
@@ -196,16 +209,18 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
     if (rows.length === 1 && rows[0]!.card === "scalar") return decodeProp(rows[0]!);
     return rows.map(decodeProp);
   };
-  // All of a doc's properties from one source (`frontmatter` / `inline`) as OQX
-  // entries, for `entries(frontmatter)`: one entry per TOP-LEVEL key, valued by
+  // All of a doc's authored properties as OQX entries, for `entries(frontmatter)`
+  // / `entries(inline)` / `entries(data)`: one entry per TOP-LEVEL key, valued by
   // the same scalar-vs-list rule as a bare read (`docProp`), with flattened dotted
-  // keys (`logging.level`) folded back into one nested entry. Keys come in the
-  // properties table's deterministic order — by key — because authored key
-  // position is not indexed (`ord` is the position WITHIN a list-valued key).
-  const docPropEntries = (docId: string, source: string): unknown[] => {
-    const keys = all(
-      `SELECT DISTINCT key FROM properties WHERE doc_id = ? AND source = ? AND deleted_commit IS NULL ORDER BY key`,
-      docId, source,
+  // keys (`logging.level`) folded back into one nested entry. `data` (source
+  // null) is frontmatter ∪ inline — the keys deduped, each valued by the merged
+  // read. Keys come in the properties table's deterministic order — by key —
+  // because authored key position is not indexed (`ord` is the position WITHIN
+  // a list-valued key).
+  const docPropEntries = (docId: string, source: string | null): unknown[] => {
+    const keys = (source
+      ? all(`SELECT DISTINCT key FROM properties WHERE doc_id = ? AND source = ? AND deleted_commit IS NULL ORDER BY key`, docId, source)
+      : all(`SELECT DISTINCT key FROM properties WHERE doc_id = ? AND source IN ('frontmatter', 'inline') AND deleted_commit IS NULL ORDER BY key`, docId)
     ).map((r) => String(r.key));
     const tops: string[] = [];
     const seen = new Set<string>();
@@ -213,7 +228,7 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
       const top = k.split(".")[0]!;
       if (!seen.has(top)) { seen.add(top); tops.push(top); }
     }
-    return tops.map((t) => semantics.makeEntry(t, docProp(docId, t, source)));
+    return tops.map((t) => semantics.makeEntry(t, docProp(docId, t, source ?? undefined)));
   };
   // Reconstruct a nested object from flattened dotted keys under `prefix.`
   // (undefined when there are none). Leaves are decoded property values.
@@ -362,11 +377,11 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
   // (spec/surface §1, 3.0): the owner is handed out as a LAZY row whose identity
   // columns are already known from the child — a block's/node's `doc_id` and
   // `__path` name its document, an edge's `src_doc` and `__path` its source doc,
-  // a node's `block_id` (+ `doc_id`, `__path`) its block — so `doc.$id` and
-  // `doc.$path` (and `block.$id`/`block.$path`/`block.doc_id` on a node) read
+  // a node's `block_id` (+ `doc_id`, `__path`) its block — so `doc.id` and
+  // `doc.path` (and `block.id`/`block.path`/`block.doc_id` on a node) read
   // those columns and run NO statement, exactly like the bare `doc_id`; the full
   // owner row is loaded on the first read of anything else (`doc.layer`,
-  // `block.text`). The translator mirrors this in SQL (`doc.$id` → the FK
+  // `block.text`). The translator mirrors this in SQL (`doc.id` → the FK
   // column). A Proxy over the backing object so the engine sees a plain tagged
   // row either way (indexing, rendering, `rowRef`).
   const lazyOwner = (known: Record<string, unknown>, t: Target, load: () => Record<string, unknown> | undefined): Row | undefined => {
@@ -409,63 +424,108 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
     return lazyOwner({ block_id: row.block_id, doc_id: row.doc_id, __path: row.__path }, "blocks", load);
   };
 
-  // ---- intrinsics ($-fields) ------------------------------------------------
-  // The `$` vocabulary is exactly the engine-provided names that contend with
-  // user names (see RESERVED_DOC_BASENAMES above; spec/surface §1.2, 3.0): every
-  // row's `$id`/`$path`, docs' and blocks' `$raw`/`$hash`/`$updated_at`, docs'
-  // computed `$title`/`$tags`. A foreign key (`doc_id`, `block_id`, `dst_id`, …)
-  // is a plain field, resolved in `getFrom` below. `$path` (and the edge field
-  // `dst_path`) is the REFERENCE form (`/a/b.md`, §1 "Paths", 2.0): the rows
-  // carry the storage form (`path`, the `__path` join column) and the read roots
-  // it, so nothing below the binding changes. run.ts roots the string literals
-  // a query compares them with.
-  const intrinsic = (row: Row, t: Target, name: string): unknown => {
-    // `$self` = the current row: run.ts rewrites row-scoped domain functions
-    // (text/semantic/under_*/…) to `$self.fn(…)` so they arrive via callMethod
-    // with the row as receiver (a free function sees no row).
-    if (name === "$self") return row;
+  // ---- engine attributes -----------------------------------------------------
+  // Bare, snake_case, winning on collision (see the name rule above; spec/surface
+  // §1.2, 3.0). `path` (and the edge field `dst_path`) is the REFERENCE form
+  // (`/a/b.md`, §1 "Paths", 2.0): the rows carry the storage form (`path`, the
+  // `__path` join column) and the read roots it, so nothing below the binding
+  // changes. run.ts roots the string literals a query compares them with.
+  // `undefined` means "not an attribute" — the caller falls through to the
+  // handles, relations and the author's data.
+  const attribute = (row: Row, t: Target, name: string): unknown => {
     if (t === "docs") switch (name) {
-      case "$id": return row.doc_id;
-      case "$path": return referencePath(String(row.path));
-      case "$hash": return row.file_hash == null ? null : hex(row.file_hash);
-      case "$updated_at": return scalar(`SELECT c.ts FROM revisions r JOIN commits c ON c.commit_id = r.commit_id WHERE r.rev_id = ?`, row.current_rev) ?? null;
-      // `$raw`: the exact file bytes (spec/store §6.1, frontmatter included).
-      case "$raw": return docsRead(store, String(row.doc_id))?.$raw ?? null;
-      case "$title": return docProp(String(row.doc_id), "$title", "computed") ?? null;
-      case "$tags": return docProp(String(row.doc_id), "$tags", "computed") ?? null;
+      case "id": return row.doc_id;
+      case "path": return referencePath(String(row.path));
+      case "hash": return row.file_hash == null ? null : hex(row.file_hash);
+      case "updated_at": return scalar(`SELECT c.ts FROM revisions r JOIN commits c ON c.commit_id = r.commit_id WHERE r.rev_id = ?`, row.current_rev) ?? null;
+      // `raw`: the exact file bytes (spec/store §6.1, frontmatter included).
+      case "raw": return docsRead(store, String(row.doc_id))?.raw ?? null;
+      // `title`: the computed title (spec/properties §3.3 — the authored
+      // title, else the first H1, else absent → null). `data.title` is the
+      // authored one alone.
+      case "title": return docProp(String(row.doc_id), "$title", "computed") ?? null;
+      // `tags`: the union of the authored tags (frontmatter + inline, by the
+      // property rule) and the body `#hashtags` (the computed `$tags` row,
+      // spec/properties §3.3), deduped, authored first in authored order, then
+      // the hashtags in document order; null when both are absent.
+      // `data.tags` is the authored list alone.
+      case "tags": return docTags(String(row.doc_id));
+      case "format": return row.format;
     }
     if (t === "blocks") switch (name) {
-      case "$id": return row.block_id;
-      case "$path": return referencePath(String(row.__path));
-      // `$raw`: the block's raw source bytes — the blob its `raw_hash` names (a
-      // container's raw holds its children verbatim); `text` is the plain field.
-      case "$raw": return row.raw_hash == null ? null : (scalar(`SELECT bytes FROM blobs WHERE hash = ?`, row.raw_hash) as Buffer | undefined)?.toString("utf8") ?? null;
-      case "$hash": return row.raw_hash == null ? null : hex(row.raw_hash);
-      case "$updated_at": return scalar(`SELECT MAX(c.ts) FROM block_changes bc JOIN commits c ON c.commit_id = bc.commit_id WHERE bc.block_id = ?`, row.block_id) ?? null;
+      case "id": return row.block_id;
+      case "path": return referencePath(String(row.__path));
+      // `raw`: the block's raw source bytes — the blob its `raw_hash` names (a
+      // container's raw holds its children verbatim); `text` is the normalized text.
+      case "raw": return row.raw_hash == null ? null : (scalar(`SELECT bytes FROM blobs WHERE hash = ?`, row.raw_hash) as Buffer | undefined)?.toString("utf8") ?? null;
+      case "hash": return row.raw_hash == null ? null : hex(row.raw_hash);
+      case "updated_at": return scalar(`SELECT MAX(c.ts) FROM block_changes bc JOIN commits c ON c.commit_id = bc.commit_id WHERE bc.block_id = ?`, row.block_id) ?? null;
+      case "doc_id": return row.doc_id;
+      case "type": return row.type;
+      case "text": return row.text;
+      case "attrs": return parseJson(row.attrs);
+      case "ordinal": return row.ordinal;
+      case "depth": return row.depth;
     }
     if (t === "nodes") switch (name) {
-      case "$id": return row.node_id;
-      case "$path": return referencePath(String(row.__path));
+      case "id": return row.node_id;
+      case "path": return referencePath(String(row.__path));
+      case "doc_id": return row.doc_id;
+      case "block_id": return row.block_id ?? null;
+      case "kind": return row.kind;
+      case "name": return row.name;
+      case "value": return row.value;
+      case "attrs": return parseJson(row.attrs);
     }
     if (t === "edges") switch (name) {
-      case "$id": return row.edge_id;
-      case "$path": return referencePath(String(row.__path));
+      // the store's columns under the surface's names (spec/surface §1.2).
+      case "id": return row.edge_id;
+      case "path": return referencePath(String(row.__path));
+      case "doc_id": return row.src_doc;
+      case "block_id": return row.src_block ?? null;
+      case "via_id": return row.via_node ?? null;
+      case "dst_id": return row.dst_node;
+      case "dst_path": {
+        const p = scalar(`SELECT path FROM docs WHERE doc_id = ?`, row.dst_node);
+        return p == null ? null : referencePath(String(p));
+      }
+      case "uri": return scalar(`SELECT uri FROM external_nodes WHERE node_id = ?`, row.dst_node) ?? null;
+      case "field": return row.src_field ?? null;
+      case "predicate": case "provenance": case "dst_kind": case "anchor": return row[name];
     }
     return undefined;
+  };
+  // `tags` on a document: authored ∪ hashtags, each list as the property rule
+  // reads it (a scalar-authored `tags: x` is one element), deduped by value
+  // (canonical JSON, so both engines agree on non-string elements).
+  const docTags = (docId: string): unknown => {
+    const asList = (v: unknown): unknown[] => (v === undefined || v === null ? [] : Array.isArray(v) ? v : [v]);
+    const authored = asList(docProp(docId, "tags"));
+    const hashtags = asList(docProp(docId, "$tags", "computed"));
+    if (authored.length === 0 && hashtags.length === 0) return null;
+    const seen = new Set<string>();
+    const out: unknown[] = [];
+    for (const v of [...authored, ...hashtags]) {
+      const k = JSON.stringify(v) ?? "undefined";
+      if (seen.has(k)) continue;
+      seen.add(k);
+      out.push(v);
+    }
+    return out;
   };
 
   // ---- get ------------------------------------------------------------------
   const getFrom = (row: unknown, key: string): unknown => {
     if (row == null) return undefined;
-    // The root row: `^$it.$id` is the repository id, `^$it.<target>` the lazy
+    // The root row: `^$it.id` is the repository id, `^$it.<target>` the lazy
     // root scan (the same handle `^<target>` / `root(name)` hands out).
     if ((row as RootRow)[ROOT_ROW]) {
-      if (key === "$id") return repoId;
+      if (key === "id") return repoId;
       return rootFns[key] ? rootFns[key]!() : undefined;
     }
     if ((row as PropSourceRef)[PROP_SOURCE]) {
       const p = row as PropSourceRef;
-      return docProp(p.docId, key, p.source);
+      return docProp(p.docId, key, p.source ?? undefined);
     }
     const t = (row as Row)[TARGET];
     if (!t) {
@@ -474,7 +534,15 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
     }
     const r = row as Row;
 
-    if (key.startsWith("$")) return intrinsic(r, t, key);
+    // `$self` = the current row: run.ts rewrites row-scoped domain functions
+    // (text/semantic/under_*/…) to `$self.fn(…)` so they arrive via callMethod
+    // with the row as receiver (a free function sees no row). Any other `$`
+    // name is OQX's (resolved by the engine before the row) or unknown — never
+    // an omgbase attribute.
+    if (key === "$self") return r;
+
+    // engine attributes win on collision (the name rule above).
+    if (ATTRIBUTES[t].has(key)) return attribute(r, t, key);
 
     // self-alias namespaces: `doc.x` (docs), `block.x` (blocks), `section.x` (nodes).
     if (t === "docs" && key === "doc") return r;
@@ -495,57 +563,19 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
     // edge row do.
     if (TARGETS.has(key)) throw new FilterInvalid(bareTargetMessage(key, null), "OQX");
 
-    // per-target scalar fields.
+    // the author's data.
     if (t === "docs") {
-      if (key === "format") return r.format;
-      if (key === "frontmatter" || key === "inline") return { [PROP_SOURCE]: true, docId: String(r.doc_id), source: key } as PropSourceRef;
-      if (RESERVED_DOC_BASENAMES.has(key)) {
-        throw new FilterInvalid(`bare '${key}' reads a frontmatter key; did you mean the intrinsic $${key}? (use frontmatter.${key} to force the property)`, "10 §2");
-      }
+      // The source handles: `data` is the merged authored view (frontmatter +
+      // inline), the other two one source each; `data.<k>` reaches an authored
+      // key whose bare name is an engine attribute (`data.path`, `data.tags`).
+      if (SOURCE_HANDLES.has(key)) return { [PROP_SOURCE]: true, docId: String(r.doc_id), source: key === "data" ? null : key } as PropSourceRef;
       return docProp(String(r.doc_id), key);
     }
-    if (t === "blocks") {
-      switch (key) {
-        case "doc_id": return r.doc_id;
-        case "type": return r.type;
-        case "text": return r.text;
-        case "attrs": return parseJson(r.attrs);
-        case "ordinal": return r.ordinal;
-        case "depth": return r.depth;
-      }
-      // A bare non-structural identifier flattens into attrs: `checked` reads
-      // `attrs.checked`. Structural fields above win on collision; an absent key
-      // is undefined (silently false in a predicate), matching a doc's missing
-      // frontmatter key. The `attrs.<k>` form still works unchanged.
-      return jattr(r, key);
-    }
-    if (t === "nodes") {
-      switch (key) {
-        case "doc_id": return r.doc_id;
-        case "block_id": return r.block_id ?? null;
-        case "kind": return r.kind;
-        case "name": return r.name;
-        case "value": return r.value;
-        case "attrs": return parseJson(r.attrs);
-      }
-      // Bare non-structural identifier flattens into attrs (see blocks above):
-      // `checked` reads `attrs.checked` on an `md:task`, `level` on an `md:section`.
-      return jattr(r, key);
-    }
-    // edges: the store's columns under the surface's names (spec/surface §1.2).
-    switch (key) {
-      case "doc_id": return r.src_doc;
-      case "block_id": return r.src_block ?? null;
-      case "via_id": return r.via_node ?? null;
-      case "dst_id": return r.dst_node;
-      case "dst_path": {
-        const p = scalar(`SELECT path FROM docs WHERE doc_id = ?`, r.dst_node);
-        return p == null ? null : referencePath(String(p));
-      }
-      case "uri": return scalar(`SELECT uri FROM external_nodes WHERE node_id = ?`, r.dst_node) ?? null;
-      case "field": return r.src_field ?? null;
-      case "predicate": case "provenance": case "dst_kind": case "anchor": return r[key];
-    }
+    // blocks / nodes: a bare non-structural identifier flattens into attrs:
+    // `checked` reads `attrs.checked`. The attributes above win on collision; an
+    // absent key is undefined (silently false in a predicate), matching a doc's
+    // missing frontmatter key. The `attrs.<k>` form still works unchanged.
+    if (t === "blocks" || t === "nodes") return jattr(r, key);
     return undefined;
   };
 
@@ -699,11 +729,11 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
 
   return {
     // The root scope's names (spec/oqx §2 step 5 at the root): the four lazy
-    // scans and `$id`, the repository id — so `^docs` / `0^docs` from any row is
-    // the scan and `^$id` / `0^$id` the id.
+    // scans and `id`, the repository id — so `^docs` / `0^docs` from any row is
+    // the scan and `^id` / `0^id` the id.
     root(name: string): unknown {
       if (opts.rowsRoot && name === opts.rowsRoot.name) return opts.rowsRoot.rows;
-      if (name === "$id") return repoId;
+      if (name === "id") return repoId;
       return rootFns[name] ? rootFns[name]!() : undefined;
     },
     // The root scope's row (oqx 0.18): the repository, so `^$it` from a
@@ -743,9 +773,10 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
     // pushdown can serve the property's autopromoted/cached bounds — see
     // detectRange + val_json in store/properties.ts.
     callFunction(name: string, args: unknown[]): CallResult {
-      // `entries(frontmatter)` / `entries(inline)`: the source handle is lazy (a
-      // PropSourceRef, not a plain object), so materialize its property bag as
-      // entries here; any other argument falls through to the oqx builtin.
+      // `entries(data)` / `entries(frontmatter)` / `entries(inline)`: the source
+      // handle is lazy (a PropSourceRef, not a plain object), so materialize its
+      // property bag as entries here; any other argument falls through to the
+      // oqx builtin.
       if (name === "entries" && (args[0] as PropSourceRef | undefined)?.[PROP_SOURCE]) {
         const p = args[0] as PropSourceRef;
         return { handled: true, value: docPropEntries(p.docId, p.source) };
@@ -786,20 +817,20 @@ export function tagRows(rows: Record<string, unknown>[], target: Target): unknow
 
 /**
  * A store row surfacing as a VALUE in a result (spec/surface §1.4, rows as
- * values, 1.2) is rendered as `{ $id, $path }` (3.0) — its id column and its
+ * values, 1.2) is rendered as `{ id, path }` (3.0) — its id column and its
  * document's path in the reference form (`/a.md`, §1 "Paths"), the same two keys
- * every hit carries, spelled as the intrinsics that read them — never the store
+ * every hit carries, spelled as the attributes that read them — never the store
  * row itself.
  * Returns undefined for anything that is not a tagged row (run.ts leaves those
  * alone).
  */
-export function rowRef(value: unknown): { $id: string; $path: string } | undefined {
+export function rowRef(value: unknown): { id: string; path: string } | undefined {
   const t = (value as Row | null | undefined)?.[TARGET];
   if (!t) return undefined;
   const r = value as Row;
   const id = t === "docs" ? r.doc_id : t === "blocks" ? r.block_id : t === "nodes" ? r.node_id : r.edge_id;
   const path = t === "docs" ? r.path : r.__path;
-  return { $id: String(id), $path: path == null ? "" : referencePath(String(path)) };
+  return { id: String(id), path: path == null ? "" : referencePath(String(path)) };
 }
 
 export { TARGET };

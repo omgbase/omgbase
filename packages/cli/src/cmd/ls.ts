@@ -42,11 +42,11 @@ async function runLs(cli: Cli, args: string[]): Promise<number> {
     rows.push(...page.items);
     cursor = page.truncated ? page.cursor : null;
   } while (cursor);
-  cli.capture?.(rows); // shell: docs become the addressable frame (ref = $id, label $path)
+  cli.capture?.(rows); // shell: docs become the addressable frame (ref = id, label path)
 
-  // `--ids` prints the documents' `$id`s (spec/cli 3.0; the paths before, a
+  // `--ids` prints the documents' `id`s (spec/cli 3.0; the paths before, a
   // stand-in for an identity the row did not carry).
-  if (cli.flags.mode !== "human") return emitMachine(cli, rows, { items: rows, ids: rows.map((r) => r.$id) });
+  if (cli.flags.mode !== "human") return emitMachine(cli, rows, { items: rows, ids: rows.map((r) => r.id) });
 
   const { style, io } = cli;
   if (rows.length === 0) {
@@ -54,9 +54,9 @@ async function runLs(cli: Cli, args: string[]): Promise<number> {
     return EXIT_OK;
   }
   const table = rows.map((r) => [
-    style.accent(r.$path),
+    style.accent(r.path),
     style.dim(`${r.blocks} blocks`),
-    style.dim(relTime(r.$updated_at)),
+    style.dim(relTime(r.updated_at)),
   ]);
   for (const line of columns(table, [{}, { align: "right" }, { align: "right" }])) io.out(line);
   return EXIT_OK;

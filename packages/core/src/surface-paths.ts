@@ -9,8 +9,8 @@
 // own fixtures pin them) and are re-shaped HERE.
 //
 // Row names (spec/surface §1.2, 3.0): a result that renders a document, block
-// or edge row spells it the way the query binding does — `$id`, `$path`,
-// `$hash`, `$raw`, `$updated_at`, plain `doc_id`/`block_id` foreign keys. The
+// or edge row spells it the way the query binding does — `id`, `path`,
+// `hash`, `raw`, `updated_at`, plain `doc_id`/`block_id` foreign keys. The
 // shapes other specs own under their own names — `spec/mutate`'s document
 // operation result `{ docId, path, … }`, `spec/store`'s observe outcome — are
 // re-shaped HERE too (`SurfaceDocOpResult`, `SurfaceObserveResult`, …).
@@ -30,33 +30,33 @@ import type { TextSearchResult } from "./search/text.js";
 import type { ResolveHit } from "./search/resolve.js";
 import { referencePath, referenceKeyed } from "./core/paths.js";
 
-/** `spec/mutate` §4's result: `revisions[].$path` and the dry-run `diffs` keys. */
+/** `spec/mutate` §4's result: `revisions[].path` and the dry-run `diffs` keys. */
 export function surfaceApplyResult<T extends ApplyResult>(res: T): T {
   return {
     ...res,
-    revisions: res.revisions.map((r) => ({ ...r, $path: referencePath(r.$path) })),
+    revisions: res.revisions.map((r) => ({ ...r, path: referencePath(r.path) })),
     ...(res.diffs ? { diffs: referenceKeyed(res.diffs) } : {}),
   };
 }
 
 /** A document operation's result on the wire (spec/surface §4, 3.0): the
  *  library's `{ docId, path, … }` (`spec/mutate` §6, unchanged there) renamed
- *  to the document's row attributes `$id`/`$path`, the path rooted, the
+ *  to the document's row attributes `id`/`path`, the path rooted, the
  *  dry-run `diffs` re-keyed; every other key (`committed`, `deleted`, …) as is. */
-export type SurfaceDocOpResult<T extends DocOpResult> = Omit<T, "docId" | "path"> & { $id: string; $path: string };
+export type SurfaceDocOpResult<T extends DocOpResult> = Omit<T, "docId" | "path"> & { id: string; path: string };
 
 /** `docs_create` / `docs_delete` / `docs_set_meta`. */
 export function surfaceDocOpResult<T extends DocOpResult>(res: T): SurfaceDocOpResult<T> {
   const { docId, path, ...rest } = res;
-  return { $id: docId, $path: referencePath(path), ...rest, ...(res.diffs ? { diffs: referenceKeyed(res.diffs) } : {}) };
+  return { id: docId, path: referencePath(path), ...rest, ...(res.diffs ? { diffs: referenceKeyed(res.diffs) } : {}) };
 }
 
 /** An inbound link on the wire (`docs_move.dangling[]`): an edge row under the
- *  `edges` target's names (spec/surface §1.2) — `doc_id`, `$path` (rooted),
+ *  `edges` target's names (spec/surface §1.2) — `doc_id`, `path` (rooted),
  *  `block_id`, `target` (as authored), `anchor`, `field?`. */
 export interface SurfaceInboundLink {
   doc_id: string;
-  $path: string;
+  path: string;
   block_id: string | null;
   target: string;
   anchor: string | null;
@@ -65,7 +65,7 @@ export interface SurfaceInboundLink {
 
 export function surfaceInboundLink(l: InboundLink): SurfaceInboundLink {
   const { path, ...rest } = l;
-  return { doc_id: rest.doc_id, $path: referencePath(path), block_id: rest.block_id, target: rest.target, anchor: rest.anchor, ...(rest.field !== undefined ? { field: rest.field } : {}) };
+  return { doc_id: rest.doc_id, path: referencePath(path), block_id: rest.block_id, target: rest.target, anchor: rest.anchor, ...(rest.field !== undefined ? { field: rest.field } : {}) };
 }
 
 /** `docs_move`: the document-op fields plus each dangling link (its `target`
@@ -76,24 +76,24 @@ export function surfaceDocMoveResult(res: DocMoveResult): Omit<SurfaceDocOpResul
 
 /** An observe outcome on the wire (spec/surface §4, 3.0): `spec/store` §5's
  *  `{ docId, path, … }` (unchanged there) renamed to the document's row
- *  attributes `$id`/`$path`, the path rooted. */
-export type SurfaceObserveResult<T extends { docId: string | null; path: string }> = Omit<T, "docId" | "path"> & { $id: T["docId"]; $path: string };
+ *  attributes `id`/`path`, the path rooted. */
+export type SurfaceObserveResult<T extends { docId: string | null; path: string }> = Omit<T, "docId" | "path"> & { id: T["docId"]; path: string };
 
 /** `observe` / `observe_many` outcomes. */
 export function surfaceObserveResult<T extends ObserveResult>(res: T): SurfaceObserveResult<T> {
   const { docId, path, ...rest } = res;
-  return { $id: docId, $path: referencePath(path), ...rest };
+  return { id: docId, path: referencePath(path), ...rest };
 }
 
 /** `observe_delete`. */
 export function surfaceObserveDeleteResult(res: ObserveDeleteResult): SurfaceObserveResult<ObserveDeleteResult> {
   const { docId, path, ...rest } = res;
-  return { $id: docId, $path: referencePath(path), ...rest };
+  return { id: docId, path: referencePath(path), ...rest };
 }
 
-/** `text_search` hits (`$path` rooted). */
+/** `text_search` hits (`path` rooted). */
 export function surfaceTextSearch(res: TextSearchResult): TextSearchResult {
-  return { ...res, hits: res.hits.map((h) => ({ ...h, $path: referencePath(h.$path) })) };
+  return { ...res, hits: res.hits.map((h) => ({ ...h, path: referencePath(h.path) })) };
 }
 
 /** `resolve` hits: the locator is `<path>#<type>[<ordinal>]`; its path half is
@@ -105,17 +105,17 @@ export function surfaceResolveHits(hits: ResolveHit[]): ResolveHit[] {
   });
 }
 
-/** `links_retarget` / `links_repair` hits (`$path` is the block's document). */
+/** `links_retarget` / `links_repair` hits (`path` is the block's document). */
 export function surfaceRetargetHits(hits: RetargetHit[]): RetargetHit[] {
-  return hits.map((h) => ({ ...h, $path: referencePath(h.$path) }));
+  return hits.map((h) => ({ ...h, path: referencePath(h.path) }));
 }
 
-/** A whole-document update plan: `target.$path` and `precondition.$path`. */
+/** A whole-document update plan: `target.path` and `precondition.path`. */
 export function surfaceOpset(opset: Opset): Opset {
   return {
     ...opset,
-    target: { ...opset.target, $path: referencePath(opset.target.$path) },
-    precondition: { ...opset.precondition, $path: referencePath(opset.precondition.$path) },
+    target: { ...opset.target, path: referencePath(opset.target.path) },
+    precondition: { ...opset.precondition, path: referencePath(opset.precondition.path) },
   };
 }
 

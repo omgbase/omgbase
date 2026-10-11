@@ -8,11 +8,11 @@ import { referencePath, storagePath } from "../paths.js";
 
 /** One row of the `ls` / docs_list surface: a live document with its block
  *  count and last-commit timestamp, under the row attributes' own names
- *  (spec/surface §1.2, 3.0: `$id`, `$path`, `$updated_at`). */
+ *  (spec/surface §1.2, 3.0: `id`, `path`, `updated_at`). */
 export interface DocListRow {
-  $id: string;
-  $path: string;
-  $updated_at: string | null;
+  id: string;
+  path: string;
+  updated_at: string | null;
   blocks: number;
 }
 
@@ -72,7 +72,7 @@ function liveDocRows(store: Store, repoId: string, like: string, after: string |
     .all(...params) as { id: string; path: string; ts: string | null; blocks: number }[];
   // The surface speaks the reference form (spec/surface §1 "Paths"): rooted on
   // the way out, the storage form never leaves this module.
-  return rows.map((r) => ({ $id: r.id, $path: referencePath(r.path), $updated_at: r.ts, blocks: r.blocks }));
+  return rows.map((r) => ({ id: r.id, path: referencePath(r.path), updated_at: r.ts, blocks: r.blocks }));
 }
 
 // Path-keyset cursors for the path-ordered list surfaces: the shared kernel
@@ -87,7 +87,7 @@ function decodeListCursor(cursor: string): string {
 
 /** Page an already path-ordered row set under a limit + token budget, issuing
  *  a keyset cursor when it stops early. Shared by docs_list and docs_tree. */
-function pagePathOrdered<T extends { $path: string }>(
+function pagePathOrdered<T extends { path: string }>(
   rows: T[],
   limit: number,
   budgetTokens: number | undefined,
@@ -111,7 +111,7 @@ function pagePathOrdered<T extends { $path: string }>(
     items.push(row);
   }
   const last = items[items.length - 1];
-  return { items, truncated, cursor: truncated && last ? encodePathCursor(last.$path) : null };
+  return { items, truncated, cursor: truncated && last ? encodePathCursor(last.path) : null };
 }
 
 /** List a repo's live documents (path, block count, last-commit ts), ordered by
@@ -131,17 +131,17 @@ export function docsList(store: Store, repoId: string, opts: DocListOptions = {}
 }
 
 /** One entry of the docs_tree surface: a live document (`kind: "doc"`, with
- *  its `$id`) or a collapsed directory (`kind: "dir"`, `$path` ends in `/`, no
+ *  its `id`) or a collapsed directory (`kind: "dir"`, `path` ends in `/`, no
  *  id) at the requested depth. `docs`/`blocks` are totals under the entry (a
- *  doc counts 1 doc); `$updated_at` is the latest last-commit timestamp under
+ *  doc counts 1 doc); `updated_at` is the latest last-commit timestamp under
  *  it (spec/surface §1.2, 3.0 names). */
 export interface DocTreeEntry {
-  $id?: string;
-  $path: string;
+  id?: string;
+  path: string;
   kind: "dir" | "doc";
   docs: number;
   blocks: number;
-  $updated_at: string | null;
+  updated_at: string | null;
 }
 
 export interface DocTreePage {
@@ -198,12 +198,12 @@ export function docsTree(store: Store, repoId: string, opts: DocTreeOptions = {}
   const byPath = new Map<string, DocTreeEntry>();
   const total = { docs: 0, blocks: 0 };
   for (const row of rows) {
-    const storage = storagePath(row.$path);
+    const storage = storagePath(row.path);
     total.docs += 1;
     total.blocks += row.blocks;
     const segs = storage.slice(prefix.length).split("/");
     if (segs.length <= depth) {
-      byPath.set(storage, { $id: row.$id, $path: row.$path, kind: "doc", docs: 1, blocks: row.blocks, $updated_at: row.$updated_at });
+      byPath.set(storage, { id: row.id, path: row.path, kind: "doc", docs: 1, blocks: row.blocks, updated_at: row.updated_at });
       continue;
     }
     const dir = referencePath(prefix + segs.slice(0, depth).join("/") + "/");
@@ -211,16 +211,16 @@ export function docsTree(store: Store, repoId: string, opts: DocTreeOptions = {}
     if (cur) {
       cur.docs += 1;
       cur.blocks += row.blocks;
-      if (row.$updated_at !== null && (cur.$updated_at === null || row.$updated_at > cur.$updated_at)) cur.$updated_at = row.$updated_at;
+      if (row.updated_at !== null && (cur.updated_at === null || row.updated_at > cur.updated_at)) cur.updated_at = row.updated_at;
     } else {
-      byPath.set(dir, { $path: dir, kind: "dir", docs: 1, blocks: row.blocks, $updated_at: row.$updated_at });
+      byPath.set(dir, { path: dir, kind: "dir", docs: 1, blocks: row.blocks, updated_at: row.updated_at });
     }
   }
 
-  let entries = [...byPath.values()].sort((a, b) => (a.$path < b.$path ? -1 : a.$path > b.$path ? 1 : 0));
+  let entries = [...byPath.values()].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
   if (opts.cursor) {
     const after = decodeListCursor(opts.cursor);
-    entries = entries.filter((e) => e.$path > after);
+    entries = entries.filter((e) => e.path > after);
   }
   const { items, truncated, cursor } = pagePathOrdered(entries, limit, opts.budgetTokens, false);
   return { prefix: referencePath(prefix), depth, total, entries: items, truncated, cursor };

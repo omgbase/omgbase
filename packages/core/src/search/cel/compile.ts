@@ -15,7 +15,7 @@ export type Target = "docs" | "blocks" | "nodes" | "edges";
 // must give the inner scope a DISTINCT alias (n1, b1, …) so its correlation and
 // field references do not shadow the outer row. `ctx.self` is the alias of the
 // target's own table; `ctx.doc` is the alias of the correlated `docs` row that
-// property routing and `$path`/`doc.*` reach-through resolve against (== self on
+// property routing and `path`/`doc.*` reach-through resolve against (== self on
 // the docs target). For OQX's slice-2 relations every nested scope shares the
 // outer document, so `doc` stays `d`; a future cross-document relation would
 // allocate a distinct doc alias here too.
@@ -106,39 +106,16 @@ function jsonPath(segs: string[]): string {
 // an existence/count predicate (membership, size, has, bool-context). All
 // correlate on `<doc>.doc_id` (the correlated docs row, present on every target).
 
-const PROP_SOURCES = new Set(["frontmatter", "inline", "computed"]);
+const PROP_SOURCES = new Set(["data", "frontmatter", "inline", "computed"]);
 
 // Computed properties surfaced as document intrinsics (12 §4). Engine-derived,
 // stored as source='computed' rows keyed by their $ name. Filterable like any
 // property (scalar ==, list(), membership) but never shadow authored keys.
 const COMPUTED_INTRINSICS = new Set(["$title", "$tags"]);
 
-// Base names of the document intrinsics ($id, $path, ...) MINUS their `$`. On
-// the docs open namespace (and doc.<k> reach-through), a BARE first segment
-// equal to one of these is almost always a typo for the intrinsic: it would
-// otherwise resolve to an absent frontmatter key and silently match nothing
-// (a misleading empty). We reject it with a hint instead. `title`/`tags` are
-// deliberately EXCLUDED: their $-forms are `computed` intrinsics that do not
-// shadow authored frontmatter, so bare `title`/`tags` remain legitimate key
-// access (see COMPUTED_INTRINSICS and QUERY_SYNTAX). A source-scoped form
-// (frontmatter.path / inline.path) is an explicit request for that property
-// and is likewise not caught — only the bare first-segment case is the trap.
-const RESERVED_INTRINSIC_BASENAMES = new Set([
-  "id", "path", "repo", "updated_at", "hash", "raw",
-]);
-
-// Guard the docs open namespace against reserved-intrinsic collisions. `segs`
-// are the property key segments (after any doc./source scope has been peeled).
-// Throws when the FIRST segment shadows an intrinsic base name.
-function guardReservedCollision(segs: string[]): void {
-  if (RESERVED_INTRINSIC_BASENAMES.has(segs[0]!)) {
-    const name = segs[0]!;
-    throw new FilterInvalid(
-      `bare '${name}' reads a frontmatter key; did you mean the intrinsic $${name}? (use frontmatter.${name} to force the property)`,
-      "10 §2",
-    );
-  }
-}
+// There is no reserved-basename guard any more (spec/surface §1.2, 3.0): the
+// engine attributes are bare and win on collision; an authored key of the same
+// name is reached through `data.<k>` / `frontmatter.<k>` / `inline.<k>`.
 
 // Validate + join identifier segments into a dotted property key. Segments come
 // from the lexer's identifier rule, so inlining is injection-safe (mirrors
@@ -162,7 +139,7 @@ interface PropRef { key: string; source?: string }
 function propRef(field: FieldRef, target: Target): PropRef | null {
   let segs = field.segments;
   if (target === "docs") {
-    // Computed intrinsic ($title, $tags): route to source='computed' rows.
+    // Computed intrinsic (title, tags): route to source='computed' rows.
     if (field.intrinsic) {
       if (segs.length === 1 && COMPUTED_INTRINSICS.has(segs[0]!)) return { key: segs[0]!, source: "computed" };
       return null;
@@ -173,7 +150,7 @@ function propRef(field: FieldRef, target: Target): PropRef | null {
     // blocks / nodes: only doc.<k> reach-through routes to properties.
     if (segs[0] !== "doc") return null;
     segs = segs.slice(1);
-    // doc.$title reach-through to a computed intrinsic.
+    // doc.title reach-through to a computed intrinsic.
     if (segs.length === 1 && COMPUTED_INTRINSICS.has(segs[0]!)) return { key: segs[0]!, source: "computed" };
     if (segs.length === 0 || segs[0]!.startsWith("$") || segs[0] === "format") return null;
   }
@@ -181,10 +158,6 @@ function propRef(field: FieldRef, target: Target): PropRef | null {
     const source = segs[0]!;
     return { key: propKey(segs.slice(1)), source };
   }
-  // Bare (non-`$`, non-source-scoped) key: reject a first segment that shadows
-  // a reserved intrinsic base name (path/id/repo/...) so a typo for `$path`
-  // fails loud instead of silently resolving to an absent frontmatter key.
-  guardReservedCollision(segs);
   return { key: propKey(segs) };
 }
 
@@ -269,13 +242,12 @@ function fieldSql(field: FieldRef, target: Target, ctx: AliasCtx): { expr: strin
   if (field.intrinsic) {
     if (target === "docs") {
       switch (head) {
-        case "$id": return { expr: `${self}.doc_id` };
-        case "$path": return { expr: `${self}.path` };
-        case "$repo": return { expr: `${self}.repo_id` };
-        case "$updated_at": return { expr: `(SELECT c.ts FROM revisions r JOIN commits c ON c.commit_id = r.commit_id WHERE r.rev_id = ${self}.current_rev)` };
-        case "$hash": return { expr: `lower(hex(${self}.file_hash))` };
+        case "id": return { expr: `${self}.doc_id` };
+        case "path": return { expr: `${self}.path` };
+                case "updated_at": return { expr: `(SELECT c.ts FROM revisions r JOIN commits c ON c.commit_id = r.commit_id WHERE r.rev_id = ${self}.current_rev)` };
+        case "hash": return { expr: `lower(hex(${self}.file_hash))` };
         default: {
-          // Computed property intrinsic ($title, $tags) → properties row scalar.
+          // Computed property intrinsic (title, tags) → properties row scalar.
           const ref = propRef(field, target);
           if (ref) return { expr: propScalarExpr(ref, ctx) };
           throw new FilterInvalid(`unknown intrinsic ${head} on docs`, "10 §2");
@@ -283,22 +255,22 @@ function fieldSql(field: FieldRef, target: Target, ctx: AliasCtx): { expr: strin
       }
     } else if (target === "nodes") {
       switch (head) {
-        case "$id": return { expr: `${self}.node_id` };
-        case "$path": return { expr: `${doc}.path` };
+        case "id": return { expr: `${self}.node_id` };
+        case "path": return { expr: `${doc}.path` };
         default: throw new FilterInvalid(`unknown intrinsic ${head} on nodes`, "10 §2");
       }
     } else if (target === "edges") {
       switch (head) {
-        case "$id": return { expr: `${self}.edge_id` };
-        case "$path": return { expr: `${doc}.path` }; // source document's path
+        case "id": return { expr: `${self}.edge_id` };
+        case "path": return { expr: `${doc}.path` }; // source document's path
         default: throw new FilterInvalid(`unknown intrinsic ${head} on edges`, "10 §2");
       }
     } else {
       switch (head) {
-        case "$id": return { expr: `${self}.block_id` };
-        case "$path": return { expr: `${doc}.path` };
-        case "$hash": return { expr: `lower(hex(${self}.raw_hash))` };
-        case "$updated_at": return { expr: `(SELECT MAX(c.ts) FROM block_changes bc JOIN commits c ON c.commit_id = bc.commit_id WHERE bc.block_id = ${self}.block_id)` };
+        case "id": return { expr: `${self}.block_id` };
+        case "path": return { expr: `${doc}.path` };
+        case "hash": return { expr: `lower(hex(${self}.raw_hash))` };
+        case "updated_at": return { expr: `(SELECT MAX(c.ts) FROM block_changes bc JOIN commits c ON c.commit_id = bc.commit_id WHERE bc.block_id = ${self}.block_id)` };
         default: throw new FilterInvalid(`unknown intrinsic ${head} on blocks`, "10 §2");
       }
     }

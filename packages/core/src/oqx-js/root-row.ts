@@ -1,6 +1,6 @@
 // The root row (spec/surface §1.1, 2.0; spec/oqx 0.18). The repository is OQX's
 // root row: from a top-level row `^docs` reaches the documents (one caret per
-// enclosing block, or the absolute `0^docs`), `^$id` the repository id, and the
+// enclosing block, or the absolute `0^docs`), `^id` the repository id, and the
 // root object (`^$it`) exposes the four collections. Two spellings are refused
 // as `filter_invalid`, with the messages below, in both engines:
 //
@@ -35,7 +35,7 @@ export const REACH_THROUGH: Readonly<Record<string, Target>> = { doc: "docs", bl
 const NOUN: Record<Target, string> = { docs: "documents", blocks: "blocks", nodes: "nodes", edges: "edges" };
 
 export const REPO_REMOVED_MESSAGE =
-  "`$repo` was removed in surface 2.0 — reach the repository's collections through the root row: `^docs` from a top-level row (one caret per enclosing block, or the absolute `0^docs`), and the repository id as `^$id` / `0^$id`";
+  "`$repo` was removed in surface 2.0 — reach the repository's collections through the root row: `^docs` from a top-level row (one caret per enclosing block, or the absolute `0^docs`), and the repository id as `^id` / `0^id`";
 
 /**
  * The bare-target error. `depth` is the scope depth the name was read at when

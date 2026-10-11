@@ -227,7 +227,7 @@ function indent(s: string, pad: string): string {
 //     (dim), the locator, and the projected columns in select order. Columns are
 //     the union of projected keys across hits in first-seen order (a hit omits
 //     an absent field, so no single hit is authoritative). The injected `path`
-//     column is dropped when the projection itself carries `$path` — a row stays
+//     column is dropped when the projection itself carries `path` — a row stays
 //     locatable either way, and the same path never prints twice.
 //
 // Cells: strings verbatim (first line only; `…` marks a cut), numbers/booleans
@@ -237,8 +237,8 @@ function indent(s: string, pad: string): string {
 // `cli.style`, so NO_COLOR / non-TTY degrade to plain text like everything else.
 
 export interface HitLike {
-  $id: string;
-  $path: string;
+  id: string;
+  path: string;
   [k: string]: unknown;
 }
 
@@ -262,12 +262,12 @@ export function hitCell(v: unknown): string {
 }
 
 /** The projected column names across `hits`: every key but the envelope's
- *  `$id`/`$path` (spec/surface §1.4, 3.0 — a `$path` projection collapses onto
+ *  `id`/`path` (spec/surface §1.4, 3.0 — a `path` projection collapses onto
  *  the envelope key, so it is never a column), in first-seen order. Empty when
  *  nothing was projected. */
 export function hitColumns(hits: HitLike[]): string[] {
   const cols: string[] = [];
-  const seen = new Set<string>(["$id", "$path"]);
+  const seen = new Set<string>(["id", "path"]);
   for (const h of hits) {
     for (const k of Object.keys(h)) {
       if (seen.has(k)) continue;
@@ -278,22 +278,22 @@ export function hitColumns(hits: HitLike[]): string[] {
   return cols;
 }
 
-/** Human-tier hit list: `<$id>  <$path>` lines, or an aligned table when projected
- *  (header `$id`, `$path`, then the projected keys — spec/cli §4, 3.0). */
+/** Human-tier hit list: `<id>  <path>` lines, or an aligned table when projected
+ *  (header `id`, `path`, then the projected keys — spec/cli §4, 3.0). */
 export function renderHits(cli: { io: IO; style: Style }, hits: HitLike[]): void {
   const { io, style } = cli;
   const projected = hitColumns(hits);
   if (projected.length === 0) {
-    for (const h of hits) io.out(`${style.id(h.$id)}  ${style.accent(h.$path)}`.trimEnd());
+    for (const h of hits) io.out(`${style.id(h.id)}  ${style.accent(h.path)}`.trimEnd());
     return;
   }
-  const cols = ["$id", "$path", ...projected];
+  const cols = ["id", "path", ...projected];
   const rows: string[][] = [cols.map((c) => style.dim(c))];
   for (const h of hits) {
     rows.push(
       cols.map((c) => {
-        if (c === "$id") return style.id(h.$id);
-        if (c === "$path") return style.accent(h.$path);
+        if (c === "id") return style.id(h.id);
+        if (c === "path") return style.accent(h.path);
         return hitCell(h[c]);
       }),
     );

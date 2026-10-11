@@ -82,7 +82,7 @@ pub fn retarget(cli: &mut Cli, args: &[String]) -> Result<i32> {
         hits.len()
     )));
     for h in &hits {
-        cli.io.out(&cli.style.id(&str_of(h, "$id")));
+        cli.io.out(&cli.style.id(&str_of(h, "id")));
         for line in unified_diff_lines(&str_of(h, "oldRaw"), &str_of(h, "newRaw")) {
             let styled = if line.starts_with('+') {
                 cli.style.ok(&line)

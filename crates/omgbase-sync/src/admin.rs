@@ -54,7 +54,7 @@ impl RepoStatus {
     #[must_use]
     pub fn to_json(&self) -> Value {
         serde_json::json!({
-            "$id": self.repo_id,
+            "id": self.repo_id,
             "slug": self.slug,
             "rootPath": self.root_path,
             "docs": self.docs,

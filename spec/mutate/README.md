@@ -98,8 +98,8 @@ Expect { content_hash?: hex(raw_hash), parent_children_hash?: hex(sha256(child i
 
 `check_content_hash(block, expect)`: a **missing** `content_hash` and a
 mismatched one both raise `stale_expectation` with `{ op_index, block,
-expected_content_hash?, current: { $hash, markdown: raw }, retriable:
-true }` — the caller can retry from the error without a read (`current.$hash`
+expected_content_hash?, current: { hash, markdown: raw }, retriable:
+true }` — the caller can retry from the error without a read (`current.hash`
 is the block's current hash under the row rule of `spec/surface` §1.2, 2.0;
 `expected_content_hash` echoes the caller's argument and keeps its name).
 `check_parent_children_hash(parent, expect)`: when `expect.parent_children_hash`
@@ -250,7 +250,7 @@ Op   insert | update | move | remove | split | merge   (fields as §2; string
      fields `block`, `blocks[]`, `to.parent`, `to.at.before/after` may be
      placeholders "$<n>.ids[<i>]" naming an earlier op's result)
 Request  { repo, ops, origin: { actor, reason? }, dry_run?, set_frontmatter?: [{ doc, raw | null }] }
-Result   { results: [{ ids, removed?, merged_into? }], revisions: [{ $id, $path, $hash }], diffs?: { path: { before, after } }, committed }
+Result   { results: [{ ids, removed?, merged_into? }], revisions: [{ id, path, hash }], diffs?: { path: { before, after } }, committed }
 ```
 
 1. Resolve placeholders against earlier results (`target_missing` when the
@@ -269,7 +269,7 @@ Result   { results: [{ ids, removed?, merged_into? }], revisions: [{ $id, $path,
 3. Apply the ops in order (§2); any error aborts the whole request with
    nothing written.
 4. For every loaded document: `diffs[path] = { before, after: render }`,
-   `revisions` gets `{ $id, $path, $hash }` — the document, its path (this
+   `revisions` gets `{ id, path, hash }` — the document, its path (this
    spec's storage form; the surface roots it) and `hex(sha256(render))`, the
    hash the committed revision will carry (2.0; `{ doc, path }` before).
    `dry_run` returns here with `committed: false`.
@@ -360,16 +360,16 @@ All are `api` commits with a generated `reason`.
 `plan_update(doc, content)` → `Opset`:
 
 ```text
-Opset { version: 1, kind: "doc_update", target: { $id, $path },
-        precondition: { $id, $path, base_revision, $hash },
+Opset { version: 1, kind: "doc_update", target: { id, path },
+        precondition: { id, path, base_revision, hash },
         matcher_v, ops: [PlanOp], frontmatter?: { raw | null },
         summary: { preserved, updated, moved, created, removed, split, merged, ambiguous },
         converges, diagnostics: [string] }
 PlanOp { op, disposition, blocks, confidence, reason, detail? }
 ```
 
-1. Load the doc (`doc_missing`); `precondition.$hash = sha256(render(doc))`
-   (the document's current `$hash`), `base_revision = current_rev` (2.0:
+1. Load the doc (`doc_missing`); `precondition.hash = sha256(render(doc))`
+   (the document's current `hash`), `base_revision = current_rev` (2.0:
    `target`/`precondition` spelled `doc`/`path`/`base_content_hash` before).
 2. Parse `content` per the doc's format; split off the frontmatter block;
    reconcile the body against the doc's stored tree (`spec/reconcile`, the
@@ -426,8 +426,8 @@ With `target` = the proposed top-level blocks annotated by the assignment
 
 `plan_not_convergent` when `converges` is false; `doc_missing`;
 `stale_plan` (retriable, `{ doc, expected_revision, current: { revision,
-$hash } }`) when `base_revision` (if non-null) differs from `current_rev` or
-the doc's `file_hash` differs from `precondition.$hash`; else `apply` with the
+hash } }`) when `base_revision` (if non-null) differs from `current_rev` or
+the doc's `file_hash` differs from `precondition.hash`; else `apply` with the
 plan's kernel ops and `set_frontmatter`.
 
 ## 8. Errors
@@ -457,7 +457,7 @@ so file-CAS and the written bytes are checkable) and these steps:
 `ts` (spec/store §2.4 format) is required on every committing step: the
 implementations expose a clock seam (`ts` on the apply request, the doc-op
 context and the opset request) so commit timestamps are pinned. Ops use the
-spec spelling `child_ids`; the opset uses `base_revision`, `$hash`,
+spec spelling `child_ids`; the opset uses `base_revision`, `hash`,
 `matcher_v`; plan ops keep their placeholders;
 `diagnostics` strings are pinned verbatim.
 
@@ -570,6 +570,13 @@ and `files[path] == reconstruct(doc)`; then the projection deep-equals
 
 ## Decisions
 
+- 2026-10-11, mutate 2.0 (surface 3.0 batch 3): the renamed keys are bare —
+  `revisions: [{ id, path, hash }]`, the opset `target: { id, path }` and
+  `precondition: { id, path, base_revision, hash }`, `stale_expectation`/
+  `stale_plan` `current.hash` — because `spec/surface` §1.2's final rule gives
+  omgbase no `$` names (`$` is OQX's); the entry below described the `$id`/
+  `$path`/`$hash` interim spelling of the same unshipped 2.0 line. Fixtures:
+  the same expectations re-keyed again, nothing else.
 - 2026-10-11, mutate 2.0: the request/response shapes follow the surface's
   row rule (`spec/surface` §1.2, 3.0: `$` marks exactly the engine-provided
   names that contend with user names — a row's `$id`, `$path`, `$hash`,

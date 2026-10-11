@@ -14,7 +14,7 @@ in `select` order (here a frontmatter number and an inline field):
 
 ```console
 $ omg query 'select era, known: known_for from docs where type == "practitioner" order by era asc'
-{{:dollar}}id        $path                                era   known
+id         path                                 era   known
 d_9px29y1  /practitioners/maria-prophetissa.md  250   balneum mariae
 d_nzb61j9  /practitioners/jabir-ibn-hayyan.md   800   mercury-sulphur theory
 d_t5nvj1g  /practitioners/paracelsus.md         1530  tria prima
@@ -22,12 +22,12 @@ d_rw4ygr0  /practitioners/newton.md             1680  unpublished alchemical cor
 ```
 
 `known: known_for` renames the projected column; a bare `era` keeps its name.
-Select `$path` yourself and it takes the path column's place (the same path is
+Select `path` yourself and it takes the path column's place (the same path is
 never printed twice):
 
 ```console
-$ omg query 'select $path, era from docs where type == "practitioner" order by era asc'
-{{:dollar}}id        $path                                era
+$ omg query 'select path, era from docs where type == "practitioner" order by era asc'
+id         path                                 era
 d_9px29y1  /practitioners/maria-prophetissa.md  250
 d_nzb61j9  /practitioners/jabir-ibn-hayyan.md   800
 d_t5nvj1g  /practitioners/paracelsus.md         1530
@@ -41,17 +41,49 @@ path always come along, then your selected fields:
 
 ```console
 $ omg query 'select era, known: known_for from docs where type == "practitioner" order by era asc' --jsonl
-{"$id":"d_9px29y1","$path":"/practitioners/maria-prophetissa.md","era":250,"known":"balneum mariae"}
-{"$id":"d_nzb61j9","$path":"/practitioners/jabir-ibn-hayyan.md","era":800,"known":"mercury-sulphur theory"}
-{"$id":"d_t5nvj1g","$path":"/practitioners/paracelsus.md","era":1530,"known":"tria prima"}
-{"$id":"d_rw4ygr0","$path":"/practitioners/newton.md","era":1680,"known":"unpublished alchemical corpus"}
+{"id":"d_9px29y1","path":"/practitioners/maria-prophetissa.md","era":250,"known":"balneum mariae"}
+{"id":"d_nzb61j9","path":"/practitioners/jabir-ibn-hayyan.md","era":800,"known":"mercury-sulphur theory"}
+{"id":"d_t5nvj1g","path":"/practitioners/paracelsus.md","era":1530,"known":"tria prima"}
+{"id":"d_rw4ygr0","path":"/practitioners/newton.md","era":1680,"known":"unpublished alchemical corpus"}
 ```
 
 `known: known_for` renames the projected column; a bare `era` keeps its name.
 The projection comes *first*: OQX clauses have one fixed order — `select`, `from`,
 `where`, `follow`, `order by`, `limit`, `offset` — and `select` is the only keyword
 you may drop (`era, known: known_for from docs …` means the same). A `where` may
-refer to a `select` alias (`select $path, old: era < 1000 from docs where old`).
+refer to a `select` alias (`select path, old: era < 1000 from docs where old`).
+
+### Engine attributes win; `data.<k>` reaches your own key
+
+`id`, `path`, `title`, `tags`, `raw`, `hash`, `updated_at`, `format` are the
+document's **engine attributes** — bare names that always read the engine's
+value. `title` is the computed title (the first H1); if your frontmatter has a
+`title:` of its own, reach it through the `data` handle (the merged authored
+view — frontmatter plus inline fields). The hub authors `title: Alchemy` and its
+H1 says the same; the lab notes have no `title:` key, so `data.title` is absent
+there while `title` still comes from the heading:
+
+```console
+$ omg query 'select title, t: data.title from docs where type == "hub" or type == "lab-note"'
+id         path                   title                        t
+d_zkfr2za  /index.md              Alchemy                      Alchemy
+d_y4dnw21  /lab/2026-01-notes.md  Laboratory notes — January
+d_11fw7fe  /lab/2026-02-notes.md  Laboratory notes — February
+```
+
+The hit's `id` and `path` are an envelope every hit carries, so a projection may
+not take their place: `select data.path` would land an authored `path:` key on
+the envelope's `path`, and the query is refused with the fix in the message —
+alias it. (`select id, path` is fine: the attribute collapses onto its own key.)
+
+```console
+$ omg query 'select data.path from docs'
+error[filter_invalid]: projection `path` collides with the hit envelope — alias it (`p: data.path`)
+  {
+    "reason": "projection `path` collides with the hit envelope — alias it (`p: data.path`)",
+    "hint": "OQX"
+  }
+```
 
 ## `order by`
 
@@ -91,12 +123,12 @@ d_5zmf9f7  /substances/sulphur.md
 ## `values` — bare values instead of hits
 
 When you want a single column and nothing else, follow a one-item `select` with
-`values`. The result is the bare projected value per row (no `{$id, $path}`
+`values`. The result is the bare projected value per row (no `{id, path}`
 record), so the human tier prints one value per line — a list of paths, or a
 list of numbers:
 
 ```console
-$ omg query 'select $path values from docs where type == "practitioner" order by era asc'
+$ omg query 'select path values from docs where type == "practitioner" order by era asc'
 /practitioners/maria-prophetissa.md
 /practitioners/jabir-ibn-hayyan.md
 /practitioners/paracelsus.md

@@ -26,18 +26,18 @@
     {
       "name": "receiver-collect",
       "notes": "§1.3 refs(x) as a directive receiver over a list: a repo-root-absolute path and a bare repo-relative path each resolve to the live document (matched against docs.path after stripping one leading `/`); a dangling reference is dropped; order preserved.",
-      "query": "select $path, prior: refs(before) collect { $path } from docs where $path == \"timeline/review.md\"",
+      "query": "select path, prior: refs(before) collect { path } from docs where path == \"timeline/review.md\"",
       "expect": {
         "hits": [
           {
-            "$id": "d_19",
-            "$path": "/timeline/review.md",
+            "id": "d_19",
+            "path": "/timeline/review.md",
             "prior": [
               {
-                "$path": "/timeline/kickoff.md"
+                "path": "/timeline/kickoff.md"
               },
               {
-                "$path": "/processes/dissolution.md"
+                "path": "/processes/dissolution.md"
               }
             ]
           }
@@ -50,22 +50,22 @@
     {
       "name": "follow-destination",
       "notes": "§1.3: refs(x) as a follow destination walks the documents a property names (`follow before` over the same list is filter_invalid — query-errors::hit-not-a-row-follow-property).",
-      "query": "select $path, $depth from docs where $path == \"timeline/review.md\" follow refs(before)",
+      "query": "select path, $depth from docs where path == \"timeline/review.md\" follow refs(before)",
       "expect": {
         "hits": [
           {
-            "$id": "d_19",
-            "$path": "/timeline/review.md",
+            "id": "d_19",
+            "path": "/timeline/review.md",
             "$depth": 1
           },
           {
-            "$id": "d_18",
-            "$path": "/timeline/kickoff.md",
+            "id": "d_18",
+            "path": "/timeline/kickoff.md",
             "$depth": 2
           },
           {
-            "$id": "d_9",
-            "$path": "/processes/dissolution.md",
+            "id": "d_9",
+            "path": "/processes/dissolution.md",
             "$depth": 2
           }
         ],
@@ -77,24 +77,24 @@
     {
       "name": "follow-destination-depth-and-stop",
       "notes": "§1.3 with spec/oqx follow options: a depth bound over refs(before).",
-      "query": "select $path, $depth, $stop from docs where $path == \"timeline/review.md\" follow refs(before) { depth 2 }",
+      "query": "select path, $depth, $stop from docs where path == \"timeline/review.md\" follow refs(before) { depth 2 }",
       "expect": {
         "hits": [
           {
-            "$id": "d_19",
-            "$path": "/timeline/review.md",
+            "id": "d_19",
+            "path": "/timeline/review.md",
             "$depth": 1,
             "$stop": "interior"
           },
           {
-            "$id": "d_18",
-            "$path": "/timeline/kickoff.md",
+            "id": "d_18",
+            "path": "/timeline/kickoff.md",
             "$depth": 2,
             "$stop": "depth"
           },
           {
-            "$id": "d_9",
-            "$path": "/processes/dissolution.md",
+            "id": "d_9",
+            "path": "/processes/dissolution.md",
             "$depth": 2,
             "$stop": "depth"
           }
@@ -107,30 +107,30 @@
     {
       "name": "follow-two-destinations",
       "notes": "§1.3: two refs destinations unioned per step (spec/oqx 0.14) — a timeline walked both ways; the seed is revisited as a cycle.",
-      "query": "select $path, $depth, $stop from docs where $path == \"timeline/kickoff.md\" follow refs(before), refs(after)",
+      "query": "select path, $depth, $stop from docs where path == \"timeline/kickoff.md\" follow refs(before), refs(after)",
       "expect": {
         "hits": [
           {
-            "$id": "d_18",
-            "$path": "/timeline/kickoff.md",
+            "id": "d_18",
+            "path": "/timeline/kickoff.md",
             "$depth": 1,
             "$stop": "interior"
           },
           {
-            "$id": "d_19",
-            "$path": "/timeline/review.md",
+            "id": "d_19",
+            "path": "/timeline/review.md",
             "$depth": 2,
             "$stop": "interior"
           },
           {
-            "$id": "d_18",
-            "$path": "/timeline/kickoff.md",
+            "id": "d_18",
+            "path": "/timeline/kickoff.md",
             "$depth": 3,
             "$stop": "cycle"
           },
           {
-            "$id": "d_9",
-            "$path": "/processes/dissolution.md",
+            "id": "d_9",
+            "path": "/processes/dissolution.md",
             "$depth": 3,
             "$stop": "leaf"
           }
@@ -143,12 +143,12 @@
     {
       "name": "in-where-exists",
       "notes": "§1.3: refs(x) is a collection inside where.",
-      "query": "select $path from docs where refs(before) exists { where $path == \"timeline/kickoff.md\" }",
+      "query": "select path from docs where refs(before) exists { where path == \"timeline/kickoff.md\" }",
       "expect": {
         "hits": [
           {
-            "$id": "d_19",
-            "$path": "/timeline/review.md"
+            "id": "d_19",
+            "path": "/timeline/review.md"
           }
         ],
         "truncated": false,
@@ -159,15 +159,15 @@
     {
       "name": "scalar-string",
       "notes": "§1.3: x may be one string.",
-      "query": "select r: refs(after) collect { $path } from docs where $path == \"timeline/kickoff.md\"",
+      "query": "select r: refs(after) collect { path } from docs where path == \"timeline/kickoff.md\"",
       "expect": {
         "hits": [
           {
-            "$id": "d_18",
-            "$path": "/timeline/kickoff.md",
+            "id": "d_18",
+            "path": "/timeline/kickoff.md",
             "r": [
               {
-                "$path": "/timeline/review.md"
+                "path": "/timeline/review.md"
               }
             ]
           }
@@ -180,12 +180,12 @@
     {
       "name": "dangling-scalar-is-empty",
       "notes": "§1.3: a reference that resolves to nothing is dropped — no phantom row, no error.",
-      "query": "select r: refs(after) collect { $path } from docs where $path == \"timeline/review.md\"",
+      "query": "select r: refs(after) collect { path } from docs where path == \"timeline/review.md\"",
       "expect": {
         "hits": [
           {
-            "$id": "d_19",
-            "$path": "/timeline/review.md",
+            "id": "d_19",
+            "path": "/timeline/review.md",
             "r": []
           }
         ],
@@ -197,15 +197,15 @@
     {
       "name": "doc-id",
       "notes": "§1.3: a `d_…` element resolves by id (d_0 is index.md under the fixture minter).",
-      "query": "select r: refs(see_also) collect { $path } from docs where $path == \"timeline/review.md\"",
+      "query": "select r: refs(see_also) collect { path } from docs where path == \"timeline/review.md\"",
       "expect": {
         "hits": [
           {
-            "$id": "d_19",
-            "$path": "/timeline/review.md",
+            "id": "d_19",
+            "path": "/timeline/review.md",
             "r": [
               {
-                "$path": "/index.md"
+                "path": "/index.md"
               }
             ]
           }
@@ -218,19 +218,19 @@
     {
       "name": "list-with-bare-path-id-and-dangling",
       "notes": "§1.3: a bare path, an id and a dangling reference in one list.",
-      "query": "select r: refs(see_also) collect { $path, type } from docs where $path == \"timeline/kickoff.md\"",
+      "query": "select r: refs(see_also) collect { path, type } from docs where path == \"timeline/kickoff.md\"",
       "expect": {
         "hits": [
           {
-            "$id": "d_18",
-            "$path": "/timeline/kickoff.md",
+            "id": "d_18",
+            "path": "/timeline/kickoff.md",
             "r": [
               {
-                "$path": "/processes/calcination.md",
+                "path": "/processes/calcination.md",
                 "type": "process"
               },
               {
-                "$path": "/index.md",
+                "path": "/index.md",
                 "type": "hub"
               }
             ]
@@ -244,12 +244,12 @@
     {
       "name": "absent-is-empty",
       "notes": "§1.3: refs over an absent property is empty.",
-      "query": "select r: refs(before) collect { $path } from docs where $path == \"index.md\"",
+      "query": "select r: refs(before) collect { path } from docs where path == \"index.md\"",
       "expect": {
         "hits": [
           {
-            "$id": "d_0",
-            "$path": "/index.md",
+            "id": "d_0",
+            "path": "/index.md",
             "r": []
           }
         ],
@@ -261,12 +261,12 @@
     {
       "name": "non-string-elements-are-dropped",
       "notes": "§1.3: a number and a boolean resolve to nothing.",
-      "query": "select r: refs(42) collect { $path }, s: refs(verified) collect { $path } from docs where $path == \"index.md\"",
+      "query": "select r: refs(42) collect { path }, s: refs(verified) collect { path } from docs where path == \"index.md\"",
       "expect": {
         "hits": [
           {
-            "$id": "d_0",
-            "$path": "/index.md",
+            "id": "d_0",
+            "path": "/index.md",
             "r": [],
             "s": []
           }
@@ -279,12 +279,12 @@
     {
       "name": "source",
       "notes": "§1.3: refs(x) as a top-level source.",
-      "query": "select $path, type from refs(\"/index.md\")",
+      "query": "select path, type from refs(\"/index.md\")",
       "expect": {
         "hits": [
           {
-            "$id": "d_0",
-            "$path": "/index.md",
+            "id": "d_0",
+            "path": "/index.md",
             "type": "hub"
           }
         ],
@@ -296,12 +296,12 @@
     {
       "name": "directive-receiver-first",
       "notes": "§1.3: refs(x) as the receiver of a top-level directive.",
-      "query": "refs(\"/timeline/kickoff.md\") first { select $path, type }",
+      "query": "refs(\"/timeline/kickoff.md\") first { select path, type }",
       "expect": {
         "hits": [
           {
-            "$id": "d_18",
-            "$path": "/timeline/kickoff.md",
+            "id": "d_18",
+            "path": "/timeline/kickoff.md",
             "type": "milestone"
           }
         ],
@@ -313,18 +313,18 @@
     {
       "name": "nested-from-outer-property",
       "notes": "§1.3: `from refs(^before)` inside a block re-projects through the outer row's property.",
-      "query": "select $path, prior: doc collect { select $path from refs(^before) } from docs where $path == \"timeline/review.md\"",
+      "query": "select path, prior: doc collect { select path from refs(^before) } from docs where path == \"timeline/review.md\"",
       "expect": {
         "hits": [
           {
-            "$id": "d_19",
-            "$path": "/timeline/review.md",
+            "id": "d_19",
+            "path": "/timeline/review.md",
             "prior": [
               {
-                "$path": "/timeline/kickoff.md"
+                "path": "/timeline/kickoff.md"
               },
               {
-                "$path": "/processes/dissolution.md"
+                "path": "/processes/dissolution.md"
               }
             ]
           }
@@ -337,12 +337,12 @@
     {
       "name": "size",
       "notes": "§1.3: refs(x) is an ordinary array value.",
-      "query": "select n: size(refs(before)) from docs where $path == \"timeline/review.md\"",
+      "query": "select n: size(refs(before)) from docs where path == \"timeline/review.md\"",
       "expect": {
         "hits": [
           {
-            "$id": "d_19",
-            "$path": "/timeline/review.md",
+            "id": "d_19",
+            "path": "/timeline/review.md",
             "n": 2
           }
         ],
@@ -354,7 +354,7 @@
     {
       "name": "values-render-rows",
       "notes": "§1.4 rows as values: a values projection of refs(x) renders each row as { id, path }.",
-      "query": "select r: refs(before) values from docs where $path == \"timeline/review.md\"",
+      "query": "select r: refs(before) values from docs where path == \"timeline/review.md\"",
       "expect": {
         "hits": [],
         "truncated": false,
@@ -363,12 +363,12 @@
         "values": [
           [
             {
-              "$id": "d_18",
-              "$path": "/timeline/kickoff.md"
+              "id": "d_18",
+              "path": "/timeline/kickoff.md"
             },
             {
-              "$id": "d_9",
-              "$path": "/processes/dissolution.md"
+              "id": "d_9",
+              "path": "/processes/dissolution.md"
             }
           ]
         ]
@@ -377,7 +377,7 @@
     {
       "name": "values-mode-over-scalar-rows-is-exempt",
       "notes": "§1.4: a values projection returns no hits, so the hit rule does not apply — `follow before` surfaces the seed row as { id, path } and the property's raw strings.",
-      "query": "select $it values from docs where $path == \"timeline/review.md\" follow before",
+      "query": "select $it values from docs where path == \"timeline/review.md\" follow before",
       "expect": {
         "hits": [],
         "truncated": false,
@@ -385,8 +385,8 @@
         "consumer": "collect",
         "values": [
           {
-            "$id": "d_19",
-            "$path": "/timeline/review.md"
+            "id": "d_19",
+            "path": "/timeline/review.md"
           },
           "/timeline/kickoff.md",
           "/timeline/lost-notes.md",
@@ -396,16 +396,16 @@
     },
     {
       "name": "reverse-reference-by-path-membership",
-      "notes": "§1 Paths (2.0): the reverse of `refs(x)` needs no function — a document's `$path` is already the reference form, so `^$path in list(before)` finds the documents whose `before` names it (review.md names kickoff.md). Before 2.0 this needed `\"/\" + ^$path`.",
-      "query": "select next: ^docs collect { $path where ^$path in list(before) } from docs where $path == \"/timeline/kickoff.md\"",
+      "notes": "§1 Paths (2.0): the reverse of `refs(x)` needs no function — a document's `path` is already the reference form, so `^path in list(before)` finds the documents whose `before` names it (review.md names kickoff.md). Before 2.0 this needed `\"/\" + ^path`.",
+      "query": "select next: ^docs collect { path where ^path in list(before) } from docs where path == \"/timeline/kickoff.md\"",
       "expect": {
         "hits": [
           {
-            "$id": "d_18",
-            "$path": "/timeline/kickoff.md",
+            "id": "d_18",
+            "path": "/timeline/kickoff.md",
             "next": [
               {
-                "$path": "/timeline/review.md"
+                "path": "/timeline/review.md"
               }
             ]
           }
@@ -418,20 +418,20 @@
     {
       "name": "refs-both-forms-resolve",
       "notes": "§1.3 / §1 Paths: `refs(x)` accepts either form — the two spellings of index.md resolve to the same document, so the follow-up `collect` sees two rows.",
-      "query": "select both: refs(\"/index.md\") collect { $path }, bare: refs(\"index.md\") collect { $path } from docs where $path == \"/index.md\"",
+      "query": "select both: refs(\"/index.md\") collect { path }, bare: refs(\"index.md\") collect { path } from docs where path == \"/index.md\"",
       "expect": {
         "hits": [
           {
-            "$id": "d_0",
-            "$path": "/index.md",
+            "id": "d_0",
+            "path": "/index.md",
             "both": [
               {
-                "$path": "/index.md"
+                "path": "/index.md"
               }
             ],
             "bare": [
               {
-                "$path": "/index.md"
+                "path": "/index.md"
               }
             ]
           }

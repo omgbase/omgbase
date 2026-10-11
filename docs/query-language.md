@@ -13,7 +13,7 @@ those disagree, they win.
 
 > **Specs.** The language itself is `spec/oqx` (grammar, semantics, the fixture
 > corpus both engines run). The *binding* of that language to the store — roots,
-> fields, intrinsics, reach-through, relations, the row functions, the runner's
+> fields, attributes, reach-through, relations, the row functions, the runner's
 > paging — is `spec/surface/README.md` §1, pinned by the corpus-backed suites
 > `spec/surface/cases/query-*.json` (the 18-document alchemy repository, every
 > case run planned and pure in-memory, which must agree). Regenerate with
@@ -38,12 +38,12 @@ Every concern folds into the expression: `select <expr>, name: <expr>, …`
 receiver-constrained nested queries (`nodes exists { … }`, `collect { … }`),
 correlation/joins (the `^` sigil, with `^docs`/`^nodes`/`^blocks` reaching the
 root row's collections), bounded traversal (`follow`), `order by <expr> [asc|desc]`, and
-`limit`/`offset`. Results are lean projected hits (`{ $id, $path, …projections }`
-— surface 3.0: the envelope keys are the intrinsics the language reads, so a
-hit's `$id` pastes into the next `where $id == "…"` unchanged), a
-`count`/`exists`/`none` scalar, or — for a `select <expr> values` projection —
-the bare projected values (`values: […]`, §7); never full documents; hydrate by
-`$id` afterward (the hydrating tools' own envelopes keep `id`/`path`).
+`limit`/`offset`. Results are lean projected hits (`{ id, path, …projections }`
+— the envelope keys are the attributes the language reads, so a hit's `id`
+pastes into the next `where id == "…"` unchanged), a `count`/`exists`/`none`
+scalar, or — for a `select <expr> values` projection — the bare projected
+values (`values: […]`, §7); never full documents; hydrate by `id` afterward
+(every tool spells a row's identity `id`/`path`, §2).
 
 **Clause order is fixed (ADR-020, oqx ≥ 0.11).** Within one body — the top level
 or any `{ block }` — clauses appear at most once each, in exactly this order:
@@ -59,7 +59,7 @@ source, so the block's `from` is an optional re-projection. A clause out of orde
 is a parse error that names the order (`` `select` must come before `from` — OQX
 clause order is select, from, where, follow, order by, limit, offset ``). **Only
 `select` may drop its keyword, and only when it is the first clause written**
-(`$path, era from docs where …`; in a block, `nodes collect { value }` projects
+(`path, era from docs where …`; in a block, `nodes collect { value }` projects
 `value`). Every other clause always carries its keyword — with the 0.17 sugar
 that a **block** whose leading expression is syntactically a predicate is a
 `where`-first body: `nodes exists { kind == "md:task" }` ≡
@@ -68,7 +68,7 @@ predicate after a projection still needs `where`). At the top level a predicate
 always needs `where`, and `from docs count` is an error rather than a projection
 of a field called `count` (write `docs count { … }`, or
 `select count from docs`). **`where` (and, since 0.17, a later `select` item) may
-reference the same body's `select` aliases** (`select $path, old: era < 1000 from docs where old`): the alias's
+reference the same body's `select` aliases** (`select path, old: era < 1000 from docs where old`): the alias's
 expression is substituted before evaluation (`resolveAliases`, once, ahead of
 the runner's own rewrites — the parsed tree keeps the alias), so the pushdown
 planner sees an ordinary predicate; an alias shadows a same-named field inside `where`; a cycle among
@@ -83,49 +83,67 @@ something different from every other consumer's.
 
 ## 2. Targets and field namespaces
 
-**The `$` rule (spec/surface §1.2, 3.0).** A `$`-prefixed name is a name the
-engine adds to a namespace it *shares* with user-generated content — a
-document's frontmatter keys and inline properties, a block's or node's `attrs`
-keys — prefixed so the author's field names keep priority and never collide
-(a frontmatter `id:` is `id`, the engine's identity is `$id`). That bounds the
-vocabulary: `$` marks exactly the engine-provided names that contend with user
-names — every row's `$id`/`$path`; docs' and blocks' `$raw` (the exact source
-bytes), `$hash` (their sha256) and `$updated_at`; docs' computed `$title`/`$tags`
-— and **everything else the engine provides is a plain snake_case field**: a
-foreign key named for what it is (`doc_id`, `block_id`, `via_id`, `dst_id`,
-`dst_path`, `uri`), a column its column (`type`, `text`, `depth`, `ordinal`,
-`kind`, `predicate`, `field`). Tool results spell a row the same way (`$id`,
-`$path`, `$raw`, `$hash`, `$updated_at`, `doc_id`, …), so a key read from any
-result pastes into a query. On the closed `blocks`/`nodes`/`edges` targets an
-unknown bare field simply reads as absent; on the open `docs` target a bare key
-is a document property, except a bare first segment colliding with a `$` base
-name (`id`/`path`/`updated_at`/`hash`/`raw`) is a loud error (a typo guard — use
-`$path` or `frontmatter.path`; `title`/`tags` are not reserved).
+**The name rule (spec/surface §1.2, 3.0).** `$` belongs to OQX: `$it`, `$key`,
+`$depth`, `$stop`, `$leaf`, `$frontier`, `$ordinal` are values the *language*
+injects into a scope, and omgbase adds **no** `$` names (a `$id` or `$path` in a
+query is an unknown OQX identifier — absent — never an attribute). Every engine
+attribute is a **bare, snake_case name that wins on collision** — the convention
+the relations (`children`, `blocks`, `out`, `in`, `doc`, `frontmatter`, …) always
+followed: a bare name that is an engine attribute reads the engine's value,
+never the author's. User data is bare too, read by any non-colliding key; where
+a key of yours collides with an engine name, reach it through a **source
+handle**: `data.<k>` (the merged authored view — frontmatter + inline by the
+property rule, exactly the read a bare non-colliding key performs),
+`frontmatter.<k>`, `inline.<k>`. So `path` is the engine's `/`-rooted location
+and `data.path` your `path:` key; `title` the computed title (the first H1,
+`spec/properties` §3.3) and `data.title` your `title:`; `tags` your tags ∪ the
+body `#hashtags` (deduped, authored first, then hashtags in document order;
+`null` when both are absent) and `data.tags` the authored list alone;
+`entries(data)` lists every authored top-level key (frontmatter ∪ inline,
+deduped, key order). There is no loud-error set: a bare `id`/`path`/
+`updated_at`/`hash`/`raw` is simply the attribute (before this batch of 3.0 the
+attributes were `$`-prefixed and the bare spelling was a "did you mean `$path`?"
+error). A foreign key is named for what it is (`doc_id`, `block_id`, `via_id`,
+`dst_id`, `dst_path`, `uri`), a column is its column (`type`, `text`, `depth`,
+`ordinal`, `kind`, `predicate`, `field`). **Same value, same name, everywhere:**
+tool results and arguments spell a row the same way (`id`, `path`, `raw`,
+`hash`, `updated_at`, `doc_id`, …), so a key read from any result pastes into a
+query and into a tool's `id` argument. On the closed `blocks`/`nodes`/`edges`
+targets an unknown bare field reads as absent; on the open `docs` target a bare
+key that is not an attribute, a handle or a relation is a document property.
 
-| kind | `$` names | plain fields |
+| kind | attributes | handles / self / relations |
 | --- | --- | --- |
-| docs | `$id` `$path` `$raw` `$hash` `$updated_at` `$title` `$tags` | properties; `frontmatter`/`inline`; `format` |
-| blocks | `$id` `$path` `$raw` `$hash` `$updated_at` | `doc_id` `type` `text` `attrs` `depth` `ordinal` |
-| nodes | `$id` `$path` | `doc_id` `block_id` `kind` `name` `value` `attrs` |
-| edges | `$id` `$path` | `doc_id` `block_id` `via_id` `dst_id` `dst_path` `uri` `field` `dst_kind` `predicate` `provenance` `anchor` |
+| docs | `id` `path` `raw` `hash` `updated_at` `title` `tags` `format` | `data` `frontmatter` `inline`; `doc`; `blocks` `nodes` `out` `in` `out_edges` `in_edges` |
+| blocks | `id` `path` `doc_id` `raw` `hash` `updated_at` `type` `text` `attrs` `depth` `ordinal` | `block` `doc`; `children` `nodes` `out_edges` `section` |
+| nodes | `id` `path` `doc_id` `block_id` `kind` `name` `value` `attrs` | `section` `doc` `block`; `blocks` `subsections` `children` |
+| edges | `id` `path` `doc_id` `block_id` `via_id` `dst_id` `dst_path` `uri` `field` `dst_kind` `predicate` `provenance` `anchor` | `doc` |
 
-**[was, before 3.0: `$body`/`$content_hash`; blocks `$doc`, `$ordinal`/`$depth`
-(colliding with the `follow` recursion intrinsics, which shadowed them inside a
-walk); nodes `$doc_id`/`$block_id`/`$node_id`; edges `$src`/`$dst`/`$src_block`/
-`$via`/`$dst_path`/`$dst_uri`/`$from_commit` and the field `src_field`. `$from_commit`
+Language words that can never be a bare field: `select from where is not and
+or`, the literals `true false null`. The contextual words (`limit order offset
+follow collect count first distinct desc by in`) parse as fields in expression
+position (`select o: order from docs`). A user key with any reserved name is
+`data.<k>` (or `frontmatter.<k>` / `inline.<k>` by source; `attrs.<k>` on a block
+or node).
+
+**[was, before 3.0: the attributes were `$`-prefixed (`$id`, `$path`, …) with
+`$body`/`$content_hash`; blocks `$doc`, `$ordinal`/`$depth` (colliding with the
+`follow` recursion intrinsics, which shadowed them inside a walk); nodes
+`$doc_id`/`$block_id`/`$node_id`; edges `$src`/`$dst`/`$src_block`/`$via`/
+`$dst_path`/`$dst_uri`/`$from_commit` and the field `src_field`. `$from_commit`
 is gone outright — a query sees open edges only.]**
 
 **Paths (spec/surface 2.0).** omgbase stores a document's path repo-relative
 (`projects/oqx.md`), but every reference an author writes is root-absolute
 (`[x](/projects/oqx.md)`, `before: [/timeline/kickoff.md]`). The surface
-speaks the reference form: `$path` on every target, `dst_path` on edges, the
-`$path` of every hit and of a row rendered as `{ $id, $path }` are `/`-rooted.
+speaks the reference form: `path` on every target, `dst_path` on edges, the
+`path` of every hit and of a row rendered as `{ id, path }` are `/`-rooted.
 Every path the surface accepts tolerates both forms — tool arguments, `refs(x)`,
-`within(…)`, and a **string literal** compared with `$path`/`dst_path` by
+`within(…)`, and a **string literal** compared with `path`/`dst_path` by
 `==`/`!=` or passed to their `.startsWith(…)`, which is rooted before
-evaluation (`$path == "a.md"` and `$path == "/a.md"` both match; write the
+evaluation (`path == "a.md"` and `path == "/a.md"` both match; write the
 rooted form). Nothing else is rewritten: a property's value is the author's
-(`where customer == ^$path`, `where ^$path in list(after)` — no `"/" + ^$path`
+(`where customer == ^path`, `where ^path in list(after)` — no `"/" + ^path`
 glue), and `matches`/`contains`/`endsWith` read the string as it is
 (`matches("^/texts/")`). The planner de-roots the literal (or roots the
 column) so pushed SQL and the in-memory engine agree.
@@ -137,23 +155,29 @@ column) so pushed SQL and the in-memory engine agree.
   object so `logging.level` navigates it. A value is scalar-comparable only when
   the key is **single-valued and scalar-authored** in scope; a list/repeated/
   collided key compares unequal — use `list()` (§4).
-- **Source-scoped:** `frontmatter.<k>` / `inline.<k>`. The whole bag as a
-  collection: `entries(frontmatter)` / `entries(inline)` (oqx ≥ 0.10) — one
-  entry per top-level key, **in key order** (authored position is not indexed),
-  valued by the same scalar-vs-list rule as a bare read, dotted keys folded back
-  into a nested value; inside the block `$key` is the key and `$it` the value.
-- **Computed intrinsics:** `$title` (first H1), `$tags` (body `#hashtags`).
-- **Intrinsics:** `$id`, `$path` (the **reference form**, `/`-rooted — see
-  "Paths" above), `$updated_at` (ISO-8601 UTC, compares lexicographically =
-  chronologically), `$raw` (the whole file, frontmatter included), `$hash` (its
-  sha256, 64 hex); `format` is a plain column.
+- **Source handles:** `data.<k>` (the merged authored view, frontmatter +
+  inline — the read a bare non-colliding key performs; the way to an authored
+  key whose name is an attribute: `data.path`, `data.title`, `data.tags`),
+  `frontmatter.<k>` / `inline.<k>` (one source). The whole bag as a collection:
+  `entries(data)` / `entries(frontmatter)` / `entries(inline)` (oqx ≥ 0.10) —
+  one entry per top-level key, **in key order** (authored position is not
+  indexed), valued by the same scalar-vs-list rule as a bare read, dotted keys
+  folded back into a nested value; inside the block `$key` is the key and `$it`
+  the value.
+- **Attributes:** `id`, `path` (the **reference form**, `/`-rooted — see "Paths"
+  above), `updated_at` (ISO-8601 UTC, compares lexicographically =
+  chronologically), `raw` (the whole file, frontmatter included), `hash` (its
+  sha256, 64 hex), `title` (the computed title — the first H1 — `null` when
+  none; the authored `title:` is `data.title`), `tags` (the authored tags ∪ the
+  body `#hashtags`, deduped, authored first; the authored list alone is
+  `data.tags`), `format` (`"markdown"`/`"yaml"`/`"json"`).
 - **The root row** (spec/oqx 0.18, surface 2.0): the repository is the root
   scope's row. From a top-level row `^docs` / `^blocks` / `^nodes` / `^edges` are
   the explicit root scans (§3.4; one caret per enclosing block, or the absolute
-  `0^docs` from any depth), `^$id` / `0^$id` the repository id, and `^$it` the
+  `0^docs` from any depth), `^id` / `0^id` the repository id, and `^$it` the
   root object itself — `^$it.docs` ≡ `^docs`, `entries(^$it)` names the four
-  collections (`$id` is an intrinsic, not an entry). **[was: `$repo.<target>` /
-  `$repo.$id`, an intrinsic of every scope — removed in surface 2.0; reading
+  collections (`id` is an attribute, not an entry). **[was: `$repo.<target>` /
+  `$repo.id`, an intrinsic of every scope — removed in surface 2.0; reading
   `$repo` anywhere is `filter_invalid` naming the replacement. A bare target
   name inside a block (`docs collect { … }` at depth ≥ 1) is `filter_invalid`
   too — "did you mean `^docs`" — not an empty property read, and so is a
@@ -177,15 +201,15 @@ column) so pushed SQL and the in-memory engine agree.
   a predicate, exactly like a missing frontmatter key on a doc. Inside a
   `follow`, `$depth`/`$ordinal` are always the walk's metadata (§6); a block's
   own nesting is `depth`/`ordinal` everywhere.
-- **Intrinsics:** `$id`, `$path` (the owning doc's path), `$raw` (the block's raw
-  source bytes — a container's raw holds its children verbatim), `$hash` (its
+- **Attributes:** `id`, `path` (the owning doc's path), `raw` (the block's raw
+  source bytes — a container's raw holds its children verbatim), `hash` (its
   sha256; the value `update`/`split` expect as `expect.content_hash`),
-  `$updated_at`.
-- **Doc reach-through:** `doc.<key>` / `doc.$path` / `doc.$id` / `doc.format`
-  constrain by the owning document (scope, not selection). `doc.$id` and
-  `doc.$path` are **foreign-key eliminated** (spec/surface §1, 3.0): they read
+  `updated_at`.
+- **Doc reach-through:** `doc.<key>` / `doc.path` / `doc.id` / `doc.format`
+  constrain by the owning document (scope, not selection). `doc.id` and
+  `doc.path` are **foreign-key eliminated** (spec/surface §1, 3.0): they read
   the row's own `doc_id` / joined path — no owner lookup in memory, the FK
-  column in SQL — so `doc.$id == "d_1"` and `doc_id == "d_1"` plan to the same
+  column in SQL — so `doc.id == "d_1"` and `doc_id == "d_1"` plan to the same
   statement.
 - **Relations:** `block.children`, `block.nodes`, `block.out_edges`, `section`
   (enclosing `md:section` node(s)). **Structural functions:** §5.
@@ -197,9 +221,9 @@ column) so pushed SQL and the in-memory engine agree.
   `kind`/`name`/`value` win on a name collision; an absent key is silently false.
 - **Bare fields (foreign keys):** `doc_id`, `block_id` (null for a block-less
   node).
-- **Intrinsics:** `$id`, `$path`.
-- **Reach-through:** `doc.<key>` / `doc.$id` / `doc.$path`, `block.type` /
-  `block.text` / `block.$id` / `block.$path` / `block.doc_id` (the identity
+- **Attributes:** `id`, `path`.
+- **Reach-through:** `doc.<key>` / `doc.id` / `doc.path`, `block.type` /
+  `block.text` / `block.id` / `block.path` / `block.doc_id` (the identity
   reads are FK-eliminated: the node's own columns).
 - **Section relations:** `section.blocks` (content under an `md:section` node's
   heading), `section.children` (immediate child sections), `section.subsections`
@@ -214,10 +238,10 @@ The authored link graph as first-class rows (open edges, `to_commit IS NULL`).
   external/dangling), `uri` (external URL; null otherwise), `predicate`,
   `provenance`, `dst_kind`, `anchor`, `field` (the frontmatter key / inline
   field the edge was authored in; null for a link).
-- **Intrinsics:** `$id`, `$path` (the **source** document's path). There is no
+- **Attributes:** `id`, `path` (the **source** document's path). There is no
   `from_commit`: a query sees open edges only; the creating commit is history
   (`blocks_history`, `changes_since`).
-- Source-document reach-through: `doc.<key>` / `doc.$id` / `doc.$path`.
+- Source-document reach-through: `doc.<key>` / `doc.id` / `doc.path`.
   `text()`/`semantic()` are unavailable (edges carry no text/embedding).
 
 ## 3. Scalar semantics (`@omgbase/oqx` contract)
@@ -233,7 +257,7 @@ Comparisons (`== != < <= > >=`), identity (`is`, `is not`; §3.6), boolean
 (`lo..hi`, `lo...hi`, `..hi`, `lo..`; §3.5), method calls (`x.contains("s")`),
 free functions (`list(x)`, `size(x)`, `has(x)` + omgbase's domain functions §5),
 field/intrinsic access with `.` navigation, bracket lookups (`refs(x)[0]`,
-`^docs[$path == ^company]`; §3.6), the postfix required operator (`title!`;
+`^docs[path == ^company]`; §3.6), the postfix required operator (`title!`;
 §3.6), and outer references (`^name`, `^^name`). Reserved words (never a bare
 field name): `from where select is not and or`, `true false null`.
 **[was CEL: arithmetic, ternary, and `in` without `list()` were rejected — now
@@ -292,20 +316,20 @@ parser** (the AST, `print`, the planner and the optimizer see the explicit form)
 
 | Written | Means |
 | --- | --- |
-| `nodes { kind == "md:task" }` | `nodes collect { where kind == "md:task" }` — a receiver block without a consumer is `collect`; a block whose *leading* expression is syntactically a predicate (a comparison, `in`, `&&`/`||`, a prefix `!`/`is`/`not`, an infix `is`, a call, a literal, a binding, a parenthesized expression, a consumer test, a bracket chain or `x!` — anything but a bare name, a dotted path or a `^`-lift) is `where`-first. `nodes { name }` still projects; `nodes { is checked }` is the bare-field filter; `{ name where kind == "md:task" }` keeps the keyword. After `follow` only over an outer-reference receiver (spec/oqx 0.19): `follow ^docs { where ^$path in list(after) }` is `follow ^docs collect { … }`, while `follow children { depth 2 }` and `follow refs(before) { depth 2 }` are the options block. |
-| `refs(x)[0]`, `refs(x)[${i}]` | `refs(x) first { offset 0 }` — positional (an integer literal or a binding; out of range ⇒ absent); `refs(x)[0].$title` navigates the row |
-| `^docs[$path == ^company]` | `^docs first { where $path == ^company }` — the first match or absent |
-| `^docs[$path == ^company]!` | `^docs single { where $path == ^company }!` — exactly one match; zero or many is `filter_invalid` |
-| `title!` | required: `title`, or `filter_invalid` naming the expression (`` `title!` is absent on "d_…" ``). Never a filter, never a coercion (`0!`, `""!` are values); tightest precedence (`refs(c)[0]!.name` vs `refs(c)[0].name!`). `select $id!, status from docs` insists on identity before a write. |
+| `nodes { kind == "md:task" }` | `nodes collect { where kind == "md:task" }` — a receiver block without a consumer is `collect`; a block whose *leading* expression is syntactically a predicate (a comparison, `in`, `&&`/`||`, a prefix `!`/`is`/`not`, an infix `is`, a call, a literal, a binding, a parenthesized expression, a consumer test, a bracket chain or `x!` — anything but a bare name, a dotted path or a `^`-lift) is `where`-first. `nodes { name }` still projects; `nodes { is checked }` is the bare-field filter; `{ name where kind == "md:task" }` keeps the keyword. After `follow` only over an outer-reference receiver (spec/oqx 0.19): `follow ^docs { where ^path in list(after) }` is `follow ^docs collect { … }`, while `follow children { depth 2 }` and `follow refs(before) { depth 2 }` are the options block. |
+| `refs(x)[0]`, `refs(x)[${i}]` | `refs(x) first { offset 0 }` — positional (an integer literal or a binding; out of range ⇒ absent); `refs(x)[0].title` navigates the row |
+| `^docs[path == ^company]` | `^docs first { where path == ^company }` — the first match or absent |
+| `^docs[path == ^company]!` | `^docs single { where path == ^company }!` — exactly one match; zero or many is `filter_invalid` |
+| `title!` | required: `title`, or `filter_invalid` naming the expression (`` `title!` is absent on "d_…" ``). Never a filter, never a coercion (`0!`, `""!` are values); tightest precedence (`refs(c)[0]!.name` vs `refs(c)[0].name!`). `select id!, status from docs` insists on identity before a write. |
 | `is x`, `not x` | `!!x`, `!x` (truthiness) |
 | `x is y`, `x is not y` | identity: a row's `id` when present, else structural — so `$it is ^$it` compares rows (which `==` leaves unspecified); `owner is null` is absent; for scalars `is` ≡ `==`. Comparison precedence, no chaining. Never pushed down (residual). |
-| `a and b`, `a or b` | the connectives — exactly `a && b`, `a || b` (precedence, short-circuit, value: `title or $path` coalesces); the words are canonical |
-| `boss: ^docs[$path == ^manager], bossName: boss.$title` | a `select` item may use the items to its left (inlined like a `where` alias; a reference to an item to its right is a parse error) |
+| `a and b`, `a or b` | the connectives — exactly `a && b`, `a || b` (precedence, short-circuit, value: `title or path` coalesces); the words are canonical |
+| `boss: ^docs[path == ^manager], bossName: boss.title` | a `select` item may use the items to its left (inlined like a `where` alias; a reference to an item to its right is a parse error) |
 
 The top level is unchanged: `type == "x" from docs` stays the parse error it was
 (`where` would precede `from`). There is no `expand`/`unnest` and no automatic
 dereference of a path-valued field: the body-level `from` chain flat-maps
-(`docs collect { from nodes … }`) and `refs(x)[0].$title` is the
+(`docs collect { from nodes … }`) and `refs(x)[0].title` is the
 dereference.
 
 ### 3.4 Correlation (`^`) and lifts
@@ -321,9 +345,9 @@ dereference.
   replacement named; (oqx < 0.7): an absent local name climbed enclosing scopes,
   and a bare `repo` reached the root that way.]**
 - **`^name` reads a name `N` scopes outward** (`^` = one scope, `^^` = two) — it
-  resolves against the enclosing **row's fields/intrinsics/lifts**, not the outer
-  query's select aliases. To reference the outer row's path write `^$path` (not a
-  `me: $path` alias). **[was CEL/omgbase: `^name` read a bound select value; that
+  resolves against the enclosing **row's fields/attributes/lifts**, not the outer
+  query's select aliases. To reference the outer row's path write `^path` (not a
+  `me: path` alias). **[was CEL/omgbase: `^name` read a bound select value; that
   binding indirection is gone — read the field directly.]**
 - **`^name:` in a select** *lifts* the value `N` scopes out (flatten-append),
   binding it into the enclosing scope while the collect filters (§ lifts).
@@ -354,11 +378,11 @@ nested/correlated scopes:
   nothing is dropped — no phantom, no error. Order preserved, duplicates kept.
   Index-backed (one lookup per element, never a scan). It yields docs rows, so
   it works wherever rows do: `follow refs(before), refs(after)` walks a
-  timeline both ways; `select prior: refs(before) collect { $path }` projects
+  timeline both ways; `select prior: refs(before) collect { path }` projects
   the referenced documents; `where refs(see_also) exists { where type == "x" }`
   filters on them; `from refs("/index.md")` is a source. The reverse direction
-  needs no function: `$path` is already the reference form, so
-  `^docs collect { where ^$path in list(after) }` is "the documents whose
+  needs no function: `path` is already the reference form, so
+  `^docs collect { where ^path in list(after) }` is "the documents whose
   `after` names me".
 - **A hit is a store row.** Every top-level row of a `collect`/`first`/`single`
   query must be a document, block, node or edge; `follow before` over a list of
@@ -390,7 +414,7 @@ nested/correlated scopes:
   apply whichever destination reached a row.
 - **Destination blocks:** a destination may be a select-position block
   re-evaluated per frontier row — `follow ^docs collect { where doc.out
-  exists { where $path == ^^$path } }` computes backlinks as a block (the same
+  exists { where path == ^^path } }` computes backlinks as a block (the same
   rows as `follow doc.in`). Inside the block `^` is the frontier row (the
   destination is read in that row's scope, so `^docs` there is the root's
   documents); `first`/`single` yield at
@@ -399,7 +423,7 @@ nested/correlated scopes:
   outer reference** (`^docs`, `^^docs`, `0^docs`, `^$it.docs`, with any member
   chain): such a receiver can never be a relation of the current row, so its
   brace is the block, not the options block — `follow refs(before), ^docs {
-  where ^$path in list(after) }` walks `before` references forward and,
+  where ^path in list(after) }` walks `before` references forward and,
   backward, every document whose `after` names the frontier row. After any
   other receiver (`children`, `doc.out`, `refs(before)`, a binding) a brace is
   still the options block (an error when that destination is not the last),
@@ -409,7 +433,7 @@ nested/correlated scopes:
 - **Correlated successor `where`:** inside the follow-local `where`, a bare name
   is the candidate's own property, `^name` is the **frontier row** being
   expanded, and `^^name` the walk's enclosing scope — `follow doc.out { where
-  doc.out exists { where $path == ^^$path } }` keeps only mutual citations
+  doc.out exists { where path == ^^path } }` keeps only mutual citations
   (before 0.14 `^` skipped the frontier row and such predicates matched nothing).
 - **Edges as rows:** `from edges …`, or a doc's `doc.out_edges`/`doc.in_edges`.
 - **`distinct`** on any consumer dedups the rows it reduces by their **projected
@@ -418,26 +442,29 @@ nested/correlated scopes:
   identity.
 
 ## 7. `order by`, `select`, pagination
-- **`order by <expr> [asc|desc], …`:** orders by intrinsics, bare fields,
+- **`order by <expr> [asc|desc], …`:** orders by attributes, bare fields,
   `doc.<key>`, or a `semantic(…)` score. **Absent values sort last** (ascending).
   Ties break by `(path, id)` for a stable keyset cursor; a custom `order by`
   disables the cursor (you get the top `limit` with `truncated`). **[was CEL/
   SQLite: NULLs sorted first ascending.]**
-- **`select`:** default hit is `{ $id, $path }` (surface 3.0; before, `{id,
-  path}` — names the language itself rejects as bare reads); add `name: <expr>`
-  fields and nested `collect { … }` / `first { … }` / `single { … }`. A `$id` /
-  `$path` projection collapses onto the envelope key (`select $path` yields one
-  `$path`, not a `path` beside it); `id`/`path` are ordinary names for a
-  projected column. An item that is not a plain navigation (a call, arithmetic)
-  needs an alias — `n: size(tags)` — unless the projection is in `values` mode.
+- **`select`:** default hit is `{ id, path }`; add `name: <expr>` fields and
+  nested `collect { … }` / `first { … }` / `single { … }`. `select id, path` is
+  simply the envelope (the attribute collapses onto its own key — never a
+  duplicate column); any **other** projection whose output key would be `id` or
+  `path` — `select data.path`, `select path: doc.layer` — is `filter_invalid`
+  ("projection `path` collides with the hit envelope — alias it (`p:
+  data.path`)"), so the envelope is never overwritten. An item that is not a
+  plain navigation (a call, arithmetic) needs an alias — `n: size(tags)` —
+  unless the projection is in `values` mode (which returns no hits, so the
+  envelope rule does not apply there).
   **Rows as values** (surface 1.2; keys renamed in 3.0): wherever a store row
   surfaces as a *value* rather than a hit — a nested `collect { }` / `first { }`
   / `single { }` with an **empty** projection ("the row itself", oqx §12), a
   `values` projection of `$it`, a field bound to a row — it is rendered as
-  `{ $id, $path }` (the row's id and its document's path), never the raw store
+  `{ id, path }` (the row's id and its document's path), never the raw store
   row (before 1.2 the columns leaked, `attrs` as a JSON string and the `__path`
   join column included). `tasks: nodes collect { where kind == "md:task" }` is
-  therefore a list of `{ $id, $path }` node refs — the same shape a hit leads
+  therefore a list of `{ id, path }` node refs — the same shape a hit leads
   with.
 - **`values`** (oqx ≥ 0.8): `select <expr> values` — exactly **one** item — makes
   each row's result the bare value rather than a `{ name: value }` record. At the
@@ -447,8 +474,8 @@ nested/correlated scopes:
   array / scalar (`tags: tags collect { $it values }`, `latest: nodes first
   { value values order by … }`). The runner implements the top-level form by
   projecting the single item under a reserved key alongside the injected
-  `$id`/`$path`, then peeling the values off the final page — so the keyset
-  cursor still works (`values` carries no hits, so the 3.0 envelope does not
+  `id`/`path`, then peeling the values off the final page — so the keyset
+  cursor still works (`values` carries no hits, so the envelope rule does not
   touch it).
 - **`limit N` / `offset N`** (oqx ≥ 0.9): bound the row set **after** `where` /
   `order by` / `distinct` and **before** the consumer reduces it, so they mean
@@ -465,7 +492,7 @@ nested/correlated scopes:
 
 ## 8. Execution model
 - OQX parses to the `@omgbase/oqx` AST and runs on the in-memory engine over a
-  store-backed `DataContext` (`context.ts`), which resolves fields/intrinsics/
+  store-backed `DataContext` (`context.ts`), which resolves fields/attributes/
   relations and the domain functions against SQLite.
 - A **tier-3 pushdown planner** (`planner.ts`) translates a query's pushable
   top-level `where` conjuncts into one guarded SQL `SELECT` (via
@@ -512,26 +539,26 @@ nested/correlated scopes:
   item observes it — `spec/surface` `lazy-root-*` pins that both engines see
   the same array). The `@omgbase/oqx` optimizer
   turns a block's top-level `local == outer` conjunct (a `^` reference OR a
-  literal: `where customer == ^$path`, `where type == "order"`, `where dst_id ==
-  ^$id`) into a probe and asks the context for an index first
+  literal: `where customer == ^path`, `where type == "order"`, `where dst_id ==
+  ^id`) into a probe and asks the context for an index first
   (`DataContext.indexFor` → `RowIndex.lookupRows`); the store context answers
   with ONE prepared, index-driven statement per probe under the same live-row
   and repo guards as the planner (`sql/scan.ts`), yielding rows built exactly as
   the scan builds them — so the handle is never materialized and every
-  intrinsic/relation works downstream. Indexed paths: docs `$id` (PK), `$path`
-  (`UNIQUE (repo_id, path)`), `$title` and any frontmatter/inline **property
+  attribute/relation works downstream. Indexed paths: docs `id` (PK), `path`
+  (`UNIQUE (repo_id, path)`), `title` (the computed row) and any frontmatter/inline **property
   key** (`idx_props_key_text` / `idx_props_key_num`, under the scalar-in-scope
   rule and **typed**: a string probe matches only a `type = 'string'` row by
   `val_text`, a number only `type = 'number'` by `val_num`, a boolean only
-  `type = 'bool'`, so `1` never meets `"1"`); blocks `$id`, `doc_id`, `type`,
-  `$path`; nodes `$id`, `doc_id`, `kind`, `name`, `$path`; edges `$id`,
-  `doc_id`, `dst_id`, `$path`, `dst_path`. A `$path` probe on a joined
+  `type = 'bool'`, so `1` never meets `"1"`); blocks `id`, `doc_id`, `type`,
+  `path`; nodes `id`, `doc_id`, `kind`, `name`, `path`; edges `id`,
+  `doc_id`, `dst_id`, `path`, `dst_path`. A `path` probe on a joined
   target drives from `docs (repo_id, path)` into the target's `doc_id` index. An
   **absent** probe (`key == null`, `name == ^missing`) is an anti-join SQLite has
   no index for: the handle is read once and filtered in memory (same answer).
   Not indexed — the engine's own hash index over the handle, built once per
-  run — `format`, `$tags`, edge `predicate` / `field`, multi-segment paths
-  (`meta.id`), reserved docs basenames (the scan raises). With several
+  run — `format`, `raw`, `hash`, `updated_at`, `tags`, edge `predicate` /
+  `field`, multi-segment paths (`meta.id`), the source handles. With several
   equalities the varying one is probed and the rest stay residual conjuncts in
   their original order. Nothing here changes a result: `corpus/oqx/
   conformance.test.ts` runs the correlated shapes planned vs. in-memory, and
@@ -552,7 +579,7 @@ A parsed query is a first-class tree shared by both engines
 (`spec/oqx/AST.md`, language 0.16, extended in 0.17): every node carries `kind` and a code-point
 `span`, optionals are materialized, and `where` keeps its surface form (a
 `select` alias stays an identifier; `resolveAliases` substitutes it before
-evaluation — omgbase's runner does this once, before it injects `$id`/`$path`
+evaluation — omgbase's runner does this once, before it injects `id`/`path`
 and renames a `values` item). `@omgbase/oqx` exports `visit`/`transform` (one
 child-key table drives both), `print`/`printTemplate` (canonical source, with
 the round-trip law both spec runners enforce), `toJSON` (`{ "oqx": "0.19",
@@ -573,20 +600,21 @@ projected-query fence (ADR-011, deferred).
 | Intent | OQX |
 |---|---|
 | Working-layer docs | `from docs where layer == "working"` |
-| Guides, recently touched | `from docs where $path.startsWith("/guides/") and $updated_at >= "2026-08-01"` |
+| Guides, recently touched | `from docs where path.startsWith("/guides/") and updated_at >= "2026-08-01"` |
 | Docs tagged pricing (scalar or list) | `from docs where "pricing" in list(tags)` |
-| Case-insensitive title match | `from docs where $title.lower().contains("aurora")` |
+| Case-insensitive title match | `from docs where title.lower().contains("aurora")` |
 | Distinct doc types | `select distinct type from docs` |
 | Distinct doc types as bare strings | `select distinct type values from docs` |
 | Docs with no open task (every task done) | `from docs where nodes none { where kind == "md:task" and not checked }` |
-| A doc's frontmatter as key/value rows | `select fm: entries(frontmatter) collect { k: $key, v: $it } from docs where $path == "/x.md"` |
-| Docs whose frontmatter has any numeric key over 1600 | `select $path from docs where entries(frontmatter) exists { where $it > 1600 }` |
+| A doc's frontmatter as key/value rows | `select fm: entries(frontmatter) collect { k: $key, v: $it } from docs where path == "/x.md"` |
+| Docs whose frontmatter has any numeric key over 1600 | `select path from docs where entries(frontmatter) exists { where $it > 1600 }` |
+| An authored `path:`/`title:` key beside the engine's | `select p: data.path, t: data.title, title from docs where has(data.path)` |
 | Two most recent practitioners | `from docs where type == "practitioner" order by era desc limit 2` |
 | Each doc's first section heading | `select h: nodes first { name values where kind == "md:section" order by first_ordinal } from docs` |
 | Each substance's tags minus one | `select tags: tags collect { $it values where $it != "substance" } from docs where type == "substance"` |
 | Docs with ≥2 distinct link predicates | `from docs where doc.out_edges count distinct { select predicate } >= 2` |
 | Unchecked tasks under a heading (working docs) | `from blocks where type == "task" and not checked and under_heading("Launch") and doc.layer == "working"` |
 | Blocks about a concept (semantic top-K) | `from blocks order by semantic("identity preservation across edits") desc` |
-| Everything a note transitively cites | `from docs where $path == "/index.md" follow doc.out` |
-| The documents whose `after` names this one | `select next: ^docs collect { $path where ^$path in list(after) } from docs where $path == "/timeline/kickoff.md"` |
+| Everything a note transitively cites | `from docs where path == "/index.md" follow doc.out` |
+| The documents whose `after` names this one | `select next: ^docs collect { path where ^path in list(after) } from docs where path == "/timeline/kickoff.md"` |
 | Every `depends_on` edge, both endpoints | `select doc_id, dst_path from edges where predicate == "depends_on"` |

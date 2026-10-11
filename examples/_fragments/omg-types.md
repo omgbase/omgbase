@@ -17,10 +17,11 @@ per-document lists of ids.
 - `cursor` — an opaque keyset pagination token (base64; embeds a per-ingest id).
   Anchored on its `Wy…` (`["…`) prefix so binding it by type can't swallow other
   words.
-- `dollar` — one literal `$`, for an output line that *starts* with one: the
-  query table's `$id` header (surface 3.0 spells a hit's identity as `$id`/`$path`).
-  recital reads any line beginning with `$` as a prompt, so such a header is
-  written `{{:dollar}}id        $path …` — same text, same widths, not a command.
+- `dollar` — one literal `$`, for an output line that *starts* with one.
+  recital reads any line beginning with `$` as a prompt, so such a line is
+  written `{{:dollar}}rest-of-line` — same text, same widths, not a command.
+  (The query table's header read `$id …` before surface 3.0 made the attributes
+  bare; no transcript needs it today, the type stays for the next such line.)
 
 <!-- recital type:
 doc_id: "d_[a-z0-9]{7}"

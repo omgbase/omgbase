@@ -38,7 +38,7 @@ describe("linksStale (dangling internal link detector)", () => {
     expect(health.stale).toHaveLength(1);
     const s = health.stale[0]!;
     expect(s.target).toBe("/b.md");
-    expect(s.$path).toBe("/a.md");
+    expect(s.path).toBe("/a.md");
     expect(s.reason).toBe("dangling_doc");
     expect(s.predicate).toBe("references");
 
@@ -62,7 +62,7 @@ describe("linksStale (dangling internal link detector)", () => {
 
     const scoped = linksStale(store, repoId, { pathGlob: "journal/*" });
     expect(scoped.stale).toHaveLength(1);
-    expect(scoped.stale[0]!.$path).toBe("/journal/day1.md");
+    expect(scoped.stale[0]!.path).toBe("/journal/day1.md");
     expect(scoped.stale[0]!.target).toBe("/missing-j.md");
 
     const all = linksStale(store, repoId);
@@ -162,13 +162,13 @@ describe("linksStaleSummary (counts only)", () => {
     expect(s).not.toHaveProperty("stale");
     expect(s.staleCount).toBe(linksStale(store, repoId).stale.length);
     expect(s.byTarget).toEqual([{ target: "/gone-a.md", count: 3 }, { target: "/gone-b.md", count: 1 }]);
-    expect(s.bySource).toEqual([{ $path: "/j/one.md", count: 3 }, { $path: "/g/two.md", count: 1 }]);
+    expect(s.bySource).toEqual([{ path: "/j/one.md", count: 3 }, { path: "/g/two.md", count: 1 }]);
     expect(s.externalCount).toBe(1);
     expect(s.totalOpenEdges).toBe(5);
 
     const scoped = linksStaleSummary(store, repoId, { pathGlob: "g/*" });
     expect(scoped.staleCount).toBe(1);
     expect(scoped.byTarget).toEqual([{ target: "/gone-a.md", count: 1 }]);
-    expect(scoped.bySource).toEqual([{ $path: "/g/two.md", count: 1 }]);
+    expect(scoped.bySource).toEqual([{ path: "/g/two.md", count: 1 }]);
   });
 });

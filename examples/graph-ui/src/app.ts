@@ -172,7 +172,7 @@ const candidates = computed<Candidate[]>(() => inferCandidates(ast.get(), rows.g
 /** The relationship picker's resolved view (edges + layout); the projection joins it below. */
 const relationshipView = signal<View>(defaultView([]));
 /** The projected fields, by reflection over the query (or the rows for an empty projection). */
-const projection = computed<Projection>(() => projectionOf(ast.get(), rows.get()));
+const projection = computed<Projection>(() => projectionOf(ast.get(), rows.get(), serverSurface.get()));
 /** The user's card choices (label radio, show checkboxes); vanished fields are dropped on resolve. */
 const projectionOverrides = signal<ProjectionOverrides>(NO_PROJECTION_OVERRIDES);
 /** The view record the graph draws: `{ edges, layout, projection }`. */
@@ -184,8 +184,8 @@ const view = computed<View>(() => {
 // surface 1.x, rooted on 2.0), so one document has one key on either. The
 // node's `label` is the FALLBACK title line (the de-rooted path); the card's
 // actual title comes from the projection's label field (lib/cards.ts).
-// The hit's identity is read through `hitId`/`hitPath` (lib/paths.ts): `$id`/
-// `$path` on surface ≥ 3.0, `id`/`path` before.
+// The hit's identity is read through `hitId`/`hitPath` (lib/paths.ts): the
+// envelope's `id`/`path`, the same under every surface version.
 const nodes = computed<GraphNode[]>(() => rows.get().map((row) => {
   const rawPath = hitPath(row);
   const path = rawPath !== null ? rooted(rawPath) : hitId(row) ?? "";
@@ -460,7 +460,7 @@ async function runQuery(): Promise<void> {
     if (gen === runGeneration) querying.set(false);
   }
   if (!empty) return;
-  // Then say WHY, when the query names a document: probe its `$path == "…"` literals.
+  // Then say WHY, when the query names a document: probe its `path == "…"` literals.
   const missing = await missingPathLiterals(pathLiterals(q), docExists);
   if (gen === runGeneration && missing.length > 0) emptyResult.set({ ...empty, missing });
 }
@@ -805,7 +805,7 @@ export class GraphUiApp extends SignalWatcher(LitElement) {
       ${t.details.map((d) => html`<div class="missing" data-missing>${d}</div>`)}
       ${stale ? html`<div class="note">the graph below is the previous result</div>` : nothing}
       <div class="actions">
-        ${isStarterQuery(source.get()) ? nothing : html`<button type="button" data-action="starter" @click=${() => source.set(starterQuery())}>show recent documents</button>`}
+        ${isStarterQuery(source.get()) ? nothing : html`<button type="button" data-action="starter" @click=${() => source.set(starterQuery(serverSurface.get()))}>show recent documents</button>`}
         <label><input type="checkbox" .checked=${ui.keepLastGraph} @change=${(e: Event) => uiSettings.set({ ...ui, keepLastGraph: (e.target as HTMLInputElement).checked })}> keep the last graph when a query matches nothing</label>
       </div>
     </div>`;

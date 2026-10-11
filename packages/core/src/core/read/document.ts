@@ -1,7 +1,7 @@
 import type { Database } from "better-sqlite3";
 import type { Store } from "../store/store.js";
 import { findDoc, findDocByRef, loadDocBlocks, type BlockNode } from "./reader.js";
-import { docPropertiesGrouped } from "../store/properties.js";
+import { docPropertiesGrouped, type PropertySource } from "../store/properties.js";
 import { sha256 } from "../hash.js";
 import { referencePath } from "../paths.js";
 
@@ -26,18 +26,18 @@ import { referencePath } from "../paths.js";
 // round-trips the file byte-for-byte (03 §2.1 coverage invariant).
 
 // The wire shape follows the surface's row rule (spec/surface §1.2, 3.0): the
-// document's identity and location under the row attributes' own names — `$id`,
-// `$path` — and the exact source bytes as `$raw` (the same value the query
-// binding's `$raw` reads); `rev`, `ids`, `hashes`, `parents` name roles.
+// document's identity and location under the row attributes' own names — `id`,
+// `path` — and the exact source bytes as `raw` (the same value the query
+// binding's `raw` reads); `rev`, `ids`, `hashes`, `parents` name roles.
 export interface DocsReadResult {
-  $id: string;
+  id: string;
   /** The reference form (`/a/b.md`, spec/surface §1 "Paths"). */
-  $path: string;
+  path: string;
   rev: string | null;
   /** Properties grouped by source: { frontmatter, inline, computed }. */
   properties: Record<string, Record<string, unknown>>;
-  /** The reconstructed file bytes (spec/store §6.1) — the document's `$raw`. */
-  $raw: string;
+  /** The reconstructed file bytes (spec/store §6.1) — the document's `raw`. */
+  raw: string;
   /** Block ids in document order, for follow-up edits (include_ids). */
   ids?: string[];
   /**
@@ -121,6 +121,20 @@ export function reconstructContent(db: Database, docId: string): string | null {
   return out.join("");
 }
 
+/**
+ * The surface's `properties` (spec/surface §2, 3.0): the `spec/properties` §5
+ * grouped shape with the computed group's keys spelled as the attributes that
+ * read them — the store writes the computed rows under `$title`/`$tags`
+ * (spec/properties §3.3, unchanged), the surface has no `$` names, so
+ * `properties.computed` is `{ title, tags }`. Authored groups are untouched (an
+ * authored `$x:` key keeps its sigil, as `frontmatter.$x` reads it).
+ */
+export function surfaceProperties(grouped: Record<PropertySource, Record<string, unknown>>): Record<string, Record<string, unknown>> {
+  const computed: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(grouped.computed)) computed[k.startsWith("$") ? k.slice(1) : k] = v;
+  return { frontmatter: grouped.frontmatter, inline: grouped.inline, computed };
+}
+
 /** Read a whole document by id: full file bytes + properties. Null if missing. */
 export function docsRead(store: Store, docId: string, opts: DocsReadOptions = {}): DocsReadResult | null {
   const info = findDoc(store, { docId });
@@ -129,11 +143,11 @@ export function docsRead(store: Store, docId: string, opts: DocsReadOptions = {}
   if (content === null) return null;
 
   const result: DocsReadResult = {
-    $id: info.docId,
-    $path: referencePath(info.path),
+    id: info.docId,
+    path: referencePath(info.path),
     rev: info.currentRev,
-    properties: docPropertiesGrouped(store.db, docId),
-    $raw: content,
+    properties: surfaceProperties(docPropertiesGrouped(store.db, docId)),
+    raw: content,
   };
   if (opts.includeIds) {
     const ids: string[] = [];
@@ -240,13 +254,13 @@ export function docsReadMany(
 }
 
 export interface DocsReadAtResult {
-  $id: string;
+  id: string;
   /** The path as of that revision, in the reference form. */
-  $path: string;
+  path: string;
   /** The revision travelled to (the argument, echoed for confirmation). */
   rev: string;
-  /** The reconstructed file bytes at `rev` — the document's `$raw` then. */
-  $raw: string;
+  /** The reconstructed file bytes at `rev` — the document's `raw` then. */
+  raw: string;
   /** True when the reconstructed bytes' sha256 matched the revision's stored
    *  rendered_hash — a byte-faithful round-trip. False flags the fidelity gap
    *  described below (doc-level trivia may differ for an old revision). */
@@ -317,13 +331,13 @@ export function readDocumentAtRevision(store: Store, docId: string, revId: strin
   const renderedHashMatch = sha256(content).equals(rev.rendered_hash);
 
   return {
-    $id: docId,
+    id: docId,
     // The revision records the path as of that revision (docs may be moved).
-    $path: referencePath(rev.path),
+    path: referencePath(rev.path),
     rev: revId,
-    $raw: content,
+    raw: content,
     renderedHashMatch,
-    properties: docPropertiesGrouped(db, docId),
+    properties: surfaceProperties(docPropertiesGrouped(db, docId)),
     propertiesAreCurrent: true,
   };
 }

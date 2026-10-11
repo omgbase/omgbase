@@ -46,6 +46,10 @@ describe("queryHints", () => {
     expect(SLASHED.slice(...hints[0]!.span)).toBe('("/" + ^$path)'); // the parser's span keeps the parentheses
     expect(queryHints(parse(SLASHED), "1.5")).toEqual([]);
     expect(queryHints(parse(SLASHED), null)).toEqual([]); // version unknown: no path hints
+    // The 3.0 spelling: a bare `path` is the attribute (rooted), so `"/" + ^path` is flagged the same way.
+    const bare3 = parse(`select path from docs where path == "a.md" follow refs(before), $it.in collect { where ("/" + ^path) in list(after) }`);
+    expect(queryHints(bare3, "3.0").map((h) => [h.kind, h.field, h.message])).toEqual([["path-already-rooted", "^path", "`path` is already `/`-rooted on this server; use `^path`"]]);
+    expect(queryHints(parse(`select path from docs follow $it.in collect { where ^path in list(after) }`), "3.0")).toEqual([]);
     // The same with `$path` at the top level and with `$dst_path`.
     const top = parse(`select p: "/" + $path from docs`);
     expect(queryHints(top, "2.0")[0]!.message).toBe("`$path` is already `/`-rooted on this server; use `$path`");

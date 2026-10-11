@@ -96,8 +96,9 @@ export const LANGUAGE = {
  * §1.2–1.3) binds on top of OQX. They are **not** part of the language:
  * `@omgbase/oqx` knows nothing of them, and another host may bind different
  * names. The grammar highlights the row functions (`text("…")`, `semantic("…")`,
- * …) as host functions; intrinsics and relations are listed for consumers such
- * as completion providers and are covered by the generic `$`-identifier rule.
+ * …) as host functions; the attributes, handles and relations are listed for
+ * consumers such as completion providers and highlight as plain identifiers
+ * (the `$`-identifier rule covers OQX's own intrinsics only).
  */
 export const OMGBASE = {
   /** The named roots of the repository (the root row: `^docs` from a row, bare `docs` at the top). */
@@ -109,19 +110,21 @@ export const OMGBASE = {
     "has_edge", "has_anchor", "child_count", "parent_type",
   ],
   /**
-   * `$`-intrinsics by target (every one is scoped `variable.language` by shape).
-   * Surface 3.0's `$` rule (spec/surface §1.2): `$` marks exactly the engine
-   * names that share a namespace with the author's fields — `$id`/`$path` on
-   * every row, `$raw`/`$hash`/`$updated_at` on docs and blocks, the computed
-   * `$title`/`$tags` on docs; a foreign key or column (`doc_id`, `block_id`,
-   * `dst_path`, `ordinal`, …) is a plain field and highlights as an identifier.
+   * The engine attributes by target — bare snake_case names that win on
+   * collision with an authored key (spec/surface §1.2, 3.0: `$` belongs to
+   * OQX — `$it`, `$key`, `$depth`, … — and omgbase adds no `$` names; an
+   * authored key with an attribute's name is reached through a source handle,
+   * `data.<k>` / `frontmatter.<k>` / `inline.<k>`). They highlight as plain
+   * identifiers; the list exists for completion providers.
    */
-  intrinsics: {
-    docs: ["$id", "$path", "$raw", "$hash", "$updated_at", "$title", "$tags"],
-    blocks: ["$id", "$path", "$raw", "$hash", "$updated_at"],
-    nodes: ["$id", "$path"],
-    edges: ["$id", "$path"],
+  attributes: {
+    docs: ["id", "path", "raw", "hash", "updated_at", "title", "tags", "format"],
+    blocks: ["id", "path", "doc_id", "raw", "hash", "updated_at", "type", "text", "attrs", "depth", "ordinal"],
+    nodes: ["id", "path", "doc_id", "block_id", "kind", "name", "value", "attrs"],
+    edges: ["id", "path", "doc_id", "block_id", "via_id", "dst_id", "dst_path", "uri", "field", "dst_kind", "predicate", "provenance", "anchor"],
   },
+  /** The source handles of a document (`data.<k>` the merged authored view, `frontmatter.<k>` / `inline.<k>` one source; `entries(x)` over any). */
+  handles: ["data", "frontmatter", "inline"],
   /** Relations reachable from a row (`follow children`, `nodes exists { … }`). */
   relations: [
     "nodes", "blocks", "out", "in", "out_edges", "in_edges",

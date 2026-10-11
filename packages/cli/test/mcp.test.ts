@@ -154,7 +154,7 @@ describe("omg mcp — multi-repo (per-call `repo` slug, ADR-014)", () => {
       const res = await rpc.send("tools/call", { name: "query", arguments: { query: "from docs", ...args } });
       const c = (res.result as { content?: { text?: string }[]; isError?: boolean }) ?? {};
       if (c.isError) return ["<error>"];
-      return ((JSON.parse(c.content?.[0]?.text ?? "{}") as { hits?: { $path?: string }[] }).hits ?? []).map((h) => h.$path ?? "");
+      return ((JSON.parse(c.content?.[0]?.text ?? "{}") as { hits?: { path?: string }[] }).hits ?? []).map((h) => h.path ?? "");
     };
 
     // No repo → the bound default (alpha).

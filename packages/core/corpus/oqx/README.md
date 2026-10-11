@@ -85,7 +85,7 @@ different sets. Several tests depend on this; keep it fully checked.
   relations (asserted to navigate the same content as `under_heading`).
 - **Lifts (`^name`)** — the open tasks distributed across ten documents (both
   lab notes, three practitioners, all four processes, mutus-liber) let a single
-  `select $path, open from docs where nodes collect { ^open: value where kind ==
+  `select path, open from docs where nodes collect { ^open: value where kind ==
   "md:task" and not attrs.checked }` both filter to those docs and capture each
   one's open-task texts. salt's all-checked supply list is the discriminator
   again: an any-task lift captures salt, an open-task lift drops it.
@@ -132,7 +132,7 @@ different sets. Several tests depend on this; keep it fully checked.
   follow-local `where`** (`follow doc.out { where type == ^type }`, `^` being
   the frontier row), a **destination list** (`follow doc.out, doc.in`, unioned
   by identity within a step) and a **destination block** (`follow ^docs
-  collect { where doc.out exists { where $path == ^^$path } }`, backlinks
+  collect { where doc.out exists { where path == ^^path } }`, backlinks
   computed per frontier row, equal to `doc.in`). The **structural** relations ride the heading
   outline (`section.children` — magnum-opus's `#` over four `##`, with `$leaf`)
   and the block tree (`block.children` — a bullet list down to its items),
@@ -152,28 +152,28 @@ different sets. Several tests depend on this; keep it fully checked.
   element — mercury's scalar-authored `tags: substance` is one element (→ `[]`),
   the list-authored substances keep their extras — and
   `tags exists { where $it == "tria-prima" }` equals `"tria-prima" in list(tags)`.
-- **The root row (`^docs`, `^$id`, `0^docs`; surface 2.0)** — the repository is
+- **The root row (`^docs`, `^id`, `0^docs`; surface 2.0)** — the repository is
   the root scope's row: from a top-level row `^docs` is the documents scan
-  (`size(^docs)` is 20), `^$id` the repository id, `entries(^$it)` names the four
+  (`size(^docs)` is 20), `^id` the repository id, `entries(^$it)` names the four
   collections `docs`/`blocks`/`nodes`/`edges`; from a block's rows `^^docs` or the
   absolute `0^docs`. A bare `docs` inside a block is the loud "did you mean
   `^docs`" error, never an empty read.
 - **Sugar (oqx 0.17)** — `docs { type == "substance" }` is the collect with a
   where-first body (the five substances); `docs count { is verified }` filters a
-  bare boolean (15); `^docs[slug == ^subject].$path` is the bracket form of the
+  bare boolean (15); `^docs[slug == ^subject].path` is the bracket form of the
   lab notes' 1:1 `single` lookup and `^docs[type == "practitioner" and era >
   1600]!` the required-single form (Newton; four matches without the era bound
   is the `single` error); `refs(before)[0]` is positional; `era!` is the required
   value (an error on a substance, which has no era); `era is not null` /
   `era is null` the identity-based absence test; `hub: ^docs[type == "hub"],
-  hub_path: hub.$path` reuses a select alias to its left.
+  hub_path: hub.path` reuses a select alias to its left.
 - **`refs(x)` (surface 1.5)** — the milestones' `before`/`after`/`see_also`
   resolve to live document rows in either path form or by id, dangling
-  references dropped: `refs(before) collect { $path, when }` on `review` yields
+  references dropped: `refs(before) collect { path, when }` on `review` yields
   kickoff and dissolution (not `lost-notes`); `follow refs(before), refs(after)`
   from `review` walks review → {dissolution, kickoff} → review (a cycle, admitted
-  once); the reverse join is `^docs { ^$path in list(before) }` — live because
-  `$path` is the `/`-rooted reference form; `follow before` (the strings) is the
+  once); the reverse join is `^docs { ^path in list(before) }` — live because
+  `path` is the `/`-rooted reference form; `follow before` (the strings) is the
   "a hit must be a document, block, node or edge row" error.
 - **`none`, `limit`, `offset`** (oqx ≥ 0.9) — `nodes none { where kind ==
   "md:task" }` excludes salt (its checked supply list *is* a task) while `none`

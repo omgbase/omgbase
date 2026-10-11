@@ -164,9 +164,9 @@ describe("doctor", () => {
 describe("traversal (OQX follow doc.out)", () => {
   it("walks the citation graph from a seed doc to its linked doc", () => {
     // hub.md links to old.md — `follow doc.out` reaches it across the edge graph.
-    const res = JSON.parse(omg(["query", 'from docs where $path == "hub.md" follow doc.out', "--json"])) as {
+    const res = JSON.parse(omg(["query", 'from docs where path == "hub.md" follow doc.out', "--json"])) as {
       hits: { path: string }[];
     };
-    expect(res.hits.map((h) => h.$path)).toContain("/old.md");
+    expect(res.hits.map((h) => h.path)).toContain("/old.md");
   });
 });

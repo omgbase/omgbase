@@ -402,8 +402,8 @@ fn observe_outcome(v: &Value) -> ObserveOutcome {
         })
         .unwrap_or_default();
     ObserveOutcome {
-        path: str_field(v, "$path"),
-        doc_id: str_field(v, "$id"),
+        path: str_field(v, "path"),
+        doc_id: str_field(v, "id"),
         rev: opt_str_field(v, "rev"),
         commit_id: opt_str_field(v, "commitId"),
         converged: bool_field(v, "converged"),
@@ -435,9 +435,9 @@ fn changes_page(v: &Value, cursor: i64) -> ChangesPage {
                         .map(|rs| {
                             rs.iter()
                                 .map(|r| DigestRevision {
-                                    doc: str_field(r, "$id"),
-                                    path: str_field(r, "$path"),
-                                    content_hash: str_field(r, "$hash"),
+                                    doc: str_field(r, "id"),
+                                    path: str_field(r, "path"),
+                                    content_hash: str_field(r, "hash"),
                                 })
                                 .collect()
                         })
@@ -473,8 +473,8 @@ impl EngineClient for McpEngineClient {
     fn observe_delete(&mut self, path: &str) -> Result<DeleteOutcome> {
         let out = self.call("observe_delete", json!({ "path": path }))?;
         Ok(DeleteOutcome {
-            path: opt_str_field(&out, "$path").unwrap_or_else(|| path.to_owned()),
-            doc_id: opt_str_field(&out, "$id"),
+            path: opt_str_field(&out, "path").unwrap_or_else(|| path.to_owned()),
+            doc_id: opt_str_field(&out, "id"),
             old_hash_hex: None,
         })
     }
@@ -505,7 +505,7 @@ impl EngineClient for McpEngineClient {
         if res.is_error {
             return Ok(None);
         }
-        let Some(content) = res.body.get("$raw").and_then(Value::as_str) else {
+        let Some(content) = res.body.get("raw").and_then(Value::as_str) else {
             return Ok(None);
         };
         Ok(Some(DocBytes {
@@ -881,7 +881,7 @@ mod tests {
     #[test]
     fn wire_shapes_map_to_store_outcomes() {
         let o = observe_outcome(&json!({
-            "$id": "d_0", "$path": "a.md", "rev": "r_0", "commitId": "c_0",
+            "id": "d_0", "path": "a.md", "rev": "r_0", "commitId": "c_0",
             "converged": true, "echo": false, "conflicted": false,
             "dispositions": [{ "kind": "same", "count": 2 }, { "kind": "edited", "count": 1 }],
         }));
@@ -889,13 +889,13 @@ mod tests {
         assert_eq!(o.dispositions["same"], 2);
         assert!(o.converged && !o.echo);
         let echo = observe_outcome(
-            &json!({ "$id": "d_0", "$path": "a.md", "rev": null, "commitId": null, "converged": true, "echo": true, "conflicted": false, "dispositions": [] }),
+            &json!({ "id": "d_0", "path": "a.md", "rev": null, "commitId": null, "converged": true, "echo": true, "conflicted": false, "dispositions": [] }),
         );
         assert!(echo.echo && echo.rev.is_none());
         let page = changes_page(
             &json!({
                 "digests": [{ "commit": "c_1", "seq": 1, "ts": "t", "origin": "api", "actor": null, "summary": "s",
-                              "revisions": [{ "$id": "d_0", "$path": "a.md", "$hash": "ab" }] }],
+                              "revisions": [{ "id": "d_0", "path": "a.md", "hash": "ab" }] }],
                 "cursor": 1, "truncated": false, "head": 1,
             }),
             0,

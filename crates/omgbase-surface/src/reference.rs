@@ -14,13 +14,13 @@ is no {from, filter, order} envelope: every concern is a clause of the string.
 CLAUSE ORDER IS FIXED: select, from, where, follow, order by, limit, offset —
 each at most once; an out-of-order clause is a parse error naming the order.
 Only `select` may drop its keyword, and only as the first clause
-(`$path, era from docs where …`). A top-level predicate needs `where`, because
+(`path, era from docs where …`). A top-level predicate needs `where`, because
 `where` follows `from` (`era > 1600 from docs` is the clause-order error); a
 block may LEAD with a predicate (see Sugar), but a predicate after a projection
 still needs the keyword (`{ name where kind == "md:task" }`, not
 `{ name, kind == "md:task" }`); `from docs count` is an error (write
 `docs count { … }`). `where` and later `select` items may use the same body's
-`select` aliases (`select $path, old: era < 1000 from docs where old`; an alias
+`select` aliases (`select path, old: era < 1000 from docs where old`; an alias
 shadows a same-named field there). `and` / `or` / `not` are the connectives;
 the symbols `&&` / `||` / `!` are accepted synonyms (the words are canonical and
 what `print` writes).
@@ -37,71 +37,91 @@ Every form here is shorthand for an explicit directive (the AST is the explicit 
                                        follow ^docs { where … } is a destination block (collect); follow children { depth 2 }
                                        and follow refs(x) { depth 2 } are the options block.
   refs(x)[0]                          ≡ refs(x) first { offset 0 }   positional (integer literal or ${binding});
-                                       out of range ⇒ absent; refs(x)[0].$path navigates the row
-  ^docs[$path == ^company]            ≡ ^docs first { where $path == ^company }   first match or absent
-  ^docs[$path == ^company]!           ≡ … single { … } required: exactly one, else filter_invalid
-  title!                              required: title, or an error naming the expression (and the row's $id)
+                                       out of range ⇒ absent; refs(x)[0].path navigates the row
+  ^docs[path == ^company]             ≡ ^docs first { where path == ^company }   first match or absent
+  ^docs[path == ^company]!            ≡ … single { … } required: exactly one, else filter_invalid
+  title!                              required: title, or an error naming the expression (and the row's id)
                                        — never a filter, never a coercion (0!, ""! are values); tightest: a!.b vs a.b!
   is x / not x                        truthiness of x, and its negation (prefix; `not` ≡ `!`)
   x is y / x is not y                 identity (a row's id, else structural) — compares rows, which == does not;
                                        x is null = absent; for scalars is ≡ ==; comparison precedence, no chaining
-  a and b / a or b                    the connectives (≡ && / ||: same precedence, short-circuit, value: title or $path coalesces)
-  boss: ^docs[$path == ^manager], bossName: boss.$title   a select item may use the items to its LEFT
+  a and b / a or b                    the connectives (≡ && / ||: same precedence, short-circuit, value: data.title or path coalesces)
+  boss: ^docs[path == ^manager], bossName: boss.title   a select item may use the items to its LEFT
   Reserved words (never a bare field name): from where select is not and or, true false null.
+  Contextual words (limit order offset follow collect count first distinct desc by in) parse as
+  fields in expression position (select o: order from docs).
 
-Results are LEAN hits — { $id, $path } + whatever `select` projects (or `values`,
-`count`, `exists`, `none`). The envelope keys ARE the intrinsics: copy a hit's
-`$id` straight into `where $id == "…"` (no translation); a `select $path` lands on
-the envelope key rather than beside it; a row surfacing as a value (an empty
-`collect { }`) is the same `{ $id, $path }`. Every other tool spells a row the
-same way (`docs_read` → `{ $id, $path, rev, properties, $raw }`, `blocks_get` →
-`{ $id, type, text, $raw, $hash, … }`, `docs_list` → `{ $id, $path, $updated_at,
-blocks }`, a revision → `{ $id, $path, $hash }`): hydrate by id via
+Results are LEAN hits — { id, path } + whatever `select` projects (or `values`,
+`count`, `exists`, `none`). The envelope keys ARE the attributes: copy a hit's
+`id` straight into `where id == "…"` (no translation); `select id, path` is simply
+the envelope (no duplicate columns); any OTHER projection whose output key would
+be `id` or `path` must be aliased — `select data.path` is refused ("projection
+`path` collides with the hit envelope — alias it (`p: data.path`)"); a row
+surfacing as a value (an empty `collect { }`) is the same `{ id, path }`. Every
+other tool spells a row the same way (`docs_read` → `{ id, path, rev, properties,
+raw }`, `blocks_get` → `{ id, type, text, raw, hash, … }`, `docs_list` → `{ id,
+path, updated_at, blocks }`, a revision → `{ id, path, hash }`): hydrate by id via
 blocks_get/docs_read.
 
 ## Paths
 
 Every path the surface returns is `/`-rooted — the form a reference is
 written in (`[x](/projects/oqx.md)`, `before: [/timeline/kickoff.md]`): a
-hit's `$path`, an edge's `dst_path`, every tool's paths. Every path it
+hit's `path`, an edge's `dst_path`, every tool's paths. Every path it
 accepts tolerates both forms (`/a.md` or `a.md`): tool arguments, `refs(x)`,
-`within(...)`, and a string LITERAL compared with `$path`/`dst_path` by
-`==`/`!=` or passed to their `.startsWith(...)` (it is rooted first, so
-`$path == "a.md"` and `$path == "/a.md"` both match). A property holding a
-reference compares directly: `where ^$path in list(after)`,
-`where customer == ^$path` — no `"/" + ...` glue.
+`within(...)`, and a string LITERAL compared with `path`/`dst_path` (bare, or
+through a row handle: `doc.path`) by `==`/`!=` or passed to their
+`.startsWith(...)` (it is rooted first, so `path == "a.md"` and `path == "/a.md"`
+both match). A property holding a reference compares directly — and is never
+rooted: `where ^path in list(after)`, `where customer == ^path`,
+`where data.path == "/x.md"` (the author's `path:` key, as written) — no
+`"/" + ...` glue.
 
 ## Targets & field namespaces
 
-WHY `$`: a `$`-prefixed name is one the engine adds to a namespace it SHARES with
-your content — frontmatter keys and inline properties on a doc, attrs keys on a
-block or node — prefixed so YOUR field names keep priority and never collide (a
-frontmatter `id:` is `id`, the engine's identity is `$id`). That is the whole
-vocabulary: every row's `$id`/`$path`; docs' and blocks' `$raw` (exact source
-bytes) / `$hash` (their sha256) / `$updated_at`; docs' computed `$title`/`$tags`.
-Everything else the engine provides is a PLAIN snake_case field — a foreign key
-named for what it is (doc_id, block_id, via_id, dst_id, dst_path, uri), a column
-its column (type, text, depth, ordinal, kind, predicate, field) — because nothing
-of yours lives there. On docs a bare first segment that collides with a `$` base
-name (id/path/updated_at/hash/raw) is REJECTED with a "did you mean $X?" hint
-(bare `path` would silently read an absent frontmatter key). Force the property
-with `frontmatter.<k>`. `title`/`tags` are NOT reserved: `$title`/`$tags` are
-computed and never shadow an authored `title:`/`tags:` key. Tool results spell
-a row with the same names (a hit's `$id` is docs_read's `$id`).
+THE NAME RULE: `//! The `query_syntax` text (`spec/surface/README.md` §4: reference prose,
+//! unpinned). A condensed distillation of `docs/query-language.md`.
+
+/// The agent-facing OQX syntax reference the `query_syntax` tool returns.
+pub const QUERY_SYNTAX: &str = r##" belongs to OQX — $it, $key, $depth, $stop, $leaf, $frontier,
+$ordinal are values the LANGUAGE injects into a scope; omgbase adds NO $ names
+(a `$id` in a query is an unknown name, absent). Every engine attribute is a BARE
+snake_case name that WINS on collision — the convention the relations (children,
+blocks, out, in, doc, frontmatter, …) always followed: a bare name that is an
+engine attribute reads the engine's value, never yours. Your data is bare too;
+where a key of yours collides with an engine name, reach it through a source
+handle: `data.<k>` (the merged authored view — frontmatter + inline, exactly the
+read a bare non-colliding key performs), `frontmatter.<k>`, `inline.<k>`. So
+`path` is the engine's /-rooted location and `data.path` your `path:` key;
+`tags` is your tags ∪ the body #hashtags and `data.tags` the authored list alone;
+`title` the computed title (the first H1) and `data.title` your `title:`;
+`entries(data)` lists every authored top-level key. Same value, same name
+everywhere: a hit's `id` is docs_read's `id` and the `id` argument of blocks_get.
+
+  Reserved bare names per kind (engine attributes; handles; self; relations):
+    docs    id path raw hash updated_at title tags format | data frontmatter inline | doc | blocks nodes out in out_edges in_edges
+    blocks  id path doc_id raw hash updated_at type text attrs depth ordinal | block doc | children nodes out_edges section
+    nodes   id path doc_id block_id kind name value attrs | section doc block | blocks subsections children
+    edges   id path doc_id block_id via_id dst_id dst_path uri field dst_kind predicate provenance anchor | doc
+  A key of yours with any of these names is `data.<k>` (or frontmatter.<k> /
+  inline.<k> by source; attrs.<k> on a block or node).
 
 docs:
   - bare identifier  = a document PROPERTY (frontmatter + inline `key:: value`,
                        unioned; nested via dots: meta.owner). YAML/JSON docs
                        expose the parsed object's keys the same way.
-  - source-scoped    = frontmatter.<k> / inline.<k>; the whole bag as a collection
-                       via entries(frontmatter) / entries(inline) (see entries()).
-  - computed         = $title (first H1), $tags (body #hashtags), format
-                       (the doc's format — "markdown"/"yaml"/"json"; a bare
-                       computed field, present on EVERY doc, so has(format) is
-                       always true and `format == "yaml"` is the filter).
-  - intrinsics       = $id, $path (/-rooted, see Paths), $updated_at (ISO-8601,
-                       sorts chronologically), $raw (the whole file, frontmatter
-                       included), $hash (its sha256, 64 hex).
+  - source handles   = data.<k> (merged authored view) / frontmatter.<k> /
+                       inline.<k>; the whole bag as a collection via entries(data)
+                       / entries(frontmatter) / entries(inline) (see entries()).
+  - attributes       = id, path (/-rooted, see Paths), updated_at (ISO-8601,
+                       sorts chronologically), raw (the whole file, frontmatter
+                       included), hash (its sha256, 64 hex), title (the computed
+                       title: the first H1; data.title is the authored key), tags
+                       (authored tags ∪ body #hashtags, deduped, authored first;
+                       data.tags is the authored list), format (the doc's format —
+                       "markdown"/"yaml"/"json"; present on EVERY doc, so
+                       has(format) is always true and `format == "yaml"` is the
+                       filter).
   - relations        = nodes, blocks, doc.out / doc.in (citation graph),
                        doc.out_edges / doc.in_edges (a doc's edges as rows).
 
@@ -111,12 +131,12 @@ blocks:
                        every attrs key FLATTENED onto the row (bare `checked`
                        reads attrs.checked; `attrs.<k>` still works; the
                        structural fields win on collision; absent ⇒ false).
-  - intrinsics       = $id, $path (the owning doc's path), $raw (the block's raw
-                       source — a container's raw holds its children), $hash
+  - attributes       = id, path (the owning doc's path), raw (the block's raw
+                       source — a container's raw holds its children), hash
                        (its sha256 — the value update/split expect as
-                       expect.content_hash), $updated_at.
-  - reach-through    = doc.<key> / doc.$path / doc.$id / doc.format = the
-                       CONTAINING doc (doc.$id and doc.$path cost nothing — they
+                       expect.content_hash), updated_at.
+  - reach-through    = doc.<key> / doc.path / doc.id / doc.format = the
+                       CONTAINING doc (doc.id and doc.path cost nothing — they
                        read the row's own doc_id / joined path, no lookup).
   - relations        = block.children, block.nodes, block.out_edges, section.
   NOTE: inside a `follow`, $depth/$ordinal are ALWAYS the walk's metadata; a
@@ -126,9 +146,9 @@ nodes:
   - bare fields      = doc_id, block_id (null for a block-less node), kind
                        (md:task / md:link / md:section / yaml:…), name, value,
                        + attrs keys flattened (checked, level).
-  - intrinsics       = $id, $path.
-  - reach-through    = doc.<key> / doc.$id / doc.$path, block.type / block.text
-                       / block.$id / block.$path.
+  - attributes       = id, path.
+  - reach-through    = doc.<key> / doc.id / doc.path, block.type / block.text
+                       / block.id / block.path.
   - relations        = section.blocks, section.children, section.subsections.
 
 edges:  (the authored link graph as rows — one per open edge)
@@ -141,7 +161,7 @@ edges:  (the authored link graph as rows — one per open edge)
                        ("link"/"frontmatter"/"inline_field"/…), dst_kind
                        ("document"/"external"/"collection"), anchor, field (the
                        frontmatter key / inline field it was authored in).
-  - intrinsics       = $id, $path (the SOURCE doc's path); doc.<key> reaches the
+  - attributes       = id, path (the SOURCE doc's path); doc.<key> reaches the
                        source document. There is no from_commit: a query sees
                        open edges only (history is blocks_history/changes_since).
   - text()/semantic() are N/A on edges.
@@ -151,13 +171,13 @@ edges:  (the authored link graph as rows — one per open edge)
   name          the CURRENT row only — never falls through to an enclosing row
                 or the repository; an absent field is simply absent.
   ^name         one scope OUT (the enclosing row's fields/intrinsics/lifts);
-                ^^name two scopes out. `^$path` = the enclosing row's path.
+                ^^name two scopes out. `^path` = the enclosing row's path.
   ^docs ^nodes ^blocks ^edges
                 THE ROOT ROW (surface 2.0, oqx 0.18): the repository is the root
                 scope's row, one scope out from a top-level row, so ^docs there is
                 the whole documents scan (uncorrelated until you add a ^ predicate);
                 one caret per enclosing block (^^docs from depth two), or the
-                absolute 0^docs from ANY depth. ^$id / 0^$id = the repository id.
+                absolute 0^docs from ANY depth. ^id / 0^id = the repository id.
                 ^$it = the root object: ^$it.docs ≡ ^docs, entries(^$it) names the
                 four collections. At the root scope itself a bare target is the scan
                 (docs count { … }, from docs, entries(docs)).
@@ -193,7 +213,7 @@ edges:  (the authored link graph as rows — one per open edge)
                range-shaped STRING property as an interval: "2026-01-15" in range(window).
   strings      x.contains("s") x.startsWith("p") x.endsWith("s") x.matches("^re$")
                (real regex) x.lower() x.upper() size(x). ALL CASE-SENSITIVE —
-               fold with .lower(): $title.lower().contains("aurora").
+               fold with .lower(): title.lower().contains("aurora").
   functions    has(f)  size(x)  list(x)  entries(x)  range(s)
   literals     "str" 'str' 123 1.5 true false null
   determinism  no now()/clock/random. Lists/structs are not literals; ternary is
@@ -228,8 +248,8 @@ edges:  (the authored link graph as rows — one per open edge)
                        a source, a receiver or a follow destination:
                        follow refs(before), refs(after) walks a timeline both ways.
                        The reverse direction needs no function: a document's
-                       $path is already the reference form, so
-                       ^docs { where ^$path in list(after) } is
+                       path is already the reference form, so
+                       ^docs { where ^path in list(after) } is
                        "the documents whose `after` names me".
   A HIT IS A STORE ROW: a top-level row that is not a doc/block/node/edge fails
                        (filter_invalid). `follow before` over a list of paths
@@ -254,7 +274,7 @@ edges:  (the authored link graph as rows — one per open edge)
             consumer reduces: nodes exists { offset 1 } = at least two;
             first { … offset 1 } = the second.
   lift      `^name:` in a where-collect binds values outward:
-            select $path, open from docs where nodes collect { ^open: value where kind == "md:task" and not checked }
+            select path, open from docs where nodes collect { ^open: value where kind == "md:task" and not checked }
   joins     ^<t> exists { where slug == ^ref }  semi-join; not … exists  anti-join;
             ^nodes single { where kind == "person" and attrs.id == ^owner_id }  lookup;
             x in ^keys  membership over a lifted set.
@@ -262,24 +282,26 @@ edges:  (the authored link graph as rows — one per open edge)
 ## select — projection
 
   select a, alias: expr, nested: nodes collect { … }
-  bare key → the property (scalar-authored → scalar; list → array); $-intrinsics;
-  a call/arithmetic needs an alias (n: size(tags)) unless in values mode.
-  "$raw"      whole file bytes (docs) — docs_read is cheaper for one doc.
+  bare key → the attribute when it is one (id, path, title, …), else the property
+  (scalar-authored → scalar; list → array); data.<k> forces the property;
+  a call/arithmetic needs an alias (n: size(tags)) unless in values mode;
+  an output key of id/path other than the attribute itself needs an alias.
+  raw         whole file bytes (docs) — docs_read is cheaper for one doc.
   distinct    select distinct type   (dedup hits by projected value)
   values      select <ONE item> values → bare values instead of records:
                 from docs select distinct type values          → values: ["hub","lab-note",…]
-                select $path values from docs                  → values: ["/index.md", …]
+                select path values from docs                   → values: ["/index.md", …]
                 tags: tags collect { $it values }             → a plain array
                 h: nodes first { name values where kind == "md:section" order by first_ordinal }
   entries(x)  a record as a collection ($key / $it per entry), key order:
-                select fm: entries(frontmatter) collect { k: $key, v: $it }
+                select fm: entries(data) collect { k: $key, v: $it }
                 where entries(frontmatter) exists { where $key == "era" and $it > 1600 }
                 entries(inline), entries(attrs), a nested map, or a list (index keys)
   $semantic_score is not a field — project semantic("…") under an alias instead.
 
 ## order by, limit/offset, pagination
 
-  order by era desc, $path asc     absent values sort LAST (asc); ties → (path, id)
+  order by era desc, path asc      absent values sort LAST (asc); ties → (path, id)
   limit N / offset N               define the result SET (integer literals);
                                    the tool's limit/cursor then page WITHIN it
   cursor                           opaque keyset on (path,id); a custom order by
@@ -291,17 +313,17 @@ edges:  (the authored link graph as rows — one per open edge)
   from docs where <seed> follow doc.in             backlinks
     follow doc.out { depth 3 }                     bound (1..8, default 8)
     follow doc.out { where layer == "canon" }      keep only matching successors
-    follow doc.in { where ^$path in list(before) }    ^ = the row being expanded
+    follow doc.in { where ^path in list(before) }     ^ = the row being expanded
                                                    (^^ = the walk's enclosing scope)
     follow doc.out, doc.in                         several destinations: their union
                                                    (one step dedups by identity)
-    follow ^docs { where doc.out exists { where $path == ^^$path } }
+    follow ^docs { where doc.out exists { where path == ^^path } }
                                                    a destination block, re-read per
                                                    frontier row (^ = that row; ^docs
                                                    is the root's documents) = doc.in
     follow doc.out { frontier type == "practitioner" }   cut, keeping the frontier row
     follow distinct doc.out / follow doc.out { by group } identity control
-    follow refs(before), ^docs { where ^$path in list(after) }   forward over `before`, backward
+    follow refs(before), ^docs { where ^path in list(after) }    forward over `before`, backward
                                                    over every doc whose `after` names me
   Per-occurrence metadata: $depth (seed = 1), $stop (interior|leaf|frontier|
   depth|cycle), $leaf/$frontier, $ordinal — usable in select/order by and the
@@ -311,7 +333,7 @@ edges:  (the authored link graph as rows — one per open edge)
   by an outer reference (^docs, ^^docs, 0^docs, ^$it.docs, with any member chain)
   can never be a relation of the current row, so a brace right after it is a
   destination block with the implicit collect — follow refs(before), ^docs { where
-  ^$path in list(after) } walks `before` forward and, backward, every document
+  ^path in list(after) } walks `before` forward and, backward, every document
   whose `after` names the frontier row (the 0.17 body rules apply: where-first,
   projections). After children / doc.out / refs(x) / a binding a brace is still
   the options block (an error when that destination is not the last); an options
@@ -332,30 +354,31 @@ text()/where prune the candidate set; only order by reweights.
 ## Examples
 
   from docs where layer == "working"
-  from docs where $path.startsWith("/guides/") and $updated_at >= "2026-08-01"
+  from docs where path.startsWith("/guides/") and updated_at >= "2026-08-01"
   from docs where "pricing" in list(tags) select layer, tags
   from docs where inline.owner == "alice"
-  from docs where $title.lower().contains("q3 plan")
+  from docs where title.lower().contains("q3 plan")
   from docs where format == "yaml"
   from docs where type == "practitioner" order by era desc limit 2
   from docs where nodes none { where kind == "md:task" and not checked }
   from docs where tags exists { where $it == "tria-prima" }
-  from docs where $path == "/x.md" select fm: entries(frontmatter) collect { k: $key, v: $it }
+  from docs where path == "/x.md" select fm: entries(data) collect { k: $key, v: $it }
   from docs select owner_id, owner: ^nodes single { where kind == "person" and attrs.id == ^owner_id }
   from blocks where type == "task" and not checked and under_heading("Launch") and doc.layer == "working"
   from blocks where type == "paragraph" and has_edge("references", "d_92aaaaa")
-  select $path, $depth from docs where $path == "/timeline/review.md" follow refs(before), refs(after)
-  select $path, next: ^docs collect { $path where ^$path in list(before) } from docs where type == "milestone"
-  select $path, n: size(^docs), repo: ^$id from docs limit 1
+  select path, $depth from docs where path == "/timeline/review.md" follow refs(before), refs(after)
+  select path, next: ^docs collect { path where ^path in list(before) } from docs where type == "milestone"
+  select path, n: size(^docs), repo: ^id from docs limit 1
+  select p: data.path, t: data.title from docs where has(data.path)
   docs { type == "substance" and not verified }
-  select subject, process: ^docs[slug == ^subject]!.$path from docs where type == "lab-note"
-  select $path, back: nodes first { select p: 0^docs collect { $path where ^^$path in list(after) } values } from docs where type == "milestone"
-  select $path, prior: refs(before) collect { $path, when } from docs where type == "milestone"
+  select subject, process: ^docs[slug == ^subject]!.path from docs where type == "lab-note"
+  select path, back: nodes first { select p: 0^docs collect { path where ^^path in list(after) } values } from docs where type == "milestone"
+  select path, prior: refs(before) collect { path, when } from docs where type == "milestone"
   from blocks order by semantic("identity preservation across edits") desc limit 10
   from edges where dst_kind == "external" select uri
   docs count { where layer == "canon" }
 
-Common mistake: bare `path.startsWith(...)` meant the intrinsic — it fails loud
-with a hint; write `$path.startsWith(...)`. Another: `where tags == "x"` on a
-list-valued key is false — write `"x" in tags`.
+Common mistake: `$path`/`$id` (the 2.x spelling) — omgbase has no $ names; write
+`path`/`id`. Another: `where tags == "x"` on a list-valued key is false — write
+`"x" in tags`. Another: `select data.path` — alias it (`p: data.path`).
 "##;

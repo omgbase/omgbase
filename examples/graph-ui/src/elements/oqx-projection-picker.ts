@@ -24,7 +24,7 @@ export interface ProjectionChangeDetail extends ProjectionChoice { overrides: Pr
 export interface FieldHoverDetail { field: ProjectedField | null }
 
 const KIND_TITLE: Record<ProjectedField["kind"], string> = {
-  intrinsic: "a $-intrinsic of the document ($path, $title, $id, $updated_at, …)",
+  intrinsic: "an engine attribute of the document (path, title, id, updated_at, …; $-spelled before surface 3.0)",
   field: "a scalar: a frontmatter field, a navigation or an aliased expression",
   nested: "a nested block (collect / first / single) — rendered as a count",
   values: "`values` mode: the row is this single value",
@@ -86,7 +86,7 @@ export class OqxProjectionPicker extends LitElement {
   protected override render() {
     const p = this.projection;
     if (this.fields.length === 0) {
-      return html`<div class="empty">No projected fields yet — list them in <code>select</code> (<code>select $path, title, phase …</code>), or leave the projection empty to get every field of the returned rows once the query has run.</div>`;
+      return html`<div class="empty">No projected fields yet — list them in <code>select</code> (<code>select path, title, phase …</code>), or leave the projection empty to get every field of the returned rows once the query has run.</div>`;
     }
     const overridden = this.overrides.label !== "auto" || Object.keys(this.overrides.shown).length > 0;
     const fromRows = this.fields.every((f) => f.source === "row");

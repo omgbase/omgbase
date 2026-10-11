@@ -38,7 +38,7 @@ pub struct GraphArgs {
 /// directions so a single filter handles either scan (an edge is a directional
 /// fact regardless of which endpoint the walk reached it from).
 const EDGE_FIELDS: [&str; 12] = [
-    "$id",
+    "id",
     "doc_id",
     "block_id",
     "via_id",
@@ -67,9 +67,10 @@ fn build_user_select(select: &[String]) -> Result<(Vec<SelectItem>, Vec<Option<S
         if trimmed.is_empty() {
             continue;
         }
-        // A bare or `$`-prefixed identifier keeps its spelling as the output
-        // key (3.0: a `$title` selection is `$title` in the document, as a
-        // `query` hit's would be); anything else is `sel_<i>`.
+        // A bare identifier keeps its spelling as the output key (3.0: a
+        // `title` selection is `title` in the document, as a `query` hit's
+        // would be; an OQX `$` name too); anything else is `sel_<i>`, so a
+        // projection can never overwrite the envelope here.
         let ident = trimmed.strip_prefix('$').unwrap_or(trimmed);
         let is_ident = ident
             .chars()
@@ -81,10 +82,10 @@ fn build_user_select(select: &[String]) -> Result<(Vec<SelectItem>, Vec<Option<S
         } else {
             format!("sel_{i}")
         };
-        // The envelope keys are the row's own identity: a `$id`/`$path`
+        // The envelope keys are the row's own identity: a `id`/`path`
         // selection lands on them rather than beside them (the engine reads
         // the same value).
-        if name != "$id" && name != "$path" {
+        if name != "id" && name != "path" {
             while used.contains(&name) {
                 name = format!("{name}_{i}");
             }
@@ -103,7 +104,7 @@ fn build_user_select(select: &[String]) -> Result<(Vec<SelectItem>, Vec<Option<S
 ///
 /// ```text
 /// select _depth: $depth, _stop: $stop, _edges: doc.<dir>_edges collect { <edge fields> } <user items>
-/// from docs where $id == <root> or … follow distinct doc.<dir> { depth <depth> }
+/// from docs where id == <root> or … follow distinct doc.<dir> { depth <depth> }
 /// ```
 fn build_query(root_ids: &[String], dir: &str, depth: u32, user_select: &[SelectItem]) -> String {
     let mut edges_body = build::subquery();
@@ -121,7 +122,7 @@ fn build_query(root_ids: &[String], dir: &str, depth: u32, user_select: &[Select
         .map(|id| {
             build::scalar(build::binary(
                 BinaryOp::Eq,
-                build::ident("$id"),
+                build::ident("id"),
                 build::lit(id.as_str()),
             ))
         })
@@ -221,10 +222,10 @@ pub fn graph_neighborhood(
             query_truncated = true;
         }
         for hit in &res.hits {
-            // The walk's hits carry `$id`/`$path` (§1.4, 3.0), and so does
+            // The walk's hits carry `id`/`path` (§1.4, 3.0), and so does
             // `graph`'s own envelope (§4): one spelling for a document's identity.
-            let id = hit["$id"].as_str().unwrap_or_default().to_owned();
-            let path = hit["$path"].as_str().unwrap_or_default().to_owned();
+            let id = hit["id"].as_str().unwrap_or_default().to_owned();
+            let path = hit["path"].as_str().unwrap_or_default().to_owned();
             let hop = hit["_depth"].as_f64().unwrap_or(f64::NAN);
             let degree = (hop - 1.0) as i64;
             let replace = docs
@@ -260,8 +261,8 @@ pub fn graph_neighborhood(
             }
             if let Some(raw) = hit["_edges"].as_array() {
                 for e in raw {
-                    let eid = e["$id"].as_str().unwrap_or_default();
-                    if !edges.iter().any(|x| x["$id"].as_str() == Some(eid)) {
+                    let eid = e["id"].as_str().unwrap_or_default();
+                    if !edges.iter().any(|x| x["id"].as_str() == Some(eid)) {
                         edges.push(e.clone());
                     }
                 }
@@ -330,11 +331,11 @@ pub fn graph_neighborhood(
         .map(|d| {
             let is_frontier = d.degree == effective_degrees;
             if is_frontier {
-                frontier.push(json!({ "$id": d.id, "$path": d.path, "degree": d.degree }));
+                frontier.push(json!({ "id": d.id, "path": d.path, "degree": d.degree }));
             }
             let mut m = Map::new();
-            m.insert("$id".to_owned(), json!(d.id));
-            m.insert("$path".to_owned(), json!(d.path));
+            m.insert("id".to_owned(), json!(d.id));
+            m.insert("path".to_owned(), json!(d.path));
             m.insert("degree".to_owned(), json!(d.degree));
             m.insert("frontier".to_owned(), json!(is_frontier));
             for (k, v) in &d.extra {
@@ -368,8 +369,8 @@ pub fn graph_neighborhood(
         );
         if sa == sb {
             locale_compare(
-                a["$id"].as_str().unwrap_or_default(),
-                b["$id"].as_str().unwrap_or_default(),
+                a["id"].as_str().unwrap_or_default(),
+                b["id"].as_str().unwrap_or_default(),
             )
         } else {
             locale_compare(sa, sb)
@@ -396,7 +397,7 @@ mod tests {
     fn user_select_aliases() {
         let (items, names) = build_user_select(&[
             "layer".into(),
-            "$path".into(),
+            "path".into(),
             "a + 1".into(),
             "layer".into(),
         ])
@@ -407,13 +408,13 @@ mod tests {
             .collect();
         assert_eq!(
             printed,
-            ["_u0: layer", "_u1: $path", "_u2: a + 1", "_u3: layer"]
+            ["_u0: layer", "_u1: path", "_u2: a + 1", "_u3: layer"]
         );
         assert_eq!(
             names,
             [
                 Some("layer".into()),
-                Some("$path".into()),
+                Some("path".into()),
                 Some("sel_2".into()),
                 Some("layer_3".into())
             ]
@@ -429,7 +430,7 @@ mod tests {
         assert!(
             q.starts_with("select _depth: $depth, _stop: $stop, _edges: doc.out_edges collect {")
         );
-        assert!(q.ends_with("from docs where $id == \"d_0\" follow distinct doc.out { depth 2 }"));
+        assert!(q.ends_with("from docs where id == \"d_0\" follow distinct doc.out { depth 2 }"));
         assert!(oqx::parse_string(&q).is_ok());
         // several roots: an `or` seed (the canonical print of the `or` node since
         // oqx 0.18); the generated text is exactly the macro's pinned shape
@@ -437,7 +438,7 @@ mod tests {
         let q = build_query(&["d_14".to_owned(), "d_15".to_owned()], "in", 8, &[]);
         assert_eq!(
             q,
-            "select _depth: $depth, _stop: $stop, _edges: doc.in_edges collect { $id: $id, doc_id: doc_id, block_id: block_id, via_id: via_id, dst_id: dst_id, dst_path: dst_path, uri: uri, dst_kind: dst_kind, predicate: predicate, provenance: provenance, anchor: anchor, field: field } from docs where $id == \"d_14\" or $id == \"d_15\" follow distinct doc.in { depth 8 }"
+            "select _depth: $depth, _stop: $stop, _edges: doc.in_edges collect { id: id, doc_id: doc_id, block_id: block_id, via_id: via_id, dst_id: dst_id, dst_path: dst_path, uri: uri, dst_kind: dst_kind, predicate: predicate, provenance: provenance, anchor: anchor, field: field } from docs where id == \"d_14\" or id == \"d_15\" follow distinct doc.in { depth 8 }"
         );
     }
 

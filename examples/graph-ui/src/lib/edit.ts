@@ -41,7 +41,7 @@ export const ID_FORM: RefForm = { kind: "id", rooted: false, md: false };
 export type Shape = "scalar" | "list";
 export type EmptyListBehavior = "unset" | "keep";
 
-/** A shown document: its minted id and its `$path` (bare, `.md`). */
+/** A shown document: its minted id and its `path` (bare, `.md`). */
 export interface DocRef {
   id: string;
   path: string;
@@ -165,8 +165,8 @@ export function inferShape(values: readonly unknown[]): Shape | null {
   return lists >= scalars ? "list" : "scalar";
 }
 
-// The hit envelope under both spellings (`$id`/`$path` since surface 3.0,
-// `id`/`path` before — lib/paths.ts `HIT_ENVELOPE_KEYS`) plus the walk intrinsics.
+// The hit envelope (`id`/`path` — lib/paths.ts `HIT_ENVELOPE_KEYS`) plus the
+// walk intrinsics.
 const ROW_META = new Set([...HIT_ENVELOPE_KEYS, "$depth", "$stop", "$leaf", "$frontier", "$ordinal", "$doc_id"]);
 
 /** Row fields whose values are all document references (scalar or list). */

@@ -619,7 +619,7 @@ fn search_step(store: &Store, repo_id: &str, body: &Json) -> Result<Json, String
                 .iter()
                 .map(|h| {
                     json!({
-                        "$id": h.block_id, "doc_id": h.doc_id, "$path": h.path,
+                        "id": h.block_id, "doc_id": h.doc_id, "path": h.path,
                         "type": h.block_type, "text": h.text, "score": h.score,
                     })
                 })
@@ -681,7 +681,7 @@ fn resolve_step(store: &Store, repo_id: &str, body: &Json) -> Result<Json, Strin
         .map_err(|e| e.to_string())?;
     Ok(json!({
         "hits": hits.iter().map(|h| json!({
-            "$id": h.id, "locator": h.locator, "preview": h.preview, "evidence": h.evidence.to_json(),
+            "id": h.id, "locator": h.locator, "preview": h.preview, "evidence": h.evidence.to_json(),
         })).collect::<Vec<_>>()
     }))
 }

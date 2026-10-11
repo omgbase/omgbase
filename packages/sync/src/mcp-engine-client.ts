@@ -43,7 +43,7 @@ export class McpEngineClient implements EngineClient {
     return body as T;
   }
 
-  // The wire spells a document's identity `$id`/`$path` (spec/surface §1.2,
+  // The wire spells a document's identity `id`/`path` (spec/surface §1.2,
   // 3.0); the engine-client contract keeps the library's `docId`/`path`
   // (spec/store's observe outcome), so the two are mapped back here.
   async observeMany(files: { path: string; content: string }[]): Promise<ObserveResult[]> {
@@ -65,8 +65,8 @@ export class McpEngineClient implements EngineClient {
 
   async readDoc(path: string): Promise<DocBytes | null> {
     try {
-      const res = await this.callTool<{ $raw: string }>("docs_read", { path });
-      return { content: res.$raw, contentHash: createHash("sha256").update(res.$raw, "utf8").digest("hex") };
+      const res = await this.callTool<{ raw: string }>("docs_read", { path });
+      return { content: res.raw, contentHash: createHash("sha256").update(res.raw, "utf8").digest("hex") };
     } catch {
       // doc_missing (or any read failure) → treat as absent.
       return null;
@@ -78,10 +78,10 @@ export class McpEngineClient implements EngineClient {
   }
 }
 
-/** A wire observe outcome (`{ $id, $path, … }`) as the library's `{ docId, path, … }`. */
+/** A wire observe outcome (`{ id, path, … }`) as the library's `{ docId, path, … }`. */
 function fromWireObserve<T extends { docId: string | null; path: string }>(w: SurfaceObserveResult<T>): T {
-  const { $id, $path, ...rest } = w;
-  return { docId: $id, path: $path, ...rest } as unknown as T;
+  const { id, path, ...rest } = w;
+  return { docId: id, path: path, ...rest } as unknown as T;
 }
 
 /** Connect to an omgbase MCP server over stdio by spawning `command args`

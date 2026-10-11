@@ -64,14 +64,14 @@ export interface OpResult {
 }
 
 /** One touched document in an apply result (spec/mutate §4, 2.0): its row
- *  attributes `$id`, `$path` (the storage form here; the surface roots it) and
- *  `$hash` — the hex sha256 of the rendered bytes, i.e. the hash the committed
+ *  attributes `id`, `path` (the storage form here; the surface roots it) and
+ *  `hash` — the hex sha256 of the rendered bytes, i.e. the hash the committed
  *  revision carries (a dry run reports the hash it would carry). The same
  *  three keys a `changes_since` revision carries. */
 export interface ApplyRevision {
-  $id: string;
-  $path: string;
-  $hash: string;
+  id: string;
+  path: string;
+  hash: string;
 }
 
 export interface ApplyResult {
@@ -220,7 +220,7 @@ export function apply(store: Store, req: ApplyRequest): ApplyResult {
   for (const [docId, d] of loaded) {
     const after = renderDoc(d);
     diffs[d.path] = { before: before.get(docId) ?? "", after };
-    revisions.push({ $id: docId, $path: d.path, $hash: sha256(after).toString("hex") });
+    revisions.push({ id: docId, path: d.path, hash: sha256(after).toString("hex") });
   }
 
   if (req.dryRun) {

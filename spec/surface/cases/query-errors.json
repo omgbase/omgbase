@@ -24,31 +24,33 @@
   },
   "cases": [
     {
-      "name": "reserved-basename",
-      "notes": "§1.2: a bare id/path/updated_at/content_hash/body is a loud error.",
-      "query": "from docs where path.startsWith(\"lab/\")",
+      "name": "envelope-collision-needs-an-alias",
+      "notes": "§1.4 (3.0): a projection whose output key would be `path` (here `data.path`, the author's `path:` key) would overwrite the hit envelope — a loud error asking for an alias.",
+      "query": "select data.path from docs",
       "expect": {
         "error": "filter_invalid",
-        "message_includes": "did you mean the intrinsic"
+        "message_includes": "projection `path` collides with the hit envelope — alias it (`p: data.path`)"
       }
     },
     {
-      "name": "reserved-basename-in-select",
-      "query": "select id from docs",
+      "name": "envelope-collision-id-needs-an-alias",
+      "notes": "§1.4 (3.0): an alias ONTO `id` of anything but the attribute itself collides with the envelope.",
+      "query": "select id: layer from docs",
       "expect": {
         "error": "filter_invalid",
-        "message_includes": "did you mean the intrinsic $id"
+        "message_includes": "projection `id` collides with the hit envelope — alias it (`i: data.id`)"
       }
     },
     {
-      "name": "reserved-basename-body",
+      "name": "bare-body-is-an-absent-property",
       "query": "from docs where body",
       "expect": {
         "hits": [],
         "truncated": false,
         "cursor": null,
         "consumer": "collect"
-      }
+      },
+      "notes": "§1.2: `body` is not an engine attribute (the bytes are `raw`), so it is an ordinary property read — absent on every document."
     },
     {
       "name": "text-on-edges",
@@ -111,7 +113,7 @@
     },
     {
       "name": "nested-single-matches-many",
-      "query": "select x: ^docs single { where type == \"substance\" } from docs where $path == \"index.md\"",
+      "query": "select x: ^docs single { where type == \"substance\" } from docs where path == \"index.md\"",
       "expect": {
         "error": "filter_invalid",
         "message_includes": "matched"
@@ -152,7 +154,7 @@
     },
     {
       "name": "values-needs-exactly-one-item",
-      "query": "select $path, type values from docs",
+      "query": "select path, type values from docs",
       "expect": {
         "error": "filter_invalid",
         "message_includes": "exactly one"
@@ -193,7 +195,7 @@
     },
     {
       "name": "clause-order-select-after-from",
-      "query": "from docs select $path",
+      "query": "from docs select path",
       "expect": {
         "error": "filter_invalid",
         "message_includes": "select"
@@ -252,18 +254,18 @@
       }
     },
     {
-      "name": "planned-residual-error-not-hidden",
-      "notes": "§1 planner decline (c): a residual bare reserved basename raises in memory; the pushed `$path == \"nope.md\"` empties the scan, so a planned run saw no rows and no error. The whole query runs unplanned.",
-      "query": "from docs where path == \"x\" && $path == \"nope.md\"",
+      "name": "envelope-collision-through-a-row-handle",
+      "notes": "§1.4 (3.0): `doc.path` on a block is the same value as the block's `path`, but it is not the envelope's own selection (the bare attribute), so aliasing it onto `path` is the collision error too.",
+      "query": "select path: doc.path from blocks where type == \"heading\"",
       "expect": {
         "error": "filter_invalid",
-        "message_includes": "bare 'path' reads a frontmatter key; did you mean the intrinsic $path? (use frontmatter.path to force the property)"
+        "message_includes": "projection `path` collides with the hit envelope — alias it (`p: data.path`)"
       }
     },
     {
       "name": "planned-residual-bad-regex-not-hidden",
       "notes": "§1 planner decline (c): a residual method call (matches with an invalid pattern) raises in memory; the emptying pushed conjunct must not hide it.",
-      "query": "from docs where $path.matches(\"[\") && $path == \"nope.md\"",
+      "query": "from docs where path.matches(\"[\") && path == \"nope.md\"",
       "expect": {
         "error": "filter_invalid",
         "message_includes": "invalid regular expression \"[\": unterminated character class (missing ']')"
@@ -272,7 +274,7 @@
     {
       "name": "planned-residual-unknown-function-not-hidden",
       "notes": "§1 planner decline (c): a residual free call to an unknown function raises in memory; the emptying pushed conjunct must not hide it.",
-      "query": "from docs where nope(\"x\") && $path == \"nope.md\"",
+      "query": "from docs where nope(\"x\") && path == \"nope.md\"",
       "expect": {
         "error": "filter_invalid",
         "message_includes": "unknown function 'nope(…)'"
@@ -281,7 +283,7 @@
     {
       "name": "hit-not-a-row-follow-property",
       "notes": "§1.4 (1.5): a hit must be a store row. `follow before` over a frontmatter list of paths reaches the strings; the error names the value and the remedy (refs(<field>)).",
-      "query": "select $path from docs where $path == \"timeline/review.md\" follow before",
+      "query": "select path from docs where path == \"timeline/review.md\" follow before",
       "expect": {
         "error": "filter_invalid",
         "message_includes": "a hit must be a document, block, node or edge row — the query reached a string (\"/timeline/kickoff.md\")"
@@ -290,7 +292,7 @@
     {
       "name": "hit-not-a-row-first",
       "notes": "§1.4 (1.5): the rule holds for first/single too.",
-      "query": "select $path from docs where $path == \"timeline/review.md\" follow before first { }",
+      "query": "select path from docs where path == \"timeline/review.md\" follow before first { }",
       "expect": {
         "error": "filter_invalid",
         "message_includes": "a hit must be a document, block, node or edge row — the query reached a string (\"/timeline/kickoff.md\")"
@@ -313,6 +315,17 @@
       "expect": {
         "error": "filter_invalid",
         "message_includes": "not /-rooted"
+      }
+    },
+    {
+      "name": "dollar-names-are-not-omgbase-names",
+      "notes": "§1.2 (3.0): omgbase adds no `$` names — `$id`/`$path` are unknown OQX identifiers (absent), never the attributes. Pinned here so a 2.x-style query fails visibly (an absent projection is omitted; `where $id == …` matches nothing).",
+      "query": "select x: $id, y: $path from docs where $id == \"d_14\"",
+      "expect": {
+        "hits": [],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "collect"
       }
     }
   ]

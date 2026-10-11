@@ -13,14 +13,14 @@
 //      `$it.in`), a `$`-intrinsic, and the structural relations (`in`, `out`,
 //      `children`, `subsections`, …) which yield rows by themselves.
 //   2. the path form, once the server's surface version is known (lib/paths.ts):
-//      on a 2.0 server `"/" + $path` (or `"/" + ^$path`, `"/" + $dst_path` —
-//      `dst_path` since 3.0, spec/surface §1.2) adds
-//      a second slash to an already rooted path — use the intrinsic alone; on a
-//      1.x server a bare `$path`/`^$path` compared directly with a property
-//      (`^$path in list(after)`, `after.contains(^$path)`, `customer == ^$path`)
-//      never matches an authored `/`-rooted reference — prefix it with `"/" +`.
-//      A literal (`$path == "a.md"`) and another intrinsic (`$path == ^^$path`)
-//      are not flagged: the server roots a literal itself on 2.0, and a bare
+//      on a ≥ 2.0 server `"/" + path` (or `"/" + ^path`, `"/" + dst_path`; the
+//      pre-3.0 spellings `$path`/`$dst_path` are read too) adds a second slash
+//      to an already rooted path — use the attribute alone; on a 1.x server a
+//      bare `$path`/`^$path` compared directly with a property (`^$path in
+//      list(after)`, `after.contains(^$path)`, `customer == ^$path`) never
+//      matches an authored `/`-rooted reference — prefix it with `"/" +`. A
+//      literal (`path == "a.md"`) and another attribute (`path == ^^path`) are
+//      not flagged: the server roots a literal itself on 2.0, and a bare
 //      literal is right on 1.x.
 
 import type { Expr, Query, Span } from "@omgbase/oqx";
@@ -33,7 +33,7 @@ export type HintKind = "follow-bare-field" | "path-already-rooted" | "path-not-r
 export interface Hint {
   kind: HintKind;
   /** The code the hint is about: the field a destination names, or the path
-   * intrinsic as spelled (`$path`, `^$path`). */
+   * attribute as spelled (`path`, `^path`, `^$path`). */
   field: string;
   /** Code-point span of the offending source. */
   span: Span;
@@ -79,29 +79,29 @@ function pathHint(p: PathMention, serverSurface: string): Hint {
 // ---- the path form ---------------------------------------------------------
 
 interface PathMention {
-  /** The intrinsic as spelled (`$path`, `^$path`, `^^$dst_path`). */
+  /** The attribute as spelled (`path`, `^path`, `^^dst_path`, `^$path`). */
   ref: string;
   span: Span;
 }
 
-// The path reads: `$path` on every target; an edge's destination path, spelled
-// `dst_path` since surface 3.0 (a plain field) and `$dst_path` before.
-const PATH_INTRINSICS = new Set(["$path", "$dst_path", "dst_path"]);
+// The path reads: the row's `path` on every target (`$path` before surface
+// 3.0); an edge's destination path, `dst_path` since 3.0 and `$dst_path` before.
+const PATH_INTRINSICS = new Set(["path", "$path", "$dst_path", "dst_path"]);
 
-/** A bare path intrinsic (`$path`, `^$path`, …) and its spelling, else null. */
+/** A bare path attribute (`path`, `^path`, `^$path`, …) and its spelling, else null. */
 export function pathRef(expr: Expr): string | null {
   if (expr.kind === "ident" && PATH_INTRINSICS.has(expr.name)) return expr.name;
   if (expr.kind === "outer" && PATH_INTRINSICS.has(expr.name)) return `${"^".repeat(expr.levels)}${expr.name}`;
   return null;
 }
 
-/** `"/" + $path` (a `/` literal prefixed to a path intrinsic), else null. */
+/** `"/" + path` (a `/` literal prefixed to a path attribute), else null. */
 export function slashPrefixedPath(expr: Expr): string | null {
   if (expr.kind !== "binary" || expr.op !== "+" || expr.left.kind !== "lit" || expr.left.value !== "/") return null;
   return pathRef(expr.right);
 }
 
-/** Every `"/" + <path intrinsic>` in the query (2.0: the slash is redundant). */
+/** Every `"/" + <path attribute>` in the query (≥ 2.0: the slash is redundant). */
 export function slashPrefixedPaths(query: Query): PathMention[] {
   const out: PathMention[] = [];
   visit(query, {
@@ -113,8 +113,8 @@ export function slashPrefixedPaths(query: Query): PathMention[] {
   return out;
 }
 
-/** Every comparison of a bare path intrinsic with a property value — `in`,
- * `==`/`!=`, `.contains()` either way round (1.x: the intrinsic lacks the slash
+/** Every comparison of a bare path attribute with a property value — `in`,
+ * `==`/`!=`, `.contains()` either way round (1.x: the attribute lacks the slash
  * the authored reference has). */
 export function barePathsAgainstProperties(query: Query): PathMention[] {
   const out: PathMention[] = [];
@@ -137,12 +137,15 @@ export function barePathsAgainstProperties(query: Query): PathMention[] {
   return out;
 }
 
-/** Does the expression read a property (a non-`$` name, at any depth)? */
+/** Does the expression read a property (a non-`$` name that is not itself a
+ * path attribute, at any depth)? */
 function mentionsProperty(expr: Expr): boolean {
   let found = false;
   visit(expr, {
     enter(node) {
-      if ((node.kind === "ident" || node.kind === "outer") && !(node as { name: string }).name.startsWith("$")) found = true;
+      if (node.kind !== "ident" && node.kind !== "outer") return;
+      const name = (node as { name: string }).name;
+      if (!name.startsWith("$") && !PATH_INTRINSICS.has(name)) found = true;
     },
   });
   return found;

@@ -30,7 +30,7 @@ use rusqlite::Connection;
 use rusqlite::types::Value as SqlValue;
 
 use crate::context::{Target, fetch_rows, tag_rows};
-use crate::translate::{RESERVED_DOC_BASENAMES, TranslateCtx, translate_predicate};
+use crate::translate::{TranslateCtx, translate_predicate};
 
 /// The SQL aliases of the scanned row (`self`) and its owning doc (`doc`).
 fn aliases(t: Target) -> (&'static str, &'static str) {
@@ -86,7 +86,7 @@ pub(crate) fn guards(t: Target) -> &'static str {
 /// [`from_clause`], with the loop order fixed by `CROSS JOIN` so a predicate on
 /// the document (`d.path = ?`) is the outer search and the target's rows are
 /// reached through their `doc_id` / `src_doc` index (the store indexes'
-/// `$path` probes). [`guards_by_doc`] goes with it; `Docs` is `from_clause`.
+/// `path` probes). [`guards_by_doc`] goes with it; `Docs` is `from_clause`.
 pub(crate) fn from_by_doc(t: Target) -> &'static str {
     match t {
         Target::Docs => from_clause(t),
@@ -152,18 +152,17 @@ fn reach_through(head: &str) -> Option<Target> {
 /// never runs and the error vanishes. So a residual containing any function
 /// or method call (an unknown function, a bad regex, a wrong arity…), a
 /// nested block with the `single` consumer (more than one row raises), a
-/// `^`-escaped name (no enclosing scope at the top level) or a bare reserved
-/// docs basename (`path` for `$path`…, the guard in `get`) sends the whole
-/// query to the in-memory engine unplanned. Only comparisons, logical
+/// `^`-escaped name (no enclosing scope at the top level) sends the whole
+/// query to the in-memory engine unplanned (before this batch of 3.0 a bare
+/// reserved docs basename did too; the attributes are bare now and never
+/// raise). Only comparisons, logical
 /// operators, `in`, `!`, literals, bindings and plain reads keep the push.
 ///
 /// The walk is generic over the whole `oqx` AST — every `Where` node, every
 /// nested block (its `from`, `where`, `select`, `order by`, `follow`,
 /// `limit` / `offset`) and every `Expr`. A `^name:` lift in a nested select
-/// counts as a `^`-escaped name. Inside a block the rows are a different
-/// scope (a relation's rows), so a bare reserved name is an ordinary read
-/// there (`root` is false) — only `doc.<reserved>` still raises at any depth.
-/// Same decisions as the reference's `residualMayRaise`.
+/// counts as a `^`-escaped name. Same decisions as the reference's
+/// `residualMayRaise`.
 fn residual_may_raise(w: &Where, target: Target) -> bool {
     where_may_raise(w, target, true)
 }
@@ -215,10 +214,6 @@ fn follow_may_raise(f: &Follow, target: Target) -> bool {
         || f.by.as_ref().is_some_and(inner)
 }
 
-fn is_reserved(name: &str) -> bool {
-    RESERVED_DOC_BASENAMES.contains(&name)
-}
-
 fn expr_may_raise(e: &Expr, target: Target, root: bool) -> bool {
     let again = |e: &Expr| expr_may_raise(e, target, root);
     match e {
@@ -229,15 +224,14 @@ fn expr_may_raise(e: &Expr, target: Target, root: bool) -> bool {
         Expr::Ident { name, .. } if Target::parse(name).is_some() => {
             !root || !is_target_relation_of(target, name)
         }
-        Expr::Ident { name, .. } => root && target == Target::Docs && is_reserved(name),
+        // A bare attribute never raises (3.0: there is no loud-error set).
+        Expr::Ident { .. } => false,
         Expr::Outer { .. } | Expr::Call { .. } => true,
-        // `doc.<reserved>`: the reach-through row is a doc (the row itself on
-        // docs), so the guard fires on any target at any depth. `<head>.<target>`
-        // raises unless the head is a reach-through whose row has that relation.
+        // `<head>.<target>` raises unless the head is a reach-through whose row
+        // has that relation.
         Expr::Member { recv, name, .. } => {
-            (is_reserved(name) && matches!(&**recv, Expr::Ident { name, .. } if name == "doc"))
-                || (Target::parse(name).is_some()
-                    && !matches!(&**recv, Expr::Ident { name: head, .. }
+            (Target::parse(name).is_some()
+                && !matches!(&**recv, Expr::Ident { name: head, .. }
                         if reach_through(head).is_some_and(|t| is_target_relation_of(t, name))))
                 || again(recv)
         }
@@ -374,7 +368,7 @@ mod tests {
     #[test]
     fn a_pushable_scan_compiles_to_one_statement_in_root_order() {
         let c =
-            compile(&parse("from docs where $path == \"index.md\""), &[], "r_1").expect("planned");
+            compile(&parse("from docs where path == \"index.md\""), &[], "r_1").expect("planned");
         assert_eq!(c.target, Target::Docs);
         assert_eq!(
             c.sql,
@@ -394,7 +388,7 @@ mod tests {
     #[test]
     fn every_target_has_its_join_columns_guards_and_order() {
         let b = compile(
-            &parse("from blocks where $path.startsWith(\"lab/\")"),
+            &parse("from blocks where path.startsWith(\"lab/\")"),
             &[],
             "r",
         )
@@ -432,7 +426,7 @@ mod tests {
     #[test]
     fn mixed_conjunctions_push_the_translatable_parts_and_keep_the_rest() {
         let q = parse(
-            "from docs where $path.startsWith(\"processes/\") && nodes exists { where kind == \"md:task\" } && layer == \"canon\"",
+            "from docs where path.startsWith(\"processes/\") && nodes exists { where kind == \"md:task\" } && layer == \"canon\"",
         );
         let c = compile(&q, &[], "r").expect("planned");
         assert!(
@@ -471,7 +465,7 @@ mod tests {
         assert!(compile(&parse("from docs where !verified"), &[], "r").is_none());
         assert!(
             compile(
-                &parse("from docs where $path == \"a\" || $path == \"b\""),
+                &parse("from docs where path == \"a\" || path == \"b\""),
                 &[],
                 "r"
             )
@@ -488,7 +482,7 @@ mod tests {
         // follow
         assert!(
             compile(
-                &parse("from docs where $path == \"a.md\" follow distinct doc.out"),
+                &parse("from docs where path == \"a.md\" follow distinct doc.out"),
                 &[],
                 "r"
             )
@@ -498,7 +492,7 @@ mod tests {
         // decline exactly like a single relation (0.14)
         assert!(
             compile(
-                &parse("from docs where $path == \"a.md\" follow doc.out, doc.in"),
+                &parse("from docs where path == \"a.md\" follow doc.out, doc.in"),
                 &[],
                 "r"
             )
@@ -507,7 +501,7 @@ mod tests {
         assert!(
             compile(
                 &parse(
-                    "from docs where $path == \"a.md\" follow ^docs collect { where after.contains(^$path) }"
+                    "from docs where path == \"a.md\" follow ^docs collect { where after.contains(^path) }"
                 ),
                 &[],
                 "r"
@@ -515,11 +509,11 @@ mod tests {
             .is_none()
         );
         // not a root scan
-        assert!(compile(&parse("from things where $path == \"a.md\""), &[], "r").is_none());
-        assert!(compile(&parse("from nope where $path == \"a.md\""), &[], "r").is_none());
+        assert!(compile(&parse("from things where path == \"a.md\""), &[], "r").is_none());
+        assert!(compile(&parse("from nope where path == \"a.md\""), &[], "r").is_none());
         assert!(compile(&parse("from docs.nodes where kind == \"x\""), &[], "r").is_none());
         // a `from E` re-projection (an AST-level shape)
-        let mut q = parse("from docs where $path == \"a.md\"");
+        let mut q = parse("from docs where path == \"a.md\"");
         q.from.push(Expr::Ident {
             name: "nodes".to_owned(),
             span: oqx::Span::EMPTY,
@@ -543,54 +537,73 @@ mod tests {
                 "should plan: {src}"
             );
         };
-        // a bare reserved docs basename (the guard in `get`)
-        declined("from docs where path == \"x\" && $path == \"nope.md\"");
-        declined("from docs where $path == \"nope.md\" && !raw");
-        // `doc.<reserved>` on any target, at any depth
-        declined("from blocks where $path == \"x\" && doc.path == \"y\"");
-        declined("from blocks where $path == \"x\" && nodes exists { where doc.path == \"y\" }");
+        // a bare attribute is never a raise (3.0: no loud-error set) — `path`
+        // pushes, `raw`/`updated_at`/`tags` are plain residuals
+        planned("from docs where path == \"x\" && path == \"nope.md\"");
+        planned("from docs where path == \"nope.md\" && !raw");
+        planned("from docs where path == \"nope.md\" && updated_at");
+        planned("from docs where path == \"nope.md\" && tags");
+        // `doc.<attribute>` on any target, at any depth, is a plain read too
+        planned("from blocks where path == \"x\" && doc.path == \"y\"");
+        planned("from blocks where path == \"x\" && nodes exists { where doc.path == \"y\" }");
         // a function or method call
-        declined("from docs where $path.matches(\"[\") && $path == \"nope.md\"");
-        declined("from docs where nope(\"x\") && $path == \"nope.md\"");
-        declined("from docs where $path == \"x\" && size(tags) > 1");
-        declined("from docs where $path == \"x\" && nodes exists { where name.lower() == \"a\" }");
+        declined("from docs where path.matches(\"[\") && path == \"nope.md\"");
+        declined("from docs where nope(\"x\") && path == \"nope.md\"");
+        declined("from docs where path == \"x\" && size(tags) > 1");
+        declined("from docs where path == \"x\" && nodes exists { where name.lower() == \"a\" }");
         declined(
-            "from docs where $path == \"x\" && nodes count { where kind == \"a\" order by size(name) } > 1",
+            "from docs where path == \"x\" && nodes count { where kind == \"a\" order by size(name) } > 1",
         );
         // a `^`-escaped name: an outer reference or a lift
-        declined("from docs where $path == \"x\" && ^slug == \"y\"");
-        declined("from docs where $path == \"x\" && nodes exists { where name == ^title }");
-        declined("from docs where $path == \"x\" && nodes collect { ^first_task: name }");
+        declined("from docs where path == \"x\" && ^slug == \"y\"");
+        declined("from docs where path == \"x\" && nodes exists { where name == ^title }");
+        declined("from docs where path == \"x\" && nodes collect { ^first_task: name }");
         // a nested block with the `single` consumer
         declined(
-            "from docs where $path == \"x\" && blocks exists { select t: nodes single { where kind == \"md:task\" } }",
+            "from docs where path == \"x\" && blocks exists { select t: nodes single { where kind == \"md:task\" } }",
         );
         // the pushed side raising is impossible; only the residual matters
-        planned("from docs where $path.startsWith(\"lab/\") && $path == \"x\"");
+        planned("from docs where path.startsWith(\"lab/\") && path == \"x\"");
         // plain reads, comparisons, `in`, `!`, literals and bindings keep the push
-        planned("from docs where $path == \"x\" && era in 800..1680");
-        planned("from docs where $path == \"x\" && !verified");
-        planned("from docs where $path == \"x\" && (layer == \"a\" || layer == \"b\")");
-        planned("from docs where $path == \"x\" && verified == true");
-        planned("from docs where $path == \"x\" && nodes exists { where kind == \"md:task\" }");
+        planned("from docs where path == \"x\" && era in 800..1680");
+        planned("from docs where path == \"x\" && !verified");
+        planned("from docs where path == \"x\" && (layer == \"a\" || layer == \"b\")");
+        planned("from docs where path == \"x\" && verified == true");
+        planned("from docs where path == \"x\" && nodes exists { where kind == \"md:task\" }");
         planned(
-            "from docs where $path == \"x\" && nodes count { where kind == \"md:task\" limit 5 } > 1",
+            "from docs where path == \"x\" && nodes count { where kind == \"md:task\" limit 5 } > 1",
         );
         // on blocks a bare `path` is an attribute, and inside a block the rows
         // are another scope — an ordinary read, not the guard
-        planned("from blocks where $path == \"x\" && !path");
-        planned("from docs where $path == \"x\" && nodes exists { where path == \"y\" }");
-        planned("from docs where $path == \"x\" && frontmatter.path == \"y\"");
+        planned("from blocks where path == \"x\" && !path");
+        planned("from docs where path == \"x\" && nodes exists { where path == \"y\" }");
+        planned("from docs where path == \"x\" && frontmatter.path == \"y\"");
+        // a key read through a source handle is pushed (3.0), scoped to its
+        // source; a WHOLE handle reference and `entries(…)` stay residual (and
+        // the function call declines the query)
+        let fm = compile(
+            &parse("from docs where frontmatter.layer == \"canon\""),
+            &[],
+            "r",
+        )
+        .expect("planned");
+        assert!(fm.sql.contains("p.source = 'frontmatter'"), "{}", fm.sql);
+        let data =
+            compile(&parse("from docs where data.layer == \"canon\""), &[], "r").expect("planned");
+        assert!(!data.sql.contains("p.source"), "{}", data.sql);
+        planned("from blocks where doc.inline.element == \"fire\"");
+        planned("from docs where path == \"x\" && frontmatter == null");
+        declined("from docs where path == \"x\" && entries(frontmatter) exists { }");
     }
 
     #[test]
     fn a_top_level_not_or_or_is_the_whole_residual_and_declines() {
         // `!(…)` and `||` at the top are `Where::Not` / `Where::Or`, never scalar
         // parts, so nothing is pushed even when their leaves would be.
-        assert!(compile(&parse("from docs where !($path == \"a\")"), &[], "r").is_none());
+        assert!(compile(&parse("from docs where !(path == \"a\")"), &[], "r").is_none());
         assert!(
             compile(
-                &parse("from docs where ($path == \"a\" || $path == \"b\") && layer == \"canon\""),
+                &parse("from docs where (path == \"a\" || path == \"b\") && layer == \"canon\""),
                 &[],
                 "r"
             )

@@ -112,7 +112,7 @@ pub fn render_result(cli: &Cli, result: &Json, source: &str) -> Result<i32> {
     match cli.flags.mode {
         Mode::Ids => {
             for h in &hits {
-                io.out(&str_of(h, "$id"));
+                io.out(&str_of(h, "id"));
             }
         }
         Mode::Jsonl => {

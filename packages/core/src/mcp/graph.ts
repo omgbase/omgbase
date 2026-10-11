@@ -10,7 +10,7 @@
 // bound is `follow`'s; nothing here re-implements BFS/DFS.
 //
 // Mapping (args → follow query):
-//   roots      → the seed `where $id == … or …` (refs resolved to doc ids first; literals in the AST, never spliced text)
+//   roots      → the seed `where id == … or …` (refs resolved to doc ids first; literals in the AST, never spliced text)
 //   degrees    → `follow … { depth degrees+1 }` (seed is $depth 1, so N hops = depth N+1)
 //   direction  → `follow doc.out` | `doc.in` | both (two walks, unioned)
 //   predicate  → restricts the neighborhood to docs reachable via that predicate
@@ -53,19 +53,19 @@ export interface GraphArgs {
   /** restrict the neighborhood to documents reachable from a root via edges of
    * this predicate, within `degrees` (both the docs and the edges are filtered). */
   predicate?: string | undefined;
-  /** extra document projections (OQX select expressions, e.g. "layer", "$path"). */
+  /** extra document projections (OQX select expressions, e.g. "layer", "path"). */
   select?: string[] | undefined;
   /** cap on the distinct documents returned (default 200). */
   max_documents?: number | undefined;
 }
 
 /** A traversed edge: a row of the `edges` target under its own field names
- *  (spec/surface §1.2, 3.0 — `$id` the edge, `doc_id`/`block_id` the source,
+ *  (spec/surface §1.2, 3.0 — `id` the edge, `doc_id`/`block_id` the source,
  *  `via_id`, `dst_id` the destination node, `dst_path`/`uri` its path or URI,
  *  `field` the authoring key). No rename table: what the walk projects is what
  *  the result carries. */
 export interface GraphEdge {
-  $id: string;
+  id: string;
   doc_id: string;
   block_id: string | null;
   via_id: string | null;
@@ -79,11 +79,11 @@ export interface GraphEdge {
   field: string | null;
 }
 
-/** A reached document: `$id`/`$path` (the row's own names, as a `query` hit)
+/** A reached document: `id`/`path` (the row's own names, as a `query` hit)
  *  + walk metadata + any requested projections. */
 export interface GraphDoc {
-  $id: string;
-  $path: string;
+  id: string;
+  path: string;
   /** minimum hop distance from a root (root = 0). */
   degree: number;
   /** true when this node sits on the outer boundary (its min degree == degrees). */
@@ -97,7 +97,7 @@ export interface GraphResult {
   direction: GraphDirection;
   documents: GraphDoc[];
   edges: GraphEdge[];
-  frontier: { $id: string; $path: string; degree: number }[];
+  frontier: { id: string; path: string; degree: number }[];
   truncated: boolean;
   /** the exact OQX `follow` query/queries this macro generated — it delegates. */
   queries: string[];
@@ -106,23 +106,24 @@ export interface GraphResult {
 // Build the extra `select` items for caller projections. Each expression gets a
 // stable internal alias (_u0, _u1, …) so it can never collide with a reserved
 // word or the macro's own aliases; the clean output name is derived separately.
-// A `$`-named selection (`$path`, `$title`) keeps its `$` — the output key is
-// the intrinsic's own spelling, exactly as a `query` hit projects it (spec/surface
-// §1.4, 3.0) — so `$id`/`$path` collapse onto the envelope keys; a bare name is
-// an ordinary column. Anything else (an expression) is `sel_<i>`.
+// A bare-name selection (`layer`, `title`) is its own output key, exactly as a
+// `query` hit projects it (spec/surface §1.4, 3.0) — so `id`/`path` collapse
+// onto the envelope keys (the engine reads the same value) and any other name
+// is an ordinary column, deduped by suffix. Anything else (an expression) is
+// `sel_<i>`, so a projection can never overwrite the envelope here.
 function buildUserSelect(select: string[] | undefined): { items: SelectItem[]; outNames: string[] } {
   const items: SelectItem[] = [];
   const outNames: string[] = [];
   if (!select || select.length === 0) return { items, outNames };
-  const used = new Set<string>(["$id", "$path"]);
+  const used = new Set<string>(["id", "path"]);
   select.forEach((expr, i) => {
     const trimmed = expr.trim();
     if (!trimmed) return;
     const m = /^(\$?[A-Za-z_][A-Za-z0-9_]*)$/.exec(trimmed);
     let name = m ? m[1]! : `sel_${i}`;
-    // The envelope keys are the row's own identity: a `$id`/`$path` selection
+    // The envelope keys are the row's own identity: an `id`/`path` selection
     // lands on them rather than beside them (the engine reads the same value).
-    if (name !== "$id" && name !== "$path") {
+    if (name !== "id" && name !== "path") {
       while (used.has(name)) name = `${name}_${i}`;
       used.add(name);
     }
@@ -153,7 +154,7 @@ function userItems(src: string, alias: string): SelectItem[] {
 // so a single filter handles either scan (an edge is a directional fact
 // regardless of which endpoint the walk reached it from).
 const EDGE_FIELDS: (keyof GraphEdge)[] = [
-  "$id", "doc_id", "block_id", "via_id", "dst_id", "dst_path", "uri",
+  "id", "doc_id", "block_id", "via_id", "dst_id", "dst_path", "uri",
   "dst_kind", "predicate", "provenance", "anchor", "field",
 ];
 
@@ -161,12 +162,12 @@ const EDGE_FIELDS: (keyof GraphEdge)[] = [
 // strings: the seed ids are literals, the caller's projections parsed items.
 //
 //   select _depth: $depth, _stop: $stop, _edges: doc.<dir>_edges collect { <edge fields> } <user items>
-//   from docs where $id == <root> or … follow distinct doc.<dir> { depth <depth> }
+//   from docs where id == <root> or … follow distinct doc.<dir> { depth <depth> }
 function buildQuery(rootIds: readonly string[], dir: "out" | "in", depth: number, userSelect: SelectItem[]): string {
   const edges = build.op(build.path("doc", `${dir}_edges`), "collect", build.subquery({
     select: EDGE_FIELDS.map((name) => build.field(name, build.ident(name))),
   }));
-  const seed = rootIds.map((id) => build.scalar(build.binary("==", build.ident("$id"), build.lit(id))));
+  const seed = rootIds.map((id) => build.scalar(build.binary("==", build.ident("id"), build.lit(id))));
   const q = build.query(build.ident("docs"), {
     select: [
       build.field("_depth", build.ident("$depth")),
@@ -230,21 +231,21 @@ export async function graphNeighborhood(
     for (const hit of res.hits) {
       const hopDepth = Number(hit._depth); // $depth: seed = 1
       const degree = hopDepth - 1; // root = 0
-      // The walk's hits carry `$id`/`$path` (spec/surface §1.4, 3.0) and so
+      // The walk's hits carry `id`/`path` (spec/surface §1.4, 3.0) and so
       // does `graph`'s document: one notation for a document everywhere.
-      const prev = docMap.get(hit.$id);
+      const prev = docMap.get(hit.id);
       if (!prev || degree < prev.degree) {
-        const doc: GraphDoc = { $id: hit.$id, $path: hit.$path, degree, frontier: false };
+        const doc: GraphDoc = { id: hit.id, path: hit.path, degree, frontier: false };
         outNames.forEach((name, i) => {
-          // A `$id`/`$path` selection is the envelope key itself (same value).
-          if (name !== undefined && name !== "$id" && name !== "$path") doc[name] = hit[`_u${i}`] ?? null;
+          // An `id`/`path` selection is the envelope key itself (same value).
+          if (name !== undefined && name !== "id" && name !== "path") doc[name] = hit[`_u${i}`] ?? null;
         });
-        docMap.set(hit.$id, doc);
+        docMap.set(hit.id, doc);
       }
       // Gather this node's edges; dedup by edge id (an a→b edge is reachable as
       // a's out-edge AND b's in-edge in "both" mode).
       const raw = (hit._edges as GraphEdge[] | null) ?? [];
-      for (const e of raw) if (!edgeMap.has(e.$id)) edgeMap.set(e.$id, e);
+      for (const e of raw) if (!edgeMap.has(e.id)) edgeMap.set(e.id, e);
     }
   }
 
@@ -286,19 +287,19 @@ export async function graphNeighborhood(
   }
 
   // Cap the distinct document set (nearest-first), then bound edges to it.
-  const allDocs = [...docMap.values()].sort((a, b) => a.degree - b.degree || cmpBytes(a.$path, b.$path));
+  const allDocs = [...docMap.values()].sort((a, b) => a.degree - b.degree || cmpBytes(a.path, b.path));
   const capped = allDocs.length > maxDocuments;
   const documents = allDocs.slice(0, maxDocuments);
-  const reached = new Set(documents.map((d) => d.$id));
+  const reached = new Set(documents.map((d) => d.id));
   const truncated = queryTruncated || capped;
 
   // Mark the outer boundary: a node whose MIN degree equals the requested reach
   // was only ever touched at the edge of the walk (never expanded past). At
   // degrees 0 the roots themselves are the boundary.
-  const frontier: { $id: string; $path: string; degree: number }[] = [];
+  const frontier: { id: string; path: string; degree: number }[] = [];
   for (const d of documents) {
     d.frontier = d.degree === effectiveDegrees;
-    if (d.frontier) frontier.push({ $id: d.$id, $path: d.$path, degree: d.degree });
+    if (d.frontier) frontier.push({ id: d.id, path: d.path, degree: d.degree });
   }
 
   // Keep the induced-subgraph edges (both endpoints in the neighborhood) plus
@@ -314,7 +315,7 @@ export async function graphNeighborhood(
     const dstIn = reached.has(e.dst_id) || dstDangling;
     if (srcIn && dstIn) edges.push(e);
   }
-  edges.sort((a, b) => cmpBytes(a.doc_id, b.doc_id) || cmpBytes(a.$id, b.$id));
+  edges.sort((a, b) => cmpBytes(a.doc_id, b.doc_id) || cmpBytes(a.id, b.id));
 
   return {
     roots: rootIds,

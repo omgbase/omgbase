@@ -27,6 +27,9 @@ describe("pathLiterals", () => {
     expect(pathLiterals(q)).toEqual(["/a.md", "/b.md", "/c.md"]);
   });
 
+  it("reads the 3.0 spelling (bare `path`) too", () => {
+    expect(pathLiterals(parse(`select path from docs where path == "/a.md" || "b.md" == path follow ^docs collect { where path == "/c.md" }`))).toEqual(["/a.md", "b.md", "/c.md"]);
+  });
   it("ignores other comparisons and other intrinsics", () => {
     expect(pathLiterals(parse(`select $path from docs where $path != "/a.md" && $path.startsWith("/t/") && $dst_path == "/x.md" && owner == "/p.md"`))).toEqual([]);
     expect(pathLiterals(null)).toEqual([]);

@@ -53,7 +53,7 @@ describe("budget_tokens + cursor audit", () => {
     ingestFile(store, repoId, "second.md", "# Second\n\nA paragraph.\n");
     const ids = (store.db.prepare("SELECT block_id FROM blocks WHERE doc_id=? AND type='paragraph' ORDER BY ordinal").all(docId) as { block_id: string }[]).map((r) => r.block_id);
     const many = nodesGetMany(store, docId, ids, { resolution: "text", budgetTokens: 1 });
-    expect(many.nodes.map((n) => n.$id)).toEqual([ids[0]]);
+    expect(many.nodes.map((n) => n.id)).toEqual([ids[0]]);
     expect(many.truncated).toBe(true);
     // Alone, the oversized item is the whole batch: nothing remained, so not truncated.
     const one = nodesGetMany(store, docId, [ids[0]!], { resolution: "text", budgetTokens: 1 });
@@ -66,7 +66,7 @@ describe("budget_tokens + cursor audit", () => {
     expect(skip.truncated).toBe(false);
 
     const docs = docsReadMany(store, repoId, ["big.md", "second.md"], { budgetTokens: 1 });
-    expect(docs.items.map((d) => d.$path)).toEqual(["/big.md"]);
+    expect(docs.items.map((d) => d.path)).toEqual(["/big.md"]);
     expect(docs.truncated).toBe(true);
     const single = docsReadMany(store, repoId, ["big.md"], { budgetTokens: 1 });
     expect(single.items.length).toBe(1);
@@ -80,8 +80,8 @@ describe("budget_tokens + cursor audit", () => {
     expect(page.cursor).not.toBeNull();
     const next = oqxRun(store, repoId, "from blocks", { limit: 5, cursor: page.cursor });
     // no overlap between pages
-    const firstIds = new Set(page.hits.map((h) => h.$id));
-    expect(next.hits.some((h) => firstIds.has(h.$id))).toBe(false);
+    const firstIds = new Set(page.hits.map((h) => h.id));
+    expect(next.hits.some((h) => firstIds.has(h.id))).toBe(false);
   });
 
   it("every paged surface rejects a foreign cursor with the same CursorInvalid", () => {
@@ -109,8 +109,8 @@ describe("budget_tokens + cursor audit", () => {
     expect(page.truncated).toBe(true);
     expect(page.cursor).not.toBeNull();
     const next = docsList(store, repoId, { limit: 4, cursor: page.cursor });
-    const first = new Set(page.items.map((r) => r.$path));
-    expect(next.items.some((r) => first.has(r.$path))).toBe(false);
+    const first = new Set(page.items.map((r) => r.path));
+    expect(next.items.some((r) => first.has(r.path))).toBe(false);
     expect(next.truncated).toBe(false);
     const tight = docsList(store, repoId, { budgetTokens: 5 });
     expect(tight.truncated).toBe(true);
@@ -124,7 +124,7 @@ describe("budget_tokens + cursor audit", () => {
     expect(page.cursor).not.toBeNull();
     expect(page.total.docs).toBe(6);
     const next = docsTree(store, repoId, { limit: 4, cursor: page.cursor });
-    expect(next.entries.map((e) => e.$path)).toEqual(["/d4/", "/d5/"]);
+    expect(next.entries.map((e) => e.path)).toEqual(["/d4/", "/d5/"]);
     expect(next.truncated).toBe(false);
     const tight = docsTree(store, repoId, { budgetTokens: 5 });
     expect(tight.truncated).toBe(true);

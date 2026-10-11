@@ -244,7 +244,7 @@ pub struct ApplyRequest {
     pub set_frontmatter: Vec<SetFrontmatter>,
 }
 
-/// `{ $id, $path, $hash }` of a touched document (`spec/mutate` §4, 2.0): the
+/// `{ id, path, hash }` of a touched document (`spec/mutate` §4, 2.0): the
 /// document, its path (storage form; the surface roots it) and the hex sha256
 /// of its rendered bytes — the hash the committed revision carries, computed
 /// on a dry run too, so an apply revision and a `changes_since` revision are
@@ -287,7 +287,7 @@ impl ApplyResult {
             Value::Array(
                 self.revisions
                     .iter()
-                    .map(|r| json!({ "$id": r.doc, "$path": r.path, "$hash": r.hash }))
+                    .map(|r| json!({ "id": r.doc, "path": r.path, "hash": r.hash }))
                     .collect(),
             ),
         );

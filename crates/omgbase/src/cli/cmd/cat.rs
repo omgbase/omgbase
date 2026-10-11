@@ -18,9 +18,9 @@ struct CatOne {
     capture: Json,
 }
 
-/// `$raw ?? text ?? label` of a `blocks_get` object (3.0: the block's bytes are `$raw`).
+/// `raw ?? text ?? label` of a `blocks_get` object (3.0: the block's bytes are `raw`).
 pub fn node_text(node: &Json) -> String {
-    for k in ["$raw", "text", "label"] {
+    for k in ["raw", "text", "label"] {
         if let Some(s) = node.get(k).and_then(Json::as_str) {
             return s.to_owned();
         }
@@ -45,7 +45,7 @@ fn cat_one_remote(cli: &mut Cli, r: &str, resolution: &str) -> Result<CatOne> {
             warn_doc_resolution(cli, r, resolution);
         }
         let text = res
-            .get("$raw")
+            .get("raw")
             .and_then(Json::as_str)
             .unwrap_or("")
             .to_owned();
@@ -88,7 +88,7 @@ fn cat_one(cli: &mut Cli, r: &str, resolution: &str) -> Result<CatOne> {
                 warn_doc_resolution(cli, r, resolution);
             }
             let text = res
-                .get("$raw")
+                .get("raw")
                 .and_then(Json::as_str)
                 .unwrap_or("")
                 .to_owned();

@@ -26,192 +26,192 @@
     {
       "name": "root-order-is-path-then-block-id",
       "notes": "§1.1: blocks scan in (doc path, block_id) order — bytewise, so b_10 sorts before b_2. `ordinal`/`depth` are the store's block columns (0-based sibling ordinal, nesting depth), plain fields since 3.0 — see `intrinsics-and-fields`.",
-      "query": "select o: ordinal, d: depth from blocks where $path == \"index.md\"",
+      "query": "select o: ordinal, d: depth from blocks where path == \"index.md\"",
       "expect": {
         "hits": [
           {
-            "$id": "b_0",
-            "$path": "/index.md",
+            "id": "b_0",
+            "path": "/index.md",
             "o": 0,
             "d": 0
           },
           {
-            "$id": "b_1",
-            "$path": "/index.md",
+            "id": "b_1",
+            "path": "/index.md",
             "o": 1,
             "d": 0
           },
           {
-            "$id": "b_10",
-            "$path": "/index.md",
+            "id": "b_10",
+            "path": "/index.md",
             "o": 0,
             "d": 1
           },
           {
-            "$id": "b_11",
-            "$path": "/index.md",
+            "id": "b_11",
+            "path": "/index.md",
             "o": 1,
             "d": 1
           },
           {
-            "$id": "b_12",
-            "$path": "/index.md",
+            "id": "b_12",
+            "path": "/index.md",
             "o": 7,
             "d": 0
           },
           {
-            "$id": "b_13",
-            "$path": "/index.md",
+            "id": "b_13",
+            "path": "/index.md",
             "o": 8,
             "d": 0
           },
           {
-            "$id": "b_14",
-            "$path": "/index.md",
+            "id": "b_14",
+            "path": "/index.md",
             "o": 9,
             "d": 0
           },
           {
-            "$id": "b_15",
-            "$path": "/index.md",
+            "id": "b_15",
+            "path": "/index.md",
             "o": 0,
             "d": 1
           },
           {
-            "$id": "b_16",
-            "$path": "/index.md",
+            "id": "b_16",
+            "path": "/index.md",
             "o": 1,
             "d": 1
           },
           {
-            "$id": "b_17",
-            "$path": "/index.md",
+            "id": "b_17",
+            "path": "/index.md",
             "o": 2,
             "d": 1
           },
           {
-            "$id": "b_18",
-            "$path": "/index.md",
+            "id": "b_18",
+            "path": "/index.md",
             "o": 10,
             "d": 0
           },
           {
-            "$id": "b_19",
-            "$path": "/index.md",
+            "id": "b_19",
+            "path": "/index.md",
             "o": 11,
             "d": 0
           },
           {
-            "$id": "b_2",
-            "$path": "/index.md",
+            "id": "b_2",
+            "path": "/index.md",
             "o": 2,
             "d": 0
           },
           {
-            "$id": "b_20",
-            "$path": "/index.md",
+            "id": "b_20",
+            "path": "/index.md",
             "o": 0,
             "d": 1
           },
           {
-            "$id": "b_21",
-            "$path": "/index.md",
+            "id": "b_21",
+            "path": "/index.md",
             "o": 1,
             "d": 1
           },
           {
-            "$id": "b_22",
-            "$path": "/index.md",
+            "id": "b_22",
+            "path": "/index.md",
             "o": 2,
             "d": 1
           },
           {
-            "$id": "b_23",
-            "$path": "/index.md",
+            "id": "b_23",
+            "path": "/index.md",
             "o": 3,
             "d": 1
           },
           {
-            "$id": "b_24",
-            "$path": "/index.md",
+            "id": "b_24",
+            "path": "/index.md",
             "o": 4,
             "d": 1
           },
           {
-            "$id": "b_25",
-            "$path": "/index.md",
+            "id": "b_25",
+            "path": "/index.md",
             "o": 12,
             "d": 0
           },
           {
-            "$id": "b_26",
-            "$path": "/index.md",
+            "id": "b_26",
+            "path": "/index.md",
             "o": 13,
             "d": 0
           },
           {
-            "$id": "b_27",
-            "$path": "/index.md",
+            "id": "b_27",
+            "path": "/index.md",
             "o": 0,
             "d": 1
           },
           {
-            "$id": "b_28",
-            "$path": "/index.md",
+            "id": "b_28",
+            "path": "/index.md",
             "o": 1,
             "d": 1
           },
           {
-            "$id": "b_29",
-            "$path": "/index.md",
+            "id": "b_29",
+            "path": "/index.md",
             "o": 14,
             "d": 0
           },
           {
-            "$id": "b_3",
-            "$path": "/index.md",
+            "id": "b_3",
+            "path": "/index.md",
             "o": 3,
             "d": 0
           },
           {
-            "$id": "b_30",
-            "$path": "/index.md",
+            "id": "b_30",
+            "path": "/index.md",
             "o": 15,
             "d": 0
           },
           {
-            "$id": "b_4",
-            "$path": "/index.md",
+            "id": "b_4",
+            "path": "/index.md",
             "o": 4,
             "d": 0
           },
           {
-            "$id": "b_5",
-            "$path": "/index.md",
+            "id": "b_5",
+            "path": "/index.md",
             "o": 0,
             "d": 1
           },
           {
-            "$id": "b_6",
-            "$path": "/index.md",
+            "id": "b_6",
+            "path": "/index.md",
             "o": 1,
             "d": 1
           },
           {
-            "$id": "b_7",
-            "$path": "/index.md",
+            "id": "b_7",
+            "path": "/index.md",
             "o": 2,
             "d": 1
           },
           {
-            "$id": "b_8",
-            "$path": "/index.md",
+            "id": "b_8",
+            "path": "/index.md",
             "o": 5,
             "d": 0
           },
           {
-            "$id": "b_9",
-            "$path": "/index.md",
+            "id": "b_9",
+            "path": "/index.md",
             "o": 6,
             "d": 0
           }
@@ -223,12 +223,12 @@
     },
     {
       "name": "fields",
-      "query": "select type, text, attrs from blocks where $path == \"index.md\" && type == \"heading\"",
+      "query": "select type, text, attrs from blocks where path == \"index.md\" && type == \"heading\"",
       "expect": {
         "hits": [
           {
-            "$id": "b_0",
-            "$path": "/index.md",
+            "id": "b_0",
+            "path": "/index.md",
             "type": "heading",
             "text": "Alchemy",
             "attrs": {
@@ -236,8 +236,8 @@
             }
           },
           {
-            "$id": "b_12",
-            "$path": "/index.md",
+            "id": "b_12",
+            "path": "/index.md",
             "type": "heading",
             "text": "Processes",
             "attrs": {
@@ -245,8 +245,8 @@
             }
           },
           {
-            "$id": "b_18",
-            "$path": "/index.md",
+            "id": "b_18",
+            "path": "/index.md",
             "type": "heading",
             "text": "Practitioners",
             "attrs": {
@@ -254,8 +254,8 @@
             }
           },
           {
-            "$id": "b_2",
-            "$path": "/index.md",
+            "id": "b_2",
+            "path": "/index.md",
             "type": "heading",
             "text": "The tria prima",
             "attrs": {
@@ -263,8 +263,8 @@
             }
           },
           {
-            "$id": "b_25",
-            "$path": "/index.md",
+            "id": "b_25",
+            "path": "/index.md",
             "type": "heading",
             "text": "Texts",
             "attrs": {
@@ -272,8 +272,8 @@
             }
           },
           {
-            "$id": "b_29",
-            "$path": "/index.md",
+            "id": "b_29",
+            "path": "/index.md",
             "type": "heading",
             "text": "Laboratory",
             "attrs": {
@@ -281,8 +281,8 @@
             }
           },
           {
-            "$id": "b_8",
-            "$path": "/index.md",
+            "id": "b_8",
+            "path": "/index.md",
             "type": "heading",
             "text": "Substances",
             "attrs": {
@@ -298,48 +298,48 @@
     {
       "name": "attrs-flattening",
       "notes": "§1.2: a bare non-structural identifier reads attrs.<k>.",
-      "query": "select level, l2: attrs.level from blocks where $path == \"index.md\" && type == \"heading\"",
+      "query": "select level, l2: attrs.level from blocks where path == \"index.md\" && type == \"heading\"",
       "expect": {
         "hits": [
           {
-            "$id": "b_0",
-            "$path": "/index.md",
+            "id": "b_0",
+            "path": "/index.md",
             "level": 1,
             "l2": 1
           },
           {
-            "$id": "b_12",
-            "$path": "/index.md",
+            "id": "b_12",
+            "path": "/index.md",
             "level": 2,
             "l2": 2
           },
           {
-            "$id": "b_18",
-            "$path": "/index.md",
+            "id": "b_18",
+            "path": "/index.md",
             "level": 2,
             "l2": 2
           },
           {
-            "$id": "b_2",
-            "$path": "/index.md",
+            "id": "b_2",
+            "path": "/index.md",
             "level": 2,
             "l2": 2
           },
           {
-            "$id": "b_25",
-            "$path": "/index.md",
+            "id": "b_25",
+            "path": "/index.md",
             "level": 2,
             "l2": 2
           },
           {
-            "$id": "b_29",
-            "$path": "/index.md",
+            "id": "b_29",
+            "path": "/index.md",
             "level": 2,
             "l2": 2
           },
           {
-            "$id": "b_8",
-            "$path": "/index.md",
+            "id": "b_8",
+            "path": "/index.md",
             "level": 2,
             "l2": 2
           }
@@ -351,49 +351,49 @@
     },
     {
       "name": "attrs-absent-is-undefined",
-      "query": "select checked from blocks where $path == \"substances/salt.md\" && (type == \"task\" || type == \"paragraph\")",
+      "query": "select checked from blocks where path == \"substances/salt.md\" && (type == \"task\" || type == \"paragraph\")",
       "expect": {
         "hits": [
           {
-            "$id": "b_262",
-            "$path": "/substances/salt.md"
+            "id": "b_262",
+            "path": "/substances/salt.md"
           },
           {
-            "$id": "b_263",
-            "$path": "/substances/salt.md"
+            "id": "b_263",
+            "path": "/substances/salt.md"
           },
           {
-            "$id": "b_265",
-            "$path": "/substances/salt.md"
+            "id": "b_265",
+            "path": "/substances/salt.md"
           },
           {
-            "$id": "b_266",
-            "$path": "/substances/salt.md"
+            "id": "b_266",
+            "path": "/substances/salt.md"
           },
           {
-            "$id": "b_268",
-            "$path": "/substances/salt.md"
+            "id": "b_268",
+            "path": "/substances/salt.md"
           },
           {
-            "$id": "b_273",
-            "$path": "/substances/salt.md"
+            "id": "b_273",
+            "path": "/substances/salt.md"
           },
           {
-            "$id": "b_275",
-            "$path": "/substances/salt.md"
+            "id": "b_275",
+            "path": "/substances/salt.md"
           },
           {
-            "$id": "b_277",
-            "$path": "/substances/salt.md"
+            "id": "b_277",
+            "path": "/substances/salt.md"
           },
           {
-            "$id": "b_279",
-            "$path": "/substances/salt.md",
+            "id": "b_279",
+            "path": "/substances/salt.md",
             "checked": true
           },
           {
-            "$id": "b_280",
-            "$path": "/substances/salt.md",
+            "id": "b_280",
+            "path": "/substances/salt.md",
             "checked": true
           }
         ],
@@ -415,13 +415,13 @@
     },
     {
       "name": "intrinsics-and-fields",
-      "notes": "§1.2 (3.0): the `$` names are $id/$path/$raw/$hash/$updated_at; doc_id/ordinal/depth are plain fields. $raw is the block's raw source bytes (the blob its raw_hash names), $hash its hex sha256, `text` the normalized text. `ordinal` is the block's 0-based ordinal among its siblings and `depth` its nesting depth (0 at the top level; these tasks sit in a list, so 0/1 and 1/1). There is no shadowing by a `follow` any more: $depth inside a follow is always the walk's.",
-      "query": "select i: $id, d: doc_id, o: ordinal, dp: depth, r: $raw, t: text, h: $hash, u: $updated_at from blocks where $path == \"substances/salt.md\" && type == \"task\"",
+      "notes": "§1.2 (3.0): the `$` names are id/path/raw/hash/updated_at; doc_id/ordinal/depth are plain fields. raw is the block's raw source bytes (the blob its raw_hash names), hash its hex sha256, `text` the normalized text. `ordinal` is the block's 0-based ordinal among its siblings and `depth` its nesting depth (0 at the top level; these tasks sit in a list, so 0/1 and 1/1). There is no shadowing by a `follow` any more: $depth inside a follow is always the walk's.",
+      "query": "select i: id, d: doc_id, o: ordinal, dp: depth, r: raw, t: text, h: hash, u: updated_at from blocks where path == \"substances/salt.md\" && type == \"task\"",
       "expect": {
         "hits": [
           {
-            "$id": "b_279",
-            "$path": "/substances/salt.md",
+            "id": "b_279",
+            "path": "/substances/salt.md",
             "i": "b_279",
             "d": "d_14",
             "o": 0,
@@ -432,8 +432,8 @@
             "u": "2026-09-27T00:00:00.000Z"
           },
           {
-            "$id": "b_280",
-            "$path": "/substances/salt.md",
+            "id": "b_280",
+            "path": "/substances/salt.md",
             "i": "b_280",
             "d": "d_14",
             "o": 1,
@@ -451,12 +451,12 @@
     },
     {
       "name": "block-is-the-row",
-      "query": "from blocks where block.type == \"table\" && $path == \"index.md\"",
+      "query": "from blocks where block.type == \"table\" && path == \"index.md\"",
       "expect": {
         "hits": [
           {
-            "$id": "b_19",
-            "$path": "/index.md"
+            "id": "b_19",
+            "path": "/index.md"
           }
         ],
         "truncated": false,
@@ -470,48 +470,48 @@
       "expect": {
         "hits": [
           {
-            "$id": "b_52",
-            "$path": "/lab/2026-01-notes.md"
+            "id": "b_52",
+            "path": "/lab/2026-01-notes.md"
           },
           {
-            "$id": "b_53",
-            "$path": "/lab/2026-01-notes.md"
+            "id": "b_53",
+            "path": "/lab/2026-01-notes.md"
           },
           {
-            "$id": "b_54",
-            "$path": "/lab/2026-01-notes.md"
+            "id": "b_54",
+            "path": "/lab/2026-01-notes.md"
           },
           {
-            "$id": "b_55",
-            "$path": "/lab/2026-01-notes.md"
+            "id": "b_55",
+            "path": "/lab/2026-01-notes.md"
           },
           {
-            "$id": "b_56",
-            "$path": "/lab/2026-01-notes.md"
+            "id": "b_56",
+            "path": "/lab/2026-01-notes.md"
           },
           {
-            "$id": "b_57",
-            "$path": "/lab/2026-01-notes.md"
+            "id": "b_57",
+            "path": "/lab/2026-01-notes.md"
           },
           {
-            "$id": "b_58",
-            "$path": "/lab/2026-01-notes.md"
+            "id": "b_58",
+            "path": "/lab/2026-01-notes.md"
           },
           {
-            "$id": "b_78",
-            "$path": "/lab/2026-02-notes.md"
+            "id": "b_78",
+            "path": "/lab/2026-02-notes.md"
           },
           {
-            "$id": "b_79",
-            "$path": "/lab/2026-02-notes.md"
+            "id": "b_79",
+            "path": "/lab/2026-02-notes.md"
           },
           {
-            "$id": "b_80",
-            "$path": "/lab/2026-02-notes.md"
+            "id": "b_80",
+            "path": "/lab/2026-02-notes.md"
           },
           {
-            "$id": "b_81",
-            "$path": "/lab/2026-02-notes.md"
+            "id": "b_81",
+            "path": "/lab/2026-02-notes.md"
           }
         ],
         "truncated": false,
@@ -521,20 +521,20 @@
     },
     {
       "name": "type-filter-under-path-prefix",
-      "query": "from blocks where type == \"code_fence\" && $path.startsWith(\"processes/\")",
+      "query": "from blocks where type == \"code_fence\" && path.startsWith(\"processes/\")",
       "expect": {
         "hits": [
           {
-            "$id": "b_143",
-            "$path": "/processes/calcination.md"
+            "id": "b_143",
+            "path": "/processes/calcination.md"
           },
           {
-            "$id": "b_166",
-            "$path": "/processes/coagulation.md"
+            "id": "b_166",
+            "path": "/processes/coagulation.md"
           },
           {
-            "$id": "b_177",
-            "$path": "/processes/dissolution.md"
+            "id": "b_177",
+            "path": "/processes/dissolution.md"
           }
         ],
         "truncated": false,
@@ -548,23 +548,23 @@
       "expect": {
         "hits": [
           {
-            "$id": "b_94",
-            "$path": "/practitioners/jabir-ibn-hayyan.md",
+            "id": "b_94",
+            "path": "/practitioners/jabir-ibn-hayyan.md",
             "text": "Separate the Jabirian corpus into strata by vocabulary"
           },
           {
-            "$id": "b_120",
-            "$path": "/practitioners/newton.md",
+            "id": "b_120",
+            "path": "/practitioners/newton.md",
             "text": "Read the Index Chemicus entries on [[mercury]]"
           },
           {
-            "$id": "b_121",
-            "$path": "/practitioners/newton.md",
+            "id": "b_121",
+            "path": "/practitioners/newton.md",
             "text": "Cross-check the furnace dates against the Principia years"
           },
           {
-            "$id": "b_136",
-            "$path": "/practitioners/paracelsus.md",
+            "id": "b_136",
+            "path": "/practitioners/paracelsus.md",
             "text": "Check which mineral remedies survived into the 18th-century pharmacopoeia"
           }
         ],
@@ -576,12 +576,12 @@
     {
       "name": "relation-children",
       "notes": "§1.2: `children` is the live children in (ordinal, block_id) order.",
-      "query": "select c: children collect { type, text } from blocks where $path == \"substances/salt.md\" && type == \"list\"",
+      "query": "select c: children collect { type, text } from blocks where path == \"substances/salt.md\" && type == \"list\"",
       "expect": {
         "hits": [
           {
-            "$id": "b_269",
-            "$path": "/substances/salt.md",
+            "id": "b_269",
+            "path": "/substances/salt.md",
             "c": [
               {
                 "type": "list_item",
@@ -598,8 +598,8 @@
             ]
           },
           {
-            "$id": "b_278",
-            "$path": "/substances/salt.md",
+            "id": "b_278",
+            "path": "/substances/salt.md",
             "c": [
               {
                 "type": "task",
@@ -619,42 +619,42 @@
     },
     {
       "name": "relation-children-of-a-leaf",
-      "query": "select n: size(children) from blocks where $path == \"index.md\" && type == \"heading\"",
+      "query": "select n: size(children) from blocks where path == \"index.md\" && type == \"heading\"",
       "expect": {
         "hits": [
           {
-            "$id": "b_0",
-            "$path": "/index.md",
+            "id": "b_0",
+            "path": "/index.md",
             "n": 0
           },
           {
-            "$id": "b_12",
-            "$path": "/index.md",
+            "id": "b_12",
+            "path": "/index.md",
             "n": 0
           },
           {
-            "$id": "b_18",
-            "$path": "/index.md",
+            "id": "b_18",
+            "path": "/index.md",
             "n": 0
           },
           {
-            "$id": "b_2",
-            "$path": "/index.md",
+            "id": "b_2",
+            "path": "/index.md",
             "n": 0
           },
           {
-            "$id": "b_25",
-            "$path": "/index.md",
+            "id": "b_25",
+            "path": "/index.md",
             "n": 0
           },
           {
-            "$id": "b_29",
-            "$path": "/index.md",
+            "id": "b_29",
+            "path": "/index.md",
             "n": 0
           },
           {
-            "$id": "b_8",
-            "$path": "/index.md",
+            "id": "b_8",
+            "path": "/index.md",
             "n": 0
           }
         ],
@@ -665,27 +665,27 @@
     },
     {
       "name": "relation-nodes",
-      "query": "select k: nodes collect { kind, value } from blocks where $path == \"index.md\" && type == \"list\"",
+      "query": "select k: nodes collect { kind, value } from blocks where path == \"index.md\" && type == \"list\"",
       "expect": {
         "hits": [
           {
-            "$id": "b_14",
-            "$path": "/index.md",
+            "id": "b_14",
+            "path": "/index.md",
             "k": []
           },
           {
-            "$id": "b_26",
-            "$path": "/index.md",
+            "id": "b_26",
+            "path": "/index.md",
             "k": []
           },
           {
-            "$id": "b_4",
-            "$path": "/index.md",
+            "id": "b_4",
+            "path": "/index.md",
             "k": []
           },
           {
-            "$id": "b_9",
-            "$path": "/index.md",
+            "id": "b_9",
+            "path": "/index.md",
             "k": []
           }
         ],
@@ -707,12 +707,12 @@
     },
     {
       "name": "relation-out-edges",
-      "query": "select e: out_edges collect { predicate, dp: dst_path } from blocks where $path == \"index.md\" && type == \"paragraph\" && has_edge(\"references\")",
+      "query": "select e: out_edges collect { predicate, dp: dst_path } from blocks where path == \"index.md\" && type == \"paragraph\" && has_edge(\"references\")",
       "expect": {
         "hits": [
           {
-            "$id": "b_13",
-            "$path": "/index.md",
+            "id": "b_13",
+            "path": "/index.md",
             "e": [
               {
                 "predicate": "references",
@@ -729,12 +729,12 @@
     {
       "name": "relation-section",
       "notes": "§1.2: `section` is the md:section nodes whose range contains the block's top-level ancestor ordinal, (first_ordinal, node_id) order — the h1 and the h2.",
-      "query": "select s: section collect { name, level } from blocks where $path == \"processes/magnum-opus.md\" && type == \"table\"",
+      "query": "select s: section collect { name, level } from blocks where path == \"processes/magnum-opus.md\" && type == \"table\"",
       "expect": {
         "hits": [
           {
-            "$id": "b_190",
-            "$path": "/processes/magnum-opus.md",
+            "id": "b_190",
+            "path": "/processes/magnum-opus.md",
             "s": [
               {
                 "name": "The magnum opus",
@@ -755,20 +755,20 @@
     {
       "name": "relation-section-nested-block",
       "notes": "a nested list item is placed by its top-level ancestor's ordinal.",
-      "query": "select s: section collect { name values } from blocks where $path == \"substances/salt.md\" && type == \"task\"",
+      "query": "select s: section collect { name values } from blocks where path == \"substances/salt.md\" && type == \"task\"",
       "expect": {
         "hits": [
           {
-            "$id": "b_279",
-            "$path": "/substances/salt.md",
+            "id": "b_279",
+            "path": "/substances/salt.md",
             "s": [
               "Salt",
               "Supplies"
             ]
           },
           {
-            "$id": "b_280",
-            "$path": "/substances/salt.md",
+            "id": "b_280",
+            "path": "/substances/salt.md",
             "s": [
               "Salt",
               "Supplies"
@@ -786,20 +786,20 @@
       "expect": {
         "hits": [
           {
-            "$id": "b_245",
-            "$path": "/substances/philosophers-stone.md"
+            "id": "b_245",
+            "path": "/substances/philosophers-stone.md"
           },
           {
-            "$id": "b_246",
-            "$path": "/substances/philosophers-stone.md"
+            "id": "b_246",
+            "path": "/substances/philosophers-stone.md"
           },
           {
-            "$id": "b_259",
-            "$path": "/substances/prima-materia.md"
+            "id": "b_259",
+            "path": "/substances/prima-materia.md"
           },
           {
-            "$id": "b_260",
-            "$path": "/substances/prima-materia.md"
+            "id": "b_260",
+            "path": "/substances/prima-materia.md"
           }
         ],
         "truncated": false,
@@ -813,23 +813,23 @@
       "expect": {
         "hits": [
           {
-            "$id": "b_245",
-            "$path": "/substances/philosophers-stone.md",
+            "id": "b_245",
+            "path": "/substances/philosophers-stone.md",
             "text": "The surviving transmutation claims have never been gathered in one place with dates and provenance attached."
           },
           {
-            "$id": "b_246",
-            "$path": "/substances/philosophers-stone.md",
+            "id": "b_246",
+            "path": "/substances/philosophers-stone.md",
             "text": "The shift from literal to allegorical readings is well documented; what caused it is still disputed."
           },
           {
-            "$id": "b_259",
-            "$path": "/substances/prima-materia.md",
+            "id": "b_259",
+            "path": "/substances/prima-materia.md",
             "text": "Whether the \"chaos\" and the \"lead of the philosophers\" readings can be reconciled, or whether they simply belong to different schools."
           },
           {
-            "$id": "b_260",
-            "$path": "/substances/prima-materia.md",
+            "id": "b_260",
+            "path": "/substances/prima-materia.md",
             "text": "How far the term can honestly be traced back through the Alexandrian corpus before it becomes a later retrojection."
           }
         ],
@@ -844,20 +844,20 @@
       "expect": {
         "hits": [
           {
-            "$id": "b_245",
-            "$path": "/substances/philosophers-stone.md"
+            "id": "b_245",
+            "path": "/substances/philosophers-stone.md"
           },
           {
-            "$id": "b_246",
-            "$path": "/substances/philosophers-stone.md"
+            "id": "b_246",
+            "path": "/substances/philosophers-stone.md"
           },
           {
-            "$id": "b_259",
-            "$path": "/substances/prima-materia.md"
+            "id": "b_259",
+            "path": "/substances/prima-materia.md"
           },
           {
-            "$id": "b_260",
-            "$path": "/substances/prima-materia.md"
+            "id": "b_260",
+            "path": "/substances/prima-materia.md"
           }
         ],
         "truncated": false,
@@ -882,12 +882,12 @@
       "expect": {
         "hits": [
           {
-            "$id": "b_207",
-            "$path": "/processes/magnum-opus.md"
+            "id": "b_207",
+            "path": "/processes/magnum-opus.md"
           },
           {
-            "$id": "b_208",
-            "$path": "/processes/magnum-opus.md"
+            "id": "b_208",
+            "path": "/processes/magnum-opus.md"
           }
         ],
         "truncated": false,
@@ -902,23 +902,23 @@
       "expect": {
         "hits": [
           {
-            "$id": "b_4",
-            "$path": "/index.md",
+            "id": "b_4",
+            "path": "/index.md",
             "type": "list"
           },
           {
-            "$id": "b_5",
-            "$path": "/index.md",
+            "id": "b_5",
+            "path": "/index.md",
             "type": "list_item"
           },
           {
-            "$id": "b_6",
-            "$path": "/index.md",
+            "id": "b_6",
+            "path": "/index.md",
             "type": "list_item"
           },
           {
-            "$id": "b_7",
-            "$path": "/index.md",
+            "id": "b_7",
+            "path": "/index.md",
             "type": "list_item"
           }
         ],
@@ -933,38 +933,38 @@
       "expect": {
         "hits": [
           {
-            "$id": "b_19",
-            "$path": "/index.md",
+            "id": "b_19",
+            "path": "/index.md",
             "type": "table",
             "text": "Practitioner Tradition Approximate era [Maria Prophetissa](/practitioners/maria-prophetissa.md) Alexandrian 3rd century [Jabir ibn Hayyan](/practitioners/jabir-ibn-hayyan.md) Islamic 8th century [Paracelsus](/practitioners/paracelsus.md) Western 16th century [Isaac Newton](/practitioners/newton.md) Western 17th century"
           },
           {
-            "$id": "b_20",
-            "$path": "/index.md",
+            "id": "b_20",
+            "path": "/index.md",
             "type": "table_row",
             "text": "Practitioner Tradition Approximate era"
           },
           {
-            "$id": "b_21",
-            "$path": "/index.md",
+            "id": "b_21",
+            "path": "/index.md",
             "type": "table_row",
             "text": "[Maria Prophetissa](/practitioners/maria-prophetissa.md) Alexandrian 3rd century"
           },
           {
-            "$id": "b_22",
-            "$path": "/index.md",
+            "id": "b_22",
+            "path": "/index.md",
             "type": "table_row",
             "text": "[Jabir ibn Hayyan](/practitioners/jabir-ibn-hayyan.md) Islamic 8th century"
           },
           {
-            "$id": "b_23",
-            "$path": "/index.md",
+            "id": "b_23",
+            "path": "/index.md",
             "type": "table_row",
             "text": "[Paracelsus](/practitioners/paracelsus.md) Western 16th century"
           },
           {
-            "$id": "b_24",
-            "$path": "/index.md",
+            "id": "b_24",
+            "path": "/index.md",
             "type": "table_row",
             "text": "[Isaac Newton](/practitioners/newton.md) Western 17th century"
           }
@@ -999,16 +999,16 @@
     {
       "name": "within-glob",
       "notes": "§1.3: `*` → LIKE %, across `/`.",
-      "query": "select $path from blocks where within(\"lab/*\") && type == \"heading\" && level == 1",
+      "query": "select path from blocks where within(\"lab/*\") && type == \"heading\" && level == 1",
       "expect": {
         "hits": [
           {
-            "$id": "b_31",
-            "$path": "/lab/2026-01-notes.md"
+            "id": "b_31",
+            "path": "/lab/2026-01-notes.md"
           },
           {
-            "$id": "b_59",
-            "$path": "/lab/2026-02-notes.md"
+            "id": "b_59",
+            "path": "/lab/2026-02-notes.md"
           }
         ],
         "truncated": false,
@@ -1041,16 +1041,16 @@
     },
     {
       "name": "under-kind",
-      "query": "from blocks where under_kind(\"list\") && type == \"task\" && $path == \"substances/salt.md\"",
+      "query": "from blocks where under_kind(\"list\") && type == \"task\" && path == \"substances/salt.md\"",
       "expect": {
         "hits": [
           {
-            "$id": "b_279",
-            "$path": "/substances/salt.md"
+            "id": "b_279",
+            "path": "/substances/salt.md"
           },
           {
-            "$id": "b_280",
-            "$path": "/substances/salt.md"
+            "id": "b_280",
+            "path": "/substances/salt.md"
           }
         ],
         "truncated": false,
@@ -1065,13 +1065,13 @@
       "expect": {
         "hits": [
           {
-            "$id": "b_253",
-            "$path": "/substances/prima-materia.md",
+            "id": "b_253",
+            "path": "/substances/prima-materia.md",
             "text": "That which is below is like that which is above."
           },
           {
-            "$id": "b_294",
-            "$path": "/texts/emerald-tablet.md",
+            "id": "b_294",
+            "path": "/texts/emerald-tablet.md",
             "text": "That which is above is from that which is below, and that which is below is from that which is above, working the miracles of one."
           }
         ],
@@ -1093,27 +1093,27 @@
     },
     {
       "name": "child-count",
-      "query": "select n: child_count() from blocks where $path == \"index.md\" && type == \"list\"",
+      "query": "select n: child_count() from blocks where path == \"index.md\" && type == \"list\"",
       "expect": {
         "hits": [
           {
-            "$id": "b_14",
-            "$path": "/index.md",
+            "id": "b_14",
+            "path": "/index.md",
             "n": 3
           },
           {
-            "$id": "b_26",
-            "$path": "/index.md",
+            "id": "b_26",
+            "path": "/index.md",
             "n": 2
           },
           {
-            "$id": "b_4",
-            "$path": "/index.md",
+            "id": "b_4",
+            "path": "/index.md",
             "n": 3
           },
           {
-            "$id": "b_9",
-            "$path": "/index.md",
+            "id": "b_9",
+            "path": "/index.md",
             "n": 2
           }
         ],
@@ -1124,42 +1124,42 @@
     },
     {
       "name": "parent-type",
-      "query": "select p: parent_type() from blocks where $path == \"substances/salt.md\" && (type == \"task\" || type == \"heading\")",
+      "query": "select p: parent_type() from blocks where path == \"substances/salt.md\" && (type == \"task\" || type == \"heading\")",
       "expect": {
         "hits": [
           {
-            "$id": "b_261",
-            "$path": "/substances/salt.md",
+            "id": "b_261",
+            "path": "/substances/salt.md",
             "p": null
           },
           {
-            "$id": "b_264",
-            "$path": "/substances/salt.md",
+            "id": "b_264",
+            "path": "/substances/salt.md",
             "p": null
           },
           {
-            "$id": "b_267",
-            "$path": "/substances/salt.md",
+            "id": "b_267",
+            "path": "/substances/salt.md",
             "p": null
           },
           {
-            "$id": "b_274",
-            "$path": "/substances/salt.md",
+            "id": "b_274",
+            "path": "/substances/salt.md",
             "p": null
           },
           {
-            "$id": "b_276",
-            "$path": "/substances/salt.md",
+            "id": "b_276",
+            "path": "/substances/salt.md",
             "p": null
           },
           {
-            "$id": "b_279",
-            "$path": "/substances/salt.md",
+            "id": "b_279",
+            "path": "/substances/salt.md",
             "p": "list"
           },
           {
-            "$id": "b_280",
-            "$path": "/substances/salt.md",
+            "id": "b_280",
+            "path": "/substances/salt.md",
             "p": "list"
           }
         ],
@@ -1170,7 +1170,7 @@
     },
     {
       "name": "has-edge",
-      "query": "select $path from blocks where has_edge(\"references\") && type == \"table\"",
+      "query": "select path from blocks where has_edge(\"references\") && type == \"table\"",
       "expect": {
         "hits": [],
         "truncated": false,
@@ -1184,8 +1184,8 @@
       "expect": {
         "hits": [
           {
-            "$id": "b_126",
-            "$path": "/practitioners/paracelsus.md",
+            "id": "b_126",
+            "path": "/practitioners/paracelsus.md",
             "text": "He replaced the four elements with three principles — [[mercury]], [[sulphur]], [[salt]] — as the constituents of every body. See [index](/index.md) for the scheme."
           }
         ],
@@ -1222,18 +1222,18 @@
       "expect": {
         "hits": [
           {
-            "$id": "b_177",
-            "$path": "/processes/dissolution.md",
+            "id": "b_177",
+            "path": "/processes/dissolution.md",
             "text": "nitre + vitriol → aqua fortis (nitric acid) aqua fortis + sal → aqua regia (dissolves gold)"
           },
           {
-            "$id": "b_178",
-            "$path": "/processes/dissolution.md",
+            "id": "b_178",
+            "path": "/processes/dissolution.md",
             "text": "*Aqua regia* — royal water, because it dissolves the royal metal — is the single most consequential thing to come out of the laboratory tradition. It is a real reagent, it does something no other liquid does, and its discovery was driven entirely by the transmutation programme."
           },
           {
-            "$id": "b_185",
-            "$path": "/processes/dissolution.md",
+            "id": "b_185",
+            "path": "/processes/dissolution.md",
             "text": "Prepare aqua regia and test on gold leaf"
           }
         ],
@@ -1284,44 +1284,44 @@
       "expect": {
         "hits": [
           {
-            "$id": "b_0",
-            "$path": "/index.md"
+            "id": "b_0",
+            "path": "/index.md"
           },
           {
-            "$id": "b_12",
-            "$path": "/index.md"
+            "id": "b_12",
+            "path": "/index.md"
           },
           {
-            "$id": "b_18",
-            "$path": "/index.md"
+            "id": "b_18",
+            "path": "/index.md"
           },
           {
-            "$id": "b_2",
-            "$path": "/index.md"
+            "id": "b_2",
+            "path": "/index.md"
           },
           {
-            "$id": "b_25",
-            "$path": "/index.md"
+            "id": "b_25",
+            "path": "/index.md"
           },
           {
-            "$id": "b_29",
-            "$path": "/index.md"
+            "id": "b_29",
+            "path": "/index.md"
           },
           {
-            "$id": "b_8",
-            "$path": "/index.md"
+            "id": "b_8",
+            "path": "/index.md"
           },
           {
-            "$id": "b_31",
-            "$path": "/lab/2026-01-notes.md"
+            "id": "b_31",
+            "path": "/lab/2026-01-notes.md"
           },
           {
-            "$id": "b_34",
-            "$path": "/lab/2026-01-notes.md"
+            "id": "b_34",
+            "path": "/lab/2026-01-notes.md"
           },
           {
-            "$id": "b_37",
-            "$path": "/lab/2026-01-notes.md"
+            "id": "b_37",
+            "path": "/lab/2026-01-notes.md"
           }
         ],
         "truncated": true,
@@ -1337,44 +1337,44 @@
       "expect": {
         "hits": [
           {
-            "$id": "b_82",
-            "$path": "/practitioners/jabir-ibn-hayyan.md"
+            "id": "b_82",
+            "path": "/practitioners/jabir-ibn-hayyan.md"
           },
           {
-            "$id": "b_85",
-            "$path": "/practitioners/jabir-ibn-hayyan.md"
+            "id": "b_85",
+            "path": "/practitioners/jabir-ibn-hayyan.md"
           },
           {
-            "$id": "b_88",
-            "$path": "/practitioners/jabir-ibn-hayyan.md"
+            "id": "b_88",
+            "path": "/practitioners/jabir-ibn-hayyan.md"
           },
           {
-            "$id": "b_91",
-            "$path": "/practitioners/jabir-ibn-hayyan.md"
+            "id": "b_91",
+            "path": "/practitioners/jabir-ibn-hayyan.md"
           },
           {
-            "$id": "b_102",
-            "$path": "/practitioners/maria-prophetissa.md"
+            "id": "b_102",
+            "path": "/practitioners/maria-prophetissa.md"
           },
           {
-            "$id": "b_106",
-            "$path": "/practitioners/maria-prophetissa.md"
+            "id": "b_106",
+            "path": "/practitioners/maria-prophetissa.md"
           },
           {
-            "$id": "b_95",
-            "$path": "/practitioners/maria-prophetissa.md"
+            "id": "b_95",
+            "path": "/practitioners/maria-prophetissa.md"
           },
           {
-            "$id": "b_98",
-            "$path": "/practitioners/maria-prophetissa.md"
+            "id": "b_98",
+            "path": "/practitioners/maria-prophetissa.md"
           },
           {
-            "$id": "b_108",
-            "$path": "/practitioners/newton.md"
+            "id": "b_108",
+            "path": "/practitioners/newton.md"
           },
           {
-            "$id": "b_111",
-            "$path": "/practitioners/newton.md"
+            "id": "b_111",
+            "path": "/practitioners/newton.md"
           }
         ],
         "truncated": true,
@@ -1384,33 +1384,33 @@
     },
     {
       "name": "planned-bool-literal-residual-positive",
-      "notes": "§1 planner decline (a): a boolean literal against a bare attribute (json_extract) is declined, so `checked == true` runs as the residual over the rows `$path.startsWith` pushed; the checked tasks under lab/ come back.",
-      "query": "from blocks where $path.startsWith(\"lab/\") && checked == true",
+      "notes": "§1 planner decline (a): a boolean literal against a bare attribute (json_extract) is declined, so `checked == true` runs as the residual over the rows `path.startsWith` pushed; the checked tasks under lab/ come back.",
+      "query": "from blocks where path.startsWith(\"lab/\") && checked == true",
       "expect": {
         "hits": [
           {
-            "$id": "b_52",
-            "$path": "/lab/2026-01-notes.md"
+            "id": "b_52",
+            "path": "/lab/2026-01-notes.md"
           },
           {
-            "$id": "b_53",
-            "$path": "/lab/2026-01-notes.md"
+            "id": "b_53",
+            "path": "/lab/2026-01-notes.md"
           },
           {
-            "$id": "b_54",
-            "$path": "/lab/2026-01-notes.md"
+            "id": "b_54",
+            "path": "/lab/2026-01-notes.md"
           },
           {
-            "$id": "b_55",
-            "$path": "/lab/2026-01-notes.md"
+            "id": "b_55",
+            "path": "/lab/2026-01-notes.md"
           },
           {
-            "$id": "b_78",
-            "$path": "/lab/2026-02-notes.md"
+            "id": "b_78",
+            "path": "/lab/2026-02-notes.md"
           },
           {
-            "$id": "b_79",
-            "$path": "/lab/2026-02-notes.md"
+            "id": "b_79",
+            "path": "/lab/2026-02-notes.md"
           }
         ],
         "truncated": false,
@@ -1509,73 +1509,73 @@
     {
       "name": "planned-typed-bool-attr",
       "notes": "§1 typed pushes (1.2): a boolean literal against a bare attribute pushes as `(json_type(attrs,'$.checked') = 'true') IS 1` — the type string is the value, no bind — so the conjunct plans on its own (before 1.2 it was residual and the query ran unplanned). Every checked task in the corpus, with its `checked` projected true.",
-      "query": "select $path, checked from blocks where checked == true",
+      "query": "select path, checked from blocks where checked == true",
       "limit": 100,
       "expect": {
         "hits": [
           {
-            "$id": "b_52",
-            "$path": "/lab/2026-01-notes.md",
+            "id": "b_52",
+            "path": "/lab/2026-01-notes.md",
             "checked": true
           },
           {
-            "$id": "b_53",
-            "$path": "/lab/2026-01-notes.md",
+            "id": "b_53",
+            "path": "/lab/2026-01-notes.md",
             "checked": true
           },
           {
-            "$id": "b_54",
-            "$path": "/lab/2026-01-notes.md",
+            "id": "b_54",
+            "path": "/lab/2026-01-notes.md",
             "checked": true
           },
           {
-            "$id": "b_55",
-            "$path": "/lab/2026-01-notes.md",
+            "id": "b_55",
+            "path": "/lab/2026-01-notes.md",
             "checked": true
           },
           {
-            "$id": "b_78",
-            "$path": "/lab/2026-02-notes.md",
+            "id": "b_78",
+            "path": "/lab/2026-02-notes.md",
             "checked": true
           },
           {
-            "$id": "b_79",
-            "$path": "/lab/2026-02-notes.md",
+            "id": "b_79",
+            "path": "/lab/2026-02-notes.md",
             "checked": true
           },
           {
-            "$id": "b_137",
-            "$path": "/practitioners/paracelsus.md",
+            "id": "b_137",
+            "path": "/practitioners/paracelsus.md",
             "checked": true
           },
           {
-            "$id": "b_155",
-            "$path": "/processes/calcination.md",
+            "id": "b_155",
+            "path": "/processes/calcination.md",
             "checked": true
           },
           {
-            "$id": "b_170",
-            "$path": "/processes/coagulation.md",
+            "id": "b_170",
+            "path": "/processes/coagulation.md",
             "checked": true
           },
           {
-            "$id": "b_184",
-            "$path": "/processes/dissolution.md",
+            "id": "b_184",
+            "path": "/processes/dissolution.md",
             "checked": true
           },
           {
-            "$id": "b_185",
-            "$path": "/processes/dissolution.md",
+            "id": "b_185",
+            "path": "/processes/dissolution.md",
             "checked": true
           },
           {
-            "$id": "b_279",
-            "$path": "/substances/salt.md",
+            "id": "b_279",
+            "path": "/substances/salt.md",
             "checked": true
           },
           {
-            "$id": "b_280",
-            "$path": "/substances/salt.md",
+            "id": "b_280",
+            "path": "/substances/salt.md",
             "checked": true
           }
         ],
@@ -1599,323 +1599,323 @@
     {
       "name": "planned-typed-number-attr",
       "notes": "§1 typed pushes (1.2): a number literal against a bare attribute pushes as `(json_type(attrs,'$.level') IN ('integer','real') AND json_extract(attrs,'$.level') >= ?) IS 1` — only headings of level 2 and deeper; a `true`-valued attribute (JSON true reads as 1 to a bare `>=`) and every block without `level` are excluded by the type test, as in memory.",
-      "query": "select $path, level from blocks where level >= 2",
+      "query": "select path, level from blocks where level >= 2",
       "limit": 100,
       "expect": {
         "hits": [
           {
-            "$id": "b_12",
-            "$path": "/index.md",
+            "id": "b_12",
+            "path": "/index.md",
             "level": 2
           },
           {
-            "$id": "b_18",
-            "$path": "/index.md",
+            "id": "b_18",
+            "path": "/index.md",
             "level": 2
           },
           {
-            "$id": "b_2",
-            "$path": "/index.md",
+            "id": "b_2",
+            "path": "/index.md",
             "level": 2
           },
           {
-            "$id": "b_25",
-            "$path": "/index.md",
+            "id": "b_25",
+            "path": "/index.md",
             "level": 2
           },
           {
-            "$id": "b_29",
-            "$path": "/index.md",
+            "id": "b_29",
+            "path": "/index.md",
             "level": 2
           },
           {
-            "$id": "b_8",
-            "$path": "/index.md",
+            "id": "b_8",
+            "path": "/index.md",
             "level": 2
           },
           {
-            "$id": "b_34",
-            "$path": "/lab/2026-01-notes.md",
+            "id": "b_34",
+            "path": "/lab/2026-01-notes.md",
             "level": 2
           },
           {
-            "$id": "b_37",
-            "$path": "/lab/2026-01-notes.md",
+            "id": "b_37",
+            "path": "/lab/2026-01-notes.md",
             "level": 2
           },
           {
-            "$id": "b_45",
-            "$path": "/lab/2026-01-notes.md",
+            "id": "b_45",
+            "path": "/lab/2026-01-notes.md",
             "level": 2
           },
           {
-            "$id": "b_48",
-            "$path": "/lab/2026-01-notes.md",
+            "id": "b_48",
+            "path": "/lab/2026-01-notes.md",
             "level": 2
           },
           {
-            "$id": "b_50",
-            "$path": "/lab/2026-01-notes.md",
+            "id": "b_50",
+            "path": "/lab/2026-01-notes.md",
             "level": 2
           },
           {
-            "$id": "b_62",
-            "$path": "/lab/2026-02-notes.md",
+            "id": "b_62",
+            "path": "/lab/2026-02-notes.md",
             "level": 2
           },
           {
-            "$id": "b_65",
-            "$path": "/lab/2026-02-notes.md",
+            "id": "b_65",
+            "path": "/lab/2026-02-notes.md",
             "level": 2
           },
           {
-            "$id": "b_74",
-            "$path": "/lab/2026-02-notes.md",
+            "id": "b_74",
+            "path": "/lab/2026-02-notes.md",
             "level": 2
           },
           {
-            "$id": "b_76",
-            "$path": "/lab/2026-02-notes.md",
+            "id": "b_76",
+            "path": "/lab/2026-02-notes.md",
             "level": 2
           },
           {
-            "$id": "b_85",
-            "$path": "/practitioners/jabir-ibn-hayyan.md",
+            "id": "b_85",
+            "path": "/practitioners/jabir-ibn-hayyan.md",
             "level": 2
           },
           {
-            "$id": "b_88",
-            "$path": "/practitioners/jabir-ibn-hayyan.md",
+            "id": "b_88",
+            "path": "/practitioners/jabir-ibn-hayyan.md",
             "level": 2
           },
           {
-            "$id": "b_91",
-            "$path": "/practitioners/jabir-ibn-hayyan.md",
+            "id": "b_91",
+            "path": "/practitioners/jabir-ibn-hayyan.md",
             "level": 2
           },
           {
-            "$id": "b_102",
-            "$path": "/practitioners/maria-prophetissa.md",
+            "id": "b_102",
+            "path": "/practitioners/maria-prophetissa.md",
             "level": 2
           },
           {
-            "$id": "b_106",
-            "$path": "/practitioners/maria-prophetissa.md",
+            "id": "b_106",
+            "path": "/practitioners/maria-prophetissa.md",
             "level": 2
           },
           {
-            "$id": "b_98",
-            "$path": "/practitioners/maria-prophetissa.md",
+            "id": "b_98",
+            "path": "/practitioners/maria-prophetissa.md",
             "level": 2
           },
           {
-            "$id": "b_111",
-            "$path": "/practitioners/newton.md",
+            "id": "b_111",
+            "path": "/practitioners/newton.md",
             "level": 2
           },
           {
-            "$id": "b_114",
-            "$path": "/practitioners/newton.md",
+            "id": "b_114",
+            "path": "/practitioners/newton.md",
             "level": 2
           },
           {
-            "$id": "b_117",
-            "$path": "/practitioners/newton.md",
+            "id": "b_117",
+            "path": "/practitioners/newton.md",
             "level": 2
           },
           {
-            "$id": "b_125",
-            "$path": "/practitioners/paracelsus.md",
+            "id": "b_125",
+            "path": "/practitioners/paracelsus.md",
             "level": 2
           },
           {
-            "$id": "b_128",
-            "$path": "/practitioners/paracelsus.md",
+            "id": "b_128",
+            "path": "/practitioners/paracelsus.md",
             "level": 2
           },
           {
-            "$id": "b_133",
-            "$path": "/practitioners/paracelsus.md",
+            "id": "b_133",
+            "path": "/practitioners/paracelsus.md",
             "level": 2
           },
           {
-            "$id": "b_141",
-            "$path": "/processes/calcination.md",
+            "id": "b_141",
+            "path": "/processes/calcination.md",
             "level": 2
           },
           {
-            "$id": "b_145",
-            "$path": "/processes/calcination.md",
+            "id": "b_145",
+            "path": "/processes/calcination.md",
             "level": 2
           },
           {
-            "$id": "b_148",
-            "$path": "/processes/calcination.md",
+            "id": "b_148",
+            "path": "/processes/calcination.md",
             "level": 2
           },
           {
-            "$id": "b_153",
-            "$path": "/processes/calcination.md",
+            "id": "b_153",
+            "path": "/processes/calcination.md",
             "level": 2
           },
           {
-            "$id": "b_161",
-            "$path": "/processes/coagulation.md",
+            "id": "b_161",
+            "path": "/processes/coagulation.md",
             "level": 2
           },
           {
-            "$id": "b_164",
-            "$path": "/processes/coagulation.md",
+            "id": "b_164",
+            "path": "/processes/coagulation.md",
             "level": 2
           },
           {
-            "$id": "b_168",
-            "$path": "/processes/coagulation.md",
+            "id": "b_168",
+            "path": "/processes/coagulation.md",
             "level": 2
           },
           {
-            "$id": "b_175",
-            "$path": "/processes/dissolution.md",
+            "id": "b_175",
+            "path": "/processes/dissolution.md",
             "level": 2
           },
           {
-            "$id": "b_179",
-            "$path": "/processes/dissolution.md",
+            "id": "b_179",
+            "path": "/processes/dissolution.md",
             "level": 2
           },
           {
-            "$id": "b_182",
-            "$path": "/processes/dissolution.md",
+            "id": "b_182",
+            "path": "/processes/dissolution.md",
             "level": 2
           },
           {
-            "$id": "b_189",
-            "$path": "/processes/magnum-opus.md",
+            "id": "b_189",
+            "path": "/processes/magnum-opus.md",
             "level": 2
           },
           {
-            "$id": "b_197",
-            "$path": "/processes/magnum-opus.md",
+            "id": "b_197",
+            "path": "/processes/magnum-opus.md",
             "level": 2
           },
           {
-            "$id": "b_199",
-            "$path": "/processes/magnum-opus.md",
+            "id": "b_199",
+            "path": "/processes/magnum-opus.md",
             "level": 2
           },
           {
-            "$id": "b_205",
-            "$path": "/processes/magnum-opus.md",
+            "id": "b_205",
+            "path": "/processes/magnum-opus.md",
             "level": 2
           },
           {
-            "$id": "b_212",
-            "$path": "/substances/mercury.md",
+            "id": "b_212",
+            "path": "/substances/mercury.md",
             "level": 2
           },
           {
-            "$id": "b_219",
-            "$path": "/substances/mercury.md",
+            "id": "b_219",
+            "path": "/substances/mercury.md",
             "level": 2
           },
           {
-            "$id": "b_222",
-            "$path": "/substances/mercury.md",
+            "id": "b_222",
+            "path": "/substances/mercury.md",
             "level": 2
           },
           {
-            "$id": "b_229",
-            "$path": "/substances/philosophers-stone.md",
+            "id": "b_229",
+            "path": "/substances/philosophers-stone.md",
             "level": 2
           },
           {
-            "$id": "b_236",
-            "$path": "/substances/philosophers-stone.md",
+            "id": "b_236",
+            "path": "/substances/philosophers-stone.md",
             "level": 2
           },
           {
-            "$id": "b_243",
-            "$path": "/substances/philosophers-stone.md",
+            "id": "b_243",
+            "path": "/substances/philosophers-stone.md",
             "level": 2
           },
           {
-            "$id": "b_250",
-            "$path": "/substances/prima-materia.md",
+            "id": "b_250",
+            "path": "/substances/prima-materia.md",
             "level": 2
           },
           {
-            "$id": "b_255",
-            "$path": "/substances/prima-materia.md",
+            "id": "b_255",
+            "path": "/substances/prima-materia.md",
             "level": 2
           },
           {
-            "$id": "b_257",
-            "$path": "/substances/prima-materia.md",
+            "id": "b_257",
+            "path": "/substances/prima-materia.md",
             "level": 2
           },
           {
-            "$id": "b_264",
-            "$path": "/substances/salt.md",
+            "id": "b_264",
+            "path": "/substances/salt.md",
             "level": 2
           },
           {
-            "$id": "b_267",
-            "$path": "/substances/salt.md",
+            "id": "b_267",
+            "path": "/substances/salt.md",
             "level": 2
           },
           {
-            "$id": "b_274",
-            "$path": "/substances/salt.md",
+            "id": "b_274",
+            "path": "/substances/salt.md",
             "level": 2
           },
           {
-            "$id": "b_276",
-            "$path": "/substances/salt.md",
+            "id": "b_276",
+            "path": "/substances/salt.md",
             "level": 2
           },
           {
-            "$id": "b_284",
-            "$path": "/substances/sulphur.md",
+            "id": "b_284",
+            "path": "/substances/sulphur.md",
             "level": 2
           },
           {
-            "$id": "b_287",
-            "$path": "/substances/sulphur.md",
+            "id": "b_287",
+            "path": "/substances/sulphur.md",
             "level": 2
           },
           {
-            "$id": "b_292",
-            "$path": "/texts/emerald-tablet.md",
+            "id": "b_292",
+            "path": "/texts/emerald-tablet.md",
             "level": 2
           },
           {
-            "$id": "b_297",
-            "$path": "/texts/emerald-tablet.md",
+            "id": "b_297",
+            "path": "/texts/emerald-tablet.md",
             "level": 2
           },
           {
-            "$id": "b_300",
-            "$path": "/texts/emerald-tablet.md",
+            "id": "b_300",
+            "path": "/texts/emerald-tablet.md",
             "level": 2
           },
           {
-            "$id": "b_305",
-            "$path": "/texts/mutus-liber.md",
+            "id": "b_305",
+            "path": "/texts/mutus-liber.md",
             "level": 2
           },
           {
-            "$id": "b_308",
-            "$path": "/texts/mutus-liber.md",
+            "id": "b_308",
+            "path": "/texts/mutus-liber.md",
             "level": 2
           },
           {
-            "$id": "b_316",
-            "$path": "/timeline/kickoff.md",
+            "id": "b_316",
+            "path": "/timeline/kickoff.md",
             "level": 2
           },
           {
-            "$id": "b_323",
-            "$path": "/timeline/review.md",
+            "id": "b_323",
+            "path": "/timeline/review.md",
             "level": 2
           }
         ],
@@ -1938,49 +1938,86 @@
     },
     {
       "name": "reach-through-identity-is-the-foreign-key",
-      "notes": "§1 foreign-key elimination (3.0): `doc.$id` and `doc.$path` on a block read the row's own doc_id / joined path — the same values as the bare `doc_id` / `$path`, and (both engines' planners) the same SQL, with no owner lookup; `doc.layer` still reaches the document.",
-      "query": "select a: doc.$id, b: doc_id, c: doc.$path, l: doc.layer from blocks where $path == \"substances/salt.md\" && type == \"heading\"",
+      "notes": "§1 foreign-key elimination (3.0): `doc.id` and `doc.path` on a block read the row's own doc_id / joined path — the same values as the bare `doc_id` / `path`, and (both engines' planners) the same SQL, with no owner lookup; `doc.layer` still reaches the document.",
+      "query": "select a: doc.id, b: doc_id, c: doc.path, l: doc.layer from blocks where path == \"substances/salt.md\" && type == \"heading\"",
       "expect": {
         "hits": [
           {
-            "$id": "b_261",
-            "$path": "/substances/salt.md",
+            "id": "b_261",
+            "path": "/substances/salt.md",
             "a": "d_14",
             "b": "d_14",
             "c": "/substances/salt.md",
             "l": "canon"
           },
           {
-            "$id": "b_264",
-            "$path": "/substances/salt.md",
+            "id": "b_264",
+            "path": "/substances/salt.md",
             "a": "d_14",
             "b": "d_14",
             "c": "/substances/salt.md",
             "l": "canon"
           },
           {
-            "$id": "b_267",
-            "$path": "/substances/salt.md",
+            "id": "b_267",
+            "path": "/substances/salt.md",
             "a": "d_14",
             "b": "d_14",
             "c": "/substances/salt.md",
             "l": "canon"
           },
           {
-            "$id": "b_274",
-            "$path": "/substances/salt.md",
+            "id": "b_274",
+            "path": "/substances/salt.md",
             "a": "d_14",
             "b": "d_14",
             "c": "/substances/salt.md",
             "l": "canon"
           },
           {
-            "$id": "b_276",
-            "$path": "/substances/salt.md",
+            "id": "b_276",
+            "path": "/substances/salt.md",
             "a": "d_14",
             "b": "d_14",
             "c": "/substances/salt.md",
             "l": "canon"
+          }
+        ],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "collect"
+      }
+    },
+    {
+      "name": "planned-doc-handle-read",
+      "notes": "§1 (3.0, batch 3): `doc.<handle>.<k>` from a block pushes the owning document's property read scoped to the source (the joined `d` alias).",
+      "query": "select text from blocks where doc.inline.element == \"fire\" && type == \"heading\"",
+      "expect": {
+        "hits": [
+          {
+            "id": "b_138",
+            "path": "/processes/calcination.md",
+            "text": "Calcination"
+          },
+          {
+            "id": "b_141",
+            "path": "/processes/calcination.md",
+            "text": "Procedure"
+          },
+          {
+            "id": "b_145",
+            "path": "/processes/calcination.md",
+            "text": "What is actually happening"
+          },
+          {
+            "id": "b_148",
+            "path": "/processes/calcination.md",
+            "text": "Products"
+          },
+          {
+            "id": "b_153",
+            "path": "/processes/calcination.md",
+            "text": "Tasks"
           }
         ],
         "truncated": false,

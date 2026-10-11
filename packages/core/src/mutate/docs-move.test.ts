@@ -88,7 +88,7 @@ describe("docsMove — edge index follows the path", () => {
     // (c.md's wikilink sits in a list item, so the list AND the item each carry
     // an edge — one stale row per edge, both dangling.)
     expect(stale).toHaveLength(inboundBefore);
-    expect(new Set(stale.map((s) => s.$path))).toEqual(new Set(["/b.md", "/c.md", "/sub/d.md"]));
+    expect(new Set(stale.map((s) => s.path))).toEqual(new Set(["/b.md", "/c.md", "/sub/d.md"]));
     expect(stale.every((s) => s.target === "/old.md")).toBe(true);
     // The moved doc itself is fine on disk and in the DB.
     expect(existsSync(join(dir, "moved/new.md"))).toBe(true);
@@ -154,7 +154,7 @@ describe("docsMove — edge index follows the path", () => {
     expect(res.dangling).toEqual([{ doc_id: docId("fm.md"), path: "fm.md", block_id: null, target: "old.md", anchor: null, field: "depends_on" }]);
     // The rewrite ran and touched nothing: empty lists, not null (null = opted out or nothing linked in).
     expect(res.retargeted).toEqual({ blocks: [], docs: [] });
-    expect(linksStale(store, repoId).stale.map((s) => s.$path)).toEqual(["/fm.md"]);
+    expect(linksStale(store, repoId).stale.map((s) => s.path)).toEqual(["/fm.md"]);
   });
 });
 

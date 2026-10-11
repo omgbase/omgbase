@@ -43,11 +43,11 @@ export class RevisionNotFound extends Error {
   }
 }
 
-/** One block-grain diff entry: the block's `$id` (spec/surface §1.2, 3.0) and
+/** One block-grain diff entry: the block's `id` (spec/surface §1.2, 3.0) and
  *  its raw `before`/`after` as applicable. */
 export interface DiffEntry {
   kind: "added" | "removed" | "changed" | "unchanged";
-  $id: string;
+  id: string;
   before?: string;
   after?: string;
 }
@@ -59,10 +59,10 @@ export function diffBlocks(store: Store, docId: string, fromRev: string, toRev: 
   const after = at(toRev);
   const entries: DiffEntry[] = [];
   for (const [id, raw] of before) {
-    if (!after.has(id)) entries.push({ kind: "removed", $id: id, before: raw });
-    else if (after.get(id) !== raw) entries.push({ kind: "changed", $id: id, before: raw, after: after.get(id)! });
+    if (!after.has(id)) entries.push({ kind: "removed", id: id, before: raw });
+    else if (after.get(id) !== raw) entries.push({ kind: "changed", id: id, before: raw, after: after.get(id)! });
   }
-  for (const [id, raw] of after) if (!before.has(id)) entries.push({ kind: "added", $id: id, after: raw });
+  for (const [id, raw] of after) if (!before.has(id)) entries.push({ kind: "added", id: id, after: raw });
   return entries;
 }
 
@@ -110,15 +110,15 @@ export function diffUnified(store: Store, docId: string, fromRev: string, toRev:
   const rendered = (rev: string): string => {
     const at = readDocumentAtRevision(store, docId, rev);
     if (!at) throw new RevisionNotFound(docId, rev);
-    return at.$raw;
+    return at.raw;
   };
   return unifiedDiff(rendered(fromRev), rendered(toRev));
 }
 
 /** The `diff_unified` tool's result (spec/surface §3): the resolved revision pair and the diff. */
 export interface DocDiffUnified {
-  $id: string;
-  $path: string;
+  id: string;
+  path: string;
   from: string;
   to: string;
   diff: string;
@@ -140,7 +140,7 @@ export function docDiffUnified(store: Store, docId: string, opts: { fromRev?: st
   const from = opts.fromRev ?? revs[1]?.rev_id ?? revs[0]?.rev_id;
   if (!to || !from) throw new EngineError("target_missing", `no revisions to diff for ${opts.label ?? docId}`);
   const path = (store.db.prepare("SELECT path FROM docs WHERE doc_id = ?").get(docId) as { path: string } | undefined)?.path;
-  return { $id: docId, $path: path === undefined ? "" : referencePath(path), from, to, diff: diffUnified(store, docId, from, to) };
+  return { id: docId, path: path === undefined ? "" : referencePath(path), from, to, diff: diffUnified(store, docId, from, to) };
 }
 
 // ---- unified diff (spec/surface §3) ------------------------------------------
@@ -294,11 +294,11 @@ export interface CommitDigest {
   actor: string | null;
   summary: string;
   /** The revisions the commit wrote, each the document's row attributes
-   *  (spec/surface §1.2, 3.0): `$id`, `$path` as of the commit, `$hash` (hex of
+   *  (spec/surface §1.2, 3.0): `id`, `path` as of the commit, `hash` (hex of
    *  the revision's rendered_hash) — the hash lets a puller decide "changed vs
    *  echo" without a follow-up docs_read/docs_history (ADR-014 §4.2). The same
    *  three keys an `apply` revision carries. */
-  revisions: { $id: string; $path: string; $hash: string }[];
+  revisions: { id: string; path: string; hash: string }[];
 }
 
 /** changes_since: commit digests after a cursor (repo commit seq) — the change
@@ -326,7 +326,7 @@ export function changesSince(store: Store, repoId: string, opts: { cursor?: numb
   // Every path in a digest — the revisions', a deletion's, a move's two, and
   // the summary's — is the reference form (spec/surface §1 "Paths").
   const digests: CommitDigest[] = page.map((c) => {
-    const revs = (store.db.prepare("SELECT r.doc_id AS doc, r.path AS path, r.rendered_hash AS rendered_hash FROM revisions r WHERE r.commit_id = ?").all(c.commit_id) as { doc: string; path: string; rendered_hash: Buffer }[]).map((r) => ({ $id: r.doc, $path: referencePath(r.path), $hash: r.rendered_hash.toString("hex") }));
+    const revs = (store.db.prepare("SELECT r.doc_id AS doc, r.path AS path, r.rendered_hash AS rendered_hash FROM revisions r WHERE r.commit_id = ?").all(c.commit_id) as { doc: string; path: string; rendered_hash: Buffer }[]).map((r) => ({ id: r.doc, path: referencePath(r.path), hash: r.rendered_hash.toString("hex") }));
     const dispCounts = store.db.prepare("SELECT kind, count(*) n FROM dispositions WHERE commit_id = ? GROUP BY kind").all(c.commit_id) as { kind: string; n: number }[];
     // A deletion or a move writes no revision: the tombstone names the commit
     // (`docs.deleted_commit`), a move only its reason (`move <from> -> <to>`).
@@ -354,20 +354,20 @@ export interface DocVersion {
   rev: string;
   seq: number;
   commit: string;
-  /** the commit's ts — the document's `$updated_at` as of this version (spec/surface §1.2, 3.0). */
-  $updated_at: string;
+  /** the commit's ts — the document's `updated_at` as of this version (spec/surface §1.2, 3.0). */
+  updated_at: string;
   origin: string;
   actor: string | null;
-  /** hex of the revision's rendered_hash — the document's `$hash` as of this version; spot no-op vs real change, feed into docs_read_at/diff. */
-  $hash: string;
+  /** hex of the revision's rendered_hash — the document's `hash` as of this version; spot no-op vs real change, feed into docs_read_at/diff. */
+  hash: string;
   /** true when this rev == the doc's current_rev. */
   isCurrent: boolean;
 }
 
 /** A matching document with its ordered version history. */
 export interface DocVersions {
-  $id: string;
-  $path: string;
+  id: string;
+  path: string;
   deleted: boolean;
   currentRev: string | null;
   versions: DocVersion[];
@@ -451,13 +451,13 @@ export function docHistory(
       rev: r.rev,
       seq: r.seq,
       commit: r.commitId,
-      $updated_at: r.ts,
+      updated_at: r.ts,
       origin: r.origin,
       actor: r.actor,
-      $hash: r.rendered_hash.toString("hex"),
+      hash: r.rendered_hash.toString("hex"),
       isCurrent: r.rev === d.current_rev,
     }));
-    return { $id: d.doc_id, $path: referencePath(d.path), deleted: d.deleted_commit !== null, currentRev: d.current_rev, versions };
+    return { id: d.doc_id, path: referencePath(d.path), deleted: d.deleted_commit !== null, currentRev: d.current_rev, versions };
   });
 
   return { docs, truncated };
@@ -496,11 +496,11 @@ function parseMove(reason: string | null): { from: string; to: string } | null {
 function renderSummary(
   origin: string,
   actor: string | null,
-  revs: { $path: string }[],
+  revs: { path: string }[],
   disp: { kind: string; n: number }[],
   extra: { deleted: string[]; moved: { from: string; to: string } | null } = { deleted: [], moved: null },
 ): string {
-  let subject = revs.map((r) => r.$path).join(", ");
+  let subject = revs.map((r) => r.path).join(", ");
   if (revs.length === 0) {
     if (extra.deleted.length > 0) subject = `deleted ${extra.deleted.join(", ")}`;
     else if (extra.moved) subject = `moved ${extra.moved.from} → ${extra.moved.to}`;

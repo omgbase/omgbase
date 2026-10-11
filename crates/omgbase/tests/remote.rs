@@ -543,7 +543,7 @@ fn ls_over_the_reference_server_renders_like_local() {
             blank_ago(&text(&l.stdout)),
             "ls {mode:?}: remote (left) vs local (right)"
         );
-        // `--ids` prints the documents' `$id`s (spec/cli 3.0); the other modes
+        // `--ids` prints the documents' `id`s (spec/cli 3.0); the other modes
         // name the paths.
         if mode == ["--ids"] {
             let out = text(&l.stdout);
@@ -596,14 +596,14 @@ fn every_read_over_the_reference_server_renders_like_local() {
     let p = Pair::seed("reads");
     let server = ts_server(&omg, &p.remote);
     let intro =
-        p.id(r#"from blocks where $path == "notes/a.md" && text == "Intro paragraph, revised.""#);
-    let alpha = p.id(r#"from blocks where $path == "notes/a.md" && text == "Alpha beta.""#);
+        p.id(r#"from blocks where path == "notes/a.md" && text == "Intro paragraph, revised.""#);
+    let alpha = p.id(r#"from blocks where path == "notes/a.md" && text == "Alpha beta.""#);
     let tasks =
-        p.id(r#"from blocks where $path == "notes/a.md" && type == "heading" && text == "Tasks""#);
+        p.id(r#"from blocks where path == "notes/a.md" && type == "heading" && text == "Tasks""#);
     let a_doc = {
         let out = p.local(&["--json", "cat", "notes/a.md"], None);
         let v: serde_json::Value = serde_json::from_str(text(&out.stdout).trim()).unwrap();
-        v["$id"].as_str().unwrap().to_owned()
+        v["id"].as_str().unwrap().to_owned()
     };
     let cases: Vec<(&str, Vec<&str>)> = vec![
         ("query", vec!["query", "from docs"]),
@@ -612,7 +612,7 @@ fn every_read_over_the_reference_server_renders_like_local() {
             vec![
                 "--json",
                 "query",
-                r#"select type, text from blocks where $path == "notes/a.md""#,
+                r#"select type, text from blocks where path == "notes/a.md""#,
             ],
         ),
         ("query --jsonl", vec!["--jsonl", "query", "from docs"]),
@@ -623,7 +623,7 @@ fn every_read_over_the_reference_server_renders_like_local() {
         ("query count", vec!["query", "docs count { }"]),
         (
             "query values",
-            vec!["query", "select $path values from docs"],
+            vec!["query", "select path values from docs"],
         ),
         ("outline", vec!["outline", "notes/a.md"]),
         (
@@ -746,14 +746,14 @@ fn every_write_over_the_reference_server_lands_like_local() {
     };
     let p = Pair::seed("writes");
     let server = ts_server(&omg, &p.remote);
-    let list = p.id(r#"from blocks where $path == "notes/a.md" && type == "list""#);
+    let list = p.id(r#"from blocks where path == "notes/a.md" && type == "list""#);
     let tasks =
-        p.id(r#"from blocks where $path == "notes/a.md" && type == "heading" && text == "Tasks""#);
-    let task_one = p.id(r#"from blocks where $path == "notes/a.md" && text == "task one""#);
-    let task_two = p.id(r#"from blocks where $path == "notes/a.md" && text == "task two""#);
-    let alpha = p.id(r#"from blocks where $path == "notes/a.md" && text == "Alpha beta.""#);
+        p.id(r#"from blocks where path == "notes/a.md" && type == "heading" && text == "Tasks""#);
+    let task_one = p.id(r#"from blocks where path == "notes/a.md" && text == "task one""#);
+    let task_two = p.id(r#"from blocks where path == "notes/a.md" && text == "task two""#);
+    let alpha = p.id(r#"from blocks where path == "notes/a.md" && text == "Alpha beta.""#);
     let intro =
-        p.id(r#"from blocks where $path == "notes/a.md" && text == "Intro paragraph, revised.""#);
+        p.id(r#"from blocks where path == "notes/a.md" && text == "Intro paragraph, revised.""#);
 
     let same = |what: &str, args: &[&str]| -> Vec<String> {
         let (l, r) = p.both(&server, args, None);
@@ -822,10 +822,10 @@ fn every_write_over_the_reference_server_lands_like_local() {
     );
     let lv: serde_json::Value = serde_json::from_str(text(&l.stdout).trim()).unwrap();
     let mut rv: serde_json::Value = serde_json::from_str(text(&r.stdout).trim()).unwrap();
-    assert_eq!(rv["$id"], task_two);
+    assert_eq!(rv["id"], task_two);
     assert_eq!(rv["ids"], serde_json::json!([task_two]));
     let rm = rv.as_object_mut().unwrap();
-    rm.remove("$id");
+    rm.remove("id");
     rm.remove("ids");
     assert_eq!(rv, lv, "the ApplyResult underneath");
 
@@ -1034,8 +1034,8 @@ fn the_reference_omg_reaches_omgbase_mcp_as_its_server() {
         (l, r)
     };
     let intro =
-        p.id(r#"from blocks where $path == "notes/a.md" && text == "Intro paragraph, revised.""#);
-    let list = p.id(r#"from blocks where $path == "notes/a.md" && type == "list""#);
+        p.id(r#"from blocks where path == "notes/a.md" && text == "Intro paragraph, revised.""#);
+    let list = p.id(r#"from blocks where path == "notes/a.md" && type == "list""#);
     let cases: Vec<(&str, Vec<&str>)> = vec![
         ("ls", vec!["ls"]),
         ("ls --json", vec!["--json", "ls"]),
@@ -1048,7 +1048,7 @@ fn the_reference_omg_reaches_omgbase_mcp_as_its_server() {
             vec![
                 "--json",
                 "query",
-                r#"select type from blocks where $path == "index.md""#,
+                r#"select type from blocks where path == "index.md""#,
             ],
         ),
         ("find", vec!["find", "task"]),
@@ -1145,7 +1145,7 @@ fn sync_server_mirrors_a_directory_into_the_reference_engine() {
         .as_array()
         .expect("an array of rows")
         .iter()
-        .filter_map(|i| i["$path"].as_str())
+        .filter_map(|i| i["path"].as_str())
         .collect();
     assert_eq!(paths, ["/sub/y.md", "/x.md"]);
     // Again: everything echoes.

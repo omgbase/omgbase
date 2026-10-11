@@ -54,13 +54,13 @@ sweep.ingested;                                       // ["todo.md"]
 // Query with OQX. Nodes are projections of blocks; block_id is the anchor block.
 const open = oqxRun(ws.store, repoId,
   'select block: block_id from nodes where kind == "md:task" && !attrs.checked');
-open.hits;  // [{ $id: "n_…", $path: "/todo.md", block: "b_…" }]
+open.hits;  // [{ id: "n_…", path: "/todo.md", block: "b_…" }]
 
 // Read a whole document back byte-exact, with block ids + CAS hashes.
 const doc = findDoc(ws.store, { repoId, path: "todo.md" });
 const read = docsRead(ws.store, doc.docId, { includeIds: true });
-read.$raw;     // "# Todo\n\n- [ ] write the README\n- [x] ship 0.1\n"
-read.ids;      // ["b_…", "b_…", "b_…", "b_…"]   read.hashes[id] → the block's $hash (the expect.content_hash value)
+read.raw;     // "# Todo\n\n- [ ] write the README\n- [x] ship 0.1\n"
+read.ids;      // ["b_…", "b_…", "b_…", "b_…"]   read.hashes[id] → the block's hash (the expect.content_hash value)
 
 // Mutate. The macro expands to kernel `update` ops pinned by content_hash;
 // apply() renders, writes the file, and commits a new revision.
@@ -71,7 +71,7 @@ const result = apply(ws.store, {
   ops: tasksComplete(ws.store, open.hits.map((h) => h.block)),
   origin: { actor: "agent:quickstart", reason: "demo" },
 });
-result;  // { results: [{ ids: ["b_…"] }], revisions: [{ $id: "d_…", $path: "todo.md", $hash: "…" }], committed: true }
+result;  // { results: [{ ids: ["b_…"] }], revisions: [{ id: "d_…", path: "todo.md", hash: "…" }], committed: true }
 // todo.md on disk now reads "- [x] write the README"
 
 historyNode(ws.store, open.hits[0].block);  // [{ origin: "import", kind: "edited", … }, { origin: "observed", kind: "inserted", … }]
@@ -144,11 +144,11 @@ and `semantic("…")` (embedding score) are omgbase additions.
 
 ```js
 oqxRun(ws.store, repoId, `
-  select $path, $title, open: nodes collect { select block_id where kind == "md:task" && !attrs.checked }
+  select path, title, open: nodes collect { select block_id where kind == "md:task" && !attrs.checked }
   from docs where nodes count { where kind == "md:task" && !attrs.checked } >= 2
-  order by $path limit 10
+  order by path limit 10
 `);
-// hits: [{ $id: "d_…", $path: "/more.md", $title: "More", open: [{ block_id: "b_…" }, …] }]
+// hits: [{ id: "d_…", path: "/more.md", title: "More", open: [{ block_id: "b_…" }, …] }]
 ```
 
 See [`docs/query-language.md`](https://github.com/omgbase/omgbase/blob/main/docs/query-language.md)

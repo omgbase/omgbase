@@ -80,7 +80,7 @@ fn bad(token: &str) -> RefError {
 /// (does not start with `@`); an error for a malformed `@…`. The grammar is
 /// `^@(\d+|_|[A-Za-z][\w-]*)(?:\[(\d+)\])?(?:\.(\$?[A-Za-z_]\w*))?$` — the
 /// field admits a leading `$` so a query hit's identity is addressable
-/// (`@1.$id`, `@t[1].$path`; `spec/surface` §1.4, 3.0).
+/// (`@1.id`, `@t[1].path`; `spec/surface` §1.4, 3.0).
 pub fn parse_ref(token: &str) -> Result<Option<ParsedRef>, RefError> {
     let Some(body) = token.strip_prefix('@') else {
         return Ok(None);
@@ -213,7 +213,7 @@ fn row_of(el: &Json) -> Row {
         let label = first_string(
             o,
             &[
-                "$path", "path", "locator", "name", "$id", "id", "node", "doc_id",
+                "path", "path", "locator", "name", "id", "id", "node", "doc_id",
             ],
         )
         .or_else(|| r#ref.clone())
@@ -233,12 +233,12 @@ fn row_of(el: &Json) -> Row {
 }
 
 /// The keys that make an object an entity ref, in precedence order: a row's
-/// `$id` (`spec/surface` §1.2, 3.0 — every tool result spells a row's identity
+/// `id` (`spec/surface` §1.2, 3.0 — every tool result spells a row's identity
 /// as the intrinsic), a `links` row's far node (`doc_id`) and an edge's
 /// `block_id`, then the pre-3.0 envelopes (`id`, `node`, `block`) — kept so a
 /// remote 2.x server's results still address — then `locator` and a path.
 const REF_KEYS: &[&str] = &[
-    "$id", "doc_id", "block_id", "id", "node", "block", "locator", "$path", "path",
+    "id", "doc_id", "block_id", "id", "node", "block", "locator", "path", "path",
 ];
 
 fn first_string(o: &serde_json::Map<String, Json>, keys: &[&str]) -> Option<String> {

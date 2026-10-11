@@ -103,12 +103,12 @@ mod tests {
     fn splits_and_quotes() {
         assert_eq!(t("  ls   texts/*  "), vec!["ls", "texts/*"]);
         assert_eq!(
-            t(r#"q 'from docs where $path == "x"' --ids"#),
-            vec!["q", r#"from docs where $path == "x""#, "--ids"]
+            t(r#"q 'from docs where path == "x"' --ids"#),
+            vec!["q", r#"from docs where path == "x""#, "--ids"]
         );
         assert_eq!(
-            t(r#"q "from docs where \$path == \"x\"" --ids"#),
-            vec!["q", r#"from docs where $path == "x""#, "--ids"]
+            t(r#"q "from docs where \$it == \"x\"" --ids"#),
+            vec!["q", r#"from docs where $it == "x""#, "--ids"]
         );
         assert_eq!(t(r#"q "a\nb""#), vec!["q", r"a\nb"]);
         assert_eq!(

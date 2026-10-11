@@ -32,13 +32,13 @@ import { referencePath, storagePath } from "../core/paths.js";
 export type StaleReason = "dangling_doc" | "dangling_block" | "broken_anchor";
 
 // A stale link is an edge row under the `edges` target's names (spec/surface
-// §1.2, 3.0): `doc_id`/`block_id` the source, `$path` the source document's
+// §1.2, 3.0): `doc_id`/`block_id` the source, `path` the source document's
 // path (the reference form), `dst_kind` the destination's kind.
 export interface StaleLink {
   /** source document id */
   doc_id: string;
   /** source document path in the reference form */
-  $path: string;
+  path: string;
   /** source block id (null for frontmatter-level edges) */
   block_id: string | null;
   predicate: string;
@@ -61,8 +61,8 @@ export interface LinkHealthSummary {
   staleCount: number;
   /** distinct missing targets, most-referenced first (ties by target) */
   byTarget: { target: string; count: number }[];
-  /** source documents carrying dangling links, most first (ties by path); `$path` the reference form */
-  bySource: { $path: string; count: number }[];
+  /** source documents carrying dangling links, most first (ties by path); `path` the reference form */
+  bySource: { path: string; count: number }[];
   externalCount: number;
   totalOpenEdges: number;
 }
@@ -183,11 +183,11 @@ export function linksStale(store: Store, repoId: string, opts: LinkHealthOptions
   const stale: StaleLink[] = page.map((r) => {
     // Strip the "phantom:" prefix to expose the canonical path.
     const target = r.dstNode.slice("phantom:".length);
-    // The surface speaks the reference form: `$path` and `target` rooted;
+    // The surface speaks the reference form: `path` and `target` rooted;
     // `authored` stays exactly as written in the source.
     return {
       doc_id: r.srcDoc,
-      $path: referencePath(r.srcPath),
+      path: referencePath(r.srcPath),
       block_id: r.srcBlock,
       predicate: r.predicate,
       provenance: r.provenance,
@@ -237,7 +237,7 @@ export function linksStaleSummary(store: Store, repoId: string, opts: Pick<LinkH
   const bySource = (store.db
     .prepare(`SELECT d.path AS srcPath, count(*) AS count ${phantom} GROUP BY d.path ORDER BY count DESC, d.path`)
     .all(...params) as { srcPath: string; count: number }[])
-    .map((r) => ({ $path: referencePath(r.srcPath), count: r.count }));
+    .map((r) => ({ path: referencePath(r.srcPath), count: r.count }));
   return {
     staleCount: byTarget.reduce((n, t) => n + t.count, 0),
     byTarget,

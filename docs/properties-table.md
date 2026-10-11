@@ -62,7 +62,7 @@ every row. Real purpose — but a *convenience* one (avoid re-parsing), not a
 
 The critical properties it currently provides, which any replacement MUST keep:
 
-- **Typed scalar comparison** — `priority >= 3`, `$updated_at >= "2026-08-01"`
+- **Typed scalar comparison** — `priority >= 3`, `updated_at >= "2026-08-01"`
   (numeric/string ordering, not just equality).
 - **Nesting** — `meta.owner` via `json_extract(..., '$.meta.owner')`.
 - **Scalar-or-array polymorphism** — `"x" in list(tags)` where `tags` may be a
@@ -113,7 +113,7 @@ CREATE INDEX idx_props_src_key  ON properties(repo_id, source, key)            W
 ### Modeling decisions
 
 - **Typed columns, not one TEXT `value`.** `priority >= 3` needs numeric
-  ordering; `$updated_at >= "..."` needs string ordering. A single TEXT column
+  ordering; `updated_at >= "..."` needs string ordering. A single TEXT column
   can't index both meaningfully. Splitting `val_text`/`val_num`/`val_bool` lets
   the index serve range predicates. `type` disambiguates.
 - **Flattened dotted keys.** `meta.owner` stored as `key = "meta.owner"`, so
@@ -143,10 +143,11 @@ CREATE INDEX idx_props_src_key  ON properties(repo_id, source, key)            W
   generalizes to other string-encoded types (e.g. a future `date(s)`/`time(s)`
   with a cached normalized/epoch form).
 - **`source` is the provenance delineation.** `frontmatter` / `inline` /
-  `computed` as a filterable column — no `$frontmatter`/`$inline` reserved keys
-  in content-space. Bare keys span the *authored* sources; computed values are
-  `$`-intrinsics, not bare keys (see §4), so engine-derived facts never shadow a
-  user's `title:`/`tags:`.
+  `computed` as a filterable column — no reserved keys in content-space. Bare
+  keys span the *authored* sources; computed values are stored under `$`-keyed
+  rows (`$title`/`$tags`) and surfaced as the engine attributes `title`/`tags`
+  (see §4), the authored `title:`/`tags:` staying reachable as `data.title` /
+  `data.tags`.
 - **Block scope retained.** Inline props keep their authoring `block_id`, so
   "which paragraph asserted `owner:: alice`" is still answerable, and computed
   props can be doc- or block-scoped.
@@ -159,7 +160,7 @@ against `docs.metadata`. (The later ADR-013 move to `@omgbase/oqx` did change sc
 semantics — `!=` over absent, case-sensitive strings, arithmetic — see
 `query-language.md` §3; the property *store* below is unaffected.) Only the compile target changes (indexed
 `properties` rows instead of `json_extract` scans), plus two additive powers:
-source-scoped accessors and computed `$`-intrinsics.
+source-scoped accessors and the computed attributes.
 
 ### Scalar semantics preserved (no behavior change)
 
@@ -229,26 +230,27 @@ from: docs  filter: "farmer" in list(job)           # any authored source
 ```
 
 Bare `<k>` spans authored sources (`frontmatter` + `inline`); `frontmatter.<k>`
-/ `inline.<k>` narrow to one. (Computed props are NOT bare keys — see next.)
+/ `inline.<k>` narrow to one; `data.<k>` is the authored union by name (surface
+3.0) — the way to an authored key whose bare name is an engine attribute.
 
-### Computed properties are `$`-intrinsics, not bare keys
+### Computed properties are stored `$`-keyed and read as the `title`/`tags` attributes
 
-Engine-derived properties live in the `$`-namespace, alongside `$path`/`$id`,
-and do **not** claim the bare `title`/`tags` keys — those remain 100% author
-content (frontmatter/inline). This keeps the sigil rule exact: `$` = engine,
-bare = authored.
+The rows are stored under `$`-prefixed keys (`source='computed'`, key `$title` /
+`$tags` — `spec/properties` §3.3, unchanged), so they never collide with an
+authored `title:`/`tags:` row in the table. **The query surface (spec/surface
+§1.2, 3.0) has no `$` names:** it reads them as the engine attributes `title`
+and `tags`, which win on collision like every attribute:
 
 ```
-$title                # derived from the first H1 (NOT the frontmatter `title`)
-$tags                 # derived from body #hashtags (NOT frontmatter `tags`)
+title                 # the computed title: the first H1 (null when none); data.title is the authored key
+tags                  # authored tags ∪ body #hashtags, deduped, authored first; data.tags is the authored list
 ```
 
-So `title == "x"` matches the *authored* frontmatter/inline `title`; `$title`
-matches the *computed* H1-derived one. They never collide, and a user's
-`title:`/`tags:` frontmatter is never shadowed by a computed value. Computed
-`$`-intrinsics are stored as `source='computed'` rows and surfaced by name
-through the intrinsic table in the compiler (like `$path`), not via bare-key
-resolution.
+So `title == "x"` matches the *computed* H1-derived title and `data.title == "x"`
+the *authored* frontmatter/inline one; `"urgent" in tags` sees both the authored
+list and the body hashtags. **[was, surface < 3.0 (batch 3): the attributes were
+`$title`/`$tags`, bare `title`/`tags` read the authored keys, and `$tags` was the
+body hashtags alone.]**
 
 ### `docs_read` and projection
 
@@ -257,20 +259,20 @@ vs. computed provenance:
 
 ```jsonc
 {
-  "$id": "...", "$path": "...", "rev": "...",
-  "$raw": "...",                        // byte-exact file (unchanged)
+  "id": "...", "path": "...", "rev": "...",
+  "raw": "...",                         // byte-exact file (unchanged)
   "properties": {
     "frontmatter": { "layer": "canon", "tags": ["a","b"] },   // scalar stays scalar
     "inline":      { "job": ["janitor","salesman"] },
-    "computed":    { "$title": "Q3 Plan", "$tags": ["urgent"] }
+    "computed":    { "title": "Q3 Plan", "tags": ["urgent"] } // the stored `$title`/`$tags` rows, re-keyed at the surface (3.0)
   }
 }
 ```
 
 There is no `metadata` field — the JSON column is gone (§5). Scalar-authored keys
 render as scalars, list-authored as arrays (honest to `card`). `query` select
-gains `frontmatter.<k>` / `inline.<k>` / bare `<k>` / the computed `$`-intrinsics
-/ `$properties`.
+gains `frontmatter.<k>` / `inline.<k>` / `data.<k>` / bare `<k>` / the computed
+attributes `title`/`tags`.
 
 ## 5. `docs.metadata` is removed (decided)
 
@@ -382,8 +384,9 @@ not an index rebuild.
   keep their meaning; the `card` flag reproduces the scalar-vs-array distinction. No
   authored query changes behavior. Multi-source additivity applies only to the
   *authored union* (frontmatter + inline) a bare key already spans.
-- Computed props as `$`-intrinsics keep the sigil rule exact and never shadow
-  user `title:`/`tags:` keys.
+- Computed props stored `$`-keyed never collide with authored rows; at the
+  surface they are the `title`/`tags` attributes and the authored keys are
+  `data.title`/`data.tags` (surface 3.0).
 
 **Costs / risks**
 - **Compiler rework is the bulk of the work.** `list()`, membership, `size()`,
@@ -427,9 +430,9 @@ not an index rebuild.
   earlier "scalar `==` matches any scalar-authored row" wording: multiplicity in
   scope, not just authored shape, gates scalar comparison.) YAML duplicate-key
   rules apply within a fence before storage.
-- **Computed props are `$`-intrinsics, not bare keys.** `$title` (first H1),
-  `$tags` (body hashtags) live in the `$`-namespace and do NOT claim/shadow the
-  authored `title`/`tags` keys. (§4)
+- **Computed props are stored `$`-keyed (`$title`, `$tags`) and surfaced as the
+  `title`/`tags` attributes** (surface 3.0, §4); the authored `title`/`tags`
+  rows are untouched in the table and read as `data.title`/`data.tags`.
 - **Inline fields move fully to `properties`** (clean move, nothing deployed).
 
 ### Deterministic ordering (decided)
@@ -464,9 +467,9 @@ evaluation model, just parser + compiler desugaring. Deferred; noted so the
 grammar leaves room (the `*` suffix/prefix on relops is currently unused).
 
 **Still open:**
-- [ ] Which computed `$`-intrinsics ship first — `$title` (first H1) and
-  `$tags` (body #hashtags) are the named two; `$word_count`/`$task_count`
-  candidates.
+- [ ] Which computed properties ship first — `$title` (first H1) and `$tags`
+  (body #hashtags) are the named two; `$word_count`/`$task_count` candidates
+  (each would surface as a bare attribute, `word_count`).
 - [x] Array-of-objects in frontmatter: straight to `val_json` — one
   `card='list'` row (`ord` 0, `type='json'`) carrying the whole array
   (spec/properties §2.3; note the read shape then wraps it in another array,

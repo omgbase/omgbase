@@ -4,7 +4,7 @@
 // pushed `type ==` conjunct identically whether the planner runs it in SQL or
 // the engine runs it in memory, and must never match a superseded value via a
 // stale property row. Also pins `startsWith && ==` conjunct splits, where the
-// `$path` intrinsic and the `type` property are pushed together.
+// `path` intrinsic and the `type` property are pushed together.
 
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
@@ -27,8 +27,8 @@ function save(path: string, content: string): void {
   processCheckpoint(store, repoId, dir, [{ path }]);
 }
 function paths(q: string, plan?: boolean): string[] {
-  const r = oqxRun(store, repoId, q, { limit: 100, ...(plan === false ? { plan: false } : {}) }) as { hits: { $path: string }[] };
-  return r.hits.map((h) => h.$path).sort();
+  const r = oqxRun(store, repoId, q, { limit: 100, ...(plan === false ? { plan: false } : {}) }) as { hits: { path: string }[] };
+  return r.hits.map((h) => h.path).sort();
 }
 function both(q: string): { planned: string[]; memory: string[] } {
   return { planned: paths(q), memory: paths(q, false) };
@@ -57,17 +57,17 @@ beforeAll(() => {
 afterAll(() => { store.close(); rmSync(dir, { recursive: true, force: true }); });
 
 const QUERIES = [
-  `from docs where $path.startsWith("creative/") && type == "${PROJECT}"`,
-  `from docs where $path.startsWith("creative/") && type == "${IDEA}"`,
-  `from docs where type == "${PROJECT}" && $path.startsWith("creative/")`,
-  `from docs where $path.startsWith("creative/") && type != "${PROJECT}"`,
-  `from docs where $path == "creative/flip-observed.md" && type == "${PROJECT}"`,
-  `from docs where $path == "creative/flip-api.md" && type == "${PROJECT}"`,
-  `from docs where $path == "creative/flip-api.md" && type == "${IDEA}"`,
-  `select $path, type from docs where $path.startsWith("creative/") && type == "${PROJECT}"`,
-  `from docs where $path.startsWith("creative/") && "${PROJECT}" in list(type)`,
+  `from docs where path.startsWith("creative/") && type == "${PROJECT}"`,
+  `from docs where path.startsWith("creative/") && type == "${IDEA}"`,
+  `from docs where type == "${PROJECT}" && path.startsWith("creative/")`,
+  `from docs where path.startsWith("creative/") && type != "${PROJECT}"`,
+  `from docs where path == "creative/flip-observed.md" && type == "${PROJECT}"`,
+  `from docs where path == "creative/flip-api.md" && type == "${PROJECT}"`,
+  `from docs where path == "creative/flip-api.md" && type == "${IDEA}"`,
+  `select path, type from docs where path.startsWith("creative/") && type == "${PROJECT}"`,
+  `from docs where path.startsWith("creative/") && "${PROJECT}" in list(type)`,
   `from docs where type == "${PROJECT}"`,
-  `from docs where $path.startsWith("creative/") && frontmatter.type == "${PROJECT}"`,
+  `from docs where path.startsWith("creative/") && frontmatter.type == "${PROJECT}"`,
 ];
 
 describe("OQX conformance — type changed across revisions (planned == in-memory)", () => {
@@ -88,19 +88,19 @@ describe("OQX conformance — type changed across revisions (planned == in-memor
   });
 
   it("a flipped doc matches only its CURRENT type, regardless of the surrounding predicate", () => {
-    const wide = both(`from docs where $path.startsWith("creative/") && type == "${PROJECT}"`);
+    const wide = both(`from docs where path.startsWith("creative/") && type == "${PROJECT}"`);
     // Hits carry the reference form (spec/surface §1 "Paths"); the bare literals
-    // in the queries still match (a literal compared with `$path` is rooted first).
+    // in the queries still match (a literal compared with `path` is rooted first).
     expect(wide.planned).toEqual(["/creative/proj.md"]);
     expect(wide.memory).toEqual(["/creative/proj.md"]);
     for (const p of ["creative/flip-observed.md", "creative/flip-api.md", "creative/list-to-scalar.md"]) {
-      expect(both(`from docs where $path == "${p}" && type == "${PROJECT}"`)).toEqual({ planned: [], memory: [] });
-      expect(both(`from docs where $path == "${p}" && type == "${IDEA}"`)).toEqual({ planned: ["/" + p], memory: ["/" + p] });
+      expect(both(`from docs where path == "${p}" && type == "${PROJECT}"`)).toEqual({ planned: [], memory: [] });
+      expect(both(`from docs where path == "${p}" && type == "${IDEA}"`)).toEqual({ planned: ["/" + p], memory: ["/" + p] });
     }
     // The wide and narrowed forms agree doc-by-doc.
-    const all = paths('from docs where $path.startsWith("creative/")');
+    const all = paths('from docs where path.startsWith("creative/")');
     for (const p of all) {
-      const narrow = paths(`from docs where $path == "${p}" && type == "${PROJECT}"`);
+      const narrow = paths(`from docs where path == "${p}" && type == "${PROJECT}"`);
       expect(wide.planned.includes(p)).toBe(narrow.length === 1);
     }
   });

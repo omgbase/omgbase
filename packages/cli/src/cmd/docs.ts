@@ -2,8 +2,8 @@ import { parseArgs } from "node:util";
 import { parse as parseYamlScalar } from "yaml";
 import { docsCreate, docsMove, docsDelete, docsSetMeta, surfaceDocOpResult, surfaceDocMoveResult, referencePath, type DocOpContext, type DocOpResult, type DocMoveResult, type SurfaceDocOpResult, type SurfaceInboundLink } from "@omgbase/core";
 
-// The SURFACE shapes (spec/surface §4, 3.0): `{ $id, $path, committed, diffs? }`
-// and, for a move, `dangling: [{ doc_id, $path, block_id, … }]` — what the MCP
+// The SURFACE shapes (spec/surface §4, 3.0): `{ id, path, committed, diffs? }`
+// and, for a move, `dangling: [{ doc_id, path, block_id, … }]` — what the MCP
 // tool returns and what `--json` prints verbatim.
 type DocOp = SurfaceDocOpResult<DocOpResult>;
 type DocMove = Omit<SurfaceDocOpResult<DocMoveResult>, "dangling"> & { dangling: SurfaceInboundLink[] };
@@ -18,7 +18,7 @@ import { remoteCall, docLocator, requireDoc } from "./_remote.js";
 // The global --dry-run rides as the op's `dryRun` (spec/cli §3.6): the op
 // validates and returns the per-file diffs it would make, committing nothing.
 // Every path printed is the reference form (spec/surface §1 "Paths") and the
-// result's identity is `$id`/`$path` (3.0): the library's result is re-shaped
+// result's identity is `id`/`path` (3.0): the library's result is re-shaped
 // through `surfaceDocOpResult` — the same function the MCP server applies —
 // before it is rendered, so the CLI and the tool print one shape.
 
@@ -41,8 +41,8 @@ function report(cli: Cli, verb: string, res: DocOp): number {
     renderDiffs(cli, res.diffs ?? {});
     return EXIT_OK;
   }
-  cli.io.err(cli.style.dim(`  ${cli.style.ok(cli.render.g.ok)} ${verb} ${cli.style.accent(res.$path)}`));
-  cli.io.out(res.$id);
+  cli.io.err(cli.style.dim(`  ${cli.style.ok(cli.render.g.ok)} ${verb} ${cli.style.accent(res.path)}`));
+  cli.io.out(res.id);
   return EXIT_OK;
 }
 
@@ -62,17 +62,17 @@ function reportMove(cli: Cli, from: string, res: DocMove): number {
     io.err(style.dim(`  ${style.ok(cli.render.g.ok)} retargeted ${b} inbound link${b === 1 ? "" : "s"} in ${d} document${d === 1 ? "" : "s"}`));
   }
   if (res.dangling.length === 0) return code;
-  const where = res.dangling.map((l) => (l.block_id ? `${l.$path} ${l.block_id}` : `${l.$path} (frontmatter)`)).join(", ");
+  const where = res.dangling.map((l) => (l.block_id ? `${l.path} ${l.block_id}` : `${l.path} (frontmatter)`)).join(", ");
   const n = res.dangling.length;
   io.err(style.warn(`  ${style.warn(cli.render.g.warn)} ${n} inbound link${n === 1 ? "" : "s"} still name${n === 1 ? "s" : ""} the old path: ${where}`));
-  if (res.dangling.some((l) => l.block_id)) io.err(style.dim(`  fix: ${cli.prog} retarget ${from} ${res.$path} --apply`));
+  if (res.dangling.some((l) => l.block_id)) io.err(style.dim(`  fix: ${cli.prog} retarget ${from} ${res.path} --apply`));
   const seen = new Set<string>();
   for (const l of res.dangling) {
     if (l.block_id || !l.field) continue;
-    const key = `${l.$path}\u0000${l.field}`;
+    const key = `${l.path}\u0000${l.field}`;
     if (seen.has(key)) continue;
     seen.add(key);
-    io.err(style.dim(`  fix: ${cli.prog} meta ${l.$path} --set ${l.field}=${res.$path}`));
+    io.err(style.dim(`  fix: ${cli.prog} meta ${l.path} --set ${l.field}=${res.path}`));
   }
   return code;
 }

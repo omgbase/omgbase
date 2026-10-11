@@ -170,7 +170,7 @@ https://example.com                  →  b_9 —references→ x_(example.com)  
 > **Surface:** `query "… follow doc.out"` (traverse the authored graph),
 > `query "… follow refs(before)"` (walk the document references a frontmatter
 > relation holds — `refs(field)` resolves them to live documents; the reverse is
-> `^docs { ^$path in list(before) }`, `^docs` being the repository's documents
+> `^docs { ^path in list(before) }`, `^docs` being the repository's documents
 > from inside a row), `from edges where …` (the edges as rows),
 > `links` (`links_stale`), `retarget` (`links_retarget`), `links_repair`. Edges
 > aren't created by an "add edge" call — you write a link/field in a block and the
@@ -197,8 +197,9 @@ sense 2 (the projection layer).
 ## Properties (the fifth thing, briefly)
 
 Alongside the four is the **property** index: typed key/value pairs extracted
-from frontmatter, inline `key:: value` fields, and computed values (`$title`,
-`$tags`). Properties are scoped to a document (frontmatter/computed) or a block
+from frontmatter, inline `key:: value` fields, and computed values (the
+computed title and body hashtags, read as the `title`/`tags` attributes).
+Properties are scoped to a document (frontmatter/computed) or a block
 (inline), and are the backing for property filters in queries
 (`from docs where layer == "working"`). See `properties-table.md`. They are
 mentioned here only so the boundary is clear: properties are *values on*

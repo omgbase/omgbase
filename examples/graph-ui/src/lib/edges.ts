@@ -1,9 +1,9 @@
 // Edge fetching through the `query` tool, by generated OQX.
 //
 // Strategy: the `edges` target, restricted to the shown nodes with a chunked
-// disjunction — OQX has no array literal (`$path in [...]` is a lex error) and
+// disjunction — OQX has no array literal (`path in [...]` is a lex error) and
 // `in` only takes a lifted set or a range, so the node set is spelled
-// `($path == "a" || $path == "b" || …)` in chunks of CHUNK paths. The result is
+// `(path == "a" || path == "b" || …)` in chunks of CHUNK paths. The result is
 // filtered client-side so only edges between SHOWN nodes remain (the
 // disjunction constrains the source only). The alternative — a nested
 // `doc.out_edges collect { … }` per doc — also works against the engine but
@@ -17,16 +17,16 @@
 // come out the same against either server.
 //
 // Field names: surface 3.0 renamed the `edges` target's names (spec/surface
-// §1.2 — `$dst_path` → `dst_path`, `src_field` → `field`), so the query is
-// spelled per server (`edgeFields`, lib/shapes.ts); the projection aliases
-// (`src`/`dst`) are the demo's own and the same on both.
+// §1.2 — `$path` → `path`, `$dst_path` → `dst_path`, `src_field` → `field`), so
+// the query is spelled per server (`edgeFields`, lib/shapes.ts); the projection
+// aliases (`src`/`dst`) are the demo's own and the same on both.
 
 import type { Candidate, Direction, InversePair } from "./candidates.ts";
 import { rooted, serverPath } from "./paths.ts";
 import { edgeFields } from "./shapes.ts";
 
 export interface GraphEdge {
-  /** Source doc path (`$path`, `/`-rooted). */
+  /** Source doc path (the edge's `path`, `/`-rooted). */
   src: string;
   /** Destination doc path (the edge's `dst_path` — `$dst_path` before 3.0 — `/`-rooted). */
   dst: string;
@@ -41,7 +41,7 @@ export function oqxString(s: string): string {
   return JSON.stringify(s);
 }
 
-export function pathDisjunction(paths: readonly string[], field = "$path"): string {
+export function pathDisjunction(paths: readonly string[], field: string): string {
   return `(${paths.map((p) => `${field} == ${oqxString(p)}`).join(" || ")})`;
 }
 
@@ -62,7 +62,7 @@ export function edgeQueries(candidate: Pick<Candidate, "name" | "kind">, paths: 
       ? `${f.field} == ${oqxString(candidate.name)} && provenance == "frontmatter"`
       : `provenance == "link" && dst_kind == "document"`;
   return chunked(paths).map(
-    (chunk) => `select src: $path, dst: ${f.dstPath} from edges where ${relation} && ${pathDisjunction(chunk.map((p) => serverPath(serverSurface, p)))}`,
+    (chunk) => `select src: ${f.path}, dst: ${f.dstPath} from edges where ${relation} && ${pathDisjunction(chunk.map((p) => serverPath(serverSurface, p)), f.path)}`,
   );
 }
 

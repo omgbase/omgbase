@@ -45,7 +45,7 @@ function runEdit(cli: Cli, args: string[]): number {
   const blockId = resolved.blockId!;
 
   const node = nodesGet(ws.store, resolved.docId, blockId, { resolution: "raw" });
-  const before = node?.$raw ?? "";
+  const before = node?.raw ?? "";
   const preHash = rawHashOf(ws, blockId); // pin BEFORE the editor opens
 
   const editor = process.env.OMG_EDITOR ?? process.env.VISUAL ?? process.env.EDITOR;

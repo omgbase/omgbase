@@ -390,16 +390,16 @@ pub fn hit_cell(v: Option<&Json>) -> String {
 }
 
 /// The hit envelope's keys (`spec/surface` §1.4, 3.0): never columns.
-const HIT_ID: &str = "$id";
-const HIT_PATH: &str = "$path";
+const HIT_ID: &str = "id";
+const HIT_PATH: &str = "path";
 
 fn is_envelope_key(k: &str) -> bool {
     k == HIT_ID || k == HIT_PATH
 }
 
 /// The projected keys: `projected` (the query's `select` names, in order),
-/// then every other key of `hits`, both minus the envelope's `$id`/`$path` (a
-/// `select $path` collapses onto the envelope key), first-seen order.
+/// then every other key of `hits`, both minus the envelope's `id`/`path` (a
+/// `select path` collapses onto the envelope key), first-seen order.
 pub fn hit_columns(hits: &[Json], projected: &[String]) -> Vec<String> {
     let mut cols: Vec<String> = Vec::new();
     for k in projected {
@@ -419,8 +419,8 @@ pub fn hit_columns(hits: &[Json], projected: &[String]) -> Vec<String> {
     cols
 }
 
-/// Human-tier hit list: `<$id>  <$path>` lines, or an aligned table when
-/// projected (header `$id`, `$path`, then the projected keys — `spec/cli` §4).
+/// Human-tier hit list: `<id>  <path>` lines, or an aligned table when
+/// projected (header `id`, `path`, then the projected keys — `spec/cli` §4).
 pub fn render_hits(io: Io, style: &Style, hits: &[Json], projected: &[String]) {
     let str_of = |h: &Json, k: &str| -> String {
         h.get(k)
@@ -493,8 +493,8 @@ mod tests {
         assert_eq!(
             hit_columns(
                 &[
-                    json!({ "$id": "a", "$path": "p", "x": 1 }),
-                    json!({ "$id": "b", "y": 2 })
+                    json!({ "id": "a", "path": "p", "x": 1 }),
+                    json!({ "id": "b", "y": 2 })
                 ],
                 &[]
             ),
@@ -502,15 +502,10 @@ mod tests {
         );
         assert_eq!(
             hit_columns(
-                &[json!({ "$id": "a", "$path": "p", "x": 1 })],
-                &["$path".into(), "x".into(), "nope".into()]
+                &[json!({ "id": "a", "path": "p", "x": 1 })],
+                &["path".into(), "x".into(), "nope".into()]
             ),
             vec!["x", "nope"]
-        );
-        // A user column spelled `id` is a projection, not the envelope.
-        assert_eq!(
-            hit_columns(&[json!({ "$id": "a", "$path": "p", "id": 1 })], &[]),
-            vec!["id"]
         );
     }
 }

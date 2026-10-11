@@ -4,10 +4,10 @@ import { hybridSearch, type HybridInput } from "./rrf.js";
 // resolve (05 §7, 06 §3): hybrid search specialized for "give me the ID of the
 // thing I mean".
 
-/** A resolve hit (spec/search §4): the block's `$id` (spec/surface §1.2, 3.0),
+/** A resolve hit (spec/search §4): the block's `id` (spec/surface §1.2, 3.0),
  *  its `locator`, a `preview` and the fusion `evidence`. */
 export interface ResolveHit {
-  $id: string;
+  id: string;
   locator: string;
   preview: string;
   evidence: unknown;
@@ -39,5 +39,5 @@ export function resolve(store: Store, input: ResolveInput): ResolveHit[] {
   const hi: HybridInput = { repoId: input.repoId, text: input.query, limit: input.limit ?? 10 };
   if (input.vector) hi.vector = input.vector;
   const hits = hybridSearch(store, hi);
-  return hits.map((h) => ({ $id: h.blockId, locator: locatorFor(store, h.blockId), preview: previewFor(store, h.blockId), evidence: h.evidence }));
+  return hits.map((h) => ({ id: h.blockId, locator: locatorFor(store, h.blockId), preview: previewFor(store, h.blockId), evidence: h.evidence }));
 }

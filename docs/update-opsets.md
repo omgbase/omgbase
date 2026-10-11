@@ -35,12 +35,12 @@ An opset is a plan whose mutations are the existing six kernel ops (insert/updat
 interface Opset {
   version: 1;
   kind: "doc_update";
-  target: { $id: DocId; $path: string };          // the document, named as every row is (spec/surface §1.2)
+  target: { id: DocId; path: string };          // the document, named as every row is (spec/surface §1.2)
   precondition: {
-    $id: DocId;
-    $path: string;
+    id: DocId;
+    path: string;
     baseRevision: RevId | null;   // current_rev at plan time
-    $hash: Hex;                   // sha256 of the current rendered bytes (docs.file_hash) — the document's $hash; `baseContentHash` before 3.0
+    hash: Hex;                   // sha256 of the current rendered bytes (docs.file_hash) — the document's hash; `baseContentHash` before 3.0
   };
   matcherV: string;               // matcher version that produced the decisions
   ops: PlanOp[];                  // executable kernel ops + identity annotations
@@ -75,7 +75,7 @@ preserved: 37  updated: 4  moved: 2  created: 3  removed: 1  split: 0  merged: 0
 `planUpdate(store, repoId, rootPath, docRef, content) → Opset` (also `docs_plan_update` MCP tool, and the read half of `docs update`/`docs_update`):
 
 1. Resolve `docRef` (id or path) to the existing document; load its current tree (`MutDoc`). A missing document is `doc_missing` — creation is `docs_create`'s job.
-2. Record the precondition: `baseRevision` (current_rev) and `$hash` (sha256 of current rendered bytes).
+2. Record the precondition: `baseRevision` (current_rev) and `hash` (sha256 of current rendered bytes).
 3. Parse the proposed `content` with the document's format adapter; split off frontmatter.
 4. **Reconcile** the proposed body against the current tree via the same `reconcileDocument` matcher the observation path uses (`03`), yielding a per-block assignment (carried or minted id) plus dispositions. No resurrection pool is consulted (see §6).
 5. **Lower** the assignment to kernel ops (§4).
@@ -120,7 +120,7 @@ When a lowering diverges, its diagnostic names **where**: the first differing by
 `applyOpset(store, req)` (and `docs.update` = plan + apply):
 
 1. Refuse a non-convergent plan (`plan_not_convergent`) — a plan that cannot reproduce the intended bytes is never applied silently.
-2. Validate the **precondition**: the document must still be at `baseRevision` and `$hash`. A drift fails `stale_plan` (retriable), carrying current truth (`current: { revision, $hash }`); the caller re-plans against the new state. This is the whole-document analogue of the block-level CAS in 04 §1.2.
+2. Validate the **precondition**: the document must still be at `baseRevision` and `hash`. A drift fails `stale_plan` (retriable), carrying current truth (`current: { revision, hash }`); the caller re-plans against the new state. This is the whole-document analogue of the block-level CAS in 04 §1.2.
 3. Replay the opset's kernel ops through `apply` (the single write path: file-CAS, atomic write, known-id identity threading, one commit).
 
 `docs.update(..., dry_run=true)` returns the opset (plan) without executing — identical to `docs_plan_update`.

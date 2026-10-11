@@ -52,9 +52,10 @@ describe("inferCandidates", () => {
     expect(c.map((x) => x.defaults.layout)).toEqual([true, false, false]);
   });
 
-  it("turns a non-intrinsic order by key into a sequence candidate", () => {
+  it("turns a non-attribute order by key into a sequence candidate (3.0's bare `path`/`updated_at` are attributes, never keys)", () => {
     const c = inferCandidates(parse(`$path, date from docs order by date desc, $path`), []);
     expect(c.map((x) => x.name)).toEqual(["date", "doc.out", "doc.in"]); // + the builtin links (no follow)
+    expect(inferCandidates(parse(`path, date from docs order by date desc, path, updated_at`), []).map((x) => x.name)).toEqual(["date", "doc.out", "doc.in"]);
     expect(c[0]).toMatchObject({ name: "date", kind: "sequence", sources: ["order by"], defaults: { edge: false, layout: true, direction: "backward" } });
     expect(c.find((x) => x.name === "doc.out")!.defaults.edge).toBe(true); // nothing else is drawn
   });
@@ -170,6 +171,11 @@ order by $ordinal`;
       ["after", "frontmatter", "backward", false, false],
     ]);
     expect(src.slice(...c[2]!.spans[0]!)).toBe("^$path in list(after)");
+    // …and the 3.0 spelling (bare `path`): the same relations, no attribute mistaken for a field.
+    for (const follow of [`^docs collect { where after.contains(^path) }`, `$it.in collect { where ^path in list(after) }`, `^docs collect { where refs(after) exists { where path == ^^path } }`]) {
+      const cands = inferCandidates(parse(`path from docs where path == "/a.md" follow ${follow}`), []);
+      expect(cands.map((c) => [c.name, c.defaults.direction]), follow).toEqual([["after", "backward"]]);
+    }
     for (const follow of [`^docs collect { where after.contains(^$path) }`, `$it.in collect { where ^$path in list(after) }`, `$repo.docs collect { where $path in ^before }`]) {
       const cands = inferCandidates(parse(`$path from docs where $path == "/a.md" follow ${follow}`), []);
       expect(cands.map((x) => [x.name, x.defaults.direction]), follow).toEqual([[follow.includes("^before") ? "before" : "after", follow.includes("^before") ? "forward" : "backward"]]);
@@ -204,22 +210,22 @@ order by $ordinal`;
     expect(c[0]!.sources).toEqual(["follow", "inferred"]);
   });
 
-  it("reads a hit's path through the envelope of either surface generation: `$path` (3.0) or `path` (1.x/2.x)", () => {
-    const v3 = [
-      { $id: "d_1", $path: "/a.md", before: ["/b.md"] },
-      { $id: "d_2", $path: "/b.md", after: ["/a.md"] },
+  it("reads a hit's path through the envelope (`id`/`path`, rooted or bare)", () => {
+    const rooted = [
+      { id: "d_1", path: "/a.md", before: ["/b.md"] },
+      { id: "d_2", path: "/b.md", after: ["/a.md"] },
     ];
-    const v2 = v3.map(({ $id, $path, ...r }) => ({ id: $id, path: $path.slice(1), ...r }));
-    expect(reciprocal(v3, "before", "after")).toBe(true);
-    expect(reciprocal(v2, "before", "after")).toBe(true);
-    // A field whose values are rows-as-values (`{ $id, $path }`, or `{ id, path }` before 3.0) references those documents.
+    const bare = rooted.map(({ path, ...r }) => ({ path: path.slice(1), ...r }));
+    expect(reciprocal(rooted, "before", "after")).toBe(true);
+    expect(reciprocal(bare, "before", "after")).toBe(true);
+    // A field whose values are rows-as-values (`{ id, path }`) references those documents.
     const nested = [
-      { $id: "d_1", $path: "/a.md", before: [{ $id: "d_2", $path: "/b.md" }] },
-      { $id: "d_2", $path: "/b.md", after: { id: "d_1", path: "/a.md" } },
+      { id: "d_1", path: "/a.md", before: [{ id: "d_2", path: "/b.md" }] },
+      { id: "d_2", path: "/b.md", after: { id: "d_1", path: "a.md" } },
     ];
     expect(reciprocal(nested, "before", "after")).toBe(true);
-    // Neither spelling of the envelope is a frontmatter field.
-    expect(pathValuedFields([{ $id: "d_1", $path: "/a.md", id: "d_1", path: "/a.md", owner: "/c.md" }])).toEqual(["owner"]);
+    // The envelope is not a frontmatter field.
+    expect(pathValuedFields([{ id: "d_1", path: "/a.md", owner: "/c.md" }])).toEqual(["owner"]);
   });
 
   it("works without an AST (unparsable source) from rows alone", () => {
@@ -310,7 +316,7 @@ describe("inverse pairs (rule 5)", () => {
 
 describe("pathValuedFields", () => {
   it("accepts root paths, relative paths and lists; rejects metadata, mixed lists and non-paths", () => {
-    expect(pathValuedFields([{ id: "a", path: "x.md", $path: "x.md", a: "/a.md", b: "dir/b.md", c: ["/a.md", "b.md"], d: ["/a.md", 3], e: "hello", f: [] }]))
+    expect(pathValuedFields([{ id: "a", path: "x.md", $depth: 1, a: "/a.md", b: "dir/b.md", c: ["/a.md", "b.md"], d: ["/a.md", 3], e: "hello", f: [] }]))
       .toEqual(["a", "b", "c"]);
   });
 });
@@ -320,7 +326,7 @@ describe("refsField / relationKind", () => {
     const expr = (src: string) => parse(`select x: ${src} from docs`).select[0]!.kind === "field" ? (parse(`select x: ${src} from docs`).select[0] as { expr: import("@omgbase/oqx").Expr }).expr : null!;
     expect(refsField(expr("refs(before)"))).toEqual({ name: "before", outer: false });
     expect(refsField(expr("refs(^before)"))).toEqual({ name: "before", outer: true });
-    for (const src of ["refs($path)", "refs(\"/a.md\")", "refs(before, after)", "size(before)", "before.refs()", "before"]) {
+    for (const src of ["refs($path)", "refs(path)", "refs(\"/a.md\")", "refs(before, after)", "size(before)", "before.refs()", "before"]) {
       expect(refsField(expr(src)), src).toBeNull();
     }
   });

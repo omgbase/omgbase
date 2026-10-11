@@ -6,7 +6,7 @@
 //!
 //! Rows are the store's raw column objects (blobs as hex) carrying a hidden
 //! tag column ([`TAG_KEY`]) naming their target; `get` routes field /
-//! intrinsic / relation resolution per target, lazily querying the store.
+//! attribute / relation resolution per target, lazily querying the store.
 //! Row functions (`text`, `under`, …) arrive as methods on the `$self`
 //! receiver (see the runner's AST rewrite), since a free function sees no row.
 //!
@@ -17,7 +17,7 @@
 //! reference's `rowsRoot` context option.
 //!
 //! Errors travel the engine's channel: a failure inside a property read or a
-//! row function — the reserved-basename guard, a store failure — is the
+//! row function — a bare target name, a store failure — is the
 //! `Err` of `get` / `call_method` (an eval-stage [`OqxError`], since `oqx`
 //! 0.13), which aborts the run exactly like a throw from the reference's
 //! `get`; the runner maps it to `filter_invalid` with the same message. The
@@ -29,11 +29,11 @@
 //! One seam differs from the reference and is bridged here:
 //!
 //! * the Rust engine expands `entries(x)` in row position itself (never via
-//!   `call_function`), so the `frontmatter` / `inline` source handles are
-//!   materialized eagerly as plain objects — one key per top-level property
-//!   in key order, valued by the scalar-vs-list rule — instead of the
-//!   reference's lazy handle. `frontmatter.<k>` and `entries(frontmatter)`
-//!   read the same values either way.
+//!   `call_function`), so the `data` / `frontmatter` / `inline` source
+//!   handles are materialized eagerly as plain objects — one key per
+//!   top-level property in key order, valued by the scalar-vs-list rule —
+//!   instead of the reference's lazy handle. `frontmatter.<k>` and
+//!   `entries(frontmatter)` read the same values either way.
 
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
@@ -98,38 +98,91 @@ impl Target {
     }
 }
 
-/// WHY `$` (`spec/surface` §1.2, 3.0). A `$`-prefixed name is a name the
-/// engine adds to a namespace it SHARES with user-generated content —
-/// frontmatter keys and inline properties on a document, `attrs` keys on a
-/// block or node — prefixed so the author's field names keep priority and the
-/// two can never collide: a frontmatter `id:` reads as `id`, the engine's
-/// identity as `$id`. That bounds the vocabulary to exactly the
-/// engine-provided names that contend with user names: every row's
-/// `$id`/`$path`; docs' and blocks' `$raw`/`$hash`/`$updated_at`; the computed
-/// `$title`/`$tags`. Everything else the engine provides is a plain
-/// snake_case field — a foreign key named for what it is (`doc_id`,
-/// `block_id`, `via_id`, `dst_id`, `dst_path`, `uri`), a column its column
-/// (`depth`, `ordinal`, `field`) — because nothing of the author's lives in
-/// those namespaces.
-///
-/// The bare spelling of a docs `$` name (`path`, `id`, …) is almost always a
-/// typo for the intrinsic — it would otherwise read an absent frontmatter key
-/// and silently match nothing — so it is a LOUD error in `get` ("did you mean
-/// the intrinsic"). `title`/`tags` are not in the set: `$title`/`$tags` are
-/// computed and never shadow an authored key. (A bare target name — `docs`,
-/// `edges`, … — is a loud error of its own, `crate::query`; `repo` is just an
-/// ordinary frontmatter key.)
-const RESERVED_DOC_BASENAMES: [&str; 5] = ["id", "path", "updated_at", "hash", "raw"];
+/// THE NAME RULE (`spec/surface` §1.2, 3.0). `$` belongs to OQX: `$it`,
+/// `$key`, `$depth`, `$stop`, `$leaf`, `$frontier`, `$ordinal` are values the
+/// LANGUAGE injects into a scope; omgbase adds no `$` names. Every engine
+/// attribute is a bare snake_case name that WINS on collision — the convention
+/// the relations (`children`, `blocks`, `out`, `in`, `doc`, `frontmatter`, …)
+/// always followed: a bare name that is an engine attribute reads the
+/// engine's value, never the author's. The attributes: every row's
+/// `id`/`path`; docs' and blocks' `raw`/`hash`/`updated_at`; docs' `title`
+/// (the computed title) and `tags` (authored tags ∪ body hashtags) and
+/// `format`; a foreign key named for what it is (`doc_id`, `block_id`,
+/// `via_id`, `dst_id`, `dst_path`, `uri`), a column its column (`type`,
+/// `text`, `depth`, `ordinal`, `kind`, `predicate`, `field`). User data is
+/// bare too, read by any non-colliding key; where it collides it is reached
+/// through a source handle — `data` (the merged authored view: frontmatter +
+/// inline by the property rule, exactly the read a bare non-colliding key
+/// performs), `frontmatter`, `inline` — so `data.path` is the author's `path:`
+/// key, `data.tags` the authored list alone, `data.title` the authored title.
+/// There is no loud-error set: a bare `id`/`path`/`updated_at`/`hash`/`raw`
+/// is simply the engine's attribute (before this batch of 3.0 the attributes
+/// were `$`-prefixed and the bare spelling was an error, §9). A bare target
+/// name — `docs`, `edges`, … — is a loud error of its own (`crate::query`).
+const DOC_ATTRIBUTES: [&str; 8] = [
+    "id",
+    "path",
+    "raw",
+    "hash",
+    "updated_at",
+    "title",
+    "tags",
+    "format",
+];
+const BLOCK_ATTRIBUTES: [&str; 11] = [
+    "id",
+    "path",
+    "raw",
+    "hash",
+    "updated_at",
+    "doc_id",
+    "type",
+    "text",
+    "attrs",
+    "depth",
+    "ordinal",
+];
+const NODE_ATTRIBUTES: [&str; 8] = [
+    "id", "path", "doc_id", "block_id", "kind", "name", "value", "attrs",
+];
+const EDGE_ATTRIBUTES: [&str; 13] = [
+    "id",
+    "path",
+    "doc_id",
+    "block_id",
+    "via_id",
+    "dst_id",
+    "dst_path",
+    "uri",
+    "field",
+    "dst_kind",
+    "predicate",
+    "provenance",
+    "anchor",
+];
+/// The engine attributes per kind (`spec/surface` §1.2 table).
+#[must_use]
+pub fn attributes(t: Target) -> &'static [&'static str] {
+    match t {
+        Target::Docs => &DOC_ATTRIBUTES,
+        Target::Blocks => &BLOCK_ATTRIBUTES,
+        Target::Nodes => &NODE_ATTRIBUTES,
+        Target::Edges => &EDGE_ATTRIBUTES,
+    }
+}
+/// The source handles of a document (§1.2): `data` is the merged authored
+/// view (frontmatter + inline), the other two one source each.
+pub const SOURCE_HANDLES: [&str; 3] = ["data", "frontmatter", "inline"];
 
 /// The key marking a LAZY OWNER row (foreign-key elimination, `spec/surface`
 /// §1, 3.0): the owner a reach-through hands out (`doc` on a block, node or
 /// edge; `block` on a node) carries only the columns the child row already
 /// knows — `doc_id` + `path` (from the child's `doc_id`/`src_doc` and
 /// `__path`), or `block_id` + `doc_id` + `__path` — tagged with the owner's
-/// target, plus this key. `get` answers `$id`, `$path`, the owner's own
+/// target, plus this key. `get` answers `id`, `path`, the owner's own
 /// foreign keys, its relations and its properties (which need only the id)
 /// from those columns and runs NO statement, exactly like the bare `doc_id`;
-/// the first read of anything else (`format`, `$hash`, `text`, …) loads the
+/// the first read of anything else (`format`, `hash`, `text`, …) loads the
 /// full row ([`StoreContext::owner_full`], memoized per run). The port of the
 /// reference's `lazyOwner` Proxy. The marker is a tagged row to everything
 /// else (`identity`, `render_row_values`, `materialize`, hits) and the hidden
@@ -308,8 +361,8 @@ pub fn strip_tags(v: Value) -> Value {
 
 /// §1.4 rows as values (1.2): a store row that surfaces as a VALUE in a result
 /// tree — a nested `collect { }` / `first { }` / `single { }` with an empty
-/// projection, or a `values` item that is a row — renders as `{ $id, $path }`
-/// (3.0: the hit envelope's own keys, spelled as the intrinsics; the target's
+/// projection, or a `values` item that is a row — renders as `{ id, path }`
+/// (3.0: the hit envelope's own keys, spelled as the attributes; the target's
 /// id column as a string; the owning document's path in the reference form,
 /// §1 "Paths": a docs row's `path`, every other row's `__path` join column,
 /// rooted), never the store row. Everything else
@@ -561,7 +614,7 @@ impl<'a> StoreContext<'a> {
     /// the repository, reached as `^$it` from a top-level row (`0^$it` from any
     /// depth). Its own keys are the four collections as lazy markers, so
     /// `entries(^$it)` names them without running a scan and `^$it.docs` is
-    /// the same scan as `^docs`; `get` answers `$id` with the repository id (an
+    /// the same scan as `^docs`; `get` answers `id` with the repository id (an
     /// intrinsic, not an entry). Same shape as the reference's root row.
     fn root_row(&self) -> Value {
         let mut o = Object::with_capacity(ALL_TARGETS.len());
@@ -677,23 +730,62 @@ impl<'a> StoreContext<'a> {
         Ok(Value::Object(out))
     }
 
-    /// The `frontmatter` / `inline` bag as a plain object: one entry per
-    /// top-level key in key order, each valued by [`Self::doc_prop`].
-    fn doc_prop_bag(&self, doc_id: &str, source: &str) -> oqx::Result<Value> {
-        let keys = self.all(
-            "SELECT DISTINCT key FROM properties WHERE doc_id = ?1 AND source = ?2 AND deleted_commit IS NULL ORDER BY key",
-            &[SqlValue::Text(doc_id.to_owned()), SqlValue::Text(source.to_owned())],
-        )?;
+    /// The `data` / `frontmatter` / `inline` bag as a plain object: one entry
+    /// per top-level key in key order, each valued by [`Self::doc_prop`].
+    /// `data` (`None`) is frontmatter ∪ inline — the keys deduped, each valued
+    /// by the merged read.
+    fn doc_prop_bag(&self, doc_id: &str, source: Option<&str>) -> oqx::Result<Value> {
+        let keys = match source {
+            Some(s) => self.all(
+                "SELECT DISTINCT key FROM properties WHERE doc_id = ?1 AND source = ?2 AND deleted_commit IS NULL ORDER BY key",
+                &[SqlValue::Text(doc_id.to_owned()), SqlValue::Text(s.to_owned())],
+            )?,
+            None => self.all(
+                "SELECT DISTINCT key FROM properties WHERE doc_id = ?1 AND source IN ('frontmatter', 'inline') AND deleted_commit IS NULL ORDER BY key",
+                &[SqlValue::Text(doc_id.to_owned())],
+            )?,
+        };
         let mut out = Object::new();
         for k in keys {
             let key = k.get("key").and_then(Value::as_str).unwrap_or("");
             let top = key.split('.').next().unwrap_or("");
             if !out.contains_key(top) {
-                let v = self.doc_prop(doc_id, top, Some(source))?;
+                let v = self.doc_prop(doc_id, top, source)?;
                 out.insert(top, v);
             }
         }
         Ok(Value::Object(out))
+    }
+
+    /// `tags` on a document: authored ∪ hashtags, each list as the property
+    /// rule reads it (a scalar-authored `tags: x` is one element), deduped by
+    /// canonical JSON of each element, authored first in authored order, then
+    /// the computed `$tags` row (body hashtags, `spec/properties` §3.3) in
+    /// document order; `Null` when both are absent.
+    fn doc_tags(&self, doc_id: &str) -> oqx::Result<Value> {
+        fn as_list(v: Value) -> Vec<Value> {
+            match v {
+                Value::Undefined | Value::Null => Vec::new(),
+                Value::Array(a) => a,
+                other => vec![other],
+            }
+        }
+        let authored = as_list(self.doc_prop(doc_id, "tags", None)?);
+        let hashtags = as_list(self.doc_prop(doc_id, "$tags", Some("computed"))?);
+        if authored.is_empty() && hashtags.is_empty() {
+            return Ok(Value::Null);
+        }
+        let mut seen: Vec<String> = Vec::new();
+        let mut out = Vec::new();
+        for v in authored.into_iter().chain(hashtags) {
+            let k = v.to_canonical_json().to_string();
+            if seen.contains(&k) {
+                continue;
+            }
+            seen.push(k);
+            out.push(v);
+        }
+        Ok(Value::Array(out))
     }
 
     // ---- structure ----------------------------------------------------------------------
@@ -957,12 +1049,12 @@ impl<'a> StoreContext<'a> {
     // The owner is handed out as a LAZY row (`LAZY_KEY`) whose identity columns
     // are already known from the child — a block's/node's `doc_id` and `__path`
     // name its document, an edge's `src_doc` and `__path` its source doc, a
-    // node's `block_id` (+ `doc_id`, `__path`) its block — so `doc.$id` and
-    // `doc.$path` (and `block.$id`/`block.$path`/`block.doc_id` on a node)
+    // node's `block_id` (+ `doc_id`, `__path`) its block — so `doc.id` and
+    // `doc.path` (and `block.id`/`block.path`/`block.doc_id` on a node)
     // read those columns and run NO statement, exactly like the bare `doc_id`;
     // the full owner row is loaded on the first read of anything else
     // (`doc.format`, `block.text`). The translator mirrors this in SQL
-    // (`doc.$id` → the FK column). Port of the reference's `lazyOwner` Proxy.
+    // (`doc.id` → the FK column). Port of the reference's `lazyOwner` Proxy.
 
     fn lazy_owner(known: &[(&str, Value)], t: Target) -> Value {
         let mut o = Object::with_capacity(known.len() + 2);
@@ -1038,23 +1130,22 @@ impl<'a> StoreContext<'a> {
     }
 
     /// Whether reading `key` off a lazy owner of `t` needs the full row. The
-    /// known columns answer the identity (`$id`, `$path`), the self alias, the
+    /// known columns answer the identity (`id`, `path`), the self alias, the
     /// relations (keyed by `doc_id` / `path` / `block_id`), the properties
-    /// and source handles (keyed by `doc_id`), `$raw` on docs (reconstructed
-    /// by id), `$updated_at` on blocks (by id), a bare target name (an
+    /// and source handles (keyed by `doc_id`), `raw`, `title` and `tags` on
+    /// docs (by id), `updated_at` on blocks (by id), a bare target name (an
     /// error) and an unknown `$x` (absent); everything that reads another
-    /// column — `format`, `$hash`, `$updated_at` on docs; `type`, `text`,
-    /// `attrs`, `ordinal`, `depth`, an attrs key, `section`, `$raw`/`$hash` on
+    /// column — `format`, `hash`, `updated_at` on docs; `type`, `text`,
+    /// `attrs`, `ordinal`, `depth`, an attrs key, `section`, `raw`/`hash` on
     /// blocks — loads it.
     fn lazy_needs_load(t: Target, key: &str) -> bool {
         match t {
-            Target::Docs => matches!(key, "format" | "$hash" | "$updated_at"),
+            Target::Docs => matches!(key, "format" | "hash" | "updated_at"),
             Target::Blocks => {
                 !matches!(
                     key,
-                    "$id"
-                        | "$path"
-                        | "$updated_at"
+                    "id" | "path"
+                        | "updated_at"
                         | "$self"
                         | "doc_id"
                         | "block"
@@ -1083,56 +1174,56 @@ impl<'a> StoreContext<'a> {
         self.load_owner(t, &col_str(row, id_col))
     }
 
-    // ---- intrinsics ---------------------------------------------------------------------
+    // ---- engine attributes --------------------------------------------------------------
 
     fn null_if_absent(v: Value) -> Value {
         if v.is_absent() { Value::Null } else { v }
     }
 
-    /// The `$` vocabulary is exactly the engine-provided names that contend
-    /// with user names (see [`RESERVED_DOC_BASENAMES`]; `spec/surface` §1.2,
-    /// 3.0): every row's `$id`/`$path`, docs' and blocks' `$raw`/`$hash`/
-    /// `$updated_at`, docs' computed `$title`/`$tags`. A foreign key
-    /// (`doc_id`, `block_id`, `dst_id`, …) is a plain field, resolved in
-    /// `get`. `$path` (and the edge field `dst_path`) is the REFERENCE form
-    /// (`/a/b.md`, §1 "Paths", 2.0): the rows carry the storage form (`path`,
-    /// the `__path` join column) and the read roots it, so nothing below the
-    /// binding changes. The runner roots the string literals a query compares
-    /// them with.
-    fn intrinsic(&self, row: &Value, t: Target, name: &str) -> oqx::Result<Value> {
-        if name == "$self" {
-            return Ok(row.clone());
-        }
+    /// The engine attributes (see the name rule above; `spec/surface` §1.2,
+    /// 3.0): bare, snake_case, winning on collision. `path` (and the edge
+    /// field `dst_path`) is the REFERENCE form (`/a/b.md`, §1 "Paths", 2.0):
+    /// the rows carry the storage form (`path`, the `__path` join column) and
+    /// the read roots it, so nothing below the binding changes. The runner
+    /// roots the string literals a query compares them with. The caller has
+    /// checked `name` against [`attributes`], so the fallthrough is unreachable
+    /// in practice (`Undefined`).
+    fn attribute(&self, row: &Value, t: Target, name: &str) -> oqx::Result<Value> {
         let c = |k: &str| col(row, k).clone();
         let rooted = |k: &str| Value::Str(reference_path(&col_str(row, k)));
         Ok(match (t, name) {
-            (Target::Docs, "$id") => c("doc_id"),
-            (Target::Docs, "$path") => rooted("path"),
-            (Target::Docs, "$hash") => Self::null_if_absent(c("file_hash")),
-            (Target::Docs, "$updated_at") => Self::null_if_absent(self.scalar(
+            (Target::Docs, "id") => c("doc_id"),
+            (Target::Docs, "path") => rooted("path"),
+            (Target::Docs, "hash") => Self::null_if_absent(c("file_hash")),
+            (Target::Docs, "updated_at") => Self::null_if_absent(self.scalar(
                 "SELECT c.ts FROM revisions r JOIN commits c ON c.commit_id = r.commit_id WHERE r.rev_id = ?1",
                 &[to_sql(&c("current_rev"))],
             )?),
-            // `$raw`: the exact file bytes (`spec/store` §6.1, frontmatter included).
-            (Target::Docs, "$raw") => {
+            // `raw`: the exact file bytes (`spec/store` §6.1, frontmatter included).
+            (Target::Docs, "raw") => {
                 match omgbase_store::read::reconstruct(self.conn, &col_str(row, "doc_id")) {
                     Ok(Some(s)) => Value::Str(s),
                     Ok(None) => Value::Null,
                     Err(e) => return Err(OqxError::eval(e.to_string())),
                 }
             }
-            (Target::Docs, "$title") => {
+            // `title`: the computed title (`spec/properties` §3.3 — the
+            // authored title, else the first H1, else absent → null); the
+            // store writes it under `$title`. `data.title` is the authored
+            // one alone.
+            (Target::Docs, "title") => {
                 Self::null_if_absent(self.doc_prop(&col_str(row, "doc_id"), "$title", Some("computed"))?)
             }
-            (Target::Docs, "$tags") => {
-                Self::null_if_absent(self.doc_prop(&col_str(row, "doc_id"), "$tags", Some("computed"))?)
-            }
-            (Target::Blocks, "$id") => c("block_id"),
-            (Target::Blocks, "$path") => rooted("__path"),
-            // `$raw`: the block's raw source bytes — the blob its `raw_hash`
+            // `tags`: authored tags ∪ body `#hashtags` (the computed `$tags`
+            // row); `data.tags` is the authored list alone.
+            (Target::Docs, "tags") => self.doc_tags(&col_str(row, "doc_id"))?,
+            (Target::Docs, "format") => c("format"),
+            (Target::Blocks, "id") => c("block_id"),
+            (Target::Blocks, "path") => rooted("__path"),
+            // `raw`: the block's raw source bytes — the blob its `raw_hash`
             // names (a container's raw holds its children verbatim); `text`
-            // is the plain field.
-            (Target::Blocks, "$raw") => match c("raw_hash") {
+            // is the normalized text.
+            (Target::Blocks, "raw") => match c("raw_hash") {
                 Value::Str(hex) => {
                     let hash = omgbase_store::tree::from_hex(&hex)
                         .map_err(|e| OqxError::eval(e.to_string()))?;
@@ -1152,15 +1243,40 @@ impl<'a> StoreContext<'a> {
                 }
                 _ => Value::Null,
             },
-            (Target::Blocks, "$hash") => Self::null_if_absent(c("raw_hash")),
-            (Target::Blocks, "$updated_at") => Self::null_if_absent(self.scalar(
+            (Target::Blocks, "hash") => Self::null_if_absent(c("raw_hash")),
+            (Target::Blocks, "updated_at") => Self::null_if_absent(self.scalar(
                 "SELECT MAX(c.ts) FROM block_changes bc JOIN commits c ON c.commit_id = bc.commit_id WHERE bc.block_id = ?1",
                 &[to_sql(&c("block_id"))],
             )?),
-            (Target::Nodes, "$id") => c("node_id"),
-            (Target::Nodes, "$path") => rooted("__path"),
-            (Target::Edges, "$id") => c("edge_id"),
-            (Target::Edges, "$path") => rooted("__path"),
+            // The structural columns and the foreign keys under the surface's
+            // names (§1.2, 3.0).
+            (Target::Blocks, "doc_id" | "type" | "text" | "ordinal" | "depth") => c(name),
+            (Target::Blocks | Target::Nodes, "attrs") => parse_json(&c("attrs")),
+            (Target::Nodes, "id") => c("node_id"),
+            (Target::Nodes, "path") => rooted("__path"),
+            (Target::Nodes, "doc_id" | "kind" | "name" | "value") => c(name),
+            (Target::Nodes, "block_id") => Self::null_if_absent(c("block_id")),
+            // edges: the store's columns under the surface's names (a foreign
+            // key is named for what it is, the `src_field` column is `field`).
+            (Target::Edges, "id") => c("edge_id"),
+            (Target::Edges, "path") => rooted("__path"),
+            (Target::Edges, "doc_id") => c("src_doc"),
+            (Target::Edges, "block_id") => Self::null_if_absent(c("src_block")),
+            (Target::Edges, "via_id") => Self::null_if_absent(c("via_node")),
+            (Target::Edges, "dst_id") => c("dst_node"),
+            (Target::Edges, "dst_path") => match self.scalar(
+                "SELECT path FROM docs WHERE doc_id = ?1",
+                &[to_sql(&c("dst_node"))],
+            )? {
+                Value::Undefined | Value::Null => Value::Null,
+                p => Value::Str(reference_path(&js_string(&p))),
+            },
+            (Target::Edges, "uri") => Self::null_if_absent(self.scalar(
+                "SELECT uri FROM external_nodes WHERE node_id = ?1",
+                &[to_sql(&c("dst_node"))],
+            )?),
+            (Target::Edges, "field") => Self::null_if_absent(c("src_field")),
+            (Target::Edges, "predicate" | "provenance" | "dst_kind" | "anchor") => c(name),
             _ => Value::Undefined,
         })
     }
@@ -1515,9 +1631,9 @@ impl DataContext for StoreContext<'_> {
             return Value::Array(rows.unwrap_or_default());
         }
         // The root scope's names (`spec/oqx` §2 step 5 at the root): the four
-        // lazy scans and `$id`, the repository id — so `^docs` / `0^docs` from
-        // any row is the scan and `^$id` / `0^$id` the id.
-        if name == "$id" {
+        // lazy scans and `id`, the repository id — so `^docs` / `0^docs` from
+        // any row is the scan and `^id` / `0^id` the id.
+        if name == "id" {
             return Value::Str(self.repo_id.clone());
         }
         // A root scan is handed out LAZILY (see `SCAN_KEY`): `to_rows` runs it
@@ -1535,10 +1651,10 @@ impl DataContext for StoreContext<'_> {
         if row.is_absent() {
             return Ok(Value::Undefined);
         }
-        // The root row: `^$it.$id` is the repository id, `^$it.<target>` the
+        // The root row: `^$it.id` is the repository id, `^$it.<target>` the
         // lazy root scan (the same marker `^<target>` / `root(name)` hands out).
         if is_root_object(row) {
-            if key == "$id" {
+            if key == "id" {
                 return Ok(Value::Str(self.repo_id.clone()));
             }
             return Ok(Target::parse(key).map_or(Value::Undefined, scan_marker));
@@ -1552,8 +1668,16 @@ impl DataContext for StoreContext<'_> {
         if let Some(full) = self.resolve_lazy(row, t, key)? {
             return self.get(&full, key);
         }
-        if key.starts_with('$') {
-            return self.intrinsic(row, t, key);
+        // `$self` = the current row: the runner rewrites row functions
+        // (text/under/…) to `$self.fn(…)` so they arrive via `call_method` with
+        // the row as receiver. Any other `$` name is OQX's (resolved by the
+        // engine before the row) or unknown — never an omgbase attribute.
+        if key == "$self" {
+            return Ok(row.clone());
+        }
+        // engine attributes win on collision (the name rule above).
+        if attributes(t).contains(&key) {
+            return self.attribute(row, t, key);
         }
         // self-alias namespaces
         match (t, key) {
@@ -1577,62 +1701,25 @@ impl DataContext for StoreContext<'_> {
                 named, None,
             )));
         }
-        let c = |k: &str| col(row, k).clone();
+        // the author's data.
         Ok(match t {
             Target::Docs => {
-                if key == "format" {
-                    return Ok(c("format"));
-                }
                 let doc_id = col_str(row, "doc_id");
-                if key == "frontmatter" || key == "inline" {
-                    return self.doc_prop_bag(&doc_id, key);
-                }
-                if RESERVED_DOC_BASENAMES.contains(&key) {
-                    // The reference's `FilterInvalid` thrown from `get`; the
-                    // runner maps this eval error to `filter_invalid` with
-                    // the same message.
-                    return Err(OqxError::eval(format!(
-                        "bare '{key}' reads a frontmatter key; did you mean the intrinsic ${key}? (use frontmatter.{key} to force the property)"
-                    )));
+                // The source handles: `data` is the merged authored view
+                // (frontmatter + inline), the other two one source each;
+                // `data.<k>` reaches an authored key whose bare name is an
+                // engine attribute (`data.path`, `data.tags`).
+                if SOURCE_HANDLES.contains(&key) {
+                    let source = (key != "data").then_some(key);
+                    return self.doc_prop_bag(&doc_id, source);
                 }
                 return self.doc_prop(&doc_id, key, None);
             }
-            // The plain fields (§1.2, 3.0): the structural columns and the
-            // foreign keys under the surface's names; any other bare name
-            // flattens into `attrs.<k>` (the structural fields win on collision).
-            Target::Blocks => match key {
-                "doc_id" | "type" | "text" | "ordinal" | "depth" => c(key),
-                "attrs" => parse_json(&c("attrs")),
-                _ => Self::jattr(row, key),
-            },
-            Target::Nodes => match key {
-                "doc_id" | "kind" | "name" | "value" => c(key),
-                "block_id" => Self::null_if_absent(c("block_id")),
-                "attrs" => parse_json(&c("attrs")),
-                _ => Self::jattr(row, key),
-            },
-            // edges: the store's columns under the surface's names (a foreign
-            // key is named for what it is, the `src_field` column is `field`).
-            Target::Edges => match key {
-                "doc_id" => c("src_doc"),
-                "block_id" => Self::null_if_absent(c("src_block")),
-                "via_id" => Self::null_if_absent(c("via_node")),
-                "dst_id" => c("dst_node"),
-                "dst_path" => match self.scalar(
-                    "SELECT path FROM docs WHERE doc_id = ?1",
-                    &[to_sql(&c("dst_node"))],
-                )? {
-                    Value::Undefined | Value::Null => Value::Null,
-                    p => Value::Str(reference_path(&js_string(&p))),
-                },
-                "uri" => Self::null_if_absent(self.scalar(
-                    "SELECT uri FROM external_nodes WHERE node_id = ?1",
-                    &[to_sql(&c("dst_node"))],
-                )?),
-                "field" => Self::null_if_absent(c("src_field")),
-                "predicate" | "provenance" | "dst_kind" | "anchor" => c(key),
-                _ => Value::Undefined,
-            },
+            // blocks / nodes: a bare non-structural identifier flattens into
+            // `attrs.<k>` (the attributes above win on collision); an absent
+            // key is undefined, matching a doc's missing frontmatter key.
+            Target::Blocks | Target::Nodes => Self::jattr(row, key),
+            Target::Edges => Value::Undefined,
         })
     }
 
@@ -1767,7 +1854,7 @@ mod tests {
     #[test]
     fn rows_surfacing_as_values_render_id_and_path() {
         // §1.4 (1.2, keys renamed in 3.0): a tagged store row anywhere in a
-        // value tree is `{ $id, $path }`; untagged records keep their keys,
+        // value tree is `{ id, path }`; untagged records keep their keys,
         // minus the tag.
         let mut node = Object::new();
         node.insert("node_id", Value::Str("n_1".into()));
@@ -1797,18 +1884,18 @@ mod tests {
                 .map(|(k, _)| k.to_owned())
                 .collect()
         };
-        assert_eq!(keys(&tasks[0]), ["$id", "$path"]);
+        assert_eq!(keys(&tasks[0]), ["id", "path"]);
         assert_eq!(
-            tasks[0].as_object().unwrap().get("$id"),
+            tasks[0].as_object().unwrap().get("id"),
             Some(&Value::Str("n_1".into()))
         );
         assert_eq!(
-            tasks[0].as_object().unwrap().get("$path"),
+            tasks[0].as_object().unwrap().get("path"),
             Some(&Value::Str("/a.md".into()))
         );
-        assert_eq!(keys(&tasks[1]), ["$id", "$path"]);
+        assert_eq!(keys(&tasks[1]), ["id", "path"]);
         assert_eq!(
-            tasks[1].as_object().unwrap().get("$id"),
+            tasks[1].as_object().unwrap().get("id"),
             Some(&Value::Str("d_0".into()))
         );
         // An id column that is not a string still renders as its string form.
@@ -1816,11 +1903,11 @@ mod tests {
         edge.insert("edge_id", Value::Number(7.0));
         let e = render_row_values(tag_row(edge, Target::Edges));
         assert_eq!(
-            e.as_object().unwrap().get("$id"),
+            e.as_object().unwrap().get("id"),
             Some(&Value::Str("7".into()))
         );
         assert_eq!(
-            e.as_object().unwrap().get("$path"),
+            e.as_object().unwrap().get("path"),
             Some(&Value::Str(String::new()))
         );
     }

@@ -19,7 +19,7 @@ import { extractFromBlock, maskCode, resolveRelativePath } from "./extract.js";
 export interface InboundLink {
   /** source document id */
   doc_id: string;
-  /** source document repo-relative path (the surface roots it as `$path`) */
+  /** source document repo-relative path (the surface roots it as `path`) */
   path: string;
   /** source block id; null for a frontmatter-level edge */
   block_id: string | null;

@@ -343,7 +343,7 @@ mod tests {
         assert_eq!(levenshtein("kitten", "sitting"), 3);
         assert_eq!(levenshtein("", "ab"), 2);
         assert_eq!(nearest("q", &["query", "limit"]), Some("query"));
-        assert_eq!(nearest("$id", &["id", "path"]), Some("id"));
+        assert_eq!(nearest("id", &["id", "path"]), Some("id"));
         assert_eq!(nearest("zzzz", &["id", "path"]), None);
     }
 }

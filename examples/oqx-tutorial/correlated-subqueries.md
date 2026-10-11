@@ -83,8 +83,8 @@ nested list (`--jsonl` to see the structure):
 
 ```console
 $ omg query 'select open: nodes collect { select text: value where kind == "md:task" and not attrs.checked } from docs where type == "lab-note"' --jsonl
-{"$id":"d_b089t54","$path":"/lab/2026-01-notes.md","open":[{"text":"Repeat the series with copper"},{"text":"Plot mass gain against heating time"},{"text":"Tabulate the metal sulphides by colour"}]}
-{"$id":"d_w18c2st","$path":"/lab/2026-02-notes.md","open":[{"text":"Assay cycle 1 and cycle 4 crops for iron"},{"text":"Write the plateau result up for the coagulation note"}]}
+{"id":"d_b089t54","path":"/lab/2026-01-notes.md","open":[{"text":"Repeat the series with copper"},{"text":"Plot mass gain against heating time"},{"text":"Tabulate the metal sulphides by colour"}]}
+{"id":"d_w18c2st","path":"/lab/2026-02-notes.md","open":[{"text":"Assay cycle 1 and cycle 4 crops for iron"},{"text":"Write the plateau result up for the coagulation note"}]}
 ```
 
 ## Scoping to a section

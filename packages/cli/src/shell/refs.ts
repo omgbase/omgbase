@@ -28,9 +28,9 @@ export interface Captured {
   rows: Row[] | null;
 }
 
-// `.field` admits a leading `$` so a query hit's identity is addressable
-// (`@1.$id`, `@t[1].$path` — spec/surface §1.4, 3.0 spells the envelope as
-// the intrinsics).
+// `.field` reads any projected key (`@1.id`, `@t[1].path`, `@1.layer` —
+// spec/surface §1.4, 3.0 spells the envelope as the bare attributes); a leading
+// `$` is admitted for an OQX-named projection (`$depth`).
 const REF_RE = /^@(\d+|_|[A-Za-z][\w-]*)(?:\[(\d+)\])?(?:\.(\$?[A-Za-z_]\w*))?$/;
 
 export interface ParsedRef {
@@ -84,7 +84,7 @@ function rowOf(el: unknown): Row {
   if (el && typeof el === "object") {
     const o = el as Record<string, unknown>;
     const ref = firstString(o, REF_KEYS);
-    const label = firstString(o, ["$path", "path", "locator", "name", "$id", "id", "node", "doc_id"]) ?? ref ?? preview(o);
+    const label = firstString(o, ["path", "locator", "name", "id", "node", "doc_id"]) ?? ref ?? preview(o);
     return { ref: ref ?? label ?? "", label: label ?? "", value: el };
   }
   const s = String(el);
@@ -92,11 +92,12 @@ function rowOf(el: unknown): Row {
 }
 
 // The keys that make an object an entity ref, in precedence order: a row's
-// `$id` (spec/surface §1.2, 3.0 — every tool result spells a row's identity as
-// the intrinsic), a `links` row's far node (`doc_id`) and an edge's `block_id`,
-// then the pre-3.0 envelopes (`id`, `node`, `block`) — kept so a remote 2.x
-// server's results still address — then `locator` and a path.
-const REF_KEYS = ["$id", "doc_id", "block_id", "id", "node", "block", "locator", "$path", "path"];
+// `id` (spec/surface §1.2, 3.0 — every tool result spells a row's identity as
+// the attribute; a 2.x server's `id` is the same key), a `links` row's far node
+// (`doc_id`) and an edge's `block_id`, then the pre-3.0 envelopes (`node`,
+// `block`) — kept so a remote 2.x server's results still address — then
+// `locator` and a path.
+const REF_KEYS = ["id", "doc_id", "block_id", "node", "block", "locator", "path"];
 
 function firstString(o: Record<string, unknown>, keys: string[]): string | undefined {
   for (const k of keys) if (typeof o[k] === "string") return o[k] as string;

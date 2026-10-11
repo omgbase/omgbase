@@ -10,7 +10,7 @@
 // are planned; everything else declines to a full in-memory run. One more
 // decline keeps the planned path invisible (spec/surface §1 decline (c)): a
 // pushed conjunct that empties the scan would also hide an OQX eval error a
-// residual conjunct raises in memory (`path == "x" && $path == "nope.md"` was
+// residual conjunct raises in memory (`path == "x" && path == "nope.md"` was
 // `[]` planned, `filter_invalid` in memory), so when any residual conjunct could
 // raise — a function or method call, a `single` block, a `^`-escaped name, or a
 // bare reserved docs basename — the WHOLE query runs unplanned.
@@ -19,7 +19,7 @@ import type { Query, Expr, Where, OpNode, Subquery, Follow, QueryPlanner, Plan, 
 import { ROWS_ROOT, partitionPushable, residualQuery } from "@omgbase/oqx";
 import type { Store } from "../core/store/store.js";
 import { makeStoreContext, tagRows, type StoreContextOptions } from "./context.js";
-import { translatePredicate, RESERVED_DOC_BASENAMES, type Target, type TranslateCtx } from "./sql/translate.js";
+import { translatePredicate, type Target, type TranslateCtx } from "./sql/translate.js";
 import { ALIAS, COLS, FROM, ORDER, guards } from "./sql/scan.js";
 import { REACH_THROUGH, TARGETS, isTargetRelationOf } from "./root-row.js";
 
@@ -104,10 +104,8 @@ function exprMayRaise(e: Expr, target: Target, root: boolean): boolean {
     case "call": return true;
     case "outer": return true;
     case "ident":
-      if (TARGETS.has(e.name)) return !root || !isTargetRelationOf(target, e.name);
-      return root && target === "docs" && RESERVED_DOC_BASENAMES.has(e.name);
+      return TARGETS.has(e.name) && (!root || !isTargetRelationOf(target, e.name));
     case "member":
-      if (e.recv.kind === "ident" && e.recv.name === "doc" && RESERVED_DOC_BASENAMES.has(e.name)) return true;
       if (TARGETS.has(e.name) && !(e.recv.kind === "ident" && isTargetRelationOf(REACH_THROUGH[e.recv.name], e.name))) return true;
       return exprMayRaise(e.recv, target, root);
     case "unary": return exprMayRaise(e.expr, target, root);
