@@ -28,15 +28,27 @@
 //      once as that code block with its lines coloured individually (removed
 //      lines red, added green, the rest neutral): code and YAML lines are
 //      independent, and a one-line edit inside a long fence should read as
-//      one. ANY other changed cluster is rendered whole, twice: every before
-//      block on the removed (red) side, every after block on the added (green)
-//      side — a table with one changed cell, a paragraph with one changed word,
-//      a heading, an item whose own text changed, a fence whose info string
-//      changed. Nothing else is coloured a line at a time inside a rendered
-//      element.
+//      one. A cluster with changes and one TABLE on each side whose header and
+//      alignment rows did not change is one table: the header once, the body
+//      rows coloured individually (a removed row red, an added row green, so a
+//      changed cell is its row twice). ANY other changed cluster is rendered
+//      whole, twice: every before block on the removed (red) side, every after
+//      block on the added (green) side — a paragraph with one changed word, a
+//      heading, an item whose own text changed, a fence whose info string
+//      changed, a table whose header changed. Nothing else is coloured a line
+//      at a time inside a rendered element.
 //   4. Only clusters that touch a hunk's rows are shown (the diff's own three
 //      lines of context decide the extent); the rest of the document — and the
-//      rest of a container's children — is elided with a `⋯` gap marker.
+//      rest of a container's children — is elided with a `⋯` gap marker. Each
+//      level of `merge` emits its own gaps, so an elision that spans levels
+//      (the tail of a list, then the paragraph after the list; the leading
+//      items of three nested lists) would show one `⋯` per level in a row —
+//      `coalesceGaps` keeps ONE per run of consecutive gaps, the shallowest,
+//      because vertical space in the feed is at a premium and two markers say
+//      nothing one does not. No marker leads or trails the document when the
+//      first or last block is shown, and none sits between two shown blocks
+//      that are adjacent in the source: a gap is only ever emitted for a
+//      cluster that was skipped.
 //   5. `renderPieces` turns the pieces into HTML through markdown-it's own
 //      renderer over the original tokens (a container's open/close tokens
 //      around its rendered children; a leaf's token slice; `html: false` so raw
@@ -272,12 +284,17 @@ export type Mark = "add" | "del" | null;
 /** What is shown, in order: whole blocks (coloured or neutral), containers whose children are shown in turn, and gaps. */
 export interface VerbatimLine { kind: RowKind; text: string }
 
+/** One body row of a row-level table: the `tr_open`..`tr_close` token slice on its side, its source line, its colour. */
+export interface TableRow { side: "before" | "after"; open: number; close: number; text: string; mark: Mark }
+
 export type Piece =
   | { kind: "gap" }
   | { kind: "block"; side: "before" | "after"; block: Block; mark: Mark }
   | { kind: "container"; block: Block; children: Piece[] }
   /** One code block (the after side's) with its lines coloured individually; `before` is its other version. */
-  | { kind: "verbatim"; block: Block; before: Block; lines: VerbatimLine[] };
+  | { kind: "verbatim"; block: Block; before: Block; lines: VerbatimLine[] }
+  /** One table (the after side's header) with its body rows coloured individually; `before` is its other version. */
+  | { kind: "table"; block: Block; before: Block; rows: TableRow[] };
 
 interface Sides {
   rows: Row[];
@@ -368,8 +385,47 @@ function clusters(s: Sides, before: readonly Block[], after: readonly Block[]): 
   return out;
 }
 
+/** A table's body rows by source line: the `tr_open`..`tr_close` slice of each (the header's row excluded). */
+function bodyRows(tokens: readonly Token[], b: Block): Map<number, { open: number; close: number }> {
+  const out = new Map<number, { open: number; close: number }>();
+  let inBody = false;
+  for (let i = b.open; i <= b.close; i++) {
+    const t = tokens[i]!;
+    if (t.type === "tbody_open") inBody = true;
+    else if (t.type === "tbody_close") inBody = false;
+    else if (inBody && t.type === "tr_open" && t.map) {
+      let j = i + 1;
+      while (tokens[j]!.type !== "tr_close") j++;
+      out.set(t.map[0], { open: i, close: j });
+    }
+  }
+  return out;
+}
+
+/** A changed table cluster's body rows, coloured one by one; null when the
+ * header or alignment row changed, or a changed line is not a body row —
+ * then the table is shown twice. */
+function tableRows(s: Sides, c: Cluster, tokens: MarkdownDiff["tokens"], before: Block, after: Block): TableRow[] | null {
+  const rowsB = bodyRows(tokens.before, before);
+  const rowsA = bodyRows(tokens.after, after);
+  const out: TableRow[] = [];
+  for (let i = c.lo; i <= c.hi; i++) {
+    const r = s.rows[i]!;
+    const headA = r.newLine !== null && r.newLine >= after.start && r.newLine < after.start + 2;
+    const headB = r.oldLine !== null && r.oldLine >= before.start && r.oldLine < before.start + 2;
+    if (headA || headB) { if (r.kind !== "ctx" || headA !== headB) return null; continue; }
+    const a = r.newLine === null ? undefined : rowsA.get(r.newLine);
+    const b = r.oldLine === null ? undefined : rowsB.get(r.oldLine);
+    if (r.kind === "ctx") { if (!a || !b) return null; out.push({ side: "after", ...a, text: r.text, mark: null }); continue; }
+    if (r.kind === "add") { if (!a) return null; out.push({ side: "after", ...a, text: r.text, mark: "add" }); continue; }
+    if (!b) return null;
+    out.push({ side: "before", ...b, text: r.text, mark: "del" });
+  }
+  return out;
+}
+
 /** The pieces for one level: the clusters that touch a hunk, the rest elided. */
-function merge(s: Sides, before: readonly Block[], after: readonly Block[]): Piece[] {
+function merge(s: Sides, tokens: MarkdownDiff["tokens"], before: readonly Block[], after: readonly Block[]): Piece[] {
   const out: Piece[] = [];
   let gap = false;
   for (const c of clusters(s, before, after)) {
@@ -379,18 +435,22 @@ function merge(s: Sides, before: readonly Block[], after: readonly Block[]): Pie
     if (!changed) {
       // Unchanged: the after side once, neutral — a container only partly inside the hunk shows just the children that touch it.
       const whole = count(s.inHunk, c.lo, c.hi) === c.hi - c.lo + 1;
-      for (const b of c.after) out.push(b.container && !whole ? { kind: "container", block: b, children: merge(s, pairOf(c.before, b), b.children) } : { kind: "block", side: "after", block: b, mark: null });
+      for (const b of c.after) out.push(b.container && !whole ? { kind: "container", block: b, children: merge(s, tokens, pairOf(c.before, b), b.children) } : { kind: "block", side: "after", block: b, mark: null });
       continue;
     }
     const [b, a] = [c.before[0], c.after[0]];
     if (c.before.length === 1 && c.after.length === 1 && b!.type === a!.type) {
       if (b!.container) {
-        out.push({ kind: "container", block: a!, children: merge(s, b!.children, a!.children) });
+        out.push({ kind: "container", block: a!, children: merge(s, tokens, b!.children, a!.children) });
         continue;
       }
       if (VERBATIM.has(a!.type)) {
         const lines = verbatimLines(s, c, b!, a!);
         if (lines) { out.push({ kind: "verbatim", block: a!, before: b!, lines }); continue; }
+      }
+      if (a!.type === "table") {
+        const rows = tableRows(s, c, tokens, b!, a!);
+        if (rows) { out.push({ kind: "table", block: a!, before: b!, rows }); continue; }
       }
     }
     for (const x of c.before) out.push({ kind: "block", side: "before", block: x, mark: "del" });
@@ -398,6 +458,39 @@ function merge(s: Sides, before: readonly Block[], after: readonly Block[]): Pie
   }
   if (gap) out.push({ kind: "gap" });
   return out;
+}
+
+/** One `⋯` per elision, however many levels it spans. `merge` emits a gap per
+ * level, so consecutive gaps in reading order — a container's elided tail
+ * followed by an elided sibling after it, the leading gaps of nested lists
+ * whose first items are all elided — are one run, and a run keeps a single
+ * marker: the shallowest (the first of those on a tie), so it sits outside the
+ * list chrome rather than as an item of a list that is otherwise not shown. A
+ * container left without children is dropped with them. */
+export function coalesceGaps(pieces: readonly Piece[]): Piece[] {
+  const drop = new Set<Piece>();
+  let run: { piece: Piece; depth: number }[] = [];
+  const flush = () => {
+    const keep = run.reduce<{ piece: Piece; depth: number } | null>((best, g) => (best === null || g.depth < best.depth ? g : best), null);
+    for (const g of run) if (g !== keep) drop.add(g.piece);
+    run = [];
+  };
+  const walk = (ps: readonly Piece[], depth: number) => {
+    for (const p of ps) {
+      if (p.kind === "gap") run.push({ piece: p, depth });
+      else if (p.kind === "container") walk(p.children, depth + 1);
+      else flush();
+    }
+  };
+  walk(pieces, 0);
+  flush();
+  const prune = (ps: readonly Piece[]): Piece[] => ps.flatMap<Piece>((p) => {
+    if (drop.has(p)) return [];
+    if (p.kind !== "container") return [p];
+    const children = prune(p.children);
+    return children.length === 0 ? [] : [{ ...p, children }];
+  });
+  return drop.size === 0 ? [...pieces] : prune(pieces);
 }
 
 /** For an unchanged after container, the before container it pairs with (same type), so the recursion can keep pairing. */
@@ -434,7 +527,7 @@ export function markdownDiff(diff: string, before: string | null = null, after: 
   }
   const s = sides(alignRows(b, a, hunks), b, a);
   const tokens = { before: md.parse(b.join("\n"), {}), after: md.parse(a.join("\n"), {}) };
-  return { pieces: hunks.length === 0 ? [] : merge(s, blockTree(tokens.before, b), blockTree(tokens.after, a)), source, tokens };
+  return { pieces: hunks.length === 0 ? [] : coalesceGaps(merge(s, tokens, blockTree(tokens.before, b), blockTree(tokens.after, a))), source, tokens };
 }
 
 // ---- HTML --------------------------------------------------------------------------------
@@ -461,7 +554,7 @@ function listStart(list: Block, children: readonly Piece[]): number | null {
   return index <= 0 ? null : index;
 }
 
-/** The pieces as HTML: markdown-it's renderer over the original tokens, `data-kind` on the coloured pieces, `⋯` for the gaps. */
+/** The pieces as HTML: markdown-it's renderer over the original tokens, `data-kind` on the coloured pieces, one `⋯` line for each gap (never two in a row — `coalesceGaps`). */
 export function renderPieces(d: MarkdownDiff, md: Md = markdown()): string {
   const render = (pieces: readonly Piece[], inList: boolean): string => pieces.map((p) => {
     if (p.kind === "gap") return inList ? `<li class="gap">⋯</li>\n` : `<div class="gap">⋯</div>\n`;
@@ -470,6 +563,17 @@ export function renderPieces(d: MarkdownDiff, md: Md = markdown()): string {
       const cls = [p.block.type === "frontmatter" ? "frontmatter" : "", info ? `language-${md.utils.escapeHtml(info)}` : ""].filter(Boolean);
       const body = p.lines.map((l) => `<span class="line" data-kind="${l.kind}">${md.utils.escapeHtml(l.text)}\n</span>`).join("");
       return `<pre class="verbatim${p.block.type === "frontmatter" ? " frontmatter" : ""}"><code${cls.length ? ` class="${cls.join(" ")}"` : ""}>${body}</code></pre>\n`;
+    }
+    if (p.kind === "table") {
+      const toks = d.tokens.after;
+      const headOpen = toks.findIndex((t, i) => i > p.block.open && t.type === "thead_open");
+      let headClose = headOpen;
+      while (toks[headClose]!.type !== "thead_close") headClose++;
+      const rows = p.rows.map((r) => {
+        const slice = d.tokens[r.side].slice(r.open, r.close + 1);
+        return renderTokens(md, r.mark ? [withAttr(slice[0]!, "data-kind", r.mark), ...slice.slice(1)] : slice);
+      }).join("");
+      return `<table class="rows">\n${renderTokens(md, toks.slice(headOpen, headClose + 1))}<tbody>\n${rows}</tbody>\n</table>\n`;
     }
     if (p.kind === "block") {
       const toks = d.tokens[p.side];
@@ -497,12 +601,13 @@ export function renderMarkdownDiff(diff: string, before: string | null = null, a
   return { html: renderPieces(d), source: d.source };
 }
 
-/** A flat description of the pieces for tests and debugging: `add paragraph new 3-4`, `container bullet_list new 8-16 [ … ]`, `verbatim fence new 18-23  a| -b|+B`, `gap`. */
+/** A flat description of the pieces for tests and debugging: `add paragraph new 3-4`, `container bullet_list new 8-16 [ … ]`, `verbatim fence new 18-23  a| -b|+B`, `table new 24-29  | a |…|-| b |…|+| B |…`, `gap`. */
 export function describePieces(pieces: readonly Piece[]): string[] {
   return pieces.map((p) => {
     if (p.kind === "gap") return "gap";
     if (p.kind === "block") return `${p.mark ?? "ctx"} ${p.block.type} ${p.side === "before" ? "old" : "new"} ${p.block.start}-${p.block.end}`;
     if (p.kind === "verbatim") return `verbatim ${p.block.type} new ${p.block.start}-${p.block.end} ${p.lines.map((l) => (l.kind === "add" ? "+" : l.kind === "del" ? "-" : " ") + l.text).join("|")}`;
+    if (p.kind === "table") return `table new ${p.block.start}-${p.block.end} ${p.rows.map((r) => (r.mark ?? " ").replace("add", "+").replace("del", "-") + r.text).join("|")}`;
     return `container ${p.block.type} new ${p.block.start}-${p.block.end} [${describePieces(p.children).join(", ")}]`;
   });
 }

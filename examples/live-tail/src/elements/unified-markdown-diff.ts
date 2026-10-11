@@ -10,10 +10,12 @@
 // item, blockquote) keeps its chrome and recurses so only the items that
 // changed are coloured; a fenced or indented code block and the frontmatter —
 // verbatim lines — are one code block with the removed and added LINES
-// coloured; any other element the diff touches only in part (a table row, one
-// line of a paragraph, a heading) is rendered WHOLE, twice: the before version
-// red, the after version green. Whatever the hunk does not reach is elided
-// with `⋯`.
+// coloured; a table whose header did not change is one table with the body
+// ROWS coloured; any other element the diff touches only in part (one line of
+// a paragraph, a heading, a table header) is rendered WHOLE, twice: the before
+// version red, the after version green. Whatever the hunk does not reach is elided
+// with `⋯` — one compact line per elision, never two in a row, none at an edge
+// the document's first or last block is shown at.
 //
 //   properties: diff     the unified diff text (`diff_unified`'s `diff`, or `createdDiff`)
 //               oldText  the full text of the `from` revision (null while unknown)
@@ -54,9 +56,11 @@ export class UnifiedMarkdownDiff extends LitElement {
     hr { border: 0; border-top: 1px solid #d4d8e0; margin: 0.6em 0; }
     a { color: #1565c0; }
     .image { color: #6a7382; font-style: italic; }
-    .gap { color: #8a94a6; text-align: center; letter-spacing: 0.3em; margin: 0.2em 0; list-style: none; user-select: none; }
+    /* One short muted line per elision, as cheap in height as it can be: no margins, a line-height of 1, a couple of pixels of padding (vertical space in the feed is at a premium; the pure layer already guarantees never two in a row). */
+    .gap { color: #a0a8b6; text-align: center; letter-spacing: 0.3em; font-size: 12px; line-height: 1; margin: 0; padding: 2px 0; list-style: none; user-select: none; }
     pre.verbatim { padding: 6px 0; }
     pre.verbatim .line { display: block; padding: 0 8px; }
+    tr[data-kind] td { box-shadow: none; }
     [data-kind] { border-radius: 3px; }
     pre.verbatim .line[data-kind] { border-radius: 0; }
     .piece[data-kind] { padding: 2px 6px; margin: 2px 0; }

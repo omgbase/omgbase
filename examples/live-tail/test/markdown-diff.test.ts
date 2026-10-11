@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { alignRows, blockTree, consistent, describePieces, dropTrailingEmpty, markdown, markdownDiff, parseUnified, renderMarkdownDiff, sidesFromHunks, splitLines } from "../src/lib/markdown-diff.ts";
+import { alignRows, blockTree, coalesceGaps, consistent, describePieces, dropTrailingEmpty, markdown, markdownDiff, parseUnified, renderMarkdownDiff, sidesFromHunks, splitLines } from "../src/lib/markdown-diff.ts";
+import type { Block, Piece } from "../src/lib/markdown-diff.ts";
 
 /** A unified diff of two texts for the tests: ONE hunk over the changed region with `context` lines around it (a tiny LCS is overkill here: the fixtures change a contiguous run). */
 function unified(before: string, after: string, context = 3): string {
@@ -121,8 +122,8 @@ describe("hunk → block context", () => {
     expect(pieces(added, DOC)[1]).toBe("verbatim fence new 18-23  const a = 1;| const b = 2;| const c = 3;|-const d = 4;");
     const relabelled = edit("```js", "```ts");
     expect(pieces(DOC, relabelled)).toEqual([
-      "gap",
-      "container bullet_list new 11-17 [gap, container list_item new 12-16 [gap, container bullet_list new 13-16 [gap, ctx list_item new 15-16]], ctx list_item new 16-17]", // the hunk's context reaches the list's last items
+      "gap", // the ONE marker for everything elided before `render the pieces` — the document's head, `gather`, `build`'s own text, `parse the tokens`, `map the lines` (each level's own gap, coalesced)
+      "container bullet_list new 11-17 [container list_item new 12-16 [container bullet_list new 13-16 [ctx list_item new 15-16]], ctx list_item new 16-17]", // the hunk's context reaches the list's last items
       "del fence old 18-23", "add fence new 18-23",
       "gap",
     ]);
@@ -157,23 +158,38 @@ describe("hunk → block context", () => {
   });
   it("an item ADDED to a nested list is one green item inside the kept nesting", () => {
     const after = edit("  - map the lines\n", "  - map the lines\n  - colour them\n");
-    expect(pieces(DOC, after)[1]).toBe("container bullet_list new 11-18 [gap, container list_item new 12-17 [ctx paragraph new 12-13, container bullet_list new 13-17 [ctx list_item new 13-14, ctx list_item new 14-15, add list_item new 15-16, ctx list_item new 16-17]], ctx list_item new 17-18]");
+    expect(pieces(DOC, after)).toEqual([
+      "gap", // the document's head and `gather` (the list's own leading gap folded into this one)
+      "container bullet_list new 11-18 [container list_item new 12-17 [ctx paragraph new 12-13, container bullet_list new 13-17 [ctx list_item new 13-14, ctx list_item new 14-15, add list_item new 15-16, ctx list_item new 16-17]], ctx list_item new 17-18]",
+      "gap",
+    ]);
   });
-  it("a changed table row renders the WHOLE table twice — header and alignment rows with it — never a bare row", () => {
+  it("a changed table cell is its ROW twice (red, then green) inside ONE table that keeps the header and alignment rows — never a bare row", () => {
     const after = edit("| beta | active |", "| beta | done |");
-    expect(pieces(DOC, after)).toEqual(["gap", "del table old 24-29", "add table new 24-29", "container blockquote new 30-32 [ctx paragraph new 30-32]", "gap"]);
+    expect(pieces(DOC, after)).toEqual(["gap", "table new 24-29  | alpha | active ||-| beta | active ||+| beta | done || | gamma | planned |", "container blockquote new 30-32 [ctx paragraph new 30-32]", "gap"]);
     const { html } = renderMarkdownDiff(unified(DOC, after), DOC, after);
+    expect(html).toContain('<table class="rows">\n<thead>\n<tr>\n<th>name</th>\n<th>status</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>alpha</td>\n<td>active</td>\n</tr>\n<tr data-kind="del">\n<td>beta</td>\n<td>active</td>\n</tr>\n<tr data-kind="add">\n<td>beta</td>\n<td>done</td>\n</tr>\n<tr>\n<td>gamma</td>\n<td>planned</td>\n</tr>\n</tbody>\n</table>');
+    expect(html.match(/<table/g)).toHaveLength(1);
+  });
+  it("rows added to or removed from a table are coloured in place; a header or alignment change shows the whole table twice", () => {
+    const added = edit("| gamma | planned |\n", "| gamma | planned |\n| delta | idea |\n");
+    expect(pieces(DOC, added)[1]).toBe("table new 24-30  | alpha | active || | beta | active || | gamma | planned ||+| delta | idea |");
+    expect(pieces(added, DOC)[1]).toBe("table new 24-29  | alpha | active || | beta | active || | gamma | planned ||-| delta | idea |");
+    const header = edit("| name | status |", "| name | state |");
+    expect(pieces(DOC, header)).toEqual(["gap", "ctx fence new 18-23", "del table old 24-29", "add table new 24-29", "gap"]); // the hunk's context reaches the fence
+    const aligned = edit("| --- | --- |", "| :-- | --: |");
+    expect(pieces(DOC, aligned)).toEqual(["gap", "ctx fence new 18-23", "del table old 24-29", "add table new 24-29", "gap"]);
+    const { html } = renderMarkdownDiff(unified(DOC, header), DOC, header);
     const tables = html.match(/<table>[\s\S]*?<\/table>/g)!;
     expect(tables).toHaveLength(2);
-    for (const t of tables) expect(t).toContain("<thead>\n<tr>\n<th>name</th>\n<th>status</th>\n</tr>\n</thead>");
+    for (const t of tables) expect(t).toContain("<thead>");
     expect(html).toContain('<div class="piece" data-kind="del"><table>');
     expect(html).toContain('<div class="piece" data-kind="add"><table>');
-    expect(tables[0]).toContain("<td>active</td>\n</tr>\n<tr>\n<td>beta</td>\n<td>active</td>");
-    expect(tables[1]).toContain("<td>beta</td>\n<td>done</td>");
   });
   it("a heading change is the heading twice; the paragraphs around it are context, rendered once", () => {
     const after = edit("## Steps", "## The steps");
-    expect(pieces(DOC, after)).toEqual(["gap", "ctx paragraph new 6-8", "del heading old 9-10", "add heading new 9-10", "container bullet_list new 11-17 [ctx list_item new 11-12, container list_item new 12-16 [ctx paragraph new 12-13, gap], gap]", "gap"]);
+    // The hunk's context ends at `build`: its sub-list, `ship` and the rest of the document are three levels of elision and ONE marker, the top-level one.
+    expect(pieces(DOC, after)).toEqual(["gap", "ctx paragraph new 6-8", "del heading old 9-10", "add heading new 9-10", "container bullet_list new 11-17 [ctx list_item new 11-12, container list_item new 12-16 [ctx paragraph new 12-13]]", "gap"]);
     const { html } = renderMarkdownDiff(unified(DOC, after), DOC, after);
     expect(html).toContain('<div class="piece" data-kind="del"><h2>Steps</h2>\n</div>');
     expect(html).toContain('<div class="piece" data-kind="add"><h2>The steps</h2>\n</div>');
@@ -238,6 +254,69 @@ describe("hunk → block context", () => {
   });
   it("an empty diff renders nothing", () => {
     expect(renderMarkdownDiff("", "a\n", "a\n")).toEqual({ html: "", source: "documents" });
+  });
+});
+
+describe("gap markers", () => {
+  const gaps = (html: string) => html.match(/⋯/g)?.length ?? 0;
+  const pieces = (before: string, after: string, context = 3) => describePieces(markdownDiff(unified(before, after, context), before, after).pieces);
+  const fake = (type: string, start: number, end: number, container = false): Block => ({ type, start, end, open: -1, close: -1, container, markup: "", children: [] });
+  const gap = (): Piece => ({ kind: "gap" });
+  const block = (type: string, start: number): Piece => ({ kind: "block", side: "after", block: fake(type, start, start + 1), mark: null });
+  const container = (type: string, children: Piece[]): Piece => ({ kind: "container", block: fake(type, 0, 0, true), children });
+
+  it("coalesceGaps: a run of consecutive gaps across nesting levels keeps one marker — the shallowest — and drops a container left with nothing to show", () => {
+    const run = [gap(), container("bullet_list", [gap(), container("list_item", [gap(), block("paragraph", 3)])]), gap(), container("bullet_list", [gap()]), gap(), container("blockquote", [block("paragraph", 9), gap()]), gap()];
+    expect(describePieces(coalesceGaps(run))).toEqual([
+      "gap", // the three leading gaps (depths 0, 1, 2) → the top-level one
+      "container bullet_list new 0-0 [container list_item new 0-0 [ctx paragraph new 3-4]]",
+      "gap", // depth 0, an empty list's gap (dropped with the list), depth 0 → one
+      "container blockquote new 0-0 [ctx paragraph new 9-10]",
+      "gap", // the quote's trailing gap and the document's → the document's
+    ]);
+    const tie = [container("bullet_list", [block("list_item", 0), gap()]), container("bullet_list", [gap(), block("list_item", 5)])];
+    expect(describePieces(coalesceGaps(tie))).toEqual(["container bullet_list new 0-0 [ctx list_item new 0-1, gap]", "container bullet_list new 0-0 [ctx list_item new 5-6]"]); // equal depth: the first stays
+    const lone = [gap(), block("paragraph", 2), gap(), block("paragraph", 5)];
+    expect(coalesceGaps(lone)).toEqual(lone); // nothing to coalesce: the same pieces
+  });
+  it("consecutive elided runs are ONE marker: the elided items of three nested lists above a change render one `⋯`, outside the list, and the elided tail of an item + its list + the document one below", () => {
+    const relabelled = edit("```js", "```ts");
+    const above = renderMarkdownDiff(unified(DOC, relabelled), DOC, relabelled).html;
+    expect(above.startsWith('<div class="gap">⋯</div>\n<ul>\n<li>\n<ul>\n<li>render the pieces</li>\n</ul>\n</li>\n<li>ship</li>\n</ul>\n')).toBe(true);
+    expect(above).not.toContain('<li class="gap">');
+    expect(gaps(above)).toBe(2); // one above the list, one after the fence
+    const heading = edit("## Steps", "## The steps");
+    const below = renderMarkdownDiff(unified(DOC, heading), DOC, heading).html;
+    expect(below.endsWith('<ul>\n<li>gather</li>\n<li>build</li>\n</ul>\n<div class="gap">⋯</div>\n')).toBe(true); // no `<li class="gap">` inside `build` or after it
+    expect(gaps(below)).toBe(2); // one above the paragraph, one after `build`
+    const deep = edit("  - render the pieces", "  - render the PIECES");
+    expect(pieces(DOC, deep, 1)).toEqual([
+      "gap", // the head of the document, `gather`, `build`'s text and `parse the tokens`: four levels, one marker
+      "container bullet_list new 11-17 [container list_item new 12-16 [container bullet_list new 13-16 [ctx list_item new 14-15, del list_item old 15-16, add list_item new 15-16]], ctx list_item new 16-17]",
+      "gap",
+    ]);
+    expect(gaps(renderMarkdownDiff(unified(DOC, deep, 1), DOC, deep).html)).toBe(2);
+  });
+  it("no marker at an edge the document's first or last block is shown at, none at all when both are, and none for a created document", () => {
+    expect(pieces(DOC, edit("status: active\n---", "status: done\n---"))[0]).toBe("verbatim frontmatter new 0-4  title: Alpha|-status: active|+status: done"); // the first block is shown: no leading gap
+    expect(pieces(DOC, edit("Tail paragraph.", "Tail paragraph!")).slice(-2)).toEqual(["del paragraph old 33-34", "add paragraph new 33-34"]); // the last block is shown: no trailing gap
+    const short = "# T\n\none\n\ntwo\n";
+    const both = short.replace("one", "ONE");
+    expect(pieces(short, both)).toEqual(["ctx heading new 0-1", "del paragraph old 2-3", "add paragraph new 2-3", "ctx paragraph new 4-5"]);
+    expect(gaps(renderMarkdownDiff(unified(short, both), short, both).html)).toBe(0);
+    const content = "# New\n\n- a\n- b\n";
+    expect(gaps(renderMarkdownDiff(`@@ -0,0 +1,4 @@\n${splitLines(content).map((l) => `+${l}`).join("\n")}`, "", content).html)).toBe(0);
+  });
+  it("no marker between two shown clusters that are adjacent in the source — two hunks whose context meets at one paragraph — and exactly one when blocks between them are skipped", () => {
+    const before = "p0\n\np1\n\np2\n\np3\n\np4\n\np5\n";
+    const after = before.replace("p1", "P1").replace("p3", "P3");
+    const meeting = "@@ -2,4 +2,4 @@\n \n-p1\n+P1\n \n p2\n@@ -6,3 +6,3 @@\n \n-p3\n+P3\n "; // hunk 1 reaches p2; hunk 2 starts right after it
+    expect(describePieces(markdownDiff(meeting, before, after).pieces)).toEqual(["gap", "del paragraph old 2-3", "add paragraph new 2-3", "ctx paragraph new 4-5", "del paragraph old 6-7", "add paragraph new 6-7", "gap"]);
+    expect(gaps(renderMarkdownDiff(meeting, before, after).html)).toBe(2);
+    const apart = before.replace("p1", "P1").replace("p4", "P4");
+    const separated = "@@ -2,3 +2,3 @@\n \n-p1\n+P1\n \n@@ -8,3 +8,3 @@\n \n-p4\n+P4\n "; // p2 and p3 skipped between the hunks: one marker
+    expect(describePieces(markdownDiff(separated, before, apart).pieces)).toEqual(["gap", "del paragraph old 2-3", "add paragraph new 2-3", "gap", "del paragraph old 8-9", "add paragraph new 8-9", "gap"]);
+    expect(gaps(renderMarkdownDiff(separated, before, apart).html)).toBe(3);
   });
 });
 

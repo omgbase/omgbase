@@ -182,21 +182,36 @@ hunks only to decide what to show and how to colour it:
      coloured individually, removed red, added green, the rest neutral. Code
      and YAML lines are independent, and `status: active` → `status: done`
      should read as one line, not as two copies of the frontmatter;
-   - **any other change** — a table with one changed cell, a paragraph with one
-     changed word, a heading, an item whose own text changed, a fence whose
-     info string changed, a paragraph split in two — is rendered **whole,
-     twice**: every before block of the cluster on the removed (red) side, then
-     every after block on the added (green) side. A table therefore always
-     comes with its header and alignment rows, and nothing inside a rendered
-     element is ever coloured a line at a time except in a code block.
+   - **changed, one table on each side** whose header and alignment rows did
+     not change: rendered once as one table — the header once, the body
+     **rows** coloured individually, so a changed cell is its row red then
+     green, and an added or removed row is one coloured row. A table always
+     comes with its header and alignment rows, never as a bare row;
+   - **any other change** — a paragraph with one changed word, a heading, an
+     item whose own text changed, a fence whose info string changed, a table
+     whose header or alignment row changed, a paragraph split in two — is
+     rendered **whole, twice**: every before block of the cluster on the
+     removed (red) side, then every after block on the added (green) side.
+     Nothing inside a rendered element is coloured a line at a time except
+     code lines and table rows.
 4. Only clusters that touch a hunk's rows are shown — the diff's own three
    lines of context decide the extent — and the rest of the document, and the
-   rest of a container's children, is elided with a `⋯` gap marker.
+   rest of a container's children, is elided with a `⋯` gap marker: **one**
+   marker per elision, however many blocks or nesting levels it spans. The
+   merge emits a gap per level, so an elided container's tail followed by an
+   elided sibling, or the elided leading items of three nested lists, would be
+   two or three `⋯` in a row; `coalesceGaps` keeps one per run of consecutive
+   gaps — the shallowest, so it sits outside the list chrome — and drops a
+   container left with nothing to show. No marker leads the document when its
+   first block is shown or trails it when its last block is, and none sits
+   between two shown clusters adjacent in the source (two hunks whose context
+   meets). The marker itself is one short muted line with two pixels of
+   padding and no margins: vertical space in the feed is at a premium.
 5. The HTML is markdown-it's own renderer over the original tokens (a
    container's open/close tokens around its rendered children, a leaf's token
    slice), `data-kind="add|del"` on the coloured pieces (`<li data-kind>` for
-   items, a wrapping `<div class="piece">` otherwise, `<span class="line">`
-   in a code block). Sanitised: `html: false` (raw HTML is escaped), images
+   items, `<tr data-kind>` for table rows, `<span class="line">` in a code
+   block, a wrapping `<div class="piece">` otherwise). Sanitised: `html: false` (raw HTML is escaped), images
    are named (`[image: alt]`) rather than fetched, `javascript:` and friends
    are not links (markdown-it's `validateLink`).
 
@@ -320,8 +335,9 @@ reconnected* in the header; only a second failure is shown.
   `splitLines`/`dropTrailingEmpty`, `consistent`, `sidesFromHunks`,
   `alignRows`, the markdown-it instance (`markdown()`: frontmatter rule,
   images named not fetched), `blockTree`, `markdownDiff` (the pieces: block /
-  container / verbatim / gap), `renderPieces`/`renderMarkdownDiff`,
-  `describePieces` (the flat description the tests assert).
+  container / verbatim / table / gap), `coalesceGaps` (one `⋯` per run of
+  consecutive gaps), `renderPieces`/`renderMarkdownDiff`, `describePieces`
+  (the flat description the tests assert).
 - `src/lib/feed.ts` — the pure parts: `startCursor`/`advanceCursor`,
   `entryFromDigest`/`prependDigests`/`byline`, `latestPair`/`pairForCommit`,
   `recentQuery`/`frameFor`/`recentFromHits`, the poll's lookup
@@ -348,12 +364,35 @@ reconnected* in the header; only a second failure is shown.
   arguments, the client's session recovery (a fake transport) and the markdown
   diff (`markdown-diff.test.ts`: the hunk parser and row alignment, both line
   counts, the block tree, hunk → block context for a fence, a nested list, a
-  table row, a heading, a paragraph, the frontmatter, a blockquote, an
-  indented code block and a fence inside a list item, a created document, an
-  `<ol>`'s numbering, the excerpt fallback, sanitisation; the view's
-  persistence in `feed.test.ts`; 84 tests).
+  table cell (one table, the row twice), rows added/removed, a table header or
+  alignment change (the table twice), a heading, a paragraph, the frontmatter,
+  a blockquote, an indented code block and a fence inside a list item, a
+  created document, an `<ol>`'s numbering, the excerpt fallback,
+  sanitisation, and the gap markers — `coalesceGaps` on a synthetic tree,
+  consecutive elided runs above and below a change rendering one `⋯`, none
+  at an edge whose block is shown or for a created document, none between
+  two shown clusters adjacent in the source and exactly one when blocks are
+  skipped between two hunks; the view's persistence in `feed.test.ts`; 89
+  tests).
 
 ## Verified headlessly
+
+One `⋯` per elision (Chrome `--headless=new` over CDP, proxy 18931, Vite
+15931, a temporary workspace, the markdown view on): `alpha.md` rewritten with
+`omg update -f` as a document with two intro paragraphs, a list whose `build`
+item holds six nested items, three middle paragraphs, a `## Notes` heading, a
+quote and a tail paragraph (all green, no marker); then the sixth nested item
+and the tail paragraph changed in one commit → the card's visible sequence was
+`⋯ text ⋯ text`: ONE marker above the list for the document's head, `gather`,
+`build`'s own text and the first two nested items (four nesting levels of
+elision; HEAD's renderer gave this edit five markers, four of them in a row),
+one between `Middle paragraph A.` and the quote, none after the tail
+paragraph (the last block is shown), no `<li class="gap">`, each marker 16 px
+tall; then a mid-list item and the first intro paragraph changed → `text ⋯
+text ⋯`: none above the shown frontmatter, one for the `## Steps` heading +
+`gather` + the list's own leading gap, one trailing. Over all eight card
+bodies: 4 markers, 0 adjacent pairs. No console errors (Lit's dev-mode
+warning only).
 
 The markdown view (Chrome `--headless=new` over CDP, proxy 18811, Vite 15811,
 a temporary workspace): five cards in the plain view by default (`view` not
@@ -363,9 +402,10 @@ on and stored `omgbase-live-tail.view = markdown`; the entry rendered a
 `<table>`, a `<pre><code>`, `ul li ul li` and six green pieces with computed
 backgrounds `rgb(230, 255, 237)` (add) / `rgb(255, 238, 240)` (del) over a
 transparent body, with no "excerpt" note (both revisions were in). Then: one
-table **cell** changed → the whole table twice, both with `name status`
-headers, red `active` then green `done`, one `⋯` gap, no stray `<pre>`/`<ul>`;
-one **fence line** changed → ONE `language-js` code block with the lines
+table **cell** changed → ONE table with the `name status` header once and the
+body rows `ctx:alpha active` / `del:beta active` / `add:beta done`, the two
+coloured rows with the same backgrounds, no stray `<pre>`; one **fence line**
+changed → ONE `language-js` code block with the lines
 `ctx:const a = 1;` / `del:const b = 2;` / `add:const b = 22;` coloured
 individually; `omg meta notes/alpha.md --set status=done` → ONE yaml block
 with `ctx:title: Alpha` / `del:status: active` / `add:status: done` and no
