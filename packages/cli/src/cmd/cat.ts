@@ -11,10 +11,10 @@ import { expandBlockArgs } from "./_mutate.js";
 // (subtree at raw). No decoration on stdout: cat is the bytes. Several refs (or
 // `-` = refs from stdin, one per line — the counterpart of `--ids`, same
 // convention as the mutators) are cat'ed in order, like unix cat. `--json` is
-// the mapped tool's result: `docs_read` for a document, `nodes_get` for a block.
+// the mapped tool's result: `docs_read` for a document, `blocks_get` for a block.
 //
 // Refs are what `resolveRef` accepts: a block/doc/node id or a document path
-// in either form (`/notes/x.md`, `notes/x.md`). `--resolution` is a block-level notion (nodes_get); a document
+// in either form (`/notes/x.md`, `notes/x.md`). `--resolution` is a block-level notion (blocks_get); a document
 // is always its exact bytes (docs_read has no resolution ladder), so asking for
 // another resolution on a document ref is warned about, not silently ignored.
 

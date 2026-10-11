@@ -80,6 +80,8 @@ export type Step = StoreStep | ReadStep;
 /** A tool error, as the fixture records it: the envelope minus its prose. */
 export interface ReadErrorOutcome {
   error: string;
+  /** Recorded for the surface's own errors only (README §6). */
+  message?: string;
   retriable: boolean;
   data?: unknown;
 }
@@ -380,6 +382,16 @@ export function typeShape(v: unknown, path: string[] = []): unknown {
   return `<${typeof v}>`;
 }
 
+/** The `data` keys that mark an error as composed by the surface itself (README §6). */
+export const SURFACE_ERROR_KEYS: ReadonlySet<string> = new Set(["id", "path", "doc_id", "doc_path", "ref", "section", "provider"]);
+
+/** Is this error's message pinned (README §6)? Its `data` names an argument, or it is an argument-shape error. */
+export function surfaceComposed(data: unknown): boolean {
+  if (!isRecord(data)) return false;
+  if (data.hint === "arguments") return true;
+  return Object.keys(data).some((k) => SURFACE_ERROR_KEYS.has(k));
+}
+
 export function toReadOutcome(tool: string, r: ToolResult): ReadOutcome {
   const text = r.content[0]?.text ?? "";
   let payload: unknown;
@@ -389,8 +401,13 @@ export function toReadOutcome(tool: string, r: ToolResult): ReadOutcome {
     throw new Error(`${tool}: result is not JSON: ${text}`);
   }
   if (r.isError) {
-    const env = payload as { error: string; retriable?: boolean; data?: unknown };
+    const env = payload as { error: string; message?: string; retriable?: boolean; data?: unknown };
     const out: ReadErrorOutcome = { error: env.error, retriable: Boolean(env.retriable) };
+    // README §6: the surface's own errors — the ones whose `data` names the
+    // argument they could not honor, and the argument-shape errors — carry a
+    // message both engines must spell alike, so it is recorded; a kernel or
+    // store message (spec/mutate, spec/store) is not.
+    if (surfaceComposed(env.data) && env.message !== undefined) out.message = env.message;
     if (env.data !== undefined && env.error !== "filter_invalid") out.data = env.data;
     return canonical(out);
   }

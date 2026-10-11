@@ -64,13 +64,13 @@ fn show_one(cli: &mut Cli, r: &str, include_history: bool) -> Result<Card> {
                 links,
             })
         }
-        ResolvedRef::Block { doc_id, block_id } => {
+        ResolvedRef::Block { block_id, .. } => {
             let node = cli.call(
-                "nodes_get",
-                json!({ "id": block_id, "doc": doc_id, "resolution": "full" }),
+                "blocks_get",
+                json!({ "id": block_id, "resolution": "full" }),
             )?;
             let history = if include_history {
-                Some(cli.call("history_node", json!({ "id": block_id, "limit": 5 }))?)
+                Some(cli.call("blocks_history", json!({ "id": block_id, "limit": 5 }))?)
             } else {
                 None
             };

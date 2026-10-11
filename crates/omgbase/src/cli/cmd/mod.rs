@@ -75,6 +75,29 @@ pub fn machine_out(
 }
 
 /// A string field of a JSON object, `""` when absent.
+/// A document ref as the surface's locator (`spec/surface` §4 "Arguments",
+/// 3.0): a `d_` id is the `id` argument, anything else the `path` — the two
+/// names a `docs_*` tool takes (one of them required).
+pub fn doc_locator(m: &mut serde_json::Map<String, Json>, r: &str) {
+    let key = if omgbase_store::is_id_ref(r, "d") {
+        "id"
+    } else {
+        "path"
+    };
+    m.insert(key.to_owned(), Json::String(r.to_owned()));
+}
+
+/// The same document as a FOREIGN reference from a tool whose rows are not
+/// documents (`diff`, `diff_unified`): `doc_id` / `doc_path`.
+pub fn doc_foreign(m: &mut serde_json::Map<String, Json>, r: &str) {
+    let key = if omgbase_store::is_id_ref(r, "d") {
+        "doc_id"
+    } else {
+        "doc_path"
+    };
+    m.insert(key.to_owned(), Json::String(r.to_owned()));
+}
+
 pub fn str_of(v: &Json, key: &str) -> String {
     v.get(key)
         .and_then(Json::as_str)

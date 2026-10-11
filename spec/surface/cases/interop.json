@@ -36,7 +36,7 @@
         {
           "tool": "docs_outline",
           "args": {
-            "doc": "d_1",
+            "id": "d_1",
             "resolution": "skeleton",
             "depth": 1
           }
@@ -44,14 +44,14 @@
         {
           "tool": "docs_outline",
           "args": {
-            "doc": "substances/mercury.md",
+            "path": "substances/mercury.md",
             "budget_tokens": 30
           }
         },
         {
           "tool": "docs_read",
           "args": {
-            "doc": "d_0",
+            "id": "d_0",
             "include_ids": true
           }
         },
@@ -64,7 +64,7 @@
         {
           "tool": "docs_read",
           "args": {
-            "doc": "nope.md"
+            "path": "nope.md"
           }
         },
         {
@@ -288,8 +288,9 @@
           {
             "error": "doc_missing",
             "retriable": false,
+            "message": "no document with id or path \"nope.md\"",
             "data": {
-              "doc": "nope.md"
+              "path": "nope.md"
             }
           },
           {
@@ -498,71 +499,74 @@
           },
           {
             "error": "doc_missing",
-            "retriable": false
+            "retriable": false,
+            "message": "no document or block with id or path \"nope\"",
+            "data": {
+              "ref": "nope"
+            }
           }
         ]
       }
     },
     {
       "name": "read-blocks",
-      "notes": "§2 block reads: nodes_get at every resolution incl. children, an id outside an explicit doc scope (block_missing), an unknown id (doc_missing, §9); nodes_get_many across documents, scoped with an unresolved id, and budget-truncated.",
+      "notes": "§2 block reads: blocks_get at every resolution incl. children, an id outside an explicit doc scope (block_missing), an unknown id (doc_missing, §9); blocks_get_many across documents, scoped with an unresolved id, and budget-truncated.",
       "reads": [
         {
-          "tool": "nodes_get",
+          "tool": "blocks_get",
           "args": {
             "id": "b_4",
             "resolution": "full"
           }
         },
         {
-          "tool": "nodes_get",
+          "tool": "blocks_get",
           "args": {
             "id": "b_19",
             "resolution": "text"
           }
         },
         {
-          "tool": "nodes_get",
+          "tool": "blocks_get",
           "args": {
             "id": "b_51"
           }
         },
         {
-          "tool": "nodes_get",
+          "tool": "blocks_get",
           "args": {
             "id": "b_50",
             "resolution": "skeleton"
           }
         },
         {
-          "tool": "nodes_get",
+          "tool": "blocks_get",
           "args": {
             "id": "b_38",
             "resolution": "outline"
           }
         },
         {
-          "tool": "nodes_get",
+          "tool": "blocks_get",
           "args": {
             "id": "b_36",
             "resolution": "raw"
           }
         },
         {
-          "tool": "nodes_get",
+          "tool": "blocks_get",
           "args": {
-            "doc": "index.md",
             "id": "b_31"
           }
         },
         {
-          "tool": "nodes_get",
+          "tool": "blocks_get",
           "args": {
             "id": "b_999"
           }
         },
         {
-          "tool": "nodes_get_many",
+          "tool": "blocks_get_many",
           "args": {
             "ids": [
               "b_1",
@@ -573,9 +577,8 @@
           }
         },
         {
-          "tool": "nodes_get_many",
+          "tool": "blocks_get_many",
           "args": {
-            "doc": "index.md",
             "ids": [
               "b_1",
               "b_35"
@@ -584,7 +587,7 @@
           }
         },
         {
-          "tool": "nodes_get_many",
+          "tool": "blocks_get_many",
           "args": {
             "ids": [
               "b_1",
@@ -824,14 +827,24 @@
             "$hash": "962fc02c5f3364a6b0ca4da3aba10b4a752e04e126ae6205f547ebfc98e60d95"
           },
           {
-            "error": "block_missing",
-            "retriable": false
+            "$id": "b_31",
+            "type": "heading",
+            "$raw": "# Laboratory notes — January",
+            "$hash": "082208c3cb694c6a0077d50126ace00e5c4b65342e2fcd356568a754ca6677b6",
+            "text": "Laboratory notes — January",
+            "attrs": {
+              "level": 1
+            },
+            "ordinal": 0,
+            "depth": 0,
+            "parent_id": null
           },
           {
-            "error": "doc_missing",
+            "error": "block_missing",
             "retriable": false,
+            "message": "no block with id \"b_999\"",
             "data": {
-              "block": "b_999"
+              "id": "b_999"
             }
           },
           {
@@ -864,12 +877,16 @@
                 "type": "paragraph",
                 "$raw": "The art of transformation — part proto-chemistry, part philosophy, part\ncontemplative practice. This repository collects notes on its substances,\nprocesses, practitioners, and primary texts.",
                 "$hash": "f32a5a083fb47f88c5069fb34a2819f3ccc18bead169edb97c3e098bdfb15f6e"
+              },
+              {
+                "$id": "b_35",
+                "type": "paragraph",
+                "$raw": "Lead sheet cut into 2 g pieces, crucible pre-fired to constant weight, muffle at\n600 °C. Weighings after cooling in a desiccator.",
+                "$hash": "a0201793a883834e43ae3f2164711ed04ed971cb0501ea80a20cdebbe8c7c70d"
               }
             ],
             "truncated": false,
-            "unresolved": [
-              "b_35"
-            ]
+            "unresolved": []
           },
           {
             "nodes": [
@@ -1783,8 +1800,12 @@
             "retriable": false
           },
           {
-            "error": "semantic_unavailable",
-            "retriable": false
+            "error": "provider_unavailable",
+            "retriable": false,
+            "message": "semantic(...) needs an embedding provider; none is configured — set embedding.provider (omg config set embedding.provider <command|url>) and embed the repository (omg embed drain)",
+            "data": {
+              "provider": null
+            }
           },
           {
             "hits": [
@@ -3012,16 +3033,16 @@
     },
     {
       "name": "read-history-admin",
-      "notes": "§3 history over a one-commit-per-document corpus (history_node, diff of a revision with itself and with a foreign one → target_missing, diff_unified with a single revision, docs_read_at incl. an unknown rev, docs_history by doc and by glob, changes_since paging/filters) and the §4 admin tools (repos_status/sync_status with the fs source — disk scan of the workspace — and repos).",
+      "notes": "§3 history over a one-commit-per-document corpus (blocks_history, diff of a revision with itself and with a foreign one → target_missing, diff_unified with a single revision, docs_read_at incl. an unknown rev, docs_history by doc and by glob, changes_since paging/filters) and the §4 admin tools (repos_status/sync_status with the fs source — disk scan of the workspace — and repos).",
       "reads": [
         {
-          "tool": "history_node",
+          "tool": "blocks_history",
           "args": {
             "id": "b_0"
           }
         },
         {
-          "tool": "history_node",
+          "tool": "blocks_history",
           "args": {
             "id": "b_56",
             "limit": 1
@@ -3030,7 +3051,7 @@
         {
           "tool": "diff",
           "args": {
-            "doc": "d_0",
+            "doc_id": "d_0",
             "from_rev": "r_0",
             "to_rev": "r_0"
           }
@@ -3038,7 +3059,7 @@
         {
           "tool": "diff",
           "args": {
-            "doc": "index.md",
+            "doc_path": "index.md",
             "from_rev": "r_0",
             "to_rev": "r_1"
           }
@@ -3046,13 +3067,13 @@
         {
           "tool": "diff_unified",
           "args": {
-            "doc": "d_1"
+            "doc_id": "d_1"
           }
         },
         {
           "tool": "diff_unified",
           "args": {
-            "doc": "index.md",
+            "doc_path": "index.md",
             "from_rev": "r_0",
             "to_rev": "r_0"
           }
@@ -3060,21 +3081,21 @@
         {
           "tool": "docs_read_at",
           "args": {
-            "doc": "texts/mutus-liber.md",
+            "path": "texts/mutus-liber.md",
             "rev": "r_17"
           }
         },
         {
           "tool": "docs_read_at",
           "args": {
-            "doc": "d_0",
+            "id": "d_0",
             "rev": "r_1"
           }
         },
         {
           "tool": "docs_history",
           "args": {
-            "doc": "index.md"
+            "path": "index.md"
           }
         },
         {
@@ -3708,7 +3729,7 @@
     },
     {
       "name": "write-apply",
-      "notes": "§4 apply (spec/mutate §4): one changeset with an insert at the document top level and a CAS-pinned update, then a dry run (no commit; dry runs consume minted ids, §9). Reads show the new revision r_18 / commit c_18 through docs_read, docs_history, changes_since, diff, diff_unified, history_node of the minted block, docs_read_at of the old revision, and the admin tools' view of the working tree the apply wrote (§7.3).",
+      "notes": "§4 apply (spec/mutate §4): one changeset with an insert at the document top level and a CAS-pinned update, then a dry run (no commit; dry runs consume minted ids, §9). Reads show the new revision r_18 / commit c_18 through docs_read, docs_history, changes_since, diff, diff_unified, blocks_history of the minted block, docs_read_at of the old revision, and the admin tools' view of the working tree the apply wrote (§7.3).",
       "writes": [
         {
           "tool": "apply",
@@ -3756,14 +3777,14 @@
         {
           "tool": "docs_read",
           "args": {
-            "doc": "index.md",
+            "path": "index.md",
             "include_ids": true
           }
         },
         {
           "tool": "docs_history",
           "args": {
-            "doc": "index.md"
+            "path": "index.md"
           }
         },
         {
@@ -3775,7 +3796,7 @@
         {
           "tool": "diff",
           "args": {
-            "doc": "index.md",
+            "doc_path": "index.md",
             "from_rev": "r_0",
             "to_rev": "r_20"
           }
@@ -3783,17 +3804,17 @@
         {
           "tool": "diff_unified",
           "args": {
-            "doc": "index.md"
+            "doc_path": "index.md"
           }
         },
         {
-          "tool": "history_node",
+          "tool": "blocks_history",
           "args": {
             "id": "b_327"
           }
         },
         {
-          "tool": "history_node",
+          "tool": "blocks_history",
           "args": {
             "id": "b_30"
           }
@@ -3801,7 +3822,7 @@
         {
           "tool": "docs_read_at",
           "args": {
-            "doc": "d_0",
+            "id": "d_0",
             "rev": "r_0"
           }
         },
@@ -4194,7 +4215,7 @@
           }
         },
         {
-          "tool": "nodes_get",
+          "tool": "blocks_get",
           "args": {
             "id": "b_149",
             "resolution": "text"
@@ -4253,6 +4274,7 @@
           {
             "error": "block_missing",
             "retriable": false,
+            "message": "no block or document with id or path \"nope.md\"",
             "data": {
               "ref": "nope.md"
             }
@@ -4464,21 +4486,21 @@
         {
           "tool": "blocks_update",
           "args": {
-            "block": "b_1",
+            "id": "b_1",
             "markdown": "The art of transformation, revised for interop."
           }
         },
         {
           "tool": "blocks_update",
           "args": {
-            "block": "b_56",
+            "id": "b_56",
             "checked": true
           }
         },
         {
           "tool": "blocks_update",
           "args": {
-            "block": "b_1",
+            "id": "b_1",
             "markdown": "x",
             "expect": {
               "content_hash": "00"
@@ -4494,7 +4516,7 @@
           }
         },
         {
-          "tool": "nodes_get",
+          "tool": "blocks_get",
           "args": {
             "id": "b_56",
             "resolution": "full"
@@ -4503,13 +4525,13 @@
         {
           "tool": "docs_history",
           "args": {
-            "doc": "index.md"
+            "path": "index.md"
           }
         },
         {
           "tool": "docs_history",
           "args": {
-            "doc": "lab/2026-01-notes.md"
+            "path": "lab/2026-01-notes.md"
           }
         },
         {
@@ -4521,7 +4543,7 @@
         {
           "tool": "diff",
           "args": {
-            "doc": "d_0",
+            "doc_id": "d_0",
             "from_rev": "r_0",
             "to_rev": "r_20"
           }
@@ -4529,11 +4551,11 @@
         {
           "tool": "diff_unified",
           "args": {
-            "doc": "index.md"
+            "doc_path": "index.md"
           }
         },
         {
-          "tool": "history_node",
+          "tool": "blocks_history",
           "args": {
             "id": "b_1"
           }
@@ -4843,7 +4865,7 @@
           }
         },
         {
-          "tool": "history_node",
+          "tool": "blocks_history",
           "args": {
             "id": "b_7"
           }
@@ -4851,7 +4873,7 @@
         {
           "tool": "diff",
           "args": {
-            "doc": "index.md",
+            "doc_path": "index.md",
             "from_rev": "r_0",
             "to_rev": "r_21"
           }
@@ -4859,7 +4881,7 @@
         {
           "tool": "diff_unified",
           "args": {
-            "doc": "index.md",
+            "doc_path": "index.md",
             "from_rev": "r_0",
             "to_rev": "r_21"
           }
@@ -5032,7 +5054,7 @@
         {
           "tool": "blocks_split",
           "args": {
-            "block": "b_1",
+            "id": "b_1",
             "at": [
               98
             ]
@@ -5086,26 +5108,26 @@
           }
         },
         {
-          "tool": "nodes_get",
+          "tool": "blocks_get",
           "args": {
             "id": "b_327",
             "resolution": "raw"
           }
         },
         {
-          "tool": "history_node",
+          "tool": "blocks_history",
           "args": {
             "id": "b_43"
           }
         },
         {
-          "tool": "history_node",
+          "tool": "blocks_history",
           "args": {
             "id": "b_44"
           }
         },
         {
-          "tool": "history_node",
+          "tool": "blocks_history",
           "args": {
             "id": "b_47"
           }
@@ -5113,7 +5135,7 @@
         {
           "tool": "diff",
           "args": {
-            "doc": "lab/2026-01-notes.md",
+            "doc_path": "lab/2026-01-notes.md",
             "from_rev": "r_1",
             "to_rev": "r_22"
           }
@@ -5190,8 +5212,9 @@
           {
             "error": "block_missing",
             "retriable": false,
+            "message": "no block with id \"b_999\"",
             "data": {
-              "ref": "b_999"
+              "id": "b_999"
             }
           }
         ],
@@ -5510,7 +5533,7 @@
         {
           "tool": "node_set",
           "args": {
-            "node": "n_c7ebbf77d614",
+            "id": "n_c7ebbf77d614",
             "prop": "name",
             "value": "Calcination"
           }
@@ -5518,7 +5541,7 @@
         {
           "tool": "node_set",
           "args": {
-            "node": "n_9e25b3a6f1e2",
+            "id": "n_9e25b3a6f1e2",
             "prop": "value",
             "value": "substances/mercury.md"
           }
@@ -5526,7 +5549,7 @@
         {
           "tool": "node_set",
           "args": {
-            "node": "n_7524a6e40952",
+            "id": "n_7524a6e40952",
             "prop": "name",
             "value": "x"
           }
@@ -5534,7 +5557,7 @@
       ],
       "reads": [
         {
-          "tool": "nodes_get",
+          "tool": "blocks_get",
           "args": {
             "id": "b_51",
             "resolution": "text"
@@ -6725,28 +6748,29 @@
     },
     {
       "name": "write-sections-docs-append",
-      "notes": "§4 sections_append (heading text scoped by path, a heading block id, repo-wide ambiguous text → ambiguous_heading) and docs_append (by path, by doc id, a miss → doc_missing). Reads: the four touched documents, the listing (block counts, ts), the api feed.",
+      "notes": "§4 docs_append (a section by heading text scoped to the document; a heading the document lacks → parent_missing; by path, by doc id, a miss → doc_missing) and blocks_append (a heading block id). Reads: the four touched documents, the listing (block counts, ts), the api feed.",
       "writes": [
         {
-          "tool": "sections_append",
+          "tool": "docs_append",
           "args": {
-            "heading": "Products",
             "path": "processes/calcination.md",
-            "markdown": "- calcined tin → white putty powder\n"
+            "section": "Products",
+            "text": "- calcined tin → white putty powder\n"
           }
         },
         {
-          "tool": "sections_append",
+          "tool": "blocks_append",
           "args": {
-            "heading": "b_29",
-            "markdown": "Bench notes are dated by month.\n"
+            "id": "b_29",
+            "text": "Bench notes are dated by month.\n"
           }
         },
         {
-          "tool": "sections_append",
+          "tool": "docs_append",
           "args": {
-            "heading": "Tasks",
-            "markdown": "x"
+            "path": "processes/calcination.md",
+            "section": "Nope",
+            "text": "x"
           }
         },
         {
@@ -6759,7 +6783,7 @@
         {
           "tool": "docs_append",
           "args": {
-            "doc": "d_16",
+            "id": "d_16",
             "text": "Trailing line.\n"
           }
         },
@@ -6844,32 +6868,12 @@
             "committed": true
           },
           {
-            "error": "ambiguous_heading",
+            "error": "parent_missing",
             "retriable": false,
+            "message": "no heading \"Nope\" in /processes/calcination.md",
             "data": {
-              "heading": "Tasks",
-              "candidates": [
-                {
-                  "$id": "b_50",
-                  "doc_id": "d_1"
-                },
-                {
-                  "$id": "b_76",
-                  "doc_id": "d_2"
-                },
-                {
-                  "$id": "b_168",
-                  "doc_id": "d_8"
-                },
-                {
-                  "$id": "b_182",
-                  "doc_id": "d_9"
-                },
-                {
-                  "$id": "b_327",
-                  "doc_id": "d_7"
-                }
-              ]
+              "section": "Nope",
+              "path": "/processes/calcination.md"
             }
           },
           {
@@ -6910,6 +6914,7 @@
           {
             "error": "doc_missing",
             "retriable": false,
+            "message": "no document with id or path \"nope.md\"",
             "data": {
               "path": "nope.md"
             }
@@ -8459,14 +8464,14 @@
         {
           "tool": "docs_move",
           "args": {
-            "doc": "texts/mutus-liber.md",
+            "path": "texts/mutus-liber.md",
             "to_path": "texts/silent-book.md"
           }
         },
         {
           "tool": "docs_move",
           "args": {
-            "doc": "nope.md",
+            "path": "nope.md",
             "to_path": "x.md"
           }
         }
@@ -8566,7 +8571,10 @@
           {
             "error": "doc_missing",
             "retriable": false,
-            "data": {}
+            "message": "no document with id or path \"nope.md\"",
+            "data": {
+              "path": "nope.md"
+            }
           }
         ],
         "reads": [
@@ -9247,7 +9255,7 @@
         {
           "tool": "docs_set_meta",
           "args": {
-            "doc": "substances/salt.md",
+            "path": "substances/salt.md",
             "set": {
               "verified": false,
               "reviewed": "2026-09"
@@ -9260,13 +9268,13 @@
         {
           "tool": "docs_delete",
           "args": {
-            "doc": "texts/emerald-tablet.md"
+            "path": "texts/emerald-tablet.md"
           }
         },
         {
           "tool": "docs_delete",
           "args": {
-            "doc": "nope.md"
+            "path": "nope.md"
           }
         }
       ],
@@ -9290,14 +9298,14 @@
         {
           "tool": "docs_history",
           "args": {
-            "doc": "texts/emerald-tablet.md",
+            "path": "texts/emerald-tablet.md",
             "include_deleted": true
           }
         },
         {
           "tool": "docs_history",
           "args": {
-            "doc": "texts/emerald-tablet.md"
+            "path": "texts/emerald-tablet.md"
           }
         },
         {
@@ -9336,7 +9344,10 @@
           {
             "error": "doc_missing",
             "retriable": false,
-            "data": {}
+            "message": "no document with id or path \"nope.md\"",
+            "data": {
+              "path": "nope.md"
+            }
           }
         ],
         "reads": [
@@ -9526,7 +9537,11 @@
           },
           {
             "error": "doc_missing",
-            "retriable": false
+            "retriable": false,
+            "message": "no document with id or path \"texts/emerald-tablet.md\"",
+            "data": {
+              "path": "texts/emerald-tablet.md"
+            }
           },
           {
             "stale": [
@@ -9898,14 +9913,14 @@
         {
           "tool": "docs_plan_update",
           "args": {
-            "doc": "practitioners/newton.md",
+            "path": "practitioners/newton.md",
             "content": "---\ntype: practitioner\nlayer: working\ntradition: western\nera: 1680\ntags: [practitioner, transmutation]\nverified: true\n---\n\n# Isaac Newton\n\n1643–1727. Wrote more on alchemy than on physics, and published almost none of it.\n\nknown_for:: unpublished alchemical corpus\ncentury:: 17\n\n## Scale of the work\n\nRoughly a million words of alchemical manuscript survive: transcriptions,\nindexes of authors, and his own laboratory records with quantities and dates. He\nkept furnaces at Trinity for decades and ran the work himself rather than\ndelegating it.\n\nKeynes, who bought a large part of the papers at auction in 1936, called him\n\"the last of the magicians.\" The phrase is memorable and slightly unfair — the\nnotebooks are methodical, quantitative, and unmystical in tone.\n\n## The index of authors\n\nHis *Index Chemicus* cross-references hundreds of alchemical texts by topic. It\nis a serious piece of scholarship on a corpus he expected to contain a real\nsecret, encoded.\n\nThat expectation was the error, and it was not a careless one: the tradition\n*claimed* to encode a secret, and Newton took the claim at face value and tested\nit with the most rigorous method available. The method was sound; the corpus was\nempty.\n\n## Why it matters here\n\nNewton is the clean case against reading alchemy as mere credulity. The most\ncapable investigator of the era worked the programme for thirty years with full\nrigour and got nothing, because there was nothing there. That is a result, and\nthe [magnum opus](/processes/magnum-opus.md) framework does not survive it.\n\n- [x] Read the Index Chemicus entries on [[mercury]]\n- [ ] Compare Keynes's catalogue with the Sotheby's lot list\n"
           }
         },
         {
           "tool": "docs_update",
           "args": {
-            "doc": "practitioners/newton.md",
+            "path": "practitioners/newton.md",
             "content": "---\ntype: practitioner\nlayer: working\ntradition: western\nera: 1680\ntags: [practitioner, transmutation]\nverified: true\n---\n\n# Isaac Newton\n\n1643–1727. Wrote more on alchemy than on physics, and published almost none of it.\n\nknown_for:: unpublished alchemical corpus\ncentury:: 17\n\n## Scale of the work\n\nRoughly a million words of alchemical manuscript survive: transcriptions,\nindexes of authors, and his own laboratory records with quantities and dates. He\nkept furnaces at Trinity for decades and ran the work himself rather than\ndelegating it.\n\nKeynes, who bought a large part of the papers at auction in 1936, called him\n\"the last of the magicians.\" The phrase is memorable and slightly unfair — the\nnotebooks are methodical, quantitative, and unmystical in tone.\n\n## The index of authors\n\nHis *Index Chemicus* cross-references hundreds of alchemical texts by topic. It\nis a serious piece of scholarship on a corpus he expected to contain a real\nsecret, encoded.\n\nThat expectation was the error, and it was not a careless one: the tradition\n*claimed* to encode a secret, and Newton took the claim at face value and tested\nit with the most rigorous method available. The method was sound; the corpus was\nempty.\n\n## Why it matters here\n\nNewton is the clean case against reading alchemy as mere credulity. The most\ncapable investigator of the era worked the programme for thirty years with full\nrigour and got nothing, because there was nothing there. That is a result, and\nthe [magnum opus](/processes/magnum-opus.md) framework does not survive it.\n\n- [x] Read the Index Chemicus entries on [[mercury]]\n- [ ] Compare Keynes's catalogue with the Sotheby's lot list\n",
             "reason": "interop"
           }
@@ -9913,7 +9928,7 @@
         {
           "tool": "docs_update",
           "args": {
-            "doc": "practitioners/newton.md",
+            "path": "practitioners/newton.md",
             "content": "---\ntype: practitioner\nlayer: working\ntradition: western\nera: 1680\ntags: [practitioner, transmutation]\nverified: true\n---\n\n# Isaac Newton\n\n1643–1727. Wrote more on alchemy than on physics, and published almost none of it.\n\nknown_for:: unpublished alchemical corpus\ncentury:: 17\n\n## Scale of the work\n\nRoughly a million words of alchemical manuscript survive: transcriptions,\nindexes of authors, and his own laboratory records with quantities and dates. He\nkept furnaces at Trinity for decades and ran the work himself rather than\ndelegating it.\n\nKeynes, who bought a large part of the papers at auction in 1936, called him\n\"the last of the magicians.\" The phrase is memorable and slightly unfair — the\nnotebooks are methodical, quantitative, and unmystical in tone.\n\n## The index of authors\n\nHis *Index Chemicus* cross-references hundreds of alchemical texts by topic. It\nis a serious piece of scholarship on a corpus he expected to contain a real\nsecret, encoded.\n\nThat expectation was the error, and it was not a careless one: the tradition\n*claimed* to encode a secret, and Newton took the claim at face value and tested\nit with the most rigorous method available. The method was sound; the corpus was\nempty.\n\n## Why it matters here\n\nNewton is the clean case against reading alchemy as mere credulity. The most\ncapable investigator of the era worked the programme for thirty years with full\nrigour and got nothing, because there was nothing there. That is a result, and\nthe [magnum opus](/processes/magnum-opus.md) framework does not survive it.\n\n- [x] Read the Index Chemicus entries on [[mercury]]\n- [ ] Compare Keynes's catalogue with the Sotheby's lot list\n"
           }
         }
@@ -9933,7 +9948,7 @@
           }
         },
         {
-          "tool": "history_node",
+          "tool": "blocks_history",
           "args": {
             "id": "b_109"
           }
@@ -9941,13 +9956,13 @@
         {
           "tool": "docs_history",
           "args": {
-            "doc": "practitioners/newton.md"
+            "path": "practitioners/newton.md"
           }
         },
         {
           "tool": "diff",
           "args": {
-            "doc": "d_5",
+            "doc_id": "d_5",
             "from_rev": "r_5",
             "to_rev": "r_20"
           }
@@ -9955,7 +9970,7 @@
         {
           "tool": "diff_unified",
           "args": {
-            "doc": "practitioners/newton.md"
+            "doc_path": "practitioners/newton.md"
           }
         },
         {
@@ -10430,14 +10445,14 @@
         {
           "tool": "docs_history",
           "args": {
-            "doc": "practitioners/paracelsus.md",
+            "path": "practitioners/paracelsus.md",
             "include_deleted": true
           }
         },
         {
           "tool": "docs_history",
           "args": {
-            "doc": "lab/2026-03-notes.md"
+            "path": "lab/2026-03-notes.md"
           }
         },
         {
@@ -10904,7 +10919,7 @@
           }
         },
         {
-          "tool": "history_node",
+          "tool": "blocks_history",
           "args": {
             "id": "b_57"
           }
@@ -11123,13 +11138,13 @@
     },
     {
       "name": "clock-seam",
-      "notes": "§7.1 OMGBASE_SPEC_CLOCK: the case's `ts` is the writer's clock, so the seed commits AND the write's commit carry 2026-10-01T12:34:56.789Z; every `ts` a reader reports (docs_history, changes_since, docs_list, docs_tree, history_node) equals it.",
+      "notes": "§7.1 OMGBASE_SPEC_CLOCK: the case's `ts` is the writer's clock, so the seed commits AND the write's commit carry 2026-10-01T12:34:56.789Z; every `ts` a reader reports (docs_history, changes_since, docs_list, docs_tree, blocks_history) equals it.",
       "ts": "2026-10-01T12:34:56.789Z",
       "writes": [
         {
           "tool": "blocks_update",
           "args": {
-            "block": "b_277",
+            "id": "b_277",
             "markdown": "Bench stock, restocked for interop."
           }
         }
@@ -11138,7 +11153,7 @@
         {
           "tool": "docs_history",
           "args": {
-            "doc": "substances/salt.md"
+            "path": "substances/salt.md"
           }
         },
         {
@@ -11156,7 +11171,7 @@
           "args": {}
         },
         {
-          "tool": "history_node",
+          "tool": "blocks_history",
           "args": {
             "id": "b_277"
           }

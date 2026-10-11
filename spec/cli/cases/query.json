@@ -406,7 +406,7 @@
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "error[semantic_unavailable]: semantic(...) needs an embedding provider\n  hint: omg config set embedding.provider <command|url>\n"
+        "stderr": "error[provider_unavailable]: semantic(...) needs an embedding provider\n  hint: omg config set embedding.provider <command|url>\n"
       }
     },
     {
@@ -420,7 +420,7 @@
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "{\"error\":\"semantic_unavailable\",\"message\":\"semantic(...) needs an embedding provider\",\"hint\":\"omg config set embedding.provider <command|url>\",\"retriable\":false}\n"
+        "stderr": "{\"error\":\"provider_unavailable\",\"message\":\"semantic(...) needs an embedding provider\",\"hint\":\"omg config set embedding.provider <command|url>\",\"retriable\":false}\n"
       }
     },
     {

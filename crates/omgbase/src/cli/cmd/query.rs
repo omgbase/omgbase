@@ -13,19 +13,19 @@ use crate::cli::output::{CliError, EXIT_OK, Result, js_json, render_hits, trunca
 use super::{fmt_value, str_of};
 
 /// Run `source` with the query tool; a `semantic(...)` phrase needs the
-/// provider (none configured → `semantic_unavailable` with the config hint).
+/// provider (none configured → `provider_unavailable` with the config hint).
 pub fn run_source(
     cli: &mut Cli,
     source: &str,
     limit: Option<i64>,
     cursor: Option<&str>,
 ) -> Result<Json> {
-    // §2.3: remotely the engine's own provider (or its `semantic_unavailable`)
+    // §2.3: remotely the engine's own provider (or its `provider_unavailable`)
     // answers; the local provider check would open the workspace.
     let semantic = !collect_semantic_phrases(source).is_empty();
     if semantic && !cli.remote_mode() && !cli.has_provider()? {
         return Err(CliError::engine_hint(
-            "semantic_unavailable",
+            "provider_unavailable",
             "semantic(...) needs an embedding provider",
             format!("{} config set embedding.provider <command|url>", cli.prog),
         ));

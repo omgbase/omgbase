@@ -389,7 +389,18 @@ fn record(tool: &str, result: &Json, w: &str) -> Result<Json, String> {
     };
     if is_error {
         if let Some(o) = body.as_object_mut() {
-            o.remove("message");
+            // README §6: the surface's own errors keep their message.
+            let composed = o.get("data").and_then(Json::as_object).is_some_and(|d| {
+                d.get("hint").and_then(Json::as_str) == Some("arguments")
+                    || [
+                        "id", "path", "doc_id", "doc_path", "ref", "section", "provider",
+                    ]
+                    .iter()
+                    .any(|k| d.contains_key(*k))
+            });
+            if !composed {
+                o.remove("message");
+            }
             if o.get("error").and_then(Json::as_str) == Some("filter_invalid") {
                 o.remove("data");
             }

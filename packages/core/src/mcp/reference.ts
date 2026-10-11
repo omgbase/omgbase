@@ -58,10 +58,10 @@ Results are LEAN hits — { $id, $path } + whatever \`select\` projects (or \`va
 \`$id\` straight into \`where $id == "…"\` (no translation); a \`select $path\` lands on
 the envelope key rather than beside it; a row surfacing as a value (an empty
 \`collect { }\`) is the same \`{ $id, $path }\`. Every other tool spells a row the
-same way (\`docs_read\` → \`{ $id, $path, rev, properties, $raw }\`, \`nodes_get\` →
+same way (\`docs_read\` → \`{ $id, $path, rev, properties, $raw }\`, \`blocks_get\` →
 \`{ $id, type, text, $raw, $hash, … }\`, \`docs_list\` → \`{ $id, $path, $updated_at,
 blocks }\`, a revision → \`{ $id, $path, $hash }\`): hydrate by id via
-nodes_get/docs_read.
+blocks_get/docs_read.
 
 ## Paths
 
@@ -147,7 +147,7 @@ edges:  (the authored link graph as rows — one per open edge)
                        frontmatter key / inline field it was authored in).
   - intrinsics       = $id, $path (the SOURCE doc's path); doc.<key> reaches the
                        source document. There is no from_commit: a query sees
-                       open edges only (history is history_node/changes_since).
+                       open edges only (history is blocks_history/changes_since).
   - text()/semantic() are N/A on edges.
 
 ## Scoping (ADR-015; the root row since surface 2.0): bare names are LOCAL
@@ -211,7 +211,7 @@ edges:  (the authored link graph as rows — one per open edge)
                        via the node index); composes anywhere, incl. nested scopes.
   semantic("phrase")   embedding cosine SCORE (docs/blocks): threshold it
                        (semantic("x") > 0.6), project it, or \`order by semantic("x")
-                       desc\` for top-K. Needs a provider; else semantic_unavailable.
+                       desc\` for top-K. Needs a provider that has embedded the repository; else provider_unavailable.
   blocks target only:
     under(id_or_heading)      block in the containment subtree / section range
     under_heading("Launch")   an ancestor section heading contains the text (ci)

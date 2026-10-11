@@ -51,7 +51,7 @@ describe("MCP server skeleton", () => {
   it("lists the full tool surface", async () => {
     const tools = await client.listTools();
     const names = tools.tools.map((t) => t.name).sort();
-    for (const t of ["docs_tree", "docs_list", "docs_outline", "docs_read", "docs_get_many", "nodes_get", "nodes_get_many", "query", "query_syntax", "graph", "text_search", "resolve", "apply", "blocks_insert", "blocks_update", "blocks_move", "blocks_remove", "blocks_split", "blocks_merge", "tasks_complete", "node_set", "sections_append", "docs_append", "links_retarget", "links_stale", "links_repair", "docs_create", "docs_move", "docs_delete", "docs_set_meta", "docs_plan_update", "docs_update", "history_node", "diff", "docs_read_at", "docs_history", "changes_since", "repos_status", "sync_status"]) {
+    for (const t of ["docs_tree", "docs_list", "docs_outline", "docs_read", "docs_get_many", "blocks_get", "blocks_get_many", "query", "query_syntax", "graph", "text_search", "resolve", "apply", "blocks_insert", "blocks_update", "blocks_move", "blocks_remove", "blocks_split", "blocks_merge", "tasks_complete", "node_set", "blocks_append", "docs_append", "links_retarget", "links_stale", "links_repair", "docs_create", "docs_move", "docs_delete", "docs_set_meta", "docs_plan_update", "docs_update", "blocks_history", "diff", "docs_read_at", "docs_history", "changes_since", "repos_status", "sync_status"]) {
       expect(names, `missing tool ${t}`).toContain(t);
     }
   });
@@ -172,38 +172,38 @@ describe("MCP server skeleton", () => {
 
   // Ref-resolution audit: doc-ref tools accept a d_ id OR a path in `doc`
   // (findDocByRef), and never silent-empty on an unresolvable ref.
-  it("docs_read / docs_outline accept a d_ id in the `doc` field", async () => {
+  it("docs_read / docs_outline take a d_ id as `id`", async () => {
     const docId = (store.db.prepare("SELECT doc_id FROM docs WHERE path='notes.md'").get() as { doc_id: string }).doc_id;
-    const { payload: read } = (await call("docs_read", { doc: docId })) as { payload: { $path: string } };
+    const { payload: read } = (await call("docs_read", { id: docId })) as { payload: { $path: string } };
     expect(read.$path).toBe("/notes.md");
-    const { payload: outline } = (await call("docs_outline", { doc: docId })) as { payload: { text: string } };
+    const { payload: outline } = (await call("docs_outline", { id: docId })) as { payload: { text: string } };
     expect(outline.text).toContain("§");
   });
 
-  it("docs_read / docs_outline accept a PATH in the `doc` field (id-or-path symmetry)", async () => {
-    const { payload: read } = (await call("docs_read", { doc: "notes.md" })) as { payload: { $path: string } };
+  it("docs_read / docs_outline take a path as `path`", async () => {
+    const { payload: read } = (await call("docs_read", { path: "notes.md" })) as { payload: { $path: string } };
     expect(read.$path).toBe("/notes.md");
-    const { payload: outline } = (await call("docs_outline", { doc: "notes.md" })) as { payload: { text: string } };
+    const { payload: outline } = (await call("docs_outline", { path: "notes.md" })) as { payload: { text: string } };
     expect(outline.text).toContain("§");
   });
 
-  it("docs_read_at accepts a PATH in the `doc` field", async () => {
+  it("docs_read_at takes a path as `path`", async () => {
     const rev1 = (store.db.prepare("SELECT current_rev FROM docs WHERE path='notes.md'").get() as { current_rev: string }).current_rev;
-    const { payload } = (await call("docs_read_at", { doc: "notes.md", rev: rev1 })) as { payload: { rev: string } };
+    const { payload } = (await call("docs_read_at", { path: "notes.md", rev: rev1 })) as { payload: { rev: string } };
     expect(payload.rev).toBe(rev1);
   });
 
   it("a d_-shaped id that doesn't exist maps to doc_missing (loud, not path-fallthrough)", async () => {
-    const { payload, isError } = (await call("docs_read", { doc: "d_0000000" })) as { payload: { error: string }; isError: boolean };
+    const { payload, isError } = (await call("docs_read", { id: "d_0000000" })) as { payload: { error: string }; isError: boolean };
     expect(isError).toBe(true);
     expect(payload.error).toBe("doc_missing");
   });
 
-  it("diff resolves a PATH in `doc` and returns the real block-grain diff (not silent-empty)", async () => {
+  it("diff resolves `doc_path` and returns the real block-grain diff (not silent-empty)", async () => {
     const rev1 = (store.db.prepare("SELECT current_rev FROM docs WHERE path='notes.md'").get() as { current_rev: string }).current_rev;
     ingestFile(store, repoId, "notes.md", "---\nlayer: working\n---\n\n# Risks\n\nStable identity is hard.\n\n- [ ] decide write-back\n\nAdded tail.\n");
     const rev2 = (store.db.prepare("SELECT current_rev FROM docs WHERE path='notes.md'").get() as { current_rev: string }).current_rev;
-    const { payload, isError } = (await call("diff", { doc: "notes.md", from_rev: rev1, to_rev: rev2 })) as {
+    const { payload, isError } = (await call("diff", { doc_path: "notes.md", from_rev: rev1, to_rev: rev2 })) as {
       payload: { kind: string }[]; isError: boolean;
     };
     expect(isError).toBe(false);
@@ -212,7 +212,7 @@ describe("MCP server skeleton", () => {
   });
 
   it("diff with an unresolvable doc errors doc_missing (not an empty diff)", async () => {
-    const { payload, isError } = (await call("diff", { doc: "nope.md", from_rev: "r_a", to_rev: "r_b" })) as { payload: { error: string }; isError: boolean };
+    const { payload, isError } = (await call("diff", { doc_path: "nope.md", from_rev: "r_a", to_rev: "r_b" })) as { payload: { error: string }; isError: boolean };
     expect(isError).toBe(true);
     expect(payload.error).toBe("doc_missing");
   });
@@ -258,10 +258,10 @@ describe("MCP server skeleton", () => {
     expect(payload.hits[0]!.layer).toBe("working");
   });
 
-  it("query semantic without a provider yields semantic_unavailable", async () => {
+  it("query semantic without a provider yields provider_unavailable", async () => {
     const { payload, isError } = (await call("query", { query: 'from blocks where semantic("identity across edits") > 0.5' })) as { payload: { error: string }; isError: boolean };
     expect(isError).toBe(true);
-    expect(payload.error).toBe("semantic_unavailable");
+    expect(payload.error).toBe("provider_unavailable");
   });
 
   it("resolve embeds the query when a provider is configured (hybrid, not FTS-only)", async () => {
@@ -278,17 +278,17 @@ describe("MCP server skeleton", () => {
     expect(embeddedWith).toBe("why isn't severity shown to artists");
   });
 
-  it("nodes_get hydrates a block by id at a resolution", async () => {
+  it("blocks_get hydrates a block by id at a resolution", async () => {
     const { payload: read } = (await call("docs_read", { path: "notes.md", include_ids: true })) as { payload: { ids: string[] } };
     const headingId = read.ids[0]!;
-    const { payload } = (await call("nodes_get", { path: "notes.md", id: headingId, resolution: "raw" })) as { payload: { $raw: string } };
+    const { payload } = (await call("blocks_get", { id: headingId, resolution: "raw" })) as { payload: { $raw: string } };
     expect(payload.$raw).toBe("# Risks");
   });
 
-  it("nodes_get infers the document from a block id alone (no doc/path)", async () => {
+  it("blocks_get infers the document from the block id", async () => {
     const { payload: read } = (await call("docs_read", { path: "notes.md", include_ids: true })) as { payload: { ids: string[] } };
     const headingId = read.ids[0]!;
-    const { payload, isError } = (await call("nodes_get", { id: headingId, resolution: "raw" })) as { payload: { $raw: string }; isError: boolean };
+    const { payload, isError } = (await call("blocks_get", { id: headingId, resolution: "raw" })) as { payload: { $raw: string }; isError: boolean };
     expect(isError).toBe(false);
     expect(payload.$raw).toBe("# Risks");
   });
@@ -314,7 +314,7 @@ describe("MCP server skeleton", () => {
   });
 });
 
-describe("nodes_get_many spans documents (ids are globally unique)", () => {
+describe("blocks_get_many spans documents (ids are globally unique)", () => {
   it("without doc/path returns ids from three docs in request order and lists bogus ids as unresolved", async () => {
     ingestFile(store, repoId, "a.md", "# A\n\npara a\n");
     ingestFile(store, repoId, "b.md", "# B\n\npara b\n");
@@ -325,7 +325,7 @@ describe("nodes_get_many spans documents (ids are globally unique)", () => {
     const b = idsOf("b.md");
     const ids = [b[1]!, notes[0]!, "b_bogus", a[1]!, notes[1]!, a[0]!, b[0]!];
 
-    const { payload, isError } = (await call("nodes_get_many", { ids })) as {
+    const { payload, isError } = (await call("blocks_get_many", { ids })) as {
       payload: { nodes: { $id: string }[]; truncated: boolean; unresolved: string[] };
       isError: boolean;
     };
@@ -335,15 +335,16 @@ describe("nodes_get_many spans documents (ids are globally unique)", () => {
     expect(payload.truncated).toBe(false);
   });
 
-  it("with an explicit doc scope, other docs' ids are unresolved rather than dropped", async () => {
+  it("a `path` scope is no longer an argument (3.0): the shape error names the valid ones", async () => {
     ingestFile(store, repoId, "a.md", "# A\n");
     const aId = (store.db.prepare("SELECT block_id FROM blocks WHERE doc_id = (SELECT doc_id FROM docs WHERE path = 'a.md')").get() as { block_id: string }).block_id;
-    const notesId = (store.db.prepare("SELECT block_id FROM blocks WHERE doc_id = (SELECT doc_id FROM docs WHERE path = 'notes.md') AND type = 'heading'").get() as { block_id: string }).block_id;
-    const { payload } = (await call("nodes_get_many", { path: "notes.md", ids: [notesId, aId] })) as {
-      payload: { nodes: { $id: string }[]; unresolved: string[] };
+    const { payload, isError } = (await call("blocks_get_many", { path: "notes.md", ids: [aId] })) as {
+      payload: { error: string; message: string; data: { hint: string } }; isError: boolean;
     };
-    expect(payload.nodes.map((n) => n.$id)).toEqual([notesId]);
-    expect(payload.unresolved).toEqual([aId]);
+    expect(isError).toBe(true);
+    expect(payload.error).toBe("filter_invalid");
+    expect(payload.message).toBe("unknown argument `path` (blocks_get_many takes budget_tokens?, ids, repo?, resolution?)");
+    expect(payload.data.hint).toBe("arguments");
   });
 });
 
@@ -383,14 +384,14 @@ describe("doc-level MCP tools (docs_create/move/delete/set_meta)", () => {
   });
 
   it("docs_set_meta patches frontmatter, preserving other keys", async () => {
-    const { isError } = (await call("docs_set_meta", { doc: "notes.md", set: { status: "active", priority: 2 } })) as { isError: boolean };
+    const { isError } = (await call("docs_set_meta", { path: "notes.md", set: { status: "active", priority: 2 } })) as { isError: boolean };
     expect(isError).toBe(false);
     const { payload } = (await call("query", { query: 'from docs where layer == "working" && status == "active"' })) as { payload: { hits: { $path: string }[] } };
     expect(payload.hits.map((h) => h.$path)).toContain("/notes.md");
   });
 
   it("docs_move renames the document", async () => {
-    const { payload, isError } = (await call("docs_move", { doc: "notes.md", to_path: "moved/notes.md" })) as { payload: { $path: string }; isError: boolean };
+    const { payload, isError } = (await call("docs_move", { path: "notes.md", to_path: "moved/notes.md" })) as { payload: { $path: string }; isError: boolean };
     expect(isError).toBe(false);
     expect(payload.$path).toBe("/moved/notes.md");
     const { payload: q } = (await call("query", { query: 'from docs where layer == "working"' })) as { payload: { hits: { $path: string }[] } };
@@ -406,7 +407,7 @@ describe("doc-level MCP tools (docs_create/move/delete/set_meta)", () => {
     expect(staleBefore.payload.stale.map((s) => s.target)).toEqual(["/moved/notes.md"]);
 
     // Opted-out move: b's link dangles and is reported; a's phantom resolves.
-    const { payload, isError } = (await call("docs_move", { doc: "notes.md", to_path: "moved/notes.md", retarget_inbound: false })) as {
+    const { payload, isError } = (await call("docs_move", { path: "notes.md", to_path: "moved/notes.md", retarget_inbound: false })) as {
       payload: { $path: string; dangling: { doc_id: string; $path: string; block_id: string | null; target: string; anchor: string | null }[]; retargeted: unknown };
       isError: boolean;
     };
@@ -420,7 +421,7 @@ describe("doc-level MCP tools (docs_create/move/delete/set_meta)", () => {
     expect(staleAfter.payload.stale[0]).toMatchObject({ $path: "/b.md", target: "/notes.md" });
 
     // Move again with the default (retarget_inbound omitted): zero dangling, file rewritten, code span untouched.
-    const { payload: p2 } = (await call("docs_move", { doc: "moved/notes.md", to_path: "final/notes.md" })) as {
+    const { payload: p2 } = (await call("docs_move", { path: "moved/notes.md", to_path: "final/notes.md" })) as {
       payload: { dangling: unknown[]; retargeted: { blocks: string[]; docs: string[] } | null };
     };
     expect(p2.dangling).toEqual([]);
@@ -439,19 +440,19 @@ describe("doc-level MCP tools (docs_create/move/delete/set_meta)", () => {
     expect(created.payload.diffs).toEqual({ "/sub/fresh.md": { before: "", after: "# Fresh\n" } });
     expect(existsSync(join(root, "sub/fresh.md"))).toBe(false);
 
-    const meta = (await call("docs_set_meta", { doc: "notes.md", set: { status: "active" }, dry_run: true })) as { payload: { committed: boolean; diffs: Record<string, { before: string; after: string }> }; isError: boolean };
+    const meta = (await call("docs_set_meta", { path: "notes.md", set: { status: "active" }, dry_run: true })) as { payload: { committed: boolean; diffs: Record<string, { before: string; after: string }> }; isError: boolean };
     expect(meta.isError).toBe(false);
     expect(meta.payload.committed).toBe(false);
     expect(meta.payload.diffs["/notes.md"]!.after).toContain("status: active");
     expect(readFileSync(join(root, "notes.md"), "utf8")).not.toContain("status: active");
 
-    const moved = (await call("docs_move", { doc: "notes.md", to_path: "moved/notes.md", dry_run: true })) as { payload: { committed: boolean; path: string; diffs: Record<string, unknown> }; isError: boolean };
+    const moved = (await call("docs_move", { path: "notes.md", to_path: "moved/notes.md", dry_run: true })) as { payload: { committed: boolean; path: string; diffs: Record<string, unknown> }; isError: boolean };
     expect(moved.isError).toBe(false);
     expect(moved.payload.committed).toBe(false);
     expect(Object.keys(moved.payload.diffs).sort()).toEqual(["/moved/notes.md", "/notes.md"]);
     expect(existsSync(join(root, "notes.md"))).toBe(true);
 
-    const deleted = (await call("docs_delete", { doc: "notes.md", dry_run: true })) as { payload: { committed: boolean; diffs: Record<string, { after: string }> }; isError: boolean };
+    const deleted = (await call("docs_delete", { path: "notes.md", dry_run: true })) as { payload: { committed: boolean; diffs: Record<string, { after: string }> }; isError: boolean };
     expect(deleted.isError).toBe(false);
     expect(deleted.payload.committed).toBe(false);
     expect(deleted.payload.diffs["/notes.md"]!.after).toBe("");
@@ -463,17 +464,17 @@ describe("doc-level MCP tools (docs_create/move/delete/set_meta)", () => {
   });
 
   it("docs_delete tombstones the document", async () => {
-    const { isError } = (await call("docs_delete", { doc: "notes.md" })) as { isError: boolean };
+    const { isError } = (await call("docs_delete", { path: "notes.md" })) as { isError: boolean };
     expect(isError).toBe(false);
     const { payload } = (await call("query", { query: 'from docs where layer == "working"' })) as { payload: { hits: unknown[] } };
     expect(payload.hits).toHaveLength(0);
   });
 
-  it("docs_move / docs_set_meta accept a d_ id in `doc` too (id-or-path regression)", async () => {
+  it("docs_move / docs_set_meta take a d_ id as `id` too", async () => {
     const docId = (store.db.prepare("SELECT doc_id FROM docs WHERE path='notes.md'").get() as { doc_id: string }).doc_id;
-    const { isError: metaErr } = (await call("docs_set_meta", { doc: docId, set: { status: "byid" } })) as { isError: boolean };
+    const { isError: metaErr } = (await call("docs_set_meta", { id: docId, set: { status: "byid" } })) as { isError: boolean };
     expect(metaErr).toBe(false);
-    const { payload, isError } = (await call("docs_move", { doc: docId, to_path: "moved/byid.md" })) as { payload: { $path: string }; isError: boolean };
+    const { payload, isError } = (await call("docs_move", { id: docId, to_path: "moved/byid.md" })) as { payload: { $path: string }; isError: boolean };
     expect(isError).toBe(false);
     expect(payload.$path).toBe("/moved/byid.md");
   });
@@ -580,13 +581,13 @@ describe("onMutation fires for writes (embed-drain trigger)", () => {
   });
 
   it("fires for a doc-level write (docs_set_meta)", async () => {
-    const { isError } = (await call("docs_set_meta", { doc: "notes.md", set: { status: "active" } })) as { isError: boolean };
+    const { isError } = (await call("docs_set_meta", { path: "notes.md", set: { status: "active" } })) as { isError: boolean };
     expect(isError).toBe(false);
     expect(mutations).toBe(1);
   });
 });
 
-describe("apply op schema + sections_append heading resolution", () => {
+describe("apply op schema + blocks_append / docs_append section resolution", () => {
   let root: string;
 
   beforeEach(async () => {
@@ -627,12 +628,12 @@ describe("apply op schema + sections_append heading resolution", () => {
     const { payload: read } = (await call("docs_read", { path: "notes.md", include_ids: true })) as {
       payload: { ids: string[]; hashes: Record<string, string> };
     };
-    // Pick the "intro body" paragraph via nodes_get, then update it through the
+    // Pick the "intro body" paragraph via blocks_get, then update it through the
     // RAW apply kernel using ONLY the hash the same read handed back — no
-    // nodes_get_many(resolution:"full") hydration round trip.
+    // blocks_get_many(resolution:"full") hydration round trip.
     let target = "";
     for (const id of read.ids) {
-      const { payload } = (await call("nodes_get", { id, resolution: "raw" })) as { payload: { $raw?: string } };
+      const { payload } = (await call("blocks_get", { id, resolution: "raw" })) as { payload: { $raw?: string } };
       if (payload.$raw === "intro body") { target = id; break; }
     }
     expect(target).not.toBe("");
@@ -652,7 +653,7 @@ describe("apply op schema + sections_append heading resolution", () => {
     };
     let target = "";
     for (const id of read.ids) {
-      const { payload } = (await call("nodes_get", { id, resolution: "raw" })) as { payload: { $raw?: string } };
+      const { payload } = (await call("blocks_get", { id, resolution: "raw" })) as { payload: { $raw?: string } };
       if (payload.$raw === "intro body") { target = id; break; }
     }
     const { payload, isError } = (await call("apply", {
@@ -665,41 +666,84 @@ describe("apply op schema + sections_append heading resolution", () => {
     expect(payload.data.current!.$hash).toBe(read.hashes[target]);
   });
 
-  it("sections_append resolves heading text to a block id (unique)", async () => {
-    const { isError } = (await call("sections_append", { heading: "Launch", markdown: "appended item", path: "notes.md" })) as { isError: boolean };
+  it("docs_append with `section` resolves heading text inside the named document", async () => {
+    const { isError } = (await call("docs_append", { path: "notes.md", section: "Launch", text: "appended item" })) as { isError: boolean };
     expect(isError).toBe(false);
     const { payload } = (await call("docs_read", { path: "notes.md" })) as { payload: { $raw: string } };
     expect(payload.$raw).toContain("appended item");
   });
 
-  it("sections_append still accepts a heading block id", async () => {
+  it("blocks_append on a heading appends into its section", async () => {
     const { payload: read } = (await call("docs_read", { path: "notes.md", include_ids: true })) as { payload: { ids: string[] } };
-    // pick the id whose block is the Launch heading via nodes_get
+    // pick the id whose block is the Launch heading via blocks_get
     let headingId = "";
     for (const id of read.ids) {
-      const { payload } = (await call("nodes_get", { id, resolution: "raw" })) as { payload: { $raw?: string } };
+      const { payload } = (await call("blocks_get", { id, resolution: "raw" })) as { payload: { $raw?: string } };
       if (payload.$raw === "## Launch") { headingId = id; break; }
     }
     expect(headingId).not.toBe("");
-    const { isError } = (await call("sections_append", { heading: headingId, markdown: "byid item" })) as { isError: boolean };
+    const { isError } = (await call("blocks_append", { id: headingId, text: "byid item" })) as { isError: boolean };
     expect(isError).toBe(false);
+    const { payload } = (await call("docs_read", { path: "notes.md" })) as { payload: { $raw: string } };
+    expect(payload.$raw).toContain("launch note\n\nbyid item");
   });
 
-  it("sections_append with ambiguous heading text errors ambiguous_heading with candidates", async () => {
-    const { payload, isError } = (await call("sections_append", { heading: "Launch", markdown: "x" })) as {
-      payload: { error: string; data: { candidates: { $id: string; doc_id: string }[] } }; isError: boolean;
+  it("blocks_append on a container appends to its children; on a leaf it is block_not_container", async () => {
+    writeFileSync(join(root, "list.md"), "# L\n\n- one\n- two\n\nplain\n");
+    ingestFile(store, repoId, "list.md", "# L\n\n- one\n- two\n\nplain\n");
+    const rows = store.db.prepare("SELECT block_id, type FROM blocks WHERE doc_id = (SELECT doc_id FROM docs WHERE path = 'list.md') AND deleted_commit IS NULL ORDER BY order_key").all() as { block_id: string; type: string }[];
+    const list = rows.find((r) => r.type === "list")!.block_id;
+    const para = rows.filter((r) => r.type === "paragraph").at(-1)!.block_id;
+    const { isError } = (await call("blocks_append", { id: list, text: "- three" })) as { isError: boolean };
+    expect(isError).toBe(false);
+    const { payload } = (await call("docs_read", { path: "list.md" })) as { payload: { $raw: string } };
+    expect(payload.$raw).toContain("- two\n- three");
+    const leaf = (await call("blocks_append", { id: para, text: "x" })) as { payload: { error: string; message: string; data: { id: string; type: string } }; isError: boolean };
+    expect(leaf.isError).toBe(true);
+    expect(leaf.payload.error).toBe("block_not_container");
+    expect(leaf.payload.data).toEqual({ id: para, type: "paragraph" });
+    expect(leaf.payload.message).toContain("blocks_insert");
+  });
+
+  it("docs_append with a `section` spelled twice in the document errors ambiguous_heading with candidates", async () => {
+    writeFileSync(join(root, "twice.md"), "## Launch\n\na\n\n## Launch\n\nb\n");
+    ingestFile(store, repoId, "twice.md", "## Launch\n\na\n\n## Launch\n\nb\n");
+    const { payload, isError } = (await call("docs_append", { path: "twice.md", section: "Launch", text: "x" })) as {
+      payload: { error: string; message: string; data: { section: string; candidates: { $id: string; doc_id: string }[] } }; isError: boolean;
     };
     expect(isError).toBe(true);
     expect(payload.error).toBe("ambiguous_heading");
+    expect(payload.data.section).toBe("Launch");
     expect(payload.data.candidates.length).toBe(2);
+    expect(payload.message).toBe('heading "Launch" matches 2 headings in /twice.md; pass the heading\'s id to blocks_append');
   });
 
-  it("sections_append with unknown heading text errors parent_missing", async () => {
-    const { payload, isError } = (await call("sections_append", { heading: "Nonexistent", markdown: "x", path: "notes.md" })) as {
-      payload: { error: string }; isError: boolean;
+  it("docs_append with an unknown `section` errors parent_missing naming the heading", async () => {
+    const { payload, isError } = (await call("docs_append", { path: "notes.md", section: "Nonexistent", text: "x" })) as {
+      payload: { error: string; message: string }; isError: boolean;
     };
     expect(isError).toBe(true);
     expect(payload.error).toBe("parent_missing");
+    expect(payload.message).toBe('no heading "Nonexistent" in /notes.md');
+  });
+
+  it("argument-shape errors are filter_invalid with the nearest name and the tool's shape", async () => {
+    const retired = (await call("docs_read", { doc: "notes.md" })) as { payload: { error: string; message: string } };
+    expect(retired.payload.error).toBe("filter_invalid");
+    expect(retired.payload.message).toBe("`doc` is no longer an argument — pass `id` or `path` (docs_read takes id?, include_ids?, path?, repo?)");
+    const typo = (await call("text_search", { query: "x" })) as { payload: { message: string } };
+    expect(typo.payload.message).toBe("unknown argument `query`; did you mean `q`? (text_search takes limit?, q, repo?)");
+    const missing = (await call("query", {})) as { payload: { message: string } };
+    expect(missing.payload.message).toBe("`query` is required (query takes cursor?, limit?, query, repo?)");
+    const typed = (await call("query", { query: "from docs", limit: "5" })) as { payload: { message: string } };
+    expect(typed.payload.message).toBe("`limit` must be an integer (query takes cursor?, limit?, query, repo?)");
+    const neither = (await call("docs_read", {})) as { payload: { message: string } };
+    expect(neither.payload.message).toBe("pass id or path (docs_read takes id?, include_ids?, path?, repo?)");
+    const both = (await call("docs_read", { id: "d_0000000", path: "notes.md" })) as { payload: { error: string; message: string } };
+    expect(both.payload.error).toBe("doc_missing");
+    expect(both.payload.message).toBe('no document with id or path "d_0000000"');
+    const node = (await call("blocks_update", { block: "b_x", markdown: "x" })) as { payload: { message: string } };
+    expect(node.payload.message).toBe("`block` is no longer an argument — pass `id` (blocks_update takes attrs?, checked?, dry_run?, expect?, id, markdown?, repo?)");
   });
 
   it("docs_append appends to the end of the document, preserving every existing block id", async () => {
@@ -749,9 +793,9 @@ describe("apply op schema + sections_append heading resolution", () => {
     expect(after.$raw).toContain("second para");
   });
 
-  it("docs_append accepts a d_ id in `doc`", async () => {
+  it("docs_append takes a d_ id as `id`", async () => {
     const docId = (store.db.prepare("SELECT doc_id FROM docs WHERE path='notes.md'").get() as { doc_id: string }).doc_id;
-    const { isError } = (await call("docs_append", { doc: docId, text: "by-id append\n" })) as { isError: boolean };
+    const { isError } = (await call("docs_append", { id: docId, text: "by-id append\n" })) as { isError: boolean };
     expect(isError).toBe(false);
     const { payload } = (await call("docs_read", { path: "notes.md" })) as { payload: { $raw: string } };
     expect(payload.$raw).toContain("by-id append");
@@ -778,7 +822,7 @@ describe("block-level MCP tools (blocks_* — ref resolution + CAS server-side)"
     const { payload } = (await call("docs_read", { path: "notes.md", include_ids: true })) as { payload: { ids: string[] } };
     const out: { $id: string; $raw: string }[] = [];
     for (const id of payload.ids) {
-      const { payload: n } = (await call("nodes_get", { id, resolution: "raw" })) as { payload: { $raw?: string } };
+      const { payload: n } = (await call("blocks_get", { id, resolution: "raw" })) as { payload: { $raw?: string } };
       out.push({ $id: id, $raw: n.$raw ?? "" });
     }
     return out;
@@ -820,7 +864,7 @@ describe("block-level MCP tools (blocks_* — ref resolution + CAS server-side)"
 
   it("blocks_update resolves a ref and pins CAS from current bytes server-side", async () => {
     const beta = await idOf("Beta para.");
-    const { isError } = (await call("blocks_update", { block: beta, markdown: "Beta, edited." })) as { isError: boolean };
+    const { isError } = (await call("blocks_update", { id: beta, markdown: "Beta, edited." })) as { isError: boolean };
     expect(isError).toBe(false);
     const { payload } = (await call("docs_read", { path: "notes.md" })) as { payload: { $raw: string } };
     expect(payload.$raw).toContain("Beta, edited.");
@@ -829,7 +873,7 @@ describe("block-level MCP tools (blocks_* — ref resolution + CAS server-side)"
 
   it("blocks_update honors a caller-supplied stale expect (CAS conflict)", async () => {
     const beta = await idOf("Beta para.");
-    const { isError } = (await call("blocks_update", { block: beta, markdown: "nope", expect: { content_hash: "deadbeef" } })) as { isError: boolean };
+    const { isError } = (await call("blocks_update", { id: beta, markdown: "nope", expect: { content_hash: "deadbeef" } })) as { isError: boolean };
     expect(isError).toBe(true);
   });
 
@@ -886,7 +930,7 @@ describe("block-level MCP tools (blocks_* — ref resolution + CAS server-side)"
 
   it("blocks_split splits a block at offsets (CAS pinned server-side)", async () => {
     const alpha = await idOf("Alpha para.");
-    const { isError } = (await call("blocks_split", { block: alpha, at: [5] })) as { isError: boolean };
+    const { isError } = (await call("blocks_split", { id: alpha, at: [5] })) as { isError: boolean };
     expect(isError).toBe(false);
     const { payload } = (await call("docs_read", { path: "notes.md" })) as { payload: { $raw: string } };
     expect(payload.$raw).toContain("Alpha");
@@ -900,7 +944,7 @@ describe("block-level MCP tools (blocks_* — ref resolution + CAS server-side)"
   });
 
   it("a bogus ref errors block_missing", async () => {
-    const { payload, isError } = (await call("blocks_update", { block: "b_nope", markdown: "x" })) as { payload: { error: string }; isError: boolean };
+    const { payload, isError } = (await call("blocks_update", { id: "b_nope", markdown: "x" })) as { payload: { error: string }; isError: boolean };
     expect(isError).toBe(true);
     expect(payload.error).toBe("block_missing");
   });
@@ -1010,7 +1054,7 @@ describe("link maintenance tools: honest dry run, authored targets, summary, sco
     await call("docs_create", { path: "m.md", markdown: "# M\n\nBody.\n\nTail.\n" });
     const { payload: before } = (await call("docs_read", { path: "m.md", include_ids: true })) as { payload: { ids: string[] } };
     const [headId, bodyId, tailId] = before.ids as [string, string, string];
-    const { payload, isError } = (await call("blocks_update", { block: bodyId, markdown: "Body, edited.\n\nExtra para.\n\n- li" })) as {
+    const { payload, isError } = (await call("blocks_update", { id: bodyId, markdown: "Body, edited.\n\nExtra para.\n\n- li" })) as {
       payload: { $id: string; ids: string[]; committed: boolean }; isError: boolean;
     };
     expect(isError).toBe(false);

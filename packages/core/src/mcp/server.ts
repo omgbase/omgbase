@@ -1,18 +1,19 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { CallToolRequestSchema, ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import type { Store } from "../core/store/store.js";
 import { docsOutline } from "../core/read/outline.js";
 import { docsRead, docsReadMany, MANY_DOCS_CAP, readDocumentAtRevision } from "../core/read/document.js";
 import { nodesGet, nodesGetMany } from "../core/read/nodes.js";
-import { findDoc, findDocByRef, docsList, docsTree, DOCS_LIST_DEFAULT_LIMIT, DOCS_TREE_DEFAULT_LIMIT } from "../core/read/reader.js";
+import { findDoc, docsList, docsTree, DOCS_LIST_DEFAULT_LIMIT, DOCS_TREE_DEFAULT_LIMIT } from "../core/read/reader.js";
 import { resolveRef } from "../core/read/refs.js";
-import { isValidId } from "../core/ids.js";
 import { VERSION } from "../core/index.js";
 import { normalizeText, normalizeVisibleText } from "../core/hash.js";
-import { oqxRunAsync, collectSemanticPhrases } from "../oqx/run.js";
+import { oqxRunAsync, collectSemanticPhrases, type EmbedQuery } from "../oqx/run.js";
 import { graphNeighborhood } from "./graph.js";
 import { textSearch } from "../search/text.js";
 import { EngineError, errorBody } from "./errors.js";
+import { argumentError, validateArguments, type ArgShape } from "./arguments.js";
 import { apply, type Op } from "../mutate/apply.js";
 import { tasksComplete, sectionsAppend, docsAppend, linksRetarget, linksRepair, nodeSet } from "../mutate/macros.js";
 import { docsCreate, docsMove, docsDelete, docsSetMeta } from "../mutate/docs.js";
@@ -25,15 +26,16 @@ import { reposStatus, syncStatus, reposList } from "../sync/admin.js";
 import { observeFile, observeMany, observeDelete } from "../sync/observe.js";
 import { QUERY_SYNTAX } from "./reference.js";
 import { versionInfo, type HostInfo } from "../version.js";
-import { storagePath } from "../core/paths.js";
+import { storagePath, referencePath } from "../core/paths.js";
+import { isContainerBlock } from "../format/index.js";
 import {
   surfaceApplyResult, surfaceDocOpResult, surfaceDocMoveResult, surfaceObserveResult, surfaceObserveDeleteResult,
   surfaceTextSearch, surfaceResolveHits, surfaceRetargetHits, surfaceOpset, surfaceDocsUpdate,
 } from "../surface-paths.js";
 
 // MCP server (mcp-api). The full tool surface wired to the engine: read
-// (docs_tree, docs_list, docs_outline, nodes_get(_many), query, text_search, resolve), mutate (apply
-// + macros), graph (traverse, path), history (history_node, diff,
+// (docs_tree, docs_list, docs_outline, blocks_get(_many), query, text_search, resolve), mutate (apply
+// + macros), graph (traverse, path), history (blocks_history, diff,
 // changes_since), admin (repos_status, sync_status). Uniform truncated+cursor
 // on lists; stable error-code mapping.
 //
@@ -43,6 +45,17 @@ import {
 // in the storage form (apply, the document operations, observe, search) are
 // re-shaped here through `surface-paths.ts` — the same functions the `omg`
 // verbs call, so the two clients cannot drift.
+//
+// Arguments (spec/surface §4 "Arguments", 3.0): a tool's prefix names the row
+// kind it addresses, and `id` / `path` in its arguments are that kind's
+// attributes — `docs_read { id?, path? }`, `blocks_get { id }`, `node_set
+// { id }`; a document referenced from a tool of another kind is the foreign
+// key `doc_id` / `doc_path` (`diff`, `diff_unified`); list and mixed-reference
+// arguments keep role names (`ids`, `docs`, `roots`, `ref`, `to`, `blocks`).
+// There is no bare `doc` argument any more. Every call is validated by
+// `validateArguments` ahead of its handler (the `tool` wrapper + the
+// CallTool handler below), so a wrong name is a `filter_invalid` naming the
+// nearest valid one, never the SDK's generic validation text.
 
 export interface ServerContext {
   store: Store;
@@ -55,10 +68,13 @@ export interface ServerContext {
   rootPath?: string;
   /**
    * Embed a query string to a vector for semantic search. Absent ⇒ the `query`
-   * tool's `semantic` param yields `semantic_unavailable` (no provider). The
+   * tool's `semantic` param yields `provider_unavailable` (no provider). The
    * host (CLI `omg mcp`) supplies this from the repo's configured embedder.
    */
   embedQuery?: (text: string) => Promise<{ model: string; vec: Float32Array }>;
+  /** The configured provider's name (`embedding.provider`), for the
+   *  `provider_unavailable` error's `data` when the host knows it. */
+  embedProvider?: string;
   /**
    * Called after any successful write tool (apply/macros/doc ops). The host
    * (CLI `omg mcp`) uses this to schedule a background embed drain so a block's
@@ -80,7 +96,9 @@ export interface ServerContext {
 // each op a real schema (rather than z.any()) makes the required fields
 // discoverable in the tool's JSON schema and turns a malformed op — e.g. an
 // `update` missing its `block` id — into a boundary validation error naming the
-// field, instead of a downstream `block_missing` for "block undefined".
+// field, instead of a downstream `block_missing` for "block undefined". The
+// grammar (`block`, `blocks`, `to`, `at`, `expect.content_hash`, `op`) is
+// spec/mutate's and is not renamed by the surface's argument rule.
 const atSchema = z.union([
   z.literal("start"),
   z.literal("end"),
@@ -117,19 +135,40 @@ const opSchema = z.discriminatedUnion("op", [
   z.object({ op: z.literal("merge"), blocks: z.array(z.string()), separator: z.string().optional(), expect: z.record(z.string(), expectSchema).optional() }),
 ]);
 
-function ok(payload: unknown): { content: { type: "text"; text: string }[] } {
+type ToolResult = { content: { type: "text"; text: string }[]; isError?: true };
+
+function ok(payload: unknown): ToolResult {
   return { content: [{ type: "text", text: JSON.stringify(payload) }] };
 }
 
-function fail(err: unknown): { content: { type: "text"; text: string }[]; isError: true } {
+function fail(err: unknown): ToolResult {
   // One mapping for every client (errors.ts `errorBody`): the CLI renders the
   // same body, so a code can never differ between `omg` and `omg mcp`.
   return { content: [{ type: "text", text: JSON.stringify(errorBody(err)) }], isError: true };
 }
 
+/** The message every tool uses for a `semantic(...)` call the server cannot rank. */
+export const PROVIDER_UNAVAILABLE_MESSAGE =
+  "semantic(...) needs an embedding provider; none is configured — set embedding.provider (omg config set embedding.provider <command|url>) and embed the repository (omg embed drain)";
+
 export function buildServer(ctx: ServerContext): McpServer {
   const server = new McpServer({ name: "omgbase", version: VERSION });
   const { store } = ctx;
+
+  // ---- registration: listing through the SDK, validation + dispatch ours ----
+  // `server.registerTool` publishes the name, description and JSON schema on
+  // `tools/list`; the `tools/call` handler is replaced below so the arguments
+  // are validated by `validateArguments` (spec/surface §4 "Arguments") and a
+  // failure is the engine's own `filter_invalid`, not the SDK's text.
+  const registry = new Map<string, { shape: ArgShape; handler: (args: Record<string, unknown>) => Promise<ToolResult> }>();
+  function tool<S extends ArgShape>(
+    name: string,
+    def: { description: string; inputSchema: S },
+    handler: (args: z.infer<z.ZodObject<S>>) => Promise<ToolResult>,
+  ): void {
+    server.registerTool(name, def, handler as never);
+    registry.set(name, { shape: def.inputSchema, handler: handler as (args: Record<string, unknown>) => Promise<ToolResult> });
+  }
 
   // Multi-repo (ADR-014): every tool accepts an optional `repo` slug. Resolve it
   // to a repo id + its (derived) working-tree root per call; omitting it uses the
@@ -156,68 +195,77 @@ export function buildServer(ctx: ServerContext): McpServer {
   // `const { repoId, rootPath } = repoScope(args.repo);` — omitting `repo` uses
   // the bound default repo (single-repo clients unchanged).
   const REPO_ARG = { repo: z.string().optional() };
+  // The document locator every `docs_*` tool takes (§4 "Arguments"): the row's
+  // own attributes, at least one of them.
+  const DOC_ARGS = { id: z.string().optional(), path: z.string().optional() };
 
   // Wrap a successful write's result: notify the host so it can schedule a
   // background embed drain. onMutation must be cheap/non-blocking (see
   // ServerContext); we never await it, keeping it off the response path.
-  function okMutated(payload: unknown): { content: { type: "text"; text: string }[] } {
+  function okMutated(payload: unknown): ToolResult {
     ctx.onMutation?.();
     return ok(payload);
   }
 
-  // Resolve the owning document id from an explicit doc/path, or — when neither
-  // is given — infer it from a block id. The MCP schemas mark `doc`/`path`
-  // optional precisely so a caller holding only a block id (e.g. from
-  // docs_outline or query) can hydrate it without a separate lookup.
-  //
-  // `doc` is id-OR-path: an agent holding a path from a prior query/outline hit
-  // routinely reaches for the most obvious field, so it must accept both (via
-  // the shared findDocByRef). `path` stays explicit-path; `block` infers the
-  // owning doc. An unresolvable ref throws doc_missing (loud), never a silent
-  // empty — including a d_-shaped id that doesn't exist (findDocByRef won't fall
-  // through to a path lookup for it).
-  function resolveDocId(repoId: string, ref: { doc?: string | undefined; path?: string | undefined; block?: string | undefined }): string {
-    if (ref.doc) {
-      const info = findDocByRef(store, repoId, ref.doc);
-      if (info) return info.docId;
-    } else if (ref.path) {
-      const info = findDoc(store, { repoId, path: ref.path });
-      if (info) return info.docId;
-    } else if (ref.block) {
-      const row = store.db
-        .prepare("SELECT doc_id FROM blocks WHERE block_id = ?")
-        .get(ref.block) as { doc_id: string } | undefined;
-      if (row) return row.doc_id;
+  // ---- the document locator (§4 "Arguments") ---------------------------------
+  // `id` is the document's id, `path` its path (either form, §1 "Paths"); at
+  // least one is required, and when both are given they must name the same
+  // document. A tool whose prefix is not `docs` refers to a document as the
+  // foreign key `doc_id` / `doc_path` (`diff`, `diff_unified`) under the same
+  // rules (the names are bare because the attributes themselves are becoming
+  // bare — surface 3.0 attribute flip, follow-up). A miss is `doc_missing` "no
+  // document with id or path "<value>"" with the arguments as given in `data`;
+  // neither given is `filter_invalid` "pass id or path"; a disagreement is
+  // `filter_invalid` "id "…" and path "…" name different documents". `findDoc`
+  // never falls through from an id to a path.
+  type LocatorKeys = readonly ["id", "path"] | readonly ["doc_id", "doc_path"];
+  const DOC_KEYS = ["id", "path"] as const;
+  const FOREIGN_KEYS = ["doc_id", "doc_path"] as const;
+  function locateDoc(repoId: string, toolName: string, shape: ArgShape, args: Record<string, unknown>, keys: LocatorKeys = DOC_KEYS): string {
+    const [idKey, pathKey] = keys;
+    const id = args[idKey] as string | undefined;
+    const path = args[pathKey] as string | undefined;
+    if (id === undefined && path === undefined) throw argumentError(toolName, `pass ${idKey} or ${pathKey}`, shape);
+    const given: Record<string, string> = { ...(id !== undefined ? { [idKey]: id } : {}), ...(path !== undefined ? { [pathKey]: path } : {}) };
+    const missing = (value: string) => new EngineError("doc_missing", `no document with ${idKey} or ${pathKey} ${JSON.stringify(value)}`, { data: given });
+    const byId = id !== undefined ? findDoc(store, { docId: id }) : null;
+    if (id !== undefined && (!byId || byId.repoId !== repoId)) throw missing(id);
+    const byPath = path !== undefined ? findDoc(store, { repoId, path }) : null;
+    if (path !== undefined && !byPath) throw missing(path);
+    if (byId && byPath && byId.docId !== byPath.docId) {
+      throw argumentError(toolName, `${idKey} ${JSON.stringify(id)} and ${pathKey} ${JSON.stringify(path)} name different documents`, shape);
     }
-    throw new EngineError("doc_missing", `no document for ${JSON.stringify(ref)}`, { data: ref });
+    return (byId ?? byPath)!.docId;
+  }
+  // The owning document of a block id (`blocks_get`): the block must be live.
+  function docOfBlock(blockId: string): string {
+    const row = store.db.prepare("SELECT doc_id FROM blocks WHERE block_id = ? AND deleted_commit IS NULL").get(blockId) as { doc_id: string } | undefined;
+    if (!row) throw blockMissing(blockId);
+    return row.doc_id;
+  }
+  function blockMissing(value: string): EngineError {
+    return new EngineError("block_missing", `no block with id ${JSON.stringify(value)}`, { data: { id: value } });
   }
 
-  // Resolve `heading` (a block id or heading text) to a heading block id, for
-  // macros that address a section. A value that already names a live heading
-  // block is returned as-is; otherwise it's matched as heading text (normalized
-  // the same way the parser stores block.text), scoped to a doc/path when given.
-  // Repo-wide text that isn't unique fails ambiguous_heading with candidate ids.
-  function resolveHeadingId(repoId: string, heading: string, scope: { doc?: string; path?: string }): string {
-    const asBlock = store.db
-      .prepare("SELECT block_id FROM blocks WHERE block_id = ? AND type = 'heading' AND deleted_commit IS NULL")
-      .get(heading) as { block_id: string } | undefined;
-    if (asBlock) return asBlock.block_id;
-
-    const wantDoc = scope.doc || scope.path ? resolveDocId(repoId, scope) : undefined;
-    // An ATX-looking value ("## Title") loses its hashes; anything else is taken
-    // as the heading's text verbatim (the setext branch of the heading rule
-    // would drop the last line, which for a one-line lookup is everything).
-    const needle = /^[ \t]*#/.test(heading) ? normalizeVisibleText(heading, "heading") : normalizeText(heading);
-    const rows = (wantDoc
-      ? store.db.prepare("SELECT block_id, doc_id, text FROM blocks WHERE repo_id = ? AND type = 'heading' AND doc_id = ? AND deleted_commit IS NULL")
-        .all(repoId, wantDoc)
-      : store.db.prepare("SELECT block_id, doc_id, text FROM blocks WHERE repo_id = ? AND type = 'heading' AND deleted_commit IS NULL")
-        .all(repoId)) as { block_id: string; doc_id: string; text: string }[];
+  // `docs_append`'s `section`: a heading's TEXT, matched against the normalized
+  // heading text of the named document's live headings (an ATX-looking value,
+  // "## Title", loses its hashes). Zero → `parent_missing` naming the heading;
+  // several → `ambiguous_heading` with the candidates `[{ $id, doc_id }]` (pass
+  // the heading's id to `blocks_append` instead). Never an id lookup — the
+  // id form is `blocks_append`'s (§9).
+  function resolveSectionHeading(docId: string, docPath: string, section: string): string {
+    const needle = /^[ \t]*#/.test(section) ? normalizeVisibleText(section, "heading") : normalizeText(section);
+    const rows = store.db
+      .prepare("SELECT block_id, doc_id, text FROM blocks WHERE doc_id = ? AND type = 'heading' AND deleted_commit IS NULL")
+      .all(docId) as { block_id: string; doc_id: string; text: string }[];
     const matches = rows.filter((r) => normalizeText(r.text) === needle);
-    if (matches.length === 0) throw new EngineError("parent_missing", `no heading matching ${JSON.stringify(heading)}`, { data: { heading, ...(wantDoc ? { doc: wantDoc } : {}) } });
+    const shown = referencePath(docPath);
+    if (matches.length === 0) {
+      throw new EngineError("parent_missing", `no heading ${JSON.stringify(section)} in ${shown}`, { data: { section, path: shown } });
+    }
     if (matches.length > 1) {
-      throw new EngineError("ambiguous_heading", `heading ${JSON.stringify(heading)} matches ${matches.length} headings; pass its block id or a doc/path scope`, {
-        data: { heading, candidates: matches.map((m) => ({ $id: m.block_id, doc_id: m.doc_id })) },
+      throw new EngineError("ambiguous_heading", `heading ${JSON.stringify(section)} matches ${matches.length} headings in ${shown}; pass the heading's id to blocks_append`, {
+        data: { section, path: shown, candidates: matches.map((m) => ({ $id: m.block_id, doc_id: m.doc_id })) },
       });
     }
     return matches[0]!.block_id;
@@ -230,7 +278,7 @@ export function buildServer(ctx: ServerContext): McpServer {
   // store, instead of on a client that has none.
   function resolveBlockRef(repoId: string, ref: string): string {
     const r = resolveRef(store, repoId, ref);
-    if (!r || r.kind !== "block" || !r.blockId) throw new EngineError("block_missing", `not a block: ${ref}`, { data: { ref } });
+    if (!r || r.kind !== "block" || !r.blockId) throw blockMissing(ref);
     return r.blockId;
   }
   // Resolve a PARENT ref for insert/move: a block ref names that block as the
@@ -240,7 +288,7 @@ export function buildServer(ctx: ServerContext): McpServer {
   // the parent lives in so the caller can pin the op to it.
   function resolveParentRef(repoId: string, ref: string): { parent: string | { doc: true }; docId: string } {
     const r = resolveRef(store, repoId, ref);
-    if (!r) throw new EngineError("block_missing", `not a block or document: ${ref}`, { data: { ref } });
+    if (!r) throw new EngineError("block_missing", `no block or document with id or path ${JSON.stringify(ref)}`, { data: { ref } });
     if (r.kind === "document") return { parent: { doc: true }, docId: r.docId };
     return { parent: r.blockId!, docId: r.docId };
   }
@@ -276,14 +324,46 @@ export function buildServer(ctx: ServerContext): McpServer {
     return rootPath;
   }
 
-  server.registerTool(
+  // ---- semantic(): loud when it cannot rank (§4, 3.0) ---------------------------
+  // No provider → `provider_unavailable` before anything runs (`data.provider`
+  // null). A provider that answers but whose model has embedded NOTHING in this
+  // repository would score every row null and hand back path-ordered rows with
+  // no score — so the first phrase embedded checks the index and fails the same
+  // code, naming the provider and model and what to run.
+  function hasEmbeddings(repoId: string, model: string): boolean {
+    const row = store.db
+      .prepare(
+        `SELECT 1 WHERE EXISTS (SELECT 1 FROM doc_embeddings de JOIN docs d ON d.doc_id = de.doc_id WHERE d.repo_id = ? AND de.model = ?)
+            OR EXISTS (SELECT 1 FROM embeddings WHERE model = ?)`,
+      )
+      .get(repoId, model, model);
+    return row !== undefined;
+  }
+  function providerUnavailable(): EngineError {
+    return new EngineError("provider_unavailable", PROVIDER_UNAVAILABLE_MESSAGE, { data: { provider: null } });
+  }
+  function rankableEmbed(repoId: string): EmbedQuery | undefined {
+    const embed = ctx.embedQuery;
+    if (!embed) return undefined;
+    return async (text: string) => {
+      const r = await embed(text);
+      if (!hasEmbeddings(repoId, r.model)) {
+        const who = ctx.embedProvider ? `provider ${JSON.stringify(ctx.embedProvider)} (model ${r.model})` : `model ${r.model}`;
+        throw new EngineError("provider_unavailable", `semantic(...) cannot rank: ${who} is configured but nothing in this repository is embedded under it — run omg embed drain`, {
+          data: { provider: ctx.embedProvider ?? null, model: r.model },
+        });
+      }
+      return r;
+    };
+  }
+
+  tool(
     "docs_outline",
     {
       description:
-        "Orientation call. Returns a document's compact indented outline (alias/type/label per line, § marks section headings). IDs are stable; prefer them in follow-ups. Args take a doc id or path. For the whole document body in one call, use docs_read.",
+        "Orientation call. Returns a document's compact indented outline (alias/type/label per line, § marks section headings). IDs are stable; prefer them in follow-ups. Address the document by `id` or `path` (at least one; a `path` in either form). For the whole document body in one call, use docs_read.",
       inputSchema: {
-        doc: z.string().optional(),
-        path: z.string().optional(),
+        ...DOC_ARGS,
         resolution: z.enum(["skeleton", "outline"]).optional(),
         depth: z.number().int().optional(),
         budget_tokens: z.number().int().optional(),
@@ -293,7 +373,7 @@ export function buildServer(ctx: ServerContext): McpServer {
     async (args) => {
       try {
         const { repoId } = repoScope(args.repo);
-        const docId = resolveDocId(repoId, args);
+        const docId = locateDoc(repoId, "docs_outline", registry.get("docs_outline")!.shape, args);
         const res = docsOutline(store, docId, {
           ...(args.resolution ? { resolution: args.resolution } : {}),
           ...(args.depth !== undefined ? { depth: args.depth } : {}),
@@ -306,14 +386,13 @@ export function buildServer(ctx: ServerContext): McpServer {
     },
   );
 
-  server.registerTool(
+  tool(
     "docs_read",
     {
       description:
-        "Read a whole document in one call: `$raw` is the complete file bytes verbatim (fences/tables/list markers preserved), `properties` is the document's property bag grouped by source — `{ frontmatter, inline, computed }` — plus `$id`/`$path`/`rev` (the document's row attributes, spelled as the query language spells them). What `properties.frontmatter` holds is format-dependent: for markdown it's the parsed frontmatter fence; for YAML/JSON it's the parsed object the file represents; other adapters extract per their format. `inline` holds dataview-style `key:: value` fields from the body; `computed` holds engine intrinsics (`$title`, `$tags`). The cold-start 'read the guide before doing anything' call. Args take a doc id or path. Pass include_ids:true to also get the document's block ids in order (`ids`) AND `hashes` — a {block `$id` → block `$hash`} map giving the exact `expect.content_hash` value the raw `apply` kernel needs, so one read yields both the ids and the CAS tokens to mutate them (no follow-up nodes_get_many hydration) — AND `parents`, a {block id → parent block id | null} map (null = top level), because `ids` is a flat pre-order walk and a list is otherwise indistinguishable from its items; filter to `parents[id] === null` for the top-level blocks. For structure-only orientation use docs_outline; to hydrate a single block use nodes_get.",
+        "Read a whole document in one call: `$raw` is the complete file bytes verbatim (fences/tables/list markers preserved), `properties` is the document's property bag grouped by source — `{ frontmatter, inline, computed }` — plus `$id`/`$path`/`rev` (the document's row attributes, spelled as the query language spells them). What `properties.frontmatter` holds is format-dependent: for markdown it's the parsed frontmatter fence; for YAML/JSON it's the parsed object the file represents; other adapters extract per their format. `inline` holds dataview-style `key:: value` fields from the body; `computed` holds engine intrinsics (`$title`, `$tags`). The cold-start 'read the guide before doing anything' call. Address the document by `id` or `path` (at least one; a query hit's `$id`/`$path` are the values to pass). Pass include_ids:true to also get the document's block ids in order (`ids`) AND `hashes` — a {block `$id` → block `$hash`} map giving the exact `expect.content_hash` value the raw `apply` kernel needs, so one read yields both the ids and the CAS tokens to mutate them (no follow-up blocks_get_many hydration) — AND `parents`, a {block id → parent block id | null} map (null = top level), because `ids` is a flat pre-order walk and a list is otherwise indistinguishable from its items; filter to `parents[id] === null` for the top-level blocks. For structure-only orientation use docs_outline; to hydrate a single block use blocks_get.",
       inputSchema: {
-        doc: z.string().optional(),
-        path: z.string().optional(),
+        ...DOC_ARGS,
         include_ids: z.boolean().optional(),
         ...REPO_ARG,
       },
@@ -321,9 +400,9 @@ export function buildServer(ctx: ServerContext): McpServer {
     async (args) => {
       try {
         const { repoId } = repoScope(args.repo);
-        const docId = resolveDocId(repoId, args);
+        const docId = locateDoc(repoId, "docs_read", registry.get("docs_read")!.shape, args);
         const res = docsRead(store, docId, args.include_ids ? { includeIds: true } : {});
-        if (!res) throw new EngineError("doc_missing", `no document for ${JSON.stringify(args)}`);
+        if (!res) throw new EngineError("doc_missing", `no document with id or path ${JSON.stringify(args.id ?? args.path)}`, { data: { id: docId } });
         return ok(res);
       } catch (e) {
         return fail(e);
@@ -331,11 +410,11 @@ export function buildServer(ctx: ServerContext): McpServer {
     },
   );
 
-  server.registerTool(
+  tool(
     "docs_get_many",
     {
       description:
-        "Batch whole-document read — the hydrate half of query→hydrate. The plural of docs_read: pass `docs`, a list of refs (each a doc id OR a path, same id-or-path symmetry docs_read accepts in its `doc` field), and get back one full read per ref. Returns `{ items, errors, truncated }`: each found doc is a full docs_read projection (`$raw` = complete file bytes verbatim, `properties` grouped by source, plus `$id`/`$path`/`rev`, and — with include_ids:true — the document's ordered block `ids`, a `hashes` {block `$id` → block `$hash`} map for raw-`apply` CAS pinning, and a `parents` {block id → parent block id | null} map so top-level vs nested blocks are distinguishable without an outline read); a ref that resolves to no live document lands in `errors` as {ref, error:\"doc_not_found\"} WITHOUT failing the call, so one bad ref never sinks the batch. Duplicate refs collapse first-seen (a repeated ref yields a single item). Capped at " + MANY_DOCS_CAP + " refs per call; excess refs are dropped and `truncated` is set. Pass budget_tokens to cap total hydrated size — the batch stops early and flags `truncated` when the next doc would exceed it; the FIRST doc always ships even when it alone exceeds the budget (the same at-least-one-row contract as docs_list/docs_tree, so a budgeted caller always makes progress). Use this after query/text_search/resolve to pull N whole docs in ONE round-trip instead of N serial docs_read calls; for a single doc use docs_read, and for lean structure-only orientation use docs_outline.",
+        "Batch whole-document read — the hydrate half of query→hydrate. The plural of docs_read: pass `docs`, a list of refs (each a document id OR a path, in either form), and get back one full read per ref. Returns `{ items, errors, truncated }`: each found doc is a full docs_read projection (`$raw` = complete file bytes verbatim, `properties` grouped by source, plus `$id`/`$path`/`rev`, and — with include_ids:true — the document's ordered block `ids`, a `hashes` {block `$id` → block `$hash`} map for raw-`apply` CAS pinning, and a `parents` {block id → parent block id | null} map so top-level vs nested blocks are distinguishable without an outline read); a ref that resolves to no live document lands in `errors` as {ref, error:\"doc_not_found\"} WITHOUT failing the call, so one bad ref never sinks the batch. Duplicate refs collapse first-seen (a repeated ref yields a single item). Capped at " + MANY_DOCS_CAP + " refs per call; excess refs are dropped and `truncated` is set. Pass budget_tokens to cap total hydrated size — the batch stops early and flags `truncated` when the next doc would exceed it; the FIRST doc always ships even when it alone exceeds the budget (the same at-least-one-row contract as docs_list/docs_tree, so a budgeted caller always makes progress). Use this after query/text_search/resolve to pull N whole docs in ONE round-trip instead of N serial docs_read calls; for a single doc use docs_read, and for lean structure-only orientation use docs_outline.",
       inputSchema: {
         docs: z.array(z.string()),
         include_ids: z.boolean().optional(),
@@ -357,13 +436,11 @@ export function buildServer(ctx: ServerContext): McpServer {
     },
   );
 
-  server.registerTool(
-    "nodes_get",
+  tool(
+    "blocks_get",
     {
-      description: "Hydrate one block subtree at a resolution (skeleton|outline|text|raw|full). Pass a block `id`; `doc`/`path` are optional — the owning document is inferred from the block id when omitted. Every resolution carries the block's `$id` and `type`; raw and full add `$raw` (its source bytes) and `$hash` (its own raw hash) — the value update/split need in expect.content_hash, so you can fetch it before editing rather than reading it back from a conflict; full adds `text`, `attrs`, `ordinal`, `depth` and `parent_id` (null at the top level). Use this to expand the lean ids returned by query/resolve. To read a whole document in one call, use docs_read (nodes_get on a doc/heading id returns only that block, not the document).",
+      description: "Hydrate one block subtree at a resolution (skeleton|outline|text|raw|full). `id` is the block's id; its document is inferred from it (blocks used to be called nodes here — this tool was nodes_get until surface 3.0, and `nodes` now names the extracted-entity rows). Every resolution carries the block's `$id` and `type`; raw and full add `$raw` (its source bytes) and `$hash` (its own raw hash) — the value update/split need in expect.content_hash, so you can fetch it before editing rather than reading it back from a conflict; full adds `text`, `attrs`, `ordinal`, `depth` and `parent_id` (null at the top level). Use this to expand the lean ids returned by query/resolve. To read a whole document in one call, use docs_read (blocks_get on a heading's id returns only that block, not its section).",
       inputSchema: {
-        doc: z.string().optional(),
-        path: z.string().optional(),
         id: z.string(),
         resolution: z.enum(["skeleton", "outline", "text", "raw", "full"]).optional(),
         ...REPO_ARG,
@@ -371,10 +448,10 @@ export function buildServer(ctx: ServerContext): McpServer {
     },
     async (args) => {
       try {
-        const { repoId } = repoScope(args.repo);
-        const docId = resolveDocId(repoId, { doc: args.doc, path: args.path, block: args.id });
+        repoScope(args.repo);
+        const docId = docOfBlock(args.id);
         const node = nodesGet(store, docId, args.id, args.resolution ? { resolution: args.resolution } : {});
-        if (!node) throw new EngineError("block_missing", `no block ${args.id}`);
+        if (!node) throw blockMissing(args.id);
         return ok(node);
       } catch (e) {
         return fail(e);
@@ -382,14 +459,12 @@ export function buildServer(ctx: ServerContext): McpServer {
     },
   );
 
-  server.registerTool(
-    "nodes_get_many",
+  tool(
+    "blocks_get_many",
     {
       description:
-        "Fetch up to 100 blocks by id (in request order) with budget truncation. Block ids are globally unique, so `ids` may span ANY number of documents — each id is resolved to its owning doc server-side; `doc`/`path` is an optional SCOPE (ids from other docs then count as unresolved), not a requirement. Result carries `nodes`, `truncated` (cap or `budget_tokens` hit — the first resolved node always ships even when it alone exceeds the budget, so a budgeted caller always makes progress), and `unresolved` — the requested ids that name no live block (never silently dropped).",
+        "Fetch up to 100 blocks by id (in request order) with budget truncation — the plural of blocks_get (nodes_get_many before surface 3.0). Block ids are globally unique, so `ids` may span ANY number of documents — each id is resolved to its owning doc server-side. Result carries `nodes` (the hydrated blocks, one per resolved id), `truncated` (cap or `budget_tokens` hit — the first resolved block always ships even when it alone exceeds the budget, so a budgeted caller always makes progress), and `unresolved` — the requested ids that name no live block (never silently dropped).",
       inputSchema: {
-        doc: z.string().optional(),
-        path: z.string().optional(),
         ids: z.array(z.string()),
         resolution: z.enum(["skeleton", "outline", "text", "raw", "full"]).optional(),
         budget_tokens: z.number().int().optional(),
@@ -398,11 +473,8 @@ export function buildServer(ctx: ServerContext): McpServer {
     },
     async (args) => {
       try {
-        const { repoId } = repoScope(args.repo);
-        // Only an explicit doc/path scopes the fetch; never infer a doc from
-        // ids[0] — that silently dropped every id owned by another document.
-        const docId = args.doc || args.path ? resolveDocId(repoId, { doc: args.doc, path: args.path }) : null;
-        const res = nodesGetMany(store, docId, args.ids, {
+        repoScope(args.repo);
+        const res = nodesGetMany(store, null, args.ids, {
           ...(args.resolution ? { resolution: args.resolution } : {}),
           ...(args.budget_tokens !== undefined ? { budgetTokens: args.budget_tokens } : {}),
         });
@@ -413,11 +485,11 @@ export function buildServer(ctx: ServerContext): McpServer {
     },
   );
 
-  server.registerTool(
+  tool(
     "read_ref",
     {
       description:
-        "Read ANY ref — a document (`d_…` id or path, with or without its leading `/`) OR a block (`b_…` id, or an `n_…` node id which dereferences to its block) — and get its content, classified. Resolves the ref server-side (the polymorphic `omg cat`): a document ref returns `{ kind:\"document\", $id, $path, rev, properties, $raw }` (complete file bytes; `resolution` does not apply); a block ref returns `{ kind:\"block\", $id, type, … }` — the block subtree at `resolution` (raw|text|outline|skeleton|full, default raw). Use this when you hold a ref and want its bytes WITHOUT first knowing whether it names a document or a block. Contrast: docs_read needs a doc; nodes_get needs a block id.",
+        "Read ANY ref — a document (`d_…` id or path, with or without its leading `/`) OR a block (`b_…` id, or an `n_…` node id which dereferences to its block) — and get its content, classified. Resolves the ref server-side (the polymorphic `omg cat`): a document ref returns `{ kind:\"document\", $id, $path, rev, properties, $raw }` (complete file bytes; `resolution` does not apply); a block ref returns `{ kind:\"block\", $id, type, … }` — the block subtree at `resolution` (raw|text|outline|skeleton|full, default raw). Use this when you hold a ref and want its bytes WITHOUT first knowing whether it names a document or a block. Contrast: docs_read needs a document's `id`/`path`; blocks_get needs a block's `id`.",
       inputSchema: {
         ref: z.string(),
         resolution: z.enum(["skeleton", "outline", "text", "raw", "full"]).optional(),
@@ -428,14 +500,14 @@ export function buildServer(ctx: ServerContext): McpServer {
       try {
         const { repoId } = repoScope(args.repo);
         const resolved = resolveRef(store, repoId, args.ref);
-        if (!resolved) throw new EngineError("doc_missing", `no document or block for ${JSON.stringify(args.ref)}`);
+        if (!resolved) throw new EngineError("doc_missing", `no document or block with id or path ${JSON.stringify(args.ref)}`, { data: { ref: args.ref } });
         if (resolved.kind === "document") {
           const res = docsRead(store, resolved.docId);
-          if (!res) throw new EngineError("doc_missing", `no document for ${JSON.stringify(args.ref)}`);
+          if (!res) throw new EngineError("doc_missing", `no document with id or path ${JSON.stringify(args.ref)}`, { data: { ref: args.ref } });
           return ok({ kind: "document", ...res });
         }
         const node = nodesGet(store, resolved.docId, resolved.blockId!, { resolution: args.resolution ?? "raw" });
-        if (!node) throw new EngineError("block_missing", `no block ${resolved.blockId}`);
+        if (!node) throw blockMissing(resolved.blockId!);
         return ok({ kind: "block", ...node });
       } catch (e) {
         return fail(e);
@@ -443,7 +515,7 @@ export function buildServer(ctx: ServerContext): McpServer {
     },
   );
 
-  server.registerTool(
+  tool(
     "docs_tree",
     {
       description:
@@ -475,7 +547,7 @@ export function buildServer(ctx: ServerContext): McpServer {
     },
   );
 
-  server.registerTool(
+  tool(
     "docs_list",
     {
       description:
@@ -505,7 +577,7 @@ export function buildServer(ctx: ServerContext): McpServer {
     },
   );
 
-  server.registerTool(
+  tool(
     "query_syntax",
     {
       description:
@@ -515,11 +587,11 @@ export function buildServer(ctx: ServerContext): McpServer {
     async () => ok({ syntax: QUERY_SYNTAX }),
   );
 
-  server.registerTool(
+  tool(
     "query",
     {
       description:
-        "OQX (omgbase Query eXpressions) — composable query in ONE expression. Two rules: DOT navigation belongs to the host object model (`doc.layer`, `section.blocks`, `target.out`); WHITESPACE query directives belong to OQX — a nested query is `<receiver> collect|exists|count|first|single { <block> }` (a postfix directive + a `{ … }` block), never a method. `from E` selects a property/relation relative to the current source scope and flattens it (a typed flatMap): top-level `from docs|blocks|nodes|edges` selects the repository's docs/blocks/nodes/edges (the `edges` target is the authored link graph as first-class rows — `$id`/`$path` plus the plain fields doc_id/block_id/via_id/dst_id/dst_path/uri/predicate/provenance/dst_kind/anchor/field, with $path/doc.* reaching the SOURCE doc); `where`; `select`. Its distinctive power is receiver-constrained nested queries that correlate to the current row: `from docs where nodes exists { where kind == \"md:task\" }` returns only the docs that themselves contain a matching node (not a global scan). Directives: `exists { … }` / `count { … }` in where — with an optional count comparison `nodes count { where kind == \"md:task\" } >= 2`; `collect { … }` in select for hierarchical results, nestable (`select secs: nodes collect { select h: name, items: section.blocks collect { where type == \"list_item\" } where kind == \"md:section\" } from docs`). CLAUSE ORDER IS FIXED (ADR-020): within one body — the top level or any `{ block }` — clauses appear at most once each, in exactly this order: `select … from … where … follow … order by … limit N offset N`. Every clause is optional except a top-level `from`; an out-of-order clause is a parse error naming the order. ONLY `select` may drop its keyword, and only when it is the first clause written (`$path, open from docs where …`; `nodes collect { attrs.text }` projects `attrs.text`). Every other clause carries its keyword, with one piece of sugar (oqx 0.17): a block's leading expression is its `where` when it is predicate-shaped (`nodes exists { kind == \"md:task\" }` ≡ `nodes exists { where kind == \"md:task\" }`); a bare name or dotted path is a projection, so filter on a bare field with `is active`, and `{ name where … }` is the projection + filter (`{ age >= 18, name }` is an error). A top-level predicate needs `where` (`where` follows `from`, so `age > 15 from people` is an error), a bare boolean property in leading position PROJECTS (`nodes collect { active }`), and `from docs count` is an error (write `docs count { … }` for the consumer, or `select count from docs` to project a field named count). More sugar, each desugaring in the parser to the explicit directive: a receiver block without a consumer is `collect` (`docs { type == \"x\" }`, `nodes { kind == \"md:task\" }` — not after `follow`, where `{ … }` is the options block); brackets `x[p]` = `x first { where p }` (the first match or absent), `x[p]!` = `x single { where p }` required (exactly one, else filter_invalid), `x[n]` = `x first { offset n }` (positional; out of range is absent); postfix `x!` = required (the value, or a loud error naming the expression and the row — never a filter, never a coercion; tightest: `a!.b` vs `a.b!`); prefix `is x` / `not x` (truthiness); infix `x is y` / `x is not y` compares identity (a row's id, else the value — `x is null` is the absence test; for scalars `is` ≡ `==`); and a `select` item may use the items to its left (`boss: ^docs[slug == ^manager], name: boss.$title`). `and` / `or` / `not` are the connectives; `&&` / `||` / `!` are accepted synonyms (the canonical printer writes the words). `where` may reference the same body's `select` aliases (`select $path, old: era < 1000 from docs where old` — inlined at parse time; an alias shadows a same-named field there). On the nodes/blocks targets a bare identifier that is not a structural field (doc_id, block_id, kind/name/value; doc_id, type/text, ordinal/depth) or `$`-intrinsic reads the flattened attrs bag — `checked` == `attrs.checked`, `level` == `attrs.level` — so the name you filter on matches the name a projection returns (`select attrs.checked` yields key `checked`); the `attrs.<key>` form still works and an absent key is silently false. Any consumer accepts `distinct` to dedup the rows it reduces by their projected value — `nodes count distinct { select kind }`, `nodes collect distinct { select kind }`, top-level `select distinct type` (empty projection dedups by identity). `values` after a projection of exactly ONE item returns the bare value instead of a `{name: value}` record: at the top level `select $path values from docs where layer == \"canon\"` returns `values: [\"a.md\", …]` (paged like hits; `hits` is empty), and inside a block `select tags: tags collect { $it values }` yields a plain array. `$it` is the current item itself — the row, or the scalar element when the receiver is a list property (`where tags exists { where $it == \"pricing\" }`); inside a block `^$it` is the enclosing row. `none { … }` is the zero-cardinality test — true iff the block yields no rows (≡ `!… exists { … }`), and how \"every\" is spelled: `nodes none { where kind == \"md:task\" and not checked }` = no open tasks; also a whole-query directive (`docs none { … }` returns `none`). `limit N` / `offset N` bound a row set AFTER where/order/distinct and BEFORE the consumer reduces it, so they mean the same under every consumer: at the top level (`order by era desc limit 3` — the tool's `limit`/`cursor` then page within that bounded set) or inside any block (`nodes collect { … order by ordinal limit 1 }`; `nodes exists { offset 1 }` = at least two). `entries(x)` turns a record into a collection of entries — inside the block `$key` is the property key and `$it` (and bare names) the value: `select fm: entries(frontmatter) collect { k: $key, v: $it }`, `from nodes where kind == \"md:task\" and entries(attrs) exists { where $key == \"checked\" and $it }`; works on `frontmatter` / `inline` (the whole authored bag, nested dotted keys folded back), `attrs`, a nested frontmatter map, or a list (numeric index keys). Plain objects never auto-iterate; `entries()` is the explicit bridge. The where clause is a boolean tree: compose scalar predicates and consumer directives with `and`, `or`, `not`, and grouping (`layer == \"canon\" or nodes exists { where kind == \"md:task\" }`). Relative source: `from E` inside a top-level consumer block re-projects the rows — `docs collect { from nodes where kind == \"md:task\" }` starts at docs, projects each doc through its `nodes` relation, and queries the resulting nodes (a scalar relation like `from doc` contributes one row; a missing/non-navigable relation is a loud error, never a global scan). One-scope lift: a `collect` in `where` with a `^name` both filters (non-empty) and binds the matching values into the parent select in one expression — `select $path, open from docs where nodes collect { ^open: value where kind == \"md:task\" and not attrs.checked }` returns the docs with an open task, each carrying its open-task texts. Correlation / joins (the `^` sigil, symmetric with the lift): a nested query may READ a name bound one scope outward — bind it in the parent (a select value or a lift), then reference `^name` inside a nested query's where. Combined with the root row's collections `^docs` / `^nodes` / `^blocks` / `^edges` (the repository is OQX's root row, one scope out from a top-level row — one caret per enclosing block, or the absolute `0^docs` from any depth; an UNBOUNDED repository scan, uncorrelated until you add a `^` predicate) this expresses lateral/dependent joins without a JOIN keyword: `^<t> exists { where … == ^k }` = semi-join, `not … exists { … }` = anti-join, `… collect { … }` in select = nested left-join, and the select-only lookups `first { … }` / `single { … }` (zero-or-one / one-to-one; `single` errors if it matches >1) — e.g. `select owner_id, owner: ^nodes single { where kind == \"person\" and attrs.id == ^owner_id } from docs`. Membership over a lifted set: `<value> in ^keys`. `^` reads exactly ONE scope out (no arbitrary-ancestor search), and a bare name reads the CURRENT row only — it never falls through to an enclosing row or the root, so reach outward explicitly with `^name` (the enclosing row) or `^docs` / `0^docs` (the root row's collections; `^$id` / `0^$id` is the repository id, `^$it` the root object). A bare `docs` INSIDE a block is an error (\"did you mean `^docs`\"), never an empty read; `$repo` (surface < 2.0) is refused with the replacement spelled out. PATHS are `/`-rooted on the surface (surface 2.0): every path returned — `$path`, an edge's `dst_path`, a hit's `$path` — is the reference form (`/a/b.md`), and a string literal compared with `$path`/`dst_path` by `==`/`!=` or passed to their `startsWith` accepts both forms (`$path == \"a.md\"` and `$path == \"/a.md\"` both match); a property's value is the author's, so a reference held in frontmatter compares with `^$path` directly (`^docs { ^$path in list(after) }` = the documents whose `after` names me). `refs(field)` resolves the document REFERENCES a property holds (a string or a list of `/a.md`, `a.md` or `d_…` elements; dangling and non-string elements dropped) to live docs rows, so it is a source (`from refs(\"/a.md\")`), a receiver (`refs(before) collect { $path, when }`, `refs(see_also)[0]`) or a `follow` destination (`follow refs(before), refs(after)` walks a timeline both ways); `follow before` over the strings fails — a hit must be a document, block, node or edge row. Top-level consumers: the whole query can be a consumer directive over a bare root receiver (a target name at the root scope) to change its result shape — `docs count { … }`, `docs exists { … }` and `docs none { … }` reduce to a scalar (returned as `count`/`exists`/`none`, no hits), `docs first { … }` / `docs single { … }` return zero-or-one hit (`single` errors if the query matches >1); a bare `from …` is the collect form. (A bare target at the root scope is the same collection `^<target>` reaches from inside where/select.) Scalar predicates follow the @omgbase/oqx semantics (strict typed equality with absence normalized so `!=` over an absent field matches; case-sensitive string ops with `.lower()`/`.upper()` and a regex `matches()`; absent sorts last; arithmetic supported), including doc.<key> reach-through and `text(\"terms\")` — a full-text (FTS5) PRUNING predicate that, because it is an ordinary predicate, composes inside correlated subqueries and collects (e.g. `nodes exists { where kind == \"md:task\" and text(\"ship\") }`), which the flat `query` tool cannot express. (`text` prunes; relevance ranking is separate.) And `semantic(\"phrase\")` — an embedding cosine SCORE (docs/blocks only) usable as a threshold prune (`semantic(\"the great work\") > 0.6`) or a projection (`select score: semantic(\"…\")`); it needs an embedding provider (else semantic_unavailable) and, like `text`, composes inside nested scopes. Ranking: `order by <expr> [asc|desc], …` sorts the result (`order by semantic(\"the great work\") desc` = semantic top-K; also orders by any frontmatter field / `$path`), always tie-broken by (path, id) for a total order — this is how score functions become a ranking. A custom order disables the keyset cursor (you still get the top `limit` with `truncated`). Recursion (`follow`): make the query recursive over a TYPE-PRESERVING relation (the relation's successor type must equal the query target). `from blocks where $id == \"b_x\" follow block.children` walks the block subtree from a seed; the `where` picks the SEED rows and `follow <relation>` expands them. A bare `follow <relation>` carries no sub-clauses; sub-clauses go in a `{ … }` block. Two orthogonal knobs shape it: a follow-local `follow <rel> { where <pred> }` filters which successors keep participating at each hop (running out ⇒ a leaf), and `{ frontier <pred> }` cuts a relation that could otherwise continue (⇒ a frontier); `{ depth <n> }` bounds the walk (1..8, default 8). `follow distinct` dedups reached rows by identity (the default keeps one occurrence per distinct walk path). `follow … { by <expr> }` sets the node identity used for cycle detection + dedup to a field/intrinsic (default: the entity id) — e.g. `follow doc.out { by group }` treats same-`group` documents as one node. Each reached row carries recursion metadata: `$depth` (seed = 1), the categorical `$stop` (interior | leaf | frontier | depth | cycle) with `$leaf`/`$frontier` boolean sugar, and `$ordinal` (a deterministic 1..N rank over the walk, ordered by depth then path — `order by $ordinal` for walk order, `where $ordinal <= N` for a deterministic budget cut). It is queryable in select / order by AND filterable post-walk in the top-level `where` (a `where` conjunct referencing a recursion intrinsic filters the walk's RESULT — `from blocks where type == \"list_item\" and $leaf follow block.children` = the leaves; the non-recursion conjuncts remain the seed predicate). Recursion intrinsics are NOT valid in the follow-local successor `where` or `frontier` (those run mid-walk, before the metadata exists), nor inside a consumer directive. Cyclic graphs are safe: a revisited node is admitted once as a `$stop == \"cycle\"` occurrence and never re-expanded. Type-preserving relations today: `block.children` (blocks→blocks, immediate child blocks), `section.children` (nodes→nodes, immediate child sections — a true outline depth ladder) and `section.subsections` (nodes→nodes, the whole transitive sub-tree — flattens to depth 2), and `doc.out` / `doc.in` (docs→docs, the authored citation graph — outgoing links / backlinks; inspect a doc's edges as rows via `doc.out_edges`/`doc.in_edges` (predicate/provenance/anchor filtered by a plain `where`)). Consumers compose over the walk (`blocks count { where … follow block.children }`). A `follow` may also nest inside a select-position `collect` for a per-row recursive subtree: `select outline: nodes collect { select n: name, d: $depth where kind == \"md:section\" and name == \"Overview\" follow section.children } from docs` (the collect's `where` seeds, correlated to the row; `follow` recurses; the collect's `select` projects each occurrence). Receivers: from docs — `nodes`, `blocks`, `doc.out`/`doc.in`, `doc.out_edges`/`doc.in_edges` (a doc's outgoing/incoming edges as rows); from nodes — `section.blocks` (content under an `md:section` node's heading, transitively including deeper headings), `section.children` (immediate child sections), and `section.subsections` (all contained sections); from blocks — `section` (enclosing `md:section` node(s)), `block.children` (child blocks), `block.nodes` (the projected nodes anchored to this block — links/tasks/anchors/…), and `block.out_edges` (this block's outgoing edges as rows — body links + inline fields; frontmatter edges are doc-grain, use `doc.out_edges`); from any row — `^docs` / `^nodes` / `^blocks` / `^edges` (the root row's collections; `0^docs` from any depth). Returns lean hits {$id, $path, ...projections} — the envelope keys are the intrinsics, so a hit's `$id` pastes into the next `where $id == …` unchanged (the `$` rule, surface 3.0: `$` marks exactly the engine names that share a namespace with your content — $id/$path everywhere, $raw/$hash/$updated_at on docs and blocks, $title/$tags on docs; every other engine field is plain snake_case, and every tool result spells a row with the same names) — with truncated + cursor (or a `count`/`exists` scalar for those consumers). Covers structural + section navigation + ad-hoc correlation + bounded recursive traversal (`follow`).",
+        "OQX (omgbase Query eXpressions) — composable query in ONE expression. Two rules: DOT navigation belongs to the host object model (`doc.layer`, `section.blocks`, `target.out`); WHITESPACE query directives belong to OQX — a nested query is `<receiver> collect|exists|count|first|single { <block> }` (a postfix directive + a `{ … }` block), never a method. `from E` selects a property/relation relative to the current source scope and flattens it (a typed flatMap): top-level `from docs|blocks|nodes|edges` selects the repository's docs/blocks/nodes/edges (the `edges` target is the authored link graph as first-class rows — `$id`/`$path` plus the plain fields doc_id/block_id/via_id/dst_id/dst_path/uri/predicate/provenance/dst_kind/anchor/field, with $path/doc.* reaching the SOURCE doc); `where`; `select`. Its distinctive power is receiver-constrained nested queries that correlate to the current row: `from docs where nodes exists { where kind == \"md:task\" }` returns only the docs that themselves contain a matching node (not a global scan). Directives: `exists { … }` / `count { … }` in where — with an optional count comparison `nodes count { where kind == \"md:task\" } >= 2`; `collect { … }` in select for hierarchical results, nestable (`select secs: nodes collect { select h: name, items: section.blocks collect { where type == \"list_item\" } where kind == \"md:section\" } from docs`). CLAUSE ORDER IS FIXED (ADR-020): within one body — the top level or any `{ block }` — clauses appear at most once each, in exactly this order: `select … from … where … follow … order by … limit N offset N`. Every clause is optional except a top-level `from`; an out-of-order clause is a parse error naming the order. ONLY `select` may drop its keyword, and only when it is the first clause written (`$path, open from docs where …`; `nodes collect { attrs.text }` projects `attrs.text`). Every other clause carries its keyword, with one piece of sugar (oqx 0.17): a block's leading expression is its `where` when it is predicate-shaped (`nodes exists { kind == \"md:task\" }` ≡ `nodes exists { where kind == \"md:task\" }`); a bare name or dotted path is a projection, so filter on a bare field with `is active`, and `{ name where … }` is the projection + filter (`{ age >= 18, name }` is an error). A top-level predicate needs `where` (`where` follows `from`, so `age > 15 from people` is an error), a bare boolean property in leading position PROJECTS (`nodes collect { active }`), and `from docs count` is an error (write `docs count { … }` for the consumer, or `select count from docs` to project a field named count). More sugar, each desugaring in the parser to the explicit directive: a receiver block without a consumer is `collect` (`docs { type == \"x\" }`, `nodes { kind == \"md:task\" }` — not after `follow`, where `{ … }` is the options block); brackets `x[p]` = `x first { where p }` (the first match or absent), `x[p]!` = `x single { where p }` required (exactly one, else filter_invalid), `x[n]` = `x first { offset n }` (positional; out of range is absent); postfix `x!` = required (the value, or a loud error naming the expression and the row — never a filter, never a coercion; tightest: `a!.b` vs `a.b!`); prefix `is x` / `not x` (truthiness); infix `x is y` / `x is not y` compares identity (a row's id, else the value — `x is null` is the absence test; for scalars `is` ≡ `==`); and a `select` item may use the items to its left (`boss: ^docs[slug == ^manager], name: boss.$title`). `and` / `or` / `not` are the connectives; `&&` / `||` / `!` are accepted synonyms (the canonical printer writes the words). `where` may reference the same body's `select` aliases (`select $path, old: era < 1000 from docs where old` — inlined at parse time; an alias shadows a same-named field there). On the nodes/blocks targets a bare identifier that is not a structural field (doc_id, block_id, kind/name/value; doc_id, type/text, ordinal/depth) or `$`-intrinsic reads the flattened attrs bag — `checked` == `attrs.checked`, `level` == `attrs.level` — so the name you filter on matches the name a projection returns (`select attrs.checked` yields key `checked`); the `attrs.<key>` form still works and an absent key is silently false. Any consumer accepts `distinct` to dedup the rows it reduces by their projected value — `nodes count distinct { select kind }`, `nodes collect distinct { select kind }`, top-level `select distinct type` (empty projection dedups by identity). `values` after a projection of exactly ONE item returns the bare value instead of a `{name: value}` record: at the top level `select $path values from docs where layer == \"canon\"` returns `values: [\"a.md\", …]` (paged like hits; `hits` is empty), and inside a block `select tags: tags collect { $it values }` yields a plain array. `$it` is the current item itself — the row, or the scalar element when the receiver is a list property (`where tags exists { where $it == \"pricing\" }`); inside a block `^$it` is the enclosing row. `none { … }` is the zero-cardinality test — true iff the block yields no rows (≡ `!… exists { … }`), and how \"every\" is spelled: `nodes none { where kind == \"md:task\" and not checked }` = no open tasks; also a whole-query directive (`docs none { … }` returns `none`). `limit N` / `offset N` bound a row set AFTER where/order/distinct and BEFORE the consumer reduces it, so they mean the same under every consumer: at the top level (`order by era desc limit 3` — the tool's `limit`/`cursor` then page within that bounded set) or inside any block (`nodes collect { … order by ordinal limit 1 }`; `nodes exists { offset 1 }` = at least two). `entries(x)` turns a record into a collection of entries — inside the block `$key` is the property key and `$it` (and bare names) the value: `select fm: entries(frontmatter) collect { k: $key, v: $it }`, `from nodes where kind == \"md:task\" and entries(attrs) exists { where $key == \"checked\" and $it }`; works on `frontmatter` / `inline` (the whole authored bag, nested dotted keys folded back — an authored `$`-prefixed key such as `$version` is reached as `frontmatter.$version` and listed by `entries(frontmatter)`; a bare `$version` is the engine's namespace and reads nothing), `attrs`, a nested frontmatter map, or a list (numeric index keys). Plain objects never auto-iterate; `entries()` is the explicit bridge. The where clause is a boolean tree: compose scalar predicates and consumer directives with `and`, `or`, `not`, and grouping (`layer == \"canon\" or nodes exists { where kind == \"md:task\" }`). Relative source: `from E` inside a top-level consumer block re-projects the rows — `docs collect { from nodes where kind == \"md:task\" }` starts at docs, projects each doc through its `nodes` relation, and queries the resulting nodes (a scalar relation like `from doc` contributes one row; a missing/non-navigable relation is a loud error, never a global scan). One-scope lift: a `collect` in `where` with a `^name` both filters (non-empty) and binds the matching values into the parent select in one expression — `select $path, open from docs where nodes collect { ^open: value where kind == \"md:task\" and not attrs.checked }` returns the docs with an open task, each carrying its open-task texts. Correlation / joins (the `^` sigil, symmetric with the lift): a nested query may READ a name bound one scope outward — bind it in the parent (a select value or a lift), then reference `^name` inside a nested query's where. Combined with the root row's collections `^docs` / `^nodes` / `^blocks` / `^edges` (the repository is OQX's root row, one scope out from a top-level row — one caret per enclosing block, or the absolute `0^docs` from any depth; an UNBOUNDED repository scan, uncorrelated until you add a `^` predicate) this expresses lateral/dependent joins without a JOIN keyword: `^<t> exists { where … == ^k }` = semi-join, `not … exists { … }` = anti-join, `… collect { … }` in select = nested left-join, and the select-only lookups `first { … }` / `single { … }` (zero-or-one / one-to-one; `single` errors if it matches >1) — e.g. `select owner_id, owner: ^nodes single { where kind == \"person\" and attrs.id == ^owner_id } from docs`. Membership over a lifted set: `<value> in ^keys`. `^` reads exactly ONE scope out (no arbitrary-ancestor search), and a bare name reads the CURRENT row only — it never falls through to an enclosing row or the root, so reach outward explicitly with `^name` (the enclosing row) or `^docs` / `0^docs` (the root row's collections; `^$id` / `0^$id` is the repository id, `^$it` the root object). A bare `docs` INSIDE a block is an error (\"did you mean `^docs`\"), never an empty read; `$repo` (surface < 2.0) is refused with the replacement spelled out. PATHS are `/`-rooted on the surface (surface 2.0): every path returned — `$path`, an edge's `dst_path`, a hit's `$path` — is the reference form (`/a/b.md`), and a string literal compared with `$path`/`dst_path` by `==`/`!=` or passed to their `startsWith` accepts both forms (`$path == \"a.md\"` and `$path == \"/a.md\"` both match); a property's value is the author's, so a reference held in frontmatter compares with `^$path` directly (`^docs { ^$path in list(after) }` = the documents whose `after` names me). `refs(field)` resolves the document REFERENCES a property holds (a string or a list of `/a.md`, `a.md` or `d_…` elements; dangling and non-string elements dropped) to live docs rows, so it is a source (`from refs(\"/a.md\")`), a receiver (`refs(before) collect { $path, when }`, `refs(see_also)[0]`) or a `follow` destination (`follow refs(before), refs(after)` walks a timeline both ways); `follow before` over the strings fails — a hit must be a document, block, node or edge row. Top-level consumers: the whole query can be a consumer directive over a bare root receiver (a target name at the root scope) to change its result shape — `docs count { … }`, `docs exists { … }` and `docs none { … }` reduce to a scalar (returned as `count`/`exists`/`none`, no hits), `docs first { … }` / `docs single { … }` return zero-or-one hit (`single` errors if the query matches >1); a bare `from …` is the collect form. (A bare target at the root scope is the same collection `^<target>` reaches from inside where/select.) Scalar predicates follow the @omgbase/oqx semantics (strict typed equality with absence normalized so `!=` over an absent field matches; case-sensitive string ops with `.lower()`/`.upper()` and a regex `matches()`; absent sorts last; arithmetic supported), including doc.<key> reach-through and `text(\"terms\")` — a full-text (FTS5) PRUNING predicate that, because it is an ordinary predicate, composes inside correlated subqueries and collects (e.g. `nodes exists { where kind == \"md:task\" and text(\"ship\") }`), which the flat `query` tool cannot express. (`text` prunes; relevance ranking is separate.) And `semantic(\"phrase\")` — an embedding cosine SCORE (docs/blocks only) usable as a threshold prune (`semantic(\"the great work\") > 0.6`) or a projection (`select score: semantic(\"…\")`); it needs an embedding provider that has embedded this repository (else `provider_unavailable`, naming what to configure — never a silent unranked result) and, like `text`, composes inside nested scopes. Ranking: `order by <expr> [asc|desc], …` sorts the result (`order by semantic(\"the great work\") desc` = semantic top-K; also orders by any frontmatter field / `$path`), always tie-broken by (path, id) for a total order — this is how score functions become a ranking. A custom order disables the keyset cursor (you still get the top `limit` with `truncated`). Recursion (`follow`): make the query recursive over a TYPE-PRESERVING relation (the relation's successor type must equal the query target). `from blocks where $id == \"b_x\" follow block.children` walks the block subtree from a seed; the `where` picks the SEED rows and `follow <relation>` expands them. A bare `follow <relation>` carries no sub-clauses; sub-clauses go in a `{ … }` block. Two orthogonal knobs shape it: a follow-local `follow <rel> { where <pred> }` filters which successors keep participating at each hop (running out ⇒ a leaf), and `{ frontier <pred> }` cuts a relation that could otherwise continue (⇒ a frontier); `{ depth <n> }` bounds the walk (1..8, default 8). `follow distinct` dedups reached rows by identity (the default keeps one occurrence per distinct walk path). `follow … { by <expr> }` sets the node identity used for cycle detection + dedup to a field/intrinsic (default: the entity id) — e.g. `follow doc.out { by group }` treats same-`group` documents as one node. Each reached row carries recursion metadata: `$depth` (seed = 1), the categorical `$stop` (interior | leaf | frontier | depth | cycle) with `$leaf`/`$frontier` boolean sugar, and `$ordinal` (a deterministic 1..N rank over the walk, ordered by depth then path — `order by $ordinal` for walk order, `where $ordinal <= N` for a deterministic budget cut). It is queryable in select / order by AND filterable post-walk in the top-level `where` (a `where` conjunct referencing a recursion intrinsic filters the walk's RESULT — `from blocks where type == \"list_item\" and $leaf follow block.children` = the leaves; the non-recursion conjuncts remain the seed predicate). Recursion intrinsics are NOT valid in the follow-local successor `where` or `frontier` (those run mid-walk, before the metadata exists), nor inside a consumer directive. Cyclic graphs are safe: a revisited node is admitted once as a `$stop == \"cycle\"` occurrence and never re-expanded. Type-preserving relations today: `block.children` (blocks→blocks, immediate child blocks), `section.children` (nodes→nodes, immediate child sections — a true outline depth ladder) and `section.subsections` (nodes→nodes, the whole transitive sub-tree — flattens to depth 2), and `doc.out` / `doc.in` (docs→docs, the authored citation graph — outgoing links / backlinks; inspect a doc's edges as rows via `doc.out_edges`/`doc.in_edges` (predicate/provenance/anchor filtered by a plain `where`)). Consumers compose over the walk (`blocks count { where … follow block.children }`). A `follow` may also nest inside a select-position `collect` for a per-row recursive subtree: `select outline: nodes collect { select n: name, d: $depth where kind == \"md:section\" and name == \"Overview\" follow section.children } from docs` (the collect's `where` seeds, correlated to the row; `follow` recurses; the collect's `select` projects each occurrence). Receivers: from docs — `nodes`, `blocks`, `doc.out`/`doc.in`, `doc.out_edges`/`doc.in_edges` (a doc's outgoing/incoming edges as rows); from nodes — `section.blocks` (content under an `md:section` node's heading, transitively including deeper headings), `section.children` (immediate child sections), and `section.subsections` (all contained sections); from blocks — `section` (enclosing `md:section` node(s)), `block.children` (child blocks), `block.nodes` (the projected nodes anchored to this block — links/tasks/anchors/…), and `block.out_edges` (this block's outgoing edges as rows — body links + inline fields; frontmatter edges are doc-grain, use `doc.out_edges`); from any row — `^docs` / `^nodes` / `^blocks` / `^edges` (the root row's collections; `0^docs` from any depth). Returns lean hits {$id, $path, ...projections} — the envelope keys are the intrinsics, so a hit's `$id` pastes into the next `where $id == …` unchanged, and is the value a tool's `id` argument takes (the `$` rule, surface 3.0: `$` marks exactly the engine names that share a namespace with your content — $id/$path everywhere, $raw/$hash/$updated_at on docs and blocks, $title/$tags on docs; every other engine field is plain snake_case, and every tool result spells a row with the same names) — with truncated + cursor (or a `count`/`exists` scalar for those consumers). Covers structural + section navigation + ad-hoc correlation + bounded recursive traversal (`follow`).",
       inputSchema: {
         query: z.string(),
         limit: z.number().int().optional(),
@@ -530,22 +602,20 @@ export function buildServer(ctx: ServerContext): McpServer {
     async (args) => {
       try {
         const { repoId } = repoScope(args.repo);
-        // A `semantic(...)` query with no provider is semantic_unavailable (not a
-        // generic filter error) — surface that specific code, mirroring resolve.
-        if (!ctx.embedQuery && collectSemanticPhrases(args.query).length > 0) {
-          throw new EngineError("semantic_unavailable", "no embedding provider configured for this server");
-        }
+        // A `semantic(...)` query with no provider is provider_unavailable (not a
+        // generic filter error) — surface that specific code, mirroring graph.
+        if (!ctx.embedQuery && collectSemanticPhrases(args.query).length > 0) throw providerUnavailable();
         return ok(await oqxRunAsync(store, repoId, args.query, {
           ...(args.limit !== undefined ? { limit: args.limit } : {}),
           ...(args.cursor !== undefined ? { cursor: args.cursor } : {}),
-        }, ctx.embedQuery));
+        }, rankableEmbed(repoId)));
       } catch (e) {
         return fail(e);
       }
     },
   );
 
-  server.registerTool(
+  tool(
     "graph",
     {
       description:
@@ -565,17 +635,15 @@ export function buildServer(ctx: ServerContext): McpServer {
         const { repoId } = repoScope(args.repo);
         // A `select` using semantic(...) needs a provider — surface the specific
         // code, mirroring the `query` tool.
-        if (!ctx.embedQuery && (args.select ?? []).some((s) => collectSemanticPhrases(`from docs select x: ${s}`).length > 0)) {
-          throw new EngineError("semantic_unavailable", "no embedding provider configured for this server");
-        }
-        return ok(await graphNeighborhood(store, repoId, args, ctx.embedQuery));
+        if (!ctx.embedQuery && (args.select ?? []).some((s) => collectSemanticPhrases(`from docs select x: ${s}`).length > 0)) throw providerUnavailable();
+        return ok(await graphNeighborhood(store, repoId, args, rankableEmbed(repoId)));
       } catch (e) {
         return fail(e);
       }
     },
   );
 
-  server.registerTool(
+  tool(
     "text_search",
     {
       description: "Full-text (FTS5, bm25-ranked) keyword search over block text: `{ hits: [{ $id (the block), doc_id, $path, type, text, score }], truncated }`. Input is treated as a search box — plain words are ANDed, \"quoted phrases\" match adjacency, punctuation like / is safe (no query DSL). For structured filtering or frontmatter projection use `query` instead (see query_syntax).",
@@ -591,7 +659,7 @@ export function buildServer(ctx: ServerContext): McpServer {
     },
   );
 
-  server.registerTool(
+  tool(
     "resolve",
     {
       description: "Resolve a name/title/concept to the concrete blocks it refers to — 'the id of the thing I mean'. Hybrid ranker (FTS + semantic when a provider is configured); best on short, entity-shaped inputs (a title, term, or phrase). Returns ranked `{ $id, locator, preview, evidence }` (the block's id, its `path#type[ordinal]` locator); prefer the returned ids in follow-up calls. For open natural-language questions or passage retrieval, use `query` with `semantic` instead.",
@@ -611,11 +679,11 @@ export function buildServer(ctx: ServerContext): McpServer {
     },
   );
 
-  server.registerTool(
+  tool(
     "apply",
     {
       description:
-        "The only real writer. Applies a changeset of kernel ops (insert/update/move/remove/split/merge) atomically — all apply or none. Each op is a tagged object keyed by \"op\"; the block an op targets is named by its `block` (update/split) or `blocks` (move/remove/merge) field, never `id`/`target`. Ops apply in order; later ops see earlier effects; minted ids are referenceable via \"$n.ids[i]\". Pass dry_run:true first for multi-doc changes to preview diffs. The result is `{ results: [{ ids, … }], revisions: [{ $id, $path, $hash }], diffs?, committed }` — one revision per touched document with its hash after the change (the same shape a changes_since revision has). update/split/merge/remove take a CAS `expect.content_hash` — get it from docs_read include_ids (its `hashes` map) in the same read that gave you the ids, or use the ref-accepting block_* sugar (blocks_update/blocks_split/…) which pins it server-side. Conflicts carry current truth (`data.current.$hash` + `markdown`) — including a missing/omitted expect.content_hash, whose error returns the current hash — so retry from the error, don't re-read.",
+        "The only real writer. Applies a changeset of kernel ops (insert/update/move/remove/split/merge) atomically — all apply or none. Each op is a tagged object keyed by \"op\"; the block an op targets is named by its `block` (update/split) or `blocks` (move/remove/merge) field, never `id`/`target` (the op grammar is spec/mutate's, unchanged by the surface's `id`/`path` argument rule). Ops apply in order; later ops see earlier effects; minted ids are referenceable via \"$n.ids[i]\". Pass dry_run:true first for multi-doc changes to preview diffs. The result is `{ results: [{ ids, … }], revisions: [{ $id, $path, $hash }], diffs?, committed }` — one revision per touched document with its hash after the change (the same shape a changes_since revision has). update/split/merge/remove take a CAS `expect.content_hash` — get it from docs_read include_ids (its `hashes` map) in the same read that gave you the ids, or use the ref-accepting block_* sugar (blocks_update/blocks_split/…) which pins it server-side. Conflicts carry current truth (`data.current.$hash` + `markdown`) — including a missing/omitted expect.content_hash, whose error returns the current hash — so retry from the error, don't re-read.",
       inputSchema: {
         ops: z.array(opSchema),
         reason: z.string().optional(),
@@ -649,10 +717,10 @@ export function buildServer(ctx: ServerContext): McpServer {
   // local: the resolution that used to live in the CLI now lives next to the
   // store, so a remote client needs no local database.
 
-  server.registerTool(
+  tool(
     "blocks_insert",
     {
-      description: "Insert new block(s) parsed from `markdown` under a parent, at a position. `to` names the parent: a BLOCK ref (id or locator) nests the new blocks under that block — it must be a CONTAINER (a list, list item, task, blockquote or table); a leaf such as a heading or paragraph fails `type_mismatch` (spec/mutate §1.1) — use sections_append for \"under this heading\" or `at: {after: <ref>}` for \"right after this block\"; or a DOCUMENT ref (doc id or path) places them at the document's top level — so appending a new section to a document is `{ to: \"<path>\", markdown: \"## New\\n\\n…\" }` (the positional generalization of docs_append). `at` places among the parent's children: \"end\" (default) / \"start\" / {before|after: <block ref>}. Optional `expect.parent_children_hash` is the destination-parent CAS: the parent's CURRENT direct child ids (the document's top-level ids for a document `to`) joined by \",\" and sha256-hexed — compute it from docs_read include_ids (`ids` filtered by `parents`) — and the insert fails `stale_expectation` (with `data.current.parent_children_hash`) if the siblings changed under you; `content_hash` has no meaning here (there is no target block) and is not accepted. Expands to one insert op through the kernel writer.",
+      description: "Insert new block(s) parsed from `markdown` under a parent, at a position. `to` names the parent: a BLOCK ref (id or locator) nests the new blocks under that block — it must be a CONTAINER (a list, list item, task, blockquote or table); a leaf such as a heading or paragraph fails `type_mismatch` (spec/mutate §1.1) — use blocks_append for \"into this heading's section / this container\" or `at: {after: <ref>}` for \"right after this block\"; or a DOCUMENT ref (doc id or path) places them at the document's top level — so appending a new section to a document is `{ to: \"<path>\", markdown: \"## New\\n\\n…\" }` (the positional generalization of docs_append). `at` places among the parent's children: \"end\" (default) / \"start\" / {before|after: <block ref>}. Optional `expect.parent_children_hash` is the destination-parent CAS: the parent's CURRENT direct child ids (the document's top-level ids for a document `to`) joined by \",\" and sha256-hexed — compute it from docs_read include_ids (`ids` filtered by `parents`) — and the insert fails `stale_expectation` (with `data.current.parent_children_hash`) if the siblings changed under you; `content_hash` has no meaning here (there is no target block) and is not accepted. Expands to one insert op through the kernel writer.",
       inputSchema: { to: z.string(), markdown: z.string(), at: atSchema.optional(), expect: parentExpectSchema.optional(), dry_run: z.boolean().optional(), ...REPO_ARG },
     },
     async (args) => {
@@ -672,17 +740,17 @@ export function buildServer(ctx: ServerContext): McpServer {
     },
   );
 
-  server.registerTool(
+  tool(
     "blocks_update",
     {
-      description: "Replace a block's markdown (and/or set attrs) with compare-and-swap. `block` is a ref; `expect.content_hash` is pinned to the block's current bytes server-side when omitted (protects against a concurrent edit). One update op through the kernel writer. `markdown` may parse to SEVERAL sibling blocks (e.g. a paragraph followed by a list): the target keeps its id and takes the first, the rest are inserted right after it with fresh ids — the response carries `$id` (the target) and `ids` (all resulting blocks, in order). A list item may likewise be replaced by a multi-item list (`- a\\n- b`), yielding sibling items. Task state is settable flat as `checked` (the same name reads flatten to — `from blocks where checked`), folded into attrs and synced to the `[ ]`/`[x]` in the raw. The general `attrs` bag is still accepted; note every OTHER block attr (heading `level`, code `lang`, list `ordered`) is derived from the markdown, so set those by editing `markdown`, not attrs.",
-      inputSchema: { block: z.string(), markdown: z.string().optional(), checked: z.boolean().optional(), attrs: z.record(z.string(), z.unknown()).optional(), expect: expectSchema.optional(), dry_run: z.boolean().optional(), ...REPO_ARG },
+      description: "Replace a block's markdown (and/or set attrs) with compare-and-swap. `id` is the block's id (or any ref resolve accepts); `expect.content_hash` is pinned to the block's current bytes server-side when omitted (protects against a concurrent edit). One update op through the kernel writer. `markdown` may parse to SEVERAL sibling blocks (e.g. a paragraph followed by a list): the target keeps its id and takes the first, the rest are inserted right after it with fresh ids — the response carries `$id` (the target) and `ids` (all resulting blocks, in order). A list item may likewise be replaced by a multi-item list (`- a\\n- b`), yielding sibling items. Task state is settable flat as `checked` (the same name reads flatten to — `from blocks where checked`), folded into attrs and synced to the `[ ]`/`[x]` in the raw. The general `attrs` bag is still accepted; note every OTHER block attr (heading `level`, code `lang`, list `ordered`) is derived from the markdown, so set those by editing `markdown`, not attrs.",
+      inputSchema: { id: z.string(), markdown: z.string().optional(), checked: z.boolean().optional(), attrs: z.record(z.string(), z.unknown()).optional(), expect: expectSchema.optional(), dry_run: z.boolean().optional(), ...REPO_ARG },
     },
     async (args) => {
       try {
         const { repoId, rootPath } = repoScope(args.repo);
         const root = requireRoot(rootPath);
-        const block = resolveBlockRef(repoId, args.block);
+        const block = resolveBlockRef(repoId, args.id);
         const expect = args.expect ?? (() => { const h = pinHash(block); return h ? { content_hash: h } : undefined; })();
         // Flat `checked` sugar folds into the attrs bag (explicit attrs wins on
         // collision), so a task reads and writes under the same bare name.
@@ -702,7 +770,7 @@ export function buildServer(ctx: ServerContext): McpServer {
     },
   );
 
-  server.registerTool(
+  tool(
     "blocks_move",
     {
       description: "Move block(s) under a new parent at a position. `blocks` are block refs; `to` (the parent) is a block ref (a container — a leaf parent is `type_mismatch`, as for blocks_insert), or the blocks' OWN document (id or path) to move them to its top level — moving to ANOTHER document's root is not expressible (target_missing): anchor on a block in that document with `at` {before|after} instead. `at` is \"end\"/\"start\"/{before|after: <ref>}. Optional `expect.parent_children_hash` is the destination-parent CAS (as blocks_insert: the destination parent's CURRENT direct child ids joined by \",\", sha256 hex), checked once for the whole run before anything moves — `stale_expectation` with `data.current.parent_children_hash` if the destination's children changed; `content_hash` is meaningless here and not accepted. One move op through the kernel writer.",
@@ -728,7 +796,7 @@ export function buildServer(ctx: ServerContext): McpServer {
     },
   );
 
-  server.registerTool(
+  tool(
     "blocks_remove",
     {
       description: "Remove block(s) (the resurrection pool catches regret). `blocks` are refs; removing a block removes its whole subtree, and a set that names both a container and some of its descendants (e.g. every id of a section straight from docs_read include_ids) is fine — it collapses to the top-most blocks and `removed` lists everything that left. One remove op through the kernel writer. To delete a whole document use docs_delete.",
@@ -747,17 +815,17 @@ export function buildServer(ctx: ServerContext): McpServer {
     },
   );
 
-  server.registerTool(
+  tool(
     "blocks_split",
     {
-      description: "Split a block at UTF-8 byte offset(s) into consecutive blocks. `block` is a ref; `at` is a list of integer byte offsets into the block's raw bytes (spec/mutate §2.5; an offset inside a multi-byte character rounds down to its start). CAS is pinned to the block's current bytes server-side. One split op through the kernel writer.",
-      inputSchema: { block: z.string(), at: z.array(z.number().int()), dry_run: z.boolean().optional(), ...REPO_ARG },
+      description: "Split a block at UTF-8 byte offset(s) into consecutive blocks. `id` is the block's id (or a ref); `at` is a list of integer byte offsets into the block's raw bytes (spec/mutate §2.5; an offset inside a multi-byte character rounds down to its start). CAS is pinned to the block's current bytes server-side. One split op through the kernel writer.",
+      inputSchema: { id: z.string(), at: z.array(z.number().int()), dry_run: z.boolean().optional(), ...REPO_ARG },
     },
     async (args) => {
       try {
         const { repoId, rootPath } = repoScope(args.repo);
         const root = requireRoot(rootPath);
-        const block = resolveBlockRef(repoId, args.block);
+        const block = resolveBlockRef(repoId, args.id);
         const ops: Op[] = [{ op: "split", block, at: args.at, expect: { content_hash: pinHash(block) ?? "" } } as Op];
         return applyOps(repoId, root, ops, "blocks_split", args.dry_run);
       } catch (e) {
@@ -766,7 +834,7 @@ export function buildServer(ctx: ServerContext): McpServer {
     },
   );
 
-  server.registerTool(
+  tool(
     "blocks_merge",
     {
       description: "Merge adjacent blocks into the first, joined by `separator` (default a blank line). `blocks` are refs (≥2). One merge op through the kernel writer.",
@@ -785,7 +853,7 @@ export function buildServer(ctx: ServerContext): McpServer {
     },
   );
 
-  server.registerTool(
+  tool(
     "tasks_complete",
     {
       description: "Macro: check (or, with checked:false, uncheck) the given task blocks. `blocks` are refs. Expands to update(attrs:{checked}) per block, CAS-pinned, applied via the same changeset machinery.",
@@ -807,18 +875,20 @@ export function buildServer(ctx: ServerContext): McpServer {
     },
   );
 
-  server.registerTool(
+  tool(
     "node_set",
     {
       description:
-        "Macro: surgically set one editable property of a projected node (e.g. a link's `name` text or `value` target, a task's `checked`). Takes the node id (from query from:nodes), a property, and its new value. Resolves the node to its block and rewrites only that node's span, applying one update op. Nodes are read-only projections — this is the affordance to edit what a node represents without hand-rewriting the block. Errors node_not_editable (with the editable prop list) when the kind/prop has no editor.",
-      inputSchema: { node: z.string(), prop: z.string(), value: z.string(), dry_run: z.boolean().optional(), ...REPO_ARG },
+        "Macro: surgically set one editable property of a projected node (e.g. a link's `name` text or `value` target, a task's `checked`). `id` is the node's id (from `query` over `from nodes` — the one tool that addresses `nodes` rows), `prop` the property, `value` its new value. Resolves the node to its block and rewrites only that node's span, applying one update op. Nodes are read-only projections — this is the affordance to edit what a node represents without hand-rewriting the block. Errors node_not_editable (with the editable prop list) when the kind/prop has no editor.",
+      inputSchema: { id: z.string(), prop: z.string(), value: z.string(), dry_run: z.boolean().optional(), ...REPO_ARG },
     },
     async (args) => {
       try {
         const { repoId, rootPath } = repoScope(args.repo);
         const root = requireRoot(rootPath);
-        const ops = nodeSet(store, args.node, args.prop, args.value);
+        const known = store.db.prepare("SELECT 1 FROM nodes WHERE node_id = ? AND repo_id = ?").get(args.id, repoId);
+        if (!known) throw new EngineError("block_missing", `no node with id ${JSON.stringify(args.id)}`, { data: { id: args.id } });
+        const ops = nodeSet(store, args.id, args.prop, args.value);
         return applyOps(repoId, root, ops, "node_set", args.dry_run);
       } catch (e) {
         return fail(e);
@@ -826,51 +896,70 @@ export function buildServer(ctx: ServerContext): McpServer {
     },
   );
 
-  server.registerTool(
-    "sections_append",
+  tool(
+    "blocks_append",
     {
       description:
-        "Macro: append markdown at the end of a heading's section range. `heading` accepts the heading's block id (preferred, from docs_outline) OR its text — text is resolved to an id, scoped to `doc`/`path` when given. Heading text without a doc scope is repo-wide and errors ambiguous_heading (with candidate ids) when it isn't unique. Expands to a single insert op.",
-      inputSchema: { heading: z.string(), markdown: z.string(), doc: z.string().optional(), path: z.string().optional(), dry_run: z.boolean().optional(), ...REPO_ARG },
+        "Macro: append markdown INTO a block, by what the block is. `id` is a block's id (or a ref). A HEADING: the `text` is inserted at the end of its section range (before the next heading of equal or higher level) — the former sections_append. A CONTAINER (a list, list item, task, blockquote or table — anything the kernel accepts as a parent): inserted at the end of its children (`blocks_insert { to: <id>, at: \"end\" }`). A LEAF (a paragraph, code fence, …) is `block_not_container` — append means \"into\", never a sibling insert; place after it with `blocks_insert { to: <its parent>, at: { after: <id> } }`. Expands to one insert op; to append at a whole document's end, or inside a section named by its heading TEXT, use docs_append.",
+      inputSchema: { id: z.string(), text: z.string(), dry_run: z.boolean().optional(), ...REPO_ARG },
     },
     async (args) => {
       try {
         const { repoId, rootPath } = repoScope(args.repo);
         const root = requireRoot(rootPath);
-        const headingId = resolveHeadingId(repoId, args.heading, { ...(args.doc ? { doc: args.doc } : {}), ...(args.path ? { path: args.path } : {}) });
-        const ops = sectionsAppend(headingId, args.markdown);
-        return applyOps(repoId, root, ops, "sections_append", args.dry_run);
+        const block = resolveBlockRef(repoId, args.id);
+        const row = store.db
+          .prepare("SELECT b.type AS type, d.format AS format, (SELECT count(*) FROM blocks c WHERE c.parent_block = b.block_id AND c.deleted_commit IS NULL) AS children FROM blocks b JOIN docs d ON d.doc_id = b.doc_id WHERE b.block_id = ? AND b.deleted_commit IS NULL")
+          .get(block) as { type: string; format: string | null; children: number } | undefined;
+        if (!row) throw blockMissing(args.id);
+        let ops: Op[];
+        if (row.type === "heading") {
+          ops = sectionsAppend(block, args.text);
+        } else if (isContainerBlock(row.format ?? "markdown", { type: row.type, children: new Array<unknown>(row.children) })) {
+          ops = [{ op: "insert", to: { parent: block, at: "end" }, markdown: args.text } as Op];
+        } else {
+          throw new EngineError("block_not_container", `block ${block} is a ${row.type}, not a heading or a container; append means into — insert after it with blocks_insert { to: <its parent>, at: { after: ${JSON.stringify(block)} } }`, {
+            data: { id: block, type: row.type },
+          });
+        }
+        return applyOps(repoId, root, ops, "blocks_append", args.dry_run);
       } catch (e) {
         return fail(e);
       }
     },
   );
 
-  server.registerTool(
+  tool(
     "docs_append",
     {
       description:
-        "Macro: append markdown at the END of a whole document — the journal/log/running-note primitive (the document-root peer of sections_append, which appends inside a heading's section). ADDITIVE and identity-preserving, NOT a whole-body replace: the `text` is parsed into blocks and inserted as NEW top-level blocks after the document's existing ones, so every existing block keeps its stable `b_` id (omgbase deliberately has no whole-body `docs_put` — see mcp-api). Expands to a single insert op at the document top level (position end); commits atomically through the same kernel path as `apply`, returning the new revision(s) and the inserted block ids. Target the document with `doc` (id OR path) or `path`. The document must already exist — a missing doc errors `doc_missing` (creating one is docs_create's job, never this). To append inside a specific heading section instead, use sections_append.",
-      inputSchema: { doc: z.string().optional(), path: z.string().optional(), text: z.string(), ...REPO_ARG },
+        "Macro: append markdown to a document — at its END, or at the end of one of its sections when `section` names a heading by its TEXT (`\"Setup\"`; an ATX spelling `\"## Setup\"` is accepted). The journal/log/running-note primitive. ADDITIVE and identity-preserving, NOT a whole-body replace: the `text` is parsed into blocks and inserted as NEW blocks after the existing ones (at the document's top level, or inside the section's range), so every existing block keeps its stable `b_` id (omgbase deliberately has no whole-body `docs_put` — see mcp-api). Expands to a single insert op; commits atomically through the same kernel path as `apply`, returning the new revision(s) and the inserted block ids. Address the document by `id` or `path` (at least one). The document must already exist — a missing doc errors `doc_missing` (creating one is docs_create's job, never this); a `section` matching no heading in it is `parent_missing`, one matching several is `ambiguous_heading` with `candidates[{ $id, doc_id }]` — pass that heading's id to blocks_append, which appends into a block by its id.",
+      inputSchema: { ...DOC_ARGS, text: z.string(), section: z.string().optional(), dry_run: z.boolean().optional(), ...REPO_ARG },
     },
     async (args) => {
       try {
         const { repoId, rootPath } = repoScope(args.repo);
-        if (!rootPath) throw new EngineError("repo_not_found", "repo has no filesystem source; mutation disabled");
-        // Resolve the ref to a live doc id FIRST — a missing doc is doc_missing
-        // (resolveDocId throws it), never an auto-create. Then expand to the
-        // single top-level insert-at-end op and apply it (existing blocks keep
-        // their ids; only the appended blocks are minted).
-        const docId = resolveDocId(repoId, { ...(args.doc ? { doc: args.doc } : {}), ...(args.path ? { path: args.path } : {}) });
-        const ops = docsAppend(docId, args.text);
-        return okMutated(surfaceApplyResult(apply(store, { repoId, rootPath, ops, origin: { actor: "agent:mcp", reason: "docs_append" } })));
+        const root = requireRoot(rootPath);
+        // Resolve the locator to a live doc id FIRST — a missing doc is doc_missing
+        // (locateDoc throws it), never an auto-create. Then expand to the single
+        // insert-at-end op (document top level, or the named section) and apply
+        // it (existing blocks keep their ids; only the appended blocks are minted).
+        const docId = locateDoc(repoId, "docs_append", registry.get("docs_append")!.shape, args);
+        let ops: Op[];
+        if (args.section !== undefined) {
+          const info = findDoc(store, { docId })!;
+          ops = sectionsAppend(resolveSectionHeading(docId, info.path, args.section), args.text);
+        } else {
+          ops = docsAppend(docId, args.text);
+        }
+        return applyOps(repoId, root, ops, "docs_append", args.dry_run);
       } catch (e) {
         return fail(e);
       }
     },
   );
 
-  server.registerTool(
+  tool(
     "links_retarget",
     {
       description: "Macro: rewrite ONE link destination everywhere it is linked — the single-pair form of links_repair (same matching rules: whole link destinations only, leading `/` optional, fragments preserved; prose/inline code/code fences untouched). Scope source docs with `path_glob`. ALWAYS call with dry_run:true first to preview `hits` + `pairs` (the dry run plans through the kernel, so it fails exactly where the apply would), then dry_run:false to apply.",
@@ -892,7 +981,7 @@ export function buildServer(ctx: ServerContext): McpServer {
     },
   );
 
-  server.registerTool(
+  tool(
     "links_stale",
     {
       description:
@@ -913,7 +1002,7 @@ export function buildServer(ctx: ServerContext): McpServer {
     },
   );
 
-  server.registerTool(
+  tool(
     "links_repair",
     {
       description:
@@ -964,10 +1053,10 @@ export function buildServer(ctx: ServerContext): McpServer {
   };
   const docResult = <T,>(res: T, dryRun?: boolean) => (dryRun ? ok(res) : okMutated(res));
 
-  server.registerTool(
+  tool(
     "docs_create",
     {
-      description: "Create a new document at `path` from complete file bytes (`markdown`), with optional structured `frontmatter`; returns `{ $id, $path, committed }`. Fails path_taken if it already exists. dry_run:true validates and returns the would-be file under `diffs` (committed:false) without writing.",
+      description: "Create a new document at `path` (the new document's path, either form) from complete file bytes (`markdown`), with optional structured `frontmatter`; returns `{ $id, $path, committed }`. Fails path_taken if it already exists. dry_run:true validates and returns the would-be file under `diffs` (committed:false) without writing.",
       inputSchema: { path: z.string(), markdown: z.string(), frontmatter: z.record(z.string(), z.unknown()).optional(), dry_run: z.boolean().optional(), ...REPO_ARG },
     },
     async (args) => {
@@ -979,46 +1068,52 @@ export function buildServer(ctx: ServerContext): McpServer {
     },
   );
 
-  server.registerTool(
+  tool(
     "docs_move",
     {
       description:
-        "Rename a document to a new path (`/`-rooted or bare; the result `{ $id, $path, committed, retargeted, dangling }` reports the rooted form); block identity and history are preserved, and the inbound links FOLLOW it: every link written against the old path (Markdown links/images, wikilinks, bare-path inline fields — anchors, link text, titles and code spans preserved, absolute vs relative style kept) is rewritten to the new path in the same call as one CAS-checked changeset, so a move never leaves the graph broken. Fails path_taken if the destination exists. The result carries `retargeted` (the touched blocks/docs) and `dangling` — what could NOT be rewritten, i.e. frontmatter relations (block null; fix with docs_set_meta). Pass `retarget_inbound:false` to opt out for the rarer intent that the old path become unbound: the links are left as written, listed in `dangling` ({doc_id, $path, block_id, target, anchor, field?} per occurrence — an edge row under the `edges` target's names) and reported by links_stale (their edges become `phantom:<old path>`); links already written against the new path start resolving to this doc either way. dry_run:true validates and returns the plan — `dangling`, `retargeted`, and the per-file `diffs` (the old path emptied, the new path filled, plus the rewritten sources) — without renaming or committing.",
-      inputSchema: { doc: z.string(), to_path: z.string(), retarget_inbound: z.boolean().optional(), dry_run: z.boolean().optional(), ...REPO_ARG },
+        "Rename a document to a new path (`to_path`, `/`-rooted or bare; the result `{ $id, $path, committed, retargeted, dangling }` reports the rooted form); the document is addressed by `id` or `path`. Block identity and history are preserved, and the inbound links FOLLOW it: every link written against the old path (Markdown links/images, wikilinks, bare-path inline fields — anchors, link text, titles and code spans preserved, absolute vs relative style kept) is rewritten to the new path in the same call as one CAS-checked changeset, so a move never leaves the graph broken. Fails path_taken if the destination exists. The result carries `retargeted` (the touched blocks/docs) and `dangling` — what could NOT be rewritten, i.e. frontmatter relations (block null; fix with docs_set_meta). Pass `retarget_inbound:false` to opt out for the rarer intent that the old path become unbound: the links are left as written, listed in `dangling` ({doc_id, $path, block_id, target, anchor, field?} per occurrence — an edge row under the `edges` target's names) and reported by links_stale (their edges become `phantom:<old path>`); links already written against the new path start resolving to this doc either way. dry_run:true validates and returns the plan — `dangling`, `retargeted`, and the per-file `diffs` (the old path emptied, the new path filled, plus the rewritten sources) — without renaming or committing.",
+      inputSchema: { ...DOC_ARGS, to_path: z.string(), retarget_inbound: z.boolean().optional(), dry_run: z.boolean().optional(), ...REPO_ARG },
     },
     async (args) => {
       try {
-        return docResult(surfaceDocMoveResult(docsMove(store, docCtx(repoScope(args.repo), args.dry_run), args.doc, args.to_path, { retargetInbound: args.retarget_inbound !== false })), args.dry_run);
+        const scope = repoScope(args.repo);
+        const docId = locateDoc(scope.repoId, "docs_move", registry.get("docs_move")!.shape, args);
+        return docResult(surfaceDocMoveResult(docsMove(store, docCtx(scope, args.dry_run), docId, args.to_path, { retargetInbound: args.retarget_inbound !== false })), args.dry_run);
       } catch (e) {
         return fail(e);
       }
     },
   );
 
-  server.registerTool(
+  tool(
     "docs_delete",
     {
-      description: "Delete a document: tombstone it and its live blocks (resurrection-poolable) and remove the file. Requires the explicit doc id/path. dry_run:true validates and returns the file's removal under `diffs` without deleting.",
-      inputSchema: { doc: z.string(), dry_run: z.boolean().optional(), ...REPO_ARG },
+      description: "Delete a document: tombstone it and its live blocks (resurrection-poolable) and remove the file. Address it by `id` or `path`. dry_run:true validates and returns the file's removal under `diffs` without deleting.",
+      inputSchema: { ...DOC_ARGS, dry_run: z.boolean().optional(), ...REPO_ARG },
     },
     async (args) => {
       try {
-        return docResult(surfaceDocOpResult(docsDelete(store, docCtx(repoScope(args.repo), args.dry_run), args.doc)), args.dry_run);
+        const scope = repoScope(args.repo);
+        const docId = locateDoc(scope.repoId, "docs_delete", registry.get("docs_delete")!.shape, args);
+        return docResult(surfaceDocOpResult(docsDelete(store, docCtx(scope, args.dry_run), docId)), args.dry_run);
       } catch (e) {
         return fail(e);
       }
     },
   );
 
-  server.registerTool(
+  tool(
     "docs_set_meta",
     {
-      description: "Surgical frontmatter patch: set the given keys and/or unset named keys, re-ingesting the document. Other frontmatter is preserved. dry_run:true validates and returns the rewritten file under `diffs` without writing.",
-      inputSchema: { doc: z.string(), set: z.record(z.string(), z.unknown()).optional(), unset: z.array(z.string()).optional(), dry_run: z.boolean().optional(), ...REPO_ARG },
+      description: "Surgical frontmatter patch: set the given keys and/or unset named keys on the document addressed by `id` or `path`, re-ingesting it. Other frontmatter is preserved. dry_run:true validates and returns the rewritten file under `diffs` without writing.",
+      inputSchema: { ...DOC_ARGS, set: z.record(z.string(), z.unknown()).optional(), unset: z.array(z.string()).optional(), dry_run: z.boolean().optional(), ...REPO_ARG },
     },
     async (args) => {
       try {
-        return docResult(surfaceDocOpResult(docsSetMeta(store, docCtx(repoScope(args.repo), args.dry_run), args.doc, {
+        const scope = repoScope(args.repo);
+        const docId = locateDoc(scope.repoId, "docs_set_meta", registry.get("docs_set_meta")!.shape, args);
+        return docResult(surfaceDocOpResult(docsSetMeta(store, docCtx(scope, args.dry_run), docId, {
           ...(args.set ? { set: args.set } : {}),
           ...(args.unset ? { unset: args.unset } : {}),
         })), args.dry_run);
@@ -1028,18 +1123,19 @@ export function buildServer(ctx: ServerContext): McpServer {
     },
   );
 
-  server.registerTool(
+  tool(
     "docs_plan_update",
     {
       description:
-        "Plan a whole-document update WITHOUT applying it. Given a doc (id or path) and the proposed complete `content`, reconciles the new representation against the current stable block tree and returns an executable *opset*: the exact kernel ops (insert/update/move/remove) it would run, each annotated with its identity consequence (disposition, confidence, reason), plus a summary (preserved/updated/moved/created/removed) and a human-readable plan. The opset carries preconditions (`precondition: { $id, $path, baseRevision, $hash }` — the document's revision and hash at plan time); a stale plan is refused at apply. `converges` is verified by simulation (replaying the ops reproduces `content` byte-for-byte); when a lowering diverges, `diagnostics[]` names the first differing byte offset and the proposed block (index/type/byte range) that failed to round-trip. Use this to inspect identity effects before committing, or as the reviewable half of docs_update.",
-      inputSchema: { doc: z.string(), content: z.string(), ...REPO_ARG },
+        "Plan a whole-document update WITHOUT applying it. Given a document (`id` or `path`) and the proposed complete `content`, reconciles the new representation against the current stable block tree and returns an executable *opset*: the exact kernel ops (insert/update/move/remove) it would run, each annotated with its identity consequence (disposition, confidence, reason), plus a summary (preserved/updated/moved/created/removed) and a human-readable plan. The opset carries preconditions (`precondition: { $id, $path, baseRevision, $hash }` — the document's revision and hash at plan time); a stale plan is refused at apply. `converges` is verified by simulation (replaying the ops reproduces `content` byte-for-byte); when a lowering diverges, `diagnostics[]` names the first differing byte offset and the proposed block (index/type/byte range) that failed to round-trip. Use this to inspect identity effects before committing, or as the reviewable half of docs_update.",
+      inputSchema: { ...DOC_ARGS, content: z.string(), ...REPO_ARG },
     },
     async (args) => {
       try {
         const { repoId, rootPath } = repoScope(args.repo);
         if (!rootPath) throw new EngineError("repo_not_found", "repo has no filesystem source; mutation disabled");
-        const opset = surfaceOpset(planUpdate(store, repoId, rootPath, args.doc, args.content));
+        const docId = locateDoc(repoId, "docs_plan_update", registry.get("docs_plan_update")!.shape, args);
+        const opset = surfaceOpset(planUpdate(store, repoId, rootPath, docId, args.content));
         return ok({ opset, plan: renderOpsetPlan(opset) });
       } catch (e) {
         return fail(e);
@@ -1047,16 +1143,18 @@ export function buildServer(ctx: ServerContext): McpServer {
     },
   );
 
-  server.registerTool(
+  tool(
     "docs_update",
     {
       description:
-        "Whole-document update with smart identity preservation. Submit the complete proposed `content` for a doc (id or path); the engine reconciles it against the current tree, preserving stable block ids for structure that is recognizably the same (edits, moves, reorders), minting for new structure, and tombstoning removals — then commits the derived opset through the kernel write path. Frontmatter changes are applied too. dry_run:true returns the opset + plan without writing (identical to docs_plan_update). Conflicts (the doc changed since planning) fail stale_plan — re-run. A plan whose replay cannot reproduce `content` byte-for-byte fails plan_not_convergent; the message names the first divergent byte and the proposed block (index/type) that failed to round-trip (full diagnostics in `data.diagnostics`). This is docs_plan_update + apply(opset).",
-      inputSchema: { doc: z.string(), content: z.string(), reason: z.string().optional(), dry_run: z.boolean().optional(), ...REPO_ARG },
+        "Whole-document update with smart identity preservation. Submit the complete proposed `content` for a document (`id` or `path`); the engine reconciles it against the current tree, preserving stable block ids for structure that is recognizably the same (edits, moves, reorders), minting for new structure, and tombstoning removals — then commits the derived opset through the kernel write path. Frontmatter changes are applied too. dry_run:true returns the opset + plan without writing (identical to docs_plan_update). Conflicts (the doc changed since planning) fail stale_plan — re-run. A plan whose replay cannot reproduce `content` byte-for-byte fails plan_not_convergent; the message names the first divergent byte and the proposed block (index/type) that failed to round-trip (full diagnostics in `data.diagnostics`). This is docs_plan_update + apply(opset).",
+      inputSchema: { ...DOC_ARGS, content: z.string(), reason: z.string().optional(), dry_run: z.boolean().optional(), ...REPO_ARG },
     },
     async (args) => {
       try {
-        const { opset, result } = surfaceDocsUpdate(docsUpdate(store, docCtx(repoScope(args.repo)), args.doc, args.content, {
+        const scope = repoScope(args.repo);
+        const docId = locateDoc(scope.repoId, "docs_update", registry.get("docs_update")!.shape, args);
+        const { opset, result } = surfaceDocsUpdate(docsUpdate(store, docCtx(scope), docId, args.content, {
           ...(args.dry_run !== undefined ? { dryRun: args.dry_run } : {}),
           ...(args.reason !== undefined ? { reason: args.reason } : {}),
         }));
@@ -1068,11 +1166,11 @@ export function buildServer(ctx: ServerContext): McpServer {
     },
   );
 
-  server.registerTool(
+  tool(
     "observe",
     {
       description:
-        "SYNC INGEST (ADR-014): record `content` as the current authoritative bytes for `path`, committed as an OBSERVED-origin revision — a write *around* the engine, the way a human/external edit is recorded. Contrast docs_update, which is api-origin (a write *through* the engine, agent intent); both reconcile the new bytes against the current block tree and preserve stable ids, but the origin differs (and thus the change-feed semantics and matcher path). This is the file→DB direction for an out-of-process synchronizer: it never writes a file, so it works on a headless/sourceless server with no working tree. Idempotent: bytes whose hash already equals the stored revision are an ECHO — no commit (`echo:true`, `rev:null`). Bytes with git conflict markers are still ingested (opaque) and the doc is flagged (`conflicted:true`). To mirror a deletion, use `observe_delete` (an observed, resurrection-pooled tombstone — not `docs_delete`, which is an intentional api-origin removal that also unlinks the file). Returns `{ $id, $path, rev, commitId, converged, echo, conflicted, dispositions }` — the document's row attributes plus a disposition summary (how identity threaded).",
+        "SYNC INGEST (ADR-014): record `content` as the current authoritative bytes for `path`, committed as an OBSERVED-origin revision — a write *around* the engine, the way a human/external edit is recorded. Contrast docs_update, which is api-origin (a write *through* the engine, agent intent); both reconcile the new bytes against the current block tree and preserve stable ids, but the origin differs (and thus the change-feed semantics and matcher path). This is the file→DB direction for an out-of-process synchronizer: it never writes a file, so it works on a headless/sourceless server with no working tree. Idempotent: bytes whose hash already equals the stored revision are an ECHO — no commit (`echo:true`, `rev:null`). Bytes with git conflict markers are still ingested (opaque) and the doc is flagged (`conflicted:true`). To mirror a deletion, use `observe_delete` (an observed, resurrection-pooled tombstone — not `docs_delete`, which is an intentional api-origin removal that also unlinks the file). Returns `{ $id, $path, rev, commitId, converged, echo, conflicted, dispositions }` — the document's row attributes plus a disposition summary (how identity threaded). `path` is a FILE event's path from the store's layer, not a row locator, so it keeps its name.",
       inputSchema: { path: z.string(), content: z.string(), ...REPO_ARG },
     },
     async (args) => {
@@ -1085,7 +1183,7 @@ export function buildServer(ctx: ServerContext): McpServer {
     },
   );
 
-  server.registerTool(
+  tool(
     "observe_many",
     {
       description:
@@ -1102,7 +1200,7 @@ export function buildServer(ctx: ServerContext): McpServer {
     },
   );
 
-  server.registerTool(
+  tool(
     "observe_delete",
     {
       description:
@@ -1119,10 +1217,10 @@ export function buildServer(ctx: ServerContext): McpServer {
     },
   );
 
-  server.registerTool(
-    "history_node",
+  tool(
+    "blocks_history",
     {
-      description: "A block's biography: the commits that touched it with disposition kind/confidence/reason, newest first.",
+      description: "A block's biography: the commits that touched the block `id` names, with disposition kind/confidence/reason, newest first (history_node before surface 3.0 — it always took a block id and returned the block's changes). Not repo-scoped: block ids are global.",
       inputSchema: { id: z.string(), limit: z.number().int().optional() },
     },
     async (args) => {
@@ -1134,20 +1232,20 @@ export function buildServer(ctx: ServerContext): McpServer {
     },
   );
 
-  server.registerTool(
+  tool(
     "diff",
     {
-      description: "Block-grain diff between two revisions of a document: `[{ kind: added|removed|changed, $id (the block), before?, after? }]` in that order.",
-      inputSchema: { doc: z.string(), from_rev: z.string(), to_rev: z.string(), ...REPO_ARG },
+      description: "Block-grain diff between two revisions of a document: `[{ kind: added|removed|changed, $id (the block), before?, after? }]` in that order. The document is a foreign reference here (this tool's rows are diff entries, not documents), so it is named `doc_id` or `doc_path` (at least one).",
+      inputSchema: { doc_id: z.string().optional(), doc_path: z.string().optional(), from_rev: z.string(), to_rev: z.string(), ...REPO_ARG },
     },
     async (args) => {
       try {
         const { repoId } = repoScope(args.repo);
-        // Resolve `doc` id-or-path FIRST: diffBlocks keys its SQL on the doc id,
-        // so a raw path here would silently return an empty diff (no error) —
-        // the misleading-empty trap. resolveDocId throws doc_missing when the
-        // ref names no document.
-        const docId = resolveDocId(repoId, { doc: args.doc });
+        // Resolve the locator FIRST: diffBlocks keys its SQL on the doc id, so a
+        // raw path here would silently return an empty diff (no error) — the
+        // misleading-empty trap. locateDoc throws doc_missing when the ref
+        // names no document.
+        const docId = locateDoc(repoId, "diff", registry.get("diff")!.shape, args, FOREIGN_KEYS);
         return ok(diffBlocks(store, docId, args.from_rev, args.to_rev));
       } catch (e) {
         return fail(e);
@@ -1155,21 +1253,21 @@ export function buildServer(ctx: ServerContext): McpServer {
     },
   );
 
-  server.registerTool(
+  tool(
     "diff_unified",
     {
       description:
-        "Unified diff between two revisions of a document (the `omg diff` rendering): returns `{ $id, $path, from, to, diff }` where `diff` is a unified diff of the two revisions' file texts — for each revision exactly the bytes docs_read_at returns, so hunk line numbers are real file lines (Myers shortest edit script; `@@ -a,b +c,d @@` hunks with 3 lines of context; lines prefixed `-`, `+` or a space; no file header; identical texts → \"\"). `from_rev`/`to_rev` default to the previous and current revisions ('what did the last commit change here'). Contrast `diff`, which returns block-grain added/removed/changed entries.",
-      inputSchema: { doc: z.string(), from_rev: z.string().optional(), to_rev: z.string().optional(), ...REPO_ARG },
+        "Unified diff between two revisions of a document (the `omg diff` rendering): returns `{ $id, $path, from, to, diff }` where `diff` is a unified diff of the two revisions' file texts — for each revision exactly the bytes docs_read_at returns, so hunk line numbers are real file lines (Myers shortest edit script; `@@ -a,b +c,d @@` hunks with 3 lines of context; lines prefixed `-`, `+` or a space; no file header; identical texts → \"\"). The document is named `doc_id` or `doc_path` (at least one — a foreign reference, as in `diff`). `from_rev`/`to_rev` default to the previous and current revisions ('what did the last commit change here'). Contrast `diff`, which returns block-grain added/removed/changed entries.",
+      inputSchema: { doc_id: z.string().optional(), doc_path: z.string().optional(), from_rev: z.string().optional(), to_rev: z.string().optional(), ...REPO_ARG },
     },
     async (args) => {
       try {
         const { repoId } = repoScope(args.repo);
-        const docId = resolveDocId(repoId, { doc: args.doc });
+        const docId = locateDoc(repoId, "diff_unified", registry.get("diff_unified")!.shape, args, FOREIGN_KEYS);
         return ok(docDiffUnified(store, docId, {
           ...(args.from_rev !== undefined ? { fromRev: args.from_rev } : {}),
           ...(args.to_rev !== undefined ? { toRev: args.to_rev } : {}),
-          label: JSON.stringify(args.doc),
+          label: JSON.stringify(args.doc_id ?? args.doc_path),
         }));
       } catch (e) {
         return fail(e);
@@ -1177,17 +1275,17 @@ export function buildServer(ctx: ServerContext): McpServer {
     },
   );
 
-  server.registerTool(
+  tool(
     "docs_read_at",
     {
       description:
-        "TIME-TRAVEL read: the whole file bytes of a document AS OF a past revision — `$raw` is the reconstructed source at that `rev` (fences/tables/list markers preserved), plus `$id`/`$path` (the path as of that revision)/`rev`. Use this to audit or answer 'what did this doc say at revision N', or to fetch the exact prior text before reverting. Get a `rev` from diff, history_node, or changes_since. Contrast: docs_read = current bytes; diff = block-grain changes BETWEEN two revisions. `renderedHashMatch` is true when the reconstruction is byte-for-byte the file at that revision; it can be false for an old revision ONLY when the document's leading/frontmatter trivia (separator bytes, not block content) changed since — block content always reconstructs faithfully. `properties` are CURRENT values (propertiesAreCurrent:true), since property history is not stored. Args take a doc id or path plus a rev id.",
-      inputSchema: { doc: z.string().optional(), path: z.string().optional(), rev: z.string(), ...REPO_ARG },
+        "TIME-TRAVEL read: the whole file bytes of a document AS OF a past revision — `$raw` is the reconstructed source at that `rev` (fences/tables/list markers preserved), plus `$id`/`$path` (the path as of that revision)/`rev`. Use this to audit or answer 'what did this doc say at revision N', or to fetch the exact prior text before reverting. Get a `rev` from diff, blocks_history, docs_history or changes_since. Contrast: docs_read = current bytes; diff = block-grain changes BETWEEN two revisions. `renderedHashMatch` is true when the reconstruction is byte-for-byte the file at that revision; it can be false for an old revision ONLY when the document's leading/frontmatter trivia (separator bytes, not block content) changed since — block content always reconstructs faithfully. `properties` are CURRENT values (propertiesAreCurrent:true), since property history is not stored. Address the document by `id` or `path` plus a `rev` id.",
+      inputSchema: { ...DOC_ARGS, rev: z.string(), ...REPO_ARG },
     },
     async (args) => {
       try {
         const { repoId } = repoScope(args.repo);
-        const docId = resolveDocId(repoId, args);
+        const docId = locateDoc(repoId, "docs_read_at", registry.get("docs_read_at")!.shape, args);
         const res = readDocumentAtRevision(store, docId, args.rev);
         if (!res) throw new EngineError("target_missing", `no revision ${JSON.stringify(args.rev)} for document ${docId}`, { data: { doc: docId, rev: args.rev } });
         return ok(res);
@@ -1197,14 +1295,14 @@ export function buildServer(ctx: ServerContext): McpServer {
     },
   );
 
-  server.registerTool(
+  tool(
     "docs_history",
     {
       description:
-        "VERSION HISTORY of matching documents, grouped BY DOCUMENT: for each doc (`$id`, `$path`, `deleted`, `currentRev`), its ordered revision list (oldest→newest) with `rev`/`seq`/`commit`/`$updated_at`/`origin`/`actor`/`$hash`/`isCurrent`. Give `path_glob` (e.g. \"journal/*\" — `*` matches ACROSS `/`, so journal/* and journal/** are equivalent) OR a single `doc` (id or path); at least one is required. `$hash` (hex of the revision's rendered file hash) lets you spot no-op vs real changes. Feed a returned `rev` into `docs_read_at` (whole doc AT that rev) or `diff` (block-grain changes BETWEEN two revs). By default only live docs; `include_deleted:true` also returns tombstoned docs (their history is intact for audit). `limit` caps DOCUMENTS returned (default 50) with a `truncated` flag. Contrast `changes_since`: a repo-wide COMMIT feed, not this per-document view.",
+        "VERSION HISTORY of matching documents, grouped BY DOCUMENT: for each doc (`$id`, `$path`, `deleted`, `currentRev`), its ordered revision list (oldest→newest) with `rev`/`seq`/`commit`/`$updated_at`/`origin`/`actor`/`$hash`/`isCurrent`. Give `path_glob` (e.g. \"journal/*\" — `*` matches ACROSS `/`, so journal/* and journal/** are equivalent) OR a single document by `id` or `path`; at least one is required. `$hash` (hex of the revision's rendered file hash) lets you spot no-op vs real changes. Feed a returned `rev` into `docs_read_at` (whole doc AT that rev) or `diff` (block-grain changes BETWEEN two revs). By default only live docs; `include_deleted:true` also returns tombstoned docs (their history is intact for audit). `limit` caps DOCUMENTS returned (default 50) with a `truncated` flag. Contrast `changes_since`: a repo-wide COMMIT feed, not this per-document view.",
       inputSchema: {
         path_glob: z.string().optional(),
-        doc: z.string().optional(),
+        ...DOC_ARGS,
         include_deleted: z.boolean().optional(),
         limit: z.number().int().optional(),
         ...REPO_ARG,
@@ -1213,23 +1311,23 @@ export function buildServer(ctx: ServerContext): McpServer {
     async (args) => {
       try {
         const { repoId } = repoScope(args.repo);
-        if (!args.path_glob && !args.doc) {
-          throw new EngineError("target_missing", "docs_history requires one of path_glob or doc");
+        if (!args.path_glob && args.id === undefined && args.path === undefined) {
+          throw new EngineError("target_missing", "docs_history requires one of path_glob, id or path");
         }
-        if (args.doc) {
-          // Validate the ref resolves (or, when include_deleted, a tombstoned doc
-          // exists). findDocByRef does the id-or-path dispatch (isValidId); the
-          // tombstone fallback uses the same dispatch.
-          const info = findDocByRef(store, repoId, args.doc);
-          const asId = isValidId(args.doc, "d");
-          const known = info || (args.include_deleted
-            ? store.db.prepare(asId ? "SELECT 1 FROM docs WHERE doc_id = ?" : "SELECT 1 FROM docs WHERE repo_id = ? AND path = ?").get(...(asId ? [args.doc] : [repoId, storagePath(args.doc)]))
-            : undefined);
-          if (!known) throw new EngineError("doc_missing", `no document for ${JSON.stringify(args.doc)}`);
+        let doc: string | undefined;
+        if (args.id !== undefined || args.path !== undefined) {
+          // A live document resolves through the locator; with include_deleted a
+          // tombstoned one is looked up by the same attribute.
+          const tomb = args.include_deleted
+            ? (args.id !== undefined
+              ? store.db.prepare("SELECT doc_id FROM docs WHERE doc_id = ? AND repo_id = ?").get(args.id, repoId)
+              : store.db.prepare("SELECT doc_id FROM docs WHERE repo_id = ? AND path = ?").get(repoId, storagePath(args.path!))) as { doc_id: string } | undefined
+            : undefined;
+          doc = tomb ? tomb.doc_id : locateDoc(repoId, "docs_history", registry.get("docs_history")!.shape, args);
         }
         return ok(docHistory(store, repoId, {
           ...(args.path_glob ? { pathGlob: args.path_glob } : {}),
-          ...(args.doc ? { doc: args.doc } : {}),
+          ...(doc ? { doc } : {}),
           ...(args.include_deleted !== undefined ? { includeDeleted: args.include_deleted } : {}),
           ...(args.limit !== undefined ? { limit: args.limit } : {}),
         }));
@@ -1239,7 +1337,7 @@ export function buildServer(ctx: ServerContext): McpServer {
     },
   );
 
-  server.registerTool(
+  tool(
     "changes_since",
     {
       description: "The change feed: commit digests after a cursor (repo commit seq) with one-line summaries. Each digest's `revisions[]` carries `{ $id, $path, $hash }` ($hash = hex of the revision's rendered file hash; the same shape an apply result's revisions have), so a synchronizer can decide 'changed vs echo' without a follow-up docs_read. Filter by `origin` (api/observed/import) to ignore commits a given writer produced. Poll with your last cursor to cheaply re-orient after time away. Paging: `cursor` is the last digest's `seq` (a dense per-REPO order — a cursor is only meaningful against the same `repo` it came from); pass it back while `truncated` is true. `head` is the repo's current max seq: an empty page with cursor == head means nothing new, cursor > head means the cursor belongs to a different repo/server.",
@@ -1259,7 +1357,7 @@ export function buildServer(ctx: ServerContext): McpServer {
     },
   );
 
-  server.registerTool(
+  tool(
     "repos_status",
     {
       description:
@@ -1274,7 +1372,7 @@ export function buildServer(ctx: ServerContext): McpServer {
     },
   );
 
-  server.registerTool(
+  tool(
     "sync_status",
     {
       description:
@@ -1292,7 +1390,7 @@ export function buildServer(ctx: ServerContext): McpServer {
   // List the repos in this workspace (multi-repo discovery for a client): slug +
   // whether it has a filesystem source. The `repo` arg other tools take is a slug
   // from here. (repos_status gives per-repo counts.)
-  server.registerTool(
+  tool(
     "repos",
     {
       description:
@@ -1310,7 +1408,7 @@ export function buildServer(ctx: ServerContext): McpServer {
 
   // Which engine and which versions (spec/surface §4, 1.4). No repo scope: the
   // answer is about the binary and its database, not a repo.
-  server.registerTool(
+  tool(
     "version",
     {
       description:
@@ -1327,5 +1425,32 @@ export function buildServer(ctx: ServerContext): McpServer {
     },
   );
 
+  // The `tools/call` handler: ours, so the argument shape is checked by
+  // `validateArguments` (spec/surface §4 "Arguments") and a failure is the
+  // engine's `filter_invalid` envelope — naming the expected shape and, for an
+  // unknown name, the nearest valid one — rather than the SDK's validation
+  // text. Listing (`tools/list`) stays the SDK's, from the same registrations.
+  server.server.setRequestHandler(CallToolRequestSchema, async (request) => {
+    const name = request.params.name;
+    const entry = registry.get(name);
+    if (!entry) throw new McpError(ErrorCode.InvalidParams, `Tool ${name} not found`);
+    let args: Record<string, unknown>;
+    try {
+      args = validateArguments(name, entry.shape, request.params.arguments);
+    } catch (e) {
+      return fail(e);
+    }
+    return entry.handler(args);
+  });
+
   return server;
+}
+
+/** The catalog's tool names in registration order with their descriptions —
+ *  what `spec/surface/tool-descriptions.json` pins for both engines. */
+export async function toolDescriptions(server: McpServer): Promise<Record<string, string>> {
+  const tools = (server as unknown as { _registeredTools: Record<string, { description?: string }> })._registeredTools;
+  const out: Record<string, string> = {};
+  for (const [name, t] of Object.entries(tools)) out[name] = t.description ?? "";
+  return out;
 }

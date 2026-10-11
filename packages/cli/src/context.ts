@@ -154,7 +154,7 @@ export const REMOTE_OK = new Set([
   // doc-level mutators
   "new", "mv", "meta", "rm", "update", "retarget",
   // block-level sugar (server-side ref resolution + CAS via the blocks_* /
-  // tasks_complete / sections_append / node_set / apply tools)
+  // tasks_complete / blocks_append / node_set / apply tools)
   "apply", "insert", "move", "split", "merge", "done", "append", "node",
   // shell accepts --server itself, then threads it into every line it runs.
   "shell",

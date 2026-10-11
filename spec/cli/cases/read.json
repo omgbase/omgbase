@@ -390,7 +390,7 @@
     },
     {
       "name": "cat-block-json",
-      "notes": "nodes_get at raw",
+      "notes": "blocks_get at raw",
       "workspace": "alchemy",
       "argv": [
         "cat",

@@ -28,6 +28,7 @@ use omgbase_sync::{RealFileSystem, RepoRow};
 use rusqlite::{OptionalExtension, params};
 use serde_json::{Map, Value as Json, json};
 
+use crate::arguments::{argument_error, validate_arguments};
 use crate::error::{Result, SurfaceError};
 use crate::graph::{GraphArgs, graph_neighborhood};
 use crate::history;
@@ -73,6 +74,9 @@ pub struct Surface {
     store: Store,
     default_repo: String,
     provider: Option<Box<dyn EmbeddingProvider>>,
+    /// The configured provider's name (`embedding.provider`), for the
+    /// `provider_unavailable` error's `data` when the host knows it.
+    provider_name: Option<String>,
     on_mutation: Option<Box<dyn FnMut()>>,
     clock: Box<dyn FnMut() -> String>,
     writes: WriteTarget,
@@ -236,19 +240,41 @@ fn parent_expect_schema() -> Json {
     json!({ "type": "object", "properties": { "parent_children_hash": { "type": "string" } } })
 }
 
-/// The catalog (§4 table), in the reference's registration order.
+/// The catalog (§4 table), in the reference's registration order. The
+/// descriptions are the reference's, byte for byte, generated into
+/// [`descriptions`](crate::descriptions) from `spec/surface/tool-descriptions.json`
+/// (`scripts/gen-tool-descriptions.mjs`); `tests/spec.rs` pins the parity.
 #[must_use]
 pub fn tools() -> Vec<ToolSpec> {
-    let dp = |extra: &[(&str, Json)], required: &[&str]| {
-        let mut props = vec![("doc", s()), ("path", s())];
+    catalog().to_vec()
+}
+
+/// The catalog, built once.
+pub(crate) fn catalog() -> &'static [ToolSpec] {
+    static CATALOG: std::sync::OnceLock<Vec<ToolSpec>> = std::sync::OnceLock::new();
+    CATALOG.get_or_init(build_catalog)
+}
+
+/// The spec of one tool, by name.
+pub(crate) fn tool_spec(name: &str) -> Option<&'static ToolSpec> {
+    catalog().iter().find(|t| t.name == name)
+}
+
+#[allow(clippy::too_many_lines)]
+fn build_catalog() -> Vec<ToolSpec> {
+    use crate::descriptions as d;
+    // The document locator every `docs_*` tool takes (§4 "Arguments"): the
+    // row's own attributes, at least one of them (checked by the handler).
+    let doc = |extra: &[(&str, Json)], required: &[&str]| {
+        let mut props = vec![("id", s()), ("path", s())];
         props.extend(extra.iter().cloned());
         schema(&props, required, true)
     };
     vec![
         ToolSpec {
             name: "docs_outline",
-            description: "A document's compact indented outline (id, type, label per line; § marks headings). Args take a doc id or path.",
-            input_schema: dp(
+            description: d::DOCS_OUTLINE,
+            input_schema: doc(
                 &[
                     (
                         "resolution",
@@ -262,12 +288,12 @@ pub fn tools() -> Vec<ToolSpec> {
         },
         ToolSpec {
             name: "docs_read",
-            description: "Read a whole document: `{ $id, $path, rev, properties, $raw }` — `$raw` the verbatim file bytes, `properties` grouped by source; include_ids adds `ids`, `hashes` (block `$id` → `$hash`, the CAS tokens) and `parents`.",
-            input_schema: dp(&[("include_ids", b())], &[]),
+            description: d::DOCS_READ,
+            input_schema: doc(&[("include_ids", b())], &[]),
         },
         ToolSpec {
             name: "docs_get_many",
-            description: "Batch docs_read over `docs` (ids or paths): `{ items, errors, truncated }`, capped at 100 refs, optional token budget.",
+            description: d::DOCS_GET_MANY,
             input_schema: schema(
                 &[
                     ("docs", strings()),
@@ -279,25 +305,30 @@ pub fn tools() -> Vec<ToolSpec> {
             ),
         },
         ToolSpec {
-            name: "nodes_get",
-            description: "Hydrate one block subtree at a resolution (skeleton|outline|text|raw|full); the owning doc is inferred from `id` when `doc`/`path` are omitted.",
-            input_schema: dp(&[("id", s()), ("resolution", resolution_schema())], &["id"]),
+            name: "blocks_get",
+            description: d::BLOCKS_GET,
+            input_schema: schema(
+                &[("id", s()), ("resolution", resolution_schema())],
+                &["id"],
+                true,
+            ),
         },
         ToolSpec {
-            name: "nodes_get_many",
-            description: "Fetch up to 100 blocks by id in request order with budget truncation; `doc`/`path` is an optional scope. Returns `nodes`, `truncated`, `unresolved`.",
-            input_schema: dp(
+            name: "blocks_get_many",
+            description: d::BLOCKS_GET_MANY,
+            input_schema: schema(
                 &[
                     ("ids", strings()),
                     ("resolution", resolution_schema()),
                     ("budget_tokens", i()),
                 ],
                 &["ids"],
+                true,
             ),
         },
         ToolSpec {
             name: "read_ref",
-            description: "Read any ref — a document (id or path) or a block (`b_` id, or an `n_` node id) — classified as `{ kind: \"document\", … }` or `{ kind: \"block\", … }` (block `resolution` defaults to raw).",
+            description: d::READ_REF,
             input_schema: schema(
                 &[("ref", s()), ("resolution", resolution_schema())],
                 &["ref"],
@@ -306,7 +337,7 @@ pub fn tools() -> Vec<ToolSpec> {
         },
         ToolSpec {
             name: "docs_tree",
-            description: "The directory-aware shape of a repo: live docs under `path` collapsed at `depth` segments into dir/doc entries (`{ $id?, $path, kind, docs, blocks, $updated_at }`) with totals, ordered by path and paged.",
+            description: d::DOCS_TREE,
             input_schema: schema(
                 &[
                     ("path", s()),
@@ -321,7 +352,7 @@ pub fn tools() -> Vec<ToolSpec> {
         },
         ToolSpec {
             name: "docs_list",
-            description: "Enumerate live documents as a page `{ items: [{ $id, $path, $updated_at, blocks }], truncated, cursor }`, ordered by path; `path_glob` is a LIKE match (`*` matches across `/`).",
+            description: d::DOCS_LIST,
             input_schema: schema(
                 &[
                     ("path_glob", s()),
@@ -335,12 +366,12 @@ pub fn tools() -> Vec<ToolSpec> {
         },
         ToolSpec {
             name: "query_syntax",
-            description: r#"Reference: the full `query` (OQX) syntax — the clause order, the sugar (a block without a consumer is collect, where-first bodies, brackets, postfix `!`, `is`/`is not`, `and`/`or`/`not`), `/`-rooted paths, targets and field namespaces, scalar semantics and absence, domain predicates incl. `refs()`, nested queries and the root row (`^docs`, `^$id`, `0^docs`), `select`/`order by`/paging, `follow`, and worked examples. Call this before writing a non-trivial query. No arguments."#,
+            description: d::QUERY_SYNTAX,
             input_schema: schema(&[], &[], false),
         },
         ToolSpec {
             name: "query",
-            description: r#"OQX (omgbase Query eXpressions) — composable query in ONE expression. Two rules: DOT navigation belongs to the host object model (`doc.layer`, `section.blocks`, `target.out`); WHITESPACE query directives belong to OQX — a nested query is `<receiver> collect|exists|count|first|single { <block> }` (a postfix directive + a `{ … }` block), never a method. `from E` selects a property/relation relative to the current source scope and flattens it (a typed flatMap): top-level `from docs|blocks|nodes|edges` selects the repository's docs/blocks/nodes/edges (the `edges` target is the authored link graph as first-class rows — `$id`/`$path` plus the plain fields doc_id/block_id/via_id/dst_id/dst_path/uri/predicate/provenance/dst_kind/anchor/field, with $path/doc.* reaching the SOURCE doc); `where`; `select`. Its distinctive power is receiver-constrained nested queries that correlate to the current row: `from docs where nodes exists { where kind == "md:task" }` returns only the docs that themselves contain a matching node (not a global scan). Directives: `exists { … }` / `count { … }` in where — with an optional count comparison `nodes count { where kind == "md:task" } >= 2`; `collect { … }` in select for hierarchical results, nestable (`select secs: nodes collect { select h: name, items: section.blocks collect { where type == "list_item" } where kind == "md:section" } from docs`). CLAUSE ORDER IS FIXED (ADR-020): within one body — the top level or any `{ block }` — clauses appear at most once each, in exactly this order: `select … from … where … follow … order by … limit N offset N`. Every clause is optional except a top-level `from`; an out-of-order clause is a parse error naming the order. ONLY `select` may drop its keyword, and only when it is the first clause written (`$path, open from docs where …`; `nodes collect { attrs.text }` projects `attrs.text`). Every other clause carries its keyword, with one piece of sugar (oqx 0.17): a block's leading expression is its `where` when it is predicate-shaped (`nodes exists { kind == "md:task" }` ≡ `nodes exists { where kind == "md:task" }`); a bare name or dotted path is a projection, so filter on a bare field with `is active`, and `{ name where … }` is the projection + filter (`{ age >= 18, name }` is an error). A top-level predicate needs `where` (`where` follows `from`, so `age > 15 from people` is an error), a bare boolean property in leading position PROJECTS (`nodes collect { active }`), and `from docs count` is an error (write `docs count { … }` for the consumer, or `select count from docs` to project a field named count). More sugar, each desugaring in the parser to the explicit directive: a receiver block without a consumer is `collect` (`docs { type == "x" }`, `nodes { kind == "md:task" }` — not after `follow`, where `{ … }` is the options block); brackets `x[p]` = `x first { where p }` (the first match or absent), `x[p]!` = `x single { where p }` required (exactly one, else filter_invalid), `x[n]` = `x first { offset n }` (positional; out of range is absent); postfix `x!` = required (the value, or a loud error naming the expression and the row — never a filter, never a coercion; tightest: `a!.b` vs `a.b!`); prefix `is x` / `not x` (truthiness); infix `x is y` / `x is not y` compares identity (a row's id, else the value — `x is null` is the absence test; for scalars `is` ≡ `==`); and a `select` item may use the items to its left (`boss: ^docs[slug == ^manager], name: boss.$title`). `and` / `or` / `not` are the connectives; `&&` / `||` / `!` are accepted synonyms (the canonical printer writes the words). `where` may reference the same body's `select` aliases (`select $path, old: era < 1000 from docs where old` — inlined at parse time; an alias shadows a same-named field there). On the nodes/blocks targets a bare identifier that is not a structural field (doc_id, block_id, kind/name/value; doc_id, type/text, ordinal/depth) or `$`-intrinsic reads the flattened attrs bag — `checked` == `attrs.checked`, `level` == `attrs.level` — so the name you filter on matches the name a projection returns (`select attrs.checked` yields key `checked`); the `attrs.<key>` form still works and an absent key is silently false. Any consumer accepts `distinct` to dedup the rows it reduces by their projected value — `nodes count distinct { select kind }`, `nodes collect distinct { select kind }`, top-level `select distinct type` (empty projection dedups by identity). `values` after a projection of exactly ONE item returns the bare value instead of a `{name: value}` record: at the top level `select $path values from docs where layer == "canon"` returns `values: ["a.md", …]` (paged like hits; `hits` is empty), and inside a block `select tags: tags collect { $it values }` yields a plain array. `$it` is the current item itself — the row, or the scalar element when the receiver is a list property (`where tags exists { where $it == "pricing" }`); inside a block `^$it` is the enclosing row. `none { … }` is the zero-cardinality test — true iff the block yields no rows (≡ `!… exists { … }`), and how "every" is spelled: `nodes none { where kind == "md:task" and not checked }` = no open tasks; also a whole-query directive (`docs none { … }` returns `none`). `limit N` / `offset N` bound a row set AFTER where/order/distinct and BEFORE the consumer reduces it, so they mean the same under every consumer: at the top level (`order by era desc limit 3` — the tool's `limit`/`cursor` then page within that bounded set) or inside any block (`nodes collect { … order by ordinal limit 1 }`; `nodes exists { offset 1 }` = at least two). `entries(x)` turns a record into a collection of entries — inside the block `$key` is the property key and `$it` (and bare names) the value: `select fm: entries(frontmatter) collect { k: $key, v: $it }`, `from nodes where kind == "md:task" and entries(attrs) exists { where $key == "checked" and $it }`; works on `frontmatter` / `inline` (the whole authored bag, nested dotted keys folded back), `attrs`, a nested frontmatter map, or a list (numeric index keys). Plain objects never auto-iterate; `entries()` is the explicit bridge. The where clause is a boolean tree: compose scalar predicates and consumer directives with `and`, `or`, `not`, and grouping (`layer == "canon" or nodes exists { where kind == "md:task" }`). Relative source: `from E` inside a top-level consumer block re-projects the rows — `docs collect { from nodes where kind == "md:task" }` starts at docs, projects each doc through its `nodes` relation, and queries the resulting nodes (a scalar relation like `from doc` contributes one row; a missing/non-navigable relation is a loud error, never a global scan). One-scope lift: a `collect` in `where` with a `^name` both filters (non-empty) and binds the matching values into the parent select in one expression — `select $path, open from docs where nodes collect { ^open: value where kind == "md:task" and not attrs.checked }` returns the docs with an open task, each carrying its open-task texts. Correlation / joins (the `^` sigil, symmetric with the lift): a nested query may READ a name bound one scope outward — bind it in the parent (a select value or a lift), then reference `^name` inside a nested query's where. Combined with the root row's collections `^docs` / `^nodes` / `^blocks` / `^edges` (the repository is OQX's root row, one scope out from a top-level row — one caret per enclosing block, or the absolute `0^docs` from any depth; an UNBOUNDED repository scan, uncorrelated until you add a `^` predicate) this expresses lateral/dependent joins without a JOIN keyword: `^<t> exists { where … == ^k }` = semi-join, `not … exists { … }` = anti-join, `… collect { … }` in select = nested left-join, and the select-only lookups `first { … }` / `single { … }` (zero-or-one / one-to-one; `single` errors if it matches >1) — e.g. `select owner_id, owner: ^nodes single { where kind == "person" and attrs.id == ^owner_id } from docs`. Membership over a lifted set: `<value> in ^keys`. `^` reads exactly ONE scope out (no arbitrary-ancestor search), and a bare name reads the CURRENT row only — it never falls through to an enclosing row or the root, so reach outward explicitly with `^name` (the enclosing row) or `^docs` / `0^docs` (the root row's collections; `^$id` / `0^$id` is the repository id, `^$it` the root object). A bare `docs` INSIDE a block is an error ("did you mean `^docs`"), never an empty read; `$repo` (surface < 2.0) is refused with the replacement spelled out. PATHS are `/`-rooted on the surface (surface 2.0): every path returned — `$path`, an edge's `dst_path`, a hit's `$path` — is the reference form (`/a/b.md`), and a string literal compared with `$path`/`dst_path` by `==`/`!=` or passed to their `startsWith` accepts both forms (`$path == "a.md"` and `$path == "/a.md"` both match); a property's value is the author's, so a reference held in frontmatter compares with `^$path` directly (`^docs { ^$path in list(after) }` = the documents whose `after` names me). `refs(field)` resolves the document REFERENCES a property holds (a string or a list of `/a.md`, `a.md` or `d_…` elements; dangling and non-string elements dropped) to live docs rows, so it is a source (`from refs("/a.md")`), a receiver (`refs(before) collect { $path, when }`, `refs(see_also)[0]`) or a `follow` destination (`follow refs(before), refs(after)` walks a timeline both ways); `follow before` over the strings fails — a hit must be a document, block, node or edge row. Top-level consumers: the whole query can be a consumer directive over a bare root receiver (a target name at the root scope) to change its result shape — `docs count { … }`, `docs exists { … }` and `docs none { … }` reduce to a scalar (returned as `count`/`exists`/`none`, no hits), `docs first { … }` / `docs single { … }` return zero-or-one hit (`single` errors if the query matches >1); a bare `from …` is the collect form. (A bare target at the root scope is the same collection `^<target>` reaches from inside where/select.) Scalar predicates follow the @omgbase/oqx semantics (strict typed equality with absence normalized so `!=` over an absent field matches; case-sensitive string ops with `.lower()`/`.upper()` and a regex `matches()`; absent sorts last; arithmetic supported), including doc.<key> reach-through and `text("terms")` — a full-text (FTS5) PRUNING predicate that, because it is an ordinary predicate, composes inside correlated subqueries and collects (e.g. `nodes exists { where kind == "md:task" and text("ship") }`), which the flat `query` tool cannot express. (`text` prunes; relevance ranking is separate.) And `semantic("phrase")` — an embedding cosine SCORE (docs/blocks only) usable as a threshold prune (`semantic("the great work") > 0.6`) or a projection (`select score: semantic("…")`); it needs an embedding provider (else semantic_unavailable) and, like `text`, composes inside nested scopes. Ranking: `order by <expr> [asc|desc], …` sorts the result (`order by semantic("the great work") desc` = semantic top-K; also orders by any frontmatter field / `$path`), always tie-broken by (path, id) for a total order — this is how score functions become a ranking. A custom order disables the keyset cursor (you still get the top `limit` with `truncated`). Recursion (`follow`): make the query recursive over a TYPE-PRESERVING relation (the relation's successor type must equal the query target). `from blocks where $id == "b_x" follow block.children` walks the block subtree from a seed; the `where` picks the SEED rows and `follow <relation>` expands them. A bare `follow <relation>` carries no sub-clauses; sub-clauses go in a `{ … }` block. Two orthogonal knobs shape it: a follow-local `follow <rel> { where <pred> }` filters which successors keep participating at each hop (running out ⇒ a leaf), and `{ frontier <pred> }` cuts a relation that could otherwise continue (⇒ a frontier); `{ depth <n> }` bounds the walk (1..8, default 8). `follow distinct` dedups reached rows by identity (the default keeps one occurrence per distinct walk path). `follow … { by <expr> }` sets the node identity used for cycle detection + dedup to a field/intrinsic (default: the entity id) — e.g. `follow doc.out { by group }` treats same-`group` documents as one node. Each reached row carries recursion metadata: `$depth` (seed = 1), the categorical `$stop` (interior | leaf | frontier | depth | cycle) with `$leaf`/`$frontier` boolean sugar, and `$ordinal` (a deterministic 1..N rank over the walk, ordered by depth then path — `order by $ordinal` for walk order, `where $ordinal <= N` for a deterministic budget cut). It is queryable in select / order by AND filterable post-walk in the top-level `where` (a `where` conjunct referencing a recursion intrinsic filters the walk's RESULT — `from blocks where type == "list_item" and $leaf follow block.children` = the leaves; the non-recursion conjuncts remain the seed predicate). Recursion intrinsics are NOT valid in the follow-local successor `where` or `frontier` (those run mid-walk, before the metadata exists), nor inside a consumer directive. Cyclic graphs are safe: a revisited node is admitted once as a `$stop == "cycle"` occurrence and never re-expanded. Type-preserving relations today: `block.children` (blocks→blocks, immediate child blocks), `section.children` (nodes→nodes, immediate child sections — a true outline depth ladder) and `section.subsections` (nodes→nodes, the whole transitive sub-tree — flattens to depth 2), and `doc.out` / `doc.in` (docs→docs, the authored citation graph — outgoing links / backlinks; inspect a doc's edges as rows via `doc.out_edges`/`doc.in_edges` (predicate/provenance/anchor filtered by a plain `where`)). Consumers compose over the walk (`blocks count { where … follow block.children }`). A `follow` may also nest inside a select-position `collect` for a per-row recursive subtree: `select outline: nodes collect { select n: name, d: $depth where kind == "md:section" and name == "Overview" follow section.children } from docs` (the collect's `where` seeds, correlated to the row; `follow` recurses; the collect's `select` projects each occurrence). Receivers: from docs — `nodes`, `blocks`, `doc.out`/`doc.in`, `doc.out_edges`/`doc.in_edges` (a doc's outgoing/incoming edges as rows); from nodes — `section.blocks` (content under an `md:section` node's heading, transitively including deeper headings), `section.children` (immediate child sections), and `section.subsections` (all contained sections); from blocks — `section` (enclosing `md:section` node(s)), `block.children` (child blocks), `block.nodes` (the projected nodes anchored to this block — links/tasks/anchors/…), and `block.out_edges` (this block's outgoing edges as rows — body links + inline fields; frontmatter edges are doc-grain, use `doc.out_edges`); from any row — `^docs` / `^nodes` / `^blocks` / `^edges` (the root row's collections; `0^docs` from any depth). Returns lean hits {$id, $path, ...projections} — the envelope keys are the intrinsics, so a hit's `$id` pastes into the next `where $id == …` unchanged (the `$` rule, surface 3.0: `$` marks exactly the engine names that share a namespace with your content — $id/$path everywhere, $raw/$hash/$updated_at on docs and blocks, $title/$tags on docs; every other engine field is plain snake_case, and every tool result spells a row with the same names) — with truncated + cursor (or a `count`/`exists` scalar for those consumers). Covers structural + section navigation + ad-hoc correlation + bounded recursive traversal (`follow`)."#,
+            description: d::QUERY,
             input_schema: schema(
                 &[
                     ("query", s()),
@@ -353,7 +384,7 @@ pub fn tools() -> Vec<ToolSpec> {
         },
         ToolSpec {
             name: "graph",
-            description: r#"Neighborhood macro: the bounded graph AROUND one or more root documents in ONE call — { documents, edges, frontier } — so you can orient without hand-writing an OQX `follow`. This is a CONVENIENCE WRAPPER, not a new engine: it compiles its args into an OQX `follow doc.out`/`doc.in` query and runs it through the same `query` path (the returned `queries` field is the exact follow query it generated). It does NOT replace `follow` or `from edges` — reach for the `query` tool directly when you need successor/frontier predicates, `by`-keyed identity, `$ordinal` budgets, cross-document correlation, or the edge scan with its own projections. `roots` are one or more doc refs (paths and/or ids); they are depth 0. `degrees` is the max hop distance (root = 0; maps to `follow { depth degrees+1 }`, capped so degrees+1 ≤ 8; default 1). `direction` is `out` (outgoing links), `in` (backlinks), or `both` (default). `predicate` restricts the neighborhood to documents reachable from a root via edges of that predicate (both the documents and the edges are filtered). `select` adds document projections (OQX select expressions, e.g. "layer", "$path"). `max_documents` caps the distinct document set (default 200) with a `truncated` flag. Returns: `documents` (each with `id`/`path`/`degree` = min hops from a root/`frontier` bool + your projections), `edges` (the traversed edges with full provenance — `predicate`/`provenance`/`dst_kind`/`anchor`/`src_field` + `src`/`dst`/`dst_path`/`dst_uri`; external `x_…` and dangling phantom endpoints are preserved as edge stubs, exactly as `from edges` surfaces them), and `frontier` (the documents on the outer boundary — min degree == degrees; at degrees 0 that is the roots themselves)."#,
+            description: d::GRAPH,
             input_schema: schema(
                 &[
                     ("roots", strings()),
@@ -372,17 +403,17 @@ pub fn tools() -> Vec<ToolSpec> {
         },
         ToolSpec {
             name: "text_search",
-            description: "Full-text (FTS5, bm25-ranked) search over block text.",
+            description: d::TEXT_SEARCH,
             input_schema: schema(&[("q", s()), ("limit", i())], &["q"], true),
         },
         ToolSpec {
             name: "resolve",
-            description: "Resolve a name/title/phrase to the blocks it refers to: ranked `{ $id, locator, preview, evidence }` (FTS, fused with the vector ranking when a provider exists).",
+            description: d::RESOLVE,
             input_schema: schema(&[("query", s()), ("limit", i())], &["query"], true),
         },
         ToolSpec {
             name: "apply",
-            description: "Apply a changeset of kernel ops (insert/update/move/remove/split/merge) atomically; `dry_run` previews diffs.",
+            description: d::APPLY,
             input_schema: schema(
                 &[
                     (
@@ -398,7 +429,7 @@ pub fn tools() -> Vec<ToolSpec> {
         },
         ToolSpec {
             name: "blocks_insert",
-            description: "Insert blocks parsed from `markdown` under `to` (a block ref, or a document ref for its top level) at `at` (end|start|{before|after}). Optional `expect.parent_children_hash` is the destination-parent CAS: the parent's CURRENT direct child ids (the document's top-level ids for a document `to`) joined by `,` and sha256-hexed — compute it from docs_read include_ids (`ids` filtered by `parents`) — and the insert fails `stale_expectation` (with `data.current.parent_children_hash`) if the siblings changed under you; `content_hash` has no meaning here (there is no target block) and is not accepted.",
+            description: d::BLOCKS_INSERT,
             input_schema: schema(
                 &[
                     ("to", s()),
@@ -413,23 +444,23 @@ pub fn tools() -> Vec<ToolSpec> {
         },
         ToolSpec {
             name: "blocks_update",
-            description: "Replace a block's markdown and/or set attrs (`checked` folds into attrs) with CAS pinned server-side when `expect` is omitted. Returns `$id`, `ids` and the apply result.",
+            description: d::BLOCKS_UPDATE,
             input_schema: schema(
                 &[
-                    ("block", s()),
+                    ("id", s()),
                     ("markdown", s()),
                     ("checked", b()),
                     ("attrs", obj()),
                     ("expect", expect_schema()),
                     ("dry_run", b()),
                 ],
-                &["block"],
+                &["id"],
                 true,
             ),
         },
         ToolSpec {
             name: "blocks_move",
-            description: "Move blocks under a new parent at a position; `to` is a block ref or the blocks' own document. Optional `expect.parent_children_hash` is the destination-parent CAS (as blocks_insert: the destination parent's CURRENT direct child ids joined by `,`, sha256 hex), checked once for the whole run before anything moves — `stale_expectation` with `data.current.parent_children_hash` if the destination's children changed; `content_hash` is meaningless here and not accepted.",
+            description: d::BLOCKS_MOVE,
             input_schema: schema(
                 &[
                     ("blocks", strings()),
@@ -444,7 +475,7 @@ pub fn tools() -> Vec<ToolSpec> {
         },
         ToolSpec {
             name: "blocks_remove",
-            description: "Remove blocks (and their subtrees).",
+            description: d::BLOCKS_REMOVE,
             input_schema: schema(
                 &[("blocks", strings()), ("dry_run", b())],
                 &["blocks"],
@@ -453,23 +484,23 @@ pub fn tools() -> Vec<ToolSpec> {
         },
         ToolSpec {
             name: "blocks_split",
-            description: "Split a block at UTF-8 byte offsets; CAS pinned server-side.",
+            description: d::BLOCKS_SPLIT,
             input_schema: schema(
                 &[
-                    ("block", s()),
+                    ("id", s()),
                     (
                         "at",
                         json!({ "type": "array", "items": { "type": "integer" } }),
                     ),
                     ("dry_run", b()),
                 ],
-                &["block", "at"],
+                &["id", "at"],
                 true,
             ),
         },
         ToolSpec {
             name: "blocks_merge",
-            description: "Merge adjacent blocks into the first, joined by `separator`.",
+            description: d::BLOCKS_MERGE,
             input_schema: schema(
                 &[("blocks", strings()), ("separator", s()), ("dry_run", b())],
                 &["blocks"],
@@ -478,7 +509,7 @@ pub fn tools() -> Vec<ToolSpec> {
         },
         ToolSpec {
             name: "tasks_complete",
-            description: "Check (or uncheck with checked:false) task blocks.",
+            description: d::TASKS_COMPLETE,
             input_schema: schema(
                 &[("blocks", strings()), ("checked", b()), ("dry_run", b())],
                 &["blocks"],
@@ -487,45 +518,33 @@ pub fn tools() -> Vec<ToolSpec> {
         },
         ToolSpec {
             name: "node_set",
-            description: "Set one editable property of a projected node (a link's name/value, a task's checked).",
+            description: d::NODE_SET,
             input_schema: schema(
-                &[
-                    ("node", s()),
-                    ("prop", s()),
-                    ("value", s()),
-                    ("dry_run", b()),
-                ],
-                &["node", "prop", "value"],
+                &[("id", s()), ("prop", s()), ("value", s()), ("dry_run", b())],
+                &["id", "prop", "value"],
                 true,
             ),
         },
         ToolSpec {
-            name: "sections_append",
-            description: "Append markdown at the end of a heading's section; `heading` is a heading block id or its text (scoped by `doc`/`path`).",
+            name: "blocks_append",
+            description: d::BLOCKS_APPEND,
             input_schema: schema(
-                &[
-                    ("heading", s()),
-                    ("markdown", s()),
-                    ("doc", s()),
-                    ("path", s()),
-                    ("dry_run", b()),
-                ],
-                &["heading", "markdown"],
+                &[("id", s()), ("text", s()), ("dry_run", b())],
+                &["id", "text"],
                 true,
             ),
         },
         ToolSpec {
             name: "docs_append",
-            description: "Append markdown at the end of a document as new top-level blocks (existing ids preserved).",
-            input_schema: schema(
-                &[("doc", s()), ("path", s()), ("text", s())],
+            description: d::DOCS_APPEND,
+            input_schema: doc(
+                &[("text", s()), ("section", s()), ("dry_run", b())],
                 &["text"],
-                true,
             ),
         },
         ToolSpec {
             name: "links_retarget",
-            description: "Rewrite one link destination everywhere it is linked (dry run by default).",
+            description: d::LINKS_RETARGET,
             input_schema: schema(
                 &[
                     ("from_target", s()),
@@ -539,7 +558,7 @@ pub fn tools() -> Vec<ToolSpec> {
         },
         ToolSpec {
             name: "links_stale",
-            description: "Dangling internal links (open edges to a `phantom:` target) plus external and total counts; `summary:true` returns counts only.",
+            description: d::LINKS_STALE,
             input_schema: schema(
                 &[("path_glob", s()), ("limit", i()), ("summary", b())],
                 &[],
@@ -548,7 +567,7 @@ pub fn tools() -> Vec<ToolSpec> {
         },
         ToolSpec {
             name: "links_repair",
-            description: "Bulk link repair: `repairs` ([{from,to}]) or one `from_target`/`to_target` pair, in one changeset (dry run by default).",
+            description: d::LINKS_REPAIR,
             input_schema: schema(
                 &[
                     (
@@ -566,7 +585,7 @@ pub fn tools() -> Vec<ToolSpec> {
         },
         ToolSpec {
             name: "docs_create",
-            description: "Create a document at `path` from `markdown` with optional `frontmatter`; `dry_run` returns the would-be file under `diffs` without writing.",
+            description: d::DOCS_CREATE,
             input_schema: schema(
                 &[
                     ("path", s()),
@@ -580,59 +599,45 @@ pub fn tools() -> Vec<ToolSpec> {
         },
         ToolSpec {
             name: "docs_move",
-            description: "Rename a document to `to_path`, identity preserved; the inbound links are rewritten to the new path in the same call (`retarget_inbound` defaults to `true`; `false` leaves them as written, listed in `dangling`); `dry_run` returns the plan (`dangling`, `retargeted`, per-file `diffs`) without renaming.",
-            input_schema: schema(
+            description: d::DOCS_MOVE,
+            input_schema: doc(
                 &[
-                    ("doc", s()),
                     ("to_path", s()),
                     ("retarget_inbound", b()),
                     ("dry_run", b()),
                 ],
-                &["doc", "to_path"],
-                true,
+                &["to_path"],
             ),
         },
         ToolSpec {
             name: "docs_delete",
-            description: "Delete a document: tombstone it and remove the file; `dry_run` returns the removal under `diffs` without deleting.",
-            input_schema: schema(&[("doc", s()), ("dry_run", b())], &["doc"], true),
+            description: d::DOCS_DELETE,
+            input_schema: doc(&[("dry_run", b())], &[]),
         },
         ToolSpec {
             name: "docs_set_meta",
-            description: "Set and/or unset frontmatter keys, re-ingesting the document; `dry_run` returns the rewritten file under `diffs` without writing.",
-            input_schema: schema(
-                &[
-                    ("doc", s()),
-                    ("set", obj()),
-                    ("unset", strings()),
-                    ("dry_run", b()),
-                ],
-                &["doc"],
-                true,
+            description: d::DOCS_SET_META,
+            input_schema: doc(
+                &[("set", obj()), ("unset", strings()), ("dry_run", b())],
+                &[],
             ),
         },
         ToolSpec {
             name: "docs_plan_update",
-            description: "Plan a whole-document update without applying: the opset and a one-line-per-op plan.",
-            input_schema: schema(&[("doc", s()), ("content", s())], &["doc", "content"], true),
+            description: d::DOCS_PLAN_UPDATE,
+            input_schema: doc(&[("content", s())], &["content"]),
         },
         ToolSpec {
             name: "docs_update",
-            description: "Whole-document update with identity preservation: plan then apply (`dry_run` returns the plan only).",
-            input_schema: schema(
-                &[
-                    ("doc", s()),
-                    ("content", s()),
-                    ("reason", s()),
-                    ("dry_run", b()),
-                ],
-                &["doc", "content"],
-                true,
+            description: d::DOCS_UPDATE,
+            input_schema: doc(
+                &[("content", s()), ("reason", s()), ("dry_run", b())],
+                &["content"],
             ),
         },
         ToolSpec {
             name: "observe",
-            description: "Record `content` as the authoritative bytes at `path` (an observed-origin commit; an echo when unchanged).",
+            description: d::OBSERVE,
             input_schema: schema(
                 &[("path", s()), ("content", s())],
                 &["path", "content"],
@@ -641,7 +646,7 @@ pub fn tools() -> Vec<ToolSpec> {
         },
         ToolSpec {
             name: "observe_many",
-            description: "Observe several files under one timestamp and one pool sweep.",
+            description: d::OBSERVE_MANY,
             input_schema: schema(
                 &[(
                     "files",
@@ -653,44 +658,55 @@ pub fn tools() -> Vec<ToolSpec> {
         },
         ToolSpec {
             name: "observe_delete",
-            description: "Record that `path` left the source: an observed, pooled tombstone.",
+            description: d::OBSERVE_DELETE,
             input_schema: schema(&[("path", s())], &["path"], true),
         },
         ToolSpec {
-            name: "history_node",
-            description: "A block's biography: the commits that touched it, newest first.",
+            name: "blocks_history",
+            description: d::BLOCKS_HISTORY,
             input_schema: schema(&[("id", s()), ("limit", i())], &["id"], false),
         },
         ToolSpec {
             name: "diff",
-            description: "Block-grain diff between two revisions of a document: `[{ kind, $id, before?, after? }]`.",
+            description: d::DIFF,
             input_schema: schema(
-                &[("doc", s()), ("from_rev", s()), ("to_rev", s())],
-                &["doc", "from_rev", "to_rev"],
+                &[
+                    ("doc_id", s()),
+                    ("doc_path", s()),
+                    ("from_rev", s()),
+                    ("to_rev", s()),
+                ],
+                &["from_rev", "to_rev"],
                 true,
             ),
         },
         ToolSpec {
             name: "diff_unified",
-            description: "Unified diff (Myers, 3 lines of context) between two revisions (default: the previous and current): `{ $id, $path, from, to, diff }`.",
+            description: d::DIFF_UNIFIED,
             input_schema: schema(
-                &[("doc", s()), ("from_rev", s()), ("to_rev", s())],
-                &["doc"],
+                &[
+                    ("doc_id", s()),
+                    ("doc_path", s()),
+                    ("from_rev", s()),
+                    ("to_rev", s()),
+                ],
+                &[],
                 true,
             ),
         },
         ToolSpec {
             name: "docs_read_at",
-            description: "The whole document as of a past revision.",
-            input_schema: dp(&[("rev", s())], &["rev"]),
+            description: d::DOCS_READ_AT,
+            input_schema: doc(&[("rev", s())], &["rev"]),
         },
         ToolSpec {
             name: "docs_history",
-            description: "Version history of the docs matching `path_glob` or `doc`, grouped by document: `{ $id, $path, deleted, currentRev, versions: [{ rev, seq, commit, $updated_at, origin, actor, $hash, isCurrent }] }`.",
+            description: d::DOCS_HISTORY,
             input_schema: schema(
                 &[
                     ("path_glob", s()),
-                    ("doc", s()),
+                    ("id", s()),
+                    ("path", s()),
                     ("include_deleted", b()),
                     ("limit", i()),
                 ],
@@ -700,7 +716,7 @@ pub fn tools() -> Vec<ToolSpec> {
         },
         ToolSpec {
             name: "changes_since",
-            description: "The change feed: commit digests after `cursor` (a repo commit seq).",
+            description: d::CHANGES_SINCE,
             input_schema: schema(
                 &[
                     ("cursor", i()),
@@ -716,22 +732,22 @@ pub fn tools() -> Vec<ToolSpec> {
         },
         ToolSpec {
             name: "repos_status",
-            description: "Repo counts, unconverged docs and on-disk drift.",
+            description: d::REPOS_STATUS,
             input_schema: schema(&[], &[], true),
         },
         ToolSpec {
             name: "sync_status",
-            description: "Sync state: last commit seq, last checkpoint, convergence.",
+            description: d::SYNC_STATUS,
             input_schema: schema(&[], &[], true),
         },
         ToolSpec {
             name: "repos",
-            description: "The repos in this workspace: `{ repos: [{ slug, hasSource }] }`.",
+            description: d::REPOS,
             input_schema: schema(&[], &[], false),
         },
         ToolSpec {
             name: "version",
-            description: "Which engine and which versions you are talking to: `{ engine: \"typescript\"|\"rust\", version, components: { <package>: <version> }, specs: { oqx, format, reconcile, store, properties, graph, search, mutate, sync, surface, cli }, schema, mcp: { protocol, sdk? }, runtime, commit, built }`. `version` is the serving binary's own; `components` every omgbase package it is built from; `specs` the spec versions it implements (compile-time constants); `schema` the database's `PRAGMA user_version`; `commit`/`built` the build's git revision and RFC 3339 time (null when unknown). No arguments, no repo scope.",
+            description: d::VERSION,
             input_schema: schema(&[], &[], false),
         },
     ]
@@ -763,6 +779,7 @@ impl Surface {
             store,
             default_repo: default_repo.to_owned(),
             provider,
+            provider_name: None,
             on_mutation: None,
             clock: Box::new(omgbase_sync::now_ts),
             writes: WriteTarget::Derived,
@@ -770,6 +787,14 @@ impl Surface {
             actor: ACTOR.to_owned(),
             build_info: BuildInfo::default(),
         }
+    }
+
+    /// Name the configured embedding provider (`embedding.provider`) so a
+    /// `provider_unavailable` error can say which one cannot rank.
+    #[must_use]
+    pub fn with_provider_name(mut self, name: &str) -> Self {
+        self.provider_name = Some(name.to_owned());
+        self
     }
 
     /// Record `actor` on every write instead of [`ACTOR`] (the CLI's
@@ -859,7 +884,7 @@ impl Surface {
                 | "blocks_merge"
                 | "tasks_complete"
                 | "node_set"
-                | "sections_append"
+                | "blocks_append"
                 | "docs_append"
                 | "links_retarget"
                 | "links_repair"
@@ -956,129 +981,170 @@ impl Surface {
         }
     }
 
-    // ---- ref resolution (§4) ---------------------------------------------------------
-
-    /// The owning doc from `doc` (id or path) / `path` / `block`; `doc_missing` when none.
-    fn resolve_doc_id(
-        &self,
-        repo_id: &str,
-        doc: Option<&str>,
-        path: Option<&str>,
-        block: Option<&str>,
-    ) -> Result<String> {
-        let conn = self.store.conn();
-        let found = if let Some(d) = doc.filter(|d| !d.is_empty()) {
-            read::find_doc_by_ref(conn, repo_id, d)?.map(|i| i.doc_id)
-        } else if let Some(p) = path.filter(|p| !p.is_empty()) {
-            read::find_doc_by_path(conn, repo_id, p)?.map(|i| i.doc_id)
-        } else if let Some(b) = block.filter(|b| !b.is_empty()) {
-            conn.query_row(
-                "SELECT doc_id FROM blocks WHERE block_id = ?1",
-                params![b],
-                |r| r.get::<_, String>(0),
-            )
-            .optional()?
+    // ---- the document locator (§4 "Arguments") ---------------------------------------
+    // `id` is the document's id, `path` its path (either form, §1 "Paths"); at
+    // least one is required, and when both are given they must name the same
+    // document. A tool whose prefix is not `docs` refers to a document as the
+    // foreign key `doc_id` / `doc_path` (`diff`, `diff_unified`) under the same
+    // rules (the names are bare because the attributes themselves are becoming
+    // bare — surface 3.0 attribute flip, follow-up). A miss is `doc_missing`
+    // "no document with id or path "<value>"" with the arguments as given in
+    // `data`; neither given is `filter_invalid` "pass id or path"; a
+    // disagreement is `filter_invalid` "id "…" and path "…" name different
+    // documents". The reference's `locateDoc`, byte for byte.
+    fn locate_doc(&self, repo_id: &str, tool: &str, args: &Json, foreign: bool) -> Result<String> {
+        let (id_key, path_key) = if foreign {
+            ("doc_id", "doc_path")
         } else {
-            None
+            ("id", "path")
         };
-        found.ok_or_else(|| {
-            let mut m = Map::new();
-            if let Some(d) = doc {
-                m.insert("doc".to_owned(), json!(d));
-            }
-            if let Some(p) = path {
-                m.insert("path".to_owned(), json!(p));
-            }
-            if let Some(b) = block {
-                m.insert("block".to_owned(), json!(b));
-            }
+        let schema = &tool_spec(tool).expect("a catalog tool").input_schema;
+        let id = arg_str(args, id_key);
+        let path = arg_str(args, path_key);
+        if id.is_none() && path.is_none() {
+            return Err(argument_error(
+                tool,
+                &format!("pass {id_key} or {path_key}"),
+                schema,
+            ));
+        }
+        let mut given = Map::new();
+        if let Some(v) = id {
+            given.insert(id_key.to_owned(), json!(v));
+        }
+        if let Some(v) = path {
+            given.insert(path_key.to_owned(), json!(v));
+        }
+        let missing = |value: &str| {
             SurfaceError::with_data(
                 "doc_missing",
-                format!("no document for {}", Json::Object(m.clone())),
-                Json::Object(m),
+                format!(
+                    "no document with {id_key} or {path_key} {}",
+                    Json::String(value.to_owned())
+                ),
+                Json::Object(given.clone()),
             )
-        })
-    }
-
-    fn resolve_doc_from_args(&self, repo_id: &str, args: &Json) -> Result<String> {
-        self.resolve_doc_id(repo_id, arg_str(args, "doc"), arg_str(args, "path"), None)
-    }
-
-    /// `heading` (a heading block id or heading text) → the heading block id.
-    fn resolve_heading_id(
-        &self,
-        repo_id: &str,
-        heading: &str,
-        doc: Option<&str>,
-        path: Option<&str>,
-    ) -> Result<String> {
+        };
         let conn = self.store.conn();
-        let as_block: Option<String> = conn
+        let by_id = match id {
+            Some(v) => {
+                let info = read::find_doc_by_id(conn, v)?.filter(|i| i.repo_id == repo_id);
+                Some(info.ok_or_else(|| missing(v))?.doc_id)
+            }
+            None => None,
+        };
+        let by_path = match path {
+            Some(v) => Some(
+                read::find_doc_by_path(conn, repo_id, v)?
+                    .ok_or_else(|| missing(v))?
+                    .doc_id,
+            ),
+            None => None,
+        };
+        if let (Some(a), Some(b)) = (&by_id, &by_path)
+            && a != b
+        {
+            return Err(argument_error(
+                tool,
+                &format!(
+                    "{id_key} {} and {path_key} {} name different documents",
+                    Json::String(id.unwrap_or_default().to_owned()),
+                    Json::String(path.unwrap_or_default().to_owned())
+                ),
+                schema,
+            ));
+        }
+        Ok(by_id.or(by_path).expect("one locator given"))
+    }
+
+    /// `semantic()` is loud when it cannot rank (§4, 3.0): a provider that
+    /// answers but whose model has embedded NOTHING in this repository would
+    /// score every row null and hand back path-ordered rows with no score, so
+    /// a query naming a phrase (`semantic`) fails `provider_unavailable` up
+    /// front, naming the provider and model and what to run. No provider at
+    /// all is the arm's own `provider_unavailable` (checked before this).
+    fn require_rankable(&self, repo_id: &str, semantic: bool) -> Result<()> {
+        let Some(provider) = self.provider.as_deref().filter(|_| semantic) else {
+            return Ok(());
+        };
+        let model = provider.model();
+        let any: Option<i64> = self
+            .store
+            .conn()
             .query_row(
-                "SELECT block_id FROM blocks WHERE block_id = ?1 AND type = 'heading' AND deleted_commit IS NULL",
-                params![heading],
+                "SELECT 1 WHERE EXISTS (SELECT 1 FROM doc_embeddings de JOIN docs d ON d.doc_id = de.doc_id WHERE d.repo_id = ?1 AND de.model = ?2) OR EXISTS (SELECT 1 FROM embeddings WHERE model = ?2)",
+                params![repo_id, model],
                 |r| r.get(0),
             )
             .optional()?;
-        if let Some(b) = as_block {
-            return Ok(b);
+        if any.is_some() {
+            return Ok(());
         }
-        let want_doc = if doc.is_some_and(|d| !d.is_empty()) || path.is_some_and(|p| !p.is_empty())
-        {
-            Some(self.resolve_doc_id(repo_id, doc, path, None)?)
+        let who = match &self.provider_name {
+            Some(name) => format!("provider {} (model {model})", Json::String(name.clone())),
+            None => format!("model {model}"),
+        };
+        Err(SurfaceError::with_data(
+            "provider_unavailable",
+            format!(
+                "semantic(...) cannot rank: {who} is configured but nothing in this repository is embedded under it — run omg embed drain"
+            ),
+            json!({ "provider": self.provider_name, "model": model }),
+        ))
+    }
+
+    /// The owning document of a live block (`blocks_get`).
+    fn doc_of_block(&self, block_id: &str) -> Result<String> {
+        self.doc_id_of_block(block_id)?
+            .ok_or_else(|| block_missing(block_id))
+    }
+
+    /// `docs_append`'s `section`: a heading's TEXT, matched against the
+    /// normalized heading text of the named document's live headings (an
+    /// ATX-looking value, "## Title", loses its hashes). Zero →
+    /// `parent_missing` naming the heading; several → `ambiguous_heading` with
+    /// the candidates `[{ $id, doc_id }]` (pass the heading's id to
+    /// `blocks_append` instead). Never an id lookup — the id form is
+    /// `blocks_append`'s (§9).
+    fn resolve_section_heading(
+        &self,
+        doc_id: &str,
+        doc_path: &str,
+        section: &str,
+    ) -> Result<String> {
+        let conn = self.store.conn();
+        let needle = if section.trim_start_matches([' ', '\t']).starts_with('#') {
+            normalize_visible_text(section, BlockKind::Heading, 0)
         } else {
-            None
+            normalize_text(section)
         };
-        let needle = if heading.trim_start_matches([' ', '\t']).starts_with('#') {
-            normalize_visible_text(heading, BlockKind::Heading, 0)
-        } else {
-            normalize_text(heading)
-        };
-        let rows: Vec<(String, String, String)> = match &want_doc {
-            Some(d) => {
-                let mut stmt = conn.prepare(
-                    "SELECT block_id, doc_id, text FROM blocks WHERE repo_id = ?1 AND type = 'heading' AND doc_id = ?2 AND deleted_commit IS NULL",
-                )?;
-                let it = stmt.query_map(params![repo_id, d], |r| {
-                    Ok((r.get(0)?, r.get(1)?, r.get(2)?))
-                })?;
-                it.collect::<std::result::Result<_, _>>()?
-            }
-            None => {
-                let mut stmt = conn.prepare(
-                    "SELECT block_id, doc_id, text FROM blocks WHERE repo_id = ?1 AND type = 'heading' AND deleted_commit IS NULL",
-                )?;
-                let it =
-                    stmt.query_map(params![repo_id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
-                it.collect::<std::result::Result<_, _>>()?
-            }
-        };
+        let mut stmt = conn.prepare(
+            "SELECT block_id, doc_id, text FROM blocks WHERE doc_id = ?1 AND type = 'heading' AND deleted_commit IS NULL",
+        )?;
+        let rows: Vec<(String, String, String)> = stmt
+            .query_map(params![doc_id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
+            .collect::<std::result::Result<_, _>>()?;
         let matches: Vec<&(String, String, String)> = rows
             .iter()
             .filter(|(_, _, text)| normalize_text(text) == needle)
             .collect();
+        let shown = reference_path(doc_path);
         match matches.len() {
-            0 => {
-                let mut data = Map::new();
-                data.insert("heading".to_owned(), json!(heading));
-                if let Some(d) = want_doc {
-                    data.insert("doc".to_owned(), json!(d));
-                }
-                Err(SurfaceError::with_data(
-                    "parent_missing",
-                    format!("no heading matching {}", Json::String(heading.to_owned())),
-                    Json::Object(data),
-                ))
-            }
+            0 => Err(SurfaceError::with_data(
+                "parent_missing",
+                format!("no heading {} in {shown}", Json::String(section.to_owned())),
+                json!({ "section": section, "path": shown }),
+            )),
             1 => Ok(matches[0].0.clone()),
             n => Err(SurfaceError::with_data(
                 "ambiguous_heading",
                 format!(
-                    "heading {} matches {n} headings; pass its block id or a doc/path scope",
-                    Json::String(heading.to_owned())
+                    "heading {} matches {n} headings in {shown}; pass the heading's id to blocks_append",
+                    Json::String(section.to_owned())
                 ),
                 json!({
-                    "heading": heading,
+                    "section": section,
+                    "path": shown,
                     "candidates": matches.iter().map(|(b, d, _)| json!({ "$id": b, "doc_id": d })).collect::<Vec<_>>(),
                 }),
             )),
@@ -1089,11 +1155,7 @@ impl Surface {
     fn resolve_block_ref(&self, repo_id: &str, r: &str) -> Result<String> {
         match read::resolve_ref(self.store.conn(), repo_id, r)? {
             Some(ResolvedRef::Block { block_id, .. }) => Ok(block_id),
-            _ => Err(SurfaceError::with_data(
-                "block_missing",
-                format!("not a block: {r}"),
-                json!({ "ref": r }),
-            )),
+            _ => Err(block_missing(r)),
         }
     }
 
@@ -1104,7 +1166,10 @@ impl Surface {
             Some(ResolvedRef::Document { doc_id }) => Ok((Parent::Doc, doc_id)),
             None => Err(SurfaceError::with_data(
                 "block_missing",
-                format!("not a block or document: {r}"),
+                format!(
+                    "no block or document with id or path {}",
+                    Json::String(r.to_owned())
+                ),
                 json!({ "ref": r }),
             )),
         }
@@ -1197,10 +1262,15 @@ impl Surface {
     /// Run a tool, returning its result or the error.
     #[allow(clippy::too_many_lines)]
     pub fn call_result(&mut self, name: &str, args: &Json) -> Result<Json> {
+        // §4 "Arguments": the shape first, so a wrong name is one
+        // `filter_invalid` naming the nearest valid one.
+        let spec =
+            tool_spec(name).ok_or_else(|| SurfaceError::other(format!("unknown tool {name}")))?;
+        validate_arguments(name, &spec.input_schema, args)?;
         match name {
             "docs_outline" => {
                 let (repo, _) = self.scope(args)?;
-                let doc_id = self.resolve_doc_from_args(&repo, args)?;
+                let doc_id = self.locate_doc(&repo, name, args, false)?;
                 let skeleton = match arg_str(args, "resolution") {
                     None | Some("outline") => false,
                     Some("skeleton") => true,
@@ -1216,13 +1286,27 @@ impl Surface {
             }
             "docs_read" => {
                 let (repo, _) = self.scope(args)?;
-                let doc_id = self.resolve_doc_from_args(&repo, args)?;
+                let doc_id = self.locate_doc(&repo, name, args, false)?;
                 read::docs_read(
                     &self.store,
                     &doc_id,
                     arg_bool(args, "include_ids")?.unwrap_or(false),
                 )?
-                .ok_or_else(|| SurfaceError::new("doc_missing", format!("no document for {args}")))
+                .ok_or_else(|| {
+                    SurfaceError::with_data(
+                        "doc_missing",
+                        format!(
+                            "no document with id or path {}",
+                            Json::String(
+                                arg_str(args, "id")
+                                    .or(arg_str(args, "path"))
+                                    .unwrap_or_default()
+                                    .to_owned()
+                            )
+                        ),
+                        json!({ "id": doc_id }),
+                    )
+                })
             }
             "docs_get_many" => {
                 let (repo, _) = self.scope(args)?;
@@ -1235,36 +1319,24 @@ impl Surface {
                     arg_usize(args, "budget_tokens")?,
                 )
             }
-            "nodes_get" => {
-                let (repo, _) = self.scope(args)?;
+            "blocks_get" => {
+                self.scope(args)?;
                 let id = arg_string(args, "id")?;
-                let doc_id = self.resolve_doc_id(
-                    &repo,
-                    arg_str(args, "doc"),
-                    arg_str(args, "path"),
-                    Some(&id),
-                )?;
-                read::nodes_get(
+                let doc_id = self.doc_of_block(&id)?;
+                read::blocks_get(
                     &self.store,
                     &doc_id,
                     &id,
                     resolution_arg(args, Resolution::Full)?,
                 )?
-                .ok_or_else(|| SurfaceError::new("block_missing", format!("no block {id}")))
+                .ok_or_else(|| block_missing(&id))
             }
-            "nodes_get_many" => {
-                let (repo, _) = self.scope(args)?;
+            "blocks_get_many" => {
+                self.scope(args)?;
                 let ids = arg_strings(args, "ids")?;
-                let scoped = arg_str(args, "doc").is_some_and(|d| !d.is_empty())
-                    || arg_str(args, "path").is_some_and(|p| !p.is_empty());
-                let doc_id = if scoped {
-                    Some(self.resolve_doc_from_args(&repo, args)?)
-                } else {
-                    None
-                };
-                read::nodes_get_many(
+                read::blocks_get_many(
                     &self.store,
-                    doc_id.as_deref(),
+                    None,
                     &ids,
                     resolution_arg(args, Resolution::Text)?,
                     arg_usize(args, "budget_tokens")?,
@@ -1275,18 +1347,26 @@ impl Surface {
                 let r = arg_string(args, "ref")?;
                 let resolved =
                     read::resolve_ref(self.store.conn(), &repo, &r)?.ok_or_else(|| {
-                        SurfaceError::new(
+                        SurfaceError::with_data(
                             "doc_missing",
-                            format!("no document or block for {}", Json::String(r.clone())),
+                            format!(
+                                "no document or block with id or path {}",
+                                Json::String(r.clone())
+                            ),
+                            json!({ "ref": r }),
                         )
                     })?;
                 match resolved {
                     ResolvedRef::Document { doc_id } => {
                         let res =
                             read::docs_read(&self.store, &doc_id, false)?.ok_or_else(|| {
-                                SurfaceError::new(
+                                SurfaceError::with_data(
                                     "doc_missing",
-                                    format!("no document for {}", Json::String(r.clone())),
+                                    format!(
+                                        "no document with id or path {}",
+                                        Json::String(r.clone())
+                                    ),
+                                    json!({ "ref": r }),
                                 )
                             })?;
                         let mut m = Map::new();
@@ -1294,15 +1374,13 @@ impl Surface {
                         Ok(merge(m, res))
                     }
                     ResolvedRef::Block { doc_id, block_id } => {
-                        let node = read::nodes_get(
+                        let node = read::blocks_get(
                             &self.store,
                             &doc_id,
                             &block_id,
                             resolution_arg(args, Resolution::Raw)?,
                         )?
-                        .ok_or_else(|| {
-                            SurfaceError::new("block_missing", format!("no block {block_id}"))
-                        })?;
+                        .ok_or_else(|| block_missing(&block_id))?;
                         let mut m = Map::new();
                         m.insert("kind".to_owned(), json!("block"));
                         Ok(merge(m, node))
@@ -1336,15 +1414,12 @@ impl Surface {
             "query" => {
                 let (repo, _) = self.scope(args)?;
                 let source = arg_string(args, "query")?;
-                // A `semantic(...)` query with no provider is `semantic_unavailable`
+                // A `semantic(...)` query with no provider is `provider_unavailable`
                 // here (the runner itself reports `filter_invalid`, §9).
                 if self.provider.is_none()
                     && !crate::query::collect_semantic_phrases(&source).is_empty()
                 {
-                    return Err(SurfaceError::new(
-                        "semantic_unavailable",
-                        "no embedding provider configured for this server",
-                    ));
+                    return Err(provider_unavailable());
                 }
                 let opts = QueryOptions {
                     limit: arg_usize(args, "limit")?,
@@ -1352,6 +1427,10 @@ impl Surface {
                     provider: self.provider.as_deref(),
                     in_memory: false,
                 };
+                self.require_rankable(
+                    &repo,
+                    !crate::query::collect_semantic_phrases(&source).is_empty(),
+                )?;
                 Ok(query(&self.store, &repo, &source, opts)?.to_json())
             }
             "graph" => {
@@ -1374,11 +1453,15 @@ impl Surface {
                             .is_empty()
                     })
                 {
-                    return Err(SurfaceError::new(
-                        "semantic_unavailable",
-                        "no embedding provider configured for this server",
-                    ));
+                    return Err(provider_unavailable());
                 }
+                self.require_rankable(
+                    &repo,
+                    g.select.iter().any(|s| {
+                        !crate::query::collect_semantic_phrases(&format!("from docs select x: {s}"))
+                            .is_empty()
+                    }),
+                )?;
                 graph_neighborhood(&self.store, &repo, &g, self.provider.as_deref())
             }
             "text_search" => {
@@ -1474,7 +1557,7 @@ impl Surface {
             "blocks_update" => {
                 let (repo, root) = self.scope(args)?;
                 self.require_root(root.as_deref())?;
-                let block = self.resolve_block_ref(&repo, &arg_string(args, "block")?)?;
+                let block = self.resolve_block_ref(&repo, &arg_string(args, "id")?)?;
                 let expect = match arg_expect(args)? {
                     Some(e) => Some(e),
                     None => self.pin_hash(&block)?.map(Expect::content),
@@ -1575,7 +1658,7 @@ impl Surface {
             "blocks_split" => {
                 let (repo, root) = self.scope(args)?;
                 self.require_root(root.as_deref())?;
-                let block = self.resolve_block_ref(&repo, &arg_string(args, "block")?)?;
+                let block = self.resolve_block_ref(&repo, &arg_string(args, "id")?)?;
                 let at: Vec<usize> = args
                     .get("at")
                     .and_then(Json::as_array)
@@ -1654,8 +1737,25 @@ impl Surface {
             "node_set" => {
                 let (repo, root) = self.scope(args)?;
                 self.require_root(root.as_deref())?;
+                let node_id = arg_string(args, "id")?;
+                let known: Option<i64> = self
+                    .store
+                    .conn()
+                    .query_row(
+                        "SELECT 1 FROM nodes WHERE node_id = ?1 AND repo_id = ?2",
+                        params![node_id, repo],
+                        |r| r.get(0),
+                    )
+                    .optional()?;
+                if known.is_none() {
+                    return Err(SurfaceError::with_data(
+                        "block_missing",
+                        format!("no node with id {}", Json::String(node_id.clone())),
+                        json!({ "id": node_id }),
+                    ));
+                }
                 let ops = self.store.node_set(
-                    &arg_string(args, "node")?,
+                    &node_id,
                     &arg_string(args, "prop")?,
                     &arg_string(args, "value")?,
                 )?;
@@ -1667,35 +1767,82 @@ impl Surface {
                     arg_bool(args, "dry_run")?.unwrap_or(false),
                 )?))
             }
-            "sections_append" => {
+            "blocks_append" => {
                 let (repo, root) = self.scope(args)?;
                 self.require_root(root.as_deref())?;
-                let heading = self.resolve_heading_id(
-                    &repo,
-                    &arg_string(args, "heading")?,
-                    arg_str(args, "doc"),
-                    arg_str(args, "path"),
-                )?;
-                let ops = Store::sections_append(&heading, &arg_string(args, "markdown")?);
+                let given = arg_string(args, "id")?;
+                let block = self.resolve_block_ref(&repo, &given)?;
+                let text = arg_string(args, "text")?;
+                // By what the block is (the reference's `blocks_append`): a heading
+                // → the end of its section; a container → the end of its children;
+                // a leaf → `block_not_container` (append means into).
+                let row: Option<(String, Option<String>, i64)> = self
+                    .store
+                    .conn()
+                    .query_row(
+                        "SELECT b.type, d.format, (SELECT count(*) FROM blocks c WHERE c.parent_block = b.block_id AND c.deleted_commit IS NULL) FROM blocks b JOIN docs d ON d.doc_id = b.doc_id WHERE b.block_id = ?1 AND b.deleted_commit IS NULL",
+                        params![block],
+                        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+                    )
+                    .optional()?;
+                let Some((kind, format, children)) = row else {
+                    return Err(block_missing(&given));
+                };
+                let container = if format.as_deref().unwrap_or("markdown") == "markdown" {
+                    kind.parse::<BlockKind>().is_ok_and(|k| k.is_container())
+                } else {
+                    children > 0
+                };
+                let ops = if kind == "heading" {
+                    Store::sections_append(&block, &text)
+                } else if container {
+                    vec![Op::Insert {
+                        doc: None,
+                        to: To {
+                            parent: Parent::Block(block.clone()),
+                            at: At::End,
+                        },
+                        markdown: text,
+                        expect: None,
+                    }]
+                } else {
+                    return Err(SurfaceError::with_data(
+                        "block_not_container",
+                        format!(
+                            "block {block} is a {kind}, not a heading or a container; append means into — insert after it with blocks_insert {{ to: <its parent>, at: {{ after: {} }} }}",
+                            Json::String(block.clone())
+                        ),
+                        json!({ "id": block, "type": kind }),
+                    ));
+                };
                 Ok(apply_json(&self.apply_ops(
                     &repo,
                     root.as_deref(),
                     ops,
-                    "sections_append",
+                    "blocks_append",
                     arg_bool(args, "dry_run")?.unwrap_or(false),
                 )?))
             }
             "docs_append" => {
                 let (repo, root) = self.scope(args)?;
                 self.require_root(root.as_deref())?;
-                let doc_id = self.resolve_doc_from_args(&repo, args)?;
-                let ops = Store::docs_append(&doc_id, &arg_string(args, "text")?);
+                let doc_id = self.locate_doc(&repo, name, args, false)?;
+                let text = arg_string(args, "text")?;
+                let ops = match arg_str(args, "section") {
+                    Some(section) => {
+                        let info = read::find_doc_by_id(self.store.conn(), &doc_id)?
+                            .ok_or_else(|| block_missing(&doc_id))?;
+                        let heading = self.resolve_section_heading(&doc_id, &info.path, section)?;
+                        Store::sections_append(&heading, &text)
+                    }
+                    None => Store::docs_append(&doc_id, &text),
+                };
                 Ok(apply_json(&self.apply_ops(
                     &repo,
                     root.as_deref(),
                     ops,
                     "docs_append",
-                    false,
+                    arg_bool(args, "dry_run")?.unwrap_or(false),
                 )?))
             }
             "links_retarget" | "links_repair" => {
@@ -1786,8 +1933,8 @@ impl Surface {
             }
             "docs_move" => {
                 let (repo, root) = self.scope(args)?;
+                let doc = self.locate_doc(&repo, name, args, false)?;
                 let ctx = self.doc_ctx(&repo);
-                let doc = arg_string(args, "doc")?;
                 let to = arg_string(args, "to_path")?;
                 // spec/mutate §6 (1.3): the default is `true`; `false` opts out.
                 let retarget = arg_bool(args, "retarget_inbound")?.unwrap_or(true);
@@ -1830,8 +1977,8 @@ impl Surface {
             }
             "docs_delete" => {
                 let (repo, root) = self.scope(args)?;
+                let doc = self.locate_doc(&repo, name, args, false)?;
                 let ctx = self.doc_ctx(&repo);
-                let doc = arg_string(args, "doc")?;
                 let dry = arg_bool(args, "dry_run")?.unwrap_or(false);
                 let res = self.with_writes(root.as_deref(), |store, ds| {
                     Ok(if dry {
@@ -1847,8 +1994,8 @@ impl Surface {
             }
             "docs_set_meta" => {
                 let (repo, root) = self.scope(args)?;
+                let doc = self.locate_doc(&repo, name, args, false)?;
                 let ctx = self.doc_ctx(&repo);
-                let doc = arg_string(args, "doc")?;
                 let set = arg_object(args, "set")?.cloned();
                 let unset = if args.get("unset").is_some() {
                     arg_strings(args, "unset")?
@@ -1873,7 +2020,7 @@ impl Surface {
             "docs_plan_update" => {
                 let (repo, root) = self.scope(args)?;
                 self.require_root(root.as_deref())?;
-                let doc = arg_string(args, "doc")?;
+                let doc = self.locate_doc(&repo, name, args, false)?;
                 let content = arg_string(args, "content")?;
                 let opset = self
                     .store
@@ -1882,7 +2029,7 @@ impl Surface {
             }
             "docs_update" => {
                 let (repo, root) = self.scope(args)?;
-                let doc = arg_string(args, "doc")?;
+                let doc = self.locate_doc(&repo, name, args, false)?;
                 let content = arg_string(args, "content")?;
                 let dry = arg_bool(args, "dry_run")?.unwrap_or(false);
                 let reason = arg_str(args, "reason").map(str::to_owned);
@@ -1958,14 +2105,14 @@ impl Surface {
                     json!({ "$id": out.doc_id, "$path": reference_path(&out.path), "deleted": out.deleted() }),
                 )
             }
-            "history_node" => history::history_node(
+            "blocks_history" => history::blocks_history(
                 &self.store,
                 &arg_string(args, "id")?,
                 arg_i64(args, "limit")?,
             ),
             "diff" => {
                 let (repo, _) = self.scope(args)?;
-                let doc_id = self.resolve_doc_id(&repo, arg_str(args, "doc"), None, None)?;
+                let doc_id = self.locate_doc(&repo, name, args, true)?;
                 history::diff_blocks(
                     &self.store,
                     &doc_id,
@@ -1975,8 +2122,11 @@ impl Surface {
             }
             "diff_unified" => {
                 let (repo, _) = self.scope(args)?;
-                let doc_ref = arg_string(args, "doc")?;
-                let doc_id = self.resolve_doc_id(&repo, Some(&doc_ref), None, None)?;
+                let doc_ref = arg_str(args, "doc_id")
+                    .or(arg_str(args, "doc_path"))
+                    .unwrap_or_default()
+                    .to_owned();
+                let doc_id = self.locate_doc(&repo, name, args, true)?;
                 let revs = history::recent_revs(self.store.conn(), &doc_id)?;
                 let to_rev = arg_str(args, "to_rev")
                     .map(str::to_owned)
@@ -2007,7 +2157,7 @@ impl Surface {
             }
             "docs_read_at" => {
                 let (repo, _) = self.scope(args)?;
-                let doc_id = self.resolve_doc_from_args(&repo, args)?;
+                let doc_id = self.locate_doc(&repo, name, args, false)?;
                 let rev = arg_string(args, "rev")?;
                 read::docs_read_at(&self.store, &doc_id, &rev)?.ok_or_else(|| {
                     SurfaceError::with_data(
@@ -2023,29 +2173,55 @@ impl Surface {
             "docs_history" => {
                 let (repo, _) = self.scope(args)?;
                 let glob = arg_str(args, "path_glob").filter(|g| !g.is_empty());
-                let doc = arg_str(args, "doc").filter(|d| !d.is_empty());
-                if glob.is_none() && doc.is_none() {
+                let id = arg_str(args, "id");
+                let path = arg_str(args, "path");
+                if glob.is_none() && id.is_none() && path.is_none() {
                     return Err(SurfaceError::new(
                         "target_missing",
-                        "docs_history requires one of path_glob or doc",
+                        "docs_history requires one of path_glob, id or path",
                     ));
                 }
                 let include_deleted = arg_bool(args, "include_deleted")?.unwrap_or(false);
-                if let Some(d) = doc {
-                    if history::resolve_doc_row(self.store.conn(), &repo, d, include_deleted)?
-                        .is_none()
-                    {
-                        return Err(SurfaceError::new(
-                            "doc_missing",
-                            format!("no document for {}", Json::String(d.to_owned())),
-                        ));
-                    }
-                }
+                // A live document resolves through the locator; with
+                // include_deleted a tombstoned one is looked up by the same attribute.
+                let doc: Option<String> = if id.is_some() || path.is_some() {
+                    let tomb: Option<String> = if include_deleted {
+                        match (id, path) {
+                            (Some(i), _) => self
+                                .store
+                                .conn()
+                                .query_row(
+                                    "SELECT doc_id FROM docs WHERE doc_id = ?1 AND repo_id = ?2",
+                                    params![i, repo],
+                                    |r| r.get(0),
+                                )
+                                .optional()?,
+                            (None, Some(p)) => self
+                                .store
+                                .conn()
+                                .query_row(
+                                    "SELECT doc_id FROM docs WHERE repo_id = ?1 AND path = ?2",
+                                    params![repo, storage_path(p)],
+                                    |r| r.get(0),
+                                )
+                                .optional()?,
+                            (None, None) => None,
+                        }
+                    } else {
+                        None
+                    };
+                    Some(match tomb {
+                        Some(d) => d,
+                        None => self.locate_doc(&repo, name, args, false)?,
+                    })
+                } else {
+                    None
+                };
                 history::docs_history(
                     &self.store,
                     &repo,
                     glob,
-                    doc,
+                    doc.as_deref(),
                     include_deleted,
                     arg_i64(args, "limit")?,
                 )
@@ -2086,6 +2262,29 @@ impl Surface {
             other => Err(SurfaceError::other(format!("unknown tool {other}"))),
         }
     }
+}
+
+/// `block_missing` for a block the caller named (`id` or a ref): the
+/// attribute spelling, the argument as given in `data`.
+fn block_missing(value: &str) -> SurfaceError {
+    SurfaceError::with_data(
+        "block_missing",
+        format!("no block with id {}", Json::String(value.to_owned())),
+        json!({ "id": value }),
+    )
+}
+
+/// The message every tool uses for a `semantic(...)` call with no provider.
+pub const PROVIDER_UNAVAILABLE_MESSAGE: &str = "semantic(...) needs an embedding provider; none is configured — set embedding.provider (omg config set embedding.provider <command|url>) and embed the repository (omg embed drain)";
+
+/// `provider_unavailable` with no provider configured (§4, 3.0).
+#[must_use]
+pub fn provider_unavailable() -> SurfaceError {
+    SurfaceError::with_data(
+        "provider_unavailable",
+        PROVIDER_UNAVAILABLE_MESSAGE,
+        json!({ "provider": null }),
+    )
 }
 
 /// `spec/mutate` §4's result on the wire: `{ results: [{ ids, removed?,
@@ -2399,8 +2598,8 @@ mod tests {
             "docs_outline",
             "docs_read",
             "docs_get_many",
-            "nodes_get",
-            "nodes_get_many",
+            "blocks_get",
+            "blocks_get_many",
             "read_ref",
             "docs_tree",
             "docs_list",
@@ -2418,7 +2617,7 @@ mod tests {
             "blocks_merge",
             "tasks_complete",
             "node_set",
-            "sections_append",
+            "blocks_append",
             "docs_append",
             "links_retarget",
             "links_stale",
@@ -2432,7 +2631,7 @@ mod tests {
             "observe",
             "observe_many",
             "observe_delete",
-            "history_node",
+            "blocks_history",
             "diff",
             "diff_unified",
             "docs_read_at",
@@ -2458,13 +2657,25 @@ mod tests {
         assert!(!out.is_error, "{}", out.body);
         assert_eq!(out.body["$id"], "d_0");
         assert_eq!(out.body["echo"], false);
-        let read = s.call("docs_read", json!({ "doc": "a.md", "include_ids": true }));
-        assert!(!read.is_error);
+        let read = s.call("docs_read", json!({ "path": "a.md", "include_ids": true }));
+        assert!(!read.is_error, "{}", read.body);
         assert_eq!(read.body["$path"], "/a.md");
         // either form names the document (§1 Paths)
         assert_eq!(
-            s.call("docs_read", json!({ "doc": "/a.md" })).body["$path"],
+            s.call("docs_read", json!({ "path": "/a.md" })).body["$path"],
             "/a.md"
+        );
+        // §4 "Arguments": the retired `doc` is refused with its replacement.
+        let retired = s.call("docs_read", json!({ "doc": "a.md" }));
+        assert_eq!(retired.body["error"], "filter_invalid");
+        assert_eq!(
+            retired.body["message"],
+            "`doc` is no longer an argument — pass `id` or `path` (docs_read takes id?, include_ids?, path?, repo?)"
+        );
+        let neither = s.call("docs_read", json!({}));
+        assert_eq!(
+            neither.body["message"],
+            "pass id or path (docs_read takes id?, include_ids?, path?, repo?)"
         );
         assert_eq!(
             s.call("docs_read", json!({ "path": "//a.md" })).body["$id"],
@@ -2501,13 +2712,19 @@ mod tests {
             "query",
             json!({ "query": "from docs where semantic(\"x\") > 0.5" }),
         );
-        assert_eq!(sem.body["error"], "semantic_unavailable");
+        assert_eq!(sem.body["error"], "provider_unavailable");
+        assert_eq!(sem.body["data"], json!({ "provider": null }));
         let outline = s.call("docs_outline", json!({ "path": "a.md" }));
         let text = outline.body["text"].as_str().unwrap();
         assert!(text.starts_with("b_0 h1   Title  §"), "{text}");
         assert!(text.contains("☐ task one"));
-        let missing = s.call("docs_read", json!({ "doc": "nope.md" }));
+        let missing = s.call("docs_read", json!({ "path": "nope.md" }));
         assert_eq!(missing.body["error"], "doc_missing");
+        assert_eq!(
+            missing.body["message"],
+            "no document with id or path \"nope.md\""
+        );
+        assert_eq!(missing.body["data"], json!({ "path": "nope.md" }));
         let repos = s.call("repos", json!({}));
         assert_eq!(repos.body["repos"][0]["slug"], "fixture");
         let unknown = s.call("docs_list", json!({ "repo": "zzz" }));
@@ -2543,7 +2760,7 @@ mod tests {
         );
         assert!(!ok.is_error, "{}", ok.body);
         assert_eq!(ok.body["committed"], true);
-        let read = s.call("docs_read", json!({ "doc": "a.md" }));
+        let read = s.call("docs_read", json!({ "path": "a.md" }));
         assert_eq!(read.body["$raw"], "# T\n\nOne.\n\nTwo.\n\nThree.\n");
         // blocks_move: the destination is checked once for the whole run.
         let stale = s.call(
@@ -2560,7 +2777,7 @@ mod tests {
             json!({ "blocks": ["b_1", "b_2"], "to": "a.md", "at": "end", "expect": { "parent_children_hash": current } }),
         );
         assert!(!ok.is_error, "{}", ok.body);
-        let read = s.call("docs_read", json!({ "doc": "a.md" }));
+        let read = s.call("docs_read", json!({ "path": "a.md" }));
         assert_eq!(read.body["$raw"], "# T\n\nThree.\n\nOne.\n\nTwo.\n\n");
         // A `dry_run` still runs the CAS.
         let dry = s.call(
@@ -2589,7 +2806,7 @@ mod tests {
         assert_eq!(one.body["items"].as_array().unwrap().len(), 1);
         assert_eq!(one.body["truncated"], false);
         let nodes = s.call(
-            "nodes_get_many",
+            "blocks_get_many",
             json!({ "ids": ["b_zzz", "b_1", "b_2"], "resolution": "full", "budget_tokens": 1 }),
         );
         assert_eq!(
@@ -2625,31 +2842,41 @@ mod tests {
         let wet = s.call("blocks_insert", json!({ "to": "a.md", "markdown": "Two." }));
         assert!(!wet.is_error, "{}", wet.body);
         assert_eq!(fired.get(), 2);
-        let read = s.call("docs_read", json!({ "doc": "d_0" }));
+        let read = s.call("docs_read", json!({ "id": "d_0" }));
         assert_eq!(read.body["$raw"], "# T\n\nOne.\n\nTwo.\n");
         let upd = s.call(
             "blocks_update",
-            json!({ "block": "b_1", "markdown": "One, edited." }),
+            json!({ "id": "b_1", "markdown": "One, edited." }),
         );
         assert!(!upd.is_error, "{}", upd.body);
         assert_eq!(upd.body["$id"], "b_1");
         let app = s.call(
-            "sections_append",
-            json!({ "heading": "T", "markdown": "Three." }),
+            "docs_append",
+            json!({ "path": "a.md", "section": "T", "text": "Three." }),
         );
         assert!(!app.is_error, "{}", app.body);
         let amb = s.call(
-            "sections_append",
-            json!({ "heading": "Nope", "markdown": "x" }),
+            "docs_append",
+            json!({ "path": "a.md", "section": "Nope", "text": "x" }),
         );
         assert_eq!(amb.body["error"], "parent_missing");
-        let hist = s.call("history_node", json!({ "id": "b_1" }));
+        assert_eq!(amb.body["message"], "no heading \"Nope\" in /a.md");
+        // blocks_append: a heading's section, a leaf is block_not_container.
+        let into = s.call("blocks_append", json!({ "id": "b_0", "text": "Four." }));
+        assert!(!into.is_error, "{}", into.body);
+        let leaf = s.call("blocks_append", json!({ "id": "b_1", "text": "x" }));
+        assert_eq!(leaf.body["error"], "block_not_container", "{}", leaf.body);
+        assert_eq!(
+            leaf.body["data"],
+            json!({ "id": "b_1", "type": "paragraph" })
+        );
+        let hist = s.call("blocks_history", json!({ "id": "b_1" }));
         let entries = hist.body.as_array().unwrap();
         assert!(entries.len() >= 2, "{}", hist.body);
         assert_eq!(entries[0]["origin"], "api", "newest first");
-        let du = s.call("diff_unified", json!({ "doc": "a.md" }));
+        let du = s.call("diff_unified", json!({ "doc_path": "a.md" }));
         assert!(!du.is_error, "{}", du.body);
-        assert!(du.body["diff"].as_str().unwrap().contains("+Three."));
+        assert!(du.body["diff"].as_str().unwrap().contains("+Four."));
     }
 
     #[test]
@@ -2699,7 +2926,7 @@ mod tests {
         // the rewritten source appended; `dangling`/`retargeted` previewed.
         let m = s.call(
             "docs_move",
-            json!({ "doc": "b.md", "to_path": "notes/b.md", "retarget_inbound": true, "dry_run": true }),
+            json!({ "path": "b.md", "to_path": "notes/b.md", "retarget_inbound": true, "dry_run": true }),
         );
         assert!(!m.is_error, "{}", m.body);
         // Byte for byte what the reference prints for
@@ -2729,7 +2956,7 @@ mod tests {
         // two entries, the inbound link dangles.
         let plain = s.call(
             "docs_move",
-            json!({ "doc": "b.md", "to_path": "notes/b.md", "dry_run": true, "retarget_inbound": false }),
+            json!({ "path": "b.md", "to_path": "notes/b.md", "dry_run": true, "retarget_inbound": false }),
         );
         assert_eq!(
             serde_json::to_string(&plain.body).unwrap(),
@@ -2737,7 +2964,7 @@ mod tests {
         );
 
         // docs_delete: the file → `""`.
-        let d = s.call("docs_delete", json!({ "doc": "a.md", "dry_run": true }));
+        let d = s.call("docs_delete", json!({ "path": "a.md", "dry_run": true }));
         assert!(!d.is_error, "{}", d.body);
         assert_eq!(
             d.body,
@@ -2748,7 +2975,7 @@ mod tests {
         // docs_set_meta: before → after.
         let sm = s.call(
             "docs_set_meta",
-            json!({ "doc": "a.md", "set": { "status": "open" }, "dry_run": true }),
+            json!({ "path": "a.md", "set": { "status": "open" }, "dry_run": true }),
         );
         assert!(!sm.is_error, "{}", sm.body);
         assert_eq!(
@@ -2760,11 +2987,11 @@ mod tests {
         assert_eq!(fired.get(), 2, "dry runs never fire the mutation hook");
         assert_eq!(snapshot(&s), before);
         assert_eq!(
-            s.call("docs_read", json!({ "doc": "d_0" })).body["$path"],
+            s.call("docs_read", json!({ "id": "d_0" })).body["$path"],
             "/b.md"
         );
         assert_eq!(
-            s.call("docs_read", json!({ "doc": "d_1" })).body["$raw"],
+            s.call("docs_read", json!({ "id": "d_1" })).body["$raw"],
             a_src
         );
         let taken = s.call(
@@ -2772,7 +2999,7 @@ mod tests {
             json!({ "path": "a.md", "markdown": "x", "dry_run": true }),
         );
         assert_eq!(taken.body["error"], "path_taken");
-        let missing = s.call("docs_delete", json!({ "doc": "nope.md", "dry_run": true }));
+        let missing = s.call("docs_delete", json!({ "path": "nope.md", "dry_run": true }));
         assert_eq!(missing.body["error"], "doc_missing");
         // The dry-run create spent `d_2`: the next real create is `d_3` and carries no `diffs`.
         let real = s.call(

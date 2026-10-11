@@ -37,7 +37,7 @@ describe("budget_tokens + cursor audit", () => {
     expect(tight.truncated).toBe(true);
   });
 
-  it("nodes_get_many truncates under a token budget", () => {
+  it("blocks_get_many truncates under a token budget", () => {
     const docId = bigDoc();
     const ids = (store.db.prepare("SELECT block_id FROM blocks WHERE doc_id=? AND type='paragraph'").all(docId) as { block_id: string }[]).map((r) => r.block_id);
     const res = nodesGetMany(store, docId, ids, { resolution: "text", budgetTokens: 20 });
@@ -48,7 +48,7 @@ describe("budget_tokens + cursor audit", () => {
   // spec/surface §2 (1.2): one list contract for every budgeted read — the first
   // item always ships, even when it alone exceeds the budget; `truncated` only
   // says more remained.
-  it("nodes_get_many and docs_get_many return at least one item under any budget", () => {
+  it("blocks_get_many and docs_get_many return at least one item under any budget", () => {
     const docId = bigDoc();
     ingestFile(store, repoId, "second.md", "# Second\n\nA paragraph.\n");
     const ids = (store.db.prepare("SELECT block_id FROM blocks WHERE doc_id=? AND type='paragraph' ORDER BY ordinal").all(docId) as { block_id: string }[]).map((r) => r.block_id);

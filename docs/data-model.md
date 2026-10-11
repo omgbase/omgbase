@@ -290,7 +290,7 @@ CREATE TABLE doc_edges (
   PRIMARY KEY (src_doc, predicate, dst_node)
 );
 
--- Per-block history projection (answers history_node cheaply).
+-- Per-block history projection (answers blocks_history cheaply).
 CREATE TABLE block_changes (
   block_id  TEXT NOT NULL,
   commit_id TEXT NOT NULL,

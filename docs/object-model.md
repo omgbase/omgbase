@@ -99,8 +99,8 @@ compare-and-swap — there is no other way to write (`mutation-and-concurrency.m
 > **Surface:** `insert` / `update <block>` / `move` / `rm <blocks>` / `split` /
 > `merge` (tools `blocks_insert`/`blocks_update`/`blocks_move`/`blocks_remove`/
 > `blocks_split`/`blocks_merge`), `apply` (the raw changeset primitive), and the
-> macros `done` (`tasks_complete`) / `append` (`sections_append`). Read a block
-> with `nodes_get` (see the next section for why the read is named for *nodes*).
+> macros `done` (`tasks_complete`) / `append` (`blocks_append`). Read a block
+> with `blocks_get` (see the next section for why the read is named for *nodes*).
 
 ---
 
@@ -117,8 +117,8 @@ block is "a paragraph of source bytes," its nodes are "the link to `/design.md`
 at offset 12" and "the task that is unchecked."
 
 This is the answer to *why writes are `blocks_*` but the block read is
-`nodes_get`*: **you edit the anchor (a block); you read the projection (its
-nodes).** The two names track the two layers on purpose. `nodes_get` keys off a
+`blocks_get`*: **you edit the anchor (a block); you read the projection (its
+nodes).** The two names track the two layers on purpose. `blocks_get` keys off a
 block id and hydrates that block's projected view — which is also why a separate
 `blocks_get` would be redundant.
 
@@ -129,7 +129,7 @@ the underlying block's span — i.e. it resolves node → block and emits one
 projection is a view of.
 
 > **Surface:** `query "from nodes …"` (the projection query surface),
-> `nodes_get` / `nodes_get_many` (hydrate a block's node view), `node set`
+> `blocks_get` / `blocks_get_many` (hydrate a block's node view), `node set`
 > (`node_set` — the editable-property escape hatch), `node props` (list what's
 > editable, local-only).
 
@@ -185,7 +185,7 @@ omgbase uses "node" in two nearby senses; keep them apart:
 1. **Graph node / vertex** — the things edges connect: documents, blocks,
    external URIs, collections. This is the sense in "the knowledge graph."
 2. **Projected node** — a row in the projections layer (`from nodes`,
-   `nodes_get`): a semantic view over a block (`md:link`, `md:task`). This is the
+   `blocks_get`): a semantic view over a block (`md:link`, `md:task`). This is the
    sense in the four-word model above.
 
 They meet at links: a link is a projected **node** *and* an edge to a graph
@@ -229,8 +229,8 @@ walled off from the things that must stay correct (graph, search, bytes).
 | Layer | You… | CLI | MCP |
 |---|---|---|---|
 | **Document** | create/rename/delete/retitle, read whole | `new` `mv` `rm --doc` `meta` `cat` `ls` `outline` `update <doc>` | `docs_*`, `read_ref`, `docs_tree`, `docs_list`, `docs_outline`, `docs_update` |
-| **Block** | edit structure (the anchors) | `insert` `update <block>` `move` `rm <blocks>` `split` `merge` `done` `append` `apply` | `blocks_*`, `tasks_complete`, `sections_append`, `apply` |
-| **Node** | read/query projections; edit one property | `query "from nodes"` `node set` | `query`, `nodes_get(_many)`, `node_set` |
+| **Block** | edit structure (the anchors) | `insert` `update <block>` `move` `rm <blocks>` `split` `merge` `done` `append` `apply` | `blocks_*`, `tasks_complete`, `blocks_append`, `apply` |
+| **Node** | read/query projections; edit one property | `query "from nodes"` `node set` | `query`, `blocks_get(_many)`, `node_set` |
 | **Edge** | assert (by writing links/fields); traverse; retarget | `query "… follow"` `links` `retarget` | `query`, `links_stale`, `links_retarget`, `links_repair` |
 
 The full, authoritative correspondence — every operation across library, CLI, and

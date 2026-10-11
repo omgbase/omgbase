@@ -37,7 +37,7 @@ function blockByText(path: string, prefix: string): string {
   return rows.find((r) => r.text.startsWith(prefix))!.block_id;
 }
 
-describe("history_node", () => {
+describe("blocks_history (historyNode)", () => {
   it("records a block's biography across commits (inserted then edited)", () => {
     save("a.md", "# H\n\nthe original paragraph text stays long enough to carry\n");
     const bId = blockByText("a.md", "the original");

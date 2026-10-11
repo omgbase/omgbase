@@ -546,6 +546,24 @@ fn cli_spec_version() -> String {
     .to_owned()
 }
 
+/// README §6: an error whose `data` names the argument it could not honor
+/// (`id`, `path`, `doc_id`, `doc_path`, `ref`, `section`, `provider`) or an
+/// argument-shape error (`hint: "arguments"`) is the surface's own; its
+/// message is pinned.
+fn surface_composed(data: Option<&Json>) -> bool {
+    let Some(o) = data.and_then(Json::as_object) else {
+        return false;
+    };
+    if o.get("hint").and_then(Json::as_str) == Some("arguments") {
+        return true;
+    }
+    [
+        "id", "path", "doc_id", "doc_path", "ref", "section", "provider",
+    ]
+    .iter()
+    .any(|k| o.contains_key(*k))
+}
+
 /// The fixture's view of an outcome: an error envelope without its
 /// `message` (and without `data` for `filter_invalid`); `changes_since`
 /// digests without `summary`; a `version` result by shape (§6).
@@ -553,7 +571,11 @@ fn normalize_outcome(tool: &str, out: &omgbase_surface::ToolOutcome) -> Json {
     let mut body = out.body.clone();
     if out.is_error {
         if let Some(o) = body.as_object_mut() {
-            o.remove("message");
+            // README §6: the surface's own errors keep their message (both
+            // engines spell them alike); a kernel's or store's does not.
+            if !surface_composed(o.get("data")) {
+                o.remove("message");
+            }
             if o.get("error").and_then(Json::as_str) == Some("filter_invalid") {
                 o.remove("data");
             }
@@ -1023,6 +1045,32 @@ fn version_agrees_with_the_spec() {
     }
     let version = fs::read_to_string(version_file).expect("VERSION");
     assert_eq!(omgbase_surface::SPEC_VERSION, version.trim());
+}
+
+/// README §4: every tool's description is the reference's, byte for byte —
+/// `spec/surface/tool-descriptions.json` (written by the reference) against
+/// the generated `descriptions.rs` the catalog carries; names in order too.
+#[test]
+fn tool_descriptions_match_the_reference() {
+    let text = fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../spec/surface/tool-descriptions.json"
+    ))
+    .expect("spec/surface/tool-descriptions.json");
+    let pinned: Json = serde_json::from_str(&text).expect("json");
+    let pinned = pinned.as_object().expect("an object");
+    let tools = omgbase_surface::catalog::tools();
+    let names: Vec<&str> = tools.iter().map(|t| t.name).collect();
+    let want: Vec<&str> = pinned.keys().map(String::as_str).collect();
+    assert_eq!(names, want, "tool names and order");
+    for t in &tools {
+        assert_eq!(
+            Some(t.description),
+            pinned[t.name].as_str(),
+            "description of {} drifted — run SURFACE_SPEC_UPDATE=1 on the reference, then node scripts/gen-tool-descriptions.mjs",
+            t.name
+        );
+    }
 }
 
 // ---- comparison ----------------------------------------------------------------------

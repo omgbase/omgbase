@@ -9,7 +9,7 @@ use crate::cli::context::Cli;
 use crate::cli::help::{render_help_for, wants_help};
 use crate::cli::output::{CliError, EXIT_OK, Result};
 
-use super::{machine_out, str_of};
+use super::{doc_foreign, machine_out, str_of};
 
 pub fn diff(cli: &mut Cli, args: &[String]) -> Result<i32> {
     if wants_help(args) {
@@ -32,7 +32,7 @@ pub fn diff(cli: &mut Cli, args: &[String]) -> Result<i32> {
             .doc_id
     };
     let mut req = serde_json::Map::new();
-    req.insert("doc".to_owned(), json!(doc));
+    doc_foreign(&mut req, &doc);
     if let Some(f) = a.value("from") {
         req.insert("from_rev".to_owned(), json!(f));
     }
@@ -43,10 +43,11 @@ pub fn diff(cli: &mut Cli, args: &[String]) -> Result<i32> {
     let style = cli.style;
     if a.flag("blocks") {
         // Block-grain over the same resolved revision pair.
-        let entries = cli.call(
-            "diff",
-            json!({ "doc": doc, "from_rev": str_of(&result, "from"), "to_rev": str_of(&result, "to") }),
-        )?;
+        let mut req = serde_json::Map::new();
+        doc_foreign(&mut req, &doc);
+        req.insert("from_rev".to_owned(), json!(str_of(&result, "from")));
+        req.insert("to_rev".to_owned(), json!(str_of(&result, "to")));
+        let entries = cli.call("diff", Json::Object(req))?;
         let items: Vec<Json> = entries.as_array().cloned().unwrap_or_default();
         let ids: Vec<String> = items.iter().map(|e| str_of(e, "$id")).collect();
         if let Some(code) = machine_out(cli, &entries, Some(&items), Some(&ids)) {

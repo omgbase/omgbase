@@ -9,7 +9,7 @@ use crate::cli::context::Cli;
 use crate::cli::help::{render_help_for, wants_help};
 use crate::cli::output::{CliError, EXIT_OK, Result, truncation_footer};
 
-use super::machine_out;
+use super::{doc_locator, machine_out};
 
 pub fn outline(cli: &mut Cli, args: &[String]) -> Result<i32> {
     if wants_help(args) {
@@ -40,7 +40,7 @@ pub fn outline(cli: &mut Cli, args: &[String]) -> Result<i32> {
         (info.doc_id, reference_path(&info.path))
     };
     let mut req = serde_json::Map::new();
-    req.insert("doc".to_owned(), json!(doc));
+    doc_locator(&mut req, &doc);
     if let Some(d) = depth {
         req.insert("depth".to_owned(), json!(d));
     }

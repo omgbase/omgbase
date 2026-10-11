@@ -10,7 +10,7 @@
 //! priming sweep, then "watcher live") and the [`crate::drain`]er (when the
 //! repo's `embedding.*` settings name a provider; a provider that cannot
 //! be spawned is reported on stderr and semantic queries fail
-//! `semantic_unavailable`).
+//! `provider_unavailable`).
 //!
 //! Threads: the MCP loop runs on the main thread and owns the surface's
 //! store; the watcher and the drainer each own a store connection of their

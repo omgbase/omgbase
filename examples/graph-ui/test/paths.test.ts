@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { parse } from "@omgbase/oqx";
-import { HIT_ENVELOPE_KEYS, LEGACY_SURFACE, docArg, hitId, hitPath, pathExpr, pathOperand, rooted, rootsPaths, rowRef, samePath, serverPath, surfaceMajor, surfaceOf, unrooted } from "../src/lib/paths.ts";
+import { HIT_ENVELOPE_KEYS, LEGACY_SURFACE, bareArguments, docArg, docForeign, docLocator, hitId, hitPath, pathExpr, pathOperand, rooted, rootsPaths, rowRef, samePath, serverPath, surfaceMajor, surfaceOf, unrooted } from "../src/lib/paths.ts";
 
 describe("hitId / hitPath / rowRef — the hit envelope across surface generations", () => {
   it("reads `$id`/`$path` (surface ≥ 3.0) and falls back to `id`/`path` (1.x/2.x)", () => {
@@ -116,5 +116,19 @@ describe("serverPath / docArg", () => {
     expect(docArg("2.0", "/timeline/kickoff.md")).toBe("/timeline/kickoff.md");
     expect(docArg("1.5", "d_77ptprj")).toBe("d_77ptprj");
     expect(docArg("2.0", "d_77ptprj")).toBe("d_77ptprj");
+  });
+  it("spells the document argument `id`/`path` on 3.0 and `doc` before (spec/surface §4 Arguments)", () => {
+    expect(bareArguments("3.0")).toBe(true);
+    expect(bareArguments("2.0")).toBe(false);
+    expect(bareArguments(null)).toBe(false);
+    expect(docLocator("3.0", "d_77ptprj")).toEqual({ id: "d_77ptprj" });
+    expect(docLocator("3.0", "d_0")).toEqual({ id: "d_0" });
+    expect(docLocator("3.0", "/timeline/kickoff.md")).toEqual({ path: "/timeline/kickoff.md" });
+    expect(docLocator("2.0", "/timeline/kickoff.md")).toEqual({ doc: "/timeline/kickoff.md" });
+    expect(docLocator("1.5", "/timeline/kickoff.md")).toEqual({ doc: "timeline/kickoff.md" });
+    expect(docLocator("2.0", "d_77ptprj")).toEqual({ doc: "d_77ptprj" });
+    expect(docForeign("3.0", "d_77ptprj")).toEqual({ doc_id: "d_77ptprj" });
+    expect(docForeign("3.0", "a.md")).toEqual({ doc_path: "a.md" });
+    expect(docForeign("2.0", "a.md")).toEqual({ doc: "a.md" });
   });
 });

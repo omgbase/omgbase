@@ -470,7 +470,7 @@
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "error[doc_missing]: no document notes/nope.md\n"
+        "stderr": "error[doc_missing]: no document with id or path \"notes/nope.md\"\n  {\n    \"path\": \"notes/nope.md\"\n  }\n"
       }
     },
     {
@@ -665,7 +665,7 @@
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "error[doc_missing]: no document nope.md\n"
+        "stderr": "error[doc_missing]: no document with id or path \"nope.md\"\n  {\n    \"path\": \"nope.md\"\n  }\n"
       }
     },
     {
@@ -734,7 +734,7 @@
           "expect": {
             "exit": 1,
             "stdout": "",
-            "stderr": "error[doc_missing]: no document texts/mutus-liber.md\n"
+            "stderr": "error[doc_missing]: no document with id or path \"texts/mutus-liber.md\"\n  {\n    \"path\": \"texts/mutus-liber.md\"\n  }\n"
           }
         },
         {
@@ -810,7 +810,7 @@
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "error[doc_missing]: no document nope.md\n"
+        "stderr": "error[doc_missing]: no document with id or path \"nope.md\"\n  {\n    \"path\": \"nope.md\"\n  }\n"
       }
     },
     {
@@ -952,7 +952,7 @@
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "error[doc_missing]: doc nope.md not found\n  {\n    \"doc\": \"nope.md\"\n  }\n"
+        "stderr": "error[doc_missing]: no document with id or path \"nope.md\"\n  {\n    \"path\": \"nope.md\"\n  }\n"
       }
     },
     {

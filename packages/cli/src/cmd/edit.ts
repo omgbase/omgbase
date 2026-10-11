@@ -41,7 +41,7 @@ function runEdit(cli: Cli, args: string[]): number {
   const ws = cli.workspace();
   const repo = cli.repo(ws);
   const resolved = resolveRef(ws.store, repo.repoId, ref);
-  if (!resolved || resolved.kind !== "block") throw new EngineErrorLike("block_missing", `not a block: ${ref}`);
+  if (!resolved || resolved.kind !== "block") throw new EngineErrorLike("block_missing", `no block with id ${JSON.stringify(ref)}`, { data: { id: ref } });
   const blockId = resolved.blockId!;
 
   const node = nodesGet(ws.store, resolved.docId, blockId, { resolution: "raw" });

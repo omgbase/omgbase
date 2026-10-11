@@ -13,8 +13,9 @@
 //   - a `$path == "…"` literal: must be bare on 1.x; on 2.0 both forms match
 //     (the literal is rooted before evaluation) and the rooted one is the
 //     spelling → `serverPath`;
-//   - a tool's `doc` argument (an id or a path): 1.x wants the bare path, 2.0
-//     accepts both → `docArg` (ids pass through untouched);
+//   - a tool's document argument: 3.0 spells it `id` / `path` (`doc_id` /
+//     `doc_path` from `diff`), earlier servers take `doc` (id-or-path; 1.x
+//     wants the bare path) → `docLocator` / `docForeign` over `docArg`;
 //   - correlating the current row with an authored reference (frontmatter
 //     values are `/`-rooted in the repositories this demo is aimed at, whatever
 //     the server version): `"/" + ^$path` on 1.x, plain `^$path` on 2.0 →
@@ -135,3 +136,27 @@ export function docArg(surface: string | null, doc: string): string {
   if (rootsPaths(surface) || !doc.includes("/")) return doc;
   return unrooted(doc);
 }
+
+/** Does the server take the 3.0 argument names (`spec/surface` §4 "Arguments":
+ * a `docs_*` tool addresses its document by `id` or `path`, a foreign
+ * reference by `doc_id`/`doc_path`; `doc` is gone)? Before 3.0 every document
+ * argument was `doc` (id-or-path). An unknown version is taken as 2.x. */
+export function bareArguments(surface: string | null): boolean {
+  return (surfaceMajor(surface) ?? 1) >= 3;
+}
+
+/** A document ref (an id or a path) as the arguments a `docs_*` tool takes on
+ * the connected server: `{ id }` / `{ path }` on ≥ 3.0, `{ doc }` before (the
+ * path de-rooted for 1.x, `docArg`). */
+export function docLocator(surface: string | null, doc: string): Record<string, string> {
+  if (!bareArguments(surface)) return { doc: docArg(surface, doc) };
+  return /^d_[0-9a-z]{1,7}$/.test(doc) ? { id: doc } : { path: doc };
+}
+
+/** The same document as a FOREIGN reference (`diff`, `diff_unified`):
+ * `{ doc_id }` / `{ doc_path }` on ≥ 3.0, `{ doc }` before. */
+export function docForeign(surface: string | null, doc: string): Record<string, string> {
+  if (!bareArguments(surface)) return { doc: docArg(surface, doc) };
+  return /^d_[0-9a-z]{1,7}$/.test(doc) ? { doc_id: doc } : { doc_path: doc };
+}
+

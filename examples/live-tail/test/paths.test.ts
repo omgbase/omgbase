@@ -1,4 +1,21 @@
 import { describe, expect, it } from "vitest";
+import { bareArguments, docForeign, docLocator } from "../src/lib/paths.ts";
+
+describe("docLocator / docForeign — the document argument by surface version (spec/surface §4 Arguments)", () => {
+  it("spells `id`/`path` (and `doc_id`/`doc_path`) on 3.0 and `doc` before", () => {
+    expect(bareArguments("3.0")).toBe(true);
+    expect(bareArguments("2.0")).toBe(false);
+    expect(bareArguments(null)).toBe(false);
+    expect(docLocator("3.0", "d_0")).toEqual({ id: "d_0" });
+    expect(docLocator("3.0", "d_77ptprj")).toEqual({ id: "d_77ptprj" });
+    expect(docLocator("3.0", "/notes/a.md")).toEqual({ path: "/notes/a.md" });
+    expect(docLocator("2.0", "/notes/a.md")).toEqual({ doc: "/notes/a.md" });
+    expect(docLocator("2.0", "d_0")).toEqual({ doc: "d_0" });
+    expect(docForeign("3.0", "d_0")).toEqual({ doc_id: "d_0" });
+    expect(docForeign("3.0", "a.md")).toEqual({ doc_path: "a.md" });
+    expect(docForeign(null, "a.md")).toEqual({ doc: "a.md" });
+  });
+});
 import { LEGACY_SURFACE, hitId, hitPath, rooted, surfaceMajor, surfaceOf } from "../src/lib/paths.ts";
 
 describe("surfaceOf", () => {

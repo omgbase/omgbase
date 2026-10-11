@@ -595,14 +595,14 @@ pub fn card(name: &'static str, prog: &str) -> Option<HelpSpec> {
             vec![],
         ),
         "append" => spec(
-            s("Append markdown at the end of a heading's section"),
+            s("Append markdown into a block: a heading's section or a container's children"),
             vec![s(
-                "append <heading> (-m <markdown> | -f <file> | -) [--actor <s>] [--dry-run]",
+                "append <block> (-m <markdown> | -f <file> | -) [--actor <s>] [--dry-run]",
             )],
             opts(&[
                 (
-                    "<heading>",
-                    "the heading block (id or locator) whose section receives the content",
+                    "<block>",
+                    "a heading (its section receives the content) or a container — list, item, quote, table (its children do)",
                 ),
                 ("-m <markdown>", "content inline"),
                 ("-f <file>", "content from a file"),

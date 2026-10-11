@@ -19,7 +19,7 @@ use crate::cli::context::Cli;
 use crate::cli::help::{render_help_for, wants_help};
 use crate::cli::output::{CliError, EXIT_OK, Result, js_json};
 
-use super::{machine_out, str_of};
+use super::{doc_locator, machine_out, str_of};
 
 // ---- content sources (§2.2, §6) ------------------------------------------------------
 
@@ -133,20 +133,21 @@ pub fn set_actor(cli: &mut Cli, actor: Option<&str>) -> Result<()> {
     Ok(())
 }
 
-/// A ref that must name a live block: its id, else `block_missing: not a block: <ref>`.
+/// A ref that must name a live block: its id, else `block_missing: no block with id "<ref>"`.
 pub fn block_id(cli: &mut Cli, r: &str) -> Result<String> {
     let repo = cli.repo()?;
     match resolve_ref(cli.store()?.conn(), &repo.repo_id, r)? {
         Some(ResolvedRef::Block { block_id, .. }) => Ok(block_id),
-        _ => Err(CliError::engine(
+        _ => Err(CliError::engine_data(
             "block_missing",
-            format!("not a block: {r}"),
+            format!("no block with id {}", Json::String(r.to_owned())),
+            json!({ "id": r }),
         )),
     }
 }
 
 /// A block argument for a ref-accepting tool: remotely (§2.3) the ref as
-/// given — the `blocks_*` / `tasks_complete` / `sections_append` tools
+/// given — the `blocks_*` / `tasks_complete` / `blocks_append` tools
 /// resolve refs and pin CAS server-side; locally its resolved block id.
 pub fn block_arg(cli: &mut Cli, r: &str) -> Result<String> {
     if cli.remote_mode() {
@@ -160,9 +161,10 @@ fn block_ref(cli: &mut Cli, r: &str) -> Result<(String, String)> {
     let repo = cli.repo()?;
     match resolve_ref(cli.store()?.conn(), &repo.repo_id, r)? {
         Some(ResolvedRef::Block { doc_id, block_id }) => Ok((doc_id, block_id)),
-        _ => Err(CliError::engine(
+        _ => Err(CliError::engine_data(
             "block_missing",
-            format!("not a block: {r}"),
+            format!("no block with id {}", Json::String(r.to_owned())),
+            json!({ "id": r }),
         )),
     }
 }
@@ -396,7 +398,7 @@ fn update_block(cli: &mut Cli, args: &[String]) -> Result<i32> {
     let markdown = read_content(&content)?;
     let block = block_arg(cli, &r)?;
     let mut m = Map::new();
-    m.insert("block".to_owned(), json!(block));
+    m.insert("id".to_owned(), json!(block));
     m.insert("markdown".to_owned(), json!(markdown));
     match a.value("expect") {
         Some(e) => {
@@ -442,7 +444,7 @@ fn update_doc(cli: &mut Cli, args: &[String]) -> Result<i32> {
     }
     set_actor(cli, a.value("actor"))?;
     let mut m = Map::new();
-    m.insert("doc".to_owned(), json!(doc));
+    doc_locator(&mut m, &doc);
     m.insert("content".to_owned(), json!(bytes));
     if let Some(r) = a.value("reason") {
         m.insert("reason".to_owned(), json!(r));
@@ -518,11 +520,8 @@ pub fn edit(cli: &mut Cli, args: &[String]) -> Result<i32> {
         return Err(CliError::usage("edit requires a <block>"));
     };
     let r = r.to_owned();
-    let (doc_id, block) = block_ref(cli, &r)?;
-    let node = cli.call(
-        "nodes_get",
-        json!({ "id": block, "doc": doc_id, "resolution": "raw" }),
-    )?;
+    let (_, block) = block_ref(cli, &r)?;
+    let node = cli.call("blocks_get", json!({ "id": block, "resolution": "raw" }))?;
     let before = str_of(&node, "$raw");
     // Pin the CAS BEFORE the editor opens.
     let pre_hash = node
@@ -596,7 +595,7 @@ pub fn edit(cli: &mut Cli, args: &[String]) -> Result<i32> {
         return Ok(EXIT_OK);
     };
     let mut m = Map::new();
-    m.insert("block".to_owned(), json!(block));
+    m.insert("id".to_owned(), json!(block));
     m.insert("markdown".to_owned(), json!(after));
     if let Some(h) = pre_hash {
         m.insert("expect".to_owned(), json!({ "content_hash": h }));
@@ -673,7 +672,7 @@ pub fn rm(cli: &mut Cli, args: &[String]) -> Result<i32> {
 fn rm_doc(cli: &mut Cli, doc: &str, actor: Option<&str>) -> Result<i32> {
     set_actor(cli, actor)?;
     let mut m = Map::new();
-    m.insert("doc".to_owned(), json!(doc));
+    doc_locator(&mut m, doc);
     if cli.flags.dry_run {
         m.insert("dry_run".to_owned(), json!(true));
     }
@@ -740,9 +739,10 @@ fn task_block(cli: &mut Cli, r: &str, block: String) -> Result<String> {
         )
         .optional()?;
     match kind {
-        None => Err(CliError::engine(
+        None => Err(CliError::engine_data(
             "block_missing",
-            format!("not a block: {r}"),
+            format!("no block with id {}", Json::String(r.to_owned())),
+            json!({ "id": r }),
         )),
         Some(t) if t != "task" => Err(CliError::engine_data(
             "type_mismatch",
@@ -761,16 +761,18 @@ pub fn append(cli: &mut Cli, args: &[String]) -> Result<i32> {
     }
     let content = extract_content_opts(args)?;
     let a = parse_args(&content.rest, &[ACTOR])?;
-    let Some(heading) = a.pos(0) else {
-        return Err(CliError::usage("append requires a <heading> block"));
+    let Some(target) = a.pos(0) else {
+        return Err(CliError::usage("append requires a <block>"));
     };
-    let heading = heading.to_owned();
+    let target = target.to_owned();
     let markdown = read_content(&content)?;
-    let heading_id = block_arg(cli, &heading)?;
+    // `blocks_append` decides by the block's kind (a heading's section, a
+    // container's children, a leaf → `block_not_container`), spec/surface §4.
+    let block = block_arg(cli, &target)?;
     let mut m = Map::new();
-    m.insert("heading".to_owned(), json!(heading_id));
-    m.insert("markdown".to_owned(), json!(markdown));
-    run_tool(cli, "sections_append", m, a.value("actor"))
+    m.insert("id".to_owned(), json!(block));
+    m.insert("text".to_owned(), json!(markdown));
+    run_tool(cli, "blocks_append", m, a.value("actor"))
 }
 
 // ---- split / merge --------------------------------------------------------------------
@@ -799,7 +801,7 @@ pub fn split(cli: &mut Cli, args: &[String]) -> Result<i32> {
         })?;
     let block = block_arg(cli, &r)?;
     let mut m = Map::new();
-    m.insert("block".to_owned(), json!(block));
+    m.insert("id".to_owned(), json!(block));
     m.insert("at".to_owned(), json!(offsets));
     run_tool(cli, "blocks_split", m, a.value("actor"))
 }

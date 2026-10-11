@@ -58,10 +58,10 @@ describe("embed with no provider configured", () => {
     expect(res.provider).toBeNull();
   });
 
-  it("oqx semantic() without a provider → semantic_unavailable, exit 1", () => {
+  it("oqx semantic() without a provider → provider_unavailable, exit 1", () => {
     const { code, stderr } = omgFails(["query", 'from blocks where semantic("durability") > 0', "--json"]);
     expect(code).toBe(1);
-    expect(stderr).toContain("semantic_unavailable");
+    expect(stderr).toContain("provider_unavailable");
   });
 });
 

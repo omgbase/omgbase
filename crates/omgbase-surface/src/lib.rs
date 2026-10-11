@@ -32,9 +32,11 @@
 // `Result` size is not worth boxing.
 #![allow(clippy::result_large_err)]
 
+pub mod arguments;
 pub mod catalog;
 pub mod context;
 pub mod cursor;
+pub mod descriptions;
 pub mod error;
 pub mod graph;
 pub mod history;

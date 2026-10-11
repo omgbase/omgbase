@@ -310,7 +310,7 @@ exit 2; with a machine mode it is
 `{"error":"usage","message":…,"hint":…,"retriable":false}` (`hint` omitted
 when absent). Every other error — the engine's typed errors (`spec/mutate`
 §8 codes, `doc_missing`, `block_missing`, `repo_not_found`,
-`semantic_unavailable`, `embedder_failed`, …) and anything else thrown — is
+`provider_unavailable`, `embedder_failed`, …) and anything else thrown — is
 
 ```
 error[<code>]: <message>
@@ -486,13 +486,14 @@ the `--json` shape, and the errors. "Exact bytes" points at the cases.
 
 ### `append`
 
-`append <heading> (-m <markdown> | -f <file> | -) [--actor <s>] [--dry-run]`
-— `sections_append`: the block(s) parsed from the markdown are inserted at
-the end of the heading's section (before the next heading of equal or higher
-level). `<heading>` is a heading block id (a path or heading *text* is
-`block_missing: not a block: <ref>`, §9). Content: `-m`, `-f <file>`, `-f -`
+`append <block> (-m <markdown> | -f <file> | -) [--actor <s>] [--dry-run]`
+— `blocks_append` (surface 3.0; `sections_append` before): the block(s)
+parsed from the markdown are appended INTO the block — a heading's section
+(before the next heading of equal or higher level) or a container's children;
+a leaf is `block_not_container`. `<block>` is a block id or locator (a path
+or heading *text* is `block_missing`, §9). Content: `-m`, `-f <file>`, `-f -`
 or a bare `-` for stdin, else stdin. Commit confirmation (§4);
-`--json` the `ApplyResult`. Missing heading → `usage: append requires a <heading> block`.
+`--json` the `ApplyResult`. Missing block → `usage: append requires a <block>`.
 
 ### `apply`
 
@@ -513,13 +514,13 @@ Each ref (a block id, doc id, node id or document path in either form; `-` reads
 from stdin one per line, a `-` with empty stdin is
 `usage: cat requires a <node> (or - to read refs from stdin)`) prints, in
 order: a document → its exact bytes (`docs_read`); a block → its raw
-markdown, or at `--resolution text|outline|skeleton|full` the `nodes_get`
+markdown, or at `--resolution text|outline|skeleton|full` the `blocks_get`
 field `$raw ?? text ?? label`. `--resolution` other than `raw` on a document
 ref warns on stderr
 `  --resolution <r> ignored for <ref>: a document is always its exact bytes (resolutions apply to block refs)`
 and prints the bytes. `--json`: one ref → the object, several → an array;
 `--jsonl` one object per line (`--ids`: the same document — a read has no
-id list); a block's object is `nodes_get` at the resolution
+id list); a block's object is `blocks_get` at the resolution
 (`{ $id, type, $raw, $hash }` at raw), a document's is the `docs_read`
 result `{ $id, $path, rev, properties: { frontmatter, inline, computed },
 $raw }` (3.0 — the row rule of `spec/surface` §1.2). Unknown ref →
@@ -601,7 +602,7 @@ argument; none set → `target_missing: no $EDITOR set (or $VISUAL/$OMG_EDITOR)`
 `target_missing: editor exited <n>`. An unchanged file → stderr
 `  no changes`, exit 0, nothing committed. A changed file → the commit
 confirmation (§4); a concurrent change → `stale_expectation`. Not a block →
-`block_missing: not a block: <ref>`. The editor's own TTY interaction is
+`block_missing: no block with id "<ref>"`. The editor's own TTY interaction is
 unpinnable; the fixtures use shell scripts as editors.
 
 ### `embed`
@@ -644,7 +645,7 @@ See §5.
 
 ### `hist`
 
-`hist <node> [-n <N>]` — `history_node` for a block (a document ref, or an
+`hist <node> [-n <N>]` — `blocks_history` for a block (a document ref, or an
 unknown id, is `block_missing: hist needs a block id; got <ref>`). Human,
 newest first: `#<seq> <kind>[ (<confidence to 2 decimals>)] <origin> <ts>`;
 none → stderr `  no history`. `--json` the change array; `--jsonl` one per
@@ -681,7 +682,7 @@ is `stale_expectation: parent_children_hash mismatch` with the current hash).
 `<to>` must be a container (`list`, `list_item`, `task`, `blockquote`, `table`) or a document; a leaf such as a heading is the kernel's `type_mismatch` with its hint (`spec/mutate` §1.1, 1.2 — §9).
 Confirmation (§4); `--json` the `ApplyResult`. Missing parent →
 `usage: insert requires a <to> parent (a container block id, or a doc id/path for the top level)`;
-unknown → `block_missing: not a block: <ref>`.
+unknown → `block_missing: no block with id "<ref>"`.
 
 ### `links`
 
@@ -852,7 +853,7 @@ OQX message, `data { reason: <message>, hint: "OQX" }`; `invalid cursor`,
 `data { reason: "cursor was not issued by query", hint: … }` — as the
 `query` tool reports them; an unknown root is silently empty (§9).
 `semantic(...)` without a provider →
-`error[semantic_unavailable]: semantic(...) needs an embedding provider`
+`error[provider_unavailable]: semantic(...) needs an embedding provider`
 with the hint `omg config set embedding.provider <command|url>`.
 
 ### `rebuild-index`
@@ -923,7 +924,7 @@ including the computed `$title`, then `  out edges` / `  backlinks` as
 `    <k> = <v>` lines when any, `  text  <text>` when any, and with
 `--include history` `  history` then `    #<seq> <kind> <origin> <ts>` for the
 last five changes. Several refs print one card after another. `--json`: a
-block's `nodes_get` at `full` (+ `history` when included); a document's the
+block's `blocks_get` at `full` (+ `history` when included); a document's the
 `read_ref` result `{ kind: "document", $id, $path, rev, properties:
 { frontmatter, inline, computed }, $raw }` (the card's merged properties
 and edges are the human rendering only); one ref → the object, several →
@@ -1032,7 +1033,7 @@ on timing and on a second process; only the card is fixed.
 `update <block|doc> (-m <markdown> | -f <file> | -) [--plan] [--expect <hash>] [--reason <s>] [--actor <s>] [--dry-run]`
 — polymorphic on the target. A **`b_`-prefixed token** is the block path:
 an `update` op replacing the block's markdown (a token that names no live
-block is `block_missing: not a block: <ref>`, never a document lookup);
+block is `block_missing: no block with id "<ref>"`, never a document lookup);
 without `--expect` the
 CAS is pinned from the live row and stderr says
 `  updating <ref> (CAS pinned from current bytes)`; with it, a mismatch is
@@ -1094,7 +1095,7 @@ empty). Collections: `query`/`run` hits (row ref = `$id`, label `$path`;
 card or scalar (`show`, `cat`, a count) sets `@_` and leaves the frame.
 **Not captured** at all (they leave `@_` and the frame untouched): `log`,
 `hist`, `outline`, `diff`, `status`, `repos`, `sync`, the admin verbs (§9).
-`cat` captures the bytes (a string) for a document, the `nodes_get` object
+`cat` captures the bytes (a string) for a document, the `blocks_get` object
 for a block; `show` a document captures the card object.
 
 Substitution coerces a row to its ref; a scalar to its string; an object
@@ -1329,7 +1330,7 @@ fixture change and a version bump, or keep). None was fixed here.
   alias, so is `--directory` for `-C`.
 - **Fixed — the JSON error keeps the hint** as a `hint` field
   (`repo_not_found`'s two fixes: `invoke::no-workspace-json`;
-  `semantic_unavailable`'s config command: `query::semantic-unavailable-json`).
+  `provider_unavailable`'s config command: `query::semantic-unavailable-json`).
 - **Fixed — an empty error payload prints nothing**: a `data` of `{}` (a
   `MutationError` raised without a payload) no longer prints the two lines
   `  {` / `  }` under the message, and is omitted from the JSON error
@@ -1386,7 +1387,7 @@ fixture change and a version bump, or keep). None was fixed here.
   frontmatter relation, with a `meta` fix) leaves behind (`docs::mv`,
   `mv-dry-run`, `mv-no-retarget`).
 - **Fixed — a `b_`-prefixed `update` target is always the block path**:
-  `update b_nope` is `block_missing: not a block: b_nope`; it no longer
+  `update b_nope` is `block_missing: no block with id "b_nope"`; it no longer
   falls through to the document path (`doc_missing: doc b_nope not found`)
   (`mutate::update-missing-block`).
 - **Fixed — `split --at` with a non-integer offset is a usage error**:
@@ -1485,7 +1486,7 @@ fixture change and a version bump, or keep). None was fixed here.
 - **Pinned — `edit` needs `OMG_EDITOR` for a scripted edit**: `$EDITOR`/`$VISUAL`
   are refused without a TTY (`mutate::edit-editor-needs-tty`).
 - **Pinned — heading text is not a CLI ref**: `append Contents` is
-  `block_missing: not a block: Contents`; the MCP tools' `heading` text
+  `block_missing: no block with id "Contents"`; the MCP tools' `heading` text
   resolution (and therefore `ambiguous_heading`) is unreachable from the CLI.
 - **Pinned — an unknown OQX root is silently empty** (`q 'from nope'` prints
   `  no hits`, exit 0; `query::unknown-root`).
@@ -1600,6 +1601,17 @@ was `b_314`).
   (or a frontmatter relation) leaves. A flag added: a minor
   (`docs::mv`, `mv-json`, `mv-dry-run`, `mv-dry-run-json`, `mv-no-retarget`,
   `mv-no-retarget-json`, `invoke::help-card-mv`).
+- 2026-10-11, cli 3.0 (surface 3.0 batch 2): the verbs send the surface's
+  3.0 argument names — a `d_` ref is `id`, anything else `path` (`doc_id` /
+  `doc_path` from `diff`), `blocks_get`/`blocks_get_many`/`blocks_history`
+  behind `cat`/`show`/`hist`, `append <block>` renders `blocks_append` (a
+  heading's section or a container's children; a leaf is
+  `block_not_container`), `omg query`'s no-provider error is
+  `provider_unavailable`; and the LOCAL verbs spell a missing document the
+  way the tools do (`error[doc_missing]: no document with id or path "…"`,
+  `no node with id "…"`), so a verb reads alike in both modes
+  (`docs::*-missing`, `mutate::node-set-unknown-node`, `mutate::append-none`,
+  `invoke::help-card-append`, `query::semantic-unavailable*`).
 - 2026-09-27, cli 1.1: a `version` verb rendering the surface's `version`
   tool (Brendan: one place that says which engine and which component
   versions an MCP host or a shell is talking to). A verb added: a minor.

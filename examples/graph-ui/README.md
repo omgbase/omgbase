@@ -237,7 +237,8 @@ as `1.x`. The result is the `serverSurface` signal, shown in the header
 | `samePath(a, b)` | equal modulo the leading slash |
 | `pathExpr(surface, ref = "$path")` | the OQX that yields the rooted path of `ref`: `$path` on ≥ 2.0, `"/" + $path` before (`pathOperand` parenthesizes the latter) |
 | `serverPath(surface, p)` | a `$path == "…"` literal in the server's form: bare on 1.x, rooted on 2.0 |
-| `docArg(surface, doc)` | a tool's `doc` argument: a path is de-rooted for 1.x; an id passes through |
+| `docArg(surface, doc)` | a pre-3.0 tool's `doc` argument: a path is de-rooted for 1.x; an id passes through |
+| `docLocator(surface, doc)` / `docForeign(surface, doc)` | the document argument in the server's spelling: `{ id }`/`{ path }` (`{ doc_id }`/`{ doc_path }` for `diff`) on ≥ 3.0 — `spec/surface` §4 "Arguments" — else `{ doc }` via `docArg` |
 | `surfaceOf(versionResult)` | `specs.surface`, else `"1.x"` |
 | `hitId(hit)` / `hitPath(hit)` | a query hit's identity under either envelope: `$id`/`$path` (≥ 3.0) else `id`/`path` |
 | `rowRef(v)` | a row that surfaced as a value — `{ $id, $path }` (≥ 3.0) or `{ id, path }` — as `{ id, path }` rooted, else null |
@@ -268,7 +269,7 @@ than beside it. Before 3.0 the envelope spelled `{ id, path }` (with a
 projected `$path` sitting next to `path`). A row surfacing as a *value* (an
 empty `collect { }`, a `$it` projection) follows the same rename. Other tools'
 envelopes did not change: `docs_list` items are `{ path }`, `graph`'s
-`documents[]` carry `id`/`path`, `docs_read`/`nodes_get` keep theirs. The demo
+`documents[]` carry `id`/`path`, `docs_read`/`blocks_get` keep theirs. The demo
 never reads `hit.id`/`hit.path` directly — every hit read goes through
 `hitId`/`hitPath` (and `rowRef` for nested rows), which try `$id`/`$path`
 first, so it works against a 3.0 build and a lagging 2.x remote alike. The
@@ -844,3 +845,16 @@ stay rooted whatever surface version serves them), two branches
 (`docs-draft`, `security-audit`) that rejoin at `launch`, a deliberate three-note
 cycle (`loop-a` → `loop-b` → `loop-c` → `loop-a`), `owner` relations into
 `people/`, `see_also` under `topics/`, and ordinary Markdown links.
+
+## Verified headlessly
+
+Surface 3.0 batch 2 (the argument names — `docs_read { id | path }`,
+`docs_set_meta { id | path, set, unset }`, chosen by the server's version with
+`docLocator`): Chrome `--headless=new` over CDP on free ports, against the
+current build (proxy 18901, Vite 15901; header `surface 3.0`, 9 rows) and
+against a `surface-2.0` omg built from its tag into a temporary worktree (proxy
+18903, Vite 15903; `surface 2.0`): the default query drew 9 nodes / 10 edges,
+switching the axis radio moved the layout to the force-directed banner, arming
+`before` and ⌘-clicking a `before` edge proposed `set before: […] (was […]) via
+docs_set_meta?`, **apply** committed it (`api(agent:mcp): /timeline/alpha.md`
+in `omg log`) and the graph re-fetched. No console errors on either server.

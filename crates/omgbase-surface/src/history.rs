@@ -1,4 +1,4 @@
-//! History (`spec/surface/README.md` §3): `history_node`, the block-grain
+//! History (`spec/surface/README.md` §3): `blocks_history`, the block-grain
 //! `diff`, the Myers unified `diff_unified` over the two revisions'
 //! reconstructed files (§3; positional before 1.1, §9), `docs_history`. Port
 //! of `packages/core/src/graph/history.ts`; `changes_since` is the store's.
@@ -15,9 +15,9 @@ use crate::error::Result;
 use crate::paths::{reference_path, storage_path};
 use crate::read::find_doc_by_ref;
 
-/// §3 `history_node`: `[{ commitId, seq, ts, origin, kind, confidence, reason }]`,
+/// §3 `blocks_history`: `[{ commitId, seq, ts, origin, kind, confidence, reason }]`,
 /// newest first.
-pub fn history_node(store: &Store, block_id: &str, limit: Option<i64>) -> Result<Json> {
+pub fn blocks_history(store: &Store, block_id: &str, limit: Option<i64>) -> Result<Json> {
     let limit = limit.unwrap_or(100);
     let mut stmt = store.conn().prepare(
         "SELECT bc.commit_id, c.seq, c.ts, c.origin, bc.kind, d.confidence, d.reason

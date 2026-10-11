@@ -127,7 +127,7 @@
           "read": {
             "tool": "docs_outline",
             "args": {
-              "doc": "d_0",
+              "id": "d_0",
               "resolution": "skeleton"
             }
           }
@@ -136,7 +136,7 @@
           "read": {
             "tool": "docs_outline",
             "args": {
-              "doc": "guide.md",
+              "path": "guide.md",
               "depth": 0
             }
           }
@@ -154,7 +154,7 @@
           "read": {
             "tool": "docs_read",
             "args": {
-              "doc": "d_0"
+              "id": "d_0"
             }
           }
         },
@@ -162,7 +162,7 @@
           "read": {
             "tool": "docs_read",
             "args": {
-              "doc": "guide.md",
+              "path": "guide.md",
               "include_ids": true
             }
           }
@@ -785,7 +785,7 @@
     },
     {
       "name": "resolution-ladders",
-      "notes": "§2: nodes_get at every resolution, nodes_get_many (request order, unresolved, scoping, budget), read_ref polymorphism.",
+      "notes": "§2: blocks_get at every resolution, blocks_get_many (request order, unresolved, scoping, budget), read_ref polymorphism.",
       "steps": [
         {
           "observe": {
@@ -804,7 +804,7 @@
         },
         {
           "read": {
-            "tool": "nodes_get",
+            "tool": "blocks_get",
             "args": {
               "id": "b_4",
               "resolution": "skeleton"
@@ -813,7 +813,7 @@
         },
         {
           "read": {
-            "tool": "nodes_get",
+            "tool": "blocks_get",
             "args": {
               "id": "b_4",
               "resolution": "outline"
@@ -822,7 +822,7 @@
         },
         {
           "read": {
-            "tool": "nodes_get",
+            "tool": "blocks_get",
             "args": {
               "id": "b_4",
               "resolution": "text"
@@ -831,7 +831,7 @@
         },
         {
           "read": {
-            "tool": "nodes_get",
+            "tool": "blocks_get",
             "args": {
               "id": "b_4",
               "resolution": "raw"
@@ -840,7 +840,7 @@
         },
         {
           "read": {
-            "tool": "nodes_get",
+            "tool": "blocks_get",
             "args": {
               "id": "b_4",
               "resolution": "full"
@@ -849,7 +849,7 @@
         },
         {
           "read": {
-            "tool": "nodes_get",
+            "tool": "blocks_get",
             "args": {
               "id": "b_9"
             }
@@ -857,7 +857,7 @@
         },
         {
           "read": {
-            "tool": "nodes_get",
+            "tool": "blocks_get",
             "args": {
               "id": "b_0",
               "resolution": "skeleton"
@@ -866,26 +866,24 @@
         },
         {
           "read": {
-            "tool": "nodes_get",
+            "tool": "blocks_get",
             "args": {
               "id": "b_14",
-              "resolution": "text",
-              "doc": "guide.md"
+              "resolution": "text"
             }
           }
         },
         {
           "read": {
-            "tool": "nodes_get",
+            "tool": "blocks_get",
             "args": {
-              "id": "b_9",
-              "doc": "notes/one.md"
+              "id": "b_9"
             }
           }
         },
         {
           "read": {
-            "tool": "nodes_get",
+            "tool": "blocks_get",
             "args": {
               "id": "b_99"
             }
@@ -893,7 +891,7 @@
         },
         {
           "read": {
-            "tool": "nodes_get_many",
+            "tool": "blocks_get_many",
             "args": {
               "ids": [
                 "b_9",
@@ -907,20 +905,19 @@
         },
         {
           "read": {
-            "tool": "nodes_get_many",
+            "tool": "blocks_get_many",
             "args": {
               "ids": [
                 "b_9",
                 "b_17"
               ],
-              "path": "guide.md",
               "resolution": "raw"
             }
           }
         },
         {
           "read": {
-            "tool": "nodes_get_many",
+            "tool": "blocks_get_many",
             "args": {
               "ids": [
                 "b_1",
@@ -934,7 +931,7 @@
         },
         {
           "read": {
-            "tool": "nodes_get_many",
+            "tool": "blocks_get_many",
             "args": {
               "ids": []
             }
@@ -1187,14 +1184,24 @@
             ]
           },
           {
-            "error": "block_missing",
-            "retriable": false
+            "$id": "b_9",
+            "type": "task",
+            "$raw": "- [ ] open task",
+            "$hash": "cfef6a468aa11b127940c8c6dd34e3c8128029ce52b8793b6d15b8927a6bf188",
+            "text": "open task",
+            "attrs": {
+              "checked": false
+            },
+            "ordinal": 0,
+            "depth": 1,
+            "parent_id": "b_8"
           },
           {
-            "error": "doc_missing",
+            "error": "block_missing",
             "retriable": false,
+            "message": "no block with id \"b_99\"",
             "data": {
-              "block": "b_99"
+              "id": "b_99"
             }
           },
           {
@@ -1232,12 +1239,16 @@
                 "type": "task",
                 "$raw": "- [ ] open task",
                 "$hash": "cfef6a468aa11b127940c8c6dd34e3c8128029ce52b8793b6d15b8927a6bf188"
+              },
+              {
+                "$id": "b_17",
+                "type": "heading",
+                "$raw": "# One",
+                "$hash": "9ec1d2e3a102edbfa7ce4512308cf15d8fa812b46ea8541a4905a275b6d271f8"
               }
             ],
             "truncated": false,
-            "unresolved": [
-              "b_17"
-            ]
+            "unresolved": []
           },
           {
             "nodes": [
@@ -1331,19 +1342,35 @@
           },
           {
             "error": "doc_missing",
-            "retriable": false
+            "retriable": false,
+            "message": "no document or block with id or path \"n_000000000000\"",
+            "data": {
+              "ref": "n_000000000000"
+            }
           },
           {
             "error": "doc_missing",
-            "retriable": false
+            "retriable": false,
+            "message": "no document or block with id or path \"nope.md\"",
+            "data": {
+              "ref": "nope.md"
+            }
           },
           {
             "error": "doc_missing",
-            "retriable": false
+            "retriable": false,
+            "message": "no document or block with id or path \"b_99\"",
+            "data": {
+              "ref": "b_99"
+            }
           },
           {
             "error": "doc_missing",
-            "retriable": false
+            "retriable": false,
+            "message": "no document or block with id or path \"guide.md#Setup\"",
+            "data": {
+              "ref": "guide.md#Setup"
+            }
           }
         ]
       }
@@ -1391,7 +1418,7 @@
         },
         {
           "read": {
-            "tool": "history_node",
+            "tool": "blocks_history",
             "args": {
               "id": "b_1"
             }
@@ -1399,7 +1426,7 @@
         },
         {
           "read": {
-            "tool": "history_node",
+            "tool": "blocks_history",
             "args": {
               "id": "b_1",
               "limit": 1
@@ -1408,7 +1435,7 @@
         },
         {
           "read": {
-            "tool": "history_node",
+            "tool": "blocks_history",
             "args": {
               "id": "b_11"
             }
@@ -1416,7 +1443,7 @@
         },
         {
           "read": {
-            "tool": "history_node",
+            "tool": "blocks_history",
             "args": {
               "id": "b_99"
             }
@@ -1426,7 +1453,7 @@
           "read": {
             "tool": "diff",
             "args": {
-              "doc": "guide.md",
+              "doc_path": "guide.md",
               "from_rev": "r_0",
               "to_rev": "r_2"
             }
@@ -1436,7 +1463,7 @@
           "read": {
             "tool": "diff",
             "args": {
-              "doc": "d_0",
+              "doc_id": "d_0",
               "from_rev": "r_2",
               "to_rev": "r_0"
             }
@@ -1446,7 +1473,7 @@
           "read": {
             "tool": "diff",
             "args": {
-              "doc": "d_0",
+              "doc_id": "d_0",
               "from_rev": "r_0",
               "to_rev": "r_zz"
             }
@@ -1456,7 +1483,7 @@
           "read": {
             "tool": "diff",
             "args": {
-              "doc": "nope.md",
+              "doc_path": "nope.md",
               "from_rev": "r_0",
               "to_rev": "r_2"
             }
@@ -1466,7 +1493,7 @@
           "read": {
             "tool": "diff_unified",
             "args": {
-              "doc": "guide.md"
+              "doc_path": "guide.md"
             }
           }
         },
@@ -1474,7 +1501,7 @@
           "read": {
             "tool": "diff_unified",
             "args": {
-              "doc": "d_0",
+              "doc_id": "d_0",
               "from_rev": "r_0",
               "to_rev": "r_2"
             }
@@ -1484,7 +1511,7 @@
           "read": {
             "tool": "diff_unified",
             "args": {
-              "doc": "d_0",
+              "doc_id": "d_0",
               "from_rev": "r_2",
               "to_rev": "r_2"
             }
@@ -1494,7 +1521,7 @@
           "read": {
             "tool": "diff_unified",
             "args": {
-              "doc": "notes/one.md"
+              "doc_path": "notes/one.md"
             }
           }
         },
@@ -1502,7 +1529,7 @@
           "read": {
             "tool": "docs_read_at",
             "args": {
-              "doc": "guide.md",
+              "path": "guide.md",
               "rev": "r_0"
             }
           }
@@ -1520,7 +1547,7 @@
           "read": {
             "tool": "docs_read_at",
             "args": {
-              "doc": "d_0",
+              "id": "d_0",
               "rev": "r_1"
             }
           }
@@ -1529,7 +1556,7 @@
           "read": {
             "tool": "docs_history",
             "args": {
-              "doc": "guide.md"
+              "path": "guide.md"
             }
           }
         },
@@ -1572,7 +1599,7 @@
           "read": {
             "tool": "docs_history",
             "args": {
-              "doc": "notes/one.md"
+              "path": "notes/one.md"
             }
           }
         },
@@ -1580,7 +1607,7 @@
           "read": {
             "tool": "docs_history",
             "args": {
-              "doc": "d_1",
+              "id": "d_1",
               "include_deleted": true
             }
           }
@@ -1807,8 +1834,9 @@
           {
             "error": "doc_missing",
             "retriable": false,
+            "message": "no document with doc_id or doc_path \"nope.md\"",
             "data": {
-              "doc": "nope.md"
+              "doc_path": "nope.md"
             }
           },
           {
@@ -1835,8 +1863,9 @@
           {
             "error": "doc_missing",
             "retriable": false,
+            "message": "no document with doc_id or doc_path \"notes/one.md\"",
             "data": {
-              "doc": "notes/one.md"
+              "doc_path": "notes/one.md"
             }
           },
           {
@@ -2050,7 +2079,11 @@
           },
           {
             "error": "doc_missing",
-            "retriable": false
+            "retriable": false,
+            "message": "no document with id or path \"notes/one.md\"",
+            "data": {
+              "path": "notes/one.md"
+            }
           },
           {
             "docs": [
@@ -2213,6 +2246,7 @@
           {
             "error": "doc_missing",
             "retriable": false,
+            "message": "no document with id or path \"notes/one.md\"",
             "data": {
               "path": "notes/one.md"
             }
@@ -2260,7 +2294,7 @@
           "read": {
             "tool": "docs_read_at",
             "args": {
-              "doc": "log.md",
+              "path": "log.md",
               "rev": "r_1"
             }
           }
@@ -2269,7 +2303,7 @@
           "read": {
             "tool": "docs_read_at",
             "args": {
-              "doc": "log.md",
+              "path": "log.md",
               "rev": "r_2"
             }
           }
@@ -2278,7 +2312,7 @@
           "read": {
             "tool": "diff_unified",
             "args": {
-              "doc": "log.md"
+              "doc_path": "log.md"
             }
           }
         },
@@ -2286,7 +2320,7 @@
           "read": {
             "tool": "diff_unified",
             "args": {
-              "doc": "log.md",
+              "doc_path": "log.md",
               "from_rev": "r_0",
               "to_rev": "r_2"
             }
@@ -2296,7 +2330,7 @@
           "read": {
             "tool": "diff",
             "args": {
-              "doc": "log.md",
+              "doc_path": "log.md",
               "from_rev": "r_1",
               "to_rev": "r_2"
             }
@@ -2450,7 +2484,7 @@
           "read": {
             "tool": "docs_read",
             "args": {
-              "doc": "d_99"
+              "id": "d_99"
             }
           }
         },
@@ -2458,13 +2492,13 @@
           "read": {
             "tool": "docs_outline",
             "args": {
-              "doc": "guide.md/"
+              "path": "guide.md/"
             }
           }
         },
         {
           "read": {
-            "tool": "nodes_get",
+            "tool": "blocks_get",
             "args": {
               "id": "b_99"
             }
@@ -2472,10 +2506,9 @@
         },
         {
           "read": {
-            "tool": "nodes_get",
+            "tool": "blocks_get",
             "args": {
-              "id": "b_0",
-              "path": "nope.md"
+              "id": "b_0"
             }
           }
         },
@@ -2542,7 +2575,7 @@
           "read": {
             "tool": "docs_read_at",
             "args": {
-              "doc": "guide.md",
+              "path": "guide.md",
               "rev": "r_9"
             }
           }
@@ -2551,7 +2584,7 @@
           "read": {
             "tool": "diff_unified",
             "args": {
-              "doc": "nope.md"
+              "doc_path": "nope.md"
             }
           }
         },
@@ -2582,7 +2615,7 @@
           "read": {
             "tool": "blocks_update",
             "args": {
-              "block": "b_1",
+              "id": "b_1",
               "markdown": "x"
             }
           }
@@ -2608,10 +2641,11 @@
         },
         {
           "read": {
-            "tool": "sections_append",
+            "tool": "docs_append",
             "args": {
-              "heading": "Setup",
-              "markdown": "x",
+              "path": "guide.md",
+              "section": "Setup",
+              "text": "x",
               "dry_run": true
             }
           }
@@ -2629,7 +2663,7 @@
           "read": {
             "tool": "docs_update",
             "args": {
-              "doc": "guide.md",
+              "path": "guide.md",
               "content": "# Guide\n"
             }
           }
@@ -2740,43 +2774,52 @@
           {
             "error": "doc_missing",
             "retriable": false,
+            "message": "no document with id or path \"nope.md\"",
             "data": {
               "path": "nope.md"
             }
           },
           {
-            "error": "doc_missing",
+            "error": "filter_invalid",
             "retriable": false,
-            "data": {}
+            "message": "pass id or path (docs_read takes id?, include_ids?, path?, repo?)"
           },
           {
             "error": "doc_missing",
             "retriable": false,
+            "message": "no document with id or path \"d_99\"",
             "data": {
-              "doc": "d_99"
+              "id": "d_99"
             }
           },
           {
             "error": "doc_missing",
             "retriable": false,
+            "message": "no document with id or path \"guide.md/\"",
             "data": {
-              "doc": "guide.md/"
+              "path": "guide.md/"
             }
           },
           {
-            "error": "doc_missing",
+            "error": "block_missing",
             "retriable": false,
+            "message": "no block with id \"b_99\"",
             "data": {
-              "block": "b_99"
+              "id": "b_99"
             }
           },
           {
-            "error": "doc_missing",
-            "retriable": false,
-            "data": {
-              "path": "nope.md",
-              "block": "b_0"
-            }
+            "$id": "b_0",
+            "type": "heading",
+            "$raw": "# Guide",
+            "$hash": "ca85e859db5c1f8ab39081106a1ccbe7e2a618fac858824eb09033b48ea7ce05",
+            "text": "Guide",
+            "attrs": {
+              "level": 1
+            },
+            "ordinal": 0,
+            "depth": 0,
+            "parent_id": null
           },
           {
             "error": "filter_invalid",
@@ -2795,8 +2838,12 @@
             "retriable": false
           },
           {
-            "error": "semantic_unavailable",
-            "retriable": false
+            "error": "provider_unavailable",
+            "retriable": false,
+            "message": "semantic(...) needs an embedding provider; none is configured — set embedding.provider (omg config set embedding.provider <command|url>) and embed the repository (omg embed drain)",
+            "data": {
+              "provider": null
+            }
           },
           {
             "hits": [
@@ -2827,8 +2874,9 @@
           {
             "error": "doc_missing",
             "retriable": false,
+            "message": "no document with doc_id or doc_path \"nope.md\"",
             "data": {
-              "doc": "nope.md"
+              "doc_path": "nope.md"
             }
           },
           {
@@ -3108,7 +3156,7 @@
     },
     {
       "name": "budgets",
-      "notes": "§2 (1.2): one list contract for every budgeted read — docs_get_many and nodes_get_many always return the first item even when it alone exceeds budget_tokens, and report truncated only because more remained (before 1.2 they returned zero items); docs_list and docs_tree already did. budget_tokens: 1 is below any item's cost. An unresolved id ahead of the first resolved node does not consume the floor.",
+      "notes": "§2 (1.2): one list contract for every budgeted read — docs_get_many and blocks_get_many always return the first item even when it alone exceeds budget_tokens, and report truncated only because more remained (before 1.2 they returned zero items); docs_list and docs_tree already did. budget_tokens: 1 is below any item's cost. An unresolved id ahead of the first resolved node does not consume the floor.",
       "steps": [
         {
           "observe": {
@@ -3150,7 +3198,7 @@
         },
         {
           "read": {
-            "tool": "nodes_get_many",
+            "tool": "blocks_get_many",
             "args": {
               "ids": [
                 "b_0",
@@ -3163,7 +3211,7 @@
         },
         {
           "read": {
-            "tool": "nodes_get_many",
+            "tool": "blocks_get_many",
             "args": {
               "ids": [
                 "b_9",
@@ -3343,63 +3391,65 @@
         },
         {
           "read": {
-            "tool": "sections_append",
+            "tool": "docs_append",
             "args": {
-              "heading": "Setup",
-              "markdown": "Appended.",
+              "path": "notes/one.md",
+              "section": "Setup",
+              "text": "Appended.",
               "dry_run": true
             }
           }
         },
         {
           "read": {
-            "tool": "sections_append",
+            "tool": "docs_append",
             "args": {
-              "heading": "Setup",
               "path": "guide.md",
-              "markdown": "Appended.",
+              "section": "Setup",
+              "text": "Appended.",
               "dry_run": true
             }
           }
         },
         {
           "read": {
-            "tool": "sections_append",
+            "tool": "docs_append",
             "args": {
-              "heading": "## Setup",
-              "doc": "d_1",
-              "markdown": "Appended.",
+              "id": "d_1",
+              "section": "## Setup",
+              "text": "Appended.",
               "dry_run": true
             }
           }
         },
         {
           "read": {
-            "tool": "sections_append",
+            "tool": "blocks_append",
             "args": {
-              "heading": "b_3",
-              "markdown": "Appended.",
+              "id": "b_3",
+              "text": "Appended.",
               "dry_run": true
             }
           }
         },
         {
           "read": {
-            "tool": "sections_append",
+            "tool": "docs_append",
             "args": {
-              "heading": "Nope",
-              "markdown": "x",
+              "path": "guide.md",
+              "section": "Nope",
+              "text": "x",
               "dry_run": true
             }
           }
         },
         {
           "read": {
-            "tool": "sections_append",
+            "tool": "docs_append",
             "args": {
-              "heading": "Setup",
               "path": "nope.md",
-              "markdown": "x",
+              "section": "Setup",
+              "text": "x",
               "dry_run": true
             }
           }
@@ -3565,7 +3615,7 @@
           "read": {
             "tool": "blocks_split",
             "args": {
-              "block": "b_1",
+              "id": "b_1",
               "at": [
                 16
               ],
@@ -3602,7 +3652,7 @@
           "read": {
             "tool": "blocks_update",
             "args": {
-              "block": "b_1",
+              "id": "b_1",
               "markdown": "Replaced.",
               "expect": {
                 "content_hash": "00"
@@ -3615,7 +3665,7 @@
           "read": {
             "tool": "blocks_update",
             "args": {
-              "block": "n_7f86eccd7a7c",
+              "id": "n_7f86eccd7a7c",
               "markdown": "Replaced via node ref.",
               "dry_run": true
             }
@@ -3625,7 +3675,7 @@
           "read": {
             "tool": "node_set",
             "args": {
-              "node": "n_7f86eccd7a7c",
+              "id": "n_7f86eccd7a7c",
               "prop": "value",
               "value": "/notes/two.md",
               "dry_run": true
@@ -3636,7 +3686,7 @@
           "read": {
             "tool": "node_set",
             "args": {
-              "node": "n_7f86eccd7a7c",
+              "id": "n_7f86eccd7a7c",
               "prop": "nope",
               "value": "x",
               "dry_run": true
@@ -3693,7 +3743,7 @@
           "read": {
             "tool": "docs_plan_update",
             "args": {
-              "doc": "notes/one.md",
+              "path": "notes/one.md",
               "content": "# One\n\nBack to [guide](/guide.md), edited.\n\n## Setup\n\nAlso a setup section.\n"
             }
           }
@@ -3702,7 +3752,7 @@
           "read": {
             "tool": "docs_update",
             "args": {
-              "doc": "notes/one.md",
+              "path": "notes/one.md",
               "content": "# One\n\nBack to [guide](/guide.md), edited.\n\n## Setup\n\nAlso a setup section.\n",
               "dry_run": true
             }
@@ -3712,7 +3762,7 @@
           "read": {
             "tool": "blocks_update",
             "args": {
-              "block": "b_9",
+              "id": "b_9",
               "checked": true
             },
             "ts": "2026-09-27T10:05:00.000Z"
@@ -3750,7 +3800,7 @@
         },
         {
           "read": {
-            "tool": "history_node",
+            "tool": "blocks_history",
             "args": {
               "id": "b_9"
             }
@@ -3760,7 +3810,7 @@
           "read": {
             "tool": "docs_history",
             "args": {
-              "doc": "guide.md"
+              "path": "guide.md"
             }
           }
         },
@@ -3791,7 +3841,7 @@
           "read": {
             "tool": "docs_set_meta",
             "args": {
-              "doc": "new.md",
+              "path": "new.md",
               "set": {
                 "layer": "draft"
               },
@@ -3806,7 +3856,7 @@
           "read": {
             "tool": "docs_move",
             "args": {
-              "doc": "new.md",
+              "path": "new.md",
               "to_path": "moved/new.md"
             },
             "ts": "2026-09-27T10:11:00.000Z"
@@ -3824,7 +3874,7 @@
           "read": {
             "tool": "docs_delete",
             "args": {
-              "doc": "moved/new.md"
+              "path": "moved/new.md"
             },
             "ts": "2026-09-27T10:12:00.000Z"
           }
@@ -3833,7 +3883,7 @@
           "read": {
             "tool": "docs_delete",
             "args": {
-              "doc": "moved/new.md"
+              "path": "moved/new.md"
             },
             "ts": "2026-09-27T10:13:00.000Z"
           }
@@ -3890,50 +3940,10 @@
             ]
           },
           {
-            "error": "ambiguous_heading",
-            "retriable": false,
-            "data": {
-              "heading": "Setup",
-              "candidates": [
-                {
-                  "$id": "b_3",
-                  "doc_id": "d_0"
-                },
-                {
-                  "$id": "b_19",
-                  "doc_id": "d_1"
-                }
-              ]
-            }
-          },
-          {
             "results": [
               {
                 "ids": [
                   "b_21"
-                ]
-              }
-            ],
-            "revisions": [
-              {
-                "$id": "d_0",
-                "$path": "/guide.md",
-                "$hash": "33e47bb1fdb8e3b96f7a323af78f5c7165cafd894229e00b5f9bc229b9a20687"
-              }
-            ],
-            "diffs": {
-              "/guide.md": {
-                "before": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n",
-                "after": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\nAppended.\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n"
-              }
-            },
-            "committed": false
-          },
-          {
-            "results": [
-              {
-                "ids": [
-                  "b_22"
                 ]
               }
             ],
@@ -3956,7 +3966,53 @@
             "results": [
               {
                 "ids": [
+                  "b_22"
+                ]
+              }
+            ],
+            "revisions": [
+              {
+                "$id": "d_0",
+                "$path": "/guide.md",
+                "$hash": "33e47bb1fdb8e3b96f7a323af78f5c7165cafd894229e00b5f9bc229b9a20687"
+              }
+            ],
+            "diffs": {
+              "/guide.md": {
+                "before": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n",
+                "after": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\nAppended.\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n"
+              }
+            },
+            "committed": false
+          },
+          {
+            "results": [
+              {
+                "ids": [
                   "b_23"
+                ]
+              }
+            ],
+            "revisions": [
+              {
+                "$id": "d_1",
+                "$path": "/notes/one.md",
+                "$hash": "2a3a088150efad810f2fbb1d3604383b0fc9e51554db07d42b383be2973e3b54"
+              }
+            ],
+            "diffs": {
+              "/notes/one.md": {
+                "before": "# One\n\nBack to [guide](/guide.md).\n\n## Setup\n\nAlso a setup section.\n",
+                "after": "# One\n\nBack to [guide](/guide.md).\n\n## Setup\n\nAlso a setup section.\n\nAppended.\n"
+              }
+            },
+            "committed": false
+          },
+          {
+            "results": [
+              {
+                "ids": [
+                  "b_24"
                 ]
               }
             ],
@@ -3978,13 +4034,16 @@
           {
             "error": "parent_missing",
             "retriable": false,
+            "message": "no heading \"Nope\" in /guide.md",
             "data": {
-              "heading": "Nope"
+              "section": "Nope",
+              "path": "/guide.md"
             }
           },
           {
             "error": "doc_missing",
             "retriable": false,
+            "message": "no document with id or path \"nope.md\"",
             "data": {
               "path": "nope.md"
             }
@@ -3993,8 +4052,8 @@
             "results": [
               {
                 "ids": [
-                  "b_24",
-                  "b_25"
+                  "b_25",
+                  "b_26"
                 ]
               }
             ],
@@ -4017,7 +4076,7 @@
             "results": [
               {
                 "ids": [
-                  "b_27"
+                  "b_28"
                 ]
               }
             ],
@@ -4039,6 +4098,7 @@
           {
             "error": "block_missing",
             "retriable": false,
+            "message": "no block or document with id or path \"b_99\"",
             "data": {
               "ref": "b_99"
             }
@@ -4046,8 +4106,9 @@
           {
             "error": "block_missing",
             "retriable": false,
+            "message": "no block with id \"b_99\"",
             "data": {
-              "ref": "b_99"
+              "id": "b_99"
             }
           },
           {
@@ -4093,7 +4154,7 @@
             "results": [
               {
                 "ids": [
-                  "b_29"
+                  "b_30"
                 ]
               }
             ],
@@ -4191,7 +4252,7 @@
               {
                 "ids": [
                   "b_1",
-                  "b_30"
+                  "b_31"
                 ]
               }
             ],
@@ -4692,7 +4753,7 @@
             "results": [
               {
                 "ids": [
-                  "b_39"
+                  "b_40"
                 ]
               }
             ],
@@ -4862,7 +4923,10 @@
           {
             "error": "doc_missing",
             "retriable": false,
-            "data": {}
+            "message": "no document with id or path \"moved/new.md\"",
+            "data": {
+              "path": "moved/new.md"
+            }
           },
           {
             "digests": [
@@ -5303,7 +5367,7 @@
           "read": {
             "tool": "docs_read",
             "args": {
-              "doc": "index.md"
+              "path": "index.md"
             }
           }
         },
@@ -5331,7 +5395,7 @@
           "read": {
             "tool": "docs_outline",
             "args": {
-              "doc": "//processes/magnum-opus.md",
+              "path": "//processes/magnum-opus.md",
               "resolution": "skeleton"
             }
           }
@@ -5366,7 +5430,7 @@
           "read": {
             "tool": "docs_history",
             "args": {
-              "doc": "/timeline/review.md"
+              "path": "/timeline/review.md"
             }
           }
         },
@@ -8613,7 +8677,11 @@
           },
           {
             "error": "doc_missing",
-            "retriable": false
+            "retriable": false,
+            "message": "no document with id or path \"/timeline/review.md\"",
+            "data": {
+              "path": "/timeline/review.md"
+            }
           },
           {
             "stale": [],
@@ -8697,7 +8765,7 @@
     },
     {
       "name": "hit-envelope-round-trip",
-      "notes": "§1.4 (3.0) through the `query` tool: every hit is `{ $id, $path, ...projection }`. The script reads the collection, copies `d_0` (guide.md's `$id` from the first hit) into `where $id == …` with no translation, projects `$id`/`$path` (they collapse onto the envelope keys), pages with the keyset cursor (its tuple carries values, not key names — unchanged by the rename), renders a block row as a value (`{ $id, $path }`), and reads `values` (no hits, so untouched). The other tools' envelopes are not hits and keep their names: `docs_list` items `{ path }`, `nodes_get` `id`.",
+      "notes": "§1.4 (3.0) through the `query` tool: every hit is `{ $id, $path, ...projection }`. The script reads the collection, copies `d_0` (guide.md's `$id` from the first hit) into `where $id == …` with no translation, projects `$id`/`$path` (they collapse onto the envelope keys), pages with the keyset cursor (its tuple carries values, not key names — unchanged by the rename), renders a block row as a value (`{ $id, $path }`), and reads `values` (no hits, so untouched). The other tools' envelopes are not hits and keep their names: `docs_list` items `{ path }`, `blocks_get` `id`.",
       "steps": [
         {
           "observe": {
@@ -8797,7 +8865,7 @@
         },
         {
           "read": {
-            "tool": "nodes_get",
+            "tool": "blocks_get",
             "args": {
               "id": "b_0",
               "resolution": "text"
@@ -8970,6 +9038,771 @@
             "$id": "b_0",
             "type": "heading",
             "text": "Guide"
+          }
+        ]
+      }
+    },
+    {
+      "name": "arguments",
+      "notes": "§4 \"Arguments\" (3.0): the locator rule and its errors, byte-identical across engines — `doc` and the other retired names are refused with their replacement, an unknown name gets the nearest valid one, a missing/mistyped argument names the expected shape; a document is addressed by `id`/`path` (at least one; both must agree), a block/node by `id`; `doc_missing`/`block_missing` spell the attributes. Also `frontmatter.$version`: an authored `$`-prefixed key is stored and reached through the source handle and `entries(frontmatter)`, while the bare `$version` is the engine's namespace (nothing).",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-27T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "---\n$version: 3\ntitle: A\n---\n\n# A\n\nBody of a.\n\n- item one\n- item two\n"
+              },
+              {
+                "path": "b.md",
+                "source": "# B\n\nBody of b.\n"
+              }
+            ]
+          }
+        },
+        {
+          "read": {
+            "tool": "docs_read",
+            "args": {
+              "doc": "a.md"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "docs_read",
+            "args": {}
+          }
+        },
+        {
+          "read": {
+            "tool": "docs_read",
+            "args": {
+              "id": "d_0",
+              "path": "b.md"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "docs_read",
+            "args": {
+              "id": "d_0",
+              "path": "a.md"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "docs_read",
+            "args": {
+              "id": "d_zzz"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "docs_read",
+            "args": {
+              "path": "nope.md"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "docs_read",
+            "args": {
+              "path": "a.md",
+              "include_id": true
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "docs_read",
+            "args": {
+              "path": 7
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "diff",
+            "args": {
+              "doc": "a.md",
+              "from_rev": "r_0",
+              "to_rev": "r_0"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "diff",
+            "args": {
+              "doc_path": "nope.md",
+              "from_rev": "r_0",
+              "to_rev": "r_0"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "diff_unified",
+            "args": {
+              "from_rev": "r_0"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "text_search",
+            "args": {
+              "query": "body"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "query",
+            "args": {}
+          }
+        },
+        {
+          "read": {
+            "tool": "query",
+            "args": {
+              "query": "from docs",
+              "limit": "5"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "blocks_get",
+            "args": {
+              "id": "b_1",
+              "doc": "a.md"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "blocks_get",
+            "args": {
+              "id": "b_zzz"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "blocks_get",
+            "args": {
+              "id": "b_1",
+              "resolution": "giant"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "blocks_get_many",
+            "args": {
+              "ids": [
+                "b_1",
+                "b_zzz"
+              ],
+              "path": "a.md"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "blocks_history",
+            "args": {
+              "id": "b_1"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "blocks_update",
+            "args": {
+              "block": "b_1",
+              "markdown": "x"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "node_set",
+            "args": {
+              "node": "n_000000000000",
+              "prop": "name",
+              "value": "x"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "docs_append",
+            "args": {
+              "heading": "A",
+              "markdown": "x",
+              "path": "a.md"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "docs_create",
+            "args": {
+              "path": "c.md",
+              "content": "# C\n"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "repos",
+            "args": {
+              "repo": "fixture"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "docs_history",
+            "args": {}
+          }
+        },
+        {
+          "read": {
+            "tool": "query",
+            "args": {
+              "query": "select v: frontmatter.$version, bare: $version from docs where $path == \"/a.md\""
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "query",
+            "args": {
+              "query": "select fm: entries(frontmatter) collect { k: $key, v: $it } from docs where $path == \"/a.md\""
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "query",
+            "args": {
+              "query": "from docs where frontmatter.$version == 3"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 5
+              }
+            },
+            {
+              "path": "b.md",
+              "echo": false,
+              "doc": "d_1",
+              "commit": "c_1",
+              "rev": "r_1",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 2
+              }
+            }
+          ],
+          {
+            "error": "filter_invalid",
+            "retriable": false,
+            "message": "`doc` is no longer an argument — pass `id` or `path` (docs_read takes id?, include_ids?, path?, repo?)"
+          },
+          {
+            "error": "filter_invalid",
+            "retriable": false,
+            "message": "pass id or path (docs_read takes id?, include_ids?, path?, repo?)"
+          },
+          {
+            "error": "filter_invalid",
+            "retriable": false,
+            "message": "id \"d_0\" and path \"b.md\" name different documents (docs_read takes id?, include_ids?, path?, repo?)"
+          },
+          {
+            "$id": "d_0",
+            "$path": "/a.md",
+            "rev": "r_0",
+            "properties": {
+              "frontmatter": {
+                "$version": 3,
+                "title": "A"
+              },
+              "inline": {},
+              "computed": {
+                "$title": "A"
+              }
+            },
+            "$raw": "---\n$version: 3\ntitle: A\n---\n\n# A\n\nBody of a.\n\n- item one\n- item two\n"
+          },
+          {
+            "error": "doc_missing",
+            "retriable": false,
+            "message": "no document with id or path \"d_zzz\"",
+            "data": {
+              "id": "d_zzz"
+            }
+          },
+          {
+            "error": "doc_missing",
+            "retriable": false,
+            "message": "no document with id or path \"nope.md\"",
+            "data": {
+              "path": "nope.md"
+            }
+          },
+          {
+            "error": "filter_invalid",
+            "retriable": false,
+            "message": "unknown argument `include_id`; did you mean `include_ids`? (docs_read takes id?, include_ids?, path?, repo?)"
+          },
+          {
+            "error": "filter_invalid",
+            "retriable": false,
+            "message": "`path` must be a string (docs_read takes id?, include_ids?, path?, repo?)"
+          },
+          {
+            "error": "filter_invalid",
+            "retriable": false,
+            "message": "`doc` is no longer an argument — pass `doc_id` or `doc_path` (diff takes doc_id?, doc_path?, from_rev, repo?, to_rev)"
+          },
+          {
+            "error": "doc_missing",
+            "retriable": false,
+            "message": "no document with doc_id or doc_path \"nope.md\"",
+            "data": {
+              "doc_path": "nope.md"
+            }
+          },
+          {
+            "error": "filter_invalid",
+            "retriable": false,
+            "message": "pass doc_id or doc_path (diff_unified takes doc_id?, doc_path?, from_rev?, repo?, to_rev?)"
+          },
+          {
+            "error": "filter_invalid",
+            "retriable": false,
+            "message": "unknown argument `query`; did you mean `q`? (text_search takes limit?, q, repo?)"
+          },
+          {
+            "error": "filter_invalid",
+            "retriable": false,
+            "message": "`query` is required (query takes cursor?, limit?, query, repo?)"
+          },
+          {
+            "error": "filter_invalid",
+            "retriable": false,
+            "message": "`limit` must be an integer (query takes cursor?, limit?, query, repo?)"
+          },
+          {
+            "error": "filter_invalid",
+            "retriable": false,
+            "message": "unknown argument `doc` (blocks_get takes id, repo?, resolution?)"
+          },
+          {
+            "error": "block_missing",
+            "retriable": false,
+            "message": "no block with id \"b_zzz\"",
+            "data": {
+              "id": "b_zzz"
+            }
+          },
+          {
+            "error": "filter_invalid",
+            "retriable": false,
+            "message": "`resolution` must be one of skeleton, outline, text, raw, full (blocks_get takes id, repo?, resolution?)"
+          },
+          {
+            "error": "filter_invalid",
+            "retriable": false,
+            "message": "unknown argument `path` (blocks_get_many takes budget_tokens?, ids, repo?, resolution?)"
+          },
+          [
+            {
+              "commitId": "c_0",
+              "seq": 1,
+              "ts": "2026-09-27T10:00:00.000Z",
+              "origin": "observed",
+              "kind": "inserted",
+              "confidence": null,
+              "reason": null
+            }
+          ],
+          {
+            "error": "filter_invalid",
+            "retriable": false,
+            "message": "`block` is no longer an argument — pass `id` (blocks_update takes attrs?, checked?, dry_run?, expect?, id, markdown?, repo?)"
+          },
+          {
+            "error": "filter_invalid",
+            "retriable": false,
+            "message": "`node` is no longer an argument — pass `id` (node_set takes dry_run?, id, prop, repo?, value)"
+          },
+          {
+            "error": "filter_invalid",
+            "retriable": false,
+            "message": "`heading` is no longer an argument — pass `section` (the heading's text), or blocks_append with the heading's `id` (docs_append takes dry_run?, id?, path?, repo?, section?, text)"
+          },
+          {
+            "error": "filter_invalid",
+            "retriable": false,
+            "message": "unknown argument `content` (docs_create takes dry_run?, frontmatter?, markdown, path, repo?)"
+          },
+          {
+            "error": "filter_invalid",
+            "retriable": false,
+            "message": "unknown argument `repo` (repos takes no arguments)"
+          },
+          {
+            "error": "target_missing",
+            "retriable": false
+          },
+          {
+            "hits": [
+              {
+                "$id": "d_0",
+                "$path": "/a.md",
+                "v": 3
+              }
+            ],
+            "truncated": false,
+            "cursor": null,
+            "consumer": "collect"
+          },
+          {
+            "hits": [
+              {
+                "$id": "d_0",
+                "$path": "/a.md",
+                "fm": [
+                  {
+                    "k": "$version",
+                    "v": 3
+                  },
+                  {
+                    "k": "title",
+                    "v": "A"
+                  }
+                ]
+              }
+            ],
+            "truncated": false,
+            "cursor": null,
+            "consumer": "collect"
+          },
+          {
+            "hits": [
+              {
+                "$id": "d_0",
+                "$path": "/a.md"
+              }
+            ],
+            "truncated": false,
+            "cursor": null,
+            "consumer": "collect"
+          }
+        ]
+      }
+    },
+    {
+      "name": "append-into-blocks",
+      "notes": "§4 (3.0): `blocks_append` by what the block is — a heading appends at the end of its section, a container at the end of its children, a leaf is `block_not_container` (append means into); `docs_append` with `section` names a heading by its TEXT inside the named document — an unknown heading is `parent_missing`, a heading spelled twice in that document is `ambiguous_heading` with `candidates[{ $id, doc_id }]` (pass the heading's id to blocks_append), the ATX spelling is accepted; the dry runs preview the kernel's insert, the last call commits.",
+      "workspace": true,
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-27T10:00:00.000Z",
+            "items": [
+              {
+                "path": "notes.md",
+                "source": "# Notes\n\nIntro.\n\n## Log\n\n- first\n- second\n\n## Log\n\nSecond log section.\n\n## Ideas\n\nA paragraph.\n\n> quoted\n"
+              }
+            ]
+          }
+        },
+        {
+          "read": {
+            "tool": "blocks_append",
+            "args": {
+              "id": "b_2",
+              "text": "- appended under the first Log\n",
+              "dry_run": true
+            },
+            "ts": "2026-09-27T10:01:00.000Z"
+          }
+        },
+        {
+          "read": {
+            "tool": "blocks_append",
+            "args": {
+              "id": "b_3",
+              "text": "- third\n",
+              "dry_run": true
+            },
+            "ts": "2026-09-27T10:01:00.000Z"
+          }
+        },
+        {
+          "read": {
+            "tool": "blocks_append",
+            "args": {
+              "id": "b_1",
+              "text": "x",
+              "dry_run": true
+            },
+            "ts": "2026-09-27T10:01:00.000Z"
+          }
+        },
+        {
+          "read": {
+            "tool": "blocks_append",
+            "args": {
+              "id": "b_zzz",
+              "text": "x",
+              "dry_run": true
+            },
+            "ts": "2026-09-27T10:01:00.000Z"
+          }
+        },
+        {
+          "read": {
+            "tool": "docs_append",
+            "args": {
+              "path": "notes.md",
+              "section": "Log",
+              "text": "x",
+              "dry_run": true
+            },
+            "ts": "2026-09-27T10:01:00.000Z"
+          }
+        },
+        {
+          "read": {
+            "tool": "docs_append",
+            "args": {
+              "path": "notes.md",
+              "section": "Nope",
+              "text": "x",
+              "dry_run": true
+            },
+            "ts": "2026-09-27T10:01:00.000Z"
+          }
+        },
+        {
+          "read": {
+            "tool": "docs_append",
+            "args": {
+              "path": "notes.md",
+              "section": "## Ideas",
+              "text": "Another idea.\n",
+              "dry_run": true
+            },
+            "ts": "2026-09-27T10:01:00.000Z"
+          }
+        },
+        {
+          "read": {
+            "tool": "docs_append",
+            "args": {
+              "id": "d_0",
+              "section": "Ideas",
+              "text": "Another idea.\n"
+            },
+            "ts": "2026-09-27T10:02:00.000Z"
+          }
+        },
+        {
+          "read": {
+            "tool": "docs_read",
+            "args": {
+              "path": "notes.md"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "notes.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 12
+              }
+            }
+          ],
+          {
+            "results": [
+              {
+                "ids": [
+                  "b_12"
+                ]
+              }
+            ],
+            "revisions": [
+              {
+                "$id": "d_0",
+                "$path": "/notes.md",
+                "$hash": "b7af714b4d34a321c3461a943cbc045f3d6a76dd4d0631c03ad64c9bdce21113"
+              }
+            ],
+            "diffs": {
+              "/notes.md": {
+                "before": "# Notes\n\nIntro.\n\n## Log\n\n- first\n- second\n\n## Log\n\nSecond log section.\n\n## Ideas\n\nA paragraph.\n\n> quoted\n",
+                "after": "# Notes\n\nIntro.\n\n## Log\n\n- first\n- second\n\n- appended under the first Log\n\n## Log\n\nSecond log section.\n\n## Ideas\n\nA paragraph.\n\n> quoted\n"
+              }
+            },
+            "committed": false
+          },
+          {
+            "results": [
+              {
+                "ids": [
+                  "b_15"
+                ]
+              }
+            ],
+            "revisions": [
+              {
+                "$id": "d_0",
+                "$path": "/notes.md",
+                "$hash": "5421a0ddc506aa8da3753b3e75e4cae24fb3cd2957523ea761143722c2673ec0"
+              }
+            ],
+            "diffs": {
+              "/notes.md": {
+                "before": "# Notes\n\nIntro.\n\n## Log\n\n- first\n- second\n\n## Log\n\nSecond log section.\n\n## Ideas\n\nA paragraph.\n\n> quoted\n",
+                "after": "# Notes\n\nIntro.\n\n## Log\n\n- first\n- second\n- third\n\n## Log\n\nSecond log section.\n\n## Ideas\n\nA paragraph.\n\n> quoted\n"
+              }
+            },
+            "committed": false
+          },
+          {
+            "error": "block_not_container",
+            "retriable": false,
+            "message": "block b_1 is a paragraph, not a heading or a container; append means into — insert after it with blocks_insert { to: <its parent>, at: { after: \"b_1\" } }",
+            "data": {
+              "id": "b_1",
+              "type": "paragraph"
+            }
+          },
+          {
+            "error": "block_missing",
+            "retriable": false,
+            "message": "no block with id \"b_zzz\"",
+            "data": {
+              "id": "b_zzz"
+            }
+          },
+          {
+            "error": "ambiguous_heading",
+            "retriable": false,
+            "message": "heading \"Log\" matches 2 headings in /notes.md; pass the heading's id to blocks_append",
+            "data": {
+              "section": "Log",
+              "path": "/notes.md",
+              "candidates": [
+                {
+                  "$id": "b_2",
+                  "doc_id": "d_0"
+                },
+                {
+                  "$id": "b_6",
+                  "doc_id": "d_0"
+                }
+              ]
+            }
+          },
+          {
+            "error": "parent_missing",
+            "retriable": false,
+            "message": "no heading \"Nope\" in /notes.md",
+            "data": {
+              "section": "Nope",
+              "path": "/notes.md"
+            }
+          },
+          {
+            "results": [
+              {
+                "ids": [
+                  "b_16"
+                ]
+              }
+            ],
+            "revisions": [
+              {
+                "$id": "d_0",
+                "$path": "/notes.md",
+                "$hash": "90761b86c5ca3552274aab2a81500ca5a355ca0e051247580af4ceb356cfedce"
+              }
+            ],
+            "diffs": {
+              "/notes.md": {
+                "before": "# Notes\n\nIntro.\n\n## Log\n\n- first\n- second\n\n## Log\n\nSecond log section.\n\n## Ideas\n\nA paragraph.\n\n> quoted\n",
+                "after": "# Notes\n\nIntro.\n\n## Log\n\n- first\n- second\n\n## Log\n\nSecond log section.\n\n## Ideas\n\nA paragraph.\n\n> quoted\n\nAnother idea.\n"
+              }
+            },
+            "committed": false
+          },
+          {
+            "results": [
+              {
+                "ids": [
+                  "b_17"
+                ]
+              }
+            ],
+            "revisions": [
+              {
+                "$id": "d_0",
+                "$path": "/notes.md",
+                "$hash": "90761b86c5ca3552274aab2a81500ca5a355ca0e051247580af4ceb356cfedce"
+              }
+            ],
+            "committed": true
+          },
+          {
+            "$id": "d_0",
+            "$path": "/notes.md",
+            "rev": "r_1",
+            "properties": {
+              "frontmatter": {},
+              "inline": {},
+              "computed": {
+                "$title": "Notes"
+              }
+            },
+            "$raw": "# Notes\n\nIntro.\n\n## Log\n\n- first\n- second\n\n## Log\n\nSecond log section.\n\n## Ideas\n\nA paragraph.\n\n> quoted\n\nAnother idea.\n"
           }
         ]
       }

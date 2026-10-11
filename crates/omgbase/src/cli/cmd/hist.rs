@@ -1,4 +1,4 @@
-//! `hist` (§6): `history_node` for a block, newest first.
+//! `hist` (§6): `blocks_history` for a block, newest first.
 
 use omgbase_surface::read::{ResolvedRef, resolve_ref};
 use serde_json::{Value as Json, json};
@@ -18,7 +18,7 @@ pub fn hist(cli: &mut Cli, args: &[String]) -> Result<i32> {
     let Some(r) = a.pos(0) else {
         return Err(CliError::usage("hist requires a <node>"));
     };
-    // §2.3: `history_node` keys on a block id (globally unique) — the ref
+    // §2.3: `blocks_history` keys on a block id (globally unique) — the ref
     // goes through as given; a locator would need a local resolve.
     let block_id = if cli.remote_mode() {
         r.to_owned()
@@ -38,7 +38,7 @@ pub fn hist(cli: &mut Cli, args: &[String]) -> Result<i32> {
     if let Some(n) = number(&a, "n")? {
         req.insert("limit".to_owned(), json!(n));
     }
-    let changes = cli.call("history_node", Json::Object(req))?;
+    let changes = cli.call("blocks_history", Json::Object(req))?;
     let items: Vec<Json> = changes.as_array().cloned().unwrap_or_default();
     // §9 Fixed: `--ids` on a result without an id list prints the document.
     if let Some(code) = machine_out(cli, &changes, Some(&items), None) {

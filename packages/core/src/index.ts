@@ -7,6 +7,7 @@ export type { FormatAdapter, AdapterEdge, ProjectedNode, EmbeddingChunk, Reconci
 export { AdapterCapability } from "./format/adapter.js";
 export { registerAdapter, adapterForFormat, adapterForPath, registeredFormats, detectFormat } from "./format/registry.js";
 export { markdownAdapter, MARKDOWN_FORMAT } from "./format/markdown.js";
+export { isContainerBlock } from "./format/index.js";
 export { yamlAdapter, YAML_FORMAT } from "./format/yaml.js";
 export { jsonAdapter, JSON_FORMAT } from "./format/json.js";
 export { writeDocNodes, deleteDocNodes } from "./core/store/nodes.js";
@@ -78,7 +79,7 @@ export { docsOutline, type OutlineResult, type OutlineOptions } from "./core/rea
 export { docsRead, reconstructContent, type DocsReadResult, type DocsReadOptions } from "./core/read/document.js";
 export { nodesGet, nodesGetMany, type GetNode, type Resolution } from "./core/read/nodes.js";
 export {
-  findDoc, loadDocBlocks, blockRaw, docsList, docsTree, normalizeTreePrefix, DOCS_LIST_DEFAULT_LIMIT, DOCS_TREE_DEFAULT_LIMIT,
+  findDoc, findDocByRef, loadDocBlocks, blockRaw, docsList, docsTree, normalizeTreePrefix, DOCS_LIST_DEFAULT_LIMIT, DOCS_TREE_DEFAULT_LIMIT,
   type DocInfo, type BlockNode, type DocListRow, type DocListPage, type DocListOptions, type DocTreeEntry, type DocTreePage, type DocTreeOptions,
 } from "./core/read/reader.js";
 export { CursorInvalid, encodeCursor, decodeCursor, decodePathCursor } from "./core/cursor.js";

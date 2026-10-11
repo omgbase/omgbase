@@ -194,7 +194,7 @@ describe("omg mcp — configured-but-broken embedder (degrade loudly)", () => {
     execFileSync("node", [BIN, "init", bvault, "--yes", "--no-embedder"], { encoding: "utf8", env });
     execFileSync("node", [BIN, "-C", bvault, "source", "add", ".", "-y"], { encoding: "utf8", env });
     // Point the embedder at a command that cannot spawn — the "nonfunctional
-    // embedder" case. It is configured (so NOT semantic_unavailable) but broken.
+    // embedder" case. It is configured (so NOT provider_unavailable) but broken.
     execFileSync("node", [BIN, "-C", bvault, "config", "set", "embedding.provider", "omg-no-such-embedder-xyz"], { encoding: "utf8", env });
   });
   afterAll(() => rmSync(bdir, { recursive: true, force: true }));
@@ -218,7 +218,7 @@ describe("omg mcp — configured-but-broken embedder (degrade loudly)", () => {
     expect((plain.result as { isError?: boolean }).isError).toBeFalsy();
 
     // A semantic query fails LOUDLY and SPECIFICALLY: embedder_failed, not the
-    // misleading semantic_unavailable (which means "no provider configured").
+    // misleading provider_unavailable (which means "no provider configured").
     const sem = await rpc.send("tools/call", { name: "query", arguments: { query: 'from docs where semantic("hello") > 0.1' } });
     const sc = (sem.result as { content?: { text?: string }[]; isError?: boolean }) ?? {};
     expect(sc.isError).toBe(true);

@@ -216,7 +216,7 @@ The authored link graph as first-class rows (open edges, `to_commit IS NULL`).
   field the edge was authored in; null for a link).
 - **Intrinsics:** `$id`, `$path` (the **source** document's path). There is no
   `from_commit`: a query sees open edges only; the creating commit is history
-  (`history_node`, `changes_since`).
+  (`blocks_history`, `changes_since`).
 - Source-document reach-through: `doc.<key>` / `doc.$id` / `doc.$path`.
   `text()`/`semantic()` are unavailable (edges carry no text/embedding).
 

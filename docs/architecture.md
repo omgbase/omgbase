@@ -147,13 +147,13 @@ Every block retains its **exact raw source bytes** (and span) from parse time. R
 ## 10. Mutation & concurrency (summary; full spec in `mutation-and-concurrency.md`)
 
 - Kernel of six ops: `insert`, `update`, `move`, `remove`, `split`, `merge` — over contiguous sibling runs, in atomic cross-document **changesets** with per-op expectations (content-hash CAS on update; existence checks; opt-in order CAS).
-- Everything else is a **server-side macro** (`tasks_complete`, `sections_append`, `links_retarget`, …) expanding deterministically to kernel ops, reported in kernel vocabulary.
+- Everything else is a **server-side macro** (`tasks_complete`, `blocks_append`, `docs_append`, `links_retarget`, …) expanding deterministically to kernel ops, reported in kernel vocabulary.
 - Plain OCC; no CRDTs, no OT (ADR-008). Conflicts are typed objects that **carry current truth** (live hash, live markdown, live revision, invalidating commit) so agents retry without a read.
 - `dry_run: true` validates and returns rendered diffs without committing.
 
 ## 11. MCP surface (summary; full spec in `mcp-api.md`)
 
-Small tool set (45 registrations), capability via parameters: `docs_outline`, `docs_read(_many)`, `read_ref`, `docs_tree`/`docs_list`, `nodes_get(_many)`, `resolve`, `query` (OQX — traversal is the `follow` operator) + `query_syntax` + `graph`, `changes_since`, `history_node`, `diff`/`diff_unified`, `apply` + the `blocks_*` sugar + macro tools, `repos` / `repos_status` / `sync_status`, and the sync-ingest primitives `observe` / `observe_many` / `observe_delete`. One `resolution: skeleton|outline|text|raw|full` ladder wherever a block is hydrated — as built that is `nodes_get`, `nodes_get_many`, and `read_ref` (block refs); `docs_outline` takes only `skeleton|outline`, and the whole-document reads take none. `budget_tokens` is accepted by `docs_outline`, `docs_get_many`, `nodes_get_many`, `docs_tree`, and `docs_list`. Every list result carries `truncated` + cursor. URIs: `omg://<repo>/doc/<id>[@rev]`, `omg://<repo>/block/<id>[@rev]`, `omg://<repo>/path/<filepath>`.
+Small tool set (46 registrations), capability via parameters: `docs_outline`, `docs_read(_many)`, `read_ref`, `docs_tree`/`docs_list`, `blocks_get(_many)`, `resolve`, `query` (OQX — traversal is the `follow` operator) + `query_syntax` + `graph`, `changes_since`, `blocks_history`, `diff`/`diff_unified`, `apply` + the `blocks_*` sugar + macro tools, `repos` / `repos_status` / `sync_status`, and the sync-ingest primitives `observe` / `observe_many` / `observe_delete`. One `resolution: skeleton|outline|text|raw|full` ladder wherever a block is hydrated — as built that is `blocks_get`, `blocks_get_many`, and `read_ref` (block refs); `docs_outline` takes only `skeleton|outline`, and the whole-document reads take none. `budget_tokens` is accepted by `docs_outline`, `docs_get_many`, `blocks_get_many`, `docs_tree`, and `docs_list`. Every list result carries `truncated` + cursor. URIs: `omg://<repo>/doc/<id>[@rev]`, `omg://<repo>/block/<id>[@rev]`, `omg://<repo>/path/<filepath>`.
 
 ## 12. Storage (summary; DDL in `data-model.md`)
 

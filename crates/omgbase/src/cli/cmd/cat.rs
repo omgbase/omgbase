@@ -1,5 +1,5 @@
 //! `cat` (§6): the bytes — a document's exact content, a block's raw
-//! markdown (or its `nodes_get` field at another resolution).
+//! markdown (or its `blocks_get` field at another resolution).
 
 use omgbase_surface::read::{ResolvedRef, resolve_ref};
 use serde_json::{Value as Json, json};
@@ -18,7 +18,7 @@ struct CatOne {
     capture: Json,
 }
 
-/// `$raw ?? text ?? label` of a `nodes_get` object (3.0: the block's bytes are `$raw`).
+/// `$raw ?? text ?? label` of a `blocks_get` object (3.0: the block's bytes are `$raw`).
 pub fn node_text(node: &Json) -> String {
     for k in ["$raw", "text", "label"] {
         if let Some(s) = node.get(k).and_then(Json::as_str) {
@@ -29,7 +29,7 @@ pub fn node_text(node: &Json) -> String {
 }
 
 /// §2.3: the polymorphic `read_ref` classifies and reads the ref server-side
-/// — `{ kind: "document", ...docs_read }` or `{ kind: "block", ...nodes_get }`.
+/// — `{ kind: "document", ...docs_read }` or `{ kind: "block", ...blocks_get }`.
 /// The document's `--json` is the `docs_read` result (`kind` dropped, the
 /// other keys in their order); a block's is the `read_ref` result as it came
 /// (with `kind`), as the reference renders it.
@@ -83,7 +83,7 @@ fn cat_one(cli: &mut Cli, r: &str, resolution: &str) -> Result<CatOne> {
     match resolved {
         ResolvedRef::Document { doc_id } => {
             // §9 Fixed: `--json` is the `docs_read` result.
-            let res = cli.call("docs_read", json!({ "doc": doc_id }))?;
+            let res = cli.call("docs_read", json!({ "id": doc_id }))?;
             if resolution != "raw" {
                 warn_doc_resolution(cli, r, resolution);
             }
@@ -100,10 +100,10 @@ fn cat_one(cli: &mut Cli, r: &str, resolution: &str) -> Result<CatOne> {
                 capture,
             })
         }
-        ResolvedRef::Block { doc_id, block_id } => {
+        ResolvedRef::Block { block_id, .. } => {
             let node = cli.call(
-                "nodes_get",
-                json!({ "id": block_id, "doc": doc_id, "resolution": resolution }),
+                "blocks_get",
+                json!({ "id": block_id, "resolution": resolution }),
             )?;
             Ok(CatOne {
                 text: node_text(&node),

@@ -72,7 +72,7 @@ async function runMcp(cli: Cli, args: string[]): Promise<number> {
 
   // Connect the configured embedder once (if any) so the query tool's
   // `semantic` mode has a vectorizer for the session. Unset ⇒ semantic queries
-  // return semantic_unavailable. The spawned process lives for the session and
+  // return provider_unavailable. The spawned process lives for the session and
   // is released on shutdown.
   //
   // A CONFIGURED-but-broken embedder must never be mistaken for "no embedder":
@@ -156,7 +156,7 @@ async function runMcp(cli: Cli, args: string[]): Promise<number> {
   // The query surface's `embedQuery`: a live vectorizer when the embedder loaded,
   // or — when it's configured-but-broken — a hook that throws `embedder_failed`
   // so semantic access fails loudly and specifically (not the misleading
-  // `semantic_unavailable`, which the server emits only when embedQuery is
+  // `provider_unavailable`, which the server emits only when embedQuery is
   // absent, i.e. genuinely no provider configured). `const` captures satisfy
   // closure narrowing over the `let`-bound state above.
   const loaded = embedding;
@@ -173,6 +173,7 @@ async function runMcp(cli: Cli, args: string[]): Promise<number> {
     ...(repo.rootPath ? { rootPath: repo.rootPath } : {}),
     ...(drainer ? { onMutation: () => drainer.schedule() } : {}),
     ...(embedQuery ? { embedQuery } : {}),
+    ...(loaded ? { embedProvider: loaded.providerName } : {}),
     // The `version` tool's view of this binary (spec/surface §4).
     host: hostInfo(),
   });

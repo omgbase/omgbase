@@ -49,8 +49,8 @@ Legend: `--server` = is this CLI command remote-capable? ✅ wired · ▫️ pla
 | Read any ref → bytes | `resolveRef`+`docsRead`/`nodesGet` | `cat` | **`read_ref`** | ✅ |
 | Read whole document | `docsRead` | `cat` (doc) | `docs_read` | ✅ (via `read_ref`) |
 | Read many documents | `docsReadMany` | — | `docs_get_many` | — |
-| Hydrate a block | `nodesGet` | `cat`/`show` (block) | `nodes_get` | ✅ `cat` · ▫️ `show` |
-| Hydrate many blocks | `nodesGetMany` | — | `nodes_get_many` | — |
+| Hydrate a block | `nodesGet` | `cat`/`show` (block) | `blocks_get` | ✅ `cat` · ▫️ `show` |
+| Hydrate many blocks | `nodesGetMany` | — | `blocks_get_many` | — |
 | Metadata card | `nodesGet`(full)+`docLinks`+`docProps` | `show` | **`read_ref`** (kind=card) | ▫️ |
 | Find / rank | `resolveThing`/`textSearch` | `find` | `resolve` (+`text_search`) | ✅ |
 | List documents (paged) | `docsList` | `ls` (walks every page) | **`docs_list`** | ✅ |
@@ -63,7 +63,7 @@ Legend: `--server` = is this CLI command remote-capable? ✅ wired · ▫️ pla
 | Operation | library | `omg` CLI | MCP tool | `--server` |
 |---|---|---|---|---|
 | Commit feed | `changesSince` | `log` | `changes_since` | ✅ |
-| Block biography | `historyNode` | `hist` | `history_node` | ✅ |
+| Block biography | `historyNode` | `hist` | `blocks_history` | ✅ |
 | Diff two revisions | `diffBlocks`/`diffUnified` | `diff` | `diff` (block-grain) + **`diff_unified`** | ✅ |
 | Read doc at a revision | `readDocumentAtRevision` | (`cat --rev` ✳️) | `docs_read_at` | ▫️ |
 | Per-document version list | `docHistory` | — | `docs_history` | — |
@@ -88,7 +88,7 @@ Legend: `--server` = is this CLI command remote-capable? ✅ wired · ▫️ pla
 | Split a block | `apply` ops | `split` | `blocks_split` | ✅ |
 | Merge blocks | `apply` ops | `merge` | `blocks_merge` | ✅ |
 | Complete tasks | `tasksComplete` | `done` | `tasks_complete` | ✅ |
-| Append to a doc / section | `docsAppend`/`sectionsAppend` | `append` | `docs_append` / `sections_append` | ✅ |
+| Append to a doc / into a block | `docsAppend`/`sectionsAppend` | `append` (block) | `docs_append { section? }` / `blocks_append` | ✅ |
 | Set a node property | `nodeSet` | `node set` | `node_set` | ✅ |
 | Whole-document update | `docsUpdate`/`planUpdate` | `update` | `docs_update` / `docs_plan_update` | ✅ |
 | Edit a block in `$EDITOR` (CAS pinned) | `apply` ops | `edit` | `blocks_update` (same op as `update` on a `b_` target) | 🔒 local (spawns `$EDITOR`; not in `REMOTE_OK`) |
@@ -162,7 +162,7 @@ represents a real engine operation now has a remote path.
 
 ## Drift to align (`⚠️`, register-only differences — document, optionally rename)
 
-`log`↔`changes_since`, `hist`↔`history_node`, `new/mv/rm/meta`↔`docs_*`. These are
+`log`↔`changes_since`, `hist`↔`blocks_history`, `new/mv/rm/meta`↔`docs_*`. These are
 fine as different registers of the same operation **as long as this table is the
 source of truth**; renaming is optional polish, not required for coherence.
 

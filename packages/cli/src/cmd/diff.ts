@@ -3,7 +3,7 @@ import { findDoc, docDiffUnified, diffBlocks, type DocDiffUnified, type DiffEntr
 import type { Command } from "../commands.js";
 import type { Cli } from "../context.js";
 import { CliUsageError, EngineErrorLike, EXIT_OK, emitMachine, renderHelp } from "../output.js";
-import { remoteCall } from "./_remote.js";
+import { remoteCall, docForeign } from "./_remote.js";
 
 // `omg diff <doc>` (11 §5.5) — `diff_unified`: the unified diff, `--json` the
 // tool's `{ doc, path, from, to, diff }`. With no revisions: current vs previous
@@ -34,7 +34,7 @@ async function runDiff(cli: Cli, args: string[]): Promise<number> {
   let result: DocDiffUnified;
   if (cli.flags.server) {
     result = await remoteCall<DocDiffUnified>(cli, "diff_unified", {
-      doc: ref,
+      ...docForeign(ref),
       ...(values.from ? { from_rev: values.from } : {}),
       ...(values.to ? { to_rev: values.to } : {}),
     });
@@ -54,7 +54,7 @@ async function runDiff(cli: Cli, args: string[]): Promise<number> {
   if (values.blocks) {
     // Block-grain over the same resolved revision pair.
     let entries: DiffEntry[];
-    if (cli.flags.server) entries = await remoteCall<DiffEntry[]>(cli, "diff", { doc: ref, from_rev: result.from, to_rev: result.to });
+    if (cli.flags.server) entries = await remoteCall<DiffEntry[]>(cli, "diff", { ...docForeign(ref), from_rev: result.from, to_rev: result.to });
     else entries = diffBlocks(cli.workspace().store, result.$id, result.from, result.to);
     if (cli.flags.mode !== "human") return emitMachine(cli, entries, { items: entries, ids: entries.map((e) => e.$id) });
     if (entries.length === 0) {

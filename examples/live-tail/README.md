@@ -68,10 +68,12 @@ dev proxy); nothing imports `@omgbase/core`. On load:
 2. `version` → the surface version for the header (a server without the tool
    is 1.x); `repos` → the repository picker (the choice is persisted).
 3. **Recently updated** — `select $path, $title, $updated_at from docs order by
-   $updated_at desc limit 25`; for each hit `docs_history { doc }` gives the
-   version list and the last two versions are diffed with `diff_unified
-   { doc, from_rev, to_rev }`; a document with one version is **created** and
-   `docs_read_at { doc, rev }` gives its content, shown as a pure-addition
+   $updated_at desc limit 25`; for each hit `docs_history { id | path }` gives
+   the version list and the last two versions are diffed with `diff_unified
+   { doc_id | doc_path, from_rev, to_rev }`; a document with one version is
+   **created** and `docs_read_at { id | path, rev }` gives its content (the
+   argument names are 3.0's — `spec/surface` §4 "Arguments"; a 2.x server gets
+   `doc`, `lib/paths.ts` `docLocator`/`docForeign`), shown as a pure-addition
    diff (`createdDiff`: one `@@ -0,0 +1,N @@` hunk, every line `+`, so
    frontmatter fences and dash bullets are green, not subtractions; `+N −0`).
    Four documents at a time; the first three cards start open, the rest open
@@ -243,6 +245,19 @@ reconnected* in the header; only a second failure is shown.
   arguments and the client's session recovery (a fake transport; 50 tests).
 
 ## Verified headlessly
+
+Surface 3.0 batch 2 (the argument names — `docs_history { id | path }`,
+`diff_unified { doc_id | doc_path }`, `docs_read_at { id | path, rev }`, chosen
+by the server's version): the same headless run passed against the current
+build (proxy 18902, Vite 15902; `surface 3.0`) and against a `surface-2.0` omg
+built from its tag into a temporary worktree (proxy 18904, Vite 15904;
+`surface 2.0`, the `doc` spelling): five cards; `omg meta notes/alpha.md --set
+status=done` arrived at the top in under 1.1 s with `-status: active` /
+`+status: done`; the persisted filter `status == "active"` narrowed the
+recent list to `/notes/beta.md` and a change to `notes/gamma.md` read `1 change
+hidden by the filter`. No console errors on either server.
+
+Earlier runs:
 
 Chrome (`--headless=new`) driven over CDP against the sample workspace on free
 ports (proxy 18798, Vite 15184): the page connected (`local · omg mcp -C …

@@ -29,7 +29,7 @@ import {
   RECENT_LIMIT, advanceCursor, createdDiff, diffLineKind, diffStats, digestPaths, entryCard, filterStateAfter, formatStats, formatTime, hiddenLine, latestChange, latestPair, matchQuery, pairForCommit, partitionByFilter, pollMs, prependDigests, recentCard, recentFromHits, recentQuery, startCursor, titlesByPath,
   type Card, type Digest, type DiffPair, type DocVersions, type EntryChange, type FeedEntry, type FilterState, type RecentDoc, type Stats,
 } from "./lib/feed.ts";
-import { LEGACY_SURFACE, surfaceOf } from "./lib/paths.ts";
+import { LEGACY_SURFACE, docForeign, docLocator, surfaceOf } from "./lib/paths.ts";
 import { changesOf, docVersionsOf, readAtOf, unifiedOf } from "./lib/shapes.ts";
 
 const MCP_URL = "/mcp";
@@ -115,10 +115,10 @@ async function fetchPair(doc: string, pair: DiffPair): Promise<DiffState> {
   const r = repo.get();
   if (pair.kind === "created") {
     // The content as a pure-addition diff: a content line starting with `-` is not a subtraction.
-    const text = createdDiff(readAtOf(surface.get(), await client.docsReadAt(doc, pair.rev, r)).content);
+    const text = createdDiff(readAtOf(surface.get(), await client.docsReadAt(docLocator(surface.get(), doc), pair.rev, r)).content);
     return text === "" ? { status: "none", note: "created empty" } : { status: "ready", pair, text };
   }
-  const d = unifiedOf(surface.get(), await client.diffUnified(doc, pair.from, pair.to, r));
+  const d = unifiedOf(surface.get(), await client.diffUnified(docForeign(surface.get(), doc), pair.from, pair.to, r));
   return d.diff === "" ? { status: "none", note: "no textual change between the two revisions" } : { status: "ready", pair, text: d.diff };
 }
 
@@ -132,7 +132,7 @@ function statsOf(state: DiffState | undefined): Stats | null {
 
 /** One document's `docs_history`, read for the connected server's generation (lib/shapes.ts). */
 async function docsHistory(doc: string): Promise<DocVersions | null> {
-  const d = await client.docsHistory(doc, repo.get());
+  const d = await client.docsHistory(docLocator(surface.get(), doc), repo.get());
   return d ? docVersionsOf(surface.get(), d) : null;
 }
 

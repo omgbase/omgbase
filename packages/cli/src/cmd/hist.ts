@@ -5,7 +5,7 @@ import type { Cli } from "../context.js";
 import { CliUsageError, EngineErrorLike, EXIT_OK, emitMachine, renderHelp } from "../output.js";
 import { remoteCall } from "./_remote.js";
 
-// `omg hist <node>` (11 §5.5) — history_node: a block's biography.
+// `omg hist <node>` (11 §5.5) — blocks_history: a block's biography.
 
 async function runHist(cli: Cli, args: string[]): Promise<number> {
   const { values, positionals } = parseArgs({
@@ -26,9 +26,9 @@ async function runHist(cli: Cli, args: string[]): Promise<number> {
 
   let changes: NodeChange[];
   if (cli.flags.server) {
-    // Remote: history_node keys on a block id (globally unique). Pass the ref
+    // Remote: blocks_history keys on a block id (globally unique). Pass the ref
     // through — a locator would need a local resolve, so remote hist wants an id.
-    changes = await remoteCall<NodeChange[]>(cli, "history_node", { id: ref, ...(values.n ? { limit: Number(values.n) } : {}) });
+    changes = await remoteCall<NodeChange[]>(cli, "blocks_history", { id: ref, ...(values.n ? { limit: Number(values.n) } : {}) });
   } else {
     const ws = cli.workspace();
     const repo = cli.repo(ws);

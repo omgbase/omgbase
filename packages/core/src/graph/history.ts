@@ -5,7 +5,7 @@ import { isValidId } from "../core/ids.js";
 import { EngineError } from "../mcp/errors.js";
 import { referencePath, storagePath } from "../core/paths.js";
 
-// History surface (06 §3, 07 task 4.4): history_node (block/doc biography),
+// History surface (06 §3, 07 task 4.4): blocks_history (block/doc biography),
 // diff (block-grain + Myers unified), changes_since (commit digests / change feed).
 
 export interface NodeChange {
@@ -18,7 +18,7 @@ export interface NodeChange {
   reason: string | null;
 }
 
-/** history_node: a block's biography from block_changes + commits (06 §3). */
+/** blocks_history: a block's biography from block_changes + commits (06 §3). */
 export function historyNode(store: Store, blockId: string, opts: { limit?: number } = {}): NodeChange[] {
   const limit = opts.limit ?? 100;
   return store.db

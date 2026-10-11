@@ -119,7 +119,7 @@ async function runOqx(cli: Cli, args: string[]): Promise<number> {
     if (phrases.length > 0) {
       const loaded = await loadEmbedding(ws, repo.repoId);
       if (!loaded) {
-        throw new EngineErrorLike("semantic_unavailable", "semantic(...) needs an embedding provider", {
+        throw new EngineErrorLike("provider_unavailable", "semantic(...) needs an embedding provider", {
           hint: "omg config set embedding.provider <command|url>",
         });
       }

@@ -15,7 +15,7 @@ use crate::cli::help::{render_help_for, wants_help};
 use crate::cli::output::{CliError, EXIT_OK, Result};
 
 use super::mutate::{extract_content_opts, read_content, render_diffs, set_actor};
-use super::{machine_out, str_of};
+use super::{doc_locator, machine_out, str_of};
 
 const ACTOR: Opt = Opt::value("actor");
 const NO_RETARGET: Opt = Opt::flag("no-retarget");
@@ -93,7 +93,7 @@ pub fn mv(cli: &mut Cli, args: &[String]) -> Result<i32> {
         return Err(CliError::usage("mv requires <doc> and <new-path>"));
     };
     let mut m = Map::new();
-    m.insert("doc".to_owned(), json!(doc));
+    doc_locator(&mut m, doc);
     m.insert("to_path".to_owned(), json!(to));
     if a.flag("no-retarget") {
         m.insert("retarget_inbound".to_owned(), json!(false));
@@ -294,7 +294,7 @@ pub fn meta(cli: &mut Cli, args: &[String]) -> Result<i32> {
         return Err(CliError::usage("meta requires --set or --unset"));
     }
     let mut m = Map::new();
-    m.insert("doc".to_owned(), json!(doc));
+    doc_locator(&mut m, doc);
     if !set.is_empty() {
         m.insert("set".to_owned(), Json::Object(set));
     }

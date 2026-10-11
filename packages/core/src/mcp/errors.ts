@@ -12,7 +12,8 @@ export type ErrorCode =
   | "doc_missing" | "cycle_move" | "opaque_block" | "not_contiguous"
   | "type_mismatch" | "conflicted_document" | "path_taken" | "create_conflict"
   | "ambiguous_locator" | "ambiguous_heading" | "filter_invalid" | "budget_exceeded"
-  | "semantic_unavailable" | "embedder_failed" | "sync_conflict" | "repo_not_found" | "node_not_editable" | "seed_unresolved";
+  | "provider_unavailable" | "embedder_failed" | "sync_conflict" | "repo_not_found" | "node_not_editable" | "seed_unresolved"
+  | "block_not_container";
 
 export interface EngineErrorBody {
   error: ErrorCode;

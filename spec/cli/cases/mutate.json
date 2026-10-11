@@ -425,7 +425,7 @@
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "error[block_missing]: not a block: b_9999\n"
+        "stderr": "error[block_missing]: no block with id \"b_9999\"\n  {\n    \"id\": \"b_9999\"\n  }\n"
       }
     },
     {
@@ -681,7 +681,7 @@
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "error[block_missing]: not a block: b_nope\n"
+        "stderr": "error[block_missing]: no block with id \"b_nope\"\n  {\n    \"id\": \"b_nope\"\n  }\n"
       }
     },
     {
@@ -698,7 +698,7 @@
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "error[block_missing]: not a block: b_9999\n"
+        "stderr": "error[block_missing]: no block with id \"b_9999\"\n  {\n    \"id\": \"b_9999\"\n  }\n"
       }
     },
     {
@@ -894,7 +894,7 @@
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "error[block_missing]: not a block: b_9999\n"
+        "stderr": "error[block_missing]: no block with id \"b_9999\"\n  {\n    \"id\": \"b_9999\"\n  }\n"
       }
     },
     {
@@ -935,7 +935,7 @@
           "expect": {
             "exit": 1,
             "stdout": "",
-            "stderr": "error[block_missing]: not a block: b_304\n"
+            "stderr": "error[block_missing]: no block with id \"b_304\"\n  {\n    \"id\": \"b_304\"\n  }\n"
           }
         }
       ]
@@ -1190,7 +1190,7 @@
     },
     {
       "name": "append",
-      "notes": "§6: sections_append at the end of the heading's section",
+      "notes": "§6: blocks_append on a heading: at the end of its section",
       "workspace": "alchemy",
       "steps": [
         {
@@ -1268,7 +1268,7 @@
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "error[block_missing]: not a block: Contents\n"
+        "stderr": "error[block_missing]: no block with id \"Contents\"\n  {\n    \"id\": \"Contents\"\n  }\n"
       }
     },
     {
@@ -1299,7 +1299,7 @@
       "expect": {
         "exit": 2,
         "stdout": "",
-        "stderr": "usage: append requires a <heading> block\n"
+        "stderr": "usage: append requires a <block>\n"
       }
     },
     {
@@ -1914,7 +1914,7 @@
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "error[block_missing]: node n_000000000000 not found\n"
+        "stderr": "error[block_missing]: no node with id \"n_000000000000\"\n  {\n    \"id\": \"n_000000000000\"\n  }\n"
       }
     },
     {
@@ -2182,7 +2182,7 @@
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "error[block_missing]: not a block: b_9999\n"
+        "stderr": "error[block_missing]: no block with id \"b_9999\"\n  {\n    \"id\": \"b_9999\"\n  }\n"
       }
     },
     {
@@ -2198,7 +2198,7 @@
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "error[block_missing]: not a block: texts/mutus-liber.md\n"
+        "stderr": "error[block_missing]: no block with id \"texts/mutus-liber.md\"\n  {\n    \"id\": \"texts/mutus-liber.md\"\n  }\n"
       }
     },
     {

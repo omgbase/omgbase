@@ -691,7 +691,7 @@ fn every_read_over_the_reference_server_renders_like_local() {
     );
 
     // The reference's remote `cat --json <block>` is the `read_ref` result,
-    // `kind` included; the local run prints the bare `nodes_get` object.
+    // `kind` included; the local run prints the bare `blocks_get` object.
     let (l, r) = p.both(&server, &["--json", "cat", &alpha], None);
     let lv: serde_json::Value = serde_json::from_str(text(&l.stdout).trim()).unwrap();
     let mut rv: serde_json::Value = serde_json::from_str(text(&r.stdout).trim()).unwrap();

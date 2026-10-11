@@ -3,7 +3,7 @@ import { findDoc, docsOutline, referencePath, type OutlineResult } from "@omgbas
 import type { Command } from "../commands.js";
 import type { Cli } from "../context.js";
 import { CliUsageError, EngineErrorLike, truncationFooter, EXIT_OK, emitMachine, renderHelp } from "../output.js";
-import { remoteCall } from "./_remote.js";
+import { remoteCall, docLocator } from "./_remote.js";
 
 // `omg outline <doc|path>` (alias ol) — the wire format (06 §6). Human output
 // prints the outline text with full block ids inline; --json emits the
@@ -36,11 +36,11 @@ async function runOutline(cli: Cli, args: string[]): Promise<number> {
   let result: OutlineResult;
   let header: string;
   if (cli.flags.server) {
-    // Remote: the docs_outline tool resolves the ref + returns the same
-    // OutlineResult. The header shows the ref you passed (no local path lookup):
+    // Remote: the docs_outline tool resolves the locator (`id` for a `d_` id,
+    // else `path`) + returns the same OutlineResult. The header shows the ref you passed (no local path lookup):
     // a path ref rooted (spec/surface §1 "Paths"), a `d_` id verbatim.
     result = await remoteCall<OutlineResult>(cli, "docs_outline", {
-      doc: ref,
+      ...docLocator(ref),
       ...(values.depth ? { depth: Number(values.depth) } : {}),
       ...(values.skeleton ? { resolution: "skeleton" } : {}),
     });

@@ -136,7 +136,7 @@ impl Cli {
     //   * call `cli.capture(&value)` exactly once, with the `--json` document
     //     (`query`: the scalar for count/exists/none, the `values` list, else
     //     the whole result; `cat`: the content string for a document, the
-    //     `nodes_get` object for a block, a list of those for several refs;
+    //     `blocks_get` object for a block, a list of those for several refs;
     //     `show`: the card payload or a list of them; `ls`: the rows; `find`:
     //     the hits; `links`: `{ out, in }`; the block mutators: the
     //     `ApplyResult` — its `results[*].ids` become the frame);
@@ -354,7 +354,16 @@ impl Cli {
             let Engine::Store(store) = std::mem::replace(&mut self.engine, Engine::Closed) else {
                 unreachable!("checked above");
             };
+            let name = if provider.is_some() {
+                self.embedding_settings(&repo.repo_id)?
+                    .and_then(|c| c.provider)
+            } else {
+                None
+            };
             let mut surface = Surface::new(*store, &repo.repo_id, provider);
+            if let Some(n) = name {
+                surface = surface.with_provider_name(&n);
+            }
             if let Some(ts) = self.seams.clock.clone() {
                 surface = surface.with_clock(move || ts.clone());
             }

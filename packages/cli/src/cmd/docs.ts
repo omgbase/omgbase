@@ -11,7 +11,7 @@ import type { Cli } from "../context.js";
 import type { Command } from "../commands.js";
 import { CliUsageError, EXIT_OK, renderHelp } from "../output.js";
 import { readContent, extractContentOpts, renderDiffs } from "./_mutate.js";
-import { remoteCall } from "./_remote.js";
+import { remoteCall, docLocator, requireDoc } from "./_remote.js";
 
 // Document-level commands (11 §5.6): new / mv / rm --doc / meta. Thin wrappers
 // over the core doc ops, which own the file-write + commit + flock protocol.
@@ -135,12 +135,12 @@ async function runMv(cli: Cli, args: string[]): Promise<number> {
   if (!doc || !toPath) throw new CliUsageError("mv requires <doc> and <new-path>");
   const noRetarget = values["no-retarget"] === true;
   if (cli.flags.server) {
-    const res = await remoteCall<DocMove>(cli, "docs_move", { doc, to_path: toPath, ...(noRetarget ? { retarget_inbound: false } : {}), ...dryRunArg(cli) });
+    const res = await remoteCall<DocMove>(cli, "docs_move", { ...docLocator(doc), to_path: toPath, ...(noRetarget ? { retarget_inbound: false } : {}), ...dryRunArg(cli) });
     return reportMove(cli, fromPathOf(res, doc), res);
   }
   const ws = cli.workspace();
   const repo = cli.repo(ws);
-  const res = surfaceDocMoveResult(docsMove(ws.store, ctxOf(cli, ws, repo.repoId, repo.rootPath, values.actor), doc, toPath, noRetarget ? { retargetInbound: false } : {}));
+  const res = surfaceDocMoveResult(docsMove(ws.store, ctxOf(cli, ws, repo.repoId, repo.rootPath, values.actor), requireDoc(ws.store, repo.repoId, doc), toPath, noRetarget ? { retargetInbound: false } : {}));
   return reportMove(cli, fromPathOf(res, doc), res);
 }
 
@@ -148,11 +148,11 @@ async function runMv(cli: Cli, args: string[]): Promise<number> {
 
 export async function runRmDoc(cli: Cli, doc: string, actor?: string): Promise<number> {
   if (cli.flags.server) {
-    return report(cli, "deleted", await remoteCall<DocOp>(cli, "docs_delete", { doc, ...dryRunArg(cli) }));
+    return report(cli, "deleted", await remoteCall<DocOp>(cli, "docs_delete", { ...docLocator(doc), ...dryRunArg(cli) }));
   }
   const ws = cli.workspace();
   const repo = cli.repo(ws);
-  const res = surfaceDocOpResult(docsDelete(ws.store, ctxOf(cli, ws, repo.repoId, repo.rootPath, actor), doc));
+  const res = surfaceDocOpResult(docsDelete(ws.store, ctxOf(cli, ws, repo.repoId, repo.rootPath, actor), requireDoc(ws.store, repo.repoId, doc)));
   return report(cli, "deleted", res);
 }
 
@@ -205,7 +205,7 @@ async function runMeta(cli: Cli, args: string[]): Promise<number> {
 
   if (cli.flags.server) {
     return report(cli, "patched", await remoteCall<DocOp>(cli, "docs_set_meta", {
-      doc,
+      ...docLocator(doc),
       ...(Object.keys(set).length ? { set } : {}),
       ...(unset.length ? { unset } : {}),
       ...dryRunArg(cli),
@@ -213,7 +213,7 @@ async function runMeta(cli: Cli, args: string[]): Promise<number> {
   }
   const ws = cli.workspace();
   const repo = cli.repo(ws);
-  const res = surfaceDocOpResult(docsSetMeta(ws.store, ctxOf(cli, ws, repo.repoId, repo.rootPath, values.actor), doc, { set, unset }));
+  const res = surfaceDocOpResult(docsSetMeta(ws.store, ctxOf(cli, ws, repo.repoId, repo.rootPath, values.actor), requireDoc(ws.store, repo.repoId, doc), { set, unset }));
   return report(cli, "patched", res);
 }
 

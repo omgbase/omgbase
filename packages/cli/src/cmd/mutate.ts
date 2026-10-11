@@ -4,6 +4,8 @@ import {
   resolveRef,
   tasksComplete,
   sectionsAppend,
+  isContainerBlock,
+  type Store,
   type Op,
   type To,
   type At,
@@ -20,7 +22,7 @@ import { runRmDoc } from "./docs.js";
 
 function block(cli: Cli, ws: ReturnType<Cli["workspace"]>, repoId: string, ref: string): string {
   const r = resolveRef(ws.store, repoId, ref);
-  if (!r || r.kind !== "block") throw new EngineErrorLike("block_missing", `not a block: ${ref}`);
+  if (!r || r.kind !== "block") throw new EngineErrorLike("block_missing", `no block with id ${JSON.stringify(ref)}`, { data: { id: ref } });
   return r.blockId!;
 }
 
@@ -31,7 +33,7 @@ function taskBlock(ws: ReturnType<Cli["workspace"]>, ref: string, blockId: strin
   const row = ws.store.db
     .prepare("SELECT type FROM blocks WHERE block_id = ? AND deleted_commit IS NULL")
     .get(blockId) as { type: string } | undefined;
-  if (!row) throw new EngineErrorLike("block_missing", `not a block: ${ref}`);
+  if (!row) throw new EngineErrorLike("block_missing", `no block with id ${JSON.stringify(ref)}`, { data: { id: ref } });
   if (row.type !== "task") {
     throw new EngineErrorLike("type_mismatch", `not a task: ${ref} is a ${row.type}`, { data: { block: blockId, type: row.type } });
   }
@@ -150,7 +152,7 @@ async function runUpdate(cli: Cli, args: string[]): Promise<number> {
   if (!ref) throw new CliUsageError("update requires a <block>");
   const markdown = readContent(content);
   // Remote: the server pins CAS from current bytes when --expect is absent.
-  if (cli.flags.server) return runOpsRemote(cli, "blocks_update", { block: ref, markdown, ...(values.expect ? { expect: { content_hash: values.expect } } : {}) });
+  if (cli.flags.server) return runOpsRemote(cli, "blocks_update", { id: ref, markdown, ...(values.expect ? { expect: { content_hash: values.expect } } : {}) });
   const ws = cli.workspace();
   const repo = cli.repo(ws);
   const blockId = block(cli, ws, repo.repoId, ref);
@@ -267,7 +269,7 @@ async function runDone(cli: Cli, args: string[]): Promise<number> {
   return runOps(cli, ws, repo, ops, actorOf(values));
 }
 
-// ---- append (sections_append) -----------------------------------------------
+// ---- append (blocks_append) --------------------------------------------------
 
 async function runAppend(cli: Cli, args: string[]): Promise<number> {
   const content = extractContentOpts(args);
@@ -279,10 +281,10 @@ async function runAppend(cli: Cli, args: string[]): Promise<number> {
   if (values.help) {
     return renderHelp(cli, {
       name: "append",
-      summary: "Append markdown at the end of a heading's section",
-      usage: "append <heading> (-m <markdown> | -f <file> | -) [--actor <s>] [--dry-run]",
+      summary: "Append markdown into a block: a heading's section or a container's children",
+      usage: "append <block> (-m <markdown> | -f <file> | -) [--actor <s>] [--dry-run]",
       options: [
-        ["<heading>", "the heading block (id or locator) whose section receives the content"],
+        ["<block>", "a heading (its section receives the content) or a container — list, item, quote, table (its children do)"],
         ["-m <markdown>", "content inline"],
         ["-f <file>", "content from a file"],
         ["-", "content from stdin"],
@@ -290,15 +292,31 @@ async function runAppend(cli: Cli, args: string[]): Promise<number> {
       ],
     });
   }
-  const heading = positionals[0];
-  if (!heading) throw new CliUsageError("append requires a <heading> block");
+  const target = positionals[0];
+  if (!target) throw new CliUsageError("append requires a <block>");
   const markdown = readContent(content);
-  // Remote: sections_append resolves the heading ref (id OR text) server-side.
-  if (cli.flags.server) return runOpsRemote(cli, "sections_append", { heading, markdown });
+  // Remote: blocks_append resolves the ref and decides by the block's kind
+  // server-side (spec/surface §4).
+  if (cli.flags.server) return runOpsRemote(cli, "blocks_append", { id: target, text: markdown });
   const ws = cli.workspace();
   const repo = cli.repo(ws);
-  const headingId = block(cli, ws, repo.repoId, heading);
-  return runOps(cli, ws, repo, sectionsAppend(headingId, markdown), actorOf(values));
+  const blockId = block(cli, ws, repo.repoId, target);
+  return runOps(cli, ws, repo, appendOps(ws.store, blockId, markdown), actorOf(values));
+}
+
+/** The ops `blocks_append` expands to, by what the block is: a heading → the end
+ *  of its section (`sectionsAppend`); a container → the end of its children; a
+ *  leaf → `block_not_container` (append means into, never a sibling insert). */
+function appendOps(store: Store, blockId: string, markdown: string): Op[] {
+  const row = store.db
+    .prepare("SELECT b.type AS type, d.format AS format, (SELECT count(*) FROM blocks c WHERE c.parent_block = b.block_id AND c.deleted_commit IS NULL) AS children FROM blocks b JOIN docs d ON d.doc_id = b.doc_id WHERE b.block_id = ? AND b.deleted_commit IS NULL")
+    .get(blockId) as { type: string; format: string | null; children: number } | undefined;
+  if (!row) throw new EngineErrorLike("block_missing", `no block with id ${JSON.stringify(blockId)}`, { data: { id: blockId } });
+  if (row.type === "heading") return sectionsAppend(blockId, markdown);
+  if (isContainerBlock(row.format ?? "markdown", { type: row.type, children: new Array<unknown>(row.children) })) {
+    return [{ op: "insert", to: { parent: blockId, at: "end" }, markdown } as Op];
+  }
+  throw new EngineErrorLike("block_not_container", `block ${blockId} is a ${row.type}, not a heading or a container; append means into — insert after it with blocks_insert { to: <its parent>, at: { after: ${JSON.stringify(blockId)} } }`, { data: { id: blockId, type: row.type } });
 }
 
 // ---- split / merge ----------------------------------------------------------
@@ -330,7 +348,7 @@ async function runSplit(cli: Cli, args: string[]): Promise<number> {
     if (s.trim() === "" || !Number.isInteger(n)) throw new CliUsageError(`bad --at '${values.at}' (offsets must be integers: n[,n…])`);
     return n;
   });
-  if (cli.flags.server) return runOpsRemote(cli, "blocks_split", { block: ref, at });
+  if (cli.flags.server) return runOpsRemote(cli, "blocks_split", { id: ref, at });
   const ws = cli.workspace();
   const repo = cli.repo(ws);
   const blockId = block(cli, ws, repo.repoId, ref);

@@ -382,7 +382,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "  append — Append markdown at the end of a heading's section\n  usage: omg append <heading> (-m <markdown> | -f <file> | -) [--actor <s>] [--dry-run]\n  options:\n    <heading>      the heading block (id or locator) whose section receives the content\n    -m <markdown>  content inline\n    -f <file>      content from a file\n    -              content from stdin\n    --actor <s>    commit actor (default human:$USER)\n    -h, --help     show this help\n"
+        "stdout": "  append — Append markdown into a block: a heading's section or a container's children\n  usage: omg append <block> (-m <markdown> | -f <file> | -) [--actor <s>] [--dry-run]\n  options:\n    <block>        a heading (its section receives the content) or a container — list, item, quote, table (its children do)\n    -m <markdown>  content inline\n    -f <file>      content from a file\n    -              content from stdin\n    --actor <s>    commit actor (default human:$USER)\n    -h, --help     show this help\n"
       }
     },
     {

@@ -236,8 +236,12 @@ carries exactly what a row attribute yields, it is spelled as that attribute
 — a tool's `$id`/`$path`/`$hash`/`$updated_at`/`$raw` are the row's, and a
 key naming a *role* in the result (`rev`, `from`/`to`, `before`/`after`,
 `locator`, `cursor`, `expected_content_hash`, `baseRevision`) keeps its own
-name (§2–§4). Inputs — `doc`, `path`, `block`, `id`, `expect.content_hash` —
-are locators and arguments, not row attributes, and are unchanged.
+name (§2–§4). Inputs follow §4 "Arguments" (3.0, batch 2): a tool's prefix
+names the row kind it addresses and `id` / `path` in its arguments are that
+kind's attributes (spelled bare, because the attributes themselves are
+becoming bare — surface 3.0 attribute flip, follow-up); the kernel-op
+grammar (`block`, `blocks`, `to`, `at`, `expect.content_hash`, `op`) is
+spec/mutate's and is unchanged.
 
 | kind | `$` names | plain fields |
 | --- | --- | --- |
@@ -324,7 +328,7 @@ null otherwise), `predicate`, `provenance`, `dst_kind`, `anchor`, `field`
 (the frontmatter key or inline field the edge was authored in, null for a
 link). `doc` reaches the source doc. No relations. The creating commit
 (`from_commit`) is not a field: a query sees open edges only and the commit
-is history (`history_node`, `changes_since`), §9.
+is history (`blocks_history`, `changes_since`), §9.
 
 ### 1.3 Functions
 
@@ -357,8 +361,8 @@ against the current row:
   live block of the doc matches; blocks → the block's FTS row matches;
   nodes → the node's FTS row matches; edges → `filter_invalid`.
 - `semantic("phrase")`: docs/blocks only (else `filter_invalid`); the phrase
-  must have been embedded for this query (`semantic_unavailable` when no
-  provider); the score is `cosine` over the row's stored vector for the
+  must have been embedded for this query (`provider_unavailable` when no
+  provider, §4); the score is `cosine` over the row's stored vector for the
   provider's model (docs: `doc_embeddings`; blocks: the `embeddings` row for
   the block's current `(raw_hash, ctx_hash)`, `spec/search` §3 — since 1.1;
   before, the first row for the `raw_hash` whatever its context) or null
@@ -447,8 +451,8 @@ cursor, consumer, count?, exists?, none?, values? }`:
   properties, $raw, … }`, `graph` documents `{ $id, $path, degree, … }`,
   `text_search` hits `{ $id, doc_id, $path, … }`, `resolve` `{ $id, locator,
   … }`, a `changes_since` or `apply` revision `{ $id, $path, $hash }`,
-  `nodes_get` `{ $id, type, … }` (`reads::hit-envelope-round-trip` closes
-  with a `docs_list` and a `nodes_get` showing the shared spelling). Before
+  `blocks_get` `{ $id, type, … }` (`reads::hit-envelope-round-trip` closes
+  with a `docs_list` and a `blocks_get` showing the shared spelling). Before
   3.0 each tool had its own (`path`, `docId`, `blockId`, `contentHash`, …).
 - Errors: an OQX error is `filter_invalid` with the engine's message; a
   malformed cursor is `filter_invalid` naming the surface.
@@ -468,7 +472,7 @@ The generic decoder (`cursor.json`) is unchanged.
 - **`resolve_ref(ref)`**: an `n_` + 12 hex node id → its block when the block
   is live, else its doc; a `b_` id → its live block; a `d_` id → the live doc;
   anything else → the live doc at that path; null when nothing matches.
-- **`docs_read(doc, include_ids?)`**: `{ $id, $path (reference form), rev,
+- **`docs_read(id? | path?, include_ids?)`**: `{ $id, $path (reference form), rev,
   properties (grouped, spec/properties §5), $raw (spec/store §6.1 — the
   document's `$raw`, §1.2) }` + with ids `ids` (pre-order), `hashes` (a map
   block `$id` → block `$hash`), `parents` (block `$id` → parent `$id` or
@@ -479,22 +483,24 @@ The generic decoder (`cursor.json`) is unchanged.
   early with `truncated` — but **at least one item is always returned**
   (1.2, the uniform list contract of `docs_list`/`docs_tree`: the budget
   is checked before the second item onward; a first item that alone exceeds
-  it is still emitted and the batch is `truncated` if more remained). `docs_read_at(doc, rev)`: `spec/store` §6.2 as
+  it is still emitted and the batch is `truncated` if more remained). `docs_read_at(id? | path?, rev)`: `spec/store` §6.2 as
   `{ $id, $path (the path as of that revision), rev, $raw, renderedHashMatch,
   properties (current), propertiesAreCurrent: true }`.
-- **`nodes_get(doc?, id, resolution = full)`**: the block subtree projected
-  at a resolution — `skeleton` `{ $id, type, label = heading text or type }`,
+- **`blocks_get(id, resolution = full)`** (`nodes_get` before 3.0 — it always
+  took a block id and returned a block; `nodes` now names the extracted-entity
+  rows, §9): the block subtree projected at a resolution — `skeleton` `{ $id, type, label = heading text or type }`,
   `outline` `{ $id, type, label = first 12 words… }`, `text` `{ $id, type,
   text }`, `raw` `{ $id, type, $raw, $hash }`, `full` (`$raw`, `$hash`,
   `text`, `attrs`, then the placement flattened onto the row: `ordinal`,
   `depth`, `parent_id` (null at the top level)); `children` recursively. The
   block's `$raw`/`$hash` are the row attributes of §1.2 (`$hash` is the value
-  an `update`/`split` op expects as `expect.content_hash`). `nodes_get_many(doc?, ids, resolution = text,
-  budget_tokens?)`: cap 100, request order, no children, `unresolved` for
-  ids naming no live block (or one outside the scoping doc), `truncated`
-  on the cap or the budget; at least one resolved node is always returned
-  (1.2, as `docs_read_many`).
-- **`docs_outline(doc, resolution = outline, depth?, budget_tokens?)`**:
+  an `update`/`split` op expects as `expect.content_hash`); the owning document
+  is inferred from the id (the `doc`/`path` scope arguments are gone, 3.0).
+  `blocks_get_many(ids, resolution = text, budget_tokens?)` (`nodes_get_many`
+  before 3.0): cap 100, request order, no children, `unresolved` for ids
+  naming no live block, `truncated` on the cap or the budget; at least one
+  resolved block is always returned (1.2, as `docs_read_many`).
+- **`docs_outline(id? | path?, resolution = outline, depth?, budget_tokens?)`**:
   one line per block, `"  " × depth + id + " " + type label padded to 4 +
   " " + label`, `"  §"` appended for headings, trailing spaces trimmed; type
   labels `h<level>`, `p`, `ul`, `li` (list items and tasks), `bq`, `code`,
@@ -523,15 +529,16 @@ role keys keep the reference's **camelCase** (`isCurrent`, `hasSource`,
 `currentRev`, `renderedHashMatch`, `propertiesAreCurrent`, `commitId`,
 `baseRevision`, …); the fixtures pin the wire verbatim.
 
-- **`history_node(id, limit = 100)`**: the block's `block_changes` joined to
-  commits and dispositions, newest first: `{ commitId, seq, ts, origin,
-  kind, confidence, reason }` (a change record, not a row: unchanged in 3.0).
-- **`diff(doc, from_rev, to_rev)`**: both revisions must belong to the doc,
+- **`blocks_history(id, limit = 100)`** (`history_node` before 3.0): the
+  block's `block_changes` joined to commits and dispositions, newest first:
+  `{ commitId, seq, ts, origin, kind, confidence, reason }` (a change record,
+  not a row: unchanged in 3.0).
+- **`diff(doc_id? | doc_path?, from_rev, to_rev)`**: both revisions must belong to the doc,
   else `target_missing` (§9: the reference treated an unknown revision as
   empty and reported every block removed); block-grain — the id → raw maps
   of both revisions' Merkle trees (all depths); entries `removed` (in from
   only), `changed` (raw differs), `added` (in to only), in that order, each
-  `{ kind, $id (the block), before?, after? }`. **`diff_unified(doc, from_rev?, to_rev?)`**:
+  `{ kind, $id (the block), before?, after? }`. **`diff_unified(doc_id? | doc_path?, from_rev?, to_rev?)`**:
   defaults to the previous and current revisions (`target_missing` when
   none); `{ $id, $path, from, to, diff }` where `diff` is a **unified diff** of the
   two revisions' **reconstructed file texts** — for each revision exactly the
@@ -557,7 +564,7 @@ role keys keep the reference's **camelCase** (`isCurrent`, `hasSource`,
   }]` (the document, its path as of the commit, the revision's rendered
   hash — the same three keys an `apply` revision carries, §4), every path in
   a digest, the `summary`'s subject included, in the reference form (2.0).
-- **`docs_history(path_glob | doc, include_deleted?, limit = 50)`**: docs by
+- **`docs_history(path_glob | id | path, include_deleted?, limit = 50)`**: docs by
   path (glob as `docs_list`; a glob without `*` is an exact path), live only
   unless `include_deleted`, `limit + 1` for `truncated`; each `{ $id, $path
   (reference form), deleted, currentRev, versions: [{ rev, seq, commit,
@@ -569,59 +576,99 @@ role keys keep the reference's **camelCase** (`isCurrent`, `hasSource`,
 Served as MCP over stdio; every result is one text content item holding
 JSON; an error result has `isError: true` and the envelope `{ error: <code>,
 message, data?, retriable }`. Codes: `spec/mutate` §8 plus `filter_invalid`
-(OQX and cursor errors, `data: { reason, hint }`), `budget_exceeded`,
-`semantic_unavailable`, `embedder_failed`, `repo_not_found`,
-`ambiguous_heading`, `conflicted_document`, `ambiguous_locator`,
-`seed_unresolved`. Any other failure is `repo_not_found` with the message
-(§9).
+(OQX and cursor errors, `data: { reason, hint }`; argument-shape errors,
+`data: { reason, hint: "arguments" }`), `budget_exceeded`,
+`provider_unavailable` (3.0; `semantic_unavailable` before), `embedder_failed`,
+`repo_not_found`, `ambiguous_heading`, `block_not_container` (3.0),
+`conflicted_document`, `ambiguous_locator`, `seed_unresolved`. Any other
+failure is `repo_not_found` with the message (§9).
+
+**Arguments (3.0, normative).** A tool's prefix names the row kind it
+addresses; `id` / `path` in its arguments are that kind's attributes —
+`docs_read { id?, path? }`, `blocks_get { id }`, `node_set { id }` (the one
+tool that addresses `nodes` rows); a document referenced from a tool of
+another kind is the foreign key `doc_id` / `doc_path` (`diff`,
+`diff_unified`); list and mixed-reference arguments keep role names (`ids`,
+`docs`, `roots`, `ref`, `to`, `blocks`, `at`); the kernel-op grammar
+(`block`, `blocks`, `to`, `at.before|after`, `expect.content_hash`, `op`) is
+spec/mutate's and is unchanged; `observe { path, content }`,
+`observe_many.files[].path`, `observe_delete.path` are FILE events from the
+store's layer, not row locators, and `docs_tree.path`, `docs_list.path_glob`,
+`links_repair.path_glob` and `docs_create.path` are role arguments. The bare
+argument name `doc` no longer exists. The names are bare (not `$id`/`$path`)
+because the attributes themselves are becoming bare — surface 3.0 attribute
+flip, follow-up. A `docs_*` locator takes at least one of `id`/`path` (else
+`filter_invalid` "pass id or path"); both given must name the same document
+(else `filter_invalid` "id "…" and path "…" name different documents"); a
+miss is `doc_missing` "no document with id or path "<value>"" with the
+arguments as given in `data` (`doc_id`/`doc_path` tools say "no document
+with doc_id or doc_path …"); a block the caller named that is not live is
+`block_missing` "no block with id "<value>"", a node "no node with id …".
+Every call's shape is checked before its handler, in both engines alike: an
+unknown argument name is `filter_invalid` naming the nearest valid one —
+"unknown argument `q`; did you mean `query`?" (Levenshtein ≤ 2 or a prefix
+either way; the names 3.0 retired name their replacement: "`doc` is no
+longer an argument — pass `id` or `path`", `block`/`node` → `id`, `heading`
+→ `section`, `markdown` → `text`) — a missing one "`query` is required", a
+mistyped one "`limit` must be an integer" (`a string`, `a boolean`, `an
+object`, `an array of strings|integers|objects`, `one of a, b, c`), each
+followed by the tool's shape in bytewise order with `?` on the optional
+names: "(docs_read takes id?, include_ids?, path?, repo?)"; a tool with none
+"takes no arguments". The unknown-name check runs first (bytewise order of
+the names given), then presence and type per declared name (bytewise); the
+nested shapes (`apply.ops`, `expect`, `at`) are each engine's own. The
+messages above are pinned by the fixtures (§6).
 
 **Repo scoping.** Every repo-scoped tool takes an optional `repo` slug;
 omitted → the server's default repo; unknown → `repo_not_found`. A repo's
 root is derived (`spec/sync` §1); a mutating tool on a sourceless repo fails
 `repo_not_found` ("mutation disabled").
 
-**Ref resolution (server side).** `doc` fields accept an id or a path;
-`path` fields a path (every path argument in either form, §1 Paths); a block-level tool's `block`/`blocks`/`to`/`at` refs go
-through `resolve_ref` (a doc ref as `to` means the document's top level);
-`heading` accepts a heading block id or heading text (an ATX-looking text
-loses its hashes; matched against the normalized heading text repo-wide or
-within `doc`/`path`; zero → `parent_missing`, several →
-`ambiguous_heading { heading, candidates }`). Block-level tools pin
+**Ref resolution (server side).** `id` is looked up by id only and `path`
+by path (either form, §1 Paths) — never one falling through to the other; a
+block-level tool's `id`/`blocks`/`to`/`at` refs go through `resolve_ref` (a
+doc ref as `to` means the document's top level). `docs_append.section` is a
+heading's TEXT (an ATX-looking text loses its hashes), matched against the
+normalized heading text of the named document's live headings: zero →
+`parent_missing` "no heading "<text>" in /<path>" (`data: { section, path
+}`), several → `ambiguous_heading { section, path, candidates: [{ $id,
+doc_id }] }` ("pass the heading's id to blocks_append"); it is never an id
+lookup — the id form is `blocks_append`. Block-level tools pin
 `expect.content_hash` from the live row when the caller omits it.
 
 | Tool | Args | Result |
 | --- | --- | --- |
-| `docs_outline` | `doc?`, `path?`, `resolution?`, `depth?`, `budget_tokens?` | §2 |
-| `docs_read` | `doc?`, `path?`, `include_ids?` | §2 |
+| `docs_outline` | `id?`, `path?`, `resolution?`, `depth?`, `budget_tokens?` | §2 |
+| `docs_read` | `id?`, `path?`, `include_ids?` | §2 |
 | `docs_get_many` | `docs[]`, `include_ids?`, `budget_tokens?` | §2 |
-| `nodes_get` | `doc?`, `path?`, `id`, `resolution?` | §2 (doc inferred from the block) |
-| `nodes_get_many` | `doc?`, `path?`, `ids[]`, `resolution?`, `budget_tokens?` | §2 |
-| `read_ref` | `ref`, `resolution? = raw` | `{ kind: "document", ...docs_read }` or `{ kind: "block", ...nodes_get }` |
+| `blocks_get` | `id`, `resolution?` | §2 (the document inferred from the block; `nodes_get { doc?, path?, id }` before 3.0) |
+| `blocks_get_many` | `ids[]`, `resolution?`, `budget_tokens?` | §2 (`nodes_get_many` before 3.0) |
+| `read_ref` | `ref`, `resolution? = raw` | `{ kind: "document", ...docs_read }` or `{ kind: "block", ...blocks_get }` |
 | `docs_tree` / `docs_list` | §2 args | §2 |
 | `query_syntax` | — | `{ syntax }` (reference text, unpinned) |
-| `query` | `query`, `limit?`, `cursor?` | §1.4; `semantic(...)` with no provider → `semantic_unavailable` |
+| `query` | `query`, `limit?`, `cursor?` | §1.4; `semantic(...)` with no provider → `provider_unavailable` (`data: { provider: null }`, the message naming what to configure); a provider whose model has embedded nothing in the repository → `provider_unavailable` too (`data: { provider, model }`), never path-ordered rows with no score (3.0) |
 | `graph` | `roots[]`, `degrees? = 1`, `direction? = both`, `predicate?`, `select?[]`, `max_documents? = 200` | `{ roots, degrees, direction, documents: [{ $id, $path, degree, frontier, ...select }], edges: [{ $id, doc_id, block_id, via_id, dst_id, dst_path, uri, dst_kind, predicate, provenance, anchor, field }], frontier: [{ $id, $path, degree }], truncated, queries }` — compiled to `follow doc.out`/`doc.in` with `depth = degrees + 1` (≤ 8, so `degrees` clamps to 7 and the result reports the clamped value), roots depth 0; documents ordered bytewise by path (§9); an edge row carries the `edges` target's fields under their own names (§1.2, 3.0 — before, a rename table spelled `src`/`dst`/`dst_uri`/`src_field`); a `$`-named selection (`select: ["$path"]`) keeps its `$` and collapses onto the envelope key exactly as a `query` hit's does, a bare alias is an ordinary column |
 | `text_search` | `q`, `limit?` | `spec/search` §1.3: `{ hits: [{ $id (the block), doc_id, $path (reference form), type, text, score }], truncated }` |
 | `resolve` | `query`, `limit?` | `spec/search` §4 (vector fused when a provider exists): `[{ $id, locator, preview, evidence }]`, the `locator`'s path half in the reference form (`/a.md#paragraph[2]`) |
 | `apply` | `ops[]`, `reason?`, `dry_run?` | `spec/mutate` §4, `origin.actor = "agent:mcp"`: `{ results, revisions: [{ $id, $path, $hash }], diffs?, committed }` — `revisions[].$path` and the `diffs` keys in the reference form, `$hash` the document's hash after the commit (the rendered bytes' sha256; the same shape as a `changes_since` revision, §3). Every mutating tool below returns this result |
 | `blocks_insert` | `to`, `markdown`, `at? = end`, `expect? { parent_children_hash? }`, `dry_run?` | the apply result; `expect` is the destination-parent CAS of `spec/mutate` §1.2 (1.2) |
-| `blocks_update` | `block`, `markdown?`, `checked?`, `attrs?`, `expect?`, `dry_run?` | `{ $id (the target block), ids, ...apply result }` (`checked` folds into attrs) |
+| `blocks_update` | `id`, `markdown?`, `checked?`, `attrs?`, `expect?`, `dry_run?` | `{ $id (the target block), ids, ...apply result }` (`checked` folds into attrs; `block` before 3.0) |
 | `blocks_move` | `blocks[]`, `to`, `at?`, `expect? { parent_children_hash? }`, `dry_run?` | a doc ref as `to` must be the blocks' own document, else `target_missing`; `expect` is the destination-parent CAS, checked once (1.2) |
 | `blocks_remove` | `blocks[]`, `dry_run?` | |
-| `blocks_split` | `block`, `at[]` (bytes), `dry_run?` | |
+| `blocks_split` | `id`, `at[]` (bytes), `dry_run?` | (`block` before 3.0) |
 | `blocks_merge` | `blocks[]`, `separator?`, `dry_run?` | |
 | `tasks_complete` | `blocks[]`, `checked? = true`, `dry_run?` | |
-| `node_set` | `node`, `prop`, `value`, `dry_run?` | |
-| `sections_append` | `heading`, `markdown`, `doc?`, `path?`, `dry_run?` | |
-| `docs_append` | `doc?`, `path?`, `text` | (no dry run) |
+| `node_set` | `id`, `prop`, `value`, `dry_run?` | an unknown node → `block_missing` "no node with id …" (`node` before 3.0) |
+| `blocks_append` | `id`, `text`, `dry_run?` | (3.0) append INTO a block by what it is: a heading → the end of its section range (`spec/mutate` §5 `sections_append`), a container (`spec/mutate` §1.1) → the end of its children (an insert `to: { parent: id, at: "end" }`), a leaf → `block_not_container` (`data: { id, type }`, the message pointing at `blocks_insert … at.after`) — the apply result |
+| `docs_append` | `id?`, `path?`, `text`, `section?`, `dry_run?` | the apply result; `section` is a heading's text inside the document (above); absent → the document's end (`sections_append { heading, markdown, doc?, path? }` is gone, 3.0: appending is a document-level act or an into-a-block act) |
 | `links_retarget` | `from_target`, `to_target`, `path_glob?`, `dry_run? = true` | `{ hits: [{ $id (the block), $path, oldRaw, newRaw }], pairs, applied, ...apply result }` |
 | `links_stale` | `path_glob?`, `limit? = 500`, `summary?` | `spec/graph` §6: `{ stale: [{ doc_id, $path (the source), block_id (null for a frontmatter edge), predicate, provenance, dst_kind, target, authored, anchor, reason }], truncated, summary?: { total, byTarget: [{ target, count }], bySource: [{ $path, count }] } }` — an edge row's fields under the `edges` target's names (§1.2), `$path`, `target` and `bySource[].$path` in the reference form (`authored` stays as written) |
 | `links_repair` | `repairs[]` or `from_target`+`to_target`, `path_glob?`, `dry_run? = true` | as retarget; neither given → `target_missing` |
-| `docs_create` / `docs_move` / `docs_delete` / `docs_set_meta` | `spec/mutate` §6 args, `dry_run?` (1.3) | its results — `{ $id, $path, committed, diffs?, … }`: `docs_move` adds `retargeted` and `dangling: [{ doc_id, $path, block_id, target, anchor, field? }]` (the inbound edges left pointing at the old path, each an edge row under the `edges` target's names), `docs_delete` adds `deleted` — every path (`$path`, the `diffs` keys, `dangling[].$path`; not `dangling[].target`, which is as authored) in the reference form; with `dry_run` nothing commits and the result carries `committed: false` and `diffs` (`{ <path>: { before, after } }` — create `"" → bytes`, delete `bytes → ""`, move two entries, meta before → after; a move — which retargets the inbound links unless `retarget_inbound: false`, `spec/mutate` 1.3 — also previews the rewritten sources and `retargeted`/`dangling`); a dry-run create still mints its `d_` id (`apply`'s rule) |
-| `docs_plan_update` | `doc`, `content` | `{ opset, plan }` (`plan` = the rendered one-line-per-op text; the opset's `target: { $id, $path }` and `precondition: { $id, $path, baseRevision, $hash }` — `spec/mutate` §5 — with both paths in the reference form) |
-| `docs_update` | `doc`, `content`, `reason?`, `dry_run?` | `{ opset, plan, result }` |
+| `docs_create` / `docs_move` / `docs_delete` / `docs_set_meta` | `docs_create { path, markdown, frontmatter? }`; the others `id?`/`path?` + `spec/mutate` §6 args (`to_path`, `retarget_inbound?`, `set?`/`unset?`), `dry_run?` (1.3) | its results — `{ $id, $path, committed, diffs?, … }`: `docs_move` adds `retargeted` and `dangling: [{ doc_id, $path, block_id, target, anchor, field? }]` (the inbound edges left pointing at the old path, each an edge row under the `edges` target's names), `docs_delete` adds `deleted` — every path (`$path`, the `diffs` keys, `dangling[].$path`; not `dangling[].target`, which is as authored) in the reference form; with `dry_run` nothing commits and the result carries `committed: false` and `diffs` (`{ <path>: { before, after } }` — create `"" → bytes`, delete `bytes → ""`, move two entries, meta before → after; a move — which retargets the inbound links unless `retarget_inbound: false`, `spec/mutate` 1.3 — also previews the rewritten sources and `retargeted`/`dangling`); a dry-run create still mints its `d_` id (`apply`'s rule) |
+| `docs_plan_update` | `id?`, `path?`, `content` | `{ opset, plan }` (`plan` = the rendered one-line-per-op text; the opset's `target: { $id, $path }` and `precondition: { $id, $path, baseRevision, $hash }` — `spec/mutate` §5 — with both paths in the reference form) |
+| `docs_update` | `id?`, `path?`, `content`, `reason?`, `dry_run?` | `{ opset, plan, result }` |
 | `observe` / `observe_many` / `observe_delete` | `spec/store` §5 (`path` in either form) | its outcomes (`observe` sweeps the pool) as `{ $id, $path, rev, commitId, converged, echo, conflicted, dispositions }` (`observe_many`: one per item, `observe_delete`: `{ $id, $path, deleted }`) — the store's own `{ doc, commit, rev }` outcome of `spec/store` §9 is re-shaped at this boundary, `$path` in the reference form |
-| `history_node` | `id`, `limit?` | §3 (not repo-scoped) |
+| `blocks_history` | `id`, `limit?` | §3 (not repo-scoped; `history_node` before 3.0) |
 | `diff` / `diff_unified` / `docs_read_at` / `docs_history` / `changes_since` | §3 | §3 |
 | `repos_status` / `sync_status` | `repo?` | `spec/sync` §4.4; `repos_status` names the repository `{ $id, slug, … }` (its own identity under the row rule) |
 | `repos` | — | `{ repos: [{ slug, has_source }] }` by slug |
@@ -675,9 +722,13 @@ verbs later.
   it) — `{ "read": { "tool": "<name>", "args": {...}, "ts"? } }` — invoked
   through the MCP server itself (the reference connects an SDK client over an
   in-memory transport and calls the tool); the outcome is the tool's JSON
-  result, or `{ error, retriable, data? }` for an error result (`message`
-  dropped; `data` dropped for `filter_invalid`; `changes_since` digests lose
-  `summary`). A case with `workspace: true` gives the default repo a
+  result, or `{ error, retriable, message?, data? }` for an error result
+  (`data` dropped for `filter_invalid`; `changes_since` digests lose
+  `summary`; `message` kept only for the surface's OWN errors — those whose
+  `data` names the argument they could not honor (`id`, `path`, `doc_id`,
+  `doc_path`, `ref`, `section`, `provider`) or that carry `hint: "arguments"`,
+  the §4 "Arguments" wording both engines spell alike — and dropped for a
+  kernel's or store's). A case with `workspace: true` gives the default repo a
   temporary directory as its `fs` source and server root, seeded from the
   `observe` steps, so writing tools work (file-CAS included) and `repos`
   reports `hasSource: true`; without it the repo is sourceless and every
@@ -695,6 +746,15 @@ verbs later.
   combination) — `packages/core/corpus/surface/interop.test.ts` and
   `crates/omgbase/tests/interop.rs`; `spec.test.ts` and the surface crate's
   `spec.rs` validate its shape and otherwise leave it to them.
+
+- **`tool-descriptions.json`** (§4, 3.0): the catalog's tool names in
+  registration order with their `description` strings — one source for both
+  engines. Written by the reference from its registrations under
+  `SURFACE_SPEC_UPDATE=1`; `scripts/gen-tool-descriptions.mjs` turns it into
+  the Rust catalog's `descriptions.rs` (generated, checked in); the surface
+  crate's `tests/spec.rs` and the reference's `spec.test.ts` each fail when
+  their catalog drifts from it, so every description is byte-identical across
+  engines.
 
 **Generation.** `packages/core/corpus/surface/spec.test.ts`,
 `SURFACE_SPEC_UPDATE=1`; `interop.json` is regenerated by `interop.test.ts`
@@ -849,7 +909,7 @@ both and runs both harnesses.
   (`query-errors::hit-not-a-row-follow-property`).
 - **Pinned — `semantic()` without a provider is `filter_invalid` at the
   runner** ("needs an embedding provider"); only the `query` tool pre-checks
-  and reports `semantic_unavailable`.
+  and reports `provider_unavailable` (`semantic_unavailable` before 3.0).
 - **Pinned — wikilinks resolve by path**, so a `[[slug]]` whose slug is not a
   path is a phantom edge (`spec/graph` §3.2); the alchemy corpus's `out`/`in`
   never reach documents through wikilinks.
@@ -857,9 +917,10 @@ both and runs both harnesses.
   `=` padding are accepted).
 - **Pinned — dry runs consume minted ids** (a dry-run insert advances the
   `b` counter).
-- **Pinned — `nodes_get` with an unknown block id is `doc_missing`** (the doc
-  is inferred first); a block outside an explicit `doc` scope is
-  `block_missing` without data.
+- **Fixed (3.0) — `nodes_get` with an unknown block id was `doc_missing`** (the
+  doc was inferred first), and a block outside its explicit `doc` scope was
+  `block_missing` without data. `blocks_get` has no scope; an unknown id is
+  `block_missing` "no block with id \"…\"" with `data: { id }`.
 - **Pinned — `$tags` is body hashtags only** (`spec/properties` §3.3); a
   corpus without `#tags` in prose has `$tags` null everywhere.
 - **Port notes.** Argument-shape failures (the reference's MCP/zod
@@ -972,6 +1033,71 @@ both and runs both harnesses.
 
 ## Decisions
 
+- 2026-10-11, surface 3.0 (batch 2 — locators, fossils, the append fold,
+  loud `semantic()`, description parity; Brendan's decisions): **a tool's
+  arguments name the row kind its prefix names** (§4 "Arguments"): `id` /
+  `path` on the `docs_*` tools (the bare `doc` id-or-path argument is gone,
+  with `path` no longer a second spelling of the same thing), `id` on the
+  block tools, `doc_id`/`doc_path` where a document is a foreign reference
+  (`diff`, `diff_unified`); role names (`ids`, `docs`, `roots`, `ref`, `to`,
+  `blocks`) and the kernel-op grammar unchanged. The names are **bare** —
+  not `$id`/`$path` — because omgbase's object attributes are losing the `$`
+  prefix in the follow-up batch (surface 3.0 attribute flip): `$` will mark
+  OQX's scope-injected values only, and a colliding user key is reached
+  through a `data.<k>` handle; this batch does not touch result keys or the
+  intrinsic switch, so fixtures regenerated here show bare argument names
+  beside `$`-keyed results — expected, transient on an unreleased main.
+  Every error that refers to a row's identity or path spells the attribute
+  (`no document with id or path "…"`, `pass id or path`, `no block with id
+  "…"`), never the kernel's "block undefined". **Fossil renames:** blocks
+  used to be called nodes in the read tools, and `nodes` is now the
+  extracted-entity row kind, so `nodes_get` → `blocks_get { id, resolution }`
+  and `nodes_get_many` → `blocks_get_many { ids, … }` (the `doc`/`path`
+  SCOPE arguments dropped: a block id is global and names its document; the
+  fixtures that scoped a read to another document now simply hydrate the
+  block), `history_node` → `blocks_history { id, limit }` (it always took a
+  block id and returned the block's changes); `node_set { id }` keeps its
+  name as the one tool that addresses `nodes` rows. **Appending is a
+  document-level act (`docs_append`) or an into-a-block act
+  (`blocks_append`)** — Brendan; `sections_append` is gone: `docs_append {
+  id? | path?, text, section?, dry_run? }` takes a heading's TEXT resolved
+  inside the named document (an unknown heading → `parent_missing`, a
+  heading spelled twice → `ambiguous_heading` with the candidates — pass the
+  heading's id to `blocks_append`), and `blocks_append { id, text, dry_run?
+  }` appends INTO a block by what it is (heading → its section's end,
+  container → its children's end, leaf → `block_not_container`, the hint
+  being `blocks_insert … at.after`). The id-vs-text union argument was
+  rejected so no argument needs inference; the repo-wide heading-text
+  lookup (and its cross-document `ambiguous_heading`) went with it — the
+  interop case that pinned it now pins `parent_missing`. **Argument-shape
+  errors are the engine's own** (§4): the reference replaces the SDK's
+  `tools/call` handler so a wrong name is `filter_invalid` with the nearest
+  valid one and the tool's shape, byte-identical to the Rust catalog's
+  (`arguments.ts` / `arguments.rs`); `q` has one spelling (no alias).
+  **`semantic()` is loud when it cannot rank:** no provider →
+  `provider_unavailable` (the code `semantic_unavailable` is retired at the
+  surface and in the CLI; `spec/search`'s own `semantic_unavailable` — the
+  embedding layer's "no provider" for `omg embed` — is a lower-layer code
+  and stays), and a provider whose model has embedded nothing in the
+  repository (the drain never ran) → `provider_unavailable` naming the
+  provider/model and `omg embed drain`, instead of every row scoring null
+  and the result coming back path-ordered with no score. **`frontmatter.$x`
+  reaches an authored `$`-prefixed key** — the complaint's premise (ingest
+  drops `$` keys) did not reproduce in either engine at HEAD: `spec/properties`
+  stores keys as given, both bindings read them through the source handle
+  and `entries(frontmatter)` lists them, the bare `$version` is the engine's
+  namespace (nothing); pinned by `reads::arguments`, no engine or
+  `spec/properties` change. **Tool descriptions are one text:**
+  `tool-descriptions.json` (§6) generated from the reference, the Rust
+  `descriptions.rs` generated from it, parity tested on both sides (before,
+  only `query` and eight re-keyed descriptions matched). **Pinned messages**
+  (§6): a surface-composed error keeps its `message` in the fixtures; a
+  kernel's or store's does not — the discriminator is the `data` the surface
+  attaches (the argument it could not honor, or `hint: "arguments"`).
+  `dry_run?` is added to `docs_append` (it had none) and `blocks_append` so
+  `omg append --dry-run` still previews remotely. The brief spelled
+  `blocks_get { id, view }`; the argument stays `resolution`, the name every
+  other read (`read_ref`, `docs_outline`) uses.
 - 2026-10-11, surface 3.0 (the rest of it): **`$` marks exactly the
   engine-provided names that contend with user names; everything else the
   engine adds is a plain field; every tool result spells a row the way the

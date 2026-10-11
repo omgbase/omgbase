@@ -144,18 +144,22 @@ export class OmgClient {
     return this.call<ChangesSinceWire>("changes_since", { repo, limit, ...(cursor !== undefined ? { cursor } : {}) });
   }
 
-  /** One document's version list (oldest → newest), by id or path. */
-  async docsHistory(doc: string, repo: string): Promise<Wire | null> {
-    const r = await this.call<{ docs: Wire[] }>("docs_history", { doc, repo, include_deleted: true });
+  // The document argument arrives spelled for the connected server
+  // (lib/paths.ts `docLocator` / `docForeign`: `{ id }`/`{ path }` and
+  // `{ doc_id }`/`{ doc_path }` on 3.0, `{ doc }` before — spec/surface §4).
+
+  /** One document's version list (oldest → newest). */
+  async docsHistory(locator: Record<string, string>, repo: string): Promise<Wire | null> {
+    const r = await this.call<{ docs: Wire[] }>("docs_history", { ...locator, repo, include_deleted: true });
     return r.docs[0] ?? null;
   }
 
-  diffUnified(doc: string, fromRev: string, toRev: string, repo: string): Promise<Wire> {
-    return this.call("diff_unified", { doc, from_rev: fromRev, to_rev: toRev, repo });
+  diffUnified(foreign: Record<string, string>, fromRev: string, toRev: string, repo: string): Promise<Wire> {
+    return this.call("diff_unified", { ...foreign, from_rev: fromRev, to_rev: toRev, repo });
   }
 
-  docsReadAt(doc: string, rev: string, repo: string): Promise<Wire> {
-    return this.call("docs_read_at", { doc, rev, repo });
+  docsReadAt(locator: Record<string, string>, rev: string, repo: string): Promise<Wire> {
+    return this.call("docs_read_at", { ...locator, rev, repo });
   }
 }
 

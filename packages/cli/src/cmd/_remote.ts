@@ -1,6 +1,7 @@
 import { connectEngine, parseEngineSpec, type EngineSpec, type McpEngineClient } from "@omgbase/sync";
+import { isValidId, findDocByRef, type Store } from "@omgbase/core";
 import type { Cli } from "../context.js";
-import { CliUsageError } from "../output.js";
+import { CliUsageError, EngineErrorLike } from "../output.js";
 
 // Remote (`--server`) mode plumbing (ADR-014). When a command runs with the
 // global `--server <cmd|url>` flag, it reaches a remote engine over MCP instead
@@ -58,6 +59,36 @@ function parseHeaders(raw: string[] | undefined): Record<string, string> {
 export async function remoteCall<T>(cli: Cli, tool: string, args: Record<string, unknown>): Promise<T> {
   const eng = await remoteEngine(cli);
   return eng.callTool<T>(tool, { ...args, ...(cli.flags.repo ? { repo: cli.flags.repo } : {}) });
+}
+
+/** A document ref as the surface's locator (spec/surface §4 "Arguments", 3.0):
+ *  a `d_` id is the `id` argument, anything else the `path` — the two names a
+ *  `docs_*` tool takes (one of them required). */
+export function docLocator(ref: string): { id: string } | { path: string } {
+  return isValidId(ref, "d") ? { id: ref } : { path: ref };
+}
+
+/** The same document as a FOREIGN reference from a tool whose rows are not
+ *  documents (`diff`, `diff_unified`): `doc_id` / `doc_path`. */
+export function docForeign(ref: string): { doc_id: string } | { doc_path: string } {
+  return isValidId(ref, "d") ? { doc_id: ref } : { doc_path: ref };
+}
+
+/** The live document a ref names, for a LOCAL verb, or the surface's own
+ *  `doc_missing` ("no document with id or path "<ref>"", `data` the locator) —
+ *  the same wording the `docs_*` tools give a remote caller (spec/surface §4
+ *  "Arguments"), so `omg mv nope.md …` reads alike in both modes. */
+export function requireDoc(store: Store, repoId: string, ref: string): string {
+  const info = findDocByRef(store, repoId, ref);
+  if (!info) throw new EngineErrorLike("doc_missing", `no document with id or path ${JSON.stringify(ref)}`, { data: docLocator(ref) });
+  return info.docId;
+}
+
+/** The live node a ref names, or the surface's `block_missing` ("no node with id "<ref>""). */
+export function requireNode(store: Store, repoId: string, nodeId: string): string {
+  const row = store.db.prepare("SELECT 1 FROM nodes WHERE node_id = ? AND repo_id = ?").get(nodeId, repoId);
+  if (!row) throw new EngineErrorLike("block_missing", `no node with id ${JSON.stringify(nodeId)}`, { data: { id: nodeId } });
+  return nodeId;
 }
 
 /** Close the remote connection if one was opened (idempotent). Called after a

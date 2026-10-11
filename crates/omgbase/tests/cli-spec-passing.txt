@@ -330,6 +330,7 @@ mutate::update-missing-block
 mutate::update-missing-block-valid-id
 mutate::update-no-target
 query::alias-q
+query::bare-target-in-block
 query::count
 query::count-json
 query::cursor-continue
@@ -353,6 +354,10 @@ query::parse-error
 query::parse-error-json
 query::path-literal-bare
 query::path-literal-rooted
+query::repo-removed
+query::repo-removed-json
+query::root-caret
+query::root-caret-past-the-root
 query::run
 query::run-empty-fence
 query::run-hits-and-count

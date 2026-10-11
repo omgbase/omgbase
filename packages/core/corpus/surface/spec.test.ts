@@ -13,6 +13,9 @@ import { afterAll, describe, it, expect } from "vitest";
 import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { Store } from "../../src/core/store/store.js";
+import { ensureRepo } from "../../src/core/attach.js";
+import { buildServer, toolDescriptions } from "../../src/mcp/server.js";
 import {
   carriesCorpus, deepEqualTol, describeChange, diffQueryExpect, loadCorpus, readCorpusFromDisk, runCursorCase, runQueryCase, runReadsCase, sortKeys, suiteKind, validateFixtureFile,
   type CursorCase, type CursorSuite, type FixtureFile, type LoadedCorpus, type QueryCase, type QuerySuite, type ReadsCase, type ReadsSuite,
@@ -21,6 +24,19 @@ import {
 // packages/core/corpus/surface → repo root is four levels up.
 const SPEC_DIR = fileURLToPath(new URL("../../../../spec/surface/", import.meta.url));
 const CASES_DIR = join(SPEC_DIR, "cases");
+/** README §4/§6: the catalog's tool names (registration order) and descriptions, pinned for both engines. */
+const DESCRIPTIONS_FILE = join(SPEC_DIR, "tool-descriptions.json");
+
+/** The reference catalog's `{ name → description }` in registration order. */
+async function referenceDescriptions(): Promise<Record<string, string>> {
+  const store = new Store({ path: ":memory:" });
+  try {
+    const repoId = ensureRepo(store, "fixture", null);
+    return await toolDescriptions(buildServer({ store, repoId }));
+  } finally {
+    store.close();
+  }
+}
 
 const UPDATE = (() => {
   const v = process.env.SURFACE_SPEC_UPDATE;
@@ -94,6 +110,13 @@ async function regenerate(): Promise<string[]> {
 
 if (UPDATE) {
   const report = await regenerate();
+  // The tool catalog's descriptions (README §4): one source for both engines —
+  // `scripts/gen-tool-descriptions.mjs` turns this file into the Rust
+  // catalog's `descriptions.rs`, and the surface crate's `tests/spec.rs` pins it.
+  const descriptions = JSON.stringify(await referenceDescriptions(), null, 2) + "\n";
+  const previous = existsSync(DESCRIPTIONS_FILE) ? readFileSync(DESCRIPTIONS_FILE, "utf8") : "";
+  if (descriptions !== previous) writeFileSync(DESCRIPTIONS_FILE, descriptions);
+  report.push(`tool-descriptions.json${descriptions === previous ? " (unchanged)" : " — regenerated; run node scripts/gen-tool-descriptions.mjs for the Rust catalog"}`);
   process.stderr.write(`[surface spec] regenerated expectations under ${CASES_DIR}\n${report.join("\n")}\n`);
 }
 
@@ -162,6 +185,13 @@ describe("surface spec fixtures (spec/surface/cases)", () => {
         ids.add(id);
       }
     }
+  });
+
+  it("tool-descriptions.json is the catalog's names (in order) and descriptions (README §4; SURFACE_SPEC_UPDATE=1 regenerates)", async () => {
+    const pinned = JSON.parse(readFileSync(DESCRIPTIONS_FILE, "utf8")) as Record<string, string>;
+    const actual = await referenceDescriptions();
+    expect(Object.keys(actual)).toEqual(Object.keys(pinned));
+    for (const [name, description] of Object.entries(actual)) expect(description, `description of ${name} drifted from spec/surface/tool-descriptions.json`).toBe(pinned[name]);
   });
 
   it("every corpus-backed suite embeds the alchemy corpus exactly as it is on disk (README §6)", () => {

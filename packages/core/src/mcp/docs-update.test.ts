@@ -38,7 +38,7 @@ describe("MCP docs_plan_update / docs_update", () => {
   it("docs_plan_update returns an inspectable opset without writing", async () => {
     const before = readFileSync(join(dir, "notes.md"), "utf8");
     const { payload, isError } = await call("docs_plan_update", {
-      doc: "notes.md",
+      path: "notes.md",
       content: "# Risks\n\nStable identity is a genuinely hard engineering problem indeed.\n\nA second paragraph with its own separate content to keep.\n",
     });
     expect(isError).toBe(false);
@@ -52,7 +52,7 @@ describe("MCP docs_plan_update / docs_update", () => {
   it("docs_update commits, preserving the untouched paragraph's id", async () => {
     const kept = (store.db.prepare("SELECT block_id FROM blocks WHERE text LIKE 'A second paragraph%'").get() as { block_id: string }).block_id;
     const { isError } = await call("docs_update", {
-      doc: "notes.md",
+      path: "notes.md",
       content: "# Risks\n\nStable identity is a genuinely hard engineering problem indeed.\n\nA second paragraph with its own separate content to keep.\n",
       reason: "refine risks intro",
     });
@@ -65,7 +65,7 @@ describe("MCP docs_plan_update / docs_update", () => {
   it("docs_update dry_run previews and writes nothing", async () => {
     const before = readFileSync(join(dir, "notes.md"), "utf8");
     const { payload } = await call("docs_update", {
-      doc: "notes.md",
+      path: "notes.md",
       content: "# Risks\n\nOnly one paragraph remains now after this whole-document update.\n",
       dry_run: true,
     });

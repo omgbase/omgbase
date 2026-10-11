@@ -38,7 +38,7 @@ import { BrowserOAuthProvider, callbackParams, discover, type Discovery, type Id
 import { fetchBridgeInfo, type BridgeInfo } from "./lib/bridge-info.ts";
 import { effect } from "./lib/effect.ts";
 import { describeQueryError, type OqxErrorInfo } from "./lib/errors.ts";
-import { LEGACY_SURFACE, docArg, hitId, hitPath, rooted, surfaceOf, unrooted } from "./lib/paths.ts";
+import { LEGACY_SURFACE, docLocator, hitId, hitPath, rooted, surfaceOf, unrooted } from "./lib/paths.ts";
 import { defaultQuery, isDefaultQuery } from "./lib/default-query.ts";
 import { MODE_LABEL, headerLabel, modeForBridge } from "./lib/connection.ts";
 import { SAMPLE_REPO, SAMPLE_PROBE_PATH, chooseQuery, existsQuery, isStarterQuery, starterQuery, timelineStarter, type RepositoryShape } from "./lib/starter-query.ts";
@@ -474,11 +474,12 @@ async function fetchEdges(candidate: Candidate, paths: string[]): Promise<GraphE
   return edgesFromRows(candidate, all, new Set(paths));
 }
 
-/** The edit tools with the `doc` argument in the server's form: the plans and
- * the graph speak rooted paths; a 1.x server wants them bare (`docArg`). */
+/** The edit tools with the document argument in the server's form (`id`/`path`
+ * on 3.0, `doc` before): the plans and the graph speak rooted paths; a 1.x
+ * server wants them bare (`docLocator` over `docArg`). */
 function metaClientFor(url: string) {
   const c = clientFor(url);
-  const form = (doc: string) => docArg(serverSurface.get(), doc);
+  const form = (doc: string) => docLocator(serverSurface.get(), doc);
   return {
     docsRead: (doc: string, repo?: string) => c.docsRead(form(doc), repo),
     docsSetMeta: (doc: string, patch: { set?: Record<string, unknown>; unset?: string[] }, repo?: string) => c.docsSetMeta(form(doc), patch, repo),

@@ -5,7 +5,7 @@ import type { Command } from "../commands.js";
 import { CliUsageError, EXIT_OK, renderHelp } from "../output.js";
 import { readContent, extractContentOpts } from "./_mutate.js";
 import { cmdUpdate as cmdUpdateBlock } from "./mutate.js";
-import { remoteCall } from "./_remote.js";
+import { remoteCall, docLocator, requireDoc } from "./_remote.js";
 
 // `omg update <target> (-f file | -)`: a polymorphic-target command (the omgbase
 // north-star — every command accepts any entity ref). A block id (b_…) replaces
@@ -61,7 +61,7 @@ async function runDocUpdate(cli: Cli, args: string[]): Promise<number> {
     // Remote: docs_update reconciles + commits server-side, returning the same
     // { opset, result } — render unchanged.
     const r = await remoteCall<{ opset: typeof opset; result: typeof result }>(cli, "docs_update", {
-      doc,
+      ...docLocator(doc),
       content: bytes,
       ...(values.reason ? { reason: values.reason } : {}),
       ...(dryRun ? { dry_run: true } : {}),
@@ -78,7 +78,7 @@ async function runDocUpdate(cli: Cli, args: string[]): Promise<number> {
       ...(ws.omgbaseDir ? { omgbaseDir: ws.omgbaseDir } : {}),
       ...(values.actor ? { actor: values.actor } : {}),
     };
-    ({ opset, result } = surfaceDocsUpdate(docsUpdate(ws.store, ctx, doc, bytes, {
+    ({ opset, result } = surfaceDocsUpdate(docsUpdate(ws.store, ctx, requireDoc(ws.store, repo.repoId, doc), bytes, {
       dryRun,
       ...(values.reason ? { reason: values.reason } : {}),
     })));

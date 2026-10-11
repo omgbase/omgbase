@@ -32,7 +32,7 @@ module per verb group under `cmd/`.
 directory — `spec/sync` §1), selects the default repo (`--repo`, the only
 repo, or the one whose root contains the current directory), wires the embedding
 provider named by the repo's `embedding.*` settings when it can be spawned
-(otherwise `semantic()` fails `semantic_unavailable`), and speaks
+(otherwise `semantic()` fails `provider_unavailable`), and speaks
 newline-delimited JSON-RPC 2.0 on stdin/stdout: `initialize`, `tools/list`,
 `tools/call`, `ping`. Every tool result is one text content item holding
 JSON; an error result carries `isError: true` and the envelope
