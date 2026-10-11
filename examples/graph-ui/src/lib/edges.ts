@@ -13,16 +13,22 @@
 // Paths: the shown nodes are keyed by the `/`-rooted path (lib/paths.ts). The
 // literals are spelled the way the connected server expects (`serverPath`:
 // bare on surface 1.x, rooted on 2.0 — where both forms match) and the rows'
-// `$path`/`$dst_path` are rooted before they are compared with the node keys,
-// so the edges come out the same against either server.
+// paths are rooted before they are compared with the node keys, so the edges
+// come out the same against either server.
+//
+// Field names: surface 3.0 renamed the `edges` target's names (spec/surface
+// §1.2 — `$dst_path` → `dst_path`, `src_field` → `field`), so the query is
+// spelled per server (`edgeFields`, lib/shapes.ts); the projection aliases
+// (`src`/`dst`) are the demo's own and the same on both.
 
 import type { Candidate, Direction, InversePair } from "./candidates.ts";
 import { rooted, serverPath } from "./paths.ts";
+import { edgeFields } from "./shapes.ts";
 
 export interface GraphEdge {
   /** Source doc path (`$path`, `/`-rooted). */
   src: string;
-  /** Destination doc path (`$dst_path`, `/`-rooted). */
+  /** Destination doc path (the edge's `dst_path` — `$dst_path` before 3.0 — `/`-rooted). */
   dst: string;
   /** The candidate name this edge belongs to. */
   rel: string;
@@ -46,15 +52,17 @@ export function chunked<T>(items: readonly T[], size = CHUNK): T[][] {
 }
 
 /** The queries that fetch one relationship's edges among `paths` (one per
- * chunk), with the path literals in the form `serverSurface` expects. */
+ * chunk), with the path literals and the edge field names in the form
+ * `serverSurface` expects. */
 export function edgeQueries(candidate: Pick<Candidate, "name" | "kind">, paths: readonly string[], serverSurface: string | null = null): string[] {
   if (paths.length === 0 || candidate.kind === "sequence") return [];
+  const f = edgeFields(serverSurface);
   const relation =
     candidate.kind === "frontmatter"
-      ? `src_field == ${oqxString(candidate.name)} && provenance == "frontmatter"`
+      ? `${f.field} == ${oqxString(candidate.name)} && provenance == "frontmatter"`
       : `provenance == "link" && dst_kind == "document"`;
   return chunked(paths).map(
-    (chunk) => `select src: $path, dst: $dst_path from edges where ${relation} && ${pathDisjunction(chunk.map((p) => serverPath(serverSurface, p)))}`,
+    (chunk) => `select src: $path, dst: ${f.dstPath} from edges where ${relation} && ${pathDisjunction(chunk.map((p) => serverPath(serverSurface, p)))}`,
   );
 }
 

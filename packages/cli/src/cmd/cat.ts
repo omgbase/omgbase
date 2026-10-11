@@ -43,9 +43,9 @@ async function catOne(cli: Cli, ref: string, resolution: Resolution): Promise<Ca
       // The `docs_read` result is the `read_ref` document result without `kind`.
       const { kind: _kind, ...doc } = r;
       void _kind;
-      return { text: String(r.content ?? ""), json: doc, capture: r.content };
+      return { text: String(r.$raw ?? ""), json: doc, capture: r.$raw };
     }
-    return { text: String(r.raw ?? r.text ?? r.label ?? ""), json: r, capture: r };
+    return { text: String(r.$raw ?? r.text ?? r.label ?? ""), json: r, capture: r };
   }
 
   const ws = cli.workspace();
@@ -63,13 +63,13 @@ async function catOne(cli: Cli, ref: string, resolution: Resolution): Promise<Ca
     if (!res) throw new EngineErrorLike("doc_missing", `no document ${ref}`);
     warnDocResolution(cli, ref, resolution);
     // shell: the bytes (a string; @_ only). `--json` is the `docs_read` result.
-    return { text: res.content, json: res, capture: res.content };
+    return { text: res.$raw, json: res, capture: res.$raw };
   }
 
   const node = nodesGet(ws.store, resolved.docId, resolved.blockId!, { resolution });
   if (!node) throw new EngineErrorLike("block_missing", `no block ${ref}`);
   // shell: the block (single entity)
-  return { text: node.raw ?? node.text ?? node.label ?? "", json: node, capture: node };
+  return { text: node.$raw ?? node.text ?? node.label ?? "", json: node, capture: node };
 }
 
 async function runCat(cli: Cli, args: string[]): Promise<number> {

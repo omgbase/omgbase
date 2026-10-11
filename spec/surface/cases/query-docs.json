@@ -118,8 +118,8 @@
     },
     {
       "name": "intrinsics",
-      "notes": "§1.2: $id/$path/$content_hash/$updated_at/$title/$tags and the `format` column.",
-      "query": "select i: $id, p: $path, h: $content_hash, u: $updated_at, t: $title, tg: $tags, format from docs where $path == \"substances/salt.md\"",
+      "notes": "§1.2: $id/$path/$hash/$updated_at/$title/$tags and the `format` column.",
+      "query": "select i: $id, p: $path, h: $hash, u: $updated_at, t: $title, tg: $tags, format from docs where $path == \"substances/salt.md\"",
       "expect": {
         "hits": [
           {
@@ -182,9 +182,9 @@
       }
     },
     {
-      "name": "body-intrinsic",
-      "notes": "§1.2: $body is the reconstructed file (spec/store §6.1).",
-      "query": "select b: $body from docs where $path == \"substances/mercury.md\"",
+      "name": "raw-intrinsic",
+      "notes": "§1.2: $raw is the reconstructed file (spec/store §6.1), frontmatter included; $hash (the `intrinsics` case) is its sha256.",
+      "query": "select b: $raw from docs where $path == \"substances/mercury.md\"",
       "expect": {
         "hits": [
           {
@@ -877,8 +877,8 @@
     },
     {
       "name": "relation-blocks-in-document-order",
-      "notes": "§1.2: `blocks` is the live blocks in DOCUMENT order (pre-order over the tree): each block's $ordinal restarts at 0 under its parent and $depth is its nesting depth (the list items and tasks are 0..N at depth 1 after their list at depth 0). Reachable since oqx 0.13; before, the engine's follow intrinsics shadowed them (§9).",
-      "query": "select b: blocks collect { o: $ordinal, d: $depth, type } from docs where $path == \"substances/salt.md\"",
+      "notes": "§1.2: `blocks` is the live blocks in DOCUMENT order (pre-order over the tree): each block's `ordinal` restarts at 0 under its parent and `depth` is its nesting depth (the list items and tasks are 0..N at depth 1 after their list at depth 0). Plain fields since 3.0 (before, the `$`-spelled columns collided with the follow intrinsics, §9).",
+      "query": "select b: blocks collect { o: ordinal, d: depth, type } from docs where $path == \"substances/salt.md\"",
       "expect": {
         "hits": [
           {
@@ -1047,8 +1047,8 @@
     },
     {
       "name": "relation-out-edges",
-      "notes": "§1.2: `out_edges` in (predicate, edge_id) order; the dangling [[nigredo]] has no $dst_path.",
-      "query": "select oe: out_edges collect { predicate, provenance, dp: $dst_path } from docs where $path == \"substances/prima-materia.md\"",
+      "notes": "§1.2: `out_edges` in (predicate, edge_id) order; the dangling [[nigredo]] has no dst_path.",
+      "query": "select oe: out_edges collect { predicate, provenance, dp: dst_path } from docs where $path == \"substances/prima-materia.md\"",
       "expect": {
         "hits": [
           {

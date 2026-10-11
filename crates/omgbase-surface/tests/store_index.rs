@@ -119,13 +119,13 @@ fn index_for_answers_for_a_root_scan_marker_on_an_indexable_path_and_for_nothing
         ctx.index_for(&docs, &["meta".to_owned(), "id".to_owned()])
             .is_none()
     ); // multi-segment
-    assert!(ctx.index_for(&ctx.root("edges"), &p("$dst")).is_some()); // a bare root
+    assert!(ctx.index_for(&ctx.root("edges"), &p("dst_id")).is_some()); // a bare root
     assert!(
         ctx.index_for(&ctx.get(&repo_root, "edges").unwrap(), &p("predicate"))
             .is_none()
     ); // no leading index
     assert!(
-        ctx.index_for(&ctx.get(&repo_root, "blocks").unwrap(), &p("$doc"))
+        ctx.index_for(&ctx.get(&repo_root, "blocks").unwrap(), &p("doc_id"))
             .is_some()
     );
     assert!(
@@ -139,7 +139,7 @@ fn index_for_answers_for_a_root_scan_marker_on_an_indexable_path_and_for_nothing
     assert!(ctx.index_for(&out, &p("$path")).is_none());
     assert_eq!(
         indexable_paths(Target::Edges),
-        ["$id", "$src", "$dst", "$path", "$dst_path"]
+        ["$id", "doc_id", "dst_id", "$path", "dst_path"]
     );
     // the scan is read once per run
     let _ = ctx.to_rows(&docs);
@@ -187,10 +187,10 @@ fn the_other_targets_are_probed_from_their_indexes() {
         return;
     };
     for q in [
-        "select $path, inbound: ^edges collect { $src values where $dst == ^$id } from docs",
-        "select $id, paragraphs: ^blocks collect { $ordinal values where $doc == ^$doc && type == \"paragraph\" } from blocks where type == \"heading\"",
-        "select name, same_kind: ^nodes collect { name values where kind == ^kind && $doc_id == ^$doc_id } from nodes where kind == \"md:section\"",
-        "select $path, outbound: ^edges collect { $dst_path values where $path == ^$path } from docs",
+        "select $path, inbound: ^edges collect { doc_id values where dst_id == ^$id } from docs",
+        "select $id, paragraphs: ^blocks collect { ordinal values where doc_id == ^doc_id && type == \"paragraph\" } from blocks where type == \"heading\"",
+        "select name, same_kind: ^nodes collect { name values where kind == ^kind && doc_id == ^doc_id } from nodes where kind == \"md:section\"",
+        "select $path, outbound: ^edges collect { dst_path values where $path == ^$path } from docs",
     ] {
         let (out, scans, naive) = run(&store, &repo, q);
         assert_eq!(out, naive, "{q}");
@@ -279,6 +279,85 @@ fn typed_equality_per_value_kind_and_the_absent_fallback() {
         .collect();
     assert_eq!(pos, paths(&ctx, &rows(Value::Number(800.0))));
     assert!(ty.lookup(&Value::Str("nope".into())).is_empty());
+}
+
+/// Foreign-key elimination (`spec/surface` §1, 3.0): a reach-through to the
+/// owner's identity reads the child row's own columns and runs no statement
+/// beyond the root scan; a read of another owner column loads it.
+#[test]
+fn reach_through_identity_runs_no_owner_statement() {
+    let Some((store, repo)) = alchemy() else {
+        return;
+    };
+    let count = |q: &str| -> (Value, usize) {
+        let parsed = rewrite_query(&oqx::parse_string(q).expect("parses"));
+        let engine = InMemoryEngine::new(StoreContext::new(store.conn(), &repo, HashMap::new()));
+        let out = engine.run(&parsed, &[]).expect("runs").into_value();
+        (out, engine.context().statements_run())
+    };
+    let rows_of =
+        |v: &Value| -> Vec<Value> { v.as_array().map(<[Value]>::to_vec).unwrap_or_default() };
+    let field = |r: &Value, k: &str| {
+        r.as_object()
+            .unwrap()
+            .get(k)
+            .cloned()
+            .unwrap_or(Value::Undefined)
+    };
+    for target in ["blocks", "edges"] {
+        let (out, statements) = count(&format!(
+            "select a: doc.$id, b: doc_id, c: doc.$path, d: $path from {target}"
+        ));
+        let rows = rows_of(&out);
+        assert!(rows.len() > 10, "{target}");
+        for r in &rows {
+            assert_eq!(field(r, "a"), field(r, "b"), "{target}: doc.$id is doc_id");
+            assert_eq!(field(r, "c"), field(r, "d"), "{target}: doc.$path is $path");
+        }
+        assert_eq!(statements, 1, "{target}: the root scan only");
+        // a document COLUMN loads the owner (a property read needs only the id)
+        let (_, with_column) = count(&format!("select f: doc.format from {target}"));
+        assert!(with_column > 1, "{target}: {with_column}");
+    }
+    let (out, statements) = count(
+        "select a: block.$id, b: block_id, c: block.$path, d: $path, e: block.doc_id, f: doc_id from nodes where kind == \"md:task\"",
+    );
+    let rows = rows_of(&out);
+    assert!(!rows.is_empty());
+    for r in &rows {
+        assert_eq!(field(r, "a"), field(r, "b"));
+        assert_eq!(field(r, "c"), field(r, "d"));
+        assert_eq!(field(r, "e"), field(r, "f"));
+    }
+    assert_eq!(statements, 1, "the root scan only");
+    let (_, with_column) = count("select t: block.text from nodes where kind == \"md:task\"");
+    assert!(with_column > 1, "{with_column}");
+    // the owner's properties and relations still answer from the lazy row
+    let (out, _) =
+        count("select l: doc.layer, n: size(doc.blocks) from blocks where $path == \"/index.md\"");
+    let rows = rows_of(&out);
+    assert!(!rows.is_empty());
+    assert!(
+        rows.iter()
+            .all(|r| field(r, "n").as_f64().is_some_and(|n| n > 0.0))
+    );
+    // planned and in-memory agree over the reach-through identity
+    let q = "select a: doc.$id, p: doc.$path from blocks where doc.$id == \"d_0\" && doc.$path == \"/index.md\"";
+    let planned =
+        omgbase_surface::query(&store, &repo, q, omgbase_surface::QueryOptions::default())
+            .expect("planned");
+    let memory = omgbase_surface::query(
+        &store,
+        &repo,
+        q,
+        omgbase_surface::QueryOptions {
+            in_memory: true,
+            ..Default::default()
+        },
+    )
+    .expect("in memory");
+    assert_eq!(planned, memory);
+    assert!(!planned.hits.is_empty());
 }
 
 #[test]

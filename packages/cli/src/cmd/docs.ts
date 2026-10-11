@@ -1,6 +1,12 @@
 import { parseArgs } from "node:util";
 import { parse as parseYamlScalar } from "yaml";
-import { docsCreate, docsMove, docsDelete, docsSetMeta, surfaceDocOpResult, surfaceDocMoveResult, referencePath, type DocOpContext, type DocOpResult, type DocMoveResult } from "@omgbase/core";
+import { docsCreate, docsMove, docsDelete, docsSetMeta, surfaceDocOpResult, surfaceDocMoveResult, referencePath, type DocOpContext, type DocOpResult, type DocMoveResult, type SurfaceDocOpResult, type SurfaceInboundLink } from "@omgbase/core";
+
+// The SURFACE shapes (spec/surface §4, 3.0): `{ $id, $path, committed, diffs? }`
+// and, for a move, `dangling: [{ doc_id, $path, block_id, … }]` — what the MCP
+// tool returns and what `--json` prints verbatim.
+type DocOp = SurfaceDocOpResult<DocOpResult>;
+type DocMove = Omit<SurfaceDocOpResult<DocMoveResult>, "dangling"> & { dangling: SurfaceInboundLink[] };
 import type { Cli } from "../context.js";
 import type { Command } from "../commands.js";
 import { CliUsageError, EXIT_OK, renderHelp } from "../output.js";
@@ -11,9 +17,10 @@ import { remoteCall } from "./_remote.js";
 // over the core doc ops, which own the file-write + commit + flock protocol.
 // The global --dry-run rides as the op's `dryRun` (spec/cli §3.6): the op
 // validates and returns the per-file diffs it would make, committing nothing.
-// Every path printed is the reference form (spec/surface §1 "Paths"): the
-// library's result is re-shaped through `surfaceDocOpResult` — the same
-// function the MCP server applies — before it is rendered.
+// Every path printed is the reference form (spec/surface §1 "Paths") and the
+// result's identity is `$id`/`$path` (3.0): the library's result is re-shaped
+// through `surfaceDocOpResult` — the same function the MCP server applies —
+// before it is rendered, so the CLI and the tool print one shape.
 
 function ctxOf(cli: Cli, ws: ReturnType<Cli["workspace"]>, repoId: string, rootPath: string | null, actor?: string): DocOpContext {
   return {
@@ -25,7 +32,7 @@ function ctxOf(cli: Cli, ws: ReturnType<Cli["workspace"]>, repoId: string, rootP
   };
 }
 
-function report(cli: Cli, verb: string, res: DocOpResult): number {
+function report(cli: Cli, verb: string, res: DocOp): number {
   if (cli.flags.mode !== "human") {
     cli.io.out(JSON.stringify(res));
     return EXIT_OK;
@@ -34,8 +41,8 @@ function report(cli: Cli, verb: string, res: DocOpResult): number {
     renderDiffs(cli, res.diffs ?? {});
     return EXIT_OK;
   }
-  cli.io.err(cli.style.dim(`  ${cli.style.ok(cli.render.g.ok)} ${verb} ${cli.style.accent(res.path)}`));
-  cli.io.out(res.docId);
+  cli.io.err(cli.style.dim(`  ${cli.style.ok(cli.render.g.ok)} ${verb} ${cli.style.accent(res.$path)}`));
+  cli.io.out(res.$id);
   return EXIT_OK;
 }
 
@@ -45,7 +52,7 @@ function report(cli: Cli, verb: string, res: DocOpResult): number {
 // list the --json result does, with the fix for each kind — `retarget` for
 // authored links left as written, `meta` for a frontmatter relation (never
 // rewritten by a move).
-function reportMove(cli: Cli, from: string, res: DocMoveResult): number {
+function reportMove(cli: Cli, from: string, res: DocMove): number {
   const code = report(cli, "moved to", res);
   if (cli.flags.mode !== "human") return code;
   const { style, io } = cli;
@@ -55,17 +62,17 @@ function reportMove(cli: Cli, from: string, res: DocMoveResult): number {
     io.err(style.dim(`  ${style.ok(cli.render.g.ok)} retargeted ${b} inbound link${b === 1 ? "" : "s"} in ${d} document${d === 1 ? "" : "s"}`));
   }
   if (res.dangling.length === 0) return code;
-  const where = res.dangling.map((l) => (l.block ? `${l.path} ${l.block}` : `${l.path} (frontmatter)`)).join(", ");
+  const where = res.dangling.map((l) => (l.block_id ? `${l.$path} ${l.block_id}` : `${l.$path} (frontmatter)`)).join(", ");
   const n = res.dangling.length;
   io.err(style.warn(`  ${style.warn(cli.render.g.warn)} ${n} inbound link${n === 1 ? "" : "s"} still name${n === 1 ? "s" : ""} the old path: ${where}`));
-  if (res.dangling.some((l) => l.block)) io.err(style.dim(`  fix: ${cli.prog} retarget ${from} ${res.path} --apply`));
+  if (res.dangling.some((l) => l.block_id)) io.err(style.dim(`  fix: ${cli.prog} retarget ${from} ${res.$path} --apply`));
   const seen = new Set<string>();
   for (const l of res.dangling) {
-    if (l.block || !l.field) continue;
-    const key = `${l.path}\u0000${l.field}`;
+    if (l.block_id || !l.field) continue;
+    const key = `${l.$path}\u0000${l.field}`;
     if (seen.has(key)) continue;
     seen.add(key);
-    io.err(style.dim(`  fix: ${cli.prog} meta ${l.path} --set ${l.field}=${res.path}`));
+    io.err(style.dim(`  fix: ${cli.prog} meta ${l.$path} --set ${l.field}=${res.$path}`));
   }
   return code;
 }
@@ -96,7 +103,7 @@ async function runNew(cli: Cli, args: string[]): Promise<number> {
   if (!path) throw new CliUsageError("new requires a <path>");
   const bytes = readContent(content);
   if (cli.flags.server) {
-    return report(cli, "created", await remoteCall<DocOpResult>(cli, "docs_create", { path, markdown: bytes, ...dryRunArg(cli) }));
+    return report(cli, "created", await remoteCall<DocOp>(cli, "docs_create", { path, markdown: bytes, ...dryRunArg(cli) }));
   }
   const ws = cli.workspace();
   const repo = cli.repo(ws);
@@ -128,7 +135,7 @@ async function runMv(cli: Cli, args: string[]): Promise<number> {
   if (!doc || !toPath) throw new CliUsageError("mv requires <doc> and <new-path>");
   const noRetarget = values["no-retarget"] === true;
   if (cli.flags.server) {
-    const res = await remoteCall<DocMoveResult>(cli, "docs_move", { doc, to_path: toPath, ...(noRetarget ? { retarget_inbound: false } : {}), ...dryRunArg(cli) });
+    const res = await remoteCall<DocMove>(cli, "docs_move", { doc, to_path: toPath, ...(noRetarget ? { retarget_inbound: false } : {}), ...dryRunArg(cli) });
     return reportMove(cli, fromPathOf(res, doc), res);
   }
   const ws = cli.workspace();
@@ -141,7 +148,7 @@ async function runMv(cli: Cli, args: string[]): Promise<number> {
 
 export async function runRmDoc(cli: Cli, doc: string, actor?: string): Promise<number> {
   if (cli.flags.server) {
-    return report(cli, "deleted", await remoteCall<DocOpResult>(cli, "docs_delete", { doc, ...dryRunArg(cli) }));
+    return report(cli, "deleted", await remoteCall<DocOp>(cli, "docs_delete", { doc, ...dryRunArg(cli) }));
   }
   const ws = cli.workspace();
   const repo = cli.repo(ws);
@@ -197,7 +204,7 @@ async function runMeta(cli: Cli, args: string[]): Promise<number> {
   if (Object.keys(set).length === 0 && unset.length === 0) throw new CliUsageError("meta requires --set or --unset");
 
   if (cli.flags.server) {
-    return report(cli, "patched", await remoteCall<DocOpResult>(cli, "docs_set_meta", {
+    return report(cli, "patched", await remoteCall<DocOp>(cli, "docs_set_meta", {
       doc,
       ...(Object.keys(set).length ? { set } : {}),
       ...(unset.length ? { unset } : {}),
@@ -217,7 +224,7 @@ function dryRunArg(cli: Cli): { dry_run?: true } {
 // The path a move left behind, for the retarget hint, in the reference form:
 // the dangling links name it as written (`target`, the canonical spelling with
 // a leading `/`); fall back to the ref the user typed when nothing dangles.
-function fromPathOf(res: DocMoveResult, ref: string): string {
+function fromPathOf(res: DocMove, ref: string): string {
   const named = res.dangling.find((l) => l.target)?.target;
   return referencePath(named ?? ref);
 }

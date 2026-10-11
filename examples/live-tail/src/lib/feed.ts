@@ -4,7 +4,9 @@
 // queries it shapes and what it hides), and the diff's lines. Nothing here
 // touches the network or the DOM.
 //
-// Tool shapes (packages/core/src/mcp/server.ts, graph/history.ts):
+// Tool shapes, as this module keeps them (the 2.x spellings; a 3.0 server's
+// `{ $id, $path, $hash, $updated_at, $raw }` are read into these by lib/shapes.ts
+// per the connected server's surface version):
 //   changes_since → { digests: [{ commit, seq, ts, origin, actor, summary, revisions: [{ doc, path, contentHash }] }], cursor, truncated, head }
 //   docs_history  → { docs: [{ docId, path, deleted, currentRev, versions: [{ rev, seq, commit, ts, origin, actor, contentHash, isCurrent }] }], truncated }
 //   diff_unified  → { doc, path, from, to, diff }

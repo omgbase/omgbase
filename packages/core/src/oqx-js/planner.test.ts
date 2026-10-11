@@ -23,7 +23,7 @@ const planned = (q: string): boolean => planner.plan(parse(q), []) !== null;
 describe("planner — decline (c): a residual that could raise sends the whole query unplanned", () => {
   it("a bare reserved docs basename in the residual", () => {
     expect(planned('from docs where path == "x" && $path == "nope.md"')).toBe(false);
-    expect(planned('from docs where $path == "nope.md" && body')).toBe(false);
+    expect(planned('from docs where $path == "nope.md" && raw')).toBe(false);
     expect(planned('from docs where $path == "nope.md" && updated_at')).toBe(false);
   });
 
@@ -66,7 +66,7 @@ describe("planner — decline (c): a residual that could raise sends the whole q
 
   it("no pushable conjunct at all → unplanned (as before)", () => {
     expect(planned('from docs where era == stages')).toBe(false); // prop × prop
-    expect(planned('from blocks where $ordinal == checked')).toBe(false); // int × json
+    expect(planned('from blocks where ordinal == checked')).toBe(false); // int × json
     expect(planned('from docs')).toBe(false);
   });
 
@@ -110,7 +110,7 @@ describe("planner — typed pushes (1.2): a bool or num literal against a json o
   });
 
   it("the still-declined cells stay unplanned", () => {
-    expect(planned('from blocks where checked == $ordinal')).toBe(false);
+    expect(planned('from blocks where checked == ordinal')).toBe(false);
     expect(planned('from blocks where attrs.level == attrs.checked')).toBe(false);
     expect(planned('from docs where true == 1')).toBe(false);
     expect(planned('from docs where tags != null')).toBe(false);

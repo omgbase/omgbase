@@ -70,10 +70,10 @@ async function runFind(cli: Cli, args: string[]): Promise<number> {
 
   // -1: bare top id.
   if (values.one) {
-    if (hits[0]) cli.io.out(hits[0].id);
+    if (hits[0]) cli.io.out(hits[0].$id);
     return EXIT_OK;
   }
-  if (cli.flags.mode !== "human") return emitMachine(cli, hits, { items: hits, ids: hits.map((h) => h.id) });
+  if (cli.flags.mode !== "human") return emitMachine(cli, hits, { items: hits, ids: hits.map((h) => h.$id) });
 
   const { style, io } = cli;
   if (hits.length === 0) {
@@ -81,7 +81,7 @@ async function runFind(cli: Cli, args: string[]): Promise<number> {
     return EXIT_OK;
   }
   for (const h of hits) {
-    io.out(`${style.id(h.id)}  ${style.accent(h.locator)}  ${h.preview}`);
+    io.out(`${style.id(h.$id)}  ${style.accent(h.locator)}  ${h.preview}`);
     if (values.verbose) io.err(style.dim(`    ${JSON.stringify(h.evidence)}`));
   }
   return EXIT_OK;

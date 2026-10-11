@@ -545,7 +545,7 @@ mod tests {
         };
         // a bare reserved docs basename (the guard in `get`)
         declined("from docs where path == \"x\" && $path == \"nope.md\"");
-        declined("from docs where $path == \"nope.md\" && !body");
+        declined("from docs where $path == \"nope.md\" && !raw");
         // `doc.<reserved>` on any target, at any depth
         declined("from blocks where $path == \"x\" && doc.path == \"y\"");
         declined("from blocks where $path == \"x\" && nodes exists { where doc.path == \"y\" }");

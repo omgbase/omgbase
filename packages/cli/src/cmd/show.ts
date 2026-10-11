@@ -30,7 +30,7 @@ function showOne(cli: Cli, ref: string, include: string[]): ShowOne {
     const links = docLinks(ws.store, resolved.docId, { direction: "both" });
     const properties = docPropertiesMerged(ws.store.db, resolved.docId);
     const payload = { kind: "document", ...res };
-    return { payload, render: () => renderDocCard(cli, res.path, properties, links) };
+    return { payload, render: () => renderDocCard(cli, res.$path, properties, links) };
   }
 
   const node = nodesGet(ws.store, resolved.docId, resolved.blockId!, { resolution: "full" });
@@ -84,19 +84,20 @@ function renderDocCard(cli: Cli, path: string, fm: Record<string, unknown>, link
   }
   if (links.out.length > 0) {
     io.out(`  ${style.dim("out edges")}`);
-    for (const e of links.out) io.out(`    ${style.accent(e.predicate)} ${style.dim(render.g.arrow)} ${style.id(e.node)} ${style.dim(`×${e.count}`)}`);
+    for (const e of links.out) io.out(`    ${style.accent(e.predicate)} ${style.dim(render.g.arrow)} ${style.id(e.doc_id)} ${style.dim(`×${e.count}`)}`);
   }
   if (links.in.length > 0) {
     io.out(`  ${style.dim("backlinks")}`);
-    for (const e of links.in) io.out(`    ${style.id(e.node)} ${style.dim(render.g.arrow)} ${style.accent(e.predicate)} ${style.dim(`×${e.count}`)}`);
+    for (const e of links.in) io.out(`    ${style.id(e.doc_id)} ${style.dim(render.g.arrow)} ${style.accent(e.predicate)} ${style.dim(`×${e.count}`)}`);
   }
 }
 
 function renderBlockCard(cli: Cli, node: import("@omgbase/core").GetNode, history?: import("@omgbase/core").NodeChange[]): void {
   const { render, style, io } = cli;
-  io.out(`  ${render.typeGlyph(node.type)} ${style.bold(node.type)}  ${style.id(node.id)}`);
+  io.out(`  ${render.typeGlyph(node.type)} ${style.bold(node.type)}  ${style.id(node.$id)}`);
   io.out(render.rule(40));
-  if (node.placement) io.out(`  ${style.dim("placement")}  parent=${style.id(node.placement.parent ?? "—")} ordinal=${node.placement.ordinal} depth=${node.placement.depth}`);
+  // The placement is flattened onto the row (3.0: `parent_id`/`ordinal`/`depth`); the line reads the same.
+  if (node.ordinal !== undefined) io.out(`  ${style.dim("placement")}  parent=${style.id(node.parent_id ?? "—")} ordinal=${node.ordinal} depth=${node.depth}`);
   if (node.attrs && Object.keys(node.attrs).length > 0) {
     io.out(`  ${style.dim("attrs")}`);
     for (const [k, v] of Object.entries(node.attrs)) io.out(`    ${style.accent(k)} ${style.dim("=")} ${fmt(v)}`);

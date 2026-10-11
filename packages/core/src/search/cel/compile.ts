@@ -124,7 +124,7 @@ const COMPUTED_INTRINSICS = new Set(["$title", "$tags"]);
 // (frontmatter.path / inline.path) is an explicit request for that property
 // and is likewise not caught — only the bare first-segment case is the trap.
 const RESERVED_INTRINSIC_BASENAMES = new Set([
-  "id", "path", "repo", "updated_at", "content_hash", "body",
+  "id", "path", "repo", "updated_at", "hash", "raw",
 ]);
 
 // Guard the docs open namespace against reserved-intrinsic collisions. `segs`
@@ -273,7 +273,7 @@ function fieldSql(field: FieldRef, target: Target, ctx: AliasCtx): { expr: strin
         case "$path": return { expr: `${self}.path` };
         case "$repo": return { expr: `${self}.repo_id` };
         case "$updated_at": return { expr: `(SELECT c.ts FROM revisions r JOIN commits c ON c.commit_id = r.commit_id WHERE r.rev_id = ${self}.current_rev)` };
-        case "$content_hash": return { expr: `lower(hex(${self}.file_hash))` };
+        case "$hash": return { expr: `lower(hex(${self}.file_hash))` };
         default: {
           // Computed property intrinsic ($title, $tags) → properties row scalar.
           const ref = propRef(field, target);
@@ -284,37 +284,20 @@ function fieldSql(field: FieldRef, target: Target, ctx: AliasCtx): { expr: strin
     } else if (target === "nodes") {
       switch (head) {
         case "$id": return { expr: `${self}.node_id` };
-        case "$node_id": return { expr: `${self}.node_id` };
-        case "$doc_id": return { expr: `${self}.doc_id` };
-        case "$block_id": return { expr: `${self}.block_id` };
         case "$path": return { expr: `${doc}.path` };
         default: throw new FilterInvalid(`unknown intrinsic ${head} on nodes`, "10 §2");
       }
     } else if (target === "edges") {
       switch (head) {
         case "$id": return { expr: `${self}.edge_id` };
-        case "$src": return { expr: `${self}.src_doc` };
-        case "$dst": return { expr: `${self}.dst_node` };
-        case "$src_block": return { expr: `${self}.src_block` };
-        case "$via": return { expr: `${self}.via_node` };
-        case "$from_commit": return { expr: `${self}.from_commit` };
         case "$path": return { expr: `${doc}.path` }; // source document's path
-        // Meaningful destination, resolved per dst_kind (cheap correlated lookups,
-        // NULL when not applicable): the target document's path, or the external
-        // node's URI. Lets `from edges` show real targets, not opaque node ids.
-        case "$dst_path": return { expr: `(SELECT dd.path FROM docs dd WHERE dd.doc_id = ${self}.dst_node)` };
-        case "$dst_uri": return { expr: `(SELECT xn.uri FROM external_nodes xn WHERE xn.node_id = ${self}.dst_node)` };
         default: throw new FilterInvalid(`unknown intrinsic ${head} on edges`, "10 §2");
       }
     } else {
       switch (head) {
         case "$id": return { expr: `${self}.block_id` };
-        case "$doc": return { expr: `${self}.doc_id` };
         case "$path": return { expr: `${doc}.path` };
-        case "$ordinal": return { expr: `${self}.ordinal` };
-        case "$depth": return { expr: `${self}.depth` };
-        case "$content_hash": return { expr: `lower(hex(${self}.raw_hash))` };
-        case "$body": return { expr: `${self}.text` };
+        case "$hash": return { expr: `lower(hex(${self}.raw_hash))` };
         case "$updated_at": return { expr: `(SELECT MAX(c.ts) FROM block_changes bc JOIN commits c ON c.commit_id = bc.commit_id WHERE bc.block_id = ${self}.block_id)` };
         default: throw new FilterInvalid(`unknown intrinsic ${head} on blocks`, "10 §2");
       }
@@ -359,7 +342,15 @@ function fieldSql(field: FieldRef, target: Target, ctx: AliasCtx): { expr: strin
     if (head === "provenance") return { expr: `${self}.provenance` };
     if (head === "dst_kind") return { expr: `${self}.dst_kind` };
     if (head === "anchor") return { expr: `${self}.anchor` };
-    if (head === "src_field") return { expr: `${self}.src_field` };
+    // The edges target's plain fields (spec/surface §1.2, 3.0): foreign keys
+    // named for what they are, the `src_field` column as `field`.
+    if (head === "doc_id") return { expr: `${self}.src_doc` };
+    if (head === "block_id") return { expr: `${self}.src_block` };
+    if (head === "via_id") return { expr: `${self}.via_node` };
+    if (head === "dst_id") return { expr: `${self}.dst_node` };
+    if (head === "dst_path") return { expr: `(SELECT dd.path FROM docs dd WHERE dd.doc_id = ${self}.dst_node)` };
+    if (head === "uri") return { expr: `(SELECT xn.uri FROM external_nodes xn WHERE xn.node_id = ${self}.dst_node)` };
+    if (head === "field") return { expr: `${self}.src_field` };
     if (head === "doc") {
       // reach-through to the SOURCE document (edges join docs on src_doc).
       const rest = segs.slice(1);

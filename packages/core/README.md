@@ -51,16 +51,16 @@ const repoId = ensureRepo(ws.store, "notes", root);   // repo row + an `fs` sour
 const sweep = freshnessSweep(ws.store, repoId, root); // ingest new/changed *.md as one checkpoint
 sweep.ingested;                                       // ["todo.md"]
 
-// Query with OQX. Nodes are projections of blocks; $block_id is the anchor block.
+// Query with OQX. Nodes are projections of blocks; block_id is the anchor block.
 const open = oqxRun(ws.store, repoId,
-  'select block: $block_id from nodes where kind == "md:task" && !attrs.checked');
-open.hits;  // [{ id: "n_…", path: "todo.md", block: "b_…" }]
+  'select block: block_id from nodes where kind == "md:task" && !attrs.checked');
+open.hits;  // [{ $id: "n_…", $path: "/todo.md", block: "b_…" }]
 
 // Read a whole document back byte-exact, with block ids + CAS hashes.
 const doc = findDoc(ws.store, { repoId, path: "todo.md" });
 const read = docsRead(ws.store, doc.docId, { includeIds: true });
-read.content;  // "# Todo\n\n- [ ] write the README\n- [x] ship 0.1\n"
-read.ids;      // ["b_…", "b_…", "b_…", "b_…"]   read.hashes[id] → content_hash
+read.$raw;     // "# Todo\n\n- [ ] write the README\n- [x] ship 0.1\n"
+read.ids;      // ["b_…", "b_…", "b_…", "b_…"]   read.hashes[id] → the block's $hash (the expect.content_hash value)
 
 // Mutate. The macro expands to kernel `update` ops pinned by content_hash;
 // apply() renders, writes the file, and commits a new revision.
@@ -71,7 +71,7 @@ const result = apply(ws.store, {
   ops: tasksComplete(ws.store, open.hits.map((h) => h.block)),
   origin: { actor: "agent:quickstart", reason: "demo" },
 });
-result;  // { results: [{ ids: ["b_…"] }], revisions: [{ doc: "d_…", path: "todo.md" }], committed: true }
+result;  // { results: [{ ids: ["b_…"] }], revisions: [{ $id: "d_…", $path: "todo.md", $hash: "…" }], committed: true }
 // todo.md on disk now reads "- [x] write the README"
 
 historyNode(ws.store, open.hits[0].block);  // [{ origin: "import", kind: "edited", … }, { origin: "observed", kind: "inserted", … }]
@@ -126,7 +126,7 @@ server in your own process with `buildServer(ctx)` and any MCP SDK transport.
 3. A doc is an ordered tree of **blocks** (`b_`): paragraphs, headings, list items, fences, YAML entries, JSON properties…
 4. Block ids are minted once and threaded through re-ingests by the reconciler, so they survive edits and moves.
 5. Blocks are the **mutation anchors**: every kernel op addresses `b_` ids; `expect.content_hash` (sha256 of the block's raw bytes) is the CAS token.
-6. **Nodes** (`n_`) are semantic projections of blocks — `md:task`, `md:heading`, `md:section`, `md:link`, `md:wikilink`, `md:anchor`, `md:inline_field` — queryable but derived; `$block_id` points back at the anchor.
+6. **Nodes** (`n_`) are semantic projections of blocks — `md:task`, `md:heading`, `md:section`, `md:link`, `md:wikilink`, `md:anchor`, `md:inline_field` — queryable but derived; `block_id` points back at the anchor.
 7. **Edges** are typed links between blocks/docs (wikilinks, `$ref`, frontmatter relations) with commit intervals.
 8. Every ingest or mutation appends a **commit** (`c_`) and a per-doc **revision** (`r_`) whose rendered hash equals the file's bytes.
 9. Commits carry `origin` (`observed` from disk, `import` from `apply`) and an actor; `historyNode`/`changesSince` read them back.
@@ -144,11 +144,11 @@ and `semantic("…")` (embedding score) are omgbase additions.
 
 ```js
 oqxRun(ws.store, repoId, `
-  select $path, $title, open: nodes collect { select $block_id where kind == "md:task" && !attrs.checked }
+  select $path, $title, open: nodes collect { select block_id where kind == "md:task" && !attrs.checked }
   from docs where nodes count { where kind == "md:task" && !attrs.checked } >= 2
   order by $path limit 10
 `);
-// hits: [{ id: "d_…", path: "more.md", $path: "more.md", $title: "More", open: [{ $block_id: "b_…" }, …] }]
+// hits: [{ $id: "d_…", $path: "/more.md", $title: "More", open: [{ block_id: "b_…" }, …] }]
 ```
 
 See [`docs/query-language.md`](https://github.com/omgbase/omgbase/blob/main/docs/query-language.md)

@@ -31,16 +31,19 @@ import { referencePath, storagePath } from "../core/paths.js";
 
 export type StaleReason = "dangling_doc" | "dangling_block" | "broken_anchor";
 
+// A stale link is an edge row under the `edges` target's names (spec/surface
+// §1.2, 3.0): `doc_id`/`block_id` the source, `$path` the source document's
+// path (the reference form), `dst_kind` the destination's kind.
 export interface StaleLink {
   /** source document id */
-  srcDoc: string;
-  /** source document repo-relative path */
-  srcPath: string;
+  doc_id: string;
+  /** source document path in the reference form */
+  $path: string;
   /** source block id (null for frontmatter-level edges) */
-  srcBlock: string | null;
+  block_id: string | null;
   predicate: string;
   provenance: string;
-  dstKind: string;
+  dst_kind: string;
   /** the canonical target path in the reference form (phantom prefix stripped,
    *  rooted), e.g. "/guides/old.md" — spec/surface §1 "Paths" */
   target: string;
@@ -58,14 +61,14 @@ export interface LinkHealthSummary {
   staleCount: number;
   /** distinct missing targets, most-referenced first (ties by target) */
   byTarget: { target: string; count: number }[];
-  /** source documents carrying dangling links, most first (ties by path) */
-  bySource: { srcPath: string; count: number }[];
+  /** source documents carrying dangling links, most first (ties by path); `$path` the reference form */
+  bySource: { $path: string; count: number }[];
   externalCount: number;
   totalOpenEdges: number;
 }
 
 export interface LinkHealth {
-  /** dangling internal links, ordered by srcPath then target */
+  /** dangling internal links, ordered by source path then target */
   stale: StaleLink[];
   /** open external (http(s)) edges — unverifiable, not counted as stale */
   externalCount: number;
@@ -180,15 +183,15 @@ export function linksStale(store: Store, repoId: string, opts: LinkHealthOptions
   const stale: StaleLink[] = page.map((r) => {
     // Strip the "phantom:" prefix to expose the canonical path.
     const target = r.dstNode.slice("phantom:".length);
-    // The surface speaks the reference form: `srcPath` and `target` rooted;
+    // The surface speaks the reference form: `$path` and `target` rooted;
     // `authored` stays exactly as written in the source.
     return {
-      srcDoc: r.srcDoc,
-      srcPath: referencePath(r.srcPath),
-      srcBlock: r.srcBlock,
+      doc_id: r.srcDoc,
+      $path: referencePath(r.srcPath),
+      block_id: r.srcBlock,
       predicate: r.predicate,
       provenance: r.provenance,
-      dstKind: r.dstKind,
+      dst_kind: r.dstKind,
       target: referencePath(target),
       authored: authoredFor(r.srcBlock, r.srcPath, target, r.anchor),
       anchor: r.anchor,
@@ -234,7 +237,7 @@ export function linksStaleSummary(store: Store, repoId: string, opts: Pick<LinkH
   const bySource = (store.db
     .prepare(`SELECT d.path AS srcPath, count(*) AS count ${phantom} GROUP BY d.path ORDER BY count DESC, d.path`)
     .all(...params) as { srcPath: string; count: number }[])
-    .map((r) => ({ srcPath: referencePath(r.srcPath), count: r.count }));
+    .map((r) => ({ $path: referencePath(r.srcPath), count: r.count }));
   return {
     staleCount: byTarget.reduce((n, t) => n + t.count, 0),
     byTarget,

@@ -257,8 +257,8 @@ vs. computed provenance:
 
 ```jsonc
 {
-  "path": "...", "docId": "...", "rev": "...",
-  "content": "...",                     // byte-exact file (unchanged)
+  "$id": "...", "$path": "...", "rev": "...",
+  "$raw": "...",                        // byte-exact file (unchanged)
   "properties": {
     "frontmatter": { "layer": "canon", "tags": ["a","b"] },   // scalar stays scalar
     "inline":      { "job": ["janitor","salesman"] },

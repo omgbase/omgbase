@@ -212,7 +212,9 @@ fn row_of(el: &Json) -> Row {
         let r#ref = first_string(o, REF_KEYS);
         let label = first_string(
             o,
-            &["$path", "path", "locator", "name", "$id", "id", "node"],
+            &[
+                "$path", "path", "locator", "name", "$id", "id", "node", "doc_id",
+            ],
         )
         .or_else(|| r#ref.clone())
         .unwrap_or_else(|| preview(el));
@@ -230,11 +232,14 @@ fn row_of(el: &Json) -> Row {
     }
 }
 
-/// The keys that make an object an entity ref, in precedence order: a query
-/// hit's `$id` (`spec/surface` §1.4, 3.0 — the envelope spells the
-/// intrinsics), then the other tools' envelopes (`id`, `node`, `block`,
-/// `locator`, a path).
-const REF_KEYS: &[&str] = &["$id", "id", "node", "block", "locator", "$path", "path"];
+/// The keys that make an object an entity ref, in precedence order: a row's
+/// `$id` (`spec/surface` §1.2, 3.0 — every tool result spells a row's identity
+/// as the intrinsic), a `links` row's far node (`doc_id`) and an edge's
+/// `block_id`, then the pre-3.0 envelopes (`id`, `node`, `block`) — kept so a
+/// remote 2.x server's results still address — then `locator` and a path.
+const REF_KEYS: &[&str] = &[
+    "$id", "doc_id", "block_id", "id", "node", "block", "locator", "$path", "path",
+];
 
 fn first_string(o: &serde_json::Map<String, Json>, keys: &[&str]) -> Option<String> {
     keys.iter()
@@ -350,7 +355,7 @@ mod tests {
         assert!(derive_rows(&json!("text")).is_none());
         let apply = json!({ "results": [{ "ids": ["b_1", "b_2"] }], "revisions": [] });
         assert_eq!(derive_rows(&apply).unwrap().len(), 2);
-        let links = json!({ "out": [{ "node": "d_1" }], "in": [{ "node": "d_0" }] });
+        let links = json!({ "out": [{ "doc_id": "d_1" }], "in": [{ "doc_id": "d_0" }] });
         let rows = derive_rows(&links).unwrap();
         assert_eq!(
             rows.iter().map(|r| r.r#ref.as_str()).collect::<Vec<_>>(),

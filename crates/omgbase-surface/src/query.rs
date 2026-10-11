@@ -1,7 +1,7 @@
 //! The runner (`spec/surface/README.md` §1.4): parse the source, rewrite the
 //! row functions to `$self` methods, run it through the engine over the
 //! store context, and shape the engine's result into the surface's
-//! `OqxResult` (lean `{ id, path, … }` hits, keyset paging, the consumer
+//! `OqxResult` (lean `{ $id, $path, … }` hits, keyset paging, the consumer
 //! scalars). Port of `packages/core/src/oqx-js/run.ts`.
 //!
 //! By default the tier-3 planner ([`crate::planner`]) pre-filters the scan in
@@ -146,13 +146,14 @@ impl OqxResult {
 // ---- the `$self` rewrite -----------------------------------------------------------
 
 /// Paths on the surface are the reference form (`spec/surface` §1 "Paths",
-/// 2.0): `$path` and `$dst_path` read `/a/b.md`. A string literal a query
-/// compares with one of them — `$path == "a.md"`, `"a.md" != $dst_path`,
+/// 2.0): `$path` and the edge field `dst_path` read `/a/b.md`. A string
+/// literal a query compares with one of them — `$path == "a.md"`, `"a.md" !=
+/// dst_path`,
 /// `$path.startsWith("lab/")` — is rooted first, so both spellings match; a
 /// property or binding compared with a path is never touched (it is the
 /// author's value). The planner sees the rewritten tree too, so the pushed
 /// SQL and the in-memory engine agree by construction.
-const PATH_INTRINSICS: [&str; 2] = ["$path", "$dst_path"];
+const PATH_INTRINSICS: [&str; 2] = ["$path", "dst_path"];
 
 fn is_path_read(e: &Expr) -> bool {
     match e {
@@ -882,7 +883,7 @@ mod tests {
     #[test]
     fn path_literals_are_rooted_only_against_path_reads() {
         let q = oqx::parse_string(
-            "select n: ^docs collect { $path where $path == ^after || \"x.md\" != $dst_path } from docs where $path.startsWith(\"lab/\") && doc.$path == \"a.md\" && type == \"a.md\" && ^$path == \"b.md\"",
+            "select n: ^docs collect { $path where $path == ^after || \"x.md\" != dst_path } from docs where $path.startsWith(\"lab/\") && doc.$path == \"a.md\" && type == \"a.md\" && ^$path == \"b.md\"",
         )
         .unwrap();
         let printed = oqx::print_query(&rewrite_query(&q)).unwrap();
@@ -890,7 +891,7 @@ mod tests {
         assert!(printed.contains("doc.$path == \"/a.md\""), "{printed}");
         assert!(printed.contains("type == \"a.md\""), "{printed}");
         assert!(printed.contains("^$path == \"/b.md\""), "{printed}");
-        assert!(printed.contains("\"/x.md\" != $dst_path"), "{printed}");
+        assert!(printed.contains("\"/x.md\" != dst_path"), "{printed}");
         // a property compared with a path is the author's value: untouched
         assert!(printed.contains("$path == ^after"), "{printed}");
         // `contains`/`endsWith`/`matches` and the empty string are literal

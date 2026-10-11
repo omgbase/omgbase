@@ -1,8 +1,8 @@
 //! Reads (`spec/surface/README.md` §2): ref resolution, whole-document reads,
 //! block hydration at a resolution, the outline wire format, and the two
 //! path-ordered list surfaces. Port of `packages/core/src/core/read/*`.
-//! Result keys follow the reference's spelling (`docId`, `renderedHashMatch`,
-//! …) — the fixtures are generated from it.
+//! Result keys follow the reference's spelling (`$id`, `$path`, `$raw`, the row
+//! rule of §1.2; `renderedHashMatch`, …) — the fixtures are generated from it.
 
 use std::collections::{BTreeMap, HashMap};
 
@@ -289,8 +289,9 @@ pub fn block_raw(conn: &Connection, raw_hash_hex: &str) -> Result<String> {
 
 // ---- docs_read ---------------------------------------------------------------------------
 
-/// §2 `docs_read`: `{ path, docId, rev, properties, content }` (+ `ids`,
-/// `hashes`, `parents` with ids); `None` for a missing doc.
+/// §2 `docs_read`: `{ $id, $path, rev, properties, $raw }` (+ `ids`,
+/// `hashes`, `parents` with ids) — the document's row attributes under the
+/// surface's names (§1.2, 3.0); `None` for a missing doc.
 pub fn docs_read(store: &Store, doc_id: &str, include_ids: bool) -> Result<Option<Json>> {
     let conn = store.conn();
     let Some(info) = find_doc_by_id(conn, doc_id)? else {
@@ -300,11 +301,11 @@ pub fn docs_read(store: &Store, doc_id: &str, include_ids: bool) -> Result<Optio
         return Ok(None);
     };
     let mut m = Map::new();
-    m.insert("path".to_owned(), json!(reference_path(&info.path)));
-    m.insert("docId".to_owned(), json!(info.doc_id));
+    m.insert("$id".to_owned(), json!(info.doc_id));
+    m.insert("$path".to_owned(), json!(reference_path(&info.path)));
     m.insert("rev".to_owned(), json!(info.current_rev));
     m.insert("properties".to_owned(), store.properties_grouped(doc_id)?);
-    m.insert("content".to_owned(), json!(content));
+    m.insert("$raw".to_owned(), json!(content));
     if include_ids {
         let mut ids = Vec::new();
         let mut hashes = Map::new();
@@ -383,10 +384,10 @@ pub fn docs_read_at(store: &Store, doc_id: &str, rev: &str) -> Result<Option<Jso
         return Ok(None);
     };
     Ok(Some(json!({
-        "path": reference_path(&r.path),
-        "docId": doc_id,
+        "$id": doc_id,
+        "$path": reference_path(&r.path),
         "rev": rev,
-        "content": r.content,
+        "$raw": r.content,
         "renderedHashMatch": r.rendered_hash_match,
         "properties": store.properties_grouped(doc_id)?,
         "propertiesAreCurrent": true,
@@ -437,8 +438,11 @@ fn project(
     resolution: Resolution,
     include_children: bool,
 ) -> Result<Json> {
+    // A block row under the surface's names (§1.2, 3.0): `$id`, the raw bytes
+    // `$raw` and their hash `$hash`; the placement is the plain fields
+    // `ordinal`/`depth`/`parent_id` on the row.
     let mut m = Map::new();
-    m.insert("id".to_owned(), json!(node.block_id));
+    m.insert("$id".to_owned(), json!(node.block_id));
     m.insert("type".to_owned(), json!(node.kind));
     match resolution {
         Resolution::Skeleton => {
@@ -457,23 +461,22 @@ fn project(
         }
         Resolution::Raw => {
             m.insert(
-                "raw".to_owned(),
+                "$raw".to_owned(),
                 json!(block_raw(conn, &node.raw_hash_hex)?),
             );
-            m.insert("content_hash".to_owned(), json!(node.raw_hash_hex));
+            m.insert("$hash".to_owned(), json!(node.raw_hash_hex));
         }
         Resolution::Full => {
             m.insert(
-                "raw".to_owned(),
+                "$raw".to_owned(),
                 json!(block_raw(conn, &node.raw_hash_hex)?),
             );
-            m.insert("content_hash".to_owned(), json!(node.raw_hash_hex));
+            m.insert("$hash".to_owned(), json!(node.raw_hash_hex));
             m.insert("text".to_owned(), json!(node.text));
             m.insert("attrs".to_owned(), node.attrs.clone());
-            m.insert(
-                "placement".to_owned(),
-                json!({ "parent": node.parent_block, "ordinal": node.ordinal, "depth": node.depth }),
-            );
+            m.insert("ordinal".to_owned(), json!(node.ordinal));
+            m.insert("depth".to_owned(), json!(node.depth));
+            m.insert("parent_id".to_owned(), json!(node.parent_block));
         }
     }
     if include_children && !node.children.is_empty() {
@@ -675,15 +678,17 @@ pub fn docs_outline(
 /// One row of `docs_list` (`path` in the storage form; the wire roots it).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DocListRow {
+    pub doc_id: String,
     pub path: String,
     pub blocks: i64,
     pub ts: Option<String>,
 }
 
 impl DocListRow {
-    /// The wire row: the path in the reference form (§1 "Paths").
+    /// The wire row (§2, 3.0): `{ $id, $path, $updated_at, blocks }` — the
+    /// document's row attributes, the path in the reference form (§1 "Paths").
     fn to_json(&self) -> Json {
-        json!({ "path": reference_path(&self.path), "blocks": self.blocks, "ts": self.ts })
+        json!({ "$id": self.doc_id, "$path": reference_path(&self.path), "$updated_at": self.ts, "blocks": self.blocks })
     }
 }
 
@@ -697,7 +702,7 @@ fn live_doc_rows(
     limit: Option<usize>,
 ) -> Result<Vec<DocListRow>> {
     let mut sql = String::from(
-        "SELECT d.path,
+        "SELECT d.path, d.doc_id,
                 (SELECT count(*) FROM blocks b WHERE b.doc_id = d.doc_id AND b.deleted_commit IS NULL),
                 (SELECT c.ts FROM revisions r JOIN commits c ON c.commit_id = r.commit_id WHERE r.rev_id = d.current_rev)
          FROM docs d
@@ -724,8 +729,9 @@ fn live_doc_rows(
     let rows = stmt.query_map(rusqlite::params_from_iter(p.iter()), |r| {
         Ok(DocListRow {
             path: r.get(0)?,
-            blocks: r.get(1)?,
-            ts: r.get(2)?,
+            doc_id: r.get(1)?,
+            blocks: r.get(2)?,
+            ts: r.get(3)?,
         })
     })?;
     Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
@@ -842,6 +848,8 @@ pub fn docs_tree(
 
     struct Entry {
         path: String,
+        /// The document's id for a `doc` entry; a `dir` has none.
+        doc_id: Option<String>,
         dir: bool,
         docs: i64,
         blocks: i64,
@@ -857,6 +865,7 @@ pub fn docs_tree(
         if segs.len() <= depth {
             by_path.push(Entry {
                 path: row.path.clone(),
+                doc_id: Some(row.doc_id.clone()),
                 dir: false,
                 docs: 1,
                 blocks: row.blocks,
@@ -877,6 +886,7 @@ pub fn docs_tree(
             }
             None => by_path.push(Entry {
                 path: dir,
+                doc_id: None,
                 dir: true,
                 docs: 1,
                 blocks: row.blocks,
@@ -892,17 +902,19 @@ pub fn docs_tree(
     let entries: Vec<(String, Json)> = by_path
         .into_iter()
         .map(|e| {
+            // §2 (3.0): a `doc` entry is `{ $id, $path, kind, docs, blocks,
+            // $updated_at }`, a `dir` the same without the `$id`.
             let path = reference_path(&e.path);
-            (
-                path.clone(),
-                json!({
-                    "path": path,
-                    "kind": if e.dir { "dir" } else { "doc" },
-                    "docs": e.docs,
-                    "blocks": e.blocks,
-                    "ts": e.ts,
-                }),
-            )
+            let mut m = Map::new();
+            if let Some(id) = &e.doc_id {
+                m.insert("$id".to_owned(), json!(id));
+            }
+            m.insert("$path".to_owned(), json!(path));
+            m.insert("kind".to_owned(), json!(if e.dir { "dir" } else { "doc" }));
+            m.insert("docs".to_owned(), json!(e.docs));
+            m.insert("blocks".to_owned(), json!(e.blocks));
+            m.insert("$updated_at".to_owned(), json!(e.ts));
+            (path, Json::Object(m))
         })
         .collect();
     let (items, truncated, cursor) = page_path_ordered(entries, limit, budget_tokens, false);

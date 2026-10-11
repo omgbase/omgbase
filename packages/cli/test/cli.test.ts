@@ -389,9 +389,9 @@ describe("stdin refs: `-` on cat / show (the README idiom `q … --ids | cat -`)
     const many = JSON.parse(piped(["cat", "-", "--json"], ids).stdout) as unknown[];
     expect(Array.isArray(many)).toBe(true);
     expect(many).toHaveLength(n);
-    const one = JSON.parse(omg(["cat", "hub.md", "--json"]).stdout) as { path: string; content: string };
-    expect(one.path).toBe("/hub.md");
-    expect(one.content).toContain("# Hub");
+    const one = JSON.parse(omg(["cat", "hub.md", "--json"]).stdout) as { $path: string; $raw: string };
+    expect(one.$path).toBe("/hub.md");
+    expect(one.$raw).toContain("# Hub");
   });
 
   it("show - hydrates each id to a card", () => {

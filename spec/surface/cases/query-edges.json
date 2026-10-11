@@ -112,7 +112,7 @@
     },
     {
       "name": "fields",
-      "query": "select predicate, provenance, dst_kind, anchor, src_field from edges where $path == \"substances/prima-materia.md\"",
+      "query": "select predicate, provenance, dst_kind, anchor, field from edges where $path == \"substances/prima-materia.md\"",
       "expect": {
         "hits": [
           {
@@ -122,7 +122,7 @@
             "provenance": "link",
             "dst_kind": "document",
             "anchor": null,
-            "src_field": null
+            "field": null
           },
           {
             "$id": "e_48",
@@ -131,7 +131,7 @@
             "provenance": "link",
             "dst_kind": "document",
             "anchor": null,
-            "src_field": null
+            "field": null
           },
           {
             "$id": "e_49",
@@ -140,7 +140,7 @@
             "provenance": "link",
             "dst_kind": "document",
             "anchor": null,
-            "src_field": null
+            "field": null
           },
           {
             "$id": "e_50",
@@ -149,7 +149,7 @@
             "provenance": "link",
             "dst_kind": "document",
             "anchor": null,
-            "src_field": null
+            "field": null
           }
         ],
         "truncated": false,
@@ -158,9 +158,9 @@
       }
     },
     {
-      "name": "intrinsics",
-      "notes": "§1.2: $src/$dst/$src_block/$via/$from_commit/$dst_path/$dst_uri; the dangling [[nigredo]] is a phantom with no $dst_path.",
-      "query": "select s: $src, d: $dst, sb: $src_block, v: $via, fc: $from_commit, dp: $dst_path, du: $dst_uri from edges where $path == \"substances/prima-materia.md\"",
+      "name": "foreign-keys",
+      "notes": "§1.2 (3.0): an edge's `$` names are $id/$path only; doc_id/dst_id/block_id/via_id/dst_path/uri are plain fields (foreign keys named for what they are); the creating commit is not a field. The dangling [[nigredo]] is a phantom with no dst_path.",
+      "query": "select s: doc_id, d: dst_id, sb: block_id, v: via_id, dp: dst_path, du: uri from edges where $path == \"substances/prima-materia.md\"",
       "expect": {
         "hits": [
           {
@@ -170,7 +170,6 @@
             "d": "d_16",
             "sb": "b_254",
             "v": null,
-            "fc": "c_13",
             "dp": "/texts/emerald-tablet.md",
             "du": null
           },
@@ -181,7 +180,6 @@
             "d": "d_10",
             "sb": "b_256",
             "v": null,
-            "fc": "c_13",
             "dp": "/processes/magnum-opus.md",
             "du": null
           },
@@ -192,7 +190,6 @@
             "d": "d_7",
             "sb": "b_256",
             "v": null,
-            "fc": "c_13",
             "dp": "/processes/calcination.md",
             "du": null
           },
@@ -203,7 +200,6 @@
             "d": "phantom:nigredo",
             "sb": "b_256",
             "v": null,
-            "fc": "c_13",
             "dp": null,
             "du": null
           }
@@ -309,8 +305,8 @@
     },
     {
       "name": "phantom-targets",
-      "notes": "spec/graph: a wikilink resolves by path, so every [[slug]] here is a phantom — dst_kind document, $dst `phantom:<value>`, null $dst_path.",
-      "query": "select d: $dst from edges where dst_kind == \"document\" && $dst_path == null",
+      "notes": "spec/graph: a wikilink resolves by path, so every [[slug]] here is a phantom — dst_kind document, dst_id `phantom:<value>`, null dst_path.",
+      "query": "select d: dst_id from edges where dst_kind == \"document\" && dst_path == null",
       "expect": {
         "hits": [
           {
@@ -441,7 +437,7 @@
     },
     {
       "name": "external-targets-none",
-      "query": "edges count { where $dst_uri != null }",
+      "query": "edges count { where uri != null }",
       "expect": {
         "hits": [],
         "truncated": false,
@@ -452,7 +448,7 @@
     },
     {
       "name": "edges-into-a-doc",
-      "query": "select $path, provenance from edges where $dst_path == \"processes/magnum-opus.md\"",
+      "query": "select $path, provenance from edges where dst_path == \"processes/magnum-opus.md\"",
       "expect": {
         "hits": [
           {
@@ -540,34 +536,34 @@
     },
     {
       "name": "dst-path-rooted-literal",
-      "notes": "§1 Paths (2.0): `$dst_path` is the reference form; a rooted literal matches it (and the planner's `$dst_path` probe de-roots it).",
-      "query": "select $path, $dst_path from edges where $dst_path == \"/processes/magnum-opus.md\"",
+      "notes": "§1 Paths (2.0): `dst_path` is the reference form; a rooted literal matches it (and the planner's `dst_path` probe de-roots it).",
+      "query": "select $path, dst_path from edges where dst_path == \"/processes/magnum-opus.md\"",
       "expect": {
         "hits": [
           {
             "$id": "e_5",
             "$path": "/index.md",
-            "$dst_path": "/processes/magnum-opus.md"
+            "dst_path": "/processes/magnum-opus.md"
           },
           {
             "$id": "e_23",
             "$path": "/practitioners/maria-prophetissa.md",
-            "$dst_path": "/processes/magnum-opus.md"
+            "dst_path": "/processes/magnum-opus.md"
           },
           {
             "$id": "e_24",
             "$path": "/practitioners/newton.md",
-            "$dst_path": "/processes/magnum-opus.md"
+            "dst_path": "/processes/magnum-opus.md"
           },
           {
             "$id": "e_43",
             "$path": "/substances/philosophers-stone.md",
-            "$dst_path": "/processes/magnum-opus.md"
+            "dst_path": "/processes/magnum-opus.md"
           },
           {
             "$id": "e_48",
             "$path": "/substances/prima-materia.md",
-            "$dst_path": "/processes/magnum-opus.md"
+            "dst_path": "/processes/magnum-opus.md"
           }
         ],
         "truncated": false,
@@ -578,33 +574,77 @@
     {
       "name": "dst-path-bare-literal",
       "notes": "§1 Paths: the bare spelling is rooted first — the same edges.",
-      "query": "select $path, $dst_path from edges where $dst_path == \"processes/magnum-opus.md\"",
+      "query": "select $path, dst_path from edges where dst_path == \"processes/magnum-opus.md\"",
       "expect": {
         "hits": [
           {
             "$id": "e_5",
             "$path": "/index.md",
-            "$dst_path": "/processes/magnum-opus.md"
+            "dst_path": "/processes/magnum-opus.md"
           },
           {
             "$id": "e_23",
             "$path": "/practitioners/maria-prophetissa.md",
-            "$dst_path": "/processes/magnum-opus.md"
+            "dst_path": "/processes/magnum-opus.md"
           },
           {
             "$id": "e_24",
             "$path": "/practitioners/newton.md",
-            "$dst_path": "/processes/magnum-opus.md"
+            "dst_path": "/processes/magnum-opus.md"
           },
           {
             "$id": "e_43",
             "$path": "/substances/philosophers-stone.md",
-            "$dst_path": "/processes/magnum-opus.md"
+            "dst_path": "/processes/magnum-opus.md"
           },
           {
             "$id": "e_48",
             "$path": "/substances/prima-materia.md",
-            "$dst_path": "/processes/magnum-opus.md"
+            "dst_path": "/processes/magnum-opus.md"
+          }
+        ],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "collect"
+      }
+    },
+    {
+      "name": "reach-through-identity-is-the-foreign-key",
+      "notes": "§1 foreign-key elimination (3.0): `doc.$id` on an edge is its `doc_id` (the source document), `doc.$path` its `$path` — no owner lookup, the same SQL when planned.",
+      "query": "select a: doc.$id, b: doc_id, c: doc.$path, t: doc.type from edges where $path == \"substances/prima-materia.md\" && predicate == \"references\"",
+      "expect": {
+        "hits": [
+          {
+            "$id": "e_47",
+            "$path": "/substances/prima-materia.md",
+            "a": "d_13",
+            "b": "d_13",
+            "c": "/substances/prima-materia.md",
+            "t": "substance"
+          },
+          {
+            "$id": "e_48",
+            "$path": "/substances/prima-materia.md",
+            "a": "d_13",
+            "b": "d_13",
+            "c": "/substances/prima-materia.md",
+            "t": "substance"
+          },
+          {
+            "$id": "e_49",
+            "$path": "/substances/prima-materia.md",
+            "a": "d_13",
+            "b": "d_13",
+            "c": "/substances/prima-materia.md",
+            "t": "substance"
+          },
+          {
+            "$id": "e_50",
+            "$path": "/substances/prima-materia.md",
+            "a": "d_13",
+            "b": "d_13",
+            "c": "/substances/prima-materia.md",
+            "t": "substance"
           }
         ],
         "truncated": false,

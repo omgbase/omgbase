@@ -25,8 +25,8 @@
   "cases": [
     {
       "name": "root-order-is-path-then-block-id",
-      "notes": "§1.1: blocks scan in (doc path, block_id) order — bytewise, so b_10 sorts before b_2. $ordinal/$depth are the store's block columns (0-based sibling ordinal, nesting depth), reachable since oqx 0.13 — see `intrinsics`.",
-      "query": "select o: $ordinal, d: $depth from blocks where $path == \"index.md\"",
+      "notes": "§1.1: blocks scan in (doc path, block_id) order — bytewise, so b_10 sorts before b_2. `ordinal`/`depth` are the store's block columns (0-based sibling ordinal, nesting depth), plain fields since 3.0 — see `intrinsics-and-fields`.",
+      "query": "select o: ordinal, d: depth from blocks where $path == \"index.md\"",
       "expect": {
         "hits": [
           {
@@ -414,9 +414,9 @@
       }
     },
     {
-      "name": "intrinsics",
-      "notes": "§1.2: $id/$doc/$path/$ordinal/$depth/$body(=text)/$content_hash/$updated_at. $ordinal is the block's 0-based ordinal among its siblings and $depth its nesting depth (0 at the top level; these tasks sit in a list, so 0/1 and 1/1). Outside a `follow` the names are ordinary reads of the row (spec/oqx 0.13 §2); inside one the walk's metadata wins (§9).",
-      "query": "select i: $id, d: $doc, o: $ordinal, dp: $depth, b: $body, h: $content_hash, u: $updated_at from blocks where $path == \"substances/salt.md\" && type == \"task\"",
+      "name": "intrinsics-and-fields",
+      "notes": "§1.2 (3.0): the `$` names are $id/$path/$raw/$hash/$updated_at; doc_id/ordinal/depth are plain fields. $raw is the block's raw source bytes (the blob its raw_hash names), $hash its hex sha256, `text` the normalized text. `ordinal` is the block's 0-based ordinal among its siblings and `depth` its nesting depth (0 at the top level; these tasks sit in a list, so 0/1 and 1/1). There is no shadowing by a `follow` any more: $depth inside a follow is always the walk's.",
+      "query": "select i: $id, d: doc_id, o: ordinal, dp: depth, r: $raw, t: text, h: $hash, u: $updated_at from blocks where $path == \"substances/salt.md\" && type == \"task\"",
       "expect": {
         "hits": [
           {
@@ -426,7 +426,8 @@
             "d": "d_14",
             "o": 0,
             "dp": 1,
-            "b": "Buy more salt of tartar",
+            "r": "- [x] Buy more salt of tartar",
+            "t": "Buy more salt of tartar",
             "h": "e789186305831740b025de6778e2de6947752ad1cfbfc762a8d9fba59b562e63",
             "u": "2026-09-27T00:00:00.000Z"
           },
@@ -437,7 +438,8 @@
             "d": "d_14",
             "o": 1,
             "dp": 1,
-            "b": "Replace the leaching filter papers",
+            "r": "- [x] Replace the leaching filter papers",
+            "t": "Replace the leaching filter papers",
             "h": "d8c2230035697421671ab4f871e3132bccbb387b7b3af7bd7defe1504730513c",
             "u": "2026-09-27T00:00:00.000Z"
           }
@@ -705,7 +707,7 @@
     },
     {
       "name": "relation-out-edges",
-      "query": "select e: out_edges collect { predicate, dp: $dst_path } from blocks where $path == \"index.md\" && type == \"paragraph\" && has_edge(\"references\")",
+      "query": "select e: out_edges collect { predicate, dp: dst_path } from blocks where $path == \"index.md\" && type == \"paragraph\" && has_edge(\"references\")",
       "expect": {
         "hits": [
           {
@@ -1428,9 +1430,9 @@
       }
     },
     {
-      "name": "planned-bool-vs-integer-intrinsic",
-      "notes": "§1 planner decline (a): a boolean literal against an integer intrinsic ($ordinal/$depth) is declined — a pushed `ordinal IS 1` matched the second sibling; in memory `1 == true` is false. Zero hits.",
-      "query": "from blocks where $ordinal == true",
+      "name": "planned-bool-vs-integer-column",
+      "notes": "§1 planner decline (a): a boolean literal against an integer column (ordinal/depth) is declined — a pushed `ordinal IS 1` matched the second sibling; in memory `1 == true` is false. Zero hits.",
+      "query": "from blocks where ordinal == true",
       "expect": {
         "hits": [],
         "truncated": false,
@@ -1474,7 +1476,7 @@
     {
       "name": "planned-relational-int-vs-text",
       "notes": "§1 planner decline (a), the relational shape: a relational comparison between an integer intrinsic and a text literal is declined — SQLite orders every integer before every text, so a pushed `ordinal < '3'` kept every block; in memory `compare` of mixed kinds is undefined and the row is dropped. Zero hits.",
-      "query": "from blocks where $ordinal < \"3\"",
+      "query": "from blocks where ordinal < \"3\"",
       "expect": {
         "hits": [],
         "truncated": false,
@@ -1485,7 +1487,7 @@
     {
       "name": "planned-int-vs-json",
       "notes": "§1 planner comparison rule: equality pushes only when one side is text, one side is null against a non-property, or both are numeric — an integer intrinsic against a JSON read is none of these: a pushed `ordinal IS json_extract(attrs,'$.checked')` matched checked tasks at ordinal 1 (JSON true reads as 1); in memory a number never equals a boolean. Zero hits.",
-      "query": "from blocks where $ordinal == checked",
+      "query": "from blocks where ordinal == checked",
       "expect": {
         "hits": [],
         "truncated": false,
@@ -1932,6 +1934,58 @@
         "cursor": null,
         "consumer": "count",
         "count": 264
+      }
+    },
+    {
+      "name": "reach-through-identity-is-the-foreign-key",
+      "notes": "§1 foreign-key elimination (3.0): `doc.$id` and `doc.$path` on a block read the row's own doc_id / joined path — the same values as the bare `doc_id` / `$path`, and (both engines' planners) the same SQL, with no owner lookup; `doc.layer` still reaches the document.",
+      "query": "select a: doc.$id, b: doc_id, c: doc.$path, l: doc.layer from blocks where $path == \"substances/salt.md\" && type == \"heading\"",
+      "expect": {
+        "hits": [
+          {
+            "$id": "b_261",
+            "$path": "/substances/salt.md",
+            "a": "d_14",
+            "b": "d_14",
+            "c": "/substances/salt.md",
+            "l": "canon"
+          },
+          {
+            "$id": "b_264",
+            "$path": "/substances/salt.md",
+            "a": "d_14",
+            "b": "d_14",
+            "c": "/substances/salt.md",
+            "l": "canon"
+          },
+          {
+            "$id": "b_267",
+            "$path": "/substances/salt.md",
+            "a": "d_14",
+            "b": "d_14",
+            "c": "/substances/salt.md",
+            "l": "canon"
+          },
+          {
+            "$id": "b_274",
+            "$path": "/substances/salt.md",
+            "a": "d_14",
+            "b": "d_14",
+            "c": "/substances/salt.md",
+            "l": "canon"
+          },
+          {
+            "$id": "b_276",
+            "$path": "/substances/salt.md",
+            "a": "d_14",
+            "b": "d_14",
+            "c": "/substances/salt.md",
+            "l": "canon"
+          }
+        ],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "collect"
       }
     }
   ]

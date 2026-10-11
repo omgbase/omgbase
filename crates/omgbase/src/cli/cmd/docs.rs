@@ -49,9 +49,9 @@ fn report(cli: &mut Cli, verb: &str, res: &Json) -> Result<i32> {
     cli.io.err(&cli.style.dim(&format!(
         "  {} {verb} {}",
         cli.style.ok(cli.style.glyphs().ok),
-        cli.style.accent(&str_of(res, "path"))
+        cli.style.accent(&str_of(res, "$path"))
     )));
-    cli.io.out(&str_of(res, "docId"));
+    cli.io.out(&str_of(res, "$id"));
     Ok(EXIT_OK)
 }
 
@@ -129,8 +129,8 @@ pub fn mv(cli: &mut Cli, args: &[String]) -> Result<i32> {
     let where_ = dangling
         .iter()
         .map(|l| {
-            let path = str_of(l, "path");
-            match l.get("block").and_then(Json::as_str) {
+            let path = str_of(l, "$path");
+            match l.get("block_id").and_then(Json::as_str) {
                 Some(b) => format!("{path} {b}"),
                 None => format!("{path} (frontmatter)"),
             }
@@ -145,14 +145,14 @@ pub fn mv(cli: &mut Cli, args: &[String]) -> Result<i32> {
         if n == 1 { "s" } else { "" },
     )));
     // The result's `path` is already the reference form (spec/surface §1 "Paths").
-    let new_path = str_of(&res, "path");
+    let new_path = str_of(&res, "$path");
     // Authored links left as written (`--no-retarget`): the retarget that
     // rewrites them. The path the move left behind is as the dangling links
     // name it (the canonical spelling with a leading `/`), else the ref as
     // typed — rooted either way.
     if dangling
         .iter()
-        .any(|l| l.get("block").is_some_and(Json::is_string))
+        .any(|l| l.get("block_id").is_some_and(Json::is_string))
     {
         let from = reference_path(
             dangling
@@ -169,13 +169,13 @@ pub fn mv(cli: &mut Cli, args: &[String]) -> Result<i32> {
     // (source, field).
     let mut seen: Vec<(String, String)> = Vec::new();
     for l in &dangling {
-        if l.get("block").is_some_and(Json::is_string) {
+        if l.get("block_id").is_some_and(Json::is_string) {
             continue;
         }
         let Some(field) = l.get("field").and_then(Json::as_str) else {
             continue;
         };
-        let key = (str_of(l, "path"), field.to_owned());
+        let key = (str_of(l, "$path"), field.to_owned());
         if seen.contains(&key) {
             continue;
         }

@@ -5,16 +5,25 @@ import { loadDocBlocks, blockRaw, type BlockNode } from "./reader.js";
 
 export type Resolution = "skeleton" | "outline" | "text" | "raw" | "full";
 
+// The wire shape follows the surface's row rule (spec/surface §1.2, 3.0): the
+// block's identity `$id`, its source bytes `$raw` and their hash `$hash` under
+// the row attributes' own names; `type`, `text`, `attrs`, `ordinal`, `depth` are
+// the block's plain fields and `parent_id` its parent's foreign key (the former
+// `placement` object flattened onto the row).
 export interface GetNode {
-  id: string;
+  $id: string;
   type: string;
   label?: string;
   text?: string;
-  raw?: string;
-  /** The block's raw_hash (hex) — the value update/split expect as content_hash. */
-  content_hash?: string;
+  /** The block's raw source bytes (`raw` / `full`). */
+  $raw?: string;
+  /** The block's raw_hash (hex) — the value update/split expect as `expect.content_hash`. */
+  $hash?: string;
   attrs?: Record<string, unknown>;
-  placement?: { parent: string | null; ordinal: number; depth: number };
+  ordinal?: number;
+  depth?: number;
+  /** The parent block's id, null at the top level (`full`). */
+  parent_id?: string | null;
   children?: GetNode[];
 }
 
@@ -24,7 +33,7 @@ function firstWords(text: string, n: number): string {
 }
 
 function project(store: Store, node: BlockNode, resolution: Resolution, includeChildren: boolean): GetNode {
-  const out: GetNode = { id: node.blockId, type: node.type };
+  const out: GetNode = { $id: node.blockId, type: node.type };
   switch (resolution) {
     case "skeleton":
       out.label = node.type === "heading" ? node.text : node.type;
@@ -36,15 +45,17 @@ function project(store: Store, node: BlockNode, resolution: Resolution, includeC
       out.text = node.text;
       break;
     case "raw":
-      out.raw = blockRaw(store, node.rawHashHex);
-      out.content_hash = node.rawHashHex;
+      out.$raw = blockRaw(store, node.rawHashHex);
+      out.$hash = node.rawHashHex;
       break;
     case "full":
-      out.raw = blockRaw(store, node.rawHashHex);
-      out.content_hash = node.rawHashHex;
+      out.$raw = blockRaw(store, node.rawHashHex);
+      out.$hash = node.rawHashHex;
       out.text = node.text;
       out.attrs = node.attrs;
-      out.placement = { parent: node.parentBlock, ordinal: node.ordinal, depth: node.depth };
+      out.ordinal = node.ordinal;
+      out.depth = node.depth;
+      out.parent_id = node.parentBlock;
       break;
   }
   if (includeChildren && node.children.length > 0) {

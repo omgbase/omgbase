@@ -91,14 +91,14 @@ async function runDocUpdate(cli: Cli, args: string[]): Promise<number> {
 
   if (dryRun || result === null) {
     const s = opset.summary;
-    cli.io.err(cli.style.dim(`  plan for ${cli.style.accent(opset.target.path)}${opset.converges ? "" : " — DOES NOT CONVERGE (will not apply)"}`));
+    cli.io.err(cli.style.dim(`  plan for ${cli.style.accent(opset.target.$path)}${opset.converges ? "" : " — DOES NOT CONVERGE (will not apply)"}`));
     cli.io.out(renderOpsetPlan(opset));
     void s;
     return EXIT_OK;
   }
 
   const g = cli.render.g;
-  cli.io.err(cli.style.dim(`  ${cli.style.ok(g.ok)} updated ${cli.style.accent(opset.target.path)} · ${opset.summary.preserved} preserved, ${opset.summary.updated} updated, ${opset.summary.moved} moved, ${opset.summary.created} created, ${opset.summary.removed} removed`));
+  cli.io.err(cli.style.dim(`  ${cli.style.ok(g.ok)} updated ${cli.style.accent(opset.target.$path)} · ${opset.summary.preserved} preserved, ${opset.summary.updated} updated, ${opset.summary.moved} moved, ${opset.summary.created} created, ${opset.summary.removed} removed`));
   // Every id the opset touched, once each: a block appears in several ops'
   // results (an update then a retile of the same block), the confirmation
   // lists it a single time.

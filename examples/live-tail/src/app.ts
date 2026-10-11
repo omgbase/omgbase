@@ -27,9 +27,10 @@ import type { FilterDetail } from "./elements/oqx-framed-filter.ts";
 import { OmgClient, OmgError, fetchWhoAmI } from "./lib/mcp-client.ts";
 import {
   RECENT_LIMIT, advanceCursor, createdDiff, diffLineKind, diffStats, digestPaths, entryCard, filterStateAfter, formatStats, formatTime, hiddenLine, latestChange, latestPair, matchQuery, pairForCommit, partitionByFilter, pollMs, prependDigests, recentCard, recentFromHits, recentQuery, startCursor, titlesByPath,
-  type Card, type Digest, type DiffPair, type EntryChange, type FeedEntry, type FilterState, type RecentDoc, type Stats,
+  type Card, type Digest, type DiffPair, type DocVersions, type EntryChange, type FeedEntry, type FilterState, type RecentDoc, type Stats,
 } from "./lib/feed.ts";
 import { LEGACY_SURFACE, surfaceOf } from "./lib/paths.ts";
+import { changesOf, docVersionsOf, readAtOf, unifiedOf } from "./lib/shapes.ts";
 
 const MCP_URL = "/mcp";
 const REPO_KEY = "omgbase-live-tail.repo";
@@ -114,10 +115,10 @@ async function fetchPair(doc: string, pair: DiffPair): Promise<DiffState> {
   const r = repo.get();
   if (pair.kind === "created") {
     // The content as a pure-addition diff: a content line starting with `-` is not a subtraction.
-    const text = createdDiff((await client.docsReadAt(doc, pair.rev, r)).content);
+    const text = createdDiff(readAtOf(surface.get(), await client.docsReadAt(doc, pair.rev, r)).content);
     return text === "" ? { status: "none", note: "created empty" } : { status: "ready", pair, text };
   }
-  const d = await client.diffUnified(doc, pair.from, pair.to, r);
+  const d = unifiedOf(surface.get(), await client.diffUnified(doc, pair.from, pair.to, r));
   return d.diff === "" ? { status: "none", note: "no textual change between the two revisions" } : { status: "ready", pair, text: d.diff };
 }
 
@@ -129,12 +130,18 @@ function statsOf(state: DiffState | undefined): Stats | null {
   return null;
 }
 
+/** One document's `docs_history`, read for the connected server's generation (lib/shapes.ts). */
+async function docsHistory(doc: string): Promise<DocVersions | null> {
+  const d = await client.docsHistory(doc, repo.get());
+  return d ? docVersionsOf(surface.get(), d) : null;
+}
+
 /** The diff for a document's latest change (a recent card), and that change's seq/commit/actor for the header. */
 async function loadLatestDiff(doc: RecentDoc): Promise<void> {
   const key = doc.id ?? doc.path;
   setDiff(key, { status: "loading" });
   try {
-    const history = await client.docsHistory(key, repo.get());
+    const history = await docsHistory(key);
     const latest = history ? latestChange(history.versions) : null;
     if (latest) recent.set(recent.get().map((d) => ((d.id ?? d.path) === key ? { ...d, latest } : d)));
     const pair = history ? latestPair(history.versions) : null;
@@ -152,7 +159,7 @@ async function loadChangeDiff(entry: FeedEntry, change: EntryChange): Promise<vo
   if (current && current.status !== "idle" && current.status !== "error") return;
   setDiff(key, { status: "loading" });
   try {
-    const history = await client.docsHistory(change.doc, repo.get());
+    const history = await docsHistory(change.doc);
     const pair = history ? pairForCommit(history.versions, entry.key) : null;
     if (!pair) { setDiff(key, { status: "none", note: "this commit wrote no revision of the document (deleted or moved)" }); return; }
     setDiff(key, await fetchPair(change.doc, pair));
@@ -250,7 +257,7 @@ async function poll(): Promise<void> {
   polling.set(true);
   try {
     const c = cursor.get();
-    const page = await client.changesSince(repo.get(), c ?? undefined);
+    const page = changesOf(surface.get(), await client.changesSince(repo.get(), c ?? undefined));
     if (generation !== feedGeneration) return; // the repo changed meanwhile
     const next = advanceCursor(page);
     cursor.set(next.cursor);
@@ -292,7 +299,7 @@ async function startFeed(): Promise<void> {
   feedError.set(null);
   try {
     // One tiny call for the head: the feed starts at "now".
-    const head = await client.changesSince(repo.get(), undefined, 1);
+    const head = changesOf(surface.get(), await client.changesSince(repo.get(), undefined, 1));
     cursor.set(startCursor(head));
     lastPoll.set(new Date().toISOString());
     if (live.get()) schedulePoll();

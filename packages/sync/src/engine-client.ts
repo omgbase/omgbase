@@ -28,7 +28,7 @@ export interface ChangesPage {
 
 export interface DocBytes {
   content: string;
-  /** hex of the doc's current rendered/file hash (matches changes_since contentHash). */
+  /** hex of the doc's current rendered/file hash (matches a changes_since revision's `$hash`). */
   contentHash: string;
 }
 
@@ -77,7 +77,7 @@ export class InProcessEngineClient implements EngineClient {
     if (!row) return Promise.resolve(null);
     const res = docsRead(this.store, row.doc_id);
     if (!res) return Promise.resolve(null);
-    return Promise.resolve({ content: res.content, contentHash: row.file_hash?.toString("hex") ?? "" });
+    return Promise.resolve({ content: res.$raw, contentHash: row.file_hash?.toString("hex") ?? "" });
   }
 
   close(): Promise<void> {

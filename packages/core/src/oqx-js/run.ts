@@ -72,13 +72,13 @@ const ROW_FNS = new Set([
 ]);
 
 // Paths on the surface are the reference form (spec/surface §1 "Paths", 2.0):
-// `$path` and `$dst_path` read `/a/b.md`. A string literal a query compares
-// with one of them — `$path == "a.md"`, `"a.md" != $dst_path`,
+// `$path` and the edge field `dst_path` read `/a/b.md`. A string literal a query
+// compares with one of them — `$path == "a.md"`, `"a.md" != dst_path`,
 // `$path.startsWith("lab/")` — is rooted first, so both spellings match; a
 // property or binding compared with a path is never touched (it is the
 // author's value). The planner sees the rewritten tree too, so the pushed SQL
 // and the in-memory engine agree by construction.
-const PATH_INTRINSICS = new Set(["$path", "$dst_path"]);
+const PATH_INTRINSICS = new Set(["$path", "dst_path"]);
 function isPathRead(e: Expr): boolean {
   return (e.kind === "ident" || e.kind === "outer" || e.kind === "member") && PATH_INTRINSICS.has(e.name);
 }

@@ -70,7 +70,7 @@ Semantics:
 - Ops apply **in order** within the changeset; later ops see earlier ops' effects (the update above targets the moved block).
 - Minted IDs from earlier ops are referenceable by later ops via `"$0.ids[1]"`-style placeholders (op index + result path).
 - **`dry_run: true`** runs full validation + render and returns per-file `{ before, after }` diffs and the would-be results, committing nothing.
-- Response: `{ results: [per-op: {ids}], revisions: [{doc, path}], diffs?: {path → {before, after}}, committed }` (`ApplyResult` in `apply.ts`); `diffs` is populated on a dry run.
+- Response: `{ results: [per-op: {ids}], revisions: [{ $id, $path, $hash }], diffs?: {path → {before, after}}, committed }` (`ApplyResult` in `apply.ts`; `$hash` is the document's rendered hash after the write — the same revision shape `changes_since` carries, `spec/mutate` 2.0); `diffs` is populated on a dry run.
 
 ## 3. Macros (conveniences, not primitives)
 
@@ -96,14 +96,14 @@ Every conflict is a typed error **carrying current truth** so the caller can ret
   "block": "b_q4aaaaa",
   "expected_content_hash": "9f2c…",
   "current": {
-    "content_hash": "b71e…",
+    "$hash": "b71e…",
     "markdown": "the block's live markdown"
   },
   "retriable": true
 }
 ```
 
-The `current` payload is op-specific: `checkContentHash` throws `{ content_hash, markdown }`; a `parent_children_hash` mismatch carries `{ parent_children_hash }`; the whole-document planner's `stale_plan` carries `{ revision, content_hash }` (`ops.ts`, `plan-update.ts`). A **missing** `expect.content_hash` (not just a mismatched one) throws `stale_expectation` with the same `{ content_hash, markdown }` `current` payload and `retriable: true`, so an op that omitted the CAS token is retriable straight from the error — no separate hydration read. (Better still, ask for it up front: `docs_read`/`docs_get_many` with `include_ids:true` return a `hashes` map giving every block's current content hash alongside its id.)
+The `current` payload is op-specific: `checkContentHash` throws `{ $hash, markdown }` (the block's current hash under the row rule of `spec/surface` §1.2; the caller's argument is still echoed as `expected_content_hash`); a `parent_children_hash` mismatch carries `{ parent_children_hash }`; the whole-document planner's `stale_plan` carries `{ revision, $hash }` (`ops.ts`, `plan-update.ts`). A **missing** `expect.content_hash` (not just a mismatched one) throws `stale_expectation` with the same `{ $hash, markdown }` `current` payload and `retriable: true`, so an op that omitted the CAS token is retriable straight from the error — no separate hydration read. (Better still, ask for it up front: `docs_read`/`docs_get_many` with `include_ids:true` return a `hashes` map giving every block's current content hash alongside its id.)
 
 Error codes actually thrown by the write path (codes are stable per `mcp/errors.ts`): `stale_expectation`, `block_missing`, `target_missing` (anchor/placeholder not found), `parent_missing`, `doc_missing`, `cycle_move`, `not_contiguous`, `type_mismatch`, `path_taken` (`docs_create`/`docs_rename`), `ambiguous_heading` (a `{heading}` locator matching >1 heading), `node_not_editable` (a macro targeting a node with no editable block), `stale_plan` (the doc changed since the plan was computed), and `sync_conflict` (file changed on disk — retriable).
 

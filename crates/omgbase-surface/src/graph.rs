@@ -32,21 +32,24 @@ pub struct GraphArgs {
     pub max_documents: Option<i64>,
 }
 
-/// The edge fields projected from `doc.out_edges`/`doc.in_edges` — identical
-/// for both directions so a single filter handles either scan (an edge is a
-/// directional src→dst fact regardless of which endpoint the walk reached it
-/// from).
-const EDGE_FIELDS: [(&str, &str); 10] = [
-    ("id", "$id"),
-    ("src", "$src"),
-    ("dst", "$dst"),
-    ("dst_path", "$dst_path"),
-    ("dst_uri", "$dst_uri"),
-    ("dst_kind", "dst_kind"),
-    ("predicate", "predicate"),
-    ("provenance", "provenance"),
-    ("anchor", "anchor"),
-    ("src_field", "src_field"),
+/// The edge fields projected from `doc.out_edges`/`doc.in_edges` — the `edges`
+/// target's own names, projected under themselves (`spec/surface` §1.2, 3.0:
+/// no rename between the language and the result) — identical for both
+/// directions so a single filter handles either scan (an edge is a directional
+/// fact regardless of which endpoint the walk reached it from).
+const EDGE_FIELDS: [&str; 12] = [
+    "$id",
+    "doc_id",
+    "block_id",
+    "via_id",
+    "dst_id",
+    "dst_path",
+    "uri",
+    "dst_kind",
+    "predicate",
+    "provenance",
+    "anchor",
+    "field",
 ];
 
 /// The extra `select` items for caller projections. Each expression gets a
@@ -64,6 +67,9 @@ fn build_user_select(select: &[String]) -> Result<(Vec<SelectItem>, Vec<Option<S
         if trimmed.is_empty() {
             continue;
         }
+        // A bare or `$`-prefixed identifier keeps its spelling as the output
+        // key (3.0: a `$title` selection is `$title` in the document, as a
+        // `query` hit's would be); anything else is `sel_<i>`.
         let ident = trimmed.strip_prefix('$').unwrap_or(trimmed);
         let is_ident = ident
             .chars()
@@ -71,14 +77,19 @@ fn build_user_select(select: &[String]) -> Result<(Vec<SelectItem>, Vec<Option<S
             .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
             && ident.chars().all(|c| c.is_ascii_alphanumeric() || c == '_');
         let mut name = if is_ident {
-            ident.to_owned()
+            trimmed.to_owned()
         } else {
             format!("sel_{i}")
         };
-        while used.contains(&name) {
-            name = format!("{name}_{i}");
+        // The envelope keys are the row's own identity: a `$id`/`$path`
+        // selection lands on them rather than beside them (the engine reads
+        // the same value).
+        if name != "$id" && name != "$path" {
+            while used.contains(&name) {
+                name = format!("{name}_{i}");
+            }
+            used.push(name.clone());
         }
-        used.push(name.clone());
         out_names[i] = Some(name);
         let parsed = oqx::parse_string(&format!("select _u{i}: {trimmed} from docs"))?;
         items.extend(parsed.select);
@@ -98,7 +109,7 @@ fn build_query(root_ids: &[String], dir: &str, depth: u32, user_select: &[Select
     let mut edges_body = build::subquery();
     edges_body.select = EDGE_FIELDS
         .iter()
-        .map(|(name, expr)| build::field(name, build::ident(expr)))
+        .map(|name| build::field(name, build::ident(name)))
         .collect();
     let edges = build::op(
         build::path(&["doc", &format!("{dir}_edges")]),
@@ -210,8 +221,8 @@ pub fn graph_neighborhood(
             query_truncated = true;
         }
         for hit in &res.hits {
-            // The walk's hits carry `$id`/`$path` (§1.4, 3.0); `graph`'s own
-            // envelope keeps `documents[].id/path` — a tool result, not a hit.
+            // The walk's hits carry `$id`/`$path` (§1.4, 3.0), and so does
+            // `graph`'s own envelope (§4): one spelling for a document's identity.
             let id = hit["$id"].as_str().unwrap_or_default().to_owned();
             let path = hit["$path"].as_str().unwrap_or_default().to_owned();
             let hop = hit["_depth"].as_f64().unwrap_or(f64::NAN);
@@ -249,8 +260,8 @@ pub fn graph_neighborhood(
             }
             if let Some(raw) = hit["_edges"].as_array() {
                 for e in raw {
-                    let eid = e["id"].as_str().unwrap_or_default();
-                    if !edges.iter().any(|x| x["id"].as_str() == Some(eid)) {
+                    let eid = e["$id"].as_str().unwrap_or_default();
+                    if !edges.iter().any(|x| x["$id"].as_str() == Some(eid)) {
                         edges.push(e.clone());
                     }
                 }
@@ -264,8 +275,8 @@ pub fn graph_neighborhood(
             if e["predicate"].as_str() != Some(p.as_str()) {
                 continue;
             }
-            let src = e["src"].as_str().unwrap_or_default().to_owned();
-            let dst = e["dst"].as_str().unwrap_or_default().to_owned();
+            let src = e["doc_id"].as_str().unwrap_or_default().to_owned();
+            let dst = e["dst_id"].as_str().unwrap_or_default().to_owned();
             if dirs.contains(&"out") {
                 adj.entry(src.clone()).or_default().push(dst.clone());
             }
@@ -319,11 +330,11 @@ pub fn graph_neighborhood(
         .map(|d| {
             let is_frontier = d.degree == effective_degrees;
             if is_frontier {
-                frontier.push(json!({ "id": d.id, "path": d.path, "degree": d.degree }));
+                frontier.push(json!({ "$id": d.id, "$path": d.path, "degree": d.degree }));
             }
             let mut m = Map::new();
-            m.insert("id".to_owned(), json!(d.id));
-            m.insert("path".to_owned(), json!(d.path));
+            m.insert("$id".to_owned(), json!(d.id));
+            m.insert("$path".to_owned(), json!(d.path));
             m.insert("degree".to_owned(), json!(d.degree));
             m.insert("frontier".to_owned(), json!(is_frontier));
             for (k, v) in &d.extra {
@@ -342,23 +353,23 @@ pub fn graph_neighborhood(
                     return false;
                 }
             }
-            let src_in = reached(e["src"].as_str().unwrap_or_default());
+            let src_in = reached(e["doc_id"].as_str().unwrap_or_default());
             let dst_kind = e["dst_kind"].as_str().unwrap_or_default();
             let dst_dangling =
                 dst_kind == "external" || (dst_kind == "document" && e["dst_path"].is_null());
-            let dst_in = reached(e["dst"].as_str().unwrap_or_default()) || dst_dangling;
+            let dst_in = reached(e["dst_id"].as_str().unwrap_or_default()) || dst_dangling;
             src_in && dst_in
         })
         .collect();
     kept.sort_by(|a, b| {
         let (sa, sb) = (
-            a["src"].as_str().unwrap_or_default(),
-            b["src"].as_str().unwrap_or_default(),
+            a["doc_id"].as_str().unwrap_or_default(),
+            b["doc_id"].as_str().unwrap_or_default(),
         );
         if sa == sb {
             locale_compare(
-                a["id"].as_str().unwrap_or_default(),
-                b["id"].as_str().unwrap_or_default(),
+                a["$id"].as_str().unwrap_or_default(),
+                b["$id"].as_str().unwrap_or_default(),
             )
         } else {
             locale_compare(sa, sb)
@@ -402,7 +413,7 @@ mod tests {
             names,
             [
                 Some("layer".into()),
-                Some("path".into()),
+                Some("$path".into()),
                 Some("sel_2".into()),
                 Some("layer_3".into())
             ]
@@ -426,7 +437,7 @@ mod tests {
         let q = build_query(&["d_14".to_owned(), "d_15".to_owned()], "in", 8, &[]);
         assert_eq!(
             q,
-            "select _depth: $depth, _stop: $stop, _edges: doc.in_edges collect { id: $id, src: $src, dst: $dst, dst_path: $dst_path, dst_uri: $dst_uri, dst_kind: dst_kind, predicate: predicate, provenance: provenance, anchor: anchor, src_field: src_field } from docs where $id == \"d_14\" or $id == \"d_15\" follow distinct doc.in { depth 8 }"
+            "select _depth: $depth, _stop: $stop, _edges: doc.in_edges collect { $id: $id, doc_id: doc_id, block_id: block_id, via_id: via_id, dst_id: dst_id, dst_path: dst_path, uri: uri, dst_kind: dst_kind, predicate: predicate, provenance: provenance, anchor: anchor, field: field } from docs where $id == \"d_14\" or $id == \"d_15\" follow distinct doc.in { depth 8 }"
         );
     }
 

@@ -33,6 +33,11 @@ describe("inferCandidates", () => {
     expect(inferCandidates(q, []).map((x) => [x.name, x.defaults.direction])).toEqual([["before", "forward"]]);
     const q2 = parse(`$path from docs where $path == "a.md" follow $repo.docs collect { where doc.out_edges exists { where predicate == "after" && $dst_path == ^^$path } }`);
     expect(inferCandidates(q2, []).map((x) => [x.name, x.defaults.direction])).toEqual([["after", "backward"]]);
+    // Surface 3.0 spells the authored field `field` and the destination path `dst_path` (spec/surface §1.2): the same reading.
+    const q3 = parse(`$path from docs where $path == "a.md" follow ^docs collect { where doc.in_edges exists { where field == "before" && $path == ^^$path } }`);
+    expect(inferCandidates(q3, []).map((x) => [x.name, x.defaults.direction])).toEqual([["before", "forward"]]);
+    const q4 = parse(`$path from docs where $path == "a.md" follow ^docs collect { where doc.out_edges exists { where predicate == "after" && dst_path == ^^$path } }`);
+    expect(inferCandidates(q4, []).map((x) => [x.name, x.defaults.direction])).toEqual([["after", "backward"]]);
   });
 
   it("maps plain destinations: doc.out → links, doc.in → backlinks, a bare name → frontmatter", () => {

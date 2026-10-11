@@ -43,7 +43,7 @@ export function rootTarget(source: Expr): Target | null {
  *   • any `call` node (a function or method: unknown name, bad regex, wrong target…)
  *   • any nested block whose consumer is `single` (raises on 0 or >1 rows)
  *   • any `^`-escaped name: an `outer` reference or a `^name:` lift
- *   • a bare reserved docs basename (`id path updated_at content_hash body`): as
+ *   • a bare reserved docs basename (`id path updated_at hash raw`): as
  *     an `ident` at the ROOT scope when the target is `docs`, or as `doc.<name>`
  *     on any target at any depth (the reach-through row is a doc)
  *   • a bare target name (`docs blocks nodes edges`, root-row.ts) read as a

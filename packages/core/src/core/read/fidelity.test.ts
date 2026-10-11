@@ -40,7 +40,7 @@ describe("byte-exact round-trip fidelity", () => {
       const res = ingestFile(store, repoId, "a.md", src);
 
       // Read path.
-      expect(docsRead(store, res.docId)!.content).toBe(src);
+      expect(docsRead(store, res.docId)!.$raw).toBe(src);
       // Write path (the exact bytes apply() renders to disk).
       expect(renderDoc(loadMutDoc(store.db, res.docId)!)).toBe(src);
       // Convergence now asserts the storage round-trip, so it must hold too.

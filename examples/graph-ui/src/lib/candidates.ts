@@ -31,7 +31,8 @@
 //          same two cases (`refs(after)` backward, `refs(^before)` forward); a
 //          literal compared with `src_field` / `predicate` under `doc.in_edges`
 //          / `doc.out_edges` / `edges` → that relation (`in_edges` forward,
-//          `out_edges` backward).
+//          `out_edges` backward; the field is `field` since surface 3.0 and
+//          `src_field` before — both are read).
 //   2. `order by` keys — a non-intrinsic key is a SEQUENCE candidate: edges are
 //        consecutive pairs in result order (no fetch), direction forward.
 //   3. inferred from rows — a projected field whose value is a doc path or a
@@ -73,7 +74,7 @@ import { HIT_ENVELOPE_KEYS, hitPath, rowRef } from "./paths.ts";
 export type Direction = "forward" | "backward";
 export type CandidateSource = "follow" | "order by" | "inferred" | "builtin" | "pair";
 export type CandidateKind =
-  | "frontmatter" // a frontmatter relation: edges rows with src_field == name
+  | "frontmatter" // a frontmatter relation: edges rows whose authored field (`field`; `src_field` before 3.0) == name
   | "links" // doc.out — authored links
   | "backlinks" // doc.in — authored links, reversed
   | "sequence"; // an order-by key (consecutive result rows) or an inverse pair (both fields, one direction)
@@ -358,14 +359,14 @@ function destinationBlockMentions(op: OpNode): Mention[] {
       out.push({ name: ref.name, kind: "frontmatter", source: "follow", span: inner.receiver.span, direction: ref.outer ? "forward" : "backward" });
       return;
     }
-    // `doc.in_edges exists { where src_field == "before" … }` (or out_edges / $repo.edges).
+    // `doc.in_edges exists { where field == "before" … }` (`src_field` before 3.0; or out_edges / $repo.edges).
     const receiverPath = dottedPath(inner.receiver) ?? "";
     const viaIn = receiverPath.endsWith("in_edges");
     const viaOut = receiverPath.endsWith("out_edges");
     if (!viaIn && !viaOut && !receiverPath.endsWith("edges")) return;
     if (!inner.sub.where) return;
     forEachScalar(inner.sub.where, (expr) => {
-      const lit = fieldLiteral(expr, ["src_field", "predicate"]);
+      const lit = fieldLiteral(expr, ["field", "src_field", "predicate"]);
       if (lit) out.push({ name: lit, kind: "frontmatter", source: "follow", span: expr.span, direction: viaOut ? "backward" : "forward" });
     });
   });

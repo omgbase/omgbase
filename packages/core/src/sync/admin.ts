@@ -16,7 +16,8 @@ export interface DiskStatus extends DiskDrift {
 }
 
 export interface RepoStatus {
-  repoId: string;
+  /** the repository's own id (spec/surface §1.2, 3.0: every row names its identity `$id`) */
+  $id: string;
   slug: string;
   rootPath: string;
   docs: number;
@@ -54,7 +55,7 @@ export function reposStatus(store: Store, repoId: string, rootPath?: string): Re
     ? { ...detectDiskDrift(store, repoId, rootPath), checked: true }
     : { changed: 0, deleted: 0, untracked: 0, checked: false };
   return {
-    repoId,
+    $id: repoId,
     slug: repo?.slug ?? "",
     rootPath: rootPath ?? "",
     docs: count("SELECT count(*) c FROM docs WHERE repo_id = ? AND deleted_commit IS NULL"),

@@ -244,11 +244,16 @@ pub struct ApplyRequest {
     pub set_frontmatter: Vec<SetFrontmatter>,
 }
 
-/// `{ doc, path }` of a touched document.
+/// `{ $id, $path, $hash }` of a touched document (`spec/mutate` §4, 2.0): the
+/// document, its path (storage form; the surface roots it) and the hex sha256
+/// of its rendered bytes — the hash the committed revision carries, computed
+/// on a dry run too, so an apply revision and a `changes_since` revision are
+/// one shape.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Revision {
     pub doc: String,
     pub path: String,
+    pub hash: String,
 }
 
 /// `{ before, after }` of a dry run.
@@ -282,7 +287,7 @@ impl ApplyResult {
             Value::Array(
                 self.revisions
                     .iter()
-                    .map(|r| json!({ "doc": r.doc, "path": r.path }))
+                    .map(|r| json!({ "$id": r.doc, "$path": r.path, "$hash": r.hash }))
                     .collect(),
             ),
         );
@@ -626,6 +631,7 @@ impl Store {
             .map(|d| Revision {
                 doc: d.doc.doc_id.clone(),
                 path: d.doc.path.clone(),
+                hash: omgbase_format::hash::hex(&sha256(render(&d.doc).as_bytes())),
             })
             .collect();
         if req.dry_run {

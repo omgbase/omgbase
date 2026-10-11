@@ -55,8 +55,8 @@ async function runDiff(cli: Cli, args: string[]): Promise<number> {
     // Block-grain over the same resolved revision pair.
     let entries: DiffEntry[];
     if (cli.flags.server) entries = await remoteCall<DiffEntry[]>(cli, "diff", { doc: ref, from_rev: result.from, to_rev: result.to });
-    else entries = diffBlocks(cli.workspace().store, result.doc, result.from, result.to);
-    if (cli.flags.mode !== "human") return emitMachine(cli, entries, { items: entries, ids: entries.map((e) => e.blockId) });
+    else entries = diffBlocks(cli.workspace().store, result.$id, result.from, result.to);
+    if (cli.flags.mode !== "human") return emitMachine(cli, entries, { items: entries, ids: entries.map((e) => e.$id) });
     if (entries.length === 0) {
       io.err(style.dim("  no changes"));
       return EXIT_OK;
@@ -64,7 +64,7 @@ async function runDiff(cli: Cli, args: string[]): Promise<number> {
     for (const e of entries) {
       const mark = e.kind === "added" ? style.ok("+") : e.kind === "removed" ? style.err("-") : style.warn("~");
       const preview = (e.after ?? e.before ?? "").split("\n")[0] ?? "";
-      io.out(`${mark} ${style.id(e.blockId)}  ${preview}`.trimEnd());
+      io.out(`${mark} ${style.id(e.$id)}  ${preview}`.trimEnd());
     }
     return EXIT_OK;
   }

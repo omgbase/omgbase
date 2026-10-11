@@ -98,9 +98,43 @@ impl Target {
     }
 }
 
-/// docs intrinsics whose BARE form is almost always a typo: a loud error
-/// ("did you mean the intrinsic").
-const RESERVED_DOC_BASENAMES: [&str; 5] = ["id", "path", "updated_at", "content_hash", "body"];
+/// WHY `$` (`spec/surface` §1.2, 3.0). A `$`-prefixed name is a name the
+/// engine adds to a namespace it SHARES with user-generated content —
+/// frontmatter keys and inline properties on a document, `attrs` keys on a
+/// block or node — prefixed so the author's field names keep priority and the
+/// two can never collide: a frontmatter `id:` reads as `id`, the engine's
+/// identity as `$id`. That bounds the vocabulary to exactly the
+/// engine-provided names that contend with user names: every row's
+/// `$id`/`$path`; docs' and blocks' `$raw`/`$hash`/`$updated_at`; the computed
+/// `$title`/`$tags`. Everything else the engine provides is a plain
+/// snake_case field — a foreign key named for what it is (`doc_id`,
+/// `block_id`, `via_id`, `dst_id`, `dst_path`, `uri`), a column its column
+/// (`depth`, `ordinal`, `field`) — because nothing of the author's lives in
+/// those namespaces.
+///
+/// The bare spelling of a docs `$` name (`path`, `id`, …) is almost always a
+/// typo for the intrinsic — it would otherwise read an absent frontmatter key
+/// and silently match nothing — so it is a LOUD error in `get` ("did you mean
+/// the intrinsic"). `title`/`tags` are not in the set: `$title`/`$tags` are
+/// computed and never shadow an authored key. (A bare target name — `docs`,
+/// `edges`, … — is a loud error of its own, `crate::query`; `repo` is just an
+/// ordinary frontmatter key.)
+const RESERVED_DOC_BASENAMES: [&str; 5] = ["id", "path", "updated_at", "hash", "raw"];
+
+/// The key marking a LAZY OWNER row (foreign-key elimination, `spec/surface`
+/// §1, 3.0): the owner a reach-through hands out (`doc` on a block, node or
+/// edge; `block` on a node) carries only the columns the child row already
+/// knows — `doc_id` + `path` (from the child's `doc_id`/`src_doc` and
+/// `__path`), or `block_id` + `doc_id` + `__path` — tagged with the owner's
+/// target, plus this key. `get` answers `$id`, `$path`, the owner's own
+/// foreign keys, its relations and its properties (which need only the id)
+/// from those columns and runs NO statement, exactly like the bare `doc_id`;
+/// the first read of anything else (`format`, `$hash`, `text`, …) loads the
+/// full row ([`StoreContext::owner_full`], memoized per run). The port of the
+/// reference's `lazyOwner` Proxy. The marker is a tagged row to everything
+/// else (`identity`, `render_row_values`, `materialize`, hits) and the hidden
+/// key is stripped with the tag.
+pub const LAZY_KEY: &str = "__oqx_lazy";
 
 /// A query phrase's embedding: the model whose cache to read and the vector
 /// as a float32 little-endian blob.
@@ -129,6 +163,12 @@ pub struct StoreContext<'a> {
     scans: RefCell<HashMap<Target, Rc<Vec<Value>>>>,
     /// How many root scans actually ran (tests prove a probe runs none).
     scans_run: Cell<usize>,
+    /// How many statements this context has run in all (`all` / `exists`),
+    /// so a test can prove a reach-through to the owner's identity runs none.
+    statements_run: Cell<usize>,
+    /// Lazy owners loaded in full during this run, by `(target, id)` — the
+    /// store does not change within a run, so an owner is read at most once.
+    owners: RefCell<HashMap<(Target, String), Option<Value>>>,
 }
 
 /// The planned rows behind [`oqx::ROWS_ROOT`]: cloned out on every read, or
@@ -202,6 +242,11 @@ pub fn target_of(row: &Value) -> Option<Target> {
         .and_then(Target::parse)
 }
 
+/// Whether `row` is a lazy owner (see [`LAZY_KEY`]).
+fn is_lazy_owner(row: &Value) -> bool {
+    row.as_object().is_some_and(|o| o.contains_key(LAZY_KEY))
+}
+
 /// The target of a lazy root-scan marker, if `v` is one.
 #[must_use]
 pub fn scan_of(v: &Value) -> Option<Target> {
@@ -252,7 +297,7 @@ pub fn strip_tags(v: Value) -> Value {
     match v {
         Value::Object(o) => Value::Object(
             o.into_iter()
-                .filter(|(k, _)| k != TAG_KEY)
+                .filter(|(k, _)| k != TAG_KEY && k != LAZY_KEY)
                 .map(|(k, x)| (k, strip_tags(x)))
                 .collect(),
         ),
@@ -295,7 +340,7 @@ pub fn render_row_values(v: Value) -> Value {
             };
             Value::Object(
                 o.into_iter()
-                    .filter(|(k, _)| k != TAG_KEY)
+                    .filter(|(k, _)| k != TAG_KEY && k != LAZY_KEY)
                     .map(|(k, x)| (k, render_row_values(x)))
                     .collect(),
             )
@@ -323,7 +368,16 @@ impl<'a> StoreContext<'a> {
             regexes: RefCell::new(HashMap::new()),
             scans: RefCell::new(HashMap::new()),
             scans_run: Cell::new(0),
+            statements_run: Cell::new(0),
+            owners: RefCell::new(HashMap::new()),
         }
+    }
+
+    /// How many statements this context has run (every `SELECT`, the root
+    /// scans included). A reach-through to the owner's identity adds none.
+    #[must_use]
+    pub fn statements_run(&self) -> usize {
+        self.statements_run.get()
     }
 
     /// The repository this context is scoped to.
@@ -473,6 +527,7 @@ impl<'a> StoreContext<'a> {
     // ---- SQL helpers ------------------------------------------------------------------
 
     fn all(&self, sql: &str, params: &[SqlValue]) -> oqx::Result<Vec<Object>> {
+        self.statements_run.set(self.statements_run.get() + 1);
         fetch_rows(self.conn, sql, params).map_err(sql_err)
     }
 
@@ -488,6 +543,7 @@ impl<'a> StoreContext<'a> {
     }
 
     fn exists(&self, sql: &str, params: &[SqlValue]) -> oqx::Result<bool> {
+        self.statements_run.set(self.statements_run.get() + 1);
         let mut stmt = self.conn.prepare_cached(sql).map_err(sql_err)?;
         stmt.exists(params_from_iter(params.iter()))
             .map_err(sql_err)
@@ -896,14 +952,44 @@ impl<'a> StoreContext<'a> {
         }))
     }
 
+    // ---- owning-entity reach-through: foreign-key elimination ------------------------
+    //
+    // The owner is handed out as a LAZY row (`LAZY_KEY`) whose identity columns
+    // are already known from the child — a block's/node's `doc_id` and `__path`
+    // name its document, an edge's `src_doc` and `__path` its source doc, a
+    // node's `block_id` (+ `doc_id`, `__path`) its block — so `doc.$id` and
+    // `doc.$path` (and `block.$id`/`block.$path`/`block.doc_id` on a node)
+    // read those columns and run NO statement, exactly like the bare `doc_id`;
+    // the full owner row is loaded on the first read of anything else
+    // (`doc.format`, `block.text`). The translator mirrors this in SQL
+    // (`doc.$id` → the FK column). Port of the reference's `lazyOwner` Proxy.
+
+    fn lazy_owner(known: &[(&str, Value)], t: Target) -> Value {
+        let mut o = Object::with_capacity(known.len() + 2);
+        for (k, v) in known {
+            o.insert(*k, v.clone());
+        }
+        o.insert(LAZY_KEY, Value::Bool(true));
+        tag_row(o, t)
+    }
+
     fn owning_doc(&self, row: &Value) -> oqx::Result<Value> {
         let id = match col(row, "doc_id") {
             Value::Undefined | Value::Null => col(row, "src_doc").clone(),
             v => v.clone(),
         };
-        Ok(self
-            .one("SELECT * FROM docs WHERE doc_id = ?1", &[to_sql(&id)])?
-            .map_or(Value::Undefined, |o| Self::tag(o, Target::Docs)))
+        if id.is_absent() {
+            return Ok(Value::Undefined);
+        }
+        match col(row, "__path") {
+            Value::Str(path) => Ok(Self::lazy_owner(
+                &[("doc_id", id), ("path", Value::Str(path.clone()))],
+                Target::Docs,
+            )),
+            _ => Ok(self
+                .load_owner(Target::Docs, &js_string(&id))?
+                .unwrap_or(Value::Undefined)),
+        }
     }
 
     fn owning_block(&self, row: &Value) -> oqx::Result<Value> {
@@ -911,12 +997,90 @@ impl<'a> StoreContext<'a> {
         if !id.truthy() {
             return Ok(Value::Undefined);
         }
-        Ok(self
-            .one(
-                "SELECT b.*, d.path AS __path FROM blocks b JOIN docs d ON d.doc_id = b.doc_id WHERE b.block_id = ?1",
-                &[to_sql(id)],
-            )?
-            .map_or(Value::Undefined, |o| Self::tag(o, Target::Blocks)))
+        match col(row, "__path") {
+            Value::Str(path) => Ok(Self::lazy_owner(
+                &[
+                    ("block_id", id.clone()),
+                    ("doc_id", col(row, "doc_id").clone()),
+                    ("__path", Value::Str(path.clone())),
+                ],
+                Target::Blocks,
+            )),
+            _ => Ok(self
+                .load_owner(Target::Blocks, &js_string(id))?
+                .unwrap_or(Value::Undefined)),
+        }
+    }
+
+    /// The full owner row by id (`None` when it is not in the store), read
+    /// at most once per run.
+    fn load_owner(&self, t: Target, id: &str) -> oqx::Result<Option<Value>> {
+        let key = (t, id.to_owned());
+        if let Some(v) = self.owners.borrow().get(&key) {
+            return Ok(v.clone());
+        }
+        let loaded = match t {
+            Target::Docs => self
+                .one(
+                    "SELECT * FROM docs WHERE doc_id = ?1",
+                    &[SqlValue::Text(id.to_owned())],
+                )?
+                .map(|o| Self::tag(o, Target::Docs)),
+            _ => self
+                .one(
+                    "SELECT b.*, d.path AS __path FROM blocks b JOIN docs d ON d.doc_id = b.doc_id WHERE b.block_id = ?1",
+                    &[SqlValue::Text(id.to_owned())],
+                )?
+                .map(|o| Self::tag(o, Target::Blocks)),
+        };
+        self.owners.borrow_mut().insert(key, loaded.clone());
+        Ok(loaded)
+    }
+
+    /// Whether reading `key` off a lazy owner of `t` needs the full row. The
+    /// known columns answer the identity (`$id`, `$path`), the self alias, the
+    /// relations (keyed by `doc_id` / `path` / `block_id`), the properties
+    /// and source handles (keyed by `doc_id`), `$raw` on docs (reconstructed
+    /// by id), `$updated_at` on blocks (by id), a bare target name (an
+    /// error) and an unknown `$x` (absent); everything that reads another
+    /// column — `format`, `$hash`, `$updated_at` on docs; `type`, `text`,
+    /// `attrs`, `ordinal`, `depth`, an attrs key, `section`, `$raw`/`$hash` on
+    /// blocks — loads it.
+    fn lazy_needs_load(t: Target, key: &str) -> bool {
+        match t {
+            Target::Docs => matches!(key, "format" | "$hash" | "$updated_at"),
+            Target::Blocks => {
+                !matches!(
+                    key,
+                    "$id"
+                        | "$path"
+                        | "$updated_at"
+                        | "$self"
+                        | "doc_id"
+                        | "block"
+                        | "doc"
+                        | "children"
+                        | "nodes"
+                        | "out_edges"
+                ) && Target::parse(key).is_none()
+            }
+            Target::Nodes | Target::Edges => true,
+        }
+    }
+
+    /// A lazy owner with the full row in its place when `key` needs it; the
+    /// marker itself otherwise (`None` for a row that is not a lazy owner, or
+    /// whose owner is gone from the store — then the partial columns stand).
+    fn resolve_lazy(&self, row: &Value, t: Target, key: &str) -> oqx::Result<Option<Value>> {
+        if !is_lazy_owner(row) || !Self::lazy_needs_load(t, key) {
+            return Ok(None);
+        }
+        let id_col = if t == Target::Docs {
+            "doc_id"
+        } else {
+            "block_id"
+        };
+        self.load_owner(t, &col_str(row, id_col))
     }
 
     // ---- intrinsics ---------------------------------------------------------------------
@@ -925,10 +1089,16 @@ impl<'a> StoreContext<'a> {
         if v.is_absent() { Value::Null } else { v }
     }
 
-    /// `$path` / `$dst_path` are the REFERENCE form (`/a/b.md`, §1 "Paths",
-    /// 2.0): the rows carry the storage form (`path`, the `__path` join column)
-    /// and the intrinsic roots it on read, so nothing below the binding
-    /// changes. The runner roots the string literals a query compares them with.
+    /// The `$` vocabulary is exactly the engine-provided names that contend
+    /// with user names (see [`RESERVED_DOC_BASENAMES`]; `spec/surface` §1.2,
+    /// 3.0): every row's `$id`/`$path`, docs' and blocks' `$raw`/`$hash`/
+    /// `$updated_at`, docs' computed `$title`/`$tags`. A foreign key
+    /// (`doc_id`, `block_id`, `dst_id`, …) is a plain field, resolved in
+    /// `get`. `$path` (and the edge field `dst_path`) is the REFERENCE form
+    /// (`/a/b.md`, §1 "Paths", 2.0): the rows carry the storage form (`path`,
+    /// the `__path` join column) and the read roots it, so nothing below the
+    /// binding changes. The runner roots the string literals a query compares
+    /// them with.
     fn intrinsic(&self, row: &Value, t: Target, name: &str) -> oqx::Result<Value> {
         if name == "$self" {
             return Ok(row.clone());
@@ -938,12 +1108,13 @@ impl<'a> StoreContext<'a> {
         Ok(match (t, name) {
             (Target::Docs, "$id") => c("doc_id"),
             (Target::Docs, "$path") => rooted("path"),
-            (Target::Docs, "$content_hash") => Self::null_if_absent(c("file_hash")),
+            (Target::Docs, "$hash") => Self::null_if_absent(c("file_hash")),
             (Target::Docs, "$updated_at") => Self::null_if_absent(self.scalar(
                 "SELECT c.ts FROM revisions r JOIN commits c ON c.commit_id = r.commit_id WHERE r.rev_id = ?1",
                 &[to_sql(&c("current_rev"))],
             )?),
-            (Target::Docs, "$body") => {
+            // `$raw`: the exact file bytes (`spec/store` §6.1, frontmatter included).
+            (Target::Docs, "$raw") => {
                 match omgbase_store::read::reconstruct(self.conn, &col_str(row, "doc_id")) {
                     Ok(Some(s)) => Value::Str(s),
                     Ok(None) => Value::Null,
@@ -957,38 +1128,39 @@ impl<'a> StoreContext<'a> {
                 Self::null_if_absent(self.doc_prop(&col_str(row, "doc_id"), "$tags", Some("computed"))?)
             }
             (Target::Blocks, "$id") => c("block_id"),
-            (Target::Blocks, "$doc") => c("doc_id"),
             (Target::Blocks, "$path") => rooted("__path"),
-            (Target::Blocks, "$ordinal") => c("ordinal"),
-            (Target::Blocks, "$depth") => c("depth"),
-            (Target::Blocks, "$body") => c("text"),
-            (Target::Blocks, "$content_hash") => Self::null_if_absent(c("raw_hash")),
+            // `$raw`: the block's raw source bytes — the blob its `raw_hash`
+            // names (a container's raw holds its children verbatim); `text`
+            // is the plain field.
+            (Target::Blocks, "$raw") => match c("raw_hash") {
+                Value::Str(hex) => {
+                    let hash = omgbase_store::tree::from_hex(&hex)
+                        .map_err(|e| OqxError::eval(e.to_string()))?;
+                    let bytes: Option<Vec<u8>> = self
+                        .conn
+                        .query_row(
+                            "SELECT bytes FROM blobs WHERE hash = ?1",
+                            rusqlite::params![hash],
+                            |r| r.get(0),
+                        )
+                        .optional()
+                        .map_err(sql_err)?;
+                    self.statements_run.set(self.statements_run.get() + 1);
+                    bytes.map_or(Value::Null, |b| {
+                        Value::Str(String::from_utf8_lossy(&b).into_owned())
+                    })
+                }
+                _ => Value::Null,
+            },
+            (Target::Blocks, "$hash") => Self::null_if_absent(c("raw_hash")),
             (Target::Blocks, "$updated_at") => Self::null_if_absent(self.scalar(
                 "SELECT MAX(c.ts) FROM block_changes bc JOIN commits c ON c.commit_id = bc.commit_id WHERE bc.block_id = ?1",
                 &[to_sql(&c("block_id"))],
             )?),
-            (Target::Nodes, "$id" | "$node_id") => c("node_id"),
-            (Target::Nodes, "$doc_id") => c("doc_id"),
-            (Target::Nodes, "$block_id") => c("block_id"),
+            (Target::Nodes, "$id") => c("node_id"),
             (Target::Nodes, "$path") => rooted("__path"),
             (Target::Edges, "$id") => c("edge_id"),
-            (Target::Edges, "$src") => c("src_doc"),
-            (Target::Edges, "$dst") => c("dst_node"),
-            (Target::Edges, "$src_block") => c("src_block"),
-            (Target::Edges, "$via") => c("via_node"),
-            (Target::Edges, "$from_commit") => c("from_commit"),
             (Target::Edges, "$path") => rooted("__path"),
-            (Target::Edges, "$dst_path") => match self.scalar(
-                "SELECT path FROM docs WHERE doc_id = ?1",
-                &[to_sql(&c("dst_node"))],
-            )? {
-                Value::Undefined | Value::Null => Value::Null,
-                p => Value::Str(reference_path(&js_string(&p))),
-            },
-            (Target::Edges, "$dst_uri") => Self::null_if_absent(self.scalar(
-                "SELECT uri FROM external_nodes WHERE node_id = ?1",
-                &[to_sql(&c("dst_node"))],
-            )?),
             _ => Value::Undefined,
         })
     }
@@ -1375,6 +1547,11 @@ impl DataContext for StoreContext<'_> {
             // A plain value (parsed attrs, a property bag, a lifted element).
             return Ok(oqx::DefaultContext::read(row, key));
         };
+        // A lazy owner (`LAZY_KEY`) answers its identity, relations and
+        // properties from the columns it carries; any other key loads the row.
+        if let Some(full) = self.resolve_lazy(row, t, key)? {
+            return self.get(&full, key);
+        }
         if key.starts_with('$') {
             return self.intrinsic(row, t, key);
         }
@@ -1420,21 +1597,40 @@ impl DataContext for StoreContext<'_> {
                 }
                 return self.doc_prop(&doc_id, key, None);
             }
+            // The plain fields (§1.2, 3.0): the structural columns and the
+            // foreign keys under the surface's names; any other bare name
+            // flattens into `attrs.<k>` (the structural fields win on collision).
             Target::Blocks => match key {
-                "type" => c("type"),
-                "text" => c("text"),
+                "doc_id" | "type" | "text" | "ordinal" | "depth" => c(key),
                 "attrs" => parse_json(&c("attrs")),
                 _ => Self::jattr(row, key),
             },
             Target::Nodes => match key {
-                "kind" => c("kind"),
-                "name" => c("name"),
-                "value" => c("value"),
+                "doc_id" | "kind" | "name" | "value" => c(key),
+                "block_id" => Self::null_if_absent(c("block_id")),
                 "attrs" => parse_json(&c("attrs")),
                 _ => Self::jattr(row, key),
             },
+            // edges: the store's columns under the surface's names (a foreign
+            // key is named for what it is, the `src_field` column is `field`).
             Target::Edges => match key {
-                "predicate" | "provenance" | "dst_kind" | "anchor" | "src_field" => c(key),
+                "doc_id" => c("src_doc"),
+                "block_id" => Self::null_if_absent(c("src_block")),
+                "via_id" => Self::null_if_absent(c("via_node")),
+                "dst_id" => c("dst_node"),
+                "dst_path" => match self.scalar(
+                    "SELECT path FROM docs WHERE doc_id = ?1",
+                    &[to_sql(&c("dst_node"))],
+                )? {
+                    Value::Undefined | Value::Null => Value::Null,
+                    p => Value::Str(reference_path(&js_string(&p))),
+                },
+                "uri" => Self::null_if_absent(self.scalar(
+                    "SELECT uri FROM external_nodes WHERE node_id = ?1",
+                    &[to_sql(&c("dst_node"))],
+                )?),
+                "field" => Self::null_if_absent(c("src_field")),
+                "predicate" | "provenance" | "dst_kind" | "anchor" => c(key),
                 _ => Value::Undefined,
             },
         })
@@ -1509,6 +1705,25 @@ impl DataContext for StoreContext<'_> {
         // `^docs.size()`: the receiver, a value, is materialized by the
         // engine before the call.
         if let Some(t) = target_of(recv) {
+            // A row function reads the row's columns: a lazy owner is loaded first.
+            let full;
+            let recv = if is_lazy_owner(recv) {
+                let id_col = if t == Target::Docs {
+                    "doc_id"
+                } else {
+                    "block_id"
+                };
+                match self.load_owner(t, &col_str(recv, id_col)) {
+                    Ok(Some(v)) => {
+                        full = v;
+                        &full
+                    }
+                    Ok(None) => recv,
+                    Err(e) => return Some(Err(e)),
+                }
+            } else {
+                recv
+            };
             if let Some(r) = self.row_method(name, recv, t, args) {
                 return Some(r);
             }

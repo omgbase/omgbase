@@ -718,16 +718,16 @@
             "committed": true,
             "dangling": [
               {
-                "doc": "d_1",
+                "doc_id": "d_1",
                 "path": "b.md",
-                "block": "b_3",
+                "block_id": "b_3",
                 "target": "/a.md",
                 "anchor": null
               },
               {
-                "doc": "d_1",
+                "doc_id": "d_1",
                 "path": "b.md",
-                "block": "b_3",
+                "block_id": "b_3",
                 "target": "/a.md",
                 "anchor": "A"
               }

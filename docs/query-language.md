@@ -83,20 +83,45 @@ something different from every other consumer's.
 
 ## 2. Targets and field namespaces
 
-The sigil rule: kernel-owned things carry `$`; bare identifiers are content. On
-the closed `blocks`/`nodes`/`edges` targets an unknown bare field simply reads as
-absent; on the open `docs` target a bare key is a document property, except a
-bare first segment colliding with an intrinsic base name
-(`id`/`path`/`repo`/`updated_at`/`content_hash`/`body`) is a loud error (a typo
-guard — use `$path` or `frontmatter.path`).
+**The `$` rule (spec/surface §1.2, 3.0).** A `$`-prefixed name is a name the
+engine adds to a namespace it *shares* with user-generated content — a
+document's frontmatter keys and inline properties, a block's or node's `attrs`
+keys — prefixed so the author's field names keep priority and never collide
+(a frontmatter `id:` is `id`, the engine's identity is `$id`). That bounds the
+vocabulary: `$` marks exactly the engine-provided names that contend with user
+names — every row's `$id`/`$path`; docs' and blocks' `$raw` (the exact source
+bytes), `$hash` (their sha256) and `$updated_at`; docs' computed `$title`/`$tags`
+— and **everything else the engine provides is a plain snake_case field**: a
+foreign key named for what it is (`doc_id`, `block_id`, `via_id`, `dst_id`,
+`dst_path`, `uri`), a column its column (`type`, `text`, `depth`, `ordinal`,
+`kind`, `predicate`, `field`). Tool results spell a row the same way (`$id`,
+`$path`, `$raw`, `$hash`, `$updated_at`, `doc_id`, …), so a key read from any
+result pastes into a query. On the closed `blocks`/`nodes`/`edges` targets an
+unknown bare field simply reads as absent; on the open `docs` target a bare key
+is a document property, except a bare first segment colliding with a `$` base
+name (`id`/`path`/`updated_at`/`hash`/`raw`) is a loud error (a typo guard — use
+`$path` or `frontmatter.path`; `title`/`tags` are not reserved).
+
+| kind | `$` names | plain fields |
+| --- | --- | --- |
+| docs | `$id` `$path` `$raw` `$hash` `$updated_at` `$title` `$tags` | properties; `frontmatter`/`inline`; `format` |
+| blocks | `$id` `$path` `$raw` `$hash` `$updated_at` | `doc_id` `type` `text` `attrs` `depth` `ordinal` |
+| nodes | `$id` `$path` | `doc_id` `block_id` `kind` `name` `value` `attrs` |
+| edges | `$id` `$path` | `doc_id` `block_id` `via_id` `dst_id` `dst_path` `uri` `field` `dst_kind` `predicate` `provenance` `anchor` |
+
+**[was, before 3.0: `$body`/`$content_hash`; blocks `$doc`, `$ordinal`/`$depth`
+(colliding with the `follow` recursion intrinsics, which shadowed them inside a
+walk); nodes `$doc_id`/`$block_id`/`$node_id`; edges `$src`/`$dst`/`$src_block`/
+`$via`/`$dst_path`/`$dst_uri`/`$from_commit` and the field `src_field`. `$from_commit`
+is gone outright — a query sees open edges only.]**
 
 **Paths (spec/surface 2.0).** omgbase stores a document's path repo-relative
 (`projects/oqx.md`), but every reference an author writes is root-absolute
 (`[x](/projects/oqx.md)`, `before: [/timeline/kickoff.md]`). The surface
-speaks the reference form: `$path` on every target, `$dst_path` on edges, the
+speaks the reference form: `$path` on every target, `dst_path` on edges, the
 `$path` of every hit and of a row rendered as `{ $id, $path }` are `/`-rooted.
 Every path the surface accepts tolerates both forms — tool arguments, `refs(x)`,
-`within(…)`, and a **string literal** compared with `$path`/`$dst_path` by
+`within(…)`, and a **string literal** compared with `$path`/`dst_path` by
 `==`/`!=` or passed to their `.startsWith(…)`, which is rooted before
 evaluation (`$path == "a.md"` and `$path == "/a.md"` both match; write the
 rooted form). Nothing else is rewritten: a property's value is the author's
@@ -119,8 +144,9 @@ column) so pushed SQL and the in-memory engine agree.
   into a nested value; inside the block `$key` is the key and `$it` the value.
 - **Computed intrinsics:** `$title` (first H1), `$tags` (body `#hashtags`).
 - **Intrinsics:** `$id`, `$path` (the **reference form**, `/`-rooted — see
-  "Paths" below), `$updated_at` (ISO-8601 UTC, compares lexicographically =
-  chronologically), `$body`, `$content_hash`, `format`.
+  "Paths" above), `$updated_at` (ISO-8601 UTC, compares lexicographically =
+  chronologically), `$raw` (the whole file, frontmatter included), `$hash` (its
+  sha256, 64 hex); `format` is a plain column.
 - **The root row** (spec/oqx 0.18, surface 2.0): the repository is the root
   scope's row. From a top-level row `^docs` / `^blocks` / `^nodes` / `^edges` are
   the explicit root scans (§3.4; one caret per enclosing block, or the absolute
@@ -143,17 +169,24 @@ column) so pushed SQL and the in-memory engine agree.
   `doc.out_edges`/`doc.in_edges` (a doc's edges as rows).
 
 ### `blocks`
-- **Bare fields:** `type`, `text`, and every `attrs` key FLATTENED onto the row:
-  a bare `checked` reads `attrs.checked` (`attrs.<key>` still works). Structural
-  `type`/`text` win on a name collision; an absent key is silently false in a
-  predicate, exactly like a missing frontmatter key on a doc.
-- **Intrinsics:** `$id`, `$doc`, `$path`, `$ordinal` (0-based ordinal among
-  its siblings), `$depth` (nesting depth, 0 at the top level), `$content_hash`,
-  `$body` (the block text), `$updated_at`. Inside a `follow` the walk's own
-  `$ordinal`/`$depth` (§6) take precedence over the block's; everywhere else
-  the block's values read as plain properties (`@omgbase/oqx` 0.13).
-- **Doc reach-through:** `doc.<key>` / `doc.$path` / `doc.format` constrain by the
-  owning document (scope, not selection).
+- **Bare fields:** `doc_id` (the owning document), `type`, `text` (the
+  normalized text), `ordinal` (0-based among its siblings), `depth` (nesting
+  depth, 0 at the top level), and every `attrs` key FLATTENED onto the row: a
+  bare `checked` reads `attrs.checked` (`attrs.<key>` still works). The
+  structural fields win on a name collision; an absent key is silently false in
+  a predicate, exactly like a missing frontmatter key on a doc. Inside a
+  `follow`, `$depth`/`$ordinal` are always the walk's metadata (§6); a block's
+  own nesting is `depth`/`ordinal` everywhere.
+- **Intrinsics:** `$id`, `$path` (the owning doc's path), `$raw` (the block's raw
+  source bytes — a container's raw holds its children verbatim), `$hash` (its
+  sha256; the value `update`/`split` expect as `expect.content_hash`),
+  `$updated_at`.
+- **Doc reach-through:** `doc.<key>` / `doc.$path` / `doc.$id` / `doc.format`
+  constrain by the owning document (scope, not selection). `doc.$id` and
+  `doc.$path` are **foreign-key eliminated** (spec/surface §1, 3.0): they read
+  the row's own `doc_id` / joined path — no owner lookup in memory, the FK
+  column in SQL — so `doc.$id == "d_1"` and `doc_id == "d_1"` plan to the same
+  statement.
 - **Relations:** `block.children`, `block.nodes`, `block.out_edges`, `section`
   (enclosing `md:section` node(s)). **Structural functions:** §5.
 
@@ -162,20 +195,30 @@ column) so pushed SQL and the in-memory engine agree.
   every `attrs` key FLATTENED onto the row (`checked` on a task, `level` on a
   section == `attrs.checked` / `attrs.level`; `attrs.<key>` still works).
   `kind`/`name`/`value` win on a name collision; an absent key is silently false.
-- **Intrinsics:** `$id`(=`$node_id`), `$node_id`, `$doc_id`, `$block_id`, `$path`.
-- **Reach-through:** `doc.<key>`, `block.type`/`block.text`.
+- **Bare fields (foreign keys):** `doc_id`, `block_id` (null for a block-less
+  node).
+- **Intrinsics:** `$id`, `$path`.
+- **Reach-through:** `doc.<key>` / `doc.$id` / `doc.$path`, `block.type` /
+  `block.text` / `block.$id` / `block.$path` / `block.doc_id` (the identity
+  reads are FK-eliminated: the node's own columns).
 - **Section relations:** `section.blocks` (content under an `md:section` node's
   heading), `section.children` (immediate child sections), `section.subsections`
   (all contained sections).
 
 ### `edges`
 The authored link graph as first-class rows (open edges, `to_commit IS NULL`).
-- **Bare fields:** `predicate`, `provenance`, `dst_kind`, `anchor`, `src_field`.
-- **Intrinsics:** `$id`, `$src`, `$dst`, `$dst_path` (target doc's path; null when
-  external/dangling), `$dst_uri` (external URL; null otherwise), `$src_block`,
-  `$via`, `$from_commit`, `$path` (the **source** document's path).
-- Source-document reach-through: `doc.<key>` / `doc.$path`. `text()`/`semantic()`
-  are unavailable (edges carry no text/embedding).
+- **Bare fields:** `doc_id` (the **source** document), `block_id` (the source
+  block; null for a frontmatter edge), `via_id` (null unless derived through
+  another node), `dst_id` (the destination node id: a doc id, an external node
+  id or `phantom:<path>`), `dst_path` (target doc's path, `/`-rooted; null when
+  external/dangling), `uri` (external URL; null otherwise), `predicate`,
+  `provenance`, `dst_kind`, `anchor`, `field` (the frontmatter key / inline
+  field the edge was authored in; null for a link).
+- **Intrinsics:** `$id`, `$path` (the **source** document's path). There is no
+  `from_commit`: a query sees open edges only; the creating commit is history
+  (`history_node`, `changes_since`).
+- Source-document reach-through: `doc.<key>` / `doc.$id` / `doc.$path`.
+  `text()`/`semantic()` are unavailable (edges carry no text/embedding).
 
 ## 3. Scalar semantics (`@omgbase/oqx` contract)
 
@@ -469,7 +512,7 @@ nested/correlated scopes:
   item observes it — `spec/surface` `lazy-root-*` pins that both engines see
   the same array). The `@omgbase/oqx` optimizer
   turns a block's top-level `local == outer` conjunct (a `^` reference OR a
-  literal: `where customer == ^$path`, `where type == "order"`, `where $dst ==
+  literal: `where customer == ^$path`, `where type == "order"`, `where dst_id ==
   ^$id`) into a probe and asks the context for an index first
   (`DataContext.indexFor` → `RowIndex.lookupRows`); the store context answers
   with ONE prepared, index-driven statement per probe under the same live-row
@@ -480,14 +523,14 @@ nested/correlated scopes:
   key** (`idx_props_key_text` / `idx_props_key_num`, under the scalar-in-scope
   rule and **typed**: a string probe matches only a `type = 'string'` row by
   `val_text`, a number only `type = 'number'` by `val_num`, a boolean only
-  `type = 'bool'`, so `1` never meets `"1"`); blocks `$id`, `$doc`, `type`,
-  `$path`; nodes `$id`/`$node_id`, `$doc_id`, `kind`, `name`, `$path`; edges
-  `$id`, `$src`, `$dst`, `$path`, `$dst_path`. A `$path` probe on a joined
+  `type = 'bool'`, so `1` never meets `"1"`); blocks `$id`, `doc_id`, `type`,
+  `$path`; nodes `$id`, `doc_id`, `kind`, `name`, `$path`; edges `$id`,
+  `doc_id`, `dst_id`, `$path`, `dst_path`. A `$path` probe on a joined
   target drives from `docs (repo_id, path)` into the target's `doc_id` index. An
   **absent** probe (`key == null`, `name == ^missing`) is an anti-join SQLite has
   no index for: the handle is read once and filtered in memory (same answer).
   Not indexed — the engine's own hash index over the handle, built once per
-  run — `format`, `$tags`, edge `predicate` / `src_field`, multi-segment paths
+  run — `format`, `$tags`, edge `predicate` / `field`, multi-segment paths
   (`meta.id`), reserved docs basenames (the scan raises). With several
   equalities the varying one is probed and the rest stay residual conjuncts in
   their original order. Nothing here changes a result: `corpus/oqx/
@@ -546,4 +589,4 @@ projected-query fence (ADR-011, deferred).
 | Blocks about a concept (semantic top-K) | `from blocks order by semantic("identity preservation across edits") desc` |
 | Everything a note transitively cites | `from docs where $path == "/index.md" follow doc.out` |
 | The documents whose `after` names this one | `select next: ^docs collect { $path where ^$path in list(after) } from docs where $path == "/timeline/kickoff.md"` |
-| Every `depends_on` edge, both endpoints | `select $src, $dst_path from edges where predicate == "depends_on"` |
+| Every `depends_on` edge, both endpoints | `select doc_id, dst_path from edges where predicate == "depends_on"` |

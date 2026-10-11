@@ -15,7 +15,10 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import type { WhoAmI } from "webdevproxy";
-import type { ChangesSince, DocVersions } from "./feed.ts";
+/** A tool result as the server spelled it (lib/shapes.ts reads it per version). */
+export type Wire = Record<string, unknown>;
+/** A `changes_since` page on the wire: the digests are read per version, the paging keys did not change. */
+export type ChangesSinceWire = { digests: Wire[]; cursor: number; truncated: boolean; head: number };
 
 export interface OmgClientOptions {
   url: string;
@@ -132,21 +135,26 @@ export class OmgClient {
     return this.call<QueryResult>("query", { query, repo, ...(limit !== undefined ? { limit } : {}) });
   }
 
-  changesSince(repo: string, cursor?: number, limit = 50): Promise<ChangesSince> {
-    return this.call<ChangesSince>("changes_since", { repo, limit, ...(cursor !== undefined ? { cursor } : {}) });
+  // The four reads below return the server's wire shape untouched: surface
+  // 3.0 spells a row `$id`/`$path`/`$hash`/`$updated_at`/`$raw` where 2.x had
+  // `doc`/`docId`/`path`/`contentHash`/`ts`/`content` (spec/surface §3–§4), and
+  // the page reads either through lib/shapes.ts by the connected version.
+
+  changesSince(repo: string, cursor?: number, limit = 50): Promise<ChangesSinceWire> {
+    return this.call<ChangesSinceWire>("changes_since", { repo, limit, ...(cursor !== undefined ? { cursor } : {}) });
   }
 
   /** One document's version list (oldest → newest), by id or path. */
-  async docsHistory(doc: string, repo: string): Promise<DocVersions | null> {
-    const r = await this.call<{ docs: DocVersions[] }>("docs_history", { doc, repo, include_deleted: true });
+  async docsHistory(doc: string, repo: string): Promise<Wire | null> {
+    const r = await this.call<{ docs: Wire[] }>("docs_history", { doc, repo, include_deleted: true });
     return r.docs[0] ?? null;
   }
 
-  diffUnified(doc: string, fromRev: string, toRev: string, repo: string): Promise<{ doc: string; path: string; from: string; to: string; diff: string }> {
+  diffUnified(doc: string, fromRev: string, toRev: string, repo: string): Promise<Wire> {
     return this.call("diff_unified", { doc, from_rev: fromRev, to_rev: toRev, repo });
   }
 
-  docsReadAt(doc: string, rev: string, repo: string): Promise<{ path: string; docId: string; rev: string; content: string }> {
+  docsReadAt(doc: string, rev: string, repo: string): Promise<Wire> {
     return this.call("docs_read_at", { doc, rev, repo });
   }
 }

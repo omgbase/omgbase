@@ -72,14 +72,14 @@ describe("store-backed indexes for correlated blocks over a root scan", () => {
     expect(ctx.indexFor!(docs, ["out"])).toBeUndefined(); // a relation
     expect(ctx.indexFor!(docs, ["path"])).toBeUndefined(); // reserved: the scan raises
     expect(ctx.indexFor!(docs, ["meta", "id"])).toBeUndefined(); // multi-segment
-    expect(ctx.indexFor!(ctx.root("edges"), ["$dst"])).toBeDefined(); // a bare root at the root scope
+    expect(ctx.indexFor!(ctx.root("edges"), ["dst_id"])).toBeDefined(); // a bare root at the root scope
     expect(ctx.indexFor!(ctx.get(repo, "edges"), ["predicate"])).toBeUndefined(); // no leading index
-    expect(ctx.indexFor!(ctx.get(repo, "blocks"), ["$doc"])).toBeDefined();
+    expect(ctx.indexFor!(ctx.get(repo, "blocks"), ["doc_id"])).toBeDefined();
     expect(ctx.indexFor!(ctx.get(repo, "nodes"), ["name"])).toBeDefined();
     // a relation's rows are an ordinary array: the engine indexes those itself
     const index = ctx.get((docs as unknown[])[0], "out");
     expect(ctx.indexFor!(index, ["$path"])).toBeUndefined();
-    expect(indexablePaths("edges")).toEqual(["$id", "$src", "$dst", "$path", "$dst_path"]);
+    expect(indexablePaths("edges")).toEqual(["$id", "doc_id", "dst_id", "$path", "dst_path"]);
   });
 
   it("a correlated block over ^docs probes SQLite per outer row and never runs the docs scan", () => {
@@ -109,9 +109,9 @@ describe("store-backed indexes for correlated blocks over a root scan", () => {
 
   it("an edges-target correlated block is answered from idx_edges_dst; blocks from idx_blocks_doc; nodes from idx_nodes_kind", () => {
     const cases: [string, RegExp][] = [
-      ['select $path, inbound: ^edges collect { $src values where $dst == ^$id } from docs', /e\.dst_node = \? ORDER BY/],
-      ['select $id, paragraphs: ^blocks collect { $ordinal values where $doc == ^$doc && type == "paragraph" } from blocks where type == "heading"', /b\.doc_id = \? ORDER BY/],
-      ['select name, same_kind: ^nodes collect { name values where kind == ^kind && $doc_id == ^$doc_id } from nodes where kind == "md:section"', /n\.kind = \? ORDER BY/],
+      ['select $path, inbound: ^edges collect { doc_id values where dst_id == ^$id } from docs', /e\.dst_node = \? ORDER BY/],
+      ['select $id, paragraphs: ^blocks collect { ordinal values where doc_id == ^doc_id && type == "paragraph" } from blocks where type == "heading"', /b\.doc_id = \? ORDER BY/],
+      ['select name, same_kind: ^nodes collect { name values where kind == ^kind && doc_id == ^doc_id } from nodes where kind == "md:section"', /n\.kind = \? ORDER BY/],
     ];
     for (const [q, probe] of cases) {
       let out!: { result: OqxResult; events: TraceEvent[] };
@@ -169,6 +169,49 @@ describe("store-backed indexes for correlated blocks over a root scan", () => {
     // `from docs` and the nested receiver share a single SELECT (was one per outer row)
     const sql = prepared(store, () => { oqxRun(store, repoId, q, { limit: 100, plan: false }); });
     expect(sql.filter(isScan).length).toBe(1);
+  });
+});
+
+describe("foreign-key elimination (spec/surface §1, 3.0) — the owner's identity costs no lookup", () => {
+  let store: Store, repoId: string;
+  beforeAll(() => {
+    store = new Store({ path: ":memory:" });
+    repoId = ensureRepo(store, "fk", DIR);
+    processCheckpoint(store, repoId, DIR, walk(DIR).map((f) => ({ path: relative(DIR, f) })));
+  });
+  afterAll(() => store.close());
+  const ownerLoad = /^SELECT \* FROM docs WHERE doc_id = \?$/;
+  const blockLoad = /^SELECT b\.\*, d\.path AS __path FROM blocks b JOIN docs d ON d\.doc_id = b\.doc_id WHERE b\.block_id = \?$/;
+
+  it("doc.$id / doc.$path on blocks and edges read the row's own columns; doc.<column> still loads the document", () => {
+    for (const target of ["blocks", "edges"]) {
+      const q = `select a: doc.$id, b: doc_id, c: doc.$path, d: $path from ${target}`;
+      let out!: { result: OqxResult; events: TraceEvent[] };
+      const sql = prepared(store, () => { out = engineRun(store, repoId, q); });
+      const rows = (out.result.consumer === "collect" ? out.result.rows : []) as { a: string; b: string; c: string; d: string }[];
+      expect(rows.length, target).toBeGreaterThan(10);
+      expect(rows.every((r) => r.a === r.b && r.c === r.d), target).toBe(true);
+      expect(sql.filter((s) => ownerLoad.test(s)), target).toHaveLength(0);
+      const viaOwner = prepared(store, () => engineRun(store, repoId, `select f: doc.format from ${target}`)); // a document COLUMN loads the owner (a property read needs only the id)
+      expect(viaOwner.filter((s) => ownerLoad.test(s)).length, target).toBeGreaterThan(0);
+    }
+  });
+
+  it("block.$id / block.$path / block.doc_id on nodes read the node's own columns; block.text still loads the block", () => {
+    const q = 'select a: block.$id, b: block_id, c: block.$path, d: $path, e: block.doc_id, f: doc_id from nodes where kind == "md:task"';
+    let out!: { result: OqxResult; events: TraceEvent[] };
+    const sql = prepared(store, () => { out = engineRun(store, repoId, q); });
+    const rows = (out.result.consumer === "collect" ? out.result.rows : []) as Record<string, string>[];
+    expect(rows.length).toBeGreaterThan(0);
+    expect(rows.every((r) => r.a === r.b && r.c === r.d && r.e === r.f)).toBe(true);
+    expect(sql.filter((s) => blockLoad.test(s))).toHaveLength(0);
+    const viaOwner = prepared(store, () => engineRun(store, repoId, 'select t: block.text from nodes where kind == "md:task"'));
+    expect(viaOwner.filter((s) => blockLoad.test(s)).length).toBeGreaterThan(0);
+  });
+
+  it("planned and in-memory agree over the reach-through identity", () => {
+    const q = 'select a: doc.$id, p: doc.$path from blocks where doc.$id == "d_0" && doc.$path == "/index.md"';
+    expect(oqxRun(store, repoId, q, { limit: 200 })).toEqual(oqxRun(store, repoId, q, { limit: 200, plan: false }));
   });
 });
 

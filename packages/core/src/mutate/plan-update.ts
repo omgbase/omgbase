@@ -106,8 +106,8 @@ export function planUpdate(store: Store, repoId: string, rootPath: string, docRe
   return {
     version: 1,
     kind: "doc_update",
-    target: { doc: docId, path },
-    precondition: { doc: docId, path, baseRevision: info.currentRev, baseContentHash },
+    target: { $id: docId, $path: path },
+    precondition: { $id: docId, $path: path, baseRevision: info.currentRev, $hash: baseContentHash },
     matcherV: config.matcherV,
     ops,
     ...(fmChanged ? { frontmatter: { raw: targetFm } } : {}),
@@ -185,14 +185,15 @@ export function applyOpset(store: Store, req: ApplyOpsetRequest): ApplyResult {
   }
   // Precondition: the document must still be at the revision/content the plan
   // was computed against.
-  const row = store.db.prepare("SELECT current_rev, lower(hex(file_hash)) fh FROM docs WHERE doc_id = ? AND deleted_commit IS NULL").get(opset.precondition.doc) as { current_rev: string | null; fh: string | null } | undefined;
-  if (!row) throw new MutationError("doc_missing", `doc ${opset.precondition.doc} not found`, { doc: opset.precondition.doc });
-  const stale = (opset.precondition.baseRevision !== null && row.current_rev !== opset.precondition.baseRevision) || (row.fh !== null && row.fh !== opset.precondition.baseContentHash);
+  const docId = opset.precondition.$id;
+  const row = store.db.prepare("SELECT current_rev, lower(hex(file_hash)) fh FROM docs WHERE doc_id = ? AND deleted_commit IS NULL").get(docId) as { current_rev: string | null; fh: string | null } | undefined;
+  if (!row) throw new MutationError("doc_missing", `doc ${docId} not found`, { doc: docId });
+  const stale = (opset.precondition.baseRevision !== null && row.current_rev !== opset.precondition.baseRevision) || (row.fh !== null && row.fh !== opset.precondition.$hash);
   if (stale) {
     throw new MutationError("stale_plan", "document changed since the plan was computed; re-plan", {
-      doc: opset.precondition.doc,
+      doc: docId,
       expected_revision: opset.precondition.baseRevision,
-      current: { revision: row.current_rev, content_hash: row.fh },
+      current: { revision: row.current_rev, $hash: row.fh },
       retriable: true,
     });
   }
@@ -206,7 +207,7 @@ export function applyOpset(store: Store, req: ApplyOpsetRequest): ApplyResult {
     ...(req.dryRun !== undefined ? { dryRun: req.dryRun } : {}),
     ...(req.omgbaseDir !== undefined ? { omgbaseDir: req.omgbaseDir } : {}),
     ...(req.ts !== undefined ? { ts: req.ts } : {}),
-    ...(opset.frontmatter ? { setFrontmatter: [{ doc: opset.precondition.doc, raw: opset.frontmatter.raw }] } : {}),
+    ...(opset.frontmatter ? { setFrontmatter: [{ doc: docId, raw: opset.frontmatter.raw }] } : {}),
   });
 }
 

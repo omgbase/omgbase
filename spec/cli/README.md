@@ -514,15 +514,16 @@ from stdin one per line, a `-` with empty stdin is
 `usage: cat requires a <node> (or - to read refs from stdin)`) prints, in
 order: a document → its exact bytes (`docs_read`); a block → its raw
 markdown, or at `--resolution text|outline|skeleton|full` the `nodes_get`
-field `raw ?? text ?? label`. `--resolution` other than `raw` on a document
+field `$raw ?? text ?? label`. `--resolution` other than `raw` on a document
 ref warns on stderr
 `  --resolution <r> ignored for <ref>: a document is always its exact bytes (resolutions apply to block refs)`
 and prints the bytes. `--json`: one ref → the object, several → an array;
 `--jsonl` one object per line (`--ids`: the same document — a read has no
 id list); a block's object is `nodes_get` at the resolution
-(`{ id, type, raw, content_hash }` at raw), a document's is the `docs_read`
-result `{ path, docId, rev, properties: { frontmatter, inline, computed },
-content }`. Unknown ref → `doc_missing: no node <ref>` (a `b_` id too, §9).
+(`{ $id, type, $raw, $hash }` at raw), a document's is the `docs_read`
+result `{ $id, $path, rev, properties: { frontmatter, inline, computed },
+$raw }` (3.0 — the row rule of `spec/surface` §1.2). Unknown ref →
+`doc_missing: no node <ref>` (a `b_` id too, §9).
 
 ### `config`
 
@@ -553,13 +554,13 @@ string verbatim, anything else as JSON, an absent key as an empty line
 before it (or the current one again when there is only one → an empty
 diff, stderr `  no changes`). Human: the unified diff's lines
 (`spec/surface` §3, no header); `--json` the tool's result
-`{ doc, path, from, to, diff }` (the reference and the tool share one
+`{ $id, $path, from, to, diff }` (the reference and the tool share one
 function); `--jsonl`/`--ids` the same document. `--blocks` is the
 block-grain `diff` tool over the same resolved pair: human one line per
 entry, `+ <id>  <first line of after>` (added), `- <id>  <first line of
 before>` (removed), `~ <id>  <first line of after>` (changed), none → stderr
 `  no changes`; `--json` the entry array
-`[{ kind, blockId, before?, after? }]`, `--jsonl` one per line, `--ids` the
+`[{ kind, $id, before?, after? }]`, `--jsonl` one per line, `--ids` the
 block ids. Unknown doc → `doc_missing: no document <ref>`; unknown revision
 → `target_missing: no revision "<rev>" for document <id>` with
 `data { doc, rev }`.
@@ -623,8 +624,9 @@ provider the status figures and the drain depend on the model — unpinned;
 hybrid ranking when a provider is configured, FTS-only with `--no-semantic`
 or without one. Human: `<id>  <locator>  <preview>` per hit; `-v` adds
 `    <evidence as JSON>` on **stderr** under each; none → stderr
-`  no matches`. `-1` prints the top hit's id alone (nothing when there is
-none). `--ids` the ids; `--json` the hit array; `--jsonl` one hit per line.
+`  no matches`. `-1` prints the top hit's `$id` alone (nothing when there is
+none). `--ids` the `$id`s; `--json` the hit array (`[{ $id, locator, preview,
+evidence }]`); `--jsonl` one hit per line.
 No text → `usage: find requires <text>`.
 
 ### `gc`
@@ -685,18 +687,20 @@ unknown → `block_missing: not a block: <ref>`.
 
 `links <node> [--in|--out] [--pred <p,p>] [--blocks]` — `docLinks` for the
 node's document (a block ref reports its document). Human: `  out` then
-`    <predicate> > <node> ×<count>` per outgoing group, `  in (backlinks)`
-then `    <node> > <predicate> ×<count>` per incoming group; `--in`/`--out`
+`    <predicate> > <doc_id> ×<count>` per outgoing group, `  in (backlinks)`
+then `    <doc_id> > <predicate> ×<count>` per incoming group; `--in`/`--out`
 alone select a direction (both together mean both); `--pred` keeps the
-listed predicates; groups are ordered by node id as text; none → stderr
-`  no links`. `--blocks` is block-grain: one row per open edge, ordered by
-(predicate, node, block), the source block beside the far node —
-`    <predicate> > <node> (<block>)` out, `    <node> (<block>) > <predicate>`
-in (`(frontmatter)` for a block-less relation), no count. `--ids` the far
-node ids (out, then in); `--json` the
-`{ out: [{ predicate, node, kind, count, samples? }], in: [...] }` object
-(`--blocks`: `count` is 1, no `samples`, plus `block`); `--jsonl` the same
-object (it is not a list). Unknown ref → `doc_missing: no node <ref>`.
+listed predicates; groups are ordered by the far node's id as text; none →
+stderr `  no links`. `--blocks` is block-grain: one row per open edge,
+ordered by (predicate, doc_id, block_id), the source block beside the far
+node — `    <predicate> > <doc_id> (<block_id>)` out, `    <doc_id>
+(<block_id>) > <predicate>` in (`(frontmatter)` for a block-less relation),
+no count. `--ids` the far node ids (out, then in); `--json` the
+`{ out: [{ predicate, doc_id, kind, count, samples? }], in: [...] }` object
+(`doc_id` is the far node: a document id, or for an outgoing external or
+phantom edge that node's id; `--blocks`: `count` is 1, no `samples`, plus
+`block_id`) — 3.0, `node`/`block` before; `--jsonl` the same object (it is
+not a list). Unknown ref → `doc_missing: no node <ref>`.
 
 ### `log`
 
@@ -724,9 +728,9 @@ line plus the footer; `--ids` the commit ids plus the footer.
 `ls [<glob>] [--ids|--json|--jsonl]` — `docs_list`, every page walked. The
 glob is a path pattern with `*` matching any run of characters, in either
 path form. Human: a column table of `<path>` (rooted), `<n> blocks` (right-aligned), the relative time
-(§4, right-aligned); none → stderr `  no documents`. `--ids` the paths;
-`--json` the row array `[{ path, blocks, ts }]`; `--jsonl` one row per
-line.
+(§4, right-aligned); none → stderr `  no documents`. `--ids` the `$id`s
+(3.0; the paths before); `--json` the row array `[{ $id, $path, $updated_at,
+blocks }]`; `--jsonl` one row per line.
 
 ### `mcp`
 
@@ -755,7 +759,7 @@ kernel's default), the first block's identity surviving. Fewer than two →
 `true` → boolean), `--set-json` as JSON, `--unset` removes; the body is
 untouched; the frontmatter is re-serialized by the engine (a list becomes a
 block sequence). Document-op confirmation (§4); `--json`
-`{ docId, path, committed }`. Neither `--set` nor `--unset` →
+`{ $id, $path, committed }`. Neither `--set` nor `--unset` →
 `usage: meta requires --set or --unset`; a value without `=` →
 `usage: --set expects k=v, got '<v>'` / `usage: --set-json expects k=json, got '<v>'`.
 `--dry-run`: the patched file's diff (§3.6).
@@ -777,7 +781,8 @@ inbound links that named the old path are rewritten to the new one
 <new-path>`, then when anything was rewritten
 `  ok retargeted <n> inbound link(s) in <m> document(s)` (`link`/`document`
 for one); `--json` the `DocMoveResult`
-`{ docId, path, committed, dangling: [...], retargeted }`. `--no-retarget`
+`{ $id, $path, committed, dangling: [{ doc_id, $path, block_id, target,
+anchor, field? }], retargeted }`. `--no-retarget`
 (cli 1.2) passes `retarget_inbound: false`: the links are left as written
 and listed in `dangling`. Whatever still dangles is reported on stderr after
 the confirmation: `  ! <n> inbound link(s) still name(s) the old path:
@@ -796,7 +801,7 @@ as two file diffs plus the diff of every source the retarget would rewrite
 `new <path> (-m <markdown> | -f <file> | -) [--actor <s>] [--dry-run]` —
 `docs_create` from complete file bytes (frontmatter included, `-m`
 verbatim). Confirmation (§4) `created <path>`; `--json`
-`{ docId, path, committed }`. Existing →
+`{ $id, $path, committed }`. Existing →
 `path_taken: document already exists at <path>` (with the `{}` payload,
 §9). `--dry-run`: the would-be file's diff (§3.6), nothing created.
 
@@ -887,7 +892,7 @@ searched.
 `rm <blocks…|-> [--actor <s>] [--dry-run]` · `rm --doc <doc> [--actor <s>] [--dry-run]`
 — a `remove` op (confirmation lists the removed ids; `--json`'s result
 carries `removed`), or with `--doc` `docs_delete` (document-op confirmation
-`deleted <path>`; `--json` `{ docId, path, committed }`; the file leaves the
+`deleted <path>`; `--json` `{ $id, $path, committed, deleted }`; the file leaves the
 tree; `--dry-run` renders the file's removal, §3.6). Neither →
 `usage: rm requires one or more blocks (or - for stdin), or --doc`.
 
@@ -913,13 +918,14 @@ wordmark with its path, the rule, `  properties` and
 including the computed `$title`, then `  out edges` / `  backlinks` as
 `links` renders them (each section only when non-empty). A block:
 `  <type glyph> <type>  <id>`, the rule,
-`  placement  parent=<id|—> ordinal=<n> depth=<n>`, `  attrs` with
+`  placement  parent=<parent_id|—> ordinal=<n> depth=<n>` (the row's
+`parent_id`/`ordinal`/`depth`, 3.0), `  attrs` with
 `    <k> = <v>` lines when any, `  text  <text>` when any, and with
 `--include history` `  history` then `    #<seq> <kind> <origin> <ts>` for the
 last five changes. Several refs print one card after another. `--json`: a
 block's `nodes_get` at `full` (+ `history` when included); a document's the
-`read_ref` result `{ kind: "document", path, docId, rev, properties:
-{ frontmatter, inline, computed }, content }` (the card's merged properties
+`read_ref` result `{ kind: "document", $id, $path, rev, properties:
+{ frontmatter, inline, computed }, $raw }` (the card's merged properties
 and edges are the human rendering only); one ref → the object, several →
 an array; `--jsonl` one object per line; `--ids` the same as `--json`.
 
@@ -1083,7 +1089,7 @@ the unknown-command one.
 A **collection** result replaces the frame and prints, on stderr,
 `  <n> row(s) — address with @1..@<n>` (`1 row`, `2 rows`; nothing when
 empty). Collections: `query`/`run` hits (row ref = `$id`, label `$path`;
-3.0), `ls` rows (ref = `path`), `find` hits (`id`), `links` (out then in; ref = `node`), an
+3.0), `ls` rows (ref = `$id`, label `$path`), `find` hits (`$id`), `links` (out then in; ref = `doc_id`), an
 `ApplyResult` (its `results[*].ids`, flattened; ref = the id), any array. A
 card or scalar (`show`, `cat`, a count) sets `@_` and leaves the frame.
 **Not captured** at all (they leave `@_` and the frame untouched): `log`,
@@ -1092,8 +1098,9 @@ card or scalar (`show`, `cat`, a count) sets `@_` and leaves the frame.
 for a block; `show` a document captures the card object.
 
 Substitution coerces a row to its ref; a scalar to its string; an object
-with `$id`/`id`/`node`/`block`/`locator`/`$path`/`path` (in that precedence)
-to that; a bare collection is
+with `$id`/`doc_id`/`block_id`/`id`/`node`/`block`/`locator`/`$path`/`path`
+(in that precedence; the pre-3.0 names stay so a remote 2.x server's results
+still address) to that; a bare collection is
 refused: `usage: reference is a collection; select one with [i]` (or
 `reference is a collection of <n>; select one with [i]` for an array).
 Errors: `usage: no displayed collection to index with @N`,
@@ -1534,6 +1541,26 @@ was `b_314`).
   `nothing to do` for an empty `apply`, where the reference posts the call.
 
 ## 10. Decisions
+
+- 2026-10-11, cli 3.0 (the rest of it): every verb's `--json`/`--jsonl`
+  document follows `spec/surface` 3.0's row rule — a row's identity is
+  `$id`/`$path`, its bytes `$raw`, its hash `$hash`, its time `$updated_at`,
+  foreign keys are plain snake_case (`doc_id`, `block_id`, `parent_id`) —
+  because the verbs render the tool results verbatim and those changed
+  (`cat`/`show` `{ $id, $path, rev, properties, $raw }`, a block `{ $id,
+  type, $raw, $hash, …, ordinal, depth, parent_id }`, `ls` `[{ $id, $path,
+  $updated_at, blocks }]`, `diff` `{ $id, $path, from, to, diff }` /
+  `[{ kind, $id, … }]`, `find` `[{ $id, locator, … }]`, `links` `doc_id` /
+  `block_id`, the document ops `{ $id, $path, committed, … }`, `log`'s
+  revisions `{ $id, $path, $hash }`, every apply result's revisions). Two
+  renderings change with them: `ls --ids` prints the `$id`s (the paths were a
+  stand-in for an identity the row did not carry) and `find -1`/`--ids` read
+  `$id`; the shell's row ref for `ls` is the `$id` (label `$path`) and for
+  `links` the far node's `doc_id`, and `.field` on a ref admits the new
+  names. The human renderings are unchanged. Result keys renamed: part of the
+  3.0 major (the hit envelope half shipped first, below). Regeneration:
+  every `--json`/`--jsonl` expectation re-keyed, `ls --ids` and the shell
+  cases that address an `ls` row re-rendered, nothing else.
 
 - 2026-10-10, cli 3.0: **the query hit renders as `$id`/`$path`** (§4, §6
   `query`, §7), following `spec/surface` 3.0 — the same decision, rendered:

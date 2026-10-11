@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Store } from "../core/store/store.js";
 import { ensureRepo } from "../core/attach.js";
+import { sha256 } from "../core/hash.js";
 import { processCheckpoint } from "../sync/checkpoint.js";
 import { apply } from "./apply.js";
 import { MutationError } from "./tree.js";
@@ -158,15 +159,15 @@ describe("apply — changesets", () => {
     expect(caught!.code).toBe("stale_expectation");
     // The error hands back the current hash, so the caller can retry WITHOUT a
     // separate hydration read — nothing was written.
-    const data = caught!.data as { retriable?: boolean; current?: { content_hash?: string } };
+    const data = caught!.data as { retriable?: boolean; current?: { $hash?: string } };
     expect(data.retriable).toBe(true);
-    expect(data.current!.content_hash).toBe(hashOf(bId));
+    expect(data.current!.$hash).toBe(hashOf(bId));
     expect(readFileSync(join(dir, "a.md"), "utf8")).toContain("Body.");
 
     // Retrying with the returned hash succeeds.
     const res = apply(store, {
       repoId, rootPath: dir,
-      ops: [{ op: "update", block: bId, markdown: "Rewritten.", expect: { content_hash: data.current!.content_hash! } }],
+      ops: [{ op: "update", block: bId, markdown: "Rewritten.", expect: { content_hash: data.current!.$hash! } }],
       origin: { actor: "agent:test" },
     });
     expect(res.committed).toBe(true);
@@ -181,7 +182,7 @@ describe("apply — changesets", () => {
       origin: { actor: "agent:test" },
     });
     expect(res.committed).toBe(false);
-    expect(res.revisions).toEqual([{ doc: docId, path: "a.md" }]);
+    expect(res.revisions).toEqual([{ $id: docId, $path: "a.md", $hash: sha256(res.diffs!["a.md"]!.after).toString("hex") }]);
     expect(res.diffs!["a.md"]!.after).toContain("Appended.");
   });
 

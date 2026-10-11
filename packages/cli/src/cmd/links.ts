@@ -49,7 +49,7 @@ function runLinks(cli: Cli, args: string[]): number {
   cli.capture?.(result); // shell: edges (out+in) become the addressable frame
 
   // `{ out, in }` is not a list: `--jsonl` prints the document; `--ids` the far nodes.
-  if (cli.flags.mode !== "human") return emitMachine(cli, result, { ids: [...result.out, ...result.in].map((e) => e.node) });
+  if (cli.flags.mode !== "human") return emitMachine(cli, result, { ids: [...result.out, ...result.in].map((e) => e.doc_id) });
 
   const { render, style, io } = cli;
   const g = render.g;
@@ -59,19 +59,19 @@ function runLinks(cli: Cli, args: string[]): number {
   }
   // Doc-grain: one row per (predicate, node) with its rollup count. Block-grain:
   // one row per edge, the source block beside the far node.
-  const src = (e: { block?: string | null }): string => style.dim(`(${e.block ?? "frontmatter"})`);
+  const src = (e: { block_id?: string | null }): string => style.dim(`(${e.block_id ?? "frontmatter"})`);
   if (result.out.length > 0) {
     io.out(style.dim("  out"));
     for (const e of result.out) {
-      if (values.blocks) io.out(`    ${style.accent(e.predicate)} ${style.dim(g.arrow)} ${style.id(e.node)} ${src(e)}`);
-      else io.out(`    ${style.accent(e.predicate)} ${style.dim(g.arrow)} ${style.id(e.node)} ${style.dim(`×${e.count}`)}`);
+      if (values.blocks) io.out(`    ${style.accent(e.predicate)} ${style.dim(g.arrow)} ${style.id(e.doc_id)} ${src(e)}`);
+      else io.out(`    ${style.accent(e.predicate)} ${style.dim(g.arrow)} ${style.id(e.doc_id)} ${style.dim(`×${e.count}`)}`);
     }
   }
   if (result.in.length > 0) {
     io.out(style.dim("  in (backlinks)"));
     for (const e of result.in) {
-      if (values.blocks) io.out(`    ${style.id(e.node)} ${src(e)} ${style.dim(g.arrow)} ${style.accent(e.predicate)}`);
-      else io.out(`    ${style.id(e.node)} ${style.dim(g.arrow)} ${style.accent(e.predicate)} ${style.dim(`×${e.count}`)}`);
+      if (values.blocks) io.out(`    ${style.id(e.doc_id)} ${src(e)} ${style.dim(g.arrow)} ${style.accent(e.predicate)}`);
+      else io.out(`    ${style.id(e.doc_id)} ${style.dim(g.arrow)} ${style.accent(e.predicate)} ${style.dim(`×${e.count}`)}`);
     }
   }
   return EXIT_OK;

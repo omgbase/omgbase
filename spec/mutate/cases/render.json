@@ -64,8 +64,9 @@
             ],
             "revisions": [
               {
-                "doc": "d_0",
-                "path": "a.md"
+                "$id": "d_0",
+                "$path": "a.md",
+                "$hash": "58e7c4b2aebbc7cd6bc23a5d8968f6fa9446ee05509ba101d216269720bdded5"
               }
             ],
             "committed": true
@@ -370,8 +371,9 @@
             ],
             "revisions": [
               {
-                "doc": "d_0",
-                "path": "a.md"
+                "$id": "d_0",
+                "$path": "a.md",
+                "$hash": "e817e39f1e0d836498f409b65a2c46c0cbe1b78d3c4c7c0b39b713289401a32c"
               }
             ],
             "committed": true
@@ -648,8 +650,9 @@
             ],
             "revisions": [
               {
-                "doc": "d_0",
-                "path": "a.md"
+                "$id": "d_0",
+                "$path": "a.md",
+                "$hash": "deb76b15b7c0a8ce4df7e3d369e36c963775687fdcdd3a6b2d541b07c4a3cbef"
               }
             ],
             "committed": true
@@ -917,8 +920,9 @@
             ],
             "revisions": [
               {
-                "doc": "d_0",
-                "path": "a.md"
+                "$id": "d_0",
+                "$path": "a.md",
+                "$hash": "6782cf537f96176fe5b0f1d860c8cc7d9d1a58e30c506d9b33232cf4a1af67d7"
               }
             ],
             "committed": true
@@ -1220,8 +1224,9 @@
             ],
             "revisions": [
               {
-                "doc": "d_0",
-                "path": "a.md"
+                "$id": "d_0",
+                "$path": "a.md",
+                "$hash": "ecb11f3c985c2ae85c38462cdcd5ed4b95d4200be36018c3a13d2c06af1d9560"
               }
             ],
             "committed": true
@@ -1488,8 +1493,9 @@
             ],
             "revisions": [
               {
-                "doc": "d_0",
-                "path": "a.md"
+                "$id": "d_0",
+                "$path": "a.md",
+                "$hash": "4a17298d31d11b8971c917b75a2b081d2c386f7e4c25e1e977dddf0336743391"
               }
             ],
             "committed": true
@@ -1763,8 +1769,9 @@
             ],
             "revisions": [
               {
-                "doc": "d_0",
-                "path": "a.md"
+                "$id": "d_0",
+                "$path": "a.md",
+                "$hash": "aa66034ccc42881a07941de2c80472bc9b24228cc783816e9a1a67646f10632d"
               }
             ],
             "committed": true
@@ -2038,8 +2045,9 @@
             ],
             "revisions": [
               {
-                "doc": "d_0",
-                "path": "a.md"
+                "$id": "d_0",
+                "$path": "a.md",
+                "$hash": "f88d83870fea6256c6eaf9f877e44738203a04416abce2d852e51809405cb120"
               }
             ],
             "committed": true
@@ -2422,8 +2430,9 @@
             ],
             "revisions": [
               {
-                "doc": "d_0",
-                "path": "a.md"
+                "$id": "d_0",
+                "$path": "a.md",
+                "$hash": "fdd378d1571fcddfed366b3b781ca73095aaae7a63e204295c32101c105c78c2"
               }
             ],
             "committed": true
@@ -2846,8 +2855,9 @@
             ],
             "revisions": [
               {
-                "doc": "d_0",
-                "path": "a.md"
+                "$id": "d_0",
+                "$path": "a.md",
+                "$hash": "ba9e08c0abb8b9f6f0469e7cee2fe808135509c968b65831ac18f6a2ae39cf4d"
               }
             ],
             "committed": true
@@ -3163,8 +3173,9 @@
             ],
             "revisions": [
               {
-                "doc": "d_0",
-                "path": "a.md"
+                "$id": "d_0",
+                "$path": "a.md",
+                "$hash": "56100733632a8df6329586ea9d611951d0d33222beb24bfd9da6ddb1b3bb206e"
               }
             ],
             "committed": true

@@ -57,16 +57,19 @@ Results are LEAN hits — { $id, $path } + whatever \`select\` projects (or \`va
 \`count\`, \`exists\`, \`none\`). The envelope keys ARE the intrinsics: copy a hit's
 \`$id\` straight into \`where $id == "…"\` (no translation); a \`select $path\` lands on
 the envelope key rather than beside it; a row surfacing as a value (an empty
-\`collect { }\`) is the same \`{ $id, $path }\`. Hydrate full content by id via
-nodes_get/docs_read (their own envelopes keep \`id\`/\`path\`).
+\`collect { }\`) is the same \`{ $id, $path }\`. Every other tool spells a row the
+same way (\`docs_read\` → \`{ $id, $path, rev, properties, $raw }\`, \`nodes_get\` →
+\`{ $id, type, text, $raw, $hash, … }\`, \`docs_list\` → \`{ $id, $path, $updated_at,
+blocks }\`, a revision → \`{ $id, $path, $hash }\`): hydrate by id via
+nodes_get/docs_read.
 
 ## Paths
 
 Every path the surface returns is \`/\`-rooted — the form a reference is
 written in (\`[x](/projects/oqx.md)\`, \`before: [/timeline/kickoff.md]\`): a
-hit's \`path\`, \`$path\`, \`$dst_path\`, every tool's paths. Every path it
+hit's \`$path\`, an edge's \`dst_path\`, every tool's paths. Every path it
 accepts tolerates both forms (\`/a.md\` or \`a.md\`): tool arguments, \`refs(x)\`,
-\`within(...)\`, and a string LITERAL compared with \`$path\`/\`$dst_path\` by
+\`within(...)\`, and a string LITERAL compared with \`$path\`/\`dst_path\` by
 \`==\`/\`!=\` or passed to their \`.startsWith(...)\` (it is rooted first, so
 \`$path == "a.md"\` and \`$path == "/a.md"\` both match). A property holding a
 reference compares directly: \`where ^$path in list(after)\`,
@@ -74,12 +77,21 @@ reference compares directly: \`where ^$path in list(after)\`,
 
 ## Targets & field namespaces
 
-The sigil rule: \`$\`-prefixed names are engine intrinsics; BARE identifiers are
-your content. On docs a bare first segment that collides with an intrinsic base
-name (id/path/updated_at/content_hash/body) is REJECTED with a "did you mean
-$X?" hint (bare \`path\` would silently read an absent frontmatter key). Force the
-property with \`frontmatter.<k>\`. \`title\`/\`tags\` are NOT reserved: \`$title\`/\`$tags\`
-are computed and never shadow an authored \`title:\`/\`tags:\` key.
+WHY \`$\`: a \`$\`-prefixed name is one the engine adds to a namespace it SHARES with
+your content — frontmatter keys and inline properties on a doc, attrs keys on a
+block or node — prefixed so YOUR field names keep priority and never collide (a
+frontmatter \`id:\` is \`id\`, the engine's identity is \`$id\`). That is the whole
+vocabulary: every row's \`$id\`/\`$path\`; docs' and blocks' \`$raw\` (exact source
+bytes) / \`$hash\` (their sha256) / \`$updated_at\`; docs' computed \`$title\`/\`$tags\`.
+Everything else the engine provides is a PLAIN snake_case field — a foreign key
+named for what it is (doc_id, block_id, via_id, dst_id, dst_path, uri), a column
+its column (type, text, depth, ordinal, kind, predicate, field) — because nothing
+of yours lives there. On docs a bare first segment that collides with a \`$\` base
+name (id/path/updated_at/hash/raw) is REJECTED with a "did you mean $X?" hint
+(bare \`path\` would silently read an absent frontmatter key). Force the property
+with \`frontmatter.<k>\`. \`title\`/\`tags\` are NOT reserved: \`$title\`/\`$tags\` are
+computed and never shadow an authored \`title:\`/\`tags:\` key. Tool results spell
+a row with the same names (a hit's \`$id\` is docs_read's \`$id\`).
 
 docs:
   - bare identifier  = a document PROPERTY (frontmatter + inline \`key:: value\`,
@@ -92,35 +104,50 @@ docs:
                        computed field, present on EVERY doc, so has(format) is
                        always true and \`format == "yaml"\` is the filter).
   - intrinsics       = $id, $path (/-rooted, see Paths), $updated_at (ISO-8601,
-                       sorts chronologically), $body (whole file), $content_hash.
+                       sorts chronologically), $raw (the whole file, frontmatter
+                       included), $hash (its sha256, 64 hex).
   - relations        = nodes, blocks, doc.out / doc.in (citation graph),
                        doc.out_edges / doc.in_edges (a doc's edges as rows).
 
 blocks:
-  - bare fields      = type, text, and every attrs key FLATTENED onto the row
-                       (bare \`checked\` reads attrs.checked; \`attrs.<k>\` still
-                       works; type/text win on collision; absent ⇒ false).
-  - intrinsics       = $id, $doc, $path, $ordinal, $depth, $updated_at, $body
-                       (the block text), $content_hash (the block's OWN raw hash —
-                       the value update/split expect).
-  - reach-through    = doc.<key> / doc.$path / doc.format = the CONTAINING doc.
+  - bare fields      = doc_id (the owning doc), type, text (normalized), ordinal
+                       (0-based among siblings), depth (0 at the top level), and
+                       every attrs key FLATTENED onto the row (bare \`checked\`
+                       reads attrs.checked; \`attrs.<k>\` still works; the
+                       structural fields win on collision; absent ⇒ false).
+  - intrinsics       = $id, $path (the owning doc's path), $raw (the block's raw
+                       source — a container's raw holds its children), $hash
+                       (its sha256 — the value update/split expect as
+                       expect.content_hash), $updated_at.
+  - reach-through    = doc.<key> / doc.$path / doc.$id / doc.format = the
+                       CONTAINING doc (doc.$id and doc.$path cost nothing — they
+                       read the row's own doc_id / joined path, no lookup).
   - relations        = block.children, block.nodes, block.out_edges, section.
+  NOTE: inside a \`follow\`, $depth/$ordinal are ALWAYS the walk's metadata; a
+  block's own nesting is \`depth\` / \`ordinal\` (no $) everywhere.
 
 nodes:
-  - bare fields      = kind (md:task / md:link / md:section / yaml:…), name,
-                       value, + attrs keys flattened (checked, level).
-  - intrinsics       = $id (=$node_id), $doc_id, $block_id, $path.
-  - reach-through    = doc.<key>, block.type / block.text.
+  - bare fields      = doc_id, block_id (null for a block-less node), kind
+                       (md:task / md:link / md:section / yaml:…), name, value,
+                       + attrs keys flattened (checked, level).
+  - intrinsics       = $id, $path.
+  - reach-through    = doc.<key> / doc.$id / doc.$path, block.type / block.text
+                       / block.$id / block.$path.
   - relations        = section.blocks, section.children, section.subsections.
 
 edges:  (the authored link graph as rows — one per open edge)
-  - bare fields      = predicate ("references"/"embeds"/freeform), provenance
+  - bare fields      = doc_id (the SOURCE doc), block_id (the source block; null
+                       for a frontmatter edge), via_id, dst_id (the destination
+                       node id: a doc id, an external node id or phantom:<path>),
+                       dst_path (target doc path, /-rooted; NULL when
+                       dangling/external), uri (external URL; NULL otherwise),
+                       predicate ("references"/"embeds"/freeform), provenance
                        ("link"/"frontmatter"/"inline_field"/…), dst_kind
-                       ("document"/"external"/"collection"), anchor, src_field
-  - intrinsics       = $id, $src, $dst, $dst_path (target doc path, /-rooted;
-                       NULL when dangling/external), $dst_uri (external URL;
-                       NULL otherwise), $src_block, $via, $from_commit; $path
-                       and doc.<key> reach the SOURCE document.
+                       ("document"/"external"/"collection"), anchor, field (the
+                       frontmatter key / inline field it was authored in).
+  - intrinsics       = $id, $path (the SOURCE doc's path); doc.<key> reaches the
+                       source document. There is no from_commit: a query sees
+                       open edges only (history is history_node/changes_since).
   - text()/semantic() are N/A on edges.
 
 ## Scoping (ADR-015; the root row since surface 2.0): bare names are LOCAL
@@ -241,7 +268,7 @@ edges:  (the authored link graph as rows — one per open edge)
   select a, alias: expr, nested: nodes collect { … }
   bare key → the property (scalar-authored → scalar; list → array); $-intrinsics;
   a call/arithmetic needs an alias (n: size(tags)) unless in values mode.
-  "$body"     whole file bytes (docs) — docs_read is cheaper for one doc.
+  "$raw"      whole file bytes (docs) — docs_read is cheaper for one doc.
   distinct    select distinct type   (dedup hits by projected value)
   values      select <ONE item> values → bare values instead of records:
                 from docs select distinct type values          → values: ["hub","lab-note",…]
@@ -296,8 +323,8 @@ edges:  (the authored link graph as rows — one per open edge)
   follow ^docs (no brace, no consumer) is an error naming both block spellings.
   Type-preserving relations: doc.out/doc.in, block.children, section.children,
   section.subsections.
-  from edges where $dst_path == "/notes/x.md"      inbound edges to a doc, as rows
-  from edges where predicate == "depends_on" select $src, $dst_path
+  from edges where dst_path == "/notes/x.md"       inbound edges to a doc, as rows
+  from edges where predicate == "depends_on" select doc_id, dst_path
   from docs where not doc.in_edges exists { }      orphans (nothing links in)
   (The \`graph\` tool is a convenience wrapper that compiles to a follow query.)
 
@@ -329,7 +356,7 @@ text()/where prune the candidate set; only order by reweights.
   select $path, back: nodes first { select p: 0^docs collect { $path where ^^$path in list(after) } values } from docs where type == "milestone"
   select $path, prior: refs(before) collect { $path, when } from docs where type == "milestone"
   from blocks order by semantic("identity preservation across edits") desc limit 10
-  from edges where dst_kind == "external" select $dst_uri
+  from edges where dst_kind == "external" select uri
   docs count { where layer == "canon" }
 
 Common mistake: bare \`path.startsWith(...)\` meant the intrinsic — it fails loud

@@ -70,11 +70,11 @@
       "workspace": "alchemy",
       "argv": [
         "q",
-        "select type, $ordinal, $depth, attrs.checked from blocks where doc.$path == \"texts/mutus-liber.md\" && $depth == 1"
+        "select type, ordinal, depth, attrs.checked from blocks where doc.$path == \"texts/mutus-liber.md\" && depth == 1"
       ],
       "expect": {
         "exit": 0,
-        "stdout": "$id    $path                  type  $ordinal  $depth  checked\nb_311  /texts/mutus-liber.md  task  0         1       false\nb_312  /texts/mutus-liber.md  task  1         1       false\nb_313  /texts/mutus-liber.md  task  2         1       false\n"
+        "stdout": "$id    $path                  type  ordinal  depth  checked\nb_311  /texts/mutus-liber.md  task  0        1      false\nb_312  /texts/mutus-liber.md  task  1        1      false\nb_313  /texts/mutus-liber.md  task  2        1      false\n"
       }
     },
     {
@@ -499,7 +499,7 @@
       "workspace": "alchemy",
       "argv": [
         "q",
-        "select predicate, to: $dst_path from edges where $src == \"d_17\""
+        "select predicate, to: dst_path from edges where doc_id == \"d_17\""
       ],
       "expect": {
         "exit": 0,

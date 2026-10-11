@@ -50,6 +50,9 @@ describe("queryHints", () => {
     const top = parse(`select p: "/" + $path from docs`);
     expect(queryHints(top, "2.0")[0]!.message).toBe("`$path` is already `/`-rooted on this server; use `$path`");
     expect(slashPrefixedPaths(parse(`select x from edges where ("/" + $dst_path) in ^before`)).map((m) => m.ref)).toEqual(["$dst_path"]);
+    // …and 3.0's plain `dst_path` (spec/surface §1.2) is the same path read.
+    expect(slashPrefixedPaths(parse(`select x from edges where ("/" + dst_path) in ^before`)).map((m) => m.ref)).toEqual(["dst_path"]);
+    expect(queryHints(parse(`select p: "/" + dst_path from edges`), "3.0")[0]!.message).toBe("`dst_path` is already `/`-rooted on this server; use `dst_path`");
     // A slash prefixed to something else is not a path.
     expect(queryHints(parse(`select p: "/" + title from docs`), "2.0")).toEqual([]);
   });

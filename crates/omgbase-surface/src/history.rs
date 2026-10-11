@@ -133,17 +133,16 @@ pub fn diff_blocks(store: &Store, doc_id: &str, from_rev: &str, to_rev: &str) ->
     let mut entries = Vec::new();
     for (id, raw) in &before {
         match after_map.get(id.as_str()) {
-            None => entries.push(json!({ "kind": "removed", "blockId": id, "before": raw })),
+            None => entries.push(json!({ "kind": "removed", "$id": id, "before": raw })),
             Some(a) if *a != raw => {
-                entries
-                    .push(json!({ "kind": "changed", "blockId": id, "before": raw, "after": a }));
+                entries.push(json!({ "kind": "changed", "$id": id, "before": raw, "after": a }));
             }
             Some(_) => {}
         }
     }
     for (id, raw) in &after {
         if !before_map.contains_key(id.as_str()) {
-            entries.push(json!({ "kind": "added", "blockId": id, "after": raw }));
+            entries.push(json!({ "kind": "added", "$id": id, "after": raw }));
         }
     }
     Ok(Json::Array(entries))
@@ -395,7 +394,7 @@ pub fn resolve_doc_row(
         .optional()?)
 }
 
-/// §3 `docs_history`: `{ docs: [{ docId, path, deleted, currentRev, versions }], truncated }`.
+/// §3 `docs_history`: `{ docs: [{ $id, $path, deleted, currentRev, versions }], truncated }`.
 pub fn docs_history(
     store: &Store,
     repo_id: &str,
@@ -462,17 +461,17 @@ pub fn docs_history(
                     "rev": rev,
                     "seq": r.get::<_, i64>(1)?,
                     "commit": r.get::<_, String>(2)?,
-                    "ts": r.get::<_, String>(4)?,
+                    "$updated_at": r.get::<_, String>(4)?,
                     "origin": r.get::<_, String>(5)?,
                     "actor": r.get::<_, Option<String>>(6)?,
-                    "contentHash": hex(&hash),
+                    "$hash": hex(&hash),
                     "isCurrent": current_rev.as_deref() == Some(rev.as_str()),
                 }))
             })?
             .collect::<std::result::Result<_, _>>()?;
         let mut m = Map::new();
-        m.insert("docId".to_owned(), json!(doc_id));
-        m.insert("path".to_owned(), json!(reference_path(&path)));
+        m.insert("$id".to_owned(), json!(doc_id));
+        m.insert("$path".to_owned(), json!(reference_path(&path)));
         m.insert("deleted".to_owned(), json!(deleted_commit.is_some()));
         m.insert("currentRev".to_owned(), json!(current_rev));
         m.insert("versions".to_owned(), Json::Array(versions));

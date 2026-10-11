@@ -251,7 +251,7 @@ const QUERIES: &[(&str, Push)] = &[
     ),
     // edges target
     (
-        "select $src, $dst_path from edges where predicate == \"references\"",
+        "select doc_id, dst_path from edges where predicate == \"references\"",
         Planned,
     ),
     // row functions rewrite to `$self.fn(…)`, which the translator declines;
@@ -272,7 +272,7 @@ const QUERIES: &[(&str, Push)] = &[
         Planned,
     ),
     ("from docs where $path.matches(\"^lab/\")", Declined),
-    ("from docs where $content_hash != null", Planned),
+    ("from docs where $hash != null", Planned),
     ("from docs where $updated_at >= \"2026-01-01\"", Planned),
     // nested blocks over a ROOT SCAN with a correlated / constant equality: the
     // store answers these from SQLite indexes (`store_index`) instead of
@@ -352,13 +352,13 @@ const QUERIES: &[(&str, Push)] = &[
         "select $path, l: ^docs collect { $path values where layer == ^tags } from docs",
         Declined,
     ),
-    // the other targets as receivers: an edges-target correlated block, blocks by $doc, nodes by kind
+    // the other targets as receivers: an edges-target correlated block, blocks by doc_id, nodes by kind
     (
-        "select $path, inbound: ^edges collect { $src where $dst == ^$id } from docs",
+        "select $path, inbound: ^edges collect { doc_id where dst_id == ^$id } from docs",
         Declined,
     ),
     (
-        "select $path, outbound: ^edges collect { $dst_path values where $path == ^$path } from docs",
+        "select $path, outbound: ^edges collect { dst_path values where $path == ^$path } from docs",
         Declined,
     ),
     (
@@ -366,15 +366,15 @@ const QUERIES: &[(&str, Push)] = &[
         Declined,
     ),
     (
-        "select $src, same_dst: ^edges collect { $src values where $dst_path == ^$dst_path && $id != ^$id } from edges where predicate == \"references\"",
+        "select doc_id, same_dst: ^edges collect { doc_id values where dst_path == ^dst_path && $id != ^$id } from edges where predicate == \"references\"",
         Planned,
     ),
     (
-        "select $id, paragraphs: ^blocks collect { $ordinal values where $doc == ^$doc && type == \"paragraph\" } from blocks where type == \"heading\"",
+        "select $id, paragraphs: ^blocks collect { ordinal values where doc_id == ^doc_id && type == \"paragraph\" } from blocks where type == \"heading\"",
         Planned,
     ),
     (
-        "from blocks where type == \"heading\" && ^blocks count { where $doc == ^$doc && type == \"paragraph\" } > 3",
+        "from blocks where type == \"heading\" && ^blocks count { where doc_id == ^doc_id && type == \"paragraph\" } > 3",
         Declined,
     ),
     (
@@ -382,7 +382,7 @@ const QUERIES: &[(&str, Push)] = &[
         Declined,
     ),
     (
-        "select name, same_kind: ^nodes collect { name values where kind == ^kind && $doc_id == ^$doc_id } from nodes where kind == \"md:section\"",
+        "select name, same_kind: ^nodes collect { name values where kind == ^kind && doc_id == ^doc_id } from nodes where kind == \"md:section\"",
         Planned,
     ),
     (

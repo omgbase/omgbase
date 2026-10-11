@@ -2,7 +2,7 @@
 //! when a nested block's receiver is a ROOT SCAN (`^docs`, `^edges`,
 //! a bare `docs` at the root scope — a lazy [`crate::context`] marker) and its
 //! correlated or constant equality is on a column or property SQLite can look
-//! up — `where $path == ^^$path`, `where customer == ^$path`, `where $dst ==
+//! up — `where $path == ^^$path`, `where customer == ^$path`, `where dst_id ==
 //! ^$id`, `where type == "order"` — the probe runs ONE cached statement
 //! against the store's indexes instead of materializing every row of the
 //! target and hashing it. The rows come back exactly as the root scan
@@ -14,7 +14,7 @@
 //!
 //! Typed equality (OQX SEMANTICS §5) is preserved by probing per VALUE KIND:
 //!
-//! * a text column (`doc_id`, `path`, `type`, `kind`, `name`, `src_doc`, …)
+//! * a text column (`$id`, `$path`, `type`, `kind`, `name`, `doc_id`, `dst_id`, …)
 //!   matches a string probe by `= ?` (TEXT = TEXT, exact); a number, boolean,
 //!   object or any other non-string probe matches NO row (the column holds
 //!   strings or NULL and `5 == "5"` is false); an absent probe (`null`,
@@ -73,8 +73,8 @@ enum Probe {
 /// `idx_nodes_doc`, `idx_nodes_kind`, `idx_nodes_name`; edges `edge_id` (PK),
 /// `idx_edges_src (src_doc, …)`, `idx_edges_dst (dst_node, …)`; `$path` on a
 /// joined target reaches the docs `(repo_id, path)` key and then the target's
-/// `doc_id` / `src_doc` index. `$dst_path` is the destination document's path
-/// (deleted or not — the intrinsic reads `docs` by id without a liveness
+/// `doc_id` / `src_doc` index. `dst_path` is the destination document's path
+/// (deleted or not — the field reads `docs` by id without a liveness
 /// guard); a destination is resolved within the edge's repo (spec/graph §3),
 /// where `(repo_id, path)` is UNIQUE, so the probe is that one document.
 fn column_probe(t: Target, key: &str) -> Option<&'static str> {
@@ -82,19 +82,19 @@ fn column_probe(t: Target, key: &str) -> Option<&'static str> {
         (Target::Docs, "$id") => "d.doc_id = ?",
         (Target::Docs, "$path") => "d.path = ?",
         (Target::Blocks, "$id") => "b.block_id = ?",
-        (Target::Blocks, "$doc") => "b.doc_id = ?",
+        (Target::Blocks, "doc_id") => "b.doc_id = ?",
         (Target::Blocks, "type") => "b.type = ?",
         (Target::Blocks, "$path") => "d.path = ?",
-        (Target::Nodes, "$id" | "$node_id") => "n.node_id = ?",
-        (Target::Nodes, "$doc_id") => "n.doc_id = ?",
+        (Target::Nodes, "$id") => "n.node_id = ?",
+        (Target::Nodes, "doc_id") => "n.doc_id = ?",
         (Target::Nodes, "kind") => "n.kind = ?",
         (Target::Nodes, "name") => "n.name = ?",
         (Target::Nodes, "$path") => "d.path = ?",
         (Target::Edges, "$id") => "e.edge_id = ?",
-        (Target::Edges, "$src") => "e.src_doc = ?",
-        (Target::Edges, "$dst") => "e.dst_node = ?",
+        (Target::Edges, "doc_id") => "e.src_doc = ?",
+        (Target::Edges, "dst_id") => "e.dst_node = ?",
         (Target::Edges, "$path") => "d.path = ?",
-        (Target::Edges, "$dst_path") => {
+        (Target::Edges, "dst_path") => {
             "e.dst_node IN (SELECT doc_id FROM docs WHERE repo_id = ?r AND path = ?)"
         }
         _ => return None,
@@ -142,15 +142,15 @@ fn probe_for(t: Target, path: &[String]) -> Option<Probe> {
 pub fn indexable_paths(t: Target) -> &'static [&'static str] {
     match t {
         Target::Docs => &["$id", "$path", "$title", "<property key>"],
-        Target::Blocks => &["$id", "$doc", "type", "$path"],
-        Target::Nodes => &["$id", "$node_id", "$doc_id", "kind", "name", "$path"],
-        Target::Edges => &["$id", "$src", "$dst", "$path", "$dst_path"],
+        Target::Blocks => &["$id", "doc_id", "type", "$path"],
+        Target::Nodes => &["$id", "doc_id", "kind", "name", "$path"],
+        Target::Edges => &["$id", "doc_id", "dst_id", "$path", "dst_path"],
     }
 }
 
 /// A store-backed [`RowIndex`] for the root scan of `target` on `path`, or
 /// `None` when SQLite has no index for the path (table above; multi-segment
-/// paths; `format`, edge `predicate` / `src_field`, `$tags`, …).
+/// paths; `format`, edge `predicate` / `field`, `$tags`, …).
 pub(crate) fn index_for<'c, 'a>(
     ctx: &'c StoreContext<'a>,
     target: Target,
@@ -178,10 +178,10 @@ impl StoreIndex<'_, '_> {
             return self.fallback(value);
         }
         match &self.probe {
-            // `$path` / `$dst_path` are the reference form in memory (`/a.md`,
+            // `$path` / `dst_path` are the reference form in memory (`/a.md`,
             // `spec/surface` §1 "Paths"); the column holds the storage form. A
             // rooted probe is de-rooted; a bare one can equal no rooted path.
-            Probe::Column(sql) if self.path == "$path" || self.path == "$dst_path" => match value {
+            Probe::Column(sql) if self.path == "$path" || self.path == "dst_path" => match value {
                 Value::Str(s) if s.starts_with('/') => self.column(sql, storage_path(s)),
                 _ => Ok(Vec::new()),
             },

@@ -74,10 +74,10 @@ describe("docsMove — edge index follows the path", () => {
     const res = docsMove(store, ctx(), "old.md", "moved/new.md", { retargetInbound: false });
     const byPath = new Map(res.dangling.map((d) => [d.path, d]));
     expect([...byPath.keys()].sort()).toEqual(["b.md", "c.md", "sub/d.md"]);
-    expect(byPath.get("b.md")).toMatchObject({ doc: docId("b.md"), target: "/old.md", anchor: "Top" });
-    expect(byPath.get("c.md")).toMatchObject({ doc: docId("c.md"), target: "old.md", anchor: null });
-    expect(byPath.get("sub/d.md")).toMatchObject({ doc: docId("sub/d.md"), target: "../old.md", anchor: null });
-    for (const d of res.dangling) expect(typeof d.block).toBe("string");
+    expect(byPath.get("b.md")).toMatchObject({ doc_id: docId("b.md"), target: "/old.md", anchor: "Top" });
+    expect(byPath.get("c.md")).toMatchObject({ doc_id: docId("c.md"), target: "old.md", anchor: null });
+    expect(byPath.get("sub/d.md")).toMatchObject({ doc_id: docId("sub/d.md"), target: "../old.md", anchor: null });
+    for (const d of res.dangling) expect(typeof d.block_id).toBe("string");
     expect(res.retargeted).toBeNull();
 
     // The edge index agrees: nothing open points at the doc; the old path's
@@ -88,7 +88,7 @@ describe("docsMove — edge index follows the path", () => {
     // (c.md's wikilink sits in a list item, so the list AND the item each carry
     // an edge — one stale row per edge, both dangling.)
     expect(stale).toHaveLength(inboundBefore);
-    expect(new Set(stale.map((s) => s.srcPath))).toEqual(new Set(["/b.md", "/c.md", "/sub/d.md"]));
+    expect(new Set(stale.map((s) => s.$path))).toEqual(new Set(["/b.md", "/c.md", "/sub/d.md"]));
     expect(stale.every((s) => s.target === "/old.md")).toBe(true);
     // The moved doc itself is fine on disk and in the DB.
     expect(existsSync(join(dir, "moved/new.md"))).toBe(true);
@@ -104,7 +104,7 @@ describe("docsMove — edge index follows the path", () => {
 
     const res = docsMove(store, ctx(), "old.md", "new.md", { retargetInbound: false });
     expect(res.dangling).toHaveLength(1);
-    expect(res.dangling[0]).toMatchObject({ doc: oldId, path: "old.md", target: "/old.md", anchor: "Other" });
+    expect(res.dangling[0]).toMatchObject({ doc_id: oldId, path: "old.md", target: "/old.md", anchor: "Other" });
     const kept = openEdgesTo(oldId);
     expect(kept).toHaveLength(1); // the #Top fragment link stays
     expect(kept[0]!.anchor).toBe("Top");
@@ -141,7 +141,7 @@ describe("docsMove — edge index follows the path", () => {
     // The rewritten links are now the moved doc's inbound set at its new path.
     const after = inboundLinksTo(store, repoId, oldId, "moved/new.md");
     expect(new Set(after.map((l) => l.path))).toEqual(new Set(["b.md", "c.md", "moved/new.md", "sub/d.md"]));
-    expect(after.every((l) => l.block !== null)).toBe(true);
+    expect(after.every((l) => l.block_id !== null)).toBe(true);
     // Only the deepest block per link was updated (not the list AND its item).
     const types = res.retargeted!.blocks.map((b) => (store.db.prepare("SELECT type FROM blocks WHERE block_id = ?").get(b) as { type: string } | undefined)?.type);
     expect(types).not.toContain("list");
@@ -151,10 +151,10 @@ describe("docsMove — edge index follows the path", () => {
     save("old.md", "# Old\n");
     save("fm.md", "---\ndepends_on: /old.md\n---\n\n# FM\n");
     const res = docsMove(store, ctx(), "old.md", "new.md");
-    expect(res.dangling).toEqual([{ doc: docId("fm.md"), path: "fm.md", block: null, target: "old.md", anchor: null, field: "depends_on" }]);
+    expect(res.dangling).toEqual([{ doc_id: docId("fm.md"), path: "fm.md", block_id: null, target: "old.md", anchor: null, field: "depends_on" }]);
     // The rewrite ran and touched nothing: empty lists, not null (null = opted out or nothing linked in).
     expect(res.retargeted).toEqual({ blocks: [], docs: [] });
-    expect(linksStale(store, repoId).stale.map((s) => s.srcPath)).toEqual(["/fm.md"]);
+    expect(linksStale(store, repoId).stale.map((s) => s.$path)).toEqual(["/fm.md"]);
   });
 });
 

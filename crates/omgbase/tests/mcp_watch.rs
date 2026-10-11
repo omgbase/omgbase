@@ -340,7 +340,7 @@ fn a_missing_adapter_primes_then_serves_without_a_watcher() {
     // The priming sweep ran before the adapter was tried: the file is in.
     let (doc, err) = s.call("docs_read", json!({ "path": "hello.md" }));
     assert!(!err, "{doc}");
-    assert_eq!(doc["content"], "# Hello\n\nOne.\n");
+    assert_eq!(doc["$raw"], "# Hello\n\nOne.\n");
     assert!(
         !WatchLease::live(&omgbase_dir(&w)),
         "the lease was released when the adapter failed"
@@ -387,12 +387,12 @@ fn sigterm_shuts_down_cleanly() {
     assert!(stderr.contains("[mcp] signal: shutting down"), "{stderr}");
 }
 
-/// Poll `docs_read` until the document reads with `content`.
+/// Poll `docs_read` until the document reads with `content` as its `$raw`.
 fn wait_for_content(s: &mut Server, path: &str, content: &str, timeout: Duration) -> bool {
     let deadline = Instant::now() + timeout;
     while Instant::now() < deadline {
         let (doc, err) = s.call("docs_read", json!({ "path": path }));
-        if !err && doc["content"] == content {
+        if !err && doc["$raw"] == content {
             return true;
         }
         thread::sleep(Duration::from_millis(250));
@@ -473,7 +473,7 @@ fn a_watched_run_ingests_files_written_under_the_workspace() {
     thread::sleep(Duration::from_millis(1500));
     let (doc, err) = s.call("docs_read", json!({ "path": "made.md" }));
     assert!(!err, "{doc}");
-    assert_eq!(doc["content"], "# Made\n\nBy the tool.\n");
+    assert_eq!(doc["$raw"], "# Made\n\nBy the tool.\n");
 
     let (status, stderr) = s.close();
     assert!(status.success(), "{stderr}");

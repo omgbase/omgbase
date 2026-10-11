@@ -192,11 +192,16 @@ OQX (the parser rejects `{` after the target), which is why the frame uses
   screen as they are: it applies to the recent list and to what arrives from
   now on.
 
-**Both hit shapes.** The server may be surface 2.x (`{ id, path, … }` hits) or
-3.0 (`{ $id, $path, … }`); `lib/paths.ts` reads a hit's identity through
-`hitId`/`hitPath`, which accept both, and every path is shown `/`-rooted.
-Tool envelopes (`docs_history`, `diff_unified`, `changes_since`) are the same
-under both.
+**Both result shapes.** The server may be surface 2.x (`{ id, path, … }` hits;
+`docs_history` `docId`/`path`/`ts`/`contentHash`, `changes_since` revisions
+`{ doc, path, contentHash }`, `docs_read_at` `content`, `diff_unified`
+`{ doc, path, … }`, `docs_list` `{ path, blocks, ts }`) or 3.0, where every tool
+spells a row the way the language does (`{ $id, $path, … }` hits; `$id`/`$path`/
+`$updated_at`/`$hash`/`$raw` everywhere — `spec/surface` §1.2); `lib/paths.ts`
+reads identity through `hitId`/`hitPath`, `lib/shapes.ts` reads each tool
+result (`changesOf`, `docVersionsOf`, `unifiedOf`, `readAtOf`) by the server's
+`specs.surface` (an unknown version reads as 2.x), and every path is shown
+`/`-rooted.
 
 **Session recovery.** The proxy forgets a session after `--idle` seconds
 (default 3600) or when it restarts and answers the next POST with `404`
@@ -225,7 +230,11 @@ reconnected* in the header; only a second failure is shown.
   `mapHole`, `changesInside`, `insertsNewline`, `reframe`/`reframeSpec`,
   `holeText`, `holeState`); only `@codemirror/state`, so it is tested with
   plain `EditorState`s.
-- `src/lib/paths.ts` — `surfaceOf`, `hitId`, `hitPath`, `rooted`.
+- `src/lib/paths.ts` — `surfaceOf`, `surfaceMajor`, `hitId`, `hitPath`, `rooted`.
+- `src/lib/shapes.ts` — the tool results under both generations, read by the
+  server's `specs.surface` into the one shape `feed.ts` keeps: `changesOf`
+  (`revisionOf`/`digestOf`), `docVersionsOf` (`versionOf`), `unifiedOf`,
+  `readAtOf`, `dollarNames`.
 - `src/lib/mcp-client.ts` — `OmgClient` (the tool calls, the JSON-text envelope,
   session recovery), `fetchWhoAmI`.
 - `scripts/dev.mjs`, `scripts/dev-args.mjs`, `scripts/dev-workspace.mjs` —

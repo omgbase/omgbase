@@ -6,7 +6,8 @@ import { CliUsageError, EXIT_OK, renderHelp } from "../output.js";
 import { runOps, unifiedDiffLines } from "./_mutate.js";
 import { remoteCall } from "./_remote.js";
 
-interface RetargetHit { block: string; path?: string; oldRaw: string; newRaw: string; }
+// A `links_retarget` hit (spec/surface §4, 3.0): the block and its document under the row rule.
+interface RetargetHit { $id: string; $path?: string; oldRaw: string; newRaw: string; }
 
 // `omg retarget <from> <to> [--scope glob] [--apply]` (11 §5.6) — plan-by-default.
 // Without --apply it runs the dry-run and prints, per hit block, the unified
@@ -73,7 +74,7 @@ function renderPlan(cli: Cli, from: string, to: string, hits: RetargetHit[]): nu
   }
   io.err(style.dim(`  plan — ${hits.length} block(s) would change; re-run with --apply to commit`));
   for (const h of hits) {
-    io.out(style.id(h.block));
+    io.out(style.id(h.$id));
     for (const line of unifiedDiffLines(cli, h.oldRaw, h.newRaw)) io.out(line);
     io.out("");
   }

@@ -100,7 +100,7 @@ export const LANGUAGE = {
  * as completion providers and are covered by the generic `$`-identifier rule.
  */
 export const OMGBASE = {
-  /** The named roots of a repository scope (`$repo.<root>` from any row). */
+  /** The named roots of the repository (the root row: `^docs` from a row, bare `docs` at the top). */
   roots: ["docs", "blocks", "nodes", "edges"],
   /** Row functions written as free calls, evaluated against the current row. */
   rowFunctions: [
@@ -108,13 +108,19 @@ export const OMGBASE = {
     "under", "under_heading", "within", "under_kind", "yaml_path", "json_pointer",
     "has_edge", "has_anchor", "child_count", "parent_type",
   ],
-  /** `$`-intrinsics by target (every one is scoped `variable.language` by shape). */
+  /**
+   * `$`-intrinsics by target (every one is scoped `variable.language` by shape).
+   * Surface 3.0's `$` rule (spec/surface §1.2): `$` marks exactly the engine
+   * names that share a namespace with the author's fields — `$id`/`$path` on
+   * every row, `$raw`/`$hash`/`$updated_at` on docs and blocks, the computed
+   * `$title`/`$tags` on docs; a foreign key or column (`doc_id`, `block_id`,
+   * `dst_path`, `ordinal`, …) is a plain field and highlights as an identifier.
+   */
   intrinsics: {
-    every: ["$repo"],
-    docs: ["$id", "$path", "$content_hash", "$updated_at", "$body", "$title", "$tags"],
-    blocks: ["$id", "$doc", "$path", "$ordinal", "$depth", "$body", "$content_hash", "$updated_at"],
-    nodes: ["$id", "$node_id", "$doc_id", "$block_id", "$path"],
-    edges: ["$id", "$src", "$dst", "$src_block", "$via", "$from_commit", "$path", "$dst_path", "$dst_uri"],
+    docs: ["$id", "$path", "$raw", "$hash", "$updated_at", "$title", "$tags"],
+    blocks: ["$id", "$path", "$raw", "$hash", "$updated_at"],
+    nodes: ["$id", "$path"],
+    edges: ["$id", "$path"],
   },
   /** Relations reachable from a row (`follow children`, `nodes exists { … }`). */
   relations: [

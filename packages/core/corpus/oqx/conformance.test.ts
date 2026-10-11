@@ -108,7 +108,7 @@ const QUERIES: string[] = [
   'select slug from docs where type == "substance" && ^nodes exists { where kind == "md:wikilink" && value == ^slug }',
   'select $path, open from docs where nodes collect { ^open: value where kind == "md:task" && !attrs.checked }',
   // edges target
-  'select $src, $dst_path from edges where predicate == "references"',
+  'select doc_id, dst_path from edges where predicate == "references"',
   // nested blocks over a ROOT SCAN with a correlated / constant equality: the
   // store answers these from SQLite indexes (oqx-js/store-index.ts) instead of
   // materializing `^<target>` — results must not move an inch
@@ -133,15 +133,15 @@ const QUERIES: string[] = [
   'select $path, no_slug: ^docs collect { $path where slug == null } from docs where type == "text"',
   'select $path, l: ^docs collect { $path values where tags == ^tags } from docs',
   'select $path, l: ^docs collect { $path values where layer == ^tags } from docs',
-  // the other targets as receivers: an edges-target correlated block, blocks by $doc, nodes by kind
-  'select $path, inbound: ^edges collect { $src where $dst == ^$id } from docs',
-  'select $path, outbound: ^edges collect { $dst_path values where $path == ^$path } from docs',
+  // the other targets as receivers: an edges-target correlated block, blocks by doc_id, nodes by kind
+  'select $path, inbound: ^edges collect { doc_id where dst_id == ^$id } from docs',
+  'select $path, outbound: ^edges collect { dst_path values where $path == ^$path } from docs',
   'from docs where ^edges count { where $path == ^$path } > 2',
-  'select $src, same_dst: ^edges collect { $src values where $dst_path == ^$dst_path && $id != ^$id } from edges where predicate == "references"',
-  'select $id, paragraphs: ^blocks collect { $ordinal values where $doc == ^$doc && type == "paragraph" } from blocks where type == "heading"',
-  'from blocks where type == "heading" && ^blocks count { where $doc == ^$doc && type == "paragraph" } > 3',
+  'select doc_id, same_dst: ^edges collect { doc_id values where dst_path == ^dst_path && $id != ^$id } from edges where predicate == "references"',
+  'select $id, paragraphs: ^blocks collect { ordinal values where doc_id == ^doc_id && type == "paragraph" } from blocks where type == "heading"',
+  'from blocks where type == "heading" && ^blocks count { where doc_id == ^doc_id && type == "paragraph" } > 3',
   'from nodes where kind == "md:section" && ^nodes count { where kind == ^kind } > 10',
-  'select name, same_kind: ^nodes collect { name values where kind == ^kind && $doc_id == ^$doc_id } from nodes where kind == "md:section"',
+  'select name, same_kind: ^nodes collect { name values where kind == ^kind && doc_id == ^doc_id } from nodes where kind == "md:section"',
   'select $path, by_name: ^nodes collect { $id where name == ^name } from nodes where kind == "md:section" && name == "Preparation"',
   'select $path, nameless: ^nodes collect { kind values where name == ^nope } from nodes where kind == "md:section" && name == "Preparation"',
 ];

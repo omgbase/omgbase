@@ -266,8 +266,11 @@ client** (in-process or over MCP) with no reconciliation logic of its own.
 - The engine's **change feed**, `changes_since(cursor = 0, limit = 50,
   origin?)`: the repo's commits with `seq > cursor` (optionally of one
   origin), in `seq` order, `limit + 1` fetched to set `truncated`; each
-  digest `{ commit, seq, ts, origin, actor, summary, revisions: [{ doc,
-  path, content_hash = hex(rendered_hash) }] }`; the page's `cursor` is the
+  digest `{ commit, seq, ts, origin, actor, summary, revisions: [{ $id,
+  $path, $hash = hex(rendered_hash) }] }` (2.0 — the document, its path as
+  of the commit and the revision's rendered hash, spelled as the row
+  attributes of `spec/surface` §1.2; `{ doc, path, content_hash }` before,
+  `contentHash` on the MCP wire); the page's `cursor` is the
   last digest's `seq` (or the input cursor when empty) and `head` the repo's
   max `seq`. `summary` is a human line the fixtures do not pin.
 - `sync_out(cursor = 0)`: page the engine's `changes_since(cursor)`; for
@@ -467,6 +470,15 @@ also rewrites `out` lines from the engine's actual requests. **Allowlist
 
 ## Decisions
 
+- 2026-10-11, sync 2.0: a change-feed revision is `{ $id, $path, $hash }`
+  (`spec/surface` §1.2, 3.0 — the row rule: `$` marks the engine-provided
+  names that contend with user names, a result key carrying a row attribute
+  is spelled as that attribute; `{ doc, path, content_hash }` before,
+  `contentHash` on the wire). The §6 engine client reads the new keys in
+  both implementations (`@omgbase/sync`'s `McpEngineClient`,
+  `omgbase-sync::McpEngineClient`); the adapter protocol, the registry, the
+  sweep and the checkpoints are untouched (`protocol: 1` stays). A key of the
+  engine interface changed in spelling: a major.
 - 2026-09-26, sync 1.0 specified as built. The last spec before the MCP/CLI
   binary: with it, every table of `schema.sql` has an owner spec.
 - 2026-09-26, sync 1.1: a `file_stats` rebuild records only files whose bytes

@@ -115,7 +115,7 @@ describe("node-id substitution (from nodes hits are actionable)", () => {
 
 describe("@_ previous result and .field", () => {
   it("reads a field off the previous result", () => {
-    const { stdout, code } = shell(["show hub.md", "@_.path", "exit"].join("\n"));
+    const { stdout, code } = shell(["show hub.md", "@_.$path", "exit"].join("\n"));
     expect(code).toBe(0);
     expect(stdout).toContain("hub.md");
   });
@@ -212,7 +212,7 @@ describe("bindings management", () => {
 
   it("reads a field off a named binding", () => {
     const { stdout, code } = shell(
-      ["@d = show hub.md", "@d.path", "exit"].join("\n"),
+      ["@d = show hub.md", "@d.$path", "exit"].join("\n"),
     );
     expect(code).toBe(0);
     expect(stdout).toContain("hub.md");

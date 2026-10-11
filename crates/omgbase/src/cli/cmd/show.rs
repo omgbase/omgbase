@@ -108,12 +108,14 @@ fn render_block_card(cli: &Cli, node: &Json, history: Option<&Json>) {
         "  {} {}  {}",
         type_glyph(&style, &kind),
         style.bold(&kind),
-        style.id(&str_of(node, "id"))
+        style.id(&str_of(node, "$id"))
     ));
     cli.io.out(&style.rule());
-    if let Some(p) = node.get("placement").filter(|p| p.is_object()) {
-        let parent = p
-            .get("parent")
+    // The placement is flattened onto the row (3.0: `parent_id`/`ordinal`/`depth`);
+    // the line reads the same.
+    if node.get("ordinal").is_some() {
+        let parent = node
+            .get("parent_id")
             .and_then(Json::as_str)
             .unwrap_or("—")
             .to_owned();
@@ -121,8 +123,8 @@ fn render_block_card(cli: &Cli, node: &Json, history: Option<&Json>) {
             "  {}  parent={} ordinal={} depth={}",
             style.dim("placement"),
             style.id(&parent),
-            fmt_value(p.get("ordinal").unwrap_or(&Json::Null)),
-            fmt_value(p.get("depth").unwrap_or(&Json::Null))
+            fmt_value(node.get("ordinal").unwrap_or(&Json::Null)),
+            fmt_value(node.get("depth").unwrap_or(&Json::Null))
         ));
     }
     if let Some(attrs) = node.get("attrs").and_then(Json::as_object) {

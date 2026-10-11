@@ -58,7 +58,7 @@ describe("cross-format graph: markdown → yaml → json", () => {
 
   it("markdown doc has outbound edges to YAML file", () => {
     const links = docLinks(store, docId("docs/readme.md"), { direction: "out" });
-    const targets = links.out.map((e) => e.node);
+    const targets = links.out.map((e) => e.doc_id);
     expect(targets).toContain(docId("config/database.yaml"));
   });
 
@@ -66,14 +66,14 @@ describe("cross-format graph: markdown → yaml → json", () => {
     const links = docLinks(store, docId("config/database.yaml"), { direction: "out" });
     const extendEdge = links.out.find((e) => e.predicate === "extends");
     expect(extendEdge).toBeDefined();
-    expect(extendEdge!.node).toBe(docId("config/base.yaml"));
+    expect(extendEdge!.doc_id).toBe(docId("config/base.yaml"));
   });
 
   it("yaml doc has outbound schema edge to JSON schema", () => {
     const links = docLinks(store, docId("config/database.yaml"), { direction: "out" });
     const schemaEdge = links.out.find((e) => e.predicate === "schema");
     expect(schemaEdge).toBeDefined();
-    expect(schemaEdge!.node).toBe(docId("config/schemas/db.json"));
+    expect(schemaEdge!.doc_id).toBe(docId("config/schemas/db.json"));
   });
 
   it("follow doc.out crosses markdown → yaml boundary", () => {

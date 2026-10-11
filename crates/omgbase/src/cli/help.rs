@@ -166,7 +166,7 @@ const QUERY_EXAMPLES: &[&str] = &[
     "       query 'from nodes where name == \"Overview\" follow section.subsections { depth 3 }'   # follow [distinct] <rel> [{ where … frontier … depth n by … }]",
     "       query 'select p: $path, d: $depth, s: $stop from docs where $path == \"/index.md\" follow doc.out'   # citation graph (cyclic-safe: $stop=cycle)",
     "       query 'from blocks where type == \"list_item\" and $leaf follow block.children'   # $leaf/$depth/$stop filter the walk result post-walk",
-    "       query 'select src: $src, to: $dst_path from edges where predicate == \"depends_on\"'   # the edges target: predicate/provenance/dst_kind + $src/$dst_path/$dst_uri",
+    "       query 'select src: doc_id, to: dst_path from edges where predicate == \"depends_on\"'   # the edges target: predicate/provenance/dst_kind + doc_id/dst_path/uri",
 ];
 
 fn s(x: &str) -> String {

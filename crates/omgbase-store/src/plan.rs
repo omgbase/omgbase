@@ -96,7 +96,7 @@ impl Store {
             ))
         })?;
         let current_content = render(&old_doc);
-        let base_content_hash = hex(&sha256(current_content.as_bytes()));
+        let hash = hex(&sha256(current_content.as_bytes()));
 
         let tree = parse_markdown(content);
         let (fm_block, rest): (Option<&Block>, &[Block]) = match tree.children.first() {
@@ -175,7 +175,7 @@ impl Store {
                 doc: info.doc_id,
                 path: info.path,
                 base_revision: info.current_rev,
-                base_content_hash,
+                hash,
             },
             matcher_v: config.matcher_v.clone(),
             ops: chosen.ops,
@@ -272,9 +272,7 @@ impl Store {
         let fh = file_hash.map(|h| hex(&h));
         let stale = (opset.precondition.base_revision.is_some()
             && current_rev != opset.precondition.base_revision)
-            || fh
-                .as_deref()
-                .is_some_and(|h| h != opset.precondition.base_content_hash);
+            || fh.as_deref().is_some_and(|h| h != opset.precondition.hash);
         if stale {
             return Err(MutationError::with_data(
                 ErrorCode::StalePlan,
@@ -282,7 +280,7 @@ impl Store {
                 json!({
                     "doc": opset.precondition.doc,
                     "expected_revision": opset.precondition.base_revision,
-                    "current": { "revision": current_rev, "content_hash": fh },
+                    "current": { "revision": current_rev, "$hash": fh },
                     "retriable": true,
                 }),
             )

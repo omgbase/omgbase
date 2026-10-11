@@ -45,14 +45,14 @@
               "version": 1,
               "kind": "doc_update",
               "target": {
-                "doc": "d_0",
-                "path": "a.md"
+                "$id": "d_0",
+                "$path": "a.md"
               },
               "precondition": {
-                "doc": "d_0",
-                "path": "a.md",
+                "$id": "d_0",
+                "$path": "a.md",
                 "base_revision": "r_0",
-                "base_content_hash": "a37e66099c3c42dd00a503d56411cfdf9bb213f73c2301a23ce9bd21ba438fb0"
+                "$hash": "a37e66099c3c42dd00a503d56411cfdf9bb213f73c2301a23ce9bd21ba438fb0"
               },
               "matcher_v": "m2.3",
               "ops": [],
@@ -268,14 +268,14 @@
               "version": 1,
               "kind": "doc_update",
               "target": {
-                "doc": "d_0",
-                "path": "a.md"
+                "$id": "d_0",
+                "$path": "a.md"
               },
               "precondition": {
-                "doc": "d_0",
-                "path": "a.md",
+                "$id": "d_0",
+                "$path": "a.md",
                 "base_revision": "r_0",
-                "base_content_hash": "a37e66099c3c42dd00a503d56411cfdf9bb213f73c2301a23ce9bd21ba438fb0"
+                "$hash": "a37e66099c3c42dd00a503d56411cfdf9bb213f73c2301a23ce9bd21ba438fb0"
               },
               "matcher_v": "m2.3",
               "ops": [
@@ -509,14 +509,14 @@
               "version": 1,
               "kind": "doc_update",
               "target": {
-                "doc": "d_0",
-                "path": "a.md"
+                "$id": "d_0",
+                "$path": "a.md"
               },
               "precondition": {
-                "doc": "d_0",
-                "path": "a.md",
+                "$id": "d_0",
+                "$path": "a.md",
                 "base_revision": "r_0",
-                "base_content_hash": "a37e66099c3c42dd00a503d56411cfdf9bb213f73c2301a23ce9bd21ba438fb0"
+                "$hash": "a37e66099c3c42dd00a503d56411cfdf9bb213f73c2301a23ce9bd21ba438fb0"
               },
               "matcher_v": "m2.3",
               "ops": [
@@ -782,14 +782,14 @@
               "version": 1,
               "kind": "doc_update",
               "target": {
-                "doc": "d_0",
-                "path": "a.md"
+                "$id": "d_0",
+                "$path": "a.md"
               },
               "precondition": {
-                "doc": "d_0",
-                "path": "a.md",
+                "$id": "d_0",
+                "$path": "a.md",
                 "base_revision": "r_0",
-                "base_content_hash": "a37e66099c3c42dd00a503d56411cfdf9bb213f73c2301a23ce9bd21ba438fb0"
+                "$hash": "a37e66099c3c42dd00a503d56411cfdf9bb213f73c2301a23ce9bd21ba438fb0"
               },
               "matcher_v": "m2.3",
               "ops": [
@@ -1049,14 +1049,14 @@
               "version": 1,
               "kind": "doc_update",
               "target": {
-                "doc": "d_0",
-                "path": "a.md"
+                "$id": "d_0",
+                "$path": "a.md"
               },
               "precondition": {
-                "doc": "d_0",
-                "path": "a.md",
+                "$id": "d_0",
+                "$path": "a.md",
                 "base_revision": "r_0",
-                "base_content_hash": "a37e66099c3c42dd00a503d56411cfdf9bb213f73c2301a23ce9bd21ba438fb0"
+                "$hash": "a37e66099c3c42dd00a503d56411cfdf9bb213f73c2301a23ce9bd21ba438fb0"
               },
               "matcher_v": "m2.3",
               "ops": [
@@ -1292,14 +1292,14 @@
               "version": 1,
               "kind": "doc_update",
               "target": {
-                "doc": "d_0",
-                "path": "a.md"
+                "$id": "d_0",
+                "$path": "a.md"
               },
               "precondition": {
-                "doc": "d_0",
-                "path": "a.md",
+                "$id": "d_0",
+                "$path": "a.md",
                 "base_revision": "r_0",
-                "base_content_hash": "f1f1c840491309240a1a2a3a5f674cf2fa96387b5ff1425c72c2d8d1d078cc7e"
+                "$hash": "f1f1c840491309240a1a2a3a5f674cf2fa96387b5ff1425c72c2d8d1d078cc7e"
               },
               "matcher_v": "m2.3",
               "ops": [
@@ -1566,14 +1566,14 @@
               "version": 1,
               "kind": "doc_update",
               "target": {
-                "doc": "d_0",
-                "path": "a.md"
+                "$id": "d_0",
+                "$path": "a.md"
               },
               "precondition": {
-                "doc": "d_0",
-                "path": "a.md",
+                "$id": "d_0",
+                "$path": "a.md",
                 "base_revision": "r_0",
-                "base_content_hash": "a37e66099c3c42dd00a503d56411cfdf9bb213f73c2301a23ce9bd21ba438fb0"
+                "$hash": "a37e66099c3c42dd00a503d56411cfdf9bb213f73c2301a23ce9bd21ba438fb0"
               },
               "matcher_v": "m2.3",
               "ops": [
@@ -1804,14 +1804,14 @@
               "version": 1,
               "kind": "doc_update",
               "target": {
-                "doc": "d_0",
-                "path": "a.md"
+                "$id": "d_0",
+                "$path": "a.md"
               },
               "precondition": {
-                "doc": "d_0",
-                "path": "a.md",
+                "$id": "d_0",
+                "$path": "a.md",
                 "base_revision": "r_0",
-                "base_content_hash": "01b4fc6d1bc25b35ceca8b7b479cddafdf422b1232bdbd6ba3b6b0fd90a3619f"
+                "$hash": "01b4fc6d1bc25b35ceca8b7b479cddafdf422b1232bdbd6ba3b6b0fd90a3619f"
               },
               "matcher_v": "m2.3",
               "ops": [],
@@ -1835,8 +1835,9 @@
               "results": [],
               "revisions": [
                 {
-                  "doc": "d_0",
-                  "path": "a.md"
+                  "$id": "d_0",
+                  "$path": "a.md",
+                  "$hash": "7fd120e4067184523f93f1f758a07a3c866216962f3726b863f3a1fad67e2071"
                 }
               ],
               "committed": true
@@ -2026,14 +2027,14 @@
               "version": 1,
               "kind": "doc_update",
               "target": {
-                "doc": "d_0",
-                "path": "a.md"
+                "$id": "d_0",
+                "$path": "a.md"
               },
               "precondition": {
-                "doc": "d_0",
-                "path": "a.md",
+                "$id": "d_0",
+                "$path": "a.md",
                 "base_revision": "r_0",
-                "base_content_hash": "01b4fc6d1bc25b35ceca8b7b479cddafdf422b1232bdbd6ba3b6b0fd90a3619f"
+                "$hash": "01b4fc6d1bc25b35ceca8b7b479cddafdf422b1232bdbd6ba3b6b0fd90a3619f"
               },
               "matcher_v": "m2.3",
               "ops": [],
@@ -2201,14 +2202,14 @@
               "version": 1,
               "kind": "doc_update",
               "target": {
-                "doc": "d_0",
-                "path": "a.md"
+                "$id": "d_0",
+                "$path": "a.md"
               },
               "precondition": {
-                "doc": "d_0",
-                "path": "a.md",
+                "$id": "d_0",
+                "$path": "a.md",
                 "base_revision": "r_0",
-                "base_content_hash": "a37e66099c3c42dd00a503d56411cfdf9bb213f73c2301a23ce9bd21ba438fb0"
+                "$hash": "a37e66099c3c42dd00a503d56411cfdf9bb213f73c2301a23ce9bd21ba438fb0"
               },
               "matcher_v": "m2.3",
               "ops": [],
@@ -2446,14 +2447,14 @@
               "version": 1,
               "kind": "doc_update",
               "target": {
-                "doc": "d_0",
-                "path": "a.md"
+                "$id": "d_0",
+                "$path": "a.md"
               },
               "precondition": {
-                "doc": "d_0",
-                "path": "a.md",
+                "$id": "d_0",
+                "$path": "a.md",
                 "base_revision": "r_0",
-                "base_content_hash": "a37e66099c3c42dd00a503d56411cfdf9bb213f73c2301a23ce9bd21ba438fb0"
+                "$hash": "a37e66099c3c42dd00a503d56411cfdf9bb213f73c2301a23ce9bd21ba438fb0"
               },
               "matcher_v": "m2.3",
               "ops": [
@@ -2510,7 +2511,7 @@
                 "code": "stale_plan",
                 "current": {
                   "revision": "r_1",
-                  "content_hash": "c5ddd63fd27275985f72c78197f0812beb92ff3d66f7d759a0cebc018a8e4acc"
+                  "$hash": "c5ddd63fd27275985f72c78197f0812beb92ff3d66f7d759a0cebc018a8e4acc"
                 },
                 "retriable": true
               }
@@ -2775,14 +2776,14 @@
               "version": 1,
               "kind": "doc_update",
               "target": {
-                "doc": "d_0",
-                "path": "a.md"
+                "$id": "d_0",
+                "$path": "a.md"
               },
               "precondition": {
-                "doc": "d_0",
-                "path": "a.md",
+                "$id": "d_0",
+                "$path": "a.md",
                 "base_revision": "r_0",
-                "base_content_hash": "a37e66099c3c42dd00a503d56411cfdf9bb213f73c2301a23ce9bd21ba438fb0"
+                "$hash": "a37e66099c3c42dd00a503d56411cfdf9bb213f73c2301a23ce9bd21ba438fb0"
               },
               "matcher_v": "m2.3",
               "ops": [
@@ -2912,8 +2913,9 @@
               ],
               "revisions": [
                 {
-                  "doc": "d_0",
-                  "path": "a.md"
+                  "$id": "d_0",
+                  "$path": "a.md",
+                  "$hash": "a5a608bda93e46c7c82e1d03ed391144f9d3a739bdf5fff09a691cfdc6953c8f"
                 }
               ],
               "committed": true

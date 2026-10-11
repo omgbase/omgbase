@@ -13,7 +13,8 @@
 //      `$it.in`), a `$`-intrinsic, and the structural relations (`in`, `out`,
 //      `children`, `subsections`, …) which yield rows by themselves.
 //   2. the path form, once the server's surface version is known (lib/paths.ts):
-//      on a 2.0 server `"/" + $path` (or `"/" + ^$path`, `"/" + $dst_path`) adds
+//      on a 2.0 server `"/" + $path` (or `"/" + ^$path`, `"/" + $dst_path` —
+//      `dst_path` since 3.0, spec/surface §1.2) adds
 //      a second slash to an already rooted path — use the intrinsic alone; on a
 //      1.x server a bare `$path`/`^$path` compared directly with a property
 //      (`^$path in list(after)`, `after.contains(^$path)`, `customer == ^$path`)
@@ -83,7 +84,9 @@ interface PathMention {
   span: Span;
 }
 
-const PATH_INTRINSICS = new Set(["$path", "$dst_path"]);
+// The path reads: `$path` on every target; an edge's destination path, spelled
+// `dst_path` since surface 3.0 (a plain field) and `$dst_path` before.
+const PATH_INTRINSICS = new Set(["$path", "$dst_path", "dst_path"]);
 
 /** A bare path intrinsic (`$path`, `^$path`, …) and its spelling, else null. */
 export function pathRef(expr: Expr): string | null {

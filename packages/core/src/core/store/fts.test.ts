@@ -88,8 +88,8 @@ describe("blocks_fts — leaf-only index (spec/search §1.1)", () => {
     const moved = blockIds("b.md").filter((b) => b.type !== "heading" || b.parent_block !== null).filter((b) => b.text !== "quiet paragraph about quails.");
     // The ids carried across (the move was recognized), so eviction ran.
     expect(moved.map((b) => b.block_id).sort()).toEqual([...listIds].sort());
-    expect(textSearch(store, repoId, "kelp").hits.map((h) => `${h.path}#${h.type}`).sort()).toEqual(["b.md#list_item", "b.md#paragraph"]);
-    expect(textSearch(store, repoId, "urchins").hits.map((h) => h.path)).toEqual(["b.md"]);
+    expect(textSearch(store, repoId, "kelp").hits.map((h) => `${h.$path}#${h.type}`).sort()).toEqual(["b.md#list_item", "b.md#paragraph"]);
+    expect(textSearch(store, repoId, "urchins").hits.map((h) => h.$path)).toEqual(["b.md"]);
   });
 
   it("evicting a list's only live child re-indexes the parent so the source's delete pass stays symmetric", () => {
@@ -106,7 +106,7 @@ describe("blocks_fts — leaf-only index (spec/search §1.1)", () => {
       { path: "a.md", content: `# A\n\n- a fresh replacement item about harbors\n\n${FILLER}` },
     ], "2026-09-26T10:01:00.000Z");
     expectIndexIsLeaves();
-    expect(textSearch(store, repoId, "lighthouses").hits.map((h) => [h.path, h.type])).toEqual([["b.md", "list_item"]]);
-    expect(textSearch(store, repoId, "harbors").hits.map((h) => [h.path, h.type])).toEqual([["a.md", "list_item"]]);
+    expect(textSearch(store, repoId, "lighthouses").hits.map((h) => [h.$path, h.type])).toEqual([["b.md", "list_item"]]);
+    expect(textSearch(store, repoId, "harbors").hits.map((h) => [h.$path, h.type])).toEqual([["a.md", "list_item"]]);
   });
 });

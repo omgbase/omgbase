@@ -85,7 +85,7 @@ pub struct LinkRepairPlan {
 }
 
 impl LinkRepairPlan {
-    /// `{ hits: [{ block, path, old_raw, new_raw }], pairs: [{ from, to, hits }] }`
+    /// `{ hits: [{ $id, $path, old_raw, new_raw }], pairs: [{ from, to, hits }] }`
     /// — the extra the fixture records beside `ops`.
     #[must_use]
     pub fn extras_json(&self) -> Map<String, Value> {
@@ -95,7 +95,7 @@ impl LinkRepairPlan {
             Value::Array(
                 self.hits
                     .iter()
-                    .map(|h| json!({ "block": h.block, "path": h.path, "old_raw": h.old_raw, "new_raw": h.new_raw }))
+                    .map(|h| json!({ "$id": h.block, "$path": h.path, "old_raw": h.old_raw, "new_raw": h.new_raw }))
                     .collect(),
             ),
         );

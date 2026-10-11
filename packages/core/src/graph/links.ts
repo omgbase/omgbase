@@ -4,17 +4,20 @@ import type { Store } from "../core/store/store.js";
 // Doc-grain by default via the doc_edges rollup; block-grain reads the open
 // edges table directly. Backlinks are the `in` direction.
 
+// Keys follow the surface's row rule (spec/surface §1.2, 3.0): a foreign key
+// is a plain field named for what it is — `doc_id` the far document (or
+// external / phantom node), `block_id` the source block.
 export interface LinkEdge {
   predicate: string;
-  /** the other endpoint (dst for out-edges, src for in-edges) */
-  node: string;
+  /** the other endpoint (dst for out-edges, src for in-edges): a doc id, an external node id or `phantom:<path>` */
+  doc_id: string;
   kind: string;
   /** how many underlying block-grain edges this doc-grain row rolls up */
   count: number;
   /** sample source block ids (out-edges only) */
   samples?: string[];
   /** block-grain (`blocks: true`): the source block of this edge (null for a frontmatter edge) */
-  block?: string | null;
+  block_id?: string | null;
 }
 
 export interface LinksResult {
@@ -46,7 +49,7 @@ export function docLinks(store: Store, docId: string, opts: LinksOptions = {}): 
            WHERE src_doc = ? AND to_commit IS NULL ORDER BY predicate, dst_node, src_block`,
         )
         .all(docId) as { predicate: string; dst_node: string; dst_kind: string; src_block: string | null }[];
-      for (const r of rows) if (inPred(r.predicate)) out.push({ predicate: r.predicate, node: r.dst_node, kind: r.dst_kind, count: 1, block: r.src_block });
+      for (const r of rows) if (inPred(r.predicate)) out.push({ predicate: r.predicate, doc_id: r.dst_node, kind: r.dst_kind, count: 1, block_id: r.src_block });
     } else {
       const rows = store.db
         .prepare(
@@ -56,7 +59,7 @@ export function docLinks(store: Store, docId: string, opts: LinksOptions = {}): 
         .all(docId) as { predicate: string; dst_node: string; dst_kind: string; count: number; samples: string }[];
       for (const r of rows) {
         if (!inPred(r.predicate)) continue;
-        out.push({ predicate: r.predicate, node: r.dst_node, kind: r.dst_kind, count: r.count, samples: JSON.parse(r.samples) as string[] });
+        out.push({ predicate: r.predicate, doc_id: r.dst_node, kind: r.dst_kind, count: r.count, samples: JSON.parse(r.samples) as string[] });
       }
     }
   }
@@ -69,7 +72,7 @@ export function docLinks(store: Store, docId: string, opts: LinksOptions = {}): 
            WHERE dst_node = ? AND to_commit IS NULL ORDER BY predicate, src_doc, src_block`,
         )
         .all(docId) as { predicate: string; src_doc: string; src_block: string | null }[];
-      for (const r of rows) if (inPred(r.predicate)) inbound.push({ predicate: r.predicate, node: r.src_doc, kind: "document", count: 1, block: r.src_block });
+      for (const r of rows) if (inPred(r.predicate)) inbound.push({ predicate: r.predicate, doc_id: r.src_doc, kind: "document", count: 1, block_id: r.src_block });
     } else {
       const rows = store.db
         .prepare(
@@ -78,7 +81,7 @@ export function docLinks(store: Store, docId: string, opts: LinksOptions = {}): 
            GROUP BY predicate, src_doc ORDER BY predicate, src_doc`,
         )
         .all(docId) as { predicate: string; src_doc: string; cnt: number }[];
-      for (const r of rows) if (inPred(r.predicate)) inbound.push({ predicate: r.predicate, node: r.src_doc, kind: "document", count: r.cnt });
+      for (const r of rows) if (inPred(r.predicate)) inbound.push({ predicate: r.predicate, doc_id: r.src_doc, kind: "document", count: r.cnt });
     }
   }
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { LEGACY_SURFACE, hitId, hitPath, rooted, surfaceOf } from "../src/lib/paths.ts";
+import { LEGACY_SURFACE, hitId, hitPath, rooted, surfaceMajor, surfaceOf } from "../src/lib/paths.ts";
 
 describe("surfaceOf", () => {
   it("reads the version tool's specs.surface, else 1.x", () => {
@@ -8,6 +8,13 @@ describe("surfaceOf", () => {
     expect(surfaceOf({})).toBe(LEGACY_SURFACE);
     expect(surfaceOf(null)).toBe(LEGACY_SURFACE);
     expect(surfaceOf({ specs: { surface: "nope" } })).toBe(LEGACY_SURFACE);
+  });
+  it("surfaceMajor: the major number; 1 for the legacy marker and junk; null while unknown", () => {
+    expect(surfaceMajor("3.0")).toBe(3);
+    expect(surfaceMajor("2.1")).toBe(2);
+    expect(surfaceMajor(LEGACY_SURFACE)).toBe(1);
+    expect(surfaceMajor("nope")).toBe(1);
+    expect(surfaceMajor(null)).toBeNull();
   });
 });
 

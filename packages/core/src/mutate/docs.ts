@@ -194,8 +194,8 @@ export function docsMove(store: Store, ctx: DocOpContext, docRef: string, toPath
       db.prepare("UPDATE edges SET dst_node = ? WHERE dst_node = ? AND to_commit IS NULL AND src_doc != ?").run(phantom, info.docId, info.docId);
       const selfEdge = db.prepare("UPDATE edges SET dst_node = ? WHERE dst_node = ? AND to_commit IS NULL AND src_doc = ? AND src_block = ? AND anchor IS ?");
       for (const l of inbound) {
-        if (l.doc !== info.docId || l.block === null) continue;
-        selfEdge.run(phantom, info.docId, info.docId, l.block, l.anchor);
+        if (l.doc_id !== info.docId || l.block_id === null) continue;
+        selfEdge.run(phantom, info.docId, info.docId, l.block_id, l.anchor);
         affected.add(info.docId);
       }
       for (const d of affected) rebuildDocEdges(db, d);
@@ -245,7 +245,7 @@ function applyCtx(ctx: DocOpContext): { repoId: string; rootPath?: string; docSt
  */
 function planInboundRetarget(store: Store, docId: string, fromPath: string, toRel: string, inbound: InboundLink[]): { ops: Op[]; blocks: string[]; docs: string[]; dangling: InboundLink[] } {
   const byBlock = new Map<string, InboundLink>();
-  for (const l of inbound) if (l.block !== null && !byBlock.has(l.block)) byBlock.set(l.block, l);
+  for (const l of inbound) if (l.block_id !== null && !byBlock.has(l.block_id)) byBlock.set(l.block_id, l);
   // A container's raw includes its children's raw, so a link inside a list item
   // is reported for BOTH the list and the item. Rewrite the deepest block only:
   // updating the container would re-parse (and re-identify) its children, and
@@ -271,16 +271,16 @@ function planInboundRetarget(store: Store, docId: string, fromPath: string, toRe
     // Match against the directory the link was RESOLVED in (the source's path at
     // extraction time); write relative forms against the source's CURRENT
     // directory — they differ only for links inside the moved doc itself.
-    const writeDir = src.doc === docId ? dirOf(toRel) : dirOf(src.path);
+    const writeDir = src.doc_id === docId ? dirOf(toRel) : dirOf(src.path);
     const newRaw = retargetLinksInRaw(row.bytes.toString("utf8"), dirOf(src.path), writeDir, fromPath, toRel);
     if (newRaw === null) continue;
     ops.push({ op: "update", block: blockId, markdown: newRaw, expect: { content_hash: row.raw_hash.toString("hex") } });
     blocks.push(blockId);
-    docs.add(src.doc);
+    docs.add(src.doc_id);
   }
   // Containers whose rewritten child covered them count as rewritten too.
   const rewritten = new Set([...blocks, ...containers]);
-  const dangling = inbound.filter((l) => l.block === null || !rewritten.has(l.block));
+  const dangling = inbound.filter((l) => l.block_id === null || !rewritten.has(l.block_id));
   return { ops, blocks, docs: [...docs], dangling };
 }
 

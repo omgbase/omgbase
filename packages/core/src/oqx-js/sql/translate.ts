@@ -120,13 +120,16 @@ export const NON_PROPERTY_NAMES: Readonly<Record<Target, ReadonlySet<string>>> =
 // ---- intrinsics -------------------------------------------------------------
 
 // A `$`-namespaced intrinsic → a param-free SQL scalar, per target, with its kind.
-// Anything not mapped (e.g. docs `$body`, reconstructed; `$title`/`$tags`,
-// computed) returns null → residual. `$updated_at`/`$dst_path`/`$dst_uri` are
-// correlated subqueries. `$path` and `$dst_path` are the REFERENCE form on the
-// surface (spec/surface §1 "Paths", 2.0) — `'/' || <storage column>` in SQL —
-// so every comparison, `startsWith`, `contains`, `lower()`… sees exactly the
-// string the in-memory intrinsic yields; `pathColumn` keeps the bare indexed
-// column at hand for the equality fast path.
+// The vocabulary is exactly the engine names that contend with user names
+// (spec/surface §1.2, 3.0: `$id`, `$path`, `$raw`, `$hash`, `$updated_at`,
+// `$title`, `$tags`); foreign keys and columns are plain fields, translated in
+// `translateOperand`. Anything not mapped (`$raw`, reconstructed or a blob;
+// `$title`/`$tags`, computed) returns null → residual. `$updated_at` is a
+// correlated subquery. `$path` (and the edge field `dst_path`) is the REFERENCE
+// form on the surface (spec/surface §1 "Paths", 2.0) — `'/' || <storage column>`
+// in SQL — so every comparison, `startsWith`, `contains`, `lower()`… sees
+// exactly the string the in-memory intrinsic yields; `pathColumn` keeps the bare
+// indexed column at hand for the equality fast path.
 /** The rooted path read over a storage path column. */
 export function pathColumn(col: string): Operand {
   return { sql: `('/' || ${col})`, params: [], kind: "text", pathCol: col };
@@ -134,46 +137,52 @@ export function pathColumn(col: string): Operand {
 function intrinsicSql(name: string, ctx: TranslateCtx): Operand | null {
   const { self, doc, target } = ctx;
   const text = (sql: string): Operand => ({ sql, params: [], kind: "text" });
-  const int = (sql: string): Operand => ({ sql, params: [], kind: "int" });
   if (target === "docs") switch (name) {
     case "$id": return text(`${self}.doc_id`);
     case "$path": return pathColumn(`${doc}.path`);
-    case "$content_hash": return text(`lower(hex(${self}.file_hash))`);
+    case "$hash": return text(`lower(hex(${self}.file_hash))`);
     case "$updated_at": return text(`(SELECT c.ts FROM revisions r JOIN commits c ON c.commit_id = r.commit_id WHERE r.rev_id = ${self}.current_rev)`);
   }
   else if (target === "blocks") switch (name) {
     case "$id": return text(`${self}.block_id`);
-    case "$doc": return text(`${self}.doc_id`);
     case "$path": return pathColumn(`${doc}.path`);
-    case "$ordinal": return int(`${self}.ordinal`);
-    case "$depth": return int(`${self}.depth`);
-    case "$body": return text(`${self}.text`);
-    case "$content_hash": return text(`lower(hex(${self}.raw_hash))`);
+    case "$hash": return text(`lower(hex(${self}.raw_hash))`);
   }
   else if (target === "nodes") switch (name) {
-    case "$id": case "$node_id": return text(`${self}.node_id`);
-    case "$doc_id": return text(`${self}.doc_id`);
-    case "$block_id": return text(`${self}.block_id`);
+    case "$id": return text(`${self}.node_id`);
     case "$path": return pathColumn(`${doc}.path`);
   }
   else if (target === "edges") switch (name) {
     case "$id": return text(`${self}.edge_id`);
-    case "$src": return text(`${self}.src_doc`);
-    case "$dst": return text(`${self}.dst_node`);
-    case "$src_block": return text(`${self}.src_block`);
-    case "$via": return text(`${self}.via_node`);
-    case "$from_commit": return text(`${self}.from_commit`);
     case "$path": return pathColumn(`${doc}.path`);
-    case "$dst_path": return text(`(SELECT '/' || dd.path FROM docs dd WHERE dd.doc_id = ${self}.dst_node)`);
-    case "$dst_uri": return text(`(SELECT xn.uri FROM external_nodes xn WHERE xn.node_id = ${self}.dst_node)`);
   }
   return null;
 }
 
-/** docs intrinsics whose BARE (non-$) form is a loud error in-memory (10 §2) — not
- * pushable, so the residual raises it (and the planner keeps the whole query
- * unplanned when one is residual: spec/surface §1 decline (c)). */
-export const RESERVED_DOC_BASENAMES: ReadonlySet<string> = new Set(["id", "path", "updated_at", "content_hash", "body"]);
+/** The edges target's plain fields → the store's columns (spec/surface §1.2,
+ * 3.0: a foreign key is named for what it is, never `$`-prefixed). `dst_path`
+ * and `uri` are correlated subqueries; `dst_path` is the reference form. */
+function edgeField(name: string, self: string): Operand | null {
+  const text = (sql: string): Operand => ({ sql, params: [], kind: "text" });
+  switch (name) {
+    case "doc_id": return text(`${self}.src_doc`);
+    case "block_id": return text(`${self}.src_block`);
+    case "via_id": return text(`${self}.via_node`);
+    case "dst_id": return text(`${self}.dst_node`);
+    case "dst_path": return text(`(SELECT '/' || dd.path FROM docs dd WHERE dd.doc_id = ${self}.dst_node)`);
+    case "uri": return text(`(SELECT xn.uri FROM external_nodes xn WHERE xn.node_id = ${self}.dst_node)`);
+    case "field": return text(`${self}.src_field`);
+    case "predicate": case "provenance": case "dst_kind": case "anchor": return text(`${self}.${name}`);
+    default: return null;
+  }
+}
+
+/** docs intrinsics whose BARE (non-$) form is a loud error in-memory (the `$`
+ * rule, spec/surface §1.2: the bare spelling of an engine name that shares the
+ * frontmatter namespace is a typo for the intrinsic) — not pushable, so the
+ * residual raises it (and the planner keeps the whole query unplanned when one
+ * is residual: spec/surface §1 decline (c)). */
+export const RESERVED_DOC_BASENAMES: ReadonlySet<string> = new Set(["id", "path", "updated_at", "hash", "raw"]);
 const SEG = /^[A-Za-z_][A-Za-z0-9_]*$/; // injection-safe inlined identifier
 
 // The single-scalar-row scope of a document property (the CEL scalar-in-scope
@@ -257,20 +266,18 @@ export function translateOperand(e: Expr, ctx: TranslateCtx): Operand | null {
         return propScalar(doc, e.name);
       }
       if (target === "blocks") {
-        if (e.name === "type" || e.name === "text") return text(`${self}.${e.name}`);
+        if (e.name === "doc_id" || e.name === "type" || e.name === "text") return text(`${self}.${e.name}`);
+        if (e.name === "ordinal" || e.name === "depth") return { sql: `${self}.${e.name}`, params: [], kind: "int" };
         // Bare non-structural identifier flattens into attrs — same pushdown as
         // the `attrs.<k>` member form (json_extract), so `checked` == `attrs.checked`.
         return jsonExtract(`${self}.attrs`, [e.name]);
       }
       if (target === "nodes") {
-        if (e.name === "kind" || e.name === "name" || e.name === "value") return text(`${self}.${e.name}`);
+        if (["doc_id", "block_id", "kind", "name", "value"].includes(e.name)) return text(`${self}.${e.name}`);
         // Bare non-structural identifier flattens into attrs (see blocks above).
         return jsonExtract(`${self}.attrs`, [e.name]);
       }
-      if (target === "edges") {
-        if (["predicate", "provenance", "dst_kind", "anchor", "src_field"].includes(e.name)) return text(`${self}.${e.name}`);
-        return null;
-      }
+      if (target === "edges") return edgeField(e.name, self);
       return null;
     }
     case "member": {
@@ -283,19 +290,34 @@ export function translateOperand(e: Expr, ctx: TranslateCtx): Operand | null {
       }
       // doc.<x> reach-through — the owning doc (alias `doc`, which is `d`). On the
       // docs target `doc` is the row itself; either way it resolves against `doc`.
+      // FOREIGN-KEY ELIMINATION (spec/surface §1, 3.0): `doc.$id` is the row's
+      // own FK column (`b.doc_id`, `n.doc_id`, `e.src_doc`) and `doc.$path` /
+      // `doc.$hash` / `doc.$updated_at` the scan's already-joined document
+      // columns — no extra join, the same SQL as the bare `doc_id`.
       if (head === "doc") {
         if (rest.length !== 1) return null;
         const k = rest[0]!;
+        if (k === "$id") return text(target === "edges" ? `${self}.src_doc` : `${self}.doc_id`);
         if (k === "$path") return pathColumn(`${doc}.path`);
+        if (k === "$hash") return text(`lower(hex(${doc}.file_hash))`);
+        if (k === "$updated_at") return text(`(SELECT c.ts FROM revisions r JOIN commits c ON c.commit_id = r.commit_id WHERE r.rev_id = ${doc}.current_rev)`);
         if (k === "format") return text(`${doc}.format`);
         if (k.startsWith("$")) return null;
         if (RESERVED_DOC_BASENAMES.has(k)) return null;
         if (NON_PROPERTY_NAMES.docs.has(k) || TARGETS.has(k)) return null; // `doc.nodes`, `doc.frontmatter`, `doc.docs` … (decline (b))
         return propScalar(doc, k);
       }
-      // block.type / block.text reach-through from a node.
-      if (head === "block" && target === "nodes" && rest.length === 1 && (rest[0] === "type" || rest[0] === "text")) {
-        return text(`(SELECT bb.${rest[0]} FROM blocks bb WHERE bb.block_id = ${self}.block_id)`);
+      // block.<x> reach-through from a node: the block's identity is the node's
+      // FK (`block.$id` → `n.block_id`, `block.$path` → the joined `d.path`,
+      // `block.doc_id` → `n.doc_id` — FK elimination again); `type`/`text` are
+      // a correlated read of the block row.
+      if (head === "block" && target === "nodes" && rest.length === 1) {
+        const k = rest[0]!;
+        if (k === "$id") return text(`${self}.block_id`);
+        if (k === "$path") return pathColumn(`${doc}.path`);
+        if (k === "doc_id") return text(`${self}.doc_id`);
+        if (k === "type" || k === "text") return text(`(SELECT bb.${k} FROM blocks bb WHERE bb.block_id = ${self}.block_id)`);
+        return null;
       }
       return null;
     }

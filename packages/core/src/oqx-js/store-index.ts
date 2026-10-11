@@ -2,7 +2,7 @@
 // when a nested block's receiver is a ROOT SCAN (`^docs`, `^edges`,
 // a bare `docs` at the root scope) and its correlated or constant equality is on
 // a column or property SQLite can look up — `where $path == ^^$path`,
-// `where customer == ^$path`, `where $dst == ^$id`, `where type == "order"` —
+// `where customer == ^$path`, `where dst_id == ^$id`, `where type == "order"` —
 // the probe runs ONE prepared statement against the store's indexes instead of
 // materializing every row of the target and hashing it. The rows come back
 // exactly as the root scan constructs them (same columns, same `__path`, same
@@ -12,7 +12,7 @@
 //
 // Typed equality (OQX SEMANTICS §5) is preserved by probing per VALUE KIND:
 //
-//   • a text column (`doc_id`, `path`, `type`, `kind`, `name`, `src_doc`, …)
+//   • a text column (`$id`, `$path`, `type`, `kind`, `name`, `doc_id`, `dst_id`, …)
 //     matches a string probe by `= ?` (TEXT = TEXT, exact); a number, boolean,
 //     object or any other non-string probe matches NO row (the column holds
 //     strings or NULL and `5 == "5"` is false); an absent probe (`null`,
@@ -71,15 +71,15 @@ export interface StoreIndexDeps {
  * `(repo_id, path)` key and then the target's `doc_id`/`src_doc` index. */
 const COLUMN_PROBES: Record<Target, Record<string, string>> = {
   docs: { $id: "d.doc_id = ?", $path: "d.path = ?" },
-  blocks: { $id: "b.block_id = ?", $doc: "b.doc_id = ?", type: "b.type = ?", $path: "d.path = ?" },
-  nodes: { $id: "n.node_id = ?", $node_id: "n.node_id = ?", $doc_id: "n.doc_id = ?", kind: "n.kind = ?", name: "n.name = ?", $path: "d.path = ?" },
+  blocks: { $id: "b.block_id = ?", doc_id: "b.doc_id = ?", type: "b.type = ?", $path: "d.path = ?" },
+  nodes: { $id: "n.node_id = ?", doc_id: "n.doc_id = ?", kind: "n.kind = ?", name: "n.name = ?", $path: "d.path = ?" },
   edges: {
-    $id: "e.edge_id = ?", $src: "e.src_doc = ?", $dst: "e.dst_node = ?", $path: "d.path = ?",
-    // `$dst_path` is the destination document's path (deleted or not — the
-    // intrinsic reads `docs` by id without a liveness guard). A destination is
+    $id: "e.edge_id = ?", doc_id: "e.src_doc = ?", dst_id: "e.dst_node = ?", $path: "d.path = ?",
+    // `dst_path` is the destination document's path (deleted or not — the
+    // field reads `docs` by id without a liveness guard). A destination is
     // resolved within the edge's repo (spec/graph §3), where `(repo_id, path)`
     // is UNIQUE, so the probe is that one document; `?r` is the repo id.
-    $dst_path: "e.dst_node IN (SELECT doc_id FROM docs WHERE repo_id = ?r AND path = ?)",
+    dst_path: "e.dst_node IN (SELECT doc_id FROM docs WHERE repo_id = ?r AND path = ?)",
   },
 };
 
@@ -123,10 +123,10 @@ class StoreIndex implements RowIndex {
     if (v === null) return this.fallback(null);
     if (this.probe.kind === "column") {
       if (typeof v !== "string") return [];
-      // `$path` / `$dst_path` are the reference form in memory (`/a.md`,
+      // `$path` / `dst_path` are the reference form in memory (`/a.md`,
       // spec/surface §1 "Paths"); the column holds the storage form. A rooted
       // probe is de-rooted; a bare one can equal no rooted path — no row.
-      if (this.path === "$path" || this.path === "$dst_path") return v.startsWith("/") ? this.column(storagePath(v)) : [];
+      if (this.path === "$path" || this.path === "dst_path") return v.startsWith("/") ? this.column(storagePath(v)) : [];
       return this.column(v);
     }
     switch (typeof v) {
@@ -198,7 +198,7 @@ class StoreIndex implements RowIndex {
 
 /** A store-backed `RowIndex` for the root scan of `target` on `path`, or
  * `undefined` when SQLite has no index for the path (per-target table above;
- * multi-segment paths; `format`, edge `predicate`/`src_field`, `$tags`, …). */
+ * multi-segment paths; `format`, edge `predicate`/`field`, `$tags`, …). */
 export function storeIndexFor(target: Target, path: readonly string[], deps: StoreIndexDeps): RowIndex | undefined {
   const probe = probeFor(target, path);
   return probe ? new StoreIndex(target, path[0]!, probe, deps) : undefined;

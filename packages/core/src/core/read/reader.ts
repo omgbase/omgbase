@@ -7,11 +7,13 @@ import { referencePath, storagePath } from "../paths.js";
 // Rebuilds the containment forest for a document from parent_block + order_key.
 
 /** One row of the `ls` / docs_list surface: a live document with its block
- *  count and last-commit timestamp. */
+ *  count and last-commit timestamp, under the row attributes' own names
+ *  (spec/surface §1.2, 3.0: `$id`, `$path`, `$updated_at`). */
 export interface DocListRow {
-  path: string;
+  $id: string;
+  $path: string;
+  $updated_at: string | null;
   blocks: number;
-  ts: string | null;
 }
 
 /** A page of the docs_list surface. Honors the uniform list contract (mcp-api
@@ -60,18 +62,17 @@ function liveDocRows(store: Store, repoId: string, like: string, after: string |
   }
   const rows = store.db
     .prepare(
-      `SELECT d.path AS path,
-              (SELECT count(*) FROM blocks b WHERE b.doc_id = d.doc_id AND b.deleted_commit IS NULL) AS blocks,
-              (SELECT c.ts FROM revisions r JOIN commits c ON c.commit_id = r.commit_id WHERE r.rev_id = d.current_rev) AS ts
+      `SELECT d.doc_id AS id, d.path AS path,
+              (SELECT c.ts FROM revisions r JOIN commits c ON c.commit_id = r.commit_id WHERE r.rev_id = d.current_rev) AS ts,
+              (SELECT count(*) FROM blocks b WHERE b.doc_id = d.doc_id AND b.deleted_commit IS NULL) AS blocks
        FROM docs d
        WHERE d.repo_id = ? AND d.deleted_commit IS NULL AND d.path LIKE ? ESCAPE '\\'${where}
        ORDER BY d.path${tail}`,
     )
-    .all(...params) as DocListRow[];
+    .all(...params) as { id: string; path: string; ts: string | null; blocks: number }[];
   // The surface speaks the reference form (spec/surface §1 "Paths"): rooted on
   // the way out, the storage form never leaves this module.
-  for (const r of rows) r.path = referencePath(r.path);
-  return rows;
+  return rows.map((r) => ({ $id: r.id, $path: referencePath(r.path), $updated_at: r.ts, blocks: r.blocks }));
 }
 
 // Path-keyset cursors for the path-ordered list surfaces: the shared kernel
@@ -86,7 +87,7 @@ function decodeListCursor(cursor: string): string {
 
 /** Page an already path-ordered row set under a limit + token budget, issuing
  *  a keyset cursor when it stops early. Shared by docs_list and docs_tree. */
-function pagePathOrdered<T extends { path: string }>(
+function pagePathOrdered<T extends { $path: string }>(
   rows: T[],
   limit: number,
   budgetTokens: number | undefined,
@@ -110,7 +111,7 @@ function pagePathOrdered<T extends { path: string }>(
     items.push(row);
   }
   const last = items[items.length - 1];
-  return { items, truncated, cursor: truncated && last ? encodePathCursor(last.path) : null };
+  return { items, truncated, cursor: truncated && last ? encodePathCursor(last.$path) : null };
 }
 
 /** List a repo's live documents (path, block count, last-commit ts), ordered by
@@ -129,16 +130,18 @@ export function docsList(store: Store, repoId: string, opts: DocListOptions = {}
   return pagePathOrdered(rows.slice(0, limit), limit, opts.budgetTokens, moreBeyond);
 }
 
-/** One entry of the docs_tree surface: a live document (`kind: "doc"`) or a
- *  collapsed directory (`kind: "dir"`, path ends in `/`) at the requested
- *  depth. `docs`/`blocks` are totals under the entry (a doc counts 1 doc);
- *  `ts` is the latest last-commit timestamp under it. */
+/** One entry of the docs_tree surface: a live document (`kind: "doc"`, with
+ *  its `$id`) or a collapsed directory (`kind: "dir"`, `$path` ends in `/`, no
+ *  id) at the requested depth. `docs`/`blocks` are totals under the entry (a
+ *  doc counts 1 doc); `$updated_at` is the latest last-commit timestamp under
+ *  it (spec/surface §1.2, 3.0 names). */
 export interface DocTreeEntry {
-  path: string;
+  $id?: string;
+  $path: string;
   kind: "dir" | "doc";
   docs: number;
   blocks: number;
-  ts: string | null;
+  $updated_at: string | null;
 }
 
 export interface DocTreePage {
@@ -195,12 +198,12 @@ export function docsTree(store: Store, repoId: string, opts: DocTreeOptions = {}
   const byPath = new Map<string, DocTreeEntry>();
   const total = { docs: 0, blocks: 0 };
   for (const row of rows) {
-    const storage = storagePath(row.path);
+    const storage = storagePath(row.$path);
     total.docs += 1;
     total.blocks += row.blocks;
     const segs = storage.slice(prefix.length).split("/");
     if (segs.length <= depth) {
-      byPath.set(storage, { path: row.path, kind: "doc", docs: 1, blocks: row.blocks, ts: row.ts });
+      byPath.set(storage, { $id: row.$id, $path: row.$path, kind: "doc", docs: 1, blocks: row.blocks, $updated_at: row.$updated_at });
       continue;
     }
     const dir = referencePath(prefix + segs.slice(0, depth).join("/") + "/");
@@ -208,16 +211,16 @@ export function docsTree(store: Store, repoId: string, opts: DocTreeOptions = {}
     if (cur) {
       cur.docs += 1;
       cur.blocks += row.blocks;
-      if (row.ts !== null && (cur.ts === null || row.ts > cur.ts)) cur.ts = row.ts;
+      if (row.$updated_at !== null && (cur.$updated_at === null || row.$updated_at > cur.$updated_at)) cur.$updated_at = row.$updated_at;
     } else {
-      byPath.set(dir, { path: dir, kind: "dir", docs: 1, blocks: row.blocks, ts: row.ts });
+      byPath.set(dir, { $path: dir, kind: "dir", docs: 1, blocks: row.blocks, $updated_at: row.$updated_at });
     }
   }
 
-  let entries = [...byPath.values()].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+  let entries = [...byPath.values()].sort((a, b) => (a.$path < b.$path ? -1 : a.$path > b.$path ? 1 : 0));
   if (opts.cursor) {
     const after = decodeListCursor(opts.cursor);
-    entries = entries.filter((e) => e.path > after);
+    entries = entries.filter((e) => e.$path > after);
   }
   const { items, truncated, cursor } = pagePathOrdered(entries, limit, opts.budgetTokens, false);
   return { prefix: referencePath(prefix), depth, total, entries: items, truncated, cursor };

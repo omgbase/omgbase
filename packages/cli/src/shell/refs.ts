@@ -84,17 +84,19 @@ function rowOf(el: unknown): Row {
   if (el && typeof el === "object") {
     const o = el as Record<string, unknown>;
     const ref = firstString(o, REF_KEYS);
-    const label = firstString(o, ["$path", "path", "locator", "name", "$id", "id", "node"]) ?? ref ?? preview(o);
+    const label = firstString(o, ["$path", "path", "locator", "name", "$id", "id", "node", "doc_id"]) ?? ref ?? preview(o);
     return { ref: ref ?? label ?? "", label: label ?? "", value: el };
   }
   const s = String(el);
   return { ref: s, label: s, value: el };
 }
 
-// The keys that make an object an entity ref, in precedence order: a query
-// hit's `$id` (spec/surface §1.4, 3.0 — the envelope spells the intrinsics),
-// then the other tools' envelopes (`id`, `node`, `block`, `locator`, a path).
-const REF_KEYS = ["$id", "id", "node", "block", "locator", "$path", "path"];
+// The keys that make an object an entity ref, in precedence order: a row's
+// `$id` (spec/surface §1.2, 3.0 — every tool result spells a row's identity as
+// the intrinsic), a `links` row's far node (`doc_id`) and an edge's `block_id`,
+// then the pre-3.0 envelopes (`id`, `node`, `block`) — kept so a remote 2.x
+// server's results still address — then `locator` and a path.
+const REF_KEYS = ["$id", "doc_id", "block_id", "id", "node", "block", "locator", "$path", "path"];
 
 function firstString(o: Record<string, unknown>, keys: string[]): string | undefined {
   for (const k of keys) if (typeof o[k] === "string") return o[k] as string;

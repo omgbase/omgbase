@@ -8,6 +8,13 @@ import { makeStoreContext, tagRows } from "../context.js";
 
 const DOCS: TranslateCtx = { target: "docs", self: "d", doc: "d", params: [] };
 
+// Parse `from <target> where <src>` and return the single scalar predicate Expr.
+function predOn(target: string, src: string): Expr {
+  const q: Query = parse(`from ${target} where ${src}`);
+  if (!q.where || q.where.kind !== "scalar") throw new Error(`expected a single scalar predicate, got ${q.where?.kind}`);
+  return q.where.expr;
+}
+
 // Parse `from docs where <src>` and return the single scalar predicate Expr.
 function pred(src: string): Expr {
   const q: Query = parse(`from docs where ${src}`);
@@ -24,11 +31,11 @@ describe("translate — equality is absence-normalized (IS / IS NOT)", () => {
     expect(translatePredicate(pred('$path == "/index.md"'), DOCS)).toEqual({ sql: "(d.path IS ?)", params: ["index.md"] });
     expect(translatePredicate(pred('"/x.md" != $path'), DOCS)).toEqual({ sql: "(d.path IS NOT ?)", params: ["x.md"] });
     expect(translatePredicate(pred('doc.$path == "/a.md"'), DOCS)).toEqual({ sql: "(d.path IS ?)", params: ["a.md"] });
-    // not under a relational op, not for a bare literal, not for `$dst_path` (a subquery)
+    // not under a relational op, not for a bare literal, not for `dst_path` (a subquery)
     expect(translatePredicate(pred('$path < "/m"'), DOCS)).toEqual({ sql: "(('/' || d.path) < ?)", params: ["/m"] });
     expect(translatePredicate(pred('$path == "index.md"'), DOCS)).toEqual({ sql: "(('/' || d.path) IS ?)", params: ["index.md"] });
     const edges: TranslateCtx = { target: "edges", self: "e", doc: "d", params: [] };
-    expect(translatePredicate(pred('$dst_path == "/a.md"'), edges)).toEqual({
+    expect(translatePredicate(predOn('edges', 'dst_path == "/a.md"'), edges)).toEqual({
       sql: "((SELECT '/' || dd.path FROM docs dd WHERE dd.doc_id = e.dst_node) IS ?)",
       params: ["/a.md"],
     });
@@ -120,8 +127,8 @@ describe("translate — declines (left residual) return null", () => {
     expect(translatePredicate(pred('path == "x"'), DOCS)).toBeNull();
   });
 
-  it("docs $body (reconstructed, not a column)", () => {
-    expect(translatePredicate(pred('$body == "x"'), DOCS)).toBeNull();
+  it("docs $raw (reconstructed, not a column)", () => {
+    expect(translatePredicate(pred('$raw == "x"'), DOCS)).toBeNull();
   });
 
   it("matches() (needs a regexp UDF)", () => {
@@ -172,8 +179,8 @@ describe("translate — conjunction and bindings via constructed AST", () => {
       span: [0, 0],
       op: "&&",
       left: { kind: "binary", span: [0, 0], op: "==", left: { kind: "ident", span: [0, 0], name: "$path" }, right: { kind: "lit", span: [0, 0], value: "a" } },
-      // $body is not a column (reconstructed) → not pushable, so the whole && declines.
-      right: { kind: "binary", span: [0, 0], op: "==", left: { kind: "ident", span: [0, 0], name: "$body" }, right: { kind: "lit", span: [0, 0], value: "x" } },
+      // $raw is not a column (reconstructed) → not pushable, so the whole && declines.
+      right: { kind: "binary", span: [0, 0], op: "==", left: { kind: "ident", span: [0, 0], name: "$raw" }, right: { kind: "lit", span: [0, 0], value: "x" } },
     };
     expect(translatePredicate(e, DOCS)).toBeNull();
   });
@@ -197,12 +204,6 @@ const EDGES: TranslateCtx = { target: "edges", self: "e", doc: "d", params: [] }
 const CTX: Record<string, TranslateCtx> = { docs: DOCS, blocks: BLOCKS, nodes: NODES, edges: EDGES };
 
 // Parse `from <target> where <src>` and return the single scalar predicate Expr.
-function predOn(target: string, src: string): Expr {
-  const q: Query = parse(`from ${target} where ${src}`);
-  if (!q.where || q.where.kind !== "scalar") throw new Error(`expected a single scalar predicate, got ${q.where?.kind}`);
-  return q.where.expr;
-}
-
 describe("decline (a) — the operand-kind comparison matrix", () => {
   it("classifies operands", () => {
     const kind = (ctx: TranslateCtx, src: string): OperandKind | null => translateOperand((predOn(ctx.target, `${src} == null`) as Extract<Expr, { kind: "binary" }>).left, ctx)?.kind ?? null;
@@ -210,8 +211,11 @@ describe("decline (a) — the operand-kind comparison matrix", () => {
     expect(kind(DOCS, "format")).toBe("text");
     expect(kind(DOCS, "era")).toBe("prop");
     expect(kind(DOCS, "$path.lower()")).toBe("text");
-    expect(kind(BLOCKS, "$ordinal")).toBe("int");
-    expect(kind(BLOCKS, "$depth")).toBe("int");
+    expect(kind(BLOCKS, "ordinal")).toBe("int");
+    expect(kind(BLOCKS, "depth")).toBe("int");
+    expect(kind(BLOCKS, "doc_id")).toBe("text");
+    expect(kind(EDGES, "dst_id")).toBe("text");
+    expect(kind(EDGES, "field")).toBe("text");
     expect(kind(BLOCKS, "type")).toBe("text");
     expect(kind(BLOCKS, "checked")).toBe("json");
     expect(kind(BLOCKS, "attrs.checked")).toBe("json");
@@ -259,30 +263,30 @@ describe("decline (a) — the operand-kind comparison matrix", () => {
   });
 
   it("declines: an integer intrinsic against a JSON read, two JSON reads, two property reads, bool against bool/num", () => {
-    expect(translatePredicate(predOn("blocks", "$ordinal == checked"), BLOCKS)).toBeNull();
+    expect(translatePredicate(predOn("blocks", "ordinal == checked"), BLOCKS)).toBeNull();
     expect(translatePredicate(predOn("blocks", "attrs.level == attrs.checked"), BLOCKS)).toBeNull();
     expect(translatePredicate(predOn("docs", "era == stages"), DOCS)).toBeNull();
-    expect(translatePredicate(predOn("blocks", "doc.era == $ordinal"), BLOCKS)).toBeNull();
+    expect(translatePredicate(predOn("blocks", "doc.era == ordinal"), BLOCKS)).toBeNull();
     expect(translatePredicate(predOn("docs", "true == false"), DOCS)).toBeNull();
     expect(translatePredicate(predOn("docs", "true == 1"), DOCS)).toBeNull();
     expect(translatePredicate(predOn("nodes", "level == block.type"), NODES)).not.toBeNull(); // json × text: text wins
   });
 
   it("declines: a relational comparison between a text operand and a number or integer operand (the fifth shape)", () => {
-    expect(translatePredicate(predOn("blocks", '$ordinal < "3"'), BLOCKS)).toBeNull();
-    expect(translatePredicate(predOn("blocks", '"3" >= $depth'), BLOCKS)).toBeNull();
+    expect(translatePredicate(predOn("blocks", 'ordinal < "3"'), BLOCKS)).toBeNull();
+    expect(translatePredicate(predOn("blocks", '"3" >= depth'), BLOCKS)).toBeNull();
     expect(translatePredicate(predOn("docs", "$path > 5"), DOCS)).toBeNull();
     expect(translatePredicate(predOn("docs", "5 <= $path"), DOCS)).toBeNull();
     expect(translatePredicate(predOn("blocks", "type < 1"), BLOCKS)).toBeNull();
     expect(translatePredicate(predOn("docs", '$path.lower() > 5'), DOCS)).toBeNull();
     // equality across the same kinds stays pushable (IS is typed), and same-kind relational too
-    expect(translatePredicate(predOn("blocks", '$ordinal == "3"'), BLOCKS)).toEqual({ sql: "(b.ordinal IS ?)", params: ["3"] });
+    expect(translatePredicate(predOn("blocks", 'ordinal == "3"'), BLOCKS)).toEqual({ sql: "(b.ordinal IS ?)", params: ["3"] });
     expect(translatePredicate(predOn("docs", "$path != 5"), DOCS)).toEqual({ sql: "(('/' || d.path) IS NOT ?)", params: [5] });
-    expect(translatePredicate(predOn("blocks", "$ordinal < 3"), BLOCKS)).toEqual({ sql: "(b.ordinal < ?)", params: [3] });
+    expect(translatePredicate(predOn("blocks", "ordinal < 3"), BLOCKS)).toEqual({ sql: "(b.ordinal < ?)", params: [3] });
     expect(translatePredicate(predOn("docs", '$path > "m"'), DOCS)).toEqual({ sql: "(('/' || d.path) > ?)", params: ["m"] });
     expect(translatePredicate(predOn("blocks", 'checked > "x"'), BLOCKS)).toBeNull(); // json × text relational: JSON integers order before text in SQLite
     expect(translatePredicate(predOn("blocks", 'level < "x"'), BLOCKS)).toBeNull();
-    expect(translatePredicate(predOn("blocks", "$ordinal <= 1.5"), BLOCKS)).toEqual({ sql: "(b.ordinal <= ?)", params: [1.5] }); // int × num relational pushes
+    expect(translatePredicate(predOn("blocks", "ordinal <= 1.5"), BLOCKS)).toEqual({ sql: "(b.ordinal <= ?)", params: [1.5] }); // int × num relational pushes
   });
 
   // ---- spec/surface 1.2 patch: the typed pushes ----
@@ -354,8 +358,8 @@ describe("decline (a) — the operand-kind comparison matrix", () => {
   });
 
   it("declines: a boolean literal against an integer intrinsic", () => {
-    expect(translatePredicate(predOn("blocks", "$ordinal == true"), BLOCKS)).toBeNull();
-    expect(translatePredicate(predOn("blocks", "$depth != false"), BLOCKS)).toBeNull();
+    expect(translatePredicate(predOn("blocks", "ordinal == true"), BLOCKS)).toBeNull();
+    expect(translatePredicate(predOn("blocks", "depth != false"), BLOCKS)).toBeNull();
   });
 
   it("declines: null against a property read (a list-valued or nested key reads NULL in SQL)", () => {
@@ -379,15 +383,15 @@ describe("decline (a) — the operand-kind comparison matrix", () => {
   });
 
   it("pushes: a number against an integer intrinsic", () => {
-    expect(translatePredicate(predOn("blocks", "$ordinal == 1"), BLOCKS)).toEqual({ sql: "(b.ordinal IS ?)", params: [1] });
-    expect(translatePredicate(predOn("blocks", "$depth >= 2"), BLOCKS)).toEqual({ sql: "(b.depth >= ?)", params: [2] });
+    expect(translatePredicate(predOn("blocks", "ordinal == 1"), BLOCKS)).toEqual({ sql: "(b.ordinal IS ?)", params: [1] });
+    expect(translatePredicate(predOn("blocks", "depth >= 2"), BLOCKS)).toEqual({ sql: "(b.depth >= ?)", params: [2] });
   });
 
   it("pushes: any comparison with a string literal, a text column or .lower()/.upper()", () => {
     expect(translatePredicate(predOn("blocks", 'checked == "x"'), BLOCKS)).toEqual({ sql: "(json_extract(b.attrs, '$.checked') IS ?)", params: ["x"] });
     expect(translatePredicate(predOn("docs", 'layer == "canon"'), DOCS)).not.toBeNull();
     expect(translatePredicate(predOn("docs", 'doc.layer != "canon"'), DOCS)).not.toBeNull();
-    expect(translatePredicate(predOn("blocks", '$ordinal == "1"'), BLOCKS)).toEqual({ sql: "(b.ordinal IS ?)", params: ["1"] });
+    expect(translatePredicate(predOn("blocks", 'ordinal == "1"'), BLOCKS)).toEqual({ sql: "(b.ordinal IS ?)", params: ["1"] });
     expect(translatePredicate(predOn("docs", "$path == 1"), DOCS)).toEqual({ sql: "(('/' || d.path) IS ?)", params: [1] });
     expect(translatePredicate(predOn("docs", "$path == true"), DOCS)).toEqual({ sql: "(('/' || d.path) IS ?)", params: [1] });
     expect(translatePredicate(predOn("docs", 'type.lower() == "hub"'), DOCS)).not.toBeNull();
@@ -460,5 +464,43 @@ describe("decline (b) — relation, reach-through and source-handle names are no
     // `section`/`children` are not in the docs or edges sets: on docs they are property keys (pushable as text).
     expect(translatePredicate(predOn("docs", 'section == "x"'), DOCS)).not.toBeNull();
     expect(translatePredicate(predOn("nodes", 'out_edges == "x"'), NODES)).not.toBeNull(); // nodes have no out_edges relation → attrs.out_edges
+  });
+});
+
+describe("foreign-key elimination (spec/surface §1, 3.0) — a reach-through to the owner's identity is the FK column", () => {
+  it("doc.$id is the row's own FK column on every joined target, the same SQL as the bare doc_id", () => {
+    expect(translatePredicate(predOn("blocks", 'doc.$id == "d_1"'), BLOCKS)).toEqual({ sql: "(b.doc_id IS ?)", params: ["d_1"] });
+    expect(translatePredicate(predOn("blocks", 'doc_id == "d_1"'), BLOCKS)).toEqual({ sql: "(b.doc_id IS ?)", params: ["d_1"] });
+    expect(translatePredicate(predOn("nodes", 'doc.$id == "d_1"'), NODES)).toEqual({ sql: "(n.doc_id IS ?)", params: ["d_1"] });
+    expect(translatePredicate(predOn("edges", 'doc.$id == "d_1"'), EDGES)).toEqual({ sql: "(e.src_doc IS ?)", params: ["d_1"] });
+    expect(translatePredicate(predOn("edges", 'doc_id == "d_1"'), EDGES)).toEqual({ sql: "(e.src_doc IS ?)", params: ["d_1"] });
+    expect(translatePredicate(pred('doc.$id == "d_1"'), DOCS)).toEqual({ sql: "(d.doc_id IS ?)", params: ["d_1"] });
+  });
+
+  it("doc.$path / doc.$hash / doc.$updated_at read the scan's joined document columns (no subquery for the join)", () => {
+    expect(translatePredicate(predOn("blocks", 'doc.$path == "/a.md"'), BLOCKS)).toEqual({ sql: "(d.path IS ?)", params: ["a.md"] });
+    expect(translatePredicate(predOn("edges", 'doc.$path == "/a.md"'), EDGES)).toEqual({ sql: "(d.path IS ?)", params: ["a.md"] });
+    expect(translatePredicate(predOn("blocks", 'doc.$hash == "ab"'), BLOCKS)).toEqual({ sql: "(lower(hex(d.file_hash)) IS ?)", params: ["ab"] });
+    expect(translatePredicate(predOn("nodes", 'doc.$updated_at >= "2026"'), NODES)?.sql).toContain("r.rev_id = d.current_rev");
+  });
+
+  it("block.$id / block.$path / block.doc_id on a node are the node's own columns; block.text still reaches the block", () => {
+    expect(translatePredicate(predOn("nodes", 'block.$id == "b_1"'), NODES)).toEqual({ sql: "(n.block_id IS ?)", params: ["b_1"] });
+    expect(translatePredicate(predOn("nodes", 'block_id == "b_1"'), NODES)).toEqual({ sql: "(n.block_id IS ?)", params: ["b_1"] });
+    expect(translatePredicate(predOn("nodes", 'block.$path == "/a.md"'), NODES)).toEqual({ sql: "(d.path IS ?)", params: ["a.md"] });
+    expect(translatePredicate(predOn("nodes", 'block.doc_id == "d_1"'), NODES)).toEqual({ sql: "(n.doc_id IS ?)", params: ["d_1"] });
+    expect(translatePredicate(predOn("nodes", 'block.text == "x"'), NODES)?.sql).toContain("SELECT bb.text FROM blocks bb");
+  });
+
+  it("the edges target's plain fields are the store's columns under the surface's names", () => {
+    expect(translatePredicate(predOn("edges", 'block_id == "b_1"'), EDGES)).toEqual({ sql: "(e.src_block IS ?)", params: ["b_1"] });
+    expect(translatePredicate(predOn("edges", 'via_id == null'), EDGES)).toEqual({ sql: "(e.via_node IS ?)", params: [null] });
+    expect(translatePredicate(predOn("edges", 'dst_id == "d_2"'), EDGES)).toEqual({ sql: "(e.dst_node IS ?)", params: ["d_2"] });
+    expect(translatePredicate(predOn("edges", 'field == "before"'), EDGES)).toEqual({ sql: "(e.src_field IS ?)", params: ["before"] });
+    expect(translatePredicate(predOn("edges", 'uri == "https://x"'), EDGES)?.sql).toContain("FROM external_nodes xn");
+    // the dropped names are no longer intrinsics: an unknown `$x` declines, `from_commit` is gone
+    expect(translatePredicate(predOn("edges", '$src == "d_1"'), EDGES)).toBeNull();
+    expect(translatePredicate(predOn("edges", '$from_commit == "c_1"'), EDGES)).toBeNull();
+    expect(translatePredicate(predOn("blocks", '$doc == "d_1"'), BLOCKS)).toBeNull();
   });
 });

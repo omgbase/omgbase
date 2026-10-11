@@ -69,7 +69,7 @@ impl CommitDigest {
             "actor": self.actor,
             "summary": self.summary,
             "revisions": self.revisions.iter().map(|r| serde_json::json!({
-                "doc": r.doc, "path": r.path, "contentHash": r.content_hash,
+                "$id": r.doc, "$path": r.path, "$hash": r.content_hash,
             })).collect::<Vec<_>>(),
         })
     }
@@ -356,7 +356,7 @@ mod tests {
         let page = store.changes_since(&repo, 0, 50, None).unwrap();
         let json = page.to_json();
         assert_eq!(
-            json["digests"][0]["revisions"][0]["contentHash"],
+            json["digests"][0]["revisions"][0]["$hash"],
             page.digests[0].revisions[0].content_hash
         );
         assert_eq!(json["head"], 1);

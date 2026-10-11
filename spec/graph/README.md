@@ -239,7 +239,13 @@ paths.
   not verified in this version.
 
 Both are projections a runner can recompute from the tables; the fixtures pin
-the tables.
+the tables. The surface renders them (`spec/surface` §4 `links_stale`, the
+`omg links` verb) under the `edges` target's field names of `spec/surface`
+§1.2 — `doc_id`/`block_id` for `src_doc`/`src_block`, `field` for the
+`src_field` column, `dst_id` for `dst_node`, `$path` for the source
+document's path — so a reader of a tool result and a reader of a query see
+one vocabulary; the columns themselves (`spec/store`'s `edges` table, which
+these fixtures pin) keep their names.
 
 ## 7. Fixtures
 

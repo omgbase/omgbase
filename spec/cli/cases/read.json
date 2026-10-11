@@ -71,7 +71,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "{\"repoId\":\"rp_0\",\"slug\":\"fixture\",\"rootPath\":\"<workspace>/vault\",\"docs\":20,\"blocks\":327,\"commits\":20,\"openEdges\":69,\"unconverged\":0,\"disk\":{\"changed\":0,\"deleted\":0,\"untracked\":0,\"checked\":true},\"sync\":{\"lastCommitSeq\":20,\"lastCheckpoint\":\"cp_0\",\"convergent\":true,\"diskChecked\":true,\"disk\":{\"changed\":0,\"deleted\":0,\"untracked\":0,\"checked\":true}},\"watcher\":\"none\",\"embedQueue\":60}\n"
+        "stdout": "{\"$id\":\"rp_0\",\"slug\":\"fixture\",\"rootPath\":\"<workspace>/vault\",\"docs\":20,\"blocks\":327,\"commits\":20,\"openEdges\":69,\"unconverged\":0,\"disk\":{\"changed\":0,\"deleted\":0,\"untracked\":0,\"checked\":true},\"sync\":{\"lastCommitSeq\":20,\"lastCheckpoint\":\"cp_0\",\"convergent\":true,\"diskChecked\":true,\"disk\":{\"changed\":0,\"deleted\":0,\"untracked\":0,\"checked\":true}},\"watcher\":\"none\",\"embedQueue\":60}\n"
       }
     },
     {
@@ -84,7 +84,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "{\"repoId\":\"rp_0\",\"slug\":\"fixture\",\"rootPath\":\"<workspace>/vault\",\"docs\":20,\"blocks\":327,\"commits\":20,\"openEdges\":69,\"unconverged\":0,\"disk\":{\"changed\":0,\"deleted\":0,\"untracked\":0,\"checked\":true},\"sync\":{\"lastCommitSeq\":20,\"lastCheckpoint\":\"cp_0\",\"convergent\":true,\"diskChecked\":true,\"disk\":{\"changed\":0,\"deleted\":0,\"untracked\":0,\"checked\":true}},\"watcher\":\"none\",\"embedQueue\":60}\n"
+        "stdout": "{\"$id\":\"rp_0\",\"slug\":\"fixture\",\"rootPath\":\"<workspace>/vault\",\"docs\":20,\"blocks\":327,\"commits\":20,\"openEdges\":69,\"unconverged\":0,\"disk\":{\"changed\":0,\"deleted\":0,\"untracked\":0,\"checked\":true},\"sync\":{\"lastCommitSeq\":20,\"lastCheckpoint\":\"cp_0\",\"convergent\":true,\"diskChecked\":true,\"disk\":{\"changed\":0,\"deleted\":0,\"untracked\":0,\"checked\":true}},\"watcher\":\"none\",\"embedQueue\":60}\n"
       }
     },
     {
@@ -120,7 +120,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "/index.md\n/lab/2026-01-notes.md\n/lab/2026-02-notes.md\n/practitioners/jabir-ibn-hayyan.md\n/practitioners/maria-prophetissa.md\n/practitioners/newton.md\n/practitioners/paracelsus.md\n/processes/calcination.md\n/processes/coagulation.md\n/processes/dissolution.md\n/processes/magnum-opus.md\n/substances/mercury.md\n/substances/philosophers-stone.md\n/substances/prima-materia.md\n/substances/salt.md\n/substances/sulphur.md\n/texts/emerald-tablet.md\n/texts/mutus-liber.md\n/timeline/kickoff.md\n/timeline/review.md\n"
+        "stdout": "d_0\nd_1\nd_2\nd_3\nd_4\nd_5\nd_6\nd_7\nd_8\nd_9\nd_10\nd_11\nd_12\nd_13\nd_14\nd_15\nd_16\nd_17\nd_18\nd_19\n"
       }
     },
     {
@@ -133,7 +133,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "[{\"path\":\"/texts/emerald-tablet.md\",\"blocks\":13,\"ts\":\"2026-09-27T00:00:00.000Z\"},{\"path\":\"/texts/mutus-liber.md\",\"blocks\":12,\"ts\":\"2026-09-27T00:00:00.000Z\"}]\n"
+        "stdout": "[{\"$id\":\"d_16\",\"$path\":\"/texts/emerald-tablet.md\",\"$updated_at\":\"2026-09-27T00:00:00.000Z\",\"blocks\":13},{\"$id\":\"d_17\",\"$path\":\"/texts/mutus-liber.md\",\"$updated_at\":\"2026-09-27T00:00:00.000Z\",\"blocks\":12}]\n"
       }
     },
     {
@@ -146,7 +146,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "{\"path\":\"/texts/emerald-tablet.md\",\"blocks\":13,\"ts\":\"2026-09-27T00:00:00.000Z\"}\n{\"path\":\"/texts/mutus-liber.md\",\"blocks\":12,\"ts\":\"2026-09-27T00:00:00.000Z\"}\n"
+        "stdout": "{\"$id\":\"d_16\",\"$path\":\"/texts/emerald-tablet.md\",\"$updated_at\":\"2026-09-27T00:00:00.000Z\",\"blocks\":13}\n{\"$id\":\"d_17\",\"$path\":\"/texts/mutus-liber.md\",\"$updated_at\":\"2026-09-27T00:00:00.000Z\",\"blocks\":12}\n"
       }
     },
     {
@@ -399,7 +399,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "{\"id\":\"b_303\",\"type\":\"paragraph\",\"raw\":\"The \\\"silent book,\\\" La Rochelle, 1677: fifteen engraved plates and essentially no\\ntext. The entire Great Work, allegedly, in pictures.\",\"content_hash\":\"afd258987f51af3d86b749b4f6b4d0a1104e7f1142102698371bba6d56065fc1\"}\n"
+        "stdout": "{\"$id\":\"b_303\",\"type\":\"paragraph\",\"$raw\":\"The \\\"silent book,\\\" La Rochelle, 1677: fifteen engraved plates and essentially no\\ntext. The entire Great Work, allegedly, in pictures.\",\"$hash\":\"afd258987f51af3d86b749b4f6b4d0a1104e7f1142102698371bba6d56065fc1\"}\n"
       }
     },
     {
@@ -413,7 +413,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "{\"path\":\"/texts/mutus-liber.md\",\"docId\":\"d_17\",\"rev\":\"r_17\",\"properties\":{\"frontmatter\":{\"type\":\"text\",\"layer\":\"draft\",\"tradition\":\"western\",\"era\":1677,\"tags\":[\"text\",\"images\"],\"verified\":false},\"inline\":{\"length\":\"fifteen plates\",\"attributed_to\":\"altus\"},\"computed\":{\"$title\":\"Mutus Liber\"}},\"content\":\"---\\ntype: text\\nlayer: draft\\ntradition: western\\nera: 1677\\ntags: [text, images]\\nverified: false\\n---\\n\\n# Mutus Liber\\n\\nThe \\\"silent book,\\\" La Rochelle, 1677: fifteen engraved plates and essentially no\\ntext. The entire Great Work, allegedly, in pictures.\\n\\nlength:: fifteen plates\\nattributed_to:: altus\\n\\n## Contents\\n\\nThe plates show a couple gathering dew in sheets stretched between poles,\\nprocessing it through vessels, and attending a furnace, framed by angels and\\nzodiacal signs. A sequence is clearly intended. What it instructs is not clear.\\n\\nThe dew-gathering is the one concretely readable operation, and it connects to a\\nreal strand of practice: dew was held to be a celestial condensate and a candidate\\n[prima materia](/substances/prima-materia.md).\\n\\n## Status of these notes\\n\\nDraft. I have not worked through the plates in order against a commentary, and\\nthe secondary literature disagrees about even the number of stages depicted.\\n\\n- [ ] Obtain a facsimile with plate numbering\\n- [ ] Compare the 1677 and 1702 plate sequences\\n- [ ] Decide whether the dew operation is literal\\n\"}\n"
+        "stdout": "{\"$id\":\"d_17\",\"$path\":\"/texts/mutus-liber.md\",\"rev\":\"r_17\",\"properties\":{\"frontmatter\":{\"type\":\"text\",\"layer\":\"draft\",\"tradition\":\"western\",\"era\":1677,\"tags\":[\"text\",\"images\"],\"verified\":false},\"inline\":{\"length\":\"fifteen plates\",\"attributed_to\":\"altus\"},\"computed\":{\"$title\":\"Mutus Liber\"}},\"$raw\":\"---\\ntype: text\\nlayer: draft\\ntradition: western\\nera: 1677\\ntags: [text, images]\\nverified: false\\n---\\n\\n# Mutus Liber\\n\\nThe \\\"silent book,\\\" La Rochelle, 1677: fifteen engraved plates and essentially no\\ntext. The entire Great Work, allegedly, in pictures.\\n\\nlength:: fifteen plates\\nattributed_to:: altus\\n\\n## Contents\\n\\nThe plates show a couple gathering dew in sheets stretched between poles,\\nprocessing it through vessels, and attending a furnace, framed by angels and\\nzodiacal signs. A sequence is clearly intended. What it instructs is not clear.\\n\\nThe dew-gathering is the one concretely readable operation, and it connects to a\\nreal strand of practice: dew was held to be a celestial condensate and a candidate\\n[prima materia](/substances/prima-materia.md).\\n\\n## Status of these notes\\n\\nDraft. I have not worked through the plates in order against a commentary, and\\nthe secondary literature disagrees about even the number of stages depicted.\\n\\n- [ ] Obtain a facsimile with plate numbering\\n- [ ] Compare the 1677 and 1702 plate sequences\\n- [ ] Decide whether the dew operation is literal\\n\"}\n"
       }
     },
     {
@@ -427,7 +427,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "[{\"id\":\"b_302\",\"type\":\"heading\",\"raw\":\"# Mutus Liber\",\"content_hash\":\"15f54d05ad1c1ffc35a23f7d24c6083a12edc5a4e5efc5cfe7a0628e0b93fafd\"},{\"path\":\"/texts/mutus-liber.md\",\"docId\":\"d_17\",\"rev\":\"r_17\",\"properties\":{\"frontmatter\":{\"type\":\"text\",\"layer\":\"draft\",\"tradition\":\"western\",\"era\":1677,\"tags\":[\"text\",\"images\"],\"verified\":false},\"inline\":{\"length\":\"fifteen plates\",\"attributed_to\":\"altus\"},\"computed\":{\"$title\":\"Mutus Liber\"}},\"content\":\"---\\ntype: text\\nlayer: draft\\ntradition: western\\nera: 1677\\ntags: [text, images]\\nverified: false\\n---\\n\\n# Mutus Liber\\n\\nThe \\\"silent book,\\\" La Rochelle, 1677: fifteen engraved plates and essentially no\\ntext. The entire Great Work, allegedly, in pictures.\\n\\nlength:: fifteen plates\\nattributed_to:: altus\\n\\n## Contents\\n\\nThe plates show a couple gathering dew in sheets stretched between poles,\\nprocessing it through vessels, and attending a furnace, framed by angels and\\nzodiacal signs. A sequence is clearly intended. What it instructs is not clear.\\n\\nThe dew-gathering is the one concretely readable operation, and it connects to a\\nreal strand of practice: dew was held to be a celestial condensate and a candidate\\n[prima materia](/substances/prima-materia.md).\\n\\n## Status of these notes\\n\\nDraft. I have not worked through the plates in order against a commentary, and\\nthe secondary literature disagrees about even the number of stages depicted.\\n\\n- [ ] Obtain a facsimile with plate numbering\\n- [ ] Compare the 1677 and 1702 plate sequences\\n- [ ] Decide whether the dew operation is literal\\n\"}]\n"
+        "stdout": "[{\"$id\":\"b_302\",\"type\":\"heading\",\"$raw\":\"# Mutus Liber\",\"$hash\":\"15f54d05ad1c1ffc35a23f7d24c6083a12edc5a4e5efc5cfe7a0628e0b93fafd\"},{\"$id\":\"d_17\",\"$path\":\"/texts/mutus-liber.md\",\"rev\":\"r_17\",\"properties\":{\"frontmatter\":{\"type\":\"text\",\"layer\":\"draft\",\"tradition\":\"western\",\"era\":1677,\"tags\":[\"text\",\"images\"],\"verified\":false},\"inline\":{\"length\":\"fifteen plates\",\"attributed_to\":\"altus\"},\"computed\":{\"$title\":\"Mutus Liber\"}},\"$raw\":\"---\\ntype: text\\nlayer: draft\\ntradition: western\\nera: 1677\\ntags: [text, images]\\nverified: false\\n---\\n\\n# Mutus Liber\\n\\nThe \\\"silent book,\\\" La Rochelle, 1677: fifteen engraved plates and essentially no\\ntext. The entire Great Work, allegedly, in pictures.\\n\\nlength:: fifteen plates\\nattributed_to:: altus\\n\\n## Contents\\n\\nThe plates show a couple gathering dew in sheets stretched between poles,\\nprocessing it through vessels, and attending a furnace, framed by angels and\\nzodiacal signs. A sequence is clearly intended. What it instructs is not clear.\\n\\nThe dew-gathering is the one concretely readable operation, and it connects to a\\nreal strand of practice: dew was held to be a celestial condensate and a candidate\\n[prima materia](/substances/prima-materia.md).\\n\\n## Status of these notes\\n\\nDraft. I have not worked through the plates in order against a commentary, and\\nthe secondary literature disagrees about even the number of stages depicted.\\n\\n- [ ] Obtain a facsimile with plate numbering\\n- [ ] Compare the 1677 and 1702 plate sequences\\n- [ ] Decide whether the dew operation is literal\\n\"}]\n"
       }
     },
     {
@@ -441,7 +441,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "{\"id\":\"b_302\",\"type\":\"heading\",\"raw\":\"# Mutus Liber\",\"content_hash\":\"15f54d05ad1c1ffc35a23f7d24c6083a12edc5a4e5efc5cfe7a0628e0b93fafd\"}\n{\"id\":\"b_305\",\"type\":\"heading\",\"raw\":\"## Contents\",\"content_hash\":\"624e5c6774ba967b017d18ec4ffe2e77c1cffa258162a6f11b4625cd3708f9ec\"}\n"
+        "stdout": "{\"$id\":\"b_302\",\"type\":\"heading\",\"$raw\":\"# Mutus Liber\",\"$hash\":\"15f54d05ad1c1ffc35a23f7d24c6083a12edc5a4e5efc5cfe7a0628e0b93fafd\"}\n{\"$id\":\"b_305\",\"type\":\"heading\",\"$raw\":\"## Contents\",\"$hash\":\"624e5c6774ba967b017d18ec4ffe2e77c1cffa258162a6f11b4625cd3708f9ec\"}\n"
       }
     },
     {
@@ -470,7 +470,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "{\"id\":\"b_311\",\"type\":\"task\",\"raw\":\"- [ ] Obtain a facsimile with plate numbering\",\"content_hash\":\"31c205b3e59317c1eace88de62a9ea69cfe18fa6a9c51adf3b5236f42f9a86fb\",\"text\":\"Obtain a facsimile with plate numbering\",\"attrs\":{\"checked\":false},\"placement\":{\"parent\":\"b_310\",\"ordinal\":0,\"depth\":1}}\n"
+        "stdout": "{\"$id\":\"b_311\",\"type\":\"task\",\"$raw\":\"- [ ] Obtain a facsimile with plate numbering\",\"$hash\":\"31c205b3e59317c1eace88de62a9ea69cfe18fa6a9c51adf3b5236f42f9a86fb\",\"text\":\"Obtain a facsimile with plate numbering\",\"attrs\":{\"checked\":false},\"ordinal\":0,\"depth\":1,\"parent_id\":\"b_310\"}\n"
       }
     },
     {
@@ -601,7 +601,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "{\"id\":\"b_303\",\"type\":\"paragraph\",\"raw\":\"The \\\"silent book,\\\" La Rochelle, 1677: fifteen engraved plates and essentially no\\ntext. The entire Great Work, allegedly, in pictures.\",\"content_hash\":\"afd258987f51af3d86b749b4f6b4d0a1104e7f1142102698371bba6d56065fc1\",\"text\":\"The \\\"silent book,\\\" La Rochelle, 1677: fifteen engraved plates and essentially no text. The entire Great Work, allegedly, in pictures.\",\"attrs\":{},\"placement\":{\"parent\":null,\"ordinal\":1,\"depth\":0}}\n"
+        "stdout": "{\"$id\":\"b_303\",\"type\":\"paragraph\",\"$raw\":\"The \\\"silent book,\\\" La Rochelle, 1677: fifteen engraved plates and essentially no\\ntext. The entire Great Work, allegedly, in pictures.\",\"$hash\":\"afd258987f51af3d86b749b4f6b4d0a1104e7f1142102698371bba6d56065fc1\",\"text\":\"The \\\"silent book,\\\" La Rochelle, 1677: fifteen engraved plates and essentially no text. The entire Great Work, allegedly, in pictures.\",\"attrs\":{},\"ordinal\":1,\"depth\":0,\"parent_id\":null}\n"
       }
     },
     {
@@ -615,7 +615,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "{\"kind\":\"document\",\"path\":\"/texts/mutus-liber.md\",\"docId\":\"d_17\",\"rev\":\"r_17\",\"properties\":{\"frontmatter\":{\"type\":\"text\",\"layer\":\"draft\",\"tradition\":\"western\",\"era\":1677,\"tags\":[\"text\",\"images\"],\"verified\":false},\"inline\":{\"length\":\"fifteen plates\",\"attributed_to\":\"altus\"},\"computed\":{\"$title\":\"Mutus Liber\"}},\"content\":\"---\\ntype: text\\nlayer: draft\\ntradition: western\\nera: 1677\\ntags: [text, images]\\nverified: false\\n---\\n\\n# Mutus Liber\\n\\nThe \\\"silent book,\\\" La Rochelle, 1677: fifteen engraved plates and essentially no\\ntext. The entire Great Work, allegedly, in pictures.\\n\\nlength:: fifteen plates\\nattributed_to:: altus\\n\\n## Contents\\n\\nThe plates show a couple gathering dew in sheets stretched between poles,\\nprocessing it through vessels, and attending a furnace, framed by angels and\\nzodiacal signs. A sequence is clearly intended. What it instructs is not clear.\\n\\nThe dew-gathering is the one concretely readable operation, and it connects to a\\nreal strand of practice: dew was held to be a celestial condensate and a candidate\\n[prima materia](/substances/prima-materia.md).\\n\\n## Status of these notes\\n\\nDraft. I have not worked through the plates in order against a commentary, and\\nthe secondary literature disagrees about even the number of stages depicted.\\n\\n- [ ] Obtain a facsimile with plate numbering\\n- [ ] Compare the 1677 and 1702 plate sequences\\n- [ ] Decide whether the dew operation is literal\\n\"}\n"
+        "stdout": "{\"kind\":\"document\",\"$id\":\"d_17\",\"$path\":\"/texts/mutus-liber.md\",\"rev\":\"r_17\",\"properties\":{\"frontmatter\":{\"type\":\"text\",\"layer\":\"draft\",\"tradition\":\"western\",\"era\":1677,\"tags\":[\"text\",\"images\"],\"verified\":false},\"inline\":{\"length\":\"fifteen plates\",\"attributed_to\":\"altus\"},\"computed\":{\"$title\":\"Mutus Liber\"}},\"$raw\":\"---\\ntype: text\\nlayer: draft\\ntradition: western\\nera: 1677\\ntags: [text, images]\\nverified: false\\n---\\n\\n# Mutus Liber\\n\\nThe \\\"silent book,\\\" La Rochelle, 1677: fifteen engraved plates and essentially no\\ntext. The entire Great Work, allegedly, in pictures.\\n\\nlength:: fifteen plates\\nattributed_to:: altus\\n\\n## Contents\\n\\nThe plates show a couple gathering dew in sheets stretched between poles,\\nprocessing it through vessels, and attending a furnace, framed by angels and\\nzodiacal signs. A sequence is clearly intended. What it instructs is not clear.\\n\\nThe dew-gathering is the one concretely readable operation, and it connects to a\\nreal strand of practice: dew was held to be a celestial condensate and a candidate\\n[prima materia](/substances/prima-materia.md).\\n\\n## Status of these notes\\n\\nDraft. I have not worked through the plates in order against a commentary, and\\nthe secondary literature disagrees about even the number of stages depicted.\\n\\n- [ ] Obtain a facsimile with plate numbering\\n- [ ] Compare the 1677 and 1702 plate sequences\\n- [ ] Decide whether the dew operation is literal\\n\"}\n"
       }
     },
     {
@@ -642,7 +642,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "[{\"id\":\"b_302\",\"type\":\"heading\",\"raw\":\"# Mutus Liber\",\"content_hash\":\"15f54d05ad1c1ffc35a23f7d24c6083a12edc5a4e5efc5cfe7a0628e0b93fafd\",\"text\":\"Mutus Liber\",\"attrs\":{\"level\":1},\"placement\":{\"parent\":null,\"ordinal\":0,\"depth\":0}},{\"id\":\"b_311\",\"type\":\"task\",\"raw\":\"- [ ] Obtain a facsimile with plate numbering\",\"content_hash\":\"31c205b3e59317c1eace88de62a9ea69cfe18fa6a9c51adf3b5236f42f9a86fb\",\"text\":\"Obtain a facsimile with plate numbering\",\"attrs\":{\"checked\":false},\"placement\":{\"parent\":\"b_310\",\"ordinal\":0,\"depth\":1}}]\n"
+        "stdout": "[{\"$id\":\"b_302\",\"type\":\"heading\",\"$raw\":\"# Mutus Liber\",\"$hash\":\"15f54d05ad1c1ffc35a23f7d24c6083a12edc5a4e5efc5cfe7a0628e0b93fafd\",\"text\":\"Mutus Liber\",\"attrs\":{\"level\":1},\"ordinal\":0,\"depth\":0,\"parent_id\":null},{\"$id\":\"b_311\",\"type\":\"task\",\"$raw\":\"- [ ] Obtain a facsimile with plate numbering\",\"$hash\":\"31c205b3e59317c1eace88de62a9ea69cfe18fa6a9c51adf3b5236f42f9a86fb\",\"text\":\"Obtain a facsimile with plate numbering\",\"attrs\":{\"checked\":false},\"ordinal\":0,\"depth\":1,\"parent_id\":\"b_310\"}]\n"
       }
     },
     {
@@ -656,7 +656,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "{\"id\":\"b_302\",\"type\":\"heading\",\"raw\":\"# Mutus Liber\",\"content_hash\":\"15f54d05ad1c1ffc35a23f7d24c6083a12edc5a4e5efc5cfe7a0628e0b93fafd\",\"text\":\"Mutus Liber\",\"attrs\":{\"level\":1},\"placement\":{\"parent\":null,\"ordinal\":0,\"depth\":0}}\n{\"id\":\"b_311\",\"type\":\"task\",\"raw\":\"- [ ] Obtain a facsimile with plate numbering\",\"content_hash\":\"31c205b3e59317c1eace88de62a9ea69cfe18fa6a9c51adf3b5236f42f9a86fb\",\"text\":\"Obtain a facsimile with plate numbering\",\"attrs\":{\"checked\":false},\"placement\":{\"parent\":\"b_310\",\"ordinal\":0,\"depth\":1}}\n"
+        "stdout": "{\"$id\":\"b_302\",\"type\":\"heading\",\"$raw\":\"# Mutus Liber\",\"$hash\":\"15f54d05ad1c1ffc35a23f7d24c6083a12edc5a4e5efc5cfe7a0628e0b93fafd\",\"text\":\"Mutus Liber\",\"attrs\":{\"level\":1},\"ordinal\":0,\"depth\":0,\"parent_id\":null}\n{\"$id\":\"b_311\",\"type\":\"task\",\"$raw\":\"- [ ] Obtain a facsimile with plate numbering\",\"$hash\":\"31c205b3e59317c1eace88de62a9ea69cfe18fa6a9c51adf3b5236f42f9a86fb\",\"text\":\"Obtain a facsimile with plate numbering\",\"attrs\":{\"checked\":false},\"ordinal\":0,\"depth\":1,\"parent_id\":\"b_310\"}\n"
       }
     },
     {
@@ -754,7 +754,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "[{\"id\":\"b_289\",\"locator\":\"/texts/emerald-tablet.md#heading[0]\",\"preview\":\"The Emerald Tablet\",\"evidence\":{\"rrf\":0.016129032258064516,\"boosts\":{\"heading\":1.15,\"path\":1.1,\"layer\":1.3},\"ftsRank\":2}},{\"id\":\"b_27\",\"locator\":\"/index.md#list_item[0]\",\"preview\":\"[The Emerald Tablet](/texts/emerald-tablet.md)\",\"evidence\":{\"rrf\":0.01639344262295082,\"boosts\":{\"layer\":1.3},\"ftsRank\":1}}]\n"
+        "stdout": "[{\"$id\":\"b_289\",\"locator\":\"/texts/emerald-tablet.md#heading[0]\",\"preview\":\"The Emerald Tablet\",\"evidence\":{\"rrf\":0.016129032258064516,\"boosts\":{\"heading\":1.15,\"path\":1.1,\"layer\":1.3},\"ftsRank\":2}},{\"$id\":\"b_27\",\"locator\":\"/index.md#list_item[0]\",\"preview\":\"[The Emerald Tablet](/texts/emerald-tablet.md)\",\"evidence\":{\"rrf\":0.01639344262295082,\"boosts\":{\"layer\":1.3},\"ftsRank\":1}}]\n"
       }
     },
     {
@@ -769,7 +769,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "{\"id\":\"b_289\",\"locator\":\"/texts/emerald-tablet.md#heading[0]\",\"preview\":\"The Emerald Tablet\",\"evidence\":{\"rrf\":0.016129032258064516,\"boosts\":{\"heading\":1.15,\"path\":1.1,\"layer\":1.3},\"ftsRank\":2}}\n{\"id\":\"b_27\",\"locator\":\"/index.md#list_item[0]\",\"preview\":\"[The Emerald Tablet](/texts/emerald-tablet.md)\",\"evidence\":{\"rrf\":0.01639344262295082,\"boosts\":{\"layer\":1.3},\"ftsRank\":1}}\n"
+        "stdout": "{\"$id\":\"b_289\",\"locator\":\"/texts/emerald-tablet.md#heading[0]\",\"preview\":\"The Emerald Tablet\",\"evidence\":{\"rrf\":0.016129032258064516,\"boosts\":{\"heading\":1.15,\"path\":1.1,\"layer\":1.3},\"ftsRank\":2}}\n{\"$id\":\"b_27\",\"locator\":\"/index.md#list_item[0]\",\"preview\":\"[The Emerald Tablet](/texts/emerald-tablet.md)\",\"evidence\":{\"rrf\":0.01639344262295082,\"boosts\":{\"layer\":1.3},\"ftsRank\":1}}\n"
       }
     },
     {

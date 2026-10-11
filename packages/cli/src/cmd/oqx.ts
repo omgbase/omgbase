@@ -88,7 +88,7 @@ async function runOqx(cli: Cli, args: string[]): Promise<number> {
     cli.io.out("       query 'from nodes where name == \"Overview\" follow section.subsections { depth 3 }'   # follow [distinct] <rel> [{ where … frontier … depth n by … }]");
     cli.io.out("       query 'select p: $path, d: $depth, s: $stop from docs where $path == \"/index.md\" follow doc.out'   # citation graph (cyclic-safe: $stop=cycle)");
     cli.io.out("       query 'from blocks where type == \"list_item\" and $leaf follow block.children'   # $leaf/$depth/$stop filter the walk result post-walk");
-    cli.io.out("       query 'select src: $src, to: $dst_path from edges where predicate == \"depends_on\"'   # the edges target: predicate/provenance/dst_kind + $src/$dst_path/$dst_uri");
+    cli.io.out("       query 'select src: doc_id, to: dst_path from edges where predicate == \"depends_on\"'   # the edges target: predicate/provenance/dst_kind + doc_id/dst_path/uri");
     return EXIT_OK;
   }
 

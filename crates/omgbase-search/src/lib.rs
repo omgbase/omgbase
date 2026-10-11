@@ -73,7 +73,7 @@ pub use rank::{
 pub use vec::{blob_to_f32, cosine_bytes, cosine_f32, f32_to_blob, to_f32};
 
 /// The `spec/search/VERSION` this crate implements (`major.minor`).
-pub const SPEC_VERSION: &str = "1.2";
+pub const SPEC_VERSION: &str = "2.0";
 
 /// This crate's own version (`Cargo.toml`), for the surface's `version` tool.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

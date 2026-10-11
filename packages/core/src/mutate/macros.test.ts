@@ -185,9 +185,9 @@ describe("linksRepair rewrites LINK DESTINATIONS, coalesced to top-most blocks",
     seed("j-one.md", "# J\n\n[b](/b.md)\n");
     seed("g-one.md", "# G\n\n[b](/b.md)\n");
     const { hits, pairs } = linksRepair(store, repoId, [{ from: "/b.md", to: "/c.md" }], { pathGlob: "j-*" });
-    expect(hits.map((h) => h.path)).toEqual(["j-one.md"]);
+    expect(hits.map((h) => h.$path)).toEqual(["j-one.md"]);
     expect(pairs[0]!.hits).toBe(1);
-    expect(linksRepair(store, repoId, [{ from: "/b.md", to: "/c.md" }]).hits.map((h) => h.path).sort()).toEqual(["g-one.md", "j-one.md"]);
+    expect(linksRepair(store, repoId, [{ from: "/b.md", to: "/c.md" }]).hits.map((h) => h.$path).sort()).toEqual(["g-one.md", "j-one.md"]);
   });
 
   it("each destination takes the first matching pair — no chaining; unmatched pairs report 0", () => {

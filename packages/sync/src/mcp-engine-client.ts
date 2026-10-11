@@ -3,7 +3,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
-import { VERSION, type ObserveResult, type ObserveDeleteResult } from "@omgbase/core";
+import { VERSION, type ObserveResult, type ObserveDeleteResult, type SurfaceObserveResult } from "@omgbase/core";
 import type { EngineClient, ChangesPage, DocBytes } from "./engine-client.js";
 
 // McpEngineClient (ADR-014 §7): reaches the omgbase side over the Model Context
@@ -43,12 +43,16 @@ export class McpEngineClient implements EngineClient {
     return body as T;
   }
 
-  observeMany(files: { path: string; content: string }[]): Promise<ObserveResult[]> {
-    return this.callTool<ObserveResult[]>("observe_many", { files });
+  // The wire spells a document's identity `$id`/`$path` (spec/surface §1.2,
+  // 3.0); the engine-client contract keeps the library's `docId`/`path`
+  // (spec/store's observe outcome), so the two are mapped back here.
+  async observeMany(files: { path: string; content: string }[]): Promise<ObserveResult[]> {
+    const out = await this.callTool<SurfaceObserveResult<ObserveResult>[]>("observe_many", { files });
+    return out.map(fromWireObserve);
   }
 
-  observeDelete(path: string): Promise<ObserveDeleteResult> {
-    return this.callTool<ObserveDeleteResult>("observe_delete", { path });
+  async observeDelete(path: string): Promise<ObserveDeleteResult> {
+    return fromWireObserve(await this.callTool<SurfaceObserveResult<ObserveDeleteResult>>("observe_delete", { path }));
   }
 
   changesSince(cursor?: number, opts?: { origin?: "api" | "observed" | "import"; limit?: number }): Promise<ChangesPage> {
@@ -61,8 +65,8 @@ export class McpEngineClient implements EngineClient {
 
   async readDoc(path: string): Promise<DocBytes | null> {
     try {
-      const res = await this.callTool<{ content: string }>("docs_read", { path });
-      return { content: res.content, contentHash: createHash("sha256").update(res.content, "utf8").digest("hex") };
+      const res = await this.callTool<{ $raw: string }>("docs_read", { path });
+      return { content: res.$raw, contentHash: createHash("sha256").update(res.$raw, "utf8").digest("hex") };
     } catch {
       // doc_missing (or any read failure) → treat as absent.
       return null;
@@ -72,6 +76,12 @@ export class McpEngineClient implements EngineClient {
   async close(): Promise<void> {
     await this.client.close();
   }
+}
+
+/** A wire observe outcome (`{ $id, $path, … }`) as the library's `{ docId, path, … }`. */
+function fromWireObserve<T extends { docId: string | null; path: string }>(w: SurfaceObserveResult<T>): T {
+  const { $id, $path, ...rest } = w;
+  return { docId: $id, path: $path, ...rest } as unknown as T;
 }
 
 /** Connect to an omgbase MCP server over stdio by spawning `command args`

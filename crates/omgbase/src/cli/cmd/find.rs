@@ -44,11 +44,11 @@ pub fn find(cli: &mut Cli, args: &[String]) -> Result<i32> {
     cli.capture(&hits); // shell: the ranked hits become the addressable frame
     if a.flag("one") {
         if let Some(h) = items.first() {
-            cli.io.out(&str_of(h, "id"));
+            cli.io.out(&str_of(h, "$id"));
         }
         return Ok(EXIT_OK);
     }
-    let ids: Vec<String> = items.iter().map(|h| str_of(h, "id")).collect();
+    let ids: Vec<String> = items.iter().map(|h| str_of(h, "$id")).collect();
     if let Some(code) = machine_out(cli, &hits, Some(&items), Some(&ids)) {
         return code;
     }
@@ -60,7 +60,7 @@ pub fn find(cli: &mut Cli, args: &[String]) -> Result<i32> {
     for h in &items {
         cli.io.out(&format!(
             "{}  {}  {}",
-            style.id(&str_of(h, "id")),
+            style.id(&str_of(h, "$id")),
             style.accent(&str_of(h, "locator")),
             str_of(h, "preview")
         ));

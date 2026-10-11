@@ -96,16 +96,15 @@
       }
     },
     {
-      "name": "intrinsics",
-      "notes": "§1.2: $id = $node_id, $doc_id, $block_id, $path.",
-      "query": "select i: $id, n: $node_id, d: $doc_id, b: $block_id from nodes where kind == \"md:section\" && name == \"Supplies\"",
+      "name": "intrinsics-and-fields",
+      "notes": "§1.2 (3.0): a node's `$` names are $id/$path; doc_id and block_id are plain fields (the `$node_id` synonym is gone).",
+      "query": "select i: $id, d: doc_id, b: block_id from nodes where kind == \"md:section\" && name == \"Supplies\"",
       "expect": {
         "hits": [
           {
             "$id": "n_de68e55098c0",
             "$path": "/substances/salt.md",
             "i": "n_de68e55098c0",
-            "n": "n_de68e55098c0",
             "d": "d_14",
             "b": "b_276"
           }
@@ -437,7 +436,7 @@
     },
     {
       "name": "section-blocks-includes-nested",
-      "query": "select b: section.blocks collect { type, d: $depth } from nodes where kind == \"md:section\" && name == \"Supplies\"",
+      "query": "select b: section.blocks collect { type, d: depth } from nodes where kind == \"md:section\" && name == \"Supplies\"",
       "expect": {
         "hits": [
           {
@@ -471,7 +470,7 @@
         "cursor": null,
         "consumer": "collect"
       },
-      "notes": "§1.2: `section.blocks` keeps the blocks whose top-level ancestor is in range, in document order (nested items follow their list; their $depth is 1 under the list's 0 — the block column, reachable since oqx 0.13)."
+      "notes": "§1.2: `section.blocks` keeps the blocks whose top-level ancestor is in range, in document order (nested items follow their list; their `depth` is 1 under the list's 0 — the block column, a plain field since 3.0)."
     },
     {
       "name": "section-subsections",
@@ -728,6 +727,38 @@
         ],
         "truncated": true,
         "cursor": "WyIvbGFiLzIwMjYtMDEtbm90ZXMubWQiLCJuXzAyOTE4Mzk3NjA5NiJd",
+        "consumer": "collect"
+      }
+    },
+    {
+      "name": "reach-through-identity-is-the-foreign-key",
+      "notes": "§1 foreign-key elimination (3.0): `block.$id`, `block.$path` and `block.doc_id` on a node are the node's own block_id / path / doc_id — no block lookup; `block.type` still reaches the block.",
+      "query": "select a: block.$id, b: block_id, c: block.$path, d: block.doc_id, e: doc_id, t: block.type from nodes where kind == \"md:task\" && $path == \"substances/salt.md\"",
+      "expect": {
+        "hits": [
+          {
+            "$id": "n_0ddcacdef653",
+            "$path": "/substances/salt.md",
+            "a": "b_279",
+            "b": "b_279",
+            "c": "/substances/salt.md",
+            "d": "d_14",
+            "e": "d_14",
+            "t": "task"
+          },
+          {
+            "$id": "n_6d35d6b1d52b",
+            "$path": "/substances/salt.md",
+            "a": "b_280",
+            "b": "b_280",
+            "c": "/substances/salt.md",
+            "d": "d_14",
+            "e": "d_14",
+            "t": "task"
+          }
+        ],
+        "truncated": false,
+        "cursor": null,
         "consumer": "collect"
       }
     }

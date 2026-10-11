@@ -29,7 +29,7 @@ describe("textSearch — FTS5", () => {
   it("matches across documents and reports the path", () => {
     const repoId = setup();
     const { hits } = textSearch(store!, repoId, "WAL");
-    expect(hits[0]!.path).toBe("b.md");
+    expect(hits[0]!.$path).toBe("b.md");
   });
 
   it("supports FTS phrase queries", () => {

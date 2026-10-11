@@ -44,8 +44,10 @@
       "name": "reserved-basename-body",
       "query": "from docs where body",
       "expect": {
-        "error": "filter_invalid",
-        "message_includes": "did you mean the intrinsic $body"
+        "hits": [],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "collect"
       }
     },
     {

@@ -24,15 +24,18 @@ export type PlanDisposition =
   | "split_from" | "merged_into" | "copied_from" | "resurrected" | "bulk_rewrite"
   | "retiled";
 
-/** State the opset was planned against; applying against different state fails. */
+/** State the opset was planned against; applying against different state
+ *  fails. The document is named by its row attributes (spec/surface §1.2,
+ *  3.0): `$id`, `$path`, and `$hash` — its current hash at plan time;
+ *  `baseRevision` names a role and keeps its name. */
 export interface OpsetPrecondition {
   /** doc id the plan targets */
-  doc: string;
-  path: string;
+  $id: string;
+  $path: string;
   /** the document's current revision id at plan time (null for a doc with no committed revision yet) */
   baseRevision: string | null;
-  /** sha256 hex of the document's current rendered bytes (docs.file_hash) at plan time */
-  baseContentHash: string;
+  /** sha256 hex of the document's current rendered bytes (docs.file_hash) at plan time — its `$hash` */
+  $hash: string;
 }
 
 /** One kernel op plus the identity consequence the planner attributes to it. */
@@ -69,7 +72,7 @@ export interface OpsetSummary {
 export interface Opset {
   version: 1;
   kind: OpsetKind;
-  target: { doc: string; path: string };
+  target: { $id: string; $path: string };
   precondition: OpsetPrecondition;
   /** matcher version that produced the identity decisions (reproducibility) */
   matcherV: string;

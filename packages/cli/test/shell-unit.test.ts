@@ -62,16 +62,26 @@ describe("deriveRows", () => {
     const rows = deriveRows({ results: [{ ids: ["b_9", "b_10"] }], revisions: [{}] });
     expect(rows?.map((r) => r.ref)).toEqual(["b_9", "b_10"]);
   });
-  it("derives far nodes from links (out+in)", () => {
-    const rows = deriveRows({ out: [{ node: "d_1", predicate: "references" }], in: [{ node: "d_2" }] });
+  it("derives far nodes from links (out+in): `doc_id` (3.0), `node` from a 2.x server", () => {
+    const rows = deriveRows({ out: [{ predicate: "references", doc_id: "d_1" }], in: [{ doc_id: "d_2" }] });
     expect(rows?.map((r) => r.ref)).toEqual(["d_1", "d_2"]);
+    const legacy = deriveRows({ out: [{ node: "d_1", predicate: "references" }], in: [{ node: "d_2" }] });
+    expect(legacy?.map((r) => r.ref)).toEqual(["d_1", "d_2"]);
+  });
+  it("a 3.0 row's `$id` is the ref and `$path` the label (ls rows, hits, docs_read)", () => {
+    const rows = deriveRows([{ $id: "d_1", $path: "/a.md", $updated_at: null, blocks: 3 }]);
+    expect(rows?.[0]).toMatchObject({ ref: "d_1", label: "/a.md" });
+    expect(coerce({ $id: "d_1", $path: "/a.md", rev: "r_1" })).toBe("d_1");
+    // an edge row (links --blocks, dangling): the far doc leads, the block is next
+    expect(coerce({ doc_id: "d_2", block_id: "b_7", predicate: "references" })).toBe("d_2");
+    expect(coerce({ block_id: "b_7", target: "/x.md" })).toBe("b_7");
   });
   it("returns null for a card / scalar / string (frame stays intact)", () => {
     expect(deriveRows({ kind: "document", id: "d_1", path: "a.md" })).toBeNull();
     expect(deriveRows("some bytes")).toBeNull();
     expect(deriveRows(42)).toBeNull();
   });
-  it("uses path as the ref when there is no id (ls docs)", () => {
+  it("uses path as the ref when there is no id (a 2.x server's ls docs)", () => {
     const rows = deriveRows([{ path: "a.md", blocks: 3 }]);
     expect(rows?.[0]).toMatchObject({ ref: "a.md", label: "a.md" });
   });

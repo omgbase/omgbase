@@ -79,7 +79,7 @@ pub use source::{
 pub use workspace::{RepoRow, RepoSelection, Workspace, select_repo};
 
 /// The `spec/sync/VERSION` this crate implements (`major.minor`).
-pub const SPEC_VERSION: &str = "1.3";
+pub const SPEC_VERSION: &str = "2.0";
 
 /// This crate's own version (`Cargo.toml`), for the surface's `version` tool.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

@@ -14,13 +14,15 @@ import { extractFromBlock, maskCode, resolveRelativePath } from "./extract.js";
 // other destination is root-relative, one leading `/` is stripped. A link
 // "resolves to" a doc path when that canonical form equals the doc's path.
 
+// An inbound link is an edge row under the `edges` target's names (spec/surface
+// §1.2, 3.0): `doc_id`/`block_id` the source, `field` the authoring key.
 export interface InboundLink {
   /** source document id */
-  doc: string;
-  /** source document repo-relative path */
+  doc_id: string;
+  /** source document repo-relative path (the surface roots it as `$path`) */
   path: string;
   /** source block id; null for a frontmatter-level edge */
-  block: string | null;
+  block_id: string | null;
   /** the link's destination path as written (e.g. "/old.md", "../old.md", "old.md") */
   target: string;
   /** #heading / ^ref fragment, if any */
@@ -49,7 +51,7 @@ function resolvesTo(dest: string, srcDir: string, docPath: string): boolean {
  * re-scanned from the block raw so `target`/`anchor` are as written (and so a
  * self-doc pure-fragment link `#H`, which also has dst_node == docId, is NOT
  * reported — it does not depend on the path). Frontmatter edges are reported
- * with `block: null`, `target: docPath`, and their `field`.
+ * with `block_id: null`, `target: docPath`, and their `field`.
  */
 export function inboundLinksTo(store: Store, repoId: string, docId: string, docPath: string): InboundLink[] {
   const rows = store.db
@@ -65,7 +67,7 @@ export function inboundLinksTo(store: Store, repoId: string, docId: string, docP
   const seenBlocks = new Set<string>();
   for (const r of rows) {
     if (r.srcBlock === null) {
-      out.push({ doc: r.srcDoc, path: r.srcPath, block: null, target: docPath, anchor: null, ...(r.srcField ? { field: r.srcField } : {}) });
+      out.push({ doc_id: r.srcDoc, path: r.srcPath, block_id: null, target: docPath, anchor: null, ...(r.srcField ? { field: r.srcField } : {}) });
       continue;
     }
     if (seenBlocks.has(r.srcBlock)) continue;
@@ -78,9 +80,9 @@ export function inboundLinksTo(store: Store, repoId: string, docId: string, docP
     for (const e of extractFromBlock(r.srcBlock, blk.type, blk.bytes.toString("utf8"))) {
       if (e.dstKind === "external" || !resolvesTo(e.target, srcDir, docPath)) continue;
       out.push({
-        doc: r.srcDoc,
+        doc_id: r.srcDoc,
         path: r.srcPath,
-        block: r.srcBlock,
+        block_id: r.srcBlock,
         target: e.target,
         anchor: e.anchor,
         ...(e.srcField ? { field: e.srcField } : {}),

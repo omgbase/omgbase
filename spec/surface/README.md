@@ -45,8 +45,8 @@ filesystem adapters, every store/sync spec — uses git's repo-relative form
 (`projects/oqx.md`); a reference an author writes — a Markdown link, a
 wikilink, a frontmatter relation — is root-absolute (`/projects/oqx.md`, the
 graph layer resolves it). **The surface speaks the reference form**: every
-path a query, a tool or the CLI RETURNS is `/`-rooted — `$path` and
-`$dst_path` on every target, the `path` of every hit and of a row rendered as
+path a query, a tool or the CLI RETURNS is `/`-rooted — `$path` on every
+target and `dst_path` on edges, the `$path` of every hit and of a row rendered as
 a value (§1.4), `docs_list`/`docs_tree` rows and the tree's `prefix` (`/` for
 the root), `docs_read`/`docs_read_at`/`docs_get_many`/`read_ref`, every
 history, link-health, search, document-operation, `apply`, `observe` and
@@ -55,7 +55,7 @@ history, link-health, search, document-operation, `apply`, `observe` and
 missing leading `/` is added, an extra one is stripped (`docs_read` of
 `/a.md`, `a.md` or `//a.md` is one document; a `path_glob`, a `docs_tree`
 prefix, `roots`, `docs[]`, `refs(x)`, `within(…)` likewise). In a query, a
-**string literal** compared with `$path`/`$dst_path` by `==` or `!=`, or
+**string literal** compared with `$path`/`dst_path` by `==` or `!=`, or
 passed to their `.startsWith(…)`, is rooted before evaluation, so `$path ==
 "a.md"` and `$path == "/a.md"` both match and `$path.startsWith("dir/")`
 keeps working; nothing else is rewritten — a property's value is the
@@ -76,13 +76,13 @@ block's equality probe over a root scan** from the store's indexes
 `omgbase-surface::store_index`): a root (`^<target>` from a row, a bare target
 at the root scope) is handed to the engine lazily and a block whose top-level
 conjunct is `local == outer` — `^docs collect { where customer == ^$path
-}`, `^edges exists { where $dst == ^$id }`, `^docs single { where
+}`, `^edges exists { where dst_id == ^$id }`, `^docs single { where
 type == "x" }` — is served by one indexed statement per probe (docs `$id`,
-`$path`, `$title`, any property key by typed value; blocks `$id`, `$doc`,
-`type`, `$path`; nodes `$id`, `$doc_id`, `kind`, `name`, `$path`; edges
-`$id`, `$src`, `$dst`, `$path`, `$dst_path`) under the root scan's guards and
+`$path`, `$title`, any property key by typed value; blocks `$id`, `doc_id`,
+`type`, `$path`; nodes `$id`, `doc_id`, `kind`, `name`, `$path`; edges
+`$id`, `doc_id`, `dst_id`, `$path`, `dst_path`) under the root scan's guards and
 order, so the root is never read whole; an absent probe or an unindexed path
-reads it once. A `$path`/`$dst_path` probe de-roots a rooted value before the
+reads it once. A `$path`/`dst_path` probe de-roots a rooted value before the
 statement and answers no row for a bare one (the intrinsic is the reference
 form, 2.0), as the translator renders the column `'/' || d.path` and takes
 the indexed `d.path IS ?` fast path only for a rooted constant. Results are unchanged — the §6 fixtures and the conformance
@@ -93,7 +93,7 @@ lists are the gate — only the work is. Invisibility is kept by
 - a comparison whose operand kinds are not **provably comparable the same
   way** in SQLite and in memory. Operand kinds: *text* (a string literal or
   binding, a text column or intrinsic, `lower()`/`upper()` output), *int*
-  (an integer intrinsic: `$ordinal`, `$depth`), *num*, *bool* and *null*
+  (an integer column: a block's `ordinal`, `depth`), *num*, *bool* and *null*
   (literals or bindings; an absent binding is null), *json* (an `attrs`
   path or a bare attribute name on blocks or nodes), *prop* (a document
   property or `doc.<k>`). **Equality** (`==`, `!=`) pushes only when one
@@ -126,10 +126,21 @@ lists are the gate — only the work is. Invisibility is kept by
   error the pushed conjuncts might hide by emptying the scan: a residual
   that contains any function or method call, a nested block with the
   `single` consumer, a `^`-escaped name, or (on `docs`) a bare reserved
-  basename (`id`, `path`, `updated_at`, `content_hash`, `body`) sends the
+  basename (`id`, `path`, `updated_at`, `hash`, `raw`) sends the
   query to the in-memory engine unplanned. Only a residual made of
   comparisons, logical operators, `in`, `!`, literals, bindings and plain
   reads keeps the pushed conjuncts.
+
+**Foreign-key elimination (3.0).** A reach-through read that names the
+owner's identity — `doc.$id` and `doc.$path` on a block, a node or an edge,
+`block.$id` / `block.$path` on a node — is answered from the row's own
+foreign-key column or the scan's already-joined document column, never by
+loading the owner: in SQL `doc.$id` on blocks is `b.doc_id` (nodes `n.doc_id`,
+edges `e.src_doc`), `doc.$path` is the joined `d.path` the scan carries, and
+`block.$id` on nodes is `n.block_id`; in memory the reach-through hands out a
+lazy owner row whose `$id`/`$path` come from the child row, so `doc.$id` and
+`doc_id` cost the same statement (none) and plan to the same SQL. Any other
+read through the owner (`doc.layer`, `block.text`) still reaches it.
 
 The differential (every corpus-backed query case run planned and in-memory)
 proves each decline: `query-errors::planned-*` and the `planned-*` cases of
@@ -204,11 +215,54 @@ relation returns rows of its successor target; a scalar reach-through
 
 ### 1.2 Fields, intrinsics, reach-through, relations
 
+**Why `$` (3.0, normative).** A `$`-prefixed name is a name the engine adds
+to a namespace it SHARES with user-generated content — a document's
+frontmatter keys and inline properties, a block's or node's `attrs` keys —
+prefixed so that the author's field names keep priority and the two can
+never collide: a frontmatter `id:` or `path:` is read by its bare name, the
+engine's identity by `$id`/`$path`. That is the whole reason the sigil
+exists, and it bounds the vocabulary: `$` marks exactly the engine-provided
+names that contend with user names, and nothing else the engine adds carries
+it. **Every row names its own identity `$id` and its location `$path`**;
+docs and blocks add `$raw` (the exact source bytes) and `$hash` (their
+SHA-256) and `$updated_at`; docs add the two computed properties `$title`
+and `$tags` (`spec/properties` §3.3, which writes them under those keys).
+**That is the whole `$` vocabulary.** Everything else the engine provides
+is a plain snake_case field: a foreign key is named for what it is
+(`doc_id`, `block_id`, `via_id`, `dst_id`, `dst_path`, `uri`), a column is
+its column (`type`, `text`, `depth`, `ordinal`, `kind`, `predicate`,
+`field`). One corollary is **same value, same name**: wherever a result key
+carries exactly what a row attribute yields, it is spelled as that attribute
+— a tool's `$id`/`$path`/`$hash`/`$updated_at`/`$raw` are the row's, and a
+key naming a *role* in the result (`rev`, `from`/`to`, `before`/`after`,
+`locator`, `cursor`, `expected_content_hash`, `baseRevision`) keeps its own
+name (§2–§4). Inputs — `doc`, `path`, `block`, `id`, `expect.content_hash` —
+are locators and arguments, not row attributes, and are unchanged.
+
+| kind | `$` names | plain fields |
+| --- | --- | --- |
+| docs | `$id` `$path` `$raw` `$hash` `$updated_at` `$title` `$tags` | properties; the `frontmatter` / `inline` handles; `format` |
+| blocks | `$id` `$path` `$raw` `$hash` `$updated_at` | `doc_id` `type` `text` `attrs` `depth` `ordinal` |
+| nodes | `$id` `$path` | `doc_id` `block_id` `kind` `name` `value` `attrs` |
+| edges | `$id` `$path` | `doc_id` `block_id` `via_id` `dst_id` `dst_path` `uri` `field` `dst_kind` `predicate` `provenance` `anchor` |
+| root | `$id` | (the four collections, §1.1) |
+
+`$raw` is the exact source bytes of the thing and `$hash` is their SHA-256
+as 64 lowercase hex: a document's `$raw` is the reconstructed file
+(`spec/store` §6.1, frontmatter included) and its `$hash` the `file_hash`
+(null when none); a block's `$raw` is its raw source — the `blobs` row its
+`raw_hash` names, a container's raw holding its children verbatim
+(`spec/format`) — and its `$hash` the hex `raw_hash`. `text` (the
+normalized text) is a plain field of blocks; there is no `$body` and no
+`$content`. `$path` on every kind is the path of the document the row lives
+in (blocks and nodes: the owner; edges: the source document), the reference
+form (§1 Paths).
+
 **docs.** Intrinsics: `$id` (doc id), `$path` (the reference form, `/a/b.md`
-— §1 Paths), `$content_hash` (hex of
-`file_hash`, null when none), `$updated_at` (the current revision's commit
-`ts`, null when none), `$body` (the reconstructed file, `spec/store` §6.1),
-`$title`/`$tags` (the computed properties, null when absent). `format` is
+— §1 Paths), `$hash` (hex of `file_hash`, null when none), `$updated_at`
+(the current revision's commit `ts`, null when none), `$raw` (the
+reconstructed file, `spec/store` §6.1), `$title`/`$tags` (the computed
+properties, null when absent). `format` is
 the format column. `frontmatter` / `inline` are **source handles**:
 `frontmatter.<k>` reads the key from that source only; `entries(frontmatter)`
 yields one entry per **top-level** key in `key` order (bytewise), dotted
@@ -218,8 +272,11 @@ the rows of that key across authored sources (frontmatter + inline, `ord`
 order) — exactly one row with `card = scalar` → the decoded scalar;
 otherwise the array of decoded values; no row → the nested object rebuilt
 from keys under `<k>.` (undefined when none). A bare `id`, `path`,
-`updated_at`, `content_hash` or `body` is a **loud error** (`filter_invalid`:
-"did you mean the intrinsic") — use `frontmatter.<k>` to force the property.
+`updated_at`, `hash` or `raw` is a **loud error** (`filter_invalid`: "did
+you mean the intrinsic `$x`?") — the bare spelling of a `$` name almost
+always means the intrinsic, and a silent read of an absent frontmatter key
+would hide the mistake; use `frontmatter.<k>` to force the property
+(`title`, `tags`, `content` and every other name are ordinary properties).
 `doc` is the row itself. Relations: `nodes` (the doc's nodes in **document
 order**: block-less nodes first, then by the owning block's pre-order rank,
 then `span_start`, then `node_id` — §9), `blocks` (live, **document order**:
@@ -227,39 +284,47 @@ pre-order over the tree — §9), `out` / `in` (distinct docs linked to / linkin
 `(path, doc_id)` order), `out_edges` / `in_edges` (open edges, `(predicate,
 edge_id)` order).
 
-**blocks.** Intrinsics: `$id`, `$doc`, `$path` (owning doc's path),
-`$ordinal` (the block's 0-based ordinal among its siblings — the `ordinal`
-column), `$depth` (its nesting depth, 0 at the top level — the `depth`
-column), `$body` (= `text`), `$content_hash` (hex `raw_hash`), `$updated_at`
-(the latest commit `ts` among the block's `block_changes`, null when none).
-Inside a `follow` the walk's own `$ordinal`/`$depth` win over the block's
-(`spec/oqx` 0.14 §2: the recursion intrinsics are metadata only on a walk
-occurrence; anywhere else the names are ordinary reads of the row, §9).
-Fields: `type`, `text`, `attrs` (parsed); any other bare
-identifier reads `attrs.<k>` (undefined when absent). `block` is the row;
-`doc` the owning doc. Relations: `children` (live, `(ordinal, block_id)`),
-`nodes` (nodes anchored to the block, `(span_start, node_id)` order),
-`out_edges` (open
-edges from the block, `(predicate, edge_id)`), `section` (the `md:section`
-nodes whose `[first_ordinal, last_ordinal]` contains the block's **top-level
-ancestor's ordinal**, by `(first_ordinal, node_id)`).
+**blocks.** Intrinsics: `$id`, `$path` (owning doc's path), `$raw` (the
+block's raw source bytes), `$hash` (hex `raw_hash`), `$updated_at` (the
+latest commit `ts` among the block's `block_changes`, null when none).
+Fields: `doc_id` (the owning document's id), `type`, `text`, `attrs`
+(parsed), `ordinal` (the block's 0-based ordinal among its siblings — the
+`ordinal` column), `depth` (its nesting depth, 0 at the top level — the
+`depth` column); any other bare identifier reads `attrs.<k>` (undefined when
+absent; the structural fields win on collision). The recursion intrinsics of
+a `follow` (`spec/oqx` §2: `$depth`, `$ordinal`, `$stop`, …) are metadata of
+a walk occurrence only and never name a block column — inside a `follow`
+`$depth` is always the walk's, and a block's own nesting is `depth`
+everywhere (before 3.0 the two shared a name and the walk's shadowed the
+block's, §9). `block` is the row; `doc` the owning doc. Relations:
+`children` (live, `(ordinal, block_id)`), `nodes` (nodes anchored to the
+block, `(span_start, node_id)` order), `out_edges` (open edges from the
+block, `(predicate, edge_id)`), `section` (the `md:section` nodes whose
+`[first_ordinal, last_ordinal]` contains the block's **top-level ancestor's
+ordinal**, by `(first_ordinal, node_id)`).
 
-**nodes.** Intrinsics: `$id` = `$node_id`, `$doc_id`, `$block_id`, `$path`.
-Fields: `kind`, `name`, `value`, `attrs`; other bare identifiers read
-`attrs.<k>`. `section` is the row; `doc` and `block` reach through (`block`
-undefined when the node has none). Section relations (a node read as a
-section; empty when it has no `first_ordinal`): `blocks` (live blocks whose
-top-level ancestor's ordinal lies in the range, in document order),
-`subsections` (`md:section` nodes contained in the range with a greater
-`level`, by `(first_ordinal, node_id)`), `children` (contained deeper
-sections with **no** intervening section of a level strictly between, same
-order).
+**nodes.** Intrinsics: `$id` (the node id), `$path`. Fields: `doc_id`,
+`block_id` (null for a block-less node), `kind`, `name`, `value`, `attrs`;
+other bare identifiers read `attrs.<k>`. `section` is the row; `doc` and
+`block` reach through (`block` undefined when the node has none). Section
+relations (a node read as a section; empty when it has no `first_ordinal`):
+`blocks` (live blocks whose top-level ancestor's ordinal lies in the range,
+in document order), `subsections` (`md:section` nodes contained in the range
+with a greater `level`, by `(first_ordinal, node_id)`), `children`
+(contained deeper sections with **no** intervening section of a level
+strictly between, same order).
 
-**edges.** Intrinsics: `$id`, `$src`, `$dst`, `$src_block`, `$via`,
-`$from_commit`, `$path` (the source doc's path), `$dst_path` (the target
-doc's path, null when not a doc; both the reference form), `$dst_uri` (the
-external node's URI, null otherwise). Fields: `predicate`, `provenance`, `dst_kind`, `anchor`,
-`src_field`. `doc` reaches the source doc. No relations.
+**edges.** Intrinsics: `$id`, `$path` (the source doc's path). Fields:
+`doc_id` (the source document), `block_id` (the source block, null for a
+frontmatter edge), `via_id` (the `via_node`, null unless the edge was
+derived through another node), `dst_id` (the destination node id: a doc id,
+an external node id or `phantom:<path>`), `dst_path` (the target doc's path,
+null when not a doc; the reference form), `uri` (the external node's URI,
+null otherwise), `predicate`, `provenance`, `dst_kind`, `anchor`, `field`
+(the frontmatter key or inline field the edge was authored in, null for a
+link). `doc` reaches the source doc. No relations. The creating commit
+(`from_commit`) is not a field: a query sees open edges only and the commit
+is history (`history_node`, `changes_since`), §9.
 
 ### 1.3 Functions
 
@@ -373,13 +438,18 @@ cursor, consumer, count?, exists?, none?, values? }`:
   envelope and a row-as-value spell identity the same way
   (`query-docs::rows-as-values-are-id-path-refs`). Hits are otherwise
   unaffected: `{ $id, $path, ...projection }` as above.
-- **Only query hits.** The `$id`/`$path` envelope is the `query` tool's (and
-  the `omg query`/`run` verbs'). Every other tool's result is a tool
-  envelope, not a hit, and keeps its field names: `docs_list` items
-  `{ path }`, `docs_read.path`, `graph` `documents[].id`/`.path`,
-  `text_search` hits, `resolve` `{ id, locator }`, `changes_since`,
-  `nodes_get.id`, … (`reads::hit-envelope-round-trip` closes with a
-  `docs_list` and a `nodes_get` for the contrast).
+- **One notation everywhere (3.0).** The envelope is not only the `query`
+  tool's: every tool result that renders a document, block, node or edge row
+  names it the same way — `$id`, `$path`, and where the result carries the
+  row's bytes or hash `$raw`/`$hash`, its time `$updated_at` (§1.2 "same
+  value, same name"; §2–§4 list every shape). `docs_list` items are
+  `{ $id, $path, $updated_at, blocks }`, `docs_read` is `{ $id, $path, rev,
+  properties, $raw, … }`, `graph` documents `{ $id, $path, degree, … }`,
+  `text_search` hits `{ $id, doc_id, $path, … }`, `resolve` `{ $id, locator,
+  … }`, a `changes_since` or `apply` revision `{ $id, $path, $hash }`,
+  `nodes_get` `{ $id, type, … }` (`reads::hit-envelope-round-trip` closes
+  with a `docs_list` and a `nodes_get` showing the shared spelling). Before
+  3.0 each tool had its own (`path`, `docId`, `blockId`, `contentHash`, …).
 - Errors: an OQX error is `filter_invalid` with the engine's message; a
   malformed cursor is `filter_invalid` naming the surface.
 
@@ -398,23 +468,28 @@ The generic decoder (`cursor.json`) is unchanged.
 - **`resolve_ref(ref)`**: an `n_` + 12 hex node id → its block when the block
   is live, else its doc; a `b_` id → its live block; a `d_` id → the live doc;
   anything else → the live doc at that path; null when nothing matches.
-- **`docs_read(doc, include_ids?)`**: `{ path (reference form), doc_id, rev,
-  properties (grouped, spec/properties §5), content (spec/store §6.1) }` + with ids
-  `ids` (pre-order), `hashes` (id → hex `raw_hash`), `parents` (id → parent
-  id or null). `docs_read_many(refs, include_ids?, budget_tokens?)`:
+- **`docs_read(doc, include_ids?)`**: `{ $id, $path (reference form), rev,
+  properties (grouped, spec/properties §5), $raw (spec/store §6.1 — the
+  document's `$raw`, §1.2) }` + with ids `ids` (pre-order), `hashes` (a map
+  block `$id` → block `$hash`), `parents` (block `$id` → parent `$id` or
+  null); the two maps keep their id-keyed shape, since a key cannot be a `$`
+  name. `docs_read_many(refs, include_ids?, budget_tokens?)`:
   first-seen dedup, cap 100 (`truncated`), a miss → `errors: [{ ref, error:
   "doc_not_found" }]`, the budget (`ceil(JSON length / 4)` per item) stops
   early with `truncated` — but **at least one item is always returned**
   (1.2, the uniform list contract of `docs_list`/`docs_tree`: the budget
   is checked before the second item onward; a first item that alone exceeds
-  it is still emitted and the batch is `truncated` if more remained). `docs_read_at(doc, rev)`: `spec/store` §6.2 plus
-  `properties` (current) and `properties_are_current: true`.
+  it is still emitted and the batch is `truncated` if more remained). `docs_read_at(doc, rev)`: `spec/store` §6.2 as
+  `{ $id, $path (the path as of that revision), rev, $raw, renderedHashMatch,
+  properties (current), propertiesAreCurrent: true }`.
 - **`nodes_get(doc?, id, resolution = full)`**: the block subtree projected
-  at a resolution — `skeleton` `{ id, type, label = heading text or type }`,
-  `outline` `{ id, type, label = first 12 words… }`, `text` `{ id, type,
-  text }`, `raw` `{ id, type, raw, content_hash }`, `full` (`raw`,
-  `content_hash`, `text`, `attrs`, `placement { parent, ordinal, depth }`);
-  `children` recursively. `nodes_get_many(doc?, ids, resolution = text,
+  at a resolution — `skeleton` `{ $id, type, label = heading text or type }`,
+  `outline` `{ $id, type, label = first 12 words… }`, `text` `{ $id, type,
+  text }`, `raw` `{ $id, type, $raw, $hash }`, `full` (`$raw`, `$hash`,
+  `text`, `attrs`, then the placement flattened onto the row: `ordinal`,
+  `depth`, `parent_id` (null at the top level)); `children` recursively. The
+  block's `$raw`/`$hash` are the row attributes of §1.2 (`$hash` is the value
+  an `update`/`split` op expects as `expect.content_hash`). `nodes_get_many(doc?, ids, resolution = text,
   budget_tokens?)`: cap 100, request order, no children, `unresolved` for
   ids naming no live block (or one outside the scoping doc), `truncated`
   on the cap or the budget; at least one resolved node is always returned
@@ -428,33 +503,37 @@ The generic decoder (`cursor.json`) is unchanged.
   limits nesting; the budget (`ceil(line length / 4)`) truncates.
 - **`docs_list(path_glob?, limit = 200, cursor?, budget_tokens?)`**: live
   docs by path, `path LIKE glob` (`*` → `%`, `%`/`_`/`\` escaped; the glob
-  in either form), rows `{ path (reference form), blocks (live count), ts
-  (current revision's commit ts or null) }`, fetched `limit + 1`, keyset
-  cursor `[path]`, budget as above (at least one row). **`docs_tree(path?,
-  depth = 1, …)`**: the prefix normalized (either form accepted; reported
-  rooted — `/` for the repo root, else `/<dir>/`); every live doc under it
-  collapsed at `depth` segments into `dir` entries (a rooted `path` ending
-  `/`, summed `docs` and `blocks`, max `ts`) or `doc` entries; `total` over
+  in either form), rows `{ $id, $path (reference form), $updated_at (the
+  current revision's commit ts or null), blocks (live count) }`, fetched
+  `limit + 1`, keyset cursor `[path]` (values, so unchanged by the 3.0 key
+  names), budget as above (at least one row). **`docs_tree(path?, depth = 1,
+  …)`**: the prefix normalized (either form accepted; reported rooted — `/`
+  for the repo root, else `/<dir>/`); every live doc under it collapsed at
+  `depth` segments into `dir` entries (`{ $path (rooted, ending `/`), kind:
+  "dir", docs, blocks, $updated_at (the max under it) }`) or `doc` entries
+  (`{ $id, $path, kind: "doc", docs: 1, blocks, $updated_at }`); `total` over
   everything under the prefix; ordered by path and paged the same way.
 
 ## 3. History
 
-Result keys in §2–§4 are written in the reference's **camelCase** on the
-wire (`docId`, `contentHash`, `isCurrent`, `hasSource`, `blockId`,
-`renderedHashMatch`, `propertiesAreCurrent`, …); the fixtures pin the wire
-verbatim, and this prose uses snake_case only as a naming convention.
+Result keys in §2–§4 are written as they appear on the wire: a row attribute
+is its `$` name (`$id`, `$path`, `$hash`, `$updated_at`, `$raw`, §1.2), a
+foreign key its snake_case name (`doc_id`, `parent_id`), and the remaining
+role keys keep the reference's **camelCase** (`isCurrent`, `hasSource`,
+`currentRev`, `renderedHashMatch`, `propertiesAreCurrent`, `commitId`,
+`baseRevision`, …); the fixtures pin the wire verbatim.
 
 - **`history_node(id, limit = 100)`**: the block's `block_changes` joined to
   commits and dispositions, newest first: `{ commitId, seq, ts, origin,
-  kind, confidence, reason }`.
+  kind, confidence, reason }` (a change record, not a row: unchanged in 3.0).
 - **`diff(doc, from_rev, to_rev)`**: both revisions must belong to the doc,
   else `target_missing` (§9: the reference treated an unknown revision as
   empty and reported every block removed); block-grain — the id → raw maps
   of both revisions' Merkle trees (all depths); entries `removed` (in from
-  only), `changed` (raw differs), `added` (in to only), in that order,
-  `before`/`after` as applicable. **`diff_unified(doc, from_rev?, to_rev?)`**:
+  only), `changed` (raw differs), `added` (in to only), in that order, each
+  `{ kind, $id (the block), before?, after? }`. **`diff_unified(doc, from_rev?, to_rev?)`**:
   defaults to the previous and current revisions (`target_missing` when
-  none); `{ doc, path, from, to, diff }` where `diff` is a **unified diff** of the
+  none); `{ $id, $path, from, to, diff }` where `diff` is a **unified diff** of the
   two revisions' **reconstructed file texts** — for each revision exactly the
   bytes `docs_read_at` returns (§2: leading trivia, frontmatter, the top-level
   raws with their trivia in order; a container's raw already holds its
@@ -474,13 +553,16 @@ verbatim, and this prose uses snake_case only as a naming convention.
   joined by `\n`, no file header; identical texts yield `""`. Lines are
   compared as exact strings.
 - **`changes_since`**: `spec/sync` §6 (the digest shape and paging;
-  `summary` unpinned) — every path in a digest, the `summary`'s subject
-  included, in the reference form (2.0).
+  `summary` unpinned) — each digest's `revisions` are `[{ $id, $path, $hash
+  }]` (the document, its path as of the commit, the revision's rendered
+  hash — the same three keys an `apply` revision carries, §4), every path in
+  a digest, the `summary`'s subject included, in the reference form (2.0).
 - **`docs_history(path_glob | doc, include_deleted?, limit = 50)`**: docs by
   path (glob as `docs_list`; a glob without `*` is an exact path), live only
-  unless `include_deleted`, `limit + 1` for `truncated`; each `{ doc_id,
-  path (reference form), deleted, current_rev, versions: [{ rev, seq, commit,
-  ts, origin, actor, content_hash, is_current }] }` oldest first.
+  unless `include_deleted`, `limit + 1` for `truncated`; each `{ $id, $path
+  (reference form), deleted, currentRev, versions: [{ rev, seq, commit,
+  $updated_at (the commit's ts), origin, actor, $hash (the rendered hash),
+  isCurrent }] }` oldest first.
 
 ## 4. The MCP tool catalog
 
@@ -518,12 +600,12 @@ within `doc`/`path`; zero → `parent_missing`, several →
 | `docs_tree` / `docs_list` | §2 args | §2 |
 | `query_syntax` | — | `{ syntax }` (reference text, unpinned) |
 | `query` | `query`, `limit?`, `cursor?` | §1.4; `semantic(...)` with no provider → `semantic_unavailable` |
-| `graph` | `roots[]`, `degrees? = 1`, `direction? = both`, `predicate?`, `select?[]`, `max_documents? = 200` | `{ documents: [{ id, path, degree, frontier, ...select }], edges: [{ id, src, dst, dst_path, dst_uri, predicate, provenance, dst_kind, anchor, src_field }], frontier, truncated, queries, degrees }` — compiled to `follow doc.out`/`doc.in` with `depth = degrees + 1` (≤ 8, so `degrees` clamps to 7 and the result reports the clamped value), roots depth 0; documents ordered bytewise by path (§9); a `$path` projection collapses onto the existing `path` key — `graph`'s envelope is a tool result, not a hit, and keeps `id`/`path` (3.0: the macro reads its walk's hits by `$id`/`$path` and re-shapes them) |
-| `text_search` | `q`, `limit?` | `spec/search` §1.3, hit `path` in the reference form |
-| `resolve` | `query`, `limit?` | `spec/search` §4 (vector fused when a provider exists), the `locator`'s path half in the reference form (`/a.md#paragraph[2]`) |
-| `apply` | `ops[]`, `reason?`, `dry_run?` | `spec/mutate` §4, `origin.actor = "agent:mcp"`; `revisions[].path` and the `diffs` keys in the reference form |
+| `graph` | `roots[]`, `degrees? = 1`, `direction? = both`, `predicate?`, `select?[]`, `max_documents? = 200` | `{ roots, degrees, direction, documents: [{ $id, $path, degree, frontier, ...select }], edges: [{ $id, doc_id, block_id, via_id, dst_id, dst_path, uri, dst_kind, predicate, provenance, anchor, field }], frontier: [{ $id, $path, degree }], truncated, queries }` — compiled to `follow doc.out`/`doc.in` with `depth = degrees + 1` (≤ 8, so `degrees` clamps to 7 and the result reports the clamped value), roots depth 0; documents ordered bytewise by path (§9); an edge row carries the `edges` target's fields under their own names (§1.2, 3.0 — before, a rename table spelled `src`/`dst`/`dst_uri`/`src_field`); a `$`-named selection (`select: ["$path"]`) keeps its `$` and collapses onto the envelope key exactly as a `query` hit's does, a bare alias is an ordinary column |
+| `text_search` | `q`, `limit?` | `spec/search` §1.3: `{ hits: [{ $id (the block), doc_id, $path (reference form), type, text, score }], truncated }` |
+| `resolve` | `query`, `limit?` | `spec/search` §4 (vector fused when a provider exists): `[{ $id, locator, preview, evidence }]`, the `locator`'s path half in the reference form (`/a.md#paragraph[2]`) |
+| `apply` | `ops[]`, `reason?`, `dry_run?` | `spec/mutate` §4, `origin.actor = "agent:mcp"`: `{ results, revisions: [{ $id, $path, $hash }], diffs?, committed }` — `revisions[].$path` and the `diffs` keys in the reference form, `$hash` the document's hash after the commit (the rendered bytes' sha256; the same shape as a `changes_since` revision, §3). Every mutating tool below returns this result |
 | `blocks_insert` | `to`, `markdown`, `at? = end`, `expect? { parent_children_hash? }`, `dry_run?` | the apply result; `expect` is the destination-parent CAS of `spec/mutate` §1.2 (1.2) |
-| `blocks_update` | `block`, `markdown?`, `checked?`, `attrs?`, `expect?`, `dry_run?` | `{ id, ids, ...apply result }` (`checked` folds into attrs) |
+| `blocks_update` | `block`, `markdown?`, `checked?`, `attrs?`, `expect?`, `dry_run?` | `{ $id (the target block), ids, ...apply result }` (`checked` folds into attrs) |
 | `blocks_move` | `blocks[]`, `to`, `at?`, `expect? { parent_children_hash? }`, `dry_run?` | a doc ref as `to` must be the blocks' own document, else `target_missing`; `expect` is the destination-parent CAS, checked once (1.2) |
 | `blocks_remove` | `blocks[]`, `dry_run?` | |
 | `blocks_split` | `block`, `at[]` (bytes), `dry_run?` | |
@@ -532,21 +614,29 @@ within `doc`/`path`; zero → `parent_missing`, several →
 | `node_set` | `node`, `prop`, `value`, `dry_run?` | |
 | `sections_append` | `heading`, `markdown`, `doc?`, `path?`, `dry_run?` | |
 | `docs_append` | `doc?`, `path?`, `text` | (no dry run) |
-| `links_retarget` | `from_target`, `to_target`, `path_glob?`, `dry_run? = true` | `{ hits, pairs, applied, ...apply result }` |
-| `links_stale` | `path_glob?`, `limit? = 500`, `summary?` | `spec/graph` §6 shapes; `srcPath`, `target`, `bySource[].srcPath`, `byTarget[].target` in the reference form (`authored` stays as written) |
+| `links_retarget` | `from_target`, `to_target`, `path_glob?`, `dry_run? = true` | `{ hits: [{ $id (the block), $path, oldRaw, newRaw }], pairs, applied, ...apply result }` |
+| `links_stale` | `path_glob?`, `limit? = 500`, `summary?` | `spec/graph` §6: `{ stale: [{ doc_id, $path (the source), block_id (null for a frontmatter edge), predicate, provenance, dst_kind, target, authored, anchor, reason }], truncated, summary?: { total, byTarget: [{ target, count }], bySource: [{ $path, count }] } }` — an edge row's fields under the `edges` target's names (§1.2), `$path`, `target` and `bySource[].$path` in the reference form (`authored` stays as written) |
 | `links_repair` | `repairs[]` or `from_target`+`to_target`, `path_glob?`, `dry_run? = true` | as retarget; neither given → `target_missing` |
-| `docs_create` / `docs_move` / `docs_delete` / `docs_set_meta` | `spec/mutate` §6 args, `dry_run?` (1.3) | its results, every path (`path`, the `diffs` keys, `dangling[].path`; not `dangling[].target`, which is as authored) in the reference form; with `dry_run` nothing commits and the result carries `committed: false` and `diffs` (`{ <path>: { before, after } }` — create `"" → bytes`, delete `bytes → ""`, move two entries, meta before → after; a move — which retargets the inbound links unless `retarget_inbound: false`, `spec/mutate` 1.3 — also previews the rewritten sources and `retargeted`/`dangling`); a dry-run create still mints its `d_` id (`apply`'s rule) |
-| `docs_plan_update` | `doc`, `content` | `{ opset, plan }` (`plan` = the rendered one-line-per-op text; the opset's `target.path` and `precondition.path` in the reference form) |
+| `docs_create` / `docs_move` / `docs_delete` / `docs_set_meta` | `spec/mutate` §6 args, `dry_run?` (1.3) | its results — `{ $id, $path, committed, diffs?, … }`: `docs_move` adds `retargeted` and `dangling: [{ doc_id, $path, block_id, target, anchor, field? }]` (the inbound edges left pointing at the old path, each an edge row under the `edges` target's names), `docs_delete` adds `deleted` — every path (`$path`, the `diffs` keys, `dangling[].$path`; not `dangling[].target`, which is as authored) in the reference form; with `dry_run` nothing commits and the result carries `committed: false` and `diffs` (`{ <path>: { before, after } }` — create `"" → bytes`, delete `bytes → ""`, move two entries, meta before → after; a move — which retargets the inbound links unless `retarget_inbound: false`, `spec/mutate` 1.3 — also previews the rewritten sources and `retargeted`/`dangling`); a dry-run create still mints its `d_` id (`apply`'s rule) |
+| `docs_plan_update` | `doc`, `content` | `{ opset, plan }` (`plan` = the rendered one-line-per-op text; the opset's `target: { $id, $path }` and `precondition: { $id, $path, baseRevision, $hash }` — `spec/mutate` §5 — with both paths in the reference form) |
 | `docs_update` | `doc`, `content`, `reason?`, `dry_run?` | `{ opset, plan, result }` |
-| `observe` / `observe_many` / `observe_delete` | `spec/store` §5 (`path` in either form) | its outcomes (`observe` sweeps the pool), `path` in the reference form |
+| `observe` / `observe_many` / `observe_delete` | `spec/store` §5 (`path` in either form) | its outcomes (`observe` sweeps the pool) as `{ $id, $path, rev, commitId, converged, echo, conflicted, dispositions }` (`observe_many`: one per item, `observe_delete`: `{ $id, $path, deleted }`) — the store's own `{ doc, commit, rev }` outcome of `spec/store` §9 is re-shaped at this boundary, `$path` in the reference form |
 | `history_node` | `id`, `limit?` | §3 (not repo-scoped) |
 | `diff` / `diff_unified` / `docs_read_at` / `docs_history` / `changes_since` | §3 | §3 |
-| `repos_status` / `sync_status` | `repo?` | `spec/sync` §4.4 |
+| `repos_status` / `sync_status` | `repo?` | `spec/sync` §4.4; `repos_status` names the repository `{ $id, slug, … }` (its own identity under the row rule) |
 | `repos` | — | `{ repos: [{ slug, has_source }] }` by slug |
 | `version` | — | (1.4) which engine and which versions: `{ engine: "typescript" \| "rust", version, components: { <package or crate>: <version>, … }, specs: { oqx, format, reconcile, store, properties, graph, search, mutate, sync, surface, cli }, schema, mcp: { protocol, sdk? }, runtime, commit, built }` — `version` is the serving binary's own (the `omgbase` npm package or crate); `components` every omgbase package the binary is built from with its version (the reference: `omgbase`, `@omgbase/core`, `@omgbase/oqx`, `@omgbase/sync`, `@omgbase/fs-adapter`; the port: `omgbase` and each `omgbase-*` crate and `oqx`), keys sorted bytewise; `specs` the `spec/<x>/VERSION` each was built against (a compile-time constant, not a file read); `schema` the open database's `PRAGMA user_version`; `mcp.protocol` the protocol version served, `mcp.sdk` the SDK's version when one is used; `runtime` `node <version>` or `rustc <version>`; `commit` the build's git revision (short, `null` when unknown — a published crate reads `.cargo_vcs_info.json`, the npm package a `build-info.json` written by `pnpm build`), `built` its RFC 3339 build time or `null`. Values are engine- and release-specific, so §6 pins the **shape**: leaves are recorded as their type. No repo scope, no workspace needed beyond the database for `schema` (`null` without one). |
 
 Dry runs never trigger the host's post-mutation hook (the embed drain);
 successful writes do.
+
+**Error data (3.0).** `spec/mutate` §8's data fields follow the same rule
+where they carry a row attribute: `stale_expectation` reports `current: {
+$hash, markdown }` (the block's current hash and raw; `expected_content_hash`
+echoes the caller's argument and keeps its name), `stale_plan` `current: {
+revision, $hash }`; `ambiguous_heading` lists `candidates: [{ $id, doc_id }]`
+(each heading block and its document); `doc_missing`, `target_missing`,
+`op_index`, `block` (the op's locator) are unchanged.
 
 ## 5. The CLI
 
@@ -662,7 +752,7 @@ A case runs in a fresh temporary directory `W`:
    `observe_many` once with every corpus file in bytewise path order (so
    `d_0` is `index.md`, as in the query suites), then each of `writes` in
    order. The seed's outcome is **checked, not recorded**: one outcome per
-   file in order, `docId` `d_<i>`, `echo: false`. Each write's result is
+   file in order, `$id` `d_<i>`, `echo: false`. Each write's result is
    recorded (§7.3), so `expect.writes` holds one outcome per entry of
    `writes`. The writer is then closed (stdin EOF) and the harness waits for
    it to exit.
@@ -724,11 +814,15 @@ both and runs both harnesses.
   shadowed** by the engine's recursion intrinsics outside a `follow` (they
   read undefined). `spec/oqx` 0.13 §2 makes the intrinsic names ordinary
   property reads wherever the scope carries no such metadata, so the block
-  columns are reachable (`query-blocks::intrinsics`,
+  columns are reachable (`query-blocks::intrinsics`, now `intrinsics-and-fields`,
   `query-blocks::root-order-is-path-then-block-id`,
   `query-docs::relation-blocks-in-document-order`,
   `query-nodes::section-blocks-includes-nested`); inside a `follow` the
-  walk's metadata still wins.
+  walk's metadata still won. **Superseded (3.0):** the block columns are the
+  plain fields `ordinal`/`depth` (§1.2) — they never contended with user
+  names, only with the walk's intrinsics — so there is no shadowing rule any
+  more: `$depth` inside a follow is always the walk's, a block's nesting is
+  `depth` everywhere.
 - **Fixed (1.2) — an empty-projection nested `collect { }` yielded the raw
   store row** (store columns, `attrs` as a JSON string, the join column
   `__path`); a port had to reproduce the same keys, blobs came out as a Node
@@ -878,6 +972,52 @@ both and runs both harnesses.
 
 ## Decisions
 
+- 2026-10-11, surface 3.0 (the rest of it): **`$` marks exactly the
+  engine-provided names that contend with user names; everything else the
+  engine adds is a plain field; every tool result spells a row the way the
+  language does** (Brendan's decision, §1.2). The hit-envelope half of 3.0
+  (below) had made `$id`/`$path` the one spelling for a hit's identity and
+  left every other tool's envelope alone; it also left the question of WHY
+  `$` exists unanswered, and the intrinsic vocabulary had grown by accretion
+  — `$doc` on blocks but `$doc_id` on nodes, `$src`/`$dst`/`$via`/`$src_block`
+  on edges, `$node_id` as a synonym of `$id`, `$body` (the file on docs, the
+  normalized text on blocks), `$content_hash`, `$from_commit` (a commit no
+  open-edge query can use), and `$ordinal`/`$depth` on blocks colliding with
+  the `follow` recursion intrinsics of the same names. The rule now: a
+  `$`-prefixed name is one the engine adds to a namespace shared with
+  user-generated content (frontmatter keys, inline properties, block attrs),
+  prefixed to give the author's field names priority and prevent collisions;
+  a name that cannot collide is a plain snake_case field. So the `$`
+  vocabulary is exactly `$id $path $raw $hash $updated_at $title $tags`
+  (the table in §1.2), and: `$body` → `$raw` (a block's `$raw` is now its raw
+  source, not its text — `text` stays a field), `$content_hash` → `$hash`;
+  blocks `$doc` → `doc_id`, `$ordinal`/`$depth` → `ordinal`/`depth` (the
+  follow-shadowing rule is deleted); nodes `$doc_id`/`$block_id` →
+  `doc_id`/`block_id`, the `$node_id` synonym dropped; edges `$src` →
+  `doc_id`, `$src_block` → `block_id`, `$via` → `via_id`, `$dst` → `dst_id`,
+  `$dst_path` → `dst_path`, `$dst_uri` → `uri`, `src_field` → `field`,
+  `$from_commit` removed; the loud-error set is `id path updated_at hash
+  raw`. **Same value, same name** carries the rule into every tool result: a
+  key holding what a row attribute yields is spelled as that attribute
+  (`docId`/`doc` → `$id`, `path` → `$path`, `content`/`raw` → `$raw`,
+  `contentHash`/`content_hash` → `$hash`, `ts` → `$updated_at`, foreign keys
+  `doc_id`/`block_id`/`parent_id`), role keys keep their names (`rev`,
+  `from`/`to`, `before`/`after`, `locator`, `baseRevision`, `cursor`,
+  `expected_content_hash`), inputs are untouched (§2–§4 list every shape;
+  the migration table is `changes/surface-3.0-hit-envelope.md`). The planner
+  gains foreign-key elimination in both engines (§1: `doc.$id` reads the FK
+  column, no join). `spec/search` 2.0, `spec/mutate` 2.0 and `spec/sync` 2.0
+  take the renames on the shapes they own (`text_search`/`resolve` hits,
+  the apply result and opset precondition and error data, the change-feed
+  revision); `spec/store` (the observe outcome, re-shaped at the boundary)
+  and `spec/graph` (whose fixtures pin the `edges` table — the `src_field`
+  column stays the column) are unchanged. Regeneration: every expectation
+  changed by exactly the key renames above, plus the two value changes the
+  rule predicts — a block's `$raw` is its raw bytes where `$body` was its
+  text, and `graph` edges gain `block_id`/`via_id`; every fixture query that
+  spelled a dropped name was rewritten by hand. The `query_syntax` text,
+  both engines' intrinsic switches and loud-error checks carry the rationale
+  as a comment, so the next reader finds the reason beside the rule.
 - 2026-10-10, surface 3.0: **the query hit envelope renders identity as
   `$id`/`$path`** (Brendan's decision, §1.4). The lean hit was
   `{ id, path, ...projection }`; the expression language has no bare `id` or

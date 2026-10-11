@@ -48,11 +48,25 @@ function tagAll(rows: Record<string, unknown>[], t: Target): Row[] {
   return rows as Row[];
 }
 
-// docs intrinsics whose BARE (non-$) form is almost always a typo (10 §2); a bare
-// read of one is a loud error, matching the CEL guard. (A bare target name —
-// `docs`, `edges`, … — is a loud error of its own, root-row.ts; `repo` is just an
-// ordinary frontmatter key.)
-const RESERVED_DOC_BASENAMES = new Set(["id", "path", "updated_at", "content_hash", "body"]);
+// WHY `$` (spec/surface §1.2, 3.0). A `$`-prefixed name is a name the engine adds
+// to a namespace it SHARES with user-generated content — frontmatter keys and
+// inline properties on a document, `attrs` keys on a block or node — prefixed so
+// the author's field names keep priority and the two can never collide: a
+// frontmatter `id:` reads as `id`, the engine's identity as `$id`. That bounds the
+// vocabulary to exactly the engine-provided names that contend with user names:
+// every row's `$id`/`$path`; docs' and blocks' `$raw`/`$hash`/`$updated_at`; the
+// computed `$title`/`$tags`. Everything else the engine provides is a plain
+// snake_case field — a foreign key named for what it is (`doc_id`, `block_id`,
+// `via_id`, `dst_id`, `dst_path`, `uri`), a column its column (`depth`,
+// `ordinal`, `field`) — because nothing of the author's lives in those namespaces.
+//
+// The bare spelling of a docs `$` name (`path`, `id`, …) is almost always a typo
+// for the intrinsic — it would otherwise read an absent frontmatter key and
+// silently match nothing — so it is a LOUD error here and in run.ts. `title`/
+// `tags` are not in the set: `$title`/`$tags` are computed and never shadow an
+// authored key. (A bare target name — `docs`, `edges`, … — is a loud error of its
+// own, root-row.ts; `repo` is just an ordinary frontmatter key.)
+const RESERVED_DOC_BASENAMES = new Set(["id", "path", "updated_at", "hash", "raw"]);
 
 export interface StoreContextOptions {
   /** Pre-computed query vectors for `semantic("phrase")`, keyed by phrase (the
@@ -344,18 +358,67 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
     return o && typeof o === "object" ? (o as Record<string, unknown>)[k] : undefined;
   };
 
-  // owning-entity reach-through (single row).
-  const owningDoc = (row: Row): Row | undefined =>
-    tag(one(`SELECT * FROM docs WHERE doc_id = ?`, row.doc_id ?? row.src_doc), "docs");
-  const owningBlock = (row: Row): Row | undefined => row.block_id
-    ? tag(one(`SELECT b.*, d.path AS __path FROM blocks b JOIN docs d ON d.doc_id = b.doc_id WHERE b.block_id = ?`, row.block_id), "blocks")
-    : undefined;
+  // Owning-entity reach-through (single row) with FOREIGN-KEY ELIMINATION
+  // (spec/surface §1, 3.0): the owner is handed out as a LAZY row whose identity
+  // columns are already known from the child — a block's/node's `doc_id` and
+  // `__path` name its document, an edge's `src_doc` and `__path` its source doc,
+  // a node's `block_id` (+ `doc_id`, `__path`) its block — so `doc.$id` and
+  // `doc.$path` (and `block.$id`/`block.$path`/`block.doc_id` on a node) read
+  // those columns and run NO statement, exactly like the bare `doc_id`; the full
+  // owner row is loaded on the first read of anything else (`doc.layer`,
+  // `block.text`). The translator mirrors this in SQL (`doc.$id` → the FK
+  // column). A Proxy over the backing object so the engine sees a plain tagged
+  // row either way (indexing, rendering, `rowRef`).
+  const lazyOwner = (known: Record<string, unknown>, t: Target, load: () => Record<string, unknown> | undefined): Row | undefined => {
+    const backing: Row = tag({ ...known }, t)!;
+    const knownKeys = new Set<string>(Object.keys(known));
+    let filled = false;
+    const fill = (): void => {
+      if (filled) return;
+      filled = true;
+      const full = load();
+      if (full) Object.assign(backing, full);
+    };
+    // Only an unknown STRING key is a column read worth the load: symbols (the
+    // target tag, the context's own row markers, `Symbol.iterator` probes) are
+    // never store columns.
+    const loads = (prop: string | symbol): boolean => typeof prop === "string" && !knownKeys.has(prop);
+    const proxy = new Proxy(backing, {
+      get(target, prop, receiver) {
+        if (loads(prop)) fill();
+        return Reflect.get(target, prop, receiver);
+      },
+      has(target, prop) { if (loads(prop)) fill(); return Reflect.has(target, prop); },
+      ownKeys(target) { fill(); return Reflect.ownKeys(target); },
+      getOwnPropertyDescriptor(target, prop) { if (loads(prop)) fill(); return Reflect.getOwnPropertyDescriptor(target, prop); },
+    });
+    return proxy;
+  };
+  const owningDoc = (row: Row): Row | undefined => {
+    const id = row.doc_id ?? row.src_doc;
+    if (id == null) return undefined;
+    const path = row.__path;
+    if (typeof path !== "string") return tag(one(`SELECT * FROM docs WHERE doc_id = ?`, id), "docs");
+    return lazyOwner({ doc_id: id, path }, "docs", () => one(`SELECT * FROM docs WHERE doc_id = ?`, id));
+  };
+  const owningBlock = (row: Row): Row | undefined => {
+    if (!row.block_id) return undefined;
+    const load = (): Record<string, unknown> | undefined =>
+      one(`SELECT b.*, d.path AS __path FROM blocks b JOIN docs d ON d.doc_id = b.doc_id WHERE b.block_id = ?`, row.block_id);
+    if (typeof row.__path !== "string") return tag(load(), "blocks");
+    return lazyOwner({ block_id: row.block_id, doc_id: row.doc_id, __path: row.__path }, "blocks", load);
+  };
 
   // ---- intrinsics ($-fields) ------------------------------------------------
-  // `$path` / `$dst_path` are the REFERENCE form (`/a/b.md`, spec/surface §1
-  // "Paths", 2.0): the rows carry the storage form (`path`, the `__path` join
-  // column) and the intrinsic roots it on read, so nothing below the binding
-  // changes. run.ts roots the string literals a query compares them with.
+  // The `$` vocabulary is exactly the engine-provided names that contend with
+  // user names (see RESERVED_DOC_BASENAMES above; spec/surface §1.2, 3.0): every
+  // row's `$id`/`$path`, docs' and blocks' `$raw`/`$hash`/`$updated_at`, docs'
+  // computed `$title`/`$tags`. A foreign key (`doc_id`, `block_id`, `dst_id`, …)
+  // is a plain field, resolved in `getFrom` below. `$path` (and the edge field
+  // `dst_path`) is the REFERENCE form (`/a/b.md`, §1 "Paths", 2.0): the rows
+  // carry the storage form (`path`, the `__path` join column) and the read roots
+  // it, so nothing below the binding changes. run.ts roots the string literals
+  // a query compares them with.
   const intrinsic = (row: Row, t: Target, name: string): unknown => {
     // `$self` = the current row: run.ts rewrites row-scoped domain functions
     // (text/semantic/under_*/…) to `$self.fn(…)` so they arrive via callMethod
@@ -364,41 +427,29 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
     if (t === "docs") switch (name) {
       case "$id": return row.doc_id;
       case "$path": return referencePath(String(row.path));
-      case "$content_hash": return row.file_hash == null ? null : hex(row.file_hash);
+      case "$hash": return row.file_hash == null ? null : hex(row.file_hash);
       case "$updated_at": return scalar(`SELECT c.ts FROM revisions r JOIN commits c ON c.commit_id = r.commit_id WHERE r.rev_id = ?`, row.current_rev) ?? null;
-      case "$body": return docsRead(store, String(row.doc_id))?.content ?? null;
+      // `$raw`: the exact file bytes (spec/store §6.1, frontmatter included).
+      case "$raw": return docsRead(store, String(row.doc_id))?.$raw ?? null;
       case "$title": return docProp(String(row.doc_id), "$title", "computed") ?? null;
       case "$tags": return docProp(String(row.doc_id), "$tags", "computed") ?? null;
     }
     if (t === "blocks") switch (name) {
       case "$id": return row.block_id;
-      case "$doc": return row.doc_id;
       case "$path": return referencePath(String(row.__path));
-      case "$ordinal": return row.ordinal;
-      case "$depth": return row.depth;
-      case "$body": return row.text;
-      case "$content_hash": return row.raw_hash == null ? null : hex(row.raw_hash);
+      // `$raw`: the block's raw source bytes — the blob its `raw_hash` names (a
+      // container's raw holds its children verbatim); `text` is the plain field.
+      case "$raw": return row.raw_hash == null ? null : (scalar(`SELECT bytes FROM blobs WHERE hash = ?`, row.raw_hash) as Buffer | undefined)?.toString("utf8") ?? null;
+      case "$hash": return row.raw_hash == null ? null : hex(row.raw_hash);
       case "$updated_at": return scalar(`SELECT MAX(c.ts) FROM block_changes bc JOIN commits c ON c.commit_id = bc.commit_id WHERE bc.block_id = ?`, row.block_id) ?? null;
     }
     if (t === "nodes") switch (name) {
-      case "$id": case "$node_id": return row.node_id;
-      case "$doc_id": return row.doc_id;
-      case "$block_id": return row.block_id;
+      case "$id": return row.node_id;
       case "$path": return referencePath(String(row.__path));
     }
     if (t === "edges") switch (name) {
       case "$id": return row.edge_id;
-      case "$src": return row.src_doc;
-      case "$dst": return row.dst_node;
-      case "$src_block": return row.src_block;
-      case "$via": return row.via_node;
-      case "$from_commit": return row.from_commit;
       case "$path": return referencePath(String(row.__path));
-      case "$dst_path": {
-        const p = scalar(`SELECT path FROM docs WHERE doc_id = ?`, row.dst_node);
-        return p == null ? null : referencePath(String(p));
-      }
-      case "$dst_uri": return scalar(`SELECT uri FROM external_nodes WHERE node_id = ?`, row.dst_node) ?? null;
     }
     return undefined;
   };
@@ -454,9 +505,14 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
       return docProp(String(r.doc_id), key);
     }
     if (t === "blocks") {
-      if (key === "type") return r.type;
-      if (key === "text") return r.text;
-      if (key === "attrs") return parseJson(r.attrs);
+      switch (key) {
+        case "doc_id": return r.doc_id;
+        case "type": return r.type;
+        case "text": return r.text;
+        case "attrs": return parseJson(r.attrs);
+        case "ordinal": return r.ordinal;
+        case "depth": return r.depth;
+      }
       // A bare non-structural identifier flattens into attrs: `checked` reads
       // `attrs.checked`. Structural fields above win on collision; an absent key
       // is undefined (silently false in a predicate), matching a doc's missing
@@ -464,16 +520,32 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
       return jattr(r, key);
     }
     if (t === "nodes") {
-      if (key === "kind") return r.kind;
-      if (key === "name") return r.name;
-      if (key === "value") return r.value;
-      if (key === "attrs") return parseJson(r.attrs);
+      switch (key) {
+        case "doc_id": return r.doc_id;
+        case "block_id": return r.block_id ?? null;
+        case "kind": return r.kind;
+        case "name": return r.name;
+        case "value": return r.value;
+        case "attrs": return parseJson(r.attrs);
+      }
       // Bare non-structural identifier flattens into attrs (see blocks above):
       // `checked` reads `attrs.checked` on an `md:task`, `level` on an `md:section`.
       return jattr(r, key);
     }
-    // edges
-    if (key === "predicate" || key === "provenance" || key === "dst_kind" || key === "anchor" || key === "src_field") return r[key];
+    // edges: the store's columns under the surface's names (spec/surface §1.2).
+    switch (key) {
+      case "doc_id": return r.src_doc;
+      case "block_id": return r.src_block ?? null;
+      case "via_id": return r.via_node ?? null;
+      case "dst_id": return r.dst_node;
+      case "dst_path": {
+        const p = scalar(`SELECT path FROM docs WHERE doc_id = ?`, r.dst_node);
+        return p == null ? null : referencePath(String(p));
+      }
+      case "uri": return scalar(`SELECT uri FROM external_nodes WHERE node_id = ?`, r.dst_node) ?? null;
+      case "field": return r.src_field ?? null;
+      case "predicate": case "provenance": case "dst_kind": case "anchor": return r[key];
+    }
     return undefined;
   };
 

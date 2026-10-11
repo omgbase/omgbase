@@ -128,7 +128,7 @@ export interface ErrorOutcome {
 
 export interface ApplyOutcome {
   results: { ids: string[]; removed?: string[]; merged_into?: string[] }[];
-  revisions: { doc: string; path: string }[];
+  revisions: { $id: string; $path: string; $hash: string }[];
   diffs?: Record<string, { before: string; after: string }>;
   committed: boolean;
 }
@@ -278,7 +278,7 @@ export function toSpecOpset(o: Opset): Record<string, unknown> {
     version: o.version,
     kind: o.kind,
     target: o.target,
-    precondition: { doc: o.precondition.doc, path: o.precondition.path, base_revision: o.precondition.baseRevision, base_content_hash: o.precondition.baseContentHash },
+    precondition: { $id: o.precondition.$id, $path: o.precondition.$path, base_revision: o.precondition.baseRevision, $hash: o.precondition.$hash },
     matcher_v: o.matcherV,
     ops: o.ops.map((p) => ({
       op: toSpecOp(p.op),
@@ -388,7 +388,7 @@ function runMacro(r: Runner, s: MacroStep): StepOutcome {
   let ops: Op[];
   let extra: Record<string, unknown> = {};
   const linkPlan = (p: LinkRepairPlan): Op[] => {
-    extra = { hits: p.hits.map((h) => ({ block: h.block, path: h.path, old_raw: h.oldRaw, new_raw: h.newRaw })), pairs: p.pairs };
+    extra = { hits: p.hits.map((h) => ({ $id: h.$id, $path: h.$path, old_raw: h.oldRaw, new_raw: h.newRaw })), pairs: p.pairs };
     return p.ops;
   };
   try {

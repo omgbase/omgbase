@@ -25,14 +25,19 @@ import { referencePath } from "../paths.js";
 // So leading_trivia + frontmatter + frontmatter_trivia + Σ(raw + trivia)
 // round-trips the file byte-for-byte (03 §2.1 coverage invariant).
 
+// The wire shape follows the surface's row rule (spec/surface §1.2, 3.0): the
+// document's identity and location under the row attributes' own names — `$id`,
+// `$path` — and the exact source bytes as `$raw` (the same value the query
+// binding's `$raw` reads); `rev`, `ids`, `hashes`, `parents` name roles.
 export interface DocsReadResult {
+  $id: string;
   /** The reference form (`/a/b.md`, spec/surface §1 "Paths"). */
-  path: string;
-  docId: string;
+  $path: string;
   rev: string | null;
   /** Properties grouped by source: { frontmatter, inline, computed }. */
   properties: Record<string, Record<string, unknown>>;
-  content: string;
+  /** The reconstructed file bytes (spec/store §6.1) — the document's `$raw`. */
+  $raw: string;
   /** Block ids in document order, for follow-up edits (include_ids). */
   ids?: string[];
   /**
@@ -124,11 +129,11 @@ export function docsRead(store: Store, docId: string, opts: DocsReadOptions = {}
   if (content === null) return null;
 
   const result: DocsReadResult = {
-    path: referencePath(info.path),
-    docId: info.docId,
+    $id: info.docId,
+    $path: referencePath(info.path),
     rev: info.currentRev,
     properties: docPropertiesGrouped(store.db, docId),
-    content,
+    $raw: content,
   };
   if (opts.includeIds) {
     const ids: string[] = [];
@@ -235,11 +240,13 @@ export function docsReadMany(
 }
 
 export interface DocsReadAtResult {
-  path: string;
-  docId: string;
+  $id: string;
+  /** The path as of that revision, in the reference form. */
+  $path: string;
   /** The revision travelled to (the argument, echoed for confirmation). */
   rev: string;
-  content: string;
+  /** The reconstructed file bytes at `rev` — the document's `$raw` then. */
+  $raw: string;
   /** True when the reconstructed bytes' sha256 matched the revision's stored
    *  rendered_hash — a byte-faithful round-trip. False flags the fidelity gap
    *  described below (doc-level trivia may differ for an old revision). */
@@ -310,11 +317,11 @@ export function readDocumentAtRevision(store: Store, docId: string, revId: strin
   const renderedHashMatch = sha256(content).equals(rev.rendered_hash);
 
   return {
+    $id: docId,
     // The revision records the path as of that revision (docs may be moved).
-    path: referencePath(rev.path),
-    docId,
+    $path: referencePath(rev.path),
     rev: revId,
-    content,
+    $raw: content,
     renderedHashMatch,
     properties: docPropertiesGrouped(db, docId),
     propertiesAreCurrent: true,

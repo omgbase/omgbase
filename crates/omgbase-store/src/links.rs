@@ -267,9 +267,11 @@ impl InboundLink {
     #[must_use]
     pub fn to_json(&self) -> Value {
         let mut m = Map::new();
-        m.insert("doc".to_owned(), json!(self.doc));
+        // An edge row under the surface's names (`spec/surface` §1.2, 3.0): the
+        // foreign keys `doc_id`/`block_id`; `path` stays the storage form here.
+        m.insert("doc_id".to_owned(), json!(self.doc));
         m.insert("path".to_owned(), json!(self.path));
-        m.insert("block".to_owned(), json!(self.block));
+        m.insert("block_id".to_owned(), json!(self.block));
         m.insert("target".to_owned(), json!(self.target));
         m.insert("anchor".to_owned(), json!(self.anchor));
         if let Some(f) = &self.field {

@@ -543,11 +543,20 @@ fn ls_over_the_reference_server_renders_like_local() {
             blank_ago(&text(&l.stdout)),
             "ls {mode:?}: remote (left) vs local (right)"
         );
-        assert!(
-            text(&l.stdout).contains("notes/a.md"),
-            "{}",
-            text(&l.stdout)
-        );
+        // `--ids` prints the documents' `$id`s (spec/cli 3.0); the other modes
+        // name the paths.
+        if mode == ["--ids"] {
+            let out = text(&l.stdout);
+            let ids: Vec<&str> = out.lines().collect();
+            assert_eq!(ids.len(), 3, "{out}");
+            assert!(ids.iter().all(|i| i.starts_with("d_")), "{out}");
+        } else {
+            assert!(
+                text(&l.stdout).contains("notes/a.md"),
+                "{}",
+                text(&l.stdout)
+            );
+        }
     }
     // A glob narrows both the same way.
     let l = run(
@@ -594,7 +603,7 @@ fn every_read_over_the_reference_server_renders_like_local() {
     let a_doc = {
         let out = p.local(&["--json", "cat", "notes/a.md"], None);
         let v: serde_json::Value = serde_json::from_str(text(&out.stdout).trim()).unwrap();
-        v["docId"].as_str().unwrap().to_owned()
+        v["$id"].as_str().unwrap().to_owned()
     };
     let cases: Vec<(&str, Vec<&str>)> = vec![
         ("query", vec!["query", "from docs"]),
@@ -813,10 +822,10 @@ fn every_write_over_the_reference_server_lands_like_local() {
     );
     let lv: serde_json::Value = serde_json::from_str(text(&l.stdout).trim()).unwrap();
     let mut rv: serde_json::Value = serde_json::from_str(text(&r.stdout).trim()).unwrap();
-    assert_eq!(rv["id"], task_two);
+    assert_eq!(rv["$id"], task_two);
     assert_eq!(rv["ids"], serde_json::json!([task_two]));
     let rm = rv.as_object_mut().unwrap();
-    rm.remove("id");
+    rm.remove("$id");
     rm.remove("ids");
     assert_eq!(rv, lv, "the ApplyResult underneath");
 
@@ -1136,7 +1145,7 @@ fn sync_server_mirrors_a_directory_into_the_reference_engine() {
         .as_array()
         .expect("an array of rows")
         .iter()
-        .filter_map(|i| i["path"].as_str())
+        .filter_map(|i| i["$path"].as_str())
         .collect();
     assert_eq!(paths, ["/sub/y.md", "/x.md"]);
     // Again: everything echoes.
