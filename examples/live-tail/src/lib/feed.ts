@@ -5,14 +5,16 @@
 // touches the network or the DOM.
 //
 // Tool shapes, as this module keeps them (the 2.x spellings; a 3.0 server's
-// `{ $id, $path, $hash, $updated_at, $raw }` are read into these by lib/shapes.ts
-// per the connected server's surface version):
+// `{ id, path, hash, updated_at, raw }` are read into these by lib/shapes.ts
+// per the connected server's surface version). The queries this module
+// generates spell the attributes per server too (lib/paths.ts `attr`: `path`/
+// `title`/`updated_at` on ≥ 3.0, `$path`/`$title`/`$updated_at` before):
 //   changes_since → { digests: [{ commit, seq, ts, origin, actor, summary, revisions: [{ doc, path, contentHash }] }], cursor, truncated, head }
 //   docs_history  → { docs: [{ docId, path, deleted, currentRev, versions: [{ rev, seq, commit, ts, origin, actor, contentHash, isCurrent }] }], truncated }
 //   diff_unified  → { doc, path, from, to, diff }
 //   docs_read_at  → { path, docId, rev, content, … }
 
-import { hitId, hitPath, rooted } from "./paths.ts";
+import { attr, hitId, hitPath, rooted } from "./paths.ts";
 
 export interface Revision { doc: string; path: string; contentHash: string }
 export interface Digest {
@@ -31,27 +33,38 @@ export interface DocVersions { docId: string; path: string; deleted: boolean; cu
 
 export const RECENT_LIMIT = 25;
 
-const RECENT_SELECT = "select $path, $title, $updated_at from docs";
-const RECENT_TAIL = `order by $updated_at desc limit ${RECENT_LIMIT}`;
+/** The recent query's first line — the projection — in the server's spelling
+ * (`title` on 3.0 is the computed title attribute; `$title` before). */
+export function recentSelect(surface: string | null = null): string {
+  return `select ${attr(surface, "path")}, ${attr(surface, "title")}, ${attr(surface, "updated_at")} from docs`;
+}
+/** Its last line — newest first, the page's cap. */
+export function recentTail(surface: string | null = null): string {
+  return `order by ${attr(surface, "updated_at")} desc limit ${RECENT_LIMIT}`;
+}
 
 /** The query behind the initial view, narrowed by the filter (an OQX `where`
- * predicate over `docs`) when there is one; one line, for the server. With a
- * filter its tokens are exactly the framed field's (`frameFor`, which lays the
- * same text out on three lines); without one the `where` clause is omitted (an
- * empty `where` would not parse). `$title`/`$updated_at` are projected under
- * both envelopes. */
-export function recentQuery(filter = ""): string {
+ * predicate over `docs`) when there is one; one line, for the server of
+ * surface `surface` (unknown → the 2.x spelling). With a filter its tokens are
+ * exactly the framed field's (`frameFor`, which lays the same text out on three
+ * lines); without one the `where` clause is omitted (an empty `where` would not
+ * parse). */
+export function recentQuery(filter = "", surface: string | null = null): string {
   const f = filter.trim();
-  return f ? `${RECENT_SELECT} where ${f} ${RECENT_TAIL}` : `${RECENT_SELECT} ${RECENT_TAIL}`;
+  const select = recentSelect(surface);
+  const tail = recentTail(surface);
+  return f ? `${select} where ${f} ${tail}` : `${select} ${tail}`;
 }
-/** The unfiltered initial view. */
-export const RECENT_QUERY = recentQuery();
 
 /** The read-only frame the field shows around the hole when there is a `where`
  * line — the `select … from docs` line, `where ` + the hole, the `order by …
  * limit` line. */
-export const FRAME_BEFORE = `${RECENT_SELECT}\nwhere `;
-export const FRAME_AFTER = `\n${RECENT_TAIL}`;
+export function frameBefore(surface: string | null = null): string {
+  return `${recentSelect(surface)}\nwhere `;
+}
+export function frameAfter(surface: string | null = null): string {
+  return `\n${recentTail(surface)}`;
+}
 
 export interface Frame {
   text: string;
@@ -62,19 +75,22 @@ export interface Frame {
 }
 
 /** The framed field's text and the hole in it. With a filter, or while the
- * field is being edited, three lines: the filter between `FRAME_BEFORE` and
- * `FRAME_AFTER`, so the second line is `where <filter>` (an empty filter is an
+ * field is being edited, three lines: the filter between `frameBefore` and
+ * `frameAfter`, so the second line is `where <filter>` (an empty filter is an
  * empty hole after `where `, where the caret waits). Idle and empty, two lines
  * with no `where` at all and a closed, zero-width hole at the end of the first.
- * Joined with spaces instead of its newlines the text is `recentQuery(filter)`
- * in every state. */
-export function frameFor(filter: string, { editing = false }: { editing?: boolean } = {}): Frame {
+ * Joined with spaces instead of its newlines the text is `recentQuery(filter,
+ * surface)` in every state. */
+export function frameFor(filter: string, { editing = false, surface = null }: { editing?: boolean; surface?: string | null } = {}): Frame {
+  const select = recentSelect(surface);
+  const after = frameAfter(surface);
   if (filter === "" && !editing) {
-    const at = RECENT_SELECT.length;
-    return { text: `${RECENT_SELECT}${FRAME_AFTER}`, hole: { from: at, to: at }, where: false };
+    const at = select.length;
+    return { text: `${select}${after}`, hole: { from: at, to: at }, where: false };
   }
-  const from = FRAME_BEFORE.length;
-  return { text: `${FRAME_BEFORE}${filter}${FRAME_AFTER}`, hole: { from, to: from + filter.length }, where: true };
+  const before = frameBefore(surface);
+  const from = before.length;
+  return { text: `${before}${filter}${after}`, hole: { from, to: from + filter.length }, where: true };
 }
 
 // ---- the cursor --------------------------------------------------------------------
@@ -102,7 +118,7 @@ export interface EntryChange {
   doc: string;
   /** `/`-rooted whatever the server returned. */
   path: string;
-  /** The document's `$title` from the poll's lookup query; null when it has none or is gone (deleted, moved away). */
+  /** The document's `title` from the poll's lookup query; null when it has none or is gone (deleted, moved away). */
   title: string | null;
   contentHash: string;
 }
@@ -195,18 +211,24 @@ export function latestChange(versions: readonly DocVersion[]): LatestChange | nu
   return v ? { seq: v.seq, commit: v.commit, origin: v.origin, actor: v.actor } : null;
 }
 
+/** The projected title of a hit — `title` (a 3.0 server) or `$title` (before);
+ * the recent and lookup queries project exactly one of the two. */
+function hitTitle(hit: Record<string, unknown>): string | null {
+  const title = hit.title ?? hit.$title;
+  return typeof title === "string" && title.trim() ? title : null;
+}
+
 /** The recent-documents hits as the page shows them; a hit without a path is skipped. */
 export function recentFromHits(hits: readonly Record<string, unknown>[]): RecentDoc[] {
   const out: RecentDoc[] = [];
   for (const hit of hits) {
     const path = hitPath(hit);
     if (path === null) continue;
-    const title = hit.$title;
-    const updated = hit.$updated_at;
+    const updated = hit.updated_at ?? hit.$updated_at;
     out.push({
       id: hitId(hit),
       path: rooted(path),
-      title: typeof title === "string" && title.trim() ? title : null,
+      title: hitTitle(hit),
       updatedAt: typeof updated === "string" ? updated : null,
       latest: null,
     });
@@ -217,8 +239,8 @@ export function recentFromHits(hits: readonly Record<string, unknown>[]): Recent
 // ---- the card -----------------------------------------------------------------------
 //
 // Both card kinds — a recent document and a feed entry — are one view model: a
-// header that carries every value exactly once (the update's time, `$title`
-// prominent, `$path` secondary — or the path alone when the title is null or
+// header that carries every value exactly once (the update's time, `title`
+// prominent, `path` secondary — or the path alone when the title is null or
 // the same —, the change's `seq` and commit id, who made it, the lines added
 // and removed), with no label words ("latest change", "created", the digest's
 // summary) that restate what is already there. A change touching several
@@ -230,7 +252,7 @@ export interface Stats { added: number; removed: number }
 export interface CardRow { title: string | null; path: string; stats: Stats | null }
 
 export interface Card {
-  /** The update's time: a recent document's `$updated_at`, a digest's `ts`. */
+  /** The update's time: a recent document's `updated_at`, a digest's `ts`. */
   ts: string | null;
   /** The document, when the card is about one (null for a multi-document digest; a deletion names nothing). */
   title: string | null;
@@ -322,21 +344,22 @@ export function filterStateAfter(filter: string, error: { code?: string; message
 }
 
 /** ONE query per poll over the documents a page of digests touches: their
- * `$path` and `$title` — the title lookup for the cards — narrowed to the
- * documents the filter admits when there is one (the filter and-ed with the
- * paths or-ed together; OQX has no array literal). Paths are `/`-rooted and
- * deduped; null when there is nothing to ask about. The hits come back under
- * either envelope — read them with `hitPath`/`titlesByPath`. A deleted or
- * moved-away document is not in `docs` and so is not returned. */
-export function matchQuery(filter: string, paths: readonly string[]): string | null {
+ * `path` and `title` (in the server's spelling) — the title lookup for the
+ * cards — narrowed to the documents the filter admits when there is one (the
+ * filter and-ed with the paths or-ed together; OQX has no array literal). Paths
+ * are `/`-rooted and deduped; null when there is nothing to ask about. Read
+ * the hits with `hitPath`/`titlesByPath`. A deleted or moved-away document is
+ * not in `docs` and so is not returned. */
+export function matchQuery(filter: string, paths: readonly string[], surface: string | null = null): string | null {
   const unique = [...new Set(paths.map(rooted))];
   if (unique.length === 0) return null;
-  const alternatives = unique.map((p) => `$path == ${JSON.stringify(p)}`).join(" or ");
+  const path = attr(surface, "path");
+  const alternatives = unique.map((p) => `${path} == ${JSON.stringify(p)}`).join(" or ");
   const f = filter.trim();
-  return `select $path, $title from docs where ${f ? `(${f}) and ` : ""}(${alternatives})`;
+  return `select ${path}, ${attr(surface, "title")} from docs where ${f ? `(${f}) and ` : ""}(${alternatives})`;
 }
 
-/** The lookup query's hits as rooted path → `$title` (null for a blank or
+/** The lookup query's hits as rooted path → title (null for a blank or
  * missing title); a hit without a path is skipped. Its keys are the documents
  * the query returned — under a filter, the ones it admits. */
 export function titlesByPath(hits: readonly Record<string, unknown>[]): Map<string, string | null> {
@@ -344,8 +367,7 @@ export function titlesByPath(hits: readonly Record<string, unknown>[]): Map<stri
   for (const hit of hits) {
     const path = hitPath(hit);
     if (path === null) continue;
-    const title = hit.$title;
-    out.set(rooted(path), typeof title === "string" && title.trim() ? title : null);
+    out.set(rooted(path), hitTitle(hit));
   }
   return out;
 }
@@ -356,7 +378,7 @@ export function digestPaths(digests: readonly Digest[]): string[] {
 }
 
 /** Digests through the filter: a revision stays when its document is in
- * `matching` (the match query's `$path`s, rooted), the rest are dropped; a
+ * `matching` (the match query's paths, rooted), the rest are dropped; a
  * digest left without revisions — including one that had none, a deletion or a
  * move, whose documents are no longer in `docs` to be evaluated — is hidden
  * and counted. */
@@ -424,6 +446,26 @@ export function formatTime(iso: string | null, now: Date = new Date()): string {
   const sameDay = d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
   const hm = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
   return sameDay ? `${hm}:${pad(d.getSeconds())}` : `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${hm}`;
+}
+
+/** How a diff is shown: the plain unified text (the default), or rendered as
+ * Markdown with the removed/added elements coloured (`<unified-markdown-diff>`). */
+export type DiffView = "text" | "markdown";
+
+export const DIFF_VIEW_KEY = "omgbase-live-tail.view";
+
+/** The view a stored value names; anything but `markdown` is the default text view. */
+export function diffViewOf(stored: string | null | undefined): DiffView {
+  return stored === "markdown" ? "markdown" : "text";
+}
+
+/** The persisted view (`localStorage`, or anything with `getItem`). */
+export function loadDiffView(storage: Pick<Storage, "getItem">): DiffView {
+  return diffViewOf(storage.getItem(DIFF_VIEW_KEY));
+}
+
+export function saveDiffView(storage: Pick<Storage, "setItem">, view: DiffView): void {
+  storage.setItem(DIFF_VIEW_KEY, view);
 }
 
 /** The poll interval the user typed, in milliseconds: whole seconds, 1..3600, else the fallback. */

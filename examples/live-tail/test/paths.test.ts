@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bareArguments, docForeign, docLocator } from "../src/lib/paths.ts";
+import { attr, bareArguments, bareAttributes, docForeign, docLocator } from "../src/lib/paths.ts";
 
 describe("docLocator / docForeign — the document argument by surface version (spec/surface §4 Arguments)", () => {
   it("spells `id`/`path` (and `doc_id`/`doc_path`) on 3.0 and `doc` before", () => {
@@ -36,15 +36,23 @@ describe("surfaceOf", () => {
 });
 
 describe("the hit envelope", () => {
-  it("reads $id/$path (3.0) and id/path (2.x), preferring the $ spelling", () => {
-    expect(hitId({ $id: "d_1", $path: "/a.md" })).toBe("d_1");
-    expect(hitPath({ $id: "d_1", $path: "/a.md" })).toBe("/a.md");
+  it("reads id/path — the envelope under every surface version", () => {
     expect(hitId({ id: "d_1", path: "/a.md" })).toBe("d_1");
     expect(hitPath({ id: "d_1", path: "/a.md" })).toBe("/a.md");
-    expect(hitPath({ id: "d_1", path: "a.md", $path: "/a.md" })).toBe("/a.md");
+    expect(hitPath({ id: "d_1", path: "a.md" })).toBe("a.md");
     expect(hitId({})).toBeNull();
     expect(hitPath(null)).toBeNull();
-    expect(hitId({ $id: 3 })).toBeNull();
+    expect(hitId({ id: 3 })).toBeNull();
+    expect(hitId({ $id: "d_1", $path: "/a.md" })).toBeNull(); // the unreleased `$` interlude is not read
+  });
+  it("spells the attributes for the server's language: bare on 3.0, `$` before and while unknown", () => {
+    expect(bareAttributes("3.0")).toBe(true);
+    expect(bareAttributes("2.0")).toBe(false);
+    expect(bareAttributes(null)).toBe(false);
+    expect(attr("3.0", "title")).toBe("title");
+    expect(attr("3.1", "updated_at")).toBe("updated_at");
+    expect(attr("2.0", "path")).toBe("$path");
+    expect(attr(null, "path")).toBe("$path");
   });
   it("roots paths idempotently", () => {
     expect(rooted("a/b.md")).toBe("/a/b.md");

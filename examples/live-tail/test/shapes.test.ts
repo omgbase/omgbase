@@ -1,17 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { changesOf, digestOf, docVersionsOf, dollarNames, readAtOf, revisionOf, unifiedOf, versionOf } from "../src/lib/shapes.ts";
+import { changesOf, digestOf, docVersionsOf, surface3, readAtOf, revisionOf, unifiedOf, versionOf } from "../src/lib/shapes.ts";
 
-const rev3 = { $id: "d_a", $path: "/notes/alpha.md", $hash: "aa" };
+const rev3 = { id: "d_a", path: "/notes/alpha.md", hash: "aa" };
 const rev2 = { doc: "d_a", path: "/notes/alpha.md", contentHash: "aa" };
 const want = { doc: "d_a", path: "/notes/alpha.md", contentHash: "aa" };
 
-describe("dollarNames", () => {
+describe("surface3", () => {
   it("is 3.0 and later; unknown, 1.x and 2.x read the old spellings", () => {
-    expect(dollarNames("3.0")).toBe(true);
-    expect(dollarNames("3.1")).toBe(true);
-    expect(dollarNames("2.0")).toBe(false);
-    expect(dollarNames("1.x")).toBe(false);
-    expect(dollarNames(null)).toBe(false);
+    expect(surface3("3.0")).toBe(true);
+    expect(surface3("3.1")).toBe(true);
+    expect(surface3("2.0")).toBe(false);
+    expect(surface3("1.x")).toBe(false);
+    expect(surface3(null)).toBe(false);
   });
 });
 
@@ -20,8 +20,8 @@ describe("changes_since", () => {
     expect(revisionOf("3.0", rev3)).toEqual(want);
     expect(revisionOf("2.0", rev2)).toEqual(want);
     expect(revisionOf(null, rev2)).toEqual(want);
-    // The wrong generation finds nothing — the spellings do not overlap.
-    expect(revisionOf("3.0", rev2)).toEqual({ doc: "", path: "", contentHash: "" });
+    // The wrong generation finds only the shared `path` — `doc`/`contentHash` are 2.x's names.
+    expect(revisionOf("3.0", rev2)).toEqual({ doc: "", path: "/notes/alpha.md", contentHash: "" });
   });
   it("a digest keeps its own keys and reads its revisions; a page keeps cursor/truncated/head", () => {
     const d3 = { commit: "c_7", seq: 7, ts: "2026-10-11T01:00:00Z", origin: "api", actor: "agent:mcp", summary: "s", revisions: [rev3] };
@@ -37,30 +37,30 @@ describe("changes_since", () => {
 });
 
 describe("docs_history", () => {
-  const v3 = { rev: "r_2", seq: 2, commit: "c_2", $updated_at: "2026-10-11T01:00:00Z", origin: "observed", actor: null, $hash: "h2", isCurrent: true };
+  const v3 = { rev: "r_2", seq: 2, commit: "c_2", updated_at: "2026-10-11T01:00:00Z", origin: "observed", actor: null, hash: "h2", isCurrent: true };
   const v2 = { rev: "r_2", seq: 2, commit: "c_2", ts: "2026-10-11T01:00:00Z", origin: "observed", actor: null, contentHash: "h2", isCurrent: true };
   const wantV = { rev: "r_2", seq: 2, commit: "c_2", ts: "2026-10-11T01:00:00Z", origin: "observed", actor: null, contentHash: "h2", isCurrent: true };
-  it("a version: `$updated_at`/`$hash` on 3.0, `ts`/`contentHash` before", () => {
+  it("a version: `updated_at`/`hash` on 3.0, `ts`/`contentHash` before", () => {
     expect(versionOf("3.0", v3)).toEqual(wantV);
     expect(versionOf("2.0", v2)).toEqual(wantV);
   });
-  it("a document: `$id`/`$path` on 3.0, `docId`/`path` before; the versions follow", () => {
+  it("a document: `id`/`path` on 3.0, `docId`/`path` before; the versions follow", () => {
     const wantD = { docId: "d_a", path: "/notes/alpha.md", deleted: false, currentRev: "r_2", versions: [wantV] };
-    expect(docVersionsOf("3.0", { $id: "d_a", $path: "/notes/alpha.md", deleted: false, currentRev: "r_2", versions: [v3] })).toEqual(wantD);
+    expect(docVersionsOf("3.0", { id: "d_a", path: "/notes/alpha.md", deleted: false, currentRev: "r_2", versions: [v3] })).toEqual(wantD);
     expect(docVersionsOf("2.0", { docId: "d_a", path: "/notes/alpha.md", deleted: false, currentRev: "r_2", versions: [v2] })).toEqual(wantD);
-    expect(docVersionsOf("3.0", { $id: "d_g", $path: "/gone.md", deleted: true, currentRev: null })).toEqual({ docId: "d_g", path: "/gone.md", deleted: true, currentRev: null, versions: [] });
+    expect(docVersionsOf("3.0", { id: "d_g", path: "/gone.md", deleted: true, currentRev: null })).toEqual({ docId: "d_g", path: "/gone.md", deleted: true, currentRev: null, versions: [] });
   });
 });
 
 describe("diff_unified / docs_read_at", () => {
-  it("the unified diff: `$id`/`$path` vs `doc`/`path`; the diff text is the same", () => {
+  it("the unified diff: `id` vs `doc`; `path` and the diff text are the same", () => {
     const want = { doc: "d_a", path: "/notes/alpha.md", from: "r_1", to: "r_2", diff: "@@ -1 +1 @@\n-a\n+b" };
-    expect(unifiedOf("3.0", { $id: "d_a", $path: "/notes/alpha.md", from: "r_1", to: "r_2", diff: want.diff })).toEqual(want);
+    expect(unifiedOf("3.0", { id: "d_a", path: "/notes/alpha.md", from: "r_1", to: "r_2", diff: want.diff })).toEqual(want);
     expect(unifiedOf("2.0", { doc: "d_a", path: "/notes/alpha.md", from: "r_1", to: "r_2", diff: want.diff })).toEqual(want);
   });
-  it("the bytes at a revision: `$raw` on 3.0, `content` before", () => {
+  it("the bytes at a revision: `raw` on 3.0, `content` before", () => {
     const want = { doc: "d_a", path: "/notes/alpha.md", rev: "r_1", content: "# Alpha\n" };
-    expect(readAtOf("3.0", { $id: "d_a", $path: "/notes/alpha.md", rev: "r_1", $raw: "# Alpha\n", renderedHashMatch: true })).toEqual(want);
+    expect(readAtOf("3.0", { id: "d_a", path: "/notes/alpha.md", rev: "r_1", raw: "# Alpha\n", renderedHashMatch: true })).toEqual(want);
     expect(readAtOf("2.0", { path: "/notes/alpha.md", docId: "d_a", rev: "r_1", content: "# Alpha\n" })).toEqual(want);
     expect(readAtOf("3.0", { path: "/x.md", docId: "d_a", rev: "r_1", content: "stale shape" }).content).toBe("");
   });

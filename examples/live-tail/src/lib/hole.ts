@@ -69,9 +69,9 @@ export const holeOnly = EditorState.transactionFilter.of((tr): TransactionSpec |
 });
 
 /** The one transaction that swaps the frame: the whole document becomes
- * `frameFor(filter, { editing })`, the caret goes to the end of the hole. */
-export function reframeSpec(state: EditorState, filter: string, editing: boolean): TransactionSpec {
-  const framed = frameFor(filter, { editing });
+ * `frameFor(filter, { editing, surface })`, the caret goes to the end of the hole. */
+export function reframeSpec(state: EditorState, filter: string, editing: boolean, surface: string | null = null): TransactionSpec {
+  const framed = frameFor(filter, { editing, surface });
   return {
     changes: { from: 0, to: state.doc.length, insert: framed.text },
     selection: { anchor: framed.hole.to },
@@ -85,9 +85,9 @@ export function holeText(state: EditorState): string {
   return state.doc.sliceString(h.from, h.to);
 }
 
-/** An EditorState over the frame for `filter` with the hole machinery installed (the element adds the view-side extensions). */
-export function holeState(filter: string, { editing = false }: { editing?: boolean } = {}, extensions: Extension = []): EditorState {
-  const framed = frameFor(filter, { editing });
+/** An EditorState over the frame for `filter` (spelled for `surface`) with the hole machinery installed (the element adds the view-side extensions). */
+export function holeState(filter: string, { editing = false, surface = null }: { editing?: boolean; surface?: string | null } = {}, extensions: Extension = []): EditorState {
+  const framed = frameFor(filter, { editing, surface });
   return EditorState.create({
     doc: framed.text,
     selection: { anchor: framed.hole.to },

@@ -5,13 +5,17 @@
 //     → the change feed: `changes_since` from the repo's head, polled every N seconds,
 //       every digest prepended as it lands with its revisions' diffs (fetched when shown)
 //     → one lookup query per poll over the documents a page of digests touches gives the
-//       cards their `$title`; an OQX filter (a `where` fragment over docs) narrows the
+//       cards their `title`; an OQX filter (a `where` fragment over docs) narrows the
 //       recent list and, through that same query, which arriving revisions are shown
 //
 // The data path is MCP only (lib/mcp-client.ts) through the dev proxy at the
 // same-origin /mcp; the pure parts (cursor, digests → entries, which revisions
 // to diff, hits under either envelope, the filter's queries and partition, diff
-// lines) are lib/feed.ts.
+// lines) are lib/feed.ts. A diff is shown as plain unified text or — the
+// persisted **markdown** switch — rendered as Markdown by
+// elements/unified-markdown-diff.ts over both revisions' full text (fetched
+// with `docs_read_at` when the switch is on), so a hunk inside a fence, a list
+// or a table keeps its construct and the changed elements are coloured whole.
 
 import { LitElement, css, html, nothing } from "lit";
 import { customElement } from "lit/decorators.js";
@@ -24,12 +28,13 @@ import "@shoelace-style/shoelace/dist/components/switch/switch.js";
 import type SlSwitch from "@shoelace-style/shoelace/dist/components/switch/switch.js";
 import "./elements/oqx-framed-filter.ts";
 import type { FilterDetail } from "./elements/oqx-framed-filter.ts";
+import "./elements/unified-markdown-diff.ts";
 import { OmgClient, OmgError, fetchWhoAmI } from "./lib/mcp-client.ts";
 import {
-  RECENT_LIMIT, advanceCursor, createdDiff, diffLineKind, diffStats, digestPaths, entryCard, filterStateAfter, formatStats, formatTime, hiddenLine, latestChange, latestPair, matchQuery, pairForCommit, partitionByFilter, pollMs, prependDigests, recentCard, recentFromHits, recentQuery, startCursor, titlesByPath,
-  type Card, type Digest, type DiffPair, type DocVersions, type EntryChange, type FeedEntry, type FilterState, type RecentDoc, type Stats,
+  RECENT_LIMIT, advanceCursor, createdDiff, diffLineKind, diffStats, digestPaths, entryCard, filterStateAfter, formatStats, formatTime, hiddenLine, latestChange, latestPair, loadDiffView, matchQuery, pairForCommit, partitionByFilter, pollMs, prependDigests, recentCard, recentFromHits, recentQuery, saveDiffView, startCursor, titlesByPath,
+  type Card, type Digest, type DiffPair, type DiffView, type DocVersions, type EntryChange, type FeedEntry, type FilterState, type RecentDoc, type Stats,
 } from "./lib/feed.ts";
-import { LEGACY_SURFACE, docForeign, docLocator, surfaceOf } from "./lib/paths.ts";
+import { LEGACY_SURFACE, attr, docForeign, docLocator, surfaceOf } from "./lib/paths.ts";
 import { changesOf, docVersionsOf, readAtOf, unifiedOf } from "./lib/shapes.ts";
 
 const MCP_URL = "/mcp";
@@ -49,8 +54,14 @@ const OPEN_RECENT = 3;
 export type DiffState =
   | { status: "idle" }
   | { status: "loading" }
-  | { status: "ready"; pair: DiffPair; text: string }
+  | { status: "ready"; pair: DiffPair; text: string; doc: string }
   | { status: "none"; note: string }
+  | { status: "error"; message: string };
+
+/** The two revisions' full text behind a ready diff — what the markdown view renders (fetched only while it is on). */
+export type SourceState =
+  | { status: "loading" }
+  | { status: "ready"; before: string; after: string }
   | { status: "error"; message: string };
 
 // ---- state --------------------------------------------------------------------------
@@ -70,11 +81,15 @@ const filterState = signal<FilterState>(filter.get() ? { kind: "on", filter: fil
 const hiddenCount = signal(0);
 /** Word-wrap in every diff view. */
 const wrap = signal<boolean>(localStorage.getItem(WRAP_KEY) === "1");
+/** Plain unified text (the default) or rendered Markdown. */
+const diffView = signal<DiffView>(loadDiffView(localStorage));
 
 const recent = signal<RecentDoc[]>([]);
 const recentLoading = signal(false);
 /** Diffs by key: a recent card's document id/path, or `<commit>:<doc>` for a feed change. */
 const diffs = signal<Record<string, DiffState>>({});
+/** The revisions' texts, by the same keys. */
+const sources = signal<Record<string, SourceState>>({});
 
 const entries = signal<FeedEntry[]>([]);
 const live = signal(true);
@@ -108,18 +123,44 @@ function describe(e: unknown): string {
 
 function setDiff(key: string, state: DiffState): void {
   diffs.set({ ...diffs.get(), [key]: state });
+  if (state.status === "ready" && diffView.get() === "markdown") void loadSources(key, state);
+}
+
+function setSource(key: string, state: SourceState): void {
+  sources.set({ ...sources.get(), [key]: state });
+}
+
+/** One revision's full text. */
+async function readAt(doc: string, rev: string): Promise<string> {
+  return readAtOf(surface.get(), await client.docsReadAt(docLocator(surface.get(), doc), rev, repo.get())).content;
 }
 
 /** Fetch what a pair names: the unified diff between two revisions, or the created revision's content. */
-async function fetchPair(doc: string, pair: DiffPair): Promise<DiffState> {
+async function fetchPair(key: string, doc: string, pair: DiffPair): Promise<DiffState> {
   const r = repo.get();
   if (pair.kind === "created") {
     // The content as a pure-addition diff: a content line starting with `-` is not a subtraction.
-    const text = createdDiff(readAtOf(surface.get(), await client.docsReadAt(docLocator(surface.get(), doc), pair.rev, r)).content);
-    return text === "" ? { status: "none", note: "created empty" } : { status: "ready", pair, text };
+    const content = await readAt(doc, pair.rev);
+    const text = createdDiff(content);
+    setSource(key, { status: "ready", before: "", after: content }); // the markdown view's sides, already in hand
+    return text === "" ? { status: "none", note: "created empty" } : { status: "ready", pair, text, doc };
   }
   const d = unifiedOf(surface.get(), await client.diffUnified(docForeign(surface.get(), doc), pair.from, pair.to, r));
-  return d.diff === "" ? { status: "none", note: "no textual change between the two revisions" } : { status: "ready", pair, text: d.diff };
+  return d.diff === "" ? { status: "none", note: "no textual change between the two revisions" } : { status: "ready", pair, text: d.diff, doc };
+}
+
+/** Both revisions' full text for a ready diff (the markdown view's input), once. */
+async function loadSources(key: string, state: Extract<DiffState, { status: "ready" }>): Promise<void> {
+  const current = sources.get()[key];
+  if (current && current.status !== "error") return;
+  if (state.pair.kind === "created") return; // set by fetchPair
+  setSource(key, { status: "loading" });
+  try {
+    const [before, after] = await Promise.all([readAt(state.doc, state.pair.from), readAt(state.doc, state.pair.to)]);
+    setSource(key, { status: "ready", before, after });
+  } catch (e) {
+    setSource(key, { status: "error", message: describe(e) });
+  }
 }
 
 /** The lines a diff state accounts for: known once it is ready (or known to be empty), else null. */
@@ -146,7 +187,7 @@ async function loadLatestDiff(doc: RecentDoc): Promise<void> {
     if (latest) recent.set(recent.get().map((d) => ((d.id ?? d.path) === key ? { ...d, latest } : d)));
     const pair = history ? latestPair(history.versions) : null;
     if (!pair) { setDiff(key, { status: "none", note: "no stored revisions" }); return; }
-    setDiff(key, await fetchPair(key, pair));
+    setDiff(key, await fetchPair(key, key, pair));
   } catch (e) {
     setDiff(key, { status: "error", message: describe(e) });
   }
@@ -162,7 +203,7 @@ async function loadChangeDiff(entry: FeedEntry, change: EntryChange): Promise<vo
     const history = await docsHistory(change.doc);
     const pair = history ? pairForCommit(history.versions, entry.key) : null;
     if (!pair) { setDiff(key, { status: "none", note: "this commit wrote no revision of the document (deleted or moved)" }); return; }
-    setDiff(key, await fetchPair(change.doc, pair));
+    setDiff(key, await fetchPair(key, change.doc, pair));
   } catch (e) {
     setDiff(key, { status: "error", message: describe(e) });
   }
@@ -178,7 +219,7 @@ async function loadRecent(): Promise<void> {
   const f = filter.get();
   recentLoading.set(true);
   try {
-    const result = await client.query(recentQuery(f), repo.get(), RECENT_LIMIT);
+    const result = await client.query(recentQuery(f, surface.get()), repo.get(), RECENT_LIMIT);
     if (generation !== recentGeneration) return; // the filter or repo changed meanwhile
     filterState.set(filterStateAfter(f, null));
     const docs = recentFromHits(result.hits);
@@ -211,7 +252,7 @@ function applyFilter(value: string): void {
 }
 
 /** The digests of one poll, looked up: ONE query over the documents they touch
- * (`matchQuery`) gives their `$title`s for the cards and, when the filter is
+ * (`matchQuery`) gives their titles for the cards and, when the filter is
  * on, is narrowed to the documents it admits — revisions of the rest are
  * dropped and a digest left empty is counted as hidden. While the filter is
  * off or invalid everything passes; a `filter_invalid` answer here marks it
@@ -220,7 +261,7 @@ async function lookupDigests(digests: Digest[]): Promise<{ digests: Digest[]; ti
   const paths = digestPaths(digests);
   const state = filterState.get();
   const filter = state.kind === "on" ? state.filter : "";
-  const q = matchQuery(filter, paths);
+  const q = matchQuery(filter, paths, surface.get());
   if (q === null) return { digests, titles: new Map() };
   let titles: Map<string, string | null>;
   try {
@@ -239,6 +280,17 @@ async function lookupDigests(digests: Digest[]): Promise<{ digests: Digest[]; ti
 function setWrap(on: boolean): void {
   wrap.set(on);
   localStorage.setItem(WRAP_KEY, on ? "1" : "0");
+}
+
+/** The diff view, persisted; turning markdown on fetches the revisions behind every diff already shown (a few at a time). */
+function setDiffView(view: DiffView): void {
+  diffView.set(view);
+  saveDiffView(localStorage, view);
+  if (view !== "markdown") return;
+  const queue = Object.entries(diffs.get()).filter((e): e is [string, Extract<DiffState, { status: "ready" }>] => e[1].status === "ready");
+  void Promise.all(Array.from({ length: DIFF_CONCURRENCY }, async () => {
+    for (let next = queue.shift(); next; next = queue.shift()) await loadSources(next[0], next[1]);
+  }));
 }
 
 // ---- the feed ------------------------------------------------------------------------
@@ -378,6 +430,7 @@ function switchRepo(slug: string): void {
   localStorage.setItem(REPO_KEY, slug);
   recent.set([]);
   diffs.set({});
+  sources.set({});
   void Promise.all([loadRecent(), startFeed()]);
 }
 
@@ -441,6 +494,7 @@ export class LiveTailApp extends SignalWatcher(LitElement) {
     pre .del { background: #ffeef0; color: #7a1c1c; display: block; }
     pre .hunk { color: #6f42c1; display: block; }
     pre .ctx { display: block; }
+    unified-markdown-diff.markdown { border-top: 1px solid #e8eaef; }
     .note { padding: 8px 10px; color: #6a7382; font-size: 12.5px; border-top: 1px solid #e8eaef; }
     .note.err { color: #b3261e; }
   `;
@@ -474,6 +528,7 @@ export class LiveTailApp extends SignalWatcher(LitElement) {
             }} /> s
           </label>
           <sl-switch size="small" ?checked=${wrap.get()} @sl-change=${(e: Event) => setWrap((e.target as SlSwitch).checked)}>wrap</sl-switch>
+          <sl-switch size="small" class="view" ?checked=${diffView.get() === "markdown"} @sl-change=${(e: Event) => setDiffView((e.target as SlSwitch).checked ? "markdown" : "text")} title="render each diff as Markdown: removed elements red, added green, the enclosing list, fence or table kept">markdown</sl-switch>
           <button @click=${() => setLive(!live.get())} ?disabled=${state !== "ok"}>${live.get() ? "pause" : "resume"}</button>
           ${this.renderPill()}
         </div>
@@ -514,7 +569,7 @@ export class LiveTailApp extends SignalWatcher(LitElement) {
     const apply = (value: string) => { if (this.filterTimer) { clearTimeout(this.filterTimer); this.filterTimer = null; } applyFilter(value); };
     return html`
       <div class="filterbar">
-        <oqx-framed-filter .value=${filter.get()} ?invalid=${fs.kind === "invalid"} placeholder=${FILTER_PLACEHOLDER}
+        <oqx-framed-filter .value=${filter.get()} .surface=${surface.get()} ?invalid=${fs.kind === "invalid"} placeholder=${FILTER_PLACEHOLDER}
           @filter-input=${(e: CustomEvent<FilterDetail>) => {
             const { value } = e.detail;
             if (this.filterTimer) clearTimeout(this.filterTimer);
@@ -523,7 +578,7 @@ export class LiveTailApp extends SignalWatcher(LitElement) {
           @filter-change=${(e: CustomEvent<FilterDetail>) => apply(e.detail.value)}></oqx-framed-filter>
         ${fs.kind === "invalid"
           ? html`<span class="hint err">${fs.message}</span>`
-          : html`<span class="hint">click into the query to add a <code>where</code> predicate — an OQX expression over <code>docs</code> such as <code>${FILTER_PLACEHOLDER}</code> or <code>$path.startsWith("/notes/")</code>; it narrows the recent list and what arrives from now on (Enter applies, Escape leaves)</span>`}
+          : html`<span class="hint">click into the query to add a <code>where</code> predicate — an OQX expression over <code>docs</code> such as <code>${FILTER_PLACEHOLDER}</code> or <code>${attr(surface.get(), "path")}.startsWith("/notes/")</code>; it narrows the recent list and what arrives from now on (Enter applies, Escape leaves)</span>`}
       </div>
     `;
   }
@@ -538,7 +593,7 @@ export class LiveTailApp extends SignalWatcher(LitElement) {
     const loading = e.changes.some((ch) => states.get(ch.doc)?.status === "loading");
     const body = e.changes.map((ch, i) => html`
       ${card.rows.length ? this.renderRow(card.rows[i]!) : nothing}
-      ${this.renderBody(states.get(ch.doc))}`);
+      ${this.renderBody(states.get(ch.doc), `${e.key}:${ch.doc}`)}`);
     return this.renderCard(card, loading, body, true, "fresh", () => { for (const ch of e.changes) { const s = states.get(ch.doc); if (!s || s.status === "idle" || s.status === "error") void loadChangeDiff(e, ch); } });
   }
 
@@ -547,7 +602,7 @@ export class LiveTailApp extends SignalWatcher(LitElement) {
     const key = d.id ?? d.path;
     const state = diffs.get()[key];
     const card = recentCard(d, statsOf(state));
-    return this.renderCard(card, state?.status === "loading", this.renderBody(state), index < OPEN_RECENT, "", () => { if (!state || state.status === "idle" || state.status === "error") void loadLatestDiff(d); });
+    return this.renderCard(card, state?.status === "loading", this.renderBody(state, key), index < OPEN_RECENT, "", () => { if (!state || state.status === "idle" || state.status === "error") void loadLatestDiff(d); });
   }
 
   /** The card: an `sl-details` whose summary IS the header (every value once; the chevron alone says it opens); `onShow` fetches what is not in yet. */
@@ -580,12 +635,22 @@ export class LiveTailApp extends SignalWatcher(LitElement) {
     return html`<div class="row">${this.renderDoc(row.title, row.path)}${row.stats !== null ? this.renderStats(row.stats) : nothing}</div>`;
   }
 
-  private renderBody(state: DiffState | undefined) {
+  private renderBody(state: DiffState | undefined, key: string) {
     if (!state || state.status === "idle") return html`<div class="note">open to fetch</div>`;
     if (state.status === "loading") return html`<div class="note">fetching…</div>`;
     if (state.status === "none") return html`<div class="note">${state.note}</div>`;
     if (state.status === "error") return html`<div class="note err">${state.message}</div>`;
+    if (diffView.get() === "markdown") return this.renderMarkdown(state, sources.get()[key]);
     return html`<pre class=${wrap.get() ? "wrap" : ""}>${state.text.split("\n").map((line) => html`<span class=${diffLineKind(line)}>${line}</span>`)}</pre>`;
+  }
+
+  /** The markdown view: the diff over both revisions' full text (the element renders the excerpt alone, and says so, until they are in). */
+  private renderMarkdown(state: Extract<DiffState, { status: "ready" }>, source: SourceState | undefined) {
+    const ready = source?.status === "ready" ? source : null;
+    return html`
+      ${source?.status === "error" ? html`<div class="note err">revisions: ${source.message}</div>` : nothing}
+      <unified-markdown-diff class="markdown" .diff=${state.text} .oldText=${ready?.before ?? null} .newText=${ready?.after ?? null} ?wrap=${wrap.get()}></unified-markdown-diff>
+    `;
   }
 
   private renderStats(s: Stats) {

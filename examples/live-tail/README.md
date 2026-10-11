@@ -10,6 +10,13 @@ Edit a file in the repository (or change it through the MCP tools or the `omg`
 CLI) while the page is open and the commit appears at the top within the poll
 interval, open, with the diff of what changed.
 
+A **markdown** switch turns every diff from the plain unified text into
+rendered Markdown — real bullets, headings, tables and code blocks — with the
+removed elements on red and the added ones on green, and the construct a hunk
+starts inside of (a fence, a nested list, a table) kept whole, because the
+view renders the two revisions' full text rather than the excerpt (see "The
+markdown view").
+
 An **OQX filter** at the top narrows both: the field shows the recent query
 itself with its `where` predicate as the one editable hole, so `status ==
 "active"` there limits the recent list to the active documents and, from then
@@ -53,9 +60,11 @@ workspace), `dev:mcp` (just the proxy, = `dev --proxy-only`), `logout`,
 Controls (all persisted in `localStorage`): the **repo** picker, **every N s**
 (the poll interval), **wrap** (word-wrap in every diff view — off is
 `white-space: pre` with a horizontal scroll, on is `pre-wrap` +
-`overflow-wrap: anywhere`), **pause/resume**, and the **filter** field below
-the header (Enter, leaving the field, a 600 ms pause in typing, or the clear
-button apply it).
+`overflow-wrap: anywhere`; in the markdown view it applies to the code
+blocks), **markdown** (the diff view: off — the default — is the plain unified
+text, on is rendered Markdown; `omgbase-live-tail.view` = `text` | `markdown`),
+**pause/resume**, and the **filter** field below the header (Enter, leaving the
+field, a 600 ms pause in typing, or the clear button apply it).
 
 ## What it does
 
@@ -67,8 +76,10 @@ dev proxy); nothing imports `@omgbase/core`. On load:
    sign-in wait).
 2. `version` → the surface version for the header (a server without the tool
    is 1.x); `repos` → the repository picker (the choice is persisted).
-3. **Recently updated** — `select $path, $title, $updated_at from docs order by
-   $updated_at desc limit 25`; for each hit `docs_history { id | path }` gives
+3. **Recently updated** — `select path, title, updated_at from docs order by
+   updated_at desc limit 25` (the attributes spelled for the server: bare on
+   3.0, `$path`/`$title`/`$updated_at` on 2.x — `lib/paths.ts` `attr`); for
+   each hit `docs_history { id | path }` gives
    the version list and the last two versions are diffed with `diff_unified
    { doc_id | doc_path, from_rev, to_rev }`; a document with one version is
    **created** and `docs_read_at { id | path, rev }` gives its content (the
@@ -102,8 +113,8 @@ words (no "latest change", no "created" badge, no digest summary line):
 09:05:07  Alpha  /notes/alpha.md   seq 6 · c_761p702   api   +1 −0
 ```
 
-— the update's time (a recent document's `$updated_at`, a digest's `ts`;
-`HH:MM:SS` today, else `YYYY-MM-DD HH:MM`), `$title` prominent, `$path`
+— the update's time (a recent document's `updated_at`, a digest's `ts`;
+`HH:MM:SS` today, else `YYYY-MM-DD HH:MM`), `title` prominent, `path`
 secondary (the path alone when the title is null or the same), the change's
 `seq` and commit id (a recent card takes them, with the actor, from
 `docs_history`'s latest version, fetched anyway for the diff pair), who made
@@ -123,6 +134,82 @@ everything committed meanwhile arrives in one page. The pill says `live · N s`,
 `paused`, `filter invalid — showing everything`, or the connection state;
 errors show in a banner above the feed.
 
+### The markdown view
+
+With **markdown** on, each card's body is a `<unified-markdown-diff>`
+(`src/elements/unified-markdown-diff.ts`) instead of the `<pre>`: the diff
+rendered as Markdown, removed elements on red, added on green, context neutral.
+Both card kinds go through the one `renderBody`, so the recent documents and
+the feed entries switch together; the switch is persisted
+(`diffViewOf`/`loadDiffView`/`saveDiffView` in `lib/feed.ts`).
+
+The problem the element solves: a hunk is an excerpt and may start in the
+middle of a construct — inside a fenced code block (its lines would render as
+prose), at a nested list item (the indentation context is gone), at a table
+row (a row without the header and alignment rows is not a table). Rendering
+the hunk's lines as Markdown would break all three. So the element does not
+render the excerpt. When the markdown view is on, the page fetches both
+revisions' full text — `docs_read_at { id | path, rev }` for `diff_unified`'s
+`from` and `to` (a created document already has its content: the before side
+is empty) — and `lib/markdown-diff.ts` renders the **documents**, using the
+hunks only to decide what to show and how to colour it:
+
+1. `parseUnified` reads the hunks; `alignRows` lays the two texts side by side
+   as one sequence of rows — every line of either revision, `ctx` / `del` /
+   `add`, with its old and/or new line number and the hunk it came from. Lines
+   are counted the way `diff_unified` counts them (`raw.split("\n")`, so a
+   trailing newline is an empty last line; `createdDiff`'s count without it is
+   accepted too); texts that do not match the diff fall back to the excerpt.
+2. markdown-it parses each revision; its block tokens carry `map` (source line
+   ranges), from which `blockTree` builds containers (lists, items,
+   blockquotes) with children and leaves (paragraphs, headings, fences,
+   tables, a YAML `frontmatter` block of its own — a small block rule, so
+   `---` + `title: …` is not a thematic break and a setext heading). A block's
+   lines give it a span of rows.
+3. The two trees are merged level by level. Blocks of the two sides whose row
+   spans overlap form one **cluster** — the before and after versions of one
+   element — and the rule for a cluster is:
+   - **unchanged** (every row `ctx`): rendered once, neutral; a container only
+     partly inside the hunk shows just the children the hunk touches;
+   - **changed, one container on each side of the same kind** (list ↔ list,
+     item ↔ item, blockquote ↔ blockquote): the container keeps its chrome
+     (`<ul>`, `<li>`, `<blockquote>`, an `<ol>`'s `start` adjusted for elided
+     items) and the rule recurses into the children — so in a list only the
+     items that changed are coloured, inside the nesting they live in;
+   - **changed, one verbatim block on each side** — a fenced code block, an
+     indented code block, the frontmatter — whose fence lines did not change:
+     rendered once as that code block (with its language) with the **lines**
+     coloured individually, removed red, added green, the rest neutral. Code
+     and YAML lines are independent, and `status: active` → `status: done`
+     should read as one line, not as two copies of the frontmatter;
+   - **any other change** — a table with one changed cell, a paragraph with one
+     changed word, a heading, an item whose own text changed, a fence whose
+     info string changed, a paragraph split in two — is rendered **whole,
+     twice**: every before block of the cluster on the removed (red) side, then
+     every after block on the added (green) side. A table therefore always
+     comes with its header and alignment rows, and nothing inside a rendered
+     element is ever coloured a line at a time except in a code block.
+4. Only clusters that touch a hunk's rows are shown — the diff's own three
+   lines of context decide the extent — and the rest of the document, and the
+   rest of a container's children, is elided with a `⋯` gap marker.
+5. The HTML is markdown-it's own renderer over the original tokens (a
+   container's open/close tokens around its rendered children, a leaf's token
+   slice), `data-kind="add|del"` on the coloured pieces (`<li data-kind>` for
+   items, a wrapping `<div class="piece">` otherwise, `<span class="line">`
+   in a code block). Sanitised: `html: false` (raw HTML is escaped), images
+   are named (`[image: alt]`) rather than fetched, `javascript:` and friends
+   are not links (markdown-it's `validateLink`).
+
+Until both texts are in (or when they do not match the diff) the element
+renders the hunks alone and says so in a muted line — the known-broken case,
+kept as the fallback. **Why markdown-it**: one small, maintained dependency
+(v15, its own types, no transitive surprises) whose block tokens carry source
+line ranges natively, whose renderer can be driven over a partial token array
+(so a list's chrome can be emitted around substituted children), with GFM
+tables built in and `html: false` as a one-line sanitiser; `marked` exposes
+only `raw` per token, and the micromark/mdast route is five packages for the
+same information.
+
 ### The filter
 
 The field is the recent query as one CodeMirror 6 editor with OQX highlighting
@@ -130,17 +217,19 @@ The field is the recent query as one CodeMirror 6 editor with OQX highlighting
 dimmed:
 
 ```
-select $path, $title, $updated_at from docs
-order by $updated_at desc limit 25
+select path, title, updated_at from docs
+order by updated_at desc limit 25
 ```
 
-Click into it (anywhere) and a `where ` line opens between the two with the
-caret right after the keyword, in the hole:
+(against a 2.x server the frame reads `select $path, $title, $updated_at …` —
+the element's `surface` property respells it when the connection says). Click
+into it (anywhere) and a `where ` line opens between the two with the caret
+right after the keyword, in the hole:
 
 ```
-select $path, $title, $updated_at from docs
+select path, title, updated_at from docs
 where ⟨hole⟩
-order by $updated_at desc limit 25
+order by updated_at desc limit 25
 ```
 
 Lines 1 and 3 and the `where ` are the frame — read-only and dimmed; the hole
@@ -176,10 +265,10 @@ OQX (the parser rejects `{` after the target), which is why the frame uses
   the filter is fixed nothing is hidden. Fixing it re-runs the list and
   resumes filtering.
 - **The feed**: every poll that brings digests runs ONE lookup query over the
-  documents they touch — `select $path, $title from docs where ($path ==
-  "/a.md" or $path == "/b.md" …)` (`matchQuery`; OQX has no array literal,
-  so the path equalities are or-ed, each JSON-quoted; hits read through
-  `hitPath` under either envelope). Its `$title`s are the cards' titles
+  documents they touch — `select path, title from docs where (path ==
+  "/a.md" or path == "/b.md" …)` (`matchQuery`, in the server's spelling; OQX
+  has no array literal, so the path equalities are or-ed, each JSON-quoted;
+  hits read through `hitPath`). Its titles are the cards' titles
   (`titlesByPath`: each change shows the title prominent and the `/`-rooted
   path secondary, like the recent list; a document the lookup does not return
   — deleted, moved away, no title — shows the path alone). With a filter the
@@ -194,16 +283,18 @@ OQX (the parser rejects `{` after the target), which is why the frame uses
   screen as they are: it applies to the recent list and to what arrives from
   now on.
 
-**Both result shapes.** The server may be surface 2.x (`{ id, path, … }` hits;
-`docs_history` `docId`/`path`/`ts`/`contentHash`, `changes_since` revisions
-`{ doc, path, contentHash }`, `docs_read_at` `content`, `diff_unified`
-`{ doc, path, … }`, `docs_list` `{ path, blocks, ts }`) or 3.0, where every tool
-spells a row the way the language does (`{ $id, $path, … }` hits; `$id`/`$path`/
-`$updated_at`/`$hash`/`$raw` everywhere — `spec/surface` §1.2); `lib/paths.ts`
-reads identity through `hitId`/`hitPath`, `lib/shapes.ts` reads each tool
-result (`changesOf`, `docVersionsOf`, `unifiedOf`, `readAtOf`) by the server's
-`specs.surface` (an unknown version reads as 2.x), and every path is shown
-`/`-rooted.
+**Both generations.** The server may be surface 2.x (`docs_history`
+`docId`/`path`/`ts`/`contentHash`, `changes_since` revisions `{ doc, path,
+contentHash }`, `docs_read_at` `content`, `diff_unified` `{ doc, path, … }`,
+`docs_list` `{ path, blocks, ts }`; `$path`/`$title`/`$updated_at` in the
+language) or 3.0, where every tool spells a row the way the language does and
+the language's attributes are bare (`id`/`path`/`updated_at`/`hash`/`raw`
+everywhere — `spec/surface` §1.2; `$` belongs to OQX alone). A query hit is
+`{ id, path, … }` on both. `lib/paths.ts` reads identity through
+`hitId`/`hitPath` and spells the generated queries with `attr`, `lib/shapes.ts`
+reads each tool result (`changesOf`, `docVersionsOf`, `unifiedOf`, `readAtOf`)
+by the server's `specs.surface` (an unknown version reads as 2.x), and every
+path is shown `/`-rooted.
 
 **Session recovery.** The proxy forgets a session after `--idle` seconds
 (default 3600) or when it restarts and answers the next POST with `404`
@@ -221,30 +312,67 @@ reconnected* in the header; only a second failure is shown.
 - `src/elements/oqx-framed-filter.ts` — `<oqx-framed-filter>`: the CodeMirror 6
   editor with OQX highlighting and the editable hole (events `filter-input`,
   `filter-change`; the setup follows graph-ui's `oqx-query-editor`).
+- `src/elements/unified-markdown-diff.ts` — `<unified-markdown-diff>`: the
+  markdown view of one diff (properties `diff`, `oldText`, `newText`, `wrap`;
+  `before`/`after` would shadow `Element.before()`/`after()`), styles for the
+  rendered Markdown and the red/green pieces and lines.
+- `src/lib/markdown-diff.ts` — the pure part of that view: `parseUnified`,
+  `splitLines`/`dropTrailingEmpty`, `consistent`, `sidesFromHunks`,
+  `alignRows`, the markdown-it instance (`markdown()`: frontmatter rule,
+  images named not fetched), `blockTree`, `markdownDiff` (the pieces: block /
+  container / verbatim / gap), `renderPieces`/`renderMarkdownDiff`,
+  `describePieces` (the flat description the tests assert).
 - `src/lib/feed.ts` — the pure parts: `startCursor`/`advanceCursor`,
   `entryFromDigest`/`prependDigests`/`byline`, `latestPair`/`pairForCommit`,
   `recentQuery`/`frameFor`/`recentFromHits`, the poll's lookup
   `matchQuery`/`digestPaths`/`titlesByPath`, the filter's
   `partitionByFilter`/`filterStateAfter`/`hiddenLine`,
   `latestChange`/`recentCard`/`entryCard`/`cardFields`/`sumStats`/`formatStats` (the card),
-  `createdDiff`/`diffLineKind`/`diffStats`/`formatTime`/`pollMs`.
+  `createdDiff`/`diffLineKind`/`diffStats`/`formatTime`/`pollMs`, the diff view's
+  persistence `diffViewOf`/`loadDiffView`/`saveDiffView`.
 - `src/lib/hole.ts` — the hole as CodeMirror state (`holeField`, `holeOnly`,
   `mapHole`, `changesInside`, `insertsNewline`, `reframe`/`reframeSpec`,
   `holeText`, `holeState`); only `@codemirror/state`, so it is tested with
   plain `EditorState`s.
-- `src/lib/paths.ts` — `surfaceOf`, `surfaceMajor`, `hitId`, `hitPath`, `rooted`.
+- `src/lib/paths.ts` — `surfaceOf`, `surfaceMajor`, `hitId`, `hitPath`,
+  `attr`/`bareAttributes`, `docLocator`/`docForeign`, `rooted`.
 - `src/lib/shapes.ts` — the tool results under both generations, read by the
   server's `specs.surface` into the one shape `feed.ts` keeps: `changesOf`
   (`revisionOf`/`digestOf`), `docVersionsOf` (`versionOf`), `unifiedOf`,
-  `readAtOf`, `dollarNames`.
+  `readAtOf`, `surface3`.
 - `src/lib/mcp-client.ts` — `OmgClient` (the tool calls, the JSON-text envelope,
   session recovery), `fetchWhoAmI`.
 - `scripts/dev.mjs`, `scripts/dev-args.mjs`, `scripts/dev-workspace.mjs` —
   the proxy + Vite dev script and the sample workspace.
 - `test/` — vitest over the pure parts, the hole's transaction filter, the dev
-  arguments and the client's session recovery (a fake transport; 50 tests).
+  arguments, the client's session recovery (a fake transport) and the markdown
+  diff (`markdown-diff.test.ts`: the hunk parser and row alignment, both line
+  counts, the block tree, hunk → block context for a fence, a nested list, a
+  table row, a heading, a paragraph, the frontmatter, a blockquote, an
+  indented code block and a fence inside a list item, a created document, an
+  `<ol>`'s numbering, the excerpt fallback, sanitisation; the view's
+  persistence in `feed.test.ts`; 84 tests).
 
 ## Verified headlessly
+
+The markdown view (Chrome `--headless=new` over CDP, proxy 18811, Vite 15811,
+a temporary workspace): five cards in the plain view by default (`view` not
+stored, the switch off); rewriting `alpha.md` with a nested list, a fence and a
+table arrived in the feed in 2 s; a real click on the switch's input turned it
+on and stored `omgbase-live-tail.view = markdown`; the entry rendered a
+`<table>`, a `<pre><code>`, `ul li ul li` and six green pieces with computed
+backgrounds `rgb(230, 255, 237)` (add) / `rgb(255, 238, 240)` (del) over a
+transparent body, with no "excerpt" note (both revisions were in). Then: one
+table **cell** changed → the whole table twice, both with `name status`
+headers, red `active` then green `done`, one `⋯` gap, no stray `<pre>`/`<ul>`;
+one **fence line** changed → ONE `language-js` code block with the lines
+`ctx:const a = 1;` / `del:const b = 2;` / `add:const b = 22;` coloured
+individually; `omg meta notes/alpha.md --set status=done` → ONE yaml block
+with `ctx:title: Alpha` / `del:status: active` / `add:status: done` and no
+`<hr>`; the recent cards used the view too (alpha's latest change as that yaml
+block, the created documents all green). Switch off → the `<pre>`s back and
+`view = text`; on again + reload → still on, diffs rendered. No console
+errors (Lit's dev-mode warning only).
 
 Surface 3.0 batch 2 (the argument names — `docs_history { id | path }`,
 `diff_unified { doc_id | doc_path }`, `docs_read_at { id | path, rev }`, chosen
@@ -271,7 +399,8 @@ nothing, **resume** → the third digest arrived on top. No console errors.
 
 The filter, the same way (proxy 18797, Vite 15183, a fresh sample workspace):
 the idle field read `select $path, $title, $updated_at from docs` / `order by
-$updated_at desc limit 25` — two lines, no `where`; focusing it opened the
+$updated_at desc limit 25` (the attribute spelling of that build; a 3.0 build
+reads `select path, title, updated_at …`) — two lines, no `where`; focusing it opened the
 `where ` line with the caret at offset 50, right after the keyword, and the
 placeholder in the empty hole; blurring with the hole empty went back to two
 lines, as did focus + Escape; a real click on the idle frame's `order by` line

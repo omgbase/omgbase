@@ -136,7 +136,7 @@ export class OmgClient {
   }
 
   // The four reads below return the server's wire shape untouched: surface
-  // 3.0 spells a row `$id`/`$path`/`$hash`/`$updated_at`/`$raw` where 2.x had
+  // 3.0 spells a row `id`/`path`/`hash`/`updated_at`/`raw` where 2.x had
   // `doc`/`docId`/`path`/`contentHash`/`ts`/`content` (spec/surface §3–§4), and
   // the page reads either through lib/shapes.ts by the connected version.
 
