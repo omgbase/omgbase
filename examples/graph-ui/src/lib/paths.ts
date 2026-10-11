@@ -21,7 +21,14 @@
 //     `pathExpr`;
 //   - the keyset cursor changed shape and a 1.x cursor is refused by 2.0; the
 //     demo never stores one (`OmgClient.queryAll` follows the cursor within one
-//     call), so there is nothing to drop on a version change.
+//     call), so there is nothing to drop on a version change;
+//   - the HIT ENVELOPE renamed its keys in 3.0 (spec/surface §1.4): a hit is
+//     `{ $id, $path, ...projection }` — the intrinsics' own spellings, so a key
+//     copied from a hit pastes into the next `where` — where 1.x/2.x spelled
+//     `{ id, path }`; a row surfacing as a VALUE (an empty `collect { }`)
+//     follows the same rename. Brendan's remote may lag the local build, so
+//     the demo reads a hit's identity through `hitId`/`hitPath`/`rowRef`,
+//     which accept both shapes (`$id` first), and never through `.id`/`.path`.
 //
 // The version comes from the `version` MCP tool's `specs.surface` ("major.minor",
 // surface ≥ 1.4); a server without the tool is treated as 1.x (`surfaceOf`).
@@ -51,6 +58,39 @@ export function surfaceMajor(surface: string | null): number | null {
  * a 2.0 server accepts it everywhere. */
 export function rootsPaths(surface: string | null): boolean {
   return (surfaceMajor(surface) ?? 1) >= 2;
+}
+
+/** The hit envelope's keys under both surface generations: `$id`/`$path` on
+ * ≥ 3.0, `id`/`path` before. Neither spelling is a projectable field. */
+export const HIT_ENVELOPE_KEYS: ReadonlySet<string> = new Set(["$id", "$path", "id", "path"]);
+
+/** A query hit's id: `$id` (surface ≥ 3.0) else `id` (1.x/2.x), else null. */
+export function hitId(hit: Record<string, unknown> | null | undefined): string | null {
+  const v = hit?.$id ?? hit?.id;
+  return typeof v === "string" ? v : null;
+}
+
+/** A query hit's document path AS RETURNED (bare on 1.x, rooted since 2.0):
+ * `$path` (surface ≥ 3.0) else `path` (1.x/2.x), else null. Callers that key
+ * nodes root it (`rooted`). */
+export function hitPath(hit: Record<string, unknown> | null | undefined): string | null {
+  const v = hit?.$path ?? hit?.path;
+  return typeof v === "string" ? v : null;
+}
+
+/** A row surfacing as a VALUE in a result (spec/surface §1.4 "rows as
+ * values": an empty `collect { }` / `first { }`, a `$it` projection) — `{ $id,
+ * $path }` on ≥ 3.0, `{ id, path }` before — as `{ id, path }` with the path
+ * rooted; null for anything that is not that shape (a string reference, a
+ * record with other keys, a scalar). */
+export function rowRef(v: unknown): { id: string; path: string } | null {
+  if (v === null || typeof v !== "object" || Array.isArray(v)) return null;
+  const o = v as Record<string, unknown>;
+  const keys = Object.keys(o);
+  if (keys.length !== 2 || !keys.every((k) => HIT_ENVELOPE_KEYS.has(k))) return null;
+  const id = hitId(o);
+  const path = hitPath(o);
+  return id !== null && path !== null ? { id, path: rooted(path) } : null;
 }
 
 /** The `/`-rooted form: exactly one leading slash. Idempotent. */

@@ -210,8 +210,10 @@ pub fn graph_neighborhood(
             query_truncated = true;
         }
         for hit in &res.hits {
-            let id = hit["id"].as_str().unwrap_or_default().to_owned();
-            let path = hit["path"].as_str().unwrap_or_default().to_owned();
+            // The walk's hits carry `$id`/`$path` (§1.4, 3.0); `graph`'s own
+            // envelope keeps `documents[].id/path` — a tool result, not a hit.
+            let id = hit["$id"].as_str().unwrap_or_default().to_owned();
+            let path = hit["$path"].as_str().unwrap_or_default().to_owned();
             let hop = hit["_depth"].as_f64().unwrap_or(f64::NAN);
             let degree = (hop - 1.0) as i64;
             let replace = docs

@@ -302,7 +302,10 @@ fn a_scan_projected_as_a_value_renders_as_its_rows() {
     let all = hit["all"].as_array().expect("an array of rows");
     assert_eq!(hit["n"].as_f64(), Some(all.len() as f64));
     assert!(all.len() > 10);
-    assert!(all[0].get("path").is_some(), "rendered as {{ id, path }}");
+    assert!(
+        all[0].get("$path").is_some(),
+        "rendered as {{ $id, $path }}"
+    );
 }
 
 #[test]

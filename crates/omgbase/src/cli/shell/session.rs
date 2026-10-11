@@ -461,7 +461,7 @@ impl<'a> ShellSession<'a> {
                 }
             }
             Json::Number(_) | Json::Bool(_) => js_json(&cap.value),
-            Json::Object(o) => ["id", "node", "path", "locator"]
+            Json::Object(o) => ["$id", "id", "node", "$path", "path", "locator"]
                 .iter()
                 .find_map(|k| o.get(*k).filter(|v| !v.is_null()))
                 .map_or_else(

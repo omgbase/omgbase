@@ -1,6 +1,36 @@
 import { describe, expect, it } from "vitest";
 import { parse } from "@omgbase/oqx";
-import { LEGACY_SURFACE, docArg, pathExpr, pathOperand, rooted, rootsPaths, samePath, serverPath, surfaceMajor, surfaceOf, unrooted } from "../src/lib/paths.ts";
+import { HIT_ENVELOPE_KEYS, LEGACY_SURFACE, docArg, hitId, hitPath, pathExpr, pathOperand, rooted, rootsPaths, rowRef, samePath, serverPath, surfaceMajor, surfaceOf, unrooted } from "../src/lib/paths.ts";
+
+describe("hitId / hitPath / rowRef — the hit envelope across surface generations", () => {
+  it("reads `$id`/`$path` (surface ≥ 3.0) and falls back to `id`/`path` (1.x/2.x)", () => {
+    expect(hitId({ $id: "d_1", $path: "/a.md" })).toBe("d_1");
+    expect(hitPath({ $id: "d_1", $path: "/a.md" })).toBe("/a.md");
+    expect(hitId({ id: "d_1", path: "a.md" })).toBe("d_1");
+    expect(hitPath({ id: "d_1", path: "a.md" })).toBe("a.md");
+    // A 3.0 hit whose projection aliased `id`/`path` to something else: the `$` keys win.
+    expect(hitId({ $id: "d_1", $path: "/a.md", id: 7, path: "x" })).toBe("d_1");
+    expect(hitPath({ $id: "d_1", $path: "/a.md", id: 7, path: "x" })).toBe("/a.md");
+  });
+  it("is null for a hit without an identity, a non-string value, or no hit", () => {
+    expect(hitId({ title: "A" })).toBeNull();
+    expect(hitPath({ $path: 3 })).toBeNull();
+    expect(hitId(null)).toBeNull();
+    expect(hitPath(undefined)).toBeNull();
+  });
+  it("rowRef recognizes a row surfacing as a value in either spelling, rooted, and nothing else", () => {
+    expect(rowRef({ $id: "b_0", $path: "/a.md" })).toEqual({ id: "b_0", path: "/a.md" });
+    expect(rowRef({ id: "d_1", path: "a.md" })).toEqual({ id: "d_1", path: "/a.md" });
+    expect(rowRef("/a.md")).toBeNull();
+    expect(rowRef({ $id: "d_1", $path: "/a.md", title: "A" })).toBeNull(); // a hit with a projection is not a bare ref
+    expect(rowRef({ $id: "d_1" })).toBeNull();
+    expect(rowRef([{ $id: "d_1", $path: "/a.md" }])).toBeNull();
+    expect(rowRef(null)).toBeNull();
+  });
+  it("names both spellings as the envelope", () => {
+    expect([...HIT_ENVELOPE_KEYS].sort()).toEqual(["$id", "$path", "id", "path"]);
+  });
+});
 
 describe("surfaceOf", () => {
   it("reads specs.surface off the version tool's result", () => {

@@ -27,8 +27,8 @@ function save(path: string, content: string): void {
   processCheckpoint(store, repoId, dir, [{ path }]);
 }
 function paths(q: string, plan?: boolean): string[] {
-  const r = oqxRun(store, repoId, q, { limit: 100, ...(plan === false ? { plan: false } : {}) }) as { hits: { path: string }[] };
-  return r.hits.map((h) => h.path).sort();
+  const r = oqxRun(store, repoId, q, { limit: 100, ...(plan === false ? { plan: false } : {}) }) as { hits: { $path: string }[] };
+  return r.hits.map((h) => h.$path).sort();
 }
 function both(q: string): { planned: string[]; memory: string[] } {
   return { planned: paths(q), memory: paths(q, false) };

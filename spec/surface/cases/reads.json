@@ -2797,8 +2797,8 @@
           {
             "hits": [
               {
-                "id": "d_0",
-                "path": "/guide.md"
+                "$id": "d_0",
+                "$path": "/guide.md"
               }
             ],
             "truncated": false,
@@ -7650,24 +7650,24 @@
           {
             "hits": [
               {
-                "id": "d_11",
-                "path": "/substances/mercury.md"
+                "$id": "d_11",
+                "$path": "/substances/mercury.md"
               },
               {
-                "id": "d_12",
-                "path": "/substances/philosophers-stone.md"
+                "$id": "d_12",
+                "$path": "/substances/philosophers-stone.md"
               },
               {
-                "id": "d_13",
-                "path": "/substances/prima-materia.md"
+                "$id": "d_13",
+                "$path": "/substances/prima-materia.md"
               },
               {
-                "id": "d_14",
-                "path": "/substances/salt.md"
+                "$id": "d_14",
+                "$path": "/substances/salt.md"
               },
               {
-                "id": "d_15",
-                "path": "/substances/sulphur.md"
+                "$id": "d_15",
+                "$path": "/substances/sulphur.md"
               }
             ],
             "truncated": false,
@@ -8383,6 +8383,283 @@
               "select _depth: $depth, _stop: $stop, _edges: doc.out_edges collect { id: $id, src: $src, dst: $dst, dst_path: $dst_path, dst_uri: $dst_uri, dst_kind: dst_kind, predicate: predicate, provenance: provenance, anchor: anchor, src_field: src_field } from docs where $id == \"d_0\" follow distinct doc.out { depth 1 }",
               "select _depth: $depth, _stop: $stop, _edges: doc.in_edges collect { id: $id, src: $src, dst: $dst, dst_path: $dst_path, dst_uri: $dst_uri, dst_kind: dst_kind, predicate: predicate, provenance: provenance, anchor: anchor, src_field: src_field } from docs where $id == \"d_0\" follow distinct doc.in { depth 1 }"
             ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "hit-envelope-round-trip",
+      "notes": "§1.4 (3.0) through the `query` tool: every hit is `{ $id, $path, ...projection }`. The script reads the collection, copies `d_0` (guide.md's `$id` from the first hit) into `where $id == …` with no translation, projects `$id`/`$path` (they collapse onto the envelope keys), pages with the keyset cursor (its tuple carries values, not key names — unchanged by the rename), renders a block row as a value (`{ $id, $path }`), and reads `values` (no hits, so untouched). The other tools' envelopes are not hits and keep their names: `docs_list` items `{ path }`, `nodes_get` `id`.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-10-10T00:00:00.000Z",
+            "items": [
+              {
+                "path": "guide.md",
+                "source": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md).\n\n## Setup\n\n- first item\n- second item\n"
+              },
+              {
+                "path": "notes/one.md",
+                "source": "# One\n\nBack to [guide](/guide.md).\n"
+              }
+            ]
+          }
+        },
+        {
+          "read": {
+            "tool": "query",
+            "args": {
+              "query": "from docs"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "query",
+            "args": {
+              "query": "select $id from docs where $id == \"d_0\""
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "query",
+            "args": {
+              "query": "select $path, title: $title from docs where $path == \"/guide.md\""
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "query",
+            "args": {
+              "query": "select id: $id, path: $path from docs where $id == \"d_1\""
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "query",
+            "args": {
+              "query": "from docs",
+              "limit": 1
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "query",
+            "args": {
+              "query": "from docs",
+              "limit": 1,
+              "cursor": "WyIvZ3VpZGUubWQiLCJkXzAiXQ"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "query",
+            "args": {
+              "query": "select first_block: blocks first { }, links: nodes collect { where kind == \"md:link\" } from docs where $id == \"d_0\""
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "query",
+            "args": {
+              "query": "select $path values from docs"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "query",
+            "args": {
+              "query": "from blocks where $id == \"b_0\""
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "docs_list",
+            "args": {}
+          }
+        },
+        {
+          "read": {
+            "tool": "nodes_get",
+            "args": {
+              "id": "b_0",
+              "resolution": "text"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "guide.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 6
+              }
+            },
+            {
+              "path": "notes/one.md",
+              "echo": false,
+              "doc": "d_1",
+              "commit": "c_1",
+              "rev": "r_1",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 2
+              }
+            }
+          ],
+          {
+            "hits": [
+              {
+                "$id": "d_0",
+                "$path": "/guide.md"
+              },
+              {
+                "$id": "d_1",
+                "$path": "/notes/one.md"
+              }
+            ],
+            "truncated": false,
+            "cursor": null,
+            "consumer": "collect"
+          },
+          {
+            "hits": [
+              {
+                "$id": "d_0",
+                "$path": "/guide.md"
+              }
+            ],
+            "truncated": false,
+            "cursor": null,
+            "consumer": "collect"
+          },
+          {
+            "hits": [
+              {
+                "$id": "d_0",
+                "$path": "/guide.md",
+                "title": "Guide"
+              }
+            ],
+            "truncated": false,
+            "cursor": null,
+            "consumer": "collect"
+          },
+          {
+            "hits": [
+              {
+                "$id": "d_1",
+                "$path": "/notes/one.md",
+                "id": "d_1",
+                "path": "/notes/one.md"
+              }
+            ],
+            "truncated": false,
+            "cursor": null,
+            "consumer": "collect"
+          },
+          {
+            "hits": [
+              {
+                "$id": "d_0",
+                "$path": "/guide.md"
+              }
+            ],
+            "truncated": true,
+            "cursor": "WyIvZ3VpZGUubWQiLCJkXzAiXQ",
+            "consumer": "collect"
+          },
+          {
+            "hits": [
+              {
+                "$id": "d_1",
+                "$path": "/notes/one.md"
+              }
+            ],
+            "truncated": false,
+            "cursor": null,
+            "consumer": "collect"
+          },
+          {
+            "hits": [
+              {
+                "$id": "d_0",
+                "$path": "/guide.md",
+                "first_block": {
+                  "$id": "b_0",
+                  "$path": "/guide.md"
+                },
+                "links": [
+                  {
+                    "$id": "n_7f86eccd7a7c",
+                    "$path": "/guide.md"
+                  }
+                ]
+              }
+            ],
+            "truncated": false,
+            "cursor": null,
+            "consumer": "collect"
+          },
+          {
+            "hits": [],
+            "truncated": false,
+            "cursor": null,
+            "consumer": "collect",
+            "values": [
+              "/guide.md",
+              "/notes/one.md"
+            ]
+          },
+          {
+            "hits": [
+              {
+                "$id": "b_0",
+                "$path": "/guide.md"
+              }
+            ],
+            "truncated": false,
+            "cursor": null,
+            "consumer": "collect"
+          },
+          {
+            "items": [
+              {
+                "path": "/guide.md",
+                "blocks": 6,
+                "ts": "2026-10-10T00:00:00.000Z"
+              },
+              {
+                "path": "/notes/one.md",
+                "blocks": 2,
+                "ts": "2026-10-10T00:00:00.000Z"
+              }
+            ],
+            "truncated": false,
+            "cursor": null
+          },
+          {
+            "id": "b_0",
+            "type": "heading",
+            "text": "Guide"
           }
         ]
       }

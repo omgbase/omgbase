@@ -210,11 +210,11 @@ scalar-authored `tags: substance` is one element, so mercury's list empties):
 
 ```console
 $ omg query 'select tags: tags collect { $it values where $it != "substance" } from docs where type == "substance"' --jsonl
-{"id":"d_0vsapzt","path":"/substances/mercury.md","tags":[]}
-{"id":"d_1rren8z","path":"/substances/philosophers-stone.md","tags":["goal","legendary"]}
-{"id":"d_prj3j7a","path":"/substances/prima-materia.md","tags":["theory"]}
-{"id":"d_h73rhv8","path":"/substances/salt.md","tags":["tria-prima"]}
-{"id":"d_5zmf9f7","path":"/substances/sulphur.md","tags":["tria-prima"]}
+{"$id":"d_0vsapzt","$path":"/substances/mercury.md","tags":[]}
+{"$id":"d_1rren8z","$path":"/substances/philosophers-stone.md","tags":["goal","legendary"]}
+{"$id":"d_prj3j7a","$path":"/substances/prima-materia.md","tags":["theory"]}
+{"$id":"d_h73rhv8","$path":"/substances/salt.md","tags":["tria-prima"]}
+{"$id":"d_5zmf9f7","$path":"/substances/sulphur.md","tags":["tria-prima"]}
 ```
 
 ## `entries()` — a record as rows, with `$key`
@@ -226,7 +226,7 @@ comes back as an array, exactly as a bare `tags` reads:
 
 ```console
 $ omg query 'select fm: entries(frontmatter) collect { k: $key, v: $it } from docs where $path == "/substances/salt.md"' --jsonl
-{"id":"d_h73rhv8","path":"/substances/salt.md","fm":[{"k":"element","v":"salt"},{"k":"layer","v":"canon"},{"k":"slug","v":"salt"},{"k":"tags","v":["substance","tria-prima"]},{"k":"tradition","v":"western"},{"k":"type","v":"substance"},{"k":"verified","v":true}]}
+{"$id":"d_h73rhv8","$path":"/substances/salt.md","fm":[{"k":"element","v":"salt"},{"k":"layer","v":"canon"},{"k":"slug","v":"salt"},{"k":"tags","v":["substance","tria-prima"]},{"k":"tradition","v":"western"},{"k":"type","v":"substance"},{"k":"verified","v":true}]}
 ```
 
 Keys are queryable too, so you can filter on a key you name at query time

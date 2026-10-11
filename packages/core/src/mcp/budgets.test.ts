@@ -80,8 +80,8 @@ describe("budget_tokens + cursor audit", () => {
     expect(page.cursor).not.toBeNull();
     const next = oqxRun(store, repoId, "from blocks", { limit: 5, cursor: page.cursor });
     // no overlap between pages
-    const firstIds = new Set(page.hits.map((h) => h.id));
-    expect(next.hits.some((h) => firstIds.has(h.id))).toBe(false);
+    const firstIds = new Set(page.hits.map((h) => h.$id));
+    expect(next.hits.some((h) => firstIds.has(h.$id))).toBe(false);
   });
 
   it("every paged surface rejects a foreign cursor with the same CursorInvalid", () => {

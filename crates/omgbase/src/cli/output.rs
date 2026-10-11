@@ -389,19 +389,28 @@ pub fn hit_cell(v: Option<&Json>) -> String {
     }
 }
 
+/// The hit envelope's keys (`spec/surface` §1.4, 3.0): never columns.
+const HIT_ID: &str = "$id";
+const HIT_PATH: &str = "$path";
+
+fn is_envelope_key(k: &str) -> bool {
+    k == HIT_ID || k == HIT_PATH
+}
+
 /// The projected keys: `projected` (the query's `select` names, in order),
-/// then every other key of `hits` but `id`/`path`, first-seen order.
+/// then every other key of `hits`, both minus the envelope's `$id`/`$path` (a
+/// `select $path` collapses onto the envelope key), first-seen order.
 pub fn hit_columns(hits: &[Json], projected: &[String]) -> Vec<String> {
     let mut cols: Vec<String> = Vec::new();
     for k in projected {
-        if k != "id" && k != "path" && !cols.iter().any(|c| c == k) {
+        if !is_envelope_key(k) && !cols.iter().any(|c| c == k) {
             cols.push(k.clone());
         }
     }
     for h in hits {
         if let Some(m) = h.as_object() {
             for k in m.keys() {
-                if k != "id" && k != "path" && !cols.iter().any(|c| c == k) {
+                if !is_envelope_key(k) && !cols.iter().any(|c| c == k) {
                     cols.push(k.clone());
                 }
             }
@@ -410,7 +419,8 @@ pub fn hit_columns(hits: &[Json], projected: &[String]) -> Vec<String> {
     cols
 }
 
-/// Human-tier hit list: `<id>  <path>` lines, or an aligned table when projected.
+/// Human-tier hit list: `<$id>  <$path>` lines, or an aligned table when
+/// projected (header `$id`, `$path`, then the projected keys — `spec/cli` §4).
 pub fn render_hits(io: Io, style: &Style, hits: &[Json], projected: &[String]) {
     let str_of = |h: &Json, k: &str| -> String {
         h.get(k)
@@ -423,28 +433,22 @@ pub fn render_hits(io: Io, style: &Style, hits: &[Json], projected: &[String]) {
         for h in hits {
             let line = format!(
                 "{}  {}",
-                style.id(&str_of(h, "id")),
-                style.accent(&str_of(h, "path"))
+                style.id(&str_of(h, HIT_ID)),
+                style.accent(&str_of(h, HIT_PATH))
             );
             io.out(line.trim_end());
         }
         return;
     }
-    let mut cols: Vec<String> = vec!["id".to_owned()];
-    if !projected.iter().any(|c| c == "$path") {
-        cols.push("path".to_owned());
-    }
+    let mut cols: Vec<String> = vec![HIT_ID.to_owned(), HIT_PATH.to_owned()];
     cols.extend(projected);
     let mut rows: Vec<Vec<String>> = vec![cols.iter().map(|c| style.dim(c)).collect()];
     for h in hits {
         rows.push(
             cols.iter()
                 .map(|c| match c.as_str() {
-                    "id" => style.id(&str_of(h, "id")),
-                    "path" => style.accent(&str_of(h, "path")),
-                    "$path" if h.get("$path").is_some_and(Json::is_string) => {
-                        style.accent(&str_of(h, "$path"))
-                    }
+                    HIT_ID => style.id(&str_of(h, HIT_ID)),
+                    HIT_PATH => style.accent(&str_of(h, HIT_PATH)),
                     other => hit_cell(h.get(other)),
                 })
                 .collect(),
@@ -489,8 +493,8 @@ mod tests {
         assert_eq!(
             hit_columns(
                 &[
-                    json!({ "id": "a", "path": "p", "x": 1 }),
-                    json!({ "id": "b", "y": 2 })
+                    json!({ "$id": "a", "$path": "p", "x": 1 }),
+                    json!({ "$id": "b", "y": 2 })
                 ],
                 &[]
             ),
@@ -498,10 +502,15 @@ mod tests {
         );
         assert_eq!(
             hit_columns(
-                &[json!({ "id": "a", "path": "p", "x": 1 })],
-                &["x".into(), "nope".into()]
+                &[json!({ "$id": "a", "$path": "p", "x": 1 })],
+                &["$path".into(), "x".into(), "nope".into()]
             ),
             vec!["x", "nope"]
+        );
+        // A user column spelled `id` is a projection, not the envelope.
+        assert_eq!(
+            hit_columns(&[json!({ "$id": "a", "$path": "p", "id": 1 })], &[]),
+            vec!["id"]
         );
     }
 }

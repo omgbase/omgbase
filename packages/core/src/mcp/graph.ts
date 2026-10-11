@@ -227,13 +227,15 @@ export async function graphNeighborhood(
     for (const hit of res.hits) {
       const hopDepth = Number(hit._depth); // $depth: seed = 1
       const degree = hopDepth - 1; // root = 0
-      const prev = docMap.get(hit.id);
+      // The walk's hits carry `$id`/`$path` (spec/surface §1.4, 3.0); `graph`'s
+      // own envelope keeps `documents[].id/path` — a tool result, not a hit.
+      const prev = docMap.get(hit.$id);
       if (!prev || degree < prev.degree) {
-        const doc: GraphDoc = { id: hit.id, path: hit.path, degree, frontier: false };
+        const doc: GraphDoc = { id: hit.$id, path: hit.$path, degree, frontier: false };
         outNames.forEach((name, i) => {
           if (name !== undefined) doc[name] = hit[`_u${i}`] ?? null;
         });
-        docMap.set(hit.id, doc);
+        docMap.set(hit.$id, doc);
       }
       // Gather this node's edges; dedup by edge id (an a→b edge is reachable as
       // a's out-edge AND b's in-edge in "both" mode).

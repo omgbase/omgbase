@@ -78,7 +78,7 @@ async function runOqx(cli: Cli, args: string[]): Promise<number> {
     cli.io.out("       query 'select $path, next: ^docs { ^$path in list(before) } from docs where type == \"milestone\"'   # paths are /-rooted on the surface ($path == \"/x.md\"; inputs accept both forms), so a property's reference compares with ^$path directly");
     cli.io.out("       query 'from docs where type == \"practitioner\" order by era desc limit 2 offset 1'   # limit/offset bound the set (after order/distinct, before the consumer)");
     cli.io.out("       query 'select fm: entries(frontmatter) collect { k: $key, v: $it } from docs where $path == \"/x.md\"'   # a record as a collection ($key/$it); also entries(attrs), entries(inline)");
-    cli.io.out("       query 'select $path values from docs where layer == \"canon\"'   # `values`: bare values, no {id,path} hits (one item only)");
+    cli.io.out("       query 'select $path values from docs where layer == \"canon\"'   # `values`: bare values, no {$id,$path} hits (one item only)");
     cli.io.out("       query 'select $path, tags: tags collect { $it values where $it != \"draft\" } from docs'   # $it = the current item (here: each tag)");
     cli.io.out("       query 'docs collect { from nodes where kind == \"md:task\" }'   # `from E` re-projects the source (→ nodes)");
     cli.io.out("       query 'from docs where text(\"philosophers stone\") and layer == \"canon\"'   # full-text prune");
@@ -159,7 +159,7 @@ export function renderOqxResult(cli: Cli, result: OqxResult): number {
     const list = result.values ?? (result.consumer === "collect" || result.consumer === "first" || result.consumer === "single" ? result.hits : undefined);
     return emitMachine(cli, result, {
       ...(list ? { items: list } : {}),
-      ...(list && !result.values ? { ids: result.hits.map((h) => h.id) } : {}),
+      ...(list && !result.values ? { ids: result.hits.map((h) => h.$id) } : {}),
       cursor,
     });
   }

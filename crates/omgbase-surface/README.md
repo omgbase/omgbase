@@ -8,7 +8,7 @@ what a client sees of an omgbase repository.
   the root row (`^docs`, `^$id`, `^$it`), the per-target intrinsics,
   reach-through and relations, the
   property rule (`spec/properties`), the row functions (`text`, `under`,
-  `within`, `has_edge`, `semantic`, …) — and the §1.4 runner: `{ id, path }`
+  `within`, `has_edge`, `semantic`, …) — and the §1.4 runner: `{ $id, $path }`
   injection, `distinct` by projection, top-level `limit`/`offset`, keyset
   paging with the base64url cursor, `values`, the consumer scalars, error
   normalization to `filter_invalid`.

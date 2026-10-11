@@ -30,8 +30,7 @@
       "expect": {
         "hits": [
           {
-            "id": "d_19",
-            "path": "/timeline/review.md",
+            "$id": "d_19",
             "$path": "/timeline/review.md",
             "prior": [
               {
@@ -55,20 +54,17 @@
       "expect": {
         "hits": [
           {
-            "id": "d_19",
-            "path": "/timeline/review.md",
+            "$id": "d_19",
             "$path": "/timeline/review.md",
             "$depth": 1
           },
           {
-            "id": "d_18",
-            "path": "/timeline/kickoff.md",
+            "$id": "d_18",
             "$path": "/timeline/kickoff.md",
             "$depth": 2
           },
           {
-            "id": "d_9",
-            "path": "/processes/dissolution.md",
+            "$id": "d_9",
             "$path": "/processes/dissolution.md",
             "$depth": 2
           }
@@ -85,22 +81,19 @@
       "expect": {
         "hits": [
           {
-            "id": "d_19",
-            "path": "/timeline/review.md",
+            "$id": "d_19",
             "$path": "/timeline/review.md",
             "$depth": 1,
             "$stop": "interior"
           },
           {
-            "id": "d_18",
-            "path": "/timeline/kickoff.md",
+            "$id": "d_18",
             "$path": "/timeline/kickoff.md",
             "$depth": 2,
             "$stop": "depth"
           },
           {
-            "id": "d_9",
-            "path": "/processes/dissolution.md",
+            "$id": "d_9",
             "$path": "/processes/dissolution.md",
             "$depth": 2,
             "$stop": "depth"
@@ -118,29 +111,25 @@
       "expect": {
         "hits": [
           {
-            "id": "d_18",
-            "path": "/timeline/kickoff.md",
+            "$id": "d_18",
             "$path": "/timeline/kickoff.md",
             "$depth": 1,
             "$stop": "interior"
           },
           {
-            "id": "d_19",
-            "path": "/timeline/review.md",
+            "$id": "d_19",
             "$path": "/timeline/review.md",
             "$depth": 2,
             "$stop": "interior"
           },
           {
-            "id": "d_18",
-            "path": "/timeline/kickoff.md",
+            "$id": "d_18",
             "$path": "/timeline/kickoff.md",
             "$depth": 3,
             "$stop": "cycle"
           },
           {
-            "id": "d_9",
-            "path": "/processes/dissolution.md",
+            "$id": "d_9",
             "$path": "/processes/dissolution.md",
             "$depth": 3,
             "$stop": "leaf"
@@ -158,8 +147,7 @@
       "expect": {
         "hits": [
           {
-            "id": "d_19",
-            "path": "/timeline/review.md",
+            "$id": "d_19",
             "$path": "/timeline/review.md"
           }
         ],
@@ -175,8 +163,8 @@
       "expect": {
         "hits": [
           {
-            "id": "d_18",
-            "path": "/timeline/kickoff.md",
+            "$id": "d_18",
+            "$path": "/timeline/kickoff.md",
             "r": [
               {
                 "$path": "/timeline/review.md"
@@ -196,8 +184,8 @@
       "expect": {
         "hits": [
           {
-            "id": "d_19",
-            "path": "/timeline/review.md",
+            "$id": "d_19",
+            "$path": "/timeline/review.md",
             "r": []
           }
         ],
@@ -213,8 +201,8 @@
       "expect": {
         "hits": [
           {
-            "id": "d_19",
-            "path": "/timeline/review.md",
+            "$id": "d_19",
+            "$path": "/timeline/review.md",
             "r": [
               {
                 "$path": "/index.md"
@@ -234,8 +222,8 @@
       "expect": {
         "hits": [
           {
-            "id": "d_18",
-            "path": "/timeline/kickoff.md",
+            "$id": "d_18",
+            "$path": "/timeline/kickoff.md",
             "r": [
               {
                 "$path": "/processes/calcination.md",
@@ -260,8 +248,8 @@
       "expect": {
         "hits": [
           {
-            "id": "d_0",
-            "path": "/index.md",
+            "$id": "d_0",
+            "$path": "/index.md",
             "r": []
           }
         ],
@@ -277,8 +265,8 @@
       "expect": {
         "hits": [
           {
-            "id": "d_0",
-            "path": "/index.md",
+            "$id": "d_0",
+            "$path": "/index.md",
             "r": [],
             "s": []
           }
@@ -295,8 +283,7 @@
       "expect": {
         "hits": [
           {
-            "id": "d_0",
-            "path": "/index.md",
+            "$id": "d_0",
             "$path": "/index.md",
             "type": "hub"
           }
@@ -313,8 +300,7 @@
       "expect": {
         "hits": [
           {
-            "id": "d_18",
-            "path": "/timeline/kickoff.md",
+            "$id": "d_18",
             "$path": "/timeline/kickoff.md",
             "type": "milestone"
           }
@@ -331,8 +317,7 @@
       "expect": {
         "hits": [
           {
-            "id": "d_19",
-            "path": "/timeline/review.md",
+            "$id": "d_19",
             "$path": "/timeline/review.md",
             "prior": [
               {
@@ -356,8 +341,8 @@
       "expect": {
         "hits": [
           {
-            "id": "d_19",
-            "path": "/timeline/review.md",
+            "$id": "d_19",
+            "$path": "/timeline/review.md",
             "n": 2
           }
         ],
@@ -378,12 +363,12 @@
         "values": [
           [
             {
-              "id": "d_18",
-              "path": "/timeline/kickoff.md"
+              "$id": "d_18",
+              "$path": "/timeline/kickoff.md"
             },
             {
-              "id": "d_9",
-              "path": "/processes/dissolution.md"
+              "$id": "d_9",
+              "$path": "/processes/dissolution.md"
             }
           ]
         ]
@@ -400,8 +385,8 @@
         "consumer": "collect",
         "values": [
           {
-            "id": "d_19",
-            "path": "/timeline/review.md"
+            "$id": "d_19",
+            "$path": "/timeline/review.md"
           },
           "/timeline/kickoff.md",
           "/timeline/lost-notes.md",
@@ -416,8 +401,8 @@
       "expect": {
         "hits": [
           {
-            "id": "d_18",
-            "path": "/timeline/kickoff.md",
+            "$id": "d_18",
+            "$path": "/timeline/kickoff.md",
             "next": [
               {
                 "$path": "/timeline/review.md"
@@ -437,8 +422,8 @@
       "expect": {
         "hits": [
           {
-            "id": "d_0",
-            "path": "/index.md",
+            "$id": "d_0",
+            "$path": "/index.md",
             "both": [
               {
                 "$path": "/index.md"

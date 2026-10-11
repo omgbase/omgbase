@@ -68,6 +68,7 @@
 // looks only at name, kind and the rows).
 
 import type { Expr, Follow, OpNode, Query, Span, Where } from "@omgbase/oqx";
+import { HIT_ENVELOPE_KEYS, hitPath, rowRef } from "./paths.ts";
 
 export type Direction = "forward" | "backward";
 export type CandidateSource = "follow" | "order by" | "inferred" | "builtin" | "pair";
@@ -124,7 +125,9 @@ export function pairName(pair: Pick<InversePair, "forward" | "backward">): strin
 }
 const PAIR_NAME_ORDER: readonly [string, string][] = [["before", "after"], ["prev", "next"], ["previous", "next"], ["predecessor", "successor"]];
 const TIMELINE_WORDS = /^(before|after|next|prev(ious)?|follows?|precedes?|succeeds?|then|parent|child(ren)?)$/i;
-const ROW_META = new Set(["id", "path", "$path", "$depth", "$stop", "$leaf", "$frontier", "$ordinal", "$id", "$doc_id"]);
+// The hit envelope under both spellings (`$id`/`$path` since surface 3.0,
+// `id`/`path` before — lib/paths.ts `HIT_ENVELOPE_KEYS`) plus the walk intrinsics.
+const ROW_META = new Set([...HIT_ENVELOPE_KEYS, "$depth", "$stop", "$leaf", "$frontier", "$ordinal", "$doc_id"]);
 
 /** Relations of a row that yield rows by themselves (spec/surface §1.2) — a
  * `follow` over one of these is not a frontmatter field, so no `refs()` hint. */
@@ -200,11 +203,15 @@ export function detectPairs(candidates: readonly Pick<Candidate, "name" | "kind"
  * relations pointing the same way, not one read from both ends). */
 export function reciprocal(rows: readonly Row[], a: string, b: string): boolean {
   const byPath = new Map<string, Row>();
-  for (const row of rows) if (typeof row.path === "string") byPath.set(rootedPath(row.path), row);
+  for (const row of rows) {
+    const p = hitPath(row);
+    if (p !== null) byPath.set(rootedPath(p), row);
+  }
   let hits = 0;
   for (const row of rows) {
-    if (typeof row.path !== "string") continue;
-    const self = rootedPath(row.path);
+    const p = hitPath(row);
+    if (p === null) continue;
+    const self = rootedPath(p);
     const aRefs = refsOf(row[a]);
     const bRefs = refsOf(row[b]);
     if (aRefs.some((r) => bRefs.includes(r))) return false;
@@ -220,10 +227,13 @@ export function reciprocal(rows: readonly Row[], a: string, b: string): boolean 
   return hits > 0;
 }
 
+/** The rooted paths a field value references: path strings, and rows that
+ * surfaced as values (`{ $id, $path }` since 3.0, `{ id, path }` before). */
 function refsOf(v: unknown): string[] {
-  if (looksLikeDocPath(v)) return [rootedPath(v as string)];
-  if (Array.isArray(v)) return v.filter(looksLikeDocPath).map((x) => rootedPath(x as string));
-  return [];
+  const one = (x: unknown): string | null => (looksLikeDocPath(x) ? rootedPath(x as string) : rowRef(x)?.path ?? null);
+  if (Array.isArray(v)) return v.map(one).filter((p): p is string => p !== null);
+  const p = one(v);
+  return p === null ? [] : [p];
 }
 
 function rootedPath(p: string): string {

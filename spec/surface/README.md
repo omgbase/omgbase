@@ -281,7 +281,7 @@ a directive receiver (`refs(see_also) collect { $path }`, `refs(before) exists
 { where $path == "x" }`), a `follow` destination (`follow refs(before),
 refs(after)` walks a timeline both ways), a nested `from` (`from
 refs(^before)`), or a value (`size(refs(before))`; as a `values` item its rows
-render `{ id, path }`, §1.4). It is the remedy for `follow before` over a
+render `{ $id, $path }`, §1.4). It is the remedy for `follow before` over a
 list of paths, which reaches the list's strings (§1.4). Row
 functions (`text`, `semantic`, `under`, `under_heading`, `within`,
 `under_kind`, `yaml_path`, `json_pointer`, `has_edge`, `has_anchor`,
@@ -317,8 +317,21 @@ against the current row:
 cursor, consumer, count?, exists?, none?, values? }`:
 
 - `exists` / `count` / `none` consumers return the scalar and no hits.
-- otherwise every hit is `{ id, path, ...projection }` (`$id`/`$path`
-  injected); `first`/`single` return zero or one hit, no cursor.
+- otherwise **every hit is `{ $id, $path, ...projection }`** (3.0): the
+  row's identity under the *same* `$`-prefixed names the expression language
+  reads, injected first, then whatever `select` projected. The envelope keys
+  are the intrinsics, so a key copied from a hit is valid in the next `where`
+  with no translation — `select $id from docs where $id == "d_14"` returns
+  `{ $id: "d_14", $path: "/substances/salt.md" }` (`query-docs::hit-envelope-round-trip`,
+  `reads::hit-envelope-round-trip`, §7 `read-query`). A projection of `$id`
+  or `$path` collapses onto the envelope key — the hit carries one `$path`,
+  never a `path` beside a `$path` (`query-docs::path-projection-collapses-onto-the-envelope`);
+  `id` and `path` are ordinary projected names, so `select id: $id` is a
+  column after the envelope (`query-docs::user-columns-named-id-and-path-are-projections`).
+  Before 3.0 the envelope spelled `id`/`path`, which the language rejects as
+  bare reads ("did you mean `$id`?"), and a user column named `id` or `path`
+  overwrote the envelope (§9). `first`/`single` return zero or one hit, no
+  cursor.
 - **A hit is a store row (1.5).** Every top-level row of a `collect`, `first`
   or `single` query must be a docs, blocks, nodes or edges row; a query whose
   rows reach anything else — `follow before` over a frontmatter list of paths
@@ -331,27 +344,42 @@ cursor, consumer, count?, exists?, none?, values? }`:
   value`, `an array`, `an object`, `a range`). Before 1.5 such a row rendered
   as the junk hit `{ id: "undefined", path: "" }` (§9). The rule is about
   hits only: a `values` projection returns no hits, so its rows may be
-  scalars (`follow before` with `select $it values` yields the seed as `{ id,
-  path }` and then the raw strings; `query-refs::values-mode-over-scalar-rows-is-exempt`),
+  scalars (`follow before` with `select $it values` yields the seed as `{ $id,
+  $path }` and then the raw strings; `query-refs::values-mode-over-scalar-rows-is-exempt`),
   and a nested block's rows are never hits — rows as values below is unchanged
   (`tags collect { }` is the tag strings).
 - `collect`: a top-level `select distinct` dedups hits by the user
-  projection (first wins), the query's own `limit`/`offset` (integer
-  literals only, else `filter_invalid`) bound the set after that, then the
-  page: with the default order the keyset cursor `(path, id)` — the hit's
-  path, so the reference form — skips rows at or before the cursor, `cap =
-  limit`, `truncated` = more remained, `cursor` = the last hit's `(path, id)`
-  when truncated; a custom `order by` disables the cursor (the top `cap` is
-  returned, `truncated` still honest).
+  projection (every key but the envelope's `$id`/`$path`; first wins), the
+  query's own `limit`/`offset` (integer literals only, else `filter_invalid`)
+  bound the set after that, then the page: with the default order the keyset
+  cursor `(path, id)` — the hit's `$path`, so the reference form, and its
+  `$id` — skips rows at or before the cursor, `cap = limit`, `truncated` =
+  more remained, `cursor` = the last hit's `(path, id)` when truncated; a
+  custom `order by` disables the cursor (the top `cap` is returned,
+  `truncated` still honest). The cursor encodes the two *values*, never key
+  names, so a 2.x cursor stays valid across the 3.0 envelope rename
+  (`reads::hit-envelope-round-trip` pages with one).
 - `values`: the single projected item is returned as `values: [...]` with
-  `hits` empty.
-- **Rows as values (1.2).** Wherever a row surfaces as a *value* rather
-  than as a hit — a nested `collect { }` / `first { }` / `single { }` with an
-  empty projection (`spec/oqx` §12: "the row itself"), or a `values`
-  projection of a row — it is rendered as `{ id, path }` (the row's id
-  column and its document's path), never the store row (§9: before 1.2 the
-  raw row leaked, `attrs` as a JSON string and the join column `__path`
-  included). Hits are unaffected: `{ id, path, ...projection }` as above.
+  `hits` empty — no hits, so the envelope does not apply
+  (`query-docs::values-mode-is-unchanged-by-the-envelope`).
+- **Rows as values (1.2; keys renamed in 3.0).** Wherever a row surfaces
+  as a *value* rather than as a hit — a nested `collect { }` / `first { }` /
+  `single { }` with an empty projection (`spec/oqx` §12: "the row itself"),
+  or a `values` projection of a row — it is rendered as `{ $id, $path }`
+  (the row's id column and its document's path), never the store row (§9:
+  before 1.2 the raw row leaked, `attrs` as a JSON string and the join
+  column `__path` included). One notation for "a document, block, node or
+  edge reference" everywhere a row shape appears in a query result: the hit
+  envelope and a row-as-value spell identity the same way
+  (`query-docs::rows-as-values-are-id-path-refs`). Hits are otherwise
+  unaffected: `{ $id, $path, ...projection }` as above.
+- **Only query hits.** The `$id`/`$path` envelope is the `query` tool's (and
+  the `omg query`/`run` verbs'). Every other tool's result is a tool
+  envelope, not a hit, and keeps its field names: `docs_list` items
+  `{ path }`, `docs_read.path`, `graph` `documents[].id`/`.path`,
+  `text_search` hits, `resolve` `{ id, locator }`, `changes_since`,
+  `nodes_get.id`, … (`reads::hit-envelope-round-trip` closes with a
+  `docs_list` and a `nodes_get` for the contrast).
 - Errors: an OQX error is `filter_invalid` with the engine's message; a
   malformed cursor is `filter_invalid` naming the surface.
 
@@ -490,7 +518,7 @@ within `doc`/`path`; zero → `parent_missing`, several →
 | `docs_tree` / `docs_list` | §2 args | §2 |
 | `query_syntax` | — | `{ syntax }` (reference text, unpinned) |
 | `query` | `query`, `limit?`, `cursor?` | §1.4; `semantic(...)` with no provider → `semantic_unavailable` |
-| `graph` | `roots[]`, `degrees? = 1`, `direction? = both`, `predicate?`, `select?[]`, `max_documents? = 200` | `{ documents: [{ id, path, degree, frontier, ...select }], edges: [{ id, src, dst, dst_path, dst_uri, predicate, provenance, dst_kind, anchor, src_field }], frontier, truncated, queries, degrees }` — compiled to `follow doc.out`/`doc.in` with `depth = degrees + 1` (≤ 8, so `degrees` clamps to 7 and the result reports the clamped value), roots depth 0; documents ordered bytewise by path (§9); a `$path` projection collapses onto the existing `path` key |
+| `graph` | `roots[]`, `degrees? = 1`, `direction? = both`, `predicate?`, `select?[]`, `max_documents? = 200` | `{ documents: [{ id, path, degree, frontier, ...select }], edges: [{ id, src, dst, dst_path, dst_uri, predicate, provenance, dst_kind, anchor, src_field }], frontier, truncated, queries, degrees }` — compiled to `follow doc.out`/`doc.in` with `depth = degrees + 1` (≤ 8, so `degrees` clamps to 7 and the result reports the clamped value), roots depth 0; documents ordered bytewise by path (§9); a `$path` projection collapses onto the existing `path` key — `graph`'s envelope is a tool result, not a hit, and keeps `id`/`path` (3.0: the macro reads its walk's hits by `$id`/`$path` and re-shapes them) |
 | `text_search` | `q`, `limit?` | `spec/search` §1.3, hit `path` in the reference form |
 | `resolve` | `query`, `limit?` | `spec/search` §4 (vector fused when a provider exists), the `locator`'s path half in the reference form (`/a.md#paragraph[2]`) |
 | `apply` | `ops[]`, `reason?`, `dry_run?` | `spec/mutate` §4, `origin.actor = "agent:mcp"`; `revisions[].path` and the `diffs` keys in the reference form |
@@ -850,6 +878,46 @@ both and runs both harnesses.
 
 ## Decisions
 
+- 2026-10-10, surface 3.0: **the query hit envelope renders identity as
+  `$id`/`$path`** (Brendan's decision, §1.4). The lean hit was
+  `{ id, path, ...projection }`; the expression language has no bare `id` or
+  `path` — a reserved basename is rejected with "did you mean `$id`?" — so
+  the envelope taught agents a name the next `where` clause refused: an agent
+  copying a key from a result into its query walked straight into the
+  rejection. Projections already kept their `$` (`$title`); only the envelope
+  stripped it. Now every hit is `{ $id, $path, ...projection }` and a row
+  surfacing as a value is `{ $id, $path }` — result keys live in the same
+  `$`-prefixed intrinsic namespace as the language, and the round trip holds
+  with no translation: copy a hit's `$id` into `where $id == "…"`. A `$id` /
+  `$path` projection collapses onto the envelope key (before, a `select
+  $path` produced `path` *and* `$path`), `id`/`path` become ordinary
+  projected names, and `values` mode is untouched (no hits). The keyset
+  cursor carries the two values, not key names: 2.x cursors stay valid. Both
+  engines render the envelope byte-identically; §7 `read-query` pins the
+  round trip across them. **Not in scope:** every other tool's envelope —
+  `docs_list` `{ path }`, `docs_read.path`, `graph` `documents[].id/path`,
+  `text_search`, `resolve`, `changes_since`, `nodes_get.id` — is a tool
+  result, not a hit, and keeps its names. Regeneration: every hit-bearing
+  expectation of every suite changed by the two key renames, every `$path`
+  projection lost its duplicate `path`, and exactly one expectation changed
+  beyond that — `query-root::root-object-collection-is-the-root-name`, whose
+  `id: ^$it.$id` projection used to *overwrite* the envelope's `id` (the hit
+  reported `rp_0`, the repository, as its own identity); it is now the
+  column `id: "rp_0"` after `$id: "d_0"`. New cases:
+  `query-docs::hit-envelope-is-the-intrinsics`, `::hit-envelope-round-trip`,
+  `::path-projection-collapses-onto-the-envelope`,
+  `::user-columns-named-id-and-path-are-projections`,
+  `::rows-as-values-are-id-path-refs`, `::values-mode-is-unchanged-by-the-envelope`,
+  `reads::hit-envelope-round-trip` (the script form: observe, copy `d_0` from
+  the first hit into `where $id == …`, page with a 2.x-shaped cursor, a block
+  row as a value, `values`, then `docs_list`/`nodes_get` for the contrast).
+  **Migration:** `hit.id → hit.$id`, `hit.path → hit.$path` in every hit
+  parser (`omg query --json`/`--jsonl`, MCP `query` results, a nested
+  `collect { }` of rows); a `select $path, …` consumer that read `path` reads
+  `$path`; a projection you aliased `id:`/`path:` to dodge the collision no
+  longer needs the alias but keeps working; tool envelopes unchanged; stored
+  cursors unchanged. A result key changed in meaning: a major (`spec/cli`
+  3.0 follows for the `omg query`/`run` table and `--json`).
 - 2026-10-10, surface 2.0 also: **the repository is the root row; `$repo` is
   removed** (Brendan's decision of 2026-10-09/10, §1.1). `spec/oqx` 0.18 made
   the root scope a row — the host's root object — so the repository no longer

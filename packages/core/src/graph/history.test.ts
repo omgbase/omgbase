@@ -282,6 +282,6 @@ describe("exit gate: backlinks via OQX follow doc.in", () => {
     save("target.md", "# Target\n");
     save("src.md", "# Src\n\nrefers to [target](/target.md)\n");
     const hits = oqxRun(store, repoId, 'from docs where $path == "target.md" follow doc.in', { limit: 100 }).hits;
-    expect(hits.map((h) => h.path)).toContain("/src.md");
+    expect(hits.map((h) => h.$path)).toContain("/src.md");
   });
 });

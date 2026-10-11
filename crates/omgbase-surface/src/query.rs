@@ -49,11 +49,16 @@ const ROW_FNS: [&str; 12] = [
 
 const ID_KEY: &str = "__oqx_id";
 const PATH_KEY: &str = "__oqx_path";
+/// The hit envelope's keys (§1.4, 3.0): the row's identity under the same
+/// `$`-prefixed names the expression language reads, so a key copied from a
+/// hit is valid in the next `where` with no translation.
+pub(crate) const HIT_ID: &str = "$id";
+pub(crate) const HIT_PATH: &str = "$path";
 /// A hit is a store row (§1.4, 1.5). A bare root scan's rows are store rows by
 /// construction; a `follow` destination (`follow before` over a frontmatter
 /// list of paths), a `from E` re-projection or any other source can reach a
 /// scalar, which the injected `$id`/`$path` reads would render as the junk hit
-/// `{ id: "undefined", path: "" }`. For those queries the row itself is
+/// `{ $id: "undefined", $path: "" }`. For those queries the row itself is
 /// projected too (`$it`) under this key and [`to_hit`] fails the query when it
 /// is not a row. Only then: the clone of every projected row is a real cost
 /// here, and a root scan cannot need it. A `values` projection returns no
@@ -447,11 +452,13 @@ fn not_a_store_row(v: &Value) -> SurfaceError {
     )
 }
 
-/// A projected row as a hit: `{ id, path, ...rest }` with the injected
-/// columns peeled off (JavaScript's `String()` on the id, `""` for an absent
-/// path). The projection's values are rendered per §1.4 "rows as values": a
-/// store row nested in the result (an empty-projection `collect { }` and
-/// friends) becomes `{ id, path }`. When the row itself was projected under
+/// A projected row as a hit: `{ $id, $path, ...rest }` (§1.4, 3.0: the
+/// envelope keys are the intrinsics that read them) with the injected columns
+/// peeled off (JavaScript's `String()` on the id, `""` for an absent path). A
+/// user projection of `$id`/`$path` collapses onto the envelope key in place.
+/// The projection's values are rendered per §1.4 "rows as values": a store row
+/// nested in the result (an empty-projection `collect { }` and friends)
+/// becomes `{ $id, $path }`. When the row itself was projected under
 /// [`SELF_KEY`] and is not a store row, the query fails (§1.4: a hit is a
 /// store row).
 fn to_hit(row: Value) -> Result<Value> {
@@ -477,9 +484,9 @@ fn to_hit(row: Value) -> Result<Value> {
         }
     }
     let mut hit = oqx::Object::with_capacity(rest.len() + 2);
-    hit.insert("id", Value::Str(id.to_string()));
+    hit.insert(HIT_ID, Value::Str(id.to_string()));
     hit.insert(
-        "path",
+        HIT_PATH,
         Value::Str(if path.is_absent() {
             String::new()
         } else {
@@ -500,7 +507,7 @@ fn hit_str(hit: &Value, key: &str) -> String {
 }
 
 /// Top-level `select distinct`: dedup hits by their USER projection (every
-/// field but `id`/`path`), keeping the first. The key is the canonical JSON
+/// field but the envelope's `$id`/`$path`), keeping the first. The key is the canonical JSON
 /// of the sorted `[key, value]` pairs (`JSON.stringify` in the reference).
 fn dedup_hits_by_projection(hits: Vec<Value>) -> Vec<Value> {
     let mut seen: Vec<String> = Vec::new();
@@ -510,7 +517,7 @@ fn dedup_hits_by_projection(hits: Vec<Value>) -> Vec<Value> {
             .as_object()
             .map(|o| {
                 o.iter()
-                    .filter(|(k, _)| *k != "id" && *k != "path")
+                    .filter(|(k, _)| *k != HIT_ID && *k != HIT_PATH)
                     .map(|(k, v)| (k.to_owned(), v.clone()))
                     .collect()
             })
@@ -783,7 +790,7 @@ fn run_inner(engine: &Runner<'_>, source: &str, opts: QueryOptions<'_>) -> Resul
     };
     let custom = parsed.order_by.as_ref().is_some_and(|o| !o.is_empty());
     let cursor = opts.cursor.filter(|c| !c.is_empty() && !custom);
-    // Rows become hits ({ id, path, … }) before anything inspects them — the
+    // Rows become hits ({ $id, $path, … }) before anything inspects them — the
     // distinct key and the cursor's (path, id) read the HIT — else only the
     // page does (the offset/limit slice and the cap see plain rows), so a
     // scan that projects thousands of rows shapes fifty.
@@ -812,8 +819,8 @@ fn run_inner(engine: &Runner<'_>, source: &str, opts: QueryOptions<'_>) -> Resul
         let parts = decode_path_cursor(cursor, "query", 2)?;
         let (path, id) = (&parts[0], &parts[1]);
         page.retain(|h| {
-            let hp = hit_str(h, "path");
-            let hi = hit_str(h, "id");
+            let hp = hit_str(h, HIT_PATH);
+            let hi = hit_str(h, HIT_ID);
             hp > *path || (hp == *path && hi > *id)
         });
     }
@@ -824,7 +831,7 @@ fn run_inner(engine: &Runner<'_>, source: &str, opts: QueryOptions<'_>) -> Resul
     }
     let cursor = if truncated && !custom {
         page.last()
-            .map(|last| encode_cursor(&[&hit_str(last, "path"), &hit_str(last, "id")]))
+            .map(|last| encode_cursor(&[&hit_str(last, HIT_PATH), &hit_str(last, HIT_ID)]))
     } else {
         None
     };
@@ -976,17 +983,26 @@ mod tests {
         o.insert("layer", Value::Str("canon".into()));
         let hit = to_hit(Value::Object(o)).unwrap();
         let ho = hit.as_object().unwrap();
-        assert_eq!(ho.keys().collect::<Vec<_>>(), ["id", "path", "layer"]);
-        assert_eq!(ho.get("path"), Some(&Value::Str(String::new())));
-        // A user field named `id` overrides the injected one in place.
+        assert_eq!(ho.keys().collect::<Vec<_>>(), ["$id", "$path", "layer"]);
+        assert_eq!(ho.get("$path"), Some(&Value::Str(String::new())));
+        // A user projection of `$id` collapses onto the envelope key in place
+        // (3.0): same position, the projected value.
+        let mut o = oqx::Object::new();
+        o.insert(ID_KEY, Value::Str("d_1".into()));
+        o.insert(PATH_KEY, Value::Str("a.md".into()));
+        o.insert("$id", Value::Number(7.0));
+        let hit = to_hit(Value::Object(o)).unwrap();
+        let ho = hit.as_object().unwrap();
+        assert_eq!(ho.keys().collect::<Vec<_>>(), ["$id", "$path"]);
+        assert_eq!(ho.get("$id"), Some(&Value::Number(7.0)));
+        // A user field spelled `id` is an ordinary projected column.
         let mut o = oqx::Object::new();
         o.insert(ID_KEY, Value::Str("d_1".into()));
         o.insert(PATH_KEY, Value::Str("a.md".into()));
         o.insert("id", Value::Number(7.0));
         let hit = to_hit(Value::Object(o)).unwrap();
         let ho = hit.as_object().unwrap();
-        assert_eq!(ho.keys().collect::<Vec<_>>(), ["id", "path"]);
-        assert_eq!(ho.get("id"), Some(&Value::Number(7.0)));
+        assert_eq!(ho.keys().collect::<Vec<_>>(), ["$id", "$path", "id"]);
     }
 
     #[test]
@@ -1015,7 +1031,7 @@ mod tests {
         let hit = to_hit(Value::Object(o)).unwrap();
         assert_eq!(
             hit.as_object().unwrap().keys().collect::<Vec<_>>(),
-            ["id", "path"]
+            ["$id", "$path"]
         );
         // Only queries that can reach a non-row project the row itself.
         let parse = |s: &str| oqx::parse_string(s).unwrap();
@@ -1030,15 +1046,15 @@ mod tests {
     fn distinct_dedups_by_user_projection_first_wins() {
         let mk = |id: &str, t: &str| {
             let mut o = oqx::Object::new();
-            o.insert("id", Value::Str(id.into()));
-            o.insert("path", Value::Str("p".into()));
+            o.insert(HIT_ID, Value::Str(id.into()));
+            o.insert(HIT_PATH, Value::Str("p".into()));
             o.insert("type", Value::Str(t.into()));
             Value::Object(o)
         };
         let out = dedup_hits_by_projection(vec![mk("1", "a"), mk("2", "b"), mk("3", "a")]);
         assert_eq!(out.len(), 2);
-        assert_eq!(hit_str(&out[0], "id"), "1");
-        assert_eq!(hit_str(&out[1], "id"), "2");
+        assert_eq!(hit_str(&out[0], HIT_ID), "1");
+        assert_eq!(hit_str(&out[1], HIT_ID), "2");
     }
 
     #[test]

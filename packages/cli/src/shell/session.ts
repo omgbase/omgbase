@@ -329,7 +329,7 @@ export class ShellSession {
     if (typeof v === "number" || typeof v === "boolean") return String(v);
     if (v && typeof v === "object") {
       const o = v as Record<string, unknown>;
-      const id = o.id ?? o.node ?? o.path ?? o.locator;
+      const id = o.$id ?? o.id ?? o.node ?? o.$path ?? o.path ?? o.locator; // a query hit leads with $id/$path (surface 3.0)
       return id ? String(id) : "record";
     }
     return "empty";

@@ -28,7 +28,10 @@ export interface Captured {
   rows: Row[] | null;
 }
 
-const REF_RE = /^@(\d+|_|[A-Za-z][\w-]*)(?:\[(\d+)\])?(?:\.([A-Za-z_]\w*))?$/;
+// `.field` admits a leading `$` so a query hit's identity is addressable
+// (`@1.$id`, `@t[1].$path` — spec/surface §1.4, 3.0 spells the envelope as
+// the intrinsics).
+const REF_RE = /^@(\d+|_|[A-Za-z][\w-]*)(?:\[(\d+)\])?(?:\.(\$?[A-Za-z_]\w*))?$/;
 
 export interface ParsedRef {
   base: string; // "1", "_", or a name
@@ -80,13 +83,18 @@ function rowOf(el: unknown): Row {
   if (typeof el === "string") return { ref: el, label: el, value: el };
   if (el && typeof el === "object") {
     const o = el as Record<string, unknown>;
-    const ref = firstString(o, ["id", "node", "block", "locator", "path"]);
-    const label = firstString(o, ["path", "locator", "name", "id", "node"]) ?? ref ?? preview(o);
+    const ref = firstString(o, REF_KEYS);
+    const label = firstString(o, ["$path", "path", "locator", "name", "$id", "id", "node"]) ?? ref ?? preview(o);
     return { ref: ref ?? label ?? "", label: label ?? "", value: el };
   }
   const s = String(el);
   return { ref: s, label: s, value: el };
 }
+
+// The keys that make an object an entity ref, in precedence order: a query
+// hit's `$id` (spec/surface §1.4, 3.0 — the envelope spells the intrinsics),
+// then the other tools' envelopes (`id`, `node`, `block`, `locator`, a path).
+const REF_KEYS = ["$id", "id", "node", "block", "locator", "$path", "path"];
 
 function firstString(o: Record<string, unknown>, keys: string[]): string | undefined {
   for (const k of keys) if (typeof o[k] === "string") return o[k] as string;
@@ -112,7 +120,7 @@ export function coerce(value: unknown): string {
   }
   if (typeof value === "object") {
     const o = value as Record<string, unknown>;
-    const ref = firstString(o, ["id", "node", "block", "locator", "path"]);
+    const ref = firstString(o, REF_KEYS);
     if (ref) return ref;
     // A collection-shaped result object (e.g. {hits:[…]}) can't be one arg.
     if (deriveRows(value)) throw new RefError("reference is a collection; select one with [i]");

@@ -169,8 +169,8 @@ instead — see [Server versions](#server-versions).)
 `/timeline/alpha.md` — not documents. `follow before` walks the strings, and
 since surface 1.5 the server refuses that (`filter_invalid`: "a hit must be a
 document, block, node or edge row — the query reached a string …"; before 1.5
-it rendered a junk `{ id: "undefined", path: "" }` hit, which this demo drew
-as a phantom node). `refs(before)` resolves each reference (`/`-rooted or bare
+it rendered a junk `{ id: "undefined", path: "" }` hit — `{ $id, $path }` in
+3.0's spelling — which this demo drew as a phantom node). `refs(before)` resolves each reference (`/`-rooted or bare
 path, or a `d_` id; dangling ones dropped) to the live document, so it is the
 `follow` destination that means "the documents `before` names". The editor
 says so under the query whenever a destination is a bare field.
@@ -199,7 +199,7 @@ is refused since surface 2.0 with a message pointing at `^docs`.) The comparison
 
 The omgbase surface changed its path form in 2.0 (`spec/surface` §1 "Paths"):
 every path a query or a tool **returns** is `/`-rooted (`$path`, `$dst_path`,
-a hit's `path`, `docs_read`'s `path`, …), every path a tool **accepts**
+a hit's path, `docs_read`'s `path`, …), every path a tool **accepts**
 tolerates both forms, and a string literal compared with `$path` by `==` (or
 passed to `startsWith`) is rooted before evaluation, so `$path == "a.md"` and
 `$path == "/a.md"` both match. A 1.x server (surface 1.5 is what Brendan's
@@ -224,6 +224,23 @@ as `1.x`. The result is the `serverSurface` signal, shown in the header
 | `serverPath(surface, p)` | a `$path == "…"` literal in the server's form: bare on 1.x, rooted on 2.0 |
 | `docArg(surface, doc)` | a tool's `doc` argument: a path is de-rooted for 1.x; an id passes through |
 | `surfaceOf(versionResult)` | `specs.surface`, else `"1.x"` |
+| `hitId(hit)` / `hitPath(hit)` | a query hit's identity under either envelope: `$id`/`$path` (≥ 3.0) else `id`/`path` |
+| `rowRef(v)` | a row that surfaced as a value — `{ $id, $path }` (≥ 3.0) or `{ id, path }` — as `{ id, path }` rooted, else null |
+| `HIT_ENVELOPE_KEYS` | the four spellings; none is a projectable field |
+
+Surface 3.0 renamed the **hit envelope** (`spec/surface` §1.4): a query hit is
+`{ $id, $path, ...projection }` — the same `$`-prefixed names the expression
+language reads, so a key copied from a hit pastes into the next `where $id ==
+…` with no translation, and a `select $path` lands on the envelope key rather
+than beside it. Before 3.0 the envelope spelled `{ id, path }` (with a
+projected `$path` sitting next to `path`). A row surfacing as a *value* (an
+empty `collect { }`, a `$it` projection) follows the same rename. Other tools'
+envelopes did not change: `docs_list` items are `{ path }`, `graph`'s
+`documents[]` carry `id`/`path`, `docs_read`/`nodes_get` keep theirs. The demo
+never reads `hit.id`/`hit.path` directly — every hit read goes through
+`hitId`/`hitPath` (and `rowRef` for nested rows), which try `$id`/`$path`
+first, so it works against a 3.0 build and a lagging 2.x remote alike. The
+cards panel's *from rows* fallback drops both spellings of the envelope.
 
 Nodes are keyed by the rooted path whatever the server returned, so a 1.x hit
 and a 2.0 hit for one document share a key, and the edge fetch roots the rows'
@@ -768,11 +785,11 @@ engine's own `refs(<field>)` when no bare destination names the field.
   — and would replace the pair detection in `candidates.ts` (vocabulary plus
   reciprocal rows) with a declaration.
 - **An empty projection is not "the row itself".** `from docs where …` with no
-  `select` returns hits carrying only `id` and `path`, so the cards panel's
-  *from rows* fallback can offer just those two; the frontmatter has to be
-  named in `select` to reach a card (a `select *`, or hits that carry the
-  frontmatter bag when nothing is projected, would make the empty projection
-  mean what it says).
+  `select` returns hits carrying only the envelope (`$id` and `$path`; `id` and
+  `path` before 3.0), so the cards panel's *from rows* fallback has nothing to
+  offer; the frontmatter has to be named in `select` to reach a card (a
+  `select *`, or hits that carry the frontmatter bag when nothing is projected,
+  would make the empty projection mean what it says).
 - **Projected-but-absent is indistinguishable from not projected** in a hit:
   a document without `after` yields a row without the key, so whether a row's
   value is authoritative has to be read off the AST (`projectedFields`).

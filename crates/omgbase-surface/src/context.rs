@@ -263,10 +263,11 @@ pub fn strip_tags(v: Value) -> Value {
 
 /// §1.4 rows as values (1.2): a store row that surfaces as a VALUE in a result
 /// tree — a nested `collect { }` / `first { }` / `single { }` with an empty
-/// projection, or a `values` item that is a row — renders as `{ id, path }`
-/// (the target's id column as a string; the owning document's path in the
-/// reference form, §1 "Paths": a docs row's `path`, every other row's
-/// `__path` join column, rooted), never the store row. Everything else
+/// projection, or a `values` item that is a row — renders as `{ $id, $path }`
+/// (3.0: the hit envelope's own keys, spelled as the intrinsics; the target's
+/// id column as a string; the owning document's path in the reference form,
+/// §1 "Paths": a docs row's `path`, every other row's `__path` join column,
+/// rooted), never the store row. Everything else
 /// recurses, dropping the hidden tag as [`strip_tags`].
 #[must_use]
 pub fn render_row_values(v: Value) -> Value {
@@ -281,12 +282,12 @@ pub fn render_row_values(v: Value) -> Value {
                     Target::Edges => ("edge_id", "__path"),
                 };
                 let mut out = Object::with_capacity(2);
-                out.insert("id", Value::Str(col_str(&row, id_col)));
+                out.insert(crate::query::HIT_ID, Value::Str(col_str(&row, id_col)));
                 let path = match col(&row, path_col) {
                     Value::Undefined | Value::Null => String::new(),
                     v => reference_path(&js_string(v)),
                 };
-                out.insert("path", Value::Str(path));
+                out.insert(crate::query::HIT_PATH, Value::Str(path));
                 return Value::Object(out);
             }
             let Value::Object(o) = row else {
@@ -1550,8 +1551,9 @@ mod tests {
 
     #[test]
     fn rows_surfacing_as_values_render_id_and_path() {
-        // §1.4 (1.2): a tagged store row anywhere in a value tree is
-        // `{ id, path }`; untagged records keep their keys, minus the tag.
+        // §1.4 (1.2, keys renamed in 3.0): a tagged store row anywhere in a
+        // value tree is `{ $id, $path }`; untagged records keep their keys,
+        // minus the tag.
         let mut node = Object::new();
         node.insert("node_id", Value::Str("n_1".into()));
         node.insert("attrs", Value::Str("{\"checked\":true}".into()));
@@ -1580,18 +1582,18 @@ mod tests {
                 .map(|(k, _)| k.to_owned())
                 .collect()
         };
-        assert_eq!(keys(&tasks[0]), ["id", "path"]);
+        assert_eq!(keys(&tasks[0]), ["$id", "$path"]);
         assert_eq!(
-            tasks[0].as_object().unwrap().get("id"),
+            tasks[0].as_object().unwrap().get("$id"),
             Some(&Value::Str("n_1".into()))
         );
         assert_eq!(
-            tasks[0].as_object().unwrap().get("path"),
+            tasks[0].as_object().unwrap().get("$path"),
             Some(&Value::Str("/a.md".into()))
         );
-        assert_eq!(keys(&tasks[1]), ["id", "path"]);
+        assert_eq!(keys(&tasks[1]), ["$id", "$path"]);
         assert_eq!(
-            tasks[1].as_object().unwrap().get("id"),
+            tasks[1].as_object().unwrap().get("$id"),
             Some(&Value::Str("d_0".into()))
         );
         // An id column that is not a string still renders as its string form.
@@ -1599,11 +1601,11 @@ mod tests {
         edge.insert("edge_id", Value::Number(7.0));
         let e = render_row_values(tag_row(edge, Target::Edges));
         assert_eq!(
-            e.as_object().unwrap().get("id"),
+            e.as_object().unwrap().get("$id"),
             Some(&Value::Str("7".into()))
         );
         assert_eq!(
-            e.as_object().unwrap().get("path"),
+            e.as_object().unwrap().get("$path"),
             Some(&Value::Str(String::new()))
         );
     }

@@ -38,7 +38,7 @@ function docId(path: string): string {
 // short chains; the walk crosses format boundaries because edges are doc-grain.
 function reachable(seed: string, dir: "out" | "in"): string[] {
   const hits = oqxRun(store, repoId, `from docs where $path == "${seed}" follow doc.${dir}`, { limit: 100 }).hits;
-  return hits.map((h) => h.path as string);
+  return hits.map((h) => h.$path);
 }
 
 describe("cross-format graph: markdown → yaml → json", () => {

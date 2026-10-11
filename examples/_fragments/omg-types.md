@@ -17,9 +17,14 @@ per-document lists of ids.
 - `cursor` — an opaque keyset pagination token (base64; embeds a per-ingest id).
   Anchored on its `Wy…` (`["…`) prefix so binding it by type can't swallow other
   words.
+- `dollar` — one literal `$`, for an output line that *starts* with one: the
+  query table's `$id` header (surface 3.0 spells a hit's identity as `$id`/`$path`).
+  recital reads any line beginning with `$` as a prompt, so such a header is
+  written `{{:dollar}}id        $path …` — same text, same widths, not a command.
 
 <!-- recital type:
 doc_id: "d_[a-z0-9]{7}"
+dollar: "[$]"
 block_id: "b_[a-z0-9]{7}"
 node_id: "n_[0-9a-f]{12}"
 repo_id: "rp_[a-z0-9]{7}"

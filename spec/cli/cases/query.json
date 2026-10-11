@@ -36,7 +36,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "id   path                                 $title             era\nd_4  /practitioners/maria-prophetissa.md  Maria Prophetissa  250\nd_3  /practitioners/jabir-ibn-hayyan.md   Jabir ibn Hayyan   800\nd_6  /practitioners/paracelsus.md         Paracelsus         1530\nd_5  /practitioners/newton.md             Isaac Newton       1680\n"
+        "stdout": "$id  $path                                $title             era\nd_4  /practitioners/maria-prophetissa.md  Maria Prophetissa  250\nd_3  /practitioners/jabir-ibn-hayyan.md   Jabir ibn Hayyan   800\nd_6  /practitioners/paracelsus.md         Paracelsus         1530\nd_5  /practitioners/newton.md             Isaac Newton       1680\n"
       }
     },
     {
@@ -49,7 +49,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "id    $path                     era\nd_16  /texts/emerald-tablet.md  800\nd_17  /texts/mutus-liber.md     1677\n"
+        "stdout": "$id   $path                     era\nd_16  /texts/emerald-tablet.md  800\nd_17  /texts/mutus-liber.md     1677\n"
       }
     },
     {
@@ -62,7 +62,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "id     path                   text                                                          tags  nope\nb_303  /texts/mutus-liber.md  The \"silent book,\" La Rochelle, 1677: fifteen engraved plat…\nb_304  /texts/mutus-liber.md  length:: fifteen plates attributed_to:: altus\nb_306  /texts/mutus-liber.md  The plates show a couple gathering dew in sheets stretched …\nb_307  /texts/mutus-liber.md  The dew-gathering is the one concretely readable operation,…\nb_309  /texts/mutus-liber.md  Draft. I have not worked through the plates in order agains…\n"
+        "stdout": "$id    $path                  text                                                          tags  nope\nb_303  /texts/mutus-liber.md  The \"silent book,\" La Rochelle, 1677: fifteen engraved plat…\nb_304  /texts/mutus-liber.md  length:: fifteen plates attributed_to:: altus\nb_306  /texts/mutus-liber.md  The plates show a couple gathering dew in sheets stretched …\nb_307  /texts/mutus-liber.md  The dew-gathering is the one concretely readable operation,…\nb_309  /texts/mutus-liber.md  Draft. I have not worked through the plates in order agains…\n"
       }
     },
     {
@@ -74,7 +74,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "id     path                   type  $ordinal  $depth  checked\nb_311  /texts/mutus-liber.md  task  0         1       false\nb_312  /texts/mutus-liber.md  task  1         1       false\nb_313  /texts/mutus-liber.md  task  2         1       false\n"
+        "stdout": "$id    $path                  type  $ordinal  $depth  checked\nb_311  /texts/mutus-liber.md  task  0         1       false\nb_312  /texts/mutus-liber.md  task  1         1       false\nb_313  /texts/mutus-liber.md  task  2         1       false\n"
       }
     },
     {
@@ -190,7 +190,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "{\"id\":\"d_16\",\"path\":\"/texts/emerald-tablet.md\"}\n{\"id\":\"d_17\",\"path\":\"/texts/mutus-liber.md\"}\n"
+        "stdout": "{\"$id\":\"d_16\",\"$path\":\"/texts/emerald-tablet.md\"}\n{\"$id\":\"d_17\",\"$path\":\"/texts/mutus-liber.md\"}\n"
       }
     },
     {
@@ -203,7 +203,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "{\"hits\":[{\"id\":\"d_16\",\"path\":\"/texts/emerald-tablet.md\"},{\"id\":\"d_17\",\"path\":\"/texts/mutus-liber.md\"}],\"truncated\":false,\"cursor\":null,\"consumer\":\"collect\"}\n"
+        "stdout": "{\"hits\":[{\"$id\":\"d_16\",\"$path\":\"/texts/emerald-tablet.md\"},{\"$id\":\"d_17\",\"$path\":\"/texts/mutus-liber.md\"}],\"truncated\":false,\"cursor\":null,\"consumer\":\"collect\"}\n"
       }
     },
     {
@@ -280,7 +280,7 @@
       "pin_stderr": true,
       "expect": {
         "exit": 0,
-        "stdout": "{\"id\":\"d_0\",\"path\":\"/index.md\"}\n{\"id\":\"d_1\",\"path\":\"/lab/2026-01-notes.md\"}\n",
+        "stdout": "{\"$id\":\"d_0\",\"$path\":\"/index.md\"}\n{\"$id\":\"d_1\",\"$path\":\"/lab/2026-01-notes.md\"}\n",
         "stderr": "… truncated; continue with --cursor WyIvbGFiLzIwMjYtMDEtbm90ZXMubWQiLCJkXzEiXQ\n"
       }
     },
@@ -298,7 +298,7 @@
       "pin_stderr": true,
       "expect": {
         "exit": 0,
-        "stdout": "{\"hits\":[{\"id\":\"d_0\",\"path\":\"/index.md\"},{\"id\":\"d_1\",\"path\":\"/lab/2026-01-notes.md\"}],\"truncated\":true,\"cursor\":\"WyIvbGFiLzIwMjYtMDEtbm90ZXMubWQiLCJkXzEiXQ\",\"consumer\":\"collect\"}\n",
+        "stdout": "{\"hits\":[{\"$id\":\"d_0\",\"$path\":\"/index.md\"},{\"$id\":\"d_1\",\"$path\":\"/lab/2026-01-notes.md\"}],\"truncated\":true,\"cursor\":\"WyIvbGFiLzIwMjYtMDEtbm90ZXMubWQiLCJkXzEiXQ\",\"consumer\":\"collect\"}\n",
         "stderr": ""
       }
     },
@@ -491,7 +491,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "id    $path                         d  s\nd_17  /texts/mutus-liber.md         1  interior\nd_13  /substances/prima-materia.md  2  depth\n"
+        "stdout": "$id   $path                         d  s\nd_17  /texts/mutus-liber.md         1  interior\nd_13  /substances/prima-materia.md  2  depth\n"
       }
     },
     {
@@ -503,7 +503,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "id    path                   predicate   to\ne_63  /texts/mutus-liber.md  references  /substances/prima-materia.md\n"
+        "stdout": "$id   $path                  predicate   to\ne_63  /texts/mutus-liber.md  references  /substances/prima-materia.md\n"
       }
     },
     {
@@ -515,7 +515,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "id    $path                  open\nd_17  /texts/mutus-liber.md  [{\"$id\":\"n_5ebb7234aa44\"},{\"$id\":\"n_cb80a4290986\"},{\"$id\":\"…\n"
+        "stdout": "$id   $path                  open\nd_17  /texts/mutus-liber.md  [{\"$id\":\"n_5ebb7234aa44\"},{\"$id\":\"n_cb80a4290986\"},{\"$id\":\"…\n"
       }
     },
     {
@@ -775,7 +775,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "id   path       n   rid\nd_0  /index.md  20  rp_0\n"
+        "stdout": "$id  $path      n   rid\nd_0  /index.md  20  rp_0\n"
       }
     },
     {

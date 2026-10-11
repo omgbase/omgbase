@@ -248,8 +248,8 @@ describe("MCP server skeleton", () => {
   });
 
   it("query returns projected hits with truncated + cursor", async () => {
-    const { payload } = (await call("query", { query: 'from docs where layer == "working"' })) as { payload: { hits: { path: string }[]; truncated: boolean } };
-    expect(payload.hits.map((h) => h.path)).toEqual(["/notes.md"]);
+    const { payload } = (await call("query", { query: 'from docs where layer == "working"' })) as { payload: { hits: { $path: string }[]; truncated: boolean } };
+    expect(payload.hits.map((h) => h.$path)).toEqual(["/notes.md"]);
     expect(payload.truncated).toBe(false);
   });
 
@@ -372,8 +372,8 @@ describe("doc-level MCP tools (docs_create/move/delete/set_meta)", () => {
     })) as { payload: { docId: string; path: string }; isError: boolean };
     expect(isError).toBe(false);
     expect(payload.path).toBe("/sub/fresh.md");
-    const { payload: q } = (await call("query", { query: 'from docs where status == "draft"' })) as { payload: { hits: { path: string }[] } };
-    expect(q.hits.map((h) => h.path)).toContain("/sub/fresh.md");
+    const { payload: q } = (await call("query", { query: 'from docs where status == "draft"' })) as { payload: { hits: { $path: string }[] } };
+    expect(q.hits.map((h) => h.$path)).toContain("/sub/fresh.md");
   });
 
   it("docs_create fails path_taken on an existing path", async () => {
@@ -385,16 +385,16 @@ describe("doc-level MCP tools (docs_create/move/delete/set_meta)", () => {
   it("docs_set_meta patches frontmatter, preserving other keys", async () => {
     const { isError } = (await call("docs_set_meta", { doc: "notes.md", set: { status: "active", priority: 2 } })) as { isError: boolean };
     expect(isError).toBe(false);
-    const { payload } = (await call("query", { query: 'from docs where layer == "working" && status == "active"' })) as { payload: { hits: { path: string }[] } };
-    expect(payload.hits.map((h) => h.path)).toContain("/notes.md");
+    const { payload } = (await call("query", { query: 'from docs where layer == "working" && status == "active"' })) as { payload: { hits: { $path: string }[] } };
+    expect(payload.hits.map((h) => h.$path)).toContain("/notes.md");
   });
 
   it("docs_move renames the document", async () => {
     const { payload, isError } = (await call("docs_move", { doc: "notes.md", to_path: "moved/notes.md" })) as { payload: { path: string }; isError: boolean };
     expect(isError).toBe(false);
     expect(payload.path).toBe("/moved/notes.md");
-    const { payload: q } = (await call("query", { query: 'from docs where layer == "working"' })) as { payload: { hits: { path: string }[] } };
-    expect(q.hits.map((h) => h.path)).toContain("/moved/notes.md");
+    const { payload: q } = (await call("query", { query: 'from docs where layer == "working"' })) as { payload: { hits: { $path: string }[] } };
+    expect(q.hits.map((h) => h.$path)).toContain("/moved/notes.md");
   });
 
   it("docs_move with retarget_inbound:false reports dangling inbound links; the default rewrites them; destination phantoms are adopted", async () => {
@@ -558,8 +558,8 @@ describe("onMutation fires for writes (embed-drain trigger)", () => {
   });
 
   it("fires once for a successful apply", async () => {
-    const { payload: q } = (await call("query", { query: 'select $path from docs where layer == "working"' })) as { payload: { hits: { id: string }[] } };
-    const docId = q.hits[0]!.id;
+    const { payload: q } = (await call("query", { query: 'select $path from docs where layer == "working"' })) as { payload: { hits: { $id: string }[] } };
+    const docId = q.hits[0]!.$id;
     const { isError } = (await call("apply", { ops: [{ op: "insert", doc: docId, to: { parent: { doc: true }, at: "end" }, markdown: "appended paragraph" }] })) as { isError: boolean };
     expect(isError).toBe(false);
     expect(mutations).toBe(1);
@@ -572,8 +572,8 @@ describe("onMutation fires for writes (embed-drain trigger)", () => {
   });
 
   it("does not fire for a dry-run apply", async () => {
-    const { payload: q } = (await call("query", { query: 'select $path from docs where layer == "working"' })) as { payload: { hits: { id: string }[] } };
-    const docId = q.hits[0]!.id;
+    const { payload: q } = (await call("query", { query: 'select $path from docs where layer == "working"' })) as { payload: { hits: { $id: string }[] } };
+    const docId = q.hits[0]!.$id;
     const { isError } = (await call("apply", { ops: [{ op: "insert", doc: docId, to: { parent: { doc: true }, at: "end" }, markdown: "preview only" }], dry_run: true })) as { isError: boolean };
     expect(isError).toBe(false);
     expect(mutations).toBe(0);

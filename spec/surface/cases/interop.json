@@ -1352,7 +1352,7 @@
     },
     {
       "name": "read-query",
-      "notes": "§1 through the query tool: a filter with projections, a follow over doc.out, a nested collect, a count consumer, an order by with limit (absent sorts last), a keyset page and its continuation (cursor = base64url(JSON [path, id])), values, an edges scan, blocks row functions, the reserved-basename loud error (filter_invalid) and semantic() without a provider (semantic_unavailable, §4). A refs(before) walk with a refs(before) projection (surface 1.5).",
+      "notes": "§1 through the query tool: a filter with projections, a follow over doc.out, a nested collect, a count consumer, an order by with limit (absent sorts last), a keyset page and its continuation (cursor = base64url(JSON [path, id])), values, an edges scan, blocks row functions, the reserved-basename loud error (filter_invalid) and semantic() without a provider (semantic_unavailable, §4). A refs(before) walk with a refs(before) projection (surface 1.5). The 3.0 hit envelope: a hit's `$id` pasted into `where $id == …`, a `$path` projection on the envelope key, a block row as a value (`{ $id, $path }`).",
       "reads": [
         {
           "tool": "query",
@@ -1452,6 +1452,18 @@
           "args": {
             "query": "select back: nodes first { select p: 0^docs collect { $path where ^^$path in list(after) } values } from docs where $path == \"timeline/review.md\""
           }
+        },
+        {
+          "tool": "query",
+          "args": {
+            "query": "select $id from docs where $id == \"d_0\""
+          }
+        },
+        {
+          "tool": "query",
+          "args": {
+            "query": "select $path, first_block: blocks first { } from docs where $path == \"/index.md\""
+          }
         }
       ],
       "expect": {
@@ -1460,22 +1472,19 @@
           {
             "hits": [
               {
-                "id": "d_7",
-                "path": "/processes/calcination.md",
+                "$id": "d_7",
                 "$path": "/processes/calcination.md",
                 "layer": "canon",
                 "type": "process"
               },
               {
-                "id": "d_9",
-                "path": "/processes/dissolution.md",
+                "$id": "d_9",
                 "$path": "/processes/dissolution.md",
                 "layer": "canon",
                 "type": "process"
               },
               {
-                "id": "d_10",
-                "path": "/processes/magnum-opus.md",
+                "$id": "d_10",
                 "$path": "/processes/magnum-opus.md",
                 "layer": "canon",
                 "type": "process"
@@ -1488,38 +1497,32 @@
           {
             "hits": [
               {
-                "id": "d_10",
-                "path": "/processes/magnum-opus.md",
+                "$id": "d_10",
                 "$path": "/processes/magnum-opus.md",
                 "$depth": 1
               },
               {
-                "id": "d_12",
-                "path": "/substances/philosophers-stone.md",
+                "$id": "d_12",
                 "$path": "/substances/philosophers-stone.md",
                 "$depth": 2
               },
               {
-                "id": "d_13",
-                "path": "/substances/prima-materia.md",
+                "$id": "d_13",
                 "$path": "/substances/prima-materia.md",
                 "$depth": 2
               },
               {
-                "id": "d_7",
-                "path": "/processes/calcination.md",
+                "$id": "d_7",
                 "$path": "/processes/calcination.md",
                 "$depth": 2
               },
               {
-                "id": "d_8",
-                "path": "/processes/coagulation.md",
+                "$id": "d_8",
                 "$path": "/processes/coagulation.md",
                 "$depth": 2
               },
               {
-                "id": "d_9",
-                "path": "/processes/dissolution.md",
+                "$id": "d_9",
                 "$path": "/processes/dissolution.md",
                 "$depth": 2
               }
@@ -1531,8 +1534,7 @@
           {
             "hits": [
               {
-                "id": "d_2",
-                "path": "/lab/2026-02-notes.md",
+                "$id": "d_2",
                 "$path": "/lab/2026-02-notes.md",
                 "tasks": [
                   {
@@ -1568,32 +1570,27 @@
           {
             "hits": [
               {
-                "id": "d_5",
-                "path": "/practitioners/newton.md",
+                "$id": "d_5",
                 "$path": "/practitioners/newton.md",
                 "era": 1680
               },
               {
-                "id": "d_17",
-                "path": "/texts/mutus-liber.md",
+                "$id": "d_17",
                 "$path": "/texts/mutus-liber.md",
                 "era": 1677
               },
               {
-                "id": "d_6",
-                "path": "/practitioners/paracelsus.md",
+                "$id": "d_6",
                 "$path": "/practitioners/paracelsus.md",
                 "era": 1530
               },
               {
-                "id": "d_3",
-                "path": "/practitioners/jabir-ibn-hayyan.md",
+                "$id": "d_3",
                 "$path": "/practitioners/jabir-ibn-hayyan.md",
                 "era": 800
               },
               {
-                "id": "d_16",
-                "path": "/texts/emerald-tablet.md",
+                "$id": "d_16",
                 "$path": "/texts/emerald-tablet.md",
                 "era": 800
               }
@@ -1605,24 +1602,24 @@
           {
             "hits": [
               {
-                "id": "d_0",
-                "path": "/index.md"
+                "$id": "d_0",
+                "$path": "/index.md"
               },
               {
-                "id": "d_1",
-                "path": "/lab/2026-01-notes.md"
+                "$id": "d_1",
+                "$path": "/lab/2026-01-notes.md"
               },
               {
-                "id": "d_2",
-                "path": "/lab/2026-02-notes.md"
+                "$id": "d_2",
+                "$path": "/lab/2026-02-notes.md"
               },
               {
-                "id": "d_3",
-                "path": "/practitioners/jabir-ibn-hayyan.md"
+                "$id": "d_3",
+                "$path": "/practitioners/jabir-ibn-hayyan.md"
               },
               {
-                "id": "d_4",
-                "path": "/practitioners/maria-prophetissa.md"
+                "$id": "d_4",
+                "$path": "/practitioners/maria-prophetissa.md"
               }
             ],
             "truncated": true,
@@ -1632,24 +1629,24 @@
           {
             "hits": [
               {
-                "id": "d_5",
-                "path": "/practitioners/newton.md"
+                "$id": "d_5",
+                "$path": "/practitioners/newton.md"
               },
               {
-                "id": "d_6",
-                "path": "/practitioners/paracelsus.md"
+                "$id": "d_6",
+                "$path": "/practitioners/paracelsus.md"
               },
               {
-                "id": "d_7",
-                "path": "/processes/calcination.md"
+                "$id": "d_7",
+                "$path": "/processes/calcination.md"
               },
               {
-                "id": "d_8",
-                "path": "/processes/coagulation.md"
+                "$id": "d_8",
+                "$path": "/processes/coagulation.md"
               },
               {
-                "id": "d_9",
-                "path": "/processes/dissolution.md"
+                "$id": "d_9",
+                "$path": "/processes/dissolution.md"
               }
             ],
             "truncated": true,
@@ -1673,29 +1670,29 @@
           {
             "hits": [
               {
-                "id": "e_47",
-                "path": "/substances/prima-materia.md",
+                "$id": "e_47",
+                "$path": "/substances/prima-materia.md",
                 "predicate": "references",
                 "dst_kind": "document",
                 "$dst_path": "/texts/emerald-tablet.md"
               },
               {
-                "id": "e_48",
-                "path": "/substances/prima-materia.md",
+                "$id": "e_48",
+                "$path": "/substances/prima-materia.md",
                 "predicate": "references",
                 "dst_kind": "document",
                 "$dst_path": "/processes/magnum-opus.md"
               },
               {
-                "id": "e_49",
-                "path": "/substances/prima-materia.md",
+                "$id": "e_49",
+                "$path": "/substances/prima-materia.md",
                 "predicate": "references",
                 "dst_kind": "document",
                 "$dst_path": "/processes/calcination.md"
               },
               {
-                "id": "e_50",
-                "path": "/substances/prima-materia.md",
+                "$id": "e_50",
+                "$path": "/substances/prima-materia.md",
                 "predicate": "references",
                 "dst_kind": "document",
                 "$dst_path": null
@@ -1708,57 +1705,49 @@
           {
             "hits": [
               {
-                "id": "b_155",
-                "path": "/processes/calcination.md",
+                "$id": "b_155",
                 "$path": "/processes/calcination.md",
                 "text": "Verify the weight gain on lead with a balance",
                 "checked": true
               },
               {
-                "id": "b_156",
-                "path": "/processes/calcination.md",
+                "$id": "b_156",
                 "$path": "/processes/calcination.md",
                 "text": "Repeat with copper and record the colour sequence",
                 "checked": false
               },
               {
-                "id": "b_157",
-                "path": "/processes/calcination.md",
+                "$id": "b_157",
                 "$path": "/processes/calcination.md",
                 "text": "Chase down the earliest recorded weight-gain measurement",
                 "checked": false
               },
               {
-                "id": "b_170",
-                "path": "/processes/coagulation.md",
+                "$id": "b_170",
                 "$path": "/processes/coagulation.md",
                 "text": "Recrystallize alum three times and weigh each crop",
                 "checked": true
               },
               {
-                "id": "b_171",
-                "path": "/processes/coagulation.md",
+                "$id": "b_171",
                 "$path": "/processes/coagulation.md",
                 "text": "Measure purity gain per cycle to find where it plateaus",
                 "checked": false
               },
               {
-                "id": "b_184",
-                "path": "/processes/dissolution.md",
+                "$id": "b_184",
                 "$path": "/processes/dissolution.md",
                 "text": "Distil aqua fortis from nitre and vitriol",
                 "checked": true
               },
               {
-                "id": "b_185",
-                "path": "/processes/dissolution.md",
+                "$id": "b_185",
                 "$path": "/processes/dissolution.md",
                 "text": "Prepare aqua regia and test on gold leaf",
                 "checked": true
               },
               {
-                "id": "b_186",
-                "path": "/processes/dissolution.md",
+                "$id": "b_186",
                 "$path": "/processes/dissolution.md",
                 "text": "Write up the alkahest arguments and their rebuttals",
                 "checked": false
@@ -1779,8 +1768,8 @@
           {
             "hits": [
               {
-                "id": "d_0",
-                "path": "/index.md",
+                "$id": "d_0",
+                "$path": "/index.md",
                 "same": true,
                 "n": 20,
                 "e": 20,
@@ -1794,8 +1783,7 @@
           {
             "hits": [
               {
-                "id": "d_19",
-                "path": "/timeline/review.md",
+                "$id": "d_19",
                 "$path": "/timeline/review.md",
                 "$depth": 1,
                 "prior": [
@@ -1808,15 +1796,13 @@
                 ]
               },
               {
-                "id": "d_18",
-                "path": "/timeline/kickoff.md",
+                "$id": "d_18",
                 "$path": "/timeline/kickoff.md",
                 "$depth": 2,
                 "prior": []
               },
               {
-                "id": "d_9",
-                "path": "/processes/dissolution.md",
+                "$id": "d_9",
                 "$path": "/processes/dissolution.md",
                 "$depth": 2,
                 "prior": []
@@ -1829,8 +1815,8 @@
           {
             "hits": [
               {
-                "id": "d_0",
-                "path": "/index.md",
+                "$id": "d_0",
+                "$path": "/index.md",
                 "n": 20,
                 "rid": "rp_0",
                 "ks": [
@@ -1848,13 +1834,39 @@
           {
             "hits": [
               {
-                "id": "d_19",
-                "path": "/timeline/review.md",
+                "$id": "d_19",
+                "$path": "/timeline/review.md",
                 "back": [
                   {
                     "$path": "/timeline/kickoff.md"
                   }
                 ]
+              }
+            ],
+            "truncated": false,
+            "cursor": null,
+            "consumer": "collect"
+          },
+          {
+            "hits": [
+              {
+                "$id": "d_0",
+                "$path": "/index.md"
+              }
+            ],
+            "truncated": false,
+            "cursor": null,
+            "consumer": "collect"
+          },
+          {
+            "hits": [
+              {
+                "$id": "d_0",
+                "$path": "/index.md",
+                "first_block": {
+                  "$id": "b_0",
+                  "$path": "/index.md"
+                }
               }
             ],
             "truncated": false,
@@ -4312,23 +4324,23 @@
           {
             "hits": [
               {
-                "id": "b_150",
-                "path": "/processes/calcination.md",
+                "$id": "b_150",
+                "$path": "/processes/calcination.md",
                 "text": "calcined lead → yellow massicot, then red minium"
               },
               {
-                "id": "b_151",
-                "path": "/processes/calcination.md",
+                "$id": "b_151",
+                "$path": "/processes/calcination.md",
                 "text": "calcined copper → black tenorite"
               },
               {
-                "id": "b_152",
-                "path": "/processes/calcination.md",
+                "$id": "b_152",
+                "$path": "/processes/calcination.md",
                 "text": "plant matter → ash, source of the [[salt]]"
               },
               {
-                "id": "b_330",
-                "path": "/processes/calcination.md",
+                "$id": "b_330",
+                "$path": "/processes/calcination.md",
                 "text": "calcined tin → white putty powder"
               }
             ],
@@ -4696,8 +4708,8 @@
           {
             "hits": [
               {
-                "id": "b_56",
-                "path": "/lab/2026-01-notes.md",
+                "$id": "b_56",
+                "$path": "/lab/2026-01-notes.md",
                 "text": "Repeat the series with copper",
                 "checked": true
               }
@@ -5623,44 +5635,44 @@
           {
             "hits": [
               {
-                "id": "n_6647b1c32a15",
-                "path": "/lab/2026-01-notes.md",
+                "$id": "n_6647b1c32a15",
+                "$path": "/lab/2026-01-notes.md",
                 "value": "Tabulate the metal sulphides by colour",
                 "checked": false
               },
               {
-                "id": "n_76ca98c76e72",
-                "path": "/lab/2026-01-notes.md",
+                "$id": "n_76ca98c76e72",
+                "$path": "/lab/2026-01-notes.md",
                 "value": "Extract the salt of wormwood and weigh the yield",
                 "checked": true
               },
               {
-                "id": "n_7d73d8ff9294",
-                "path": "/lab/2026-01-notes.md",
+                "$id": "n_7d73d8ff9294",
+                "$path": "/lab/2026-01-notes.md",
                 "value": "Repeat the series with copper",
                 "checked": true
               },
               {
-                "id": "n_8ba7a99b8dc8",
-                "path": "/lab/2026-01-notes.md",
+                "$id": "n_8ba7a99b8dc8",
+                "$path": "/lab/2026-01-notes.md",
                 "value": "Pre-fire crucibles to constant weight",
                 "checked": false
               },
               {
-                "id": "n_95a191326d69",
-                "path": "/lab/2026-01-notes.md",
+                "$id": "n_95a191326d69",
+                "$path": "/lab/2026-01-notes.md",
                 "value": "Plot mass gain against heating time",
                 "checked": true
               },
               {
-                "id": "n_a38c158ec928",
-                "path": "/lab/2026-01-notes.md",
+                "$id": "n_a38c158ec928",
+                "$path": "/lab/2026-01-notes.md",
                 "value": "Record the colour sequence",
                 "checked": true
               },
               {
-                "id": "n_a529ba23cf73",
-                "path": "/lab/2026-01-notes.md",
+                "$id": "n_a529ba23cf73",
+                "$path": "/lab/2026-01-notes.md",
                 "value": "Three replicate runs on lead",
                 "checked": true
               }
@@ -8005,32 +8017,32 @@
           {
             "hits": [
               {
-                "id": "e_43",
-                "path": "/substances/philosophers-stone.md",
+                "$id": "e_43",
+                "$path": "/substances/philosophers-stone.md",
                 "predicate": "references",
                 "dst_kind": "document",
                 "$dst_path": "/processes/magnum-opus.md",
                 "$dst_uri": null
               },
               {
-                "id": "e_69",
-                "path": "/substances/philosophers-stone.md",
+                "$id": "e_69",
+                "$path": "/substances/philosophers-stone.md",
                 "predicate": "references",
                 "dst_kind": "document",
                 "$dst_path": "/substances/prima-materia.md",
                 "$dst_uri": null
               },
               {
-                "id": "e_70",
-                "path": "/substances/philosophers-stone.md",
+                "$id": "e_70",
+                "$path": "/substances/philosophers-stone.md",
                 "predicate": "references",
                 "dst_kind": "document",
                 "$dst_path": "/processes/magnum-opus.md",
                 "$dst_uri": null
               },
               {
-                "id": "e_71",
-                "path": "/substances/philosophers-stone.md",
+                "$id": "e_71",
+                "$path": "/substances/philosophers-stone.md",
                 "predicate": "references",
                 "dst_kind": "document",
                 "$dst_path": "/substances/mercury.md",
@@ -9101,8 +9113,7 @@
           {
             "hits": [
               {
-                "id": "d_14",
-                "path": "/substances/salt.md",
+                "$id": "d_14",
                 "$path": "/substances/salt.md",
                 "verified": false,
                 "reviewed": "2026-09"

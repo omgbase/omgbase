@@ -156,7 +156,7 @@ const QUERY_EXAMPLES: &[&str] = &[
     "       query 'select $path, next: ^docs { ^$path in list(before) } from docs where type == \"milestone\"'   # paths are /-rooted on the surface ($path == \"/x.md\"; inputs accept both forms), so a property's reference compares with ^$path directly",
     "       query 'from docs where type == \"practitioner\" order by era desc limit 2 offset 1'   # limit/offset bound the set (after order/distinct, before the consumer)",
     "       query 'select fm: entries(frontmatter) collect { k: $key, v: $it } from docs where $path == \"/x.md\"'   # a record as a collection ($key/$it); also entries(attrs), entries(inline)",
-    "       query 'select $path values from docs where layer == \"canon\"'   # `values`: bare values, no {id,path} hits (one item only)",
+    "       query 'select $path values from docs where layer == \"canon\"'   # `values`: bare values, no {$id,$path} hits (one item only)",
     "       query 'select $path, tags: tags collect { $it values where $it != \"draft\" } from docs'   # $it = the current item (here: each tag)",
     "       query 'docs collect { from nodes where kind == \"md:task\" }'   # `from E` re-projects the source (→ nodes)",
     "       query 'from docs where text(\"philosophers stone\") and layer == \"canon\"'   # full-text prune",

@@ -38,7 +38,7 @@ import { BrowserOAuthProvider, callbackParams, discover, type Discovery, type Id
 import { fetchBridgeInfo, type BridgeInfo } from "./lib/bridge-info.ts";
 import { effect } from "./lib/effect.ts";
 import { describeQueryError, type OqxErrorInfo } from "./lib/errors.ts";
-import { LEGACY_SURFACE, docArg, rooted, surfaceOf, unrooted } from "./lib/paths.ts";
+import { LEGACY_SURFACE, docArg, hitId, hitPath, rooted, surfaceOf, unrooted } from "./lib/paths.ts";
 import { defaultQuery, isDefaultQuery } from "./lib/default-query.ts";
 import { MODE_LABEL, headerLabel, modeForBridge } from "./lib/connection.ts";
 import { SAMPLE_REPO, SAMPLE_PROBE_PATH, chooseQuery, existsQuery, isStarterQuery, starterQuery, timelineStarter, type RepositoryShape } from "./lib/starter-query.ts";
@@ -184,9 +184,12 @@ const view = computed<View>(() => {
 // surface 1.x, rooted on 2.0), so one document has one key on either. The
 // node's `label` is the FALLBACK title line (the de-rooted path); the card's
 // actual title comes from the projection's label field (lib/cards.ts).
+// The hit's identity is read through `hitId`/`hitPath` (lib/paths.ts): `$id`/
+// `$path` on surface ≥ 3.0, `id`/`path` before.
 const nodes = computed<GraphNode[]>(() => rows.get().map((row) => {
-  const path = typeof row.path === "string" ? rooted(row.path) : String(row.id ?? "");
-  return { id: String(row.id ?? path), path, label: unrooted(path).replace(/\.md$/, ""), row };
+  const rawPath = hitPath(row);
+  const path = rawPath !== null ? rooted(rawPath) : hitId(row) ?? "";
+  return { id: hitId(row) ?? path, path, label: unrooted(path).replace(/\.md$/, ""), row };
 }));
 const graphState = signal<GraphStateDetail | null>(null);
 /** The query is in flight (the spinner and the empty state key off it). */
@@ -768,8 +771,8 @@ export class GraphUiApp extends SignalWatcher(LitElement) {
    * rooted at the first shown document (or a placeholder). */
   private renderStarterHint() {
     if (!isStarterQuery(source.get())) return nothing;
-    const first = rows.get().find((r) => typeof r.path === "string");
-    const suggestion = timelineStarter(serverSurface.get(), typeof first?.path === "string" ? first.path : null);
+    const first = rows.get().map(hitPath).find((p) => p !== null) ?? null;
+    const suggestion = timelineStarter(serverSurface.get(), first);
     return html`<div class="try" data-starter-hint>
       <span>for a timeline, start from one document and walk its <code>before</code> / <code>after</code> frontmatter:</span>
       <pre>${suggestion}</pre>

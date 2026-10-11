@@ -51,21 +51,28 @@ describe("projectionOf", () => {
     expect(p.defaults).toEqual({ label: null, shown: [] });
   });
 
-  it("an empty projection (or no query) describes itself from the rows: union, first-seen order, kinded by value", () => {
+  it("an empty projection (or no query) describes itself from the rows: union, first-seen order, kinded by value, minus the hit envelope", () => {
+    // Surface 3.0 hits: `$id`/`$path` are the envelope, never fields; `$title` here is a projected intrinsic.
     const rows = [
-      { id: "d_1", path: "/a.md", title: "A", tags: null, $path: "/a.md" },
-      { id: "d_2", path: "/b.md", tags: ["x", "y"], meta: { k: 1 }, count: 3, done: false },
+      { $id: "d_1", $path: "/a.md", title: "A", tags: null, $title: "A" },
+      { $id: "d_2", $path: "/b.md", tags: ["x", "y"], meta: { k: 1 }, count: 3, done: false },
     ];
     const fromDocs = projectionOf(parse(`from docs where $path == "/a.md"`), rows);
     expect(fromDocs.fields.map((f) => [f.name, f.kind, f.source])).toEqual([
-      ["id", "field", "row"], ["path", "field", "row"], ["title", "field", "row"],
+      ["title", "field", "row"],
       ["tags", "nested", "row"], // null first, then a list: the list decides
-      ["$path", "intrinsic", "row"], ["meta", "nested", "row"], ["count", "field", "row"], ["done", "field", "row"],
+      ["$title", "intrinsic", "row"], ["meta", "nested", "row"], ["count", "field", "row"], ["done", "field", "row"],
     ]);
-    expect(fromDocs.defaults).toEqual({ label: "title", shown: ["title"] });
+    expect(fromDocs.defaults).toEqual({ label: "$title", shown: ["$title"] });
     expect(projectionOf(null, rows).fields.map((f) => f.name)).toEqual(fromDocs.fields.map((f) => f.name));
     expect(projectionOf(null, [])).toEqual({ fields: [], defaults: { label: null, shown: [] } });
     expect(rowFields([]).length).toBe(0);
+  });
+
+  it("the 1.x/2.x envelope (`id`/`path`) is dropped from the rows' keys too, and a bare `from docs` offers nothing", () => {
+    expect(rowFields([{ id: "d_1", path: "/a.md", $path: "/a.md" }, { id: "d_2", path: "/b.md" }])).toEqual([]);
+    const p = projectionOf(parse(`from docs`), [{ $id: "d_1", $path: "/a.md" }]);
+    expect(p).toEqual({ fields: [], defaults: { label: null, shown: [] } });
   });
 
 });

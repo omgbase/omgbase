@@ -38,10 +38,12 @@ Every concern folds into the expression: `select <expr>, name: <expr>, …`
 receiver-constrained nested queries (`nodes exists { … }`, `collect { … }`),
 correlation/joins (the `^` sigil, with `^docs`/`^nodes`/`^blocks` reaching the
 root row's collections), bounded traversal (`follow`), `order by <expr> [asc|desc]`, and
-`limit`/`offset`. Results are lean projected hits (`{id, path, …projections}`),
-a `count`/`exists`/`none` scalar, or — for a `select <expr> values` projection —
+`limit`/`offset`. Results are lean projected hits (`{ $id, $path, …projections }`
+— surface 3.0: the envelope keys are the intrinsics the language reads, so a
+hit's `$id` pastes into the next `where $id == "…"` unchanged), a
+`count`/`exists`/`none` scalar, or — for a `select <expr> values` projection —
 the bare projected values (`values: […]`, §7); never full documents; hydrate by
-id afterward.
+`$id` afterward (the hydrating tools' own envelopes keep `id`/`path`).
 
 **Clause order is fixed (ADR-020, oqx ≥ 0.11).** Within one body — the top level
 or any `{ block }` — clauses appear at most once each, in exactly this order:
@@ -92,7 +94,7 @@ guard — use `$path` or `frontmatter.path`).
 (`projects/oqx.md`), but every reference an author writes is root-absolute
 (`[x](/projects/oqx.md)`, `before: [/timeline/kickoff.md]`). The surface
 speaks the reference form: `$path` on every target, `$dst_path` on edges, the
-`path` of every hit and of a row rendered as `{ id, path }` are `/`-rooted.
+`$path` of every hit and of a row rendered as `{ $id, $path }` are `/`-rooted.
 Every path the surface accepts tolerates both forms — tool arguments, `refs(x)`,
 `within(…)`, and a **string literal** compared with `$path`/`$dst_path` by
 `==`/`!=` or passed to their `.startsWith(…)`, which is rooted before
@@ -378,17 +380,22 @@ nested/correlated scopes:
   Ties break by `(path, id)` for a stable keyset cursor; a custom `order by`
   disables the cursor (you get the top `limit` with `truncated`). **[was CEL/
   SQLite: NULLs sorted first ascending.]**
-- **`select`:** default hit is `{id, path}`; add `name: <expr>` fields and nested
-  `collect { … }` / `first { … }` / `single { … }`. An item that is not a plain
-  navigation (a call, arithmetic) needs an alias — `n: size(tags)` — unless the
-  projection is in `values` mode. **Rows as values** (surface 1.2): wherever a
-  store row surfaces as a *value* rather than a hit — a nested `collect { }` /
-  `first { }` / `single { }` with an **empty** projection ("the row itself",
-  oqx §12), a `values` projection of `$it`, a field bound to a row — it is
-  rendered as `{ id, path }` (the row's id and its document's path), never the
-  raw store row (before 1.2 the columns leaked, `attrs` as a JSON string and the
-  `__path` join column included). `tasks: nodes collect { where kind ==
-  "md:task" }` is therefore a list of `{ id, path }` node refs.
+- **`select`:** default hit is `{ $id, $path }` (surface 3.0; before, `{id,
+  path}` — names the language itself rejects as bare reads); add `name: <expr>`
+  fields and nested `collect { … }` / `first { … }` / `single { … }`. A `$id` /
+  `$path` projection collapses onto the envelope key (`select $path` yields one
+  `$path`, not a `path` beside it); `id`/`path` are ordinary names for a
+  projected column. An item that is not a plain navigation (a call, arithmetic)
+  needs an alias — `n: size(tags)` — unless the projection is in `values` mode.
+  **Rows as values** (surface 1.2; keys renamed in 3.0): wherever a store row
+  surfaces as a *value* rather than a hit — a nested `collect { }` / `first { }`
+  / `single { }` with an **empty** projection ("the row itself", oqx §12), a
+  `values` projection of `$it`, a field bound to a row — it is rendered as
+  `{ $id, $path }` (the row's id and its document's path), never the raw store
+  row (before 1.2 the columns leaked, `attrs` as a JSON string and the `__path`
+  join column included). `tasks: nodes collect { where kind == "md:task" }` is
+  therefore a list of `{ $id, $path }` node refs — the same shape a hit leads
+  with.
 - **`values`** (oqx ≥ 0.8): `select <expr> values` — exactly **one** item — makes
   each row's result the bare value rather than a `{ name: value }` record. At the
   top level the result carries `values: […]` in place of `hits` (empty), paged
@@ -397,8 +404,9 @@ nested/correlated scopes:
   array / scalar (`tags: tags collect { $it values }`, `latest: nodes first
   { value values order by … }`). The runner implements the top-level form by
   projecting the single item under a reserved key alongside the injected
-  id/path, then peeling the values off the final page — so the keyset cursor
-  still works.
+  `$id`/`$path`, then peeling the values off the final page — so the keyset
+  cursor still works (`values` carries no hits, so the 3.0 envelope does not
+  touch it).
 - **`limit N` / `offset N`** (oqx ≥ 0.9): bound the row set **after** `where` /
   `order by` / `distinct` and **before** the consumer reduces it, so they mean
   the same thing under every consumer (`nodes count { … limit 5 } <= 5`,

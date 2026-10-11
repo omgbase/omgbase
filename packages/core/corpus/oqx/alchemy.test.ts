@@ -56,7 +56,7 @@ afterAll(() => store.close());
  *  spec/surface §1 "Paths"); the queries below spell their literals that way too,
  *  though a bare `"a/b.md"` compared with `$path` would match as well. */
 function paths(src: string): string[] {
-  return oqxRun(store, repoId, src, { limit: 100 }).hits.map((h) => h.path);
+  return oqxRun(store, repoId, src, { limit: 100 }).hits.map((h) => h.$path);
 }
 function hits(src: string, limit = 100) {
   return oqxRun(store, repoId, src, { limit });
@@ -366,7 +366,7 @@ describe("alchemy corpus — correlated block queries", () => {
     // list_item) under an "Open questions" section. under_heading() scopes to a
     // heading's section by case-insensitive substring.
     const res = hits('select text: text from blocks where type == "list_item" and under_heading("Open questions")');
-    expect(res.hits.map((h) => h.path)).toEqual([
+    expect(res.hits.map((h) => h.$path)).toEqual([
       "/substances/philosophers-stone.md",
       "/substances/philosophers-stone.md",
       "/substances/prima-materia.md",
@@ -443,7 +443,7 @@ describe("alchemy corpus — collect { … } projection", () => {
     const res = hits(
       'select open: nodes collect { select text: value where kind == "md:task" and not attrs.checked } from docs where type == "lab-note"',
     );
-    expect(res.hits.map((h) => h.path)).toEqual(["/lab/2026-01-notes.md", "/lab/2026-02-notes.md"]);
+    expect(res.hits.map((h) => h.$path)).toEqual(["/lab/2026-01-notes.md", "/lab/2026-02-notes.md"]);
     // `nodes` comes back in document order (spec/surface §1.2); compare as sets so the assertion pins the members, not the order.
     const byText = (open: unknown) => (open as { text: string }[]).map((t) => t.text).sort();
     expect(byText(res.hits[0]!.open)).toEqual([
@@ -459,7 +459,7 @@ describe("alchemy corpus — collect { … } projection", () => {
 
   it("projects without filtering — task-free documents still appear, with []", () => {
     const res = hits('select tasks: nodes collect { where kind == "md:task" } from docs where type == "substance"');
-    const byPath = new Map(res.hits.map((h) => [h.path, h.tasks as unknown[]]));
+    const byPath = new Map(res.hits.map((h) => [h.$path, h.tasks as unknown[]]));
     expect([...byPath.keys()]).toEqual(SUBSTANCES); // every substance is a hit
     // only salt.md carries a (checked, supply) list; the rest project []
     expect(byPath.get("/substances/salt.md")!.length).toBe(2);
@@ -472,7 +472,7 @@ describe("alchemy corpus — collect { … } projection", () => {
     const res = hits(
       'select open: nodes collect { select text: value where kind == "md:task" and not attrs.checked } from docs where type == "process" and nodes exists { where kind == "md:task" and not attrs.checked }',
     );
-    expect(res.hits.map((h) => h.path)).toEqual([
+    expect(res.hits.map((h) => h.$path)).toEqual([
       "/processes/calcination.md",
       "/processes/coagulation.md",
       "/processes/dissolution.md",
@@ -498,7 +498,7 @@ describe("alchemy corpus — the fixed clause order (ADR-020)", () => {
 
   it("the keyword-less leading projection equals the explicit `select` (top level and in a block)", () => {
     const shape = (src: string) =>
-      hits(src).hits.map((h) => ({ path: h.path, vals: h.vals }));
+      hits(src).hits.map((h) => ({ path: h.$path, vals: h.vals }));
     const longhand = shape('select vals: nodes collect { select value } from docs where type == "lab-note"');
     const shorthand = shape('vals: nodes collect { value } from docs where type == "lab-note"');
     expect(shorthand).toEqual(longhand);
@@ -508,7 +508,7 @@ describe("alchemy corpus — the fixed clause order (ADR-020)", () => {
 
   it("a block that both projects and filters: projection first, then `where`", () => {
     const shape = (src: string) =>
-      hits(src).hits.map((h) => ({ path: h.path, open: h.open }));
+      hits(src).hits.map((h) => ({ path: h.$path, open: h.open }));
     const longhand = shape(
       'select open: nodes collect { select text: value where kind == "md:task" and not attrs.checked } from docs where type == "lab-note"',
     );
@@ -548,8 +548,8 @@ describe("alchemy corpus — the fixed clause order (ADR-020)", () => {
     // the alias is substituted at parse time, so the pushdown planner sees an
     // ordinary predicate — planned and in-memory must agree
     const q = 'select $path, old: era < 1000 from docs where old and type == "practitioner"';
-    const planned = oqxRun(store, repoId, q).hits.map((h) => h.path);
-    const memory = oqxRun(store, repoId, q, { plan: false }).hits.map((h) => h.path);
+    const planned = oqxRun(store, repoId, q).hits.map((h) => h.$path);
+    const memory = oqxRun(store, repoId, q, { plan: false }).hits.map((h) => h.$path);
     expect(planned).toEqual(memory);
     expect(planned).toEqual(["/practitioners/jabir-ibn-hayyan.md", "/practitioners/maria-prophetissa.md"]);
     // an alias shadows a same-named property inside where
@@ -745,7 +745,7 @@ describe("alchemy corpus — correlation & joins (^ outer references)", () => {
       "select subject, process: ^docs single { select p: $path, layer where slug == ^subject } " +
         "from docs where type == \"lab-note\"",
     );
-    const by = new Map(res.hits.map((h) => [h.path, h.process as { p: string; layer: string }]));
+    const by = new Map(res.hits.map((h) => [h.$path, h.process as { p: string; layer: string }]));
     expect(by.get("/lab/2026-01-notes.md")).toEqual({ p: "/processes/calcination.md", layer: "canon" });
     expect(by.get("/lab/2026-02-notes.md")).toEqual({ p: "/processes/coagulation.md", layer: "working" });
   });
@@ -778,14 +778,14 @@ describe("alchemy corpus — blocks and nodes targets", () => {
   it("selects task blocks constrained by their document's frontmatter", () => {
     const res = hits('from blocks where type == "task" and doc.type == "lab-note"');
     expect(res.hits.length).toBe(11); // 7 in January + 4 in February
-    expect(new Set(res.hits.map((h) => h.path))).toEqual(
+    expect(new Set(res.hits.map((h) => h.$path))).toEqual(
       new Set(["/lab/2026-01-notes.md", "/lab/2026-02-notes.md"]),
     );
   });
 
   it("selects code fences under a path prefix", () => {
     const res = hits('from blocks where type == "code_fence" and $path.startsWith("processes/")');
-    expect(res.hits.map((h) => h.path)).toEqual([
+    expect(res.hits.map((h) => h.$path)).toEqual([
       "/processes/calcination.md",
       "/processes/coagulation.md",
       "/processes/dissolution.md",
@@ -796,7 +796,7 @@ describe("alchemy corpus — blocks and nodes targets", () => {
     const res = hits('from nodes where kind == "md:task" and not attrs.checked and doc.type == "practitioner"');
     // jabir 1, newton 2, paracelsus 1
     expect(res.hits.length).toBe(4);
-    expect(new Set(res.hits.map((h) => h.path))).toEqual(
+    expect(new Set(res.hits.map((h) => h.$path))).toEqual(
       new Set([
         "/practitioners/jabir-ibn-hayyan.md",
         "/practitioners/newton.md",
@@ -867,7 +867,7 @@ describe("alchemy corpus — order by", () => {
 
   it("docs first + order by era desc is the latest practitioner (Newton)", () => {
     const r = hits('docs first { where type == "practitioner" order by era desc }');
-    expect(r.hits.map((h) => h.path)).toEqual([`${P}newton.md`]);
+    expect(r.hits.map((h) => h.$path)).toEqual([`${P}newton.md`]);
   });
 });
 
@@ -893,12 +893,12 @@ describe("alchemy corpus — top-level consumers (<target> <op> { … } at the r
   it("docs first returns the first document in path order, with projections", () => {
     const r = hits('docs first { select t: type }');
     expect(r.hits.length).toBe(1);
-    expect(r.hits[0]!.path).toBe("/index.md"); // sorts before every subdirectory
+    expect(r.hits[0]!.$path).toBe("/index.md"); // sorts before every subdirectory
   });
 
   it("docs single fetches the sole draft document (mutus-liber)", () => {
     const r = hits('docs single { where layer == "draft" }');
-    expect(r.hits.map((h) => h.path)).toEqual(["/texts/mutus-liber.md"]);
+    expect(r.hits.map((h) => h.$path)).toEqual(["/texts/mutus-liber.md"]);
   });
 
   it("docs single fails loudly when the query matches more than one document", () => {
@@ -914,7 +914,7 @@ describe("alchemy corpus — pagination", () => {
     let pages = 0;
     do {
       const page = oqxRun(store, repoId, "from docs", { limit: 5, ...(cursor ? { cursor } : {}) });
-      seen.push(...page.hits.map((h) => h.path));
+      seen.push(...page.hits.map((h) => h.$path));
       cursor = page.cursor;
       pages++;
       expect(pages).toBeLessThan(10); // guard against a non-advancing cursor
@@ -1198,7 +1198,7 @@ describe("alchemy corpus — $it and values (scalar collections)", () => {
 
   it("$it names each element of a list property inside a block", () => {
     const r = hits('select tags: tags collect { $it values where $it != "substance" } from docs where type == "substance"');
-    const byPath = Object.fromEntries(r.hits.map((h) => [h.path, h.tags]));
+    const byPath = Object.fromEntries(r.hits.map((h) => [h.$path, h.tags]));
     expect(byPath).toEqual({
       "/substances/mercury.md": [],                       // scalar-authored `tags: substance` → one element, filtered out
       "/substances/philosophers-stone.md": ["goal", "legendary"],
@@ -1256,12 +1256,12 @@ describe("alchemy corpus — none, limit, offset", () => {
     expect(p1.truncated).toBe(true); // a third row exists inside the bound
     const all3 = paths('from docs order by $path limit 3');
     expect(all3.length).toBe(3);
-    expect(p1.hits.map((h) => h.path)).toEqual(all3.slice(0, 2));
+    expect(p1.hits.map((h) => h.$path)).toEqual(all3.slice(0, 2));
     // default order → keyset cursor continues inside the bounded set and stops there
     const q = 'from docs limit 3';
     const a = hits(q, 2);
     const b = oqxRun(store, repoId, q, { limit: 2, cursor: a.cursor! });
-    expect([...a.hits, ...b.hits].map((h) => h.path)).toEqual(paths(q));
+    expect([...a.hits, ...b.hits].map((h) => h.$path)).toEqual(paths(q));
     expect(b.truncated).toBe(false);
   });
 
@@ -1386,7 +1386,7 @@ describe("alchemy corpus — sugar, refs() and the root row", () => {
     expect(paths('from docs where type == "practitioner" and era is null')).toEqual([]);
     // a select item may use the items to its left
     const hub = hits('select hub: ^docs[type == "hub"], hub_path: hub.$path from docs where type == "lab-note"').hits[0]!;
-    expect(hub.hub).toEqual({ id: expect.any(String), path: "/index.md" });
+    expect(hub.hub).toEqual({ $id: expect.any(String), $path: "/index.md" });
     expect(hub.hub_path).toBe("/index.md");
   });
 
@@ -1404,7 +1404,7 @@ describe("alchemy corpus — sugar, refs() and the root row", () => {
     ]);
     // the reverse direction is a membership test — $path IS the reference form
     const next = hits('select $path, next: ^docs { ^$path in list(before) } from docs where type == "milestone"').hits;
-    expect(next.map((h) => (h.next as { path: string }[]).map((n) => n.path))).toEqual([["/timeline/review.md"], []]);
+    expect(next.map((h) => (h.next as { $path: string }[]).map((n) => n.$path))).toEqual([["/timeline/review.md"], []]);
     // the strings themselves are not hits
     expect(() => paths('from docs where $path == "/timeline/review.md" follow before')).toThrow(/a hit must be a document, block, node or edge row.*refs\(<field>\)/);
   });

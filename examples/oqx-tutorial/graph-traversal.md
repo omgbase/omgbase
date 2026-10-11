@@ -63,20 +63,20 @@ citations but treating practitioner pages as the frontier:
 
 ```console
 $ omg query 'select stop: $stop from docs where $path == "/index.md" follow distinct doc.out { frontier type == "practitioner" } order by $path asc' --jsonl
-{"id":"d_sz1e8z0","path":"/index.md","stop":"interior"}
-{"id":"d_w18c2st","path":"/lab/2026-02-notes.md","stop":"interior"}
-{"id":"d_nzb61j9","path":"/practitioners/jabir-ibn-hayyan.md","stop":"frontier"}
-{"id":"d_9px29y1","path":"/practitioners/maria-prophetissa.md","stop":"frontier"}
-{"id":"d_rw4ygr0","path":"/practitioners/newton.md","stop":"frontier"}
-{"id":"d_t5nvj1g","path":"/practitioners/paracelsus.md","stop":"frontier"}
-{"id":"d_zdac7ww","path":"/processes/calcination.md","stop":"leaf"}
-{"id":"d_jtnqxt2","path":"/processes/coagulation.md","stop":"interior"}
-{"id":"d_91vsvhk","path":"/processes/dissolution.md","stop":"leaf"}
-{"id":"d_m67jwv8","path":"/processes/magnum-opus.md","stop":"interior"}
-{"id":"d_1rren8z","path":"/substances/philosophers-stone.md","stop":"interior"}
-{"id":"d_prj3j7a","path":"/substances/prima-materia.md","stop":"interior"}
-{"id":"d_wc1napn","path":"/texts/emerald-tablet.md","stop":"interior"}
-{"id":"d_f7w5k26","path":"/texts/mutus-liber.md","stop":"interior"}
+{"$id":"d_sz1e8z0","$path":"/index.md","stop":"interior"}
+{"$id":"d_w18c2st","$path":"/lab/2026-02-notes.md","stop":"interior"}
+{"$id":"d_nzb61j9","$path":"/practitioners/jabir-ibn-hayyan.md","stop":"frontier"}
+{"$id":"d_9px29y1","$path":"/practitioners/maria-prophetissa.md","stop":"frontier"}
+{"$id":"d_rw4ygr0","$path":"/practitioners/newton.md","stop":"frontier"}
+{"$id":"d_t5nvj1g","$path":"/practitioners/paracelsus.md","stop":"frontier"}
+{"$id":"d_zdac7ww","$path":"/processes/calcination.md","stop":"leaf"}
+{"$id":"d_jtnqxt2","$path":"/processes/coagulation.md","stop":"interior"}
+{"$id":"d_91vsvhk","$path":"/processes/dissolution.md","stop":"leaf"}
+{"$id":"d_m67jwv8","$path":"/processes/magnum-opus.md","stop":"interior"}
+{"$id":"d_1rren8z","$path":"/substances/philosophers-stone.md","stop":"interior"}
+{"$id":"d_prj3j7a","$path":"/substances/prima-materia.md","stop":"interior"}
+{"$id":"d_wc1napn","$path":"/texts/emerald-tablet.md","stop":"interior"}
+{"$id":"d_f7w5k26","$path":"/texts/mutus-liber.md","stop":"interior"}
 ```
 
 ## Structure: the heading outline (`section.children`)
@@ -87,11 +87,11 @@ outline one level per hop — the magnum opus's section and its four subsections
 
 ```console
 $ omg query 'select name, depth: $depth, stop: $stop from nodes where kind == "md:section" and name == "The magnum opus" follow section.children order by $depth asc, name asc' --jsonl
-{"id":"n_7a874b74b236","path":"/processes/magnum-opus.md","name":"The magnum opus","depth":1,"stop":"interior"}
-{"id":"n_cb7296cac24a","path":"/processes/magnum-opus.md","name":"Open questions","depth":2,"stop":"leaf"}
-{"id":"n_e7364dec9d89","path":"/processes/magnum-opus.md","name":"Operations","depth":2,"stop":"leaf"}
-{"id":"n_97dc3b054223","path":"/processes/magnum-opus.md","name":"The four stages","depth":2,"stop":"leaf"}
-{"id":"n_fcb087e2dfbc","path":"/processes/magnum-opus.md","name":"Why colour","depth":2,"stop":"leaf"}
+{"$id":"n_7a874b74b236","$path":"/processes/magnum-opus.md","name":"The magnum opus","depth":1,"stop":"interior"}
+{"$id":"n_cb7296cac24a","$path":"/processes/magnum-opus.md","name":"Open questions","depth":2,"stop":"leaf"}
+{"$id":"n_e7364dec9d89","$path":"/processes/magnum-opus.md","name":"Operations","depth":2,"stop":"leaf"}
+{"$id":"n_97dc3b054223","$path":"/processes/magnum-opus.md","name":"The four stages","depth":2,"stop":"leaf"}
+{"$id":"n_fcb087e2dfbc","$path":"/processes/magnum-opus.md","name":"Why colour","depth":2,"stop":"leaf"}
 ```
 
 Other knobs, briefly: `order by $ordinal` yields the walk's natural 1..N order

@@ -28,6 +28,7 @@
 
 import type { Expr, Query, SelectItem, Span } from "@omgbase/oqx";
 import type { Row } from "./candidates.ts";
+import { HIT_ENVELOPE_KEYS } from "./paths.ts";
 
 export type ProjectedKind = "intrinsic" | "field" | "nested" | "values";
 
@@ -95,11 +96,14 @@ export function isIntrinsic(expr: Expr): boolean {
   return expr.kind === "ident" && expr.name.startsWith("$") && expr.name !== "$it";
 }
 
-/** The keys the rows carry, in first-seen order, kinded by their values. */
+/** The keys the rows carry, in first-seen order, kinded by their values — minus
+ * the hit envelope (`$id`/`$path` since surface 3.0, `id`/`path` before): the
+ * row's identity is not a projected field, whichever server spelled it. */
 export function rowFields(rows: readonly Row[]): ProjectedField[] {
   const byName = new Map<string, ProjectedField>();
   for (const row of rows) {
     for (const [name, value] of Object.entries(row)) {
+      if (HIT_ENVELOPE_KEYS.has(name)) continue;
       const existing = byName.get(name);
       const kind = valueKind(name, value);
       if (!existing) byName.set(name, { name, kind: kind ?? "field", span: null, source: "row" });

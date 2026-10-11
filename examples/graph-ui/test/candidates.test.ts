@@ -199,6 +199,24 @@ order by $ordinal`;
     expect(c[0]!.sources).toEqual(["follow", "inferred"]);
   });
 
+  it("reads a hit's path through the envelope of either surface generation: `$path` (3.0) or `path` (1.x/2.x)", () => {
+    const v3 = [
+      { $id: "d_1", $path: "/a.md", before: ["/b.md"] },
+      { $id: "d_2", $path: "/b.md", after: ["/a.md"] },
+    ];
+    const v2 = v3.map(({ $id, $path, ...r }) => ({ id: $id, path: $path.slice(1), ...r }));
+    expect(reciprocal(v3, "before", "after")).toBe(true);
+    expect(reciprocal(v2, "before", "after")).toBe(true);
+    // A field whose values are rows-as-values (`{ $id, $path }`, or `{ id, path }` before 3.0) references those documents.
+    const nested = [
+      { $id: "d_1", $path: "/a.md", before: [{ $id: "d_2", $path: "/b.md" }] },
+      { $id: "d_2", $path: "/b.md", after: { id: "d_1", path: "/a.md" } },
+    ];
+    expect(reciprocal(nested, "before", "after")).toBe(true);
+    // Neither spelling of the envelope is a frontmatter field.
+    expect(pathValuedFields([{ $id: "d_1", $path: "/a.md", id: "d_1", path: "/a.md", owner: "/c.md" }])).toEqual(["owner"]);
+  });
+
   it("works without an AST (unparsable source) from rows alone", () => {
     expect(inferCandidates(null, [{ id: "x", path: "a.md", next: "/b.md" }]).map((c) => c.name)).toEqual(["next", "doc.out", "doc.in"]);
     expect(inferCandidates(null, []).map((c) => c.name)).toEqual(["doc.out", "doc.in"]);

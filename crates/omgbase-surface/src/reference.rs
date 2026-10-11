@@ -49,8 +49,12 @@ Every form here is shorthand for an explicit directive (the AST is the explicit 
   boss: ^docs[$path == ^manager], bossName: boss.$title   a select item may use the items to its LEFT
   Reserved words (never a bare field name): from where select is not and or, true false null.
 
-Results are LEAN hits — {id, path} + whatever `select` projects (or `values`,
-`count`, `exists`, `none`). Hydrate full content by id via nodes_get/docs_read.
+Results are LEAN hits — { $id, $path } + whatever `select` projects (or `values`,
+`count`, `exists`, `none`). The envelope keys ARE the intrinsics: copy a hit's
+`$id` straight into `where $id == "…"` (no translation); a `select $path` lands on
+the envelope key rather than beside it; a row surfacing as a value (an empty
+`collect { }`) is the same `{ $id, $path }`. Hydrate full content by id via
+nodes_get/docs_read (their own envelopes keep `id`/`path`).
 
 ## Paths
 

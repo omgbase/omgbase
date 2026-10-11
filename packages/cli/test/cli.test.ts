@@ -141,20 +141,20 @@ describe("query (oqx)", () => {
     }
   });
 
-  // Human tier, projected: header + id + path + the select columns, in order.
+  // Human tier, projected: header + $id + $path (the hit envelope, surface 3.0) + the select columns, in order.
   it("a projecting query prints a header and the projected columns in select order", () => {
     const { stdout } = omg(["query", 'select title, status, layer from docs where $path == "hub.md"']);
     const lines = stdout.trimEnd().split("\n");
     expect(lines).toHaveLength(2);
-    expect(lines[0]).toBe("id         path     title  status  layer");
+    expect(lines[0]).toBe("$id        $path    title  status  layer");
     // hub.md sets no layer → empty last cell, trailing whitespace trimmed.
     expect(lines[1]).toMatch(/^d_[a-z0-9]{7}  \/hub\.md  Hub    active$/);
   });
 
-  it("a projected $path takes the path column's place (never printed twice)", () => {
+  it("a projected $path collapses onto the envelope's $path column (never printed twice)", () => {
     const { stdout } = omg(["query", 'select $path, title from docs where $path == "hub.md"']);
     const lines = stdout.trimEnd().split("\n");
-    expect(lines[0]).toBe("id         $path    title");
+    expect(lines[0]).toBe("$id        $path    title");
     expect(lines[1]).toMatch(/^d_[a-z0-9]{7}  \/hub\.md  Hub$/);
     expect(lines[1]!.split("hub.md")).toHaveLength(2);
   });
@@ -165,7 +165,7 @@ describe("query (oqx)", () => {
       'select title, open: blocks collect { select t: text where type == "task" && !attrs.checked } from docs order by $path asc',
     ]);
     const lines = stdout.trimEnd().split("\n");
-    expect(lines[0]).toBe("id         path        title  open");
+    expect(lines[0]).toBe("$id        $path       title  open");
     expect(lines[1]).toMatch(/^d_[a-z0-9]{7}  \/hub\.md     Hub    \[\{"t":"wire the deploy pipeline"\}\]$/);
     // target.md has no frontmatter title → empty title cell; empty collect → [].
     expect(lines[2]).toMatch(/^d_[a-z0-9]{7}  \/target\.md         \[\]$/);

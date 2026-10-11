@@ -30,78 +30,78 @@
       "expect": {
         "hits": [
           {
-            "id": "e_0",
-            "path": "/index.md",
+            "$id": "e_0",
+            "$path": "/index.md",
             "p": "references"
           },
           {
-            "id": "e_1",
-            "path": "/index.md",
+            "$id": "e_1",
+            "$path": "/index.md",
             "p": "references"
           },
           {
-            "id": "e_10",
-            "path": "/index.md",
+            "$id": "e_10",
+            "$path": "/index.md",
             "p": "references"
           },
           {
-            "id": "e_11",
-            "path": "/index.md",
+            "$id": "e_11",
+            "$path": "/index.md",
             "p": "references"
           },
           {
-            "id": "e_12",
-            "path": "/index.md",
+            "$id": "e_12",
+            "$path": "/index.md",
             "p": "references"
           },
           {
-            "id": "e_13",
-            "path": "/index.md",
+            "$id": "e_13",
+            "$path": "/index.md",
             "p": "references"
           },
           {
-            "id": "e_14",
-            "path": "/index.md",
+            "$id": "e_14",
+            "$path": "/index.md",
             "p": "references"
           },
           {
-            "id": "e_2",
-            "path": "/index.md",
+            "$id": "e_2",
+            "$path": "/index.md",
             "p": "references"
           },
           {
-            "id": "e_3",
-            "path": "/index.md",
+            "$id": "e_3",
+            "$path": "/index.md",
             "p": "references"
           },
           {
-            "id": "e_4",
-            "path": "/index.md",
+            "$id": "e_4",
+            "$path": "/index.md",
             "p": "references"
           },
           {
-            "id": "e_5",
-            "path": "/index.md",
+            "$id": "e_5",
+            "$path": "/index.md",
             "p": "references"
           },
           {
-            "id": "e_6",
-            "path": "/index.md",
+            "$id": "e_6",
+            "$path": "/index.md",
             "p": "references"
           },
           {
-            "id": "e_7",
-            "path": "/index.md",
+            "$id": "e_7",
+            "$path": "/index.md",
             "p": "references"
           },
           {
-            "id": "e_8",
-            "path": "/index.md",
+            "$id": "e_8",
+            "$path": "/index.md",
             "p": "references"
           },
           {
-            "id": "e_9",
-            "path": "/index.md",
+            "$id": "e_9",
+            "$path": "/index.md",
             "p": "references"
           }
         ],
@@ -116,8 +116,8 @@
       "expect": {
         "hits": [
           {
-            "id": "e_47",
-            "path": "/substances/prima-materia.md",
+            "$id": "e_47",
+            "$path": "/substances/prima-materia.md",
             "predicate": "references",
             "provenance": "link",
             "dst_kind": "document",
@@ -125,8 +125,8 @@
             "src_field": null
           },
           {
-            "id": "e_48",
-            "path": "/substances/prima-materia.md",
+            "$id": "e_48",
+            "$path": "/substances/prima-materia.md",
             "predicate": "references",
             "provenance": "link",
             "dst_kind": "document",
@@ -134,8 +134,8 @@
             "src_field": null
           },
           {
-            "id": "e_49",
-            "path": "/substances/prima-materia.md",
+            "$id": "e_49",
+            "$path": "/substances/prima-materia.md",
             "predicate": "references",
             "provenance": "link",
             "dst_kind": "document",
@@ -143,8 +143,8 @@
             "src_field": null
           },
           {
-            "id": "e_50",
-            "path": "/substances/prima-materia.md",
+            "$id": "e_50",
+            "$path": "/substances/prima-materia.md",
             "predicate": "references",
             "provenance": "link",
             "dst_kind": "document",
@@ -164,8 +164,8 @@
       "expect": {
         "hits": [
           {
-            "id": "e_47",
-            "path": "/substances/prima-materia.md",
+            "$id": "e_47",
+            "$path": "/substances/prima-materia.md",
             "s": "d_13",
             "d": "d_16",
             "sb": "b_254",
@@ -175,8 +175,8 @@
             "du": null
           },
           {
-            "id": "e_48",
-            "path": "/substances/prima-materia.md",
+            "$id": "e_48",
+            "$path": "/substances/prima-materia.md",
             "s": "d_13",
             "d": "d_10",
             "sb": "b_256",
@@ -186,8 +186,8 @@
             "du": null
           },
           {
-            "id": "e_49",
-            "path": "/substances/prima-materia.md",
+            "$id": "e_49",
+            "$path": "/substances/prima-materia.md",
             "s": "d_13",
             "d": "d_7",
             "sb": "b_256",
@@ -197,8 +197,8 @@
             "du": null
           },
           {
-            "id": "e_50",
-            "path": "/substances/prima-materia.md",
+            "$id": "e_50",
+            "$path": "/substances/prima-materia.md",
             "s": "d_13",
             "d": "phantom:nigredo",
             "sb": "b_256",
@@ -219,23 +219,23 @@
       "expect": {
         "hits": [
           {
-            "id": "e_51",
-            "path": "/substances/salt.md",
+            "$id": "e_51",
+            "$path": "/substances/salt.md",
             "dt": "substance"
           },
           {
-            "id": "e_52",
-            "path": "/substances/salt.md",
+            "$id": "e_52",
+            "$path": "/substances/salt.md",
             "dt": "substance"
           },
           {
-            "id": "e_53",
-            "path": "/substances/salt.md",
+            "$id": "e_53",
+            "$path": "/substances/salt.md",
             "dt": "substance"
           },
           {
-            "id": "e_54",
-            "path": "/substances/salt.md",
+            "$id": "e_54",
+            "$path": "/substances/salt.md",
             "dt": "substance"
           }
         ],
@@ -314,123 +314,123 @@
       "expect": {
         "hits": [
           {
-            "id": "e_0",
-            "path": "/index.md",
+            "$id": "e_0",
+            "$path": "/index.md",
             "d": "phantom:mercury"
           },
           {
-            "id": "e_1",
-            "path": "/index.md",
+            "$id": "e_1",
+            "$path": "/index.md",
             "d": "phantom:sulphur"
           },
           {
-            "id": "e_2",
-            "path": "/index.md",
+            "$id": "e_2",
+            "$path": "/index.md",
             "d": "phantom:salt"
           },
           {
-            "id": "e_16",
-            "path": "/lab/2026-01-notes.md",
+            "$id": "e_16",
+            "$path": "/lab/2026-01-notes.md",
             "d": "phantom:salt"
           },
           {
-            "id": "e_17",
-            "path": "/lab/2026-01-notes.md",
+            "$id": "e_17",
+            "$path": "/lab/2026-01-notes.md",
             "d": "phantom:mercury"
           },
           {
-            "id": "e_20",
-            "path": "/practitioners/jabir-ibn-hayyan.md",
+            "$id": "e_20",
+            "$path": "/practitioners/jabir-ibn-hayyan.md",
             "d": "phantom:mercury"
           },
           {
-            "id": "e_21",
-            "path": "/practitioners/jabir-ibn-hayyan.md",
+            "$id": "e_21",
+            "$path": "/practitioners/jabir-ibn-hayyan.md",
             "d": "phantom:sulphur"
           },
           {
-            "id": "e_25",
-            "path": "/practitioners/newton.md",
+            "$id": "e_25",
+            "$path": "/practitioners/newton.md",
             "d": "phantom:mercury"
           },
           {
-            "id": "e_27",
-            "path": "/practitioners/paracelsus.md",
+            "$id": "e_27",
+            "$path": "/practitioners/paracelsus.md",
             "d": "phantom:mercury"
           },
           {
-            "id": "e_28",
-            "path": "/practitioners/paracelsus.md",
+            "$id": "e_28",
+            "$path": "/practitioners/paracelsus.md",
             "d": "phantom:sulphur"
           },
           {
-            "id": "e_29",
-            "path": "/practitioners/paracelsus.md",
+            "$id": "e_29",
+            "$path": "/practitioners/paracelsus.md",
             "d": "phantom:salt"
           },
           {
-            "id": "e_30",
-            "path": "/processes/calcination.md",
+            "$id": "e_30",
+            "$path": "/processes/calcination.md",
             "d": "phantom:salt"
           },
           {
-            "id": "e_38",
-            "path": "/substances/mercury.md",
+            "$id": "e_38",
+            "$path": "/substances/mercury.md",
             "d": "phantom:salt"
           },
           {
-            "id": "e_39",
-            "path": "/substances/mercury.md",
+            "$id": "e_39",
+            "$path": "/substances/mercury.md",
             "d": "phantom:sulphur"
           },
           {
-            "id": "e_45",
-            "path": "/substances/philosophers-stone.md",
+            "$id": "e_45",
+            "$path": "/substances/philosophers-stone.md",
             "d": "phantom:magnum-opus"
           },
           {
-            "id": "e_46",
-            "path": "/substances/philosophers-stone.md",
+            "$id": "e_46",
+            "$path": "/substances/philosophers-stone.md",
             "d": "phantom:mercury"
           },
           {
-            "id": "e_50",
-            "path": "/substances/prima-materia.md",
+            "$id": "e_50",
+            "$path": "/substances/prima-materia.md",
             "d": "phantom:nigredo"
           },
           {
-            "id": "e_51",
-            "path": "/substances/salt.md",
+            "$id": "e_51",
+            "$path": "/substances/salt.md",
             "d": "phantom:mercury"
           },
           {
-            "id": "e_52",
-            "path": "/substances/salt.md",
+            "$id": "e_52",
+            "$path": "/substances/salt.md",
             "d": "phantom:sulphur"
           },
           {
-            "id": "e_55",
-            "path": "/substances/sulphur.md",
+            "$id": "e_55",
+            "$path": "/substances/sulphur.md",
             "d": "phantom:mercury"
           },
           {
-            "id": "e_56",
-            "path": "/substances/sulphur.md",
+            "$id": "e_56",
+            "$path": "/substances/sulphur.md",
             "d": "phantom:salt"
           },
           {
-            "id": "e_65",
-            "path": "/timeline/kickoff.md",
+            "$id": "e_65",
+            "$path": "/timeline/kickoff.md",
             "d": "phantom:timeline/lost-notes.md"
           },
           {
-            "id": "e_67",
-            "path": "/timeline/review.md",
+            "$id": "e_67",
+            "$path": "/timeline/review.md",
             "d": "phantom:timeline/lost-notes.md"
           },
           {
-            "id": "e_68",
-            "path": "/timeline/review.md",
+            "$id": "e_68",
+            "$path": "/timeline/review.md",
             "d": "phantom:timeline/next-season.md"
           }
         ],
@@ -456,32 +456,27 @@
       "expect": {
         "hits": [
           {
-            "id": "e_5",
-            "path": "/index.md",
+            "$id": "e_5",
             "$path": "/index.md",
             "provenance": "link"
           },
           {
-            "id": "e_23",
-            "path": "/practitioners/maria-prophetissa.md",
+            "$id": "e_23",
             "$path": "/practitioners/maria-prophetissa.md",
             "provenance": "link"
           },
           {
-            "id": "e_24",
-            "path": "/practitioners/newton.md",
+            "$id": "e_24",
             "$path": "/practitioners/newton.md",
             "provenance": "link"
           },
           {
-            "id": "e_43",
-            "path": "/substances/philosophers-stone.md",
+            "$id": "e_43",
             "$path": "/substances/philosophers-stone.md",
             "provenance": "link"
           },
           {
-            "id": "e_48",
-            "path": "/substances/prima-materia.md",
+            "$id": "e_48",
             "$path": "/substances/prima-materia.md",
             "provenance": "link"
           }
@@ -498,8 +493,8 @@
       "expect": {
         "hits": [
           {
-            "id": "e_0",
-            "path": "/index.md"
+            "$id": "e_0",
+            "$path": "/index.md"
           }
         ],
         "truncated": false,
@@ -514,28 +509,28 @@
       "expect": {
         "hits": [
           {
-            "id": "e_38",
-            "path": "/substances/mercury.md"
+            "$id": "e_38",
+            "$path": "/substances/mercury.md"
           },
           {
-            "id": "e_39",
-            "path": "/substances/mercury.md"
+            "$id": "e_39",
+            "$path": "/substances/mercury.md"
           },
           {
-            "id": "e_40",
-            "path": "/substances/mercury.md"
+            "$id": "e_40",
+            "$path": "/substances/mercury.md"
           },
           {
-            "id": "e_41",
-            "path": "/substances/mercury.md"
+            "$id": "e_41",
+            "$path": "/substances/mercury.md"
           },
           {
-            "id": "e_42",
-            "path": "/substances/mercury.md"
+            "$id": "e_42",
+            "$path": "/substances/mercury.md"
           },
           {
-            "id": "e_43",
-            "path": "/substances/philosophers-stone.md"
+            "$id": "e_43",
+            "$path": "/substances/philosophers-stone.md"
           }
         ],
         "truncated": true,
@@ -550,32 +545,27 @@
       "expect": {
         "hits": [
           {
-            "id": "e_5",
-            "path": "/index.md",
+            "$id": "e_5",
             "$path": "/index.md",
             "$dst_path": "/processes/magnum-opus.md"
           },
           {
-            "id": "e_23",
-            "path": "/practitioners/maria-prophetissa.md",
+            "$id": "e_23",
             "$path": "/practitioners/maria-prophetissa.md",
             "$dst_path": "/processes/magnum-opus.md"
           },
           {
-            "id": "e_24",
-            "path": "/practitioners/newton.md",
+            "$id": "e_24",
             "$path": "/practitioners/newton.md",
             "$dst_path": "/processes/magnum-opus.md"
           },
           {
-            "id": "e_43",
-            "path": "/substances/philosophers-stone.md",
+            "$id": "e_43",
             "$path": "/substances/philosophers-stone.md",
             "$dst_path": "/processes/magnum-opus.md"
           },
           {
-            "id": "e_48",
-            "path": "/substances/prima-materia.md",
+            "$id": "e_48",
             "$path": "/substances/prima-materia.md",
             "$dst_path": "/processes/magnum-opus.md"
           }
@@ -592,32 +582,27 @@
       "expect": {
         "hits": [
           {
-            "id": "e_5",
-            "path": "/index.md",
+            "$id": "e_5",
             "$path": "/index.md",
             "$dst_path": "/processes/magnum-opus.md"
           },
           {
-            "id": "e_23",
-            "path": "/practitioners/maria-prophetissa.md",
+            "$id": "e_23",
             "$path": "/practitioners/maria-prophetissa.md",
             "$dst_path": "/processes/magnum-opus.md"
           },
           {
-            "id": "e_24",
-            "path": "/practitioners/newton.md",
+            "$id": "e_24",
             "$path": "/practitioners/newton.md",
             "$dst_path": "/processes/magnum-opus.md"
           },
           {
-            "id": "e_43",
-            "path": "/substances/philosophers-stone.md",
+            "$id": "e_43",
             "$path": "/substances/philosophers-stone.md",
             "$dst_path": "/processes/magnum-opus.md"
           },
           {
-            "id": "e_48",
-            "path": "/substances/prima-materia.md",
+            "$id": "e_48",
             "$path": "/substances/prima-materia.md",
             "$dst_path": "/processes/magnum-opus.md"
           }

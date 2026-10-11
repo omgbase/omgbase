@@ -14,7 +14,7 @@ in `select` order (here a frontmatter number and an inline field):
 
 ```console
 $ omg query 'select era, known: known_for from docs where type == "practitioner" order by era asc'
-id         path                                 era   known
+{{:dollar}}id        $path                                era   known
 d_9px29y1  /practitioners/maria-prophetissa.md  250   balneum mariae
 d_nzb61j9  /practitioners/jabir-ibn-hayyan.md   800   mercury-sulphur theory
 d_t5nvj1g  /practitioners/paracelsus.md         1530  tria prima
@@ -27,7 +27,7 @@ never printed twice):
 
 ```console
 $ omg query 'select $path, era from docs where type == "practitioner" order by era asc'
-id         $path                                era
+{{:dollar}}id        $path                                era
 d_9px29y1  /practitioners/maria-prophetissa.md  250
 d_nzb61j9  /practitioners/jabir-ibn-hayyan.md   800
 d_t5nvj1g  /practitioners/paracelsus.md         1530
@@ -41,10 +41,10 @@ path always come along, then your selected fields:
 
 ```console
 $ omg query 'select era, known: known_for from docs where type == "practitioner" order by era asc' --jsonl
-{"id":"d_9px29y1","path":"/practitioners/maria-prophetissa.md","era":250,"known":"balneum mariae"}
-{"id":"d_nzb61j9","path":"/practitioners/jabir-ibn-hayyan.md","era":800,"known":"mercury-sulphur theory"}
-{"id":"d_t5nvj1g","path":"/practitioners/paracelsus.md","era":1530,"known":"tria prima"}
-{"id":"d_rw4ygr0","path":"/practitioners/newton.md","era":1680,"known":"unpublished alchemical corpus"}
+{"$id":"d_9px29y1","$path":"/practitioners/maria-prophetissa.md","era":250,"known":"balneum mariae"}
+{"$id":"d_nzb61j9","$path":"/practitioners/jabir-ibn-hayyan.md","era":800,"known":"mercury-sulphur theory"}
+{"$id":"d_t5nvj1g","$path":"/practitioners/paracelsus.md","era":1530,"known":"tria prima"}
+{"$id":"d_rw4ygr0","$path":"/practitioners/newton.md","era":1680,"known":"unpublished alchemical corpus"}
 ```
 
 `known: known_for` renames the projected column; a bare `era` keeps its name.
@@ -91,7 +91,7 @@ d_5zmf9f7  /substances/sulphur.md
 ## `values` — bare values instead of hits
 
 When you want a single column and nothing else, follow a one-item `select` with
-`values`. The result is the bare projected value per row (no `{id, path}`
+`values`. The result is the bare projected value per row (no `{$id, $path}`
 record), so the human tier prints one value per line — a list of paths, or a
 list of numbers:
 

@@ -1,7 +1,8 @@
 // omgbase's OQX entry point, served by `@omgbase/oqx`: parse the source, run it
 // through the in-memory engine over a store-backed DataContext (context.ts), and
-// shape the engine's result into omgbase's OqxResult (lean {id, path, …} hits,
-// keyset pagination, count/exists scalars). Same signature + shape as the former
+// shape the engine's result into omgbase's OqxResult (lean {$id, $path, …} hits
+// — the envelope keys ARE the intrinsics, spec/surface §1.4 3.0 — keyset
+// pagination, count/exists scalars). Same signature + shape as the former
 // in-tree compiler, so every caller and the corpus are unchanged.
 
 import { parse, PlannedEngine, InMemoryEngine, OqxError, resolveAliases, transform, visit, build, semantics } from "@omgbase/oqx";
@@ -21,9 +22,14 @@ export type OqxConsumer = "collect" | "count" | "exists" | "none" | "first" | "s
 
 export type EmbedQuery = (text: string) => Promise<{ model: string; vec: Float32Array }>;
 
+/** A query hit (spec/surface §1.4, 3.0): the row's identity under the SAME
+ * `$`-prefixed names the expression language reads — `$id`, `$path` — plus
+ * whatever `select` projected. A key copied from a hit is valid in the next
+ * `where` with no translation (`where $id == "<hit.$id>"`); a `$id`/`$path`
+ * projection simply lands on the envelope key. */
 export interface OqxHit {
-  id: string;
-  path: string;
+  $id: string;
+  $path: string;
   [k: string]: unknown;
 }
 
@@ -152,7 +158,7 @@ const PATH_ITEM: SelectItem = build.field("__oqx_path", build.ident("$path"));
 // nothing re-projects them; a `follow` destination (`follow before` over a
 // frontmatter list of paths), a `from E` re-projection or any other source can
 // reach a scalar, which the injected `$id`/`$path` reads would render as the
-// junk hit `{ id: "undefined", path: "" }`. For those queries the row itself is
+// junk hit `{ $id: "undefined", $path: "" }`. For those queries the row itself is
 // projected too (`$it`), and `toHit` fails the query when it is not a row. Only
 // then: a row clone per hit is free here but not in the Rust port, and a root
 // scan cannot need it. A `values` projection returns no hits, so it is exempt
@@ -188,9 +194,11 @@ const VALUE_KEY = "__oqx_value";
 // spec/oqx §12), a `values` projection of `$it`/`$self`, a field bound to a
 // row — and a store row is not a wire shape (column names, `attrs` as a JSON
 // string, the `__path` join column, Buffers). Walk the projected value and
-// render every tagged row as `{ id, path }`; everything else passes through
-// untouched (plain records and arrays are descended, scalars kept). Hits are
-// records the engine built from the injected id/path items, never rows.
+// render every tagged row as `{ $id, $path }` — the hit envelope's own keys
+// (3.0), one notation for "a document reference" everywhere a row shape
+// appears in a result; everything else passes through untouched (plain records
+// and arrays are descended, scalars kept). Hits are records the engine built
+// from the injected id/path items, never rows.
 function renderValue(v: unknown): unknown {
   if (v === null || typeof v !== "object") return v;
   const ref = rowRef(v);
@@ -207,17 +215,19 @@ function toHit(row: unknown): OqxHit {
   const o = row as Record<string, unknown>;
   const { __oqx_id, __oqx_path, __oqx_self, ...rest } = o;
   if (SELF_KEY in o && !rowRef(__oqx_self)) throw notAStoreRow(__oqx_self);
-  return { id: String(__oqx_id), path: String(__oqx_path ?? ""), ...(renderValue(rest) as Record<string, unknown>) };
+  // The envelope keys lead; a user projection of `$id`/`$path` collapses onto
+  // them in place (the same value, read by the same intrinsic).
+  return { $id: String(__oqx_id), $path: String(__oqx_path ?? ""), ...(renderValue(rest) as Record<string, unknown>) };
 }
 
 // Top-level `select distinct`: dedup hits by their USER projection (every field
-// except the injected id/path), keeping the first (so the retained hit carries a
-// real id/path). Order-preserving.
+// except the envelope's `$id`/`$path`), keeping the first (so the retained hit
+// carries a real identity). Order-preserving.
 function dedupHitsByProjection(hits: OqxHit[]): OqxHit[] {
   const seen = new Set<string>();
   const out: OqxHit[] = [];
   for (const h of hits) {
-    const { id: _id, path: _path, ...proj } = h;
+    const { $id: _id, $path: _path, ...proj } = h;
     void _id; void _path;
     const key = JSON.stringify(Object.keys(proj).sort().map((k) => [k, proj[k]]));
     if (seen.has(key)) continue;
@@ -307,12 +317,12 @@ function oqxRunInner(store: Store, repoId: string, source: string, opts: OqxOpti
   let page = rows;
   if (!custom && opts.cursor) {
     const { path, id } = decodeCursor(opts.cursor);
-    page = page.filter((h) => h.path > path || (h.path === path && h.id > id));
+    page = page.filter((h) => h.$path > path || (h.$path === path && h.$id > id));
   }
   const truncated = page.length > cap;
   page = page.slice(0, cap);
   const last = page[page.length - 1];
-  const cursor = truncated && last && !custom ? encodeCursor(last.path, last.id) : null;
+  const cursor = truncated && last && !custom ? encodeCursor(last.$path, last.$id) : null;
   if (topValues) return { hits: [], truncated, cursor, consumer: "collect", values: page.map((h) => h[VALUE_KEY]) };
   return { hits: page, truncated, cursor, consumer: "collect" };
 }
@@ -331,9 +341,10 @@ export async function oqxRunAsync(
   return oqxRun(store, repoId, source, { ...opts, semanticVectors });
 }
 
-// The collect page's keyset is (path, id) — the hit's path, so the reference
-// form (`/a.md`): the kernel's shared cursor encoding (core/cursor.ts) with a
-// two-part tuple. A malformed cursor is CursorInvalid, which the MCP layer maps
+// The collect page's keyset is (path, id) — the hit's `$path`, so the reference
+// form (`/a.md`), and its `$id`: the kernel's shared cursor encoding
+// (core/cursor.ts) with a two-part tuple of VALUES (no key names ride in it, so
+// the 3.0 envelope rename left every cursor valid). A malformed cursor is CursorInvalid, which the MCP layer maps
 // to filter_invalid; so is a cursor whose path is not rooted — one issued by a
 // 1.x surface, whose keyset would otherwise sort before every rooted hit and
 // silently replay the first page (spec/surface §1.4, 2.0).

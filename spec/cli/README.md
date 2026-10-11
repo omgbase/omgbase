@@ -402,19 +402,24 @@ The commit **actor** of every CLI write defaults to `human:<os username>`
 ## 4. Shared renderers
 
 - **id + locator pairing**: `<id>  <locator>` — two spaces, the id first
-  (`query` hits, `find` hits, the shell's inspect listing).
+  (`query` hits — their `$id` and `$path` —, `find` hits, the shell's inspect
+  listing).
 - **columns** (`ls`, the query table, `repos`, `source list`): cells padded
   to the widest cell of their column, joined by two spaces, the last column
   unpadded, trailing whitespace removed from every line; a column may be
   right-aligned (`ls`'s counts and times).
-- **the query hit table** (`query`, `run`): with no projection, one
-  `<id>  <path>` line per hit; with a projection, a header row (`id`,
-  `path` — dropped when the projection itself carries `$path` —, then the
-  projected keys in first-seen order across the hits), then one row per hit.
-  Cells: strings verbatim up to their first newline (a cut is marked `…`),
-  numbers and booleans as JavaScript prints them, `null`/absent → empty,
-  lists and records as compact JSON; every cell but `id`/`path` is clipped
-  to 60 visible characters, the 60th being `…`.
+- **the query hit table** (`query`, `run`): a hit is `{ $id, $path,
+  ...projection }` (`spec/surface` §1.4, 3.0). With no projection, one
+  `<$id>  <$path>` line per hit; with a projection, a header row (`$id`,
+  `$path`, then the projected keys in first-seen order across the hits — a
+  `select $path`/`$id` is the envelope key itself, so it is never a column;
+  a column *named* `id` or `path` is an ordinary projection), then one row
+  per hit. Cells: strings verbatim up to their first newline (a cut is
+  marked `…`), numbers and booleans as JavaScript prints them, `null`/absent
+  → empty, lists and records as compact JSON; every cell but `$id`/`$path`
+  is clipped to 60 visible characters, the 60th being `…`. Before 3.0 the
+  header read `id`, `path` and a `$path` projection sat beside the `path`
+  column.
 - **the outline wire format** (`outline`): `spec/surface` §2's text
   verbatim, one line per block.
 - **commit confirmation** (block mutators): stderr
@@ -830,8 +835,11 @@ result's consumer: `count`/`exists`/`none` → the scalar (`13`, `false`,
 `true`); a `values` projection → one value per line (strings verbatim,
 others as JSON; `--jsonl` all as JSON); otherwise the hit table (§4); no
 hits → stderr `  no hits`; truncated → the footer with the cursor. `--ids`
-the hit ids; `--jsonl` one hit per line; `--json` the whole `OqxResult`
-(`{ hits, truncated, cursor, consumer, count? | exists? | none? | values? }`).
+the hit ids (`$id`); `--jsonl` one hit per line (`{ $id, $path, ... }`);
+`--json` the whole `OqxResult` (`{ hits, truncated, cursor, consumer, count?
+| exists? | none? | values? }`, every hit `{ $id, $path, ...projection }` —
+`spec/surface` §1.4, 3.0; copy a hit's `$id` into the next `where $id == "…"`
+unchanged).
 An empty or missing source is
 `usage: query requires a <source> (or -f file|-)`, exit 2. An OQX error
 (lex, parse, eval) and an invalid `--cursor` are `filter_invalid` — the
@@ -1070,12 +1078,12 @@ the unknown-command one.
 | `@N` (1-based) | row N of the **frame** — the last displayed collection |
 | `@_` | the previous command's typed result |
 | `@name` | a binding |
-| `…[i]` then `….field` | one index (1-based) then one shallow field, in that order, no deeper |
+| `…[i]` then `….field` | one index (1-based) then one shallow field (`[A-Za-z_]\w*`, optionally `$`-prefixed: `@1.$id`, `@t[1].$path` — a hit's identity, cli 3.0), in that order, no deeper |
 
 A **collection** result replaces the frame and prints, on stderr,
 `  <n> row(s) — address with @1..@<n>` (`1 row`, `2 rows`; nothing when
-empty). Collections: `query`/`run` hits (row ref = `id`), `ls` rows (ref =
-`path`), `find` hits (`id`), `links` (out then in; ref = `node`), an
+empty). Collections: `query`/`run` hits (row ref = `$id`, label `$path`;
+3.0), `ls` rows (ref = `path`), `find` hits (`id`), `links` (out then in; ref = `node`), an
 `ApplyResult` (its `results[*].ids`, flattened; ref = the id), any array. A
 card or scalar (`show`, `cat`, a count) sets `@_` and leaves the frame.
 **Not captured** at all (they leave `@_` and the frame untouched): `log`,
@@ -1084,7 +1092,8 @@ card or scalar (`show`, `cat`, a count) sets `@_` and leaves the frame.
 for a block; `show` a document captures the card object.
 
 Substitution coerces a row to its ref; a scalar to its string; an object
-with `id`/`node`/`block`/`locator`/`path` to that; a bare collection is
+with `$id`/`id`/`node`/`block`/`locator`/`$path`/`path` (in that precedence)
+to that; a bare collection is
 refused: `usage: reference is a collection; select one with [i]` (or
 `reference is a collection of <n>; select one with [i]` for an array).
 Errors: `usage: no displayed collection to index with @N`,
@@ -1526,6 +1535,20 @@ was `b_314`).
 
 ## 10. Decisions
 
+- 2026-10-10, cli 3.0: **the query hit renders as `$id`/`$path`** (§4, §6
+  `query`, §7), following `spec/surface` 3.0 — the same decision, rendered:
+  the hit table's header reads `$id`, `$path`; the bare list `<$id>  <$path>`
+  is unchanged in text (it prints the values); `--json`/`--jsonl` carry the
+  surface's envelope verbatim, `--ids` the `$id`s; the shell's row ref for a
+  `query`/`run` collection is the hit's `$id` and its label the `$path`
+  (`@1` still substitutes the id), and substitution of an object accepts
+  `$id`/`$path` ahead of `id`/`path`. A `select $path, …` no longer drops the
+  `path` column (there is no `path` column: `$path` *is* the envelope) and
+  shows no `$path` column either — the projection collapsed onto the
+  envelope. Every regenerated expectation changed by the key spelling alone
+  (table headers, `--json`/`--jsonl` bodies, shell frames). A rendered key
+  changed in meaning: a major. **Migration:** scripts parsing `--json`/
+  `--jsonl` read `$id`/`$path`; `--ids` and the bare list are unchanged.
 - 2026-10-10, cli 2.0 also: the query text follows `spec/surface` 2.0 §1.1 —
   the repository is the root row (`^docs` from a row, `0^docs` from any depth,
   `^$id` the repository id; a top-level consumer is `docs count { … }`), and

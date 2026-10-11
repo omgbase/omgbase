@@ -714,19 +714,20 @@ export function tagRows(rows: Record<string, unknown>[], target: Target): unknow
 
 /**
  * A store row surfacing as a VALUE in a result (spec/surface §1.4, rows as
- * values, 1.2) is rendered as `{ id, path }` — its id column and its document's
- * path in the reference form (`/a.md`, §1 "Paths"), the same two keys every hit
- * carries — never the store row itself.
+ * values, 1.2) is rendered as `{ $id, $path }` (3.0) — its id column and its
+ * document's path in the reference form (`/a.md`, §1 "Paths"), the same two keys
+ * every hit carries, spelled as the intrinsics that read them — never the store
+ * row itself.
  * Returns undefined for anything that is not a tagged row (run.ts leaves those
  * alone).
  */
-export function rowRef(value: unknown): { id: string; path: string } | undefined {
+export function rowRef(value: unknown): { $id: string; $path: string } | undefined {
   const t = (value as Row | null | undefined)?.[TARGET];
   if (!t) return undefined;
   const r = value as Row;
   const id = t === "docs" ? r.doc_id : t === "blocks" ? r.block_id : t === "nodes" ? r.node_id : r.edge_id;
   const path = t === "docs" ? r.path : r.__path;
-  return { id: String(id), path: path == null ? "" : referencePath(String(path)) };
+  return { $id: String(id), $path: path == null ? "" : referencePath(String(path)) };
 }
 
 export { TARGET };

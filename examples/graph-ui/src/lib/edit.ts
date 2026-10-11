@@ -24,6 +24,7 @@
 
 import type { Query } from "@omgbase/oqx";
 import type { Candidate, Direction, InversePair, Row } from "./candidates.ts";
+import { HIT_ENVELOPE_KEYS } from "./paths.ts";
 
 /** How a field spells its references. */
 export interface RefForm {
@@ -164,7 +165,9 @@ export function inferShape(values: readonly unknown[]): Shape | null {
   return lists >= scalars ? "list" : "scalar";
 }
 
-const ROW_META = new Set(["id", "path", "$path", "$depth", "$stop", "$leaf", "$frontier", "$ordinal", "$id", "$doc_id"]);
+// The hit envelope under both spellings (`$id`/`$path` since surface 3.0,
+// `id`/`path` before — lib/paths.ts `HIT_ENVELOPE_KEYS`) plus the walk intrinsics.
+const ROW_META = new Set([...HIT_ENVELOPE_KEYS, "$depth", "$stop", "$leaf", "$frontier", "$ordinal", "$doc_id"]);
 
 /** Row fields whose values are all document references (scalar or list). */
 export function refValuedFields(rows: readonly Row[]): string[] {

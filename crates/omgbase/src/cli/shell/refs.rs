@@ -78,7 +78,9 @@ fn bad(token: &str) -> RefError {
 
 /// Parse a whole-token reference; `None` if the token isn't a reference
 /// (does not start with `@`); an error for a malformed `@…`. The grammar is
-/// `^@(\d+|_|[A-Za-z][\w-]*)(?:\[(\d+)\])?(?:\.([A-Za-z_]\w*))?$`.
+/// `^@(\d+|_|[A-Za-z][\w-]*)(?:\[(\d+)\])?(?:\.(\$?[A-Za-z_]\w*))?$` — the
+/// field admits a leading `$` so a query hit's identity is addressable
+/// (`@1.$id`, `@t[1].$path`; `spec/surface` §1.4, 3.0).
 pub fn parse_ref(token: &str) -> Result<Option<ParsedRef>, RefError> {
     let Some(body) = token.strip_prefix('@') else {
         return Ok(None);
@@ -123,10 +125,14 @@ pub fn parse_ref(token: &str) -> Result<Option<ParsedRef>, RefError> {
     let mut field = None;
     if i < n && chars[i] == '.' {
         let start = i + 1;
-        if start >= n || !(chars[start].is_ascii_alphabetic() || chars[start] == '_') {
+        let mut j = start;
+        if j < n && chars[j] == '$' {
+            j += 1;
+        }
+        if j >= n || !(chars[j].is_ascii_alphabetic() || chars[j] == '_') {
             return Err(bad(token));
         }
-        let mut j = start + 1;
+        j += 1;
         while j < n && is_word(chars[j]) {
             j += 1;
         }
@@ -203,10 +209,13 @@ fn row_of(el: &Json) -> Row {
         };
     }
     if let Some(o) = el.as_object() {
-        let r#ref = first_string(o, &["id", "node", "block", "locator", "path"]);
-        let label = first_string(o, &["path", "locator", "name", "id", "node"])
-            .or_else(|| r#ref.clone())
-            .unwrap_or_else(|| preview(el));
+        let r#ref = first_string(o, REF_KEYS);
+        let label = first_string(
+            o,
+            &["$path", "path", "locator", "name", "$id", "id", "node"],
+        )
+        .or_else(|| r#ref.clone())
+        .unwrap_or_else(|| preview(el));
         return Row {
             r#ref: r#ref.unwrap_or_else(|| label.clone()),
             label,
@@ -220,6 +229,12 @@ fn row_of(el: &Json) -> Row {
         value: el.clone(),
     }
 }
+
+/// The keys that make an object an entity ref, in precedence order: a query
+/// hit's `$id` (`spec/surface` §1.4, 3.0 — the envelope spells the
+/// intrinsics), then the other tools' envelopes (`id`, `node`, `block`,
+/// `locator`, a path).
+const REF_KEYS: &[&str] = &["$id", "id", "node", "block", "locator", "$path", "path"];
 
 fn first_string(o: &serde_json::Map<String, Json>, keys: &[&str]) -> Option<String> {
     keys.iter()
@@ -251,7 +266,7 @@ pub fn coerce(value: &Json) -> Result<String, RefError> {
             a.len()
         ))),
         Json::Object(o) => {
-            if let Some(r) = first_string(o, &["id", "node", "block", "locator", "path"]) {
+            if let Some(r) = first_string(o, REF_KEYS) {
                 return Ok(r);
             }
             // A collection-shaped result object (e.g. {hits:[…]}) can't be one arg.
