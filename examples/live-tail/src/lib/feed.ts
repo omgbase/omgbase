@@ -274,6 +274,18 @@ export function hiddenLine(hidden: number): string | null {
 
 // ---- rendering helpers -------------------------------------------------------------
 
+/** A created document's content as a pure-addition unified diff: one
+ * `@@ -0,0 +1,N @@` hunk with every line prefixed `+`, so content that itself
+ * starts with `-` (frontmatter fences, YAML items, dash bullets) or `+` is
+ * never read as a subtraction or a context line by `diffLineKind`. A single
+ * trailing newline is the file's, not an empty last line. Empty content is "". */
+export function createdDiff(content: string): string {
+  if (content === "") return "";
+  const lines = content.split("\n");
+  if (lines.length > 1 && lines[lines.length - 1] === "") lines.pop();
+  return [`@@ -0,0 +1,${lines.length} @@`, ...lines.map((l) => `+${l}`)].join("\n");
+}
+
 export type DiffLineKind = "hunk" | "add" | "del" | "ctx";
 
 /** Classify a unified-diff line by its first character (no file header is

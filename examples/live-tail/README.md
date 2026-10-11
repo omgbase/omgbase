@@ -71,7 +71,10 @@ dev proxy); nothing imports `@omgbase/core`. On load:
    $updated_at desc limit 25`; for each hit `docs_history { doc }` gives the
    version list and the last two versions are diffed with `diff_unified
    { doc, from_rev, to_rev }`; a document with one version is **created** and
-   `docs_read_at { doc, rev }` shows its content. Four documents at a time; the
+   `docs_read_at { doc, rev }` gives its content, shown as a pure-addition
+   diff (`createdDiff`: one `@@ -0,0 +1,N @@` hunk, every line `+`, so
+   frontmatter fences and dash bullets are green, not subtractions; `+N −0`).
+   Four documents at a time; the
    first three cards start open, the rest open on click.
 4. **The feed** — one `changes_since { repo, limit: 1 }` for the repo's `head`,
    which is the starting cursor (what happened before the page opened is the
@@ -189,7 +192,7 @@ reconnected* in the header; only a second failure is shown.
   `recentQuery`/`frameFor`/`recentFromHits`, the poll's lookup
   `matchQuery`/`digestPaths`/`titlesByPath`, the filter's
   `partitionByFilter`/`filterStateAfter`/`hiddenLine`,
-  `diffLineKind`/`diffStats`/`formatTime`/`pollMs`.
+  `createdDiff`/`diffLineKind`/`diffStats`/`formatTime`/`pollMs`.
 - `src/lib/hole.ts` — the hole as CodeMirror state (`holeField`, `holeOnly`,
   `mapHole`, `changesInside`, `insertsNewline`, `reframe`/`reframeSpec`,
   `holeText`, `holeState`); only `@codemirror/state`, so it is tested with
@@ -200,7 +203,7 @@ reconnected* in the header; only a second failure is shown.
 - `scripts/dev.mjs`, `scripts/dev-args.mjs`, `scripts/dev-workspace.mjs` —
   the proxy + Vite dev script and the sample workspace.
 - `test/` — vitest over the pure parts, the hole's transaction filter, the dev
-  arguments and the client's session recovery (a fake transport; 42 tests).
+  arguments and the client's session recovery (a fake transport; 43 tests).
 
 ## Verified headlessly
 

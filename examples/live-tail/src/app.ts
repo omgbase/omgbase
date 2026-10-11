@@ -26,7 +26,7 @@ import "./elements/oqx-framed-filter.ts";
 import type { FilterDetail } from "./elements/oqx-framed-filter.ts";
 import { OmgClient, OmgError, fetchWhoAmI } from "./lib/mcp-client.ts";
 import {
-  RECENT_LIMIT, advanceCursor, byline, diffLineKind, diffStats, digestPaths, filterStateAfter, formatTime, hiddenLine, latestPair, matchQuery, pairForCommit, partitionByFilter, pollMs, prependDigests, recentFromHits, recentQuery, startCursor, titlesByPath,
+  RECENT_LIMIT, advanceCursor, byline, createdDiff, diffLineKind, diffStats, digestPaths, filterStateAfter, formatTime, hiddenLine, latestPair, matchQuery, pairForCommit, partitionByFilter, pollMs, prependDigests, recentFromHits, recentQuery, startCursor, titlesByPath,
   type Digest, type DiffPair, type EntryChange, type FeedEntry, type FilterState, type RecentDoc,
 } from "./lib/feed.ts";
 import { LEGACY_SURFACE, surfaceOf } from "./lib/paths.ts";
@@ -113,8 +113,9 @@ function setDiff(key: string, state: DiffState): void {
 async function fetchPair(doc: string, pair: DiffPair): Promise<DiffState> {
   const r = repo.get();
   if (pair.kind === "created") {
-    const at = await client.docsReadAt(doc, pair.rev, r);
-    return { status: "ready", pair, text: at.content };
+    // The content as a pure-addition diff: a content line starting with `-` is not a subtraction.
+    const text = createdDiff((await client.docsReadAt(doc, pair.rev, r)).content);
+    return text === "" ? { status: "none", note: "created empty" } : { status: "ready", pair, text };
   }
   const d = await client.diffUnified(doc, pair.from, pair.to, r);
   return d.diff === "" ? { status: "none", note: "no textual change between the two revisions" } : { status: "ready", pair, text: d.diff };
@@ -547,7 +548,7 @@ export class LiveTailApp extends SignalWatcher(LitElement) {
     const state = diffs.get()[key] ?? { status: "idle" as const };
     const summary = state.status === "ready"
       ? state.pair.kind === "created"
-        ? html`${label}<span class="kind created">created</span>`
+        ? html`${label}<span class="kind created">created</span>${this.renderStats(state.text)}`
         : html`${label}${this.renderStats(state.text)}`
       : html`${label}${state.status === "loading" ? html`<span class="kind">loading…</span>` : nothing}`;
     return html`

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  FRAME_AFTER, FRAME_BEFORE, RECENT_QUERY, advanceCursor, byline, diffLineKind, diffStats, digestPaths, entryFromDigest, filterStateAfter, formatTime, frameFor, hiddenLine, latestPair, matchQuery, pairForCommit, partitionByFilter, pollMs, prependDigests, recentFromHits, recentQuery, startCursor, titlesByPath,
+  FRAME_AFTER, FRAME_BEFORE, RECENT_QUERY, advanceCursor, byline, createdDiff, diffLineKind, diffStats, digestPaths, entryFromDigest, filterStateAfter, formatTime, frameFor, hiddenLine, latestPair, matchQuery, pairForCommit, partitionByFilter, pollMs, prependDigests, recentFromHits, recentQuery, startCursor, titlesByPath,
   type Digest, type DocVersion, type FeedEntry,
 } from "../src/lib/feed.ts";
 
@@ -181,6 +181,19 @@ describe("the filter", () => {
 });
 
 describe("rendering helpers", () => {
+  it("createdDiff: a created document is one pure-addition hunk — lines that start with -, ---, + or a space are all additions, +N −0", () => {
+    const content = "---\ntitle: New\ntags:\n- a\n---\n# New\n\n- bullet\n+ plus bullet\n  indented\n";
+    const diff = createdDiff(content);
+    const lines = diff.split("\n");
+    expect(lines[0]).toBe("@@ -0,0 +1,10 @@");
+    expect(lines.slice(1)).toEqual(["+---", "+title: New", "+tags:", "+- a", "+---", "+# New", "+", "+- bullet", "++ plus bullet", "+  indented"]);
+    expect(lines.slice(1).map(diffLineKind).every((k) => k === "add")).toBe(true);
+    expect(diffStats(diff)).toEqual({ added: 10, removed: 0 });
+    expect(createdDiff("a\n\n")).toBe("@@ -0,0 +1,2 @@\n+a\n+"); // one trailing newline is the file's; the empty last line stays
+    expect(createdDiff("a")).toBe("@@ -0,0 +1,1 @@\n+a");
+    expect(createdDiff("\n")).toBe("@@ -0,0 +1,1 @@\n+");
+    expect(createdDiff("")).toBe("");
+  });
   it("classifies diff lines and counts them", () => {
     const diff = "@@ -1,3 +1,4 @@\n title: Alpha\n-status: active\n+status: done\n+owner: ada\n # Alpha";
     expect(diff.split("\n").map(diffLineKind)).toEqual(["hunk", "ctx", "del", "add", "add", "ctx"]);
