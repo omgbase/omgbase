@@ -100,6 +100,8 @@ export interface EntryChange {
   doc: string;
   /** `/`-rooted whatever the server returned. */
   path: string;
+  /** The document's `$title` from the poll's lookup query; null when it has none or is gone (deleted, moved away). */
+  title: string | null;
   contentHash: string;
 }
 
@@ -114,7 +116,8 @@ export interface FeedEntry {
   changes: EntryChange[];
 }
 
-export function entryFromDigest(d: Digest): FeedEntry {
+/** `titles` is the poll's lookup (`titlesByPath`), keyed by rooted path; a document it lacks has no title. */
+export function entryFromDigest(d: Digest, titles: ReadonlyMap<string, string | null> = new Map()): FeedEntry {
   return {
     key: d.commit,
     seq: d.seq,
@@ -122,19 +125,19 @@ export function entryFromDigest(d: Digest): FeedEntry {
     origin: d.origin,
     actor: d.actor,
     summary: d.summary,
-    changes: d.revisions.map((r) => ({ doc: r.doc, path: rooted(r.path), contentHash: r.contentHash })),
+    changes: d.revisions.map((r) => { const path = rooted(r.path); return { doc: r.doc, path, title: titles.get(path) ?? null, contentHash: r.contentHash }; }),
   };
 }
 
 /** A page of digests (ascending `seq`) put in front of the entries shown
  * (newest first), without repeating a commit already there. */
-export function prependDigests(entries: readonly FeedEntry[], digests: readonly Digest[]): FeedEntry[] {
+export function prependDigests(entries: readonly FeedEntry[], digests: readonly Digest[], titles?: ReadonlyMap<string, string | null>): FeedEntry[] {
   const seen = new Set(entries.map((e) => e.key));
   const fresh: FeedEntry[] = [];
   for (const d of digests) {
     if (seen.has(d.commit)) continue;
     seen.add(d.commit);
-    fresh.push(entryFromDigest(d));
+    fresh.push(entryFromDigest(d, titles));
   }
   fresh.sort((a, b) => b.seq - a.seq);
   return [...fresh, ...entries];
@@ -213,15 +216,33 @@ export function filterStateAfter(filter: string, error: { code?: string; message
   return { kind: "on", filter: f };
 }
 
-/** ONE query asking which of these documents the filter admits: the filter
- * and-ed with the paths or-ed together (OQX has no array literal). Paths are
- * `/`-rooted and deduped; null when there is nothing to ask about. The hits
- * come back under either envelope — read them with `hitPath`. */
+/** ONE query per poll over the documents a page of digests touches: their
+ * `$path` and `$title` — the title lookup for the cards — narrowed to the
+ * documents the filter admits when there is one (the filter and-ed with the
+ * paths or-ed together; OQX has no array literal). Paths are `/`-rooted and
+ * deduped; null when there is nothing to ask about. The hits come back under
+ * either envelope — read them with `hitPath`/`titlesByPath`. A deleted or
+ * moved-away document is not in `docs` and so is not returned. */
 export function matchQuery(filter: string, paths: readonly string[]): string | null {
   const unique = [...new Set(paths.map(rooted))];
   if (unique.length === 0) return null;
   const alternatives = unique.map((p) => `$path == ${JSON.stringify(p)}`).join(" or ");
-  return `select $path from docs where (${filter.trim()}) and (${alternatives})`;
+  const f = filter.trim();
+  return `select $path, $title from docs where ${f ? `(${f}) and ` : ""}(${alternatives})`;
+}
+
+/** The lookup query's hits as rooted path → `$title` (null for a blank or
+ * missing title); a hit without a path is skipped. Its keys are the documents
+ * the query returned — under a filter, the ones it admits. */
+export function titlesByPath(hits: readonly Record<string, unknown>[]): Map<string, string | null> {
+  const out = new Map<string, string | null>();
+  for (const hit of hits) {
+    const path = hitPath(hit);
+    if (path === null) continue;
+    const title = hit.$title;
+    out.set(rooted(path), typeof title === "string" && title.trim() ? title : null);
+  }
+  return out;
 }
 
 /** The paths a page of digests touches (`/`-rooted, deduped, in order). */

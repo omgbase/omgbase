@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  FRAME_AFTER, FRAME_BEFORE, RECENT_QUERY, advanceCursor, byline, diffLineKind, diffStats, digestPaths, entryFromDigest, filterStateAfter, formatTime, frameFor, hiddenLine, latestPair, matchQuery, pairForCommit, partitionByFilter, pollMs, prependDigests, recentFromHits, recentQuery, startCursor,
+  FRAME_AFTER, FRAME_BEFORE, RECENT_QUERY, advanceCursor, byline, diffLineKind, diffStats, digestPaths, entryFromDigest, filterStateAfter, formatTime, frameFor, hiddenLine, latestPair, matchQuery, pairForCommit, partitionByFilter, pollMs, prependDigests, recentFromHits, recentQuery, startCursor, titlesByPath,
   type Digest, type DocVersion, type FeedEntry,
 } from "../src/lib/feed.ts";
 
@@ -21,14 +21,22 @@ describe("the cursor", () => {
 });
 
 describe("digests → entries", () => {
-  it("keeps the digest's identity, roots every path and reads the byline", () => {
+  it("keeps the digest's identity, roots every path, reads the byline; without a lookup every title is null", () => {
     const e = entryFromDigest(digest(7, "c_7", [{ doc: "d_a", path: "notes/alpha.md", contentHash: "aa" }, { doc: "d_b", path: "/notes/beta.md", contentHash: "bb" }]));
     expect(e).toEqual({
       key: "c_7", seq: 7, ts: "2026-10-10T12:00:07Z", origin: "api", actor: "agent:mcp", summary: "docs_set_meta notes/alpha.md, /notes/beta.md",
-      changes: [{ doc: "d_a", path: "/notes/alpha.md", contentHash: "aa" }, { doc: "d_b", path: "/notes/beta.md", contentHash: "bb" }],
+      changes: [{ doc: "d_a", path: "/notes/alpha.md", title: null, contentHash: "aa" }, { doc: "d_b", path: "/notes/beta.md", title: null, contentHash: "bb" }],
     });
     expect(byline(e)).toBe("api · agent:mcp");
     expect(byline({ origin: "observed", actor: null })).toBe("observed");
+  });
+  it("gives each change its title from the poll's lookup, by rooted path; a document the lookup lacks (deleted, moved away) keeps the path alone", () => {
+    const titles = new Map([["/notes/alpha.md", "Alpha"], ["/notes/beta.md", null]]);
+    const e = entryFromDigest(digest(7, "c_7", [
+      { doc: "d_a", path: "notes/alpha.md", contentHash: "aa" }, { doc: "d_b", path: "/notes/beta.md", contentHash: "bb" }, { doc: "d_g", path: "/notes/gone.md", contentHash: "gg" },
+    ]), titles);
+    expect(e.changes.map((c) => [c.path, c.title])).toEqual([["/notes/alpha.md", "Alpha"], ["/notes/beta.md", null], ["/notes/gone.md", null]]);
+    expect(prependDigests([], [digest(1)], titles)[0]!.changes[0]!.title).toBe("Alpha");
   });
   it("prepends a page newest-first and never repeats a commit", () => {
     const shown: FeedEntry[] = [entryFromDigest(digest(2)), entryFromDigest(digest(1))];
@@ -115,11 +123,24 @@ describe("the filter", () => {
     expect(f.hole).toEqual({ from: "select $path, $title, $updated_at from docs".length, to: "select $path, $title, $updated_at from docs".length });
     expect(frameFor("", { editing: false })).toEqual(f);
   });
-  it("matchQuery: ONE query, the filter and-ed with the paths or-ed together, rooted, deduped, JSON-quoted; null without paths", () => {
+  it("matchQuery: ONE query per poll projecting $path and $title, the filter (when any) and-ed with the paths or-ed together, rooted, deduped, JSON-quoted; null without paths", () => {
     expect(matchQuery('status == "active"', ["/notes/alpha.md", "notes/beta.md", "/notes/alpha.md"]))
-      .toBe('select $path from docs where (status == "active") and ($path == "/notes/alpha.md" or $path == "/notes/beta.md")');
-    expect(matchQuery("x", ['/odd "quoted" name.md'])).toBe('select $path from docs where (x) and ($path == "/odd \\"quoted\\" name.md")');
+      .toBe('select $path, $title from docs where (status == "active") and ($path == "/notes/alpha.md" or $path == "/notes/beta.md")');
+    expect(matchQuery("", ["/notes/alpha.md", "/notes/beta.md"])).toBe('select $path, $title from docs where ($path == "/notes/alpha.md" or $path == "/notes/beta.md")');
+    expect(matchQuery("  ", ["/a.md"])).toBe('select $path, $title from docs where ($path == "/a.md")');
+    expect(matchQuery("x", ['/odd "quoted" name.md'])).toBe('select $path, $title from docs where (x) and ($path == "/odd \\"quoted\\" name.md")');
     expect(matchQuery('status == "active"', [])).toBeNull();
+    expect(matchQuery("", [])).toBeNull();
+  });
+  it("titlesByPath: rooted path → $title under both envelopes; a blank title is null, a hit without a path is skipped", () => {
+    const titles = titlesByPath([
+      { $id: "d_a", $path: "/notes/alpha.md", $title: "Alpha" },
+      { id: "d_b", path: "notes/beta.md", $title: "  " },
+      { id: "d_c", path: "/notes/gamma.md" },
+      { $id: "d_x", $title: "no path" },
+    ]);
+    expect([...titles]).toEqual([["/notes/alpha.md", "Alpha"], ["/notes/beta.md", null], ["/notes/gamma.md", null]]);
+    expect(titlesByPath([])).toEqual(new Map());
   });
   it("digestPaths: every revision's path, rooted and deduped, in order", () => {
     const page = [

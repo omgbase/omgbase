@@ -4,7 +4,7 @@ A small Lit demo of omgbase's **change feed**. It connects to an omgbase MCP
 server, shows the most recently updated documents with the unified diff of each
 one's latest change, and then polls `changes_since` with a cursor, prepending
 every commit as it lands — timestamp, origin/actor, the server's one-line
-summary, and for each revision the document's path and its unified diff.
+summary, and for each revision the document's title, its `/`-rooted path and its unified diff.
 
 Edit a file in the repository (or change it through the MCP tools or the `omg`
 CLI) while the page is open and the commit appears at the top within the poll
@@ -143,12 +143,16 @@ OQX (the parser rejects `{` after the target), which is why the frame uses
   screen, and sets the pill to `filter invalid — showing everything`; until
   the filter is fixed nothing is hidden. Fixing it re-runs the list and
   resumes filtering.
-- **The feed**: for every poll that brings digests, ONE query asks which of
-  their documents the filter admits — `select $path from docs where
-  (<filter>) and ($path == "/a.md" or $path == "/b.md" …)` (`matchQuery`;
-  OQX has no array literal, so the path equalities are or-ed, each
-  JSON-quoted; hits read through `hitPath` under either envelope). Revisions
-  of admitted documents stay, the rest are dropped (`partitionByFilter`); a
+- **The feed**: every poll that brings digests runs ONE lookup query over the
+  documents they touch — `select $path, $title from docs where ($path ==
+  "/a.md" or $path == "/b.md" …)` (`matchQuery`; OQX has no array literal,
+  so the path equalities are or-ed, each JSON-quoted; hits read through
+  `hitPath` under either envelope). Its `$title`s are the cards' titles
+  (`titlesByPath`: each change shows the title prominent and the `/`-rooted
+  path secondary, like the recent list; a document the lookup does not return
+  — deleted, moved away, no title — shows the path alone). With a filter the
+  query is prefixed `(<filter>) and`, so the same hits say which documents
+  it admits: revisions of those stay, the rest are dropped (`partitionByFilter`); a
   digest left without revisions — including one that had none, a deletion or a
   move, whose documents are no longer in `docs` to be evaluated — is not shown
   but counted: a muted `3 changes hidden by the filter` under the feed heading.
@@ -182,8 +186,9 @@ reconnected* in the header; only a second failure is shown.
   `filter-change`; the setup follows graph-ui's `oqx-query-editor`).
 - `src/lib/feed.ts` — the pure parts: `startCursor`/`advanceCursor`,
   `entryFromDigest`/`prependDigests`/`byline`, `latestPair`/`pairForCommit`,
-  `recentQuery`/`frameFor`/`recentFromHits`, the filter's
-  `matchQuery`/`digestPaths`/`partitionByFilter`/`filterStateAfter`/`hiddenLine`,
+  `recentQuery`/`frameFor`/`recentFromHits`, the poll's lookup
+  `matchQuery`/`digestPaths`/`titlesByPath`, the filter's
+  `partitionByFilter`/`filterStateAfter`/`hiddenLine`,
   `diffLineKind`/`diffStats`/`formatTime`/`pollMs`.
 - `src/lib/hole.ts` — the hole as CodeMirror state (`holeField`, `holeOnly`,
   `mapHole`, `changesInside`, `insertsNewline`, `reframe`/`reframeSpec`,
@@ -195,7 +200,7 @@ reconnected* in the header; only a second failure is shown.
 - `scripts/dev.mjs`, `scripts/dev-args.mjs`, `scripts/dev-workspace.mjs` —
   the proxy + Vite dev script and the sample workspace.
 - `test/` — vitest over the pure parts, the hole's transaction filter, the dev
-  arguments and the client's session recovery (a fake transport; 40 tests).
+  arguments and the client's session recovery (a fake transport; 42 tests).
 
 ## Verified headlessly
 

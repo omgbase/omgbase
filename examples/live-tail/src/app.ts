@@ -4,8 +4,9 @@
 //     → recent documents (query) with the unified diff of each one's latest change
 //     → the change feed: `changes_since` from the repo's head, polled every N seconds,
 //       every digest prepended as it lands with its revisions' diffs (fetched when shown)
-//     → an OQX filter (a `where` fragment over docs) narrows the recent list and, through
-//       one match query per poll, which arriving revisions are shown
+//     → one lookup query per poll over the documents a page of digests touches gives the
+//       cards their `$title`; an OQX filter (a `where` fragment over docs) narrows the
+//       recent list and, through that same query, which arriving revisions are shown
 //
 // The data path is MCP only (lib/mcp-client.ts) through the dev proxy at the
 // same-origin /mcp; the pure parts (cursor, digests → entries, which revisions
@@ -25,10 +26,10 @@ import "./elements/oqx-framed-filter.ts";
 import type { FilterDetail } from "./elements/oqx-framed-filter.ts";
 import { OmgClient, OmgError, fetchWhoAmI } from "./lib/mcp-client.ts";
 import {
-  RECENT_LIMIT, advanceCursor, byline, diffLineKind, diffStats, digestPaths, filterStateAfter, formatTime, hiddenLine, latestPair, matchQuery, pairForCommit, partitionByFilter, pollMs, prependDigests, recentFromHits, recentQuery, startCursor,
+  RECENT_LIMIT, advanceCursor, byline, diffLineKind, diffStats, digestPaths, filterStateAfter, formatTime, hiddenLine, latestPair, matchQuery, pairForCommit, partitionByFilter, pollMs, prependDigests, recentFromHits, recentQuery, startCursor, titlesByPath,
   type Digest, type DiffPair, type EntryChange, type FeedEntry, type FilterState, type RecentDoc,
 } from "./lib/feed.ts";
-import { LEGACY_SURFACE, hitPath, rooted, surfaceOf } from "./lib/paths.ts";
+import { LEGACY_SURFACE, surfaceOf } from "./lib/paths.ts";
 
 const MCP_URL = "/mcp";
 const REPO_KEY = "omgbase-live-tail.repo";
@@ -191,28 +192,30 @@ function applyFilter(value: string): void {
   if (connection.get() === "ok") void loadRecent();
 }
 
-/** The digests of one poll through the filter: one query asks which of their
- * documents it admits (`matchQuery`); revisions of the rest are dropped and a
- * digest left empty is counted as hidden. While the filter is off or invalid
- * everything passes; a `filter_invalid` answer here marks it invalid too. */
-async function filterDigests(digests: Digest[]): Promise<Digest[]> {
-  const state = filterState.get();
-  if (state.kind !== "on" || digests.length === 0) return digests;
+/** The digests of one poll, looked up: ONE query over the documents they touch
+ * (`matchQuery`) gives their `$title`s for the cards and, when the filter is
+ * on, is narrowed to the documents it admits — revisions of the rest are
+ * dropped and a digest left empty is counted as hidden. While the filter is
+ * off or invalid everything passes; a `filter_invalid` answer here marks it
+ * invalid too (the titles are then looked up unfiltered). */
+async function lookupDigests(digests: Digest[]): Promise<{ digests: Digest[]; titles: Map<string, string | null> }> {
   const paths = digestPaths(digests);
-  const q = matchQuery(state.filter, paths);
-  let matching = new Set<string>();
-  if (q !== null) {
-    try {
-      const result = await client.query(q, repo.get(), paths.length);
-      matching = new Set(result.hits.map(hitPath).filter((p): p is string => p !== null).map(rooted));
-    } catch (e) {
-      if (e instanceof OmgError && e.code === "filter_invalid") { filterState.set(filterStateAfter(state.filter, e)); return digests; }
-      throw e;
-    }
+  const state = filterState.get();
+  const filter = state.kind === "on" ? state.filter : "";
+  const q = matchQuery(filter, paths);
+  if (q === null) return { digests, titles: new Map() };
+  let titles: Map<string, string | null>;
+  try {
+    titles = titlesByPath((await client.query(q, repo.get(), paths.length)).hits);
+  } catch (e) {
+    if (!(e instanceof OmgError && e.code === "filter_invalid") || filter === "") throw e;
+    filterState.set(filterStateAfter(filter, e));
+    return lookupDigests(digests); // once more, unfiltered, for the titles
   }
-  const { kept, hidden } = partitionByFilter(digests, matching);
+  if (filter === "") return { digests, titles };
+  const { kept, hidden } = partitionByFilter(digests, new Set(titles.keys()));
   if (hidden) hiddenCount.set(hiddenCount.get() + hidden);
-  return kept;
+  return { digests: kept, titles };
 }
 
 function setWrap(on: boolean): void {
@@ -243,18 +246,19 @@ async function poll(): Promise<void> {
     if (next.reset) feedError.set(`the cursor (${c}) was beyond this repo's head (${page.head}) — restarted from the head`);
     else feedError.set(null);
     let digests = page.digests;
+    let titles: Map<string, string | null> | undefined;
     if (digests.length) {
       try {
-        digests = await filterDigests(digests);
+        ({ digests, titles } = await lookupDigests(digests));
       } catch (e) {
-        // The match query failed for a reason other than the filter: say so and show the page unfiltered.
-        feedError.set(`filter: ${describe(e)}`);
+        // The lookup failed for a reason other than the filter: say so and show the page unfiltered, paths only.
+        feedError.set(`lookup: ${describe(e)}`);
       }
       if (generation !== feedGeneration) return;
     }
     if (digests.length) {
       const before = new Set(entries.get().map((e) => e.key));
-      const merged = prependDigests(entries.get(), digests);
+      const merged = prependDigests(entries.get(), digests, titles);
       entries.set(merged);
       // New entries arrive open: fetch their diffs now.
       for (const e of merged) if (!before.has(e.key)) for (const ch of e.changes) void loadChangeDiff(e, ch);
@@ -409,6 +413,8 @@ export class LiveTailApp extends SignalWatcher(LitElement) {
     sl-details { margin-top: 6px; }
     sl-details::part(base) { border: 1px solid #e8eaef; border-radius: 5px; background: #fafbfc; }
     sl-details::part(header) { padding: 5px 9px; font-size: 12.5px; }
+    sl-details [slot=summary] { display: inline-flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; }
+    sl-details .title { font-weight: 600; color: #222; }
     sl-details::part(content) { padding: 0; }
     .stats { margin-left: 8px; font-size: 12px; }
     .stats .add { color: #1e6b2e; }
@@ -517,7 +523,7 @@ export class LiveTailApp extends SignalWatcher(LitElement) {
           <span class="seq">seq ${e.seq} · ${e.key}</span>
         </div>
         <div class="summary">${e.summary}</div>
-        ${e.changes.map((ch) => this.renderDiff(`${e.key}:${ch.doc}`, ch.path, true, () => loadChangeDiff(e, ch)))}
+        ${e.changes.map((ch) => this.renderDiff(`${e.key}:${ch.doc}`, ch.title === null ? html`<span class="path">${ch.path}</span>` : html`<span class="title">${ch.title}</span><span class="path">${ch.path}</span>`, true, () => loadChangeDiff(e, ch)))}
       </article>
     `;
   }
@@ -531,19 +537,19 @@ export class LiveTailApp extends SignalWatcher(LitElement) {
           <span class="path">${d.path}</span>
           <span class="when">${d.updatedAt ? `updated ${formatTime(d.updatedAt)}` : ""}</span>
         </div>
-        ${this.renderDiff(key, "latest change", index < OPEN_RECENT, () => loadLatestDiff(d))}
+        ${this.renderDiff(key, html`<span class="path">latest change</span>`, index < OPEN_RECENT, () => loadLatestDiff(d))}
       </article>
     `;
   }
 
-  /** A collapsible diff; `load` runs when it is first shown (and again after an error). */
-  private renderDiff(key: string, label: string, open: boolean, load: () => Promise<void>) {
+  /** A collapsible diff under `label` (a feed change's title + path, or a recent card's "latest change"); `load` runs when it is first shown (and again after an error). */
+  private renderDiff(key: string, label: unknown, open: boolean, load: () => Promise<void>) {
     const state = diffs.get()[key] ?? { status: "idle" as const };
     const summary = state.status === "ready"
       ? state.pair.kind === "created"
-        ? html`<span class="path">${label}</span><span class="kind created">created</span>`
-        : html`<span class="path">${label}</span>${this.renderStats(state.text)}`
-      : html`<span class="path">${label}</span>${state.status === "loading" ? html`<span class="kind">loading…</span>` : nothing}`;
+        ? html`${label}<span class="kind created">created</span>`
+        : html`${label}${this.renderStats(state.text)}`
+      : html`${label}${state.status === "loading" ? html`<span class="kind">loading…</span>` : nothing}`;
     return html`
       <sl-details ?open=${open} @sl-show=${() => { const s = diffs.get()[key]; if (!s || s.status === "idle" || s.status === "error") void load(); }}>
         <span slot="summary">${summary}</span>
