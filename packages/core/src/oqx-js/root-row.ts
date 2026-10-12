@@ -29,8 +29,8 @@ export const TARGET_RELATIONS: Readonly<Record<Target, ReadonlySet<string>>> = {
   links: new Set(),
 };
 
-/** The reach-through heads and the target of the row they reach (`doc.x`, `block.x`, `section.x`). */
-export const REACH_THROUGH: Readonly<Record<string, Target>> = { doc: "docs", block: "blocks", section: "nodes" };
+/** The reach-through heads and the target of the row they reach (`doc.x`, `block.x`, `section.x`, and a link's `dst.x`). */
+export const REACH_THROUGH: Readonly<Record<string, Target>> = { doc: "docs", block: "blocks", section: "nodes", dst: "docs" };
 
 const NOUN: Record<Target, string> = { docs: "documents", blocks: "blocks", nodes: "nodes", links: "links" };
 

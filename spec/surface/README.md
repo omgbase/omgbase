@@ -151,7 +151,16 @@ links `e.src_doc`), `doc.path` is the joined `d.path` the scan carries, and
 `block.id` on nodes is `n.block_id`; in memory the reach-through hands out a
 lazy owner row whose `id`/`path` come from the child row, so `doc.id` and
 `doc_id` cost the same statement (none) and plan to the same SQL. Any other
-read through the owner (`doc.layer`, `block.text`) still reaches it.
+read through the owner (`doc.layer`, `block.text`) still reaches it. A link's
+`dst.<k>` (3.0 follow-up, §1.2) pushes down like `doc.<k>`: a property read
+scopes `properties` by the row's own `e.dst_node`, and `dst.id` / `dst.path`
+/ `dst.hash` / `dst.updated_at` / `dst.format` are a primary-key probe of the
+destination (`(SELECT … FROM docs dd WHERE dd.doc_id = e.dst_node)`) — NULL
+wherever `dst` is absent in memory; `dst.raw` / `dst.title` / `dst.tags` and
+the relations stay residual, as `doc.*`'s do. `dst` is a row handle for the
+path rule (§1 "Paths"): a literal compared with `dst.path` is rooted like one
+compared with `dst_path` (`query-links::dst-identity-reads-the-foreign-key`,
+`::dst-filter-pushes-down`, `::dst-path-literal-rooted`).
 
 The differential (every corpus-backed query case run planned and in-memory)
 proves each decline: `query-errors::planned-*` and the `planned-*` cases of
@@ -238,7 +247,7 @@ injects into a scope (`spec/oqx` §2), and omgbase adds **no `$` names** — a
 `$id` or `$path` in a query is an unknown OQX identifier, absent
 (`query-errors::dollar-names-are-not-omgbase-names`). **Every engine attribute
 is bare, snake_case, and wins on collision** — the convention the relations
-(`children`, `blocks`, `out`, `in`, `doc`, `frontmatter`, …) always followed:
+(`children`, `blocks`, `out_links`, `doc`, `frontmatter`, …) always followed:
 a bare name that is an engine attribute reads the engine's value, never the
 author's. **User data is bare too; where it collides, it is reached through a
 handle.** A document has three *source handles*, all bare engine names:
@@ -268,10 +277,10 @@ block or node as `attrs.<k>`):
 
 | kind | attributes | handles | self | relations |
 | --- | --- | --- | --- | --- |
-| docs | `id` `path` `raw` `hash` `updated_at` `title` `tags` `format` | `data` `frontmatter` `inline` | `doc` | `blocks` `nodes` `out` `in` `out_links` `in_links` |
+| docs | `id` `path` `raw` `hash` `updated_at` `title` `tags` `format` | `data` `frontmatter` `inline` | `doc` | `blocks` `nodes` `out_links` `in_links` |
 | blocks | `id` `path` `doc_id` `raw` `hash` `updated_at` `type` `text` `attrs` `depth` `ordinal` | — | `block` (+ `doc`) | `children` `nodes` `out_links` `section` |
 | nodes | `id` `path` `doc_id` `block_id` `kind` `name` `value` `attrs` | — | `section` (+ `doc`, `block`) | `blocks` `subsections` `children` |
-| links | `id` `path` `doc_id` `block_id` `via_id` `dst_id` `dst_path` `uri` `field` `dst_kind` `predicate` `provenance` `anchor` | — | — (`doc` reaches the source) | — |
+| links | `id` `path` `doc_id` `block_id` `via_id` `dst_id` `dst_path` `uri` `field` `dst_kind` `predicate` `provenance` `anchor` | — | — (`doc` reaches the source, `dst` the destination document) | `doc` `dst` |
 | root | `id` | — | — | the four collections (§1.1) |
 
 Language words that can never be a bare field: `select from where is not and
@@ -323,9 +332,17 @@ decoded values; no row → the nested object rebuilt from keys under `<k>.`
 (undefined when none). `doc` is the row itself. Relations: `nodes` (the doc's nodes in **document
 order**: block-less nodes first, then by the owning block's pre-order rank,
 then `span_start`, then `node_id` — §9), `blocks` (live, **document order**:
-pre-order over the tree — §9), `out` / `in` (distinct docs linked to / linking from, by open edges,
-`(path, doc_id)` order), `out_links` / `in_links` (open edges, `(predicate,
-edge_id)` order).
+pre-order over the tree — §9), `out_links` / `in_links` (open edges, `(predicate,
+edge_id)` order). There is **no `out` / `in` relation** (3.0 follow-up, §9):
+the documents a doc links TO are its link rows' destinations, `out_links
+collect distinct { from dst }`, and the documents linking to it their
+sources, `in_links collect distinct { from doc }` (`from` over an absent
+`dst` — an external link, a dangling `[[wikilink]]` — contributes no row);
+the citation walk is `follow out_links collect { from dst }` /
+`follow in_links collect { from doc }`, options after the block. A bare `out`
+or `in` on a doc reads an authored property like any other unknown name
+(`query-docs::linked-docs-through-out-links`,
+`::linking-docs-through-in-links`, `::out-and-in-are-plain-properties`).
 
 **blocks.** Attributes: `id`, `path` (owning doc's path), `raw` (the
 block's raw source bytes), `hash` (hex `raw_hash`), `updated_at` (the
@@ -371,7 +388,20 @@ an external node id or `phantom:<path>`), `dst_path` (the target doc's path,
 null when not a doc; the reference form), `uri` (the external node's URI,
 null otherwise), `predicate`, `provenance`, `dst_kind`, `anchor`, `field`
 (the frontmatter key or inline field the edge was authored in, null for a
-link). `doc` reaches the source doc. No relations. The creating commit
+link). Two reach-throughs: `doc` is the SOURCE document (the row `doc_id`
+names), and `dst` (3.0 follow-up) is the DESTINATION document — the docs row
+`dst_id` names when `dst_kind == "document"` and that document exists
+(`dst_path` already names it; resolved by `dst_id` exactly as `dst_path` is),
+absent (`undefined`) for a `block` or `external` destination and for a phantom
+(the kind with no row). `dst` never reaches into a block. So `dst.title` is
+the destination's computed title, `dst { title }` a one-element list (or
+empty), `dst values` the row as `{ id, path }` (or null), `out_links exists {
+where dst.layer == "draft" }` a doc-level filter on what is linked to, and
+`dst.id` / `dst.path` read `dst_id` / `dst_path` wherever `dst` exists
+(`query-links::dst-reach-through`, `::dst-block-sugar`,
+`::dst-identity-reads-the-foreign-key`, `::dst-filter-pushes-down`,
+`::dst-path-literal-rooted`; `reads::dst-on-links` for an external link).
+The creating commit
 (`from_commit`) is not a field: a query sees open edges only and the commit
 is history (`blocks_history`, `changes_since`), §9.
 
@@ -553,9 +583,17 @@ The generic decoder (`cursor.json`) is unchanged.
   block's `raw`/`hash` are the row attributes of §1.2 (`hash` is the value
   an `update`/`split` op expects as `expect.content_hash`); the owning document
   is inferred from the id (the `doc`/`path` scope arguments are gone, 3.0);
-  `id` is a block ref like every block-level tool's — an `n_` node id
-  dereferences to the block it was projected from (`reads::resolution-ladders`;
-  what the removed `read_ref` did, §9). `blocks_read_many(ids, resolution =
+  `id` is a BLOCK id — the `blocks_` kind's attribute (§4 "Names and
+  arguments") — so an `n_` node id is `block_missing` "no block with id \"n_…\"
+  (an n_ id names a node — nodes_block_read reads its block)" (3.0 follow-up,
+  §9; the name pass had dereferenced it here). **`nodes_block_read(id,
+  resolution = full)`** (3.0 follow-up): `id` is a NODE id; the result is
+  exactly `blocks_read`'s for the block the node was projected from — same
+  shape, same resolution ladder and default. An unknown node is
+  `block_missing` "no node with id \"…\""; a node naming no live block (a
+  block-less node, e.g. one derived from the frontmatter) is `block_missing`
+  "node \"n_…\" has no block" (`data: { id, doc_id }`)
+  (`reads::resolution-ladders`). `blocks_read_many(ids, resolution =
   text, budget_tokens?)` (`nodes_get_many`, then `blocks_get_many`, before 3.0): cap 100, request order, no children, `unresolved` for ids
   naming no live block, `truncated` on the cap or the budget; at least one
   resolved block is always returned (1.2, as `docs_read_many`).
@@ -645,8 +683,10 @@ failure is `repo_not_found` with the message (§9).
 **Names and arguments (3.0, normative).** A tool's prefix names the row
 kind it addresses — `docs_`, `blocks_`, `nodes_`, `links_` — and `id` /
 `path` in its arguments are that kind's attributes: `docs_read { id?, path?
-}`, `docs_diff { id?, path? }`, `blocks_read { id }`, `nodes_set { id }` (the
-one tool that addresses `nodes` rows). A handful of repo-level operations
+}`, `docs_diff { id?, path? }`, `blocks_read { id }` (a block id — never a
+node's), `nodes_set { id }` and `nodes_block_read { id }` (the two tools that
+address `nodes` rows; the latter dereferences a node to its block, so each
+tool's `id` is unambiguously its namespace's kind — 3.0 follow-up, §9). A handful of repo-level operations
 have no kind prefix (`query`, `query_syntax`, `graph`, `changes_since`,
 `apply`, `observe*`, `repos*`, `sync_status`, `version`). One verb returns
 the row: **`read`** (`docs_read`, `docs_read_many`, `docs_read_at`,
@@ -704,12 +744,13 @@ lookup — the id form is `blocks_append`. Block-level tools pin
 | `docs_outline` | `id?`, `path?`, `resolution?`, `depth?`, `budget_tokens?` | §2 |
 | `docs_read` | `id?`, `path?`, `include_ids?` | §2 |
 | `docs_read_many` | `docs[]`, `include_ids?`, `budget_tokens?` | §2 (`docs_get_many` before 3.0) |
-| `blocks_read` | `id`, `resolution?` | §2 (the document inferred from the block; `id` is a block ref, an `n_` id its block; `nodes_get { doc?, path?, id }`, then `blocks_get`, before 3.0) |
+| `blocks_read` | `id`, `resolution?` | §2 (the document inferred from the block; `id` is a block id — an `n_` id is `block_missing` naming `nodes_block_read`; `nodes_get { doc?, path?, id }`, then `blocks_get`, before 3.0) |
+| `nodes_block_read` | `id`, `resolution?` | §2 (3.0 follow-up): `id` is a node id; the block it was projected from, exactly as `blocks_read` renders it |
 | `blocks_read_many` | `ids[]`, `resolution?`, `budget_tokens?` | §2 (`nodes_get_many`, then `blocks_get_many`, before 3.0) |
 | `docs_tree` / `docs_list` | §2 args | §2 |
 | `query_syntax` | — | `{ syntax }` (reference text, unpinned) |
 | `query` | `query`, `limit?`, `cursor?` | §1.4; `semantic(...)` with no provider → `provider_unavailable` (`data: { provider: null }`, the message naming what to configure); a provider whose model has embedded nothing in the repository → `provider_unavailable` too (`data: { provider, model }`), never path-ordered rows with no score (3.0) |
-| `graph` | `roots[]`, `degrees? = 1`, `direction? = both`, `predicate?`, `select?[]`, `max_documents? = 200` | `{ roots, degrees, direction, documents: [{ id, path, degree, frontier, ...select }], links: [{ id, doc_id, block_id, via_id, dst_id, dst_path, uri, dst_kind, predicate, provenance, anchor, field }], frontier: [{ id, path, degree }], truncated, queries }` — compiled to `follow doc.out`/`doc.in` with `depth = degrees + 1` (≤ 8, so `degrees` clamps to 7 and the result reports the clamped value), roots depth 0; documents ordered bytewise by path (§9); a link row carries the `links` target's fields under their own names (§1.2, 3.0 — `edges[]` until the name pass, and before that a rename table spelled `src`/`dst`/`dst_uri`/`src_field`); an `id`/`path` selection collapses onto the envelope key exactly as a `query` hit's does, any other bare name is its own column (deduped by suffix) and an expression is `sel_<i>` — a `graph` selection can never overwrite the envelope |
+| `graph` | `roots[]`, `degrees? = 1`, `direction? = both`, `predicate?`, `select?[]`, `max_documents? = 200` | `{ roots, degrees, direction, documents: [{ id, path, degree, frontier, ...select }], links: [{ id, doc_id, block_id, via_id, dst_id, dst_path, uri, dst_kind, predicate, provenance, anchor, field }], frontier: [{ id, path, degree }], truncated, queries }` — compiled to `follow distinct out_links collect { from dst }` / `follow distinct in_links collect { from doc }` (the link rows walked to the documents at their other end, §1.2; `follow doc.out`/`doc.in` before the 3.0 follow-up) with `depth = degrees + 1` (≤ 8, so `degrees` clamps to 7 and the result reports the clamped value), roots depth 0; documents ordered bytewise by path (§9); a link row carries the `links` target's fields under their own names (§1.2, 3.0 — `edges[]` until the name pass, and before that a rename table spelled `src`/`dst`/`dst_uri`/`src_field`); an `id`/`path` selection collapses onto the envelope key exactly as a `query` hit's does, any other bare name is its own column (deduped by suffix) and an expression is `sel_<i>` — a `graph` selection can never overwrite the envelope |
 | `blocks_search` | `q`, `limit?` | `spec/search` §1.3 (`text_search` before 3.0): `{ hits: [{ id (the block), doc_id, path (reference form), type, text, score }], truncated }` |
 | `blocks_resolve` | `query`, `limit?` | `spec/search` §4 (`resolve` before 3.0; vector fused when a provider exists): `[{ id, locator, preview, evidence }]`, the `locator`'s path half in the reference form (`/a.md#paragraph[2]`) |
 | `apply` | `ops[]`, `reason?`, `dry_run?` | `spec/mutate` §4, `origin.actor = "agent:mcp"`: `{ results, revisions: [{ id, path, hash }], diffs?, committed }` — `revisions[].path` and the `diffs` keys in the reference form, `hash` the document's hash after the commit (the rendered bytes' sha256; the same shape as a `changes_since` revision, §3). Every mutating tool below returns this result |
@@ -974,8 +1015,9 @@ both and runs both harnesses.
   runner** ("needs an embedding provider"); only the `query` tool pre-checks
   and reports `provider_unavailable` (`semantic_unavailable` before 3.0).
 - **Pinned — wikilinks resolve by path**, so a `[[slug]]` whose slug is not a
-  path is a phantom edge (`spec/graph` §3.2); the alchemy corpus's `out`/`in`
-  never reach documents through wikilinks.
+  path is a phantom edge (`spec/graph` §3.2); in the alchemy corpus
+  `out_links collect distinct { from dst }` never reaches a document through
+  a wikilink (a phantom's `dst` is absent).
 - **Pinned — the cursor decoder is lenient** (standard-alphabet base64 and
   `=` padding are accepted).
 - **Pinned — dry runs consume minted ids** (a dry-run insert advances the
@@ -1087,7 +1129,12 @@ both and runs both harnesses.
   names a block; a ref naming nothing live is `block_missing` "no block with id
   …" (`reads::resolution-ladders` — the cases the removed `read_ref` carried;
   it had defaulted to `raw`, so the ladder now shows `blocks_read`'s `full`,
-  and its miss was `doc_missing` "no document or block …").
+  and its miss was `doc_missing` "no document or block …"). **Superseded (3.0
+  follow-up, 2026-10-11):** `blocks_read`'s `id` is a block id only; the `n_`
+  dereference is `nodes_block_read { id, resolution? }` (the same result), and
+  `blocks_read` with an `n_` id is `block_missing` "no block with id …" naming
+  that tool — each tool's `id` is unambiguously its namespace's kind (the
+  Decisions entry below; `reads::resolution-ladders` carries both).
 - **Fixed (3.0, the name pass) — `from <unknown>` was a silent empty result.**
   A top-level source that is no collection read an absent root and returned
   zero hits — which is exactly what `from edges` would have done after the
@@ -1110,6 +1157,43 @@ both and runs both harnesses.
   hash rather than `block_missing`.
 
 ## Decisions
+
+- 2026-10-11, surface 3.0 (the follow-up to the tool-name pass; Brendan's
+  three decisions): **(1) `nodes_block_read { id, resolution? }`** — a new
+  tool in the `nodes_*` namespace whose `id` is a NODE id (`n_…`); it
+  dereferences to the node's owning block and returns exactly what
+  `blocks_read` returns for that block (same shape, same `resolution`
+  default). `blocks_read` loses the `n_` dereference the name pass had given
+  it: its `id` is a block id only, and an `n_` id is `block_missing` "no block
+  with id …" whose message adds "an n_ id names a node — nodes_block_read
+  reads its block". Rationale: **each tool's `id` is unambiguously its
+  namespace's kind** — the name pass made `nodes_set { id }` a node id and
+  `blocks_read { id }` a block id, then let the latter also accept a node's,
+  the one place the rule bent. 44 → 45 tools; `omg cat`/`show` dispatch an
+  `n_` ref to `nodes_block_read` client-side. **(2) The doc relations `in` and
+  `out` are dropped** (the distinct linked / linking documents): docs relations
+  are `blocks nodes out_links in_links`, and `out`/`in` on a doc reads an
+  undefined property like any other unknown name
+  (`query-docs::out-and-in-are-plain-properties`). Rationale: **`in`/`out`
+  were non-descript, `in` doubles as the contextual `in` keyword, and the
+  link rows express both with `distinct`** — `out_links collect distinct {
+  from dst }` / `in_links collect distinct { from doc }`, and the walk `follow
+  out_links collect { from dst }` / `follow in_links collect { from doc }`
+  (every `query-follow` case respelled, expectations byte-identical; `graph`
+  compiles to the same destination blocks, `reads::alchemy`). **(3) `dst` on
+  link rows** — a reach-through to the destination DOCUMENT row when `dst_kind
+  == "document"` (resolved by `dst_id`, the row `dst_path` already names),
+  absent for a `block` or `external` destination and for a phantom; it never
+  reaches into a block (kept simple, §1.2). `doc` on a link row (the source)
+  is unchanged. `dst.<k>` pushes down like `doc.<k>` (the destination's
+  properties by the row's own `dst_node`; `dst.id`/`dst.path` a primary-key
+  probe — the FK-elimination paragraph of §1), and `dst` is a row handle for
+  the path rule. Fixtures: `query-links::dst-*`, `query-docs::linked-docs-*`,
+  `::dst-values-absent-is-null`, `::exists-through-dst`, `reads::dst-on-links`
+  (an external link whose `dst` is absent). `query_syntax`, the §1.2 table,
+  `@omgbase/oqx-syntax`'s vocabulary (`dst` in, `out`/`in` out), the docs, the
+  tutorial and the graph-ui demo follow; `tool-descriptions.json` carries the
+  45 descriptions. Both engines byte-identical.
 
 - 2026-10-11, surface 3.0 (the tool-name pass; Brendan's decisions): **a
   tool's prefix names the row kind it addresses (`docs_`, `blocks_`, `nodes_`,

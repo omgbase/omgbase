@@ -161,10 +161,10 @@ describe("doctor", () => {
   });
 });
 
-describe("traversal (OQX follow doc.out)", () => {
+describe("traversal (OQX follow out_links collect { from dst })", () => {
   it("walks the citation graph from a seed doc to its linked doc", () => {
-    // hub.md links to old.md — `follow doc.out` reaches it across the edge graph.
-    const res = JSON.parse(omg(["query", 'from docs where path == "hub.md" follow doc.out', "--json"])) as {
+    // hub.md links to old.md — `follow out_links collect { from dst }` reaches it across the edge graph.
+    const res = JSON.parse(omg(["query", 'from docs where path == "hub.md" follow out_links collect { from dst }', "--json"])) as {
       hits: { path: string }[];
     };
     expect(res.hits.map((h) => h.path)).toContain("/old.md");

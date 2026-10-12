@@ -277,11 +277,11 @@ describe("docHistory (version-history listing)", () => {
   });
 });
 
-describe("exit gate: backlinks via OQX follow doc.in", () => {
+describe("exit gate: backlinks via OQX follow in_links collect { from doc }", () => {
   it("backlinks: which docs reference a target (incoming edge walk)", () => {
     save("target.md", "# Target\n");
     save("src.md", "# Src\n\nrefers to [target](/target.md)\n");
-    const hits = oqxRun(store, repoId, 'from docs where path == "target.md" follow doc.in', { limit: 100 }).hits;
+    const hits = oqxRun(store, repoId, 'from docs where path == "target.md" follow in_links collect { from doc }', { limit: 100 }).hits;
     expect(hits.map((h) => h.path)).toContain("/src.md");
   });
 });

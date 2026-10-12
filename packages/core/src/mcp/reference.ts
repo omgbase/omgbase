@@ -122,8 +122,11 @@ docs:
                        "markdown"/"yaml"/"json"; present on EVERY doc, so
                        has(format) is always true and \`format == "yaml"\` is the
                        filter).
-  - relations        = nodes, blocks, doc.out / doc.in (citation graph),
-                       doc.out_links / doc.in_links (a doc's links as rows).
+  - relations        = nodes, blocks, doc.out_links / doc.in_links (a doc's
+                       links as rows; the documents at their other end are
+                       out_links collect distinct { from dst } and
+                       in_links collect distinct { from doc } — there is no
+                       out / in relation).
 
 blocks:
   - bare fields      = doc_id (the owning doc), type, text (normalized), ordinal
@@ -261,6 +264,7 @@ links:  (the authored link graph as rows — one per open link: the relation a l
 
   <receiver> collect|exists|none|count|first|single { <block> }
     receiver = a relation (nodes, blocks, doc.out_links, section.blocks, …), a
+               reach-through row (dst, doc: one row — dst { title }), a
     list property (tags), entries(x), or a root collection (^docs; 0^docs at depth ≥ 2).
     block    = [select …] [where …] [follow …] [order by …] [limit N] [offset N]
                — the same fixed order as the top level (\`from\` optional; the
@@ -311,20 +315,25 @@ links:  (the authored link graph as rows — one per open link: the relation a l
 
 ## Graph traversal (follow) and links
 
-  from docs where <seed> follow doc.out            docs the seed links TO
-  from docs where <seed> follow doc.in             backlinks
-    follow doc.out { depth 3 }                     bound (1..8, default 8)
-    follow doc.out { where layer == "canon" }      keep only matching successors
-    follow doc.in { where ^path in list(before) }     ^ = the row being expanded
+  The citation graph is the LINK ROWS walked through a destination block:
+  dst is a link's destination document (absent for an external or dangling
+  link — it then contributes no successor), doc its source.
+  from docs where <seed> follow out_links collect { from dst }     docs the seed links TO
+  from docs where <seed> follow in_links collect { from doc }      backlinks
+    follow out_links collect { from dst } { depth 3 }              bound (1..8, default 8)
+    follow out_links collect { from dst } { where layer == "canon" }   keep only matching successors
+    follow in_links collect { from doc } { where ^path in list(before) }   ^ = the row being expanded
                                                    (^^ = the walk's enclosing scope)
-    follow doc.out, doc.in                         several destinations: their union
+    follow out_links collect { from dst where predicate == "depends_on" }   one predicate only
+    follow out_links collect { from dst }, in_links collect { from doc }
+                                                   several destinations: their union
                                                    (one step dedups by identity)
-    follow ^docs { where doc.out exists { where path == ^^path } }
-                                                   a destination block, re-read per
-                                                   frontier row (^ = that row; ^docs
-                                                   is the root's documents) = doc.in
-    follow doc.out { frontier type == "practitioner" }   cut, keeping the frontier row
-    follow distinct doc.out / follow doc.out { by group } identity control
+    follow ^docs { where out_links exists { where dst_path == ^^path } }
+                                                   a destination block over the root's
+                                                   documents, re-read per frontier row
+                                                   (^ = that row) = the backlinks walk
+    follow out_links collect { from dst } { frontier type == "practitioner" }   cut, keeping the frontier row
+    follow distinct out_links collect { from dst } / … { by group }   identity control
     follow refs(before), ^docs { where ^path in list(after) }    forward over \`before\`, backward
                                                    over every doc whose \`after\` names me
   Per-occurrence metadata: $depth (seed = 1), $stop (interior|leaf|frontier|
@@ -337,13 +346,16 @@ links:  (the authored link graph as rows — one per open link: the relation a l
   destination block with the implicit collect — follow refs(before), ^docs { where
   ^path in list(after) } walks \`before\` forward and, backward, every document
   whose \`after\` names the frontier row (the 0.17 body rules apply: where-first,
-  projections). After children / doc.out / refs(x) / a binding a brace is still
+  projections). After children / out_links / refs(x) / a binding a brace is still
   the options block (an error when that destination is not the last); an options
   block may follow a trailing block: follow ^docs { where … } { depth 2 }. A bare
   follow ^docs (no brace, no consumer) is an error naming both block spellings.
-  Type-preserving relations: doc.out/doc.in, block.children, section.children,
-  section.subsections.
+  Type-preserving relations: block.children, section.children, section.subsections;
+  the citation graph is out_links collect { from dst } / in_links collect { from doc }.
   from links where dst_path == "/notes/x.md"       inbound links to a doc, as rows
+  select d: dst.title, k: dst_kind from links       the destination document's title
+  from docs where out_links exists { where dst.layer == "draft" }   links into drafts
+  select b: in_links collect distinct { from doc } from docs     backlinks as { id, path }
   from links where predicate == "depends_on" select doc_id, dst_path
   from docs where not doc.in_links exists { }      orphans (nothing links in)
   (The \`graph\` tool is a convenience wrapper that compiles to a follow query.)

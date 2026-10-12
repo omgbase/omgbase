@@ -314,6 +314,15 @@ fn build_catalog() -> Vec<ToolSpec> {
             ),
         },
         ToolSpec {
+            name: "nodes_block_read",
+            description: d::NODES_BLOCK_READ,
+            input_schema: schema(
+                &[("id", s()), ("resolution", resolution_schema())],
+                &["id"],
+                true,
+            ),
+        },
+        ToolSpec {
             name: "blocks_read_many",
             description: d::BLOCKS_READ_MANY,
             input_schema: schema(
@@ -1118,6 +1127,36 @@ impl Surface {
         }
     }
 
+    /// `nodes_block_read`: the `(doc_id, block_id)` of the live block a node
+    /// was projected from — `block_missing` for an unknown node ("no node with
+    /// id …") or a node with no live block ("node … has no block").
+    fn block_of_node(&self, node_id: &str) -> Result<(String, String)> {
+        let node: Option<(String, Option<String>)> = self
+            .store
+            .conn()
+            .query_row(
+                "SELECT doc_id, block_id FROM nodes WHERE node_id = ?1",
+                params![node_id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()?;
+        let Some((doc_id, block_id)) = node else {
+            return Err(SurfaceError::with_data(
+                "block_missing",
+                format!("no node with id {}", Json::String(node_id.to_owned())),
+                json!({ "id": node_id }),
+            ));
+        };
+        let live = match &block_id {
+            Some(b) => self.doc_id_of_block(b)?.is_some(),
+            None => false,
+        };
+        match block_id {
+            Some(b) if live => Ok((doc_id, b)),
+            _ => Err(node_has_no_block(node_id, &doc_id)),
+        }
+    }
+
     /// A ref → a live block id (`block_missing` otherwise).
     fn resolve_block_ref(&self, repo_id: &str, r: &str) -> Result<String> {
         match read::resolve_ref(self.store.conn(), repo_id, r)? {
@@ -1287,20 +1326,46 @@ impl Surface {
                 )
             }
             "blocks_read" => {
-                let (repo, _) = self.scope(args)?;
+                self.scope(args)?;
                 let id = arg_string(args, "id")?;
-                // The ref goes through `resolve_block_ref` like every block-level
-                // tool's: an `n_` node id dereferences to its block (what `read_ref`
-                // did before 3.0 — `omg cat <n_…>` renders this tool).
-                let block_id = self.resolve_block_ref(&repo, &id)?;
-                let doc_id = self.doc_of_block(&block_id)?;
+                // `id` is a block id, unambiguously the `blocks_` kind's (§4
+                // "Names and arguments"): an `n_` id names a NODE and is
+                // `block_missing` pointing at `nodes_block_read` (the name pass
+                // had dereferenced it here, §9).
+                if id.starts_with("n_") {
+                    return Err(SurfaceError::with_data(
+                        "block_missing",
+                        format!(
+                            "no block with id {} (an n_ id names a node — nodes_block_read reads its block)",
+                            Json::String(id.clone())
+                        ),
+                        json!({ "id": id }),
+                    ));
+                }
+                let doc_id = self.doc_of_block(&id)?;
+                read::blocks_read(
+                    &self.store,
+                    &doc_id,
+                    &id,
+                    resolution_arg(args, Resolution::Full)?,
+                )?
+                .ok_or_else(|| block_missing(&id))
+            }
+            "nodes_block_read" => {
+                self.scope(args)?;
+                let id = arg_string(args, "id")?;
+                // The block a node was projected from: the node must exist and
+                // name a live block (a block-less node — one derived from the
+                // frontmatter — has none). Both misses are `block_missing`,
+                // the message naming the node.
+                let (doc_id, block_id) = self.block_of_node(&id)?;
                 read::blocks_read(
                     &self.store,
                     &doc_id,
                     &block_id,
                     resolution_arg(args, Resolution::Full)?,
                 )?
-                .ok_or_else(|| block_missing(&id))
+                .ok_or_else(|| node_has_no_block(&id, &doc_id))
             }
             "blocks_read_many" => {
                 self.scope(args)?;
@@ -2190,6 +2255,15 @@ fn block_missing(value: &str) -> SurfaceError {
     )
 }
 
+/// `nodes_block_read` on a node that names no live block.
+fn node_has_no_block(node_id: &str, doc_id: &str) -> SurfaceError {
+    SurfaceError::with_data(
+        "block_missing",
+        format!("node {} has no block", Json::String(node_id.to_owned())),
+        json!({ "id": node_id, "doc_id": doc_id }),
+    )
+}
+
 /// The message every tool uses for a `semantic(...)` call with no provider.
 pub const PROVIDER_UNAVAILABLE_MESSAGE: &str = "semantic(...) needs an embedding provider; none is configured — set embedding.provider (omg config set embedding.provider <command|url>) and embed the repository (omg embed drain)";
 
@@ -2515,6 +2589,7 @@ mod tests {
             "docs_read",
             "docs_read_many",
             "blocks_read",
+            "nodes_block_read",
             "blocks_read_many",
             "docs_tree",
             "docs_list",
@@ -2558,7 +2633,7 @@ mod tests {
         ] {
             assert!(names.contains(&want), "missing {want}");
         }
-        assert_eq!(names.len(), 44);
+        assert_eq!(names.len(), 45);
         for t in tools() {
             assert_eq!(t.input_schema["type"], "object");
         }

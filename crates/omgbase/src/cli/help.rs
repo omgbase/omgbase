@@ -164,7 +164,7 @@ const QUERY_EXAMPLES: &[&str] = &[
     "       query 'from docs where type == \"practitioner\" order by era desc'   # order by <expr> [asc|desc]",
     "       query 'select t: text, d: $depth, s: $stop from blocks where id == \"b_x\" follow block.children'   # recursive walk ($depth/$stop metadata)",
     "       query 'from nodes where name == \"Overview\" follow section.subsections { depth 3 }'   # follow [distinct] <rel> [{ where … frontier … depth n by … }]",
-    "       query 'select p: path, d: $depth, s: $stop from docs where path == \"/index.md\" follow doc.out'   # citation graph (cyclic-safe: $stop=cycle)",
+    "       query 'select p: path, d: $depth, s: $stop from docs where path == \"/index.md\" follow out_links collect { from dst }'   # citation graph (cyclic-safe: $stop=cycle)",
     "       query 'from blocks where type == \"list_item\" and $leaf follow block.children'   # $leaf/$depth/$stop filter the walk result post-walk",
     "       query 'select src: doc_id, to: dst_path from links where predicate == \"depends_on\"'   # the links target: predicate/provenance/dst_kind + doc_id/dst_path/uri",
 ];

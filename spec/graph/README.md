@@ -231,7 +231,7 @@ paths.
 
 ## 6. Reads this spec pins
 
-- **Document links** (`omg links`, `doc.out`/`doc.in`): out = the doc's
+- **Document links** (`omg links`; at the query surface `out_links`/`in_links`): out = the doc's
   `doc_edges` (or its open `edges` at block grain), in = open `edges` whose
   `dst_node` is the doc, grouped by `(predicate, src_doc)`.
 - **Stale links**: an open edge whose `dst_node` starts with `phantom:` is

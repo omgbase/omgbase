@@ -12,8 +12,9 @@
 //     present) keeps its timeline default, in the connected server's path form;
 //   - every other repository gets the STARTER: the most recently changed
 //     documents, which exists in any repository and needs no field names. It
-//     has no `follow`, so the picker offers the builtin `doc.out` / `doc.in`
-//     (lib/candidates.ts) and infers nothing else; `links` are drawn, force layout.
+//     has no `follow`, so the picker offers the builtin `doc.out_links` /
+//     `doc.in_links` (lib/candidates.ts) and infers nothing else; `links` are
+//     drawn, force layout.
 //
 // `timelineStarter` is the second suggestion — the sample default's shape with
 // the start document left to the user — shown under the editor while it holds

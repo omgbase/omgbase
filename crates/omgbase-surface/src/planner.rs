@@ -133,10 +133,11 @@ fn is_target_relation_of(target: Target, name: &str) -> bool {
     )
 }
 
-/// The row a reach-through head reaches (`doc.x`, `block.x`, `section.x`).
+/// The row a reach-through head reaches (`doc.x`, `block.x`, `section.x`,
+/// and a link's `dst.x`).
 fn reach_through(head: &str) -> Option<Target> {
     match head {
-        "doc" => Some(Target::Docs),
+        "doc" | "dst" => Some(Target::Docs),
         "block" => Some(Target::Blocks),
         "section" => Some(Target::Nodes),
         _ => None,
@@ -482,7 +483,7 @@ mod tests {
         // follow
         assert!(
             compile(
-                &parse("from docs where path == \"a.md\" follow distinct doc.out"),
+                &parse("from docs where path == \"a.md\" follow distinct out_links collect { from dst }"),
                 &[],
                 "r"
             )
@@ -492,7 +493,7 @@ mod tests {
         // decline exactly like a single relation (0.14)
         assert!(
             compile(
-                &parse("from docs where path == \"a.md\" follow doc.out, doc.in"),
+                &parse("from docs where path == \"a.md\" follow out_links collect { from dst }, in_links collect { from doc }"),
                 &[],
                 "r"
             )

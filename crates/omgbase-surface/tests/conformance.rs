@@ -232,7 +232,7 @@ const QUERIES: &[(&str, Push)] = &[
     ),
     // follow (planner declines → in-memory both ways, still must agree)
     (
-        "from docs where path == \"substances/philosophers-stone.md\" follow distinct doc.out",
+        "from docs where path == \"substances/philosophers-stone.md\" follow distinct out_links collect { from dst }",
         Declined,
     ),
     (
@@ -278,7 +278,7 @@ const QUERIES: &[(&str, Push)] = &[
     // store answers these from SQLite indexes (`store_index`) instead of
     // materializing `^<target>` — results must not move an inch
     (
-        "select path, cited: ^docs collect { path where doc.out exists { where path == ^^path } } from docs",
+        "select path, cited: ^docs collect { path where out_links exists { where dst_path == ^^path } } from docs",
         Declined,
     ),
     (
@@ -286,7 +286,7 @@ const QUERIES: &[(&str, Push)] = &[
         Planned,
     ),
     (
-        "from docs where path == \"index.md\" follow doc.out, ^docs collect { where after.contains(^path) }",
+        "from docs where path == \"index.md\" follow out_links collect { from dst }, ^docs collect { where after.contains(^path) }",
         Declined,
     ),
     (

@@ -102,7 +102,7 @@ const QUERIES: string[] = [
   'select path from nodes where kind == "md:task" && entries(attrs) exists { where $key == "checked" && $it }',
   'select h: nodes collect { select name values where kind == "md:section" order by first_ordinal limit 2 } from docs where path == "processes/magnum-opus.md"',
   // follow (planner declines → in-memory both ways, still must agree)
-  'from docs where path == "substances/philosophers-stone.md" follow distinct doc.out',
+  'from docs where path == "substances/philosophers-stone.md" follow distinct out_links collect { from dst }',
   'select n: name, d: $depth from nodes where kind == "md:section" && name == "The magnum opus" follow section.children',
   // correlation / lifts
   'select slug from docs where type == "substance" && ^nodes exists { where kind == "md:wikilink" && value == ^slug }',
@@ -112,9 +112,9 @@ const QUERIES: string[] = [
   // nested blocks over a ROOT SCAN with a correlated / constant equality: the
   // store answers these from SQLite indexes (oqx-js/store-index.ts) instead of
   // materializing `^<target>` — results must not move an inch
-  'select path, cited: ^docs collect { path where doc.out exists { where path == ^^path } } from docs',
+  'select path, cited: ^docs collect { path where out_links exists { where dst_path == ^^path } } from docs',
   'select name, orders: ^docs collect { path where type == "order" && customer == ^path } from docs where type == "customer"',
-  'from docs where path == "index.md" follow doc.out, ^docs collect { where after.contains(^path) }',
+  'from docs where path == "index.md" follow out_links collect { from dst }, ^docs collect { where after.contains(^path) }',
   'select path, same_type: ^docs collect { path where type == ^type && path != ^path } from docs',
   'select path, same_era: ^docs collect { path where era == ^era } from docs where type == "practitioner"',
   'select path, same_layer: ^docs collect { path values where layer == ^layer } from docs',

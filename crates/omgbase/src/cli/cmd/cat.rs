@@ -28,21 +28,27 @@ pub fn node_text(node: &Json) -> String {
     String::new()
 }
 
-/// A ref that names a block: a `b_` block id, an `n_` node id (its block), or
-/// a `path#type[n]` locator — everything else is a document (a `d_` id or a
-/// path).
+/// A ref that names a block: a `b_` block id, an `n_` node id (the block it
+/// was projected from), or a `path#type[n]` locator — everything else is a
+/// document (a `d_` id or a path).
 pub fn is_block_ref(r: &str) -> bool {
     r.starts_with("b_") || r.starts_with("n_") || r.contains('#')
 }
 
 /// §2.3: remotely the ref's SHAPE picks the tool (ids carry their kind, a path
-/// is a document): a block ref is `blocks_read` (an `n_` id dereferences to
-/// its block server-side, as on every block-level tool), anything else is
-/// `docs_read` — the same two results the local run renders (the polymorphic
-/// `read_ref` classified server-side before surface 3.0).
+/// is a document): an `n_` node id is `nodes_block_read` (the block the node
+/// was projected from — `blocks_read`'s shape), any other block ref
+/// `blocks_read`, anything else `docs_read` — the same results the local run
+/// renders (the polymorphic `read_ref` classified server-side before surface
+/// 3.0).
 fn cat_one_remote(cli: &mut Cli, r: &str, resolution: &str) -> Result<CatOne> {
     if is_block_ref(r) {
-        let node = cli.call("blocks_read", json!({ "id": r, "resolution": resolution }))?;
+        let tool = if r.starts_with("n_") {
+            "nodes_block_read"
+        } else {
+            "blocks_read"
+        };
+        let node = cli.call(tool, json!({ "id": r, "resolution": resolution }))?;
         return Ok(CatOne {
             text: node_text(&node),
             capture: node.clone(),

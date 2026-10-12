@@ -102,8 +102,8 @@ describe("trace suite", () => {
     save("target.md", "# Target\n");
     save("src.md", "# Src\n\ncites [target](/target.md) in this paragraph\n");
     await connect();
-    // Backlinks via OQX `follow doc.in`: seed the target, walk incoming edges.
-    const { payload } = await call("query", { query: 'from docs where path == "target.md" follow doc.in' });
+    // Backlinks via OQX `follow in_links collect { from doc }`: seed the target, walk incoming edges.
+    const { payload } = await call("query", { query: 'from docs where path == "target.md" follow in_links collect { from doc }' });
     expect((arr(payload.hits) as { path: string }[]).map((h) => h.path)).toContain("/src.md");
     expect(turns).toBe(1);
   });

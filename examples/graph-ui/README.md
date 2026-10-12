@@ -57,8 +57,9 @@ limit 40
 (the attributes spelled for the connected server — bare on a 3.0 server,
 `$path`/`$title`/`$updated_at` on a 2.x one; see [Server
 versions](#server-versions)). The starter has no `follow`, so the picker offers
-the builtin link graph — `doc.out` (links, drawn by default) and `doc.in`
-(backlinks) — and a force layout; under the editor a second suggestion shows
+the builtin link graph — `doc.out_links` (links, drawn by default) and
+`doc.in_links` (backlinks), named for the link rows the edges come from — and a
+force layout; under the editor a second suggestion shows
 the timeline walk rooted at the first shown document (`select path, title,
 before, after from docs where path == "/…" follow distinct refs(before), $it.in
 collect { where ^path in list(after) }`; `^$path` against a 2.x server, `"/" +
@@ -197,8 +198,9 @@ says so under the query whenever a destination is a bare field.
 **Why `$it.in` for the backward hop.** The engine has no `refs⁻¹`: there is no
 function giving "the documents whose `after` names me". But a `/`-rooted
 frontmatter reference *is extracted as an edge* (`spec/graph` §3.1,
-`provenance: frontmatter`), so the frontier's backlinks (`$it.in`, the same
-relation as `doc.in`) already contain every document whose `after` — or any
+`provenance: frontmatter`), so the frontier's backlinks (`$it.in` on a 2.x
+server; `in_links collect { from doc }` on 3.0, where a doc has no `in`
+relation) already contain every document whose `after` — or any
 other field, or a body link — points at it. The destination block narrows those
 to the ones whose `after` really says so (`^path in list(after)`; `list()`
 makes a scalar and a list read alike). It is an indexed lookup per frontier
@@ -314,8 +316,9 @@ never flagged.
 
 Try: `select path, title, before from docs where phase == "experiment" || phase == "plan"`
 (no `follow` — the candidates are *inferred* from the projected path-valued
-fields, and the three `loop-*` notes trigger the cycle banner); `follow doc.out`
-for the link graph; `order by phase` for a sequence axis; `follow before` to
+fields, and the three `loop-*` notes trigger the cycle banner); `follow
+out_links collect { from dst }` (3.0; `follow doc.out` on a 2.x server) for the
+link graph; `order by phase` for a sequence axis; `follow before` to
 see the hint and the server's error (with the `refs()` fix) in the status line.
 
 Scripts: `dev [--remote <url>]` (all of it; the proxy's flags — `--port 8787`,
@@ -452,9 +455,11 @@ dst_path, field } from docs where …`) also works against the engine (against a
 pre-3.0 server the relation is `doc.out_edges` and the edge fields are
 `$path`/`$dst_path`/`src_field` — the demo spells them by the server's surface
 version, like the paths below); the flat rows were simpler to
-merge across chunks and page with the tool's cursor. Links (`doc.out`) and
-backlinks (`doc.in`) use the same query with `provenance == "link"`; backlinks
-are the same rows reversed. A sequence candidate (an `order by` key) needs no
+merge across chunks and page with the tool's cursor. An edge is a link row
+read source → destination, `path` → `dst_path` (the paths of `doc_id` and
+`dst_id`; on 3.0 `dst` is the destination document row itself). Links
+(`doc.out_links`) and backlinks (`doc.in_links`) use the same query with
+`provenance == "link"`; backlinks are the same rows reversed. A sequence candidate (an `order by` key) needs no
 fetch — its edges are consecutive result rows.
 
 ## The elements
@@ -675,7 +680,7 @@ path comes back bare (surface 1.x) or rooted (2.0).
 **Writable or not.** Writable candidates are exactly the frontmatter relations
 whose sampled values are document references (a `/`-rooted repo path, a bare
 repo path, or a doc id — scalar or list). The rest show *read-only* with a
-reason: `doc.out` / `doc.in` ("links live in the body"), an `order by` key
+reason: `doc.out_links` / `doc.in_links` ("links live in the body"), an `order by` key
 ("derived from order by …"), an inverse pair ("edit `before` or `after`
 directly"), a frontmatter field holding something else ("values are not
 document references"), or a server that does not offer the tool. While a
@@ -690,8 +695,8 @@ field was not projected). The page lists the server's tools on connect and
 shows every relationship read-only when `docs_set_meta` is missing; a refusal at
 write time is reported with the same hint.
 
-**Limits.** Body links (`doc.out`, `doc.in`) and derived sequences are
-read-only. Nested property paths (`meta.rel`) are not edited. Edits are per
+**Limits.** Body links (`doc.out_links`, `doc.in_links`) and derived sequences
+are read-only. Nested property paths (`meta.rel`) are not edited. Edits are per
 document: the inverse relation (e.g. `before` when you edit `after`) is not
 maintained — the engine has no field definitions declaring inverses. In the
 local sample the writes land in `.dev-workspace/sample/` (a copy of `sample/`
@@ -711,13 +716,20 @@ module becomes the fallback.
    frontmatter relation `<field>` with direction *forward* — the frontier row
    owns the field and names its successors; it is the same candidate a bare
    `follow <field>` would give (same name and kind, merged with the inferred one
-   from the rows, written the same way), now meaning the documents. A plain
-   relation is itself a candidate (`doc.out` / `out` / `$it.out` = links,
-   `doc.in` / `in` / `$it.in` = backlinks with direction *backward*, any other
-   bare name = a frontmatter relation — flagged by the editor's hint, since it
-   follows the strings). A **destination block** (`^docs collect { where
-   … }`, `$it.in collect { … }`, `refs(before) collect { … }`) is read first through its receiver — `refs(<field>)` names `<field>`,
-   *forward* — then through its correlated `where`: a bare property of the
+   from the rows, written the same way), now meaning the documents. The link
+   graph is a candidate in either generation's spelling: on 3.0 it is walked
+   through the link rows — `follow out_links collect { from dst }` = links
+   (`dst` is a link's destination document), `follow in_links collect { from
+   doc }` = backlinks with direction *backward* (`doc` its source); the receiver
+   names the relation, as written (`out_links`, `doc.out_links`, `$it.in_links`)
+   — and a 2.x server spells the same walks as the plain relations `doc.out` /
+   `out` / `$it.out` and `doc.in` / `in` / `$it.in` (gone in 3.0, where `out`
+   and `in` read an absent property). Any other plain relation is a frontmatter
+   relation — flagged by the editor's hint, since it follows the strings. Any
+   other **destination block** (`^docs collect { where … }`, `$it.in collect {
+   … }`, `refs(before) collect { … }`) is read first through its receiver —
+   `refs(<field>)` names `<field>`, *forward* — then through its correlated
+   `where`: a bare property of the
    candidate row compared against an outer reference (`^path in list(after)`,
    `after.contains(^path)`, the 2.x `^$path`, or the 1.x spellings `("/" +
    ^$path) in list(after)`, `after.contains("/" + ^$path)`) names the relation
@@ -736,9 +748,11 @@ module becomes the fallback.
    "looks-backward" vocabulary (`after`, `prev`, `parent`, `depends_on`, …)
    default to *backward*.
 4. **Builtin**: a query without a `follow` always gets the authored link graph
-   to choose from — `doc.out` (links) and `doc.in` (backlinks) — so a query
-   that projects no relationship (the starter) still has edges to draw. A
-   `follow doc.out` is the follow candidate itself, not a second entry.
+   to choose from — `doc.out_links` (links) and `doc.in_links` (backlinks),
+   named for the link rows the edges are fetched from — so a query that
+   projects no relationship (the starter) still has edges to draw. A `follow
+   out_links collect { from dst }` (or a 2.x `follow doc.out`) is the follow
+   candidate itself, not a second entry.
 
 5. **Inverse pairs** — see the next section: two frontmatter candidates that are
    one sequence read from both ends get a combined candidate (`before/after`,
@@ -746,8 +760,8 @@ module becomes the fallback.
 
 Defaults: a pair is drawn and its members are not; otherwise every `follow`
 candidate is drawn; inferred fields are drawn only when the query has no
-`follow`; the builtin `doc.out` is drawn only when nothing else is (no
-`follow`, no inferred field); `doc.in` and sequences are never drawn by
+`follow`; the builtin `doc.out_links` is drawn only when nothing else is (no
+`follow`, no inferred field); `doc.in_links` and sequences are never drawn by
 default. The layout axis is the first pair, else the first `follow` candidate,
 else the first sequence key, else the first inferred field (timeline words
 first), else none (force) — a builtin is never the axis. Overrides live beside
@@ -794,7 +808,8 @@ becomes the fallback — see [Gaps](#gaps-found-in-the-public-api).
 **Hints and server errors** (`src/lib/hints.ts`, `src/lib/errors.ts`). The same
 AST reading drives the non-blocking messages. Under the editor: when a `follow`
 destination is a bare frontmatter-looking field (not `refs(…)`, not a block,
-not `doc.out`/`doc.in`/`in`/`out`/`children`/`subsections`/`$it.…`), the
+not `out_links`/`in_links`/`children`/`subsections`/`dst`/`$it.…`, nor the 2.x
+`doc.out`/`doc.in`/`in`/`out`), the
 status area adds "`before` holds document references; `follow refs(before)`
 walks the documents (a bare field follows the strings)" and dot-underlines the
 destination; the query still runs. The two path-form hints ([Server

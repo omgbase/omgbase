@@ -69,7 +69,7 @@ describe("store-backed indexes for correlated blocks over a root scan", () => {
     expect(ctx.indexFor!(docs, ["title"])).toBeDefined(); // the computed scalar
     expect(ctx.indexFor!(docs, ["format"])).toBeUndefined(); // a column without an index
     expect(ctx.indexFor!(docs, ["tags"])).toBeUndefined(); // list-valued
-    expect(ctx.indexFor!(docs, ["out"])).toBeUndefined(); // a relation
+    expect(ctx.indexFor!(docs, ["out_links"])).toBeUndefined(); // a relation
     expect(ctx.indexFor!(docs, ["raw"])).toBeUndefined(); // an attribute without an index, never a property probe
     expect(ctx.indexFor!(docs, ["data"])).toBeUndefined(); // a source handle
     expect(ctx.indexFor!(docs, ["meta", "id"])).toBeUndefined(); // multi-segment
@@ -78,7 +78,7 @@ describe("store-backed indexes for correlated blocks over a root scan", () => {
     expect(ctx.indexFor!(ctx.get(repo, "blocks"), ["doc_id"])).toBeDefined();
     expect(ctx.indexFor!(ctx.get(repo, "nodes"), ["name"])).toBeDefined();
     // a relation's rows are an ordinary array: the engine indexes those itself
-    const index = ctx.get((docs as unknown[])[0], "out");
+    const index = ctx.get((docs as unknown[])[0], "out_links");
     expect(ctx.indexFor!(index, ["path"])).toBeUndefined();
     expect(indexablePaths("links")).toEqual(["id", "doc_id", "dst_id", "path", "dst_path"]);
   });
@@ -160,7 +160,7 @@ describe("store-backed indexes for correlated blocks over a root scan", () => {
   });
 
   it("the runner path: planned and in-memory agree and the in-memory run uses the indexes", () => {
-    const q = 'select path, cited: ^docs collect { path where doc.out exists { where path == ^^path } } from docs where type == "substance"';
+    const q = 'select path, cited: ^docs collect { path where out_links exists { where dst_path == ^^path } } from docs where type == "substance"';
     const planned = oqxRun(store, repoId, q, { limit: 100 });
     const memory = oqxRun(store, repoId, q, { limit: 100, plan: false });
     expect(planned).toEqual(memory);

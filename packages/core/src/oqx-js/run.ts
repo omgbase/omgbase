@@ -79,11 +79,12 @@ const ROW_FNS = new Set([
 // spellings match; a property or binding compared with a path is never touched
 // (it is the author's value), and neither is an authored `path:` key read
 // through a source handle (`data.path`, `frontmatter.path`, `inline.path`): a
-// member read is a path read only through a ROW handle (`doc`, `block`, `$it`).
+// member read is a path read only through a ROW handle (`doc`, `block`, `dst`,
+// `$it`).
 // The planner sees the rewritten tree too, so the pushed SQL and the in-memory
 // engine agree by construction.
 const PATH_ATTRIBUTES = new Set(["path", "dst_path"]);
-const ROW_HANDLES = new Set(["doc", "block", "$it"]);
+const ROW_HANDLES = new Set(["doc", "block", "dst", "$it"]);
 function isPathRead(e: Expr): boolean {
   if (e.kind === "ident" || e.kind === "outer") return PATH_ATTRIBUTES.has(e.name);
   if (e.kind === "member" && PATH_ATTRIBUTES.has(e.name)) {

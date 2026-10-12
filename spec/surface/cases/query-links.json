@@ -252,6 +252,219 @@
       }
     },
     {
+      "name": "dst-reach-through",
+      "notes": "§1.2 (3.0 follow-up): `dst` on a link row is the destination DOCUMENT row when `dst_kind == \"document\"` and the document exists, so `dst.title` is its computed title; absent (null here) for the dangling [[nigredo]].",
+      "query": "select t: dst.title, k: dst_kind from links where path == \"substances/prima-materia.md\"",
+      "expect": {
+        "hits": [
+          {
+            "id": "e_47",
+            "path": "/substances/prima-materia.md",
+            "t": "The Emerald Tablet",
+            "k": "document"
+          },
+          {
+            "id": "e_48",
+            "path": "/substances/prima-materia.md",
+            "t": "The magnum opus",
+            "k": "document"
+          },
+          {
+            "id": "e_49",
+            "path": "/substances/prima-materia.md",
+            "t": "Calcination",
+            "k": "document"
+          },
+          {
+            "id": "e_50",
+            "path": "/substances/prima-materia.md",
+            "k": "document"
+          }
+        ],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "collect"
+      }
+    },
+    {
+      "name": "dst-block-sugar",
+      "notes": "§1.2: `dst { title }` is `dst collect { title }` over the one destination row — a one-element list, or empty where `dst` is absent.",
+      "query": "select d: dst { title } from links where path == \"substances/salt.md\"",
+      "expect": {
+        "hits": [
+          {
+            "id": "e_51",
+            "path": "/substances/salt.md",
+            "d": []
+          },
+          {
+            "id": "e_52",
+            "path": "/substances/salt.md",
+            "d": []
+          },
+          {
+            "id": "e_53",
+            "path": "/substances/salt.md",
+            "d": [
+              {
+                "title": "Calcination"
+              }
+            ]
+          },
+          {
+            "id": "e_54",
+            "path": "/substances/salt.md",
+            "d": [
+              {
+                "title": "Coagulation"
+              }
+            ]
+          }
+        ],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "collect"
+      }
+    },
+    {
+      "name": "dst-identity-reads-the-foreign-key",
+      "notes": "§1 (3.0 follow-up): `dst.id` / `dst.path` are the destination's `dst_id` / `dst_path` wherever `dst` exists — the same values, pushed as a primary-key probe of the destination, no owner row loaded.",
+      "query": "select a: dst.id, b: dst_id, c: dst.path, d: dst_path from links where path == \"texts/emerald-tablet.md\"",
+      "expect": {
+        "hits": [
+          {
+            "id": "e_59",
+            "path": "/texts/emerald-tablet.md",
+            "a": "d_3",
+            "b": "d_3",
+            "c": "/practitioners/jabir-ibn-hayyan.md",
+            "d": "/practitioners/jabir-ibn-hayyan.md"
+          },
+          {
+            "id": "e_60",
+            "path": "/texts/emerald-tablet.md",
+            "a": "d_5",
+            "b": "d_5",
+            "c": "/practitioners/newton.md",
+            "d": "/practitioners/newton.md"
+          },
+          {
+            "id": "e_61",
+            "path": "/texts/emerald-tablet.md",
+            "a": "d_9",
+            "b": "d_9",
+            "c": "/processes/dissolution.md",
+            "d": "/processes/dissolution.md"
+          },
+          {
+            "id": "e_62",
+            "path": "/texts/emerald-tablet.md",
+            "a": "d_8",
+            "b": "d_8",
+            "c": "/processes/coagulation.md",
+            "d": "/processes/coagulation.md"
+          }
+        ],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "collect"
+      }
+    },
+    {
+      "name": "dst-filter-pushes-down",
+      "notes": "§1: `dst.<k>` in a top-level `where` is pushed like `doc.<k>` (the destination's properties keyed by the row's own `dst_node`); the differential proves planned == in-memory.",
+      "query": "select path, dst_path from links where dst.type == \"practitioner\"",
+      "expect": {
+        "hits": [
+          {
+            "id": "e_10",
+            "path": "/index.md",
+            "dst_path": "/practitioners/jabir-ibn-hayyan.md"
+          },
+          {
+            "id": "e_11",
+            "path": "/index.md",
+            "dst_path": "/practitioners/paracelsus.md"
+          },
+          {
+            "id": "e_12",
+            "path": "/index.md",
+            "dst_path": "/practitioners/newton.md"
+          },
+          {
+            "id": "e_9",
+            "path": "/index.md",
+            "dst_path": "/practitioners/maria-prophetissa.md"
+          },
+          {
+            "id": "e_41",
+            "path": "/substances/mercury.md",
+            "dst_path": "/practitioners/paracelsus.md"
+          },
+          {
+            "id": "e_42",
+            "path": "/substances/mercury.md",
+            "dst_path": "/practitioners/jabir-ibn-hayyan.md"
+          },
+          {
+            "id": "e_57",
+            "path": "/substances/sulphur.md",
+            "dst_path": "/practitioners/jabir-ibn-hayyan.md"
+          },
+          {
+            "id": "e_59",
+            "path": "/texts/emerald-tablet.md",
+            "dst_path": "/practitioners/jabir-ibn-hayyan.md"
+          },
+          {
+            "id": "e_60",
+            "path": "/texts/emerald-tablet.md",
+            "dst_path": "/practitioners/newton.md"
+          }
+        ],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "collect"
+      }
+    },
+    {
+      "name": "dst-path-literal-rooted",
+      "notes": "§1 Paths: a literal compared with `dst.path` is rooted like one compared with `dst_path`.",
+      "query": "select dp: dst.path from links where dst.path == \"processes/magnum-opus.md\"",
+      "expect": {
+        "hits": [
+          {
+            "id": "e_5",
+            "path": "/index.md",
+            "dp": "/processes/magnum-opus.md"
+          },
+          {
+            "id": "e_23",
+            "path": "/practitioners/maria-prophetissa.md",
+            "dp": "/processes/magnum-opus.md"
+          },
+          {
+            "id": "e_24",
+            "path": "/practitioners/newton.md",
+            "dp": "/processes/magnum-opus.md"
+          },
+          {
+            "id": "e_43",
+            "path": "/substances/philosophers-stone.md",
+            "dp": "/processes/magnum-opus.md"
+          },
+          {
+            "id": "e_48",
+            "path": "/substances/prima-materia.md",
+            "dp": "/processes/magnum-opus.md"
+          }
+        ],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "collect"
+      }
+    },
+    {
       "name": "count-all",
       "query": "links count { }",
       "expect": {

@@ -56,7 +56,7 @@ describe("previewFor", () => {
 
   it("ignores a hovered edge whose relationship is read-only", () => {
     expect(previewFor(state({ hoveredEdge: edges[0]!, writable: ["before"] }))).toBeNull();
-    expect(previewFor(state({ hoveredEdge: { src: alpha.path, dst: gamma.path, rel: "doc.out" } }))).toBeNull();
+    expect(previewFor(state({ hoveredEdge: { src: alpha.path, dst: gamma.path, rel: "doc.out_links" } }))).toBeNull();
   });
 
   it("a hovered node wins over a hovered edge", () => {

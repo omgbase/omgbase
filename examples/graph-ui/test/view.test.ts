@@ -54,7 +54,7 @@ describe("axisStatus — an axis with no edges in the result", () => {
   });
 
   it("offers the axis's own pair first, then every other relationship with edges, never the empty ones", () => {
-    const counts = { before: 0, "before/after": 7, after: 7, owner: 4, "doc.out": 0 };
+    const counts = { before: 0, "before/after": 7, after: 7, owner: 4, "doc.out_links": 0 };
     expect(axisStatus("before", all, counts, 12).alternatives).toEqual([
       { name: "before/after", edges: 7 }, { name: "after", edges: 7 }, { name: "owner", edges: 4 },
     ]);

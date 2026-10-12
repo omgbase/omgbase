@@ -1261,9 +1261,9 @@
       }
     },
     {
-      "name": "relation-out",
-      "notes": "§1.2: `out` is the distinct docs linked to by open edges, (path, doc_id) order.",
-      "query": "select o: out collect { path values } from docs where path == \"index.md\"",
+      "name": "linked-docs-through-out-links",
+      "notes": "§1.2 (3.0 follow-up): there is no `out` relation — the documents a doc links TO are its link rows' destinations, `out_links collect distinct { from dst }`; `from dst` coerces an absent `dst` (a phantom [[wikilink]], an external link) to no row, and `distinct` collapses the targets linked twice. Projected here as paths in path order.",
+      "query": "select o: out_links collect distinct { select path values from dst order by path } from docs where path == \"index.md\"",
       "expect": {
         "hits": [
           {
@@ -1291,8 +1291,8 @@
       }
     },
     {
-      "name": "relation-in",
-      "query": "select i: in collect { path values } from docs where path == \"processes/magnum-opus.md\"",
+      "name": "linking-docs-through-in-links",
+      "query": "select i: in_links collect distinct { select path values from doc order by path } from docs where path == \"processes/magnum-opus.md\"",
       "expect": {
         "hits": [
           {
@@ -1305,6 +1305,112 @@
               "/substances/philosophers-stone.md",
               "/substances/prima-materia.md"
             ]
+          }
+        ],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "collect"
+      },
+      "notes": "§1.2 (3.0 follow-up): there is no `in` relation — the documents linking TO a doc are its inbound link rows' sources, `in_links collect distinct { from doc }`."
+    },
+    {
+      "name": "linked-docs-as-rows-as-values",
+      "notes": "§1.2 / §1.4: `out_links collect distinct { from dst }` with no projection yields the destination documents as rows-as-values `{ id, path }`; the dangling [[nigredo]] has no `dst` and contributes no row.",
+      "query": "select o: out_links collect distinct { from dst } from docs where path == \"substances/prima-materia.md\"",
+      "expect": {
+        "hits": [
+          {
+            "id": "d_13",
+            "path": "/substances/prima-materia.md",
+            "o": [
+              {
+                "id": "d_16",
+                "path": "/texts/emerald-tablet.md"
+              },
+              {
+                "id": "d_10",
+                "path": "/processes/magnum-opus.md"
+              },
+              {
+                "id": "d_7",
+                "path": "/processes/calcination.md"
+              }
+            ]
+          }
+        ],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "collect"
+      }
+    },
+    {
+      "name": "dst-values-absent-is-null",
+      "notes": "§1.2: `dst` projected as a value is the document row (rendered `{ id, path }`) or null where the link has no destination document — here the dangling [[nigredo]].",
+      "query": "select o: out_links collect { dst values } from docs where path == \"substances/prima-materia.md\"",
+      "expect": {
+        "hits": [
+          {
+            "id": "d_13",
+            "path": "/substances/prima-materia.md",
+            "o": [
+              {
+                "id": "d_16",
+                "path": "/texts/emerald-tablet.md"
+              },
+              {
+                "id": "d_10",
+                "path": "/processes/magnum-opus.md"
+              },
+              {
+                "id": "d_7",
+                "path": "/processes/calcination.md"
+              },
+              null
+            ]
+          }
+        ],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "collect"
+      }
+    },
+    {
+      "name": "exists-through-dst",
+      "notes": "§1.2: a link row's `dst` reaches the destination document, so a doc-level filter on what is linked TO needs no second query.",
+      "query": "from docs where out_links exists { where dst.type == \"practitioner\" }",
+      "expect": {
+        "hits": [
+          {
+            "id": "d_0",
+            "path": "/index.md"
+          },
+          {
+            "id": "d_11",
+            "path": "/substances/mercury.md"
+          },
+          {
+            "id": "d_15",
+            "path": "/substances/sulphur.md"
+          },
+          {
+            "id": "d_16",
+            "path": "/texts/emerald-tablet.md"
+          }
+        ],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "collect"
+      }
+    },
+    {
+      "name": "out-and-in-are-plain-properties",
+      "notes": "§9 (3.0 follow-up): `out` and `in` are no relations — on a doc they read an authored property like any other unknown name (absent here); `in` parses as a field in expression position.",
+      "query": "select o: out, i: in from docs where path == \"index.md\"",
+      "expect": {
+        "hits": [
+          {
+            "id": "d_0",
+            "path": "/index.md"
           }
         ],
         "truncated": false,

@@ -36,10 +36,10 @@ limit 40`);
     for (const src of STARTER_QUERIES) {
       const c = inferCandidates(parse(src), [{ id: "d_1", path: "/a.md", title: "A" }]);
       expect(c.map((x) => [x.name, x.kind, x.sources, x.defaults.edge])).toEqual([
-        ["doc.out", "links", ["builtin"], true],
-        ["doc.in", "backlinks", ["builtin"], false],
+        ["doc.out_links", "links", ["builtin"], true],
+        ["doc.in_links", "backlinks", ["builtin"], false],
       ]);
-      expect(defaultView(c)).toEqual({ edges: ["doc.out"], layout: { axis: null, direction: "forward" }, projection: { label: null, shown: [] } });
+      expect(defaultView(c)).toEqual({ edges: ["doc.out_links"], layout: { axis: null, direction: "forward" }, projection: { label: null, shown: [] } });
     }
   });
 

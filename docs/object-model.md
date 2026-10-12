@@ -165,11 +165,13 @@ https://example.com                  →  b_9 —references→ x_(example.com)  
 - **Two things are *not* edges.** (1) **Structural** relations — parent/child,
   sibling order, section containment — live in the block tree, not the edge
   tables; you navigate them with the query `follow` operator (`block.children`,
-  `doc.out`/`doc.in`) rather than edge rows. (2) **Inferred** relations
+  `section.children`) — and the citation graph through the link rows' reach-
+  throughs (`follow out_links collect { from dst }`, `dst` being a link's
+  destination document) rather than a dedicated edge walk. (2) **Inferred** relations
   (similarity, co-occurrence) are quarantined in a separate `inferred_edges`
   table, never mixed into the authored graph (as-built: a reserved stub).
 
-> **Surface:** `query "… follow doc.out"` (traverse the authored graph),
+> **Surface:** `query "… follow out_links collect { from dst }"` (traverse the authored graph),
 > `query "… follow refs(before)"` (walk the document references a frontmatter
 > relation holds — `refs(field)` resolves them to live documents; the reverse is
 > `^docs { ^path in list(before) }`, `^docs` being the repository's documents

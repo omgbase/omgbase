@@ -1,5 +1,9 @@
 //! The `graph` neighborhood macro (`spec/surface/README.md` §4): compiled to
-//! an OQX `follow doc.out` / `doc.in` walk run through the shared runner and
+//! an OQX `follow out_links collect { from dst }` / `follow in_links collect
+//! { from doc }` walk over the link rows (3.0 follow-up: there are no
+//! `out`/`in` relations — `dst` is a link's destination document, `doc` its
+//! source; an absent `dst`, an external or phantom target, contributes no
+//! successor) run through the shared runner and
 //! shaped into `{ documents, links, frontier }`. Port of
 //! `packages/core/src/mcp/graph.ts`; nothing here walks the graph itself.
 
@@ -104,7 +108,7 @@ fn build_user_select(select: &[String]) -> Result<(Vec<SelectItem>, Vec<Option<S
 ///
 /// ```text
 /// select _depth: $depth, _stop: $stop, _links: doc.<dir>_links collect { <edge fields> } <user items>
-/// from docs where id == <root> or … follow distinct doc.<dir> { depth <depth> }
+/// from docs where id == <root> or … follow distinct <dir>_links collect { from <dst | doc> } { depth <depth> }
 /// ```
 fn build_query(root_ids: &[String], dir: &str, depth: u32, user_select: &[SelectItem]) -> String {
     let mut edges_body = build::subquery();
@@ -139,9 +143,13 @@ fn build_query(root_ids: &[String], dir: &str, depth: u32, user_select: &[Select
     } else {
         build::or(seed)
     });
-    let mut walk = build::follow(vec![FollowDestination::Relation(build::path(&[
-        "doc", dir,
-    ]))]);
+    let mut step = build::subquery();
+    step.from = vec![build::ident(if dir == "out" { "dst" } else { "doc" })];
+    let mut walk = build::follow(vec![FollowDestination::Block(Box::new(build::op(
+        build::ident(&format!("{dir}_links")),
+        Consumer::Collect,
+        step,
+    )))]);
     walk.distinct = true;
     walk.depth = Some(depth);
     q.follow = Some(walk);
@@ -430,7 +438,9 @@ mod tests {
         assert!(
             q.starts_with("select _depth: $depth, _stop: $stop, _links: doc.out_links collect {")
         );
-        assert!(q.ends_with("from docs where id == \"d_0\" follow distinct doc.out { depth 2 }"));
+        assert!(q.ends_with(
+            "from docs where id == \"d_0\" follow distinct out_links collect { from dst } { depth 2 }"
+        ));
         assert!(oqx::parse_string(&q).is_ok());
         // several roots: an `or` seed (the canonical print of the `or` node since
         // oqx 0.18); the generated text is exactly the macro's pinned shape
@@ -438,7 +448,7 @@ mod tests {
         let q = build_query(&["d_14".to_owned(), "d_15".to_owned()], "in", 8, &[]);
         assert_eq!(
             q,
-            "select _depth: $depth, _stop: $stop, _links: doc.in_links collect { id: id, doc_id: doc_id, block_id: block_id, via_id: via_id, dst_id: dst_id, dst_path: dst_path, uri: uri, dst_kind: dst_kind, predicate: predicate, provenance: provenance, anchor: anchor, field: field } from docs where id == \"d_14\" or id == \"d_15\" follow distinct doc.in { depth 8 }"
+            "select _depth: $depth, _stop: $stop, _links: doc.in_links collect { id: id, doc_id: doc_id, block_id: block_id, via_id: via_id, dst_id: dst_id, dst_path: dst_path, uri: uri, dst_kind: dst_kind, predicate: predicate, provenance: provenance, anchor: anchor, field: field } from docs where id == \"d_14\" or id == \"d_15\" follow distinct in_links collect { from doc } { depth 8 }"
         );
     }
 

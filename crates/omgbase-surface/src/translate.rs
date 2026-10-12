@@ -203,8 +203,6 @@ pub fn non_property_handles(t: Target) -> &'static [&'static str] {
             "doc",
             "blocks",
             "nodes",
-            "out",
-            "in",
             "out_links",
             "in_links",
             "data",
@@ -229,7 +227,7 @@ pub fn non_property_handles(t: Target) -> &'static [&'static str] {
             "children",
             "attrs",
         ],
-        Target::Links => &["doc"],
+        Target::Links => &["doc", "dst"],
     }
 }
 
@@ -316,9 +314,12 @@ fn is_seg(s: &str) -> bool {
 /// `frontmatter.<k>` / `inline.<k>` performs (`spec/surface` §1.2; the
 /// context's `doc_prop(doc_id, key, Some(source))`): both the row and the
 /// count are of that source's rows only. The merged `data.<k>` read is the
-/// bare read, so it passes no source. Same text as the reference's
-/// `propSubquery`.
-fn prop_row(doc_alias: &str, key: &str, select: &str, source: Option<&str>) -> Option<String> {
+/// bare read, so it passes no source. `doc_id` is the SQL expression naming
+/// the document: the scan's `d.doc_id`, or a link's `e.dst_node` for a
+/// `dst.<k>` read (the destination's rows by its id — a non-document or
+/// phantom destination has none, so the read is NULL exactly where `dst` is
+/// absent in memory). Same text as the reference's `propSubquery`.
+fn prop_row(doc_id: &str, key: &str, select: &str, source: Option<&str>) -> Option<String> {
     if !is_seg(key) {
         return None;
     }
@@ -326,17 +327,17 @@ fn prop_row(doc_alias: &str, key: &str, select: &str, source: Option<&str>) -> O
     let src2 = source.map_or(String::new(), |s| format!(" AND p2.source = '{s}'"));
     Some(format!(
         "(SELECT {select} FROM properties p \
-         WHERE p.doc_id = {doc_alias}.doc_id AND p.key = '{key}' AND p.card = 'scalar' AND p.deleted_commit IS NULL{src} \
-         AND (SELECT COUNT(*) FROM properties p2 WHERE p2.doc_id = {doc_alias}.doc_id AND p2.key = '{key}' AND p2.deleted_commit IS NULL{src2}) = 1 \
+         WHERE p.doc_id = {doc_id} AND p.key = '{key}' AND p.card = 'scalar' AND p.deleted_commit IS NULL{src} \
+         AND (SELECT COUNT(*) FROM properties p2 WHERE p2.doc_id = {doc_id} AND p2.key = '{key}' AND p2.deleted_commit IS NULL{src2}) = 1 \
          LIMIT 1)"
     ))
 }
 
 /// A single-valued document property's scalar value (`val_text`, `val_num`
-/// and `val_bool` coalesced), or NULL.
-fn prop_scalar(doc_alias: &str, key: &str, source: Option<&str>) -> Option<String> {
+/// and `val_bool` coalesced), or NULL. `doc_id` as in [`prop_row`].
+fn prop_scalar(doc_id: &str, key: &str, source: Option<&str>) -> Option<String> {
     prop_row(
-        doc_alias,
+        doc_id,
         key,
         "COALESCE(p.val_text, p.val_num, p.val_bool)",
         source,
@@ -380,11 +381,12 @@ enum Shape {
     Const(Value),
     /// `json_extract(col, 'path')`.
     Json { col: String, path: String },
-    /// A document property read: the owning document's alias, the key and
-    /// the source a handle scoped it to (`frontmatter.<k>` / `inline.<k>`;
+    /// A document property read: the SQL expression naming the document
+    /// (`d.doc_id`; a link's `e.dst_node` for `dst.<k>`), the key and the
+    /// source a handle scoped it to (`frontmatter.<k>` / `inline.<k>`;
     /// `None` for the bare or `data.<k>` read).
     Prop {
-        doc_alias: String,
+        doc_id: String,
         key: String,
         source: Option<&'static str>,
     },
@@ -445,12 +447,18 @@ impl Operand {
         })
     }
 
+    /// A property of the document aliased `doc_alias` (its `doc_id` column).
     fn prop(doc_alias: &str, key: &str, source: Option<&'static str>) -> Option<Self> {
+        Self::prop_of(&format!("{doc_alias}.doc_id"), key, source)
+    }
+
+    /// A property of the document the SQL expression `doc_id` names.
+    fn prop_of(doc_id: &str, key: &str, source: Option<&'static str>) -> Option<Self> {
         Some(Self {
-            frag: Frag::bare(prop_scalar(doc_alias, key, source)?),
+            frag: Frag::bare(prop_scalar(doc_id, key, source)?),
             ty: Ty::Prop,
             shape: Shape::Prop {
-                doc_alias: doc_alias.to_owned(),
+                doc_id: doc_id.to_owned(),
                 key: key.to_owned(),
                 source,
             },
@@ -616,6 +624,49 @@ fn operand(e: &Expr, ctx: &TranslateCtx<'_>) -> Option<Operand> {
                 }
                 return Operand::prop(d, k, None);
             }
+            // dst.<x> reach-through from a link (`spec/surface` §1.2, 3.0
+            // follow-up): the destination DOCUMENT, keyed by the row's own
+            // `dst_node` — the lookup `dst_path` already runs. A property read
+            // scopes `properties` by `e.dst_node` directly; the document's own
+            // columns are a primary-key probe `(SELECT … FROM docs dd WHERE
+            // dd.doc_id = e.dst_node)` — NULL wherever `dst` is absent in
+            // memory (a block or external destination, a phantom). `dst.raw` /
+            // `dst.title` / `dst.tags` and the relations stay residual, as
+            // `doc.*`'s do.
+            if *head == "dst" && target == Target::Links {
+                let dst_id = format!("{s}.dst_node");
+                if rest.len() == 2
+                    && let Some(source) = handle_source(rest[0])
+                {
+                    return Operand::prop_of(&dst_id, rest[1], source);
+                }
+                if rest.len() != 1 {
+                    return None;
+                }
+                let k = rest[0];
+                let probe = |col: &str| {
+                    Operand::text(format!(
+                        "(SELECT {col} FROM docs dd WHERE dd.doc_id = {dst_id})"
+                    ))
+                };
+                return match k {
+                    "id" => probe("dd.doc_id"),
+                    "path" => probe("'/' || dd.path"),
+                    "hash" => probe("lower(hex(dd.file_hash))"),
+                    "updated_at" => probe(
+                        "(SELECT c.ts FROM revisions r JOIN commits c ON c.commit_id = r.commit_id WHERE r.rev_id = dd.current_rev)",
+                    ),
+                    "format" => probe("dd.format"),
+                    _ if k.starts_with('$')
+                        || row_attributes(Target::Docs).contains(&k)
+                        || non_property_handles(Target::Docs).contains(&k)
+                        || Target::parse(k).is_some() =>
+                    {
+                        None
+                    }
+                    _ => Operand::prop_of(&dst_id, k, None),
+                };
+            }
             // block.<x> reach-through from a node: the block's identity is the
             // node's FK (`block.id` → `n.block_id`, `block.path` → the joined
             // `d.path`, `block.doc_id` → `n.doc_id` — FK elimination again);
@@ -742,7 +793,7 @@ fn typed_compare(op: BinaryOp, sql_op: &str, l: &Operand, r: &Operand) -> Option
         ),
         (
             Shape::Prop {
-                doc_alias,
+                doc_id,
                 key,
                 source,
             },
@@ -751,7 +802,7 @@ fn typed_compare(op: BinaryOp, sql_op: &str, l: &Operand, r: &Operand) -> Option
             format!(
                 "{} {wrap}",
                 prop_row(
-                    doc_alias,
+                    doc_id,
                     key,
                     &format!("p.type = 'bool' AND {}", sides("p.val_bool")),
                     *source,
@@ -761,7 +812,7 @@ fn typed_compare(op: BinaryOp, sql_op: &str, l: &Operand, r: &Operand) -> Option
         ),
         (
             Shape::Prop {
-                doc_alias,
+                doc_id,
                 key,
                 source,
             },
@@ -770,7 +821,7 @@ fn typed_compare(op: BinaryOp, sql_op: &str, l: &Operand, r: &Operand) -> Option
             format!(
                 "{} {wrap}",
                 prop_row(
-                    doc_alias,
+                    doc_id,
                     key,
                     &format!("p.type = 'number' AND {}", sides("p.val_num")),
                     *source,
@@ -2299,6 +2350,91 @@ mod tests {
         );
         assert_eq!(
             translate_predicate(&pred("block.hash == \"x\""), &nodes),
+            None
+        );
+    }
+
+    /// `dst.<k>` on a link reaches the destination DOCUMENT by the row's own
+    /// `dst_node` (3.0 follow-up), byte for byte the reference's SQL.
+    #[test]
+    fn dst_reach_through_reads_the_destination_by_its_foreign_key() {
+        let edges = TranslateCtx {
+            target: Target::Links,
+            self_alias: "e",
+            ..DOCS
+        };
+        // identity and the document's own columns: a primary-key probe, NULL
+        // where `dst` is absent in memory
+        assert_eq!(
+            translate_predicate(&pred("dst.id == \"d_2\""), &edges),
+            frag(
+                "((SELECT dd.doc_id FROM docs dd WHERE dd.doc_id = e.dst_node) IS ?)",
+                &[text("d_2")]
+            )
+        );
+        assert_eq!(
+            translate_predicate(&pred("dst.path == \"/a.md\""), &edges),
+            frag(
+                "((SELECT '/' || dd.path FROM docs dd WHERE dd.doc_id = e.dst_node) IS ?)",
+                &[text("/a.md")]
+            )
+        );
+        assert_eq!(
+            translate_predicate(&pred("dst.format == \"yaml\""), &edges),
+            frag(
+                "((SELECT dd.format FROM docs dd WHERE dd.doc_id = e.dst_node) IS ?)",
+                &[text("yaml")]
+            )
+        );
+        assert!(
+            translate_predicate(&pred("dst.hash == \"ab\""), &edges)
+                .is_some_and(|f| f.sql.contains("lower(hex(dd.file_hash))"))
+        );
+        assert!(
+            translate_predicate(&pred("dst.updated_at == \"t\""), &edges)
+                .is_some_and(|f| f.sql.contains("WHERE r.rev_id = dd.current_rev"))
+        );
+        // a property: the properties scope keyed by e.dst_node itself
+        let prop = translate_predicate(&pred("dst.layer == \"canon\""), &edges).expect("pushed");
+        assert!(
+            prop.sql
+                .contains("p.doc_id = e.dst_node AND p.key = 'layer'"),
+            "{}",
+            prop.sql
+        );
+        assert_eq!(prop.params, vec![text("canon")]);
+        // a typed push keeps the same scope
+        assert!(
+            translate_predicate(&pred("dst.era > 1600"), &edges)
+                .is_some_and(|f| f.sql.contains("p.doc_id = e.dst_node AND p.key = 'era'"))
+        );
+        // through a source handle
+        assert!(
+            translate_predicate(&pred("dst.frontmatter.layer == \"canon\""), &edges)
+                .is_some_and(|f| f.sql.contains("p.source = 'frontmatter'"))
+        );
+        // the attributes the owner's reach-through declines decline here too,
+        // and so do the relations, the whole handle and a bare `dst`
+        for k in [
+            "raw",
+            "title",
+            "tags",
+            "nodes",
+            "out_links",
+            "data",
+            "docs",
+            "$x",
+        ] {
+            assert_eq!(
+                translate_predicate(&pred(&format!("dst.{k} == \"x\"")), &edges),
+                None,
+                "dst.{k}"
+            );
+        }
+        assert_eq!(translate_predicate(&pred("dst == null"), &edges), None);
+        // `dst` is a link's name only
+        assert_eq!(
+            translate_predicate(&pred("dst.layer == \"canon\""), &DOCS),
             None
         );
     }

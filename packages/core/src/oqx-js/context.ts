@@ -52,7 +52,7 @@ function tagAll(rows: Record<string, unknown>[], t: Target): Row[] {
 // `$depth`, `$stop`, `$leaf`, `$frontier`, `$ordinal` are values the LANGUAGE
 // injects into a scope; omgbase adds no `$` names. Every engine attribute is a
 // bare snake_case name that WINS on collision — the convention the relations
-// (`children`, `blocks`, `out`, `in`, `doc`, `frontmatter`, …) always followed:
+// (`children`, `blocks`, `out_links`, `doc`, `frontmatter`, …) always followed:
 // a bare name that is an engine attribute reads the engine's value, never the
 // author's. The attributes: every row's `id`/`path`; docs' and blocks' `raw`/
 // `hash`/`updated_at`; docs' `title` (the computed title) and `tags` (authored
@@ -306,12 +306,9 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
     docs: {
       nodes: (r) => docNodesInOrder(r.doc_id, r.path),
       blocks: (r) => tagAll(docBlocksPreorder(r.doc_id, r.path).map((x) => x.row), "blocks"),
-      out: (r) => tagAll(all(
-        `SELECT DISTINCT d2.* FROM docs d2 JOIN edges e ON e.dst_node = d2.doc_id
-         WHERE e.src_doc = ? AND e.to_commit IS NULL AND d2.repo_id = ? AND d2.deleted_commit IS NULL ORDER BY d2.path, d2.doc_id`, r.doc_id, repoId), "docs"),
-      in: (r) => tagAll(all(
-        `SELECT DISTINCT d2.* FROM docs d2 JOIN edges e ON e.src_doc = d2.doc_id
-         WHERE e.dst_node = ? AND e.to_commit IS NULL AND d2.repo_id = ? AND d2.deleted_commit IS NULL ORDER BY d2.path, d2.doc_id`, r.doc_id, repoId), "docs"),
+      // The linked / linking DOCUMENTS are reached through the link rows (3.0
+      // follow-up, §9: the `out` / `in` relations are gone): `out_links collect
+      // distinct { from dst }` and `in_links collect distinct { from doc }`.
       out_links: (r) => tagAll(all(`SELECT e.*, ? AS __path FROM edges e WHERE e.src_doc = ? AND e.to_commit IS NULL ORDER BY e.predicate, e.edge_id`, r.path, r.doc_id), "links"),
       in_links: (r) => tagAll(all(
         `SELECT e.*, d.path AS __path FROM edges e JOIN docs d ON d.doc_id = e.src_doc
@@ -415,6 +412,15 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
     const path = row.__path;
     if (typeof path !== "string") return tag(one(`SELECT * FROM docs WHERE doc_id = ?`, id), "docs");
     return lazyOwner({ doc_id: id, path }, "docs", () => one(`SELECT * FROM docs WHERE doc_id = ?`, id));
+  };
+  // `dst` on a link row (spec/surface §1.2, 3.0 follow-up): the destination
+  // DOCUMENT row when the link points at one (`dst_kind == "document"` and the
+  // document exists — a phantom target has the kind and no row), read by
+  // `dst_id` exactly as `dst_path` is; absent for a `block` or `external`
+  // destination (never reached into). `doc` stays the source document.
+  const destinationDoc = (row: Row): Row | undefined => {
+    if (row.dst_kind !== "document") return undefined;
+    return tag(one(`SELECT * FROM docs WHERE doc_id = ?`, row.dst_node), "docs");
   };
   const owningBlock = (row: Row): Row | undefined => {
     if (!row.block_id) return undefined;
@@ -549,9 +555,10 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
     if (t === "blocks" && key === "block") return r;
     if (t === "nodes" && key === "section") return r;
 
-    // reach-through to owning entities.
+    // reach-through to owning entities, and from a link row to its destination.
     if (t !== "docs" && key === "doc") return owningDoc(r);
     if (t === "nodes" && key === "block") return owningBlock(r);
+    if (t === "links" && key === "dst") return destinationDoc(r);
 
     // relations.
     const rels = rel[t];

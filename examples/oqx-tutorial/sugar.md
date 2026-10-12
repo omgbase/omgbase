@@ -49,7 +49,9 @@ $ omg query 'select path, open: nodes { value where kind == "md:task" and not ch
 ```
 
 One carve-out: after a `follow` destination a brace is still the **options**
-block — `follow doc.out { depth 2 }` bounds the walk, it does not collect. The
+block — `follow children { depth 2 }` bounds the walk, it does not collect
+(the citation walk's own block, `follow out_links collect { from dst }`, is a
+destination block, and its options come in a second brace after it). The
 top level is unchanged too: `type == "substance" from docs` is still the
 clause-order error, because `where` follows `from`.
 

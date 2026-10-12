@@ -9,7 +9,8 @@ import { graphNeighborhood } from "./graph.js";
 import { EngineError } from "./errors.js";
 import "../format/index.js";
 
-// `graph` is a MACRO over OQX `follow doc.out`/`doc.in` — it compiles args into a
+// `graph` is a MACRO over OQX `follow out_links collect { from dst }` /
+// `in_links collect { from doc }` — it compiles args into a
 // follow query and runs it through the shared runner. Edges are populated by the
 // sync path (extraction + resolution + maintainEdges), so these tests write real
 // files and run processCheckpoint, exactly like follow-graph.test.ts.
@@ -54,10 +55,10 @@ beforeEach(() => {
 });
 
 describe("graph — neighborhood macro over OQX follow", () => {
-  it("delegates: the generated query is an OQX `follow doc.out`", async () => {
+  it("delegates: the generated query is an OQX `follow out_links collect { from dst }`", async () => {
     const r = await graph({ roots: ["a.md"], degrees: 1, direction: "out" });
     expect(r.queries).toHaveLength(1);
-    expect(r.queries[0]).toContain("follow distinct doc.out { depth 2 }");
+    expect(r.queries[0]).toContain("follow distinct out_links collect { from dst } { depth 2 }");
     expect(r.queries[0]).toMatch(/^select _depth: \$depth, .* from docs where \id == "d_/);
   });
 
@@ -94,7 +95,7 @@ describe("graph — neighborhood macro over OQX follow", () => {
     // c → a and d → a link to a.
     const r = await graph({ roots: ["a.md"], degrees: 1, direction: "in" });
     expect(r.documents.map((d) => d.path).sort()).toEqual(["/a.md", "/c.md", "/d.md"]);
-    expect(r.queries[0]).toContain("follow distinct doc.in");
+    expect(r.queries[0]).toContain("follow distinct in_links collect { from doc }");
   });
 
   it("both directions — unions out and in neighbors", async () => {
@@ -102,8 +103,8 @@ describe("graph — neighborhood macro over OQX follow", () => {
     // out: b ; in: c, d ; plus the root a.
     expect(r.documents.map((d) => d.path).sort()).toEqual(["/a.md", "/b.md", "/c.md", "/d.md"]);
     expect(r.queries).toHaveLength(2);
-    expect(r.queries[0]).toContain("doc.out");
-    expect(r.queries[1]).toContain("doc.in");
+    expect(r.queries[0]).toContain("out_links collect { from dst }");
+    expect(r.queries[1]).toContain("in_links collect { from doc }");
   });
 
   it("edges carry provenance and preserve external + phantom endpoints", async () => {

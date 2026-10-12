@@ -25,7 +25,7 @@
   "cases": [
     {
       "name": "doc-out-distinct-closure",
-      "query": "from docs where path == \"substances/philosophers-stone.md\" follow distinct doc.out",
+      "query": "from docs where path == \"substances/philosophers-stone.md\" follow distinct out_links collect { from dst }",
       "expect": {
         "hits": [
           {
@@ -76,7 +76,7 @@
     },
     {
       "name": "doc-out-distinct-with-depth-and-stop",
-      "query": "select p: path, d: $depth, s: $stop from docs where path == \"substances/philosophers-stone.md\" follow distinct doc.out",
+      "query": "select p: path, d: $depth, s: $stop from docs where path == \"substances/philosophers-stone.md\" follow distinct out_links collect { from dst }",
       "expect": {
         "hits": [
           {
@@ -158,7 +158,7 @@
     {
       "name": "doc-in-direct-citers",
       "notes": "seed is $depth 1; a post-walk `$depth == 2` keeps the direct backlinks.",
-      "query": "from docs where path == \"processes/magnum-opus.md\" && $depth == 2 follow doc.in { depth 2 }",
+      "query": "from docs where path == \"processes/magnum-opus.md\" && $depth == 2 follow in_links collect { from doc } { depth 2 }",
       "expect": {
         "hits": [
           {
@@ -189,7 +189,7 @@
     },
     {
       "name": "cycle-admitted-once",
-      "query": "select p: path, s: $stop from docs where path == \"practitioners/paracelsus.md\" && $stop == \"cycle\" follow doc.out { depth 3 }",
+      "query": "select p: path, s: $stop from docs where path == \"practitioners/paracelsus.md\" && $stop == \"cycle\" follow out_links collect { from dst } { depth 3 }",
       "expect": {
         "hits": [
           {
@@ -207,7 +207,7 @@
     {
       "name": "occurrences-count",
       "notes": "default follow keeps one occurrence per distinct walk path.",
-      "query": "docs count { where path == \"substances/philosophers-stone.md\" follow doc.out }",
+      "query": "docs count { where path == \"substances/philosophers-stone.md\" follow out_links collect { from dst } }",
       "expect": {
         "hits": [],
         "truncated": false,
@@ -218,7 +218,7 @@
     },
     {
       "name": "distinct-count",
-      "query": "docs count { where path == \"substances/philosophers-stone.md\" follow distinct doc.out }",
+      "query": "docs count { where path == \"substances/philosophers-stone.md\" follow distinct out_links collect { from dst } }",
       "expect": {
         "hits": [],
         "truncated": false,
@@ -229,7 +229,7 @@
     },
     {
       "name": "frontier-cuts-the-walk",
-      "query": "select p: path, ty: type, s: $stop from docs where path == \"index.md\" follow distinct doc.out { frontier type == \"practitioner\" }",
+      "query": "select p: path, ty: type, s: $stop from docs where path == \"index.md\" follow distinct out_links collect { from dst } { frontier type == \"practitioner\" }",
       "expect": {
         "hits": [
           {
@@ -339,7 +339,7 @@
     {
       "name": "follow-local-where",
       "notes": "successors failing the follow-local `where` drop out of the walk.",
-      "query": "select p: path, d: $depth, s: $stop from docs where path == \"index.md\" follow distinct doc.out { where layer == \"canon\" depth 2 }",
+      "query": "select p: path, d: $depth, s: $stop from docs where path == \"index.md\" follow distinct out_links collect { from dst } { where layer == \"canon\" depth 2 }",
       "expect": {
         "hits": [
           {
@@ -420,7 +420,7 @@
     },
     {
       "name": "by-rekeys-identity",
-      "query": "select p: path, s: $stop from docs where path == \"substances/philosophers-stone.md\" follow doc.out { by type }",
+      "query": "select p: path, s: $stop from docs where path == \"substances/philosophers-stone.md\" follow out_links collect { from dst } { by type }",
       "expect": {
         "hits": [
           {
@@ -461,7 +461,7 @@
     },
     {
       "name": "depth-bound",
-      "query": "select p: path, d: $depth from docs where path == \"texts/emerald-tablet.md\" follow distinct doc.out { depth 2 }",
+      "query": "select p: path, d: $depth from docs where path == \"texts/emerald-tablet.md\" follow distinct out_links collect { from dst } { depth 2 }",
       "expect": {
         "hits": [
           {
@@ -502,7 +502,7 @@
     },
     {
       "name": "leaf-sugar",
-      "query": "select p: path, s: $stop from docs where path == \"substances/salt.md\" && $leaf follow distinct doc.out",
+      "query": "select p: path, s: $stop from docs where path == \"substances/salt.md\" && $leaf follow distinct out_links collect { from dst }",
       "expect": {
         "hits": [
           {
@@ -525,7 +525,7 @@
     },
     {
       "name": "ordinal-over-the-walk",
-      "query": "select p: path, o: $ordinal, d: $depth from docs where path == \"substances/sulphur.md\" follow distinct doc.out { depth 2 } order by $ordinal",
+      "query": "select p: path, o: $ordinal, d: $depth from docs where path == \"substances/sulphur.md\" follow distinct out_links collect { from dst } { depth 2 } order by $ordinal",
       "expect": {
         "hits": [
           {
@@ -557,7 +557,7 @@
     },
     {
       "name": "doc-in-with-stop",
-      "query": "select p: path, d: $depth, s: $stop from docs where path == \"processes/calcination.md\" follow distinct doc.in { depth 2 }",
+      "query": "select p: path, d: $depth, s: $stop from docs where path == \"processes/calcination.md\" follow distinct in_links collect { from doc } { depth 2 }",
       "expect": {
         "hits": [
           {
@@ -1039,7 +1039,7 @@
     {
       "name": "follow-page-limit",
       "notes": "§1.4: a follow's rows page like any collect (default order, keyset cursor).",
-      "query": "from docs where path == \"substances/philosophers-stone.md\" follow distinct doc.out",
+      "query": "from docs where path == \"substances/philosophers-stone.md\" follow distinct out_links collect { from dst }",
       "limit": 4,
       "expect": {
         "hits": [
@@ -1067,7 +1067,7 @@
     },
     {
       "name": "correlated-follow-where-same-type",
-      "query": "select p: path, d: $depth, s: $stop from docs where path == \"processes/magnum-opus.md\" follow doc.out { where type == ^type }",
+      "query": "select p: path, d: $depth, s: $stop from docs where path == \"processes/magnum-opus.md\" follow out_links collect { from dst } { where type == ^type }",
       "notes": "`spec/oqx` 0.14: `^` in the follow-local `where` is the frontier row (`^^` the walk's enclosing scope), so the walk steps only into citations of the citer's own type.",
       "expect": {
         "hits": [
@@ -1107,7 +1107,7 @@
     },
     {
       "name": "two-destinations-union",
-      "query": "select p: path, d: $depth from docs where path == \"substances/prima-materia.md\" follow doc.out, doc.in { depth 2 }",
+      "query": "select p: path, d: $depth from docs where path == \"substances/prima-materia.md\" follow out_links collect { from dst }, in_links collect { from doc } { depth 2 }",
       "notes": "a destination list walks the union of its relations; within one step the successors are deduplicated by identity (magnum-opus is both cited and a citer).",
       "expect": {
         "hits": [
@@ -1161,8 +1161,8 @@
     },
     {
       "name": "destination-block-equals-doc-in",
-      "query": "select p: path, d: $depth from docs where path == \"processes/magnum-opus.md\" follow ^docs collect { where doc.out exists { where path == ^^path } } { depth 2 }",
-      "notes": "a destination block is re-evaluated per frontier row with `^` bound to it (`^docs` from the frontier row is the root's documents); backlinks computed as a block equal `follow doc.in { depth 2 }` (`doc-in-direct-citers`).",
+      "query": "select p: path, d: $depth from docs where path == \"processes/magnum-opus.md\" follow ^docs collect { where out_links exists { where dst_path == ^^path } } { depth 2 }",
+      "notes": "a destination block is re-evaluated per frontier row with `^` bound to it (`^docs` from the frontier row is the root's documents); backlinks computed as a block over the root's documents equal `follow in_links collect { from doc } { depth 2 }` (`doc-in-direct-citers`).",
       "expect": {
         "hits": [
           {

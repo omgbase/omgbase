@@ -121,7 +121,9 @@ different sets. Several tests depend on this; keep it fully checked.
 - **Recursive `follow`** — the corpus is ingested through `processCheckpoint`
   (the real sync path) so the wikilink/markdown-link graph is extracted to
   doc→doc `references` edges (89 open edges — wikilinks resolve by path, so every `[[slug]]` is a `phantom:` stub), which the **citation-graph** demos
-  walk: `follow doc.out` (outgoing), `follow doc.in` (backlinks). It exercises
+  walk: `follow out_links collect { from dst }` (outgoing), `follow in_links
+  collect { from doc }` (backlinks — the link rows walked to the documents at
+  their other end; there is no `out`/`in` relation since the 3.0 follow-up). It exercises
   every follow feature — `distinct` (philosophers-stone's 10-document transitive
   citation closure) vs default per-path occurrences (56), a post-walk `$depth`
   filter (the 5 documents that directly cite magnum-opus), **cyclic-safety**
@@ -129,11 +131,13 @@ different sets. Several tests depend on this; keep it fully checked.
   `frontier type == "practitioner"` (biographies as the edge of the walk),
   `by type` (re-keying identity so the walk stops when a document *type*
   repeats), and `$ordinal`; and the `spec/oqx` 0.14 forms — a **correlated
-  follow-local `where`** (`follow doc.out { where type == ^type }`, `^` being
-  the frontier row), a **destination list** (`follow doc.out, doc.in`, unioned
-  by identity within a step) and a **destination block** (`follow ^docs
-  collect { where doc.out exists { where path == ^^path } }`, backlinks
-  computed per frontier row, equal to `doc.in`). The **structural** relations ride the heading
+  follow-local `where`** (`follow out_links collect { from dst } { where type
+  == ^type }`, `^` being the frontier row), a **destination list** (`follow
+  out_links collect { from dst }, in_links collect { from doc }`, unioned by
+  identity within a step) and a **destination block over the root's documents**
+  (`follow ^docs collect { where out_links exists { where dst_path == ^^path }
+  }`, backlinks computed per frontier row, equal to `in_links collect { from
+  doc }`). The **structural** relations ride the heading
   outline (`section.children` — magnum-opus's `#` over four `##`, with `$leaf`)
   and the block tree (`block.children` — a bullet list down to its items),
   including a **nested follow-collect** projecting each process document's
@@ -200,7 +204,7 @@ will fail tests by design — that is the point. If you add a document:
 - keep `salt.md`'s supply list **fully checked** (several tests use it as the
   has-tasks / has-open-tasks discriminator);
 - give a substance/process a `slug` (= filename base) if anything wikilinks it,
-  and keep the wikilink graph in mind — the correlation AND `follow doc.out/in`
+  and keep the wikilink graph in mind — the correlation AND the citation-walk
   tests pin exact resolved sets (the graph is extracted to `references` edges by
   the `processCheckpoint` ingest), including `prima-materia.md`'s deliberately
   dangling `[[nigredo]]`;

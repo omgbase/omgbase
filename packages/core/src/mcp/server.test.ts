@@ -51,7 +51,7 @@ describe("MCP server skeleton", () => {
   it("lists the full tool surface", async () => {
     const tools = await client.listTools();
     const names = tools.tools.map((t) => t.name).sort();
-    for (const t of ["docs_tree", "docs_list", "docs_outline", "docs_read", "docs_read_many", "blocks_read", "blocks_read_many", "query", "query_syntax", "graph", "blocks_search", "blocks_resolve", "apply", "blocks_insert", "blocks_update", "blocks_move", "blocks_remove", "blocks_split", "blocks_merge", "blocks_check", "nodes_set", "blocks_append", "docs_append", "links_retarget", "links_stale", "links_repair", "docs_create", "docs_move", "docs_delete", "docs_set_meta", "docs_update", "blocks_history", "docs_diff", "docs_diff_unified", "docs_read_at", "docs_history", "changes_since", "repos_status", "sync_status"]) {
+    for (const t of ["docs_tree", "docs_list", "docs_outline", "docs_read", "docs_read_many", "blocks_read", "blocks_read_many", "nodes_block_read", "query", "query_syntax", "graph", "blocks_search", "blocks_resolve", "apply", "blocks_insert", "blocks_update", "blocks_move", "blocks_remove", "blocks_split", "blocks_merge", "blocks_check", "nodes_set", "blocks_append", "docs_append", "links_retarget", "links_stale", "links_repair", "docs_create", "docs_move", "docs_delete", "docs_set_meta", "docs_update", "blocks_history", "docs_diff", "docs_diff_unified", "docs_read_at", "docs_history", "changes_since", "repos_status", "sync_status"]) {
       expect(names, `missing tool ${t}`).toContain(t);
     }
   });

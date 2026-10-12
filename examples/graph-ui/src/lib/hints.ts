@@ -9,9 +9,10 @@
 //      follows the STRINGS, and since surface 1.5 the server refuses the hit
 //      (`filter_invalid`, "a hit must be a document, block, node or edge row").
 //      `follow refs(before)` resolves the references to the documents.
-//      Not flagged: `refs(…)`, a destination block, a dotted path (`doc.out`,
-//      `$it.in`), a `$`-intrinsic, and the structural relations (`in`, `out`,
-//      `children`, `subsections`, …) which yield rows by themselves.
+//      Not flagged: `refs(…)`, a destination block (`out_links collect { from
+//      dst }`), a dotted path (`doc.out_links`, `$it.in`), a `$`-intrinsic, and
+//      the structural relations (`out_links`, `in_links`, `children`,
+//      `subsections`, the 2.x `in`/`out`, …) which yield rows by themselves.
 //   2. the path form, once the server's surface version is known (lib/paths.ts):
 //      on a ≥ 2.0 server `"/" + path` (or `"/" + ^path`, `"/" + dst_path`; the
 //      pre-3.0 spellings `$path`/`$dst_path` are read too) adds a second slash

@@ -163,7 +163,7 @@
     {
       "name": "root-object-collection-as-receiver-probe",
       "notes": "§1.1, §9: `^$it.docs` serves as a correlated receiver (the lazy handle reaches the store index) exactly like `^docs`.",
-      "query": "select cited: ^$it.docs collect { path where doc.out exists { where path == ^^path } } from docs where type == \"substance\"",
+      "query": "select cited: ^$it.docs collect { path where out_links exists { where dst.path == ^^path } } from docs where type == \"substance\"",
       "expect": {
         "hits": [
           {

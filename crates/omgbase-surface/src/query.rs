@@ -157,9 +157,10 @@ impl OqxResult {
 /// SQL and the in-memory engine agree by construction.
 const PATH_ATTRIBUTES: [&str; 2] = ["path", "dst_path"];
 /// The handles through which a member read reaches a ROW's `path` (`doc.path`,
-/// `block.path`, `$it.path`); a member read through a source handle
-/// (`data.path`, `frontmatter.path`) is the author's value and is never rooted.
-const ROW_HANDLES: [&str; 3] = ["doc", "block", "$it"];
+/// `block.path`, a link's `dst.path`, `$it.path`); a member read through a
+/// source handle (`data.path`, `frontmatter.path`) is the author's value and
+/// is never rooted.
+const ROW_HANDLES: [&str; 4] = ["doc", "block", "dst", "$it"];
 
 fn is_path_read(e: &Expr) -> bool {
     match e {

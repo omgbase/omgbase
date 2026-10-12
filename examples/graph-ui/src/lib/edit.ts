@@ -4,8 +4,9 @@
 // page (app.ts) and lib/mutations.ts do the I/O.
 //
 // Rules:
-//   1. WRITABLE candidates are frontmatter relations (not `doc.out`/`doc.in`,
-//      which live in the body; not `order by` sequences, which are derived)
+//   1. WRITABLE candidates are frontmatter relations (not the link graph —
+//      `doc.out_links`/`doc.in_links`, `doc.out`/`doc.in` on 2.x — which lives
+//      in the body; not `order by` sequences, which are derived)
 //      whose sampled values are document references — a `/`-rooted repo path
 //      (`/projects/oqx.md`), a bare repo path (`projects/oqx.md`, `projects/oqx`),
 //      or a doc id (`d_77ptprj`) — scalar or list. Anything else is read-only

@@ -33,11 +33,11 @@ function save(path: string, content: string): void {
 function docId(path: string): string {
   return (store.db.prepare("SELECT doc_id FROM docs WHERE path=?").get(path) as { doc_id: string }).doc_id;
 }
-// Reachable doc paths from a seed via OQX `follow doc.out|in` — the traversal
+// Reachable doc paths from a seed via OQX `follow out_links collect { from dst }|in` — the traversal
 // replacement for the retired graph_traverse. Default depth (8) covers these
 // short chains; the walk crosses format boundaries because edges are doc-grain.
 function reachable(seed: string, dir: "out" | "in"): string[] {
-  const hits = oqxRun(store, repoId, `from docs where path == "${seed}" follow doc.${dir}`, { limit: 100 }).hits;
+  const hits = oqxRun(store, repoId, `from docs where path == "${seed}" follow ${dir === "out" ? "out_links collect { from dst }" : "in_links collect { from doc }"}`, { limit: 100 }).hits;
   return hits.map((h) => h.path);
 }
 
@@ -76,17 +76,17 @@ describe("cross-format graph: markdown → yaml → json", () => {
     expect(schemaEdge!.doc_id).toBe(docId("config/schemas/db.json"));
   });
 
-  it("follow doc.out crosses markdown → yaml boundary", () => {
+  it("follow out_links collect { from dst } crosses markdown → yaml boundary", () => {
     expect(reachable("docs/readme.md", "out")).toContain("/config/database.yaml");
   });
 
-  it("follow doc.out crosses yaml → yaml (extends)", () => {
+  it("follow out_links collect { from dst } crosses yaml → yaml (extends)", () => {
     const paths = reachable("docs/readme.md", "out");
     expect(paths).toContain("/config/database.yaml");
     expect(paths).toContain("/config/base.yaml");
   });
 
-  it("follow doc.out crosses yaml → json (schema)", () => {
+  it("follow out_links collect { from dst } crosses yaml → json (schema)", () => {
     const paths = reachable("docs/readme.md", "out");
     expect(paths).toContain("/config/database.yaml");
     expect(paths).toContain("/config/schemas/db.json");
@@ -99,11 +99,11 @@ describe("cross-format graph: markdown → yaml → json", () => {
     expect(paths.has("/config/schemas/db.json")).toBe(true);
   });
 
-  it("follow doc.in: who references the YAML config?", () => {
+  it("follow in_links collect { from doc }: who references the YAML config?", () => {
     expect(reachable("config/database.yaml", "in")).toContain("/docs/readme.md");
   });
 
-  it("follow doc.in: who extends base.yaml?", () => {
+  it("follow in_links collect { from doc }: who extends base.yaml?", () => {
     expect(reachable("config/base.yaml", "in")).toContain("/config/database.yaml");
   });
 });

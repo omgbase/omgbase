@@ -91,7 +91,10 @@ export type OperandKind = "text" | "int" | "num" | "bool" | "null" | "json" | "p
 export interface Operand extends Frag {
   kind: OperandKind;
   json?: { col: string; path: string };
-  prop?: { docAlias: string; key: string; source?: string };
+  /** A property read: `docId` is the SQL expression naming the document whose
+   * rows are read (`d.doc_id` for the row's own document, `e.dst_node` for a
+   * link's destination). */
+  prop?: { docId: string; key: string; source?: string };
   value?: unknown;
   /** The storage-form path column behind a `path` / `doc.path` read
    * (`d.path`): the operand's SQL is the rooted `'/' || <col>`, and an
@@ -112,10 +115,10 @@ export interface Operand extends Frag {
  * `translate.test.ts` asserts this set against the store context.
  */
 export const NON_PROPERTY_NAMES: Readonly<Record<Target, ReadonlySet<string>>> = {
-  docs: new Set(["doc", "nodes", "blocks", "out", "in", "out_links", "in_links", "data", "frontmatter", "inline"]),
+  docs: new Set(["doc", "nodes", "blocks", "out_links", "in_links", "data", "frontmatter", "inline"]),
   blocks: new Set(["block", "doc", "children", "nodes", "out_links", "section", "attrs"]),
   nodes: new Set(["section", "doc", "block", "blocks", "subsections", "children", "attrs"]),
-  links: new Set(["doc"]),
+  links: new Set(["doc", "dst"]),
 };
 
 // ---- engine attributes ------------------------------------------------------
@@ -197,25 +200,34 @@ const SEG = /^[A-Za-z_][A-Za-z0-9_]*$/; // injection-safe inlined identifier
 // the scope to one authored source — the read `frontmatter.<k>` / `inline.<k>`
 // performs (spec/surface §1.2; the in-memory `docProp(docId, key, source)`):
 // both the row and the count are of that source's rows only. The merged
-// `data.<k>` read is the bare read, so it passes no source.
-function propSubquery(docAlias: string, key: string, select: string, source?: string): string {
+// `data.<k>` read is the bare read, so it passes no source. `docId` is the SQL
+// expression naming the document: the scan's `d.doc_id`, or a link's
+// `e.dst_node` for a `dst.<k>` read (the destination's rows by its id — a
+// non-document or phantom destination has none, so the read is NULL exactly
+// where `dst` is absent in memory).
+function propSubquery(docId: string, key: string, select: string, source?: string): string {
   const src = source ? ` AND p.source = '${source}'` : "";
   const src2 = source ? ` AND p2.source = '${source}'` : "";
   return `(SELECT ${select} FROM properties p
-           WHERE p.doc_id = ${docAlias}.doc_id AND p.key = '${key}' AND p.card = 'scalar' AND p.deleted_commit IS NULL${src}
-             AND (SELECT COUNT(*) FROM properties p2 WHERE p2.doc_id = ${docAlias}.doc_id AND p2.key = '${key}' AND p2.deleted_commit IS NULL${src2}) = 1
+           WHERE p.doc_id = ${docId} AND p.key = '${key}' AND p.card = 'scalar' AND p.deleted_commit IS NULL${src}
+             AND (SELECT COUNT(*) FROM properties p2 WHERE p2.doc_id = ${docId} AND p2.key = '${key}' AND p2.deleted_commit IS NULL${src2}) = 1
            LIMIT 1)`;
 }
 
 // A single-valued document property: the scalar value of its one row in scope,
 // else NULL — matching the store context's `docProp` for a scalar read.
+// `docAlias` is the document's table alias; `propScalarOf` takes the id
+// expression itself.
 function propScalar(docAlias: string, key: string, source?: string): Operand | null {
+  return propScalarOf(`${docAlias}.doc_id`, key, source);
+}
+function propScalarOf(docId: string, key: string, source?: string): Operand | null {
   if (!SEG.test(key)) return null;
   return {
-    sql: propSubquery(docAlias, key, "COALESCE(p.val_text, p.val_num, p.val_bool)", source),
+    sql: propSubquery(docId, key, "COALESCE(p.val_text, p.val_num, p.val_bool)", source),
     params: [],
     kind: "prop",
-    prop: source ? { docAlias, key, source } : { docAlias, key },
+    prop: source ? { docId, key, source } : { docId, key },
   };
 }
 
@@ -226,8 +238,11 @@ function propScalar(docAlias: string, key: string, source?: string): Operand | n
 // (`frontmatter == null`) and `entries(<handle>)` still decline.
 const SOURCE_HANDLES: Readonly<Record<string, string | undefined>> = { data: undefined, frontmatter: "frontmatter", inline: "inline" };
 function handleRead(docAlias: string, handle: string, key: string): Operand | null {
+  return handleReadOf(`${docAlias}.doc_id`, handle, key);
+}
+function handleReadOf(docId: string, handle: string, key: string): Operand | null {
   if (!(handle in SOURCE_HANDLES)) return null;
-  return propScalar(docAlias, key, SOURCE_HANDLES[handle]);
+  return propScalarOf(docId, key, SOURCE_HANDLES[handle]);
 }
 
 // json_extract path from validated segments, or null if any segment is unsafe.
@@ -337,6 +352,29 @@ export function translateOperand(e: Expr, ctx: TranslateCtx): Operand | null {
         if (ROW_ATTRIBUTES.docs.has(k)) return null; // `doc.raw`, `doc.title`, `doc.tags`: the attribute, not pushable
         if (NON_PROPERTY_NAMES.docs.has(k) || TARGETS.has(k)) return null; // `doc.nodes`, `doc.data`, `doc.docs` … (decline (b))
         return propScalar(doc, k);
+      }
+      // dst.<x> reach-through from a link (spec/surface §1.2, 3.0 follow-up): the
+      // destination DOCUMENT, keyed by the row's own `dst_node` — the lookup
+      // `dst_path` already runs. A property read scopes `properties` by
+      // `e.dst_node` directly; the document's own columns are a primary-key
+      // probe `(SELECT … FROM docs dd WHERE dd.doc_id = e.dst_node)` — NULL
+      // wherever `dst` is absent in memory (a block or external destination, a
+      // phantom). `dst.raw` / `dst.title` / `dst.tags` and the relations stay
+      // residual, as `doc.*`'s do.
+      if (head === "dst" && target === "links") {
+        const dstId = `${self}.dst_node`;
+        if (rest.length === 2 && rest[0]! in SOURCE_HANDLES) return handleReadOf(dstId, rest[0]!, rest[1]!);
+        if (rest.length !== 1) return null;
+        const k = rest[0]!;
+        const probe = (col: string): Operand => text(`(SELECT ${col} FROM docs dd WHERE dd.doc_id = ${dstId})`);
+        if (k === "id") return probe("dd.doc_id");
+        if (k === "path") return probe("'/' || dd.path");
+        if (k === "hash") return probe("lower(hex(dd.file_hash))");
+        if (k === "updated_at") return probe("(SELECT c.ts FROM revisions r JOIN commits c ON c.commit_id = r.commit_id WHERE r.rev_id = dd.current_rev)");
+        if (k === "format") return probe("dd.format");
+        if (k.startsWith("$")) return null;
+        if (ROW_ATTRIBUTES.docs.has(k) || NON_PROPERTY_NAMES.docs.has(k) || TARGETS.has(k)) return null;
+        return propScalarOf(dstId, k);
       }
       // block.<x> reach-through from a node: the block's identity is the node's
       // FK (`block.id` → `n.block_id`, `block.path` → the joined `d.path`,
@@ -555,9 +593,9 @@ function typedComparison(op: string, read: Operand, constant: Operand): Frag | n
     };
   }
   if (read.prop) {
-    const { docAlias, key, source } = read.prop;
+    const { docId, key, source } = read.prop;
     const test = constant.kind === "bool" ? `p.type = 'bool' AND p.val_bool = ?` : `p.type = 'number' AND p.val_num ${cmp} ?`;
-    return { sql: `(${propSubquery(docAlias, key, test, source)} ${wrap})`, params: [...constant.params] };
+    return { sql: `(${propSubquery(docId, key, test, source)} ${wrap})`, params: [...constant.params] };
   }
   return null;
 }

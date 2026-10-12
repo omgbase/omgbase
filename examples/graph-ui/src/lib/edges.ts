@@ -10,7 +10,11 @@
 // nested `doc.out_links collect { … }` (`doc.out_edges` before 3.0) per doc —
 // also works against the engine but returns one row per doc with the edges
 // inlined; the flat edge rows are simpler to merge across chunks and page
-// with the tool's cursor.
+// with the tool's cursor. An edge is a link row read source → destination:
+// its `path` (the source document, `doc_id`'s path) → its `dst_path` (the
+// destination document, `dst_id`'s path — what `dst` reaches on 3.0); the
+// builtin links candidate (`doc.out_links`) draws them as stored and the
+// backlinks candidate (`doc.in_links`) flipped.
 //
 // Paths: the shown nodes are keyed by the `/`-rooted path (lib/paths.ts). The
 // literals are spelled the way the connected server expects (`serverPath`:
@@ -70,8 +74,9 @@ export function edgeQueries(candidate: Pick<Candidate, "name" | "kind">, paths: 
 }
 
 /** Rows from the edge queries → edges between SHOWN nodes (`shown` holds the
- * rooted keys; the rows' paths are rooted before the lookup), deduped; `doc.in`
- * (backlinks) flips direction so an edge points the way the walk goes. */
+ * rooted keys; the rows' paths are rooted before the lookup), deduped; a
+ * backlinks candidate (`doc.in_links`; `doc.in` on 2.x) flips direction so an
+ * edge points the way the walk goes. */
 export function edgesFromRows(
   candidate: Pick<Candidate, "name" | "kind">,
   rows: readonly Record<string, unknown>[],

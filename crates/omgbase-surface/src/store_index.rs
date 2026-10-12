@@ -112,7 +112,7 @@ fn probe_for(t: Target, path: &[String]) -> Option<Probe> {
         return None;
     }
     // A docs property: any bare name the context reads through `doc_prop` —
-    // not a relation / handle (`out`, `data`, `frontmatter`, …), not the
+    // not a relation / handle (`out_links`, `data`, `frontmatter`, …), not the
     // `format` column (not indexed), not an OQX `$` name, and of the engine
     // attributes only `title` (the computed `$title` row, a scalar property
     // the author's `title:` never reaches — `data.title` does): `raw`, `hash`,

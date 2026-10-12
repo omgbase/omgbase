@@ -785,7 +785,7 @@
     },
     {
       "name": "resolution-ladders",
-      "notes": "§2: blocks_read at every resolution, blocks_read_many (request order, unresolved, scoping, budget), blocks_read over block REFS (an `n_` node id dereferences to its block, a locator names one; what the removed read_ref did before 3.0) and docs_read by id and path.",
+      "notes": "§2: blocks_read at every resolution, blocks_read_many (request order, unresolved, scoping, budget), nodes_block_read (an `n_` node id → the block it was projected from, blocks_read's shape; an unknown node is block_missing), blocks_read with an `n_` id (block_missing pointing at nodes_block_read — 3.0 follow-up: a tool's `id` is its own kind's) and docs_read by id and path.",
       "steps": [
         {
           "observe": {
@@ -972,7 +972,7 @@
         },
         {
           "read": {
-            "tool": "blocks_read",
+            "tool": "nodes_block_read",
             "args": {
               "id": "n_7f86eccd7a7c"
             }
@@ -980,9 +980,17 @@
         },
         {
           "read": {
-            "tool": "blocks_read",
+            "tool": "nodes_block_read",
             "args": {
               "id": "n_000000000000"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "blocks_read",
+            "args": {
+              "id": "n_7f86eccd7a7c"
             }
           }
         },
@@ -1349,9 +1357,17 @@
           {
             "error": "block_missing",
             "retriable": false,
-            "message": "no block with id \"n_000000000000\"",
+            "message": "no node with id \"n_000000000000\"",
             "data": {
               "id": "n_000000000000"
+            }
+          },
+          {
+            "error": "block_missing",
+            "retriable": false,
+            "message": "no block with id \"n_7f86eccd7a7c\" (an n_ id names a node — nodes_block_read reads its block)",
+            "data": {
+              "id": "n_7f86eccd7a7c"
             }
           },
           {
@@ -6471,7 +6487,7 @@
             ],
             "truncated": false,
             "queries": [
-              "select _depth: $depth, _stop: $stop, _links: doc.out_links collect { id: id, doc_id: doc_id, block_id: block_id, via_id: via_id, dst_id: dst_id, dst_path: dst_path, uri: uri, dst_kind: dst_kind, predicate: predicate, provenance: provenance, anchor: anchor, field: field } from docs where id == \"d_0\" follow distinct doc.out { depth 2 }"
+              "select _depth: $depth, _stop: $stop, _links: doc.out_links collect { id: id, doc_id: doc_id, block_id: block_id, via_id: via_id, dst_id: dst_id, dst_path: dst_path, uri: uri, dst_kind: dst_kind, predicate: predicate, provenance: provenance, anchor: anchor, field: field } from docs where id == \"d_0\" follow distinct out_links collect { from dst } { depth 2 }"
             ]
           },
           {
@@ -6717,7 +6733,7 @@
             ],
             "truncated": false,
             "queries": [
-              "select _depth: $depth, _stop: $stop, _links: doc.in_links collect { id: id, doc_id: doc_id, block_id: block_id, via_id: via_id, dst_id: dst_id, dst_path: dst_path, uri: uri, dst_kind: dst_kind, predicate: predicate, provenance: provenance, anchor: anchor, field: field } from docs where id == \"d_10\" follow distinct doc.in { depth 2 }"
+              "select _depth: $depth, _stop: $stop, _links: doc.in_links collect { id: id, doc_id: doc_id, block_id: block_id, via_id: via_id, dst_id: dst_id, dst_path: dst_path, uri: uri, dst_kind: dst_kind, predicate: predicate, provenance: provenance, anchor: anchor, field: field } from docs where id == \"d_10\" follow distinct in_links collect { from doc } { depth 2 }"
             ]
           },
           {
@@ -6787,8 +6803,8 @@
             ],
             "truncated": false,
             "queries": [
-              "select _depth: $depth, _stop: $stop, _links: doc.out_links collect { id: id, doc_id: doc_id, block_id: block_id, via_id: via_id, dst_id: dst_id, dst_path: dst_path, uri: uri, dst_kind: dst_kind, predicate: predicate, provenance: provenance, anchor: anchor, field: field } from docs where id == \"d_0\" follow distinct doc.out { depth 1 }",
-              "select _depth: $depth, _stop: $stop, _links: doc.in_links collect { id: id, doc_id: doc_id, block_id: block_id, via_id: via_id, dst_id: dst_id, dst_path: dst_path, uri: uri, dst_kind: dst_kind, predicate: predicate, provenance: provenance, anchor: anchor, field: field } from docs where id == \"d_0\" follow distinct doc.in { depth 1 }"
+              "select _depth: $depth, _stop: $stop, _links: doc.out_links collect { id: id, doc_id: doc_id, block_id: block_id, via_id: via_id, dst_id: dst_id, dst_path: dst_path, uri: uri, dst_kind: dst_kind, predicate: predicate, provenance: provenance, anchor: anchor, field: field } from docs where id == \"d_0\" follow distinct out_links collect { from dst } { depth 1 }",
+              "select _depth: $depth, _stop: $stop, _links: doc.in_links collect { id: id, doc_id: doc_id, block_id: block_id, via_id: via_id, dst_id: dst_id, dst_path: dst_path, uri: uri, dst_kind: dst_kind, predicate: predicate, provenance: provenance, anchor: anchor, field: field } from docs where id == \"d_0\" follow distinct in_links collect { from doc } { depth 1 }"
             ]
           },
           {
@@ -7002,8 +7018,8 @@
             "frontier": [],
             "truncated": true,
             "queries": [
-              "select _depth: $depth, _stop: $stop, _links: doc.out_links collect { id: id, doc_id: doc_id, block_id: block_id, via_id: via_id, dst_id: dst_id, dst_path: dst_path, uri: uri, dst_kind: dst_kind, predicate: predicate, provenance: provenance, anchor: anchor, field: field } from docs where id == \"d_12\" follow distinct doc.out { depth 3 }",
-              "select _depth: $depth, _stop: $stop, _links: doc.in_links collect { id: id, doc_id: doc_id, block_id: block_id, via_id: via_id, dst_id: dst_id, dst_path: dst_path, uri: uri, dst_kind: dst_kind, predicate: predicate, provenance: provenance, anchor: anchor, field: field } from docs where id == \"d_12\" follow distinct doc.in { depth 3 }"
+              "select _depth: $depth, _stop: $stop, _links: doc.out_links collect { id: id, doc_id: doc_id, block_id: block_id, via_id: via_id, dst_id: dst_id, dst_path: dst_path, uri: uri, dst_kind: dst_kind, predicate: predicate, provenance: provenance, anchor: anchor, field: field } from docs where id == \"d_12\" follow distinct out_links collect { from dst } { depth 3 }",
+              "select _depth: $depth, _stop: $stop, _links: doc.in_links collect { id: id, doc_id: doc_id, block_id: block_id, via_id: via_id, dst_id: dst_id, dst_path: dst_path, uri: uri, dst_kind: dst_kind, predicate: predicate, provenance: provenance, anchor: anchor, field: field } from docs where id == \"d_12\" follow distinct in_links collect { from doc } { depth 3 }"
             ]
           },
           {
@@ -7192,7 +7208,7 @@
             ],
             "truncated": false,
             "queries": [
-              "select _depth: $depth, _stop: $stop, _links: doc.out_links collect { id: id, doc_id: doc_id, block_id: block_id, via_id: via_id, dst_id: dst_id, dst_path: dst_path, uri: uri, dst_kind: dst_kind, predicate: predicate, provenance: provenance, anchor: anchor, field: field }, _u0: type, _u1: path, _u2: era from docs where id == \"d_16\" follow distinct doc.out { depth 2 }"
+              "select _depth: $depth, _stop: $stop, _links: doc.out_links collect { id: id, doc_id: doc_id, block_id: block_id, via_id: via_id, dst_id: dst_id, dst_path: dst_path, uri: uri, dst_kind: dst_kind, predicate: predicate, provenance: provenance, anchor: anchor, field: field }, _u0: type, _u1: path, _u2: era from docs where id == \"d_16\" follow distinct out_links collect { from dst } { depth 2 }"
             ]
           },
           {
@@ -7213,8 +7229,8 @@
             "frontier": [],
             "truncated": false,
             "queries": [
-              "select _depth: $depth, _stop: $stop, _links: doc.out_links collect { id: id, doc_id: doc_id, block_id: block_id, via_id: via_id, dst_id: dst_id, dst_path: dst_path, uri: uri, dst_kind: dst_kind, predicate: predicate, provenance: provenance, anchor: anchor, field: field } from docs where id == \"d_0\" follow distinct doc.out { depth 2 }",
-              "select _depth: $depth, _stop: $stop, _links: doc.in_links collect { id: id, doc_id: doc_id, block_id: block_id, via_id: via_id, dst_id: dst_id, dst_path: dst_path, uri: uri, dst_kind: dst_kind, predicate: predicate, provenance: provenance, anchor: anchor, field: field } from docs where id == \"d_0\" follow distinct doc.in { depth 2 }"
+              "select _depth: $depth, _stop: $stop, _links: doc.out_links collect { id: id, doc_id: doc_id, block_id: block_id, via_id: via_id, dst_id: dst_id, dst_path: dst_path, uri: uri, dst_kind: dst_kind, predicate: predicate, provenance: provenance, anchor: anchor, field: field } from docs where id == \"d_0\" follow distinct out_links collect { from dst } { depth 2 }",
+              "select _depth: $depth, _stop: $stop, _links: doc.in_links collect { id: id, doc_id: doc_id, block_id: block_id, via_id: via_id, dst_id: dst_id, dst_path: dst_path, uri: uri, dst_kind: dst_kind, predicate: predicate, provenance: provenance, anchor: anchor, field: field } from docs where id == \"d_0\" follow distinct in_links collect { from doc } { depth 2 }"
             ]
           },
           {
@@ -7841,7 +7857,7 @@
             "frontier": [],
             "truncated": false,
             "queries": [
-              "select _depth: $depth, _stop: $stop, _links: doc.out_links collect { id: id, doc_id: doc_id, block_id: block_id, via_id: via_id, dst_id: dst_id, dst_path: dst_path, uri: uri, dst_kind: dst_kind, predicate: predicate, provenance: provenance, anchor: anchor, field: field } from docs where id == \"d_14\" or id == \"d_15\" follow distinct doc.out { depth 8 }"
+              "select _depth: $depth, _stop: $stop, _links: doc.out_links collect { id: id, doc_id: doc_id, block_id: block_id, via_id: via_id, dst_id: dst_id, dst_path: dst_path, uri: uri, dst_kind: dst_kind, predicate: predicate, provenance: provenance, anchor: anchor, field: field } from docs where id == \"d_14\" or id == \"d_15\" follow distinct out_links collect { from dst } { depth 8 }"
             ]
           },
           {
@@ -7995,7 +8011,7 @@
             ],
             "truncated": false,
             "queries": [
-              "select _depth: $depth, _stop: $stop, _links: doc.out_links collect { id: id, doc_id: doc_id, block_id: block_id, via_id: via_id, dst_id: dst_id, dst_path: dst_path, uri: uri, dst_kind: dst_kind, predicate: predicate, provenance: provenance, anchor: anchor, field: field } from docs where id == \"d_13\" follow distinct doc.out { depth 2 }"
+              "select _depth: $depth, _stop: $stop, _links: doc.out_links collect { id: id, doc_id: doc_id, block_id: block_id, via_id: via_id, dst_id: dst_id, dst_path: dst_path, uri: uri, dst_kind: dst_kind, predicate: predicate, provenance: provenance, anchor: anchor, field: field } from docs where id == \"d_13\" follow distinct out_links collect { from dst } { depth 2 }"
             ]
           },
           {
@@ -8770,8 +8786,8 @@
             ],
             "truncated": false,
             "queries": [
-              "select _depth: $depth, _stop: $stop, _links: doc.out_links collect { id: id, doc_id: doc_id, block_id: block_id, via_id: via_id, dst_id: dst_id, dst_path: dst_path, uri: uri, dst_kind: dst_kind, predicate: predicate, provenance: provenance, anchor: anchor, field: field } from docs where id == \"d_0\" follow distinct doc.out { depth 1 }",
-              "select _depth: $depth, _stop: $stop, _links: doc.in_links collect { id: id, doc_id: doc_id, block_id: block_id, via_id: via_id, dst_id: dst_id, dst_path: dst_path, uri: uri, dst_kind: dst_kind, predicate: predicate, provenance: provenance, anchor: anchor, field: field } from docs where id == \"d_0\" follow distinct doc.in { depth 1 }"
+              "select _depth: $depth, _stop: $stop, _links: doc.out_links collect { id: id, doc_id: doc_id, block_id: block_id, via_id: via_id, dst_id: dst_id, dst_path: dst_path, uri: uri, dst_kind: dst_kind, predicate: predicate, provenance: provenance, anchor: anchor, field: field } from docs where id == \"d_0\" follow distinct out_links collect { from dst } { depth 1 }",
+              "select _depth: $depth, _stop: $stop, _links: doc.in_links collect { id: id, doc_id: doc_id, block_id: block_id, via_id: via_id, dst_id: dst_id, dst_path: dst_path, uri: uri, dst_kind: dst_kind, predicate: predicate, provenance: provenance, anchor: anchor, field: field } from docs where id == \"d_0\" follow distinct in_links collect { from doc } { depth 1 }"
             ]
           }
         ]
@@ -10236,6 +10252,198 @@
             ],
             "truncated": false,
             "cursor": null
+          }
+        ]
+      }
+    },
+    {
+      "name": "dst-on-links",
+      "notes": "§1.2 (3.0 follow-up): `dst` on a link row is the destination DOCUMENT row — present for a document link, absent for an external link (`uri`), a dangling [[wikilink]] (a phantom: `dst_kind` document, no row) — and `doc` the source; the linked / linking documents are `out_links collect distinct { from dst }` / `in_links collect distinct { from doc }`; a doc's `out` / `in` is a plain absent property.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-10-11T12:00:00.000Z",
+            "items": [
+              {
+                "path": "hub.md",
+                "source": "---\nlayer: canon\n---\n\n# Hub\n\nSee [the note](/note.md), [omg](https://example.com/omg) and [[nowhere]].\n"
+              },
+              {
+                "path": "note.md",
+                "source": "---\nlayer: draft\n---\n\n# Note\n\nBack to [hub](/hub.md).\n"
+              }
+            ]
+          }
+        },
+        {
+          "read": {
+            "tool": "query",
+            "args": {
+              "query": "select k: dst_kind, u: uri, p: dst_path, d: dst, t: dst.title, l: dst.layer from links where path == \"/hub.md\""
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "query",
+            "args": {
+              "query": "select o: out_links collect distinct { from dst }, i: in_links collect distinct { from doc }, out, in from docs"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "query",
+            "args": {
+              "query": "from links where dst.layer == \"draft\""
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "query",
+            "args": {
+              "query": "select p: path, d: $depth from docs where path == \"/note.md\" follow out_links collect { from dst } { depth 3 }"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "hub.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 2
+              }
+            },
+            {
+              "path": "note.md",
+              "echo": false,
+              "doc": "d_1",
+              "commit": "c_1",
+              "rev": "r_1",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 2
+              }
+            }
+          ],
+          {
+            "hits": [
+              {
+                "id": "e_0",
+                "path": "/hub.md",
+                "k": "document",
+                "u": null,
+                "p": "/note.md",
+                "d": {
+                  "id": "d_1",
+                  "path": "/note.md"
+                },
+                "t": "Note",
+                "l": "draft"
+              },
+              {
+                "id": "e_1",
+                "path": "/hub.md",
+                "k": "external",
+                "u": "https://example.com/omg",
+                "p": null
+              },
+              {
+                "id": "e_2",
+                "path": "/hub.md",
+                "k": "document",
+                "u": null,
+                "p": null
+              }
+            ],
+            "truncated": false,
+            "cursor": null,
+            "consumer": "collect"
+          },
+          {
+            "hits": [
+              {
+                "id": "d_0",
+                "path": "/hub.md",
+                "o": [
+                  {
+                    "id": "d_1",
+                    "path": "/note.md"
+                  }
+                ],
+                "i": [
+                  {
+                    "id": "d_1",
+                    "path": "/note.md"
+                  }
+                ]
+              },
+              {
+                "id": "d_1",
+                "path": "/note.md",
+                "o": [
+                  {
+                    "id": "d_0",
+                    "path": "/hub.md"
+                  }
+                ],
+                "i": [
+                  {
+                    "id": "d_0",
+                    "path": "/hub.md"
+                  }
+                ]
+              }
+            ],
+            "truncated": false,
+            "cursor": null,
+            "consumer": "collect"
+          },
+          {
+            "hits": [
+              {
+                "id": "e_0",
+                "path": "/hub.md"
+              }
+            ],
+            "truncated": false,
+            "cursor": null,
+            "consumer": "collect"
+          },
+          {
+            "hits": [
+              {
+                "id": "d_1",
+                "path": "/note.md",
+                "p": "/note.md",
+                "d": 1
+              },
+              {
+                "id": "d_0",
+                "path": "/hub.md",
+                "p": "/hub.md",
+                "d": 2
+              },
+              {
+                "id": "d_1",
+                "path": "/note.md",
+                "p": "/note.md",
+                "d": 3
+              }
+            ],
+            "truncated": false,
+            "cursor": null,
+            "consumer": "collect"
           }
         ]
       }

@@ -48,7 +48,8 @@ Legend: `--server` = is this CLI command remote-capable? ✅ wired · ▫️ pla
 | Document outline | `docsOutline` | `outline` / `ol` | `docs_outline` | ✅ |
 | Read whole document | `docsRead` | `cat` (doc) | `docs_read` | ✅ |
 | Read many documents | `docsReadMany` | — | `docs_read_many` | — |
-| Hydrate a block | `nodesGet` | `cat`/`show` (block; the CLI dispatches on the ref's shape — `b_`/`n_` → `blocks_read`, else `docs_read`) | `blocks_read` | ✅ `cat` · ▫️ `show` |
+| Hydrate a block | `nodesGet` | `cat`/`show` (block; the CLI dispatches on the ref's shape — `b_` → `blocks_read`, `n_` → `nodes_block_read`, else `docs_read`) | `blocks_read` | ✅ `cat` · ▫️ `show` |
+| Hydrate a node's block | `resolveRef` + `nodesGet` | `cat`/`show` (an `n_` ref) | `nodes_block_read` | ✅ `cat` · ▫️ `show` |
 | Hydrate many blocks | `nodesGetMany` | — | `blocks_read_many` | — |
 | Metadata card | `nodesGet`(full)+`docLinks`+`docProps` | `show` | `blocks_read` (block) / `docs_read` (document; `{ kind: "document", … }` composed client-side) | ▫️ |
 | Find / rank | `resolveThing`/`textSearch` | `find` | `blocks_resolve` (+`blocks_search`) | ✅ |
@@ -144,8 +145,9 @@ files for the same inputs (verified per-op). The block sugar is backed by
 **`blocks_insert`/`blocks_update`/`blocks_move`/`blocks_remove`/`blocks_split`/
 `blocks_merge`** — ref-accepting peers of the `apply` primitive that resolve refs
 and pin CAS **server-side**, so a remote client needs no local store. The read
-gap tools are in place too: `cat` picks **`docs_read`** / **`blocks_read`** by the
-ref's shape (ids carry their kind; the polymorphic `read_ref` was removed in 3.0),
+gap tools are in place too: `cat` picks **`docs_read`** / **`blocks_read`** /
+**`nodes_block_read`** by the ref's shape (ids carry their kind; the polymorphic
+`read_ref` was removed in 3.0),
 **`docs_list`** (backs `ls`), **`docs_diff_unified`** (backs `diff`), and
 `find`→`blocks_resolve`.
 

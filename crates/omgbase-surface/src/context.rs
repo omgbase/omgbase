@@ -102,7 +102,7 @@ impl Target {
 /// `$key`, `$depth`, `$stop`, `$leaf`, `$frontier`, `$ordinal` are values the
 /// LANGUAGE injects into a scope; omgbase adds no `$` names. Every engine
 /// attribute is a bare snake_case name that WINS on collision — the convention
-/// the relations (`children`, `blocks`, `out`, `in`, `doc`, `frontmatter`, …)
+/// the relations (`children`, `blocks`, `out_links`, `doc`, `frontmatter`, …)
 /// always followed: a bare name that is an engine attribute reads the
 /// engine's value, never the author's. The attributes: every row's
 /// `id`/`path`; docs' and blocks' `raw`/`hash`/`updated_at`; docs' `title`
@@ -874,7 +874,6 @@ impl<'a> StoreContext<'a> {
         let doc_id = || SqlValue::Text(col_str(row, "doc_id"));
         let doc_path = || SqlValue::Text(col_str(row, "path"));
         let block_id = || SqlValue::Text(col_str(row, "block_id"));
-        let repo = || SqlValue::Text(self.repo_id.clone());
         Ok(Some(match (t, key) {
             (Target::Docs, "nodes") => {
                 // Document order: block-less nodes first, then by the owning
@@ -914,22 +913,10 @@ impl<'a> StoreContext<'a> {
             (Target::Docs, "blocks") => {
                 Value::Array(self.doc_blocks_preorder(&col_str(row, "doc_id"), &col_str(row, "path"))?)
             }
-            (Target::Docs, "out") => Self::tag_all(
-                self.all(
-                    "SELECT DISTINCT d2.* FROM docs d2 JOIN edges e ON e.dst_node = d2.doc_id
-                     WHERE e.src_doc = ?1 AND e.to_commit IS NULL AND d2.repo_id = ?2 AND d2.deleted_commit IS NULL ORDER BY d2.path, d2.doc_id",
-                    &[doc_id(), repo()],
-                )?,
-                Target::Docs,
-            ),
-            (Target::Docs, "in") => Self::tag_all(
-                self.all(
-                    "SELECT DISTINCT d2.* FROM docs d2 JOIN edges e ON e.src_doc = d2.doc_id
-                     WHERE e.dst_node = ?1 AND e.to_commit IS NULL AND d2.repo_id = ?2 AND d2.deleted_commit IS NULL ORDER BY d2.path, d2.doc_id",
-                    &[doc_id(), repo()],
-                )?,
-                Target::Docs,
-            ),
+            // The linked / linking DOCUMENTS are reached through the link rows
+            // (3.0 follow-up, §9: the `out` / `in` relations are gone):
+            // `out_links collect distinct { from dst }` and `in_links collect
+            // distinct { from doc }`.
             (Target::Docs, "out_links") => Self::tag_all(
                 self.all(
                     "SELECT e.*, ?1 AS __path FROM edges e WHERE e.src_doc = ?2 AND e.to_commit IS NULL ORDER BY e.predicate, e.edge_id",
@@ -1082,6 +1069,21 @@ impl<'a> StoreContext<'a> {
                 .load_owner(Target::Docs, &js_string(&id))?
                 .unwrap_or(Value::Undefined)),
         }
+    }
+
+    /// `dst` on a link row (`spec/surface` §1.2, 3.0 follow-up): the
+    /// destination DOCUMENT row when the link points at one (`dst_kind ==
+    /// "document"` and the document exists — a phantom target has the kind
+    /// and no row), read by `dst_id` exactly as `dst_path` is; absent for a
+    /// `block` or `external` destination (never reached into). `doc` stays
+    /// the source document.
+    fn destination_doc(&self, row: &Value) -> oqx::Result<Value> {
+        if col(row, "dst_kind") != &Value::Str("document".to_owned()) {
+            return Ok(Value::Undefined);
+        }
+        Ok(self
+            .load_owner(Target::Docs, &col_str(row, "dst_node"))?
+            .unwrap_or(Value::Undefined))
     }
 
     fn owning_block(&self, row: &Value) -> oqx::Result<Value> {
@@ -1686,6 +1688,7 @@ impl DataContext for StoreContext<'_> {
             }
             (_, "doc") => return self.owning_doc(row),
             (Target::Nodes, "block") => return self.owning_block(row),
+            (Target::Links, "dst") => return self.destination_doc(row),
             _ => {}
         }
         if let Some(v) = self.relation(row, t, key)? {

@@ -2,8 +2,9 @@
 //
 // ADR-006: OQX `follow` is the ONE traversal engine; the removed
 // graph_traverse/path/subgraph tools are not resurrected. This macro owns NO
-// graph-walking logic — it compiles its arguments into an OQX `follow doc.out`
-// / `doc.in` query (the exact recursive-CTE walk the `query` tool exposes),
+// graph-walking logic — it compiles its arguments into an OQX `follow out_links
+// collect { from dst }` / `follow in_links collect { from doc }` query (the
+// exact walk the `query` tool exposes over the link rows),
 // runs it through the shared runner (oqxRunAsync), and then only SHAPES the
 // walk's own output (its `$depth`/`$stop` intrinsics and projected edges) into
 // the { documents, links, frontier } envelope. Every hop, cycle-guard and depth
@@ -12,7 +13,9 @@
 // Mapping (args → follow query):
 //   roots      → the seed `where id == … or …` (refs resolved to doc ids first; literals in the AST, never spliced text)
 //   degrees    → `follow … { depth degrees+1 }` (seed is $depth 1, so N hops = depth N+1)
-//   direction  → `follow doc.out` | `doc.in` | both (two walks, unioned)
+//   direction  → `follow out_links collect { from dst }` (the linked documents)
+//                | `follow in_links collect { from doc }` (the linking documents)
+//                | both (two walks, unioned)
 //   predicate  → restricts the neighborhood to docs reachable via that predicate
 //                (recomputed over the walk's collected edges; no `via` clause)
 //   select     → extra doc projections spliced into the walk's `select`
@@ -162,7 +165,12 @@ const EDGE_FIELDS: (keyof GraphEdge)[] = [
 // strings: the seed ids are literals, the caller's projections parsed items.
 //
 //   select _depth: $depth, _stop: $stop, _links: doc.<dir>_links collect { <edge fields> } <user items>
-//   from docs where id == <root> or … follow distinct doc.<dir> { depth <depth> }
+//   from docs where id == <root> or … follow distinct <dir>_links collect { from <dst | doc> } { depth <depth> }
+//
+// The destination block walks the link rows to the documents at their other
+// end (spec/surface §1.2, 3.0 follow-up: there are no `out`/`in` relations —
+// `dst` is a link's destination document, `doc` its source; a `from` over an
+// absent `dst` — an external or phantom target — contributes no successor).
 function buildQuery(rootIds: readonly string[], dir: "out" | "in", depth: number, userSelect: SelectItem[]): string {
   const edges = build.op(build.path("doc", `${dir}_links`), "collect", build.subquery({
     select: EDGE_FIELDS.map((name) => build.field(name, build.ident(name))),
@@ -176,7 +184,10 @@ function buildQuery(rootIds: readonly string[], dir: "out" | "in", depth: number
       ...userSelect,
     ],
     where: seed.length === 1 ? seed[0]! : build.or(seed),
-    follow: build.follow([build.path("doc", dir)], { distinct: true, depth }),
+    follow: build.follow(
+      [build.op(build.ident(`${dir}_links`), "collect", build.subquery({ from: [build.ident(dir === "out" ? "dst" : "doc")] }))],
+      { distinct: true, depth },
+    ),
   });
   return print(q);
 }

@@ -113,7 +113,7 @@ fn index_for_answers_for_a_root_scan_marker_on_an_indexable_path_and_for_nothing
     assert!(ctx.index_for(&docs, &p("title")).is_some()); // the computed scalar
     assert!(ctx.index_for(&docs, &p("format")).is_none()); // a column without an index
     assert!(ctx.index_for(&docs, &p("tags")).is_none()); // list-valued
-    assert!(ctx.index_for(&docs, &p("out")).is_none()); // a relation
+    assert!(ctx.index_for(&docs, &p("out_links")).is_none()); // a relation
     assert!(ctx.index_for(&docs, &p("raw")).is_none()); // an attribute without an index, never a property probe
     assert!(ctx.index_for(&docs, &p("data")).is_none()); // a source handle
     assert!(
@@ -136,7 +136,7 @@ fn index_for_answers_for_a_root_scan_marker_on_an_indexable_path_and_for_nothing
     // a relation's rows are an ordinary array: the engine indexes those itself
     let rows = ctx.to_rows(&docs);
     assert_eq!(ctx.scans_run(), 1);
-    let out = ctx.get(&rows[0], "out").unwrap();
+    let out = ctx.get(&rows[0], "out_links").unwrap();
     assert!(ctx.index_for(&out, &p("path")).is_none());
     assert_eq!(
         indexable_paths(Target::Links),

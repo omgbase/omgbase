@@ -96,7 +96,7 @@ function probeFor(target: Target, path: readonly string[]): Probe | null {
   if (column) return { kind: "column", sql: column };
   if (target !== "docs") return null;
   // A docs property: any bare name the context reads through `docProp` — not a
-  // relation / handle (`out`, `data`, `frontmatter`, …), not the `format` column
+  // relation / handle (`out_links`, `data`, `frontmatter`, …), not the `format` column
   // (not indexed), not an OQX `$` name, and of the engine attributes only
   // `title` (the computed `$title` row, a scalar property the author's `title:`
   // never reaches — `data.title` does): `raw`, `hash`, `updated_at` and `tags`

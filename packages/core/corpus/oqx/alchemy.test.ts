@@ -46,7 +46,7 @@ beforeAll(() => {
   // Ingest through processCheckpoint (the real sync path) rather than a bare
   // ingestFile loop, so the authored EDGE graph is extracted — wikilinks and
   // markdown links resolve to doc→doc `references` edges — which the graph-follow
-  // demos below (`follow doc.out`/`in`) walk. ingestFile alone leaves `edges`
+  // demos below (`follow out_links collect { from dst }`/`in`) walk. ingestFile alone leaves `edges`
   // empty. Everything else (docs/blocks/nodes/properties) is identical.
   processCheckpoint(store, repoId, DIR, walk(DIR).map((f) => ({ path: relative(DIR, f) })));
 });
@@ -540,7 +540,7 @@ describe("alchemy corpus — the fixed clause order (ADR-020)", () => {
     expect(() => paths('from docs select path')).toThrow(/`select` must come before `from`/);
     expect(() => paths('from docs order by era where type == "practitioner"')).toThrow(/`where` must come before `order by`/);
     expect(() => paths('from docs where type == "practitioner" order by era desc offset 1 limit 2')).toThrow(/`limit` must come before `offset`/);
-    expect(() => paths('from docs where path == "/index.md" follow doc.out where type == "substance"')).toThrow(/`where` must come before `follow`/);
+    expect(() => paths('from docs where path == "/index.md" follow out_links collect { from dst } where type == "substance"')).toThrow(/`where` must come before `follow`/);
     expect(() => paths('select h: nodes collect { where kind == "md:section" select name } from docs')).toThrow(order);
   });
 
@@ -969,7 +969,7 @@ describe("alchemy corpus — follow: the citation graph (out / in)", () => {
   it("out (distinct) = a note's transitive citation closure", () => {
     // Everything philosophers-stone.md reaches by following references, deduped
     // to nodes. The dense magnum-opus ⇄ prima-materia cycles are walked safely.
-    const closure = paths('from docs where path == "/substances/philosophers-stone.md" follow distinct doc.out').sort();
+    const closure = paths('from docs where path == "/substances/philosophers-stone.md" follow distinct out_links collect { from dst }').sort();
     expect(closure).toEqual([
       "/lab/2026-02-notes.md",
       "/practitioners/jabir-ibn-hayyan.md",
@@ -989,7 +989,7 @@ describe("alchemy corpus — follow: the citation graph (out / in)", () => {
 
   it("in + a post-walk $depth filter = the documents that directly cite a note", () => {
     // Backlinks one hop out: who references magnum-opus? (seed@1, citers@2).
-    const citers = paths('from docs where path == "/processes/magnum-opus.md" and $depth == 2 follow doc.in { depth 2 }').sort();
+    const citers = paths('from docs where path == "/processes/magnum-opus.md" and $depth == 2 follow in_links collect { from doc } { depth 2 }').sort();
     expect(citers).toEqual([
       "/index.md",
       "/practitioners/maria-prophetissa.md",
@@ -1002,17 +1002,17 @@ describe("alchemy corpus — follow: the citation graph (out / in)", () => {
   it("cyclic citations are safe — a revisit is admitted once as $stop == 'cycle'", () => {
     // paracelsus references index, which references paracelsus back. The return
     // to paracelsus is admitted as a single cycle occurrence, not an infinite loop.
-    const cyc = paths('from docs where path == "/practitioners/paracelsus.md" and $stop == "cycle" follow doc.out { depth 3 }');
+    const cyc = paths('from docs where path == "/practitioners/paracelsus.md" and $stop == "cycle" follow out_links collect { from dst } { depth 3 }');
     expect(cyc).toContain("/practitioners/paracelsus.md");
     // the whole walk terminates: a bounded number of rows, no runaway.
-    const all = hits('from docs where path == "/practitioners/paracelsus.md" follow doc.out { depth 3 }');
+    const all = hits('from docs where path == "/practitioners/paracelsus.md" follow out_links collect { from dst } { depth 3 }');
     expect(all.hits.length).toBeGreaterThan(0);
     expect(all.hits.length).toBeLessThan(200);
   });
 
   it("default keeps per-path occurrences; `distinct` collapses to reached nodes", () => {
-    const occ = hits('docs count { where path == "/substances/philosophers-stone.md" follow doc.out }').count!;
-    const dist = hits('docs count { where path == "/substances/philosophers-stone.md" follow distinct doc.out }').count!;
+    const occ = hits('docs count { where path == "/substances/philosophers-stone.md" follow out_links collect { from dst } }').count!;
+    const dist = hits('docs count { where path == "/substances/philosophers-stone.md" follow distinct out_links collect { from dst } }').count!;
     expect(dist).toBe(10);
     expect(occ).toBeGreaterThan(dist); // the dense graph reaches nodes by many distinct paths
   });
@@ -1020,7 +1020,7 @@ describe("alchemy corpus — follow: the citation graph (out / in)", () => {
   it("`frontier` cuts the walk at a class of documents", () => {
     // Explore citations, but treat practitioner biographies as the edge of the
     // walk: they are reported but never expanded through.
-    const res = hits('select p: path, ty: type, s: $stop from docs where path == "/index.md" follow doc.out { frontier type == "practitioner" }');
+    const res = hits('select p: path, ty: type, s: $stop from docs where path == "/index.md" follow out_links collect { from dst } { frontier type == "practitioner" }');
     const practitioners = res.hits.filter((h) => h.ty === "practitioner");
     expect(practitioners.length).toBeGreaterThan(0);
     expect(practitioners.every((h) => h.s === "frontier")).toBe(true);
@@ -1029,7 +1029,7 @@ describe("alchemy corpus — follow: the citation graph (out / in)", () => {
   it("`by <expr>` re-keys node identity — walk until a document TYPE repeats", () => {
     // Identity = type, so revisiting any type is a cycle. From a substance the
     // walk reaches a process, then stops the moment a type would repeat.
-    const res = hits('select p: path, s: $stop from docs where path == "/substances/philosophers-stone.md" follow doc.out { by type }');
+    const res = hits('select p: path, s: $stop from docs where path == "/substances/philosophers-stone.md" follow out_links collect { from dst } { by type }');
     const stopByPath = new Map(res.hits.map((h) => [h.p as string, h.s]));
     // prima-materia is a substance — the seed's type — so it is an immediate cycle
     expect(stopByPath.get("/substances/prima-materia.md")).toBe("cycle");
@@ -1044,20 +1044,20 @@ describe("alchemy corpus — follow: the citation graph (out / in)", () => {
     const seed = "/processes/magnum-opus.md";
     // magnum-opus (a process) cites three processes and two substances; none of
     // the three processes cites a process onward, so the walk is exactly the four.
-    const same = paths(`from docs where path == "${seed}" follow doc.out { where type == ^type }`).sort();
+    const same = paths(`from docs where path == "${seed}" follow out_links collect { from dst } { where type == ^type }`).sort();
     expect(same).toEqual(["/processes/calcination.md", "/processes/coagulation.md", "/processes/dissolution.md", "/processes/magnum-opus.md"]);
     // the same first step computed without a walk (inside the collect, ^ is the seed)
-    const h = hits(`select m: doc.out collect { select path where type == ^type } from docs where path == "${seed}"`).hits[0]!;
+    const h = hits(`select m: out_links collect { select path from dst where type == ^type } from docs where path == "${seed}"`).hits[0]!;
     expect((h.m as { path: string }[]).map((x) => x.path).sort()).toEqual(same.filter((p) => p !== seed));
     // the predicate bites: the unconstrained walk also reaches the substances
-    expect(paths(`from docs where path == "${seed}" follow distinct doc.out`)).toContain("/substances/prima-materia.md");
+    expect(paths(`from docs where path == "${seed}" follow distinct out_links collect { from dst }`)).toContain("/substances/prima-materia.md");
   });
 
   it("a destination list walks the union of its relations (one step dedups by identity)", () => {
     const seed = "/substances/prima-materia.md";
-    const both = paths(`from docs where path == "${seed}" follow doc.out, doc.in { depth 2 }`);
-    const out = paths(`from docs where path == "${seed}" follow doc.out { depth 2 }`);
-    const inn = paths(`from docs where path == "${seed}" follow doc.in { depth 2 }`);
+    const both = paths(`from docs where path == "${seed}" follow out_links collect { from dst }, in_links collect { from doc } { depth 2 }`);
+    const out = paths(`from docs where path == "${seed}" follow out_links collect { from dst } { depth 2 }`);
+    const inn = paths(`from docs where path == "${seed}" follow in_links collect { from doc } { depth 2 }`);
     // seed + every distinct neighbour, each once, whichever relation reached it
     expect(both.slice().sort()).toEqual([...new Set([...out, ...inn])].sort());
     expect(both).toHaveLength(7); // seed + 3 cited + 4 citers − magnum-opus, which is both
@@ -1065,12 +1065,12 @@ describe("alchemy corpus — follow: the citation graph (out / in)", () => {
     expect(inn).toHaveLength(5);
   });
 
-  it("a destination block re-evaluated per frontier row — backlinks as a block equal doc.in", () => {
+  it("a destination block re-evaluated per frontier row — backlinks as a block equal the in_links walk", () => {
     // `^docs` from the frontier row is the root's documents (the destination is read in that row's scope); inside
     // the block `^` is the frontier row, so `^^path` from the nested exists is it.
     const seed = "/processes/magnum-opus.md";
-    const block = paths(`from docs where path == "${seed}" follow ^docs collect { where doc.out exists { where path == ^^path } } { depth 3 }`);
-    const rel = paths(`from docs where path == "${seed}" follow doc.in { depth 3 }`);
+    const block = paths(`from docs where path == "${seed}" follow ^docs collect { where out_links exists { where dst_path == ^^path } } { depth 3 }`);
+    const rel = paths(`from docs where path == "${seed}" follow in_links collect { from doc } { depth 3 }`);
     expect(block.slice().sort()).toEqual(rel.slice().sort()); // same occurrences (per-path walk)
     expect(block.length).toBeGreaterThan(5);
   });

@@ -53,7 +53,7 @@ A global flag whose value is missing (`-C`, `--repo`, `--server`, `-H`) and a st
 
 ### 2.3 Arguments: IDs, paths, stdin
 
-Anywhere a node is named, the CLI accepts what the API accepts (`resolveRef`, `core/read/refs.ts`): a bare ID — block `b_k7z2p9q`, document `d_7f31k2m`, or projected node `n_…` (dereferenced to its block) — or a document path in either form (`/projects/foo.md` or `projects/foo.md`). Every path the CLI *prints* — a hit's locator, `ls` rows, headers, confirmations, diff headers, `--json` documents — is the `/`-rooted reference form (`spec/surface` §1 "Paths", 2.0; `spec/cli` §3.1a). In-doc anchor **locators** (`projects/foo.md#Risks/p[2]`) are a design notion that is **not implemented**: nothing parses them, so such an argument is an unknown path (`doc_missing`). Locators appear only in *output*, paired with the ID (§4.2); use the ID for the follow-up. `omg cat`'s `--resolution` applies to block refs; a document ref is always its exact bytes, and asking for another resolution on one prints a warning on stderr rather than being silently ignored.
+Anywhere a node is named, the CLI accepts what the API accepts (`resolveRef`, `core/read/refs.ts`): a bare ID — block `b_k7z2p9q`, document `d_7f31k2m`, or projected node `n_…` (dereferenced to its block — remotely via `nodes_block_read`) — or a document path in either form (`/projects/foo.md` or `projects/foo.md`). Every path the CLI *prints* — a hit's locator, `ls` rows, headers, confirmations, diff headers, `--json` documents — is the `/`-rooted reference form (`spec/surface` §1 "Paths", 2.0; `spec/cli` §3.1a). In-doc anchor **locators** (`projects/foo.md#Risks/p[2]`) are a design notion that is **not implemented**: nothing parses them, so such an argument is an unknown path (`doc_missing`). Locators appear only in *output*, paired with the ID (§4.2); use the ID for the follow-up. `omg cat`'s `--resolution` applies to block refs; a document ref is always its exact bytes, and asking for another resolution on one prints a warning on stderr rather than being silently ignored.
 
 Commands that take a list of nodes — the mutators (`move`, `rm`, `done`, `merge`) and the readers `cat` and `show` — accept `-` meaning "read refs from stdin, one per line" — the counterpart of `--ids`, so `omg q … --ids | omg cat -` (or `| omg show -`, `| omg done -`) is the pipeline. One helper (`expandBlockArgs` in `cmd/_mutate.ts`) implements it everywhere; a `-` with empty stdin is a usage error (exit 2).
 
@@ -141,8 +141,8 @@ Everything maps onto the 06 tool surface; the correspondence table in §5.10 is 
 | `omg status` | `repos_status` + `sync_status` + watch-lease probe + embedding queue depth. The "where am I" command. `--json` is `{ ...repos_status, sync: sync_status, watcher: "live"\|"none", embedQueue }` — the two tools' results as they are on the wire. |
 | `omg ls [glob]` | Live documents: path, block count, last-commit time. The engine pages `docs_list`; `ls` walks every page (local and `--server`) so the terminal listing is always complete. `--json` is the row array `[{ id, path, updated_at, blocks }]`; `--ids` prints the `id`s (cli 3.0 — before, the paths; `--jsonl` and read `path` for those). |
 | `omg outline <doc\|path> [--depth n] [--skeleton]` | `docs_outline`, frozen wire format. Alias: `omg ol`. (The once-documented `--section`/`--annotate` do not exist; an unknown option is a usage error.) |
-| `omg cat <node…\|-> [--resolution raw\|text\|outline\|skeleton\|full]` | Content only, default `raw` — exact bytes, pipe-clean. Several refs (or `-` = refs from stdin) are cat'ed in order like unix `cat`; `--json` is the single object for one ref, an array for many (`--jsonl` one per line): a block's `blocks_read` at the resolution, a document's the `docs_read` result. |
-| `omg show <node…\|-> [--include history]` | `blocks_read` at `full`: attrs, placement (the row's `parent_id`/`ordinal`/`depth`, rendered `parent=<id|—> ordinal=<n> depth=<n>`), open links, last change. The metadata card; `cat` is the bytes. The CLI dispatches on the ref's shape (`b_`/`n_` → `blocks_read`, a `d_` id or path → `docs_read`; there is no `read_ref` tool since 3.0). A document's card renders its merged properties and open links (`out links` / `backlinks`); its `--json` is `{ kind: "document", ...docs_read }`, composed client-side. Several refs (or `-`) print one card each — the hydrate step of `q … --ids \| show -`. |
+| `omg cat <node…\|-> [--resolution raw\|text\|outline\|skeleton\|full]` | Content only, default `raw` — exact bytes, pipe-clean. Several refs (or `-` = refs from stdin) are cat'ed in order like unix `cat`; `--json` is the single object for one ref, an array for many (`--jsonl` one per line): a block's `blocks_read` at the resolution (an `n_` ref: `nodes_block_read`, the same shape), a document's the `docs_read` result. |
+| `omg show <node…\|-> [--include history]` | `blocks_read` at `full`: attrs, placement (the row's `parent_id`/`ordinal`/`depth`, rendered `parent=<id|—> ordinal=<n> depth=<n>`), open links, last change. The metadata card; `cat` is the bytes. The CLI dispatches on the ref's shape (`b_` → `blocks_read`, `n_` → `nodes_block_read`, a `d_` id or path → `docs_read`; there is no `read_ref` tool since 3.0). A document's card renders its merged properties and open links (`out links` / `backlinks`); its `--json` is `{ kind: "document", ...docs_read }`, composed client-side. Several refs (or `-`) print one card each — the hydrate step of `q … --ids \| show -`. |
 | `omg find <text> [-n N] [-1] [-v] [--no-semantic]` | `blocks_resolve` — ranked `{ id, locator, preview, evidence }`. Hybrid (FTS + vector) by default when an embedding provider is configured; `--no-semantic` forces FTS-only; `-v` prints per-hit evidence. `-1` prints the top hit's `id` alone: `omg cat $(omg find "risks" -1)`; `--ids` the `id`s. |
 
 ### 5.3 Query
@@ -162,9 +162,9 @@ Alias `omg q`. The source is one OQX expression (`[select …] from docs|blocks|
 |---|---|
 | `omg links <node> [--in\|--out] [--pred p,p] [--blocks]` | Open links touching the node; default both directions, grouped; doc-grain by default (`doc_edges`), `--blocks` for block-grain — one row per open edge with its source block (`references > d_13 (b_307)`; `block_id` in `--json`). `--json` is `{ out: [{ predicate, doc_id, kind, count, samples? }], in: [...] }` — `doc_id` the far node (cli 3.0; `node`/`block` before). Backlinks = `omg links <node> --in`. `--jsonl` prints the `{ out, in }` object (it is not a list). |
 
-Traversal is OQX `follow`, not a dedicated `graph` command: `omg q 'from docs where path == "/x.md" follow doc.out'` walks the outgoing citation graph, `follow doc.in` walks backlinks, `follow refs(before), refs(after)` walks the document references a frontmatter key holds, and `follow block.children` / `section.children` / `section.subsections` walk structure — all with `$depth`/`$stop`/`$ordinal` metadata and a depth cap of 8 (see 10, OQX `follow`). The structured `graph_traverse`/`graph_path`/`graph_subgraph` API was removed.
+Traversal is OQX `follow`, not a dedicated `graph` command: `omg q 'from docs where path == "/x.md" follow out_links collect { from dst }'` walks the outgoing citation graph (the link rows to their destination documents), `follow in_links collect { from doc }` walks backlinks, `follow refs(before), refs(after)` walks the document references a frontmatter key holds, and `follow block.children` / `section.children` / `section.subsections` walk structure — all with `$depth`/`$stop`/`$ordinal` metadata and a depth cap of 8 (see 10, OQX `follow`). The structured `graph_traverse`/`graph_path`/`graph_subgraph` API was removed.
 
-There is no `pipeline` command: **the pipeline is the pipe.** `omg q 'from docs where path == "/x.md" follow doc.out' --ids | omg show -` covers seed → expand → hydrate; in-process `pipeline` remains an MCP-only round-trip optimization.
+There is no `pipeline` command: **the pipeline is the pipe.** `omg q 'from docs where path == "/x.md" follow out_links collect { from dst }' --ids | omg show -` covers seed → expand → hydrate; in-process `pipeline` remains an MCP-only round-trip optimization.
 
 ### 5.5 History
 
@@ -271,17 +271,17 @@ Two drive modes: an interactive readline REPL on a TTY, and a **script runner** 
 |---|---|
 | `docs_outline` | `outline` |
 | `docs_list` / `docs_tree` | `ls` / — (no CLI tree verb yet) |
-| `blocks_read` / `blocks_read_many` | `show` / `cat` (many: stdin IDs) |
+| `blocks_read` / `blocks_read_many` / `nodes_block_read` | `show` / `cat` (many: stdin IDs; an `n_` ref → `nodes_block_read`) |
 | `blocks_resolve` (+ `blocks_search`) | `find` |
 | `query` | `query` |
-| `pipeline` | shell pipes (`q '… follow doc.out' --ids \| show -`) |
+| `pipeline` | shell pipes (`q '… follow out_links collect { from dst }' --ids \| show -`) |
 | traversal (`follow`) | `query`/`q` — OQX `follow` (no dedicated `graph` command) |
 | `changes_since` / `blocks_history` / `docs_diff` | `log` / `hist` / `diff --blocks` |
 | `apply` | `apply` |
 | `blocks_check` / `blocks_append` / `sections_rename` / `sections_move` / `lists_insert_item` / `links_retarget` | `done` / `append` / `update` (heading) / `move --section` / `insert` (list parent) / `retarget` |
 | `docs_create` / `docs_delete` / `docs_move` / `docs_set_meta` | `new` / `rm --doc` / `mv` / `meta` |
 | `repos` / `repos_status` / `sync_status` | `repos` / `status` / `status` |
-| `docs_read` / `docs_diff_unified` | `cat` / `show` (a `d_` id or path; `b_`/`n_` refs go to `blocks_read`) / `diff` |
+| `docs_read` / `docs_diff_unified` | `cat` / `show` (a `d_` id or path; `b_` refs go to `blocks_read`, `n_` refs to `nodes_block_read`) / `diff` |
 | `sync_flush` | `sync` |
 
 ## 6. Acceptance traces (CLI analogues of 06 §7; executable, keystroke-budgeted)

@@ -26,8 +26,8 @@ describe("edgeQueries", () => {
       expect(q).not.toContain("$");
       expect(q).not.toContain("edges"); // `from edges` is an unknown target on 3.0
     }
-    expect(edgeQueries({ name: "doc.out", kind: "links" }, keys, "3.0")[0]).toBe('select src: path, dst: dst_path from links where provenance == "link" && dst_kind == "document" && (path == "/a.md")');
-    expect(edgeQueries({ name: "doc.out", kind: "links" }, keys, "2.0")[0]).toBe('select src: $path, dst: $dst_path from edges where provenance == "link" && dst_kind == "document" && ($path == "/a.md")');
+    expect(edgeQueries({ name: "doc.out_links", kind: "links" }, keys, "3.0")[0]).toBe('select src: path, dst: dst_path from links where provenance == "link" && dst_kind == "document" && (path == "/a.md")');
+    expect(edgeQueries({ name: "doc.out_links", kind: "links" }, keys, "2.0")[0]).toBe('select src: $path, dst: $dst_path from edges where provenance == "link" && dst_kind == "document" && ($path == "/a.md")');
   });
 
   it("spells the path literals in the server's form: bare for 1.x (and unknown), rooted for 2.0", () => {
@@ -39,7 +39,7 @@ describe("edgeQueries", () => {
   });
 
   it("links and backlinks share the link-provenance query; sequences fetch nothing", () => {
-    const q = edgeQueries({ name: "doc.in", kind: "backlinks" }, ["a.md"]);
+    const q = edgeQueries({ name: "doc.in_links", kind: "backlinks" }, ["a.md"]);
     expect(q[0]).toContain('provenance == "link" && dst_kind == "document"');
     expect(edgeQueries({ name: "date", kind: "sequence" }, ["a.md"])).toEqual([]);
     expect(edgeQueries({ name: "before", kind: "frontmatter" }, [])).toEqual([]);
@@ -65,8 +65,8 @@ describe("edgesFromRows", () => {
     expect(edgesFromRows({ name: "before", kind: "frontmatter" }, rooted, shown)).toEqual(edgesFromRows({ name: "before", kind: "frontmatter" }, rows, shown));
   });
   it("flips backlinks", () => {
-    expect(edgesFromRows({ name: "doc.in", kind: "backlinks" }, rows, new Set(["/a.md", "/b.md"])))
-      .toEqual([{ src: "/b.md", dst: "/a.md", rel: "doc.in" }]);
+    expect(edgesFromRows({ name: "doc.in_links", kind: "backlinks" }, rows, new Set(["/a.md", "/b.md"])))
+      .toEqual([{ src: "/b.md", dst: "/a.md", rel: "doc.in_links" }]);
   });
 });
 

@@ -88,7 +88,7 @@ something different from every other consumer's.
 injects into a scope, and omgbase adds **no** `$` names (a `$id` or `$path` in a
 query is an unknown OQX identifier — absent — never an attribute). Every engine
 attribute is a **bare, snake_case name that wins on collision** — the convention
-the relations (`children`, `blocks`, `out`, `in`, `doc`, `frontmatter`, …) always
+the relations (`children`, `blocks`, `out_links`, `doc`, `frontmatter`, …) always
 followed: a bare name that is an engine attribute reads the engine's value,
 never the author's. User data is bare too, read by any non-colliding key; where
 a key of yours collides with an engine name, reach it through a **source
@@ -114,7 +114,7 @@ key that is not an attribute, a handle or a relation is a document property.
 
 | kind | attributes | handles / self / relations |
 | --- | --- | --- |
-| docs | `id` `path` `raw` `hash` `updated_at` `title` `tags` `format` | `data` `frontmatter` `inline`; `doc`; `blocks` `nodes` `out` `in` `out_links` `in_links` |
+| docs | `id` `path` `raw` `hash` `updated_at` `title` `tags` `format` | `data` `frontmatter` `inline`; `doc`; `blocks` `nodes` `out_links` `in_links` |
 | blocks | `id` `path` `doc_id` `raw` `hash` `updated_at` `type` `text` `attrs` `depth` `ordinal` | `block` `doc`; `children` `nodes` `out_links` `section` |
 | nodes | `id` `path` `doc_id` `block_id` `kind` `name` `value` `attrs` | `section` `doc` `block`; `blocks` `subsections` `children` |
 | links | `id` `path` `doc_id` `block_id` `via_id` `dst_id` `dst_path` `uri` `field` `dst_kind` `predicate` `provenance` `anchor` | `doc` |
@@ -190,8 +190,11 @@ column) so pushed SQL and the in-memory engine agree.
   list-valued property (`tags exists { where $it == "pricing" }`,
   `tags collect { $it values }`). Inside a block `^$it` is the enclosing
   row. It is engine-owned (never a stored field) and never pushed to SQL.
-- **Relations:** `nodes`, `blocks`, `doc.out`/`doc.in` (the citation graph),
-  `doc.out_links`/`doc.in_links` (a doc's links as rows).
+- **Relations:** `nodes`, `blocks`, `doc.out_links`/`doc.in_links` (a doc's
+  links as rows). There is no `out`/`in` relation (3.0): the documents at the
+  other end of the links are `out_links collect distinct { from dst }` (linked
+  to) and `in_links collect distinct { from doc }` (linking in) — `dst` is a
+  link row's destination document, `doc` its source (see `links`).
 
 ### `blocks`
 - **Bare fields:** `doc_id` (the owning document), `type`, `text` (the
@@ -402,7 +405,11 @@ nested/correlated scopes:
 ## 6. `follow`, the edge graph, and `distinct`
 - **Traversal:** `follow <dest>, …` recurses over one or more type-preserving
   destinations; a plain destination is a relation of the current row
-  (`doc.out`/`doc.in`, `block.children`, `section.children`/`section.subsections`).
+  (`block.children`, `section.children`/`section.subsections`) or a destination
+  block over the link rows — the citation graph is `follow out_links collect {
+  from dst }` (outgoing) / `follow in_links collect { from doc }` (backlinks),
+  options after the block (`… { from dst } { depth 2 }`); an external or
+  dangling link has no `dst` and contributes no successor.
   Per-path: a node reached by N paths yields N occurrences; `follow distinct`
   keeps one per identity (`by <expr>` sets that identity). Each occurrence carries
   `$depth` (seed = 1), `$stop` (`interior|leaf|frontier|depth|cycle`) with
@@ -413,15 +420,16 @@ nested/correlated scopes:
   intrinsics are result metadata (valid in `select`/`order by` and the top-level
   post-walk `where`), not metadata of the candidate rows the successor
   `where`/`frontier` read.
-- **Destination lists** (`spec/oqx` 0.14): `follow doc.out, doc.in` walks the
-  union of the destinations — within one step the successors are concatenated
+- **Destination lists** (`spec/oqx` 0.14): `follow out_links collect { from dst
+  }, in_links collect { from doc }` walks the union of the destinations — within one step the successors are concatenated
   in source order and deduplicated by identity, so a document both cited by and
   citing the current row is stepped into once. `frontier`, `depth` and `by`
   apply whichever destination reached a row.
 - **Destination blocks:** a destination may be a select-position block
-  re-evaluated per frontier row — `follow ^docs collect { where doc.out
-  exists { where path == ^^path } }` computes backlinks as a block (the same
-  rows as `follow doc.in`). Inside the block `^` is the frontier row (the
+  re-evaluated per frontier row — `follow ^docs collect { where out_links
+  exists { where dst_path == ^^path } }` computes backlinks as a block over
+  the root's documents (the same rows as `follow in_links collect { from doc
+  }`). Inside the block `^` is the frontier row (the
   destination is read in that row's scope, so `^docs` there is the root's
   documents); `first`/`single` yield at
   most one successor; `exists`/`none`/`count` are not destinations. Since
@@ -431,17 +439,23 @@ nested/correlated scopes:
   brace is the block, not the options block — `follow refs(before), ^docs {
   where ^path in list(after) }` walks `before` references forward and,
   backward, every document whose `after` names the frontier row. After any
-  other receiver (`children`, `doc.out`, `refs(before)`, a binding) a brace is
+  other receiver (`children`, `out_links`, `refs(before)`, a binding) a brace is
   still the options block (an error when that destination is not the last),
   and an options block may follow a trailing destination block: `follow ^docs
   { where … } { depth 2 }`. A bare `follow ^docs` (no brace, no consumer) is a
   parse error naming both block spellings.
 - **Correlated successor `where`:** inside the follow-local `where`, a bare name
   is the candidate's own property, `^name` is the **frontier row** being
-  expanded, and `^^name` the walk's enclosing scope — `follow doc.out { where
-  doc.out exists { where path == ^^path } }` keeps only mutual citations
+  expanded, and `^^name` the walk's enclosing scope — `follow out_links collect
+  { from dst } { where out_links exists { where dst_path == ^^path } }` keeps
+  only mutual citations
   (before 0.14 `^` skipped the frontier row and such predicates matched nothing).
 - **Links as rows:** `from links …`, or a doc's `doc.out_links`/`doc.in_links`.
+  A link row reaches both ends: `doc` is its source document and `dst` (3.0)
+  its destination document — present when `dst_kind == "document"` and the
+  document exists, absent for an external or block destination and for a
+  dangling (phantom) target; `dst.title`, `dst { title }`, `where out_links
+  exists { where dst.layer == "draft" }`; `dst.<k>` pushes down like `doc.<k>`.
 - **`distinct`** on any consumer dedups the rows it reduces by their **projected
   value**: `select distinct type`, `nodes collect distinct { select kind }`,
   `nodes count distinct { select kind } == 3`. Empty projection → dedup by
@@ -529,7 +543,7 @@ nested/correlated scopes:
   Everything else — `$ordinal == checked`, `true == 1`, `tags != null`,
   `$ordinal < "3"`, `level < "x"`, `era == stages` — stays residual. A name that
   is a relation, reach-through or source handle or the `attrs` bag (`nodes`,
-  `blocks`, `out`, `children`, `section`, `doc`, `frontmatter`, `attrs`, …) is
+  `blocks`, `out_links`, `children`, `section`, `doc`, `dst`, `frontmatter`, `attrs`, …) is
   never read as a property (`NON_PROPERTY_NAMES`). When a residual conjunct
   could raise an OQX eval error (any function/method call, a `single` block, a
   `^` name, a bare reserved docs basename), the whole query runs unplanned so
@@ -621,6 +635,8 @@ projected-query fence (ADR-011, deferred).
 | Docs with ≥2 distinct link predicates | `from docs where doc.out_links count distinct { select predicate } >= 2` |
 | Unchecked tasks under a heading (working docs) | `from blocks where type == "task" and not checked and under_heading("Launch") and doc.layer == "working"` |
 | Blocks about a concept (semantic top-K) | `from blocks order by semantic("identity preservation across edits") desc` |
-| Everything a note transitively cites | `from docs where path == "/index.md" follow doc.out` |
+| Everything a note transitively cites | `from docs where path == "/index.md" follow out_links collect { from dst }` |
+| The documents a note links to / that link to it | `select out: out_links collect distinct { from dst }, in: in_links collect distinct { from doc } from docs where path == "/index.md"` |
+| Links into drafts, with the target's title | `select t: dst.title from links where dst.layer == "draft"` |
 | The documents whose `after` names this one | `select next: ^docs collect { path where ^path in list(after) } from docs where path == "/timeline/kickoff.md"` |
 | Every `depends_on` link, both endpoints | `select doc_id, dst_path from links where predicate == "depends_on"` |

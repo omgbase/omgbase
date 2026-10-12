@@ -5,8 +5,12 @@
 `follow <relation>` walks a relation **recursively**, so a query closed over its
 row type expands along that relation. omgbase exposes a few:
 
-- `doc.out` / `doc.in` — the citation graph (Markdown links and `[[wikilinks]]`
-  become `references` edges).
+- `out_links collect { from dst }` / `in_links collect { from doc }` — the
+  citation graph (Markdown links and `[[wikilinks]]` become `references`
+  edges): a *destination block* that walks a document's link rows to the
+  documents at their other end — `dst` is a link's destination document (absent
+  for an external or dangling link, which then contributes nothing), `doc` its
+  source. There is no `out`/`in` relation.
 - `section.children` / `block.children` — document structure (the heading
   outline, a list's items).
 
@@ -15,13 +19,13 @@ on: `$depth` (hops from the seed, seed = 1), `$stop` (why the walk stopped here)
 and `$ordinal` (a deterministic 1..N rank over the walk). `distinct` collapses
 the walk to the set of reached rows.
 
-## The citation closure (`doc.out`)
+## The citation closure (`out_links collect { from dst }`)
 
 Everything `index.md` reaches by following links, transitively. We print just
 the paths, sorted, for a stable set:
 
 ```console
-$ omg query 'from docs where path == "/index.md" follow distinct doc.out' | awk '{print $2}' | sort
+$ omg query 'from docs where path == "/index.md" follow distinct out_links collect { from dst }' | awk '{print $2}' | sort
 /index.md
 /lab/2026-02-notes.md
 /practitioners/jabir-ibn-hayyan.md
@@ -38,14 +42,16 @@ $ omg query 'from docs where path == "/index.md" follow distinct doc.out' | awk 
 /texts/mutus-liber.md
 ```
 
-## Backlinks (`doc.in`)
+## Backlinks (`in_links collect { from doc }`)
 
-`doc.in` walks the edges backwards. Bound the walk to one hop (`depth 2`) and
+`in_links collect { from doc }` walks the edges backwards — the inbound link
+rows to their source documents. Options go in a second brace after the block.
+Bound the walk to one hop (`depth 2`) and
 keep only that hop (`$depth == 2`) to get the documents that *directly* cite the
 magnum opus:
 
 ```console
-$ omg query 'from docs where path == "/processes/magnum-opus.md" and $depth == 2 follow doc.in { depth 2 }' | awk '{print $2}' | sort
+$ omg query 'from docs where path == "/processes/magnum-opus.md" and $depth == 2 follow in_links collect { from doc } { depth 2 }' | awk '{print $2}' | sort
 /index.md
 /practitioners/maria-prophetissa.md
 /practitioners/newton.md
@@ -62,7 +68,7 @@ why each row ended: `interior` (expanded), `leaf` (no further edges), `frontier`
 citations but treating practitioner pages as the frontier:
 
 ```console
-$ omg query 'select stop: $stop from docs where path == "/index.md" follow distinct doc.out { frontier type == "practitioner" } order by path asc' --jsonl
+$ omg query 'select stop: $stop from docs where path == "/index.md" follow distinct out_links collect { from dst } { frontier type == "practitioner" } order by path asc' --jsonl
 {"id":"d_sz1e8z0","path":"/index.md","stop":"interior"}
 {"id":"d_w18c2st","path":"/lab/2026-02-notes.md","stop":"interior"}
 {"id":"d_nzb61j9","path":"/practitioners/jabir-ibn-hayyan.md","stop":"frontier"}

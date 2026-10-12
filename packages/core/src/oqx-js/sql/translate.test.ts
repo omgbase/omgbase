@@ -447,10 +447,10 @@ describe("source handles (3.0) — a key read through a handle is pushed, the wh
 
 describe("decline (b) — relation, reach-through and source-handle names are not property reads", () => {
   it("the name sets per target", () => {
-    expect([...NON_PROPERTY_NAMES.docs].sort()).toEqual(["blocks", "data", "doc", "frontmatter", "in", "inline", "nodes", "out", "out_links", "in_links"].sort());
+    expect([...NON_PROPERTY_NAMES.docs].sort()).toEqual(["blocks", "data", "doc", "frontmatter", "inline", "nodes", "out_links", "in_links"].sort());
     expect([...NON_PROPERTY_NAMES.blocks].sort()).toEqual(["attrs", "block", "children", "doc", "nodes", "out_links", "section"].sort());
     expect([...NON_PROPERTY_NAMES.nodes].sort()).toEqual(["attrs", "block", "blocks", "children", "doc", "section", "subsections"].sort());
-    expect([...NON_PROPERTY_NAMES.links].sort()).toEqual(["doc"]);
+    expect([...NON_PROPERTY_NAMES.links].sort()).toEqual(["doc", "dst"]);
   });
 
   it("every name in the set resolves to a non-scalar in the store context (a row, an array, an object)", () => {
@@ -469,8 +469,9 @@ describe("decline (b) — relation, reach-through and source-handle names are no
         for (const name of NON_PROPERTY_NAMES[target]) {
           const v = ctx.get(row, name);
           // a row, an array or a handle object — or, for the owning-entity reach-through
-          // (`doc` off blocks/nodes/edges, `block` off nodes), undefined when the owner is not in the store
-          const reach = name === "doc" || name === "block";
+          // (`doc` off blocks/nodes/edges, `block` off nodes, `dst` off a link), undefined when
+          // the owner is not in the store (or the link's destination is not a document)
+          const reach = name === "doc" || name === "block" || name === "dst";
           expect((typeof v === "object" && v !== null) || (reach && v === undefined), `${target}.${name} resolved to ${JSON.stringify(v)}`).toBe(true);
         }
         // and a plain key is a scalar/absent read, so the set is not over-wide
@@ -541,5 +542,29 @@ describe("foreign-key elimination (spec/surface §1, 3.0) — a reach-through to
     expect(translatePredicate(predOn("links", '$src == "d_1"'), EDGES)).toBeNull();
     expect(translatePredicate(predOn("links", '$from_commit == "c_1"'), EDGES)).toBeNull();
     expect(translatePredicate(predOn("blocks", '$doc == "d_1"'), BLOCKS)).toBeNull();
+  });
+
+  it("dst.<k> on a link reaches the destination DOCUMENT by the row's own dst_node (3.0 follow-up)", () => {
+    // identity and the document's own columns: a primary-key probe, NULL where `dst` is absent in memory
+    expect(translatePredicate(predOn("links", 'dst.id == "d_2"'), EDGES)).toEqual({ sql: "((SELECT dd.doc_id FROM docs dd WHERE dd.doc_id = e.dst_node) IS ?)", params: ["d_2"] });
+    expect(translatePredicate(predOn("links", 'dst.path == "/a.md"'), EDGES)).toEqual({ sql: "((SELECT '/' || dd.path FROM docs dd WHERE dd.doc_id = e.dst_node) IS ?)", params: ["/a.md"] });
+    expect(translatePredicate(predOn("links", 'dst.format == "yaml"'), EDGES)).toEqual({ sql: "((SELECT dd.format FROM docs dd WHERE dd.doc_id = e.dst_node) IS ?)", params: ["yaml"] });
+    expect(translatePredicate(predOn("links", 'dst.hash == "ab"'), EDGES)?.sql).toContain("lower(hex(dd.file_hash))");
+    expect(translatePredicate(predOn("links", 'dst.updated_at == "t"'), EDGES)?.sql).toContain("WHERE r.rev_id = dd.current_rev");
+    // a property: the properties scope keyed by e.dst_node itself (a non-document destination has no rows)
+    const prop = translatePredicate(predOn("links", 'dst.layer == "canon"'), EDGES);
+    expect(prop?.sql).toContain("p.doc_id = e.dst_node AND p.key = 'layer'");
+    expect(prop?.params).toEqual(["canon"]);
+    // a typed push keeps the same scope
+    expect(translatePredicate(predOn("links", "dst.era > 1600"), EDGES)?.sql).toContain("p.doc_id = e.dst_node AND p.key = 'era'");
+    // through a source handle
+    expect(translatePredicate(predOn("links", 'dst.frontmatter.layer == "canon"'), EDGES)?.sql).toContain("p.source = 'frontmatter'");
+    // the attributes the owner's reach-through declines decline here too, and so do the relations and the whole handle
+    for (const k of ["raw", "title", "tags", "nodes", "out_links", "data", "docs", "$x"]) {
+      expect(translatePredicate(predOn("links", `dst.${k} == "x"`), EDGES), k).toBeNull();
+    }
+    expect(translatePredicate(predOn("links", "dst == null"), EDGES)).toBeNull();
+    // `dst` is a link's name only
+    expect(translatePredicate(predOn("docs", 'dst.layer == "canon"'), DOCS)).toBeNull();
   });
 });

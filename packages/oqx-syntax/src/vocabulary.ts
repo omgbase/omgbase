@@ -125,10 +125,11 @@ export const OMGBASE = {
   },
   /** The source handles of a document (`data.<k>` the merged authored view, `frontmatter.<k>` / `inline.<k>` one source; `entries(x)` over any). */
   handles: ["data", "frontmatter", "inline"],
-  /** Relations reachable from a row (`follow children`, `nodes exists { … }`). */
+  /** Relations and reach-throughs of a row (`follow children`, `nodes exists { … }`,
+   * a link's `dst` — its destination document — and `doc`, its source). */
   relations: [
-    "nodes", "blocks", "out", "in", "out_links", "in_links",
-    "children", "section", "subsections", "doc", "block",
+    "nodes", "blocks", "out_links", "in_links",
+    "children", "section", "subsections", "doc", "block", "dst",
   ],
 } as const;
 
