@@ -16,9 +16,12 @@ import { EngineError, errorBody } from "./errors.js";
 import { argumentError, validateArguments, type ArgShape } from "./arguments.js";
 import { apply, type Op } from "../mutate/apply.js";
 import { linksRetarget, linksRepair } from "../mutate/macros.js";
-import { docsCreate, docsMove, docsDelete, docsSetMeta } from "../mutate/docs.js";
+import { canonicalDocPath, planInboundRetarget, type DocMoveResult, type DocOpResult } from "../mutate/docs.js";
+import { inboundLinksTo } from "../graph/inbound-links.js";
+import { resolveDocStore } from "../mutate/doc-store.js";
+import { MutationError } from "../mutate/tree.js";
 import { docsUpdate } from "../mutate/plan-update.js";
-import { applyEffects, applyEffectsDetailed, executeByDigest, executePlan, legacyApplyResult, planEffects, stripEffectIndex, type Plan, type Receipt } from "../mutate/plan.js";
+import { applyEffects, applyEffectsDetailed, executeByDigest, executePlan, legacyApplyResult, planEffects, realizeNewIds, stripEffectIndex, type Plan, type Receipt } from "../mutate/plan.js";
 import type { Effect, EffectExpect, EffectTarget } from "../mutate/effects.js";
 import { renderOpsetPlan } from "../mutate/opset.js";
 import { historyNode, diffBlocks, docDiffUnified, changesSince, docHistory } from "../graph/history.js";
@@ -1231,13 +1234,69 @@ export function buildServer(ctx: ServerContext): McpServer {
   // the tool-boundary lock already holds the writer lock for the call, so the
   // operation's own lock re-enters it, and the stat cache is recorded as on the
   // CLI path. MCP-originated writes are actor agent:mcp.
-  // `dry_run` validates and returns the per-file `diffs` without writing
-  // (`DocOpContext.dryRun`), the docs-verb peer of `apply`'s preview.
+  // `dry_run` validates and returns the per-file `diffs` without writing, the
+  // docs-verb peer of `apply`'s preview. `docCtx` is the library context of the
+  // one document tool still on the library, `docs_update` (its result needs the
+  // opset, which the effects discard).
   const docCtx = (scope: { repoId: string; rootPath: string | undefined }, dryRun?: boolean) => {
     if (!scope.rootPath) throw new EngineError("repo_not_found", "repo has no filesystem source; mutation disabled");
     return { repoId: scope.repoId, rootPath: scope.rootPath, actor: "agent:mcp", ...LOCK_DIR, ...(dryRun ? { dryRun: true } : {}) };
   };
   const docResult = <T,>(res: T, dryRun?: boolean) => (dryRun ? ok(res) : okMutated(res));
+
+  // ---- the document operations as effects (spec/surface §4 "Sugar over effects", 3.3) ----
+  // `docs_create` / `docs_delete` / `docs_move` / `docs_set_meta` are one document
+  // effect each — `create`, `remove { target: document }`, `move { target:
+  // document, to, retarget_inbound }`, one `set`/`unset frontmatter.<k>` per key —
+  // planned and executed through the same seam as the block-level sugar, under
+  // the legacy document-operation reasons (`create <rel>`, `delete <path>`,
+  // `move <from> -> <to>`, `set_meta <path>`; `spec/mutate` §6) and returning the
+  // legacy `spec/mutate` §6 result shapes, re-shaped by `surfaceDocOpResult` as
+  // before. Each tool keeps its own pre-checks — `locateDoc`'s `doc_missing`, the
+  // create/move `path_taken` pair (no `data`, as pinned) — so the planner's own
+  // copies of them never fire and the error envelopes are unchanged.
+  type Diff = { before: string; after: string };
+  const documentTarget = (id: string): EffectTarget => ({ kind: "document", id });
+  const docEffects = (scope: { repoId: string; rootPath: string | undefined }, effects: Effect[], reason: string, dryRun?: boolean): { plan: Plan; receipt?: Receipt } => {
+    const rootPath = requireRoot(scope.rootPath);
+    try {
+      return applyEffectsDetailed(store, { repoId: scope.repoId, rootPath, effects, origin: { actor: "agent:mcp", reason }, ...LOCK_DIR, ...(dryRun ? { dryRun: true } : {}) });
+    } catch (e) {
+      throw stripEffectIndex(e);
+    }
+  };
+  /** The dry-run `diffs` (a plan always carries its preview here). */
+  const previewDiffs = (plan: Plan): Record<string, Diff> => plan.preview?.diffs ?? {};
+  // A dry run realizes the plan's symbols exactly as the block-level sugar does
+  // (`realizeNewIds`: one production mint per `new_ids` entry, in order) so it
+  // still consumes the ids the legacy operation burned — a create's `d`, the
+  // discarded `b`s of a move's retarget re-parse (`spec/mutate` §10) — and the
+  // plan's `$new.n` are mapped to them (§9).
+  const dryDocResult = (plan: Plan, docId: string, path: string, diffs: Record<string, Diff> = previewDiffs(plan)): DocOpResult => {
+    const ids = realizeNewIds(plan);
+    return { docId: ids[docId] ?? docId, path, committed: false, diffs };
+  };
+  /** The storage-form path of a document `locateDoc` just found. */
+  const pathOfDoc = (docId: string): string => findDoc(store, { docId })!.path;
+  /** `path_taken` exactly as the legacy document operations raised it: their message, no `data` (§9). */
+  const requireAbsent = (repoId: string, rootPath: string, rel: string, takenMessage: string): void => {
+    if (findDoc(store, { repoId, path: rel })) throw new MutationError("path_taken", takenMessage);
+    if (resolveDocStore({ rootPath }).exists(rel)) throw new MutationError("path_taken", `file already exists on disk at ${rel}`);
+  };
+  // A move's dry-run `diffs` in the legacy key order — the old path emptied, the
+  // new path filled, then the rewritten sources — rebuilt from the plan's
+  // preview, which lists the sources first (`spec/mutate` §11.6). When the moved
+  // document links to itself by path it is a source too: the legacy preview kept
+  // the OLD path's entry as the rewrite (`bytes → rewritten`; the document has
+  // not moved in a dry run) and the new path as the plain rename (`"" → bytes`),
+  // pinned in §9, where the plan carries the rewritten bytes at the new path —
+  // the rebuild restores the legacy reading.
+  const moveDiffs = (preview: Record<string, Diff>, from: string, to: string): Record<string, Diff> => {
+    const { [from]: old, [to]: dest, ...sources } = preview;
+    const bytes = old?.before ?? "";
+    const rewritten = dest !== undefined && dest.after !== bytes ? dest.after : null;
+    return { [from]: { before: bytes, after: rewritten ?? "" }, [to]: { before: "", after: bytes }, ...sources };
+  };
 
   tool(
     "docs_create",
@@ -1247,7 +1306,17 @@ export function buildServer(ctx: ServerContext): McpServer {
     },
     async (args) => {
       try {
-        return docResult(surfaceDocOpResult(docsCreate(store, docCtx(repoScope(args.repo), args.dry_run), args.path, args.markdown, args.frontmatter)), args.dry_run);
+        const scope = repoScope(args.repo);
+        const rootPath = requireRoot(scope.rootPath);
+        const rel = canonicalDocPath(args.path);
+        requireAbsent(scope.repoId, rootPath, rel, `document already exists at ${rel}`);
+        const { plan, receipt } = docEffects(scope, [{ op: "create", path: rel, markdown: args.markdown, ...(args.frontmatter !== undefined ? { frontmatter: args.frontmatter } : {}) }], `create ${rel}`, args.dry_run);
+        // The new document's id: the receipt's one revision when committed; on a
+        // dry run the `d` the realize shim mints for `$new.0` (the create's symbol).
+        const res: DocOpResult = receipt
+          ? { docId: receipt.revisions[0]!.id, path: rel, committed: true }
+          : dryDocResult(plan, "$new.0", rel);
+        return docResult(surfaceDocOpResult(res), args.dry_run);
       } catch (e) {
         return fail(e);
       }
@@ -1265,7 +1334,23 @@ export function buildServer(ctx: ServerContext): McpServer {
       try {
         const scope = repoScope(args.repo);
         const docId = locateDoc(scope.repoId, "docs_move", registry.get("docs_move")!.shape, args);
-        return docResult(surfaceDocMoveResult(docsMove(store, docCtx(scope, args.dry_run), docId, args.to_path, { retargetInbound: args.retarget_inbound !== false })), args.dry_run);
+        const rootPath = requireRoot(scope.rootPath);
+        const from = pathOfDoc(docId);
+        const to = canonicalDocPath(args.to_path);
+        requireAbsent(scope.repoId, rootPath, to, `a document already exists at ${to}`);
+        const retargetInbound = args.retarget_inbound !== false;
+        // Who links here BY PATH, as written — read before the path changes — and
+        // the rewrite the move carries: `planInboundRetarget` is pure over the
+        // current blocks, so computed here, before the commit, it equals what the
+        // planner lowered (`spec/mutate` §11.3) and yields `dangling`/`retargeted`.
+        const inbound = inboundLinksTo(store, scope.repoId, docId, from);
+        const rt = retargetInbound && inbound.length > 0 ? planInboundRetarget(store, docId, from, to, inbound) : null;
+        const links = rt ? { dangling: rt.dangling, retargeted: { blocks: rt.blocks, docs: rt.docs } } : { dangling: inbound, retargeted: null };
+        const { plan, receipt } = docEffects(scope, [{ op: "move", target: documentTarget(docId), to, ...(retargetInbound ? {} : { retarget_inbound: false }) }], `move ${from} -> ${to}`, args.dry_run);
+        const res: DocMoveResult = receipt
+          ? { docId, path: to, committed: true, ...links }
+          : { ...dryDocResult(plan, docId, to, moveDiffs(previewDiffs(plan), from, to)), ...links };
+        return docResult(surfaceDocMoveResult(res), args.dry_run);
       } catch (e) {
         return fail(e);
       }
@@ -1282,7 +1367,10 @@ export function buildServer(ctx: ServerContext): McpServer {
       try {
         const scope = repoScope(args.repo);
         const docId = locateDoc(scope.repoId, "docs_delete", registry.get("docs_delete")!.shape, args);
-        return docResult(surfaceDocOpResult(docsDelete(store, docCtx(scope, args.dry_run), docId)), args.dry_run);
+        const path = pathOfDoc(docId);
+        const { plan, receipt } = docEffects(scope, [{ op: "remove", target: documentTarget(docId) }], `delete ${path}`, args.dry_run);
+        const res: DocOpResult = receipt ? { docId, path, committed: true } : dryDocResult(plan, docId, path);
+        return docResult(surfaceDocOpResult(res), args.dry_run);
       } catch (e) {
         return fail(e);
       }
@@ -1298,11 +1386,23 @@ export function buildServer(ctx: ServerContext): McpServer {
     async (args) => {
       try {
         const scope = repoScope(args.repo);
-        const docId = locateDoc(scope.repoId, "docs_set_meta", registry.get("docs_set_meta")!.shape, args);
-        return docResult(surfaceDocOpResult(docsSetMeta(store, docCtx(scope, args.dry_run), docId, {
-          ...(args.set ? { set: args.set } : {}),
-          ...(args.unset ? { unset: args.unset } : {}),
-        })), args.dry_run);
+        const shape = registry.get("docs_set_meta")!.shape;
+        const docId = locateDoc(scope.repoId, "docs_set_meta", shape, args);
+        requireRoot(scope.rootPath);
+        const path = pathOfDoc(docId);
+        const unset = args.unset ?? [];
+        // One scalar effect per key, `unset` winning over `set` for a shared key
+        // (the legacy merge spread `set` then deleted `unset`); the planner drops a
+        // repeated `unset`. An empty patch is an argument error (3.3, §9) — it used
+        // to rewrite the frontmatter through the emitter for nothing.
+        const effects: Effect[] = [
+          ...Object.entries(args.set ?? {}).filter(([k]) => !unset.includes(k)).map(([k, value]): Effect => ({ op: "set", target: documentTarget(docId), field: `frontmatter.${k}`, value })),
+          ...unset.map((k): Effect => ({ op: "unset", target: documentTarget(docId), field: `frontmatter.${k}` })),
+        ];
+        if (effects.length === 0) throw argumentError("docs_set_meta", "pass `set` and/or `unset`", shape);
+        const { plan, receipt } = docEffects(scope, effects, `set_meta ${path}`, args.dry_run);
+        const res: DocOpResult = receipt ? { docId, path, committed: true } : dryDocResult(plan, docId, path);
+        return docResult(surfaceDocOpResult(res), args.dry_run);
       } catch (e) {
         return fail(e);
       }

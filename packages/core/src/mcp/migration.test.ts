@@ -16,18 +16,21 @@ import { isContainerBlock } from "../format/index.js";
 import { observeBatch } from "../sync/observe.js";
 import { apply, type Op } from "../mutate/apply.js";
 import { docsAppend, linksRepair, nodeSet, sectionsAppend, tasksComplete } from "../mutate/macros.js";
-import { surfaceApplyResult, surfaceRetargetHits } from "../surface-paths.js";
+import { composeFile, docsCreate, docsDelete, docsMove, docsSetMeta, splitFrontmatter, type DocOpContext } from "../mutate/docs.js";
+import { surfaceApplyResult, surfaceDocMoveResult, surfaceDocOpResult, surfaceRetargetHits } from "../surface-paths.js";
 import { CORPUS_TS, FIXTURE_REPO_SLUG, cmpBytes, readCorpusFromDisk } from "../../corpus/surface/fixture.js";
 import { EngineError, errorBody } from "./errors.js";
 import { buildServer } from "./server.js";
 
-// ADR-021, the migration phase (spec/surface 3.2): the twelve block-level sugar
-// tools of batch 1 are `apply { effects }` sugar. This suite proves the
-// migration behaviour-preserving over the alchemy corpus: for every tool, the
-// HEAD~ handler (reproduced here over the library — `apply` + the macros, the
-// code the tools called before 3.2) and the migrated handler (through the MCP
-// server) run on identical workspaces under the fixture minter and the same
-// clock, and must agree on
+// ADR-021, the migration phase (spec/surface 3.2 + 3.3): the twelve block-level
+// sugar tools of batch 1 and the four document operations of batch 2
+// (`docs_create`, `docs_delete`, `docs_move`, `docs_set_meta`) are
+// `apply { effects }` sugar. This suite proves the migration
+// behaviour-preserving over the alchemy corpus: for every tool, the pre-migration
+// handler (reproduced here over the library — `apply` + the macros + the
+// document operations, the code the tools called before) and the migrated
+// handler (through the MCP server) run on identical workspaces under the fixture
+// minter and the same clock, and must agree on
 //
 //   - the tool's result (or its error envelope),
 //   - the store projection (docs, blocks, revisions, commits minus `ops`,
@@ -37,7 +40,11 @@ import { buildServer } from "./server.js";
 //
 // with one intended difference: a migrated commit carries the intent record in
 // `commits.ops` (legacy rows stay NULL). The two behaviour FIXES the design
-// pins (spec/mutate §10, 3.2) are asserted as divergences at the end.
+// pins (spec/mutate §10, 3.2) are asserted as divergences at the end, as is the
+// one identity change batch 2 accepts (spec/surface §9, 3.3): a committed
+// `docs_set_meta` is a known-id head write, not a reconciling re-ingest, so its
+// dispositions differ (`edited/api` for every block, not `same/exact_hash`
+// under the matcher); rows, files and mints are otherwise identical.
 
 // ---- workspaces -----------------------------------------------------------------
 
@@ -219,6 +226,10 @@ function resolveSectionHeading(ws: Ws, docId: string, docPath: string, section: 
 function legacyApply(ws: Ws, ops: Op[], reason: string, dryRun?: boolean) {
   return surfaceApplyResult(apply(ws.store, { repoId: ws.repoId, rootPath: ws.dir, ops, origin: { actor: "agent:mcp", reason }, ...(dryRun !== undefined ? { dryRun } : {}) }));
 }
+/** The pre-3.3 `docCtx` of the document tools (the server passes no `omgbaseDir` here, as `buildServer` below gets none). */
+function docCtx(ws: Ws, dryRun?: boolean): DocOpContext {
+  return { repoId: ws.repoId, rootPath: ws.dir, actor: "agent:mcp", ...(dryRun ? { dryRun: true } : {}) };
+}
 
 const LEGACY: Record<string, Legacy> = {
   blocks_insert: (ws, a) => {
@@ -309,6 +320,24 @@ const LEGACY: Record<string, Legacy> = {
     const res = legacyApply(ws, ops, "links_repair", dryRun);
     return { hits, pairs, applied: !dryRun, ...res };
   },
+  // batch 2 (3.3): the pre-migration document tool handlers — the library's
+  // document operations behind `locateDoc` and the surface re-shaping.
+  docs_create: (ws, a) => surfaceDocOpResult(docsCreate(ws.store, docCtx(ws, a.dry_run), a.path as string, a.markdown as string, a.frontmatter as Record<string, unknown> | undefined)),
+  docs_move: (ws, a) => {
+    const docId = locateDoc(ws, a);
+    return surfaceDocMoveResult(docsMove(ws.store, docCtx(ws, a.dry_run), docId, a.to_path as string, { retargetInbound: a.retarget_inbound !== false }));
+  },
+  docs_delete: (ws, a) => {
+    const docId = locateDoc(ws, a);
+    return surfaceDocOpResult(docsDelete(ws.store, docCtx(ws, a.dry_run), docId));
+  },
+  docs_set_meta: (ws, a) => {
+    const docId = locateDoc(ws, a);
+    return surfaceDocOpResult(docsSetMeta(ws.store, docCtx(ws, a.dry_run), docId, {
+      ...(a.set ? { set: a.set as Record<string, unknown> } : {}),
+      ...(a.unset ? { unset: a.unset as string[] } : {}),
+    }));
+  },
 };
 
 function viaLegacy(ws: Ws, tool: string, args: Args): Outcome {
@@ -386,7 +415,41 @@ const SCENARIOS: Scenario[] = [
   { tool: "links_retarget", args: { from_target: "salt", to_target: "substances/salt.md", path_glob: "lab/*" }, dryDefault: true },
   { tool: "links_repair", args: { repairs: [{ from: "magnum-opus", to: "processes/magnum-opus.md" }, { from: "mercury", to: "substances/mercury.md" }] }, dryDefault: true },
   { tool: "links_repair", args: {}, dryDefault: true },
+  // batch 2 (3.3): the document operations
+  { tool: "docs_create", args: { path: "substances/gold.md", markdown: "# Gold\n\nThe goal. See [[mercury]] and [mercury](/substances/mercury.md).\n", frontmatter: { type: "substance", layer: "working", tags: ["substance", "metal"] } } },
+  { tool: "docs_create", args: { path: "/notes/plain.md", markdown: "No frontmatter, no trailing newline." } },
+  { tool: "docs_create", args: { path: "texts/empty.md", markdown: "" } },
+  { tool: "docs_create", args: { path: "texts/with-fm.md", markdown: "# Heading\n\n- a\n- b\n", frontmatter: { n: 1, ok: true, nothing: null } } },
+  { tool: "docs_create", args: { path: "index.md", markdown: "# Again\n" } },
+  { tool: "docs_create", args: { path: "lab", markdown: "a directory's name" } },
+  { tool: "docs_delete", args: { path: "texts/emerald-tablet.md" } },
+  { tool: "docs_delete", args: { id: "d_16" } },
+  { tool: "docs_delete", args: { path: "/index.md" } },
+  { tool: "docs_delete", args: { path: "nope.md" } },
+  { tool: "docs_move", args: { path: "texts/mutus-liber.md", to_path: "texts/silent-book.md" } },
+  { tool: "docs_move", args: { path: "texts/mutus-liber.md", to_path: "/texts/silent-book.md", retarget_inbound: false } },
+  { tool: "docs_move", args: { path: "substances/salt.md", to_path: "substances/sal.md" } },
+  { tool: "docs_move", args: { id: "d_7", to_path: "moved/calcination.md" } },
+  { tool: "docs_move", args: { path: "processes/calcination.md", to_path: "processes/fire.md", retarget_inbound: false } },
+  { tool: "docs_move", args: { path: "timeline/kickoff.md", to_path: "timeline/start.md" } },
+  { tool: "docs_move", args: { path: "index.md", to_path: "texts/mutus-liber.md" } },
+  { tool: "docs_move", args: { path: "index.md", to_path: "lab" } },
+  { tool: "docs_move", args: { path: "nope.md", to_path: "x.md" } },
+  { tool: "docs_set_meta", args: { path: "substances/salt.md", set: { verified: false, reviewed: "2026-09" }, unset: ["tradition"] } },
+  { tool: "docs_set_meta", args: { path: "texts/mutus-liber.md", set: { tags: ["text", "images", "plates"], era: 1700, nested: { k: "v" } } } },
+  { tool: "docs_set_meta", args: { path: "index.md", unset: ["type"] } },
+  { tool: "docs_set_meta", args: { path: "lab/2026-01-notes.md", set: { a: 1, b: "two" }, unset: ["a", "nope"] } },
+  { tool: "docs_set_meta", args: { id: "d_16", set: { layer: "canon" } } },
+  { tool: "docs_set_meta", args: { path: "timeline/review.md", set: { status: "done" } } },
+  { tool: "docs_set_meta", args: { path: "nope.md", set: { a: 1 } } },
 ];
+
+/** The reason a document operation records (spec/mutate §6) — the migrated tools pass it through. */
+const DOC_REASON = /^(create|delete|move|set_meta) /;
+/** A committed `docs_set_meta`: the one scenario kind whose projection is allowed to differ (dispositions) — §9, 3.3. */
+function isSetMetaCommit(s: Scenario, dry: boolean, ok: boolean): boolean {
+  return s.tool === "docs_set_meta" && !dry && ok;
+}
 
 function label(s: Scenario): string {
   return `${s.tool} ${JSON.stringify(s.args)}`;
@@ -415,14 +478,26 @@ async function compare(s: Scenario, dry: boolean): Promise<void> {
 
   expect(migrated.outcome.ok, `migrated ${migrated.outcome.ok ? "succeeded" : "failed"} where legacy ${legacy.outcome.ok ? "succeeded" : "failed"}: ${JSON.stringify(migrated.outcome.payload)}`).toBe(legacy.outcome.ok);
   expect(migrated.outcome.payload).toEqual(legacy.outcome.payload);
-  expect(migrated.mints, "minted ids").toEqual(legacy.mints);
-  expect(migrated.projection).toEqual(legacy.projection);
   expect(migrated.files).toEqual(legacy.files);
+  if (isSetMetaCommit(s, dry, legacy.outcome.ok)) {
+    // The accepted identity change (spec/surface §9, 3.3): the known-id head
+    // write labels every block of the document itself where the reconciling
+    // re-ingest ran the matcher — the rows differ in `dispositions` only (the
+    // matcher assigns the known ids after parsing, so neither side burns a block id).
+    const { dispositions: legacyDispositions, ...legacyRest } = legacy.projection;
+    const { dispositions: migratedDispositions, ...migratedRest } = migrated.projection;
+    expect(migratedRest).toEqual(legacyRest);
+    expect(legacyDispositions).not.toEqual(migratedDispositions);
+    expect(migrated.mints, "minted ids").toEqual(legacy.mints);
+  } else {
+    expect(migrated.mints, "minted ids").toEqual(legacy.mints);
+    expect(migrated.projection).toEqual(legacy.projection);
+  }
 
   // The intended difference: a committed migrated write records its intent.
   if (legacy.outcome.ok && !dry) {
     expect(migrated.last?.reason).toBe(legacy.last?.reason);
-    if (migrated.last && migrated.last.reason === s.tool) {
+    if (migrated.last && (migrated.last.reason === s.tool || DOC_REASON.test(migrated.last.reason ?? ""))) {
       const legacyBag = s.tool === "blocks_update" && (("attrs" in s.args && Object.keys(s.args.attrs as object).some((k) => k !== "checked")) || !("markdown" in s.args || "checked" in s.args || "attrs" in s.args));
       if (legacyBag) expect(migrated.last.ops).toBeNull();
       else {
@@ -440,7 +515,7 @@ describe("ADR-021 migration: the sugar tools equal their legacy handlers over th
   }
 });
 
-describe("the two pinned fixes (spec/mutate §10, surface 3.2)", () => {
+describe("the pinned divergences (spec/mutate §10: the two 3.2 fixes; surface 3.3: the set_meta identity change, the empty-patch argument error)", () => {
   it("blocks_update with `expect: {}` is completed by the planner where the legacy kernel path refused it", async () => {
     const legacy = await legacySide("blocks_update", { id: "b_1", markdown: "x", expect: {} });
     expect(legacy.outcome.ok).toBe(false);
@@ -473,6 +548,68 @@ describe("the two pinned fixes (spec/mutate §10, surface 3.2)", () => {
     expect(once.outcome.payload).toEqual(migrated.outcome.payload);
     expect(once.projection).toEqual(migrated.projection);
     expect(once.mints).toEqual(migrated.mints);
+  });
+
+  it("docs_set_meta commits a known-id head write: `edited`/`api` dispositions where the re-ingest matched `same`/`exact_hash` (surface 3.3, §9)", async () => {
+    const legacy = await legacySide("docs_set_meta", { path: "substances/salt.md", set: { verified: false, reviewed: "2026-09" }, unset: ["tradition"] });
+    const migrated = await migratedSide("docs_set_meta", { path: "substances/salt.md", set: { verified: false, reviewed: "2026-09" }, unset: ["tradition"] });
+    expect(migrated.outcome.payload).toEqual(legacy.outcome.payload);
+    expect(migrated.files).toEqual(legacy.files);
+    const kinds = (snap: Snapshot) => {
+      const rows = snap.projection.dispositions as { commit_id: string; kind: string; reason: string | null; matcher_v: string | null; confidence: number | null }[];
+      const last = rows.filter((r) => r.commit_id === "c_20");
+      return { n: last.length, kinds: [...new Set(last.map((r) => `${r.kind}/${r.reason}/${r.matcher_v}`))].sort() };
+    };
+    // The reconciling re-ingest: every block `same` by exact hash under the matcher…
+    expect(kinds(legacy)).toEqual({ n: 20, kinds: ["same/exact_hash/m2.3"] });
+    // …the known-id head write: every block of the touched document `edited` by the api, no matcher.
+    expect(kinds(migrated)).toEqual({ n: 20, kinds: ["edited/api/null"] });
+    // Neither side burns a block id (the reconciler assigns the known ids after
+    // its parse; the head write parses nothing): the commit and revision only.
+    expect(legacy.mints).toEqual(["c_20", "r_20"]);
+    expect(migrated.mints).toEqual(legacy.mints);
+  });
+
+  it("N sequential frontmatter patches compose to the bytes of one merged patch over every corpus document (the YAML emitter is idempotent on its own output)", () => {
+    // `docs_set_meta` is one `set`/`unset frontmatter.<k>` effect per key; each
+    // lowers as `composeFile(body, parse(previous) patched)`, so the result equals
+    // the legacy single `composeFile(body, { ...fm, ...set } minus unset)` iff
+    // `stringify ∘ parse` is the identity on what `stringify` wrote.
+    for (const path of PATHS) {
+      const { frontmatter, body } = splitFrontmatter(CORPUS[path]!);
+      const set: Record<string, unknown> = { verified: false, reviewed: "2026-09", tags: ["x", "y"], n: 1.5, era: 1677, nothing: null, nested: { k: "v" } };
+      const unset = ["type", "tradition", "nope"];
+      const merged: Record<string, unknown> = { ...frontmatter, ...set };
+      for (const k of unset) delete merged[k];
+      const once = composeFile(body, merged);
+      let current = CORPUS[path]!;
+      for (const [k, v] of Object.entries(set)) {
+        const cur = splitFrontmatter(current);
+        current = composeFile(cur.body, { ...cur.frontmatter, [k]: v });
+      }
+      for (const k of unset) {
+        const cur = splitFrontmatter(current);
+        const next = { ...cur.frontmatter };
+        delete next[k];
+        current = composeFile(cur.body, next);
+      }
+      expect(current, path).toBe(once);
+    }
+  });
+
+  it("docs_set_meta with an empty patch is an argument error (3.3; it used to rewrite the frontmatter for nothing)", async () => {
+    const ws = workspace();
+    for (const args of [{ path: "index.md" }, { path: "index.md", set: {}, unset: [] }, { path: "index.md", set: { a: 1 }, unset: ["a"] }]) {
+      const r = await viaServer(ws, "docs_set_meta", args);
+      if ("set" in args && args.set && "a" in args.set) {
+        // `unset` wins the shared key: one `unset` effect, a real write.
+        expect(r.ok, JSON.stringify(r.payload)).toBe(true);
+        continue;
+      }
+      expect(r.ok).toBe(false);
+      expect(r.payload).toMatchObject({ error: "filter_invalid", data: { hint: "arguments" } });
+      expect((r.payload as { message: string }).message).toContain("pass `set` and/or `unset` (docs_set_meta takes");
+    }
   });
 
   it("an empty block list is an argument error, not a malformed kernel op", async () => {

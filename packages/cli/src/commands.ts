@@ -28,7 +28,7 @@ import { cmdDiff } from "./cmd/diff.js";
 import { cmdLinks } from "./cmd/links.js";
 import { cmdSync } from "./cmd/sync.js";
 import { cmdMcp } from "./cmd/mcp.js";
-import { cmdApply, cmdInsert, cmdMove, cmdRm, cmdDone, cmdAppend, cmdSplit, cmdMerge } from "./cmd/mutate.js";
+import { cmdApply, cmdExecute, cmdInsert, cmdMove, cmdRm, cmdDone, cmdAppend, cmdSplit, cmdMerge } from "./cmd/mutate.js";
 import { cmdEdit } from "./cmd/edit.js";
 import { cmdRetarget } from "./cmd/retarget.js";
 import { cmdNode } from "./cmd/node.js";
@@ -56,6 +56,7 @@ export const COMMANDS: Command[] = [
   cmdDiff,
   cmdLinks,
   cmdApply,
+  cmdExecute,
   cmdInsert,
   cmdUpdateDoc,
   cmdEdit,

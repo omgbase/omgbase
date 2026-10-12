@@ -176,7 +176,7 @@ There is no `pipeline` command: **the pipeline is the pipe.** `omg q 'from docs 
 
 ### 5.6 Mutate
 
-`omg apply [-f changeset.json|-] [--reason s] [--actor s]` is the primitive — a changeset document, exactly 04 §2, from file or stdin. Everything below is sugar that expands to one changeset (macros expand server-side, per 04 §3) and shares its behavior: `--dry-run` everywhere, typed conflicts with current truth, `origin.actor` defaulting to `human:$USER` (override `--actor`; MCP-originated writes remain `agent:*`).
+`omg apply [-f changeset.json|-] [--reason s] [--actor s]` is the primitive — a changeset document from file or stdin holding exactly one of `ops` (the six kernel ops, 04 §2) or `effects` (the nine public effects of ADR-021 / spec/mutate §11; spec/cli 3.2). With `effects`, `--dry-run --json` prints the frozen plan and `--json` the receipt, and a dry run consumes no ids. `omg execute (-f plan.json | -) [--reason s] [--actor s]` commits a frozen plan exactly (`stale_plan` / `plan_mismatch` / `unsupported_plan_version` render as `error[<code>]`); it has no dry run — the plan is the preview. Both route to the `apply`/`execute` tools under `--server`. Everything below is sugar that expands to one changeset (macros expand server-side, per 04 §3) and shares its behavior: `--dry-run` everywhere, typed conflicts with current truth, `origin.actor` defaulting to `human:$USER` (override `--actor`; MCP-originated writes remain `agent:*`).
 
 | Command | Expands to |
 |---|---|

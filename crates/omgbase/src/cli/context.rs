@@ -29,8 +29,8 @@ pub const SKIP_FRESHNESS: &[&str] = &["sync", "mcp", "init", "source", "help", "
 /// Commands that accept `--server` (§2.3).
 pub const REMOTE_OK: &[&str] = &[
     "sync", "query", "outline", "hist", "cat", "ls", "diff", "find", "log", "new", "mv", "meta",
-    "rm", "update", "retarget", "apply", "insert", "move", "split", "merge", "done", "append",
-    "node", "shell", "version",
+    "rm", "update", "retarget", "apply", "execute", "insert", "move", "split", "merge", "done",
+    "append", "node", "shell", "version",
 ];
 
 /// An open workspace's paths.
@@ -415,6 +415,29 @@ impl Cli {
             None
         };
         let out = self.surface(semantic)?.call_result(tool, &args);
+        drop(lock);
+        Ok(out?)
+    }
+
+    /// `apply { effects }` keeping the plan (`spec/cli` 3.2): locally
+    /// [`Surface::apply_effects_with_plan`] under the writer lock, as
+    /// [`Cli::call`] runs the `apply` tool — `(plan, receipt?)`; remotely the
+    /// `apply` tool, which answers with one of the two (the Plan on a dry
+    /// run, else the Receipt — returned as `(plan, None)` / `(Null, Some)`).
+    pub fn call_apply_effects(&mut self, args: Json) -> Result<(Json, Option<Json>)> {
+        if self.remote_mode() {
+            let dry = args.get("dry_run").and_then(Json::as_bool).unwrap_or(false);
+            let res = self.remote_call("apply", args)?;
+            return Ok(if dry {
+                (res, None)
+            } else {
+                (Json::Null, Some(res))
+            });
+        }
+        self.surface(false)?;
+        let ws = self.workspace()?;
+        let lock = WriterLock::acquire(&ws.omgbase_dir, self.seams.lock_options())?;
+        let out = self.surface(false)?.apply_effects_with_plan(&args);
         drop(lock);
         Ok(out?)
     }

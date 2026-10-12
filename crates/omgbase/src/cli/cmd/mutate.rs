@@ -1,11 +1,14 @@
-//! The block mutators (`spec/cli` §6): `apply` (the primitive), `insert`,
-//! `update` (a `b_` target is a block update with CAS; anything else the
-//! whole-document update), `edit`, `move`, `rm` (blocks, or `--doc`), `done`,
-//! `append`, `split`, `merge`. Each is a thin client: it parses argv, reads
-//! its content source (`-m` / `-f` / `-` / stdin), resolves its refs to block
-//! ids, and hands the catalog tool the same arguments the MCP server would
-//! receive; the result is rendered once here — the commit confirmation, the
-//! `--dry-run` diffs (§3.6), or the `--json` document.
+//! The block mutators (`spec/cli` §6): `apply` (the primitive — a kernel
+//! changeset `{ ops }` or, since ADR-021, a list of effects `{ effects }`
+//! planned and executed in one transaction), `execute` (a frozen plan),
+//! `insert`, `update` (a `b_` target is a block update with CAS; anything
+//! else the whole-document update), `edit`, `move`, `rm` (blocks, or
+//! `--doc`), `done`, `append`, `split`, `merge`. Each is a thin client: it
+//! parses argv, reads its content source (`-m` / `-f` / `-` / stdin),
+//! resolves its refs to block ids, and hands the catalog tool the same
+//! arguments the MCP server would receive; the result is rendered once here
+//! — the commit confirmation, the `--dry-run` diffs (§3.6), or the `--json`
+//! document.
 
 use std::process::{Command, Stdio};
 
@@ -310,6 +313,12 @@ const ACTOR: Opt = Opt::value("actor");
 
 // ---- apply ----------------------------------------------------------------------------
 
+/// `apply -f`: a changeset `{ ops: [...] }` (the six-op kernel) or a list of
+/// effects `{ effects: [...] }` (`spec/mutate` §11; planned + executed in one
+/// transaction by the `apply` tool), exactly one of the two. With `ops` the
+/// legacy `ApplyResult` is rendered as ever; with `effects` a dry run prints
+/// the Plan (`--json`) or its preview's diffs, a commit the Receipt (`--json`)
+/// or the confirmation with the ids the plan minted (`new_ids`, in order).
 pub fn apply(cli: &mut Cli, args: &[String]) -> Result<i32> {
     if wants_help(args) {
         return render_help_for(cli, "apply");
@@ -324,6 +333,37 @@ pub fn apply(cli: &mut Cli, args: &[String]) -> Result<i32> {
     };
     let parsed: Json = serde_json::from_str(&raw)
         .map_err(|e| CliError::usage(format!("changeset is not JSON: {e}")))?;
+    // Exactly one input (`spec/surface` §4 `apply`): the effects, or the
+    // legacy kernel ops — by key, as the reference reads them.
+    if parsed.get("ops").is_some() && parsed.get("effects").is_some() {
+        return Err(CliError::usage(
+            "changeset must have exactly one of `ops` or `effects`",
+        ));
+    }
+    if let Some(effects) = parsed.get("effects") {
+        let Some(effects) = effects.as_array() else {
+            return Err(CliError::usage("changeset `effects` must be an array"));
+        };
+        if effects.is_empty() {
+            cli.io.err(&cli.style.dim("  nothing to do"));
+            return Ok(EXIT_OK);
+        }
+        let mut m = Map::new();
+        m.insert("effects".to_owned(), Json::Array(effects.clone()));
+        if let Some(r) = a.value("reason") {
+            m.insert("reason".to_owned(), json!(r));
+        }
+        set_actor(cli, a.value("actor"))?;
+        if cli.flags.dry_run {
+            m.insert("dry_run".to_owned(), json!(true));
+        }
+        let (plan, receipt) = cli.call_apply_effects(Json::Object(m))?;
+        return match receipt {
+            None => render_plan(cli, plan),
+            Some(receipt) => render_receipt(cli, receipt, Some(&plan)),
+        };
+    }
+    // `mutate::apply-not-a-changeset` pins the wording.
     let Some(ops) = parsed.get("ops").and_then(Json::as_array) else {
         return Err(CliError::usage("changeset must have an `ops` array"));
     };
@@ -337,6 +377,115 @@ pub fn apply(cli: &mut Cli, args: &[String]) -> Result<i32> {
         m.insert("reason".to_owned(), json!(r));
     }
     run_tool(cli, "apply", m, a.value("actor"))
+}
+
+/// A Plan, dry-run style: `--json` the Plan verbatim (what `execute` takes
+/// back); human the §3.6 note and the per-file diffs of its preview.
+fn render_plan(cli: &mut Cli, plan: Json) -> Result<i32> {
+    cli.capture(&plan);
+    if let Some(code) = machine_out(cli, &plan, None, None) {
+        return code;
+    }
+    render_diffs(cli, plan.get("preview").and_then(|p| p.get("diffs")));
+    Ok(EXIT_OK)
+}
+
+/// A Receipt: `--json` verbatim; human the commit confirmation of §4 (one
+/// revision per touched document) and, on stdout, the ids the write names —
+/// the plan's `preview.results[].ids` with every `$new.n` realized from
+/// `new_ids` when the plan is at hand with its preview (a local `apply`, any
+/// `execute`), exactly the ids the `ops` form prints; else (a plan echoed
+/// without `preview`, a remote `apply`) every id the plan minted, the
+/// `new_ids` values in order — which includes the discarded mints of a
+/// re-parse (`spec/mutate` §10), ids that name no row.
+fn render_receipt(cli: &mut Cli, receipt: Json, plan: Option<&Json>) -> Result<i32> {
+    cli.capture(&receipt);
+    if let Some(code) = machine_out(cli, &receipt, None, None) {
+        return code;
+    }
+    let n = receipt
+        .get("revisions")
+        .and_then(Json::as_array)
+        .map_or(0, Vec::len);
+    cli.io.err(&cli.style.dim(&format!(
+        "  {} committed · {n} document{} touched",
+        cli.style.ok(cli.style.glyphs().ok),
+        if n == 1 { "" } else { "s" }
+    )));
+    for id in receipt_ids(&receipt, plan) {
+        cli.io.out(&id);
+    }
+    Ok(EXIT_OK)
+}
+
+/// See [`render_receipt`]: the preview's ids realized, else `new_ids` values.
+fn receipt_ids(receipt: &Json, plan: Option<&Json>) -> Vec<String> {
+    let new_ids = receipt.get("new_ids").and_then(Json::as_object);
+    let Some(results) = plan
+        .and_then(|p| p.get("preview"))
+        .and_then(|p| p.get("results"))
+        .and_then(Json::as_array)
+    else {
+        return new_ids
+            .into_iter()
+            .flat_map(|m| m.values())
+            .filter_map(Json::as_str)
+            .map(str::to_owned)
+            .collect();
+    };
+    results
+        .iter()
+        .filter_map(|r| r.get("ids").and_then(Json::as_array))
+        .flatten()
+        .filter_map(Json::as_str)
+        .map(|id| {
+            new_ids
+                .and_then(|m| m.get(id))
+                .and_then(Json::as_str)
+                .unwrap_or(id)
+                .to_owned()
+        })
+        .collect()
+}
+
+// ---- execute --------------------------------------------------------------------------
+
+/// `execute (-f <plan.json> | -)`: a frozen plan (the `--json` of `apply
+/// --dry-run` with effects) handed to the `execute` tool, which admits it
+/// (`version`, shape, `plan_id`), re-validates its preconditions
+/// (`stale_plan`) and commits exactly what was planned. Rendered as a
+/// Receipt. The plan IS the preview, so `--dry-run` is a usage error.
+pub fn execute(cli: &mut Cli, args: &[String]) -> Result<i32> {
+    if wants_help(args) {
+        return render_help_for(cli, "execute");
+    }
+    let a = parse_args(
+        args,
+        &[Opt::value_short("f", 'f'), Opt::value("reason"), ACTOR],
+    )?;
+    if cli.flags.dry_run {
+        return Err(CliError::usage(
+            "execute has no dry run — the plan is the preview (re-plan with apply --dry-run)",
+        ));
+    }
+    let source = a
+        .value("f")
+        .or_else(|| a.pos(0).filter(|p| *p == "-"))
+        .ok_or_else(|| CliError::usage("execute requires -f <plan.json> (or - for stdin)"))?;
+    let raw = match source {
+        "-" => read_stdin(),
+        f => std::fs::read_to_string(f)?,
+    };
+    let plan: Json = serde_json::from_str(&raw)
+        .map_err(|e| CliError::usage(format!("plan is not JSON: {e}")))?;
+    let mut m = Map::new();
+    m.insert("plan".to_owned(), plan.clone());
+    if let Some(r) = a.value("reason") {
+        m.insert("reason".to_owned(), json!(r));
+    }
+    set_actor(cli, a.value("actor"))?;
+    let result = cli.call("execute", Json::Object(m))?;
+    render_receipt(cli, result, Some(&plan))
 }
 
 // ---- insert ---------------------------------------------------------------------------
@@ -861,6 +1010,28 @@ mod tests {
             "bad --at 'middle' (use end|start|before <id>|after <id>)"
         );
         assert!(parse_at(Some("before")).is_err());
+    }
+
+    #[test]
+    fn receipt_ids_prefer_the_previews_live_ids() {
+        let r = json!({ "plan_id": "x", "commit": "c_1", "revisions": [], "new_ids": { "$new.0": "b_9", "$new.1": "b_10" }, "committed": true });
+        // The plan at hand: the preview names the live id (`$new.1`), the
+        // wrapper mint `$new.0` stays out, as the `ops` form prints.
+        let plan = json!({ "preview": { "results": [{ "ids": ["$new.1"] }, { "ids": ["b_3"] }] } });
+        assert_eq!(
+            receipt_ids(&r, Some(&plan)),
+            vec!["b_10".to_owned(), "b_3".to_owned()]
+        );
+        // No plan (a remote apply) or a plan echoed without its preview: every mint.
+        assert_eq!(
+            receipt_ids(&r, None),
+            vec!["b_9".to_owned(), "b_10".to_owned()]
+        );
+        assert_eq!(
+            receipt_ids(&r, Some(&json!({ "version": 1 }))),
+            vec!["b_9".to_owned(), "b_10".to_owned()]
+        );
+        assert!(receipt_ids(&json!({ "results": [] }), None).is_empty());
     }
 
     #[test]

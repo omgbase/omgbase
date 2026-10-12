@@ -760,8 +760,29 @@ an order-only guard with `markdown`) proceeds with the content hash pinned
 from the live row, and `blocks_check` naming a block twice is one write.
 `blocks_update`'s `attrs` bag beyond `checked` stays on the kernel path until
 4.0; an empty `blocks`/`ids` list is `filter_invalid` ("`blocks` must name
-at least one block", with the tool's shape). `docs_create`, `docs_move`,
-`docs_delete`, `docs_set_meta` and `docs_update` are unchanged in 3.2.
+at least one block", with the tool's shape).
+
+**The document operations (3.3)** follow: `docs_create` is one `create {
+path, markdown, frontmatter? }`, `docs_delete` one `remove { target: document
+}`, `docs_move` one `move { target: document, to, retarget_inbound }`,
+`docs_set_meta` one `set`/`unset frontmatter.<k>` per key (`unset` winning a
+key named in both, as the legacy merge did; an empty patch is `filter_invalid`
+"pass `set` and/or `unset`", §9) — under the `spec/mutate` §6 reasons the
+library wrote (`create <rel>`, `delete <path>`, `move <from> -> <to>`,
+`set_meta <path>`, storage-form paths) and returning the §6 result shapes
+unchanged: `id` is the receipt's one revision (committed) or the `d` the
+realize shim mints for `$new.0` (a dry-run create still consumes its id);
+`diffs` is the plan's preview, a move's rebuilt in the legacy key order (the
+old path emptied, the new path filled, then the rewritten sources — the
+preview lists the sources first; the self-link reading of §9 restored);
+`dangling`/`retargeted` are recomputed by the tool from `inbound_links_to` +
+`plan_inbound_retarget` over the current blocks before the commit (pure, so
+equal to what the planner lowered). The tools keep their pre-checks —
+`locateDoc`'s `doc_missing`, the create/move `path_taken` pair with the
+legacy messages and no `data` — so the planner's copies never fire. One
+identity change is accepted and pinned (§9): a committed `docs_set_meta` is a
+known-id head write, not a reconciling re-ingest. `docs_update` stays on the
+library (its result needs the opset).
 
 | Tool | Args | Result |
 | --- | --- | --- |
@@ -793,7 +814,7 @@ at least one block", with the tool's shape). `docs_create`, `docs_move`,
 | `links_retarget` | `from_target`, `to_target`, `path_glob?`, `dry_run? = true` | `{ hits: [{ id (the block), path, oldRaw, newRaw }], pairs, applied, ...apply result }` |
 | `links_stale` | `path_glob?`, `limit? = 500`, `summary?` | `spec/graph` §6: `{ stale: [{ doc_id, path (the source), block_id (null for a frontmatter edge), predicate, provenance, dst_kind, target, authored, anchor, reason }], truncated, summary?: { total, byTarget: [{ target, count }], bySource: [{ path, count }] } }` — a link row's fields under the `links` target's names (§1.2), `path`, `target` and `bySource[].path` in the reference form (`authored` stays as written) |
 | `links_repair` | `repairs[]` or `from_target`+`to_target`, `path_glob?`, `dry_run? = true` | as retarget; neither given → `target_missing` |
-| `docs_create` / `docs_move` / `docs_delete` / `docs_set_meta` | `docs_create { path, markdown, frontmatter? }`; the others `id?`/`path?` + `spec/mutate` §6 args (`to_path`, `retarget_inbound?`, `set?`/`unset?`), `dry_run?` (1.3) | its results — `{ id, path, committed, diffs?, … }`: `docs_move` adds `retargeted` and `dangling: [{ doc_id, path, block_id, target, anchor, field? }]` (the inbound edges left pointing at the old path, each a link row under the `links` target's names), `docs_delete` adds `deleted` — every path (`path`, the `diffs` keys, `dangling[].path`; not `dangling[].target`, which is as authored) in the reference form; with `dry_run` nothing commits and the result carries `committed: false` and `diffs` (`{ <path>: { before, after } }` — create `"" → bytes`, delete `bytes → ""`, move two entries, meta before → after; a move — which retargets the inbound links unless `retarget_inbound: false`, `spec/mutate` 1.3 — also previews the rewritten sources and `retargeted`/`dangling`); a dry-run create still mints its `d_` id (`apply`'s rule) |
+| `docs_create` / `docs_move` / `docs_delete` / `docs_set_meta` | `docs_create { path, markdown, frontmatter? }`; the others `id?`/`path?` + `spec/mutate` §6 args (`to_path`, `retarget_inbound?`, `set?`/`unset?` — at least one key between them, 3.3), `dry_run?` (1.3) | (3.3: `apply { effects }` sugar, above) its results — `{ id, path, committed, diffs?, … }`: `docs_move` adds `retargeted` and `dangling: [{ doc_id, path, block_id, target, anchor, field? }]` (the inbound edges left pointing at the old path, each a link row under the `links` target's names), `docs_delete` adds `deleted` — every path (`path`, the `diffs` keys, `dangling[].path`; not `dangling[].target`, which is as authored) in the reference form; with `dry_run` nothing commits and the result carries `committed: false` and `diffs` (`{ <path>: { before, after } }` — create `"" → bytes`, delete `bytes → ""`, move two entries, meta before → after; a move — which retargets the inbound links unless `retarget_inbound: false`, `spec/mutate` 1.3 — also previews the rewritten sources and `retargeted`/`dangling`); a dry-run create still mints its `d_` id (`apply`'s rule) |
 | `docs_update` | `id?`, `path?`, `content`, `reason?`, `dry_run?` | `{ opset, plan, result }`; with `dry_run` the PLAN-ONLY call — `result: null`, nothing written, `plan` the rendered one-line-per-op text, the opset's `target: { id, path }` and `precondition: { id, path, baseRevision, hash }` (`spec/mutate` §5) with both paths in the reference form (the removed `docs_plan_update` was exactly this dry run, §9) |
 | `observe` / `observe_many` / `observe_delete` | `spec/store` §5 (`path` in either form) | its outcomes (`observe` sweeps the pool) as `{ id, path, rev, commitId, converged, echo, conflicted, dispositions }` (`observe_many`: one per item, `observe_delete`: `{ id, path, deleted }`) — the store's own `{ doc, commit, rev }` outcome of `spec/store` §9 is re-shaped at this boundary, `path` in the reference form |
 | `blocks_history` | `id`, `limit?` | §3 (not repo-scoped; `history_node` before 3.0) |
@@ -983,7 +1004,10 @@ adds `write-sugar-over-effects`: the two pinned behaviour changes
 (`blocks_update { expect: {} }` succeeds, `blocks_check` with a repeated id
 is one write), the empty-list argument errors, and a dry-run `blocks_insert`
 followed by a committed one — the committed ids prove the dry run burned
-its ids (§9) through the sugar's realize shim. `apply`'s file-CAS holds in the writing
+its ids (§9) through the sugar's realize shim. Batch 2 (3.3) adds one read to
+`write-docs-set-meta-delete`: `blocks_history` of a block of the patched
+document, whose latest disposition is the known-id head write's
+`edited`/`api` (§9) — the one observable of the migrated `docs_set_meta`. `apply`'s file-CAS holds in the writing
 engine's working tree, so a write through one engine and a later read of
 `repos_status`/`sync_status` through the other exercises the sync tables
 (`file_stats`, checkpoints) both engines must maintain alike.
@@ -1217,10 +1241,53 @@ both and runs both harnesses.
   planner's own dry run (`plan`, `apply { effects, dry_run }`) burns none;
   the sugar realizes its plan's `new_ids` with one production mint each so
   the 3.1 contract above ("dry runs consume minted ids") and `spec/cli` §3.6
-  hold unchanged. Retired with the sugar's `dry_run` at 4.0.
+  hold unchanged. Retired with the sugar's `dry_run` at 4.0. The document
+  operations (3.3) realize alike: a dry-run `docs_create` mints its `d`, a
+  dry-run `docs_move` the discarded `b`s of its retarget re-parse
+  (`spec/mutate` §10), exactly as the library operations did.
+- **Changed (3.3) — a committed `docs_set_meta` is a known-id head write.**
+  The library operation re-ingested the patched file through the reconciling
+  resolver, so every block of the document got a matcher disposition
+  (`same`, `exact_hash`, `m2.3`); the `set frontmatter.<k>` effect is a file
+  head on the loaded tree (`spec/mutate` §11.3) committed by the known-id
+  path, so every block gets the api write's `edited`/`api` disposition with
+  no matcher — the strictly better identity (no probabilistic matcher on an
+  api write). Bytes, rows, revision, commit and mint sequence are identical
+  (the reconciler assigned the known ids after its parse without minting; the
+  head write parses nothing); `blocks_history` is the one tool that shows the
+  difference (`interop::write-docs-set-meta-delete`, 3.3). Accepted, not
+  preserved. N keys are N sequential patches, each `compose(parse(previous)
+  patched)`; the reference proves over every corpus document that this
+  equals the legacy single merged `compose` — `stringify ∘ parse` is the
+  identity on what the emitter writes (`spec/mutate` §10, "the YAML emitter").
+- **Pinned (3.3) — `docs_set_meta` with an empty patch is an argument
+  error** (`filter_invalid` "pass `set` and/or `unset` (docs_set_meta
+  takes…)"). Through 3.2 it re-emitted the frontmatter for nothing
+  (normalizing its YAML); there is no effect for "touch", and the CLI's
+  `meta` already refused it.
+- **Pinned (3.3) — a move's dry-run `diffs` keep the legacy key order and
+  the self-link reading.** The plan's preview lists the rewritten sources
+  before the rename pair and, when the moved document links to itself, puts
+  the rewritten bytes at the NEW path; the tool rebuilds `{ old: bytes → "",
+  new: "" → bytes, …sources }` and, for the self-link, `old: bytes →
+  rewritten` as the 1.3 entry above describes. The Rust port mirrors the
+  rebuild (`plan_inbound_retarget`'s `dangling`/`retargeted` too).
 
 ## Decisions
 
+- 2026-10-12, surface 3.3: ADR-021's migration phase, batch 2 — the four
+  document operations (`docs_create`, `docs_delete`, `docs_move`,
+  `docs_set_meta`; §4 "The document operations") are `apply { effects }`
+  sugar. Results, error envelopes (the `path_taken` pair without `data`, the
+  `doc_missing` locator), reasons, bytes, rows and mint sequences are
+  unchanged — the reference's `migration.test.ts` proves it over the alchemy
+  corpus, committed and dry, for 26 scenarios — except the accepted identity
+  change of a committed `docs_set_meta` (§9: `edited`/`api` dispositions
+  instead of the matcher's `same`/`exact_hash`; one new `blocks_history` read
+  in the interop case pins it) and the new argument error for an empty patch.
+  A result observable through a read tool changed: a minor. `docs_update`
+  stays legacy by design. The CLI gains the layer's verbs the same day
+  (`spec/cli` 3.2: `apply -f { effects }`, `execute`).
 - 2026-10-12, surface 3.2: ADR-021's migration phase, batch 1 — the twelve
   block-level write tools (§4 "Sugar over effects") are `apply { effects }`
   sugar, behaviour-preservingly: every 3.1 fixture of theirs is unchanged

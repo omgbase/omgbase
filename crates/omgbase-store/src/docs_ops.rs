@@ -152,11 +152,13 @@ impl DocMoveResult {
 /// per deepest hit block, the blocks and docs it touches, and the inbound
 /// links it leaves dangling. Pure over the store's current blocks — the move
 /// itself changes no block — so the real move and its dry run plan identically.
-pub(crate) struct RetargetPlan {
-    pub(crate) ops: Vec<Op>,
-    pub(crate) blocks: Vec<String>,
-    pub(crate) docs: Vec<String>,
-    pub(crate) dangling: Vec<InboundLink>,
+/// Public since ADR-021's migration phase: the surface's `docs_move` sugar
+/// reports `dangling`/`retargeted` from it before the planner runs.
+pub struct RetargetPlan {
+    pub ops: Vec<Op>,
+    pub blocks: Vec<String>,
+    pub docs: Vec<String>,
+    pub dangling: Vec<InboundLink>,
 }
 
 /// §6: strip leading `/`s, `\` → `/`.
@@ -314,7 +316,8 @@ impl Store {
         DryRun(self)
     }
 
-    pub(crate) fn live_doc_at(&self, repo_id: &str, path: &str) -> Result<bool> {
+    /// Whether a live document sits at the repo-relative `path`.
+    pub fn live_doc_at(&self, repo_id: &str, path: &str) -> Result<bool> {
         Ok(self
             .conn
             .query_row(
@@ -587,7 +590,7 @@ impl Store {
     /// store's current blocks: deepest hit block per inbound link (a
     /// container whose raw includes a hit child's raw is covered by the
     /// child), each rewritten against the source's *current* directory.
-    pub(crate) fn plan_inbound_retarget(
+    pub fn plan_inbound_retarget(
         &self,
         doc_id: &str,
         from_path: &str,

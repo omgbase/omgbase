@@ -13,12 +13,14 @@ import {
 import type { Command } from "../commands.js";
 import type { Cli } from "../context.js";
 import { CliUsageError, EngineErrorLike, renderHelp } from "../output.js";
-import { runOps, runOpsRemote, readContent, readStdin, expandBlockArgs, extractContentOpts } from "./_mutate.js";
+import { runOps, runOpsRemote, runEffects, runEffectsRemote, runExecutePlan, runExecutePlanRemote, readContent, readStdin, expandBlockArgs, extractContentOpts } from "./_mutate.js";
 import { runRmDoc } from "./docs.js";
 
 // Write sugar (11 §5.6): each command builds kernel Ops and applies them as one
 // changeset via the shared runOps helper (writer flock, actor default, dry-run,
-// conflict rendering). `apply` is the primitive; the rest are sugar.
+// conflict rendering). `apply` is the primitive — a changeset of `effects`
+// (ADR-021, the intentional-write vocabulary; spec/cli 3.2) or of kernel `ops` —
+// and `execute` commits a frozen plan; the rest are sugar.
 
 function block(cli: Cli, ws: ReturnType<Cli["workspace"]>, repoId: string, ref: string): string {
   const r = resolveRef(ws.store, repoId, ref);
@@ -68,23 +70,66 @@ async function runApply(cli: Cli, args: string[]): Promise<number> {
   if (values.help) {
     return renderHelp(cli, {
       name: "apply",
-      summary: "Apply a raw changeset (`{ ops: [...] }`, the six-op kernel) — the primitive every other mutator expands to",
+      summary: "Apply a changeset — `{ effects: [...] }` (intentional writes, planned + committed as one transaction) or `{ ops: [...] }` (the six-op kernel) — the primitive every other mutator expands to",
       usage: "apply [-f <changeset.json|->] [--reason <s>] [--actor <s>] [--dry-run]",
       options: [
         ["-f <file|->", "changeset JSON from a file or stdin (default: stdin)"],
         ["--reason <s>", "commit reason recorded in history"],
         ["--actor <s>", "commit actor (default human:$USER)"],
-        ["--dry-run", "validate + render the diff, commit nothing"],
+        ["--dry-run", "validate + render the diff, commit nothing (effects: --json prints the Plan for `execute`)"],
       ],
     });
   }
   const raw = values.f ? (values.f === "-" ? readStdin() : readFileSync(values.f, "utf8")) : readStdin();
-  const parsed = JSON.parse(raw) as { ops?: Op[] };
+  const parsed = JSON.parse(raw) as { ops?: unknown; effects?: unknown };
+  // Exactly one input (spec/surface §4 `apply`): the effects, or the legacy kernel ops.
+  if (parsed.ops !== undefined && parsed.effects !== undefined) throw new CliUsageError("changeset must have exactly one of `ops` or `effects`");
+  const opts = { ...(values.reason ? { reason: values.reason } : {}), ...(values.actor ? { actor: values.actor } : {}) };
+  if (parsed.effects !== undefined) {
+    if (!Array.isArray(parsed.effects)) throw new CliUsageError("changeset `effects` must be an array");
+    if (cli.flags.server) return runEffectsRemote(cli, parsed.effects, values.reason);
+    const ws = cli.workspace();
+    const repo = cli.repo(ws);
+    return runEffects(cli, ws, repo, parsed.effects, opts);
+  }
   if (!parsed.ops || !Array.isArray(parsed.ops)) throw new CliUsageError("changeset must have an `ops` array");
-  if (cli.flags.server) return runOpsRemote(cli, "apply", { ops: parsed.ops, ...(values.reason ? { reason: values.reason } : {}) });
+  const ops = parsed.ops as Op[];
+  if (cli.flags.server) return runOpsRemote(cli, "apply", { ops, ...(values.reason ? { reason: values.reason } : {}) });
   const ws = cli.workspace();
   const repo = cli.repo(ws);
-  return runOps(cli, ws, repo, parsed.ops, { ...(values.reason ? { reason: values.reason } : {}), ...(values.actor ? { actor: values.actor } : {}) });
+  return runOps(cli, ws, repo, ops, opts);
+}
+
+// ---- execute (the plan form of the Effect layer) ------------------------------
+
+async function runExecute(cli: Cli, args: string[]): Promise<number> {
+  const { values, positionals } = parseArgs({
+    args,
+    allowPositionals: true,
+    options: { f: { type: "string", short: "f" }, reason: { type: "string" }, actor: { type: "string" }, help: { type: "boolean" } },
+  });
+  if (values.help) {
+    return renderHelp(cli, {
+      name: "execute",
+      summary: "Commit exactly a frozen Plan (what `apply -f <effects> --dry-run --json` printed) — one transaction, one commit; stale_plan if a document moved on",
+      usage: "execute (-f <plan.json> | -) [--reason <s>] [--actor <s>]",
+      options: [
+        ["-f <file|->", "the Plan JSON from a file or stdin"],
+        ["-", "the Plan JSON from stdin"],
+        ["--reason <s>", "commit reason recorded in history"],
+        ["--actor <s>", "commit actor (default human:$USER)"],
+      ],
+    });
+  }
+  // The plan IS the preview: a dry run of `execute` would be `apply --dry-run` again.
+  if (cli.flags.dryRun) throw new CliUsageError("execute has no dry run — the plan is the preview (re-plan with apply --dry-run)");
+  const source = values.f ?? (positionals[0] === "-" ? "-" : undefined);
+  if (source === undefined) throw new CliUsageError("execute requires -f <plan.json> (or - for stdin)");
+  const plan = JSON.parse(source === "-" ? readStdin() : readFileSync(source, "utf8")) as unknown;
+  if (cli.flags.server) return runExecutePlanRemote(cli, plan, values.reason);
+  const ws = cli.workspace();
+  const repo = cli.repo(ws);
+  return runExecutePlan(cli, ws, repo, plan, { ...(values.reason ? { reason: values.reason } : {}), ...(values.actor ? { actor: values.actor } : {}) });
 }
 
 // ---- insert -----------------------------------------------------------------
@@ -394,6 +439,7 @@ function actorOf(values: { actor?: string }): { actor?: string } {
 }
 
 export const cmdApply: Command = { name: "apply", summary: "Apply a raw changeset (the primitive)", run: (c, a) => runApply(c, a) };
+export const cmdExecute: Command = { name: "execute", summary: "Commit a frozen plan (from apply --dry-run --json)", run: (c, a) => runExecute(c, a) };
 export const cmdInsert: Command = { name: "insert", summary: "Insert blocks under a parent", run: (c, a) => runInsert(c, a) };
 export const cmdUpdate: Command = { name: "update", summary: "Replace a block's markdown (CAS)", run: (c, a) => runUpdate(c, a) };
 export const cmdMove: Command = { name: "move", summary: "Move blocks under a new parent", run: (c, a) => runMove(c, a) };

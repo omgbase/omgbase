@@ -11,7 +11,7 @@ const GROUPS: { title: string; names: string[] }[] = [
   { title: "orient & read", names: ["status", "ls", "outline", "cat", "show", "find"] },
   { title: "query", names: ["query", "run"] },
   { title: "history & links", names: ["log", "hist", "diff", "links"] },
-  { title: "mutate", names: ["apply", "insert", "update", "edit", "move", "rm", "done", "append", "retarget", "split", "merge", "node"] },
+  { title: "mutate", names: ["apply", "execute", "insert", "update", "edit", "move", "rm", "done", "append", "retarget", "split", "merge", "node"] },
   { title: "documents", names: ["new", "mv", "meta"] },
   { title: "session", names: ["shell"] },
   { title: "sync & serve", names: ["sync", "mcp"] },

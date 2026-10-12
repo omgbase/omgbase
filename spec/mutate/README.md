@@ -718,7 +718,20 @@ instead; then the projection deep-equals `expect`. **Generation**: `packages/cor
   indent, block sequences, plain scalars where legal, `null` as `null`).
   Fixtures pin flat mappings of strings, numbers, booleans and string lists
   only; anything a port's emitter formats differently is out of the
-  fixtures.
+  fixtures. **Idempotent on its own output (2.3, surface 3.3):** `stringify ∘
+  parse` is the identity on what `stringify` wrote, so N sequential
+  `set`/`unset frontmatter.<k>` effects — each `compose(parse(previous)
+  patched)`, §11.3 — produce the bytes of the one merged `compose` the
+  library's `docs_set_meta` produced; the reference proves it over every
+  alchemy document with strings, numbers, booleans, `null`, a string list
+  and a nested mapping. A port whose emitter is not idempotent would
+  diverge from the surface's `docs_set_meta` bytes on multi-key patches.
+- **Pinned (surface 3.3) — the surface's `docs_set_meta` is a known-id head
+  write, the library's a reconciling re-ingest.** Same bytes, rows,
+  revision and mints; the dispositions differ (`edited`/`api` vs
+  `same`/`exact_hash`/`m2.3`). The library operation stays as specified in
+  §6 until it folds into the planner (3.0); `spec/surface` §9 records the
+  surface's choice.
 - **Pinned — `docs_move` records a commit with no revision of the moved
   document** (2.1: with retargets, one revision per rewritten source under
   the move's reason), so a doc's revision `seq` does not advance on a move

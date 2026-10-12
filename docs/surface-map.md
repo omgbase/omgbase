@@ -81,9 +81,9 @@ Legend: `--server` = is this CLI command remote-capable? ✅ wired · ▫️ pla
 | Operation | library | `omg` CLI | MCP tool | `--server` |
 |---|---|---|---|---|
 | Apply a changeset | `apply` | `apply` | `apply` | ✅ |
-| Plan an effect request (frozen plan, writes nothing) | `planEffects` | ⏳ `apply -f {effects} --dry-run` (migration phase) | `plan` | ✅ |
-| Execute a frozen plan | `executePlan` / `executeByDigest` | ⏳ `execute -f plan.json` (migration phase) | `execute` | ✅ |
-| Apply effects one-shot (plan + execute, one tx) | `applyEffects` | ⏳ `apply -f {effects}` (migration phase) | `apply { effects }` | ✅ |
+| Plan an effect request (frozen plan, writes nothing) | `planEffects` | `apply -f <{ effects }> --dry-run` (`--json` prints the Plan) | `plan` | ✅ |
+| Execute a frozen plan | `executePlan` / `executeByDigest` | `execute (-f plan.json \| -)` (the plan form) | `execute` | ✅ |
+| Apply effects one-shot (plan + execute, one tx) | `applyEffects` | `apply -f <{ effects }>` | `apply { effects }` | ✅ |
 | Insert a block | `apply` ops | `insert` | `blocks_insert` | ✅ |
 | Update a block (CAS) | `apply` ops | `update` (b_ target) | `blocks_update` | ✅ |
 | Move block(s) | `apply` ops | `move` | `blocks_move` | ✅ |
@@ -141,8 +141,8 @@ vernacular and `--server` does not apply.
 ## `--server` coverage (state)
 
 **Shipped** — reads, the full doc lifecycle, **all block-level mutation**, tasks,
-append, `node set`, whole-document `update`, `retarget`, `apply`, `sync`, and
-`shell` are wired end-to-end. Remote writes flow through the server → `apply` →
+append, `node set`, whole-document `update`, `retarget`, `apply` (both inputs:
+`{ ops }` and `{ effects }`), `execute`, `sync`, and `shell` are wired end-to-end. Remote writes flow through the server → `apply` →
 write-through to the served repo's tree; local and remote produce byte-identical
 files for the same inputs (verified per-op). The block sugar is backed by
 **`blocks_insert`/`blocks_update`/`blocks_move`/`blocks_remove`/`blocks_split`/

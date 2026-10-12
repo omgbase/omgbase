@@ -1,17 +1,21 @@
-//! ADR-021, the migration phase: the twelve batch-1 sugar tools now lower to
-//! `apply { effects }` ([`Surface::apply_sugar`]) and must be
+//! ADR-021, the migration phase: the twelve batch-1 sugar tools and the four
+//! batch-2 document operations now lower to `apply { effects }`
+//! ([`Surface::apply_sugar`] / [`Surface::apply_sugar_with`]) and must be
 //! **behaviour-preserving**. Every scenario here runs the same call twice —
 //! through the pre-migration handler ([`Surface::call_legacy`], the kernel
-//! ops + [`Surface::apply_ops`], kept verbatim for this comparison) on one
-//! surface and through the effect-driven handler on another, both over the
-//! alchemy corpus under the sequential minter and one clock — and requires:
-//! the result JSON deep-equal (errors included: code, message, `data`), the
-//! store projection identical (`commits` minus `ops`, `docs`, live `blocks`,
-//! `revisions`, `block_changes`, the pool, the pending rows, the files), and
-//! the next `b` the two stores mint identical (a dry run burns the same
-//! ids). The two deliberate fixes the design pins — `blocks_update` with an
-//! empty `expect` on `markdown`, `blocks_check` naming one id twice — are
-//! asserted as differences, not equalities.
+//! ops + [`Surface::apply_ops`] or the library's document operations, kept
+//! verbatim for this comparison) on one surface and through the effect-driven
+//! handler on another, both over the alchemy corpus under the sequential
+//! minter and one clock — and requires: the result JSON deep-equal (errors
+//! included: code, message, `data`), the store projection identical
+//! (`commits` minus `ops`, `docs`, live `blocks`, `revisions`,
+//! `block_changes`, `dispositions`, the pool, the pending rows, the files),
+//! and the next `b` and `d` the two stores mint identical (a dry run burns
+//! the same ids). The deliberate differences the design pins — `blocks_update`
+//! with an empty `expect` on `markdown`, `blocks_check` naming one id twice,
+//! `docs_set_meta`'s known-id identity (dispositions `edited`/`api` where the
+//! reconciling ingest wrote `same`/`exact_hash`) — are asserted as
+//! differences, not equalities.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -125,10 +129,45 @@ fn footprint(s: &Surface) -> Json {
         "blocks": rows("SELECT block_id, doc_id, parent_block, ordinal, depth, type, raw_hash, trivia_hash, attrs, created_commit FROM blocks WHERE deleted_commit IS NULL ORDER BY doc_id, parent_block, ordinal"),
         "revisions": rows("SELECT rev_id, doc_id, seq, rendered_hash, path, commit_id FROM revisions ORDER BY rev_id"),
         "block_changes": rows("SELECT block_id, commit_id, kind FROM block_changes ORDER BY commit_id, block_id"),
+        "dispositions": rows("SELECT commit_id, block_id, kind, reason, matcher_v FROM dispositions ORDER BY commit_id, block_id, kind"),
         "pool": rows("SELECT block_id, doc_id FROM resurrection_pool ORDER BY block_id"),
         "pending": rows("SELECT path FROM pending_materializations ORDER BY path"),
         "files": files,
     })
+}
+
+/// Where two footprints differ, table by table: the rows only one side has
+/// (a readable failure instead of two multi-kilobyte dumps).
+fn footprint_diff(old: &Json, new: &Json) -> String {
+    let mut out = String::new();
+    for (table, o) in old.as_object().unwrap() {
+        let n = &new[table];
+        if o == n {
+            continue;
+        }
+        out.push_str(&format!("  {table}:\n"));
+        match (o.as_array(), n.as_array()) {
+            (Some(o), Some(n)) => {
+                for row in o.iter().filter(|r| !n.contains(r)) {
+                    out.push_str(&format!("    legacy only: {row}\n"));
+                }
+                for row in n.iter().filter(|r| !o.contains(r)) {
+                    out.push_str(&format!("    effects only: {row}\n"));
+                }
+            }
+            _ => {
+                for (k, ov) in o.as_object().unwrap() {
+                    if n.get(k) != Some(ov) {
+                        out.push_str(&format!(
+                            "    {k}: legacy {ov}\n    {k}: effects {}\n",
+                            n.get(k).unwrap_or(&Json::Null)
+                        ));
+                    }
+                }
+            }
+        }
+    }
+    out
 }
 
 fn outcome(r: Result<Json, super::SurfaceError>) -> Json {
@@ -142,6 +181,9 @@ fn outcome(r: Result<Json, super::SurfaceError>) -> Json {
 struct Pair {
     legacy: Surface,
     sugar: Surface,
+    /// A pinned `docs_set_meta` commit happened: its relabelled rows stay in
+    /// every later footprint, so the tolerance sticks for the sequence.
+    identity_pinned: bool,
 }
 
 impl Pair {
@@ -150,29 +192,64 @@ impl Pair {
         Some(Self {
             legacy: surface(&files),
             sugar: surface(&files),
+            identity_pinned: false,
         })
     }
 
     /// Run one call both ways; every observable must agree.
     fn check(&mut self, label: &str, tool: &str, args: Json) -> Json {
+        self.check_with(label, tool, args, false)
+    }
+
+    /// [`Pair::check`]; with `pinned_identity`, a committed `docs_set_meta`
+    /// whose dispositions and block changes are allowed to differ exactly as
+    /// the design pins (§2 item 6): the library's reconciling ingest matched
+    /// every body block `same` (`exact_hash`, the matcher's version), the
+    /// planner's known-id head writes `edited`/`api` with no matcher — the
+    /// same blocks, the same commit, everything else identical.
+    fn check_with(&mut self, label: &str, tool: &str, args: Json, pinned_identity: bool) -> Json {
         let old = outcome(self.legacy.call_legacy(tool, &args));
         let new = outcome(self.sugar.call_result(tool, &args));
         assert_eq!(
             new, old,
             "[{label}] {tool} {args}: the effect-driven result differs from the legacy result"
         );
-        assert_eq!(
-            footprint(&self.sugar),
-            footprint(&self.legacy),
-            "[{label}] {tool} {args}: the store projections differ"
+        let mut fp_old = footprint(&self.legacy);
+        let mut fp_new = footprint(&self.sugar);
+        self.identity_pinned |= pinned_identity;
+        if self.identity_pinned {
+            let d_old = fp_old["dispositions"].take();
+            let d_new = fp_new["dispositions"].take();
+            assert_pinned_set_meta_identity(label, &d_old, &d_new, pinned_identity);
+            let c_old = fp_old["block_changes"].take();
+            let c_new = fp_new["block_changes"].take();
+            assert_pinned_set_meta_changes(label, &c_old, &c_new);
+        }
+        assert!(
+            fp_new == fp_old,
+            "[{label}] {tool} {args}: the store projections differ:\n{}",
+            footprint_diff(&fp_old, &fp_new)
         );
-        let next_old = self.legacy.store_mut().mint("b").unwrap();
-        let next_new = self.sugar.store_mut().mint("b").unwrap();
-        assert_eq!(
-            next_new, next_old,
-            "[{label}] {tool} {args}: the minted-id sequence diverged"
-        );
+        for prefix in ["b", "d"] {
+            let next_old = self.legacy.store_mut().mint(prefix).unwrap();
+            let next_new = self.sugar.store_mut().mint(prefix).unwrap();
+            assert_eq!(
+                next_new, next_old,
+                "[{label}] {tool} {args}: the minted `{prefix}` sequence diverged"
+            );
+        }
         new
+    }
+
+    /// A file both doc stores hold without the store knowing it (a stray file
+    /// on disk).
+    fn seed_file(&mut self, path: &str, bytes: &str) {
+        for s in [&mut self.legacy, &mut self.sugar] {
+            let WriteTarget::Fixed(ds) = &mut s.writes else {
+                panic!("the test surfaces write through a fixed doc store")
+            };
+            ds.write(path, bytes).expect("seeded");
+        }
     }
 
     fn ok(&mut self, label: &str, tool: &str, args: Json) -> Json {
@@ -191,6 +268,70 @@ impl Pair {
             "[{label}] {tool} expected {code}: {out}"
         );
         out
+    }
+}
+
+/// The one difference a committed `docs_set_meta` may show (design §2 item
+/// 6, pinned by the interop `write-docs-set-meta-delete` history read): the
+/// rows of the new commit. Every row the legacy path wrote as
+/// `same`/`exact_hash`/`m<version>` the planner path writes as
+/// `edited`/`api`/`NULL` for the same `(commit, block)`; rows of other kinds
+/// (and every earlier commit's) are identical.
+fn assert_pinned_set_meta_identity(label: &str, old: &Json, new: &Json, expect_relabel: bool) {
+    let rows = |v: &Json| -> Vec<Vec<Json>> {
+        v.as_array()
+            .unwrap()
+            .iter()
+            .map(|r| r.as_array().unwrap().clone())
+            .collect()
+    };
+    let (old, new) = (rows(old), rows(new));
+    assert_eq!(old.len(), new.len(), "[{label}] dispositions row count");
+    let mut relabeled = 0;
+    for (o, n) in old.iter().zip(&new) {
+        if o == n {
+            continue;
+        }
+        assert_eq!(o[0], n[0], "[{label}] commit: {o:?} vs {n:?}");
+        assert_eq!(o[1], n[1], "[{label}] block: {o:?} vs {n:?}");
+        assert_eq!(
+            (&o[2], &o[3]),
+            (&json!("same"), &json!("exact_hash")),
+            "[{label}] the legacy row {o:?} is not a `same`/`exact_hash` match"
+        );
+        assert!(
+            o[4].as_str().is_some_and(|m| m.starts_with('m')),
+            "[{label}] the legacy row {o:?} carries no matcher version"
+        );
+        assert_eq!(
+            (&n[2], &n[3], &n[4]),
+            (&json!("edited"), &json!("api"), &Json::Null),
+            "[{label}] the planner row {n:?} is not `edited`/`api`/NULL"
+        );
+        relabeled += 1;
+    }
+    assert!(
+        relabeled > 0 || !expect_relabel,
+        "[{label}] expected the pinned identity difference; the dispositions were identical"
+    );
+}
+
+/// The `block_changes` face of the same pin: a `same` row of the legacy
+/// commit is an `edited` row of the planner's, block for block.
+fn assert_pinned_set_meta_changes(label: &str, old: &Json, new: &Json) {
+    let (old, new) = (old.as_array().unwrap(), new.as_array().unwrap());
+    assert_eq!(old.len(), new.len(), "[{label}] block_changes row count");
+    for (o, n) in old.iter().zip(new) {
+        if o == n {
+            continue;
+        }
+        assert_eq!(o[0], n[0], "[{label}] block: {o} vs {n}");
+        assert_eq!(o[1], n[1], "[{label}] commit: {o} vs {n}");
+        assert_eq!(
+            (&o[2], &n[2]),
+            (&json!("same"), &json!("edited")),
+            "[{label}] {o} vs {n}: not the pinned `same` → `edited` relabel"
+        );
     }
 }
 
@@ -748,4 +889,300 @@ fn dry_runs_consume_the_ids_the_commit_would_mint() {
     assert_eq!(wet["results"][0]["ids"], json!([format!("b_{}", n + 3)]));
     assert!(wet.get("diffs").is_none(), "no diffs on a commit: {wet}");
     assert_eq!(wet["committed"], true);
+}
+
+// ---- batch 2: the document operations -------------------------------------------------
+
+/// The four document operations both ways: committed and dry runs of
+/// `docs_create`, `docs_set_meta`, `docs_delete` and `docs_move` (with and
+/// without `retarget_inbound`, a self-linking source, frontmatter-only
+/// inbound relations), their own pre-check errors (`path_taken` for a live
+/// document and for a stray file, `doc_missing`) and the id sequence after
+/// each. `docs_set_meta`'s committed runs compare under the pinned identity
+/// difference; everything else must be identical.
+#[test]
+#[allow(clippy::too_many_lines)]
+fn effect_driven_document_operations_match_their_legacy_handlers() {
+    let Some(mut p) = Pair::new() else {
+        return;
+    };
+    const MUTUS: &str = "texts/mutus-liber.md";
+    const EMERALD: &str = "texts/emerald-tablet.md";
+    const CALCINATION: &str = "processes/calcination.md";
+
+    // docs_create: a dry run with frontmatter (the `d` burned), a rooted
+    // path, a body with links (one into a missing document), an empty body,
+    // a body without a trailing newline, a taken path (live document), a
+    // taken path (stray file), by-the-byte the same `path_taken` data.
+    p.ok(
+        "create-dry",
+        "docs_create",
+        json!({ "path": "notes/dry.md", "markdown": "# Dry\n", "frontmatter": { "title": "Dry", "tags": ["a", "b"], "n": 2 }, "dry_run": true }),
+    );
+    p.ok(
+        "create-rooted",
+        "docs_create",
+        json!({ "path": "/notes/new.md", "markdown": "---\ntitle: New\n---\n# New\n\nHello.\n" }),
+    );
+    p.ok(
+        "create-links",
+        "docs_create",
+        json!({ "path": "substances/gold.md", "markdown": "# Gold\n\nThe goal. See [[mercury]], [salt](/substances/salt.md) and [lost](nope.md).\n\n- [ ] refine\n", "frontmatter": { "type": "substance", "layer": "working", "verified": false } }),
+    );
+    p.ok(
+        "create-empty",
+        "docs_create",
+        json!({ "path": "notes/empty.md", "markdown": "" }),
+    );
+    p.ok(
+        "create-no-newline",
+        "docs_create",
+        json!({ "path": "notes/tight.md", "markdown": "Just a line", "frontmatter": {} }),
+    );
+    p.err(
+        "create-taken-doc",
+        "docs_create",
+        json!({ "path": "index.md", "markdown": "# Again\n" }),
+        "path_taken",
+    );
+    p.seed_file("notes/stray.md", "# Stray\n");
+    p.err(
+        "create-taken-file",
+        "docs_create",
+        json!({ "path": "notes/stray.md", "markdown": "# Again\n" }),
+        "path_taken",
+    );
+    p.err(
+        "create-taken-file-dry",
+        "docs_create",
+        json!({ "path": "/notes/stray.md", "markdown": "# Again\n", "dry_run": true }),
+        "path_taken",
+    );
+
+    // docs_set_meta: the dry run (identical: nothing is written), then the
+    // committed patches under the pinned identity difference — set two +
+    // unset one, an idempotent re-set, a key in both lists (unset wins), a
+    // structured value, by id, a document without frontmatter, an unset of
+    // an absent key (a normalizing rewrite); a miss. (Nothing to set or
+    // unset is the pinned argument error below.)
+    p.ok(
+        "set-meta-dry",
+        "docs_set_meta",
+        json!({ "path": SALT, "set": { "verified": false, "reviewed": "2026-09" }, "unset": ["tradition"], "dry_run": true }),
+    );
+    p.check_with(
+        "set-meta",
+        "docs_set_meta",
+        json!({ "path": SALT, "set": { "verified": false, "reviewed": "2026-09" }, "unset": ["tradition"] }),
+        true,
+    );
+    p.check_with(
+        "set-meta-again",
+        "docs_set_meta",
+        json!({ "path": SALT, "set": { "reviewed": "2026-09" } }),
+        true,
+    );
+    p.check_with(
+        "set-meta-shared-key",
+        "docs_set_meta",
+        json!({ "path": SALT, "set": { "status": "x", "other": 1 }, "unset": ["status"] }),
+        true,
+    );
+    p.check_with(
+        "set-meta-structured",
+        "docs_set_meta",
+        json!({ "id": doc_id(&p.legacy, NOTES), "set": { "meta": { "a": [1, 2.5, "three"], "b": null, "c": { "d": true } } } }),
+        true,
+    );
+    p.check_with(
+        "set-meta-no-frontmatter",
+        "docs_set_meta",
+        json!({ "path": "notes/new.md", "set": { "status": "open" }, "unset": ["title"] }),
+        true,
+    );
+    p.check_with(
+        "set-meta-absent-unset",
+        "docs_set_meta",
+        json!({ "path": EMERALD, "unset": ["nope"] }),
+        true,
+    );
+    p.err(
+        "set-meta-missing",
+        "docs_set_meta",
+        json!({ "path": "nope.md", "set": { "a": 1 } }),
+        "doc_missing",
+    );
+
+    // docs_move: the dry runs with and without the retarget, the committed
+    // move with the retarget (index.md links to Mutus Liber), a destination
+    // taken by a live document and by a stray file, a miss, a document with
+    // no inbound link, a committed move without the retarget (the links
+    // dangle), frontmatter-only inbound relations (never rewritten), a
+    // self-linking document (the library's own-path quirk), a rooted `to_path`.
+    p.ok(
+        "move-dry",
+        "docs_move",
+        json!({ "path": MUTUS, "to_path": "texts/silent-book.md", "dry_run": true }),
+    );
+    p.ok(
+        "move-dry-no-retarget",
+        "docs_move",
+        json!({ "id": doc_id(&p.legacy, MUTUS), "to_path": "texts/silent-book.md", "retarget_inbound": false, "dry_run": true }),
+    );
+    p.ok(
+        "move",
+        "docs_move",
+        json!({ "path": MUTUS, "to_path": "texts/silent-book.md" }),
+    );
+    p.err(
+        "move-taken-doc",
+        "docs_move",
+        json!({ "path": SALT, "to_path": "/index.md" }),
+        "path_taken",
+    );
+    p.err(
+        "move-taken-file",
+        "docs_move",
+        json!({ "path": SALT, "to_path": "notes/stray.md" }),
+        "path_taken",
+    );
+    p.err(
+        "move-missing",
+        "docs_move",
+        json!({ "path": MUTUS, "to_path": "x.md" }),
+        "doc_missing",
+    );
+    p.ok(
+        "move-no-inbound",
+        "docs_move",
+        json!({ "path": "notes/empty.md", "to_path": "notes/void.md" }),
+    );
+    p.ok(
+        "move-no-retarget",
+        "docs_move",
+        json!({ "path": SALT, "to_path": "substances/sal.md", "retarget_inbound": false }),
+    );
+    p.ok(
+        "move-frontmatter-inbound-dry",
+        "docs_move",
+        json!({ "path": CALCINATION, "to_path": "processes/burning.md", "dry_run": true }),
+    );
+    p.ok(
+        "move-frontmatter-inbound",
+        "docs_move",
+        json!({ "path": CALCINATION, "to_path": "processes/burning.md" }),
+    );
+    p.ok(
+        "create-self-link",
+        "docs_create",
+        json!({ "path": "self/loop.md", "markdown": "# Loop\n\nSee [me](loop.md) and [me too](/self/loop.md) and [gold](../substances/gold.md).\n" }),
+    );
+    p.ok(
+        "move-self-link-dry",
+        "docs_move",
+        json!({ "path": "self/loop.md", "to_path": "self/ring.md", "dry_run": true }),
+    );
+    p.ok(
+        "move-self-link",
+        "docs_move",
+        json!({ "path": "self/loop.md", "to_path": "/self/ring.md" }),
+    );
+
+    // docs_delete: the dry run, the commit (the inbound links now dangle), a
+    // repeat (a miss), by id, a document with a pending retarget history.
+    p.ok(
+        "delete-dry",
+        "docs_delete",
+        json!({ "path": EMERALD, "dry_run": true }),
+    );
+    p.ok("delete", "docs_delete", json!({ "path": EMERALD }));
+    p.err(
+        "delete-again",
+        "docs_delete",
+        json!({ "path": EMERALD }),
+        "doc_missing",
+    );
+    p.ok(
+        "delete-by-id",
+        "docs_delete",
+        json!({ "id": doc_id(&p.legacy, "substances/gold.md") }),
+    );
+    p.ok(
+        "delete-moved",
+        "docs_delete",
+        json!({ "path": "texts/silent-book.md" }),
+    );
+    // A create at a deleted document's path is allowed again, and lands.
+    p.ok(
+        "create-after-delete",
+        "docs_create",
+        json!({ "path": EMERALD, "markdown": "# Emerald, again\n" }),
+    );
+}
+
+/// `docs_set_meta` with nothing to set or unset: the library path rewrote the
+/// file through the YAML emitter anyway — a normalizing no-op `api` commit
+/// (`set_meta <path>`), or on a dry run a `diffs` entry — where the planner
+/// has no effect to plan. Pinned (3.3, both engines) as an argument error.
+#[test]
+fn docs_set_meta_with_nothing_to_do_is_an_argument_error() {
+    let Some(mut p) = Pair::new() else {
+        return;
+    };
+    let before = footprint(&p.sugar);
+    for args in [
+        json!({ "path": SALT, "set": {}, "unset": [] }),
+        json!({ "path": SALT }),
+        json!({ "path": SALT, "set": {}, "dry_run": true }),
+    ] {
+        let out = outcome(p.sugar.call_result("docs_set_meta", &args));
+        assert_eq!(out["error"], "filter_invalid", "{out}");
+        assert_eq!(
+            out["message"],
+            "pass `set` and/or `unset` (docs_set_meta takes dry_run?, id?, path?, repo?, set?, unset?)",
+            "{out}"
+        );
+    }
+    assert_eq!(footprint(&p.sugar), before, "nothing written");
+    // The legacy handler committed a (normalizing) rewrite instead.
+    let legacy = outcome(p.legacy.call_legacy(
+        "docs_set_meta",
+        &json!({ "path": SALT, "set": {}, "unset": [] }),
+    ));
+    assert_eq!(legacy["committed"], true, "{legacy}");
+}
+
+/// A `docs_create` dry run burns the `d` the commit would take (`spec/surface`
+/// §9, `spec/cli` `docs::new-dry-run-json` pins `d_20`), and no planner key
+/// leaks into the result.
+#[test]
+fn docs_create_dry_run_consumes_the_document_id() {
+    let Some(mut p) = Pair::new() else {
+        return;
+    };
+    let next = p.sugar.store_mut().mint("d").unwrap();
+    let n: usize = next.trim_start_matches("d_").parse().unwrap();
+    let dry = outcome(p.sugar.call_result(
+        "docs_create",
+        &json!({ "path": "notes/dry.md", "markdown": "# Dry\n", "dry_run": true }),
+    ));
+    assert_eq!(
+        dry,
+        json!({ "id": format!("d_{}", n + 1), "path": "/notes/dry.md", "committed": false, "diffs": { "/notes/dry.md": { "before": "", "after": "# Dry\n" } } })
+    );
+    let wet = outcome(p.sugar.call_result(
+        "docs_create",
+        &json!({ "path": "notes/dry.md", "markdown": "# Dry\n" }),
+    ));
+    assert_eq!(
+        wet,
+        json!({ "id": format!("d_{}", n + 2), "path": "/notes/dry.md", "committed": true })
+    );
+    let taken = outcome(p.sugar.call_result(
+        "docs_create",
+        &json!({ "path": "notes/dry.md", "markdown": "x" }),
+    ));
+    assert_eq!(taken["error"], "path_taken");
+    assert_eq!(taken["data"], json!({}), "{taken}");
+    assert_eq!(taken["message"], "document already exists at notes/dry.md");
 }

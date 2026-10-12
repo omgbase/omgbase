@@ -139,8 +139,8 @@ forms) are extracted before `parseArgs` so a value beginning with `-`
 `--server` runs a command against a remote engine over MCP; the set of
 commands that accept it is `REMOTE_OK` = { `sync`, `query`, `outline`, `hist`,
 `cat`, `ls`, `diff`, `find`, `log`, `new`, `mv`, `meta`, `rm`, `update`,
-`retarget`, `apply`, `insert`, `move`, `split`, `merge`, `done`, `append`,
-`node`, `shell` }. Any other command given `--server` (unless `--help`) is
+`retarget`, `apply`, `execute`, `insert`, `move`, `split`, `merge`, `done`,
+`append`, `node`, `shell` }. Any other command given `--server` (unless `--help`) is
 the usage error, exit 2:
 
 ```
@@ -373,6 +373,17 @@ operation's result with `diffs`. Nothing is written or committed. A
 `new --dry-run`'s `docId` is the id the real run would mint next (the dry
 run consumes it, as a block dry run consumes block ids).
 
+**The one exception (cli 3.2): `apply` given `{ effects }`.** Its `--dry-run`
+is the Effect layer's own `plan` (`spec/mutate` §11.6): it prints the same
+note and the per-file diffs of the Plan's `preview` (or, under `--json`, the
+Plan itself — what `execute` takes back), and it **burns no id**: planning
+runs under the symbolic minter, so the ids it reports are `$new.n` and a
+committed run that follows takes exactly the ids the dry run would have
+(`mutate::apply-effects-dry-run`: the dry run, then the commit minting
+`b_328`, the same id the commit alone mints). `execute` has no dry run — the
+plan is the preview; `execute --dry-run` is the usage error
+`execute has no dry run — the plan is the preview (re-plan with apply --dry-run)`.
+
 ### 3.7 Freshness and locks
 
 Before a command runs (`spec/sync` §4.3), unless `--help`, `--stale`,
@@ -428,6 +439,14 @@ The commit **actor** of every CLI write defaults to `human:<os username>`
 - **commit confirmation** (block mutators): stderr
   `  ok committed · <n> document<s> touched` (`document` for one), stdout
   the ids of `results[*].ids` in order, one per line (duplicates included).
+  For a Receipt (`apply` with `{ effects }`, `execute`; cli 3.2) `<n>` is the
+  receipt's `revisions`, and stdout is the Plan's `preview.results[*].ids`
+  with every `$new.n` realized from the receipt's `new_ids` — the same ids the
+  `ops` form prints — when the Plan is at hand with its preview (a local
+  `apply`, any `execute`); when it is not (a plan echoed without `preview`, a
+  remote `apply`), every id the plan minted: the `new_ids` values in order,
+  which includes the discarded mints of a re-parse (`spec/mutate` §10) — ids
+  that name no row.
 - **document-op confirmation** (`new`/`mv`/`rm --doc`/`meta`): stderr
   `  ok <verb> <path>` (`created` / `moved to` / `deleted` / `patched`),
   stdout the document id.
@@ -454,8 +473,8 @@ The **catalog** (no command / `--help` / `help`), on stdout:
 
 Groups, in order: `bootstrap` (init, source, repos), `orient & read` (status,
 ls, outline, cat, show, find), `query` (query, run), `history & links` (log,
-hist, diff, links), `mutate` (apply, insert, update, edit, move, rm, done,
-append, retarget, split, merge, node), `documents` (new, mv, meta), `session`
+hist, diff, links), `mutate` (apply, execute, insert, update, edit, move, rm,
+done, append, retarget, split, merge, node), `documents` (new, mv, meta), `session`
 (shell), `sync & serve` (sync, mcp), `admin` (rebuild-index, gc, doctor,
 config, embed, version). `help` is unlisted. The exact bytes are
 `invoke::help-bare`.
@@ -501,14 +520,24 @@ or a bare `-` for stdin, else stdin. Commit confirmation (§4);
 ### `apply`
 
 `apply [-f <changeset.json|->] [--reason <s>] [--actor <s>] [--dry-run]` —
-the primitive: a changeset `{ "ops": [...] }` (`spec/mutate` §4) from `-f
-<file>`, `-f -` or stdin, applied as one changeset with
-`origin.actor`/`reason`. Placeholders `$n.ids[i]` resolve across ops.
-Confirmation (§4); `--json` the `ApplyResult` (a `remove` result carries
-`removed`). An empty `ops` prints `  nothing to do` on stderr, exit 0. Not a
-changeset → `usage: changeset must have an \`ops\` array`. Kernel errors
+the primitive: a changeset from `-f <file>`, `-f -` or stdin holding
+**exactly one** of two inputs. `{ "effects": [...] }` (cli 3.2; `spec/mutate`
+§11, the `apply` tool's `effects`): the ordered intentional writes, planned
+and committed as one transaction with `origin.actor`/`reason`
+(`applyEffects`); confirmation (§4, the Receipt form); `--json` the Receipt
+`{ plan_id, commit, revisions, new_ids, committed }`; `--dry-run` the Plan
+(§3.6 — the one dry run that burns no id). `{ "ops": [...] }` (`spec/mutate`
+§4): the kernel changeset, applied as before; placeholders `$n.ids[i]`
+resolve across ops; confirmation (§4); `--json` the `ApplyResult` (a `remove`
+result carries `removed`). An empty `ops` or `effects` prints
+`  nothing to do` on stderr, exit 0. Both inputs →
+`usage: changeset must have exactly one of \`ops\` or \`effects\``; neither
+→ `usage: changeset must have an \`ops\` array`; `effects` not an array →
+`usage: changeset \`effects\` must be an array`. Kernel errors
 (`block_missing`, `stale_expectation`, `not_contiguous`, …) render per §3.5
-with the op's payload (`op_index`, …).
+with the op's payload (`op_index`, …); planner errors (`conflicting_effects`,
+`stale_expectation`, `path_taken`, …) with the planner's (`effect_index`,
+`focus`, …) — `mutate::apply-conflicting-effects`.
 
 ### `cat`
 
@@ -623,6 +652,25 @@ without `--no-semantic`, `query` with `semantic()`) fails
 operating system's spawn error text and is **unpinned**. With a working
 provider the status figures and the drain depend on the model — unpinned;
 `spec/search` pins what is embedded.
+
+### `execute`
+
+`execute (-f <plan.json> | -) [--reason <s>] [--actor <s>]` — (cli 3.2) the
+plan form of the `execute` tool (`spec/mutate` §11.7): the Plan JSON that
+`apply -f <effects> --dry-run --json` printed, from `-f <file>`, `-f -` or a
+bare `-` (stdin), admitted — `version` other than 1 →
+`error[unsupported_plan_version]` with `{ version, supported: [1] }`, a core
+whose digest no longer equals its `plan_id` → `error[plan_mismatch]` with
+`{ expected, actual }`, a missing member → `error[filter_invalid]` — and
+committed as one transaction with `origin.actor`/`reason`; a document that
+moved on since the plan (an already executed plan included) →
+`error[stale_plan]` with `{ doc, expected_revision, current: { revision, hash },
+retriable: true }`, nothing written. Confirmation (§4, the Receipt form);
+`--json` the Receipt. Neither `-f` nor `-` →
+`usage: execute requires -f <plan.json> (or - for stdin)`; `--dry-run` →
+`usage: execute has no dry run — the plan is the preview (re-plan with apply --dry-run)`.
+Exact bytes: `mutate::execute-file`, `execute-stdin`, `execute-stale-plan`,
+`execute-plan-mismatch`, `execute-unsupported-plan-version`.
 
 ### `find`
 
@@ -1563,6 +1611,24 @@ was `b_314`).
 
 ## 10. Decisions
 
+- 2026-10-12, cli 3.2: the Effect layer's verbs (ADR-021, `spec/mutate` §11,
+  `spec/surface` 3.1–3.3). `apply -f` accepts `{ effects }` beside `{ ops }`
+  (exactly one): committed it renders the Receipt (confirmation + the ids of
+  the plan's preview results, §4; `--json` the Receipt), `--dry-run` the Plan
+  (the diffs of its preview; `--json` the Plan) and — the documented
+  difference from §3.6 — burns no id. A new verb `execute (-f plan.json | -)`
+  commits exactly a Plan (admission errors `unsupported_plan_version`,
+  `plan_mismatch`, `filter_invalid`; `stale_plan` when a document moved on),
+  in `REMOTE_OK` (the `execute` tool's plan form), the `mutate` help group
+  and `docs/surface-map.md`. A verb and an input added: a minor. Ten cases
+  (`mutate::apply-effects`, `apply-effects-dry-run`, `apply-effects-json`,
+  `apply-both-inputs`, `apply-conflicting-effects`, `execute-file`,
+  `execute-stdin`, `execute-stale-plan`, `execute-plan-mismatch`,
+  `execute-unsupported-plan-version`) plus `invoke::help-card-execute`; the
+  catalog (`invoke::help-bare`) and the `apply` card (`invoke::help-card-apply`)
+  re-rendered for the new verb and input, nothing else moved. The Rust binary
+  renders both verbs over the `apply`/`execute` tools (batch 2 of the
+  migration).
 - 2026-10-12, cli 3.1: `sync --json` (and the sourceless fallback) gains
   `materialized: [path…]`, the freshness sweep's step 0 result (`spec/sync`
   2.2, `spec/store` 14.0 §5.7). An additive result key: a minor; the five

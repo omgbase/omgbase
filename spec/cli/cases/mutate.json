@@ -2400,6 +2400,299 @@
         "stdout": "",
         "stderr": "error[stale_expectation]: content hash mismatch\n  {\n    \"op_index\": 0,\n    \"block\": \"b_309\",\n    \"expected_content_hash\": \"00\",\n    \"current\": {\n      \"hash\": \"50505887d336b1bbe5fa9461f9e2ef7a93e54446d4ac16b9848ceade1c0e841e\",\n      \"markdown\": \"Draft. I have not worked through the plates in order against a commentary, and\\nthe secondary literature disagrees about even the number of stages depicted.\"\n    },\n    \"retriable\": true\n  }\n"
       }
+    },
+    {
+      "name": "apply-effects",
+      "notes": "§6 apply (cli 3.2): the `{ effects }` input — plan + execute as one transaction; the Receipt confirmation prints the live id the preview names (`b_328`, as the `ops` form does; the discarded wrapper mint `b_327` is in the Receipt's new_ids only)",
+      "workspace": "alchemy",
+      "files": {
+        "effects.json": "{\"effects\":[{\"op\":\"insert\",\"into\":{\"kind\":\"block\",\"id\":\"b_310\"},\"markdown\":\"- [ ] Via effects\"}]}\n"
+      },
+      "steps": [
+        {
+          "argv": [
+            "apply",
+            "-f",
+            "effects.json",
+            "--reason",
+            "spec",
+            "--actor",
+            "human:spec"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "b_328\n",
+            "stderr": "  ok committed · 1 document touched\n"
+          }
+        },
+        {
+          "argv": [
+            "cat",
+            "b_310"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "- [ ] Obtain a facsimile with plate numbering\n- [ ] Compare the 1677 and 1702 plate sequences\n- [ ] Decide whether the dew operation is literal\n- [ ] Via effects\n"
+          }
+        },
+        {
+          "argv": [
+            "log",
+            "--cursor",
+            "20",
+            "--json"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "{\"digests\":[{\"commit\":\"c_20\",\"seq\":21,\"ts\":\"2026-09-27T00:00:00.000Z\",\"origin\":\"api\",\"actor\":\"human:spec\",\"summary\":\"api(human:spec): /texts/mutus-liber.md — 12 edited, 1 inserted\",\"revisions\":[{\"id\":\"d_17\",\"path\":\"/texts/mutus-liber.md\",\"hash\":\"97fa8e1175b89d94092673f07fd9bdeb3fde121ac8143077211423a622e344c9\"}]}],\"cursor\":21,\"truncated\":false,\"head\":21}\n"
+          }
+        }
+      ]
+    },
+    {
+      "name": "apply-effects-dry-run",
+      "notes": "§3.6, the documented difference: an effects dry run is the Plan — the preview's diffs — and burns NO id, so the commit that follows takes b_328 exactly as a commit alone does (an `ops` dry run would have burned it, cf. insert-dry-run then apply)",
+      "workspace": "alchemy",
+      "files": {
+        "effects.json": "{\"effects\":[{\"op\":\"insert\",\"into\":{\"kind\":\"block\",\"id\":\"b_310\"},\"markdown\":\"- [ ] Via effects\"}]}\n"
+      },
+      "steps": [
+        {
+          "argv": [
+            "apply",
+            "-f",
+            "effects.json",
+            "--dry-run",
+            "--actor",
+            "human:spec"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "/texts/mutus-liber.md\n@@ -33,4 +33,5 @@\n - [ ] Obtain a facsimile with plate numbering\n - [ ] Compare the 1677 and 1702 plate sequences\n - [ ] Decide whether the dew operation is literal\n+- [ ] Via effects\n \n\n",
+            "stderr": "  dry run — 1 file(s) would change, nothing committed\n"
+          }
+        },
+        {
+          "argv": [
+            "apply",
+            "-f",
+            "effects.json",
+            "--actor",
+            "human:spec"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "b_328\n",
+            "stderr": "  ok committed · 1 document touched\n"
+          }
+        }
+      ]
+    },
+    {
+      "name": "apply-effects-json",
+      "notes": "§6 apply: `--json` prints the Receipt `{ plan_id, commit, revisions, new_ids, committed }`",
+      "workspace": "alchemy",
+      "files": {
+        "effects.json": "{\"effects\":[{\"op\":\"insert\",\"into\":{\"kind\":\"block\",\"id\":\"b_310\"},\"markdown\":\"- [ ] Via effects\"}]}\n"
+      },
+      "argv": [
+        "apply",
+        "-f",
+        "effects.json",
+        "--json",
+        "--actor",
+        "human:spec"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "{\"plan_id\":\"3658b8a5158debce266e2a682cdbe21a60c1e13f32c89846a780603e7da898b7\",\"commit\":\"c_20\",\"revisions\":[{\"id\":\"d_17\",\"path\":\"/texts/mutus-liber.md\",\"hash\":\"97fa8e1175b89d94092673f07fd9bdeb3fde121ac8143077211423a622e344c9\"}],\"new_ids\":{\"$new.0\":\"b_327\",\"$new.1\":\"b_328\"},\"committed\":true}\n"
+      }
+    },
+    {
+      "name": "apply-both-inputs",
+      "notes": "§6 apply: a changeset with both `ops` and `effects` is a usage error (exactly one input)",
+      "workspace": "alchemy",
+      "argv": [
+        "apply",
+        "--actor",
+        "human:spec"
+      ],
+      "stdin": "{\"ops\":[],\"effects\":[]}",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "usage: changeset must have exactly one of `ops` or `effects`\n"
+      }
+    },
+    {
+      "name": "apply-conflicting-effects",
+      "notes": "§6 apply: two `set markdown` on one block with different values — the planner's conflicting_effects with its payload (effects, focus, effect_index), rendered per §3.5",
+      "workspace": "alchemy",
+      "argv": [
+        "apply",
+        "--actor",
+        "human:spec"
+      ],
+      "stdin": "{\"effects\":[{\"op\":\"set\",\"target\":{\"kind\":\"block\",\"id\":\"b_309\"},\"field\":\"markdown\",\"value\":\"one\"},{\"op\":\"set\",\"target\":{\"kind\":\"block\",\"id\":\"b_309\"},\"field\":\"markdown\",\"value\":\"two\"}]}",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "error[conflicting_effects]: effects 0 and 1 contradict each other on block b_309 markdown\n  {\n    \"effects\": [\n      0,\n      1\n    ],\n    \"focus\": {\n      \"kind\": \"scalar\",\n      \"target\": {\n        \"kind\": \"block\",\n        \"id\": \"b_309\"\n      },\n      \"field\": \"markdown\"\n    },\n    \"retriable\": false,\n    \"effect_index\": 1\n  }\n"
+      }
+    },
+    {
+      "name": "execute-file",
+      "notes": "§6 execute: the Plan that `apply -f effects.json --dry-run --json` printed over this workspace (plan_id 3658b8a5…), committed from a file — the Receipt confirmation prints the preview's live id",
+      "workspace": "alchemy",
+      "files": {
+        "plan.json": "{\"version\":1,\"planner_v\":\"p1\",\"effects\":[{\"op\":\"insert\",\"into\":{\"kind\":\"block\",\"id\":\"b_310\"},\"at\":\"end\",\"markdown\":\"- [ ] Via effects\"}],\"opset\":{\"creates\":[],\"moves\":[],\"tombstones\":[],\"set_frontmatter\":[],\"ops\":[{\"op\":\"insert\",\"to\":{\"parent\":\"b_310\",\"at\":\"end\"},\"markdown\":\"- [ ] Via effects\"}]},\"preconditions\":{\"docs\":[{\"id\":\"d_17\",\"path\":\"texts/mutus-liber.md\",\"base_revision\":\"r_17\",\"hash\":\"ccd682da7c3f643751e4aee291b18b75995ef9f883ececc5f925031bb319f4b5\"}],\"blocks\":[],\"parents\":[],\"absent_paths\":[]},\"new_ids\":[{\"symbol\":\"$new.0\",\"kind\":\"block\"},{\"symbol\":\"$new.1\",\"kind\":\"block\"}],\"plan_id\":\"3658b8a5158debce266e2a682cdbe21a60c1e13f32c89846a780603e7da898b7\",\"diagnostics\":[],\"preview\":{\"results\":[{\"ids\":[\"$new.1\"]}],\"revisions\":[{\"id\":\"d_17\",\"path\":\"/texts/mutus-liber.md\",\"hash\":\"97fa8e1175b89d94092673f07fd9bdeb3fde121ac8143077211423a622e344c9\"}],\"diffs\":{\"/texts/mutus-liber.md\":{\"before\":\"---\\ntype: text\\nlayer: draft\\ntradition: western\\nera: 1677\\ntags: [text, images]\\nverified: false\\n---\\n\\n# Mutus Liber\\n\\nThe \\\"silent book,\\\" La Rochelle, 1677: fifteen engraved plates and essentially no\\ntext. The entire Great Work, allegedly, in pictures.\\n\\nlength:: fifteen plates\\nattributed_to:: altus\\n\\n## Contents\\n\\nThe plates show a couple gathering dew in sheets stretched between poles,\\nprocessing it through vessels, and attending a furnace, framed by angels and\\nzodiacal signs. A sequence is clearly intended. What it instructs is not clear.\\n\\nThe dew-gathering is the one concretely readable operation, and it connects to a\\nreal strand of practice: dew was held to be a celestial condensate and a candidate\\n[prima materia](/substances/prima-materia.md).\\n\\n## Status of these notes\\n\\nDraft. I have not worked through the plates in order against a commentary, and\\nthe secondary literature disagrees about even the number of stages depicted.\\n\\n- [ ] Obtain a facsimile with plate numbering\\n- [ ] Compare the 1677 and 1702 plate sequences\\n- [ ] Decide whether the dew operation is literal\\n\",\"after\":\"---\\ntype: text\\nlayer: draft\\ntradition: western\\nera: 1677\\ntags: [text, images]\\nverified: false\\n---\\n\\n# Mutus Liber\\n\\nThe \\\"silent book,\\\" La Rochelle, 1677: fifteen engraved plates and essentially no\\ntext. The entire Great Work, allegedly, in pictures.\\n\\nlength:: fifteen plates\\nattributed_to:: altus\\n\\n## Contents\\n\\nThe plates show a couple gathering dew in sheets stretched between poles,\\nprocessing it through vessels, and attending a furnace, framed by angels and\\nzodiacal signs. A sequence is clearly intended. What it instructs is not clear.\\n\\nThe dew-gathering is the one concretely readable operation, and it connects to a\\nreal strand of practice: dew was held to be a celestial condensate and a candidate\\n[prima materia](/substances/prima-materia.md).\\n\\n## Status of these notes\\n\\nDraft. I have not worked through the plates in order against a commentary, and\\nthe secondary literature disagrees about even the number of stages depicted.\\n\\n- [ ] Obtain a facsimile with plate numbering\\n- [ ] Compare the 1677 and 1702 plate sequences\\n- [ ] Decide whether the dew operation is literal\\n- [ ] Via effects\\n\"}}}}\n"
+      },
+      "steps": [
+        {
+          "argv": [
+            "execute",
+            "-f",
+            "plan.json",
+            "--actor",
+            "human:spec"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "b_328\n",
+            "stderr": "  ok committed · 1 document touched\n"
+          }
+        },
+        {
+          "argv": [
+            "cat",
+            "b_310"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "- [ ] Obtain a facsimile with plate numbering\n- [ ] Compare the 1677 and 1702 plate sequences\n- [ ] Decide whether the dew operation is literal\n- [ ] Via effects\n"
+          }
+        },
+        {
+          "argv": [
+            "log",
+            "--cursor",
+            "20",
+            "--json"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "{\"digests\":[{\"commit\":\"c_20\",\"seq\":21,\"ts\":\"2026-09-27T00:00:00.000Z\",\"origin\":\"api\",\"actor\":\"human:spec\",\"summary\":\"api(human:spec): /texts/mutus-liber.md — 12 edited, 1 inserted\",\"revisions\":[{\"id\":\"d_17\",\"path\":\"/texts/mutus-liber.md\",\"hash\":\"97fa8e1175b89d94092673f07fd9bdeb3fde121ac8143077211423a622e344c9\"}]}],\"cursor\":21,\"truncated\":false,\"head\":21}\n"
+          }
+        }
+      ]
+    },
+    {
+      "name": "execute-stdin",
+      "notes": "§6 execute: the Plan from stdin (`-`), `--json` the Receipt",
+      "workspace": "alchemy",
+      "argv": [
+        "execute",
+        "-",
+        "--json",
+        "--actor",
+        "human:spec"
+      ],
+      "stdin": "{\"version\":1,\"planner_v\":\"p1\",\"effects\":[{\"op\":\"insert\",\"into\":{\"kind\":\"block\",\"id\":\"b_310\"},\"at\":\"end\",\"markdown\":\"- [ ] Via effects\"}],\"opset\":{\"creates\":[],\"moves\":[],\"tombstones\":[],\"set_frontmatter\":[],\"ops\":[{\"op\":\"insert\",\"to\":{\"parent\":\"b_310\",\"at\":\"end\"},\"markdown\":\"- [ ] Via effects\"}]},\"preconditions\":{\"docs\":[{\"id\":\"d_17\",\"path\":\"texts/mutus-liber.md\",\"base_revision\":\"r_17\",\"hash\":\"ccd682da7c3f643751e4aee291b18b75995ef9f883ececc5f925031bb319f4b5\"}],\"blocks\":[],\"parents\":[],\"absent_paths\":[]},\"new_ids\":[{\"symbol\":\"$new.0\",\"kind\":\"block\"},{\"symbol\":\"$new.1\",\"kind\":\"block\"}],\"plan_id\":\"3658b8a5158debce266e2a682cdbe21a60c1e13f32c89846a780603e7da898b7\",\"diagnostics\":[],\"preview\":{\"results\":[{\"ids\":[\"$new.1\"]}],\"revisions\":[{\"id\":\"d_17\",\"path\":\"/texts/mutus-liber.md\",\"hash\":\"97fa8e1175b89d94092673f07fd9bdeb3fde121ac8143077211423a622e344c9\"}],\"diffs\":{\"/texts/mutus-liber.md\":{\"before\":\"---\\ntype: text\\nlayer: draft\\ntradition: western\\nera: 1677\\ntags: [text, images]\\nverified: false\\n---\\n\\n# Mutus Liber\\n\\nThe \\\"silent book,\\\" La Rochelle, 1677: fifteen engraved plates and essentially no\\ntext. The entire Great Work, allegedly, in pictures.\\n\\nlength:: fifteen plates\\nattributed_to:: altus\\n\\n## Contents\\n\\nThe plates show a couple gathering dew in sheets stretched between poles,\\nprocessing it through vessels, and attending a furnace, framed by angels and\\nzodiacal signs. A sequence is clearly intended. What it instructs is not clear.\\n\\nThe dew-gathering is the one concretely readable operation, and it connects to a\\nreal strand of practice: dew was held to be a celestial condensate and a candidate\\n[prima materia](/substances/prima-materia.md).\\n\\n## Status of these notes\\n\\nDraft. I have not worked through the plates in order against a commentary, and\\nthe secondary literature disagrees about even the number of stages depicted.\\n\\n- [ ] Obtain a facsimile with plate numbering\\n- [ ] Compare the 1677 and 1702 plate sequences\\n- [ ] Decide whether the dew operation is literal\\n\",\"after\":\"---\\ntype: text\\nlayer: draft\\ntradition: western\\nera: 1677\\ntags: [text, images]\\nverified: false\\n---\\n\\n# Mutus Liber\\n\\nThe \\\"silent book,\\\" La Rochelle, 1677: fifteen engraved plates and essentially no\\ntext. The entire Great Work, allegedly, in pictures.\\n\\nlength:: fifteen plates\\nattributed_to:: altus\\n\\n## Contents\\n\\nThe plates show a couple gathering dew in sheets stretched between poles,\\nprocessing it through vessels, and attending a furnace, framed by angels and\\nzodiacal signs. A sequence is clearly intended. What it instructs is not clear.\\n\\nThe dew-gathering is the one concretely readable operation, and it connects to a\\nreal strand of practice: dew was held to be a celestial condensate and a candidate\\n[prima materia](/substances/prima-materia.md).\\n\\n## Status of these notes\\n\\nDraft. I have not worked through the plates in order against a commentary, and\\nthe secondary literature disagrees about even the number of stages depicted.\\n\\n- [ ] Obtain a facsimile with plate numbering\\n- [ ] Compare the 1677 and 1702 plate sequences\\n- [ ] Decide whether the dew operation is literal\\n- [ ] Via effects\\n\"}}}}",
+      "expect": {
+        "exit": 0,
+        "stdout": "{\"plan_id\":\"3658b8a5158debce266e2a682cdbe21a60c1e13f32c89846a780603e7da898b7\",\"commit\":\"c_20\",\"revisions\":[{\"id\":\"d_17\",\"path\":\"/texts/mutus-liber.md\",\"hash\":\"97fa8e1175b89d94092673f07fd9bdeb3fde121ac8143077211423a622e344c9\"}],\"new_ids\":{\"$new.0\":\"b_327\",\"$new.1\":\"b_328\"},\"committed\":true}\n"
+      }
+    },
+    {
+      "name": "execute-stale-plan",
+      "notes": "§6 execute: the document moved on since the plan (a block update advanced d_17 to r_20) — stale_plan with the current triple, retriable, nothing written",
+      "workspace": "alchemy",
+      "files": {
+        "plan.json": "{\"version\":1,\"planner_v\":\"p1\",\"effects\":[{\"op\":\"insert\",\"into\":{\"kind\":\"block\",\"id\":\"b_310\"},\"at\":\"end\",\"markdown\":\"- [ ] Via effects\"}],\"opset\":{\"creates\":[],\"moves\":[],\"tombstones\":[],\"set_frontmatter\":[],\"ops\":[{\"op\":\"insert\",\"to\":{\"parent\":\"b_310\",\"at\":\"end\"},\"markdown\":\"- [ ] Via effects\"}]},\"preconditions\":{\"docs\":[{\"id\":\"d_17\",\"path\":\"texts/mutus-liber.md\",\"base_revision\":\"r_17\",\"hash\":\"ccd682da7c3f643751e4aee291b18b75995ef9f883ececc5f925031bb319f4b5\"}],\"blocks\":[],\"parents\":[],\"absent_paths\":[]},\"new_ids\":[{\"symbol\":\"$new.0\",\"kind\":\"block\"},{\"symbol\":\"$new.1\",\"kind\":\"block\"}],\"plan_id\":\"3658b8a5158debce266e2a682cdbe21a60c1e13f32c89846a780603e7da898b7\",\"diagnostics\":[],\"preview\":{\"results\":[{\"ids\":[\"$new.1\"]}],\"revisions\":[{\"id\":\"d_17\",\"path\":\"/texts/mutus-liber.md\",\"hash\":\"97fa8e1175b89d94092673f07fd9bdeb3fde121ac8143077211423a622e344c9\"}],\"diffs\":{\"/texts/mutus-liber.md\":{\"before\":\"---\\ntype: text\\nlayer: draft\\ntradition: western\\nera: 1677\\ntags: [text, images]\\nverified: false\\n---\\n\\n# Mutus Liber\\n\\nThe \\\"silent book,\\\" La Rochelle, 1677: fifteen engraved plates and essentially no\\ntext. The entire Great Work, allegedly, in pictures.\\n\\nlength:: fifteen plates\\nattributed_to:: altus\\n\\n## Contents\\n\\nThe plates show a couple gathering dew in sheets stretched between poles,\\nprocessing it through vessels, and attending a furnace, framed by angels and\\nzodiacal signs. A sequence is clearly intended. What it instructs is not clear.\\n\\nThe dew-gathering is the one concretely readable operation, and it connects to a\\nreal strand of practice: dew was held to be a celestial condensate and a candidate\\n[prima materia](/substances/prima-materia.md).\\n\\n## Status of these notes\\n\\nDraft. I have not worked through the plates in order against a commentary, and\\nthe secondary literature disagrees about even the number of stages depicted.\\n\\n- [ ] Obtain a facsimile with plate numbering\\n- [ ] Compare the 1677 and 1702 plate sequences\\n- [ ] Decide whether the dew operation is literal\\n\",\"after\":\"---\\ntype: text\\nlayer: draft\\ntradition: western\\nera: 1677\\ntags: [text, images]\\nverified: false\\n---\\n\\n# Mutus Liber\\n\\nThe \\\"silent book,\\\" La Rochelle, 1677: fifteen engraved plates and essentially no\\ntext. The entire Great Work, allegedly, in pictures.\\n\\nlength:: fifteen plates\\nattributed_to:: altus\\n\\n## Contents\\n\\nThe plates show a couple gathering dew in sheets stretched between poles,\\nprocessing it through vessels, and attending a furnace, framed by angels and\\nzodiacal signs. A sequence is clearly intended. What it instructs is not clear.\\n\\nThe dew-gathering is the one concretely readable operation, and it connects to a\\nreal strand of practice: dew was held to be a celestial condensate and a candidate\\n[prima materia](/substances/prima-materia.md).\\n\\n## Status of these notes\\n\\nDraft. I have not worked through the plates in order against a commentary, and\\nthe secondary literature disagrees about even the number of stages depicted.\\n\\n- [ ] Obtain a facsimile with plate numbering\\n- [ ] Compare the 1677 and 1702 plate sequences\\n- [ ] Decide whether the dew operation is literal\\n- [ ] Via effects\\n\"}}}}\n"
+      },
+      "steps": [
+        {
+          "argv": [
+            "update",
+            "b_309",
+            "-m",
+            "Draft, revised.",
+            "--actor",
+            "human:spec"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "b_309\n",
+            "stderr": "  updating b_309 (CAS pinned from current bytes)\n  ok committed · 1 document touched\n"
+          }
+        },
+        {
+          "argv": [
+            "execute",
+            "-f",
+            "plan.json",
+            "--actor",
+            "human:spec"
+          ],
+          "expect": {
+            "exit": 1,
+            "stdout": "",
+            "stderr": "error[stale_plan]: document d_17 changed since the plan was made; re-plan\n  {\n    \"doc\": \"d_17\",\n    \"expected_revision\": \"r_17\",\n    \"current\": {\n      \"revision\": \"r_20\",\n      \"hash\": \"ff981464d3f8e6ba3e8b031b2d0471498b9fd6fdb374ca8bdf639c8612a4268f\"\n    },\n    \"retriable\": true\n  }\n"
+          }
+        },
+        {
+          "argv": [
+            "cat",
+            "b_310"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "- [ ] Obtain a facsimile with plate numbering\n- [ ] Compare the 1677 and 1702 plate sequences\n- [ ] Decide whether the dew operation is literal\n"
+          }
+        }
+      ]
+    },
+    {
+      "name": "execute-plan-mismatch",
+      "notes": "§6 execute: the plan's core was edited after planning (its markdown), so the recomputed digest differs from plan_id — plan_mismatch { expected, actual }",
+      "workspace": "alchemy",
+      "files": {
+        "plan.json": "{\"version\":1,\"planner_v\":\"p1\",\"effects\":[{\"op\":\"insert\",\"into\":{\"kind\":\"block\",\"id\":\"b_310\"},\"at\":\"end\",\"markdown\":\"- [ ] Edited after planning\"}],\"opset\":{\"creates\":[],\"moves\":[],\"tombstones\":[],\"set_frontmatter\":[],\"ops\":[{\"op\":\"insert\",\"to\":{\"parent\":\"b_310\",\"at\":\"end\"},\"markdown\":\"- [ ] Edited after planning\"}]},\"preconditions\":{\"docs\":[{\"id\":\"d_17\",\"path\":\"texts/mutus-liber.md\",\"base_revision\":\"r_17\",\"hash\":\"ccd682da7c3f643751e4aee291b18b75995ef9f883ececc5f925031bb319f4b5\"}],\"blocks\":[],\"parents\":[],\"absent_paths\":[]},\"new_ids\":[{\"symbol\":\"$new.0\",\"kind\":\"block\"},{\"symbol\":\"$new.1\",\"kind\":\"block\"}],\"plan_id\":\"3658b8a5158debce266e2a682cdbe21a60c1e13f32c89846a780603e7da898b7\",\"diagnostics\":[],\"preview\":{\"results\":[{\"ids\":[\"$new.1\"]}],\"revisions\":[{\"id\":\"d_17\",\"path\":\"/texts/mutus-liber.md\",\"hash\":\"97fa8e1175b89d94092673f07fd9bdeb3fde121ac8143077211423a622e344c9\"}],\"diffs\":{\"/texts/mutus-liber.md\":{\"before\":\"---\\ntype: text\\nlayer: draft\\ntradition: western\\nera: 1677\\ntags: [text, images]\\nverified: false\\n---\\n\\n# Mutus Liber\\n\\nThe \\\"silent book,\\\" La Rochelle, 1677: fifteen engraved plates and essentially no\\ntext. The entire Great Work, allegedly, in pictures.\\n\\nlength:: fifteen plates\\nattributed_to:: altus\\n\\n## Contents\\n\\nThe plates show a couple gathering dew in sheets stretched between poles,\\nprocessing it through vessels, and attending a furnace, framed by angels and\\nzodiacal signs. A sequence is clearly intended. What it instructs is not clear.\\n\\nThe dew-gathering is the one concretely readable operation, and it connects to a\\nreal strand of practice: dew was held to be a celestial condensate and a candidate\\n[prima materia](/substances/prima-materia.md).\\n\\n## Status of these notes\\n\\nDraft. I have not worked through the plates in order against a commentary, and\\nthe secondary literature disagrees about even the number of stages depicted.\\n\\n- [ ] Obtain a facsimile with plate numbering\\n- [ ] Compare the 1677 and 1702 plate sequences\\n- [ ] Decide whether the dew operation is literal\\n\",\"after\":\"---\\ntype: text\\nlayer: draft\\ntradition: western\\nera: 1677\\ntags: [text, images]\\nverified: false\\n---\\n\\n# Mutus Liber\\n\\nThe \\\"silent book,\\\" La Rochelle, 1677: fifteen engraved plates and essentially no\\ntext. The entire Great Work, allegedly, in pictures.\\n\\nlength:: fifteen plates\\nattributed_to:: altus\\n\\n## Contents\\n\\nThe plates show a couple gathering dew in sheets stretched between poles,\\nprocessing it through vessels, and attending a furnace, framed by angels and\\nzodiacal signs. A sequence is clearly intended. What it instructs is not clear.\\n\\nThe dew-gathering is the one concretely readable operation, and it connects to a\\nreal strand of practice: dew was held to be a celestial condensate and a candidate\\n[prima materia](/substances/prima-materia.md).\\n\\n## Status of these notes\\n\\nDraft. I have not worked through the plates in order against a commentary, and\\nthe secondary literature disagrees about even the number of stages depicted.\\n\\n- [ ] Obtain a facsimile with plate numbering\\n- [ ] Compare the 1677 and 1702 plate sequences\\n- [ ] Decide whether the dew operation is literal\\n- [ ] Edited after planning\\n\"}}}}\n"
+      },
+      "argv": [
+        "execute",
+        "-f",
+        "plan.json",
+        "--actor",
+        "human:spec"
+      ],
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "error[plan_mismatch]: the plan's digest does not match its plan_id; it was edited or produced by a different planner — re-plan\n  {\n    \"expected\": \"3658b8a5158debce266e2a682cdbe21a60c1e13f32c89846a780603e7da898b7\",\n    \"actual\": \"88b158bb77362d39f4c59ed9a83a374fe74b348610fd54f2277aab4d88e109bc\"\n  }\n"
+      }
+    },
+    {
+      "name": "execute-unsupported-plan-version",
+      "notes": "§6 execute: admission checks `version` first — anything but 1 is unsupported_plan_version { version, supported: [1] }",
+      "workspace": "alchemy",
+      "argv": [
+        "execute",
+        "-",
+        "--actor",
+        "human:spec"
+      ],
+      "stdin": "{\"version\":2,\"planner_v\":\"p1\",\"effects\":[],\"opset\":{},\"preconditions\":{},\"new_ids\":[],\"plan_id\":\"00\"}",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "error[unsupported_plan_version]: plan version 2 is not supported (supported: 1)\n  {\n    \"version\": 2,\n    \"supported\": [\n      1\n    ]\n  }\n"
+      }
     }
   ]
 }

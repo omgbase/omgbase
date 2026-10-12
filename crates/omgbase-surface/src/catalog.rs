@@ -18,14 +18,15 @@ use omgbase_format::BlockKind;
 use omgbase_format::text::{normalize_text, normalize_visible_text};
 use omgbase_reconcile::Config;
 use omgbase_search::EmbeddingProvider;
-use omgbase_store::docs_ops::diffs_json;
+use omgbase_store::docs_ops::canonical;
+use omgbase_store::links::inbound_links_to;
 use omgbase_store::mutate_kernel::effects::{
     Admission, EffectExpect, Repair, Target as EffectTarget,
 };
-use omgbase_store::mutate_kernel::{At, Op, Parent};
+use omgbase_store::mutate_kernel::{At, ErrorCode, Op, Parent};
 use omgbase_store::{
-    ApplyOrigin, ApplyRequest, ApplyResult, Diff, DocOpContext, DocStore, EffectsOutcome, Expect,
-    FsDocStore, OpResult, Opset, Plan, PlanContext, PublicEffect, QueryVector, Receipt, Revision,
+    ApplyOrigin, ApplyRequest, ApplyResult, Diff, DocStore, Expect, FsDocStore, MutationError,
+    OpResult, Opset, Plan, PlanContext, PublicEffect, QueryVector, Receipt, Retargeted, Revision,
     Store,
 };
 use omgbase_sync::{RealFileSystem, RepoRow};
@@ -252,6 +253,11 @@ fn set_block(id: &str, field: &str, value: Json, expect: Option<EffectExpect>) -
         expect,
     }
 }
+
+/// What [`Surface::apply_sugar_with`] hands a sugar tool: the plan, the
+/// receipt (`None` on a dry run) and the `$new.<n>` → id map (the receipt's,
+/// or the realize-symbols shim's).
+type SugarOutcome = (Plan, Option<Receipt>, Vec<(String, String)>);
 
 /// The planner stamps `effect_index` on every error it raises; a sugar
 /// tool's caller never passed effects, so the key goes (the kernel's own
@@ -1439,9 +1445,28 @@ impl Surface {
         reason: &str,
         dry_run: bool,
     ) -> Result<ApplyResult> {
+        let (plan, receipt, new_ids) =
+            self.apply_sugar_with(repo_id, root, reason, dry_run, |_, _| Ok(effects))?;
+        Ok(sugar_result(&plan, receipt.as_ref(), &new_ids))
+    }
+
+    /// [`Surface::apply_sugar`]'s seam for the tools whose result is not an
+    /// `ApplyResult` (the document operations): `build` runs under the write
+    /// scope with the store and the doc store — the tool's own pre-checks,
+    /// then its effects — and the plan, the receipt (unless `dry_run`) and
+    /// the realized `$new.<n>` map come back for the tool to shape.
+    fn apply_sugar_with(
+        &mut self,
+        repo_id: &str,
+        root: Option<&str>,
+        reason: &str,
+        dry_run: bool,
+        build: impl FnOnce(&mut Store, &mut dyn DocStore) -> Result<Vec<PublicEffect>>,
+    ) -> Result<SugarOutcome> {
         let origin = ApplyOrigin::new(&self.actor, Some(reason));
         let ctx = self.plan_ctx(repo_id);
-        let res = self.with_writes(root, |store, ds| {
+        let out = self.with_writes(root, |store, ds| {
+            let effects = build(store, ds)?;
             let (plan, receipt) = store
                 .apply_effects_detailed(&ctx, &effects, &origin, ds, dry_run)
                 .map_err(strip_effect_index)?;
@@ -1449,12 +1474,67 @@ impl Surface {
                 Some(r) => r.new_ids.clone(),
                 None => store.realize_symbols(&plan)?,
             };
-            Ok(sugar_result(&plan, receipt.as_ref(), &new_ids))
+            Ok((plan, receipt, new_ids))
         })?;
         if !dry_run {
             self.notify();
         }
-        Ok(res)
+        Ok(out)
+    }
+
+    /// A located document's row (`locate_doc` has already resolved it, so a
+    /// miss here is a race) as `{ doc_id, path, current_rev }`.
+    fn doc_info(&self, repo_id: &str, doc_ref: &str) -> Result<omgbase_store::DocInfo> {
+        self.store
+            .find_doc_by_ref(repo_id, doc_ref)?
+            .ok_or_else(|| {
+                SurfaceError::from(MutationError::new(
+                    ErrorCode::DocMissing,
+                    format!("no document {doc_ref}"),
+                ))
+            })
+    }
+
+    /// `apply { effects }` with the plan kept (ADR-021, `spec/cli` 3.2): the
+    /// Plan on the wire and, unless `dry_run`, the Receipt — plan + execute
+    /// in one write scope and one transaction, as the `apply` tool runs them.
+    /// The CLI's local `apply -f { effects }` reads the preview's live ids
+    /// from the plan after the receipt arrives (the reference's
+    /// `applyEffectsDetailed`); the tool itself answers with one of the two.
+    pub fn apply_effects_with_plan(&mut self, args: &Json) -> Result<(Json, Option<Json>)> {
+        let spec = tool_spec("apply").expect("a catalog tool");
+        validate_arguments("apply", &spec.input_schema, args)?;
+        let (repo, root) = self.scope(args)?;
+        self.require_root(root.as_deref())?;
+        if args.get("effects").is_none() || args.get("ops").is_some() {
+            return Err(argument_error(
+                "apply",
+                "pass exactly one of `ops` or `effects`",
+                &spec.input_schema,
+            ));
+        }
+        self.apply_effects_detailed(&repo, root.as_deref(), args)
+    }
+
+    /// The `apply` tool's effects branch: `(plan, receipt?)` on the wire.
+    fn apply_effects_detailed(
+        &mut self,
+        repo: &str,
+        root: Option<&str>,
+        args: &Json,
+    ) -> Result<(Json, Option<Json>)> {
+        let effects = parse_effects(&args["effects"])?;
+        let dry = arg_bool(args, "dry_run")?.unwrap_or(false);
+        let reason = arg_str(args, "reason").map(str::to_owned);
+        let origin = ApplyOrigin::new(&self.actor, reason.as_deref());
+        let ctx = self.plan_ctx(repo);
+        let (plan, receipt) = self.with_writes(root, |store, ds| {
+            Ok(store.apply_effects_detailed(&ctx, &effects, &origin, ds, dry)?)
+        })?;
+        if receipt.is_some() {
+            self.notify();
+        }
+        Ok((plan_json(&plan), receipt.as_ref().map(receipt_json)))
     }
 
     fn plan_ctx(&mut self, repo_id: &str) -> PlanContext {
@@ -1465,8 +1545,11 @@ impl Surface {
         }
     }
 
-    fn doc_ctx(&mut self, repo_id: &str) -> DocOpContext {
-        DocOpContext {
+    /// The library document operations' context — the pre-migration
+    /// handlers' (`call_legacy`), tests only since batch 2.
+    #[cfg(test)]
+    fn doc_ctx(&mut self, repo_id: &str) -> omgbase_store::DocOpContext {
+        omgbase_store::DocOpContext {
             repo_id: repo_id.to_owned(),
             actor: Some(self.actor.clone()),
             ts: self.now(),
@@ -1475,11 +1558,13 @@ impl Surface {
 
     // ---- the pre-migration handlers (tests only) ---------------------------------------
 
-    /// The twelve batch-1 sugar tools as they ran before ADR-021's migration
-    /// phase — each building its kernel ops and calling [`Surface::apply_ops`]
-    /// — kept verbatim as the reference the equivalence tests compare the
-    /// effect-driven handlers against (`sugar_tests`). Not compiled into the
-    /// library.
+    /// The sixteen migrated sugar tools as they ran before ADR-021's
+    /// migration phase — the twelve batch-1 block/link tools building their
+    /// kernel ops and calling [`Surface::apply_ops`], the four batch-2
+    /// document operations calling the library's `docs_create` / `docs_move`
+    /// / `docs_delete` / `docs_set_meta` — kept verbatim as the reference the
+    /// equivalence tests compare the effect-driven handlers against
+    /// (`sugar_tests`). Not compiled into the library.
     #[cfg(test)]
     #[allow(clippy::too_many_lines)]
     pub(crate) fn call_legacy(&mut self, name: &str, args: &Json) -> Result<Json> {
@@ -1856,6 +1941,116 @@ impl Surface {
                 m.insert("applied".to_owned(), json!(!dry));
                 Ok(merge(m, apply_json(&res)))
             }
+            "docs_create" => {
+                let (repo, root) = self.scope(args)?;
+                let ctx = self.doc_ctx(&repo);
+                let path = arg_string(args, "path")?;
+                let markdown = arg_string(args, "markdown")?;
+                let fm = arg_object(args, "frontmatter")?.cloned();
+                let dry = arg_bool(args, "dry_run")?.unwrap_or(false);
+                let res = self.with_writes(root.as_deref(), |store, ds| {
+                    Ok(if dry {
+                        store
+                            .dry_run()
+                            .docs_create(&ctx, ds, &path, &markdown, fm.as_ref())?
+                    } else {
+                        store.docs_create(&ctx, ds, &path, &markdown, fm.as_ref())?
+                    })
+                })?;
+                if !dry {
+                    self.notify();
+                }
+                Ok(doc_op_json(&res))
+            }
+            "docs_move" => {
+                let (repo, root) = self.scope(args)?;
+                let doc = self.locate_doc(&repo, name, args)?;
+                let ctx = self.doc_ctx(&repo);
+                let to = arg_string(args, "to_path")?;
+                // spec/mutate §6 (1.3): the default is `true`; `false` opts out.
+                let retarget = arg_bool(args, "retarget_inbound")?.unwrap_or(true);
+                let dry = arg_bool(args, "dry_run")?.unwrap_or(false);
+                let res = self.with_writes(root.as_deref(), |store, ds| {
+                    Ok(if dry {
+                        store.dry_run().docs_move(&ctx, ds, &doc, &to, retarget)?
+                    } else {
+                        store.docs_move(&ctx, ds, &doc, &to, retarget)?
+                    })
+                })?;
+                if !dry {
+                    self.notify();
+                }
+                // `{ id, path, committed, diffs?, dangling, retargeted }` — the
+                // reference spreads the planned/moved record before the link report.
+                let mut m = Map::new();
+                m.insert("id".to_owned(), json!(res.doc_id));
+                m.insert("path".to_owned(), json!(reference_path(&res.path)));
+                m.insert("committed".to_owned(), json!(res.committed));
+                if let Some(diffs) = &res.diffs {
+                    m.insert(
+                        "diffs".to_owned(),
+                        reference_keyed(&omgbase_store::docs_ops::diffs_json(diffs)),
+                    );
+                }
+                // Each dangling link is an edge row under the `edges` target's
+                // names (§1.2, 3.0) with its source `path` rooted; its `target`
+                // stays as authored — that is what the link says.
+                m.insert(
+                    "dangling".to_owned(),
+                    Json::Array(res.dangling.iter().map(dangling_json).collect()),
+                );
+                m.insert(
+                    "retargeted".to_owned(),
+                    json!(
+                        res.retargeted
+                            .as_ref()
+                            .map(|r| json!({ "blocks": r.blocks, "docs": r.docs }))
+                    ),
+                );
+                Ok(Json::Object(m))
+            }
+            "docs_delete" => {
+                let (repo, root) = self.scope(args)?;
+                let doc = self.locate_doc(&repo, name, args)?;
+                let ctx = self.doc_ctx(&repo);
+                let dry = arg_bool(args, "dry_run")?.unwrap_or(false);
+                let res = self.with_writes(root.as_deref(), |store, ds| {
+                    Ok(if dry {
+                        store.dry_run().docs_delete(&ctx, ds, &doc)?
+                    } else {
+                        store.docs_delete(&ctx, ds, &doc)?
+                    })
+                })?;
+                if !dry {
+                    self.notify();
+                }
+                Ok(doc_op_json(&res))
+            }
+            "docs_set_meta" => {
+                let (repo, root) = self.scope(args)?;
+                let doc = self.locate_doc(&repo, name, args)?;
+                let ctx = self.doc_ctx(&repo);
+                let set = arg_object(args, "set")?.cloned();
+                let unset = if args.get("unset").is_some() {
+                    arg_strings(args, "unset")?
+                } else {
+                    Vec::new()
+                };
+                let dry = arg_bool(args, "dry_run")?.unwrap_or(false);
+                let res = self.with_writes(root.as_deref(), |store, ds| {
+                    Ok(if dry {
+                        store
+                            .dry_run()
+                            .docs_set_meta(&ctx, ds, &doc, set.as_ref(), &unset)?
+                    } else {
+                        store.docs_set_meta(&ctx, ds, &doc, set.as_ref(), &unset)?
+                    })
+                })?;
+                if !dry {
+                    self.notify();
+                }
+                Ok(doc_op_json(&res))
+            }
             other => self.call_result(other, args),
         }
     }
@@ -2105,21 +2300,9 @@ impl Surface {
                     ));
                 }
                 if has_effects {
-                    let effects = parse_effects(&args["effects"])?;
-                    let dry = arg_bool(args, "dry_run")?.unwrap_or(false);
-                    let reason = arg_str(args, "reason").map(str::to_owned);
-                    let origin = ApplyOrigin::new(&self.actor, reason.as_deref());
-                    let ctx = self.plan_ctx(&repo);
-                    let out = self.with_writes(root.as_deref(), |store, ds| {
-                        Ok(store.apply_effects(&ctx, &effects, &origin, ds, dry)?)
-                    })?;
-                    return Ok(match out {
-                        EffectsOutcome::Plan(plan) => plan_json(&plan),
-                        EffectsOutcome::Receipt(receipt) => {
-                            self.notify();
-                            receipt_json(&receipt)
-                        }
-                    });
+                    let (plan, receipt) =
+                        self.apply_effects_detailed(&repo, root.as_deref(), args)?;
+                    return Ok(receipt.unwrap_or(plan));
                 }
                 let ops = args
                     .get("ops")
@@ -2635,63 +2818,121 @@ impl Surface {
             }
             "docs_create" => {
                 let (repo, root) = self.scope(args)?;
-                let ctx = self.doc_ctx(&repo);
-                let path = arg_string(args, "path")?;
+                let rel = canonical(&arg_string(args, "path")?);
                 let markdown = arg_string(args, "markdown")?;
                 let fm = arg_object(args, "frontmatter")?.cloned();
                 let dry = arg_bool(args, "dry_run")?.unwrap_or(false);
-                let res = self.with_writes(root.as_deref(), |store, ds| {
-                    Ok(if dry {
-                        store
-                            .dry_run()
-                            .docs_create(&ctx, ds, &path, &markdown, fm.as_ref())?
-                    } else {
-                        store.docs_create(&ctx, ds, &path, &markdown, fm.as_ref())?
-                    })
-                })?;
-                if !dry {
-                    self.notify();
+                let reason = format!("create {rel}");
+                // The library's own checks first, in its order and with its
+                // messages (`path_taken` with an empty `data`, as pinned); the
+                // planner's `check_absent` would name the path in `data`.
+                let (plan, receipt, new_ids) =
+                    self.apply_sugar_with(&repo, root.as_deref(), &reason, dry, |store, ds| {
+                        if store.live_doc_at(&repo, &rel)? {
+                            return Err(path_taken(format!("document already exists at {rel}")));
+                        }
+                        if ds.exists(&rel) {
+                            return Err(path_taken(format!(
+                                "file already exists on disk at {rel}"
+                            )));
+                        }
+                        Ok(vec![PublicEffect::Create {
+                            path: rel.clone(),
+                            markdown,
+                            frontmatter: fm,
+                        }])
+                    })?;
+                // `id`: committed, the receipt's first revision is the
+                // create's; on a dry run the plan's one `d` symbol was realized
+                // through the shim — the id the legacy dry run minted.
+                let id = match &receipt {
+                    Some(r) => r.revisions.first().map(|r| r.doc.clone()),
+                    None => new_ids.first().map(|(_, id)| id.clone()),
                 }
-                Ok(doc_op_json(&res))
+                .ok_or_else(|| {
+                    SurfaceError::other(format!("create: nothing committed for {rel}"))
+                })?;
+                Ok(doc_sugar_json(&id, &rel, receipt.is_some(), &plan))
             }
             "docs_move" => {
                 let (repo, root) = self.scope(args)?;
                 let doc = self.locate_doc(&repo, name, args)?;
-                let ctx = self.doc_ctx(&repo);
-                let to = arg_string(args, "to_path")?;
+                let to_rel = canonical(&arg_string(args, "to_path")?);
                 // spec/mutate §6 (1.3): the default is `true`; `false` opts out.
                 let retarget = arg_bool(args, "retarget_inbound")?.unwrap_or(true);
                 let dry = arg_bool(args, "dry_run")?.unwrap_or(false);
-                let res = self.with_writes(root.as_deref(), |store, ds| {
-                    Ok(if dry {
-                        store.dry_run().docs_move(&ctx, ds, &doc, &to, retarget)?
-                    } else {
-                        store.docs_move(&ctx, ds, &doc, &to, retarget)?
-                    })
-                })?;
-                if !dry {
-                    self.notify();
-                }
+                let info = self.doc_info(&repo, &doc)?;
+                let reason = format!("move {} -> {to_rel}", info.path);
+                // `dangling`/`retargeted` as the library reported them: planned
+                // over the current blocks before anything moves (the move
+                // itself changes no block, so the real run and its dry run
+                // report identically); the planner lowers the same plan.
+                let mut report: Option<(Vec<omgbase_store::InboundLink>, Option<Retargeted>)> =
+                    None;
+                let (plan, receipt, _) =
+                    self.apply_sugar_with(&repo, root.as_deref(), &reason, dry, |store, ds| {
+                        if store.live_doc_at(&repo, &to_rel)? {
+                            return Err(path_taken(format!(
+                                "a document already exists at {to_rel}"
+                            )));
+                        }
+                        let inbound =
+                            inbound_links_to(store.conn(), &repo, &info.doc_id, &info.path)?;
+                        if ds.exists(&to_rel) {
+                            return Err(path_taken(format!(
+                                "file already exists on disk at {to_rel}"
+                            )));
+                        }
+                        report = Some(if retarget && !inbound.is_empty() {
+                            let p = store.plan_inbound_retarget(
+                                &info.doc_id,
+                                &info.path,
+                                &to_rel,
+                                &inbound,
+                            )?;
+                            (
+                                p.dangling,
+                                Some(Retargeted {
+                                    blocks: p.blocks,
+                                    docs: p.docs,
+                                }),
+                            )
+                        } else {
+                            (inbound, None)
+                        });
+                        Ok(vec![PublicEffect::MoveDocument {
+                            target: EffectTarget::Document {
+                                id: Some(info.doc_id.clone()),
+                                path: None,
+                            },
+                            to: to_rel.clone(),
+                            retarget_inbound: retarget,
+                        }])
+                    })?;
+                let (dangling, retargeted) = report.expect("set before the effects were built");
                 // `{ id, path, committed, diffs?, dangling, retargeted }` — the
                 // reference spreads the planned/moved record before the link report.
                 let mut m = Map::new();
-                m.insert("id".to_owned(), json!(res.doc_id));
-                m.insert("path".to_owned(), json!(reference_path(&res.path)));
-                m.insert("committed".to_owned(), json!(res.committed));
-                if let Some(diffs) = &res.diffs {
-                    m.insert("diffs".to_owned(), reference_keyed(&diffs_json(diffs)));
+                m.insert("id".to_owned(), json!(info.doc_id));
+                m.insert("path".to_owned(), json!(reference_path(&to_rel)));
+                m.insert("committed".to_owned(), json!(receipt.is_some()));
+                if receipt.is_none() {
+                    m.insert(
+                        "diffs".to_owned(),
+                        move_diffs_json(&plan, &info.path, &to_rel),
+                    );
                 }
                 // Each dangling link is an edge row under the `edges` target's
                 // names (§1.2, 3.0) with its source `path` rooted; its `target`
                 // stays as authored — that is what the link says.
                 m.insert(
                     "dangling".to_owned(),
-                    Json::Array(res.dangling.iter().map(dangling_json).collect()),
+                    Json::Array(dangling.iter().map(dangling_json).collect()),
                 );
                 m.insert(
                     "retargeted".to_owned(),
                     json!(
-                        res.retargeted
+                        retargeted
                             .as_ref()
                             .map(|r| json!({ "blocks": r.blocks, "docs": r.docs }))
                     ),
@@ -2701,24 +2942,27 @@ impl Surface {
             "docs_delete" => {
                 let (repo, root) = self.scope(args)?;
                 let doc = self.locate_doc(&repo, name, args)?;
-                let ctx = self.doc_ctx(&repo);
                 let dry = arg_bool(args, "dry_run")?.unwrap_or(false);
-                let res = self.with_writes(root.as_deref(), |store, ds| {
-                    Ok(if dry {
-                        store.dry_run().docs_delete(&ctx, ds, &doc)?
-                    } else {
-                        store.docs_delete(&ctx, ds, &doc)?
-                    })
-                })?;
-                if !dry {
-                    self.notify();
-                }
-                Ok(doc_op_json(&res))
+                let info = self.doc_info(&repo, &doc)?;
+                let reason = format!("delete {}", info.path);
+                let target = EffectTarget::Document {
+                    id: Some(info.doc_id.clone()),
+                    path: None,
+                };
+                let (plan, receipt, _) =
+                    self.apply_sugar_with(&repo, root.as_deref(), &reason, dry, |_, _| {
+                        Ok(vec![PublicEffect::RemoveDocument { target }])
+                    })?;
+                Ok(doc_sugar_json(
+                    &info.doc_id,
+                    &info.path,
+                    receipt.is_some(),
+                    &plan,
+                ))
             }
             "docs_set_meta" => {
                 let (repo, root) = self.scope(args)?;
                 let doc = self.locate_doc(&repo, name, args)?;
-                let ctx = self.doc_ctx(&repo);
                 let set = arg_object(args, "set")?.cloned();
                 let unset = if args.get("unset").is_some() {
                     arg_strings(args, "unset")?
@@ -2726,19 +2970,57 @@ impl Surface {
                     Vec::new()
                 };
                 let dry = arg_bool(args, "dry_run")?.unwrap_or(false);
-                let res = self.with_writes(root.as_deref(), |store, ds| {
-                    Ok(if dry {
-                        store
-                            .dry_run()
-                            .docs_set_meta(&ctx, ds, &doc, set.as_ref(), &unset)?
-                    } else {
-                        store.docs_set_meta(&ctx, ds, &doc, set.as_ref(), &unset)?
-                    })
-                })?;
-                if !dry {
-                    self.notify();
+                let info = self.doc_info(&repo, &doc)?;
+                // One `set`/`unset frontmatter.<key>` per key; a key in both
+                // lists is only unset (the library merged `set` first and
+                // deleted `unset` after, so `unset` won — and the planner would
+                // call two writes to one scalar a conflict).
+                let target = EffectTarget::Document {
+                    id: Some(info.doc_id.clone()),
+                    path: None,
+                };
+                let mut effects: Vec<PublicEffect> = Vec::new();
+                if let Some(set) = &set {
+                    for (k, v) in set {
+                        if !unset.contains(k) {
+                            effects.push(PublicEffect::Set {
+                                target: target.clone(),
+                                field: format!("frontmatter.{k}"),
+                                value: v.clone(),
+                                expect: None,
+                            });
+                        }
+                    }
                 }
-                Ok(doc_op_json(&res))
+                for k in &unset {
+                    effects.push(PublicEffect::Unset {
+                        target: target.clone(),
+                        field: format!("frontmatter.{k}"),
+                        expect: None,
+                    });
+                }
+                if effects.is_empty() {
+                    // Nothing to set or unset: the library path rewrote the
+                    // frontmatter through the YAML emitter anyway (a
+                    // normalizing no-op commit); with no effect to plan this is
+                    // an argument error in both engines (3.3).
+                    return Err(argument_error(
+                        name,
+                        "pass `set` and/or `unset`",
+                        &spec.input_schema,
+                    ));
+                }
+                let reason = format!("set_meta {}", info.path);
+                let (plan, receipt, _) =
+                    self.apply_sugar_with(&repo, root.as_deref(), &reason, dry, |_, _| {
+                        Ok(effects)
+                    })?;
+                Ok(doc_sugar_json(
+                    &info.doc_id,
+                    &info.path,
+                    receipt.is_some(),
+                    &plan,
+                ))
             }
             "docs_update" => {
                 let (repo, root) = self.scope(args)?;
@@ -3115,14 +3397,77 @@ fn dangling_json(l: &omgbase_store::InboundLink) -> Json {
 
 /// A document operation's result on the wire: `{ id, path, committed,
 /// diffs? }` — the store's `{ doc, path }` re-shaped under the row rule
-/// (§1.2, 3.0); `diffs` only on a dry run (1.3).
+/// (§1.2, 3.0); `diffs` only on a dry run (1.3). The pre-migration handlers'
+/// (`call_legacy`), tests only since batch 2.
+#[cfg(test)]
 fn doc_op_json(res: &omgbase_store::DocOpResult) -> Json {
     let mut m = Map::new();
     m.insert("id".to_owned(), json!(res.doc_id));
     m.insert("path".to_owned(), json!(reference_path(&res.path)));
     m.insert("committed".to_owned(), json!(res.committed));
     if let Some(diffs) = &res.diffs {
-        m.insert("diffs".to_owned(), reference_keyed(&diffs_json(diffs)));
+        m.insert(
+            "diffs".to_owned(),
+            reference_keyed(&omgbase_store::docs_ops::diffs_json(diffs)),
+        );
+    }
+    Json::Object(m)
+}
+
+/// `path_taken` as the library's document operations raise it: the message
+/// alone, an empty `data` (`spec/surface` §7 pins `path_taken {}`).
+fn path_taken(message: String) -> SurfaceError {
+    SurfaceError::from(MutationError::new(ErrorCode::PathTaken, message))
+}
+
+/// A document sugar tool's result (ADR-021 migration): `{ id, path,
+/// committed, diffs? }` — `diffs` the plan preview's, on a dry run only, the
+/// keys in the reference form.
+fn doc_sugar_json(id: &str, path: &str, committed: bool, plan: &Plan) -> Json {
+    let mut m = Map::new();
+    m.insert("id".to_owned(), json!(id));
+    m.insert("path".to_owned(), json!(reference_path(path)));
+    m.insert("committed".to_owned(), json!(committed));
+    if !committed {
+        let mut d = Map::new();
+        for (p, (before, after)) in plan.preview.as_ref().map_or(&[][..], |p| &p.diffs[..]) {
+            d.insert(
+                reference_path(p),
+                json!({ "before": before, "after": after }),
+            );
+        }
+        m.insert("diffs".to_owned(), Json::Object(d));
+    }
+    Json::Object(m)
+}
+
+/// `docs_move`'s dry-run `diffs` in the library's order and content (the
+/// plan preview puts the rewritten sources first, then the emptied old path
+/// and the filled new one): the old path emptied, the new path filled with
+/// the current bytes, then every other rewritten source in preview order.
+/// One library quirk kept: when the moved document links to itself, its
+/// rewrite was loaded under the OLD path and `Object.assign` landed it
+/// there — so the old path shows `bytes → rewritten`, the new path `"" →
+/// bytes` (the preview puts the rewrite at the new path).
+fn move_diffs_json(plan: &Plan, from: &str, to: &str) -> Json {
+    let empty: Vec<(String, (String, String))> = Vec::new();
+    let preview = plan.preview.as_ref().map_or(&empty, |p| &p.diffs);
+    let find = |path: &str| preview.iter().find(|(p, _)| p == path).map(|(_, d)| d);
+    let bytes = find(from).map_or_else(String::new, |d| d.0.clone());
+    let own_after = find(to).map_or_else(|| bytes.clone(), |d| d.1.clone());
+    let entry = |before: &str, after: &str| json!({ "before": before, "after": after });
+    let mut m = Map::new();
+    let from_after = if own_after == bytes {
+        String::new()
+    } else {
+        own_after
+    };
+    m.insert(reference_path(from), entry(&bytes, &from_after));
+    m.insert(reference_path(to), entry("", &bytes));
+    for (path, (before, after)) in preview {
+        if path != from && path != to {
+            m.insert(reference_path(path), entry(before, after));
+        }
     }
     Json::Object(m)
 }

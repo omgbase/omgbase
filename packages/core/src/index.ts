@@ -147,11 +147,38 @@ export {
   docsMove,
   docsDelete,
   docsSetMeta,
+  canonicalDocPath,
+  planInboundRetarget,
   type DocOpContext,
   type DocOpResult,
   type DocMoveOptions,
   type DocMoveResult,
 } from "./mutate/docs.js";
+// The Effect layer (ADR-021, spec/mutate §11): plan / execute / apply { effects } and the plan's shapes.
+export {
+  planEffects,
+  executePlan,
+  executeByDigest,
+  applyEffects,
+  applyEffectsDetailed,
+  realizeNewIds,
+  substituteSymbols,
+  legacyApplyResult,
+  admitPlan,
+  canonicalJson,
+  planDigest,
+  PLAN_VERSION,
+  PLANNER_V,
+  type Plan,
+  type PlanCore,
+  type PlanOpset,
+  type PlanPreconditions,
+  type PlanPreview,
+  type Receipt,
+  type PlanEffectsRequest,
+  type ExecuteRequest,
+} from "./mutate/plan.js";
+export { validateEffects, EFFECT_OPS, type Effect, type EffectTarget, type EffectExpect, type ResolvedEffect } from "./mutate/effects.js";
 // Inbound-link discovery + destination-aware rewrite (docs_move's dangling report / retarget_inbound).
 export { inboundLinksTo, retargetLinksInRaw, type InboundLink } from "./graph/inbound-links.js";
 // Whole-document update: reconcile → opset → inspect/apply.

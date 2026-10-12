@@ -9156,7 +9156,7 @@
     },
     {
       "name": "write-docs-set-meta-delete",
-      "notes": "§4 docs_set_meta (set two keys, unset one; spec/mutate §6 YAML emitter) and docs_delete (an intentional api-origin removal; a miss → doc_missing). Reads: the edited document, an OQX read of its properties, the listing, docs_history of the deleted doc with and without include_deleted, links_stale (prima-materia now dangles), docs_tree under texts/, the api feed, repos_status.",
+      "notes": "§4 docs_set_meta (set two keys, unset one; spec/mutate §6 YAML emitter) and docs_delete (an intentional api-origin removal; a miss → doc_missing). Reads: the edited document, blocks_history of its first block (3.3: the set_meta is a known-id head write — the disposition is `edited`/`api`, not the matcher's `same`/`exact_hash`), an OQX read of its properties, the listing, docs_history of the deleted doc with and without include_deleted, links_stale (prima-materia now dangles), docs_tree under texts/, the api feed, repos_status.",
       "writes": [
         {
           "tool": "docs_set_meta",
@@ -9189,6 +9189,12 @@
           "tool": "docs_read",
           "args": {
             "path": "substances/salt.md"
+          }
+        },
+        {
+          "tool": "blocks_history",
+          "args": {
+            "id": "b_261"
           }
         },
         {
@@ -9285,6 +9291,26 @@
             },
             "raw": "---\ntype: substance\nslug: salt\nlayer: canon\nelement: salt\ntags:\n  - substance\n  - tria-prima\nverified: false\nreviewed: 2026-09\n---\n\n# Salt\n\nWhat remains. Burn a plant to ash and leach the ash with water, and the residue\nthat crystallizes out is the salt — the incombustible, fixed body.\n\nsymbol:: 🜔\nsoluble:: yes\ntoxic:: no\n\n## As a principle\n\nSalt is the third of the tria prima: the body that gives a substance its\npersistence and form. Where [[mercury]] flies off and [[sulphur]] burns, salt\nstays behind.\n\nThe operation that produces it is straightforward and repeatable, which gave the\nprinciple an evidential weight the other two lacked. You can *show* someone the\nsalt of a plant.\n\n## Practical extraction\n\nThe standard route, still sound:\n\n1. Incinerate the material completely — see [calcination](/processes/calcination.md).\n2. Leach the ash with distilled water.\n3. Filter, then evaporate slowly to crystallize.\n\n[Coagulation](/processes/coagulation.md) is the general name for step 3.\n\n## Note\n\nThe alchemical \"salt\" is not sodium chloride but the mixed carbonates and\npotash left after combustion. The terminology predates the distinction.\n\n## Supplies\n\nBench stock for the leaching work. Nothing outstanding.\n\n- [x] Buy more salt of tartar\n- [x] Replace the leaching filter papers\n"
           },
+          [
+            {
+              "commitId": "c_20",
+              "seq": 21,
+              "ts": "2026-09-27T00:00:00.000Z",
+              "origin": "api",
+              "kind": "edited",
+              "confidence": 1,
+              "reason": "api"
+            },
+            {
+              "commitId": "c_14",
+              "seq": 15,
+              "ts": "2026-09-27T00:00:00.000Z",
+              "origin": "observed",
+              "kind": "inserted",
+              "confidence": null,
+              "reason": null
+            }
+          ],
           {
             "hits": [
               {

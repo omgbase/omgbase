@@ -17,8 +17,8 @@ const GROUPS: &[(&str, &[&str])] = &[
     (
         "mutate",
         &[
-            "apply", "insert", "update", "edit", "move", "rm", "done", "append", "retarget",
-            "split", "merge", "node",
+            "apply", "execute", "insert", "update", "edit", "move", "rm", "done", "append",
+            "retarget", "split", "merge", "node",
         ],
     ),
     ("documents", &["new", "mv", "meta"]),
@@ -462,7 +462,7 @@ pub fn card(name: &'static str, prog: &str) -> Option<HelpSpec> {
         ),
         "apply" => spec(
             s(
-                "Apply a raw changeset (`{ ops: [...] }`, the six-op kernel) — the primitive every other mutator expands to",
+                "Apply a changeset — `{ effects: [...] }` (intentional writes, planned + committed as one transaction) or `{ ops: [...] }` (the six-op kernel) — the primitive every other mutator expands to",
             ),
             vec![s(
                 "apply [-f <changeset.json|->] [--reason <s>] [--actor <s>] [--dry-run]",
@@ -474,7 +474,25 @@ pub fn card(name: &'static str, prog: &str) -> Option<HelpSpec> {
                 ),
                 ("--reason <s>", "commit reason recorded in history"),
                 ACTOR,
-                ("--dry-run", "validate + render the diff, commit nothing"),
+                (
+                    "--dry-run",
+                    "validate + render the diff, commit nothing (effects: --json prints the Plan for `execute`)",
+                ),
+            ]),
+            vec![],
+        ),
+        "execute" => spec(
+            s(
+                "Commit exactly a frozen Plan (what `apply -f <effects> --dry-run --json` printed) — one transaction, one commit; stale_plan if a document moved on",
+            ),
+            vec![s(
+                "execute (-f <plan.json> | -) [--reason <s>] [--actor <s>]",
+            )],
+            opts(&[
+                ("-f <file|->", "the Plan JSON from a file or stdin"),
+                ("-", "the Plan JSON from stdin"),
+                ("--reason <s>", "commit reason recorded in history"),
+                ACTOR,
             ]),
             vec![],
         ),

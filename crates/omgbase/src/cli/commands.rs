@@ -93,6 +93,12 @@ pub static COMMANDS: &[Command] = &[
         cmd::mutate::apply,
     ),
     cmd(
+        "execute",
+        &[],
+        "Commit a frozen plan (from apply --dry-run --json)",
+        cmd::mutate::execute,
+    ),
+    cmd(
         "insert",
         &[],
         "Insert blocks under a parent",

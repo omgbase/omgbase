@@ -1136,7 +1136,9 @@ impl Store {
                             draft.frontmatter.insert(key.to_owned(), v.clone());
                         }
                         None => {
-                            draft.frontmatter.remove(key);
+                            // `shift_remove`: the reference's `delete` keeps the
+                            // other keys' order (`remove` would swap the last in).
+                            draft.frontmatter.shift_remove(key);
                         }
                     }
                     return Ok(());
@@ -1158,7 +1160,9 @@ impl Store {
                         merged.insert(key.to_owned(), v.clone());
                     }
                     None => {
-                        merged.remove(key);
+                        // `shift_remove`, as above: `unset` of a middle key must
+                        // not reorder the frontmatter the way `remove` would.
+                        merged.shift_remove(key);
                     }
                 }
                 self.patch_frontmatter(p, doc_id, &merged, &body)
@@ -1844,7 +1848,7 @@ impl Store {
     ) -> Result<Receipt> {
         let plan = self.plan_effects(ctx, effects, doc_store)?;
         if plan.plan_id != plan_id {
-            return Err(fx::plan_mismatch(plan_id, &plan.plan_id).into());
+            return Err(fx::plan_mismatch_replanned(plan_id, &plan.plan_id).into());
         }
         self.execute_admitted(ctx, &plan, origin, doc_store)
     }

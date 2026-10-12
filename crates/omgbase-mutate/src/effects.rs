@@ -1980,7 +1980,19 @@ pub fn unsupported_plan_version(version: &Value) -> MutationError {
 pub fn plan_mismatch(expected: &str, actual: &str) -> MutationError {
     MutationError::with_data(
         ErrorCode::PlanMismatch,
-        "the plan's digest does not match its plan_id; it was edited, produced by a different planner, or its documents changed — re-plan",
+        "the plan's digest does not match its plan_id; it was edited or produced by a different planner — re-plan",
+        json!({ "expected": expected, "actual": actual }),
+    )
+}
+
+/// §11.7 `plan_mismatch` of the digest form (`execute { plan_id, effects }`):
+/// the re-plan's digest is not the `plan_id` given — the effects, or the
+/// documents they target, changed since the plan was made.
+#[must_use]
+pub fn plan_mismatch_replanned(expected: &str, actual: &str) -> MutationError {
+    MutationError::with_data(
+        ErrorCode::PlanMismatch,
+        "the effects or the documents they target changed since the plan was made; re-plan",
         json!({ "expected": expected, "actual": actual }),
     )
 }

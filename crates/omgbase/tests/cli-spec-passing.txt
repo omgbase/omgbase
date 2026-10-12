@@ -167,6 +167,7 @@ invoke::help-card-doctor
 invoke::help-card-done
 invoke::help-card-edit
 invoke::help-card-embed
+invoke::help-card-execute
 invoke::help-card-find
 invoke::help-card-gc
 invoke::help-card-hist
@@ -237,7 +238,12 @@ mutate::append-heading-text-unsupported
 mutate::append-none
 mutate::append-stdin
 mutate::apply
+mutate::apply-both-inputs
+mutate::apply-conflicting-effects
 mutate::apply-dry-run
+mutate::apply-effects
+mutate::apply-effects-dry-run
+mutate::apply-effects-json
 mutate::apply-empty-ops
 mutate::apply-file
 mutate::apply-file-stdin
@@ -262,6 +268,11 @@ mutate::edit-missing-block
 mutate::edit-no-arg
 mutate::edit-no-change
 mutate::edit-no-editor
+mutate::execute-file
+mutate::execute-plan-mismatch
+mutate::execute-stale-plan
+mutate::execute-stdin
+mutate::execute-unsupported-plan-version
 mutate::insert
 mutate::insert-at-after
 mutate::insert-at-invalid
@@ -337,7 +348,6 @@ query::cursor-continue
 query::cursor-from-1x
 query::cursor-invalid
 query::cursor-invalid-json
-query::links
 query::empty-source
 query::exists
 query::follow
@@ -345,6 +355,7 @@ query::hits
 query::ids
 query::json
 query::jsonl
+query::links
 query::nested-collect
 query::no-hits
 query::no-hits-json

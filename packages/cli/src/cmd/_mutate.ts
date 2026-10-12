@@ -1,6 +1,6 @@
 import { readFileSync, readSync } from "node:fs";
 import { userInfo } from "node:os";
-import { apply, unifiedDiff, surfaceApplyResult, type ApplyRequest, type ApplyResult, type Op } from "@omgbase/core";
+import { apply, applyEffectsDetailed, executePlan, substituteSymbols, unifiedDiff, surfaceApplyResult, surfacePlan, surfaceReceipt, type ApplyRequest, type ApplyResult, type Op, type Plan, type Receipt } from "@omgbase/core";
 import type { Cli } from "../context.js";
 import type { RepoRow } from "@omgbase/core";
 import type { Workspace } from "@omgbase/core";
@@ -153,6 +153,97 @@ export async function runOpsRemote(cli: Cli, tool: string, toolArgs: Record<stri
     ...(cli.flags.dryRun ? { dry_run: true } : {}),
   });
   return renderApply(cli, result);
+}
+
+// ---- the Effect layer (ADR-021; spec/cli 3.2 `apply -f { effects }`, `execute`) ----
+
+/**
+ * `apply` given `{ effects }`: plan + execute as one transaction
+ * (`applyEffects`, spec/mutate §11.7) under the writer flock, rendered as a
+ * Receipt. `--dry-run` plans only and renders the Plan — unlike every other
+ * dry run (§3.6) it burns no id: planning runs under the symbolic minter and
+ * the ids it reports are `$new.n`. An empty list is `nothing to do`, as for `ops`.
+ */
+export function runEffects(cli: Cli, ws: Workspace, repo: RepoRow, effects: unknown[], opts: RunOpsOptions = {}): number {
+  if (effects.length === 0) {
+    cli.io.err(cli.style.dim("  nothing to do"));
+    return EXIT_OK;
+  }
+  const req = {
+    repoId: repo.repoId,
+    ...(repo.rootPath ? { rootPath: repo.rootPath } : {}),
+    effects,
+    origin: { actor: opts.actor ?? defaultActor(), ...(opts.reason ? { reason: opts.reason } : {}) },
+    omgbaseDir: ws.omgbaseDir,
+  };
+  const { plan, receipt } = applyEffectsDetailed(ws.store, { ...req, ...(cli.flags.dryRun ? { dryRun: true } : {}) });
+  if (!receipt) return renderPlan(cli, surfacePlan(plan));
+  return renderReceipt(cli, surfaceReceipt(receipt), plan);
+}
+
+/** Remote peer of `runEffects`: the `apply` tool with `effects` (its `dry_run` returns the Plan, else the Receipt). */
+export async function runEffectsRemote(cli: Cli, effects: unknown[], reason?: string): Promise<number> {
+  const res = await remoteCall<Plan | Receipt>(cli, "apply", { effects, ...(reason ? { reason } : {}), ...(cli.flags.dryRun ? { dry_run: true } : {}) });
+  return cli.flags.dryRun ? renderPlan(cli, res as Plan) : renderReceipt(cli, res as Receipt);
+}
+
+/** `execute`: commit exactly a Plan (the plan form, spec/mutate §11.7 — admission, then the one transaction), rendered as a Receipt. */
+export function runExecutePlan(cli: Cli, ws: Workspace, repo: RepoRow, plan: unknown, opts: RunOpsOptions = {}): number {
+  const receipt = executePlan(ws.store, {
+    repoId: repo.repoId,
+    ...(repo.rootPath ? { rootPath: repo.rootPath } : {}),
+    plan,
+    origin: { actor: opts.actor ?? defaultActor(), ...(opts.reason ? { reason: opts.reason } : {}) },
+    omgbaseDir: ws.omgbaseDir,
+  });
+  return renderReceipt(cli, surfaceReceipt(receipt), plan);
+}
+
+/** Remote peer of `runExecutePlan`: the `execute` tool's plan form. */
+export async function runExecutePlanRemote(cli: Cli, plan: unknown, reason?: string): Promise<number> {
+  return renderReceipt(cli, await remoteCall<Receipt>(cli, "execute", { plan, ...(reason ? { reason } : {}) }), plan);
+}
+
+/** A Plan, dry-run style: `--json` the Plan verbatim (what `execute` takes back); human the §3.6 note and the per-file diffs of its preview. */
+export function renderPlan(cli: Cli, plan: Plan): number {
+  cli.capture?.(plan);
+  if (cli.flags.mode !== "human") {
+    cli.io.out(JSON.stringify(plan));
+    return EXIT_OK;
+  }
+  renderDiffs(cli, plan.preview?.diffs ?? {});
+  return EXIT_OK;
+}
+
+/**
+ * A Receipt: `--json` verbatim; human the commit confirmation of §4 (one
+ * revision per touched document) and, on stdout, the ids the write names —
+ * the plan's `preview.results[].ids` with every `$new.n` realized from
+ * `new_ids` when the plan is at hand with its preview (a local `apply`, any
+ * `execute`), exactly the ids the `ops` form prints; else (a plan echoed
+ * without `preview`, a remote `apply`) every id the plan minted, the `new_ids`
+ * values in order — which includes the discarded mints of a re-parse
+ * (`spec/mutate` §10), ids that name no row.
+ */
+export function renderReceipt(cli: Cli, receipt: Receipt, plan?: unknown): number {
+  cli.capture?.(receipt);
+  if (cli.flags.mode !== "human") {
+    cli.io.out(JSON.stringify(receipt));
+    return EXIT_OK;
+  }
+  const { render, style, io } = cli;
+  const n = receipt.revisions.length;
+  io.err(style.dim(`  ${style.ok(render.g.ok)} committed · ${n} document${n === 1 ? "" : "s"} touched`));
+  for (const id of receiptIds(receipt, plan)) io.out(id);
+  return EXIT_OK;
+}
+
+function receiptIds(receipt: Receipt, plan: unknown): string[] {
+  const results = (plan as { preview?: { results?: { ids?: unknown }[] } } | null)?.preview?.results;
+  if (!Array.isArray(results)) return Object.values(receipt.new_ids);
+  const ids: string[] = [];
+  for (const r of results) if (Array.isArray(r.ids)) for (const id of r.ids) if (typeof id === "string") ids.push(id);
+  return substituteSymbols(ids, receipt.new_ids);
 }
 
 /** Capture + render an ApplyResult (shared by the local and remote paths). */
