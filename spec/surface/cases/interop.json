@@ -12697,6 +12697,381 @@
           }
         ]
       }
+    },
+    {
+      "name": "write-sugar-over-effects",
+      "notes": "§4 \"Sugar over effects\" (3.2): the block-level tools are `apply { effects }`. Pinned: blocks_update with `expect: {}` succeeds (the planner pins the content hash; 3.1 failed stale_expectation), blocks_check naming b_56 twice is one write with one result per distinct block, an empty `blocks`/`ids` list is filter_invalid (an argument error, not a kernel op), and a dry-run blocks_insert then a committed one — the update's re-parse burned `b_327` (a discarded mint, spec/mutate §10), the dry run `b_328`/`b_329`, so the commit takes `b_330`/`b_331`: the sugar's dry run still consumes ids (§9). Reads: index.md with ids, the two tasks raw, calcination's outline, the api feed.",
+      "writes": [
+        {
+          "tool": "blocks_update",
+          "args": {
+            "id": "b_1",
+            "markdown": "The art of transformation, guarded by an empty expectation.",
+            "expect": {}
+          }
+        },
+        {
+          "tool": "blocks_check",
+          "args": {
+            "ids": [
+              "b_56",
+              "b_56",
+              "b_57"
+            ]
+          }
+        },
+        {
+          "tool": "blocks_remove",
+          "args": {
+            "blocks": []
+          }
+        },
+        {
+          "tool": "blocks_check",
+          "args": {
+            "ids": []
+          }
+        },
+        {
+          "tool": "blocks_insert",
+          "args": {
+            "to": "processes/calcination.md",
+            "markdown": "## Notes\n\nPreviewed only.\n",
+            "dry_run": true
+          }
+        },
+        {
+          "tool": "blocks_insert",
+          "args": {
+            "to": "processes/calcination.md",
+            "markdown": "## Notes\n\nCommitted after the preview.\n"
+          }
+        }
+      ],
+      "reads": [
+        {
+          "tool": "docs_read",
+          "args": {
+            "path": "index.md",
+            "include_ids": true
+          }
+        },
+        {
+          "tool": "blocks_read_many",
+          "args": {
+            "ids": [
+              "b_56",
+              "b_57"
+            ],
+            "resolution": "raw"
+          }
+        },
+        {
+          "tool": "docs_outline",
+          "args": {
+            "path": "processes/calcination.md"
+          }
+        },
+        {
+          "tool": "changes_since",
+          "args": {
+            "origin": "api"
+          }
+        }
+      ],
+      "expect": {
+        "writes": [
+          {
+            "id": "b_1",
+            "ids": [
+              "b_1"
+            ],
+            "results": [
+              {
+                "ids": [
+                  "b_1"
+                ]
+              }
+            ],
+            "revisions": [
+              {
+                "id": "d_0",
+                "path": "/index.md",
+                "hash": "8dfca3d55cba927fa359d93104565302228a271f1c25196db355d1e0aa8cbf1a"
+              }
+            ],
+            "committed": true
+          },
+          {
+            "results": [
+              {
+                "ids": [
+                  "b_56"
+                ]
+              },
+              {
+                "ids": [
+                  "b_57"
+                ]
+              }
+            ],
+            "revisions": [
+              {
+                "id": "d_1",
+                "path": "/lab/2026-01-notes.md",
+                "hash": "79eb54a243998acee56e491e0112ca2f83d9cd163233344e1df0d53e7771d808"
+              }
+            ],
+            "committed": true
+          },
+          {
+            "error": "filter_invalid",
+            "retriable": false,
+            "message": "`blocks` must name at least one block (blocks_remove takes blocks, dry_run?, repo?)"
+          },
+          {
+            "error": "filter_invalid",
+            "retriable": false,
+            "message": "`ids` must name at least one block (blocks_check takes checked?, dry_run?, ids, repo?)"
+          },
+          {
+            "results": [
+              {
+                "ids": [
+                  "b_328",
+                  "b_329"
+                ]
+              }
+            ],
+            "revisions": [
+              {
+                "id": "d_7",
+                "path": "/processes/calcination.md",
+                "hash": "7cdb5c6268a0adb7a1cbbfd859716320fb7312de41a80d56804cbffbdfb1fa68"
+              }
+            ],
+            "diffs": {
+              "/processes/calcination.md": {
+                "before": "---\ntype: process\nslug: calcination\nlayer: canon\ntradition: western\ntags: [process, fire]\nverified: true\nstage: nigredo\n---\n\n# Calcination\n\nHeating a substance in air until it is reduced to a friable powder — a *calx*.\nThe first of the twelve gates and, in practice, the first thing anyone does.\n\nelement:: fire\nreversible:: no\n\n## Procedure\n\nGrind the material, spread it thinly in an open crucible, and heat steadily\nbelow the melting point. Stir to expose fresh surface. Continue until no further\nweight is lost and no fumes come off.\n\n```text\ncrucible → grind → thin layer → moderate heat → stir → constant weight\n```\n\nThe endpoint is the constant weight, not the colour. Colour tells you which\noxide you have; weight tells you that you are finished.\n\n## What is actually happening\n\nOrganic matter burns away; metals take up oxygen. The characteristic *gain* in\nweight when calcining a metal is the observation that eventually broke the\nphlogiston theory — the calx weighs more than the metal, which a theory of\nescaping substance cannot accommodate.\n\nAlchemical practice recorded this gain for centuries without drawing the\ninference. The data were sound; the framework could not use them.\n\n## Products\n\n- calcined lead → yellow massicot, then red minium\n- calcined copper → black tenorite\n- plant matter → ash, source of the [[salt]]\n\n## Tasks\n\n- [x] Verify the weight gain on lead with a balance\n- [ ] Repeat with copper and record the colour sequence\n- [ ] Chase down the earliest recorded weight-gain measurement\n",
+                "after": "---\ntype: process\nslug: calcination\nlayer: canon\ntradition: western\ntags: [process, fire]\nverified: true\nstage: nigredo\n---\n\n# Calcination\n\nHeating a substance in air until it is reduced to a friable powder — a *calx*.\nThe first of the twelve gates and, in practice, the first thing anyone does.\n\nelement:: fire\nreversible:: no\n\n## Procedure\n\nGrind the material, spread it thinly in an open crucible, and heat steadily\nbelow the melting point. Stir to expose fresh surface. Continue until no further\nweight is lost and no fumes come off.\n\n```text\ncrucible → grind → thin layer → moderate heat → stir → constant weight\n```\n\nThe endpoint is the constant weight, not the colour. Colour tells you which\noxide you have; weight tells you that you are finished.\n\n## What is actually happening\n\nOrganic matter burns away; metals take up oxygen. The characteristic *gain* in\nweight when calcining a metal is the observation that eventually broke the\nphlogiston theory — the calx weighs more than the metal, which a theory of\nescaping substance cannot accommodate.\n\nAlchemical practice recorded this gain for centuries without drawing the\ninference. The data were sound; the framework could not use them.\n\n## Products\n\n- calcined lead → yellow massicot, then red minium\n- calcined copper → black tenorite\n- plant matter → ash, source of the [[salt]]\n\n## Tasks\n\n- [x] Verify the weight gain on lead with a balance\n- [ ] Repeat with copper and record the colour sequence\n- [ ] Chase down the earliest recorded weight-gain measurement\n\n## Notes\n\nPreviewed only.\n"
+              }
+            },
+            "committed": false
+          },
+          {
+            "results": [
+              {
+                "ids": [
+                  "b_330",
+                  "b_331"
+                ]
+              }
+            ],
+            "revisions": [
+              {
+                "id": "d_7",
+                "path": "/processes/calcination.md",
+                "hash": "5e1b8529e5ef3b85d2b1a2b335a7d4ae94f955a269305a57c1c369ee8a047224"
+              }
+            ],
+            "committed": true
+          }
+        ],
+        "reads": [
+          {
+            "id": "d_0",
+            "path": "/index.md",
+            "rev": "r_20",
+            "properties": {
+              "frontmatter": {
+                "type": "hub",
+                "layer": "canon",
+                "title": "Alchemy",
+                "tags": [
+                  "alchemy",
+                  "index"
+                ],
+                "verified": true
+              },
+              "inline": {},
+              "computed": {
+                "title": "Alchemy"
+              }
+            },
+            "raw": "---\ntype: hub\nlayer: canon\ntitle: Alchemy\ntags: [alchemy, index]\nverified: true\n---\n\n# Alchemy\n\nThe art of transformation, guarded by an empty expectation.\n\n## The tria prima\n\nParacelsus reduced the material world to three principles:\n\n- [[mercury]] — the volatile spirit\n- [[sulphur]] — the combustible soul\n- [[salt]] — the fixed body\n\n## Substances\n\n- [prima materia](/substances/prima-materia.md) — the undifferentiated first matter\n- [the philosophers' stone](/substances/philosophers-stone.md) — the goal of the Great Work\n\n## Processes\n\nThe [magnum opus](/processes/magnum-opus.md) organizes the operations into\nstages. Individual operations are documented separately:\n\n- [calcination](/processes/calcination.md)\n- [dissolution](/processes/dissolution.md)\n- [coagulation](/processes/coagulation.md)\n\n## Practitioners\n\n| Practitioner | Tradition | Approximate era |\n|---|---|---|\n| [Maria Prophetissa](/practitioners/maria-prophetissa.md) | Alexandrian | 3rd century |\n| [Jabir ibn Hayyan](/practitioners/jabir-ibn-hayyan.md) | Islamic | 8th century |\n| [Paracelsus](/practitioners/paracelsus.md) | Western | 16th century |\n| [Isaac Newton](/practitioners/newton.md) | Western | 17th century |\n\n## Texts\n\n- [The Emerald Tablet](/texts/emerald-tablet.md)\n- [Mutus Liber](/texts/mutus-liber.md)\n\n## Laboratory\n\nWorking notes live under `lab/`.\n",
+            "ids": [
+              "b_0",
+              "b_1",
+              "b_2",
+              "b_3",
+              "b_4",
+              "b_5",
+              "b_6",
+              "b_7",
+              "b_8",
+              "b_9",
+              "b_10",
+              "b_11",
+              "b_12",
+              "b_13",
+              "b_14",
+              "b_15",
+              "b_16",
+              "b_17",
+              "b_18",
+              "b_19",
+              "b_20",
+              "b_21",
+              "b_22",
+              "b_23",
+              "b_24",
+              "b_25",
+              "b_26",
+              "b_27",
+              "b_28",
+              "b_29",
+              "b_30"
+            ],
+            "hashes": {
+              "b_0": "7a4a6dfa67be0eaa480fef04560a2b79a17f708aba30aec3a1587afe8b64c56d",
+              "b_1": "a58e49935e2b7270fea918b6a676bbd733ec55ef1346cdaeea94f92b6913baab",
+              "b_2": "13ee3f18f49b6a3391f7ec349b92681c0113e48854fdf3488f4595ef36dc52ca",
+              "b_3": "35b1ab02ce572e3e78d64b9afc5beae4376af2449dbf8a8940e7a32ce6db72fe",
+              "b_4": "5c4364702cf55169086bca60128f510cfde666cb788b799d7bbf32e155f89903",
+              "b_5": "510b69146a14233c3d5bc125e57084966266f7ef443c140cbfd5273ab72e0691",
+              "b_6": "49616fa2d9c51fc3e58b9523e5148a23f85e092cd09583affed127a239e380a6",
+              "b_7": "f7ad9e6c143c48ba2d0bf3664379e043900ce57a1a270db468e71ecdc96ccf53",
+              "b_8": "9091283bfeb5c144d09238e5c032fd0b66bd46437d7456babacaad84fec3543e",
+              "b_9": "de343f7169ac9d03c2c4c3af985dd323feb3fa98dd778d03b9e5ef26b700d1bc",
+              "b_10": "b6e8be3ed81355c278fdc7de749a333dc2dfc0a6b367029a1e17ec093ad1318e",
+              "b_11": "a98c00d2d0c6f1cb795571ec436d1b4ea015282ca9fad5deb497cfaa16f87e5e",
+              "b_12": "928a367ac6719862b5a00c970e32b4434eddab6dfbf4dd8421a74d8e2055ac0c",
+              "b_13": "3f5152f91eca09f63390f212e91cdceef2dd3f4d4ac87b7562a613bf552b1abf",
+              "b_14": "0ae4a5fa91395d0aa69b506e5781c3ecea1ec730c4c5852b270fe0c02fba6894",
+              "b_15": "4d0dbfdff7d8b11de69d70d55c131a6521b078a5177e41d521c4009ee68d7e57",
+              "b_16": "2b68634fdb5d3aabc20f605aa7a873aff0655fce8aba161e403da5005807d584",
+              "b_17": "663f0abbd648592a547274cf3228696d22190e1d1cb720bf27a2c7d422864661",
+              "b_18": "186436c2ac0dccf5ade6184c0bdc75b605e8c70ab24938fc8b9d3fd5273b8bec",
+              "b_19": "00a2cc0f639cb8b810529f59bbd62f11a1ad974d4f7eeaefc38777a935b2dd84",
+              "b_20": "f2fc401d3c654ac6cc3446ae0c0a0ce47dcc60f5b3b7add35da012d7a9300c0f",
+              "b_21": "c575f9791e27098c663f8a1decc546dd9a6dc88345d9d256ac7235b256368b8e",
+              "b_22": "2ba27c728815df124ac939590528a714b767339f25d9740322b4832a1586f7c3",
+              "b_23": "3a84ecade8fb1df82033ad62f5551e9a9264182936dc1e129b0aeb6b5c5a7782",
+              "b_24": "43a58be07053cdd78a09f72b081085346e5ce009ce9794de419c40eb33b60dec",
+              "b_25": "2fc66c446e56ade15dab500e31f6bc6934779a335a0c36a01d778eff1e5bea6a",
+              "b_26": "006eb8670966948168a197595e0f71b83a8b9316c6e6351489059861ea6ce492",
+              "b_27": "0958932364fa1439064e9dedf909d3cc77d0f2b7c5e235cf232e6aafb6cb000f",
+              "b_28": "8bcaf3c914c34fa95195733dd70fb28512acb54ab01c27f5db6a5e3c74c8aeae",
+              "b_29": "0ea6eb263d4f956db48be06cdf734e9dbb2b0ea5ce615b196b4766ff84ed5172",
+              "b_30": "8346b26bd6078f9caf9ca19ad755b81184bba060240140ccae597c72e0ef6f3e"
+            },
+            "parents": {
+              "b_0": null,
+              "b_1": null,
+              "b_2": null,
+              "b_3": null,
+              "b_4": null,
+              "b_5": "b_4",
+              "b_6": "b_4",
+              "b_7": "b_4",
+              "b_8": null,
+              "b_9": null,
+              "b_10": "b_9",
+              "b_11": "b_9",
+              "b_12": null,
+              "b_13": null,
+              "b_14": null,
+              "b_15": "b_14",
+              "b_16": "b_14",
+              "b_17": "b_14",
+              "b_18": null,
+              "b_19": null,
+              "b_20": "b_19",
+              "b_21": "b_19",
+              "b_22": "b_19",
+              "b_23": "b_19",
+              "b_24": "b_19",
+              "b_25": null,
+              "b_26": null,
+              "b_27": "b_26",
+              "b_28": "b_26",
+              "b_29": null,
+              "b_30": null
+            }
+          },
+          {
+            "nodes": [
+              {
+                "id": "b_56",
+                "type": "task",
+                "raw": "- [x] Repeat the series with copper",
+                "hash": "2bbf8b2a67dfe7a54ea4b1eb552e0795a6607bdc70a9f716bbd427ad84802b9f"
+              },
+              {
+                "id": "b_57",
+                "type": "task",
+                "raw": "- [x] Plot mass gain against heating time",
+                "hash": "b76b19107eeab4d9fb844b6712fb0d32a3f2f499508fbfa744a49d7dfb9b37e3"
+              }
+            ],
+            "truncated": false,
+            "unresolved": []
+          },
+          {
+            "text": "b_138 h1   Calcination  §\nb_139 p    Heating a substance in air until it is reduced to…\nb_140 p    element:: fire reversible:: no\nb_141 h2   Procedure  §\nb_142 p    Grind the material, spread it thinly in an open crucible,…\nb_143 code crucible → grind → thin layer → moderate heat →…\nb_144 p    The endpoint is the constant weight, not the colour. Colour…\nb_145 h2   What is actually happening  §\nb_146 p    Organic matter burns away; metals take up oxygen. The characteristic…\nb_147 p    Alchemical practice recorded this gain for centuries without drawing the…\nb_148 h2   Products  §\nb_149 ul\n  b_150 li   calcined lead → yellow massicot, then red minium\n  b_151 li   calcined copper → black tenorite\n  b_152 li   plant matter → ash, source of the [[salt]]\nb_153 h2   Tasks  §\nb_154 ul\n  b_155 li   ☑ Verify the weight gain on lead with a balance\n  b_156 li   ☐ Repeat with copper and record the colour sequence\n  b_157 li   ☐ Chase down the earliest recorded weight-gain measurement\nb_330 h2   Notes  §\nb_331 p    Committed after the preview.",
+            "truncated": false
+          },
+          {
+            "digests": [
+              {
+                "commit": "c_20",
+                "seq": 21,
+                "ts": "2026-09-27T00:00:00.000Z",
+                "origin": "api",
+                "actor": "agent:mcp",
+                "revisions": [
+                  {
+                    "id": "d_0",
+                    "path": "/index.md",
+                    "hash": "8dfca3d55cba927fa359d93104565302228a271f1c25196db355d1e0aa8cbf1a"
+                  }
+                ]
+              },
+              {
+                "commit": "c_21",
+                "seq": 22,
+                "ts": "2026-09-27T00:00:00.000Z",
+                "origin": "api",
+                "actor": "agent:mcp",
+                "revisions": [
+                  {
+                    "id": "d_1",
+                    "path": "/lab/2026-01-notes.md",
+                    "hash": "79eb54a243998acee56e491e0112ca2f83d9cd163233344e1df0d53e7771d808"
+                  }
+                ]
+              },
+              {
+                "commit": "c_22",
+                "seq": 23,
+                "ts": "2026-09-27T00:00:00.000Z",
+                "origin": "api",
+                "actor": "agent:mcp",
+                "revisions": [
+                  {
+                    "id": "d_7",
+                    "path": "/processes/calcination.md",
+                    "hash": "5e1b8529e5ef3b85d2b1a2b335a7d4ae94f955a269305a57c1c369ee8a047224"
+                  }
+                ]
+              }
+            ],
+            "cursor": 23,
+            "truncated": false,
+            "head": 23
+          }
+        ]
+      }
     }
   ]
 }

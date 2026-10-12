@@ -1,10 +1,10 @@
 import type { Store } from "../core/store/store.js";
 import { sha256 } from "../core/hash.js";
-import { observeMints, withIdMinter } from "../core/ids.js";
+import { mintId, observeMints, withIdMinter } from "../core/ids.js";
 import { findDoc } from "../core/read/reader.js";
 import { inboundLinksTo } from "../graph/inbound-links.js";
 import { withWriterLock } from "../sync/writer-lock.js";
-import { ChangesetPlanner, type ApplyRevision, type ChangesetPlan, type Op, type OpResult } from "./apply.js";
+import { ChangesetPlanner, type ApplyResult, type ApplyRevision, type ChangesetPlan, type Op, type OpResult } from "./apply.js";
 import { commitChangeset, readDocBase, type CommitHead, type Effect as InternalEffect } from "./commit.js";
 import { resolveDocStore, type DocStore } from "./doc-store.js";
 import { composeFile } from "./docs.js";
@@ -349,12 +349,92 @@ export function executeByDigest(store: Store, req: ExecuteRequest & { planId: st
   });
 }
 
-/** `apply { effects }` (§11.7): plan + execute under one lock and one transaction; `dryRun` returns the Plan. */
-export function applyEffects(store: Store, req: ExecuteRequest & { effects: unknown; dryRun?: boolean }): Plan | Receipt {
+/**
+ * `apply { effects }` with both halves kept (the sugar tools' seam, 3.2): the
+ * Plan always, and the Receipt when it committed (`dryRun` plans only). Plan
+ * + execute run under one lock and one transaction, exactly as `applyEffects`.
+ */
+export function applyEffectsDetailed(store: Store, req: ExecuteRequest & { effects: unknown; dryRun?: boolean }): { plan: Plan; receipt?: Receipt } {
   const docStore = resolveDocStore(req);
   const planIt = (): Plan => planEffects(store, { repoId: req.repoId, docStore, ...(req.omgbaseDir !== undefined ? { omgbaseDir: req.omgbaseDir } : {}), effects: req.effects });
-  if (req.dryRun) return planIt();
-  return underLock(req, () => executeAdmitted(store, req, planIt(), docStore));
+  if (req.dryRun) return { plan: planIt() };
+  return underLock(req, () => {
+    const plan = planIt();
+    return { plan, receipt: executeAdmitted(store, req, plan, docStore) };
+  });
+}
+
+/** `apply { effects }` (§11.7): plan + execute under one lock and one transaction; `dryRun` returns the Plan. */
+export function applyEffects(store: Store, req: ExecuteRequest & { effects: unknown; dryRun?: boolean }): Plan | Receipt {
+  const { plan, receipt } = applyEffectsDetailed(store, req);
+  return receipt ?? plan;
+}
+
+// ---- the sugar tools' adapter (spec/surface §4, 3.2) ---------------------------------------
+//
+// The 21 write tools are `apply { effects }` sugar whose results keep the
+// `spec/mutate` §4 apply shape `{ results, revisions, diffs?, committed }`.
+// The adapter derives it from a Plan (+ Receipt when committed):
+//   results   = preview.results with every `$new.n` replaced by its id —
+//               receipt.new_ids when committed, else the ids the realize shim mints;
+//   revisions = receipt.revisions (committed) | preview.revisions (dry run);
+//   diffs     = preview.diffs, dry run only;
+//   committed = whether a receipt exists.
+
+/**
+ * The realize-symbols shim for a dry run: mint one PRODUCTION `b`/`d` per
+ * `plan.new_ids` entry, in order, and map each symbol to it. The symbolic
+ * minter is the kernel's own mint sequence, so this consumes exactly the ids
+ * the request would have minted — a dry run keeps burning ids (`spec/surface`
+ * §9, `spec/cli` §3.6), and the ids it reports are the ones the real run
+ * takes next.
+ */
+export function realizeNewIds(plan: Pick<Plan, "new_ids">): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const s of plan.new_ids) out[s.symbol] = mintId(s.kind === "block" ? "b" : "d");
+  return out;
+}
+
+/** Every string that is a key of `ids` replaced by its value, recursively (arrays and plain objects). */
+export function substituteSymbols<T>(value: T, ids: Record<string, string>): T {
+  if (typeof value === "string") return (Object.hasOwn(ids, value) ? ids[value]! : value) as T;
+  if (Array.isArray(value)) return value.map((x) => substituteSymbols(x, ids)) as T;
+  if (typeof value === "object" && value !== null) {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) out[k] = substituteSymbols(v, ids);
+    return out as T;
+  }
+  return value;
+}
+
+/**
+ * Today's apply result from a Plan and, when committed, its Receipt (above).
+ * The preview carries the kernel's own `OpResult`s (`ids`, `removed`,
+ * `mergedInto`) in op order; load order is preserved because the replay
+ * re-pushes the same ops into a fresh planner.
+ */
+export function legacyApplyResult(plan: Plan, receipt?: Receipt): ApplyResult {
+  const preview = plan.preview;
+  if (!preview) throw new Error("legacyApplyResult: the plan carries no preview");
+  if (receipt) {
+    return { results: substituteSymbols(preview.results, receipt.new_ids), revisions: receipt.revisions, committed: true };
+  }
+  const ids = realizeNewIds(plan);
+  return { results: substituteSymbols(preview.results, ids), revisions: substituteSymbols(preview.revisions, ids), diffs: preview.diffs, committed: false };
+}
+
+/**
+ * A planner error as a sugar tool reports it: the `effect_index` the planner
+ * adds (§11.6) is dropped — the tool built the effects itself, so the index
+ * names nothing the caller sent and the kernel's data (`op_index`, `block`,
+ * `current`, …) stays exactly as the legacy path reported it.
+ */
+export function stripEffectIndex(err: unknown): unknown {
+  if (err instanceof MutationError && Object.hasOwn(err.data, "effect_index")) {
+    const { effect_index: _dropped, ...rest } = err.data;
+    err.data = rest;
+  }
+  return err;
 }
 
 function underLock<T>(req: { omgbaseDir?: string }, fn: () => T): T {

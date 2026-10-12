@@ -19,11 +19,14 @@ use omgbase_format::text::{normalize_text, normalize_visible_text};
 use omgbase_reconcile::Config;
 use omgbase_search::EmbeddingProvider;
 use omgbase_store::docs_ops::diffs_json;
-use omgbase_store::mutate_kernel::effects::Admission;
-use omgbase_store::mutate_kernel::{At, Op, Parent, To};
+use omgbase_store::mutate_kernel::effects::{
+    Admission, EffectExpect, Repair, Target as EffectTarget,
+};
+use omgbase_store::mutate_kernel::{At, Op, Parent};
 use omgbase_store::{
-    ApplyOrigin, ApplyRequest, ApplyResult, DocOpContext, DocStore, EffectsOutcome, Expect,
-    FsDocStore, Opset, Plan, PlanContext, PublicEffect, QueryVector, Receipt, Store,
+    ApplyOrigin, ApplyRequest, ApplyResult, Diff, DocOpContext, DocStore, EffectsOutcome, Expect,
+    FsDocStore, OpResult, Opset, Plan, PlanContext, PublicEffect, QueryVector, Receipt, Revision,
+    Store,
 };
 use omgbase_sync::{RealFileSystem, RepoRow};
 use rusqlite::{OptionalExtension, params};
@@ -189,6 +192,145 @@ fn merge(mut a: Map<String, Json>, b: Json) -> Json {
         }
     }
     Json::Object(a)
+}
+
+// ---- the sugar tools over effects (ADR-021, migration phase) ---------------------------
+//
+// The 21 write tools lower to `apply { effects }` behaviour-preservingly:
+// each handler keeps its own pre-checks (so every pinned error `data` is
+// unchanged), builds the effects of the design's table, and hands them to
+// [`Surface::apply_sugar`], which adapts the plan + receipt back to the
+// legacy `apply` result the handler always returned.
+
+/// An empty block list is an argument error (3.2, §9): `filter_invalid`
+/// "`blocks` must name at least one block (… takes …)" — it used to reach
+/// the kernel as a malformed op (`block_missing "block undefined not
+/// found"`), or commit nothing and report success (`blocks_check`). The
+/// reference's `requireSome`, raised after the root check and before any
+/// ref resolves.
+fn require_some(tool: &str, arg: &str, list: Vec<String>, spec: &ToolSpec) -> Result<Vec<String>> {
+    if list.is_empty() {
+        return Err(argument_error(
+            tool,
+            &format!("`{arg}` must name at least one block"),
+            &spec.input_schema,
+        ));
+    }
+    Ok(list)
+}
+
+/// A block tool's kernel `expect` as an effect's (`revision` is never set
+/// by the sugar tools).
+fn effect_expect(e: Option<Expect>) -> Option<EffectExpect> {
+    e.map(|e| EffectExpect {
+        content_hash: e.content_hash,
+        parent_children_hash: e.parent_children_hash,
+        revision: None,
+    })
+}
+
+/// A resolved placement parent as the effect target it names.
+fn placement_target(parent: Parent, doc_id: String) -> EffectTarget {
+    match parent {
+        Parent::Doc => EffectTarget::Document {
+            id: Some(doc_id),
+            path: None,
+        },
+        Parent::Block(id) => EffectTarget::Block { id },
+        Parent::Section { heading } => EffectTarget::Section {
+            heading_id: heading,
+        },
+    }
+}
+
+/// `set { block, field, value }` with an optional `expect`.
+fn set_block(id: &str, field: &str, value: Json, expect: Option<EffectExpect>) -> PublicEffect {
+    PublicEffect::Set {
+        target: EffectTarget::Block { id: id.to_owned() },
+        field: field.to_owned(),
+        value,
+        expect,
+    }
+}
+
+/// The planner stamps `effect_index` on every error it raises; a sugar
+/// tool's caller never passed effects, so the key goes (the kernel's own
+/// `op_index`, `block`, `current`… stay as pinned).
+fn strip_effect_index(e: omgbase_store::Error) -> omgbase_store::Error {
+    match e {
+        omgbase_store::Error::Mutation(mut m) => {
+            m.data.remove("effect_index");
+            omgbase_store::Error::Mutation(m)
+        }
+        other => other,
+    }
+}
+
+/// The legacy `apply` result derived from a plan and (unless a dry run) its
+/// receipt: `results` are the preview's with every `$new.<n>` substituted
+/// from `new_ids` (the receipt's map, or the realize-symbols shim's);
+/// `revisions` the receipt's when committed, else the preview's; `diffs`
+/// the preview's, on a dry run only. Load order is the preview's, which is
+/// the runner's — the same order the legacy path produced.
+fn sugar_result(
+    plan: &Plan,
+    receipt: Option<&Receipt>,
+    new_ids: &[(String, String)],
+) -> ApplyResult {
+    let realize = |id: &String| -> String {
+        new_ids
+            .iter()
+            .find(|(symbol, _)| symbol == id)
+            .map_or_else(|| id.clone(), |(_, minted)| minted.clone())
+    };
+    let realize_all = |ids: &[String]| -> Vec<String> { ids.iter().map(realize).collect() };
+    let preview = plan.preview.as_ref();
+    let results: Vec<OpResult> = preview.map_or_else(Vec::new, |p| {
+        p.results
+            .iter()
+            .map(|r| OpResult {
+                ids: realize_all(&r.ids),
+                removed: r.removed.as_deref().map(realize_all),
+                merged_into: r.merged_into.as_deref().map(realize_all),
+            })
+            .collect()
+    });
+    let revisions: Vec<Revision> = match receipt {
+        Some(r) => r.revisions.clone(),
+        None => preview.map_or_else(Vec::new, |p| {
+            p.revisions
+                .iter()
+                .map(|r| Revision {
+                    doc: realize(&r.id),
+                    path: r.path.clone(),
+                    hash: r.hash.clone(),
+                })
+                .collect()
+        }),
+    };
+    let diffs = match receipt {
+        Some(_) => None,
+        None => Some(preview.map_or_else(Vec::new, |p| {
+            p.diffs
+                .iter()
+                .map(|(path, (before, after))| {
+                    (
+                        path.clone(),
+                        Diff {
+                            before: before.clone(),
+                            after: after.clone(),
+                        },
+                    )
+                })
+                .collect()
+        })),
+    };
+    ApplyResult {
+        results,
+        revisions,
+        diffs,
+        committed: receipt.is_some(),
+    }
 }
 
 fn schema(props: &[(&str, Json)], required: &[&str], repo: bool) -> Json {
@@ -1282,6 +1424,39 @@ impl Surface {
         Ok(res)
     }
 
+    /// A sugar tool's effects through the planner (ADR-021, migration
+    /// phase), adapted to the legacy `apply` result: `plan` + `execute` in
+    /// one call under one write scope, `reason` the tool's fixed string as
+    /// today; on a dry run the plan's `$new.<n>` are realized through the
+    /// store's shim so the ids a dry run consumes are the ones the legacy
+    /// path burned ([`Store::realize_symbols`]). The mutation hook fires on
+    /// a commit, as [`Surface::apply_ops`] fired it.
+    fn apply_sugar(
+        &mut self,
+        repo_id: &str,
+        root: Option<&str>,
+        effects: Vec<PublicEffect>,
+        reason: &str,
+        dry_run: bool,
+    ) -> Result<ApplyResult> {
+        let origin = ApplyOrigin::new(&self.actor, Some(reason));
+        let ctx = self.plan_ctx(repo_id);
+        let res = self.with_writes(root, |store, ds| {
+            let (plan, receipt) = store
+                .apply_effects_detailed(&ctx, &effects, &origin, ds, dry_run)
+                .map_err(strip_effect_index)?;
+            let new_ids = match &receipt {
+                Some(r) => r.new_ids.clone(),
+                None => store.realize_symbols(&plan)?,
+            };
+            Ok(sugar_result(&plan, receipt.as_ref(), &new_ids))
+        })?;
+        if !dry_run {
+            self.notify();
+        }
+        Ok(res)
+    }
+
     fn plan_ctx(&mut self, repo_id: &str) -> PlanContext {
         PlanContext {
             repo_id: repo_id.to_owned(),
@@ -1295,6 +1470,393 @@ impl Surface {
             repo_id: repo_id.to_owned(),
             actor: Some(self.actor.clone()),
             ts: self.now(),
+        }
+    }
+
+    // ---- the pre-migration handlers (tests only) ---------------------------------------
+
+    /// The twelve batch-1 sugar tools as they ran before ADR-021's migration
+    /// phase — each building its kernel ops and calling [`Surface::apply_ops`]
+    /// — kept verbatim as the reference the equivalence tests compare the
+    /// effect-driven handlers against (`sugar_tests`). Not compiled into the
+    /// library.
+    #[cfg(test)]
+    #[allow(clippy::too_many_lines)]
+    pub(crate) fn call_legacy(&mut self, name: &str, args: &Json) -> Result<Json> {
+        use omgbase_store::mutate_kernel::To;
+        let spec =
+            tool_spec(name).ok_or_else(|| SurfaceError::other(format!("unknown tool {name}")))?;
+        validate_arguments(name, &spec.input_schema, args)?;
+        match name {
+            "blocks_insert" => {
+                let (repo, root) = self.scope(args)?;
+                self.require_root(root.as_deref())?;
+                let (parent, doc_id) = self.resolve_parent_ref(&repo, &arg_string(args, "to")?)?;
+                let at = self.resolve_at(&repo, args.get("at"))?;
+                let doc = if parent == Parent::Doc {
+                    Some(doc_id)
+                } else {
+                    None
+                };
+                let ops = vec![Op::Insert {
+                    doc,
+                    to: To { parent, at },
+                    markdown: arg_string(args, "markdown")?,
+                    expect: arg_parent_expect(args)?,
+                }];
+                Ok(apply_json(&self.apply_ops(
+                    &repo,
+                    root.as_deref(),
+                    ops,
+                    "blocks_insert",
+                    arg_bool(args, "dry_run")?.unwrap_or(false),
+                )?))
+            }
+            "blocks_update" => {
+                let (repo, root) = self.scope(args)?;
+                self.require_root(root.as_deref())?;
+                let block = self.resolve_block_ref(&repo, &arg_string(args, "id")?)?;
+                let expect = match arg_expect(args)? {
+                    Some(e) => Some(e),
+                    None => self.pin_hash(&block)?.map(Expect::content),
+                };
+                let checked = arg_bool(args, "checked")?;
+                let extra = arg_object(args, "attrs")?;
+                let attrs = if checked.is_some() || extra.is_some() {
+                    let mut a = Map::new();
+                    if let Some(c) = checked {
+                        a.insert("checked".to_owned(), json!(c));
+                    }
+                    if let Some(x) = extra {
+                        for (k, v) in x {
+                            a.insert(k.clone(), v.clone());
+                        }
+                    }
+                    Some(a)
+                } else {
+                    None
+                };
+                let ops = vec![Op::Update {
+                    block: block.clone(),
+                    markdown: arg_str(args, "markdown").map(str::to_owned),
+                    attrs,
+                    expect,
+                    trivia: None,
+                    child_ids: None,
+                }];
+                let dry = arg_bool(args, "dry_run")?.unwrap_or(false);
+                let res = self.apply_ops(&repo, root.as_deref(), ops, "blocks_update", dry)?;
+                let ids: Vec<String> = res
+                    .results
+                    .first()
+                    .map_or_else(|| vec![block.clone()], |r| r.ids.clone());
+                let mut m = Map::new();
+                m.insert(
+                    "id".to_owned(),
+                    json!(ids.first().cloned().unwrap_or(block)),
+                );
+                m.insert("ids".to_owned(), json!(ids));
+                Ok(merge(m, apply_json(&res)))
+            }
+            "blocks_move" => {
+                let (repo, root) = self.scope(args)?;
+                self.require_root(root.as_deref())?;
+                let blocks: Vec<String> = arg_strings(args, "blocks")?
+                    .iter()
+                    .map(|b| self.resolve_block_ref(&repo, b))
+                    .collect::<Result<_>>()?;
+                let to_ref = arg_string(args, "to")?;
+                let (parent, doc_id) = self.resolve_parent_ref(&repo, &to_ref)?;
+                if parent == Parent::Doc {
+                    if let Some(first) = blocks.first() {
+                        if self.doc_id_of_block(first)? != Some(doc_id) {
+                            return Err(SurfaceError::with_data(
+                                "target_missing",
+                                format!(
+                                    "blocks_move cannot target another document's root ({to_ref}); anchor on a block in that document with at.before/at.after"
+                                ),
+                                json!({ "to": to_ref }),
+                            ));
+                        }
+                    }
+                }
+                let at = self.resolve_at(&repo, args.get("at"))?;
+                let ops = vec![Op::Move {
+                    blocks,
+                    to: To { parent, at },
+                    expect: arg_parent_expect(args)?,
+                }];
+                Ok(apply_json(&self.apply_ops(
+                    &repo,
+                    root.as_deref(),
+                    ops,
+                    "blocks_move",
+                    arg_bool(args, "dry_run")?.unwrap_or(false),
+                )?))
+            }
+            "blocks_remove" => {
+                let (repo, root) = self.scope(args)?;
+                self.require_root(root.as_deref())?;
+                let blocks: Vec<String> = arg_strings(args, "blocks")?
+                    .iter()
+                    .map(|b| self.resolve_block_ref(&repo, b))
+                    .collect::<Result<_>>()?;
+                let ops = vec![Op::Remove {
+                    blocks,
+                    expect: None,
+                }];
+                Ok(apply_json(&self.apply_ops(
+                    &repo,
+                    root.as_deref(),
+                    ops,
+                    "blocks_remove",
+                    arg_bool(args, "dry_run")?.unwrap_or(false),
+                )?))
+            }
+            "blocks_split" => {
+                let (repo, root) = self.scope(args)?;
+                self.require_root(root.as_deref())?;
+                let block = self.resolve_block_ref(&repo, &arg_string(args, "id")?)?;
+                let at: Vec<usize> = args
+                    .get("at")
+                    .and_then(Json::as_array)
+                    .ok_or_else(|| bad_args("`at` must be an array of byte offsets"))?
+                    .iter()
+                    .map(|v| {
+                        v.as_u64()
+                            .map(|n| usize::try_from(n).unwrap_or(usize::MAX))
+                            .ok_or_else(|| bad_args("`at` must be an array of byte offsets"))
+                    })
+                    .collect::<Result<_>>()?;
+                let expect = Some(Expect::content(self.pin_hash(&block)?.unwrap_or_default()));
+                let ops = vec![Op::Split { block, at, expect }];
+                Ok(apply_json(&self.apply_ops(
+                    &repo,
+                    root.as_deref(),
+                    ops,
+                    "blocks_split",
+                    arg_bool(args, "dry_run")?.unwrap_or(false),
+                )?))
+            }
+            "blocks_merge" => {
+                let (repo, root) = self.scope(args)?;
+                self.require_root(root.as_deref())?;
+                let blocks: Vec<String> = arg_strings(args, "blocks")?
+                    .iter()
+                    .map(|b| self.resolve_block_ref(&repo, b))
+                    .collect::<Result<_>>()?;
+                let ops = vec![Op::Merge {
+                    blocks,
+                    separator: arg_str(args, "separator").map(str::to_owned),
+                    expect: None,
+                }];
+                Ok(apply_json(&self.apply_ops(
+                    &repo,
+                    root.as_deref(),
+                    ops,
+                    "blocks_merge",
+                    arg_bool(args, "dry_run")?.unwrap_or(false),
+                )?))
+            }
+            "blocks_check" => {
+                let (repo, root) = self.scope(args)?;
+                self.require_root(root.as_deref())?;
+                let blocks: Vec<String> = arg_strings(args, "ids")?
+                    .iter()
+                    .map(|b| self.resolve_block_ref(&repo, b))
+                    .collect::<Result<_>>()?;
+                let ops = if arg_bool(args, "checked")?.unwrap_or(true) {
+                    self.store.tasks_complete(&blocks)?
+                } else {
+                    let mut ops = Vec::with_capacity(blocks.len());
+                    for b in &blocks {
+                        let mut a = Map::new();
+                        a.insert("checked".to_owned(), json!(false));
+                        ops.push(Op::Update {
+                            block: b.clone(),
+                            markdown: None,
+                            attrs: Some(a),
+                            expect: self.pin_hash(b)?.map(Expect::content),
+                            trivia: None,
+                            child_ids: None,
+                        });
+                    }
+                    ops
+                };
+                Ok(apply_json(&self.apply_ops(
+                    &repo,
+                    root.as_deref(),
+                    ops,
+                    "blocks_check",
+                    arg_bool(args, "dry_run")?.unwrap_or(false),
+                )?))
+            }
+            "nodes_set" => {
+                let (repo, root) = self.scope(args)?;
+                self.require_root(root.as_deref())?;
+                let node_id = arg_string(args, "id")?;
+                let known: Option<i64> = self
+                    .store
+                    .conn()
+                    .query_row(
+                        "SELECT 1 FROM nodes WHERE node_id = ?1 AND repo_id = ?2",
+                        params![node_id, repo],
+                        |r| r.get(0),
+                    )
+                    .optional()?;
+                if known.is_none() {
+                    return Err(SurfaceError::with_data(
+                        "block_missing",
+                        format!("no node with id {}", Json::String(node_id.clone())),
+                        json!({ "id": node_id }),
+                    ));
+                }
+                let ops = self.store.node_set(
+                    &node_id,
+                    &arg_string(args, "prop")?,
+                    &arg_string(args, "value")?,
+                )?;
+                Ok(apply_json(&self.apply_ops(
+                    &repo,
+                    root.as_deref(),
+                    ops,
+                    "nodes_set",
+                    arg_bool(args, "dry_run")?.unwrap_or(false),
+                )?))
+            }
+            "blocks_append" => {
+                let (repo, root) = self.scope(args)?;
+                self.require_root(root.as_deref())?;
+                let given = arg_string(args, "id")?;
+                let block = self.resolve_block_ref(&repo, &given)?;
+                let text = arg_string(args, "text")?;
+                let row: Option<(String, Option<String>, i64)> = self
+                    .store
+                    .conn()
+                    .query_row(
+                        "SELECT b.type, d.format, (SELECT count(*) FROM blocks c WHERE c.parent_block = b.block_id AND c.deleted_commit IS NULL) FROM blocks b JOIN docs d ON d.doc_id = b.doc_id WHERE b.block_id = ?1 AND b.deleted_commit IS NULL",
+                        params![block],
+                        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+                    )
+                    .optional()?;
+                let Some((kind, format, children)) = row else {
+                    return Err(block_missing(&given));
+                };
+                let container = if format.as_deref().unwrap_or("markdown") == "markdown" {
+                    kind.parse::<BlockKind>().is_ok_and(|k| k.is_container())
+                } else {
+                    children > 0
+                };
+                let ops = if kind == "heading" {
+                    Store::sections_append(&block, &text)
+                } else if container {
+                    vec![Op::Insert {
+                        doc: None,
+                        to: To {
+                            parent: Parent::Block(block.clone()),
+                            at: At::End,
+                        },
+                        markdown: text,
+                        expect: None,
+                    }]
+                } else {
+                    return Err(SurfaceError::with_data(
+                        "block_not_container",
+                        format!(
+                            "block {block} is a {kind}, not a heading or a container; append means into — insert after it with blocks_insert {{ to: <its parent>, at: {{ after: {} }} }}",
+                            Json::String(block.clone())
+                        ),
+                        json!({ "id": block, "type": kind }),
+                    ));
+                };
+                Ok(apply_json(&self.apply_ops(
+                    &repo,
+                    root.as_deref(),
+                    ops,
+                    "blocks_append",
+                    arg_bool(args, "dry_run")?.unwrap_or(false),
+                )?))
+            }
+            "docs_append" => {
+                let (repo, root) = self.scope(args)?;
+                self.require_root(root.as_deref())?;
+                let doc_id = self.locate_doc(&repo, name, args)?;
+                let text = arg_string(args, "text")?;
+                let ops = match arg_str(args, "section") {
+                    Some(section) => {
+                        let info = read::find_doc_by_id(self.store.conn(), &doc_id)?
+                            .ok_or_else(|| block_missing(&doc_id))?;
+                        let heading = self.resolve_section_heading(&doc_id, &info.path, section)?;
+                        Store::sections_append(&heading, &text)
+                    }
+                    None => Store::docs_append(&doc_id, &text),
+                };
+                Ok(apply_json(&self.apply_ops(
+                    &repo,
+                    root.as_deref(),
+                    ops,
+                    "docs_append",
+                    arg_bool(args, "dry_run")?.unwrap_or(false),
+                )?))
+            }
+            "links_retarget" | "links_repair" => {
+                let (repo, root) = self.scope(args)?;
+                self.require_root(root.as_deref())?;
+                let repairs: Vec<omgbase_store::LinkRepair> = if name == "links_retarget" {
+                    vec![omgbase_store::LinkRepair {
+                        from: arg_string(args, "from_target")?,
+                        to: arg_string(args, "to_target")?,
+                    }]
+                } else if let Some(list) = args.get("repairs").and_then(Json::as_array) {
+                    list.iter()
+                        .map(|r| {
+                            Ok(omgbase_store::LinkRepair {
+                                from: arg_string(r, "from")?,
+                                to: arg_string(r, "to")?,
+                            })
+                        })
+                        .collect::<Result<_>>()?
+                } else if let (Some(f), Some(t)) =
+                    (arg_str(args, "from_target"), arg_str(args, "to_target"))
+                {
+                    vec![omgbase_store::LinkRepair {
+                        from: f.to_owned(),
+                        to: t.to_owned(),
+                    }]
+                } else {
+                    Vec::new()
+                };
+                if repairs.is_empty() {
+                    return Err(SurfaceError::new(
+                        "target_missing",
+                        "links_repair requires `repairs` (array of {from,to}) or a `from_target`+`to_target` pair",
+                    ));
+                }
+                let plan = self.store.links_repair(
+                    &repo,
+                    &repairs,
+                    arg_str(args, "path_glob").filter(|g| !g.is_empty()),
+                )?;
+                let dry = arg_bool(args, "dry_run")?.unwrap_or(true);
+                let res = self.apply_ops(&repo, root.as_deref(), plan.ops.clone(), name, dry)?;
+                let mut m = Map::new();
+                m.insert(
+                    "hits".to_owned(),
+                    Json::Array(plan.hits.iter().map(|h| json!({ "id": h.block, "path": reference_path(&h.path), "oldRaw": h.old_raw, "newRaw": h.new_raw })).collect()),
+                );
+                m.insert(
+                    "pairs".to_owned(),
+                    Json::Array(
+                        plan.pairs
+                            .iter()
+                            .map(|p| json!({ "from": p.from, "to": p.to, "hits": p.hits }))
+                            .collect(),
+                    ),
+                );
+                m.insert("applied".to_owned(), json!(!dry));
+                Ok(merge(m, apply_json(&res)))
+            }
+            other => self.call_result(other, args),
         }
     }
 
@@ -1640,26 +2202,22 @@ impl Surface {
                 self.notify();
                 Ok(receipt_json(&receipt))
             }
+            // ---- the sugar tools (ADR-021 migration: `apply { effects }` sugar) ----
             "blocks_insert" => {
                 let (repo, root) = self.scope(args)?;
                 self.require_root(root.as_deref())?;
                 let (parent, doc_id) = self.resolve_parent_ref(&repo, &arg_string(args, "to")?)?;
                 let at = self.resolve_at(&repo, args.get("at"))?;
-                let doc = if parent == Parent::Doc {
-                    Some(doc_id)
-                } else {
-                    None
-                };
-                let ops = vec![Op::Insert {
-                    doc,
-                    to: To { parent, at },
+                let effects = vec![PublicEffect::Insert {
+                    into: placement_target(parent, doc_id),
+                    at,
                     markdown: arg_string(args, "markdown")?,
-                    expect: arg_parent_expect(args)?,
+                    expect: effect_expect(arg_parent_expect(args)?),
                 }];
-                Ok(apply_json(&self.apply_ops(
+                Ok(apply_json(&self.apply_sugar(
                     &repo,
                     root.as_deref(),
-                    ops,
+                    effects,
                     "blocks_insert",
                     arg_bool(args, "dry_run")?.unwrap_or(false),
                 )?))
@@ -1668,36 +2226,69 @@ impl Surface {
                 let (repo, root) = self.scope(args)?;
                 self.require_root(root.as_deref())?;
                 let block = self.resolve_block_ref(&repo, &arg_string(args, "id")?)?;
-                let expect = match arg_expect(args)? {
-                    Some(e) => Some(e),
-                    None => self.pin_hash(&block)?.map(Expect::content),
-                };
+                let markdown = arg_str(args, "markdown").map(str::to_owned);
                 let checked = arg_bool(args, "checked")?;
                 let extra = arg_object(args, "attrs")?;
-                let attrs = if checked.is_some() || extra.is_some() {
-                    let mut a = Map::new();
-                    if let Some(c) = checked {
-                        a.insert("checked".to_owned(), json!(c));
-                    }
-                    if let Some(x) = extra {
-                        for (k, v) in x {
-                            a.insert(k.clone(), v.clone());
-                        }
-                    }
-                    Some(a)
-                } else {
-                    None
-                };
-                let ops = vec![Op::Update {
-                    block: block.clone(),
-                    markdown: arg_str(args, "markdown").map(str::to_owned),
-                    attrs,
-                    expect,
-                    trivia: None,
-                    child_ids: None,
-                }];
                 let dry = arg_bool(args, "dry_run")?.unwrap_or(false);
-                let res = self.apply_ops(&repo, root.as_deref(), ops, "blocks_update", dry)?;
+                // The effects vocabulary writes `attrs.checked` only (§11): an
+                // `attrs` bag with any other key, a non-boolean `attrs.checked`,
+                // or an update naming no field at all stays on the kernel path
+                // (legacy until 4.0). `attrs.checked` wins over `checked`, as
+                // the bag always overrode the flag.
+                let attrs_checked = extra.and_then(|x| x.get("checked"));
+                let legacy = extra.is_some_and(|x| x.keys().any(|k| k != "checked"))
+                    || attrs_checked.is_some_and(|v| !v.is_boolean())
+                    || (markdown.is_none() && checked.is_none() && attrs_checked.is_none());
+                let res = if legacy {
+                    let expect = match arg_expect(args)? {
+                        Some(e) => Some(e),
+                        None => self.pin_hash(&block)?.map(Expect::content),
+                    };
+                    let attrs = if checked.is_some() || extra.is_some() {
+                        let mut a = Map::new();
+                        if let Some(c) = checked {
+                            a.insert("checked".to_owned(), json!(c));
+                        }
+                        if let Some(x) = extra {
+                            for (k, v) in x {
+                                a.insert(k.clone(), v.clone());
+                            }
+                        }
+                        Some(a)
+                    } else {
+                        None
+                    };
+                    let ops = vec![Op::Update {
+                        block: block.clone(),
+                        markdown,
+                        attrs,
+                        expect,
+                        trivia: None,
+                        child_ids: None,
+                    }];
+                    self.apply_ops(&repo, root.as_deref(), ops, "blocks_update", dry)?
+                } else {
+                    // `set markdown` then `set attrs.checked`; the caller's
+                    // `expect` rides the first (the planner pins the second
+                    // from the tree after the first op — the hashes the one
+                    // legacy op checked once); a missing `content_hash` is
+                    // pinned from the live block, so `expect: {}` succeeds
+                    // (a pinned 3.2 fix). The two results collapse to the first.
+                    let checked = attrs_checked.and_then(Json::as_bool).or(checked);
+                    let expect = effect_expect(arg_expect(args)?);
+                    let mut effects = Vec::new();
+                    if let Some(md) = markdown {
+                        effects.push(set_block(&block, "markdown", json!(md), expect.clone()));
+                    }
+                    if let Some(c) = checked {
+                        let expect = if effects.is_empty() { expect } else { None };
+                        effects.push(set_block(&block, "attrs.checked", json!(c), expect));
+                    }
+                    let mut res =
+                        self.apply_sugar(&repo, root.as_deref(), effects, "blocks_update", dry)?;
+                    res.results.truncate(1);
+                    res
+                };
                 let ids: Vec<String> = res
                     .results
                     .first()
@@ -1713,15 +2304,16 @@ impl Surface {
             "blocks_move" => {
                 let (repo, root) = self.scope(args)?;
                 self.require_root(root.as_deref())?;
-                let blocks: Vec<String> = arg_strings(args, "blocks")?
-                    .iter()
-                    .map(|b| self.resolve_block_ref(&repo, b))
-                    .collect::<Result<_>>()?;
+                let blocks: Vec<String> =
+                    require_some(name, "blocks", arg_strings(args, "blocks")?, spec)?
+                        .iter()
+                        .map(|b| self.resolve_block_ref(&repo, b))
+                        .collect::<Result<_>>()?;
                 let to_ref = arg_string(args, "to")?;
                 let (parent, doc_id) = self.resolve_parent_ref(&repo, &to_ref)?;
                 if parent == Parent::Doc {
                     if let Some(first) = blocks.first() {
-                        if self.doc_id_of_block(first)? != Some(doc_id) {
+                        if self.doc_id_of_block(first)? != Some(doc_id.clone()) {
                             return Err(SurfaceError::with_data(
                                 "target_missing",
                                 format!(
@@ -1733,15 +2325,16 @@ impl Surface {
                     }
                 }
                 let at = self.resolve_at(&repo, args.get("at"))?;
-                let ops = vec![Op::Move {
-                    blocks,
-                    to: To { parent, at },
-                    expect: arg_parent_expect(args)?,
+                let effects = vec![PublicEffect::MoveBlocks {
+                    targets: blocks,
+                    into: placement_target(parent, doc_id),
+                    at,
+                    expect: effect_expect(arg_parent_expect(args)?),
                 }];
-                Ok(apply_json(&self.apply_ops(
+                Ok(apply_json(&self.apply_sugar(
                     &repo,
                     root.as_deref(),
-                    ops,
+                    effects,
                     "blocks_move",
                     arg_bool(args, "dry_run")?.unwrap_or(false),
                 )?))
@@ -1749,18 +2342,21 @@ impl Surface {
             "blocks_remove" => {
                 let (repo, root) = self.scope(args)?;
                 self.require_root(root.as_deref())?;
-                let blocks: Vec<String> = arg_strings(args, "blocks")?
-                    .iter()
-                    .map(|b| self.resolve_block_ref(&repo, b))
-                    .collect::<Result<_>>()?;
-                let ops = vec![Op::Remove {
-                    blocks,
+                let blocks: Vec<String> =
+                    require_some(name, "blocks", arg_strings(args, "blocks")?, spec)?
+                        .iter()
+                        .map(|b| self.resolve_block_ref(&repo, b))
+                        .collect::<Result<_>>()?;
+                // The planner pins every target's live hash (invisible in the
+                // result; the kernel op carried none).
+                let effects = vec![PublicEffect::RemoveBlocks {
+                    targets: blocks,
                     expect: None,
                 }];
-                Ok(apply_json(&self.apply_ops(
+                Ok(apply_json(&self.apply_sugar(
                     &repo,
                     root.as_deref(),
-                    ops,
+                    effects,
                     "blocks_remove",
                     arg_bool(args, "dry_run")?.unwrap_or(false),
                 )?))
@@ -1780,13 +2376,16 @@ impl Surface {
                             .ok_or_else(|| bad_args("`at` must be an array of byte offsets"))
                     })
                     .collect::<Result<_>>()?;
-                // §9: an empty hash when the block has no live row.
-                let expect = Some(Expect::content(self.pin_hash(&block)?.unwrap_or_default()));
-                let ops = vec![Op::Split { block, at, expect }];
-                Ok(apply_json(&self.apply_ops(
+                // The planner pins the live hash (§9's own CAS token).
+                let effects = vec![PublicEffect::Split {
+                    target: block,
+                    at,
+                    expect: None,
+                }];
+                Ok(apply_json(&self.apply_sugar(
                     &repo,
                     root.as_deref(),
-                    ops,
+                    effects,
                     "blocks_split",
                     arg_bool(args, "dry_run")?.unwrap_or(false),
                 )?))
@@ -1794,19 +2393,20 @@ impl Surface {
             "blocks_merge" => {
                 let (repo, root) = self.scope(args)?;
                 self.require_root(root.as_deref())?;
-                let blocks: Vec<String> = arg_strings(args, "blocks")?
-                    .iter()
-                    .map(|b| self.resolve_block_ref(&repo, b))
-                    .collect::<Result<_>>()?;
-                let ops = vec![Op::Merge {
-                    blocks,
+                let blocks: Vec<String> =
+                    require_some(name, "blocks", arg_strings(args, "blocks")?, spec)?
+                        .iter()
+                        .map(|b| self.resolve_block_ref(&repo, b))
+                        .collect::<Result<_>>()?;
+                let effects = vec![PublicEffect::Merge {
+                    targets: blocks,
                     separator: arg_str(args, "separator").map(str::to_owned),
                     expect: None,
                 }];
-                Ok(apply_json(&self.apply_ops(
+                Ok(apply_json(&self.apply_sugar(
                     &repo,
                     root.as_deref(),
-                    ops,
+                    effects,
                     "blocks_merge",
                     arg_bool(args, "dry_run")?.unwrap_or(false),
                 )?))
@@ -1814,32 +2414,24 @@ impl Surface {
             "blocks_check" => {
                 let (repo, root) = self.scope(args)?;
                 self.require_root(root.as_deref())?;
-                let blocks: Vec<String> = arg_strings(args, "ids")?
+                let blocks: Vec<String> =
+                    require_some(name, "ids", arg_strings(args, "ids")?, spec)?
+                        .iter()
+                        .map(|b| self.resolve_block_ref(&repo, b))
+                        .collect::<Result<_>>()?;
+                // N × `set attrs.checked`, each pinned by the planner; an id
+                // named twice is one identical scalar write — the planner
+                // drops the duplicate (a pinned 3.2 fix: the second op no
+                // longer fails `stale_expectation`).
+                let checked = arg_bool(args, "checked")?.unwrap_or(true);
+                let effects = blocks
                     .iter()
-                    .map(|b| self.resolve_block_ref(&repo, b))
-                    .collect::<Result<_>>()?;
-                let ops = if arg_bool(args, "checked")?.unwrap_or(true) {
-                    self.store.tasks_complete(&blocks)?
-                } else {
-                    let mut ops = Vec::with_capacity(blocks.len());
-                    for b in &blocks {
-                        let mut a = Map::new();
-                        a.insert("checked".to_owned(), json!(false));
-                        ops.push(Op::Update {
-                            block: b.clone(),
-                            markdown: None,
-                            attrs: Some(a),
-                            expect: self.pin_hash(b)?.map(Expect::content),
-                            trivia: None,
-                            child_ids: None,
-                        });
-                    }
-                    ops
-                };
-                Ok(apply_json(&self.apply_ops(
+                    .map(|b| set_block(b, "attrs.checked", json!(checked), None))
+                    .collect();
+                Ok(apply_json(&self.apply_sugar(
                     &repo,
                     root.as_deref(),
-                    ops,
+                    effects,
                     "blocks_check",
                     arg_bool(args, "dry_run")?.unwrap_or(false),
                 )?))
@@ -1864,15 +2456,16 @@ impl Surface {
                         json!({ "id": node_id }),
                     ));
                 }
-                let ops = self.store.node_set(
-                    &node_id,
-                    &arg_string(args, "prop")?,
-                    &arg_string(args, "value")?,
-                )?;
-                Ok(apply_json(&self.apply_ops(
+                let effects = vec![PublicEffect::Set {
+                    target: EffectTarget::Node { id: node_id },
+                    field: arg_string(args, "prop")?,
+                    value: json!(arg_string(args, "value")?),
+                    expect: None,
+                }];
+                Ok(apply_json(&self.apply_sugar(
                     &repo,
                     root.as_deref(),
-                    ops,
+                    effects,
                     "nodes_set",
                     arg_bool(args, "dry_run")?.unwrap_or(false),
                 )?))
@@ -1903,18 +2496,10 @@ impl Surface {
                 } else {
                     children > 0
                 };
-                let ops = if kind == "heading" {
-                    Store::sections_append(&block, &text)
+                let into = if kind == "heading" {
+                    EffectTarget::Section { heading_id: block }
                 } else if container {
-                    vec![Op::Insert {
-                        doc: None,
-                        to: To {
-                            parent: Parent::Block(block.clone()),
-                            at: At::End,
-                        },
-                        markdown: text,
-                        expect: None,
-                    }]
+                    EffectTarget::Block { id: block }
                 } else {
                     return Err(SurfaceError::with_data(
                         "block_not_container",
@@ -1925,10 +2510,16 @@ impl Surface {
                         json!({ "id": block, "type": kind }),
                     ));
                 };
-                Ok(apply_json(&self.apply_ops(
+                let effects = vec![PublicEffect::Insert {
+                    into,
+                    at: At::End,
+                    markdown: text,
+                    expect: None,
+                }];
+                Ok(apply_json(&self.apply_sugar(
                     &repo,
                     root.as_deref(),
-                    ops,
+                    effects,
                     "blocks_append",
                     arg_bool(args, "dry_run")?.unwrap_or(false),
                 )?))
@@ -1938,19 +2529,32 @@ impl Surface {
                 self.require_root(root.as_deref())?;
                 let doc_id = self.locate_doc(&repo, name, args)?;
                 let text = arg_string(args, "text")?;
-                let ops = match arg_str(args, "section") {
+                // The heading-TEXT resolution (and `ambiguous_heading`) stays
+                // the tool's; the effect names the heading by id.
+                let into = match arg_str(args, "section") {
                     Some(section) => {
                         let info = read::find_doc_by_id(self.store.conn(), &doc_id)?
                             .ok_or_else(|| block_missing(&doc_id))?;
                         let heading = self.resolve_section_heading(&doc_id, &info.path, section)?;
-                        Store::sections_append(&heading, &text)
+                        EffectTarget::Section {
+                            heading_id: heading,
+                        }
                     }
-                    None => Store::docs_append(&doc_id, &text),
+                    None => EffectTarget::Document {
+                        id: Some(doc_id),
+                        path: None,
+                    },
                 };
-                Ok(apply_json(&self.apply_ops(
+                let effects = vec![PublicEffect::Insert {
+                    into,
+                    at: At::End,
+                    markdown: text,
+                    expect: None,
+                }];
+                Ok(apply_json(&self.apply_sugar(
                     &repo,
                     root.as_deref(),
-                    ops,
+                    effects,
                     "docs_append",
                     arg_bool(args, "dry_run")?.unwrap_or(false),
                 )?))
@@ -1988,13 +2592,22 @@ impl Surface {
                         "links_repair requires `repairs` (array of {from,to}) or a `from_target`+`to_target` pair",
                     ));
                 }
-                let plan = self.store.links_repair(
-                    &repo,
-                    &repairs,
-                    arg_str(args, "path_glob").filter(|g| !g.is_empty()),
-                )?;
+                // `hits` / `pairs` come from the store's plan as before; the
+                // `retarget` effect re-plans the same rewrite for the commit.
+                let path_glob = arg_str(args, "path_glob").filter(|g| !g.is_empty());
+                let plan = self.store.links_repair(&repo, &repairs, path_glob)?;
                 let dry = arg_bool(args, "dry_run")?.unwrap_or(true);
-                let res = self.apply_ops(&repo, root.as_deref(), plan.ops.clone(), name, dry)?;
+                let effects = vec![PublicEffect::Retarget {
+                    repairs: repairs
+                        .iter()
+                        .map(|r| Repair {
+                            from: r.from.clone(),
+                            to: r.to.clone(),
+                        })
+                        .collect(),
+                    path_glob: path_glob.map(str::to_owned),
+                }];
+                let res = self.apply_sugar(&repo, root.as_deref(), effects, name, dry)?;
                 let mut m = Map::new();
                 m.insert(
                     "hits".to_owned(),
@@ -2730,6 +3343,9 @@ pub fn render_opset_plan(opset: &Opset) -> String {
     }
     lines.join("\n")
 }
+
+#[cfg(test)]
+mod sugar_tests;
 
 #[cfg(test)]
 mod tests {

@@ -15,10 +15,11 @@ import { textSearch } from "../search/text.js";
 import { EngineError, errorBody } from "./errors.js";
 import { argumentError, validateArguments, type ArgShape } from "./arguments.js";
 import { apply, type Op } from "../mutate/apply.js";
-import { tasksComplete, sectionsAppend, docsAppend, linksRetarget, linksRepair, nodeSet } from "../mutate/macros.js";
+import { linksRetarget, linksRepair } from "../mutate/macros.js";
 import { docsCreate, docsMove, docsDelete, docsSetMeta } from "../mutate/docs.js";
 import { docsUpdate } from "../mutate/plan-update.js";
-import { applyEffects, executeByDigest, executePlan, planEffects, type Plan, type Receipt } from "../mutate/plan.js";
+import { applyEffects, applyEffectsDetailed, executeByDigest, executePlan, legacyApplyResult, planEffects, stripEffectIndex, type Plan, type Receipt } from "../mutate/plan.js";
+import type { Effect, EffectExpect, EffectTarget } from "../mutate/effects.js";
 import { renderOpsetPlan } from "../mutate/opset.js";
 import { historyNode, diffBlocks, docDiffUnified, changesSince, docHistory } from "../graph/history.js";
 import { linksStale, linksStaleSummary } from "../graph/link-health.js";
@@ -378,11 +379,42 @@ export function buildServer(ctx: ServerContext): McpServer {
     if ("before" in at) return { before: resolveBlockRef(repoId, at.before) };
     return { after: resolveBlockRef(repoId, at.after) };
   }
-  // Apply an already-built op list, honoring dry_run (preview, no drain) — the
-  // shared tail of every block-level tool below.
-  function applyOps(repoId: string, rootPath: string, ops: Op[], reason: string, dryRun?: boolean) {
-    const res = surfaceApplyResult(apply(store, { repoId, rootPath, ops, origin: { actor: "agent:mcp", reason }, ...LOCK_DIR, ...(dryRun !== undefined ? { dryRun } : {}) }));
+  // The sugar tools are `apply { effects }` (spec/surface §4, 3.2; ADR-021's
+  // migration phase): each builds its effects with the tool's fixed `reason`,
+  // runs plan + execute (or the plan alone on a dry run) and renders today's
+  // apply result through the adapter — ids realized (committed: the receipt's
+  // map; dry run: one production mint per `new_ids` entry, so the dry run
+  // still consumes the ids the real run would take), paths rooted, and the
+  // planner's `effect_index` dropped from any error so `data` stays as pinned.
+  function sugarResult(repoId: string, rootPath: string, effects: Effect[], reason: string, dryRun?: boolean) {
+    try {
+      const { plan, receipt } = applyEffectsDetailed(store, { repoId, rootPath, effects, origin: { actor: "agent:mcp", reason }, ...LOCK_DIR, ...(dryRun ? { dryRun: true } : {}) });
+      return surfaceApplyResult(legacyApplyResult(plan, receipt));
+    } catch (e) {
+      throw stripEffectIndex(e);
+    }
+  }
+  function sugar(repoId: string, rootPath: string, effects: Effect[], reason: string, dryRun?: boolean) {
+    const res = sugarResult(repoId, rootPath, effects, reason, dryRun);
     return dryRun ? ok(res) : okMutated(res);
+  }
+  const blockTarget = (id: string): EffectTarget => ({ kind: "block", id });
+  // The caller's `expect` as an effect guard (absent when not given; an empty
+  // object stays an empty guard — the planner then pins what it needs).
+  const guard = (e: { content_hash?: string | undefined; parent_children_hash?: string | undefined } | undefined): { expect?: EffectExpect } => {
+    if (!e) return {};
+    const expect: EffectExpect = {};
+    if (e.content_hash !== undefined) expect.content_hash = e.content_hash;
+    if (e.parent_children_hash !== undefined) expect.parent_children_hash = e.parent_children_hash;
+    return { expect };
+  };
+  // A parent ref as an effect target: a document ref is the document's top level, a block ref the block.
+  const parentTarget = (p: { parent: string | { doc: true }; docId: string }): EffectTarget =>
+    typeof p.parent === "object" ? { kind: "document", id: p.docId } : { kind: "block", id: p.parent };
+  // An empty block list is an argument error (3.2, §9) — it used to reach the
+  // kernel as a malformed op (`block_missing "block undefined not found"`).
+  function requireSome(tool: string, arg: string, list: unknown[]): void {
+    if (list.length === 0) throw argumentError(tool, `\`${arg}\` must name at least one block`, registry.get(tool)!.shape);
   }
   // Guard shared by every mutating tool: a sourceless (headless-only) repo has no
   // working tree to write through, so mutation is disabled with a loud error.
@@ -852,13 +884,12 @@ export function buildServer(ctx: ServerContext): McpServer {
       try {
         const { repoId, rootPath } = repoScope(args.repo);
         const root = requireRoot(rootPath);
-        const { parent, docId } = resolveParentRef(repoId, args.to);
-        const to = { parent, at: resolveAt(repoId, args.at) };
-        // A document parent carries no block to infer the doc from; pin it. The
-        // caller's expect rides through as the op-level expectation (spec/mutate
-        // §1.2: checked against the destination parent before the op mutates).
-        const ops: Op[] = [{ op: "insert", ...(typeof parent === "object" ? { doc: docId } : {}), to, markdown: args.markdown, ...(args.expect ? { expect: args.expect } : {}) } as Op];
-        return applyOps(repoId, root, ops, "blocks_insert", args.dry_run);
+        // `insert into document|block at …`: a document parent is the top level
+        // (the planner pins the op to it). The caller's expect rides through as
+        // the destination-parent expectation (spec/mutate §1.2).
+        const into = parentTarget(resolveParentRef(repoId, args.to));
+        const effects: Effect[] = [{ op: "insert", into, at: resolveAt(repoId, args.at), markdown: args.markdown, ...guard(args.expect) }];
+        return sugar(repoId, root, effects, "blocks_insert", args.dry_run);
       } catch (e) {
         return fail(e);
       }
@@ -876,14 +907,38 @@ export function buildServer(ctx: ServerContext): McpServer {
         const { repoId, rootPath } = repoScope(args.repo);
         const root = requireRoot(rootPath);
         const block = resolveBlockRef(repoId, args.id);
-        const expect = args.expect ?? (() => { const h = pinHash(block); return h ? { content_hash: h } : undefined; })();
-        // Flat `checked` sugar folds into the attrs bag (explicit attrs wins on
-        // collision), so a task reads and writes under the same bare name.
-        const attrs = (args.checked !== undefined || args.attrs)
-          ? { ...(args.checked !== undefined ? { checked: args.checked } : {}), ...(args.attrs ?? {}) }
-          : undefined;
-        const ops: Op[] = [{ op: "update", block, ...(args.markdown !== undefined ? { markdown: args.markdown } : {}), ...(attrs ? { attrs } : {}), ...(expect ? { expect } : {}) } as Op];
-        const res = surfaceApplyResult(apply(store, { repoId, rootPath: root, ops, origin: { actor: "agent:mcp", reason: "blocks_update" }, ...LOCK_DIR, ...(args.dry_run !== undefined ? { dryRun: args.dry_run } : {}) }));
+        // Flat `checked` sugar and the attrs bag name the same thing (explicit
+        // attrs wins on collision), so a task reads and writes under one bare name.
+        const checked = args.attrs && Object.hasOwn(args.attrs, "checked") ? args.attrs.checked : args.checked;
+        // The effects speak `markdown` and `attrs.checked` only (spec/mutate §11.2).
+        // Anything else the bag can carry — another key, a non-boolean `checked`,
+        // or an update that sets nothing (a no-op revision) — stays on the legacy
+        // kernel path until 4.0 (spec/mutate §10, 3.2).
+        const legacy = (args.attrs !== undefined && Object.keys(args.attrs).some((k) => k !== "checked"))
+          || (checked !== undefined && typeof checked !== "boolean")
+          || (args.markdown === undefined && checked === undefined);
+        let res: ReturnType<typeof sugarResult>;
+        if (legacy) {
+          const expect = args.expect ?? (() => { const h = pinHash(block); return h ? { content_hash: h } : undefined; })();
+          const attrs = (args.checked !== undefined || args.attrs)
+            ? { ...(args.checked !== undefined ? { checked: args.checked } : {}), ...(args.attrs ?? {}) }
+            : undefined;
+          const ops: Op[] = [{ op: "update", block, ...(args.markdown !== undefined ? { markdown: args.markdown } : {}), ...(attrs ? { attrs } : {}), ...(expect ? { expect } : {}) } as Op];
+          res = surfaceApplyResult(apply(store, { repoId, rootPath: root, ops, origin: { actor: "agent:mcp", reason: "blocks_update" }, ...LOCK_DIR, ...(args.dry_run !== undefined ? { dryRun: args.dry_run } : {}) }));
+        } else {
+          // `set markdown` and/or `set attrs.checked`. The caller's `expect` guards
+          // the FIRST effect (the content CAS of §1.2 is checked once, against the
+          // bytes the caller saw); a second effect is pinned by the planner to the
+          // block as the first left it. Two effects are two kernel ops and two
+          // results — the result collapses to the first, today's one-op shape.
+          const target = blockTarget(block);
+          const expect = guard(args.expect);
+          const effects: Effect[] = [];
+          if (args.markdown !== undefined) effects.push({ op: "set", target, field: "markdown", value: args.markdown, ...expect });
+          if (checked !== undefined) effects.push({ op: "set", target, field: "attrs.checked", value: checked, ...(effects.length === 0 ? expect : {}) });
+          const full = sugarResult(repoId, root, effects, "blocks_update", args.dry_run);
+          res = { ...full, results: full.results.slice(0, 1) };
+        }
         // `ids` lists every resulting block (the target first, then any siblings
         // minted from multi-block content); `id` keeps the target for convenience.
         const ids = res.results[0]?.ids ?? [block];
@@ -905,16 +960,16 @@ export function buildServer(ctx: ServerContext): McpServer {
       try {
         const { repoId, rootPath } = repoScope(args.repo);
         const root = requireRoot(rootPath);
+        requireSome("blocks_move", "blocks", args.blocks);
         const blocks = args.blocks.map((b) => resolveBlockRef(repoId, b));
-        const { parent, docId } = resolveParentRef(repoId, args.to);
+        const parentRef = resolveParentRef(repoId, args.to);
         // The kernel reads `{ doc: true }` + start/end as "the SOURCE doc's top
         // level", so a document parent is only honest when it IS the source doc.
-        if (typeof parent === "object" && blocks[0] !== undefined && docIdOfBlock(blocks[0]) !== docId) {
+        if (typeof parentRef.parent === "object" && blocks[0] !== undefined && docIdOfBlock(blocks[0]) !== parentRef.docId) {
           throw new EngineError("target_missing", `blocks_move cannot target another document's root (${args.to}); anchor on a block in that document with at.before/at.after`, { data: { to: args.to } });
         }
-        const to = { parent, at: resolveAt(repoId, args.at) };
-        const ops: Op[] = [{ op: "move", blocks, to, ...(args.expect ? { expect: args.expect } : {}) } as Op];
-        return applyOps(repoId, root, ops, "blocks_move", args.dry_run);
+        const effects: Effect[] = [{ op: "move", targets: blocks.map(blockTarget), into: parentTarget(parentRef), at: resolveAt(repoId, args.at), ...guard(args.expect) }];
+        return sugar(repoId, root, effects, "blocks_move", args.dry_run);
       } catch (e) {
         return fail(e);
       }
@@ -931,9 +986,9 @@ export function buildServer(ctx: ServerContext): McpServer {
       try {
         const { repoId, rootPath } = repoScope(args.repo);
         const root = requireRoot(rootPath);
+        requireSome("blocks_remove", "blocks", args.blocks);
         const blocks = args.blocks.map((b) => resolveBlockRef(repoId, b));
-        const ops: Op[] = [{ op: "remove", blocks } as Op];
-        return applyOps(repoId, root, ops, "blocks_remove", args.dry_run);
+        return sugar(repoId, root, [{ op: "remove", targets: blocks.map(blockTarget) }], "blocks_remove", args.dry_run);
       } catch (e) {
         return fail(e);
       }
@@ -951,8 +1006,8 @@ export function buildServer(ctx: ServerContext): McpServer {
         const { repoId, rootPath } = repoScope(args.repo);
         const root = requireRoot(rootPath);
         const block = resolveBlockRef(repoId, args.id);
-        const ops: Op[] = [{ op: "split", block, at: args.at, expect: { content_hash: pinHash(block) ?? "" } } as Op];
-        return applyOps(repoId, root, ops, "blocks_split", args.dry_run);
+        // The planner pins the content CAS from the live row (the block is live: it resolved).
+        return sugar(repoId, root, [{ op: "split", target: blockTarget(block), at: args.at }], "blocks_split", args.dry_run);
       } catch (e) {
         return fail(e);
       }
@@ -969,9 +1024,10 @@ export function buildServer(ctx: ServerContext): McpServer {
       try {
         const { repoId, rootPath } = repoScope(args.repo);
         const root = requireRoot(rootPath);
+        requireSome("blocks_merge", "blocks", args.blocks);
         const blocks = args.blocks.map((b) => resolveBlockRef(repoId, b));
-        const ops: Op[] = [{ op: "merge", blocks, ...(args.separator !== undefined ? { separator: args.separator } : {}) } as Op];
-        return applyOps(repoId, root, ops, "blocks_merge", args.dry_run);
+        const effects: Effect[] = [{ op: "merge", targets: blocks.map(blockTarget), ...(args.separator !== undefined ? { separator: args.separator } : {}) }];
+        return sugar(repoId, root, effects, "blocks_merge", args.dry_run);
       } catch (e) {
         return fail(e);
       }
@@ -988,12 +1044,13 @@ export function buildServer(ctx: ServerContext): McpServer {
       try {
         const { repoId, rootPath } = repoScope(args.repo);
         const root = requireRoot(rootPath);
+        requireSome("blocks_check", "ids", args.ids);
         const blocks = args.ids.map((b) => resolveBlockRef(repoId, b));
         const checked = args.checked ?? true;
-        const ops: Op[] = checked
-          ? tasksComplete(store, blocks)
-          : blocks.map((block) => ({ op: "update", block, attrs: { checked: false }, ...(() => { const h = pinHash(block); return h ? { expect: { content_hash: h } } : {}; })() } as Op));
-        return applyOps(repoId, root, ops, "blocks_check", args.dry_run);
+        // N × `set attrs.checked`, each CAS-pinned by the planner; a block named
+        // twice is one write (the planner drops the identical duplicate, 3.2).
+        const effects: Effect[] = blocks.map((block) => ({ op: "set", target: blockTarget(block), field: "attrs.checked", value: checked }));
+        return sugar(repoId, root, effects, "blocks_check", args.dry_run);
       } catch (e) {
         return fail(e);
       }
@@ -1013,8 +1070,7 @@ export function buildServer(ctx: ServerContext): McpServer {
         const root = requireRoot(rootPath);
         const known = store.db.prepare("SELECT 1 FROM nodes WHERE node_id = ? AND repo_id = ?").get(args.id, repoId);
         if (!known) throw new EngineError("block_missing", `no node with id ${JSON.stringify(args.id)}`, { data: { id: args.id } });
-        const ops = nodeSet(store, args.id, args.prop, args.value);
-        return applyOps(repoId, root, ops, "nodes_set", args.dry_run);
+        return sugar(repoId, root, [{ op: "set", target: { kind: "node", id: args.id }, field: args.prop, value: args.value }], "nodes_set", args.dry_run);
       } catch (e) {
         return fail(e);
       }
@@ -1037,17 +1093,17 @@ export function buildServer(ctx: ServerContext): McpServer {
           .prepare("SELECT b.type AS type, d.format AS format, (SELECT count(*) FROM blocks c WHERE c.parent_block = b.block_id AND c.deleted_commit IS NULL) AS children FROM blocks b JOIN docs d ON d.doc_id = b.doc_id WHERE b.block_id = ? AND b.deleted_commit IS NULL")
           .get(block) as { type: string; format: string | null; children: number } | undefined;
         if (!row) throw blockMissing(args.id);
-        let ops: Op[];
+        let into: EffectTarget;
         if (row.type === "heading") {
-          ops = sectionsAppend(block, args.text);
+          into = { kind: "section", heading_id: block };
         } else if (isContainerBlock(row.format ?? "markdown", { type: row.type, children: new Array<unknown>(row.children) })) {
-          ops = [{ op: "insert", to: { parent: block, at: "end" }, markdown: args.text } as Op];
+          into = blockTarget(block);
         } else {
           throw new EngineError("block_not_container", `block ${block} is a ${row.type}, not a heading or a container; append means into — insert after it with blocks_insert { to: <its parent>, at: { after: ${JSON.stringify(block)} } }`, {
             data: { id: block, type: row.type },
           });
         }
-        return applyOps(repoId, root, ops, "blocks_append", args.dry_run);
+        return sugar(repoId, root, [{ op: "insert", into, at: "end", markdown: args.text }], "blocks_append", args.dry_run);
       } catch (e) {
         return fail(e);
       }
@@ -1070,14 +1126,14 @@ export function buildServer(ctx: ServerContext): McpServer {
         // insert-at-end op (document top level, or the named section) and apply
         // it (existing blocks keep their ids; only the appended blocks are minted).
         const docId = locateDoc(repoId, "docs_append", registry.get("docs_append")!.shape, args);
-        let ops: Op[];
+        let into: EffectTarget;
         if (args.section !== undefined) {
           const info = findDoc(store, { docId })!;
-          ops = sectionsAppend(resolveSectionHeading(docId, info.path, args.section), args.text);
+          into = { kind: "section", heading_id: resolveSectionHeading(docId, info.path, args.section) };
         } else {
-          ops = docsAppend(docId, args.text);
+          into = { kind: "document", id: docId };
         }
-        return applyOps(repoId, root, ops, "docs_append", args.dry_run);
+        return sugar(repoId, root, [{ op: "insert", into, at: "end", markdown: args.text }], "docs_append", args.dry_run);
       } catch (e) {
         return fail(e);
       }
@@ -1094,10 +1150,13 @@ export function buildServer(ctx: ServerContext): McpServer {
       try {
         const { repoId, rootPath } = repoScope(args.repo);
         if (!rootPath) throw new EngineError("repo_not_found", "repo has no filesystem source; mutation disabled");
-        const { ops, hits: rawHits, pairs } = linksRetarget(store, repoId, args.from_target, args.to_target, args.path_glob ? { pathGlob: args.path_glob } : {});
+        // `hits`/`pairs` come from the macro's plan; the write is the `retarget`
+        // effect, whose lowering runs the same macro (same ops, same CAS pins).
+        const { hits: rawHits, pairs } = linksRetarget(store, repoId, args.from_target, args.to_target, args.path_glob ? { pathGlob: args.path_glob } : {});
         const hits = surfaceRetargetHits(rawHits);
         const dryRun = args.dry_run !== false;
-        const res = surfaceApplyResult(apply(store, { repoId, rootPath, ops, origin: { actor: "agent:mcp", reason: "links_retarget" }, ...LOCK_DIR, dryRun }));
+        const effects: Effect[] = [{ op: "retarget", repairs: [{ from: args.from_target, to: args.to_target }], ...(args.path_glob ? { path_glob: args.path_glob } : {}) }];
+        const res = sugarResult(repoId, rootPath, effects, "links_retarget", dryRun);
         if (dryRun) return ok({ hits, pairs, applied: false, ...res });
         return okMutated({ hits, pairs, applied: true, ...res });
       } catch (e) {
@@ -1153,12 +1212,13 @@ export function buildServer(ctx: ServerContext): McpServer {
         if (!repairs || repairs.length === 0) {
           throw new EngineError("target_missing", "links_repair requires `repairs` (array of {from,to}) or a `from_target`+`to_target` pair");
         }
-        const { ops, hits: rawHits, pairs } = linksRepair(store, repoId, repairs, args.path_glob ? { pathGlob: args.path_glob } : {});
+        const { hits: rawHits, pairs } = linksRepair(store, repoId, repairs, args.path_glob ? { pathGlob: args.path_glob } : {});
         const hits = surfaceRetargetHits(rawHits);
-        // The dry run plans through the same kernel path (dryRun: no write, no
-        // drain) so a preview surfaces exactly the failure an apply would hit.
+        // The dry run plans through the same kernel path (no write, no drain) so
+        // a preview surfaces exactly the failure an apply would hit.
         const dryRun = args.dry_run !== false;
-        const res = surfaceApplyResult(apply(store, { repoId, rootPath, ops, origin: { actor: "agent:mcp", reason: "links_repair" }, ...LOCK_DIR, dryRun }));
+        const effects: Effect[] = [{ op: "retarget", repairs: repairs.map((r) => ({ from: r.from, to: r.to })), ...(args.path_glob ? { path_glob: args.path_glob } : {}) }];
+        const res = sugarResult(repoId, rootPath, effects, "links_repair", dryRun);
         if (dryRun) return ok({ hits, pairs, applied: false, ...res });
         return okMutated({ hits, pairs, applied: true, ...res });
       } catch (e) {

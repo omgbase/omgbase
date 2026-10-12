@@ -3752,6 +3752,69 @@ fn plan_effects_burns_no_id_and_previews_the_exact_bytes() {
     assert!(back.preview.is_none());
 }
 
+/// ADR-021 migration seam: `apply_effects_detailed` is the plan plus — unless
+/// a dry run — the receipt the one-shot produces, and `realize_symbols`
+/// mints one production id per `new_ids` entry **in order**, the ids a
+/// legacy dry run burned through the kernel (`spec/surface` §9): the next
+/// mint after a realized dry run is the one after a commit's.
+#[test]
+fn apply_effects_detailed_and_realize_symbols_follow_the_legacy_mint_sequence() {
+    let (mut store, repo, mut ds) = seeded(&[("a.md", FM_DOC)]);
+    let effects = vec![
+        insert_section("b_0", "One.\n\nTwo."),
+        insert_section("b_0", "Three."),
+    ];
+    let (plan, receipt) = store
+        .apply_effects_detailed(&ctx(&repo, T1), &effects, &api_origin(), &mut ds, true)
+        .unwrap();
+    assert!(receipt.is_none(), "a dry run has no receipt");
+    assert_eq!(
+        plan.to_json(false)["new_ids"],
+        json!([
+            { "symbol": "$new.0", "kind": "block" },
+            { "symbol": "$new.1", "kind": "block" },
+            { "symbol": "$new.2", "kind": "block" },
+        ])
+    );
+    let preview = plan.preview.as_ref().expect("preview");
+    assert_eq!(preview.results[0].ids, ["$new.0", "$new.1"]);
+    assert_eq!(preview.results[1].ids, ["$new.2"]);
+    assert_eq!(count(&store, "commits"), 1, "nothing committed");
+    // The shim: b_0, b_1 are the observed blocks; the three symbols take
+    // b_2, b_3, b_4 in plan order and the store moves on to b_5.
+    let realized = store.realize_symbols(&plan).unwrap();
+    assert_eq!(
+        realized,
+        [
+            ("$new.0".to_owned(), "b_2".to_owned()),
+            ("$new.1".to_owned(), "b_3".to_owned()),
+            ("$new.2".to_owned(), "b_4".to_owned()),
+        ]
+    );
+    assert_eq!(store.mint("b").unwrap(), "b_5");
+    // Committed: the receipt maps the same symbols to the ids the replay
+    // minted next, the plan is the one the receipt names.
+    let (plan2, receipt) = store
+        .apply_effects_detailed(&ctx(&repo, T1), &effects, &api_origin(), &mut ds, false)
+        .unwrap();
+    let receipt = receipt.expect("a commit has a receipt");
+    assert_eq!(plan2.plan_id, receipt.plan_id);
+    assert_eq!(
+        receipt.new_ids,
+        [
+            ("$new.0".to_owned(), "b_6".to_owned()),
+            ("$new.1".to_owned(), "b_7".to_owned()),
+            ("$new.2".to_owned(), "b_8".to_owned()),
+        ]
+    );
+    assert_eq!(receipt.commit.as_deref(), Some("c_1"));
+    assert_eq!(count(&store, "commits"), 2);
+    assert_eq!(
+        ds.read("a.md").unwrap().as_deref(),
+        Some("---\nstatus: open\n---\n\n# A\n\nAlpha.\n\nOne.\n\nTwo.\n\nThree.\n")
+    );
+}
+
 /// `plan` → `execute` and the one-shot `apply({ effects })` leave the same
 /// store and files behind: one `api` commit whose `ops` is the intent
 /// record, one revision, the inserted block minted under the same id.

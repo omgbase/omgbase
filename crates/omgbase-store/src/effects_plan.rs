@@ -1867,4 +1867,45 @@ impl Store {
             self.execute_admitted(ctx, &plan, origin, doc_store)?,
         ))
     }
+
+    /// [`Store::apply_effects`] for the sugar tools (ADR-021, the migration
+    /// phase): the plan always — its preview is what a dry run previews and
+    /// what a committed run's `results` are read from — and the receipt
+    /// unless `dry_run`. The reference is `applyEffectsDetailed`.
+    pub fn apply_effects_detailed(
+        &mut self,
+        ctx: &PlanContext,
+        effects: &[Effect],
+        origin: &ApplyOrigin,
+        doc_store: &mut dyn DocStore,
+        dry_run: bool,
+    ) -> Result<(Plan, Option<Receipt>)> {
+        let plan = self.plan_effects(ctx, effects, doc_store)?;
+        if dry_run {
+            return Ok((plan, None));
+        }
+        let receipt = self.execute_admitted(ctx, &plan, origin, doc_store)?;
+        Ok((plan, Some(receipt)))
+    }
+
+    /// The realize-symbols shim of a sugar tool's dry run (ADR-021 migration):
+    /// one production `b`/`d` minted per `plan.new_ids` entry, **in order**,
+    /// as `$new.<n>` → id. The symbolic minter saw the kernel's own mint
+    /// sequence, so this consumes exactly the ids the legacy dry run burned
+    /// (`spec/surface` §9, `spec/cli` §3.6 pin that a dry run consumes ids)
+    /// and the preview's `$new.<n>` substitute to the ids the real run
+    /// would have produced. Only the sugar tools call this; `plan` and
+    /// `apply { effects, dry_run }` keep burning nothing.
+    pub fn realize_symbols(&mut self, plan: &Plan) -> Result<Vec<(String, String)>> {
+        plan.new_ids
+            .iter()
+            .map(|n| {
+                let prefix = match n.kind {
+                    NewIdKind::Block => "b",
+                    NewIdKind::Document => "d",
+                };
+                Ok((n.symbol.clone(), self.mint(prefix)?))
+            })
+            .collect()
+    }
 }

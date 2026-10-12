@@ -743,6 +743,26 @@ doc_id }] }` ("pass the heading's id to blocks_append"); it is never an id
 lookup — the id form is `blocks_append`. Block-level tools pin
 `expect.content_hash` from the live row when the caller omits it.
 
+**Sugar over effects (3.2).** The block-level write tools — `blocks_insert`,
+`blocks_update`, `blocks_move`, `blocks_remove`, `blocks_split`,
+`blocks_merge`, `blocks_check`, `nodes_set`, `blocks_append`, `docs_append`,
+`links_retarget`, `links_repair` — are `apply { effects }` (ADR-021's
+migration phase; `spec/mutate` §10): each builds its effects after its own
+pre-checks (so its error `data` is unchanged), plans and executes them as
+one request with the tool's name as the commit `reason`, and returns the
+apply result derived from the plan's preview: `results` with every `$new.n`
+realized — the receipt's id when committed; on a dry run one production
+mint per `new_ids` entry, in order, so **a dry run still consumes the ids
+the real run would take** (§9) — `revisions`, `diffs` (dry run only),
+`committed`; a planner error loses its `effect_index`. Two behaviours moved
+with it (`spec/mutate` §10, pinned): `blocks_update` with `expect: {}` (or
+an order-only guard with `markdown`) proceeds with the content hash pinned
+from the live row, and `blocks_check` naming a block twice is one write.
+`blocks_update`'s `attrs` bag beyond `checked` stays on the kernel path until
+4.0; an empty `blocks`/`ids` list is `filter_invalid` ("`blocks` must name
+at least one block", with the tool's shape). `docs_create`, `docs_move`,
+`docs_delete`, `docs_set_meta` and `docs_update` are unchanged in 3.2.
+
 | Tool | Args | Result |
 | --- | --- | --- |
 | `docs_outline` | `id?`, `path?`, `resolution?`, `depth?`, `budget_tokens?` | §2 |
@@ -761,12 +781,12 @@ lookup — the id form is `blocks_append`. Block-level tools pin
 | `plan` | `effects[]` | (3.1) `spec/mutate` §11.6: the Plan `{ version, planner_v, effects, opset, preconditions, new_ids, plan_id, diagnostics, preview }` with `preview` included. **The executable core is returned verbatim in the storage form** — `effects[].target.path`, `preconditions.docs[].path`, `preconditions.absent_paths`, `opset.creates[].path`, `opset.moves[].from/to`, `opset.tombstones[].path` — because `plan_id` digests exactly those bytes and the client hands the object back to `execute` (the one result the path rule of §1 exempts, as `dangling[].target` is); only `preview.revisions[].path` and the `preview.diffs` keys are rooted. A malformed effect is `filter_invalid` (`hint: "arguments"`, the message naming `effects[i]` and the member), a contradiction `conflicting_effects`, a stale guard `stale_expectation` / `stale_plan` — `spec/mutate` §8/§11. Listed with the write tools: it runs under the lock like a dry run |
 | `execute` | `plan` (an object) or `plan_id` + `effects[]` (exactly one form, else `filter_invalid` "pass exactly one of `plan` or `plan_id` + `effects`"; half of the digest form → "the digest form needs both `plan_id` and `effects`"), `reason?` | (3.1) `spec/mutate` §11.7: the plan form admits (`unsupported_plan_version { version, supported: [1] }`, `filter_invalid`, `plan_mismatch { expected, actual }`) then commits; the digest form re-plans and commits on digest equality else `plan_mismatch`; the committed plan's preconditions re-validated in the transaction (`stale_plan`, retriable). The Receipt `{ plan_id, commit, revisions: [{ id, path, hash }], new_ids: { "$new.n": id }, committed: true }`, `revisions[].path` rooted; `origin.actor = "agent:mcp"` |
 | `blocks_insert` | `to`, `markdown`, `at? = end`, `expect? { parent_children_hash? }`, `dry_run?` | the apply result; `expect` is the destination-parent CAS of `spec/mutate` §1.2 (1.2) |
-| `blocks_update` | `id`, `markdown?`, `checked?`, `attrs?`, `expect?`, `dry_run?` | `{ id (the target block), ids, ...apply result }` (`checked` folds into attrs; `block` before 3.0) |
-| `blocks_move` | `blocks[]`, `to`, `at?`, `expect? { parent_children_hash? }`, `dry_run?` | a doc ref as `to` must be the blocks' own document, else `target_missing`; `expect` is the destination-parent CAS, checked once (1.2) |
-| `blocks_remove` | `blocks[]`, `dry_run?` | |
+| `blocks_update` | `id`, `markdown?`, `checked?`, `attrs?`, `expect?`, `dry_run?` | `{ id (the target block), ids, ...apply result }` (`checked` folds into attrs; `block` before 3.0); 3.2: `set markdown` and/or `set attrs.checked` — `expect: {}` or an order-only guard with `markdown` is completed by the planner (`stale_expectation` "expect.content_hash required" before), `markdown` + `checked` is two effects with the result collapsed to the first, `attrs` beyond `checked` the kernel path |
+| `blocks_move` | `blocks[]` (non-empty), `to`, `at?`, `expect? { parent_children_hash? }`, `dry_run?` | a doc ref as `to` must be the blocks' own document, else `target_missing`; `expect` is the destination-parent CAS, checked once (1.2) |
+| `blocks_remove` | `blocks[]` (non-empty), `dry_run?` | |
 | `blocks_split` | `id`, `at[]` (bytes), `dry_run?` | (`block` before 3.0) |
-| `blocks_merge` | `blocks[]`, `separator?`, `dry_run?` | |
-| `blocks_check` | `ids[]`, `checked? = true`, `dry_run?` | check (or uncheck with `checked: false`) the given task blocks (`tasks_complete { blocks[] }` before 3.0) |
+| `blocks_merge` | `blocks[]` (non-empty), `separator?`, `dry_run?` | |
+| `blocks_check` | `ids[]` (non-empty), `checked? = true`, `dry_run?` | check (or uncheck with `checked: false`) the given task blocks (`tasks_complete { blocks[] }` before 3.0); 3.2: a block named twice is one write and one result |
 | `nodes_set` | `id`, `prop`, `value`, `dry_run?` | an unknown node → `block_missing` "no node with id …" (`node_set { node }` before 3.0) |
 | `blocks_append` | `id`, `text`, `dry_run?` | (3.0) append INTO a block by what it is: a heading → the end of its section range (`spec/mutate` §5 `sections_append`), a container (`spec/mutate` §1.1) → the end of its children (an insert `to: { parent: id, at: "end" }`), a leaf → `block_not_container` (`data: { id, type }`, the message pointing at `blocks_insert … at.after`) — the apply result |
 | `docs_append` | `id?`, `path?`, `text`, `section?`, `dry_run?` | the apply result; `section` is a heading's text inside the document (above); absent → the document's end (`sections_append { heading, markdown, doc?, path? }` is gone, 3.0: appending is a document-level act or an into-a-block act) |
@@ -958,7 +978,12 @@ digest form; a one-shot `apply { effects }` with a `create`), `write-effects-
 dry-run` (the Plan, and that it burns no id), `write-effects-stale-plan`
 (the plan form with the reference's full Plan authored into the call,
 refused `stale_plan` after a `blocks_update`; `plan_mismatch`,
-`unsupported_plan_version`, the argument-shape errors). `apply`'s file-CAS holds in the writing
+`unsupported_plan_version`, the argument-shape errors). The migration (3.2)
+adds `write-sugar-over-effects`: the two pinned behaviour changes
+(`blocks_update { expect: {} }` succeeds, `blocks_check` with a repeated id
+is one write), the empty-list argument errors, and a dry-run `blocks_insert`
+followed by a committed one — the committed ids prove the dry run burned
+its ids (§9) through the sugar's realize shim. `apply`'s file-CAS holds in the writing
 engine's working tree, so a write through one engine and a later read of
 `repos_status`/`sync_status` through the other exercises the sync tables
 (`file_stats`, checkpoints) both engines must maintain alike.
@@ -1167,10 +1192,49 @@ both and runs both harnesses.
   run) and replaces the emptied one. Both engines mirror it (1.3).
 - **Pinned — `blocks_split` sends an empty `content_hash`** when the block
   has no live row, so the kernel raises `stale_expectation` with the current
-  hash rather than `block_missing`.
+  hash rather than `block_missing`. **Superseded (3.2):** the planner pins
+  the live row's hash (the block resolved, so it is live); unreachable
+  either way.
+- **Fixed (3.2) — `blocks_update` passed the caller's `expect` bag to the
+  kernel as given**, so `expect: {}` — or `{ parent_children_hash }` alone
+  with `markdown` — reached the content CAS with no hash and failed
+  `stale_expectation` "expect.content_hash required", although the
+  description promised the hash is "pinned to the block's current bytes
+  server-side when omitted". The effect planner completes the guard (§4
+  "Sugar over effects"; `spec/mutate` §10): omitted keys are pinned, given
+  ones checked (`interop::write-sugar-over-effects`).
+- **Fixed (3.2) — `blocks_check` naming a block twice failed.** Both ops
+  carried the pre-check hash; the first flipped the checkbox and the second
+  failed `stale_expectation`. The planner drops the identical duplicate
+  (`spec/mutate` §11.3) — one write, one result per distinct block.
+- **Pinned (3.2) — an empty `blocks`/`ids` list is an argument error**
+  (`filter_invalid` "`blocks` must name at least one block (…takes…)") on
+  `blocks_move`, `blocks_remove`, `blocks_merge` and `blocks_check`. Through
+  3.1 the first three reached the kernel as a malformed op (`block_missing`
+  "block undefined not found") and `blocks_check` committed nothing and
+  reported success.
+- **Pinned (3.2) — the sugar tools' dry runs still burn ids.** The effect
+  planner's own dry run (`plan`, `apply { effects, dry_run }`) burns none;
+  the sugar realizes its plan's `new_ids` with one production mint each so
+  the 3.1 contract above ("dry runs consume minted ids") and `spec/cli` §3.6
+  hold unchanged. Retired with the sugar's `dry_run` at 4.0.
 
 ## Decisions
 
+- 2026-10-12, surface 3.2: ADR-021's migration phase, batch 1 — the twelve
+  block-level write tools (§4 "Sugar over effects") are `apply { effects }`
+  sugar, behaviour-preservingly: every 3.1 fixture of theirs is unchanged
+  (the four interop pairings pass against the committed expectations), the
+  reference's `migration.test.ts` proves result, projection, files and mint
+  sequence equal to the legacy handlers over the alchemy corpus, committed
+  and dry. Two edge behaviours moved and are pinned as fixes (§9:
+  `blocks_update { expect: {} }`, repeated `blocks_check` ids), the
+  empty-list argument error is new, and migrated commits record their intent
+  (`commits.ops`; no read tool surfaces it). No tool, argument or result key
+  added or removed; the catalog's descriptions are unchanged — a minor for
+  the two result changes. `docs_create` / `docs_move` / `docs_delete` /
+  `docs_set_meta` (batch 2) and the CLI verbs follow; `docs_update` stays
+  legacy by design (its result needs the opset).
 - 2026-10-12, surface 3.1: the effect layer's verbs (`spec/mutate` §11,
   ADR-021) — `plan { effects }`, `execute { plan | plan_id + effects }`, and
   `apply` gains `effects` as an alternative to `ops` (exactly one; the `ops`
