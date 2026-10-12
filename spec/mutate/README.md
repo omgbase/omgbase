@@ -15,8 +15,8 @@ It is owned by neither implementation.
 
 | Implementation | Where | Role |
 | --- | --- | --- |
-| `@omgbase/core` (TypeScript, npm) | `packages/core/src/mutate/{tree,ops,apply,commit,materialize,load,known-ids,macros,docs,doc-store,plan-update,lower,opset}.ts` | **Reference.** Mutation decisions land here first. |
-| `omgbase-mutate` (Rust, crates.io) | `crates/omgbase-mutate` | Conformance-first port: the working tree, the six ops, the splice renderer, the lowering and the opset (pure); `omgbase-store` loads, commits, plans and runs the macros and document operations. |
+| `@omgbase/core` (TypeScript, npm) | `packages/core/src/mutate/{tree,ops,apply,commit,materialize,load,known-ids,macros,docs,doc-store,plan-update,lower,opset,effects,plan}.ts` | **Reference.** Mutation decisions land here first. |
+| `omgbase-mutate` (Rust, crates.io) | `crates/omgbase-mutate` | Conformance-first port: the working tree, the six ops, the splice renderer, the lowering and the opset, the effect vocabulary with its conflict rules, lowering and canonical JSON (pure); `omgbase-store` loads, commits, plans and runs the macros, the document operations and the effect planner's `plan`/`execute`. |
 
 The spec is two artifacts, versioned together by `VERSION`: this `README.md`
 and `cases/*.json`. **When prose and fixtures disagree, the fixtures win**,
@@ -298,7 +298,10 @@ Result   { results: [{ ids, removed?, merged_into? }], revisions: [{ id, path, h
      their own guards the same way (`path_taken` for a create and for a
      move's destination, `doc_missing` for a move's source and a delete).
      Only then one commit row (`origin = "api"`, `actor`, `reason`,
-     `checkpoint_id = NULL`, `ops = NULL`), then per document in load order
+     `checkpoint_id = NULL`, `ops` = the intent record of an effect-driven
+     commit — the canonical JSON (§11.5) of `{ v: 1, plan_id, effects }`,
+     the plan's resolved effects — and NULL for every other request, 2.3;
+     ADR-003), then per document in load order
      `spec/store` §5.4 steps 1–4 and 6–13 naming that commit (`spec/store`
      §5.4 "The api path") with the **known-id resolver**: the re-parsed body
      gets the tree's ids by positional key (`"/i/j"`; a position with no id
@@ -503,9 +506,17 @@ plan's kernel ops and `set_frontmatter`.
 Codes: `stale_expectation`, `block_missing`, `target_missing`,
 `parent_missing`, `doc_missing`, `cycle_move`, `not_contiguous`,
 `type_mismatch`, `path_taken`, `node_not_editable`, `stale_plan`,
-`plan_not_convergent`, `sync_conflict`. Fixtures compare the code and the
-listed data fields (`op_index`, `block`, `current`, `retriable`); messages
-are not pinned.
+`plan_not_convergent`, `sync_conflict`, and (2.3, §11) `conflicting_effects`
+(`{ effects: [i, j], focus: { kind, target, field? }, retriable: false }`),
+`unsupported_plan_version` (`{ version, supported: [1] }`), `plan_mismatch`
+(`{ expected, actual }`, two plan ids). A malformed effect or plan object is
+the surface's argument-shape error `filter_invalid { reason, hint:
+"arguments" }` (`spec/surface` §4), thrown by the planner. Fixtures compare
+the code and the listed data fields (`op_index`, `block`, `current`,
+`retriable`, and since 2.3 `effect_index` — the index of the effect a
+planner error arose from, added to every error the planner or its kernel
+ops raise — `effects`, `focus`, `symbol`, `version`, `supported`,
+`expected`, `actual`); messages are not pinned.
 
 ## 9. Fixtures
 
@@ -521,7 +532,23 @@ so file-CAS and the written bytes are checkable) and these steps:
                 "before_apply"?: [ <observe|disk steps run between plan and apply> ] } }    // stages stale_plan
 { "disk":     { "path": "a.md", "source": "…" } }                                   // a human edit landed on disk
 { "materialize": {} }                                                                // replay every pending row (spec/store §5.7) → { materialized: [path…] }
+{ "plan_effects": { "effects": [...] } }                                             // §11.6 `plan` → { plan } (minus preview) or the error
+{ "execute": { "ts": "…", "plan_step": 1 | "plan": {...} | "plan_id": "…", "effects": [...],
+               "origin": {...}, "crash_after_commit"?: true } }                     // §11.7 → { receipt } or the error
+{ "apply_effects": { "ts": "…", "effects": [...], "origin": {...}, "dry_run"?: true } } // §11.7 → { plan } (dry run) | { receipt } | the error
+{ "canonical": { "value": <any JSON> } }                                             // §11.5 → { json: canonical(value), digest: hex(sha256(json)) }
 ```
+
+The effect steps (2.3): `plan_effects` plans and records the Plan without
+its `preview` (so `plan_id`, `opset`, `preconditions`, `new_ids`,
+`diagnostics` and the resolved `effects` are pinned); `execute` takes the
+plan form — `plan_step` names an earlier `plan_effects` or dry-run
+`apply_effects` step whose full plan (preview included) is handed back, or
+`plan` is an authored plan object — or the digest form (`plan_id` +
+`effects`), and records the Receipt; `apply_effects` records the Plan
+(`dry_run`) or the Receipt; `canonical` is the digest vector step. The
+`plan_effects`/`canonical` steps have no `ts` (nothing commits);
+`execute`/`apply_effects` are committing steps and may `crash_after_commit`.
 
 A committing `apply` / `macro` / `docs` step may carry `"crash_after_commit":
 true` (2.2): the process dies after its transaction committed and before the
@@ -545,7 +572,9 @@ committed }` or `{ error: { code, op_index?, block?, current?, retriable? } }`
 path, committed }` (+ `dangling`, `retargeted` for a move) or the error;
 `plan` → `{ opset, before_apply?, apply? }`; `disk` → `{}`; `materialize` →
 `{ materialized: [path…] }` (the rows cleared, in insertion order; a row kept
-for a foreign file is not listed). After the last step: `files` (path → bytes
+for a foreign file is not listed); `plan_effects` → `{ plan }` or the error;
+`execute` → `{ receipt }` or the error; `apply_effects` → `{ plan }` /
+`{ receipt }` / the error; `canonical` → `{ json, digest }`. After the last step: `files` (path → bytes
 of the in-memory doc store), and the `spec/store` §9.4 projection of `docs`,
 `blocks`, `commits`, `revisions`, `dispositions`, `resurrection_pool`,
 `pending_materializations` (14.0; `[]` unless a step crashed). The fixture
@@ -562,7 +591,14 @@ retile, fallback to replace, non-convergent plan refused, stale plan),
 `materialize.json` (2.2: a crash after COMMIT and what each later step — a
 `materialize`, an observation of the stale, the rendered, new or absent
 file, a second request — does with the pending rows, for `apply`, `create`,
-`set_meta`, `delete` and `move`).
+`set_meta`, `delete` and `move`), `effects.json` (2.3, §11: every lowering
+row once, each conflict rule, `plan` → `execute` vs the one-shot `apply`,
+the dry run that burns no id, `stale_plan` after an observation and on
+replay, the digest form equal and mismatched, an unsupported plan version,
+an edited plan, a crash after COMMIT, `set frontmatter` byte parity with
+`set_meta`, `$new.n` references, `create` + `set` on the created document,
+`move document` with the default and an explicit `retarget`, and the digest
+vectors).
 
 **Runner checks**: every committed document satisfies `spec/store` §8 I1–I8
 and `files[path] == reconstruct(doc)` — a path a `disk` step rewrote, or one
@@ -689,8 +725,301 @@ instead; then the projection deep-equals `expect`. **Generation**: `packages/cor
   — unless it is itself a retarget source (it links to itself by path) —
   although `revisions.path` is rewritten in place for the current revision
   only.
+- **Pinned (2.3) — discarded mints are symbols too.** The symbolic minter
+  (§11.4) names every `b` the kernel mints while a plan is lowered, in mint
+  order — including the ids the kernel mints and discards (an `update`'s
+  re-parse mints the parsed block before the target's id replaces it; a
+  `list` wrapper whose items are spliced). Such a `$new.n` is in `new_ids`
+  and the receipt maps it to the `b` the replay minted for it, an id that
+  names no row (`effects::new-block-referenced-by-later-effects` — `$new.2`;
+  `effects::move-document-default-retarget` — `$new.0`). The complete list
+  is what lets `execute` zip mint order onto the symbols; the live ids are
+  the ones `preview.results[].ids` name.
+- **Pinned (2.3) — the digest form cannot tell a stale plan from an edited
+  one.** `execute { plan_id, effects }` holds no plan to compare
+  preconditions against, so any divergence is `plan_mismatch`; only the plan
+  form distinguishes `stale_plan`. The design note had the digest form
+  report `stale_plan` when the preconditions differ — it cannot.
+- **Pinned (2.3) — a file head, not a frontmatter raw.** `set frontmatter.<k>`
+  must reproduce `docs_set_meta`'s bytes, which `composeFile` builds over
+  the whole file; a document without frontmatter whose body starts with a
+  blank line would render `leading_trivia + fences` (not frontmatter) under
+  the kernel's `set_frontmatter` (which leaves the leading trivia). The
+  plan's `set_frontmatter[].raw` therefore replaces everything before the
+  first block (§11.4); the kernel request's `set_frontmatter` is unchanged.
+
+## 11. Effects and plans
+
+Since 2.3 (ADR-021). Nine **effects** are the intentional-write vocabulary:
+an ordered list of them is lowered by a **planner** to the kernel ops of §2,
+the macros of §5, the whole-document planner of §7 and the document
+operations of §6, and committed as ONE request of §4 step 5 — one
+transaction, one `commits` row (whose `ops` records the effects), one
+revision per touched document. Nothing is added to the kernel. Three verbs:
+`plan` (the frozen Plan, nothing written), `execute` (commit exactly that
+plan, its preconditions re-validated in the transaction), `apply { effects }`
+(plan + execute under one writer lock and one transaction). The kernel
+`Request` of §4 and the `Opset` of §7 are unchanged; the observe path is a
+separate entry and commit origin, never an effect.
+
+### 11.1 Vocabulary
+
+```text
+Target  { kind: "document", id? | path? }        at least one; a path in either form (spec/surface §1)
+        { kind: "block", id } | { kind: "node", id }
+        { kind: "section", heading_id }           the heading's section range (§1.1), never a stored id
+At      "start" | "end" | { before: <block id> } | { after: <block id> }
+Expect  { content_hash?, parent_children_hash?, revision? }   revision = the document's current_rev
+
+Effect  { op: "create",   path, markdown, frontmatter? }
+        { op: "insert",   into: Target(document|section|block), at? = "end", markdown, expect? }
+        { op: "set",      target: Target(document|block|node), field, value, expect? }
+        { op: "unset",    target: Target(document), field: "frontmatter.<key>", expect? }
+        { op: "move",     target: Target(document), to, retarget_inbound? = true }
+        { op: "move",     targets: [Target(block)…], into: Target(document|section|block), at? = "end", expect? }
+        { op: "remove",   target: Target(document) }
+        { op: "remove",   targets: [Target(block)…], expect?: { <block id>: Expect } }
+        { op: "split",    target: Target(block), at: [byte…], expect? }
+        { op: "merge",    targets: [Target(block)…], separator? = " ", expect?: { <block id>: Expect } }
+        { op: "retarget", repairs: [{ from, to }], path_glob? }
+```
+
+Any `id` — a target's, an anchor's, a `targets[]` member's — may be
+**`$new.<n>`**, an identity an earlier effect of the same request creates
+(§11.4). A symbol no earlier effect created (or one of the other kind: a
+document symbol where a block is wanted) is `target_missing { symbol }`.
+`move`/`remove` are distinguished by `target` (a document) vs `targets`
+(blocks). The shape is checked before anything is resolved — an unknown
+key, a missing or mistyped member, a target kind the op does not take, a
+`field` not in §11.2 — and a failure is `filter_invalid { reason, hint:
+"arguments" }` naming `effects[i]` and the member; an empty `effects` is one
+too.
+
+### 11.2 Fields
+
+| Target | `field` | `value` |
+| --- | --- | --- |
+| document | `frontmatter.<key>` (`<key>` is everything after the dot; one flat key) | any JSON (`unset` takes none) |
+| document | `content` (`set` only) | the complete proposed document, a string |
+| block | `markdown` | a string |
+| block | `attrs.checked` | a boolean |
+| node | an editable property of the node's kind (`value`, `name`, `checked` — §5 `node_set`) | a string, else its canonical JSON (§11.5) |
+
+`expect.content_hash` and `expect.parent_children_hash` go to the lowered
+op (§1.2); a mismatch at plan time is the kernel's `stale_expectation`
+(`effects::plan-rejects-stale-expect`). A `content_hash` the caller omits
+is **pinned from the live row** for every block an effect targets (`set`,
+`split`, each block of `remove`/`merge`; the sugar tools' rule) and the
+pins are the plan's `preconditions.blocks`. `expect.revision` is compared
+with the target document's `current_rev` when the effect is planned; a
+difference is `stale_plan { doc, expected_revision, current: { revision,
+hash }, retriable }` (`effects::plan-rejects-stale-revision`).
+
+### 11.3 Lowering and conflicts
+
+Effects are lowered **in order**; later effects see earlier ones (an anchor
+may be a block an earlier insert created; a second frontmatter key patches
+the first's result). Resolution: a document target → its `{ id, path }`
+(`doc_missing { doc }`; `filter_invalid` when `id` and `path` disagree); a
+`$new.n` document → the create's path. Each effect lowers per this table —
+the TypeScript reference's `mutate/effects.ts`, the port's
+`omgbase-mutate::effects`:
+
+| Effect | Lowers to |
+| --- | --- |
+| `create` | `opset.creates[] = { path, source }`, `source = composeFile(markdown, frontmatter)` (§6 `docs_create`) with every later `set`/`unset frontmatter.<key>` on its `$new.n` **folded into `frontmatter` before composing**; a live document at `path`, a path an earlier effect of the plan already creates or moves to, or a file on disk → `path_taken`; `preconditions.absent_paths += path`; the symbol is allocated here (kind `document`). At commit: `ingest_reconciled { precondition: null }` (§4 step 5 (b): `path_taken` re-checked) |
+| `insert into document` | kernel `insert { doc, to: { parent: { doc: true }, at }, markdown, expect? }` |
+| `insert into section` | `insert { to: { parent: { heading: heading_id, scope: "section" }, at }, markdown, expect? }` (§1.1; an unknown heading is `parent_missing`) |
+| `insert into block` | `insert { to: { parent: id, at }, markdown, expect? }` (the container rule → `type_mismatch`) |
+| `set`/`unset frontmatter.<key>` on a document | the file is re-composed as `docs_set_meta` composes it (§6): `split(render(doc))` → `(frontmatter, body)`, the key set or deleted, `after = composeFile(body, merged)`; the document's **head** — `after` minus the rendered body blocks — becomes `opset.set_frontmatter[] = { doc, raw }` (one entry per document, the last patch wins). The head replaces the leading trivia and the frontmatter together (§10), so the body blocks keep their ids and bytes (a file without a trailing newline gains one on its last block's trivia); byte parity with `set_meta` is pinned by `effects::set-fm-matches-set-meta-bytes` |
+| `set content` on a document | §7 `plan_update(doc, value)`: `converges: false` → `plan_not_convergent { doc, diagnostics }`; its `frontmatter` → the head `leading_trivia + raw`; its kernel ops appended with every `$k.ids[i]` placeholder shifted by the ops already planned. The planner's own dry runs mint under a throwaway symbol table (nothing of theirs reaches the plan) |
+| `set markdown` on a block | `update { block, markdown, expect: { content_hash (pinned), parent_children_hash? } }` |
+| `set attrs.checked` on a block | `update { block, attrs: { checked }, expect }` |
+| `set <prop>` on a node | §5 `node_set(node, prop, value)` → its one `update`, the pin as above (`node_not_editable` / `block_missing` as there) |
+| `move` a document | `opset.moves[] = { id, from, to }` (`doc_missing`; `path_taken` for a live document, an earlier create/move of the plan, or a file at `to`; `absent_paths += to`; the document's triple → `preconditions.docs`) and, unless `retarget_inbound` is `false`, the inbound rewrite of §6 `docs_move` as kernel `update`s (pinned). At commit: `move_path` then the sources' revisions, the moved document's own revision (when it is a source) at the NEW path — §6, one commit |
+| `move` blocks | `move { blocks, to, expect? }` |
+| `remove` a document | `opset.tombstones[] = { id, path }` (`doc_missing`; the triple → `preconditions.docs`); at commit the tombstone of §6 `docs_delete` (nothing pooled) |
+| `remove` blocks | `remove { blocks, expect: { <id>: { content_hash (pinned), … } } }` |
+| `split` | `split { block, at, expect }` |
+| `merge` | `merge { blocks, separator, expect: { <id>: … } }` |
+| `retarget` | §5 `links_repair(repairs, path_glob)` → its `update` per top-most block (pinned); no hit → no op |
+
+A kernel error raised while an effect's ops are planned keeps its own data
+and gains `effect_index` (§8).
+
+**Focus and conflicts.** Before an effect lowers, the planner classifies
+what it writes and what it addresses, against what earlier effects did:
+
+| Focus | Key | Rule |
+| --- | --- | --- |
+| scalar | `(document, frontmatter.<key>)`, `(document, content)`, `(document, path)` — a `move`, `(block, markdown)`, `(block, attrs.checked)`, `(node, <prop>)`; a `retarget` is one `(block, markdown)` per hit | a second write to a key an earlier effect wrote: **identical** (same op; for `set`, equal canonical JSON of `value`) → the later effect is **dropped** and `diagnostics` gains `effect <j> (<describe>) duplicates effect <i>; dropped` (`describe`: `set <field> on document <id>`, `set <field> on block <id>`, …); otherwise — a different value, `set` then `unset`, `unset` then `set` — `conflicting_effects { effects: [i, j], focus: { kind: "scalar", target: { kind, id }, field } }` |
+| positional | `insert`, `move` blocks, `split`, `merge` | any number, sequential; an anchor must exist when reached (the kernel's `target_missing`) |
+| identity | retired by: `remove` a document (the document and every block), `remove` blocks (each block and its descendants), `merge` (the non-first blocks and their descendants), `set markdown` on a block (its descendants — the re-parse re-mints them, §2.2), `set content` (every block of the document; the document counts as wholly rewritten), `move` a document (its OLD path) | a later effect that **addresses** a retired document, block (a target, an `into`, a `heading_id`, an anchor, a node's block) or path (a `create` there, a `move` to it) → `conflicting_effects { effects: [i, j], focus: { kind: "identity", target: { kind: "document" \| "block" \| "path", id? \| path? } } }`; `set content` on a document any earlier effect touched → the same, naming the document and that effect |
+
+The dropped duplicate is not in the plan's `effects`. `conflicting_effects`
+is not retriable. `execute` does no analysis.
+
+### 11.4 The Plan
+
+```text
+Plan {
+  version: 1,                    // the plan schema
+  planner_v: "p1",               // the lowering + conflict rules above (the matcher_v precedent)
+  effects: [ResolvedEffect],     // in order, duplicates dropped: document targets as { kind: "document", id, path }
+                                 // (path in the storage form; a $new.n document keeps its symbol with the create's path),
+                                 // defaults made explicit (insert/move `at: "end"`, move `retarget_inbound: true`,
+                                 // merge `separator: " "`), a `create` path canonicalized; optional keys absent when absent
+  opset: { creates: [{ path, source }], moves: [{ id, from, to }], tombstones: [{ id, path }],
+           set_frontmatter: [{ doc, raw }], ops: [Op] },     // every key present ([] when empty); ops in the fixture spelling
+                                                             // (`child_ids`), new structure named by kernel placeholders "$k.ids[i]"
+  preconditions: { docs: [{ id, path, base_revision, hash }],      // §4 step 5's triple of every touched document: the loaded ones
+                                                                   // in load order, then moved/removed documents in effect order
+                   blocks: [{ id, content_hash }],                 // every pin, first-pin order ($new.n blocks excluded)
+                   parents: [{ doc, parent: <block id> | null, parent_children_hash }],   // the caller's destination-parent pins
+                   absent_paths: [path] },                         // create paths and move destinations, in effect order
+  new_ids: [{ symbol: "$new.n", kind: "block" | "document" }],      // in allocation order (below)
+  plan_id: "<64 hex>",           // §11.5
+  diagnostics: [string],         // the dropped duplicates
+  preview?: { results: [{ ids }], revisions: [{ id, path, hash }], diffs: { path: { before, after } } }   // not digested; omittable
+}
+```
+
+**Symbolic identities.** The planner lowers under the **symbolic minter**:
+every `b` the kernel mints while the ops are planned returns the next
+`$new.n` (`n` counting from 0 across the plan), and a `create` allocates the
+next `$new.n` of kind `document` when it is lowered. So a plan mints no
+real id (a dry run burns nothing — `effects::apply-effects-dry-run-plan-only`),
+the kernel — id-agnostic for rendering — renders exact bytes and hashes, and
+the `preview` is exact. The ids an op reported (`results[k].ids`) are what
+a later effect's `$new.n` resolves to: the kernel placeholder `$k.ids[i]`
+of the op that minted it. `new_ids` lists every symbol in allocation order
+(§10: a discarded mint is a symbol too).
+
+The `preview`: the kernel results (`ids` may be symbols), the revisions
+the commit would record — the loaded documents' `{ id, path, hash }` with a
+moved document at its new path, plus `{ id: "$new.n", path, hash }` per
+create — and the per-file diffs: the kernel's, a create `"" → source`, a
+move two entries (`from → ""`, `to` filled with the moved document's bytes
+— its rewritten bytes when it is a retarget source), a removal `bytes → ""`.
+
+### 11.5 Canonical JSON and the digest
+
+`plan_id = hex(sha256(utf8(canonical(core))))` over the **core** — exactly the
+six members `{ version, planner_v, effects, opset, preconditions, new_ids }`
+of the plan (`plan_id`, `diagnostics`, `preview` excluded). `canonical(v)`
+is the JSON text of `v` under these rules, each exact:
+
+1. No whitespace anywhere.
+2. **Objects**: members sorted by the **UTF-8 bytes** of their keys
+   (bytewise, unsigned — `"z"` before `"é"`); a member whose value is
+   absent (`undefined`) is omitted; a member whose value is JSON `null` is
+   written `null`. Optional keys of the plan and of resolved effects are
+   therefore absent, never `null`, when they are not given — and a `null`
+   that IS a value (`base_revision: null`, `hash: null`, a frontmatter
+   `value: null`) stays.
+3. **Arrays**: elements in order, comma-separated.
+4. **Strings** (values and keys): `"` → `\"`, `\` → `\\`, U+0008 → `\b`,
+   U+000C → `\f`, U+000A → `\n`, U+000D → `\r`, U+0009 → `\t`, every other
+   U+0000–U+001F → `\u00xx` with **lower-case** hex; everything else —
+   `/`, U+007F, U+2028/2029, every non-ASCII character — literal UTF-8. A
+   string that is not well-formed Unicode (a lone surrogate) cannot be
+   digested: `filter_invalid`.
+5. **Numbers**: NaN and the infinities cannot be digested (`filter_invalid`).
+   A value that is **integral with |v| < 2^53** is written as a plain decimal
+   integer — no fraction, no exponent, `-0` as `0` (so `1.0` and `1` are one
+   value: JSON distinguishes them, the digest does not). Any other finite
+   value is written by **ECMAScript `Number::toString(10)`**: the shortest
+   digit string that round-trips (`d₁…dₖ`, decimal exponent `n` with the
+   value `0.d₁…dₖ × 10ⁿ`), laid out as: `k ≤ n ≤ 21` → the digits followed
+   by `n − k` zeros; `0 < n ≤ 21` → the digits with a `.` after the `n`-th;
+   `−6 < n ≤ 0` → `0.` then `−n` zeros then the digits; otherwise
+   `d₁[.d₂…dₖ]e±(n−1)` — `1.5`, `0.30000000000000004`, `1e+21`, `1e-7`,
+   `9007199254740992`, `123456789012345680000`, `1.7976931348623157e+308`
+   (`effects::digest-vectors` pins each). Integers beyond 2^53 are not
+   portable between the engines' number models and appear in no fixture.
+6. `true`, `false`, `null`.
+
+The `canonical` fixture step (§9) pins the text and its digest; the empty
+core `{ version: 1, planner_v: "p1", effects: [], opset: { every key [] },
+preconditions: { every key [] }, new_ids: [] }` digests to
+`a20097a9c319b59a1313c83e1fd494bbb3cf4895040fbbddd2866e56b16cddd3`.
+
+### 11.6 `plan`
+
+`plan(effects)` → Plan. Validate the shape (§11.1), then under the symbolic
+minter lower each effect in order (§11.3: resolve, classify — dropping or
+refusing — then lower), render every loaded document (§4 steps 1–4),
+compose the creates, freeze the preconditions, digest the core. Reads only;
+no id minted; no lock needed beyond the host's (the triples are re-checked
+at commit). A plan has no expiry.
+
+### 11.7 `execute` and `apply`
+
+**`execute { plan }`** (the plan form). Admission, in this order: `version`
+≠ 1 → `unsupported_plan_version { version, supported: [1] }` (before any
+other member is read — a plan from a newer schema fails here, whatever
+else it carries); a missing or mistyped core member → `filter_invalid`;
+the recomputed digest of the core ≠ `plan_id` → `plan_mismatch { expected:
+plan_id, actual }` (an edited plan, or another planner's digest — the
+parity gate: `effects::execute-plan-edited-is-plan-mismatch` pins `actual`
+for the empty core). `planner_v` is digested, not checked: the opset is
+executable whatever planned it. Then, under the writer lock when a
+workspace is given: pre-check every `preconditions.docs` triple against the
+rows (`doc_missing`; a difference → `stale_plan { doc, expected_revision,
+current: { revision, hash }, retriable }`) and every `absent_paths` entry
+(`path_taken`) — so a stale plan fails before a `b` is minted; **replay the
+opset** under the production minter: `set_frontmatter` heads first, then
+`ops` in order through §4 steps 1–4 (the `b` ids are minted here, before
+the transaction, as every request's are — a failure after this point burns
+them, in both engines alike); build the request's internal effects in this
+order — per create `ingest_reconciled { precondition: null }`, per move
+`move_path` (the inbound edges read now), the rendered documents'
+`ingest_known`s (a moved document's at its new path), per tombstone
+`tombstone { pool: false }` — and commit them as §4 step 5 with `ops` = the
+intent record `canonical({ v: 1, plan_id, effects })` (the plan's resolved
+effects, symbols kept). The transaction re-validates every triple
+authoritatively; a document that moved meanwhile is `stale_plan` with
+nothing minted of `c`/`d`/`r`. Replaying an executed plan fails the same
+way (`effects::execute-replay-fails-stale-plan`): the preconditions decide,
+no server-held handle, no idempotent replay.
+
+**Receipt** `{ plan_id, commit, revisions: [{ id, path, hash }], new_ids:
+{ "$new.n": <id> }, committed: true }`: `commit` the one `commits` row
+(`null` when the plan had nothing to commit); `revisions` one per ingest in
+effect order (a create's `id` is the document minted); `new_ids` maps the
+plan's symbols to the ids the replay minted — the `i`-th block symbol to
+the `i`-th `b` minted during the replay, the `i`-th document symbol to the
+`i`-th `d` minted inside the transaction (the creates, in order; the
+reconciling ingest's `b` mints for a created document's blocks follow the
+replay's and are not symbols).
+
+**`execute { plan_id, effects }`** (the digest form): plan the effects as
+§11.6 (under the lock); the new plan's `plan_id` ≠ the given one →
+`plan_mismatch { expected, actual }` — the effects differ, or the documents
+they target moved (§10: the digest form cannot tell which); equal → commit
+it as above.
+
+**`apply { effects, dry_run? }`**: `dry_run` → the Plan (§11.6, preview
+included); otherwise plan + commit under one writer lock and one
+transaction → the Receipt. The one-shot and `plan` → `execute` produce the
+identical store projection (`effects::set-fm-and-insert-section-*`).
 
 ## Decisions
+
+- 2026-10-12, mutate 2.3: the public Effect layer (§11; ADR-021). Nine
+  effects, a planner tier over the six-op kernel — nothing added to the
+  kernel — and the verbs `plan` / `execute` / `apply { effects }`; a plan's
+  identity is the sha256 of the canonical JSON of its executable core
+  (§11.5), its new identities symbolic `$new.n` minted at execute and
+  mapped in the receipt; contradictions rejected by focus kind at plan time
+  (§11.3); `commits.ops` populated for effect-driven commits (§4 step 5
+  (b)). Additive — the kernel `Request`/`Opset` are unchanged — so a minor.
+  Three codes (§8), four fixture steps and the `effects.json` suite (33
+  cases, §9); no existing case moved. Decided against the design brief in
+  three places (§10): the digest form reports only `plan_mismatch`; the
+  plan's lowered form carries the document operations (`creates`, `moves`,
+  `tombstones`) so `execute` replays without re-lowering; `set_frontmatter`
+  entries are file heads.
 
 - 2026-10-12, mutate 2.2: the commit transaction opens `BEGIN IMMEDIATE`
   and re-validates every loaded document's `(path, current_rev, file_hash)`

@@ -1,7 +1,8 @@
 //! The mutation spec conformance runner: executes every fixture under
 //! `spec/mutate/cases` — observation scripts exactly as `spec/store` §9.4
 //! plus the `apply`, `macro`, `docs`, `plan` and `disk` steps of
-//! `spec/mutate` §9 — against `omgbase-store` (which calls this crate to apply
+//! `spec/mutate` §9, and the §11 `plan_effects`, `execute` and
+//! `apply_effects` steps — against `omgbase-store` (which calls this crate to apply
 //! changesets) and an in-memory doc store seeded by the `observe` steps, then
 //! checks the §8 invariants, `files[path] == reconstruct(doc)`, and the
 //! projection (`steps`, `files`, `docs`, `blocks`, `commits`, `revisions`,
@@ -25,12 +26,14 @@ use std::panic::{self, AssertUnwindSafe};
 use std::path::{Path, PathBuf};
 
 use omgbase_format::hash::{hex, sha256};
-use omgbase_mutate::{At, MutationError, Op, Opset};
+use omgbase_mutate::effects::{Admission, canonical_json, digest};
+use omgbase_mutate::{At, Effect, MutationError, Op, Opset, Plan};
 use omgbase_reconcile::Config;
 use omgbase_store::tree::parse_tree_entries;
 use omgbase_store::{
     ApplyOrigin, ApplyRequest, ApplyResult, BatchItem, BatchOutcome, DocOpContext, DocStore,
-    LinkRepair, MemDocStore, SequentialMinter, SetFrontmatter, Store, TreeEntry,
+    EffectsOutcome, LinkRepair, MemDocStore, PlanContext, SequentialMinter, SetFrontmatter, Store,
+    TreeEntry,
 };
 use rusqlite::types::Value as Sql;
 use rusqlite::{Connection, OptionalExtension, params};
@@ -73,7 +76,7 @@ const PROJECTED_TABLES: [&str; 7] = [
     "resurrection_pool",
     "pending_materializations",
 ];
-const STEP_KINDS: [&str; 8] = [
+const STEP_KINDS: [&str; 12] = [
     "observe",
     "sweep",
     "apply",
@@ -82,11 +85,19 @@ const STEP_KINDS: [&str; 8] = [
     "plan",
     "disk",
     "materialize",
+    "plan_effects",
+    "execute",
+    "apply_effects",
+    "canonical",
 ];
 /// The committing step kinds that take `crash_after_commit: true` (store
 /// 14.0, `spec/mutate` §9): the request commits, the process dies before
 /// its first file operation, the outcome is `{ crashed_after_commit: true }`.
-const CRASHABLE_STEPS: [&str; 3] = ["apply", "macro", "docs"];
+const CRASHABLE_STEPS: [&str; 5] = ["apply", "macro", "docs", "execute", "apply_effects"];
+/// The `ts` a `plan_effects` step plans at when it names none (a plan is
+/// not a commit; the timestamp only bounds the pool a `create` reconciles
+/// against).
+const PLAN_TS: &str = "1970-01-01T00:00:00.000Z";
 const MACROS: [&str; 9] = [
     "tasks_complete",
     "sections_append",
@@ -369,6 +380,75 @@ fn validate_steps(at: &str, steps: Option<&Json>, nested: bool, problems: &mut V
                     problems.push(format!("{here}: exactly one of {}", DOC_OPS.join("/")));
                 } else if !b[ops[0]].is_object() {
                     problems.push(format!("{here}.{}: must be an object", ops[0]));
+                }
+            }
+            "plan_effects" => {
+                only_keys(b, &["effects"], &here, problems);
+                if !b.get("effects").is_some_and(Json::is_array) {
+                    problems.push(format!("{here}: `effects` must be an array"));
+                }
+            }
+            "execute" => {
+                only_keys(
+                    b,
+                    &[
+                        "ts",
+                        "plan_step",
+                        "plan",
+                        "plan_id",
+                        "effects",
+                        "origin",
+                        "crash_after_commit",
+                    ],
+                    &here,
+                    problems,
+                );
+                require_ts(b, &here, problems);
+                require_origin(b.get("origin"), &here, problems);
+                let plan_form = b.contains_key("plan_step") || b.contains_key("plan");
+                let digest_form = b.contains_key("plan_id") || b.contains_key("effects");
+                if plan_form == digest_form {
+                    problems.push(format!(
+                        "{here}: exactly one of `plan_step` / `plan` (the plan form) or `plan_id` + `effects` (the digest form)"
+                    ));
+                }
+                if b.contains_key("plan_step") && b.contains_key("plan") {
+                    problems.push(format!("{here}: `plan_step` and `plan` are alternatives"));
+                }
+                if b.get("plan_step").is_some_and(|v| !v.is_u64()) {
+                    problems.push(format!("{here}: `plan_step` must be a step index"));
+                }
+                if b.get("plan").is_some_and(|v| !v.is_object()) {
+                    problems.push(format!("{here}: `plan` must be an object"));
+                }
+                if digest_form
+                    && (!b.get("plan_id").is_some_and(Json::is_string)
+                        || !b.get("effects").is_some_and(Json::is_array))
+                {
+                    problems.push(format!(
+                        "{here}: the digest form needs `plan_id` (a string) and `effects` (an array)"
+                    ));
+                }
+            }
+            "apply_effects" => {
+                only_keys(
+                    b,
+                    &["ts", "effects", "origin", "dry_run", "crash_after_commit"],
+                    &here,
+                    problems,
+                );
+                require_ts(b, &here, problems);
+                if !b.get("effects").is_some_and(Json::is_array) {
+                    problems.push(format!("{here}: `effects` must be an array"));
+                }
+                require_origin(b.get("origin"), &here, problems);
+                if b.get("dry_run").is_some_and(|v| !v.is_boolean()) {
+                    problems.push(format!("{here}: `dry_run` must be a boolean"));
+                }
+            }
+            "canonical" => {
+                if !b.contains_key("value") || b.len() != 1 {
+                    problems.push(format!("{here}: `canonical` takes exactly `value`"));
                 }
             }
             "plan" => {
@@ -722,6 +802,31 @@ fn error_json(m: &MutationError) -> Json {
     if let Some(r) = m.data.get("retriable").filter(|v| v.is_boolean()) {
         error.insert("retriable".to_owned(), r.clone());
     }
+    // The effect layer's fields (2.3).
+    if let Some(n) = m.data.get("effect_index").filter(|v| v.is_number()) {
+        error.insert("effect_index".to_owned(), n.clone());
+    }
+    if let Some(e) = m.data.get("effects").filter(|v| v.is_array()) {
+        error.insert("effects".to_owned(), e.clone());
+    }
+    if let Some(f) = m.data.get("focus").filter(|v| v.is_object()) {
+        error.insert("focus".to_owned(), f.clone());
+    }
+    if let Some(s) = m.data.get("symbol").filter(|v| v.is_string()) {
+        error.insert("symbol".to_owned(), s.clone());
+    }
+    if let Some(v) = m.data.get("version") {
+        error.insert("version".to_owned(), v.clone());
+    }
+    if let Some(s) = m.data.get("supported").filter(|v| v.is_array()) {
+        error.insert("supported".to_owned(), s.clone());
+    }
+    if let Some(e) = m.data.get("expected").filter(|v| v.is_string()) {
+        error.insert("expected".to_owned(), e.clone());
+    }
+    if let Some(a) = m.data.get("actual").filter(|v| v.is_string()) {
+        error.insert("actual".to_owned(), a.clone());
+    }
     Json::Object(error)
 }
 
@@ -746,6 +851,12 @@ struct Runner {
     /// the file half), so the commit lands and its
     /// `pending_materializations` rows stay (14.0).
     crash_after_commit: bool,
+    /// The plans earlier `plan_effects` / dry-run `apply_effects` steps
+    /// produced, by top-level step index (an `execute { plan_step }` names
+    /// one).
+    plans: HashMap<usize, Plan>,
+    /// The index of the top-level step being run.
+    step_index: usize,
 }
 
 /// The doc store a crashed phase B' sees: reads pass through, the first
@@ -1014,6 +1125,118 @@ fn run_docs(r: &mut Runner, body: &JsonMap<String, Json>) -> Result<Json, String
     }
 }
 
+/// The `effects` of a step; a shape error is the planner's `filter_invalid`
+/// and records as an error outcome — `{ error: { code: "filter_invalid" } }`
+/// is not a §8 code, so the runner reports it as a runner problem.
+fn effects_of(body: &JsonMap<String, Json>) -> Result<Vec<Effect>, String> {
+    Effect::list_from_json(body.get("effects").ok_or("effects")?)
+}
+
+fn plan_ctx(r: &Runner, ts: &str) -> PlanContext {
+    PlanContext {
+        repo_id: r.repo_id.clone(),
+        ts: ts.to_owned(),
+        config: r.config.clone(),
+    }
+}
+
+/// `spec/mutate` §9 (2.3) `plan_effects { effects }`: `{ plan }` — the Plan
+/// minus its preview — or the error. The plan is kept for a later
+/// `execute { plan_step }`.
+fn run_plan_effects(r: &mut Runner, body: &JsonMap<String, Json>) -> Result<Json, String> {
+    let effects = effects_of(body)?;
+    let ctx = plan_ctx(r, PLAN_TS);
+    match r.store.plan_effects(&ctx, &effects, &r.doc_store) {
+        Ok(plan) => {
+            let out = json!({ "plan": plan.to_json(false) });
+            r.plans.insert(r.step_index, plan);
+            Ok(out)
+        }
+        Err(e) => error_outcome(&e),
+    }
+}
+
+/// §9 (2.3) `execute { ts, plan_step | plan | plan_id + effects, origin,
+/// crash_after_commit? }`: `{ receipt }` or the error.
+fn run_execute(r: &mut Runner, body: &JsonMap<String, Json>) -> Result<Json, String> {
+    let ts = body
+        .get("ts")
+        .and_then(Json::as_str)
+        .ok_or("execute.ts")?
+        .to_owned();
+    let origin = origin_from(body.get("origin"));
+    let ctx = plan_ctx(r, &ts);
+    if let Some(plan_id) = body.get("plan_id").and_then(Json::as_str) {
+        let plan_id = plan_id.to_owned();
+        let effects = effects_of(body)?;
+        return with_doc_store(r, |store, ds| {
+            store
+                .execute_by_digest(&ctx, &plan_id, &effects, &origin, ds)
+                .map(|receipt| json!({ "receipt": receipt.to_json() }))
+        });
+    }
+    // The plan form: an earlier step's plan, or an authored object (admitted
+    // as a client's would be: version, shape, digest).
+    let plan = match body.get("plan") {
+        Some(v) => match Plan::admit(v) {
+            Ok(plan) => plan,
+            Err(Admission::Refused(m)) => {
+                return Ok(json!({ "error": error_json(&m) }));
+            }
+            Err(Admission::Invalid(msg)) => {
+                return Err(format!("execute.plan is not a well-formed plan: {msg}"));
+            }
+        },
+        None => {
+            let step = body
+                .get("plan_step")
+                .and_then(Json::as_u64)
+                .ok_or("execute.plan_step")?;
+            r.plans
+                .get(&usize::try_from(step).map_err(|e| e.to_string())?)
+                .cloned()
+                .ok_or_else(|| format!("execute: step {step} produced no plan"))?
+        }
+    };
+    with_doc_store(r, |store, ds| {
+        store
+            .execute_plan(&ctx, &plan, &origin, ds)
+            .map(|receipt| json!({ "receipt": receipt.to_json() }))
+    })
+}
+
+/// §9 (2.3) `apply_effects { ts, effects, origin, dry_run?, crash_after_commit? }`:
+/// `{ plan }` on a dry run (kept for `plan_step`), else `{ receipt }`; or the error.
+fn run_apply_effects(r: &mut Runner, body: &JsonMap<String, Json>) -> Result<Json, String> {
+    let ts = body
+        .get("ts")
+        .and_then(Json::as_str)
+        .ok_or("apply_effects.ts")?
+        .to_owned();
+    let effects = effects_of(body)?;
+    let origin = origin_from(body.get("origin"));
+    let dry_run = body.get("dry_run").and_then(Json::as_bool).unwrap_or(false);
+    let ctx = plan_ctx(r, &ts);
+    let step_index = r.step_index;
+    let mut planned: Option<Plan> = None;
+    let outcome = with_doc_store(r, |store, ds| {
+        store
+            .apply_effects(&ctx, &effects, &origin, ds, dry_run)
+            .map(|out| match out {
+                EffectsOutcome::Plan(plan) => {
+                    let json = json!({ "plan": plan.to_json(false) });
+                    planned = Some(*plan);
+                    json
+                }
+                EffectsOutcome::Receipt(receipt) => json!({ "receipt": receipt.to_json() }),
+            })
+    })?;
+    if let Some(plan) = planned {
+        r.plans.insert(step_index, plan);
+    }
+    Ok(outcome)
+}
+
 fn run_plan(r: &mut Runner, body: &JsonMap<String, Json>) -> Result<Json, String> {
     let ts = body.get("ts").and_then(Json::as_str).ok_or("plan.ts")?;
     let doc = body.get("doc").and_then(Json::as_str).ok_or("plan.doc")?;
@@ -1111,6 +1334,14 @@ fn run_step(r: &mut Runner, step: &Json) -> Result<Json, String> {
         "macro" => run_macro(r, body.as_object().ok_or("macro")?),
         "docs" => run_docs(r, body.as_object().ok_or("docs")?),
         "plan" => run_plan(r, body.as_object().ok_or("plan")?),
+        "plan_effects" => run_plan_effects(r, body.as_object().ok_or("plan_effects")?),
+        "execute" => run_execute(r, body.as_object().ok_or("execute")?),
+        "apply_effects" => run_apply_effects(r, body.as_object().ok_or("apply_effects")?),
+        "canonical" => {
+            let value = body.get("value").ok_or("canonical.value")?;
+            let json = canonical_json(value);
+            Ok(json!({ "json": json, "digest": digest(value) }))
+        }
         other => Err(format!("unknown step {other}")),
     }
 }
@@ -1136,10 +1367,13 @@ fn run_case_script(c: &Json) -> Result<Evaluation, String> {
         pending_disk: HashSet::new(),
         config,
         crash_after_commit: false,
+        plans: HashMap::new(),
+        step_index: 0,
     };
     let mut steps = Vec::new();
     let mut problems = Vec::new();
     for (i, step) in c["steps"].as_array().ok_or("steps")?.iter().enumerate() {
+        r.step_index = i;
         steps.push(run_step(&mut r, step).map_err(|e| format!("step {i}: {e}"))?);
         for p in check_all(&mut r) {
             problems.push(format!("after step {i}: {p}"));

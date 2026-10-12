@@ -145,117 +145,179 @@ export interface ChangesetPlan {
 
 /** spec/mutate §4 steps 1–4: resolve, load, apply the ops in memory, render. */
 export function planChangeset(store: Store, req: Omit<ApplyRequest, "dryRun" | "ts">): ChangesetPlan {
-  // Load all docs that ops touch into memory; apply ops in order.
-  const loaded = new Map<string, MutDoc>();
-  const before = new Map<string, string>();
-  // Block ids present in each doc BEFORE any op — used to label intent
-  // dispositions (edited vs inserted) on the known-id commit path.
-  const priorIds = new Map<string, Set<string>>();
-  // The row triple `(path, current_rev, file_hash)` each document is loaded
-  // against — the commit's precondition (spec/mutate §4 step 5, 2.2).
-  const bases = new Map<string, DocBase>();
-  const results: OpResult[] = [];
-
-  const ensureDoc = (docId: string): MutDoc => {
-    let d = loaded.get(docId);
-    if (!d) {
-      const base = readDocBase(store.db, docId);
-      const md = base ? loadMutDoc(store.db, docId) : null;
-      if (!base || !md) throw new MutationError("doc_missing", `doc ${docId} not found`);
-      d = md;
-      loaded.set(docId, d);
-      bases.set(docId, base);
-      before.set(docId, renderDoc(d));
-      const ids = store.db.prepare("SELECT block_id FROM blocks WHERE doc_id = ? AND deleted_commit IS NULL").all(docId) as { block_id: string }[];
-      priorIds.set(docId, new Set(ids.map((r) => r.block_id)));
-    }
-    return d;
-  };
-
+  const planner = new ChangesetPlanner(store, req.repoId, req.omgbaseDir);
   // Document-level frontmatter overrides, before the op loop (so a change with
   // no body ops still loads + commits the doc). Applied to the loaded MutDoc;
   // renderDoc emits frontmatterRaw verbatim and the commit re-ingest re-derives
   // properties/edges from the rendered bytes.
-  for (const fm of req.setFrontmatter ?? []) {
-    // ensureDoc captures `before` (pre-mutation render) at load time.
-    ensureDoc(fm.doc).frontmatterRaw = fm.raw;
+  for (const fm of req.setFrontmatter ?? []) planner.setFrontmatter(fm.doc, fm.raw);
+  for (const op of req.ops) planner.push(op);
+  return planner.finish();
+}
+
+/**
+ * The op loop of spec/mutate §4 steps 1–4 as an incremental planner: `push`
+ * applies one op to the in-memory trees (loading a document at first touch and
+ * remembering its pre-mutation render, live ids and row triple), `finish`
+ * renders every loaded document into the `ChangesetPlan`. `planChangeset` is
+ * `push` over a whole op list; the effect planner (`plan.ts`, 2.3) pushes an
+ * effect's lowered ops one effect at a time so it can read the ids each op
+ * minted (`results`) before lowering the next effect, and it sets a document's
+ * file head (`setHead`) for a frontmatter effect.
+ */
+export class ChangesetPlanner {
+  /** Per op, in push order: the ids each op reported (`"$n.ids[i]"` placeholders resolve against these). */
+  readonly results: OpResult[] = [];
+  private readonly loaded = new Map<string, MutDoc>();
+  private readonly before = new Map<string, string>();
+  // Block ids present in each doc BEFORE any op — used to label intent
+  // dispositions (edited vs inserted) on the known-id commit path.
+  private readonly priorIds = new Map<string, Set<string>>();
+  // The row triple `(path, current_rev, file_hash)` each document is loaded
+  // against — the commit's precondition (spec/mutate §4 step 5, 2.2).
+  private readonly bases = new Map<string, DocBase>();
+
+  constructor(private readonly store: Store, private readonly repoId: string, private readonly omgbaseDir?: string) {}
+
+  /** The loaded document (loading it at first touch); unknown or tombstoned → `doc_missing`. */
+  ensureDoc(docId: string): MutDoc {
+    let d = this.loaded.get(docId);
+    if (!d) {
+      const base = readDocBase(this.store.db, docId);
+      const md = base ? loadMutDoc(this.store.db, docId) : null;
+      if (!base || !md) throw new MutationError("doc_missing", `doc ${docId} not found`);
+      d = md;
+      this.loaded.set(docId, d);
+      this.bases.set(docId, base);
+      this.before.set(docId, renderDoc(d));
+      const ids = this.store.db.prepare("SELECT block_id FROM blocks WHERE doc_id = ? AND deleted_commit IS NULL").all(docId) as { block_id: string }[];
+      this.priorIds.set(docId, new Set(ids.map((r) => r.block_id)));
+    }
+    return d;
   }
 
-  req.ops.forEach((rawOp, i) => {
+  /** Is the document loaded (touched by an earlier op or head change)? */
+  isLoaded(docId: string): boolean {
+    return this.loaded.has(docId);
+  }
+
+  /** The loaded document's row triple (after `ensureDoc`). */
+  baseOf(docId: string): DocBase | undefined {
+    return this.bases.get(docId);
+  }
+
+  /** Resolve a document reference (an id passes through, a path resolves; else `doc_missing`). */
+  resolveDoc(ref: string): string {
+    return resolveDocRef(this.store, this.repoId, ref);
+  }
+
+  /** Locate a block in the LOADED documents only (an id an earlier op minted included); never loads one. */
+  locateLoaded(blockId: string): { docId: string; block: MutBlock; siblings: MutBlock[]; index: number } | null {
+    for (const [docId, d] of this.loaded) {
+      const f = locateMut(d, blockId);
+      if (f) return { docId, ...f };
+    }
+    return null;
+  }
+
+  /** `ApplyRequest.setFrontmatter`'s semantics: replace the frontmatter bytes (incl. fences + separator), leaving the leading trivia. */
+  setFrontmatter(docId: string, raw: string | null): void {
+    this.ensureDoc(docId).frontmatterRaw = raw;
+  }
+
+  /** spec/mutate §11.3 (2.3): replace everything before the first block — the
+   *  leading trivia AND the frontmatter — with `raw` (the file head). */
+  setHead(docId: string, raw: string): void {
+    const d = this.ensureDoc(docId);
+    d.leadingTrivia = "";
+    d.frontmatterRaw = raw;
+  }
+
+  /** Apply one op (spec/mutate §2); `op_index` is its position in `results`. */
+  push(rawOp: Op): OpResult {
+    const { store, repoId, loaded, results } = this;
+    const i = results.length;
+    const ensureDoc = (docId: string): MutDoc => this.ensureDoc(docId);
+    let result: OpResult;
     switch (rawOp.op) {
       case "insert": {
         const to = resolveTo(rawOp.to, results);
         const docId = rawOp.doc !== undefined
-          ? resolveDocRef(store, req.repoId, rawOp.doc)
-          : parentDoc(store, req.repoId, to, loaded);
+          ? resolveDocRef(store, repoId, rawOp.doc)
+          : parentDoc(store, repoId, to, loaded);
         const d = ensureDoc(docId);
-        results.push(opInsert(d, to, rawOp.markdown, rawOp.expect, i));
+        result = opInsert(d, to, rawOp.markdown, rawOp.expect, i);
         break;
       }
       case "update": {
         const block = resolvePlaceholder(rawOp.block, results);
-        const docId = docIdForBlockLoaded(loaded, block) ?? docIdForBlock(store, req.repoId, block);
+        const docId = docIdForBlockLoaded(loaded, block) ?? docIdForBlock(store, repoId, block);
         if (!docId) throw new MutationError("block_missing", `block ${block} not found`, { op_index: i });
-        results.push(opUpdate(ensureDoc(docId), block, i, rawOp.markdown, rawOp.attrs, rawOp.expect, rawOp.trivia, rawOp.childIds));
+        result = opUpdate(ensureDoc(docId), block, i, rawOp.markdown, rawOp.attrs, rawOp.expect, rawOp.trivia, rawOp.childIds);
         break;
       }
       case "move": {
         const blocks = rawOp.blocks.map((b) => resolvePlaceholder(b, results));
         const to = resolveTo(rawOp.to, results);
-        const srcDocId = docIdForBlockLoaded(loaded, blocks[0]!) ?? docIdForBlock(store, req.repoId, blocks[0]!);
+        const srcDocId = docIdForBlockLoaded(loaded, blocks[0]!) ?? docIdForBlock(store, repoId, blocks[0]!);
         if (!srcDocId) throw new MutationError("block_missing", `block ${blocks[0]} not found`, { op_index: i });
         // {doc:true} with a non-anchor `at` (start/end) means the source doc's
         // top level; otherwise infer the destination doc from the target.
         const topLevelSameDoc = typeof to.parent === "object" && "doc" in to.parent && typeof to.at === "string";
-        const dstDocId = topLevelSameDoc ? srcDocId : parentDoc(store, req.repoId, to, loaded);
+        const dstDocId = topLevelSameDoc ? srcDocId : parentDoc(store, repoId, to, loaded);
         if (dstDocId === srcDocId) {
-          results.push(opMove(ensureDoc(srcDocId), blocks, to, i, rawOp.expect));
+          result = opMove(ensureDoc(srcDocId), blocks, to, i, rawOp.expect);
         } else {
           // Cross-document move (04 §1): extract from source, insert into target.
-          results.push(crossDocMove(ensureDoc(srcDocId), ensureDoc(dstDocId), blocks, to, i, rawOp.expect));
+          result = crossDocMove(ensureDoc(srcDocId), ensureDoc(dstDocId), blocks, to, i, rawOp.expect);
         }
         break;
       }
       case "remove": {
         const blocks = rawOp.blocks.map((b) => resolvePlaceholder(b, results));
-        const docId = docIdForBlockLoaded(loaded, blocks[0]!) ?? docIdForBlock(store, req.repoId, blocks[0]!);
+        const docId = docIdForBlockLoaded(loaded, blocks[0]!) ?? docIdForBlock(store, repoId, blocks[0]!);
         if (!docId) throw new MutationError("block_missing", `block ${blocks[0]} not found`, { op_index: i });
-        results.push(opRemove(ensureDoc(docId), blocks, i, rawOp.expect));
+        result = opRemove(ensureDoc(docId), blocks, i, rawOp.expect);
         break;
       }
       case "split": {
         const block = resolvePlaceholder(rawOp.block, results);
-        const docId = docIdForBlockLoaded(loaded, block) ?? docIdForBlock(store, req.repoId, block);
+        const docId = docIdForBlockLoaded(loaded, block) ?? docIdForBlock(store, repoId, block);
         if (!docId) throw new MutationError("block_missing", `block ${block} not found`, { op_index: i });
-        results.push(opSplit(ensureDoc(docId), block, rawOp.at, i, rawOp.expect));
+        result = opSplit(ensureDoc(docId), block, rawOp.at, i, rawOp.expect);
         break;
       }
       case "merge": {
         const blocks = rawOp.blocks.map((b) => resolvePlaceholder(b, results));
-        const docId = docIdForBlockLoaded(loaded, blocks[0]!) ?? docIdForBlock(store, req.repoId, blocks[0]!);
+        const docId = docIdForBlockLoaded(loaded, blocks[0]!) ?? docIdForBlock(store, repoId, blocks[0]!);
         if (!docId) throw new MutationError("block_missing", `block ${blocks[0]} not found`, { op_index: i });
-        results.push(opMerge(ensureDoc(docId), blocks, i, rawOp.separator, rawOp.expect));
+        result = opMerge(ensureDoc(docId), blocks, i, rawOp.separator, rawOp.expect);
         break;
       }
     }
-  });
-
-  const revisions: ApplyRevision[] = [];
-  const diffs: Record<string, { before: string; after: string }> = {};
-  const effects: Effect[] = [];
-  const preconditions: ChangesetPlan["preconditions"] = [];
-  for (const [docId, d] of loaded) {
-    const after = renderDoc(d);
-    const base = bases.get(docId)!;
-    diffs[d.path] = { before: before.get(docId) ?? "", after };
-    revisions.push({ id: docId, path: d.path, hash: sha256(after).toString("hex") });
-    preconditions.push({ id: docId, ...base });
-    effects.push({ kind: "ingest_known", docId, path: d.path, rendered: after, mutDoc: d, priorIds: priorIds.get(docId) ?? new Set(), base });
-    // Keep the freshness cache warm so this engine write isn't re-hashed by a
-    // later sweep (echo suppression already covers correctness; this avoids work).
-    if (req.omgbaseDir) effects.push({ kind: "record_stat", path: d.path, bytes: after });
+    results.push(result);
+    return result;
   }
-  return { results, revisions, diffs, effects, preconditions };
+
+  /** Step 4: render every loaded document; the plan's effects, revisions, diffs and preconditions in load order. */
+  finish(): ChangesetPlan {
+    const revisions: ApplyRevision[] = [];
+    const diffs: Record<string, { before: string; after: string }> = {};
+    const effects: Effect[] = [];
+    const preconditions: ChangesetPlan["preconditions"] = [];
+    for (const [docId, d] of this.loaded) {
+      const after = renderDoc(d);
+      const base = this.bases.get(docId)!;
+      diffs[d.path] = { before: this.before.get(docId) ?? "", after };
+      revisions.push({ id: docId, path: d.path, hash: sha256(after).toString("hex") });
+      preconditions.push({ id: docId, ...base });
+      effects.push({ kind: "ingest_known", docId, path: d.path, rendered: after, mutDoc: d, priorIds: this.priorIds.get(docId) ?? new Set(), base });
+      // Keep the freshness cache warm so this engine write isn't re-hashed by a
+      // later sweep (echo suppression already covers correctness; this avoids work).
+      if (this.omgbaseDir) effects.push({ kind: "record_stat", path: d.path, bytes: after });
+    }
+    return { results: this.results, revisions, diffs, effects, preconditions };
+  }
 }
 
 export function apply(store: Store, req: ApplyRequest): ApplyResult {

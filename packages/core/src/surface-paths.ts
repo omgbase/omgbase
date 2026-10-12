@@ -23,6 +23,7 @@ import type { DocOpResult, DocMoveResult } from "./mutate/docs.js";
 import type { RetargetHit } from "./mutate/macros.js";
 import type { Opset } from "./mutate/opset.js";
 import type { DocsUpdateResult } from "./mutate/plan-update.js";
+import type { Plan, Receipt } from "./mutate/plan.js";
 import type { InboundLink } from "./graph/inbound-links.js";
 import type { ObserveResult, ObserveDeleteResult } from "./sync/observe.js";
 import type { SweepResult } from "./sync/freshness.js";
@@ -122,6 +123,31 @@ export function surfaceOpset(opset: Opset): Opset {
 /** `docs_update`: the opset and, when committed, the apply result. */
 export function surfaceDocsUpdate(res: DocsUpdateResult): DocsUpdateResult {
   return { opset: surfaceOpset(res.opset), result: res.result ? surfaceApplyResult(res.result) : null };
+}
+
+/**
+ * A Plan on the wire (spec/surface §4, 3.1): the executable core — `effects`,
+ * `opset`, `preconditions`, `new_ids`, `plan_id` — is returned VERBATIM in the
+ * storage form, because `plan_id` digests exactly those bytes and the client
+ * hands the object back to `execute` (spec/mutate §11.5; the one result the
+ * path rule exempts, like `dangling[].target`). Only the un-digested `preview`
+ * is rooted: its `revisions[].path` and `diffs` keys.
+ */
+export function surfacePlan(plan: Plan): Plan {
+  if (!plan.preview) return plan;
+  return {
+    ...plan,
+    preview: {
+      ...plan.preview,
+      revisions: plan.preview.revisions.map((r) => ({ ...r, path: referencePath(r.path) })),
+      diffs: referenceKeyed(plan.preview.diffs),
+    },
+  };
+}
+
+/** A Receipt on the wire: `revisions[].path` rooted (the same shape as an apply revision). */
+export function surfaceReceipt(receipt: Receipt): Receipt {
+  return { ...receipt, revisions: receipt.revisions.map((r) => ({ ...r, path: referencePath(r.path) })) };
 }
 
 /** `omg sync`'s one-shot sweep: the ingested / suppressed / deleted / conflicted paths. */

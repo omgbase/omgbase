@@ -11555,6 +11555,1148 @@
           ]
         ]
       }
+    },
+    {
+      "name": "write-effects-plan-execute",
+      "notes": "§4 (3.1) the Effect layer: `plan` over salt.md (`set frontmatter.reviewed` + `insert into section` ## Note) returns the Plan — its `plan_id` is the digest of the executable core (spec/mutate §11.5), so the Rust writer must digest identically for this case to pass; `execute` in the digest form (`plan_id` + the same effects, the id pinned verbatim) re-plans and commits one `api` commit; `apply { effects }` one-shot creates texts/rosarium.md with a `set frontmatter.layer` on `$new.0` folded into the create, the receipt mapping `$new.0` to the minted `d` id. Reads: salt.md with ids (b_327 is the inserted paragraph), the created document, the api feed (two commits), salt.md's history.",
+      "writes": [
+        {
+          "tool": "plan",
+          "args": {
+            "effects": [
+              {
+                "op": "set",
+                "target": {
+                  "kind": "document",
+                  "path": "substances/salt.md"
+                },
+                "field": "frontmatter.reviewed",
+                "value": "2026-10"
+              },
+              {
+                "op": "insert",
+                "into": {
+                  "kind": "section",
+                  "heading_id": "b_274"
+                },
+                "at": "end",
+                "markdown": "Checked against the 1702 edition."
+              }
+            ]
+          }
+        },
+        {
+          "tool": "execute",
+          "args": {
+            "plan_id": "a73934028edf8a789ac75911476d7316aeb580698f788ccda78acfc427e2df1d",
+            "effects": [
+              {
+                "op": "set",
+                "target": {
+                  "kind": "document",
+                  "path": "substances/salt.md"
+                },
+                "field": "frontmatter.reviewed",
+                "value": "2026-10"
+              },
+              {
+                "op": "insert",
+                "into": {
+                  "kind": "section",
+                  "heading_id": "b_274"
+                },
+                "at": "end",
+                "markdown": "Checked against the 1702 edition."
+              }
+            ],
+            "reason": "interop"
+          }
+        },
+        {
+          "tool": "apply",
+          "args": {
+            "effects": [
+              {
+                "op": "create",
+                "path": "texts/rosarium.md",
+                "markdown": "# Rosarium\n\nTwenty woodcuts.",
+                "frontmatter": {
+                  "type": "text"
+                }
+              },
+              {
+                "op": "set",
+                "target": {
+                  "kind": "document",
+                  "id": "$new.0"
+                },
+                "field": "frontmatter.layer",
+                "value": "canon"
+              }
+            ],
+            "reason": "interop"
+          }
+        }
+      ],
+      "reads": [
+        {
+          "tool": "docs_read",
+          "args": {
+            "path": "substances/salt.md",
+            "include_ids": true
+          }
+        },
+        {
+          "tool": "docs_read",
+          "args": {
+            "path": "texts/rosarium.md"
+          }
+        },
+        {
+          "tool": "changes_since",
+          "args": {
+            "origin": "api"
+          }
+        },
+        {
+          "tool": "docs_history",
+          "args": {
+            "path": "substances/salt.md"
+          }
+        }
+      ],
+      "expect": {
+        "writes": [
+          {
+            "version": 1,
+            "planner_v": "p1",
+            "effects": [
+              {
+                "op": "set",
+                "target": {
+                  "kind": "document",
+                  "id": "d_14",
+                  "path": "substances/salt.md"
+                },
+                "field": "frontmatter.reviewed",
+                "value": "2026-10"
+              },
+              {
+                "op": "insert",
+                "into": {
+                  "kind": "section",
+                  "heading_id": "b_274"
+                },
+                "at": "end",
+                "markdown": "Checked against the 1702 edition."
+              }
+            ],
+            "opset": {
+              "creates": [],
+              "moves": [],
+              "tombstones": [],
+              "set_frontmatter": [
+                {
+                  "doc": "d_14",
+                  "raw": "---\ntype: substance\nslug: salt\nlayer: canon\ntradition: western\nelement: salt\ntags:\n  - substance\n  - tria-prima\nverified: true\nreviewed: 2026-10\n---\n\n"
+                }
+              ],
+              "ops": [
+                {
+                  "op": "insert",
+                  "to": {
+                    "parent": {
+                      "heading": "b_274",
+                      "scope": "section"
+                    },
+                    "at": "end"
+                  },
+                  "markdown": "Checked against the 1702 edition."
+                }
+              ]
+            },
+            "preconditions": {
+              "docs": [
+                {
+                  "id": "d_14",
+                  "path": "substances/salt.md",
+                  "base_revision": "r_14",
+                  "hash": "bd46557a5b70181f7b5ed3478e6ddf646a92c7560a44607bbf92485e35e48cd3"
+                }
+              ],
+              "blocks": [],
+              "parents": [],
+              "absent_paths": []
+            },
+            "new_ids": [
+              {
+                "symbol": "$new.0",
+                "kind": "block"
+              }
+            ],
+            "plan_id": "a73934028edf8a789ac75911476d7316aeb580698f788ccda78acfc427e2df1d",
+            "diagnostics": [],
+            "preview": {
+              "results": [
+                {
+                  "ids": [
+                    "$new.0"
+                  ]
+                }
+              ],
+              "revisions": [
+                {
+                  "id": "d_14",
+                  "path": "/substances/salt.md",
+                  "hash": "4d419ccf16e738e8758e55f559929d18c9aa2951bcf0cd48321b95fbc657b74b"
+                }
+              ],
+              "diffs": {
+                "/substances/salt.md": {
+                  "before": "---\ntype: substance\nslug: salt\nlayer: canon\ntradition: western\nelement: salt\ntags: [substance, tria-prima]\nverified: true\n---\n\n# Salt\n\nWhat remains. Burn a plant to ash and leach the ash with water, and the residue\nthat crystallizes out is the salt — the incombustible, fixed body.\n\nsymbol:: 🜔\nsoluble:: yes\ntoxic:: no\n\n## As a principle\n\nSalt is the third of the tria prima: the body that gives a substance its\npersistence and form. Where [[mercury]] flies off and [[sulphur]] burns, salt\nstays behind.\n\nThe operation that produces it is straightforward and repeatable, which gave the\nprinciple an evidential weight the other two lacked. You can *show* someone the\nsalt of a plant.\n\n## Practical extraction\n\nThe standard route, still sound:\n\n1. Incinerate the material completely — see [calcination](/processes/calcination.md).\n2. Leach the ash with distilled water.\n3. Filter, then evaporate slowly to crystallize.\n\n[Coagulation](/processes/coagulation.md) is the general name for step 3.\n\n## Note\n\nThe alchemical \"salt\" is not sodium chloride but the mixed carbonates and\npotash left after combustion. The terminology predates the distinction.\n\n## Supplies\n\nBench stock for the leaching work. Nothing outstanding.\n\n- [x] Buy more salt of tartar\n- [x] Replace the leaching filter papers\n",
+                  "after": "---\ntype: substance\nslug: salt\nlayer: canon\ntradition: western\nelement: salt\ntags:\n  - substance\n  - tria-prima\nverified: true\nreviewed: 2026-10\n---\n\n# Salt\n\nWhat remains. Burn a plant to ash and leach the ash with water, and the residue\nthat crystallizes out is the salt — the incombustible, fixed body.\n\nsymbol:: 🜔\nsoluble:: yes\ntoxic:: no\n\n## As a principle\n\nSalt is the third of the tria prima: the body that gives a substance its\npersistence and form. Where [[mercury]] flies off and [[sulphur]] burns, salt\nstays behind.\n\nThe operation that produces it is straightforward and repeatable, which gave the\nprinciple an evidential weight the other two lacked. You can *show* someone the\nsalt of a plant.\n\n## Practical extraction\n\nThe standard route, still sound:\n\n1. Incinerate the material completely — see [calcination](/processes/calcination.md).\n2. Leach the ash with distilled water.\n3. Filter, then evaporate slowly to crystallize.\n\n[Coagulation](/processes/coagulation.md) is the general name for step 3.\n\n## Note\n\nThe alchemical \"salt\" is not sodium chloride but the mixed carbonates and\npotash left after combustion. The terminology predates the distinction.\n\nChecked against the 1702 edition.\n\n## Supplies\n\nBench stock for the leaching work. Nothing outstanding.\n\n- [x] Buy more salt of tartar\n- [x] Replace the leaching filter papers\n"
+                }
+              }
+            }
+          },
+          {
+            "plan_id": "a73934028edf8a789ac75911476d7316aeb580698f788ccda78acfc427e2df1d",
+            "commit": "c_20",
+            "revisions": [
+              {
+                "id": "d_14",
+                "path": "/substances/salt.md",
+                "hash": "4d419ccf16e738e8758e55f559929d18c9aa2951bcf0cd48321b95fbc657b74b"
+              }
+            ],
+            "new_ids": {
+              "$new.0": "b_327"
+            },
+            "committed": true
+          },
+          {
+            "plan_id": "9ab816cb616e67503dec35f51be1f64bb3f03f8df208bcd4e9aa969b54670371",
+            "commit": "c_21",
+            "revisions": [
+              {
+                "id": "d_20",
+                "path": "/texts/rosarium.md",
+                "hash": "df8d5715a48b7933116d7dbdab8764210bdaa12d0fa545a52f07affd29a69cf8"
+              }
+            ],
+            "new_ids": {
+              "$new.0": "d_20"
+            },
+            "committed": true
+          }
+        ],
+        "reads": [
+          {
+            "id": "d_14",
+            "path": "/substances/salt.md",
+            "rev": "r_20",
+            "properties": {
+              "frontmatter": {
+                "type": "substance",
+                "slug": "salt",
+                "layer": "canon",
+                "tradition": "western",
+                "element": "salt",
+                "tags": [
+                  "substance",
+                  "tria-prima"
+                ],
+                "verified": true,
+                "reviewed": "2026-10"
+              },
+              "inline": {
+                "symbol": "🜔",
+                "soluble": "yes",
+                "toxic": "no"
+              },
+              "computed": {
+                "title": "Salt"
+              }
+            },
+            "raw": "---\ntype: substance\nslug: salt\nlayer: canon\ntradition: western\nelement: salt\ntags:\n  - substance\n  - tria-prima\nverified: true\nreviewed: 2026-10\n---\n\n# Salt\n\nWhat remains. Burn a plant to ash and leach the ash with water, and the residue\nthat crystallizes out is the salt — the incombustible, fixed body.\n\nsymbol:: 🜔\nsoluble:: yes\ntoxic:: no\n\n## As a principle\n\nSalt is the third of the tria prima: the body that gives a substance its\npersistence and form. Where [[mercury]] flies off and [[sulphur]] burns, salt\nstays behind.\n\nThe operation that produces it is straightforward and repeatable, which gave the\nprinciple an evidential weight the other two lacked. You can *show* someone the\nsalt of a plant.\n\n## Practical extraction\n\nThe standard route, still sound:\n\n1. Incinerate the material completely — see [calcination](/processes/calcination.md).\n2. Leach the ash with distilled water.\n3. Filter, then evaporate slowly to crystallize.\n\n[Coagulation](/processes/coagulation.md) is the general name for step 3.\n\n## Note\n\nThe alchemical \"salt\" is not sodium chloride but the mixed carbonates and\npotash left after combustion. The terminology predates the distinction.\n\nChecked against the 1702 edition.\n\n## Supplies\n\nBench stock for the leaching work. Nothing outstanding.\n\n- [x] Buy more salt of tartar\n- [x] Replace the leaching filter papers\n",
+            "ids": [
+              "b_261",
+              "b_262",
+              "b_263",
+              "b_264",
+              "b_265",
+              "b_266",
+              "b_267",
+              "b_268",
+              "b_269",
+              "b_270",
+              "b_271",
+              "b_272",
+              "b_273",
+              "b_274",
+              "b_275",
+              "b_327",
+              "b_276",
+              "b_277",
+              "b_278",
+              "b_279",
+              "b_280"
+            ],
+            "hashes": {
+              "b_261": "dd0d7631c73fd5ea2621553333476ce86e4c52b610aa7b5f25a41bcb435ac8b4",
+              "b_262": "197615e59569f3bbbc3313227639f91269c24cfa63068f20551af1f194ea036d",
+              "b_263": "53e0e2315ad0e765e80624e849ffa78b1e092567f8cecc14dc6c05614e263cf8",
+              "b_264": "f2447daf2914a26469851d0091eab20ec3ebfe35ae9f8caee6a85704335224c8",
+              "b_265": "f37416d8a366cdea74865c90497eabca4566583e7e2b0cc5ff5afc1381c79169",
+              "b_266": "4dfa21c5ede6fa1cac67a7d7be1fb3da06b8edc33ea37c1047f5aab06a505c98",
+              "b_267": "03ef655675d2463886200335a4c085dde1c15f0c772006619744cd300e8a39f9",
+              "b_268": "02ed452728169d19853c834c4f3b08c88d85df1fd111af911b385cbc9bb136a7",
+              "b_269": "6ba4e8d09dca5951b9b5360a4ae30327b5a0262f256e5aeef37f9db8b5ce5607",
+              "b_270": "735e8605da96d7635fe0db954af1ac59a0a694f93e5cc6e8326c975f174a661c",
+              "b_271": "584423174f6471ba85f0a11771f4f89398a6eda2c892130006f9c8fe81c9ce69",
+              "b_272": "be273a5244f1cd323a3c64829a8eeb237b1e212574ec57eee28169384a11d851",
+              "b_273": "38152e4407fef3f9138a9e472c02fa7c29aeec7284d0bbf04a5fcaa7880f8fbf",
+              "b_274": "55842f51304d96b83b4bb3b93147e0b3600533954216bec08ed01ea7e6c9441c",
+              "b_275": "5ecc1641f537725fbe0fd2f3c01df5288b6467b12cd7f60253ed5d1fe3cc7aea",
+              "b_327": "fcb85176aab9a2ba98d85647a85a608e7f3a99ea88411dfed485e7c6400af484",
+              "b_276": "4437ac3bf2659a91019d7c73de2d5f2be05fb9230c7990aff0d55992f19ecf66",
+              "b_277": "5628e54113d6d80595930c0fec3cdf668ea6a82b1b93b2d40cb095a3d5e18c83",
+              "b_278": "c1e95ea14e1408994be16701b0492f879ec7237081f133b0ab992c70e35d3b81",
+              "b_279": "e789186305831740b025de6778e2de6947752ad1cfbfc762a8d9fba59b562e63",
+              "b_280": "d8c2230035697421671ab4f871e3132bccbb387b7b3af7bd7defe1504730513c"
+            },
+            "parents": {
+              "b_261": null,
+              "b_262": null,
+              "b_263": null,
+              "b_264": null,
+              "b_265": null,
+              "b_266": null,
+              "b_267": null,
+              "b_268": null,
+              "b_269": null,
+              "b_270": "b_269",
+              "b_271": "b_269",
+              "b_272": "b_269",
+              "b_273": null,
+              "b_274": null,
+              "b_275": null,
+              "b_327": null,
+              "b_276": null,
+              "b_277": null,
+              "b_278": null,
+              "b_279": "b_278",
+              "b_280": "b_278"
+            }
+          },
+          {
+            "id": "d_20",
+            "path": "/texts/rosarium.md",
+            "rev": "r_21",
+            "properties": {
+              "frontmatter": {
+                "type": "text",
+                "layer": "canon"
+              },
+              "inline": {},
+              "computed": {
+                "title": "Rosarium"
+              }
+            },
+            "raw": "---\ntype: text\nlayer: canon\n---\n\n# Rosarium\n\nTwenty woodcuts.\n"
+          },
+          {
+            "digests": [
+              {
+                "commit": "c_20",
+                "seq": 21,
+                "ts": "2026-09-27T00:00:00.000Z",
+                "origin": "api",
+                "actor": "agent:mcp",
+                "revisions": [
+                  {
+                    "id": "d_14",
+                    "path": "/substances/salt.md",
+                    "hash": "4d419ccf16e738e8758e55f559929d18c9aa2951bcf0cd48321b95fbc657b74b"
+                  }
+                ]
+              },
+              {
+                "commit": "c_21",
+                "seq": 22,
+                "ts": "2026-09-27T00:00:00.000Z",
+                "origin": "api",
+                "actor": "agent:mcp",
+                "revisions": [
+                  {
+                    "id": "d_20",
+                    "path": "/texts/rosarium.md",
+                    "hash": "df8d5715a48b7933116d7dbdab8764210bdaa12d0fa545a52f07affd29a69cf8"
+                  }
+                ]
+              }
+            ],
+            "cursor": 22,
+            "truncated": false,
+            "head": 22
+          },
+          {
+            "docs": [
+              {
+                "id": "d_14",
+                "path": "/substances/salt.md",
+                "deleted": false,
+                "currentRev": "r_20",
+                "versions": [
+                  {
+                    "rev": "r_14",
+                    "seq": 1,
+                    "commit": "c_14",
+                    "updated_at": "2026-09-27T00:00:00.000Z",
+                    "origin": "observed",
+                    "actor": null,
+                    "hash": "bd46557a5b70181f7b5ed3478e6ddf646a92c7560a44607bbf92485e35e48cd3",
+                    "isCurrent": false
+                  },
+                  {
+                    "rev": "r_20",
+                    "seq": 2,
+                    "commit": "c_20",
+                    "updated_at": "2026-09-27T00:00:00.000Z",
+                    "origin": "api",
+                    "actor": "agent:mcp",
+                    "hash": "4d419ccf16e738e8758e55f559929d18c9aa2951bcf0cd48321b95fbc657b74b",
+                    "isCurrent": true
+                  }
+                ]
+              }
+            ],
+            "truncated": false
+          }
+        ]
+      }
+    },
+    {
+      "name": "write-effects-dry-run",
+      "notes": "§4 (3.1) `apply { effects, dry_run: true }` is the Plan (the same object `plan` returns, `preview` included): nothing is committed and NO real id is minted — the new identity is the symbol `$new.0`. The kernel insert that follows mints `b_327`, the next id after the seed, which pins that the dry run burned nothing (a kernel dry run consumes ids, `write-apply`). Reads: salt.md unchanged, the api feed with one commit, mutus-liber.md with the probe.",
+      "writes": [
+        {
+          "tool": "apply",
+          "args": {
+            "effects": [
+              {
+                "op": "set",
+                "target": {
+                  "kind": "document",
+                  "path": "substances/salt.md"
+                },
+                "field": "frontmatter.reviewed",
+                "value": "2026-10"
+              },
+              {
+                "op": "insert",
+                "into": {
+                  "kind": "section",
+                  "heading_id": "b_274"
+                },
+                "at": "end",
+                "markdown": "Checked against the 1702 edition."
+              }
+            ],
+            "dry_run": true
+          }
+        },
+        {
+          "tool": "apply",
+          "args": {
+            "effects": [
+              {
+                "op": "insert",
+                "into": {
+                  "kind": "document",
+                  "path": "texts/mutus-liber.md"
+                },
+                "markdown": "Probe."
+              }
+            ],
+            "reason": "interop"
+          }
+        }
+      ],
+      "reads": [
+        {
+          "tool": "docs_read",
+          "args": {
+            "path": "substances/salt.md"
+          }
+        },
+        {
+          "tool": "changes_since",
+          "args": {
+            "origin": "api"
+          }
+        },
+        {
+          "tool": "docs_read",
+          "args": {
+            "path": "texts/mutus-liber.md",
+            "include_ids": true
+          }
+        }
+      ],
+      "expect": {
+        "writes": [
+          {
+            "version": 1,
+            "planner_v": "p1",
+            "effects": [
+              {
+                "op": "set",
+                "target": {
+                  "kind": "document",
+                  "id": "d_14",
+                  "path": "substances/salt.md"
+                },
+                "field": "frontmatter.reviewed",
+                "value": "2026-10"
+              },
+              {
+                "op": "insert",
+                "into": {
+                  "kind": "section",
+                  "heading_id": "b_274"
+                },
+                "at": "end",
+                "markdown": "Checked against the 1702 edition."
+              }
+            ],
+            "opset": {
+              "creates": [],
+              "moves": [],
+              "tombstones": [],
+              "set_frontmatter": [
+                {
+                  "doc": "d_14",
+                  "raw": "---\ntype: substance\nslug: salt\nlayer: canon\ntradition: western\nelement: salt\ntags:\n  - substance\n  - tria-prima\nverified: true\nreviewed: 2026-10\n---\n\n"
+                }
+              ],
+              "ops": [
+                {
+                  "op": "insert",
+                  "to": {
+                    "parent": {
+                      "heading": "b_274",
+                      "scope": "section"
+                    },
+                    "at": "end"
+                  },
+                  "markdown": "Checked against the 1702 edition."
+                }
+              ]
+            },
+            "preconditions": {
+              "docs": [
+                {
+                  "id": "d_14",
+                  "path": "substances/salt.md",
+                  "base_revision": "r_14",
+                  "hash": "bd46557a5b70181f7b5ed3478e6ddf646a92c7560a44607bbf92485e35e48cd3"
+                }
+              ],
+              "blocks": [],
+              "parents": [],
+              "absent_paths": []
+            },
+            "new_ids": [
+              {
+                "symbol": "$new.0",
+                "kind": "block"
+              }
+            ],
+            "plan_id": "a73934028edf8a789ac75911476d7316aeb580698f788ccda78acfc427e2df1d",
+            "diagnostics": [],
+            "preview": {
+              "results": [
+                {
+                  "ids": [
+                    "$new.0"
+                  ]
+                }
+              ],
+              "revisions": [
+                {
+                  "id": "d_14",
+                  "path": "/substances/salt.md",
+                  "hash": "4d419ccf16e738e8758e55f559929d18c9aa2951bcf0cd48321b95fbc657b74b"
+                }
+              ],
+              "diffs": {
+                "/substances/salt.md": {
+                  "before": "---\ntype: substance\nslug: salt\nlayer: canon\ntradition: western\nelement: salt\ntags: [substance, tria-prima]\nverified: true\n---\n\n# Salt\n\nWhat remains. Burn a plant to ash and leach the ash with water, and the residue\nthat crystallizes out is the salt — the incombustible, fixed body.\n\nsymbol:: 🜔\nsoluble:: yes\ntoxic:: no\n\n## As a principle\n\nSalt is the third of the tria prima: the body that gives a substance its\npersistence and form. Where [[mercury]] flies off and [[sulphur]] burns, salt\nstays behind.\n\nThe operation that produces it is straightforward and repeatable, which gave the\nprinciple an evidential weight the other two lacked. You can *show* someone the\nsalt of a plant.\n\n## Practical extraction\n\nThe standard route, still sound:\n\n1. Incinerate the material completely — see [calcination](/processes/calcination.md).\n2. Leach the ash with distilled water.\n3. Filter, then evaporate slowly to crystallize.\n\n[Coagulation](/processes/coagulation.md) is the general name for step 3.\n\n## Note\n\nThe alchemical \"salt\" is not sodium chloride but the mixed carbonates and\npotash left after combustion. The terminology predates the distinction.\n\n## Supplies\n\nBench stock for the leaching work. Nothing outstanding.\n\n- [x] Buy more salt of tartar\n- [x] Replace the leaching filter papers\n",
+                  "after": "---\ntype: substance\nslug: salt\nlayer: canon\ntradition: western\nelement: salt\ntags:\n  - substance\n  - tria-prima\nverified: true\nreviewed: 2026-10\n---\n\n# Salt\n\nWhat remains. Burn a plant to ash and leach the ash with water, and the residue\nthat crystallizes out is the salt — the incombustible, fixed body.\n\nsymbol:: 🜔\nsoluble:: yes\ntoxic:: no\n\n## As a principle\n\nSalt is the third of the tria prima: the body that gives a substance its\npersistence and form. Where [[mercury]] flies off and [[sulphur]] burns, salt\nstays behind.\n\nThe operation that produces it is straightforward and repeatable, which gave the\nprinciple an evidential weight the other two lacked. You can *show* someone the\nsalt of a plant.\n\n## Practical extraction\n\nThe standard route, still sound:\n\n1. Incinerate the material completely — see [calcination](/processes/calcination.md).\n2. Leach the ash with distilled water.\n3. Filter, then evaporate slowly to crystallize.\n\n[Coagulation](/processes/coagulation.md) is the general name for step 3.\n\n## Note\n\nThe alchemical \"salt\" is not sodium chloride but the mixed carbonates and\npotash left after combustion. The terminology predates the distinction.\n\nChecked against the 1702 edition.\n\n## Supplies\n\nBench stock for the leaching work. Nothing outstanding.\n\n- [x] Buy more salt of tartar\n- [x] Replace the leaching filter papers\n"
+                }
+              }
+            }
+          },
+          {
+            "plan_id": "6952d6afe1ed18b928a5dc4968dbd190592f66e8e27533288ada38117f3f1235",
+            "commit": "c_20",
+            "revisions": [
+              {
+                "id": "d_17",
+                "path": "/texts/mutus-liber.md",
+                "hash": "653d2ae49485aee8612575b00c2b3d28c85b86635cb48b2a143ff9c6a92be9a7"
+              }
+            ],
+            "new_ids": {
+              "$new.0": "b_327"
+            },
+            "committed": true
+          }
+        ],
+        "reads": [
+          {
+            "id": "d_14",
+            "path": "/substances/salt.md",
+            "rev": "r_14",
+            "properties": {
+              "frontmatter": {
+                "type": "substance",
+                "slug": "salt",
+                "layer": "canon",
+                "tradition": "western",
+                "element": "salt",
+                "tags": [
+                  "substance",
+                  "tria-prima"
+                ],
+                "verified": true
+              },
+              "inline": {
+                "symbol": "🜔",
+                "soluble": "yes",
+                "toxic": "no"
+              },
+              "computed": {
+                "title": "Salt"
+              }
+            },
+            "raw": "---\ntype: substance\nslug: salt\nlayer: canon\ntradition: western\nelement: salt\ntags: [substance, tria-prima]\nverified: true\n---\n\n# Salt\n\nWhat remains. Burn a plant to ash and leach the ash with water, and the residue\nthat crystallizes out is the salt — the incombustible, fixed body.\n\nsymbol:: 🜔\nsoluble:: yes\ntoxic:: no\n\n## As a principle\n\nSalt is the third of the tria prima: the body that gives a substance its\npersistence and form. Where [[mercury]] flies off and [[sulphur]] burns, salt\nstays behind.\n\nThe operation that produces it is straightforward and repeatable, which gave the\nprinciple an evidential weight the other two lacked. You can *show* someone the\nsalt of a plant.\n\n## Practical extraction\n\nThe standard route, still sound:\n\n1. Incinerate the material completely — see [calcination](/processes/calcination.md).\n2. Leach the ash with distilled water.\n3. Filter, then evaporate slowly to crystallize.\n\n[Coagulation](/processes/coagulation.md) is the general name for step 3.\n\n## Note\n\nThe alchemical \"salt\" is not sodium chloride but the mixed carbonates and\npotash left after combustion. The terminology predates the distinction.\n\n## Supplies\n\nBench stock for the leaching work. Nothing outstanding.\n\n- [x] Buy more salt of tartar\n- [x] Replace the leaching filter papers\n"
+          },
+          {
+            "digests": [
+              {
+                "commit": "c_20",
+                "seq": 21,
+                "ts": "2026-09-27T00:00:00.000Z",
+                "origin": "api",
+                "actor": "agent:mcp",
+                "revisions": [
+                  {
+                    "id": "d_17",
+                    "path": "/texts/mutus-liber.md",
+                    "hash": "653d2ae49485aee8612575b00c2b3d28c85b86635cb48b2a143ff9c6a92be9a7"
+                  }
+                ]
+              }
+            ],
+            "cursor": 21,
+            "truncated": false,
+            "head": 21
+          },
+          {
+            "id": "d_17",
+            "path": "/texts/mutus-liber.md",
+            "rev": "r_20",
+            "properties": {
+              "frontmatter": {
+                "type": "text",
+                "layer": "draft",
+                "tradition": "western",
+                "era": 1677,
+                "tags": [
+                  "text",
+                  "images"
+                ],
+                "verified": false
+              },
+              "inline": {
+                "length": "fifteen plates",
+                "attributed_to": "altus"
+              },
+              "computed": {
+                "title": "Mutus Liber"
+              }
+            },
+            "raw": "---\ntype: text\nlayer: draft\ntradition: western\nera: 1677\ntags: [text, images]\nverified: false\n---\n\n# Mutus Liber\n\nThe \"silent book,\" La Rochelle, 1677: fifteen engraved plates and essentially no\ntext. The entire Great Work, allegedly, in pictures.\n\nlength:: fifteen plates\nattributed_to:: altus\n\n## Contents\n\nThe plates show a couple gathering dew in sheets stretched between poles,\nprocessing it through vessels, and attending a furnace, framed by angels and\nzodiacal signs. A sequence is clearly intended. What it instructs is not clear.\n\nThe dew-gathering is the one concretely readable operation, and it connects to a\nreal strand of practice: dew was held to be a celestial condensate and a candidate\n[prima materia](/substances/prima-materia.md).\n\n## Status of these notes\n\nDraft. I have not worked through the plates in order against a commentary, and\nthe secondary literature disagrees about even the number of stages depicted.\n\n- [ ] Obtain a facsimile with plate numbering\n- [ ] Compare the 1677 and 1702 plate sequences\n- [ ] Decide whether the dew operation is literal\n\nProbe.\n",
+            "ids": [
+              "b_302",
+              "b_303",
+              "b_304",
+              "b_305",
+              "b_306",
+              "b_307",
+              "b_308",
+              "b_309",
+              "b_310",
+              "b_311",
+              "b_312",
+              "b_313",
+              "b_327"
+            ],
+            "hashes": {
+              "b_302": "15f54d05ad1c1ffc35a23f7d24c6083a12edc5a4e5efc5cfe7a0628e0b93fafd",
+              "b_303": "afd258987f51af3d86b749b4f6b4d0a1104e7f1142102698371bba6d56065fc1",
+              "b_304": "e946ad127eb93c0f1fbe58ed1d692d86be0ea3bd5899af48da8bf5bda347b217",
+              "b_305": "624e5c6774ba967b017d18ec4ffe2e77c1cffa258162a6f11b4625cd3708f9ec",
+              "b_306": "f3b0af650827ab70ecc2166cce827455fa40b20174c65123819b47f4e5eb8854",
+              "b_307": "2730f7f1455d6489c9656370cbea8a79d6788a0ca1955d9e7e979b9655d42a36",
+              "b_308": "fd98765499f0361dde59d89c2dcf7d926336f1708000566bce888ef029a2cb71",
+              "b_309": "50505887d336b1bbe5fa9461f9e2ef7a93e54446d4ac16b9848ceade1c0e841e",
+              "b_310": "64a404dae30aeef5b3559cae73a55b6bc1d5ee06cc3575438851fda0eda5d443",
+              "b_311": "31c205b3e59317c1eace88de62a9ea69cfe18fa6a9c51adf3b5236f42f9a86fb",
+              "b_312": "fa5ad4d1ae5261f94453628face8f1d125ec1b85b1b86f8b8edd97b539d8060c",
+              "b_313": "7011d64045c583d18a9916f6fbf9e77149436a6763796352e62e042f229444bf",
+              "b_327": "034389982f7fef21a617bbb696bce3b2ae1ca3771048cfd6178b3a2cce1b9715"
+            },
+            "parents": {
+              "b_302": null,
+              "b_303": null,
+              "b_304": null,
+              "b_305": null,
+              "b_306": null,
+              "b_307": null,
+              "b_308": null,
+              "b_309": null,
+              "b_310": null,
+              "b_311": "b_310",
+              "b_312": "b_310",
+              "b_313": "b_310",
+              "b_327": null
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "write-effects-stale-plan",
+      "notes": "§4 (3.1) the plan form and its refusals: `plan` freezes salt.md's triple; a `blocks_update` moves the document's revision; `execute { plan }` with the FULL Plan the reference produced (authored here verbatim — the digest check passes in both engines, then the triple fails) is `stale_plan` (retriable) with nothing written; the digest form with the old `plan_id` is `plan_mismatch { expected, actual }` (the re-plan's preconditions changed); a plan with `version: 2` is `unsupported_plan_version { version, supported }`; `apply` with neither or both of `ops`/`effects`, and `execute` with half of the digest form, are argument-shape `filter_invalid`s whose messages both engines compose alike. Reads: salt.md (only the blocks_update landed), the api feed.",
+      "writes": [
+        {
+          "tool": "plan",
+          "args": {
+            "effects": [
+              {
+                "op": "set",
+                "target": {
+                  "kind": "document",
+                  "path": "substances/salt.md"
+                },
+                "field": "frontmatter.reviewed",
+                "value": "2026-10"
+              },
+              {
+                "op": "insert",
+                "into": {
+                  "kind": "section",
+                  "heading_id": "b_274"
+                },
+                "at": "end",
+                "markdown": "Checked against the 1702 edition."
+              }
+            ]
+          }
+        },
+        {
+          "tool": "blocks_update",
+          "args": {
+            "id": "b_275",
+            "markdown": "The alchemical \"salt\" is potash, not sodium chloride."
+          }
+        },
+        {
+          "tool": "execute",
+          "args": {
+            "plan": {
+              "version": 1,
+              "planner_v": "p1",
+              "effects": [
+                {
+                  "op": "set",
+                  "target": {
+                    "kind": "document",
+                    "id": "d_14",
+                    "path": "substances/salt.md"
+                  },
+                  "field": "frontmatter.reviewed",
+                  "value": "2026-10"
+                },
+                {
+                  "op": "insert",
+                  "into": {
+                    "kind": "section",
+                    "heading_id": "b_274"
+                  },
+                  "at": "end",
+                  "markdown": "Checked against the 1702 edition."
+                }
+              ],
+              "opset": {
+                "creates": [],
+                "moves": [],
+                "tombstones": [],
+                "set_frontmatter": [
+                  {
+                    "doc": "d_14",
+                    "raw": "---\ntype: substance\nslug: salt\nlayer: canon\ntradition: western\nelement: salt\ntags:\n  - substance\n  - tria-prima\nverified: true\nreviewed: 2026-10\n---\n\n"
+                  }
+                ],
+                "ops": [
+                  {
+                    "op": "insert",
+                    "to": {
+                      "parent": {
+                        "heading": "b_274",
+                        "scope": "section"
+                      },
+                      "at": "end"
+                    },
+                    "markdown": "Checked against the 1702 edition."
+                  }
+                ]
+              },
+              "preconditions": {
+                "docs": [
+                  {
+                    "id": "d_14",
+                    "path": "substances/salt.md",
+                    "base_revision": "r_14",
+                    "hash": "bd46557a5b70181f7b5ed3478e6ddf646a92c7560a44607bbf92485e35e48cd3"
+                  }
+                ],
+                "blocks": [],
+                "parents": [],
+                "absent_paths": []
+              },
+              "new_ids": [
+                {
+                  "symbol": "$new.0",
+                  "kind": "block"
+                }
+              ],
+              "plan_id": "a73934028edf8a789ac75911476d7316aeb580698f788ccda78acfc427e2df1d",
+              "diagnostics": [],
+              "preview": {
+                "results": [
+                  {
+                    "ids": [
+                      "$new.0"
+                    ]
+                  }
+                ],
+                "revisions": [
+                  {
+                    "id": "d_14",
+                    "path": "/substances/salt.md",
+                    "hash": "4d419ccf16e738e8758e55f559929d18c9aa2951bcf0cd48321b95fbc657b74b"
+                  }
+                ],
+                "diffs": {
+                  "/substances/salt.md": {
+                    "before": "---\ntype: substance\nslug: salt\nlayer: canon\ntradition: western\nelement: salt\ntags: [substance, tria-prima]\nverified: true\n---\n\n# Salt\n\nWhat remains. Burn a plant to ash and leach the ash with water, and the residue\nthat crystallizes out is the salt — the incombustible, fixed body.\n\nsymbol:: 🜔\nsoluble:: yes\ntoxic:: no\n\n## As a principle\n\nSalt is the third of the tria prima: the body that gives a substance its\npersistence and form. Where [[mercury]] flies off and [[sulphur]] burns, salt\nstays behind.\n\nThe operation that produces it is straightforward and repeatable, which gave the\nprinciple an evidential weight the other two lacked. You can *show* someone the\nsalt of a plant.\n\n## Practical extraction\n\nThe standard route, still sound:\n\n1. Incinerate the material completely — see [calcination](/processes/calcination.md).\n2. Leach the ash with distilled water.\n3. Filter, then evaporate slowly to crystallize.\n\n[Coagulation](/processes/coagulation.md) is the general name for step 3.\n\n## Note\n\nThe alchemical \"salt\" is not sodium chloride but the mixed carbonates and\npotash left after combustion. The terminology predates the distinction.\n\n## Supplies\n\nBench stock for the leaching work. Nothing outstanding.\n\n- [x] Buy more salt of tartar\n- [x] Replace the leaching filter papers\n",
+                    "after": "---\ntype: substance\nslug: salt\nlayer: canon\ntradition: western\nelement: salt\ntags:\n  - substance\n  - tria-prima\nverified: true\nreviewed: 2026-10\n---\n\n# Salt\n\nWhat remains. Burn a plant to ash and leach the ash with water, and the residue\nthat crystallizes out is the salt — the incombustible, fixed body.\n\nsymbol:: 🜔\nsoluble:: yes\ntoxic:: no\n\n## As a principle\n\nSalt is the third of the tria prima: the body that gives a substance its\npersistence and form. Where [[mercury]] flies off and [[sulphur]] burns, salt\nstays behind.\n\nThe operation that produces it is straightforward and repeatable, which gave the\nprinciple an evidential weight the other two lacked. You can *show* someone the\nsalt of a plant.\n\n## Practical extraction\n\nThe standard route, still sound:\n\n1. Incinerate the material completely — see [calcination](/processes/calcination.md).\n2. Leach the ash with distilled water.\n3. Filter, then evaporate slowly to crystallize.\n\n[Coagulation](/processes/coagulation.md) is the general name for step 3.\n\n## Note\n\nThe alchemical \"salt\" is not sodium chloride but the mixed carbonates and\npotash left after combustion. The terminology predates the distinction.\n\nChecked against the 1702 edition.\n\n## Supplies\n\nBench stock for the leaching work. Nothing outstanding.\n\n- [x] Buy more salt of tartar\n- [x] Replace the leaching filter papers\n"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "tool": "execute",
+          "args": {
+            "plan_id": "a73934028edf8a789ac75911476d7316aeb580698f788ccda78acfc427e2df1d",
+            "effects": [
+              {
+                "op": "set",
+                "target": {
+                  "kind": "document",
+                  "path": "substances/salt.md"
+                },
+                "field": "frontmatter.reviewed",
+                "value": "2026-10"
+              },
+              {
+                "op": "insert",
+                "into": {
+                  "kind": "section",
+                  "heading_id": "b_274"
+                },
+                "at": "end",
+                "markdown": "Checked against the 1702 edition."
+              }
+            ]
+          }
+        },
+        {
+          "tool": "execute",
+          "args": {
+            "plan": {
+              "version": 2,
+              "planner_v": "p1",
+              "effects": [],
+              "opset": {},
+              "preconditions": {},
+              "new_ids": [],
+              "plan_id": "x"
+            }
+          }
+        },
+        {
+          "tool": "apply",
+          "args": {}
+        },
+        {
+          "tool": "apply",
+          "args": {
+            "ops": [],
+            "effects": []
+          }
+        },
+        {
+          "tool": "execute",
+          "args": {
+            "plan_id": "x"
+          }
+        }
+      ],
+      "reads": [
+        {
+          "tool": "docs_read",
+          "args": {
+            "path": "substances/salt.md"
+          }
+        },
+        {
+          "tool": "changes_since",
+          "args": {
+            "origin": "api"
+          }
+        }
+      ],
+      "expect": {
+        "writes": [
+          {
+            "version": 1,
+            "planner_v": "p1",
+            "effects": [
+              {
+                "op": "set",
+                "target": {
+                  "kind": "document",
+                  "id": "d_14",
+                  "path": "substances/salt.md"
+                },
+                "field": "frontmatter.reviewed",
+                "value": "2026-10"
+              },
+              {
+                "op": "insert",
+                "into": {
+                  "kind": "section",
+                  "heading_id": "b_274"
+                },
+                "at": "end",
+                "markdown": "Checked against the 1702 edition."
+              }
+            ],
+            "opset": {
+              "creates": [],
+              "moves": [],
+              "tombstones": [],
+              "set_frontmatter": [
+                {
+                  "doc": "d_14",
+                  "raw": "---\ntype: substance\nslug: salt\nlayer: canon\ntradition: western\nelement: salt\ntags:\n  - substance\n  - tria-prima\nverified: true\nreviewed: 2026-10\n---\n\n"
+                }
+              ],
+              "ops": [
+                {
+                  "op": "insert",
+                  "to": {
+                    "parent": {
+                      "heading": "b_274",
+                      "scope": "section"
+                    },
+                    "at": "end"
+                  },
+                  "markdown": "Checked against the 1702 edition."
+                }
+              ]
+            },
+            "preconditions": {
+              "docs": [
+                {
+                  "id": "d_14",
+                  "path": "substances/salt.md",
+                  "base_revision": "r_14",
+                  "hash": "bd46557a5b70181f7b5ed3478e6ddf646a92c7560a44607bbf92485e35e48cd3"
+                }
+              ],
+              "blocks": [],
+              "parents": [],
+              "absent_paths": []
+            },
+            "new_ids": [
+              {
+                "symbol": "$new.0",
+                "kind": "block"
+              }
+            ],
+            "plan_id": "a73934028edf8a789ac75911476d7316aeb580698f788ccda78acfc427e2df1d",
+            "diagnostics": [],
+            "preview": {
+              "results": [
+                {
+                  "ids": [
+                    "$new.0"
+                  ]
+                }
+              ],
+              "revisions": [
+                {
+                  "id": "d_14",
+                  "path": "/substances/salt.md",
+                  "hash": "4d419ccf16e738e8758e55f559929d18c9aa2951bcf0cd48321b95fbc657b74b"
+                }
+              ],
+              "diffs": {
+                "/substances/salt.md": {
+                  "before": "---\ntype: substance\nslug: salt\nlayer: canon\ntradition: western\nelement: salt\ntags: [substance, tria-prima]\nverified: true\n---\n\n# Salt\n\nWhat remains. Burn a plant to ash and leach the ash with water, and the residue\nthat crystallizes out is the salt — the incombustible, fixed body.\n\nsymbol:: 🜔\nsoluble:: yes\ntoxic:: no\n\n## As a principle\n\nSalt is the third of the tria prima: the body that gives a substance its\npersistence and form. Where [[mercury]] flies off and [[sulphur]] burns, salt\nstays behind.\n\nThe operation that produces it is straightforward and repeatable, which gave the\nprinciple an evidential weight the other two lacked. You can *show* someone the\nsalt of a plant.\n\n## Practical extraction\n\nThe standard route, still sound:\n\n1. Incinerate the material completely — see [calcination](/processes/calcination.md).\n2. Leach the ash with distilled water.\n3. Filter, then evaporate slowly to crystallize.\n\n[Coagulation](/processes/coagulation.md) is the general name for step 3.\n\n## Note\n\nThe alchemical \"salt\" is not sodium chloride but the mixed carbonates and\npotash left after combustion. The terminology predates the distinction.\n\n## Supplies\n\nBench stock for the leaching work. Nothing outstanding.\n\n- [x] Buy more salt of tartar\n- [x] Replace the leaching filter papers\n",
+                  "after": "---\ntype: substance\nslug: salt\nlayer: canon\ntradition: western\nelement: salt\ntags:\n  - substance\n  - tria-prima\nverified: true\nreviewed: 2026-10\n---\n\n# Salt\n\nWhat remains. Burn a plant to ash and leach the ash with water, and the residue\nthat crystallizes out is the salt — the incombustible, fixed body.\n\nsymbol:: 🜔\nsoluble:: yes\ntoxic:: no\n\n## As a principle\n\nSalt is the third of the tria prima: the body that gives a substance its\npersistence and form. Where [[mercury]] flies off and [[sulphur]] burns, salt\nstays behind.\n\nThe operation that produces it is straightforward and repeatable, which gave the\nprinciple an evidential weight the other two lacked. You can *show* someone the\nsalt of a plant.\n\n## Practical extraction\n\nThe standard route, still sound:\n\n1. Incinerate the material completely — see [calcination](/processes/calcination.md).\n2. Leach the ash with distilled water.\n3. Filter, then evaporate slowly to crystallize.\n\n[Coagulation](/processes/coagulation.md) is the general name for step 3.\n\n## Note\n\nThe alchemical \"salt\" is not sodium chloride but the mixed carbonates and\npotash left after combustion. The terminology predates the distinction.\n\nChecked against the 1702 edition.\n\n## Supplies\n\nBench stock for the leaching work. Nothing outstanding.\n\n- [x] Buy more salt of tartar\n- [x] Replace the leaching filter papers\n"
+                }
+              }
+            }
+          },
+          {
+            "id": "b_275",
+            "ids": [
+              "b_275"
+            ],
+            "results": [
+              {
+                "ids": [
+                  "b_275"
+                ]
+              }
+            ],
+            "revisions": [
+              {
+                "id": "d_14",
+                "path": "/substances/salt.md",
+                "hash": "ba9a22102f82a6a528be11f689448fb1894798c217d370556849d666b52bcee9"
+              }
+            ],
+            "committed": true
+          },
+          {
+            "error": "stale_plan",
+            "retriable": true,
+            "data": {
+              "doc": "d_14",
+              "expected_revision": "r_14",
+              "current": {
+                "revision": "r_20",
+                "hash": "ba9a22102f82a6a528be11f689448fb1894798c217d370556849d666b52bcee9"
+              },
+              "retriable": true
+            }
+          },
+          {
+            "error": "plan_mismatch",
+            "retriable": false,
+            "data": {
+              "expected": "a73934028edf8a789ac75911476d7316aeb580698f788ccda78acfc427e2df1d",
+              "actual": "c352d90896b993ebf8f3dafdccb3e302319bbe344e74c70622f4ec9fcb7a2022"
+            }
+          },
+          {
+            "error": "unsupported_plan_version",
+            "retriable": false,
+            "data": {
+              "version": 2,
+              "supported": [
+                1
+              ]
+            }
+          },
+          {
+            "error": "filter_invalid",
+            "retriable": false,
+            "message": "pass exactly one of `ops` or `effects` (apply takes dry_run?, effects?, ops?, reason?, repo?)"
+          },
+          {
+            "error": "filter_invalid",
+            "retriable": false,
+            "message": "pass exactly one of `ops` or `effects` (apply takes dry_run?, effects?, ops?, reason?, repo?)"
+          },
+          {
+            "error": "filter_invalid",
+            "retriable": false,
+            "message": "the digest form needs both `plan_id` and `effects` (execute takes effects?, plan?, plan_id?, reason?, repo?)"
+          }
+        ],
+        "reads": [
+          {
+            "id": "d_14",
+            "path": "/substances/salt.md",
+            "rev": "r_20",
+            "properties": {
+              "frontmatter": {
+                "type": "substance",
+                "slug": "salt",
+                "layer": "canon",
+                "tradition": "western",
+                "element": "salt",
+                "tags": [
+                  "substance",
+                  "tria-prima"
+                ],
+                "verified": true
+              },
+              "inline": {
+                "symbol": "🜔",
+                "soluble": "yes",
+                "toxic": "no"
+              },
+              "computed": {
+                "title": "Salt"
+              }
+            },
+            "raw": "---\ntype: substance\nslug: salt\nlayer: canon\ntradition: western\nelement: salt\ntags: [substance, tria-prima]\nverified: true\n---\n\n# Salt\n\nWhat remains. Burn a plant to ash and leach the ash with water, and the residue\nthat crystallizes out is the salt — the incombustible, fixed body.\n\nsymbol:: 🜔\nsoluble:: yes\ntoxic:: no\n\n## As a principle\n\nSalt is the third of the tria prima: the body that gives a substance its\npersistence and form. Where [[mercury]] flies off and [[sulphur]] burns, salt\nstays behind.\n\nThe operation that produces it is straightforward and repeatable, which gave the\nprinciple an evidential weight the other two lacked. You can *show* someone the\nsalt of a plant.\n\n## Practical extraction\n\nThe standard route, still sound:\n\n1. Incinerate the material completely — see [calcination](/processes/calcination.md).\n2. Leach the ash with distilled water.\n3. Filter, then evaporate slowly to crystallize.\n\n[Coagulation](/processes/coagulation.md) is the general name for step 3.\n\n## Note\n\nThe alchemical \"salt\" is potash, not sodium chloride.\n\n## Supplies\n\nBench stock for the leaching work. Nothing outstanding.\n\n- [x] Buy more salt of tartar\n- [x] Replace the leaching filter papers\n"
+          },
+          {
+            "digests": [
+              {
+                "commit": "c_20",
+                "seq": 21,
+                "ts": "2026-09-27T00:00:00.000Z",
+                "origin": "api",
+                "actor": "agent:mcp",
+                "revisions": [
+                  {
+                    "id": "d_14",
+                    "path": "/substances/salt.md",
+                    "hash": "ba9a22102f82a6a528be11f689448fb1894798c217d370556849d666b52bcee9"
+                  }
+                ]
+              }
+            ],
+            "cursor": 21,
+            "truncated": false,
+            "head": 21
+          }
+        ]
+      }
     }
   ]
 }

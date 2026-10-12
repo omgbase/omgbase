@@ -51,8 +51,9 @@ use crate::observe::{Committed, Prepared, ingest_in, tombstone_in};
 use crate::time::pool_expiry;
 use crate::writers::{NewCommit, Origin, new_commit};
 
-/// The commit row a request records (`spec/store` §5.4 step 5): `ops` stays
-/// `NULL` until the planner step populates ADR-003's intent record.
+/// The commit row a request records (`spec/store` §5.4 step 5). `ops` is
+/// ADR-003's intent record — `canonical({ v: 1, plan_id, effects })` for an
+/// effect-driven commit (`spec/mutate` §11), `NULL` for every other.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct CommitHead<'a> {
     pub origin: Origin,
@@ -62,6 +63,8 @@ pub(crate) struct CommitHead<'a> {
     /// pending at its path (`spec/store` §5.7, the file wins): the row is
     /// deleted in this transaction, with the commit that supersedes it.
     pub clear_pending: bool,
+    /// `commits.ops`.
+    pub ops: Option<&'a str>,
 }
 
 /// A live document's precondition as captured when it was loaded (the opset
@@ -134,7 +137,10 @@ pub(crate) enum Effect {
     /// The same steps with the **reconciling** resolver, the member already
     /// parsed and matched outside the transaction (`docs_create`,
     /// `docs_set_meta`, the sync layer's recovery).
-    IngestReconciled { prepared: Prepared, guard: Guard },
+    IngestReconciled {
+        prepared: Box<Prepared>,
+        guard: Guard,
+    },
     /// `spec/mutate` §6 `docs_move`'s row changes: the doc and current
     /// revision take the new path, every open edge from another document
     /// (and a self edge whose link names the path) re-points to
@@ -252,8 +258,21 @@ impl Store {
         effects: &[Effect],
         ts: &str,
     ) -> Result<Outcome> {
+        self.commit_effects_with_id(repo_id, head, effects, ts)
+            .map(|(outcome, _)| outcome)
+    }
+
+    /// [`Store::commit_effects`] with the commit id it minted (`None` when
+    /// nothing was committed: no effects, or a conflict).
+    pub(crate) fn commit_effects_with_id(
+        &mut self,
+        repo_id: &str,
+        head: &CommitHead<'_>,
+        effects: &[Effect],
+        ts: &str,
+    ) -> Result<(Outcome, Option<String>)> {
         if effects.is_empty() {
-            return Ok(Outcome::Committed(Vec::new()));
+            return Ok((Outcome::Committed(Vec::new()), None));
         }
         let expires = pool_expiry(ts)?;
         let Store { conn, ids, .. } = self;
@@ -264,9 +283,9 @@ impl Store {
         }
         if let Some(conflict) = validate(&tx, repo_id, effects)? {
             drop(tx);
-            return Ok(Outcome::Conflict(conflict));
+            return Ok((Outcome::Conflict(conflict), None));
         }
-        let committed = {
+        let (committed, commit_id) = {
             let mut mint = ids.at(&tx);
             let (commit_id, _) = new_commit(
                 &tx,
@@ -278,7 +297,7 @@ impl Store {
                     actor: head.actor,
                     reason: head.reason,
                     checkpoint_id: None,
-                    ops: None,
+                    ops: head.ops,
                 },
             )?;
             let mut outcomes = Vec::with_capacity(effects.len());
@@ -297,10 +316,13 @@ impl Store {
                     delete_pending(&tx, repo_id, &path)?;
                 }
             }
-            outcomes.into_iter().flatten().collect()
+            (
+                outcomes.into_iter().flatten().collect::<Vec<_>>(),
+                commit_id,
+            )
         };
         tx.commit()?;
-        Ok(Outcome::Committed(committed))
+        Ok((Outcome::Committed(committed), Some(commit_id)))
     }
 }
 
@@ -380,15 +402,13 @@ fn record_intent(
         _ => None,
     });
     for (effect, outcome) in effects.iter().zip(outcomes) {
-        let row = match (effect, outcome) {
-            (Effect::IngestKnown { path, .. }, Some(c))
-            | (
-                Effect::IngestReconciled {
-                    prepared: Prepared { path, .. },
-                    ..
-                },
-                Some(c),
-            ) => {
+        let ingested_path = match effect {
+            Effect::IngestKnown { path, .. } => Some(path.as_str()),
+            Effect::IngestReconciled { prepared, .. } => Some(prepared.path.as_str()),
+            _ => None,
+        };
+        let row = match (ingested_path, effect, outcome) {
+            (Some(path), _, Some(c)) => {
                 if moved == Some(c.doc_id.as_str()) {
                     continue; // the rename row lands these bytes
                 }
@@ -398,7 +418,7 @@ fn record_intent(
                     |r| r.get(0),
                 )?;
                 PendingRow {
-                    path: path.clone(),
+                    path: path.to_owned(),
                     kind: PendingKind::Write,
                     from_path: None,
                     doc_id: c.doc_id.clone(),
@@ -408,6 +428,7 @@ fn record_intent(
                 }
             }
             (
+                _,
                 Effect::MovePath {
                     doc_id, from, to, ..
                 },
@@ -427,6 +448,7 @@ fn record_intent(
                 }
             }
             (
+                _,
                 Effect::Tombstone {
                     doc_id, path, pool, ..
                 },
@@ -458,7 +480,7 @@ fn record_intent(
 
 /// `stale_plan` with the current truth, the shape `docs_update` emits for
 /// an opset whose precondition is behind (`spec/mutate` §8).
-fn stale_plan(base: &DocBase, current: Option<&DocBase>) -> crate::error::Error {
+pub(crate) fn stale_plan(base: &DocBase, current: Option<&DocBase>) -> crate::error::Error {
     MutationError::with_data(
         ErrorCode::StalePlan,
         "document changed since the plan was computed; re-plan",
@@ -475,7 +497,7 @@ fn stale_plan(base: &DocBase, current: Option<&DocBase>) -> crate::error::Error 
     .into()
 }
 
-fn doc_missing(doc_id: &str) -> crate::error::Error {
+pub(crate) fn doc_missing(doc_id: &str) -> crate::error::Error {
     MutationError::with_data(
         ErrorCode::DocMissing,
         format!("doc {doc_id} not found"),
@@ -484,7 +506,7 @@ fn doc_missing(doc_id: &str) -> crate::error::Error {
     .into()
 }
 
-fn path_taken(path: &str) -> crate::error::Error {
+pub(crate) fn path_taken(path: &str) -> crate::error::Error {
     MutationError::new(
         ErrorCode::PathTaken,
         format!("a document already exists at {path}"),

@@ -72,6 +72,10 @@ Semantics:
 - **`dry_run: true`** runs full validation + render and returns per-file `{ before, after }` diffs and the would-be results, committing nothing.
 - Response: `{ results: [per-op: {ids}], revisions: [{ id, path, hash }], diffs?: {path → {before, after}}, committed }` (`ApplyResult` in `apply.ts`; `hash` is the document's rendered hash after the write — the same revision shape `changes_since` carries, `spec/mutate` 2.0); `diffs` is populated on a dry run.
 
+## 2b. Effects and plans (the planner tier — spec/mutate 2.3 §11, ADR-021)
+
+Above the changeset sits the public intentional-write vocabulary: nine effects (`create insert set unset move remove split merge retarget`) over document/block/node/section targets, each lowering deterministically to kernel ops, `set_frontmatter` or a document operation (`mutate/effects.ts` `lowerEffect`; Rust `omgbase-mutate/src/effects.rs`). `planEffects` runs the lowering under a symbolic minter (new ids are `$new.n`, nothing issued) and freezes `{ version, planner_v, effects, opset, preconditions, new_ids, plan_id }` + a `preview`; `plan_id` = sha256 of the canonical JSON of the core (§11.5 rules; digest vectors in `effects::digest-vectors`). `executePlan` admits the plan (version, recomputed digest), replays the opset under the production minter zipping real mints onto `$new.n` per kind, asserts the re-rendered hashes equal the plan's, then runs §6's commit with the plan's preconditions re-validated in the transaction and `commits.ops = { v, plan_id, effects }`. `applyEffects` is plan + execute in one lock scope. Conflicts are the planner's: a scalar focus admits one write per plan (identical values dedupe), positional effects sequence, identity effects fence what follows (`conflicting_effects { effects: [i, j], focus }`). Fixtures: `spec/mutate/cases/effects.json`.
+
 ## 3. Macros (conveniences, not primitives)
 
 Macros expand server-side into kernel ops **within the same changeset**, and results are reported in kernel vocabulary (the expansion is visible in the response). Test for macro-hood: expansion must be deterministic — no policy judgment. If it needs judgment, it belongs in the agent.

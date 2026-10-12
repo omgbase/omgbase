@@ -22,11 +22,17 @@ pub enum ErrorCode {
     StalePlan,
     PlanNotConvergent,
     SyncConflict,
+    /// Two effects of one request contradict each other on one focus (§11).
+    ConflictingEffects,
+    /// A plan's `version` this engine does not read (§11).
+    UnsupportedPlanVersion,
+    /// A `plan_id` that does not digest the plan it was given with (§11).
+    PlanMismatch,
 }
 
 impl ErrorCode {
     /// Every code, in the §8 order.
-    pub const ALL: [ErrorCode; 13] = [
+    pub const ALL: [ErrorCode; 16] = [
         ErrorCode::StaleExpectation,
         ErrorCode::BlockMissing,
         ErrorCode::TargetMissing,
@@ -40,6 +46,9 @@ impl ErrorCode {
         ErrorCode::StalePlan,
         ErrorCode::PlanNotConvergent,
         ErrorCode::SyncConflict,
+        ErrorCode::ConflictingEffects,
+        ErrorCode::UnsupportedPlanVersion,
+        ErrorCode::PlanMismatch,
     ];
 
     /// The spec's spelling.
@@ -59,6 +68,9 @@ impl ErrorCode {
             ErrorCode::StalePlan => "stale_plan",
             ErrorCode::PlanNotConvergent => "plan_not_convergent",
             ErrorCode::SyncConflict => "sync_conflict",
+            ErrorCode::ConflictingEffects => "conflicting_effects",
+            ErrorCode::UnsupportedPlanVersion => "unsupported_plan_version",
+            ErrorCode::PlanMismatch => "plan_mismatch",
         }
     }
 
@@ -147,7 +159,7 @@ mod tests {
             assert_eq!(ErrorCode::parse(c.as_str()), Some(c));
         }
         assert_eq!(ErrorCode::parse("nope"), None);
-        assert_eq!(ErrorCode::ALL.len(), 13);
+        assert_eq!(ErrorCode::ALL.len(), 16);
     }
 
     #[test]

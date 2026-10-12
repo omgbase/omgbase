@@ -2579,6 +2579,7 @@ const API_HEAD: CommitHead<'static> = CommitHead {
     actor: Some("agent:test"),
     reason: Some("fixture"),
     clear_pending: false,
+    ops: None,
 };
 
 fn expect_mutation(err: &Error, code: omgbase_mutate::ErrorCode) -> &omgbase_mutate::MutationError {
@@ -3588,4 +3589,715 @@ fn a_later_request_materializes_the_pending_row_before_reading() {
         "b.md's row is another request's: left for the sweep"
     );
     assert_eq!(ds.read("b.md").unwrap().as_deref(), Some("# B\n\nBravo.\n"));
+}
+
+// ---- the public Effect layer (spec/mutate §11, mutate 2.3) --------------------------------
+
+use crate::effects_plan::{EffectsOutcome, PlanContext, Receipt};
+use omgbase_mutate::effects::Target;
+use omgbase_mutate::{Effect as Fx, ErrorCode};
+use serde_json::{Value, json};
+
+const FM_DOC: &str = "---\nstatus: open\n---\n\n# A\n\nAlpha.\n";
+
+fn ctx(repo: &str, ts: &str) -> PlanContext {
+    PlanContext {
+        repo_id: repo.to_owned(),
+        ts: ts.to_owned(),
+        config: Config::default(),
+    }
+}
+
+fn doc_by_path(path: &str) -> Target {
+    Target::Document {
+        id: None,
+        path: Some(path.to_owned()),
+    }
+}
+
+fn set_fm(target: Target, key: &str, value: Value) -> Fx {
+    Fx::Set {
+        target,
+        field: format!("frontmatter.{key}"),
+        value,
+        expect: None,
+    }
+}
+
+fn insert_section(heading: &str, markdown: &str) -> Fx {
+    Fx::Insert {
+        into: Target::Section {
+            heading_id: heading.to_owned(),
+        },
+        at: At::End,
+        markdown: markdown.to_owned(),
+        expect: None,
+    }
+}
+
+/// Slice 1's effects: `set frontmatter.status` + `insert into section`.
+fn slice_one() -> Vec<Fx> {
+    vec![
+        set_fm(doc_by_path("a.md"), "status", json!("done")),
+        insert_section("b_0", "Tail."),
+    ]
+}
+
+const SLICE_ONE_AFTER: &str = "---\nstatus: done\n---\n\n# A\n\nAlpha.\n\nTail.\n";
+
+/// Everything a request leaves behind, for the one-shot vs plan+execute
+/// comparison: commit rows (with `ops`), doc pointers, live blocks, files.
+fn footprint(store: &Store, ds: &MemDocStore) -> Value {
+    let conn = store.conn();
+    let rows = |sql: &str| -> Vec<Vec<Value>> {
+        let mut stmt = conn.prepare(sql).unwrap();
+        let n = stmt.column_count();
+        stmt.query_map([], |r| {
+            (0..n)
+                .map(|i| {
+                    Ok(match r.get_ref(i)? {
+                        rusqlite::types::ValueRef::Null => Value::Null,
+                        rusqlite::types::ValueRef::Integer(i) => json!(i),
+                        rusqlite::types::ValueRef::Real(f) => json!(f),
+                        rusqlite::types::ValueRef::Text(t) => json!(String::from_utf8_lossy(t)),
+                        rusqlite::types::ValueRef::Blob(b) => json!(hex(b)),
+                    })
+                })
+                .collect::<rusqlite::Result<Vec<_>>>()
+        })
+        .unwrap()
+        .map(|r| r.unwrap())
+        .collect()
+    };
+    json!({
+        "commits": rows("SELECT commit_id, seq, origin, actor, reason, ops FROM commits ORDER BY seq"),
+        "docs": rows("SELECT doc_id, path, current_rev, file_hash, deleted_commit FROM docs ORDER BY path"),
+        "blocks": rows("SELECT block_id, doc_id, parent_block, ordinal, type, raw_hash, created_commit FROM blocks WHERE deleted_commit IS NULL ORDER BY doc_id, ordinal"),
+        "revisions": rows("SELECT rev_id, doc_id, seq, rendered_hash, path, commit_id FROM revisions ORDER BY rev_id"),
+        "pending": rows("SELECT path FROM pending_materializations"),
+        "files": ds.files().iter().map(|(k, v)| (k.clone(), json!(v))).collect::<serde_json::Map<_, _>>(),
+    })
+}
+
+fn expect_code(err: &Error, code: ErrorCode) -> &MutationError {
+    match err {
+        Error::Mutation(m) if m.code == code => m,
+        other => panic!("expected {code:?}, got {other:?}"),
+    }
+}
+
+/// §11.6 `plan`: the frozen plan with an exact preview; nothing written, no
+/// commit row, and — the symbolic minter — no id consumed: the next `b` the
+/// store mints is the one it would have minted before the plan.
+#[test]
+fn plan_effects_burns_no_id_and_previews_the_exact_bytes() {
+    let (mut store, repo, ds) = seeded(&[("a.md", FM_DOC)]);
+    let next_b = store.mint("b").unwrap();
+    assert_eq!(next_b, "b_2", "b_0, b_1 are the observed blocks");
+    let plan = store
+        .plan_effects(&ctx(&repo, T1), &slice_one(), &ds)
+        .unwrap();
+    assert_eq!(plan.version, 1);
+    assert_eq!(plan.planner_v, "p1");
+    assert_eq!(plan.plan_id.len(), 64);
+    assert_eq!(plan.plan_id, plan.digest(), "sealed over its core");
+    // Resolved: the document target carries id and path.
+    assert_eq!(
+        plan.effects[0].to_json()["target"],
+        json!({ "kind": "document", "id": "d_0", "path": "a.md" })
+    );
+    // Lowered: one file head (set_meta's bytes) + one insert; every opset key present.
+    assert_eq!(
+        plan.opset.to_json(),
+        json!({
+            "creates": [], "moves": [], "tombstones": [],
+            "set_frontmatter": [{ "doc": "d_0", "raw": "---\nstatus: done\n---\n\n" }],
+            "ops": [{ "op": "insert", "to": { "parent": { "heading": "b_0", "scope": "section" }, "at": "end" }, "markdown": "Tail." }],
+        })
+    );
+    // Pinned: the DocBase triple (nulls kept as values); the new block is symbolic.
+    assert_eq!(
+        plan.preconditions.to_json(),
+        json!({
+            "docs": [{ "id": "d_0", "path": "a.md", "base_revision": "r_0", "hash": hex(&sha256(FM_DOC.as_bytes())) }],
+            "blocks": [], "parents": [], "absent_paths": [],
+        })
+    );
+    assert_eq!(
+        plan.to_json(false)["new_ids"],
+        json!([{ "symbol": "$new.0", "kind": "block" }])
+    );
+    let preview = plan.preview.as_ref().expect("plan carries a preview");
+    assert_eq!(preview.results[0].ids, ["$new.0"]);
+    assert_eq!(preview.revisions.len(), 1);
+    assert_eq!(preview.revisions[0].id, "d_0");
+    assert_eq!(
+        preview.revisions[0].hash,
+        hex(&sha256(SLICE_ONE_AFTER.as_bytes()))
+    );
+    assert_eq!(preview.diffs[0].0, "a.md");
+    assert_eq!(
+        preview.diffs[0].1,
+        (FM_DOC.to_owned(), SLICE_ONE_AFTER.to_owned())
+    );
+    // Nothing happened to the store, the files, or the minter.
+    assert_eq!(count(&store, "commits"), 1);
+    assert_eq!(count(&store, "revisions"), 1);
+    assert_eq!(count(&store, "pending_materializations"), 0);
+    assert_eq!(ds.read("a.md").unwrap().as_deref(), Some(FM_DOC));
+    assert_eq!(store.mint("b").unwrap(), "b_3", "the plan minted nothing");
+    // The preview is outside the digest; the wire form round-trips and admits.
+    let back = Plan::admit(&plan.to_json(false)).unwrap();
+    assert_eq!(back.digest(), plan.plan_id);
+    assert!(back.preview.is_none());
+}
+
+/// `plan` → `execute` and the one-shot `apply({ effects })` leave the same
+/// store and files behind: one `api` commit whose `ops` is the intent
+/// record, one revision, the inserted block minted under the same id.
+#[test]
+fn plan_then_execute_and_one_shot_apply_leave_identical_footprints() {
+    let origin = api_origin();
+    let (mut a, repo_a, mut ds_a) = seeded(&[("a.md", FM_DOC)]);
+    let plan = a
+        .plan_effects(&ctx(&repo_a, T1), &slice_one(), &ds_a)
+        .unwrap();
+    let r1 = a
+        .execute_plan(&ctx(&repo_a, T1), &plan, &origin, &mut ds_a)
+        .unwrap();
+    let (mut b, repo_b, mut ds_b) = seeded(&[("a.md", FM_DOC)]);
+    let EffectsOutcome::Receipt(r2) = b
+        .apply_effects(&ctx(&repo_b, T1), &slice_one(), &origin, &mut ds_b, false)
+        .unwrap()
+    else {
+        panic!("a committing apply returns a receipt")
+    };
+    assert_eq!(r1, r2);
+    assert_eq!(
+        r1.to_json(),
+        json!({
+            "plan_id": plan.plan_id,
+            "commit": "c_1",
+            "revisions": [{ "id": "d_0", "path": "a.md", "hash": hex(&sha256(SLICE_ONE_AFTER.as_bytes())) }],
+            "new_ids": { "$new.0": "b_2" },
+            "committed": true,
+        })
+    );
+    assert_eq!(footprint(&a, &ds_a), footprint(&b, &ds_b));
+    assert_eq!(ds_a.read("a.md").unwrap().as_deref(), Some(SLICE_ONE_AFTER));
+    assert_eq!(
+        a.reconstruct("d_0").unwrap().as_deref(),
+        Some(SLICE_ONE_AFTER)
+    );
+    // ADR-003: the commit records the intent, not the lowered ops.
+    let ops: String = a
+        .conn()
+        .query_row("SELECT ops FROM commits WHERE commit_id = 'c_1'", [], |r| {
+            r.get(0)
+        })
+        .unwrap();
+    let record: Value = serde_json::from_str(&ops).unwrap();
+    assert_eq!(record["v"], 1);
+    assert_eq!(record["plan_id"], json!(plan.plan_id));
+    assert_eq!(record["effects"].as_array().unwrap().len(), 2);
+    assert_eq!(record["effects"][0]["op"], "set");
+    assert_eq!(
+        ops,
+        omgbase_mutate::effects::canonical_json(&record),
+        "stored in canonical form"
+    );
+    // The observed commit keeps `ops` NULL.
+    let null_ops: Option<String> = a
+        .conn()
+        .query_row("SELECT ops FROM commits WHERE commit_id = 'c_0'", [], |r| {
+            r.get(0)
+        })
+        .unwrap();
+    assert_eq!(null_ops, None);
+    assert_eq!(
+        a.changes_since(&repo_a, 1, 10, None).unwrap().digests.len(),
+        1
+    );
+}
+
+/// A failure inside the transaction (`dispositions` taken away so the
+/// ingest fails after the commit row) leaves no row, no revision, no
+/// pending intent and no file change; the plan is still executable after.
+#[test]
+fn an_execute_that_fails_mid_transaction_commits_nothing() {
+    let (mut store, repo, mut ds) = seeded(&[("a.md", FM_DOC)]);
+    let plan = store
+        .plan_effects(&ctx(&repo, T1), &slice_one(), &ds)
+        .unwrap();
+    let before = footprint(&store, &ds);
+    store
+        .conn()
+        .execute("ALTER TABLE dispositions RENAME TO dispositions_gone", [])
+        .unwrap();
+    start_trace(store.conn());
+    let err = store
+        .execute_plan(&ctx(&repo, T1), &plan, &api_origin(), &mut ds)
+        .unwrap_err();
+    assert!(matches!(err, Error::Sqlite(_)), "{err}");
+    let log = traced();
+    assert!(log.iter().any(|s| s.starts_with("ROLLBACK")), "{log:#?}");
+    assert!(
+        log.iter().any(|s| s.starts_with("INSERT INTO commits")),
+        "it reached the commit row: {log:#?}"
+    );
+    store
+        .conn()
+        .execute("ALTER TABLE dispositions_gone RENAME TO dispositions", [])
+        .unwrap();
+    assert_eq!(footprint(&store, &ds), before, "nothing survived");
+    // (The `c` and `b` ids drawn before the failure stay issued in this
+    // process, as for `apply`; nothing in the database names them.)
+    let r = store
+        .execute_plan(&ctx(&repo, T2), &plan, &api_origin(), &mut ds)
+        .unwrap();
+    assert_eq!(r.commit.as_deref(), Some("c_2"));
+    assert_eq!(ds.read("a.md").unwrap().as_deref(), Some(SLICE_ONE_AFTER));
+}
+
+/// Replaying a committed plan fails `stale_plan` with the current truth; a
+/// plan computed before an observed change fails the same way; the plan
+/// form refuses a version it does not read and a core that does not digest
+/// to its `plan_id`.
+#[test]
+fn replay_and_stale_plans_are_refused_and_so_are_bad_plan_objects() {
+    let (mut store, repo, mut ds) = seeded(&[("a.md", FM_DOC)]);
+    let plan = store
+        .plan_effects(&ctx(&repo, T1), &slice_one(), &ds)
+        .unwrap();
+    store
+        .execute_plan(&ctx(&repo, T1), &plan, &api_origin(), &mut ds)
+        .unwrap();
+    let err = store
+        .execute_plan(&ctx(&repo, T2), &plan, &api_origin(), &mut ds)
+        .unwrap_err();
+    let m = expect_code(&err, ErrorCode::StalePlan);
+    assert_eq!(m.data["doc"], "d_0");
+    assert_eq!(m.data["expected_revision"], "r_0");
+    assert_eq!(m.data["current"]["revision"], "r_1");
+    assert_eq!(m.data["retriable"], true);
+    assert_eq!(count(&store, "commits"), 2, "the replay committed nothing");
+
+    // A fresh plan, then the file changes underneath it.
+    let plan = store
+        .plan_effects(&ctx(&repo, T2), &[insert_section("b_0", "More.")], &ds)
+        .unwrap();
+    let edited = format!("{SLICE_ONE_AFTER}\nEdited.\n");
+    observe(&mut store, &repo, "a.md", &edited, T2);
+    ds.write("a.md", &edited).unwrap();
+    let err = store
+        .execute_plan(&ctx(&repo, T2), &plan, &api_origin(), &mut ds)
+        .unwrap_err();
+    let m = expect_code(&err, ErrorCode::StalePlan);
+    assert_eq!(m.data["expected_revision"], "r_1");
+    assert_eq!(m.data["current"]["revision"], "r_2");
+
+    // Bad plan objects.
+    let mut unsupported = plan.clone();
+    unsupported.version = 2;
+    let err = store
+        .execute_plan(&ctx(&repo, T2), &unsupported, &api_origin(), &mut ds)
+        .unwrap_err();
+    let m = expect_code(&err, ErrorCode::UnsupportedPlanVersion);
+    assert_eq!(m.data["version"], 2);
+    assert_eq!(m.data["supported"], json!([1]));
+    let mut tampered = plan.clone();
+    tampered.opset.ops.clear();
+    let err = store
+        .execute_plan(&ctx(&repo, T2), &tampered, &api_origin(), &mut ds)
+        .unwrap_err();
+    let m = expect_code(&err, ErrorCode::PlanMismatch);
+    assert_eq!(m.data["expected"], json!(plan.plan_id));
+    assert_eq!(m.data["actual"], json!(tampered.digest()));
+    assert_eq!(count(&store, "commits"), 3, "none of them committed");
+}
+
+/// The digest form: `execute({ plan_id, effects })` re-plans and commits on
+/// digest equality; a different digest is `plan_mismatch { expected, actual }`.
+#[test]
+fn execute_by_digest_commits_on_equality_and_refuses_a_mismatch() {
+    let (mut store, repo, mut ds) = seeded(&[("a.md", FM_DOC)]);
+    let plan = store
+        .plan_effects(&ctx(&repo, T1), &slice_one(), &ds)
+        .unwrap();
+    let wrong = "0".repeat(64);
+    let err = store
+        .execute_by_digest(
+            &ctx(&repo, T1),
+            &wrong,
+            &slice_one(),
+            &api_origin(),
+            &mut ds,
+        )
+        .unwrap_err();
+    let m = expect_code(&err, ErrorCode::PlanMismatch);
+    assert_eq!(m.data["expected"], json!(wrong));
+    assert_eq!(m.data["actual"], json!(plan.plan_id));
+    assert_eq!(count(&store, "commits"), 1);
+    let r = store
+        .execute_by_digest(
+            &ctx(&repo, T1),
+            &plan.plan_id,
+            &slice_one(),
+            &api_origin(),
+            &mut ds,
+        )
+        .unwrap();
+    assert_eq!(r.plan_id, plan.plan_id);
+    assert_eq!(r.commit.as_deref(), Some("c_1"));
+    assert_eq!(ds.read("a.md").unwrap().as_deref(), Some(SLICE_ONE_AFTER));
+}
+
+/// Decision 4 at the store: two writes to one scalar focus conflict unless
+/// identical (then the later is dropped with a diagnostic and lowers once);
+/// an effect after `remove` of its target conflicts on identity; a
+/// `$new.<n>` nobody created is `target_missing` naming the symbol; every
+/// planner error names its effect.
+#[test]
+fn conflicting_effects_are_rejected_when_planned() {
+    let (mut store, repo, ds) = seeded(&[("a.md", FM_DOC)]);
+    let c = ctx(&repo, T1);
+    let differ = [
+        set_fm(doc_by_path("a.md"), "status", json!("done")),
+        set_fm(doc_by_path("a.md"), "status", json!("open")),
+    ];
+    let err = store.plan_effects(&c, &differ, &ds).unwrap_err();
+    let m = expect_code(&err, ErrorCode::ConflictingEffects);
+    assert_eq!(m.data["effects"], json!([0, 1]));
+    assert_eq!(
+        m.data["focus"],
+        json!({ "kind": "scalar", "target": { "kind": "document", "id": "d_0" }, "field": "frontmatter.status" })
+    );
+    assert_eq!(m.data["retriable"], false);
+    assert_eq!(m.data["effect_index"], 1);
+
+    let same = [
+        set_fm(doc_by_path("a.md"), "status", json!("done")),
+        set_fm(doc_by_path("a.md"), "status", json!("done")),
+    ];
+    let plan = store.plan_effects(&c, &same, &ds).unwrap();
+    assert_eq!(plan.effects.len(), 1, "the repeat is dropped");
+    assert_eq!(
+        plan.diagnostics,
+        ["effect 1 (set frontmatter.status on document d_0) duplicates effect 0; dropped"]
+    );
+    assert_eq!(plan.opset.set_frontmatter.len(), 1);
+
+    let after_remove = [
+        Fx::RemoveBlocks {
+            targets: vec!["b_1".into()],
+            expect: None,
+        },
+        Fx::Set {
+            target: Target::Block { id: "b_1".into() },
+            field: "markdown".into(),
+            value: json!("Beta."),
+            expect: None,
+        },
+    ];
+    let err = store.plan_effects(&c, &after_remove, &ds).unwrap_err();
+    let m = expect_code(&err, ErrorCode::ConflictingEffects);
+    assert_eq!(
+        m.data["focus"],
+        json!({ "kind": "identity", "target": { "kind": "block", "id": "b_1" } })
+    );
+
+    let unknown = [set_fm(
+        Target::Document {
+            id: Some("$new.0".into()),
+            path: None,
+        },
+        "k",
+        json!(1),
+    )];
+    let err = store.plan_effects(&c, &unknown, &ds).unwrap_err();
+    let m = expect_code(&err, ErrorCode::TargetMissing);
+    assert_eq!(m.data["symbol"], "$new.0");
+    assert_eq!(m.data["effect_index"], 0);
+
+    // A stale `expect.revision` is caught when planning.
+    let stale = [Fx::Set {
+        target: doc_by_path("a.md"),
+        field: "frontmatter.k".into(),
+        value: json!(1),
+        expect: Some(omgbase_mutate::EffectExpect {
+            revision: Some("r_9".into()),
+            ..Default::default()
+        }),
+    }];
+    let err = store.plan_effects(&c, &stale, &ds).unwrap_err();
+    let m = expect_code(&err, ErrorCode::StalePlan);
+    assert_eq!(m.data["expected_revision"], "r_9");
+    assert_eq!(m.data["current"]["revision"], "r_0");
+    // A pinned CAS the caller gets wrong is the kernel's own error, naming the op and the effect.
+    let wrong_hash = [Fx::Set {
+        target: Target::Block { id: "b_1".into() },
+        field: "markdown".into(),
+        value: json!("Beta."),
+        expect: Some(omgbase_mutate::EffectExpect {
+            content_hash: Some("00".into()),
+            ..Default::default()
+        }),
+    }];
+    let err = store.plan_effects(&c, &wrong_hash, &ds).unwrap_err();
+    let m = expect_code(&err, ErrorCode::StaleExpectation);
+    assert_eq!(m.data["op_index"], 0);
+    assert_eq!(m.data["effect_index"], 0);
+    assert_eq!(count(&store, "commits"), 1, "plans write nothing");
+}
+
+/// Slice 2: `create` + `set frontmatter.<k>` on `$new.0` folds into the
+/// create's composition (`docs_create`'s bytes), the receipt maps the
+/// document symbol to the `d` minted in the transaction, and the intent
+/// record names the symbol, not the minted id.
+#[test]
+fn create_then_set_on_the_new_document_folds_and_maps_the_symbols() {
+    let (mut store, repo, mut ds) = seeded(&[("a.md", FM_DOC)]);
+    let fm: serde_json::Map<String, Value> = serde_json::from_str(r#"{"title":"N"}"#).unwrap();
+    let effects = [
+        Fx::Create {
+            path: "/notes/n.md".into(),
+            markdown: "# N\n\nNew.".into(),
+            frontmatter: Some(fm),
+        },
+        set_fm(
+            Target::Document {
+                id: Some("$new.0".into()),
+                path: None,
+            },
+            "owner",
+            json!("me"),
+        ),
+    ];
+    let plan = store.plan_effects(&ctx(&repo, T1), &effects, &ds).unwrap();
+    assert_eq!(
+        plan.to_json(false)["new_ids"],
+        json!([{ "symbol": "$new.0", "kind": "document" }]),
+        "the create's symbol; its blocks are the reconciling ingest's, not symbols"
+    );
+    let composed = "---\ntitle: N\nowner: me\n---\n\n# N\n\nNew.\n";
+    assert_eq!(
+        plan.opset.to_json()["creates"],
+        json!([{ "path": "notes/n.md", "source": composed }])
+    );
+    assert!(plan.opset.ops.is_empty(), "the set folded into the create");
+    assert_eq!(plan.preconditions.absent_paths, ["notes/n.md"]);
+    assert_eq!(
+        plan.effects[1].to_json()["target"],
+        json!({ "kind": "document", "id": "$new.0", "path": "notes/n.md" })
+    );
+    let preview = plan.preview.as_ref().unwrap();
+    assert_eq!(preview.revisions[0].id, "$new.0");
+    assert_eq!(preview.revisions[0].hash, hex(&sha256(composed.as_bytes())));
+    assert_eq!(
+        preview.diffs[0],
+        (
+            "notes/n.md".to_owned(),
+            (String::new(), composed.to_owned())
+        )
+    );
+    assert_eq!(store.mint("d").unwrap(), "d_1", "no document id burned");
+
+    let r = store
+        .execute_plan(&ctx(&repo, T1), &plan, &api_origin(), &mut ds)
+        .unwrap();
+    assert_eq!(r.to_json()["new_ids"], json!({ "$new.0": "d_2" }));
+    assert_eq!(r.revisions.len(), 1);
+    assert_eq!(r.revisions[0].doc, "d_2");
+    assert_eq!(r.revisions[0].path, "notes/n.md");
+    assert_eq!(ds.read("notes/n.md").unwrap().as_deref(), Some(composed));
+    assert_eq!(store.reconstruct("d_2").unwrap().as_deref(), Some(composed));
+    let ops: String = store
+        .conn()
+        .query_row(
+            "SELECT ops FROM commits WHERE commit_id = ?1",
+            params![r.commit],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert!(ops.contains("\"$new.0\""), "{ops}");
+    assert!(!ops.contains("d_2"), "{ops}");
+    // The same effects over the same state plan to the same digest.
+    let (mut other, repo_b, ds_b) = seeded(&[("a.md", FM_DOC)]);
+    let again = other
+        .plan_effects(&ctx(&repo_b, T1), &effects, &ds_b)
+        .unwrap();
+    assert_eq!(again.plan_id, plan.plan_id);
+}
+
+/// `$new.n` blocks: a later effect anchors on, and edits, a block an
+/// earlier insert minted — lowered through the kernel placeholder of the op
+/// that minted it; the receipt maps every block symbol (a discarded re-parse
+/// mint included) to the ids the replay minted, in order.
+#[test]
+fn new_blocks_are_referenced_through_kernel_placeholders() {
+    let (mut store, repo, mut ds) = seeded(&[("a.md", FM_DOC)]);
+    let effects = [
+        Fx::Insert {
+            into: doc_by_path("a.md"),
+            at: At::End,
+            markdown: "Para A.".into(),
+            expect: None,
+        },
+        Fx::Insert {
+            into: doc_by_path("a.md"),
+            at: At::After("$new.0".into()),
+            markdown: "Para B.".into(),
+            expect: None,
+        },
+        Fx::Set {
+            target: Target::Block {
+                id: "$new.0".into(),
+            },
+            field: "markdown".into(),
+            value: json!("Para A, edited."),
+            expect: None,
+        },
+    ];
+    let plan = store.plan_effects(&ctx(&repo, T1), &effects, &ds).unwrap();
+    let ops = plan.opset.to_json()["ops"].clone();
+    assert_eq!(ops[1]["to"]["at"], json!({ "after": "$0.ids[0]" }));
+    assert_eq!(ops[2]["block"], "$0.ids[0]");
+    assert!(ops[2].get("expect").is_none() || ops[2]["expect"]["content_hash"].is_string());
+    assert_eq!(
+        plan.preconditions.blocks.len(),
+        0,
+        "a $new block is not pinned"
+    );
+    assert_eq!(
+        plan.to_json(false)["new_ids"],
+        json!([
+            { "symbol": "$new.0", "kind": "block" },
+            { "symbol": "$new.1", "kind": "block" },
+            { "symbol": "$new.2", "kind": "block" },
+        ]),
+        "two inserts and the re-parse's discarded mint"
+    );
+    let r = store
+        .execute_plan(&ctx(&repo, T1), &plan, &api_origin(), &mut ds)
+        .unwrap();
+    assert_eq!(
+        r.to_json()["new_ids"],
+        json!({ "$new.0": "b_2", "$new.1": "b_3", "$new.2": "b_4" })
+    );
+    assert_eq!(
+        ds.read("a.md").unwrap().as_deref(),
+        Some("---\nstatus: open\n---\n\n# A\n\nAlpha.\n\nPara A, edited.\n\nPara B.\n")
+    );
+}
+
+/// Slice 2: `move document` with its inbound retarget is one plan and one
+/// commit — the row moves, the linking source is rewritten under the same
+/// commit (its hash pinned), the file is renamed; `remove document`
+/// tombstones in the same vocabulary.
+#[test]
+fn move_document_retargets_inbound_links_in_one_commit() {
+    let (mut store, repo, mut ds) = seeded(&[
+        ("a.md", "# A\n\nSee [b](b.md).\n"),
+        ("b.md", "# B\n\nBravo.\n"),
+    ]);
+    let effects = [Fx::MoveDocument {
+        target: doc_by_path("b.md"),
+        to: "notes/b.md".into(),
+        retarget_inbound: true,
+    }];
+    let plan = store.plan_effects(&ctx(&repo, T1), &effects, &ds).unwrap();
+    assert_eq!(plan.preconditions.absent_paths, ["notes/b.md"]);
+    assert_eq!(
+        plan.opset.to_json()["moves"],
+        json!([{ "id": "d_1", "from": "b.md", "to": "notes/b.md" }])
+    );
+    assert_eq!(
+        plan.opset.ops.len(),
+        1,
+        "one CAS-pinned update of a.md's paragraph"
+    );
+    assert!(matches!(
+        &plan.opset.ops[0],
+        Op::Update {
+            expect: Some(_),
+            ..
+        }
+    ));
+    assert_eq!(plan.preconditions.blocks.len(), 1);
+    assert_eq!(plan.preconditions.blocks[0].id, "b_1");
+    let docs: Vec<&str> = plan
+        .preconditions
+        .docs
+        .iter()
+        .map(|d| d.id.as_str())
+        .collect();
+    assert_eq!(
+        docs,
+        ["d_0", "d_1"],
+        "the source first (loaded), then the moved document"
+    );
+    let preview = plan.preview.as_ref().unwrap();
+    let paths: Vec<&str> = preview.diffs.iter().map(|(p, _)| p.as_str()).collect();
+    assert_eq!(paths, ["a.md", "b.md", "notes/b.md"]);
+    assert_eq!(preview.diffs[0].1.1, "# A\n\nSee [b](notes/b.md).\n");
+    assert_eq!(
+        preview.diffs[2].1,
+        (String::new(), "# B\n\nBravo.\n".to_owned())
+    );
+    // The retarget's `update` re-parses its markdown, minting one id the
+    // kernel then replaces by the target's: a mint with no block, a symbol
+    // all the same (§10).
+    assert_eq!(
+        plan.to_json(false)["new_ids"],
+        json!([{ "symbol": "$new.0", "kind": "block" }])
+    );
+
+    let r = store
+        .execute_plan(&ctx(&repo, T1), &plan, &api_origin(), &mut ds)
+        .unwrap();
+    assert_eq!(r.commit.as_deref(), Some("c_2"));
+    assert_eq!(
+        r.revisions.len(),
+        1,
+        "the rewritten source; a move alone has no revision"
+    );
+    assert_eq!(r.revisions[0].doc, "d_0");
+    assert_eq!(r.new_ids.len(), 1, "{:?}", r.new_ids);
+    assert_eq!(count(&store, "commits"), 3);
+    assert_eq!(
+        ds.read("a.md").unwrap().as_deref(),
+        Some("# A\n\nSee [b](notes/b.md).\n")
+    );
+    assert!(!ds.exists("b.md"));
+    assert_eq!(
+        ds.read("notes/b.md").unwrap().as_deref(),
+        Some("# B\n\nBravo.\n")
+    );
+    assert_eq!(
+        current_revs(&store),
+        vec![
+            ("a.md".into(), "r_2".into()),
+            ("notes/b.md".into(), "r_1".into())
+        ]
+    );
+
+    let EffectsOutcome::Receipt(r) = store
+        .apply_effects(
+            &ctx(&repo, T2),
+            &[Fx::RemoveDocument {
+                target: doc_by_path("notes/b.md"),
+            }],
+            &api_origin(),
+            &mut ds,
+            false,
+        )
+        .unwrap()
+    else {
+        panic!("receipt")
+    };
+    assert!(r.commit.is_some());
+    assert!(r.revisions.is_empty());
+    assert!(!ds.exists("notes/b.md"));
+    assert_eq!(store.reconstruct("d_1").unwrap(), None);
+    let _: Receipt = r;
 }

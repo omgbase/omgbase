@@ -125,6 +125,25 @@ export function repeatingMinter(): IdMinter {
   };
 }
 
+/** A mint observer (spec/mutate §11.6, 2.3): told every id `mintId` issues, in order. */
+export type MintObserver = (prefix: IdPrefix, id: string) => void;
+
+// The installed observers. The effect planner's `execute` records the `b`/`d`
+// ids a plan's replay mints so the receipt can zip them, in mint order, onto
+// the plan's symbolic `$new.n` identities — it observes what `mintId` RETURNS
+// (after the in-use check), never a rejected candidate.
+const observers = new Set<MintObserver>();
+
+/** Run `body` with `observer` told every id minted meanwhile (also under a nested `withIdMinter`). */
+export function observeMints<T>(observer: MintObserver, body: () => T): T {
+  observers.add(observer);
+  try {
+    return body();
+  } finally {
+    observers.delete(observer);
+  }
+}
+
 function inUse(prefix: IdPrefix, id: string, issued: Set<string>): boolean {
   if (issued.has(id)) return true;
   for (const oracle of oracles) if (oracle(prefix, id)) return true;
@@ -144,6 +163,7 @@ export function mintId(prefix: IdPrefix): string {
     const candidate = minter ? minter(prefix) : `${prefix}_${randomSuffix()}`;
     if (inUse(prefix, candidate, issued)) continue;
     issued.add(candidate);
+    for (const observer of observers) observer(prefix, candidate);
     return candidate;
   }
   throw new Error(

@@ -98,9 +98,12 @@ export class NullDocStore implements DocStore {
   read(): string | null {
     return null;
   }
-  write(): void {}
-  rename(): void {}
-  remove(): void {}
+  // Parameters spelled out so a subclass may override with the interface's
+  // signature (a zero-parameter base method makes `write(path, bytes)` an
+  // incompatible override under TS2416).
+  write(_path: string, _bytes: string): void {}
+  rename(_from: string, _to: string): void {}
+  remove(_path: string): void {}
   recordStat(): void {}
   clearStat(): void {}
 }

@@ -692,7 +692,7 @@ node's), `nodes_set { id }` and `nodes_block_read { id }` (the two tools that
 address `nodes` rows; the latter dereferences a node to its block, so each
 tool's `id` is unambiguously its namespace's kind — 3.0 follow-up, §9). A handful of repo-level operations
 have no kind prefix (`query`, `query_syntax`, `graph`, `changes_since`,
-`apply`, `observe*`, `repos*`, `sync_status`, `version`). One verb returns
+`apply`, `plan`, `execute` (3.1), `observe*`, `repos*`, `sync_status`, `version`). One verb returns
 the row: **`read`** (`docs_read`, `docs_read_many`, `docs_read_at`,
 `blocks_read`, `blocks_read_many`). No tool refers to a document of another
 kind, so no argument is a foreign key; were one added it would say `doc_id`
@@ -757,7 +757,9 @@ lookup — the id form is `blocks_append`. Block-level tools pin
 | `graph` | `roots[]`, `degrees? = 1`, `direction? = both`, `predicate?`, `select?[]`, `max_documents? = 200` | `{ roots, degrees, direction, documents: [{ id, path, degree, frontier, ...select }], links: [{ id, doc_id, block_id, via_id, dst_id, dst_path, uri, dst_kind, predicate, provenance, anchor, field }], frontier: [{ id, path, degree }], truncated, queries }` — compiled to `follow distinct out_links collect { from dst }` / `follow distinct in_links collect { from doc }` (the link rows walked to the documents at their other end, §1.2; `follow doc.out`/`doc.in` before the 3.0 follow-up) with `depth = degrees + 1` (≤ 8, so `degrees` clamps to 7 and the result reports the clamped value), roots depth 0; documents ordered bytewise by path (§9); a link row carries the `links` target's fields under their own names (§1.2, 3.0 — `edges[]` until the name pass, and before that a rename table spelled `src`/`dst`/`dst_uri`/`src_field`); an `id`/`path` selection collapses onto the envelope key exactly as a `query` hit's does, any other bare name is its own column (deduped by suffix) and an expression is `sel_<i>` — a `graph` selection can never overwrite the envelope |
 | `blocks_search` | `q`, `limit?` | `spec/search` §1.3 (`text_search` before 3.0): `{ hits: [{ id (the block), doc_id, path (reference form), type, text, score }], truncated }` |
 | `blocks_resolve` | `query`, `limit?` | `spec/search` §4 (`resolve` before 3.0; vector fused when a provider exists): `[{ id, locator, preview, evidence }]`, the `locator`'s path half in the reference form (`/a.md#paragraph[2]`) |
-| `apply` | `ops[]`, `reason?`, `dry_run?` | `spec/mutate` §4, `origin.actor = "agent:mcp"`: `{ results, revisions: [{ id, path, hash }], diffs?, committed }` — `revisions[].path` and the `diffs` keys in the reference form, `hash` the document's hash after the commit (the rendered bytes' sha256; the same shape as a `changes_since` revision, §3). Every mutating tool below returns this result |
+| `apply` | `ops[]` or `effects[]` (exactly one, else `filter_invalid` "pass exactly one of `ops` or `effects`" with `hint: "arguments"` — 3.1), `reason?`, `dry_run?` | with `ops`: `spec/mutate` §4, `origin.actor = "agent:mcp"`: `{ results, revisions: [{ id, path, hash }], diffs?, committed }` — `revisions[].path` and the `diffs` keys in the reference form, `hash` the document's hash after the commit (the rendered bytes' sha256; the same shape as a `changes_since` revision, §3). Every mutating tool below returns this result. With `effects` (3.1, `spec/mutate` §11.7): `dry_run` → the Plan exactly as `plan` returns it; without → plan + execute under the one tool-call lock and one transaction → the Receipt (below) |
+| `plan` | `effects[]` | (3.1) `spec/mutate` §11.6: the Plan `{ version, planner_v, effects, opset, preconditions, new_ids, plan_id, diagnostics, preview }` with `preview` included. **The executable core is returned verbatim in the storage form** — `effects[].target.path`, `preconditions.docs[].path`, `preconditions.absent_paths`, `opset.creates[].path`, `opset.moves[].from/to`, `opset.tombstones[].path` — because `plan_id` digests exactly those bytes and the client hands the object back to `execute` (the one result the path rule of §1 exempts, as `dangling[].target` is); only `preview.revisions[].path` and the `preview.diffs` keys are rooted. A malformed effect is `filter_invalid` (`hint: "arguments"`, the message naming `effects[i]` and the member), a contradiction `conflicting_effects`, a stale guard `stale_expectation` / `stale_plan` — `spec/mutate` §8/§11. Listed with the write tools: it runs under the lock like a dry run |
+| `execute` | `plan` (an object) or `plan_id` + `effects[]` (exactly one form, else `filter_invalid` "pass exactly one of `plan` or `plan_id` + `effects`"; half of the digest form → "the digest form needs both `plan_id` and `effects`"), `reason?` | (3.1) `spec/mutate` §11.7: the plan form admits (`unsupported_plan_version { version, supported: [1] }`, `filter_invalid`, `plan_mismatch { expected, actual }`) then commits; the digest form re-plans and commits on digest equality else `plan_mismatch`; the committed plan's preconditions re-validated in the transaction (`stale_plan`, retriable). The Receipt `{ plan_id, commit, revisions: [{ id, path, hash }], new_ids: { "$new.n": id }, committed: true }`, `revisions[].path` rooted; `origin.actor = "agent:mcp"` |
 | `blocks_insert` | `to`, `markdown`, `at? = end`, `expect? { parent_children_hash? }`, `dry_run?` | the apply result; `expect` is the destination-parent CAS of `spec/mutate` §1.2 (1.2) |
 | `blocks_update` | `id`, `markdown?`, `checked?`, `attrs?`, `expect?`, `dry_run?` | `{ id (the target block), ids, ...apply result }` (`checked` folds into attrs; `block` before 3.0) |
 | `blocks_move` | `blocks[]`, `to`, `at?`, `expect? { parent_children_hash? }`, `dry_run?` | a doc ref as `to` must be the blocks' own document, else `target_missing`; `expect` is the destination-parent CAS, checked once (1.2) |
@@ -949,7 +951,14 @@ The suite's cases call **every read tool** of §4 at least once over the
 corpus, and every writing tool at least once followed by reads that show
 its effect (a `blocks_update` then `docs_read`, `docs_history`,
 `changes_since`, `docs_diff`; a `docs_move` then `docs_tree`, `links_stale`; a
-`docs_create` then `graph`; …). `apply`'s file-CAS holds in the writing
+`docs_create` then `graph`; …). The effect layer (3.1) has three cases —
+`write-effects-plan-execute` (a `plan` whose `plan_id` the expectation
+pins, so the Rust planner must digest the identical core; `execute` in the
+digest form; a one-shot `apply { effects }` with a `create`), `write-effects-
+dry-run` (the Plan, and that it burns no id), `write-effects-stale-plan`
+(the plan form with the reference's full Plan authored into the call,
+refused `stale_plan` after a `blocks_update`; `plan_mismatch`,
+`unsupported_plan_version`, the argument-shape errors). `apply`'s file-CAS holds in the writing
 engine's working tree, so a write through one engine and a later read of
 `repos_status`/`sync_status` through the other exercises the sync tables
 (`file_stats`, checkpoints) both engines must maintain alike.
@@ -1162,6 +1171,17 @@ both and runs both harnesses.
 
 ## Decisions
 
+- 2026-10-12, surface 3.1: the effect layer's verbs (`spec/mutate` §11,
+  ADR-021) — `plan { effects }`, `execute { plan | plan_id + effects }`, and
+  `apply` gains `effects` as an alternative to `ops` (exactly one; the `ops`
+  path is byte-identical to 3.0). Two tools and one argument added: a
+  minor. 45 → 47 tools; `plan` and `execute` are write tools (the lock, the
+  pre-verb sweep). The Plan's executable core is returned in the storage
+  form (§4): it is a digest-covered artifact the client echoes back, not a
+  rendering of rows. Fixtures: the three §7 interop cases above;
+  `tool-descriptions.json` carries the 47 descriptions. The 21 write tools
+  are unchanged in this release (the migration onto `apply { effects }` is
+  the next phase).
 - 2026-10-11, surface 3.0 (the follow-up to the tool-name pass; Brendan's
   three decisions): **(1) `nodes_block_read { id, resolution? }`** — a new
   tool in the `nodes_*` namespace whose `id` is a NODE id (`n_…`); it

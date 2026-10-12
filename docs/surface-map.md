@@ -81,6 +81,9 @@ Legend: `--server` = is this CLI command remote-capable? ✅ wired · ▫️ pla
 | Operation | library | `omg` CLI | MCP tool | `--server` |
 |---|---|---|---|---|
 | Apply a changeset | `apply` | `apply` | `apply` | ✅ |
+| Plan an effect request (frozen plan, writes nothing) | `planEffects` | ⏳ `apply -f {effects} --dry-run` (migration phase) | `plan` | ✅ |
+| Execute a frozen plan | `executePlan` / `executeByDigest` | ⏳ `execute -f plan.json` (migration phase) | `execute` | ✅ |
+| Apply effects one-shot (plan + execute, one tx) | `applyEffects` | ⏳ `apply -f {effects}` (migration phase) | `apply { effects }` | ✅ |
 | Insert a block | `apply` ops | `insert` | `blocks_insert` | ✅ |
 | Update a block (CAS) | `apply` ops | `update` (b_ target) | `blocks_update` | ✅ |
 | Move block(s) | `apply` ops | `move` | `blocks_move` | ✅ |

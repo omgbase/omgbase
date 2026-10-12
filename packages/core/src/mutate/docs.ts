@@ -94,9 +94,11 @@ function underLock<T>(ctx: DocOpContext, fn: () => T): T {
   return ctx.omgbaseDir ? withWriterLock(ctx.omgbaseDir, fn) : fn();
 }
 
-function canonical(path: string): string {
+/** spec/mutate §6: the storage form of a document path — leading `/` stripped, `\` → `/`. */
+export function canonicalDocPath(path: string): string {
   return path.replace(/^\/+/, "").split("\\").join("/");
 }
+const canonical = canonicalDocPath;
 
 /** The one commit row a document operation records (spec/mutate §6). */
 function head(ctx: DocOpContext, reason: string): CommitHead {
@@ -107,8 +109,13 @@ function targets(ctx: DocOpContext, docStore: DocStore): CommitTargets {
   return { docStore, ...(ctx.omgbaseDir ? { omgbaseDir: ctx.omgbaseDir } : {}) };
 }
 
-// Compose a full document's bytes from optional frontmatter + body markdown.
-function composeFile(markdown: string, frontmatter?: Record<string, unknown>): string {
+/** Compose a full document's bytes from optional frontmatter + body markdown
+ *  (spec/mutate §6 `docs_create`): the body with a trailing `\n` ensured; a
+ *  non-empty frontmatter mapping becomes `---\n<yaml>\n---\n` followed by a
+ *  blank line unless the body already starts with one. The effect planner's
+ *  `set frontmatter.<k>` composes through this same function (§11.3), so its
+ *  bytes equal `docs_set_meta`'s for the same patch. */
+export function composeFile(markdown: string, frontmatter?: Record<string, unknown>): string {
   const body = markdown.endsWith("\n") || markdown.length === 0 ? markdown : markdown + "\n";
   if (!frontmatter || Object.keys(frontmatter).length === 0) return body;
   const yaml = stringifyYaml(frontmatter).replace(/\n$/, "");
@@ -222,9 +229,9 @@ function applyCtx(ctx: DocOpContext): { repoId: string; rootPath?: string; docSt
  * CAS-pinned `update` per deepest hit block, the blocks and docs it touches,
  * and the inbound links it leaves dangling. Pure over the store's current
  * blocks — the move itself changes no block — so the real move and its dry run
- * plan identically.
+ * plan identically. Exported for the effect planner's `move document` (§11.3).
  */
-function planInboundRetarget(store: Store, docId: string, fromPath: string, toRel: string, inbound: InboundLink[]): { ops: Op[]; blocks: string[]; docs: string[]; dangling: InboundLink[] } {
+export function planInboundRetarget(store: Store, docId: string, fromPath: string, toRel: string, inbound: InboundLink[]): { ops: Op[]; blocks: string[]; docs: string[]; dangling: InboundLink[] } {
   const byBlock = new Map<string, InboundLink>();
   for (const l of inbound) if (l.block_id !== null && !byBlock.has(l.block_id)) byBlock.set(l.block_id, l);
   // A container's raw includes its children's raw, so a link inside a list item
@@ -323,9 +330,10 @@ export function docsSetMeta(
   });
 }
 
-// Split a file's bytes into (frontmatter object, body markdown). Missing or
-// malformed frontmatter yields an empty object and the whole content as body.
-function splitFrontmatter(content: string): { frontmatter: Record<string, unknown>; body: string } {
+/** Split a file's bytes into (frontmatter object, body markdown) with
+ *  `^---\r?\n([\s\S]*?)\r?\n---\r?\n?` (spec/mutate §6). Missing or malformed
+ *  frontmatter yields an empty object and the whole content as body. */
+export function splitFrontmatter(content: string): { frontmatter: Record<string, unknown>; body: string } {
   const m = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/.exec(content);
   if (!m) return { frontmatter: {}, body: content };
   let fm: Record<string, unknown> = {};

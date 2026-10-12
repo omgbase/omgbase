@@ -5,8 +5,9 @@
 //! six kernel operations over it with placement addressing and
 //! compare-and-swap expectations ([`ops`]), the splice renderer with its
 //! dirty rules ([`render`]), changeset placeholder resolution
-//! ([`changeset`]), the whole-document lowering ([`lower`]) and the opset
-//! ([`opset`]). Every function here is pure: the store loads, applies,
+//! ([`changeset`]), the whole-document lowering ([`lower`]), the opset
+//! ([`opset`]) and the public effect vocabulary with its plan shape, conflict
+//! rules and digest ([`effects`], 2.3). Every function here is pure: the store loads, applies,
 //! commits, and hosts the macros and document operations.
 //!
 //! ```
@@ -24,6 +25,7 @@
 #![forbid(unsafe_code)]
 
 pub mod changeset;
+pub mod effects;
 pub mod error;
 pub mod lower;
 pub mod ops;
@@ -32,6 +34,12 @@ pub mod render;
 pub mod tree;
 
 pub use changeset::{Op, parse_placeholder, resolve_op, resolve_placeholder, resolve_to};
+pub use effects::{
+    Admission, ConflictTracker, Effect, EffectExpect, ExpectMap, Field, Focus, FocusInfo,
+    FocusTarget, NewId, NewIdKind, PLAN_VERSION, PLANNER_V, Plan, PlanCreate, PlanFrontmatter,
+    PlanMove, PlanOpset, PlanPreview, PlanRevision, PlanTombstone, Preconditions, Repair,
+    ScalarWrite, Target, canonical_json, classify_field, parse_new_symbol, shift_placeholders,
+};
 pub use error::{ErrorCode, MutationError, Result};
 pub use lower::{LowerResult, body_of, lcs, lower_replace, lower_top_level, strip_frontmatter};
 pub use omgbase_reconcile::Minter;
@@ -45,7 +53,7 @@ pub use render::{render, render_block};
 pub use tree::{BlockPath, MutBlock, MutDoc, child_ids, parent_children_hash, raw_hash_hex};
 
 /// The `spec/mutate/VERSION` this crate implements (`major.minor`).
-pub const SPEC_VERSION: &str = "2.2";
+pub const SPEC_VERSION: &str = "2.3";
 
 /// This crate's own version (`Cargo.toml`), for the surface's `version` tool.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

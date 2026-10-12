@@ -52,7 +52,7 @@ describe("MCP write tools under the workspace writer lock", () => {
   it("WRITE_TOOLS is the Rust catalog's `is_write_tool` list, and every name is a registered tool", async () => {
     // Mirrors crates/omgbase-surface/src/catalog.rs — change both or neither.
     expect([...WRITE_TOOLS].sort()).toEqual([
-      "apply", "blocks_insert", "blocks_update", "blocks_move", "blocks_remove", "blocks_split", "blocks_merge", "blocks_check",
+      "apply", "plan", "execute", "blocks_insert", "blocks_update", "blocks_move", "blocks_remove", "blocks_split", "blocks_merge", "blocks_check",
       "nodes_set", "blocks_append", "docs_append", "links_retarget", "links_repair",
       "docs_create", "docs_move", "docs_delete", "docs_set_meta", "docs_update",
       "observe", "observe_many", "observe_delete",

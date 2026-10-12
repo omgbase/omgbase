@@ -18,6 +18,7 @@ import { apply, type Op } from "../mutate/apply.js";
 import { tasksComplete, sectionsAppend, docsAppend, linksRetarget, linksRepair, nodeSet } from "../mutate/macros.js";
 import { docsCreate, docsMove, docsDelete, docsSetMeta } from "../mutate/docs.js";
 import { docsUpdate } from "../mutate/plan-update.js";
+import { applyEffects, executeByDigest, executePlan, planEffects, type Plan, type Receipt } from "../mutate/plan.js";
 import { renderOpsetPlan } from "../mutate/opset.js";
 import { historyNode, diffBlocks, docDiffUnified, changesSince, docHistory } from "../graph/history.js";
 import { linksStale, linksStaleSummary } from "../graph/link-health.js";
@@ -31,7 +32,7 @@ import { storagePath, referencePath } from "../core/paths.js";
 import { isContainerBlock } from "../format/index.js";
 import {
   surfaceApplyResult, surfaceDocOpResult, surfaceDocMoveResult, surfaceObserveResult, surfaceObserveDeleteResult,
-  surfaceTextSearch, surfaceResolveHits, surfaceRetargetHits, surfaceDocsUpdate,
+  surfaceTextSearch, surfaceResolveHits, surfaceRetargetHits, surfaceDocsUpdate, surfacePlan, surfaceReceipt,
 } from "../surface-paths.js";
 
 // MCP server (mcp-api). The full tool surface wired to the engine: read
@@ -148,6 +149,16 @@ const opSchema = z.discriminatedUnion("op", [
   z.object({ op: z.literal("merge"), blocks: z.array(z.string()), separator: z.string().optional(), expect: z.record(z.string(), expectSchema).optional() }),
 ]);
 
+// The public Effect vocabulary (spec/mutate §11, 2.3) — the `plan` / `execute` /
+// `apply.effects` grammar. The boundary schema is deliberately loose (an
+// object whose `op` is one of the nine): the planner's own `validateEffects`
+// checks every key, target kind and field spelling and reports the failure as
+// the same `filter_invalid { hint: "arguments" }` envelope, naming `effects[i]`
+// and the offending key — a message both engines compose from the spec.
+const effectSchema = z.looseObject({ op: z.enum(["create", "insert", "set", "unset", "move", "remove", "split", "merge", "retarget"]) }).describe(
+  "one effect: { op: \"create\", path, markdown, frontmatter? } | { op: \"insert\", into: Target, at?, markdown, expect? } | { op: \"set\", target, field, value, expect? } | { op: \"unset\", target, field, expect? } | { op: \"move\", target: document, to, retarget_inbound? } | { op: \"move\", targets: [block…], into, at?, expect? } | { op: \"remove\", target: document } | { op: \"remove\", targets: [block…], expect? } | { op: \"split\", target: block, at: [byte…], expect? } | { op: \"merge\", targets: [block…], separator?, expect? } | { op: \"retarget\", repairs: [{ from, to }], path_glob? }; Target = { kind: \"document\", id? | path? } | { kind: \"block\", id } | { kind: \"node\", id } | { kind: \"section\", heading_id }; any id may be $new.<n> for an identity an earlier effect creates",
+);
+
 type ToolResult = { content: { type: "text"; text: string }[]; isError?: true };
 
 function ok(payload: unknown): ToolResult {
@@ -172,7 +183,7 @@ export const PROVIDER_UNAVAILABLE_MESSAGE =
  * writer exactly as the write would.
  */
 export const WRITE_TOOLS: ReadonlySet<string> = new Set([
-  "apply",
+  "apply", "plan", "execute",
   "blocks_insert", "blocks_update", "blocks_move", "blocks_remove", "blocks_split", "blocks_merge", "blocks_check",
   "nodes_set", "blocks_append", "docs_append",
   "links_retarget", "links_repair",
@@ -736,9 +747,10 @@ export function buildServer(ctx: ServerContext): McpServer {
     "apply",
     {
       description:
-        "The only real writer. Applies a changeset of kernel ops (insert/update/move/remove/split/merge) atomically — all apply or none. Each op is a tagged object keyed by \"op\"; the block an op targets is named by its `block` (update/split) or `blocks` (move/remove/merge) field, never `id`/`target` (the op grammar is spec/mutate's, unchanged by the surface's `id`/`path` argument rule). Ops apply in order; later ops see earlier effects; minted ids are referenceable via \"$n.ids[i]\". Pass dry_run:true first for multi-doc changes to preview diffs. The result is `{ results: [{ ids, … }], revisions: [{ id, path, hash }], diffs?, committed }` — one revision per touched document with its hash after the change (the same shape a changes_since revision has). update/split/merge/remove take a CAS `expect.content_hash` — get it from docs_read include_ids (its `hashes` map) in the same read that gave you the ids, or use the ref-accepting block_* sugar (blocks_update/blocks_split/…) which pins it server-side. Conflicts carry current truth (`data.current.hash` + `markdown`) — including a missing/omitted expect.content_hash, whose error returns the current hash — so retry from the error, don't re-read.",
+        "The only real writer. Takes exactly one of two inputs. `effects` (preferred): an ORDERED list of intentional writes — `create insert set unset move remove split merge retarget` over documents, blocks, nodes and sections (the vocabulary `plan` documents) — planned and committed as ONE transaction with one commit: dry_run:true returns the frozen Plan (what `plan` returns; nothing written), without it the result is the Receipt `{ plan_id, commit, revisions: [{ id, path, hash }], new_ids: { \"$new.n\": id }, committed: true }`. `ops` (the kernel, legacy input): a changeset of kernel ops (insert/update/move/remove/split/merge) applied atomically — all apply or none. Each op is a tagged object keyed by \"op\"; the block an op targets is named by its `block` (update/split) or `blocks` (move/remove/merge) field, never `id`/`target` (the op grammar is spec/mutate's, unchanged by the surface's `id`/`path` argument rule). Ops apply in order; later ops see earlier effects; minted ids are referenceable via \"$n.ids[i]\". Pass dry_run:true first for multi-doc changes to preview diffs. The `ops` result is `{ results: [{ ids, … }], revisions: [{ id, path, hash }], diffs?, committed }` — one revision per touched document with its hash after the change (the same shape a changes_since revision has). update/split/merge/remove take a CAS `expect.content_hash` — get it from docs_read include_ids (its `hashes` map) in the same read that gave you the ids, or use the ref-accepting block_* sugar (blocks_update/blocks_split/…) which pins it server-side (effects pin it for you). Conflicts carry current truth (`data.current.hash` + `markdown`) — including a missing/omitted expect.content_hash, whose error returns the current hash — so retry from the error, don't re-read.",
       inputSchema: {
-        ops: z.array(opSchema),
+        ops: z.array(opSchema).optional(),
+        effects: z.array(effectSchema).optional(),
         reason: z.string().optional(),
         dry_run: z.boolean().optional(),
         ...REPO_ARG,
@@ -748,15 +760,74 @@ export function buildServer(ctx: ServerContext): McpServer {
       try {
         const { repoId, rootPath } = repoScope(args.repo);
         if (!rootPath) throw new EngineError("repo_not_found", "repo has no filesystem source; mutation disabled");
+        // Exactly one input (spec/surface §4, 3.1): the legacy kernel `ops` or the effects.
+        if ((args.ops === undefined) === (args.effects === undefined)) throw argumentError("apply", "pass exactly one of `ops` or `effects`", registry.get("apply")!.shape);
+        const origin = { actor: "agent:mcp", ...(args.reason ? { reason: args.reason } : {}) };
+        if (args.effects !== undefined) {
+          // `effects` + `dry_run` → the Plan (preview included); without → plan + execute
+          // under one lock and one transaction → the Receipt.
+          const res = applyEffects(store, { repoId, rootPath, effects: args.effects, origin, ...LOCK_DIR, ...(args.dry_run !== undefined ? { dryRun: args.dry_run } : {}) });
+          return args.dry_run ? ok(surfacePlan(res as Plan)) : okMutated(surfaceReceipt(res as Receipt));
+        }
         const res = surfaceApplyResult(apply(store, {
           repoId, rootPath,
           ops: args.ops as Op[],
-          origin: { actor: "agent:mcp", ...(args.reason ? { reason: args.reason } : {}) },
+          origin,
           ...LOCK_DIR,
           ...(args.dry_run !== undefined ? { dryRun: args.dry_run } : {}),
         }));
         // A dry run previews without writing — don't schedule a drain for it.
         return args.dry_run ? ok(res) : okMutated(res);
+      } catch (e) {
+        return fail(e);
+      }
+    },
+  );
+
+  // ---- the Effect layer's verbs (spec/mutate §11, spec/surface §4 — 3.1) ----
+  // `plan` reads only and returns the frozen Plan with its preview; `execute`
+  // commits exactly a plan (the plan form, or the digest form `plan_id` +
+  // `effects`); `apply { effects }` above is plan + execute in one call.
+
+  tool(
+    "plan",
+    {
+      description:
+        "Plan a write without writing: lower an ORDERED list of `effects` — the intentional-write vocabulary `create insert set unset move remove split merge retarget` over documents, blocks, nodes and sections (spec/mutate §11) — to the kernel ops and document operations they mean, check their preconditions now (a stale `expect` fails here as it would at commit), reject contradictory effects (`conflicting_effects`: two writes to one scalar with different values, an effect addressing a target an earlier one removed — an identical duplicate is dropped with a diagnostic), and return the frozen Plan: `{ version: 1, planner_v, effects (targets resolved; `$new.n` kept symbolic), opset, preconditions: { docs, blocks, parents, absent_paths }, new_ids: [{ symbol, kind }], plan_id, diagnostics, preview: { results, revisions, diffs } }`. `plan_id` is the sha256 of the plan's executable core, so an identical plan over identical state has the same id and a plan burns no real id (new identities are `$new.0, $new.1, …`, minted at execute and mapped in the receipt). Hand the whole Plan to `execute` (or just its `plan_id` with the same `effects`); nothing has expiry — the preconditions decide. Effect shapes: { op: \"create\", path, markdown, frontmatter? }, { op: \"insert\", into: Target, at? = \"end\", markdown, expect? }, { op: \"set\", target, field, value, expect? } (fields: a document's `frontmatter.<key>` or `content`, a block's `markdown` or `attrs.checked`, a node's editable property), { op: \"unset\", target: document, field: \"frontmatter.<key>\" }, { op: \"move\", target: document, to, retarget_inbound? = true }, { op: \"move\", targets: [block…], into, at?, expect? }, { op: \"remove\", target: document } | { targets: [block…], expect? }, { op: \"split\", target: block, at: [byte…] }, { op: \"merge\", targets: [block…], separator? }, { op: \"retarget\", repairs: [{ from, to }], path_glob? }; Target = { kind: \"document\", id? | path? } | { kind: \"block\", id } | { kind: \"node\", id } | { kind: \"section\", heading_id }; `expect` carries `content_hash`, `parent_children_hash` and/or the document's `revision`. Block content hashes you omit are pinned from the live rows. The plan's core keeps paths in the storage form (they are digested); only `preview` is rooted.",
+      inputSchema: { effects: z.array(effectSchema), ...REPO_ARG },
+    },
+    async (args) => {
+      try {
+        const { repoId, rootPath } = repoScope(args.repo);
+        if (!rootPath) throw new EngineError("repo_not_found", "repo has no filesystem source; mutation disabled");
+        return ok(surfacePlan(planEffects(store, { repoId, rootPath, effects: args.effects, ...LOCK_DIR })));
+      } catch (e) {
+        return fail(e);
+      }
+    },
+  );
+
+  tool(
+    "execute",
+    {
+      description:
+        "Commit exactly a plan made by `plan` (or by `apply { effects, dry_run: true }`), as one transaction with one commit. Two forms, exactly one of them: `plan` — the Plan object as returned (`preview` may be dropped; `version` other than 1 → `unsupported_plan_version`, an edited core whose digest no longer equals its `plan_id` → `plan_mismatch`); or `plan_id` + `effects` — the engine re-plans the effects and commits only when the new plan's digest equals `plan_id` (else `plan_mismatch { expected, actual }`: the effects or the documents they target changed). Every precondition the plan froze is re-validated inside the transaction; a document that moved on fails `stale_plan` (retriable: re-plan) with nothing written, and replaying an already executed plan fails the same way. Returns the Receipt `{ plan_id, commit, revisions: [{ id, path, hash }], new_ids: { \"$new.0\": \"b_…\", … }, committed: true }` — `new_ids` maps the plan's symbolic identities to the ids minted. The commit records the plan as its intent (`commits.ops`).",
+      inputSchema: { plan: z.record(z.string(), z.unknown()).optional(), plan_id: z.string().optional(), effects: z.array(effectSchema).optional(), reason: z.string().optional(), ...REPO_ARG },
+    },
+    async (args) => {
+      try {
+        const { repoId, rootPath } = repoScope(args.repo);
+        if (!rootPath) throw new EngineError("repo_not_found", "repo has no filesystem source; mutation disabled");
+        const shape = registry.get("execute")!.shape;
+        const planForm = args.plan !== undefined;
+        const digestForm = args.plan_id !== undefined || args.effects !== undefined;
+        if (planForm === digestForm) throw argumentError("execute", "pass exactly one of `plan` or `plan_id` + `effects`", shape);
+        if (digestForm && (args.plan_id === undefined || args.effects === undefined)) throw argumentError("execute", "the digest form needs both `plan_id` and `effects`", shape);
+        const origin = { actor: "agent:mcp", ...(args.reason ? { reason: args.reason } : {}) };
+        const receipt = planForm
+          ? executePlan(store, { repoId, rootPath, plan: args.plan, origin, ...LOCK_DIR })
+          : executeByDigest(store, { repoId, rootPath, planId: args.plan_id!, effects: args.effects, origin, ...LOCK_DIR });
+        return okMutated(surfaceReceipt(receipt));
       } catch (e) {
         return fail(e);
       }

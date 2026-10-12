@@ -30,6 +30,10 @@ pub enum Error {
         /// How many consecutive candidates were in use.
         rejected: usize,
     },
+    /// An effect a plan cannot read (`spec/mutate` §11): a malformed shape,
+    /// a field no target kind has, a value of the wrong type. The surface
+    /// reports it as `filter_invalid`.
+    InvalidEffect(String),
     /// Anything else, with a message.
     Other(String),
 }
@@ -50,6 +54,7 @@ impl fmt::Display for Error {
                 f,
                 "mint({prefix}): {rejected} consecutive candidates were already in use; the minter cannot produce a fresh id"
             ),
+            Error::InvalidEffect(msg) => write!(f, "invalid effect: {msg}"),
             Error::Other(msg) => f.write_str(msg),
         }
     }

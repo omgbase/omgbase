@@ -17,7 +17,7 @@ use crate::error::{Error, Result};
 use crate::links::{glob_clause, rewrite_link_destinations, split_destination};
 use crate::read::blob_text;
 
-fn raw_hash_of_block(conn: &Connection, block_id: &str) -> Result<Option<String>> {
+pub(crate) fn raw_hash_of_block(conn: &Connection, block_id: &str) -> Result<Option<String>> {
     let h: Option<Vec<u8>> = conn
         .query_row(
             "SELECT raw_hash FROM blocks WHERE block_id = ?1 AND deleted_commit IS NULL",

@@ -2,7 +2,8 @@
 //
 //   runCase()               §9: run a mutation script — the spec/store §9.4 observation-script
 //                           shape plus the `apply` / `macro` / `docs` / `plan` / `disk` /
-//                           `materialize` steps and the `crash_after_commit` modifier —
+//                           `materialize` steps, the effect layer's `plan_effects` / `execute` /
+//                           `apply_effects` / `canonical` steps (§11, 2.3) and the `crash_after_commit` modifier —
 //                           through the production write paths against a fresh `:memory:` store
 //                           and an in-memory doc store, check the invariants after every step,
 //                           project `files` + the store tables
@@ -38,6 +39,7 @@ import { docsCreate, docsDelete, docsMove, docsSetMeta, type DocOpContext } from
 import { listPending, materializePending } from "../../src/mutate/materialize.js";
 import { applyOpset, planUpdate } from "../../src/mutate/plan-update.js";
 import type { Opset } from "../../src/mutate/opset.js";
+import { applyEffects, canonicalJson, executeByDigest, executePlan, planEffects, type Plan, type Receipt } from "../../src/mutate/plan.js";
 import { toReconcileConfig, deepEqualTol, type FixtureConfig } from "../reconcile/fixture.js";
 import {
   FIXTURE_REPO_SLUG, TS_RE, checkInvariants, projectStore, toOutcome, validateSteps,
@@ -124,12 +126,46 @@ export interface DiskStep {
   source: string;
 }
 
+/** README §9 (2.3): `plan { effects }` → the Plan minus `preview`, or the error. */
+export interface PlanEffectsStep {
+  effects: unknown[];
+}
+
+/** README §9 (2.3): `execute` in the plan form (`plan_step` names an earlier `plan_effects` /
+ *  dry-run `apply_effects` step whose plan is executed; `plan` is an authored plan object) or the
+ *  digest form (`plan_id` + `effects`) → the Receipt, or the error. */
+export interface ExecuteStep extends Crashable {
+  ts: string;
+  plan_step?: number;
+  plan?: Record<string, unknown>;
+  plan_id?: string;
+  effects?: unknown[];
+  origin: Origin;
+}
+
+/** README §9 (2.3): `apply { effects }` → the Plan minus `preview` (`dry_run`) or the Receipt, or the error. */
+export interface ApplyEffectsStep extends Crashable {
+  ts: string;
+  effects: unknown[];
+  origin: Origin;
+  dry_run?: boolean;
+}
+
+/** README §9 (2.3): the canonical JSON of `value` and its sha256 — the digest vectors (§11.5). */
+export interface CanonicalStep {
+  value: unknown;
+}
+
 export type Step =
   | StoreStep
   | { apply: ApplyStep }
   | { macro: MacroStep }
   | { docs: DocsStep }
   | { plan: PlanStep }
+  | { plan_effects: PlanEffectsStep }
+  | { execute: ExecuteStep }
+  | { apply_effects: ApplyEffectsStep }
+  | { canonical: CanonicalStep }
   | { disk: DiskStep }
   /** README §9 (2.2): replay every pending materialization row through the doc store → `{ materialized: [path…] }` */
   | { materialize: Record<string, never> };
@@ -139,9 +175,14 @@ export interface CrashOutcome {
   crashed_after_commit: true;
 }
 
-/** `{ code, op_index?, block?, current?, retriable? }` — README §8's pinned data fields. */
+/** `{ code, op_index?, block?, current?, retriable? }` — README §8's pinned data fields — plus the
+ *  effect layer's (2.3): `effect_index`, `effects`, `focus`, `symbol`, `version`, `supported`, `expected`, `actual`. */
 export interface ErrorOutcome {
-  error: { code: string; op_index?: number; block?: string; current?: Record<string, unknown>; retriable?: boolean };
+  error: {
+    code: string; op_index?: number; block?: string; current?: Record<string, unknown>; retriable?: boolean;
+    effect_index?: number; effects?: number[]; focus?: Record<string, unknown>; symbol?: string;
+    version?: unknown; supported?: unknown[]; expected?: string; actual?: string;
+  };
 }
 
 export interface ApplyOutcome {
@@ -303,7 +344,21 @@ export function errorOutcome(e: unknown): ErrorOutcome {
     error.current = current;
   }
   if (typeof d.retriable === "boolean") error.retriable = d.retriable;
+  if (typeof d.effect_index === "number") error.effect_index = d.effect_index;
+  if (Array.isArray(d.effects)) error.effects = d.effects as number[];
+  if (isRecord(d.focus)) error.focus = d.focus;
+  if (typeof d.symbol === "string") error.symbol = d.symbol;
+  if ("version" in d) error.version = d.version;
+  if (Array.isArray(d.supported)) error.supported = d.supported;
+  if (typeof d.expected === "string") error.expected = d.expected;
+  if (typeof d.actual === "string") error.actual = d.actual;
   return { error };
+}
+
+/** A Plan as the fixture records it (README §11.4): everything but `preview`. */
+export function planOutcome(plan: Plan): Record<string, unknown> {
+  const { preview: _preview, ...rest } = plan;
+  return rest;
 }
 
 /** An opset as the fixture records it (README §7): snake_case precondition/matcher, fixture-spelled ops. */
@@ -346,6 +401,8 @@ interface Runner {
   /** paths a `disk` step rewrote that no commit has ingested yet (the store may lag them) */
   pendingDisk: Set<string>;
   config: ReturnType<typeof toReconcileConfig>;
+  /** the full plan (preview included) each `plan_effects` / dry-run `apply_effects` step produced, by step index */
+  plans: Map<number, Plan>;
 }
 
 /**
@@ -358,11 +415,11 @@ export function runCase(c: FixtureCaseInput): Evaluation {
   return withFixtureMinter(() => {
     const store = new Store({ path: ":memory:" });
     try {
-      const r: Runner = { store, repoId: ensureRepo(store, FIXTURE_REPO_SLUG, null), docStore: new MemoryDocStore(), pendingDisk: new Set(), config: toReconcileConfig(c.config) };
+      const r: Runner = { store, repoId: ensureRepo(store, FIXTURE_REPO_SLUG, null), docStore: new MemoryDocStore(), pendingDisk: new Set(), config: toReconcileConfig(c.config), plans: new Map() };
       const steps: StepOutcome[] = [];
       const problems: string[] = [];
       c.steps.forEach((step, i) => {
-        steps.push(runStep(r, step));
+        steps.push(runStep(r, step, i));
         for (const p of checkAll(r)) problems.push(`after step ${i}: ${p}`);
       });
       for (const p of checkAll(r)) problems.push(`at end: ${p}`);
@@ -381,7 +438,7 @@ export function runCase(c: FixtureCaseInput): Evaluation {
   });
 }
 
-function runStep(r: Runner, step: Step): StepOutcome {
+function runStep(r: Runner, step: Step, index = -1): StepOutcome {
   if ("observe" in step) {
     const items = step.observe.items.map((it) => ({ path: it.path, content: it.source }));
     const outcomes = observeBatch(r.store, r.repoId, items, step.observe.ts, { config: r.config });
@@ -403,7 +460,55 @@ function runStep(r: Runner, step: Step): StepOutcome {
   if ("apply" in step) return crashable(r, step.apply, () => runApply(r, step.apply));
   if ("macro" in step) return crashable(r, step.macro, () => runMacro(r, step.macro));
   if ("docs" in step) return crashable(r, step.docs, () => runDocs(r, step.docs));
+  if ("plan_effects" in step) return runPlanEffects(r, step.plan_effects, index);
+  if ("execute" in step) return crashable(r, step.execute, () => runExecute(r, step.execute));
+  if ("apply_effects" in step) return crashable(r, step.apply_effects, () => runApplyEffects(r, step.apply_effects, index));
+  if ("canonical" in step) {
+    const json = canonicalJson(step.canonical.value);
+    return { json, digest: sha256(json).toString("hex") };
+  }
   return runPlan(r, step.plan);
+}
+
+// ---- the effect layer (README §9, 2.3) ----
+
+function runPlanEffects(r: Runner, s: PlanEffectsStep, index: number): StepOutcome {
+  try {
+    const plan = planEffects(r.store, { repoId: r.repoId, docStore: r.docStore, effects: s.effects });
+    r.plans.set(index, plan);
+    return { plan: planOutcome(plan) };
+  } catch (e) {
+    return errorOutcome(e);
+  }
+}
+
+function receiptOutcome(receipt: Receipt): StepOutcome {
+  return { receipt };
+}
+
+function runExecute(r: Runner, s: ExecuteStep): StepOutcome {
+  const base = { repoId: r.repoId, docStore: r.docStore, origin: s.origin, ts: s.ts };
+  try {
+    if (s.plan_id !== undefined) return receiptOutcome(executeByDigest(r.store, { ...base, planId: s.plan_id, effects: s.effects }));
+    const plan = s.plan ?? r.plans.get(s.plan_step!);
+    if (plan === undefined) throw new Error(`execute: step ${s.plan_step} produced no plan`);
+    return receiptOutcome(executePlan(r.store, { ...base, plan }));
+  } catch (e) {
+    return errorOutcome(e);
+  }
+}
+
+function runApplyEffects(r: Runner, s: ApplyEffectsStep, index: number): StepOutcome {
+  try {
+    const res = applyEffects(r.store, { repoId: r.repoId, docStore: r.docStore, effects: s.effects, origin: s.origin, ts: s.ts, ...(s.dry_run !== undefined ? { dryRun: s.dry_run } : {}) });
+    if (s.dry_run) {
+      r.plans.set(index, res as Plan);
+      return { plan: planOutcome(res as Plan) };
+    }
+    return receiptOutcome(res as Receipt);
+  } catch (e) {
+    return errorOutcome(e);
+  }
 }
 
 // `crash_after_commit`: the doc store's next file operation dies. The commit
@@ -656,6 +761,46 @@ export const EXTRA_STEPS: Record<string, ExtraStepValidator> = {
   disk: validateDisk,
   materialize: (body, here, problems) => {
     if (!isRecord(body) || Object.keys(body).length > 0) problems.push(`${here}: \`materialize\` takes an empty object`);
+  },
+  plan_effects: (body, here, problems) => {
+    if (!isRecord(body)) {
+      problems.push(`${here}: not an object`);
+      return;
+    }
+    onlyKeys(body, ["effects"], here, problems);
+    if (!Array.isArray(body.effects)) problems.push(`${here}: \`effects\` must be an array`);
+  },
+  execute: (body, here, problems) => {
+    if (!isRecord(body)) {
+      problems.push(`${here}: not an object`);
+      return;
+    }
+    onlyKeys(body, ["ts", "plan_step", "plan", "plan_id", "effects", "origin", "crash_after_commit"], here, problems);
+    requireTs(body, here, problems);
+    requireOrigin(body.origin, here, problems);
+    crashFlag(body, here, problems);
+    const planForm = body.plan_step !== undefined || body.plan !== undefined;
+    const digestForm = body.plan_id !== undefined || body.effects !== undefined;
+    if (planForm === digestForm) problems.push(`${here}: exactly one of \`plan_step\` / \`plan\` (the plan form) or \`plan_id\` + \`effects\` (the digest form)`);
+    if (body.plan_step !== undefined && body.plan !== undefined) problems.push(`${here}: \`plan_step\` and \`plan\` are alternatives`);
+    if (body.plan_step !== undefined && typeof body.plan_step !== "number") problems.push(`${here}: \`plan_step\` must be a step index`);
+    if (body.plan !== undefined && !isRecord(body.plan)) problems.push(`${here}: \`plan\` must be an object`);
+    if (digestForm && (typeof body.plan_id !== "string" || !Array.isArray(body.effects))) problems.push(`${here}: the digest form needs \`plan_id\` (a string) and \`effects\` (an array)`);
+  },
+  apply_effects: (body, here, problems) => {
+    if (!isRecord(body)) {
+      problems.push(`${here}: not an object`);
+      return;
+    }
+    onlyKeys(body, ["ts", "effects", "origin", "dry_run", "crash_after_commit"], here, problems);
+    requireTs(body, here, problems);
+    if (!Array.isArray(body.effects)) problems.push(`${here}: \`effects\` must be an array`);
+    requireOrigin(body.origin, here, problems);
+    crashFlag(body, here, problems);
+    if (body.dry_run !== undefined && typeof body.dry_run !== "boolean") problems.push(`${here}: \`dry_run\` must be a boolean`);
+  },
+  canonical: (body, here, problems) => {
+    if (!isRecord(body) || !("value" in body) || Object.keys(body).length !== 1) problems.push(`${here}: \`canonical\` takes exactly \`value\``);
   },
 };
 

@@ -113,6 +113,7 @@ impl From<omgbase_store::Error> for SurfaceError {
         match e {
             omgbase_store::Error::Mutation(m) => Self::from(m),
             omgbase_store::Error::Search(s) => Self::new(s.code(), s.to_string()),
+            omgbase_store::Error::InvalidEffect(m) => Self::filter_invalid(m, "arguments"),
             other => Self::other(other.to_string()),
         }
     }

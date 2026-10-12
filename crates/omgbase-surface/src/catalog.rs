@@ -19,10 +19,11 @@ use omgbase_format::text::{normalize_text, normalize_visible_text};
 use omgbase_reconcile::Config;
 use omgbase_search::EmbeddingProvider;
 use omgbase_store::docs_ops::diffs_json;
+use omgbase_store::mutate_kernel::effects::Admission;
 use omgbase_store::mutate_kernel::{At, Op, Parent, To};
 use omgbase_store::{
-    ApplyOrigin, ApplyRequest, ApplyResult, DocOpContext, DocStore, Expect, FsDocStore, Opset,
-    QueryVector, Store,
+    ApplyOrigin, ApplyRequest, ApplyResult, DocOpContext, DocStore, EffectsOutcome, Expect,
+    FsDocStore, Opset, Plan, PlanContext, PublicEffect, QueryVector, Receipt, Store,
 };
 use omgbase_sync::{RealFileSystem, RepoRow};
 use rusqlite::{OptionalExtension, params};
@@ -236,6 +237,10 @@ fn expect_schema() -> Json {
 /// `spec/mutate` §1.2: only `parent_children_hash` has a meaning there (no
 /// target block whose content could be checked), so the schema names that
 /// key alone, as the reference's `parentExpectSchema`.
+fn effects_schema() -> Json {
+    json!({ "type": "array", "items": { "type": "object" } })
+}
+
 fn parent_expect_schema() -> Json {
     json!({ "type": "object", "properties": { "parent_children_hash": { "type": "string" } } })
 }
@@ -420,10 +425,30 @@ fn build_catalog() -> Vec<ToolSpec> {
                         "ops",
                         json!({ "type": "array", "items": { "type": "object" } }),
                     ),
+                    ("effects", effects_schema()),
                     ("reason", s()),
                     ("dry_run", b()),
                 ],
-                &["ops"],
+                &[],
+                true,
+            ),
+        },
+        ToolSpec {
+            name: "plan",
+            description: d::PLAN,
+            input_schema: schema(&[("effects", effects_schema())], &["effects"], true),
+        },
+        ToolSpec {
+            name: "execute",
+            description: d::EXECUTE,
+            input_schema: schema(
+                &[
+                    ("plan", obj()),
+                    ("plan_id", s()),
+                    ("effects", effects_schema()),
+                    ("reason", s()),
+                ],
+                &[],
                 true,
             ),
         },
@@ -856,6 +881,8 @@ impl Surface {
         matches!(
             name,
             "apply"
+                | "plan"
+                | "execute"
                 | "blocks_insert"
                 | "blocks_update"
                 | "blocks_move"
@@ -1255,6 +1282,14 @@ impl Surface {
         Ok(res)
     }
 
+    fn plan_ctx(&mut self, repo_id: &str) -> PlanContext {
+        PlanContext {
+            repo_id: repo_id.to_owned(),
+            ts: self.now(),
+            config: self.config.clone(),
+        }
+    }
+
     fn doc_ctx(&mut self, repo_id: &str) -> DocOpContext {
         DocOpContext {
             repo_id: repo_id.to_owned(),
@@ -1496,6 +1531,34 @@ impl Surface {
             "apply" => {
                 let (repo, root) = self.scope(args)?;
                 self.require_root(root.as_deref())?;
+                // §11: `ops` (the kernel changeset) or `effects` (the planner),
+                // exactly one.
+                let (has_ops, has_effects) =
+                    (args.get("ops").is_some(), args.get("effects").is_some());
+                if has_ops == has_effects {
+                    return Err(argument_error(
+                        name,
+                        "pass exactly one of `ops` or `effects`",
+                        &spec.input_schema,
+                    ));
+                }
+                if has_effects {
+                    let effects = parse_effects(&args["effects"])?;
+                    let dry = arg_bool(args, "dry_run")?.unwrap_or(false);
+                    let reason = arg_str(args, "reason").map(str::to_owned);
+                    let origin = ApplyOrigin::new(&self.actor, reason.as_deref());
+                    let ctx = self.plan_ctx(&repo);
+                    let out = self.with_writes(root.as_deref(), |store, ds| {
+                        Ok(store.apply_effects(&ctx, &effects, &origin, ds, dry)?)
+                    })?;
+                    return Ok(match out {
+                        EffectsOutcome::Plan(plan) => plan_json(&plan),
+                        EffectsOutcome::Receipt(receipt) => {
+                            self.notify();
+                            receipt_json(&receipt)
+                        }
+                    });
+                }
                 let ops = args
                     .get("ops")
                     .and_then(Json::as_array)
@@ -1520,6 +1583,62 @@ impl Surface {
                     self.notify();
                 }
                 Ok(apply_json(&res))
+            }
+            "plan" => {
+                let (repo, root) = self.scope(args)?;
+                self.require_root(root.as_deref())?;
+                let effects = parse_effects(&args["effects"])?;
+                let ctx = self.plan_ctx(&repo);
+                let plan = self.with_writes(root.as_deref(), |store, ds| {
+                    Ok(store.plan_effects(&ctx, &effects, ds)?)
+                })?;
+                Ok(plan_json(&plan))
+            }
+            "execute" => {
+                let (repo, root) = self.scope(args)?;
+                self.require_root(root.as_deref())?;
+                let reason = arg_str(args, "reason").map(str::to_owned);
+                let origin = ApplyOrigin::new(&self.actor, reason.as_deref());
+                let ctx = self.plan_ctx(&repo);
+                // §4 (3.1): exactly one form — the plan, or `plan_id` + `effects`.
+                let plan_form = args.get("plan").is_some();
+                let digest_form = args.get("plan_id").is_some() || args.get("effects").is_some();
+                if plan_form == digest_form {
+                    return Err(argument_error(
+                        name,
+                        "pass exactly one of `plan` or `plan_id` + `effects`",
+                        &spec.input_schema,
+                    ));
+                }
+                let receipt = if plan_form {
+                    let plan = match Plan::admit(&args["plan"]) {
+                        Ok(plan) => plan,
+                        Err(Admission::Refused(m)) => return Err(SurfaceError::from(m)),
+                        Err(Admission::Invalid(m)) => {
+                            return Err(SurfaceError::filter_invalid(m, "arguments"));
+                        }
+                    };
+                    self.with_writes(root.as_deref(), |store, ds| {
+                        Ok(store.execute_plan(&ctx, &plan, &origin, ds)?)
+                    })?
+                } else {
+                    let (Some(plan_id), Some(effects)) =
+                        (arg_str(args, "plan_id"), args.get("effects"))
+                    else {
+                        return Err(argument_error(
+                            name,
+                            "the digest form needs both `plan_id` and `effects`",
+                            &spec.input_schema,
+                        ));
+                    };
+                    let effects = parse_effects(effects)?;
+                    let plan_id = plan_id.to_owned();
+                    self.with_writes(root.as_deref(), |store, ds| {
+                        Ok(store.execute_by_digest(&ctx, &plan_id, &effects, &origin, ds)?)
+                    })?
+                };
+                self.notify();
+                Ok(receipt_json(&receipt))
             }
             "blocks_insert" => {
                 let (repo, root) = self.scope(args)?;
@@ -2327,6 +2446,44 @@ pub fn apply_json(res: &ApplyResult) -> Json {
     Json::Object(m)
 }
 
+/// The `effects` argument (`spec/mutate` §11.1): a malformed effect is
+/// `filter_invalid { reason, hint: "arguments" }` naming `effects[i]`.
+fn parse_effects(v: &Json) -> Result<Vec<PublicEffect>> {
+    PublicEffect::list_from_json(v).map_err(|m| SurfaceError::filter_invalid(m, "arguments"))
+}
+
+/// A plan on the wire (`spec/mutate` §11): the digest-covered core as the
+/// planner wrote it — a client echoes it back to `execute`, so no key moves
+/// — and, under §1 "Paths", the preview's `revisions[].path` and `diffs`
+/// keys in the reference form.
+#[must_use]
+pub fn plan_json(plan: &Plan) -> Json {
+    let mut v = plan.to_json(true);
+    if let Some(preview) = v.get_mut("preview").and_then(Json::as_object_mut) {
+        if let Some(revs) = preview.get_mut("revisions").and_then(Json::as_array_mut) {
+            for r in revs {
+                root_field(r, "path");
+            }
+        }
+        if let Some(diffs) = preview.get_mut("diffs") {
+            *diffs = reference_keyed(diffs);
+        }
+    }
+    v
+}
+
+/// A receipt on the wire: `revisions[].path` in the reference form.
+#[must_use]
+pub fn receipt_json(receipt: &Receipt) -> Json {
+    let mut v = receipt.to_json();
+    if let Some(revs) = v.get_mut("revisions").and_then(Json::as_array_mut) {
+        for r in revs {
+            root_field(r, "path");
+        }
+    }
+    v
+}
+
 /// A dangling inbound link as an edge row (`spec/surface` §4 `docs_move`, 3.0):
 /// `{ doc_id, path, block_id, target, anchor, field? }` — the source `path`
 /// rooted, the `target` as authored.
@@ -2610,6 +2767,8 @@ mod tests {
             "blocks_search",
             "blocks_resolve",
             "apply",
+            "plan",
+            "execute",
             "blocks_insert",
             "blocks_update",
             "blocks_move",
@@ -2644,10 +2803,131 @@ mod tests {
         ] {
             assert!(names.contains(&want), "missing {want}");
         }
-        assert_eq!(names.len(), 45);
+        assert_eq!(names.len(), 47);
         for t in tools() {
             assert_eq!(t.input_schema["type"], "object");
         }
+    }
+
+    /// `spec/mutate` §11 at the surface: `plan` returns the frozen plan with
+    /// a rooted preview, `execute` commits it (receipt with rooted paths),
+    /// `apply` takes `ops` or `effects` (exactly one) and `effects` +
+    /// `dry_run` is the plan; `execute` needs a plan or a digest + effects.
+    #[test]
+    fn plan_execute_and_apply_effects_round_trip() {
+        let mut s = surface();
+        let out = s.call(
+            "observe",
+            json!({ "path": "a.md", "content": "---\nstatus: open\n---\n\n# A\n\nAlpha.\n" }),
+        );
+        assert!(!out.is_error, "{}", out.body);
+        let effects = json!([
+            { "op": "set", "target": { "kind": "document", "path": "/a.md" }, "field": "frontmatter.status", "value": "done" },
+            { "op": "insert", "into": { "kind": "section", "heading_id": "b_0" }, "markdown": "Tail." },
+        ]);
+        let plan = s.call("plan", json!({ "effects": effects }));
+        assert!(!plan.is_error, "{}", plan.body);
+        let plan = plan.body;
+        assert_eq!(plan["version"], 1);
+        assert_eq!(plan["plan_id"].as_str().map(str::len), Some(64));
+        assert_eq!(
+            plan["effects"][0]["target"],
+            json!({ "kind": "document", "id": "d_0", "path": "a.md" }),
+            "the core keeps storage paths"
+        );
+        assert_eq!(
+            plan["preview"]["revisions"][0]["path"], "/a.md",
+            "the preview is rooted"
+        );
+        assert!(
+            plan["preview"]["diffs"].get("/a.md").is_some(),
+            "{}",
+            plan["preview"]["diffs"]
+        );
+        assert_eq!(
+            plan["new_ids"],
+            json!([{ "symbol": "$new.0", "kind": "block" }])
+        );
+        // A dry-run apply with effects is the same plan.
+        let dry = s.call("apply", json!({ "effects": effects, "dry_run": true }));
+        assert!(!dry.is_error, "{}", dry.body);
+        assert_eq!(dry.body["plan_id"], plan["plan_id"]);
+        // Exactly one of ops / effects.
+        let both = s.call("apply", json!({ "ops": [], "effects": effects }));
+        assert!(both.is_error);
+        assert_eq!(both.body["error"], "filter_invalid");
+        assert_eq!(both.body["data"]["hint"], "arguments");
+        let neither = s.call("apply", json!({}));
+        assert!(neither.is_error);
+        assert_eq!(neither.body["data"]["hint"], "arguments");
+        let bad = s.call("apply", json!({ "effects": [{ "op": "nope" }] }));
+        assert!(bad.is_error);
+        assert_eq!(bad.body["error"], "filter_invalid");
+        assert_eq!(bad.body["data"]["hint"], "arguments");
+        assert!(
+            bad.body["message"]
+                .as_str()
+                .unwrap()
+                .starts_with("effects[0]:"),
+            "{}",
+            bad.body
+        );
+        // `execute` needs a plan or a digest + effects.
+        let empty = s.call("execute", json!({}));
+        assert!(empty.is_error);
+        assert_eq!(empty.body["data"]["hint"], "arguments");
+        // The plan, echoed back without its preview, commits.
+        let mut echoed = plan.clone();
+        echoed.as_object_mut().unwrap().remove("preview");
+        let receipt = s.call("execute", json!({ "plan": echoed, "reason": "slice 1" }));
+        assert!(!receipt.is_error, "{}", receipt.body);
+        assert_eq!(receipt.body["plan_id"], plan["plan_id"]);
+        assert_eq!(receipt.body["committed"], true);
+        assert_eq!(receipt.body["commit"], "c_1");
+        assert_eq!(receipt.body["revisions"][0]["path"], "/a.md");
+        assert_eq!(receipt.body["new_ids"], json!({ "$new.0": "b_2" }));
+        let read = s.call("docs_read", json!({ "path": "a.md" }));
+        assert_eq!(
+            read.body["raw"],
+            "---\nstatus: done\n---\n\n# A\n\nAlpha.\n\nTail.\n"
+        );
+        // A replay is stale; the digest form with the same effects re-plans.
+        let again = s.call("execute", json!({ "plan": echoed }));
+        assert!(again.is_error);
+        assert_eq!(again.body["error"], "stale_plan");
+        assert_eq!(again.body["retriable"], true);
+        let digest = s.call(
+            "execute",
+            json!({ "plan_id": plan["plan_id"], "effects": effects }),
+        );
+        assert!(digest.is_error);
+        assert_eq!(digest.body["error"], "plan_mismatch", "{}", digest.body);
+        let half = s.call("execute", json!({ "plan_id": plan["plan_id"] }));
+        assert!(half.is_error);
+        assert!(
+            half.body["message"]
+                .as_str()
+                .unwrap()
+                .starts_with("the digest form needs both"),
+            "{}",
+            half.body
+        );
+        let v2 = s.call(
+            "execute",
+            json!({ "plan": { "version": 2, "plan_id": "x" } }),
+        );
+        assert_eq!(v2.body["error"], "unsupported_plan_version", "{}", v2.body);
+        let ops_count: i64 = s
+            .store()
+            .conn()
+            .query_row(
+                "SELECT count(*) FROM commits WHERE ops IS NOT NULL",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(ops_count, 1, "the effect commit recorded its intent");
+        assert!(Surface::is_write_tool("plan") && Surface::is_write_tool("execute"));
     }
 
     #[test]

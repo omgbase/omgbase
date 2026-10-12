@@ -152,11 +152,11 @@ impl DocMoveResult {
 /// per deepest hit block, the blocks and docs it touches, and the inbound
 /// links it leaves dangling. Pure over the store's current blocks — the move
 /// itself changes no block — so the real move and its dry run plan identically.
-struct RetargetPlan {
-    ops: Vec<Op>,
-    blocks: Vec<String>,
-    docs: Vec<String>,
-    dangling: Vec<InboundLink>,
+pub(crate) struct RetargetPlan {
+    pub(crate) ops: Vec<Op>,
+    pub(crate) blocks: Vec<String>,
+    pub(crate) docs: Vec<String>,
+    pub(crate) dangling: Vec<InboundLink>,
 }
 
 /// §6: strip leading `/`s, `\` → `/`.
@@ -212,7 +212,11 @@ pub fn split_frontmatter(content: &str) -> (Map<String, Value>, String) {
 
 /// §6 `docs_set_meta`'s rewrite: `set` merged over the file's frontmatter,
 /// `unset` removed, recomposed over the same body.
-fn patch_frontmatter(original: &str, set: Option<&Map<String, Value>>, unset: &[String]) -> String {
+pub(crate) fn patch_frontmatter(
+    original: &str,
+    set: Option<&Map<String, Value>>,
+    unset: &[String],
+) -> String {
     let (mut merged, body) = split_frontmatter(original);
     if let Some(set) = set {
         for (k, v) in set {
@@ -310,7 +314,7 @@ impl Store {
         DryRun(self)
     }
 
-    fn live_doc_at(&self, repo_id: &str, path: &str) -> Result<bool> {
+    pub(crate) fn live_doc_at(&self, repo_id: &str, path: &str) -> Result<bool> {
         Ok(self
             .conn
             .query_row(
@@ -378,6 +382,7 @@ impl Store {
             actor: ctx.actor.as_deref(),
             reason: Some(&reason),
             clear_pending: false,
+            ops: None,
         };
         let c = self
             .reconciling_commit(
@@ -538,6 +543,7 @@ impl Store {
             actor: ctx.actor.as_deref(),
             reason: Some(&reason),
             clear_pending: false,
+            ops: None,
         };
         let mut effects = vec![Effect::MovePath {
             doc_id: info.doc_id.clone(),
@@ -581,7 +587,7 @@ impl Store {
     /// store's current blocks: deepest hit block per inbound link (a
     /// container whose raw includes a hit child's raw is covered by the
     /// child), each rewritten against the source's *current* directory.
-    fn plan_inbound_retarget(
+    pub(crate) fn plan_inbound_retarget(
         &self,
         doc_id: &str,
         from_path: &str,
@@ -734,6 +740,7 @@ impl Store {
             actor: ctx.actor.as_deref(),
             reason: Some(&reason),
             clear_pending: false,
+            ops: None,
         };
         self.commit_effects(
             &ctx.repo_id,
@@ -814,6 +821,7 @@ impl Store {
             actor: ctx.actor.as_deref(),
             reason: Some(&reason),
             clear_pending: false,
+            ops: None,
         };
         let c = match self.reconciling_commit(
             &ctx.repo_id,

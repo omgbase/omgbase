@@ -51,7 +51,9 @@
 //! (`effects`, not public API); since 14.0 it commits **DB-first**, recording
 //! the files it owes as `pending_materializations` rows and writing them
 //! after COMMIT ([`materialize`]: the replay the sweep, recovery and the
-//! observe gate rule share).
+//! observe gate rule share). The public effect vocabulary of `spec/mutate`
+//! §11 (mutate 2.3) is planned and executed over that executor by
+//! [`effects_plan`] (`plan` / `execute` / `apply({ effects })`).
 //!
 //! Minted ids are opaque; the store asks its [`IdMinter`] for each one. The
 //! default is the CSPRNG-backed [`RandomMinter`]; a fixture runner installs a
@@ -65,6 +67,7 @@ pub mod derived;
 pub mod doc_store;
 pub mod docs_ops;
 mod effects;
+pub mod effects_plan;
 pub mod error;
 pub mod graph;
 pub mod history;
@@ -95,6 +98,7 @@ use rusqlite::{Connection, Transaction, params};
 pub use derived::{GcResult, LIVE_LEAF_SQL, RebuildTarget};
 pub use doc_store::{DocStore, FsDocStore, MemDocStore, NullDocStore};
 pub use docs_ops::{DocMoveResult, DocOpContext, DocOpResult, Retargeted};
+pub use effects_plan::{EffectsOutcome, PlanContext, Receipt};
 pub use error::{Error, Result};
 pub use graph::ResolvedEdge;
 pub use history::{ChangesPage, CommitDigest, DigestRevision};
@@ -112,8 +116,8 @@ pub use observe::{
 };
 pub use omgbase_graph::{EdgeDescriptor, ProjectedNode};
 pub use omgbase_mutate::{
-    self as mutate_kernel, At, Expect, MutBlock, MutDoc, MutationError, Op, OpResult, Opset,
-    Parent, PlanOp, To,
+    self as mutate_kernel, At, Effect as PublicEffect, Expect, MutBlock, MutDoc, MutationError, Op,
+    OpResult, Opset, Parent, Plan, PlanOp, To,
 };
 pub use omgbase_properties::PropertyRow;
 pub use omgbase_reconcile::{Config, MatchBlock, PoolEntry};

@@ -76,6 +76,21 @@ pub fn id_in_use(conn: &Connection, prefix: &str, id: &str) -> Result<bool> {
 pub(crate) struct IdSource {
     inner: Box<dyn IdMinter>,
     issued: HashSet<String>,
+    /// The planner's view of the `b`/`d` mints (`spec/mutate` §11): `None`
+    /// is production.
+    capture: Option<Capture>,
+}
+
+/// How a plan sees the identities a request creates (`spec/mutate` §11).
+/// Only `b` and `d` are captured: `c`, `r`, `x`, `e` are the commit's own.
+#[derive(Debug)]
+pub(crate) enum Capture {
+    /// `plan`: a `b`/`d` mint yields `$new.<n>` and issues nothing — the
+    /// kinds minted, in order.
+    Symbolic(Vec<&'static str>),
+    /// `execute`: a `b`/`d` mint is production, and its id is recorded in
+    /// order so the receipt can zip it against the plan's `new_ids`.
+    Record(Vec<(&'static str, String)>),
 }
 
 impl IdSource {
@@ -83,6 +98,7 @@ impl IdSource {
         Self {
             inner,
             issued: HashSet::new(),
+            capture: None,
         }
     }
 
@@ -93,6 +109,22 @@ impl IdSource {
             conn,
             inner: &mut *self.inner,
             issued: &mut self.issued,
+            capture: &mut self.capture,
+        }
+    }
+
+    /// Install a capture mode; returns the previous one.
+    pub(crate) fn set_capture(&mut self, capture: Option<Capture>) -> Option<Capture> {
+        std::mem::replace(&mut self.capture, capture)
+    }
+
+    /// The kinds of the `b`/`d` mints the installed capture has seen, in
+    /// order (`$new.<n>` is the n-th).
+    pub(crate) fn captured_kinds(&self) -> Vec<&'static str> {
+        match &self.capture {
+            Some(Capture::Symbolic(kinds)) => kinds.clone(),
+            Some(Capture::Record(ids)) => ids.iter().map(|(k, _)| *k).collect(),
+            None => Vec::new(),
         }
     }
 }
@@ -102,6 +134,7 @@ pub struct Mint<'a> {
     conn: &'a Connection,
     inner: &'a mut dyn IdMinter,
     issued: &'a mut HashSet<String>,
+    capture: &'a mut Option<Capture>,
 }
 
 impl fmt::Debug for Mint<'_> {
@@ -117,12 +150,25 @@ impl Mint<'_> {
     /// the candidate is in use. Fails with [`Error::MintExhausted`] after
     /// [`MINT_GIVE_UP_AFTER`] consecutive rejections.
     pub fn mint(&mut self, prefix: &str) -> Result<String> {
+        let kind: Option<&'static str> = match prefix {
+            "b" => Some("block"),
+            "d" => Some("document"),
+            _ => None,
+        };
+        if let (Some(kind), Some(Capture::Symbolic(kinds))) = (kind, self.capture.as_mut()) {
+            // A plan burns nothing: the n-th new identity is `$new.<n>`.
+            kinds.push(kind);
+            return Ok(format!("$new.{}", kinds.len() - 1));
+        }
         for _ in 0..MINT_GIVE_UP_AFTER {
             let candidate = self.inner.mint(prefix);
             if self.issued.contains(&candidate) || id_in_use(self.conn, prefix, &candidate)? {
                 continue;
             }
             self.issued.insert(candidate.clone());
+            if let (Some(kind), Some(Capture::Record(ids))) = (kind, self.capture.as_mut()) {
+                ids.push((kind, candidate.clone()));
+            }
             return Ok(candidate);
         }
         Err(Error::MintExhausted {
@@ -137,6 +183,7 @@ impl Mint<'_> {
             conn: self.conn,
             inner: &mut *self.inner,
             issued: &mut *self.issued,
+            capture: &mut *self.capture,
         }
     }
 
@@ -316,6 +363,34 @@ mod tests {
             "{err}"
         );
         assert!(err.to_string().contains("1000"), "{err}");
+    }
+
+    #[test]
+    fn symbolic_capture_mints_symbols_for_b_and_d_only_and_record_lists_them() {
+        let mut store =
+            Store::open_in_memory_with_minter(Box::new(SequentialMinter::new())).unwrap();
+        store.ids.set_capture(Some(Capture::Symbolic(Vec::new())));
+        assert_eq!(store.mint("b").unwrap(), "$new.0");
+        assert_eq!(store.mint("d").unwrap(), "$new.1");
+        assert_eq!(store.mint("b").unwrap(), "$new.2");
+        assert_eq!(store.mint("c").unwrap(), "c_0", "c is the commit's own");
+        let Some(Capture::Symbolic(kinds)) = store.ids.set_capture(None) else {
+            panic!("symbolic capture")
+        };
+        assert_eq!(kinds, ["block", "document", "block"]);
+        // Nothing was issued: the production minter resumes at b_0 / d_0.
+        store.ids.set_capture(Some(Capture::Record(Vec::new())));
+        assert_eq!(store.mint("b").unwrap(), "b_0");
+        assert_eq!(store.mint("r").unwrap(), "r_0");
+        assert_eq!(store.mint("d").unwrap(), "d_0");
+        let Some(Capture::Record(ids)) = store.ids.set_capture(None) else {
+            panic!("record capture")
+        };
+        assert_eq!(
+            ids,
+            [("block", "b_0".to_owned()), ("document", "d_0".to_owned())]
+        );
+        assert_eq!(store.mint("b").unwrap(), "b_1");
     }
 
     #[test]

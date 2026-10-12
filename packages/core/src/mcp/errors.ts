@@ -14,7 +14,9 @@ export type ErrorCode =
   | "type_mismatch" | "conflicted_document" | "path_taken" | "create_conflict"
   | "ambiguous_locator" | "ambiguous_heading" | "filter_invalid" | "budget_exceeded"
   | "provider_unavailable" | "embedder_failed" | "sync_conflict" | "repo_not_found" | "node_not_editable" | "seed_unresolved"
-  | "block_not_container";
+  | "block_not_container"
+  // spec/mutate §8 (2.3): the effect planner's and `execute`'s own codes
+  | "stale_plan" | "plan_not_convergent" | "conflicting_effects" | "unsupported_plan_version" | "plan_mismatch";
 
 export interface EngineErrorBody {
   error: ErrorCode;

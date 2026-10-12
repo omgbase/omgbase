@@ -111,7 +111,7 @@ the `Store` first and are synchronous unless noted.
 | Search | Ranked "what does the caller mean" resolution; RRF fusion of FTS + vectors; raw vector search | `resolve`, `hybridSearch`, `vectorSearch`, `docVectorSearch` |
 | Embeddings | Out-of-process embedder client, batching worker, post-mutation drainer, task builders | `createExternalProvider`, `EmbeddingWorker`, `EmbedDrainer`, `buildEmbedTasks`, `embeddingSettings`, `SemanticUnavailable` |
 | Format adapters | Register/lookup the parsers that turn a file into blocks + nodes + edges | `registerAdapter`, `adapterForPath`, `detectFormat`, `markdownAdapter`, `yamlAdapter`, `jsonAdapter` |
-| MCP server | Build the full tool surface (45 tools: `docs_read`, `query`, `apply`, `observe`, `changes_since`, …) as an `McpServer`; wire it to stdio | `buildServer({ store, repoId, rootPath?, embedQuery?, onMutation? })`, `serveStdio(ctx)` |
+| MCP server | Build the full tool surface (47 tools: `docs_read`, `query`, `apply`, `observe`, `changes_since`, …) as an `McpServer`; wire it to stdio | `buildServer({ store, repoId, rootPath?, embedQuery?, onMutation? })`, `serveStdio(ctx)` |
 | Admin | Rebuild derived indexes; garbage-collect unreferenced blobs | `rebuildIndex`, `runGc`, `VERSION`, `EngineError` |
 
 `omg mcp` is just a host for `serveStdio`: it opens the workspace, primes with

@@ -20,8 +20,11 @@ omgbase-format = { version = "0.2.2", path = "../omgbase-format", features = ["j
 # `Minter` seam is shared. `json` for the disposition `detail` an opset carries.
 omgbase-reconcile = { version = "2.3.1", path = "../omgbase-reconcile", features = ["json"] }
 # Ops, errors and opsets are JSON at the wire (the MCP surface, the fixtures);
-# block attrs are arbitrary JSON objects.
-serde_json = { version = "1", features = ["preserve_order"] }
+# block attrs are arbitrary JSON objects. `float_roundtrip`: a plan's digest
+# (spec/mutate §11.5) covers numbers a client wrote as JSON text — an integer
+# literal beyond u64 or a long fraction must parse to the exact nearest f64
+# the reference (V8) parses, not serde_json's fast approximation.
+serde_json = { version = "1", features = ["preserve_order", "float_roundtrip"] }
 # The renderer's marker and table-delimiter patterns (§3).
 regex = "1"
 

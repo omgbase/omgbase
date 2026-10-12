@@ -24,10 +24,17 @@ export interface MutDoc {
   children: MutBlock[];
 }
 
+/** The codes spec/mutate §8 lists (2.3 adds `conflicting_effects`, `unsupported_plan_version`, `plan_mismatch`); `filter_invalid` is the planner's shape error, spec/surface §4's envelope. */
+export type MutationErrorCode =
+  | "stale_expectation" | "block_missing" | "target_missing" | "parent_missing" | "doc_missing" | "cycle_move" | "not_contiguous"
+  | "type_mismatch" | "path_taken" | "node_not_editable" | "stale_plan" | "plan_not_convergent" | "sync_conflict"
+  | "conflicting_effects" | "unsupported_plan_version" | "plan_mismatch"
+  | "filter_invalid";
+
 export class MutationError extends Error {
-  code: string;
+  code: MutationErrorCode | string;
   data: Record<string, unknown>;
-  constructor(code: string, message: string, data: Record<string, unknown> = {}) {
+  constructor(code: MutationErrorCode | string, message: string, data: Record<string, unknown> = {}) {
     super(message);
     this.code = code;
     this.data = data;

@@ -218,7 +218,7 @@ enum Pending {
         old_blocks: Vec<MatchBlock>,
     },
     Ingest {
-        prepared: Prepared,
+        prepared: Box<Prepared>,
         old_hash_hex: Option<String>,
         new_hash_hex: String,
         /// The path had a pending row the file now supersedes: delete it in
@@ -911,7 +911,7 @@ impl Store {
                 &mut consumed,
             )?;
             pending.push(Pending::Ingest {
-                prepared,
+                prepared: Box::new(prepared),
                 old_hash_hex,
                 new_hash_hex,
                 clear_pending,
@@ -1067,6 +1067,7 @@ impl Store {
             actor,
             reason,
             clear_pending: false,
+            ops: None,
         };
         self.reconciling_commit(repo_id, path, source, ts, &head, config, Guard::None)?
             .committed()?
@@ -1096,7 +1097,10 @@ impl Store {
         self.commit_effects(
             repo_id,
             head,
-            &[Effect::IngestReconciled { prepared, guard }],
+            &[Effect::IngestReconciled {
+                prepared: Box::new(prepared),
+                guard,
+            }],
             ts,
         )
     }

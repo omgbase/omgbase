@@ -315,9 +315,9 @@ impl ApplyResult {
 pub(crate) struct LoadedDoc {
     pub(crate) doc: MutDoc,
     /// The pre-mutation render.
-    before: String,
+    pub(crate) before: String,
     /// The live ids before any op (labels the `api` dispositions).
-    prior_ids: Vec<String>,
+    pub(crate) prior_ids: Vec<String>,
     /// The row's `(path, current_rev, file_hash)` as loaded — the
     /// precondition the commit re-validates inside its transaction (2.2).
     pub(crate) base: DocBase,
@@ -360,250 +360,18 @@ impl Store {
             .optional()?)
     }
 
-    /// §4 steps 1–3: load on first touch, apply every op in order.
+    /// §4 steps 1–3: load on first touch, apply every op in order (the
+    /// frontmatter overrides first).
     pub(crate) fn apply_ops(&mut self, req: &ApplyRequest) -> Result<Applied> {
-        let mut loaded: Vec<LoadedDoc> = Vec::new();
-        let mut results: Vec<OpResult> = Vec::new();
-
-        fn index_of(loaded: &[LoadedDoc], doc_id: &str) -> Option<usize> {
-            loaded.iter().position(|d| d.doc.doc_id == doc_id)
-        }
-        fn doc_id_for_block_loaded(loaded: &[LoadedDoc], block_id: &str) -> Option<String> {
-            loaded
-                .iter()
-                .find(|d| d.doc.contains(block_id))
-                .map(|d| d.doc.doc_id.clone())
-        }
-
-        macro_rules! ensure_doc {
-            ($doc_id:expr) => {{
-                let id: &str = $doc_id;
-                match index_of(&loaded, id) {
-                    Some(i) => i,
-                    None => {
-                        let Some(doc) = load_mut_doc(&self.conn, id)? else {
-                            return Err(merr(ErrorCode::DocMissing, format!("doc {id} not found")).into());
-                        };
-                        let Some(base) = doc_base(&self.conn, id)? else {
-                            return Err(merr(ErrorCode::DocMissing, format!("doc {id} not found")).into());
-                        };
-                        let before = render(&doc);
-                        let prior_ids: Vec<String> = {
-                            let mut stmt = self.conn.prepare(
-                                "SELECT block_id FROM blocks WHERE doc_id = ?1 AND deleted_commit IS NULL",
-                            )?;
-                            let it = stmt.query_map(params![id], |r| r.get(0))?;
-                            it.collect::<std::result::Result<Vec<_>, _>>()?
-                        };
-                        loaded.push(LoadedDoc {
-                            doc,
-                            before,
-                            prior_ids,
-                            base,
-                        });
-                        loaded.len() - 1
-                    }
-                }
-            }};
-        }
-        macro_rules! doc_for_block {
-            ($block:expr) => {{
-                let b: &str = $block;
-                match doc_id_for_block_loaded(&loaded, b) {
-                    Some(id) => Some(id),
-                    None => self.doc_id_for_block(b)?,
-                }
-            }};
-        }
-        macro_rules! parent_doc {
-            ($to:expr) => {{
-                let to: &To = $to;
-                let anchor: Option<&str> = match &to.parent {
-                    Parent::Block(id) => Some(id.as_str()),
-                    Parent::Section { heading } => Some(heading.as_str()),
-                    Parent::Doc => to.at.anchor(),
-                };
-                match anchor {
-                    Some(id) => match doc_for_block!(id) {
-                        Some(d) => d,
-                        None => {
-                            return Err(merr(
-                                ErrorCode::ParentMissing,
-                                format!("parent {id} not found"),
-                            )
-                            .into());
-                        }
-                    },
-                    None => {
-                        return Err(merr(
-                            ErrorCode::TargetMissing,
-                            "insert at top-level start/end requires an explicit doc",
-                        )
-                        .into());
-                    }
-                }
-            }};
-        }
-
+        let mut runner = OpsRunner::new(&req.repo_id);
         // §4 step 2: frontmatter overrides load their documents first.
         for fm in &req.set_frontmatter {
-            let i = ensure_doc!(&fm.doc);
-            loaded[i].doc.frontmatter_raw = fm.raw.clone();
+            runner.set_frontmatter(self, &fm.doc, fm.raw.clone())?;
         }
-
-        for (i, raw_op) in req.ops.iter().enumerate() {
-            let op = resolve_op(raw_op, &results)?;
-            match &op {
-                Op::Insert {
-                    doc,
-                    to,
-                    markdown,
-                    expect,
-                } => {
-                    let doc_id = match doc {
-                        Some(r) => self.resolve_doc_ref(&req.repo_id, r)?,
-                        None => parent_doc!(to),
-                    };
-                    let d = ensure_doc!(&doc_id);
-                    let mut mint = self.ids.at(&self.conn);
-                    let mut minter = mint.deferred("b");
-                    let result = op_insert(
-                        &mut loaded[d].doc,
-                        to,
-                        markdown,
-                        i,
-                        expect.as_ref(),
-                        &mut minter,
-                    );
-                    minter.finish()?;
-                    results.push(result?);
-                }
-                Op::Update {
-                    block,
-                    markdown,
-                    attrs,
-                    expect,
-                    trivia,
-                    child_ids,
-                } => {
-                    let Some(doc_id) = doc_for_block!(block) else {
-                        return Err(merr_data(
-                            ErrorCode::BlockMissing,
-                            format!("block {block} not found"),
-                            json!({ "op_index": i }),
-                        )
-                        .into());
-                    };
-                    let d = ensure_doc!(&doc_id);
-                    let args = UpdateArgs {
-                        markdown: markdown.clone(),
-                        attrs: attrs.clone(),
-                        expect: expect.clone(),
-                        trivia: trivia.clone(),
-                        child_ids: child_ids.clone(),
-                    };
-                    let mut mint = self.ids.at(&self.conn);
-                    let mut minter = mint.deferred("b");
-                    let result = op_update(&mut loaded[d].doc, block, i, &args, &mut minter);
-                    minter.finish()?;
-                    results.push(result?);
-                }
-                Op::Move { blocks, to, expect } => {
-                    let first = blocks.first().map(String::as_str).unwrap_or("");
-                    let Some(src) = doc_for_block!(first) else {
-                        return Err(merr_data(
-                            ErrorCode::BlockMissing,
-                            format!("block {first} not found"),
-                            json!({ "op_index": i }),
-                        )
-                        .into());
-                    };
-                    let top_level_same_doc =
-                        to.parent == Parent::Doc && matches!(to.at, At::Start | At::End);
-                    let dst = if top_level_same_doc {
-                        src.clone()
-                    } else {
-                        parent_doc!(to)
-                    };
-                    if dst == src {
-                        let d = ensure_doc!(&src);
-                        results.push(op_move(&mut loaded[d].doc, blocks, to, i, expect.as_ref())?);
-                    } else {
-                        let s = ensure_doc!(&src);
-                        let t = ensure_doc!(&dst);
-                        let (a, b) = two_mut(&mut loaded, s, t);
-                        results.push(cross_doc_move(
-                            &mut a.doc,
-                            &mut b.doc,
-                            blocks,
-                            to,
-                            i,
-                            expect.as_ref(),
-                        )?);
-                    }
-                }
-                Op::Remove { blocks, expect } => {
-                    let first = blocks.first().map(String::as_str).unwrap_or("");
-                    let Some(doc_id) = doc_for_block!(first) else {
-                        return Err(merr_data(
-                            ErrorCode::BlockMissing,
-                            format!("block {first} not found"),
-                            json!({ "op_index": i }),
-                        )
-                        .into());
-                    };
-                    let d = ensure_doc!(&doc_id);
-                    results.push(op_remove(&mut loaded[d].doc, blocks, i, expect.as_ref())?);
-                }
-                Op::Split { block, at, expect } => {
-                    let Some(doc_id) = doc_for_block!(block) else {
-                        return Err(merr_data(
-                            ErrorCode::BlockMissing,
-                            format!("block {block} not found"),
-                            json!({ "op_index": i }),
-                        )
-                        .into());
-                    };
-                    let d = ensure_doc!(&doc_id);
-                    let mut mint = self.ids.at(&self.conn);
-                    let mut minter = mint.deferred("b");
-                    let result = op_split(
-                        &mut loaded[d].doc,
-                        block,
-                        at,
-                        i,
-                        expect.as_ref(),
-                        &mut minter,
-                    );
-                    minter.finish()?;
-                    results.push(result?);
-                }
-                Op::Merge {
-                    blocks,
-                    separator,
-                    expect,
-                } => {
-                    let first = blocks.first().map(String::as_str).unwrap_or("");
-                    let Some(doc_id) = doc_for_block!(first) else {
-                        return Err(merr_data(
-                            ErrorCode::BlockMissing,
-                            format!("block {first} not found"),
-                            json!({ "op_index": i }),
-                        )
-                        .into());
-                    };
-                    let d = ensure_doc!(&doc_id);
-                    results.push(op_merge(
-                        &mut loaded[d].doc,
-                        blocks,
-                        i,
-                        separator.as_deref(),
-                        expect.as_ref(),
-                    )?);
-                }
-            }
+        for raw_op in &req.ops {
+            runner.push(self, raw_op)?;
         }
-        Ok(Applied { loaded, results })
+        Ok(runner.finish())
     }
 
     /// §4 step 1: an `insert.doc` — a `d_` id passes through (the document
@@ -685,6 +453,7 @@ impl Store {
             actor: Some(req.origin.actor.as_str()),
             reason: req.origin.reason.as_deref(),
             clear_pending: false,
+            ops: None,
         };
         let effects: Vec<Effect> = staged.into_iter().map(Staged::into_effect).collect();
         // (b) The transaction.
@@ -721,6 +490,7 @@ impl Store {
             actor: None,
             reason: None,
             clear_pending: true,
+            ops: None,
         };
         if let Err(e) = self
             .reconciling_commit(
@@ -742,6 +512,265 @@ impl Store {
             json!({ "retriable": true }),
         )
         .into()
+    }
+}
+
+/// The op loop of §4 steps 1–4 as an incremental runner (the reference's
+/// `ChangesetPlanner`): [`OpsRunner::push`] applies one op to the in-memory
+/// trees — loading a document at first touch and remembering its
+/// pre-mutation render, live ids and row triple — and [`OpsRunner::finish`]
+/// hands back the loaded documents and every op's result. [`Store::apply_ops`]
+/// is `push` over a whole request; the effect planner (`spec/mutate` §11,
+/// 2.3) pushes an effect's lowered ops one effect at a time so it can read
+/// the ids each op minted before lowering the next, and sets a document's
+/// file head for a frontmatter effect.
+pub(crate) struct OpsRunner {
+    repo_id: String,
+    pub(crate) loaded: Vec<LoadedDoc>,
+    /// Per op, in push order (`$n.ids[i]` placeholders resolve against these).
+    pub(crate) results: Vec<OpResult>,
+}
+
+impl OpsRunner {
+    pub(crate) fn new(repo_id: &str) -> Self {
+        Self {
+            repo_id: repo_id.to_owned(),
+            loaded: Vec::new(),
+            results: Vec::new(),
+        }
+    }
+
+    /// The loaded documents and results (§4 step 4 renders them).
+    pub(crate) fn finish(self) -> Applied {
+        Applied {
+            loaded: self.loaded,
+            results: self.results,
+        }
+    }
+
+    fn index_of(&self, doc_id: &str) -> Option<usize> {
+        self.loaded.iter().position(|d| d.doc.doc_id == doc_id)
+    }
+
+    /// Load `doc_id` at first touch (§4 step 1); `doc_missing` for an
+    /// unknown or tombstoned document. Returns its index in `loaded`.
+    pub(crate) fn ensure_doc(&mut self, store: &Store, doc_id: &str) -> Result<usize> {
+        if let Some(i) = self.index_of(doc_id) {
+            return Ok(i);
+        }
+        let Some(doc) = load_mut_doc(&store.conn, doc_id)? else {
+            return Err(merr(ErrorCode::DocMissing, format!("doc {doc_id} not found")).into());
+        };
+        let Some(base) = doc_base(&store.conn, doc_id)? else {
+            return Err(merr(ErrorCode::DocMissing, format!("doc {doc_id} not found")).into());
+        };
+        let before = render(&doc);
+        let prior_ids: Vec<String> = {
+            let mut stmt = store.conn.prepare(
+                "SELECT block_id FROM blocks WHERE doc_id = ?1 AND deleted_commit IS NULL",
+            )?;
+            let it = stmt.query_map(params![doc_id], |r| r.get(0))?;
+            it.collect::<std::result::Result<Vec<_>, _>>()?
+        };
+        self.loaded.push(LoadedDoc {
+            doc,
+            before,
+            prior_ids,
+            base,
+        });
+        Ok(self.loaded.len() - 1)
+    }
+
+    /// Where a block sits in the LOADED trees (an id an earlier op minted
+    /// included): the document and the block. Never loads a document.
+    pub(crate) fn locate_loaded(&self, block_id: &str) -> Option<(&LoadedDoc, &MutBlock)> {
+        self.loaded
+            .iter()
+            .find_map(|d| d.doc.locate(block_id).map(|path| (d, d.doc.block(&path))))
+    }
+
+    /// The document holding `block_id`: a loaded tree first, else the live row.
+    fn doc_for_block(&self, store: &Store, block_id: &str) -> Result<Option<String>> {
+        if let Some(d) = self.loaded.iter().find(|d| d.doc.contains(block_id)) {
+            return Ok(Some(d.doc.doc_id.clone()));
+        }
+        store.doc_id_for_block(block_id)
+    }
+
+    /// The document a placement's parent or anchor names (`parent_missing`
+    /// when unknown; a top-level `start`/`end` without `doc` is
+    /// `target_missing`).
+    fn parent_doc(&self, store: &Store, to: &To) -> Result<String> {
+        let anchor: Option<&str> = match &to.parent {
+            Parent::Block(id) => Some(id.as_str()),
+            Parent::Section { heading } => Some(heading.as_str()),
+            Parent::Doc => to.at.anchor(),
+        };
+        match anchor {
+            Some(id) => self.doc_for_block(store, id)?.ok_or_else(|| {
+                merr(ErrorCode::ParentMissing, format!("parent {id} not found")).into()
+            }),
+            None => Err(merr(
+                ErrorCode::TargetMissing,
+                "insert at top-level start/end requires an explicit doc",
+            )
+            .into()),
+        }
+    }
+
+    /// `ApplyRequest.set_frontmatter`'s semantics: replace the frontmatter
+    /// bytes (fences + separator), leaving the leading trivia.
+    pub(crate) fn set_frontmatter(
+        &mut self,
+        store: &Store,
+        doc_id: &str,
+        raw: Option<String>,
+    ) -> Result<()> {
+        let i = self.ensure_doc(store, doc_id)?;
+        self.loaded[i].doc.frontmatter_raw = raw;
+        Ok(())
+    }
+
+    /// `spec/mutate` §11.3 (2.3): replace everything before the first block
+    /// — the leading trivia AND the frontmatter — with `raw` (the file head).
+    pub(crate) fn set_head(&mut self, store: &Store, doc_id: &str, raw: &str) -> Result<()> {
+        let i = self.ensure_doc(store, doc_id)?;
+        self.loaded[i].doc.leading_trivia = String::new();
+        self.loaded[i].doc.frontmatter_raw = Some(raw.to_owned());
+        Ok(())
+    }
+
+    /// Apply one op (§2); its `op_index` is its position in `results`.
+    pub(crate) fn push(&mut self, store: &mut Store, raw_op: &Op) -> Result<&OpResult> {
+        let i = self.results.len();
+        let op = resolve_op(raw_op, &self.results)?;
+        let missing = |block: &str| -> Error {
+            merr_data(
+                ErrorCode::BlockMissing,
+                format!("block {block} not found"),
+                json!({ "op_index": i }),
+            )
+            .into()
+        };
+        let result = match &op {
+            Op::Insert {
+                doc,
+                to,
+                markdown,
+                expect,
+            } => {
+                let doc_id = match doc {
+                    Some(r) => store.resolve_doc_ref(&self.repo_id, r)?,
+                    None => self.parent_doc(store, to)?,
+                };
+                let d = self.ensure_doc(store, &doc_id)?;
+                let mut mint = store.ids.at(&store.conn);
+                let mut minter = mint.deferred("b");
+                let result = op_insert(
+                    &mut self.loaded[d].doc,
+                    to,
+                    markdown,
+                    i,
+                    expect.as_ref(),
+                    &mut minter,
+                );
+                minter.finish()?;
+                result?
+            }
+            Op::Update {
+                block,
+                markdown,
+                attrs,
+                expect,
+                trivia,
+                child_ids,
+            } => {
+                let doc_id = self
+                    .doc_for_block(store, block)?
+                    .ok_or_else(|| missing(block))?;
+                let d = self.ensure_doc(store, &doc_id)?;
+                let args = UpdateArgs {
+                    markdown: markdown.clone(),
+                    attrs: attrs.clone(),
+                    expect: expect.clone(),
+                    trivia: trivia.clone(),
+                    child_ids: child_ids.clone(),
+                };
+                let mut mint = store.ids.at(&store.conn);
+                let mut minter = mint.deferred("b");
+                let result = op_update(&mut self.loaded[d].doc, block, i, &args, &mut minter);
+                minter.finish()?;
+                result?
+            }
+            Op::Move { blocks, to, expect } => {
+                let first = blocks.first().map(String::as_str).unwrap_or("");
+                let src = self
+                    .doc_for_block(store, first)?
+                    .ok_or_else(|| missing(first))?;
+                let top_level_same_doc =
+                    to.parent == Parent::Doc && matches!(to.at, At::Start | At::End);
+                let dst = if top_level_same_doc {
+                    src.clone()
+                } else {
+                    self.parent_doc(store, to)?
+                };
+                if dst == src {
+                    let d = self.ensure_doc(store, &src)?;
+                    op_move(&mut self.loaded[d].doc, blocks, to, i, expect.as_ref())?
+                } else {
+                    let s = self.ensure_doc(store, &src)?;
+                    let t = self.ensure_doc(store, &dst)?;
+                    let (a, b) = two_mut(&mut self.loaded, s, t);
+                    cross_doc_move(&mut a.doc, &mut b.doc, blocks, to, i, expect.as_ref())?
+                }
+            }
+            Op::Remove { blocks, expect } => {
+                let first = blocks.first().map(String::as_str).unwrap_or("");
+                let doc_id = self
+                    .doc_for_block(store, first)?
+                    .ok_or_else(|| missing(first))?;
+                let d = self.ensure_doc(store, &doc_id)?;
+                op_remove(&mut self.loaded[d].doc, blocks, i, expect.as_ref())?
+            }
+            Op::Split { block, at, expect } => {
+                let doc_id = self
+                    .doc_for_block(store, block)?
+                    .ok_or_else(|| missing(block))?;
+                let d = self.ensure_doc(store, &doc_id)?;
+                let mut mint = store.ids.at(&store.conn);
+                let mut minter = mint.deferred("b");
+                let result = op_split(
+                    &mut self.loaded[d].doc,
+                    block,
+                    at,
+                    i,
+                    expect.as_ref(),
+                    &mut minter,
+                );
+                minter.finish()?;
+                result?
+            }
+            Op::Merge {
+                blocks,
+                separator,
+                expect,
+            } => {
+                let first = blocks.first().map(String::as_str).unwrap_or("");
+                let doc_id = self
+                    .doc_for_block(store, first)?
+                    .ok_or_else(|| missing(first))?;
+                let d = self.ensure_doc(store, &doc_id)?;
+                op_merge(
+                    &mut self.loaded[d].doc,
+                    blocks,
+                    i,
+                    separator.as_deref(),
+                    expect.as_ref(),
+                )?
+            }
+        };
+        self.results.push(result);
+        Ok(self.results.last().expect("just pushed"))
     }
 }
 
