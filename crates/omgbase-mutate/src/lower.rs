@@ -290,6 +290,7 @@ pub fn lower_top_level(
                     op: Op::Move {
                         blocks: vec![t.id.clone()],
                         to: anchor,
+                        doc: None,
                         expect: None,
                     },
                     disposition: PlanDisposition::Moved,

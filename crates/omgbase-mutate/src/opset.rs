@@ -230,6 +230,7 @@ mod tests {
                     parent: Parent::Doc,
                     at: At::Start,
                 },
+                doc: None,
                 expect: None,
             },
             disposition: d,

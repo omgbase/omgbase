@@ -26,8 +26,7 @@ use omgbase_store::mutate_kernel::effects::{
 use omgbase_store::mutate_kernel::{At, ErrorCode, Op, Parent};
 use omgbase_store::{
     ApplyOrigin, ApplyRequest, ApplyResult, Diff, DocStore, Expect, FsDocStore, MutationError,
-    OpResult, Opset, Plan, PlanContext, PublicEffect, QueryVector, Receipt, Retargeted, Revision,
-    Store,
+    OpResult, Plan, PlanContext, PublicEffect, QueryVector, Receipt, Retargeted, Revision, Store,
 };
 use omgbase_sync::{RealFileSystem, RepoRow};
 use rusqlite::{OptionalExtension, params};
@@ -798,10 +797,7 @@ fn build_catalog() -> Vec<ToolSpec> {
         ToolSpec {
             name: "docs_update",
             description: d::DOCS_UPDATE,
-            input_schema: doc(
-                &[("content", s()), ("reason", s()), ("dry_run", b())],
-                &["content"],
-            ),
+            input_schema: doc(&[("content", s()), ("reason", s())], &["content"]),
         },
         ToolSpec {
             name: "observe",
@@ -1147,6 +1143,15 @@ impl Surface {
     // `data`; neither given is `filter_invalid` "pass id or path"; a
     // disagreement is `filter_invalid` "id "…" and path "…" name different
     // documents". The reference's `locateDoc`, byte for byte.
+    /// A document locator (`id` or `path`, either form) resolved to the live
+    /// document's id under the `docs_update` tool's rules — the error a
+    /// `docs_update` with that locator would raise (`doc_missing` with the
+    /// given keys as `data`). The CLI's local `update <doc>` resolves its
+    /// target here before planning, as the reference's `requireDoc` does.
+    pub fn locate_document(&self, repo_id: &str, args: &Json) -> Result<String> {
+        self.locate_doc(repo_id, "docs_update", args)
+    }
+
     fn locate_doc(&self, repo_id: &str, tool: &str, args: &Json) -> Result<String> {
         let (id_key, path_key) = ("id", "path");
         let schema = &tool_spec(tool).expect("a catalog tool").input_schema;
@@ -1669,6 +1674,7 @@ impl Surface {
                 let ops = vec![Op::Move {
                     blocks,
                     to: To { parent, at },
+                    doc: None,
                     expect: arg_parent_expect(args)?,
                 }];
                 Ok(apply_json(&self.apply_ops(
@@ -3023,25 +3029,39 @@ impl Surface {
                 ))
             }
             "docs_update" => {
+                // Surface 4.0: sugar for `set { document, field: "content" }`
+                // — the whole-document planner's opset lowered into one plan
+                // and committed as one receipt (the identity decision is the
+                // Plan's `preview.identity`; preview with `plan`). A content
+                // already current plans nothing and commits nothing.
                 let (repo, root) = self.scope(args)?;
+                self.require_root(root.as_deref())?;
                 let doc = self.locate_doc(&repo, name, args)?;
+                let info = self.doc_info(&repo, &doc)?;
                 let content = arg_string(args, "content")?;
-                let dry = arg_bool(args, "dry_run")?.unwrap_or(false);
                 let reason = arg_str(args, "reason").map(str::to_owned);
                 let origin = ApplyOrigin::new(&self.actor, reason.as_deref());
-                let config = self.config.clone();
-                let ts = self.now();
-                let (opset, result) = self.with_writes(root.as_deref(), |store, ds| {
-                    Ok(store.docs_update(&repo, &doc, &content, &config, &origin, dry, ds, &ts)?)
+                let ctx = self.plan_ctx(&repo);
+                let effects = vec![PublicEffect::Set {
+                    target: EffectTarget::Document {
+                        id: Some(info.doc_id),
+                        path: None,
+                    },
+                    field: "content".to_owned(),
+                    value: json!(content),
+                    expect: None,
+                }];
+                let (_, receipt) = self.with_writes(root.as_deref(), |store, ds| {
+                    store
+                        .apply_effects_detailed(&ctx, &effects, &origin, ds, false)
+                        .map_err(strip_effect_index)
+                        .map_err(SurfaceError::from)
                 })?;
-                if !dry {
+                let receipt = receipt.expect("not a dry run");
+                if receipt.commit.is_some() {
                     self.notify();
                 }
-                Ok(json!({
-                    "opset": opset_json(&opset),
-                    "plan": render_opset_plan(&opset),
-                    "result": result.map(|r| apply_json(&r)),
-                }))
+                Ok(receipt_json(&receipt))
             }
             "observe" => {
                 let (repo, _) = self.scope(args)?;
@@ -3363,6 +3383,16 @@ pub fn plan_json(plan: &Plan) -> Json {
         if let Some(diffs) = preview.get_mut("diffs") {
             *diffs = reference_keyed(diffs);
         }
+        // 4.0: a `retarget` effect's hits name their document's path.
+        if let Some(retargets) = preview.get_mut("retarget").and_then(Json::as_array_mut) {
+            for r in retargets {
+                if let Some(hits) = r.get_mut("hits").and_then(Json::as_array_mut) {
+                    for h in hits {
+                        root_field(h, "path");
+                    }
+                }
+            }
+        }
     }
     v
 }
@@ -3540,70 +3570,6 @@ fn root_summary(summary: &str) -> String {
     format!("{head}{subject}{detail}")
 }
 
-/// `spec/mutate` §7's opset on the wire (camelCase precondition keys and
-/// `matcherV`, as the reference).
-#[must_use]
-pub fn opset_json(opset: &Opset) -> Json {
-    let mut m = Map::new();
-    m.insert("version".to_owned(), json!(1));
-    m.insert("kind".to_owned(), json!("doc_update"));
-    // §1 Paths: the target's and the precondition's `path` in the reference
-    // form; the document under the row rule (§1.2, 3.0): `{ id, path }` and
-    // `{ id, path, baseRevision, hash }`.
-    m.insert(
-        "target".to_owned(),
-        json!({ "id": opset.target_doc, "path": reference_path(&opset.target_path) }),
-    );
-    m.insert(
-        "precondition".to_owned(),
-        json!({
-            "id": opset.precondition.doc,
-            "path": reference_path(&opset.precondition.path),
-            "baseRevision": opset.precondition.base_revision,
-            "hash": opset.precondition.hash,
-        }),
-    );
-    m.insert("matcherV".to_owned(), json!(opset.matcher_v));
-    m.insert(
-        "ops".to_owned(),
-        Json::Array(
-            opset
-                .ops
-                .iter()
-                .map(|p| {
-                    let mut o = Map::new();
-                    // The kernel's JSON spells the carried ids `child_ids`
-                    // (the `spec/mutate` fixture form); the wire is camelCase
-                    // like every other key here (`spec/surface` §9;
-                    // `Op::from_json` accepts both on the way back in).
-                    let mut op = p.op.to_json();
-                    if let Some(m) = op.as_object_mut()
-                        && let Some(c) = m.remove("child_ids")
-                    {
-                        m.insert("childIds".to_owned(), c);
-                    }
-                    o.insert("op".to_owned(), op);
-                    o.insert("disposition".to_owned(), json!(p.disposition.as_str()));
-                    o.insert("blocks".to_owned(), json!(p.blocks));
-                    o.insert("confidence".to_owned(), json!(p.confidence));
-                    o.insert("reason".to_owned(), json!(p.reason));
-                    if let Some(d) = &p.detail {
-                        o.insert("detail".to_owned(), d.clone());
-                    }
-                    Json::Object(o)
-                })
-                .collect(),
-        ),
-    );
-    if let Some(fm) = &opset.frontmatter {
-        m.insert("frontmatter".to_owned(), json!({ "raw": fm }));
-    }
-    m.insert("summary".to_owned(), opset.summary.to_json());
-    m.insert("converges".to_owned(), json!(opset.converges));
-    m.insert("diagnostics".to_owned(), json!(opset.diagnostics));
-    Json::Object(m)
-}
-
 /// `spec/search` §4's evidence on the wire: `{ rrf, boosts, ftsRank?,
 /// vectorRank?, cosine? }`.
 fn evidence_json(e: &omgbase_store::Evidence) -> Json {
@@ -3637,56 +3603,6 @@ fn observe_json(o: &omgbase_store::ObserveOutcome) -> Json {
         "conflicted": o.conflicted,
         "dispositions": o.dispositions.iter().map(|(k, n)| json!({ "kind": k, "count": n })).collect::<Vec<_>>(),
     })
-}
-
-fn verb(d: omgbase_store::mutate_kernel::PlanDisposition) -> &'static str {
-    use omgbase_store::mutate_kernel::PlanDisposition as D;
-    match d {
-        D::Same => "KEEP  ",
-        D::Edited | D::EditedMoved => "UPDATE",
-        D::Moved => "MOVE  ",
-        D::Inserted => "INSERT",
-        D::Deleted => "REMOVE",
-        D::SplitFrom => "SPLIT ",
-        D::MergedInto => "MERGE ",
-        D::CopiedFrom => "COPY  ",
-        D::Resurrected => "RESURR",
-        D::BulkRewrite => "REWRITE",
-        D::Retiled => "RETILE",
-    }
-}
-
-/// The one-line-per-op plan text of `docs_update` (its dry run is the plan).
-#[must_use]
-pub fn render_opset_plan(opset: &Opset) -> String {
-    let mut lines = Vec::new();
-    for p in &opset.ops {
-        let subject = p.blocks.first().map_or("(new)", String::as_str);
-        let conf = p.confidence.map_or(String::new(), |c| format!(" ~{c:.2}"));
-        let why = p
-            .reason
-            .as_ref()
-            .map_or(String::new(), |r| format!(" [{r}]"));
-        lines.push(format!(
-            "{} {:<9} {}{conf}{why}",
-            verb(p.disposition),
-            subject,
-            p.disposition.as_str()
-        ));
-    }
-    let s = &opset.summary;
-    lines.push(String::new());
-    lines.push(format!(
-        "preserved: {}  updated: {}  moved: {}  created: {}  removed: {}  split: {}  merged: {}  ambiguous: {}",
-        s.preserved, s.updated, s.moved, s.created, s.removed, s.split, s.merged, s.ambiguous
-    ));
-    if !opset.converges {
-        lines.push(
-            "WARNING: plan does not reproduce the proposed content exactly — will not apply."
-                .to_owned(),
-        );
-    }
-    lines.join("\n")
 }
 
 #[cfg(test)]

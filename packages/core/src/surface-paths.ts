@@ -21,8 +21,6 @@
 import type { ApplyResult } from "./mutate/apply.js";
 import type { DocOpResult, DocMoveResult } from "./mutate/docs.js";
 import type { RetargetHit } from "./mutate/macros.js";
-import type { Opset } from "./mutate/opset.js";
-import type { DocsUpdateResult } from "./mutate/plan-update.js";
 import type { Plan, Receipt } from "./mutate/plan.js";
 import type { InboundLink } from "./graph/inbound-links.js";
 import type { ObserveResult, ObserveDeleteResult } from "./sync/observe.js";
@@ -111,27 +109,14 @@ export function surfaceRetargetHits(hits: RetargetHit[]): RetargetHit[] {
   return hits.map((h) => ({ ...h, path: referencePath(h.path) }));
 }
 
-/** A whole-document update plan: `target.path` and `precondition.path`. */
-export function surfaceOpset(opset: Opset): Opset {
-  return {
-    ...opset,
-    target: { ...opset.target, path: referencePath(opset.target.path) },
-    precondition: { ...opset.precondition, path: referencePath(opset.precondition.path) },
-  };
-}
-
-/** `docs_update`: the opset and, when committed, the apply result. */
-export function surfaceDocsUpdate(res: DocsUpdateResult): DocsUpdateResult {
-  return { opset: surfaceOpset(res.opset), result: res.result ? surfaceApplyResult(res.result) : null };
-}
-
 /**
  * A Plan on the wire (spec/surface §4, 3.1): the executable core — `effects`,
  * `opset`, `preconditions`, `new_ids`, `plan_id` — is returned VERBATIM in the
  * storage form, because `plan_id` digests exactly those bytes and the client
  * hands the object back to `execute` (spec/mutate §11.5; the one result the
  * path rule exempts, like `dangling[].target`). Only the un-digested `preview`
- * is rooted: its `revisions[].path` and `diffs` keys.
+ * is rooted: its `revisions[].path`, `diffs` keys and `retarget[].hits[].path`
+ * (3.0; `identity` is keyed by document id and carries no path).
  */
 export function surfacePlan(plan: Plan): Plan {
   if (!plan.preview) return plan;
@@ -141,6 +126,7 @@ export function surfacePlan(plan: Plan): Plan {
       ...plan.preview,
       revisions: plan.preview.revisions.map((r) => ({ ...r, path: referencePath(r.path) })),
       diffs: referenceKeyed(plan.preview.diffs),
+      ...(plan.preview.retarget !== undefined ? { retarget: plan.preview.retarget.map((r) => ({ ...r, hits: surfaceRetargetHits(r.hits) })) } : {}),
     },
   };
 }

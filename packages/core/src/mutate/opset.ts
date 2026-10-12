@@ -96,6 +96,22 @@ export interface Opset {
   diagnostics: string[];
 }
 
+/**
+ * The identity consequences of a `set content` effect as a Plan surfaces them
+ * (spec/mutate §7/§11.4, 3.0: `preview.identity[<doc id>]`): the Opset's
+ * `matcher_v`, `summary`, `diagnostics`, and per planned op its position in
+ * the plan's `opset.ops` with the `PlanOp` annotation — what `docs_update`'s
+ * `{ opset, plan }` result carried through 3.x, minus the kernel ops (they are
+ * the plan's) and `converges` (a returned plan converges; the failure is
+ * `plan_not_convergent`).
+ */
+export interface IdentityPreview {
+  matcher_v: string;
+  summary: OpsetSummary;
+  ops: { op_index: number; disposition: PlanDisposition; blocks: string[]; confidence: number | null; reason: string | null; detail?: Record<string, unknown> }[];
+  diagnostics: string[];
+}
+
 /** The bare kernel ops, in order — what `apply` actually replays. */
 export function opsetKernelOps(opset: Opset): Op[] {
   return opset.ops.map((p) => p.op);
@@ -149,20 +165,29 @@ const VERB: Record<PlanDisposition, string> = {
 };
 
 export function renderOpsetPlan(opset: Opset): string {
+  const lines = planLines(opset.ops, opset.summary);
+  if (!opset.converges) lines.push(`WARNING: plan does not reproduce the proposed content exactly — will not apply.`);
+  return lines.join("\n");
+}
+
+/** The same text over a Plan's `preview.identity[<doc>]` (3.0; `omg update --dry-run`): one line per op, an empty line, the summary. */
+export function renderIdentityPlan(identity: IdentityPreview): string {
+  return planLines(identity.ops, identity.summary).join("\n");
+}
+
+function planLines(ops: { disposition: PlanDisposition; blocks: string[]; confidence: number | null; reason: string | null }[], s: OpsetSummary): string[] {
   const lines: string[] = [];
-  for (const p of opset.ops) {
+  for (const p of ops) {
     const subject = p.blocks[0] ?? "(new)";
     const conf = p.confidence !== null ? ` ~${p.confidence.toFixed(2)}` : "";
     const why = p.reason ? ` [${p.reason}]` : "";
     lines.push(`${VERB[p.disposition]} ${subject.padEnd(9)} ${p.disposition}${conf}${why}`);
   }
-  const s = opset.summary;
   lines.push("");
   lines.push(
     `preserved: ${s.preserved}  updated: ${s.updated}  moved: ${s.moved}  ` +
     `created: ${s.created}  removed: ${s.removed}  split: ${s.split}  ` +
     `merged: ${s.merged}  ambiguous: ${s.ambiguous}`,
   );
-  if (!opset.converges) lines.push(`WARNING: plan does not reproduce the proposed content exactly — will not apply.`);
-  return lines.join("\n");
+  return lines;
 }

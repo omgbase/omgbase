@@ -54,7 +54,7 @@ describe("plan / execute / apply { effects } over MCP", () => {
     const { payload: plan, isError } = await call("plan", { effects: SLICE1 });
     expect(isError).toBe(false);
     expect(plan.version).toBe(1);
-    expect(plan.planner_v).toBe("p1");
+    expect(plan.planner_v).toBe("p2");
     expect(plan.plan_id).toMatch(/^[0-9a-f]{64}$/);
     expect((plan.effects as { target: { path: string } }[])[0]!.target.path).toBe("a.md");
     expect((plan.preconditions as { docs: { path: string }[] }).docs[0]!.path).toBe("a.md");
@@ -92,7 +92,7 @@ describe("plan / execute / apply { effects } over MCP", () => {
     const v2 = await call("execute", { plan: { version: 2 } });
     expect(v2.payload).toMatchObject({ error: "unsupported_plan_version", retriable: false, data: { version: 2, supported: [1] } });
     const { payload: plan } = await call("plan", { effects: SLICE1 });
-    const edited = await call("execute", { plan: { ...plan, planner_v: "p2" } });
+    const edited = await call("execute", { plan: { ...plan, planner_v: "p9" } });
     expect(edited.payload).toMatchObject({ error: "plan_mismatch", data: { expected: plan.plan_id } });
     const malformed = await call("execute", { plan: { version: 1, planner_v: "p1" } });
     expect(malformed.payload).toMatchObject({ error: "filter_invalid", data: { hint: "arguments" } });

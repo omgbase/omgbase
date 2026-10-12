@@ -1839,15 +1839,19 @@
               "diagnostics": []
             },
             "apply": {
-              "results": [],
-              "revisions": [
-                {
-                  "id": "d_0",
-                  "path": "a.md",
-                  "hash": "7fd120e4067184523f93f1f758a07a3c866216962f3726b863f3a1fad67e2071"
-                }
-              ],
-              "committed": true
+              "receipt": {
+                "plan_id": "9ece468d18addf042b17a0c19dd4d8e5a5cfdc3cebb85bd77f8a5a3dc502ad48",
+                "commit": "c_1",
+                "revisions": [
+                  {
+                    "id": "d_0",
+                    "path": "a.md",
+                    "hash": "7fd120e4067184523f93f1f758a07a3c866216962f3726b863f3a1fad67e2071"
+                  }
+                ],
+                "new_ids": {},
+                "committed": true
+              }
             }
           }
         ],
@@ -1924,7 +1928,7 @@
             "actor": "agent:update",
             "reason": null,
             "checkpoint_id": null,
-            "ops": null
+            "ops": "{\"effects\":[{\"field\":\"content\",\"op\":\"set\",\"target\":{\"id\":\"d_0\",\"kind\":\"document\",\"path\":\"a.md\"},\"value\":\"---\\ntitle: Changed\\ntags:\\n  - x\\n---\\n\\n# Body\\n\\nText.\\n\"}],\"plan_id\":\"9ece468d18addf042b17a0c19dd4d8e5a5cfdc3cebb85bd77f8a5a3dc502ad48\",\"v\":1}"
           }
         ],
         "revisions": [
@@ -2240,7 +2244,8 @@
             },
             "apply": {
               "error": {
-                "code": "plan_not_convergent"
+                "code": "plan_not_convergent",
+                "effect_index": 0
               }
             }
           }
@@ -2401,7 +2406,7 @@
     },
     {
       "name": "stale-plan",
-      "notes": "§7.2: the document is observed again between planning and applying → `base_revision` differs → stale_plan (retriable) with the current revision and hash.",
+      "notes": "§7/§11.7 (3.0): the opset is planned (no apply), then the same content is frozen as a `set content` plan; the document is observed again between planning and executing → its triple moved → `execute` is stale_plan (retriable) with the current revision and hash, nothing written. (Through 2.x the `plan` step's own `apply` half replayed the stale opset; since 3.0 that half re-plans the content, so staleness is staged through the effect steps.)",
       "steps": [
         {
           "observe": {
@@ -2418,21 +2423,43 @@
           "plan": {
             "ts": "2026-09-26T10:01:00.000Z",
             "doc": "a.md",
-            "content": "# Title\n\nAlpha is the first paragraph of this note about planning.\n\nBravo is the second paragraph, which talks about something else.\n\nCharlie really closes the note with a third paragraph.\n",
-            "apply": true,
-            "before_apply": [
+            "content": "# Title\n\nAlpha is the first paragraph of this note about planning.\n\nBravo is the second paragraph, which talks about something else.\n\nCharlie really closes the note with a third paragraph.\n"
+          }
+        },
+        {
+          "plan_effects": {
+            "effects": [
               {
-                "observe": {
-                  "ts": "2026-09-26T10:02:00.000Z",
-                  "items": [
-                    {
-                      "path": "a.md",
-                      "source": "# Title\n\nAlpha was the first paragraph of this note about planning.\n\nBravo is the second paragraph, which talks about something else.\n\nCharlie closes the note with a third paragraph.\n"
-                    }
-                  ]
-                }
+                "op": "set",
+                "target": {
+                  "kind": "document",
+                  "path": "a.md"
+                },
+                "field": "content",
+                "value": "# Title\n\nAlpha is the first paragraph of this note about planning.\n\nBravo is the second paragraph, which talks about something else.\n\nCharlie really closes the note with a third paragraph.\n"
               }
             ]
+          }
+        },
+        {
+          "observe": {
+            "ts": "2026-09-26T10:02:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "# Title\n\nAlpha was the first paragraph of this note about planning.\n\nBravo is the second paragraph, which talks about something else.\n\nCharlie closes the note with a third paragraph.\n"
+              }
+            ]
+          }
+        },
+        {
+          "execute": {
+            "ts": "2026-09-26T10:03:00.000Z",
+            "plan_step": 2,
+            "origin": {
+              "actor": "agent:test",
+              "reason": "whole-document update"
+            }
           }
         }
       ],
@@ -2498,33 +2525,86 @@
               },
               "converges": true,
               "diagnostics": []
-            },
-            "before_apply": [
-              [
+            }
+          },
+          {
+            "plan": {
+              "version": 1,
+              "planner_v": "p2",
+              "effects": [
                 {
-                  "path": "a.md",
-                  "echo": false,
-                  "doc": "d_0",
-                  "commit": "c_1",
-                  "rev": "r_1",
-                  "converged": true,
-                  "conflicted": false,
-                  "dispositions": {
-                    "edited": 1,
-                    "same": 3
-                  }
+                  "op": "set",
+                  "target": {
+                    "kind": "document",
+                    "id": "d_0",
+                    "path": "a.md"
+                  },
+                  "field": "content",
+                  "value": "# Title\n\nAlpha is the first paragraph of this note about planning.\n\nBravo is the second paragraph, which talks about something else.\n\nCharlie really closes the note with a third paragraph.\n"
                 }
-              ]
-            ],
-            "apply": {
-              "error": {
-                "code": "stale_plan",
-                "current": {
-                  "revision": "r_1",
-                  "hash": "c5ddd63fd27275985f72c78197f0812beb92ff3d66f7d759a0cebc018a8e4acc"
-                },
-                "retriable": true
+              ],
+              "opset": {
+                "creates": [],
+                "moves": [],
+                "tombstones": [],
+                "set_frontmatter": [],
+                "ops": [
+                  {
+                    "op": "update",
+                    "block": "b_3",
+                    "markdown": "Charlie really closes the note with a third paragraph.",
+                    "expect": {
+                      "content_hash": "2517a46be762b2252a619dc9922d1b9e21682671faf4f88c9a8a2c88a94933fa"
+                    }
+                  }
+                ]
+              },
+              "preconditions": {
+                "docs": [
+                  {
+                    "id": "d_0",
+                    "path": "a.md",
+                    "base_revision": "r_0",
+                    "hash": "a37e66099c3c42dd00a503d56411cfdf9bb213f73c2301a23ce9bd21ba438fb0"
+                  }
+                ],
+                "blocks": [],
+                "parents": [],
+                "absent_paths": []
+              },
+              "new_ids": [
+                {
+                  "symbol": "$new.0",
+                  "kind": "block"
+                }
+              ],
+              "plan_id": "6a786346951f01552e80034dac85621ca71411583f34c61cd2cd7c59f8a4d5d7",
+              "diagnostics": []
+            }
+          },
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_1",
+              "rev": "r_1",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "edited": 1,
+                "same": 3
               }
+            }
+          ],
+          {
+            "error": {
+              "code": "stale_plan",
+              "current": {
+                "revision": "r_1",
+                "hash": "c5ddd63fd27275985f72c78197f0812beb92ff3d66f7d759a0cebc018a8e4acc"
+              },
+              "retriable": true
             }
           }
         ],
@@ -2892,44 +2972,22 @@
               "diagnostics": []
             },
             "apply": {
-              "results": [
-                {
-                  "ids": [
-                    "b_2"
-                  ],
-                  "removed": [
-                    "b_2"
-                  ]
+              "receipt": {
+                "plan_id": "22e39abc806b608deacc0a4d898275e6acf842a486428fe3f29362d9ad71f60b",
+                "commit": "c_1",
+                "revisions": [
+                  {
+                    "id": "d_0",
+                    "path": "a.md",
+                    "hash": "a5a608bda93e46c7c82e1d03ed391144f9d3a739bdf5fff09a691cfdc6953c8f"
+                  }
+                ],
+                "new_ids": {
+                  "$new.0": "b_7",
+                  "$new.1": "b_8"
                 },
-                {
-                  "ids": [
-                    "b_1"
-                  ]
-                },
-                {
-                  "ids": [
-                    "b_8"
-                  ]
-                },
-                {
-                  "ids": [
-                    "b_1"
-                  ]
-                },
-                {
-                  "ids": [
-                    "b_8"
-                  ]
-                }
-              ],
-              "revisions": [
-                {
-                  "id": "d_0",
-                  "path": "a.md",
-                  "hash": "a5a608bda93e46c7c82e1d03ed391144f9d3a739bdf5fff09a691cfdc6953c8f"
-                }
-              ],
-              "committed": true
+                "committed": true
+              }
             }
           }
         ],
@@ -3040,7 +3098,7 @@
             "actor": "agent:test",
             "reason": "whole-document update",
             "checkpoint_id": null,
-            "ops": null
+            "ops": "{\"effects\":[{\"field\":\"content\",\"op\":\"set\",\"target\":{\"id\":\"d_0\",\"kind\":\"document\",\"path\":\"a.md\"},\"value\":\"# Title\\n\\nAlpha is the first paragraph of this note about planning, revised.\\n\\nDelta arrives as a new paragraph at the end of the note.\\n\\nCharlie closes the note with a third paragraph.\\n\"}],\"plan_id\":\"22e39abc806b608deacc0a4d898275e6acf842a486428fe3f29362d9ad71f60b\",\"v\":1}"
           }
         ],
         "revisions": [

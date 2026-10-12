@@ -1,4 +1,4 @@
-//! The effect planner and executor (`spec/mutate/README.md` §11, mutate 2.3;
+//! The effect planner and executor (`spec/mutate/README.md` §11, mutate 3.0;
 //! ADR-021): the public effects of [`omgbase_mutate::effects`] resolved
 //! against this store, classified for conflicts, lowered **in order** to the
 //! kernel ops, file heads and document operations the existing executor
@@ -11,30 +11,42 @@
 //! `$new.<n>`, nothing is issued), so a plan burns no id and — the kernel
 //! being id-agnostic for rendering — its preview is exact. A `$new.<n>` a
 //! later effect names is lowered to the kernel placeholder `$k.ids[i]` of the
-//! op that minted it.
+//! op that minted it; a `create` (3.0) is its composed file parsed into a
+//! loaded tree — the document symbol, then one block symbol per block in
+//! pre-order — so later effects address the new document and its blocks like
+//! any other (the ops carry those block symbols as they are). `set
+//! document.content` runs the §7 whole-document planner and surfaces its
+//! decision as `preview.identity[doc]`; a `retarget` surfaces its hits as
+//! `preview.retarget[]`.
 //!
 //! **`execute`** ([`Store::execute_plan`], the plan form) admits the plan
 //! (version, shape, digest), pre-checks its `preconditions.docs` triples and
 //! `absent_paths`, then **replays the opset** under the **recording** minter
-//! ([`Capture::Record`]): the heads and kernel ops through the same runner,
-//! the creates reconciled from their composed `source`, the moves with their
-//! inbound edges read now, the tombstones — committed as one transaction with
-//! `commits.ops = canonical({ v: 1, plan_id, effects })`. The receipt zips the
-//! plan's symbols onto the ids the replay minted, per kind. The digest form
-//! ([`Store::execute_by_digest`]) re-plans and commits on digest equality;
-//! [`Store::apply_effects`] is plan + execute in one call.
+//! ([`Capture::Record`]): the heads, then the kernel ops in order with every
+//! created document re-adopted at its `before_op` (parsed again, so the i-th
+//! `b` minted IS the i-th block symbol — the alias its symbols in the ops
+//! resolve through), the moves with their inbound edges read now, the
+//! tombstones — committed as one transaction (a created document as a
+//! known-id ingest under the `Absent` guard; its `d` minted by the ingest)
+//! with `commits.ops = canonical({ v: 1, plan_id, effects })`. The receipt
+//! zips the plan's symbols onto the ids the replay minted, per kind. The
+//! digest form ([`Store::execute_by_digest`]) re-plans and commits on digest
+//! equality; [`Store::apply_effects`] is plan + execute in one call.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use omgbase_format::hash::{hex, sha256};
+use omgbase_format::{BlockKind, parse_markdown};
 use omgbase_mutate::effects::{
     self as fx, BlockPrecondition, ConflictTracker, DocPrecondition, Field, FocusInfo, FocusTarget,
-    NewId, NewIdKind, PLAN_VERSION, PLANNER_V, ParentPrecondition, Plan, PlanCreate,
-    PlanFrontmatter, PlanMove, PlanOpset, PlanPreview, PlanRevision, PlanTombstone, Preconditions,
+    IdentityOp, IdentityPreview, NewId, NewIdKind, PLAN_VERSION, PLANNER_V, ParentPrecondition,
+    Plan, PlanCreate, PlanFrontmatter, PlanMove, PlanOpset, PlanPreview, PlanRevision,
+    PlanTombstone, Preconditions, RetargetHitPreview, RetargetPairPreview, RetargetPreview,
     ScalarWrite, Target,
 };
 use omgbase_mutate::{
-    At, Effect, ErrorCode, Expect, MutBlock, MutationError, Op, Parent, To, render, render_block,
+    At, Effect, ErrorCode, Expect, MutBlock, MutDoc, MutationError, Op, Parent, To, parse_document,
+    render, render_block,
 };
 use omgbase_reconcile::Config;
 use rusqlite::{OptionalExtension, params};
@@ -43,9 +55,7 @@ use serde_json::{Map, Value, json};
 use crate::Store;
 use crate::doc_store::DocStore;
 use crate::docs_ops::{canonical, compose_file, split_frontmatter};
-use crate::effects::{
-    CommitHead, DocBase, Effect as Commit, Guard, Outcome, doc_base, touched_paths,
-};
+use crate::effects::{CommitHead, DocBase, Effect as Commit, Outcome, doc_base, touched_paths};
 use crate::error::{Error, Result};
 use crate::links::inbound_links_to;
 use crate::macros::LinkRepair;
@@ -121,6 +131,8 @@ fn path_taken(msg: String, path: &str) -> Error {
     merr(ErrorCode::PathTaken, msg, json!({ "path": path }))
 }
 
+/// `target_missing { symbol }`: a `$new.<n>` document the plan creates
+/// cannot be moved or removed in the same plan.
 fn symbol_target_missing(symbol: &str, what: &str) -> Error {
     merr(
         ErrorCode::TargetMissing,
@@ -131,13 +143,14 @@ fn symbol_target_missing(symbol: &str, what: &str) -> Error {
 
 // ---- the lowering context (§11.3) ---------------------------------------------------------
 
-/// A `create` as the planner carries it until the plan is frozen (later
-/// `set`/`unset frontmatter.<k>` on its `$new.n` fold in).
+/// A `create` as the plan carries it (`opset.creates[]`, 3.0): its document
+/// symbol, path, composed file, and the index of the first kernel op planned
+/// after it — where the replay adopts it again.
 struct CreateDraft {
     symbol: String,
     path: String,
-    markdown: String,
-    frontmatter: Map<String, Value>,
+    source: String,
+    before_op: usize,
 }
 
 struct MoveDraft {
@@ -174,6 +187,11 @@ struct Planning<'a> {
     tracker: ConflictTracker,
     /// The resolved effects kept (dropped duplicates excluded).
     resolved: Vec<Effect>,
+    /// `preview.identity`: per `set document.content`, what the §7 planner
+    /// decided (3.0).
+    identity: Vec<(String, IdentityPreview)>,
+    /// `preview.retarget`: per `retarget` effect, its hits and pairs (3.0).
+    retarget: Vec<RetargetPreview>,
 }
 
 /// The live row of a block as the planner needs it.
@@ -188,6 +206,35 @@ fn set_head(p: &mut Planning<'_>, doc_id: &str, head: String) {
         Some(slot) => slot.1 = head,
         None => p.heads.push((doc_id.to_owned(), head)),
     }
+}
+
+/// The block symbols of every create, by structure (§11.3, 3.0): the planner
+/// mints a create's `d` symbol, then its blocks' in pre-order, and nothing
+/// else mints a `d` — so a create's document symbol is followed in `new_ids`
+/// by one block symbol per block of its composed file. Best effort (a plan
+/// that does not fit yields fewer): the dry-run shim's view only — the
+/// replay pairs symbols with mints positionally.
+fn created_block_symbols(plan: &Plan) -> Vec<String> {
+    plan.opset
+        .creates
+        .iter()
+        .filter_map(|c| {
+            let at = plan.new_ids.iter().position(|n| n.symbol == c.symbol)?;
+            let blocks_in_source = parse_markdown(&c.source)
+                .iter()
+                .filter(|b| b.kind != BlockKind::Frontmatter)
+                .count();
+            Some(
+                plan.new_ids[at + 1..]
+                    .iter()
+                    .take_while(|n| n.kind == NewIdKind::Block)
+                    .take(blocks_in_source)
+                    .map(|n| n.symbol.clone())
+                    .collect::<Vec<_>>(),
+            )
+        })
+        .flatten()
+        .collect()
 }
 
 impl Store {
@@ -899,13 +946,27 @@ impl Store {
                 markdown,
                 frontmatter,
             } => {
+                // §11.3 (3.0): the composed file, parsed under the current
+                // minter — the document symbol first, then one block symbol
+                // per block in pre-order — and adopted into the runner, so
+                // every later effect addresses its blocks (and, for an
+                // `insert`, the document by its symbol) as it addresses a
+                // loaded document's. Its block symbols name themselves in
+                // the kernel ops (no op minted them); the replay substitutes
+                // the ids its own parse mints.
                 self.check_absent(p, path)?;
                 let symbol = self.mint("d")?;
+                let source = compose_file(markdown, frontmatter.as_ref());
+                let doc = self.parse_new_document(&symbol, path, &source)?;
+                for id in doc.all_ids() {
+                    p.block_symbols.entry(id.clone()).or_insert(id);
+                }
+                p.runner.adopt_new(doc);
                 p.creates.push(CreateDraft {
                     symbol,
                     path: path.clone(),
-                    markdown: markdown.clone(),
-                    frontmatter: frontmatter.clone().unwrap_or_default(),
+                    source,
+                    before_op: p.ops.len(),
                 });
                 p.absent_paths.push(path.clone());
             }
@@ -916,12 +977,6 @@ impl Store {
                 expect,
             } => {
                 let doc = self.target_doc(p, into)?;
-                if fx::parse_new_symbol(&doc).is_some() {
-                    return Err(symbol_target_missing(
-                        &doc,
-                        "inserting into a created document is not supported — put the content in its markdown",
-                    ));
-                }
                 self.check_revision(&doc, expect.as_ref())?;
                 Self::record_parent_pin(p, &doc, into, expect.as_ref());
                 let to = self.placement(p, into, at)?;
@@ -953,12 +1008,6 @@ impl Store {
                 expect,
             } => {
                 let dst = self.target_doc(p, into)?;
-                if fx::parse_new_symbol(&dst).is_some() {
-                    return Err(symbol_target_missing(
-                        &dst,
-                        "moving blocks into it is not supported",
-                    ));
-                }
                 self.check_revision(&dst, expect.as_ref())?;
                 Self::record_parent_pin(p, &dst, into, expect.as_ref());
                 let to = self.placement(p, into, at)?;
@@ -966,11 +1015,15 @@ impl Store {
                     .iter()
                     .map(|id| self.kernel_block_id(p, id))
                     .collect::<Result<Vec<_>>>()?;
+                // `doc` names the destination when `into` is a document
+                // (§2.3, 3.0): a top-level start/end would otherwise mean the
+                // SOURCE document's.
                 self.push_op(
                     p,
                     Op::Move {
                         blocks,
                         to,
+                        doc: matches!(into, Target::Document { .. }).then(|| dst.clone()),
                         expect: Self::order_expect(expect.as_ref()),
                     },
                 )?;
@@ -1119,30 +1172,6 @@ impl Store {
             Target::Document {
                 id: Some(doc_id), ..
             } => {
-                if fx::parse_new_symbol(doc_id).is_some() {
-                    // Folded into the create's composition (§11.3).
-                    let Some(key) = field.strip_prefix("frontmatter.") else {
-                        return Err(invalid(format!(
-                            "{field} cannot be set on a document this plan creates ({doc_id})"
-                        )));
-                    };
-                    let draft = p
-                        .creates
-                        .iter_mut()
-                        .find(|c| c.symbol == *doc_id)
-                        .expect("resolved to a create");
-                    match value {
-                        Some(v) => {
-                            draft.frontmatter.insert(key.to_owned(), v.clone());
-                        }
-                        None => {
-                            // `shift_remove`: the reference's `delete` keeps the
-                            // other keys' order (`remove` would swap the last in).
-                            draft.frontmatter.shift_remove(key);
-                        }
-                    }
-                    return Ok(());
-                }
                 self.check_revision(doc_id, expect)?;
                 if field == "content" {
                     let Some(Value::String(content)) = value else {
@@ -1150,8 +1179,16 @@ impl Store {
                             "`content` takes a string value: the complete proposed document",
                         ));
                     };
+                    if fx::parse_new_symbol(doc_id).is_some() {
+                        return Err(symbol_target_missing(
+                            doc_id,
+                            "its content is the create's markdown",
+                        ));
+                    }
                     return self.lower_content(p, doc_id, content);
                 }
+                // `frontmatter.<key>` — on a created document too (3.0): its
+                // tree is loaded, the patch is a head like any other.
                 let key = field.strip_prefix("frontmatter.").expect("validated");
                 let d = p.runner.ensure_doc(self, doc_id)?;
                 let (mut merged, body) = split_frontmatter(&render(&p.runner.loaded[d].doc));
@@ -1309,9 +1346,23 @@ impl Store {
         Ok(())
     }
 
+    /// A `create`'s composed file parsed into the working tree under the
+    /// store's current minter (symbolic when planning, recording when
+    /// executing): one `b` per block in pre-order.
+    fn parse_new_document(&mut self, doc_id: &str, path: &str, source: &str) -> Result<MutDoc> {
+        let mut mint = self.ids.at(&self.conn);
+        let mut minter = mint.deferred("b");
+        let doc = parse_document(doc_id, path, source, &mut minter);
+        minter.finish()?;
+        Ok(doc)
+    }
+
     /// `set document.content`: the whole-document planner's opset, spliced
-    /// in (placeholders shifted), its frontmatter as a file head. The planner's
-    /// own dry runs mint under a throwaway symbol table.
+    /// in (placeholders shifted), its frontmatter as a file head, its
+    /// identity decision surfaced as `preview.identity[doc]` (3.0). The
+    /// planner's own dry runs mint under a throwaway symbol table. An opset
+    /// with nothing to do — the content already current — loads nothing, so
+    /// the plan commits nothing for it.
     fn lower_content(&mut self, p: &mut Planning<'_>, doc_id: &str, content: &str) -> Result<()> {
         let config = p.ctx.config.clone();
         let prev = self.ids.set_capture(Some(Capture::Symbolic(Vec::new())));
@@ -1331,6 +1382,39 @@ impl Store {
                 json!({ "doc": doc_id, "diagnostics": opset.diagnostics }),
             ));
         }
+        let offset = p.ops.len();
+        p.identity.push((
+            doc_id.to_owned(),
+            IdentityPreview {
+                matcher_v: opset.matcher_v.clone(),
+                summary: opset.summary,
+                ops: opset
+                    .ops
+                    .iter()
+                    .enumerate()
+                    .map(|(i, planned)| IdentityOp {
+                        op_index: offset + i,
+                        disposition: planned.disposition,
+                        blocks: planned.blocks.clone(),
+                        confidence: planned.confidence,
+                        reason: planned.reason.clone(),
+                        detail: planned.detail.clone(),
+                    })
+                    .collect(),
+                diagnostics: opset.diagnostics.clone(),
+            },
+        ));
+        if opset.ops.is_empty() && opset.frontmatter.is_none() {
+            // The content IS the document (the zero-effects rule): nothing is
+            // loaded, so nothing is ingested and `execute` records no commit
+            // — the document's triple stays a precondition, so the plan is
+            // `stale_plan` once the document moves on.
+            let base = doc_base(&self.conn, doc_id)?.ok_or_else(|| doc_missing(doc_id))?;
+            if !p.doc_bases.iter().any(|b| b.doc_id == *doc_id) {
+                p.doc_bases.push(base);
+            }
+            return Ok(());
+        }
         let d = p.runner.ensure_doc(self, doc_id)?;
         if let Some(raw) = &opset.frontmatter {
             let head = format!(
@@ -1341,7 +1425,6 @@ impl Store {
             p.runner.set_head(self, doc_id, &head)?;
             set_head(p, doc_id, head);
         }
-        let offset = p.ops.len();
         for planned in &opset.ops {
             self.push_op(p, fx::shift_placeholders(&planned.op, offset))?;
         }
@@ -1368,8 +1451,9 @@ impl Store {
         effect: &Effect,
     ) -> Result<()> {
         let e = self.resolve_effect(p, effect)?;
-        // A retarget's hits are read once, for its focus and its ops.
-        let retarget_ops = match &e {
+        // A retarget's hits are read once, for its focus, its ops and its
+        // preview entry.
+        let (retarget_ops, retarget_preview) = match &e {
             Effect::Retarget { repairs, path_glob } => {
                 let repairs: Vec<LinkRepair> = repairs
                     .iter()
@@ -1378,10 +1462,32 @@ impl Store {
                         to: r.to.clone(),
                     })
                     .collect();
-                self.links_repair(&p.ctx.repo_id, &repairs, path_glob.as_deref())?
-                    .ops
+                let plan = self.links_repair(&p.ctx.repo_id, &repairs, path_glob.as_deref())?;
+                let preview = RetargetPreview {
+                    effect_index: i,
+                    hits: plan
+                        .hits
+                        .iter()
+                        .map(|h| RetargetHitPreview {
+                            id: h.block.clone(),
+                            path: h.path.clone(),
+                            old_raw: h.old_raw.clone(),
+                            new_raw: h.new_raw.clone(),
+                        })
+                        .collect(),
+                    pairs: plan
+                        .pairs
+                        .iter()
+                        .map(|c| RetargetPairPreview {
+                            from: c.from.clone(),
+                            to: c.to.clone(),
+                            hits: c.hits,
+                        })
+                        .collect(),
+                };
+                (plan.ops, Some(preview))
             }
-            _ => Vec::new(),
+            _ => (Vec::new(), None),
         };
         let hits: Vec<String> = retarget_ops
             .iter()
@@ -1395,6 +1501,9 @@ impl Store {
             return Ok(());
         }
         p.resolved.push(e.clone());
+        if let Some(preview) = retarget_preview {
+            p.retarget.push(preview);
+        }
         self.apply_lowering(p, &e, retarget_ops)
     }
 
@@ -1455,6 +1564,8 @@ impl Store {
             doc_bases: Vec::new(),
             tracker: ConflictTracker::default(),
             resolved: Vec::new(),
+            identity: Vec::new(),
+            retarget: Vec::new(),
         };
         for (i, e) in effects.iter().enumerate() {
             self.lower_effect(&mut p, i, e)?;
@@ -1472,25 +1583,19 @@ impl Store {
             doc_bases,
             tracker,
             resolved,
+            identity,
+            retarget,
             ..
         } = p;
         let applied = runner.finish();
-        let composed: Vec<(String, String, String)> = creates
-            .iter()
-            .map(|c| {
-                (
-                    c.symbol.clone(),
-                    c.path.clone(),
-                    compose_file(&c.markdown, Some(&c.frontmatter)),
-                )
-            })
-            .collect();
         let opset = PlanOpset {
-            creates: composed
+            creates: creates
                 .iter()
-                .map(|(_, path, source)| PlanCreate {
-                    path: path.clone(),
-                    source: source.clone(),
+                .map(|c| PlanCreate {
+                    symbol: c.symbol.clone(),
+                    path: c.path.clone(),
+                    source: c.source.clone(),
+                    before_op: c.before_op,
                 })
                 .collect(),
             moves: moves
@@ -1520,10 +1625,12 @@ impl Store {
             base_revision: base.current_rev.clone(),
             hash: base.file_hash.as_deref().map(hex),
         };
+        // The loaded documents' triples; an adopted document has none (its
+        // precondition is its path in `absent_paths`).
         let mut docs: Vec<DocPrecondition> = applied
             .loaded
             .iter()
-            .map(|d| precondition(&d.base))
+            .filter_map(|d| d.base.as_ref().map(precondition))
             .collect();
         for base in &doc_bases {
             if !docs.iter().any(|d| d.id == base.doc_id) {
@@ -1540,7 +1647,8 @@ impl Store {
             absent_paths,
         };
         // The preview (not digested): the kernel results, every revision the
-        // commit would record, the per-file diffs.
+        // commit would record (a created document's under its symbol), the
+        // per-file diffs (a created document's `"" → bytes`).
         let mut diffs: Vec<(String, (String, String))> = applied
             .loaded
             .iter()
@@ -1560,14 +1668,6 @@ impl Store {
                 Some(slot) => slot.1 = entry,
                 None => diffs.push((path, entry)),
             }
-        }
-        for (symbol, path, source) in &composed {
-            put(&mut diffs, path.clone(), (String::new(), source.clone()));
-            revisions.push(PlanRevision {
-                id: symbol.clone(),
-                path: path.clone(),
-                hash: hex(&sha256(source.as_bytes())),
-            });
         }
         for m in &moves {
             let bytes = doc_store.read(&m.from)?.unwrap_or_default();
@@ -1607,6 +1707,8 @@ impl Store {
                 results: applied.results,
                 revisions,
                 diffs,
+                identity,
+                retarget,
             }),
         })
     }
@@ -1670,7 +1772,10 @@ impl Store {
             unreachable!("the recording capture installed above is taken back here")
         };
         // `$new.n` → minted id, per kind: the i-th block symbol is the i-th
-        // `b` the replay minted, the i-th document symbol the i-th `d`.
+        // `b` the replay minted (every one before the transaction, in the
+        // plan's order — a created document re-adopted at its `before_op`),
+        // the i-th document symbol the i-th `d` the created documents'
+        // ingests minted inside it (load order = effect order).
         let mut bs = minted
             .iter()
             .filter(|(k, _)| *k == "block")
@@ -1699,7 +1804,14 @@ impl Store {
     }
 
     /// The replay proper (under the recording minter): the commit id and the
-    /// receipt's revisions.
+    /// receipt's revisions. The heads of the loaded documents first, then
+    /// the kernel ops in order with each created document re-adopted at its
+    /// `before_op` — its composed file parsed under the production minter,
+    /// so its blocks take the `b`s the plan's symbols stand for, and its own
+    /// heads applied once its tree is loaded — every `$new.<n>` of a created
+    /// document's block in an op rewritten to the id its parse minted (an
+    /// `insert`'s / `move`'s `doc` keeps the document symbol: the runner knows
+    /// the adopted tree by it, the ingest mints its `d`).
     fn replay(
         &mut self,
         ctx: &PlanContext,
@@ -1708,11 +1820,56 @@ impl Store {
         doc_store: &mut dyn DocStore,
     ) -> Result<(Option<String>, Vec<Revision>)> {
         let mut runner = OpsRunner::new(&ctx.repo_id);
-        for h in &plan.opset.set_frontmatter {
-            runner.set_head(self, &h.doc, &h.raw)?;
+        let heads = &plan.opset.set_frontmatter;
+        for h in heads {
+            if fx::parse_new_symbol(&h.doc).is_none() {
+                runner.set_head(self, &h.doc, &h.raw)?;
+            }
         }
-        for op in &plan.opset.ops {
-            runner.push(self, op)?;
+        // The i-th `b` the replay mints is the i-th block symbol (§11.7).
+        let block_symbols: Vec<&str> = plan
+            .new_ids
+            .iter()
+            .filter(|n| n.kind == NewIdKind::Block)
+            .map(|n| n.symbol.as_str())
+            .collect();
+        let mut aliases: HashMap<String, String> = HashMap::new();
+        let creates = &plan.opset.creates;
+        let mut ci = 0;
+        for i in 0..=plan.opset.ops.len() {
+            while ci < creates.len() && creates[ci].before_op <= i {
+                let c = &creates[ci];
+                ci += 1;
+                let minted_before = self
+                    .ids
+                    .captured_kinds()
+                    .iter()
+                    .filter(|k| **k == "block")
+                    .count();
+                let doc = self.parse_new_document(&c.symbol, &c.path, &c.source)?;
+                for (j, id) in doc.all_ids().into_iter().enumerate() {
+                    if let Some(sym) = block_symbols.get(minted_before + j) {
+                        aliases.insert((*sym).to_owned(), id);
+                    }
+                }
+                runner.adopt_new(doc);
+                for h in heads {
+                    if h.doc == c.symbol {
+                        runner.set_head(self, &c.symbol, &h.raw)?;
+                    }
+                }
+            }
+            let Some(op) = plan.opset.ops.get(i) else {
+                break;
+            };
+            let op = if aliases.is_empty() {
+                op.clone()
+            } else {
+                fx::map_block_ids(op, |id| {
+                    aliases.get(id).cloned().unwrap_or_else(|| id.to_owned())
+                })
+            };
+            runner.push(self, &op)?;
         }
         let applied = runner.finish();
         let moved_to: HashMap<&str, &str> = plan
@@ -1741,17 +1898,9 @@ impl Store {
                 .get(d.doc.doc_id.as_str())
                 .map_or_else(|| d.doc.path.clone(), |t| (*t).to_owned())
         });
-        // (b) The transaction: creates, moves, the mutated documents, tombstones.
-        let config = ctx.config.clone();
+        // (b) The transaction: moves, the documents (created ones among
+        // them, under the `Absent` guard), tombstones.
         let mut effects: Vec<Commit> = Vec::new();
-        for c in &plan.opset.creates {
-            let prepared =
-                self.prepare_single(&ctx.repo_id, &c.path, &c.source, &ctx.ts, &config)?;
-            effects.push(Commit::IngestReconciled {
-                prepared: Box::new(prepared),
-                guard: Guard::Absent,
-            });
-        }
         for m in &plan.opset.moves {
             let current_rev = doc_base(&self.conn, &m.id)?.and_then(|b| b.current_rev);
             effects.push(Commit::MovePath {
@@ -1762,7 +1911,7 @@ impl Store {
                 inbound: inbound_links_to(&self.conn, &ctx.repo_id, &m.id, &m.from)?,
             });
         }
-        let known: Vec<Revision> = staged
+        let mut known: Vec<Revision> = staged
             .iter()
             .map(|s| Revision {
                 doc: s.doc_id.clone(),
@@ -1797,21 +1946,12 @@ impl Store {
             };
         // (c) The files.
         self.materialize_paths(&ctx.repo_id, &touched_paths(&effects), doc_store)?;
-        // The receipt's revisions, in effect order: the ingest results pair
-        // with the ingest effects (creates, then the known documents).
-        let mut revisions: Vec<Revision> = plan
-            .opset
-            .creates
-            .iter()
-            .zip(committed.iter())
-            .map(|(c, committed)| Revision {
-                doc: committed.doc_id.clone(),
-                path: c.path.clone(),
-                hash: hex(&sha256(c.source.as_bytes())),
-            })
-            .collect();
-        revisions.extend(known);
-        Ok((commit, revisions))
+        // The receipt's revisions, one per ingest in load order; a created
+        // document's `id` is the `d` the ingest minted.
+        for (rev, c) in known.iter_mut().zip(&committed) {
+            rev.doc = c.doc_id.clone();
+        }
+        Ok((commit, known))
     }
 
     /// §11.7 `execute { plan }` (the plan form): `version` read, the
@@ -1901,8 +2041,13 @@ impl Store {
     /// would have produced. Only the sugar tools call this; `plan` and
     /// `apply { effects, dry_run }` keep burning nothing.
     pub fn realize_symbols(&mut self, plan: &Plan) -> Result<Vec<(String, String)>> {
+        // A created document's blocks (3.0: symbols too) were never minted by
+        // a legacy dry run — its reconciling ingest minted them inside the
+        // transaction — so they are skipped here; the `d` is realized.
+        let created: HashSet<String> = created_block_symbols(plan).into_iter().collect();
         plan.new_ids
             .iter()
+            .filter(|n| !created.contains(&n.symbol))
             .map(|n| {
                 let prefix = match n.kind {
                     NewIdKind::Block => "b",

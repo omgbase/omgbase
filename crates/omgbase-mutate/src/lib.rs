@@ -36,9 +36,10 @@ pub mod tree;
 pub use changeset::{Op, parse_placeholder, resolve_op, resolve_placeholder, resolve_to};
 pub use effects::{
     Admission, ConflictTracker, Effect, EffectExpect, ExpectMap, Field, Focus, FocusInfo,
-    FocusTarget, NewId, NewIdKind, PLAN_VERSION, PLANNER_V, Plan, PlanCreate, PlanFrontmatter,
-    PlanMove, PlanOpset, PlanPreview, PlanRevision, PlanTombstone, Preconditions, Repair,
-    ScalarWrite, Target, canonical_json, classify_field, parse_new_symbol, shift_placeholders,
+    FocusTarget, IdentityOp, IdentityPreview, NewId, NewIdKind, PLAN_VERSION, PLANNER_V, Plan,
+    PlanCreate, PlanFrontmatter, PlanMove, PlanOpset, PlanPreview, PlanRevision, PlanTombstone,
+    Preconditions, Repair, RetargetHitPreview, RetargetPairPreview, RetargetPreview, ScalarWrite,
+    Target, canonical_json, classify_field, map_block_ids, parse_new_symbol, shift_placeholders,
 };
 pub use error::{ErrorCode, MutationError, Result};
 pub use lower::{LowerResult, body_of, lcs, lower_replace, lower_top_level, strip_frontmatter};
@@ -46,14 +47,14 @@ pub use omgbase_reconcile::Minter;
 pub use ops::{
     At, Expect, OpResult, Parent, To, UpdateArgs, check_content_hash, check_parent_children_hash,
     cross_doc_move, default_trivia, op_insert, op_merge, op_move, op_remove, op_split, op_update,
-    parse_content, resolve_target, separates_blocks,
+    parse_content, parse_document, resolve_target, separates_blocks,
 };
 pub use opset::{Opset, OpsetPrecondition, OpsetSummary, PlanDisposition, PlanOp, summarize};
 pub use render::{render, render_block};
 pub use tree::{BlockPath, MutBlock, MutDoc, child_ids, parent_children_hash, raw_hash_hex};
 
 /// The `spec/mutate/VERSION` this crate implements (`major.minor`).
-pub const SPEC_VERSION: &str = "2.3";
+pub const SPEC_VERSION: &str = "3.0";
 
 /// This crate's own version (`Cargo.toml`), for the surface's `version` tool.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

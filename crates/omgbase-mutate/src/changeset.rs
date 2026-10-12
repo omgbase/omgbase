@@ -33,6 +33,11 @@ pub enum Op {
     Move {
         blocks: Vec<String>,
         to: To,
+        /// §2.3 (3.0): the destination document of a top-level `start`/`end`
+        /// placement — a cross-document move to a document's top level, which
+        /// `to` alone would read as the SOURCE document's; `None` keeps that
+        /// reading. A `$new.<n>` names a document the request creates.
+        doc: Option<String>,
         /// §1.2: the DESTINATION parent's `parent_children_hash` (since 1.1).
         expect: Option<Expect>,
     },
@@ -239,9 +244,17 @@ impl Op {
                     m.insert("child_ids".to_owned(), json!(c));
                 }
             }
-            Op::Move { blocks, to, expect } => {
+            Op::Move {
+                blocks,
+                to,
+                doc,
+                expect,
+            } => {
                 m.insert("blocks".to_owned(), json!(blocks));
                 m.insert("to".to_owned(), to_to_json(to));
+                if let Some(d) = doc {
+                    m.insert("doc".to_owned(), json!(d));
+                }
                 if let Some(e) = expect {
                     m.insert("expect".to_owned(), expect_to_json(e));
                 }
@@ -334,6 +347,10 @@ impl Op {
             "move" => Op::Move {
                 blocks: strings(obj.get("blocks"), "move.blocks")?,
                 to: to_from_json(obj.get("to").ok_or("move.to missing")?)?,
+                doc: match obj.get("doc") {
+                    None | Some(Value::Null) => None,
+                    Some(v) => Some(string(Some(v), "move.doc")?),
+                },
                 expect: expect_one("expect")?,
             },
             "remove" => Op::Remove {
@@ -451,9 +468,15 @@ pub fn resolve_op(op: &Op, results: &[OpResult]) -> Result<Op> {
             trivia: trivia.clone(),
             child_ids: child_ids.clone(),
         },
-        Op::Move { blocks, to, expect } => Op::Move {
+        Op::Move {
+            blocks,
+            to,
+            doc,
+            expect,
+        } => Op::Move {
             blocks: ids(blocks)?,
             to: resolve_to(to, results)?,
+            doc: doc.clone(),
             expect: expect.clone(),
         },
         Op::Remove { blocks, expect } => Op::Remove {
@@ -512,6 +535,7 @@ mod tests {
                 parent: Parent::Doc,
                 at: At::Start,
             },
+            doc: None,
             expect: None,
         };
         assert!(

@@ -350,39 +350,36 @@ error[stale_expectation]: content hash mismatch
 
 ### 3.6 `--dry-run`
 
-`--dry-run` is global. For every block-level mutator (`apply`, `insert`,
-`update` on a block, `move`, `rm` on blocks, `done`, `append`, `split`,
-`merge`, `node set`, `edit`, `retarget --apply`) it runs the changeset with
-`dry_run`, prints `  dry run — <n> file(s) would change, nothing committed`
-on stderr, then on stdout, per changed file in result order: the path, the
-unified diff of before → after (`spec/surface` §3's Myers diff, `@@` hunks
-with three lines of context, no `---`/`+++` header), then an empty line.
-`--json` prints the `ApplyResult` with `diffs` and `committed: false`. A
-dry run **does** consume minted ids (`spec/surface` §9) — the ids in its
-result are the ones the real run would have taken next.
-
-For a whole-document `update`, `--dry-run` (or `--plan`) prints the plan
-(§6 `update`). The document verbs `new`, `mv`, `rm --doc` and `meta` run
-their operation with `dryRun`: it validates exactly as the real run would
-(`doc_missing`, `path_taken`, …) and returns `committed: false` with the
-per-file `diffs` it would make — a create is `""` → the bytes, a delete the
-bytes → `""`, a rename two entries (the old path emptied, the new path
-filled), a `meta` patch the one file before → after — rendered with the same
-note, path, unified diff and empty line as above; `--json` prints the
-operation's result with `diffs`. Nothing is written or committed. A
-`new --dry-run`'s `docId` is the id the real run would mint next (the dry
-run consumes it, as a block dry run consumes block ids).
-
-**The one exception (cli 3.2): `apply` given `{ effects }`.** Its `--dry-run`
-is the Effect layer's own `plan` (`spec/mutate` §11.6): it prints the same
-note and the per-file diffs of the Plan's `preview` (or, under `--json`, the
-Plan itself — what `execute` takes back), and it **burns no id**: planning
-runs under the symbolic minter, so the ids it reports are `$new.n` and a
-committed run that follows takes exactly the ids the dry run would have
+`--dry-run` is global, and since cli 4.0 **every dry run is a `plan`**
+(`spec/mutate` §11.6): the verb builds the effects it would commit, plans
+them, prints `  dry run — <n> file(s) would change, nothing committed` on
+stderr, then on stdout, per changed file of the Plan's `preview.diffs` in
+order: the path, the unified diff of before → after (`spec/surface` §3's
+Myers diff, `@@` hunks with three lines of context, no `---`/`+++` header),
+then an empty line. `--json` prints the Plan itself — what `execute` takes
+back. A dry run **burns no id**: planning runs under the symbolic minter, so
+the ids it reports are `$new.n` (a `new --dry-run --json`'s revision id is
+`$new.0`, an `insert --dry-run --json`'s result id `$new.0`) and a committed
+run that follows takes exactly the ids the dry run would have
 (`mutate::apply-effects-dry-run`: the dry run, then the commit minting
-`b_328`, the same id the commit alone mints). `execute` has no dry run — the
+`b_328`, the same id the commit alone mints). This holds for every
+mutator — the block verbs (`apply`, `insert`, `update` on a block, `move`,
+`rm` on blocks, `done`, `append`, `split`, `merge`, `node set`, `edit`,
+`retarget --apply`) and the document verbs (`new`, `mv`, `rm --doc`,
+`meta`): a create is `""` → the bytes, a delete the bytes → `""`, a rename
+two entries (the old path emptied, the new path filled), a `meta` patch the
+one file before → after; every check the real run makes (`doc_missing`,
+`path_taken`, …) runs. Nothing is written or committed.
+
+For a whole-document `update`, `--dry-run` prints the plan's identity
+consequences instead of diffs (§6 `update`). `execute` has no dry run — the
 plan is the preview; `execute --dry-run` is the usage error
 `execute has no dry run — the plan is the preview (re-plan with apply --dry-run)`.
+
+Through 3.x a dry run ran the kernel changeset with `dry_run` and **consumed**
+the ids it reported (`spec/surface` §9, closed at 4.0), `--json` printed the
+`ApplyResult` with `diffs`, and only `apply -f { effects }` planned (cli 3.2,
+"the one exception").
 
 ### 3.7 Freshness and locks
 
@@ -520,24 +517,21 @@ or a bare `-` for stdin, else stdin. Commit confirmation (§4);
 ### `apply`
 
 `apply [-f <changeset.json|->] [--reason <s>] [--actor <s>] [--dry-run]` —
-the primitive: a changeset from `-f <file>`, `-f -` or stdin holding
-**exactly one** of two inputs. `{ "effects": [...] }` (cli 3.2; `spec/mutate`
-§11, the `apply` tool's `effects`): the ordered intentional writes, planned
-and committed as one transaction with `origin.actor`/`reason`
+the primitive: `{ "effects": [...] }` from `-f <file>`, `-f -` or stdin
+(`spec/mutate` §11, the `apply` tool's `effects`): the ordered intentional
+writes, planned and committed as one transaction with `origin.actor`/`reason`
 (`applyEffects`); confirmation (§4, the Receipt form); `--json` the Receipt
 `{ plan_id, commit, revisions, new_ids, committed }`; `--dry-run` the Plan
-(§3.6 — the one dry run that burns no id). `{ "ops": [...] }` (`spec/mutate`
-§4): the kernel changeset, applied as before; placeholders `$n.ids[i]`
-resolve across ops; confirmation (§4); `--json` the `ApplyResult` (a `remove`
-result carries `removed`). An empty `ops` or `effects` prints
-`  nothing to do` on stderr, exit 0. Both inputs →
-`usage: changeset must have exactly one of \`ops\` or \`effects\``; neither
-→ `usage: changeset must have an \`ops\` array`; `effects` not an array →
-`usage: changeset \`effects\` must be an array`. Kernel errors
-(`block_missing`, `stale_expectation`, `not_contiguous`, …) render per §3.5
-with the op's payload (`op_index`, …); planner errors (`conflicting_effects`,
-`stale_expectation`, `path_taken`, …) with the planner's (`effect_index`,
-`focus`, …) — `mutate::apply-conflicting-effects`.
+(§3.6). An empty `effects` prints `  nothing to do` on stderr, exit 0. No
+`effects` member → `usage: changeset must have an \`effects\` array`; not an
+array → `usage: changeset \`effects\` must be an array`; an `ops` member
+(the kernel changeset `apply -f { ops }` took through 3.x) →
+`usage: \`ops\` is no longer an input — apply takes \`effects\` (the kernel
+ops are a library/fixture contract since spec/mutate 3.0)`. Planner and
+kernel errors (`conflicting_effects`, `stale_expectation`, `path_taken`,
+`block_missing`, …) render per §3.5 with the planner's payload
+(`effect_index`, `focus`, the op's `op_index`, …) —
+`mutate::apply-conflicting-effects`.
 
 ### `cat`
 
@@ -931,17 +925,18 @@ workspace, not a repo.
 ### `retarget`
 
 `retarget <from> <to> [--scope <glob>] [--apply] [--actor <s>] [--dry-run]`
-— `links_retarget`, **plan by default**: without `--apply` it prints, per
-hit, the block id then the unified diff of the block's old and new raw
-(`spec/surface` §3's diff, the one every preview prints), then an empty
-line, under the stderr note
+— **plan by default**: without `--apply` it is `plan { effects: [retarget] }`
+(4.0; the `links_retarget` dry run before) and prints, per hit of the Plan's
+`preview.retarget[0].hits`, the block id then the unified diff of the block's
+old and new raw (`spec/surface` §3's diff, the one every preview prints),
+then an empty line, under the stderr note
 `  plan — <n> block(s) would change; re-run with --apply to commit`; no hits →
 stderr `  no blocks reference <from>`. `--json` the plan
 `{ from, to, hits: [{ block, path, oldRaw, newRaw }] }`. `--apply` commits
-through the block confirmation (§4) and honors `--dry-run` like any block
-mutator. Targets are compared as written: `/texts/x.md` for a Markdown
-link, `salt` for a wikilink. `--scope` is a path glob over the documents
-searched.
+the `links_retarget` tool's call (the Receipt + `hits` + `pairs`) through
+the Receipt confirmation (§4) and honors `--dry-run` as §3.6. Targets are
+compared as written: `/texts/x.md` for a Markdown link, `salt` for a
+wikilink. `--scope` is a path glob over the documents searched.
 
 ### `rm`
 
@@ -1090,7 +1085,7 @@ on timing and on a second process; only the card is fixed.
 
 ### `update`
 
-`update <block|doc> (-m <markdown> | -f <file> | -) [--plan] [--expect <hash>] [--reason <s>] [--actor <s>] [--dry-run]`
+`update <block|doc> (-m <markdown> | -f <file> | -) [--expect <hash>] [--reason <s>] [--actor <s>] [--dry-run]`
 — polymorphic on the target. A **`b_`-prefixed token** is the block path:
 an `update` op replacing the block's markdown (a token that names no live
 block is `block_missing: no block with id "<ref>"`, never a document lookup);
@@ -1099,18 +1094,23 @@ CAS is pinned from the live row and stderr says
 `  updating <ref> (CAS pinned from current bytes)`; with it, a mismatch is
 `stale_expectation: content hash mismatch` with the current hash and
 markdown; confirmation (§4). **Anything else** — a document id or a path —
-is the whole-document update of
-`docs/update-opsets.md`: the bytes are reconciled against the current tree
-and the derived opset committed (`docs_update`). `--plan` or `--dry-run` —
-`docs_update { dry_run: true }`, the plan-only call: stderr
-`  plan for <path>` (`— DOES NOT CONVERGE (will not apply)` appended when it
-would not), stdout the rendered opset (`renderOpsetPlan`: one
-`<OP> <target>     <disposition> [<reason>]` line per op, an empty line, the
-`preserved: n  updated: n  …` summary line). A commit: stderr
-`  ok updated <path> · <n> preserved, <n> updated, <n> moved, <n> created, <n> removed`,
-stdout every id in `results[*].ids` once, in order of first appearance.
-`--json`
-`{ opset, result }`. A sourceless repo →
+is the whole-document update: one `set content` effect
+(`spec/mutate` §11.3; locally `applyEffects`, remotely the `docs_update`
+tool — its sugar, `spec/surface` 4.0) reconciling the bytes against the
+current tree and committing the derived ops as one transaction. `--dry-run`
+— the plan (locally `planEffects`, remotely the `plan` tool over the same
+effect; 4.0: the `--plan` alias is gone, `docs_update { dry_run: true }` was
+the call before): stderr `  plan for <path>`, stdout the identity
+consequences from the Plan's `preview.identity[<doc id>]`
+(`renderIdentityPlan`: one `<OP> <target>     <disposition> [<reason>]`
+line per op, an empty line, the `preserved: n  updated: n  …` summary line
+— byte-identical to the 3.x opset rendering, minus the never-returned
+non-convergent warning: content the planner cannot reproduce is
+`error[plan_not_convergent]`). A commit: the Receipt confirmation (§4)
+`  ok committed · 1 document touched` on stderr (`0 documents` when the
+content already is the document — nothing commits, `spec/mutate` §11.7),
+stdout every id the plan's results name once, in order of first appearance.
+`--json` the Plan (dry run) or the Receipt. A sourceless repo →
 `usage: repo '<slug>' has no filesystem source; 'update' needs a working tree`
 (exit 2, §9); unknown doc → `doc_missing: doc <ref> not found` with
 `data { doc }`.
@@ -1611,6 +1611,23 @@ was `b_314`).
 
 ## 10. Decisions
 
+- 2026-10-12, cli 4.0: the retirement release of ADR-021 (with `spec/mutate`
+  3.0 and `spec/surface` 4.0; no deprecation period). `apply -f` takes
+  `{ effects }` only (`{ ops }` is the usage error naming the replacement);
+  `update <doc>` is the `set content` effect — `--dry-run` renders the Plan's
+  `preview.identity` (the bytes of the 3.x opset plan, `docs::update-doc-
+  dry-run` unchanged), a commit the Receipt confirmation + the touched ids
+  once (`docs::update-doc`: the inserted paragraph is `b_330`, not `b_335`
+  — the planner's verify no longer burns ids), `--json` the Plan or the
+  Receipt (`docs::update-doc-json`), the `--plan` alias is gone
+  (`invoke::help-card-update`); `retarget` plans through `plan { retarget }`
+  and `--apply` renders the Receipt + hits; §3.6 is one rule — every dry run
+  is a `plan`, burns no id and prints `$new.n` (`new --dry-run --json`'s
+  `$new.0`, `insert --dry-run-json`'s `$new.0`; the 3.x "dry runs consume
+  ids" is closed). A flag removed and outputs changed in meaning: a major.
+  Regeneration: the cases named above now; the `apply-*` kernel cases, the
+  17 `--dry-run` cases, `retarget-apply-*`, `sync::sourceless` and the
+  `apply`/`retarget` help cards with the surface's removals.
 - 2026-10-12, cli 3.2: the Effect layer's verbs (ADR-021, `spec/mutate` §11,
   `spec/surface` 3.1–3.3). `apply -f` accepts `{ effects }` beside `{ ops }`
   (exactly one): committed it renders the Receipt (confirmation + the ids of

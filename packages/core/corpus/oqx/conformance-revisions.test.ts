@@ -13,7 +13,8 @@ import { join, dirname } from "node:path";
 import { Store } from "../../src/core/store/store.js";
 import { ensureRepo } from "../../src/core/attach.js";
 import { processCheckpoint } from "../../src/sync/checkpoint.js";
-import { docsUpdate } from "../../src/mutate/plan-update.js";
+import { applyEffects } from "../../src/mutate/plan.js";
+import type { Receipt } from "../../src/mutate/plan.js";
 import { oqxRun } from "../../src/oqx/run.js";
 import "../../src/format/index.js";
 
@@ -46,8 +47,9 @@ beforeAll(() => {
   save("creative/flip-observed.md", `---\ntype: ${PROJECT}\ntitle: Flip O\n---\n\n# Flip O\n\nBody.\n`);
   save("creative/flip-observed.md", `---\ntype: ${IDEA}\ntitle: Flip O\n---\n\n# Flip O\n\nBody.\n`);
   save("creative/flip-api.md", `---\ntype: ${PROJECT}\ntitle: Flip A\n---\n\n# Flip A\n\nBody.\n`);
-  const r = docsUpdate(store, { repoId, rootPath: dir, actor: "agent:test" }, "creative/flip-api.md", `---\ntype: ${IDEA}\ntitle: Flip A\n---\n\n# Flip A\n\nBody.\n`);
-  if (!r.result?.committed) throw new Error("api flip did not commit");
+  // The api write: the `set content` effect (mutate 3.0; `docs_update`'s sugar).
+  const r = applyEffects(store, { repoId, rootPath: dir, origin: { actor: "agent:test" }, effects: [{ op: "set", target: { kind: "document", path: "creative/flip-api.md" }, field: "content", value: `---\ntype: ${IDEA}\ntitle: Flip A\n---\n\n# Flip A\n\nBody.\n` }] }) as Receipt;
+  if (!r.committed || r.commit === null) throw new Error("api flip did not commit");
   save("creative/list.md", `---\ntype:\n  - ${PROJECT}\n  - ${IDEA}\n---\n\n# List\n\nBody.\n`);
   save("creative/list-to-scalar.md", `---\ntype:\n  - ${IDEA}\n  - ${PROJECT}\n---\n\n# LTS\n\nBody.\n`);
   save("creative/list-to-scalar.md", `---\ntype: ${IDEA}\n---\n\n# LTS\n\nBody.\n`);

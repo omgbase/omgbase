@@ -101,7 +101,7 @@ export function expandBlockArgs(args: string[]): string[] {
   return out;
 }
 
-function defaultActor(): string {
+export function defaultActor(): string {
   try {
     return `human:${userInfo().username}`;
   } catch {
@@ -238,7 +238,7 @@ export function renderReceipt(cli: Cli, receipt: Receipt, plan?: unknown): numbe
   return EXIT_OK;
 }
 
-function receiptIds(receipt: Receipt, plan: unknown): string[] {
+export function receiptIds(receipt: Receipt, plan: unknown): string[] {
   const results = (plan as { preview?: { results?: { ids?: unknown }[] } } | null)?.preview?.results;
   if (!Array.isArray(results)) return Object.values(receipt.new_ids);
   const ids: string[] = [];

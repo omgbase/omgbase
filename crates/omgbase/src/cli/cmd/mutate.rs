@@ -20,7 +20,7 @@ use serde_json::{Map, Value as Json, json};
 use crate::cli::argv::{Opt, expand_dash, parse_args, read_stdin};
 use crate::cli::context::Cli;
 use crate::cli::help::{render_help_for, wants_help};
-use crate::cli::output::{CliError, EXIT_OK, Result, js_json};
+use crate::cli::output::{CliError, EXIT_OK, Result};
 
 use super::{doc_locator, machine_out, str_of};
 
@@ -567,19 +567,14 @@ fn update_block(cli: &mut Cli, args: &[String]) -> Result<i32> {
 
 fn update_doc(cli: &mut Cli, args: &[String]) -> Result<i32> {
     let content = extract_content_opts(args)?;
-    let a = parse_args(
-        &content.rest,
-        &[ACTOR, Opt::value("reason"), Opt::flag("plan")],
-    )?;
+    let a = parse_args(&content.rest, &[ACTOR, Opt::value("reason")])?;
     let Some(doc) = a.pos(0) else {
         return Err(CliError::usage("update requires a <doc> (id or path)"));
     };
     let doc = doc.to_owned();
     let bytes = read_content(&content)?;
-    let dry_run = a.flag("plan") || cli.flags.dry_run;
-    // §2.3: remotely `docs_update` reconciles and commits server-side and
-    // returns the same `{ opset, plan, result }`; the working-tree check is
-    // the engine's.
+    // §2.3: remotely the engine reconciles and commits server-side; the
+    // working-tree check is the engine's.
     if !cli.remote_mode() {
         let repo = cli.repo()?;
         if repo.root_path.is_none() {
@@ -590,70 +585,209 @@ fn update_doc(cli: &mut Cli, args: &[String]) -> Result<i32> {
         }
     }
     set_actor(cli, a.value("actor"))?;
+    // cli 4.0: the whole-document update is `set { document, field: "content" }`
+    // — `--dry-run` is the `plan` (its `preview.identity` is the opset's
+    // identity decision), a commit the `docs_update` sugar's Receipt.
+    if cli.remote_mode() {
+        // The engine resolves the locator: the `plan` tool over the effect on
+        // a dry run; else the `docs_update` tool, which commits the `set
+        // content` server-side and returns the Receipt (the confirmation
+        // lists the ids it minted).
+        let mut m = Map::new();
+        doc_locator(&mut m, &doc);
+        if cli.flags.dry_run {
+            let mut target = m;
+            target.insert("kind".to_owned(), json!("document"));
+            let effect = json!({
+                "op": "set",
+                "target": Json::Object(target),
+                "field": "content",
+                "value": bytes,
+            });
+            let plan = cli.call("plan", json!({ "effects": [effect] }))?;
+            return render_update_plan(cli, plan);
+        }
+        m.insert("content".to_owned(), json!(bytes));
+        if let Some(r) = a.value("reason") {
+            m.insert("reason".to_owned(), json!(r));
+        }
+        let receipt = cli.call("docs_update", Json::Object(m))?;
+        return render_update_receipt(cli, receipt, None);
+    }
+    // Locally the document is resolved first (the reference's `requireDoc`:
+    // a miss is the tool's `doc_missing` naming the locator) and the plan is
+    // at hand (`applyEffectsDetailed`), so the confirmation lists every id
+    // the plan's results name, once each.
+    let mut locator = Map::new();
+    doc_locator(&mut locator, &doc);
+    let repo_id = cli.repo()?.repo_id.clone();
+    let id = cli
+        .surface(false)?
+        .locate_document(&repo_id, &Json::Object(locator))?;
+    let effect = json!({
+        "op": "set",
+        "target": { "kind": "document", "id": id },
+        "field": "content",
+        "value": bytes,
+    });
+    if cli.flags.dry_run {
+        let plan = cli.call("plan", json!({ "effects": [effect] }))?;
+        return render_update_plan(cli, plan);
+    }
     let mut m = Map::new();
-    doc_locator(&mut m, &doc);
-    m.insert("content".to_owned(), json!(bytes));
+    m.insert("effects".to_owned(), json!([effect]));
     if let Some(r) = a.value("reason") {
         m.insert("reason".to_owned(), json!(r));
     }
-    if dry_run {
-        m.insert("dry_run".to_owned(), json!(true));
+    let (plan, receipt) = cli.call_apply_effects(Json::Object(m))?;
+    let receipt = receipt.ok_or_else(|| {
+        CliError::usage("update: the engine returned a plan where a receipt was expected")
+    })?;
+    render_update_receipt(cli, receipt, Some(&plan))
+}
+
+/// `update <doc>`'s commit: the Receipt (`--json` verbatim), the §4
+/// confirmation, and every id the write names ONCE each (a block appears in
+/// several ops' results — an update then a retile of the same block).
+fn render_update_receipt(cli: &mut Cli, receipt: Json, plan: Option<&Json>) -> Result<i32> {
+    cli.capture(&receipt);
+    if let Some(code) = machine_out(cli, &receipt, None, None) {
+        return code;
     }
-    let res = cli.call("docs_update", Json::Object(m))?;
-    let opset = res.get("opset").cloned().unwrap_or(Json::Null);
-    let result = res.get("result").cloned().unwrap_or(Json::Null);
-    // `--json` is `{ opset, result }`; the tool's rendered `plan` is the human tier.
-    let mut doc_json = Map::new();
-    doc_json.insert("opset".to_owned(), opset.clone());
-    doc_json.insert("result".to_owned(), result.clone());
-    let doc_json = Json::Object(doc_json);
-    cli.capture(&doc_json);
-    if cli.machine() {
-        cli.io.out(&js_json(&doc_json));
-        return Ok(EXIT_OK);
-    }
-    let path = opset
-        .get("target")
-        .map(|t| str_of(t, "path"))
-        .unwrap_or_default();
-    if dry_run || result.is_null() {
-        let converges = opset
-            .get("converges")
-            .and_then(Json::as_bool)
-            .unwrap_or(true);
-        cli.io.err(&cli.style.dim(&format!(
-            "  plan for {}{}",
-            cli.style.accent(&path),
-            if converges {
-                ""
-            } else {
-                " — DOES NOT CONVERGE (will not apply)"
-            }
-        )));
-        cli.io.out(&str_of(&res, "plan"));
-        return Ok(EXIT_OK);
-    }
-    let summary = opset.get("summary").cloned().unwrap_or(Json::Null);
-    let count = |k: &str| summary.get(k).and_then(Json::as_i64).unwrap_or(0);
+    let n = receipt
+        .get("revisions")
+        .and_then(Json::as_array)
+        .map_or(0, Vec::len);
     cli.io.err(&cli.style.dim(&format!(
-        "  {} updated {} · {} preserved, {} updated, {} moved, {} created, {} removed",
+        "  {} committed · {n} document{} touched",
         cli.style.ok(cli.style.glyphs().ok),
-        cli.style.accent(&path),
-        count("preserved"),
-        count("updated"),
-        count("moved"),
-        count("created"),
-        count("removed"),
+        if n == 1 { "" } else { "s" }
     )));
-    // Every id once, in order of first appearance (§9 Fixed).
     let mut seen: Vec<String> = Vec::new();
-    for id in result_ids(&result) {
+    for id in receipt_ids(&receipt, plan) {
         if !seen.contains(&id) {
             cli.io.out(&id);
             seen.push(id);
         }
     }
     Ok(EXIT_OK)
+}
+
+/// `update <doc> --dry-run`: `--json` the Plan verbatim; human `  plan for
+/// <path>` on stderr and, on stdout, the reconciliation lines rebuilt from
+/// `preview.identity` — one per planned op (`VERB subject disposition
+/// ~confidence [reason]`), a blank line, the summary counts.
+fn render_update_plan(cli: &mut Cli, plan: Json) -> Result<i32> {
+    cli.capture(&plan);
+    if let Some(code) = machine_out(cli, &plan, None, None) {
+        return code;
+    }
+    let path = update_plan_path(&plan);
+    cli.io.err(
+        &cli.style
+            .dim(&format!("  plan for {}", cli.style.accent(&path))),
+    );
+    let identity = plan
+        .get("preview")
+        .and_then(|p| p.get("identity"))
+        .and_then(Json::as_object)
+        .and_then(|m| m.values().next());
+    if let Some(identity) = identity {
+        cli.io.out(&render_identity_plan(identity));
+    }
+    Ok(EXIT_OK)
+}
+
+/// The document an `update` plan addresses, rooted: the preview's revision
+/// when the plan touches it, else the effect's resolved path (a content
+/// already current loads nothing).
+fn update_plan_path(plan: &Json) -> String {
+    if let Some(p) = plan
+        .get("preview")
+        .and_then(|p| p.get("revisions"))
+        .and_then(Json::as_array)
+        .and_then(|r| r.first())
+        .and_then(|r| r.get("path"))
+        .and_then(Json::as_str)
+    {
+        return p.to_owned();
+    }
+    let path = plan
+        .get("effects")
+        .and_then(Json::as_array)
+        .and_then(|e| e.first())
+        .and_then(|e| e.get("target"))
+        .and_then(|t| t.get("path"))
+        .and_then(Json::as_str)
+        .unwrap_or_default();
+    if path.starts_with('/') {
+        path.to_owned()
+    } else {
+        format!("/{path}")
+    }
+}
+
+/// The verb column of a plan line, by disposition.
+fn disposition_verb(d: &str) -> &'static str {
+    match d {
+        "same" => "KEEP  ",
+        "edited" | "edited_moved" => "UPDATE",
+        "moved" => "MOVE  ",
+        "inserted" => "INSERT",
+        "deleted" => "REMOVE",
+        "split_from" => "SPLIT ",
+        "merged_into" => "MERGE ",
+        "copied_from" => "COPY  ",
+        "resurrected" => "RESURR",
+        "bulk_rewrite" => "REWRITE",
+        _ => "RETILE",
+    }
+}
+
+/// The one-line-per-op plan text over a `preview.identity[<doc>]` entry.
+fn render_identity_plan(identity: &Json) -> String {
+    let mut lines = Vec::new();
+    for op in identity
+        .get("ops")
+        .and_then(Json::as_array)
+        .map_or(&[][..], Vec::as_slice)
+    {
+        let disposition = op.get("disposition").and_then(Json::as_str).unwrap_or("");
+        let subject = op
+            .get("blocks")
+            .and_then(Json::as_array)
+            .and_then(|b| b.first())
+            .and_then(Json::as_str)
+            .unwrap_or("(new)");
+        let conf = op
+            .get("confidence")
+            .and_then(Json::as_f64)
+            .map_or(String::new(), |c| format!(" ~{c:.2}"));
+        let why = op
+            .get("reason")
+            .and_then(Json::as_str)
+            .map_or(String::new(), |r| format!(" [{r}]"));
+        lines.push(format!(
+            "{} {:<9} {disposition}{conf}{why}",
+            disposition_verb(disposition),
+            subject
+        ));
+    }
+    let summary = identity.get("summary").cloned().unwrap_or(Json::Null);
+    let count = |k: &str| summary.get(k).and_then(Json::as_i64).unwrap_or(0);
+    lines.push(String::new());
+    lines.push(format!(
+        "preserved: {}  updated: {}  moved: {}  created: {}  removed: {}  split: {}  merged: {}  ambiguous: {}",
+        count("preserved"),
+        count("updated"),
+        count("moved"),
+        count("created"),
+        count("removed"),
+        count("split"),
+        count("merged"),
+        count("ambiguous"),
+    ));
+    lines.join("\n")
 }
 
 // ---- edit -----------------------------------------------------------------------------
@@ -974,6 +1108,7 @@ pub fn merge(cli: &mut Cli, args: &[String]) -> Result<i32> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::cli::output::js_json;
 
     fn v(a: &[&str]) -> Vec<String> {
         a.iter().map(|s| (*s).to_owned()).collect()

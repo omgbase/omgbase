@@ -97,16 +97,18 @@ pub(crate) fn doc_base(conn: &Connection, doc_id: &str) -> Result<Option<DocBase
         .optional()?)
 }
 
-/// What an [`Effect::IngestReconciled`] re-validates inside the transaction.
+/// What an ingest effect re-validates inside the transaction.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum Guard {
     /// Nothing: an `observed` ingest — the file wins (ADR-004), whatever
     /// the database holds.
     None,
-    /// `docs_create`: no live document at the member's path (`path_taken`).
+    /// `docs_create`, and a planner `create` (`spec/mutate` §11.3, 3.0): no
+    /// live document at the ingested path (`path_taken`).
     Absent,
-    /// `docs_set_meta`: the document's triple, and the bytes the operation
-    /// patched must still hash to `file_hash`.
+    /// A loaded document (`docs_set_meta`, every changeset document): its
+    /// triple, and the bytes read before the write must still hash to
+    /// `file_hash`.
     Doc {
         base: DocBase,
         /// The file as read before the write (`None`: no file).
@@ -122,17 +124,21 @@ pub(crate) enum Effect {
     /// creates — a document moved in the same request names its **new**
     /// path here even though it was loaded under the old one (`base.path`).
     IngestKnown {
+        /// The loaded document's id — or, for a document a plan creates, its
+        /// `$new.<n>` symbol: the ingest finds no row at `path` and mints
+        /// the `d` (3.0).
         doc_id: String,
         path: String,
         rendered: String,
         /// Positional key (`"/i/j"`) → block id of the working tree.
         by_key: std::collections::BTreeMap<String, String>,
-        /// The live ids before any op (labels the `api` dispositions).
+        /// The live ids before any op (labels the `api` dispositions; empty
+        /// for a created document, so every block is `inserted`).
         prior_ids: Vec<String>,
-        /// The row as loaded (§4 step 1).
-        base: DocBase,
-        /// The file at `base.path` as phase A read it (`None`: no file).
-        on_disk: Option<String>,
+        /// [`Guard::Doc`] with the row as loaded (§4 step 1) and the file at
+        /// its path as phase A read it; [`Guard::Absent`] for a created
+        /// document (`spec/mutate` §11.3, 3.0).
+        guard: Guard,
     },
     /// The same steps with the **reconciling** resolver, the member already
     /// parsed and matched outside the transaction (`docs_create`,
@@ -341,8 +347,10 @@ pub(crate) fn touched_paths(effects: &[Effect]) -> Vec<String> {
     };
     for e in effects {
         match e {
-            Effect::IngestKnown { path, base, .. } => {
-                push(&base.path);
+            Effect::IngestKnown { path, guard, .. } => {
+                if let Guard::Doc { base, .. } = guard {
+                    push(&base.path);
+                }
                 push(path);
             }
             Effect::IngestReconciled { prepared, .. } => push(&prepared.path),
@@ -551,30 +559,42 @@ fn check_doc(
     Ok(None)
 }
 
+/// An ingest's guard against the transaction: nothing, the path still free
+/// (`path_taken`), or the document's triple and bytes ([`check_doc`]).
+fn check_guard(
+    tx: &Connection,
+    repo_id: &str,
+    path: &str,
+    guard: &Guard,
+) -> Result<Option<DiskConflict>> {
+    match guard {
+        Guard::None => Ok(None),
+        Guard::Absent => {
+            if live_doc_at(tx, repo_id, path)? {
+                return Err(path_taken(path));
+            }
+            Ok(None)
+        }
+        Guard::Doc { base, on_disk } => check_doc(tx, base, on_disk.as_deref()),
+    }
+}
+
 /// Every effect's precondition against the transaction, in effect order,
 /// before anything is minted. The first database mismatch is the error; the
 /// first disk mismatch is the conflict.
 fn validate(tx: &Connection, repo_id: &str, effects: &[Effect]) -> Result<Option<DiskConflict>> {
     for effect in effects {
         match effect {
-            Effect::IngestKnown { base, on_disk, .. } => {
-                if let Some(c) = check_doc(tx, base, on_disk.as_deref())? {
+            Effect::IngestKnown { path, guard, .. } => {
+                if let Some(c) = check_guard(tx, repo_id, path, guard)? {
                     return Ok(Some(c));
                 }
             }
-            Effect::IngestReconciled { prepared, guard } => match guard {
-                Guard::None => {}
-                Guard::Absent => {
-                    if live_doc_at(tx, repo_id, &prepared.path)? {
-                        return Err(path_taken(&prepared.path));
-                    }
+            Effect::IngestReconciled { prepared, guard } => {
+                if let Some(c) = check_guard(tx, repo_id, &prepared.path, guard)? {
+                    return Ok(Some(c));
                 }
-                Guard::Doc { base, on_disk } => {
-                    if let Some(c) = check_doc(tx, base, on_disk.as_deref())? {
-                        return Ok(Some(c));
-                    }
-                }
-            },
+            }
             Effect::MovePath {
                 doc_id,
                 from,

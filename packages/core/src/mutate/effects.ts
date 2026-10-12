@@ -5,9 +5,10 @@ import { inboundLinksTo, type InboundLink } from "../graph/inbound-links.js";
 import type { ChangesetPlanner, Op } from "./apply.js";
 import { readDocBase, type DocBase } from "./commit.js";
 import type { DocStore } from "./doc-store.js";
-import { canonicalDocPath, composeFile, planInboundRetarget, splitFrontmatter } from "./docs.js";
-import { linksRepair, nodeSet } from "./macros.js";
+import { canonicalDocPath, composeFile, parseNewDoc, planInboundRetarget, splitFrontmatter } from "./docs.js";
+import { linksRepair, nodeSet, type LinkRepairCount, type RetargetHit } from "./macros.js";
 import type { At, Expect, To } from "./ops.js";
+import type { IdentityPreview } from "./opset.js";
 import { planUpdate } from "./plan-update.js";
 import { MutationError, rawHashHex, renderDoc, type MutBlock, type MutDoc } from "./tree.js";
 
@@ -398,12 +399,21 @@ export class SymbolTable {
   }
 }
 
-/** A `create` as the planner carries it until the plan is frozen (later `set`/`unset frontmatter.<k>` on `$new.n` fold in). */
-export interface CreateDraft {
+/** A `create` as the plan carries it (§11.4 `opset.creates[]`, 3.0): its document symbol, path, the
+ *  composed bytes, and the index of the first kernel op planned after it (`ops.length` when none) —
+ *  where `execute` adopts it again so the replay mints its block ids in the plan's order. */
+export interface CreateEntry {
   symbol: string;
   path: string;
-  markdown: string;
-  frontmatter: Record<string, unknown>;
+  source: string;
+  before_op: number;
+}
+
+/** `preview.retarget[]` (§11.4, 3.0): what a `retarget` effect found — the `links_repair` hits and pair counts. */
+export interface RetargetPreview {
+  effect_index: number;
+  hits: RetargetHit[];
+  pairs: LinkRepairCount[];
 }
 
 export interface MoveDraft {
@@ -428,9 +438,14 @@ export interface LoweringContext {
   docStore: DocStore;
   planner: ChangesetPlanner;
   symbols: SymbolTable;
-  /** `$new.n` (a block) → the kernel placeholder `$k.ids[j]` that names it */
+  /** `$new.n` (a block an op minted) → the kernel placeholder `$k.ids[j]` that names it */
   blockSymbols: Map<string, string>;
-  creates: Map<string, CreateDraft>;
+  /** the created documents, in effect order (`opset.creates`) */
+  creates: CreateEntry[];
+  /** `preview.identity`: per `set content` document, the whole-document planner's identity consequences */
+  identity: Map<string, IdentityPreview>;
+  /** `preview.retarget`: per `retarget` effect, its hits and pair counts */
+  retargets: RetargetPreview[];
   moves: MoveDraft[];
   tombstones: TombstoneDraft[];
   /** doc id → the file head (`set_frontmatter[].raw`), last write per document */
@@ -460,10 +475,10 @@ function docMissing(ref: string): MutationError {
 /** Resolve a document target: an existing document's `{ id, path }`, or a `$new.n` document this plan creates. */
 export function resolveDocumentTarget(ctx: LoweringContext, t: Extract<EffectTarget, { kind: "document" }>): Extract<ResolvedTarget, { kind: "document" }> {
   if (t.id !== undefined && isNewSymbol(t.id)) {
-    const draft = ctx.creates.get(t.id);
-    if (!draft) throw symbolMissing(ctx, t.id, "document");
-    if (t.path !== undefined && canonicalDocPath(t.path) !== draft.path) throw effectInvalid(`id ${JSON.stringify(t.id)} and path ${JSON.stringify(t.path)} name different documents`);
-    return { kind: "document", id: t.id, path: draft.path };
+    const created = ctx.creates.find((c) => c.symbol === t.id);
+    if (!created) throw symbolMissing(ctx, t.id, "document");
+    if (t.path !== undefined && canonicalDocPath(t.path) !== created.path) throw effectInvalid(`id ${JSON.stringify(t.id)} and path ${JSON.stringify(t.path)} name different documents`);
+    return { kind: "document", id: t.id, path: created.path };
   }
   const byId = t.id !== undefined ? findDoc(ctx.store, { docId: t.id }) : null;
   if (t.id !== undefined && (!byId || byId.repoId !== ctx.repoId)) throw docMissing(t.id);
@@ -480,12 +495,15 @@ function symbolMissing(ctx: LoweringContext, symbol: string, wanted: "block" | "
   return new MutationError("target_missing", `${symbol} names a ${kind}, not a ${wanted}`, { symbol });
 }
 
-/** A block id as the kernel must see it: a `$new.n` becomes the placeholder of the op that minted it. */
+/** A block id as the kernel must see it: a `$new.n` an op minted becomes the placeholder of that op;
+ *  a `$new.n` of a created document's tree (3.0) stays the symbol — it IS the tree's id at plan
+ *  time, and `execute` aliases it to the id its replay mints (§11.7). */
 function kernelBlockId(ctx: LoweringContext, id: string): string {
   if (!isNewSymbol(id)) return id;
   const placeholder = ctx.blockSymbols.get(id);
-  if (placeholder === undefined) throw symbolMissing(ctx, id, "block");
-  return placeholder;
+  if (placeholder !== undefined) return placeholder;
+  if (locateLoaded(ctx, id)) return id;
+  throw symbolMissing(ctx, id, "block");
 }
 
 function kernelAt(ctx: LoweringContext, at: EffectAt): At {
@@ -760,7 +778,7 @@ export function lowerEffect(ctx: LoweringContext, i: number, effect: Effect): Re
   const info = focusOf(ctx, e);
   if (!ctx.tracker.check(i, info, describe(e))) return null;
   ctx.resolved.push(e);
-  applyLowering(ctx, e);
+  applyLowering(ctx, i, e);
   return e;
 }
 
@@ -856,21 +874,25 @@ function allBlocksOf(ctx: LoweringContext, docId: string): string[] {
   return (ctx.store.db.prepare("SELECT block_id FROM blocks WHERE doc_id = ? AND deleted_commit IS NULL").all(docId) as { block_id: string }[]).map((r) => r.block_id);
 }
 
-// The lowering table (§11.3), one resolved effect → kernel ops / drafts.
-function applyLowering(ctx: LoweringContext, e: ResolvedEffect): void {
+// The lowering table (§11.3), one resolved effect → kernel ops / document entries. `i` is the effect's index.
+function applyLowering(ctx: LoweringContext, i: number, e: ResolvedEffect): void {
   switch (e.op) {
     case "create": {
       if (findDoc(ctx.store, { repoId: ctx.repoId, path: e.path })) throw new MutationError("path_taken", `document already exists at ${e.path}`, { path: e.path });
       if (ctx.absentPaths.includes(e.path)) throw new MutationError("path_taken", `an earlier effect already creates or moves a document to ${e.path}`, { path: e.path });
       if (ctx.docStore.exists(e.path)) throw new MutationError("path_taken", `file already exists on disk at ${e.path}`, { path: e.path });
+      // 3.0: the document symbol, then its tree parsed under the symbolic minter
+      // — its blocks are the next `$new.k` in pre-order — and adopted as a loaded
+      // document, so every later effect addresses it and its blocks like any other.
       const symbol = ctx.symbols.alloc("document");
-      ctx.creates.set(symbol, { symbol, path: e.path, markdown: e.markdown, frontmatter: { ...(e.frontmatter ?? {}) } });
+      const source = composeFile(e.markdown, e.frontmatter);
+      ctx.planner.adoptNew(symbol, parseNewDoc(symbol, e.path, source));
+      ctx.creates.push({ symbol, path: e.path, source, before_op: ctx.ops.length });
       ctx.absentPaths.push(e.path);
       return;
     }
     case "insert": {
       const doc = targetDoc(ctx, e.into);
-      if (isNewSymbol(doc)) throw new MutationError("target_missing", `${doc} is a document this plan creates; inserting into a created document is not supported — put the content in its markdown`, { symbol: doc });
       checkRevision(ctx, doc, e.expect);
       recordParentPin(ctx, doc, e.into, e.expect);
       const to = placement(ctx, e.into, e.at);
@@ -882,21 +904,14 @@ function applyLowering(ctx: LoweringContext, e: ResolvedEffect): void {
     case "unset": {
       if (e.target.kind === "document") {
         const docId = e.target.id;
-        if (isNewSymbol(docId)) {
-          // Folded into the create's composition (§11.3).
-          const draft = ctx.creates.get(docId)!;
-          const key = FRONTMATTER_FIELD.exec(e.field)?.[1];
-          if (key === undefined) throw effectInvalid(`${e.field} cannot be set on a document this plan creates (${docId})`);
-          if (e.op === "set") draft.frontmatter[key] = e.value;
-          else delete draft.frontmatter[key];
-          return;
-        }
         checkRevision(ctx, docId, e.expect);
         if (e.field === "content") {
           if (e.op !== "set" || typeof e.value !== "string") throw effectInvalid("`content` takes a string value: the complete proposed document");
+          if (isNewSymbol(docId)) throw new MutationError("target_missing", `${docId} is a document this plan creates; its content is the create's markdown`, { symbol: docId });
           lowerContent(ctx, docId, e.value);
           return;
         }
+        // `frontmatter.<key>` — on a created document too (3.0): its tree is loaded, the patch is a head like any other.
         const key = FRONTMATTER_FIELD.exec(e.field)![1]!;
         const { frontmatter, body } = frontmatterOf(ctx, docId);
         const merged: Record<string, unknown> = { ...frontmatter };
@@ -940,7 +955,9 @@ function applyLowering(ctx: LoweringContext, e: ResolvedEffect): void {
         recordParentPin(ctx, dst, e.into, e.expect);
         const to = placement(ctx, e.into, e.at);
         const expect = kernelExpect(e.expect);
-        pushOp(ctx, { op: "move", blocks: ids.map((id) => kernelBlockId(ctx, id)), to, ...(expect !== undefined ? { expect } : {}) });
+        // `doc` names the destination when `into` is a document (§2.3, 3.0): a
+        // top-level start/end would otherwise mean the SOURCE document's.
+        pushOp(ctx, { op: "move", blocks: ids.map((id) => kernelBlockId(ctx, id)), to, ...(e.into.kind === "document" ? { doc: dst } : {}), ...(expect !== undefined ? { expect } : {}) });
         return;
       }
       const t = docTarget(e.target);
@@ -1007,6 +1024,7 @@ function applyLowering(ctx: LoweringContext, e: ResolvedEffect): void {
     }
     case "retarget": {
       const plan = linksRepair(ctx.store, ctx.repoId, e.repairs, e.path_glob !== undefined ? { pathGlob: e.path_glob } : {});
+      ctx.retargets.push({ effect_index: i, hits: plan.hits, pairs: plan.pairs });
       for (const op of plan.ops) {
         const u = op as Extract<Op, { op: "update" }>;
         pin(ctx, u.block, u.expect?.content_hash);
@@ -1042,6 +1060,25 @@ function lowerContent(ctx: LoweringContext, docId: string, content: string): voi
     const why = opset.diagnostics.length > 0 ? ` — ${opset.diagnostics[opset.diagnostics.length - 1]}` : "";
     throw new MutationError("plan_not_convergent", `the proposed content of ${docId} cannot be reproduced by the planner; re-plan${why}`, { doc: docId, diagnostics: opset.diagnostics });
   }
+  // The identity consequences, surfaced as `preview.identity[doc]` (3.0; the
+  // 3.x `docs_update` result): each planned op by its index in the plan's ops.
+  const offset = ctx.ops.length;
+  ctx.identity.set(docId, {
+    matcher_v: opset.matcherV,
+    summary: opset.summary,
+    ops: opset.ops.map((p, k) => ({ op_index: offset + k, disposition: p.disposition, blocks: p.blocks, confidence: p.confidence, reason: p.reason, ...(p.detail !== undefined ? { detail: p.detail } : {}) })),
+    diagnostics: opset.diagnostics,
+  });
+  if (opset.ops.length === 0 && !opset.frontmatter) {
+    // The content IS the document (the zero-effects rule, §11.7): nothing is
+    // loaded, so nothing is ingested and `execute` records no commit — the
+    // document's triple is still a precondition (the opset's), so the plan is
+    // `stale_plan` once the document moves on.
+    const base = readDocBase(ctx.store.db, docId);
+    if (!base) throw docMissing(docId);
+    if (!ctx.docBases.has(docId)) ctx.docBases.set(docId, base);
+    return;
+  }
   const d = ctx.planner.ensureDoc(docId);
   if (opset.frontmatter) {
     // The whole-document planner's frontmatter keeps the leading trivia in
@@ -1050,7 +1087,6 @@ function lowerContent(ctx: LoweringContext, docId: string, content: string): voi
     ctx.planner.setHead(docId, head);
     ctx.heads.set(docId, head);
   }
-  const offset = ctx.ops.length;
   for (const p of opset.ops) pushOp(ctx, shiftPlaceholders(p.op, offset));
 }
 

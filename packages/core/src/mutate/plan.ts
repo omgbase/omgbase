@@ -7,11 +7,12 @@ import { withWriterLock } from "../sync/writer-lock.js";
 import { ChangesetPlanner, type ApplyResult, type ApplyRevision, type ChangesetPlan, type Op, type OpResult } from "./apply.js";
 import { commitChangeset, readDocBase, type CommitHead, type Effect as InternalEffect } from "./commit.js";
 import { resolveDocStore, type DocStore } from "./doc-store.js";
-import { composeFile } from "./docs.js";
+import { parseNewDoc } from "./docs.js";
 import {
-  ConflictTracker, SymbolTable, lowerEffect, symbolicMinter, validateEffects, effectInvalid,
-  type Effect, type LoweringContext, type ResolvedEffect,
+  ConflictTracker, SymbolTable, isNewSymbol, lowerEffect, symbolicMinter, validateEffects, effectInvalid,
+  type CreateEntry, type Effect, type LoweringContext, type ResolvedEffect, type RetargetPreview,
 } from "./effects.js";
+import type { IdentityPreview } from "./opset.js";
 import { MutationError } from "./tree.js";
 
 // The Plan (spec/mutate §11.4–§11.7, 2.3): the frozen, executable, digest-named
@@ -24,7 +25,7 @@ import { MutationError } from "./tree.js";
 
 export const PLAN_VERSION = 1 as const;
 /** The lowering + conflict rules version (§11.4; the `matcher_v` precedent). */
-export const PLANNER_V = "p1" as const;
+export const PLANNER_V = "p2" as const;
 
 /** A kernel op as the plan spells it on the wire: the fixture spelling (`child_ids`). */
 export type WireOp =
@@ -33,8 +34,8 @@ export type WireOp =
 
 /** The lowered form `execute` replays (§11.4): every key present, `[]` when empty. */
 export interface PlanOpset {
-  /** `create` → the composed file (`set`/`unset frontmatter.<k>` on `$new.n` folded in) */
-  creates: { path: string; source: string }[];
+  /** `create` → the composed file, its document symbol and the index of the first kernel op planned after it (3.0; a later `set frontmatter.<k>` on the symbol is a head below) */
+  creates: CreateEntry[];
   /** `move document` → the row/file rename (its retarget updates are in `ops`) */
   moves: { id: string; from: string; to: string }[];
   /** `remove document` */
@@ -60,6 +61,10 @@ export interface PlanPreview {
   results: OpResult[];
   revisions: ApplyRevision[];
   diffs: Record<string, { before: string; after: string }>;
+  /** (3.0) per `set content` document: the whole-document planner's identity consequences; present when a plan has one */
+  identity?: Record<string, IdentityPreview>;
+  /** (3.0) per `retarget` effect: its hits and pair counts; present when a plan has one */
+  retarget?: RetargetPreview[];
 }
 
 /** The executable core the digest covers. */
@@ -218,7 +223,7 @@ export function planEffects(store: Store, req: PlanEffectsRequest): Plan {
     const planner = new ChangesetPlanner(store, req.repoId, req.omgbaseDir);
     const ctx: LoweringContext = {
       store, repoId: req.repoId, docStore, planner, symbols,
-      blockSymbols: new Map(), creates: new Map(), moves: [], tombstones: [], heads: new Map(), ops: [],
+      blockSymbols: new Map(), creates: [], identity: new Map(), retargets: [], moves: [], tombstones: [], heads: new Map(), ops: [],
       pins: new Map(), parents: [], absentPaths: [], docBases: new Map(),
       tracker: new ConflictTracker(canonicalJson), canonical: canonicalJson, resolved: [],
     };
@@ -233,9 +238,8 @@ export function planEffects(store: Store, req: PlanEffectsRequest): Plan {
     });
     const changeset = planner.finish();
 
-    const creates = [...ctx.creates.values()].map((d) => ({ symbol: d.symbol, path: d.path, source: composeFile(d.markdown, d.frontmatter) }));
     const opset: PlanOpset = {
-      creates: creates.map((c) => ({ path: c.path, source: c.source })),
+      creates: ctx.creates,
       moves: ctx.moves.map((m) => ({ id: m.id, from: m.from, to: m.to })),
       tombstones: ctx.tombstones.map((t) => ({ id: t.id, path: t.path })),
       set_frontmatter: [...ctx.heads].map(([doc, raw]) => ({ doc, raw })),
@@ -255,14 +259,12 @@ export function planEffects(store: Store, req: PlanEffectsRequest): Plan {
     const plan_id = planDigest(core);
 
     // The preview (not digested): the kernel results, every revision the commit
-    // would record, and the per-file diffs — a create `"" → bytes`, a move two
-    // entries (its retargeted bytes land at the new path), a removal `bytes → ""`.
+    // would record — a created document's under its symbol, from its adopted
+    // tree like any loaded document's — and the per-file diffs: a create
+    // `"" → bytes`, a move two entries (its retargeted bytes land at the new
+    // path), a removal `bytes → ""`.
     const diffs: Record<string, { before: string; after: string }> = { ...changeset.diffs };
     const revisions: ApplyRevision[] = [...changeset.revisions];
-    for (const c of creates) {
-      diffs[c.path] = { before: "", after: c.source };
-      revisions.push({ id: c.symbol, path: c.path, hash: sha256(c.source).toString("hex") });
-    }
     for (const m of ctx.moves) {
       const bytes = docStore.read(m.from) ?? "";
       const own = diffs[m.from];
@@ -275,7 +277,10 @@ export function planEffects(store: Store, req: PlanEffectsRequest): Plan {
       const moved = ctx.moves.find((m) => m.id === r.id);
       if (moved) r.path = moved.to;
     }
-    return { ...core, plan_id, diagnostics: ctx.tracker.diagnostics, preview: { results: changeset.results, revisions, diffs } };
+    const preview: PlanPreview = { results: changeset.results, revisions, diffs };
+    if (ctx.identity.size > 0) preview.identity = Object.fromEntries(ctx.identity);
+    if (ctx.retargets.length > 0) preview.retarget = ctx.retargets;
+    return { ...core, plan_id, diagnostics: ctx.tracker.diagnostics, preview };
   });
 }
 
@@ -315,6 +320,11 @@ export function admitPlan(input: unknown): Plan {
   if (!isRecord(input.opset)) throw effectInvalid("`plan.opset` must be an object");
   for (const k of ["creates", "moves", "tombstones", "set_frontmatter", "ops"]) {
     if (!Array.isArray(input.opset[k])) throw effectInvalid(`\`plan.opset.${k}\` must be an array`);
+  }
+  for (const c of input.opset.creates as unknown[]) {
+    if (!isRecord(c) || typeof c.symbol !== "string" || typeof c.path !== "string" || typeof c.source !== "string" || typeof c.before_op !== "number") {
+      throw effectInvalid("`plan.opset.creates[]` entries are { symbol, path, source, before_op }");
+    }
   }
   if (!isRecord(input.preconditions)) throw effectInvalid("`plan.preconditions` must be an object");
   for (const k of ["docs", "blocks", "parents", "absent_paths"]) {
@@ -445,11 +455,15 @@ function underLock<T>(req: { omgbaseDir?: string }, fn: () => T): T {
  * Commit an admitted plan: the preconditions pre-checked (`stale_plan` /
  * `doc_missing` / `path_taken`, outside the transaction, so a stale plan fails
  * before any id is minted), the opset replayed under the production minter
- * (`b` ids minted here, before the transaction — as every request's are), the
- * internal effects built in order — creates, moves, the rendered documents (a
- * moved document's revision lands at its new path), tombstones — and
- * `commitChangeset` re-validates every triple inside `BEGIN IMMEDIATE`. The
- * commit row's `ops` is the intent record `canonical({ v: 1, plan_id, effects })`.
+ * (`b` ids minted here, before the transaction — as every request's are; a
+ * created document is re-adopted from its bytes at its `before_op` position,
+ * so the replay mints in the plan's order and the i-th `b` IS the i-th block
+ * symbol — the alias the `$new.k` in the ops resolve through), the internal
+ * effects built in order — moves, the rendered documents (created ones as
+ * `ingest_known { base: null }`; a moved document's revision lands at its new
+ * path), tombstones — and `commitChangeset` re-validates every triple inside
+ * `BEGIN IMMEDIATE`. The commit row's `ops` is the intent record
+ * `canonical({ v: 1, plan_id, effects })`.
  */
 function executeAdmitted(store: Store, req: ExecuteRequest, plan: Plan, docStore: DocStore): Receipt {
   for (const d of plan.preconditions.docs) {
@@ -479,23 +493,41 @@ function executeAdmitted(store: Store, req: ExecuteRequest, plan: Plan, docStore
   };
   const stat = req.omgbaseDir !== undefined;
   const moved = new Map(plan.opset.moves.map((m) => [m.id, m]));
+  const blockSymbols = plan.new_ids.filter((s) => s.kind === "block").map((s) => s.symbol);
+  const planner = new ChangesetPlanner(store, req.repoId, req.omgbaseDir);
 
   const { effects, outcome } = observeMints(
     (prefix, id) => {
-      if (prefix === "b") minted.b.push(id);
-      else if (prefix === "d") minted.d.push(id);
+      if (prefix === "b") {
+        // The i-th `b` the replay mints is the i-th block symbol (§11.7): alias it
+        // so an op naming a created document's block by its symbol resolves.
+        const symbol = blockSymbols[minted.b.length];
+        minted.b.push(id);
+        if (symbol !== undefined) planner.alias(symbol, id);
+      } else if (prefix === "d") minted.d.push(id);
     },
     () => {
-      const planner = new ChangesetPlanner(store, req.repoId, req.omgbaseDir);
-      for (const h of plan.opset.set_frontmatter) planner.setHead(h.doc, h.raw);
-      for (const op of plan.opset.ops) planner.push(kernelOp(op));
+      const heads = plan.opset.set_frontmatter;
+      for (const h of heads) if (!isNewSymbol(h.doc)) planner.setHead(h.doc, h.raw);
+      // Re-adopt each created document where the plan did (`before_op`), its
+      // head applied once its tree is loaded; the ops between in order.
+      const creates = plan.opset.creates;
+      let ci = 0;
+      const adoptUpTo = (opIndex: number): void => {
+        while (ci < creates.length && creates[ci]!.before_op <= opIndex) {
+          const c = creates[ci++]!;
+          planner.adoptNew(c.symbol, parseNewDoc(c.symbol, c.path, c.source));
+          for (const h of heads) if (h.doc === c.symbol) planner.setHead(c.symbol, h.raw);
+        }
+      };
+      plan.opset.ops.forEach((op, i) => {
+        adoptUpTo(i);
+        planner.push(kernelOp(op));
+      });
+      adoptUpTo(plan.opset.ops.length);
       const changeset: ChangesetPlan = planner.finish();
 
       const effects: InternalEffect[] = [];
-      for (const c of plan.opset.creates) {
-        effects.push({ kind: "ingest_reconciled", path: c.path, source: c.source, precondition: null });
-        if (stat) effects.push({ kind: "record_stat", path: c.path, bytes: c.source });
-      }
       for (const m of plan.opset.moves) {
         const bytes = docStore.read(m.from) ?? "";
         const rev = readDocBase(store.db, m.id)?.currentRev ?? null;
@@ -521,19 +553,18 @@ function executeAdmitted(store: Store, req: ExecuteRequest, plan: Plan, docStore
     },
   );
 
-  // The receipt's revisions, in effect order; the ingest results pair with the ingest effects in order.
+  // The receipt's revisions, in effect order; the ingest results pair with the
+  // ingest effects in order (a created document's id is the one its ingest minted).
   const revisions: ApplyRevision[] = [];
   let j = 0;
   for (const e of effects) {
     if (e.kind === "ingest_reconciled") revisions.push({ id: outcome.ingests[j++]!.docId, path: e.path, hash: sha256(e.source).toString("hex") });
-    else if (e.kind === "ingest_known") {
-      j++;
-      revisions.push({ id: e.docId, path: e.path, hash: sha256(e.rendered).toString("hex") });
-    }
+    else if (e.kind === "ingest_known") revisions.push({ id: outcome.ingests[j++]!.docId, path: e.path, hash: sha256(e.rendered).toString("hex") });
   }
   // `$new.n` → minted id: the i-th block symbol is the i-th `b` the replay
-  // minted (all before the transaction, in the plan's order), the i-th document
-  // symbol the i-th `d` the creates minted inside it.
+  // minted (all before the transaction, in the plan's order — the aliases
+  // above), the i-th document symbol the i-th `d` the created documents'
+  // ingests minted inside it (load order = effect order).
   const newIds: Record<string, string> = {};
   let bi = 0;
   let di = 0;

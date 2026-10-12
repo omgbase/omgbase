@@ -1,6 +1,8 @@
 # omgbase — Whole-Document Update Opsets
 
-**Status:** normative (as-built, 2026-09-26).
+**Status:** normative (as-built, 2026-10-12 — surface 4.0 / spec/mutate 3.0).
+
+> **Surfacing since 4.0.** The opset is no longer a wire object. `docs_update { id|path, content, reason? }` is sugar for the effect `set { target: document, field: "content", value }` and returns the plan's **receipt**; to inspect the identity decisions first, call `plan { effects: [that set] }` — the plan's `preview.identity[<doc id>]` carries exactly the opset's planning metadata (`matcher_v`, `summary`, `ops[{ op_index, disposition, blocks, confidence, reason, detail? }]`, `diagnostics`), outside the digest, and `omg update <doc> --dry-run` renders it as the plan lines below. `applyOpset`/`docsUpdate` and the `{ opset, plan, result }` result shape are gone; a `content` equal to the current bytes is zero effects and no commit. `planUpdate` remains the pure planning half the lowering calls.
 **Depends on:** `reconciliation-spec.md` (matcher), `mutation-and-concurrency.md` (kernel, CAS, write protocol), `architecture.md` §2 (convergence, identity).
 
 > **The language-neutral specification is [`spec/mutate/README.md`](../spec/mutate/README.md) §7** (the opset shape, the top-level lowering as an exact rule — removes, updates with `child_ids`, LCS placement, retile — verification, the replace fallback, `apply_opset` preconditions), with executable fixtures in `spec/mutate/cases/plan.json` (`packages/core/corpus/mutate/spec.test.ts`, `MUTATE_SPEC_UPDATE=1`). When this document and the spec disagree, the spec's fixtures win.
@@ -12,11 +14,11 @@
 A caller submits the **complete proposed representation** of a document and relies on omgbase to preserve stable identities for blocks that are still recognizably the same things. Rather than hiding the inferred structural changes inside an opaque `docs.update`, whole-document reconciliation produces an explicit, serializable **operation set (opset)**:
 
 ```
-proposed content
-      ↓  reconcile / plan
-    opset            ← inspect · edit · validate · serialize
-      ↓  apply(opset)
-    commit
+proposed content  (set { document, field: content })
+      ↓  reconcile / plan                      (planUpdate, pure)
+    opset  →  plan.preview.identity        ← inspect via `plan { effects }`
+      ↓  execute(plan) / apply { effects }     (one transaction, CAS re-validated)
+    commit  →  receipt
 ```
 
 Three concerns stay separate:
@@ -72,7 +74,7 @@ preserved: 37  updated: 4  moved: 2  created: 3  removed: 1  split: 0  merged: 0
 
 ## 3. Planning (`planUpdate`)
 
-`planUpdate(store, repoId, rootPath, docRef, content) → Opset` (the read half of `omg update`/`docs_update`; the MCP call is `docs_update { dry_run: true }` — `docs_plan_update` was removed in surface 3.0, it was exactly this dry run):
+`planUpdate(store, repoId, rootPath, docRef, content) → Opset` (the pure planning half the `set content` lowering calls; on the wire it is `plan { effects: [set content] }` → `preview.identity`, and `omg update --dry-run` — `docs_update { dry_run: true }` was retired in surface 4.0, `docs_plan_update` in 3.0):
 
 1. Resolve `docRef` (id or path) to the existing document; load its current tree (`MutDoc`). A missing document is `doc_missing` — creation is `docs_create`'s job.
 2. Record the precondition: `baseRevision` (current_rev) and `hash` (sha256 of current rendered bytes).

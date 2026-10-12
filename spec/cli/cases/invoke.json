@@ -334,7 +334,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "  update — Replace a block's markdown (b_… target), or reconcile a whole document from complete new bytes (doc id/path)\n  usage: omg update <block|doc> (-m <markdown> | -f <file> | -) [--plan] [--expect <hash>] [--reason <s>] [--actor <s>] [--dry-run]\n  options:\n    -m <markdown>    content inline\n    -f <file>        content from a file\n    -                content from stdin\n    --plan           (doc) print the reconciliation opset — identity effects + summary — and commit nothing\n    --expect <hash>  (block) fail with stale_expectation unless the block's hash still matches\n    --reason <s>     commit reason recorded in history\n    --actor <s>      commit actor (default human:$USER)\n    -h, --help       show this help\n"
+        "stdout": "  update — Replace a block's markdown (b_… target), or reconcile a whole document from complete new bytes (doc id/path)\n  usage: omg update <block|doc> (-m <markdown> | -f <file> | -) [--expect <hash>] [--reason <s>] [--actor <s>] [--dry-run]\n  options:\n    -m <markdown>    content inline\n    -f <file>        content from a file\n    -                content from stdin\n    --dry-run        (doc) print the reconciliation plan — identity effects + summary — and commit nothing\n    --expect <hash>  (block) fail with stale_expectation unless the block's hash still matches\n    --reason <s>     commit reason recorded in history\n    --actor <s>      commit actor (default human:$USER)\n    -h, --help       show this help\n"
       }
     },
     {

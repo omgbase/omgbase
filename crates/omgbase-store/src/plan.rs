@@ -1,7 +1,10 @@
 //! The whole-document update planner (`spec/mutate/README.md` §7):
 //! reconcile a proposed complete document against the stored tree (no pool),
 //! lower to kernel ops, verify by a dry-run apply, fall back to a full
-//! replace; and `apply_opset` with its preconditions.
+//! replace. Pure since mutate 3.0: the opset is the planner's internal
+//! result — `set document.content` (§11.3) splices its ops into a plan and
+//! surfaces its identity fields as `preview.identity`; `apply_opset` and the
+//! legacy `docs_update` are gone.
 
 use omgbase_format::hash::{hex, sha256};
 use omgbase_format::{Block, BlockKind, parse_markdown};
@@ -10,15 +13,12 @@ use omgbase_mutate::{
     lower_top_level, render, summarize,
 };
 use omgbase_reconcile::{Config, FlatSource, Options, flatten, reconcile_document};
-use rusqlite::{OptionalExtension, params};
 use serde_json::json;
 
 use crate::Store;
-use crate::doc_store::{DocStore, NullDocStore};
+use crate::doc_store::NullDocStore;
 use crate::error::{Error, Result};
-use crate::mutate::{
-    ApplyOrigin, ApplyRequest, ApplyResult, SetFrontmatter, find_doc_by_ref, load_mut_doc,
-};
+use crate::mutate::{ApplyOrigin, ApplyRequest, SetFrontmatter, find_doc_by_ref, load_mut_doc};
 use crate::read::load_old_match_blocks;
 
 enum Verified {
@@ -227,100 +227,6 @@ impl Store {
             Err(Error::Mutation(e)) => Verified::Threw(format!("{}: {}", e.code, e.message)),
             Err(e) => Verified::Threw(e.to_string()),
         }
-    }
-
-    /// §7.2 `apply_opset`: refuse a non-convergent plan, check the
-    /// preconditions (`stale_plan` with the current revision and hash), then
-    /// apply the plan's kernel ops with its frontmatter override.
-    pub fn apply_opset(
-        &mut self,
-        repo_id: &str,
-        opset: &Opset,
-        origin: &ApplyOrigin,
-        dry_run: bool,
-        doc_store: &mut dyn DocStore,
-        ts: &str,
-    ) -> Result<ApplyResult> {
-        if !opset.converges {
-            let why = opset
-                .diagnostics
-                .last()
-                .map_or(String::new(), |d| format!(" — {d}"));
-            return Err(MutationError::with_data(
-                ErrorCode::PlanNotConvergent,
-                format!("opset does not reproduce the proposed content; re-plan{why}"),
-                json!({ "diagnostics": opset.diagnostics }),
-            )
-            .into());
-        }
-        let row: Option<(Option<String>, Option<Vec<u8>>)> = self
-            .conn
-            .query_row(
-                "SELECT current_rev, file_hash FROM docs WHERE doc_id = ?1 AND deleted_commit IS NULL",
-                params![opset.precondition.doc],
-                |r| Ok((r.get(0)?, r.get(1)?)),
-            )
-            .optional()?;
-        let Some((current_rev, file_hash)) = row else {
-            return Err(MutationError::with_data(
-                ErrorCode::DocMissing,
-                format!("doc {} not found", opset.precondition.doc),
-                json!({ "doc": opset.precondition.doc }),
-            )
-            .into());
-        };
-        let fh = file_hash.map(|h| hex(&h));
-        let stale = (opset.precondition.base_revision.is_some()
-            && current_rev != opset.precondition.base_revision)
-            || fh.as_deref().is_some_and(|h| h != opset.precondition.hash);
-        if stale {
-            return Err(MutationError::with_data(
-                ErrorCode::StalePlan,
-                "document changed since the plan was computed; re-plan",
-                json!({
-                    "doc": opset.precondition.doc,
-                    "expected_revision": opset.precondition.base_revision,
-                    "current": { "revision": current_rev, "hash": fh },
-                    "retriable": true,
-                }),
-            )
-            .into());
-        }
-        let req = ApplyRequest {
-            repo_id: repo_id.to_owned(),
-            ops: opset.kernel_ops(),
-            origin: origin.clone(),
-            dry_run,
-            set_frontmatter: match &opset.frontmatter {
-                Some(raw) => vec![SetFrontmatter {
-                    doc: opset.precondition.doc.clone(),
-                    raw: raw.clone(),
-                }],
-                None => Vec::new(),
-            },
-        };
-        self.apply(&req, doc_store, ts)
-    }
-
-    /// `docs_update`: plan then apply (`None` result on a dry run).
-    #[allow(clippy::too_many_arguments)]
-    pub fn docs_update(
-        &mut self,
-        repo_id: &str,
-        doc_ref: &str,
-        content: &str,
-        config: &Config,
-        origin: &ApplyOrigin,
-        dry_run: bool,
-        doc_store: &mut dyn DocStore,
-        ts: &str,
-    ) -> Result<(Opset, Option<ApplyResult>)> {
-        let opset = self.plan_update(repo_id, doc_ref, content, config)?;
-        if dry_run {
-            return Ok((opset, None));
-        }
-        let result = self.apply_opset(repo_id, &opset, origin, false, doc_store, ts)?;
-        Ok((opset, Some(result)))
     }
 }
 

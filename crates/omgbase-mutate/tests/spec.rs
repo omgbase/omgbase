@@ -27,13 +27,12 @@ use std::path::{Path, PathBuf};
 
 use omgbase_format::hash::{hex, sha256};
 use omgbase_mutate::effects::{Admission, canonical_json, digest};
-use omgbase_mutate::{At, Effect, MutationError, Op, Opset, Plan};
+use omgbase_mutate::{At, Effect, MutationError, Op, Opset, Plan, Target};
 use omgbase_reconcile::Config;
 use omgbase_store::tree::parse_tree_entries;
 use omgbase_store::{
-    ApplyOrigin, ApplyRequest, ApplyResult, BatchItem, BatchOutcome, DocOpContext, DocStore,
-    EffectsOutcome, LinkRepair, MemDocStore, PlanContext, SequentialMinter, SetFrontmatter, Store,
-    TreeEntry,
+    ApplyOrigin, ApplyRequest, BatchItem, BatchOutcome, DocOpContext, DocStore, EffectsOutcome,
+    LinkRepair, MemDocStore, PlanContext, SequentialMinter, SetFrontmatter, Store, TreeEntry,
 };
 use rusqlite::types::Value as Sql;
 use rusqlite::{Connection, OptionalExtension, params};
@@ -956,10 +955,6 @@ fn run_apply(r: &mut Runner, ops: Vec<Op>, body: &JsonMap<String, Json>) -> Resu
     })
 }
 
-fn apply_json(res: &ApplyResult) -> Json {
-    res.to_json()
-}
-
 fn ops_of(body: &JsonMap<String, Json>) -> Result<Vec<Op>, String> {
     body.get("ops")
         .and_then(Json::as_array)
@@ -1259,15 +1254,28 @@ fn run_plan(r: &mut Runner, body: &JsonMap<String, Json>) -> Result<Json, String
         out.insert("before_apply".to_owned(), Json::Array(outcomes));
     }
     if body.get("apply").and_then(Json::as_bool).unwrap_or(false) {
+        // §9 (3.0): the apply half is `apply_effects [set content]` — the
+        // same proposed content as one `set { document, field: "content" }`
+        // on the opset's document — recording the receipt (or the error).
         let origin = origin_from(body.get("origin"));
-        let outcome =
-            match r
-                .store
-                .apply_opset(&r.repo_id, &opset, &origin, false, &mut r.doc_store, ts)
-            {
-                Ok(res) => apply_json(&res),
-                Err(e) => error_outcome(&e)?,
-            };
+        let ctx = plan_ctx(r, ts);
+        let effects = [Effect::Set {
+            target: Target::Document {
+                id: Some(opset.target_doc.clone()),
+                path: None,
+            },
+            field: "content".to_owned(),
+            value: json!(content),
+            expect: None,
+        }];
+        let outcome = with_doc_store(r, |store, ds| {
+            store
+                .apply_effects(&ctx, &effects, &origin, ds, false)
+                .map(|out| match out {
+                    EffectsOutcome::Plan(plan) => json!({ "plan": plan.to_json(false) }),
+                    EffectsOutcome::Receipt(receipt) => json!({ "receipt": receipt.to_json() }),
+                })
+        })?;
         out.insert("apply".to_owned(), outcome);
     }
     Ok(Json::Object(out))

@@ -526,15 +526,15 @@ pub fn card(name: &'static str, prog: &str) -> Option<HelpSpec> {
                 "Replace a block's markdown (b_… target), or reconcile a whole document from complete new bytes (doc id/path)",
             ),
             vec![s(
-                "update <block|doc> (-m <markdown> | -f <file> | -) [--plan] [--expect <hash>] [--reason <s>] [--actor <s>] [--dry-run]",
+                "update <block|doc> (-m <markdown> | -f <file> | -) [--expect <hash>] [--reason <s>] [--actor <s>] [--dry-run]",
             )],
             opts(&[
                 ("-m <markdown>", "content inline"),
                 ("-f <file>", "content from a file"),
                 ("-", "content from stdin"),
                 (
-                    "--plan",
-                    "(doc) print the reconciliation opset — identity effects + summary — and commit nothing",
+                    "--dry-run",
+                    "(doc) print the reconciliation plan — identity effects + summary — and commit nothing",
                 ),
                 (
                     "--expect <hash>",

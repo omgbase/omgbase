@@ -178,22 +178,16 @@ export {
   type PlanEffectsRequest,
   type ExecuteRequest,
 } from "./mutate/plan.js";
-export { validateEffects, EFFECT_OPS, type Effect, type EffectTarget, type EffectExpect, type ResolvedEffect } from "./mutate/effects.js";
+export { validateEffects, EFFECT_OPS, type Effect, type EffectTarget, type EffectExpect, type ResolvedEffect, type CreateEntry, type RetargetPreview } from "./mutate/effects.js";
 // Inbound-link discovery + destination-aware rewrite (docs_move's dangling report / retarget_inbound).
 export { inboundLinksTo, retargetLinksInRaw, type InboundLink } from "./graph/inbound-links.js";
-// Whole-document update: reconcile → opset → inspect/apply.
-export {
-  planUpdate,
-  applyOpset,
-  docsUpdate,
-  type PlanUpdateOptions,
-  type ApplyOpsetRequest,
-  type DocsUpdateContext,
-  type DocsUpdateResult,
-} from "./mutate/plan-update.js";
+// Whole-document update: reconcile → opset (the `set content` effect's internal planner since 3.0; `preview.identity` surfaces it).
+export { planUpdate, type PlanUpdateOptions } from "./mutate/plan-update.js";
 export {
   opsetKernelOps,
   renderOpsetPlan,
+  renderIdentityPlan,
+  type IdentityPreview,
   serializeOpset,
   parseOpset,
   type Opset,

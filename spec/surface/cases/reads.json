@@ -3770,21 +3770,37 @@
         },
         {
           "read": {
-            "tool": "docs_update",
+            "tool": "plan",
             "args": {
-              "path": "notes/one.md",
-              "content": "# One\n\nBack to [guide](/guide.md), edited.\n\n## Setup\n\nAlso a setup section.\n",
-              "dry_run": true
+              "effects": [
+                {
+                  "op": "set",
+                  "target": {
+                    "kind": "document",
+                    "path": "notes/one.md"
+                  },
+                  "field": "content",
+                  "value": "# One\n\nBack to [guide](/guide.md), edited.\n\n## Setup\n\nAlso a setup section.\n"
+                }
+              ]
             }
           }
         },
         {
           "read": {
-            "tool": "docs_update",
+            "tool": "plan",
             "args": {
-              "path": "notes/one.md",
-              "content": "# One\n\nBack to [guide](/guide.md), edited.\n\n## Setup\n\nAlso a setup section.\n",
-              "dry_run": true
+              "effects": [
+                {
+                  "op": "set",
+                  "target": {
+                    "kind": "document",
+                    "path": "notes/one.md"
+                  },
+                  "field": "content",
+                  "value": "# One\n\nBack to [guide](/guide.md), edited.\n\n## Setup\n\nAlso a setup section.\n"
+                }
+              ]
             }
           }
         },
@@ -4553,194 +4569,342 @@
             "retriable": false
           },
           {
+            "version": 1,
+            "planner_v": "p2",
+            "effects": [
+              {
+                "op": "set",
+                "target": {
+                  "kind": "document",
+                  "id": "d_1",
+                  "path": "notes/one.md"
+                },
+                "field": "content",
+                "value": "# One\n\nBack to [guide](/guide.md), edited.\n\n## Setup\n\nAlso a setup section.\n"
+              }
+            ],
             "opset": {
-              "version": 1,
-              "kind": "doc_update",
-              "target": {
-                "id": "d_1",
-                "path": "/notes/one.md"
-              },
-              "precondition": {
-                "id": "d_1",
-                "path": "/notes/one.md",
-                "baseRevision": "r_1",
-                "hash": "8d3da64ec85becf7eba0ca7dc2798451da1134d194d999b7856e4824f8efa1b4"
-              },
-              "matcherV": "m2.3",
+              "creates": [],
+              "moves": [],
+              "tombstones": [],
+              "set_frontmatter": [],
               "ops": [
                 {
-                  "op": {
-                    "op": "remove",
-                    "blocks": [
-                      "b_18"
-                    ],
-                    "expect": {
-                      "b_18": {
-                        "content_hash": "eff59f36000bae0f86d7a5cc0cbbe733536f4946247e14704edf446eb482bcb6"
-                      }
-                    }
-                  },
-                  "disposition": "deleted",
+                  "op": "remove",
                   "blocks": [
                     "b_18"
                   ],
-                  "confidence": null,
-                  "reason": "tombstone"
+                  "expect": {
+                    "b_18": {
+                      "content_hash": "eff59f36000bae0f86d7a5cc0cbbe733536f4946247e14704edf446eb482bcb6"
+                    }
+                  }
                 },
                 {
-                  "op": {
-                    "op": "insert",
-                    "doc": "d_1",
-                    "to": {
-                      "parent": {
-                        "doc": true
-                      },
-                      "at": {
-                        "after": "b_17"
-                      }
+                  "op": "insert",
+                  "doc": "d_1",
+                  "to": {
+                    "parent": {
+                      "doc": true
                     },
-                    "markdown": "Back to [guide](/guide.md), edited."
+                    "at": {
+                      "after": "b_17"
+                    }
                   },
-                  "disposition": "inserted",
-                  "blocks": [],
-                  "confidence": null,
-                  "reason": null
+                  "markdown": "Back to [guide](/guide.md), edited."
                 },
                 {
-                  "op": {
-                    "op": "update",
-                    "block": "b_17",
-                    "trivia": "\n\n"
-                  },
-                  "disposition": "retiled",
-                  "blocks": [
-                    "b_17"
-                  ],
-                  "confidence": null,
-                  "reason": null
+                  "op": "update",
+                  "block": "b_17",
+                  "trivia": "\n\n"
                 },
                 {
-                  "op": {
-                    "op": "update",
-                    "block": "$1.ids[0]",
-                    "trivia": "\n\n"
-                  },
-                  "disposition": "retiled",
-                  "blocks": [],
-                  "confidence": null,
-                  "reason": null
+                  "op": "update",
+                  "block": "$1.ids[0]",
+                  "trivia": "\n\n"
+                }
+              ]
+            },
+            "preconditions": {
+              "docs": [
+                {
+                  "id": "d_1",
+                  "path": "notes/one.md",
+                  "base_revision": "r_1",
+                  "hash": "8d3da64ec85becf7eba0ca7dc2798451da1134d194d999b7856e4824f8efa1b4"
                 }
               ],
-              "summary": {
-                "preserved": 3,
-                "updated": 0,
-                "moved": 0,
-                "created": 1,
-                "removed": 1,
-                "split": 0,
-                "merged": 0,
-                "ambiguous": 0
-              },
-              "converges": true,
-              "diagnostics": []
+              "blocks": [],
+              "parents": [],
+              "absent_paths": []
             },
-            "plan": "REMOVE b_18      deleted [tombstone]\nINSERT (new)     inserted\nRETILE b_17      retiled\nRETILE (new)     retiled\n\npreserved: 3  updated: 0  moved: 0  created: 1  removed: 1  split: 0  merged: 0  ambiguous: 0",
-            "result": null
+            "new_ids": [
+              {
+                "symbol": "$new.0",
+                "kind": "block"
+              }
+            ],
+            "plan_id": "bea0b69f4c750a9a4e63a708550b17b615f06b14f5f5d73340840e4ae966746d",
+            "diagnostics": [],
+            "preview": {
+              "results": [
+                {
+                  "ids": [
+                    "b_18"
+                  ],
+                  "removed": [
+                    "b_18"
+                  ]
+                },
+                {
+                  "ids": [
+                    "$new.0"
+                  ]
+                },
+                {
+                  "ids": [
+                    "b_17"
+                  ]
+                },
+                {
+                  "ids": [
+                    "$new.0"
+                  ]
+                }
+              ],
+              "revisions": [
+                {
+                  "id": "d_1",
+                  "path": "/notes/one.md",
+                  "hash": "53358def7e0e4529862293b6b14d196f6c209951868fe93e95a6fc550cbb6bf9"
+                }
+              ],
+              "diffs": {
+                "/notes/one.md": {
+                  "before": "# One\n\nBack to [guide](/guide.md).\n\n## Setup\n\nAlso a setup section.\n",
+                  "after": "# One\n\nBack to [guide](/guide.md), edited.\n\n## Setup\n\nAlso a setup section.\n"
+                }
+              },
+              "identity": {
+                "d_1": {
+                  "matcher_v": "m2.3",
+                  "summary": {
+                    "preserved": 3,
+                    "updated": 0,
+                    "moved": 0,
+                    "created": 1,
+                    "removed": 1,
+                    "split": 0,
+                    "merged": 0,
+                    "ambiguous": 0
+                  },
+                  "ops": [
+                    {
+                      "op_index": 0,
+                      "disposition": "deleted",
+                      "blocks": [
+                        "b_18"
+                      ],
+                      "confidence": null,
+                      "reason": "tombstone"
+                    },
+                    {
+                      "op_index": 1,
+                      "disposition": "inserted",
+                      "blocks": [],
+                      "confidence": null,
+                      "reason": null
+                    },
+                    {
+                      "op_index": 2,
+                      "disposition": "retiled",
+                      "blocks": [
+                        "b_17"
+                      ],
+                      "confidence": null,
+                      "reason": null
+                    },
+                    {
+                      "op_index": 3,
+                      "disposition": "retiled",
+                      "blocks": [],
+                      "confidence": null,
+                      "reason": null
+                    }
+                  ],
+                  "diagnostics": []
+                }
+              }
+            }
           },
           {
+            "version": 1,
+            "planner_v": "p2",
+            "effects": [
+              {
+                "op": "set",
+                "target": {
+                  "kind": "document",
+                  "id": "d_1",
+                  "path": "notes/one.md"
+                },
+                "field": "content",
+                "value": "# One\n\nBack to [guide](/guide.md), edited.\n\n## Setup\n\nAlso a setup section.\n"
+              }
+            ],
             "opset": {
-              "version": 1,
-              "kind": "doc_update",
-              "target": {
-                "id": "d_1",
-                "path": "/notes/one.md"
-              },
-              "precondition": {
-                "id": "d_1",
-                "path": "/notes/one.md",
-                "baseRevision": "r_1",
-                "hash": "8d3da64ec85becf7eba0ca7dc2798451da1134d194d999b7856e4824f8efa1b4"
-              },
-              "matcherV": "m2.3",
+              "creates": [],
+              "moves": [],
+              "tombstones": [],
+              "set_frontmatter": [],
               "ops": [
                 {
-                  "op": {
-                    "op": "remove",
-                    "blocks": [
-                      "b_18"
-                    ],
-                    "expect": {
-                      "b_18": {
-                        "content_hash": "eff59f36000bae0f86d7a5cc0cbbe733536f4946247e14704edf446eb482bcb6"
-                      }
-                    }
-                  },
-                  "disposition": "deleted",
+                  "op": "remove",
                   "blocks": [
                     "b_18"
                   ],
-                  "confidence": null,
-                  "reason": "tombstone"
+                  "expect": {
+                    "b_18": {
+                      "content_hash": "eff59f36000bae0f86d7a5cc0cbbe733536f4946247e14704edf446eb482bcb6"
+                    }
+                  }
                 },
                 {
-                  "op": {
-                    "op": "insert",
-                    "doc": "d_1",
-                    "to": {
-                      "parent": {
-                        "doc": true
-                      },
-                      "at": {
-                        "after": "b_17"
-                      }
+                  "op": "insert",
+                  "doc": "d_1",
+                  "to": {
+                    "parent": {
+                      "doc": true
                     },
-                    "markdown": "Back to [guide](/guide.md), edited."
+                    "at": {
+                      "after": "b_17"
+                    }
                   },
-                  "disposition": "inserted",
-                  "blocks": [],
-                  "confidence": null,
-                  "reason": null
+                  "markdown": "Back to [guide](/guide.md), edited."
                 },
                 {
-                  "op": {
-                    "op": "update",
-                    "block": "b_17",
-                    "trivia": "\n\n"
-                  },
-                  "disposition": "retiled",
-                  "blocks": [
-                    "b_17"
-                  ],
-                  "confidence": null,
-                  "reason": null
+                  "op": "update",
+                  "block": "b_17",
+                  "trivia": "\n\n"
                 },
                 {
-                  "op": {
-                    "op": "update",
-                    "block": "$1.ids[0]",
-                    "trivia": "\n\n"
-                  },
-                  "disposition": "retiled",
-                  "blocks": [],
-                  "confidence": null,
-                  "reason": null
+                  "op": "update",
+                  "block": "$1.ids[0]",
+                  "trivia": "\n\n"
+                }
+              ]
+            },
+            "preconditions": {
+              "docs": [
+                {
+                  "id": "d_1",
+                  "path": "notes/one.md",
+                  "base_revision": "r_1",
+                  "hash": "8d3da64ec85becf7eba0ca7dc2798451da1134d194d999b7856e4824f8efa1b4"
                 }
               ],
-              "summary": {
-                "preserved": 3,
-                "updated": 0,
-                "moved": 0,
-                "created": 1,
-                "removed": 1,
-                "split": 0,
-                "merged": 0,
-                "ambiguous": 0
-              },
-              "converges": true,
-              "diagnostics": []
+              "blocks": [],
+              "parents": [],
+              "absent_paths": []
             },
-            "plan": "REMOVE b_18      deleted [tombstone]\nINSERT (new)     inserted\nRETILE b_17      retiled\nRETILE (new)     retiled\n\npreserved: 3  updated: 0  moved: 0  created: 1  removed: 1  split: 0  merged: 0  ambiguous: 0",
-            "result": null
+            "new_ids": [
+              {
+                "symbol": "$new.0",
+                "kind": "block"
+              }
+            ],
+            "plan_id": "bea0b69f4c750a9a4e63a708550b17b615f06b14f5f5d73340840e4ae966746d",
+            "diagnostics": [],
+            "preview": {
+              "results": [
+                {
+                  "ids": [
+                    "b_18"
+                  ],
+                  "removed": [
+                    "b_18"
+                  ]
+                },
+                {
+                  "ids": [
+                    "$new.0"
+                  ]
+                },
+                {
+                  "ids": [
+                    "b_17"
+                  ]
+                },
+                {
+                  "ids": [
+                    "$new.0"
+                  ]
+                }
+              ],
+              "revisions": [
+                {
+                  "id": "d_1",
+                  "path": "/notes/one.md",
+                  "hash": "53358def7e0e4529862293b6b14d196f6c209951868fe93e95a6fc550cbb6bf9"
+                }
+              ],
+              "diffs": {
+                "/notes/one.md": {
+                  "before": "# One\n\nBack to [guide](/guide.md).\n\n## Setup\n\nAlso a setup section.\n",
+                  "after": "# One\n\nBack to [guide](/guide.md), edited.\n\n## Setup\n\nAlso a setup section.\n"
+                }
+              },
+              "identity": {
+                "d_1": {
+                  "matcher_v": "m2.3",
+                  "summary": {
+                    "preserved": 3,
+                    "updated": 0,
+                    "moved": 0,
+                    "created": 1,
+                    "removed": 1,
+                    "split": 0,
+                    "merged": 0,
+                    "ambiguous": 0
+                  },
+                  "ops": [
+                    {
+                      "op_index": 0,
+                      "disposition": "deleted",
+                      "blocks": [
+                        "b_18"
+                      ],
+                      "confidence": null,
+                      "reason": "tombstone"
+                    },
+                    {
+                      "op_index": 1,
+                      "disposition": "inserted",
+                      "blocks": [],
+                      "confidence": null,
+                      "reason": null
+                    },
+                    {
+                      "op_index": 2,
+                      "disposition": "retiled",
+                      "blocks": [
+                        "b_17"
+                      ],
+                      "confidence": null,
+                      "reason": null
+                    },
+                    {
+                      "op_index": 3,
+                      "disposition": "retiled",
+                      "blocks": [],
+                      "confidence": null,
+                      "reason": null
+                    }
+                  ],
+                  "diagnostics": []
+                }
+              }
+            }
           },
           {
             "id": "b_9",
@@ -4784,7 +4948,7 @@
             "results": [
               {
                 "ids": [
-                  "b_40"
+                  "b_36"
                 ]
               }
             ],

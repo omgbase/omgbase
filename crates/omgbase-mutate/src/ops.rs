@@ -177,6 +177,48 @@ pub fn parse_content(content: &str, format: &str, minter: &mut dyn Minter) -> Ve
         .collect()
 }
 
+/// A whole file as a working tree (`spec/mutate` §11.3, mutate 3.0): the
+/// document a `create` effect adopts into the planner. Parsed verbatim — the
+/// leading trivia, the frontmatter block (fences + its trivia) as
+/// `frontmatter_raw`, every body block with the trivia the parser attached,
+/// so `render` reproduces `source` byte for byte (the round-trip law) — with
+/// an id minted per block in pre-order (under the symbolic minter these are
+/// the `$new.<n>` a later effect may name).
+#[must_use]
+pub fn parse_document(doc_id: &str, path: &str, source: &str, minter: &mut dyn Minter) -> MutDoc {
+    fn verbatim(b: &Block, minter: &mut dyn Minter) -> MutBlock {
+        let id = minter.mint();
+        let attrs = match attrs_to_json(&b.attrs) {
+            Value::Object(m) => m,
+            _ => Map::new(),
+        };
+        MutBlock {
+            id,
+            kind: b.kind.as_str().to_owned(),
+            raw: b.raw.clone(),
+            trivia: b.trivia.clone(),
+            attrs,
+            children: b.children.iter().map(|c| verbatim(c, minter)).collect(),
+            dirty: false,
+        }
+    }
+    let tree = parse_markdown(source);
+    let (frontmatter_raw, body): (Option<String>, &[Block]) = match tree.children.first() {
+        Some(b) if b.kind == BlockKind::Frontmatter => {
+            (Some(format!("{}{}", b.raw, b.trivia)), &tree.children[1..])
+        }
+        _ => (None, &tree.children[..]),
+    };
+    MutDoc {
+        doc_id: doc_id.to_owned(),
+        path: path.to_owned(),
+        format: "markdown".to_owned(),
+        leading_trivia: tree.leading_trivia.clone(),
+        frontmatter_raw,
+        children: body.iter().map(|b| verbatim(b, minter)).collect(),
+    }
+}
+
 fn err(code: ErrorCode, msg: impl Into<String>) -> MutationError {
     MutationError::new(code, msg)
 }

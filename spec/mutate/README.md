@@ -164,7 +164,7 @@ Unknown block → `block_missing`. Content CAS (§1.2) is required when
   top level every seam inside the run that does not separate is set to the
   separator; the owner is marked dirty. `ids` = `[block, ...extra ids]`.
 
-### 2.3 `move { blocks, to }` → `{ ids: blocks }`
+### 2.3 `move { blocks, to, doc? }` → `{ ids: blocks }`
 
 An empty list fails before the op runs: the changeset infers the document
 from `blocks[0]` and raises `block_missing { op_index }` (§4 step 1); the
@@ -181,7 +181,11 @@ extract from the source lists, insert at the destination's resolved target
 (`parent_missing`/`target_missing` as above), mark both owners dirty, and
 heal the top-level seams of **both** documents as above (§10: the reference
 healed neither, so a block landing after the destination's last paragraph
-merged into it).
+merged into it). `doc` (3.0) names the destination document of a top-level
+`start`/`end` placement (`to.parent = { doc: true }`), which otherwise means
+the SOURCE document's top level (§4 step 1; §10 "Fixed (3.0)"); an anchored
+`at` infers the destination from the anchor and `doc` is not consulted. Like
+`insert.doc`, it accepts a document symbol of the request (§11.4).
 
 ### 2.4 `remove { blocks, expect? }` → `{ ids: blocks, removed }`
 
@@ -250,23 +254,30 @@ keeps its exact bytes.
 Op   insert | update | move | remove | split | merge   (fields as §2; string
      fields `block`, `blocks[]`, `to.parent`, `to.at.before/after` may be
      placeholders "$<n>.ids[<i>]" naming an earlier op's result)
-Request  { repo, ops, origin: { actor, reason? }, dry_run?, set_frontmatter?: [{ doc, raw | null }] }
+Request  { repo, ops, origin: { actor, reason? }, dry_run? }
 Result   { results: [{ ids, removed?, merged_into? }], revisions: [{ id, path, hash }], diffs?: { path: { before, after } }, committed }
 ```
 
 1. Resolve placeholders against earlier results (`target_missing` when the
    index is out of range). Find each op's document: `insert.doc` (an id
-   passes through, a path resolves, else `doc_missing`) or the placement's
+   passes through, a path resolves, a document symbol of the request's
+   created documents is that document — §11.4, 3.0 — else `doc_missing`) or the placement's
    block/heading/anchor (`parent_missing`, no data; a top-level
    `start`/`end` insert with no `doc` → `target_missing`);
    `update`/`remove`/`split`/`merge` by their first block (`block_missing
    { op_index }` — no `block` field at this level; an op-level miss, such
    as `remove`'s second id, carries `block` too); `move` by its first block, the
    destination by `to` unless `to` is `{ doc: true }` with `start`/`end`
-   (same document). A document is loaded once, at first touch, and its
-   pre-mutation render and live id set are remembered.
-2. `set_frontmatter` entries load their documents and replace
-   `frontmatter_raw` before any op.
+   (the document `move.doc` names, else the same document — 3.0). A document
+   is loaded once, at first touch, and its pre-mutation render and live id
+   set are remembered.
+2. (3.0) The request has no frontmatter side channel. A document's **head**
+   — everything before its first block: the leading trivia and the
+   frontmatter with its fences and separator — is set by the effect planner
+   (`set`/`unset frontmatter.<key>`, `set content`, §11.3; the plan's
+   `opset.set_frontmatter[]`) and replayed by `execute` before the ops.
+   Through 2.x `set_frontmatter: [{ doc, raw | null }]` on the request
+   replaced `frontmatter_raw` before any op (§10).
 3. Apply the ops in order (§2); any error aborts the whole request with
    nothing written.
 4. For every loaded document: `diffs[path] = { before, after: render }`,
@@ -312,7 +323,15 @@ Result   { results: [{ ids, removed?, merged_into? }], revisions: [{ id, path, h
      live ids no longer present (pooled per `spec/store` §5.4 step 7), and
      `cross_doc_ids` = the ids new to this document that were live elsewhere
      (a cross-document move), so step 8 evicts the source's row whichever
-     document commits first (§10); finally one **pending row** per file the
+     document commits first (§10). A document the request **creates** (3.0:
+     the effect planner's adopted tree, §11.3) commits through this same
+     known-id ingest with no triple to re-validate — its guard is
+     `path_taken`: no live document at the path when the transaction
+     validates (the planner's check re-run) — the ingest minting its `d`
+     inside the transaction, its blocks carrying the ids the request minted
+     before it, every disposition the api rule's `inserted / 1 / api / null`
+     (through 2.x a create was a reconciling ingest and its dispositions
+     carried a matcher version — §10 "Changed (3.0)"); finally one **pending row** per file the
      request owes the disk (`spec/store` §5.4 "The api path (14.0)": `write`
      per ingested document with its new revision and rendered hash; the
      document operations' `rename`/`remove` rows, §6). COMMIT. Mint order:
@@ -362,7 +381,17 @@ own since 3.0 — `docs_append { section }` and `blocks_append { id }` for
 
 ## 6. Document operations
 
-All are `api` commits with a generated `reason`.
+All are `api` commits with a generated `reason`. Since 3.0 the four
+operations ARE effects of §11 — `docs_create` one `create`, `docs_move` one
+`move` of a document, `docs_delete` one `remove` of a document,
+`docs_set_meta` one `set`/`unset frontmatter.<key>` per key (`unset` winning
+a key named in both) — planned and committed by the effect planner under the
+reasons below (the surface's tools since `spec/surface` 3.3; the library's
+functions and the `docs` fixture step at 3.0). Two consequences of the planner
+(§11.3): a created document commits with **known ids** (`inserted / api`, no
+matcher), and a `set_meta` is a head write (`edited / api` for every block of
+the document) — §10. This section states what each operation does and the
+rows and files it leaves.
 
 - **`docs_create { path, markdown, frontmatter? }`**: canonicalize the path
   (strip leading `/`, `\` → `/`); a live doc there → `path_taken`; compose
@@ -370,8 +399,10 @@ All are `api` commits with a generated `reason`.
   non-empty object: `"---\n" + yaml + "\n---\n" + ("\n" unless the body
   starts with one) + body`, `yaml` being the mapping serialized by the
   reference's YAML emitter — §10); a file already on disk → `path_taken`;
-  ingest with the **reconciling** resolver (`reason: "create <path>"`)
-  under §4 step 5's commit, recording a `write` row; the file is written in
+  parse the composed file into the planner's working tree (§11.3 `create`)
+  and commit it with the **known-id** ingest (`reason: "create <path>"`;
+  3.0 — the reconciling resolver through 2.x) under §4 step 5's commit, the
+  `path_taken` guard re-checked in the transaction, recording a `write` row; the file is written in
   (c) only if the path is still absent (or already holds the bytes) — a
   foreign file that appeared keeps the row and the next observation lets it
   win (`spec/store` §5.7).
@@ -418,7 +449,10 @@ All are `api` commits with a generated `reason`.
 - **`docs_set_meta { doc, set?, unset? }`**: read the file, split the
   frontmatter with `^---\r?\n([\s\S]*?)\r?\n---\r?\n?` (malformed → `{}` and
   the whole content as body), merge `set`, delete `unset`, compose (as
-  create), ingest with the reconciling resolver
+  create) and commit the composed file's **head** over the document's
+  blocks (§11.3 `set`/`unset frontmatter.<key>`: the body blocks keep their
+  ids and bytes, each `edited / api`; 3.0 — a reconciling re-ingest of the
+  composed file through 2.x)
   (`reason: "set_meta <path>"`) under §4 step 5's commit — a `write` row like
   `apply`'s: the in-transaction re-validation of (b) applies to the bytes
   the patch was computed from (2.2; before, `set_meta` checked nothing and
@@ -439,6 +473,16 @@ Opset { version: 1, kind: "doc_update", target: { id, path },
 PlanOp { op, disposition, blocks, confidence, reason, detail? }
 ```
 
+Since 3.0 the opset is the planner's **internal** result: the `set content`
+effect (§11.3) runs `plan_update`, splices its kernel ops into the plan and
+surfaces its annotations as the plan's `preview.identity[<doc id>]` (§11.4)
+— `{ matcher_v, summary, ops: [{ op_index, disposition, blocks, confidence,
+reason, detail? }], diagnostics }`, `op_index` the op's index in the plan's
+`opset.ops`; `converges: false` is `plan_not_convergent`. No request accepts
+or returns an opset (2.x: `apply_opset`, the surface's `docs_update { opset,
+plan, result }`). The `plan` fixture step (§9) still records it, so the
+lowering stays pinned on its own.
+
 1. Load the doc (`doc_missing`); `precondition.hash = sha256(render(doc))`
    (the document's current `hash`), `base_revision = current_rev` (2.0:
    `target`/`precondition` spelled `doc`/`path`/`base_content_hash` before).
@@ -447,9 +491,11 @@ PlanOp { op, disposition, blocks, confidence, reason, detail? }
    configured matcher, **no pool**).
 3. `frontmatter` = `fm.raw + fm.trivia` (or null) when it differs from
    `frontmatter_raw`.
-4. **Lower** (§7.1) to candidate ops; **verify** by a dry-run apply with the
-   same `set_frontmatter`: the rendered result must equal `content` byte for
-   byte. The top-level lowering is tried first; if it does not converge, a
+4. **Lower** (§7.1) to candidate ops; **verify** by replaying the candidate
+   through the in-memory planner of §4 steps 1–4 with the head
+   `leading_trivia + frontmatter.raw` set first when the frontmatter changes
+   (3.0; a dry-run `apply` with `set_frontmatter` before): the rendered
+   result must equal `content` byte for byte. The top-level lowering is tried first; if it does not converge, a
    diagnostic names the first differing byte and the proposed block covering
    it, and the **replace** lowering (remove every top-level block with its
    CAS, insert the whole body — the frontmatter stripped by
@@ -493,13 +539,18 @@ With `target` = the proposed top-level blocks annotated by the assignment
 
 `preserved` = carried old top-level blocks with unchanged raw in `stable`.
 
-### 7.2 `apply_opset`
+### 7.2 Committing (3.0)
 
-`plan_not_convergent` when `converges` is false; `doc_missing`;
+The opset is committed only as the `set content` effect's lowering (§11.3):
+`plan_not_convergent` when `converges` is false; the ops spliced into the
+plan (placeholders shifted), `frontmatter` as the document's head; the
+document's triple in `preconditions.docs` — a document that moved on is
 `stale_plan` (retriable, `{ doc, expected_revision, current: { revision,
-hash } }`) when `base_revision` (if non-null) differs from `current_rev` or
-the doc's `file_hash` differs from `precondition.hash`; else `apply` with the
-plan's kernel ops and `set_frontmatter`.
+hash } }`) when the plan executes. An opset with no ops and no frontmatter
+change loads nothing: the plan has nothing to commit and `execute` records
+no commit (§11.7, the zero-effects rule). `apply_opset` (2.x: `doc_missing`
+/ `stale_plan` on `base_revision` + `hash`, then `apply` with the ops and
+`set_frontmatter`) is gone.
 
 ## 8. Errors
 
@@ -525,11 +576,11 @@ store (a path → bytes map that the runner also seeds from `observe` steps,
 so file-CAS and the written bytes are checkable) and these steps:
 
 ```jsonc
-{ "apply":    { "ts": "…", "ops": [...], "origin": { "actor": "agent:test", "reason": "…" }, "dry_run": false, "set_frontmatter": [...] } }
+{ "apply":    { "ts": "…", "ops": [...], "origin": { "actor": "agent:test", "reason": "…" }, "dry_run": false } }   // the kernel (§4); no `set_frontmatter` since 3.0
 { "macro":    { "ts": "…", "name": "tasks_complete", "args": {...}, "origin": {...} } }   // expands, then applies
-{ "docs":     { "ts": "…", "actor"?: "…", "create" | "move" | "delete" | "set_meta": {...} } }
+{ "docs":     { "ts": "…", "actor"?: "…", "create" | "move" | "delete" | "set_meta": {...} } }   // §6: the effect builders (3.0)
 { "plan":     { "ts": "…", "doc": "a.md", "content": "…", "apply": true, "origin"?: {...},
-                "before_apply"?: [ <observe|disk steps run between plan and apply> ] } }    // stages stale_plan
+                "before_apply"?: [ <observe|disk steps run between plan and apply> ] } }    // `apply` commits the content as `apply_effects [set content]` (3.0)
 { "disk":     { "path": "a.md", "source": "…" } }                                   // a human edit landed on disk
 { "materialize": {} }                                                                // replay every pending row (spec/store §5.7) → { materialized: [path…] }
 { "plan_effects": { "effects": [...] } }                                             // §11.6 `plan` → { plan } (minus preview) or the error
@@ -570,7 +621,9 @@ committed }` or `{ error: { code, op_index?, block?, current?, retriable? } }`
 (only those data fields; `current.markdown` dropped beyond 200 UTF-8 bytes);
 `macro` → `{ ops, hits?, pairs?, ...the apply outcome }`; `docs` → `{ doc,
 path, committed }` (+ `dangling`, `retargeted` for a move) or the error;
-`plan` → `{ opset, before_apply?, apply? }`; `disk` → `{}`; `materialize` →
+`plan` → `{ opset, before_apply?, apply?: { receipt } | { error } }` (3.0; the
+apply half recorded an apply result through 2.x — a stale plan is now staged
+through `plan_effects` → `observe` → `execute`, `plan::stale-plan`); `disk` → `{}`; `materialize` →
 `{ materialized: [path…] }` (the rows cleared, in insertion order; a row kept
 for a foreign file is not listed); `plan_effects` → `{ plan }` or the error;
 `execute` → `{ receipt }` or the error; `apply_effects` → `{ plan }` /
@@ -598,7 +651,11 @@ replay, the digest form equal and mismatched, an unsupported plan version,
 an edited plan, a crash after COMMIT, `set frontmatter` byte parity with
 `set_meta`, `$new.n` references, `create` + `set` on the created document,
 `move document` with the default and an explicit `retarget`, and the digest
-vectors).
+vectors; 3.0 adds writing INTO a created document — `create-then-insert-
+into-new-doc`, `create-then-insert-into-new-section`, `create-then-move-
+block-into-new-doc`, `create-then-set-markdown-on-new-block`, `create-then-
+remove-new-block` — and `insert-into-symbol-before-create-is-target-missing`;
+39 cases).
 
 **Runner checks**: every committed document satisfies `spec/store` §8 I1–I8
 and `files[path] == reconstruct(doc)` — a path a `disk` step rewrote, or one
@@ -729,9 +786,29 @@ instead; then the projection deep-equals `expect`. **Generation**: `packages/cor
 - **Pinned (surface 3.3) — the surface's `docs_set_meta` is a known-id head
   write, the library's a reconciling re-ingest.** Same bytes, rows,
   revision and mints; the dispositions differ (`edited`/`api` vs
-  `same`/`exact_hash`/`m2.3`). The library operation stays as specified in
-  §6 until it folds into the planner (3.0); `spec/surface` §9 records the
-  surface's choice.
+  `same`/`exact_hash`/`m2.3`). Folded at 3.0: the library operation and the
+  `docs` fixture step are the same effect (§6), so the dispositions are the
+  head write's everywhere; `spec/surface` §9 records the surface's choice.
+- **Changed (3.0) — a created document commits with known ids.** Through
+  2.x `docs_create` (and the `create` effect) ingested the composed file
+  through the reconciling resolver: `inserted / null / null / m2.3`
+  dispositions, the `b` ids minted inside the transaction. The planner now
+  parses the composed file into its working tree and commits it as every
+  other document (§4 step 5 (b), `ingest_known` with no triple, the
+  `path_taken` guard): `inserted / 1 / api / null`, the `b` ids minted by the
+  request before the transaction (the same ids under the fixture minter —
+  nothing else mints between — in a different order), bytes, revision and
+  commit unchanged. One path for every api write, and the reason slice 3
+  exists: a block of a created document has an id a later effect of the
+  same plan can name (`effects::create-then-*`, `spec/surface`
+  `write-effects-create-and-fill`).
+- **Fixed (3.0) — a `move` of blocks into ANOTHER document's top-level
+  `start`/`end` moved them within the source.** `to.parent = { doc: true }`
+  with a non-anchor `at` names the source document (§4 step 1), so the
+  effect `move { targets, into: <other document>, at: "end" }` lowered to a
+  same-document move. The kernel op gains `doc` (§2.3), which the lowering
+  sets whenever `into` is a document (`effects::create-then-move-block-into-
+  new-doc`, `effects.test.ts`).
 - **Pinned — `docs_move` records a commit with no revision of the moved
   document** (2.1: with retargets, one revision per rewritten source under
   the move's reason), so a doc's revision `seq` does not advance on a move
@@ -759,7 +836,8 @@ instead; then the projection deep-equals `expect`. **Generation**: `packages/cor
   blank line would render `leading_trivia + fences` (not frontmatter) under
   the kernel's `set_frontmatter` (which leaves the leading trivia). The
   plan's `set_frontmatter[].raw` therefore replaces everything before the
-  first block (§11.4); the kernel request's `set_frontmatter` is unchanged.
+  first block (§11.4); the kernel request's `set_frontmatter` was unchanged
+  through 2.x and is gone at 3.0 (§4).
 - **Pinned (2.3, with surface 3.2) — the block-level sugar tools lower
   through the planner.** `blocks_insert`, `blocks_update`, `blocks_move`,
   `blocks_remove`, `blocks_split`, `blocks_merge`, `blocks_check`,
@@ -811,7 +889,13 @@ revision per touched document. Nothing is added to the kernel. Three verbs:
 plan, its preconditions re-validated in the transaction), `apply { effects }`
 (plan + execute under one writer lock and one transaction). The kernel
 `Request` of §4 and the `Opset` of §7 are unchanged; the observe path is a
-separate entry and commit origin, never an effect.
+separate entry and commit origin, never an effect. Since 3.0 the effects are
+the **only public write request**: the kernel ops are the library and fixture
+contract (§4), the opset the planner's internal result (§7), the document
+operations the effect builders (§6); a `create` is a document the planner
+adopts, so a plan may write into the document it creates (`$new.k` names its
+blocks too), and the plan's `preview` carries `identity` and `retarget`
+(§11.4). `planner_v` is `"p2"`.
 
 ### 11.1 Vocabulary
 
@@ -835,10 +919,12 @@ Effect  { op: "create",   path, markdown, frontmatter? }
         { op: "retarget", repairs: [{ from, to }], path_glob? }
 ```
 
-Any `id` — a target's, an anchor's, a `targets[]` member's — may be
-**`$new.<n>`**, an identity an earlier effect of the same request creates
-(§11.4). A symbol no earlier effect created (or one of the other kind: a
-document symbol where a block is wanted) is `target_missing { symbol }`.
+Any `id` — a target's, an anchor's, a `targets[]` member's, a section's
+`heading_id` — may be **`$new.<n>`**, an identity an earlier effect of the
+same request creates (§11.4): a created document, each block of its parsed
+tree (3.0, pre-order), the blocks an `insert`/`split`/`update` mints. A
+symbol no earlier effect created (or one of the other kind: a document
+symbol where a block is wanted) is `target_missing { symbol }`.
 `move`/`remove` are distinguished by `target` (a document) vs `targets`
 (blocks). The shape is checked before anything is resolved — an unknown
 key, a missing or mistyped member, a target kind the op does not take, a
@@ -878,22 +964,22 @@ the TypeScript reference's `mutate/effects.ts`, the port's
 
 | Effect | Lowers to |
 | --- | --- |
-| `create` | `opset.creates[] = { path, source }`, `source = composeFile(markdown, frontmatter)` (§6 `docs_create`) with every later `set`/`unset frontmatter.<key>` on its `$new.n` **folded into `frontmatter` before composing**; a live document at `path`, a path an earlier effect of the plan already creates or moves to, or a file on disk → `path_taken`; `preconditions.absent_paths += path`; the symbol is allocated here (kind `document`). At commit: `ingest_reconciled { precondition: null }` (§4 step 5 (b): `path_taken` re-checked) |
+| `create` | a live document at `path`, a path an earlier effect of the plan already creates or moves to, or a file on disk → `path_taken`; the document symbol is allocated (kind `document`), then `source = composeFile(markdown, frontmatter)` (§6 `docs_create`) is **parsed into the planner's working tree** per the path's format — the frontmatter block as the head, each body block minted in pre-order (the next `$new.k`, kind `block`) with its exact trivia — and **adopted** as a loaded document with no row behind it (3.0): no triple, an empty `before`, no prior ids. `opset.creates[] = { symbol, path, source, before_op }`, `before_op` the number of kernel ops planned so far (where `execute` re-adopts it, §11.7); `preconditions.absent_paths += path`. Every later effect addresses the document (`into`/`target` `{ kind: "document", id: "$new.n" }` — its `doc` in the kernel op) and its blocks (`$new.k`, kept literally in the ops) like any other; `set`/`unset frontmatter.<key>` on it is a head (the row below), `set content` on it is `target_missing { symbol }` (its content is the create's markdown), `move`/`remove` of the document itself are `target_missing` too. At commit: `ingest_known` with no triple — the `path_taken` guard re-checked, §4 step 5 (b) — so every block is `inserted / api`. Through 2.x the create was a reconciling ingest at commit and a later frontmatter patch was folded into its composition (§10 "Changed (3.0)") |
 | `insert into document` | kernel `insert { doc, to: { parent: { doc: true }, at }, markdown, expect? }` |
 | `insert into section` | `insert { to: { parent: { heading: heading_id, scope: "section" }, at }, markdown, expect? }` (§1.1; an unknown heading is `parent_missing`) |
 | `insert into block` | `insert { to: { parent: id, at }, markdown, expect? }` (the container rule → `type_mismatch`) |
-| `set`/`unset frontmatter.<key>` on a document | the file is re-composed as `docs_set_meta` composes it (§6): `split(render(doc))` → `(frontmatter, body)`, the key set or deleted, `after = composeFile(body, merged)`; the document's **head** — `after` minus the rendered body blocks — becomes `opset.set_frontmatter[] = { doc, raw }` (one entry per document, the last patch wins). The head replaces the leading trivia and the frontmatter together (§10), so the body blocks keep their ids and bytes (a file without a trailing newline gains one on its last block's trivia); byte parity with `set_meta` is pinned by `effects::set-fm-matches-set-meta-bytes` |
-| `set content` on a document | §7 `plan_update(doc, value)`: `converges: false` → `plan_not_convergent { doc, diagnostics }`; its `frontmatter` → the head `leading_trivia + raw`; its kernel ops appended with every `$k.ids[i]` placeholder shifted by the ops already planned. The planner's own dry runs mint under a throwaway symbol table (nothing of theirs reaches the plan) |
+| `set`/`unset frontmatter.<key>` on a document | the file is re-composed as `docs_set_meta` composes it (§6): `split(render(doc))` → `(frontmatter, body)`, the key set or deleted, `after = composeFile(body, merged)`; the document's **head** — `after` minus the rendered body blocks — becomes `opset.set_frontmatter[] = { doc, raw }` (one entry per document, the last patch wins; `doc` a created document's symbol when it is one, 3.0 — `effects::create-then-set-on-new-doc`). The head replaces the leading trivia and the frontmatter together (§10), so the body blocks keep their ids and bytes (a file without a trailing newline gains one on its last block's trivia); byte parity with `set_meta` is pinned by `effects::set-fm-matches-set-meta-bytes` |
+| `set content` on a document | §7 `plan_update(doc, value)`: `converges: false` → `plan_not_convergent { doc, diagnostics }`; its annotations → `preview.identity[doc]` (3.0; §7); its `frontmatter` → the head `leading_trivia + raw`; its kernel ops appended with every `$k.ids[i]` placeholder shifted by the ops already planned. **No ops and no frontmatter change** (the content IS the document): nothing is loaded — the document's triple still goes to `preconditions.docs`, nothing commits (§11.7). The planner's own verifies mint under a throwaway symbol table (nothing of theirs reaches the plan) |
 | `set markdown` on a block | `update { block, markdown, expect: { content_hash (pinned), parent_children_hash? } }` |
 | `set attrs.checked` on a block | `update { block, attrs: { checked }, expect }` |
 | `set <prop>` on a node | §5 `node_set(node, prop, value)` → its one `update`, the pin as above (`node_not_editable` / `block_missing` as there) |
 | `move` a document | `opset.moves[] = { id, from, to }` (`doc_missing`; `path_taken` for a live document, an earlier create/move of the plan, or a file at `to`; `absent_paths += to`; the document's triple → `preconditions.docs`) and, unless `retarget_inbound` is `false`, the inbound rewrite of §6 `docs_move` as kernel `update`s (pinned). At commit: `move_path` then the sources' revisions, the moved document's own revision (when it is a source) at the NEW path — §6, one commit |
-| `move` blocks | `move { blocks, to, expect? }` |
+| `move` blocks | `move { blocks, to, doc?, expect? }` — `doc` the destination document's id (or symbol) when `into` is a document (§2.3, 3.0) |
 | `remove` a document | `opset.tombstones[] = { id, path }` (`doc_missing`; the triple → `preconditions.docs`); at commit the tombstone of §6 `docs_delete` (nothing pooled) |
 | `remove` blocks | `remove { blocks, expect: { <id>: { content_hash (pinned), … } } }` |
 | `split` | `split { block, at, expect }` |
 | `merge` | `merge { blocks, separator, expect: { <id>: … } }` |
-| `retarget` | §5 `links_repair(repairs, path_glob)` → its `update` per top-most block (pinned); no hit → no op |
+| `retarget` | §5 `links_repair(repairs, path_glob)` → its `update` per top-most block (pinned); no hit → no op; its hits and pair counts → `preview.retarget[] = { effect_index, hits, pairs }` (3.0) |
 
 A kernel error raised while an effect's ops are planned keeps its own data
 and gains `effect_index` (§8).
@@ -915,14 +1001,15 @@ is not retriable. `execute` does no analysis.
 ```text
 Plan {
   version: 1,                    // the plan schema
-  planner_v: "p1",               // the lowering + conflict rules above (the matcher_v precedent)
+  planner_v: "p2",               // the lowering + conflict rules above (the matcher_v precedent; "p1" through 2.3)
   effects: [ResolvedEffect],     // in order, duplicates dropped: document targets as { kind: "document", id, path }
                                  // (path in the storage form; a $new.n document keeps its symbol with the create's path),
                                  // defaults made explicit (insert/move `at: "end"`, move `retarget_inbound: true`,
                                  // merge `separator: " "`), a `create` path canonicalized; optional keys absent when absent
-  opset: { creates: [{ path, source }], moves: [{ id, from, to }], tombstones: [{ id, path }],
+  opset: { creates: [{ symbol, path, source, before_op }], moves: [{ id, from, to }], tombstones: [{ id, path }],
            set_frontmatter: [{ doc, raw }], ops: [Op] },     // every key present ([] when empty); ops in the fixture spelling
-                                                             // (`child_ids`), new structure named by kernel placeholders "$k.ids[i]"
+                                                             // (`child_ids`); new structure an op minted is named by kernel placeholders "$k.ids[i]",
+                                                             // a created document and its blocks by their "$new.n" (3.0)
   preconditions: { docs: [{ id, path, base_revision, hash }],      // §4 step 5's triple of every touched document: the loaded ones
                                                                    // in load order, then moved/removed documents in effect order
                    blocks: [{ id, content_hash }],                 // every pin, first-pin order ($new.n blocks excluded)
@@ -931,14 +1018,23 @@ Plan {
   new_ids: [{ symbol: "$new.n", kind: "block" | "document" }],      // in allocation order (below)
   plan_id: "<64 hex>",           // §11.5
   diagnostics: [string],         // the dropped duplicates
-  preview?: { results: [{ ids }], revisions: [{ id, path, hash }], diffs: { path: { before, after } } }   // not digested; omittable
+  preview?: { results: [{ ids }], revisions: [{ id, path, hash }], diffs: { path: { before, after } },
+              identity?: { <doc id>: { matcher_v, summary, ops: [{ op_index, disposition, blocks, confidence, reason, detail? }], diagnostics } },
+              retarget?: [{ effect_index, hits: [{ id, path, oldRaw, newRaw }], pairs: [{ from, to, hits }] }] }   // not digested; omittable
 }
 ```
+
+`preview.identity` (3.0) is present when the plan has a `set content`: per
+document, the whole-document planner's annotations (§7) — what the 3.x
+`docs_update` result carried. `preview.retarget` is present when the plan
+has a `retarget`: per effect, `links_repair`'s hits and pair counts (§5),
+what the `links_retarget`/`links_repair` tools report beside the receipt.
 
 **Symbolic identities.** The planner lowers under the **symbolic minter**:
 every `b` the kernel mints while the ops are planned returns the next
 `$new.n` (`n` counting from 0 across the plan), and a `create` allocates the
-next `$new.n` of kind `document` when it is lowered. So a plan mints no
+next `$new.n` of kind `document` when it is lowered, immediately followed by
+its parsed blocks' symbols in pre-order (3.0). So a plan mints no
 real id (a dry run burns nothing — `effects::apply-effects-dry-run-plan-only`),
 the kernel — id-agnostic for rendering — renders exact bytes and hashes, and
 the `preview` is exact. The ids an op reported (`results[k].ids`) are what
@@ -991,9 +1087,12 @@ is the JSON text of `v` under these rules, each exact:
 6. `true`, `false`, `null`.
 
 The `canonical` fixture step (§9) pins the text and its digest; the empty
-core `{ version: 1, planner_v: "p1", effects: [], opset: { every key [] },
+core `{ version: 1, planner_v: "p2", effects: [], opset: { every key [] },
 preconditions: { every key [] }, new_ids: [] }` digests to
-`a20097a9c319b59a1313c83e1fd494bbb3cf4895040fbbddd2866e56b16cddd3`.
+`6f43b302fdcd58ca4fd182b21a5bdab6fee3787ddc074f5e7c5c23b2cc368bf9` (the
+2.3 core, `planner_v: "p1"`, to
+`a20097a9c319b59a1313c83e1fd494bbb3cf4895040fbbddd2866e56b16cddd3`; both are
+`effects::digest-vectors`).
 
 ### 11.6 `plan`
 
@@ -1019,30 +1118,41 @@ workspace is given: pre-check every `preconditions.docs` triple against the
 rows (`doc_missing`; a difference → `stale_plan { doc, expected_revision,
 current: { revision, hash }, retriable }`) and every `absent_paths` entry
 (`path_taken`) — so a stale plan fails before a `b` is minted; **replay the
-opset** under the production minter: `set_frontmatter` heads first, then
-`ops` in order through §4 steps 1–4 (the `b` ids are minted here, before
-the transaction, as every request's are — a failure after this point burns
-them, in both engines alike); build the request's internal effects in this
-order — per create `ingest_reconciled { precondition: null }`, per move
-`move_path` (the inbound edges read now), the rendered documents'
-`ingest_known`s (a moved document's at its new path), per tombstone
+opset** under the production minter: the `set_frontmatter` heads of
+existing documents first, then `ops` in order through §4 steps 1–4, each
+`creates[]` entry re-adopted (its `source` parsed, §11.3) right before the
+op its `before_op` names — after the last op when `before_op = ops.length`
+— with its own head applied as it is adopted (3.0). The `b` ids are minted
+here, before the transaction, as every request's are (a failure after this
+point burns them, in both engines alike), and in the plan's order, so the
+**i-th `b` minted IS the i-th block symbol**: the replay aliases each as it
+is minted and the ops' `$new.k` resolve through the aliases (a kernel
+placeholder `$k.ids[i]` resolves as before). Build the request's internal
+effects in this order — per move `move_path` (the inbound edges read now),
+the rendered documents' `ingest_known`s in load order (a created document's
+with no triple, a moved document's at its new path), per tombstone
 `tombstone { pool: false }` — and commit them as §4 step 5 with `ops` = the
 intent record `canonical({ v: 1, plan_id, effects })` (the plan's resolved
 effects, symbols kept). The transaction re-validates every triple
-authoritatively; a document that moved meanwhile is `stale_plan` with
-nothing minted of `c`/`d`/`r`. Replaying an executed plan fails the same
-way (`effects::execute-replay-fails-stale-plan`): the preconditions decide,
-no server-held handle, no idempotent replay.
+authoritatively and the created paths' absence (the `Absent` guard:
+`path_taken`); a document that moved meanwhile is `stale_plan` with nothing
+minted of `c`/`d`/`r`. Replaying an executed plan fails the same way
+(`effects::execute-replay-fails-stale-plan`; a create-only plan `path_taken`):
+the preconditions decide, no server-held handle, no idempotent replay. A plan
+with nothing to commit — every effect lowered to no op, no head, no document
+operation (a `set content` whose value is the document) — records no commit
+and touches no file: the **zero-effects rule** (`spec/surface`
+`write-docs-update`).
 
 **Receipt** `{ plan_id, commit, revisions: [{ id, path, hash }], new_ids:
 { "$new.n": <id> }, committed: true }`: `commit` the one `commits` row
 (`null` when the plan had nothing to commit); `revisions` one per ingest in
-effect order (a create's `id` is the document minted); `new_ids` maps the
-plan's symbols to the ids the replay minted — the `i`-th block symbol to
-the `i`-th `b` minted during the replay, the `i`-th document symbol to the
-`i`-th `d` minted inside the transaction (the creates, in order; the
-reconciling ingest's `b` mints for a created document's blocks follow the
-replay's and are not symbols).
+effect order (a created document's `id` is the `d` its ingest minted);
+`new_ids` maps the plan's symbols to the ids the replay minted — the `i`-th
+block symbol to the `i`-th `b` minted during the replay (a created
+document's blocks included, 3.0 — every `b` of the request is a symbol), the
+`i`-th document symbol to the `i`-th `d` minted inside the transaction (the
+created documents' ingests, in load order = effect order).
 
 **`execute { plan_id, effects }`** (the digest form): plan the effects as
 §11.6 (under the lock); the new plan's `plan_id` ≠ the given one →
@@ -1050,13 +1160,39 @@ replay's and are not symbols).
 they target moved (§10: the digest form cannot tell which); equal → commit
 it as above.
 
-**`apply { effects, dry_run? }`**: `dry_run` → the Plan (§11.6, preview
-included); otherwise plan + commit under one writer lock and one
-transaction → the Receipt. The one-shot and `plan` → `execute` produce the
-identical store projection (`effects::set-fm-and-insert-section-*`).
+**`apply { effects }`**: plan + commit under one writer lock and one
+transaction → the Receipt; the preview is `plan`'s (2.3's `dry_run` on
+`apply` returned the Plan; retired with `spec/surface` 4.0 — a dry run is a
+`plan`). The one-shot and `plan` → `execute` produce the identical store
+projection (`effects::set-fm-and-insert-section-*`).
 
 ## Decisions
 
+- 2026-10-12, mutate 3.0: the effects are the only public write request
+  (ADR-021's retirement release, with `spec/surface` 4.0 and `spec/cli` 4.0;
+  no deprecation period — no client of the retired inputs existed). Removed:
+  the kernel request's `set_frontmatter` (§4; a head is the planner's,
+  §11.3), `apply_opset` and the `{ opset, plan, result }` result of a
+  whole-document update (§7 — the opset is the planner's internal result,
+  surfaced as `preview.identity`), the reconciling create. Added: a `create`
+  is a parsed tree the planner ADOPTS (slice 3, §11.3/§11.4): its blocks are
+  `$new.k` symbols, every later effect may write into it, `opset.creates[]`
+  carries `{ symbol, path, source, before_op }` so `execute` re-adopts it in
+  the plan's order and aliases the replay's mints to the symbols; its commit
+  is a known-id `ingest_known` with no triple under the `path_taken` guard
+  (§4 step 5 (b)) — so a created document's dispositions are the api rule's
+  (§10 "Changed"); the kernel `move` gains `doc` (§2.3; §10 "Fixed");
+  `preview.identity` / `preview.retarget` (§11.4); the zero-effects rule
+  (§11.7); `planner_v` `"p2"` (every `plan_id` changes). The document
+  operations of §6 are the effect builders. Request shapes changed: a major.
+  Fixtures: `effects.json` 33 → 39 (slice 3 ×5, the symbol-before-create
+  error, the p2 digest vector) and every plan-bearing case re-digested;
+  `create-then-set-on-new-doc` re-pinned (`api` dispositions, a head
+  instead of the fold); `plan.json` `apply` halves → receipts,
+  `stale-plan` staged through `plan_effects` → `execute`,
+  `non-convergent-plan-refused` the planner's error; `docs.json` /
+  `materialize.json` / `changesets.json` move when the `docs` step and the
+  `apply` step's `set_frontmatter` follow (the builders).
 - 2026-10-12, mutate 2.3: the public Effect layer (§11; ADR-021). Nine
   effects, a planner tier over the six-op kernel — nothing added to the
   kernel — and the verbs `plan` / `execute` / `apply { effects }`; a plan's

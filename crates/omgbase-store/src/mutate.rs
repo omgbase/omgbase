@@ -22,7 +22,7 @@ use serde_json::{Map, Value, json};
 
 use crate::Store;
 use crate::doc_store::DocStore;
-use crate::effects::{CommitHead, DocBase, Effect, Outcome, doc_base, touched_paths};
+use crate::effects::{CommitHead, DocBase, Effect, Guard, Outcome, doc_base, touched_paths};
 use crate::error::{Error, Result};
 use crate::ids::ALPHABET;
 use crate::observe::{DispositionRow, IngestPlan};
@@ -311,16 +311,20 @@ impl ApplyResult {
     }
 }
 
-/// A document loaded once per request (§4 step 1).
+/// A document loaded once per request (§4 step 1), or one a `create` effect
+/// adopted (`spec/mutate` §11.3, 3.0: no row yet — `before` empty, no prior
+/// ids, no base).
 pub(crate) struct LoadedDoc {
     pub(crate) doc: MutDoc,
-    /// The pre-mutation render.
+    /// The pre-mutation render (`""` for an adopted document).
     pub(crate) before: String,
     /// The live ids before any op (labels the `api` dispositions).
     pub(crate) prior_ids: Vec<String>,
     /// The row's `(path, current_rev, file_hash)` as loaded — the
-    /// precondition the commit re-validates inside its transaction (2.2).
-    pub(crate) base: DocBase,
+    /// precondition the commit re-validates inside its transaction (2.2);
+    /// `None` for an adopted document, whose precondition is "no live
+    /// document at its path" (`Guard::Absent`).
+    pub(crate) base: Option<DocBase>,
 }
 
 fn merr(code: ErrorCode, msg: impl Into<String>) -> MutationError {
@@ -576,9 +580,25 @@ impl OpsRunner {
             doc,
             before,
             prior_ids,
-            base,
+            base: Some(base),
         });
         Ok(self.loaded.len() - 1)
+    }
+
+    /// `spec/mutate` §11.3 (3.0): adopt a document a `create` effect composed
+    /// — parsed, its ids minted — as a loaded entry with no row behind it:
+    /// nothing rendered before, no prior ids, no base. Later ops address its
+    /// blocks (and, for an `insert`, the document itself by `doc.doc_id`) as
+    /// they address any loaded document's; its commit is a known-id ingest
+    /// under the `Absent` guard. Returns its index in `loaded`.
+    pub(crate) fn adopt_new(&mut self, doc: MutDoc) -> usize {
+        self.loaded.push(LoadedDoc {
+            doc,
+            before: String::new(),
+            prior_ids: Vec::new(),
+            base: None,
+        });
+        self.loaded.len() - 1
     }
 
     /// Where a block sits in the LOADED trees (an id an earlier op minted
@@ -660,6 +680,10 @@ impl OpsRunner {
                 expect,
             } => {
                 let doc_id = match doc {
+                    // A document this request adopted (`$new.<n>` in a plan,
+                    // the symbol it keeps through the replay) is addressed
+                    // by the id its tree carries, never looked up.
+                    Some(r) if self.index_of(r).is_some() => r.clone(),
                     Some(r) => store.resolve_doc_ref(&self.repo_id, r)?,
                     None => self.parent_doc(store, to)?,
                 };
@@ -702,15 +726,28 @@ impl OpsRunner {
                 minter.finish()?;
                 result?
             }
-            Op::Move { blocks, to, expect } => {
+            Op::Move {
+                blocks,
+                to,
+                doc,
+                expect,
+            } => {
                 let first = blocks.first().map(String::as_str).unwrap_or("");
                 let src = self
                     .doc_for_block(store, first)?
                     .ok_or_else(|| missing(first))?;
-                let top_level_same_doc =
-                    to.parent == Parent::Doc && matches!(to.at, At::Start | At::End);
-                let dst = if top_level_same_doc {
-                    src.clone()
+                // `{doc:true}` with a non-anchor `at` (start/end) means the
+                // top level of `doc` when given (§2.3, 3.0: the destination
+                // of a cross-document move to a top level — an adopted
+                // document by its symbol), else of the source document; an
+                // anchored `at` infers the destination from the anchor.
+                let top_level = to.parent == Parent::Doc && matches!(to.at, At::Start | At::End);
+                let dst = if top_level {
+                    match doc {
+                        Some(r) if self.index_of(r).is_some() => r.clone(),
+                        Some(r) => store.resolve_doc_ref(&self.repo_id, r)?,
+                        None => src.clone(),
+                    }
                 } else {
                     self.parent_doc(store, to)?
                 };
@@ -784,23 +821,31 @@ pub(crate) struct Staged {
     pub rendered: String,
     by_key: BTreeMap<String, String>,
     prior_ids: Vec<String>,
-    /// The row as loaded, re-validated inside the commit (2.2).
-    base: DocBase,
+    /// The row as loaded, re-validated inside the commit (2.2); `None` for
+    /// an adopted document (`spec/mutate` §11.3, 3.0).
+    base: Option<DocBase>,
     /// The file as phase (a) read it at the loaded path.
     on_disk: Option<String>,
 }
 
 impl Staged {
-    /// The [`Effect::IngestKnown`] of this document.
+    /// The [`Effect::IngestKnown`] of this document: guarded by its triple
+    /// and the bytes read, or — adopted — by its path still being free.
     pub(crate) fn into_effect(self) -> Effect {
+        let guard = match self.base {
+            Some(base) => Guard::Doc {
+                base,
+                on_disk: self.on_disk,
+            },
+            None => Guard::Absent,
+        };
         Effect::IngestKnown {
             doc_id: self.doc_id,
             path: self.path,
             rendered: self.rendered,
             by_key: self.by_key,
             prior_ids: self.prior_ids,
-            base: self.base,
-            on_disk: self.on_disk,
+            guard,
         }
     }
 }

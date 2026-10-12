@@ -86,8 +86,13 @@ export type Effect =
    *  the path the revision carries — the moved document of a `docs_move` is
    *  loaded under its OLD path and overridden to the new one; `base.path` is
    *  the path it was loaded under (where its bytes are on disk at phase A).
-   *  `base` is the triple the document was planned against. */
-  | { kind: "ingest_known"; docId: string; path: string; rendered: string; mutDoc: MutDoc; priorIds: Set<string>; base: DocBase }
+   *  `base` is the triple the document was planned against — or `null` for a
+   *  document the request CREATES (spec/mutate §11.3, 3.0: the planner adopted
+   *  its parsed tree, so its blocks commit with known ids and `inserted / api`
+   *  dispositions); the guard is then `path_taken` — no live document at `path`
+   *  when the transaction validates — and `docId` is the plan's symbol, the
+   *  ingest minting the real `d`. */
+  | { kind: "ingest_known"; docId: string; path: string; rendered: string; mutDoc: MutDoc; priorIds: Set<string>; base: DocBase | null }
   /** A whole-file ingest through the probabilistic reconciler: identity is
    *  re-derived from the bytes. `precondition` is `null` for `docs_create` (no
    *  live document may exist at `path`, else `path_taken`) and, for
@@ -217,7 +222,7 @@ export function runPhases(store: Store, repoId: string, head: CommitHead, effect
   }
   const onDisk = new Map<string, string>();
   for (const e of effects) {
-    if (e.kind === "ingest_known") {
+    if (e.kind === "ingest_known" && e.base) {
       const bytes = docStore.read(e.base.path);
       if (bytes !== null) onDisk.set(e.docId, bytes);
     } else if (e.kind === "ingest_reconciled" && e.precondition?.original !== null && e.precondition?.original !== undefined) {
@@ -316,7 +321,7 @@ export function runPhases(store: Store, repoId: string, head: CommitHead, effect
   for (const e of effects) {
     switch (e.kind) {
       case "ingest_known":
-        land(e.path, fromHex(e.base.fileHash));
+        land(e.path, e.base ? fromHex(e.base.fileHash) : null);
         break;
       case "ingest_reconciled":
         land(e.path, e.precondition ? fromHex(e.precondition.base.fileHash) : null);
@@ -359,7 +364,7 @@ function touchedPaths(effects: Effect[]): string[] {
   for (const e of effects) {
     switch (e.kind) {
       case "ingest_known":
-        out.add(e.base.path);
+        if (e.base) out.add(e.base.path);
         out.add(e.path);
         break;
       case "ingest_reconciled":
@@ -414,7 +419,10 @@ function validate(db: Database, repoId: string, effects: Effect[], onDisk: Map<s
   for (const e of effects) {
     switch (e.kind) {
       case "ingest_known":
-        checkDisk(e.docId, checkRow(e.docId, e.base));
+        // A created document (`base: null`, the `Absent` guard): no live document
+        // may be at the path — the planner's check re-run through the transaction.
+        if (e.base) checkDisk(e.docId, checkRow(e.docId, e.base));
+        else if (pathTaken(e.path)) throw new MutationError("path_taken", `document already exists at ${e.path}`, { path: e.path });
         break;
       case "ingest_reconciled":
         if (e.precondition) checkDisk(e.precondition.docId, checkRow(e.precondition.docId, e.precondition.base));

@@ -20,10 +20,8 @@ import { canonicalDocPath, planInboundRetarget, type DocMoveResult, type DocOpRe
 import { inboundLinksTo } from "../graph/inbound-links.js";
 import { resolveDocStore } from "../mutate/doc-store.js";
 import { MutationError } from "../mutate/tree.js";
-import { docsUpdate } from "../mutate/plan-update.js";
 import { applyEffects, applyEffectsDetailed, executeByDigest, executePlan, legacyApplyResult, planEffects, realizeNewIds, stripEffectIndex, type Plan, type Receipt } from "../mutate/plan.js";
 import type { Effect, EffectExpect, EffectTarget } from "../mutate/effects.js";
-import { renderOpsetPlan } from "../mutate/opset.js";
 import { historyNode, diffBlocks, docDiffUnified, changesSince, docHistory } from "../graph/history.js";
 import { linksStale, linksStaleSummary } from "../graph/link-health.js";
 import { resolve as resolveThing } from "../search/resolve.js";
@@ -36,7 +34,7 @@ import { storagePath, referencePath } from "../core/paths.js";
 import { isContainerBlock } from "../format/index.js";
 import {
   surfaceApplyResult, surfaceDocOpResult, surfaceDocMoveResult, surfaceObserveResult, surfaceObserveDeleteResult,
-  surfaceTextSearch, surfaceResolveHits, surfaceRetargetHits, surfaceDocsUpdate, surfacePlan, surfaceReceipt,
+  surfaceTextSearch, surfaceResolveHits, surfaceRetargetHits, surfacePlan, surfaceReceipt,
 } from "../surface-paths.js";
 
 // MCP server (mcp-api). The full tool surface wired to the engine: read
@@ -828,7 +826,7 @@ export function buildServer(ctx: ServerContext): McpServer {
     "plan",
     {
       description:
-        "Plan a write without writing: lower an ORDERED list of `effects` — the intentional-write vocabulary `create insert set unset move remove split merge retarget` over documents, blocks, nodes and sections (spec/mutate §11) — to the kernel ops and document operations they mean, check their preconditions now (a stale `expect` fails here as it would at commit), reject contradictory effects (`conflicting_effects`: two writes to one scalar with different values, an effect addressing a target an earlier one removed — an identical duplicate is dropped with a diagnostic), and return the frozen Plan: `{ version: 1, planner_v, effects (targets resolved; `$new.n` kept symbolic), opset, preconditions: { docs, blocks, parents, absent_paths }, new_ids: [{ symbol, kind }], plan_id, diagnostics, preview: { results, revisions, diffs } }`. `plan_id` is the sha256 of the plan's executable core, so an identical plan over identical state has the same id and a plan burns no real id (new identities are `$new.0, $new.1, …`, minted at execute and mapped in the receipt). Hand the whole Plan to `execute` (or just its `plan_id` with the same `effects`); nothing has expiry — the preconditions decide. Effect shapes: { op: \"create\", path, markdown, frontmatter? }, { op: \"insert\", into: Target, at? = \"end\", markdown, expect? }, { op: \"set\", target, field, value, expect? } (fields: a document's `frontmatter.<key>` or `content`, a block's `markdown` or `attrs.checked`, a node's editable property), { op: \"unset\", target: document, field: \"frontmatter.<key>\" }, { op: \"move\", target: document, to, retarget_inbound? = true }, { op: \"move\", targets: [block…], into, at?, expect? }, { op: \"remove\", target: document } | { targets: [block…], expect? }, { op: \"split\", target: block, at: [byte…] }, { op: \"merge\", targets: [block…], separator? }, { op: \"retarget\", repairs: [{ from, to }], path_glob? }; Target = { kind: \"document\", id? | path? } | { kind: \"block\", id } | { kind: \"node\", id } | { kind: \"section\", heading_id }; `expect` carries `content_hash`, `parent_children_hash` and/or the document's `revision`. Block content hashes you omit are pinned from the live rows. The plan's core keeps paths in the storage form (they are digested); only `preview` is rooted.",
+        "Plan a write without writing: lower an ORDERED list of `effects` — the intentional-write vocabulary `create insert set unset move remove split merge retarget` over documents, blocks, nodes and sections (spec/mutate §11) — to the kernel ops and document operations they mean, check their preconditions now (a stale `expect` fails here as it would at commit), reject contradictory effects (`conflicting_effects`: two writes to one scalar with different values, an effect addressing a target an earlier one removed — an identical duplicate is dropped with a diagnostic), and return the frozen Plan: `{ version: 1, planner_v, effects (targets resolved; `$new.n` kept symbolic), opset, preconditions: { docs, blocks, parents, absent_paths }, new_ids: [{ symbol, kind }], plan_id, diagnostics, preview: { results, revisions, diffs } }`. `plan_id` is the sha256 of the plan's executable core, so an identical plan over identical state has the same id and a plan burns no real id (new identities are `$new.0, $new.1, …` — a created document AND each of its blocks, in pre-order, so later effects may insert into / move into / edit a document the same request creates — minted at execute and mapped in the receipt). `preview` also carries `identity` (per `set content` document: the whole-document planner's `{ matcher_v, summary, ops: [{ op_index, disposition, blocks, confidence, reason }], diagnostics }`) and `retarget` (per `retarget` effect: `{ effect_index, hits, pairs }`) when the plan has such effects. Hand the whole Plan to `execute` (or just its `plan_id` with the same `effects`); nothing has expiry — the preconditions decide. Effect shapes: { op: \"create\", path, markdown, frontmatter? }, { op: \"insert\", into: Target, at? = \"end\", markdown, expect? }, { op: \"set\", target, field, value, expect? } (fields: a document's `frontmatter.<key>` or `content`, a block's `markdown` or `attrs.checked`, a node's editable property), { op: \"unset\", target: document, field: \"frontmatter.<key>\" }, { op: \"move\", target: document, to, retarget_inbound? = true }, { op: \"move\", targets: [block…], into, at?, expect? }, { op: \"remove\", target: document } | { targets: [block…], expect? }, { op: \"split\", target: block, at: [byte…] }, { op: \"merge\", targets: [block…], separator? }, { op: \"retarget\", repairs: [{ from, to }], path_glob? }; Target = { kind: \"document\", id? | path? } | { kind: \"block\", id } | { kind: \"node\", id } | { kind: \"section\", heading_id }; `expect` carries `content_hash`, `parent_children_hash` and/or the document's `revision`. Block content hashes you omit are pinned from the live rows. The plan's core keeps paths in the storage form (they are digested); only `preview` is rooted.",
       inputSchema: { effects: z.array(effectSchema), ...REPO_ARG },
     },
     async (args) => {
@@ -1235,13 +1233,7 @@ export function buildServer(ctx: ServerContext): McpServer {
   // operation's own lock re-enters it, and the stat cache is recorded as on the
   // CLI path. MCP-originated writes are actor agent:mcp.
   // `dry_run` validates and returns the per-file `diffs` without writing, the
-  // docs-verb peer of `apply`'s preview. `docCtx` is the library context of the
-  // one document tool still on the library, `docs_update` (its result needs the
-  // opset, which the effects discard).
-  const docCtx = (scope: { repoId: string; rootPath: string | undefined }, dryRun?: boolean) => {
-    if (!scope.rootPath) throw new EngineError("repo_not_found", "repo has no filesystem source; mutation disabled");
-    return { repoId: scope.repoId, rootPath: scope.rootPath, actor: "agent:mcp", ...LOCK_DIR, ...(dryRun ? { dryRun: true } : {}) };
-  };
+  // docs-verb peer of `apply`'s preview.
   const docResult = <T,>(res: T, dryRun?: boolean) => (dryRun ? ok(res) : okMutated(res));
 
   // ---- the document operations as effects (spec/surface §4 "Sugar over effects", 3.3) ----
@@ -1257,10 +1249,10 @@ export function buildServer(ctx: ServerContext): McpServer {
   // copies of them never fire and the error envelopes are unchanged.
   type Diff = { before: string; after: string };
   const documentTarget = (id: string): EffectTarget => ({ kind: "document", id });
-  const docEffects = (scope: { repoId: string; rootPath: string | undefined }, effects: Effect[], reason: string, dryRun?: boolean): { plan: Plan; receipt?: Receipt } => {
+  const docEffects = (scope: { repoId: string; rootPath: string | undefined }, effects: Effect[], reason: string | undefined, dryRun?: boolean): { plan: Plan; receipt?: Receipt } => {
     const rootPath = requireRoot(scope.rootPath);
     try {
-      return applyEffectsDetailed(store, { repoId: scope.repoId, rootPath, effects, origin: { actor: "agent:mcp", reason }, ...LOCK_DIR, ...(dryRun ? { dryRun: true } : {}) });
+      return applyEffectsDetailed(store, { repoId: scope.repoId, rootPath, effects, origin: { actor: "agent:mcp", ...(reason !== undefined ? { reason } : {}) }, ...LOCK_DIR, ...(dryRun ? { dryRun: true } : {}) });
     } catch (e) {
       throw stripEffectIndex(e);
     }
@@ -1413,19 +1405,15 @@ export function buildServer(ctx: ServerContext): McpServer {
     "docs_update",
     {
       description:
-        "Whole-document update with smart identity preservation. Submit the complete proposed `content` for a document (`id` or `path`); the engine reconciles it against the current tree, preserving stable block ids for structure that is recognizably the same (edits, moves, reorders), minting for new structure, and tombstoning removals — then commits the derived opset through the kernel write path. Frontmatter changes are applied too. dry_run:true is the PLAN-ONLY call (docs_plan_update before surface 3.0): nothing is written and the result is `{ opset, plan, result: null }` — the exact kernel ops (insert/update/move/remove) it would run, each annotated with its identity consequence (disposition, confidence, reason), a summary (preserved/updated/moved/created/removed) and a human-readable plan; the opset carries `precondition: { id, path, baseRevision, hash }` (the document's revision and hash at plan time) and `converges`, verified by replaying the ops (a divergence names the first differing byte and the proposed block in `diagnostics[]`). Use the dry run to inspect identity effects before committing, then call again without it. Conflicts (the doc changed since planning) fail stale_plan — re-run. A plan whose replay cannot reproduce `content` byte-for-byte fails plan_not_convergent; the message names the first divergent byte and the proposed block (index/type) that failed to round-trip (full diagnostics in `data.diagnostics`). This is the dry run's opset + apply(opset).",
-      inputSchema: { ...DOC_ARGS, content: z.string(), reason: z.string().optional(), dry_run: z.boolean().optional(), ...REPO_ARG },
+        "Whole-document update with smart identity preservation — sugar for `apply { effects: [{ op: \"set\", target: { kind: \"document\", id }, field: \"content\", value: content }] }` (surface 4.0). Submit the complete proposed `content` for a document (`id` or `path`); the engine reconciles it against the current tree, preserving stable block ids for structure that is recognizably the same (edits, moves, reorders), minting for new structure, and tombstoning removals — frontmatter changes included — and commits the derived ops as ONE transaction. Returns the Receipt `{ plan_id, commit, revisions: [{ id, path, hash }], new_ids, committed: true }`; content that already equals the document is a plan with nothing to do — no commit (`commit: null`, no revision). To INSPECT the identity consequences before committing, call `plan { effects: [that set] }`: its `preview.identity[<doc id>]` is `{ matcher_v, summary: { preserved, updated, moved, created, removed, split, merged, ambiguous }, ops: [{ op_index, disposition, blocks, confidence, reason }], diagnostics }` — each planned kernel op (`preview`'s `op_index` into the plan's `opset.ops`) annotated with the disposition it realizes — and the plan's `preconditions.docs` pin the document's revision and hash; then `execute` that plan, or call this tool. A document that changed since planning fails stale_plan (re-plan). Content the planner cannot reproduce byte-for-byte fails plan_not_convergent; the message names the first divergent byte and the proposed block (index/type) that failed to round-trip (full diagnostics in `data.diagnostics`).",
+      inputSchema: { ...DOC_ARGS, content: z.string(), reason: z.string().optional(), ...REPO_ARG },
     },
     async (args) => {
       try {
         const scope = repoScope(args.repo);
         const docId = locateDoc(scope.repoId, "docs_update", registry.get("docs_update")!.shape, args);
-        const { opset, result } = surfaceDocsUpdate(docsUpdate(store, docCtx(scope), docId, args.content, {
-          ...(args.dry_run !== undefined ? { dryRun: args.dry_run } : {}),
-          ...(args.reason !== undefined ? { reason: args.reason } : {}),
-        }));
-        const payload = { opset, plan: renderOpsetPlan(opset), result };
-        return args.dry_run ? ok(payload) : okMutated(payload);
+        const { receipt } = docEffects(scope, [{ op: "set", target: documentTarget(docId), field: "content", value: args.content }], args.reason);
+        return okMutated(surfaceReceipt(receipt!));
       } catch (e) {
         return fail(e);
       }

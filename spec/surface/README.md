@@ -716,7 +716,11 @@ unknown argument name is `filter_invalid` naming the nearest valid one —
 "unknown argument `q`; did you mean `query`?" (Levenshtein ≤ 2 or a prefix
 either way; the names 3.0 retired name their replacement: "`doc` is no
 longer an argument — pass `id` or `path`", `block`/`node` → `id`, `heading`
-→ `section`, `markdown` → `text`) — a missing one "`query` is required", a
+→ `section`, `markdown` → `text`; and the inputs 4.0 retired theirs: "`ops`
+is no longer an argument — `apply` takes `effects` (the kernel ops are a
+library/fixture contract since spec/mutate 3.0)", "`dry_run` is no longer an
+argument — preview with `plan { effects: [...] }`", "`attrs` is no longer an
+argument — pass `checked`") — a missing one "`query` is required", a
 mistyped one "`limit` must be an integer" (`a string`, `a boolean`, `an
 object`, `an array of strings|integers|objects`, `one of a, b, c`), each
 followed by the tool's shape in bytewise order with `?` on the optional
@@ -743,46 +747,51 @@ doc_id }] }` ("pass the heading's id to blocks_append"); it is never an id
 lookup — the id form is `blocks_append`. Block-level tools pin
 `expect.content_hash` from the live row when the caller omits it.
 
-**Sugar over effects (3.2).** The block-level write tools — `blocks_insert`,
-`blocks_update`, `blocks_move`, `blocks_remove`, `blocks_split`,
-`blocks_merge`, `blocks_check`, `nodes_set`, `blocks_append`, `docs_append`,
-`links_retarget`, `links_repair` — are `apply { effects }` (ADR-021's
-migration phase; `spec/mutate` §10): each builds its effects after its own
+**Sugar over effects (3.2; 4.0).** The block-level write tools —
+`blocks_insert`, `blocks_update`, `blocks_move`, `blocks_remove`,
+`blocks_split`, `blocks_merge`, `blocks_check`, `nodes_set`, `blocks_append`,
+`docs_append`, `links_retarget`, `links_repair` — are `apply { effects }`
+(ADR-021; `spec/mutate` §10): each builds its effects after its own
 pre-checks (so its error `data` is unchanged), plans and executes them as
-one request with the tool's name as the commit `reason`, and returns the
-apply result derived from the plan's preview: `results` with every `$new.n`
-realized — the receipt's id when committed; on a dry run one production
-mint per `new_ids` entry, in order, so **a dry run still consumes the ids
-the real run would take** (§9) — `revisions`, `diffs` (dry run only),
-`committed`; a planner error loses its `effect_index`. Two behaviours moved
-with it (`spec/mutate` §10, pinned): `blocks_update` with `expect: {}` (or
-an order-only guard with `markdown`) proceeds with the content hash pinned
-from the live row, and `blocks_check` naming a block twice is one write.
-`blocks_update`'s `attrs` bag beyond `checked` stays on the kernel path until
-4.0; an empty `blocks`/`ids` list is `filter_invalid` ("`blocks` must name
-at least one block", with the tool's shape).
+one request with the tool's name as the commit `reason`, and **returns the
+Receipt** (4.0: `{ plan_id, commit, revisions, new_ids, committed: true }`,
+`revisions[].path` rooted; through 3.x the apply result `{ results,
+revisions, diffs?, committed }` derived from the plan's preview, its dry run
+realizing one production mint per symbol). A planner error loses its
+`effect_index`. There is no `dry_run` on any sugar tool: the preview of a
+write is `plan { effects: [...] }`, which burns no id (§9: "dry runs consume
+minted ids" is closed). Two behaviours moved with the migration
+(`spec/mutate` §10, pinned): `blocks_update` with `expect: {}` (or an
+order-only guard with `markdown`) proceeds with the content hash pinned from
+the live row, and `blocks_check` naming a block twice is one write.
+`blocks_update` takes `checked` and nothing else of the attrs (4.0: the
+`attrs` bag is retired — no other attribute is editable through effects); an
+empty `blocks`/`ids` list is `filter_invalid` ("`blocks` must name at least
+one block", with the tool's shape).
 
-**The document operations (3.3)** follow: `docs_create` is one `create {
-path, markdown, frontmatter? }`, `docs_delete` one `remove { target: document
-}`, `docs_move` one `move { target: document, to, retarget_inbound }`,
-`docs_set_meta` one `set`/`unset frontmatter.<k>` per key (`unset` winning a
-key named in both, as the legacy merge did; an empty patch is `filter_invalid`
-"pass `set` and/or `unset`", §9) — under the `spec/mutate` §6 reasons the
-library wrote (`create <rel>`, `delete <path>`, `move <from> -> <to>`,
-`set_meta <path>`, storage-form paths) and returning the §6 result shapes
-unchanged: `id` is the receipt's one revision (committed) or the `d` the
-realize shim mints for `$new.0` (a dry-run create still consumes its id);
-`diffs` is the plan's preview, a move's rebuilt in the legacy key order (the
-old path emptied, the new path filled, then the rewritten sources — the
-preview lists the sources first; the self-link reading of §9 restored);
-`dangling`/`retargeted` are recomputed by the tool from `inbound_links_to` +
-`plan_inbound_retarget` over the current blocks before the commit (pure, so
-equal to what the planner lowered). The tools keep their pre-checks —
-`locateDoc`'s `doc_missing`, the create/move `path_taken` pair with the
-legacy messages and no `data` — so the planner's copies never fire. One
-identity change is accepted and pinned (§9): a committed `docs_set_meta` is a
-known-id head write, not a reconciling re-ingest. `docs_update` stays on the
-library (its result needs the opset).
+**The document operations (3.3; 4.0)** follow: `docs_create` is one `create
+{ path, markdown, frontmatter? }`, `docs_delete` one `remove { target:
+document }`, `docs_move` one `move { target: document, to, retarget_inbound
+}`, `docs_set_meta` one `set`/`unset frontmatter.<k>` per key (`unset`
+winning a key named in both, as the legacy merge did; an empty patch is
+`filter_invalid` "pass `set` and/or `unset`", §9) — under the `spec/mutate`
+§6 reasons the library wrote (`create <rel>`, `delete <path>`, `move <from>
+-> <to>`, `set_meta <path>`, storage-form paths). Each returns the Receipt
+(4.0) with its own extras: `docs_move` adds `retargeted` and `dangling`,
+recomputed by the tool from `inbound_links_to` + `plan_inbound_retarget`
+over the current blocks before the commit (pure, so equal to what the planner
+lowered). The tools keep their pre-checks — `locateDoc`'s `doc_missing`, the
+create/move `path_taken` pair with the legacy messages and no `data` — so the
+planner's copies never fire. Identity (`spec/mutate` §6, §10): a committed
+`docs_set_meta` is a known-id head write (`edited / api`, §9) and a committed
+`docs_create` a known-id ingest of the planner's adopted tree (`inserted /
+api`, no matcher; 4.0 with `spec/mutate` 3.0). **`docs_update`** (4.0) is
+one `set { target: document, field: "content", value: content }` returning
+the Receipt — content that already equals the document is a plan with
+nothing to do (`commit: null`, no revision, `spec/mutate` §11.7); the
+identity consequences the 3.x result carried are the Plan's
+`preview.identity[<doc id>]` (`plan` row below), the plan-only call being
+`plan { effects: [that set] }`.
 
 | Tool | Args | Result |
 | --- | --- | --- |
@@ -798,24 +807,24 @@ library (its result needs the opset).
 | `graph` | `roots[]`, `degrees? = 1`, `direction? = both`, `predicate?`, `select?[]`, `max_documents? = 200` | `{ roots, degrees, direction, documents: [{ id, path, degree, frontier, ...select }], links: [{ id, doc_id, block_id, via_id, dst_id, dst_path, uri, dst_kind, predicate, provenance, anchor, field }], frontier: [{ id, path, degree }], truncated, queries }` — compiled to `follow distinct out_links collect { from dst }` / `follow distinct in_links collect { from doc }` (the link rows walked to the documents at their other end, §1.2; `follow doc.out`/`doc.in` before the 3.0 follow-up) with `depth = degrees + 1` (≤ 8, so `degrees` clamps to 7 and the result reports the clamped value), roots depth 0; documents ordered bytewise by path (§9); a link row carries the `links` target's fields under their own names (§1.2, 3.0 — `edges[]` until the name pass, and before that a rename table spelled `src`/`dst`/`dst_uri`/`src_field`); an `id`/`path` selection collapses onto the envelope key exactly as a `query` hit's does, any other bare name is its own column (deduped by suffix) and an expression is `sel_<i>` — a `graph` selection can never overwrite the envelope |
 | `blocks_search` | `q`, `limit?` | `spec/search` §1.3 (`text_search` before 3.0): `{ hits: [{ id (the block), doc_id, path (reference form), type, text, score }], truncated }` |
 | `blocks_resolve` | `query`, `limit?` | `spec/search` §4 (`resolve` before 3.0; vector fused when a provider exists): `[{ id, locator, preview, evidence }]`, the `locator`'s path half in the reference form (`/a.md#paragraph[2]`) |
-| `apply` | `ops[]` or `effects[]` (exactly one, else `filter_invalid` "pass exactly one of `ops` or `effects`" with `hint: "arguments"` — 3.1), `reason?`, `dry_run?` | with `ops`: `spec/mutate` §4, `origin.actor = "agent:mcp"`: `{ results, revisions: [{ id, path, hash }], diffs?, committed }` — `revisions[].path` and the `diffs` keys in the reference form, `hash` the document's hash after the commit (the rendered bytes' sha256; the same shape as a `changes_since` revision, §3). Every mutating tool below returns this result. With `effects` (3.1, `spec/mutate` §11.7): `dry_run` → the Plan exactly as `plan` returns it; without → plan + execute under the one tool-call lock and one transaction → the Receipt (below) |
-| `plan` | `effects[]` | (3.1) `spec/mutate` §11.6: the Plan `{ version, planner_v, effects, opset, preconditions, new_ids, plan_id, diagnostics, preview }` with `preview` included. **The executable core is returned verbatim in the storage form** — `effects[].target.path`, `preconditions.docs[].path`, `preconditions.absent_paths`, `opset.creates[].path`, `opset.moves[].from/to`, `opset.tombstones[].path` — because `plan_id` digests exactly those bytes and the client hands the object back to `execute` (the one result the path rule of §1 exempts, as `dangling[].target` is); only `preview.revisions[].path` and the `preview.diffs` keys are rooted. A malformed effect is `filter_invalid` (`hint: "arguments"`, the message naming `effects[i]` and the member), a contradiction `conflicting_effects`, a stale guard `stale_expectation` / `stale_plan` — `spec/mutate` §8/§11. Listed with the write tools: it runs under the lock like a dry run |
+| `apply` | `effects[]`, `reason?` | (4.0) `spec/mutate` §11.7: plan + execute under the one tool-call lock and one transaction → the Receipt `{ plan_id, commit, revisions: [{ id, path, hash }], new_ids: { "$new.n": id }, committed: true }` — `revisions[].path` in the reference form, `hash` the document's hash after the commit (the rendered bytes' sha256; the same shape as a `changes_since` revision, §3), `commit` `null` when the plan had nothing to commit; `origin.actor = "agent:mcp"`. **Every mutating tool below returns this Receipt** (its extras noted per row). `effects` missing → `filter_invalid` "`effects` is required"; the 3.x inputs → the retired-name errors above (`ops` — the kernel ops `apply` took through 3.x are a library/fixture contract, `spec/mutate` §4 — and `dry_run`: the preview is `plan`) |
+| `plan` | `effects[]` | (3.1) `spec/mutate` §11.6: the Plan `{ version, planner_v, effects, opset, preconditions, new_ids, plan_id, diagnostics, preview }` with `preview` included. **The executable core is returned verbatim in the storage form** — `effects[].target.path`, `preconditions.docs[].path`, `preconditions.absent_paths`, `opset.creates[].path`, `opset.moves[].from/to`, `opset.tombstones[].path` — because `plan_id` digests exactly those bytes and the client hands the object back to `execute` (the one result the path rule of §1 exempts, as `dangling[].target` is); only `preview.revisions[].path`, the `preview.diffs` keys and `preview.retarget[].hits[].path` are rooted. `preview` (4.0, `spec/mutate` §11.4) also carries `identity` when the plan has a `set content` — per document `{ matcher_v, summary, ops: [{ op_index, disposition, blocks, confidence, reason, detail? }], diagnostics }`, the whole-document planner's annotations (the 3.x `docs_update { dry_run }` result) — and `retarget` when it has a `retarget` effect: `[{ effect_index, hits: [{ id, path, oldRaw, newRaw }], pairs: [{ from, to, hits }] }]` (the 3.x `links_*` dry run). A malformed effect is `filter_invalid` (`hint: "arguments"`, the message naming `effects[i]` and the member), a contradiction `conflicting_effects`, a stale guard `stale_expectation` / `stale_plan` — `spec/mutate` §8/§11. Listed with the write tools: it runs under the lock. It is **the** preview: no tool takes `dry_run` (4.0) |
 | `execute` | `plan` (an object) or `plan_id` + `effects[]` (exactly one form, else `filter_invalid` "pass exactly one of `plan` or `plan_id` + `effects`"; half of the digest form → "the digest form needs both `plan_id` and `effects`"), `reason?` | (3.1) `spec/mutate` §11.7: the plan form admits (`unsupported_plan_version { version, supported: [1] }`, `filter_invalid`, `plan_mismatch { expected, actual }`) then commits; the digest form re-plans and commits on digest equality else `plan_mismatch`; the committed plan's preconditions re-validated in the transaction (`stale_plan`, retriable). The Receipt `{ plan_id, commit, revisions: [{ id, path, hash }], new_ids: { "$new.n": id }, committed: true }`, `revisions[].path` rooted; `origin.actor = "agent:mcp"` |
-| `blocks_insert` | `to`, `markdown`, `at? = end`, `expect? { parent_children_hash? }`, `dry_run?` | the apply result; `expect` is the destination-parent CAS of `spec/mutate` §1.2 (1.2) |
-| `blocks_update` | `id`, `markdown?`, `checked?`, `attrs?`, `expect?`, `dry_run?` | `{ id (the target block), ids, ...apply result }` (`checked` folds into attrs; `block` before 3.0); 3.2: `set markdown` and/or `set attrs.checked` — `expect: {}` or an order-only guard with `markdown` is completed by the planner (`stale_expectation` "expect.content_hash required" before), `markdown` + `checked` is two effects with the result collapsed to the first, `attrs` beyond `checked` the kernel path |
-| `blocks_move` | `blocks[]` (non-empty), `to`, `at?`, `expect? { parent_children_hash? }`, `dry_run?` | a doc ref as `to` must be the blocks' own document, else `target_missing`; `expect` is the destination-parent CAS, checked once (1.2) |
-| `blocks_remove` | `blocks[]` (non-empty), `dry_run?` | |
-| `blocks_split` | `id`, `at[]` (bytes), `dry_run?` | (`block` before 3.0) |
-| `blocks_merge` | `blocks[]` (non-empty), `separator?`, `dry_run?` | |
-| `blocks_check` | `ids[]` (non-empty), `checked? = true`, `dry_run?` | check (or uncheck with `checked: false`) the given task blocks (`tasks_complete { blocks[] }` before 3.0); 3.2: a block named twice is one write and one result |
-| `nodes_set` | `id`, `prop`, `value`, `dry_run?` | an unknown node → `block_missing` "no node with id …" (`node_set { node }` before 3.0) |
-| `blocks_append` | `id`, `text`, `dry_run?` | (3.0) append INTO a block by what it is: a heading → the end of its section range (`spec/mutate` §5 `sections_append`), a container (`spec/mutate` §1.1) → the end of its children (an insert `to: { parent: id, at: "end" }`), a leaf → `block_not_container` (`data: { id, type }`, the message pointing at `blocks_insert … at.after`) — the apply result |
-| `docs_append` | `id?`, `path?`, `text`, `section?`, `dry_run?` | the apply result; `section` is a heading's text inside the document (above); absent → the document's end (`sections_append { heading, markdown, doc?, path? }` is gone, 3.0: appending is a document-level act or an into-a-block act) |
-| `links_retarget` | `from_target`, `to_target`, `path_glob?`, `dry_run? = true` | `{ hits: [{ id (the block), path, oldRaw, newRaw }], pairs, applied, ...apply result }` |
+| `blocks_insert` | `to`, `markdown`, `at? = end`, `expect? { parent_children_hash? }` | the Receipt; `expect` is the destination-parent CAS of `spec/mutate` §1.2 (1.2) |
+| `blocks_update` | `id`, `markdown?`, `checked?`, `expect?` | the Receipt (4.0; `{ id, ids, ...apply result }` and an `attrs` bag through 3.x — `attrs` is a retired name); 3.2: `set markdown` and/or `set attrs.checked` — `expect: {}` or an order-only guard with `markdown` is completed by the planner (`stale_expectation` "expect.content_hash required" before), `markdown` + `checked` is two effects in one plan |
+| `blocks_move` | `blocks[]` (non-empty), `to`, `at?`, `expect? { parent_children_hash? }` | a doc ref as `to` must be the blocks' own document, else `target_missing`; `expect` is the destination-parent CAS, checked once (1.2) |
+| `blocks_remove` | `blocks[]` (non-empty) | |
+| `blocks_split` | `id`, `at[]` (bytes) | (`block` before 3.0) |
+| `blocks_merge` | `blocks[]` (non-empty), `separator?` | |
+| `blocks_check` | `ids[]` (non-empty), `checked? = true` | check (or uncheck with `checked: false`) the given task blocks (`tasks_complete { blocks[] }` before 3.0); 3.2: a block named twice is one write |
+| `nodes_set` | `id`, `prop`, `value` | an unknown node → `block_missing` "no node with id …" (`node_set { node }` before 3.0) |
+| `blocks_append` | `id`, `text` | (3.0) append INTO a block by what it is: a heading → the end of its section range (`spec/mutate` §5 `sections_append`), a container (`spec/mutate` §1.1) → the end of its children (an insert `to: { parent: id, at: "end" }`), a leaf → `block_not_container` (`data: { id, type }`, the message pointing at `blocks_insert … at.after`) |
+| `docs_append` | `id?`, `path?`, `text`, `section?` | `section` is a heading's text inside the document (above); absent → the document's end (`sections_append { heading, markdown, doc?, path? }` is gone, 3.0: appending is a document-level act or an into-a-block act) |
+| `links_retarget` | `from_target`, `to_target`, `path_glob?` | (4.0: commits — it was a dry run by default through 3.x, with `applied`) `{ hits: [{ id (the block), path, oldRaw, newRaw }], pairs: [{ from, to, hits }], ...the Receipt }`; no hit → the Receipt with `commit: null`. The preview is `plan { effects: [{ op: "retarget", repairs, path_glob? }] }` → `preview.retarget` |
 | `links_stale` | `path_glob?`, `limit? = 500`, `summary?` | `spec/graph` §6: `{ stale: [{ doc_id, path (the source), block_id (null for a frontmatter edge), predicate, provenance, dst_kind, target, authored, anchor, reason }], truncated, summary?: { total, byTarget: [{ target, count }], bySource: [{ path, count }] } }` — a link row's fields under the `links` target's names (§1.2), `path`, `target` and `bySource[].path` in the reference form (`authored` stays as written) |
-| `links_repair` | `repairs[]` or `from_target`+`to_target`, `path_glob?`, `dry_run? = true` | as retarget; neither given → `target_missing` |
-| `docs_create` / `docs_move` / `docs_delete` / `docs_set_meta` | `docs_create { path, markdown, frontmatter? }`; the others `id?`/`path?` + `spec/mutate` §6 args (`to_path`, `retarget_inbound?`, `set?`/`unset?` — at least one key between them, 3.3), `dry_run?` (1.3) | (3.3: `apply { effects }` sugar, above) its results — `{ id, path, committed, diffs?, … }`: `docs_move` adds `retargeted` and `dangling: [{ doc_id, path, block_id, target, anchor, field? }]` (the inbound edges left pointing at the old path, each a link row under the `links` target's names), `docs_delete` adds `deleted` — every path (`path`, the `diffs` keys, `dangling[].path`; not `dangling[].target`, which is as authored) in the reference form; with `dry_run` nothing commits and the result carries `committed: false` and `diffs` (`{ <path>: { before, after } }` — create `"" → bytes`, delete `bytes → ""`, move two entries, meta before → after; a move — which retargets the inbound links unless `retarget_inbound: false`, `spec/mutate` 1.3 — also previews the rewritten sources and `retargeted`/`dangling`); a dry-run create still mints its `d_` id (`apply`'s rule) |
-| `docs_update` | `id?`, `path?`, `content`, `reason?`, `dry_run?` | `{ opset, plan, result }`; with `dry_run` the PLAN-ONLY call — `result: null`, nothing written, `plan` the rendered one-line-per-op text, the opset's `target: { id, path }` and `precondition: { id, path, baseRevision, hash }` (`spec/mutate` §5) with both paths in the reference form (the removed `docs_plan_update` was exactly this dry run, §9) |
+| `links_repair` | `repairs[]` or `from_target`+`to_target`, `path_glob?` | as retarget; neither given → `target_missing` |
+| `docs_create` / `docs_move` / `docs_delete` / `docs_set_meta` | `docs_create { path, markdown, frontmatter? }`; the others `id?`/`path?` + `spec/mutate` §6 args (`to_path`, `retarget_inbound?`, `set?`/`unset?` — at least one key between them, 3.3) | (3.3: `apply { effects }` sugar, above; 4.0: the Receipt) `docs_create`'s `revisions[0]` is the created document (`new_ids["$new.0"]` its id, the rest its blocks); `docs_move` adds `retargeted` and `dangling: [{ doc_id, path, block_id, target, anchor, field? }]` (the inbound edges left pointing at the old path, each a link row under the `links` target's names; a move retargets the inbound links unless `retarget_inbound: false`, `spec/mutate` 1.3) — `dangling[].path` in the reference form, `dangling[].target` as authored. The preview of each is `plan` over its effect (a create `"" → bytes`, a delete `bytes → ""`, a move two entries + the rewritten sources, a meta patch before → after, in `preview.diffs`); through 3.x `dry_run` (1.3) returned `{ id, path, committed: false, diffs }` and a dry-run create minted its `d` |
+| `docs_update` | `id?`, `path?`, `content`, `reason?` | (4.0) sugar for `apply { effects: [{ op: "set", target: { kind: "document", id }, field: "content", value: content }] }` → the Receipt; content equal to the document → `commit: null`, `revisions: []` (`spec/mutate` §11.7). The plan-only call is `plan` over that effect, its `preview.identity[<id>]` the opset's annotations (through 3.x `{ opset, plan, result }` with `dry_run` the plan-only call — the removed `docs_plan_update` was exactly that dry run, §9) |
 | `observe` / `observe_many` / `observe_delete` | `spec/store` §5 (`path` in either form) | its outcomes (`observe` sweeps the pool) as `{ id, path, rev, commitId, converged, echo, conflicted, dispositions }` (`observe_many`: one per item, `observe_delete`: `{ id, path, deleted }`) — the store's own `{ doc, commit, rev }` outcome of `spec/store` §9 is re-shaped at this boundary, `path` in the reference form |
 | `blocks_history` | `id`, `limit?` | §3 (not repo-scoped; `history_node` before 3.0) |
 | `docs_diff` / `docs_diff_unified` / `docs_read_at` / `docs_history` / `changes_since` | §3 | §3 (`diff` / `diff_unified` before 3.0) |
@@ -823,7 +832,7 @@ library (its result needs the opset).
 | `repos` | — | `{ repos: [{ slug, has_source }] }` by slug |
 | `version` | — | (1.4) which engine and which versions: `{ engine: "typescript" \| "rust", version, components: { <package or crate>: <version>, … }, specs: { oqx, format, reconcile, store, properties, graph, search, mutate, sync, surface, cli }, schema, mcp: { protocol, sdk? }, runtime, commit, built }` — `version` is the serving binary's own (the `omgbase` npm package or crate); `components` every omgbase package the binary is built from with its version (the reference: `omgbase`, `@omgbase/core`, `@omgbase/oqx`, `@omgbase/sync`, `@omgbase/fs-adapter`; the port: `omgbase` and each `omgbase-*` crate and `oqx`), keys sorted bytewise; `specs` the `spec/<x>/VERSION` each was built against (a compile-time constant, not a file read); `schema` the open database's `PRAGMA user_version`; `mcp.protocol` the protocol version served, `mcp.sdk` the SDK's version when one is used; `runtime` `node <version>` or `rustc <version>`; `commit` the build's git revision (short, `null` when unknown — a published crate reads `.cargo_vcs_info.json`, the npm package a `build-info.json` written by `pnpm build`), `built` its RFC 3339 build time or `null`. Values are engine- and release-specific, so §6 pins the **shape**: leaves are recorded as their type. No repo scope, no workspace needed beyond the database for `schema` (`null` without one). |
 
-Dry runs never trigger the host's post-mutation hook (the embed drain);
+`plan` never triggers the host's post-mutation hook (the embed drain);
 successful writes do.
 
 **Error data (3.0).** `spec/mutate` §8's data fields follow the same rule
@@ -1007,7 +1016,17 @@ followed by a committed one — the committed ids prove the dry run burned
 its ids (§9) through the sugar's realize shim. Batch 2 (3.3) adds one read to
 `write-docs-set-meta-delete`: `blocks_history` of a block of the patched
 document, whose latest disposition is the known-id head write's
-`edited`/`api` (§9) — the one observable of the migrated `docs_set_meta`. `apply`'s file-CAS holds in the writing
+`edited`/`api` (§9) — the one observable of the migrated `docs_set_meta`.
+The retirement (4.0, `spec/mutate` 3.0) adds `write-effects-create-and-fill`
+— one `apply` creates a document and inserts into its section and at its end
+and patches its frontmatter, the receipt mapping the document AND its parsed
+blocks (`$new.1`…) to the ids the replay minted in the plan's order, the
+blocks' biographies `inserted`/`api` — and rewrites `write-docs-update`
+(`plan { set content }` pinning `preview.identity`, then two `docs_update`
+Receipts, the no-change one `commit: null`); `write-effects-plan-execute`'s
+pinned `plan_id` is p2's. The dry-run cases (`write-apply`,
+`write-links-retarget-repair`, `write-sugar-over-effects`, `reads.json`'s
+sugar dry runs) move onto `plan` with the surface's removals. `apply`'s file-CAS holds in the writing
 engine's working tree, so a write through one engine and a later read of
 `repos_status`/`sync_status` through the other exercises the sync tables
 (`file_stats`, checkpoints) both engines must maintain alike.
@@ -1082,8 +1101,11 @@ both and runs both harnesses.
   a wikilink (a phantom's `dst` is absent).
 - **Pinned — the cursor decoder is lenient** (standard-alphabet base64 and
   `=` padding are accepted).
-- **Pinned — dry runs consume minted ids** (a dry-run insert advances the
-  `b` counter).
+- **Closed (4.0) — dry runs consumed minted ids** (a dry-run insert advanced
+  the `b` counter, 1.0–3.3). There is no `dry_run` on any tool since 4.0: the
+  preview is `plan`, which mints under the symbolic minter (`spec/mutate`
+  §11.4) and reports `$new.n`; the ids a committed run takes are exactly the
+  ones the plan would have (`write-effects-dry-run`).
 - **Fixed (3.0) — `nodes_get` with an unknown block id was `doc_missing`** (the
   doc was inferred first), and a block outside its explicit `doc` scope was
   `block_missing` without data. `blocks_get` has no scope; an unknown id is
@@ -1237,14 +1259,22 @@ both and runs both harnesses.
   3.1 the first three reached the kernel as a malformed op (`block_missing`
   "block undefined not found") and `blocks_check` committed nothing and
   reported success.
-- **Pinned (3.2) — the sugar tools' dry runs still burn ids.** The effect
-  planner's own dry run (`plan`, `apply { effects, dry_run }`) burns none;
-  the sugar realizes its plan's `new_ids` with one production mint each so
-  the 3.1 contract above ("dry runs consume minted ids") and `spec/cli` §3.6
-  hold unchanged. Retired with the sugar's `dry_run` at 4.0. The document
-  operations (3.3) realize alike: a dry-run `docs_create` mints its `d`, a
-  dry-run `docs_move` the discarded `b`s of its retarget re-parse
-  (`spec/mutate` §10), exactly as the library operations did.
+- **Pinned (3.2), closed (4.0) — the sugar tools' dry runs still burned ids.**
+  The effect planner's own dry run (`plan`) burns none; through 3.x the sugar
+  realized its plan's `new_ids` with one production mint each so the 3.1
+  contract above ("dry runs consume minted ids") and `spec/cli` §3.6 held
+  unchanged (the document operations alike: a dry-run `docs_create` minted
+  its `d`, a dry-run `docs_move` the discarded `b`s of its retarget re-parse,
+  `spec/mutate` §10). Retired with the sugar's `dry_run` at 4.0 — the shim
+  with it.
+- **Changed (4.0) — a committed `docs_create` (and the `create` effect) is a
+  known-id ingest of the planner's adopted tree** (`spec/mutate` 3.0 §11.3,
+  §10): `inserted / 1 / api / null` dispositions where the reconciling ingest
+  wrote `inserted / null / null / m2.3`; the same ids under the fixture minter
+  (the `b`s are minted by the replay before the transaction instead of inside
+  it), the same bytes, revision and commit — nothing a read of
+  `write-docs-create-move` shows moved; `write-effects-create-and-fill` pins
+  the biographies.
 - **Changed (3.3) — a committed `docs_set_meta` is a known-id head write.**
   The library operation re-ingested the patched file through the reconciling
   resolver, so every block of the document got a matcher disposition
@@ -1275,6 +1305,25 @@ both and runs both harnesses.
 
 ## Decisions
 
+- 2026-10-12, surface 4.0: the retirement release of ADR-021 (with
+  `spec/mutate` 3.0 and `spec/cli` 4.0; no deprecation period — no client of
+  the retired inputs existed). Removed: `apply.ops` (the kernel ops are a
+  library/fixture contract), `dry_run` on `apply` and every sugar tool (the
+  preview is `plan`; the dry-run id burn of §9 is closed), `blocks_update`'s
+  `attrs` bag (`checked` is the one editable attribute), `links_retarget` /
+  `links_repair`'s dry-run default and `applied` (they commit; the preview is
+  `plan { retarget }` → `preview.retarget`), `docs_update`'s `{ opset, plan,
+  result }` and its `dry_run`. Changed: every sugar tool returns the Receipt;
+  `docs_update` is `set content` sugar (content equal to the document → a plan
+  with nothing to do, `commit: null`); a committed `docs_create` carries `api`
+  dispositions (§9). Added: `preview.identity` and `preview.retarget` on the
+  Plan; the retired-name messages for `ops`, `dry_run`, `attrs` (§4). Tools
+  removed or changed in meaning: a major. Fixtures: `interop.json` 24 → 25
+  (`write-effects-create-and-fill`; `write-docs-update` rewritten;
+  `write-effects-*` re-digested under `planner_v` p2), `reads.json`'s two
+  `docs_update` dry runs → `plan`, `tool-descriptions.json` (`plan`,
+  `docs_update`); the remaining dry-run calls of `interop.json` / `reads.json`
+  and the descriptions of the sugar tools move with the removals.
 - 2026-10-12, surface 3.3: ADR-021's migration phase, batch 2 — the four
   document operations (`docs_create`, `docs_delete`, `docs_move`,
   `docs_set_meta`; §4 "The document operations") are `apply { effects }`

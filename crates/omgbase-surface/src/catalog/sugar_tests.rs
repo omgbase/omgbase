@@ -271,12 +271,15 @@ impl Pair {
     }
 }
 
-/// The one difference a committed `docs_set_meta` may show (design §2 item
-/// 6, pinned by the interop `write-docs-set-meta-delete` history read): the
-/// rows of the new commit. Every row the legacy path wrote as
+/// The one difference a committed `docs_set_meta` or `docs_create` may show
+/// (design §2 item 6, pinned by the interop `write-docs-set-meta-delete`
+/// history read; the retirement design §2 (a) for a create): the rows of
+/// the new commit. Every row the legacy path wrote as
 /// `same`/`exact_hash`/`m<version>` the planner path writes as
-/// `edited`/`api`/`NULL` for the same `(commit, block)`; rows of other kinds
-/// (and every earlier commit's) are identical.
+/// `edited`/`api`/`NULL`, and every `inserted`/`NULL`/`m<version>` row of a
+/// created document's reconciling ingest as `inserted`/`api`/`NULL`, for the
+/// same `(commit, block)`; rows of other kinds (and every earlier commit's)
+/// are identical.
 fn assert_pinned_set_meta_identity(label: &str, old: &Json, new: &Json, expect_relabel: bool) {
     let rows = |v: &Json| -> Vec<Vec<Json>> {
         v.as_array()
@@ -294,20 +297,32 @@ fn assert_pinned_set_meta_identity(label: &str, old: &Json, new: &Json, expect_r
         }
         assert_eq!(o[0], n[0], "[{label}] commit: {o:?} vs {n:?}");
         assert_eq!(o[1], n[1], "[{label}] block: {o:?} vs {n:?}");
-        assert_eq!(
-            (&o[2], &o[3]),
-            (&json!("same"), &json!("exact_hash")),
-            "[{label}] the legacy row {o:?} is not a `same`/`exact_hash` match"
-        );
         assert!(
             o[4].as_str().is_some_and(|m| m.starts_with('m')),
             "[{label}] the legacy row {o:?} carries no matcher version"
         );
-        assert_eq!(
-            (&n[2], &n[3], &n[4]),
-            (&json!("edited"), &json!("api"), &Json::Null),
-            "[{label}] the planner row {n:?} is not `edited`/`api`/NULL"
-        );
+        let planner = (&n[2], &n[3], &n[4]);
+        if o[2] == json!("inserted") {
+            // A created document: the reconciling ingest's `inserted` rows
+            // are the known-id ingest's `inserted / api`.
+            assert_eq!(o[3], Json::Null, "[{label}] the legacy row {o:?}");
+            assert_eq!(
+                planner,
+                (&json!("inserted"), &json!("api"), &Json::Null),
+                "[{label}] the planner row {n:?} is not `inserted`/`api`/NULL"
+            );
+        } else {
+            assert_eq!(
+                (&o[2], &o[3]),
+                (&json!("same"), &json!("exact_hash")),
+                "[{label}] the legacy row {o:?} is not a `same`/`exact_hash` match"
+            );
+            assert_eq!(
+                planner,
+                (&json!("edited"), &json!("api"), &Json::Null),
+                "[{label}] the planner row {n:?} is not `edited`/`api`/NULL"
+            );
+        }
         relabeled += 1;
     }
     assert!(
@@ -913,31 +928,40 @@ fn effect_driven_document_operations_match_their_legacy_handlers() {
     // docs_create: a dry run with frontmatter (the `d` burned), a rooted
     // path, a body with links (one into a missing document), an empty body,
     // a body without a trailing newline, a taken path (live document), a
-    // taken path (stray file), by-the-byte the same `path_taken` data.
+    // taken path (stray file), by-the-byte the same `path_taken` data. A
+    // committed create carries the pinned identity difference of mutate 3.0
+    // (the retirement design §2 (a)): the planner adopts the composed file as
+    // a loaded tree, so its blocks commit `inserted / 1 / api / NULL` where
+    // the library's reconciling ingest wrote `inserted / NULL / NULL / m2.3`
+    // — bytes, revision and commit sequence identical.
     p.ok(
         "create-dry",
         "docs_create",
         json!({ "path": "notes/dry.md", "markdown": "# Dry\n", "frontmatter": { "title": "Dry", "tags": ["a", "b"], "n": 2 }, "dry_run": true }),
     );
-    p.ok(
+    p.check_with(
         "create-rooted",
         "docs_create",
         json!({ "path": "/notes/new.md", "markdown": "---\ntitle: New\n---\n# New\n\nHello.\n" }),
+        true,
     );
-    p.ok(
+    p.check_with(
         "create-links",
         "docs_create",
         json!({ "path": "substances/gold.md", "markdown": "# Gold\n\nThe goal. See [[mercury]], [salt](/substances/salt.md) and [lost](nope.md).\n\n- [ ] refine\n", "frontmatter": { "type": "substance", "layer": "working", "verified": false } }),
+        true,
     );
-    p.ok(
+    p.check_with(
         "create-empty",
         "docs_create",
         json!({ "path": "notes/empty.md", "markdown": "" }),
+        false,
     );
-    p.ok(
+    p.check_with(
         "create-no-newline",
         "docs_create",
         json!({ "path": "notes/tight.md", "markdown": "Just a line", "frontmatter": {} }),
+        true,
     );
     p.err(
         "create-taken-doc",
@@ -1185,4 +1209,147 @@ fn docs_create_dry_run_consumes_the_document_id() {
     assert_eq!(taken["error"], "path_taken");
     assert_eq!(taken["data"], json!({}), "{taken}");
     assert_eq!(taken["message"], "document already exists at notes/dry.md");
+}
+
+/// Surface 4.0: `docs_update` is sugar for `set { document, field: "content" }`
+/// and answers with the Receipt. Its footprint equals the retired legacy
+/// path's — `plan_update` + the kernel `apply` of the opset's ops with its
+/// frontmatter override — exactly: both are known-id ingests, so the
+/// dispositions agree (unlike `docs_set_meta`'s and `docs_create`'s relabel);
+/// the one difference is the intent record (`commits.ops`), outside the
+/// footprint. A content already current is a plan with nothing to do: no
+/// commit, no revision, the store untouched.
+#[test]
+fn docs_update_is_set_content_sugar_with_the_legacy_footprint() {
+    let Some(files) = corpus() else {
+        return;
+    };
+    let mut legacy = surface(&files);
+    let mut sugar = surface(&files);
+    const MUTUS: &str = "texts/mutus-liber.md";
+    let content = "---\ntype: text\nlayer: draft\ntradition: western\nera: 1677\ntags: [text, images]\nverified: false\n---\n\n# Mutus Liber\n\nOnly this, and a [link](/substances/salt.md).\n\n- [x] Obtain a facsimile with plate numbering\n";
+    // The legacy path, by hand (the deleted `apply_opset`): plan, then the
+    // kernel ops with the opset's frontmatter as `set_frontmatter`.
+    let repo = legacy.default_repo.clone();
+    let opset = legacy
+        .store_mut()
+        .plan_update(&repo, MUTUS, content, &Config::default())
+        .unwrap();
+    assert!(opset.converges);
+    let req = omgbase_store::ApplyRequest {
+        repo_id: repo.clone(),
+        ops: opset.kernel_ops(),
+        origin: omgbase_store::ApplyOrigin::new("agent:test", Some("interop")),
+        dry_run: false,
+        set_frontmatter: match &opset.frontmatter {
+            Some(raw) => vec![omgbase_store::SetFrontmatter {
+                doc: opset.target_doc.clone(),
+                raw: raw.clone(),
+            }],
+            None => Vec::new(),
+        },
+    };
+    let WriteTarget::Fixed(ds) = &mut legacy.writes else {
+        panic!("fixed doc store")
+    };
+    let legacy_result = legacy
+        .store
+        .apply(&req, ds.as_mut(), CLOCK)
+        .expect("the legacy apply");
+    assert!(legacy_result.committed);
+
+    sugar.actor = "agent:test".to_owned();
+    let receipt = outcome(sugar.call_result(
+        "docs_update",
+        &json!({ "path": MUTUS, "content": content, "reason": "interop" }),
+    ));
+    assert_eq!(receipt["committed"], json!(true));
+    assert_eq!(receipt["plan_id"].as_str().map(str::len), Some(64));
+    assert_eq!(receipt["commit"], json!("c_20"));
+    assert_eq!(
+        receipt["revisions"],
+        json!([{ "id": "d_17", "path": "/texts/mutus-liber.md", "hash": legacy_result.revisions[0].hash }])
+    );
+    assert!(
+        receipt["new_ids"].as_object().map(Map::len) >= Some(opset.summary.created),
+        "a symbol per inserted block (a re-parse's discarded mint included): {receipt}"
+    );
+    assert!(receipt.get("opset").is_none() && receipt.get("plan").is_none());
+    // The legacy `plan_update` minted its reconcile's and dry runs' ids under
+    // the production minter (3.x: a plan burned ids); the planner runs it
+    // under a throwaway symbol table, so the new blocks' ids differ by
+    // offset — everything else, and every disposition's labels, agree.
+    let (fp_old, fp_new) = (footprint(&legacy), footprint(&sugar));
+    for table in ["commits", "docs", "revisions", "pending", "files", "pool"] {
+        assert_eq!(fp_new[table], fp_old[table], "{table}");
+    }
+    let labels = |fp: &Json| -> Vec<Json> {
+        fp["dispositions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|r| r[0] == json!("c_20"))
+            .map(|r| json!([r[2], r[3], r[4]]))
+            .collect()
+    };
+    let (mut old_labels, mut new_labels) = (labels(&fp_old), labels(&fp_new));
+    old_labels.sort_by_key(|v| v.to_string());
+    new_labels.sort_by_key(|v| v.to_string());
+    assert_eq!(new_labels, old_labels, "both paths are known-id ingests");
+    assert!(
+        new_labels
+            .iter()
+            .all(|l| l[1] == json!("api") && l[2] == Json::Null),
+        "{new_labels:?}"
+    );
+    assert_eq!(
+        fp_new["blocks"].as_array().unwrap().len(),
+        fp_old["blocks"].as_array().unwrap().len()
+    );
+    let ops: Option<String> = sugar
+        .store
+        .conn()
+        .query_row(
+            "SELECT ops FROM commits WHERE commit_id = 'c_20'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert!(
+        ops.is_some_and(|o| o.contains("\"field\":\"content\"")),
+        "the intent record names the effect"
+    );
+
+    // Already current: nothing planned, nothing committed.
+    let before = footprint(&sugar);
+    let again =
+        outcome(sugar.call_result("docs_update", &json!({ "path": MUTUS, "content": content })));
+    assert_eq!(again["commit"], Json::Null);
+    assert_eq!(again["revisions"], json!([]));
+    assert_eq!(again["new_ids"], json!({}));
+    assert_eq!(again["committed"], json!(true));
+    assert_eq!(footprint(&sugar), before, "no change, no commit");
+
+    // `dry_run` is no longer an argument; a miss is the locator's `doc_missing`.
+    let dry = outcome(sugar.call_result(
+        "docs_update",
+        &json!({ "path": MUTUS, "content": content, "dry_run": true }),
+    ));
+    assert_eq!(dry["error"], "filter_invalid", "{dry}");
+    let missing = outcome(sugar.call_result(
+        "docs_update",
+        &json!({ "path": "nope.md", "content": "# x\n" }),
+    ));
+    assert_eq!(missing["error"], "doc_missing");
+    assert_eq!(missing["data"], json!({ "path": "nope.md" }));
+    // The identity decision is the plan's `preview.identity`.
+    let plan = outcome(sugar.call_result(
+        "plan",
+        &json!({ "effects": [{ "op": "set", "target": { "kind": "document", "path": MUTUS }, "field": "content", "value": "# Mutus Liber\n\nOnly this.\n" }] }),
+    ));
+    let identity = &plan["preview"]["identity"]["d_17"];
+    assert_eq!(identity["matcher_v"], json!(opset.matcher_v));
+    assert_eq!(identity["summary"]["preserved"], json!(1));
+    assert_eq!(identity["ops"][0]["op_index"], json!(0));
+    assert!(identity["ops"][0].get("disposition").is_some());
 }

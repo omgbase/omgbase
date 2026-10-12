@@ -1,20 +1,22 @@
 import { parseArgs } from "node:util";
-import { docsUpdate, renderOpsetPlan, surfaceDocsUpdate, type DocsUpdateContext } from "@omgbase/core";
+import { applyEffectsDetailed, planEffects, referencePath, renderIdentityPlan, surfacePlan, surfaceReceipt, type Effect, type Plan, type Receipt } from "@omgbase/core";
 import type { Cli } from "../context.js";
 import type { Command } from "../commands.js";
 import { CliUsageError, EXIT_OK, renderHelp } from "../output.js";
-import { readContent, extractContentOpts } from "./_mutate.js";
+import { readContent, extractContentOpts, receiptIds, defaultActor } from "./_mutate.js";
 import { cmdUpdate as cmdUpdateBlock } from "./mutate.js";
 import { remoteCall, docLocator, requireDoc } from "./_remote.js";
 
 // `omg update <target> (-f file | -)`: a polymorphic-target command (the omgbase
 // north-star — every command accepts any entity ref). A block id (b_…) replaces
 // that block's markdown (CAS-pinned, the low-level op). A doc id or path is the
-// note's docs.update: submit a complete proposed document; the engine reconciles
-// it against the current tree, preserves stable block ids for recognizably-same
-// structure, and commits the derived opset through the kernel write path. Global
-// --dry-run (or --plan) prints the plan (identity effects + summary), commits
-// nothing.
+// whole-document update: the complete proposed document is ONE `set content`
+// effect (spec/mutate §11.3; the `docs_update` tool's sugar, spec/surface 4.0) —
+// the engine reconciles it against the current tree, preserves stable block ids
+// for recognizably-same structure, and commits the derived ops as one
+// transaction. The global --dry-run is the plan: it prints the identity
+// consequences from the Plan's `preview.identity` (spec/cli §3.6, 4.0: every dry
+// run is a plan and burns no id) and commits nothing.
 
 function runUpdate(cli: Cli, args: string[]): number | Promise<number> {
   // Peek at the target to dispatch: a `b_` token is a block replace — a token
@@ -32,18 +34,18 @@ async function runDocUpdate(cli: Cli, args: string[]): Promise<number> {
   const { values, positionals } = parseArgs({
     args: content.rest,
     allowPositionals: true,
-    options: { actor: { type: "string" }, reason: { type: "string" }, plan: { type: "boolean" }, help: { type: "boolean" } },
+    options: { actor: { type: "string" }, reason: { type: "string" }, help: { type: "boolean" } },
   });
   if (values.help) {
     return renderHelp(cli, {
       name: "update",
       summary: "Replace a block's markdown (b_… target), or reconcile a whole document from complete new bytes (doc id/path)",
-      usage: "update <block|doc> (-m <markdown> | -f <file> | -) [--plan] [--expect <hash>] [--reason <s>] [--actor <s>] [--dry-run]",
+      usage: "update <block|doc> (-m <markdown> | -f <file> | -) [--expect <hash>] [--reason <s>] [--actor <s>] [--dry-run]",
       options: [
         ["-m <markdown>", "content inline"],
         ["-f <file>", "content from a file"],
         ["-", "content from stdin"],
-        ["--plan", "(doc) print the reconciliation opset — identity effects + summary — and commit nothing"],
+        ["--dry-run", "(doc) print the reconciliation plan — identity effects + summary — and commit nothing"],
         ["--expect <hash>", "(block) fail with stale_expectation unless the block's hash still matches"],
         ["--reason <s>", "commit reason recorded in history"],
         ["--actor <s>", "commit actor (default human:$USER)"],
@@ -53,56 +55,61 @@ async function runDocUpdate(cli: Cli, args: string[]): Promise<number> {
   const doc = positionals[0];
   if (!doc) throw new CliUsageError("update requires a <doc> (id or path)");
   const bytes = readContent(content);
-  const dryRun = Boolean(values.plan) || cli.flags.dryRun;
+  const dryRun = cli.flags.dryRun;
 
-  let opset: ReturnType<typeof docsUpdate>["opset"];
-  let result: ReturnType<typeof docsUpdate>["result"];
+  let plan: Plan | undefined;
+  let receipt: Receipt | undefined;
   if (cli.flags.server) {
-    // Remote: docs_update reconciles + commits server-side, returning the same
-    // { opset, result } — render unchanged.
-    const r = await remoteCall<{ opset: typeof opset; result: typeof result }>(cli, "docs_update", {
-      ...docLocator(doc),
-      content: bytes,
-      ...(values.reason ? { reason: values.reason } : {}),
-      ...(dryRun ? { dry_run: true } : {}),
-    });
-    opset = r.opset;
-    result = r.result;
+    // Remote: the `docs_update` tool commits the `set content` server-side and
+    // returns the Receipt (the confirmation then lists the ids it minted, as a
+    // remote `apply` does); the dry run is the `plan` tool over the same effect.
+    if (dryRun) plan = await remoteCall<Plan>(cli, "plan", { effects: [{ op: "set", target: { kind: "document", ...docLocator(doc) }, field: "content", value: bytes }] });
+    else receipt = await remoteCall<Receipt>(cli, "docs_update", { ...docLocator(doc), content: bytes, ...(values.reason ? { reason: values.reason } : {}) });
   } else {
     const ws = cli.workspace();
     const repo = cli.repo(ws);
     if (!repo.rootPath) throw new CliUsageError(`repo '${repo.slug}' has no filesystem source; 'update' needs a working tree`);
-    const ctx: DocsUpdateContext = {
+    const effects: Effect[] = [{ op: "set", target: { kind: "document", id: requireDoc(ws.store, repo.repoId, doc) }, field: "content", value: bytes }];
+    const req = {
       repoId: repo.repoId,
       rootPath: repo.rootPath,
+      effects,
+      origin: { actor: values.actor ?? defaultActor(), ...(values.reason ? { reason: values.reason } : {}) },
       ...(ws.omgbaseDir ? { omgbaseDir: ws.omgbaseDir } : {}),
-      ...(values.actor ? { actor: values.actor } : {}),
     };
-    ({ opset, result } = surfaceDocsUpdate(docsUpdate(ws.store, ctx, requireDoc(ws.store, repo.repoId, doc), bytes, {
-      dryRun,
-      ...(values.reason ? { reason: values.reason } : {}),
-    })));
+    if (dryRun) {
+      plan = surfacePlan(planEffects(ws.store, req));
+    } else {
+      const res = applyEffectsDetailed(ws.store, req);
+      plan = surfacePlan(res.plan);
+      receipt = res.receipt === undefined ? undefined : surfaceReceipt(res.receipt);
+    }
   }
 
   if (cli.flags.mode !== "human") {
-    cli.io.out(JSON.stringify({ opset, result }));
+    cli.io.out(JSON.stringify(receipt ?? plan));
     return EXIT_OK;
   }
 
-  if (dryRun || result === null) {
-    const s = opset.summary;
-    cli.io.err(cli.style.dim(`  plan for ${cli.style.accent(opset.target.path)}${opset.converges ? "" : " — DOES NOT CONVERGE (will not apply)"}`));
-    cli.io.out(renderOpsetPlan(opset));
-    void s;
+  if (receipt === undefined) {
+    // The plan: its one effect names the document; `preview.identity[<id>]` is
+    // the opset plan (one line per op, an empty line, the summary).
+    const target = plan!.effects[0] && "target" in plan!.effects[0] ? plan!.effects[0].target : undefined;
+    const docId = target && target.kind === "document" ? target.id : undefined;
+    const path = target && target.kind === "document" ? referencePath(target.path) : doc;
+    const identity = docId !== undefined ? plan!.preview?.identity?.[docId] : undefined;
+    cli.io.err(cli.style.dim(`  plan for ${cli.style.accent(path)}`));
+    if (identity) cli.io.out(renderIdentityPlan(identity));
     return EXIT_OK;
   }
 
+  // The Receipt confirmation (§4): one revision per touched document; every id
+  // the plan's results name, once each (a block appears in several ops' results
+  // — an update then a retile of the same block — and is listed a single time).
   const g = cli.render.g;
-  cli.io.err(cli.style.dim(`  ${cli.style.ok(g.ok)} updated ${cli.style.accent(opset.target.path)} · ${opset.summary.preserved} preserved, ${opset.summary.updated} updated, ${opset.summary.moved} moved, ${opset.summary.created} created, ${opset.summary.removed} removed`));
-  // Every id the opset touched, once each: a block appears in several ops'
-  // results (an update then a retile of the same block), the confirmation
-  // lists it a single time.
-  for (const id of new Set(result.results.flatMap((r) => r.ids))) cli.io.out(id);
+  const n = receipt.revisions.length;
+  cli.io.err(cli.style.dim(`  ${cli.style.ok(g.ok)} committed · ${n} document${n === 1 ? "" : "s"} touched`));
+  for (const id of new Set(receiptIds(receipt, plan))) cli.io.out(id);
   return EXIT_OK;
 }
 

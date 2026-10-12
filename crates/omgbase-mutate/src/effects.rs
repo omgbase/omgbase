@@ -29,12 +29,15 @@ use serde_json::{Map, Value, json};
 use crate::changeset::Op;
 use crate::error::{ErrorCode, MutationError, Result};
 use crate::ops::{At, Expect, OpResult, Parent, To};
+use crate::opset::{OpsetSummary, PlanDisposition};
 
 /// The plan schema version this crate reads and writes.
 pub const PLAN_VERSION: u64 = 1;
 /// The lowering + conflict rules version pinned in `spec/mutate` §11 (the
-/// `matcher_v` precedent).
-pub const PLANNER_V: &str = "p1";
+/// `matcher_v` precedent): `p2` since mutate 3.0 — a `create` is a loaded
+/// document whose block symbols are in `new_ids`, so every plan with a
+/// `create` digests differently from `p1`.
+pub const PLANNER_V: &str = "p2";
 
 // ---- `$new.<n>` ---------------------------------------------------------------------------
 
@@ -986,22 +989,36 @@ pub fn classify_field<'a>(
 /// planned alone, spliced into a longer op list — `set document.content`).
 #[must_use]
 pub fn shift_placeholders(op: &Op, offset: usize) -> Op {
-    let s = |v: &String| -> String {
-        match crate::changeset::parse_placeholder(v) {
-            Some((n, i)) => format!("${}.ids[{i}]", n + offset),
-            None => v.clone(),
-        }
-    };
+    map_block_ids(op, |v| match crate::changeset::parse_placeholder(v) {
+        Some((n, i)) => format!("${}.ids[{i}]", n + offset),
+        None => v.to_owned(),
+    })
+}
+
+/// Every block id a kernel op names — `block`, `blocks`, a placement's parent
+/// block or section heading and its anchor, the keys of a per-block `expect`
+/// map, and an `insert`'s `doc` — rewritten by `f` (§11.7: the replay turns
+/// the `$new.<n>` symbols of a created document into the ids it minted).
+#[must_use]
+pub fn map_block_ids(op: &Op, f: impl Fn(&str) -> String) -> Op {
+    let s = |v: &String| -> String { f(v) };
     let to = |t: &To| To {
         parent: match &t.parent {
             Parent::Block(id) => Parent::Block(s(id)),
-            other => other.clone(),
+            Parent::Section { heading } => Parent::Section {
+                heading: s(heading),
+            },
+            Parent::Doc => Parent::Doc,
         },
         at: match &t.at {
             At::Before(id) => At::Before(s(id)),
             At::After(id) => At::After(s(id)),
             other => other.clone(),
         },
+    };
+    let map = |m: &Option<BTreeMap<String, Expect>>| -> Option<BTreeMap<String, Expect>> {
+        m.as_ref()
+            .map(|m| m.iter().map(|(k, e)| (s(k), e.clone())).collect())
     };
     match op {
         Op::Insert {
@@ -1010,7 +1027,7 @@ pub fn shift_placeholders(op: &Op, offset: usize) -> Op {
             markdown,
             expect,
         } => Op::Insert {
-            doc: doc.clone(),
+            doc: doc.as_ref().map(s),
             to: to(t),
             markdown: markdown.clone(),
             expect: expect.clone(),
@@ -1033,15 +1050,17 @@ pub fn shift_placeholders(op: &Op, offset: usize) -> Op {
         Op::Move {
             blocks,
             to: t,
+            doc,
             expect,
         } => Op::Move {
             blocks: blocks.iter().map(s).collect(),
             to: to(t),
+            doc: doc.as_ref().map(s),
             expect: expect.clone(),
         },
         Op::Remove { blocks, expect } => Op::Remove {
             blocks: blocks.iter().map(s).collect(),
-            expect: expect.clone(),
+            expect: map(expect),
         },
         Op::Split { block, at, expect } => Op::Split {
             block: s(block),
@@ -1055,7 +1074,7 @@ pub fn shift_placeholders(op: &Op, offset: usize) -> Op {
         } => Op::Merge {
             blocks: blocks.iter().map(s).collect(),
             separator: separator.clone(),
-            expect: expect.clone(),
+            expect: map(expect),
         },
     }
 }
@@ -1436,11 +1455,16 @@ pub fn digest(core: &Value) -> String {
 
 // ---- the plan ----------------------------------------------------------------------------
 
-/// `opset.creates[]`: a `create`'s composed file.
+/// `opset.creates[]` (3.0): a `create` as the plan carries it — its document
+/// symbol, path, composed file, and `before_op`, the index of the first
+/// kernel op planned after it (`ops.len()` when none): where `execute`
+/// adopts it again so the replay mints its block ids in the plan's order.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PlanCreate {
+    pub symbol: String,
     pub path: String,
     pub source: String,
+    pub before_op: usize,
 }
 
 /// `opset.moves[]`: a document rename (its retarget updates are in `ops`).
@@ -1482,7 +1506,7 @@ impl PlanOpset {
     #[must_use]
     pub fn to_json(&self) -> Value {
         json!({
-            "creates": self.creates.iter().map(|c| json!({ "path": c.path, "source": c.source })).collect::<Vec<_>>(),
+            "creates": self.creates.iter().map(|c| json!({ "symbol": c.symbol, "path": c.path, "source": c.source, "before_op": c.before_op })).collect::<Vec<_>>(),
             "moves": self.moves.iter().map(|m| json!({ "id": m.id, "from": m.from, "to": m.to })).collect::<Vec<_>>(),
             "tombstones": self.tombstones.iter().map(|t| json!({ "id": t.id, "path": t.path })).collect::<Vec<_>>(),
             "set_frontmatter": self.set_frontmatter.iter().map(|f| json!({ "doc": f.doc, "raw": f.raw })).collect::<Vec<_>>(),
@@ -1507,10 +1531,25 @@ impl PlanOpset {
             creates: arr("creates")?
                 .iter()
                 .map(|c| {
-                    Ok(PlanCreate {
-                        path: s(c, "path", "creates[]")?,
-                        source: s(c, "source", "creates[]")?,
-                    })
+                    let str_of = |k: &str| c.get(k).and_then(Value::as_str).map(str::to_owned);
+                    let before_op = c
+                        .get("before_op")
+                        .and_then(Value::as_u64)
+                        .and_then(|n| usize::try_from(n).ok());
+                    match (str_of("symbol"), str_of("path"), str_of("source"), before_op) {
+                        (Some(symbol), Some(path), Some(source), Some(before_op)) => {
+                            Ok(PlanCreate {
+                                symbol,
+                                path,
+                                source,
+                                before_op,
+                            })
+                        }
+                        _ => Err(
+                            "`plan.opset.creates[]` entries are { symbol, path, source, before_op }"
+                                .to_owned(),
+                        ),
+                    }
                 })
                 .collect::<std::result::Result<_, String>>()?,
             moves: arr("moves")?
@@ -1706,13 +1745,238 @@ pub struct PlanRevision {
     pub hash: String,
 }
 
-/// §11.4 `preview`: excluded from the digest, omittable on echo.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+/// One planned op of a `set document.content` as `preview.identity` reports
+/// it (mutate 3.0): the §7 `PlanOp` minus the op itself — `op_index` names
+/// the entry of `opset.ops` it became.
+#[derive(Clone, Debug, PartialEq)]
+pub struct IdentityOp {
+    pub op_index: usize,
+    pub disposition: PlanDisposition,
+    /// The carried id(s) the op acts on; empty for an insert of new structure.
+    pub blocks: Vec<String>,
+    pub confidence: Option<f64>,
+    pub reason: Option<String>,
+    /// The matcher's detail, when the planner recorded one.
+    pub detail: Option<Value>,
+}
+
+/// `preview.identity[<doc id>]` (mutate 3.0): what the whole-document
+/// planner (§7) decided for a `set document.content` — the `Opset`'s
+/// identity fields, surfaced since the opset itself is no longer a wire
+/// shape (`converges` is not here: a returned plan always converges).
+#[derive(Clone, Debug, PartialEq)]
+pub struct IdentityPreview {
+    pub matcher_v: String,
+    pub summary: OpsetSummary,
+    pub ops: Vec<IdentityOp>,
+    pub diagnostics: Vec<String>,
+}
+
+impl IdentityPreview {
+    #[must_use]
+    pub fn to_json(&self) -> Value {
+        json!({
+            "matcher_v": self.matcher_v,
+            "summary": self.summary.to_json(),
+            "ops": self.ops.iter().map(|o| {
+                let mut m = Map::new();
+                m.insert("op_index".to_owned(), json!(o.op_index));
+                m.insert("disposition".to_owned(), json!(o.disposition.as_str()));
+                m.insert("blocks".to_owned(), json!(o.blocks));
+                m.insert("confidence".to_owned(), json!(o.confidence));
+                m.insert("reason".to_owned(), json!(o.reason));
+                if let Some(d) = &o.detail {
+                    m.insert("detail".to_owned(), d.clone());
+                }
+                Value::Object(m)
+            }).collect::<Vec<_>>(),
+            "diagnostics": self.diagnostics,
+        })
+    }
+
+    pub fn from_json(v: &Value) -> std::result::Result<Self, String> {
+        let obj = v
+            .as_object()
+            .ok_or("`plan.preview.identity[]` must be an object")?;
+        let matcher_v = obj
+            .get("matcher_v")
+            .and_then(Value::as_str)
+            .ok_or("`plan.preview.identity[].matcher_v` must be a string")?
+            .to_owned();
+        let summary = obj
+            .get("summary")
+            .and_then(Value::as_object)
+            .ok_or("`plan.preview.identity[].summary` must be an object")?;
+        let count = |k: &str| -> usize {
+            summary
+                .get(k)
+                .and_then(Value::as_u64)
+                .and_then(|n| usize::try_from(n).ok())
+                .unwrap_or(0)
+        };
+        let summary = OpsetSummary {
+            preserved: count("preserved"),
+            updated: count("updated"),
+            moved: count("moved"),
+            created: count("created"),
+            removed: count("removed"),
+            split: count("split"),
+            merged: count("merged"),
+            ambiguous: count("ambiguous"),
+        };
+        let ops = obj
+            .get("ops")
+            .and_then(Value::as_array)
+            .ok_or("`plan.preview.identity[].ops` must be an array")?
+            .iter()
+            .map(|o| {
+                let disposition = o
+                    .get("disposition")
+                    .and_then(Value::as_str)
+                    .and_then(PlanDisposition::parse)
+                    .ok_or("`plan.preview.identity[].ops[].disposition` is not a disposition")?;
+                let op_index = o
+                    .get("op_index")
+                    .and_then(Value::as_u64)
+                    .and_then(|n| usize::try_from(n).ok())
+                    .ok_or("`plan.preview.identity[].ops[].op_index` must be an integer")?;
+                Ok(IdentityOp {
+                    op_index,
+                    disposition,
+                    blocks: o
+                        .get("blocks")
+                        .and_then(Value::as_array)
+                        .map(|a| {
+                            a.iter()
+                                .filter_map(Value::as_str)
+                                .map(str::to_owned)
+                                .collect()
+                        })
+                        .unwrap_or_default(),
+                    confidence: o.get("confidence").and_then(Value::as_f64),
+                    reason: o.get("reason").and_then(Value::as_str).map(str::to_owned),
+                    detail: o.get("detail").cloned(),
+                })
+            })
+            .collect::<std::result::Result<Vec<_>, String>>()?;
+        let diagnostics = obj
+            .get("diagnostics")
+            .and_then(Value::as_array)
+            .map(|a| {
+                a.iter()
+                    .filter_map(Value::as_str)
+                    .map(str::to_owned)
+                    .collect()
+            })
+            .unwrap_or_default();
+        Ok(Self {
+            matcher_v,
+            summary,
+            ops,
+            diagnostics,
+        })
+    }
+}
+
+/// A block a `retarget` rewrites, as `links_repair` reports it:
+/// `{ id, path, oldRaw, newRaw }`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RetargetHitPreview {
+    pub id: String,
+    pub path: String,
+    pub old_raw: String,
+    pub new_raw: String,
+}
+
+/// A repair pair with how many destinations it matched: `{ from, to, hits }`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RetargetPairPreview {
+    pub from: String,
+    pub to: String,
+    pub hits: usize,
+}
+
+/// `preview.retarget[]` (mutate 3.0): what a `retarget` effect found —
+/// `{ effect_index, hits, pairs }`, the `links_repair` report the retired
+/// `links_retarget { dry_run }` used to return.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RetargetPreview {
+    pub effect_index: usize,
+    pub hits: Vec<RetargetHitPreview>,
+    pub pairs: Vec<RetargetPairPreview>,
+}
+
+impl RetargetPreview {
+    #[must_use]
+    pub fn to_json(&self) -> Value {
+        json!({
+            "effect_index": self.effect_index,
+            "hits": self.hits.iter().map(|h| json!({ "id": h.id, "path": h.path, "oldRaw": h.old_raw, "newRaw": h.new_raw })).collect::<Vec<_>>(),
+            "pairs": self.pairs.iter().map(|p| json!({ "from": p.from, "to": p.to, "hits": p.hits })).collect::<Vec<_>>(),
+        })
+    }
+
+    pub fn from_json(v: &Value) -> std::result::Result<Self, String> {
+        let obj = v
+            .as_object()
+            .ok_or("`plan.preview.retarget[]` must be an object")?;
+        let s = |v: &Value, k: &str| -> std::result::Result<String, String> {
+            v.get(k)
+                .and_then(Value::as_str)
+                .map(str::to_owned)
+                .ok_or_else(|| format!("`plan.preview.retarget[]` {k} must be a string"))
+        };
+        let n = |v: &Value, k: &str| -> std::result::Result<usize, String> {
+            v.get(k)
+                .and_then(Value::as_u64)
+                .and_then(|n| usize::try_from(n).ok())
+                .ok_or_else(|| format!("`plan.preview.retarget[]` {k} must be an integer"))
+        };
+        Ok(Self {
+            effect_index: n(v, "effect_index")?,
+            hits: obj
+                .get("hits")
+                .and_then(Value::as_array)
+                .ok_or("`plan.preview.retarget[].hits` must be an array")?
+                .iter()
+                .map(|h| {
+                    Ok(RetargetHitPreview {
+                        id: s(h, "id")?,
+                        path: s(h, "path")?,
+                        old_raw: s(h, "oldRaw")?,
+                        new_raw: s(h, "newRaw")?,
+                    })
+                })
+                .collect::<std::result::Result<_, String>>()?,
+            pairs: obj
+                .get("pairs")
+                .and_then(Value::as_array)
+                .ok_or("`plan.preview.retarget[].pairs` must be an array")?
+                .iter()
+                .map(|p| {
+                    Ok(RetargetPairPreview {
+                        from: s(p, "from")?,
+                        to: s(p, "to")?,
+                        hits: n(p, "hits")?,
+                    })
+                })
+                .collect::<std::result::Result<_, String>>()?,
+        })
+    }
+}
+
+/// §11.4 `preview`: excluded from the digest, omittable on echo. `identity`
+/// (per document, in effect order) and `retarget` (per effect) are present
+/// on the wire only when non-empty (mutate 3.0).
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct PlanPreview {
     pub results: Vec<OpResult>,
     pub revisions: Vec<PlanRevision>,
     /// Path → `(before, after)`, in insertion order.
     pub diffs: Vec<(String, (String, String))>,
+    /// Doc id → the whole-document planner's identity decision.
+    pub identity: Vec<(String, IdentityPreview)>,
+    pub retarget: Vec<RetargetPreview>,
 }
 
 impl PlanPreview {
@@ -1722,15 +1986,59 @@ impl PlanPreview {
         for (path, (before, after)) in &self.diffs {
             diffs.insert(path.clone(), json!({ "before": before, "after": after }));
         }
-        json!({
-            "results": self.results.iter().map(OpResult::to_json).collect::<Vec<_>>(),
-            "revisions": self.revisions.iter().map(|r| json!({ "id": r.id, "path": r.path, "hash": r.hash })).collect::<Vec<_>>(),
-            "diffs": diffs,
-        })
+        let mut m = Map::new();
+        m.insert(
+            "results".to_owned(),
+            Value::Array(self.results.iter().map(OpResult::to_json).collect()),
+        );
+        m.insert(
+            "revisions".to_owned(),
+            Value::Array(
+                self.revisions
+                    .iter()
+                    .map(|r| json!({ "id": r.id, "path": r.path, "hash": r.hash }))
+                    .collect(),
+            ),
+        );
+        m.insert("diffs".to_owned(), Value::Object(diffs));
+        if !self.identity.is_empty() {
+            let mut identity = Map::new();
+            for (doc, i) in &self.identity {
+                identity.insert(doc.clone(), i.to_json());
+            }
+            m.insert("identity".to_owned(), Value::Object(identity));
+        }
+        if !self.retarget.is_empty() {
+            m.insert(
+                "retarget".to_owned(),
+                Value::Array(self.retarget.iter().map(RetargetPreview::to_json).collect()),
+            );
+        }
+        Value::Object(m)
     }
 
     pub fn from_json(v: &Value) -> std::result::Result<Self, String> {
         let obj = v.as_object().ok_or("`plan.preview` must be an object")?;
+        let identity = obj
+            .get("identity")
+            .and_then(Value::as_object)
+            .map(|m| {
+                m.iter()
+                    .map(|(doc, i)| Ok((doc.clone(), IdentityPreview::from_json(i)?)))
+                    .collect::<std::result::Result<Vec<_>, String>>()
+            })
+            .transpose()?
+            .unwrap_or_default();
+        let retarget = obj
+            .get("retarget")
+            .and_then(Value::as_array)
+            .map(|a| {
+                a.iter()
+                    .map(RetargetPreview::from_json)
+                    .collect::<std::result::Result<Vec<_>, String>>()
+            })
+            .transpose()?
+            .unwrap_or_default();
         let strings = |v: Option<&Value>| -> Option<Vec<String>> {
             v.and_then(Value::as_array).map(|l| {
                 l.iter()
@@ -1788,6 +2096,8 @@ impl PlanPreview {
             results,
             revisions,
             diffs,
+            identity,
+            retarget,
         })
     }
 }
@@ -2170,6 +2480,7 @@ mod tests {
                 parent: Parent::Block("$1.ids[0]".into()),
                 at: At::After("$2.ids[0]".into()),
             },
+            doc: None,
             expect: None,
         };
         assert_eq!(
@@ -2343,11 +2654,18 @@ mod tests {
         assert_eq!(js_number(1e20), "100000000000000000000");
         assert_eq!(js_number(1.7976931348623157e308), "1.7976931348623157e+308");
         assert_eq!(js_number(5e-324), "5e-324");
-        // §11.5: the empty core digests to the pinned value.
+        // §11.5: the empty core digests to the pinned value (`p1`, the 2.3
+        // vector) — and under the current planner version to its own.
         let empty = json!({ "version": 1, "planner_v": "p1", "effects": [], "opset": { "creates": [], "moves": [], "tombstones": [], "set_frontmatter": [], "ops": [] }, "preconditions": { "docs": [], "blocks": [], "parents": [], "absent_paths": [] }, "new_ids": [] });
         assert_eq!(
             digest(&empty),
             "a20097a9c319b59a1313c83e1fd494bbb3cf4895040fbbddd2866e56b16cddd3"
+        );
+        let mut current = empty.clone();
+        current["planner_v"] = json!(PLANNER_V);
+        assert_eq!(
+            digest(&current),
+            "6f43b302fdcd58ca4fd182b21a5bdab6fee3787ddc074f5e7c5c23b2cc368bf9"
         );
         // The spec's number vector (`effects::digest-vectors`), byte for byte.
         let numbers: Value = serde_json::from_str(

@@ -17,6 +17,8 @@ import { observeBatch } from "../sync/observe.js";
 import { apply, type Op } from "../mutate/apply.js";
 import { docsAppend, linksRepair, nodeSet, sectionsAppend, tasksComplete } from "../mutate/macros.js";
 import { composeFile, docsCreate, docsDelete, docsMove, docsSetMeta, splitFrontmatter, type DocOpContext } from "../mutate/docs.js";
+import { planUpdate } from "../mutate/plan-update.js";
+import { opsetKernelOps } from "../mutate/opset.js";
 import { surfaceApplyResult, surfaceDocMoveResult, surfaceDocOpResult, surfaceRetargetHits } from "../surface-paths.js";
 import { CORPUS_TS, FIXTURE_REPO_SLUG, cmpBytes, readCorpusFromDisk } from "../../corpus/surface/fixture.js";
 import { EngineError, errorBody } from "./errors.js";
@@ -44,7 +46,13 @@ import { buildServer } from "./server.js";
 // one identity change batch 2 accepts (spec/surface §9, 3.3): a committed
 // `docs_set_meta` is a known-id head write, not a reconciling re-ingest, so its
 // dispositions differ (`edited/api` for every block, not `same/exact_hash`
-// under the matcher); rows, files and mints are otherwise identical.
+// under the matcher); rows, files and mints are otherwise identical. Mutate 3.0
+// (slice 3) adds the second: a committed `docs_create` ingests the planner's
+// ADOPTED tree with known ids — `inserted/api` dispositions, the `b` ids minted
+// before the transaction instead of inside it (same ids, different order) — and
+// its dry run realizes the created document's block symbols too. The last
+// `describe` compares `docs_update` (4.0: `set content` sugar) with its legacy
+// handler over the library.
 
 // ---- workspaces -----------------------------------------------------------------
 
@@ -338,6 +346,19 @@ const LEGACY: Record<string, Legacy> = {
       ...(a.unset ? { unset: a.unset as string[] } : {}),
     }));
   },
+  // 4.0: the pre-retirement `docs_update` — the opset planned, then committed
+  // through the kernel with the opset's ops and `set_frontmatter` (`applyOpset`).
+  docs_update: (ws, a) => {
+    const docId = locateDoc(ws, a);
+    const opset = planUpdate(ws.store, ws.repoId, ws.dir, docId, a.content as string);
+    if (!opset.converges) throw new EngineError("plan_not_convergent", "legacy: does not converge");
+    const result = surfaceApplyResult(apply(ws.store, {
+      repoId: ws.repoId, rootPath: ws.dir, ops: opsetKernelOps(opset),
+      origin: { actor: "agent:mcp", ...(a.reason !== undefined ? { reason: a.reason as string } : {}) },
+      ...(opset.frontmatter ? { setFrontmatter: [{ doc: docId, raw: opset.frontmatter.raw }] } : {}),
+    }));
+    return { opset, result };
+  },
 };
 
 function viaLegacy(ws: Ws, tool: string, args: Args): Outcome {
@@ -450,6 +471,10 @@ const DOC_REASON = /^(create|delete|move|set_meta) /;
 function isSetMetaCommit(s: Scenario, dry: boolean, ok: boolean): boolean {
   return s.tool === "docs_set_meta" && !dry && ok;
 }
+/** A successful `docs_create` (mutate 3.0, slice 3): known-id ingest of the adopted tree — dispositions and mint ORDER differ. */
+function isCreate(s: Scenario, ok: boolean): boolean {
+  return s.tool === "docs_create" && ok;
+}
 
 function label(s: Scenario): string {
   return `${s.tool} ${JSON.stringify(s.args)}`;
@@ -479,7 +504,31 @@ async function compare(s: Scenario, dry: boolean): Promise<void> {
   expect(migrated.outcome.ok, `migrated ${migrated.outcome.ok ? "succeeded" : "failed"} where legacy ${legacy.outcome.ok ? "succeeded" : "failed"}: ${JSON.stringify(migrated.outcome.payload)}`).toBe(legacy.outcome.ok);
   expect(migrated.outcome.payload).toEqual(legacy.outcome.payload);
   expect(migrated.files).toEqual(legacy.files);
-  if (isSetMetaCommit(s, dry, legacy.outcome.ok)) {
+  if (isCreate(s, legacy.outcome.ok)) {
+    const { dispositions: legacyDispositions, ...legacyRest } = legacy.projection;
+    const { dispositions: migratedDispositions, ...migratedRest } = migrated.projection;
+    expect(migratedRest).toEqual(legacyRest);
+    if (dry) {
+      // Nothing written either way; the shim realizes every symbol — the `d` the
+      // legacy dry run minted, then the created document's block symbols (3.0).
+      expect(migratedDispositions).toEqual(legacyDispositions);
+      expect(migrated.mints.slice(0, legacy.mints.length)).toEqual(legacy.mints);
+      expect(migrated.mints.slice(legacy.mints.length).every((id) => id.startsWith("b_"))).toBe(true);
+    } else {
+      // The api rule: every block `inserted / 1 / api / null` where the reconciling
+      // ingest wrote `inserted / null / null / m*`; the same ids, the `b`s minted by
+      // the replay's parse before the transaction (the legacy ingest minted them inside it).
+      const commit = legacy.last ? (legacy.projection.commits as { commit_id: string; seq: number }[]).reduce((a, b) => (a.seq > b.seq ? a : b)).commit_id : null;
+      const relabelled = (legacyDispositions as Record<string, unknown>[])
+        .map((d) => (d.commit_id === commit ? { ...d, confidence: 1, reason: "api", matcher_v: null } : d))
+        .sort((a, b) => cmpBytes(JSON.stringify(a), JSON.stringify(b)));
+      expect(migratedDispositions).toEqual(relabelled);
+      expect([...migrated.mints].sort()).toEqual([...legacy.mints].sort());
+      if (legacy.mints.some((id) => id.startsWith("b_"))) expect(migrated.mints).not.toEqual(legacy.mints);
+      const firstNonBlock = migrated.mints.findIndex((id) => !id.startsWith("b_"));
+      expect(migrated.mints.slice(firstNonBlock).some((id) => id.startsWith("b_"))).toBe(false);
+    }
+  } else if (isSetMetaCommit(s, dry, legacy.outcome.ok)) {
     // The accepted identity change (spec/surface §9, 3.3): the known-id head
     // write labels every block of the document itself where the reconciling
     // re-ingest ran the matcher — the rows differ in `dispositions` only (the
@@ -621,4 +670,44 @@ describe("the pinned divergences (spec/mutate §10: the two 3.2 fixes; surface 3
       expect((r.payload as { message: string }).message).toContain(`\`${arg}\` must name at least one block (${tool} takes`);
     }
   });
+});
+
+describe("docs_update is `set content` sugar (surface 4.0): the Receipt path commits what the legacy opset path committed", () => {
+  const NEWTON = CORPUS["practitioners/newton.md"]!;
+  const UPDATES: [string, string, string][] = [
+    ["an edited paragraph and a replaced task", "practitioners/newton.md", NEWTON.replace("Wrote more on alchemy than on physics, and published almost none of it.", "Wrote more on alchemy than on physics, and published almost none of it.").replace("1643–1727.", "1643–1727.")
+      .replace("- [ ] Read the Index Chemicus entries on [[mercury]]", "- [x] Read the Index Chemicus entries on [[mercury]]")],
+    ["a frontmatter change and a new paragraph", "substances/salt.md", CORPUS["substances/salt.md"]!.replace("verified: true", "verified: false") + "\nA closing remark.\n"],
+    ["content already current", "texts/emerald-tablet.md", CORPUS["texts/emerald-tablet.md"]!],
+  ];
+  for (const [label, path, content] of UPDATES) {
+    it(label, async () => {
+      const legacy = await legacySide("docs_update", { path, content, reason: "interop" });
+      const migrated = await migratedSide("docs_update", { path, content, reason: "interop" });
+      expect(legacy.outcome.ok).toBe(true);
+      expect(migrated.outcome.ok).toBe(true);
+      // The same bytes land; the rows agree table by table in count, the revisions
+      // in hash, the dispositions in kind/reason (both are known-id api writes).
+      expect(migrated.files).toEqual(legacy.files);
+      for (const table of Object.keys(legacy.projection)) expect(migrated.projection[table]!.length, table).toBe(legacy.projection[table]!.length);
+      const shape = (rows: unknown[]) => (rows as Record<string, unknown>[]).map((r) => [r.kind, r.reason, r.matcher_v, r.confidence].join("/")).sort();
+      expect(shape(migrated.projection.dispositions!)).toEqual(shape(legacy.projection.dispositions!));
+      const hashes = (rows: unknown[]) => (rows as Record<string, unknown>[]).map((r) => r.rendered_hash).sort();
+      expect(hashes(migrated.projection.revisions!)).toEqual(hashes(legacy.projection.revisions!));
+      // The Receipt names the same revisions the legacy result did.
+      const legacyResult = (legacy.outcome.payload as { result: { revisions: unknown[]; committed: boolean } }).result;
+      expect(migrated.outcome.payload).toMatchObject({ committed: true, revisions: legacyResult.revisions });
+      expect(migrated.last?.reason).toBe(legacy.last?.reason);
+      if (legacyResult.revisions.length === 0) {
+        // The zero-effects rule: neither side records a commit.
+        expect(migrated.outcome.payload).toMatchObject({ commit: null });
+        expect(migrated.projection.commits).toEqual(legacy.projection.commits);
+      } else {
+        expect(migrated.outcome.payload).toMatchObject({ commit: expect.stringMatching(/^c_/) });
+        expect(migrated.last?.ops).toMatch(/"field":"content"/);
+        // The planner's verify no longer burns real ids (it mints under a throwaway symbol table).
+        expect(migrated.mints.length).toBeLessThan(legacy.mints.length);
+      }
+    });
+  }
 });

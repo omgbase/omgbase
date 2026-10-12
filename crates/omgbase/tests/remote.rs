@@ -734,11 +734,13 @@ fn every_read_over_the_reference_server_renders_like_local() {
 /// locally on one workspace and remotely on its twin renders the same
 /// confirmation (ids included, under the minter seam) and lands the same
 /// bytes — `cat` through both afterwards agrees, and the remote engine's
-/// own files equal the local workspace's. The three places the reference's
+/// own files equal the local workspace's. The four places the reference's
 /// remote branch renders differently are pinned as they are: `update <b_>`
-/// has no CAS notice remotely, `--json` on the block sugar carries the
-/// tool's `id`/`ids`, and `retarget --apply` prints `retargeted N block(s)`
-/// (with the tool's whole result in `--json`). `node props` is refused.
+/// has no CAS notice remotely, `update <doc>` lists the Receipt's `new_ids`
+/// remotely (the plan's result ids locally), `--json` on the block sugar
+/// carries the tool's `id`/`ids`, and `retarget --apply` prints
+/// `retargeted N block(s)` (with the tool's whole result in `--json`).
+/// `node props` is refused.
 #[test]
 fn every_write_over_the_reference_server_lands_like_local() {
     let Some(omg) = ts_omg() else {
@@ -831,21 +833,51 @@ fn every_write_over_the_reference_server_lands_like_local() {
     rm.remove("ids");
     assert_eq!(rv, lv, "the ApplyResult underneath");
 
-    same(
-        "update <doc>",
+    // `update <doc>` (cli 4.0: one `set content` effect): the confirmation
+    // is the Receipt's on both sides; the ids differ by design — the local
+    // path has the plan at hand and lists every id the plan's results name
+    // (the reference's `receiptIds(receipt, plan)`), the remote `docs_update`
+    // tool answers with the Receipt alone, so the remote lists the ids it
+    // minted (`new_ids`, in order), each one among the local lines.
+    let (l, r) = p.both(
+        &server,
         &[
             "update",
             "notes/c.md",
             "-m",
             "# C\n\nHello again.\n\nNew para.\n",
         ],
+        None,
     );
+    assert_eq!(r.status.code(), l.status.code(), "update <doc>: exit");
+    assert_eq!(
+        sans_mcp(&text(&r.stderr)),
+        text(&l.stderr),
+        "update <doc>: stderr"
+    );
+    assert_eq!(text(&l.stderr), "  ok committed · 1 document touched\n");
+    let local_ids = ok_lines("update <doc>", &l);
+    let remote_ids = ok_lines("update <doc>", &r);
+    assert!(!remote_ids.is_empty(), "the minted id of the new paragraph");
+    assert!(
+        remote_ids.iter().all(|id| local_ids.contains(id)),
+        "update <doc>: remote {remote_ids:?} within local {local_ids:?}"
+    );
+    assert!(
+        local_ids.len() > remote_ids.len(),
+        "the local confirmation lists the carried ids too: {local_ids:?}"
+    );
+    assert_eq!(
+        p.remote_local_cat("notes/c.md"),
+        "# C\n\nHello again.\n\nNew para.\n"
+    );
+    // The dry run is the `plan` on both sides: identical.
     same(
-        "update <doc> --plan",
+        "update <doc> --dry-run",
         &[
+            "--dry-run",
             "update",
             "notes/c.md",
-            "--plan",
             "-m",
             "# C\n\nHello again.\n",
         ],

@@ -159,8 +159,9 @@ describe("plan + execute (§11.6, §11.7)", () => {
     // sequence artefact; the database has no trace of them).
     expect(project()).toEqual(before);
     expect(docStore.files.size).toBe(0);
-    // The replay minted b_6 (the insert's paragraph) before the transaction and the
-    // create's reconciling ingest b_7 inside it; both are burned (rows: none).
+    // The replay minted b_6 (the insert's paragraph) and b_7 (the created
+    // document's one block, its parse at `before_op`) before the transaction;
+    // both are burned (rows: none).
     expect(mintId("b")).toBe("b_8");
     // And the plan is still executable: nothing moved.
     const receipt = executePlan(store, { ...base(), docStore, plan });
@@ -182,9 +183,55 @@ describe("plan + execute (§11.6, §11.7)", () => {
         { op: "insert", into: { kind: "document", path: "a.md" }, markdown: "Q." },
       ],
     }) as Receipt;
-    expect(receipt.new_ids).toEqual({ "$new.0": "b_6", "$new.1": "d_1", "$new.2": "b_7" });
-    expect(receipt.revisions.map((r) => [r.id, r.path])).toEqual([["d_1", "n.md"], ["d_0", "a.md"]]);
+    // $new.0 the first insert; $new.1 the document, $new.2/$new.3 its heading and paragraph (3.0: the
+    // created tree's blocks are symbols too, minted by the replay's parse at the create's position);
+    // $new.4 the second insert. Revisions in load order: a.md was touched first.
+    expect(receipt.new_ids).toEqual({ "$new.0": "b_6", "$new.1": "d_1", "$new.2": "b_7", "$new.3": "b_8", "$new.4": "b_9" });
+    expect(receipt.revisions.map((r) => [r.id, r.path])).toEqual([["d_0", "a.md"], ["d_1", "n.md"]]);
     const created = store.db.prepare("SELECT path FROM docs WHERE doc_id = 'd_1'").get();
     expect(created).toEqual({ path: "n.md" });
+    expect(store.db.prepare("SELECT block_id, text FROM blocks WHERE doc_id = 'd_1' ORDER BY ordinal").all()).toEqual([{ block_id: "b_7", text: "N" }, { block_id: "b_8", text: "Body." }]);
+    expect(store.db.prepare("SELECT frontmatter_blob IS NOT NULL fm FROM revisions WHERE doc_id = 'd_1'").get()).toEqual({ fm: 1 });
+  });
+
+  it("slice 3: writing into a created document — $new.k aliased at execute, api dispositions, the file whole; a replay is path_taken", () => {
+    const docStore = new (class extends NullDocStore {
+      readonly files = new Map<string, string>();
+      override write(path: string, bytes: string): void {
+        this.files.set(path, bytes);
+      }
+    })();
+    const plan = planEffects(store, {
+      ...base(), docStore,
+      effects: [
+        { op: "create", path: "n.md", markdown: "# N\n\nBody.", frontmatter: { k: 1 } },
+        { op: "insert", into: { kind: "section", heading_id: "$new.1" }, markdown: "Tail." },
+        { op: "set", target: { kind: "block", id: "$new.2" }, field: "markdown", value: "Body, edited." },
+        { op: "move", targets: [{ kind: "block", id: "b_5" }], into: { kind: "document", id: "$new.0" }, at: "start" },
+      ],
+    });
+    expect(mintId("b")).toBe("b_6"); // nothing burned by planning
+    const receipt = executePlan(store, { ...base(), docStore, plan });
+    // b_7/b_8 the parse (pre-order), b_9 the insert, b_10 the update's discarded re-parse mint.
+    expect(receipt.new_ids).toEqual({ "$new.0": "d_1", "$new.1": "b_7", "$new.2": "b_8", "$new.3": "b_9", "$new.4": "b_10" });
+    expect(receipt.revisions.map((r) => r.id)).toEqual(["d_1", "d_0"]);
+    expect(docStore.files.get("n.md")).toBe("---\nk: 1\n---\n\nTail.\n\n# N\n\nBody, edited.\n\nTail.\n");
+    expect(store.db.prepare("SELECT block_id, text FROM blocks WHERE doc_id = 'd_1' AND deleted_commit IS NULL ORDER BY ordinal").all()).toEqual([
+      { block_id: "b_5", text: "Tail." }, { block_id: "b_7", text: "N" }, { block_id: "b_8", text: "Body, edited." }, { block_id: "b_9", text: "Tail." },
+    ]);
+    // The api rule: every block of the created document is `inserted / 1 / api / null` — the moved one included.
+    expect(store.db.prepare("SELECT block_id, kind, confidence, reason, matcher_v FROM dispositions WHERE commit_id = 'c_1' AND block_id IN ('b_5','b_7','b_8','b_9') ORDER BY block_id").all()).toEqual([
+      { block_id: "b_5", kind: "inserted", confidence: 1, reason: "api", matcher_v: null },
+      { block_id: "b_7", kind: "inserted", confidence: 1, reason: "api", matcher_v: null },
+      { block_id: "b_8", kind: "inserted", confidence: 1, reason: "api", matcher_v: null },
+      { block_id: "b_9", kind: "inserted", confidence: 1, reason: "api", matcher_v: null },
+    ]);
+    // A replay: the source document moved on (its triple is a precondition) — stale_plan first.
+    expect(() => executePlan(store, { ...base(), docStore, plan })).toThrow(expect.objectContaining({ code: "stale_plan", data: expect.objectContaining({ doc: "d_0" }) }));
+    // A create-only plan replayed hits the Absent guard: path_taken, nothing minted.
+    const only = planEffects(store, { ...base(), docStore, effects: [{ op: "create", path: "m.md", markdown: "# M" }] });
+    expect(executePlan(store, { ...base(), docStore, plan: only }).new_ids).toEqual({ "$new.0": "d_2", "$new.1": "b_11" });
+    expect(() => executePlan(store, { ...base(), docStore, plan: only })).toThrow(expect.objectContaining({ code: "path_taken", data: { path: "m.md" } }));
+    expect(store.db.prepare("SELECT count(*) n FROM commits WHERE origin = 'api'").get()).toEqual({ n: 2 });
   });
 });

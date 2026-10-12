@@ -10,10 +10,9 @@ import { DEFAULT_CONFIG, type ReconcileConfig } from "../reconcile/types.js";
 import { loadOldMatchBlocks } from "../sync/reconciling-ingest.js";
 import { loadMutDoc } from "./load.js";
 import { renderDoc, MutationError } from "./tree.js";
-import { apply, type ApplyResult, type Op } from "./apply.js";
-import type { DocStore } from "./doc-store.js";
+import { ChangesetPlanner, type Op } from "./apply.js";
 import { lowerTopLevel, lowerReplace, type LowerResult } from "./lower.js";
-import { summarizeOps, opsetKernelOps, type Opset, type PlanOp } from "./opset.js";
+import { summarizeOps, type Opset, type PlanOp } from "./opset.js";
 
 // Whole-document update planner (the note's plan_update): reconcile a proposed
 // complete document representation against the current stable block tree and
@@ -23,7 +22,10 @@ import { summarizeOps, opsetKernelOps, type Opset, type PlanOp } from "./opset.j
 // marks the opset `converges` when replaying its ops reproduces the proposed
 // bytes exactly — degrading identity (never content), which mirrors the
 // architecture's "false continuity is worse than lost continuity" and "identity
-// carries continuity, never truth".
+// carries continuity, never truth". Since mutate 3.0 the opset is the planner's
+// INTERNAL result: the `set content` effect (effects.ts) runs it, splices its
+// ops into the plan and surfaces its identity consequences as
+// `preview.identity`; the 3.x `apply_opset` / `docs_update` are gone.
 
 export interface PlanUpdateOptions {
   config?: ReconcileConfig;
@@ -44,6 +46,7 @@ function extractFrontmatter(blocks: RawBlock[]): { fmBlock: RawBlock | null; res
  * document does not exist (a create is docsCreate's job). Never writes.
  */
 export function planUpdate(store: Store, repoId: string, rootPath: string, docRef: string, content: string, opts: PlanUpdateOptions = {}): Opset {
+  void rootPath; // kept for the call shape; the planner never writes (3.0: the verify runs the in-memory planner, no doc store)
   const config = opts.config ?? DEFAULT_CONFIG;
   const info = findDocByRef(store, repoId, docRef);
   if (!info) throw new MutationError("doc_missing", `doc ${docRef} not found`, { doc: docRef });
@@ -73,7 +76,8 @@ export function planUpdate(store: Store, repoId: string, rootPath: string, docRe
   // builds frontmatterRaw as `bytes + separator`; mirror that for the target.
   const targetFm = fmBlock ? fmBlock.raw + fmBlock.trivia : null;
   const fmChanged = targetFm !== oldDoc.frontmatterRaw;
-  const setFrontmatter = fmChanged ? [{ doc: docId, raw: targetFm }] : undefined;
+  // The verify's file head (spec/mutate §11.3: `leading_trivia + raw`), when the frontmatter changes.
+  const head = fmChanged ? oldDoc.leadingTrivia + (targetFm ?? "") : undefined;
 
   const diagnostics: string[] = [];
 
@@ -82,13 +86,13 @@ export function planUpdate(store: Store, repoId: string, rootPath: string, docRe
   let chosen: LowerResult | null = null;
   let converges = false;
   const t2 = lowerTopLevel(oldDoc, rest, assignmentOf(result), dispositionsOf(result));
-  const v2 = verify(store, repoId, rootPath, path, opsOf(t2), setFrontmatter, content, currentContent);
+  const v2 = verify(store, repoId, docId, path, opsOf(t2), head, content, currentContent);
   if (v2.ok) {
     chosen = t2; converges = true;
   } else {
     diagnostics.push(`top-level lowering did not reproduce the proposed content byte-for-byte (${describeDivergence(v2, tree.children, content)}); falling back to full replace`);
     const t3 = lowerReplace(oldDoc, content);
-    const v3 = verify(store, repoId, rootPath, path, opsOf(t3), setFrontmatter, content, currentContent);
+    const v3 = verify(store, repoId, docId, path, opsOf(t3), head, content, currentContent);
     if (v3.ok) {
       chosen = t3; converges = true;
       diagnostics.push("full-replace plan converges (block identity not preserved)");
@@ -125,14 +129,18 @@ function opsOf(l: LowerResult): Op[] { return l.ops.map((p: PlanOp) => p.op); }
 
 type Verified = { ok: true } | { ok: false; actual: string | null; error: string | null };
 
-// Simulate a candidate op list and check the rendered result equals the exact
-// proposed content. An invalid script throws in apply → treated as non-convergent.
-function verify(store: Store, repoId: string, rootPath: string, path: string, ops: Op[], setFrontmatter: { doc: string; raw: string | null }[] | undefined, expected: string, currentContent: string): Verified {
+// Simulate a candidate op list (§4 steps 1–4 through the incremental planner,
+// the file head set first) and check the rendered result equals the exact
+// proposed content. An invalid script throws → treated as non-convergent.
+function verify(store: Store, repoId: string, docId: string, path: string, ops: Op[], head: string | undefined, expected: string, currentContent: string): Verified {
   try {
-    const res = apply(store, { repoId, rootPath, ops, origin: { actor: "plan:verify" }, dryRun: true, ...(setFrontmatter ? { setFrontmatter } : {}) });
+    const planner = new ChangesetPlanner(store, repoId);
+    if (head !== undefined) planner.setHead(docId, head);
+    for (const op of ops) planner.push(op);
+    const res = planner.finish();
     // A doc untouched by any op (e.g. an empty plan) is absent from diffs; its
     // effective result is the unchanged current content.
-    const after = res.diffs?.[path]?.after ?? currentContent;
+    const after = res.diffs[path]?.after ?? currentContent;
     return after === expected ? { ok: true } : { ok: false, actual: after, error: null };
   } catch (e) {
     return { ok: false, actual: null, error: e instanceof Error ? `${(e as MutationError).code ?? "error"}: ${e.message}` : String(e) };
@@ -153,92 +161,4 @@ function describeDivergence(v: Verified, proposed: RawBlock[], expected: string)
   const where = idx >= 0 ? `proposed block #${idx} (${proposed[idx]!.type}, bytes ${proposed[idx]!.span.start}-${proposed[idx]!.span.end})` : off >= expected.length ? "past the end of the proposed content" : "leading trivia";
   const snippet = (s: string): string => JSON.stringify(s.slice(off, off + 24));
   return `first divergence at byte ${off} in ${where}: expected ${snippet(expected)}, rendered ${snippet(actual)}`;
-}
-
-// ---- applying an opset ------------------------------------------------------
-
-export interface ApplyOpsetRequest {
-  repoId: string;
-  /** Working-tree root for the default filesystem write target; omit only with an explicit `docStore`. */
-  rootPath?: string;
-  /** Write target (ADR-014 §5); defaults to a filesystem store at `rootPath`. */
-  docStore?: DocStore;
-  opset: Opset;
-  origin: { actor: string; reason?: string };
-  dryRun?: boolean;
-  omgbaseDir?: string;
-  /** Commit timestamp (RFC 3339 UTC); defaults to now (see `ApplyRequest.ts`). */
-  ts?: string;
-}
-
-/**
- * Apply an opset through the kernel write path. Validates the plan's
- * preconditions against current state first (a stale plan fails, carrying
- * current truth, rather than silently reinterpreting) and refuses a plan that
- * did not verify byte-convergent.
- */
-export function applyOpset(store: Store, req: ApplyOpsetRequest): ApplyResult {
-  const { opset } = req;
-  if (!opset.converges) {
-    const why = opset.diagnostics.length > 0 ? ` — ${opset.diagnostics[opset.diagnostics.length - 1]}` : "";
-    throw new MutationError("plan_not_convergent", `opset does not reproduce the proposed content; re-plan${why}`, { diagnostics: opset.diagnostics });
-  }
-  // Precondition: the document must still be at the revision/content the plan
-  // was computed against.
-  const docId = opset.precondition.id;
-  const row = store.db.prepare("SELECT current_rev, lower(hex(file_hash)) fh FROM docs WHERE doc_id = ? AND deleted_commit IS NULL").get(docId) as { current_rev: string | null; fh: string | null } | undefined;
-  if (!row) throw new MutationError("doc_missing", `doc ${docId} not found`, { doc: docId });
-  const stale = (opset.precondition.baseRevision !== null && row.current_rev !== opset.precondition.baseRevision) || (row.fh !== null && row.fh !== opset.precondition.hash);
-  if (stale) {
-    throw new MutationError("stale_plan", "document changed since the plan was computed; re-plan", {
-      doc: docId,
-      expected_revision: opset.precondition.baseRevision,
-      current: { revision: row.current_rev, hash: row.fh },
-      retriable: true,
-    });
-  }
-
-  return apply(store, {
-    repoId: req.repoId,
-    ...(req.rootPath !== undefined ? { rootPath: req.rootPath } : {}),
-    ...(req.docStore !== undefined ? { docStore: req.docStore } : {}),
-    ops: opsetKernelOps(opset),
-    origin: req.origin,
-    ...(req.dryRun !== undefined ? { dryRun: req.dryRun } : {}),
-    ...(req.omgbaseDir !== undefined ? { omgbaseDir: req.omgbaseDir } : {}),
-    ...(req.ts !== undefined ? { ts: req.ts } : {}),
-    ...(opset.frontmatter ? { setFrontmatter: [{ doc: docId, raw: opset.frontmatter.raw }] } : {}),
-  });
-}
-
-// ---- convenience: docs.update = plan + apply --------------------------------
-
-export interface DocsUpdateContext {
-  repoId: string;
-  rootPath: string;
-  omgbaseDir?: string;
-  actor?: string;
-}
-
-export interface DocsUpdateResult {
-  opset: Opset;
-  /** null on dry_run (plan only) */
-  result: ApplyResult | null;
-}
-
-/**
- * Whole-document update convenience: plan then apply. `dryRun` returns the
- * opset without executing (the note's docs.update(..., dry_run=true)).
- */
-export function docsUpdate(store: Store, ctx: DocsUpdateContext, docRef: string, content: string, opts: { dryRun?: boolean; config?: ReconcileConfig; reason?: string } = {}): DocsUpdateResult {
-  const opset = planUpdate(store, ctx.repoId, ctx.rootPath, docRef, content, opts.config ? { config: opts.config } : {});
-  if (opts.dryRun) return { opset, result: null };
-  const result = applyOpset(store, {
-    repoId: ctx.repoId,
-    rootPath: ctx.rootPath,
-    opset,
-    origin: { actor: ctx.actor ?? "agent:update", ...(opts.reason !== undefined ? { reason: opts.reason } : {}) },
-    ...(ctx.omgbaseDir !== undefined ? { omgbaseDir: ctx.omgbaseDir } : {}),
-  });
-  return { opset, result };
 }

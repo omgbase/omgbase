@@ -17,7 +17,7 @@
 //
 // Nothing here decides anything about mutation; it drives the same code paths
 // production uses (`apply`, the macros, `docsCreate/Move/Delete/SetMeta`,
-// `planUpdate`/`applyOpset`, `observeBatch`) with the fixture minter installed
+// `planUpdate` + the `set content` effect, `observeBatch`) with the fixture minter installed
 // and a pinned commit clock, and re-expresses the results so two engines can be
 // compared.
 import { Store } from "../../src/core/store/store.js";
@@ -37,7 +37,7 @@ import {
 } from "../../src/mutate/macros.js";
 import { docsCreate, docsDelete, docsMove, docsSetMeta, type DocOpContext } from "../../src/mutate/docs.js";
 import { listPending, materializePending } from "../../src/mutate/materialize.js";
-import { applyOpset, planUpdate } from "../../src/mutate/plan-update.js";
+import { planUpdate } from "../../src/mutate/plan-update.js";
 import type { Opset } from "../../src/mutate/opset.js";
 import { applyEffects, canonicalJson, executeByDigest, executePlan, planEffects, type Plan, type Receipt } from "../../src/mutate/plan.js";
 import { toReconcileConfig, deepEqualTol, type FixtureConfig } from "../reconcile/fixture.js";
@@ -54,7 +54,7 @@ export { deepEqualTol, FIXTURE_REPO_SLUG };
 export type SpecOp =
   | { op: "insert"; doc?: string; to: To; markdown: string; expect?: Expect }
   | { op: "update"; block: string; markdown?: string; attrs?: Record<string, unknown>; expect?: Expect; trivia?: string; child_ids?: Record<string, string> }
-  | { op: "move"; blocks: string[]; to: To; expect?: Expect }
+  | { op: "move"; blocks: string[]; to: To; doc?: string; expect?: Expect }
   | { op: "remove"; blocks: string[]; expect?: Record<string, Expect> }
   | { op: "split"; block: string; at: number[]; expect?: Expect }
   | { op: "merge"; blocks: string[]; separator?: string; expect?: Record<string, Expect> };
@@ -109,9 +109,9 @@ export interface PlanStep {
   ts: string;
   doc: string;
   content: string;
-  /** also run `apply_opset` on the plan (README §7.2) */
+  /** also commit the same content as `apply_effects [set content]` (README §7, 3.0) → `{ receipt }` or the error */
   apply?: boolean;
-  /** the origin `apply_opset` commits under; defaults to `{ actor: "agent:update" }` */
+  /** the origin that commit runs under; defaults to `{ actor: "agent:update" }` */
   origin?: Origin;
   /**
    * Steps run between planning and applying (only `observe` / `disk`) — the way
@@ -613,8 +613,11 @@ function runPlan(r: Runner, s: PlanStep): StepOutcome {
   const out: Record<string, unknown> = { opset: toSpecOpset(opset) };
   if (s.before_apply) out.before_apply = s.before_apply.map((step) => runStep(r, step));
   if (s.apply) {
+    // 3.0: the opset is the planner's internal result; committing the content is
+    // the `set content` effect (README §11.3), whose receipt is recorded.
     try {
-      out.apply = applyOutcome(applyOpset(r.store, { repoId: r.repoId, docStore: r.docStore, opset, origin: s.origin ?? { actor: "agent:update" }, ts: s.ts }));
+      const effects = [{ op: "set", target: { kind: "document", id: opset.target.id }, field: "content", value: s.content }];
+      out.apply = receiptOutcome(applyEffects(r.store, { repoId: r.repoId, docStore: r.docStore, effects, origin: s.origin ?? { actor: "agent:update" }, ts: s.ts }) as Receipt);
     } catch (e) {
       out.apply = errorOutcome(e);
     }

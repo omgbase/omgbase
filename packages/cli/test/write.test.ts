@@ -139,11 +139,11 @@ describe("update — whole-document reconciliation", () => {
     expect(omg(["query", keep, "--ids"]).trim()).toBe(before);
   });
 
-  it("--plan shows the opset and writes nothing", () => {
+  it("--dry-run shows the plan (preview.identity rendered) and writes nothing", () => {
     const doc = "note2.md";
     omg(["new", doc, "-f", "-"], "# T\n\nParagraph one that is sufficiently long to reconcile here.\n");
     const before = readFileSync(join(vault, doc), "utf8");
-    const out = omg(["update", doc, "--plan", "-f", "-"], "# T\n\nParagraph one that is sufficiently long to reconcile now.\n");
+    const out = omg(["update", doc, "--dry-run", "-f", "-"], "# T\n\nParagraph one that is sufficiently long to reconcile now.\n");
     expect(out).toMatch(/preserved:|UPDATE|INSERT/);
     expect(readFileSync(join(vault, doc), "utf8")).toBe(before);
   });

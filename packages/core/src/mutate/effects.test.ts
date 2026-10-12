@@ -6,7 +6,8 @@ import { setIdMinter, sequentialMinter } from "../core/ids.js";
 import { NullDocStore } from "./doc-store.js";
 import { validateEffects, validateEffect, type Effect } from "./effects.js";
 import { planEffects, type Plan } from "./plan.js";
-import { MutationError } from "./tree.js";
+import { planUpdate } from "./plan-update.js";
+import { MutationError, rawHashHex } from "./tree.js";
 
 // spec/mutate §11.1–§11.3: the vocabulary's shape check, the lowering table
 // row by row (what each effect becomes in the plan's opset), and each conflict
@@ -180,7 +181,7 @@ describe("the lowering table (§11.3)", () => {
     expect(p.preview!.revisions).toEqual([]);
   });
 
-  it("retarget → links_repair's updates; create → creates[] with later sets folded in", () => {
+  it("retarget → links_repair's updates (+ preview.retarget); create → creates[] (an adopted tree), a later set/unset on it a head", () => {
     const p = plan([
       { op: "retarget", repairs: [{ from: "/a.md", to: "/elsewhere.md" }] },
       { op: "create", path: "/new.md", markdown: "# New", frontmatter: { type: "note" } },
@@ -188,10 +189,84 @@ describe("the lowering table (§11.3)", () => {
       { op: "unset", target: { kind: "document", id: "$new.1" }, field: "frontmatter.type" },
     ]);
     expect(p.opset.ops[0]).toMatchObject({ op: "update", block: "b_11", markdown: "See [a](/elsewhere.md)." });
-    expect(p.opset.creates).toEqual([{ path: "new.md", source: "---\nstatus: draft\n---\n\n# New\n" }]);
-    expect(p.new_ids).toEqual([{ symbol: "$new.0", kind: "block" }, { symbol: "$new.1", kind: "document" }]);
+    expect(p.preview!.retarget).toEqual([{ effect_index: 0, hits: [expect.objectContaining({ id: "b_11", path: "b.md", oldRaw: "See [a](/a.md).", newRaw: "See [a](/elsewhere.md)." })], pairs: [{ from: "/a.md", to: "/elsewhere.md", hits: 1 }] }]);
+    // The create's source is its own composition; the later frontmatter patches are a head on the symbol (3.0).
+    expect(p.opset.creates).toEqual([{ symbol: "$new.1", path: "new.md", source: "---\ntype: note\n---\n\n# New\n", before_op: 1 }]);
+    expect(p.opset.set_frontmatter).toEqual([{ doc: "$new.1", raw: "---\nstatus: draft\n---\n\n" }]);
+    // $new.0: the retarget update's discarded re-parse mint; $new.1 the document; $new.2 its heading.
+    expect(p.new_ids).toEqual([{ symbol: "$new.0", kind: "block" }, { symbol: "$new.1", kind: "document" }, { symbol: "$new.2", kind: "block" }]);
     expect(p.effects[2]).toMatchObject({ op: "set", target: { kind: "document", id: "$new.1", path: "new.md" } });
     expect(p.preview!.revisions.find((r) => r.id === "$new.1")).toMatchObject({ path: "new.md" });
+    expect(p.preview!.diffs["new.md"]).toEqual({ before: "", after: "---\nstatus: draft\n---\n\n# New\n" });
+    expect(p.preconditions.docs.map((d) => d.id)).toEqual(["d_1"]);
+    expect(p.preconditions.absent_paths).toEqual(["new.md"]);
+  });
+
+  it("slice 3: a created document is a loaded tree — its blocks are $new.k in pre-order and every later effect writes into it", () => {
+    const p = plan([
+      { op: "create", path: "n.md", markdown: "# New\n\n## Sec\n\nBody." },
+      { op: "insert", into: { kind: "document", id: "$new.0" }, markdown: "Tail." },
+      { op: "insert", into: { kind: "section", heading_id: "$new.2" }, markdown: "In sec." },
+      { op: "set", target: { kind: "block", id: "$new.3" }, field: "markdown", value: "Body, edited." },
+    ]);
+    expect(p.new_ids.map((s) => `${s.symbol}:${s.kind}`)).toEqual(["$new.0:document", "$new.1:block", "$new.2:block", "$new.3:block", "$new.4:block", "$new.5:block", "$new.6:block"]);
+    expect(p.opset.creates).toEqual([{ symbol: "$new.0", path: "n.md", source: "# New\n\n## Sec\n\nBody.\n", before_op: 0 }]);
+    // The created document is addressed by its symbol (`doc`), its blocks by theirs — no kernel placeholder names them.
+    expect(p.opset.ops[0]).toEqual({ op: "insert", doc: "$new.0", to: { parent: { doc: true }, at: "end" }, markdown: "Tail." });
+    expect(p.opset.ops[1]).toEqual({ op: "insert", to: { parent: { heading: "$new.2", scope: "section" }, at: "end" }, markdown: "In sec." });
+    expect(p.opset.ops[2]).toEqual({ op: "update", block: "$new.3", markdown: "Body, edited.", expect: { content_hash: rawHashHex("Body.") } });
+    expect(p.preconditions).toEqual({ docs: [], blocks: [], parents: [], absent_paths: ["n.md"] });
+    expect(p.preview!.results).toEqual([{ ids: ["$new.4"] }, { ids: ["$new.5"] }, { ids: ["$new.3"] }]);
+    expect(p.preview!.diffs["n.md"]).toEqual({ before: "", after: "# New\n\n## Sec\n\nBody, edited.\n\nTail.\n\nIn sec.\n" });
+    expect(p.preview!.revisions).toEqual([{ id: "$new.0", path: "n.md", hash: expect.any(String) }]);
+  });
+
+  it("slice 3: move a block into a created document (the kernel move's `doc`), remove a created block, set attrs.checked on one", () => {
+    const p = plan([
+      { op: "create", path: "n.md", markdown: "# N\n\n- [ ] task" },
+      { op: "move", targets: [{ kind: "block", id: "b_9" }], into: { kind: "document", id: "$new.0" } },
+      { op: "set", target: { kind: "block", id: "$new.3" }, field: "attrs.checked", value: true },
+      { op: "remove", targets: [{ kind: "block", id: "$new.1" }] },
+    ]);
+    expect(p.opset.ops[0]).toEqual({ op: "move", blocks: ["b_9"], to: { parent: { doc: true }, at: "end" }, doc: "$new.0" });
+    expect(p.opset.ops[1]).toMatchObject({ op: "update", block: "$new.3", attrs: { checked: true } });
+    expect(p.opset.ops[2]).toEqual({ op: "remove", blocks: ["$new.1"], expect: { "$new.1": { content_hash: rawHashHex("# N") } } });
+    expect(p.preview!.diffs["n.md"]!.after).toBe("- [x] task\n\nTail.\n");
+    expect(p.preview!.diffs["a.md"]!.after).not.toContain("Tail.");
+    expect(p.preconditions.docs.map((d) => d.id)).toEqual(["d_0"]);
+    expect(p.preconditions.blocks).toEqual([]); // a block move pins no content hash (§11.2: only `set`, `split`, `remove`, `merge` do)
+    // A move into an EXISTING document at its top-level end names that document too.
+    const q = plan([{ op: "move", targets: [{ kind: "block", id: "b_9" }], into: { kind: "document", path: "b.md" } }]);
+    expect(q.opset.ops[0]).toMatchObject({ op: "move", doc: "d_1" });
+    expect(q.preview!.diffs["b.md"]!.after).toBe("# B\n\nSee [a](/a.md).\n\nTail.\n");
+  });
+
+  it("slice 3: `set content` on a created document is refused; `create` after ops records its position", () => {
+    expect(failure([{ op: "create", path: "n.md", markdown: "x" }, { op: "set", target: { kind: "document", id: "$new.0" }, field: "content", value: "y" }])).toMatchObject({ code: "target_missing", data: { symbol: "$new.0", effect_index: 1 } });
+    const p = plan([{ op: "insert", into: doc, markdown: "P." }, { op: "create", path: "n.md", markdown: "x" }, { op: "insert", into: { kind: "document", id: "$new.1" }, markdown: "Q." }]);
+    expect(p.opset.creates[0]).toMatchObject({ symbol: "$new.1", before_op: 1 });
+    expect(p.new_ids.map((s) => s.kind)).toEqual(["block", "document", "block", "block"]);
+  });
+
+  it("set content → preview.identity carries exactly the whole-document planner's annotations; unchanged content plans nothing and pins the triple", () => {
+    const content = "---\nstatus: draft\n---\n\n# Title\n\nIntro paragraph, revised.\n\n## Notes\n\nFirst note.\n\nSecond note.\n\n- [ ] alpha\n- [ ] beta\n\n## Later\n\nTail.\n\nNew tail.\n";
+    const opset = planUpdate(store, repoId, "", "a.md", content);
+    const p = plan([{ op: "set", target: doc, field: "content", value: content }]);
+    const identity = p.preview!.identity!["d_0"]!;
+    expect(Object.keys(p.preview!.identity!)).toEqual(["d_0"]);
+    expect(identity.matcher_v).toBe(opset.matcherV);
+    expect(identity.summary).toEqual(opset.summary);
+    expect(identity.diagnostics).toEqual(opset.diagnostics);
+    expect(identity.ops).toEqual(opset.ops.map((o, k) => ({ op_index: k, disposition: o.disposition, blocks: o.blocks, confidence: o.confidence, reason: o.reason, ...(o.detail !== undefined ? { detail: o.detail } : {}) })));
+    expect(p.opset.ops).toHaveLength(opset.ops.length);
+    expect(p.preview!.retarget).toBeUndefined();
+    // The zero-effects rule: the content IS the document.
+    const same = plan([{ op: "set", target: doc, field: "content", value: DOC }]);
+    expect(same.opset).toEqual({ creates: [], moves: [], tombstones: [], set_frontmatter: [], ops: [] });
+    expect(same.preconditions.docs).toEqual([{ id: "d_0", path: "a.md", base_revision: "r_0", hash: expect.any(String) }]);
+    expect(same.preview!.revisions).toEqual([]);
+    expect(same.preview!.identity!["d_0"]).toMatchObject({ ops: [], summary: expect.objectContaining({ updated: 0, created: 0, removed: 0 }) });
+    expect(plan([{ op: "insert", into: doc, markdown: "x" }]).preview!.identity).toBeUndefined();
   });
 
   it("$new.n blocks lower through the kernel placeholder of the op that minted them", () => {
@@ -206,10 +281,11 @@ describe("the lowering table (§11.3)", () => {
     expect(p.preview!.results[0]).toEqual({ ids: ["$new.0"] });
   });
 
-  it("$new.n before its creation, of the wrong kind, or as an insert target is target_missing naming the symbol", () => {
+  it("$new.n before its creation or of the wrong kind is target_missing naming the symbol; an insert into a created document resolves (3.0)", () => {
     expect(failure([{ op: "set", target: { kind: "block", id: "$new.3" }, field: "markdown", value: "x" }])).toMatchObject({ code: "target_missing", data: { symbol: "$new.3" } });
     expect(failure([{ op: "create", path: "n.md", markdown: "x" }, { op: "set", target: { kind: "block", id: "$new.0" }, field: "markdown", value: "x" }])).toMatchObject({ code: "target_missing", data: { symbol: "$new.0" } });
-    expect(failure([{ op: "create", path: "n.md", markdown: "x" }, { op: "insert", into: { kind: "document", id: "$new.0" }, markdown: "x" }])).toMatchObject({ code: "target_missing", data: { symbol: "$new.0" } });
+    expect(failure([{ op: "insert", into: { kind: "document", id: "$new.0" }, markdown: "x" }, { op: "create", path: "n.md", markdown: "x" }])).toMatchObject({ code: "target_missing", data: { symbol: "$new.0", effect_index: 0 } });
+    expect(plan([{ op: "create", path: "n.md", markdown: "x" }, { op: "insert", into: { kind: "document", id: "$new.0" }, markdown: "y" }]).opset.ops[0]).toMatchObject({ op: "insert", doc: "$new.0" });
   });
 
   it("create at a taken path, twice in one plan, or at a move's destination is path_taken", () => {

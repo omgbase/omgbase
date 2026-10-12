@@ -1,5 +1,8 @@
 import { stringify as stringifyYaml, parse as parseYaml } from "yaml";
 import type { Store } from "../core/store/store.js";
+import type { RawBlock } from "../core/parse/types.js";
+import { parseTree } from "../core/parse/tree.js";
+import { adapterForPath } from "../format/index.js";
 import { findDoc, findDocByRef } from "../core/read/reader.js";
 import { mintId } from "../core/ids.js";
 import { withWriterLock } from "../sync/writer-lock.js";
@@ -7,7 +10,7 @@ import { inboundLinksTo, retargetLinksInRaw, type InboundLink } from "../graph/i
 import { planChangeset, type Op } from "./apply.js";
 import { commitChangeset, readDocBase, type CommitHead, type CommitTargets, type Effect } from "./commit.js";
 import { resolveDocStore, type DocStore } from "./doc-store.js";
-import { MutationError } from "./tree.js";
+import { MutationError, type MutBlock, type MutDoc } from "./tree.js";
 
 // Document-level operations (06 §API: docs_create/move/delete/set_meta; 11 §5.6
 // new/mv/rm --doc/meta). These live in the library so both the CLI and the MCP
@@ -120,6 +123,33 @@ export function composeFile(markdown: string, frontmatter?: Record<string, unkno
   if (!frontmatter || Object.keys(frontmatter).length === 0) return body;
   const yaml = stringifyYaml(frontmatter).replace(/\n$/, "");
   return `---\n${yaml}\n---\n${body.startsWith("\n") ? body : "\n" + body}`;
+}
+
+/**
+ * A document this request CREATES as the planner's working tree (spec/mutate
+ * §11.3, 3.0): `source` (the composed file) parsed per the path's format —
+ * the frontmatter block becomes `frontmatterRaw` (its raw + its trailing
+ * trivia, as `loadMutDoc` builds it), the bytes before it the leading trivia,
+ * every body block a `MutBlock` with its exact trivia and an id minted NOW in
+ * pre-order under the current minter (the symbolic one at plan time, so the
+ * ids are `$new.k`; the production one at execute, so the replay mints the
+ * same positions). `docId` is the plan's document symbol. The round-trip law
+ * makes `renderDoc` of the result equal `source` byte for byte.
+ */
+export function parseNewDoc(symbol: string, path: string, source: string): MutDoc {
+  const adapter = adapterForPath(path);
+  const tree = adapter ? adapter.parse(source) : parseTree(source);
+  const fm = tree.children[0]?.type === "frontmatter" ? tree.children[0] : null;
+  const rest = fm ? tree.children.slice(1) : tree.children;
+  const toMut = (b: RawBlock): MutBlock => ({ id: mintId("b"), type: b.type, raw: b.raw, trivia: b.trivia, attrs: b.attrs, children: b.children.map(toMut) });
+  return {
+    docId: symbol,
+    path,
+    format: adapter?.format ?? "markdown",
+    leadingTrivia: tree.leadingTrivia,
+    frontmatterRaw: fm ? fm.raw + fm.trivia : null,
+    children: rest.map(toMut),
+  };
 }
 
 /** docs_create: create a new document from complete file bytes (frontmatter incl.). */

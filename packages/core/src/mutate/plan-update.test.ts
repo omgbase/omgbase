@@ -5,8 +5,26 @@ import { join } from "node:path";
 import { Store } from "../core/store/store.js";
 import { ensureRepo } from "../core/attach.js";
 import { processCheckpoint } from "../sync/checkpoint.js";
-import { planUpdate, applyOpset, docsUpdate } from "./plan-update.js";
-import { renderOpsetPlan, serializeOpset, parseOpset } from "./opset.js";
+import { planUpdate } from "./plan-update.js";
+import { renderOpsetPlan, serializeOpset, parseOpset, type Opset } from "./opset.js";
+import { applyEffectsDetailed, executePlan, planEffects, substituteSymbols } from "./plan.js";
+import type { ApplyResult } from "./apply.js";
+import type { Effect } from "./effects.js";
+
+// Since mutate 3.0 the opset is the planner's internal result and committing a
+// whole document is the `set content` effect (§11.3): this shim is the 3.x
+// `docsUpdate` — the opset for inspection, the content committed through the
+// effect layer, the result in the kernel's apply shape.
+type Ctx = { repoId: string; rootPath: string; actor: string };
+function setContent(ref: string, content: string): Effect[] {
+  return [{ op: "set", target: { kind: "document", ...(ref.startsWith("d_") ? { id: ref } : { path: ref }) }, field: "content", value: content }];
+}
+function docsUpdate(store: Store, ctx: Ctx, ref: string, content: string, opts: { dryRun?: boolean } = {}): { opset: Opset; result: ApplyResult | null } {
+  const opset = planUpdate(store, ctx.repoId, ctx.rootPath, ref, content);
+  if (opts.dryRun) return { opset, result: null };
+  const { plan, receipt } = applyEffectsDetailed(store, { repoId: ctx.repoId, rootPath: ctx.rootPath, effects: setContent(ref, content), origin: { actor: ctx.actor } });
+  return { opset, result: { results: substituteSymbols(plan.preview!.results, receipt!.new_ids), revisions: receipt!.revisions, committed: true } };
+}
 
 let dir: string; let store: Store; let repoId: string;
 beforeEach(() => { dir = mkdtempSync(join(tmpdir(), "omgbase-plan-")); store = new Store({ path: ":memory:" }); repoId = ensureRepo(store, "t", dir); });
@@ -106,11 +124,11 @@ describe("planUpdate — whole-document reconciliation opset", () => {
 
   it("rejects a stale plan", () => {
     seed("a.md", "# Title\n\nAlpha.\n");
-    const opset = planUpdate(store, repoId, dir, "a.md", "# Title\n\nAlpha edited.\n");
+    const plan = planEffects(store, { repoId, rootPath: dir, effects: setContent("a.md", "# Title\n\nAlpha edited.\n") });
     // someone else changes the doc first
     docsUpdate(store, ctx(), "a.md", "# Title\n\nInterloper.\n");
     let code = "";
-    try { applyOpset(store, { repoId, rootPath: dir, opset, origin: { actor: "t" } }); }
+    try { executePlan(store, { repoId, rootPath: dir, plan, origin: { actor: "t" } }); }
     catch (e) { code = (e as { code?: string }).code ?? ""; }
     expect(code).toBe("stale_plan");
   });
@@ -346,7 +364,7 @@ describe("planUpdate — byte-exact convergence on ordinary Markdown constructs"
     expect(opset.converges).toBe(false);
     const last = opset.diagnostics[opset.diagnostics.length - 1]!;
     expect(last).toMatch(/first divergence at byte 0 in leading trivia/);
-    expect(() => applyOpset(store, { repoId, rootPath: dir, opset, origin: { actor: "t" } })).toThrow(/plan_not_convergent|first divergence at byte 0/);
+    expect(() => docsUpdate(store, ctx(), "a.md", "\n# Title\n\nAlpha paragraph with several words.\n")).toThrow(/plan_not_convergent|first divergence at byte 0/);
   });
 
   it("blockquote directly under an H3 with no blank line (edit elsewhere)", () => {

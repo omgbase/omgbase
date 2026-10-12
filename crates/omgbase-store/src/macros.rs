@@ -262,6 +262,7 @@ impl Store {
         Ok(vec![Op::Move {
             blocks: run,
             to: to.clone(),
+            doc: None,
             expect: None,
         }])
     }

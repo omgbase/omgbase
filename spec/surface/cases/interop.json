@@ -9840,14 +9840,22 @@
     },
     {
       "name": "write-docs-update",
-      "notes": "§4 docs_update { dry_run: true } (the plan-only call — the opset + rendered plan for an edited paragraph and a replaced task) then docs_update applying the same content, then docs_update with content already current (spec/mutate §7). Reads: the document with ids (stable ids for untouched blocks), the outline, the edited paragraph's biography, docs_history, block-grain and unified diffs, the api feed.",
+      "notes": "§4 (4.0) `docs_update` is `set content` sugar. First `plan { effects: [set content] }` — the plan-only call: `preview.identity[d_5]` carries the whole-document planner's annotations (an edited paragraph and a replaced task: `matcher_v`, `summary`, per op `op_index`/`disposition`/`blocks`/`confidence`/`reason`, the task list's `detail`), the plan's `opset.ops` the kernel ops, `preconditions.docs` the document's triple; then `docs_update` committing the same content → the Receipt (one `api` commit, known ids); then `docs_update` with content already current → a plan with nothing to do, `commit: null`, no revision (spec/mutate §11.7, the zero-effects rule). Reads: the document with ids (stable ids for untouched blocks), the outline, the edited paragraph's biography, docs_history, block-grain and unified diffs, the api feed.",
       "writes": [
         {
-          "tool": "docs_update",
+          "tool": "plan",
           "args": {
-            "path": "practitioners/newton.md",
-            "content": "---\ntype: practitioner\nlayer: working\ntradition: western\nera: 1680\ntags: [practitioner, transmutation]\nverified: true\n---\n\n# Isaac Newton\n\n1643–1727. Wrote more on alchemy than on physics, and published almost none of it.\n\nknown_for:: unpublished alchemical corpus\ncentury:: 17\n\n## Scale of the work\n\nRoughly a million words of alchemical manuscript survive: transcriptions,\nindexes of authors, and his own laboratory records with quantities and dates. He\nkept furnaces at Trinity for decades and ran the work himself rather than\ndelegating it.\n\nKeynes, who bought a large part of the papers at auction in 1936, called him\n\"the last of the magicians.\" The phrase is memorable and slightly unfair — the\nnotebooks are methodical, quantitative, and unmystical in tone.\n\n## The index of authors\n\nHis *Index Chemicus* cross-references hundreds of alchemical texts by topic. It\nis a serious piece of scholarship on a corpus he expected to contain a real\nsecret, encoded.\n\nThat expectation was the error, and it was not a careless one: the tradition\n*claimed* to encode a secret, and Newton took the claim at face value and tested\nit with the most rigorous method available. The method was sound; the corpus was\nempty.\n\n## Why it matters here\n\nNewton is the clean case against reading alchemy as mere credulity. The most\ncapable investigator of the era worked the programme for thirty years with full\nrigour and got nothing, because there was nothing there. That is a result, and\nthe [magnum opus](/processes/magnum-opus.md) framework does not survive it.\n\n- [x] Read the Index Chemicus entries on [[mercury]]\n- [ ] Compare Keynes's catalogue with the Sotheby's lot list\n",
-            "dry_run": true
+            "effects": [
+              {
+                "op": "set",
+                "target": {
+                  "kind": "document",
+                  "path": "practitioners/newton.md"
+                },
+                "field": "content",
+                "value": "---\ntype: practitioner\nlayer: working\ntradition: western\nera: 1680\ntags: [practitioner, transmutation]\nverified: true\n---\n\n# Isaac Newton\n\n1643–1727. Wrote more on alchemy than on physics, and published almost none of it.\n\nknown_for:: unpublished alchemical corpus\ncentury:: 17\n\n## Scale of the work\n\nRoughly a million words of alchemical manuscript survive: transcriptions,\nindexes of authors, and his own laboratory records with quantities and dates. He\nkept furnaces at Trinity for decades and ran the work himself rather than\ndelegating it.\n\nKeynes, who bought a large part of the papers at auction in 1936, called him\n\"the last of the magicians.\" The phrase is memorable and slightly unfair — the\nnotebooks are methodical, quantitative, and unmystical in tone.\n\n## The index of authors\n\nHis *Index Chemicus* cross-references hundreds of alchemical texts by topic. It\nis a serious piece of scholarship on a corpus he expected to contain a real\nsecret, encoded.\n\nThat expectation was the error, and it was not a careless one: the tradition\n*claimed* to encode a secret, and Newton took the claim at face value and tested\nit with the most rigorous method available. The method was sound; the corpus was\nempty.\n\n## Why it matters here\n\nNewton is the clean case against reading alchemy as mere credulity. The most\ncapable investigator of the era worked the programme for thirty years with full\nrigour and got nothing, because there was nothing there. That is a result, and\nthe [magnum opus](/processes/magnum-opus.md) framework does not survive it.\n\n- [x] Read the Index Chemicus entries on [[mercury]]\n- [ ] Compare Keynes's catalogue with the Sotheby's lot list\n"
+              }
+            ]
           }
         },
         {
@@ -9916,152 +9924,82 @@
       "expect": {
         "writes": [
           {
+            "version": 1,
+            "planner_v": "p2",
+            "effects": [
+              {
+                "op": "set",
+                "target": {
+                  "kind": "document",
+                  "id": "d_5",
+                  "path": "practitioners/newton.md"
+                },
+                "field": "content",
+                "value": "---\ntype: practitioner\nlayer: working\ntradition: western\nera: 1680\ntags: [practitioner, transmutation]\nverified: true\n---\n\n# Isaac Newton\n\n1643–1727. Wrote more on alchemy than on physics, and published almost none of it.\n\nknown_for:: unpublished alchemical corpus\ncentury:: 17\n\n## Scale of the work\n\nRoughly a million words of alchemical manuscript survive: transcriptions,\nindexes of authors, and his own laboratory records with quantities and dates. He\nkept furnaces at Trinity for decades and ran the work himself rather than\ndelegating it.\n\nKeynes, who bought a large part of the papers at auction in 1936, called him\n\"the last of the magicians.\" The phrase is memorable and slightly unfair — the\nnotebooks are methodical, quantitative, and unmystical in tone.\n\n## The index of authors\n\nHis *Index Chemicus* cross-references hundreds of alchemical texts by topic. It\nis a serious piece of scholarship on a corpus he expected to contain a real\nsecret, encoded.\n\nThat expectation was the error, and it was not a careless one: the tradition\n*claimed* to encode a secret, and Newton took the claim at face value and tested\nit with the most rigorous method available. The method was sound; the corpus was\nempty.\n\n## Why it matters here\n\nNewton is the clean case against reading alchemy as mere credulity. The most\ncapable investigator of the era worked the programme for thirty years with full\nrigour and got nothing, because there was nothing there. That is a result, and\nthe [magnum opus](/processes/magnum-opus.md) framework does not survive it.\n\n- [x] Read the Index Chemicus entries on [[mercury]]\n- [ ] Compare Keynes's catalogue with the Sotheby's lot list\n"
+              }
+            ],
             "opset": {
-              "version": 1,
-              "kind": "doc_update",
-              "target": {
-                "id": "d_5",
-                "path": "/practitioners/newton.md"
-              },
-              "precondition": {
-                "id": "d_5",
-                "path": "/practitioners/newton.md",
-                "baseRevision": "r_5",
-                "hash": "2d1f0bd3f92e3ab006e4f4220ab3cb6d7959184b9a41e1fd52a95e965750c06c"
-              },
-              "matcherV": "m2.3",
+              "creates": [],
+              "moves": [],
+              "tombstones": [],
+              "set_frontmatter": [],
               "ops": [
                 {
-                  "op": {
-                    "op": "update",
-                    "block": "b_109",
-                    "markdown": "1643–1727. Wrote more on alchemy than on physics, and published almost none of it.",
-                    "expect": {
-                      "content_hash": "087ff991d3dcb22d9febb2d67989e05eb5140c417a94915a9f1418907f957b62"
-                    }
-                  },
-                  "disposition": "edited",
-                  "blocks": [
-                    "b_109"
-                  ],
-                  "confidence": 0.9065217391304348,
-                  "reason": "context_unique",
-                  "detail": {}
+                  "op": "update",
+                  "block": "b_109",
+                  "markdown": "1643–1727. Wrote more on alchemy than on physics, and published almost none of it.",
+                  "expect": {
+                    "content_hash": "087ff991d3dcb22d9febb2d67989e05eb5140c417a94915a9f1418907f957b62"
+                  }
                 },
                 {
-                  "op": {
-                    "op": "update",
-                    "block": "b_119",
-                    "markdown": "- [x] Read the Index Chemicus entries on [[mercury]]\n- [ ] Compare Keynes's catalogue with the Sotheby's lot list",
-                    "expect": {
-                      "content_hash": "ee517c7fa020599f0e23f6ca83bf43c065c1b901bb5232789dacf85479d61018"
-                    },
-                    "childIds": {
-                      "/0": "b_120",
-                      "/1": "b_121"
-                    }
+                  "op": "update",
+                  "block": "b_119",
+                  "markdown": "- [x] Read the Index Chemicus entries on [[mercury]]\n- [ ] Compare Keynes's catalogue with the Sotheby's lot list",
+                  "expect": {
+                    "content_hash": "ee517c7fa020599f0e23f6ca83bf43c065c1b901bb5232789dacf85479d61018"
                   },
-                  "disposition": "edited",
-                  "blocks": [
-                    "b_119"
-                  ],
-                  "confidence": 0.85,
-                  "reason": "context_children",
-                  "detail": {
-                    "children_carried": 1,
-                    "children_total": 2
+                  "child_ids": {
+                    "/0": "b_120",
+                    "/1": "b_121"
                   }
                 }
-              ],
-              "summary": {
-                "preserved": 10,
-                "updated": 2,
-                "moved": 0,
-                "created": 0,
-                "removed": 0,
-                "split": 0,
-                "merged": 0,
-                "ambiguous": 0
-              },
-              "converges": true,
-              "diagnostics": []
+              ]
             },
-            "plan": "UPDATE b_109     edited ~0.91 [context_unique]\nUPDATE b_119     edited ~0.85 [context_children]\n\npreserved: 10  updated: 2  moved: 0  created: 0  removed: 0  split: 0  merged: 0  ambiguous: 0",
-            "result": null
-          },
-          {
-            "opset": {
-              "version": 1,
-              "kind": "doc_update",
-              "target": {
-                "id": "d_5",
-                "path": "/practitioners/newton.md"
-              },
-              "precondition": {
-                "id": "d_5",
-                "path": "/practitioners/newton.md",
-                "baseRevision": "r_5",
-                "hash": "2d1f0bd3f92e3ab006e4f4220ab3cb6d7959184b9a41e1fd52a95e965750c06c"
-              },
-              "matcherV": "m2.3",
-              "ops": [
+            "preconditions": {
+              "docs": [
                 {
-                  "op": {
-                    "op": "update",
-                    "block": "b_109",
-                    "markdown": "1643–1727. Wrote more on alchemy than on physics, and published almost none of it.",
-                    "expect": {
-                      "content_hash": "087ff991d3dcb22d9febb2d67989e05eb5140c417a94915a9f1418907f957b62"
-                    }
-                  },
-                  "disposition": "edited",
-                  "blocks": [
-                    "b_109"
-                  ],
-                  "confidence": 0.9065217391304348,
-                  "reason": "context_unique",
-                  "detail": {}
-                },
-                {
-                  "op": {
-                    "op": "update",
-                    "block": "b_119",
-                    "markdown": "- [x] Read the Index Chemicus entries on [[mercury]]\n- [ ] Compare Keynes's catalogue with the Sotheby's lot list",
-                    "expect": {
-                      "content_hash": "ee517c7fa020599f0e23f6ca83bf43c065c1b901bb5232789dacf85479d61018"
-                    },
-                    "childIds": {
-                      "/0": "b_120",
-                      "/1": "b_121"
-                    }
-                  },
-                  "disposition": "edited",
-                  "blocks": [
-                    "b_119"
-                  ],
-                  "confidence": 0.85,
-                  "reason": "context_children",
-                  "detail": {
-                    "children_carried": 1,
-                    "children_total": 2
-                  }
+                  "id": "d_5",
+                  "path": "practitioners/newton.md",
+                  "base_revision": "r_5",
+                  "hash": "2d1f0bd3f92e3ab006e4f4220ab3cb6d7959184b9a41e1fd52a95e965750c06c"
                 }
               ],
-              "summary": {
-                "preserved": 10,
-                "updated": 2,
-                "moved": 0,
-                "created": 0,
-                "removed": 0,
-                "split": 0,
-                "merged": 0,
-                "ambiguous": 0
-              },
-              "converges": true,
-              "diagnostics": []
+              "blocks": [],
+              "parents": [],
+              "absent_paths": []
             },
-            "plan": "UPDATE b_109     edited ~0.91 [context_unique]\nUPDATE b_119     edited ~0.85 [context_children]\n\npreserved: 10  updated: 2  moved: 0  created: 0  removed: 0  split: 0  merged: 0  ambiguous: 0",
-            "result": {
+            "new_ids": [
+              {
+                "symbol": "$new.0",
+                "kind": "block"
+              },
+              {
+                "symbol": "$new.1",
+                "kind": "block"
+              },
+              {
+                "symbol": "$new.2",
+                "kind": "block"
+              },
+              {
+                "symbol": "$new.3",
+                "kind": "block"
+              }
+            ],
+            "plan_id": "ee09cab871301598cc551a897b89716a124c214882a7e133565fc9b199e1e3d7",
+            "diagnostics": [],
+            "preview": {
               "results": [
                 {
                   "ids": [
@@ -10081,44 +10019,79 @@
                   "hash": "c8dbadfd60e5b18497d40562cdd55ac3bca31fad84e310b4b62ba594cf410459"
                 }
               ],
-              "committed": true
+              "diffs": {
+                "/practitioners/newton.md": {
+                  "before": "---\ntype: practitioner\nlayer: working\ntradition: western\nera: 1680\ntags: [practitioner, transmutation]\nverified: true\n---\n\n# Isaac Newton\n\n1643–1727. Wrote more on alchemy than on physics, and published none of it.\n\nknown_for:: unpublished alchemical corpus\ncentury:: 17\n\n## Scale of the work\n\nRoughly a million words of alchemical manuscript survive: transcriptions,\nindexes of authors, and his own laboratory records with quantities and dates. He\nkept furnaces at Trinity for decades and ran the work himself rather than\ndelegating it.\n\nKeynes, who bought a large part of the papers at auction in 1936, called him\n\"the last of the magicians.\" The phrase is memorable and slightly unfair — the\nnotebooks are methodical, quantitative, and unmystical in tone.\n\n## The index of authors\n\nHis *Index Chemicus* cross-references hundreds of alchemical texts by topic. It\nis a serious piece of scholarship on a corpus he expected to contain a real\nsecret, encoded.\n\nThat expectation was the error, and it was not a careless one: the tradition\n*claimed* to encode a secret, and Newton took the claim at face value and tested\nit with the most rigorous method available. The method was sound; the corpus was\nempty.\n\n## Why it matters here\n\nNewton is the clean case against reading alchemy as mere credulity. The most\ncapable investigator of the era worked the programme for thirty years with full\nrigour and got nothing, because there was nothing there. That is a result, and\nthe [magnum opus](/processes/magnum-opus.md) framework does not survive it.\n\n- [ ] Read the Index Chemicus entries on [[mercury]]\n- [ ] Cross-check the furnace dates against the Principia years\n",
+                  "after": "---\ntype: practitioner\nlayer: working\ntradition: western\nera: 1680\ntags: [practitioner, transmutation]\nverified: true\n---\n\n# Isaac Newton\n\n1643–1727. Wrote more on alchemy than on physics, and published almost none of it.\n\nknown_for:: unpublished alchemical corpus\ncentury:: 17\n\n## Scale of the work\n\nRoughly a million words of alchemical manuscript survive: transcriptions,\nindexes of authors, and his own laboratory records with quantities and dates. He\nkept furnaces at Trinity for decades and ran the work himself rather than\ndelegating it.\n\nKeynes, who bought a large part of the papers at auction in 1936, called him\n\"the last of the magicians.\" The phrase is memorable and slightly unfair — the\nnotebooks are methodical, quantitative, and unmystical in tone.\n\n## The index of authors\n\nHis *Index Chemicus* cross-references hundreds of alchemical texts by topic. It\nis a serious piece of scholarship on a corpus he expected to contain a real\nsecret, encoded.\n\nThat expectation was the error, and it was not a careless one: the tradition\n*claimed* to encode a secret, and Newton took the claim at face value and tested\nit with the most rigorous method available. The method was sound; the corpus was\nempty.\n\n## Why it matters here\n\nNewton is the clean case against reading alchemy as mere credulity. The most\ncapable investigator of the era worked the programme for thirty years with full\nrigour and got nothing, because there was nothing there. That is a result, and\nthe [magnum opus](/processes/magnum-opus.md) framework does not survive it.\n\n- [x] Read the Index Chemicus entries on [[mercury]]\n- [ ] Compare Keynes's catalogue with the Sotheby's lot list\n"
+                }
+              },
+              "identity": {
+                "d_5": {
+                  "matcher_v": "m2.3",
+                  "summary": {
+                    "preserved": 10,
+                    "updated": 2,
+                    "moved": 0,
+                    "created": 0,
+                    "removed": 0,
+                    "split": 0,
+                    "merged": 0,
+                    "ambiguous": 0
+                  },
+                  "ops": [
+                    {
+                      "op_index": 0,
+                      "disposition": "edited",
+                      "blocks": [
+                        "b_109"
+                      ],
+                      "confidence": 0.9065217391304348,
+                      "reason": "context_unique",
+                      "detail": {}
+                    },
+                    {
+                      "op_index": 1,
+                      "disposition": "edited",
+                      "blocks": [
+                        "b_119"
+                      ],
+                      "confidence": 0.85,
+                      "reason": "context_children",
+                      "detail": {
+                        "children_carried": 1,
+                        "children_total": 2
+                      }
+                    }
+                  ],
+                  "diagnostics": []
+                }
+              }
             }
           },
           {
-            "opset": {
-              "version": 1,
-              "kind": "doc_update",
-              "target": {
-                "id": "d_5",
-                "path": "/practitioners/newton.md"
-              },
-              "precondition": {
+            "plan_id": "ee09cab871301598cc551a897b89716a124c214882a7e133565fc9b199e1e3d7",
+            "commit": "c_20",
+            "revisions": [
+              {
                 "id": "d_5",
                 "path": "/practitioners/newton.md",
-                "baseRevision": "r_20",
                 "hash": "c8dbadfd60e5b18497d40562cdd55ac3bca31fad84e310b4b62ba594cf410459"
-              },
-              "matcherV": "m2.3",
-              "ops": [],
-              "summary": {
-                "preserved": 12,
-                "updated": 0,
-                "moved": 0,
-                "created": 0,
-                "removed": 0,
-                "split": 0,
-                "merged": 0,
-                "ambiguous": 0
-              },
-              "converges": true,
-              "diagnostics": []
+              }
+            ],
+            "new_ids": {
+              "$new.0": "b_327",
+              "$new.1": "b_328",
+              "$new.2": "b_329",
+              "$new.3": "b_330"
             },
-            "plan": "\npreserved: 12  updated: 0  moved: 0  created: 0  removed: 0  split: 0  merged: 0  ambiguous: 0",
-            "result": {
-              "results": [],
-              "revisions": [],
-              "committed": true
-            }
+            "committed": true
+          },
+          {
+            "plan_id": "f447571a7465a6fff3513d6bfccb3057995be1991e927326174078be97904766",
+            "commit": null,
+            "revisions": [],
+            "new_ids": {},
+            "committed": true
           }
         ],
         "reads": [
@@ -11584,7 +11557,7 @@
     },
     {
       "name": "write-effects-plan-execute",
-      "notes": "§4 (3.1) the Effect layer: `plan` over salt.md (`set frontmatter.reviewed` + `insert into section` ## Note) returns the Plan — its `plan_id` is the digest of the executable core (spec/mutate §11.5), so the Rust writer must digest identically for this case to pass; `execute` in the digest form (`plan_id` + the same effects, the id pinned verbatim) re-plans and commits one `api` commit; `apply { effects }` one-shot creates texts/rosarium.md with a `set frontmatter.layer` on `$new.0` folded into the create, the receipt mapping `$new.0` to the minted `d` id. Reads: salt.md with ids (b_327 is the inserted paragraph), the created document, the api feed (two commits), salt.md's history.",
+      "notes": "§4 (3.1) the Effect layer: `plan` over salt.md (`set frontmatter.reviewed` + `insert into section` ## Note) returns the Plan — its `plan_id` is the digest of the executable core (spec/mutate §11.5), so the Rust writer must digest identically for this case to pass; `execute` in the digest form (`plan_id` + the same effects, the id pinned verbatim) re-plans and commits one `api` commit; `apply { effects }` one-shot creates texts/rosarium.md with a `set frontmatter.layer` on `$new.0` folded into the create, the receipt mapping `$new.0` to the minted `d` id and `$new.1`/`$new.2` — the created document's heading and paragraph, symbols too since 3.0 — to the `b`s the replay minted before the transaction (their dispositions `inserted / api`, no matcher). Reads: salt.md with ids (b_327 is the inserted paragraph), the created document, the api feed (two commits), salt.md's history.",
       "writes": [
         {
           "tool": "plan",
@@ -11614,7 +11587,7 @@
         {
           "tool": "execute",
           "args": {
-            "plan_id": "a73934028edf8a789ac75911476d7316aeb580698f788ccda78acfc427e2df1d",
+            "plan_id": "aa6590ed0a8ca343fcae603a6b13bbf2ac8d779c5db398d450810d382f9630e3",
             "effects": [
               {
                 "op": "set",
@@ -11695,7 +11668,7 @@
         "writes": [
           {
             "version": 1,
-            "planner_v": "p1",
+            "planner_v": "p2",
             "effects": [
               {
                 "op": "set",
@@ -11760,7 +11733,7 @@
                 "kind": "block"
               }
             ],
-            "plan_id": "a73934028edf8a789ac75911476d7316aeb580698f788ccda78acfc427e2df1d",
+            "plan_id": "aa6590ed0a8ca343fcae603a6b13bbf2ac8d779c5db398d450810d382f9630e3",
             "diagnostics": [],
             "preview": {
               "results": [
@@ -11786,7 +11759,7 @@
             }
           },
           {
-            "plan_id": "a73934028edf8a789ac75911476d7316aeb580698f788ccda78acfc427e2df1d",
+            "plan_id": "aa6590ed0a8ca343fcae603a6b13bbf2ac8d779c5db398d450810d382f9630e3",
             "commit": "c_20",
             "revisions": [
               {
@@ -11801,7 +11774,7 @@
             "committed": true
           },
           {
-            "plan_id": "9ab816cb616e67503dec35f51be1f64bb3f03f8df208bcd4e9aa969b54670371",
+            "plan_id": "8bb3252c7c012d237333ffe2886c1dd0041de341f91741526171797eea6e5eb9",
             "commit": "c_21",
             "revisions": [
               {
@@ -11811,7 +11784,9 @@
               }
             ],
             "new_ids": {
-              "$new.0": "d_20"
+              "$new.0": "d_20",
+              "$new.1": "b_328",
+              "$new.2": "b_329"
             },
             "committed": true
           }
@@ -12074,7 +12049,7 @@
         "writes": [
           {
             "version": 1,
-            "planner_v": "p1",
+            "planner_v": "p2",
             "effects": [
               {
                 "op": "set",
@@ -12139,7 +12114,7 @@
                 "kind": "block"
               }
             ],
-            "plan_id": "a73934028edf8a789ac75911476d7316aeb580698f788ccda78acfc427e2df1d",
+            "plan_id": "aa6590ed0a8ca343fcae603a6b13bbf2ac8d779c5db398d450810d382f9630e3",
             "diagnostics": [],
             "preview": {
               "results": [
@@ -12165,7 +12140,7 @@
             }
           },
           {
-            "plan_id": "6952d6afe1ed18b928a5dc4968dbd190592f66e8e27533288ada38117f3f1235",
+            "plan_id": "f5db64ddea0f1782a1f06a3e519fb4ea4370a60deb8a63cad40a2ee2dc506381",
             "commit": "c_20",
             "revisions": [
               {
@@ -12513,7 +12488,7 @@
         "writes": [
           {
             "version": 1,
-            "planner_v": "p1",
+            "planner_v": "p2",
             "effects": [
               {
                 "op": "set",
@@ -12578,7 +12553,7 @@
                 "kind": "block"
               }
             ],
-            "plan_id": "a73934028edf8a789ac75911476d7316aeb580698f788ccda78acfc427e2df1d",
+            "plan_id": "aa6590ed0a8ca343fcae603a6b13bbf2ac8d779c5db398d450810d382f9630e3",
             "diagnostics": [],
             "preview": {
               "results": [
@@ -12642,7 +12617,7 @@
             "retriable": false,
             "data": {
               "expected": "a73934028edf8a789ac75911476d7316aeb580698f788ccda78acfc427e2df1d",
-              "actual": "c352d90896b993ebf8f3dafdccb3e302319bbe344e74c70622f4ec9fcb7a2022"
+              "actual": "ae162a006a4fb9c338f872aa0516f277573e1af370b17cdfc4c5e81a956efc84"
             }
           },
           {
@@ -12713,6 +12688,194 @@
                     "id": "d_14",
                     "path": "/substances/salt.md",
                     "hash": "ba9a22102f82a6a528be11f689448fb1894798c217d370556849d666b52bcee9"
+                  }
+                ]
+              }
+            ],
+            "cursor": 21,
+            "truncated": false,
+            "head": 21
+          }
+        ]
+      }
+    },
+    {
+      "name": "write-effects-create-and-fill",
+      "notes": "§4 (4.0; spec/mutate §11.3 slice 3): one `apply { effects }` creates texts/aurora.md, inserts into a SECTION of the created document (`heading_id: $new.2`, the `## Plates` heading of the adopted tree), appends a paragraph at the document's end (`into: { document: $new.0 }`) and patches its frontmatter (`set frontmatter.layer` on `$new.0`) — one commit, one revision. The receipt maps `$new.0` to the `d` and `$new.1`…`$new.7` to the `b`s in the plan's order: the five parsed blocks `b_327`–`b_331` (pre-order), then the two inserts `b_332`/`b_333` (the Rust replay must mint alike). Reads: the created document with ids (the section insert lands before `## Attribution`), the biography of a parsed paragraph (`b_330`) and of the heading (`b_327`) — both `inserted / api`, confidence 1, no matcher — and the api feed.",
+      "writes": [
+        {
+          "tool": "apply",
+          "args": {
+            "effects": [
+              {
+                "op": "create",
+                "path": "texts/aurora.md",
+                "markdown": "# Aurora Consurgens\n\n## Plates\n\nTwenty-one, in the Zurich codex.\n\n## Attribution\n\nLong given to Aquinas.",
+                "frontmatter": {
+                  "type": "text"
+                }
+              },
+              {
+                "op": "insert",
+                "into": {
+                  "kind": "section",
+                  "heading_id": "$new.2"
+                },
+                "markdown": "The first shows the sun and moon."
+              },
+              {
+                "op": "insert",
+                "into": {
+                  "kind": "document",
+                  "id": "$new.0"
+                },
+                "markdown": "See [[mercury]]."
+              },
+              {
+                "op": "set",
+                "target": {
+                  "kind": "document",
+                  "id": "$new.0"
+                },
+                "field": "frontmatter.layer",
+                "value": "draft"
+              }
+            ],
+            "reason": "interop"
+          }
+        }
+      ],
+      "reads": [
+        {
+          "tool": "docs_read",
+          "args": {
+            "path": "texts/aurora.md",
+            "include_ids": true
+          }
+        },
+        {
+          "tool": "blocks_history",
+          "args": {
+            "id": "b_330"
+          }
+        },
+        {
+          "tool": "blocks_history",
+          "args": {
+            "id": "b_327"
+          }
+        },
+        {
+          "tool": "changes_since",
+          "args": {
+            "origin": "api"
+          }
+        }
+      ],
+      "expect": {
+        "writes": [
+          {
+            "plan_id": "8b16bfbf9469c46968fb45d12288e49458902be66c31dd5021df14ebfc9e16d3",
+            "commit": "c_20",
+            "revisions": [
+              {
+                "id": "d_20",
+                "path": "/texts/aurora.md",
+                "hash": "060e46160c6641db1ee5a630f4c4a2eae6bfb67348ba3d0c1f6f9e808eb80041"
+              }
+            ],
+            "new_ids": {
+              "$new.0": "d_20",
+              "$new.1": "b_327",
+              "$new.2": "b_328",
+              "$new.3": "b_329",
+              "$new.4": "b_330",
+              "$new.5": "b_331",
+              "$new.6": "b_332",
+              "$new.7": "b_333"
+            },
+            "committed": true
+          }
+        ],
+        "reads": [
+          {
+            "id": "d_20",
+            "path": "/texts/aurora.md",
+            "rev": "r_20",
+            "properties": {
+              "frontmatter": {
+                "type": "text",
+                "layer": "draft"
+              },
+              "inline": {},
+              "computed": {
+                "title": "Aurora Consurgens"
+              }
+            },
+            "raw": "---\ntype: text\nlayer: draft\n---\n\n# Aurora Consurgens\n\n## Plates\n\nTwenty-one, in the Zurich codex.\n\nThe first shows the sun and moon.\n\n## Attribution\n\nLong given to Aquinas.\n\nSee [[mercury]].\n",
+            "ids": [
+              "b_327",
+              "b_328",
+              "b_329",
+              "b_332",
+              "b_330",
+              "b_331",
+              "b_333"
+            ],
+            "hashes": {
+              "b_327": "3210b132958e499dcfede9a081b02c3ca8992339a546f5f3bc60a797c74472a7",
+              "b_328": "fc3b16b91f459e3ace204e5b5899fb05d8a20ee422f428fa0576df016d2cd4a2",
+              "b_329": "c7d8ddc4a02dca3e02e8f5187a14172df8635526b1cff5c9d7c785525bcc843d",
+              "b_332": "86df2cf2e1bb6953421cadb51e015a602f5dd107495fe72509409033bb1bd418",
+              "b_330": "146b6a2899cf38c75c7ec992d9e31981b0ff8303850fcefa986ca6c11267a796",
+              "b_331": "06d7b0d25f783740beba771a70337bee29f6ba9a6cd609eedf14a83fde60efbb",
+              "b_333": "82b869c0dbb37bf50347cca9edf0ec2ce7071c88020797767d4e87a9620c7242"
+            },
+            "parents": {
+              "b_327": null,
+              "b_328": null,
+              "b_329": null,
+              "b_332": null,
+              "b_330": null,
+              "b_331": null,
+              "b_333": null
+            }
+          },
+          [
+            {
+              "commitId": "c_20",
+              "seq": 21,
+              "ts": "2026-09-27T00:00:00.000Z",
+              "origin": "api",
+              "kind": "inserted",
+              "confidence": 1,
+              "reason": "api"
+            }
+          ],
+          [
+            {
+              "commitId": "c_20",
+              "seq": 21,
+              "ts": "2026-09-27T00:00:00.000Z",
+              "origin": "api",
+              "kind": "inserted",
+              "confidence": 1,
+              "reason": "api"
+            }
+          ],
+          {
+            "digests": [
+              {
+                "commit": "c_20",
+                "seq": 21,
+                "ts": "2026-09-27T00:00:00.000Z",
+                "origin": "api",
+                "actor": "agent:mcp",
+                "revisions": [
+                  {
+                    "id": "d_20",
+                    "path": "/texts/aurora.md",
+                    "hash": "060e46160c6641db1ee5a630f4c4a2eae6bfb67348ba3d0c1f6f9e808eb80041"
                   }
                 ]
               }

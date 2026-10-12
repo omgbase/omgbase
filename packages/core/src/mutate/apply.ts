@@ -23,7 +23,7 @@ import { isContainerBlock } from "../format/index.js";
 export type Op =
   | { op: "insert"; doc?: string; to: To; markdown: string; expect?: Expect }
   | { op: "update"; block: string; markdown?: string; attrs?: Record<string, unknown>; expect?: Expect; trivia?: string; childIds?: Record<string, string> }
-  | { op: "move"; blocks: string[]; to: To; expect?: Expect }
+  | { op: "move"; blocks: string[]; to: To; doc?: string; expect?: Expect }
   | { op: "remove"; blocks: string[]; expect?: Record<string, Expect> }
   | { op: "split"; block: string; at: number[]; expect?: Expect }
   | { op: "merge"; blocks: string[]; separator?: string; expect?: Record<string, Expect> };
@@ -95,17 +95,6 @@ function resolvePlaceholder(value: string, results: OpResult[]): string {
   return id;
 }
 
-function resolveTo(to: To, results: OpResult[]): To {
-  const parent =
-    typeof to.parent === "string" ? resolvePlaceholder(to.parent, results) : to.parent;
-  let at = to.at;
-  if (typeof at === "object") {
-    if ("before" in at) at = { before: resolvePlaceholder(at.before, results) };
-    else if ("after" in at) at = { after: resolvePlaceholder(at.after, results) };
-  }
-  return { parent, at };
-}
-
 // Resolve an insert op's `doc` field, which may be a minted doc id (d_...) or a
 // document path — the same id-or-path symmetry the read/graph surfaces expose
 // (shared via findDocByRef; see core/read/reader.ts). A valid d_ id passes
@@ -168,6 +157,10 @@ export function planChangeset(store: Store, req: Omit<ApplyRequest, "dryRun" | "
 export class ChangesetPlanner {
   /** Per op, in push order: the ids each op reported (`"$n.ids[i]"` placeholders resolve against these). */
   readonly results: OpResult[] = [];
+  /** `$new.n` → the id minted for it at execute (spec/mutate §11.7, 3.0): a block of a document
+   *  this request creates is named by its symbol in the plan's ops, and resolved here. Empty at
+   *  plan time, when the symbols ARE the tree's ids. */
+  private readonly aliases = new Map<string, string>();
   private readonly loaded = new Map<string, MutDoc>();
   private readonly before = new Map<string, string>();
   // Block ids present in each doc BEFORE any op — used to label intent
@@ -194,6 +187,59 @@ export class ChangesetPlanner {
       this.priorIds.set(docId, new Set(ids.map((r) => r.block_id)));
     }
     return d;
+  }
+
+  /**
+   * spec/mutate §11.3 (3.0): register a document this request CREATES — parsed
+   * from its composed bytes under the current minter — as a loaded document
+   * with no row behind it: no triple (`baseOf` is undefined, it is absent from
+   * `preconditions`), an empty `before` render, no prior ids (every block is
+   * `inserted / api`). `symbol` is its document symbol (`$new.n`), the id every
+   * later op addresses it by; its commit effect is an `ingest_known` with
+   * `base: null`, guarded by `path_taken` instead of the triple.
+   */
+  adoptNew(symbol: string, doc: MutDoc): void {
+    if (this.loaded.has(symbol)) throw new Error(`adoptNew: ${symbol} is already loaded`);
+    this.loaded.set(symbol, doc);
+    this.before.set(symbol, "");
+    this.priorIds.set(symbol, new Set());
+  }
+
+  /** Name a minted id for a `$new.n` symbol the plan's ops use (execute's replay). */
+  alias(symbol: string, id: string): void {
+    this.aliases.set(symbol, id);
+  }
+
+  /** An op's string field: an alias (`$new.n` at execute), a kernel placeholder, or the id itself. */
+  private resolveId(value: string): string {
+    return this.aliases.get(value) ?? resolvePlaceholder(value, this.results);
+  }
+
+  private resolveTo(to: To): To {
+    const parent = typeof to.parent === "string"
+      ? this.resolveId(to.parent)
+      : typeof to.parent === "object" && to.parent !== null && "heading" in to.parent
+        ? { ...to.parent, heading: this.resolveId(to.parent.heading) }
+        : to.parent;
+    let at = to.at;
+    if (typeof at === "object") {
+      if ("before" in at) at = { before: this.resolveId(at.before) };
+      else if ("after" in at) at = { after: this.resolveId(at.after) };
+    }
+    return { parent, at };
+  }
+
+  /** A per-block `expect` map re-keyed by the resolved ids (its keys may be placeholders or symbols). */
+  private resolveExpectMap(expect: Record<string, Expect> | undefined): Record<string, Expect> | undefined {
+    if (!expect) return undefined;
+    const out: Record<string, Expect> = {};
+    for (const [k, v] of Object.entries(expect)) out[this.resolveId(k)] = v;
+    return out;
+  }
+
+  /** `insert.doc` / `move.doc`: a document this request created (its symbol) passes through; else `resolveDocRef`. */
+  private resolveDocArg(ref: string): string {
+    return this.loaded.has(ref) ? ref : resolveDocRef(this.store, this.repoId, ref);
   }
 
   /** Is the document loaded (touched by an earlier op or head change)? */
@@ -236,35 +282,38 @@ export class ChangesetPlanner {
   /** Apply one op (spec/mutate §2); `op_index` is its position in `results`. */
   push(rawOp: Op): OpResult {
     const { store, repoId, loaded, results } = this;
+    void results;
     const i = results.length;
     const ensureDoc = (docId: string): MutDoc => this.ensureDoc(docId);
     let result: OpResult;
     switch (rawOp.op) {
       case "insert": {
-        const to = resolveTo(rawOp.to, results);
+        const to = this.resolveTo(rawOp.to);
         const docId = rawOp.doc !== undefined
-          ? resolveDocRef(store, repoId, rawOp.doc)
+          ? this.resolveDocArg(rawOp.doc)
           : parentDoc(store, repoId, to, loaded);
         const d = ensureDoc(docId);
         result = opInsert(d, to, rawOp.markdown, rawOp.expect, i);
         break;
       }
       case "update": {
-        const block = resolvePlaceholder(rawOp.block, results);
+        const block = this.resolveId(rawOp.block);
         const docId = docIdForBlockLoaded(loaded, block) ?? docIdForBlock(store, repoId, block);
         if (!docId) throw new MutationError("block_missing", `block ${block} not found`, { op_index: i });
         result = opUpdate(ensureDoc(docId), block, i, rawOp.markdown, rawOp.attrs, rawOp.expect, rawOp.trivia, rawOp.childIds);
         break;
       }
       case "move": {
-        const blocks = rawOp.blocks.map((b) => resolvePlaceholder(b, results));
-        const to = resolveTo(rawOp.to, results);
+        const blocks = rawOp.blocks.map((b) => this.resolveId(b));
+        const to = this.resolveTo(rawOp.to);
         const srcDocId = docIdForBlockLoaded(loaded, blocks[0]!) ?? docIdForBlock(store, repoId, blocks[0]!);
         if (!srcDocId) throw new MutationError("block_missing", `block ${blocks[0]} not found`, { op_index: i });
-        // {doc:true} with a non-anchor `at` (start/end) means the source doc's
-        // top level; otherwise infer the destination doc from the target.
-        const topLevelSameDoc = typeof to.parent === "object" && "doc" in to.parent && typeof to.at === "string";
-        const dstDocId = topLevelSameDoc ? srcDocId : parentDoc(store, repoId, to, loaded);
+        // {doc:true} with a non-anchor `at` (start/end) means the top level of
+        // `doc` when given (spec/mutate §2.3, 3.0: the destination document of a
+        // cross-document move to a top-level start/end), else of the source
+        // doc; an anchored `at` infers the destination doc from the anchor.
+        const topLevel = typeof to.parent === "object" && "doc" in to.parent && typeof to.at === "string";
+        const dstDocId = topLevel ? (rawOp.doc !== undefined ? this.resolveDocArg(rawOp.doc) : srcDocId) : parentDoc(store, repoId, to, loaded);
         if (dstDocId === srcDocId) {
           result = opMove(ensureDoc(srcDocId), blocks, to, i, rawOp.expect);
         } else {
@@ -274,24 +323,24 @@ export class ChangesetPlanner {
         break;
       }
       case "remove": {
-        const blocks = rawOp.blocks.map((b) => resolvePlaceholder(b, results));
+        const blocks = rawOp.blocks.map((b) => this.resolveId(b));
         const docId = docIdForBlockLoaded(loaded, blocks[0]!) ?? docIdForBlock(store, repoId, blocks[0]!);
         if (!docId) throw new MutationError("block_missing", `block ${blocks[0]} not found`, { op_index: i });
-        result = opRemove(ensureDoc(docId), blocks, i, rawOp.expect);
+        result = opRemove(ensureDoc(docId), blocks, i, this.resolveExpectMap(rawOp.expect));
         break;
       }
       case "split": {
-        const block = resolvePlaceholder(rawOp.block, results);
+        const block = this.resolveId(rawOp.block);
         const docId = docIdForBlockLoaded(loaded, block) ?? docIdForBlock(store, repoId, block);
         if (!docId) throw new MutationError("block_missing", `block ${block} not found`, { op_index: i });
         result = opSplit(ensureDoc(docId), block, rawOp.at, i, rawOp.expect);
         break;
       }
       case "merge": {
-        const blocks = rawOp.blocks.map((b) => resolvePlaceholder(b, results));
+        const blocks = rawOp.blocks.map((b) => this.resolveId(b));
         const docId = docIdForBlockLoaded(loaded, blocks[0]!) ?? docIdForBlock(store, repoId, blocks[0]!);
         if (!docId) throw new MutationError("block_missing", `block ${blocks[0]} not found`, { op_index: i });
-        result = opMerge(ensureDoc(docId), blocks, i, rawOp.separator, rawOp.expect);
+        result = opMerge(ensureDoc(docId), blocks, i, rawOp.separator, this.resolveExpectMap(rawOp.expect));
         break;
       }
     }
@@ -307,10 +356,12 @@ export class ChangesetPlanner {
     const preconditions: ChangesetPlan["preconditions"] = [];
     for (const [docId, d] of this.loaded) {
       const after = renderDoc(d);
-      const base = this.bases.get(docId)!;
+      // An adopted document (`adoptNew`) has no triple: it is absent from the
+      // preconditions and its ingest is guarded by `path_taken` (`base: null`).
+      const base = this.bases.get(docId) ?? null;
       diffs[d.path] = { before: this.before.get(docId) ?? "", after };
       revisions.push({ id: docId, path: d.path, hash: sha256(after).toString("hex") });
-      preconditions.push({ id: docId, ...base });
+      if (base) preconditions.push({ id: docId, ...base });
       effects.push({ kind: "ingest_known", docId, path: d.path, rendered: after, mutDoc: d, priorIds: this.priorIds.get(docId) ?? new Set(), base });
       // Keep the freshness cache warm so this engine write isn't re-hashed by a
       // later sweep (echo suppression already covers correctness; this avoids work).

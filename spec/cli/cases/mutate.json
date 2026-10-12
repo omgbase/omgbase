@@ -2508,7 +2508,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "{\"plan_id\":\"3658b8a5158debce266e2a682cdbe21a60c1e13f32c89846a780603e7da898b7\",\"commit\":\"c_20\",\"revisions\":[{\"id\":\"d_17\",\"path\":\"/texts/mutus-liber.md\",\"hash\":\"97fa8e1175b89d94092673f07fd9bdeb3fde121ac8143077211423a622e344c9\"}],\"new_ids\":{\"$new.0\":\"b_327\",\"$new.1\":\"b_328\"},\"committed\":true}\n"
+        "stdout": "{\"plan_id\":\"c5c21c9a8c9a79a0f93672da4597650c3e1768576629227d2a213feb598cf7b5\",\"commit\":\"c_20\",\"revisions\":[{\"id\":\"d_17\",\"path\":\"/texts/mutus-liber.md\",\"hash\":\"97fa8e1175b89d94092673f07fd9bdeb3fde121ac8143077211423a622e344c9\"}],\"new_ids\":{\"$new.0\":\"b_327\",\"$new.1\":\"b_328\"},\"committed\":true}\n"
       }
     },
     {
