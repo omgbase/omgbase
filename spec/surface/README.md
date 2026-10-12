@@ -213,7 +213,7 @@ planned and in-memory paths agree trivially (`query-root::repo-removed-*`,
   `blocks` and `nodes` ARE relations of some rows (`docs.blocks`,
   `docs.nodes`, `blocks.nodes`, `section.blocks`, §1.2) and stay those; on a
   row that lacks the relation (`blocks` on a block or link row, `nodes` on a
-  node or edge row, `block.blocks`) the context raises the same error when
+  node or link row, `block.blocks`) the context raises the same error when
   the name is read, the hint spelling the rule (`one caret per enclosing
   block, or the absolute 0^blocks`). Consequence: a frontmatter key named
   `docs`, `blocks`, `nodes` or `links` is unreachable by bare name — read it

@@ -363,7 +363,7 @@ pub fn card(name: &'static str, prog: &str) -> Option<HelpSpec> {
         ),
         "query" => spec(
             s(
-                "Composable OQX query: from <docs|blocks|nodes|links> where … select … [order by …] [follow …] (alias: q)",
+                "Composable OQX query: [select …] from <docs|blocks|nodes|links> [where …] [follow …] [order by …] [limit N] (alias: q)",
             ),
             vec![
                 s("query <source> [-n <N>] [--cursor <c>] [--ids|--json|--jsonl]"),

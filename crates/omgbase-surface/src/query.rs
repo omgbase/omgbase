@@ -519,7 +519,7 @@ fn describe_value(v: &Value) -> String {
 fn not_a_store_row(v: &Value) -> SurfaceError {
     SurfaceError::filter_invalid(
         format!(
-            "a hit must be a document, block, node or edge row — the query reached {}; to follow document references held in a property use refs(<field>)",
+            "a hit must be a document, block, node or link row — the query reached {}; to follow document references held in a property use refs(<field>)",
             describe_value(v)
         ),
         "OQX",
@@ -1136,7 +1136,7 @@ mod tests {
         assert_eq!(e.code, "filter_invalid");
         assert_eq!(
             e.message,
-            "a hit must be a document, block, node or edge row — the query reached a string (\"/timeline/kickoff.md\"); to follow document references held in a property use refs(<field>)"
+            "a hit must be a document, block, node or link row — the query reached a string (\"/timeline/kickoff.md\"); to follow document references held in a property use refs(<field>)"
         );
         // A tagged row under SELF_KEY passes and the key is peeled off.
         let mut row = oqx::Object::new();

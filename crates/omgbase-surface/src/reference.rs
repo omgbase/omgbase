@@ -1,5 +1,8 @@
 //! The `query_syntax` text (`spec/surface/README.md` §4: reference prose,
-//! unpinned). A condensed distillation of `docs/query-language.md`.
+//! unpinned). A condensed distillation of `docs/query-language.md`. Byte for
+//! byte the reference's `packages/core/src/mcp/reference.ts` — a test below
+//! compares the two when the monorepo is present, and another parses every
+//! example the text shows.
 
 /// The agent-facing OQX syntax reference the `query_syntax` tool returns.
 pub const QUERY_SYNTAX: &str = r##"# query — OQX syntax reference
@@ -7,11 +10,11 @@ pub const QUERY_SYNTAX: &str = r##"# query — OQX syntax reference
 The `query` tool takes ONE plain OQX string (+ optional `limit`/`cursor`). There
 is no {from, filter, order} envelope: every concern is a clause of the string.
 
-  [select <items>] from <target> [where <pred>] [follow <dest> [{ … }], …]
+  [select <items>] from <target> [where <pred>] [frontier <pred>] [follow <dest> [{ … }], …]
                    [order by <expr> [asc|desc], …] [limit N] [offset N]
   <target> count|exists|none|first|single { <block> }     (scalar/one-row form: a bare target at the root scope)
 
-CLAUSE ORDER IS FIXED: select, from, where, follow, order by, limit, offset —
+CLAUSE ORDER IS FIXED: select, from, where, frontier, follow, order by, limit, offset —
 each at most once; an out-of-order clause is a parse error naming the order.
 Only `select` may drop its keyword, and only as the first clause
 (`path, era from docs where …`). A top-level predicate needs `where`, because
@@ -267,7 +270,7 @@ links:  (the authored link graph as rows — one per open link: the relation a l
     receiver = a relation (nodes, blocks, doc.out_links, section.blocks, …), a
                reach-through row (dst, doc: one row — dst { title }), a
     list property (tags), entries(x), or a root collection (^docs; 0^docs at depth ≥ 2).
-    block    = [select …] [where …] [follow …] [order by …] [limit N] [offset N]
+    block    = [select …] [where …] [frontier …] [follow …] [order by …] [limit N] [offset N]
                — the same fixed order as the top level (`from` optional; the
                receiver supplies the rows). A leading name/alias list is the
                projection (`select` dropped); a predicate always needs `where`.
@@ -296,7 +299,7 @@ links:  (the authored link graph as rows — one per open link: the relation a l
   raw         whole file bytes (docs) — docs_read is cheaper for one doc.
   distinct    select distinct type   (dedup hits by projected value)
   values      select <ONE item> values → bare values instead of records:
-                from docs select distinct type values          → values: ["hub","lab-note",…]
+                select distinct type values from docs          → values: ["hub","lab-note",…]
                 select path values from docs                   → values: ["/index.md", …]
                 tags: tags collect { $it values }             → a plain array
                 h: nodes first { name values where kind == "md:section" order by first_ordinal }
@@ -363,7 +366,7 @@ links:  (the authored link graph as rows — one per open link: the relation a l
   select d: dst.title, k: dst_kind from links       the destination document's title
   from docs where out_links exists { where dst.layer == "draft" }   links into drafts
   select b: in_links collect distinct { from doc } from docs     backlinks as { id, path }
-  from links where predicate == "depends_on" select doc_id, dst_path
+  select doc_id, dst_path from links where predicate == "depends_on"
   from docs where not doc.in_links exists { }      orphans (nothing links in)
   (The `graph` tool is a convenience wrapper that compiles to a follow query.)
 
@@ -376,15 +379,15 @@ text()/where prune the candidate set; only order by reweights.
 
   from docs where layer == "working"
   from docs where path.startsWith("/guides/") and updated_at >= "2026-08-01"
-  from docs where "pricing" in list(tags) select layer, tags
+  select layer, tags from docs where "pricing" in list(tags)
   from docs where inline.owner == "alice"
   from docs where title.lower().contains("q3 plan")
   from docs where format == "yaml"
   from docs where type == "practitioner" order by era desc limit 2
   from docs where nodes none { where kind == "md:task" and not checked }
   from docs where tags exists { where $it == "tria-prima" }
-  from docs where path == "/x.md" select fm: entries(data) collect { k: $key, v: $it }
-  from docs select owner_id, owner: ^nodes single { where kind == "person" and attrs.id == ^owner_id }
+  select fm: entries(data) collect { k: $key, v: $it } from docs where path == "/x.md"
+  select owner_id, owner: ^nodes single { where kind == "person" and attrs.id == ^owner_id } from docs
   from blocks where type == "task" and not checked and under_heading("Launch") and doc.layer == "working"
   from blocks where type == "paragraph" and has_edge("references", "d_92aaaaa")
   select path, $depth from docs where path == "/timeline/review.md" follow refs(before), refs(after)
@@ -396,10 +399,226 @@ text()/where prune the candidate set; only order by reweights.
   select path, back: nodes first { select p: 0^docs collect { path where ^^path in list(after) } values } from docs where type == "milestone"
   select path, prior: refs(before) collect { path, when } from docs where type == "milestone"
   from blocks order by semantic("identity preservation across edits") desc limit 10
-  from links where dst_kind == "external" select uri
+  select uri from links where dst_kind == "external"
   docs count { where layer == "canon" }
 
 Common mistake: `$path`/`$id` (the 2.x spelling) — omgbase has no $ names; write
 `path`/`id`. Another: `where tags == "x"` on a list-valued key is false — write
 `"x" in tags`. Another: `select data.path` — alias it (`p: data.path`).
 "##;
+
+#[cfg(test)]
+mod tests {
+    //! Every OQX example the text shows must parse — extracted MECHANICALLY by
+    //! the rule the reference's `packages/core/src/mcp/reference.test.ts` states
+    //! (and mirrors here): (1) only indented lines are candidates — an error
+    //! example belongs in prose, a code line is a valid query; (2) in
+    //! `## Examples` every indented line is a whole query; (3) elsewhere the
+    //! query is the text before the first run of three or more spaces, skipped
+    //! when it holds a grammar placeholder (`<pred>`), an ellipsis (`…`) or
+    //! sentence punctuation (wrapped commentary); (4) a candidate is a query
+    //! when it begins `select `, `from `, or a root target followed by a
+    //! consumer or `{` (a `^`-led line is an expression fragment); (5) a
+    //! `select`-led candidate without a depth-0 ` from ` is a fragment.
+    use super::QUERY_SYNTAX;
+
+    const TARGETS: [&str; 4] = ["docs", "blocks", "nodes", "links"];
+    const CONSUMERS: [&str; 7] = [
+        "collect", "exists", "none", "count", "first", "single", "distinct",
+    ];
+
+    fn has_top_level_from(q: &str) -> bool {
+        let chars: Vec<char> = q.chars().collect();
+        let (mut depth, mut quote): (i32, Option<char>) = (0, None);
+        for (i, &c) in chars.iter().enumerate() {
+            if let Some(open) = quote {
+                if c == open {
+                    quote = None;
+                }
+                continue;
+            }
+            match c {
+                '"' | '\'' => quote = Some(c),
+                '{' => depth += 1,
+                '}' => depth -= 1,
+                _ if depth == 0 && chars[i..].starts_with(&[' ', 'f', 'r', 'o', 'm', ' ']) => {
+                    return true;
+                }
+                _ => {}
+            }
+        }
+        false
+    }
+
+    /// `<seed>`, `<pred>`, `<ONE item>`: a `<` + letter … `>` run of letters, `_`, `|`, space or `…`.
+    fn has_placeholder(q: &str) -> bool {
+        let chars: Vec<char> = q.chars().collect();
+        for (i, &c) in chars.iter().enumerate() {
+            if c != '<' || !chars.get(i + 1).is_some_and(|n| n.is_ascii_alphabetic()) {
+                continue;
+            }
+            let mut j = i + 1;
+            while j < chars.len()
+                && (chars[j].is_ascii_alphabetic() || matches!(chars[j], '_' | '|' | ' ' | '…'))
+            {
+                j += 1;
+            }
+            if chars.get(j) == Some(&'>') {
+                return true;
+            }
+        }
+        false
+    }
+
+    fn is_prose(q: &str) -> bool {
+        q.contains(". ")
+            || q.contains("; ")
+            || q.ends_with('.')
+            || q.ends_with(':')
+            || q.ends_with(';')
+    }
+
+    fn root_consumer(q: &str) -> bool {
+        let mut it = q.splitn(3, ' ');
+        let (Some(target), Some(next)) = (it.next(), it.next()) else {
+            return false;
+        };
+        TARGETS.contains(&target) && (CONSUMERS.contains(&next) || next.starts_with('{'))
+    }
+
+    /// `(line, section, query)` for every admitted example, plus the skipped `select` fragments.
+    fn extract(text: &str) -> (Vec<(usize, String, String)>, Vec<String>) {
+        let (mut queries, mut fragments) = (Vec::new(), Vec::new());
+        let mut section = String::new();
+        for (i, raw) in text.lines().enumerate() {
+            if let Some(h) = raw.strip_prefix("## ") {
+                section = h.trim().to_owned();
+                continue;
+            }
+            if !raw.starts_with("  ") || raw.trim().is_empty() {
+                continue;
+            }
+            let trimmed = raw.trim();
+            if section == "Examples" {
+                queries.push((i + 1, section.clone(), trimmed.to_owned()));
+                continue;
+            }
+            let query = trimmed.split("   ").next().unwrap_or("").trim();
+            if has_placeholder(query) || query.contains('…') || is_prose(query) {
+                continue;
+            }
+            if !(query.starts_with("select ") || query.starts_with("from ") || root_consumer(query))
+            {
+                continue;
+            }
+            if query.starts_with("select ") && !has_top_level_from(query) {
+                fragments.push(query.to_owned());
+                continue;
+            }
+            queries.push((i + 1, section.clone(), query.to_owned()));
+        }
+        (queries, fragments)
+    }
+
+    #[test]
+    fn extraction_is_substantial() {
+        let (queries, fragments) = extract(QUERY_SYNTAX);
+        let in_examples = queries.iter().filter(|q| q.1 == "Examples").count();
+        assert!(in_examples >= 20, "{in_examples} examples");
+        assert!(
+            queries.len() - in_examples >= 10,
+            "{} outside Examples",
+            queries.len() - in_examples
+        );
+        for f in &fragments {
+            assert!(
+                !TARGETS.iter().any(|t| f.contains(&format!(" from {t}"))),
+                "a fragment must not carry a top-level from: {f}"
+            );
+        }
+    }
+
+    #[test]
+    fn every_example_parses() {
+        let (queries, _) = extract(QUERY_SYNTAX);
+        let failures: Vec<String> = queries
+            .iter()
+            .filter_map(|(line, section, q)| {
+                oqx::parse_string(q)
+                    .err()
+                    .map(|e| format!("line {line} ({section}): {q}\n    {e}"))
+            })
+            .collect();
+        assert!(
+            failures.is_empty(),
+            "query_syntax examples that do not parse:\n{}",
+            failures.join("\n")
+        );
+    }
+
+    #[test]
+    fn error_examples_live_in_prose() {
+        let (queries, _) = extract(QUERY_SYNTAX);
+        for bad in [
+            "era > 1600 from docs",
+            "from docs count",
+            "from docs where \"pricing\" in list(tags) select layer, tags",
+        ] {
+            assert!(oqx::parse_string(bad).is_err());
+            assert!(
+                !queries.iter().any(|q| q.2 == bad),
+                "{bad} is an error example and must stay in prose"
+            );
+        }
+    }
+
+    #[test]
+    fn clause_order_sentence_matches_the_parser() {
+        let e = oqx::parse_string("from docs where x select y")
+            .unwrap_err()
+            .to_string();
+        let (_, rest) = e
+            .split_once("OQX clause order is ")
+            .expect("the parser names the order");
+        let order = rest
+            .split(" (")
+            .next()
+            .unwrap()
+            .trim_end_matches(['.', ' ']);
+        assert!(
+            QUERY_SYNTAX.contains(&format!("CLAUSE ORDER IS FIXED: {order}")),
+            "the text's order sentence drifted from the parser's ({order})"
+        );
+    }
+
+    /// The twin is byte for byte the reference's `QUERY_SYNTAX` (the TS
+    /// template literal, unescaped). Skipped outside the monorepo.
+    #[test]
+    fn twin_is_byte_identical_to_the_reference() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../packages/core/src/mcp/reference.ts"
+        );
+        let Ok(ts) = std::fs::read_to_string(path) else {
+            return;
+        };
+        let open = "export const QUERY_SYNTAX = `";
+        let start = ts.find(open).expect("the TS export") + open.len();
+        let end = ts.rfind("`;").expect("the TS literal's end");
+        let mut text = String::new();
+        let mut chars = ts[start..end].chars();
+        while let Some(c) = chars.next() {
+            if c == '\\' {
+                if let Some(n) = chars.next() {
+                    text.push(n);
+                }
+            } else {
+                text.push(c);
+            }
+        }
+        assert!(
+            text == QUERY_SYNTAX,
+            "crates/omgbase-surface/src/reference.rs drifted from packages/core/src/mcp/reference.ts"
+        );
+    }
+}

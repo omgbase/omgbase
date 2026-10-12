@@ -212,7 +212,7 @@ function describeValue(v: unknown): string {
 }
 function notAStoreRow(v: unknown): FilterInvalid {
   return new FilterInvalid(
-    `a hit must be a document, block, node or edge row — the query reached ${describeValue(v)}; to follow document references held in a property use refs(<field>)`,
+    `a hit must be a document, block, node or link row — the query reached ${describeValue(v)}; to follow document references held in a property use refs(<field>)`,
     "OQX",
   );
 }

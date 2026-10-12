@@ -395,9 +395,9 @@ nested/correlated scopes:
   `^docs collect { where ^path in list(after) }` is "the documents whose
   `after` names me".
 - **A hit is a store row.** Every top-level row of a `collect`/`first`/`single`
-  query must be a document, block, node or edge; `follow before` over a list of
+  query must be a document, block, node or link; `follow before` over a list of
   paths reaches the list's *strings* and fails loud — `filter_invalid: a hit
-  must be a document, block, node or edge row — the query reached a string
+  must be a document, block, node or link row — the query reached a string
   ("/timeline/kickoff.md"); to follow document references held in a property
   use refs(<field>)`. Write `follow refs(before)`. A `values` projection
   returns no hits and is exempt; nested blocks are unaffected (their rows are

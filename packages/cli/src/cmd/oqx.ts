@@ -50,7 +50,7 @@ async function runOqx(cli: Cli, args: string[]): Promise<number> {
   if (values.help) {
     renderHelp(cli, {
       name: "query",
-      summary: "Composable OQX query: from <docs|blocks|nodes|links> where … select … [order by …] [follow …] (alias: q)",
+      summary: "Composable OQX query: [select …] from <docs|blocks|nodes|links> [where …] [follow …] [order by …] [limit N] (alias: q)",
       usage: ["query <source> [-n <N>] [--cursor <c>] [--ids|--json|--jsonl]", "query -f <file|-> [-n <N>] [--cursor <c>]"],
       options: [
         ["<source>", "the OQX query text (quote it); `from` may be omitted inside blocks"],

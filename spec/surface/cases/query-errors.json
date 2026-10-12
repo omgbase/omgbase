@@ -304,7 +304,7 @@
       "query": "select path from docs where path == \"timeline/review.md\" follow before",
       "expect": {
         "error": "filter_invalid",
-        "message_includes": "a hit must be a document, block, node or edge row — the query reached a string (\"/timeline/kickoff.md\")"
+        "message_includes": "a hit must be a document, block, node or link row — the query reached a string (\"/timeline/kickoff.md\")"
       }
     },
     {
@@ -313,7 +313,7 @@
       "query": "select path from docs where path == \"timeline/review.md\" follow before first { }",
       "expect": {
         "error": "filter_invalid",
-        "message_includes": "a hit must be a document, block, node or edge row — the query reached a string (\"/timeline/kickoff.md\")"
+        "message_includes": "a hit must be a document, block, node or link row — the query reached a string (\"/timeline/kickoff.md\")"
       }
     },
     {
@@ -322,7 +322,7 @@
       "query": "docs collect { select $it from tags }",
       "expect": {
         "error": "filter_invalid",
-        "message_includes": "a hit must be a document, block, node or edge row — the query reached a string (\"alchemy\")"
+        "message_includes": "a hit must be a document, block, node or link row — the query reached a string (\"alchemy\")"
       }
     },
     {

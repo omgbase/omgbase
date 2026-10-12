@@ -179,7 +179,7 @@ different sets. Several tests depend on this; keep it fully checked.
   from `review` walks review → {dissolution, kickoff} → review (a cycle, admitted
   once); the reverse join is `^docs { ^path in list(before) }` — live because
   `path` is the `/`-rooted reference form; `follow before` (the strings) is the
-  "a hit must be a document, block, node or edge row" error.
+  "a hit must be a document, block, node or link row" error.
 - **`none`, `limit`, `offset`** (oqx ≥ 0.9) — `nodes none { where kind ==
   "md:task" }` excludes salt (its checked supply list *is* a task) while `none`
   over the open-task complement admits all five substances ("every task done");

@@ -11,11 +11,11 @@ export const QUERY_SYNTAX = `# query — OQX syntax reference
 The \`query\` tool takes ONE plain OQX string (+ optional \`limit\`/\`cursor\`). There
 is no {from, filter, order} envelope: every concern is a clause of the string.
 
-  [select <items>] from <target> [where <pred>] [follow <dest> [{ … }], …]
+  [select <items>] from <target> [where <pred>] [frontier <pred>] [follow <dest> [{ … }], …]
                    [order by <expr> [asc|desc], …] [limit N] [offset N]
   <target> count|exists|none|first|single { <block> }     (scalar/one-row form: a bare target at the root scope)
 
-CLAUSE ORDER IS FIXED: select, from, where, follow, order by, limit, offset —
+CLAUSE ORDER IS FIXED: select, from, where, frontier, follow, order by, limit, offset —
 each at most once; an out-of-order clause is a parse error naming the order.
 Only \`select\` may drop its keyword, and only as the first clause
 (\`path, era from docs where …\`). A top-level predicate needs \`where\`, because
@@ -271,7 +271,7 @@ links:  (the authored link graph as rows — one per open link: the relation a l
     receiver = a relation (nodes, blocks, doc.out_links, section.blocks, …), a
                reach-through row (dst, doc: one row — dst { title }), a
     list property (tags), entries(x), or a root collection (^docs; 0^docs at depth ≥ 2).
-    block    = [select …] [where …] [follow …] [order by …] [limit N] [offset N]
+    block    = [select …] [where …] [frontier …] [follow …] [order by …] [limit N] [offset N]
                — the same fixed order as the top level (\`from\` optional; the
                receiver supplies the rows). A leading name/alias list is the
                projection (\`select\` dropped); a predicate always needs \`where\`.
@@ -300,7 +300,7 @@ links:  (the authored link graph as rows — one per open link: the relation a l
   raw         whole file bytes (docs) — docs_read is cheaper for one doc.
   distinct    select distinct type   (dedup hits by projected value)
   values      select <ONE item> values → bare values instead of records:
-                from docs select distinct type values          → values: ["hub","lab-note",…]
+                select distinct type values from docs          → values: ["hub","lab-note",…]
                 select path values from docs                   → values: ["/index.md", …]
                 tags: tags collect { $it values }             → a plain array
                 h: nodes first { name values where kind == "md:section" order by first_ordinal }
@@ -367,7 +367,7 @@ links:  (the authored link graph as rows — one per open link: the relation a l
   select d: dst.title, k: dst_kind from links       the destination document's title
   from docs where out_links exists { where dst.layer == "draft" }   links into drafts
   select b: in_links collect distinct { from doc } from docs     backlinks as { id, path }
-  from links where predicate == "depends_on" select doc_id, dst_path
+  select doc_id, dst_path from links where predicate == "depends_on"
   from docs where not doc.in_links exists { }      orphans (nothing links in)
   (The \`graph\` tool is a convenience wrapper that compiles to a follow query.)
 
@@ -380,15 +380,15 @@ text()/where prune the candidate set; only order by reweights.
 
   from docs where layer == "working"
   from docs where path.startsWith("/guides/") and updated_at >= "2026-08-01"
-  from docs where "pricing" in list(tags) select layer, tags
+  select layer, tags from docs where "pricing" in list(tags)
   from docs where inline.owner == "alice"
   from docs where title.lower().contains("q3 plan")
   from docs where format == "yaml"
   from docs where type == "practitioner" order by era desc limit 2
   from docs where nodes none { where kind == "md:task" and not checked }
   from docs where tags exists { where $it == "tria-prima" }
-  from docs where path == "/x.md" select fm: entries(data) collect { k: $key, v: $it }
-  from docs select owner_id, owner: ^nodes single { where kind == "person" and attrs.id == ^owner_id }
+  select fm: entries(data) collect { k: $key, v: $it } from docs where path == "/x.md"
+  select owner_id, owner: ^nodes single { where kind == "person" and attrs.id == ^owner_id } from docs
   from blocks where type == "task" and not checked and under_heading("Launch") and doc.layer == "working"
   from blocks where type == "paragraph" and has_edge("references", "d_92aaaaa")
   select path, $depth from docs where path == "/timeline/review.md" follow refs(before), refs(after)
@@ -400,7 +400,7 @@ text()/where prune the candidate set; only order by reweights.
   select path, back: nodes first { select p: 0^docs collect { path where ^^path in list(after) } values } from docs where type == "milestone"
   select path, prior: refs(before) collect { path, when } from docs where type == "milestone"
   from blocks order by semantic("identity preservation across edits") desc limit 10
-  from links where dst_kind == "external" select uri
+  select uri from links where dst_kind == "external"
   docs count { where layer == "canon" }
 
 Common mistake: \`$path\`/\`$id\` (the 2.x spelling) — omgbase has no $ names; write

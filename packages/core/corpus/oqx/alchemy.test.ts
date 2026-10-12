@@ -1412,7 +1412,7 @@ describe("alchemy corpus — sugar, refs() and the root row", () => {
     const next = hits('select path, next: ^docs { ^path in list(before) } from docs where type == "milestone"').hits;
     expect(next.map((h) => (h.next as { path: string }[]).map((n) => n.path))).toEqual([["/timeline/review.md"], []]);
     // the strings themselves are not hits
-    expect(() => paths('from docs where path == "/timeline/review.md" follow before')).toThrow(/a hit must be a document, block, node or edge row.*refs\(<field>\)/);
+    expect(() => paths('from docs where path == "/timeline/review.md" follow before')).toThrow(/a hit must be a document, block, node or link row.*refs\(<field>\)/);
   });
 
   it("the repository is the root row: ^docs / ^id / entries(^$it) from a row, 0^docs from any depth, a bare target inside a block is loud", () => {

@@ -208,7 +208,7 @@ Budget: 2 turns, < 1k tokens total.
 1. `changes_since { cursor: <last seen commit seq> }` — 1 turn. (`changes_since` is cursor-based on the repo commit seq; there is no `since_ts`.)
 
 **T4 — "Which exact paragraphs depend on this document?"**
-1. `query { query: 'from links where dst_path == "/x.md" and (predicate == "depends_on" or predicate == "references") select doc_id, block_id, field' }` — 1 turn.
+1. `query { query: 'select doc_id, block_id, field from links where dst_path == "/x.md" and (predicate == "depends_on" or predicate == "references")' }` — 1 turn.
 
 **T5 — "Everything downstream of this assumption."**
 1. `query { query: 'from docs where path == "/assumptions.md" follow in_links collect { from doc depth 4 }' }` — 1 turn. (The inbound link rows walked to their source documents — who depends on / references the seed.)
