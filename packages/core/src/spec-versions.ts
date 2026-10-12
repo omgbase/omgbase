@@ -19,7 +19,7 @@ export const SPEC_VERSIONS = {
   graph: "1.1",
   search: "2.0",
   mutate: "2.0",
-  sync: "2.0",
+  sync: "2.1",
   surface: "3.0",
   cli: "3.0",
 } as const;

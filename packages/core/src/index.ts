@@ -32,7 +32,7 @@ export {
   type SweepResult, type DiskDrift, type SweepPlan, type StatCacheRow, type SnapshotEntry,
 } from "./sync/freshness.js";
 export { recoverRepo, type RecoveryResult } from "./sync/recovery.js";
-export { withWriterLock, writerLockFree, WriterLockTimeout } from "./sync/writer-lock.js";
+export { withWriterLock, withWriterLockAsync, writerLockFree, writerLockHeld, setWriterLockDefaults, writerLockDefaults, WriterLockTimeout, type WriterLockOptions } from "./sync/writer-lock.js";
 export { WatchLease, watchLeaseLive } from "./sync/watch-lease.js";
 export { ingestDirectory, type IngestDirResult } from "./sync/attach.js";
 export { ensureRepo } from "./core/attach.js";
@@ -69,7 +69,7 @@ export {
 } from "./sync/sources.js";
 export { reconcileChanges, attachSource } from "./sync/driver.js";
 export { observeFile, observeMany, observeOne, observeDelete, observeBatch, type ObserveResult, type ObserveOneResult, type ObserveDeleteResult, type BatchItem, type BatchOutcome } from "./sync/observe.js";
-export { buildServer, type ServerContext } from "./mcp/server.js";
+export { buildServer, WRITE_TOOLS, type ServerContext } from "./mcp/server.js";
 export { serveStdio, type ServeStdioHandle } from "./mcp/stdio.js";
 export { processCheckpoint, type CheckpointResult } from "./sync/checkpoint.js";
 export { reposStatus, syncStatus, reposList, type RepoStatus, type SyncStatus, type DiskStatus, type ReposList } from "./sync/admin.js";

@@ -44,6 +44,9 @@ pub struct ServeOptions {
     /// `<workspace>/.omgbase`: write tools take `writer.lock` here. `None`
     /// (an in-memory surface) runs them unlocked.
     pub omgbase_dir: Option<PathBuf>,
+    /// How long a write tool waits for the lock (`spec/sync` §7's 5 s by
+    /// default; the CLI's `OMGBASE_WRITER_LOCK_TIMEOUT_MS` seam shortens it).
+    pub lock: WriterLockOptions,
 }
 
 /// One tool result as MCP frames it.
@@ -111,7 +114,7 @@ pub fn handle(
                 .unwrap_or_else(|| json!({}));
             let lock = match &opts.omgbase_dir {
                 Some(dir) if Surface::is_write_tool(name) => {
-                    match WriterLock::acquire(dir, WriterLockOptions::default()) {
+                    match WriterLock::acquire(dir, opts.lock) {
                         Ok(l) => Some(l),
                         Err(e) => {
                             let env = SurfaceError::other(e.to_string()).to_json();
@@ -231,6 +234,7 @@ mod tests {
         let dir = tmp.path().join(".omgbase");
         let opts = ServeOptions {
             omgbase_dir: Some(dir.clone()),
+            ..ServeOptions::default()
         };
         let mut s = surface();
         // A sourceless repo cannot create a document, but the lock is taken

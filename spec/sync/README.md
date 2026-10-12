@@ -290,11 +290,24 @@ Both are advisory lock files under `.omgbase/`, created with exclusive
 holder pid is no longer alive (signal 0 fails with anything but `EPERM`) is
 stolen.
 
-- **Writer lock** `writer.lock`: taken around a mutation's commit phase
-  (`spec/mutate` §4 step 5) and checkpoint ingests; a waiter polls every
-  25 ms up to 5 s, then fails `WriterLockTimeout` naming the holder pid;
-  released by unlinking. A lock held by a **live** process is never stolen,
-  however old (§9: the reference stole after 30 s).
+- **Writer lock** `writer.lock`: taken by **every host around every
+  write, once, at the host's outermost write boundary, for the write's
+  whole duration** (since 2.1; 2.0 said "around a mutation's commit phase
+  and checkpoint ingests", which left the MCP tool call and the CLI verb
+  to each engine). The boundaries are: an MCP write tool call (the 21
+  write tools of `spec/surface` §4, dry runs included, so a document move
+  and its follow-up inbound-link retarget are one holding); a CLI write
+  verb run against a local workspace (`--server` does not lock locally —
+  the remote server does); every checkpoint ingest — the watcher's priming
+  sweep and per-batch checkpoints, a one-shot command's pre-verb freshness
+  sweep and a one-shot `sync` (§4.3, §6). Inside one holding the engine
+  takes no second lock:
+  the commit phase of `spec/mutate` §4 step 5 runs under the boundary's
+  lock, never its own. A waiter polls every 25 ms up to 5 s, then fails
+  `WriterLockTimeout` naming the holder pid; at the MCP boundary that
+  failure is the tool's error envelope; released by unlinking. A lock
+  held by a **live** process is never stolen, however old (§9: the
+  reference stole after 30 s).
 - **Watch lease** `watch.lock`: held by a live watcher for its lifetime;
   `try_acquire` returns nothing when a live holder exists; `live(dir)` is
   the probe one-shot commands use to skip the freshness sweep.
@@ -460,9 +473,20 @@ also rewrites `out` lines from the engine's actual requests. **Allowlist
   the runner's ordering (wait for the events a transcript promises before
   the next request); `events` records parsed event objects, `ready` among
   them.
-- **Open — what a second host still needs from §6/§7.** The writer lock's
-  scope around a priming sweep or an embed drain, the error a lock timeout
-  produces at the MCP boundary (the catch-all in both), `git_head` null on
+- **Pinned (2.1) — the writer lock's scope.** Both engines now take the
+  lock once per write at the outermost boundary (§7): the reference's
+  `omg mcp` took none (it relied on in-process serialization, which a
+  concurrent CLI writer or the other engine defeats) and locked a document
+  move's rename and its inbound retarget separately, with a gap; the Rust
+  CLI's local write verbs took none; both engines ran a one-shot command's
+  pre-verb freshness sweep unlocked. The reference's lock is re-entrant
+  within a process (a nested acquisition is a no-op; the outermost holder
+  releases) so a boundary lock and a library-level `omgbaseDir` can
+  coexist; the Rust lock is not, and its hosts nest nothing. The priming
+  sweep is under the lock in both.
+- **Open — what a second host still needs from §6/§7.** The scope of an
+  embed drain, the exact error code a lock timeout produces at the MCP
+  boundary (today the catch-all in both engines), `git_head` null on
   watcher/sweep checkpoints, and multi-connection SQLite busy handling (both
   engines: WAL + a 5 s busy timeout) are unpinned.
 - **Pinned — lock stealing.** A lock file with an unparsable body has no

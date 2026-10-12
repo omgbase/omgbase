@@ -1,4 +1,4 @@
-import { freshnessSweep, watchLeaseLive } from "@omgbase/core";
+import { freshnessSweep, watchLeaseLive, withWriterLock } from "@omgbase/core";
 import { NO_WORKSPACE_OK, SKIP_FRESHNESS, REMOTE_OK, asksForHelp, type Cli, type GlobalFlags } from "./context.js";
 import { CliUsageError, EngineErrorLike, renderError, usageFromParseArgs } from "./output.js";
 import { resolveCommand, unknownCommandError } from "./commands.js";
@@ -155,7 +155,11 @@ export async function runCommand(cli: Cli, command: string, rest: string[]): Pro
   try {
     // Freshness sweep (11 §3.3): current-by-default, unless --stale, a live
     // watcher holds the lease, remote (`--server`) mode (no local tree to sweep),
-    // or the command manages sync itself.
+    // or the command manages sync itself. The sweep is a checkpoint ingest, so it
+    // runs under the workspace writer lock (spec/sync §7) like every other
+    // host's; a writer that follows re-enters the lock. A lock held past the
+    // wait fails the command as the catch-all engine error (exit 1), like any
+    // write would — `--stale` skips the sweep and so never contends.
     if (!help && !cli.flags.stale && cli.flags.server === undefined && !SKIP_FRESHNESS.has(resolved.name) && !NO_WORKSPACE_OK.has(resolved.name)) {
       const ws = cli.workspace();
       if (!watchLeaseLive(ws.omgbaseDir)) {
@@ -165,7 +169,8 @@ export async function runCommand(cli: Cli, command: string, rest: string[]): Pro
         // repo_not_found if it truly needs a repo.
         try {
           const repo = cli.repo(ws);
-          if (repo.rootPath) freshnessSweep(ws.store, repo.repoId, repo.rootPath);
+          const root = repo.rootPath;
+          if (root) withWriterLock(ws.omgbaseDir, () => freshnessSweep(ws.store, repo.repoId, root));
         } catch (err) {
           if (!(err instanceof EngineErrorLike && err.code === "repo_not_found")) throw err;
         }

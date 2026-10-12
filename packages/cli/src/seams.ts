@@ -1,4 +1,4 @@
-import { pinClock, sequentialMinter, setIdMinter } from "@omgbase/core";
+import { pinClock, sequentialMinter, setIdMinter, setWriterLockDefaults } from "@omgbase/core";
 import { CliUsageError } from "./output.js";
 
 // The two conformance seams of spec/surface §7.1 (and spec/cli §2.6), read
@@ -15,12 +15,28 @@ import { CliUsageError } from "./output.js";
 //                                    process: every commit a verb stamps, every
 //                                    `ts` reported as current; not an instant →
 //                                    usage error (exit 2)
+//
+// A third seam is this engine's own, not the spec's (the Rust binary reads the
+// same variable):
+//
+//   OMGBASE_WRITER_LOCK_TIMEOUT_MS=<n>  how long a write waits for the workspace
+//                                    writer lock (spec/sync §7: 5 s when unset)
+//                                    — for a test that proves a held lock fails
+//                                    a write without sitting out the full wait.
+//                                    Honored by every lock this process takes
+//                                    (a verb's kernel-level lock, `omg mcp`'s
+//                                    tool boundary, the watcher's checkpoints);
+//                                    empty = unset, not an integer → usage error
+
+export const WRITER_LOCK_TIMEOUT_ENV = "OMGBASE_WRITER_LOCK_TIMEOUT_MS";
 
 export interface SpecSeams {
   /** the sequential minter is installed */
   minter: boolean;
   /** the pinned instant (canonical ISO form), when the clock is pinned */
   clock: string | null;
+  /** the writer lock's wait in ms, when overridden */
+  writerLockTimeoutMs: number | null;
 }
 
 let installed: SpecSeams | null = null;
@@ -31,7 +47,7 @@ let installed: SpecSeams | null = null;
  */
 export function installSpecSeams(env: NodeJS.ProcessEnv = process.env): SpecSeams {
   if (installed) return installed;
-  const seams: SpecSeams = { minter: false, clock: null };
+  const seams: SpecSeams = { minter: false, clock: null, writerLockTimeoutMs: null };
   const minter = env.OMGBASE_SPEC_MINTER;
   if (minter !== undefined && minter !== "") {
     if (minter !== "sequential") {
@@ -49,11 +65,20 @@ export function installSpecSeams(env: NodeJS.ProcessEnv = process.env): SpecSeam
     }
     seams.clock = new Date().toISOString();
   }
+  const lockWait = env[WRITER_LOCK_TIMEOUT_ENV];
+  if (lockWait !== undefined && lockWait !== "") {
+    const ms = /^\s*\d+\s*$/.test(lockWait) ? Number(lockWait) : NaN;
+    if (!Number.isSafeInteger(ms)) {
+      throw new CliUsageError(`${WRITER_LOCK_TIMEOUT_ENV}=${JSON.stringify(lockWait)}: not a number of milliseconds`, `unset it, or e.g. ${WRITER_LOCK_TIMEOUT_ENV}=200 for a test run`);
+    }
+    setWriterLockDefaults({ timeoutMs: ms });
+    seams.writerLockTimeoutMs = ms;
+  }
   installed = seams;
   return seams;
 }
 
 /** The seams installed by `installSpecSeams` (none when it has not run). */
 export function activeSpecSeams(): SpecSeams {
-  return installed ?? { minter: false, clock: null };
+  return installed ?? { minter: false, clock: null, writerLockTimeoutMs: null };
 }

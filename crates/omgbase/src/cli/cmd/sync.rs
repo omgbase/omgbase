@@ -8,7 +8,8 @@
 //! ```
 //!
 //! The one-shot is the explicit form of the freshness sweep every read runs
-//! (§3.7), rendered. `--watch` is the reference's `runLocalWatch` over
+//! (§3.7), rendered — and like it a checkpoint ingest under the workspace
+//! writer lock (`spec/sync` §7), as the watcher's sweeps are. `--watch` is the reference's `runLocalWatch` over
 //! [`crate::watch`] (lease → adapter → `watch` → `ready` → priming sweep →
 //! live; `spec/sync` §5) with the embed drain when a provider is
 //! configured, until `SIGINT`/`SIGTERM`. `--server` is the reference's
@@ -34,6 +35,7 @@ use omgbase_sync::registry::FS_ADAPTER_COMMAND;
 use omgbase_sync::{
     CheckpointResult, Coordinator, ExternalSource, McpEngineClient, Readiness, RealFileSystem,
     RepoRow, SyncInSummary, SyncSource, WatchEvent, WatchLease, freshness_sweep, wait_ready,
+    with_writer_lock,
 };
 use serde_json::json;
 
@@ -92,15 +94,20 @@ fn run_one_shot(cli: &mut Cli, repo: &RepoRow) -> Result<i32> {
         return Ok(EXIT_OK);
     };
     let now = cli.now();
-    let result = freshness_sweep(
-        cli.store_mut()?,
-        &repo.repo_id,
-        &RealFileSystem,
-        Path::new(root),
-        &now,
-        None,
-        &omgbase_store::Config::default(),
-    )?;
+    let omgbase_dir = cli.workspace()?.omgbase_dir;
+    let lock = cli.seams.lock_options();
+    let store = cli.store_mut()?;
+    let result = with_writer_lock(&omgbase_dir, lock, || {
+        freshness_sweep(
+            store,
+            &repo.repo_id,
+            &RealFileSystem,
+            Path::new(root),
+            &now,
+            None,
+            &omgbase_store::Config::default(),
+        )
+    })?;
     let cp = &result.checkpoint;
     // The paths the sweep names print in the reference form (spec/surface §1 "Paths").
     let rooted =

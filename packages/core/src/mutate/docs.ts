@@ -166,7 +166,12 @@ export function docsMove(store: Store, ctx: DocOpContext, docRef: string, toPath
     }
     return { ...planned, dangling: plan.dangling, retargeted: { blocks: plan.blocks, docs: plan.docs } };
   }
-  const moved = underLock(ctx, () => {
+  // One lock for the whole operation (spec/sync §7, lock scope = write scope):
+  // the rename + row update AND the inbound retarget's changeset below are a
+  // single critical section — the retarget's own `apply` re-enters the lock —
+  // so no other writer can slip between the two halves, and nothing is left
+  // unlocked once the rename has committed.
+  return underLock(ctx, () => {
     if (docStore.exists(toRel)) throw new MutationError("path_taken", `file already exists on disk at ${toRel}`);
     const content = docStore.read(info.path) ?? "";
     if (docStore.exists(info.path)) docStore.rename(info.path, toRel);
@@ -206,23 +211,23 @@ export function docsMove(store: Store, ctx: DocOpContext, docRef: string, toPath
       docStore.clearStat(store, ctx.repoId, info.path); // drop the old path's row
       docStore.recordStat(store, ctx.repoId, toRel, content);
     }
-    return { docId: info.docId, path: toRel, committed: true };
+    const moved = { docId: info.docId, path: toRel, committed: true };
+
+    if (!retargetInbound || inbound.length === 0) return { ...moved, dangling: inbound, retargeted: null };
+
+    // Rewrite the dangling links block by block (one coalesced update per block,
+    // CAS on the block's current hash) and apply as one changeset; the re-ingest
+    // re-extracts each source doc, whose links now resolve to the moved doc.
+    const plan = planInboundRetarget(store, info.docId, info.path, toRel, inbound);
+    if (plan.ops.length > 0) {
+      apply(store, {
+        ...applyCtx(ctx),
+        ops: plan.ops,
+        origin: { actor: ctx.actor ?? "api", reason: `retarget inbound links ${info.path} -> ${toRel}` },
+      });
+    }
+    return { ...moved, dangling: plan.dangling, retargeted: { blocks: plan.blocks, docs: plan.docs } };
   });
-
-  if (!retargetInbound || inbound.length === 0) return { ...moved, dangling: inbound, retargeted: null };
-
-  // Rewrite the dangling links block by block (one coalesced update per block,
-  // CAS on the block's current hash) and apply as one changeset; the re-ingest
-  // re-extracts each source doc, whose links now resolve to the moved doc.
-  const plan = planInboundRetarget(store, info.docId, info.path, toRel, inbound);
-  if (plan.ops.length > 0) {
-    apply(store, {
-      ...applyCtx(ctx),
-      ops: plan.ops,
-      origin: { actor: ctx.actor ?? "api", reason: `retarget inbound links ${info.path} -> ${toRel}` },
-    });
-  }
-  return { ...moved, dangling: plan.dangling, retargeted: { blocks: plan.blocks, docs: plan.docs } };
 }
 
 /** The `ApplyRequest` fields a document operation's context supplies to a follow-up changeset. */

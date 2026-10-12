@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { execFileSync } from "./spawn.js";
-import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from "node:fs";
+import { execFileSync, spawnSync } from "./spawn.js";
+import { mkdtempSync, rmSync, mkdirSync, writeFileSync, existsSync, unlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -238,3 +238,83 @@ describe("omg mcp — configured-but-broken embedder (degrade loudly)", () => {
     });
   }, 15000);
 });
+
+// The workspace writer lock at the tool boundary (spec/sync §7; the Rust
+// `omgbase mcp` does the same): a write tool holds `.omgbase/writer.lock` for
+// its call and releases it; a lock a live foreign holder keeps fails the write
+// with the engine's catch-all envelope after the wait — shortened here by the
+// `OMGBASE_WRITER_LOCK_TIMEOUT_MS` seam both binaries read, so the test does
+// not sit out the spec's 5 s.
+describe("omg mcp — the workspace writer lock (spec/sync §7)", () => {
+  it("a write tool takes and releases writer.lock; a held lock fails it as repo_not_found within the seam's wait; reads are unaffected", async () => {
+    const lockFile = join(vault, ".omgbase", "writer.lock");
+    const child = spawn("node", [BIN, "-C", vault, "mcp", "--no-watch"], {
+      stdio: ["pipe", "pipe", "pipe"],
+      env: { ...process.env, NO_COLOR: "1", OMGBASE_WRITER_LOCK_TIMEOUT_MS: "150" },
+    }) as ChildProcessWithoutNullStreams;
+    let stderr = "";
+    child.stderr.on("data", (d: Buffer) => { stderr += d.toString(); });
+    const rpc = new RpcClient(child);
+    await rpc.send("initialize", { protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: "vitest", version: "0" } });
+    rpc.notify("notifications/initialized", {});
+    const call = async (name: string, args: Record<string, unknown>) => {
+      const r = await rpc.send("tools/call", { name, arguments: args });
+      const rc = (r.result as { content?: { text?: string }[]; isError?: boolean }) ?? {};
+      return { isError: rc.isError ?? false, body: JSON.parse(rc.content?.[0]?.text ?? "{}") as Record<string, unknown> };
+    };
+
+    // A write succeeds and leaves no lock behind.
+    const created = await call("docs_create", { path: "locked/a.md", markdown: "# A\n" });
+    expect(created.isError).toBe(false);
+    expect(created.body.path).toBe("/locked/a.md");
+    expect(existsSync(lockFile)).toBe(false);
+
+    // A live foreign holder: this vitest process's pid is alive, so the child
+    // can neither steal nor re-enter the record.
+    writeFileSync(lockFile, JSON.stringify({ pid: process.pid, ts: Date.now() }));
+    const t0 = Date.now();
+    const blocked = await call("docs_create", { path: "locked/b.md", markdown: "# B\n" });
+    const waited = Date.now() - t0;
+    expect(blocked.isError).toBe(true);
+    expect(blocked.body.error).toBe("repo_not_found");
+    expect(blocked.body.message).toMatch(/could not acquire writer lock .*writer\.lock \(held by pid \d+\)/);
+    expect(waited).toBeLessThan(3000); // the seam, not the spec's 5 s
+    expect(existsSync(join(vault, "locked", "b.md"))).toBe(false);
+    // A dry run waits too (Rust `is_write_tool` counts it).
+    const dry = await call("docs_create", { path: "locked/b.md", markdown: "# B\n", dry_run: true });
+    expect(dry.isError).toBe(true);
+    expect(dry.body.error).toBe("repo_not_found");
+    // Reads never touch the lock.
+    const read = await call("docs_read", { path: "locked/a.md" });
+    expect(read.isError).toBe(false);
+    // The holder's record is intact (never stolen); once it is gone the write lands.
+    expect(JSON.parse(readFileSyncUtf8(lockFile)).pid).toBe(process.pid);
+    unlinkSync(lockFile);
+    const after = await call("docs_create", { path: "locked/b.md", markdown: "# B\n" });
+    expect(after.isError).toBe(false);
+    expect(existsSync(lockFile)).toBe(false);
+
+    expect(rpc.nonJsonStdout).toEqual([]);
+    const exitCode = await new Promise<number>((res) => {
+      child.on("exit", (code) => res(code ?? -1));
+      child.stdin.end();
+      setTimeout(() => { child.kill("SIGKILL"); res(-99); }, 4000);
+    });
+    expect(exitCode).toBe(0);
+    expect(stderr).toMatch(/test seam: writer lock waits 150 ms \(OMGBASE_WRITER_LOCK_TIMEOUT_MS\)/);
+  }, 20000);
+
+  it("an invalid OMGBASE_WRITER_LOCK_TIMEOUT_MS is a usage error (exit 2), as on the Rust binary", () => {
+    const res = spawnSync("node", [BIN, "-C", vault, "ls"], { encoding: "utf8", env: { ...process.env, NO_COLOR: "1", OMGBASE_WRITER_LOCK_TIMEOUT_MS: "soon" } });
+    expect(res.status).toBe(2);
+    expect(res.stderr).toMatch(/OMGBASE_WRITER_LOCK_TIMEOUT_MS="soon": not a number of milliseconds/);
+    // Empty is unset.
+    const ok = spawnSync("node", [BIN, "-C", vault, "ls"], { encoding: "utf8", env: { ...process.env, NO_COLOR: "1", OMGBASE_WRITER_LOCK_TIMEOUT_MS: "" } });
+    expect(ok.status).toBe(0);
+  });
+});
+
+function readFileSyncUtf8(path: string): string {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  return (require("node:fs") as typeof import("node:fs")).readFileSync(path, "utf8");
+}

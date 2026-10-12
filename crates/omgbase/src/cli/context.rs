@@ -12,8 +12,8 @@ use omgbase_store::Store;
 use omgbase_surface::Surface;
 use omgbase_sync::workspace::{OMGBASE_DIR, find_root};
 use omgbase_sync::{
-    EngineSpec, McpEngineClient, RealFileSystem, RepoRow, WatchLease, freshness_sweep,
-    parse_engine_spec,
+    EngineSpec, McpEngineClient, RealFileSystem, RepoRow, WatchLease, WriterLock, freshness_sweep,
+    parse_engine_spec, with_writer_lock,
 };
 use serde_json::{Value as Json, json};
 
@@ -386,11 +386,37 @@ impl Cli {
     /// when `semantic` (`find`, a `semantic(...)` query). Remotely the
     /// server's own provider decides, as the reference's `resolve`/`query`
     /// remote branches leave it to the engine.
+    ///
+    /// This is the one seam every local verb's tool call passes, so it is
+    /// where the workspace writer lock (`spec/sync` §7) is taken: a tool
+    /// that can commit ([`Surface::is_write_tool`]; `dry_run` counts) runs
+    /// under `writer.lock` for exactly its duration, as `omgbase mcp` runs
+    /// it at its tool boundary and the reference CLI runs its own writes —
+    /// so a verb never interleaves with a watcher checkpoint or a server's
+    /// write on the same workspace. Reads never touch the lock. Remotely
+    /// nothing is locked here: the engine serving `--server` locks its own
+    /// workspace, and this process has none open. A lock held past the
+    /// timeout is `WriterLockTimeout`, which renders as the catch-all
+    /// engine error (`spec/surface` §9), exit 1, like any tool error.
     pub fn call_with(&mut self, tool: &str, args: Json, semantic: bool) -> Result<Json> {
         if self.remote_mode() {
             return self.remote_call(tool, args);
         }
-        Ok(self.surface(semantic)?.call_result(tool, &args)?)
+        // Build the surface (and spawn a provider, when asked) before the
+        // lock, so the window held is the tool's work and nothing else.
+        self.surface(semantic)?;
+        let lock = if Surface::is_write_tool(tool) {
+            let ws = self.workspace()?;
+            Some(WriterLock::acquire(
+                &ws.omgbase_dir,
+                self.seams.lock_options(),
+            )?)
+        } else {
+            None
+        };
+        let out = self.surface(semantic)?.call_result(tool, &args);
+        drop(lock);
+        Ok(out?)
     }
 
     /// `--server` was given: the verb must never open the local workspace —
@@ -489,6 +515,13 @@ impl Cli {
     /// §3.7: the freshness sweep before a command — the workspace opened, the
     /// repo selected (a failing selection is swallowed), one sweep over its
     /// root unless a live watcher holds the lease.
+    ///
+    /// The sweep is a checkpoint ingest, so it runs under the workspace
+    /// writer lock (`spec/sync` §7, as the watcher's priming sweep does) —
+    /// taken here and **released before the verb runs**, so the verb's own
+    /// write ([`Cli::call_with`]) takes the lock afresh, sequentially; the
+    /// lock is not re-entrant and nothing nests. A lock held past the
+    /// timeout fails the command before its verb, as any sweep error does.
     pub fn freshness(&mut self) -> Result<()> {
         let ws = self.workspace()?;
         if WatchLease::live(&ws.omgbase_dir) {
@@ -501,16 +534,19 @@ impl Cli {
         };
         if let Some(root) = repo.root_path.as_deref() {
             let now = self.now();
+            let lock = self.seams.lock_options();
             let store = self.store_mut()?;
-            freshness_sweep(
-                store,
-                &repo.repo_id,
-                &RealFileSystem,
-                Path::new(root),
-                &now,
-                None,
-                &omgbase_store::Config::default(),
-            )?;
+            with_writer_lock(&ws.omgbase_dir, lock, || {
+                freshness_sweep(
+                    store,
+                    &repo.repo_id,
+                    &RealFileSystem,
+                    Path::new(root),
+                    &now,
+                    None,
+                    &omgbase_store::Config::default(),
+                )
+            })?;
         }
         Ok(())
     }

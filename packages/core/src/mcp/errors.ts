@@ -2,6 +2,7 @@ import { FilterInvalid } from "../search/cel/parser.js";
 import { CursorInvalid } from "../core/cursor.js";
 import { MutationError } from "../mutate/tree.js";
 import { RevisionNotFound } from "../graph/history.js";
+import { WriterLockTimeout } from "../sync/writer-lock.js";
 
 // Error codes (06 §5). Shape: { error, message, data?, retriable }. Codes are
 // stable; prose is free to improve. FilterInvalid from the query compiler maps
@@ -43,7 +44,10 @@ export class EngineError extends Error {
 // §4's envelope; spec/cli §3.5): the MCP server's `fail` and the CLI's error
 // renderer both call this, so a code can never differ between the two. Typed
 // errors keep their code; the query layer's `FilterInvalid`/`CursorInvalid` are
-// `filter_invalid`; a diff against an unknown revision is `target_missing`; and
+// `filter_invalid`; a diff against an unknown revision is `target_missing`; a
+// writer-lock wait that ran out (spec/sync §7) is the catch-all `repo_not_found`
+// too — the code the Rust host emits for it (`SurfaceError::other`) — carrying
+// the lock's own message so both engines render the identical envelope; and
 // anything else — including a plain `Error` such as a write on a repo without a
 // working tree — is the pinned catch-all `repo_not_found` (spec/surface §9).
 
@@ -61,5 +65,6 @@ export function errorBody(err: unknown): ErrorBody {
   if (err instanceof CursorInvalid) return { error: "filter_invalid", message: err.message, data: { reason: err.reason ?? `cursor was not issued by ${err.surface}`, hint: "resume only with a `cursor` returned by a truncated page of the same tool" }, retriable: false };
   if (err instanceof MutationError) return { error: err.code, message: err.message, data: err.data, retriable: Boolean((err.data as { retriable?: boolean }).retriable) };
   if (err instanceof RevisionNotFound) return { error: "target_missing", message: err.message, data: { doc: err.docId, rev: err.rev }, retriable: false };
+  if (err instanceof WriterLockTimeout) return { error: "repo_not_found", message: err.message, retriable: false };
   return { error: "repo_not_found", message: String(err), retriable: false };
 }

@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach, beforeEach } from "vitest";
-import { mkdtempSync, writeFileSync, mkdirSync, rmSync, readFileSync, existsSync } from "node:fs";
+import { mkdtempSync, writeFileSync, mkdirSync, rmSync, readFileSync, existsSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { Store } from "../core/store/store.js";
@@ -8,6 +8,8 @@ import { processCheckpoint } from "../sync/checkpoint.js";
 import { linksStale } from "../graph/link-health.js";
 import { inboundLinksTo, retargetLinksInRaw } from "../graph/inbound-links.js";
 import { docsCreate, docsDelete, docsMove, docsSetMeta } from "./docs.js";
+import { FsDocStore, type DocStore } from "./doc-store.js";
+import { writerLockFree, writerLockHeld } from "../sync/writer-lock.js";
 
 // docs_move and the edge index. Links follow the PATH: after a move, inbound
 // links written against the old path dangle (links_stale must see them) unless
@@ -239,5 +241,73 @@ describe("retargetLinksInRaw — destination-aware, not substring", () => {
   });
   it("returns null when nothing resolves to the old path", () => {
     expect(retargetLinksInRaw("plain text [x](/other.md)", "", "", "old.md", "new.md")).toBeNull();
+  });
+});
+
+describe("docsMove under the workspace writer lock (spec/sync §7: one acquire across rename + retarget)", () => {
+  it("holds the lock continuously from the rename through the inbound retarget's commit", () => {
+    save("old.md", "# Old\n\n## Top\n\ntext\n");
+    save("b.md", "# B\n\nSee [old](/old.md#Top) here.\n");
+    save("c.md", "# C\n\n- item [[old.md]]\n");
+    const omgbaseDir = join(dir, ".omgbase");
+    const lockFile = join(omgbaseDir, "writer.lock");
+
+    // Observe the lock from inside the operation through the DocStore seam: the
+    // rename is the move's own write, the writes are the retarget changeset's
+    // commit phase (apply → FsDocStore.write per rewritten source).
+    const seen: { op: string; path: string; held: boolean; ino: number | null }[] = [];
+    const probe = (op: string, path: string): void => {
+      seen.push({ op, path, held: writerLockHeld(omgbaseDir), ino: existsSync(lockFile) ? statSync(lockFile).ino : null });
+    };
+    const fs = new FsDocStore(dir);
+    const docStore: DocStore = {
+      exists: (p) => fs.exists(p),
+      read: (p) => fs.read(p),
+      write: (p, bytes) => { probe("write", p); fs.write(p, bytes); },
+      rename: (from, to) => { probe("rename", from); fs.rename(from, to); },
+      remove: (p) => fs.remove(p),
+      recordStat: (s, r, p, bytes) => fs.recordStat(s, r, p, bytes),
+      clearStat: (s, r, p) => fs.clearStat(s, r, p),
+    };
+
+    expect(writerLockHeld(omgbaseDir)).toBe(false);
+    const res = docsMove(store, { repoId, rootPath: dir, omgbaseDir, docStore }, "old.md", "moved/new.md");
+    expect(res.retargeted?.docs.length).toBe(2);
+    expect(res.dangling).toEqual([]);
+
+    expect(seen.map((s) => s.op)).toEqual(["rename", "write", "write"]);
+    expect(seen.map((s) => s.path).sort()).toEqual(["b.md", "c.md", "old.md"]);
+    for (const s of seen) expect(s, `${s.op} ${s.path} ran outside the lock`).toMatchObject({ held: true });
+    // One acquire: the very same lock file (inode) existed through every step —
+    // it was never released and re-created between the rename and the retarget.
+    const inodes = new Set(seen.map((s) => s.ino));
+    expect(inodes.size).toBe(1);
+    expect([...inodes][0]).not.toBeNull();
+    // Released once the whole operation returned.
+    expect(writerLockHeld(omgbaseDir)).toBe(false);
+    expect(writerLockFree(omgbaseDir)).toBe(true);
+    expect(existsSync(lockFile)).toBe(false);
+    // And the rewrite landed.
+    expect(readFileSync(join(dir, "b.md"), "utf8")).toContain("(/moved/new.md#Top)");
+    expect(readFileSync(join(dir, "c.md"), "utf8")).toContain("[[moved/new.md]]");
+  });
+
+  it("releases the lock when the retarget half fails after the rename committed", () => {
+    save("old.md", "# Old\n");
+    save("b.md", "# B\n\nSee [old](/old.md).\n");
+    const omgbaseDir = join(dir, ".omgbase");
+    const fs = new FsDocStore(dir);
+    const docStore: DocStore = {
+      exists: (p) => fs.exists(p),
+      read: (p) => fs.read(p),
+      write: () => { throw new Error("disk full"); }, // the retarget's commit phase fails
+      rename: (from, to) => fs.rename(from, to),
+      remove: (p) => fs.remove(p),
+      recordStat: (s, r, p, bytes) => fs.recordStat(s, r, p, bytes),
+      clearStat: (s, r, p) => fs.clearStat(s, r, p),
+    };
+    expect(() => docsMove(store, { repoId, rootPath: dir, omgbaseDir, docStore }, "old.md", "new.md")).toThrow("disk full");
+    expect(writerLockHeld(omgbaseDir)).toBe(false);
+    expect(writerLockFree(omgbaseDir)).toBe(true);
   });
 });

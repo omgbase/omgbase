@@ -5,7 +5,7 @@
 use std::path::Path;
 
 use omgbase_sync::registry::{FS_ADAPTER, FS_ADAPTER_COMMAND, NewSource};
-use omgbase_sync::{RealFileSystem, freshness_sweep, rebuild_file_stats};
+use omgbase_sync::{RealFileSystem, freshness_sweep, rebuild_file_stats, with_writer_lock};
 use serde_json::{Value as Json, json};
 
 use crate::cli::argv::{Opt, parse_args};
@@ -98,6 +98,8 @@ fn add(cli: &mut Cli, args: &[String]) -> Result<i32> {
         }
     }
     let now = cli.now();
+    let omgbase_dir = cli.workspace()?.omgbase_dir;
+    let lock = cli.seams.lock_options();
     let (repo_id, ingested) = {
         let store = cli.store_mut()?;
         let repo_id = omgbase_sync::ensure_repo(store, &slug, None)?;
@@ -114,15 +116,19 @@ fn add(cli: &mut Cli, args: &[String]) -> Result<i32> {
             },
         )?;
         omgbase_sync::attach(store, &repo_id, &source_id)?;
-        let swept = freshness_sweep(
-            store,
-            &repo_id,
-            &RealFileSystem,
-            Path::new(&abs_str),
-            &now,
-            None,
-            &omgbase_store::Config::default(),
-        )?;
+        // The initial sweep is a checkpoint ingest: under the workspace writer
+        // lock (spec/sync §7), like every other sweep.
+        let swept = with_writer_lock(&omgbase_dir, lock, || {
+            freshness_sweep(
+                store,
+                &repo_id,
+                &RealFileSystem,
+                Path::new(&abs_str),
+                &now,
+                None,
+                &omgbase_store::Config::default(),
+            )
+        })?;
         rebuild_file_stats(store, &repo_id, &RealFileSystem, Path::new(&abs_str))?;
         (repo_id, swept.checkpoint.ingested.len())
     };

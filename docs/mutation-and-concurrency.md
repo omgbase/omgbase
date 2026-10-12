@@ -132,7 +132,10 @@ apply(changeset):
  2. render each touched doc's mutated tree to bytes                # splice (03-… §2.2)
  3. dry_run:true stops here, returning per-file { before, after } diffs
  --- commit phase, per touched file (under the cross-process writer lock when a
-     workspace .omgbase/ dir is supplied; else the Store's in-process serialization) ---
+     workspace .omgbase/ dir is supplied — every host does: the CLI verb, the MCP
+     tool call and the watcher take it once at their boundary and this inner
+     acquisition is a re-entrant no-op; a bare library caller without a
+     workspace dir gets the Store's in-process serialization only) ---
  4. file-CAS: assert sha256(file_on_disk) == the doc's stored file_hash
       on mismatch → a human edit landed first: ingest the on-disk file
         (reconciling resolver, observed commit), refresh the stat cache, and

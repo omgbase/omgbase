@@ -42,7 +42,9 @@ use crate::cli::argv::{Opt, parse_args};
 use crate::cli::context::Cli;
 use crate::cli::help::{render_help_for, wants_help};
 use crate::cli::output::{CliError, EXIT_OK, Result};
-use crate::cli::seams::{MinterSource, SPEC_CLOCK_ENV, SPEC_MINTER_ENV, open_store};
+use crate::cli::seams::{
+    MinterSource, SPEC_CLOCK_ENV, SPEC_MINTER_ENV, WRITER_LOCK_TIMEOUT_ENV, open_store,
+};
 use crate::drain::{DrainFn, DrainReport, Drainer, SharedProvider};
 use crate::{mcp as transport, watch};
 
@@ -57,6 +59,11 @@ fn announce_seams(cli: &Cli) {
     if let Some(ts) = &cli.seams.clock {
         cli.io.err(&cli.style.dim(&format!(
             "[mcp] spec seam: clock pinned to {ts} ({SPEC_CLOCK_ENV}) — conformance run, not for production"
+        )));
+    }
+    if let Some(ms) = cli.seams.writer_lock_timeout_ms {
+        cli.io.err(&cli.style.dim(&format!(
+            "[mcp] test seam: writer lock waits {ms} ms ({WRITER_LOCK_TIMEOUT_ENV}) — not for production"
         )));
     }
 }
@@ -322,6 +329,7 @@ pub fn mcp(cli: &mut Cli, args: &[String]) -> Result<i32> {
     }
     let serve_opts = transport::ServeOptions {
         omgbase_dir: Some(omgbase_dir),
+        lock: cli.seams.lock_options(),
     };
     let served = transport::serve(&mut surface, crate::cli::VERSION, &serve_opts);
     // stdin closed (or the loop failed): stop the helpers (the drain thread's

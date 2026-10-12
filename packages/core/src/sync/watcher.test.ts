@@ -1,10 +1,14 @@
 import { describe, it, expect, afterEach, beforeEach } from "vitest";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { Store } from "../core/store/store.js";
 import { ensureRepo } from "../core/attach.js";
 import { Watcher } from "./watcher.js";
 import { awaitReady } from "./plugin.js";
 import type { SyncSource, SourceCapabilities, SourceEntry, SourceItem, SourceWatch, WatchListener } from "./plugin.js";
 import type { CheckpointResult } from "./checkpoint.js";
+import { writerLockFree, writerLockHeld } from "./writer-lock.js";
 
 // The Watcher wires a SyncSource's watch stream to the reconcile driver. Debounce
 // lives adapter-side, so here a controllable in-memory source lets us fire a
@@ -23,7 +27,10 @@ class ControllableSource implements SyncSource {
   enumerate(): Promise<SourceEntry[]> {
     return Promise.resolve([...this.files].map(([path, content]) => ({ path, revision: String(content.length) })));
   }
+  /** test seam: observe each fetch (the driver calls it inside the checkpoint). */
+  onFetch: ((path: string) => void) | null = null;
   fetch(path: string): Promise<SourceItem | null> {
+    this.onFetch?.(path);
     const content = this.files.get(path);
     return Promise.resolve(content === undefined ? null : { path, revision: String(content.length), content });
   }
@@ -84,6 +91,45 @@ describe("Watcher", () => {
     const late = new Promise<void>((r) => { fire = r; });
     setTimeout(fire, 10);
     await expect(awaitReady(late, 500)).resolves.toBe(true);
+  });
+
+  it("with omgbaseDir every checkpoint runs under the workspace writer lock (spec/sync §7), released after", async () => {
+    const tmp = mkdtempSync(join(tmpdir(), "omg-watch-lock-"));
+    const omgbaseDir = join(tmp, ".omgbase");
+    try {
+      const results: CheckpointResult[] = [];
+      const fetched: { path: string; held: boolean; file: boolean }[] = [];
+      // The adapter fetch happens INSIDE the checkpoint, so it observes the lock
+      // the batch holds (as the Rust watcher's `reconcile_changes` under
+      // `with_writer_lock`).
+      source.onFetch = (path) => fetched.push({ path, held: writerLockHeld(omgbaseDir), file: existsSync(join(omgbaseDir, "writer.lock")) });
+      watcher = new Watcher(store, repoId, source, { omgbaseDir, onCheckpoint: (r) => results.push(r) });
+      await watcher.start();
+
+      source.files.set("a.md", "# A\n");
+      source.emit(["a.md"]);
+      await new Promise((r) => setTimeout(r, 20));
+
+      expect(results.length).toBe(1);
+      expect(results[0]!.ingested).toEqual(["a.md"]);
+      expect(fetched).toEqual([{ path: "a.md", held: true, file: true }]);
+      expect(writerLockHeld(omgbaseDir)).toBe(false);
+      expect(writerLockFree(omgbaseDir)).toBe(true);
+      expect(existsSync(join(omgbaseDir, "writer.lock"))).toBe(false);
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it("without omgbaseDir a checkpoint takes no lock (library embedding over a bare store)", async () => {
+    const seen: boolean[] = [];
+    source.onFetch = () => seen.push(writerLockHeld(join(tmpdir(), "never-created-omgbase")));
+    watcher = new Watcher(store, repoId, source);
+    await watcher.start();
+    source.files.set("a.md", "# A\n");
+    source.emit(["a.md"]);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(seen).toEqual([false]);
   });
 
   it("start() throws if the source cannot watch", async () => {

@@ -14,6 +14,7 @@ import {
   freshnessSweep,
   walkMarkdownAsync,
   rebuildFileStats,
+  withWriterLock,
 } from "@omgbase/core";
 import type { Command } from "../commands.js";
 import type { Cli } from "../context.js";
@@ -141,7 +142,9 @@ async function runAdd(cli: Cli, args: string[]): Promise<number> {
   ensureFsAdapter(ws.store);
   const sourceId = createSource(ws.store, { name: sourceName, adapter: FS_ADAPTER, config: { root: abs } });
   attachSourceToRepo(ws.store, repoId, sourceId);
-  const swept = freshnessSweep(ws.store, repoId, abs);
+  // The initial sweep is a checkpoint ingest: under the workspace writer lock
+  // (spec/sync §7), like every other sweep.
+  const swept = withWriterLock(ws.omgbaseDir, () => freshnessSweep(ws.store, repoId, abs));
   rebuildFileStats(ws.store, repoId, abs);
 
   // Offer to embed freshly-ingested blocks now (consent-gated like the ingest).

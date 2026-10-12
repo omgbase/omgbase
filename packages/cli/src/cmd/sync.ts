@@ -1,6 +1,6 @@
 import { resolve } from "node:path";
 import { parseArgs } from "node:util";
-import { Watcher, WatchLease, EmbedDrainer, freshnessSweep, awaitReady, WATCH_READY_PATIENCE_MS, EngineError, surfaceSweepResult, type RepoRow, type Workspace } from "@omgbase/core";
+import { Watcher, WatchLease, EmbedDrainer, freshnessSweep, withWriterLock, awaitReady, WATCH_READY_PATIENCE_MS, EngineError, surfaceSweepResult, type RepoRow, type Workspace } from "@omgbase/core";
 import { runFsMirror } from "@omgbase/sync";
 import type { Command } from "../commands.js";
 import type { Cli } from "../context.js";
@@ -74,8 +74,10 @@ function runOneShot(cli: Cli, ws: Workspace, repo: RepoRow): number {
     cli.io.err(cli.style.dim(`  ${repo.slug} has no filesystem source — nothing to sync`));
     return EXIT_OK;
   }
-  // The paths the sweep names are printed in the reference form (spec/surface §1 "Paths").
-  const result = surfaceSweepResult(freshnessSweep(ws.store, repo.repoId, repo.rootPath));
+  // The sweep is a checkpoint ingest: under the workspace writer lock (spec/sync
+  // §7). The paths it names are printed in the reference form (spec/surface §1 "Paths").
+  const root = repo.rootPath;
+  const result = surfaceSweepResult(withWriterLock(ws.omgbaseDir, () => freshnessSweep(ws.store, repo.repoId, root)));
 
   // A `SweepResult` is a record (its lists are per-kind): every machine mode is the document.
   if (cli.flags.mode !== "human") return emitMachine(cli, result);
@@ -137,7 +139,10 @@ async function runLocalWatch(cli: Cli, ws: Workspace, repo: RepoRow): Promise<nu
     return EXIT_OK;
   }
 
+  // Checkpoints and the priming sweep run under the workspace writer lock
+  // (spec/sync §7), as the Rust watcher's do.
   const watcher = new Watcher(ws.store, repo.repoId, source, {
+    omgbaseDir: ws.omgbaseDir,
     onCheckpoint: (r) => {
       if (r.ingested.length || r.deleted.length || r.conflicted.length) {
         cli.io.err(`${cli.style.ok(cli.render.g.sync)} +${r.ingested.length} -${r.deleted.length}${r.conflicted.length ? ` !${r.conflicted.length}` : ""}`);
@@ -150,7 +155,8 @@ async function runLocalWatch(cli: Cli, ws: Workspace, repo: RepoRow): Promise<nu
   if (!(await awaitReady(watcher.ready(), WATCH_READY_PATIENCE_MS))) {
     cli.io.err(cli.style.dim(`  the fs adapter did not report ready within ${WATCH_READY_PATIENCE_MS / 1000}s — proceeding as if ready (an edit made before now may be missed until the next sweep)`));
   }
-  if (repo.rootPath) freshnessSweep(ws.store, repo.repoId, repo.rootPath); // prime: anything that landed before the feed was ready
+  const root = repo.rootPath;
+  if (root) withWriterLock(ws.omgbaseDir, () => freshnessSweep(ws.store, repo.repoId, root)); // prime: anything that landed before the feed was ready
   drainer?.schedule(); // embed anything already stale at startup, in the background
   cli.io.err(cli.style.dim(`  watching ${repo.slug} — Ctrl-C to stop${drainer ? " · auto-embed on" : ""}`));
 

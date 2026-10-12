@@ -9,12 +9,21 @@
 //! a verb stamps and every relative time it renders. Any other value is a
 //! usage error (exit 2), validated before even an unknown command is
 //! reported. `--version` is answered before the seams are looked at.
+//!
+//! A third seam is this engine's own, not the spec's:
+//! `OMGBASE_WRITER_LOCK_TIMEOUT_MS=<n>` shortens how long a write waits for
+//! the workspace writer lock (`spec/sync` §7: 5 s by default) — for a test
+//! that proves a held lock fails a write without sitting out the full
+//! wait. Read the same way (empty = unset, a non-integer is a usage error)
+//! and honored by every lock this process takes: a verb's write tool
+//! ([`super::context::Cli::call`]) and `mcp`'s tool boundary.
 
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use omgbase_store::{IdMinter, RandomMinter, SequentialMinter, Store};
+use omgbase_sync::WriterLockOptions;
 
 use super::output::{CliError, js_string};
 
@@ -22,6 +31,9 @@ use super::output::{CliError, js_string};
 pub const SPEC_MINTER_ENV: &str = "OMGBASE_SPEC_MINTER";
 /// `spec/surface` §7.1: an RFC 3339 instant that is "now" for the process.
 pub const SPEC_CLOCK_ENV: &str = "OMGBASE_SPEC_CLOCK";
+/// This engine's test seam: the writer lock's wait in milliseconds
+/// (`spec/sync` §7's 5 s when unset).
+pub const WRITER_LOCK_TIMEOUT_ENV: &str = "OMGBASE_WRITER_LOCK_TIMEOUT_MS";
 
 /// How long a connection waits on a busy database before failing (the
 /// writer lock keeps writers apart; this covers a read overlapping a
@@ -34,6 +46,26 @@ pub struct Seams {
     pub sequential_minter: bool,
     /// The pinned clock, canonical `YYYY-MM-DDTHH:MM:SS.fffZ`.
     pub clock: Option<String>,
+    /// The writer lock's wait when overridden ([`WRITER_LOCK_TIMEOUT_ENV`]).
+    pub writer_lock_timeout_ms: Option<u64>,
+}
+
+impl Seams {
+    /// How every lock this process takes waits: `spec/sync` §7's defaults,
+    /// the timeout overridden by the seam (the poll never exceeds it).
+    pub fn lock_options(&self) -> WriterLockOptions {
+        let defaults = WriterLockOptions::default();
+        match self.writer_lock_timeout_ms {
+            None => defaults,
+            Some(ms) => {
+                let timeout = Duration::from_millis(ms);
+                WriterLockOptions {
+                    timeout,
+                    poll: defaults.poll.min(timeout),
+                }
+            }
+        }
+    }
 }
 
 /// Read the seams from the process environment (§2.6).
@@ -41,12 +73,17 @@ pub fn read_env_seams() -> Result<Seams, CliError> {
     read_seams(
         std::env::var(SPEC_MINTER_ENV).ok().as_deref(),
         std::env::var(SPEC_CLOCK_ENV).ok().as_deref(),
+        std::env::var(WRITER_LOCK_TIMEOUT_ENV).ok().as_deref(),
     )
 }
 
-/// Validate the two values; an empty string is "unset", as the reference
-/// reads them. An invalid value is the usage error the fixtures pin.
-pub fn read_seams(minter: Option<&str>, clock: Option<&str>) -> Result<Seams, CliError> {
+/// Validate the values; an empty string is "unset", as the reference reads
+/// them. An invalid value is the usage error the fixtures pin.
+pub fn read_seams(
+    minter: Option<&str>,
+    clock: Option<&str>,
+    lock_timeout: Option<&str>,
+) -> Result<Seams, CliError> {
     let sequential_minter = match minter.filter(|v| !v.is_empty()) {
         None => false,
         Some("sequential") => true,
@@ -72,9 +109,22 @@ pub fn read_seams(minter: Option<&str>, clock: Option<&str>) -> Result<Seams, Cl
             )
         })?),
     };
+    let writer_lock_timeout_ms = match lock_timeout.filter(|v| !v.is_empty()) {
+        None => None,
+        Some(v) => Some(v.trim().parse::<u64>().map_err(|_| {
+            CliError::usage_hint(
+                format!(
+                    "{WRITER_LOCK_TIMEOUT_ENV}={}: not a number of milliseconds",
+                    js_string(v)
+                ),
+                format!("unset it, or e.g. {WRITER_LOCK_TIMEOUT_ENV}=200 for a test run"),
+            )
+        })?),
+    };
     Ok(Seams {
         sequential_minter,
         clock,
+        writer_lock_timeout_ms,
     })
 }
 
@@ -160,21 +210,50 @@ mod tests {
 
     #[test]
     fn seams_parse_and_reject() {
-        assert_eq!(read_seams(None, None).unwrap(), Seams::default());
-        let s = read_seams(Some("sequential"), Some("2026-09-27T00:00:00Z")).unwrap();
+        assert_eq!(read_seams(None, None, None).unwrap(), Seams::default());
+        let s = read_seams(Some("sequential"), Some("2026-09-27T00:00:00Z"), None).unwrap();
         assert!(s.sequential_minter);
         assert_eq!(s.clock.as_deref(), Some("2026-09-27T00:00:00.000Z"));
-        let err = read_seams(Some("random"), None).unwrap_err();
+        assert_eq!(s.writer_lock_timeout_ms, None);
+        assert_eq!(s.lock_options(), WriterLockOptions::default());
+        let err = read_seams(Some("random"), None, None).unwrap_err();
         assert_eq!(
             err.message(),
             "OMGBASE_SPEC_MINTER=\"random\": the only value is \"sequential\" (spec/surface §7.1)"
         );
-        let err = read_seams(None, Some("yesterday")).unwrap_err();
+        let err = read_seams(None, Some("yesterday"), None).unwrap_err();
         assert_eq!(
             err.message(),
             "OMGBASE_SPEC_CLOCK=\"yesterday\": not an RFC 3339 instant (spec/surface §7.1)"
         );
-        assert!(!read_seams(Some(""), Some("")).unwrap().sequential_minter);
+        assert!(
+            !read_seams(Some(""), Some(""), Some(""))
+                .unwrap()
+                .sequential_minter
+        );
+    }
+
+    #[test]
+    fn writer_lock_timeout_seam() {
+        let s = read_seams(None, None, Some("150")).unwrap();
+        assert_eq!(s.writer_lock_timeout_ms, Some(150));
+        assert_eq!(
+            s.lock_options(),
+            WriterLockOptions {
+                timeout: Duration::from_millis(150),
+                poll: Duration::from_millis(25),
+            }
+        );
+        // The poll never outlasts the wait.
+        let s = read_seams(None, None, Some("10")).unwrap();
+        assert_eq!(s.lock_options().poll, Duration::from_millis(10));
+        assert_eq!(read_seams(None, None, Some("")).unwrap(), Seams::default());
+        let err = read_seams(None, None, Some("soon")).unwrap_err();
+        assert_eq!(
+            err.message(),
+            "OMGBASE_WRITER_LOCK_TIMEOUT_MS=\"soon\": not a number of milliseconds"
+        );
+        assert!(read_seams(None, None, Some("-1")).is_err());
     }
 
     #[test]
@@ -196,6 +275,7 @@ mod tests {
         let minters = MinterSource::from_seams(&Seams {
             sequential_minter: true,
             clock: None,
+            writer_lock_timeout_ms: None,
         });
         let mut a = minters.minter();
         let mut b = minters.minter();

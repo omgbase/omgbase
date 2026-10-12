@@ -1,9 +1,9 @@
 import { parseArgs } from "node:util";
-import { serveStdio, Watcher, WatchLease, watchLeaseLive, freshnessSweep, awaitReady, WATCH_READY_PATIENCE_MS, EmbedDrainer, EngineError, type SyncSource } from "@omgbase/core";
+import { serveStdio, Watcher, WatchLease, watchLeaseLive, freshnessSweep, withWriterLock, awaitReady, WATCH_READY_PATIENCE_MS, EmbedDrainer, EngineError, type SyncSource } from "@omgbase/core";
 import type { Command } from "../commands.js";
 import type { Cli } from "../context.js";
 import { EngineErrorLike, EXIT_OK, renderHelp } from "../output.js";
-import { installSpecSeams } from "../seams.js";
+import { installSpecSeams, WRITER_LOCK_TIMEOUT_ENV } from "../seams.js";
 import { loadEmbedding } from "./_embed.js";
 import { openRepoSource } from "./_source.js";
 import { hostInfo } from "../build.js";
@@ -29,6 +29,9 @@ function announceSpecSeams(cli: Cli): void {
   }
   if (seams.clock !== null) {
     cli.io.err(cli.style.dim(`[mcp] spec seam: clock pinned to ${seams.clock} (OMGBASE_SPEC_CLOCK) — conformance run, not for production`));
+  }
+  if (seams.writerLockTimeoutMs !== null) {
+    cli.io.err(cli.style.dim(`[mcp] test seam: writer lock waits ${seams.writerLockTimeoutMs} ms (${WRITER_LOCK_TIMEOUT_ENV}) — not for production`));
   }
 }
 
@@ -123,7 +126,11 @@ async function runMcp(cli: Cli, args: string[]): Promise<number> {
       // is primed is caught by the sweep, one after it by the feed.
       source = await openRepoSource(ws.store, repo);
       if (source) {
+        // Every checkpoint and the priming sweep run under the workspace writer
+        // lock (spec/sync §7), as the Rust watcher's do: a verb in another
+        // process waits for the ingest instead of racing its file-CAS.
         watcher = new Watcher(ws.store, repo.repoId, source, {
+          omgbaseDir: ws.omgbaseDir,
           onCheckpoint: (r) => {
             if (r.ingested.length > 0 || r.deleted.length > 0) {
               cli.io.err(cli.style.dim(`[watch] checkpoint: +${r.ingested.length} -${r.deleted.length}`));
@@ -137,7 +144,8 @@ async function runMcp(cli: Cli, args: string[]): Promise<number> {
         if (!(await awaitReady(watcher.ready(), WATCH_READY_PATIENCE_MS))) {
           cli.io.err(cli.style.dim(`[watch] the fs adapter did not report ready within ${WATCH_READY_PATIENCE_MS / 1000}s — proceeding as if ready`));
         }
-        if (repo.rootPath) freshnessSweep(ws.store, repo.repoId, repo.rootPath); // prime: anything that landed before the feed was ready
+        const root = repo.rootPath;
+        if (root) withWriterLock(ws.omgbaseDir, () => freshnessSweep(ws.store, repo.repoId, root)); // prime: anything that landed before the feed was ready
         cli.io.err(cli.style.dim(`[mcp] serving ${repo.slug} on stdio · watcher live`));
       } else {
         cli.io.err(cli.style.dim(`[mcp] serving ${repo.slug} on stdio · sourceless (no watch)`));
@@ -167,9 +175,13 @@ async function runMcp(cli: Cli, args: string[]): Promise<number> {
       ? (_text: string): Promise<{ model: string; vec: Float32Array }> => Promise.reject(failed)
       : undefined;
 
+  // The workspace dir makes every write tool take the writer lock for its whole
+  // call (spec/sync §7) — `omg` verbs, the Rust `omgbase mcp` and the watcher
+  // all lock the same file, so the server must too.
   const handle = await serveStdio({
     store: ws.store,
     repoId: repo.repoId,
+    omgbaseDir: ws.omgbaseDir,
     ...(repo.rootPath ? { rootPath: repo.rootPath } : {}),
     ...(drainer ? { onMutation: () => drainer.schedule() } : {}),
     ...(embedQuery ? { embedQuery } : {}),

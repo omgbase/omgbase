@@ -24,6 +24,7 @@ import { linksStale, linksStaleSummary } from "../graph/link-health.js";
 import { resolve as resolveThing } from "../search/resolve.js";
 import { reposStatus, syncStatus, reposList } from "../sync/admin.js";
 import { observeFile, observeMany, observeDelete } from "../sync/observe.js";
+import { withWriterLockAsync, type WriterLockOptions } from "../sync/writer-lock.js";
 import { QUERY_SYNTAX } from "./reference.js";
 import { versionInfo, type HostInfo } from "../version.js";
 import { storagePath, referencePath } from "../core/paths.js";
@@ -65,6 +66,19 @@ export interface ServerContext {
   /** Default repo's working-tree root (for mutations that omit `repo`); a
    *  `repo`-scoped call derives the target repo's root from its fs source. */
   rootPath?: string;
+  /**
+   * The workspace's `.omgbase/` directory. When set, every write tool
+   * (`WRITE_TOOLS`) runs under the workspace writer lock of spec/sync §7 for the
+   * whole call — one acquire per tool call, dry runs included — so an `omg`
+   * verb, another `omg mcp`, the Rust `omgbase mcp` or a watcher checkpoint
+   * sharing the workspace serialize with it (lock scope = write scope on every
+   * host). It also reaches the kernel (`ApplyRequest.omgbaseDir`), so the
+   * freshness stat cache is kept warm exactly as on the CLI path. Absent (a
+   * library embedding over a bare store) ⇒ no lock, no stat cache.
+   */
+  omgbaseDir?: string;
+  /** Lock wait/poll overrides for the tool-boundary lock (default 5 s / 25 ms, the spec's); a test seam. */
+  writerLock?: WriterLockOptions;
   /**
    * Embed a query string to a vector for semantic search. Absent ⇒ the `query`
    * tool's `semantic` param yields `provider_unavailable` (no provider). The
@@ -150,23 +164,61 @@ function fail(err: unknown): ToolResult {
 export const PROVIDER_UNAVAILABLE_MESSAGE =
   "semantic(...) needs an embedding provider; none is configured — set embedding.provider (omg config set embedding.provider <command|url>) and embed the repository (omg embed drain)";
 
+/**
+ * The tools that can commit — the host serializes these under the writer lock
+ * of spec/sync §7. The same list as the Rust catalog's `Surface::is_write_tool`
+ * (`crates/omgbase-surface/src/catalog.rs`): a `dry_run` call still counts
+ * (only the kernel knows whether a write happened), so a preview waits for a
+ * writer exactly as the write would.
+ */
+export const WRITE_TOOLS: ReadonlySet<string> = new Set([
+  "apply",
+  "blocks_insert", "blocks_update", "blocks_move", "blocks_remove", "blocks_split", "blocks_merge", "blocks_check",
+  "nodes_set", "blocks_append", "docs_append",
+  "links_retarget", "links_repair",
+  "docs_create", "docs_move", "docs_delete", "docs_set_meta", "docs_update",
+  "observe", "observe_many", "observe_delete",
+]);
+
 export function buildServer(ctx: ServerContext): McpServer {
   const server = new McpServer({ name: "omgbase", version: VERSION });
   const { store } = ctx;
+  // The kernel's share of the workspace dir: spread into every ApplyRequest /
+  // DocOpContext so the stat cache is recorded on the MCP path too.
+  const LOCK_DIR = ctx.omgbaseDir !== undefined ? { omgbaseDir: ctx.omgbaseDir } : {};
 
   // ---- registration: listing through the SDK, validation + dispatch ours ----
   // `server.registerTool` publishes the name, description and JSON schema on
   // `tools/list`; the `tools/call` handler is replaced below so the arguments
   // are validated by `validateArguments` (spec/surface §4 "Arguments") and a
   // failure is the engine's own `filter_invalid`, not the SDK's text.
+  //
+  // A write tool (`WRITE_TOOLS`) is wrapped at registration so its whole call —
+  // argument resolution, the kernel's file-CAS + commit, `docs_move`'s inbound
+  // retarget — runs under one writer-lock acquire when the host supplied the
+  // workspace dir (the kernel's own inner lock re-enters it). The handler
+  // catches its own errors; the only one escaping the wrapper is the lock's
+  // `WriterLockTimeout`, rendered through `fail` like every other failure — a
+  // plain Error, so `errorBody` maps it to the pinned catch-all `repo_not_found`
+  // (spec/surface §9), the code the Rust host emits (`SurfaceError::other`).
   const registry = new Map<string, { shape: ArgShape; handler: (args: Record<string, unknown>) => Promise<ToolResult> }>();
   function tool<S extends ArgShape>(
     name: string,
     def: { description: string; inputSchema: S },
     handler: (args: z.infer<z.ZodObject<S>>) => Promise<ToolResult>,
   ): void {
-    server.registerTool(name, def, handler as never);
-    registry.set(name, { shape: def.inputSchema, handler: handler as (args: Record<string, unknown>) => Promise<ToolResult> });
+    const lockDir = ctx.omgbaseDir;
+    const run: typeof handler = WRITE_TOOLS.has(name) && lockDir !== undefined
+      ? async (args) => {
+          try {
+            return await withWriterLockAsync(lockDir, () => handler(args), ctx.writerLock);
+          } catch (e) {
+            return fail(e);
+          }
+        }
+      : handler;
+    server.registerTool(name, def, run as never);
+    registry.set(name, { shape: def.inputSchema, handler: run as (args: Record<string, unknown>) => Promise<ToolResult> });
   }
 
   // Multi-repo (ADR-014): every tool accepts an optional `repo` slug. Resolve it
@@ -318,7 +370,7 @@ export function buildServer(ctx: ServerContext): McpServer {
   // Apply an already-built op list, honoring dry_run (preview, no drain) — the
   // shared tail of every block-level tool below.
   function applyOps(repoId: string, rootPath: string, ops: Op[], reason: string, dryRun?: boolean) {
-    const res = surfaceApplyResult(apply(store, { repoId, rootPath, ops, origin: { actor: "agent:mcp", reason }, ...(dryRun !== undefined ? { dryRun } : {}) }));
+    const res = surfaceApplyResult(apply(store, { repoId, rootPath, ops, origin: { actor: "agent:mcp", reason }, ...LOCK_DIR, ...(dryRun !== undefined ? { dryRun } : {}) }));
     return dryRun ? ok(res) : okMutated(res);
   }
   // Guard shared by every mutating tool: a sourceless (headless-only) repo has no
@@ -700,6 +752,7 @@ export function buildServer(ctx: ServerContext): McpServer {
           repoId, rootPath,
           ops: args.ops as Op[],
           origin: { actor: "agent:mcp", ...(args.reason ? { reason: args.reason } : {}) },
+          ...LOCK_DIR,
           ...(args.dry_run !== undefined ? { dryRun: args.dry_run } : {}),
         }));
         // A dry run previews without writing — don't schedule a drain for it.
@@ -759,7 +812,7 @@ export function buildServer(ctx: ServerContext): McpServer {
           ? { ...(args.checked !== undefined ? { checked: args.checked } : {}), ...(args.attrs ?? {}) }
           : undefined;
         const ops: Op[] = [{ op: "update", block, ...(args.markdown !== undefined ? { markdown: args.markdown } : {}), ...(attrs ? { attrs } : {}), ...(expect ? { expect } : {}) } as Op];
-        const res = surfaceApplyResult(apply(store, { repoId, rootPath: root, ops, origin: { actor: "agent:mcp", reason: "blocks_update" }, ...(args.dry_run !== undefined ? { dryRun: args.dry_run } : {}) }));
+        const res = surfaceApplyResult(apply(store, { repoId, rootPath: root, ops, origin: { actor: "agent:mcp", reason: "blocks_update" }, ...LOCK_DIR, ...(args.dry_run !== undefined ? { dryRun: args.dry_run } : {}) }));
         // `ids` lists every resulting block (the target first, then any siblings
         // minted from multi-block content); `id` keeps the target for convenience.
         const ids = res.results[0]?.ids ?? [block];
@@ -973,7 +1026,7 @@ export function buildServer(ctx: ServerContext): McpServer {
         const { ops, hits: rawHits, pairs } = linksRetarget(store, repoId, args.from_target, args.to_target, args.path_glob ? { pathGlob: args.path_glob } : {});
         const hits = surfaceRetargetHits(rawHits);
         const dryRun = args.dry_run !== false;
-        const res = surfaceApplyResult(apply(store, { repoId, rootPath, ops, origin: { actor: "agent:mcp", reason: "links_retarget" }, dryRun }));
+        const res = surfaceApplyResult(apply(store, { repoId, rootPath, ops, origin: { actor: "agent:mcp", reason: "links_retarget" }, ...LOCK_DIR, dryRun }));
         if (dryRun) return ok({ hits, pairs, applied: false, ...res });
         return okMutated({ hits, pairs, applied: true, ...res });
       } catch (e) {
@@ -1034,7 +1087,7 @@ export function buildServer(ctx: ServerContext): McpServer {
         // The dry run plans through the same kernel path (dryRun: no write, no
         // drain) so a preview surfaces exactly the failure an apply would hit.
         const dryRun = args.dry_run !== false;
-        const res = surfaceApplyResult(apply(store, { repoId, rootPath, ops, origin: { actor: "agent:mcp", reason: "links_repair" }, dryRun }));
+        const res = surfaceApplyResult(apply(store, { repoId, rootPath, ops, origin: { actor: "agent:mcp", reason: "links_repair" }, ...LOCK_DIR, dryRun }));
         if (dryRun) return ok({ hits, pairs, applied: false, ...res });
         return okMutated({ hits, pairs, applied: true, ...res });
       } catch (e) {
@@ -1043,14 +1096,15 @@ export function buildServer(ctx: ServerContext): McpServer {
     },
   );
 
-  // Doc-level operations (06 §API). The MCP server serializes writes in-process,
-  // so these pass no omgbaseDir (the flock is for cross-process CLI writers);
-  // MCP-originated writes are actor agent:mcp.
+  // Doc-level operations (06 §API). The workspace dir rides along (LOCK_DIR):
+  // the tool-boundary lock already holds the writer lock for the call, so the
+  // operation's own lock re-enters it, and the stat cache is recorded as on the
+  // CLI path. MCP-originated writes are actor agent:mcp.
   // `dry_run` validates and returns the per-file `diffs` without writing
   // (`DocOpContext.dryRun`), the docs-verb peer of `apply`'s preview.
   const docCtx = (scope: { repoId: string; rootPath: string | undefined }, dryRun?: boolean) => {
     if (!scope.rootPath) throw new EngineError("repo_not_found", "repo has no filesystem source; mutation disabled");
-    return { repoId: scope.repoId, rootPath: scope.rootPath, actor: "agent:mcp", ...(dryRun ? { dryRun: true } : {}) };
+    return { repoId: scope.repoId, rootPath: scope.rootPath, actor: "agent:mcp", ...LOCK_DIR, ...(dryRun ? { dryRun: true } : {}) };
   };
   const docResult = <T,>(res: T, dryRun?: boolean) => (dryRun ? ok(res) : okMutated(res));
 

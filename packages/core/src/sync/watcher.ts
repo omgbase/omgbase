@@ -1,6 +1,7 @@
 import type { Store } from "../core/store/store.js";
 import { reconcileChanges, type CheckpointResult } from "./driver.js";
 import type { SyncSource, SourceWatch } from "./plugin.js";
+import { withWriterLockAsync } from "./writer-lock.js";
 
 // Sync watcher (01 §6, 07 task 1.5). Subscribes to a SyncSource's change feed
 // (13 §4.3) and reconciles each debounced batch into a checkpoint. Debounce/
@@ -13,11 +14,18 @@ import type { SyncSource, SourceWatch } from "./plugin.js";
 // the subscription; `ready()` is the source's `ready` promise, which a host awaits
 // (bounded — `awaitReady`) BEFORE its priming freshness sweep, so an edit landing
 // before the feed is primed is caught by the sweep and one after it by the feed.
+//
+// Locking (spec/sync §7): a checkpoint is a write, so with `omgbaseDir` each
+// batch's reconcile — fetch through the adapter, echo gate, commit — runs
+// under the workspace writer lock, as the Rust watcher's does; a verb or MCP
+// call in another process waits for it rather than racing its file-CAS.
 
 export interface WatcherOptions {
   onCheckpoint?: (result: CheckpointResult) => void;
   /** Surface a reconcile error from a background batch (the watch stays live). */
   onError?: (err: unknown) => void;
+  /** The workspace `.omgbase/` dir: when set, every checkpoint runs under the writer lock. */
+  omgbaseDir?: string;
 }
 
 export class Watcher {
@@ -47,7 +55,9 @@ export class Watcher {
 
   private async ingest(paths: string[]): Promise<CheckpointResult | null> {
     if (paths.length === 0) return null;
-    const result = await reconcileChanges(this.store, this.repoId, this.source, paths.map((path) => ({ path })));
+    const reconcile = (): Promise<CheckpointResult> => reconcileChanges(this.store, this.repoId, this.source, paths.map((path) => ({ path })));
+    const dir = this.opts.omgbaseDir;
+    const result = dir !== undefined ? await withWriterLockAsync(dir, reconcile) : await reconcile();
     this.opts.onCheckpoint?.(result);
     return result;
   }
