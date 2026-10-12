@@ -32,9 +32,12 @@ import type { BlockPlan, Correlation, Rule, RowIndex } from "./optimize/index.ts
 import { printTemplate } from "./print.ts";
 import { DEFAULT_RULES, HashIndex, intersectPositions, lookupOrder, planFor, residualWithout } from "./optimize/index.ts";
 
-/** The shaped result of a top-level query, discriminated by consumer. */
+/** The shaped result of a top-level query, discriminated by consumer. A
+ * `collect` over a **single** receiver (one object, SEMANTICS §3) is one record
+ * or absent rather than a list: `single` is true and `rows` holds at most that
+ * one row (`unwrap` yields `rows[0] ?? null`). */
 export type OqxResult =
-  | { consumer: "collect"; rows: unknown[] }
+  | { consumer: "collect"; rows: unknown[]; single: boolean }
   | { consumer: "exists"; exists: boolean }
   | { consumer: "none"; none: boolean }
   | { consumer: "count"; count: number }
@@ -84,7 +87,7 @@ interface RunState {
 interface CollectionState {
   value: unknown;
   seen: number;
-  rows: unknown[] | null;
+  rows: Rows | null;
   indexes: Map<string, RowIndex | null>;
   contextIndexes: Map<string, RowIndex | null>;
 }
@@ -119,6 +122,20 @@ const HARD_DEPTH_CAP = 8;
 // `Query` and `Subquery` carry this shape.
 type Projection = Pick<Subquery, "select" | "values">;
 
+// The `$key: expr` item of a projection, if any — the identity the rows it
+// yields carry (SEMANTICS §16, since 0.20).
+function keyItem(proj: Projection): Extract<SelectItem, { kind: "field" }> | null {
+  for (const it of proj.select) if (it.kind === "field" && it.lift === 0 && it.name === KEY) return it;
+  return null;
+}
+
+// A row with the identity the walk knows it by.
+interface Keyed { row: unknown; key: unknown; }
+
+// The rows of a value in row position, and whether the value was a single row
+// (one object) rather than a collection — which decides a block's result shape.
+interface Rows { rows: unknown[]; single: boolean; }
+
 // An evaluated `limit`/`offset` pair. `limit === null` is unbounded.
 interface Bound { offset: number; limit: number | null; }
 const UNBOUNDED: Bound = { offset: 0, limit: null };
@@ -144,7 +161,11 @@ export class InMemoryEngine implements Engine {
     };
     if (this.trace) run.trace = this.trace;
     const root: Scope = { row: this.ctx.rootObject?.(), parent: null, bindings, run };
-    const rows = this.reproject(this.rowsOf(this.evalRaw(query.source, root)), query.from, root);
+    const src = this.coerceRows(this.evalRaw(query.source, root), query.source);
+    const rows = this.reproject(src.rows, query.from, root);
+    // One object as the source yields one record (SEMANTICS §3) — unless a
+    // `from` re-projection or a walk fans it out.
+    const single = src.single && query.from.length === 0 && !query.follow;
 
     const bound = this.boundOf(query, root);
     if (query.follow) return this.runFollow(query, rows, root, bound);
@@ -179,10 +200,11 @@ export class InMemoryEngine implements Engine {
         if (kept.length >= cap) break;
       }
     }
+    this.applyKey(kept, query);
     this.sortScopes(kept, query.orderBy);
     if (query.distinct) kept = this.dedupByProjection(kept, query);
     kept = sliceBound(kept, bound);
-    return this.shape(query.consumer, kept, query);
+    return this.shape(query.consumer, kept, query, single);
   }
 
   // Evaluate a block's `limit`/`offset`. The bound is part of the block, so it
@@ -214,8 +236,56 @@ export class InMemoryEngine implements Engine {
     return this.evalWhere(where, this.enter(row, parent));
   }
 
-  private rowsOf(v: unknown): unknown[] {
-    return Array.from(this.ctx.toRows(v));
+  // The rows of a value in row position (SEMANTICS §3): absent → none; an array
+  // (or a host iterable) → its elements, a collection; an object → one row, and
+  // the value is SINGLE — a block over it yields one result rather than a list;
+  // a scalar (a string, a number, a boolean) or a range → an eval error. A
+  // context says which of its objects are single (`isSingle`); without it, any
+  // non-iterable object is.
+  private coerceRows(v: unknown, what: Expr | null): Rows {
+    if (v == null) return { rows: [], single: false };
+    if (Array.isArray(v)) return { rows: v, single: false };
+    if (typeof v !== "object" || isRange(v)) {
+      const kind = isRange(v) ? "a range" : typeof v === "string" ? "a string" : typeof v === "number" ? "a number" : typeof v === "boolean" ? "a boolean" : `a ${typeof v}`;
+      const shown = isRange(v) ? "" : ` (${JSON.stringify(v)})`;
+      const subject = what ? `\`${describe(what)}\` is` : "the receiver is";
+      throw new OqxError(`${subject} ${kind}${shown}, not a collection or an object — rows come from a collection (a list) or one object (a record)`, "eval");
+    }
+    const rows = Array.from(this.ctx.toRows(v));
+    const single = this.ctx.isSingle ? this.ctx.isSingle(v) : !(Symbol.iterator in v);
+    return { rows, single };
+  }
+
+  private rowsOf(v: unknown, what: Expr | null = null): unknown[] {
+    return this.coerceRows(v, what).rows;
+  }
+
+  // The host's identity of a row (SEMANTICS §16): an entry is known by its key;
+  // any other row by the context's `identityOf`, else by its structural value.
+  private hostIdentity(row: unknown): unknown {
+    if (isEntry(row)) return row.key;
+    if (this.ctx.identityOf) return this.ctx.identityOf(row);
+    if (this.ctx.identity) return this.ctx.identity(row);
+    return row;
+  }
+
+  // The identity a scope's row is known by — `$key`: the identity the walk or a
+  // `$key:` projection gave it (`meta`), else the host's.
+  private scopeIdentity(scope: Scope): unknown {
+    if (scope.meta && Object.hasOwn(scope.meta, KEY)) return scope.meta[KEY];
+    if (scope.parent === null && scope.row === undefined) return undefined;
+    return this.hostIdentity(scope.row);
+  }
+
+  // A projection's `$key: expr` item gives the rows it yields that identity:
+  // evaluate it on each kept scope and record it as the scope's `$key`.
+  private applyKey(scopes: Scope[], proj: Projection): void {
+    const item = keyItem(proj);
+    if (!item) return;
+    for (const s of scopes) {
+      const key = this.evalExpr(item.expr, s);
+      s.meta = { ...(s.meta ?? {}), [KEY]: key };
+    }
   }
 
   private child(row: unknown, parent: Scope): Scope {
@@ -243,13 +313,20 @@ export class InMemoryEngine implements Engine {
   private runFollow(query: Query, rows: unknown[], root: Scope, bound: Bound): OqxResult {
     const { seed, post } = query.where ? partitionRecur(query.where) : { seed: null, post: null };
     const seeds = seed ? rows.filter((r) => this.matches(seed, r, root)) : rows;
-    const occ = this.followWalk(seeds, query.follow!, root);
+    const occ = this.followWalk(this.keyed(seeds, query, root), query.follow!, root);
     let scopes: Scope[] = occ.map((o) => this.enter(o.row, root, { lifts: {}, meta: o.meta }));
     if (post) scopes = scopes.filter((s) => this.evalWhere(post, s));
     this.sortScopes(scopes, query.orderBy);
     if (query.distinct) scopes = this.dedupByProjection(scopes, query);
     scopes = sliceBound(scopes, bound);
-    return this.shape(query.consumer, scopes, query);
+    return this.shape(query.consumer, scopes, query, false);
+  }
+
+  // The seeds of a walk with their identities: the body's `$key: expr` item,
+  // read in each seed's scope, else the host's identity (SEMANTICS §20).
+  private keyed(rows: unknown[], proj: Projection, parent: Scope): Keyed[] {
+    const item = keyItem(proj);
+    return rows.map((row) => ({ row, key: item ? this.evalExpr(item.expr, this.enter(row, parent)) : this.hostIdentity(row) }));
   }
 
   // Dedup scopes by their PROJECTED value (`distinct`): keep the first scope per
@@ -262,7 +339,7 @@ export class InMemoryEngine implements Engine {
     const out: Scope[] = [];
     for (const s of scopes) {
       const key = proj.select.length === 0
-        ? `i:${canonicalKey(this.ctx.identity(s.row))}`
+        ? `i:${canonicalKey(this.scopeIdentity(s))}`
         : `p:${canonicalKey(this.projectRow(proj, s))}`;
       if (seen.has(key)) continue;
       seen.add(key);
@@ -272,79 +349,88 @@ export class InMemoryEngine implements Engine {
   }
 
   // A bounded, per-path recursive walk. Each occurrence carries recursion
-  // metadata: `$depth` (seed = 1), a categorical `$stop`, and a deterministic
-  // `$ordinal`. Semantics:
+  // metadata: `$depth` (seed = 1), a categorical `$stop`, a deterministic
+  // `$ordinal`, and `$key`, the identity it is known by. Semantics (SEMANTICS §20):
   //   • per-path — a node reached by N distinct paths yields N occurrences
   //     (unless `distinct`, which keeps the minimal (depth, path) per identity);
-  //   • cycles are safe — revisiting a key already on the current path admits ONE
-  //     occurrence with `$stop == "cycle"` and does not expand it (no runaway);
+  //   • cycles are safe — revisiting an identity already on the current path
+  //     admits ONE occurrence with `$stop == "cycle"` and does not expand it;
   //   • `$stop` ∈ interior | leaf | frontier | depth | cycle, with precedence
   //     cycle > frontier > depth > leaf > interior; only `interior` rows expand;
   //   • `$leaf` = (stop == leaf); `$frontier` = (stop ∈ {frontier, depth}) — the
   //     "there is unfollowed graph beyond me" signal;
-  //   • identity for cycle detection + `distinct` is `by <expr>` when given, else
-  //     `ctx.identity(row)` (an entry's identity is its value's); identities are
-  //     compared structurally via `canonicalKey`, and `$ordinal` paths compare
-  //     component-wise (`comparePath`), so `10` follows `9`;
+  //   • identity is `$key` (since 0.20): a seed's is the body's `$key:` item or
+  //     the host's identity; a successor's is its destination block's `$key:`
+  //     item, else the host's identity of the yielded row. Identities compare
+  //     structurally (`canonicalKey`); `$ordinal` paths compare component-wise
+  //     (`comparePath`), so `10` follows `9`;
   //   • a row's successors are the destinations' rows in source order — a plain
   //     relation read in the row's scope, a destination block evaluated as a
   //     select-position directive in that scope (so `^` inside it is the frontier
-  //     row and its `^people` receiver resolves one scope further out) — filtered
-  //     by the follow `where`, then unioned by identity within the step (a
-  //     recurring identity is kept once, at its first position);
-  //   • the follow `where` reads the candidate's scope hung off the FRONTIER
-  //     row's scope: a bare name is the candidate's, `^name` the row being
-  //     expanded, `^^name` the walk's enclosing scope. `frontier` and `by` read
-  //     the occurrence's own scope with `^` the enclosing scope, as the body does.
-  private followWalk(seedRows: unknown[], follow: Follow, parent: Scope): Occurrence[] {
-    const cap = follow.depth ?? HARD_DEPTH_CAP;
-    const scopeFor = (row: unknown): Scope => this.enter(row, parent);
-    const identityOf = (row: unknown): unknown =>
-      follow.by ? this.evalExpr(follow.by, scopeFor(row)) : this.ctx.identity(isEntry(row) ? row.value : row);
-    const succOf = (row: unknown): unknown[] => {
-      const rowScope = scopeFor(row);
-      const raw: unknown[] = [];
-      for (const dest of follow.destinations) {
-        const v = dest.kind === "op" ? this.evalCollectValue(dest, rowScope) : this.evalRaw(dest, rowScope);
-        raw.push(...this.rowsOf(v));
-      }
-      const kept = follow.where ? raw.filter((x) => truthy(this.evalExpr(follow.where!, this.enter(x, rowScope)))) : raw;
+  //     row and its `^people` receiver resolves one scope further out), shaped by
+  //     the block's items other than `$key` — then unioned by identity within
+  //     the step (a recurring identity is kept once, at its first position, and
+  //     the destination that reached it first governs the occurrence);
+  //   • a destination block's `depth n` (0.20) makes it decline to expand a
+  //     frontier row whose `$depth >= n`; a row with no successors some
+  //     destination declined is `depth`, with none declined `leaf`; the hard
+  //     cap 8 is every destination's ceiling;
+  //   • a destination block's `frontier P` marks the occurrences IT reached for
+  //     which `P` holds (seeds are reached by none); `P` reads the occurrence's
+  //     own scope with `^` the walk's enclosing scope, as the body does.
+  private followWalk(seeds: Keyed[], follow: Follow, parent: Scope): Occurrence[] {
+    const frontierScope = (k: Keyed): Scope => this.enter(k.row, parent, { meta: { [KEY]: k.key } });
+    const succOf = (k: Keyed, depth: number): { succ: (Keyed & { via: number })[]; declined: boolean } => {
+      const rowScope = frontierScope(k);
+      const raw: (Keyed & { via: number })[] = [];
+      let declined = false;
+      follow.destinations.forEach((dest, via) => {
+        if (dest.kind === "op") {
+          if (dest.sub.depth !== null && depth >= dest.sub.depth) { declined = true; return; }
+          for (const x of this.destinationRows(dest, rowScope)) raw.push({ ...x, via });
+        } else {
+          for (const row of this.rowsOf(this.evalRaw(dest, rowScope), dest)) raw.push({ row, key: this.hostIdentity(row), via });
+        }
+      });
       const seen = new Set<string>();
-      const out: unknown[] = [];
-      for (const x of kept) {
-        const key = canonicalKey(identityOf(x));
+      const succ: (Keyed & { via: number })[] = [];
+      for (const x of raw) {
+        const key = canonicalKey(x.key);
         if (seen.has(key)) continue;
         seen.add(key);
-        out.push(x);
+        succ.push(x);
       }
-      return out;
+      return { succ, declined };
     };
-    const frontierHit = (row: unknown): boolean =>
-      follow.frontier ? truthy(this.evalExpr(follow.frontier, scopeFor(row))) : false;
+    const frontierHit = (k: Keyed, via: number | null): boolean => {
+      if (via === null) return false;
+      const dest = follow.destinations[via]!;
+      if (dest.kind !== "op" || !dest.sub.frontier) return false;
+      return truthy(this.evalExpr(dest.sub.frontier, frontierScope(k)));
+    };
 
-    interface Walked { row: unknown; depth: number; path: unknown[]; key: string; stop: string; }
+    interface Walked { row: unknown; depth: number; path: unknown[]; id: unknown; key: string; stop: string; }
     const walked: Walked[] = [];
 
-    const visit = (row: unknown, depth: number, ancestors: string[], ancestorIds: unknown[]): void => {
-      const id = identityOf(row);
-      const key = canonicalKey(id);
-      const path = [...ancestorIds, id];
+    const visit = (k: Keyed, via: number | null, depth: number, ancestors: string[], ancestorIds: unknown[]): void => {
+      const key = canonicalKey(k.key);
+      const path = [...ancestorIds, k.key];
       let stop: string;
       if (ancestors.includes(key)) stop = "cycle";
-      else if (frontierHit(row)) stop = "frontier";
-      else if (depth >= cap) stop = "depth";
+      else if (frontierHit(k, via)) stop = "frontier";
+      else if (depth >= HARD_DEPTH_CAP) stop = "depth";
       else {
-        const succ = succOf(row);
-        if (succ.length === 0) stop = "leaf";
+        const { succ, declined } = succOf(k, depth);
+        if (succ.length === 0) stop = declined ? "depth" : "leaf";
         else {
-          walked.push({ row, depth, path, key, stop: "interior" });
-          for (const s of succ) visit(s, depth + 1, [...ancestors, key], path);
+          walked.push({ row: k.row, depth, path, id: k.key, key, stop: "interior" });
+          for (const x of succ) visit(x, x.via, depth + 1, [...ancestors, key], path);
           return;
         }
       }
-      walked.push({ row, depth, path, key, stop });
+      walked.push({ row: k.row, depth, path, id: k.key, key, stop });
     };
-    for (const r of seedRows) visit(r, 1, [], []);
+    for (const k of seeds) visit(k, null, 1, [], []);
 
     let rows = walked;
     if (follow.distinct) {
@@ -361,6 +447,7 @@ export class InMemoryEngine implements Engine {
     return rows.map((w, i) => ({
       row: w.row,
       meta: {
+        [KEY]: w.id,
         $depth: w.depth,
         $stop: w.stop,
         $leaf: w.stop === "leaf",
@@ -370,14 +457,32 @@ export class InMemoryEngine implements Engine {
     }));
   }
 
+  // A destination block's successors for one frontier row, each with its
+  // identity: the block's rows (its `where`, order, `distinct`, bound and
+  // consumer applied — `first`/`single` yield at most one), shaped by its items
+  // other than `$key` (the raw rows when none remain), keyed by its `$key:`
+  // item read in the row's scope, else by the host's identity of the row yielded.
+  private destinationRows(dest: OpNode, rowScope: Scope): Keyed[] {
+    const { scopes } = this.evalCollectScopes(dest, rowScope);
+    const key = keyItem(dest.sub);
+    const shape: Projection = key ? { select: dest.sub.select.filter((it) => it !== key), values: dest.sub.values } : dest.sub;
+    return scopes.map((s) => {
+      const row = this.projectRow(shape, s);
+      const id = key ? this.evalExpr(key.expr, s) : shape.select.length === 0 ? this.scopeIdentity(s) : this.hostIdentity(row);
+      return { row, key: id };
+    });
+  }
+
   // ---- consumer shaping -----------------------------------------------------
 
-  private shape(consumer: Query["consumer"], scopes: Scope[], proj: Projection): OqxResult {
+  // `single` — the receiver was one object: a `collect` yields its one record
+  // (or nothing) rather than a one-element list (SEMANTICS §3, §15).
+  private shape(consumer: Query["consumer"], scopes: Scope[], proj: Projection, single: boolean): OqxResult {
     switch (consumer) {
       case "exists": return { consumer, exists: scopes.length > 0 };
       case "none": return { consumer, none: scopes.length === 0 };
       case "count": return { consumer, count: scopes.length };
-      case "collect": return { consumer, rows: scopes.map((s) => this.projectRow(proj, s)) };
+      case "collect": return { consumer, rows: scopes.map((s) => this.projectRow(proj, s)), single };
       case "first": return { consumer, row: scopes.length > 0 ? this.projectRow(proj, scopes[0]!) : null };
       case "single":
         if (scopes.length > 1) throw new OqxError(`single { … } matched ${scopes.length} rows; use first { … } for zero-or-one`, "eval");
@@ -462,6 +567,7 @@ export class InMemoryEngine implements Engine {
   // The rows a consumer op reduces: matched → ordered → distinct → bounded.
   private opRows(op: OpNode, scope: Scope, bound: Bound, acc?: Access): Scope[] {
     let scopes = this.matchRows(op, scope, acc);
+    this.applyKey(scopes, op.sub);
     this.sortScopes(scopes, op.sub.orderBy);
     if (op.distinct) scopes = this.dedupByProjection(scopes, op.sub);
     return sliceBound(scopes, bound);
@@ -523,13 +629,13 @@ export class InMemoryEngine implements Engine {
     if (!state) {
       const value = this.evalRaw(op.receiver, scope);
       if (plan.receiverStable) run.stableCollections.set(op, (state = newCollection(value)));
-      else if (plan.correlated.length === 0) return this.scan(this.rowsOf(value), op, scope);
+      else if (plan.correlated.length === 0) return this.scan(this.coerceRows(value, op.receiver), op, scope);
       else if (value !== null && typeof value === "object") {
         state = run.collections.get(value);
         if (!state) run.collections.set(value, (state = newCollection(value)));
       } else {
         run.trace?.({ kind: "fallback", reason: "not-a-collection" });
-        return this.scan(this.rowsOf(value), op, scope);
+        return this.scan(this.coerceRows(value, op.receiver), op, scope);
       }
     }
     state.seen++;
@@ -537,25 +643,26 @@ export class InMemoryEngine implements Engine {
       const direct = this.lookupRows(plan, state, scope);
       if (direct) return direct;
       if (state.seen >= 2 || plan.receiverStable) {
-        const probed = this.probe(plan, state, scope);
-        if (probed) return { rows: probed, where: plan.residual };
+        const probed = this.probe(plan, state, scope, op);
+        if (probed) return { rows: probed, where: plan.residual, single: false };
       } else run.trace?.({ kind: "fallback", reason: "unstable" });
     }
-    return this.scan(this.materialize(state), op, scope);
+    return this.scan(this.materialize(state, op), op, scope);
   }
 
   // The plain scan: the rows, re-projected by `from`, with the whole `where`.
-  private scan(rows: unknown[], op: OpNode, scope: Scope): Access {
-    return { rows: this.reproject(rows, op.sub.from, scope), where: op.sub.where };
+  // A `from` re-projection fans a single receiver out: the block is plural.
+  private scan(src: Rows, op: OpNode, scope: Scope): Access {
+    return { rows: this.reproject(src.rows, op.sub.from, scope), where: op.sub.where, single: src.single && op.sub.from.length === 0 };
   }
 
   private reproject(rows: unknown[], from: readonly Expr[], scope: Scope): unknown[] {
-    for (const proj of from) rows = rows.flatMap((r) => this.rowsOf(this.evalRaw(proj, this.child(r, scope))));
+    for (const proj of from) rows = rows.flatMap((r) => this.rowsOf(this.evalRaw(proj, this.child(r, scope)), proj));
     return rows;
   }
 
-  private materialize(state: CollectionState): unknown[] {
-    return (state.rows ??= this.rowsOf(state.value));
+  private materialize(state: CollectionState, op: OpNode): Rows {
+    return (state.rows ??= this.coerceRows(state.value, op.receiver));
   }
 
   // A probe answered by a context index that yields rows directly, before the
@@ -569,7 +676,7 @@ export class InMemoryEngine implements Engine {
       if (!outer) return null;
       const rows = Array.from(index.lookupRows(outer.value));
       scope.run.trace?.({ kind: "lookup", path: c.path, candidates: rows.length });
-      return { rows, where: residualWithout(plan, c) };
+      return { rows, where: residualWithout(plan, c), single: false };
     }
     return null;
   }
@@ -577,12 +684,12 @@ export class InMemoryEngine implements Engine {
   // The engine's probe: one bucket per correlation, intersected smallest-first;
   // the candidates come back in receiver order. `null` (an index that could
   // not be built, an outer value whose evaluation threw) leaves the scan in charge.
-  private probe(plan: BlockPlan, state: CollectionState, scope: Scope): unknown[] | null {
+  private probe(plan: BlockPlan, state: CollectionState, scope: Scope, op: OpNode): unknown[] | null {
     const run = scope.run;
-    const rows = this.materialize(state);
+    const rows = this.materialize(state, op).rows;
     const buckets: (readonly number[])[] = [];
     for (const c of plan.correlated) {
-      const index = this.indexFor(state, c, scope);
+      const index = this.indexFor(state, c, scope, op);
       if (!index) { run.trace?.({ kind: "fallback", reason: "index" }); return null; }
       const outer = this.outerValue(c, scope);
       if (!outer) return null;
@@ -615,11 +722,11 @@ export class InMemoryEngine implements Engine {
   // here by evaluating the local expression in each row's scope — the same read
   // the scan performs, so the keys are exactly what `==` would compare. A throw
   // while building (a context that rejects a read) leaves the path un-indexed.
-  private indexFor(state: CollectionState, c: Correlation, scope: Scope): RowIndex | null {
+  private indexFor(state: CollectionState, c: Correlation, scope: Scope, op: OpNode): RowIndex | null {
     const key = pathKey(c.path);
     const hit = state.indexes.get(key);
     if (hit !== undefined) return hit;
-    const rows = this.materialize(state);
+    const rows = this.materialize(state, op).rows;
     let index = this.contextIndex(state, c);
     let source: "context" | "engine" = "context";
     if (!index) {
@@ -643,27 +750,43 @@ export class InMemoryEngine implements Engine {
   }
 
   private evalCollectValuePlanned(op: OpNode, plan: BlockPlan, scope: Scope): unknown {
+    const { scopes, single } = this.evalCollectScopes(op, scope, plan);
+    switch (op.op) {
+      // Over a single receiver (one object) a `collect` is the record or absent,
+      // not a one-element list (SEMANTICS §3).
+      case "collect": return single ? (scopes.length > 0 ? this.projectRow(op.sub, scopes[0]!) : undefined) : scopes.map((s) => this.projectRow(op.sub, s));
+      default: return scopes.length > 0 ? this.projectRow(op.sub, scopes[0]!) : null;
+    }
+  }
+
+  // The rows a select-position directive yields, as scopes, reduced by its
+  // consumer (`first`/`single` keep at most one; `single` raises on more), and
+  // whether its receiver was a single object.
+  private evalCollectScopes(op: OpNode, scope: Scope, plan: BlockPlan = this.planOf(op, scope)): { scopes: Scope[]; single: boolean } {
     const sub = op.sub;
     const bound = this.boundOf(sub, scope);
     let scopes: Scope[];
+    let single = false;
     if (sub.follow) {
       // The seeds are the matched rows themselves (`followWalk` enters them); a
       // follow block is never correlated, so `where` here is the whole predicate.
       const { rows, where } = this.access(op, plan, scope);
       const seeds = where ? rows.filter((r) => this.evalWhere(where, this.enter(r, scope, { lifts: {} }))) : rows;
-      scopes = this.followWalk(seeds, sub.follow, scope).map((o) => this.enter(o.row, scope, { meta: o.meta }));
+      scopes = this.followWalk(this.keyed(seeds, sub, scope), sub.follow, scope).map((o) => this.enter(o.row, scope, { meta: o.meta }));
       this.sortScopes(scopes, sub.orderBy);
       if (op.distinct) scopes = this.dedupByProjection(scopes, sub);
       scopes = sliceBound(scopes, bound);
     } else {
-      scopes = this.opRows(op, scope, bound, this.access(op, plan, scope));
+      const acc = this.access(op, plan, scope);
+      single = acc.single;
+      scopes = this.opRows(op, scope, bound, acc);
     }
     switch (op.op) {
-      case "collect": return scopes.map((s) => this.projectRow(sub, s));
-      case "first": return scopes.length > 0 ? this.projectRow(sub, scopes[0]!) : null;
+      case "collect": return { scopes, single };
+      case "first": return { scopes: scopes.slice(0, 1), single };
       case "single":
         if (scopes.length > 1) throw new OqxError(`single { … } for '${describeReceiver(op.receiver)}' matched ${scopes.length} rows`, "eval");
-        return scopes.length > 0 ? this.projectRow(sub, scopes[0]!) : null;
+        return { scopes, single };
       default: throw new OqxError(`${op.op} { … } is not valid in select position`, "eval");
     }
   }
@@ -745,9 +868,9 @@ export class InMemoryEngine implements Engine {
         const l = this.evalExpr(e.left, scope);
         const r = this.evalExpr(e.right, scope);
         if (e.op === "is" || e.op === "is not") {
-          // Identity (SEMANTICS §5b): the context's identity of each side,
+          // Identity (SEMANTICS §5b): the host's identity of each side,
           // compared structurally — the key `distinct` and `follow` use.
-          const same = canonicalKey(this.ctx.identity(l)) === canonicalKey(this.ctx.identity(r));
+          const same = canonicalKey(this.hostIdentity(l)) === canonicalKey(this.hostIdentity(r));
           return e.op === "is" ? same : !same;
         }
         return isRelOp(e.op) ? relate(e.op, l, r) : arith(e.op, l, r);
@@ -762,6 +885,21 @@ export class InMemoryEngine implements Engine {
         e.lo == null ? null : this.evalExpr(e.lo, scope),
         e.hi == null ? null : this.evalExpr(e.hi, scope),
         e.exclusiveEnd);
+      // A tuple (SEMANTICS §3b): the elements in order, concatenated with ONE
+      // level of flattening — a collection contributes its items, anything else
+      // itself; an absent (`undefined`) element contributes nothing, a `null`
+      // one `null`; duplicates are kept.
+      case "tuple": {
+        const out: unknown[] = [];
+        for (const item of e.items) {
+          const v = this.evalExpr(item, scope);
+          if (v === undefined) continue;
+          if (Array.isArray(v)) out.push(...v);
+          else if (v !== null && typeof v === "object" && !isEntry(v) && !isRange(v) && Symbol.iterator in v) out.push(...(v as Iterable<unknown>));
+          else out.push(v);
+        }
+        return out;
+      }
     }
   }
 
@@ -791,18 +929,20 @@ export class InMemoryEngine implements Engine {
   // 0, "") need no special case — there is no "absent, so look outward" rule.
   private resolveIn(name: string, scope: Scope): unknown {
     if (name === "$it") return scope.row;
-    if ((name === KEY || RECUR.has(name)) && scope.meta && Object.hasOwn(scope.meta, name)) return scope.meta[name];
+    // `$key` is the row's identity on every row (SEMANTICS §16, since 0.20).
+    if (name === KEY) return this.scopeIdentity(scope);
+    if (RECUR.has(name) && scope.meta && Object.hasOwn(scope.meta, name)) return scope.meta[name];
     if (scope.lifts && Object.hasOwn(scope.lifts, name)) return scope.lifts[name];
     if (scope.parent === null) return this.ctx.root(name);
     return this.ctx.get(scope.row, name);
   }
 
-  // ` on <identity>` for a required-value error when the scope has a row with a
-  // scalar identity (its `id`, through the context); empty otherwise, and at the
-  // root (the root object is not a row of the data).
+  // ` on <identity>` for a required-value error when the scope's row has a
+  // scalar identity (`$key`: the host's, an entry's key, a `$key:` projection);
+  // empty otherwise, and at the root (the root object is not a row of the data).
   private rowIdentity(scope: Scope): string {
     if (scope.parent === null || scope.row == null) return "";
-    const id = this.ctx.identity(scope.row);
+    const id = this.scopeIdentity(scope);
     return typeof id === "string" || typeof id === "number" ? ` on ${JSON.stringify(id)}` : "";
   }
 
@@ -822,8 +962,9 @@ export class InMemoryEngine implements Engine {
 
 interface Occurrence { row: unknown; meta: Record<string, unknown>; }
 
-// A block's accessed rows and the predicate still to evaluate over each.
-interface Access { rows: unknown[]; where: Where | null; }
+// A block's accessed rows, the predicate still to evaluate over each, and
+// whether the receiver was a single object (SEMANTICS §3).
+interface Access { rows: unknown[]; where: Where | null; single: boolean; }
 
 // ---- free helpers -----------------------------------------------------------
 
@@ -947,6 +1088,7 @@ function exprHasRecur(e: Expr): boolean {
     case "unary": case "required": return exprHasRecur(e.expr);
     case "binary": case "logical": case "in": return exprHasRecur(e.left) || exprHasRecur(e.right);
     case "range": return (e.lo != null && exprHasRecur(e.lo)) || (e.hi != null && exprHasRecur(e.hi));
+    case "tuple": return e.items.some(exprHasRecur);
     default: return false;
   }
 }

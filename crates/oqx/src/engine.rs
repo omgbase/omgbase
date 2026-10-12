@@ -62,10 +62,13 @@ use crate::walk::Node;
 
 /// A query's result, shaped by its consumer. [`OqxResult::into_value`] gives
 /// the consumer-shaped plain value the tagged-template API and the spec
-/// fixtures observe.
+/// fixtures observe. A `collect` over a **single** receiver (one object,
+/// SEMANTICS §3, since 0.20) is [`OqxResult::Record`]: the one record or
+/// `None` rather than a list.
 #[derive(Clone, Debug, PartialEq)]
 pub enum OqxResult {
     Collect(Vec<Value>),
+    Record(Option<Value>),
     Exists(bool),
     None(bool),
     Count(f64),
@@ -76,7 +79,7 @@ pub enum OqxResult {
 impl OqxResult {
     pub fn consumer(&self) -> Consumer {
         match self {
-            OqxResult::Collect(_) => Consumer::Collect,
+            OqxResult::Collect(_) | OqxResult::Record(_) => Consumer::Collect,
             OqxResult::Exists(_) => Consumer::Exists,
             OqxResult::None(_) => Consumer::None,
             OqxResult::Count(_) => Consumer::Count,
@@ -85,12 +88,14 @@ impl OqxResult {
         }
     }
 
-    /// The consumer-shaped result: an array for `collect`, a boolean for
+    /// The consumer-shaped result: an array for `collect` over a collection, the
+    /// record or `Null` for `collect` over one object, a boolean for
     /// `exists`/`none`, a number for `count`, the row or `Null` for
     /// `first`/`single`.
     pub fn into_value(self) -> Value {
         match self {
             OqxResult::Collect(rows) => Value::Array(rows),
+            OqxResult::Record(row) => row.unwrap_or(Value::Null),
             OqxResult::Exists(b) | OqxResult::None(b) => Value::Bool(b),
             OqxResult::Count(n) => Value::Number(n),
             OqxResult::First(row) | OqxResult::Single(row) => row.unwrap_or(Value::Null),
@@ -161,6 +166,43 @@ impl Row {
     fn plain(value: Value) -> Self {
         Row { value, key: None }
     }
+}
+
+/// The rows of a value in row position, and whether the value was a single row
+/// (one object) rather than a collection — which decides a block's result shape
+/// (SEMANTICS §3).
+struct Rows {
+    rows: Vec<Row>,
+    single: bool,
+}
+
+impl Rows {
+    fn plural(rows: Vec<Row>) -> Self {
+        Rows {
+            rows,
+            single: false,
+        }
+    }
+}
+
+/// A row with the identity the walk knows it by (`$key`).
+struct Keyed {
+    row: Row,
+    key: Value,
+}
+
+/// The `$key: expr` item of a projection, if any — the identity the rows it
+/// yields carry (SEMANTICS §16, since 0.20).
+fn key_item(select: &[SelectItem]) -> Option<&Expr> {
+    select.iter().find_map(|it| match it {
+        SelectItem::Field {
+            name,
+            expr,
+            lift: 0,
+            ..
+        } if name == KEY => Some(expr),
+        _ => None,
+    })
 }
 
 /// One query scope: the row under evaluation plus the chain of enclosing scopes
@@ -239,15 +281,21 @@ struct Occurrence {
     meta: Object,
 }
 
-/// A walked occurrence before ranking: the identity, the path of identities
-/// from the seed to this occurrence (compared component-wise as values by
-/// `compare_path`), and the categorical stop reason.
+/// A walked occurrence before ranking: the identity (`$key`), the path of
+/// identities from the seed to this occurrence (compared component-wise as
+/// values by `compare_path`), and the categorical stop reason.
 struct Walked {
     row: Row,
     depth: u32,
     path: Vec<Value>,
     key: Value,
     stop: &'static str,
+}
+
+/// A successor with the destination (index) that reached it.
+struct Successor {
+    keyed: Keyed,
+    via: usize,
 }
 
 /// State that lives for exactly one run: the plans of the blocks met so far,
@@ -269,7 +317,7 @@ struct RunState<'e> {
 /// serves it) and what the context answered for each path.
 struct CollectionState<'e> {
     value: Value,
-    rows: RefCell<Option<Rc<Vec<Row>>>>,
+    rows: RefCell<Option<Rc<Rows>>>,
     indexes: RefCell<HashMap<String, Option<Rc<dyn RowIndex + 'e>>>>,
     context_indexes: RefCell<HashMap<String, Option<Rc<dyn RowIndex + 'e>>>>,
 }
@@ -306,11 +354,13 @@ impl Predicate {
     }
 }
 
-/// A block's accessed rows and which predicate still applies to each.
+/// A block's accessed rows, which predicate still applies to each, and whether
+/// the receiver was a single object (SEMANTICS §3).
 struct Access {
     rows: Vec<Row>,
     predicate: Predicate,
     plan: Rc<BlockPlan>,
+    single: bool,
 }
 
 impl Access {
@@ -363,7 +413,11 @@ struct Exec<'e, C: DataContext> {
 impl<'e, C: DataContext> Exec<'e, C> {
     fn run(&self, query: &Query) -> Result<OqxResult> {
         let root = Scope::root(self.ctx.root_object());
-        let mut rows = self.rows_of_expr(&query.source, &root)?;
+        let src = self.coerce_rows_expr(&query.source, &root)?;
+        // One object as the source yields one record (SEMANTICS §3) — unless a
+        // `from` re-projection or a walk fans it out.
+        let single = src.single && query.from.is_empty() && query.follow.is_none();
+        let mut rows = src.rows;
         for proj in &query.from {
             rows = self.reproject(rows, proj, &root)?;
         }
@@ -428,12 +482,13 @@ impl<'e, C: DataContext> Exec<'e, C> {
             }
         }
         let proj = Projection::from(query);
+        self.apply_key(&mut kept, proj)?;
         kept = self.sort_scopes(kept, query.order_by.as_deref())?;
         if query.distinct {
             kept = self.dedup_by_projection(kept, proj)?;
         }
         let kept = slice_bound(kept, bound);
-        self.shape(query.consumer, &kept, proj)
+        self.shape(query.consumer, &kept, proj, single)
     }
 
     // Evaluate a block's `limit`/`offset`. The bound is part of the block, so it
@@ -490,9 +545,10 @@ impl<'e, C: DataContext> Exec<'e, C> {
     }
 
     /// The rows an expression yields in row position (a source, a body-level
-    /// `from`, a directive receiver, a `follow` relation). `entries(x)` here
-    /// yields keyed rows — the reference's tagged entries — see the module docs.
-    fn rows_of_expr(&self, e: &Expr, scope: &Scope<'_>) -> Result<Vec<Row>> {
+    /// `from`, a directive receiver, a `follow` relation), with whether the value
+    /// was a single object. `entries(x)` here yields keyed rows — the reference's
+    /// tagged entries — see the module docs.
+    fn coerce_rows_expr(&self, e: &Expr, scope: &Scope<'_>) -> Result<Rows> {
         if let Expr::Call {
             recv: None,
             name,
@@ -506,17 +562,97 @@ impl<'e, C: DataContext> Exec<'e, C> {
                     vals.push(self.eval_expr(a, scope)?);
                 }
                 let target = vals.into_iter().next().unwrap_or(Value::Undefined);
-                return Ok(entries_of(&target)
-                    .into_iter()
-                    .map(|en| Row {
-                        value: en.value,
-                        key: Some(en.key),
-                    })
-                    .collect());
+                return Ok(Rows::plural(
+                    entries_of(&target)
+                        .into_iter()
+                        .map(|en| Row {
+                            value: en.value,
+                            key: Some(en.key),
+                        })
+                        .collect(),
+                ));
             }
         }
         let v = self.eval_raw(e, scope)?;
-        Ok(self.ctx.to_rows(&v).into_iter().map(Row::plain).collect())
+        self.coerce_rows(&v, Some(e))
+    }
+
+    fn rows_of_expr(&self, e: &Expr, scope: &Scope<'_>) -> Result<Vec<Row>> {
+        Ok(self.coerce_rows_expr(e, scope)?.rows)
+    }
+
+    /// The rows of a value in row position (SEMANTICS §3): absent → none; an
+    /// array → its elements, a collection; an object → one row, and the value
+    /// is SINGLE — a block over it yields one result rather than a list — unless
+    /// the context says the object is a collection (`is_single`); a scalar (a
+    /// string, a number, a boolean) or a range → an eval error.
+    fn coerce_rows(&self, v: &Value, what: Option<&Expr>) -> Result<Rows> {
+        match v {
+            Value::Undefined | Value::Null => Ok(Rows::plural(Vec::new())),
+            Value::Array(_) => Ok(Rows::plural(
+                self.ctx.to_rows(v).into_iter().map(Row::plain).collect(),
+            )),
+            Value::Object(_) => Ok(Rows {
+                rows: self.ctx.to_rows(v).into_iter().map(Row::plain).collect(),
+                single: self.ctx.is_single(v),
+            }),
+            Value::Str(_) | Value::Number(_) | Value::Bool(_) | Value::Range(_) => {
+                let kind = match v {
+                    Value::Str(_) => "a string",
+                    Value::Number(_) => "a number",
+                    Value::Bool(_) => "a boolean",
+                    _ => "a range",
+                };
+                let shown = if matches!(v, Value::Range(_)) {
+                    String::new()
+                } else {
+                    format!(" ({})", json_string(v))
+                };
+                let subject = match what {
+                    Some(e) => format!("`{}` is", describe(e)),
+                    None => "the receiver is".to_owned(),
+                };
+                Err(OqxError::eval(format!(
+                    "{subject} {kind}{shown}, not a collection or an object — rows come from a collection (a list) or one object (a record)"
+                )))
+            }
+        }
+    }
+
+    /// The host's identity of a row (SEMANTICS §16): an entry is known by its
+    /// key; any other row by the context's `identity` (structural by default).
+    fn host_identity(&self, row: &Row) -> Value {
+        match &row.key {
+            Some(k) => k.clone(),
+            None => self.ctx.identity(&row.value),
+        }
+    }
+
+    /// The identity a scope's row is known by — `$key`: the identity the walk or
+    /// a `$key:` projection gave it (`meta`), else the host's.
+    fn scope_identity(&self, scope: &Scope<'_>) -> Value {
+        if let Some(k) = scope.meta.as_ref().and_then(|m| m.get(KEY)) {
+            return k.clone();
+        }
+        if scope.is_root() && scope.row.is_absent() {
+            return Value::Undefined;
+        }
+        self.ctx.identity(&scope.row)
+    }
+
+    /// A projection's `$key: expr` item gives the rows it yields that identity:
+    /// evaluate it on each kept scope and record it as the scope's `$key`.
+    fn apply_key(&self, scopes: &mut [Scope<'_>], proj: Projection<'_>) -> Result<()> {
+        let Some(expr) = key_item(proj.select) else {
+            return Ok(());
+        };
+        for s in scopes.iter_mut() {
+            let key = self.eval_expr(expr, s)?;
+            let mut meta = s.meta.take().unwrap_or_default();
+            meta.insert(KEY, key);
+            s.meta = Some(meta);
+        }
+        Ok(())
     }
 
     /// One body-level `from E` step: every row becomes a scope under `parent`
@@ -572,7 +708,8 @@ impl<'e, C: DataContext> Exec<'e, C> {
                 seeds.push(r);
             }
         }
-        let occ = self.follow_walk(seeds, follow, root)?;
+        let proj = Projection::from(query);
+        let occ = self.follow_walk(self.keyed(seeds, proj, root)?, follow, root)?;
         let mut scopes: Vec<Scope<'_>> = Vec::with_capacity(occ.len());
         for o in occ {
             let s = self.enter(o.row, root, Some(o.meta));
@@ -580,20 +717,39 @@ impl<'e, C: DataContext> Exec<'e, C> {
                 scopes.push(s);
             }
         }
-        let proj = Projection::from(query);
         scopes = self.sort_scopes(scopes, query.order_by.as_deref())?;
         if query.distinct {
             scopes = self.dedup_by_projection(scopes, proj)?;
         }
         let scopes = slice_bound(scopes, bound);
-        self.shape(query.consumer, &scopes, proj)
+        self.shape(query.consumer, &scopes, proj, false)
+    }
+
+    /// The seeds of a walk with their identities: the body's `$key: expr` item,
+    /// read in each seed's scope, else the host's identity (SEMANTICS §20).
+    fn keyed(
+        &self,
+        rows: Vec<Row>,
+        proj: Projection<'_>,
+        parent: &Scope<'_>,
+    ) -> Result<Vec<Keyed>> {
+        let item = key_item(proj.select);
+        let mut out = Vec::with_capacity(rows.len());
+        for row in rows {
+            let key = match item {
+                Some(e) => self.eval_expr(e, &self.enter(row.clone(), parent, None))?,
+                None => self.host_identity(&row),
+            };
+            out.push(Keyed { row, key });
+        }
+        Ok(out)
     }
 
     // Dedup scopes by their PROJECTED value (`distinct`): keep the first scope
     // per distinct projection, preserving order. An empty projection dedups by
-    // row identity (so `count distinct { }` counts distinct rows). Keys compare
-    // with the scalar layer's structural `equals` (absent ≡ null, key order
-    // ignored), which is what the reference's stable stringify achieves.
+    // row identity (`$key`, so `count distinct { }` counts distinct rows). Keys
+    // compare with the scalar layer's structural `equals` (absent ≡ null, key
+    // order ignored), which is what the reference's stable stringify achieves.
     fn dedup_by_projection<'p>(
         &self,
         scopes: Vec<Scope<'p>>,
@@ -603,7 +759,7 @@ impl<'e, C: DataContext> Exec<'e, C> {
         let mut out = Vec::new();
         for s in scopes {
             let key = if proj.select.is_empty() {
-                self.ctx.identity(&s.row)
+                self.scope_identity(&s)
             } else {
                 self.project_row(proj, &s)?
             };
@@ -617,31 +773,36 @@ impl<'e, C: DataContext> Exec<'e, C> {
     }
 
     // A bounded, per-path recursive walk. Each occurrence carries recursion
-    // metadata: `$depth` (seed = 1), a categorical `$stop`, and a deterministic
-    // `$ordinal`. Semantics:
+    // metadata: `$depth` (seed = 1), a categorical `$stop`, a deterministic
+    // `$ordinal`, and `$key`, the identity it is known by. Semantics (SEMANTICS §20):
     //   • per-path — a node reached by N distinct paths yields N occurrences
     //     (unless `distinct`, which keeps the minimal (depth, path) per identity);
-    //   • cycles are safe — revisiting a key already on the current path admits
-    //     ONE occurrence with `$stop == "cycle"` and does not expand it;
+    //   • cycles are safe — revisiting an identity already on the current path
+    //     admits ONE occurrence with `$stop == "cycle"` and does not expand it;
     //   • `$stop` ∈ interior | leaf | frontier | depth | cycle, with precedence
     //     cycle > frontier > depth > leaf > interior; only `interior` rows expand;
     //   • `$leaf` = (stop == leaf); `$frontier` = (stop ∈ {frontier, depth});
-    //   • identity for cycle detection + `distinct` is `by <expr>` when given,
-    //     else `ctx.identity(row)` — compared structurally, not by string form;
-    //     `$ordinal` paths compare component-wise as values (`compare_path`),
-    //     so `10` follows `9`.
+    //   • identity is `$key` (since 0.20): a seed's is the body's `$key:` item or
+    //     the host's identity; a successor's is its destination block's `$key:`
+    //     item, else the host's identity of the yielded row — compared
+    //     structurally; `$ordinal` paths compare component-wise (`compare_path`);
+    //   • a destination block's `depth n` makes it decline to expand a frontier
+    //     row whose `$depth >= n`; a row with no successors some destination
+    //     declined is `depth`, with none declined `leaf`; the hard cap 8 is every
+    //     destination's ceiling;
+    //   • a destination block's `frontier P` marks the occurrences IT reached for
+    //     which `P` holds (seeds are reached by none); `P` reads the occurrence's
+    //     own scope with `^` the walk's enclosing scope, as the body does.
     fn follow_walk(
         &self,
-        seeds: Vec<Row>,
+        seeds: Vec<Keyed>,
         follow: &Follow,
         parent: &Scope<'_>,
     ) -> Result<Vec<Occurrence>> {
-        let cap = follow.depth.unwrap_or(HARD_DEPTH_CAP);
         let mut walked: Vec<Walked> = Vec::new();
         let mut ancestors: Vec<Value> = Vec::new();
-        for r in seeds {
-            let key = self.follow_key(follow, &r, parent)?;
-            self.follow_visit(follow, parent, cap, r, key, 1, &mut ancestors, &mut walked)?;
+        for k in seeds {
+            self.follow_visit(follow, parent, k, None, 1, &mut ancestors, &mut walked)?;
         }
 
         let mut rows = walked;
@@ -673,7 +834,8 @@ impl<'e, C: DataContext> Exec<'e, C> {
             .into_iter()
             .enumerate()
             .map(|(i, w)| {
-                let mut meta = Object::with_capacity(5);
+                let mut meta = Object::with_capacity(6);
+                meta.insert(KEY, w.key);
                 meta.insert("$depth", Value::Number(f64::from(w.depth)));
                 meta.insert("$stop", Value::Str(w.stop.to_owned()));
                 meta.insert("$leaf", Value::Bool(w.stop == "leaf"));
@@ -687,137 +849,212 @@ impl<'e, C: DataContext> Exec<'e, C> {
             .collect())
     }
 
-    /// A row's identity in the walk: `by E` read in the row's own scope under
-    /// `parent`, else the context's identity. One function so the cycle check,
-    /// `distinct`, and the within-step union of successors agree on the key.
-    fn follow_key(&self, follow: &Follow, row: &Row, parent: &Scope<'_>) -> Result<Value> {
-        match &follow.by {
-            Some(by) => self.eval_expr(by, &self.enter(row.clone(), parent, None)),
-            None => Ok(self.ctx.identity(&row.value)),
-        }
+    /// The scope of a walked row under the walk's enclosing scope, carrying its
+    /// `$key` (the frontier row's scope for a destination block, the occurrence's
+    /// for `frontier`).
+    fn keyed_scope<'p>(&self, k: &Keyed, parent: &'p Scope<'p>) -> Scope<'p> {
+        let mut meta = Object::with_capacity(1);
+        meta.insert(KEY, k.key.clone());
+        self.enter(k.row.clone(), parent, Some(meta))
     }
 
     // `ancestors` is the identity path of the current branch (the identities
     // from the seed down to the parent of `row`); each occurrence's path is
-    // that plus its own identity. `key` is `row`'s identity (`follow_key`).
+    // that plus its own identity. `via` is the destination that reached the row
+    // (`None` for a seed).
     #[allow(clippy::too_many_arguments)]
     fn follow_visit(
         &self,
         follow: &Follow,
         parent: &Scope<'_>,
-        cap: u32,
-        row: Row,
-        key: Value,
+        k: Keyed,
+        via: Option<usize>,
         depth: u32,
         ancestors: &mut Vec<Value>,
         walked: &mut Vec<Walked>,
     ) -> Result<()> {
         let mut path = Vec::with_capacity(ancestors.len() + 1);
         path.extend(ancestors.iter().cloned());
-        path.push(key.clone());
+        path.push(k.key.clone());
         let stop: &'static str;
-        if ancestors.iter().any(|a| equals(a, &key)) {
+        if ancestors.iter().any(|a| equals(a, &k.key)) {
             stop = "cycle";
-        } else if self.frontier_hit(follow, &row, parent)? {
+        } else if self.frontier_hit(follow, &k, via, parent)? {
             stop = "frontier";
-        } else if depth >= cap {
+        } else if depth >= HARD_DEPTH_CAP {
             stop = "depth";
         } else {
-            let succ = self.successors_of(follow, &row, parent)?;
+            let (succ, declined) = self.successors_of(follow, &k, depth, parent)?;
             if succ.is_empty() {
-                stop = "leaf";
+                stop = if declined { "depth" } else { "leaf" };
             } else {
+                let key = k.key.clone();
                 walked.push(Walked {
-                    row,
+                    row: k.row,
                     depth,
                     path,
                     key: key.clone(),
                     stop: "interior",
                 });
                 ancestors.push(key);
-                for (s, k) in succ {
-                    self.follow_visit(follow, parent, cap, s, k, depth + 1, ancestors, walked)?;
+                for s in succ {
+                    self.follow_visit(
+                        follow,
+                        parent,
+                        s.keyed,
+                        Some(s.via),
+                        depth + 1,
+                        ancestors,
+                        walked,
+                    )?;
                 }
                 ancestors.pop();
                 return Ok(());
             }
         }
         walked.push(Walked {
-            row,
+            row: k.row,
             depth,
             path,
-            key,
+            key: k.key,
             stop,
         });
         Ok(())
     }
 
-    fn frontier_hit(&self, follow: &Follow, row: &Row, parent: &Scope<'_>) -> Result<bool> {
-        match &follow.frontier {
-            None => Ok(false),
-            Some(f) => Ok(self
-                .eval_expr(f, &self.enter(row.clone(), parent, None))?
-                .truthy()),
-        }
+    /// Whether the destination that reached `k` marks it a frontier: its block's
+    /// `frontier P`, read in the occurrence's scope under the walk's enclosing
+    /// scope. A seed (reached by no destination) never is.
+    fn frontier_hit(
+        &self,
+        follow: &Follow,
+        k: &Keyed,
+        via: Option<usize>,
+        parent: &Scope<'_>,
+    ) -> Result<bool> {
+        let Some(via) = via else { return Ok(false) };
+        let FollowDestination::Block(op) = &follow.destinations[via] else {
+            return Ok(false);
+        };
+        let Some(f) = &op.sub.frontier else {
+            return Ok(false);
+        };
+        Ok(self.eval_expr(f, &self.keyed_scope(k, parent))?.truthy())
     }
 
-    // A row's successors, each with its identity. Per destination in source
-    // order, the destination's rows are read in the row's own scope — a plain
-    // relation like a body-level `from`; a destination block as the
-    // select-position directive it is, so its receiver (`^people`) resolves one
-    // scope out of the frontier row and inside the block `^` IS the frontier
-    // row — then concatenated, kept by the follow `where` (read in the
-    // candidate's scope whose parent is the frontier row's scope: a bare name is
-    // the candidate's own, `^name` the frontier row's, `^^name` the walk's
-    // enclosing scope), then unioned by identity within the step: an identity
-    // that recurs is kept once, at its first position.
+    // A row's successors, each with its identity and the destination that
+    // reached it, and whether some destination declined by its depth cap. Per
+    // destination in source order, the destination's rows are read in the
+    // frontier row's own scope — a plain relation like a body-level `from`,
+    // keyed by the host's identity; a destination block as the select-position
+    // directive it is (its receiver `^people` resolves one scope out of the
+    // frontier row and inside the block `^` IS the frontier row), its rows
+    // shaped by its items other than `$key` and keyed by its `$key:` item —
+    // then unioned by identity within the step: an identity that recurs is
+    // kept once, at its first position.
     fn successors_of(
         &self,
         follow: &Follow,
-        row: &Row,
+        k: &Keyed,
+        depth: u32,
         parent: &Scope<'_>,
-    ) -> Result<Vec<(Row, Value)>> {
-        let frontier = self.enter(row.clone(), parent, None);
-        let mut raw: Vec<Row> = Vec::new();
-        for dest in &follow.destinations {
+    ) -> Result<(Vec<Successor>, bool)> {
+        let frontier = self.keyed_scope(k, parent);
+        let mut raw: Vec<Successor> = Vec::new();
+        let mut declined = false;
+        for (via, dest) in follow.destinations.iter().enumerate() {
             match dest {
-                FollowDestination::Relation(e) => raw.extend(self.rows_of_expr(e, &frontier)?),
+                FollowDestination::Relation(e) => {
+                    for row in self.rows_of_expr(e, &frontier)? {
+                        let key = self.host_identity(&row);
+                        raw.push(Successor {
+                            keyed: Keyed { row, key },
+                            via,
+                        });
+                    }
+                }
                 FollowDestination::Block(op) => {
-                    let v = self.eval_collect_value(op, &frontier)?;
-                    raw.extend(self.ctx.to_rows(&v).into_iter().map(Row::plain));
+                    if op.sub.depth.is_some_and(|cap| depth >= cap) {
+                        declined = true;
+                        continue;
+                    }
+                    for keyed in self.destination_rows(op, &frontier)? {
+                        raw.push(Successor { keyed, via });
+                    }
                 }
             }
         }
-        let mut out: Vec<(Row, Value)> = Vec::with_capacity(raw.len());
+        let mut out: Vec<Successor> = Vec::with_capacity(raw.len());
         for x in raw {
-            if let Some(w) = &follow.r#where
-                && !self
-                    .eval_expr(w, &self.enter(x.clone(), &frontier, None))?
-                    .truthy()
-            {
+            if out.iter().any(|o| equals(&o.keyed.key, &x.keyed.key)) {
                 continue;
             }
-            let key = self.follow_key(follow, &x, parent)?;
-            if out.iter().any(|(_, k)| equals(k, &key)) {
-                continue;
+            out.push(x);
+        }
+        Ok((out, declined))
+    }
+
+    // A destination block's successors for one frontier row, each with its
+    // identity: the block's rows (its `where`, order, `distinct`, bound and
+    // consumer applied — `first`/`single` yield at most one), shaped by its items
+    // other than `$key` (the raw rows when none remain), keyed by its `$key:`
+    // item read in the row's scope, else by the host's identity of the row yielded.
+    fn destination_rows(&self, dest: &OpNode, frontier: &Scope<'_>) -> Result<Vec<Keyed>> {
+        let plan = self.plan_of(dest, frontier);
+        let (scopes, _) = self.eval_collect_scopes(dest, &plan, frontier)?;
+        let key = key_item(&dest.sub.select);
+        let shaped: Vec<SelectItem>;
+        let proj = match key {
+            None => Projection::from(&dest.sub),
+            Some(_) => {
+                shaped = dest
+                    .sub
+                    .select
+                    .iter()
+                    .filter(
+                        |it| !matches!(it, SelectItem::Field { name, lift: 0, .. } if name == KEY),
+                    )
+                    .cloned()
+                    .collect();
+                Projection {
+                    select: &shaped,
+                    values: dest.sub.values,
+                }
             }
-            out.push((x, key));
+        };
+        let mut out = Vec::with_capacity(scopes.len());
+        for s in &scopes {
+            let value = self.project_row(proj, s)?;
+            let row = Row::plain(value);
+            let id = match key {
+                Some(e) => self.eval_expr(e, s)?,
+                None if proj.select.is_empty() => self.scope_identity(s),
+                None => self.host_identity(&row),
+            };
+            out.push(Keyed { row, key: id });
         }
         Ok(out)
     }
 
     // ---- consumer shaping ---------------------------------------------------
 
+    // `single` — the receiver was one object: a `collect` yields its one record
+    // (or nothing) rather than a one-element list (SEMANTICS §3, §15).
     fn shape(
         &self,
         consumer: Consumer,
         scopes: &[Scope<'_>],
         proj: Projection<'_>,
+        single: bool,
     ) -> Result<OqxResult> {
         Ok(match consumer {
             Consumer::Exists => OqxResult::Exists(!scopes.is_empty()),
             Consumer::None => OqxResult::None(scopes.is_empty()),
             Consumer::Count => OqxResult::Count(scopes.len() as f64),
+            Consumer::Collect if single => OqxResult::Record(match scopes.first() {
+                Some(s) => Some(self.project_row(proj, s)?),
+                None => None,
+            }),
             Consumer::Collect => OqxResult::Collect(self.project_all(proj, scopes)?),
             Consumer::First => OqxResult::First(match scopes.first() {
                 Some(s) => Some(self.project_row(proj, s)?),
@@ -1003,6 +1240,7 @@ impl<'e, C: DataContext> Exec<'e, C> {
         acc: Option<Access>,
     ) -> Result<Vec<Scope<'p>>> {
         let mut scopes = self.match_rows(op, scope, None, acc)?;
+        self.apply_key(&mut scopes, Projection::from(&op.sub))?;
         scopes = self.sort_scopes(scopes, op.sub.order_by.as_deref())?;
         if op.distinct {
             scopes = self.dedup_by_projection(scopes, Projection::from(&op.sub))?;
@@ -1098,7 +1336,7 @@ impl<'e, C: DataContext> Exec<'e, C> {
             None
         };
         let Some(state) = state else {
-            return self.scan(self.rows_of_expr(&op.receiver, scope)?, op, plan, scope);
+            return self.scan(self.coerce_rows_expr(&op.receiver, scope)?, op, plan, scope);
         };
         if !plan.correlated.is_empty() {
             if let Some(acc) = self.lookup_rows(plan, &state, scope)? {
@@ -1106,27 +1344,34 @@ impl<'e, C: DataContext> Exec<'e, C> {
             }
             if plan.receiver_stable {
                 let rows = self.materialize(&state, op, scope)?;
-                if let Some(rows) = self.probe(plan, &state, &rows, scope) {
+                if let Some(rows) = self.probe(plan, &state, &rows.rows, scope) {
                     return Ok(Access {
                         rows,
                         predicate: Predicate::Residual,
                         plan: Rc::clone(plan),
+                        single: false,
                     });
                 }
             }
         }
-        let rows = self.materialize(&state, op, scope)?.as_ref().clone();
-        self.scan(rows, op, plan, scope)
+        let rows = self.materialize(&state, op, scope)?;
+        let src = Rows {
+            rows: rows.rows.clone(),
+            single: rows.single,
+        };
+        self.scan(src, op, plan, scope)
     }
 
     /// The plain scan: the rows, re-projected by `from`, with the whole `where`.
+    /// A `from` re-projection fans a single receiver out: the block is plural.
     fn scan(
         &self,
-        mut rows: Vec<Row>,
+        src: Rows,
         op: &OpNode,
         plan: &Rc<BlockPlan>,
         scope: &Scope<'_>,
     ) -> Result<Access> {
+        let mut rows = src.rows;
         for proj in &op.sub.from {
             rows = self.reproject(rows, proj, scope)?;
         }
@@ -1134,6 +1379,7 @@ impl<'e, C: DataContext> Exec<'e, C> {
             rows,
             predicate: Predicate::Whole,
             plan: Rc::clone(plan),
+            single: src.single && op.sub.from.is_empty(),
         })
     }
 
@@ -1167,18 +1413,14 @@ impl<'e, C: DataContext> Exec<'e, C> {
         state: &CollectionState<'e>,
         op: &OpNode,
         scope: &Scope<'_>,
-    ) -> Result<Rc<Vec<Row>>> {
+    ) -> Result<Rc<Rows>> {
         if let Some(rows) = state.rows.borrow().as_ref() {
             return Ok(Rc::clone(rows));
         }
         let rows = Rc::new(if is_entries_call(&op.receiver) {
-            self.rows_of_expr(&op.receiver, scope)?
+            self.coerce_rows_expr(&op.receiver, scope)?
         } else {
-            self.ctx
-                .to_rows(&state.value)
-                .into_iter()
-                .map(Row::plain)
-                .collect()
+            self.coerce_rows(&state.value, Some(&op.receiver))?
         });
         *state.rows.borrow_mut() = Some(Rc::clone(&rows));
         Ok(rows)
@@ -1208,6 +1450,7 @@ impl<'e, C: DataContext> Exec<'e, C> {
                     rows,
                     predicate: Predicate::Other(residual_without(plan, c)),
                     plan: Rc::clone(plan),
+                    single: false,
                 }));
             }
         }
@@ -1221,7 +1464,7 @@ impl<'e, C: DataContext> Exec<'e, C> {
         &self,
         plan: &BlockPlan,
         state: &CollectionState<'e>,
-        rows: &Rc<Vec<Row>>,
+        rows: &[Row],
         scope: &Scope<'_>,
     ) -> Option<Vec<Row>> {
         let mut buckets: Vec<Vec<usize>> = Vec::with_capacity(plan.correlated.len());
@@ -1278,7 +1521,7 @@ impl<'e, C: DataContext> Exec<'e, C> {
     fn index_for(
         &self,
         state: &CollectionState<'e>,
-        rows: &Rc<Vec<Row>>,
+        rows: &[Row],
         c: &Correlation,
         scope: &Scope<'_>,
     ) -> Option<Rc<dyn RowIndex + 'e>> {
@@ -1322,10 +1565,37 @@ impl<'e, C: DataContext> Exec<'e, C> {
         plan: &Rc<BlockPlan>,
         scope: &Scope<'_>,
     ) -> Result<Value> {
+        let proj = Projection::from(&op.sub);
+        let (scopes, single) = self.eval_collect_scopes(op, plan, scope)?;
+        match op.op {
+            // Over a single receiver (one object) a `collect` is the record or
+            // absent, not a one-element list (SEMANTICS §3).
+            Consumer::Collect if single => match scopes.first() {
+                Some(s) => self.project_row(proj, s),
+                None => Ok(Value::Undefined),
+            },
+            Consumer::Collect => Ok(Value::Array(self.project_all(proj, &scopes)?)),
+            _ => match scopes.first() {
+                Some(s) => self.project_row(proj, s),
+                None => Ok(Value::Null),
+            },
+        }
+    }
+
+    /// The rows a select-position directive yields, as scopes, reduced by its
+    /// consumer (`first`/`single` keep at most one; `single` raises on more),
+    /// and whether its receiver was a single object.
+    fn eval_collect_scopes<'p>(
+        &self,
+        op: &OpNode,
+        plan: &Rc<BlockPlan>,
+        scope: &'p Scope<'p>,
+    ) -> Result<(Vec<Scope<'p>>, bool)> {
         let sub = &op.sub;
         let bound = self.bound_of(sub.limit.as_ref(), sub.offset.as_ref(), scope)?;
         let proj = Projection::from(sub);
-        let scopes: Vec<Scope<'_>> = if let Some(follow) = &sub.follow {
+        let mut single = false;
+        let scopes: Vec<Scope<'p>> = if let Some(follow) = &sub.follow {
             // The seeds are the matched rows themselves (`follow_walk` enters
             // them); a follow block is never correlated, so the predicate left
             // by the access is the whole `where`.
@@ -1333,6 +1603,7 @@ impl<'e, C: DataContext> Exec<'e, C> {
                 rows,
                 predicate,
                 plan: accessed,
+                ..
             } = self.access(op, plan, scope)?;
             let w = predicate.resolve(&accessed);
             let mut seeds = Vec::with_capacity(rows.len());
@@ -1345,8 +1616,8 @@ impl<'e, C: DataContext> Exec<'e, C> {
                     seeds.push(r);
                 }
             }
-            let occ = self.follow_walk(seeds, follow, scope)?;
-            let mut scopes: Vec<Scope<'_>> = occ
+            let occ = self.follow_walk(self.keyed(seeds, proj, scope)?, follow, scope)?;
+            let mut scopes: Vec<Scope<'p>> = occ
                 .into_iter()
                 .map(|o| self.enter(o.row, scope, Some(o.meta)))
                 .collect();
@@ -1357,14 +1628,12 @@ impl<'e, C: DataContext> Exec<'e, C> {
             slice_bound(scopes, bound)
         } else {
             let acc = self.access(op, plan, scope)?;
+            single = acc.single;
             self.op_rows(op, scope, bound, Some(acc))?
         };
         match op.op {
-            Consumer::Collect => Ok(Value::Array(self.project_all(proj, &scopes)?)),
-            Consumer::First => match scopes.first() {
-                Some(s) => self.project_row(proj, s),
-                None => Ok(Value::Null),
-            },
+            Consumer::Collect => Ok((scopes, single)),
+            Consumer::First => Ok((scopes.into_iter().take(1).collect(), single)),
             Consumer::Single => {
                 if scopes.len() > 1 {
                     return Err(OqxError::eval(format!(
@@ -1373,10 +1642,7 @@ impl<'e, C: DataContext> Exec<'e, C> {
                         scopes.len()
                     )));
                 }
-                match scopes.first() {
-                    Some(s) => self.project_row(proj, s),
-                    None => Ok(Value::Null),
-                }
+                Ok((scopes, single))
             }
             other => Err(OqxError::eval(format!(
                 "{} {{ … }} is not valid in select position",
@@ -1504,7 +1770,7 @@ impl<'e, C: DataContext> Exec<'e, C> {
                 let l = self.eval_expr(left, scope)?;
                 let r = self.eval_expr(right, scope)?;
                 if op.is_identity() {
-                    // Identity (SEMANTICS §5b): the context's identity of each
+                    // Identity (SEMANTICS §5b): the host's identity of each
                     // side, compared structurally — the key `distinct` and
                     // `follow` use.
                     let same = canonical_key(&self.ctx.identity(&l))
@@ -1559,6 +1825,21 @@ impl<'e, C: DataContext> Exec<'e, C> {
                 };
                 Ok(Value::from(make_range(lo, hi, *exclusive_end)))
             }
+            // A tuple (SEMANTICS §3b): the elements in order, concatenated with
+            // ONE level of flattening — a collection contributes its items,
+            // anything else itself; an absent (`Undefined`) element contributes
+            // nothing, a `Null` one `Null`; duplicates are kept.
+            Expr::Tuple { items, .. } => {
+                let mut out = Vec::with_capacity(items.len());
+                for item in items {
+                    match self.eval_expr(item, scope)? {
+                        Value::Undefined => {}
+                        Value::Array(xs) => out.extend(xs),
+                        v => out.push(v),
+                    }
+                }
+                Ok(Value::Array(out))
+            }
         }
     }
 
@@ -1591,7 +1872,7 @@ impl<'e, C: DataContext> Exec<'e, C> {
         if scope.is_root() || scope.row.is_absent() {
             return String::new();
         }
-        match self.ctx.identity(&scope.row) {
+        match self.scope_identity(scope) {
             Value::Str(s) => {
                 let mut q = String::new();
                 json_quote(&s, &mut q);
@@ -1606,7 +1887,11 @@ impl<'e, C: DataContext> Exec<'e, C> {
         if name == "$it" {
             return Ok(scope.row.clone());
         }
-        if name == KEY || RECUR.contains(&name) {
+        // `$key` is the row's identity on every row (SEMANTICS §16, since 0.20).
+        if name == KEY {
+            return Ok(self.scope_identity(scope));
+        }
+        if RECUR.contains(&name) {
             if let Some(v) = scope.meta.as_ref().and_then(|m| m.get(name)) {
                 return Ok(v.clone());
             }
@@ -1795,6 +2080,7 @@ fn expr_has_recur(e: &Expr) -> bool {
         Expr::Range { lo, hi, .. } => {
             lo.as_deref().is_some_and(expr_has_recur) || hi.as_deref().is_some_and(expr_has_recur)
         }
+        Expr::Tuple { items, .. } => items.iter().any(expr_has_recur),
         Expr::Lit { .. } | Expr::Binding { .. } | Expr::Outer { .. } => false,
     }
 }
@@ -2065,8 +2351,19 @@ mod tests {
             settings.clone(),
             json!(["dark", 14, true]),
         );
+        // one object in row position is one record, not a one-element list (0.20)
         check(
             "from settings",
+            settings.clone(),
+            json!({ "theme": "dark", "fontSize": 14, "autosave": true }),
+        );
+        check(
+            "settings { theme }",
+            settings.clone(),
+            json!({ "theme": "dark" }),
+        );
+        check(
+            "from list(settings)",
             settings.clone(),
             json!([{ "theme": "dark", "fontSize": 14, "autosave": true }]),
         );
@@ -2111,11 +2408,12 @@ mod tests {
             json!({ "xs": [{ "s": { "a": 1, "b": 2 } }] }),
             json!([[{ "key": "a", "value": 1 }, { "key": "b", "value": 2 }]]),
         );
-        // A data row that merely LOOKS like an entry is not unwrapped.
+        // A data row that merely LOOKS like an entry is not unwrapped: its
+        // `$key` is its identity — the whole row under the structural default.
         check(
             "k: $key, key, value from r",
             json!({ "r": [{ "key": "k1", "value": 9 }] }),
-            json!([{ "key": "k1", "value": 9 }]),
+            json!([{ "k": { "key": "k1", "value": 9 }, "key": "k1", "value": 9 }]),
         );
         check(
             "r collect { $key values from entries(o) }",
@@ -2624,8 +2922,11 @@ mod tests {
             tree.clone(),
             json!([{ "id": "a", "stop": "depth" }, { "id": "b", "stop": "depth" }, { "id": "root", "stop": "interior" }]),
         );
+        // The in-memory context names no identity: a plain object's `$key` is
+        // its structural value, so the ordinal-sensitive walks project `$key: id`
+        // in the destination block to rank paths by id (SEMANTICS §16, §20).
         check(
-            "id, leaf: $leaf, frontier: $frontier, stop: $stop from tree follow children order by $ordinal",
+            "id, leaf: $leaf, frontier: $frontier, stop: $stop from tree follow children { $key: id } order by $ordinal",
             tree.clone(),
             json!([{ "id": "root", "leaf": false, "frontier": false, "stop": "interior" },
                    { "id": "a", "leaf": false, "frontier": false, "stop": "interior" },
@@ -2633,12 +2934,12 @@ mod tests {
                    { "id": "a1", "leaf": true, "frontier": false, "stop": "leaf" }]),
         );
         check(
-            "id, o: $ordinal from tree follow children order by $ordinal",
+            "id, o: $ordinal from tree follow children { $key: id } order by $ordinal",
             tree.clone(),
             json!([{ "id": "root", "o": 1 }, { "id": "a", "o": 2 }, { "id": "b", "o": 3 }, { "id": "a1", "o": 4 }]),
         );
         check(
-            r#"id, s: $stop, f: $frontier, l: $leaf from tree follow children { frontier id == "a" } order by $ordinal"#,
+            r#"id, s: $stop, f: $frontier, l: $leaf from tree follow children { $key: id frontier id == "a" } order by $ordinal"#,
             tree.clone(),
             json!([{ "id": "root", "s": "interior", "f": false, "l": false },
                    { "id": "a", "s": "frontier", "f": true, "l": false },
@@ -2655,29 +2956,29 @@ mod tests {
             json!([]),
         );
         check(
-            "id values from tree where $depth > 1 follow children order by $ordinal",
+            "id values from tree where $depth > 1 follow children { $key: id } order by $ordinal",
             tree.clone(),
             json!(["a", "b", "a1"]),
         );
         check(
-            r#"id values from tree where id != "b" && $depth <= 2 follow children order by $ordinal"#,
+            r#"id values from tree where id != "b" && $depth <= 2 follow children { $key: id } order by $ordinal"#,
             tree.clone(),
             json!(["root", "a", "b"]),
         );
         check(
-            "id, kids: children collect { id, own: $depth, parentDepth: ^$depth } from tree follow children { depth 2 } order by $ordinal",
+            "id, kids: children collect { id, own: $depth, parentDepth: ^$depth } from tree follow children { $key: id depth 2 } order by $ordinal",
             tree.clone(),
             json!([{ "id": "root", "kids": [{ "id": "a", "parentDepth": 1 }, { "id": "b", "parentDepth": 1 }] },
                    { "id": "a", "kids": [{ "id": "a1", "parentDepth": 2 }] },
                    { "id": "b", "kids": [] }]),
         );
         check(
-            r#"id, desc: children collect { id values follow children order by $ordinal } from tree where id == "root""#,
+            r#"id, desc: children collect { $key: id values follow children { $key: id } order by $ordinal } from tree where id == "root""#,
             tree.clone(),
             json!([{ "id": "root", "desc": ["a", "b", "a1"] }]),
         );
         check(
-            "label, stop: $stop from t follow children { by label } order by $ordinal",
+            "label, stop: $stop from t follow children { $key: label } order by $ordinal",
             json!({ "t": [{ "label": "root", "children": [{ "label": "a" }, { "label": "b" }] }] }),
             json!([{ "label": "root", "stop": "interior" }, { "label": "a", "stop": "leaf" }, { "label": "b", "stop": "leaf" }]),
         );
@@ -2689,17 +2990,17 @@ mod tests {
         // Path components compare as values: 9 < 10, numbers before strings,
         // strings by code point ("10" < "9"), then other kinds by canonical key.
         check(
-            "id values from tree follow children order by $ordinal",
+            "id values from tree follow children { $key: id } order by $ordinal",
             json!({ "tree": [{ "id": 1, "children": [{ "id": 9 }, { "id": 10 }] }] }),
             json!([1, 9, 10]),
         );
         check(
-            "id values from tree follow children order by $ordinal",
+            "id values from tree follow children { $key: id } order by $ordinal",
             json!({ "tree": [{ "id": 1, "children": [{ "id": "9" }, { "id": "10" }, { "id": 2 }] }] }),
             json!([1, 2, "10", "9"]),
         );
         check(
-            "n values from tree follow children { by n } order by $ordinal",
+            "n values from tree follow children { $key: n } order by $ordinal",
             json!({ "tree": [{ "n": 1, "children": [{ "n": "s" }, { "n": true }, { "n": 2 }, { "n": false }] }] }),
             json!([1, 2, "s", false, true]),
         );
@@ -2717,18 +3018,20 @@ mod tests {
             // 1 -> 2 -> 1, expressed with nested duplicates (plain data has no references).
             json!({ "g": [{ "id": 1, "next": [{ "id": 2, "next": [{ "id": 1, "next": [{ "id": 2 }] }] }] }] })
         };
+        // Keyed by `$key: id` in the body (seeds) and the destination block
+        // (successors), the id-1 objects are one node.
         check(
-            "id, stop: $stop from g follow next order by $ordinal",
+            "id, stop: $stop, $key: id from g follow next { $key: id } order by $ordinal",
             cyc.clone(),
-            json!([{ "id": 1, "stop": "interior" }, { "id": 2, "stop": "interior" }, { "id": 1, "stop": "cycle" }]),
+            json!([{ "id": 1, "stop": "interior", "$key": 1 }, { "id": 2, "stop": "interior", "$key": 2 }, { "id": 1, "stop": "cycle", "$key": 1 }]),
         );
         check(
-            "id from g follow distinct next order by id",
+            "id, $key: id from g follow distinct next { $key: id } order by id",
             cyc.clone(),
-            json!([{ "id": 1 }, { "id": 2 }]),
+            json!([{ "id": 1, "$key": 1 }, { "id": 2, "$key": 2 }]),
         );
         check(
-            "select distinct id from g follow next order by id",
+            "select distinct id from g follow next { $key: id } order by id",
             cyc,
             json!([{ "id": 1 }, { "id": 2 }]),
         );
@@ -2770,9 +3073,9 @@ mod tests {
         );
         // A follow seed keeps its $key.
         check(
-            "id, root: $key from entries(forest) follow children order by $ordinal",
+            "id, root: $key from entries(forest) follow children { $key: id } order by $ordinal",
             json!({ "forest": { "left": { "id": "L", "children": [{ "id": "L1" }] }, "right": { "id": "R" } } }),
-            json!([{ "id": "L", "root": "left" }, { "id": "R", "root": "right" }, { "id": "L1" }]),
+            json!([{ "id": "L", "root": "left" }, { "id": "R", "root": "right" }, { "id": "L1", "root": "L1" }]),
         );
         // Id-less nodes have structural identity: siblings are not "cycles".
         check(

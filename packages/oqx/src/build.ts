@@ -26,6 +26,8 @@ export const binary = (op: BinaryOp, left: Expr, right: Expr): Expr => ({ kind: 
 export const logical = (op: LogicalOp, left: Expr, right: Expr): Expr => ({ kind: "logical", span: span(), op, left, right });
 export const inOp = (left: Expr, right: Expr): Expr => ({ kind: "in", span: span(), left, right });
 export const range = (lo: Expr | null, hi: Expr | null, exclusiveEnd = false): Expr => ({ kind: "range", span: span(), lo, hi, exclusiveEnd });
+/** `(e1, e2, …)` — a tuple of two or more expressions (SEMANTICS §3b). */
+export const tuple = (items: Expr[]): Expr => ({ kind: "tuple", span: span(), items });
 
 export const scalar = (expr: Expr): Where => ({ kind: "scalar", span: span(), expr });
 export const and = (parts: Where[]): Where => ({ kind: "and", span: span(), parts });
@@ -40,7 +42,7 @@ export const order = (expr: Expr, desc = false): OrderSpec => ({ kind: "order", 
 export function subquery(parts: Partial<Omit<Subquery, "kind" | "span">> = {}): Subquery {
   return {
     kind: "subquery", span: span(),
-    from: [], where: null, select: [], orderBy: null, follow: null, values: false, limit: null, offset: null,
+    from: [], where: null, select: [], orderBy: null, follow: null, frontier: null, depth: null, values: false, limit: null, offset: null,
     ...parts,
   };
 }
@@ -53,11 +55,10 @@ export function op(
   return { kind: "op", span: span(), receiver, op: consumer, sub, countCmp: opts.countCmp ?? null, distinct: opts.distinct ?? false };
 }
 
-export function follow(
-  destinations: FollowDestination[],
-  opts: Partial<Omit<Follow, "kind" | "span" | "destinations">> = {},
-): Follow {
-  return { kind: "follow", span: span(), destinations, distinct: false, where: null, frontier: null, depth: null, by: null, ...opts };
+/** `follow [distinct] <destinations>`; a destination's `where`/`frontier`/`depth`
+ * belong to its block (`op(recv, "collect", subquery({ depth: 2 }))`). */
+export function follow(destinations: FollowDestination[], opts: { distinct?: boolean } = {}): Follow {
+  return { kind: "follow", span: span(), destinations, distinct: opts.distinct ?? false };
 }
 
 /** A top-level query over `source`; every other clause defaults to empty/absent

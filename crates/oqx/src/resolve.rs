@@ -77,6 +77,10 @@ pub fn resolve_subquery(s: &Subquery) -> Result<Subquery> {
         select: resolve_select(&s.select).map_err(OqxError::parse)?,
         order_by: resolve_order(s.order_by.as_deref())?,
         follow: s.follow.as_ref().map(resolve_follow).transpose()?,
+        // A destination block's `frontier` (0.20) is not rewritten against the
+        // block's select: it reads the occurrence, not a projected record.
+        frontier: s.frontier.as_ref().map(resolve_expr).transpose()?,
+        depth: s.depth,
         values: s.values,
         limit: s.limit.as_ref().map(resolve_expr).transpose()?,
         offset: s.offset.as_ref().map(resolve_expr).transpose()?,
@@ -124,10 +128,6 @@ fn resolve_follow(f: &Follow) -> Result<Follow> {
             })
             .collect::<Result<_>>()?,
         distinct: f.distinct,
-        r#where: f.r#where.as_ref().map(resolve_expr).transpose()?,
-        frontier: f.frontier.as_ref().map(resolve_expr).transpose()?,
-        depth: f.depth,
-        by: f.by.as_ref().map(resolve_expr).transpose()?,
         span: f.span,
     })
 }
@@ -263,6 +263,16 @@ where
             exclusive_end,
             span,
         },
+        Expr::Tuple { items, span } => {
+            let mut mapped = Vec::with_capacity(items.len());
+            for x in items {
+                mapped.push(*go(Box::new(x))?);
+            }
+            Expr::Tuple {
+                items: mapped,
+                span,
+            }
+        }
         // The receiver is read in this scope; the block is its own scope.
         Expr::Op(mut op) => {
             op.receiver = *go(Box::new(op.receiver))?;
@@ -319,6 +329,7 @@ fn alias_refs(it: &SelectItem, index: &HashMap<&str, usize>) -> Vec<String> {
                     visit(b, own, index, out);
                 }
             }
+            Expr::Tuple { items, .. } => items.iter().for_each(|x| visit(x, own, index, out)),
             Expr::Op(op) => visit(&op.receiver, own, index, out),
         }
     }

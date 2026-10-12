@@ -34,6 +34,7 @@ export function exprReadsScopeIn(e: Expr, at: number, upTo: number): boolean {
     case "op": return opReadsScopeIn(e, at, upTo);
     case "binary": case "logical": case "in": return exprReadsScopeIn(e.left, at, upTo) || exprReadsScopeIn(e.right, at, upTo);
     case "range": return (e.lo !== null && exprReadsScopeIn(e.lo, at, upTo)) || (e.hi !== null && exprReadsScopeIn(e.hi, at, upTo));
+    case "tuple": return e.items.some((x) => exprReadsScopeIn(x, at, upTo));
   }
 }
 
@@ -54,8 +55,9 @@ export function opReadsScopeIn(op: OpNode, at: number, upTo: number): boolean {
 
 /** A block body whose rows are scopes at depth `at`. `from` re-projections,
  * `where`, `select`, `order by` and the bound are read in the row scope (the
- * bound in a row-less scope at the same depth); `follow` walks occurrences at
- * `at`, with its successor `where` one deeper (§20). */
+ * bound in a row-less scope at the same depth); a destination block's
+ * `frontier` is read one level out, under the walk's enclosing scope (§20);
+ * `follow` walks occurrences at `at`. */
 function subReadsScopeIn(sub: Subquery, at: number, upTo: number): boolean {
   if (sub.from.some((e) => exprReadsScopeIn(e, at, upTo))) return true;
   if (sub.where && whereReadsScopeIn(sub.where, at, upTo)) return true;
@@ -63,6 +65,7 @@ function subReadsScopeIn(sub: Subquery, at: number, upTo: number): boolean {
   if (sub.orderBy?.some((o) => exprReadsScopeIn(o.expr, at, upTo))) return true;
   if (sub.limit && exprReadsScopeIn(sub.limit, at, upTo)) return true;
   if (sub.offset && exprReadsScopeIn(sub.offset, at, upTo)) return true;
+  if (sub.frontier && exprReadsScopeIn(sub.frontier, at - 1, upTo)) return true;
   return sub.follow !== null && followReadsScopeIn(sub.follow, at, upTo);
 }
 
@@ -71,12 +74,7 @@ function itemReadsScopeIn(item: SelectItem, at: number, upTo: number): boolean {
 }
 
 function followReadsScopeIn(f: Follow, at: number, upTo: number): boolean {
-  for (const d of f.destinations) {
-    if (d.kind === "op" ? opReadsScopeIn(d, at, upTo) : exprReadsScopeIn(d, at, upTo)) return true;
-  }
-  if (f.where && exprReadsScopeIn(f.where, at + 1, upTo)) return true;
-  if (f.frontier && exprReadsScopeIn(f.frontier, at, upTo)) return true;
-  return f.by !== null && exprReadsScopeIn(f.by, at, upTo);
+  return f.destinations.some((d) => (d.kind === "op" ? opReadsScopeIn(d, at, upTo) : exprReadsScopeIn(d, at, upTo)));
 }
 
 /** Does `e` read the scope it is evaluated in (a bare identifier anywhere)? */
@@ -100,6 +98,7 @@ export function exprRaiseFree(e: Expr, ctx: RuleContext): boolean {
     case "unary": return exprRaiseFree(e.expr, ctx);
     case "binary": case "logical": case "in": return exprRaiseFree(e.left, ctx) && exprRaiseFree(e.right, ctx);
     case "range": return (e.lo === null || exprRaiseFree(e.lo, ctx)) && (e.hi === null || exprRaiseFree(e.hi, ctx));
+    case "tuple": return e.items.every((x) => exprRaiseFree(x, ctx));
   }
 }
 

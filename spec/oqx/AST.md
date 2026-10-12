@@ -25,8 +25,8 @@ guess the default of.
 | --- | --- | --- |
 | `query` | the top-level query | the root |
 | `subquery` | a block body, the `{ … }` of a directive | `op.sub` |
-| `op` | a consumer directive `<receiver> <consumer> [distinct] { … } [<relop> N]` | a `where` leaf (a consumer test), a `collect` item's value, a `follow` destination block, and — since 0.17 — an expression (a value-position `collect`/`first`/`single`, which is what a bracket lookup `x[…]` desugars to: `jobs[0].pay` is a `member` over an `op`) |
-| `follow` | the `follow` clause | `query.follow`, `subquery.follow` |
+| `op` | a consumer directive `<receiver> <consumer> [distinct] { … } [<relop> N]` | a `where` leaf (a consumer test), a `collect` item's value, a `follow` destination block (whose `sub` may carry `frontier`/`depth`, since 0.20), and — since 0.17 — an expression (a value-position `collect`/`first`/`single`, which is what a bracket lookup `x[…]` and, since 0.20, any `x { … }` / `x distinct { … }` desugar to: `jobs[0].pay` is a `member` over an `op`) |
+| `follow` | the `follow` clause — its destinations and the `distinct` flag (since 0.20 nothing else: a destination's `where`/`frontier`/`depth` are clauses of its block) | `query.follow`, `subquery.follow` |
 | `order` | one `order by` term | `orderBy[]` |
 | `field` | a projection item `[^…]name: expr` / `name` | `select[]` |
 | `collect` | a projection item whose value is a block, `name: <op>` | `select[]` |
@@ -45,6 +45,7 @@ guess the default of.
 | `logical` | `&&`, `||` in value position | expressions |
 | `in` | membership | expressions |
 | `range` | `lo..hi`, `lo...hi`, `..hi`, `lo..` | expressions |
+| `tuple` | `(e1, e2, …)` — two or more expressions, a value and a receiver (since 0.20) | expressions |
 
 The `where` tree and value expressions are distinct families: `and`/`or`/`not`
 own the boolean structure of a predicate so consumer tests compose with scalar
@@ -54,9 +55,11 @@ node on `kind`.
 
 There is no `index` node and no node for any other sugar: a bracket lookup
 `x[n]` / `x[p]` is parsed straight to the `op` (`first { offset n }`,
-`first { where p }`; `single` under `!`), `x { … }` to a `collect` op, `is x`
-and `not x` to `unary` nodes (GRAMMAR §4). The only shapes 0.17 adds are
-`required` and the `is`/`is not` operators of `binary`. Nor is there a node
+`first { where p }`; `single` under `!`), `x { … }` and `x distinct { … }` to a
+`collect` op, `is x` and `not x` to `unary` nodes (GRAMMAR §4). The only shapes
+0.17 adds are `required` and the `is`/`is not` operators of `binary`; 0.20 adds
+`tuple` (a single parenthesized expression is still grouping and leaves no node)
+and the `frontier`/`depth` fields of `subquery`. Nor is there a node
 for an **absolute scope reference** (since 0.18): `N^name` is the `outer` node
 with `levels = depth − N` — the parser knows the depth of every position
 (the `depth` of §5) — and `N^name:` at a select item's head is a `field` with
@@ -80,9 +83,9 @@ as their source words (`"=="`, `"&&"`, `"collect"`).
 | Node | Fields |
 | --- | --- |
 | `query` | `source: Expr` — the root collection (`from <source>` or the directive receiver); `from: Expr[]` — further `from E` re-projections (only a directive form's block can hold them); `where: Where \| null`; `select: SelectItem[]`; `orderBy: Order[] \| null`; `consumer: "collect" \| "exists" \| "none" \| "count" \| "first" \| "single"`; `follow: Follow \| null`; `distinct: boolean`; `values: boolean`; `limit: Expr \| null`; `offset: Expr \| null` |
-| `subquery` | `from`, `where`, `select`, `orderBy`, `follow`, `values`, `limit`, `offset` as above (no `source`, `consumer`, `distinct` — those belong to the enclosing `op`) |
+| `subquery` | `from`, `where`, `select`, `orderBy`, `follow`, `values`, `limit`, `offset` as above (no `source`, `consumer`, `distinct` — those belong to the enclosing `op`); `frontier: Expr \| null` and `depth: number \| null` (1..8) — set only on a `follow` destination block's body (since 0.20), `null` on every other block |
 | `op` | `receiver: Expr`; `op: Consumer`; `sub: Subquery`; `countCmp: { op: RelOp, value: number } \| null` — the `count { … } <relop> N` test, an attribute rather than a node; `distinct: boolean` — `<op> distinct { … }` and `{ select distinct … }` are one flag |
-| `follow` | `destinations: (Expr \| Op)[]` — ≥ 1, in source order; `distinct: boolean`; `where: Expr \| null`; `frontier: Expr \| null`; `depth: number \| null` (1..8); `by: Expr \| null` |
+| `follow` | `destinations: (Expr \| Op)[]` — ≥ 1, in source order (a tuple destination is one `tuple` expression); `distinct: boolean` |
 | `order` | `expr: Expr`; `desc: boolean` |
 | `field` | `name: string` — the alias, or the last segment of an unaliased navigation, or `""` for an unaliased expression under `values`; `expr: Expr`; `lift: number` — the count of leading `^` (0 = an ordinary item) |
 | `collect` | `name: string`; `op: Op` |
@@ -101,6 +104,7 @@ as their source words (`"=="`, `"&&"`, `"collect"`).
 | `logical` | `op: "&&" \| "\|\|"`; `left: Expr`; `right: Expr` |
 | `in` | `left: Expr`; `right: Expr` |
 | `range` | `lo: Expr \| null`; `hi: Expr \| null`; `exclusiveEnd: boolean` |
+| `tuple` | `items: Expr[]` (≥ 2) |
 
 Shape rules the parser guarantees (and `cases/ast.json` pins):
 
@@ -111,12 +115,16 @@ Shape rules the parser guarantees (and `cases/ast.json` pins):
   `people exists { age > 50 }` is `where age > 50`; `x[p]` is the op
   `first { where p }`, `x[n]` the op `first { offset n }`, `x[p]!` a `required`
   over `single { where p }`, `x[n]!` a `required` over `first { offset n }`;
-  `is x` is `!!x` (two `unary` nodes), `not x` is `!x`. A `select` item whose
+  `is x` is `!!x` (two `unary` nodes), `not x` is `!x`; `x distinct { … }` is
+  the `collect` op with `distinct: true` (0.20); `follow children { depth 2 }` is
+  a `follow` whose one destination is the `collect` op over `children` with
+  `sub.depth = 2` (0.20). A `select` item whose
   value is exactly a directive is the `collect` item kind whatever spelling
   produced it (`boss: ^people[id == ^manager]`); one that navigates or operates
   on a directive (`jobs[0].pay`) is a `field` whose expression contains the
   `op`. An unaliased `field` keys by the last segment of the navigation under
-  any `required` (`name!` → `name`, `jobs[0].pay` → `pay`).
+  any `required` (`name!` → `name`, `jobs[0].pay` → `pay`). Parentheses around
+  one expression leave no node; around two or more they are a `tuple`.
 - `where` keeps its **surface form**: a `select` alias referenced in `where` is
   an `ident` in the tree. The substitution (SEMANTICS §14) is the pure function
   `resolveAliases` / `resolve_aliases`, applied by the run entry points exactly
@@ -145,8 +153,8 @@ last:
 - `subquery`: the braces inclusive, `{ … }`;
 - `op`: the receiver through the closing brace, and through `<relop> N` when
   a count comparison follows;
-- `follow`: the `follow` word through the last destination or the options'
-  closing brace;
+- `follow`: the `follow` word through the last destination (a destination
+  block's closing brace included);
 - `field`/`collect`: the leading carets or the name through the value;
   `order`: the expression through `asc`/`desc`;
 - `and`/`or`: the first part to the last; `not`: the `!` through its operand;
@@ -157,7 +165,7 @@ last:
   `unary` nodes of `is x` span `is x`; the `collect` op of `x { … }` spans `x`
   through `}` as a written directive would;
 - `outer`: the carets (or the `N^`) through the name; `lit`: a string's quotes
-  inclusive; `binding`: its `${n}` marker;
+  inclusive; `binding`: its `${n}` marker; `tuple`: its parentheses inclusive;
 - a **parenthesized operand** takes the span of its parentheses (`(a + 1) > 2`:
   the `+` node spans `(a + 1)`), so an editor can select exactly what the user
   grouped.
@@ -190,10 +198,11 @@ Both implementations ship one generic walk driven by a single child-key table
 per `kind` (TypeScript `CHILDREN`, Rust `walk::children`), so a future field
 is added in one place and every tool sees it. Children are visited in
 canonical source order: for `query` — `select`, `source`, `from`, `where`,
-`follow`, `orderBy`, `limit`, `offset`; for `subquery` the same without
-`source`; for `op` — `receiver`, `sub`; for `follow` — `destinations`,
-`where`, `frontier`, `by`; then the obvious slots of the smaller nodes
-(`expr`, `parts`, `recv`, `args`, `left`/`right`, `lo`/`hi`; `required` — `expr`).
+`follow`, `orderBy`, `limit`, `offset`; for `subquery` — `select`, `from`,
+`where`, `frontier`, `follow`, `orderBy`, `limit`, `offset` (`depth` is a
+number, not a node); for `op` — `receiver`, `sub`; for `follow` —
+`destinations`; then the obvious slots of the smaller nodes (`expr`, `parts`,
+`recv`, `args`, `left`/`right`, `lo`/`hi`, `items`; `required` — `expr`).
 
 - **`visit(root, { enter?(node, ctx), leave?(node, ctx) })`** — depth-first.
   `enter` may return `false` to skip the node's children (`leave` is still
@@ -201,15 +210,20 @@ canonical source order: for `query` — `select`, `source`, `from`, `where`,
   - `path` — the ancestors, root first;
   - `clause` — where the node sits: `source` (the root collection), `from`
     (a re-projection), `where`, `select`, `orderBy`, `limit`, `offset`,
-    `follow` (the `follow` node itself), `follow.destination`,
-    `follow.where`, `follow.frontier`, `follow.by`; the root has none
-    (`null`); a node inherits its parent's clause unless it opens one;
+    `follow` (the `follow` node itself), `follow.destination` (a destination,
+    and everything inside a destination block that opens no clause of its own —
+    its receiver and `subquery`), `follow.frontier` (a destination block's
+    `frontier` expression); the root has none (`null`); a node inherits its
+    parent's clause unless it opens one (a destination block's `where` is
+    `where`, as in any block);
   - `depth` — the **scope depth** at which the node is evaluated (SEMANTICS
     §2): 0 is the root scope — a top-level `source`, `limit` and `offset`;
     1 is a top-level row — the top-level `where`, `select`, `orderBy`, `from`
     re-projections and `follow`; a block's receiver is read at its enclosing
-    depth and its body one deeper; a follow `where` is one deeper than the
-    frontier row it tests successors of.
+    depth and its body one deeper — so a destination block's `where` tests a
+    successor one deeper than the frontier row; a destination block's
+    `frontier` is read one level **out** of the block's rows, under the walk's
+    enclosing scope (SEMANTICS §20).
 - **`transform(root, f)`** — rebuilds a `query`/`subquery` with every
   expression mapped through `f(expr, ctx)`, children first (so `f` sees an
   expression whose operands are already mapped). Nodes `f` returns unchanged
@@ -228,8 +242,11 @@ that differs from the navigation's last segment must be written anyway);
 double-quoted strings with the GRAMMAR §1 escapes; the minimal parentheses
 the precedence table (GRAMMAR §4) requires, and the predicate/scalar group
 rule of GRAMMAR §3 for `where`; `distinct` on a directive spelled
-`<op> distinct { … }`; follow options in the order `where`, `frontier`,
-`depth`, `by`; an empty block as `{ }`; the logical connectives as the **words**
+`<op> distinct { … }` (so `x distinct { … }` prints as `x collect distinct { …
+}`); a destination block's clauses in the fixed order — `where`, `frontier`,
+`depth`, then `follow`, `order by`, the bounds — and `follow x { depth 2 }` as
+`follow x collect { depth 2 }`; a tuple with its parentheses `(a, b)`; an empty
+block as `{ }`; the logical connectives as the **words**
 `and` / `or` (since 0.18; `&&` / `||` parse to the same nodes and the JSON
 `op` stays `"&&"` / `"||"`), the prefix negation as `!`. **Sugar prints as the
 explicit form** it parsed to (since 0.17): `x { p }` as `x collect { where p }`,
@@ -287,3 +304,4 @@ document says which `major.minor` produced it.
 | 0.16 | `index` expression node removed (never produced). `limit`/`offset`/`countCmp` materialized as `null`, `distinct`/`values` as `false` (they were optional). `kind` added to `query`, `subquery`, `follow`, `order`; `span` added to every node. `where` is no longer alias-inlined at parse time (see §2). |
 | 0.17 | Added (minor): the `required` expression node; `"is"` / `"is not"` as `binary` operators; an `op` may appear in expression position (`member.recv`, operands, `required.expr`, a `field`'s value). Nothing renamed or removed. |
 | 0.18 | No node or field added, renamed or removed: `N^name` parses to the existing `outer` (`levels = depth − N`). The canonical print of `and`/`or` and `logical` nodes changed from the symbols to the words; the JSON `logical.op` is still `"&&"` / `"||"`. |
+| 0.20 | Added (minor): the `tuple` expression node; `subquery.frontier` and `subquery.depth`. **Removed** (pre-1.0, so a minor): `follow.where`, `follow.frontier`, `follow.depth`, `follow.by` — a destination's `where` is its block's `where`, `frontier`/`depth` are its block's new fields, `by` has no replacement (identity is `$key`, SEMANTICS §16, projectable as a `$key:` item). The `follow.where` and `follow.by` traversal clauses are gone; `follow.frontier` now marks a destination block's `frontier` (visited at depth − 1). |

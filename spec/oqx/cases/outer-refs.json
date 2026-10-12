@@ -713,7 +713,7 @@
         "root-object",
         "intrinsics"
       ],
-      "notes": "Step 1 of §2 is unconditional at the root too: `$it` there is the root object (coerced to one row as a source), and a root literally named `$it` is unreachable by that name — bare names at the root go through `root(name)`, `$it` never does.",
+      "notes": "Step 1 of §2 is unconditional at the root too: `$it` there is the root object — one object, so the body yields it as one record (§3, since 0.20) — and a root literally named `$it` is unreachable by that name — bare names at the root go through `root(name)`, `$it` never does.",
       "roots": {
         "$it": [
           1,
@@ -725,17 +725,15 @@
       },
       "query": "$it values from $it",
       "expect": {
-        "result": [
-          {
-            "$it": [
-              1,
-              2
-            ],
-            "xs": [
-              3
-            ]
-          }
-        ]
+        "result": {
+          "$it": [
+            1,
+            2
+          ],
+          "xs": [
+            3
+          ]
+        }
       }
     },
     {

@@ -116,7 +116,8 @@ export function runQuery(query: Query, bindings: readonly unknown[], roots: unkn
 
 function unwrap(result: OqxResult): unknown {
   switch (result.consumer) {
-    case "collect": return result.rows;
+    // A `collect` over one object is that one record, or `null` (SEMANTICS §3).
+    case "collect": return result.single ? (result.rows[0] ?? null) : result.rows;
     case "exists": return result.exists;
     case "none": return result.none;
     case "count": return result.count;

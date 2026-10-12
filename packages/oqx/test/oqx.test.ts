@@ -505,7 +505,10 @@ test("follow cycles terminate: a revisit is admitted once as $stop == 'cycle'", 
   const n2: Record<string, unknown> = { id: 2 };
   n1.next = [n2];
   n2.next = [n1];
-  const out = oqx`id, stop: $stop from ${[n1]} follow next order by $ordinal` as Array<Record<string, unknown>>;
+  // The in-memory context names no identity of its own and these objects are
+  // cyclic, so the walk is keyed by `$key: id` (SEMANTICS §16; the structural
+  // default would recurse through the references).
+  const out = oqx`id, stop: $stop, $key: id from ${[n1]} follow next { $key: id } order by $ordinal` as Array<Record<string, unknown>>;
   // seed 1 (interior) → 2 (interior) → back to 1, admitted once as a cycle and
   // never re-expanded, so the walk terminates.
   assert.deepEqual(out.map((r) => r.id), [1, 2, 1]);
@@ -516,7 +519,7 @@ test("recursion intrinsics belong to the reached row's scope; a nested block rea
   const out = oqx`
     id, kids: children collect { id, own: $depth, parentDepth: ^$depth }
     from ${tree}
-    follow children { depth 2 }
+    follow children { $key: id depth 2 }
     order by $ordinal
   `;
   // Inside `children collect { … }` the rows are plain children, not follow
@@ -535,7 +538,7 @@ test("follow distinct collapses per-path occurrences to reached nodes", () => {
   const n2: Record<string, unknown> = { id: 2 };
   n1.next = [n2];
   n2.next = [n1];
-  const out = oqx`id from ${[n1]} follow distinct next order by id` as Array<Record<string, unknown>>;
+  const out = oqx`id, $key: id from ${[n1]} follow distinct next { $key: id } order by id` as Array<Record<string, unknown>>;
   assert.deepEqual(out.map((r) => r.id), [1, 2]);
 });
 
@@ -544,10 +547,9 @@ test("follow distinct collapses per-path occurrences to reached nodes", () => {
 // as an `Expr` and a destination block as the `OpNode` `tryOp` would build in
 // select position, discriminated on `kind === "op"`; `receiver` is gone.
 test("follow AST: destinations are receivers or select-position op nodes, in source order", () => {
-  const q = parse("id from people where id == 1 follow distinct children, ^people collect { where manager == ^id } { depth 3 }");
+  const q = parse("id from people where id == 1 follow distinct children, ^people collect { where manager == ^id depth 3 }");
   const f = q.follow!;
   assert.equal(f.distinct, true);
-  assert.equal(f.depth, 3);
   assert.equal(f.destinations.length, 2);
   assert.equal(f.destinations[0]!.kind, "ident");
   const block = f.destinations[1]!;
@@ -556,7 +558,9 @@ test("follow AST: destinations are receivers or select-position op nodes, in sou
   assert.equal(block.op, "collect");
   assert.deepEqual(stripSpans(block.receiver), { kind: "outer", levels: 1, name: "people" });
   assert.ok(block.sub.where);
+  assert.equal(block.sub.depth, 3); // a destination's depth is its block's clause (0.20)
   assert.equal("receiver" in f, false);
+  assert.equal("depth" in f, false);
 });
 
 // ---- distinct ---------------------------------------------------------------
@@ -713,8 +717,9 @@ test("$it at the root scope is the host's root object (the roots record), never 
   assert.deepEqual(execute("xs collect { ks: entries(^$it) collect { $key values } }", { xs: [1], k: 2 }), [{ ks: ["xs", "k"] }]);
   // a context without a root object keeps the pre-0.18 reading: absent
   const ctx = new DefaultContext({ xs: [1] });
-  const bare: DataContext = { root: (n) => ctx.root(n), get: (r, k) => ctx.get(r, k), toRows: (v) => ctx.toRows(v), identity: (r) => ctx.identity(r) };
-  assert.equal(run(parse("xs exists { where ^$it == null }"), { context: bare }).exists, true);
+  const bare: DataContext = { root: (n) => ctx.root(n), get: (r, k) => ctx.get(r, k), toRows: (v) => ctx.toRows(v) };
+  const r = run(parse("xs exists { where ^$it == null }"), { context: bare });
+  assert.equal(r.consumer === "exists" && r.exists, true);
 });
 
 test("values: a record projection becomes the bare value", () => {
@@ -869,7 +874,9 @@ test("bare names inside an entry scope navigate the property's VALUE", () => {
 });
 
 test("plain objects still do not auto-iterate; entries() is the explicit opt-in", () => {
-  assert.deepEqual(oqx`from ${settings}`, [settings]); // one row: the object itself
+  assert.deepEqual(oqx`from ${settings}`, settings); // one object: one record (0.20), not a one-element list
+  assert.deepEqual(oqx`${settings} { theme }`, { theme: "dark" });
+  assert.deepEqual(oqx`from list(${settings})`, [settings]); // the explicit one-element collection
   assert.equal(oqx`${settings} count { }`, 1);
   assert.equal(oqx`entries(${settings}) count { }`, 3);
 });
@@ -882,9 +889,11 @@ test("entries of arrays give numeric index keys; Map, null, and scalars", () => 
   assert.deepEqual(oqx`from entries(${"str"})`, []);
 });
 
-test("$key is entry-scope-only: absent on ordinary rows and array elements", () => {
-  assert.deepEqual(oqx`k: $key from ${[10, 20]}`, [{ k: undefined }, { k: undefined }]);
-  assert.deepEqual(oqx`k: $key from ${people} where name == "Bob"`, [{ k: undefined }]);
+test("$key is the row's identity everywhere: an entry's key, else the host's (structural by default)", () => {
+  assert.deepEqual(oqx`k: $key from ${[10, 20]}`, [{ k: 10 }, { k: 20 }]);
+  assert.deepEqual(oqx`k: $key from ${people} where name == "Bob"`, [{ k: people[0] }]);
+  // a projected `$key` is the identity the rows carry: `order by $key` reads it
+  assert.deepEqual(oqx`name, $key: age from ${people} order by $key`, [{ name: "Carol", $key: 29 }, { name: "Bob", $key: 41 }, { name: "Alice", $key: 52 }]);
 });
 
 test("entries() as a nested receiver, and ^$key / ^$it from inside an entry scope", () => {
@@ -920,8 +929,8 @@ test("entries compose with order/limit/distinct and a follow seed keeps its $key
   assert.deepEqual(oqx`select distinct $it values from entries(${{ a: 1, b: 1, c: 2 }})`, [1, 2]);
   const forest = { left: { id: "L", children: [{ id: "L1", children: [] }] }, right: { id: "R", children: [] } };
   assert.deepEqual(
-    oqx`id, root: $key from entries(${forest}) follow children order by $ordinal`,
-    [{ id: "L", root: "left" }, { id: "R", root: "right" }, { id: "L1", root: undefined }],
+    oqx`id, root: $key from entries(${forest}) follow children { $key: id } order by $ordinal`,
+    [{ id: "L", root: "left" }, { id: "R", root: "right" }, { id: "L1", root: "L1" }],
   );
 });
 
@@ -939,9 +948,9 @@ test("run: a binding the query references but was not given is an eval error, no
     return true;
   });
   // The error is raised only when the binding is evaluated (an empty source never is).
-  assert.deepEqual(run(parseTemplate(["name from ", " where id == ", ""], 2), { values: [[]] }), { consumer: "collect", rows: [] });
+  assert.deepEqual(run(parseTemplate(["name from ", " where id == ", ""], 2), { values: [[]] }), { consumer: "collect", rows: [], single: false });
   // With every value present the same query runs.
-  assert.deepEqual(run(query, { values: [people, 7] }), { consumer: "collect", rows: [{ name: "Alice" }] });
+  assert.deepEqual(run(query, { values: [people, 7] }), { consumer: "collect", rows: [{ name: "Alice" }], single: false });
 });
 
 test("LANGUAGE_VERSION is the spec's major.minor", () => {

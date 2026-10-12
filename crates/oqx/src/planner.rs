@@ -265,9 +265,10 @@ mod tests {
             with_rows.to_rows(&Value::Array(vec![num(1.0)])),
             vec![num(1.0)]
         );
+        // the default identity is the row's structural value (0.20)
         assert_eq!(
             with_rows.identity(&obj(&[("id", num(9.0)), ("n", num(1.0))])),
-            num(9.0)
+            obj(&[("id", num(9.0)), ("n", num(1.0))])
         );
         assert!(with_rows.call_function("size", &[]).is_none());
         assert!(with_rows.call_method("lower", &Value::Null, &[]).is_none());

@@ -103,6 +103,13 @@ pub fn range(lo: Option<Expr>, hi: Option<Expr>, exclusive_end: bool) -> Expr {
         span: Span::EMPTY,
     }
 }
+/// `(e1, e2, …)` — a tuple of two or more expressions (SEMANTICS §3b).
+pub fn tuple(items: Vec<Expr>) -> Expr {
+    Expr::Tuple {
+        items,
+        span: Span::EMPTY,
+    }
+}
 
 pub fn scalar(expr: Expr) -> Where {
     Where::Scalar {
@@ -172,6 +179,8 @@ pub fn subquery() -> Subquery {
         select: Vec::new(),
         order_by: None,
         follow: None,
+        frontier: None,
+        depth: None,
         values: false,
         limit: None,
         offset: None,
@@ -203,15 +212,12 @@ pub fn count_cmp(receiver: Expr, sub: Subquery, cmp: CountCmp) -> OpNode {
     }
 }
 
-/// `follow <destinations>`; set the options you need.
+/// `follow <destinations>`; a destination's `where`/`frontier`/`depth` belong
+/// to its block (`op(recv, Consumer::Collect, { depth: Some(2), ..subquery() })`).
 pub fn follow(destinations: Vec<FollowDestination>) -> Follow {
     Follow {
         destinations,
         distinct: false,
-        r#where: None,
-        frontier: None,
-        depth: None,
-        by: None,
         span: Span::EMPTY,
     }
 }

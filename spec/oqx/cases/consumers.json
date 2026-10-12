@@ -1626,7 +1626,7 @@
       }
     },
     {
-      "name": "a scalar relation is a one-row collection",
+      "name": "a scalar relation is not a collection",
       "roots": {
         "r": [
           {
@@ -1636,10 +1636,15 @@
       },
       "query": "r collect { $it values from tag }",
       "expect": {
-        "result": [
-          "x"
-        ]
-      }
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "`tag` is a string (\"x\")",
+            "not a collection or an object"
+          ]
+        }
+      },
+      "notes": "`from tag` re-projects each row through `tag`, a string: a scalar in row position is an eval error (SEMANTICS §3) — `list(tag)` makes it a one-element collection."
     },
     {
       "name": "receiver may be a dotted navigation",
@@ -1686,7 +1691,7 @@
       }
     },
     {
-      "name": "an object root is one row",
+      "name": "an object root is one row: the result is its record",
       "roots": {
         "settings": {
           "theme": "dark",
@@ -1696,14 +1701,13 @@
       },
       "query": "from settings",
       "expect": {
-        "result": [
-          {
-            "theme": "dark",
-            "fontSize": 14,
-            "autosave": true
-          }
-        ]
-      }
+        "result": {
+          "theme": "dark",
+          "fontSize": 14,
+          "autosave": true
+        }
+      },
+      "notes": "Since 0.20 a single receiver yields one result (SEMANTICS §3); `entries(settings)` is how to iterate its properties, `list(settings)` how to get a one-element collection."
     },
     {
       "name": "first in where is an error",

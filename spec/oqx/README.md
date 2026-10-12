@@ -11,8 +11,8 @@ owned by neither of them.
 
 The spec is four artifacts, versioned together by `VERSION`:
 
-- `GRAMMAR.md` — the surface syntax: clause order, keywords, expressions, blocks, `follow`, the 0.17 sugar (implicit `collect`, where-first bodies, brackets, postfix `!`, `is`/`not`), the 0.18 absolute scope references (`0^docs`, `1^$path`), and the 0.19 outer-reference destination blocks (`follow ^docs { where … }` ≡ `follow ^docs collect { … }`).
-- `SEMANTICS.md` — the scalar and collection rules: scopes (the root scope's row is the host's root object, since 0.18), equality, ordering, absent handling, truthiness, arithmetic, membership, ranges, builtins (including the regex baseline), `distinct`, `limit`/`offset`, consumers.
+- `GRAMMAR.md` — the surface syntax: clause order, keywords, expressions, blocks, `follow`, the 0.17 sugar (implicit `collect`, where-first bodies, brackets, postfix `!`, `is`/`not`), the 0.18 absolute scope references (`0^docs`, `1^$path`), the 0.19 outer-reference destination blocks, and the 0.20 shapes: tuples `(a, b)`, a brace after any `follow` destination opening that destination's block (with `frontier`/`depth` as its clauses; the options block is gone), `x distinct { … }`, and the receiver-block sugar wherever a value stands.
+- `SEMANTICS.md` — the scalar and collection rules: scopes (the root scope's row is the host's root object, since 0.18), equality, ordering, absent handling, truthiness, arithmetic, membership, ranges, builtins (including the regex baseline), `distinct`, `limit`/`offset`, consumers; since 0.20 the cardinality rule (one object in row position yields one record, a scalar is an error), tuples, and identity as `$key` (the host's, else structural; projectable).
 - `AST.md` — the abstract syntax tree as a contract (since 0.16): the node and field tables, spans, the JSON shape both implementations produce, the traversal and canonical-printer laws.
 - `cases/*.json` — the executable fixtures. **When prose and fixtures disagree, the fixtures win**, and the prose gets fixed.
 
@@ -78,7 +78,7 @@ Fields:
   - `query` — the query as a plain string. No interpolations.
   - `template` — a query with bindings, mirroring a JavaScript tagged template exactly: `{ "strings": ["name from ", " where employer == ", ""], "values": [ [...], "Globocorp" ] }`. `strings` has one more element than `values`. A runner parses it with the implementation's template entry point (`parseTemplate` in the reference) so bindings stay typed values, never source text.
 - `expect` (required) — exactly one of:
-  - `result` — the consumer-shaped result: an array for `collect`, a boolean for `exists`/`none`, a number for `count`, a record or `null` for `first`/`single`.
+  - `result` — the consumer-shaped result: an array for `collect` over a collection (a record or `null` over one object, SEMANTICS §3), a boolean for `exists`/`none`, a number for `count`, a record or `null` for `first`/`single`.
   - `error` — `{ "stage": "lex" | "parse" | "eval", "includes": ["substring", ...] }`. `stage` must match the implementation's error stage. Every string in `includes` (optional) must appear in the message. Fixtures should assert on stable fragments the spec names (a clause name, an operator, the clause-order sentence), not on full messages.
   - `ast` — the JSON tree of `parse(query)` (or of the template), in the shape `AST.md` defines. A runner serializes its tree (TypeScript: the objects themselves; Rust: serde under the `json` feature), drops every `span`, and compares after the canonicalization below. A case may set `"spans": true` at the top level to compare spans too; such a case keeps its source ASCII-only so the offsets are plainly countable (`cases/ast-spans.json`).
 - `spans` (optional, with `expect.ast` only) — compare spans verbatim instead of stripping them.
@@ -100,7 +100,7 @@ stay language-neutral:
 Anything that depends on a host language rather than on OQX:
 
 - the tagged template API surface itself (caching by `strings` identity, the `unwrap` shape of `run`);
-- `DataContext` customization (custom `get`, `identity`, `callFunction`);
+- `DataContext` customization (custom `get`, `identityOf`, `isSingle`, `callFunction`);
 - host-only collection types (`Set`, `Map`, iterators);
 - the SQLite adapter and planner pushdown. (Whether the planned path equals the in-memory path is an *implementation* conformance test; each implementation keeps its own.)
 
@@ -115,7 +115,9 @@ accident. `SEMANTICS.md` states each as a rule; this is the short list.
 - **Strings order and measure by Unicode code point**, not UTF-16 code unit and not byte.
 - **`matches(pattern, flags?)` compiles the OQX regex baseline** (SEMANTICS §11), a fixed grammar with spec-defined meanings: `\d` `\w` `\b` are ASCII, `\s` is one listed set, the line terminator is `\n` alone, flags are the second argument. Every construct outside it is rejected by name; a fixture relying on an engine's native behavior (Unicode `\d`, inline `(?i)`, lookaround) is a spec bug.
 - **Object property order is insertion order**, observed by `entries()` and by projection.
-- **Identity** for `follow` dedup and `distinct` over unprojected rows is the row's `id` property when present, else the row's structural value.
+- **Identity is `$key`** (SEMANTICS §16, since 0.20): what `follow` dedup, `distinct` over unprojected rows and `is` compare, and what reading `$key` on a row returns. It is the host's identity when the `DataContext` names one (`identityOf` / `identity`), else the row's **structural value**; an entry's is its key; a block may project `$key: expr` to give the rows it yields that identity. The language never names an `id` property. The reference `DefaultContext` names no identity, so the fixtures project `$key: id` where a walk must recognise plain objects by id.
+- **Cardinality** (SEMANTICS §3, since 0.20): in row position an array is a collection and a non-array object is ONE row — a block over it (and a body whose source it is) yields one record or absent, not a one-element list; a scalar is an eval error. A host may say which of its objects are collections (`DataContext.isSingle`); the fixtures assume the reference's rule (every non-array object is one row, `[]`-rooted values are collections).
+- **Tuples** (SEMANTICS §3b, since 0.20): `(e1, e2, …)` concatenates its elements with one level of flattening; the one place the two spellings of absent differ — a missing property (`undefined`) contributes nothing, a `null` is kept.
 - **The root object is host-defined** (SEMANTICS §2, since 0.18): the root scope's row — `$it` there, `^$it` from a top-level row — is whatever the host's `DataContext` returns as its root object; the reference `DefaultContext` returns the roots record, which is what the fixtures assume (`entries(^$it)` lists the roots in insertion order; `^$it.people` is `^people`). Bare names at the root are always `root(name)`, never a property of that object. A host with no root object leaves the root row absent.
 - **Canonical print writes `and` / `or`** (AST.md §6, since 0.18); the symbols parse to the same nodes and the JSON operator words stay `&&` / `||`.
 

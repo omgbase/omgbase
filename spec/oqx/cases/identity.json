@@ -1,0 +1,579 @@
+{
+  "suite": "identity",
+  "cases": [
+    {
+      "name": "$key is the row's identity: structural by default",
+      "tags": [
+        "identity",
+        "$key"
+      ],
+      "notes": "Reading `$key` on any row returns the identity the row is known by (SEMANTICS §16): with no host identity and no projected `$key`, the row's structural value.",
+      "roots": {
+        "xs": [
+          {
+            "a": 1
+          },
+          {
+            "a": 2
+          }
+        ]
+      },
+      "query": "k: $key from xs",
+      "expect": {
+        "result": [
+          {
+            "k": {
+              "a": 1
+            }
+          },
+          {
+            "k": {
+              "a": 2
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "$key on an entry is its key",
+      "tags": [
+        "identity",
+        "$key",
+        "entries"
+      ],
+      "roots": {
+        "o": {
+          "a": 1,
+          "b": 2
+        }
+      },
+      "query": "k: $key from entries(o)",
+      "expect": {
+        "result": [
+          {
+            "k": "a"
+          },
+          {
+            "k": "b"
+          }
+        ]
+      }
+    },
+    {
+      "name": "distinct over unprojected rows dedups by identity",
+      "tags": [
+        "identity",
+        "distinct"
+      ],
+      "roots": {
+        "xs": [
+          {
+            "a": 1
+          },
+          {
+            "a": 1
+          },
+          {
+            "a": 2
+          }
+        ]
+      },
+      "query": "xs count distinct { }",
+      "expect": {
+        "result": 2
+      }
+    },
+    {
+      "name": "distinct over entries dedups by key",
+      "tags": [
+        "identity",
+        "distinct",
+        "entries"
+      ],
+      "notes": "An entry's identity is its key (one meaning for `$key`), so two entries with equal values are two.",
+      "roots": {
+        "o": {
+          "a": 1,
+          "b": 1
+        }
+      },
+      "query": "entries(o) count distinct { }",
+      "expect": {
+        "result": 2
+      }
+    },
+    {
+      "name": "a projected $key names the rows' identity: order by $key reads it",
+      "tags": [
+        "identity",
+        "$key",
+        "projection"
+      ],
+      "notes": "`$key: expr` is projected like any item (the record carries it) and the rows the body yields are known by it.",
+      "roots": {
+        "people": [
+          {
+            "name": "Ann",
+            "email": "a@x"
+          },
+          {
+            "name": "Bo",
+            "email": "b@x"
+          }
+        ]
+      },
+      "query": "name, $key: email from people order by $key desc",
+      "expect": {
+        "result": [
+          {
+            "name": "Bo",
+            "$key": "b@x"
+          },
+          {
+            "name": "Ann",
+            "$key": "a@x"
+          }
+        ]
+      }
+    },
+    {
+      "name": "a projected $key is readable through ^ from a nested block",
+      "tags": [
+        "identity",
+        "$key",
+        "outer-refs"
+      ],
+      "roots": {
+        "r": [
+          {
+            "id": 7,
+            "xs": [
+              1,
+              2
+            ]
+          }
+        ]
+      },
+      "query": "$key: id, kids: xs collect { k: ^$key values } from r",
+      "expect": {
+        "result": [
+          {
+            "$key": 7,
+            "kids": [
+              7,
+              7
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "a walk keyed by $key: the body keys the seeds, the destination block its successors",
+      "tags": [
+        "identity",
+        "$key",
+        "follow"
+      ],
+      "notes": "The third row is a different object with Ann's email: known by `a@x`, it is the revisit of the seed (`$stop == \"cycle\"`) and is not expanded. Under the structural default it would be a new node.",
+      "roots": {
+        "people": [
+          {
+            "id": 1,
+            "email": "a@x",
+            "name": "Ann",
+            "next": [
+              {
+                "id": 2,
+                "email": "b@x",
+                "name": "Bo",
+                "next": [
+                  {
+                    "id": 1,
+                    "email": "a@x",
+                    "name": "Ann (again)",
+                    "next": []
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "query": "name, $key: email from people follow next { $key: email } order by $ordinal",
+      "expect": {
+        "result": [
+          {
+            "name": "Ann",
+            "$key": "a@x"
+          },
+          {
+            "name": "Bo",
+            "$key": "b@x"
+          },
+          {
+            "name": "Ann (again)",
+            "$key": "a@x"
+          }
+        ]
+      }
+    },
+    {
+      "name": "the walk's $stop under a projected $key",
+      "tags": [
+        "identity",
+        "$key",
+        "follow"
+      ],
+      "roots": {
+        "people": [
+          {
+            "id": 1,
+            "email": "a@x",
+            "name": "Ann",
+            "next": [
+              {
+                "id": 2,
+                "email": "b@x",
+                "name": "Bo",
+                "next": [
+                  {
+                    "id": 1,
+                    "email": "a@x",
+                    "name": "Ann (again)",
+                    "next": []
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "query": "s: $stop, $key: email from people follow next { $key: email } order by $ordinal",
+      "expect": {
+        "result": [
+          {
+            "s": "interior",
+            "$key": "a@x"
+          },
+          {
+            "s": "interior",
+            "$key": "b@x"
+          },
+          {
+            "s": "cycle",
+            "$key": "a@x"
+          }
+        ]
+      }
+    },
+    {
+      "name": "without a projected $key the same walk sees three distinct nodes",
+      "tags": [
+        "identity",
+        "follow"
+      ],
+      "roots": {
+        "people": [
+          {
+            "id": 1,
+            "email": "a@x",
+            "name": "Ann",
+            "next": [
+              {
+                "id": 2,
+                "email": "b@x",
+                "name": "Bo",
+                "next": [
+                  {
+                    "id": 1,
+                    "email": "a@x",
+                    "name": "Ann (again)",
+                    "next": []
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "query": "name, s: $stop from people follow next order by $ordinal",
+      "expect": {
+        "result": [
+          {
+            "name": "Ann",
+            "s": "interior"
+          },
+          {
+            "name": "Bo",
+            "s": "interior"
+          },
+          {
+            "name": "Ann (again)",
+            "s": "leaf"
+          }
+        ]
+      }
+    },
+    {
+      "name": "$key on a walked occurrence is its walk identity",
+      "tags": [
+        "identity",
+        "$key",
+        "follow"
+      ],
+      "notes": "The seed has no projected `$key` (its identity is structural — the whole row); the successors are known by `id`.",
+      "roots": {
+        "people": [
+          {
+            "id": 1,
+            "email": "a@x",
+            "name": "Ann",
+            "next": [
+              {
+                "id": 2,
+                "email": "b@x",
+                "name": "Bo",
+                "next": [
+                  {
+                    "id": 1,
+                    "email": "a@x",
+                    "name": "Ann (again)",
+                    "next": []
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "query": "k: $key values from people follow next { $key: id } order by $ordinal",
+      "expect": {
+        "result": [
+          {
+            "id": 1,
+            "email": "a@x",
+            "name": "Ann",
+            "next": [
+              {
+                "id": 2,
+                "email": "b@x",
+                "name": "Bo",
+                "next": [
+                  {
+                    "id": 1,
+                    "email": "a@x",
+                    "name": "Ann (again)",
+                    "next": []
+                  }
+                ]
+              }
+            ]
+          },
+          2,
+          1
+        ]
+      }
+    },
+    {
+      "name": "$key in a destination block is not a column of the rows it yields",
+      "tags": [
+        "identity",
+        "$key",
+        "follow"
+      ],
+      "notes": "A destination block's `$key: expr` is the identity of the successors it yields; the rows keep the shape of its other items (`{ id, manager }` here — `name` is gone, `$key` is not a column). With only a `$key` item the block yields its raw rows.",
+      "roots": {
+        "people": [
+          {
+            "id": 1,
+            "name": "Ann",
+            "manager": null
+          },
+          {
+            "id": 2,
+            "name": "Bo",
+            "manager": 1
+          },
+          {
+            "id": 3,
+            "name": "Cy",
+            "manager": 2
+          }
+        ]
+      },
+      "query": "name, m: manager from people where id == 1 follow ^people { id, manager, $key: id where manager == ^id } order by $ordinal",
+      "expect": {
+        "result": [
+          {
+            "name": "Ann",
+            "m": null
+          },
+          {
+            "m": 1
+          },
+          {
+            "m": 2
+          }
+        ]
+      }
+    },
+    {
+      "name": "a destination block with only $key yields its raw rows",
+      "tags": [
+        "identity",
+        "$key",
+        "follow"
+      ],
+      "roots": {
+        "people": [
+          {
+            "id": 1,
+            "name": "Ann",
+            "manager": null
+          },
+          {
+            "id": 2,
+            "name": "Bo",
+            "manager": 1
+          },
+          {
+            "id": 3,
+            "name": "Cy",
+            "manager": 2
+          }
+        ]
+      },
+      "query": "name values from people where id == 1 follow ^people { $key: id where manager == ^id } order by $ordinal",
+      "expect": {
+        "result": [
+          "Ann",
+          "Bo",
+          "Cy"
+        ]
+      }
+    },
+    {
+      "name": "destinations projecting different $keys do not recognise each other's rows",
+      "tags": [
+        "identity",
+        "$key",
+        "follow"
+      ],
+      "notes": "The caveat of SEMANTICS §20: identities are compared as values across the whole walk. The successor block knows the rows by `id`, the predecessor block by `label`: stepping back from `b` reaches `a` as `\"A\"`, which is not the `\"a\"` on the path, so `a` is expanded a second time (depth 3) and only its successor `b` — known as `\"b\"` by the first block — closes the cycle. Destinations that can reach the same rows should project the same `$key`.",
+      "roots": {
+        "chain": [
+          {
+            "id": "a",
+            "label": "A"
+          },
+          {
+            "id": "b",
+            "label": "B",
+            "prev": "a"
+          }
+        ]
+      },
+      "query": "id, d: $depth, s: $stop, $key: id from chain where id == \"a\" follow ^chain { $key: id where prev == ^id }, ^chain { $key: label where id == ^prev } order by $ordinal",
+      "expect": {
+        "result": [
+          {
+            "id": "a",
+            "d": 1,
+            "s": "interior",
+            "$key": "a"
+          },
+          {
+            "id": "b",
+            "d": 2,
+            "s": "interior",
+            "$key": "b"
+          },
+          {
+            "id": "a",
+            "d": 3,
+            "s": "interior",
+            "$key": "a"
+          },
+          {
+            "id": "b",
+            "d": 4,
+            "s": "cycle",
+            "$key": "b"
+          }
+        ]
+      }
+    },
+    {
+      "name": "is compares host identities, not a projected $key",
+      "tags": [
+        "identity",
+        "is"
+      ],
+      "notes": "`is` (SEMANTICS §5b) takes each side through the host's identity — structural here — whatever `$key` the body projects.",
+      "roots": {
+        "people": [
+          {
+            "email": "a@x"
+          }
+        ]
+      },
+      "query": "$key: email, same: ^people first { ok: $it is ^$it where email == ^email }.ok from people",
+      "expect": {
+        "result": [
+          {
+            "$key": "a@x",
+            "same": true
+          }
+        ]
+      }
+    },
+    {
+      "name": "the required-value error names a scalar $key",
+      "tags": [
+        "identity",
+        "errors"
+      ],
+      "notes": "The ` on <identity>` suffix is the row's `$key` when scalar: a host identity, an entry's key, or a projected `$key` (evaluated once the row is kept).",
+      "roots": {
+        "people": [
+          {
+            "id": 7
+          }
+        ]
+      },
+      "query": "title!, $key: id from people",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "`title!` is absent",
+            "on 7"
+          ]
+        }
+      }
+    },
+    {
+      "name": "the required-value error names an entry's key",
+      "tags": [
+        "identity",
+        "errors",
+        "entries"
+      ],
+      "roots": {
+        "o": {
+          "k": {}
+        }
+      },
+      "query": "x! from entries(o)",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "`x!` is absent",
+            "on \"k\""
+          ]
+        }
+      }
+    }
+  ]
+}

@@ -511,6 +511,8 @@
                   ],
                   "orderBy": null,
                   "follow": null,
+                  "frontier": null,
+                  "depth": null,
                   "values": false,
                   "limit": null,
                   "offset": null
@@ -583,6 +585,8 @@
                   ],
                   "orderBy": null,
                   "follow": null,
+                  "frontier": null,
+                  "depth": null,
                   "values": false,
                   "limit": null,
                   "offset": null
@@ -627,6 +631,8 @@
                   ],
                   "orderBy": null,
                   "follow": null,
+                  "frontier": null,
+                  "depth": null,
                   "values": false,
                   "limit": null,
                   "offset": null
@@ -684,6 +690,8 @@
               "select": [],
               "orderBy": null,
               "follow": null,
+              "frontier": null,
+              "depth": null,
               "values": false,
               "limit": null,
               "offset": null
@@ -737,6 +745,8 @@
               "select": [],
               "orderBy": null,
               "follow": null,
+              "frontier": null,
+              "depth": null,
               "values": false,
               "limit": null,
               "offset": null
@@ -784,6 +794,8 @@
               "select": [],
               "orderBy": null,
               "follow": null,
+              "frontier": null,
+              "depth": null,
               "values": false,
               "limit": null,
               "offset": null
@@ -853,6 +865,8 @@
               ],
               "orderBy": null,
               "follow": null,
+              "frontier": null,
+              "depth": null,
               "values": false,
               "limit": null,
               "offset": null
@@ -938,6 +952,8 @@
                   ],
                   "orderBy": null,
                   "follow": null,
+                  "frontier": null,
+                  "depth": null,
                   "values": false,
                   "limit": null,
                   "offset": null
@@ -958,6 +974,8 @@
               ],
               "orderBy": null,
               "follow": null,
+              "frontier": null,
+              "depth": null,
               "values": false,
               "limit": null,
               "offset": null
@@ -1298,6 +1316,8 @@
                     "select": [],
                     "orderBy": null,
                     "follow": null,
+                    "frontier": null,
+                    "depth": null,
                     "values": false,
                     "limit": null,
                     "offset": null
@@ -1320,6 +1340,8 @@
                   "select": [],
                   "orderBy": null,
                   "follow": null,
+                  "frontier": null,
+                  "depth": null,
                   "values": false,
                   "limit": null,
                   "offset": null
@@ -2087,6 +2109,8 @@
                   ],
                   "orderBy": null,
                   "follow": null,
+                  "frontier": null,
+                  "depth": null,
                   "values": false,
                   "limit": null,
                   "offset": null
@@ -2276,6 +2300,8 @@
                   ],
                   "orderBy": null,
                   "follow": null,
+                  "frontier": null,
+                  "depth": null,
                   "values": false,
                   "limit": null,
                   "offset": null
@@ -2338,6 +2364,8 @@
                   ],
                   "orderBy": null,
                   "follow": null,
+                  "frontier": null,
+                  "depth": null,
                   "values": false,
                   "limit": null,
                   "offset": null
@@ -2669,6 +2697,8 @@
                   ],
                   "orderBy": null,
                   "follow": null,
+                  "frontier": null,
+                  "depth": null,
                   "values": false,
                   "limit": {
                     "kind": "outer",
@@ -2748,6 +2778,8 @@
                     }
                   ],
                   "follow": null,
+                  "frontier": null,
+                  "depth": null,
                   "values": false,
                   "limit": {
                     "kind": "lit",
@@ -2814,6 +2846,8 @@
                   "select": [],
                   "orderBy": null,
                   "follow": null,
+                  "frontier": null,
+                  "depth": null,
                   "values": false,
                   "limit": null,
                   "offset": null
@@ -2921,11 +2955,7 @@
                 "name": "children"
               }
             ],
-            "distinct": false,
-            "where": null,
-            "frontier": null,
-            "depth": null,
-            "by": null
+            "distinct": false
           },
           "distinct": false,
           "values": false,
@@ -2935,11 +2965,11 @@
       }
     },
     {
-      "name": "follow: distinct, several destinations, every option",
+      "name": "follow: distinct, a tuple destination block with where, frontier and depth",
       "tags": [
         "follow"
       ],
-      "query": "id from tree follow distinct children, parent { where x > 1 frontier leaf depth 3 by id }",
+      "query": "id from tree follow distinct (children, parent) { where x > 1 frontier leaf depth 3 }",
       "expect": {
         "ast": {
           "kind": "query",
@@ -2966,36 +2996,56 @@
             "kind": "follow",
             "destinations": [
               {
-                "kind": "ident",
-                "name": "children"
-              },
-              {
-                "kind": "ident",
-                "name": "parent"
+                "kind": "op",
+                "receiver": {
+                  "kind": "tuple",
+                  "items": [
+                    {
+                      "kind": "ident",
+                      "name": "children"
+                    },
+                    {
+                      "kind": "ident",
+                      "name": "parent"
+                    }
+                  ]
+                },
+                "op": "collect",
+                "sub": {
+                  "kind": "subquery",
+                  "from": [],
+                  "where": {
+                    "kind": "scalar",
+                    "expr": {
+                      "kind": "binary",
+                      "op": ">",
+                      "left": {
+                        "kind": "ident",
+                        "name": "x"
+                      },
+                      "right": {
+                        "kind": "lit",
+                        "value": 1
+                      }
+                    }
+                  },
+                  "select": [],
+                  "orderBy": null,
+                  "follow": null,
+                  "frontier": {
+                    "kind": "ident",
+                    "name": "leaf"
+                  },
+                  "depth": 3,
+                  "values": false,
+                  "limit": null,
+                  "offset": null
+                },
+                "countCmp": null,
+                "distinct": false
               }
             ],
-            "distinct": true,
-            "where": {
-              "kind": "binary",
-              "op": ">",
-              "left": {
-                "kind": "ident",
-                "name": "x"
-              },
-              "right": {
-                "kind": "lit",
-                "value": 1
-              }
-            },
-            "frontier": {
-              "kind": "ident",
-              "name": "leaf"
-            },
-            "depth": 3,
-            "by": {
-              "kind": "ident",
-              "name": "id"
-            }
+            "distinct": true
           },
           "distinct": false,
           "values": false,
@@ -3079,6 +3129,8 @@
                   "select": [],
                   "orderBy": null,
                   "follow": null,
+                  "frontier": null,
+                  "depth": null,
                   "values": false,
                   "limit": null,
                   "offset": null
@@ -3087,11 +3139,7 @@
                 "distinct": false
               }
             ],
-            "distinct": false,
-            "where": null,
-            "frontier": null,
-            "depth": null,
-            "by": null
+            "distinct": false
           },
           "distinct": false,
           "values": false,
@@ -3178,6 +3226,8 @@
                   "select": [],
                   "orderBy": null,
                   "follow": null,
+                  "frontier": null,
+                  "depth": null,
                   "values": false,
                   "limit": null,
                   "offset": null
@@ -3186,11 +3236,7 @@
                 "distinct": false
               }
             ],
-            "distinct": false,
-            "where": null,
-            "frontier": null,
-            "depth": null,
-            "by": null
+            "distinct": false
           },
           "distinct": false,
           "values": false,
@@ -3276,6 +3322,8 @@
                   "select": [],
                   "orderBy": null,
                   "follow": null,
+                  "frontier": null,
+                  "depth": null,
                   "values": false,
                   "limit": null,
                   "offset": null
@@ -3284,11 +3332,7 @@
                 "distinct": false
               }
             ],
-            "distinct": false,
-            "where": null,
-            "frontier": null,
-            "depth": null,
-            "by": null
+            "distinct": false
           },
           "distinct": false,
           "values": false,
@@ -3298,13 +3342,13 @@
       }
     },
     {
-      "name": "follow: an options block after an implicit destination block",
+      "name": "follow: depth as a clause of an implicit destination block",
       "tags": [
         "follow",
         "sugar",
         "0.19"
       ],
-      "query": "id from people where id == 1 follow ^people { where manager == ^id } { depth 2 }",
+      "query": "id from people where id == 1 follow ^people { where manager == ^id depth 2 }",
       "expect": {
         "ast": {
           "kind": "query",
@@ -3374,6 +3418,8 @@
                   "select": [],
                   "orderBy": null,
                   "follow": null,
+                  "frontier": null,
+                  "depth": 2,
                   "values": false,
                   "limit": null,
                   "offset": null
@@ -3382,11 +3428,7 @@
                 "distinct": false
               }
             ],
-            "distinct": false,
-            "where": null,
-            "frontier": null,
-            "depth": 2,
-            "by": null
+            "distinct": false
           },
           "distinct": false,
           "values": false,
@@ -3470,6 +3512,8 @@
                   "select": [],
                   "orderBy": null,
                   "follow": null,
+                  "frontier": null,
+                  "depth": null,
                   "values": false,
                   "limit": null,
                   "offset": null
@@ -3511,6 +3555,8 @@
                   "select": [],
                   "orderBy": null,
                   "follow": null,
+                  "frontier": null,
+                  "depth": null,
                   "values": false,
                   "limit": null,
                   "offset": null
@@ -3519,11 +3565,7 @@
                 "distinct": false
               }
             ],
-            "distinct": true,
-            "where": null,
-            "frontier": null,
-            "depth": null,
-            "by": null
+            "distinct": true
           },
           "distinct": false,
           "values": false,
@@ -3659,6 +3701,8 @@
                   ],
                   "orderBy": null,
                   "follow": null,
+                  "frontier": null,
+                  "depth": null,
                   "values": false,
                   "limit": null,
                   "offset": null
@@ -3745,6 +3789,8 @@
                           ],
                           "orderBy": null,
                           "follow": null,
+                          "frontier": null,
+                          "depth": null,
                           "values": false,
                           "limit": null,
                           "offset": null
@@ -3756,6 +3802,8 @@
                   ],
                   "orderBy": null,
                   "follow": null,
+                  "frontier": null,
+                  "depth": null,
                   "values": false,
                   "limit": null,
                   "offset": null
@@ -3822,6 +3870,8 @@
                   "select": [],
                   "orderBy": null,
                   "follow": null,
+                  "frontier": null,
+                  "depth": null,
                   "values": false,
                   "limit": null,
                   "offset": null
@@ -3868,6 +3918,8 @@
                   ],
                   "orderBy": null,
                   "follow": null,
+                  "frontier": null,
+                  "depth": null,
                   "values": false,
                   "limit": null,
                   "offset": null
@@ -3892,15 +3944,30 @@
             "kind": "follow",
             "destinations": [
               {
-                "kind": "ident",
-                "name": "children"
+                "kind": "op",
+                "receiver": {
+                  "kind": "ident",
+                  "name": "children"
+                },
+                "op": "collect",
+                "sub": {
+                  "kind": "subquery",
+                  "from": [],
+                  "where": null,
+                  "select": [],
+                  "orderBy": null,
+                  "follow": null,
+                  "frontier": null,
+                  "depth": 2,
+                  "values": false,
+                  "limit": null,
+                  "offset": null
+                },
+                "countCmp": null,
+                "distinct": false
               }
             ],
-            "distinct": true,
-            "where": null,
-            "frontier": null,
-            "depth": 2,
-            "by": null
+            "distinct": true
           },
           "distinct": true,
           "values": false,
@@ -4086,6 +4153,8 @@
                   "select": [],
                   "orderBy": null,
                   "follow": null,
+                  "frontier": null,
+                  "depth": null,
                   "values": false,
                   "limit": null,
                   "offset": null
@@ -4173,11 +4242,7 @@
                 "index": 0
               }
             ],
-            "distinct": false,
-            "where": null,
-            "frontier": null,
-            "depth": null,
-            "by": null
+            "distinct": false
           },
           "distinct": false,
           "values": false,
@@ -4271,6 +4336,8 @@
                   ],
                   "orderBy": null,
                   "follow": null,
+                  "frontier": null,
+                  "depth": null,
                   "values": false,
                   "limit": null,
                   "offset": null
@@ -4360,6 +4427,8 @@
               "select": [],
               "orderBy": null,
               "follow": null,
+              "frontier": null,
+              "depth": null,
               "values": false,
               "limit": null,
               "offset": null
@@ -4426,6 +4495,8 @@
                   "select": [],
                   "orderBy": null,
                   "follow": null,
+                  "frontier": null,
+                  "depth": null,
                   "values": false,
                   "limit": null,
                   "offset": null
@@ -4479,6 +4550,8 @@
                   "select": [],
                   "orderBy": null,
                   "follow": null,
+                  "frontier": null,
+                  "depth": null,
                   "values": false,
                   "limit": null,
                   "offset": {
@@ -4552,6 +4625,8 @@
                     "select": [],
                     "orderBy": null,
                     "follow": null,
+                    "frontier": null,
+                    "depth": null,
                     "values": false,
                     "limit": null,
                     "offset": null
@@ -4610,6 +4685,8 @@
                     "select": [],
                     "orderBy": null,
                     "follow": null,
+                    "frontier": null,
+                    "depth": null,
                     "values": false,
                     "limit": null,
                     "offset": {
@@ -4670,6 +4747,8 @@
                     "select": [],
                     "orderBy": null,
                     "follow": null,
+                    "frontier": null,
+                    "depth": null,
                     "values": false,
                     "limit": null,
                     "offset": {
@@ -4731,6 +4810,8 @@
                     "select": [],
                     "orderBy": null,
                     "follow": null,
+                    "frontier": null,
+                    "depth": null,
                     "values": false,
                     "limit": null,
                     "offset": {

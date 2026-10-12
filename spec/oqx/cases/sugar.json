@@ -287,13 +287,13 @@
       }
     },
     {
-      "name": "distinct still needs its consumer word",
+      "name": "x distinct { … } is x collect distinct { … }",
       "tags": [
         "sugar",
         "collect",
         "distinct"
       ],
-      "notes": "`x distinct { … }` is the error it was: write `x collect distinct { … }` or `x { select distinct … }`.",
+      "notes": "Since 0.20 the `distinct` modifier may follow the receiver directly: `x distinct { … }` ≡ `x collect distinct { … }`.",
       "roots": {
         "r": [
           {
@@ -309,14 +309,17 @@
           }
         ]
       },
-      "query": "r distinct { n }",
+      "query": "r distinct { ok }",
       "expect": {
-        "error": {
-          "stage": "parse",
-          "includes": [
-            "unexpected 'distinct'"
-          ]
-        }
+        "result": [
+          {
+            "ok": true
+          },
+          {
+            "ok": false
+          },
+          {}
+        ]
       }
     },
     {
@@ -355,12 +358,12 @@
       }
     },
     {
-      "name": "a predicate in the follow brace is the options error",
+      "name": "a where-first destination block",
       "tags": [
         "sugar",
         "follow"
       ],
-      "notes": "The implicit-collect sugar never applies to a destination: the brace is the options block, and a destination block keeps its consumer.",
+      "notes": "A brace after a destination opens its block (since 0.20), with the 0.17 body rules: a leading predicate is its `where`.",
       "roots": {
         "t": [
           {
@@ -378,15 +381,19 @@
           }
         ]
       },
-      "query": "select id from t where id == 1 follow children { id > 1 }",
+      "query": "select id from t where id == 1 follow children { id > 1 } order by $ordinal",
       "expect": {
-        "error": {
-          "stage": "parse",
-          "includes": [
-            "expected where/frontier/depth/by",
-            "collect { … }"
-          ]
-        }
+        "result": [
+          {
+            "id": 1
+          },
+          {
+            "id": 2
+          },
+          {
+            "id": 3
+          }
+        ]
       }
     },
     {
@@ -1989,7 +1996,7 @@
           }
         ]
       },
-      "query": "name, j: jobs[pay > 10]! from people where id == 1",
+      "query": "name, j: jobs[pay > 10]!, $key: id from people where id == 1",
       "expect": {
         "error": {
           "stage": "eval",
@@ -2616,7 +2623,7 @@
           }
         ]
       },
-      "query": "j: jobs[0]! from people where id == 3",
+      "query": "j: jobs[0]!, $key: id from people where id == 3",
       "expect": {
         "error": {
           "stage": "eval",
@@ -3128,11 +3135,11 @@
         "error": {
           "stage": "eval",
           "includes": [
-            "`jobs first { offset 0 }!` is absent",
-            "on 3"
+            "`jobs first { offset 0 }!` is absent"
           ]
         }
-      }
+      },
+      "notes": "In `where` the row has no projected `$key` yet and a plain object's default identity is structural, so the message carries no ` on <identity>` suffix."
     },
     {
       "name": "the explicit value-position directive parses in where",
@@ -3314,7 +3321,7 @@
       }
     },
     {
-      "name": "required absent names the expression and the row id",
+      "name": "required absent names the expression and the row's $key",
       "tags": [
         "sugar",
         "required"
@@ -3360,7 +3367,7 @@
           }
         ]
       },
-      "query": "title! from people",
+      "query": "title!, $key: id from people",
       "expect": {
         "error": {
           "stage": "eval",
@@ -3372,7 +3379,7 @@
       }
     },
     {
-      "name": "required absent with a string id",
+      "name": "required absent with a string $key",
       "tags": [
         "sugar",
         "required"
@@ -3384,7 +3391,7 @@
           }
         ]
       },
-      "query": "x! from d",
+      "query": "x!, $key: id from d",
       "expect": {
         "error": {
           "stage": "eval",
@@ -3673,7 +3680,7 @@
       }
     },
     {
-      "name": "required in where names the failing row",
+      "name": "required in where carries no identity under the structural default",
       "tags": [
         "sugar",
         "required",
@@ -3725,11 +3732,11 @@
         "error": {
           "stage": "eval",
           "includes": [
-            "`manager!` is absent",
-            "on 2"
+            "`manager!` is absent"
           ]
         }
-      }
+      },
+      "notes": "A plain object's default identity is the object itself (§16), which the message does not print; a host with scalar identities (a store's row ids) names the row."
     },
     {
       "name": "required on a $-named property",
@@ -4316,13 +4323,13 @@
       }
     },
     {
-      "name": "is compares rows by id",
+      "name": "is compares rows by their host identity (structural by default)",
       "tags": [
         "sugar",
         "is",
         "identity"
       ],
-      "notes": "Two rows with id 1 are the same row whatever else they hold; both see two matches, the id-2 row one.",
+      "notes": "Under the default identity the two id-1 rows differ structurally, so each row matches only itself; a host whose rows carry an identity (a store's row ids) compares those. A projected `$key` does not change `is` (SEMANTICS §5b).",
       "roots": {
         "q": [
           {
@@ -4339,9 +4346,9 @@
           }
         ]
       },
-      "query": "q count { ^q count { $it is ^$it } == 2 }",
+      "query": "q count { ^q count { $it is ^$it } == 1 }",
       "expect": {
-        "result": 2
+        "result": 3
       }
     },
     {

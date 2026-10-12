@@ -95,7 +95,8 @@
             "stop": "interior"
           }
         ]
-      }
+      },
+      "notes": "`depth 2` is a clause of the destination block (since 0.20): `children` expands a frontier row only while its `$depth < 2`, so the depth-2 rows report `depth`."
     },
     {
       "name": "$leaf and $frontier",
@@ -125,7 +126,7 @@
           }
         ]
       },
-      "query": "id, leaf: $leaf, frontier: $frontier, stop: $stop from tree follow children order by $ordinal",
+      "query": "id, leaf: $leaf, frontier: $frontier, stop: $stop from tree follow children { $key: id } order by $ordinal",
       "expect": {
         "result": [
           {
@@ -153,7 +154,8 @@
             "stop": "leaf"
           }
         ]
-      }
+      },
+      "notes": "The destination block projects `$key: id`, so the successors are known by their ids and `$ordinal` ranks the paths by id (the default identity of a plain object is its structural value, §16)."
     },
     {
       "name": "a row without the relation is a leaf",
@@ -211,7 +213,7 @@
           }
         ]
       },
-      "query": "id, o: $ordinal from tree follow children order by $ordinal",
+      "query": "id, o: $ordinal from tree follow children { $key: id } order by $ordinal",
       "expect": {
         "result": [
           {
@@ -253,7 +255,7 @@
           }
         ]
       },
-      "query": "id values from tree follow children order by $ordinal",
+      "query": "id values from tree follow children { $key: id } order by $ordinal",
       "expect": {
         "result": [
           1,
@@ -264,7 +266,7 @@
     },
     {
       "name": "cycles terminate: a revisit is admitted once",
-      "notes": "Identity is the `id` property; the third row is the revisit of node 1 and is never expanded.",
+      "notes": "Identity is `$key`: the body projects `$key: id` for the seeds and the destination block for the successors, so the third row — a different object carrying id 1 — is the revisit of node 1 and is never expanded. (Under the default structural identity the two id-1 objects would be two nodes.)",
       "roots": {
         "g": [
           {
@@ -283,20 +285,23 @@
           }
         ]
       },
-      "query": "id, stop: $stop from g follow next order by $ordinal",
+      "query": "id, stop: $stop, $key: id from g follow next { $key: id } order by $ordinal",
       "expect": {
         "result": [
           {
             "id": 1,
-            "stop": "interior"
+            "stop": "interior",
+            "$key": 1
           },
           {
             "id": 2,
-            "stop": "interior"
+            "stop": "interior",
+            "$key": 2
           },
           {
             "id": 1,
-            "stop": "cycle"
+            "stop": "cycle",
+            "$key": 1
           }
         ]
       }
@@ -321,14 +326,16 @@
           }
         ]
       },
-      "query": "id from g follow distinct next order by id",
+      "query": "id, $key: id from g follow distinct next { $key: id } order by id",
       "expect": {
         "result": [
           {
-            "id": 1
+            "id": 1,
+            "$key": 1
           },
           {
-            "id": 2
+            "id": 2,
+            "$key": 2
           }
         ]
       }
@@ -440,7 +447,7 @@
       }
     },
     {
-      "name": "by supplies the identity",
+      "name": "a destination block's $key supplies the identity",
       "roots": {
         "tree": [
           {
@@ -458,7 +465,7 @@
           }
         ]
       },
-      "query": "label, stop: $stop from tree follow children { by label } order by $ordinal",
+      "query": "label, stop: $stop from tree follow children { $key: label } order by $ordinal",
       "expect": {
         "result": [
           {
@@ -474,7 +481,8 @@
             "stop": "leaf"
           }
         ]
-      }
+      },
+      "notes": "`$key: label` in the destination block is the identity of every successor it yields; the rows it yields keep their shape (`$key` is not a column of a destination block's record)."
     },
     {
       "name": "the hard depth cap is 8",
@@ -644,7 +652,7 @@
           }
         ]
       },
-      "query": "id, s: $stop, f: $frontier, l: $leaf from tree follow children { frontier id == \"a\" } order by $ordinal",
+      "query": "id, s: $stop, f: $frontier, l: $leaf from tree follow children { $key: id frontier id == \"a\" } order by $ordinal",
       "expect": {
         "result": [
           {
@@ -666,10 +674,11 @@
             "l": true
           }
         ]
-      }
+      },
+      "notes": "`frontier P` is a clause of the destination block (since 0.20): an occurrence this destination reached for which `P` holds is a frontier and is not expanded."
     },
     {
-      "name": "where in the follow block filters successors",
+      "name": "where in the destination block filters successors",
       "roots": {
         "tree": [
           {
@@ -765,7 +774,7 @@
           }
         ]
       },
-      "query": "id values from tree where $depth > 1 follow children order by $ordinal",
+      "query": "id values from tree where $depth > 1 follow children { $key: id } order by $ordinal",
       "expect": {
         "result": [
           "a",
@@ -803,7 +812,7 @@
           }
         ]
       },
-      "query": "id values from tree where id != \"b\" && $depth <= 2 follow children order by $ordinal",
+      "query": "id values from tree where id != \"b\" && $depth <= 2 follow children { $key: id } order by $ordinal",
       "expect": {
         "result": [
           "root",
@@ -840,7 +849,7 @@
           }
         ]
       },
-      "query": "id, kids: children collect { id, own: $depth, parentDepth: ^$depth } from tree follow children { depth 2 } order by $ordinal",
+      "query": "id, kids: children collect { id, own: $depth, parentDepth: ^$depth } from tree follow children { $key: id depth 2 } order by $ordinal",
       "expect": {
         "result": [
           {
@@ -900,7 +909,7 @@
           }
         ]
       },
-      "query": "id, desc: children collect { id values follow children order by $ordinal } from tree where id == \"root\"",
+      "query": "id, desc: children collect { $key: id values follow children { $key: id } order by $ordinal } from tree where id == \"root\"",
       "expect": {
         "result": [
           {
@@ -912,7 +921,8 @@
             ]
           }
         ]
-      }
+      },
+      "notes": "`$key: id values` names the seeds' identity and yields the ids; the destination block projects `$key: id` for the successors, so `$ordinal` ranks every path by id."
     },
     {
       "name": "follow with select distinct",
@@ -1021,37 +1031,38 @@
       }
     },
     {
-      "name": "unknown word in the follow block",
+      "name": "a stray token in a destination block",
       "query": "id from tree follow children { foo 1 }",
       "expect": {
         "error": {
           "stage": "parse",
           "includes": [
-            "expected where/frontier/depth/by"
+            "unexpected '1' in the collect { … } block",
+            "frontier/depth"
           ]
         }
       }
     },
     {
-      "name": "duplicate where in the follow block",
+      "name": "duplicate where in a destination block",
       "query": "id from tree follow children { where a where b }",
       "expect": {
         "error": {
           "stage": "parse",
           "includes": [
-            "duplicate `where` in follow"
+            "duplicate `where` clause"
           ]
         }
       }
     },
     {
-      "name": "duplicate depth in the follow block",
+      "name": "duplicate depth in a destination block",
       "query": "id from tree follow children { depth 1 depth 2 }",
       "expect": {
         "error": {
           "stage": "parse",
           "includes": [
-            "duplicate `depth` in follow"
+            "duplicate `depth` clause"
           ]
         }
       }
@@ -1069,8 +1080,8 @@
       }
     },
     {
-      "name": "follow over id-less nodes uses structural identity",
-      "notes": "Without an `id`, identity is the row's structural value; distinct successors are not cycles of each other.",
+      "name": "follow over plain objects uses structural identity",
+      "notes": "The default identity of a plain object is its structural value (§16; the in-memory context names none of its own), so distinct successors are not cycles of each other.",
       "roots": {
         "t": [
           {
@@ -1121,16 +1132,18 @@
           }
         ]
       },
-      "query": "id, stop: $stop from t follow children order by $ordinal",
+      "query": "id, stop: $stop, $key: id from t follow children { $key: id } order by $ordinal",
       "expect": {
         "result": [
           {
             "id": 1,
-            "stop": "interior"
+            "stop": "interior",
+            "$key": 1
           },
           {
             "id": "1",
-            "stop": "leaf"
+            "stop": "leaf",
+            "$key": "1"
           }
         ]
       }
@@ -1165,7 +1178,7 @@
       }
     },
     {
-      "name": "the follow where reads the frontier row through ^",
+      "name": "the destination block's where reads the frontier row through ^",
       "notes": "Inside `follow R { where P }` the candidate's scope hangs off the row being expanded, so `^id` is the parent's id. Before 0.14 `^` skipped to the walk's enclosing scope (the root here), where `id` is absent, and the predicate never held.",
       "roots": {
         "g": [
@@ -1202,7 +1215,7 @@
       }
     },
     {
-      "name": "the follow where: a bare name is the candidate's own",
+      "name": "the destination block's where: a bare name is the candidate's own",
       "roots": {
         "g": [
           {
@@ -1237,7 +1250,7 @@
       }
     },
     {
-      "name": "the follow where: ^ is the frontier row inside a nested follow",
+      "name": "the destination block's where: ^ is the frontier row inside a nested follow",
       "notes": "The collect's rows seed the walk; `^tag` in the follow where is the frontier row's tag (`r1` is `m`), not the enclosing row's.",
       "roots": {
         "t": [
@@ -1285,7 +1298,7 @@
       }
     },
     {
-      "name": "the follow where: ^^ is the walk's enclosing scope",
+      "name": "the destination block's where: ^^ is the walk's enclosing scope",
       "notes": "Two carets out of the follow where is the scope the walk runs in — here the enclosing `root` row (tag `k`).",
       "roots": {
         "t": [
@@ -1333,8 +1346,8 @@
       }
     },
     {
-      "name": "frontier and by read the occurrence with ^ the enclosing scope",
-      "notes": "`frontier`/`by` are not correlated: `^tag` there is the enclosing `root` row's tag (`k`), so `r1b` and `r2` are frontiers and `r1` (`m`) expands.",
+      "name": "frontier reads the occurrence with ^ the enclosing scope; seeds are never frontiers",
+      "notes": "`frontier` is not correlated: `^tag` there is the enclosing `root` row's tag (`k`), not the frontier row's. It marks only the occurrences the destination reached — `r1b` (tag `k`) is a frontier, while `r2` (tag `k`) is a seed, reached by no destination, and is a plain leaf; `r1` (`m`) expands.",
       "roots": {
         "t": [
           {
@@ -1378,7 +1391,7 @@
               },
               {
                 "id": "r2",
-                "s": "frontier"
+                "s": "leaf"
               },
               {
                 "id": "r1a",
@@ -1537,7 +1550,7 @@
       }
     },
     {
-      "name": "the options block applies to the union: depth",
+      "name": "a tuple destination walks the union with one depth cap",
       "roots": {
         "g": [
           {
@@ -1565,7 +1578,7 @@
           }
         ]
       },
-      "query": "id, s: $stop from g follow before, after { depth 2 } order by $ordinal",
+      "query": "id, s: $stop from g follow (before, after) { depth 2 } order by $ordinal",
       "expect": {
         "result": [
           {
@@ -1581,10 +1594,11 @@
             "s": "depth"
           }
         ]
-      }
+      },
+      "notes": "`(before, after)` is one destination (a tuple, §3b), so its block's `depth 2` governs every row it reaches."
     },
     {
-      "name": "the options block applies to the union: where",
+      "name": "a tuple destination's where filters the union",
       "roots": {
         "g": [
           {
@@ -1612,7 +1626,7 @@
           }
         ]
       },
-      "query": "id values from g follow before, after { where id != 3 } order by $ordinal",
+      "query": "id values from g follow (before, after) { where id != 3 } order by $ordinal",
       "expect": {
         "result": [
           1,
@@ -1621,7 +1635,7 @@
       }
     },
     {
-      "name": "frontier applies to a row whichever destination reached it",
+      "name": "a tuple destination's frontier applies to a row whichever element reached it",
       "roots": {
         "g": [
           {
@@ -1649,7 +1663,7 @@
           }
         ]
       },
-      "query": "id, s: $stop from g follow before, after { frontier id == 3 } order by $ordinal",
+      "query": "id, s: $stop from g follow (before, after) { frontier id == 3 } order by $ordinal",
       "expect": {
         "result": [
           {
@@ -1696,7 +1710,7 @@
           }
         ]
       },
-      "query": "id, d: $depth from g follow distinct before, after order by $ordinal",
+      "query": "id, d: $depth from g follow distinct (before, after) { $key: id } order by $ordinal",
       "expect": {
         "result": [
           {
@@ -2048,16 +2062,17 @@
       }
     },
     {
-      "name": "a destination block is closed before the options block",
-      "query": "id from tree follow ^tree collect { where parent == ^id } { depth 2",
+      "name": "a second brace after a destination block is a stray token",
+      "query": "id from tree follow ^tree collect { where parent == ^id } { depth 2 }",
       "expect": {
         "error": {
           "stage": "parse",
           "includes": [
-            "expected '}' to close the follow block"
+            "unexpected '{' after the query"
           ]
         }
-      }
+      },
+      "notes": "There is no options block (since 0.20): a destination's `depth` is a clause of its own block."
     },
     {
       "name": "an outer-reference destination with a brace is a destination block (implicit collect)",
@@ -2364,14 +2379,14 @@
       }
     },
     {
-      "name": "an options block after a trailing destination block (implicit collect)",
+      "name": "depth is a clause of the destination block (implicit collect)",
       "tags": [
         "follow",
         "outer-refs",
         "sugar",
         "0.19"
       ],
-      "notes": "The brace right after `^people` is the block; the brace after the block's `}` is the options block, as it has been since 0.14 for an explicit consumer.",
+      "notes": "`depth 2` follows the block's `where` in the fixed clause order; it caps the walk through this destination.",
       "roots": {
         "people": [
           {
@@ -2392,7 +2407,7 @@
           }
         ]
       },
-      "query": "id, s: $stop from people where id == 1 follow ^people { where manager == ^id } { depth 2 } order by $ordinal",
+      "query": "id, s: $stop from people where id == 1 follow ^people { where manager == ^id depth 2 } order by $ordinal",
       "expect": {
         "result": [
           {
@@ -2411,7 +2426,7 @@
       }
     },
     {
-      "name": "an options block after a trailing destination block (explicit collect)",
+      "name": "depth is a clause of the destination block (explicit collect)",
       "tags": [
         "follow",
         "outer-refs",
@@ -2437,7 +2452,7 @@
           }
         ]
       },
-      "query": "id, s: $stop from people where id == 1 follow ^people collect { where manager == ^id } { depth 2 } order by $ordinal",
+      "query": "id, s: $stop from people where id == 1 follow ^people collect { where manager == ^id depth 2 } order by $ordinal",
       "expect": {
         "result": [
           {
@@ -2456,7 +2471,7 @@
       }
     },
     {
-      "name": "the options where applies on top of a destination block's own where",
+      "name": "a destination block's where is the one successor predicate",
       "tags": [
         "follow",
         "outer-refs",
@@ -2483,14 +2498,15 @@
           }
         ]
       },
-      "query": "id values from people where id == 1 follow ^people { where manager == ^id } { where id != 3 } order by $ordinal",
+      "query": "id values from people where id == 1 follow ^people { where manager == ^id && id != 3 } order by $ordinal",
       "expect": {
         "result": [
           1,
           2,
           4
         ]
-      }
+      },
+      "notes": "Since 0.20 the former options `where` is simply the block's `where` — conjoin."
     },
     {
       "name": "two destinations: a plain relation and an outer-reference block, unioned by identity",
@@ -2500,7 +2516,7 @@
         "sugar",
         "0.19"
       ],
-      "notes": "Both destinations reach `b` from `a` (the nested `kids` row and the root row share the identity `b`); one step keeps it once. From that `b` only the block finds `c`.",
+      "notes": "Both destinations reach `b` from `a` — the nested `kids` row and the root row are different objects, so each block projects `$key: id` to make them one identity; one step keeps the first. From that `b` only the second block finds `c`.",
       "roots": {
         "nodes": [
           {
@@ -2521,7 +2537,7 @@
           }
         ]
       },
-      "query": "id values from nodes where id == \"a\" follow kids, ^nodes { where parent == ^id } order by $ordinal",
+      "query": "id values from nodes where id == \"a\" follow kids { $key: id }, ^nodes { $key: id where parent == ^id } order by $ordinal",
       "expect": {
         "result": [
           "a",
@@ -2564,13 +2580,13 @@
       }
     },
     {
-      "name": "the options where after an explicit destination block",
+      "name": "a destination block's where conjoins every successor condition",
       "tags": [
         "follow",
         "outer-refs",
         "0.19"
       ],
-      "notes": "Pinned alongside the implicit form: the second brace after `^chain collect { … }` is the options block, as it has been since 0.14.",
+      "notes": "Pinned alongside the implicit form.",
       "roots": {
         "chain": [
           {
@@ -2586,7 +2602,7 @@
           }
         ]
       },
-      "query": "id values from chain where id == \"a\" follow ^chain collect { where prev == ^id } { where id != \"c\" } order by $ordinal",
+      "query": "id values from chain where id == \"a\" follow ^chain collect { where prev == ^id && id != \"c\" } order by $ordinal",
       "expect": {
         "result": [
           "a",
@@ -2595,13 +2611,13 @@
       }
     },
     {
-      "name": "a brace after a plain destination of several is still the options block",
+      "name": "a brace after any destination opens that destination's block",
       "tags": [
         "follow",
         "sugar",
         "0.19"
       ],
-      "notes": "`children` is the last destination and a relation of the current row, so `{ depth 2 }` caps the walk (it is not a block).",
+      "notes": "`children { depth 2 }` is a destination block with a depth cap beside the plain destination `a` (since 0.20 there is no options block).",
       "roots": {
         "tree": [
           {
@@ -2635,14 +2651,14 @@
       }
     },
     {
-      "name": "a brace after a free-function destination is the options block: depth",
+      "name": "a free-function destination with a brace is a destination block: depth",
       "tags": [
         "follow",
         "entries",
         "sugar",
         "0.19"
       ],
-      "notes": "A call receiver (`entries(kids)`) is read in the current row, so its brace is the options block, like a bare relation's.",
+      "notes": "A call receiver (`entries(kids)`) may head a destination block like any receiver.",
       "roots": {
         "tree": [
           {
@@ -2682,7 +2698,7 @@
       }
     },
     {
-      "name": "a brace after a free-function destination is the options block: where",
+      "name": "a free-function destination with a brace is a destination block: where",
       "tags": [
         "follow",
         "entries",
@@ -2718,32 +2734,39 @@
       }
     },
     {
-      "name": "a predicate in the brace after a plain destination of several is the options error",
+      "name": "a where-first destination block beside a plain destination",
       "tags": [
         "follow",
         "sugar",
         "errors",
         "0.19"
       ],
-      "notes": "`children` is a relation of the current row, so its brace is the options block; the message says a destination block needs its consumer.",
+      "notes": "The 0.17 body rules apply to every destination block: a leading predicate opens its `where`.",
       "roots": {
         "tree": [
           {
             "id": "root",
             "a": [],
-            "children": []
+            "children": [
+              {
+                "id": "x",
+                "children": [
+                  {
+                    "id": "x1"
+                  }
+                ]
+              }
+            ]
           }
         ]
       },
-      "query": "id from tree follow a, children { id != \"root\" }",
+      "query": "id values from tree follow a, children { id != \"root\" } order by $ordinal",
       "expect": {
-        "error": {
-          "stage": "parse",
-          "includes": [
-            "expected where/frontier/depth/by",
-            "a destination block needs its consumer"
-          ]
-        }
+        "result": [
+          "root",
+          "x",
+          "x1"
+        ]
       }
     },
     {
@@ -2803,7 +2826,7 @@
       }
     },
     {
-      "name": "an implicit destination block is closed before the options block",
+      "name": "a second brace after an implicit destination block is a stray token",
       "tags": [
         "follow",
         "outer-refs",
@@ -2817,12 +2840,12 @@
           }
         ]
       },
-      "query": "id from tree follow ^tree { where parent == ^id } { depth 2",
+      "query": "id from tree follow ^tree { where parent == ^id } { depth 2 }",
       "expect": {
         "error": {
           "stage": "parse",
           "includes": [
-            "expected '}' to close the follow block"
+            "unexpected '{' after the query"
           ]
         }
       }

@@ -1100,10 +1100,6 @@ fn follow_collects_descendants() {
         Some(Follow {
             destinations: vec![FollowDestination::Relation(ident("children"))],
             distinct: false,
-            r#where: None,
-            frontier: None,
-            depth: None,
-            by: None,
             span: Span::EMPTY,
         })
     );
@@ -1113,28 +1109,55 @@ fn follow_collects_descendants() {
     );
 }
 
+/// The destination block of a `follow` destination (0.20): `follow children {
+/// … }` is `children collect { … }` with `frontier`/`depth` as body clauses.
+fn dest_block(f: &Follow, i: usize) -> &OpNode {
+    match &f.destinations[i] {
+        FollowDestination::Block(op) => op,
+        other => panic!("expected a destination block, got {other:?}"),
+    }
+}
+
 #[test]
-fn follow_block_options() {
+fn follow_destination_block_clauses() {
     let q = parse("id, stop: $stop from tree follow children { depth 2 } order by id");
-    assert_eq!(q.follow.as_ref().unwrap().depth, Some(2));
-    let q =
-        parse("from tree follow children { where active frontier kind == \"leaf\" depth 8 by id }");
-    assert_eq!(
-        q.follow,
-        Some(Follow {
-            destinations: vec![FollowDestination::Relation(ident("children"))],
-            distinct: false,
-            r#where: Some(ident("active")),
-            frontier: Some(bin(BinaryOp::Eq, ident("kind"), str_("leaf"))),
-            depth: Some(8),
-            by: Some(ident("id")),
-            span: Span::EMPTY,
-        })
+    let b = dest_block(q.follow.as_ref().unwrap(), 0);
+    assert_eq!(b.receiver, ident("children"));
+    assert_eq!(b.op, Consumer::Collect);
+    assert_eq!(b.sub.depth, Some(2));
+    assert_eq!(b.sub.frontier, None);
+    let q = parse("from tree follow children { where active frontier kind == \"leaf\" depth 8 }");
+    let b = dest_block(q.follow.as_ref().unwrap(), 0);
+    let mut sub = sub();
+    sub.r#where = Some(scalar(ident("active")));
+    sub.frontier = Some(bin(BinaryOp::Eq, ident("kind"), str_("leaf")));
+    sub.depth = Some(8);
+    assert_eq!(b.sub, sub);
+    // the clauses keep the fixed order: where, frontier, depth, …
+    assert_parse_error(
+        "from tree follow children { depth 1 frontier x }",
+        &[
+            "`frontier` must come before `depth`",
+            "select, from, where, frontier, depth, follow, order by, limit, offset",
+        ],
     );
-    // options in any order
-    let q = parse("from tree follow children { by id depth 1 }");
-    let f = q.follow.unwrap();
-    assert_eq!((f.depth, f.by), (Some(1), Some(ident("id"))));
+    assert_parse_error(
+        "from tree follow children { depth 1 where x }",
+        &["`where` must come before `depth`"],
+    );
+    // outside a destination block the two words are field names / errors
+    assert_parse_error(
+        "from tree where x depth 2",
+        &[
+            "unexpected 'depth' after `where`",
+            "clause of a follow destination block only",
+        ],
+    );
+    assert_eq!(
+        parse("depth, frontier from r").select,
+        vec![bare("depth"), bare("frontier")]
+    );
+    assert_eq!(parse("r collect { depth }").select, vec![bare("depth")]);
     // a dotted relation and a binding relation
     let q = parse("from tree follow rel.children");
     assert_eq!(
@@ -1145,10 +1168,9 @@ fn follow_block_options() {
         ))]
     );
     let q = strip_template(&["from tree follow ", " { depth 3 }"], 1).unwrap();
-    assert_eq!(
-        q.follow.unwrap().destinations,
-        vec![FollowDestination::Relation(binding(0))]
-    );
+    let b = dest_block(q.follow.as_ref().unwrap(), 0);
+    assert_eq!(b.receiver, binding(0));
+    assert_eq!(b.sub.depth, Some(3));
 }
 
 #[test]
@@ -1163,11 +1185,9 @@ fn follow_distinct() {
     let q = parse("from xs follow distinct rel.next { depth 2 }");
     let f = q.follow.unwrap();
     assert!(f.distinct);
-    assert_eq!(
-        f.destinations,
-        vec![FollowDestination::Relation(member(ident("rel"), "next"))]
-    );
-    assert_eq!(f.depth, Some(2));
+    let b = dest_block(&f, 0);
+    assert_eq!(b.receiver, member(ident("rel"), "next"));
+    assert_eq!(b.sub.depth, Some(2));
     let q = strip_template(&["from xs follow distinct ", ""], 1).unwrap();
     let f = q.follow.unwrap();
     assert!(f.distinct);
@@ -1205,33 +1225,48 @@ fn follow_block_errors() {
         "from tree follow children { depth 1.5 }",
         &["follow depth must be an integer between 1 and 8"],
     );
+    // `depth` not followed by a number is a field name, so `x` is a stray token
     assert_parse_error(
         "from tree follow children { depth x }",
+        &["unexpected 'x' after `select`", "frontier/depth"],
+    );
+    assert_parse_error(
+        "from tree follow children { where ok depth x }",
         &["expected an integer after `depth`"],
     );
     assert_parse_error(
         "from tree follow children { depth 1 depth 2 }",
-        &["duplicate `depth` in follow clause"],
+        &["duplicate `depth` clause"],
     );
     assert_parse_error(
         "from tree follow children { where a where b }",
-        &["duplicate `where` in follow clause"],
+        &["duplicate `where` clause"],
     );
     assert_parse_error(
         "from tree follow children { frontier a frontier b }",
-        &["duplicate `frontier` in follow clause"],
+        &["duplicate `frontier` clause"],
     );
+    // `by` is gone (0.20): identity is `$key`
     assert_parse_error(
-        "from tree follow children { by a by b }",
-        &["duplicate `by` in follow clause"],
+        "from tree follow children { by a }",
+        &["unexpected 'a' after `select`", "frontier/depth"],
     );
-    assert_parse_error(
-        "from tree follow children { limit 1 }",
-        &["unexpected 'limit' in follow block — expected where/frontier/depth/by"],
+    // a destination block is an ordinary block: a bound is legal
+    assert_eq!(
+        dest_block(
+            parse("from tree follow children { limit 1 }")
+                .follow
+                .as_ref()
+                .unwrap(),
+            0
+        )
+        .sub
+        .limit,
+        Some(num(1.0))
     );
     assert_parse_error(
         "from tree follow children { depth 1",
-        &["expected '}' to close the follow block"],
+        &["expected '}' to close the collect { … } block"],
     );
     // `follow` not followed by a relation name is not a follow clause at all; the
     // error says what the clause needs
@@ -1260,10 +1295,15 @@ fn follow_block_errors() {
     );
     // `depth 2.0` is an integer-valued number, so it passes the integer check
     assert_eq!(
-        parse("from tree follow children { depth 2.0 }")
-            .follow
-            .unwrap()
-            .depth,
+        dest_block(
+            parse("from tree follow children { depth 2.0 }")
+                .follow
+                .as_ref()
+                .unwrap(),
+            0
+        )
+        .sub
+        .depth,
         Some(2)
     );
 }
@@ -2679,12 +2719,15 @@ fn readme_full_query_shape() {
             order_by: Some(vec![desc(ident("age")), asc(ident("name"))]),
             consumer: Consumer::Collect,
             follow: Some(Follow {
-                destinations: vec![FollowDestination::Relation(ident("children"))],
+                destinations: vec![FollowDestination::Block(Box::new(op(
+                    ident("children"),
+                    Consumer::Collect,
+                    Subquery {
+                        depth: Some(4),
+                        ..sub()
+                    }
+                )))],
                 distinct: false,
-                r#where: None,
-                frontier: None,
-                depth: Some(4),
-                by: None,
                 span: Span::EMPTY,
             }),
             distinct: false,
@@ -2746,16 +2789,11 @@ fn readme_cheat_sheet_lines() {
         panic!()
     };
     assert_eq!(o.receiver, call(None, "entries", vec![ident("rel")]));
-    let q = parse("from xs follow rel { where a frontier b depth 3 by c }");
-    let f = q.follow.unwrap();
+    let q = parse("from xs follow rel { where a frontier b depth 3 }");
+    let b = dest_block(q.follow.as_ref().unwrap(), 0);
     assert_eq!(
-        (f.r#where, f.frontier, f.depth, f.by),
-        (
-            Some(ident("a")),
-            Some(ident("b")),
-            Some(3),
-            Some(ident("c"))
-        )
+        (b.sub.r#where.clone(), b.sub.frontier.clone(), b.sub.depth),
+        (Some(scalar(ident("a"))), Some(ident("b")), Some(3))
     );
 }
 
@@ -2813,7 +2851,7 @@ fn operator_enums_round_trip_their_ts_spelling() {
 
 #[test]
 fn follow_takes_a_comma_separated_list_of_destinations() {
-    let q = parse("id from g follow before, after { depth 2 }");
+    let q = parse("id from g follow before, after");
     let f = q.follow.unwrap();
     assert_eq!(
         f.destinations,
@@ -2822,7 +2860,32 @@ fn follow_takes_a_comma_separated_list_of_destinations() {
             FollowDestination::Relation(ident("after")),
         ]
     );
-    assert_eq!(f.depth, Some(2));
+    // a brace after any destination opens THAT destination's block (0.20); a
+    // tuple is one destination over the union
+    let q = parse("id from g follow before, after { depth 2 }");
+    let f = q.follow.unwrap();
+    assert_eq!(
+        f.destinations[0],
+        FollowDestination::Relation(ident("before"))
+    );
+    assert_eq!(dest_block(&f, 1).sub.depth, Some(2));
+    let q = parse("id from g follow (before, after) { depth 2 }");
+    let f = q.follow.unwrap();
+    assert_eq!(f.destinations.len(), 1);
+    let b = dest_block(&f, 0);
+    assert_eq!(
+        b.receiver,
+        build::tuple(vec![ident("before"), ident("after")])
+    );
+    assert_eq!(b.sub.depth, Some(2));
+    let q = parse("id from g follow (before, after)");
+    assert_eq!(
+        q.follow.unwrap().destinations,
+        vec![FollowDestination::Relation(build::tuple(vec![
+            ident("before"),
+            ident("after")
+        ]))]
+    );
     // `distinct` applies to the whole list; dotted and binding destinations mix
     let q = strip_template(&["from g follow distinct rel.a, ", ", c"], 1).unwrap();
     let f = q.follow.unwrap();
@@ -2851,24 +2914,26 @@ fn a_follow_destination_block_is_a_select_position_directive() {
             block
         )))]
     );
-    // first/single, `distinct`, a projection, and an options block after the list
+    // first/single, `distinct`, a projection, and a second destination with its
+    // own block
     let q = parse(
         "id from chain follow ^chain first distinct { id where id == ^prev order by id }, next { depth 3 }",
     );
     let f = q.follow.unwrap();
-    assert_eq!(f.depth, Some(3));
     assert_eq!(f.destinations.len(), 2);
-    let FollowDestination::Block(b) = &f.destinations[0] else {
-        panic!("expected a destination block");
-    };
+    let b = dest_block(&f, 0);
     assert_eq!(b.op, Consumer::First);
     assert!(b.distinct);
     assert_eq!(b.receiver, outer(1, "chain"));
     assert_eq!(b.sub.select, vec![bare("id")]);
-    assert_eq!(
-        f.destinations[1],
-        FollowDestination::Relation(ident("next"))
-    );
+    let b = dest_block(&f, 1);
+    assert_eq!(b.receiver, ident("next"));
+    assert_eq!(b.sub.depth, Some(3));
+    // `x distinct { … }` is `x collect distinct { … }` (0.20)
+    let q = parse("id from t follow kids distinct { ok }");
+    let b = dest_block(q.follow.as_ref().unwrap(), 0);
+    assert_eq!(b.op, Consumer::Collect);
+    assert!(b.distinct);
     // a block receiver need not be an outer reference
     let q = parse("id from t follow kids single { where ok }");
     let FollowDestination::Block(b) = &q.follow.unwrap().destinations[0] else {
@@ -2912,9 +2977,10 @@ fn follow_destination_errors() {
         "id from tree follow ^tree collect { where parent == ^id",
         &["expected '}' to close the collect { … } block"],
     );
+    // there is no options block (0.20): a second brace is a stray token
     assert_parse_error(
-        "id from tree follow ^tree collect { where parent == ^id } { depth 2",
-        &["expected '}' to close the follow block"],
+        "id from tree follow ^tree collect { where parent == ^id } { depth 2 }",
+        &["unexpected '{' after the query"],
     );
     // a consumer word not followed by `{` is not a block, so the destination is
     // plain and the word is leftover

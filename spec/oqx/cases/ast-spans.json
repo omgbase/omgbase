@@ -293,6 +293,8 @@
               "select": [],
               "orderBy": null,
               "follow": null,
+              "frontier": null,
+              "depth": null,
               "values": false,
               "limit": null,
               "offset": null
@@ -471,19 +473,42 @@
             ],
             "destinations": [
               {
-                "kind": "ident",
+                "kind": "op",
                 "span": [
                   26,
-                  30
+                  42
                 ],
-                "name": "kids"
+                "receiver": {
+                  "kind": "ident",
+                  "span": [
+                    26,
+                    30
+                  ],
+                  "name": "kids"
+                },
+                "op": "collect",
+                "sub": {
+                  "kind": "subquery",
+                  "span": [
+                    31,
+                    42
+                  ],
+                  "from": [],
+                  "where": null,
+                  "select": [],
+                  "orderBy": null,
+                  "follow": null,
+                  "frontier": null,
+                  "depth": 2,
+                  "values": false,
+                  "limit": null,
+                  "offset": null
+                },
+                "countCmp": null,
+                "distinct": false
               }
             ],
-            "distinct": true,
-            "where": null,
-            "frontier": null,
-            "depth": 2,
-            "by": null
+            "distinct": true
           },
           "distinct": false,
           "values": false,
@@ -587,6 +612,8 @@
               ],
               "orderBy": null,
               "follow": null,
+              "frontier": null,
+              "depth": null,
               "values": false,
               "limit": null,
               "offset": null
@@ -1276,6 +1303,8 @@
                   "select": [],
                   "orderBy": null,
                   "follow": null,
+                  "frontier": null,
+                  "depth": null,
                   "values": false,
                   "limit": null,
                   "offset": null,
@@ -1387,6 +1416,8 @@
                     "select": [],
                     "orderBy": null,
                     "follow": null,
+                    "frontier": null,
+                    "depth": null,
                     "values": false,
                     "limit": null,
                     "offset": null,
@@ -1474,6 +1505,8 @@
                     "select": [],
                     "orderBy": null,
                     "follow": null,
+                    "frontier": null,
+                    "depth": null,
                     "values": false,
                     "limit": null,
                     "offset": {

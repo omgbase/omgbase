@@ -14,13 +14,15 @@ import { LANGUAGE_VERSION } from "./version.ts";
  * The root node has no clause (`null`). */
 export type Clause =
   | "source" | "from" | "where" | "select" | "orderBy" | "limit" | "offset"
-  | "follow" | "follow.destination" | "follow.where" | "follow.frontier" | "follow.by";
+  | "follow" | "follow.destination" | "follow.frontier";
 
 /** Where a visited node sits. `depth` is the scope depth at which the node is
  * evaluated (0 = the root scope: a top-level `source`, `limit`, `offset`; 1 =
  * a top-level row: its `where`, `select`, `order by`, `from` re-projections and
- * `follow`; a block's rows are one deeper than the block's receiver; a follow
- * `where` is one deeper than the frontier row it tests successors of). */
+ * `follow`; a block's rows are one deeper than the block's receiver — a follow
+ * destination block's `where` therefore one deeper than the frontier row —
+ * and a destination block's `frontier` one level out of its rows, under the
+ * walk's enclosing scope). */
 export interface VisitContext {
   /** The ancestors of the node, root first (empty for the root). */
   readonly path: readonly AstNode[];
@@ -61,18 +63,16 @@ export const CHILDREN: { readonly [K in AstKind]: readonly ChildKey[] } = {
     { key: "select", clause: "select" },
     { key: "from", clause: "from" },
     { key: "where", clause: "where" },
+    // A destination block's `frontier` reads the occurrence under the walk's
+    // enclosing scope — one level OUT of the block's rows (SEMANTICS §20).
+    { key: "frontier", clause: "follow.frontier", depth: -1 },
     { key: "follow", clause: "follow" },
     { key: "orderBy", clause: "orderBy" },
     { key: "limit", clause: "limit" },
     { key: "offset", clause: "offset" },
   ],
   op: [{ key: "receiver" }, { key: "sub", depth: 1 }],
-  follow: [
-    { key: "destinations", clause: "follow.destination" },
-    { key: "where", clause: "follow.where", depth: 1 },
-    { key: "frontier", clause: "follow.frontier" },
-    { key: "by", clause: "follow.by" },
-  ],
+  follow: [{ key: "destinations", clause: "follow.destination" }],
   order: [{ key: "expr" }],
   field: [{ key: "expr" }],
   collect: [{ key: "op" }],
@@ -92,6 +92,7 @@ export const CHILDREN: { readonly [K in AstKind]: readonly ChildKey[] } = {
   logical: [{ key: "left" }, { key: "right" }],
   in: [{ key: "left" }, { key: "right" }],
   range: [{ key: "lo" }, { key: "hi" }],
+  tuple: [{ key: "items" }],
 };
 
 type Slot = AstNode | AstNode[] | null;

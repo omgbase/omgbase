@@ -348,7 +348,7 @@
           }
         ]
       },
-      "query": "title! from people",
+      "query": "title!, $key: id from people",
       "expect": {
         "error": {
           "stage": "eval",
@@ -357,7 +357,8 @@
             "on 7"
           ]
         }
-      }
+      },
+      "notes": "The ` on <identity>` suffix names the row's `$key` when it is scalar — here the projected `$key: id` (the default identity of a plain object is the object, which the message omits)."
     },
     {
       "name": "a required value that is absent on an id-less row",
@@ -433,7 +434,7 @@
           }
         ]
       },
-      "query": "j: xs[n > 5]! from q",
+      "query": "j: xs[n > 5]!, $key: id from q",
       "expect": {
         "error": {
           "stage": "eval",

@@ -17,12 +17,12 @@
 //
 // A `follow` destination is a relation of the current row (a receiver, never
 // an outer reference) or a destination block — a receiver (which MAY be an
-// outer reference, `^people`) immediately followed by `collect`/`first`/
-// `single` [`distinct`] `{ body }`, exactly the select-position directive
-// `tryOp(false)` recognizes, re-evaluated per frontier row (language 0.14).
-// Since 0.19 an outer-reference receiver followed by a bare `{` is that block
-// with the implicit `collect` (`follow ^docs { where … }`); after any other
-// receiver a brace is the options block.
+// outer reference, `^people`, or a tuple `(a, b)`) followed by `{ body }`, or
+// by `collect`/`first`/`single` [`distinct`] `{ body }`, exactly the
+// select-position directive `tryOp` recognizes, re-evaluated per frontier row.
+// Since 0.20 there is no options block: a brace after ANY destination opens
+// that destination's block, whose body admits two clauses no other block has —
+// `frontier P` and `depth n`, in the clause order after `where`.
 //
 // Every clause is optional except that a top-level body needs `from` (the
 // receiver-plus-consumer form `<receiver> <consumer> { block }` supplies the
@@ -36,9 +36,9 @@
 // out-of-order clause is a parse error naming the order.
 //
 // Sugar (0.17) desugars HERE, to existing nodes: `x { … }` is `x collect { … }`
-// (in `follow` destination position only over an outer-reference receiver, 0.19;
-// after any other destination a brace is the options block);
-// `x[p]` is `x first { where p }`, `x[n]` is `x first { offset n }`, with a
+// wherever a value stands (a select item, a where leaf, a follow destination, a
+// call argument — since 0.20 without exception) and `x distinct { … }` is
+// `x collect distinct { … }` (0.20); `x[p]` is `x first { where p }`, `x[n]` is `x first { offset n }`, with a
 // trailing `!` making the first a `single` (predicate) or a `required` (index);
 // `is x` is `!!x`, `not x` is `!x`. Two shapes are new: the postfix `required`
 // (`x!`, tightest) and the identity operators `is` / `is not` (comparison
@@ -61,6 +61,9 @@
 // source, from the first token that produced it to the end of the last; a
 // parenthesized operand's span includes its parentheses (spec/oqx/AST.md).
 //
+// Tuples (0.20): `(e1, e2, …)` with two or more elements is a `tuple` node — a
+// value and a receiver; one expression in parentheses stays grouping.
+//
 // Principle of least surprise, applied to the grammar: a rule a careful user
 // would not predict is a bug. Hence `!` binds tighter than comparison in every
 // position (`!a == b` is `(!a) == b`, as in C); parentheses in `where` group a
@@ -82,8 +85,15 @@ import { printTemplate } from "./print.ts";
 
 const CONSUMERS = new Set<string>(["collect", "exists", "none", "count", "first", "single"]);
 // The fixed clause order of a body (ADR-020). Each clause appears at most once.
-const CLAUSE_ORDER = ["select", "from", "where", "follow", "order by", "limit", "offset"] as const;
+// `frontier` and `depth` are legal only in a follow destination block (0.20);
+// the order sentence names them only there.
+const CLAUSE_ORDER = ["select", "from", "where", "frontier", "depth", "follow", "order by", "limit", "offset"] as const;
 type Clause = (typeof CLAUSE_ORDER)[number];
+const DESTINATION_ONLY: ReadonlySet<Clause> = new Set<Clause>(["frontier", "depth"]);
+// The clauses a body may hold, in order.
+function clausesOf(ctx: BodyCtx): Clause[] {
+  return CLAUSE_ORDER.filter((c) => ctx.destination || !DESTINATION_ONLY.has(c));
+}
 // Contextual clause words lexed as bare idents; an open-ended range must stop
 // before them rather than consume them as its high bound.
 const CLAUSE_WORDS = new Set<string>([
@@ -107,8 +117,10 @@ interface BodyCtx {
   op: Consumer | null;
   /** Whether `^name: expr` lift items are legal: only in a where-position `collect { … }`. */
   liftsAllowed: boolean;
+  /** A `follow` destination block (0.20): the only body that admits `frontier` and `depth`. */
+  destination: boolean;
 }
-const TOP_CTX: BodyCtx = { top: true, op: null, liftsAllowed: false };
+const TOP_CTX: BodyCtx = { top: true, op: null, liftsAllowed: false, destination: false };
 
 /** Parse a tagged-template call into a Query. */
 export function parseTemplate(fragments: readonly string[], values: number): Query {
@@ -126,6 +138,8 @@ interface BodyClauses {
   select: SelectItem[];
   orderBy: OrderSpec[] | null;
   follow: Follow | null;
+  frontier: Expr | null;
+  depth: number | null;
   distinct: boolean;
   values: boolean;
   limit: Expr | null;
@@ -268,6 +282,8 @@ class Parser {
     let select: SelectItem[] = [];
     let orderBy: OrderSpec[] | null = null;
     let follow: Follow | null = null;
+    let frontier: Expr | null = null;
+    let depth: number | null = null;
     let distinct = false;
     let values = false;
     let limit: Expr | null = null;
@@ -282,7 +298,7 @@ class Parser {
       const idx = CLAUSE_ORDER.indexOf(clause);
       if (idx === stage) this.fail(`duplicate \`${clause}\` clause`);
       if (idx < stage) {
-        this.fail(`\`${clause}\` must come before \`${CLAUSE_ORDER[stage]}\` — OQX clause order is ${CLAUSE_ORDER.join(", ")}`);
+        this.fail(`\`${clause}\` must come before \`${CLAUSE_ORDER[stage]}\` — OQX clause order is ${clausesOf(ctx).join(", ")}`);
       }
       stage = idx;
     };
@@ -305,6 +321,24 @@ class Parser {
         enter("where");
         this.next();
         where = this.atDepth(rowDepth, () => this.parseWhere());
+        continue;
+      }
+      // `frontier P` / `depth n` — a follow destination block's own clauses
+      // (0.20). `frontier` is read in the occurrence's scope, whose parent is the
+      // walk's enclosing scope — one level OUT of the block's rows (SEMANTICS
+      // §20) — so `^` there is the enclosing scope, not the frontier row.
+      if (ctx.destination && this.at("ident", "frontier") && this.startsValue(this.peekAt(1))) {
+        enter("frontier");
+        this.next();
+        frontier = this.atDepth(rowDepth - 1, () => this.parseValueExpr());
+        continue;
+      }
+      if (ctx.destination && this.at("ident", "depth") && this.peekAt(1)?.type === "number") {
+        enter("depth");
+        this.next();
+        const v = Number(this.next().value);
+        if (!Number.isInteger(v) || v < 1 || v > 8) this.fail("follow depth must be an integer between 1 and 8");
+        depth = v;
         continue;
       }
       if (this.atFollow()) {
@@ -353,7 +387,7 @@ class Parser {
     // surface form is kept. `where` first: its cycle report follows its own path.
     if (where) resolveWhere(select, where, (msg) => this.fail(msg));
     resolveSelect(select, (msg) => this.fail(msg));
-    return { froms, where, select, orderBy, follow, distinct, values, limit, offset };
+    return { froms, where, select, orderBy, follow, frontier, depth, distinct, values, limit, offset };
   }
 
   // The keyword-less run that opens a body. At the top level it is always the
@@ -407,8 +441,8 @@ class Parser {
   // consumer word where a whole-query directive was meant), or a stray token.
   private failUnexpectedInBody(stage: number, ctx: BodyCtx): never {
     const t = this.peek();
-    const remaining = CLAUSE_ORDER.slice(stage + 1).join("/");
     const last = stage >= 0 ? CLAUSE_ORDER[stage] : null;
+    const remaining = clausesOf(ctx).filter((c) => CLAUSE_ORDER.indexOf(c) > stage).join("/");
     const isWord = t.type === "ident" || t.type === "kw" || t.type === "binding" || t.type === "caret";
     // Punctuation, an operator, or a literal after a complete clause is a stray
     // token, not a misplaced predicate: name where the body ends. (A comma keeps
@@ -425,6 +459,10 @@ class Parser {
       if (t.value === "limit" || t.value === "offset") {
         this.fail(`unexpected '${t.value}' after \`${last}\` — a bound is a non-negative number literal, a binding, or (inside a block) an outer reference \`^name\``);
       }
+      if ((t.value === "depth" || t.value === "frontier") && !ctx.destination) {
+        this.fail(`unexpected '${t.value}' after \`${last}\` — \`${t.value}\` is a clause of a follow destination block only (\`follow <relation> { ${t.value === "depth" ? "depth 2" : "frontier <expr>"} }\`)`);
+      }
+      if (t.value === "depth" && ctx.destination) this.fail("expected an integer after `depth` (`depth 1`..`depth 8`)");
     }
     if (last === "from" && t.type === "ident" && CONSUMERS.has(t.value)) {
       this.fail(`unexpected \`${t.value}\` after \`from\` — a whole-query consumer is written \`<collection> ${t.value} { … }\`; to project a field named ${t.value} write \`select ${t.value} from …\`; a predicate needs \`where\``);
@@ -497,12 +535,13 @@ class Parser {
   private atFollow(): boolean {
     if (!this.at("ident", "follow")) return false;
     const nx = this.peekAt(1);
-    return !!nx && (nx.type === "ident" || nx.type === "binding" || this.atScopeRefAt(1));
+    return !!nx && (nx.type === "ident" || nx.type === "binding" || nx.type === "lparen" || this.atScopeRefAt(1));
   }
 
-  // Whether the cursor is at something that can begin a `follow` destination.
+  // Whether the cursor is at something that can begin a `follow` destination:
+  // a name, a binding, a scope reference, or a tuple's `(`.
   private atDestinationStart(): boolean {
-    return this.at("ident") || this.at("binding") || this.atScopeRefAt(0);
+    return this.at("ident") || this.at("binding") || this.at("lparen") || this.atScopeRefAt(0);
   }
 
   // ---- follow ---------------------------------------------------------------
@@ -527,86 +566,29 @@ class Parser {
       }
       destinations.push(this.parseFollowDestination());
     }
-    const follow: Follow = { kind: "follow", span: this.sp(start), destinations, distinct, where: null, frontier: null, depth: null, by: null };
-    if (!this.at("lbrace")) return follow;
-    this.next(); // '{'
-    while (!this.at("eof") && !this.at("rbrace")) {
-      if (this.at("kw", "where")) {
-        if (follow.where) this.fail("duplicate `where` in follow clause");
-        this.next();
-        // Read in the successor's scope, one deeper than the frontier row.
-        follow.where = this.atDepth(this.depth + 1, () => this.parseValueExpr());
-      } else if (this.at("ident", "frontier")) {
-        if (follow.frontier) this.fail("duplicate `frontier` in follow clause");
-        this.next();
-        follow.frontier = this.parseValueExpr();
-      } else if (this.at("ident", "by")) {
-        if (follow.by !== null) this.fail("duplicate `by` in follow clause");
-        this.next();
-        follow.by = this.parseValueExpr();
-      } else if (this.at("ident", "depth")) {
-        if (follow.depth !== null) this.fail("duplicate `depth` in follow clause");
-        this.next();
-        if (!this.at("number")) this.fail("expected an integer after `depth`");
-        const v = Number(this.next().value);
-        if (!Number.isInteger(v) || v < 1 || v > 8) this.fail("follow depth must be an integer between 1 and 8");
-        follow.depth = v;
-      } else {
-        this.fail(`unexpected ${this.tokDesc()} in follow block — expected where/frontier/depth/by (a brace after the last destination is the options block; a destination block needs its consumer: \`follow <relation> collect { … }\`)`);
-      }
-    }
-    if (!this.at("rbrace")) this.fail("expected '}' to close the follow block");
-    this.next();
-    follow.span = this.sp(start);
-    return follow;
+    return { kind: "follow", span: this.sp(start), destinations, distinct };
   }
 
-  // One `follow` destination. The lookahead mirrors `tryOp`: a receiver (binding,
-  // or carets + a dotted name) followed by a consumer word and `{` / `distinct {`
-  // is a destination block, parsed by `tryOp(false)` itself — but only the
-  // select-position consumers (collect/first/single) yield rows to walk; the
-  // where-position tests are rejected by name before their body is read. A
-  // receiver headed by an outer reference (`^docs`, `^^root.rel`, `0^docs`, with
-  // any member chain) followed directly by `{` is a destination block too, with
-  // the implicit `collect` (since 0.19): such a receiver can never be a plain
-  // destination — plain destinations are relations of the current row — so the
-  // brace cannot be its options block. Any other receiver keeps the 0.17 reading:
-  // a brace after it is the options block (`follow children { depth 2 }`). With
-  // no directive the tokens are re-read as a plain relation of the current row,
-  // where an outer reference is an error (a `^name` head only makes sense as
-  // the receiver of a block, since the block is what varies per row).
+  // One `follow` destination: a receiver (a binding, a dotted name — headed by a
+  // bare name, an outer reference or a free-function call — or a tuple) that is
+  // either a plain relation of the current row or, when a block follows, a
+  // destination block. The block is what `tryOp` recognizes in select position
+  // — `{ … }` (the implicit `collect`), `distinct { … }`, or a consumer word and
+  // `{` / `distinct {` — read with the destination flag so its body admits
+  // `frontier` and `depth`. Only collect/first/single yield rows to walk; the
+  // where-position tests are rejected by name. A receiver headed by an outer
+  // reference can never be a plain destination (plain destinations are relations
+  // of the current row), so without a block it is an error naming the block
+  // spellings.
   private parseFollowDestination(): FollowDestination {
-    const start = this.pos;
     const outer = this.atScopeRefAt(0);
-    let isReceiver = false;
-    if (this.at("binding")) { this.next(); isReceiver = true; }
-    else if (this.at("ident") || outer) {
-      const startPos = this.start();
-      this.parseScopeRef();
-      if (this.at("ident")) { this.parseNavFrom(this.next(), 0, startPos); isReceiver = true; }
-    }
-    if (isReceiver) {
-      let block = outer && this.at("lbrace");
-      if (this.at("ident") && CONSUMERS.has(this.peek().value)) {
-        const op = this.peek().value;
-        const after = this.peekAt(1);
-        const opThenBrace = after?.type === "lbrace";
-        const opDistinctBrace = after?.type === "ident" && after.value === "distinct" && this.peekAt(2)?.type === "lbrace";
-        if (opThenBrace || opDistinctBrace) {
-          if (op !== "collect" && op !== "first" && op !== "single") {
-            this.fail(`a follow destination must use collect/first/single, not \`${op}\` (exists/none/count are where-position tests)`);
-          }
-          block = true;
-        }
+    const op = this.tryOp(false, true);
+    if (op) {
+      if (op.op !== "collect" && op.op !== "first" && op.op !== "single") {
+        this.fail(`a follow destination must use collect/first/single, not \`${op.op}\` (exists/none/count are where-position tests)`);
       }
-      if (block) {
-        this.pos = start;
-        const node = this.tryOp(false);
-        if (!node) this.fail("expected a destination block (`<receiver> collect { … }`) after `follow`");
-        return node;
-      }
+      return op;
     }
-    this.pos = start;
     if (outer) {
       this.fail("`follow` takes a relation of the current row (`follow <relation>`); an outer reference walks a root collection only as a destination block — `follow ^docs { where … }` or `follow ^docs collect { … }`");
     }
@@ -620,6 +602,11 @@ class Parser {
   // call (`entries(prefs)`), so a computed collection can be consumed directly.
   private parseReceiver(): Expr {
     if (this.at("binding")) return this.bindingNode(this.next());
+    if (this.at("lparen")) {
+      const t = this.tryTuple();
+      if (t) return t;
+      this.fail("expected a collection navigation (a property/relation name) or a tuple `(a, b)`");
+    }
     const start = this.start();
     const levels = this.parseScopeRef();
     if (!this.at("ident")) this.fail("expected a collection navigation (a property/relation name)");
@@ -804,6 +791,16 @@ class Parser {
       else break;
     }
     if (this.at("lparen")) {
+      // A tuple (0.20) is a value, not a group: the receiver of a consumer test
+      // (`(a, b) exists { }`) or a scalar operand (`(a, b).size() > 1`).
+      const tuple = this.tryTuple();
+      if (tuple) {
+        if (this.atBlock()) return wrapNot(this.finishWhereOp(this.parseConsumerBlock(tuple, this.atBlock()!, true)), notStarts);
+        let e = this.parsePostfix(tuple);
+        for (let i = notStarts.length - 1; i >= 0; i--) e = { kind: "unary", span: [notStarts[i]!, e.span[1]], op: "!", expr: e };
+        const expr = this.parseCmp(e);
+        return { kind: "scalar", span: expr.span, expr };
+      }
       const lparen = this.next().pos;
       const inner = this.parseWhere();
       if (!this.at("rparen")) this.fail("expected ')' to close a grouped where expression");
@@ -903,9 +900,11 @@ class Parser {
   }
 
   // Detect + parse a postfix consumer op `<receiver> <consumer> { <sub> }` — or
-  // its implicit-`collect` form `<receiver> { <sub> }`. Returns null (rewinding)
-  // when the lookahead is not a directive.
-  private tryOp(inWhere: boolean): OpNode | null {
+  // its implicit-`collect` forms `<receiver> { <sub> }` and `<receiver> distinct
+  // { <sub> }` (0.20). Returns null (rewinding) when the lookahead is not a
+  // directive. `destination` marks a follow destination block (its body admits
+  // `frontier`/`depth`).
+  private tryOp(inWhere: boolean, destination = false): OpNode | null {
     const start = this.pos;
     const startPos = this.start();
     let receiver: Expr;
@@ -916,7 +915,13 @@ class Parser {
     // until the lookahead has decided.
     let scopeErr: OqxError | null = null;
     if (this.at("binding")) receiver = this.bindingNode(this.next());
-    else if (this.at("ident") || this.atScopeRefAt(0)) {
+    else if (this.at("lparen")) {
+      // A tuple receiver, `(a, b) { … }`; a single parenthesized expression is
+      // grouping and never a receiver.
+      const t = this.tryTuple();
+      if (!t) { this.pos = start; return null; }
+      receiver = t;
+    } else if (this.at("ident") || this.atScopeRefAt(0)) {
       let levels = 0;
       try {
         levels = this.parseScopeRef();
@@ -930,18 +935,27 @@ class Parser {
       receiver = this.parseNavFrom(this.next(), levels, startPos).expr;
     } else return null;
 
-    const op = this.at("lbrace") ? "collect" : this.atConsumerBlock();
+    const op = this.atBlock();
     if (op) {
       if (scopeErr) throw scopeErr;
       if (receiver.kind === "ident" && LITERAL_WORDS.has(receiver.name)) this.fail(`\`${receiver.name}\` is a literal, not a collection`);
       // `count { }` with nothing before it: the consumer word is not a receiver.
-      if (op === "collect" && receiver.kind === "ident" && CONSUMERS.has(receiver.name)) {
+      if (op === "collect" && receiver.kind === "ident" && CONSUMERS.has(receiver.name) && this.at("lbrace")) {
         this.fail(`unexpected '{' after \`${receiver.name}\` — a consumer needs a receiver: \`<collection> ${receiver.name} { … }\``);
       }
-      return this.parseConsumerBlock(receiver, op, inWhere);
+      return this.parseConsumerBlock(receiver, op, inWhere, destination);
     }
     this.pos = start;
     return null;
+  }
+
+  // The cursor is at what opens a block over an already-read receiver: `{` or
+  // `distinct {` (the implicit `collect`), or a consumer word and `{` /
+  // `distinct {`. Consumes nothing.
+  private atBlock(): Consumer | null {
+    if (this.at("lbrace")) return "collect";
+    if (this.at("ident", "distinct") && this.peekAt(1)?.type === "lbrace") return "collect";
+    return this.atConsumerBlock();
   }
 
   // The cursor is at a consumer word that opens a block — `<op> {` or
@@ -955,17 +969,19 @@ class Parser {
   }
 
   // `[<op>] [distinct] { <sub> }` over an already-parsed receiver; the cursor is
-  // at the consumer word, or at the `{` of the implicit `collect`.
-  private parseConsumerBlock(receiver: Expr, op: Consumer, inWhere: boolean): OpNode {
+  // at the consumer word, at `distinct`, or at the `{` of the implicit `collect`.
+  // `destination` marks a follow destination block (0.20): its body may carry
+  // `frontier` and `depth`.
+  private parseConsumerBlock(receiver: Expr, op: Consumer, inWhere: boolean, destination = false): OpNode {
     const startPos = receiver.span[0];
-    if (this.at("ident")) this.next(); // the consumer word (absent for `x { … }`)
+    if (this.at("ident") && CONSUMERS.has(this.peek().value)) this.next(); // the consumer word (absent for `x { … }`)
     let distinct = false;
     if (this.at("ident", "distinct")) { this.next(); distinct = true; }
     const lbrace = this.next().pos; // '{'
     const defer = this.deferLookup;
     this.deferLookup = false;
     // The receiver was read at the enclosing depth; the block's rows are one deeper.
-    const body = this.atDepth(this.depth + 1, () => this.parseBody({ top: false, op, liftsAllowed: inWhere && op === "collect" }));
+    const body = this.atDepth(this.depth + 1, () => this.parseBody({ top: false, op, liftsAllowed: inWhere && op === "collect", destination }));
     this.deferLookup = defer;
     if (!this.at("rbrace")) this.fail(`expected '}' to close the ${op} { … } block`);
     this.next();
@@ -977,11 +993,34 @@ class Parser {
       select: body.select,
       orderBy: body.orderBy,
       follow: body.follow,
+      frontier: body.frontier,
+      depth: body.depth,
       values: body.values,
       limit: body.limit,
       offset: body.offset,
     };
     return { kind: "op", span: this.sp(startPos), receiver, op, sub, countCmp: null, distinct: distinct || body.distinct };
+  }
+
+  // A tuple `(e1, e2, …)` at the cursor's `(` (0.20): two or more comma-separated
+  // expressions. A single parenthesized expression is grouping, not a tuple —
+  // the cursor is rewound and null returned (also on a parse error, so the
+  // caller's own reading reports its own error).
+  private tryTuple(): Expr | null {
+    const save = this.pos;
+    const lparen = this.next().pos; // '('
+    try {
+      const items = [this.parseValueExpr()];
+      if (!this.at("comma")) { this.pos = save; return null; }
+      while (this.at("comma")) { this.next(); items.push(this.parseValueExpr()); }
+      if (!this.at("rparen")) this.fail("expected ')' to close the tuple");
+      this.next();
+      return { kind: "tuple", span: [lparen, this.end()], items };
+    } catch (err) {
+      if (!(err instanceof OqxError)) throw err;
+      this.pos = save;
+      return null;
+    }
   }
 
   // A bracket suffix on `recv` (GRAMMAR §4): `[n]` / `[${…}]` is positional —
@@ -1014,7 +1053,7 @@ class Parser {
     this.next();
     const subSpan: Span = [lbracket, this.end()];
     const sub = (parts: Partial<Subquery>): Subquery => ({
-      kind: "subquery", span: subSpan, from: [], where: null, select: [], orderBy: null, follow: null, values: false, limit: null, offset: null, ...parts,
+      kind: "subquery", span: subSpan, from: [], where: null, select: [], orderBy: null, follow: null, frontier: null, depth: null, values: false, limit: null, offset: null, ...parts,
     });
     const bang = this.atOp("!") ? this.next() : null;
     if (index) {
@@ -1110,7 +1149,11 @@ class Parser {
   // consumers, …) are lexed as bare idents, so they must NOT count as a value
   // start, or `where age in 18.. order by name` would read `order` as the bound.
   private canStartValue(): boolean {
-    const t = this.peek();
+    return this.startsValue(this.peek());
+  }
+
+  private startsValue(t: Token | undefined): boolean {
+    if (!t) return false;
     if (t.type === "ident") return !CLAUSE_WORDS.has(t.value);
     if (t.type === "kw") return t.value === "is" || t.value === "not"; // the prefix operators
     if (t.type === "number" || t.type === "string" ||
@@ -1179,14 +1222,16 @@ class Parser {
         // never places two operands side by side, so it cannot begin one here.
         const bang = this.next();
         expr = { kind: "required", span: [start, bang.end], expr };
-      } else if (this.atValueDirective()) {
+      } else if (this.atValueDirective() || this.at("lbrace") || (this.at("ident", "distinct") && this.peekAt(1)?.type === "lbrace")) {
         // A value-position directive, `recv first { … }` — how a bracket chain
-        // prints back; exists/none/count have no value form and are left to
-        // the body's own error.
+        // prints back — or the implicit `collect` of a bare `{ … }` / `distinct
+        // { … }` (0.20: the receiver-block sugar stands wherever a value does,
+        // `size(children { is checked })`). exists/none/count have no value form
+        // and are left to the body's own error.
         if (expr.kind === "lit") this.fail(`\`${describe(expr)}\` is a literal, not a collection`);
-        expr = this.parseConsumerBlock(expr, this.atConsumerBlock()!, false);
+        expr = this.parseConsumerBlock(expr, this.atBlock()!, false);
       } else {
-        break; // a bare `{` is a consumer block boundary — not part of a value expression; anything else ends the chain too
+        break; // anything else ends the chain
       }
     }
     return expr;
@@ -1227,6 +1272,14 @@ class Parser {
     if (t.type === "lparen") {
       this.next();
       const e = this.parseValueExpr();
+      if (this.at("comma")) {
+        // A tuple `(e1, e2, …)` (0.20): two or more elements.
+        const items = [e];
+        while (this.at("comma")) { this.next(); items.push(this.parseValueExpr()); }
+        if (!this.at("rparen")) this.fail("expected ')' to close the tuple");
+        this.next();
+        return { kind: "tuple", span: [t.pos, this.end()], items };
+      }
       if (!this.at("rparen")) this.fail("expected ')'");
       this.next();
       return withSpan(e, [t.pos, this.end()]);

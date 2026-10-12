@@ -83,10 +83,15 @@ fn visit_reports_order_path_clause_and_depth() {
             ("scalar", Some(Clause::Where), 1, 1),
             ("ident", Some(Clause::Where), 1, 2),
             ("follow", Some(Clause::Follow), 1, 1),
-            ("ident", Some(Clause::FollowDestination), 1, 2),
-            ("binary", Some(Clause::FollowWhere), 2, 2),
-            ("ident", Some(Clause::FollowWhere), 2, 3),
-            ("outer", Some(Clause::FollowWhere), 2, 3),
+            // a destination block: its receiver in the frontier row's scope, its
+            // rows one deeper, so its `where` tests a successor there
+            ("op", Some(Clause::FollowDestination), 1, 2),
+            ("ident", Some(Clause::FollowDestination), 1, 3),
+            ("subquery", Some(Clause::FollowDestination), 2, 3),
+            ("scalar", Some(Clause::Where), 2, 4),
+            ("binary", Some(Clause::Where), 2, 5),
+            ("ident", Some(Clause::Where), 2, 6),
+            ("outer", Some(Clause::Where), 2, 6),
             ("order", Some(Clause::OrderBy), 1, 1),
             ("ident", Some(Clause::OrderBy), 1, 2),
             ("lit", Some(Clause::Limit), 0, 1),
@@ -198,10 +203,25 @@ fn print_is_canonical() {
     );
     assert_eq!(canon("x: (1).size() from r"), "select x: (1).size() from r");
     assert_eq!(
-        canon(
-            "id from t follow distinct a, ^t collect { where p == ^id } { depth 3 by id where x frontier y }"
-        ),
-        "select id: id from t follow distinct a, ^t collect { where p == ^id } { where x frontier y depth 3 by id }"
+        canon("id from t follow distinct a, ^t collect { where p == ^id frontier x depth 3 }"),
+        "select id: id from t follow distinct a, ^t collect { where p == ^id frontier x depth 3 }"
+    );
+    assert_eq!(
+        canon("id from t follow kids { depth 2 }, (a, b) { $key: id }"),
+        "select id: id from t follow kids collect { depth 2 }, (a, b) collect { $key: id }"
+    );
+    assert_eq!(
+        canon("select v: (a, (b), c + 1) from r"),
+        "select v: (a, b, c + 1) from r"
+    );
+    assert_eq!(canon("r distinct { n }"), "select distinct n: n from r");
+    assert_eq!(
+        canon("n: r distinct { x } from q"),
+        "select n: r collect distinct { x: x } from q"
+    );
+    assert_eq!(
+        canon("n: size(kids { is ok }) from r"),
+        "select n: size(kids collect { where !!ok }) from r"
     );
     assert_eq!(
         canon("select name, adult: age >= 18 from people where adult"),
@@ -315,18 +335,21 @@ fn builders_make_empty_span_nodes_that_print() {
             build::lit("d_1"),
         )),
     ]));
-    let mut walk = build::follow(vec![oqx::FollowDestination::Relation(build::path(&[
-        "doc", "out",
-    ]))]);
+    let mut capped = build::subquery();
+    capped.depth = Some(2);
+    let mut walk = build::follow(vec![oqx::FollowDestination::Block(Box::new(build::op(
+        build::path(&["doc", "out"]),
+        oqx::Consumer::Collect,
+        capped,
+    )))]);
     walk.distinct = true;
-    walk.depth = Some(2);
     q.follow = Some(walk);
     assert_eq!(q.span, Span::EMPTY);
     assert_eq!(q.limit, None);
     let printed = print_query(&q).unwrap();
     assert_eq!(
         printed,
-        "select _depth: $depth, _edges: doc.out_edges collect { id: $id } from docs where $id == \"d_0\" or $id == \"d_1\" follow distinct doc.out { depth 2 }"
+        "select _depth: $depth, _edges: doc.out_edges collect { id: $id } from docs where $id == \"d_0\" or $id == \"d_1\" follow distinct doc.out collect { depth 2 }"
     );
     assert_eq!(strip_spans(&parse(&printed)), q);
     assert_eq!(

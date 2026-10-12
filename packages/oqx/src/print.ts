@@ -2,7 +2,8 @@
 // Single spaces, double-quoted strings with GRAMMAR §1 escapes, the minimal
 // parentheses the precedence table (GRAMMAR §4) needs, `select` written at the
 // top level, the connectives as the words `and` / `or` (since 0.18; `!` stays
-// `!`), every option in its canonical position. The law both spec runners
+// `!`), every clause in its canonical position (a destination block's
+// `frontier` and `depth` after its `where`, since 0.20). The law both spec runners
 // enforce over every fixture query:
 //
 //   strip(parse(print(parse(q)))) ≡ strip(parse(q))
@@ -65,7 +66,7 @@ const OR = 1, AND = 2, CMP = 3, RANGE = 4, ADD = 5, MUL = 6, UNARY = 7, POSTFIX 
 
 function prec(e: Expr): number {
   switch (e.kind) {
-    case "lit": case "ident": case "outer": case "binding": return PRIMARY;
+    case "lit": case "ident": case "outer": case "binding": case "tuple": return PRIMARY;
     case "member": case "call": case "required": case "op": return POSTFIX;
     case "unary": return UNARY;
     case "binary": return e.op === "+" || e.op === "-" ? ADD : e.op === "*" || e.op === "/" || e.op === "%" ? MUL : CMP;
@@ -113,14 +114,18 @@ function query(q: Query): Out {
   return cat(expr(q.source), ` ${q.consumer}${q.distinct ? " distinct" : ""} `, braces(body(q)));
 }
 
-type Body = Pick<Subquery, "select" | "values" | "from" | "where" | "follow" | "orderBy" | "limit" | "offset">;
+type Body = Pick<Subquery, "select" | "values" | "from" | "where" | "follow" | "orderBy" | "limit" | "offset">
+  & Partial<Pick<Subquery, "frontier" | "depth">>;
 
 // The clauses after `from` (a query) or after the projection (a block): the
-// fixed clause order, each present clause once.
+// fixed clause order, each present clause once. `frontier`/`depth` exist only
+// on a follow destination block's body (a `Query` has neither).
 function tail(b: Omit<Body, "select" | "values">): Out[] {
   const out: Out[] = [];
   for (const e of b.from) out.push(cat("from ", expr(e)));
   if (b.where) out.push(cat("where ", where(b.where)));
+  if (b.frontier) out.push(cat("frontier ", expr(b.frontier)));
+  if (b.depth != null) out.push([`depth ${number(b.depth)}`]);
   if (b.follow) out.push(follow(b.follow));
   if (b.orderBy && b.orderBy.length > 0) out.push(cat("order by ", join(b.orderBy.map(order), ", ")));
   if (b.limit) out.push(cat("limit ", expr(b.limit)));
@@ -170,12 +175,7 @@ function op(o: OpNode): Out {
 
 function follow(f: Follow): Out {
   const dests = join(f.destinations.map((d) => (d.kind === "op" ? op(d) : expr(d))), ", ");
-  const opts: Out[] = [];
-  if (f.where) opts.push(cat("where ", expr(f.where)));
-  if (f.frontier) opts.push(cat("frontier ", expr(f.frontier)));
-  if (f.depth !== null) opts.push([`depth ${f.depth}`]);
-  if (f.by) opts.push(cat("by ", expr(f.by)));
-  return cat(`follow${f.distinct ? " distinct" : ""} `, dests, opts.length > 0 ? cat(" { ", join(opts, " "), " }") : "");
+  return cat(`follow${f.distinct ? " distinct" : ""} `, dests);
 }
 
 // ---- where ------------------------------------------------------------------
@@ -229,6 +229,8 @@ function expr(e: Expr): Out {
     case "in": return cat(operand(e.left, CMP + 1), " in ", operand(e.right, CMP + 1));
     case "range":
       return cat(e.lo ? operand(e.lo, ADD) : "", e.exclusiveEnd ? "..." : "..", e.hi ? operand(e.hi, ADD) : "");
+    // A tuple is self-delimiting; its elements are full expressions.
+    case "tuple": return cat("(", join(e.items.map(expr), ", "), ")");
   }
 }
 

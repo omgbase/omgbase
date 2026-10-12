@@ -2,7 +2,8 @@
 //! `packages/oqx/src/print.ts`): the one source text of a tree. Single spaces,
 //! double-quoted strings with GRAMMAR §1 escapes, the minimal parentheses the
 //! precedence table (GRAMMAR §4) needs, `select` written at the top level, every
-//! option in its canonical position. The law both spec runners enforce over
+//! clause in its canonical position (a destination block's `frontier` and
+//! `depth` after its `where`, since 0.20). The law both spec runners enforce over
 //! every fixture query:
 //!
 //! ```text
@@ -129,9 +130,11 @@ const PRIMARY: u8 = 9;
 
 fn prec(e: &Expr) -> u8 {
     match e {
-        Expr::Lit { .. } | Expr::Ident { .. } | Expr::Outer { .. } | Expr::Binding { .. } => {
-            PRIMARY
-        }
+        Expr::Lit { .. }
+        | Expr::Ident { .. }
+        | Expr::Outer { .. }
+        | Expr::Binding { .. }
+        | Expr::Tuple { .. } => PRIMARY,
         Expr::Member { .. } | Expr::Call { .. } | Expr::Required { .. } | Expr::Op(_) => POSTFIX,
         Expr::Unary { .. } => UNARY,
         Expr::Binary { op, .. } => match op {
@@ -195,6 +198,8 @@ fn query(q: &Query) -> Out {
         clauses.extend(tail(
             &q.from,
             q.r#where.as_ref(),
+            None,
+            None,
             q.follow.as_ref(),
             q.order_by.as_deref(),
             q.limit.as_ref(),
@@ -210,6 +215,8 @@ fn query(q: &Query) -> Out {
     body_clauses.extend(tail(
         &q.from,
         q.r#where.as_ref(),
+        None,
+        None,
         q.follow.as_ref(),
         q.order_by.as_deref(),
         q.limit.as_ref(),
@@ -227,10 +234,14 @@ fn query(q: &Query) -> Out {
 }
 
 // The clauses after `from` (a query) or after the projection (a block): the
-// fixed clause order, each present clause once.
+// fixed clause order, each present clause once. `frontier`/`depth` exist only
+// on a follow destination block's body (a `Query` has neither).
+#[allow(clippy::too_many_arguments)]
 fn tail(
     from: &[Expr],
     r#where: Option<&Where>,
+    frontier: Option<&Expr>,
+    depth: Option<u32>,
     follow_clause: Option<&Follow>,
     order_by: Option<&[OrderSpec]>,
     limit: Option<&Expr>,
@@ -242,6 +253,12 @@ fn tail(
     }
     if let Some(w) = r#where {
         out.push(cat(vec![text("where "), where_tree(w)]));
+    }
+    if let Some(e) = frontier {
+        out.push(cat(vec![text("frontier "), expr(e)]));
+    }
+    if let Some(d) = depth {
+        out.push(text(format!("depth {d}")));
     }
     if let Some(f) = follow_clause {
         out.push(follow(f));
@@ -271,6 +288,8 @@ fn block(s: &Subquery) -> Out {
     clauses.extend(tail(
         &s.from,
         s.r#where.as_ref(),
+        s.frontier.as_ref(),
+        s.depth,
         s.follow.as_ref(),
         s.order_by.as_deref(),
         s.limit.as_ref(),
@@ -347,30 +366,12 @@ fn follow(f: &Follow) -> Out {
             .collect(),
         ", ",
     );
-    let mut opts: Vec<Out> = Vec::new();
-    if let Some(e) = &f.r#where {
-        opts.push(cat(vec![text("where "), expr(e)]));
-    }
-    if let Some(e) = &f.frontier {
-        opts.push(cat(vec![text("frontier "), expr(e)]));
-    }
-    if let Some(d) = f.depth {
-        opts.push(text(format!("depth {d}")));
-    }
-    if let Some(e) = &f.by {
-        opts.push(cat(vec![text("by "), expr(e)]));
-    }
     cat(vec![
         text(format!(
             "follow{} ",
             if f.distinct { " distinct" } else { "" }
         )),
         dests,
-        if opts.is_empty() {
-            Vec::new()
-        } else {
-            cat(vec![text(" { "), join(opts, " "), text(" }")])
-        },
     ])
 }
 
@@ -478,6 +479,12 @@ fn expr(e: &Expr) -> Out {
             lo.as_deref().map_or_else(Vec::new, |l| operand(l, ADD)),
             text(if *exclusive_end { "..." } else { ".." }),
             hi.as_deref().map_or_else(Vec::new, |h| operand(h, ADD)),
+        ]),
+        // A tuple is self-delimiting; its elements are full expressions.
+        Expr::Tuple { items, .. } => cat(vec![
+            text("("),
+            join(items.iter().map(expr).collect(), ", "),
+            text(")"),
         ]),
     }
 }

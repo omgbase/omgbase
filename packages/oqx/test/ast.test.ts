@@ -68,10 +68,13 @@ test("visit: canonical order, path, clause and scope depth", () => {
     ["scalar", "where", 1, 1],
     ["ident", "where", 1, 2],
     ["follow", "follow", 1, 1],
-    ["ident", "follow.destination", 1, 2],
-    ["binary", "follow.where", 2, 2], // a successor is tested one scope deeper than the frontier row
-    ["ident", "follow.where", 2, 3],
-    ["outer", "follow.where", 2, 3],
+    ["op", "follow.destination", 1, 2], // a destination block: its receiver in the frontier row's scope …
+    ["ident", "follow.destination", 1, 3],
+    ["subquery", "follow.destination", 2, 3], // … its rows one deeper, so its `where` tests a successor there
+    ["scalar", "where", 2, 4],
+    ["binary", "where", 2, 5],
+    ["ident", "where", 2, 6],
+    ["outer", "where", 2, 6],
     ["order", "orderBy", 1, 1],
     ["ident", "orderBy", 1, 2],
     ["lit", "limit", 0, 1], // a top-level bound is read at the root scope
@@ -95,11 +98,11 @@ test("CHILDREN names every node kind and every child slot", () => {
   const kinds = Object.keys(CHILDREN).sort();
   assert.deepEqual(kinds, [
     "and", "binary", "binding", "call", "collect", "field", "follow", "ident", "in", "lit", "logical", "member", "not", "op",
-    "or", "order", "outer", "query", "range", "required", "scalar", "subquery", "unary",
+    "or", "order", "outer", "query", "range", "required", "scalar", "subquery", "tuple", "unary",
   ]);
   // Every node reached by the walk has exactly the children the table names
   // (no slot holding a node is missing from the table).
-  const q = parse("select distinct a, b: x.y(1, -2), c: r collect { $it values where k in 1..3 || !(^z == 3) order by m limit 1 offset ^o } from p where q exists { } && !t follow ^p collect { where w }, u { where x frontier y depth 2 by z } order by a desc limit 1 offset 0");
+  const q = parse("select distinct a, b: x.y(1, -2), c: r collect { $it values where k in 1..3 || !(^z == 3) order by m limit 1 offset ^o } from p where q exists { } && !t follow ^p collect { where w }, (u, v) { where x frontier y depth 2 } order by a desc limit 1 offset 0");
   const isNode = (v: unknown): v is AstNode => typeof v === "object" && v !== null && "kind" in v && "span" in v;
   visit(q, {
     enter(node) {
@@ -123,8 +126,8 @@ test("transform maps every expression bottom-up and keeps untouched nodes by ref
   // the source and the select item's `employer` field were not touched
   assert.equal(out.source, q.source);
   assert.equal(out.select[0]!.kind, "collect");
-  const before = q.select[0]!.kind === "collect" ? q.select[0].op.sub.select[0] : null;
-  const after = out.select[0]!.kind === "collect" ? out.select[0].op.sub.select[0] : null;
+  const before = q.select[0]!.kind === "collect" ? q.select[0]!.op.sub.select[0] : null;
+  const after = out.select[0]!.kind === "collect" ? out.select[0]!.op.sub.select[0] : null;
   assert.equal(after, before);
   // an identity transform returns the same object
   assert.equal(transform(q, (e) => e), q);
@@ -149,7 +152,12 @@ test("print is canonical: keyword, spacing, quotes, minimal parentheses", () => 
   assert.equal(canon("people collect { name }"), "select name: name from people");
   assert.equal(canon("r collect { $it values from jobs }"), "r collect { $it: $it values from jobs }");
   assert.equal(canon("x: (1).size() from r"), "select x: (1).size() from r");
-  assert.equal(canon("id from t follow distinct a, ^t collect { where p == ^id } { depth 3 by id where x frontier y }"), "select id: id from t follow distinct a, ^t collect { where p == ^id } { where x frontier y depth 3 by id }");
+  assert.equal(canon("id from t follow distinct a, ^t collect { where p == ^id frontier x depth 3 }"), "select id: id from t follow distinct a, ^t collect { where p == ^id frontier x depth 3 }");
+  assert.equal(canon("id from t follow kids { depth 2 }, (a, b) { $key: id }"), "select id: id from t follow kids collect { depth 2 }, (a, b) collect { $key: id }");
+  assert.equal(canon("select v: (a, (b), c + 1) from r"), "select v: (a, b, c + 1) from r");
+  assert.equal(canon("r distinct { n }"), "select distinct n: n from r");
+  assert.equal(canon("n: r distinct { x } from q"), "select n: r collect distinct { x: x } from q");
+  assert.equal(canon("n: size(kids { is ok }) from r"), "select n: size(kids collect { where !!ok }) from r");
   assert.equal(canon("select name, adult: age >= 18 from people where adult"), "select name: name, adult: age >= 18 from people where adult");
   assert.equal(canon("from p where !jobs count { } > 1 and jobs none { }"), "from p where !jobs count { } > 1 and jobs none { }");
   assert.equal(canon("distinct from r"), "distinct: distinct from r");
@@ -162,7 +170,7 @@ test("print accepts any node", () => {
   assert.equal(print(q.select[0]!), "n: jobs collect { employer: employer }");
   assert.equal(print(q.orderBy![0]!), "name desc");
   if (q.select[0]!.kind !== "collect") throw new Error("unreachable");
-  assert.equal(print(q.select[0].op.sub), "{ employer: employer }");
+  assert.equal(print(q.select[0]!.op.sub), "{ employer: employer }");
   assert.equal(print(build.subquery()), "{ }");
 });
 
@@ -185,7 +193,7 @@ test("resolveAliases substitutes once, keeps untouched nodes, and is what the en
   const plain = parse("from p where a");
   assert.equal(resolveAliases(plain), plain); // nothing to resolve: the same object
   const people = [{ name: "Bob", jobs: [{ employer: "x" }] }, { name: "Al", jobs: [] }];
-  assert.deepEqual(run(q, { roots: { people } }), { consumer: "collect", rows: [{ name: "BOB", cur: [{ employer: "x" }] }] });
+  assert.deepEqual(run(q, { roots: { people } }), { consumer: "collect", rows: [{ name: "BOB", cur: [{ employer: "x" }] }], single: false });
   assert.throws(() => resolveAliases(build.query(build.ident("p"), {
     select: [build.field("a", build.ident("b")), build.field("b", build.ident("a"))],
     where: build.scalar(build.ident("a")),
@@ -199,7 +207,7 @@ test("toJSON stamps the language version on the plain-data tree", () => {
   const j = toJSON(q);
   assert.equal(j.oqx, LANGUAGE_VERSION);
   assert.equal(j.kind, "query");
-  assert.deepEqual(JSON.parse(JSON.stringify(j)), { oqx: "0.19", ...q });
+  assert.deepEqual(JSON.parse(JSON.stringify(j)), { oqx: "0.20", ...q });
 });
 
 test("builders make nodes with the empty span and materialized fields, and print them", () => {
@@ -209,10 +217,10 @@ test("builders make nodes with the empty span and materialized fields, and print
       build.collect("_edges", build.op(build.path("doc", "out_edges"), "collect", build.subquery({ select: [build.field("id", build.ident("$id"))] }))),
     ],
     where: build.or([build.scalar(build.binary("==", build.ident("$id"), build.lit("d_0"))), build.scalar(build.binary("==", build.ident("$id"), build.lit("d_1")))]),
-    follow: build.follow([build.path("doc", "out")], { distinct: true, depth: 2 }),
+    follow: build.follow([build.op(build.path("doc", "out"), "collect", build.subquery({ depth: 2 }))], { distinct: true }),
   });
   assert.deepEqual(q.span, [0, 0]);
   assert.equal(q.limit, null);
-  assert.equal(print(q), 'select _depth: $depth, _edges: doc.out_edges collect { id: $id } from docs where $id == "d_0" or $id == "d_1" follow distinct doc.out { depth 2 }');
+  assert.equal(print(q), 'select _depth: $depth, _edges: doc.out_edges collect { id: $id } from docs where $id == "d_0" or $id == "d_1" follow distinct doc.out collect { depth 2 }');
   assert.deepEqual(stripSpans(parse(print(q))), stripSpans(q));
 });

@@ -392,6 +392,7 @@ pub fn expr_reads_scope_in(e: &Expr, at: usize, up_to: usize) -> bool {
                     .as_deref()
                     .is_some_and(|x| expr_reads_scope_in(x, at, up_to))
         }
+        Expr::Tuple { items, .. } => items.iter().any(|x| expr_reads_scope_in(x, at, up_to)),
     }
 }
 
@@ -435,6 +436,12 @@ fn sub_reads_scope_in(sub: &Subquery, at: usize, up_to: usize) -> bool {
             .offset
             .as_ref()
             .is_some_and(|e| expr_reads_scope_in(e, at, up_to))
+        // a destination block's `frontier` is read one level out, under the
+        // walk's enclosing scope (§20)
+        || sub
+            .frontier
+            .as_ref()
+            .is_some_and(|e| expr_reads_scope_in(e, at.saturating_sub(1), up_to))
         || sub
             .follow
             .as_ref()
@@ -445,16 +452,7 @@ fn follow_reads_scope_in(f: &Follow, at: usize, up_to: usize) -> bool {
     f.destinations.iter().any(|d| match d {
         FollowDestination::Relation(e) => expr_reads_scope_in(e, at, up_to),
         FollowDestination::Block(op) => op_reads_scope_in(op, at, up_to),
-    }) || f
-        .r#where
-        .as_ref()
-        .is_some_and(|e| expr_reads_scope_in(e, at + 1, up_to))
-        || f.frontier
-            .as_ref()
-            .is_some_and(|e| expr_reads_scope_in(e, at, up_to))
-        || f.by
-            .as_ref()
-            .is_some_and(|e| expr_reads_scope_in(e, at, up_to))
+    })
 }
 
 /// Does `e` read the scope it is evaluated in (a bare identifier anywhere)?
@@ -480,6 +478,7 @@ pub fn expr_raise_free(e: &Expr, ctx: &RuleContext) -> bool {
             lo.as_deref().is_none_or(|x| expr_raise_free(x, ctx))
                 && hi.as_deref().is_none_or(|x| expr_raise_free(x, ctx))
         }
+        Expr::Tuple { items, .. } => items.iter().all(|x| expr_raise_free(x, ctx)),
     }
 }
 

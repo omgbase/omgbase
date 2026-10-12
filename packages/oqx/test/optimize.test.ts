@@ -296,15 +296,19 @@ test("a receiver that varies per outer row is never indexed; one that is the sam
   assert.equal(count(r2.events, "index"), 1, "the same array seen twice is indexed once");
   assert.equal(count(r2.events, "probe"), 2, "probed from the second sight on");
 
-  // a scalar receiver coerces to one row; a statically stable one is still probed (a one-row index is harmless)
-  const r3 = both('select id from varying where ^one exists { where $it == ^id }', { varying, one: 1 });
+  // a one-element collection as a statically stable receiver is still probed (a one-row index is harmless)
+  const r3 = both('select id from varying where ^one exists { where $it == ^id }', { varying, one: [1] });
   assert.deepEqual(value(r3), [{ id: 1 }, { id: 1 }]);
   assert.equal(count(r3.events, "index"), 1);
-  // …while a per-row scalar receiver is never a collection to index
-  const r4 = both('select id from varying where id exists { where $it == ^id }', { varying });
+  // …while a per-row receiver that is a fresh one-element list is never a collection to index
+  const r4 = both('select id from varying where list(id) exists { where $it == ^id }', { varying });
   assert.deepEqual(value(r4), [{ id: 1 }, { id: 2 }, { id: 1 }]);
   assert.equal(count(r4.events, "probe"), 0);
-  assert.ok(r4.events.some((e) => e.kind === "fallback" && e.reason === "not-a-collection"));
+  assert.ok(r4.events.some((e) => e.kind === "fallback" && e.reason === "unstable"));
+  // …and an absent per-row receiver is not a collection at all (no rows, no index)
+  const r5 = both('select id from varying where nope exists { where $it == ^id }', { varying });
+  assert.deepEqual(value(r5), []);
+  assert.ok(r5.events.some((e) => e.kind === "fallback" && e.reason === "not-a-collection"));
 });
 
 test("a context whose root() yields a fresh array each call is still indexed when the receiver is statically stable", () => {
@@ -363,7 +367,7 @@ test("IndexedCollection keys under §5 equality (absent ≡ null; NaN matches no
     assert.deepEqual(planned.run(q, []), run(q, { roots: { t: rows } }), src);
   }
   const nan = parseTemplate(["id from t where tag == ", ""], 1);
-  assert.deepEqual(planned.run(nan, [NaN]), { consumer: "collect", rows: [] });
+  assert.deepEqual(planned.run(nan, [NaN]), { consumer: "collect", rows: [], single: false });
   // the plan's residual context still resolves the collection's own root for nested blocks
   const q = parse('id, twin: ^t first { id values where tag == ^tag && id != ^id } from t where tag == null');
   assert.deepEqual(planned.run(q, []), run(q, { roots: { t: rows } }));
@@ -387,7 +391,6 @@ function lazyOrdersContext(): DataContext & { walks: number; probes: unknown[] }
     root(name: string) { return name === "orders" ? self.handle : base.root(name); },
     get(row: unknown, key: string) { return base.get(row, key); },
     toRows(v: unknown) { return base.toRows(v); },
-    identity(row: unknown) { return base.identity(row); },
     callFunction(name: string, args: unknown[]) { return base.callFunction(name, args); },
     callMethod(name: string, recv: unknown, args: unknown[]) { return base.callMethod(name, recv, args); },
     indexFor(collection: unknown, path: readonly string[]) {

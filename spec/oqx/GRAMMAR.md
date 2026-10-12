@@ -32,11 +32,14 @@ Keywords and identifiers are **case-sensitive**; `FROM` is an identifier
 
 **Contextual words** are identifiers that act as syntax only in position:
 `collect exists none count first single order by asc desc follow distinct
-frontier depth by in values limit offset`. Outside that position they are field
-names (`limit from r`, `order from r`, `select follow from r`). A contextual
-word that starts a clause but does not complete it is an error naming what the
-clause needs (`order age` → `order by <expr>`; `follow` alone → a relation;
-`limit x` → a number, binding, or `^name`) [`clause-order`, `limit-offset`].
+frontier depth in values limit offset`. Outside that position they are field
+names (`limit from r`, `order from r`, `select follow from r`; `frontier` and
+`depth` are clauses only inside a `follow` destination block, §`follow`, and
+field names everywhere else). A contextual word that starts a clause but does
+not complete it is an error naming what the clause needs (`order age` → `order
+by <expr>`; `follow` alone → a relation; `limit x` → a number, binding, or
+`^name`; `where x depth 2` outside a destination block → names the block)
+[`clause-order`, `limit-offset`, `follow`].
 
 `true`, `false`, and `null` are **literals in every position**: a value, and
 never a receiver or relation (`true exists { … }`, `follow null` are parse
@@ -46,8 +49,9 @@ errors `… is a literal, not a collection`). A row property literally named
 **Reserved words** (the one list): the keywords `from where select is not and
 or` and the literal words `true false null`. A row property with one of these
 names is unreachable by bare name. Every other word — including the contextual
-`in` (omgbase's `docs` have an `in` relation: `follow in`, `in exists { }`) and
-the consumer words — is a field name outside its position. [`sugar`]
+`in` (a row may own a relation named `in`: `follow in`, `in exists { }`), `limit`
+and `order` (`select limit, order from r`) and the consumer words — is a field
+name outside its position. [`sugar`, `clause-order`]
 
 ### Bindings
 
@@ -65,7 +69,7 @@ A query is one of two forms:
 ```
 query      = body                      ; the body's `from` is the source ("collect")
            | receiver consumer [ "distinct" ] "{" body "}"    ; directive form
-           | receiver "{" body "}"                             ; ≡ receiver collect { body }   (0.17)
+           | receiver [ "distinct" ] "{" body "}"              ; ≡ receiver collect [distinct] { body }   (0.17; `distinct` 0.20)
            | receiver bracket                                   ; `people[age > 40]` ≡ people first { where age > 40 }   (0.17)
 ```
 
@@ -74,18 +78,17 @@ may follow its closing brace. The **body form** always has the `collect`
 consumer and must contain `from`.
 
 **A receiver block without a consumer is `collect`** (since 0.17): `x { … }` ≡
-`x collect { … }` wherever a directive may stand — the top-level directive form
-(`docs { age > 15 }` as a whole query), select position (`js: jobs { employer }`)
-and where position (`where jobs { ^e: employer }`). The `distinct` modifier still
-needs the consumer word before it or inside the body (`x distinct { … }` is the
-parse error it was; write `x collect distinct { … }` or `x { select distinct … }`).
-**Carve-out:** in `follow` destination position a brace after the **last**
-destination is the options block (`follow children { depth 2 }` is unchanged) —
-unless the destination's receiver is headed by an outer reference, which can
-never be a plain destination: `follow ^docs { where … }` is the destination
-block `follow ^docs collect { where … }` (since 0.19, §`follow`). A bracket
-chain (§4) whose outermost node is a directive may also be the whole query:
-`people[age > 40]` is `people first { where age > 40 }`. [`sugar`, `ast`]
+`x collect { … }` **wherever a value expression is accepted** (since 0.20 without
+exception) — the top-level directive form (`docs { age > 15 }` as a whole
+query), select position (`js: jobs { employer }`), where position (`where jobs {
+^e: employer }`), a `follow` destination (`follow children { depth 2 }`, §`follow`),
+a function argument (`size(children { is checked })`, `refs(out_links { dst_id
+values })`), an operand (`kids { ok }.size() > 1`). `x distinct { … }` ≡ `x collect
+distinct { … }` (since 0.20). The former carve-out — a brace after a `follow`
+destination opening an options block — is gone with the options block (§`follow`).
+A bracket chain (§4) whose outermost node is a directive may also be the whole
+query: `people[age > 40]` is `people first { where age > 40 }`. [`sugar`, `ast`,
+`follow`]
 
 ### The fixed clause order (ADR-020)
 
@@ -93,11 +96,15 @@ A body is a sequence of clauses. Each appears **at most once**, in exactly this
 order:
 
 ```
-select  from  where  follow  order by  limit  offset
+select  from  where  [ frontier  depth ]  follow  order by  limit  offset
 ```
 
+`frontier` and `depth` are clauses of a **`follow` destination block only**
+(§`follow`), where they sit after `where`; every other body has the seven.
+
 - A clause out of order is a parse error naming both clauses and the order:
-  `` `select` must come before `from` — OQX clause order is select, from, where, follow, order by, limit, offset ``.
+  `` `select` must come before `from` — OQX clause order is select, from, where, follow, order by, limit, offset `` (inside a destination block the sentence
+  names its two extra clauses: `… where, frontier, depth, follow, …`).
 - A repeated clause is `` duplicate `<clause>` clause ``.
 - Every clause is optional, except that a top-level body must have `from`
   (`a query must name its source …`). Inside a consumer block, `from E`
@@ -255,60 +262,55 @@ group    = "(" where ")"                       ; a predicate group …
 ### `follow` — recursion
 
 ```
-follow         = "follow" [ "distinct" ] destination { "," destination } [ "{" { option } "}" ]
-destination    = receiver                                                   ; a relation of the current row (never headed by an outer reference)
-               | receiver ("collect" | "first" | "single") [ "distinct" ] "{" body "}"   ; a destination block
-               | outer-receiver "{" body "}"                                ; ≡ outer-receiver collect { body }   (0.19)
-outer-receiver = scoperef ident { "." ident }                               ; a receiver whose head is an outer reference: ^docs, ^^root.rel, 0^docs, ^$it.docs
-option         = "where" expr | "frontier" expr | "depth" integer | "by" expr
+follow         = "follow" [ "distinct" ] destination { "," destination }
+destination    = receiver                                                   ; a plain destination: a relation of the current row (never headed by an outer reference)
+               | receiver [ "distinct" ] "{" body "}"                       ; a destination block, ≡ receiver collect [distinct] { body }
+               | receiver ("collect" | "first" | "single") [ "distinct" ] "{" body "}"   ; a destination block with its consumer
 ```
 
-`follow` is a clause when an identifier, a binding, or a scope reference (`^`,
-`0^`) follows the word; otherwise it is a field name (`select follow from r`).
-**A brace after a destination reads by the destination's receiver** (since
-0.19). A receiver that *could* be a relation of the current row — a bare or
-dotted name (`children`, `doc.out`), a free-function call (`refs(before)`,
-`entries(kids)`), a binding — keeps the 0.17 carve-out: a `{` after it opens
-the **options block** when it is the last destination (`follow children { depth
-2 }` is a depth cap, `follow a, children { depth 2 }` too; `follow children {
-age > 1 }` and `follow a, children { id != 1 }` are the options error `…
-expected where/frontier/depth/by …`, which also says a destination block needs
-its consumer). A receiver whose **head is an outer reference** (`^docs`,
-`^^root.rel`, `0^docs`, `^$it.docs` — with any `.member` chain) can never be a
-plain destination, so a `{` right after it opens a **destination block** with
-the implicit `collect`: `follow ^docs { where ^$path in list(after) }` is
-exactly `follow ^docs collect { where ^$path in list(after) }`, with the 0.17
-body rules (`follow ^docs { ^$path in list(after) }` is where-first; `follow
-^docs { title where … }` projects). An options block may still follow a
-trailing destination block, implicit or explicit: `follow ^docs { where … } {
-depth 2 }`. [`follow`, `sugar`, `ast`] After `follow`, **`distinct` is a
-keyword**: `follow distinct <relation>` sets the flag, and `follow distinct {`
-or `follow distinct` at the end of the input is a parse error `` expected a
-relation after `follow distinct` ``. A relation literally named `distinct` is
-therefore not supported.
+`follow` is a clause when an identifier, a binding, a scope reference (`^`,
+`0^`) or a tuple's `(` follows the word; otherwise it is a field name (`select
+follow from r`). After `follow`, **`distinct` is a keyword**: `follow distinct
+<relation>` sets the flag, and `follow distinct {` or `follow distinct` at the
+end of the input is a parse error `` expected a relation after `follow
+distinct` ``. A relation literally named `distinct` is therefore not supported.
 
 **Destinations** (since 0.14) are one or more, comma-separated; the walk is
 their union (SEMANTICS §20). A **plain destination** is a relation **of the
-current row**: an outer reference with no block (`follow ^rel`, `follow
-children, ^others`, `follow distinct ^rel`) is a parse error — `` `follow`
-takes a relation of the current row (`follow <relation>`); an outer reference
-walks a root collection only as a destination block — `follow ^docs { where …
-}` or `follow ^docs collect { … }` `` — and so is a literal word (`follow
-null`). A **destination block** is a receiver followed by `collect`, `first` or
-`single` (optionally `distinct`) and `{` — or, when the receiver is headed by
-an outer reference, by `{` alone (the implicit `collect`, since 0.19): an
-ordinary select-position block (§`select`), re-read per frontier row with `^`
-bound to that row. Its receiver **may** be an outer reference — `follow
-^people collect { where manager == ^id }`, `follow ^people { where manager ==
-^id }` (or `follow 0^people { … }`, §4) reads the named root `people` from a
+current row** — a receiver (§5): a dotted name, a free-function call
+(`entries(kids)`), a binding, or a tuple `(before, after)` (one destination over
+the union of its elements, §4). An outer reference with no block (`follow ^rel`,
+`follow children, ^others`) is a parse error — `` `follow` takes a relation of
+the current row (`follow <relation>`); an outer reference walks a root
+collection only as a destination block — `follow ^docs { where … }` or `follow
+^docs collect { … }` `` — and so is a literal word (`follow null`). A comma not
+followed by a destination is a parse error (`` expected a relation after ',' ``).
+
+**A brace after ANY destination opens that destination's block** (since 0.20;
+there is no options block any more): `follow children { depth 2 }`, `follow a,
+children { id != "root" }`, `follow entries(kids) { where id != "a" }`, `follow
+^docs { where ^path in list(after) }`, `follow (before, after) { depth 2 }`. A
+**destination block** is `receiver [distinct] { body }` — the implicit `collect`
+of §2 — or `receiver collect|first|single [distinct] { body }`: an ordinary
+select-position block (§`select`) with the 0.17 body rules (a leading
+predicate is its `where`: `follow children { id > 1 }`; a projection shapes the
+rows it yields), re-read per frontier row with `^` bound to that row. Its
+receiver **may** be an outer reference — `follow ^people { where manager == ^id
+}` (or `follow 0^people { … }`, §4) reads the named root `people` from a
 top-level walk — since the block, not the receiver, is what varies per row.
-`exists`, `none` and `count` are not destinations, with or without a caret
-(`` a follow destination must use collect/first/single, not `exists` … ``). A
-comma not followed by a destination is a parse error (`` expected a relation
-after ',' ``). The options block, when present, follows the last destination
-(or that destination's block). `depth` must be an integer literal in 1..8.
-Each option at most once; any other word in the block is a parse error.
-Semantics in SEMANTICS §follow. [`follow`, `errors-parse`]
+`exists`, `none` and `count` are not destinations, with or without a caret (`` a
+follow destination must use collect/first/single, not `exists` … ``).
+
+A destination block's body admits two clauses no other block has, in the fixed
+order after `where` (§2): **`frontier <expr>`** and **`depth <integer>`**, each
+at most once (`` duplicate `depth` clause ``). `depth` must be an integer literal
+in 1..8 (`follow depth must be an integer between 1 and 8`); `frontier` takes any
+value expression. Outside a destination block the two words are field names
+(`select depth, frontier from r`), and `where x depth 2` is a parse error naming
+the destination block. Semantics in SEMANTICS §20. The former options `where P`
+is simply the block's `where`; the former `by E` is gone — identity is `$key`
+(SEMANTICS §16), projected as `{ $key: expr }` when a block needs to name it.
+[`follow`, `sugar`, `ast`, `errors-parse`]
 
 ### `order by`
 
@@ -341,8 +343,8 @@ top-level row is `limit ^n`). The value is checked at evaluation time
 
 ## 4. Expressions
 
-Value position (`select`, `order by`, `from`, function arguments, follow
-options) accepts the full grammar. Precedence, loosest to tightest:
+Value position (`select`, `order by`, `from`, function arguments, a destination
+block's `frontier`) accepts the full grammar. Precedence, loosest to tightest:
 
 | Level | Operators | Notes |
 | --- | --- | --- |
@@ -353,8 +355,8 @@ options) accepts the full grammar. Precedence, loosest to tightest:
 | add | `+ -` | left-assoc |
 | mul | `* / %` | left-assoc |
 | unary | `!` `-` `is` `not` | prefix, right-assoc (`--5`); `!` has this same precedence in `where` (§3). `is x` ≡ `!!x`, `not x` ≡ `!x` — pure sugar, desugared in the parser (since 0.17) |
-| postfix | `.name` `.name(args)` `name(args)` `x!` `x[…]` `x <consumer> { … }` | navigation, method call, free-function call, the required operator, a bracket lookup, a value-position directive — left to right, tightest of all: `refs(c)[0]!.name` requires the lookup, `refs(c)[0].name!` the name |
-| primary | literal, identifier, `^…name`, `N^name`, binding, `( expr )` | `N^name` is the absolute spelling of an outer reference (below; since 0.18) |
+| postfix | `.name` `.name(args)` `name(args)` `x!` `x[…]` `x <consumer> { … }` `x { … }` `x distinct { … }` | navigation, method call, free-function call, the required operator, a bracket lookup, a value-position directive (the bare brace is the implicit `collect`, since 0.20 in every value position) — left to right, tightest of all: `refs(c)[0]!.name` requires the lookup, `refs(c)[0].name!` the name |
+| primary | literal, identifier, `^…name`, `N^name`, binding, `( expr )`, `( expr, expr, … )` | `N^name` is the absolute spelling of an outer reference (below; since 0.18); two or more comma-separated expressions in parentheses are a **tuple** (below; since 0.20), one is grouping |
 
 ```
 expr     = or
@@ -373,6 +375,7 @@ suffix   = "." ident [ "(" args ")" ]                       ; navigation, method
          | "!"                                               ; required (0.17)
          | bracket                                           ; lookup (0.17)
          | ("collect" | "first" | "single") [ "distinct" ] "{" body "}"   ; value-position directive (0.17)
+         | [ "distinct" ] "{" body "}"                        ; ≡ collect [distinct] { body }   (0.20)
 bracket  = "[" ( integer | binding ) "]" [ "!" ]            ; positional
          | "[" where "]" [ "!" ]                             ; predicate
 primary  = number | string | "true" | "false" | "null"
@@ -380,7 +383,8 @@ primary  = number | string | "true" | "false" | "null"
          | scoperef ident                            ; an outer reference: `^^name` exactly N scopes out,
                                                      ; `N^name` the scope at depth N (below)
          | binding
-         | "(" expr ")"
+         | "(" expr ")"                              ; grouping — no node
+         | "(" expr "," expr { "," expr } ")"        ; a tuple (0.20)
 args     = [ expr { "," expr } ]
 ```
 
@@ -392,8 +396,20 @@ not begin a value, so `where age in 18.. order by name` parses as intended and
 (`a range needs at least one bound`) rather than a range up to `order`.
 [`ranges`, `where`]
 
-There is no array or object literal; bound values (bindings) and named roots
-are how collections enter a query.
+There is no array or object literal; bound values (bindings), named roots and
+tuples are how collections enter a query.
+
+### Tuples (since 0.20)
+
+`(e1, e2, …)` with **two or more** comma-separated expressions is a tuple: a
+value — the elements' values concatenated with one level of flattening
+(SEMANTICS §3b) — and a receiver (§5): `(mom, dad, siblings) { name values }`,
+`"x" in (tags, aliases)`, `size((a, b))`, `follow (before, after) { depth 2 }`,
+`where (a, b) count { } == 2`, `where (tags, aliases).size() > 1`. One expression
+in parentheses is grouping and leaves no node (`(a)` is `a`, `size((xs))` is
+`size(xs)`). A tuple that is not closed is a parse error `` expected ')' to
+close the tuple ``. The AST node is `tuple` (AST.md); `print` keeps the
+parentheses. [`tuples`, `ast`]
 
 ### Outer references: relative `^…name` and absolute `N^name` (since 0.18)
 
@@ -466,10 +482,12 @@ directive, and the directive's span covers the sugar as written.
 
 ### Value-position directives (since 0.17)
 
-`recv first { … }`, `recv single { … }` and `recv collect { … }` may stand
+`recv first { … }`, `recv single { … }` and `recv collect { … }` — and the
+implicit forms `recv { … }` / `recv distinct { … }` (since 0.20) — may stand
 where a value stands — as the receiver of a navigation (`jobs first { }.pay`), an
-operand (`jobs first { }.pay > 2`), a required value (`jobs single { }!`) — and
-may themselves be navigated or bracketed further. This is how the canonical
+operand (`jobs first { }.pay > 2`), a required value (`jobs single { }!`), a
+function argument (`size(children { is checked })`) — and may themselves be
+navigated or bracketed further. This is how the canonical
 printer writes a bracket chain back (`jobs[0].pay` prints as
 `jobs first { offset 0 }.pay`). `exists`/`none`/`count` are predicates and have
 no value form. In `where`, a value-position directive is a scalar operand only
@@ -483,15 +501,16 @@ is deliberately narrower than an expression:
 ```
 receiver = binding
          | [ scoperef ] ident [ "(" args ")" ] { "." ident }
+         | "(" expr "," expr { "," expr } ")"                  ; a tuple (0.20)
 ```
 
-That is: a binding; or a dotted navigation whose head is a bare name, an outer
+That is: a binding; a dotted navigation whose head is a bare name, an outer
 reference (`^people`, `^^root.rel`, `0^people`, `0^$it.docs`), or a
-free-function call (`entries(prefs)`).
+free-function call (`entries(prefs)`); or a tuple (`(mom, dad) { name }`, §4).
 Method calls, operators, and the literal words `true`/`false`/`null` are not
 receivers. A directive is recognized only when the receiver is immediately
-followed by a consumer word and then `{` (or `distinct {`); otherwise the tokens
-are re-read as an ordinary expression. A dangling `.` in a receiver or a value
+followed by `{`, `distinct {`, or a consumer word and then `{` (or `distinct
+{`); otherwise the tokens are re-read as an ordinary expression. A dangling `.` in a receiver or a value
 is the same parse error (`expected a property name after '.'`).
 [`consumers`, `outer-refs`, `entries`, `errors-parse`]
 
@@ -503,14 +522,16 @@ Every failure is an `OqxError` with a `stage`:
 - `parse` — everything the grammar above rejects, including clause order,
   duplicates, missing `where`, projection naming (unnamed and duplicate items),
   a comma after a where-first predicate, misplaced lifts, alias cycles and
-  forward references, `follow` options, chained comparisons, a top-level
+  forward references, a `frontier`/`depth` clause outside a destination block
+  or out of range, an unclosed tuple, chained comparisons, a top-level
   `limit ^n`, an absolute reference to a scope that does not enclose the
   block (`scope N does not enclose this block …`), `count` comparisons, a
   negative or fractional index, a bare `first`/`single` in `where`.
 - `eval` — unknown functions/methods, `single` matching several rows, a required
   value that is absent (`` `x!` is absent ``), an invalid `limit`/`offset` value
   (including a bracket index binding), `follow` inside a where-position
-  directive.
+  directive, a scalar in row position (`` `s` is a string ("abc"), not a
+  collection or an object ``, SEMANTICS §3).
 
 Messages carry a `(at offset N)` suffix for lex/parse errors; `N` counts
 Unicode code points over the raw source, the unit of every AST span (AST.md

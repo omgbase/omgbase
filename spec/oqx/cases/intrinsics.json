@@ -3,212 +3,898 @@
   "cases": [
     {
       "name": "$depth and $ordinal project the row's own property outside a follow",
-      "tags": ["intrinsics", "scopes"],
+      "tags": [
+        "intrinsics",
+        "scopes"
+      ],
       "notes": "SEMANTICS §2 (0.13): the recursion intrinsics are metadata only on a follow occurrence; anywhere else the name is an ordinary property read. Before 0.13 the six names read absent everywhere they were not metadata, shadowing the row.",
-      "roots": { "rows": [ { "id": "a", "$depth": 3, "$ordinal": 7 }, { "id": "b", "$depth": 1 }, { "id": "c" } ] },
+      "roots": {
+        "rows": [
+          {
+            "id": "a",
+            "$depth": 3,
+            "$ordinal": 7
+          },
+          {
+            "id": "b",
+            "$depth": 1
+          },
+          {
+            "id": "c"
+          }
+        ]
+      },
       "query": "id, d: $depth, o: $ordinal from rows",
-      "expect": { "result": [ { "id": "a", "d": 3, "o": 7 }, { "id": "b", "d": 1 }, { "id": "c" } ] }
+      "expect": {
+        "result": [
+          {
+            "id": "a",
+            "d": 3,
+            "o": 7
+          },
+          {
+            "id": "b",
+            "d": 1
+          },
+          {
+            "id": "c"
+          }
+        ]
+      }
     },
     {
       "name": "$stop, $leaf and $frontier are ordinary properties outside a follow",
-      "tags": ["intrinsics", "scopes"],
-      "roots": { "xs": [ { "id": 1, "$stop": "own", "$leaf": true, "$frontier": false } ] },
+      "tags": [
+        "intrinsics",
+        "scopes"
+      ],
+      "roots": {
+        "xs": [
+          {
+            "id": 1,
+            "$stop": "own",
+            "$leaf": true,
+            "$frontier": false
+          }
+        ]
+      },
       "query": "s: $stop, l: $leaf, f: $frontier from xs",
-      "expect": { "result": [ { "s": "own", "l": true, "f": false } ] }
+      "expect": {
+        "result": [
+          {
+            "s": "own",
+            "l": true,
+            "f": false
+          }
+        ]
+      }
     },
     {
-      "name": "$key outside entries() reads the row's $key property",
-      "tags": ["intrinsics", "entries", "scopes"],
-      "notes": "§21: `$key` is metadata only in an entry scope. An ordinary row that happens to own a `$key` property exposes it; one without reads absent.",
-      "roots": { "xs": [ { "$key": "own" }, { } ] },
+      "name": "$key outside entries() is the row's identity, never a property",
+      "tags": [
+        "intrinsics",
+        "entries",
+        "scopes"
+      ],
+      "notes": "§16, since 0.20: `$key` is the identity on every row — the whole object under the default structural identity — so a row that happens to own a `$key` property does not expose it by that name.",
+      "roots": {
+        "xs": [
+          {
+            "$key": "own"
+          },
+          {}
+        ]
+      },
       "query": "k: $key from xs",
-      "expect": { "result": [ { "k": "own" }, { } ] }
+      "expect": {
+        "result": [
+          {
+            "k": {
+              "$key": "own"
+            }
+          },
+          {
+            "k": {}
+          }
+        ]
+      }
     },
     {
       "name": "intrinsic names inside a nested collect read the nested row's property",
-      "tags": ["intrinsics", "nested", "scopes"],
-      "roots": { "xs": [ { "id": "p", "kids": [ { "id": "k1", "$depth": 5, "$ordinal": 2 }, { "id": "k2" } ] } ] },
+      "tags": [
+        "intrinsics",
+        "nested",
+        "scopes"
+      ],
+      "roots": {
+        "xs": [
+          {
+            "id": "p",
+            "kids": [
+              {
+                "id": "k1",
+                "$depth": 5,
+                "$ordinal": 2
+              },
+              {
+                "id": "k2"
+              }
+            ]
+          }
+        ]
+      },
       "query": "id, kids: kids collect { id, d: $depth, o: $ordinal } from xs",
-      "expect": { "result": [ { "id": "p", "kids": [ { "id": "k1", "d": 5, "o": 2 }, { "id": "k2" } ] } ] }
+      "expect": {
+        "result": [
+          {
+            "id": "p",
+            "kids": [
+              {
+                "id": "k1",
+                "d": 5,
+                "o": 2
+              },
+              {
+                "id": "k2"
+              }
+            ]
+          }
+        ]
+      }
     },
     {
       "name": "a where on $depth without a follow is an ordinary predicate",
-      "tags": ["intrinsics", "where", "scopes"],
+      "tags": [
+        "intrinsics",
+        "where",
+        "scopes"
+      ],
       "notes": "The seed/post-walk split of §20 exists only when the query has a `follow`; here `$depth > 2` is a plain property comparison over each row.",
-      "roots": { "rows": [ { "id": "a", "$depth": 3, "$ordinal": 7 }, { "id": "b", "$depth": 1 }, { "id": "c" } ] },
+      "roots": {
+        "rows": [
+          {
+            "id": "a",
+            "$depth": 3,
+            "$ordinal": 7
+          },
+          {
+            "id": "b",
+            "$depth": 1
+          },
+          {
+            "id": "c"
+          }
+        ]
+      },
       "query": "id values from rows where $depth > 2",
-      "expect": { "result": ["a"] }
+      "expect": {
+        "result": [
+          "a"
+        ]
+      }
     },
     {
       "name": "a where on $depth without a follow: a row lacking the property never matches",
-      "tags": ["intrinsics", "where", "absent"],
-      "roots": { "rows": [ { "id": "a", "$depth": 3, "$ordinal": 7 }, { "id": "b", "$depth": 1 }, { "id": "c" } ] },
+      "tags": [
+        "intrinsics",
+        "where",
+        "absent"
+      ],
+      "roots": {
+        "rows": [
+          {
+            "id": "a",
+            "$depth": 3,
+            "$ordinal": 7
+          },
+          {
+            "id": "b",
+            "$depth": 1
+          },
+          {
+            "id": "c"
+          }
+        ]
+      },
       "query": "id values from rows where $depth < 5",
-      "expect": { "result": ["a", "b"] }
+      "expect": {
+        "result": [
+          "a",
+          "b"
+        ]
+      }
     },
     {
       "name": "a row without such properties still reads absent",
-      "tags": ["intrinsics", "absent", "scopes"],
-      "roots": { "ys": [ { "id": 1 } ] },
-      "query": "d: $depth, o: $ordinal, s: $stop, l: $leaf, f: $frontier, k: $key from ys",
-      "expect": { "result": [ { } ] }
+      "tags": [
+        "intrinsics",
+        "absent",
+        "scopes"
+      ],
+      "roots": {
+        "ys": [
+          {
+            "id": 1
+          }
+        ]
+      },
+      "query": "d: $depth, o: $ordinal, s: $stop, l: $leaf, f: $frontier from ys",
+      "expect": {
+        "result": [
+          {}
+        ]
+      },
+      "notes": "The recursion intrinsics are metadata only on a follow occurrence; elsewhere they are property reads. (`$key`, the identity, is never absent on a row — see the entries suite.)"
     },
     {
       "name": "order by $ordinal outside a follow sorts by the property, absent last",
-      "tags": ["intrinsics", "order", "absent"],
+      "tags": [
+        "intrinsics",
+        "order",
+        "absent"
+      ],
       "notes": "Unchanged for rows without the property: absent sorts last (§17). A row that owns a `$ordinal` sorts by it.",
-      "roots": { "zs": [ { "id": "x" }, { "id": "y", "$ordinal": 2 }, { "id": "z", "$ordinal": 1 } ] },
+      "roots": {
+        "zs": [
+          {
+            "id": "x"
+          },
+          {
+            "id": "y",
+            "$ordinal": 2
+          },
+          {
+            "id": "z",
+            "$ordinal": 1
+          }
+        ]
+      },
       "query": "id values from zs order by $ordinal",
-      "expect": { "result": ["z", "y", "x"] }
+      "expect": {
+        "result": [
+          "z",
+          "y",
+          "x"
+        ]
+      }
     },
     {
       "name": "inside a follow the walk's metadata wins over same-named row properties",
-      "tags": ["intrinsics", "follow"],
+      "tags": [
+        "intrinsics",
+        "follow"
+      ],
       "notes": "Every occurrence carries all five recursion intrinsics, so on a follow occurrence the row's own `$depth`/`$ordinal`/`$stop`/`$leaf`/`$frontier` are unreachable by bare name.",
-      "roots": { "tree": [ { "id": "root", "$depth": 99, "$ordinal": 99, "$stop": "own", "$leaf": true, "$frontier": true, "children": [ { "id": "a", "$depth": 42, "children": [] } ] } ] },
+      "roots": {
+        "tree": [
+          {
+            "id": "root",
+            "$depth": 99,
+            "$ordinal": 99,
+            "$stop": "own",
+            "$leaf": true,
+            "$frontier": true,
+            "children": [
+              {
+                "id": "a",
+                "$depth": 42,
+                "children": []
+              }
+            ]
+          }
+        ]
+      },
       "query": "id, d: $depth, o: $ordinal, s: $stop, l: $leaf, f: $frontier from tree follow children order by $ordinal",
-      "expect": { "result": [
-        { "id": "root", "d": 1, "o": 1, "s": "interior", "l": false, "f": false },
-        { "id": "a", "d": 2, "o": 2, "s": "leaf", "l": true, "f": false }
-      ] }
+      "expect": {
+        "result": [
+          {
+            "id": "root",
+            "d": 1,
+            "o": 1,
+            "s": "interior",
+            "l": false,
+            "f": false
+          },
+          {
+            "id": "a",
+            "d": 2,
+            "o": 2,
+            "s": "leaf",
+            "l": true,
+            "f": false
+          }
+        ]
+      }
     },
     {
       "name": "a where on $depth inside a follow is still a post-walk filter over the metadata",
-      "tags": ["intrinsics", "follow", "where"],
+      "tags": [
+        "intrinsics",
+        "follow",
+        "where"
+      ],
       "notes": "The root row's own `$depth` is 99, but the occurrence's `$depth` is 1, so it is filtered out.",
-      "roots": { "tree": [ { "id": "root", "$depth": 99, "$ordinal": 99, "$stop": "own", "$leaf": true, "$frontier": true, "children": [ { "id": "a", "$depth": 42, "children": [] } ] } ] },
+      "roots": {
+        "tree": [
+          {
+            "id": "root",
+            "$depth": 99,
+            "$ordinal": 99,
+            "$stop": "own",
+            "$leaf": true,
+            "$frontier": true,
+            "children": [
+              {
+                "id": "a",
+                "$depth": 42,
+                "children": []
+              }
+            ]
+          }
+        ]
+      },
       "query": "id values from tree where $depth > 1 follow children order by $ordinal",
-      "expect": { "result": ["a"] }
+      "expect": {
+        "result": [
+          "a"
+        ]
+      }
     },
     {
       "name": "inside a nested block within a follow, $depth is the nested row's property and ^$depth the occurrence's",
-      "tags": ["intrinsics", "follow", "nested", "outer-refs"],
+      "tags": [
+        "intrinsics",
+        "follow",
+        "nested",
+        "outer-refs"
+      ],
       "notes": "§20: the rows of `children collect { … }` are plain children, not occurrences. `a` owns a `$depth` of 42, so the nested `$depth` reads it; `^$depth` is the occurrence's depth as before.",
-      "roots": { "tree": [ { "id": "root", "$depth": 99, "$ordinal": 99, "$stop": "own", "$leaf": true, "$frontier": true, "children": [ { "id": "a", "$depth": 42, "children": [] } ] } ] },
+      "roots": {
+        "tree": [
+          {
+            "id": "root",
+            "$depth": 99,
+            "$ordinal": 99,
+            "$stop": "own",
+            "$leaf": true,
+            "$frontier": true,
+            "children": [
+              {
+                "id": "a",
+                "$depth": 42,
+                "children": []
+              }
+            ]
+          }
+        ]
+      },
       "query": "id, kids: children collect { id, own: $depth, occ: ^$depth } from tree follow children order by $ordinal",
-      "expect": { "result": [
-        { "id": "root", "kids": [ { "id": "a", "own": 42, "occ": 1 } ] },
-        { "id": "a", "kids": [] }
-      ] }
+      "expect": {
+        "result": [
+          {
+            "id": "root",
+            "kids": [
+              {
+                "id": "a",
+                "own": 42,
+                "occ": 1
+              }
+            ]
+          },
+          {
+            "id": "a",
+            "kids": []
+          }
+        ]
+      }
     },
     {
-      "name": "$key on a walked successor reads the row's property; the seed keeps its entry key",
-      "tags": ["intrinsics", "follow", "entries"],
-      "notes": "A seed that arrived as an entry carries `$key` as metadata (§21). A walked successor is not an entry, so its `$key` is an ordinary property read: `L1` owns one, `L2` does not.",
-      "roots": { "forest": { "left": { "id": "L", "children": [ { "id": "L1", "$key": "own", "children": [] }, { "id": "L2", "children": [] } ] } } },
+      "name": "$key on a walked successor is its identity; the seed keeps its entry key",
+      "tags": [
+        "intrinsics",
+        "follow",
+        "entries"
+      ],
+      "notes": "A seed that arrived as an entry is known by its key (§21), a successor by the host's identity — here the structural value, so `L1`'s own `$key` property is not what `$key` reads.",
+      "roots": {
+        "forest": {
+          "left": {
+            "id": "L",
+            "children": [
+              {
+                "id": "L1",
+                "$key": "own",
+                "children": []
+              },
+              {
+                "id": "L2",
+                "children": []
+              }
+            ]
+          }
+        }
+      },
       "query": "id, k: $key from entries(forest) follow children order by $ordinal",
-      "expect": { "result": [ { "id": "L", "k": "left" }, { "id": "L1", "k": "own" }, { "id": "L2" } ] }
+      "expect": {
+        "result": [
+          {
+            "id": "L",
+            "k": "left"
+          },
+          {
+            "id": "L1",
+            "k": {
+              "id": "L1",
+              "$key": "own",
+              "children": []
+            }
+          },
+          {
+            "id": "L2",
+            "k": {
+              "id": "L2",
+              "children": []
+            }
+          }
+        ]
+      }
     },
     {
       "name": "an entry scope's $key wins over a $key property of the value",
-      "tags": ["intrinsics", "entries"],
-      "roots": { "o": { "x": { "$key": "own" } } },
+      "tags": [
+        "intrinsics",
+        "entries"
+      ],
+      "roots": {
+        "o": {
+          "x": {
+            "$key": "own"
+          }
+        }
+      },
       "query": "k: $key from entries(o)",
-      "expect": { "result": [ { "k": "x" } ] }
+      "expect": {
+        "result": [
+          {
+            "k": "x"
+          }
+        ]
+      }
     },
     {
       "name": "$it is always the scope's row, never a property of it",
-      "tags": ["intrinsics", "scopes"],
+      "tags": [
+        "intrinsics",
+        "scopes"
+      ],
       "notes": "Step 1 of §2 is unconditional; only steps 2 and 3 fall through to the row. A row property literally named `$it` is shadowed by the intrinsic.",
-      "roots": { "xs": [ { "$it": 5 } ] },
+      "roots": {
+        "xs": [
+          {
+            "$it": 5
+          }
+        ]
+      },
       "query": "$it values from xs",
-      "expect": { "result": [ { "$it": 5 } ] }
+      "expect": {
+        "result": [
+          {
+            "$it": 5
+          }
+        ]
+      }
     },
     {
       "name": "$value is an ordinary property: present on the row it projects, absent otherwise",
-      "tags": ["intrinsics", "scopes", "absent"],
+      "tags": [
+        "intrinsics",
+        "scopes",
+        "absent"
+      ],
       "notes": "0.15: the current item is `$it`; `$value` has no intrinsic meaning (and no synonym role). It is a step-5 property read like `$depth` outside a follow.",
-      "roots": { "xs": [ { "id": "a", "$value": 3 }, { "id": "b" } ] },
+      "roots": {
+        "xs": [
+          {
+            "id": "a",
+            "$value": 3
+          },
+          {
+            "id": "b"
+          }
+        ]
+      },
       "query": "id, v: $value from xs",
-      "expect": { "result": [ { "id": "a", "v": 3 }, { "id": "b" } ] }
+      "expect": {
+        "result": [
+          {
+            "id": "a",
+            "v": 3
+          },
+          {
+            "id": "b"
+          }
+        ]
+      }
     },
     {
       "name": "$value values projects the property, null where the row lacks it",
-      "tags": ["intrinsics", "values", "absent"],
-      "roots": { "xs": [ { "$value": 3 }, { } ] },
+      "tags": [
+        "intrinsics",
+        "values",
+        "absent"
+      ],
+      "roots": {
+        "xs": [
+          {
+            "$value": 3
+          },
+          {}
+        ]
+      },
       "query": "$value values from xs",
-      "expect": { "result": [ 3, null ] }
+      "expect": {
+        "result": [
+          3,
+          null
+        ]
+      }
     },
     {
       "name": "$value over scalars is absent, never the scalar",
-      "tags": ["intrinsics", "values", "absent"],
+      "tags": [
+        "intrinsics",
+        "values",
+        "absent"
+      ],
       "notes": "Before 0.15 this read the elements themselves. Navigating a scalar for a property yields absent (§2).",
-      "roots": { "xs": [ 1, 2 ] },
+      "roots": {
+        "xs": [
+          1,
+          2
+        ]
+      },
       "query": "$value values from xs",
-      "expect": { "result": [ null, null ] }
+      "expect": {
+        "result": [
+          null,
+          null
+        ]
+      }
     },
     {
       "name": "$value inside a nested block reads the nested row's own property",
-      "tags": ["intrinsics", "nested", "scopes"],
-      "roots": { "xs": [ { "id": "p", "$value": 1, "kids": [ { "id": "k1", "$value": 9 }, { "id": "k2" } ] } ] },
+      "tags": [
+        "intrinsics",
+        "nested",
+        "scopes"
+      ],
+      "roots": {
+        "xs": [
+          {
+            "id": "p",
+            "$value": 1,
+            "kids": [
+              {
+                "id": "k1",
+                "$value": 9
+              },
+              {
+                "id": "k2"
+              }
+            ]
+          }
+        ]
+      },
       "query": "id, kids: kids collect { id, v: $value, pv: ^$value } from xs",
-      "expect": { "result": [ { "id": "p", "kids": [ { "id": "k1", "v": 9, "pv": 1 }, { "id": "k2", "pv": 1 } ] } ] }
+      "expect": {
+        "result": [
+          {
+            "id": "p",
+            "kids": [
+              {
+                "id": "k1",
+                "v": 9,
+                "pv": 1
+              },
+              {
+                "id": "k2",
+                "pv": 1
+              }
+            ]
+          }
+        ]
+      }
     },
     {
       "name": "$value in an entries() scope is a property of the entry's value, never the entry",
-      "tags": ["intrinsics", "entries", "scopes"],
+      "tags": [
+        "intrinsics",
+        "entries",
+        "scopes"
+      ],
       "notes": "§21: the scope's row is the property's value, so `$value` reads the value's own `$value` key. The `{ key, value }` record is the shape of `entries(x)` as a plain VALUE; inside the scope neither `value` nor `$value` names the entry's value — `$it` does.",
-      "roots": { "o": { "a": { "$value": 1 }, "b": { "x": 2 }, "c": 7 } },
+      "roots": {
+        "o": {
+          "a": {
+            "$value": 1
+          },
+          "b": {
+            "x": 2
+          },
+          "c": 7
+        }
+      },
       "query": "k: $key, v: $value, w: value, it: $it from entries(o)",
-      "expect": { "result": [ { "k": "a", "v": 1, "it": { "$value": 1 } }, { "k": "b", "it": { "x": 2 } }, { "k": "c", "it": 7 } ] }
+      "expect": {
+        "result": [
+          {
+            "k": "a",
+            "v": 1,
+            "it": {
+              "$value": 1
+            }
+          },
+          {
+            "k": "b",
+            "it": {
+              "x": 2
+            }
+          },
+          {
+            "k": "c",
+            "it": 7
+          }
+        ]
+      }
     },
     {
       "name": "^$it inside a nested block is the enclosing row",
-      "tags": ["intrinsics", "nested", "outer-refs"],
-      "roots": { "xs": [ { "id": "p", "kids": [ 1, 2 ] } ] },
+      "tags": [
+        "intrinsics",
+        "nested",
+        "outer-refs"
+      ],
+      "roots": {
+        "xs": [
+          {
+            "id": "p",
+            "kids": [
+              1,
+              2
+            ]
+          }
+        ]
+      },
       "query": "id, kids: kids collect { k: $it, parent: ^$it.id } from xs",
-      "expect": { "result": [ { "id": "p", "kids": [ { "k": 1, "parent": "p" }, { "k": 2, "parent": "p" } ] } ] }
+      "expect": {
+        "result": [
+          {
+            "id": "p",
+            "kids": [
+              {
+                "k": 1,
+                "parent": "p"
+              },
+              {
+                "k": 2,
+                "parent": "p"
+              }
+            ]
+          }
+        ]
+      }
     },
     {
       "name": "$it values over scalars",
-      "tags": ["intrinsics", "values"],
-      "roots": { "xs": [ 3, 1, 2 ] },
+      "tags": [
+        "intrinsics",
+        "values"
+      ],
+      "roots": {
+        "xs": [
+          3,
+          1,
+          2
+        ]
+      },
       "query": "$it values from xs where $it > 1 order by $it",
-      "expect": { "result": [ 2, 3 ] }
+      "expect": {
+        "result": [
+          2,
+          3
+        ]
+      }
     },
     {
       "name": "$it.field navigates the row",
-      "tags": ["intrinsics", "navigation"],
-      "roots": { "xs": [ { "meta": { "slug": "a" } }, { "meta": { "slug": "b" } }, { } ] },
+      "tags": [
+        "intrinsics",
+        "navigation"
+      ],
+      "roots": {
+        "xs": [
+          {
+            "meta": {
+              "slug": "a"
+            }
+          },
+          {
+            "meta": {
+              "slug": "b"
+            }
+          },
+          {}
+        ]
+      },
       "query": "s: $it.meta.slug from xs",
-      "expect": { "result": [ { "s": "a" }, { "s": "b" }, { } ] }
+      "expect": {
+        "result": [
+          {
+            "s": "a"
+          },
+          {
+            "s": "b"
+          },
+          {}
+        ]
+      }
     },
     {
       "name": "$it in an entries() scope is the entry's value",
-      "tags": ["intrinsics", "entries"],
-      "roots": { "settings": { "theme": "dark", "size": 14 } },
+      "tags": [
+        "intrinsics",
+        "entries"
+      ],
+      "roots": {
+        "settings": {
+          "theme": "dark",
+          "size": 14
+        }
+      },
       "query": "k: $key, v: $it from entries(settings)",
-      "expect": { "result": [ { "k": "theme", "v": "dark" }, { "k": "size", "v": 14 } ] }
+      "expect": {
+        "result": [
+          {
+            "k": "theme",
+            "v": "dark"
+          },
+          {
+            "k": "size",
+            "v": 14
+          }
+        ]
+      }
     },
     {
-      "name": "$it as a follow by identity",
-      "tags": ["intrinsics", "follow"],
-      "notes": "`by $it` keys the walk by the whole row. The two successors share an `id` (the default identity would collapse them within the step) but differ structurally, so both are reached.",
-      "roots": { "tree": [ { "id": "root", "children": [ { "id": "a", "tag": 1, "children": [] }, { "id": "a", "tag": 2, "children": [] } ] } ] },
-      "query": "id, tag from tree follow children { by $it } order by $depth, tag",
-      "expect": { "result": [ { "id": "root" }, { "id": "a", "tag": 1 }, { "id": "a", "tag": 2 } ] }
+      "name": "$key: $it keys the walk by the whole row",
+      "tags": [
+        "intrinsics",
+        "follow"
+      ],
+      "notes": "`$key: $it` in the destination block keys the walk by the whole row — the structural default spelled out. The two successors share an `id` but differ structurally, so both are reached.",
+      "roots": {
+        "tree": [
+          {
+            "id": "root",
+            "children": [
+              {
+                "id": "a",
+                "tag": 1,
+                "children": []
+              },
+              {
+                "id": "a",
+                "tag": 2,
+                "children": []
+              }
+            ]
+          }
+        ]
+      },
+      "query": "id, tag from tree follow children { $key: $it } order by $depth, tag",
+      "expect": {
+        "result": [
+          {
+            "id": "root"
+          },
+          {
+            "id": "a",
+            "tag": 1
+          },
+          {
+            "id": "a",
+            "tag": 2
+          }
+        ]
+      }
     },
     {
-      "name": "the default follow identity collapses same-id successors where by $it keeps them",
-      "tags": ["intrinsics", "follow"],
-      "roots": { "tree": [ { "id": "root", "children": [ { "id": "a", "tag": 1, "children": [] }, { "id": "a", "tag": 2, "children": [] } ] } ] },
-      "query": "id, tag from tree follow children order by $depth, tag",
-      "expect": { "result": [ { "id": "root" }, { "id": "a", "tag": 1 } ] }
+      "name": "$key: id collapses same-id successors where the structural default keeps them",
+      "tags": [
+        "intrinsics",
+        "follow"
+      ],
+      "roots": {
+        "tree": [
+          {
+            "id": "root",
+            "children": [
+              {
+                "id": "a",
+                "tag": 1,
+                "children": []
+              },
+              {
+                "id": "a",
+                "tag": 2,
+                "children": []
+              }
+            ]
+          }
+        ]
+      },
+      "query": "id, tag from tree follow children { $key: id } order by $depth, tag",
+      "expect": {
+        "result": [
+          {
+            "id": "root"
+          },
+          {
+            "id": "a",
+            "tag": 1
+          }
+        ]
+      }
     },
     {
       "name": "select $it from scalars keys by its own name",
-      "tags": ["intrinsics", "projection"],
-      "roots": { "xs": [ 1, "b", true ] },
+      "tags": [
+        "intrinsics",
+        "projection"
+      ],
+      "roots": {
+        "xs": [
+          1,
+          "b",
+          true
+        ]
+      },
       "query": "select $it from xs",
-      "expect": { "result": [ { "$it": 1 }, { "$it": "b" }, { "$it": true } ] }
+      "expect": {
+        "result": [
+          {
+            "$it": 1
+          },
+          {
+            "$it": "b"
+          },
+          {
+            "$it": true
+          }
+        ]
+      }
     },
     {
       "name": "at the root scope an intrinsic name is a named root",
-      "tags": ["intrinsics", "scopes", "roots"],
+      "tags": [
+        "intrinsics",
+        "scopes",
+        "roots"
+      ],
       "notes": "Step 5 of §2 at the root: the root scope has no row, so the fall-through is the named root, exactly as for any other bare identifier.",
-      "roots": { "$depth": [1, 2] },
+      "roots": {
+        "$depth": [
+          1,
+          2
+        ]
+      },
       "query": "$it values from $depth",
-      "expect": { "result": [1, 2] }
+      "expect": {
+        "result": [
+          1,
+          2
+        ]
+      }
     }
   ]
 }

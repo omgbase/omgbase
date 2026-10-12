@@ -585,8 +585,10 @@ impl DataContext for Lazy {
         }
         self.inner.to_rows(value)
     }
-    fn identity(&self, row: &Value) -> Value {
-        self.inner.identity(row)
+    // The marker is an object standing in for a collection (0.20, SEMANTICS §3):
+    // a block over it is a list, not a record.
+    fn is_single(&self, value: &Value) -> bool {
+        !is_marker(value)
     }
     fn call_function(&self, name: &str, args: &[Value]) -> Option<Result<Value>> {
         self.inner.call_function(name, args)

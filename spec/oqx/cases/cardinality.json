@@ -1,0 +1,640 @@
+{
+  "suite": "cardinality",
+  "cases": [
+    {
+      "name": "a block over one object yields one record",
+      "tags": [
+        "cardinality"
+      ],
+      "notes": "SEMANTICS §3: a receiver that is one object is SINGLE — a `collect` over it is the record, not a one-element list; a collection receiver is a list as before.",
+      "roots": {
+        "doc": {
+          "title": "T",
+          "status": "active",
+          "n": 1
+        },
+        "docs": [
+          {
+            "title": "A",
+            "status": "active"
+          },
+          {
+            "title": "B",
+            "status": "done"
+          }
+        ],
+        "s": "abc",
+        "num": 5,
+        "flag": true,
+        "nothing": null
+      },
+      "query": "doc { title }",
+      "expect": {
+        "result": {
+          "title": "T"
+        }
+      }
+    },
+    {
+      "name": "a block over a collection yields a list",
+      "tags": [
+        "cardinality"
+      ],
+      "roots": {
+        "doc": {
+          "title": "T",
+          "status": "active",
+          "n": 1
+        },
+        "docs": [
+          {
+            "title": "A",
+            "status": "active"
+          },
+          {
+            "title": "B",
+            "status": "done"
+          }
+        ],
+        "s": "abc",
+        "num": 5,
+        "flag": true,
+        "nothing": null
+      },
+      "query": "docs { title }",
+      "expect": {
+        "result": [
+          {
+            "title": "A"
+          },
+          {
+            "title": "B"
+          }
+        ]
+      }
+    },
+    {
+      "name": "a predicate block over one object is the object or absent: kept",
+      "tags": [
+        "cardinality",
+        "sugar"
+      ],
+      "notes": "`doc { p }` is a conditional reach-through: the object when `p` holds, absent otherwise.",
+      "roots": {
+        "doc": {
+          "title": "T",
+          "status": "active",
+          "n": 1
+        },
+        "docs": [
+          {
+            "title": "A",
+            "status": "active"
+          },
+          {
+            "title": "B",
+            "status": "done"
+          }
+        ],
+        "s": "abc",
+        "num": 5,
+        "flag": true,
+        "nothing": null
+      },
+      "query": "doc { status == \"active\" }",
+      "expect": {
+        "result": {
+          "title": "T",
+          "status": "active",
+          "n": 1
+        }
+      }
+    },
+    {
+      "name": "a predicate block over one object is the object or absent: filtered out",
+      "tags": [
+        "cardinality",
+        "sugar"
+      ],
+      "roots": {
+        "doc": {
+          "title": "T",
+          "status": "active",
+          "n": 1
+        },
+        "docs": [
+          {
+            "title": "A",
+            "status": "active"
+          },
+          {
+            "title": "B",
+            "status": "done"
+          }
+        ],
+        "s": "abc",
+        "num": 5,
+        "flag": true,
+        "nothing": null
+      },
+      "query": "doc { status == \"done\" }",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "name": "a projection block over one object filtered out is absent",
+      "tags": [
+        "cardinality"
+      ],
+      "roots": {
+        "doc": {
+          "title": "T",
+          "status": "active",
+          "n": 1
+        },
+        "docs": [
+          {
+            "title": "A",
+            "status": "active"
+          },
+          {
+            "title": "B",
+            "status": "done"
+          }
+        ],
+        "s": "abc",
+        "num": 5,
+        "flag": true,
+        "nothing": null
+      },
+      "query": "doc { title where status == \"done\" }",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "name": "values over one object is the value itself",
+      "tags": [
+        "cardinality",
+        "values"
+      ],
+      "roots": {
+        "doc": {
+          "title": "T",
+          "status": "active",
+          "n": 1
+        },
+        "docs": [
+          {
+            "title": "A",
+            "status": "active"
+          },
+          {
+            "title": "B",
+            "status": "done"
+          }
+        ],
+        "s": "abc",
+        "num": 5,
+        "flag": true,
+        "nothing": null
+      },
+      "query": "doc { title values }",
+      "expect": {
+        "result": "T"
+      }
+    },
+    {
+      "name": "first and single over one object are that object",
+      "tags": [
+        "cardinality"
+      ],
+      "roots": {
+        "r": [
+          1
+        ],
+        "doc": {
+          "title": "T"
+        }
+      },
+      "query": "r collect { a: ^doc first { title }, b: ^doc single { title }, c: ^doc[0].title }",
+      "expect": {
+        "result": [
+          {
+            "a": {
+              "title": "T"
+            },
+            "b": {
+              "title": "T"
+            },
+            "c": "T"
+          }
+        ]
+      }
+    },
+    {
+      "name": "exists, none and count over one object are unchanged",
+      "tags": [
+        "cardinality"
+      ],
+      "roots": {
+        "r": [
+          1
+        ],
+        "doc": {
+          "title": "T"
+        }
+      },
+      "query": "r count { where ^doc exists { } && !(^doc none { }) && ^doc count { } == 1 }",
+      "expect": {
+        "result": 1
+      }
+    },
+    {
+      "name": "a nested collect item over one object is a record",
+      "tags": [
+        "cardinality",
+        "projection"
+      ],
+      "roots": {
+        "links": [
+          {
+            "title": "l1",
+            "dst": {
+              "title": "D"
+            }
+          }
+        ]
+      },
+      "query": "title, d: dst { title } from links",
+      "expect": {
+        "result": [
+          {
+            "title": "l1",
+            "d": {
+              "title": "D"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "an absent receiver has no rows: a collect is the empty list",
+      "tags": [
+        "cardinality",
+        "absent"
+      ],
+      "notes": "Absent carries no cardinality for the in-memory context (SEMANTICS §3): no rows, a collection. A host whose relations are statically single may mark an absent one single (`DataContext.isSingle`), and then the block is absent.",
+      "roots": {
+        "links": [
+          {
+            "title": "l2"
+          }
+        ]
+      },
+      "query": "title, d: dst { title } from links",
+      "expect": {
+        "result": [
+          {
+            "title": "l2",
+            "d": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "the top-level source: one object is one record",
+      "tags": [
+        "cardinality"
+      ],
+      "notes": "`title from doc` and `doc collect { title }` are one tree (AST.md §2), so the body form over one object is a record too.",
+      "roots": {
+        "doc": {
+          "title": "T",
+          "status": "active",
+          "n": 1
+        },
+        "docs": [
+          {
+            "title": "A",
+            "status": "active"
+          },
+          {
+            "title": "B",
+            "status": "done"
+          }
+        ],
+        "s": "abc",
+        "num": 5,
+        "flag": true,
+        "nothing": null
+      },
+      "query": "title from doc",
+      "expect": {
+        "result": {
+          "title": "T"
+        }
+      }
+    },
+    {
+      "name": "the top-level source: the root object",
+      "tags": [
+        "cardinality",
+        "outer-refs"
+      ],
+      "notes": "`from $it` at the root is the root object — one object, one record (since 0.20; it was a one-element list).",
+      "roots": {
+        "xs": [
+          1
+        ]
+      },
+      "query": "$it values from $it",
+      "expect": {
+        "result": {
+          "xs": [
+            1
+          ]
+        }
+      }
+    },
+    {
+      "name": "a from re-projection makes a single receiver plural",
+      "tags": [
+        "cardinality",
+        "from"
+      ],
+      "roots": {
+        "doc": {
+          "tags": [
+            "a",
+            "b"
+          ]
+        }
+      },
+      "query": "doc { from tags }",
+      "expect": {
+        "result": [
+          "a",
+          "b"
+        ]
+      }
+    },
+    {
+      "name": "a follow over a single source is plural",
+      "tags": [
+        "cardinality",
+        "follow"
+      ],
+      "roots": {
+        "root": {
+          "id": 1,
+          "kids": [
+            {
+              "id": 2
+            }
+          ]
+        }
+      },
+      "query": "id values from root follow kids order by $ordinal",
+      "expect": {
+        "result": [
+          1,
+          2
+        ]
+      }
+    },
+    {
+      "name": "a destination block over one object yields one successor",
+      "tags": [
+        "cardinality",
+        "follow"
+      ],
+      "notes": "The block yields one record, which is one row to walk (the record is coerced back to a row).",
+      "roots": {
+        "t": [
+          {
+            "id": 1,
+            "parent": {
+              "id": 0
+            }
+          }
+        ]
+      },
+      "query": "id values from t follow parent { id } order by $ordinal",
+      "expect": {
+        "result": [
+          1,
+          0
+        ]
+      }
+    },
+    {
+      "name": "a string receiver is an error",
+      "tags": [
+        "cardinality",
+        "errors"
+      ],
+      "notes": "A scalar has no rows: an eval error (SEMANTICS §3) rather than a one-row collection (the pre-0.20 reading). `list(s)` is the explicit one-element collection.",
+      "roots": {
+        "doc": {
+          "title": "T",
+          "status": "active",
+          "n": 1
+        },
+        "docs": [
+          {
+            "title": "A",
+            "status": "active"
+          },
+          {
+            "title": "B",
+            "status": "done"
+          }
+        ],
+        "s": "abc",
+        "num": 5,
+        "flag": true,
+        "nothing": null
+      },
+      "query": "s { }",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "`s` is a string (\"abc\")",
+            "not a collection or an object"
+          ]
+        }
+      }
+    },
+    {
+      "name": "a number receiver is an error",
+      "tags": [
+        "cardinality",
+        "errors"
+      ],
+      "roots": {
+        "doc": {
+          "title": "T",
+          "status": "active",
+          "n": 1
+        },
+        "docs": [
+          {
+            "title": "A",
+            "status": "active"
+          },
+          {
+            "title": "B",
+            "status": "done"
+          }
+        ],
+        "s": "abc",
+        "num": 5,
+        "flag": true,
+        "nothing": null
+      },
+      "query": "num count { }",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "`num` is a number (5)",
+            "not a collection or an object"
+          ]
+        }
+      }
+    },
+    {
+      "name": "a boolean source is an error",
+      "tags": [
+        "cardinality",
+        "errors"
+      ],
+      "roots": {
+        "doc": {
+          "title": "T",
+          "status": "active",
+          "n": 1
+        },
+        "docs": [
+          {
+            "title": "A",
+            "status": "active"
+          },
+          {
+            "title": "B",
+            "status": "done"
+          }
+        ],
+        "s": "abc",
+        "num": 5,
+        "flag": true,
+        "nothing": null
+      },
+      "query": "from flag",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "`flag` is a boolean (true)",
+            "not a collection or an object"
+          ]
+        }
+      }
+    },
+    {
+      "name": "a scalar follow destination is an error",
+      "tags": [
+        "cardinality",
+        "errors",
+        "follow"
+      ],
+      "roots": {
+        "t": [
+          {
+            "id": 1,
+            "next": "b"
+          }
+        ]
+      },
+      "query": "id from t follow next",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "`next` is a string (\"b\")",
+            "not a collection or an object"
+          ]
+        }
+      }
+    },
+    {
+      "name": "list() makes a scalar a one-element collection",
+      "tags": [
+        "cardinality",
+        "builtins"
+      ],
+      "roots": {
+        "doc": {
+          "title": "T",
+          "status": "active",
+          "n": 1
+        },
+        "docs": [
+          {
+            "title": "A",
+            "status": "active"
+          },
+          {
+            "title": "B",
+            "status": "done"
+          }
+        ],
+        "s": "abc",
+        "num": 5,
+        "flag": true,
+        "nothing": null
+      },
+      "query": "list(s) { $it values }",
+      "expect": {
+        "result": [
+          "abc"
+        ]
+      }
+    },
+    {
+      "name": "a null root is absent: no rows",
+      "tags": [
+        "cardinality",
+        "absent"
+      ],
+      "roots": {
+        "doc": {
+          "title": "T",
+          "status": "active",
+          "n": 1
+        },
+        "docs": [
+          {
+            "title": "A",
+            "status": "active"
+          },
+          {
+            "title": "B",
+            "status": "done"
+          }
+        ],
+        "s": "abc",
+        "num": 5,
+        "flag": true,
+        "nothing": null
+      },
+      "query": "nothing { }",
+      "expect": {
+        "result": []
+      }
+    }
+  ]
+}

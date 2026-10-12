@@ -53,6 +53,11 @@ export type Expr =
   // (`..5` / `5..`); `exclusiveEnd` distinguishes `1...5` from `1..5`. Evaluates
   // to a runtime range value (see semantics.makeRange); primarily the RHS of `in`.
   | { kind: "range"; span: Span; lo: Expr | null; hi: Expr | null; exclusiveEnd: boolean }
+  // A tuple `(e1, e2, …)` (since 0.20): two or more expressions whose values
+  // concatenate with one level of flattening (SEMANTICS §3b) — a value and a
+  // receiver (`(a, b) { … }`, `follow (a, b) { depth 2 }`). One expression in
+  // parentheses is grouping and leaves no node.
+  | { kind: "tuple"; span: Span; items: Expr[] }
   // A value-position directive (since 0.17): `recv first { … }.pay`, and what a
   // bracket lookup `x[…]` desugars to. `isExpr` is false for it — an op is an
   // expression only by position; discriminate on `kind === "op"`.
@@ -104,16 +109,13 @@ export interface OpNode {
  * per frontier row, inside which `^` is that row. Discriminate on `kind === "op"`. */
 export type FollowDestination = Expr | OpNode;
 
-/** The recursive `follow` clause. */
+/** The recursive `follow` clause (since 0.20 just the destinations: a
+ * destination's `where`, `frontier` and `depth` live in its own block). */
 export interface Follow {
   kind: "follow";
   span: Span;
   destinations: FollowDestination[]; // ≥ 1, in source order; the walk is their union
   distinct: boolean;
-  where: Expr | null; // successor predicate: which successors keep participating
-  frontier: Expr | null; // boundary predicate: cut a relation that could continue
-  depth: number | null; // 1..8 cap; null = the hard cap
-  by: Expr | null; // identity expression for cycle detection / dedup
 }
 
 /** A nested (sub)query body — the `{ … }` of a directive. */
@@ -125,6 +127,13 @@ export interface Subquery {
   select: SelectItem[];
   orderBy: OrderSpec[] | null;
   follow: Follow | null;
+  /** `frontier P` / `depth n` (since 0.20) — legal only in a `follow` destination
+   * block: an occurrence reached through this destination for which `P` holds
+   * is a frontier (not expanded); the destination expands a frontier row only
+   * while that row's `$depth < n` (1..8; `null` = the hard cap 8). Both are
+   * `null` in every other block. */
+  frontier: Expr | null;
+  depth: number | null;
   /** `values` — scalar projection mode: the (single) projected expression is the
    * row's result itself rather than being wrapped in a `{ name: value }` record,
    * so `name values` yields `["Bob", …]` and `$it values` yields the rows. */
@@ -176,7 +185,7 @@ export type AstKind = AstNode["kind"];
 
 /** The expression kinds (`Expr["kind"]`), for `isExpr`. */
 const EXPR_KINDS: ReadonlySet<string> = new Set([
-  "lit", "ident", "outer", "binding", "member", "call", "unary", "required", "binary", "logical", "in", "range",
+  "lit", "ident", "outer", "binding", "member", "call", "unary", "required", "binary", "logical", "in", "range", "tuple",
 ]);
 
 /** Whether a node is a scalar `Expr` (an `op` in expression position is not: it

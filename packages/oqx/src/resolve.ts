@@ -61,13 +61,18 @@ function resolveBody<T extends Query | Subquery>(node: T, fail: Fail): T {
   });
   const limit = node.limit === null ? null : resolveExpr(node.limit, fail);
   const offset = node.offset === null ? null : resolveExpr(node.offset, fail);
+  // A destination block's `frontier` (0.20) is not rewritten against the
+  // block's select: it reads the occurrence, not a projected record.
+  const frontier = node.kind === "subquery" && node.frontier !== null ? resolveExpr(node.frontier, fail) : null;
   const source = node.kind === "query" ? resolveExpr(node.source, fail) : null;
   const same = where2 === node.where && select === node.select && follow === node.follow && from === node.from
     && orderBy === node.orderBy && limit === node.limit && offset === node.offset
-    && (node.kind !== "query" || source === node.source);
+    && (node.kind !== "query" || source === node.source)
+    && (node.kind !== "subquery" || frontier === node.frontier);
   if (same) return node;
   const out = { ...node, where: where2, select, follow, from, orderBy, limit, offset };
   if (node.kind === "query") (out as Query).source = source!;
+  else (out as Subquery).frontier = frontier;
   return out;
 }
 
@@ -79,11 +84,7 @@ function resolveOp(op: OpNode, fail: Fail): OpNode {
 
 function resolveFollow(f: Follow, fail: Fail): Follow {
   const destinations = mapSame(f.destinations, (d: FollowDestination) => (d.kind === "op" ? resolveOp(d, fail) : resolveExpr(d, fail)));
-  const where = f.where === null ? null : resolveExpr(f.where, fail);
-  const frontier = f.frontier === null ? null : resolveExpr(f.frontier, fail);
-  const by = f.by === null ? null : resolveExpr(f.by, fail);
-  if (destinations === f.destinations && where === f.where && frontier === f.frontier && by === f.by) return f;
-  return { ...f, destinations, where, frontier, by };
+  return destinations === f.destinations ? f : { ...f, destinations };
 }
 
 // Nested blocks inside a where tree are their own scopes: resolve each against
@@ -136,6 +137,10 @@ function mapExpr(e: Expr, f: (e: Expr) => Expr | null): Expr {
       const lo = e.lo ? go(e.lo) : null;
       const hi = e.hi ? go(e.hi) : null;
       return lo === e.lo && hi === e.hi ? e : { ...e, lo, hi };
+    }
+    case "tuple": {
+      const items = mapSame(e.items, go);
+      return items === e.items ? e : { ...e, items };
     }
     case "op": { // the receiver is read in this scope; the block is its own scope
       const receiver = go(e.receiver);

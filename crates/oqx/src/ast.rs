@@ -376,6 +376,11 @@ pub enum Expr {
         exclusive_end: bool,
         span: Span,
     },
+    /// A tuple `(e1, e2, …)` (since 0.20): two or more expressions whose values
+    /// concatenate with one level of flattening (SEMANTICS §3b) — a value and a
+    /// receiver (`(a, b) { … }`, `follow (a, b) { depth 2 }`). One expression in
+    /// parentheses is grouping and leaves no node.
+    Tuple { items: Vec<Expr>, span: Span },
     /// A value-position directive (since 0.17): `recv first { … }.pay`, and
     /// what a bracket lookup `x[…]` desugars to. Serializes as the bare
     /// `OpNode` (`kind: "op"`): an op is an expression only by position.
@@ -398,7 +403,8 @@ impl Expr {
             | Expr::Binary { span, .. }
             | Expr::Logical { span, .. }
             | Expr::In { span, .. }
-            | Expr::Range { span, .. } => *span,
+            | Expr::Range { span, .. }
+            | Expr::Tuple { span, .. } => *span,
             Expr::Op(op) => op.span,
         }
     }
@@ -423,7 +429,8 @@ impl Expr {
             | Expr::Binary { span, .. }
             | Expr::Logical { span, .. }
             | Expr::In { span, .. }
-            | Expr::Range { span, .. } => span,
+            | Expr::Range { span, .. }
+            | Expr::Tuple { span, .. } => span,
             Expr::Op(op) => &mut op.span,
         }
     }
@@ -444,6 +451,7 @@ impl Expr {
             Expr::Logical { .. } => "logical",
             Expr::In { .. } => "in",
             Expr::Range { .. } => "range",
+            Expr::Tuple { .. } => "tuple",
         }
     }
 }
@@ -554,7 +562,8 @@ impl FollowDestination {
     }
 }
 
-/// The recursive `follow` clause.
+/// The recursive `follow` clause (since 0.20 just the destinations: a
+/// destination's `where`, `frontier` and `depth` live in its own block).
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(
     feature = "json",
@@ -565,15 +574,6 @@ pub struct Follow {
     /// ≥ 1, in source order; the walk is their union.
     pub destinations: Vec<FollowDestination>,
     pub distinct: bool,
-    /// Successor predicate: which successors keep participating.
-    #[cfg_attr(feature = "json", serde(rename = "where"))]
-    pub r#where: Option<Expr>,
-    /// Boundary predicate: cut a relation that could continue.
-    pub frontier: Option<Expr>,
-    /// 1..8 cap; `None` = the hard cap.
-    pub depth: Option<u32>,
-    /// Identity expression for cycle detection / dedup.
-    pub by: Option<Expr>,
     pub span: Span,
 }
 
@@ -592,6 +592,13 @@ pub struct Subquery {
     pub select: Vec<SelectItem>,
     pub order_by: Option<Vec<OrderSpec>>,
     pub follow: Option<Follow>,
+    /// `frontier P` / `depth n` (since 0.20) — legal only in a `follow`
+    /// destination block: an occurrence reached through this destination for
+    /// which `P` holds is a frontier (not expanded); the destination expands a
+    /// frontier row only while that row's `$depth < n` (1..8; `None` = the hard
+    /// cap 8). Both are `None` in every other block.
+    pub frontier: Option<Expr>,
+    pub depth: Option<u32>,
     /// `values` — scalar projection mode: the (single) projected expression is
     /// the row's result itself rather than being wrapped in a `{ name: value }`
     /// record, so `name values` yields `["Bob", …]` and `$it values` yields

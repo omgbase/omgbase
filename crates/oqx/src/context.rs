@@ -1,8 +1,10 @@
 //! The tier-2 seam: a [`DataContext`] binds OQX's query semantics to a concrete
 //! data model. The engine never reaches into host data directly — it asks the
 //! context to resolve named roots, read properties/relations, coerce a relation
-//! result into rows, compute identity (for `follow` dedup and `distinct` over
-//! unprojected rows), and optionally supply custom scalar functions/methods.
+//! result into rows (and say which objects are one row rather than a
+//! collection), name a row's identity (`$key`: `follow` dedup, `distinct` over
+//! unprojected rows, `is`), and optionally supply custom scalar
+//! functions/methods.
 //! The same query semantics then run over plain values, a lazy store-backed
 //! graph, or a remote API without changing the engine.
 //!
@@ -52,6 +54,17 @@ pub trait DataContext {
     /// Coerce a relation/source value into rows.
     fn to_rows(&self, value: &Value) -> Vec<Value>;
 
+    /// Optional: whether an object this context handed out in row position is
+    /// ONE row — a record, not a collection (SEMANTICS §3, since 0.20) — so a
+    /// block over it yields one result rather than a one-element list
+    /// (`doc { title }` is a record; `docs { title }` a list). Asked only for
+    /// non-array objects; the default says every object is one row (a context
+    /// whose collections are objects — lazy handles — answers `false` for them).
+    fn is_single(&self, value: &Value) -> bool {
+        let _ = value;
+        true
+    }
+
     /// Optional: a value this context handed out as a stand-in for a
     /// collection it has not read yet (a lazy table handle), resolved to what
     /// it stands for. The engine calls it on every value it is about to observe
@@ -68,9 +81,16 @@ pub trait DataContext {
         value
     }
 
-    /// Identity of a row for `follow` cycle detection / dedup and for
-    /// `distinct` over unprojected rows.
-    fn identity(&self, row: &Value) -> Value;
+    /// The identity a row is known by — `$key` (SEMANTICS §16, since 0.20):
+    /// what `follow` cycle detection, the per-step union, `follow distinct`,
+    /// `distinct` over unprojected rows and `is` compare, and what reading
+    /// `$key` on the row returns. The default is the row's structural value
+    /// (an entry's is its key either way, before the context is asked); a
+    /// store-backed context answers its row id. (The reference spells this
+    /// `identityOf`; the Rust name is kept for source compatibility.)
+    fn identity(&self, row: &Value) -> Value {
+        row.clone()
+    }
 
     /// Optional custom free function. `None` = not handled: the engine falls
     /// back to the builtin table, then errors if that has no such function.
@@ -119,10 +139,9 @@ pub trait DataContext {
 
 /// The default context: plain [`Value`]s. Named roots come from an [`Object`]
 /// map, which is also the root object (`^$it` from a top-level row);
-/// properties are object keys (and array indices spelled as integers);
-/// identity is the `id` property when present, else the row itself
-/// (structural identity — the spec's rule; the reference uses reference
-/// identity for id-less objects, which has no portable meaning).
+/// properties are object keys (and array indices spelled as integers); it
+/// names no identity of its own, so a row's `$key` is its structural value
+/// (SEMANTICS §16) unless a query projects one (`$key: id`).
 #[derive(Clone, Debug, Default)]
 pub struct DefaultContext {
     roots: Object,
@@ -169,7 +188,6 @@ impl DefaultContext {
     ///         Ok(DefaultContext::read(row, key))
     ///     }
     ///     fn to_rows(&self, v: &Value) -> Vec<Value> { DefaultContext::default().to_rows(v) }
-    ///     fn identity(&self, row: &Value) -> Value { DefaultContext::default().identity(row) }
     /// }
     /// ```
     pub fn read(row: &Value, key: &str) -> Value {
@@ -199,15 +217,6 @@ impl DataContext for DefaultContext {
 
     fn to_rows(&self, value: &Value) -> Vec<Value> {
         coerce_collection(value).into_owned()
-    }
-
-    fn identity(&self, row: &Value) -> Value {
-        if let Value::Object(o) = row {
-            if let Some(id) = o.get("id") {
-                return id.clone();
-            }
-        }
-        row.clone()
     }
 
     fn call_function(&self, name: &str, args: &[Value]) -> Option<Result<Value>> {

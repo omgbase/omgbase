@@ -33,11 +33,13 @@ test("tier 2: a custom DataContext resolves relations its own way", () => {
     // read from the current row only (via `get`), nothing else is needed for the
     // engine to see it.
     toRows: (v) => coerceCollection(v),
-    identity: (row) => (row as { id: number }).id,
+    // the host names its rows' identity (`$key`): the id
+    identityOf: (row) => (row as { id: number }).id,
   };
   const res = run(parse("id: id, depth: $depth from tree follow children order by $depth, id"), { context: graph });
   assert.deepEqual(res, {
     consumer: "collect",
+    single: false,
     rows: [{ id: 1, depth: 1 }, { id: 2, depth: 2 }, { id: 3, depth: 2 }, { id: 4, depth: 3 }],
   });
 });

@@ -906,7 +906,7 @@
       }
     },
     {
-      "name": "a bound object is one row",
+      "name": "a bound object is one row: a record, not a list",
       "template": {
         "strings": [
           "from ",
@@ -921,14 +921,13 @@
         ]
       },
       "expect": {
-        "result": [
-          {
-            "theme": "dark",
-            "fontSize": 14,
-            "autosave": true
-          }
-        ]
-      }
+        "result": {
+          "theme": "dark",
+          "fontSize": 14,
+          "autosave": true
+        }
+      },
+      "notes": "One object in row position is SINGLE (SEMANTICS §3, since 0.20): the body yields its one record rather than a one-element list."
     },
     {
       "name": "a bound object through entries",
@@ -1300,7 +1299,7 @@
       }
     },
     {
-      "name": "a bound string is a one-row collection",
+      "name": "a bound scalar is not a source",
       "template": {
         "strings": [
           "$it values from ",
@@ -1311,10 +1310,15 @@
         ]
       },
       "expect": {
-        "result": [
-          "x"
-        ]
-      }
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "is a string (\"x\")",
+            "not a collection or an object"
+          ]
+        }
+      },
+      "notes": "A scalar has no rows (SEMANTICS §3): a source, receiver or destination must be a collection or one object."
     },
     {
       "name": "a bound array of arrays is nested rows",

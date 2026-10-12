@@ -141,14 +141,13 @@
       },
       "query": "from settings",
       "expect": {
-        "result": [
-          {
-            "theme": "dark",
-            "fontSize": 14,
-            "autosave": true
-          }
-        ]
-      }
+        "result": {
+          "theme": "dark",
+          "fontSize": 14,
+          "autosave": true
+        }
+      },
+      "notes": "`from settings` is the one object as one record (SEMANTICS §3), not its properties; `entries(settings)` is the explicit bridge."
     },
     {
       "name": "an object receiver is one row",
@@ -239,7 +238,7 @@
       }
     },
     {
-      "name": "$key is absent on ordinary rows",
+      "name": "$key on an ordinary row is its identity (structural by default)",
       "roots": {
         "people": [
           {
@@ -297,12 +296,32 @@
       "query": "k: $key from people where name == \"Bob\"",
       "expect": {
         "result": [
-          {}
+          {
+            "k": {
+              "name": "Bob",
+              "id": 124,
+              "title": "Engineer",
+              "active": true,
+              "age": 41,
+              "jobs": [
+                {
+                  "employer": "Globocorp",
+                  "start_date": "1984/05/01",
+                  "end_date": "1990/01/01"
+                },
+                {
+                  "employer": "Globocorp",
+                  "start_date": "2001/03/01"
+                }
+              ]
+            }
+          }
         ]
-      }
+      },
+      "notes": "Since 0.20 `$key` reads a row's identity on every row (§16): an entry's key, else the host's identity — for a plain object, the object itself."
     },
     {
-      "name": "$key is absent on array elements",
+      "name": "$key on an array element is the element (its structural identity)",
       "roots": {
         "xs": [
           10,
@@ -312,8 +331,12 @@
       "query": "k: $key from xs",
       "expect": {
         "result": [
-          {},
-          {}
+          {
+            "k": 10
+          },
+          {
+            "k": 20
+          }
         ]
       }
     },
@@ -608,7 +631,7 @@
           }
         }
       },
-      "query": "id, root: $key from entries(forest) follow children order by $ordinal",
+      "query": "id, root: $key from entries(forest) follow children { $key: id } order by $ordinal",
       "expect": {
         "result": [
           {
@@ -620,10 +643,12 @@
             "root": "right"
           },
           {
-            "id": "L1"
+            "id": "L1",
+            "root": "L1"
           }
         ]
-      }
+      },
+      "notes": "A seed that arrived as an entry is known by its key; the successors by the destination block's `$key: id`. Before 0.20 `$key` was absent on a non-entry row."
     },
     {
       "name": "block from over entries",

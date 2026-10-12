@@ -106,7 +106,8 @@ function sortKeys(v: unknown): unknown {
 // The consumer-shaped value of a result — the same unwrap `oqx` / `execute` apply.
 function unwrap(result: OqxResult): unknown {
   switch (result.consumer) {
-    case "collect": return result.rows;
+    // A `collect` over one object is that record or `null` (SEMANTICS §3).
+    case "collect": return result.single ? (result.rows[0] ?? null) : result.rows;
     case "exists": return result.exists;
     case "none": return result.none;
     case "count": return result.count;

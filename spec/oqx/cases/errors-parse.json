@@ -99,13 +99,13 @@
       }
     },
     {
-      "name": "follow block unclosed",
+      "name": "destination block unclosed",
       "query": "id from tree follow children { depth 2",
       "expect": {
         "error": {
           "stage": "parse",
           "includes": [
-            "expected '}' to close the follow block"
+            "expected '}' to close the collect { … } block"
           ]
         }
       }

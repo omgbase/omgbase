@@ -1,8 +1,9 @@
 // The tier-2 seam: a DataContext binds OQX's query semantics to a concrete data
 // model. The engine never touches host objects directly — it asks the context to
 // resolve named roots, read properties/relations, coerce a relation result into
-// rows, compute identity (for `follow` dedup), and optionally supply custom
-// scalar functions/methods. This is what lets the same query semantics run over
+// rows (and say which objects are one row rather than a collection), name a
+// row's identity (`$key`: `follow` dedup, `distinct`, `is`), and optionally
+// supply custom scalar functions/methods. This is what lets the same query semantics run over
 // plain objects, a lazy ORM graph, or a remote API without changing the engine.
 //
 // (Performant execution over a real store is the tier-3 seam — see planner.ts —
@@ -45,6 +46,13 @@ export interface DataContext {
   get(row: unknown, key: string): unknown;
   /** Coerce a relation/source value into rows (may be lazy). */
   toRows(value: unknown): Iterable<unknown>;
+  /** Optional: whether an object this context handed out in row position is
+   * ONE row — a record, not a collection (SEMANTICS §3, since 0.20) — so a block
+   * over it yields one result rather than a one-element list (`doc { title }`
+   * is a record; `docs { title }` a list). Asked only for non-array objects;
+   * absent, any non-iterable object is one row and any iterable (a `Set`, a
+   * lazy handle with `Symbol.iterator`) is a collection. */
+  isSingle?(value: unknown): boolean;
   /** Optional: a value this context handed out as a stand-in for a collection
    * it has not read yet (a lazy table handle), resolved to what it stands for.
    * The engine calls it on every value it is about to observe AS A VALUE — an
@@ -57,8 +65,15 @@ export interface DataContext {
    * seen by the language. Absent = identity; a context whose handle already
    * behaves as the collection (a `Proxy` over an array) needs none. */
   materialize?(value: unknown): unknown;
-  /** Identity of a row for `follow` cycle detection / dedup. */
-  identity(row: unknown): unknown;
+  /** Optional: the identity a row is known by — `$key` (SEMANTICS §16, since
+   * 0.20): what `follow` cycle detection, the per-step union, `follow distinct`,
+   * `distinct` over unprojected rows and `is` compare, and what reading `$key`
+   * on the row returns. Absent, a row's identity is its structural value (an
+   * entry's is its key either way). A store-backed context answers its row id. */
+  identityOf?(row: unknown): unknown;
+  /** @deprecated The pre-0.20 spelling of `identityOf`; read when `identityOf`
+   * is absent. Removed in the next minor. */
+  identity?(row: unknown): unknown;
   /** Optional custom free function; return `{ handled: false }` to defer. */
   callFunction?(name: string, args: unknown[]): CallResult;
   /** Optional custom method; return `{ handled: false }` to defer. */
@@ -92,8 +107,9 @@ export interface DefaultContextOptions {
 /** The default context: ordinary JavaScript objects. Named roots come from a
  * plain `{ name: collection }` map, which is also the root object (`^$it` from
  * a top-level row); properties are OWN keys only (an array exposes only its
- * integer indices, a primitive has none); identity is `.id` when present, else
- * the row itself (the engine keys it structurally). */
+ * integer indices, a primitive has none); it names no identity of its own, so a
+ * row's `$key` is its structural value (SEMANTICS §16) unless a query projects
+ * one (`$key: id`). */
 export class DefaultContext implements DataContext {
   private roots: Record<string, unknown>;
   readonly regexDialect: RegexDialect;
@@ -119,11 +135,6 @@ export class DefaultContext implements DataContext {
 
   toRows(value: unknown): Iterable<unknown> {
     return coerceCollection(value);
-  }
-
-  identity(row: unknown): unknown {
-    if (row != null && typeof row === "object" && "id" in row) return (row as Record<string, unknown>).id;
-    return row;
   }
 
   callFunction(name: string, args: unknown[]): CallResult {

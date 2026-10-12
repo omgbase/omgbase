@@ -30,8 +30,9 @@
 //! `from`. An out-of-order clause is a parse error naming the order.
 //!
 //! Sugar (0.17) desugars HERE, to existing nodes: `x { … }` is `x collect { … }`
-//! (not in `follow` destination position, where a brace is the options block);
-//! `x[p]` is `x first { where p }`, `x[n]` is `x first { offset n }`, with a
+//! wherever a value stands (a select item, a where leaf, a follow destination, a
+//! call argument — since 0.20 without exception) and `x distinct { … }` is
+//! `x collect distinct { … }` (0.20); `x[p]` is `x first { where p }`, `x[n]` is `x first { offset n }`, with a
 //! trailing `!` making the first a `single` (predicate) or a `required` (index);
 //! `is x` is `!!x`, `not x` is `!x`. Two shapes are new: the postfix `required`
 //! (`x!`, tightest) and the identity operators `is` / `is not` (comparison
@@ -66,12 +67,15 @@
 //! `follow` (since 0.14) takes a comma-separated list of destinations: a plain
 //! destination is a relation of the current row (an outer reference or a
 //! literal word is a parse error); a destination block is a receiver — which
-//! MAY be an outer reference — followed by `collect`/`first`/`single`
-//! [`distinct`] `{ body }`, exactly what `try_op` recognizes in select position
-//! (`exists`/`none`/`count` are rejected: they are where-position tests).
-//! Since 0.19 an outer-reference receiver followed by a bare `{` is that block
-//! with the implicit `collect` (`follow ^docs { where … }`); after any other
-//! destination a brace is still the options block.
+//! MAY be an outer reference or a tuple `(a, b)` — followed by `{ body }`, or by
+//! `collect`/`first`/`single` [`distinct`] `{ body }`, exactly what `try_op`
+//! recognizes in select position (`exists`/`none`/`count` are rejected: they are
+//! where-position tests). Since 0.20 there is no options block: a brace after
+//! ANY destination opens that destination's block, whose body admits two
+//! clauses no other block has — `frontier P` and `depth n`, after `where`.
+//!
+//! Tuples (0.20): `(e1, e2, …)` with two or more elements is a `Tuple` node — a
+//! value and a receiver; one expression in parentheses stays grouping.
 //!
 //! Error messages are the TS messages verbatim (the conformance fixtures and
 //! the reference tests assert on fragments of them).
@@ -92,22 +96,28 @@ use crate::walk::Node;
 const CONSUMERS: [&str; 6] = ["collect", "exists", "none", "count", "first", "single"];
 
 /// The fixed clause order of a body (ADR-020). Each clause appears at most once.
-/// Declaration order is the clause order; `Ord` compares by it.
+/// Declaration order is the clause order; `Ord` compares by it. `Frontier` and
+/// `Depth` are legal only in a follow destination block (0.20); the order
+/// sentence names them only there.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 enum Clause {
     Select,
     From,
     Where,
+    Frontier,
+    Depth,
     Follow,
     OrderBy,
     Limit,
     Offset,
 }
 
-const CLAUSE_ORDER: [Clause; 7] = [
+const CLAUSE_ORDER: [Clause; 9] = [
     Clause::Select,
     Clause::From,
     Clause::Where,
+    Clause::Frontier,
+    Clause::Depth,
     Clause::Follow,
     Clause::OrderBy,
     Clause::Limit,
@@ -120,17 +130,30 @@ impl Clause {
             Clause::Select => "select",
             Clause::From => "from",
             Clause::Where => "where",
+            Clause::Frontier => "frontier",
+            Clause::Depth => "depth",
             Clause::Follow => "follow",
             Clause::OrderBy => "order by",
             Clause::Limit => "limit",
             Clause::Offset => "offset",
         }
     }
+
+    fn destination_only(self) -> bool {
+        matches!(self, Clause::Frontier | Clause::Depth)
+    }
 }
 
-fn clause_order_sentence() -> String {
+/// The clauses a body may hold, in order.
+fn clauses_of(ctx: BodyCtx) -> impl Iterator<Item = Clause> {
+    let dest = ctx.is_destination();
     CLAUSE_ORDER
-        .iter()
+        .into_iter()
+        .filter(move |c| dest || !c.destination_only())
+}
+
+fn clause_order_sentence(ctx: BodyCtx) -> String {
+    clauses_of(ctx)
         .map(|c| c.as_str())
         .collect::<Vec<_>>()
         .join(", ")
@@ -162,6 +185,9 @@ enum BodyCtx {
         /// Whether `^name: expr` lift items are legal: only in a where-position
         /// `collect { … }`.
         lifts_allowed: bool,
+        /// A `follow` destination block (0.20): the only body that admits
+        /// `frontier` and `depth`.
+        destination: bool,
     },
 }
 
@@ -171,6 +197,16 @@ impl BodyCtx {
             self,
             BodyCtx::Block {
                 lifts_allowed: true,
+                ..
+            }
+        )
+    }
+
+    fn is_destination(self) -> bool {
+        matches!(
+            self,
+            BodyCtx::Block {
+                destination: true,
                 ..
             }
         )
@@ -208,6 +244,8 @@ struct BodyClauses {
     select: Vec<SelectItem>,
     order_by: Option<Vec<OrderSpec>>,
     follow: Option<Follow>,
+    frontier: Option<Expr>,
+    depth: Option<u32>,
     distinct: bool,
     values: bool,
     limit: Option<Expr>,
@@ -307,7 +345,7 @@ impl Parser {
     fn parse_query(&mut self) -> Result<Query> {
         let start = self.start();
         // Directive form: `<receiver> <consumer> { … }` consuming the whole query.
-        if let Some(mut directive) = self.try_op(false)? {
+        if let Some(mut directive) = self.try_op(false, false)? {
             if !self.at(TokType::Eof) && (self.at(TokType::LBracket) || self.at_value_directive()) {
                 // A longer chain whose outermost node is still a directive
                 // (`people first { } first { }` — how `people[p][0]` prints back).
@@ -422,7 +460,7 @@ impl Parser {
 
         while !self.at(TokType::Eof) && !self.at(TokType::RBrace) {
             if self.at_word(TokType::Kw, "select") {
-                self.enter(&mut stage, Clause::Select)?;
+                self.enter(&mut stage, Clause::Select, ctx)?;
                 self.next();
                 if self.at_word(TokType::Ident, "distinct") {
                     self.next();
@@ -434,25 +472,53 @@ impl Parser {
                 continue;
             }
             if self.at_word(TokType::Kw, "from") {
-                self.enter(&mut stage, Clause::From)?;
+                self.enter(&mut stage, Clause::From, ctx)?;
                 self.next();
                 let e = self.parse_value_expr()?;
                 body.froms.push(e);
                 continue;
             }
             if self.at_word(TokType::Kw, "where") {
-                self.enter(&mut stage, Clause::Where)?;
+                self.enter(&mut stage, Clause::Where, ctx)?;
                 self.next();
                 body.r#where = Some(self.with_depth(row_depth, |p| p.parse_where())?);
                 continue;
             }
+            // `frontier P` / `depth n` — a follow destination block's own clauses
+            // (0.20). `frontier` is read in the occurrence's scope, whose parent is
+            // the walk's enclosing scope — one level OUT of the block's rows
+            // (SEMANTICS §20) — so `^` there is the enclosing scope, not the
+            // frontier row.
+            if ctx.is_destination()
+                && self.at_word(TokType::Ident, "frontier")
+                && self.peek_at(1).is_some_and(starts_value)
+            {
+                self.enter(&mut stage, Clause::Frontier, ctx)?;
+                self.next();
+                let d = row_depth.saturating_sub(1);
+                body.frontier = Some(self.with_depth(d, |p| p.parse_value_expr())?);
+                continue;
+            }
+            if ctx.is_destination()
+                && self.at_word(TokType::Ident, "depth")
+                && self.peek_at(1).is_some_and(|t| t.kind == TokType::Number)
+            {
+                self.enter(&mut stage, Clause::Depth, ctx)?;
+                self.next();
+                let v = number_value(&self.next().value);
+                if !is_integer(v) || !(1.0..=8.0).contains(&v) {
+                    return self.fail("follow depth must be an integer between 1 and 8");
+                }
+                body.depth = Some(v as u32);
+                continue;
+            }
             if self.at_follow() {
-                self.enter(&mut stage, Clause::Follow)?;
+                self.enter(&mut stage, Clause::Follow, ctx)?;
                 body.follow = Some(self.with_depth(row_depth, |p| p.parse_follow())?);
                 continue;
             }
             if self.at_order_by() {
-                self.enter(&mut stage, Clause::OrderBy)?;
+                self.enter(&mut stage, Clause::OrderBy, ctx)?;
                 self.next(); // `order`
                 self.next(); // `by`
                 body.order_by = Some(self.with_depth(row_depth, |p| p.parse_order_specs())?);
@@ -465,7 +531,7 @@ impl Parser {
                 } else {
                     Clause::Offset
                 };
-                self.enter(&mut stage, clause)?;
+                self.enter(&mut stage, clause, ctx)?;
                 self.next();
                 // A top-level bound is evaluated at the root scope itself, so `^n` there
                 // has nothing to read: say so now instead of an "absent" error at eval.
@@ -495,11 +561,11 @@ impl Parser {
             {
                 match self.with_depth(row_depth, |p| p.parse_leading_run(ctx))? {
                     LeadingRun::Where(w) => {
-                        self.enter(&mut stage, Clause::Where)?;
+                        self.enter(&mut stage, Clause::Where, ctx)?;
                         body.r#where = Some(w);
                     }
                     LeadingRun::Projection(items, values) => {
-                        self.enter(&mut stage, Clause::Select)?;
+                        self.enter(&mut stage, Clause::Select, ctx)?;
                         body.select = items;
                         body.values = values;
                     }
@@ -570,7 +636,7 @@ impl Parser {
         Ok(LeadingRun::Projection(items, values))
     }
 
-    fn enter(&self, stage: &mut Option<Clause>, clause: Clause) -> Result<()> {
+    fn enter(&self, stage: &mut Option<Clause>, clause: Clause, ctx: BodyCtx) -> Result<()> {
         if *stage == Some(clause) {
             return self.fail(format!("duplicate `{}` clause", clause.as_str()));
         }
@@ -580,7 +646,7 @@ impl Parser {
                 "`{}` must come before `{}` — OQX clause order is {}",
                 clause.as_str(),
                 last.as_str(),
-                clause_order_sentence()
+                clause_order_sentence(ctx)
             ));
         }
         *stage = Some(clause);
@@ -592,9 +658,8 @@ impl Parser {
     // consumer word where a whole-query directive was meant), or a stray token.
     fn fail_unexpected_in_body<T>(&self, stage: Option<Clause>, ctx: BodyCtx) -> Result<T> {
         let t = self.peek();
-        let first_remaining = stage.map_or(0, |s| s as usize + 1);
-        let remaining = CLAUSE_ORDER[first_remaining..]
-            .iter()
+        let remaining = clauses_of(ctx)
+            .filter(|c| stage.is_none_or(|s| *c > s))
             .map(|c| c.as_str())
             .collect::<Vec<_>>()
             .join("/");
@@ -640,6 +705,20 @@ impl Parser {
                         return self.fail(format!(
                             "unexpected '{v}' after `{last}` — a bound is a non-negative number literal, a binding, or (inside a block) an outer reference `^name`"
                         ));
+                    }
+                    "depth" | "frontier" if !ctx.is_destination() => {
+                        let example = if v == "depth" {
+                            "depth 2"
+                        } else {
+                            "frontier <expr>"
+                        };
+                        return self.fail(format!(
+                            "unexpected '{v}' after `{last}` — `{v}` is a clause of a follow destination block only (`follow <relation> {{ {example} }}`)"
+                        ));
+                    }
+                    "depth" => {
+                        return self
+                            .fail("expected an integer after `depth` (`depth 1`..`depth 8`)");
                     }
                     _ => {}
                 }
@@ -728,9 +807,13 @@ impl Parser {
         Ok(self.parse_carets())
     }
 
-    /// Whether the cursor is at something that can begin a `follow` destination.
+    /// Whether the cursor is at something that can begin a `follow` destination:
+    /// a name, a binding, a scope reference, or a tuple's `(`.
     fn at_destination_start(&self) -> bool {
-        matches!(self.peek().kind, TokType::Ident | TokType::Binding) || self.at_scope_ref_at(0)
+        matches!(
+            self.peek().kind,
+            TokType::Ident | TokType::Binding | TokType::LParen
+        ) || self.at_scope_ref_at(0)
     }
 
     fn at_order_by(&self) -> bool {
@@ -744,14 +827,13 @@ impl Parser {
     // `distinct`, an outer reference) follows; otherwise it is a field name.
     fn at_follow(&self) -> bool {
         self.at_word(TokType::Ident, "follow")
-            && (self
-                .peek_at(1)
-                .is_some_and(|nx| matches!(nx.kind, TokType::Ident | TokType::Binding))
-                || self.at_scope_ref_at(1))
+            && (self.peek_at(1).is_some_and(|nx| {
+                matches!(nx.kind, TokType::Ident | TokType::Binding | TokType::LParen)
+            }) || self.at_scope_ref_at(1))
     }
 
     // ---- follow ---------------------------------------------------------------
-    // `follow [distinct] dest { "," dest } [ "{" options "}" ]`.
+    // `follow [distinct] dest { "," dest }` — since 0.20 without an options block.
     fn parse_follow(&mut self) -> Result<Follow> {
         let start = self.start();
         self.next(); // `follow`
@@ -776,100 +858,44 @@ impl Parser {
             }
             destinations.push(self.parse_follow_destination()?);
         }
-        let mut follow = Follow {
+        Ok(Follow {
             destinations,
             distinct,
-            r#where: None,
-            frontier: None,
-            depth: None,
-            by: None,
             span: self.sp(start),
-        };
-        if !self.at(TokType::LBrace) {
-            return Ok(follow);
-        }
-        self.next(); // '{'
-        while !self.at(TokType::Eof) && !self.at(TokType::RBrace) {
-            if self.at_word(TokType::Kw, "where") {
-                if follow.r#where.is_some() {
-                    return self.fail("duplicate `where` in follow clause");
-                }
-                self.next();
-                // Read in the successor's scope, one deeper than the frontier row.
-                let depth = self.depth + 1;
-                follow.r#where = Some(self.with_depth(depth, |p| p.parse_value_expr())?);
-            } else if self.at_word(TokType::Ident, "frontier") {
-                if follow.frontier.is_some() {
-                    return self.fail("duplicate `frontier` in follow clause");
-                }
-                self.next();
-                follow.frontier = Some(self.parse_value_expr()?);
-            } else if self.at_word(TokType::Ident, "by") {
-                if follow.by.is_some() {
-                    return self.fail("duplicate `by` in follow clause");
-                }
-                self.next();
-                follow.by = Some(self.parse_value_expr()?);
-            } else if self.at_word(TokType::Ident, "depth") {
-                if follow.depth.is_some() {
-                    return self.fail("duplicate `depth` in follow clause");
-                }
-                self.next();
-                if !self.at(TokType::Number) {
-                    return self.fail("expected an integer after `depth`");
-                }
-                let v = number_value(&self.next().value);
-                if !is_integer(v) || !(1.0..=8.0).contains(&v) {
-                    return self.fail("follow depth must be an integer between 1 and 8");
-                }
-                follow.depth = Some(v as u32);
-            } else {
-                return self.fail(format!(
-                    "unexpected {} in follow block — expected where/frontier/depth/by (a brace after the last destination is the options block; a destination block needs its consumer: `follow <relation> collect {{ … }}`)",
-                    self.tok_desc()
-                ));
-            }
-        }
-        if !self.at(TokType::RBrace) {
-            return self.fail("expected '}' to close the follow block");
-        }
-        self.next();
-        follow.span = self.sp(start);
-        Ok(follow)
+        })
     }
 
-    // One `follow` destination. The receiver is parsed first so that a block over an
-    // outer reference (`^people collect { … }`) is recognized before the plain-form
-    // rule — a relation of the current row, never `^rel` — rejects the caret. A
-    // receiver headed by an outer reference (`^docs`, `^^root.rel`, `0^docs`, with
-    // any member chain) followed directly by `{` is a destination block with the
-    // implicit `collect` (since 0.19): such a receiver can never be a plain
-    // destination, so the brace cannot be its options block. After any other
-    // receiver a brace keeps the 0.17 reading — the options block.
+    // One `follow` destination: a receiver (a binding, a dotted name — headed by
+    // a bare name, an outer reference or a free-function call — or a tuple) that
+    // is either a plain relation of the current row or, when a block follows, a
+    // destination block. The block is what `try_op` recognizes in select
+    // position — `{ … }` (the implicit `collect`), `distinct { … }`, or a
+    // consumer word and `{` / `distinct {` — read with the destination flag so
+    // its body admits `frontier` and `depth`. Only collect/first/single yield
+    // rows to walk; the where-position tests are rejected by name. A receiver
+    // headed by an outer reference can never be a plain destination (plain
+    // destinations are relations of the current row), so without a block it is
+    // an error naming the block spellings.
     fn parse_follow_destination(&mut self) -> Result<FollowDestination> {
         let outer = self.at_scope_ref_at(0);
-        let receiver = self.parse_receiver()?;
-        let op = match self.at_consumer_block() {
-            Some(op) => Some(op),
-            None if outer && self.at(TokType::LBrace) => Some(Consumer::Collect),
-            None => None,
-        };
-        if let Some(op) = op {
-            if !matches!(op, Consumer::Collect | Consumer::First | Consumer::Single) {
+        if let Some(op) = self.try_op(false, true)? {
+            if !matches!(
+                op.op,
+                Consumer::Collect | Consumer::First | Consumer::Single
+            ) {
                 return self.fail(format!(
                     "a follow destination must use collect/first/single, not `{}` (exists/none/count are where-position tests)",
-                    op.as_str()
+                    op.op.as_str()
                 ));
             }
-            let block = self.parse_consumer_block(receiver, op, false)?;
-            return Ok(FollowDestination::Block(Box::new(block)));
+            return Ok(FollowDestination::Block(Box::new(op)));
         }
         if outer {
             return self.fail(
                 "`follow` takes a relation of the current row (`follow <relation>`); an outer reference walks a root collection only as a destination block — `follow ^docs { where … }` or `follow ^docs collect { … }`",
             );
         }
-        Ok(FollowDestination::Relation(receiver))
+        Ok(FollowDestination::Relation(self.parse_receiver()?))
     }
 
     // A receiver/source: a `${…}` binding, or a dotted identifier navigation chain
@@ -880,6 +906,14 @@ impl Parser {
     fn parse_receiver(&mut self) -> Result<Expr> {
         if self.at(TokType::Binding) {
             return Ok(binding_node(&self.next()));
+        }
+        if self.at(TokType::LParen) {
+            if let Some(t) = self.try_tuple()? {
+                return Ok(t);
+            }
+            return self.fail(
+                "expected a collection navigation (a property/relation name) or a tuple `(a, b)`",
+            );
         }
         let start = self.start();
         let levels = self.parse_scope_ref()?;
@@ -1041,7 +1075,7 @@ impl Parser {
         if self.at(TokType::Ident) && self.peek_at(1).is_some_and(|t| t.kind == TokType::Colon) {
             let name = self.next().value;
             self.next(); // ':'
-            if let Some(op) = self.try_op(false)? {
+            if let Some(op) = self.try_op(false, false)? {
                 // `name: jobs first { }.pay`: the directive is the head of a longer value.
                 if self.at_scalar_continuation() || self.at_value_directive() {
                     let expr = self.parse_or(Some(Expr::Op(Box::new(op))))?;
@@ -1202,6 +1236,27 @@ impl Parser {
             }
         }
         if self.at(TokType::LParen) {
+            // A tuple (0.20) is a value, not a group: the receiver of a consumer
+            // test (`(a, b) exists { }`) or a scalar operand (`(a, b).size() > 1`).
+            if let Some(tuple) = self.try_tuple()? {
+                if let Some(op) = self.at_block() {
+                    let op = self.parse_consumer_block(tuple, op, true, false)?;
+                    let op = self.finish_where_op(op)?;
+                    return Ok(wrap_not(Where::Op(Box::new(op)), &not_starts));
+                }
+                let mut e = self.parse_postfix(Some(tuple))?;
+                for &at in not_starts.iter().rev() {
+                    let span = Span::new(at, e.span().end);
+                    e = Expr::Unary {
+                        op: UnaryOp::Not,
+                        expr: Box::new(e),
+                        span,
+                    };
+                }
+                let expr = self.parse_cmp(Some(e))?;
+                let span = expr.span();
+                return Ok(Where::Scalar { expr, span });
+            }
             let lparen = self.next().pos;
             let inner = self.parse_where()?;
             if !self.at(TokType::RParen) {
@@ -1229,7 +1284,7 @@ impl Parser {
         // A `first`/`single` directive is a value, never a test: the scalar
         // grammar reads it (as a value-position directive) with whatever follows
         // it, and `reject_bare_lookup` turns a bare one into the lookup error.
-        if let Some(op) = self.try_op(true)?
+        if let Some(op) = self.try_op(true, false)?
             && !matches!(op.op, Consumer::First | Consumer::Single)
         {
             let op = self.finish_where_op(op)?;
@@ -1402,11 +1457,13 @@ impl Parser {
         Ok(op)
     }
 
-    // Detect + parse a postfix consumer op `<receiver> <consumer> { <sub> }`.
-    // Returns None (rewinding) when the lookahead is not a consumer op. `in_where`
-    // says whether the op sits in where position, where a `collect` block may
-    // bind lifts.
-    fn try_op(&mut self, in_where: bool) -> Result<Option<OpNode>> {
+    // Detect + parse a postfix consumer op `<receiver> <consumer> { <sub> }` —
+    // or its implicit-`collect` forms `<receiver> { <sub> }` and `<receiver>
+    // distinct { <sub> }` (0.20). Returns None (rewinding) when the lookahead
+    // is not a consumer op. `in_where` says whether the op sits in where
+    // position, where a `collect` block may bind lifts; `destination` marks a
+    // follow destination block (its body admits `frontier`/`depth`).
+    fn try_op(&mut self, in_where: bool, destination: bool) -> Result<Option<OpNode>> {
         let start = self.pos;
         let start_pos = self.start();
         // An absolute reference that does not enclose this scope is an error only
@@ -1417,6 +1474,16 @@ impl Parser {
         let mut scope_err: Option<OqxError> = None;
         let receiver = if self.at(TokType::Binding) {
             binding_node(&self.next())
+        } else if self.at(TokType::LParen) {
+            // A tuple receiver, `(a, b) { … }`; a single parenthesized expression
+            // is grouping and never a receiver.
+            match self.try_tuple()? {
+                Some(t) => t,
+                None => {
+                    self.pos = start;
+                    return Ok(None);
+                }
+            }
         } else if self.at(TokType::Ident) || self.at_scope_ref_at(0) {
             let levels = match self.parse_scope_ref() {
                 Ok(levels) => levels,
@@ -1438,12 +1505,7 @@ impl Parser {
             return Ok(None);
         };
 
-        let op = if self.at(TokType::LBrace) {
-            Some(Consumer::Collect) // the implicit-`collect` form `x { … }`
-        } else {
-            self.at_consumer_block()
-        };
-        if let Some(op) = op {
+        if let Some(op) = self.at_block() {
             if let Some(e) = scope_err {
                 return Err(e);
             }
@@ -1452,16 +1514,78 @@ impl Parser {
                     return self.fail(format!("`{name}` is a literal, not a collection"));
                 }
                 // `count { }` with nothing before it: the consumer word is not a receiver.
-                if op == Consumer::Collect && CONSUMERS.contains(&name.as_str()) {
+                if op == Consumer::Collect
+                    && CONSUMERS.contains(&name.as_str())
+                    && self.at(TokType::LBrace)
+                {
                     return self.fail(format!(
                         "unexpected '{{' after `{name}` — a consumer needs a receiver: `<collection> {name} {{ … }}`"
                     ));
                 }
             }
-            return Ok(Some(self.parse_consumer_block(receiver, op, in_where)?));
+            return Ok(Some(self.parse_consumer_block(
+                receiver,
+                op,
+                in_where,
+                destination,
+            )?));
         }
         self.pos = start;
         Ok(None)
+    }
+
+    // The cursor is at what opens a block over an already-read receiver: `{` or
+    // `distinct {` (the implicit `collect`), or a consumer word and `{` /
+    // `distinct {`. Consumes nothing.
+    fn at_block(&self) -> Option<Consumer> {
+        if self.at(TokType::LBrace) {
+            return Some(Consumer::Collect);
+        }
+        if self.at_word(TokType::Ident, "distinct")
+            && self.peek_at(1).is_some_and(|t| t.kind == TokType::LBrace)
+        {
+            return Some(Consumer::Collect);
+        }
+        self.at_consumer_block()
+    }
+
+    // A tuple `(e1, e2, …)` at the cursor's `(` (0.20): two or more
+    // comma-separated expressions. A single parenthesized expression is
+    // grouping, not a tuple — the cursor is rewound and `None` returned (also
+    // on a parse error, so the caller's own reading reports its own error).
+    fn try_tuple(&mut self) -> Result<Option<Expr>> {
+        let save = self.pos;
+        let lparen = self.next().pos; // '('
+        let attempt = (|| -> Result<Option<Expr>> {
+            let mut items = vec![self.parse_value_expr()?];
+            if !self.at(TokType::Comma) {
+                return Ok(None);
+            }
+            while self.at(TokType::Comma) {
+                self.next();
+                items.push(self.parse_value_expr()?);
+            }
+            if !self.at(TokType::RParen) {
+                return self.fail("expected ')' to close the tuple");
+            }
+            self.next();
+            Ok(Some(Expr::Tuple {
+                items,
+                span: Span::new(lparen, self.end()),
+            }))
+        })();
+        match attempt {
+            Ok(Some(t)) => Ok(Some(t)),
+            Ok(None) => {
+                self.pos = save;
+                Ok(None)
+            }
+            Err(e) if e.stage == crate::errors::Stage::Parse => {
+                self.pos = save;
+                Ok(None)
+            }
+            Err(e) => Err(e),
+        }
     }
 
     // The cursor is at a consumer word that opens a VALUE-position block —
@@ -1531,6 +1655,8 @@ impl Parser {
             select: Vec::new(),
             order_by: None,
             follow: None,
+            frontier: None,
+            depth: None,
             values: false,
             limit: None,
             offset,
@@ -1592,17 +1718,19 @@ impl Parser {
     }
 
     // `[<op>] [distinct] { <sub> }` over an already-parsed receiver; the cursor
-    // is at the consumer word, or at the `{` of the implicit `collect`.
-    // `in_where` says whether the op sits in where position, where a `collect`
-    // block may bind lifts.
+    // is at the consumer word, at `distinct`, or at the `{` of the implicit
+    // `collect`. `in_where` says whether the op sits in where position, where a
+    // `collect` block may bind lifts; `destination` marks a follow destination
+    // block (0.20): its body may carry `frontier` and `depth`.
     fn parse_consumer_block(
         &mut self,
         receiver: Expr,
         op: Consumer,
         in_where: bool,
+        destination: bool,
     ) -> Result<OpNode> {
         let start = receiver.span().start;
-        if self.at(TokType::Ident) {
+        if self.at(TokType::Ident) && CONSUMERS.contains(&self.peek().value.as_str()) {
             self.next(); // the consumer word (absent for `x { … }`)
         }
         let mut distinct = false;
@@ -1614,6 +1742,7 @@ impl Parser {
         let ctx = BodyCtx::Block {
             op,
             lifts_allowed: in_where && op == Consumer::Collect,
+            destination,
         };
         let defer = self.defer_lookup;
         self.defer_lookup = false;
@@ -1635,6 +1764,8 @@ impl Parser {
             select: body.select,
             order_by: body.order_by,
             follow: body.follow,
+            frontier: body.frontier,
+            depth: body.depth,
             values: body.values,
             limit: body.limit,
             offset: body.offset,
@@ -1794,18 +1925,7 @@ impl Parser {
     // consumers, …) are lexed as bare idents, so they must NOT count as a value
     // start, or `where age in 18.. order by name` would read `order` as the bound.
     fn can_start_value(&self) -> bool {
-        let t = self.peek();
-        match t.kind {
-            TokType::Ident => !CLAUSE_WORDS.contains(&t.value.as_str()),
-            TokType::Kw => t.value == "is" || t.value == "not", // the prefix operators
-            TokType::Number
-            | TokType::Str
-            | TokType::Binding
-            | TokType::LParen
-            | TokType::Caret => true,
-            TokType::Op => t.value == "-" || t.value == "!",
-            _ => false,
-        }
+        starts_value(self.peek())
     }
 
     fn parse_add(&mut self, left: Option<Expr>) -> Result<Expr> {
@@ -1935,21 +2055,26 @@ impl Parser {
                     expr: Box::new(expr),
                     span: Span::new(start, bang.end),
                 };
-            } else if self.at_value_directive() {
+            } else if self.at_value_directive()
+                || self.at(TokType::LBrace)
+                || (self.at_word(TokType::Ident, "distinct")
+                    && self.peek_at(1).is_some_and(|t| t.kind == TokType::LBrace))
+            {
                 // A value-position directive, `recv first { … }` — how a bracket
-                // chain prints back; exists/none/count have no value form and are
-                // left to the body's own error.
+                // chain prints back — or the implicit `collect` of a bare `{ … }` /
+                // `distinct { … }` (0.20: the receiver-block sugar stands wherever
+                // a value does, `size(children { is checked })`). exists/none/count
+                // have no value form and are left to the body's own error.
                 if matches!(expr, Expr::Lit { .. }) {
                     return self.fail(format!(
                         "`{}` is a literal, not a collection",
                         describe(Node::Expr(&expr))
                     ));
                 }
-                let op = self.at_consumer_block().expect("checked above");
-                expr = Expr::Op(Box::new(self.parse_consumer_block(expr, op, false)?));
+                let op = self.at_block().expect("checked above");
+                expr = Expr::Op(Box::new(self.parse_consumer_block(expr, op, false, false)?));
             } else {
-                // A bare `{` is a consumer block boundary — not part of a value
-                // expression; anything else ends the postfix chain too.
+                // Anything else ends the postfix chain.
                 break;
             }
         }
@@ -2015,6 +2140,22 @@ impl Parser {
             TokType::LParen => {
                 self.next();
                 let e = self.parse_value_expr()?;
+                if self.at(TokType::Comma) {
+                    // A tuple `(e1, e2, …)` (0.20): two or more elements.
+                    let mut items = vec![e];
+                    while self.at(TokType::Comma) {
+                        self.next();
+                        items.push(self.parse_value_expr()?);
+                    }
+                    if !self.at(TokType::RParen) {
+                        return self.fail("expected ')' to close the tuple");
+                    }
+                    self.next();
+                    return Ok(Expr::Tuple {
+                        items,
+                        span: Span::new(t.pos, self.end()),
+                    });
+                }
                 if !self.at(TokType::RParen) {
                     return self.fail("expected ')'");
                 }
@@ -2045,6 +2186,19 @@ impl Parser {
             }
             _ => self.fail(format!("unexpected {} — expected a value", self.tok_desc())),
         }
+    }
+}
+
+/// Whether a token can begin a value expression (see `Parser::can_start_value`).
+fn starts_value(t: &Token) -> bool {
+    match t.kind {
+        TokType::Ident => !CLAUSE_WORDS.contains(&t.value.as_str()),
+        TokType::Kw => t.value == "is" || t.value == "not", // the prefix operators
+        TokType::Number | TokType::Str | TokType::Binding | TokType::LParen | TokType::Caret => {
+            true
+        }
+        TokType::Op => t.value == "-" || t.value == "!",
+        _ => false,
     }
 }
 

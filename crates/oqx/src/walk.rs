@@ -67,9 +67,9 @@ pub enum Clause {
     Offset,
     Follow,
     FollowDestination,
-    FollowWhere,
+    /// A destination block's `frontier` clause (0.20), read one level OUT of
+    /// the block's rows — under the walk's enclosing scope.
     FollowFrontier,
-    FollowBy,
 }
 
 impl Clause {
@@ -85,9 +85,7 @@ impl Clause {
             Clause::Offset => "offset",
             Clause::Follow => "follow",
             Clause::FollowDestination => "follow.destination",
-            Clause::FollowWhere => "follow.where",
             Clause::FollowFrontier => "follow.frontier",
-            Clause::FollowBy => "follow.by",
         }
     }
 }
@@ -95,8 +93,9 @@ impl Clause {
 /// Where a visited node sits. `depth` is the scope depth at which the node is
 /// evaluated (0 = the root scope: a top-level `source`, `limit`, `offset`; 1 =
 /// a top-level row: its `where`, `select`, `order by`, `from` re-projections
-/// and `follow`; a block's rows are one deeper than the block's receiver; a
-/// follow `where` is one deeper than the frontier row it tests successors of).
+/// and `follow`; a block's rows are one deeper than the block's receiver — a
+/// follow destination block's `where` therefore one deeper than the frontier
+/// row — and a destination block's `frontier` one level out of its rows).
 #[derive(Clone, Debug)]
 pub struct VisitContext<'a> {
     /// The ancestors of the node, root first (empty for the root).
@@ -120,14 +119,14 @@ pub trait Visitor {
 }
 
 /// One child slot: the node, the clause it opens (inherited when `None`) and how
-/// much deeper its scope is.
+/// much deeper its scope is (negative for a destination block's `frontier`).
 struct Child<'a> {
     node: Node<'a>,
     clause: Option<Clause>,
-    depth: usize,
+    depth: isize,
 }
 
-fn child<'a>(node: Node<'a>, clause: Option<Clause>, depth: usize) -> Child<'a> {
+fn child<'a>(node: Node<'a>, clause: Option<Clause>, depth: isize) -> Child<'a> {
     Child {
         node,
         clause,
@@ -185,6 +184,11 @@ fn children<'a>(node: Node<'a>) -> Vec<Child<'a>> {
             if let Some(w) = &s.r#where {
                 out.push(child(Node::Where(w), Some(Clause::Where), 0));
             }
+            // A destination block's `frontier` reads the occurrence under the
+            // walk's enclosing scope — one level OUT of the block's rows.
+            if let Some(e) = &s.frontier {
+                out.push(child(Node::Expr(e), Some(Clause::FollowFrontier), -1));
+            }
             if let Some(f) = &s.follow {
                 out.push(child(Node::Follow(f), Some(Clause::Follow), 0));
             }
@@ -213,15 +217,6 @@ fn children<'a>(node: Node<'a>) -> Vec<Child<'a>> {
                 };
                 child(n, Some(Clause::FollowDestination), 0)
             }));
-            if let Some(e) = &f.r#where {
-                out.push(child(Node::Expr(e), Some(Clause::FollowWhere), 1));
-            }
-            if let Some(e) = &f.frontier {
-                out.push(child(Node::Expr(e), Some(Clause::FollowFrontier), 0));
-            }
-            if let Some(e) = &f.by {
-                out.push(child(Node::Expr(e), Some(Clause::FollowBy), 0));
-            }
         }
         Node::Order(o) => out.push(child(Node::Expr(&o.expr), None, 0)),
         Node::Select(SelectItem::Field { expr, .. }) => out.push(child(Node::Expr(expr), None, 0)),
@@ -262,6 +257,9 @@ fn children<'a>(node: Node<'a>) -> Vec<Child<'a>> {
                     out.push(child(Node::Expr(h), None, 0));
                 }
             }
+            Expr::Tuple { items, .. } => {
+                out.extend(items.iter().map(|x| child(Node::Expr(x), None, 0)));
+            }
         },
     }
     out
@@ -296,7 +294,8 @@ fn go<'a, V: Visitor>(
     if visitor.enter(node, &ctx) {
         path.push(node);
         for c in children(node) {
-            go(c.node, c.clause.or(clause), depth + c.depth, path, visitor);
+            let d = (depth as isize + c.depth).max(0) as usize;
+            go(c.node, c.clause.or(clause), d, path, visitor);
         }
         path.pop();
     }
@@ -430,6 +429,11 @@ where
                 .r#where
                 .as_ref()
                 .map(|w| self.r#where(w, Clause::Where, depth)),
+            frontier: s
+                .frontier
+                .as_ref()
+                .map(|e| self.expr(e, Clause::FollowFrontier, depth.saturating_sub(1))),
+            depth: s.depth,
             follow: s.follow.as_ref().map(|fl| self.follow(fl, depth)),
             order_by: s
                 .order_by
@@ -465,16 +469,6 @@ where
                 })
                 .collect(),
             distinct: f.distinct,
-            r#where: f
-                .r#where
-                .as_ref()
-                .map(|e| self.expr(e, Clause::FollowWhere, depth + 1)),
-            frontier: f
-                .frontier
-                .as_ref()
-                .map(|e| self.expr(e, Clause::FollowFrontier, depth)),
-            depth: f.depth,
-            by: f.by.as_ref().map(|e| self.expr(e, Clause::FollowBy, depth)),
             span: f.span,
         };
         self.path.pop();
@@ -603,6 +597,10 @@ where
                 exclusive_end: *exclusive_end,
                 span: *span,
             },
+            Expr::Tuple { items, span } => Expr::Tuple {
+                items: items.iter().map(|x| self.expr(x, clause, depth)).collect(),
+                span: *span,
+            },
         };
         self.path.pop();
         let ctx = self.ctx(Some(clause), depth);
@@ -650,6 +648,9 @@ fn strip_sub_spans(s: &mut Subquery) {
     if let Some(w) = &mut s.r#where {
         strip_where_spans(w);
     }
+    if let Some(e) = &mut s.frontier {
+        strip_expr_spans(e);
+    }
     if let Some(f) = &mut s.follow {
         strip_follow_spans(f);
     }
@@ -695,12 +696,6 @@ fn strip_follow_spans(f: &mut Follow) {
             FollowDestination::Block(op) => strip_op_spans(op),
             FollowDestination::Relation(e) => strip_expr_spans(e),
         }
-    }
-    for e in [&mut f.r#where, &mut f.frontier, &mut f.by]
-        .into_iter()
-        .flatten()
-    {
-        strip_expr_spans(e);
     }
 }
 
@@ -753,6 +748,7 @@ fn strip_expr_spans(e: &mut Expr) {
                         strip_expr_spans(b);
                     }
                 }
+                Expr::Tuple { items, .. } => items.iter_mut().for_each(strip_expr_spans),
                 Expr::Op(_) => unreachable!("handled above"),
             }
         }

@@ -50,19 +50,22 @@ and never climbs:
 1. `$it` — the scope's row itself (at the root, the host's root object).
    Unconditional: a row property literally named `$it` is unreachable by bare
    name, and so is a named root called `$it`.
-2. `$key` — the property key, in an entry scope (§21).
+2. `$key` — the row's **identity** (§16; since 0.20 on every row): an entry's
+   key (§21), a walk occurrence's identity (§20), a projected `$key:` (§16),
+   else the host's identity of the row — structural by default. Unconditional
+   like `$it`: a row property literally named `$key` is unreachable by bare name.
 3. `$depth`, `$stop`, `$leaf`, `$frontier`, `$ordinal` — the recursion
    intrinsics, on a `follow` occurrence (§20).
 4. a value **lifted** into this scope by a `^name:` item (§19).
 5. at the root scope: the named root; elsewhere: the row's own property.
 
-Steps 2 and 3 apply only where the scope **carries** that metadata: an entry
-scope for `$key`, a walk occurrence for the recursion intrinsics. Anywhere
-else the name is an ordinary property read (step 5), so a host whose rows
-carry a `$depth` or `$ordinal` of their own (omgbase's blocks do) exposes it
-outside a `follow`, and a plain-JSON row `{ "$depth": 3 }` projects `3`.
-Since 0.13; before, the six names read absent everywhere they were not
-metadata, shadowing the row. **`$value` is not an intrinsic** (since 0.15,
+Step 3 applies only where the scope **carries** that metadata: a walk
+occurrence. Anywhere else the name is an ordinary property read (step 5), so a
+host whose rows carry a `$depth` or `$ordinal` of their own (omgbase's blocks
+do) exposes it outside a `follow`, and a plain-JSON row `{ "$depth": 3 }`
+projects `3`. Since 0.13; before, the six names read absent everywhere they
+were not metadata, shadowing the row. (`$key` left this rule in 0.20: it is an
+identity, never a property.) **`$value` is not an intrinsic** (since 0.15,
 when the current item was renamed from `$value` to `$it` with no synonym): it
 is an ordinary property read under step 5 everywhere — at the top level, in a
 nested block, and in an entry scope (where it is a property of the entry's
@@ -117,16 +120,56 @@ nothing. [`properties`, `builtins`, `membership`]
 
 ## 3. Collections and coercion
 
-Wherever rows are needed — a source, a directive receiver, a `follow` relation,
-a `from` re-projection — a value is coerced to rows:
+Wherever rows are needed — a source, a directive receiver, a `follow`
+destination, a `from` re-projection — a value is coerced to rows, and the value
+decides the **cardinality** of what the rows become (since 0.20):
 
-- absent → no rows; an array → its elements; any other value (an object, a
-  string, a number) → **one row**, that value. A plain object never iterates;
-  `entries(obj)` is the explicit bridge (§21). An unknown root is absent and
-  therefore empty. [`consumers`, `entries`]
+- **absent** → no rows: a collection with none (`[]` from a `collect`). An
+  unknown root is absent and therefore empty.
+- an **array** → its elements: a collection. A `collect` over it is a list.
+- an **object** → **one row**, that object, and the receiver is **single**: a
+  `collect` over it is **one record** (the projection, or the object itself
+  with no projection) — or **absent** when the row fails the `where` or the
+  bound excludes it — never a one-element list; `values` is the one value;
+  `first`/`single` are that object as always; `exists`/`none`/`count` are
+  unchanged. So `doc { title }` is a record, `doc { status == "active" }` is the
+  object or absent (a conditional reach-through), `docs { title }` a list. A
+  plain object never iterates; `entries(obj)` is the explicit bridge (§21),
+  `list(obj)` the explicit one-element collection.
+- a **scalar** (a string, a number, a boolean) or a range → an **eval error**
+  (`` `s` is a string ("abc"), not a collection or an object — rows come from
+  a collection (a list) or one object (a record) ``). Before 0.20 a scalar was a
+  one-row collection; `list(s)` says that explicitly.
 
-(The reference also materializes host iterables such as `Set`/`Map`; that is a
-host concern and not part of the spec.)
+A `from` re-projection fans a single receiver out — `doc { from tags }` is a
+list — and so does a `follow`. The two spellings of a body are one tree (AST.md
+§2), so `title from doc` is the record `doc collect { title }` is; `from $it` at
+the root is the root object as one record.
+
+**Host relations are statically single or plural; data decides at run time.**
+A host may say which of the objects it hands out are collections rather than
+rows (the reference's `DataContext.isSingle`, the Rust `is_single` — a lazy
+table handle is an object but a collection); without that, every non-array
+object is one row and every array a collection (the reference also treats host
+iterables such as `Set`/`Map` as collections). A host that knows an absent
+relation is single may mark it so and get **absent** from a block over it
+instead of `[]`; the in-memory context cannot tell and yields `[]`. The fixtures
+assume the reference's rule. [`cardinality`, `consumers`, `entries`]
+
+## 3b. Tuples
+
+`(e1, e2, …)` — two or more expressions in parentheses (GRAMMAR §4) — evaluates
+its elements in source order and **concatenates them with one level of
+flattening**: an element that is a collection contributes its items; a row,
+object or scalar contributes itself; an **absent** element (a missing property,
+JavaScript `undefined`, Rust `Undefined`) contributes nothing; a `null` element
+(the literal, or a property holding `null`) contributes `null`; duplicates are
+kept. This is the one place the two spellings of absent (§1) are told apart. A
+nested tuple is a collection and flattens one level like any other
+(`(a, (b, c))` is `[a, b…, c…]` with the inner already flat). The result is a
+collection: a tuple is a value (`size((a, b))`, `"x" in (tags, aliases)`) and a
+receiver (`(mom, dad, siblings) { name values }`, `follow (before, after) { depth
+2 }` — one destination over the union, §20). [`tuples`]
 
 ## 4. Truthiness
 
@@ -149,16 +192,17 @@ uses host reference identity; fixtures do not rely on it) — compare them with
 
 (since 0.17) `x is y` is true iff the two operands have the **same identity**
 as §16 defines it — the notion `distinct` and `follow` already use: each side
-is taken through the context's `identity` (a row's `id` property when the row is
-an object with one, else the value itself) and the two identities compare
-**structurally** (absent ≡ `null`; numbers as doubles; strings by code point;
-arrays element-wise; objects by own keys, order ignored; types never conflated).
-`x is not y` is the exact negation. Consequences: for scalars `is` and `==`
-coincide (`1 is 1`, `"a" is "a"`, `1 is "1"` is false, `nope is null` is
-true and `nope is not null` false); two rows carrying the same `id` are the
-same whatever else they hold; id-less rows are the same iff structurally equal,
-in both implementations (so `$it is ^$it` compares rows, which `==` leaves
-unspecified). `is` is at comparison precedence and does not chain. The prefix
+is taken through the **host's** identity (`DataContext.identityOf` /
+`identity`; the value itself when the host names none) and the two identities
+compare **structurally** (absent ≡ `null`; numbers as doubles; strings by code
+point; arrays element-wise; objects by own keys, order ignored; types never
+conflated). `x is not y` is the exact negation. Consequences: for scalars `is`
+and `==` coincide (`1 is 1`, `"a" is "a"`, `1 is "1"` is false, `nope is null`
+is true and `nope is not null` false); two rows a host knows by one id are the
+same whatever else they hold; under the structural default rows are the same iff
+structurally equal, in both implementations (so `$it is ^$it` compares rows,
+which `==` leaves unspecified). A projected `$key` (§16) does not change `is`:
+it names rows for a walk, `is` compares values. `is` is at comparison precedence and does not chain. The prefix
 forms are sugar: `is x` ≡ `!!x` (truthiness, §4), `not x` ≡ `!x`. Whether `in`
 over rows should compare identities is **deferred** — it still uses `==` (§9).
 [`sugar`]
@@ -166,8 +210,10 @@ over rows should compare identities is **deferred** — it still uses `==` (§9)
 `x!` — the **required** value — is `x` when `x` is present, and an **eval
 error** when `x` is absent (`null` or missing), whose message is
 `` `<x>!` is absent `` with `<x>` the canonical print of the expression
-(AST.md §6) and, when the current scope's row has a scalar identity (its `id`
-property), the suffix `` on <identity> `` (`on 7`, `on "d_1"`). It is never a
+(AST.md §6) and, when the current scope's row has a **scalar `$key`** (§16: a
+host identity, an entry's key, a projected `$key:` once the row is kept), the
+suffix `` on <identity> `` (`on 7`, `on "d_1"`); under the structural default a
+plain object has none. It is never a
 filter and never a coercion: `0!`, `""!` and `false!` are the values. It binds
 tightest (`-a!` is `-(a!)`, `!a!` is `!(a!)`, `a!.b` requires `a`, `a.b!`
 requires `a.b`). Over a bracket lookup, `x[n]!` requires the positional row and
@@ -387,8 +433,11 @@ Each kept row projects to:
   order), keyed by the alias or the navigation's last segment.
 
 An item whose value is absent produces an absent property — dropped in canonical
-form. A nested `collect` item yields an array; `first`/`single` a record (or
-its `values` value) or `null`. [`projection`, `values`, `consumers`]
+form. A nested `collect` item yields an array over a collection receiver and a
+record (or absent) over one object (§3); `first`/`single` a record (or its
+`values` value) or `null`. A `$key: expr` item is projected like any other and
+names the rows' identity (§16). [`projection`, `values`, `consumers`,
+`cardinality`, `identity`]
 
 ## 13. `where`
 
@@ -443,7 +492,7 @@ the row field). An engine evaluates the query it is given. Rules:
 
 | Consumer | Result | Notes |
 | --- | --- | --- |
-| `collect` | array of projected rows | the body form's consumer |
+| `collect` | array of projected rows — or, over a **single** receiver (one object, §3), the one record or absent | the body form's consumer |
 | `exists` | boolean | true iff at least one row |
 | `none` | boolean | true iff no rows |
 | `count` | number | rows after where/distinct/bounds |
@@ -452,26 +501,55 @@ the row field). An engine evaluates the query it is given. Rules:
 
 The same six shapes apply to nested directives, except that only
 `collect`/`first`/`single` are legal in a projection and only
-`exists`/`none`/`count`/`collect`(lifts) in `where`. [`consumers`]
+`exists`/`none`/`count`/`collect`(lifts) in `where`. [`consumers`, `cardinality`]
 
 ## 16. `distinct`
 
-`distinct` — spelled `select distinct …`, `<consumer> distinct { … }`, or
-`follow distinct` (§20) — keeps the **first** row per distinct **projected
-value**, preserving order, before bounds are applied. Projections compare
-structurally with absent ≡ `null`, key order ignored. With an **empty
-projection** (`count distinct { }`) rows dedup by **identity** (§20): the row's
-`id` property when the row is an object with one, else the row's structural
-value.
+`distinct` — spelled `select distinct …`, `<consumer> distinct { … }`, `x
+distinct { … }` (≡ `x collect distinct { … }`, since 0.20), or `follow distinct`
+(§20) — keeps the **first** row per distinct **projected value**, preserving
+order, before bounds are applied. Projections compare structurally with absent ≡
+`null`, key order ignored. With an **empty projection** (`count distinct { }`)
+rows dedup by **identity** — `$key`, below.
 
-**Identity is structural** (portability). Two values have the same identity iff
-they are structurally equal: absent ≡ `null`; numbers as doubles; strings by
-code point; arrays element-wise; objects by own keys, **order ignored**; and
-types are never conflated — `1`, `"1"`, and `true` are three identities, `{}`
-and `[]` two more. Never a host string form: `{a:1}` and `{a:2}` are different,
-`[{a:1},{a:2}] count distinct { }` is 2. Implementations key identities with a
-canonical, type-tagged serialization (the reference's `canonicalKey`). An
-entry's identity is its value's. [`distinct`, `follow`]
+### Identity: `$key` (since 0.20)
+
+Every row is known by one **identity**, `$key`: what `follow` uses for cycle
+detection, the per-step union and `follow distinct` (§20), what `distinct` over
+unprojected rows dedups by, what `is` compares (§5b), and what reading `$key` on
+the row returns (§2). One meaning — "the key by which this item is known". The
+language never names an `id` property; a host does, if it has one:
+
+- **Default: the host's identity.** A `DataContext` may name a row's identity
+  (the reference's optional `identityOf(row)`, the Rust trait's `identity`, which
+  defaults to the row): a store answers its row id. Without one a row's identity
+  is its **structural value** (portability): absent ≡ `null`; numbers as
+  doubles; strings by code point; arrays element-wise; objects by own keys,
+  **order ignored**; types never conflated — `1`, `"1"`, and `true` are three
+  identities, `{}` and `[]` two more; `{a:1}` and `{a:2}` differ, so `[{a:1},
+  {a:2}] count distinct { }` is 2. Implementations key identities with a
+  canonical, type-tagged serialization (the reference's `canonicalKey`); hosts
+  with cyclic object graphs supply an identity rather than rely on the
+  structural default.
+- **An entry's identity is its key** (§21) — the same `$key`.
+- **Projection override.** A block — a `follow` destination block or the body's
+  own `select` — may project **`$key: <expr>`**; the rows it yields carry that
+  identity. `select name, $key: email from people follow next { $key: email }`
+  walks `people` knowing every row by its email: the body's item names the
+  seeds, the destination block's item its successors. In a body the `$key` item
+  is also a column of the record (`{ name, $key }`), is read as the identity by
+  `order by $key` and by `^$key` from a nested block, and — like any alias — may
+  be named in `where`. In a **destination block** `$key:` names the identity of
+  the successors it yields and is **not** a column: the rows keep the shape of
+  the block's other items (its raw rows when `$key` is the only item), so `follow
+  next { $key: email }` yields the `next` rows themselves, known by email.
+- **Caveat.** Identities are compared as values across the whole walk, whichever
+  destination produced them: destinations that can reach the same rows should
+  project the same `$key`, or a cycle through both may run to the depth cap.
+
+The in-memory `DefaultContext` names no identity, so over plain JSON the
+fixtures project `$key: id` wherever a walk must recognise objects by an id.
+[`distinct`, `identity`, `follow`]
 
 ## 17. `order by`
 
@@ -521,33 +599,51 @@ visiting successors in order.
 
 A row's **successors** are, per destination in source order, the rows that
 destination yields (coerced per §3; a row lacking a relation contributes
-nothing), concatenated and then **unioned by identity**: an identity that
-recurs within one step is kept once, at its first position (since 0.14; a
-relation holding the same node twice yields one successor, and `follow before,
-after` steps once into a node both name). A row with no successors is a leaf.
+nothing), concatenated and then **unioned by identity** (§16): an identity that
+recurs within one step is kept once, at its first position, and the destination
+that reached it first governs the occurrence (its `frontier`, below). A row with
+no successors is a leaf.
 
-- A **plain destination** (`children`, `doc.out`) is read in the row's own
-  scope, like a body-level `from`.
-- A **destination block** (`^people collect { where manager == ^id }`, or with
-  the `collect` implicit after an outer-reference receiver, `^people { where
-  manager == ^id }` — since 0.19, GRAMMAR §`follow`) is
-  evaluated as a select-position directive **in the row's scope**: its receiver
-  is read there (so `^people` from a top-level walk is the named root), and
-  inside the block `^` reads the **frontier row** — the row being expanded —
-  exactly as `^` reads the enclosing row in any nested block. Its rows are the
-  block's result: the raw rows under an empty projection, projected records
-  otherwise, bare values under `values`; `first`/`single` yield at most one.
-  The block may order, bound and `distinct` its rows like any block. (since
-  0.14) [`follow`]
+- A **plain destination** (`children`, `doc.out`, `entries(kids)`, a tuple
+  `(before, after)` — one destination over the union of its elements, §3b) is
+  read in the row's own scope, like a body-level `from`; its rows are known by
+  the host's identity.
+- A **destination block** (`children { depth 2 }`, `^people { where manager ==
+  ^id }`, `(before, after) { where id != 3 }`, `^people collect { … }`, `kids
+  first { … }` — GRAMMAR §`follow`) is evaluated as a select-position directive
+  **in the row's scope**: its receiver is read there (so `^people` from a
+  top-level walk is the named root), and inside the block `^` reads the
+  **frontier row** — the row being expanded — exactly as `^` reads the enclosing
+  row in any nested block: `follow next { where prev == ^id }` steps only into
+  rows that name the row they were reached from, `^^name` is the walk's
+  enclosing scope. Its rows are the block's result: the raw rows under an empty
+  projection, projected records otherwise (a projection shapes what gets
+  expanded next), bare values under `values`; `first`/`single` yield at most
+  one; a block over a single receiver (§3) yields its one record as one
+  successor (or none). The block may order, bound and `distinct` its rows like
+  any block. Its `$key: expr` item names the successors' identity and is not a
+  column (§16).
+- Two clauses belong to a destination block alone (since 0.20; they were
+  options of the whole `follow` before): **`depth n`** — the destination expands
+  a frontier row only while that row's `$depth < n` (so its successors have
+  `$depth ≤ n`; 1–8); **`frontier P`** — an occurrence reached **through this
+  destination** for which `P` holds is a frontier (`$stop == "frontier"`, not
+  expanded). `P` is read in the occurrence's own scope with `^` the **walk's
+  enclosing scope** (not the frontier row), as the body is read; seeds are
+  reached through no destination and are never frontiers by this rule. The hard
+  cap **8** is every destination's ceiling and the default.
 
 Each occurrence carries intrinsics:
 
 - `$depth` — 1 for a seed;
 - `$stop` — `cycle` > `frontier` > `depth` > `leaf` > `interior` (first that
-  applies): the row's identity is already on the current path; the `frontier`
-  predicate holds; `$depth` reached the cap; no successors; otherwise interior.
-  Only `interior` rows expand;
+  applies): the row's identity is already on the current path; the destination
+  that reached it marks it a frontier; the row has no successors and some
+  destination **declined** to expand it by its `depth` (or `$depth` is 8); the
+  row has no successors and nothing declined; otherwise interior. Only
+  `interior` rows expand;
 - `$leaf` = `$stop == "leaf"`; `$frontier` = `$stop` is `frontier` or `depth`;
+- `$key` — the occurrence's identity (§16);
 - `$ordinal` — a 1-based rank over all occurrences ordered by `$depth`, then
   by **path**, the sequence of identities from the seed to the occurrence,
   compared **component-wise as values**: two numbers numerically, two strings
@@ -556,27 +652,19 @@ Each occurrence carries intrinsics:
   by canonical serialization (the reference's `comparePath`). Which destination
   reached a row plays no part.
 
-Options: `where P` keeps only successors satisfying `P`, read in the
-**successor's scope whose parent is the frontier row's scope**: a bare name is
-the candidate's own property, `^name` is the frontier row's — `follow next {
-where prev == ^id }` steps only into rows that name the row they were reached
-from — and `^^name` is the walk's enclosing scope (since 0.14;
-before, `^` skipped the frontier row and read the enclosing scope). `frontier
-P` marks a row a frontier (not expanded), whichever destination reached it;
-`depth n` caps `$depth` at `n` (1–8; the default and hard cap is 8); `by E`
-gives the identity expression. `frontier` and `by` are read in the occurrence's
-own scope with `^` the enclosing scope, as the body is. **Identity**
-(portability) defaults to the row's `id` property, else its structural value,
-compared as §16 describes — id-less nodes with different contents are different
-nodes (not cycles of one another), and an `id` of `1` is not an `id` of `"1"`.
-A revisit of an identity on the current path is admitted **once** as
-`$stop == "cycle"` and not expanded, so cycles terminate. A node reached by N
-distinct paths yields N occurrences; `follow distinct` keeps the minimal
-`(depth, path)` occurrence per identity. Intrinsics belong to the occurrence's
-scope: inside a nested block `$depth` is the nested row's own `$depth`
-property (absent unless the host provides one, §2) and `^$depth` is the
-occurrence's. `follow` is legal at the top level and inside a select-position
-`collect`; inside a where-position directive it is an eval error. [`follow`]
+**Identity** is `$key` (§16): a seed's is the body's `$key:` item read in the
+seed's scope, else the host's identity (structural by default — so over plain
+JSON two objects with the same `id` are two nodes unless `$key: id` says
+otherwise); a successor's is its destination block's `$key:` item, else the
+host's identity of the row yielded. A revisit of an identity on the current path
+is admitted **once** as `$stop == "cycle"` and not expanded, so cycles
+terminate. A node reached by N distinct paths yields N occurrences; `follow
+distinct` keeps the minimal `(depth, path)` occurrence per identity. Intrinsics
+belong to the occurrence's scope: inside a nested block `$depth` is the nested
+row's own `$depth` property (absent unless the host provides one, §2) and
+`^$depth` is the occurrence's. `follow` is legal at the top level and inside a
+select-position `collect`; inside a where-position directive it is an eval
+error. A walk is always plural (§3). [`follow`, `identity`, `tuples`]
 
 ## 21. `entries()` and `$key`
 
@@ -593,11 +681,12 @@ order of integer-like and non-integer-like keys** in one object (`{ "b":1,
 "2":2, "a":3 }` yields `["2","b","a"]` in the reference and `["b","2","a"]`
 elsewhere); an object with only one kind of key is safe. When an entry becomes a scope's row, the scope's row is
 the property's **value** (`$it`, bare names, navigation) and `$key` is the
-property's key. `$key` exists only in an entry scope; ordinary rows and array
-elements have none. Entries flow through every place a row does: sources,
-`from` re-projections, nested receivers, `follow` seeds (which keep their
-`$key`). As a plain value, `entries(x)` is an array of `{ key, value }` records.
-[`entries`]
+property's key — the entry's **identity** (§16; since 0.20 `$key` is the
+identity on every row, so an ordinary row's `$key` is the host's or structural
+identity rather than absent). Entries flow through every place a row does:
+sources, `from` re-projections, nested receivers, `follow` seeds (which keep
+their `$key`). As a plain value, `entries(x)` is an array of `{ key, value }`
+records. [`entries`, `identity`]
 
 ## 22. Bindings
 
@@ -617,9 +706,9 @@ Every failure is an `OqxError` whose `stage` is `lex`, `parse`, or `eval`
 method; `single` with more than one row; a required value that is absent
 (§5b); an invalid `limit`/`offset` value (a bracket index is an `offset`);
 `follow` in a where-position directive; an invalid or unsupported regex or
-regex flag (§11);
+regex flag (§11); a scalar in row position (§3);
 a range in a result (§1); a binding out of range (§22). Evaluation is otherwise
 total: absent navigation, arithmetic over absent, comparisons over absent or
 mismatched types, membership in a non-container, and `range()` of a bad string
 all yield a value (absent or `false`), never an error.
-[`errors-lex`, `errors-parse`, `errors-eval`, `logical`, `regex`]
+[`errors-lex`, `errors-parse`, `errors-eval`, `logical`, `regex`, `cardinality`]

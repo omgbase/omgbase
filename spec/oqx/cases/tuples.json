@@ -1,0 +1,840 @@
+{
+  "suite": "tuples",
+  "cases": [
+    {
+      "name": "a tuple is a value: the elements in order",
+      "tags": [
+        "tuples"
+      ],
+      "notes": "`(e1, e2, …)` with two or more elements is a tuple (GRAMMAR §4): a collection of the elements' values in source order.",
+      "roots": {
+        "r": [
+          {
+            "a": 1,
+            "b": 2
+          }
+        ]
+      },
+      "query": "v: (a, b) from r",
+      "expect": {
+        "result": [
+          {
+            "v": [
+              1,
+              2
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "one level of flattening: a collection contributes its items",
+      "tags": [
+        "tuples"
+      ],
+      "notes": "A collection element contributes its items (one level), a row or scalar itself.",
+      "roots": {
+        "r": [
+          {
+            "a": 1,
+            "b": [
+              2,
+              3
+            ]
+          }
+        ]
+      },
+      "query": "v: (a, b) from r",
+      "expect": {
+        "result": [
+          {
+            "v": [
+              1,
+              2,
+              3
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "a row element contributes itself (not its properties)",
+      "tags": [
+        "tuples"
+      ],
+      "roots": {
+        "people": [
+          {
+            "name": "Ann",
+            "mom": {
+              "name": "Mia"
+            },
+            "dad": {
+              "name": "Dan"
+            },
+            "siblings": [
+              {
+                "name": "Bo"
+              },
+              {
+                "name": "Cy"
+              }
+            ],
+            "tags": [
+              "x",
+              "y"
+            ],
+            "aliases": [
+              "z"
+            ]
+          },
+          {
+            "name": "Eve",
+            "mom": {
+              "name": "Mo"
+            },
+            "siblings": [],
+            "tags": [],
+            "aliases": [
+              "x"
+            ]
+          }
+        ]
+      },
+      "query": "v: (mom, dad) from people where name == \"Ann\"",
+      "expect": {
+        "result": [
+          {
+            "v": [
+              {
+                "name": "Mia"
+              },
+              {
+                "name": "Dan"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "nested collections flatten only one level",
+      "tags": [
+        "tuples"
+      ],
+      "roots": {
+        "r": [
+          {
+            "xs": [
+              [
+                1,
+                2
+              ],
+              [
+                3
+              ]
+            ]
+          }
+        ]
+      },
+      "query": "v: (xs, 0) from r",
+      "expect": {
+        "result": [
+          {
+            "v": [
+              [
+                1,
+                2
+              ],
+              [
+                3
+              ],
+              0
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "an absent element contributes nothing",
+      "tags": [
+        "tuples",
+        "absent"
+      ],
+      "notes": "Absent (a missing property, `undefined`) adds no element; see the next case for a `null`.",
+      "roots": {
+        "r": [
+          {
+            "a": 1,
+            "b": 2
+          }
+        ]
+      },
+      "query": "v: (a, nope, b) from r",
+      "expect": {
+        "result": [
+          {
+            "v": [
+              1,
+              2
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "a null element is kept",
+      "tags": [
+        "tuples",
+        "absent"
+      ],
+      "notes": "The one place the two spellings of absent differ (SEMANTICS §3b): a literal `null` and a property holding `null` are elements; a missing property is not.",
+      "roots": {
+        "r": [
+          {
+            "a": 1,
+            "n": null
+          }
+        ]
+      },
+      "query": "v: (a, null, n) from r",
+      "expect": {
+        "result": [
+          {
+            "v": [
+              1,
+              null,
+              null
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "duplicates are kept",
+      "tags": [
+        "tuples"
+      ],
+      "roots": {
+        "r": [
+          {
+            "a": 1,
+            "xs": [
+              1
+            ]
+          }
+        ]
+      },
+      "query": "v: (a, a, xs) from r",
+      "expect": {
+        "result": [
+          {
+            "v": [
+              1,
+              1,
+              1
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "a nested tuple is a collection and flattens one level",
+      "tags": [
+        "tuples"
+      ],
+      "notes": "The inner tuple is the collection `[2, 3]` (it flattened `c` itself); the outer spreads it one level.",
+      "roots": {
+        "r": [
+          {
+            "a": 1,
+            "b": 2,
+            "c": [
+              3
+            ]
+          }
+        ]
+      },
+      "query": "v: (a, (b, c)) from r",
+      "expect": {
+        "result": [
+          {
+            "v": [
+              1,
+              2,
+              3
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "size of a tuple",
+      "tags": [
+        "tuples",
+        "builtins"
+      ],
+      "roots": {
+        "people": [
+          {
+            "name": "Ann",
+            "mom": {
+              "name": "Mia"
+            },
+            "dad": {
+              "name": "Dan"
+            },
+            "siblings": [
+              {
+                "name": "Bo"
+              },
+              {
+                "name": "Cy"
+              }
+            ],
+            "tags": [
+              "x",
+              "y"
+            ],
+            "aliases": [
+              "z"
+            ]
+          },
+          {
+            "name": "Eve",
+            "mom": {
+              "name": "Mo"
+            },
+            "siblings": [],
+            "tags": [],
+            "aliases": [
+              "x"
+            ]
+          }
+        ]
+      },
+      "query": "n: size((tags, aliases)) from people",
+      "expect": {
+        "result": [
+          {
+            "n": 3
+          },
+          {
+            "n": 1
+          }
+        ]
+      }
+    },
+    {
+      "name": "membership in a tuple",
+      "tags": [
+        "tuples",
+        "membership"
+      ],
+      "roots": {
+        "people": [
+          {
+            "name": "Ann",
+            "mom": {
+              "name": "Mia"
+            },
+            "dad": {
+              "name": "Dan"
+            },
+            "siblings": [
+              {
+                "name": "Bo"
+              },
+              {
+                "name": "Cy"
+              }
+            ],
+            "tags": [
+              "x",
+              "y"
+            ],
+            "aliases": [
+              "z"
+            ]
+          },
+          {
+            "name": "Eve",
+            "mom": {
+              "name": "Mo"
+            },
+            "siblings": [],
+            "tags": [],
+            "aliases": [
+              "x"
+            ]
+          }
+        ]
+      },
+      "query": "name values from people where \"x\" in (tags, aliases)",
+      "expect": {
+        "result": [
+          "Ann",
+          "Eve"
+        ]
+      }
+    },
+    {
+      "name": "a tuple as a receiver: one block over the union",
+      "tags": [
+        "tuples",
+        "sugar"
+      ],
+      "notes": "`(mom, dad, siblings) { … }` is `(mom, dad, siblings) collect { … }`: rows (the tuple's elements) → one block. An absent `dad` contributes nothing.",
+      "roots": {
+        "people": [
+          {
+            "name": "Ann",
+            "mom": {
+              "name": "Mia"
+            },
+            "dad": {
+              "name": "Dan"
+            },
+            "siblings": [
+              {
+                "name": "Bo"
+              },
+              {
+                "name": "Cy"
+              }
+            ],
+            "tags": [
+              "x",
+              "y"
+            ],
+            "aliases": [
+              "z"
+            ]
+          },
+          {
+            "name": "Eve",
+            "mom": {
+              "name": "Mo"
+            },
+            "siblings": [],
+            "tags": [],
+            "aliases": [
+              "x"
+            ]
+          }
+        ]
+      },
+      "query": "n: (mom, dad, siblings) { name values } from people",
+      "expect": {
+        "result": [
+          {
+            "n": [
+              "Mia",
+              "Dan",
+              "Bo",
+              "Cy"
+            ]
+          },
+          {
+            "n": [
+              "Mo"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "a tuple as a consumer test receiver in where",
+      "tags": [
+        "tuples",
+        "where"
+      ],
+      "roots": {
+        "people": [
+          {
+            "name": "Ann",
+            "mom": {
+              "name": "Mia"
+            },
+            "dad": {
+              "name": "Dan"
+            },
+            "siblings": [
+              {
+                "name": "Bo"
+              },
+              {
+                "name": "Cy"
+              }
+            ],
+            "tags": [
+              "x",
+              "y"
+            ],
+            "aliases": [
+              "z"
+            ]
+          },
+          {
+            "name": "Eve",
+            "mom": {
+              "name": "Mo"
+            },
+            "siblings": [],
+            "tags": [],
+            "aliases": [
+              "x"
+            ]
+          }
+        ]
+      },
+      "query": "name values from people where (mom, dad) count { } == 2",
+      "expect": {
+        "result": [
+          "Ann"
+        ]
+      }
+    },
+    {
+      "name": "a tuple as a scalar operand in where",
+      "tags": [
+        "tuples",
+        "where"
+      ],
+      "roots": {
+        "people": [
+          {
+            "name": "Ann",
+            "mom": {
+              "name": "Mia"
+            },
+            "dad": {
+              "name": "Dan"
+            },
+            "siblings": [
+              {
+                "name": "Bo"
+              },
+              {
+                "name": "Cy"
+              }
+            ],
+            "tags": [
+              "x",
+              "y"
+            ],
+            "aliases": [
+              "z"
+            ]
+          },
+          {
+            "name": "Eve",
+            "mom": {
+              "name": "Mo"
+            },
+            "siblings": [],
+            "tags": [],
+            "aliases": [
+              "x"
+            ]
+          }
+        ]
+      },
+      "query": "name values from people where (tags, aliases).size() > 1",
+      "expect": {
+        "result": [
+          "Ann"
+        ]
+      }
+    },
+    {
+      "name": "a tuple as a follow destination walks the union",
+      "tags": [
+        "tuples",
+        "follow"
+      ],
+      "notes": "One destination; the per-step union by identity applies to its rows as to any destination's (`$key: id` so `$ordinal` ranks by id).",
+      "roots": {
+        "g": [
+          {
+            "id": 1,
+            "before": [
+              {
+                "id": 2
+              }
+            ],
+            "after": [
+              {
+                "id": 3,
+                "after": [
+                  {
+                    "id": 4
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "query": "id, d: $depth from g follow (before, after) { $key: id } order by $ordinal",
+      "expect": {
+        "result": [
+          {
+            "id": 1,
+            "d": 1
+          },
+          {
+            "id": 2,
+            "d": 2
+          },
+          {
+            "id": 3,
+            "d": 2
+          },
+          {
+            "id": 4,
+            "d": 3
+          }
+        ]
+      }
+    },
+    {
+      "name": "a tuple destination block with a depth cap",
+      "tags": [
+        "tuples",
+        "follow"
+      ],
+      "roots": {
+        "g": [
+          {
+            "id": 1,
+            "before": [
+              {
+                "id": 2
+              }
+            ],
+            "after": [
+              {
+                "id": 3,
+                "after": [
+                  {
+                    "id": 4
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "query": "id, s: $stop from g follow (before, after) { $key: id depth 2 } order by $ordinal",
+      "expect": {
+        "result": [
+          {
+            "id": 1,
+            "s": "interior"
+          },
+          {
+            "id": 2,
+            "s": "depth"
+          },
+          {
+            "id": 3,
+            "s": "depth"
+          }
+        ]
+      }
+    },
+    {
+      "name": "one expression in parentheses is grouping, not a tuple",
+      "tags": [
+        "tuples"
+      ],
+      "roots": {
+        "r": [
+          {
+            "a": 1,
+            "xs": [
+              1,
+              2
+            ]
+          }
+        ]
+      },
+      "query": "v: (a), w: size((xs)) from r",
+      "expect": {
+        "result": [
+          {
+            "v": 1,
+            "w": 2
+          }
+        ]
+      }
+    },
+    {
+      "name": "a tuple of two scalars in a bound collection test",
+      "tags": [
+        "tuples"
+      ],
+      "roots": {
+        "r": [
+          {
+            "a": 1,
+            "b": 2
+          },
+          {
+            "a": 3
+          }
+        ]
+      },
+      "query": "r count { where 2 in (a, b) }",
+      "expect": {
+        "result": 1
+      }
+    },
+    {
+      "name": "a tuple needs its closing parenthesis",
+      "tags": [
+        "tuples",
+        "errors"
+      ],
+      "query": "v: (a, b from r",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "expected ')' to close the tuple"
+          ]
+        }
+      }
+    },
+    {
+      "name": "AST: a tuple node and its canonical print",
+      "tags": [
+        "tuples",
+        "ast"
+      ],
+      "query": "v: (a, b.c, 1) from r",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "r"
+          },
+          "from": [],
+          "where": null,
+          "select": [
+            {
+              "kind": "field",
+              "name": "v",
+              "expr": {
+                "kind": "tuple",
+                "items": [
+                  {
+                    "kind": "ident",
+                    "name": "a"
+                  },
+                  {
+                    "kind": "member",
+                    "recv": {
+                      "kind": "ident",
+                      "name": "b"
+                    },
+                    "name": "c"
+                  },
+                  {
+                    "kind": "lit",
+                    "value": 1
+                  }
+                ]
+              },
+              "lift": 0
+            }
+          ],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "AST: a tuple as a block receiver",
+      "tags": [
+        "tuples",
+        "ast",
+        "sugar"
+      ],
+      "query": "n: (a, b) { x } from r",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "r"
+          },
+          "from": [],
+          "where": null,
+          "select": [
+            {
+              "kind": "collect",
+              "name": "n",
+              "op": {
+                "kind": "op",
+                "receiver": {
+                  "kind": "tuple",
+                  "items": [
+                    {
+                      "kind": "ident",
+                      "name": "a"
+                    },
+                    {
+                      "kind": "ident",
+                      "name": "b"
+                    }
+                  ]
+                },
+                "op": "collect",
+                "sub": {
+                  "kind": "subquery",
+                  "from": [],
+                  "where": null,
+                  "select": [
+                    {
+                      "kind": "field",
+                      "name": "x",
+                      "expr": {
+                        "kind": "ident",
+                        "name": "x"
+                      },
+                      "lift": 0
+                    }
+                  ],
+                  "orderBy": null,
+                  "follow": null,
+                  "frontier": null,
+                  "depth": null,
+                  "values": false,
+                  "limit": null,
+                  "offset": null
+                },
+                "countCmp": null,
+                "distinct": false
+              }
+            }
+          ],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    }
+  ]
+}
