@@ -743,6 +743,8 @@ impl Store {
                 origin: Origin::Api,
                 actor: Some(req.origin.actor.as_str()),
                 reason: req.origin.reason.as_deref(),
+                // An `api` commit never touches `docs.conflicted`.
+                conflicted: None,
             };
             self.commit_ingest(&req.repo_id, &plan, ts, &expires)?;
         }

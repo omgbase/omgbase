@@ -1824,3 +1824,158 @@ fn doc_op_dry_runs_preview_diffs_and_commit_nothing() {
         serde_json::json!({ "doc": "d_3", "path": "c.md", "committed": true })
     );
 }
+
+// ---- transaction hygiene: the statement stream ---------------------------------------
+//
+// `Connection::trace_v2` (rusqlite's `trace` feature, dev-only) records every
+// statement this thread runs; a write "rides a transaction" when a `BEGIN`
+// precedes it with no `COMMIT`/`ROLLBACK` between, and a `COMMIT` follows.
+
+thread_local! {
+    static TRACE: std::cell::RefCell<Vec<String>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+fn record_stmt(e: rusqlite::trace::TraceEvent<'_>) {
+    if let rusqlite::trace::TraceEvent::Stmt(_, sql) = e {
+        TRACE.with(|t| t.borrow_mut().push(sql.trim().to_owned()));
+    }
+}
+
+/// Start (or restart) recording this thread's statements on `conn`.
+fn start_trace(conn: &Connection) {
+    TRACE.with(|t| t.borrow_mut().clear());
+    conn.trace_v2(
+        rusqlite::trace::TraceEventCodes::SQLITE_TRACE_STMT,
+        Some(record_stmt),
+    );
+}
+
+fn traced() -> Vec<String> {
+    TRACE.with(|t| t.borrow().clone())
+}
+
+/// The index of the `BEGIN` opening the transaction the first statement
+/// matching `needle` ran in — `None` when it ran in autocommit (no open
+/// `BEGIN`, or the transaction rolled back). Panics when nothing matches.
+fn tx_of(log: &[String], needle: &str) -> Option<usize> {
+    let i = log
+        .iter()
+        .position(|s| s.contains(needle))
+        .unwrap_or_else(|| panic!("no statement matching {needle:?} in {log:#?}"));
+    let begin = log[..i].iter().rposition(|s| s.starts_with("BEGIN"))?;
+    if log[begin..i]
+        .iter()
+        .any(|s| s.starts_with("COMMIT") || s.starts_with("ROLLBACK"))
+    {
+        return None;
+    }
+    let end = log[i..]
+        .iter()
+        .position(|s| {
+            s.starts_with("COMMIT") || s.starts_with("ROLLBACK") || s.starts_with("BEGIN")
+        })
+        .map(|k| i + k)?;
+    log[end].starts_with("COMMIT").then_some(begin)
+}
+
+const CONFLICT: &str = "<<<<<<< HEAD\nours\n=======\ntheirs\n>>>>>>> main\n";
+const FLAG_UPDATE: &str = "file_hash = ?2, conflicted = ?3";
+
+fn conflicted_flag(store: &Store) -> i64 {
+    store
+        .conn()
+        .query_row("SELECT conflicted FROM docs", [], |r| r.get(0))
+        .unwrap()
+}
+
+/// §5.4 step 12: the observed path writes `docs.conflicted` with the
+/// pointers, inside the commit's transaction — never as an autocommit after
+/// it — and the `api`/reconciling path leaves the column alone.
+#[test]
+fn conflicted_flag_is_written_inside_the_ingest_transaction() {
+    let (mut store, repo) = fixture_store();
+    start_trace(store.conn());
+    let o = observe(&mut store, &repo, "a.md", CONFLICT, T0);
+    assert!(o.conflicted);
+    assert_eq!(conflicted_flag(&store), 1);
+    let log = traced();
+    let flag_tx = tx_of(&log, FLAG_UPDATE);
+    assert!(
+        flag_tx.is_some(),
+        "the flag update rides a transaction: {log:#?}"
+    );
+    assert_eq!(
+        flag_tx,
+        tx_of(&log, "INSERT INTO commits"),
+        "… the commit's own transaction: {log:#?}"
+    );
+    assert!(
+        !log.iter()
+            .any(|s| s.starts_with("UPDATE docs SET conflicted")),
+        "no standalone flag update: {log:#?}"
+    );
+
+    // The api / reconciling ingest (`docs_create`, `docs_set_meta`, the sync
+    // layer's recovery) never touches the flag: a clean source through it
+    // leaves the row conflicted, as before.
+    start_trace(store.conn());
+    store
+        .reconciling_ingest(
+            &repo,
+            "a.md",
+            "resolved by api\n",
+            T1,
+            Origin::Api,
+            Some("t"),
+            None,
+            &Config::default(),
+        )
+        .unwrap();
+    assert_eq!(conflicted_flag(&store), 1, "api ingest leaves the flag");
+    let log = traced();
+    assert!(
+        !log.iter().any(|s| s.contains("conflicted =")),
+        "api ingest never names the column: {log:#?}"
+    );
+    assert!(
+        tx_of(
+            &log,
+            "UPDATE docs SET current_rev = ?1, file_hash = ?2 WHERE"
+        )
+        .is_some()
+    );
+
+    // The next observation clears it — again inside its commit.
+    start_trace(store.conn());
+    let o = observe(&mut store, &repo, "a.md", "resolved\n", T2);
+    assert!(!o.conflicted);
+    assert_eq!(conflicted_flag(&store), 0);
+    let log = traced();
+    assert_eq!(tx_of(&log, FLAG_UPDATE), tx_of(&log, "INSERT INTO commits"));
+    assert!(tx_of(&log, FLAG_UPDATE).is_some(), "{log:#?}");
+}
+
+/// `observe_delete`: the tombstone is one transaction; the trailing pool
+/// sweep is its own autocommit (a one-liner that cannot half-apply).
+#[test]
+fn observe_delete_tombstones_in_one_transaction() {
+    let (mut store, repo) = fixture_store();
+    observe(&mut store, &repo, "a.md", "# A\n\nOne.\n", T0);
+    start_trace(store.conn());
+    let d = store.observe_delete(&repo, "a.md", T1).unwrap();
+    assert!(d.doc_id.is_some());
+    let log = traced();
+    let tomb = tx_of(&log, "UPDATE docs SET deleted_commit");
+    assert!(tomb.is_some(), "{log:#?}");
+    assert_eq!(tomb, tx_of(&log, "INSERT INTO commits"));
+    assert_eq!(tomb, tx_of(&log, "UPDATE blocks SET deleted_commit"));
+    assert_eq!(
+        tomb,
+        tx_of(&log, "INSERT OR REPLACE INTO resurrection_pool")
+    );
+    assert_eq!(
+        tx_of(&log, "DELETE FROM resurrection_pool WHERE expires_ts"),
+        None,
+        "the sweep is a separate autocommit: {log:#?}"
+    );
+}

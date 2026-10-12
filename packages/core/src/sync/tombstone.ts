@@ -25,10 +25,13 @@ import { ftsDeleteDoc } from "../core/store/fts.js";
 //      consumes the pool to resurrect ids when the file reappears). Pooling with the
 //      standard ~30-day expiry keeps sweepResurrectionPool semantics intact.
 //
-// Convention: like processCheckpoint/reconcileChanges, this runs bare db.prepare
-// statements on store.db (each auto-commits) rather than opening its own
-// store.write transaction, so it composes with either caller's loop. The unlink of
-// the on-disk file that docsDelete performs is intentionally absent here — the file
+// Transaction: the commit row, the pool snapshot, the FTS deletes and the two
+// tombstone UPDATEs are ONE `store.write` transaction (spec/store §5.6) — a
+// failure midway leaves the doc live with no commit minted, never a doc whose
+// blocks are pooled but still indexed, or tombstoned under a commit that is
+// not there. better-sqlite3 nests an inner `transaction` as a savepoint, so this
+// still composes inside a caller that already holds one. The unlink of the
+// on-disk file that docsDelete performs is intentionally absent here — the file
 // is ALREADY gone (that is what triggered the tombstone).
 
 /**
@@ -39,24 +42,25 @@ import { ftsDeleteDoc } from "../core/store/fts.js";
  * UPDATEs simply affect zero rows.
  */
 export function tombstoneObservedDeletion(store: Store, repoId: string, docId: string, ts: string): string {
-  const db = store.db;
-  const commit = newCommit(db, { repoId, ts, origin: "observed", reason: "observed deletion" });
+  return store.write((db) => {
+    const commit = newCommit(db, { repoId, ts, origin: "observed", reason: "observed deletion" });
 
-  // Snapshot the doc's live blocks into the resurrection pool BEFORE tombstoning,
-  // mirroring core/ingest.ts's reconciling-delete snapshot (~30-day expiry) so a
-  // recreate of the same file can resurrect these block identities.
-  const expires = new Date(Date.parse(ts) + 30 * 24 * 3600 * 1000).toISOString();
-  db.prepare(
-    `INSERT OR REPLACE INTO resurrection_pool (block_id, repo_id, doc_id, raw_hash, norm_hash, type, deleted_commit, expires_ts)
-     SELECT block_id, repo_id, doc_id, raw_hash, norm_hash, type, ?, ?
-       FROM blocks WHERE doc_id = ? AND deleted_commit IS NULL`,
-  ).run(commit.commitId, expires, docId);
+    // Snapshot the doc's live blocks into the resurrection pool BEFORE tombstoning,
+    // mirroring core/ingest.ts's reconciling-delete snapshot (~30-day expiry) so a
+    // recreate of the same file can resurrect these block identities.
+    const expires = new Date(Date.parse(ts) + 30 * 24 * 3600 * 1000).toISOString();
+    db.prepare(
+      `INSERT OR REPLACE INTO resurrection_pool (block_id, repo_id, doc_id, raw_hash, norm_hash, type, deleted_commit, expires_ts)
+       SELECT block_id, repo_id, doc_id, raw_hash, norm_hash, type, ?, ?
+         FROM blocks WHERE doc_id = ? AND deleted_commit IS NULL`,
+    ).run(commit.commitId, expires, docId);
 
-  // Drop FTS index rows (external-content: delete with the original text before the
-  // blocks change), then tombstone the live blocks and the doc row.
-  ftsDeleteDoc(db, docId);
-  db.prepare("UPDATE blocks SET deleted_commit = ? WHERE doc_id = ? AND deleted_commit IS NULL").run(commit.commitId, docId);
-  db.prepare("UPDATE docs SET deleted_commit = ? WHERE doc_id = ?").run(commit.commitId, docId);
+    // Drop FTS index rows (external-content: delete with the original text before the
+    // blocks change), then tombstone the live blocks and the doc row.
+    ftsDeleteDoc(db, docId);
+    db.prepare("UPDATE blocks SET deleted_commit = ? WHERE doc_id = ? AND deleted_commit IS NULL").run(commit.commitId, docId);
+    db.prepare("UPDATE docs SET deleted_commit = ? WHERE doc_id = ?").run(commit.commitId, docId);
 
-  return commit.commitId;
+    return commit.commitId;
+  });
 }

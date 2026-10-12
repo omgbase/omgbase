@@ -466,9 +466,11 @@ prepared result):
     `reconstruct(doc) == source` (§6.1, read back from the rows just
     written). Reported in the outcome; a `false` is a bug in one of the
     three, never a normal state.
-14. After the transaction: `UPDATE docs SET conflicted = 1|0` for the path,
-    1 iff `source` has a line starting with `<<<<<<<` **and** a line starting
-    with `>>>>>>>`.
+14. **Conflict flag**, inside the same transaction, with step 12's pointers
+    (13.6; 13.5 ran it after the transaction): `UPDATE docs SET conflicted =
+    1|0` for the path, 1 iff `source` has a line starting with `<<<<<<<`
+    **and** a line starting with `>>>>>>>`. Only an observed member sets the
+    flag; an `api` ingest (`spec/mutate` §4) leaves it untouched.
 
 The member's outcome is `{ echo: false, doc, commit, rev, converged,
 conflicted, dispositions: kind → count over this commit }`.
@@ -501,8 +503,9 @@ The fixtures make it an explicit step so its effect is pinned on its own.
 
 ### 5.6 Observed deletion (tombstone)
 
-For a live doc whose path is gone, in one transaction (the reference runs bare
-statements; the effect is the same):
+For a live doc whose path is gone, in one transaction (13.6; through 13.5
+the reference ran bare autocommit statements, so a failure mid-way could
+leave a pooled, half-tombstoned doc):
 
 1. **Mint `c`**; insert a commit `(seq, ts, origin = 'observed', actor =
    NULL, reason = 'observed deletion')`.
@@ -770,6 +773,14 @@ Each is **pinned** (a fixture asserts it; changing it is a store change under
 "Versioning") or **fixed** (the prose above is the fix and the reference is
 brought to it).
 
+- **Fixed (13.6) — two observe-path writes sat outside their transaction.**
+  §5.4 step 14's `conflicted` flag was an autocommit after the member's
+  transaction in both engines, and §5.6's observed tombstone was bare
+  autocommit statements in the reference (the port had it in one
+  transaction). A crash between them left a committed revision with a stale
+  flag, or a pooled doc still live. Both now run inside the transaction they
+  belong to; no projection changes (the fixtures are unchanged), so this is a
+  procedure minor.
 - **Fixed (13.5) — a random block id collided at 360,338 blocks.** The
   reference's `mintId` and the port's `RandomMinter` drew 7 Crockford
   characters and trusted the primary key; the first ingest of a synthetic
@@ -838,6 +849,11 @@ brought to it).
 
 ## Decisions
 
+- 2026-10-12, store 13.6: the `conflicted` flag (§5.4 step 14) and the
+  observed tombstone (§5.6) run inside their transactions in both engines.
+  No DDL change; a procedure minor. First of the transaction-hygiene steps
+  that precede the effect planner (the `api` path's single transaction over
+  a whole changeset is the next).
 - 2026-09-26, store 13.5: a production mint never returns an id in use
   (issued in this process, or present in the prefix's table); the repeating
   fixture minter pins the redraw. No DDL change; a procedure minor.

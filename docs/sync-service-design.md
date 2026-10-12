@@ -237,7 +237,7 @@ store touch for an MCP tool call. Mapping:
 | fetch source bytes | `source.fetch(path)` | unchanged — same adapter protocol |
 | echo gate (`file_hash.equals(diskHash)`) | in-loop compare | client-side compare vs cached `sync_state.revision` (§6) |
 | member left scope (delete) | `tombstoneObservedDeletion(...)` | `docs_delete(doc)` |
-| conflict markers → ingest opaque + flag | `ingestFile(...)` + `UPDATE docs SET conflicted=1` | `observe(path, content)`; conflict flag stays engine-side (observe detects markers) |
+| conflict markers → ingest opaque + flag | `ingestFile(..., { conflicted })` (the flag is written inside the ingest transaction since store 13.6) | `observe(path, content)`; conflict flag stays engine-side (observe detects markers) |
 | normal changed member → ingest observed | `ingestFile(store, repoId, path, content, {resolveIds: reconciling})` | **`observe(path, content, source)`** (§4.1) — identity threading stays server-side |
 | checkpoint row | `INSERT INTO checkpoints …` | server writes it inside `observe`/batch; client advances its `sync_state` cursor |
 | resurrection sweep | `sweepResurrectionPool(...)` | server-side, inside the observe/commit path |

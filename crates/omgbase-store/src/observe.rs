@@ -474,6 +474,12 @@ pub(crate) struct IngestPlan<'a> {
     pub origin: Origin,
     pub actor: Option<&'a str>,
     pub reason: Option<&'a str>,
+    /// `docs.conflicted` for this commit: `Some` on the observed path (§5.4
+    /// step 12 writes it with the pointers, in the same transaction — the
+    /// reference's `observeFile` sets it from the conflict-marker scan),
+    /// `None` leaves the column as it is (`api` ingests, the reconciling and
+    /// fresh ingests of the sync layer).
+    pub conflicted: Option<bool>,
 }
 
 fn disposition_rows(result: &ReconcileResult) -> Vec<DispositionRow> {
@@ -597,12 +603,10 @@ impl Store {
                     old_hash_hex,
                     new_hash_hex,
                 } => {
+                    // The flag rides the commit's transaction (step 12), not
+                    // an autocommit after it.
                     let conflicted = has_conflict_markers(&prepared.source);
-                    let c = self.commit_prepared(repo_id, &prepared, ts, &expires)?;
-                    self.conn.execute(
-                        "UPDATE docs SET conflicted = ?1 WHERE repo_id = ?2 AND path = ?3",
-                        params![i64::from(conflicted), repo_id, prepared.path],
-                    )?;
+                    let c = self.commit_prepared(repo_id, &prepared, ts, &expires, conflicted)?;
                     let dispositions = {
                         let mut stmt = self.conn.prepare(
                             "SELECT kind, count(*) FROM dispositions WHERE commit_id = ?1 GROUP BY kind ORDER BY kind",
@@ -631,13 +635,15 @@ impl Store {
     }
 
     /// §5.4 steps 1–13 for a prepared (reconciled) member: an `observed`
-    /// commit with the matcher's dispositions.
+    /// commit with the matcher's dispositions, `docs.conflicted` set to
+    /// `conflicted` in the same transaction.
     fn commit_prepared(
         &mut self,
         repo_id: &str,
         prepared: &Prepared,
         ts: &str,
         expires: &str,
+        conflicted: bool,
     ) -> Result<Committed> {
         let (_, rest) = split_frontmatter(&prepared.tree);
         // 3. Assign ids (nothing mints: the matcher assigned every key).
@@ -658,6 +664,7 @@ impl Store {
             origin: Origin::Observed,
             actor: None,
             reason: None,
+            conflicted: Some(conflicted),
         };
         self.commit_ingest(repo_id, &plan, ts, expires)
     }
@@ -713,6 +720,7 @@ impl Store {
             origin,
             actor,
             reason,
+            conflicted: None,
         };
         self.commit_ingest(repo_id, &plan, ts, &expires)
     }
@@ -745,6 +753,7 @@ impl Store {
             origin,
             actor: None,
             reason: None,
+            conflicted: None,
         };
         self.commit_ingest(repo_id, &plan, ts, &expires)
     }
@@ -949,11 +958,19 @@ impl Store {
             )?;
         }
 
-        // 12. Pointers.
-        tx.execute(
-            "UPDATE docs SET current_rev = ?1, file_hash = ?2 WHERE doc_id = ?3",
-            params![rev_id, &rendered_hash[..], doc_id],
-        )?;
+        // 12. Pointers — and, on the observed path, the conflict flag, so
+        //     the row the commit leaves behind is consistent as a whole (an
+        //     `api` plan leaves `conflicted` as it is).
+        match plan.conflicted {
+            Some(conflicted) => tx.execute(
+                "UPDATE docs SET current_rev = ?1, file_hash = ?2, conflicted = ?3 WHERE doc_id = ?4",
+                params![rev_id, &rendered_hash[..], i64::from(conflicted), doc_id],
+            )?,
+            None => tx.execute(
+                "UPDATE docs SET current_rev = ?1, file_hash = ?2 WHERE doc_id = ?3",
+                params![rev_id, &rendered_hash[..], doc_id],
+            )?,
+        };
 
         // 13. Converged: file_hash == rendered_hash (trivially), render(tree) ==
         //     source, reconstruct(doc) == source.

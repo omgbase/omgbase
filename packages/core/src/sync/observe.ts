@@ -209,13 +209,13 @@ function crossDocPhase(pending: Pending[], config: ReconcileConfig): void {
 }
 
 // Pass 2 for one reconciled member: commit the finished result as an observed
-// revision (one transaction), flag conflict markers, summarize dispositions.
+// revision — ONE transaction, the conflict-marker flag written inside it with
+// the revision pointers (spec/store §5.4 step 14) — then summarize dispositions.
 function commitPrepared(store: Store, repoId: string, prepared: PreparedReconcile, ts: string, oldHashHex: string | null, newHashHex: string): ObserveOneResult {
   const { path, content } = prepared;
   const conflicted = hasConflictMarkers(content);
   const resolveIds = makeReconcilingResolver(store, repoId, { ts, path, prepared });
-  const res = ingestFile(store, repoId, path, content, { ts, origin: "observed", resolveIds, parsed: prepared.tree });
-  store.db.prepare("UPDATE docs SET conflicted = ? WHERE repo_id = ? AND path = ?").run(conflicted ? 1 : 0, repoId, path);
+  const res = ingestFile(store, repoId, path, content, { ts, origin: "observed", resolveIds, parsed: prepared.tree, conflicted });
 
   const rows = store.db
     .prepare("SELECT kind, count(*) n FROM dispositions WHERE commit_id = ? GROUP BY kind ORDER BY kind")

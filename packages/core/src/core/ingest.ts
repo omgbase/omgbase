@@ -179,6 +179,12 @@ export function ingestFile(
     /** A tree already parsed from `content` (via `parseForIngest`) — skips the
      * re-parse. The caller guarantees it is the parse of these exact bytes. */
     parsed?: BlockTree;
+    /** The document's `conflicted` flag (git conflict markers in the bytes),
+     * written in the same statement as the current-revision pointers so the
+     * flag and the revision it describes land in one transaction (spec/store
+     * §5.4 step 14). Absent ⇒ the column is left untouched — the observe path
+     * sets it on every commit; api writes never touch it. */
+    conflicted?: boolean;
   } = {},
 ): IngestResult {
   const ts = opts.ts ?? new Date().toISOString();
@@ -393,13 +399,14 @@ export function ingestFile(
       db.prepare("DELETE FROM resurrection_pool WHERE block_id = ?").run(id);
     }
 
-    // Update document current pointers + convergence hash.
+    // Update document current pointers + convergence hash (+ the conflicted
+    // flag when the caller is the observe path — one statement, one transaction).
     const fileHash = sha256(content);
-    db.prepare("UPDATE docs SET current_rev = ?, file_hash = ? WHERE doc_id = ?").run(
-      rev.revId,
-      fileHash,
-      docId,
-    );
+    if (opts.conflicted === undefined) {
+      db.prepare("UPDATE docs SET current_rev = ?, file_hash = ? WHERE doc_id = ?").run(rev.revId, fileHash, docId);
+    } else {
+      db.prepare("UPDATE docs SET current_rev = ?, file_hash = ?, conflicted = ? WHERE doc_id = ?").run(rev.revId, fileHash, opts.conflicted ? 1 : 0, docId);
+    }
 
     // Convergence check (01 §2): file bytes vs rendered revision. Two independent
     // round-trips must both reproduce the source exactly:

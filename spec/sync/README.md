@@ -108,8 +108,9 @@ Every batch observed through the filesystem fast path or the adapter driver
 records one `checkpoints` row: **mint `cp`**, `ts` = the batch timestamp,
 `files` = JSON `[[path, old_hash_hex | null, new_hash_hex | null], …]` in
 batch order (a gone member has `null` new hash; the old hash is the prior
-`file_hash` or `null`), `git_head` = the caller's value or `null`. Then the
-resurrection pool is swept at `ts` (`spec/store` §5.5). The result is
+`file_hash` or `null`), `git_head` = the caller's value or `null`, and the
+resurrection pool is swept at `ts` (`spec/store` §5.5) — the row and the
+sweep in one transaction (2.1; 2.0 ran them as two autocommits). The result is
 `{ checkpoint_id, ingested, suppressed (echoes), deleted (gone members that
 had a live doc), conflicted }` in batch order.
 
@@ -494,6 +495,11 @@ also rewrites `out` lines from the engine's actual requests. **Allowlist
 
 ## Decisions
 
+- 2026-10-12, sync 2.1: the writer lock's scope is pinned (§7, §9 "Pinned
+  (2.1)") — every host, once, at its outermost write boundary, for the whole
+  write, checkpoint ingests included — and a checkpoint's row + pool sweep
+  are one transaction (§4.1). Procedure/decision-rule changes; no lock-file
+  or row format change, so a minor.
 - 2026-10-11, sync 2.0 (surface 3.0 batch 3): a change-feed revision is
   `{ id, path, hash }` — bare, because `spec/surface` §1.2's final rule gives
   omgbase no `$` names (`$` is OQX's); the entry below described the `$id`/

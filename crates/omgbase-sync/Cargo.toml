@@ -40,5 +40,11 @@ libc = "0.2"
 # crate and gate as omgbase-search's http embedding provider.
 ureq = { version = "3", optional = true }
 
+[dev-dependencies]
+# `trace`: the transaction-hygiene tests watch the statement stream
+# (`Connection::trace_v2`) to prove each write lands between a BEGIN and its
+# COMMIT. Tests only; the published crate's features are unchanged.
+rusqlite = { version = "0.40", features = ["bundled", "trace"] }
+
 [lints]
 workspace = true

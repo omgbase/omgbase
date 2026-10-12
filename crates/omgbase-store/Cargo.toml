@@ -47,5 +47,11 @@ serde_json = { version = "1", features = ["preserve_order"] }
 # CSPRNG for production ids (spec/store §2.1).
 getrandom = "0.3"
 
+[dev-dependencies]
+# `trace`: the transaction-hygiene tests watch the statement stream
+# (`Connection::trace_v2`) to prove each write lands between a BEGIN and its
+# COMMIT. Tests only; the published crate's features are unchanged.
+rusqlite = { version = "0.40", features = ["bundled", "trace"] }
+
 [lints]
 workspace = true

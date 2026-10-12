@@ -53,8 +53,11 @@ export function processCheckpoint(
 
 /**
  * Turn a batch's outcomes into the checkpoint row + result, then sweep the
- * resurrection pool. Shared with the external-source driver (driver.ts), which
- * obtains its bytes asynchronously but records its checkpoint the same way.
+ * resurrection pool — the row and the sweep in ONE transaction (spec/sync §4.1),
+ * so a checkpoint is never recorded without its sweep or swept without its row
+ * (the member commits before it are one transaction each, as before). Shared
+ * with the external-source driver (driver.ts), which obtains its bytes
+ * asynchronously but records its checkpoint the same way.
  */
 export function finishCheckpoint(
   store: Store,
@@ -81,11 +84,11 @@ export function finishCheckpoint(
     fileEntries.push([o.path, o.oldHashHex, o.newHashHex]);
   }
 
-  store.db
-    .prepare("INSERT INTO checkpoints (id, repo_id, ts, files, git_head) VALUES (?, ?, ?, ?, ?)")
-    .run(checkpointId, repoId, opts.ts, JSON.stringify(fileEntries), opts.gitHead);
-
-  sweepResurrectionPool(store, opts.ts);
+  store.write((db) => {
+    db.prepare("INSERT INTO checkpoints (id, repo_id, ts, files, git_head) VALUES (?, ?, ?, ?, ?)")
+      .run(checkpointId, repoId, opts.ts, JSON.stringify(fileEntries), opts.gitHead);
+    sweepResurrectionPool(store, opts.ts);
+  });
 
   return { checkpointId, ingested, suppressed, deleted, conflicted };
 }
