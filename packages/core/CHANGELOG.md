@@ -4,6 +4,11 @@ All notable changes to `@omgbase/core` are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [Semantic Versioning](https://semver.org/) (pre-1.0: a minor bump may break).
 
+## [0.11.1] - 2026-10-12
+
+### Patch
+- **`query_syntax` examples parse again, and the clause order leads.** The `query_syntax` reference text says in capitals that OQX clause order is fixed with `select` first — and six of its own examples were pre-0.11 `from … where … select …` relics that the parser rejects (`select layer, tags from docs where "pricing" in list(tags)`, `select distinct type values from docs`, `select doc_id, dst_path from links where predicate == "depends_on"`, `select uri from links where dst_kind == "external"`, the `entries(data)` and `^nodes single { … }` lookups). All six now lead with `select`; the order sentence and both grammar lines name `frontier` (oqx 0.20). A test on each side (`packages/core/src/mcp/reference.test.ts`, the Rust twin's `reference.rs` tests) extracts every example line mechanically — every line of `## Examples` and every indented code line that begins `select`/`from`/a root target + consumer, placeholders, ellipses, wrapped commentary and `select`-only fragments skipped, error examples living in prose by convention — and parses it with `@omgbase/oqx` / the `oqx` crate; the Rust test also pins the twin byte for byte to the reference and the order sentence to the parser's own error. The `query` tool description opens with the fixed clause order (`select, from, where, frontier, follow, order by, limit, offset` — `select` first, keyword optional only there) and introduces the clauses in writing order; both CLI `query --help` summaries read `[select …] from <docs|blocks|nodes|links> [where …] [follow …] [order by …] [limit N]`; `docs/mcp-api.md`'s T4 recipe is respelled. The engine error for a non-row hit now reads `a hit must be a document, block, node or link row` (the kind was renamed `links` in 3.0) in both engines, with every pin (surface `query-errors`, docs, the tutorial transcript) updated.
+
 ## [0.11.0] - 2026-10-11
 
 ### Minor
