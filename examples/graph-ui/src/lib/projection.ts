@@ -7,10 +7,9 @@
 //   1. `select` items, in source order, keyed by the item's `name` (the alias, or
 //      the navigation's last segment — the key the row carries):
 //        - a `field` item whose expression is a bare engine ATTRIBUTE (`path`,
-//          `title`, `id`, `updated_at`, … on a 3.0 server — spec/surface §1.2;
-//          `$path`/`$title`/… on a pre-3.0 one — aliased or not) → kind
-//          `intrinsic`; a `$`-name is always one (OQX's own `$depth`, or the
-//          old spelling);
+//          `title`, `id`, `updated_at`, … — spec/surface §1.2; aliased or not)
+//          → kind `intrinsic`; a `$`-name (OQX's own `$depth`, `$ordinal`, …)
+//          is one too;
 //        - any other `field` item (a frontmatter field, a navigation, an
 //          arithmetic alias) → kind `field`;
 //        - a `collect` item (a `collect` / `first` / `single` block — the only
@@ -25,14 +24,13 @@
 //      rows carry, in first-seen order — `$`-prefixed keys are `intrinsic`,
 //      arrays and records `nested`, everything else `field`.
 //   3. Defaults: the LABEL (the card's title line) is the first of `title` (the
-//      computed title attribute on 3.0; an authored `title:` before), `$title`
-//      (the pre-3.0 computed title), `name` that is projected, else null (= the
+//      computed title attribute), `name` that is projected, else null (= the
 //      de-rooted document path, which is always available); SHOWN is the label
 //      alone, so cards stay small until a field is asked for.
 
 import type { Expr, Query, SelectItem, Span } from "@omgbase/oqx";
 import type { Row } from "./candidates.ts";
-import { DOC_ATTRIBUTES, HIT_ENVELOPE_KEYS, bareAttributes } from "./paths.ts";
+import { DOC_ATTRIBUTES, HIT_ENVELOPE_KEYS } from "./paths.ts";
 
 export type ProjectedKind = "intrinsic" | "field" | "nested" | "values";
 
@@ -59,15 +57,14 @@ export interface Projection {
 }
 
 /** The names tried, in order, for the default label. */
-export const LABEL_PREFERENCE = ["title", "$title", "name"];
+export const LABEL_PREFERENCE = ["title", "name"];
 
 export const EMPTY_PROJECTION: Projection = { fields: [], defaults: { label: null, shown: [] } };
 
 /** The pure reflection. `query` may be null (unparsable source) — the rows alone
- * still describe themselves. `surface` (the connected server's) decides whether
- * a bare `title`/`path`/… in `select` is an engine attribute (≥ 3.0) or a field. */
-export function projectionOf(query: Query | null, rows: readonly Row[] = [], surface: string | null = null): Projection {
-  const fields = query && query.select.length > 0 ? selectFields(query, surface) : rowFields(rows);
+ * still describe themselves. */
+export function projectionOf(query: Query | null, rows: readonly Row[] = []): Projection {
+  const fields = query && query.select.length > 0 ? selectFields(query) : rowFields(rows);
   return { fields, defaults: defaultChoice(fields) };
 }
 
@@ -76,14 +73,14 @@ export function defaultChoice(fields: readonly ProjectedField[]): ProjectionChoi
   return { label, shown: label === null ? [] : [label] };
 }
 
-function selectFields(query: Query, surface: string | null): ProjectedField[] {
+function selectFields(query: Query): ProjectedField[] {
   if (query.values) {
     const item = query.select[0]!;
     return [{ name: item.name || "value", kind: "values", span: item.span, source: "select" }];
   }
   const out: ProjectedField[] = [];
   for (const item of query.select) {
-    const kind = selectKind(item, surface);
+    const kind = selectKind(item);
     if (kind === null || item.name === "") continue;
     out.push({ name: item.name, kind, span: item.span, source: "select" });
   }
@@ -91,19 +88,19 @@ function selectFields(query: Query, surface: string | null): ProjectedField[] {
 }
 
 /** The kind of one select item, or null when it adds no key to the row (a lift). */
-export function selectKind(item: SelectItem, surface: string | null = null): ProjectedKind | null {
+export function selectKind(item: SelectItem): ProjectedKind | null {
   if (item.kind === "collect") return "nested";
   if (item.lift > 0) return null;
-  return isIntrinsic(item.expr, surface) ? "intrinsic" : "field";
+  return isIntrinsic(item.expr) ? "intrinsic" : "field";
 }
 
-/** A bare read of an engine attribute: a `$name` (`$path`, `$title`, … before
- * 3.0; OQX's own `$depth`) — not `$it.title` (a navigation) — or, on a ≥ 3.0
- * server, one of the bare docs attributes (`path`, `title`, `updated_at`, …). */
-export function isIntrinsic(expr: Expr, surface: string | null = null): boolean {
+/** A bare read of an engine attribute: one of the bare docs attributes (`path`,
+ * `title`, `updated_at`, …) or a `$name` of OQX's own (`$depth`, `$ordinal`) —
+ * not `$it` itself, nor `$it.title` (a navigation). */
+export function isIntrinsic(expr: Expr): boolean {
   if (expr.kind !== "ident") return false;
   if (expr.name.startsWith("$")) return expr.name !== "$it";
-  return bareAttributes(surface) && DOC_ATTRIBUTES.has(expr.name);
+  return DOC_ATTRIBUTES.has(expr.name);
 }
 
 /** The keys the rows carry, in first-seen order, kinded by their values — minus

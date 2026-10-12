@@ -15,10 +15,10 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import type { WhoAmI } from "webdevproxy";
-import { diffUnifiedTool } from "./paths.ts";
-/** A tool result as the server spelled it (lib/shapes.ts reads it per version). */
+
+/** A tool result as the server spelled it (lib/shapes.ts coerces it). */
 export type Wire = Record<string, unknown>;
-/** A `changes_since` page on the wire: the digests are read per version, the paging keys did not change. */
+/** A `changes_since` page on the wire. */
 export type ChangesSinceWire = { digests: Wire[]; cursor: number; truncated: boolean; head: number };
 
 export interface OmgClientOptions {
@@ -136,18 +136,14 @@ export class OmgClient {
     return this.call<QueryResult>("query", { query, repo, ...(limit !== undefined ? { limit } : {}) });
   }
 
-  // The four reads below return the server's wire shape untouched: surface
-  // 3.0 spells a row `id`/`path`/`hash`/`updated_at`/`raw` where 2.x had
-  // `doc`/`docId`/`path`/`contentHash`/`ts`/`content` (spec/surface §3–§4), and
-  // the page reads either through lib/shapes.ts by the connected version.
+  // The four reads below return the server's wire shape untouched (spec/surface
+  // §3–§4: `id`/`path`/`hash`/`updated_at`/`raw`); the page reads them through
+  // lib/shapes.ts. A document argument arrives from lib/paths.ts `docLocator`
+  // (`{ id }` or `{ path }`, §4 "Arguments").
 
   changesSince(repo: string, cursor?: number, limit = 50): Promise<ChangesSinceWire> {
     return this.call<ChangesSinceWire>("changes_since", { repo, limit, ...(cursor !== undefined ? { cursor } : {}) });
   }
-
-  // The document argument arrives spelled for the connected server
-  // (lib/paths.ts `docLocator`: `{ id }`/`{ path }` on 3.0, `{ doc }` before —
-  // spec/surface §4).
 
   /** One document's version list (oldest → newest). */
   async docsHistory(locator: Record<string, string>, repo: string): Promise<Wire | null> {
@@ -155,12 +151,9 @@ export class OmgClient {
     return r.docs[0] ?? null;
   }
 
-  /** The unified diff between two revisions of one document. The TOOL is
-   * named per server (lib/paths.ts `diffUnifiedTool`): `docs_diff_unified` on
-   * surface ≥ 3.0, `diff_unified` before (spec/surface §3); `from_rev`/`to_rev`
-   * are the same on both. */
-  diffUnified(surface: string | null, locator: Record<string, string>, fromRev: string, toRev: string, repo: string): Promise<Wire> {
-    return this.call(diffUnifiedTool(surface), { ...locator, from_rev: fromRev, to_rev: toRev, repo });
+  /** The unified diff between two revisions of one document (`docs_diff_unified { id | path, from_rev, to_rev }`). */
+  diffUnified(locator: Record<string, string>, fromRev: string, toRev: string, repo: string): Promise<Wire> {
+    return this.call("docs_diff_unified", { ...locator, from_rev: fromRev, to_rev: toRev, repo });
   }
 
   docsReadAt(locator: Record<string, string>, rev: string, repo: string): Promise<Wire> {

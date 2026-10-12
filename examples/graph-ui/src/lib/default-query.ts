@@ -1,40 +1,24 @@
-// The default query, generated for the connected server's surface version
-// (lib/paths.ts), and the test for "the editor still holds a default" that lets
-// the page swap it when the version changes without touching a user's edits.
+// The default query — the sample's release timeline — and the test for "the
+// editor still holds the default" that lets the page swap it for the starter
+// (lib/starter-query.ts) without touching a user's edits.
 //
-// The query walks the sample's release timeline from `kickoff.md` both ways:
-// back through each document's own `before` (`refs(before)`, surface 1.5), and
-// forward through the documents whose `after` names it — the frontier's
-// backlinks (`$it.in`; a `/`-rooted frontmatter reference is extracted as an
-// edge, so every such document is among them) narrowed to the ones whose `after`
-// really says so. The correlation compares the frontier's path with an authored
-// reference, which is where the server versions differ: the path attribute is
-// `path` on 3.0 and `$path` before, rooted since 2.0 and needing `"/" +` on 1.x.
+// The query walks the timeline from `kickoff.md` both ways: back through each
+// document's own `before` (`refs(before)` resolves the references to the
+// documents), and forward through the documents whose `after` names it — the
+// frontier's backlinks (`in_links collect { from doc }`; a `/`-rooted
+// frontmatter reference is extracted as an edge, so every such document is
+// among them) narrowed to the ones whose `after` really says so (`^path in
+// list(after)`: the row's path is `/`-rooted like the authored reference).
 
-import { LEGACY_SURFACE, attr, outerPathOperand, serverPath } from "./paths.ts";
+export const DEFAULT_START = "/timeline/kickoff.md";
 
-export const DEFAULT_START = "timeline/kickoff.md";
-
-export function defaultQuery(surface: string | null): string {
-  const path = attr(surface, "path");
-  return `select ${path}, title, phase, before, after
+export const DEFAULT_QUERY = `select path, title, phase, before, after
 from docs
-where ${path} == ${JSON.stringify(serverPath(surface, DEFAULT_START))}
-follow distinct refs(before), $it.in collect { where ${outerPathOperand(surface)} in list(after) }
+where path == ${JSON.stringify(DEFAULT_START)}
+follow distinct refs(before), in_links collect { from doc where ^path in list(after) }
 order by $ordinal`;
-}
 
-/** Earlier defaults, still persisted in some browsers. */
-export const PREVIOUS_DEFAULT_QUERIES: readonly string[] = [
-  `select $path, title, phase, before, after
-from docs
-where $path == "timeline/kickoff.md"
-follow $repo.docs collect { where after.contains("/" + ^$path) }
-order by $ordinal`,
-];
-
-/** Is `source` one of the defaults — the current one for any server version,
- * or an earlier one — rather than something the user wrote? */
+/** Is `source` the default rather than something the user wrote? */
 export function isDefaultQuery(source: string): boolean {
-  return source === defaultQuery(LEGACY_SURFACE) || source === defaultQuery("2.0") || source === defaultQuery("3.0") || PREVIOUS_DEFAULT_QUERIES.includes(source);
+  return source === DEFAULT_QUERY;
 }

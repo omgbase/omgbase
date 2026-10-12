@@ -45,7 +45,7 @@ describe("formatValue", () => {
 });
 
 describe("card sizing", () => {
-  const node = { label: "timeline/kickoff", row: { $path: "/timeline/kickoff.md", title: "Kickoff", phase: "plan", before: [], after: ["/timeline/alpha.md"], n: 3 } };
+  const node = { label: "timeline/kickoff", row: { path: "/timeline/kickoff.md", title: "Kickoff", phase: "plan", before: [], after: ["/timeline/alpha.md"], n: 3 } };
 
   it("a label-only card is the original node size (30 high); the label is the chosen field's value", () => {
     const c = cardFor(node, { label: "title", shown: ["title"] });
@@ -59,7 +59,7 @@ describe("card sizing", () => {
   it("falls back to the node label when no label field is chosen or the row lacks it", () => {
     expect(cardFor(node, { label: null, shown: [] }).label).toBe("timeline/kickoff");
     expect(cardFor(node, { label: "missing", shown: ["missing"] }).label).toBe("timeline/kickoff");
-    expect(cardFor(node, { label: "$path", shown: ["$path"] }).label).toBe("/timeline/kickoff.md");
+    expect(cardFor(node, { label: "path", shown: ["path"] }).label).toBe("/timeline/kickoff.md");
   });
 
   it("adds one key: value line per shown field other than the label and grows the card by a line each", () => {

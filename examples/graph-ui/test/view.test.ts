@@ -65,7 +65,7 @@ describe("axisStatus — an axis with no edges in the result", () => {
 });
 
 const field = (name: string, kind: ProjectedField["kind"] = "field"): ProjectedField => ({ name, kind, span: null, source: "select" });
-const F = [field("$path", "intrinsic"), field("title"), field("phase"), field("before"), field("after")];
+const F = [field("path", "intrinsic"), field("title"), field("phase"), field("before"), field("after")];
 const D = { label: "title", shown: ["title"] };
 
 describe("projection in the view record", () => {
@@ -83,8 +83,8 @@ describe("projection in the view record", () => {
   });
 
   it("pinning the label keeps the old label shown as a line; null means the path", () => {
-    const o = withLabel(NO_PROJECTION_OVERRIDES, "$path");
-    expect(resolveProjection(F, D, o)).toEqual({ label: "$path", shown: ["$path", "title"] });
+    const o = withLabel(NO_PROJECTION_OVERRIDES, "path");
+    expect(resolveProjection(F, D, o)).toEqual({ label: "path", shown: ["path", "title"] });
     expect(resolveProjection(F, D, withLabel(NO_PROJECTION_OVERRIDES, null))).toEqual({ label: null, shown: ["title"] });
     // The path label with the title unchecked: an empty card body.
     expect(resolveProjection(F, D, withShown(withLabel(NO_PROJECTION_OVERRIDES, null), "title", false))).toEqual({ label: null, shown: [] });

@@ -10,12 +10,12 @@
 //
 // The data path is MCP only (lib/mcp-client.ts) through the dev proxy at the
 // same-origin /mcp; the pure parts (cursor, digests → entries, which revisions
-// to diff, hits under either envelope, the filter's queries and partition, diff
-// lines) are lib/feed.ts. A diff is shown as plain unified text or — the
-// persisted **markdown** switch — rendered as Markdown by
-// elements/unified-markdown-diff.ts over both revisions' full text (fetched
-// with `docs_read_at` when the switch is on), so a hunk inside a fence, a list
-// or a table keeps its construct and the changed elements are coloured whole.
+// to diff, hits, the filter's queries and partition, diff lines) are
+// lib/feed.ts. A diff is shown as plain unified text or — the persisted
+// **markdown** switch — rendered as Markdown by elements/unified-markdown-diff.ts
+// over both revisions' full text (fetched with `docs_read_at` when the switch
+// is on), so a hunk inside a fence, a list or a table keeps its construct and
+// the changed elements are coloured whole.
 
 import { LitElement, css, html, nothing } from "lit";
 import { customElement } from "lit/decorators.js";
@@ -34,7 +34,7 @@ import {
   RECENT_LIMIT, advanceCursor, createdDiff, diffLineKind, diffStats, digestPaths, entryCard, filterStateAfter, formatStats, formatTime, hiddenLine, latestChange, latestPair, loadDiffView, matchQuery, pairForCommit, partitionByFilter, pollMs, prependDigests, recentCard, recentFromHits, recentQuery, saveDiffView, startCursor, titlesByPath,
   type Card, type Digest, type DiffPair, type DiffView, type DocVersions, type EntryChange, type FeedEntry, type FilterState, type RecentDoc, type Stats,
 } from "./lib/feed.ts";
-import { LEGACY_SURFACE, attr, docLocator, surfaceOf } from "./lib/paths.ts";
+import { docLocator, surfaceOf, surfaceProblem } from "./lib/paths.ts";
 import { changesOf, docVersionsOf, readAtOf, unifiedOf } from "./lib/shapes.ts";
 
 const MCP_URL = "/mcp";
@@ -69,6 +69,7 @@ export type SourceState =
 const connection = signal<"idle" | "connecting" | "sign-in" | "ok" | "error">("idle");
 const connectionMessage = signal("");
 const whoami = signal<WhoAmI | null>(null);
+/** The server's surface version (`specs.surface`) for the header; null until known. The page only connects to a server that passes lib/paths.ts `surfaceProblem`. */
 const surface = signal<string | null>(null);
 const repos = signal<string[]>([]);
 const repo = signal<string>(localStorage.getItem(REPO_KEY) ?? "");
@@ -132,7 +133,7 @@ function setSource(key: string, state: SourceState): void {
 
 /** One revision's full text. */
 async function readAt(doc: string, rev: string): Promise<string> {
-  return readAtOf(surface.get(), await client.docsReadAt(docLocator(surface.get(), doc), rev, repo.get())).content;
+  return readAtOf(await client.docsReadAt(docLocator(doc), rev, repo.get())).raw;
 }
 
 /** Fetch what a pair names: the unified diff between two revisions, or the created revision's content. */
@@ -145,8 +146,7 @@ async function fetchPair(key: string, doc: string, pair: DiffPair): Promise<Diff
     setSource(key, { status: "ready", before: "", after: content }); // the markdown view's sides, already in hand
     return text === "" ? { status: "none", note: "created empty" } : { status: "ready", pair, text, doc };
   }
-  const s = surface.get();
-  const d = unifiedOf(s, await client.diffUnified(s, docLocator(s, doc), pair.from, pair.to, r));
+  const d = unifiedOf(await client.diffUnified(docLocator(doc), pair.from, pair.to, r));
   return d.diff === "" ? { status: "none", note: "no textual change between the two revisions" } : { status: "ready", pair, text: d.diff, doc };
 }
 
@@ -172,10 +172,10 @@ function statsOf(state: DiffState | undefined): Stats | null {
   return null;
 }
 
-/** One document's `docs_history`, read for the connected server's generation (lib/shapes.ts). */
+/** One document's `docs_history` (lib/shapes.ts). */
 async function docsHistory(doc: string): Promise<DocVersions | null> {
-  const d = await client.docsHistory(docLocator(surface.get(), doc), repo.get());
-  return d ? docVersionsOf(surface.get(), d) : null;
+  const d = await client.docsHistory(docLocator(doc), repo.get());
+  return d ? docVersionsOf(d) : null;
 }
 
 /** The diff for a document's latest change (a recent card), and that change's seq/commit/actor for the header. */
@@ -196,15 +196,15 @@ async function loadLatestDiff(doc: RecentDoc): Promise<void> {
 
 /** The diff for one change of a feed entry: that commit's revision against its predecessor. */
 async function loadChangeDiff(entry: FeedEntry, change: EntryChange): Promise<void> {
-  const key = `${entry.key}:${change.doc}`;
+  const key = `${entry.key}:${change.id}`;
   const current = diffs.get()[key];
   if (current && current.status !== "idle" && current.status !== "error") return;
   setDiff(key, { status: "loading" });
   try {
-    const history = await docsHistory(change.doc);
+    const history = await docsHistory(change.id);
     const pair = history ? pairForCommit(history.versions, entry.key) : null;
     if (!pair) { setDiff(key, { status: "none", note: "this commit wrote no revision of the document (deleted or moved)" }); return; }
-    setDiff(key, await fetchPair(key, change.doc, pair));
+    setDiff(key, await fetchPair(key, change.id, pair));
   } catch (e) {
     setDiff(key, { status: "error", message: describe(e) });
   }
@@ -220,7 +220,7 @@ async function loadRecent(): Promise<void> {
   const f = filter.get();
   recentLoading.set(true);
   try {
-    const result = await client.query(recentQuery(f, surface.get()), repo.get(), RECENT_LIMIT);
+    const result = await client.query(recentQuery(f), repo.get(), RECENT_LIMIT);
     if (generation !== recentGeneration) return; // the filter or repo changed meanwhile
     filterState.set(filterStateAfter(f, null));
     const docs = recentFromHits(result.hits);
@@ -262,7 +262,7 @@ async function lookupDigests(digests: Digest[]): Promise<{ digests: Digest[]; ti
   const paths = digestPaths(digests);
   const state = filterState.get();
   const filter = state.kind === "on" ? state.filter : "";
-  const q = matchQuery(filter, paths, surface.get());
+  const q = matchQuery(filter, paths);
   if (q === null) return { digests, titles: new Map() };
   let titles: Map<string, string | null>;
   try {
@@ -310,7 +310,7 @@ async function poll(): Promise<void> {
   polling.set(true);
   try {
     const c = cursor.get();
-    const page = changesOf(surface.get(), await client.changesSince(repo.get(), c ?? undefined));
+    const page = changesOf(await client.changesSince(repo.get(), c ?? undefined));
     if (generation !== feedGeneration) return; // the repo changed meanwhile
     const next = advanceCursor(page);
     cursor.set(next.cursor);
@@ -352,7 +352,7 @@ async function startFeed(): Promise<void> {
   feedError.set(null);
   try {
     // One tiny call for the head: the feed starts at "now".
-    const head = changesOf(surface.get(), await client.changesSince(repo.get(), undefined, 1));
+    const head = changesOf(await client.changesSince(repo.get(), undefined, 1));
     cursor.set(startCursor(head));
     lastPoll.set(new Date().toISOString());
     if (live.get()) schedulePoll();
@@ -409,7 +409,15 @@ async function connect(): Promise<void> {
     return;
   }
   try {
-    const [{ repos: list }, v] = await Promise.all([client.repos(), client.version().then(surfaceOf, () => LEGACY_SURFACE)]);
+    // This demo speaks surface 3.0: an older server (or one without the
+    // `version` tool) gets a loud, friendly error instead of a silently empty feed.
+    const [{ repos: list }, v] = await Promise.all([client.repos(), client.version().then(surfaceOf, () => null)]);
+    const problem = surfaceProblem(v);
+    if (problem) {
+      connection.set("error");
+      connectionMessage.set(problem);
+      return;
+    }
     surface.set(v);
     repos.set(list.map((r) => r.slug));
     if (!list.some((r) => r.slug === repo.get())) repo.set(list[0]?.slug ?? "");
@@ -570,7 +578,7 @@ export class LiveTailApp extends SignalWatcher(LitElement) {
     const apply = (value: string) => { if (this.filterTimer) { clearTimeout(this.filterTimer); this.filterTimer = null; } applyFilter(value); };
     return html`
       <div class="filterbar">
-        <oqx-framed-filter .value=${filter.get()} .surface=${surface.get()} ?invalid=${fs.kind === "invalid"} placeholder=${FILTER_PLACEHOLDER}
+        <oqx-framed-filter .value=${filter.get()} ?invalid=${fs.kind === "invalid"} placeholder=${FILTER_PLACEHOLDER}
           @filter-input=${(e: CustomEvent<FilterDetail>) => {
             const { value } = e.detail;
             if (this.filterTimer) clearTimeout(this.filterTimer);
@@ -579,23 +587,23 @@ export class LiveTailApp extends SignalWatcher(LitElement) {
           @filter-change=${(e: CustomEvent<FilterDetail>) => apply(e.detail.value)}></oqx-framed-filter>
         ${fs.kind === "invalid"
           ? html`<span class="hint err">${fs.message}</span>`
-          : html`<span class="hint">click into the query to add a <code>where</code> predicate — an OQX expression over <code>docs</code> such as <code>${FILTER_PLACEHOLDER}</code> or <code>${attr(surface.get(), "path")}.startsWith("/notes/")</code>; it narrows the recent list and what arrives from now on (Enter applies, Escape leaves)</span>`}
+          : html`<span class="hint">click into the query to add a <code>where</code> predicate — an OQX expression over <code>docs</code> such as <code>${FILTER_PLACEHOLDER}</code> or <code>path.startsWith("/notes/")</code>; it narrows the recent list and what arrives from now on (Enter applies, Escape leaves)</span>`}
       </div>
     `;
   }
 
   /** A feed entry: one card whose header is the digest; a multi-document digest gives each document a slim row above its diff. */
   private renderEntry(e: FeedEntry) {
-    const states = new Map(e.changes.map((ch) => [ch.doc, diffs.get()[`${e.key}:${ch.doc}`]] as const));
-    const card = entryCard(e, new Map(e.changes.map((ch) => [ch.doc, statsOf(states.get(ch.doc))])));
+    const states = new Map(e.changes.map((ch) => [ch.id, diffs.get()[`${e.key}:${ch.id}`]] as const));
+    const card = entryCard(e, new Map(e.changes.map((ch) => [ch.id, statsOf(states.get(ch.id))])));
     if (e.changes.length === 0) {
       return html`<article class="card plain fresh"><div class="hdr">${this.renderHeader(card, false)}</div><div class="note">${card.note}</div></article>`;
     }
-    const loading = e.changes.some((ch) => states.get(ch.doc)?.status === "loading");
+    const loading = e.changes.some((ch) => states.get(ch.id)?.status === "loading");
     const body = e.changes.map((ch, i) => html`
       ${card.rows.length ? this.renderRow(card.rows[i]!) : nothing}
-      ${this.renderBody(states.get(ch.doc), `${e.key}:${ch.doc}`)}`);
-    return this.renderCard(card, loading, body, true, "fresh", () => { for (const ch of e.changes) { const s = states.get(ch.doc); if (!s || s.status === "idle" || s.status === "error") void loadChangeDiff(e, ch); } });
+      ${this.renderBody(states.get(ch.id), `${e.key}:${ch.id}`)}`);
+    return this.renderCard(card, loading, body, true, "fresh", () => { for (const ch of e.changes) { const s = states.get(ch.id); if (!s || s.status === "idle" || s.status === "error") void loadChangeDiff(e, ch); } });
   }
 
   /** A recent document: one card whose header is the document and its latest change. */

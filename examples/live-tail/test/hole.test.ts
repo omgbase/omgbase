@@ -1,9 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { frameAfter, frameBefore, frameFor, recentQuery } from "../src/lib/feed.ts";
-
-// The frame in the 2.x spelling (`holeState`'s default surface); the 3.0 one is covered below.
-const FRAME_BEFORE = frameBefore(null);
-const FRAME_AFTER = frameAfter(null);
+import { FRAME_AFTER, FRAME_BEFORE, frameFor, recentQuery } from "../src/lib/feed.ts";
 import { changesInside, holeField, holeState, holeText, mapHole, reframeSpec } from "../src/lib/hole.ts";
 
 describe("the framed filter's hole", () => {
@@ -105,15 +101,13 @@ describe("the framed filter's hole", () => {
     expect(mapHole(h, tr)).toEqual({ from: h.from, to: h.to + 2, where: true });
     expect(holeText(tr.state)).toBe("xaby");
   });
-  it("spells the frame for the server: bare attributes on 3.0, `$` before; a reframe may respell it around the same hole", () => {
-    const s3 = holeState('status == "active"', { surface: "3.0" });
-    expect(s3.doc.toString()).toBe("select path, title, updated_at from docs\nwhere status == \"active\"\norder by updated_at desc limit 25");
-    expect(holeText(s3)).toBe('status == "active"');
-    expect(s3.selection.main.head).toBe(frameBefore("3.0").length + 'status == "active"'.length);
-    const s2 = holeState('status == "active"');
-    expect(s2.doc.toString()).toBe(frameFor('status == "active"', { surface: "2.0" }).text);
-    const respelled = s2.update(reframeSpec(s2, holeText(s2), false, "3.0")).state;
-    expect(respelled.doc.toString()).toBe(s3.doc.toString());
-    expect(holeText(respelled)).toBe('status == "active"');
+  it("spells the frame with the bare attributes; a reframe keeps the hole's text", () => {
+    const s = holeState('status == "active"');
+    expect(s.doc.toString()).toBe("select path, title, updated_at from docs\nwhere status == \"active\"\norder by updated_at desc limit 25");
+    expect(holeText(s)).toBe('status == "active"');
+    expect(s.selection.main.head).toBe(FRAME_BEFORE.length + 'status == "active"'.length);
+    const reframed = s.update(reframeSpec(s, holeText(s), false)).state;
+    expect(reframed.doc.toString()).toBe(s.doc.toString());
+    expect(holeText(reframed)).toBe('status == "active"');
   });
 });

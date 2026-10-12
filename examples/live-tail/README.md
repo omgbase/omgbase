@@ -22,6 +22,11 @@ itself with its `where` predicate as the one editable hole, so `status ==
 "active"` there limits the recent list to the active documents and, from then
 on, the feed to changes of documents the predicate admits.
 
+**Requires omgbase surface ≥ 3.0** (the current `omg`): the page calls the
+`version` tool on connect, shows the surface in the header (`· surface 3.0`)
+and refuses an older server with *this demo needs omgbase surface ≥ 3.0 — the
+server reports 2.0*.
+
 ## Run it
 
 ```sh
@@ -74,18 +79,17 @@ dev proxy); nothing imports `@omgbase/core`. On load:
 
 1. `GET /whoami` — the proxy's mode and sign-in state (header label; the
    sign-in wait).
-2. `version` → the surface version for the header (a server without the tool
-   is 1.x); `repos` → the repository picker (the choice is persisted).
+2. `version` → the surface version for the header; the page goes no further
+   when it is older than 3.0 (or missing) and says so (`lib/paths.ts`
+   `surfaceProblem`); `repos` → the repository picker (the choice is
+   persisted).
 3. **Recently updated** — `select path, title, updated_at from docs order by
-   updated_at desc limit 25` (the attributes spelled for the server: bare on
-   3.0, `$path`/`$title`/`$updated_at` on 2.x — `lib/paths.ts` `attr`); for
-   each hit `docs_history { id | path }` gives
+   updated_at desc limit 25`; for each hit `docs_history { id | path }` gives
    the version list and the last two versions are diffed with
    `docs_diff_unified { id | path, from_rev, to_rev }`; a document with one
    version is **created** and `docs_read_at { id | path, rev }` gives its
-   content (the tool and argument names are 3.0's — `spec/surface` §4; a 2.x
-   server gets `diff_unified { doc, … }`, `lib/paths.ts` `docLocator` /
-   `diffUnifiedTool`), shown as a pure-addition
+   content (`lib/paths.ts` `docLocator` spells the document argument —
+   `spec/surface` §4 "Arguments"), shown as a pure-addition
    diff (`createdDiff`: one `@@ -0,0 +1,N @@` hunk, every line `+`, so
    frontmatter fences and dash bullets are green, not subtractions; `+N −0`).
    Four documents at a time; the first three cards start open, the rest open
@@ -237,10 +241,8 @@ select path, title, updated_at from docs
 order by updated_at desc limit 25
 ```
 
-(against a 2.x server the frame reads `select $path, $title, $updated_at …` —
-the element's `surface` property respells it when the connection says). Click
-into it (anywhere) and a `where ` line opens between the two with the caret
-right after the keyword, in the hole:
+Click into it (anywhere) and a `where ` line opens between the two with the
+caret right after the keyword, in the hole:
 
 ```
 select path, title, updated_at from docs
@@ -299,19 +301,18 @@ OQX (the parser rejects `{` after the target), which is why the frame uses
   screen as they are: it applies to the recent list and to what arrives from
   now on.
 
-**Both generations.** The server may be surface 2.x (`docs_history`
-`docId`/`path`/`ts`/`contentHash`, `changes_since` revisions `{ doc, path,
-contentHash }`, `docs_read_at` `content`, `diff_unified` `{ doc, path, … }` (the
-tool is `docs_diff_unified` on 3.0),
-`docs_list` `{ path, blocks, ts }`; `$path`/`$title`/`$updated_at` in the
-language) or 3.0, where every tool spells a row the way the language does and
-the language's attributes are bare (`id`/`path`/`updated_at`/`hash`/`raw`
-everywhere — `spec/surface` §1.2; `$` belongs to OQX alone). A query hit is
-`{ id, path, … }` on both. `lib/paths.ts` reads identity through
-`hitId`/`hitPath` and spells the generated queries with `attr`, `lib/shapes.ts`
-reads each tool result (`changesOf`, `docVersionsOf`, `unifiedOf`, `readAtOf`)
-by the server's `specs.surface` (an unknown version reads as 2.x), and every
-path is shown `/`-rooted.
+**Surface 3.0.** Every tool spells a row the way the language does and the
+language's attributes are bare (`id`/`path`/`updated_at`/`hash`/`raw`
+everywhere — `spec/surface` §1.2; `$` belongs to OQX alone): a query hit is
+`{ id, path, … }`, `changes_since` revisions are `{ id, path, hash }`,
+`docs_history` documents `{ id, path, deleted, currentRev, versions: [{ rev,
+seq, commit, updated_at, origin, actor, hash, isCurrent }] }`,
+`docs_diff_unified` `{ id, path, from, to, diff }` and `docs_read_at` `{ id,
+path, rev, raw }`. `lib/paths.ts` reads identity through `hitId`/`hitPath`,
+`lib/shapes.ts` coerces each tool result (`changesOf`, `docVersionsOf`,
+`unifiedOf`, `readAtOf`) into the typed shapes `feed.ts` keeps, and every path
+is shown `/`-rooted. There is no compatibility layer for earlier surfaces: an
+older server is refused on connect.
 
 **Session recovery.** The proxy forgets a session after `--idle` seconds
 (default 3600) or when it restarts and answers the next POST with `404`
@@ -352,12 +353,11 @@ reconnected* in the header; only a second failure is shown.
   `mapHole`, `changesInside`, `insertsNewline`, `reframe`/`reframeSpec`,
   `holeText`, `holeState`); only `@codemirror/state`, so it is tested with
   plain `EditorState`s.
-- `src/lib/paths.ts` — `surfaceOf`, `surfaceMajor`, `hitId`, `hitPath`,
-  `attr`/`bareAttributes`, `docLocator`, `diffUnifiedTool`, `rooted`.
-- `src/lib/shapes.ts` — the tool results under both generations, read by the
-  server's `specs.surface` into the one shape `feed.ts` keeps: `changesOf`
-  (`revisionOf`/`digestOf`), `docVersionsOf` (`versionOf`), `unifiedOf`,
-  `readAtOf`, `surface3`.
+- `src/lib/paths.ts` — `surfaceOf`, `surfaceMajor`, `surfaceProblem` (the
+  ≥ 3.0 gate), `hitId`, `hitPath`, `docLocator`, `rooted`.
+- `src/lib/shapes.ts` — the tool results coerced into the typed shapes
+  `feed.ts` keeps: `changesOf` (`revisionOf`/`digestOf`), `docVersionsOf`
+  (`versionOf`), `unifiedOf`, `readAtOf`.
 - `src/lib/mcp-client.ts` — `OmgClient` (the tool calls, the JSON-text envelope,
   session recovery), `fetchWhoAmI`.
 - `scripts/dev.mjs`, `scripts/dev-args.mjs`, `scripts/dev-workspace.mjs` —
@@ -374,10 +374,20 @@ reconnected* in the header; only a second failure is shown.
   consecutive elided runs above and below a change rendering one `⋯`, none
   at an edge whose block is shown or for a created document, none between
   two shown clusters adjacent in the source and exactly one when blocks are
-  skipped between two hunks; the view's persistence in `feed.test.ts`; 89
-  tests).
+  skipped between two hunks; the view's persistence in `feed.test.ts`; the
+  surface gate in `paths.test.ts`; 89 tests).
 
 ## Verified headlessly
+
+After the pre-3.0 compatibility branches were removed (Chrome `--headless=new`
+over CDP on free ports — proxy 18962, Vite 15962 — against the current build
+and a fresh sample workspace): the header read `local · omg mcp -C … · surface
+3.0`, the pill `live · 2 s`, the idle filter `select path, title, updated_at
+from docs` / `order by updated_at desc limit 25`; the five sample documents
+listed newest-first, each with its created diff (`+7 −0`, `+11 −0`, …); `omg
+-C .dev-workspace meta notes/alpha.md --set status=done` arrived at the top
+within one poll as `Alpha /notes/alpha.md seq 6 · c_… api +1 −1` with
+`-status: active` / `+status: done`. No console errors.
 
 One `⋯` per elision (Chrome `--headless=new` over CDP, proxy 18931, Vite
 15931, a temporary workspace, the markdown view on): `alpha.md` rewritten with
@@ -418,14 +428,12 @@ errors (Lit's dev-mode warning only).
 
 Surface 3.0 batch 2 (the argument names — `docs_history { id | path }`,
 `docs_read_at { id | path, rev }`, then the name pass's `docs_diff_unified { id
-| path }`, chosen by the server's version): the same headless run passed against the current
-build (proxy 18902, Vite 15902; `surface 3.0`) and against a `surface-2.0` omg
-built from its tag into a temporary worktree (proxy 18904, Vite 15904;
-`surface 2.0`, the `doc` spelling): five cards; `omg meta notes/alpha.md --set
+| path }`): the same headless run passed against the current build (proxy
+18902, Vite 15902; `surface 3.0`): five cards; `omg meta notes/alpha.md --set
 status=done` arrived at the top in under 1.1 s with `-status: active` /
 `+status: done`; the persisted filter `status == "active"` narrowed the
 recent list to `/notes/beta.md` and a change to `notes/gamma.md` read `1 change
-hidden by the filter`. No console errors on either server.
+hidden by the filter`. No console errors.
 
 Earlier runs:
 
@@ -440,9 +448,8 @@ status=done` produced a digest at the top within 2 s (`api · seq 6`, summary
 nothing, **resume** → the third digest arrived on top. No console errors.
 
 The filter, the same way (proxy 18797, Vite 15183, a fresh sample workspace):
-the idle field read `select $path, $title, $updated_at from docs` / `order by
-$updated_at desc limit 25` (the attribute spelling of that build; a 3.0 build
-reads `select path, title, updated_at …`) — two lines, no `where`; focusing it opened the
+the idle field read `select path, title, updated_at from docs` / `order by
+updated_at desc limit 25` — two lines, no `where`; focusing it opened the
 `where ` line with the caret at offset 50, right after the keyword, and the
 placeholder in the empty hole; blurring with the hole empty went back to two
 lines, as did focus + Escape; a real click on the idle frame's `order by` line

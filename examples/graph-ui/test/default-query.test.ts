@@ -1,47 +1,28 @@
 import { describe, expect, it } from "vitest";
 import { parse } from "@omgbase/oqx";
-import { PREVIOUS_DEFAULT_QUERIES, defaultQuery, isDefaultQuery } from "../src/lib/default-query.ts";
+import { DEFAULT_QUERY, DEFAULT_START, isDefaultQuery } from "../src/lib/default-query.ts";
 import { inferCandidates } from "../src/lib/candidates.ts";
 import { queryHints } from "../src/lib/hints.ts";
 
-describe("defaultQuery", () => {
-  it("is the bare-attribute form on 3.0, the rooted `$path` form on 2.0 and the slash-prefixed form on 1.x (and while unknown)", () => {
-    expect(defaultQuery("3.0")).toBe(`select path, title, phase, before, after
+describe("DEFAULT_QUERY", () => {
+  it("walks the sample timeline from kickoff both ways: refs(before) and the backlink block over the link rows", () => {
+    expect(DEFAULT_START).toBe("/timeline/kickoff.md");
+    expect(DEFAULT_QUERY).toBe(`select path, title, phase, before, after
 from docs
 where path == "/timeline/kickoff.md"
-follow distinct refs(before), $it.in collect { where ^path in list(after) }
+follow distinct refs(before), in_links collect { from doc where ^path in list(after) }
 order by $ordinal`);
-    expect(defaultQuery("2.0")).toBe(`select $path, title, phase, before, after
-from docs
-where $path == "/timeline/kickoff.md"
-follow distinct refs(before), $it.in collect { where ^$path in list(after) }
-order by $ordinal`);
-    expect(defaultQuery("1.5")).toBe(`select $path, title, phase, before, after
-from docs
-where $path == "timeline/kickoff.md"
-follow distinct refs(before), $it.in collect { where ("/" + ^$path) in list(after) }
-order by $ordinal`);
-    expect(defaultQuery(null)).toBe(defaultQuery("1.x"));
   });
 
-  it("parses, yields the same candidates (the pair and its two fields), and raises no hint on its own server", () => {
-    for (const surface of ["1.5", "2.0", "3.0"]) {
-      const q = parse(defaultQuery(surface));
-      expect(inferCandidates(q, []).map((c) => [c.name, c.defaults.direction])).toEqual([["before/after", "forward"], ["before", "forward"], ["after", "backward"]]);
-      expect(queryHints(q, surface), surface).toEqual([]);
-    }
-    // …and exactly one on the other server.
-    expect(queryHints(parse(defaultQuery("1.5")), "2.0").map((h) => h.kind)).toEqual(["path-already-rooted"]);
-    expect(queryHints(parse(defaultQuery("2.0")), "1.5").map((h) => h.kind)).toEqual(["path-not-rooted"]);
-    expect(queryHints(parse(defaultQuery("3.0")), "2.0")).toEqual([]); // the same rooted idiom, respelled
+  it("parses, yields the pair and its two fields as candidates, and raises no hint", () => {
+    const q = parse(DEFAULT_QUERY);
+    expect(inferCandidates(q, []).map((c) => [c.name, c.defaults.direction])).toEqual([["before/after", "forward"], ["before", "forward"], ["after", "backward"]]);
+    expect(queryHints(q)).toEqual([]);
   });
 
-  it("isDefaultQuery recognizes every default and nothing the user wrote", () => {
-    expect(isDefaultQuery(defaultQuery("3.0"))).toBe(true);
-    expect(isDefaultQuery(defaultQuery("2.0"))).toBe(true);
-    expect(isDefaultQuery(defaultQuery("1.5"))).toBe(true);
-    for (const q of PREVIOUS_DEFAULT_QUERIES) expect(isDefaultQuery(q)).toBe(true);
-    expect(isDefaultQuery(`${defaultQuery("2.0")}\nlimit 5`)).toBe(false);
+  it("isDefaultQuery recognizes the default and nothing the user wrote", () => {
+    expect(isDefaultQuery(DEFAULT_QUERY)).toBe(true);
+    expect(isDefaultQuery(`${DEFAULT_QUERY}\nlimit 5`)).toBe(false);
     expect(isDefaultQuery("select path from docs")).toBe(false);
   });
 });

@@ -136,18 +136,14 @@ describe("OmgClient session recovery", () => {
   });
 });
 
-describe("OmgClient.diffUnified — the tool and its locator by surface version", () => {
-  it("calls `docs_diff_unified { id | path, from_rev, to_rev }` on 3.0 and `diff_unified { doc, … }` before", async () => {
+describe("OmgClient.diffUnified — the tool and its locator", () => {
+  it("calls `docs_diff_unified { id | path, from_rev, to_rev }`", async () => {
     const h = harness();
-    await h.client.diffUnified("3.0", docLocator("3.0", "d_a"), "r_1", "r_2", "notes");
-    await h.client.diffUnified("3.0", docLocator("3.0", "/notes/alpha.md"), "r_1", "r_2", "notes");
-    await h.client.diffUnified("2.0", docLocator("2.0", "d_a"), "r_1", "r_2", "notes");
-    await h.client.diffUnified(null, docLocator(null, "/notes/alpha.md"), "r_1", "r_2", "notes");
+    await h.client.diffUnified(docLocator("d_a"), "r_1", "r_2", "notes");
+    await h.client.diffUnified(docLocator("/notes/alpha.md"), "r_1", "r_2", "notes");
     expect(h.transports[0]!.calls.filter((c) => c.method === "tools/call")).toEqual([
       { method: "tools/call", name: "docs_diff_unified", args: { id: "d_a", from_rev: "r_1", to_rev: "r_2", repo: "notes" } },
       { method: "tools/call", name: "docs_diff_unified", args: { path: "/notes/alpha.md", from_rev: "r_1", to_rev: "r_2", repo: "notes" } },
-      { method: "tools/call", name: "diff_unified", args: { doc: "d_a", from_rev: "r_1", to_rev: "r_2", repo: "notes" } },
-      { method: "tools/call", name: "diff_unified", args: { doc: "/notes/alpha.md", from_rev: "r_1", to_rev: "r_2", repo: "notes" } },
     ]);
   });
 });

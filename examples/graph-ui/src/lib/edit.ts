@@ -5,8 +5,8 @@
 //
 // Rules:
 //   1. WRITABLE candidates are frontmatter relations (not the link graph —
-//      `doc.out_links`/`doc.in_links`, `doc.out`/`doc.in` on 2.x — which lives
-//      in the body; not `order by` sequences, which are derived)
+//      `doc.out_links`/`doc.in_links` — which lives in the body; not `order by`
+//      sequences, which are derived)
 //      whose sampled values are document references — a `/`-rooted repo path
 //      (`/projects/oqx.md`), a bare repo path (`projects/oqx.md`, `projects/oqx`),
 //      or a doc id (`d_77ptprj`) — scalar or list. Anything else is read-only
@@ -24,7 +24,7 @@
 //      an emptied list is unset (`emptyListBehavior: "unset"`) or kept as `[]`.
 
 import type { Query } from "@omgbase/oqx";
-import type { Candidate, Direction, InversePair, Row } from "./candidates.ts";
+import { isAttributeName, type Candidate, type Direction, type InversePair, type Row } from "./candidates.ts";
 import { HIT_ENVELOPE_KEYS } from "./paths.ts";
 
 /** How a field spells its references. */
@@ -246,14 +246,15 @@ export function ownerFor<T>(direction: Direction, selected: T, target: T): { own
   return direction === "backward" ? { owner: target, other: selected } : { owner: selected, other: target };
 }
 
-/** Fields the query projects under their own name (`select before` — not
- * `select b: before`, not a computed expression), so a row's value for them is
- * the document's current value and no `docs_read` is needed. */
+/** Authored fields the query projects under their own name (`select before` —
+ * not `select b: before`, not a computed expression, not an engine attribute
+ * such as `path` or `title`), so a row's value for them is the document's
+ * current value and no `docs_read` is needed. */
 export function projectedFields(query: Query | null): string[] {
   if (!query) return [];
   const out: string[] = [];
   for (const item of query.select) {
-    if (item.kind === "field" && item.lift === 0 && item.expr.kind === "ident" && item.expr.name === item.name && !item.name.startsWith("$")) out.push(item.name);
+    if (item.kind === "field" && item.lift === 0 && item.expr.kind === "ident" && item.expr.name === item.name && !isAttributeName(item.name)) out.push(item.name);
   }
   return out;
 }

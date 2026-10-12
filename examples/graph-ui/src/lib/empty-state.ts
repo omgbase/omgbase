@@ -17,10 +17,8 @@ export function firstWhereText(source: string, query: Query | null): string | nu
   return source.slice(codePointToUtf16(source, where.span[0]), codePointToUtf16(source, where.span[1])).trim() || null;
 }
 
-/** Every string literal compared with the path attribute (`path`, or `$path` on
- * a pre-3.0 server) by `==` anywhere in the query, as the author spelled it,
- * deduped and in source order. */
-const PATH_ATTRIBUTE = new Set(["path", "$path"]);
+/** Every string literal compared with the path attribute by `==` anywhere in
+ * the query, as the author spelled it, deduped and in source order. */
 export function pathLiterals(query: Query | null): string[] {
   if (!query) return [];
   const out: string[] = [];
@@ -30,7 +28,7 @@ export function pathLiterals(query: Query | null): string[] {
       if (e.kind !== "binary" || e.op !== "==") return;
       const sides: [Expr, Expr][] = [[e.left, e.right], [e.right, e.left]];
       for (const [a, b] of sides) {
-        if (a.kind === "ident" && PATH_ATTRIBUTE.has(a.name) && b.kind === "lit" && typeof b.value === "string" && !out.includes(b.value)) out.push(b.value);
+        if (a.kind === "ident" && a.name === "path" && b.kind === "lit" && typeof b.value === "string" && !out.includes(b.value)) out.push(b.value);
       }
     },
   });

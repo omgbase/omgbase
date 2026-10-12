@@ -184,20 +184,17 @@ export class OmgClient {
     return tools.map((t) => t.name);
   }
 
-  /** `docs_read`: `locator` is the document argument in the server's spelling
-   * (lib/paths.ts `docLocator`: `{ id }`/`{ path }` on ≥ 3.0, `{ doc }` before);
-   * the whole document as the server spells it — `{ id, path,
-   * rev, properties, raw }` on surface ≥ 3.0, `{ path, docId, rev, properties,
-   * content }` before (lib/shapes.ts `docReadOf` reads either); the demo uses
-   * `properties.frontmatter`, the parsed fence, spelled the same on both. */
+  /** `docs_read`: `locator` is the document argument (lib/paths.ts
+   * `docLocator`: `{ id }` or `{ path }`); the whole document — `{ id, path,
+   * rev, properties, raw }` (lib/shapes.ts `docReadOf`); the demo uses
+   * `properties.frontmatter`, the parsed fence. */
   docsRead(locator: Record<string, string>, repo?: string): Promise<Record<string, unknown> & { properties?: { frontmatter?: Record<string, unknown> } }> {
     return this.call("docs_read", { ...locator, ...(repo ? { repo } : {}) });
   }
 
   /** `docs_set_meta`: set and/or unset frontmatter keys on one document (its
-   * argument from `docLocator`)
-   * (re-ingested server-side; no CAS). The result is `{ id, path, committed }`
-   * on ≥ 3.0, `{ docId, path, committed }` before (lib/shapes.ts `docOpOf`). */
+   * argument from `docLocator`; re-ingested server-side; no CAS). The result
+   * is `{ id, path, committed }` (lib/shapes.ts `docOpOf`). */
   docsSetMeta(locator: Record<string, string>, patch: { set?: Record<string, unknown>; unset?: string[] }, repo?: string): Promise<Record<string, unknown>> {
     return this.call("docs_set_meta", { ...locator, ...patch, ...(repo ? { repo } : {}) });
   }

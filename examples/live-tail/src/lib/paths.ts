@@ -1,80 +1,56 @@
-// Path and attribute forms across surface versions (the subset of graph-ui's
-// lib/paths.ts this demo needs). Since surface 2.0 every path the server
-// returns is `/`-rooted (spec/surface §1 "Paths"). A query hit is `{ id, path,
-// ...projection }` under every version (§1.4), so `hitId`/`hitPath` are
-// version-free; what differs by version is the LANGUAGE: on a 3.0 server the
-// engine attributes are bare (`path`, `title`, `updated_at` — §1.2; `$` belongs
-// to OQX alone) where 2.x spelled them `$path`/`$title`/`$updated_at`, so every
-// query this page generates goes through `attr`. The other tool results are
-// read per version by lib/shapes.ts.
+// Paths, the hit envelope and the surface gate (the subset of graph-ui's
+// lib/paths.ts this demo needs). The demo speaks omgbase surface 3.0
+// (spec/surface): every path the server returns is `/`-rooted (§1 "Paths"), a
+// query hit is `{ id, path, ...projection }` (§1.4), the engine attributes are
+// bare names in the language (§1.2 — `path`, `title`, `updated_at`; `$`
+// belongs to OQX alone), and a `docs_*` tool addresses its document by `id` or
+// `path` (§4 "Arguments"). The connected server's version comes from the
+// `version` tool's `specs.surface` and is checked once per connection
+// (`surfaceProblem`): an older server gets a loud, friendly error.
 
-/** What a server without a `version` tool is taken to be. */
-export const LEGACY_SURFACE = "1.x";
+/** The surface major this demo is written against. */
+export const REQUIRED_SURFACE_MAJOR = 3;
 
-/** The `version` tool's `specs.surface` ("major.minor"), else `LEGACY_SURFACE`. */
-export function surfaceOf(versionResult: unknown): string {
+/** The `version` tool's `specs.surface` ("major.minor"), or null when the
+ * result does not carry one (no `version` tool, a gateway hiding it, an error body). */
+export function surfaceOf(versionResult: unknown): string | null {
   const surface = (versionResult as { specs?: { surface?: unknown } } | null | undefined)?.specs?.surface;
-  return typeof surface === "string" && /^\d+\.\d+$/.test(surface) ? surface : LEGACY_SURFACE;
+  return typeof surface === "string" && /^\d+\.\d+$/.test(surface) ? surface : null;
 }
 
-/** The major version number of a `"major.minor"` surface, 1 for `LEGACY_SURFACE`
- * and anything unparsable, null when the version is not known yet. */
+/** The major number of a `"major.minor"` surface; null for anything else (including null). */
 export function surfaceMajor(surface: string | null): number | null {
-  if (surface === null) return null;
-  const m = /^(\d+)\./.exec(surface);
-  return m ? Number(m[1]) : 1;
+  const m = surface === null ? null : /^(\d+)\.\d+$/.exec(surface);
+  return m ? Number(m[1]) : null;
 }
 
-/** A query hit's id (`id` under every surface version), else null. */
+/** Null when the server speaks a surface this demo understands (≥ 3.0); else
+ * the message to show instead of connecting. */
+export function surfaceProblem(surface: string | null): string | null {
+  const major = surfaceMajor(surface);
+  if (major !== null && major >= REQUIRED_SURFACE_MAJOR) return null;
+  return `this demo needs omgbase surface ≥ ${REQUIRED_SURFACE_MAJOR}.0 — the server reports ${surface ?? "no surface version (no `version` tool)"}`;
+}
+
+/** A query hit's id, else null. */
 export function hitId(hit: Record<string, unknown> | null | undefined): string | null {
   const v = hit?.id;
   return typeof v === "string" ? v : null;
 }
 
-/** A query hit's document path as returned (rooted since 2.0), else null. */
+/** A query hit's document path as returned (`/`-rooted), else null. */
 export function hitPath(hit: Record<string, unknown> | null | undefined): string | null {
   const v = hit?.path;
   return typeof v === "string" ? v : null;
 }
 
-/** Does the server spell the engine attributes bare in the language (surface
- * ≥ 3.0: `path`, `title`, `updated_at`), where 1.x/2.x had `$path`/`$title`/
- * `$updated_at`? An unknown version is taken as 2.x. */
-export function bareAttributes(surface: string | null): boolean {
-  return (surfaceMajor(surface) ?? 1) >= 3;
-}
-
-/** A document attribute as the connected server's language spells it:
- * `attr("3.0", "title")` → `title`, `attr("2.0", "title")` → `$title`. */
-export function attr(surface: string | null, name: "id" | "path" | "title" | "updated_at"): string {
-  return bareAttributes(surface) ? name : `$${name}`;
-}
-
-/** Does the server take the 3.0 argument names (`spec/surface` §4 "Arguments":
- * a `docs_*` tool addresses its document by `id` or `path`; `doc` is gone, and
- * no tool takes a foreign `doc_id`/`doc_path`)? Before 3.0 every document
- * argument was `doc` (id-or-path). An unknown version is taken as 2.x. */
-export function bareArguments(surface: string | null): boolean {
-  return (surfaceMajor(surface) ?? 1) >= 3;
-}
-
 const DOC_ID = /^d_[0-9a-z]{1,7}$/;
 
-/** A document ref (an id or a path) as the arguments a `docs_*` tool takes on
- * the connected server: `{ id }` / `{ path }` on ≥ 3.0, `{ doc }` before. The
- * unified diff's document is one of these too (`docs_diff_unified { id? | path?
- * }` on 3.0, `diff_unified { doc }` before — `diffUnifiedTool`). */
-export function docLocator(surface: string | null, doc: string): Record<string, string> {
-  if (!bareArguments(surface)) return { doc };
+/** A document ref (an id or a path) as the argument a `docs_*` tool takes
+ * (spec/surface §4 "Arguments"): `{ id }` for a `d_…` id, `{ path }` otherwise
+ * — `docs_history`, `docs_diff_unified` and `docs_read_at` alike. */
+export function docLocator(doc: string): Record<string, string> {
   return DOC_ID.test(doc) ? { id: doc } : { path: doc };
-}
-
-/** The unified-diff tool's name on the connected server (spec/surface §3–§4):
- * `docs_diff_unified` on ≥ 3.0 — a `docs_*` tool, its document `id`/`path` —
- * and `diff_unified` before (its document `doc`). An unknown version is taken
- * as 2.x, like the arguments. */
-export function diffUnifiedTool(surface: string | null): "docs_diff_unified" | "diff_unified" {
-  return bareArguments(surface) ? "docs_diff_unified" : "diff_unified";
 }
 
 /** The `/`-rooted form: exactly one leading slash. Idempotent. */

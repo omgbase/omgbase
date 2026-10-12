@@ -24,6 +24,11 @@ It is also a probe of the reflection API being built next door: whatever the
 UI wanted and could not get from `@omgbase/oqx`'s public `parse` or omgbase's
 MCP tools is listed under [Gaps](#gaps-found-in-the-public-api).
 
+**Requires omgbase surface ≥ 3.0** (the current `omg`): the page calls the
+`version` tool on connect, shows the surface in the header (`· surface 3.0`)
+and refuses an older server with *this demo needs omgbase surface ≥ 3.0 — the
+server reports 2.0* (see [Server version](#server-version)).
+
 ## Try it against a remote omgbase
 
 ```sh
@@ -45,7 +50,7 @@ not use it there: once connected it asks `repos` for the slug and, for the
 sample slug only, probes `/timeline/kickoff.md` with one `limit 1` query
 (`lib/starter-query.ts`); any repository that is not the sample gets the
 **starter** instead — while the editor still holds a preset (the sample default
-in any of its versions, or the starter itself), never a query you edited:
+or the starter itself), never a query you edited:
 
 ```oqx
 select path, title
@@ -54,16 +59,14 @@ order by updated_at desc
 limit 40
 ```
 
-(the attributes spelled for the connected server — bare on a 3.0 server,
-`$path`/`$title`/`$updated_at` on a 2.x one; see [Server
-versions](#server-versions)). The starter has no `follow`, so the picker offers
+The starter has no `follow`, so the picker offers
 the builtin link graph — `doc.out_links` (links, drawn by default) and
 `doc.in_links` (backlinks), named for the link rows the edges come from — and a
 force layout; under the editor a second suggestion shows
 the timeline walk rooted at the first shown document (`select path, title,
-before, after from docs where path == "/…" follow distinct refs(before), $it.in
-collect { where ^path in list(after) }`; `^$path` against a 2.x server, `"/" +
-^$path` against a 1.x one) with a *use this query* button. When any query
+before, after from docs where path == "/…" follow distinct refs(before),
+in_links collect { from doc where ^path in list(after) }`) with a *use this
+query* button. When any query
 matches nothing, the graph area says so instead of drawing an empty canvas:
 *the query matched nothing in repo notes*, the first `where` clause as
 written, and — when the query compares `path` with a
@@ -176,149 +179,89 @@ real repository](#try-it-against-a-remote-omgbase)):
 select path, title, phase, before, after
 from docs
 where path == "/timeline/kickoff.md"
-follow distinct refs(before), $it.in collect { where ^path in list(after) }
+follow distinct refs(before), in_links collect { from doc where ^path in list(after) }
 order by $ordinal
 ```
 
-(That is the query for a surface-3.0 server, where the engine's attributes are
-bare names; against a 2.x server the page spells them `$path` / `^$path`, and
-against a 1.x server `where $path == "timeline/kickoff.md"` and `("/" + ^$path)
-in list(after)` — see [Server versions](#server-versions).)
-
 **Why `refs()`.** `before` holds document *references* — strings like
 `/timeline/alpha.md` — not documents. `follow before` walks the strings, and
-since surface 1.5 the server refuses that (`filter_invalid`: "a hit must be a
-document, block, node or edge row — the query reached a string …"; before 1.5
-it rendered a junk `{ id: "undefined", path: "" }` hit, which this demo drew
-as a phantom node). `refs(before)` resolves each reference (`/`-rooted or bare
-path, or a `d_` id; dangling ones dropped) to the live document, so it is the
-`follow` destination that means "the documents `before` names". The editor
-says so under the query whenever a destination is a bare field.
+the server refuses that (`filter_invalid`: "a hit must be a document, block,
+node or edge row — the query reached a string …"). `refs(before)` resolves
+each reference (`/`-rooted or bare path, or a `d_` id; dangling ones dropped)
+to the live document, so it is the `follow` destination that means "the
+documents `before` names". The editor says so under the query whenever a
+destination is a bare field.
 
-**Why `$it.in` for the backward hop.** The engine has no `refs⁻¹`: there is no
-function giving "the documents whose `after` names me". But a `/`-rooted
-frontmatter reference *is extracted as an edge* (`spec/graph` §3.1,
-`provenance: frontmatter`), so the frontier's backlinks (`$it.in` on a 2.x
-server; `in_links collect { from doc }` on 3.0, where a doc has no `in`
-relation) already contain every document whose `after` — or any
-other field, or a body link — points at it. The destination block narrows those
-to the ones whose `after` really says so (`^path in list(after)`; `list()`
-makes a scalar and a list read alike). It is an indexed lookup per frontier
-row, unlike the full-scan fallback, which still works:
+**Why `in_links collect { from doc … }` for the backward hop.** The engine has
+no `refs⁻¹`: there is no function giving "the documents whose `after` names
+me". But a `/`-rooted frontmatter reference *is extracted as an edge*
+(`spec/graph` §3.1, `provenance: frontmatter`), so the frontier's backlinks —
+its `in_links` rows, each re-rooted to its source document by `from doc` —
+already contain every document whose `after` — or any other field, or a body
+link — points at it. The destination block narrows those to the ones whose
+`after` really says so (`^path in list(after)`: `^` is the frontier row, whose
+path is `/`-rooted like the authored reference; `list()` makes a scalar and a
+list read alike). It is an indexed lookup per frontier row, unlike the
+full-scan fallback, which still works:
 
 ```oqx
 follow refs(before), ^docs collect { where after.contains(^path) }
 ```
 
-(`^docs` is the root `docs` collection seen from inside the block; the pre-2.0 `$repo.docs`
-is refused since surface 2.0 with a message pointing at `^docs`.) The comparison works because, since surface 2.0,
-the row's path is `/`-rooted like the authored reference it is compared with; on a
-1.x server it is bare (`timeline/kickoff.md`) and the same block reads
-`("/" + ^$path) in list(after)` — the next section.
+(`^docs` is the root `docs` collection seen from inside the block.)
 
-### Server versions
+### Server version
 
-The omgbase surface changed its path form in 2.0 (`spec/surface` §1 "Paths"):
-every path a query or a tool **returns** is `/`-rooted (a row's `path`, an
-edge's `dst_path`, `docs_read`'s `path`, …), every path a tool **accepts**
-tolerates both forms, and a string literal compared with the path attribute by
-`==` (or passed to `startsWith`) is rooted before evaluation, so `path ==
-"a.md"` and `path == "/a.md"` both match. A 1.x server (surface 1.5 is what
-Brendan's remote gateway runs today) returns the storage form —
-`timeline/kickoff.md` — and matches only a bare literal. Authored frontmatter
-references are `/`-rooted on both (that is what the repositories hold; only a
-`/`-rooted string becomes a graph edge), so correlating the current row with a
-reference is `"/" + ^$path` on 1.x and the plain attribute on ≥ 2.0. The keyset
-cursor also changed shape and a 1.x cursor is refused by 2.0.
+The demo is written against omgbase **surface 3.0** (`spec/surface`): every
+path a query or a tool returns is `/`-rooted and every path a tool accepts
+tolerates both forms (§1 "Paths"); every engine attribute is a bare name in the
+language — `path`, `id`, `title`, `updated_at`, `raw`, `hash`, `tags` — and `$`
+belongs to OQX alone (`$it`, `$key`, `$depth`, …; §1.2; an authored `path:` or
+`title:` key is reached as `data.path` / `data.title`, `title` being the
+computed title); the link rows are the `links` collection (`from links`,
+`^links`, `out_links`/`in_links`; §1.1); a `docs_*` tool addresses its document
+by `id` or `path` (§4 "Arguments"); a hit is `{ id, path, ...projection }` and
+a row surfacing as a value `{ id, path }` (§1.4).
 
-Surface 3.0 then changed the **attribute names in the language** (`spec/surface`
-§1.2): `$` belongs to OQX alone (`$it`, `$key`, `$depth`, …) and every engine
-attribute is a bare name that wins on collision — `path`, `id`, `title`,
-`updated_at`, `raw`, `hash`, `tags` — where 1.x/2.x spelled them `$path`,
-`$id`, `$title`, `$updated_at`. A 3.0 server reads `$path` as an unknown OQX
-name (absent), so every query the demo generates — the default, the starter,
-the timeline suggestion, the exists probe, the edge fetch — is spelled for the
-connected server (`attr`); an authored `path:` or `title:` key is reached as
-`data.path` / `data.title` on 3.0 and `title` on 3.0 is the computed title.
-
-The demo works against both. On connect it calls the `version` tool once and
-reads `specs.surface` (`"major.minor"`); a server without the tool is taken
-as `1.x`. The result is the `serverSurface` signal, shown in the header
-(`· surface 2.0`), and everything path-shaped goes through the adapter
-`src/lib/paths.ts`:
+On connect the page calls the `version` tool once and reads `specs.surface`
+(`"major.minor"`) into the `serverSurface` signal, shown in the header (`·
+surface 3.0`). A server reporting an older surface — or none, which a server
+without the `version` tool is — is refused before anything else runs, with the
+status line reading *error: this demo needs omgbase surface ≥ 3.0 — the server
+reports 2.0* and the settings panel open (`surfaceProblem`, `src/lib/paths.ts`).
+There is no compatibility layer for earlier surfaces. The helpers:
 
 | | |
 | --- | --- |
-| `rooted(p)` / `unrooted(p)` | the two forms (idempotent) |
-| `samePath(a, b)` | equal modulo the leading slash |
-| `attr(surface, name)` / `bareAttributes(surface)` | an attribute in the server's language: `path` on ≥ 3.0, `$path` before and while unknown; `DOC_ATTRIBUTES` lists 3.0's bare docs attributes |
-| `pathExpr(surface, ref = attr(surface, "path"))` | the OQX that yields the rooted path of `ref`: the attribute itself on ≥ 2.0, `"/" + $path` before (`pathOperand` parenthesizes the latter; `outerPathOperand` is the enclosing row's — `^path` / `^$path` / `("/" + ^$path)`) |
-| `serverPath(surface, p)` | a `path == "…"` literal in the server's form: bare on 1.x, rooted on 2.0 |
-| `docArg(surface, doc)` | a pre-3.0 tool's `doc` argument: a path is de-rooted for 1.x; an id passes through |
-| `docLocator(surface, doc)` | the document argument in the server's spelling: `{ id }`/`{ path }` on ≥ 3.0 — `spec/surface` §4 "Arguments" — else `{ doc }` via `docArg` |
-| `surfaceOf(versionResult)` | `specs.surface`, else `"1.x"` |
-| `hitId(hit)` / `hitPath(hit)` | a query hit's identity — the envelope's `id`/`path`, the same under every version |
-| `rowRef(v)` | a row that surfaced as a value — `{ id, path }` — rooted, else null |
-| `HIT_ENVELOPE_KEYS` | `id` and `path`; neither is a projectable field |
+| `surfaceOf(versionResult)` / `surfaceMajor(s)` / `surfaceProblem(s)` | `specs.surface` (null when absent), its major, and the gate's message (null when the server is fine) |
+| `rooted(p)` / `unrooted(p)` / `samePath(a, b)` | the two path forms (idempotent) and equality modulo the leading slash |
+| `docLocator(doc)` | the document argument: `{ id }` for a `d_…` id, else `{ path }` |
+| `hitId(hit)` / `hitPath(hit)` / `rowRef(v)` | a query hit's identity, and a row that surfaced as a value (rooted, else null) |
+| `HIT_ENVELOPE_KEYS` / `DOC_ATTRIBUTES` | `id` and `path` (neither is a projectable field); the docs attributes a bare name reads |
 
-and every other tool result — and the link rows' names, which 3.0 also
-renamed: the row kind itself (`spec/surface` §1.1: `from links`, `^links`,
-`out_links`/`in_links` — a 2.x server says `from edges`, `^edges`,
-`out_edges`/`in_edges`, and each refuses the other's spelling) and its fields
-(`spec/surface` §1.2: `$path` → `path`, `$dst_path` → `dst_path`, `src_field` →
-`field`, `$src`/`$dst`/`$dst_uri` → `doc_id`/`dst_id`/`uri`) — through its
-sibling `src/lib/shapes.ts`, keyed on the same version (an unknown version
-reads as 2.x):
+and every other tool result goes through its sibling `src/lib/shapes.ts`, which
+normalises to one internal shape with rooted paths: `graphEdgeRows(result)` /
+`edgeOf(e)` / `docOf(d)` for the `graph` tool's `links[]` and documents (this
+demo fetches edges through `query`, not `graph`, so these are for a consumer
+that does), `docReadOf(r)` for `docs_read` and `docOpOf(r)` for a document
+op's `{ id, path, committed }`.
 
-| | |
-| --- | --- |
-| `surface3(surface)` | does the server spell rows the 3.0 way (`id`/`path`/`raw`/`hash` on every tool, plain foreign keys)? false for 1.x/2.x and while unknown |
-| `linksTarget(surface)` / `linkRelations(surface)` | the link rows' kind in generated OQX — `links` on ≥ 3.0, `edges` before — and the doc relations that yield them (`out_links`/`in_links` vs `out_edges`/`in_edges`) |
-| `edgeFields(surface)` | the link rows' field names in generated OQX (`edgeQueries` spells its `dst:` projection and the `field ==` test with them) |
-| `graphEdgeRows(surface, result)` / `edgeOf(surface, e)` / `docOf(surface, d)` | the `graph` tool's link rows (`links[]` on ≥ 3.0, `edges[]` before), one such row, and a document under either generation, normalised — this demo fetches edges through `query`, not `graph`, so these are for a consumer that does |
-| `docReadOf(surface, r)` / `docOpOf(surface, r)` | `docs_read` (`id`/`path`/`raw` vs `docId`/`path`/`content`) and a document op's result (`id`/`path` vs `docId`/`path`); the demo itself needs only `properties.frontmatter`, spelled the same on both |
-
-Candidate inference and the editor's path hints read both spellings of the
-path attribute (`path` / `$path`), an edge's field (`field` / `src_field`) and
-destination path (`dst_path` / `$dst_path`), and both spellings of the link
-rows (`in_links`/`out_links`/`^links` and `in_edges`/`out_edges`/`edges`) in a
-query's AST, since the query is the user's and the server decides which
-spelling is valid; a bare 3.0 attribute (`path`, `title`, `updated_at`, …) is
-never taken for a frontmatter relation or an `order by` sequence key.
-
-The **hit envelope** (`spec/surface` §1.4) is `{ id, path, ...projection }`
-under every surface version — on 3.0 these are the attributes' own names, so a
-key copied from a hit pastes into the next `where id == …` with no translation
-and `select id, path` is simply the envelope (any other projection onto those
-keys must be aliased). A row surfacing as a *value* (an empty `collect { }`, a
-`$it` projection) is `{ id, path }` too. Every hit read goes through
-`hitId`/`hitPath` (and `rowRef` for nested rows); the cards panel's *from rows*
-fallback drops the envelope.
-
-Nodes are keyed by the rooted path whatever the server returned, so a 1.x hit
-and a 2.0 hit for one document share a key, and the edge fetch roots the rows'
+Nodes are keyed by the rooted path, and the edge fetch roots the rows'
 `path`/`dst_path` before matching them to the shown nodes while spelling its
-`path == "…"` literals in the server's form. The default query is generated
-from `attr`/`pathExpr` for the connected server and swapped when the version
-changes with the connection — only while the editor still holds a preset (any
-version's default or starter, or an earlier one), never a user's edit.
-Candidate inference reads `"/" + ^$path`, bare `^$path` and 3.0's `^path`
-alike as the correlation idiom. The value form of an edited field is still
-inferred from the field's existing values (leading slash or not), never from
-`path`. The page never stores a cursor (`queryAll` follows one within a single
-call), so nothing is left to discard on a version change. Two hints under the
-editor catch the mismatch: on a ≥ 2.0 server a `"/" + ^path` (or `"/" + path`,
-`"/" + ^$path`) in the query gets "`path` is already `/`-rooted on this server;
-use `^path`"; on a 1.x server a bare `^$path` compared directly with a property
-(`^$path in list(after)`, `after.contains(^$path)`) gets "this server's `$path`
-has no leading slash; use `"/" + ^$path`". A literal (`path == "a.md"`) is
-never flagged.
+`path == "…"` literals rooted. The default query and the starter are constants
+swapped only while the editor still holds a preset, never a user's edit. The
+value form of an edited field is inferred from the field's existing values
+(leading slash or not), never from `path`. The page never stores a cursor
+(`queryAll` follows one within a single call). One hint under the editor
+catches the stale idiom: a `"/" + ^path` (or `"/" + path`, `"/" + dst_path`) in
+the query gets "`path` is already `/`-rooted; use `^path`". A literal (`path ==
+"a.md"`) is never flagged: the server roots it.
 
 Try: `select path, title, before from docs where phase == "experiment" || phase == "plan"`
 (no `follow` — the candidates are *inferred* from the projected path-valued
 fields, and the three `loop-*` notes trigger the cycle banner); `follow
-out_links collect { from dst }` (3.0; `follow doc.out` on a 2.x server) for the
-link graph; `order by phase` for a sequence axis; `follow before` to
+out_links collect { from dst }` for the link graph; `order by phase` for a
+sequence axis; `follow before` to
 see the hint and the server's error (with the `refs()` fix) in the status line.
 
 Scripts: `dev [--remote <url>]` (all of it; the proxy's flags — `--port 8787`,
@@ -444,20 +387,14 @@ where field == "after" && provenance == "frontmatter"
   && (path == "/timeline/kickoff.md" || path == "/timeline/alpha.md" || …)
 ```
 
-(a 2.x server still calls the kind `edges` — `from edges`, `out_edges`,
-`in_edges`, `^edges` — and the demo spells it by the server's surface version,
-`linksTarget`) in chunks of 40 paths (the literals bare against a 1.x server —
-see [Server versions](#server-versions)), then filtered client-side to edges
-whose both ends are shown. OQX has no array literal (`path in [...]` is a lex
-error) and `in` only takes a lifted set or a range, hence the disjunction. The
-nested alternative (`select path, out: doc.out_links collect { select dst:
-dst_path, field } from docs where …`) also works against the engine (against a
-pre-3.0 server the relation is `doc.out_edges` and the edge fields are
-`$path`/`$dst_path`/`src_field` — the demo spells them by the server's surface
-version, like the paths below); the flat rows were simpler to
+in chunks of 40 paths, then filtered client-side to edges whose both ends are
+shown. OQX has no array literal (`path in [...]` is a lex error) and `in` only
+takes a lifted set or a range, hence the disjunction. The nested alternative
+(`select path, out: doc.out_links collect { select dst: dst_path, field } from
+docs where …`) also works against the engine; the flat rows were simpler to
 merge across chunks and page with the tool's cursor. An edge is a link row
 read source → destination, `path` → `dst_path` (the paths of `doc_id` and
-`dst_id`; on 3.0 `dst` is the destination document row itself). Links
+`dst_id`; `dst` is the destination document row itself). Links
 (`doc.out_links`) and backlinks (`doc.in_links`) use the same query with
 `provenance == "link"`; backlinks are the same rows reversed. A sequence candidate (an `order by` key) needs no
 fetch — its edges are consecutive result rows.
@@ -466,7 +403,7 @@ fetch — its edges are consecutive result rows.
 
 | Element | Properties | Events |
 | --- | --- | --- |
-| `<oqx-query-editor>` | `value` (source), `highlights` (`Span[]`, code points), `serverSurface` (`"major.minor" \| "1.x" \| null`, for the path-form hints), `debounce` | `query-change` `{ source, query: Query \| null, error: { message, offset, stage } \| null }` |
+| `<oqx-query-editor>` | `value` (source), `highlights` (`Span[]`, code points), `debounce` | `query-change` `{ source, query: Query \| null, error: { message, offset, stage } \| null }` |
 | `<oqx-relationship-picker>` | `candidates: Candidate[]`, `overrides: Overrides`, `editable: Record<name, Editability>`, `armed: string \| null`, `edgeCounts: Record<name, number>`, `nodeCount`; getter `view`; `reset()`, `arm(name \| null)`, `setAxis(name \| null)` | `view-change` `{ view: { edges: string[], layout: { axis, direction }, projection }, overrides }`, `candidate-hover` `{ candidate \| null }`, `armed-change` `{ candidate \| null }` |
 | `<oqx-projection-picker>` | `fields: ProjectedField[]`, `defaults: ProjectionChoice`, `overrides: ProjectionOverrides`; getter `projection`; `reset()` | `projection-change` `{ label: string \| null, shown: string[], overrides }`, `field-hover` `{ field \| null }` |
 | `<oqx-graph>` | `nodes: GraphNode[]` (`label` = the fallback title line, `row` = the projected row), `view: View` (`edges`, `layout`, `projection`), `candidates`, `fetchEdges: (candidate, paths) => Promise<GraphEdge[]>`, `selected`, `armed: Candidate \| null`, `writable: string[]`, `pending: PendingEdge[]` | `node-select` `{ node \| null }`, `edge-toggle` `{ candidate, from, to, present }`, `graph-state` `{ edges, cycles, layout, busy, error, axisEdges, edgeCounts }`, `axis-request` `{ axis }` |
@@ -558,9 +495,9 @@ to the panel (and removing one drops it, along with any choice made about it).
 **Reflection rules.** Each `select` item, in order, keyed by the name the row
 carries (the alias, or a navigation's last segment):
 
-- a bare engine attribute (`path`, `title`, `id`, `updated_at`, … on a 3.0
-  server — `spec/surface` §1.2; `$path`, `$title`, … on a pre-3.0 one — aliased
-  or not) is an **intrinsic**;
+- a bare engine attribute (`path`, `title`, `id`, `updated_at`, … —
+  `spec/surface` §1.2; aliased or not), or one of OQX's own `$`-names
+  (`$depth`, `$ordinal`), is an **intrinsic**;
 - any other scalar item — a frontmatter field, a navigation (`meta.slug` →
   `slug`), an aliased expression (`n: size(before)`) — is a **field**;
 - a `collect` / `first` / `single` block (`jobs: jobs collect { … }`) is
@@ -570,9 +507,8 @@ carries (the alias, or a navigation's last segment):
   read, so the fields are the keys the returned rows actually carry, in
   first-seen order (badge *from rows*), kinded by their values.
 
-**Defaults.** The label is the first of `title` (on 3.0 the computed title
-attribute; an authored `title:` before), `$title` (the 2.x computed title),
-`name` that is projected; otherwise the card is labelled with the de-rooted
+**Defaults.** The label is the first of `title` (the computed title
+attribute), `name` that is projected; otherwise the card is labelled with the de-rooted
 document path, which is always offered as the **fallback** row. Only the label
 is shown by default — scalars other than the label start **off**, so cards
 stay as small as they were until a field is asked for. The starter query
@@ -673,9 +609,8 @@ not, path or doc id (`d_…`). A field with no values yet borrows the dominant
 form among all reference fields in the rows, else `/path.md`; whether it
 becomes a list or a scalar follows the same inference (ties → list). A field
 whose existing values disagree (`/a.md` next to `b.md`) is refused with a
-message until they agree. The server's path form plays no part in this: the
-values are the author's, `/`-rooted in these repositories whether the row's
-path comes back bare (surface 1.x) or rooted (2.0).
+message until they agree. The values are the author's — `/`-rooted in these
+repositories — whatever form the row's own `path` takes.
 
 **Writable or not.** Writable candidates are exactly the frontmatter relations
 whose sampled values are document references (a `/`-rooted repo path, a bare
@@ -703,8 +638,7 @@ local sample the writes land in `.dev-workspace/sample/` (a copy of `sample/`
 made by `dev:workspace`; `pnpm --filter graph-ui dev:workspace --force` resets
 it). Try the scalar path with `select path, title, owner from docs where
 path.startsWith("/timeline/") || path.startsWith("/people/")` (`owner` is a
-scalar `/people/….md`; `$path`, and no leading slashes, against a pre-3.0 server) and the
-list path with the default query's `after`.
+scalar `/people/….md`) and the list path with the default query's `after`.
 
 ## Inference rules (`src/lib/candidates.ts`)
 
@@ -717,30 +651,29 @@ module becomes the fallback.
    owns the field and names its successors; it is the same candidate a bare
    `follow <field>` would give (same name and kind, merged with the inferred one
    from the rows, written the same way), now meaning the documents. The link
-   graph is a candidate in either generation's spelling: on 3.0 it is walked
-   through the link rows — `follow out_links collect { from dst }` = links
-   (`dst` is a link's destination document), `follow in_links collect { from
-   doc }` = backlinks with direction *backward* (`doc` its source); the receiver
-   names the relation, as written (`out_links`, `doc.out_links`, `$it.in_links`)
-   — and a 2.x server spells the same walks as the plain relations `doc.out` /
-   `out` / `$it.out` and `doc.in` / `in` / `$it.in` (gone in 3.0, where `out`
-   and `in` read an absent property). Any other plain relation is a frontmatter
+   graph is walked through the link rows — `follow out_links collect { from dst
+   }` = links (`dst` is a link's destination document), `follow in_links
+   collect { from doc }` = backlinks with direction *backward* (`doc` its
+   source); the receiver names the relation, as written (`out_links`,
+   `doc.out_links`, `$it.in_links`). Any other plain relation is a frontmatter
    relation — flagged by the editor's hint, since it follows the strings. Any
-   other **destination block** (`^docs collect { where … }`, `$it.in collect {
-   … }`, `refs(before) collect { … }`) is read first through its receiver —
-   `refs(<field>)` names `<field>`, *forward* — then through its correlated
-   `where`: a bare property of the
-   candidate row compared against an outer reference (`^path in list(after)`,
-   `after.contains(^path)`, the 2.x `^$path`, or the 1.x spellings `("/" +
-   ^$path) in list(after)`, `after.contains("/" + ^$path)`) names the relation
-   `after` with direction *backward* (the edge is stored on the successor and
-   points at the frontier); an outer property (`path in ^before`) names
-   `before`, *forward*; a `refs()` receiver of a nested directive follows the
-   same two cases (`refs(after) exists { where path == ^^path }` → `after` *backward*,
-   `refs(^before) exists { … }` → `before` *forward*); a `field == "x"` (`src_field` pre-3.0) /
-   `predicate == "x"` literal under `doc.in_links` / `doc.out_links` / `^links`
-   (or their pre-3.0 spellings `doc.in_edges` / `doc.out_edges` / `edges`)
-   names `x` (*forward* for in_links, *backward* for out_links).
+   **destination block** (`^docs collect { where … }`, `in_links collect { from
+   doc where … }`, `refs(before) collect { … }`) is read first through its
+   receiver — `refs(<field>)` names `<field>`, *forward* — then through its
+   correlated `where`: a bare property of the candidate row compared against an
+   outer reference (`^path in list(after)`, `after.contains(^path)`) names the
+   relation `after` with direction *backward* (the edge is stored on the
+   successor and points at the frontier); an outer property (`path in ^before`)
+   names `before`, *forward*; a `refs()` receiver of a nested directive follows
+   the same two cases (`refs(after) exists { where path == ^^path }` → `after`
+   *backward*, `refs(^before) exists { … }` → `before` *forward*); a `field ==
+   "x"` / `predicate == "x"` literal under `doc.in_links` / `doc.out_links` /
+   `^links` names `x` (*forward* for in_links, *backward* for out_links). A
+   link-row block whose `where` correlates with the frontier that way — the
+   default query's `in_links collect { from doc where ^path in list(after) }` —
+   *means* that relation, so the whole backlink graph is not offered beside it;
+   an uncorrelated filter (`in_links collect { from doc where phase == "x" }`)
+   keeps the walk as the candidate.
 2. **`order by` keys** that are not `$`-intrinsics become *sequence*
    candidates (edges = consecutive rows; `desc` → backward).
 3. **Inferred from rows**: a projected field whose values are a doc path or a
@@ -751,8 +684,8 @@ module becomes the fallback.
    to choose from — `doc.out_links` (links) and `doc.in_links` (backlinks),
    named for the link rows the edges are fetched from — so a query that
    projects no relationship (the starter) still has edges to draw. A `follow
-   out_links collect { from dst }` (or a 2.x `follow doc.out`) is the follow
-   candidate itself, not a second entry.
+   out_links collect { from dst }` is the follow candidate itself, not a second
+   entry.
 
 5. **Inverse pairs** — see the next section: two frontmatter candidates that are
    one sequence read from both ends get a combined candidate (`before/after`,
@@ -808,13 +741,11 @@ becomes the fallback — see [Gaps](#gaps-found-in-the-public-api).
 **Hints and server errors** (`src/lib/hints.ts`, `src/lib/errors.ts`). The same
 AST reading drives the non-blocking messages. Under the editor: when a `follow`
 destination is a bare frontmatter-looking field (not `refs(…)`, not a block,
-not `out_links`/`in_links`/`children`/`subsections`/`dst`/`$it.…`, nor the 2.x
-`doc.out`/`doc.in`/`in`/`out`), the
+not `out_links`/`in_links`/`children`/`subsections`/`dst`/`$it.…`), the
 status area adds "`before` holds document references; `follow refs(before)`
 walks the documents (a bare field follows the strings)" and dot-underlines the
-destination; the query still runs. The two path-form hints ([Server
-versions](#server-versions)) appear the same way once the server's version is
-known. In the footer: the server's surface-1.5
+destination; the query still runs. The path-form hint ([Server
+version](#server-version)) appears the same way. In the footer: the server's
 `filter_invalid` ("a hit must be a document, block, node or edge row — the
 query reached a string ("/timeline/beta.md"); … use refs(<field>)") is shown
 with its remedy made concrete from the AST — `try follow refs(before)` — or the
@@ -824,11 +755,10 @@ engine's own `refs(<field>)` when no bare destination names the field.
 
 - ~~**Paths disagree with frontmatter paths.**~~ Fixed in surface 2.0: the
   row's path is `/`-rooted like an authored reference, so `^path in
-  list(after)` needs no `"/" +`; the demo keeps the 1.x spelling for 1.x
-  servers ([Server versions](#server-versions)).
+  list(after)` needs no `"/" +`.
 - **No inverse of `refs()`.** `refs(before)` walks forward; "the documents whose
   `after` names me" has no function and is spelled as a backlink block
-  (`$it.in collect { where ^path in list(after) }`) — correct because
+  (`in_links collect { from doc where ^path in list(after) }`) — correct because
   frontmatter references are edges, but a `referrers(after)` (or a field
   definition with `inverse_of`) would make the backward hop as short as the
   forward one.
@@ -880,21 +810,18 @@ engine's own `refs(<field>)` when no bare destination names the field.
 
 `sample/` is a 20-document project notebook: a release timeline authored through
 `before`/`after` frontmatter (`/`-rooted paths — only `/`-rooted strings and
-`[[wikilinks]]` become frontmatter edges, see `spec/graph` §3.1; the references
-stay rooted whatever surface version serves them), two branches
+`[[wikilinks]]` become frontmatter edges, see `spec/graph` §3.1), two branches
 (`docs-draft`, `security-audit`) that rejoin at `launch`, a deliberate three-note
 cycle (`loop-a` → `loop-b` → `loop-c` → `loop-a`), `owner` relations into
 `people/`, `see_also` under `topics/`, and ordinary Markdown links.
 
 ## Verified headlessly
 
-Surface 3.0 batch 2 (the argument names — `docs_read { id | path }`,
-`docs_set_meta { id | path, set, unset }`, chosen by the server's version with
-`docLocator`): Chrome `--headless=new` over CDP on free ports, against the
-current build (proxy 18901, Vite 15901; header `surface 3.0`, 9 rows) and
-against a `surface-2.0` omg built from its tag into a temporary worktree (proxy
-18903, Vite 15903; `surface 2.0`): the default query drew 9 nodes / 10 edges,
-switching the axis radio moved the layout to the force-directed banner, arming
-`before` and ⌘-clicking a `before` edge proposed `set before: […] (was […]) via
-docs_set_meta?`, **apply** committed it (`api(agent:mcp): /timeline/alpha.md`
-in `omg log`) and the graph re-fetched. No console errors on either server.
+After the pre-3.0 compatibility branches were removed (Chrome `--headless=new`
+over CDP on free ports — proxy 18961, Vite 15961 — against the current build):
+the page connected with the header `local sample · /mcp · 1 repo · surface
+3.0`, the default query (`in_links collect { from doc where ^path in
+list(after) }` for the backward hop) returned 9 rows, the picker inferred
+`before/after` + `before` + `after`, and the graph drew 9 cards with 10 edges
+along `before/after` (`layout: before/after (forward, 10 edges)`); the editor's
+status read `OQX ok`. No console errors (Lit's dev-mode warning only).

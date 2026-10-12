@@ -1,13 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
-  DIFF_VIEW_KEY, advanceCursor, byline, cardFields, createdDiff, diffLineKind, diffStats, diffViewOf, digestPaths, entryCard, frameAfter, frameBefore, entryFromDigest, filterStateAfter, formatStats, formatTime, frameFor, hiddenLine, latestChange, latestPair, loadDiffView, matchQuery, pairForCommit, partitionByFilter, pollMs, prependDigests, recentCard, recentFromHits, recentQuery, saveDiffView, startCursor, sumStats, titlesByPath,
+  DIFF_VIEW_KEY, FRAME_AFTER, FRAME_BEFORE, advanceCursor, byline, cardFields, createdDiff, diffLineKind, diffStats, diffViewOf, digestPaths, entryCard, entryFromDigest, filterStateAfter, formatStats, formatTime, frameFor, hiddenLine, latestChange, latestPair, loadDiffView, matchQuery, pairForCommit, partitionByFilter, pollMs, prependDigests, recentCard, recentFromHits, recentQuery, saveDiffView, startCursor, sumStats, titlesByPath,
   type Digest, type DocVersion, type FeedEntry, type RecentDoc,
 } from "../src/lib/feed.ts";
 
-const digest = (seq: number, commit = `c_${seq}`, revisions: Digest["revisions"] = [{ doc: "d_a", path: "/notes/alpha.md", contentHash: "aa" }]): Digest => ({
+const digest = (seq: number, commit = `c_${seq}`, revisions: Digest["revisions"] = [{ id: "d_a", path: "/notes/alpha.md", hash: "aa" }]): Digest => ({
   commit, seq, ts: `2026-10-10T12:00:0${seq % 10}Z`, origin: "api", actor: "agent:mcp", summary: `docs_set_meta ${revisions.map((r) => r.path).join(", ")}`, revisions,
 });
-const version = (i: number, commit: string): DocVersion => ({ rev: `r_${i}`, seq: i, commit, ts: "2026-10-10T12:00:00Z", origin: "observed", actor: null, contentHash: `h${i}`, isCurrent: false });
+const version = (i: number, commit: string): DocVersion => ({ rev: `r_${i}`, seq: i, commit, updated_at: "2026-10-10T12:00:00Z", origin: "observed", actor: null, hash: `h${i}`, isCurrent: false });
 
 describe("the cursor", () => {
   it("starts at the repo's head and follows the page's cursor", () => {
@@ -22,10 +22,10 @@ describe("the cursor", () => {
 
 describe("digests → entries", () => {
   it("keeps the digest's identity, roots every path, reads the byline; without a lookup every title is null", () => {
-    const e = entryFromDigest(digest(7, "c_7", [{ doc: "d_a", path: "notes/alpha.md", contentHash: "aa" }, { doc: "d_b", path: "/notes/beta.md", contentHash: "bb" }]));
+    const e = entryFromDigest(digest(7, "c_7", [{ id: "d_a", path: "notes/alpha.md", hash: "aa" }, { id: "d_b", path: "/notes/beta.md", hash: "bb" }]));
     expect(e).toEqual({
       key: "c_7", seq: 7, ts: "2026-10-10T12:00:07Z", origin: "api", actor: "agent:mcp", summary: "docs_set_meta notes/alpha.md, /notes/beta.md",
-      changes: [{ doc: "d_a", path: "/notes/alpha.md", title: null, contentHash: "aa" }, { doc: "d_b", path: "/notes/beta.md", title: null, contentHash: "bb" }],
+      changes: [{ id: "d_a", path: "/notes/alpha.md", title: null, hash: "aa" }, { id: "d_b", path: "/notes/beta.md", title: null, hash: "bb" }],
     });
     expect(byline(e)).toBe("api · agent:mcp");
     expect(byline({ origin: "observed", actor: null })).toBe("observed");
@@ -35,7 +35,7 @@ describe("digests → entries", () => {
   it("gives each change its title from the poll's lookup, by rooted path; a document the lookup lacks (deleted, moved away) keeps the path alone", () => {
     const titles = new Map([["/notes/alpha.md", "Alpha"], ["/notes/beta.md", null]]);
     const e = entryFromDigest(digest(7, "c_7", [
-      { doc: "d_a", path: "notes/alpha.md", contentHash: "aa" }, { doc: "d_b", path: "/notes/beta.md", contentHash: "bb" }, { doc: "d_g", path: "/notes/gone.md", contentHash: "gg" },
+      { id: "d_a", path: "notes/alpha.md", hash: "aa" }, { id: "d_b", path: "/notes/beta.md", hash: "bb" }, { id: "d_g", path: "/notes/gone.md", hash: "gg" },
     ]), titles);
     expect(e.changes.map((c) => [c.path, c.title])).toEqual([["/notes/alpha.md", "Alpha"], ["/notes/beta.md", null], ["/notes/gone.md", null]]);
     expect(prependDigests([], [digest(1)], titles)[0]!.changes[0]!.title).toBe("Alpha");
@@ -70,17 +70,13 @@ describe("which revisions to diff", () => {
 });
 
 describe("recent documents", () => {
-  it("asks for the most recently updated documents, the attributes spelled for the server (bare on 3.0, `$` before and while unknown)", () => {
-    expect(recentQuery("", "3.0")).toBe("select path, title, updated_at from docs order by updated_at desc limit 25");
-    expect(recentQuery("", "2.0")).toBe("select $path, $title, $updated_at from docs order by $updated_at desc limit 25");
-    expect(recentQuery()).toBe(recentQuery("", "2.0"));
+  it("asks for the most recently updated documents", () => {
+    expect(recentQuery()).toBe("select path, title, updated_at from docs order by updated_at desc limit 25");
+    expect(recentQuery("")).toBe(recentQuery());
   });
-  it("reads hits with the 3.0 projection (title/updated_at) and the 2.x one ($title/$updated_at) alike; the envelope is id/path on both", () => {
-    const v3 = { id: "d_a", path: "/notes/alpha.md", title: "Alpha", updated_at: "2026-10-10T12:00:00Z" };
-    const v2 = { id: "d_a", path: "/notes/alpha.md", $title: "Alpha", $updated_at: "2026-10-10T12:00:00Z" };
-    const expected = [{ id: "d_a", path: "/notes/alpha.md", title: "Alpha", updatedAt: "2026-10-10T12:00:00Z", latest: null }];
-    expect(recentFromHits([v3])).toEqual(expected);
-    expect(recentFromHits([v2])).toEqual(expected);
+  it("reads hits: the envelope's id/path with the projected title/updated_at", () => {
+    const hit = { id: "d_a", path: "/notes/alpha.md", title: "Alpha", updated_at: "2026-10-10T12:00:00Z" };
+    expect(recentFromHits([hit])).toEqual([{ id: "d_a", path: "/notes/alpha.md", title: "Alpha", updatedAt: "2026-10-10T12:00:00Z", latest: null }]);
   });
   it("roots a bare path, drops an empty title, skips a hit without a path", () => {
     expect(recentFromHits([{ id: "d_b", path: "notes/beta.md", title: "  ", updated_at: null }, { id: "d_x" }]))
@@ -131,7 +127,7 @@ describe("the card", () => {
     expect(entryCard(e, new Map()).stats).toBeNull(); // the diff is not in yet
   });
   it("a multi-document digest: the header carries the digest's values and the TOTAL stats; each document gets a row with its title/path and its own stats, nothing repeated", () => {
-    const e = entryFromDigest({ ...digest(9, "c_9", [{ doc: "d_a", path: "/notes/alpha.md", contentHash: "a" }, { doc: "d_b", path: "/notes/beta.md", contentHash: "b" }]), ts: today }, new Map([["/notes/alpha.md", "Alpha"]]));
+    const e = entryFromDigest({ ...digest(9, "c_9", [{ id: "d_a", path: "/notes/alpha.md", hash: "a" }, { id: "d_b", path: "/notes/beta.md", hash: "b" }]), ts: today }, new Map([["/notes/alpha.md", "Alpha"]]));
     const card = entryCard(e, new Map([["d_a", { added: 2, removed: 1 }], ["d_b", { added: 1, removed: 0 }]]));
     expect(card.title).toBeNull();
     expect(card.path).toBeNull();
@@ -159,92 +155,80 @@ describe("the card", () => {
 });
 
 describe("the filter", () => {
-  it("recentQuery: the filter becomes the where clause; none or blank leaves the plain query (no empty where); the attributes spelled for the server", () => {
-    expect(recentQuery('status == "active"', "3.0")).toBe('select path, title, updated_at from docs where status == "active" order by updated_at desc limit 25');
-    expect(recentQuery('status == "active"')).toBe('select $path, $title, $updated_at from docs where status == "active" order by $updated_at desc limit 25');
-    expect(recentQuery("  a == 1 or b == 2  ")).toBe("select $path, $title, $updated_at from docs where a == 1 or b == 2 order by $updated_at desc limit 25");
-    expect(recentQuery("")).toBe("select $path, $title, $updated_at from docs order by $updated_at desc limit 25");
+  it("recentQuery: the filter becomes the where clause; none or blank leaves the plain query (no empty where)", () => {
+    expect(recentQuery('status == "active"')).toBe('select path, title, updated_at from docs where status == "active" order by updated_at desc limit 25');
+    expect(recentQuery("  a == 1 or b == 2  ")).toBe("select path, title, updated_at from docs where a == 1 or b == 2 order by updated_at desc limit 25");
+    expect(recentQuery("")).toBe("select path, title, updated_at from docs order by updated_at desc limit 25");
     expect(recentQuery("   ")).toBe(recentQuery(""));
-    expect(recentQuery("   ", "3.0")).toBe(recentQuery("", "3.0"));
   });
-  it("frameFor, filled (idle or editing): three lines, the filter in the hole on the where line; the same tokens as recentQuery, in the server's spelling", () => {
-    for (const surface of [null, "2.0", "3.0"]) {
-      for (const editing of [false, true]) {
-        const f = frameFor('status == "active"', { editing, surface });
-        expect(f.text).toBe(surface === "3.0"
-          ? 'select path, title, updated_at from docs\nwhere status == "active"\norder by updated_at desc limit 25'
-          : 'select $path, $title, $updated_at from docs\nwhere status == "active"\norder by $updated_at desc limit 25');
-        expect(f.where).toBe(true);
-        expect(f.text.split("\n")).toHaveLength(3);
-        expect(f.text.replace(/\n/g, " ")).toBe(recentQuery('status == "active"', surface));
-        expect(f.text.slice(f.hole.from, f.hole.to)).toBe('status == "active"');
-        expect(f.text.slice(0, f.hole.from)).toBe(frameBefore(surface));
-        expect(f.text.slice(f.hole.to)).toBe(frameAfter(surface));
-        expect(f.text.split("\n")[1]).toBe('where status == "active"'); // the hole lives on the second line alone
-      }
+  it("frameFor, filled (idle or editing): three lines, the filter in the hole on the where line; the same tokens as recentQuery", () => {
+    for (const editing of [false, true]) {
+      const f = frameFor('status == "active"', { editing });
+      expect(f.text).toBe('select path, title, updated_at from docs\nwhere status == "active"\norder by updated_at desc limit 25');
+      expect(f.where).toBe(true);
+      expect(f.text.split("\n")).toHaveLength(3);
+      expect(f.text.replace(/\n/g, " ")).toBe(recentQuery('status == "active"'));
+      expect(f.text.slice(f.hole.from, f.hole.to)).toBe('status == "active"');
+      expect(f.text.slice(0, f.hole.from)).toBe(FRAME_BEFORE);
+      expect(f.text.slice(f.hole.to)).toBe(FRAME_AFTER);
+      expect(f.text.split("\n")[1]).toBe('where status == "active"'); // the hole lives on the second line alone
     }
     const astral = frameFor('title == "𝒜"'); // offsets are UTF-16, as CodeMirror counts
     expect(astral.text.slice(astral.hole.from, astral.hole.to)).toBe('title == "𝒜"');
   });
   it("frameFor, empty + editing: the where line with an empty hole after `where `, for the caret", () => {
     const f = frameFor("", { editing: true });
-    expect(f.text).toBe("select $path, $title, $updated_at from docs\nwhere \norder by $updated_at desc limit 25");
+    expect(f.text).toBe("select path, title, updated_at from docs\nwhere \norder by updated_at desc limit 25");
     expect(f.where).toBe(true);
-    expect(f.hole).toEqual({ from: frameBefore(null).length, to: frameBefore(null).length });
+    expect(f.hole).toEqual({ from: FRAME_BEFORE.length, to: FRAME_BEFORE.length });
     expect(f.text.split("\n")[1]).toBe("where ");
-    expect(frameFor("", { editing: true, surface: "3.0" }).text).toBe("select path, title, updated_at from docs\nwhere \norder by updated_at desc limit 25");
   });
   it("frameFor, empty + idle: two lines, no where at all, a closed zero-width hole; the same tokens as recentQuery('')", () => {
     const f = frameFor("");
-    expect(f.text).toBe("select $path, $title, $updated_at from docs\norder by $updated_at desc limit 25");
+    expect(f.text).toBe("select path, title, updated_at from docs\norder by updated_at desc limit 25");
     expect(f.where).toBe(false);
     expect(f.text.split("\n")).toHaveLength(2);
     expect(f.text.replace(/\n/g, " ")).toBe(recentQuery(""));
-    expect(f.hole).toEqual({ from: "select $path, $title, $updated_at from docs".length, to: "select $path, $title, $updated_at from docs".length });
+    expect(f.hole).toEqual({ from: "select path, title, updated_at from docs".length, to: "select path, title, updated_at from docs".length });
     expect(frameFor("", { editing: false })).toEqual(f);
-    const f3 = frameFor("", { surface: "3.0" });
-    expect(f3.text).toBe("select path, title, updated_at from docs\norder by updated_at desc limit 25");
-    expect(f3.hole).toEqual({ from: "select path, title, updated_at from docs".length, to: "select path, title, updated_at from docs".length });
   });
-  it("matchQuery: ONE query per poll projecting path and title (spelled for the server), the filter (when any) and-ed with the paths or-ed together, rooted, deduped, JSON-quoted; null without paths", () => {
+  it("matchQuery: ONE query per poll projecting path and title, the filter (when any) and-ed with the paths or-ed together, rooted, deduped, JSON-quoted; null without paths", () => {
     expect(matchQuery('status == "active"', ["/notes/alpha.md", "notes/beta.md", "/notes/alpha.md"]))
-      .toBe('select $path, $title from docs where (status == "active") and ($path == "/notes/alpha.md" or $path == "/notes/beta.md")');
-    expect(matchQuery('status == "active"', ["/notes/alpha.md", "notes/beta.md"], "3.0"))
       .toBe('select path, title from docs where (status == "active") and (path == "/notes/alpha.md" or path == "/notes/beta.md")');
-    expect(matchQuery("", ["/notes/alpha.md", "/notes/beta.md"])).toBe('select $path, $title from docs where ($path == "/notes/alpha.md" or $path == "/notes/beta.md")');
-    expect(matchQuery("  ", ["/a.md"], "3.0")).toBe('select path, title from docs where (path == "/a.md")');
-    expect(matchQuery("x", ['/odd "quoted" name.md'])).toBe('select $path, $title from docs where (x) and ($path == "/odd \\"quoted\\" name.md")');
+    expect(matchQuery("", ["/notes/alpha.md", "/notes/beta.md"])).toBe('select path, title from docs where (path == "/notes/alpha.md" or path == "/notes/beta.md")');
+    expect(matchQuery("  ", ["/a.md"])).toBe('select path, title from docs where (path == "/a.md")');
+    expect(matchQuery("x", ['/odd "quoted" name.md'])).toBe('select path, title from docs where (x) and (path == "/odd \\"quoted\\" name.md")');
     expect(matchQuery('status == "active"', [])).toBeNull();
-    expect(matchQuery("", [], "3.0")).toBeNull();
+    expect(matchQuery("", [])).toBeNull();
   });
-  it("titlesByPath: rooted path → title under either projection spelling; a blank title is null, a hit without a path is skipped", () => {
+  it("titlesByPath: rooted path → title; a blank title is null, a hit without a path is skipped", () => {
     const titles = titlesByPath([
       { id: "d_a", path: "/notes/alpha.md", title: "Alpha" },
-      { id: "d_b", path: "notes/beta.md", $title: "  " },
+      { id: "d_b", path: "notes/beta.md", title: "  " },
       { id: "d_c", path: "/notes/gamma.md" },
-      { id: "d_x", $title: "no path" },
+      { id: "d_x", title: "no path" },
     ]);
     expect([...titles]).toEqual([["/notes/alpha.md", "Alpha"], ["/notes/beta.md", null], ["/notes/gamma.md", null]]);
     expect(titlesByPath([])).toEqual(new Map());
   });
   it("digestPaths: every revision's path, rooted and deduped, in order", () => {
     const page = [
-      digest(1, "c_1", [{ doc: "d_a", path: "notes/alpha.md", contentHash: "a1" }]),
-      digest(2, "c_2", [{ doc: "d_b", path: "/notes/beta.md", contentHash: "b1" }, { doc: "d_a", path: "/notes/alpha.md", contentHash: "a2" }]),
+      digest(1, "c_1", [{ id: "d_a", path: "notes/alpha.md", hash: "a1" }]),
+      digest(2, "c_2", [{ id: "d_b", path: "/notes/beta.md", hash: "b1" }, { id: "d_a", path: "/notes/alpha.md", hash: "a2" }]),
       digest(3, "c_3", []),
     ];
     expect(digestPaths(page)).toEqual(["/notes/alpha.md", "/notes/beta.md"]);
   });
   it("partitionByFilter: keeps matching revisions, drops the rest, hides and counts a digest left empty (deletions and moves included)", () => {
     const page = [
-      digest(1, "c_1", [{ doc: "d_a", path: "notes/alpha.md", contentHash: "a1" }]),
-      digest(2, "c_2", [{ doc: "d_b", path: "/notes/beta.md", contentHash: "b1" }, { doc: "d_a", path: "/notes/alpha.md", contentHash: "a2" }]),
-      digest(3, "c_3", [{ doc: "d_g", path: "/notes/gamma.md", contentHash: "g1" }]),
+      digest(1, "c_1", [{ id: "d_a", path: "notes/alpha.md", hash: "a1" }]),
+      digest(2, "c_2", [{ id: "d_b", path: "/notes/beta.md", hash: "b1" }, { id: "d_a", path: "/notes/alpha.md", hash: "a2" }]),
+      digest(3, "c_3", [{ id: "d_g", path: "/notes/gamma.md", hash: "g1" }]),
       { ...digest(4, "c_4", []), summary: "delete /notes/alpha.md" },
     ];
     const { kept, hidden } = partitionByFilter(page, new Set(["/notes/alpha.md"]));
     expect(kept.map((d) => d.commit)).toEqual(["c_1", "c_2"]);
-    expect(kept[1]!.revisions).toEqual([{ doc: "d_a", path: "/notes/alpha.md", contentHash: "a2" }]);
+    expect(kept[1]!.revisions).toEqual([{ id: "d_a", path: "/notes/alpha.md", hash: "a2" }]);
     expect(hidden).toBe(2);
     expect(partitionByFilter(page, new Set())).toEqual({ kept: [], hidden: 4 });
     expect(partitionByFilter([], new Set(["/x.md"]))).toEqual({ kept: [], hidden: 0 });

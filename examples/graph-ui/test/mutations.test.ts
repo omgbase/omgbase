@@ -17,7 +17,7 @@ function fakeClient(frontmatter: Record<string, Record<string, unknown>>) {
     },
     async docsSetMeta(doc, patch, repo) {
       writes.push({ doc, patch, ...(repo ? { repo } : {}) });
-      return { docId: "d_x", path: doc, committed: true };
+      return { id: "d_x", path: doc, committed: true };
     },
   };
   return { client, reads, writes };

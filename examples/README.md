@@ -45,6 +45,8 @@ Not tutorials, but also here:
 - **[live-tail/](./live-tail/README.md)** — a Lit demo of the change feed: the most recently updated documents with the unified diff of their latest change, then every commit as it lands (`changes_since` polled with a cursor, each digest prepended with its revisions' diffs), both narrowed by an OQX `where` filter typed into the hole of the recent query itself (a CodeMirror editor whose frame is read-only).
 - **[webdevproxy/](./webdevproxy/README.md)** — the development-only local web proxy the browser demos use to reach an omgbase MCP server (a local `omg mcp`, or a remote gateway behind OAuth) from a Vite dev server without CORS or OAuth setup on the server side. Private, unpublished, loopback only.
 
+The two browser demos require an omgbase server speaking **surface ≥ 3.0** (the current `omg`); they check the `version` tool on connect and refuse an older server with a clear message.
+
 ## The corpus
 
 Every session works over the **alchemy corpus** — twenty interlinked Markdown

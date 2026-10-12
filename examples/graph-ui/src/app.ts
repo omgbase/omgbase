@@ -38,10 +38,10 @@ import { BrowserOAuthProvider, callbackParams, discover, type Discovery, type Id
 import { fetchBridgeInfo, type BridgeInfo } from "./lib/bridge-info.ts";
 import { effect } from "./lib/effect.ts";
 import { describeQueryError, type OqxErrorInfo } from "./lib/errors.ts";
-import { LEGACY_SURFACE, docLocator, hitId, hitPath, rooted, surfaceOf, unrooted } from "./lib/paths.ts";
-import { defaultQuery, isDefaultQuery } from "./lib/default-query.ts";
+import { docLocator, hitId, hitPath, rooted, surfaceOf, surfaceProblem, unrooted } from "./lib/paths.ts";
+import { DEFAULT_QUERY } from "./lib/default-query.ts";
 import { MODE_LABEL, headerLabel, modeForBridge } from "./lib/connection.ts";
-import { SAMPLE_REPO, SAMPLE_PROBE_PATH, chooseQuery, existsQuery, isStarterQuery, starterQuery, timelineStarter, type RepositoryShape } from "./lib/starter-query.ts";
+import { SAMPLE_REPO, SAMPLE_PROBE_PATH, STARTER_QUERY, chooseQuery, existsQuery, isStarterQuery, timelineStarter, type RepositoryShape } from "./lib/starter-query.ts";
 import { emptyStateText, firstWhereText, missingPathLiterals, pathLiterals, type EmptyState } from "./lib/empty-state.ts";
 
 const SETTINGS_KEY = "omgbase-graph-ui.settings";
@@ -108,17 +108,12 @@ function loadUiSettings(): UiSettings {
   return parseUiSettings(localStorage.getItem(UI_KEY));
 }
 
-/** The stored query, or the sample default (lib/default-query.ts) in its 1.x
- * form — the server's version and the repository are not known before
- * connecting; once they are, `chooseQuery` (lib/starter-query.ts) swaps a
- * preset for the sample default in the server's form or for the starter,
- * never a user's edit. A stored query equal to any sample default (an earlier
- * one, or the other version's) counts as the default too; a stored starter is
- * kept as it is (it has no version). */
+/** The stored query, or the sample default (lib/default-query.ts) — the
+ * repository is not known before connecting; once it is, `chooseQuery`
+ * (lib/starter-query.ts) swaps a preset for the sample default or the starter,
+ * never a user's edit. */
 function loadQuery(): string {
-  const saved = localStorage.getItem(QUERY_KEY);
-  if (saved === null || isDefaultQuery(saved)) return defaultQuery(null);
-  return saved;
+  return localStorage.getItem(QUERY_KEY) ?? DEFAULT_QUERY;
 }
 
 /** The bridge sits behind Vite's proxy at the same origin; `pnpm dev` starts both. */
@@ -165,14 +160,15 @@ const discovery = signal<Discovery | null>(null);
 const bridge = signal<BridgeInfo | null>(null);
 const bridgeError = signal<string | null>(null);
 /** The connected server's surface version from its `version` tool (`specs.surface`,
- * "major.minor"); `LEGACY_SURFACE` ("1.x") when the tool is missing; null until
- * known. Decides the path form everywhere (lib/paths.ts). */
+ * "major.minor"), shown in the header; null until known — and set only once the
+ * server has passed the gate (lib/paths.ts `surfaceProblem`: this demo speaks
+ * surface 3.0), so a non-null value also means "connected to a server we understand". */
 const serverSurface = signal<string | null>(null);
 const candidates = computed<Candidate[]>(() => inferCandidates(ast.get(), rows.get()));
 /** The relationship picker's resolved view (edges + layout); the projection joins it below. */
 const relationshipView = signal<View>(defaultView([]));
 /** The projected fields, by reflection over the query (or the rows for an empty projection). */
-const projection = computed<Projection>(() => projectionOf(ast.get(), rows.get(), serverSurface.get()));
+const projection = computed<Projection>(() => projectionOf(ast.get(), rows.get()));
 /** The user's card choices (label radio, show checkboxes); vanished fields are dropped on resolve. */
 const projectionOverrides = signal<ProjectionOverrides>(NO_PROJECTION_OVERRIDES);
 /** The view record the graph draws: `{ edges, layout, projection }`. */
@@ -180,12 +176,11 @@ const view = computed<View>(() => {
   const p = projection.get();
   return { ...relationshipView.get(), projection: resolveProjection(p.fields, p.defaults, projectionOverrides.get()) };
 });
-// Nodes are keyed by the `/`-rooted path whatever the server returns (bare on
-// surface 1.x, rooted on 2.0), so one document has one key on either. The
-// node's `label` is the FALLBACK title line (the de-rooted path); the card's
-// actual title comes from the projection's label field (lib/cards.ts).
-// The hit's identity is read through `hitId`/`hitPath` (lib/paths.ts): the
-// envelope's `id`/`path`, the same under every surface version.
+// Nodes are keyed by the `/`-rooted path (what the server returns; rooted again
+// defensively). The node's `label` is the FALLBACK title line (the de-rooted
+// path); the card's actual title comes from the projection's label field
+// (lib/cards.ts). The hit's identity is read through `hitId`/`hitPath`
+// (lib/paths.ts): the envelope's `id`/`path`.
 const nodes = computed<GraphNode[]>(() => rows.get().map((row) => {
   const rawPath = hitPath(row);
   const path = rawPath !== null ? rooted(rawPath) : hitId(row) ?? "";
@@ -335,13 +330,19 @@ async function refreshRepos(): Promise<void> {
   }
   try {
     const c = clientFor(url);
-    // The surface version first (one `version` call per connection; a server
-    // without the tool is 1.x), so the default query and the path literals are
-    // in the server's form before the first run.
+    // The surface version first (one `version` call per connection): this demo
+    // speaks surface 3.0 and says so, loudly, when the server does not — instead
+    // of drawing a silently empty graph. A server without the tool is older still.
     const [{ repos: list }, surface] = await Promise.all([
       c.repos(),
-      c.version().then(surfaceOf, () => LEGACY_SURFACE),
+      c.version().then(surfaceOf, () => null),
     ]);
+    const problem = surfaceProblem(surface);
+    if (problem) {
+      connection.set("error");
+      connectionMessage.set(problem);
+      return;
+    }
     serverSurface.set(surface);
     repos.set(list.map((r) => r.slug));
     // Which tools the server (or the gateway in front of it) offers decides whether edges can be edited.
@@ -415,7 +416,7 @@ async function finishSignIn(): Promise<boolean> {
 /** Does `path` exist in the current repository? null when the probe failed. */
 async function docExists(path: string): Promise<boolean | null> {
   try {
-    const r = await clientFor(serverUrl.get()).query(existsQuery(serverSurface.get(), path), { repo: settings.get().repo, limit: 1 });
+    const r = await clientFor(serverUrl.get()).query(existsQuery(path), { repo: settings.get().repo, limit: 1 });
     return r.hits.length > 0;
   } catch {
     return null;
@@ -465,24 +466,23 @@ async function runQuery(): Promise<void> {
   if (gen === runGeneration && missing.length > 0) emptyResult.set({ ...empty, missing });
 }
 
-/** The graph's edge source: generated OQX over the link rows (`from links` on a 3.0 server, `from edges` before) via the `query` tool. */
+/** The graph's edge source: generated OQX over the link rows (`from links`) via the `query` tool. */
 async function fetchEdges(candidate: Candidate, paths: string[]): Promise<GraphEdge[]> {
   const s = settings.get();
   const url = serverUrl.get();
   const all: Record<string, unknown>[] = [];
-  for (const q of edgeQueries(candidate, paths, serverSurface.get())) all.push(...(await clientFor(url).queryAll(q, { repo: s.repo })));
+  for (const q of edgeQueries(candidate, paths)) all.push(...(await clientFor(url).queryAll(q, { repo: s.repo })));
   return edgesFromRows(candidate, all, new Set(paths));
 }
 
-/** The edit tools with the document argument in the server's form (`id`/`path`
- * on 3.0, `doc` before): the plans and the graph speak rooted paths; a 1.x
- * server wants them bare (`docLocator` over `docArg`). */
+/** The edit tools with the document argument spelled for the server (`{ id }`
+ * or `{ path }`, lib/paths.ts `docLocator`); the plans and the graph speak
+ * rooted paths. */
 function metaClientFor(url: string) {
   const c = clientFor(url);
-  const form = (doc: string) => docLocator(serverSurface.get(), doc);
   return {
-    docsRead: (doc: string, repo?: string) => c.docsRead(form(doc), repo),
-    docsSetMeta: (doc: string, patch: { set?: Record<string, unknown>; unset?: string[] }, repo?: string) => c.docsSetMeta(form(doc), patch, repo),
+    docsRead: (doc: string, repo?: string) => c.docsRead(docLocator(doc), repo),
+    docsSetMeta: (doc: string, patch: { set?: Record<string, unknown>; unset?: string[] }, repo?: string) => c.docsSetMeta(docLocator(doc), patch, repo),
   };
 }
 
@@ -583,19 +583,16 @@ void (async () => {
     if (!repo || surface === null) return;
     void detectRepository(repo);
   });
-  // The preset query follows the server and the repository: the sample default
-  // in the server's path form for the sample workspace, the starter elsewhere —
-  // only while the editor holds a preset (any version's default, an earlier
-  // one, or the starter), never a user's edit. It runs when the connection or
-  // the repository changes, not on edits (`source` is read untracked): a
-  // sample query PASTED into the editor later stays, and the empty state says
-  // why it matches nothing. Nothing else is version-keyed and persisted: no
-  // cursor is ever stored.
+  // The preset query follows the repository: the sample default for the sample
+  // workspace, the starter elsewhere — only while the editor holds a preset
+  // (the default or the starter), never a user's edit. It runs when the
+  // connection or the repository changes, not on edits (`source` is read
+  // untracked): a sample query PASTED into the editor later stays, and the
+  // empty state says why it matches nothing.
   effect(() => {
-    const surface = serverSurface.get();
     const repo = repoShape.get();
-    if (surface === null || repo === null) return;
-    const want = chooseQuery(Signal.subtle.untrack(() => source.get()), surface, repo);
+    if (serverSurface.get() === null || repo === null) return;
+    const want = chooseQuery(Signal.subtle.untrack(() => source.get()), repo);
     if (want !== null) source.set(want);
   });
   // Loading feedback: the spinner appears once the query or the edge fetch has
@@ -779,7 +776,7 @@ export class GraphUiApp extends SignalWatcher(LitElement) {
   private renderStarterHint() {
     if (!isStarterQuery(source.get())) return nothing;
     const first = rows.get().map(hitPath).find((p) => p !== null) ?? null;
-    const suggestion = timelineStarter(serverSurface.get(), first);
+    const suggestion = timelineStarter(first);
     return html`<div class="try" data-starter-hint>
       <span>for a timeline, start from one document and walk its <code>before</code> / <code>after</code> frontmatter:</span>
       <pre>${suggestion}</pre>
@@ -805,7 +802,7 @@ export class GraphUiApp extends SignalWatcher(LitElement) {
       ${t.details.map((d) => html`<div class="missing" data-missing>${d}</div>`)}
       ${stale ? html`<div class="note">the graph below is the previous result</div>` : nothing}
       <div class="actions">
-        ${isStarterQuery(source.get()) ? nothing : html`<button type="button" data-action="starter" @click=${() => source.set(starterQuery(serverSurface.get()))}>show recent documents</button>`}
+        ${isStarterQuery(source.get()) ? nothing : html`<button type="button" data-action="starter" @click=${() => source.set(STARTER_QUERY)}>show recent documents</button>`}
         <label><input type="checkbox" .checked=${ui.keepLastGraph} @change=${(e: Event) => uiSettings.set({ ...ui, keepLastGraph: (e.target as HTMLInputElement).checked })}> keep the last graph when a query matches nothing</label>
       </div>
     </div>`;
@@ -874,7 +871,7 @@ export class GraphUiApp extends SignalWatcher(LitElement) {
         <div class="left" slot="start">
           <sl-details data-section="query" ?open=${ui.sections.query} @sl-show=${this.onSectionToggle("query", true)} @sl-hide=${this.onSectionToggle("query", false)}>
             <span slot="summary">query<span class="sub">${pe ? "parse error" : qe ? "query error" : `${r.length} row${r.length === 1 ? "" : "s"}`}</span></span>
-            <oqx-query-editor .value=${source.get()} .highlights=${this.highlights} .serverSurface=${serverSurface.get()} @query-change=${this.onQueryChange}></oqx-query-editor>
+            <oqx-query-editor .value=${source.get()} .highlights=${this.highlights} @query-change=${this.onQueryChange}></oqx-query-editor>
             ${this.renderStarterHint()}
           </sl-details>
           <sl-details data-section="relationships" ?open=${ui.sections.relationships} @sl-show=${this.onSectionToggle("relationships", true)} @sl-hide=${this.onSectionToggle("relationships", false)}>

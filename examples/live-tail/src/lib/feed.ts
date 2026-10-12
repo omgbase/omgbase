@@ -1,22 +1,18 @@
 // The pure side of the live tail: the change feed's cursor, a `changes_since`
 // digest as the page shows it, which two revisions to diff for a change, the
-// recent-documents query and its hits (either envelope), the OQX filter (the
-// queries it shapes and what it hides), and the diff's lines. Nothing here
-// touches the network or the DOM.
+// recent-documents query and its hits, the OQX filter (the queries it shapes
+// and what it hides), and the diff's lines. Nothing here touches the network
+// or the DOM.
 //
-// Tool shapes, as this module keeps them (the 2.x spellings; a 3.0 server's
-// `{ id, path, hash, updated_at, raw }` are read into these by lib/shapes.ts
-// per the connected server's surface version). The queries this module
-// generates spell the attributes per server too (lib/paths.ts `attr`: `path`/
-// `title`/`updated_at` on ≥ 3.0, `$path`/`$title`/`$updated_at` before):
-//   changes_since → { digests: [{ commit, seq, ts, origin, actor, summary, revisions: [{ doc, path, contentHash }] }], cursor, truncated, head }
-//   docs_history  → { docs: [{ docId, path, deleted, currentRev, versions: [{ rev, seq, commit, ts, origin, actor, contentHash, isCurrent }] }], truncated }
-//   diff_unified  → { doc, path, from, to, diff }   (the tool is `docs_diff_unified` on 3.0)
-//   docs_read_at  → { path, docId, rev, content, … }
+// Tool shapes (surface 3.0, spec/surface §3–§4; coerced from the wire by lib/shapes.ts):
+//   changes_since → { digests: [{ commit, seq, ts, origin, actor, summary, revisions: [{ id, path, hash }] }], cursor, truncated, head }
+//   docs_history  → { docs: [{ id, path, deleted, currentRev, versions: [{ rev, seq, commit, updated_at, origin, actor, hash, isCurrent }] }], truncated }
+//   docs_diff_unified → { id, path, from, to, diff }
+//   docs_read_at  → { id, path, rev, raw, … }
 
-import { attr, hitId, hitPath, rooted } from "./paths.ts";
+import { hitId, hitPath, rooted } from "./paths.ts";
 
-export interface Revision { doc: string; path: string; contentHash: string }
+export interface Revision { id: string; path: string; hash: string }
 export interface Digest {
   commit: string;
   seq: number;
@@ -28,43 +24,32 @@ export interface Digest {
 }
 export interface ChangesSince { digests: Digest[]; cursor: number; truncated: boolean; head: number }
 
-export interface DocVersion { rev: string; seq: number; commit: string; ts: string; origin: string; actor: string | null; contentHash: string; isCurrent: boolean }
-export interface DocVersions { docId: string; path: string; deleted: boolean; currentRev: string | null; versions: DocVersion[] }
+export interface DocVersion { rev: string; seq: number; commit: string; updated_at: string; origin: string; actor: string | null; hash: string; isCurrent: boolean }
+export interface DocVersions { id: string; path: string; deleted: boolean; currentRev: string | null; versions: DocVersion[] }
 
 export const RECENT_LIMIT = 25;
 
-/** The recent query's first line — the projection — in the server's spelling
- * (`title` on 3.0 is the computed title attribute; `$title` before). */
-export function recentSelect(surface: string | null = null): string {
-  return `select ${attr(surface, "path")}, ${attr(surface, "title")}, ${attr(surface, "updated_at")} from docs`;
-}
+/** The recent query's first line — the projection (`title` is the computed
+ * title attribute, spec/surface §1.2). */
+export const RECENT_SELECT = "select path, title, updated_at from docs";
 /** Its last line — newest first, the page's cap. */
-export function recentTail(surface: string | null = null): string {
-  return `order by ${attr(surface, "updated_at")} desc limit ${RECENT_LIMIT}`;
-}
+export const RECENT_TAIL = `order by updated_at desc limit ${RECENT_LIMIT}`;
 
 /** The query behind the initial view, narrowed by the filter (an OQX `where`
- * predicate over `docs`) when there is one; one line, for the server of
- * surface `surface` (unknown → the 2.x spelling). With a filter its tokens are
- * exactly the framed field's (`frameFor`, which lays the same text out on three
- * lines); without one the `where` clause is omitted (an empty `where` would not
- * parse). */
-export function recentQuery(filter = "", surface: string | null = null): string {
+ * predicate over `docs`) when there is one; one line. With a filter its tokens
+ * are exactly the framed field's (`frameFor`, which lays the same text out on
+ * three lines); without one the `where` clause is omitted (an empty `where`
+ * would not parse). */
+export function recentQuery(filter = ""): string {
   const f = filter.trim();
-  const select = recentSelect(surface);
-  const tail = recentTail(surface);
-  return f ? `${select} where ${f} ${tail}` : `${select} ${tail}`;
+  return f ? `${RECENT_SELECT} where ${f} ${RECENT_TAIL}` : `${RECENT_SELECT} ${RECENT_TAIL}`;
 }
 
 /** The read-only frame the field shows around the hole when there is a `where`
  * line — the `select … from docs` line, `where ` + the hole, the `order by …
  * limit` line. */
-export function frameBefore(surface: string | null = null): string {
-  return `${recentSelect(surface)}\nwhere `;
-}
-export function frameAfter(surface: string | null = null): string {
-  return `\n${recentTail(surface)}`;
-}
+export const FRAME_BEFORE = `${RECENT_SELECT}\nwhere `;
+export const FRAME_AFTER = `\n${RECENT_TAIL}`;
 
 export interface Frame {
   text: string;
@@ -75,22 +60,19 @@ export interface Frame {
 }
 
 /** The framed field's text and the hole in it. With a filter, or while the
- * field is being edited, three lines: the filter between `frameBefore` and
- * `frameAfter`, so the second line is `where <filter>` (an empty filter is an
+ * field is being edited, three lines: the filter between `FRAME_BEFORE` and
+ * `FRAME_AFTER`, so the second line is `where <filter>` (an empty filter is an
  * empty hole after `where `, where the caret waits). Idle and empty, two lines
  * with no `where` at all and a closed, zero-width hole at the end of the first.
- * Joined with spaces instead of its newlines the text is `recentQuery(filter,
- * surface)` in every state. */
-export function frameFor(filter: string, { editing = false, surface = null }: { editing?: boolean; surface?: string | null } = {}): Frame {
-  const select = recentSelect(surface);
-  const after = frameAfter(surface);
+ * Joined with spaces instead of its newlines the text is `recentQuery(filter)`
+ * in every state. */
+export function frameFor(filter: string, { editing = false }: { editing?: boolean } = {}): Frame {
   if (filter === "" && !editing) {
-    const at = select.length;
-    return { text: `${select}${after}`, hole: { from: at, to: at }, where: false };
+    const at = RECENT_SELECT.length;
+    return { text: `${RECENT_SELECT}${FRAME_AFTER}`, hole: { from: at, to: at }, where: false };
   }
-  const before = frameBefore(surface);
-  const from = before.length;
-  return { text: `${before}${filter}${after}`, hole: { from, to: from + filter.length }, where: true };
+  const from = FRAME_BEFORE.length;
+  return { text: `${FRAME_BEFORE}${filter}${FRAME_AFTER}`, hole: { from, to: from + filter.length }, where: true };
 }
 
 // ---- the cursor --------------------------------------------------------------------
@@ -115,12 +97,13 @@ export type DiffPair =
   | { kind: "changed"; from: string; to: string };
 
 export interface EntryChange {
-  doc: string;
+  /** The document's id. */
+  id: string;
   /** `/`-rooted whatever the server returned. */
   path: string;
   /** The document's `title` from the poll's lookup query; null when it has none or is gone (deleted, moved away). */
   title: string | null;
-  contentHash: string;
+  hash: string;
 }
 
 export interface FeedEntry {
@@ -143,7 +126,7 @@ export function entryFromDigest(d: Digest, titles: ReadonlyMap<string, string | 
     origin: d.origin,
     actor: d.actor,
     summary: d.summary,
-    changes: d.revisions.map((r) => { const path = rooted(r.path); return { doc: r.doc, path, title: titles.get(path) ?? null, contentHash: r.contentHash }; }),
+    changes: d.revisions.map((r) => { const path = rooted(r.path); return { id: r.id, path, title: titles.get(path) ?? null, hash: r.hash }; }),
   };
 }
 
@@ -211,10 +194,9 @@ export function latestChange(versions: readonly DocVersion[]): LatestChange | nu
   return v ? { seq: v.seq, commit: v.commit, origin: v.origin, actor: v.actor } : null;
 }
 
-/** The projected title of a hit — `title` (a 3.0 server) or `$title` (before);
- * the recent and lookup queries project exactly one of the two. */
+/** The projected `title` of a hit (the recent and lookup queries project it); null when blank or absent. */
 function hitTitle(hit: Record<string, unknown>): string | null {
-  const title = hit.title ?? hit.$title;
+  const title = hit.title;
   return typeof title === "string" && title.trim() ? title : null;
 }
 
@@ -224,7 +206,7 @@ export function recentFromHits(hits: readonly Record<string, unknown>[]): Recent
   for (const hit of hits) {
     const path = hitPath(hit);
     if (path === null) continue;
-    const updated = hit.updated_at ?? hit.$updated_at;
+    const updated = hit.updated_at;
     out.push({
       id: hitId(hit),
       path: rooted(path),
@@ -284,9 +266,9 @@ export function recentCard(doc: RecentDoc, stats: Stats | null): Card {
   };
 }
 
-/** A feed entry's card; `statsByDoc` has each change's stats (by `doc`) as far as its diff is in. */
+/** A feed entry's card; `statsByDoc` has each change's stats (by document id) as far as its diff is in. */
 export function entryCard(e: FeedEntry, statsByDoc: ReadonlyMap<string, Stats | null>): Card {
-  const stats = e.changes.map((ch) => statsByDoc.get(ch.doc) ?? null);
+  const stats = e.changes.map((ch) => statsByDoc.get(ch.id) ?? null);
   const one = e.changes.length === 1 ? e.changes[0]! : null;
   return {
     ts: e.ts, title: one?.title ?? null, path: one?.path ?? null,
@@ -344,19 +326,18 @@ export function filterStateAfter(filter: string, error: { code?: string; message
 }
 
 /** ONE query per poll over the documents a page of digests touches: their
- * `path` and `title` (in the server's spelling) — the title lookup for the
- * cards — narrowed to the documents the filter admits when there is one (the
- * filter and-ed with the paths or-ed together; OQX has no array literal). Paths
- * are `/`-rooted and deduped; null when there is nothing to ask about. Read
- * the hits with `hitPath`/`titlesByPath`. A deleted or moved-away document is
- * not in `docs` and so is not returned. */
-export function matchQuery(filter: string, paths: readonly string[], surface: string | null = null): string | null {
+ * `path` and `title` — the title lookup for the cards — narrowed to the
+ * documents the filter admits when there is one (the filter and-ed with the
+ * paths or-ed together; OQX has no array literal). Paths are `/`-rooted and
+ * deduped; null when there is nothing to ask about. Read the hits with
+ * `hitPath`/`titlesByPath`. A deleted or moved-away document is not in `docs`
+ * and so is not returned. */
+export function matchQuery(filter: string, paths: readonly string[]): string | null {
   const unique = [...new Set(paths.map(rooted))];
   if (unique.length === 0) return null;
-  const path = attr(surface, "path");
-  const alternatives = unique.map((p) => `${path} == ${JSON.stringify(p)}`).join(" or ");
+  const alternatives = unique.map((p) => `path == ${JSON.stringify(p)}`).join(" or ");
   const f = filter.trim();
-  return `select ${path}, ${attr(surface, "title")} from docs where ${f ? `(${f}) and ` : ""}(${alternatives})`;
+  return `select path, title from docs where ${f ? `(${f}) and ` : ""}(${alternatives})`;
 }
 
 /** The lookup query's hits as rooted path → title (null for a blank or
@@ -416,7 +397,7 @@ export function createdDiff(content: string): string {
 export type DiffLineKind = "hunk" | "add" | "del" | "ctx";
 
 /** Classify a unified-diff line by its first character (no file header is
- * ever present: `docs_diff_unified` — `diff_unified` before 3.0 — emits hunks only). */
+ * ever present: `docs_diff_unified` emits hunks only). */
 export function diffLineKind(line: string): DiffLineKind {
   if (line.startsWith("@@")) return "hunk";
   if (line.startsWith("+")) return "add";

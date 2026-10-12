@@ -24,7 +24,7 @@ export interface ProjectionChangeDetail extends ProjectionChoice { overrides: Pr
 export interface FieldHoverDetail { field: ProjectedField | null }
 
 const KIND_TITLE: Record<ProjectedField["kind"], string> = {
-  intrinsic: "an engine attribute of the document (path, title, id, updated_at, …; $-spelled before surface 3.0)",
+  intrinsic: "an engine attribute of the document (path, title, id, updated_at, …)",
   field: "a scalar: a frontmatter field, a navigation or an aliased expression",
   nested: "a nested block (collect / first / single) — rendered as a count",
   values: "`values` mode: the row is this single value",

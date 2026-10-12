@@ -4,8 +4,6 @@
 //
 //   properties: value (string, the source), highlights (Span[], code-point
 //               ranges to underline — the picker's hovered candidate),
-//               serverSurface (the connected server's surface version,
-//               "major.minor" | "1.x" | null — drives the path-form hints),
 //               debounce (ms)
 //   events:     query-change  detail: { source, query: Query | null, error: OqxErrorInfo | null }
 
@@ -67,15 +65,11 @@ export class OqxQueryEditor extends LitElement {
   @property() value = "";
   @property({ attribute: false }) highlights: Span[] = [];
   @property({ type: Number }) debounce = 150;
-  /** The connected server's surface version (lib/paths.ts); null while unknown. */
-  @property({ attribute: false }) serverSurface: string | null = null;
 
   @state() private error: OqxErrorInfo | null = null;
   @state() private hints: Hint[] = [];
 
   private view: EditorView | null = null;
-  /** The last successful parse, re-read when `serverSurface` changes. */
-  private lastQuery: Query | null = null;
   private timer: ReturnType<typeof setTimeout> | null = null;
   private lastEmitted: string | null = null;
 
@@ -86,11 +80,7 @@ export class OqxQueryEditor extends LitElement {
     if (changed.has("value") && !this.view) {
       const parsed = this.parseSource(this.value);
       this.error = parsed.error;
-      this.lastQuery = parsed.query;
-      this.hints = queryHints(parsed.query, this.serverSurface);
-    } else if (changed.has("serverSurface") && this.view) {
-      // The server changed under the same text: the path-form hints follow it.
-      this.hints = queryHints(this.lastQuery, this.serverSurface);
+      this.hints = queryHints(parsed.query);
     }
   }
 
@@ -125,7 +115,7 @@ export class OqxQueryEditor extends LitElement {
     if (changed.has("value") && this.value !== this.view.state.doc.toString()) {
       this.view.dispatch({ changes: { from: 0, to: this.view.state.doc.length, insert: this.value } });
     }
-    if (changed.has("highlights") || changed.has("serverSurface")) this.applyMarks();
+    if (changed.has("highlights")) this.applyMarks();
   }
 
   override disconnectedCallback(): void {
@@ -157,8 +147,7 @@ export class OqxQueryEditor extends LitElement {
     const source = this.source;
     const { query, error } = this.parseSource(source);
     if (this.error?.message !== error?.message || this.error?.offset !== error?.offset) this.error = error;
-    this.lastQuery = query;
-    const hints = queryHints(query, this.serverSurface);
+    const hints = queryHints(query);
     if (hints.map((h) => h.message).join("\n") !== this.hints.map((h) => h.message).join("\n")) this.hints = hints;
     this.applyMarks(hints);
     if (this.lastEmitted === source) return;

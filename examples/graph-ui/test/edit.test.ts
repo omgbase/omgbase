@@ -102,7 +102,7 @@ describe("editability (rule 1)", () => {
   it("rejects links, backlinks, sequences, nested paths, non-reference values", () => {
     expect(editability(cand("doc.out_links", "links"), rows)).toEqual({ writable: false, reason: "links live in the body" });
     expect(editability(cand("doc.in_links", "backlinks"), rows)).toEqual({ writable: false, reason: "links live in the body" });
-    expect(editability(cand("doc.out", "links"), rows)).toEqual({ writable: false, reason: "links live in the body" }); // the 2.x spelling
+    expect(editability(cand("out_links", "links"), rows)).toEqual({ writable: false, reason: "links live in the body" }); // the walk's own spelling
     expect(editability(cand("arc_order", "sequence"), rows)).toEqual({ writable: false, reason: "derived from order by arc_order" });
     expect(editability(cand("meta.rel"), rows)).toEqual({ writable: false, reason: "not a frontmatter field" });
     expect(editability(cand("phase"), rows)).toEqual({ writable: false, reason: "values are not document references" });
@@ -140,10 +140,10 @@ describe("direction → owner (rule 2)", () => {
   });
 
   it("reads the faithfully projected fields off the AST", () => {
-    const q = parse(`select $path, title, before, b2: after, n: title.size() from docs where phase == "plan"`);
-    expect(projectedFields(q)).toEqual(["title", "before"]);
+    const q = parse(`select path, title, before, b2: after, n: title.size() from docs where phase == "plan"`);
+    expect(projectedFields(q)).toEqual(["before"]); // `title` is the computed attribute, `b2`/`n` are aliased
     expect(projectedFields(null)).toEqual([]);
-    expect(projectedFields(parse(`$path from docs`))).toEqual([]);
+    expect(projectedFields(parse(`path from docs`))).toEqual([]);
   });
 });
 
@@ -220,8 +220,8 @@ describe("editability of refs() candidates", () => {
   ];
 
   it("treats a candidate from `follow refs(before)` exactly like one from `follow before`", () => {
-    const viaRefs = inferCandidates(parse(`$path, before from docs follow refs(before)`), rows).find((c) => c.name === "before")!;
-    const bare = inferCandidates(parse(`$path, before from docs follow before`), rows).find((c) => c.name === "before")!;
+    const viaRefs = inferCandidates(parse(`path, before from docs follow refs(before)`), rows).find((c) => c.name === "before")!;
+    const bare = inferCandidates(parse(`path, before from docs follow before`), rows).find((c) => c.name === "before")!;
     expect(viaRefs.name).toBe(bare.name);
     expect(viaRefs.kind).toBe(bare.kind);
     expect(editability(viaRefs, rows)).toEqual(editability(bare, rows));
@@ -232,7 +232,7 @@ describe("editability of refs() candidates", () => {
   });
 
   it("an inverse pair is read-only: the edit belongs to one of its fields", () => {
-    const c = inferCandidates(parse(`$path, before, after from docs follow refs(before), refs(after)`), rows);
+    const c = inferCandidates(parse(`path, before, after from docs follow refs(before), refs(after)`), rows);
     const pair = c.find((x) => x.pair)!;
     expect(editability(pair, rows)).toEqual({ writable: false, reason: "edit `before` or `after` directly" });
     // The members stay writable exactly as before.
@@ -241,7 +241,7 @@ describe("editability of refs() candidates", () => {
   });
 
   it("the backlink block's `after` is writable too, owned by the clicked (successor) document", () => {
-    const c = inferCandidates(parse(`$path, before, after from docs follow distinct refs(before), $it.in collect { where ("/" + ^$path) in list(after) }`), rows);
+    const c = inferCandidates(parse(`path, before, after from docs follow distinct refs(before), in_links collect { from doc where ^path in list(after) }`), rows);
     const after = c.find((x) => x.name === "after")!;
     expect(editability(after, rows)).toEqual({ writable: true, form: DEFAULT_FORM, shape: "list", formSource: "field" });
     expect(ownerFor(after.defaults.direction, alpha, beta)).toEqual({ owner: beta, other: alpha });
@@ -249,7 +249,7 @@ describe("editability of refs() candidates", () => {
 
   it("is refused the same way when the sampled values are not references, and without the tool", () => {
     const bad: Row[] = [{ id: "d_a", path: "a.md", before: "soon" }];
-    const c = inferCandidates(parse(`$path, before from docs follow refs(before)`), bad)[0]!;
+    const c = inferCandidates(parse(`path, before from docs follow refs(before)`), bad)[0]!;
     expect(editability(c, bad)).toEqual({ writable: false, reason: "values are not document references" });
     expect(editability(c, rows, false).writable).toBe(false);
   });

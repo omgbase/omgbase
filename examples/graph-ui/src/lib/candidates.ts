@@ -8,56 +8,44 @@
 //
 // Rules (in priority order of the LAYOUT default):
 //   1. `follow` destinations —
-//        - `refs(<field>)` (surface 1.5 — resolves the document references a
-//          property holds to live doc rows; `refs(^<field>)` reads the field one
-//          scope out): the frontmatter relation `<field>`, direction `forward`
-//          (the frontier row owns the field and names its successors).
-//        - the link graph, walked through the LINK ROWS on a 3.0 server
-//          (spec/surface §1.2, 3.0 follow-up: a doc has no `out`/`in` relation;
-//          a link row has `dst`, its destination document, beside `doc`, its
+//        - `refs(<field>)` (resolves the document references a property holds
+//          to live doc rows; `refs(^<field>)` reads the field one scope out):
+//          the frontmatter relation `<field>`, direction `forward` (the
+//          frontier row owns the field and names its successors).
+//        - the link graph, walked through the LINK ROWS (spec/surface §1.2: a
+//          link row has `dst`, its destination document, beside `doc`, its
 //          source): `follow out_links collect { from dst }` is the link graph
 //          (`doc.out_links`, `$it.out_links`, or any body — the RECEIVER names
 //          the relation), `follow in_links collect { from doc }` the backlink
 //          graph (direction `backward`: stored edges point successor →
-//          frontier). A 2.x server spelled the same walks as the plain
-//          relations `doc.out` / `out` / `$it.out` and `doc.in` / `in` /
-//          `$it.in` (and the rows `out_edges` / `in_edges`); the query is the
-//          user's, so both generations are read — which is valid is the
-//          server's call. Any other bare name is taken as a frontmatter
-//          relation, although `follow before` over a list of paths follows the
-//          STRINGS (the engine refuses the hit; lib/hints.ts says so under the
-//          editor).
-//        - a destination block (`$repo.docs collect { where … }`, `^docs collect
-//          { … }`, `$it.in collect { … }`, `refs(before) collect { … }`) whose
-//          receiver is not the link rows: a
-//          `refs(<field>)` receiver names `<field>` `forward` (the frontier's
-//          field); then every frontmatter-looking property its correlated
-//          `where` reads — a bare ident on the candidate row
-//          (`after.contains(^path)`, `^path in list(after)`, the 1.x `("/" +
-//          ^$path) in list(after)`) → `after`, direction `backward` (the edge
-//          lives on the successor and points at the frontier); an outer ref
-//          (`path in ^before`) → `before`, direction `forward`; a `refs(<field>)`
-//          receiver of a nested directive (`refs(after) exists { where path ==
-//          ^^path }`) → the
-//          same two cases (`refs(after)` backward, `refs(^before)` forward); a
+//          frontier). Any other bare name is taken as a frontmatter relation,
+//          although `follow before` over a list of paths follows the STRINGS
+//          (the engine refuses the hit; lib/hints.ts says so under the editor).
+//        - a destination block (`^docs collect { where … }`, `in_links collect
+//          { from doc where … }`, `refs(before) collect { … }`) whose receiver
+//          is not the link rows: a `refs(<field>)` receiver names `<field>`
+//          `forward` (the frontier's field); then every frontmatter-looking
+//          property its correlated `where` reads — a bare ident on the
+//          candidate row (`after.contains(^path)`, `^path in list(after)`) →
+//          `after`, direction `backward` (the edge lives on the successor and
+//          points at the frontier); an outer ref (`path in ^before`) →
+//          `before`, direction `forward`; a `refs(<field>)` receiver of a nested
+//          directive (`refs(after) exists { where path == ^^path }`) → the same
+//          two cases (`refs(after)` backward, `refs(^before)` forward); a
 //          literal compared with `field` / `predicate` under `doc.in_links` /
-//          `doc.out_links` / `^links` (surface 3.0, spec/surface §1.1–§1.2) or
-//          their pre-3.0 spellings `doc.in_edges` / `doc.out_edges` / `edges`
-//          → that relation (`in_*` forward, `out_*` backward; the field is
-//          `field` since 3.0 and `src_field` before). The query is the user's,
-//          so BOTH spellings are read here — which one is valid is the
-//          server's call, not this module's.
-//   2. `order by` keys — a key that is not an engine attribute (`$updated_at`,
-//        or 3.0's bare `updated_at`/`path`/…) is a SEQUENCE candidate: edges
-//        are consecutive pairs in result order (no fetch), direction forward.
+//          `doc.out_links` / `^links` (spec/surface §1.1–§1.2) → that relation
+//          (`in_*` forward, `out_*` backward).
+//   2. `order by` keys — a key that is not an engine attribute (`updated_at`,
+//        `path`, …) is a SEQUENCE candidate: edges are consecutive pairs in
+//        result order (no fetch), direction forward.
 //   3. inferred from rows — a projected field whose value is a doc path or a
 //        list of doc paths (`*.md`, `/`-rooted) is a frontmatter relation;
 //        a name in the "looks-backward" vocabulary (`after`, `prev`, `parent`,
 //        `depends_on`, …) defaults to `backward`.
 //   4. builtin — a query WITHOUT a `follow` always gets the authored link graph
 //        to choose from: `doc.out_links` (links) and `doc.in_links` (backlinks)
-//        — named for the link rows the edges are fetched from (lib/edges.ts),
-//        on every server generation — so a query that projects no relationship
+//        — named for the link rows the edges are fetched from (lib/edges.ts) —
+//        so a query that projects no relationship
 //        (the starter: `select path, title …`) still has edges to draw and
 //        relationships in the picker.
 //   5. inverse PAIRS — two frontmatter candidates that are one sequence read
@@ -91,9 +79,9 @@ import { DOC_ATTRIBUTES, HIT_ENVELOPE_KEYS, hitPath, rowRef } from "./paths.ts";
 export type Direction = "forward" | "backward";
 export type CandidateSource = "follow" | "order by" | "inferred" | "builtin" | "pair";
 export type CandidateKind =
-  | "frontmatter" // a frontmatter relation: link rows (`links`; `edges` before 3.0) whose authored field (`field`; `src_field` before 3.0) == name
-  | "links" // doc.out_links (the walk `out_links collect { from dst }`; `doc.out` on 2.x) — authored links
-  | "backlinks" // doc.in_links (`in_links collect { from doc }`; `doc.in` on 2.x) — authored links, reversed
+  | "frontmatter" // a frontmatter relation: link rows whose authored `field` == name
+  | "links" // doc.out_links (the walk `out_links collect { from dst }`) — authored links
+  | "backlinks" // doc.in_links (`in_links collect { from doc }`) — authored links, reversed
   | "sequence"; // an order-by key (consecutive result rows) or an inverse pair (both fields, one direction)
 
 /** The two fields of an inverse pair, by the way their stored edges run along
@@ -153,33 +141,26 @@ const TIMELINE_WORDS = /^(before|after|next|prev(ious)?|follows?|precedes?|succe
 const ROW_META = new Set([...HIT_ENVELOPE_KEYS, "$depth", "$stop", "$leaf", "$frontier", "$ordinal", "$doc_id"]);
 
 /** Is `name` an engine attribute rather than an authored field — a `$`-name
- * (the pre-3.0 spelling, or OQX's own) or one of 3.0's bare docs attributes
- * (spec/surface §1.2: `path`, `title`, `updated_at`, …)? A bare `path` was a
- * loud error before 3.0, so treating it as the engine's on every version is
- * never wrong about an authored field. */
+ * (OQX's own: `$it`, `$depth`, `$ordinal`, …) or one of the bare docs
+ * attributes (spec/surface §1.2: `path`, `title`, `updated_at`, …)? */
 export function isAttributeName(name: string): boolean {
   return name.startsWith("$") || DOC_ATTRIBUTES.has(name);
 }
 
 /** Relations of a row that yield rows by themselves (spec/surface §1.2) — a
  * `follow` over one of these is not a frontmatter field, so no `refs()` hint.
- * The link-row relations are listed in both spellings: `in_links`/`out_links`
- * (surface 3.0) and `in_edges`/`out_edges` (before); `dst` (a link's destination
- * document, 3.0) and `doc` are the reach-through rows; `in`/`out` are the 2.x
- * doc relations (gone in 3.0, where they read an absent property — the query
- * is the user's and the server decides which is valid). */
-export const STRUCTURAL_RELATIONS = new Set(["in", "out", "in_links", "out_links", "in_edges", "out_edges", "children", "subsections", "nodes", "blocks", "section", "doc", "dst"]);
+ * `in_links`/`out_links` are the link rows; `dst` (a link's destination
+ * document) and `doc` are the reach-through rows. */
+export const STRUCTURAL_RELATIONS = new Set(["in_links", "out_links", "children", "subsections", "nodes", "blocks", "section", "doc", "dst"]);
 
 /** Does a dotted receiver path name the inbound / outbound link rows of a doc
- * (`doc.in_links`, `in_edges`, `$it.out_links`, …) or the link rows themselves
- * (`^links`, `^^links`, `$repo.edges`, `edges`), in either generation's
- * spelling? `in`/`out` walk to the documents at the other end, not the rows,
- * and are not matched here. */
+ * (`doc.in_links`, `$it.out_links`, `in_links`, …) or the link rows themselves
+ * (`links`, `^links`, `^^links`)? */
 export function linkRowsReceiver(receiverPath: string): "in" | "out" | "all" | null {
   const last = receiverPath.split(".").pop() ?? "";
-  if (last === "in_links" || last === "in_edges") return "in";
-  if (last === "out_links" || last === "out_edges") return "out";
-  if (/^\^*(links|edges)$/.test(last)) return "all";
+  if (last === "in_links") return "in";
+  if (last === "out_links") return "out";
+  if (/^\^*links$/.test(last)) return "all";
   return null;
 }
 
@@ -382,18 +363,23 @@ function followMentions(follow: Follow): Mention[] {
  * correlated (`^` = the frontier row). Read the relation names off it. */
 function destinationBlockMentions(op: OpNode): Mention[] {
   const out: Mention[] = [];
-  // `out_links collect { from dst }` / `in_links collect { from doc }` (3.0: the
+  // `out_links collect { from dst }` / `in_links collect { from doc }` (the
   // link graph walked through the link rows) — the RECEIVER names the
   // relation, whatever the body re-projects; the candidate is named as written.
+  // Unless the body CORRELATES the reached document with the frontier
+  // (`in_links collect { from doc where ^path in list(after) }`): then the walk
+  // means that frontmatter relation — the backlinks `after` says so — and only
+  // the relation is offered (below), not the whole link graph.
   const rows = linkRowsReceiver(receiverPath(op.receiver));
-  if (rows === "in" || rows === "out") {
+  const where = op.sub.where;
+  const correlated = where !== null && correlatesWithOuter(where);
+  if ((rows === "in" || rows === "out") && !correlated) {
     const kind: CandidateKind = rows === "out" ? "links" : "backlinks";
     out.push({ name: receiverPath(op.receiver), kind, source: "follow", span: op.receiver.span, direction: rows === "out" ? "forward" : "backward" });
   }
   // `refs(before) collect { where … }` — the receiver is the frontier's field.
   const receiver = refsField(op.receiver);
   if (receiver) out.push({ name: receiver.name, kind: "frontmatter", source: "follow", span: op.receiver.span, direction: "forward" });
-  const where = op.sub.where;
   if (!where) return out;
   if (rows === "in" || rows === "out") {
     // `out_links collect { from dst where field == "owner" }` — a `field` /
@@ -401,7 +387,7 @@ function destinationBlockMentions(op: OpNode): Mention[] {
     // too (`out_*` backward, `in_*` forward), as it does under a nested
     // directive below.
     forEachScalar(where, (expr) => {
-      const lit = fieldLiteral(expr, ["field", "src_field", "predicate"]);
+      const lit = fieldLiteral(expr, ["field", "predicate"]);
       if (lit) out.push({ name: lit, kind: "frontmatter", source: "follow", span: expr.span, direction: rows === "out" ? "backward" : "forward" });
     });
   }
@@ -427,28 +413,26 @@ function destinationBlockMentions(op: OpNode): Mention[] {
       out.push({ name: ref.name, kind: "frontmatter", source: "follow", span: inner.receiver.span, direction: ref.outer ? "forward" : "backward" });
       return;
     }
-    // `doc.in_links exists { where field == "before" … }` (3.0; `doc.in_edges`
-    // and `src_field` before; or out_links / out_edges / ^links / $repo.edges).
+    // `doc.in_links exists { where field == "before" … }` (or out_links / ^links).
     const via = linkRowsReceiver(receiverPath(inner.receiver));
     if (via === null) return;
     const viaOut = via === "out";
     if (!inner.sub.where) return;
     forEachScalar(inner.sub.where, (expr) => {
-      const lit = fieldLiteral(expr, ["field", "src_field", "predicate"]);
+      const lit = fieldLiteral(expr, ["field", "predicate"]);
       if (lit) out.push({ name: lit, kind: "frontmatter", source: "follow", span: expr.span, direction: viaOut ? "backward" : "forward" });
     });
   });
   return out;
 }
 
-/** What a relation path walks: the link graph — the link rows `out_links` /
- * `doc.out_links` / `$it.out_links` (3.0; `out_edges` before) or the 2.x doc
- * relation `doc.out` / `out` / `$it.out` —, the backlink graph (`in_links`,
- * `in_edges`, `in` in the same spellings), anything else a frontmatter field. */
+/** What a relation path walks: the link graph (the link rows `out_links` /
+ * `doc.out_links` / `$it.out_links`), the backlink graph (`in_links` in the
+ * same spellings), anything else a frontmatter field. */
 export function relationKind(path: string): CandidateKind {
   const bare = path.replace(/^\$it\./, "").replace(/^doc\./, "");
-  if (bare === "out" || bare === "out_links" || bare === "out_edges") return "links";
-  if (bare === "in" || bare === "in_links" || bare === "in_edges") return "backlinks";
+  if (bare === "out_links") return "links";
+  if (bare === "in_links") return "backlinks";
   return "frontmatter";
 }
 
@@ -464,6 +448,16 @@ export function refsField(expr: Expr): { name: string; outer: boolean } | null {
 }
 
 // ---- AST helpers (public AST only) -----------------------------------------
+
+/** Does the body's `where` compare a property with an outer reference anywhere
+ * (`^path in list(after)`, `after.contains(^path)`, `path in ^before`)? */
+function correlatesWithOuter(where: Where): boolean {
+  let found = false;
+  forEachScalar(where, (expr) => {
+    if (mentionsOuter(expr) && (rowProps(expr).length > 0 || outerProps(expr).length > 0)) found = true;
+  });
+  return found;
+}
 
 function forEachScalar(where: Where, f: (expr: Expr) => void): void {
   switch (where.kind) {
@@ -514,7 +508,7 @@ function rowProps(expr: Expr): string[] {
   return [...new Set(names)];
 }
 
-/** `^name` reads that are properties (not `^path`/`^$path`-style attributes). */
+/** `^name` reads that are properties (not `^path`-style attributes). */
 function outerProps(expr: Expr): string[] {
   const names: string[] = [];
   walk(expr, (e) => {
@@ -534,7 +528,7 @@ export function dottedPath(expr: Expr): string | null {
 }
 
 /** A directive's receiver as text: `dottedPath`, or a root-row reference
- * (`^links`, `^^edges` — an `outer` read, spec/surface §1.1) with its carets. */
+ * (`^links`, `^^links` — an `outer` read, spec/surface §1.1) with its carets. */
 function receiverPath(expr: Expr): string {
   if (expr.kind === "outer") return `${"^".repeat(expr.levels)}${expr.name}`;
   return dottedPath(expr) ?? "";
