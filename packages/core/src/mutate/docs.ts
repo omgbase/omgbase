@@ -1,24 +1,20 @@
 import { stringify as stringifyYaml, parse as parseYaml } from "yaml";
 import type { Store } from "../core/store/store.js";
-import { ingestFile } from "../core/ingest.js";
 import { findDoc, findDocByRef } from "../core/read/reader.js";
-import { makeReconcilingResolver } from "../sync/reconciling-ingest.js";
-import { newCommit } from "../core/store/writers.js";
 import { mintId } from "../core/ids.js";
-import { ftsDeleteDoc } from "../core/store/fts.js";
-import { adoptPhantoms, rebuildDocEdges } from "../core/store/edges.js";
 import { withWriterLock } from "../sync/writer-lock.js";
 import { inboundLinksTo, retargetLinksInRaw, type InboundLink } from "../graph/inbound-links.js";
-import { apply, type Op } from "./apply.js";
+import { planChangeset, type Op } from "./apply.js";
+import { commitChangeset, type CommitHead, type CommitTargets, type Effect } from "./commit.js";
 import { resolveDocStore, type DocStore } from "./doc-store.js";
 import { MutationError } from "./tree.js";
 
 // Document-level operations (06 §API: docs_create/move/delete/set_meta; 11 §5.6
 // new/mv/rm --doc/meta). These live in the library so both the CLI and the MCP
 // server share one implementation (§1: the CLI holds no business logic). Each
-// follows apply()'s file-first protocol: write bytes to disk, then ingest the
-// rendered bytes as the commit — under the workspace writer flock when a
-// workspace dir is given.
+// lowers to the internal effects `commit.ts` runs as ONE request: one
+// transaction, one `api` commit with a generated reason (spec/mutate §6, 2.1) —
+// under the workspace writer flock when a workspace dir is given.
 
 export interface DocOpContext {
   repoId: string;
@@ -65,11 +61,11 @@ export interface DocMoveOptions {
    * Rewrite the inbound links that named the OLD path so they point at the new
    * one — a destination-aware rewrite (anchors, link text, titles, and code
    * spans preserved; absolute/relative style kept) applied as a CAS-checked
-   * `update` per source block in one follow-up api changeset. **Default `true`**
-   * (spec/mutate 1.3): a move means "same document, new place", so the authored
-   * links follow it; pass `false` for the rarer intent that the old path become
-   * unbound. Frontmatter-level relations are never rewritten (reported in
-   * `dangling`).
+   * `update` per source block, committed WITH the move as one commit (2.1).
+   * **Default `true`** (spec/mutate 1.3): a move means "same document, new
+   * place", so the authored links follow it; pass `false` for the rarer intent
+   * that the old path become unbound. Frontmatter-level relations are never
+   * rewritten (reported in `dangling`).
    */
   retargetInbound?: boolean;
 }
@@ -102,6 +98,15 @@ function canonical(path: string): string {
   return path.replace(/^\/+/, "").split("\\").join("/");
 }
 
+/** The one commit row a document operation records (spec/mutate §6). */
+function head(ctx: DocOpContext, reason: string): CommitHead {
+  return { origin: "api", actor: ctx.actor ?? null, reason };
+}
+
+function targets(ctx: DocOpContext, docStore: DocStore): CommitTargets {
+  return { docStore, ...(ctx.omgbaseDir ? { omgbaseDir: ctx.omgbaseDir } : {}) };
+}
+
 // Compose a full document's bytes from optional frontmatter + body markdown.
 function composeFile(markdown: string, frontmatter?: Record<string, unknown>): string {
   const body = markdown.endsWith("\n") || markdown.length === 0 ? markdown : markdown + "\n";
@@ -124,11 +129,10 @@ export function docsCreate(store: Store, ctx: DocOpContext, path: string, markdo
   }
   return underLock(ctx, () => {
     if (docStore.exists(rel)) throw new MutationError("path_taken", `file already exists on disk at ${rel}`);
-    docStore.write(rel, content);
-    const ts = nowOr(ctx);
-    const res = ingestFile(store, ctx.repoId, rel, content, { ts, origin: "api", actor: ctx.actor ?? null, reason: `create ${rel}`, resolveIds: makeReconcilingResolver(store, ctx.repoId, { ts, path: rel }) });
-    if (ctx.omgbaseDir) docStore.recordStat(store, ctx.repoId, rel, content);
-    return { docId: res.docId, path: rel, committed: true };
+    const effects: Effect[] = [{ kind: "ingest_reconciled", path: rel, source: content }];
+    if (ctx.omgbaseDir) effects.push({ kind: "record_stat", path: rel, bytes: content });
+    const res = commitChangeset(store, ctx.repoId, head(ctx, `create ${rel}`), effects, nowOr(ctx), targets(ctx, docStore));
+    return { docId: res.ingests[0]!.docId, path: rel, committed: true };
   });
 }
 
@@ -138,9 +142,9 @@ export function docsCreate(store: Store, ctx: DocOpContext, path: string, markdo
  * now dangle (their open edges are re-pointed at `phantom:<old>`, exactly what
  * re-extracting the source would produce, so `links_stale` sees them), and
  * phantom edges already written against the NEW path are adopted. By default
- * the dangling inbound links are then rewritten to the new path in one
- * follow-up changeset (spec/mutate 1.3); `retargetInbound: false` leaves them
- * as written and the result lists them.
+ * the dangling inbound links are rewritten to the new path in the SAME commit
+ * (spec/mutate 1.3 for the default, 2.1 for the one commit); `retargetInbound:
+ * false` leaves them as written and the result lists them.
  */
 export function docsMove(store: Store, ctx: DocOpContext, docRef: string, toPath: string, opts: DocMoveOptions = {}): DocMoveResult {
   const retargetInbound = opts.retargetInbound !== false;
@@ -161,83 +165,53 @@ export function docsMove(store: Store, ctx: DocOpContext, docRef: string, toPath
     if (!retargetInbound || inbound.length === 0) return { ...planned, dangling: inbound, retargeted: null };
     const plan = planInboundRetarget(store, info.docId, info.path, toRel, inbound);
     if (plan.ops.length > 0) {
-      const preview = apply(store, { ...applyCtx(ctx), ops: plan.ops, dryRun: true, origin: { actor: ctx.actor ?? "api", reason: `retarget inbound links ${info.path} -> ${toRel}` } });
-      Object.assign(diffs, preview.diffs ?? {});
+      const preview = planChangeset(store, { ...applyCtx(ctx), ops: plan.ops, origin: { actor: ctx.actor ?? "api" } });
+      Object.assign(diffs, preview.diffs);
     }
     return { ...planned, dangling: plan.dangling, retargeted: { blocks: plan.blocks, docs: plan.docs } };
   }
-  // One lock for the whole operation (spec/sync §7, lock scope = write scope):
-  // the rename + row update AND the inbound retarget's changeset below are a
-  // single critical section — the retarget's own `apply` re-enters the lock —
-  // so no other writer can slip between the two halves, and nothing is left
-  // unlocked once the rename has committed.
+  // One lock, one commit (spec/sync §7, lock scope = write scope; spec/mutate
+  // §6, 2.1): the rename + row update AND the inbound retarget are one request —
+  // `move_path` first, so each rewritten source's edges resolve to the moved
+  // document, then the retarget's `ingest_known` per source, all under the
+  // commit `move <from> -> <to>`.
   return underLock(ctx, () => {
     if (docStore.exists(toRel)) throw new MutationError("path_taken", `file already exists on disk at ${toRel}`);
     const content = docStore.read(info.path) ?? "";
-    if (docStore.exists(info.path)) docStore.rename(info.path, toRel);
-    else docStore.write(toRel, content);
 
-    const ts = nowOr(ctx);
-    store.write((db) => {
-      // Update the document row's path + its open revisions' path pointer, and
-      // record an api commit noting the move.
-      const commit = newCommit(db, { repoId: ctx.repoId, ts, origin: "api", actor: ctx.actor ?? null, reason: `move ${info.path} -> ${toRel}` });
-      db.prepare("UPDATE docs SET path = ? WHERE doc_id = ?").run(toRel, info.docId);
-      db.prepare("UPDATE revisions SET path = ? WHERE doc_id = ? AND rev_id = ?").run(toRel, info.docId, info.currentRev);
-      void commit;
-
-      // Edge index. Every open edge from ANOTHER doc into this one resolved
-      // via the old path, so it dangles now → re-point it at the old path's
-      // phantom (in place, mirroring adoptPhantoms). A self-doc edge dangles
-      // only when the link names the path (`[x](/old.md#H)`); a pure fragment
-      // (`#H`) resolves to the doc regardless of path and is left alone — the
-      // inbound scan distinguishes them from the raw.
-      const phantom = `phantom:${info.path}`;
-      const affected = new Set<string>();
-      const others = db.prepare("SELECT DISTINCT src_doc FROM edges WHERE dst_node = ? AND to_commit IS NULL AND src_doc != ?").all(info.docId, info.docId) as { src_doc: string }[];
-      for (const r of others) affected.add(r.src_doc);
-      db.prepare("UPDATE edges SET dst_node = ? WHERE dst_node = ? AND to_commit IS NULL AND src_doc != ?").run(phantom, info.docId, info.docId);
-      const selfEdge = db.prepare("UPDATE edges SET dst_node = ? WHERE dst_node = ? AND to_commit IS NULL AND src_doc = ? AND src_block = ? AND anchor IS ?");
-      for (const l of inbound) {
-        if (l.doc_id !== info.docId || l.block_id === null) continue;
-        selfEdge.run(phantom, info.docId, info.docId, l.block_id, l.anchor);
-        affected.add(info.docId);
-      }
-      for (const d of affected) rebuildDocEdges(db, d);
-      // Links already written against the NEW path resolve to this doc now.
-      adoptPhantoms(db, toRel, info.docId);
-    });
-    if (ctx.omgbaseDir) {
-      docStore.clearStat(store, ctx.repoId, info.path); // drop the old path's row
-      docStore.recordStat(store, ctx.repoId, toRel, content);
-    }
-    const moved = { docId: info.docId, path: toRel, committed: true };
-
-    if (!retargetInbound || inbound.length === 0) return { ...moved, dangling: inbound, retargeted: null };
+    const effects: Effect[] = [{ kind: "move_path", docId: info.docId, from: info.path, to: toRel, currentRev: info.currentRev, inbound, bytes: content }];
+    if (ctx.omgbaseDir) effects.push({ kind: "clear_stat", path: info.path }, { kind: "record_stat", path: toRel, bytes: content });
 
     // Rewrite the dangling links block by block (one coalesced update per block,
-    // CAS on the block's current hash) and apply as one changeset; the re-ingest
-    // re-extracts each source doc, whose links now resolve to the moved doc.
-    const plan = planInboundRetarget(store, info.docId, info.path, toRel, inbound);
-    if (plan.ops.length > 0) {
-      apply(store, {
-        ...applyCtx(ctx),
-        ops: plan.ops,
-        origin: { actor: ctx.actor ?? "api", reason: `retarget inbound links ${info.path} -> ${toRel}` },
-      });
+    // CAS on the block's current hash); the re-ingest re-extracts each source
+    // doc, whose links now resolve to the moved doc.
+    const plan = retargetInbound && inbound.length > 0 ? planInboundRetarget(store, info.docId, info.path, toRel, inbound) : null;
+    if (plan && plan.ops.length > 0) {
+      const changeset = planChangeset(store, { ...applyCtx(ctx), ops: plan.ops, origin: { actor: ctx.actor ?? "api" } });
+      for (const e of changeset.effects) {
+        // The moved document is loaded under its OLD path (the row changes
+        // inside the transaction); when it links to itself by path it is a
+        // retarget source too and its rewritten bytes belong at the new path.
+        if (e.kind === "ingest_known" && e.docId === info.docId) effects.push({ ...e, path: toRel });
+        else if (e.kind === "record_stat" && e.path === info.path) effects.push({ ...e, path: toRel });
+        else effects.push(e);
+      }
     }
+
+    commitChangeset(store, ctx.repoId, head(ctx, `move ${info.path} -> ${toRel}`), effects, nowOr(ctx), targets(ctx, docStore));
+    const moved = { docId: info.docId, path: toRel, committed: true };
+    if (!plan) return { ...moved, dangling: inbound, retargeted: null };
     return { ...moved, dangling: plan.dangling, retargeted: { blocks: plan.blocks, docs: plan.docs } };
   });
 }
 
-/** The `ApplyRequest` fields a document operation's context supplies to a follow-up changeset. */
-function applyCtx(ctx: DocOpContext): { repoId: string; rootPath?: string; docStore?: DocStore; omgbaseDir?: string; ts?: string } {
+/** The `ApplyRequest` fields a document operation's context supplies to the retarget's changeset plan. */
+function applyCtx(ctx: DocOpContext): { repoId: string; rootPath?: string; docStore?: DocStore; omgbaseDir?: string } {
   return {
     repoId: ctx.repoId,
     ...(ctx.rootPath ? { rootPath: ctx.rootPath } : {}),
     ...(ctx.docStore ? { docStore: ctx.docStore } : {}),
     ...(ctx.omgbaseDir ? { omgbaseDir: ctx.omgbaseDir } : {}),
-    ...(ctx.ts ? { ts: ctx.ts } : {}),
   };
 }
 
@@ -289,7 +263,7 @@ function planInboundRetarget(store: Store, docId: string, fromPath: string, toRe
   return { ops, blocks, docs: [...docs], dangling };
 }
 
-/** docs_delete: mark a document deleted and remove its file (resurrection-poolable). */
+/** docs_delete: mark a document deleted and remove its file (nothing pooled — an intentional removal). */
 export function docsDelete(store: Store, ctx: DocOpContext, docRef: string): DocOpResult {
   const info = findDocByRef(store, ctx.repoId, docRef);
   if (!info) throw new MutationError("doc_missing", `no document ${docRef}`);
@@ -299,16 +273,9 @@ export function docsDelete(store: Store, ctx: DocOpContext, docRef: string): Doc
     return { docId: info.docId, path: info.path, committed: false, diffs: { [info.path]: { before: docStore.read(info.path) ?? "", after: "" } } };
   }
   return underLock(ctx, () => {
-    const ts = nowOr(ctx);
-    store.write((db) => {
-      const commit = newCommit(db, { repoId: ctx.repoId, ts, origin: "api", actor: ctx.actor ?? null, reason: `delete ${info.path}` });
-      // Tombstone the document and its live blocks; FTS rows drop with the blocks.
-      ftsDeleteDoc(db, info.docId);
-      db.prepare("UPDATE blocks SET deleted_commit = ? WHERE doc_id = ? AND deleted_commit IS NULL").run(commit.commitId, info.docId);
-      db.prepare("UPDATE docs SET deleted_commit = ? WHERE doc_id = ?").run(commit.commitId, info.docId);
-    });
-    docStore.remove(info.path);
-    if (ctx.omgbaseDir) docStore.clearStat(store, ctx.repoId, info.path);
+    const effects: Effect[] = [{ kind: "tombstone", docId: info.docId, path: info.path, pool: false }];
+    if (ctx.omgbaseDir) effects.push({ kind: "clear_stat", path: info.path });
+    commitChangeset(store, ctx.repoId, head(ctx, `delete ${info.path}`), effects, nowOr(ctx), targets(ctx, docStore));
     return { docId: info.docId, path: info.path, committed: true };
   });
 }
@@ -337,11 +304,10 @@ export function docsSetMeta(
   }
   return underLock(ctx, () => {
     const { content } = patched();
-    docStore.write(info.path, content);
-    const ts = nowOr(ctx);
-    const res = ingestFile(store, ctx.repoId, info.path, content, { ts, origin: "api", actor: ctx.actor ?? null, reason: `set_meta ${info.path}`, resolveIds: makeReconcilingResolver(store, ctx.repoId, { ts, path: info.path }) });
-    if (ctx.omgbaseDir) docStore.recordStat(store, ctx.repoId, info.path, content);
-    return { docId: res.docId, path: info.path, committed: true };
+    const effects: Effect[] = [{ kind: "ingest_reconciled", path: info.path, source: content }];
+    if (ctx.omgbaseDir) effects.push({ kind: "record_stat", path: info.path, bytes: content });
+    const res = commitChangeset(store, ctx.repoId, head(ctx, `set_meta ${info.path}`), effects, nowOr(ctx), targets(ctx, docStore));
+    return { docId: res.ingests[0]!.docId, path: info.path, committed: true };
   });
 }
 

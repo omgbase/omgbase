@@ -1,12 +1,14 @@
 //! Changesets over the store (`spec/mutate/README.md` §1, §4): loading a
 //! document into the working tree, applying the ops in order across the
 //! documents they touch, and the commit protocol — file-CAS against the doc
-//! store, atomic write, and the `api` ingest with the ops' **known ids**.
+//! store, atomic writes, and the `api` ingest of every document with the
+//! ops' **known ids** under one commit in one transaction
+//! ([`crate::effects`], 2.1).
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
+use omgbase_format::Block;
 use omgbase_format::hash::sha256;
-use omgbase_format::{Block, parse_markdown};
 use omgbase_mutate::{
     At, ErrorCode, MutBlock, MutDoc, MutationError, Op, OpResult, Parent, To, UpdateArgs,
     cross_doc_move, op_insert, op_merge, op_move, op_remove, op_split, op_update, render,
@@ -18,6 +20,7 @@ use serde_json::{Map, Value, json};
 
 use crate::Store;
 use crate::doc_store::DocStore;
+use crate::effects::{CommitHead, Effect};
 use crate::error::Result;
 use crate::ids::ALPHABET;
 use crate::observe::{DispositionRow, IngestPlan};
@@ -307,8 +310,8 @@ impl ApplyResult {
 }
 
 /// A document loaded once per request (§4 step 1).
-struct LoadedDoc {
-    doc: MutDoc,
+pub(crate) struct LoadedDoc {
+    pub(crate) doc: MutDoc,
     /// The pre-mutation render.
     before: String,
     /// The live ids before any op (labels the `api` dispositions).
@@ -324,9 +327,9 @@ fn merr_data(code: ErrorCode, msg: impl Into<String>, data: Value) -> MutationEr
 }
 
 /// The ops applied to the loaded documents, before the commit phase.
-struct Applied {
-    loaded: Vec<LoadedDoc>,
-    results: Vec<OpResult>,
+pub(crate) struct Applied {
+    pub(crate) loaded: Vec<LoadedDoc>,
+    pub(crate) results: Vec<OpResult>,
 }
 
 impl Store {
@@ -353,7 +356,7 @@ impl Store {
     }
 
     /// §4 steps 1–3: load on first touch, apply every op in order.
-    fn apply_ops(&mut self, req: &ApplyRequest) -> Result<Applied> {
+    pub(crate) fn apply_ops(&mut self, req: &ApplyRequest) -> Result<Applied> {
         let mut loaded: Vec<LoadedDoc> = Vec::new();
         let mut results: Vec<OpResult> = Vec::new();
 
@@ -612,13 +615,17 @@ impl Store {
         }
     }
 
-    /// §4: apply a changeset at `ts` (RFC 3339 UTC, stamped on every commit
+    /// §4: apply a changeset at `ts` (RFC 3339 UTC, stamped on the commit
     /// the request records). Steps 1–4 in memory; unless `dry_run`, the
-    /// commit phase per loaded document in load order — file-CAS against
-    /// `doc_store` (a mismatch ingests the on-disk bytes as `observed` and
-    /// raises `sync_conflict`), the atomic write, the `api` ingest with the
-    /// known ids. Atomic up to the commit phase; a `sync_conflict` on the
-    /// *n*-th document leaves the earlier ones committed (§10).
+    /// commit phase (step 5, 2.1): **(a)** file-CAS every loaded document
+    /// against `doc_store` — the first mismatch ingests the on-disk bytes as
+    /// `observed` (its own transaction) and raises `sync_conflict`, nothing
+    /// written or committed; **(b)** write every rendered file; **(c)** one
+    /// transaction, one `api` commit row, the known-id ingest of every
+    /// document in load order (`spec/store` §5.4). Atomic per request: a
+    /// failure in (c) rolls every document back and leaves the written
+    /// files ahead of the database until the next observation heals them
+    /// (§10).
     pub fn apply(
         &mut self,
         req: &ApplyRequest,
@@ -654,11 +661,39 @@ impl Store {
                 committed: false,
             });
         }
-        let expires = crate::time::pool_expiry(ts)?;
-        for d in &loaded {
-            let rendered = render(&d.doc);
+        let staged = stage(&loaded, |d| d.doc.path.clone());
+        self.file_cas(&req.repo_id, &loaded, doc_store, ts)?;
+        write_staged(&staged, doc_store)?;
+        let head = CommitHead {
+            origin: Origin::Api,
+            actor: Some(req.origin.actor.as_str()),
+            reason: req.origin.reason.as_deref(),
+        };
+        let effects: Vec<Effect> = staged.into_iter().map(Staged::into_effect).collect();
+        self.commit_effects(&req.repo_id, &head, &effects, ts)?;
+        Ok(ApplyResult {
+            results,
+            revisions,
+            diffs: None,
+            committed: true,
+        })
+    }
+
+    /// §4 step 5 (a): file-CAS every loaded document at the path it was
+    /// loaded under — the bytes on disk must hash to `docs.file_hash`. The
+    /// first mismatch ingests the disk bytes as an `observed` commit in a
+    /// transaction of its own and fails `sync_conflict` (retriable); nothing
+    /// else is written or committed. A path with no file, or a doc with no
+    /// hash yet, passes.
+    pub(crate) fn file_cas(
+        &mut self,
+        repo_id: &str,
+        loaded: &[LoadedDoc],
+        doc_store: &dyn DocStore,
+        ts: &str,
+    ) -> Result<()> {
+        for d in loaded {
             let path = d.doc.path.as_str();
-            // File-CAS (§4 step 5).
             let current: Option<Option<Vec<u8>>> = self
                 .conn
                 .query_row(
@@ -671,7 +706,7 @@ impl Store {
             if let (Some(bytes), Some(Some(hash))) = (&on_disk, &current) {
                 if sha256(bytes.as_bytes())[..] != hash[..] {
                     self.reconciling_ingest(
-                        &req.repo_id,
+                        repo_id,
                         path,
                         bytes,
                         ts,
@@ -688,73 +723,126 @@ impl Store {
                     .into());
                 }
             }
-            doc_store.write(path, &rendered)?;
-            // The known-id `api` ingest.
-            let tree = parse_markdown(&rendered);
-            let body: &[Block] = match tree.children.first() {
-                Some(b) if b.kind == omgbase_format::BlockKind::Frontmatter => &tree.children[1..],
-                _ => &tree.children[..],
-            };
-            let by_key = positional_ids(&d.doc.children);
-            let assigned = assign_known(body, &by_key, None, &mut self.ids.at(&self.conn))?;
-            let mut now_ids = Vec::new();
-            collect_ids(&assigned, &mut now_ids);
-            let prior: HashSet<&str> = d.prior_ids.iter().map(String::as_str).collect();
-            let now: HashSet<&str> = now_ids.iter().map(String::as_str).collect();
-            let dispositions = now_ids
-                .iter()
-                .map(|id| DispositionRow {
-                    block_id: id.clone(),
-                    kind: if prior.contains(id.as_str()) {
-                        "edited".to_owned()
-                    } else {
-                        "inserted".to_owned()
-                    },
-                    confidence: Some(1.0),
-                    reason: Some("api".to_owned()),
-                    matcher_v: None,
-                    detail: "{}".to_owned(),
-                })
-                .collect();
-            let deleted: Vec<String> = d
-                .prior_ids
-                .iter()
-                .filter(|id| !now.contains(id.as_str()))
-                .cloned()
-                .collect();
-            // Ids new to this document may be live (or pooled) elsewhere — a
-            // cross-document move whose source commits later, or already did.
-            // spec/store §5.4 step 8 evicts the foreign row and the pool row;
-            // for a freshly minted id it finds nothing.
-            let cross_doc_ids: Vec<String> = now_ids
-                .iter()
-                .filter(|id| !prior.contains(id.as_str()))
-                .cloned()
-                .collect();
-            let plan = IngestPlan {
-                path,
-                source: &rendered,
-                tree: &tree,
-                assigned,
-                dispositions,
-                deleted,
-                consumed_pool: Vec::new(),
-                cross_doc_ids,
-                origin: Origin::Api,
-                actor: Some(req.origin.actor.as_str()),
-                reason: req.origin.reason.as_deref(),
-                // An `api` commit never touches `docs.conflicted`.
-                conflicted: None,
-            };
-            self.commit_ingest(&req.repo_id, &plan, ts, &expires)?;
         }
-        Ok(ApplyResult {
-            results,
-            revisions,
-            diffs: None,
-            committed: true,
-        })
+        Ok(())
     }
+}
+
+/// A loaded document rendered for the commit phase: the bytes to write at
+/// `path` and what its known-id ingest needs. `path` is where the document
+/// will live — the loaded path, or the new one for a document a `docs_move`
+/// in the same request renames.
+pub(crate) struct Staged {
+    pub doc_id: String,
+    pub path: String,
+    pub rendered: String,
+    by_key: BTreeMap<String, String>,
+    prior_ids: Vec<String>,
+}
+
+impl Staged {
+    /// The [`Effect::IngestKnown`] of this document.
+    pub(crate) fn into_effect(self) -> Effect {
+        Effect::IngestKnown {
+            doc_id: self.doc_id,
+            path: self.path,
+            rendered: self.rendered,
+            by_key: self.by_key,
+            prior_ids: self.prior_ids,
+        }
+    }
+}
+
+/// Render every loaded document, each to live at `path_of(doc)`.
+pub(crate) fn stage(loaded: &[LoadedDoc], path_of: impl Fn(&LoadedDoc) -> String) -> Vec<Staged> {
+    loaded
+        .iter()
+        .map(|d| Staged {
+            doc_id: d.doc.doc_id.clone(),
+            path: path_of(d),
+            rendered: render(&d.doc),
+            by_key: positional_ids(&d.doc.children),
+            prior_ids: d.prior_ids.clone(),
+        })
+        .collect()
+}
+
+/// §4 step 5 (b): write every staged file, in load order.
+pub(crate) fn write_staged(staged: &[Staged], doc_store: &mut dyn DocStore) -> Result<()> {
+    for s in staged {
+        doc_store.write(&s.path, &s.rendered)?;
+    }
+    Ok(())
+}
+
+/// §4 step 5 (c) for one document: the known-id [`IngestPlan`] over the
+/// re-parsed `rendered` bytes — ids by position from the working tree (a
+/// position with no id mints `b`, impossible under the round-trip law), the
+/// `api` dispositions (`edited` for a prior id, `inserted` otherwise), the
+/// prior ids now gone (pooled), and the ids new to this document as
+/// `cross_doc_ids` (a cross-document move's source may hold them live or
+/// pooled; `spec/store` §5.4 step 8 evicts those rows, and finds nothing for
+/// a freshly minted id). An `api` commit never touches `docs.conflicted`.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn known_plan<'a>(
+    tree: &'a omgbase_format::BlockTree,
+    path: &'a str,
+    rendered: &'a str,
+    by_key: &BTreeMap<String, String>,
+    prior_ids: &[String],
+    minter: &mut crate::mint::Mint<'_>,
+    origin: Origin,
+    actor: Option<&'a str>,
+    reason: Option<&'a str>,
+) -> Result<IngestPlan<'a>> {
+    let body: &[Block] = match tree.children.first() {
+        Some(b) if b.kind == omgbase_format::BlockKind::Frontmatter => &tree.children[1..],
+        _ => &tree.children[..],
+    };
+    let assigned = assign_known(body, by_key, None, minter)?;
+    let mut now_ids = Vec::new();
+    collect_ids(&assigned, &mut now_ids);
+    let prior: HashSet<&str> = prior_ids.iter().map(String::as_str).collect();
+    let now: HashSet<&str> = now_ids.iter().map(String::as_str).collect();
+    let dispositions = now_ids
+        .iter()
+        .map(|id| DispositionRow {
+            block_id: id.clone(),
+            kind: if prior.contains(id.as_str()) {
+                "edited".to_owned()
+            } else {
+                "inserted".to_owned()
+            },
+            confidence: Some(1.0),
+            reason: Some("api".to_owned()),
+            matcher_v: None,
+            detail: "{}".to_owned(),
+        })
+        .collect();
+    let deleted: Vec<String> = prior_ids
+        .iter()
+        .filter(|id| !now.contains(id.as_str()))
+        .cloned()
+        .collect();
+    let cross_doc_ids: Vec<String> = now_ids
+        .iter()
+        .filter(|id| !prior.contains(id.as_str()))
+        .cloned()
+        .collect();
+    Ok(IngestPlan {
+        path,
+        source: rendered,
+        tree,
+        assigned,
+        dispositions,
+        deleted,
+        consumed_pool: Vec::new(),
+        cross_doc_ids,
+        origin,
+        actor,
+        reason,
+        conflicted: None,
+    })
 }
 
 /// Two distinct elements of a slice, mutably.

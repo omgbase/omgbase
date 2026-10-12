@@ -475,6 +475,21 @@ prepared result):
 The member's outcome is `{ echo: false, doc, commit, rev, converged,
 conflicted, dispositions: kind → count over this commit }`.
 
+**The api path (13.7).** `spec/mutate` §4 step 5(c) runs this procedure for
+every document of a changeset inside **one transaction**: step 5 runs once,
+before the first document, with `origin = 'api'`, the request's `actor` and
+`reason`, `checkpoint_id = NULL`, `ops = NULL`; every document's step 6
+names that commit (so N revisions and every `blocks.created_commit`,
+`dispositions.commit_id`, `properties.created_commit` and edge
+`from_commit`/`to_commit` of the request share one `commit_id`); steps 1–4
+and 6–13 run per document in load order with the known-id resolver; step 8
+is unchanged (in one transaction the eviction and the pool insert of a
+cross-document move run in load order, so only their visibility changes —
+`spec/mutate` §10); step 14 never runs. The observe path is unchanged: one
+transaction per member, one commit per member (the per-member commit ids
+`spec/store` fixtures pin). Mint order on the api path: one `c`, then per
+document `r`, `x`, `e`.
+
 9b. **Properties (store 13.1).** After the blocks and sections: delete the
     doc's `properties` rows and insert the document's property rows as
     `spec/properties` defines them (`INSERT OR REPLACE` on `prop_id`, with
@@ -601,12 +616,15 @@ end of every case; an implementation may assert them in its own tests.
   exists, an `expires_ts` exactly 30 days after that commit's `ts`, and a
   block id that has no live `blocks` row.
 - **I7 Dispositions.** Every disposition's `commit_id` exists. For every
-  live doc's *current* commit: every disposition of that commit whose kind is
-  not `deleted` or `merged_into` (and whose block is not `"DOC"`) names a
-  live `blocks` row of that doc, and every `deleted`/`merged_into` one names
-  no live row of that doc. (Older commits are not checked against `blocks`:
-  a block `inserted` under one doc may legitimately be live in another after
-  a later cross-document resurrection.)
+  commit that is the *current* commit of at least one live doc, over the live
+  docs whose current revision it wrote (one on the observe path; N for an
+  `api` changeset, §5.4 "The api path" — 13.7, one doc before): every
+  disposition of that commit whose kind is not `deleted` or `merged_into`
+  (and whose block is not `"DOC"`) names a live `blocks` row of one of those
+  docs, and every `deleted`/`merged_into` one names no live row of any of
+  them. (Older commits are not checked against `blocks`: a block `inserted`
+  under one doc may legitimately be live in another after a later
+  cross-document resurrection.)
 - **I8 Rebuild equivalence.** `sections` and `block_changes` recomputed per
   §7 equal the stored rows.
 
@@ -849,6 +867,14 @@ brought to it).
 
 ## Decisions
 
+- 2026-10-12, store 13.7: the `api` path (`spec/mutate` §4) runs §5.4 for
+  every document of a request inside one transaction under one commit row
+  (§5.4 "The api path"). No DDL change; a procedure minor. The observe path
+  and its fixtures are untouched (a whole-batch mode for `observe_many` is
+  deferred). One side effect in both engines: the commit row is minted by the
+  caller before the per-document steps, so on every path `c` is now minted
+  before step 2's `d` of a new document — unobservable under the per-prefix
+  fixture minter (§2.2), which is why no observe fixture moved.
 - 2026-10-12, store 13.6: the `conflicted` flag (§5.4 step 14) and the
   observed tombstone (§5.6) run inside their transactions in both engines.
   No DDL change; a procedure minor. First of the transaction-hygiene steps

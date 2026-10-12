@@ -17,14 +17,13 @@ use rusqlite::{OptionalExtension, params};
 use serde_json::{Map, Value, json};
 
 use crate::Store;
-use crate::derived::fts_delete_doc;
 use crate::doc_store::DocStore;
+use crate::effects::{CommitHead, Effect};
 use crate::error::Result;
-use crate::graph::{adopt_phantoms, rebuild_doc_edges};
 use crate::links::{InboundLink, doc_dir_of, inbound_links_to, retarget_links_in_raw};
-use crate::mutate::{ApplyOrigin, ApplyRequest, Diff, find_doc_by_ref};
+use crate::mutate::{ApplyOrigin, ApplyRequest, Diff, Staged, find_doc_by_ref};
 use crate::read::blob_text;
-use crate::writers::{NewCommit, Origin, new_commit};
+use crate::writers::Origin;
 use crate::yaml_emit::stringify;
 
 /// What a document operation runs with.
@@ -386,12 +385,15 @@ impl Store {
         })
     }
 
-    /// §6 `docs_move`: rename a document (identity kept); an `api` commit
-    /// with no revision; open edges from other documents re-pointed to
-    /// `phantom:<old path>` (a self edge only when its link names the path);
-    /// phantoms at the new path adopted. With `retarget_inbound` — the
-    /// surface's default since mutate 1.3 — the dangling links are rewritten
-    /// as one follow-up changeset; `false` leaves them as written.
+    /// §6 `docs_move`: rename a document (identity kept) in one `api` commit
+    /// (`reason: "move <from> -> <to>"`): open edges from other documents
+    /// re-pointed to `phantom:<old path>` (a self edge only when its link
+    /// names the path), phantoms at the new path adopted, and — with
+    /// `retarget_inbound`, the surface's default since mutate 1.3 — the
+    /// dangling links rewritten in the same transaction, one revision per
+    /// rewritten source under the move's row (2.1; the moved document's own
+    /// revision advances only when it is itself a source). `false` leaves
+    /// them as written.
     pub fn docs_move(
         &mut self,
         ctx: &DocOpContext,
@@ -454,7 +456,7 @@ impl Store {
             }
             let plan = self.plan_inbound_retarget(&info.doc_id, &info.path, &to_rel, &inbound)?;
             if !plan.ops.is_empty() {
-                let req = retarget_request(ctx, plan.ops, &info.path, &to_rel, true);
+                let req = retarget_request(ctx, plan.ops, true);
                 let preview = self.apply(&req, doc_store, &ctx.ts)?;
                 assign_diffs(&mut diffs, preview.diffs.unwrap_or_default());
             }
@@ -470,101 +472,77 @@ impl Store {
                 }),
             });
         }
+        // One request, one transaction, one commit (2.1): the path change
+        // and, with `retarget_inbound`, the rewrite of every dangling source
+        // — planned over the current blocks (the move itself changes none),
+        // run in memory, file-CAS'd, written, then committed together under
+        // `move <from> -> <to>`. The reads come first, before any file moves.
+        let plan = if retarget_inbound && !inbound.is_empty() {
+            Some(self.plan_inbound_retarget(&info.doc_id, &info.path, &to_rel, &inbound)?)
+        } else {
+            None
+        };
+        let loaded = match &plan {
+            Some(p) if !p.ops.is_empty() => {
+                let req = retarget_request(ctx, p.ops.clone(), false);
+                self.apply_ops(&req)?.loaded
+            }
+            _ => Vec::new(),
+        };
+        // (a) File-CAS every source where it was loaded — the moved document,
+        //     when it links to itself, under its OLD path, where its file
+        //     still is. A mismatch fails here, before anything is renamed.
+        self.file_cas(&ctx.repo_id, &loaded, doc_store, &ctx.ts)?;
+        // The moved document was loaded under its old path: its rendered
+        // bytes go to, and its ingest names, the new one.
+        let staged = crate::mutate::stage(&loaded, |d| {
+            if d.doc.doc_id == info.doc_id {
+                to_rel.clone()
+            } else {
+                d.doc.path.clone()
+            }
+        });
+        // (b) Files: the rename, then every rewritten source.
         if doc_store.exists(&info.path) {
             doc_store.rename(&info.path, &to_rel)?;
         } else {
             doc_store.write(&to_rel, &content)?;
         }
-        {
-            let tx = self.conn.unchecked_transaction()?;
-            let reason = format!("move {} -> {to_rel}", info.path);
-            new_commit(
-                &tx,
-                &mut self.ids.at(&tx),
-                &NewCommit {
-                    repo_id: &ctx.repo_id,
-                    ts: &ctx.ts,
-                    origin: Origin::Api,
-                    actor: ctx.actor.as_deref(),
-                    reason: Some(&reason),
-                    checkpoint_id: None,
-                    ops: None,
-                },
-            )?;
-            tx.execute(
-                "UPDATE docs SET path = ?1 WHERE doc_id = ?2",
-                params![to_rel, info.doc_id],
-            )?;
-            tx.execute(
-                "UPDATE revisions SET path = ?1 WHERE doc_id = ?2 AND rev_id = ?3",
-                params![to_rel, info.doc_id, info.current_rev],
-            )?;
-            let phantom = format!("phantom:{}", info.path);
-            let mut affected: Vec<String> = Vec::new();
-            {
-                let mut stmt = tx.prepare(
-                    "SELECT DISTINCT src_doc FROM edges WHERE dst_node = ?1 AND to_commit IS NULL AND src_doc != ?1",
-                )?;
-                let it = stmt.query_map(params![info.doc_id], |r| r.get::<_, String>(0))?;
-                for src in it {
-                    let src = src?;
-                    if !affected.contains(&src) {
-                        affected.push(src);
-                    }
-                }
-            }
-            tx.execute(
-                "UPDATE edges SET dst_node = ?1 WHERE dst_node = ?2 AND to_commit IS NULL AND src_doc != ?2",
-                params![phantom, info.doc_id],
-            )?;
-            for l in &inbound {
-                let Some(block) = &l.block else {
-                    continue;
-                };
-                if l.doc != info.doc_id {
-                    continue;
-                }
-                tx.execute(
-                    "UPDATE edges SET dst_node = ?1 WHERE dst_node = ?2 AND to_commit IS NULL AND src_doc = ?2 AND src_block = ?3 AND anchor IS ?4",
-                    params![phantom, info.doc_id, block, l.anchor],
-                )?;
-                if !affected.contains(&info.doc_id) {
-                    affected.push(info.doc_id.clone());
-                }
-            }
-            for d in &affected {
-                rebuild_doc_edges(&tx, d)?;
-            }
-            adopt_phantoms(&tx, &to_rel, &info.doc_id)?;
-            tx.commit()?;
-        }
-        let moved = DocMoveResult {
+        crate::mutate::write_staged(&staged, doc_store)?;
+        // (c) The transaction: the row changes first, so each source's edges
+        //     resolve `[x](<to>)` to the document, then the sources.
+        let reason = format!("move {} -> {to_rel}", info.path);
+        let head = CommitHead {
+            origin: Origin::Api,
+            actor: ctx.actor.as_deref(),
+            reason: Some(&reason),
+        };
+        let mut effects = vec![Effect::MovePath {
             doc_id: info.doc_id.clone(),
-            path: to_rel.clone(),
+            from: info.path.clone(),
+            to: to_rel.clone(),
+            current_rev: info.current_rev.clone(),
+            inbound: inbound.clone(),
+        }];
+        effects.extend(staged.into_iter().map(Staged::into_effect));
+        self.commit_effects(&ctx.repo_id, &head, &effects, &ctx.ts)?;
+        let (dangling, retargeted) = match plan {
+            Some(p) => (
+                p.dangling,
+                Some(Retargeted {
+                    blocks: p.blocks,
+                    docs: p.docs,
+                }),
+            ),
+            None => (inbound, None),
+        };
+        Ok(DocMoveResult {
+            doc_id: info.doc_id,
+            path: to_rel,
             committed: true,
             diffs: None,
-            dangling: inbound.clone(),
-            retargeted: None,
-        };
-        if !retarget_inbound || inbound.is_empty() {
-            return Ok(moved);
-        }
-        // Rewrite the dangling links block by block (one coalesced update per
-        // block, CAS on the block's current hash) and apply as one changeset;
-        // the re-ingest re-extracts each source doc, whose links now resolve
-        // to the moved doc.
-        let plan = self.plan_inbound_retarget(&info.doc_id, &info.path, &to_rel, &inbound)?;
-        if !plan.ops.is_empty() {
-            let req = retarget_request(ctx, plan.ops, &info.path, &to_rel, false);
-            self.apply(&req, doc_store, &ctx.ts)?;
-        }
-        Ok(DocMoveResult {
-            dangling: plan.dangling,
-            retargeted: Some(Retargeted {
-                blocks: plan.blocks,
-                docs: plan.docs,
-            }),
-            ..moved
+            dangling,
+            retargeted,
         })
     }
 
@@ -678,9 +656,9 @@ impl Store {
         })
     }
 
-    /// §6 `docs_delete`: one transaction — an `api` commit, FTS rows dropped,
-    /// live blocks and the doc tombstoned, nothing pooled — then the file
-    /// removed.
+    /// §6 `docs_delete`: one transaction — an `api` commit
+    /// (`reason: "delete <path>"`), FTS rows dropped, live blocks and the doc
+    /// tombstoned, nothing pooled — then the file removed.
     pub fn docs_delete(
         &mut self,
         ctx: &DocOpContext,
@@ -715,33 +693,21 @@ impl Store {
                 diffs: Some(diffs),
             });
         }
-        {
-            let tx = self.conn.unchecked_transaction()?;
-            let reason = format!("delete {}", info.path);
-            let (commit_id, _) = new_commit(
-                &tx,
-                &mut self.ids.at(&tx),
-                &NewCommit {
-                    repo_id: &ctx.repo_id,
-                    ts: &ctx.ts,
-                    origin: Origin::Api,
-                    actor: ctx.actor.as_deref(),
-                    reason: Some(&reason),
-                    checkpoint_id: None,
-                    ops: None,
-                },
-            )?;
-            fts_delete_doc(&tx, &info.doc_id)?;
-            tx.execute(
-                "UPDATE blocks SET deleted_commit = ?1 WHERE doc_id = ?2 AND deleted_commit IS NULL",
-                params![commit_id, info.doc_id],
-            )?;
-            tx.execute(
-                "UPDATE docs SET deleted_commit = ?1 WHERE doc_id = ?2",
-                params![commit_id, info.doc_id],
-            )?;
-            tx.commit()?;
-        }
+        let reason = format!("delete {}", info.path);
+        let head = CommitHead {
+            origin: Origin::Api,
+            actor: ctx.actor.as_deref(),
+            reason: Some(&reason),
+        };
+        self.commit_effects(
+            &ctx.repo_id,
+            &head,
+            &[Effect::Tombstone {
+                doc_id: info.doc_id.clone(),
+                pool: false,
+            }],
+            &ctx.ts,
+        )?;
         doc_store.remove(&info.path)?;
         Ok(DocOpResult {
             doc_id: info.doc_id,
@@ -814,21 +780,16 @@ impl Store {
     }
 }
 
-/// The follow-up changeset of a `retarget_inbound` move: the context's repo,
-/// actor (`api` when absent) and a generated reason.
-fn retarget_request(
-    ctx: &DocOpContext,
-    ops: Vec<Op>,
-    from_path: &str,
-    to_rel: &str,
-    dry_run: bool,
-) -> ApplyRequest {
+/// The `retarget_inbound` rewrite of a move as a changeset request — run in
+/// memory only (2.1: its documents commit under the move's own row, so the
+/// origin here reaches no commit; the dry run previews it as `apply` would).
+fn retarget_request(ctx: &DocOpContext, ops: Vec<Op>, dry_run: bool) -> ApplyRequest {
     ApplyRequest {
         repo_id: ctx.repo_id.clone(),
         ops,
         origin: ApplyOrigin {
             actor: ctx.actor.clone().unwrap_or_else(|| "api".to_owned()),
-            reason: Some(format!("retarget inbound links {from_path} -> {to_rel}")),
+            reason: None,
         },
         dry_run,
         set_frontmatter: Vec::new(),

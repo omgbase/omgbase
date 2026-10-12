@@ -45,7 +45,10 @@
 //! file-CAS + known-id `api` commit), [`doc_store`] (the write-target seam),
 //! [`macros`], [`links`] (link-destination rewriting), [`docs_ops`] (create /
 //! move / delete / set_meta, [`yaml_emit`]) and [`plan`] (the whole-document
-//! update planner).
+//! update planner). Since 13.7 every `api` request — a changeset over N
+//! documents, a move with its retarget, a create, a delete — commits as one
+//! transaction with one `commits` row through the internal effect set
+//! (`effects`, not public API).
 //!
 //! Minted ids are opaque; the store asks its [`IdMinter`] for each one. The
 //! default is the CSPRNG-backed [`RandomMinter`]; a fixture runner installs a
@@ -58,6 +61,7 @@
 pub mod derived;
 pub mod doc_store;
 pub mod docs_ops;
+mod effects;
 pub mod error;
 pub mod graph;
 pub mod history;
@@ -123,7 +127,7 @@ pub use writers::{NewCommit, NewRevision, Origin, TreeInputBlock};
 
 /// The `spec/store/VERSION` this crate implements (`major.minor`); the major
 /// is [`SCHEMA_VERSION`].
-pub const SPEC_VERSION: &str = "13.6";
+pub const SPEC_VERSION: &str = "13.7";
 
 /// This crate's own version (`Cargo.toml`), for the surface's `version` tool.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

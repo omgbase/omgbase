@@ -66,7 +66,7 @@ Defaults are deliberately permissive where semantics allow (appends need no orde
 
 Semantics:
 
-- **Atomic across documents.** All ops apply or none. One commit; one revision per touched doc; each touched file rendered and written once.
+- **Atomic across documents.** All ops apply or none. One commit row; one revision per touched doc; each touched file rendered and written once; the database commit is **one transaction** over every touched document (`spec/mutate` 2.1 — through 2.0 the commit phase was per document, so a `sync_conflict` on the n-th document left the earlier ones committed). A `changes_since` digest for the request is one entry with N revisions.
 - Ops apply **in order** within the changeset; later ops see earlier ops' effects (the update above targets the moved block).
 - Minted IDs from earlier ops are referenceable by later ops via `"$0.ids[1]"`-style placeholders (op index + result path).
 - **`dry_run: true`** runs full validation + render and returns per-file `{ before, after }` diffs and the would-be results, committing nothing.
@@ -131,17 +131,20 @@ apply(changeset):
     is written (atomic: all ops apply or none)
  2. render each touched doc's mutated tree to bytes                # splice (03-… §2.2)
  3. dry_run:true stops here, returning per-file { before, after } diffs
- --- commit phase, per touched file (under the cross-process writer lock when a
-     workspace .omgbase/ dir is supplied — every host does: the CLI verb, the MCP
-     tool call and the watcher take it once at their boundary and this inner
+ --- commit phase (under the cross-process writer lock when a workspace
+     .omgbase/ dir is supplied — every host does: the CLI verb, the MCP tool
+     call and the watcher take it once at their boundary and this inner
      acquisition is a re-entrant no-op; a bare library caller without a
      workspace dir gets the Store's in-process serialization only) ---
- 4. file-CAS: assert sha256(file_on_disk) == the doc's stored file_hash
-      on mismatch → a human edit landed first: ingest the on-disk file
-        (reconciling resolver, observed commit), refresh the stat cache, and
-        throw a RETRIABLE `sync_conflict` — the caller re-plans/re-applies
- 5. atomic write: temp file → rename
- 6. re-ingest the rendered bytes as a commit with origin:"api" (carrying the caller's actor and reason) and a KNOWN-ID
+ 4. phase A — file-CAS EVERY touched doc first: assert sha256(file_on_disk) ==
+      the doc's stored file_hash; on the first mismatch → a human edit landed
+      first: ingest the on-disk file (reconciling resolver, observed commit),
+      refresh the stat cache, and throw a RETRIABLE `sync_conflict` — nothing
+      has been written for any document; the caller re-plans/re-applies
+ 5. phase B — atomic write of every rendered file: temp file → rename
+ 6. phase C — ONE transaction (spec/mutate 2.1): mint one commit row with
+    origin:"api" (carrying the caller's actor and reason), then per touched doc
+    re-ingest the rendered bytes under that commit with a KNOWN-ID
     resolver: the mutated tree already carries deterministic ids (ops keep/mint
     them), so identity threads onto the re-parsed tree and intent dispositions
     are recorded at confidence 1.0 — never re-derived from the bytes by the
@@ -151,7 +154,11 @@ apply(changeset):
     ingest persists blobs, tree_nodes, the revision + commit, edge extraction,
     and index maintenance. The commit timestamp defaults to now; callers may
     pin it (`ApplyRequest.ts`, `DocOpContext.ts`, `ApplyOpsetRequest.ts`) —
-    the spec fixtures do, so `commits.ts` compares across engines.
+    the spec fixtures do, so `commits.ts` compares across engines. A failure
+    inside phase C rolls back every document; the files written in phase B are
+    then AHEAD of the database until the next observation (sweep, watcher,
+    `observe`) heals them as an observed commit — the DB-first materialization
+    that closes this window is a later step.
  7. refresh the freshness stat cache (recordFileStat) so a later sweep won't
     re-hash the engine's own write; the watcher's content-hash echo gate
     suppresses re-ingesting it

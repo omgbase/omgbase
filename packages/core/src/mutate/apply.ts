@@ -2,20 +2,22 @@ import type { Store } from "../core/store/store.js";
 import { sha256 } from "../core/hash.js";
 import { isValidId } from "../core/ids.js";
 import { findDocByRef } from "../core/read/reader.js";
-import { ingestFile } from "../core/ingest.js";
-import { makeReconcilingResolver } from "../sync/reconciling-ingest.js";
-import { makeKnownIdResolver } from "./known-ids.js";
 import { loadMutDoc } from "./load.js";
 import { renderDoc, markContainerDirty, MutationError, type MutDoc, type MutBlock } from "./tree.js";
 import { opInsert, opUpdate, opMove, opRemove, opSplit, opMerge, healTopLevelSeams, checkParentChildrenHash, type To, type Expect } from "./ops.js";
 import { withWriterLock } from "../sync/writer-lock.js";
 import { resolveDocStore, type DocStore } from "./doc-store.js";
+import { commitChangeset, type Effect } from "./commit.js";
 import { isContainerBlock } from "../format/index.js";
 
 // Changeset application (04 §2, §6). Ops apply in order across documents; later
 // ops see earlier effects; minted ids are referenceable via "$n.ids[i]"
-// placeholders. Atomic: all ops apply or none (validation throws before any
-// file write). dry_run returns rendered diffs without committing.
+// placeholders. Atomic: all ops apply or none — validation throws before any
+// file write, and the commit is one transaction with one `commits` row and a
+// revision per touched document (spec/mutate §4 step 5, 2.1; `commit.ts`).
+// dry_run returns rendered diffs without committing. `planChangeset` is the
+// op loop (shared by the dry run and by `docs_move`'s inbound retarget, which
+// commits its effects under the move's own commit); `apply` plans, then commits.
 
 export type Op =
   | { op: "insert"; doc?: string; to: To; markdown: string; expect?: Expect }
@@ -123,8 +125,20 @@ function docIdForBlock(store: Store, repoId: string, blockId: string): string | 
   return row?.doc_id ?? null;
 }
 
-export function apply(store: Store, req: ApplyRequest): ApplyResult {
-  const { store: _s } = { store }; void _s;
+/** A planned changeset: the op results, the per-document revisions and diffs
+ *  the dry run returns, and the effects the commit runs (spec/mutate §4
+ *  steps 1–4; `commit.ts` is step 5). Nothing has been written. */
+export interface ChangesetPlan {
+  results: OpResult[];
+  revisions: ApplyRevision[];
+  diffs: Record<string, { before: string; after: string }>;
+  /** Per loaded document in load order: its `ingest_known`, then (in a
+   *  workspace) its `record_stat`. */
+  effects: Effect[];
+}
+
+/** spec/mutate §4 steps 1–4: resolve, load, apply the ops in memory, render. */
+export function planChangeset(store: Store, req: Omit<ApplyRequest, "dryRun" | "ts">): ChangesetPlan {
   // Load all docs that ops touch into memory; apply ops in order.
   const loaded = new Map<string, MutDoc>();
   const before = new Map<string, string>();
@@ -217,61 +231,37 @@ export function apply(store: Store, req: ApplyRequest): ApplyResult {
 
   const revisions: ApplyRevision[] = [];
   const diffs: Record<string, { before: string; after: string }> = {};
+  const effects: Effect[] = [];
   for (const [docId, d] of loaded) {
     const after = renderDoc(d);
     diffs[d.path] = { before: before.get(docId) ?? "", after };
     revisions.push({ id: docId, path: d.path, hash: sha256(after).toString("hex") });
+    effects.push({ kind: "ingest_known", docId, path: d.path, rendered: after, mutDoc: d, priorIds: priorIds.get(docId) ?? new Set() });
+    // Keep the freshness cache warm so this engine write isn't re-hashed by a
+    // later sweep (echo suppression already covers correctness; this avoids work).
+    if (req.omgbaseDir) effects.push({ kind: "record_stat", path: d.path, bytes: after });
   }
+  return { results, revisions, diffs, effects };
+}
+
+export function apply(store: Store, req: ApplyRequest): ApplyResult {
+  const { results, revisions, diffs, effects } = planChangeset(store, req);
 
   if (req.dryRun) {
     return { results, revisions, diffs, committed: false };
   }
 
-  // Write each touched file with the file-CAS + atomic-write protocol (04 §6),
-  // then re-ingest the rendered bytes as an api-origin commit so identity
-  // threads (the ops already assigned ids; reconciliation confirms carries).
-  // Steps 2–7 run under the cross-process writer lock when a workspace dir is
-  // supplied (11 §3.2); otherwise the Store's in-process serialization suffices.
+  // Commit (spec/mutate §4 step 5): file-CAS every touched document, write the
+  // rendered files, then one transaction with one `api` commit and a revision
+  // per document — under the cross-process writer lock when a workspace dir is
+  // supplied (spec/sync §7); otherwise the Store's in-process serialization
+  // suffices.
   const docStore = resolveDocStore(req);
+  const ts = req.ts ?? new Date().toISOString();
+  const head = { origin: "api" as const, actor: req.origin.actor, reason: req.origin.reason ?? null };
+  const targets = { docStore, ...(req.omgbaseDir ? { omgbaseDir: req.omgbaseDir } : {}) };
   const commitPhase = (): void => {
-    const ts = req.ts ?? new Date().toISOString();
-    for (const [docId, d] of loaded) {
-      const rendered = renderDoc(d);
-
-      // File-CAS: on-disk bytes must equal the revision we computed against.
-      const current = store.db.prepare("SELECT file_hash FROM docs WHERE doc_id = ?").get(docId) as { file_hash: Buffer | null } | undefined;
-      const onDiskContent = docStore.read(d.path);
-      if (onDiskContent !== null && current?.file_hash) {
-        const onDisk = sha256(onDiskContent);
-        if (!onDisk.equals(current.file_hash)) {
-          // A human edit landed first: ingest it, then the caller must retry.
-          ingestFile(store, req.repoId, d.path, onDiskContent, { ts, resolveIds: makeReconcilingResolver(store, req.repoId, { ts, path: d.path }) });
-          if (req.omgbaseDir) docStore.recordStat(store, req.repoId, d.path, onDiskContent);
-          throw new MutationError("sync_conflict", `file ${d.path} changed on disk; re-ingested — retry`, { retriable: true });
-        }
-      }
-
-      // Atomic write through the DocStore (no-op for a headless NullDocStore).
-      docStore.write(d.path, rendered);
-
-      // Commit (INTENT path): persist the ops' tree with its KNOWN block ids —
-      // never re-derive identity from the rendered bytes. The mutated MutDoc `d`
-      // already carries deterministic ids (opUpdate keeps a block's id in place,
-      // untouched blocks keep theirs, new blocks carry the op-minted id), so the
-      // known-id resolver threads them onto the re-parsed tree and records intent
-      // dispositions (confidence 1.0). Re-reconciling here would gamble block —
-      // and thus node — identity on the probabilistic matcher (node-editability).
-      ingestFile(store, req.repoId, d.path, rendered, {
-        ts,
-        origin: "api",
-        actor: req.origin.actor,
-        reason: req.origin.reason ?? null,
-        resolveIds: makeKnownIdResolver(store, req.repoId, d, priorIds.get(docId) ?? new Set(), { path: d.path }),
-      });
-      // Keep the freshness cache warm so this engine write isn't re-hashed by a
-      // later sweep (echo suppression already covers correctness; this avoids work).
-      if (req.omgbaseDir) docStore.recordStat(store, req.repoId, d.path, rendered);
-    }
+    commitChangeset(store, req.repoId, head, effects, ts, targets);
   };
 
   if (req.omgbaseDir) withWriterLock(req.omgbaseDir, commitPhase);

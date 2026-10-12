@@ -75,9 +75,10 @@ impl CommitDigest {
     }
 }
 
-/// What a commit that wrote no revision did: a document deletion (observed
-/// or api) names the tombstoned paths, a move its `move <from> -> <to>`
-/// reason.
+/// What a commit did besides its revisions: a document deletion (observed
+/// or api) with no revision names the tombstoned paths; a move names its
+/// `move <from> -> <to>` reason — alone when nothing else was written, ahead
+/// of the rewritten sources when the retarget rode the same commit (2.1).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 struct SummaryExtra {
     deleted: Vec<String>,
@@ -87,7 +88,8 @@ struct SummaryExtra {
 /// The reference's `renderSummary`: `<origin>(<actor ?? ?>): <paths> — <n
 /// kind>, …` for `api`/`import`, `observed: <paths> — …` otherwise (`same`
 /// dispositions omitted). A commit with no revision says `deleted <paths>`
-/// or `moved <from> → <to>` instead (`spec/cli` §6 `log`).
+/// or `moved <from> → <to>` instead; a move that also carries revisions
+/// says `moved <from> → <to>; <paths>` (`spec/cli` §6 `log`).
 fn render_summary(
     origin: &str,
     actor: Option<&str>,
@@ -96,12 +98,14 @@ fn render_summary(
     extra: &SummaryExtra,
 ) -> String {
     let mut paths = paths.join(", ");
-    if paths.is_empty() {
-        if !extra.deleted.is_empty() {
-            paths = format!("deleted {}", extra.deleted.join(", "));
-        } else if let Some((from, to)) = &extra.moved {
-            paths = format!("moved {from} → {to}");
-        }
+    if let Some((from, to)) = &extra.moved {
+        paths = if paths.is_empty() {
+            format!("moved {from} → {to}")
+        } else {
+            format!("moved {from} → {to}; {paths}")
+        };
+    } else if paths.is_empty() && !extra.deleted.is_empty() {
+        paths = format!("deleted {}", extra.deleted.join(", "));
     }
     let parts: Vec<String> = dispositions
         .iter()
@@ -191,8 +195,9 @@ pub fn changes_since(
     )?;
     let mut disp_stmt =
         conn.prepare("SELECT kind, count(*) FROM dispositions WHERE commit_id = ?1 GROUP BY kind")?;
-    // A deletion or a move writes no revision: the tombstone names the commit
-    // (`docs.deleted_commit`), a move only its reason (`move <from> -> <to>`).
+    // A deletion writes no revision: the tombstone names the commit
+    // (`docs.deleted_commit`). A move names its reason (`move <from> ->
+    // <to>`) and, with a retarget, carries the rewritten sources' revisions.
     let mut deleted_stmt =
         conn.prepare("SELECT path FROM docs WHERE deleted_commit = ?1 ORDER BY path")?;
     let mut digests = Vec::with_capacity(commits.len());
@@ -210,15 +215,15 @@ pub fn changes_since(
             .query_map(params![commit_id], |r| Ok((r.get(0)?, r.get(1)?)))?
             .collect::<std::result::Result<_, _>>()?;
         let paths: Vec<&str> = revisions.iter().map(|r| r.path.as_str()).collect();
-        let extra = if revisions.is_empty() {
-            SummaryExtra {
-                deleted: deleted_stmt
+        let extra = SummaryExtra {
+            deleted: if revisions.is_empty() {
+                deleted_stmt
                     .query_map(params![commit_id], |r| r.get::<_, String>(0))?
-                    .collect::<std::result::Result<_, _>>()?,
-                moved: reason.as_deref().and_then(parse_move),
-            }
-        } else {
-            SummaryExtra::default()
+                    .collect::<std::result::Result<_, _>>()?
+            } else {
+                Vec::new()
+            },
+            moved: reason.as_deref().and_then(parse_move),
         };
         let summary = render_summary(&origin, actor.as_deref(), &paths, &dispositions, &extra);
         digests.push(CommitDigest {
@@ -350,6 +355,17 @@ mod tests {
         assert_eq!(
             render_summary("api", Some("human:spec"), &[], &[], &moved),
             "api(human:spec): moved a.md → b/a.md"
+        );
+        // 2.1: the retarget rides the move's commit, so its sources follow.
+        assert_eq!(
+            render_summary(
+                "api",
+                Some("human:spec"),
+                &["index.md"],
+                &[("edited".into(), 31)],
+                &moved
+            ),
+            "api(human:spec): moved a.md → b/a.md; index.md — 31 edited"
         );
         assert_eq!(parse_move("nope"), None);
         let (store, repo) = store_with_commits(1);

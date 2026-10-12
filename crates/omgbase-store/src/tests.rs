@@ -1979,3 +1979,490 @@ fn observe_delete_tombstones_in_one_transaction() {
         "the sweep is a separate autocommit: {log:#?}"
     );
 }
+
+// ---- the api path: one request, one transaction, one commit (store 13.7) -----------------
+
+fn api_origin() -> ApplyOrigin {
+    ApplyOrigin::new("agent:test", Some("fixture"))
+}
+
+fn insert_end(doc: &str, markdown: &str) -> Op {
+    Op::Insert {
+        doc: Some(doc.to_owned()),
+        to: To {
+            parent: Parent::Doc,
+            at: At::End,
+        },
+        markdown: markdown.to_owned(),
+        expect: None,
+    }
+}
+
+fn commits_by_origin(store: &Store, origin: &str) -> i64 {
+    store
+        .conn()
+        .query_row(
+            "SELECT count(*) FROM commits WHERE origin = ?1",
+            params![origin],
+            |r| r.get(0),
+        )
+        .unwrap()
+}
+
+fn current_revs(store: &Store) -> Vec<(String, String)> {
+    let mut stmt = store
+        .conn()
+        .prepare("SELECT path, current_rev FROM docs ORDER BY path")
+        .unwrap();
+    stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+        .unwrap()
+        .map(|r| r.unwrap())
+        .collect()
+}
+
+/// Observe `files` into the store at `T0` and seed the doc store with them.
+fn seeded(files: &[(&str, &str)]) -> (Store, String, MemDocStore) {
+    let (mut store, repo) = fixture_store();
+    let mut ds = MemDocStore::new();
+    let items: Vec<BatchItem> = files
+        .iter()
+        .map(|(p, s)| BatchItem::observed(p, s))
+        .collect();
+    store
+        .observe_batch(&repo, &items, T0, &Config::default())
+        .unwrap();
+    for (p, s) in files {
+        ds.write(p, s).unwrap();
+    }
+    (store, repo, ds)
+}
+
+/// `spec/mutate` §4 step 5 (2.1): a changeset over N documents is one
+/// `commits` row with N `revisions`; every block the request wrote carries
+/// that row as `created_commit`, and `changes_since` shows one digest with
+/// the N revisions. Ids mint `c` once, then `r` per document in load order.
+#[test]
+fn a_changeset_is_one_commit_with_n_revisions() {
+    let (mut store, repo, mut ds) =
+        seeded(&[("a.md", "# A\n\nAlpha.\n"), ("b.md", "# B\n\nBravo.\n")]);
+    assert_eq!(count(&store, "commits"), 2);
+    start_trace(store.conn());
+    let res = store
+        .apply(
+            &ApplyRequest {
+                repo_id: repo.clone(),
+                ops: vec![insert_end("a.md", "A tail."), insert_end("b.md", "B tail.")],
+                origin: api_origin(),
+                dry_run: false,
+                set_frontmatter: Vec::new(),
+            },
+            &mut ds,
+            T1,
+        )
+        .unwrap();
+    assert!(res.committed);
+    assert_eq!(res.revisions.len(), 2);
+    let log = traced();
+    assert_eq!(
+        log.iter()
+            .filter(|s| s.starts_with("INSERT INTO commits"))
+            .count(),
+        1,
+        "one commit row for the request: {log:#?}"
+    );
+    let tx = tx_of(&log, "INSERT INTO commits");
+    assert!(tx.is_some());
+    assert_eq!(tx, tx_of(&log, "INSERT INTO revisions"), "{log:#?}");
+    assert_eq!(count(&store, "commits"), 3);
+    assert_eq!(commits_by_origin(&store, "api"), 1);
+    let revs: Vec<(String, String, String)> = {
+        let mut stmt = store
+            .conn()
+            .prepare("SELECT rev_id, doc_id, commit_id FROM revisions WHERE commit_id = 'c_2' ORDER BY rowid")
+            .unwrap();
+        stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+            .unwrap()
+            .map(|r| r.unwrap())
+            .collect()
+    };
+    assert_eq!(
+        revs,
+        vec![
+            ("r_2".into(), "d_0".into(), "c_2".into()),
+            ("r_3".into(), "d_1".into(), "c_2".into()),
+        ],
+        "c once, then r per document in load order"
+    );
+    let created: Vec<String> = {
+        let mut stmt = store
+            .conn()
+            .prepare("SELECT DISTINCT created_commit FROM blocks WHERE deleted_commit IS NULL")
+            .unwrap();
+        stmt.query_map([], |r| r.get(0))
+            .unwrap()
+            .map(|r| r.unwrap())
+            .collect()
+    };
+    assert_eq!(
+        created,
+        vec!["c_2".to_owned()],
+        "every live block restamped by the shared row"
+    );
+    assert_eq!(
+        current_revs(&store),
+        vec![("a.md".into(), "r_2".into()), ("b.md".into(), "r_3".into())]
+    );
+    assert_eq!(
+        ds.read("a.md").unwrap().as_deref(),
+        Some("# A\n\nAlpha.\n\nA tail.\n")
+    );
+    assert_eq!(
+        ds.read("b.md").unwrap().as_deref(),
+        Some("# B\n\nBravo.\n\nB tail.\n")
+    );
+
+    let page = store.changes_since(&repo, 2, 50, None).unwrap();
+    assert_eq!(page.digests.len(), 1, "one digest for the request");
+    let d = &page.digests[0];
+    assert_eq!(d.commit, "c_2");
+    assert_eq!(d.revisions.len(), 2);
+    assert_eq!(d.revisions[0].path, "a.md");
+    assert_eq!(d.revisions[1].path, "b.md");
+    assert_eq!(
+        d.summary,
+        "api(agent:test): a.md, b.md — 4 edited, 2 inserted"
+    );
+}
+
+/// §4 step 5 (a) + §10 Fixed (2.1): the file-CAS of every loaded document
+/// runs before any file is written, so a dirty third document aborts the
+/// whole request — no `api` commit row, no revision, the first two files
+/// untouched; the dirty bytes are ingested as one `observed` commit and the
+/// request fails `sync_conflict` (retriable).
+#[test]
+fn a_dirty_third_document_commits_nothing() {
+    let (mut store, repo, mut ds) = seeded(&[
+        ("a.md", "# A\n\nAlpha.\n"),
+        ("b.md", "# B\n\nBravo.\n"),
+        ("c.md", "# C\n\nCharlie.\n"),
+    ]);
+    ds.write("c.md", "# C\n\nCharlie, by a human.\n").unwrap();
+    let before = current_revs(&store);
+    start_trace(store.conn());
+    let err = store
+        .apply(
+            &ApplyRequest {
+                repo_id: repo.clone(),
+                ops: vec![
+                    insert_end("a.md", "A tail."),
+                    insert_end("b.md", "B tail."),
+                    insert_end("c.md", "C tail."),
+                ],
+                origin: api_origin(),
+                dry_run: false,
+                set_frontmatter: Vec::new(),
+            },
+            &mut ds,
+            T1,
+        )
+        .unwrap_err();
+    match &err {
+        Error::Mutation(m) => {
+            assert_eq!(m.code, omgbase_mutate::ErrorCode::SyncConflict);
+            assert_eq!(m.data["retriable"], serde_json::json!(true));
+        }
+        other => panic!("expected sync_conflict, got {other:?}"),
+    }
+    assert_eq!(commits_by_origin(&store, "api"), 0, "no api row at all");
+    assert_eq!(
+        commits_by_origin(&store, "observed"),
+        4,
+        "the three + c.md's disk bytes"
+    );
+    assert_eq!(
+        ds.read("a.md").unwrap().as_deref(),
+        Some("# A\n\nAlpha.\n"),
+        "phase A runs before phase B"
+    );
+    assert_eq!(ds.read("b.md").unwrap().as_deref(), Some("# B\n\nBravo.\n"));
+    let after = current_revs(&store);
+    assert_eq!(after[0], before[0]);
+    assert_eq!(after[1], before[1]);
+    assert_ne!(after[2], before[2], "c.md advanced by the observed ingest");
+    assert_eq!(
+        store.reconstruct("d_2").unwrap().as_deref(),
+        Some("# C\n\nCharlie, by a human.\n")
+    );
+    let log = traced();
+    assert_eq!(
+        log.iter()
+            .filter(|s| s.starts_with("INSERT INTO commits"))
+            .count(),
+        1,
+        "only the observed ingest wrote a commit: {log:#?}"
+    );
+}
+
+/// §6 `docs_move` (2.1): the rename and its inbound retarget are one
+/// transaction and one `api` commit (`move <from> -> <to>`), the rewritten
+/// source's revision under it; the moved document's own revision does not
+/// advance (it is not a source here); the digest reads `moved a → b; src —
+/// …`. A moved document that links to itself by path IS a source: loaded
+/// under the old path, it is written and ingested under the new one, so one
+/// `docs` row remains.
+#[test]
+fn docs_move_with_retarget_is_one_commit() {
+    let (mut store, repo) = fixture_store();
+    let mut ds = MemDocStore::new();
+    let ctx = DocOpContext {
+        repo_id: repo.clone(),
+        actor: Some("agent:mcp".to_owned()),
+        ts: T0.to_owned(),
+    };
+    store
+        .docs_create(&ctx, &mut ds, "b.md", "# B\n\nTarget.\n", None)
+        .unwrap();
+    store
+        .docs_create(&ctx, &mut ds, "a.md", "# A\n\nSee [b](b.md).\n", None)
+        .unwrap();
+    assert_eq!(count(&store, "commits"), 2);
+    let ctx1 = DocOpContext {
+        ts: T1.to_owned(),
+        ..ctx.clone()
+    };
+    start_trace(store.conn());
+    let moved = store
+        .docs_move(&ctx1, &mut ds, "b.md", "n/b.md", true)
+        .unwrap();
+    assert_eq!(moved.doc_id, "d_0");
+    assert_eq!(moved.path, "n/b.md");
+    assert_eq!(
+        moved.retargeted.as_ref().unwrap().docs,
+        vec!["d_1".to_owned()]
+    );
+    assert!(moved.dangling.is_empty());
+    let log = traced();
+    assert_eq!(
+        log.iter()
+            .filter(|s| s.starts_with("INSERT INTO commits"))
+            .count(),
+        1,
+        "{log:#?}"
+    );
+    let tx = tx_of(&log, "INSERT INTO commits");
+    assert!(tx.is_some());
+    assert_eq!(tx, tx_of(&log, "UPDATE docs SET path"), "{log:#?}");
+    assert_eq!(tx, tx_of(&log, "INSERT INTO revisions"), "{log:#?}");
+    assert_eq!(count(&store, "commits"), 3);
+    let (reason, revs): (String, i64) = store
+        .conn()
+        .query_row(
+            "SELECT reason, (SELECT count(*) FROM revisions WHERE commit_id = 'c_2') FROM commits WHERE commit_id = 'c_2'",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(reason, "move b.md -> n/b.md");
+    assert_eq!(revs, 1, "the rewritten source only");
+    assert_eq!(
+        current_revs(&store),
+        vec![
+            ("a.md".into(), "r_2".into()),
+            ("n/b.md".into(), "r_0".into())
+        ],
+        "the moved doc's revision does not advance"
+    );
+    assert_eq!(
+        ds.read("a.md").unwrap().as_deref(),
+        Some("# A\n\nSee [b](n/b.md).\n")
+    );
+    assert_eq!(
+        ds.read("n/b.md").unwrap().as_deref(),
+        Some("# B\n\nTarget.\n")
+    );
+    assert!(!ds.exists("b.md"));
+    // The source's edge resolves to the moved document, not a phantom.
+    let dst: String = store
+        .conn()
+        .query_row(
+            "SELECT dst_node FROM edges WHERE src_doc = 'd_1' AND to_commit IS NULL",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(dst, "d_0");
+    let page = store.changes_since(&repo, 2, 50, None).unwrap();
+    assert_eq!(page.digests.len(), 1);
+    assert_eq!(
+        page.digests[0].summary,
+        "api(agent:mcp): moved b.md → n/b.md; a.md — 2 edited"
+    );
+    assert_eq!(page.digests[0].revisions.len(), 1);
+    assert_eq!(page.digests[0].revisions[0].path, "a.md");
+
+    // The self-link hazard: a document whose link names its own path.
+    let ctx2 = DocOpContext {
+        ts: T2.to_owned(),
+        ..ctx.clone()
+    };
+    store
+        .docs_create(&ctx2, &mut ds, "s.md", "# S\n\nSee [me](/s.md).\n", None)
+        .unwrap();
+    let docs_before = count(&store, "docs");
+    let moved = store
+        .docs_move(&ctx2, &mut ds, "s.md", "t/s.md", true)
+        .unwrap();
+    assert_eq!(
+        moved.retargeted.as_ref().unwrap().docs,
+        vec![moved.doc_id.clone()]
+    );
+    assert_eq!(
+        count(&store, "docs"),
+        docs_before,
+        "no second row at the new path"
+    );
+    let (path, rev_path): (String, String) = store
+        .conn()
+        .query_row(
+            "SELECT d.path, r.path FROM docs d JOIN revisions r ON r.rev_id = d.current_rev WHERE d.doc_id = ?1",
+            params![moved.doc_id],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(path, "t/s.md");
+    assert_eq!(
+        rev_path, "t/s.md",
+        "the retarget's revision names the new path"
+    );
+    assert_eq!(
+        ds.read("t/s.md").unwrap().as_deref(),
+        Some("# S\n\nSee [me](/t/s.md).\n")
+    );
+    assert!(!ds.exists("s.md"));
+    assert_eq!(
+        store.reconstruct(&moved.doc_id).unwrap().as_deref(),
+        ds.read("t/s.md").unwrap().as_deref()
+    );
+}
+
+/// §10 Pinned (2.1): a failure inside the commit phase rolls the whole
+/// request back — no commit, no revision, every block as before — and leaves
+/// the files already written ahead of the database; the next observation
+/// heals each as an `observed` commit that converges.
+#[test]
+fn a_failure_in_the_commit_phase_rolls_back_and_the_next_observation_heals() {
+    let (mut store, repo, mut ds) =
+        seeded(&[("a.md", "# A\n\nAlpha.\n"), ("b.md", "# B\n\nBravo.\n")]);
+    let before = current_revs(&store);
+    let blocks_before = count(&store, "blocks");
+    // Step 10 of the ingest writes `dispositions`; take the table away so
+    // the ingest fails inside the transaction, after the commit row, the
+    // revision and the blocks are in (no mint probes that table, so the
+    // request reaches BEGIN).
+    store
+        .conn()
+        .execute("ALTER TABLE dispositions RENAME TO dispositions_gone", [])
+        .unwrap();
+    start_trace(store.conn());
+    let err = store
+        .apply(
+            &ApplyRequest {
+                repo_id: repo.clone(),
+                ops: vec![insert_end("a.md", "A tail."), insert_end("b.md", "B tail.")],
+                origin: api_origin(),
+                dry_run: false,
+                set_frontmatter: Vec::new(),
+            },
+            &mut ds,
+            T1,
+        )
+        .unwrap_err();
+    assert!(matches!(err, Error::Sqlite(_)), "{err}");
+    let log = traced();
+    assert!(
+        log.iter().any(|s| s.starts_with("ROLLBACK")),
+        "the transaction rolled back: {log:#?}"
+    );
+    assert!(
+        log.iter().any(|s| s.starts_with("INSERT INTO revisions")),
+        "it got as far as a revision before failing: {log:#?}"
+    );
+    assert_eq!(count(&store, "commits"), 2, "no commit row survives");
+    assert_eq!(count(&store, "revisions"), 2);
+    assert_eq!(count(&store, "blocks"), blocks_before);
+    assert_eq!(current_revs(&store), before);
+    assert_eq!(
+        store.reconstruct("d_0").unwrap().as_deref(),
+        Some("# A\n\nAlpha.\n")
+    );
+    // The files are ahead of the database.
+    assert_eq!(
+        ds.read("a.md").unwrap().as_deref(),
+        Some("# A\n\nAlpha.\n\nA tail.\n")
+    );
+    assert_eq!(
+        ds.read("b.md").unwrap().as_deref(),
+        Some("# B\n\nBravo.\n\nB tail.\n")
+    );
+
+    store
+        .conn()
+        .execute("ALTER TABLE dispositions_gone RENAME TO dispositions", [])
+        .unwrap();
+    for path in ["a.md", "b.md"] {
+        let bytes = ds.read(path).unwrap().unwrap();
+        let o = observe(&mut store, &repo, path, &bytes, T2);
+        assert!(!o.echo && o.converged, "{path}: {o:?}");
+        assert_eq!(o.dispositions.get("inserted"), Some(&1));
+        assert_eq!(
+            store.reconstruct(&o.doc_id).unwrap().as_deref(),
+            Some(bytes.as_str())
+        );
+    }
+    assert_eq!(commits_by_origin(&store, "observed"), 4);
+    assert_eq!(commits_by_origin(&store, "api"), 0);
+}
+
+/// §6 `docs_delete` is one transaction with one `api` commit and no
+/// revision; nothing is pooled; the file goes after the commit.
+#[test]
+fn docs_delete_is_one_commit_without_pooling() {
+    let (mut store, repo, mut ds) = seeded(&[("a.md", "# A\n\nAlpha.\n")]);
+    let ctx = DocOpContext {
+        repo_id: repo.clone(),
+        actor: Some("agent:mcp".to_owned()),
+        ts: T1.to_owned(),
+    };
+    start_trace(store.conn());
+    let res = store.docs_delete(&ctx, &mut ds, "a.md").unwrap();
+    assert!(res.committed);
+    let log = traced();
+    let tx = tx_of(&log, "INSERT INTO commits");
+    assert!(tx.is_some());
+    assert_eq!(
+        tx,
+        tx_of(&log, "UPDATE docs SET deleted_commit"),
+        "{log:#?}"
+    );
+    assert_eq!(
+        tx,
+        tx_of(&log, "UPDATE blocks SET deleted_commit"),
+        "{log:#?}"
+    );
+    assert!(
+        !log.iter().any(|s| s.contains("INTO resurrection_pool")),
+        "{log:#?}"
+    );
+    assert_eq!(count(&store, "resurrection_pool"), 0);
+    assert_eq!(count(&store, "revisions"), 1);
+    let reason: String = store
+        .conn()
+        .query_row("SELECT reason FROM commits WHERE origin = 'api'", [], |r| {
+            r.get(0)
+        })
+        .unwrap();
+    assert_eq!(reason, "delete a.md");
+    assert!(!ds.exists("a.md"));
+    let page = store.changes_since(&repo, 1, 50, None).unwrap();
+    assert_eq!(page.digests[0].summary, "api(agent:mcp): deleted a.md");
+}

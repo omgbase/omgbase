@@ -8307,100 +8307,37 @@
                     "id": "d_12",
                     "path": "/substances/philosophers-stone.md",
                     "hash": "a288f6220ce23e161a52e1b379639a804eb255ef02ae2aeeb76a72c4a5afc043"
-                  }
-                ]
-              },
-              {
-                "commit": "c_22",
-                "seq": 23,
-                "ts": "2026-09-27T00:00:00.000Z",
-                "origin": "api",
-                "actor": "agent:mcp",
-                "revisions": [
+                  },
                   {
                     "id": "d_0",
                     "path": "/index.md",
                     "hash": "8fd589da4e988aa2b78f14119182c411f3ed80168abe3e55cdf5d1b6a6bf577a"
-                  }
-                ]
-              },
-              {
-                "commit": "c_23",
-                "seq": 24,
-                "ts": "2026-09-27T00:00:00.000Z",
-                "origin": "api",
-                "actor": "agent:mcp",
-                "revisions": [
+                  },
                   {
                     "id": "d_1",
                     "path": "/lab/2026-01-notes.md",
                     "hash": "43a994a38763130d49a3440369708d8524253265cee65dd404137acd129ea958"
-                  }
-                ]
-              },
-              {
-                "commit": "c_24",
-                "seq": 25,
-                "ts": "2026-09-27T00:00:00.000Z",
-                "origin": "api",
-                "actor": "agent:mcp",
-                "revisions": [
+                  },
                   {
                     "id": "d_3",
                     "path": "/practitioners/jabir-ibn-hayyan.md",
                     "hash": "4dd992e392311a4c5fbf64edf06483b4fd44660df9a21a13a7d337b218369b07"
-                  }
-                ]
-              },
-              {
-                "commit": "c_25",
-                "seq": 26,
-                "ts": "2026-09-27T00:00:00.000Z",
-                "origin": "api",
-                "actor": "agent:mcp",
-                "revisions": [
+                  },
                   {
                     "id": "d_5",
                     "path": "/practitioners/newton.md",
                     "hash": "388998c7c2178f204e49e8020be46dfd04b8d68998f03693f4613ab436d25cb2"
-                  }
-                ]
-              },
-              {
-                "commit": "c_26",
-                "seq": 27,
-                "ts": "2026-09-27T00:00:00.000Z",
-                "origin": "api",
-                "actor": "agent:mcp",
-                "revisions": [
+                  },
                   {
                     "id": "d_6",
                     "path": "/practitioners/paracelsus.md",
                     "hash": "ca10322a9c4c44b9947b7607d7c94a7137f36a15e5b1273ea25bb613b7a55681"
-                  }
-                ]
-              },
-              {
-                "commit": "c_27",
-                "seq": 28,
-                "ts": "2026-09-27T00:00:00.000Z",
-                "origin": "api",
-                "actor": "agent:mcp",
-                "revisions": [
+                  },
                   {
                     "id": "d_14",
                     "path": "/substances/salt.md",
                     "hash": "ae2a28310ba3b973374491f1d6484fbacf20ecc15da88171b17e5c2a96511160"
-                  }
-                ]
-              },
-              {
-                "commit": "c_28",
-                "seq": 29,
-                "ts": "2026-09-27T00:00:00.000Z",
-                "origin": "api",
-                "actor": "agent:mcp",
-                "revisions": [
+                  },
                   {
                     "id": "d_15",
                     "path": "/substances/sulphur.md",
@@ -8409,9 +8346,9 @@
                 ]
               }
             ],
-            "cursor": 29,
+            "cursor": 22,
             "truncated": false,
-            "head": 29
+            "head": 22
           }
         ]
       }
@@ -9173,14 +9110,6 @@
                 "ts": "2026-09-27T00:00:00.000Z",
                 "origin": "api",
                 "actor": "agent:mcp",
-                "revisions": []
-              },
-              {
-                "commit": "c_22",
-                "seq": 23,
-                "ts": "2026-09-27T00:00:00.000Z",
-                "origin": "api",
-                "actor": "agent:mcp",
                 "revisions": [
                   {
                     "id": "d_0",
@@ -9190,9 +9119,9 @@
                 ]
               }
             ],
-            "cursor": 23,
+            "cursor": 22,
             "truncated": false,
-            "head": 23
+            "head": 22
           },
           {
             "id": "rp_0",
@@ -9200,7 +9129,7 @@
             "rootPath": "<workspace>",
             "docs": 21,
             "blocks": 329,
-            "commits": 23,
+            "commits": 22,
             "openEdges": 71,
             "unconverged": 0,
             "disk": {
@@ -9211,7 +9140,7 @@
             }
           },
           {
-            "lastCommitSeq": 23,
+            "lastCommitSeq": 22,
             "lastCheckpoint": null,
             "convergent": true,
             "diskChecked": true,
@@ -10998,8 +10927,8 @@
           },
           [
             {
-              "commitId": "c_21",
-              "seq": 22,
+              "commitId": "c_20",
+              "seq": 21,
               "ts": "2026-09-27T00:00:00.000Z",
               "origin": "api",
               "kind": "inserted",
@@ -11065,7 +10994,7 @@
                   {
                     "rev": "r_21",
                     "seq": 2,
-                    "commit": "c_21",
+                    "commit": "c_20",
                     "updated_at": "2026-09-27T00:00:00.000Z",
                     "origin": "api",
                     "actor": "agent:mcp",
@@ -11090,16 +11019,7 @@
                     "id": "d_1",
                     "path": "/lab/2026-01-notes.md",
                     "hash": "ce279499609b3d84328c3361e895d66c417746fd369e3d5ef37c7d4fb2b640ed"
-                  }
-                ]
-              },
-              {
-                "commit": "c_21",
-                "seq": 22,
-                "ts": "2026-09-27T00:00:00.000Z",
-                "origin": "api",
-                "actor": "agent:mcp",
-                "revisions": [
+                  },
                   {
                     "id": "d_2",
                     "path": "/lab/2026-02-notes.md",
@@ -11108,9 +11028,9 @@
                 ]
               }
             ],
-            "cursor": 22,
+            "cursor": 21,
             "truncated": false,
-            "head": 22
+            "head": 21
           }
         ]
       }

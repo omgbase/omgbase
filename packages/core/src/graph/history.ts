@@ -328,12 +328,15 @@ export function changesSince(store: Store, repoId: string, opts: { cursor?: numb
   const digests: CommitDigest[] = page.map((c) => {
     const revs = (store.db.prepare("SELECT r.doc_id AS doc, r.path AS path, r.rendered_hash AS rendered_hash FROM revisions r WHERE r.commit_id = ?").all(c.commit_id) as { doc: string; path: string; rendered_hash: Buffer }[]).map((r) => ({ id: r.doc, path: referencePath(r.path), hash: r.rendered_hash.toString("hex") }));
     const dispCounts = store.db.prepare("SELECT kind, count(*) n FROM dispositions WHERE commit_id = ? GROUP BY kind").all(c.commit_id) as { kind: string; n: number }[];
-    // A deletion or a move writes no revision: the tombstone names the commit
-    // (`docs.deleted_commit`), a move only its reason (`move <from> -> <to>`).
+    // A deletion writes no revision: the tombstone names the commit
+    // (`docs.deleted_commit`). A move names itself by its reason (`move <from>
+    // -> <to>`) and, since spec/mutate 2.1, carries the inbound retarget's
+    // revisions under the same commit — so the move is read off the reason
+    // whether or not the commit has revisions.
     const deleted = revs.length === 0
       ? (store.db.prepare("SELECT path FROM docs WHERE deleted_commit = ? ORDER BY path").all(c.commit_id) as { path: string }[]).map((r) => referencePath(r.path))
       : [];
-    const moved = revs.length === 0 ? parseMove(c.reason) : null;
+    const moved = parseMove(c.reason);
     const summary = renderSummary(c.origin, c.actor, revs, dispCounts, { deleted, moved: moved ? { from: referencePath(moved.from), to: referencePath(moved.to) } : null });
     return { commit: c.commit_id, seq: c.seq, ts: c.ts, origin: c.origin, actor: c.actor, summary, revisions: revs };
   });
@@ -489,9 +492,11 @@ function parseMove(reason: string | null): { from: string; to: string } | null {
 
 /**
  * One line per commit: `<origin>[(<actor>)]: <paths> — <n> <kind>, …`. A
- * commit that touched no revision — a document deletion (observed or api) or a
- * move — says so instead: `deleted <path>` / `moved <from> → <to>`
- * (spec/cli §6 `log`; the summary is unpinned by spec/surface).
+ * commit that touched no revision — a document deletion (observed or api) —
+ * says so instead: `deleted <path>`. A move says `moved <from> → <to>`, and
+ * when it also rewrote the inbound sources (spec/mutate §6, 2.1) their paths
+ * follow: `moved a → b; /index.md — 31 edited` (spec/cli §6 `log`; the summary
+ * is unpinned by spec/surface).
  */
 function renderSummary(
   origin: string,
@@ -501,10 +506,8 @@ function renderSummary(
   extra: { deleted: string[]; moved: { from: string; to: string } | null } = { deleted: [], moved: null },
 ): string {
   let subject = revs.map((r) => r.path).join(", ");
-  if (revs.length === 0) {
-    if (extra.deleted.length > 0) subject = `deleted ${extra.deleted.join(", ")}`;
-    else if (extra.moved) subject = `moved ${extra.moved.from} → ${extra.moved.to}`;
-  }
+  if (extra.moved) subject = `moved ${extra.moved.from} → ${extra.moved.to}${revs.length > 0 ? `; ${subject}` : ""}`;
+  else if (revs.length === 0 && extra.deleted.length > 0) subject = `deleted ${extra.deleted.join(", ")}`;
   const parts = disp.filter((d) => d.kind !== "same").map((d) => `${d.n} ${d.kind}`);
   const detail = parts.length > 0 ? ` — ${parts.join(", ")}` : "";
   if (origin === "api" || origin === "import") return `${origin}(${actor ?? "?"}): ${subject}${detail}`;

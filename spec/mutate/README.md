@@ -273,30 +273,41 @@ Result   { results: [{ ids, removed?, merged_into? }], revisions: [{ id, path, h
    spec's storage form; the surface roots it) and `hex(sha256(render))`, the
    hash the committed revision will carry (2.0; `{ doc, path }` before).
    `dry_run` returns here with `committed: false`.
-5. **Commit**, per loaded document in load order, under the writer lock when
-   a workspace is given:
-   - **file-CAS**: if the doc store has bytes at the path and the doc has a
-     `file_hash`, they must match; else the on-disk bytes are ingested as an
-     `observed` commit through the reconciling path (`spec/store` §5) and
-     `sync_conflict` (retriable) is raised.
-   - write the rendered bytes (atomic: temp file + rename; a headless doc
-     store does nothing);
-   - **ingest** the rendered bytes as `spec/store` §5.4 with `origin =
-     "api"`, `actor`, `reason`, and the **known-id resolver**: the re-parsed
-     body gets the tree's ids by positional key (`"/i/j"`; a position with
-     no id mints — impossible under the round-trip law), dispositions
-     `{ kind: edited if the id was live before else inserted, confidence: 1,
-     reason: "api", matcher_v: null, detail: {} }` for every block (there is
-     **no `deleted` disposition row** on the api path), `deleted` = the
-     prior live ids no longer present (pooled per `spec/store` §5.4 step 7),
-     and `cross_doc_ids` = the ids new to this document that were live
-     elsewhere (a cross-document move), so step 8 evicts the source's row
-     whichever document commits first (§10);
-   - refresh the freshness stat cache.
+5. **Commit**, under the writer lock when a workspace is given (2.1; per
+   document before):
+   - **(a) file-CAS** every loaded document, in load order, before anything
+     is written: if the doc store has bytes at the path and the doc has a
+     `file_hash`, they must match; on the first mismatch the on-disk bytes
+     are ingested as an `observed` commit through the reconciling path
+     (`spec/store` §5) and `sync_conflict` (retriable) is raised — nothing
+     written, nothing committed, no `api` commit row;
+   - **(b) write** every rendered file (atomic: temp file + rename; a
+     headless doc store does nothing);
+   - **(c) in one transaction**: one commit row (`origin = "api"`, `actor`,
+     `reason`, `checkpoint_id = NULL`, `ops = NULL`), then per document in
+     load order `spec/store` §5.4 steps 1–4 and 6–13 naming that commit
+     (`spec/store` §5.4 "The api path") with the **known-id resolver**: the
+     re-parsed body gets the tree's ids by positional key (`"/i/j"`; a
+     position with no id mints — impossible under the round-trip law),
+     dispositions `{ kind: edited if the id was live before else inserted,
+     confidence: 1, reason: "api", matcher_v: null, detail: {} }` for every
+     block (there is **no `deleted` disposition row** on the api path),
+     `deleted` = the prior live ids no longer present (pooled per
+     `spec/store` §5.4 step 7), and `cross_doc_ids` = the ids new to this
+     document that were live elsewhere (a cross-document move), so step 8
+     evicts the source's row whichever document commits first (§10); then
+     refresh the freshness stat cache. Mint order: one `c`, then per
+     document `r`, `x`, `e`.
+   A failure in (c) rolls back every document — no commit row, no revision,
+   no block row of the request survives — while the files written in (b)
+   are ahead of the database until the next observation heals them as
+   `observed` commits (§10).
    `committed: true`.
 
-Atomicity is per request up to the commit phase; a `sync_conflict` in the
-commit of the *n*-th document leaves the earlier documents committed (§10).
+Atomicity is per request: one transaction, one `commits` row, one revision
+per loaded document (2.1; one transaction and one commit per document
+before — `commit::conflict-on-third-doc-commits-nothing`,
+`changesets::multi-doc-changeset`).
 
 ## 5. Macros
 
@@ -330,19 +341,26 @@ All are `api` commits with a generated `reason`.
   reference's YAML emitter — §10); a file already on disk → `path_taken`;
   write; ingest with the **reconciling** resolver (`reason: "create <path>"`).
 - **`docs_move { doc, to_path, retarget_inbound? = true }`**: `doc_missing`;
-  `path_taken` if a live doc or a file exists at the destination; rename the
-  file (or write the bytes when the source file is absent); in one
-  transaction: an `api` commit (`reason: "move <from> -> <to>"`, no revision),
-  `docs.path` and the current revision's `path` updated, every open edge
-  from **another** document into this one re-pointed to `phantom:<old
-  path>`, a self-document edge re-pointed only when its link names the path
-  (a pure fragment stays), affected rollups rebuilt, phantoms at the new
-  path adopted. Then, unless `retarget_inbound` is `false`, the deepest hit
-  block per inbound link is rewritten (relative forms against the source's
-  current directory) as one follow-up changeset (`reason: "retarget inbound
-  links <from> -> <to>"`) — a move means "same document, new place", so the
-  authored links follow it by default (1.3); `retarget_inbound: false` is
-  the opt-out for the rarer intent that the old path become unbound. The
+  `path_taken` if a live doc or a file exists at the destination; the
+  inbound links that name the old path are read and, unless
+  `retarget_inbound` is `false`, the deepest hit block per inbound link is
+  rewritten in memory as §4 steps 1–4 (relative forms against the source's
+  current directory; the moved document, when it links to itself by path,
+  is a source too and renders under the NEW path); the file is renamed (or
+  the bytes written when the source file is absent); then **in one
+  transaction with the retarget** (2.1): one `api` commit (`reason: "move
+  <from> -> <to>"`), `docs.path` and the current revision's `path` updated,
+  every open edge from **another** document into this one re-pointed to
+  `phantom:<old path>`, a self-document edge re-pointed only when its link
+  names the path (a pure fragment stays), affected rollups rebuilt,
+  phantoms at the new path adopted, and then each rewritten source's
+  revision as §4 step 5(c) under that same commit (so its links resolve to
+  the moved document, not a phantom) — a move means "same document, new
+  place", so the authored links follow it by default (1.3);
+  `retarget_inbound: false` is the opt-out for the rarer intent that the
+  old path become unbound (the commit then carries no revision). Before 2.1
+  the retarget was a second commit (`reason: "retarget inbound links <from>
+  -> <to>"`); that reason no longer appears in history. The
   result lists the still-dangling inbound links (with the default: the
   frontmatter relations, which are never rewritten — `docs_set_meta` them)
   and, when the rewrite ran, `retargeted { blocks, docs }` (empty lists when
@@ -554,8 +572,22 @@ and `files[path] == reconstruct(doc)`; then the projection deep-equals
   discarded (a `list` wrapper whose items are spliced into a list keeps its
   minted id unused; a `list_item` wrapped from a bare block mints a second
   id). The fixture minter shows the gaps.
-- **Pinned — commit-phase atomicity is per document.** A `sync_conflict` on
-  the second document of a changeset leaves the first committed.
+- **Fixed (2.1) — commit-phase atomicity was per document.** A
+  `sync_conflict` on the second document of a changeset left the first
+  committed, each document minted its own `commits` row, and a `docs_move`
+  with retargets was two commits. A changeset is now one transaction, one
+  commit, N revisions (`commit::conflict-on-third-doc-commits-nothing`:
+  the file-CAS of the third document fails before any file is written, so
+  the first two keep their bytes and rows and only the dirty file's
+  `observed` commit lands; `changesets::multi-doc-changeset`,
+  `docs::move-retarget-inbound`).
+- **Pinned (2.1) — a failed commit leaves every written file ahead of the
+  database.** §4 step 5 writes the files (b) before the transaction (c); a
+  failure inside (c) rolls the database back and the files stay as
+  rendered, so the next observation of each (`spec/store` §5) heals it as
+  an `observed` commit through the reconciling resolver — the intent's
+  actor, reason and known ids are lost for that document. A DB-first
+  materialization that keeps the intent is a later store major.
 - **Pinned — a container update re-mints its children** unless `child_ids`
   is supplied; the planner supplies it, hand-authored changesets rarely do.
 - **Pinned — `checked` on a `list_item` retypes it to `task`** even when the
@@ -568,12 +600,29 @@ and `files[path] == reconstruct(doc)`; then the projection deep-equals
   Fixtures pin flat mappings of strings, numbers, booleans and string lists
   only; anything a port's emitter formats differently is out of the
   fixtures.
-- **Pinned — `docs_move` records a commit with no revision**, so a doc's
-  revision `seq` does not advance on a move although `revisions.path` is
-  rewritten in place for the current revision only.
+- **Pinned — `docs_move` records a commit with no revision of the moved
+  document** (2.1: with retargets, one revision per rewritten source under
+  the move's reason), so a doc's revision `seq` does not advance on a move
+  — unless it is itself a retarget source (it links to itself by path) —
+  although `revisions.path` is rewritten in place for the current revision
+  only.
 
 ## Decisions
 
+- 2026-10-12, mutate 2.1: a request commits in one transaction with one
+  `commits` row and one revision per loaded document (§4 step 5), the
+  file-CAS of every document runs before any file is written, and
+  `docs_move` commits its path change and the inbound retarget as one
+  commit under `move <from> -> <to>` (§6). Foundation step 3 of the effect
+  planner (after the writer-lock and transaction-hygiene steps): a
+  changeset that is half committed has no honest `changes_since` digest,
+  and the planner needs one commit to hang a plan on. What an op does
+  changed (atomicity, commit shape in history), the request/response shapes
+  did not: a minor. Fixtures: `commit::conflict-on-third-doc-keeps-first-two`
+  renamed `conflict-on-third-doc-commits-nothing` (nothing of the request
+  lands); the multi-document `changesets` cases and `docs::move-retarget-
+  inbound`/`move-default-retargets` re-point their second document's rows
+  at the shared commit and renumber later `c_` ids; nothing else.
 - 2026-10-11, mutate 2.0 (surface 3.0 batch 3): the renamed keys are bare —
   `revisions: [{ id, path, hash }]`, the opset `target: { id, path }` and
   `precondition: { id, path, base_revision, hash }`, `stale_expectation`/

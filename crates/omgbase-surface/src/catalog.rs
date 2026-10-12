@@ -2361,9 +2361,11 @@ fn doc_op_json(res: &omgbase_store::DocOpResult) -> Json {
 /// in the storage form; every revision `path` is rooted here, and so is the
 /// summary's subject — the reference composes `renderSummary` from rooted
 /// paths, so the same line reads `observed: /a.md — 3 inserted`,
-/// `api(human:spec): deleted /a.md`, `api(human:spec): moved /a.md → /b.md`.
-/// The subject is the text between the first `: ` and the ` — ` detail (or
-/// the end): a comma-joined path list, `deleted <paths>` or `moved <from> → <to>`.
+/// `api(human:spec): deleted /a.md`, `api(human:spec): moved /a.md → /b.md`,
+/// `api(human:spec): moved /a.md → /b.md; /index.md — 31 edited` (a move
+/// with its retarget, mutate 2.1). The subject is the text between the first
+/// `: ` and the ` — ` detail (or the end): a comma-joined path list,
+/// `deleted <paths>`, `moved <from> → <to>` or `moved <from> → <to>; <paths>`.
 fn root_changes_page(mut page: Json) -> Json {
     let Some(digests) = page.get_mut("digests").and_then(Json::as_array_mut) else {
         return page;
@@ -2404,9 +2406,18 @@ fn root_summary(summary: &str) -> String {
     let subject = if let Some(paths) = subject.strip_prefix("deleted ") {
         format!("deleted {}", root_list(paths))
     } else if let Some(mv) = subject.strip_prefix("moved ") {
-        match mv.split_once(" → ") {
+        // `moved <from> → <to>`, with the retarget's sources after a `; `.
+        let (mv, rest) = match mv.split_once("; ") {
+            Some((mv, rest)) => (mv, Some(rest)),
+            None => (mv, None),
+        };
+        let moved = match mv.split_once(" → ") {
             Some((from, to)) => format!("moved {} → {}", reference_path(from), reference_path(to)),
             None => format!("moved {mv}"),
+        };
+        match rest {
+            Some(rest) => format!("{moved}; {}", root_list(rest)),
+            None => moved,
         }
     } else {
         root_list(subject)
@@ -3011,6 +3022,10 @@ mod tests {
         assert_eq!(
             root_summary("api(human:spec): moved a.md → b/a.md"),
             "api(human:spec): moved /a.md → /b/a.md"
+        );
+        assert_eq!(
+            root_summary("api(human:spec): moved a.md → b/a.md; index.md, c.md — 31 edited"),
+            "api(human:spec): moved /a.md → /b/a.md; /index.md, /c.md — 31 edited"
         );
         assert_eq!(root_summary("api(?): x.md"), "api(?): /x.md");
         assert_eq!(root_summary("observed: "), "observed: ");

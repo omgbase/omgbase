@@ -682,25 +682,35 @@ export function checkInvariants(store: Store, repoId: string, lastSource: Readon
   }
 
   // ---- I7 dispositions ----------------------------------------------------------------
-  // Every disposition names an existing commit. For each live doc's CURRENT
-  // commit — the one state the rows can still vouch for — a disposition on a
-  // block that survives the commit (every kind but `deleted` / `merged_into`)
-  // names a live row of that doc, and a `deleted` / `merged_into` one names no
-  // live row of that doc.
+  // Every disposition names an existing commit. For each commit that is the
+  // CURRENT commit of at least one live doc — the one state the rows can still
+  // vouch for — take the live docs whose current revision it wrote (one on the
+  // observe path; N for an api changeset, spec/store §5.4 "The api path"): a
+  // disposition on a block that survives the commit (every kind but `deleted` /
+  // `merged_into`) names a live row of one of those docs, and a `deleted` /
+  // `merged_into` one names no live row of any of them.
   const dispositions = db
     .prepare("SELECT x.commit_id, x.block_id, x.kind FROM dispositions x JOIN commits c ON c.commit_id = x.commit_id WHERE c.repo_id = ?")
     .all(repoId) as { commit_id: string; block_id: string; kind: string }[];
   for (const x of dispositions) if (!commitById.has(x.commit_id)) problems.push(`I7: disposition ${x.block_id}/${x.kind} names a missing commit ${x.commit_id}`);
+  const currentDocsOf = new Map<string, Set<string>>();
   for (const d of docs) {
     if (d.deleted_commit !== null || d.current_rev === null) continue;
     const rev = revById.get(d.current_rev);
     if (!rev) continue;
+    let set = currentDocsOf.get(rev.commit_id);
+    if (!set) currentDocsOf.set(rev.commit_id, (set = new Set()));
+    set.add(d.doc_id);
+  }
+  for (const [commitId, docIds] of currentDocsOf) {
+    const label = [...docIds].sort().join(",");
     for (const x of dispositions) {
-      if (x.commit_id !== rev.commit_id || x.block_id === "DOC") continue;
+      if (x.commit_id !== commitId || x.block_id === "DOC") continue;
       const row = liveRowOf.get(x.block_id) as { doc_id: string } | undefined;
+      const liveHere = row !== undefined && docIds.has(row.doc_id);
       const gone = x.kind === "deleted" || x.kind === "merged_into";
-      if (gone && row?.doc_id === d.doc_id) problems.push(`I7: ${x.kind} block ${x.block_id} of ${x.commit_id} is still live in ${d.doc_id}`);
-      if (!gone && row?.doc_id !== d.doc_id) problems.push(`I7: ${x.kind} block ${x.block_id} of ${x.commit_id} is not live in ${d.doc_id}`);
+      if (gone && liveHere) problems.push(`I7: ${x.kind} block ${x.block_id} of ${x.commit_id} is still live in ${row.doc_id}`);
+      if (!gone && !liveHere) problems.push(`I7: ${x.kind} block ${x.block_id} of ${x.commit_id} is not live in ${label}`);
     }
   }
 

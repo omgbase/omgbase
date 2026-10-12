@@ -1691,6 +1691,10 @@ fn check_invariants(
             ));
         }
     }
+    // The live docs whose current revision each commit wrote: one on the
+    // observe path, N for an `api` changeset (spec/store §5.4 "The api
+    // path", 13.7).
+    let mut current_docs_of: BTreeMap<&str, BTreeSet<&str>> = BTreeMap::new();
     for d in &docs {
         let (Some(current_rev), None) = (&d.current_rev, &d.deleted_commit) else {
             continue;
@@ -1698,22 +1702,29 @@ fn check_invariants(
         let Some(rev) = rev_by_id.get(current_rev.as_str()) else {
             continue;
         };
+        current_docs_of
+            .entry(rev.commit_id.as_str())
+            .or_default()
+            .insert(d.doc_id.as_str());
+    }
+    for (commit, doc_ids) in &current_docs_of {
+        let label = doc_ids.iter().copied().collect::<Vec<_>>().join(",");
         for (commit_id, block_id, kind) in &dispositions {
-            if *commit_id != rev.commit_id || block_id == "DOC" {
+            if commit_id != commit || block_id == "DOC" {
                 continue;
             }
             let row = live_doc_of(block_id);
+            let live_here = row.as_deref().is_some_and(|d| doc_ids.contains(d));
             let gone = kind == "deleted" || kind == "merged_into";
-            if gone && row.as_deref() == Some(d.doc_id.as_str()) {
+            if gone && live_here {
                 problems.push(format!(
                     "I7: {kind} block {block_id} of {commit_id} is still live in {}",
-                    d.doc_id
+                    row.as_deref().unwrap_or("")
                 ));
             }
-            if !gone && row.as_deref() != Some(d.doc_id.as_str()) {
+            if !gone && !live_here {
                 problems.push(format!(
-                    "I7: {kind} block {block_id} of {commit_id} is not live in {}",
-                    d.doc_id
+                    "I7: {kind} block {block_id} of {commit_id} is not live in {label}"
                 ));
             }
         }

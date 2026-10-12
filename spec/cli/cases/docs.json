@@ -310,7 +310,7 @@
           ],
           "expect": {
             "exit": 0,
-            "stdout": "#21 api      api(human:spec): moved /texts/mutus-liber.md → /texts/silent-book.md\n#22 api      api(human:spec): /index.md — 31 edited\n"
+            "stdout": "#21 api      api(human:spec): moved /texts/mutus-liber.md → /texts/silent-book.md; /index.md — 31 edited\n"
           }
         }
       ]

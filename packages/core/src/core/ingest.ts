@@ -162,273 +162,320 @@ function flatten(
   });
 }
 
-/** Ingest a single file's content into the store as one observed commit. */
+/** The options of `ingestFile` — one observed/api/import commit of one file. */
+export interface IngestFileOptions {
+  ts?: string;
+  /** Commit provenance. `observed` = a file edit picked up by sync; `api` = an intent write (apply/docs_*), which should also carry `actor`/`reason`; `import` = bulk ingest with no retro history. */
+  origin?: "observed" | "import" | "api";
+  actor?: string | null;
+  reason?: string | null;
+  resolveIds?: IdResolver;
+  format?: string;
+  /** A tree already parsed from `content` (via `parseForIngest`) — skips the
+   * re-parse. The caller guarantees it is the parse of these exact bytes. */
+  parsed?: BlockTree;
+  /** The document's `conflicted` flag (git conflict markers in the bytes),
+   * written in the same statement as the current-revision pointers so the
+   * flag and the revision it describes land in one transaction (spec/store
+   * §5.4 step 14). Absent ⇒ the column is left untouched — the observe path
+   * sets it on every commit; api writes never touch it. */
+  conflicted?: boolean;
+}
+
+/** The options of `ingestInto`: the commit the revision hangs off is the
+ * caller's (spec/store §5.4 step 5 ran already), and `ts` is that commit's
+ * timestamp (the pool expiry is computed from it). */
+export interface IngestIntoOptions {
+  ts: string;
+  /** The `commits` row this ingest writes its revision, block rows, dispositions, properties and edges under. */
+  commitId: string;
+  resolveIds?: IdResolver | undefined;
+  format?: string | undefined;
+  parsed?: BlockTree | undefined;
+  conflicted?: boolean | undefined;
+}
+
+/**
+ * Ingest a single file's content into the store as ONE commit of its own:
+ * mint the commit row, then `ingestInto` it, in one transaction. The
+ * observe path (`sync/observe.ts`, attach, recovery, the driver) commits one
+ * member per call this way; the api path (`mutate/commit.ts`) instead opens
+ * one transaction and one commit for a whole request and calls `ingestInto`
+ * per document (spec/store §5.4 "The api path", spec/mutate §4 step 5).
+ */
 export function ingestFile(
   store: Store,
   repoId: string,
   path: string,
   content: string,
-  opts: {
-    ts?: string;
-    /** Commit provenance. `observed` = a file edit picked up by sync; `api` = an intent write (apply/docs_*), which should also carry `actor`/`reason`; `import` = bulk ingest with no retro history. */
-    origin?: "observed" | "import" | "api";
-    actor?: string | null;
-    reason?: string | null;
-    resolveIds?: IdResolver;
-    format?: string;
-    /** A tree already parsed from `content` (via `parseForIngest`) — skips the
-     * re-parse. The caller guarantees it is the parse of these exact bytes. */
-    parsed?: BlockTree;
-    /** The document's `conflicted` flag (git conflict markers in the bytes),
-     * written in the same statement as the current-revision pointers so the
-     * flag and the revision it describes land in one transaction (spec/store
-     * §5.4 step 14). Absent ⇒ the column is left untouched — the observe path
-     * sets it on every commit; api writes never touch it. */
-    conflicted?: boolean;
-  } = {},
+  opts: IngestFileOptions = {},
 ): IngestResult {
   const ts = opts.ts ?? new Date().toISOString();
   const origin = opts.origin ?? "observed";
+  return store.write((db): IngestResult => {
+    const commit = newCommit(db, { repoId, ts, origin, actor: opts.actor ?? null, reason: opts.reason ?? null });
+    return ingestInto(db, repoId, path, content, {
+      ts,
+      commitId: commit.commitId,
+      resolveIds: opts.resolveIds,
+      format: opts.format,
+      parsed: opts.parsed,
+      conflicted: opts.conflicted,
+    });
+  });
+}
+
+/**
+ * spec/store §5.4 steps 1–4 and 6–14 for one document under an EXISTING
+ * commit row, inside the caller's transaction (`db` is the connection the
+ * caller's `store.write` handed it; nothing here opens one). The revision,
+ * the block rows' `created_commit`, the pool snapshot, the dispositions and
+ * block changes, the properties and the edge intervals all name `commitId`.
+ */
+export function ingestInto(
+  db: Database,
+  repoId: string,
+  path: string,
+  content: string,
+  opts: IngestIntoOptions,
+): IngestResult {
+  const { ts, commitId } = opts;
   const adapter = adapterForPath(path);
   const format = opts.format ?? adapter?.format ?? "markdown";
+  const tree: BlockTree = opts.parsed ?? (adapter ? adapter.parse(content) : parseTree(content));
+  const { fmBlock, rest } = extractFrontmatter(tree.children);
 
-  return store.write((db): IngestResult => {
-    const tree: BlockTree = opts.parsed ?? (adapter ? adapter.parse(content) : parseTree(content));
-    const { fmBlock, rest } = extractFrontmatter(tree.children);
+  // Frontmatter blob (markdown-specific) preserved for revision history.
+  const fmBlobHex = fmBlock ? putBlob(db, fmBlock.raw) : null;
+  // The exact separator bytes between the frontmatter block and the first body
+  // block (the frontmatter block's trailing trivia). Persisted so the body
+  // reconstructs byte-for-byte instead of assuming a canonical blank line.
+  // NULL when there is no frontmatter.
+  const fmTrivia = fmBlock ? fmBlock.trivia : null;
 
-    // Frontmatter blob (markdown-specific) preserved for revision history.
-    const fmBlobHex = fmBlock ? putBlob(db, fmBlock.raw) : null;
-    // The exact separator bytes between the frontmatter block and the first body
-    // block (the frontmatter block's trailing trivia). Persisted so the body
-    // reconstructs byte-for-byte instead of assuming a canonical blank line.
-    // NULL when there is no frontmatter.
-    const fmTrivia = fmBlock ? fmBlock.trivia : null;
+  // Document property bag: whole-document metadata for the formats whose
+  // adapter extracts one (YAML, JSON); for Markdown — whose adapter has no
+  // `extractMetadata` — the YAML of the `frontmatter` block and nothing else
+  // (spec/properties §3.1: a document whose first block is not `frontmatter`
+  // has no frontmatter rows, whatever else its bytes resemble). Flattened into
+  // the properties table below (source=frontmatter); also drives frontmatter
+  // edge extraction.
+  const metadata = adapter?.extractMetadata
+    ? (adapter.extractMetadata(content) ?? {})
+    : parseFrontmatter(fmBlock);
 
-    // Document property bag: whole-document metadata for the formats whose
-    // adapter extracts one (YAML, JSON); for Markdown — whose adapter has no
-    // `extractMetadata` — the YAML of the `frontmatter` block and nothing else
-    // (spec/properties §3.1: a document whose first block is not `frontmatter`
-    // has no frontmatter rows, whatever else its bytes resemble). Flattened into
-    // the properties table below (source=frontmatter); also drives frontmatter
-    // edge extraction.
-    const metadata = adapter?.extractMetadata
-      ? (adapter.extractMetadata(content) ?? {})
-      : parseFrontmatter(fmBlock);
+  // Upsert the document row.
+  let doc = db.prepare("SELECT doc_id, deleted_commit FROM docs WHERE repo_id = ? AND path = ?").get(repoId, path) as
+    | { doc_id: string; deleted_commit: string | null }
+    | undefined;
+  const docId = doc?.doc_id ?? mintId("d");
+  const isNew = !doc;
+  if (!doc) {
+    db.prepare(
+      "INSERT INTO docs (doc_id, repo_id, path, format, leading_trivia, frontmatter_trivia) VALUES (?, ?, ?, ?, ?, ?)",
+    ).run(docId, repoId, path, format, tree.leadingTrivia, fmTrivia);
+    doc = { doc_id: docId, deleted_commit: null };
+    // Adopt phantom edges that pointed at this path so backlinks re-point.
+    adoptPhantoms(db, path, docId);
+  } else {
+    // A tombstoned row still owns the path's identity (spec/store §5.6
+    // "Re-creation"): bytes observed again at the path revive it — the row is
+    // live again, so reads that filter `deleted_commit IS NULL` see it and the
+    // next identical observation echo-gates instead of re-ingesting.
+    const revived = doc.deleted_commit !== null;
+    db.prepare("UPDATE docs SET format = ?, leading_trivia = ?, frontmatter_trivia = ?, deleted_commit = NULL WHERE doc_id = ?").run(format, tree.leadingTrivia, fmTrivia, docId);
+    // spec/graph §3.5: adoption happens whenever a row BECOMES live, so a
+    // revived tombstone also collects the phantom edges minted at its path
+    // while it was gone (§8 "Fixed — a revived document adopted no phantoms").
+    if (revived) adoptPhantoms(db, path, docId);
+  }
 
-    // Upsert the document row.
-    let doc = db.prepare("SELECT doc_id, deleted_commit FROM docs WHERE repo_id = ? AND path = ?").get(repoId, path) as
-      | { doc_id: string; deleted_commit: string | null }
-      | undefined;
-    const docId = doc?.doc_id ?? mintId("d");
-    const isNew = !doc;
-    if (!doc) {
-      db.prepare(
-        "INSERT INTO docs (doc_id, repo_id, path, format, leading_trivia, frontmatter_trivia) VALUES (?, ?, ?, ?, ?, ?)",
-      ).run(docId, repoId, path, format, tree.leadingTrivia, fmTrivia);
-      doc = { doc_id: docId, deleted_commit: null };
-      // Adopt phantom edges that pointed at this path so backlinks re-point.
-      adoptPhantoms(db, path, docId);
-    } else {
-      // A tombstoned row still owns the path's identity (spec/store §5.6
-      // "Re-creation"): bytes observed again at the path revive it — the row is
-      // live again, so reads that filter `deleted_commit IS NULL` see it and the
-      // next identical observation echo-gates instead of re-ingesting.
-      const revived = doc.deleted_commit !== null;
-      db.prepare("UPDATE docs SET format = ?, leading_trivia = ?, frontmatter_trivia = ?, deleted_commit = NULL WHERE doc_id = ?").run(format, tree.leadingTrivia, fmTrivia, docId);
-      // spec/graph §3.5: adoption happens whenever a row BECOMES live, so a
-      // revived tombstone also collects the phantom edges minted at its path
-      // while it was gone (§8 "Fixed — a revived document adopted no phantoms").
-      if (revived) adoptPhantoms(db, path, docId);
-    }
+  // Assign block ids via the resolver when supplied (it reconciles against
+  // the prior revision — for a new doc that's an empty old tree, so all blocks
+  // mint — and also drives edge extraction). Without a resolver, fresh-mint.
+  const resolved = opts.resolveIds
+    ? opts.resolveIds(rest, isNew ? null : docId)
+    : { assigned: assignIds(rest), dispositions: [] as DispositionRow[], deleted: [] as string[] };
+  const assigned = resolved.assigned;
+  const rootTreeHex = writeBlockTree(db, assigned);
 
-    // Assign block ids via the resolver when supplied (it reconciles against
-    // the prior revision — for a new doc that's an empty old tree, so all blocks
-    // mint — and also drives edge extraction). Without a resolver, fresh-mint.
-    const resolved = opts.resolveIds
-      ? opts.resolveIds(rest, isNew ? null : docId)
-      : { assigned: assignIds(rest), dispositions: [] as DispositionRow[], deleted: [] as string[] };
-    const assigned = resolved.assigned;
-    const rootTreeHex = writeBlockTree(db, assigned);
-
-    const commit = newCommit(db, { repoId, ts, origin, actor: opts.actor ?? null, reason: opts.reason ?? null });
-    const renderedHash = sha256(content);
-    const rev = writeRevision(db, {
-      docId,
-      rootTreeHex,
-      frontmatterBlobHex: fmBlobHex,
-      renderedHash,
-      path,
-      commitId: commit.commitId,
-    });
-
-    // Snapshot deleted blocks into the resurrection pool BEFORE dropping the
-    // doc's rows (the ingest rebuilds current-state blocks wholesale).
-    if (resolved.deleted.length > 0) {
-      const expires = new Date(Date.parse(ts) + 30 * 24 * 3600 * 1000).toISOString();
-      const pool = db.prepare(
-        `INSERT OR REPLACE INTO resurrection_pool (block_id, repo_id, doc_id, raw_hash, norm_hash, type, deleted_commit, expires_ts)
-         SELECT block_id, repo_id, doc_id, raw_hash, norm_hash, type, ?, ? FROM blocks WHERE block_id = ? AND doc_id = ?`,
-      );
-      for (const id of resolved.deleted) pool.run(commit.commitId, expires, id, docId);
-    }
-
-    // Ids arriving from ANOTHER document — a cross-document move whose source
-    // commits later in this checkpoint (or was tombstoned in it), or a
-    // resurrection out of a tombstoned doc whose rows still sit in `blocks` —
-    // must not collide on the block_id primary key. Evict the foreign row (and
-    // its FTS entry when live) and drop any pool row: the id is live here now.
-    const incoming = [...(resolved.crossDocIds ?? []), ...(resolved.consumedPool ?? [])];
-    if (incoming.length > 0) evictForeignBlockRows(db, docId, incoming);
-
-    // Refresh current-state blocks (clear + repopulate with carried/minted ids).
-    // FTS is external-content: delete old index rows before dropping blocks.
-    ftsDeleteDoc(db, docId);
-    db.prepare("DELETE FROM blocks WHERE doc_id = ?").run(docId);
-    const rows: BlockRow[] = [];
-    flatten(assigned, null, 0, "/", rows);
-    const insert = db.prepare(
-      `INSERT INTO blocks
-         (block_id, repo_id, doc_id, parent_block, order_key, ordinal, depth,
-          ancestor_path, type, attrs, text, raw_hash, norm_hash, trivia_hash, created_commit)
-       VALUES
-         (@blockId, @repoId, @docId, @parentBlock, @orderKey, @ordinal, @depth,
-          @ancestorPath, @type, @attrs, @text, @rawHash, @normHash, @triviaHash, @createdCommit)`,
-    );
-    for (const r of rows) {
-      insert.run({ ...r, repoId, docId, createdCommit: commit.commitId });
-    }
-    ftsIndexDoc(db, docId);
-    rebuildSections(db, docId);
-
-    // Node projection: adapter-provided semantic features from parsed blocks,
-    // plus engine-derived `md:section` nodes from the (just-rebuilt) sections
-    // table. Written together in one pass (writeDocNodes clears + repopulates).
-    const propertyRows: PropertyRow[] = [];
-    const sectionNodes = projectSectionNodes(db, docId);
-    if (adapter?.projectNodes) {
-      // Zip assigned block ids onto the parsed blocks so projectNodes can anchor
-      // each node to its own block (the parsed RawBlocks are pre-identity).
-      const rawBlocks = zipAssignedIds(rest, assigned);
-      const projected = adapter.projectNodes(rawBlocks);
-      // Keep only nodes anchored to a real assigned block id.
-      const idSet = collectBlockIds(assigned);
-      const withIds = projected.map((n) => ({
-        ...n,
-        blockId: n.blockId && idSet.has(n.blockId) ? n.blockId : "",
-      }));
-      // Adapters record spans as string indices; the store keeps byte offsets
-      // into the block's UTF-8 raw (spec/graph §2.3), so convert here — the one
-      // place that has both the nodes and the raws they index.
-      const rawById = collectRaws(assigned);
-      const byteSpanned = toByteSpans(withIds, (id) => rawById.get(id));
-      writeDocNodes(db, repoId, docId, [...byteSpanned, ...sectionNodes]);
-
-      // Inline properties (key:: value) → property rows (source=inline). The
-      // authored shape within the inline source drives `card`: a key that occurs
-      // exactly once in the document is `scalar` (so `element == "fire"` can
-      // match a lone `element:: fire`); a key that repeats is `list`. Repeats
-      // accumulate as ord-indexed rows in document order (block ordinal, then
-      // in-block position — the order withIds already carries). Effective bare-
-      // key cardinality (a frontmatter+inline collision) is decided at query
-      // time by the single-value gate on scalar comparisons (see compile.ts),
-      // not here — each source stays honest to its own authored shape.
-      const inlineFields = withIds.filter((n) => n.kind === "md:inline_field" && n.name);
-      const inlineCounts = new Map<string, number>();
-      for (const n of inlineFields) inlineCounts.set(n.name!, (inlineCounts.get(n.name!) ?? 0) + 1);
-      const inlineOrd = new Map<string, number>();
-      for (const n of inlineFields) {
-        const ord = inlineOrd.get(n.name!) ?? 0;
-        inlineOrd.set(n.name!, ord + 1);
-        propertyRows.push({
-          source: "inline",
-          blockId: n.blockId || null,
-          key: n.name!,
-          card: (inlineCounts.get(n.name!) ?? 0) > 1 ? "list" : "scalar",
-          ord,
-          ...typedInlineValue(n.value),
-        });
-      }
-    } else if (sectionNodes.length > 0) {
-      // No adapter node projection, but the document still has sections.
-      writeDocNodes(db, repoId, docId, sectionNodes);
-    }
-
-    // Frontmatter → property rows (source=frontmatter). Flatten nested maps to
-    // dotted keys, arrays to ord-indexed list rows, scalars to a scalar row.
-    for (const r of flattenFrontmatter(metadata)) {
-      propertyRows.push({ source: "frontmatter", blockId: null, ...r });
-    }
-
-    // Computed → property rows (source=computed). Engine-derived $-intrinsics
-    // ($title, $tags) from the adapter; never claim authored keys.
-    if (adapter?.computeProperties) {
-      const computed = adapter.computeProperties(rest, metadata);
-      for (const r of flattenComputed(computed)) {
-        propertyRows.push({ source: "computed", blockId: null, ...r });
-      }
-    }
-
-    writeDocProperties(db, repoId, docId, commit.commitId, propertyRows);
-
-    // Edge extraction + interval maintenance (05 §2), if the resolver supplies
-    // an extractor. Runs in this commit transaction.
-    if (resolved.extractEdges) {
-      const extracted = resolved.extractEdges(docId, metadata);
-      maintainEdges(db, repoId, docId, commit.commitId, extracted);
-    }
-
-    // Persist dispositions + block-history projection. With a resolver, use the
-    // real reconciliation dispositions; otherwise record every block as inserted.
-    const dispositions: DispositionRow[] =
-      resolved.dispositions.length > 0 || opts.resolveIds
-        ? resolved.dispositions
-        : rows.map((r) => ({ blockId: r.blockId, kind: "inserted", confidence: null, reason: null, matcherV: null, detail: {} }));
-
-    const insDisp = db.prepare(
-      `INSERT OR IGNORE INTO dispositions (commit_id, block_id, kind, confidence, reason, matcher_v, detail)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    );
-    const bc = db.prepare("INSERT OR IGNORE INTO block_changes (block_id, commit_id, kind) VALUES (?, ?, ?)");
-    for (const d of dispositions) {
-      insDisp.run(commit.commitId, d.blockId, d.kind, d.confidence, d.reason, d.matcherV, JSON.stringify(d.detail));
-      bc.run(d.blockId, commit.commitId, d.kind);
-    }
-
-    // Consumed pool rows (resurrected) are removed.
-    for (const id of resolved.consumedPool ?? []) {
-      db.prepare("DELETE FROM resurrection_pool WHERE block_id = ?").run(id);
-    }
-
-    // Update document current pointers + convergence hash (+ the conflicted
-    // flag when the caller is the observe path — one statement, one transaction).
-    const fileHash = sha256(content);
-    if (opts.conflicted === undefined) {
-      db.prepare("UPDATE docs SET current_rev = ?, file_hash = ? WHERE doc_id = ?").run(rev.revId, fileHash, docId);
-    } else {
-      db.prepare("UPDATE docs SET current_rev = ?, file_hash = ?, conflicted = ? WHERE doc_id = ?").run(rev.revId, fileHash, opts.conflicted ? 1 : 0, docId);
-    }
-
-    // Convergence check (01 §2): file bytes vs rendered revision. Two independent
-    // round-trips must both reproduce the source exactly:
-    //   1. the freshly-parsed in-memory tree (validates the parser), and
-    //   2. a reload from storage (validates that persisted blocks + trivia +
-    //      frontmatter separator tile the source — the fidelity a plain read or
-    //      an `apply` write actually depends on). Rendering only the in-memory
-    //      tree hid store→reload separator loss; reconstructContent closes that.
-    const renderFn = adapter?.render ?? render;
-    const converged =
-      fileHash.equals(renderedHash) &&
-      renderFn(tree) === content &&
-      reconstructContent(db, docId) === content;
-
-    return {
-      docId,
-      commitId: commit.commitId,
-      revId: rev.revId,
-      blockCount: rows.length,
-      converged,
-    };
+  const renderedHash = sha256(content);
+  const rev = writeRevision(db, {
+    docId,
+    rootTreeHex,
+    frontmatterBlobHex: fmBlobHex,
+    renderedHash,
+    path,
+    commitId,
   });
+
+  // Snapshot deleted blocks into the resurrection pool BEFORE dropping the
+  // doc's rows (the ingest rebuilds current-state blocks wholesale).
+  if (resolved.deleted.length > 0) {
+    const expires = new Date(Date.parse(ts) + 30 * 24 * 3600 * 1000).toISOString();
+    const pool = db.prepare(
+      `INSERT OR REPLACE INTO resurrection_pool (block_id, repo_id, doc_id, raw_hash, norm_hash, type, deleted_commit, expires_ts)
+       SELECT block_id, repo_id, doc_id, raw_hash, norm_hash, type, ?, ? FROM blocks WHERE block_id = ? AND doc_id = ?`,
+    );
+    for (const id of resolved.deleted) pool.run(commitId, expires, id, docId);
+  }
+
+  // Ids arriving from ANOTHER document — a cross-document move whose source
+  // commits later in this checkpoint (or was tombstoned in it), or a
+  // resurrection out of a tombstoned doc whose rows still sit in `blocks` —
+  // must not collide on the block_id primary key. Evict the foreign row (and
+  // its FTS entry when live) and drop any pool row: the id is live here now.
+  const incoming = [...(resolved.crossDocIds ?? []), ...(resolved.consumedPool ?? [])];
+  if (incoming.length > 0) evictForeignBlockRows(db, docId, incoming);
+
+  // Refresh current-state blocks (clear + repopulate with carried/minted ids).
+  // FTS is external-content: delete old index rows before dropping blocks.
+  ftsDeleteDoc(db, docId);
+  db.prepare("DELETE FROM blocks WHERE doc_id = ?").run(docId);
+  const rows: BlockRow[] = [];
+  flatten(assigned, null, 0, "/", rows);
+  const insert = db.prepare(
+    `INSERT INTO blocks
+       (block_id, repo_id, doc_id, parent_block, order_key, ordinal, depth,
+        ancestor_path, type, attrs, text, raw_hash, norm_hash, trivia_hash, created_commit)
+     VALUES
+       (@blockId, @repoId, @docId, @parentBlock, @orderKey, @ordinal, @depth,
+        @ancestorPath, @type, @attrs, @text, @rawHash, @normHash, @triviaHash, @createdCommit)`,
+  );
+  for (const r of rows) {
+    insert.run({ ...r, repoId, docId, createdCommit: commitId });
+  }
+  ftsIndexDoc(db, docId);
+  rebuildSections(db, docId);
+
+  // Node projection: adapter-provided semantic features from parsed blocks,
+  // plus engine-derived `md:section` nodes from the (just-rebuilt) sections
+  // table. Written together in one pass (writeDocNodes clears + repopulates).
+  const propertyRows: PropertyRow[] = [];
+  const sectionNodes = projectSectionNodes(db, docId);
+  if (adapter?.projectNodes) {
+    // Zip assigned block ids onto the parsed blocks so projectNodes can anchor
+    // each node to its own block (the parsed RawBlocks are pre-identity).
+    const rawBlocks = zipAssignedIds(rest, assigned);
+    const projected = adapter.projectNodes(rawBlocks);
+    // Keep only nodes anchored to a real assigned block id.
+    const idSet = collectBlockIds(assigned);
+    const withIds = projected.map((n) => ({
+      ...n,
+      blockId: n.blockId && idSet.has(n.blockId) ? n.blockId : "",
+    }));
+    // Adapters record spans as string indices; the store keeps byte offsets
+    // into the block's UTF-8 raw (spec/graph §2.3), so convert here — the one
+    // place that has both the nodes and the raws they index.
+    const rawById = collectRaws(assigned);
+    const byteSpanned = toByteSpans(withIds, (id) => rawById.get(id));
+    writeDocNodes(db, repoId, docId, [...byteSpanned, ...sectionNodes]);
+
+    // Inline properties (key:: value) → property rows (source=inline). The
+    // authored shape within the inline source drives `card`: a key that occurs
+    // exactly once in the document is `scalar` (so `element == "fire"` can
+    // match a lone `element:: fire`); a key that repeats is `list`. Repeats
+    // accumulate as ord-indexed rows in document order (block ordinal, then
+    // in-block position — the order withIds already carries). Effective bare-
+    // key cardinality (a frontmatter+inline collision) is decided at query
+    // time by the single-value gate on scalar comparisons (see compile.ts),
+    // not here — each source stays honest to its own authored shape.
+    const inlineFields = withIds.filter((n) => n.kind === "md:inline_field" && n.name);
+    const inlineCounts = new Map<string, number>();
+    for (const n of inlineFields) inlineCounts.set(n.name!, (inlineCounts.get(n.name!) ?? 0) + 1);
+    const inlineOrd = new Map<string, number>();
+    for (const n of inlineFields) {
+      const ord = inlineOrd.get(n.name!) ?? 0;
+      inlineOrd.set(n.name!, ord + 1);
+      propertyRows.push({
+        source: "inline",
+        blockId: n.blockId || null,
+        key: n.name!,
+        card: (inlineCounts.get(n.name!) ?? 0) > 1 ? "list" : "scalar",
+        ord,
+        ...typedInlineValue(n.value),
+      });
+    }
+  } else if (sectionNodes.length > 0) {
+    // No adapter node projection, but the document still has sections.
+    writeDocNodes(db, repoId, docId, sectionNodes);
+  }
+
+  // Frontmatter → property rows (source=frontmatter). Flatten nested maps to
+  // dotted keys, arrays to ord-indexed list rows, scalars to a scalar row.
+  for (const r of flattenFrontmatter(metadata)) {
+    propertyRows.push({ source: "frontmatter", blockId: null, ...r });
+  }
+
+  // Computed → property rows (source=computed). Engine-derived $-intrinsics
+  // ($title, $tags) from the adapter; never claim authored keys.
+  if (adapter?.computeProperties) {
+    const computed = adapter.computeProperties(rest, metadata);
+    for (const r of flattenComputed(computed)) {
+      propertyRows.push({ source: "computed", blockId: null, ...r });
+    }
+  }
+
+  writeDocProperties(db, repoId, docId, commitId, propertyRows);
+
+  // Edge extraction + interval maintenance (05 §2), if the resolver supplies
+  // an extractor. Runs in this commit transaction.
+  if (resolved.extractEdges) {
+    const extracted = resolved.extractEdges(docId, metadata);
+    maintainEdges(db, repoId, docId, commitId, extracted);
+  }
+
+  // Persist dispositions + block-history projection. With a resolver, use the
+  // real reconciliation dispositions; otherwise record every block as inserted.
+  const dispositions: DispositionRow[] =
+    resolved.dispositions.length > 0 || opts.resolveIds
+      ? resolved.dispositions
+      : rows.map((r) => ({ blockId: r.blockId, kind: "inserted", confidence: null, reason: null, matcherV: null, detail: {} }));
+
+  const insDisp = db.prepare(
+    `INSERT OR IGNORE INTO dispositions (commit_id, block_id, kind, confidence, reason, matcher_v, detail)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+  );
+  const bc = db.prepare("INSERT OR IGNORE INTO block_changes (block_id, commit_id, kind) VALUES (?, ?, ?)");
+  for (const d of dispositions) {
+    insDisp.run(commitId, d.blockId, d.kind, d.confidence, d.reason, d.matcherV, JSON.stringify(d.detail));
+    bc.run(d.blockId, commitId, d.kind);
+  }
+
+  // Consumed pool rows (resurrected) are removed.
+  for (const id of resolved.consumedPool ?? []) {
+    db.prepare("DELETE FROM resurrection_pool WHERE block_id = ?").run(id);
+  }
+
+  // Update document current pointers + convergence hash (+ the conflicted
+  // flag when the caller is the observe path — one statement, one transaction).
+  const fileHash = sha256(content);
+  if (opts.conflicted === undefined) {
+    db.prepare("UPDATE docs SET current_rev = ?, file_hash = ? WHERE doc_id = ?").run(rev.revId, fileHash, docId);
+  } else {
+    db.prepare("UPDATE docs SET current_rev = ?, file_hash = ?, conflicted = ? WHERE doc_id = ?").run(rev.revId, fileHash, opts.conflicted ? 1 : 0, docId);
+  }
+
+  // Convergence check (01 §2): file bytes vs rendered revision. Two independent
+  // round-trips must both reproduce the source exactly:
+  //   1. the freshly-parsed in-memory tree (validates the parser), and
+  //   2. a reload from storage (validates that persisted blocks + trivia +
+  //      frontmatter separator tile the source — the fidelity a plain read or
+  //      an `apply` write actually depends on). Rendering only the in-memory
+  //      tree hid store→reload separator loss; reconstructContent closes that.
+  const renderFn = adapter?.render ?? render;
+  const converged =
+    fileHash.equals(renderedHash) &&
+    renderFn(tree) === content &&
+    reconstructContent(db, docId) === content;
+
+  return {
+    docId,
+    commitId: commitId,
+    revId: rev.revId,
+    blockCount: rows.length,
+    converged,
+  };
 }
 
 // Remove another document's `blocks` row for each id in `ids` (a cross-doc move
