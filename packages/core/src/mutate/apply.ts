@@ -7,7 +7,7 @@ import { renderDoc, markContainerDirty, MutationError, type MutDoc, type MutBloc
 import { opInsert, opUpdate, opMove, opRemove, opSplit, opMerge, healTopLevelSeams, checkParentChildrenHash, type To, type Expect } from "./ops.js";
 import { withWriterLock } from "../sync/writer-lock.js";
 import { resolveDocStore, type DocStore } from "./doc-store.js";
-import { commitChangeset, type Effect } from "./commit.js";
+import { commitChangeset, readDocBase, type DocBase, type Effect } from "./commit.js";
 import { isContainerBlock } from "../format/index.js";
 
 // Changeset application (04 §2, §6). Ops apply in order across documents; later
@@ -135,6 +135,11 @@ export interface ChangesetPlan {
   /** Per loaded document in load order: its `ingest_known`, then (in a
    *  workspace) its `record_stat`. */
   effects: Effect[];
+  /** Per loaded document in load order: the row triple it was loaded against
+   *  (spec/mutate §4 step 5, 2.2) — what the commit re-validates and what a
+   *  frozen plan will carry. Each `ingest_known` effect carries its own as
+   *  `base`. */
+  preconditions: ({ id: string } & DocBase)[];
 }
 
 /** spec/mutate §4 steps 1–4: resolve, load, apply the ops in memory, render. */
@@ -145,15 +150,20 @@ export function planChangeset(store: Store, req: Omit<ApplyRequest, "dryRun" | "
   // Block ids present in each doc BEFORE any op — used to label intent
   // dispositions (edited vs inserted) on the known-id commit path.
   const priorIds = new Map<string, Set<string>>();
+  // The row triple `(path, current_rev, file_hash)` each document is loaded
+  // against — the commit's precondition (spec/mutate §4 step 5, 2.2).
+  const bases = new Map<string, DocBase>();
   const results: OpResult[] = [];
 
   const ensureDoc = (docId: string): MutDoc => {
     let d = loaded.get(docId);
     if (!d) {
-      const md = loadMutDoc(store.db, docId);
-      if (!md) throw new MutationError("doc_missing", `doc ${docId} not found`);
+      const base = readDocBase(store.db, docId);
+      const md = base ? loadMutDoc(store.db, docId) : null;
+      if (!base || !md) throw new MutationError("doc_missing", `doc ${docId} not found`);
       d = md;
       loaded.set(docId, d);
+      bases.set(docId, base);
       before.set(docId, renderDoc(d));
       const ids = store.db.prepare("SELECT block_id FROM blocks WHERE doc_id = ? AND deleted_commit IS NULL").all(docId) as { block_id: string }[];
       priorIds.set(docId, new Set(ids.map((r) => r.block_id)));
@@ -232,16 +242,19 @@ export function planChangeset(store: Store, req: Omit<ApplyRequest, "dryRun" | "
   const revisions: ApplyRevision[] = [];
   const diffs: Record<string, { before: string; after: string }> = {};
   const effects: Effect[] = [];
+  const preconditions: ChangesetPlan["preconditions"] = [];
   for (const [docId, d] of loaded) {
     const after = renderDoc(d);
+    const base = bases.get(docId)!;
     diffs[d.path] = { before: before.get(docId) ?? "", after };
     revisions.push({ id: docId, path: d.path, hash: sha256(after).toString("hex") });
-    effects.push({ kind: "ingest_known", docId, path: d.path, rendered: after, mutDoc: d, priorIds: priorIds.get(docId) ?? new Set() });
+    preconditions.push({ id: docId, ...base });
+    effects.push({ kind: "ingest_known", docId, path: d.path, rendered: after, mutDoc: d, priorIds: priorIds.get(docId) ?? new Set(), base });
     // Keep the freshness cache warm so this engine write isn't re-hashed by a
     // later sweep (echo suppression already covers correctness; this avoids work).
     if (req.omgbaseDir) effects.push({ kind: "record_stat", path: d.path, bytes: after });
   }
-  return { results, revisions, diffs, effects };
+  return { results, revisions, diffs, effects, preconditions };
 }
 
 export function apply(store: Store, req: ApplyRequest): ApplyResult {

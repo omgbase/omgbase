@@ -10,7 +10,8 @@ use omgbase_reconcile::Config;
 use rusqlite::{Connection, params};
 
 use crate::derived::mark_reachable;
-use crate::writers::{assign_fresh_ids, write_block_tree};
+use crate::effects::{CommitHead, Effect, Outcome};
+use crate::writers::{Origin, assign_fresh_ids, write_block_tree};
 use crate::*;
 
 const T0: &str = "2026-09-26T10:00:00.000Z";
@@ -2465,4 +2466,402 @@ fn docs_delete_is_one_commit_without_pooling() {
     assert!(!ds.exists("a.md"));
     let page = store.changes_since(&repo, 1, 50, None).unwrap();
     assert_eq!(page.digests[0].summary, "api(agent:mcp): deleted a.md");
+}
+
+// ---- CAS inside the transaction (mutate 2.2) ----------------------------------------------
+
+/// A file-backed store under the sequential minter, so a second connection
+/// can reach the same database between the phases of a request.
+fn file_store() -> (Store, String, std::path::PathBuf, std::path::PathBuf) {
+    let dir = std::env::temp_dir().join(format!("omgbase-store-{}", ids::random_suffix()));
+    let path = dir.join("omgbase.db");
+    let mut store = Store::open_with_minter(&path, Box::new(SequentialMinter::new())).unwrap();
+    let repo = store.create_repo("fixture").unwrap();
+    assert_eq!(repo, "rp_0");
+    (store, repo, dir, path)
+}
+
+/// `seeded` on a file-backed store.
+fn file_seeded(
+    files: &[(&str, &str)],
+) -> (
+    Store,
+    String,
+    MemDocStore,
+    std::path::PathBuf,
+    std::path::PathBuf,
+) {
+    let (mut store, repo, dir, path) = file_store();
+    let mut ds = MemDocStore::new();
+    let items: Vec<BatchItem> = files
+        .iter()
+        .map(|(p, s)| BatchItem::observed(p, s))
+        .collect();
+    store
+        .observe_batch(&repo, &items, T0, &Config::default())
+        .unwrap();
+    for (p, s) in files {
+        ds.write(p, s).unwrap();
+    }
+    (store, repo, ds, dir, path)
+}
+
+fn one_op(repo: &str, doc: &str) -> ApplyRequest {
+    ApplyRequest {
+        repo_id: repo.to_owned(),
+        ops: vec![insert_end(doc, "A tail.")],
+        origin: api_origin(),
+        dry_run: false,
+        set_frontmatter: Vec::new(),
+    }
+}
+
+/// §4 step 5 (a)–(c) by hand, up to and excluding the transaction: the
+/// phases `apply` runs after the ops, so a test can interleave a second
+/// connection between staging and the commit.
+fn staged_effects(
+    store: &mut Store,
+    repo: &str,
+    loaded: &[crate::mutate::LoadedDoc],
+    ds: &mut MemDocStore,
+) -> Vec<Effect> {
+    let on_disk = store.file_cas(repo, loaded, ds, T1).unwrap();
+    let staged = crate::mutate::stage(loaded, on_disk, |d| d.doc.path.clone());
+    crate::mutate::write_staged(&staged, ds).unwrap();
+    staged
+        .into_iter()
+        .map(crate::mutate::Staged::into_effect)
+        .collect()
+}
+
+const API_HEAD: CommitHead<'static> = CommitHead {
+    origin: Origin::Api,
+    actor: Some("agent:test"),
+    reason: Some("fixture"),
+};
+
+fn expect_mutation(err: &Error, code: omgbase_mutate::ErrorCode) -> &omgbase_mutate::MutationError {
+    match err {
+        Error::Mutation(m) if m.code == code => m,
+        other => panic!("expected {code:?}, got {other:?}"),
+    }
+}
+
+/// 2.2: a second connection advancing `docs.current_rev` after the plan
+/// was computed is caught inside the transaction — `stale_plan` carrying
+/// the current truth (the shape `docs_update` emits), the transaction
+/// rolled back before the commit row, no id minted (the next `c` is the one
+/// the request would have taken). File-first order (until step 5) means
+/// the rendered file was already written and is ahead of the database.
+#[test]
+fn a_concurrent_revision_between_plan_and_commit_is_stale_plan() {
+    let (mut store, repo, mut ds, dir, path) = file_seeded(&[("a.md", "# A\n\nAlpha.\n")]);
+    let hash = hex(&sha256("# A\n\nAlpha.\n".as_bytes()));
+    let loaded = store.apply_ops(&one_op(&repo, "a.md")).unwrap().loaded;
+    assert_eq!(loaded[0].base.current_rev.as_deref(), Some("r_0"));
+    assert_eq!(
+        loaded[0].base.file_hash.as_deref().map(hex),
+        Some(hash.clone())
+    );
+    let effects = staged_effects(&mut store, &repo, &loaded, &mut ds);
+    // Another writer commits a revision underneath the plan.
+    let other = Connection::open(&path).unwrap();
+    other
+        .execute(
+            "UPDATE docs SET current_rev = 'r_9' WHERE path = 'a.md'",
+            [],
+        )
+        .unwrap();
+    start_trace(store.conn());
+    let err = store
+        .commit_effects(&repo, &API_HEAD, &effects, T1)
+        .unwrap_err();
+    let m = expect_mutation(&err, omgbase_mutate::ErrorCode::StalePlan);
+    assert_eq!(
+        serde_json::Value::Object(m.data.clone()),
+        serde_json::json!({
+            "doc": "d_0",
+            "expected_revision": "r_0",
+            "current": { "revision": "r_9", "hash": hash },
+            "retriable": true,
+        })
+    );
+    let log = traced();
+    assert!(
+        log.iter().any(|s| s.starts_with("BEGIN IMMEDIATE")),
+        "{log:#?}"
+    );
+    assert!(log.iter().any(|s| s.starts_with("ROLLBACK")), "{log:#?}");
+    assert!(
+        !log.iter().any(|s| s.starts_with("INSERT INTO commits")),
+        "validation runs before the commit row: {log:#?}"
+    );
+    assert_eq!(count(&store, "commits"), 1, "no commit row");
+    assert_eq!(count(&store, "revisions"), 1);
+    assert_eq!(store.mint("c").unwrap(), "c_1", "no id burned");
+    assert_eq!(
+        ds.read("a.md").unwrap().as_deref(),
+        Some("# A\n\nAlpha.\n\nA tail.\n"),
+        "file-first: the render is on disk, ahead of the database (step 5 reorders)"
+    );
+    drop(other);
+    store.close().unwrap();
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// 2.2: `docs.path` changed by a concurrent move (a move advances no
+/// revision) is a `stale_plan` too — the triple, not the revision alone,
+/// is the precondition.
+#[test]
+fn a_concurrent_move_between_plan_and_commit_is_stale_plan() {
+    let (mut store, repo, mut ds, dir, path) = file_seeded(&[("a.md", "# A\n\nAlpha.\n")]);
+    let loaded = store.apply_ops(&one_op(&repo, "a.md")).unwrap().loaded;
+    let effects = staged_effects(&mut store, &repo, &loaded, &mut ds);
+    let other = Connection::open(&path).unwrap();
+    other
+        .execute("UPDATE docs SET path = 'z.md' WHERE doc_id = 'd_0'", [])
+        .unwrap();
+    let err = store
+        .commit_effects(&repo, &API_HEAD, &effects, T1)
+        .unwrap_err();
+    let m = expect_mutation(&err, omgbase_mutate::ErrorCode::StalePlan);
+    assert_eq!(m.data["doc"], "d_0");
+    assert_eq!(m.data["expected_revision"], "r_0");
+    assert_eq!(
+        m.data["current"]["revision"], "r_0",
+        "the revision did not move; the path did"
+    );
+    assert_eq!(count(&store, "commits"), 1);
+    assert_eq!(store.mint("c").unwrap(), "c_1", "no id burned");
+    drop(other);
+    store.close().unwrap();
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A file edited between the plan and the commit: phase (a) compares the
+/// disk bytes with the `file_hash` the document was loaded with, so the
+/// edit is caught **before any file is written** — the human's bytes are
+/// ingested as one `observed` commit and the request fails `sync_conflict`.
+/// The in-transaction disk check is the same comparison against the row
+/// re-read through the transaction; with file-first order it is a backstop
+/// (phase (a) already failed), and becomes the live check when step 5 moves
+/// the writes after the commit.
+#[test]
+fn a_disk_edit_between_plan_and_commit_is_caught_by_phase_a_before_any_write() {
+    let (mut store, repo, mut ds) = seeded(&[("a.md", "# A\n\nAlpha.\n")]);
+    let loaded = store.apply_ops(&one_op(&repo, "a.md")).unwrap().loaded;
+    ds.write("a.md", "# A\n\nAlpha, by a human.\n").unwrap();
+    let err = store.file_cas(&repo, &loaded, &ds, T1).unwrap_err();
+    let m = expect_mutation(&err, omgbase_mutate::ErrorCode::SyncConflict);
+    assert_eq!(m.data["retriable"], serde_json::json!(true));
+    assert_eq!(commits_by_origin(&store, "observed"), 2, "one observed row");
+    assert_eq!(commits_by_origin(&store, "api"), 0);
+    assert_eq!(
+        ds.read("a.md").unwrap().as_deref(),
+        Some("# A\n\nAlpha, by a human.\n"),
+        "nothing written"
+    );
+    assert_eq!(
+        store.reconstruct("d_0").unwrap().as_deref(),
+        Some("# A\n\nAlpha, by a human.\n")
+    );
+}
+
+/// The in-transaction disk check on its own: an `ingest_known` whose
+/// phase-(a) bytes do not hash to the row's `file_hash` comes back as
+/// `Outcome::Conflict` with those bytes, the transaction rolled back before
+/// the commit row (no id minted); the caller's `disk_conflict` then ingests
+/// them `observed` in a transaction of its own and raises `sync_conflict`.
+#[test]
+fn the_in_tx_disk_check_returns_a_conflict_without_minting() {
+    let (mut store, repo, mut ds) = seeded(&[("a.md", "# A\n\nAlpha.\n")]);
+    let loaded = store.apply_ops(&one_op(&repo, "a.md")).unwrap().loaded;
+    let mut effects = staged_effects(&mut store, &repo, &loaded, &mut ds);
+    let human = "# A\n\nSomeone else.\n";
+    match &mut effects[0] {
+        Effect::IngestKnown { on_disk, .. } => *on_disk = Some(human.to_owned()),
+        other => panic!("{other:?}"),
+    }
+    start_trace(store.conn());
+    let out = store
+        .commit_effects(&repo, &API_HEAD, &effects, T1)
+        .unwrap();
+    let conflict = match out {
+        Outcome::Conflict(c) => c,
+        Outcome::Committed(c) => panic!("committed {c:?}"),
+    };
+    assert_eq!(conflict.path, "a.md");
+    assert_eq!(conflict.bytes, human);
+    let log = traced();
+    assert!(
+        log.iter().any(|s| s.starts_with("BEGIN IMMEDIATE")),
+        "{log:#?}"
+    );
+    assert!(log.iter().any(|s| s.starts_with("ROLLBACK")), "{log:#?}");
+    assert!(
+        !log.iter().any(|s| s.starts_with("INSERT INTO commits")),
+        "{log:#?}"
+    );
+    assert_eq!(count(&store, "commits"), 1);
+    assert_eq!(store.mint("c").unwrap(), "c_1", "no id burned");
+    let err = store.disk_conflict(&repo, &conflict.path, &conflict.bytes, T1);
+    let m = expect_mutation(&err, omgbase_mutate::ErrorCode::SyncConflict);
+    assert_eq!(m.data["retriable"], serde_json::json!(true));
+    assert_eq!(commits_by_origin(&store, "observed"), 2);
+    assert_eq!(commits_by_origin(&store, "api"), 0);
+    assert_eq!(store.reconstruct("d_0").unwrap().as_deref(), Some(human));
+}
+
+/// §6 `docs_set_meta` (2.2): the file it patches must hash to the
+/// document's `file_hash` — a dirty file is ingested `observed` and the
+/// operation fails `sync_conflict`, the patch unwritten (today's unchecked
+/// gap closed; the precondition is the same as a changeset's).
+#[test]
+fn docs_set_meta_on_a_dirty_file_is_a_sync_conflict() {
+    let (mut store, repo, mut ds) = seeded(&[("a.md", "# A\n\nAlpha.\n")]);
+    ds.write("a.md", "# A\n\nAlpha, by a human.\n").unwrap();
+    let ctx = DocOpContext {
+        repo_id: repo.clone(),
+        actor: Some("agent:mcp".to_owned()),
+        ts: T1.to_owned(),
+    };
+    let mut set = serde_json::Map::new();
+    set.insert("status".to_owned(), serde_json::json!("done"));
+    let err = store
+        .docs_set_meta(&ctx, &mut ds, "a.md", Some(&set), &[])
+        .unwrap_err();
+    let m = expect_mutation(&err, omgbase_mutate::ErrorCode::SyncConflict);
+    assert_eq!(m.data["retriable"], serde_json::json!(true));
+    assert_eq!(commits_by_origin(&store, "observed"), 2);
+    assert_eq!(commits_by_origin(&store, "api"), 0);
+    assert_eq!(
+        ds.read("a.md").unwrap().as_deref(),
+        Some("# A\n\nAlpha, by a human.\n"),
+        "the patch is not written"
+    );
+    assert_eq!(
+        store.reconstruct("d_0").unwrap().as_deref(),
+        Some("# A\n\nAlpha, by a human.\n")
+    );
+    // Retried, it succeeds against the healed row.
+    let res = store
+        .docs_set_meta(&ctx, &mut ds, "a.md", Some(&set), &[])
+        .unwrap();
+    assert!(res.committed);
+    assert_eq!(commits_by_origin(&store, "api"), 1);
+    assert!(
+        ds.read("a.md")
+            .unwrap()
+            .unwrap()
+            .starts_with("---\nstatus: done\n")
+    );
+}
+
+/// `move_path` and `tombstone` re-validate too: the moved document must
+/// still be at `from` with its revision (`stale_plan`), a document that
+/// appeared at `to` is `path_taken`, a vanished document `doc_missing`; a
+/// tombstone needs the document live at the captured revision.
+#[test]
+fn move_path_and_tombstone_revalidate_inside_the_transaction() {
+    let (mut store, repo, _ds) =
+        seeded(&[("a.md", "# A\n\nAlpha.\n"), ("b.md", "# B\n\nBravo.\n")]);
+    let stale_move = Effect::MovePath {
+        doc_id: "d_0".into(),
+        from: "a.md".into(),
+        to: "c.md".into(),
+        current_rev: Some("r_7".into()),
+        inbound: Vec::new(),
+    };
+    let err = store
+        .commit_effects(&repo, &API_HEAD, &[stale_move], T1)
+        .unwrap_err();
+    let m = expect_mutation(&err, omgbase_mutate::ErrorCode::StalePlan);
+    assert_eq!(m.data["expected_revision"], "r_7");
+    assert_eq!(m.data["current"]["revision"], "r_0");
+
+    let taken = Effect::MovePath {
+        doc_id: "d_0".into(),
+        from: "a.md".into(),
+        to: "b.md".into(),
+        current_rev: Some("r_0".into()),
+        inbound: Vec::new(),
+    };
+    let err = store
+        .commit_effects(&repo, &API_HEAD, &[taken], T1)
+        .unwrap_err();
+    expect_mutation(&err, omgbase_mutate::ErrorCode::PathTaken);
+
+    let gone = Effect::Tombstone {
+        doc_id: "d_9".into(),
+        pool: false,
+        current_rev: None,
+    };
+    let err = store
+        .commit_effects(&repo, &API_HEAD, &[gone], T1)
+        .unwrap_err();
+    expect_mutation(&err, omgbase_mutate::ErrorCode::DocMissing);
+
+    let stale_tomb = Effect::Tombstone {
+        doc_id: "d_1".into(),
+        pool: false,
+        current_rev: Some("r_0".into()),
+    };
+    let err = store
+        .commit_effects(&repo, &API_HEAD, &[stale_tomb], T1)
+        .unwrap_err();
+    let m = expect_mutation(&err, omgbase_mutate::ErrorCode::StalePlan);
+    assert_eq!(m.data["doc"], "d_1");
+    assert_eq!(m.data["current"]["revision"], "r_1");
+
+    assert_eq!(count(&store, "commits"), 2, "nothing committed");
+    assert_eq!(
+        store.mint("c").unwrap(),
+        "c_2",
+        "no id burned by any of them"
+    );
+    assert_eq!(
+        current_revs(&store),
+        vec![("a.md".into(), "r_0".into()), ("b.md".into(), "r_1".into())]
+    );
+}
+
+/// The commit transaction is `BEGIN IMMEDIATE`: while a request is inside
+/// it, a second connection's own `BEGIN IMMEDIATE` fails `SQLITE_BUSY`
+/// (after its busy timeout) instead of racing the validation.
+#[test]
+fn the_commit_transaction_is_immediate() {
+    let (mut store, repo, mut ds, dir, path) = file_seeded(&[("a.md", "# A\n\nAlpha.\n")]);
+    let other = Connection::open(&path).unwrap();
+    other
+        .busy_timeout(std::time::Duration::from_millis(50))
+        .unwrap();
+    let seen: std::sync::Arc<std::sync::Mutex<Option<String>>> = Default::default();
+    let record = seen.clone();
+    store.after_begin = Some(Box::new(move || {
+        let r = other
+            .execute_batch("BEGIN IMMEDIATE")
+            .map(|()| "began".to_owned())
+            .unwrap_or_else(|e| e.to_string());
+        if r == "began" {
+            other.execute_batch("ROLLBACK").unwrap();
+        }
+        *record.lock().unwrap() = Some(r);
+    }));
+    start_trace(store.conn());
+    let res = store.apply(&one_op(&repo, "a.md"), &mut ds, T1).unwrap();
+    assert!(res.committed);
+    let seen = seen.lock().unwrap().clone().expect("the hook ran");
+    assert!(
+        seen.contains("locked") || seen.contains("busy"),
+        "the second writer was refused: {seen}"
+    );
+    let log = traced();
+    assert!(
+        log.iter().any(|s| s.starts_with("BEGIN IMMEDIATE")),
+        "{log:#?}"
+    );
+    assert_eq!(count(&store, "commits"), 2);
+    store.after_begin = None;
+    store.close().unwrap();
+    let _ = std::fs::remove_dir_all(&dir);
 }

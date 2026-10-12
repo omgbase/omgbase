@@ -22,7 +22,7 @@ use rusqlite::{Connection, OptionalExtension, params};
 use crate::derived::{
     EvictRow, fts_before_evict_rows, fts_delete_doc, fts_index_doc, rebuild_sections, sweep_pool,
 };
-use crate::effects::{CommitHead, Effect};
+use crate::effects::{CommitHead, Effect, Guard, Outcome};
 use crate::error::{Error, Result};
 use crate::graph::{
     adopt_phantoms, maintain_edges, project_section_nodes, resolve_edges, write_doc_nodes,
@@ -985,17 +985,42 @@ impl Store {
         reason: Option<&str>,
         config: &Config,
     ) -> Result<Committed> {
-        let prepared = self.prepare_single(repo_id, path, source, ts, config)?;
         let head = CommitHead {
             origin,
             actor,
             reason,
         };
-        let mut committed =
-            self.commit_effects(repo_id, &head, &[Effect::IngestReconciled { prepared }], ts)?;
-        committed.pop().ok_or_else(|| {
-            Error::Other(format!("reconciling_ingest: nothing committed for {path}"))
-        })
+        self.reconciling_commit(repo_id, path, source, ts, &head, config, Guard::None)?
+            .committed()?
+            .pop()
+            .ok_or_else(|| {
+                Error::Other(format!("reconciling_ingest: nothing committed for {path}"))
+            })
+    }
+
+    /// [`Store::reconciling_ingest`] with a precondition the transaction
+    /// re-validates (`spec/mutate` §6, 2.2): `docs_create` guards "no live
+    /// document at the path", `docs_set_meta` the document's triple and the
+    /// bytes it patched. Returns the commit's [`Outcome`] — a disk conflict
+    /// is the caller's to ingest as `observed`.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn reconciling_commit(
+        &mut self,
+        repo_id: &str,
+        path: &str,
+        source: &str,
+        ts: &str,
+        head: &CommitHead<'_>,
+        config: &Config,
+        guard: Guard,
+    ) -> Result<Outcome> {
+        let prepared = self.prepare_single(repo_id, path, source, ts, config)?;
+        self.commit_effects(
+            repo_id,
+            head,
+            &[Effect::IngestReconciled { prepared, guard }],
+            ts,
+        )
     }
 
     /// Parse `source` at `path` and commit it with a **fresh `b` id for every

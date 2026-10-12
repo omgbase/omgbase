@@ -5,7 +5,7 @@ import { mintId } from "../core/ids.js";
 import { withWriterLock } from "../sync/writer-lock.js";
 import { inboundLinksTo, retargetLinksInRaw, type InboundLink } from "../graph/inbound-links.js";
 import { planChangeset, type Op } from "./apply.js";
-import { commitChangeset, type CommitHead, type CommitTargets, type Effect } from "./commit.js";
+import { commitChangeset, readDocBase, type CommitHead, type CommitTargets, type Effect } from "./commit.js";
 import { resolveDocStore, type DocStore } from "./doc-store.js";
 import { MutationError } from "./tree.js";
 
@@ -129,7 +129,9 @@ export function docsCreate(store: Store, ctx: DocOpContext, path: string, markdo
   }
   return underLock(ctx, () => {
     if (docStore.exists(rel)) throw new MutationError("path_taken", `file already exists on disk at ${rel}`);
-    const effects: Effect[] = [{ kind: "ingest_reconciled", path: rel, source: content }];
+    // `precondition: null`: no live document may be at the path when the
+    // commit validates (the check above, re-run inside the transaction).
+    const effects: Effect[] = [{ kind: "ingest_reconciled", path: rel, source: content, precondition: null }];
     if (ctx.omgbaseDir) effects.push({ kind: "record_stat", path: rel, bytes: content });
     const res = commitChangeset(store, ctx.repoId, head(ctx, `create ${rel}`), effects, nowOr(ctx), targets(ctx, docStore));
     return { docId: res.ingests[0]!.docId, path: rel, committed: true };
@@ -273,7 +275,7 @@ export function docsDelete(store: Store, ctx: DocOpContext, docRef: string): Doc
     return { docId: info.docId, path: info.path, committed: false, diffs: { [info.path]: { before: docStore.read(info.path) ?? "", after: "" } } };
   }
   return underLock(ctx, () => {
-    const effects: Effect[] = [{ kind: "tombstone", docId: info.docId, path: info.path, pool: false }];
+    const effects: Effect[] = [{ kind: "tombstone", docId: info.docId, path: info.path, currentRev: info.currentRev, pool: false }];
     if (ctx.omgbaseDir) effects.push({ kind: "clear_stat", path: info.path });
     commitChangeset(store, ctx.repoId, head(ctx, `delete ${info.path}`), effects, nowOr(ctx), targets(ctx, docStore));
     return { docId: info.docId, path: info.path, committed: true };
@@ -291,20 +293,30 @@ export function docsSetMeta(
   if (!info) throw new MutationError("doc_missing", `no document ${docRef}`);
 
   const docStore = resolveDocStore(ctx);
-  const patched = (): { original: string; content: string } => {
-    const original = docStore.read(info.path) ?? "";
-    const { frontmatter, body } = splitFrontmatter(original);
+  // `original` is `null` when the doc store has no bytes at the path (a
+  // headless NullDocStore): the patch then starts from an empty file and the
+  // commit has no disk to CAS against.
+  const patched = (): { original: string | null; content: string } => {
+    const original = docStore.read(info.path);
+    const { frontmatter, body } = splitFrontmatter(original ?? "");
     const merged: Record<string, unknown> = { ...frontmatter, ...(patch.set ?? {}) };
     for (const k of patch.unset ?? []) delete merged[k];
     return { original, content: composeFile(body, merged) };
   };
   if (ctx.dryRun) {
     const { original, content } = patched();
-    return { docId: info.docId, path: info.path, committed: false, diffs: { [info.path]: { before: original, after: content } } };
+    return { docId: info.docId, path: info.path, committed: false, diffs: { [info.path]: { before: original ?? "", after: content } } };
   }
   return underLock(ctx, () => {
-    const { content } = patched();
-    const effects: Effect[] = [{ kind: "ingest_reconciled", path: info.path, source: content }];
+    // The triple the patch is computed against plus the bytes it patched: the
+    // commit validates both (spec/mutate §4 step 5, 2.2) — a row that moved is
+    // `stale_plan`, a file whose bytes the row's `file_hash` does not name is
+    // `sync_conflict` (the human's edit is ingested as observed, not committed
+    // under this `set_meta`).
+    const base = readDocBase(store.db, info.docId);
+    if (!base) throw new MutationError("doc_missing", `no document ${docRef}`);
+    const { original, content } = patched();
+    const effects: Effect[] = [{ kind: "ingest_reconciled", path: info.path, source: content, precondition: { docId: info.docId, base, original } }];
     if (ctx.omgbaseDir) effects.push({ kind: "record_stat", path: info.path, bytes: content });
     const res = commitChangeset(store, ctx.repoId, head(ctx, `set_meta ${info.path}`), effects, nowOr(ctx), targets(ctx, docStore));
     return { docId: res.ingests[0]!.docId, path: info.path, committed: true };

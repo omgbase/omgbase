@@ -196,6 +196,18 @@ export class Store {
     return this.db.transaction(fn)(this.db);
   }
 
+  /**
+   * Run fn inside a `BEGIN IMMEDIATE` transaction: the write lock is taken at
+   * BEGIN, so every read fn makes is already protected from another writer and
+   * a concurrent `BEGIN IMMEDIATE` waits (SQLITE_BUSY after the busy timeout).
+   * The commit phase of a request uses it (spec/mutate §4 step 5(c), 2.2) so
+   * the preconditions it re-validates cannot move before it writes. Nested
+   * inside an open transaction it is a savepoint, like `write`.
+   */
+  writeImmediate<T>(fn: (db: Database.Database) => T): T {
+    return this.db.transaction(fn).immediate(this.db);
+  }
+
   pragma(name: string): unknown {
     return this.db.pragma(name, { simple: true });
   }

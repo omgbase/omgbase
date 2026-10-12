@@ -140,6 +140,11 @@ pub const FORMAT_MARKDOWN: &str = "markdown";
 pub struct Store {
     conn: Connection,
     ids: mint::IdSource,
+    /// Test seam: runs inside [`Store::commit_effects`](effects) right after
+    /// its `BEGIN IMMEDIATE`, before the validation — a test interleaves a
+    /// second connection against the held write lock here.
+    #[cfg(test)]
+    pub(crate) after_begin: Option<Box<dyn FnMut() + Send>>,
 }
 
 impl std::fmt::Debug for Store {
@@ -218,7 +223,12 @@ impl Store {
         )?;
         let mut ids = mint::IdSource::new(minter);
         schema::migrate(&conn, &mut ids)?;
-        Ok(Self { conn, ids })
+        Ok(Self {
+            conn,
+            ids,
+            #[cfg(test)]
+            after_begin: None,
+        })
     }
 
     /// The underlying connection.

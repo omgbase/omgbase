@@ -283,8 +283,20 @@ Result   { results: [{ ids, removed?, merged_into? }], revisions: [{ id, path, h
      written, nothing committed, no `api` commit row;
    - **(b) write** every rendered file (atomic: temp file + rename; a
      headless doc store does nothing);
-   - **(c) in one transaction**: one commit row (`origin = "api"`, `actor`,
-     `reason`, `checkpoint_id = NULL`, `ops = NULL`), then per document in
+   - **(c) in one transaction**, opened `BEGIN IMMEDIATE` so the writer's
+     lock on the database is held from the first statement (2.2): **first
+     re-validate** — for every loaded document re-read `(path, current_rev,
+     file_hash)` through the transaction and compare with the values the
+     plan loaded in step 1; a document that moved on → ROLLBACK before
+     anything is minted, `stale_plan { doc, expected_revision, current: {
+     revision, hash } }` (retriable); a `file_hash` that no longer equals
+     the on-disk hash taken in (a) → ROLLBACK, `sync_conflict` (the bytes
+     are ingested as `observed` afterwards, in their own transaction); the
+     document operations re-check their own guards the same way (`path_taken`
+     for a create and for a move's destination, `doc_missing` for a move's
+     source and a delete). Only then one commit row (`origin = "api"`,
+     `actor`, `reason`, `checkpoint_id = NULL`, `ops = NULL`), then per
+     document in
      load order `spec/store` §5.4 steps 1–4 and 6–13 naming that commit
      (`spec/store` §5.4 "The api path") with the **known-id resolver**: the
      re-parsed body gets the tree's ids by positional key (`"/i/j"`; a
@@ -374,7 +386,10 @@ All are `api` commits with a generated `reason`.
   frontmatter with `^---\r?\n([\s\S]*?)\r?\n---\r?\n?` (malformed → `{}` and
   the whole content as body), merge `set`, delete `unset`, compose (as
   create), write, ingest with the reconciling resolver
-  (`reason: "set_meta <path>"`). Unsetting every key leaves the body's
+  (`reason: "set_meta <path>"`) under §4 step 5's commit: the file-CAS of (a)
+  and the in-transaction re-validation of (c) apply (2.2; before, `set_meta`
+  checked nothing and could overwrite a concurrent edit). Unsetting every
+  key leaves the body's
   leading blank line in place (`leading_trivia` becomes `"\n"`, §10).
 
 ## 7. Whole-document update
@@ -581,6 +596,16 @@ and `files[path] == reconstruct(doc)`; then the projection deep-equals
   the first two keep their bytes and rows and only the dirty file's
   `observed` commit lands; `changesets::multi-doc-changeset`,
   `docs::move-retarget-inbound`).
+- **Fixed (2.2) — every precondition was checked outside the transaction.**
+  Block CAS, parent-children CAS and the file-CAS ran on the snapshot step 1
+  loaded, on the autocommit connection, before the transaction opened; only
+  the writer lock kept another writer out of the gap, and a library caller
+  without a workspace (no lock) could commit over a moved document.
+  `spec/store` §8 I3 makes a document's `current_rev` the version vector of
+  every live block, so (c) re-reads one triple per document — the opset
+  precondition's shape — under `BEGIN IMMEDIATE`, before minting. No
+  fixture moves: a fixture's conflicts arise from a `disk` step before the
+  request, and plan and commit are one step.
 - **Pinned (2.1) — a failed commit leaves every written file ahead of the
   database.** §4 step 5 writes the files (b) before the transaction (c); a
   failure inside (c) rolls the database back and the files stay as
@@ -609,6 +634,13 @@ and `files[path] == reconstruct(doc)`; then the projection deep-equals
 
 ## Decisions
 
+- 2026-10-12, mutate 2.2: the commit transaction opens `BEGIN IMMEDIATE`
+  and re-validates every loaded document's `(path, current_rev, file_hash)`
+  and the document operations' guards before minting anything (§4 step 5
+  (c)); `docs_set_meta` is under the same CAS. Foundation step 4 of the
+  effect planner: the triple is what a frozen plan's preconditions will
+  carry, so `execute` can check them at commit. Procedure change, no
+  fixture movement; a minor.
 - 2026-10-12, mutate 2.1: a request commits in one transaction with one
   `commits` row and one revision per loaded document (§4 step 5), the
   file-CAS of every document runs before any file is written, and

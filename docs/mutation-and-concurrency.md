@@ -142,7 +142,14 @@ apply(changeset):
       refresh the stat cache, and throw a RETRIABLE `sync_conflict` — nothing
       has been written for any document; the caller re-plans/re-applies
  5. phase B — atomic write of every rendered file: temp file → rename
- 6. phase C — ONE transaction (spec/mutate 2.1): mint one commit row with
+ 6. phase C — ONE transaction (spec/mutate 2.1), opened BEGIN IMMEDIATE (2.2):
+    FIRST re-validate — re-read every touched doc's (path, current_rev,
+    file_hash) through the transaction and compare with what the plan loaded;
+    a doc that moved on → ROLLBACK before anything is minted, retriable
+    `stale_plan` with current truth; a file_hash that no longer matches the
+    on-disk hash from phase A → ROLLBACK, `sync_conflict`; the doc ops re-check
+    `path_taken`/`doc_missing` the same way (`docs_set_meta` is under this CAS
+    too — it checked nothing before). Only then mint one commit row with
     origin:"api" (carrying the caller's actor and reason), then per touched doc
     re-ingest the rendered bytes under that commit with a KNOWN-ID
     resolver: the mutated tree already carries deterministic ids (ops keep/mint

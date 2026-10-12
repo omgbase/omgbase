@@ -1,6 +1,10 @@
 //! Document operations (`spec/mutate/README.md` §6): create, move, delete,
 //! set-meta — `api` commits with generated reasons, each following the
-//! file-first protocol against a [`DocStore`]. Each has a dry run
+//! file-first protocol against a [`DocStore`], each re-validating its
+//! precondition inside the commit transaction (2.2: a create's path still
+//! free, a move's source unchanged and destination free, a delete's
+//! document still live at its revision, a set-meta's triple and bytes).
+//! Each has a dry run
 //! (`spec/surface` §4, 1.3) behind [`Store::dry_run`]: every check the real
 //! operation makes runs, nothing is written or committed, and the result
 //! carries the per-file [`Diff`]s the operation would produce.
@@ -18,7 +22,7 @@ use serde_json::{Map, Value, json};
 
 use crate::Store;
 use crate::doc_store::DocStore;
-use crate::effects::{CommitHead, Effect};
+use crate::effects::{CommitHead, Effect, Guard, Outcome, doc_base};
 use crate::error::Result;
 use crate::links::{InboundLink, doc_dir_of, inbound_links_to, retarget_links_in_raw};
 use crate::mutate::{ApplyOrigin, ApplyRequest, Diff, Staged, find_doc_by_ref};
@@ -367,16 +371,26 @@ impl Store {
         }
         doc_store.write(&rel, &content)?;
         let reason = format!("create {rel}");
-        let c = self.reconciling_ingest(
-            &ctx.repo_id,
-            &rel,
-            &content,
-            &ctx.ts,
-            Origin::Api,
-            ctx.actor.as_deref(),
-            Some(&reason),
-            &Config::default(),
-        )?;
+        let head = CommitHead {
+            origin: Origin::Api,
+            actor: ctx.actor.as_deref(),
+            reason: Some(&reason),
+        };
+        let c = self
+            .reconciling_commit(
+                &ctx.repo_id,
+                &rel,
+                &content,
+                &ctx.ts,
+                &head,
+                &Config::default(),
+                Guard::Absent,
+            )?
+            .committed()?
+            .pop()
+            .ok_or_else(|| {
+                crate::error::Error::Other(format!("create: nothing committed for {rel}"))
+            })?;
         Ok(DocOpResult {
             doc_id: c.doc_id,
             path: rel,
@@ -492,10 +506,10 @@ impl Store {
         // (a) File-CAS every source where it was loaded — the moved document,
         //     when it links to itself, under its OLD path, where its file
         //     still is. A mismatch fails here, before anything is renamed.
-        self.file_cas(&ctx.repo_id, &loaded, doc_store, &ctx.ts)?;
+        let on_disk = self.file_cas(&ctx.repo_id, &loaded, doc_store, &ctx.ts)?;
         // The moved document was loaded under its old path: its rendered
         // bytes go to, and its ingest names, the new one.
-        let staged = crate::mutate::stage(&loaded, |d| {
+        let staged = crate::mutate::stage(&loaded, on_disk, |d| {
             if d.doc.doc_id == info.doc_id {
                 to_rel.clone()
             } else {
@@ -525,7 +539,12 @@ impl Store {
             inbound: inbound.clone(),
         }];
         effects.extend(staged.into_iter().map(Staged::into_effect));
-        self.commit_effects(&ctx.repo_id, &head, &effects, &ctx.ts)?;
+        match self.commit_effects(&ctx.repo_id, &head, &effects, &ctx.ts)? {
+            Outcome::Committed(_) => {}
+            Outcome::Conflict(c) => {
+                return Err(self.disk_conflict(&ctx.repo_id, &c.path, &c.bytes, &ctx.ts));
+            }
+        }
         let (dangling, retargeted) = match plan {
             Some(p) => (
                 p.dangling,
@@ -705,9 +724,11 @@ impl Store {
             &[Effect::Tombstone {
                 doc_id: info.doc_id.clone(),
                 pool: false,
+                current_rev: info.current_rev.clone(),
             }],
             &ctx.ts,
-        )?;
+        )?
+        .committed()?;
         doc_store.remove(&info.path)?;
         Ok(DocOpResult {
             doc_id: info.doc_id,
@@ -719,7 +740,10 @@ impl Store {
 
     /// §6 `docs_set_meta`: read the file, split the frontmatter, merge `set`,
     /// delete `unset`, compose, write, ingest with the reconciling resolver
-    /// (`reason: "set_meta <path>"`).
+    /// (`reason: "set_meta <path>"`). The file read must hash to the
+    /// document's `file_hash` (2.2: a dirty file is ingested `observed` and
+    /// fails `sync_conflict`, as a changeset's file-CAS does), and the
+    /// transaction re-validates the document's triple before committing.
     pub fn docs_set_meta(
         &mut self,
         ctx: &DocOpContext,
@@ -742,7 +766,9 @@ impl Store {
     ) -> Result<DocOpResult> {
         let info = find_doc_by_ref(&self.conn, &ctx.repo_id, doc_ref)?
             .ok_or_else(|| doc_missing(doc_ref))?;
-        let original = doc_store.read(&info.path)?.unwrap_or_default();
+        let base = doc_base(&self.conn, &info.doc_id)?.ok_or_else(|| doc_missing(doc_ref))?;
+        let on_disk = doc_store.read(&info.path)?;
+        let original = on_disk.clone().unwrap_or_default();
         let content = patch_frontmatter(&original, set, unset);
         if dry_run {
             let diffs = vec![(
@@ -759,18 +785,35 @@ impl Store {
                 diffs: Some(diffs),
             });
         }
+        // (a) The file must be the one the document's revision renders to.
+        if let (Some(bytes), Some(hash)) = (&on_disk, &base.file_hash) {
+            if omgbase_format::hash::sha256(bytes.as_bytes())[..] != hash[..] {
+                return Err(self.disk_conflict(&ctx.repo_id, &info.path, bytes, &ctx.ts));
+            }
+        }
         doc_store.write(&info.path, &content)?;
         let reason = format!("set_meta {}", info.path);
-        let c = self.reconciling_ingest(
+        let head = CommitHead {
+            origin: Origin::Api,
+            actor: ctx.actor.as_deref(),
+            reason: Some(&reason),
+        };
+        let c = match self.reconciling_commit(
             &ctx.repo_id,
             &info.path,
             &content,
             &ctx.ts,
-            Origin::Api,
-            ctx.actor.as_deref(),
-            Some(&reason),
+            &head,
             &Config::default(),
-        )?;
+            Guard::Doc { base, on_disk },
+        )? {
+            Outcome::Committed(mut c) => c.pop().ok_or_else(|| {
+                crate::error::Error::Other(format!("set_meta: nothing committed for {}", info.path))
+            })?,
+            Outcome::Conflict(c) => {
+                return Err(self.disk_conflict(&ctx.repo_id, &c.path, &c.bytes, &ctx.ts));
+            }
+        };
         Ok(DocOpResult {
             doc_id: c.doc_id,
             path: info.path,
