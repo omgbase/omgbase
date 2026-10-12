@@ -1,12 +1,15 @@
 // Fixture bridge for spec/mutate (README §9). Pure pieces, no vitest:
 //
 //   runCase()               §9: run a mutation script — the spec/store §9.4 observation-script
-//                           shape plus the `apply` / `macro` / `docs` / `plan` / `disk` steps —
+//                           shape plus the `apply` / `macro` / `docs` / `plan` / `disk` /
+//                           `materialize` steps and the `crash_after_commit` modifier —
 //                           through the production write paths against a fresh `:memory:` store
 //                           and an in-memory doc store, check the invariants after every step,
 //                           project `files` + the store tables
 //   MemoryDocStore          the in-memory `DocStore` (path → bytes) the runner seeds from
-//                           `observe` steps so file-CAS and the written bytes are checkable
+//                           `observe` steps so file-CAS and the written bytes are checkable;
+//                           `crashNext` makes its next file operation die (the process crashed
+//                           after COMMIT, before the file half — spec/store §5.7)
 //   toSpecOp()/toKernelOp() the fixture's op spelling (`child_ids`) ⇄ the reference's (`childIds`)
 //   errorOutcome()          a MutationError → the pinned `{ code, op_index?, block?, current?, retriable? }`
 //   validateFixtureFile()   the shape check a runner applies before trusting a file
@@ -32,6 +35,7 @@ import {
   type LinkRepairPlan,
 } from "../../src/mutate/macros.js";
 import { docsCreate, docsDelete, docsMove, docsSetMeta, type DocOpContext } from "../../src/mutate/docs.js";
+import { listPending, materializePending } from "../../src/mutate/materialize.js";
 import { applyOpset, planUpdate } from "../../src/mutate/plan-update.js";
 import type { Opset } from "../../src/mutate/opset.js";
 import { toReconcileConfig, deepEqualTol, type FixtureConfig } from "../reconcile/fixture.js";
@@ -58,7 +62,14 @@ export interface Origin {
   reason?: string;
 }
 
-export interface ApplyStep {
+/** README §9 (2.2): a committing step with `crash_after_commit: true` dies after its transaction
+ *  committed and before any file is written — the pending rows stay, the files are as they were,
+ *  and the step's outcome is `{ crashed_after_commit: true }` (the caller never saw a result). */
+export interface Crashable {
+  crash_after_commit?: boolean;
+}
+
+export interface ApplyStep extends Crashable {
   /** commit timestamp (spec/store §2.4) — every commit this step records carries it */
   ts: string;
   ops: SpecOp[];
@@ -72,7 +83,7 @@ export const MACROS = [
 ] as const;
 export type MacroName = (typeof MACROS)[number];
 
-export interface MacroStep {
+export interface MacroStep extends Crashable {
   ts: string;
   name: MacroName;
   args: Record<string, unknown>;
@@ -82,7 +93,7 @@ export interface MacroStep {
 export const DOC_OPS = ["create", "move", "delete", "set_meta"] as const;
 export type DocOpName = (typeof DOC_OPS)[number];
 
-export interface DocsStep {
+export interface DocsStep extends Crashable {
   ts: string;
   /** the `api` commit's actor (null when omitted) */
   actor?: string;
@@ -119,7 +130,14 @@ export type Step =
   | { macro: MacroStep }
   | { docs: DocsStep }
   | { plan: PlanStep }
-  | { disk: DiskStep };
+  | { disk: DiskStep }
+  /** README §9 (2.2): replay every pending materialization row through the doc store → `{ materialized: [path…] }` */
+  | { materialize: Record<string, never> };
+
+/** The outcome of a committing step that `crash_after_commit` cut short. */
+export interface CrashOutcome {
+  crashed_after_commit: true;
+}
 
 /** `{ code, op_index?, block?, current?, retriable? }` — README §8's pinned data fields. */
 export interface ErrorOutcome {
@@ -133,7 +151,7 @@ export interface ApplyOutcome {
   committed: boolean;
 }
 
-export type StepOutcome = StoreStepOutcome | ApplyOutcome | ErrorOutcome | Record<string, unknown>;
+export type StepOutcome = StoreStepOutcome | ApplyOutcome | ErrorOutcome | CrashOutcome | Record<string, unknown>;
 
 export interface Projection {
   steps: StepOutcome[];
@@ -145,10 +163,12 @@ export interface Projection {
   revisions: Row[];
   dispositions: JsonRow[];
   resurrection_pool: Row[];
+  /** spec/store §9.4 (14.0): the rows a crashed or refused file half left behind */
+  pending_materializations: Row[];
 }
 
 /** The projected tables, in the order the fixture emits them (README §9). */
-export const PROJECTED_TABLES = ["docs", "blocks", "commits", "revisions", "dispositions", "resurrection_pool"] as const;
+export const PROJECTED_TABLES = ["docs", "blocks", "commits", "revisions", "dispositions", "resurrection_pool", "pending_materializations"] as const;
 
 export interface FixtureCase {
   name: string;
@@ -187,8 +207,19 @@ function withFixtureMinter<T>(body: () => T): T {
  * seeds from `observe` steps, so file-CAS and the written bytes are checkable)".
  * The stat cache is a filesystem concern; both stat methods are no-ops.
  */
+export class CrashedAfterCommit extends Error {
+  constructor() {
+    super("crash_after_commit: the process died before the file half");
+  }
+}
+
 export class MemoryDocStore implements DocStore {
   readonly files = new Map<string, string>();
+  /** When set, the next `write`/`rename`/`remove` throws `CrashedAfterCommit` instead of touching a file. */
+  crashNext = false;
+  private crash(): void {
+    if (this.crashNext) throw new CrashedAfterCommit();
+  }
   exists(path: string): boolean {
     return this.files.has(path);
   }
@@ -196,15 +227,18 @@ export class MemoryDocStore implements DocStore {
     return this.files.get(path) ?? null;
   }
   write(path: string, bytes: string): void {
+    this.crash();
     this.files.set(path, bytes);
   }
   rename(from: string, to: string): void {
+    this.crash();
     const bytes = this.files.get(from);
     if (bytes === undefined) throw new Error(`rename: no file at ${from}`);
     this.files.delete(from);
     this.files.set(to, bytes);
   }
   remove(path: string): void {
+    this.crash();
     this.files.delete(path);
   }
   recordStat(): void {}
@@ -334,7 +368,11 @@ export function runCase(c: FixtureCaseInput): Evaluation {
       for (const p of checkAll(r)) problems.push(`at end: ${p}`);
       const t = projectStore(store.db, r.repoId);
       return {
-        expect: { steps, files: r.docStore.snapshot(), docs: t.docs, blocks: t.blocks, commits: t.commits, revisions: t.revisions, dispositions: t.dispositions, resurrection_pool: t.resurrection_pool },
+        expect: {
+          steps, files: r.docStore.snapshot(),
+          docs: t.docs, blocks: t.blocks, commits: t.commits, revisions: t.revisions, dispositions: t.dispositions, resurrection_pool: t.resurrection_pool,
+          pending_materializations: t.pending_materializations,
+        },
         problems,
       };
     } finally {
@@ -361,10 +399,32 @@ function runStep(r: Runner, step: Step): StepOutcome {
     r.pendingDisk.add(step.disk.path);
     return {};
   }
-  if ("apply" in step) return runApply(r, step.apply);
-  if ("macro" in step) return runMacro(r, step.macro);
-  if ("docs" in step) return runDocs(r, step.docs);
+  if ("materialize" in step) return { materialized: materializePending(r.store, r.repoId, r.docStore) };
+  if ("apply" in step) return crashable(r, step.apply, () => runApply(r, step.apply));
+  if ("macro" in step) return crashable(r, step.macro, () => runMacro(r, step.macro));
+  if ("docs" in step) return crashable(r, step.docs, () => runDocs(r, step.docs));
   return runPlan(r, step.plan);
+}
+
+// `crash_after_commit`: the doc store's next file operation dies. The commit
+// phase writes nothing before its transaction commits (spec/mutate §4 step 5,
+// 2.2), so the crash lands exactly between COMMIT and the first materialized
+// file; the outcome records the crash, never a result the caller could not have
+// seen. A step that errored before committing (a stale CAS, a conflict) never
+// reaches a file operation and records its error as usual.
+function crashable(r: Runner, s: Crashable, run: () => StepOutcome): StepOutcome {
+  if (!s.crash_after_commit) return run();
+  r.docStore.crashNext = true;
+  try {
+    const outcome = run();
+    // No file operation ran (an error outcome, or a request with no file half).
+    return outcome;
+  } catch (e) {
+    if (e instanceof CrashedAfterCommit) return { crashed_after_commit: true };
+    throw e;
+  } finally {
+    r.docStore.crashNext = false;
+  }
 }
 
 function runApply(r: Runner, s: ApplyStep): ApplyOutcome | ErrorOutcome {
@@ -463,7 +523,9 @@ function runPlan(r: Runner, s: PlanStep): StepOutcome {
  * spec/store §8 I1–I8 plus README §9 "files[path] == reconstruct(doc)" for
  * every live document. A path a `disk` step rewrote is exempt from the file
  * comparison until a commit ingests those bytes (the store legitimately lags a
- * human edit); I1 then runs against the store's own reconstruction.
+ * human edit), as is a path with a pending materialization row (the file
+ * legitimately lags the store); I1 then runs against the store's own
+ * reconstruction.
  */
 function checkAll(r: Runner): string[] {
   const db = r.store.db;
@@ -472,10 +534,14 @@ function checkAll(r: Runner): string[] {
     .all(r.repoId) as { doc_id: string; path: string; file_hash: Buffer | null }[];
   const problems: string[] = [];
   const lastSource = new Map<string, string>();
+  // A path the api path still owes a file (a pending row, spec/store §5.7) is
+  // legitimately behind the database until a materializer runs: the store's own
+  // reconstruction stands in for the file, as for a `disk` edit.
+  const owed = new Set(listPending(db, r.repoId).map((p) => p.path));
   for (const d of live) {
     const bytes = r.docStore.read(d.path);
     if (bytes !== null && d.file_hash && sha256(bytes).equals(d.file_hash)) r.pendingDisk.delete(d.path);
-    if (r.pendingDisk.has(d.path)) {
+    if (r.pendingDisk.has(d.path) || owed.has(d.path)) {
       lastSource.set(d.path, reconstructContent(db, d.doc_id) ?? "");
       continue;
     }
@@ -541,10 +607,11 @@ export const EXTRA_STEPS: Record<string, ExtraStepValidator> = {
       problems.push(`${here}: not an object`);
       return;
     }
-    onlyKeys(body, ["ts", "ops", "origin", "dry_run", "set_frontmatter"], here, problems);
+    onlyKeys(body, ["ts", "ops", "origin", "dry_run", "set_frontmatter", "crash_after_commit"], here, problems);
     requireTs(body, here, problems);
     validateOps(body.ops, here, problems);
     requireOrigin(body.origin, here, problems);
+    crashFlag(body, here, problems);
     if (body.dry_run !== undefined && typeof body.dry_run !== "boolean") problems.push(`${here}: \`dry_run\` must be a boolean`);
     if (body.set_frontmatter !== undefined && !Array.isArray(body.set_frontmatter)) problems.push(`${here}: \`set_frontmatter\` must be an array of { doc, raw }`);
   },
@@ -553,8 +620,9 @@ export const EXTRA_STEPS: Record<string, ExtraStepValidator> = {
       problems.push(`${here}: not an object`);
       return;
     }
-    onlyKeys(body, ["ts", "name", "args", "origin"], here, problems);
+    onlyKeys(body, ["ts", "name", "args", "origin", "crash_after_commit"], here, problems);
     requireTs(body, here, problems);
+    crashFlag(body, here, problems);
     if (typeof body.name !== "string" || !(MACROS as readonly string[]).includes(body.name)) problems.push(`${here}: \`name\` must be one of ${MACROS.join("/")}`);
     if (!isRecord(body.args)) problems.push(`${here}: \`args\` must be an object`);
     requireOrigin(body.origin, here, problems);
@@ -564,8 +632,9 @@ export const EXTRA_STEPS: Record<string, ExtraStepValidator> = {
       problems.push(`${here}: not an object`);
       return;
     }
-    onlyKeys(body, ["ts", "actor", ...DOC_OPS], here, problems);
+    onlyKeys(body, ["ts", "actor", "crash_after_commit", ...DOC_OPS], here, problems);
     requireTs(body, here, problems);
+    crashFlag(body, here, problems);
     if (body.actor !== undefined && typeof body.actor !== "string") problems.push(`${here}: \`actor\` must be a string`);
     const ops = DOC_OPS.filter((k) => body[k] !== undefined);
     if (ops.length !== 1) problems.push(`${here}: exactly one of ${DOC_OPS.join("/")}`);
@@ -585,7 +654,14 @@ export const EXTRA_STEPS: Record<string, ExtraStepValidator> = {
     if (body.before_apply !== undefined) validateSteps(`${here}.before_apply`, body.before_apply, problems, { disk: validateDisk });
   },
   disk: validateDisk,
+  materialize: (body, here, problems) => {
+    if (!isRecord(body) || Object.keys(body).length > 0) problems.push(`${here}: \`materialize\` takes an empty object`);
+  },
 };
+
+function crashFlag(body: Record<string, unknown>, here: string, problems: string[]): void {
+  if (body.crash_after_commit !== undefined && body.crash_after_commit !== true) problems.push(`${here}: \`crash_after_commit\` is \`true\` or absent`);
+}
 
 function validateConfig(at: string, config: unknown, problems: string[]): void {
   if (!isRecord(config)) problems.push(`${at}: \`config\` must be an object`);
@@ -637,7 +713,9 @@ export function validateFixtureFile(file: string, doc: unknown, opts: ValidateOp
     if (c.notes !== undefined && typeof c.notes !== "string") problems.push(`${at}: \`notes\` must be a string`);
     if (c.config !== undefined) validateConfig(at, c.config, problems);
     const stepCount = validateSteps(at, c.steps, problems, EXTRA_STEPS);
-    if (c.expect === undefined) {
+    // A regeneration pass (`requireExpect: false`) rewrites `expect` from the
+    // inputs, so a stale one — a projection key the spec gained — is not a problem.
+    if (c.expect === undefined || !requireExpect) {
       if (requireExpect) problems.push(`${at}: missing \`expect\` (run MUTATE_SPEC_UPDATE=1)`);
       return;
     }

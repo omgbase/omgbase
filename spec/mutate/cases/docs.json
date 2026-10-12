@@ -122,7 +122,8 @@
             "detail": {}
           }
         ],
-        "resurrection_pool": []
+        "resurrection_pool": [],
+        "pending_materializations": []
       }
     },
     {
@@ -228,7 +229,8 @@
             "detail": {}
           }
         ],
-        "resurrection_pool": []
+        "resurrection_pool": [],
+        "pending_materializations": []
       }
     },
     {
@@ -324,7 +326,8 @@
             "detail": {}
           }
         ],
-        "resurrection_pool": []
+        "resurrection_pool": [],
+        "pending_materializations": []
       }
     },
     {
@@ -421,7 +424,8 @@
             "detail": {}
           }
         ],
-        "resurrection_pool": []
+        "resurrection_pool": [],
+        "pending_materializations": []
       }
     },
     {
@@ -595,7 +599,8 @@
             "detail": {}
           }
         ],
-        "resurrection_pool": []
+        "resurrection_pool": [],
+        "pending_materializations": []
       }
     },
     {
@@ -635,7 +640,8 @@
         "commits": [],
         "revisions": [],
         "dispositions": [],
-        "resurrection_pool": []
+        "resurrection_pool": [],
+        "pending_materializations": []
       }
     },
     {
@@ -1015,7 +1021,8 @@
             "detail": {}
           }
         ],
-        "resurrection_pool": []
+        "resurrection_pool": [],
+        "pending_materializations": []
       }
     },
     {
@@ -1415,7 +1422,8 @@
             "detail": {}
           }
         ],
-        "resurrection_pool": []
+        "resurrection_pool": [],
+        "pending_materializations": []
       }
     },
     {
@@ -1814,7 +1822,8 @@
             "detail": {}
           }
         ],
-        "resurrection_pool": []
+        "resurrection_pool": [],
+        "pending_materializations": []
       }
     },
     {
@@ -1988,7 +1997,8 @@
             "detail": {}
           }
         ],
-        "resurrection_pool": []
+        "resurrection_pool": [],
+        "pending_materializations": []
       }
     },
     {
@@ -2264,7 +2274,8 @@
             "detail": {}
           }
         ],
-        "resurrection_pool": []
+        "resurrection_pool": [],
+        "pending_materializations": []
       }
     },
     {
@@ -2446,7 +2457,8 @@
             "detail": {}
           }
         ],
-        "resurrection_pool": []
+        "resurrection_pool": [],
+        "pending_materializations": []
       }
     },
     {
@@ -2627,7 +2639,8 @@
             "detail": {}
           }
         ],
-        "resurrection_pool": []
+        "resurrection_pool": [],
+        "pending_materializations": []
       }
     },
     {
@@ -2800,7 +2813,8 @@
             "detail": {}
           }
         ],
-        "resurrection_pool": []
+        "resurrection_pool": [],
+        "pending_materializations": []
       }
     },
     {
@@ -2991,7 +3005,8 @@
             "detail": {}
           }
         ],
-        "resurrection_pool": []
+        "resurrection_pool": [],
+        "pending_materializations": []
       }
     },
     {
@@ -3214,7 +3229,8 @@
             "detail": {}
           }
         ],
-        "resurrection_pool": []
+        "resurrection_pool": [],
+        "pending_materializations": []
       }
     },
     {
@@ -3403,7 +3419,8 @@
             "detail": {}
           }
         ],
-        "resurrection_pool": []
+        "resurrection_pool": [],
+        "pending_materializations": []
       }
     },
     {
@@ -3579,7 +3596,8 @@
             "detail": {}
           }
         ],
-        "resurrection_pool": []
+        "resurrection_pool": [],
+        "pending_materializations": []
       }
     }
   ]

@@ -270,7 +270,8 @@
             "first_ordinal": 0,
             "last_ordinal": 2
           }
-        ]
+        ],
+        "pending_materializations": []
       }
     },
     {
@@ -458,7 +459,8 @@
           }
         ],
         "resurrection_pool": [],
-        "sections": []
+        "sections": [],
+        "pending_materializations": []
       }
     },
     {
@@ -693,7 +695,8 @@
             "expires_ts": "2026-10-26T10:01:00.000Z"
           }
         ],
-        "sections": []
+        "sections": [],
+        "pending_materializations": []
       }
     },
     {
@@ -987,7 +990,8 @@
           }
         ],
         "resurrection_pool": [],
-        "sections": []
+        "sections": [],
+        "pending_materializations": []
       }
     },
     {
@@ -1278,7 +1282,8 @@
             "expires_ts": "2026-10-26T10:01:00.000Z"
           }
         ],
-        "sections": []
+        "sections": [],
+        "pending_materializations": []
       }
     },
     {
@@ -1600,7 +1605,8 @@
           }
         ],
         "resurrection_pool": [],
-        "sections": []
+        "sections": [],
+        "pending_materializations": []
       }
     }
   ]

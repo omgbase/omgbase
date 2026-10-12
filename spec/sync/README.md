@@ -118,6 +118,16 @@ had a live doc), conflicted }` in batch order.
 (`null` when the file is absent), `observe_batch` (`spec/store` §5),
 record the checkpoint.
 
+**Gone members and pending rows (2.2).** A member absent from the disk whose
+path has a pending `write`/`rename` materialization row (`spec/store` §5.7
+— the api path committed and still owes the file) is **not** tombstoned:
+`observe_batch` returns `{ deleted: false }` for it, nothing is minted, the
+row stays for the materializer, and the checkpoint `files` entry carries
+its old hash and a `null` new hash like any gone member. A `remove` row is
+confirmed by the absence and dropped. A present member with a pending row
+is settled by the store's gate rule (bytes the row names → echo; anything
+else → the file wins), not by this layer.
+
 ### 4.2 The walk
 
 `walk_markdown(root)`: every regular file whose name ends in `.md`, at any
@@ -134,6 +144,13 @@ Inputs: the repo's `file_stats` cache rows `(path, mtime_ns, size, hash)` —
 `mtime_ns` read as a 64-bit integer, never a double (§9) — and the current
 filesystem snapshot (the walk with each file's `(mtime_ns, size)`).
 
+0. **Materialize** (2.2): replay every pending materialization row of the
+   repo through the filesystem doc store (`spec/store` §5.7
+   `materialize_pending`) before looking at the disk, so a file a crashed or
+   refused api write left behind the database is brought to its committed
+   revision rather than read back as a human edit; the paths cleared are
+   reported as `materialized`. A materialized file is a candidate below (its
+   stat moved) that echo-suppresses: its bytes are the ones the store holds.
 1. **Candidates**: paths not in the cache, or whose `(mtime_ns, size)`
    differs from the cache. **Deletions**: cached paths not on disk.
 2. For each candidate, hash its bytes. If the hash differs from the cached
@@ -146,7 +163,7 @@ filesystem snapshot (the walk with each file's `(mtime_ns, size)`).
    vanished meanwhile deletes its row) and delete the rows of the deletions.
 
 Result: the checkpoint result plus `{ scanned, candidates, changed:
-ingested or deleted or conflicted non-empty }`; a sweep with nothing to do
+ingested or deleted or conflicted non-empty, materialized }`; a sweep with nothing to do
 still records a checkpoint row with `files: []`. `file_stats` is derived: a
 rebuild deletes the repo's rows, then re-stats and re-hashes every walked
 file **that has a live doc** (one whose `file_hash` is null matches nothing)
@@ -161,12 +178,15 @@ Since 1.1 (§9: the reference recorded every file, hiding a pending edit).
 candidates whose live doc's `file_hash` differs from the bytes' hash (or is
 null), `deleted` = live docs whose path is not on disk. Touches nothing.
 
-**Recovery** (startup): for every live doc, a missing file is `missing`; a
-file whose hash differs from the current revision's `rendered_hash` (or
-`file_hash` when there is no revision) is re-ingested as an observed commit
-(one document at a time, not a batch — §9) and listed `healed`. Recovery
-records no checkpoint row and does not refresh `file_stats` (the next sweep
-re-hashes the healed file and echo-suppresses it).
+**Recovery** (startup): step 0 as the sweep's — replay the pending
+materialization rows (`materialized`, 2.2), the recorded intent of a write
+the process did not finish; then for every live doc, a missing file is
+`missing`; a file whose hash differs from the current revision's
+`rendered_hash` (or `file_hash` when there is no revision) is re-ingested as
+an observed commit (one document at a time, not a batch — §9) and listed
+`healed`. Recovery records no checkpoint row and does not refresh
+`file_stats` (the next sweep re-hashes the healed file and echo-suppresses
+it).
 
 ### 4.4 Status
 
@@ -495,6 +515,15 @@ also rewrites `out` lines from the engine's actual requests. **Allowlist
 
 ## Decisions
 
+- 2026-10-12, sync 2.2: the freshness sweep and recovery gain step 0 —
+  replay the api path's pending materialization rows (`spec/store` 14.0
+  §5.7) before reading the disk — and a gone member whose path has a pending
+  `write`/`rename` row is not tombstoned (§4.1, §4.3). The sweep is the
+  production recovery point for a crash between an api commit and its file
+  half (the priming sweep at `omg mcp` start, the pre-verb sweep of every
+  CLI write); without step 0 it would read the stale file as a human revert.
+  Procedure change, no fixture movement beyond the store projection's new
+  `pending_materializations: []` key; a minor.
 - 2026-10-12, sync 2.1: the writer lock's scope is pinned (§7, §9 "Pinned
   (2.1)") — every host, once, at its outermost write boundary, for the whole
   write, checkpoint ingests included — and a checkpoint's row + pool sweep

@@ -10,7 +10,7 @@ use crate::mint::{IdSource, Mint};
 pub const SCHEMA_SQL: &str = include_str!("../schema.sql");
 
 /// The `PRAGMA user_version` this crate writes: the spec major.
-pub const SCHEMA_VERSION: i64 = 13;
+pub const SCHEMA_VERSION: i64 = 14;
 
 /// Split the DDL into statements at every `;` outside a `--` comment or a
 /// string literal, keeping each statement's original text (comments included).
@@ -215,6 +215,7 @@ fn migrate_step(conn: &Connection, to: i64, minter: &mut Mint<'_>) -> Result<()>
         }
         12 => conn.execute_batch(&ddl_for(&["doc_embeddings"]))?,
         13 => migrate_v13(conn, minter)?,
+        14 => conn.execute_batch(&ddl_for(&["pending_materializations"]))?,
         other => return Err(Error::Other(format!("no migration to schema v{other}"))),
     }
     Ok(())
@@ -279,6 +280,7 @@ mod tests {
         assert!(targets.iter().any(|t| t == "repos"));
         assert!(targets.iter().any(|t| t == "blocks_fts"));
         assert!(targets.iter().any(|t| t == "workspace_settings"));
+        assert!(targets.iter().any(|t| t == "pending_materializations"));
         assert_eq!(
             targets.iter().filter(|t| *t == "blocks").count(),
             5,
@@ -291,6 +293,7 @@ mod tests {
             conn.execute_batch(s).unwrap();
         }
         assert!(table_exists(&conn, "workspace_settings").unwrap());
+        assert!(table_exists(&conn, "pending_materializations").unwrap());
     }
 
     #[test]
@@ -304,6 +307,9 @@ mod tests {
         let nodes = ddl_for(&["nodes", "nodes_fts"]);
         assert!(nodes.contains("CREATE VIRTUAL TABLE IF NOT EXISTS nodes_fts"));
         assert_eq!(nodes.matches("CREATE INDEX").count(), 3);
+        let pending = ddl_for(&["pending_materializations"]);
+        assert!(pending.contains("CREATE TABLE IF NOT EXISTS pending_materializations"));
+        assert!(pending.contains("PRIMARY KEY (repo_id, path)"));
         assert!(ddl_for(&["nope"]).is_empty());
     }
 }

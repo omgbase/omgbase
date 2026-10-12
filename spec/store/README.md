@@ -12,7 +12,7 @@ rows**. It is owned by neither implementation.
 
 | Implementation | Where | Role |
 | --- | --- | --- |
-| `@omgbase/core` (TypeScript, npm) | `packages/core/src/core/store`, `core/ingest.ts`, `core/hash.ts`, `core/ids.ts`, `core/order-key.ts`, `core/read/document.ts`, `sync/observe.ts`, `sync/reconciling-ingest.ts`, `sync/tombstone.ts` | **Reference.** Store decisions land here first. |
+| `@omgbase/core` (TypeScript, npm) | `packages/core/src/core/store`, `core/ingest.ts`, `core/hash.ts`, `core/ids.ts`, `core/order-key.ts`, `core/read/document.ts`, `sync/observe.ts`, `sync/reconciling-ingest.ts`, `sync/tombstone.ts`, `mutate/materialize.ts` | **Reference.** Store decisions land here first. |
 | `omgbase-store` (Rust, crates.io) | `crates/omgbase-store` | Conformance-first port. Opens the same databases, passes the same fixtures. |
 
 The spec is three artifacts, versioned together by `VERSION`:
@@ -68,13 +68,17 @@ ignores their rows. Fixtures are Markdown only (`format = 'markdown'`).
 ## Versioning
 
 `VERSION` is `<major>.<minor>`. **The major is the schema version** — the
-`PRAGMA user_version` every database carries (`13`), so a reader of a
+`PRAGMA user_version` every database carries (`14`), so a reader of a
 database knows which spec it conforms to. The minor counts semantic changes
 that need no migration: how a row is filled, an encoding, the observe
 procedure. The `omgbase-store` crate is `<major>.<minor>.<patch>`, exactly as
 `oqx`, `omgbase-format` and `omgbase-reconcile` track their specs; its first
 release is on the 13.x line. The reference lives inside `@omgbase/core`,
 which has its own version line; its `SCHEMA_VERSION` equals the major here.
+A major ships both engines together: an engine that opens a database from a
+newer major refuses it (§1 step 3) rather than reading tables it does not
+know, so a mixed-version workspace fails safely and no published engine can
+corrupt a newer one's database.
 
 - **DDL changes** (a table, column, index or constraint added, removed or
   changed) bump the major, add a migration (§3.4) and a `migrations` fixture.
@@ -184,7 +188,7 @@ The tables of `schema.sql` this spec fills:
 | Table | One row per | Meaning |
 | --- | --- | --- |
 | `repos` | repository | `repo_id`, unique `slug`, `settings` JSON (defaults `{}`). A repo owns identity and history, not a filesystem; where its bytes come from is the sync registry's business. |
-| `docs` | path ever seen in a repo | `doc_id`; `path` (repo-relative, no leading slash, unique per repo); `format`; `current_rev`; `file_hash` (of the last observed bytes); `conflicted` (0/1, git conflict markers seen); `leading_trivia` (bytes before the first block); `frontmatter_trivia` (the frontmatter block's trailing trivia, `NULL` when the document has no frontmatter); `deleted_commit` (tombstone, `NULL` = live). A path keeps its `doc_id` across deletion and re-creation (§5.6). |
+| `docs` | path ever seen in a repo | `doc_id`; `path` (repo-relative, no leading slash, unique per repo); `format`; `current_rev`; `file_hash` (of the bytes the current revision renders to — §5.4 step 12); `conflicted` (0/1, git conflict markers seen); `leading_trivia` (bytes before the first block); `frontmatter_trivia` (the frontmatter block's trailing trivia, `NULL` when the document has no frontmatter); `deleted_commit` (tombstone, `NULL` = live). A path keeps its `doc_id` across deletion and re-creation (§5.6). |
 | `blocks` | live or tombstoned block of the **current** revision | The hot table: `block_id`, `doc_id`, `parent_block` (`NULL` at top level), `order_key` (§4.3), `ordinal`, `depth`, `ancestor_path` (§4.3), `type`, `attrs` JSON, `text` (visible text, `spec/format` §4.1), `raw_hash`, `norm_hash`, `trivia_hash` (`NULL` = no trailing trivia), `created_commit`, `deleted_commit`. Rebuilt wholesale by every commit to the document (§5.4); a tombstoned document keeps its rows with `deleted_commit` set. |
 | `blobs` | distinct byte string | Content-addressed: `hash = sha256(bytes)`, `size = |bytes|`. Holds every block `raw`, every non-empty trivia, every frontmatter block. Never deleted in v1. |
 | `tree_nodes` | distinct sibling list | Content-addressed Merkle node: `hash = sha256(entries)`, `entries` the canonical serialization §4.1. Identical subtrees share a row. |
@@ -192,6 +196,7 @@ The tables of `schema.sql` this spec fills:
 | `commits` | write to the repo | `commit_id`, per-repo `seq` from 1 (the change-feed cursor), `ts`, `origin ∈ {api, observed, import, projection}`, `actor`, `reason`, `checkpoint_id`, `ops`. Observations write `observed` (§5); the mutation kernel writes `api`; `import` is bulk ingest with no retro history; `projection` is reserved. |
 | `dispositions` | (commit, block, kind) | The matcher's decisions as persisted: `kind` (the `spec/reconcile` §2 kinds), `confidence`, `reason`, `matcher_v`, `detail` JSON. Immutable once committed (R6). `INSERT OR IGNORE` on the primary key (§10). |
 | `resurrection_pool` | block deleted in an earlier commit | `block_id`, `doc_id` it left, `raw_hash`, `norm_hash`, `type`, `deleted_commit`, `expires_ts`. Feeds `spec/reconcile` phase 6b; rows leave when consumed, evicted or swept. |
+| `pending_materializations` | file the `api` path still owes the disk (14.0) | `repo_id`, `path` (where the file must end up; one row per path), `kind ∈ {write, rename, remove}`, `from_path` (rename: the old path, else `NULL`), `doc_id`, `rev_id` (the revision whose bytes `write`/`rename` leave at `path`; `NULL` for `remove`), `rendered_hash` (the bytes expected at `path` — for `remove`, the bytes it is safe to unlink), `commit_id` (the `api` commit that recorded it). Inserted by the commit transaction, deleted per file by the materializer once the file is as recorded (§5.7). Empty at quiescence; the observe path never inserts. |
 | `external_nodes`, `collections`, `checkpoints`, `properties`, `edges`, `adapters`, `sources`, `attachments`, `sync_state`, `workspace_settings`, `file_stats` | — | Created by `schema.sql`; semantics belong to other specs. `properties`, `edges` and `checkpoints` are written by the reference during the same commit transaction; a runner does not compare them. |
 
 ### 3.2 Derived tables
@@ -226,7 +231,7 @@ checked without trusting its own copy of the DDL.
 
 ### 3.4 Migrations
 
-A database at `user_version` *n* < 13 is upgraded one version at a time, each
+A database at `user_version` *n* < 14 is upgraded one version at a time, each
 step idempotent (it inspects before it alters), each in a transaction:
 
 | To | Step |
@@ -243,9 +248,10 @@ step idempotent (it inspects before it alters), each in a transaction:
 | 11 | `ALTER TABLE documents RENAME TO docs` when `documents` exists and `docs` does not (SQLite rewrites the FK references) |
 | 12 | create `doc_embeddings` |
 | 13 | if `repos.root_path` exists: ensure the `fs` adapter row (`INSERT OR IGNORE … ('fs', 'omgbase-fs-adapter', '[]')`, even when there are no repos); for each repo with a non-empty `root_path`, find or create a source named `<slug>-fs` (`source_id` minted with prefix `src`, `adapter = 'fs'`, `config = {"root": <root_path>}`, `env = '{}'`) and `INSERT OR IGNORE` the attachment; then `ALTER TABLE repos DROP COLUMN root_path` |
+| 14 | create `pending_materializations` (§5.7) |
 
 The "create" steps execute the same sub-DDL text that `schema.sql` contains
-for those tables. After the last step the opener sets `user_version = 13`.
+for those tables. After the last step the opener sets `user_version = 14`.
 `cases/migrations.json` pins these on authored pre-states (§9.3). Because
 every pre-state in the fixtures is a *partial* old schema (the tables the
 step touches, not a whole historical database), the expectation is the
@@ -460,7 +466,11 @@ prepared result):
 11. **Consume the pool.** Delete the `resurrection_pool` row of every id in
     `consumed_pool`.
 12. **Pointers.** `UPDATE docs SET current_rev = rev_id, file_hash =
-    sha256(source)`.
+    sha256(source)` — `file_hash` is the hash of the bytes the current
+    revision renders to: on the observe path the observed source; on the
+    api path (below) the bytes the engine is materializing, which the file
+    holds once §5.7 has run. The echo gate (§5.1 step 3) is unchanged: the
+    materialized file hashes to `file_hash` and is an echo.
 13. **Converged** = `file_hash == rendered_hash` (trivially) **and**
     `render(tree) == source` (`spec/format` §1 inv. 1) **and**
     `reconstruct(doc) == source` (§6.1, read back from the rows just
@@ -489,6 +499,19 @@ cross-document move run in load order, so only their visibility changes —
 transaction per member, one commit per member (the per-member commit ids
 `spec/store` fixtures pin). Mint order on the api path: one `c`, then per
 document `r`, `x`, `e`.
+
+**The api path (14.0).** The same transaction records the file half as
+intent, after every document's steps and before COMMIT: one
+`pending_materializations` row per path the request owes the disk (§3.1) —
+`write` for every ingested document (`rev_id` = its new revision,
+`rendered_hash` = `sha256(source)`), `rename` for a moved document
+(`from_path` = the old path, `path` = the new one, `rev_id` = its current
+revision and `rendered_hash` that revision's — or the revision the retarget
+gives it when it is a self-linking source), `remove` for a deleted document
+(`rev_id = NULL`, `rendered_hash` = its last revision's rendered hash, or
+`file_hash` when it has no revision). `INSERT OR REPLACE`: a later request
+for the same path supersedes the earlier intent. No file is touched inside
+the transaction; §5.7 says how the rows become files.
 
 9b. **Properties (store 13.1).** After the blocks and sections: delete the
     doc's `properties` rows and insert the document's property rows as
@@ -544,6 +567,83 @@ phase 6b), and §5.4 step 1 reuses the doc row — **and clears its
 the next observation of the same bytes is an echo. (§10: the reference did
 not clear the tombstone; found while writing this section.)
 
+### 5.7 Materialization and pending rows (14.0)
+
+The api path is **DB-first**: its transaction commits the rows (§5.4 "The
+api path") and the files follow, one `pending_materializations` row each.
+The guarantee this buys, stated honestly: all-or-nothing in the database;
+files eventually consistent through recorded intent that any materializer
+replays; no cross-resource atomicity between the database and the disk; a
+file a human changes meanwhile wins (ADR-004). A conflict found inside the
+transaction (`spec/mutate` §4 step 5) therefore touches no file, and a
+process that dies between COMMIT and the file half loses nothing: the
+commit, its revisions and the change-feed digest are durable, and the rows
+say what each file must become.
+
+**Materializing a row** (`materialize_row`), through the repo's doc store,
+then `DELETE` the row — autocommit per file, so partial progress is durable.
+Bytes are `reconstruct at rev_id` (§6.2 — byte-exact for a current revision,
+and a row always names its document's current revision because a later
+commit to the path replaces the row). A materializer never overwrites bytes
+it does not recognise as the engine's own: at `path` it accepts nothing, the
+bytes the row names (`rendered_hash`), or the **prior** bytes — the rendered
+hash of the revision before `rev_id` (what the file holds when the process
+died after COMMIT; the commit phase itself passes the `file_hash` it
+validated the file against). Anything else is **foreign** — a human edit
+that landed meanwhile — and the row is kept: the next observation of the
+path decides (below), so the api intent is superseded by a later edit, never
+silently reverted and never overwriting it.
+
+| Row | At `path` | Action |
+| --- | --- | --- |
+| `write` | absent, or the prior bytes | write the revision's bytes; delete the row |
+| `write` | the row's bytes | already there (another materializer, or a human wrote the same); delete the row |
+| `write` | foreign bytes | keep the row (the observation applies "file wins") |
+| `rename` | absent; `from_path` present | rename `from_path` → `path`; if the renamed file holds the prior bytes rather than the row's (a self-linking source), write the revision's bytes over it; delete the row |
+| `rename` | absent; `from_path` absent | write the revision's bytes at `path`; delete the row |
+| `rename` | the row's bytes | done; a stale copy of the engine's own bytes still at `from_path` is removed; delete the row |
+| `rename` | foreign bytes | keep the row (`path` wins; `from_path` becomes an untracked file) |
+| `remove` | the row's bytes | unlink; delete the row |
+| `remove` | absent, or foreign bytes | leave the file (a rewritten file is untracked now — the next sweep re-creates the path, §5.6); delete the row |
+
+A row whose bytes cannot be rendered (`rev_id` names no revision, the
+reconstruction does not hash to `rendered_hash`) is kept for a later
+materializer rather than guessed. `materialize_pending(repo)` replays every
+row of a repo in insertion order and returns the paths cleared; it is step 0
+of the freshness sweep and of recovery (`spec/sync` §4.3) — the production
+recovery points — and `spec/mutate` §4 step 5 (a) replays the rows of the
+paths a request touches before reading their files.
+
+**The gate rule.** An observation (§5.1) of a path that has a pending row
+runs this check first, before the echo gate, keyed by the `(repo, path)` row:
+
+- the bytes hash to `rendered_hash` → an **echo** of the row's `doc_id`
+  (`{ echo: true, converged: true }`, nothing minted): the observation
+  confirmed the intent; the row is deleted — except a `remove` row, which
+  stays until a materializer unlinks the file (the observe path never
+  touches a file);
+- the member is **gone** (`source` is null) and the row is a `write` or
+  `rename` → **no tombstone**, outcome `{ deleted: false }`, nothing minted,
+  row kept: the materializer still owes the file. A gone member with a
+  `remove` row is the intended state: the row is deleted and the member is
+  the §5.1 step 2 no-op;
+- anything else is **foreign bytes → the file wins**: the normal reconciling
+  ingest (§5.1 step 4, §5.4) commits them as `observed`, and the row is
+  deleted in that member's transaction. In particular a file still holding
+  the **previous** revision's bytes after a crash is foreign to this rule —
+  it does not hash to `rendered_hash`, and it is indistinguishable from a
+  human who reverted the file — so observing it commits the old bytes as a
+  new observed revision over the api one (`spec/mutate`
+  `materialize::crash-then-observe-of-stale-file-is-foreign`). The api
+  revision stays in history; nothing is reverted silently. This is why the
+  materializer, not the observation, is the recovery point: the sweep runs
+  step 0 before it walks the disk, and a watcher batch that reaches the gate
+  first is a human's intent as far as the engine can tell.
+
+`observe_delete` applies the gone-member rule the same way. The disk-drift
+counters (`spec/sync` §4.3) may transiently count a path with a pending row
+as `changed`; they are read-only and the next sweep settles it.
+
 ## 6. Reads this spec pins
 
 ### 6.1 Reconstruct (current bytes)
@@ -565,7 +665,9 @@ non-null (children not walked). `leading_trivia` and `frontmatter_trivia`
 come from the **current** doc row — they are not versioned — so the result
 is byte-exact for the current revision and best-effort for older ones; the
 read reports `rendered_hash_match = sha256(result) == rendered_hash` as the
-honest signal.
+honest signal. The materializer (§5.7) and recovery render a pending row's
+bytes with this read at the row's `rev_id`, and refuse the row when the
+result does not hash to `rendered_hash`.
 
 ## 7. Rebuild and garbage
 
@@ -593,7 +695,10 @@ end of every case; an implementation may assert them in its own tests.
 - **I1 Convergence.** For every live doc with a current revision:
   `docs.file_hash == revisions.rendered_hash == sha256(last observed
   source)`; `reconstruct(doc) == source` (§6.1); reconstruct at the current
-  revision (§6.2) `== source` with `rendered_hash_match = true`.
+  revision (§6.2) `== source` with `rendered_hash_match = true`. (On the
+  api path the file lags the store while a pending row exists — §5.7; the
+  `spec/mutate` runner compares such a path against the store's own
+  reconstruction, as it does for a `disk` edit.)
 - **I2 Hash integrity.** Every `blobs` row: `hash == sha256(bytes)`, `size ==
   |bytes|`. Every `tree_nodes` row: `hash == sha256(entries)` and `entries`
   parses as §4.1 with every `raw_hash_hex`/`trivia_hash_hex` present in
@@ -685,7 +790,7 @@ repos are visited in `rowid` order).
 minter (§2.2) is active, so ids minted by a migration (`src_0`) compare.
 When opening must fail (a newer `user_version`), `expect` is instead
 `{ "error": "<the exact message>" }` — `migrations::newer-version-is-refused`
-pins `database schema (v14) is newer than this build (v13); upgrade omgbase`.
+pins `database schema (v15) is newer than this build (v14); upgrade omgbase`.
 
 ### 9.4 Observation scripts
 
@@ -718,7 +823,8 @@ pins `database schema (v14) is newer than this build (v13); upgrade omgbase`.
         "dispositions": [ { "commit_id": "c_0", "block_id": "b_0", "kind": "inserted", "confidence": null, "reason": null, "matcher_v": "m2.3", "detail": {} }, … ],
         "block_changes": [ { "block_id": "b_0", "commit_id": "c_0", "kind": "inserted" }, … ],
         "resurrection_pool": [ { "block_id": "b_1", "doc_id": "d_0", "raw_hash": "<hex>", "norm_hash": "<hex>", "type": "paragraph", "deleted_commit": "c_1", "expires_ts": "…" } ],
-        "sections":    [ { "doc_id": "d_0", "heading_block": "b_0", "level": 1, "first_ordinal": 0, "last_ordinal": 1 } ]
+        "sections":    [ { "doc_id": "d_0", "heading_block": "b_0", "level": 1, "first_ordinal": 0, "last_ordinal": 1 } ],
+        "pending_materializations": []
       }
     }
   ]
@@ -761,7 +867,12 @@ pins `database schema (v14) is newer than this build (v13); upgrade omgbase`.
   `parent_block`, `ordinal` order — tombstoned rows keep their tree shape);
   `dispositions` and `block_changes` by (commit `seq`, `block_id` bytewise,
   `kind` bytewise); `resurrection_pool` by (`expires_ts`, `block_id`
-  bytewise); `sections` by (`doc_id` bytewise, `first_ordinal`).
+  bytewise); `sections` by (`doc_id` bytewise, `first_ordinal`);
+  `pending_materializations` (14.0) by `path`, as `{ path, kind, from_path,
+  doc_id, rev_id, rendered_hash, commit_id }` — always `[]` here, since only
+  the api path inserts rows; the `spec/mutate` scripts (its §9), which share
+  this shape, pin the rows through their `crash_after_commit` modifier and
+  `materialize {}` step.
 - Hash columns as hex; `attrs` and `detail` as JSON objects (compared with
   key order ignored); `bytes` as the decoded string; every other column as
   its SQLite value (`INTEGER` → number, `NULL` → `null`).
@@ -867,6 +978,23 @@ brought to it).
 
 ## Decisions
 
+- 2026-10-12, store 14.0: the api path commits DB-first. The commit
+  transaction records each file it owes as a `pending_materializations` row
+  (§3.1, migration 14) and the files are materialized after COMMIT from
+  `reconstruct at rev_id`, each row deleted as its file lands (§5.7); the
+  observe path gains the gate rule for a path with a pending row, the
+  freshness sweep and recovery a step 0 that replays the rows (`spec/sync`
+  §4.3). `file_hash` is now defined as the hash of the bytes the current
+  revision renders to (§5.4 step 12; on the observe path, the observed
+  source — unchanged). Last foundation step of the effect planner: without
+  it a conflict found inside the transaction had already overwritten a
+  file, and a crash after the files were written healed them as `observed`
+  commits that lost the api intent. The intent table was chosen over
+  inferring "file behind" from the previous revision's hash because that
+  inference cannot tell a crash from a human revert (ADR-004) and cannot
+  express a pending rename or remove. A DDL change: a major; both engines
+  ship together, and §1 step 3 keeps an older engine out of the newer
+  database.
 - 2026-10-12, store 13.7: the `api` path (`spec/mutate` §4) runs §5.4 for
   every document of a request inside one transaction under one commit row
   (§5.4 "The api path"). No DDL change; a procedure minor. The observe path

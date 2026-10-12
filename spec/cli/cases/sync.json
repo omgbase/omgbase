@@ -23,7 +23,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "{\"checkpointId\":\"cp_1\",\"ingested\":[],\"suppressed\":[],\"deleted\":[],\"conflicted\":[],\"scanned\":20,\"candidates\":0,\"changed\":false}\n"
+        "stdout": "{\"checkpointId\":\"cp_1\",\"ingested\":[],\"suppressed\":[],\"deleted\":[],\"conflicted\":[],\"scanned\":20,\"candidates\":0,\"changed\":false,\"materialized\":[]}\n"
       }
     },
     {
@@ -35,7 +35,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "{\"checkpointId\":\"cp_1\",\"ingested\":[],\"suppressed\":[],\"deleted\":[],\"conflicted\":[],\"scanned\":20,\"candidates\":0,\"changed\":false}\n"
+        "stdout": "{\"checkpointId\":\"cp_1\",\"ingested\":[],\"suppressed\":[],\"deleted\":[],\"conflicted\":[],\"scanned\":20,\"candidates\":0,\"changed\":false,\"materialized\":[]}\n"
       }
     },
     {
@@ -104,7 +104,7 @@
           ],
           "expect": {
             "exit": 0,
-            "stdout": "{\"checkpointId\":\"cp_5\",\"ingested\":[],\"suppressed\":[],\"deleted\":[],\"conflicted\":[],\"scanned\":20,\"candidates\":0,\"changed\":false}\n"
+            "stdout": "{\"checkpointId\":\"cp_5\",\"ingested\":[],\"suppressed\":[],\"deleted\":[],\"conflicted\":[],\"scanned\":20,\"candidates\":0,\"changed\":false,\"materialized\":[]}\n"
           }
         }
       ]
@@ -186,7 +186,7 @@
           ],
           "expect": {
             "exit": 0,
-            "stdout": "{\"checkpointId\":\"cp_1\",\"ingested\":[\"/notes/added.md\"],\"suppressed\":[],\"deleted\":[],\"conflicted\":[],\"scanned\":21,\"candidates\":1,\"changed\":true}\n"
+            "stdout": "{\"checkpointId\":\"cp_1\",\"ingested\":[\"/notes/added.md\"],\"suppressed\":[],\"deleted\":[],\"conflicted\":[],\"scanned\":21,\"candidates\":1,\"changed\":true,\"materialized\":[]}\n"
           }
         },
         {
@@ -316,7 +316,7 @@
           ],
           "expect": {
             "exit": 0,
-            "stdout": "{\"scanned\":0,\"ingested\":[],\"deleted\":[],\"conflicted\":[],\"changed\":false}\n"
+            "stdout": "{\"scanned\":0,\"ingested\":[],\"deleted\":[],\"conflicted\":[],\"changed\":false,\"materialized\":[]}\n"
           }
         },
         {

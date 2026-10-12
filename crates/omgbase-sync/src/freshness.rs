@@ -169,6 +169,9 @@ pub fn record_file_stat(
 /// The checkpoint result plus the scan counters.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SweepResult {
+    /// Step 0 (store 14.0): the paths whose pending materialization this
+    /// sweep landed before walking (not on the wire).
+    pub materialized: Vec<String>,
     pub checkpoint: CheckpointResult,
     /// Files walked.
     pub scanned: usize,
@@ -190,10 +193,13 @@ impl SweepResult {
     }
 }
 
-/// §4.3: plan over the cache and the snapshot, refresh touched-not-edited
-/// stats, checkpoint `changed ++ deletions` at `ts` (with `git_head` on the
-/// row), refresh the cache for the changed paths and drop the deletions'
-/// rows.
+/// §4.3: step 0 — replay the repo's pending materializations (store 14.0:
+/// the files an `api` commit still owes, left by a crash before they
+/// landed) through the filesystem's [`DocStore`](omgbase_store::DocStore),
+/// so the walk below sees them as echoes rather than stale files; then plan
+/// over the cache and the snapshot, refresh touched-not-edited stats,
+/// checkpoint `changed ++ deletions` at `ts` (with `git_head` on the row),
+/// refresh the cache for the changed paths and drop the deletions' rows.
 pub fn freshness_sweep(
     store: &mut Store,
     repo_id: &str,
@@ -203,6 +209,7 @@ pub fn freshness_sweep(
     git_head: Option<&str>,
     config: &Config,
 ) -> Result<SweepResult> {
+    let materialized = materialize_pending(store, repo_id, fs, root)?;
     let cache = load_cache(store, repo_id)?;
     let disk = snapshot(fs, root)?;
     let plan = {
@@ -244,11 +251,26 @@ pub fn freshness_sweep(
         || !checkpoint.deleted.is_empty()
         || !checkpoint.conflicted.is_empty();
     Ok(SweepResult {
+        materialized,
         checkpoint,
         scanned: disk.len(),
         candidates: plan.candidates.len(),
         changed,
     })
+}
+
+/// §4.3 step 0 (store 14.0): [`Store::materialize_pending`] through the
+/// filesystem's write seam; nothing when the filesystem has none.
+pub fn materialize_pending(
+    store: &mut Store,
+    repo_id: &str,
+    fs: &dyn FileSystem,
+    root: &Path,
+) -> Result<Vec<String>> {
+    match fs.doc_store(root) {
+        Some(mut ds) => Ok(store.materialize_pending(repo_id, ds.as_mut())?),
+        None => Ok(Vec::new()),
+    }
 }
 
 /// How the database disagrees with the disk (§4.3 "Disk drift").
@@ -557,5 +579,151 @@ mod tests {
         fs.remove("d/b.md");
         record_file_stat(&store, &repo, &fs, root, "d/b.md", &[0; 32]).unwrap();
         assert_eq!(file_stats_rows(&store, &repo).unwrap().len(), 1);
+    }
+
+    /// A doc store whose writes die: the api request commits, the file half
+    /// never runs (store 14.0, `spec/store` §5.7).
+    struct Crashed;
+
+    impl omgbase_store::DocStore for Crashed {
+        fn exists(&self, _path: &str) -> bool {
+            false
+        }
+        fn read(&self, _path: &str) -> omgbase_store::Result<Option<String>> {
+            Ok(None)
+        }
+        fn write(&mut self, path: &str, _bytes: &str) -> omgbase_store::Result<()> {
+            Err(omgbase_store::Error::Other(format!(
+                "crashed before {path}"
+            )))
+        }
+        fn rename(&mut self, from: &str, _to: &str) -> omgbase_store::Result<()> {
+            Err(omgbase_store::Error::Other(format!(
+                "crashed before {from}"
+            )))
+        }
+        fn remove(&mut self, path: &str) -> omgbase_store::Result<()> {
+            Err(omgbase_store::Error::Other(format!(
+                "crashed before {path}"
+            )))
+        }
+    }
+
+    fn append_tail(repo: &str, doc: &str) -> omgbase_store::ApplyRequest {
+        omgbase_store::ApplyRequest {
+            repo_id: repo.to_owned(),
+            ops: vec![omgbase_store::Op::Insert {
+                doc: Some(doc.to_owned()),
+                to: omgbase_store::To {
+                    parent: omgbase_store::Parent::Doc,
+                    at: omgbase_store::At::End,
+                },
+                markdown: "A tail.".to_owned(),
+                expect: None,
+            }],
+            origin: omgbase_store::ApplyOrigin::new("agent:test", Some("fixture")),
+            dry_run: false,
+            set_frontmatter: Vec::new(),
+        }
+    }
+
+    /// §4.3 step 0 (2.2): over the real filesystem the sweep replays the
+    /// pending rows a crashed request left before it walks, so the file the
+    /// api commit owed is brought forward and then seen as an echo — never
+    /// read back as a human edit.
+    #[test]
+    fn sweep_step_zero_materializes_pending_rows_over_the_real_fs() {
+        let dir = std::env::temp_dir().join(format!(
+            "omgbase-sync-sweep-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("a.md"), "# A\n\nAlpha.\n").unwrap();
+        let mut store =
+            Store::open_in_memory_with_minter(Box::new(SequentialMinter::new())).unwrap();
+        let repo = store.create_repo("fixture").unwrap();
+        let fs = crate::fs::RealFileSystem;
+        let cfg = Config::default();
+        let r = freshness_sweep(&mut store, &repo, &fs, &dir, TS, None, &cfg).unwrap();
+        assert_eq!(r.checkpoint.ingested, ["a.md"]);
+        assert!(r.materialized.is_empty());
+
+        // The request commits; its file half dies.
+        let err = store
+            .apply(&append_tail(&repo, "a.md"), &mut Crashed, TS)
+            .unwrap_err();
+        assert!(err.to_string().starts_with("crashed before"), "{err}");
+        assert_eq!(store.pending_materializations(&repo).unwrap().len(), 1);
+        assert_eq!(
+            std::fs::read_to_string(dir.join("a.md")).unwrap(),
+            "# A\n\nAlpha.\n"
+        );
+
+        let r = freshness_sweep(&mut store, &repo, &fs, &dir, TS, None, &cfg).unwrap();
+        assert_eq!(r.materialized, ["a.md"], "step 0 landed the file");
+        assert_eq!(
+            std::fs::read_to_string(dir.join("a.md")).unwrap(),
+            "# A\n\nAlpha.\n\nA tail.\n"
+        );
+        assert_eq!(
+            r.checkpoint.suppressed,
+            ["a.md"],
+            "… which the walk then sees as an echo"
+        );
+        assert!(r.checkpoint.ingested.is_empty());
+        assert!(store.pending_materializations(&repo).unwrap().is_empty());
+        assert!(
+            detect_disk_drift(&store, &repo, &fs, &dir)
+                .unwrap()
+                .is_clean()
+        );
+        let observed: i64 = store
+            .conn()
+            .query_row(
+                "SELECT count(*) FROM commits WHERE origin = 'observed'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(observed, 1, "the api intent was never re-ingested");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The gate rule through a sweep over the fixture filesystem (which has
+    /// no write seam, so step 0 is skipped): a human's bytes at a path with a
+    /// pending row are ingested — the file wins — and the row is cleared.
+    #[test]
+    fn sweep_over_a_mem_fs_lets_a_foreign_file_win_and_clears_the_row() {
+        let mut store =
+            Store::open_in_memory_with_minter(Box::new(SequentialMinter::new())).unwrap();
+        let repo = store.create_repo("fixture").unwrap();
+        let mut fs = MemFileSystem::new();
+        let root = Path::new(ROOT);
+        fs.set("a.md", "# A\n\nAlpha.\n", 1);
+        let cfg = Config::default();
+        freshness_sweep(&mut store, &repo, &fs, root, TS, None, &cfg).unwrap();
+        store
+            .apply(&append_tail(&repo, "a.md"), &mut Crashed, TS)
+            .unwrap_err();
+        assert_eq!(store.pending_materializations(&repo).unwrap().len(), 1);
+        fs.set("a.md", "# A\n\nAlpha, by a human.\n", 2);
+        let r = freshness_sweep(&mut store, &repo, &fs, root, TS, None, &cfg).unwrap();
+        assert!(r.materialized.is_empty(), "no write seam, no step 0");
+        assert_eq!(r.checkpoint.ingested, ["a.md"]);
+        assert!(store.pending_materializations(&repo).unwrap().is_empty());
+        let doc: String = store
+            .conn()
+            .query_row("SELECT doc_id FROM docs WHERE path = 'a.md'", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert_eq!(
+            store.reconstruct(&doc).unwrap().as_deref(),
+            Some("# A\n\nAlpha, by a human.\n")
+        );
     }
 }

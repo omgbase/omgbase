@@ -9,6 +9,8 @@
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
+use omgbase_store::{DocStore, FsDocStore};
+
 use crate::error::{Error, Result};
 
 /// The directory names the walk skips.
@@ -49,6 +51,14 @@ pub trait FileSystem {
     /// Whether `path` exists under `root`.
     fn exists(&self, root: &Path, path: &str) -> Result<bool> {
         Ok(self.stat(root, path)?.is_some())
+    }
+    /// The write seam over the same tree (`spec/sync` §4.3 step 0, store
+    /// 14.0): the [`DocStore`] the sweep and recovery replay pending
+    /// materializations through. `None` for a filesystem that cannot write
+    /// (the in-memory fixture one), in which case step 0 is skipped — the
+    /// rows stay for a materializer that can.
+    fn doc_store(&self, _root: &Path) -> Option<Box<dyn DocStore>> {
+        None
     }
 }
 
@@ -105,6 +115,10 @@ impl FileSystem for RealFileSystem {
         let mut out = Vec::new();
         walk_real(root, root, &mut out)?;
         Ok(out)
+    }
+
+    fn doc_store(&self, root: &Path) -> Option<Box<dyn DocStore>> {
+        Some(Box::new(FsDocStore::new(root)))
     }
 
     fn stat(&self, root: &Path, path: &str) -> Result<Option<FileStat>> {

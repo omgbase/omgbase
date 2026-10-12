@@ -58,7 +58,7 @@ Invariants (testable; the full list is in `README.md` §Invariants):
 - **Convergence:** at quiescence, `sha256(file) == current_revision.rendered_hash` for every tracked document.
 - **Round-trip totality:** `render(parse(file)) == file` byte-identical when no ops are applied.
 
-API mutations are writes **to the file through the engine** (apply ops → render → atomic write → record revision as synced). Human edits are writes **around the engine** (observe → parse → reconcile → record revision). One commit log; two ingestion paths; one definition of current state.
+API mutations are writes **to the file through the engine** (apply ops → render → record the revision AND the pending file effect in one transaction → write the file atomically and clear the pending row; store 14.0 — before, the file was written first and a crash lost the api intent). Human edits are writes **around the engine** (observe → parse → reconcile → record revision). One commit log; two ingestion paths; one definition of current state.
 
 ### 2.1 The write-write race
 

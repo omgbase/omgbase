@@ -183,7 +183,8 @@
             "first_ordinal": 0,
             "last_ordinal": 1
           }
-        ]
+        ],
+        "pending_materializations": []
       }
     },
     {
@@ -271,7 +272,8 @@
         "dispositions": [],
         "block_changes": [],
         "resurrection_pool": [],
-        "sections": []
+        "sections": [],
+        "pending_materializations": []
       }
     },
     {
@@ -410,7 +412,8 @@
             "first_ordinal": 0,
             "last_ordinal": 0
           }
-        ]
+        ],
+        "pending_materializations": []
       }
     },
     {
@@ -590,7 +593,8 @@
             "first_ordinal": 0,
             "last_ordinal": 1
           }
-        ]
+        ],
+        "pending_materializations": []
       }
     },
     {
@@ -853,7 +857,8 @@
             "first_ordinal": 0,
             "last_ordinal": 1
           }
-        ]
+        ],
+        "pending_materializations": []
       }
     },
     {
@@ -1111,7 +1116,8 @@
             "first_ordinal": 0,
             "last_ordinal": 1
           }
-        ]
+        ],
+        "pending_materializations": []
       }
     },
     {
@@ -1286,7 +1292,8 @@
             "first_ordinal": 0,
             "last_ordinal": 1
           }
-        ]
+        ],
+        "pending_materializations": []
       }
     }
   ]

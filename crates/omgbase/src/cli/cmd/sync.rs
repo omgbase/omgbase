@@ -82,7 +82,7 @@ fn run_one_shot(cli: &mut Cli, repo: &RepoRow) -> Result<i32> {
     let Some(root) = repo.root_path.as_deref() else {
         if cli.machine() {
             cli.io.out(&js_json(
-                &json!({ "scanned": 0, "ingested": [], "deleted": [], "conflicted": [], "changed": false }),
+                &json!({ "scanned": 0, "ingested": [], "deleted": [], "conflicted": [], "changed": false, "materialized": [] }),
             ));
         } else {
             // §9 Fixed: the note goes to stderr.
@@ -112,18 +112,22 @@ fn run_one_shot(cli: &mut Cli, repo: &RepoRow) -> Result<i32> {
     // The paths the sweep names print in the reference form (spec/surface §1 "Paths").
     let rooted =
         |paths: &[String]| -> Vec<String> { paths.iter().map(|p| reference_path(p)).collect() };
-    let (ingested, suppressed, deleted, conflicted) = (
+    let (ingested, suppressed, deleted, conflicted, materialized) = (
         rooted(&cp.ingested),
         rooted(&cp.suppressed),
         rooted(&cp.deleted),
         rooted(&cp.conflicted),
+        rooted(&result.materialized),
     );
     if cli.machine() {
-        // The `SweepResult` as the reference spells it (camelCase).
+        // The `SweepResult` as the reference spells it (camelCase); since
+        // spec/cli 3.1 with step 0's `materialized` (spec/sync §4.3, 2.2).
+        // The human rendering does not show it.
         cli.io.out(&js_json(&json!({
             "checkpointId": cp.checkpoint_id, "ingested": ingested, "suppressed": suppressed,
             "deleted": deleted, "conflicted": conflicted, "scanned": result.scanned,
             "candidates": result.candidates, "changed": result.changed,
+            "materialized": materialized,
         })));
         return Ok(EXIT_OK);
     }

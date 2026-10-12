@@ -126,11 +126,13 @@ export interface Projection {
   block_changes: Row[];
   resurrection_pool: Row[];
   sections: Row[];
+  /** README §9.4 (14.0): the api path's recorded file intent — always `[]` for an observation script. */
+  pending_materializations: Row[];
 }
 /** The projected tables, in the order the fixture emits them. */
 export const PROJECTED_TABLES = [
   "docs", "commits", "revisions", "blobs", "tree_nodes", "blocks",
-  "dispositions", "block_changes", "resurrection_pool", "sections",
+  "dispositions", "block_changes", "resurrection_pool", "sections", "pending_materializations",
 ] as const;
 
 /** README §9.4: which fixture minter a case installs — the sequential counter (default) or the repeating one (13.5). */
@@ -499,7 +501,11 @@ export function projectStore(db: Db, repoId: string): Omit<Projection, "steps"> 
     .map(toRow)
     .sort((a, b) => cmp(a.doc_id as string, b.doc_id as string) || (a.first_ordinal as number) - (b.first_ordinal as number));
 
-  return { docs, commits, revisions, blobs, tree_nodes, blocks, dispositions, block_changes, resurrection_pool, sections };
+  const pending_materializations = (db
+    .prepare("SELECT path, kind, from_path, doc_id, rev_id, rendered_hash, commit_id FROM pending_materializations WHERE repo_id = ? ORDER BY path")
+    .all(repoId) as Record<string, unknown>[]).map(toRow);
+
+  return { docs, commits, revisions, blobs, tree_nodes, blocks, dispositions, block_changes, resurrection_pool, sections, pending_materializations };
 }
 
 // ---- invariants (README §8) --------------------------------------------------------------
@@ -919,7 +925,9 @@ export function validateFixtureFile(file: string, doc: unknown, opts: ValidateOp
       stepCount = validateSteps(at, c.steps, problems);
     }
 
-    if (c.expect === undefined) {
+    // A regeneration pass (`requireExpect: false`) rewrites `expect` from the
+    // inputs, so a stale one — a projection key the spec gained — is not a problem.
+    if (c.expect === undefined || !requireExpect) {
       if (requireExpect) problems.push(`${at}: missing \`expect\` (run STORE_SPEC_UPDATE=1)`);
       return;
     }

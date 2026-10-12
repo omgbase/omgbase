@@ -64,15 +64,29 @@ const CONFIG_KEYS: [&str; 13] = [
     "max_scored_blocks",
     "theta_xdoc",
 ];
-const PROJECTED_TABLES: [&str; 6] = [
+const PROJECTED_TABLES: [&str; 7] = [
     "docs",
     "blocks",
     "commits",
     "revisions",
     "dispositions",
     "resurrection_pool",
+    "pending_materializations",
 ];
-const STEP_KINDS: [&str; 7] = ["observe", "sweep", "apply", "macro", "docs", "plan", "disk"];
+const STEP_KINDS: [&str; 8] = [
+    "observe",
+    "sweep",
+    "apply",
+    "macro",
+    "docs",
+    "plan",
+    "disk",
+    "materialize",
+];
+/// The committing step kinds that take `crash_after_commit: true` (store
+/// 14.0, `spec/mutate` §9): the request commits, the process dies before
+/// its first file operation, the outcome is `{ crashed_after_commit: true }`.
+const CRASHABLE_STEPS: [&str; 3] = ["apply", "macro", "docs"];
 const MACROS: [&str; 9] = [
     "tasks_complete",
     "sections_append",
@@ -286,10 +300,20 @@ fn validate_steps(at: &str, steps: Option<&Json>, nested: bool, problems: &mut V
                 only_keys(b, &["ts"], &here, problems);
             }
             "disk" => validate_disk(body, &here, problems),
+            "materialize" => {
+                only_keys(b, &[], &here, problems);
+            }
             "apply" => {
                 only_keys(
                     b,
-                    &["ts", "ops", "origin", "dry_run", "set_frontmatter"],
+                    &[
+                        "ts",
+                        "ops",
+                        "origin",
+                        "dry_run",
+                        "set_frontmatter",
+                        "crash_after_commit",
+                    ],
                     &here,
                     problems,
                 );
@@ -306,7 +330,12 @@ fn validate_steps(at: &str, steps: Option<&Json>, nested: bool, problems: &mut V
                 }
             }
             "macro" => {
-                only_keys(b, &["ts", "name", "args", "origin"], &here, problems);
+                only_keys(
+                    b,
+                    &["ts", "name", "args", "origin", "crash_after_commit"],
+                    &here,
+                    problems,
+                );
                 require_ts(b, &here, problems);
                 if !b
                     .get("name")
@@ -324,7 +353,7 @@ fn validate_steps(at: &str, steps: Option<&Json>, nested: bool, problems: &mut V
                 require_origin(b.get("origin"), &here, problems);
             }
             "docs" => {
-                let mut allowed = vec!["ts", "actor"];
+                let mut allowed = vec!["ts", "actor", "crash_after_commit"];
                 allowed.extend(DOC_OPS);
                 only_keys(b, &allowed, &here, problems);
                 require_ts(b, &here, problems);
@@ -367,6 +396,12 @@ fn validate_steps(at: &str, steps: Option<&Json>, nested: bool, problems: &mut V
                 }
             }
             _ => unreachable!(),
+        }
+        if CRASHABLE_STEPS.contains(&kind)
+            && b.get("crash_after_commit")
+                .is_some_and(|v| *v != Json::Bool(true))
+        {
+            problems.push(format!("{here}: `crash_after_commit` is `true` or absent"));
         }
     }
     steps.len() as i64
@@ -706,6 +741,82 @@ struct Runner {
     /// Paths a `disk` step rewrote that no commit has ingested yet.
     pending_disk: HashSet<String>,
     config: Config,
+    /// The current step carries `crash_after_commit: true`: the request's
+    /// first file operation dies (the process crashed after COMMIT, before
+    /// the file half), so the commit lands and its
+    /// `pending_materializations` rows stay (14.0).
+    crash_after_commit: bool,
+}
+
+/// The doc store a crashed phase B' sees: reads pass through, the first
+/// write/rename/remove dies — and records that it did, so the runner can
+/// tell a crash from a step that never reached a file operation (an error
+/// outcome, a request with no file half).
+struct CrashedDocStore<'a> {
+    inner: &'a mut MemDocStore,
+    crashed: bool,
+}
+
+const CRASH_MARKER: &str = "crash_after_commit: the process died before the file half";
+
+impl CrashedDocStore<'_> {
+    fn die(&mut self) -> omgbase_store::Result<()> {
+        self.crashed = true;
+        Err(omgbase_store::Error::Other(CRASH_MARKER.to_owned()))
+    }
+}
+
+impl DocStore for CrashedDocStore<'_> {
+    fn exists(&self, path: &str) -> bool {
+        self.inner.exists(path)
+    }
+    fn read(&self, path: &str) -> omgbase_store::Result<Option<String>> {
+        self.inner.read(path)
+    }
+    fn write(&mut self, _path: &str, _bytes: &str) -> omgbase_store::Result<()> {
+        self.die()
+    }
+    fn rename(&mut self, _from: &str, _to: &str) -> omgbase_store::Result<()> {
+        self.die()
+    }
+    fn remove(&mut self, _path: &str) -> omgbase_store::Result<()> {
+        self.die()
+    }
+}
+
+/// Run `f` with the step's doc store — the runner's, or the crashed view —
+/// and turn a crash into its outcome `{ crashed_after_commit: true }`
+/// (`spec/mutate` §9: the caller never saw a result).
+fn with_doc_store(
+    r: &mut Runner,
+    f: impl FnOnce(&mut Store, &mut dyn DocStore) -> omgbase_store::Result<Json>,
+) -> Result<Json, String> {
+    let result = if r.crash_after_commit {
+        let mut ds = CrashedDocStore {
+            inner: &mut r.doc_store,
+            crashed: false,
+        };
+        let result = f(&mut r.store, &mut ds);
+        if ds.crashed {
+            match &result {
+                Err(e) if e.to_string() == CRASH_MARKER => {
+                    return Ok(json!({ "crashed_after_commit": true }));
+                }
+                other => {
+                    return Err(format!(
+                        "crash_after_commit: the crash did not surface as the step's error: {other:?}"
+                    ));
+                }
+            }
+        }
+        result
+    } else {
+        f(&mut r.store, &mut r.doc_store)
+    };
+    match result {
+        Ok(v) => Ok(v),
+        Err(e) => error_outcome(&e),
+    }
 }
 
 fn run_apply(r: &mut Runner, ops: Vec<Op>, body: &JsonMap<String, Json>) -> Result<Json, String> {
@@ -729,10 +840,9 @@ fn run_apply(r: &mut Runner, ops: Vec<Op>, body: &JsonMap<String, Json>) -> Resu
         dry_run: body.get("dry_run").and_then(Json::as_bool).unwrap_or(false),
         set_frontmatter,
     };
-    match r.store.apply(&req, &mut r.doc_store, ts) {
-        Ok(res) => Ok(res.to_json()),
-        Err(e) => error_outcome(&e),
-    }
+    with_doc_store(r, |store, ds| {
+        store.apply(&req, ds, ts).map(|res| res.to_json())
+    })
 }
 
 fn apply_json(res: &ApplyResult) -> Json {
@@ -853,54 +963,54 @@ fn run_docs(r: &mut Runner, body: &JsonMap<String, Json>) -> Result<Json, String
             .ok_or("docs.ts")?
             .to_owned(),
     };
-    let result: omgbase_store::Result<Json> = if let Some(c) = body.get("create") {
+    if let Some(c) = body.get("create") {
         let fm = c.get("frontmatter").and_then(Json::as_object);
-        r.store
-            .docs_create(
-                &ctx,
-                &mut r.doc_store,
-                c["path"].as_str().unwrap_or_default(),
-                c["markdown"].as_str().unwrap_or_default(),
-                fm,
-            )
-            .map(|res| res.to_json())
+        with_doc_store(r, |store, ds| {
+            store
+                .docs_create(
+                    &ctx,
+                    ds,
+                    c["path"].as_str().unwrap_or_default(),
+                    c["markdown"].as_str().unwrap_or_default(),
+                    fm,
+                )
+                .map(|res| res.to_json())
+        })
     } else if let Some(m) = body.get("move") {
-        r.store
-            .docs_move(
-                &ctx,
-                &mut r.doc_store,
-                m["doc"].as_str().unwrap_or_default(),
-                m["to_path"].as_str().unwrap_or_default(),
-                // §6 (1.3): the default is `true`; `false` opts out.
-                m.get("retarget_inbound")
-                    .and_then(Json::as_bool)
-                    .unwrap_or(true),
-            )
-            .map(|res| res.to_json())
+        with_doc_store(r, |store, ds| {
+            store
+                .docs_move(
+                    &ctx,
+                    ds,
+                    m["doc"].as_str().unwrap_or_default(),
+                    m["to_path"].as_str().unwrap_or_default(),
+                    // §6 (1.3): the default is `true`; `false` opts out.
+                    m.get("retarget_inbound")
+                        .and_then(Json::as_bool)
+                        .unwrap_or(true),
+                )
+                .map(|res| res.to_json())
+        })
     } else if let Some(d) = body.get("delete") {
-        r.store
-            .docs_delete(
-                &ctx,
-                &mut r.doc_store,
-                d["doc"].as_str().unwrap_or_default(),
-            )
-            .map(|res| res.to_json())
+        with_doc_store(r, |store, ds| {
+            store
+                .docs_delete(&ctx, ds, d["doc"].as_str().unwrap_or_default())
+                .map(|res| res.to_json())
+        })
     } else if let Some(m) = body.get("set_meta") {
-        r.store
-            .docs_set_meta(
-                &ctx,
-                &mut r.doc_store,
-                m["doc"].as_str().unwrap_or_default(),
-                m.get("set").and_then(Json::as_object),
-                &strings_of(m.get("unset")),
-            )
-            .map(|res| res.to_json())
+        with_doc_store(r, |store, ds| {
+            store
+                .docs_set_meta(
+                    &ctx,
+                    ds,
+                    m["doc"].as_str().unwrap_or_default(),
+                    m.get("set").and_then(Json::as_object),
+                    &strings_of(m.get("unset")),
+                )
+                .map(|res| res.to_json())
+        })
     } else {
-        return Err("docs step names no operation".to_owned());
-    };
-    match result {
-        Ok(v) => Ok(v),
-        Err(e) => error_outcome(&e),
+        Err("docs step names no operation".to_owned())
     }
 }
 
@@ -943,6 +1053,11 @@ fn run_plan(r: &mut Runner, body: &JsonMap<String, Json>) -> Result<Json, String
 fn run_step(r: &mut Runner, step: &Json) -> Result<Json, String> {
     let obj = step.as_object().ok_or("step")?;
     let (kind, body) = obj.iter().next().ok_or("empty step")?;
+    r.crash_after_commit = CRASHABLE_STEPS.contains(&kind.as_str())
+        && body
+            .get("crash_after_commit")
+            .and_then(Json::as_bool)
+            .unwrap_or(false);
     match kind.as_str() {
         "observe" => {
             let ts = body["ts"].as_str().ok_or("observe.ts")?;
@@ -981,6 +1096,13 @@ fn run_step(r: &mut Runner, step: &Json) -> Result<Json, String> {
             r.pending_disk.insert(path.to_owned());
             Ok(json!({}))
         }
+        "materialize" => {
+            let done = r
+                .store
+                .materialize_pending(&r.repo_id, &mut r.doc_store)
+                .map_err(|e| e.to_string())?;
+            Ok(json!({ "materialized": done }))
+        }
         "apply" => {
             let b = body.as_object().ok_or("apply")?;
             let ops = ops_of(b)?;
@@ -1013,6 +1135,7 @@ fn run_case_script(c: &Json) -> Result<Evaluation, String> {
         doc_store: MemDocStore::new(),
         pending_disk: HashSet::new(),
         config,
+        crash_after_commit: false,
     };
     let mut steps = Vec::new();
     let mut problems = Vec::new();
@@ -1155,6 +1278,11 @@ fn project_store(conn: &Connection, repo_id: &str) -> Vec<(String, Json)> {
                 .cmp(str_of(b, "block_id").as_bytes()),
         )
     });
+    let pending = query_rows(
+        conn,
+        "SELECT path, kind, from_path, doc_id, rev_id, rendered_hash, commit_id FROM pending_materializations WHERE repo_id = ?1 ORDER BY path",
+        &[&repo_id],
+    );
     vec![
         ("docs".to_owned(), Json::Array(docs)),
         ("blocks".to_owned(), Json::Array(blocks)),
@@ -1162,17 +1290,31 @@ fn project_store(conn: &Connection, repo_id: &str) -> Vec<(String, Json)> {
         ("revisions".to_owned(), Json::Array(revisions)),
         ("dispositions".to_owned(), Json::Array(dispositions)),
         ("resurrection_pool".to_owned(), Json::Array(pool)),
+        ("pending_materializations".to_owned(), Json::Array(pending)),
     ]
 }
 
 // ---- checks (spec/store §8 + §9 files) ----------------------------------------------------
 
 /// The `files[path] == reconstruct(doc)` check for every live document (a
-/// path a `disk` step rewrote is exempt until a commit ingests those bytes),
-/// then the store invariants with the file bytes as the last source.
+/// path a `disk` step rewrote is exempt until a commit ingests those bytes;
+/// so is a path with a `pending_materializations` row — a crashed phase B'
+/// still owes it the file, 14.0), then the store invariants with the file
+/// bytes as the last source.
 fn check_all(r: &mut Runner) -> Vec<String> {
     let mut problems = Vec::new();
     let mut last_source: HashMap<String, String> = HashMap::new();
+    let pending_paths: HashSet<String> = {
+        let mut stmt = r
+            .store
+            .conn()
+            .prepare("SELECT path FROM pending_materializations WHERE repo_id = ?1")
+            .expect("valid SQL");
+        let it = stmt
+            .query_map(params![r.repo_id], |row| row.get::<_, String>(0))
+            .expect("query runs");
+        it.map(|x| x.expect("row reads")).collect()
+    };
     let live: Vec<(String, String, Option<Vec<u8>>)> = {
         let mut stmt = r
             .store
@@ -1201,7 +1343,7 @@ fn check_all(r: &mut Runner) -> Vec<String> {
             .ok()
             .flatten()
             .unwrap_or_default();
-        if r.pending_disk.contains(&path) {
+        if r.pending_disk.contains(&path) || pending_paths.contains(&path) {
             last_source.insert(path.clone(), reconstructed);
             continue;
         }

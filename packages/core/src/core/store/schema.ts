@@ -2,7 +2,7 @@
 // Kept as one string so migrations and rebuild-index can apply it verbatim.
 // No dialect-specific SQL leaks above the store module (02 §8).
 
-export const SCHEMA_VERSION = 13;
+export const SCHEMA_VERSION = 14;
 
 // file_stats (02 §4; derived, rebuildable by a full re-stat) backs the CLI
 // freshness sweep (11 §3.3): (mtime_ns, size) cheap-change detection so a
@@ -144,10 +144,35 @@ CREATE TABLE IF NOT EXISTS doc_embeddings (
 );
 `;
 
+// pending_materializations (spec/store §5.7, store 14.0). The recorded intent
+// of the api path's file half: the commit transaction inserts one row per file
+// the request must leave on disk — `write` the revision's bytes at `path`,
+// `rename` the file from `from_path` to `path`, `remove` the file at `path` —
+// and the materializer deletes each row once the file is there (after COMMIT,
+// per file, autocommit). A row that survives a crash is replayed by the next
+// materializer (B', the freshness sweep's step 0, recovery) from
+// `reconstruct at rev_id`; `rendered_hash` names the bytes expected at `path`
+// (for `remove`: the bytes it is safe to unlink). No bytes column: the
+// revision already holds them. One row per path: a later request for the same
+// path supersedes the earlier intent (`INSERT OR REPLACE`).
+export const PENDING_MATERIALIZATIONS_DDL = /* sql */ `
+CREATE TABLE IF NOT EXISTS pending_materializations (
+  repo_id       TEXT NOT NULL REFERENCES repos(repo_id),
+  path          TEXT NOT NULL,                 -- where the file must end up
+  kind          TEXT NOT NULL CHECK (kind IN ('write','rename','remove')),
+  from_path     TEXT,                          -- rename: the old path
+  doc_id        TEXT NOT NULL REFERENCES docs(doc_id),
+  rev_id        TEXT REFERENCES revisions(rev_id),   -- write/rename: the revision the bytes render (NULL for remove)
+  rendered_hash BLOB NOT NULL,                 -- the bytes expected at path (remove: the bytes it is safe to unlink)
+  commit_id     TEXT NOT NULL REFERENCES commits(commit_id),
+  PRIMARY KEY (repo_id, path)
+);
+`;
+
 // Additive migrations keyed by the version they upgrade TO. Each runs inside a
 // transaction. Only forward, idempotent DDL (CREATE ... IF NOT EXISTS) — no
 // destructive changes. store.ts applies these in order for an older db.
-// Migrations 3, 4, 6, 7, 9, 11 are programmatic — see store.ts.
+// Migrations 3, 4, 6, 7, 9, 11, 13 are programmatic — see store.ts.
 export const MIGRATIONS: Record<number, string> = {
   2: FILE_STATS_DDL,
   3: "",  // handled programmatically in store.ts
@@ -161,6 +186,7 @@ export const MIGRATIONS: Record<number, string> = {
   11: "",  // ALTER TABLE documents RENAME TO docs, handled programmatically in store.ts
   12: DOC_EMBEDDINGS_DDL,  // doc-grain semantic vectors
   13: "",  // drop repos.root_path (migrate → fs sources), handled programmatically in store.ts
+  14: PENDING_MATERIALIZATIONS_DDL,  // the api path's recorded file intent (spec/store §5.7)
 };
 
 export const DDL = /* sql */ `
@@ -313,7 +339,7 @@ CREATE TABLE IF NOT EXISTS resurrection_pool (
   deleted_commit TEXT NOT NULL,
   expires_ts     TEXT NOT NULL
 );
-
+${PENDING_MATERIALIZATIONS_DDL}
 -- ---- derived tables (02 §4; rebuildable) ------------------------------------
 CREATE TABLE IF NOT EXISTS sections (
   heading_block TEXT NOT NULL,

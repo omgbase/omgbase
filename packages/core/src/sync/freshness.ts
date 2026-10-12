@@ -1,7 +1,12 @@
 import type { Store } from "../core/store/store.js";
 import { sha256 } from "../core/hash.js";
 import { processCheckpoint, type CheckpointResult } from "./checkpoint.js";
-import { nodeFs, type FileStat, type SyncFs } from "./fs-util.js";
+import { nodeFs, type SyncFs } from "./fs-util.js";
+import { recordStat } from "./stat-cache.js";
+import { materializePending } from "../mutate/materialize.js";
+import { FsDocStore, type DocStore } from "../mutate/doc-store.js";
+
+export { recordStat, recordFileStat } from "./stat-cache.js";
 
 // Freshness sweep (11 §3.3, spec/sync §4.3). Without a live watcher the database
 // lags human edits since the last ingest. Before a one-shot command runs, this
@@ -116,36 +121,32 @@ export interface SweepResult extends CheckpointResult {
   scanned: number;
   candidates: number;
   changed: boolean;
-}
-
-/** Write a file's stat cache row from a stat (`INSERT … ON CONFLICT DO UPDATE`); a null stat (the
- *  file vanished) deletes the row. The DB half of `record_file_stat` (spec/sync §4.3 step 4). */
-export function recordStat(store: Store, repoId: string, path: string, st: FileStat | null, hash: Buffer): void {
-  if (!st) {
-    store.db.prepare("DELETE FROM file_stats WHERE repo_id = ? AND path = ?").run(repoId, path);
-    return;
-  }
-  store.db
-    .prepare(
-      `INSERT INTO file_stats (repo_id, path, mtime_ns, size, hash) VALUES (?, ?, ?, ?, ?)
-       ON CONFLICT(repo_id, path) DO UPDATE SET mtime_ns = excluded.mtime_ns, size = excluded.size, hash = excluded.hash`,
-    )
-    .run(repoId, path, st.mtimeNs, st.size, hash);
-}
-
-/** Record/refresh a file's stat cache row from its absolute path. Call after any ingest of the file. */
-export function recordFileStat(store: Store, repoId: string, path: string, abs: string, hash: Buffer): void {
-  recordStat(store, repoId, path, nodeFs.stat(abs, ""), hash);
+  /** step 0 (spec/sync §4.3, 2.2): the paths whose pending materialization rows were replayed before the walk. */
+  materialized: string[];
 }
 
 /**
  * Run the freshness sweep for a repo (spec/sync §4.3). Returns the checkpoint
  * result plus scan counters. Idempotent; safe alongside a live watcher
  * (hash-based echo suppression makes a double ingest a no-op). `opts.ts` pins
- * the batch timestamp (default now); `opts.fs` the filesystem seam.
+ * the batch timestamp (default now); `opts.fs` the filesystem seam;
+ * `opts.docStore` the write target step 0 materializes through (default: the
+ * filesystem store at `rootPath` — the fixtures' in-memory filesystem never
+ * holds a pending row, so the default is never exercised there).
  */
-export function freshnessSweep(store: Store, repoId: string, rootPath: string, opts: { ts?: string; gitHead?: string | null; fs?: SyncFs } = {}): SweepResult {
+export function freshnessSweep(
+  store: Store,
+  repoId: string,
+  rootPath: string,
+  opts: { ts?: string; gitHead?: string | null; fs?: SyncFs; docStore?: DocStore } = {},
+): SweepResult {
   const fs = opts.fs ?? nodeFs;
+  // Step 0 (2.2; spec/store §5.7): replay the api path's recorded file intent
+  // before looking at the disk, so a file a crashed or refused write left
+  // behind the database is brought forward instead of being read back as a
+  // human edit. The production recovery point (priming sweep at `omg mcp`
+  // start, the pre-verb sweep of every CLI write).
+  const materialized = materializePending(store, repoId, opts.docStore ?? new FsDocStore(rootPath));
   const cache = loadStatCache(store, repoId);
   const snapshot = snapshotOf(fs, rootPath);
   const plan = sweepPlan(cache, snapshot);
@@ -174,6 +175,7 @@ export function freshnessSweep(store: Store, repoId: string, rootPath: string, o
     scanned: snapshot.length,
     candidates: plan.candidates.length,
     changed: result.ingested.length > 0 || result.deleted.length > 0 || result.conflicted.length > 0,
+    materialized,
   };
 }
 

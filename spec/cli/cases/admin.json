@@ -1124,7 +1124,7 @@
           },
           "expect": {
             "exit": 0,
-            "stdout": "{\"checkpointId\":\"cp_1\",\"ingested\":[],\"suppressed\":[],\"deleted\":[\"/texts/mutus-liber.md\"],\"conflicted\":[],\"scanned\":19,\"candidates\":0,\"changed\":true}\n"
+            "stdout": "{\"checkpointId\":\"cp_1\",\"ingested\":[],\"suppressed\":[],\"deleted\":[\"/texts/mutus-liber.md\"],\"conflicted\":[],\"scanned\":19,\"candidates\":0,\"changed\":true,\"materialized\":[]}\n"
           }
         },
         {

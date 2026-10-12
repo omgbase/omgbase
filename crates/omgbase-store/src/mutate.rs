@@ -1,10 +1,11 @@
 //! Changesets over the store (`spec/mutate/README.md` §1, §4): loading a
 //! document into the working tree, applying the ops in order across the
-//! documents they touch, and the commit protocol — file-CAS against the doc
-//! store, atomic writes, and the `api` ingest of every document with the
-//! ops' **known ids** under one commit in one transaction
-//! ([`crate::effects`], 2.1) that re-validates every document's
-//! `(path, current_rev, file_hash)` before minting anything (2.2).
+//! documents they touch, and the commit protocol — the on-disk bytes read,
+//! the `api` ingest of every document with the ops' **known ids** under one
+//! commit in one transaction ([`crate::effects`], 2.1) that re-validates
+//! every document's `(path, current_rev, file_hash)` and the bytes read
+//! before minting anything (2.2) and records the files it owes, then the
+//! files materialized after COMMIT ([`crate::materialize`], store 14.0).
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
@@ -21,7 +22,7 @@ use serde_json::{Map, Value, json};
 
 use crate::Store;
 use crate::doc_store::DocStore;
-use crate::effects::{CommitHead, DocBase, Effect, Outcome, doc_base};
+use crate::effects::{CommitHead, DocBase, Effect, Outcome, doc_base, touched_paths};
 use crate::error::{Error, Result};
 use crate::ids::ALPHABET;
 use crate::observe::{DispositionRow, IngestPlan};
@@ -625,19 +626,19 @@ impl Store {
 
     /// §4: apply a changeset at `ts` (RFC 3339 UTC, stamped on the commit
     /// the request records). Steps 1–4 in memory; unless `dry_run`, the
-    /// commit phase (step 5, 2.1): **(a)** file-CAS every loaded document
-    /// against `doc_store` — the first mismatch ingests the on-disk bytes as
-    /// `observed` (its own transaction) and raises `sync_conflict`, nothing
-    /// written or committed; **(b)** write every rendered file; **(c)** one
-    /// `BEGIN IMMEDIATE` transaction that first re-validates every
-    /// document's `(path, current_rev, file_hash)` and the bytes (a) read
-    /// (2.2: `stale_plan` with the current truth when the database moved,
-    /// `sync_conflict` after an `observed` ingest when the file did, nothing
-    /// minted either way), then one `api` commit row and the known-id ingest
-    /// of every document in load order (`spec/store` §5.4). Atomic per
-    /// request: a failure in (c) rolls every document back and leaves the
-    /// written files ahead of the database until the next observation heals
-    /// them (§10).
+    /// commit phase (step 5, 2.2 / store 14.0): **(a)** read every loaded
+    /// document's file from `doc_store`; **(b)** one `BEGIN IMMEDIATE`
+    /// transaction that first re-validates every document's `(path,
+    /// current_rev, file_hash)` and the bytes (a) read — `stale_plan` with
+    /// the current truth when the database moved, `sync_conflict` after an
+    /// `observed` ingest of the disk bytes when the file did, nothing minted
+    /// or written either way — then one `api` commit row, the known-id
+    /// ingest of every document in load order (`spec/store` §5.4) and one
+    /// `pending_materializations` row per document; **(c)** after COMMIT,
+    /// the rendered files, each row deleted as its file lands
+    /// ([`Store::materialize_pending`]). Atomic per request in the
+    /// database; a failure in (b) rolls every document back with no file
+    /// touched, a crash in (c) leaves the rows for the next materializer.
     pub fn apply(
         &mut self,
         req: &ApplyRequest,
@@ -673,21 +674,28 @@ impl Store {
                 committed: false,
             });
         }
-        let on_disk = self.file_cas(&req.repo_id, &loaded, doc_store, ts)?;
+        // (a) A row an earlier request left at a touched path is landed
+        //     first, so a stale file reads as the engine's own bytes.
+        let touched: Vec<String> = loaded.iter().map(|d| d.doc.path.clone()).collect();
+        self.materialize_paths(&req.repo_id, &touched, doc_store)?;
+        let on_disk = read_on_disk(&loaded, doc_store)?;
         let staged = stage(&loaded, on_disk, |d| d.doc.path.clone());
-        write_staged(&staged, doc_store)?;
         let head = CommitHead {
             origin: Origin::Api,
             actor: Some(req.origin.actor.as_str()),
             reason: req.origin.reason.as_deref(),
+            clear_pending: false,
         };
         let effects: Vec<Effect> = staged.into_iter().map(Staged::into_effect).collect();
+        // (b) The transaction.
         match self.commit_effects(&req.repo_id, &head, &effects, ts)? {
             Outcome::Committed(_) => {}
             Outcome::Conflict(c) => {
                 return Err(self.disk_conflict(&req.repo_id, &c.path, &c.bytes, ts));
             }
         }
+        // (c) The files this request recorded.
+        self.materialize_paths(&req.repo_id, &touched_paths(&effects), doc_store)?;
         Ok(ApplyResult {
             results,
             revisions,
@@ -696,39 +704,11 @@ impl Store {
         })
     }
 
-    /// §4 step 5 (a): file-CAS every loaded document at the path it was
-    /// loaded under — the bytes on disk must hash to the `file_hash` the
-    /// document was loaded with. The first mismatch ingests the disk bytes
-    /// as an `observed` commit in a transaction of its own and fails
-    /// `sync_conflict` (retriable); nothing else is written or committed. A
-    /// path with no file, or a doc with no hash yet, passes. Returns the
-    /// bytes read per loaded document, in order — the commit re-checks them
-    /// against the row inside its transaction (2.2).
-    pub(crate) fn file_cas(
-        &mut self,
-        repo_id: &str,
-        loaded: &[LoadedDoc],
-        doc_store: &dyn DocStore,
-        ts: &str,
-    ) -> Result<Vec<Option<String>>> {
-        let mut read = Vec::with_capacity(loaded.len());
-        for d in loaded {
-            let path = d.doc.path.as_str();
-            let on_disk = doc_store.read(path)?;
-            if let (Some(bytes), Some(hash)) = (&on_disk, &d.base.file_hash) {
-                if sha256(bytes.as_bytes())[..] != hash[..] {
-                    return Err(self.disk_conflict(repo_id, path, bytes, ts));
-                }
-            }
-            read.push(on_disk);
-        }
-        Ok(read)
-    }
-
     /// The file at `path` no longer hashes to its document's `file_hash`:
     /// ingest `bytes` as an `observed` commit in a transaction of its own
-    /// (the file wins, ADR-004) and build the `sync_conflict` (retriable)
-    /// the request fails with — or the error that ingest itself raised.
+    /// (the file wins, ADR-004 — a pending row at the path goes with it,
+    /// §5.7) and build the `sync_conflict` (retriable) the request fails
+    /// with — or the error that ingest itself raised.
     pub(crate) fn disk_conflict(
         &mut self,
         repo_id: &str,
@@ -736,16 +716,24 @@ impl Store {
         bytes: &str,
         ts: &str,
     ) -> Error {
-        if let Err(e) = self.reconciling_ingest(
-            repo_id,
-            path,
-            bytes,
-            ts,
-            Origin::Observed,
-            None,
-            None,
-            &Config::default(),
-        ) {
+        let head = CommitHead {
+            origin: Origin::Observed,
+            actor: None,
+            reason: None,
+            clear_pending: true,
+        };
+        if let Err(e) = self
+            .reconciling_commit(
+                repo_id,
+                path,
+                bytes,
+                ts,
+                &head,
+                &Config::default(),
+                crate::effects::Guard::None,
+            )
+            .and_then(Outcome::committed)
+        {
             return e;
         }
         merr_data(
@@ -769,7 +757,7 @@ pub(crate) struct Staged {
     prior_ids: Vec<String>,
     /// The row as loaded, re-validated inside the commit (2.2).
     base: DocBase,
-    /// The file as phase A read it at the loaded path.
+    /// The file as phase (a) read it at the loaded path.
     on_disk: Option<String>,
 }
 
@@ -789,8 +777,8 @@ impl Staged {
 }
 
 /// Render every loaded document, each to live at `path_of(doc)`, carrying
-/// the bytes [`Store::file_cas`] read for it (one entry per loaded
-/// document, in order).
+/// the bytes [`read_on_disk`] read for it (one entry per loaded document,
+/// in order).
 pub(crate) fn stage(
     loaded: &[LoadedDoc],
     on_disk: Vec<Option<String>>,
@@ -812,12 +800,17 @@ pub(crate) fn stage(
         .collect()
 }
 
-/// §4 step 5 (b): write every staged file, in load order.
-pub(crate) fn write_staged(staged: &[Staged], doc_store: &mut dyn DocStore) -> Result<()> {
-    for s in staged {
-        doc_store.write(&s.path, &s.rendered)?;
-    }
-    Ok(())
+/// §4 step 5 (a): the file of every loaded document at the path it was
+/// loaded under, in order (`None`: no file) — read here, outside the
+/// transaction, and compared with the row's `file_hash` inside it (2.2): a
+/// file that no longer hashes to what the document's revision renders is a
+/// `sync_conflict` the caller raises after ingesting the disk bytes as
+/// `observed`. Nothing is written before the commit (14.0).
+pub(crate) fn read_on_disk(
+    loaded: &[LoadedDoc],
+    doc_store: &dyn DocStore,
+) -> Result<Vec<Option<String>>> {
+    loaded.iter().map(|d| doc_store.read(&d.doc.path)).collect()
 }
 
 /// §4 step 5 (c) for one document: the known-id [`IngestPlan`] over the

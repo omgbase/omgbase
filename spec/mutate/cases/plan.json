@@ -221,7 +221,8 @@
             "detail": {}
           }
         ],
-        "resurrection_pool": []
+        "resurrection_pool": [],
+        "pending_materializations": []
       }
     },
     {
@@ -462,7 +463,8 @@
             "detail": {}
           }
         ],
-        "resurrection_pool": []
+        "resurrection_pool": [],
+        "pending_materializations": []
       }
     },
     {
@@ -735,7 +737,8 @@
             "detail": {}
           }
         ],
-        "resurrection_pool": []
+        "resurrection_pool": [],
+        "pending_materializations": []
       }
     },
     {
@@ -1002,7 +1005,8 @@
             "detail": {}
           }
         ],
-        "resurrection_pool": []
+        "resurrection_pool": [],
+        "pending_materializations": []
       }
     },
     {
@@ -1245,7 +1249,8 @@
             "detail": {}
           }
         ],
-        "resurrection_pool": []
+        "resurrection_pool": [],
+        "pending_materializations": []
       }
     },
     {
@@ -1519,7 +1524,8 @@
             "detail": {}
           }
         ],
-        "resurrection_pool": []
+        "resurrection_pool": [],
+        "pending_materializations": []
       }
     },
     {
@@ -1756,7 +1762,8 @@
             "detail": {}
           }
         ],
-        "resurrection_pool": []
+        "resurrection_pool": [],
+        "pending_materializations": []
       }
     },
     {
@@ -1980,7 +1987,8 @@
             "detail": {}
           }
         ],
-        "resurrection_pool": []
+        "resurrection_pool": [],
+        "pending_materializations": []
       }
     },
     {
@@ -2154,7 +2162,8 @@
             "detail": {}
           }
         ],
-        "resurrection_pool": []
+        "resurrection_pool": [],
+        "pending_materializations": []
       }
     },
     {
@@ -2386,7 +2395,8 @@
             "detail": {}
           }
         ],
-        "resurrection_pool": []
+        "resurrection_pool": [],
+        "pending_materializations": []
       }
     },
     {
@@ -2724,7 +2734,8 @@
             "detail": {}
           }
         ],
-        "resurrection_pool": []
+        "resurrection_pool": [],
+        "pending_materializations": []
       }
     },
     {
@@ -3138,7 +3149,8 @@
             "deleted_commit": "c_1",
             "expires_ts": "2026-10-26T10:01:00.000Z"
           }
-        ]
+        ],
+        "pending_materializations": []
       }
     },
     {
@@ -3336,7 +3348,8 @@
             "detail": {}
           }
         ],
-        "resurrection_pool": []
+        "resurrection_pool": [],
+        "pending_materializations": []
       }
     }
   ]

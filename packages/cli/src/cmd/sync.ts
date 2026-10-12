@@ -70,7 +70,7 @@ async function runSync(cli: Cli, args: string[]): Promise<number> {
 function runOneShot(cli: Cli, ws: Workspace, repo: RepoRow): number {
   if (!repo.rootPath) {
     // Nothing to sweep: an empty-result note (stderr, §3.1), or the empty sweep shape.
-    if (cli.flags.mode !== "human") return emitMachine(cli, { scanned: 0, ingested: [], deleted: [], conflicted: [], changed: false });
+    if (cli.flags.mode !== "human") return emitMachine(cli, { scanned: 0, ingested: [], deleted: [], conflicted: [], changed: false, materialized: [] });
     cli.io.err(cli.style.dim(`  ${repo.slug} has no filesystem source — nothing to sync`));
     return EXIT_OK;
   }

@@ -107,6 +107,7 @@ fn creates_every_table() {
         "attachments",
         "sync_state",
         "workspace_settings",
+        "pending_materializations",
     ] {
         assert!(names.contains(&t.to_owned()), "missing table {t}");
     }
@@ -230,7 +231,7 @@ fn migrates_v12_to_v13_root_path_into_an_fs_source() {
     )
     .unwrap();
     let store = Store::from_connection(conn, Box::new(SequentialMinter::new())).unwrap();
-    assert_eq!(store.user_version().unwrap(), 13);
+    assert_eq!(store.user_version().unwrap(), SCHEMA_VERSION);
     let cols = schema::column_names(store.conn(), "repos").unwrap();
     assert_eq!(cols, ["repo_id", "slug", "settings"]);
     let src: (String, String, String) = store
@@ -267,24 +268,67 @@ fn migrates_v12_to_v13_root_path_into_an_fs_source() {
     assert_eq!(adapter, "omgbase-fs-adapter");
 }
 
+/// Spec §1 step 3 — the mixed-version guarantee of the 14.0 cut: an opener
+/// that meets a database one major ahead (a v13 engine opening the v14 file
+/// this build writes; simulated here as this build meeting v15) refuses with
+/// the exact message, and neither migrates nor touches it.
 #[test]
 fn refuses_a_newer_database_with_the_exact_message() {
     let conn = Connection::open_in_memory().unwrap();
-    conn.execute_batch("PRAGMA user_version = 14").unwrap();
+    conn.execute_batch("PRAGMA user_version = 15").unwrap();
     let err = Store::from_connection(conn, Box::new(RandomMinter))
         .err()
         .unwrap();
     assert_eq!(
         err.to_string(),
-        "database schema (v14) is newer than this build (v13); upgrade omgbase"
+        "database schema (v15) is newer than this build (v14); upgrade omgbase"
     );
     assert!(matches!(
         err,
         Error::SchemaTooNew {
-            found: 14,
-            supported: 13
+            found: 15,
+            supported: 14
         }
     ));
+}
+
+/// Migration 14 creates `pending_materializations` (and nothing else) on a
+/// v13 database; a fresh database has it from `schema.sql`.
+#[test]
+fn migrates_v13_to_v14_with_the_pending_table() {
+    let conn = Connection::open_in_memory().unwrap();
+    conn.execute_batch(
+        "CREATE TABLE repos (repo_id TEXT PRIMARY KEY, slug TEXT NOT NULL UNIQUE, settings TEXT NOT NULL DEFAULT '{}');
+         PRAGMA user_version = 13;",
+    )
+    .unwrap();
+    let store = Store::from_connection(conn, Box::new(SequentialMinter::new())).unwrap();
+    assert_eq!(store.user_version().unwrap(), 14);
+    let cols: Vec<String> = {
+        let mut stmt = store
+            .conn()
+            .prepare("PRAGMA table_info(pending_materializations)")
+            .unwrap();
+        stmt.query_map([], |r| r.get::<_, String>(1))
+            .unwrap()
+            .map(|r| r.unwrap())
+            .collect()
+    };
+    assert_eq!(
+        cols,
+        [
+            "repo_id",
+            "path",
+            "kind",
+            "from_path",
+            "doc_id",
+            "rev_id",
+            "rendered_hash",
+            "commit_id"
+        ]
+    );
+    let tables = count(&store, "sqlite_master WHERE type = 'table'");
+    assert_eq!(tables, 2, "repos + the one table the step creates");
 }
 
 #[test]
@@ -2135,11 +2179,12 @@ fn a_changeset_is_one_commit_with_n_revisions() {
     );
 }
 
-/// §4 step 5 (a) + §10 Fixed (2.1): the file-CAS of every loaded document
-/// runs before any file is written, so a dirty third document aborts the
-/// whole request — no `api` commit row, no revision, the first two files
-/// untouched; the dirty bytes are ingested as one `observed` commit and the
-/// request fails `sync_conflict` (retriable).
+/// §4 step 5 + §10 Fixed (2.1): every loaded document's disk bytes are
+/// compared inside the transaction before anything is minted or written, so
+/// a dirty third document aborts the whole request — no `api` commit row, no
+/// revision, no pending row, the first two files untouched; the dirty bytes
+/// are ingested as one `observed` commit and the request fails
+/// `sync_conflict` (retriable).
 #[test]
 fn a_dirty_third_document_commits_nothing() {
     let (mut store, repo, mut ds) = seeded(&[
@@ -2183,8 +2228,9 @@ fn a_dirty_third_document_commits_nothing() {
     assert_eq!(
         ds.read("a.md").unwrap().as_deref(),
         Some("# A\n\nAlpha.\n"),
-        "phase A runs before phase B"
+        "the commit validated before any file was written"
     );
+    assert_eq!(count(&store, "pending_materializations"), 0);
     assert_eq!(ds.read("b.md").unwrap().as_deref(), Some("# B\n\nBravo.\n"));
     let after = current_revs(&store);
     assert_eq!(after[0], before[0]);
@@ -2346,12 +2392,13 @@ fn docs_move_with_retarget_is_one_commit() {
     );
 }
 
-/// §10 Pinned (2.1): a failure inside the commit phase rolls the whole
-/// request back — no commit, no revision, every block as before — and leaves
-/// the files already written ahead of the database; the next observation
-/// heals each as an `observed` commit that converges.
+/// A failure inside the commit transaction rolls the whole request back —
+/// no commit, no revision, no pending row, every block as before — and,
+/// since 14.0 writes files only after COMMIT, **no file is touched**: the
+/// next observation of each file is an echo (§10 "Fixed (2.2)": the 2.1
+/// pin of files left ahead of the database is gone).
 #[test]
-fn a_failure_in_the_commit_phase_rolls_back_and_the_next_observation_heals() {
+fn a_failure_in_the_commit_phase_rolls_back_and_touches_no_file() {
     let (mut store, repo, mut ds) =
         seeded(&[("a.md", "# A\n\nAlpha.\n"), ("b.md", "# B\n\nBravo.\n")]);
     let before = current_revs(&store);
@@ -2391,20 +2438,15 @@ fn a_failure_in_the_commit_phase_rolls_back_and_the_next_observation_heals() {
     assert_eq!(count(&store, "commits"), 2, "no commit row survives");
     assert_eq!(count(&store, "revisions"), 2);
     assert_eq!(count(&store, "blocks"), blocks_before);
+    assert_eq!(count(&store, "pending_materializations"), 0);
     assert_eq!(current_revs(&store), before);
     assert_eq!(
         store.reconstruct("d_0").unwrap().as_deref(),
         Some("# A\n\nAlpha.\n")
     );
-    // The files are ahead of the database.
-    assert_eq!(
-        ds.read("a.md").unwrap().as_deref(),
-        Some("# A\n\nAlpha.\n\nA tail.\n")
-    );
-    assert_eq!(
-        ds.read("b.md").unwrap().as_deref(),
-        Some("# B\n\nBravo.\n\nB tail.\n")
-    );
+    // Nothing reached the working tree.
+    assert_eq!(ds.read("a.md").unwrap().as_deref(), Some("# A\n\nAlpha.\n"));
+    assert_eq!(ds.read("b.md").unwrap().as_deref(), Some("# B\n\nBravo.\n"));
 
     store
         .conn()
@@ -2413,14 +2455,9 @@ fn a_failure_in_the_commit_phase_rolls_back_and_the_next_observation_heals() {
     for path in ["a.md", "b.md"] {
         let bytes = ds.read(path).unwrap().unwrap();
         let o = observe(&mut store, &repo, path, &bytes, T2);
-        assert!(!o.echo && o.converged, "{path}: {o:?}");
-        assert_eq!(o.dispositions.get("inserted"), Some(&1));
-        assert_eq!(
-            store.reconstruct(&o.doc_id).unwrap().as_deref(),
-            Some(bytes.as_str())
-        );
+        assert!(o.echo, "{path}: the file never diverged: {o:?}");
     }
-    assert_eq!(commits_by_origin(&store, "observed"), 4);
+    assert_eq!(commits_by_origin(&store, "observed"), 2);
     assert_eq!(commits_by_origin(&store, "api"), 0);
 }
 
@@ -2464,6 +2501,16 @@ fn docs_delete_is_one_commit_without_pooling() {
         .unwrap();
     assert_eq!(reason, "delete a.md");
     assert!(!ds.exists("a.md"));
+    assert_eq!(
+        tx,
+        tx_of(&log, "INSERT OR REPLACE INTO pending_materializations"),
+        "the remove intent rides the commit: {log:#?}"
+    );
+    assert_eq!(
+        count(&store, "pending_materializations"),
+        0,
+        "… and is fulfilled"
+    );
     let page = store.changes_since(&repo, 1, 50, None).unwrap();
     assert_eq!(page.digests[0].summary, "api(agent:mcp): deleted a.md");
 }
@@ -2516,19 +2563,12 @@ fn one_op(repo: &str, doc: &str) -> ApplyRequest {
     }
 }
 
-/// §4 step 5 (a)–(c) by hand, up to and excluding the transaction: the
-/// phases `apply` runs after the ops, so a test can interleave a second
-/// connection between staging and the commit.
-fn staged_effects(
-    store: &mut Store,
-    repo: &str,
-    loaded: &[crate::mutate::LoadedDoc],
-    ds: &mut MemDocStore,
-) -> Vec<Effect> {
-    let on_disk = store.file_cas(repo, loaded, ds, T1).unwrap();
-    let staged = crate::mutate::stage(loaded, on_disk, |d| d.doc.path.clone());
-    crate::mutate::write_staged(&staged, ds).unwrap();
-    staged
+/// §4 step 5 (a) by hand, up to and excluding the transaction: the reads
+/// `apply` runs after the ops, so a test can interleave a second connection
+/// between staging and the commit. Nothing is written (14.0).
+fn staged_effects(loaded: &[crate::mutate::LoadedDoc], ds: &MemDocStore) -> Vec<Effect> {
+    let on_disk = crate::mutate::read_on_disk(loaded, ds).unwrap();
+    crate::mutate::stage(loaded, on_disk, |d| d.doc.path.clone())
         .into_iter()
         .map(crate::mutate::Staged::into_effect)
         .collect()
@@ -2538,6 +2578,7 @@ const API_HEAD: CommitHead<'static> = CommitHead {
     origin: Origin::Api,
     actor: Some("agent:test"),
     reason: Some("fixture"),
+    clear_pending: false,
 };
 
 fn expect_mutation(err: &Error, code: omgbase_mutate::ErrorCode) -> &omgbase_mutate::MutationError {
@@ -2551,11 +2592,11 @@ fn expect_mutation(err: &Error, code: omgbase_mutate::ErrorCode) -> &omgbase_mut
 /// was computed is caught inside the transaction — `stale_plan` carrying
 /// the current truth (the shape `docs_update` emits), the transaction
 /// rolled back before the commit row, no id minted (the next `c` is the one
-/// the request would have taken). File-first order (until step 5) means
-/// the rendered file was already written and is ahead of the database.
+/// the request would have taken), and — 14.0 — **no file written**: the
+/// rendered bytes exist only in the rolled-back request.
 #[test]
 fn a_concurrent_revision_between_plan_and_commit_is_stale_plan() {
-    let (mut store, repo, mut ds, dir, path) = file_seeded(&[("a.md", "# A\n\nAlpha.\n")]);
+    let (mut store, repo, ds, dir, path) = file_seeded(&[("a.md", "# A\n\nAlpha.\n")]);
     let hash = hex(&sha256("# A\n\nAlpha.\n".as_bytes()));
     let loaded = store.apply_ops(&one_op(&repo, "a.md")).unwrap().loaded;
     assert_eq!(loaded[0].base.current_rev.as_deref(), Some("r_0"));
@@ -2563,7 +2604,7 @@ fn a_concurrent_revision_between_plan_and_commit_is_stale_plan() {
         loaded[0].base.file_hash.as_deref().map(hex),
         Some(hash.clone())
     );
-    let effects = staged_effects(&mut store, &repo, &loaded, &mut ds);
+    let effects = staged_effects(&loaded, &ds);
     // Another writer commits a revision underneath the plan.
     let other = Connection::open(&path).unwrap();
     other
@@ -2598,11 +2639,12 @@ fn a_concurrent_revision_between_plan_and_commit_is_stale_plan() {
     );
     assert_eq!(count(&store, "commits"), 1, "no commit row");
     assert_eq!(count(&store, "revisions"), 1);
+    assert_eq!(count(&store, "pending_materializations"), 0, "no intent");
     assert_eq!(store.mint("c").unwrap(), "c_1", "no id burned");
     assert_eq!(
         ds.read("a.md").unwrap().as_deref(),
-        Some("# A\n\nAlpha.\n\nA tail.\n"),
-        "file-first: the render is on disk, ahead of the database (step 5 reorders)"
+        Some("# A\n\nAlpha.\n"),
+        "nothing written: the file is exactly as it was"
     );
     drop(other);
     store.close().unwrap();
@@ -2614,9 +2656,9 @@ fn a_concurrent_revision_between_plan_and_commit_is_stale_plan() {
 /// is the precondition.
 #[test]
 fn a_concurrent_move_between_plan_and_commit_is_stale_plan() {
-    let (mut store, repo, mut ds, dir, path) = file_seeded(&[("a.md", "# A\n\nAlpha.\n")]);
+    let (mut store, repo, ds, dir, path) = file_seeded(&[("a.md", "# A\n\nAlpha.\n")]);
     let loaded = store.apply_ops(&one_op(&repo, "a.md")).unwrap().loaded;
-    let effects = staged_effects(&mut store, &repo, &loaded, &mut ds);
+    let effects = staged_effects(&loaded, &ds);
     let other = Connection::open(&path).unwrap();
     other
         .execute("UPDATE docs SET path = 'z.md' WHERE doc_id = 'd_0'", [])
@@ -2633,29 +2675,49 @@ fn a_concurrent_move_between_plan_and_commit_is_stale_plan() {
     );
     assert_eq!(count(&store, "commits"), 1);
     assert_eq!(store.mint("c").unwrap(), "c_1", "no id burned");
+    assert_eq!(ds.read("a.md").unwrap().as_deref(), Some("# A\n\nAlpha.\n"));
     drop(other);
     store.close().unwrap();
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-/// A file edited between the plan and the commit: phase (a) compares the
-/// disk bytes with the `file_hash` the document was loaded with, so the
-/// edit is caught **before any file is written** — the human's bytes are
-/// ingested as one `observed` commit and the request fails `sync_conflict`.
-/// The in-transaction disk check is the same comparison against the row
-/// re-read through the transaction; with file-first order it is a backstop
-/// (phase (a) already failed), and becomes the live check when step 5 moves
-/// the writes after the commit.
+/// A file edited after the plan's load (and after phase (a) would have
+/// read it, had the request been split): the request reads the disk bytes
+/// outside the transaction and compares them with the row's `file_hash`
+/// **inside** it — 14.0 has no file-first short-circuit, the in-transaction
+/// compare is the one check. The human's bytes are ingested as one
+/// `observed` commit, the request fails `sync_conflict`, and nothing is
+/// written or recorded.
 #[test]
-fn a_disk_edit_between_plan_and_commit_is_caught_by_phase_a_before_any_write() {
+fn a_disk_edit_after_the_plan_is_caught_inside_the_transaction_before_any_write() {
     let (mut store, repo, mut ds) = seeded(&[("a.md", "# A\n\nAlpha.\n")]);
-    let loaded = store.apply_ops(&one_op(&repo, "a.md")).unwrap().loaded;
     ds.write("a.md", "# A\n\nAlpha, by a human.\n").unwrap();
-    let err = store.file_cas(&repo, &loaded, &ds, T1).unwrap_err();
+    start_trace(store.conn());
+    let err = store
+        .apply(&one_op(&repo, "a.md"), &mut ds, T1)
+        .unwrap_err();
     let m = expect_mutation(&err, omgbase_mutate::ErrorCode::SyncConflict);
     assert_eq!(m.data["retriable"], serde_json::json!(true));
+    let log = traced();
+    let begins: Vec<usize> = (0..log.len())
+        .filter(|&i| log[i].starts_with("BEGIN"))
+        .collect();
+    assert!(
+        log[begins[0]].starts_with("BEGIN IMMEDIATE"),
+        "the request's transaction opened first: {log:#?}"
+    );
+    assert!(
+        log.iter().any(|s| s.starts_with("ROLLBACK")),
+        "… and rolled back: {log:#?}"
+    );
+    assert!(
+        !log.iter()
+            .any(|s| s.contains("INTO pending_materializations")),
+        "no intent recorded: {log:#?}"
+    );
     assert_eq!(commits_by_origin(&store, "observed"), 2, "one observed row");
     assert_eq!(commits_by_origin(&store, "api"), 0);
+    assert_eq!(count(&store, "pending_materializations"), 0);
     assert_eq!(
         ds.read("a.md").unwrap().as_deref(),
         Some("# A\n\nAlpha, by a human.\n"),
@@ -2674,9 +2736,9 @@ fn a_disk_edit_between_plan_and_commit_is_caught_by_phase_a_before_any_write() {
 /// them `observed` in a transaction of its own and raises `sync_conflict`.
 #[test]
 fn the_in_tx_disk_check_returns_a_conflict_without_minting() {
-    let (mut store, repo, mut ds) = seeded(&[("a.md", "# A\n\nAlpha.\n")]);
+    let (mut store, repo, ds) = seeded(&[("a.md", "# A\n\nAlpha.\n")]);
     let loaded = store.apply_ops(&one_op(&repo, "a.md")).unwrap().loaded;
-    let mut effects = staged_effects(&mut store, &repo, &loaded, &mut ds);
+    let mut effects = staged_effects(&loaded, &ds);
     let human = "# A\n\nSomeone else.\n";
     match &mut effects[0] {
         Effect::IngestKnown { on_disk, .. } => *on_disk = Some(human.to_owned()),
@@ -2793,6 +2855,7 @@ fn move_path_and_tombstone_revalidate_inside_the_transaction() {
 
     let gone = Effect::Tombstone {
         doc_id: "d_9".into(),
+        path: "z.md".into(),
         pool: false,
         current_rev: None,
     };
@@ -2803,6 +2866,7 @@ fn move_path_and_tombstone_revalidate_inside_the_transaction() {
 
     let stale_tomb = Effect::Tombstone {
         doc_id: "d_1".into(),
+        path: "b.md".into(),
         pool: false,
         current_rev: Some("r_0".into()),
     };
@@ -2864,4 +2928,664 @@ fn the_commit_transaction_is_immediate() {
     store.after_begin = None;
     store.close().unwrap();
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+// ---- DB-first materialization (store 14.0) ------------------------------------------------
+
+/// A doc store whose reads pass through and whose writes all fail: what a
+/// request's phase B' meets when the process dies right after COMMIT.
+struct Crashed<'a>(&'a mut MemDocStore);
+
+impl DocStore for Crashed<'_> {
+    fn exists(&self, path: &str) -> bool {
+        self.0.exists(path)
+    }
+    fn read(&self, path: &str) -> Result<Option<String>> {
+        self.0.read(path)
+    }
+    fn write(&mut self, path: &str, _bytes: &str) -> Result<()> {
+        Err(Error::Other(format!("crashed before writing {path}")))
+    }
+    fn rename(&mut self, from: &str, to: &str) -> Result<()> {
+        Err(Error::Other(format!(
+            "crashed before renaming {from} -> {to}"
+        )))
+    }
+    fn remove(&mut self, path: &str) -> Result<()> {
+        Err(Error::Other(format!("crashed before removing {path}")))
+    }
+}
+
+/// A doc store on which `rename` fails (another device), everything else
+/// works.
+struct NoRename<'a>(&'a mut MemDocStore);
+
+impl DocStore for NoRename<'_> {
+    fn exists(&self, path: &str) -> bool {
+        self.0.exists(path)
+    }
+    fn read(&self, path: &str) -> Result<Option<String>> {
+        self.0.read(path)
+    }
+    fn write(&mut self, path: &str, bytes: &str) -> Result<()> {
+        self.0.write(path, bytes)
+    }
+    fn rename(&mut self, from: &str, to: &str) -> Result<()> {
+        Err(Error::Other(format!("EXDEV: {from} -> {to}")))
+    }
+    fn remove(&mut self, path: &str) -> Result<()> {
+        self.0.remove(path)
+    }
+}
+
+/// A request whose phase B' died: the error is the doc store's, the
+/// transaction before it committed.
+fn crashed<T: std::fmt::Debug>(r: Result<T>) {
+    match r {
+        Err(Error::Other(msg)) if msg.starts_with("crashed before") => {}
+        other => panic!("expected the crash to surface, got {other:?}"),
+    }
+}
+
+fn pending(store: &Store, repo: &str) -> Vec<PendingRow> {
+    store.pending_materializations(repo).unwrap()
+}
+
+fn mcp_ctx(repo: &str, ts: &str) -> DocOpContext {
+    DocOpContext {
+        repo_id: repo.to_owned(),
+        actor: Some("agent:mcp".to_owned()),
+        ts: ts.to_owned(),
+    }
+}
+
+/// §5.7: the intent rows ride the commit transaction — one `write` per
+/// document, carrying the revision just minted and the hash of its bytes —
+/// and phase B' writes each file and deletes its row in autocommit, after
+/// COMMIT. A request that completes leaves no row.
+#[test]
+fn an_api_commit_records_intent_in_its_transaction_and_phase_b_prime_clears_it() {
+    let (mut store, repo, mut ds) =
+        seeded(&[("a.md", "# A\n\nAlpha.\n"), ("b.md", "# B\n\nBravo.\n")]);
+    start_trace(store.conn());
+    let res = store
+        .apply(
+            &ApplyRequest {
+                repo_id: repo.clone(),
+                ops: vec![insert_end("a.md", "A tail."), insert_end("b.md", "B tail.")],
+                origin: api_origin(),
+                dry_run: false,
+                set_frontmatter: Vec::new(),
+            },
+            &mut ds,
+            T1,
+        )
+        .unwrap();
+    assert!(res.committed);
+    let log = traced();
+    let tx = tx_of(&log, "INSERT INTO commits").expect("the commit rides a transaction");
+    let inserts: Vec<usize> = (0..log.len())
+        .filter(|&i| log[i].starts_with("INSERT OR REPLACE INTO pending_materializations"))
+        .collect();
+    assert_eq!(inserts.len(), 2, "one row per document: {log:#?}");
+    assert_eq!(
+        tx_of(&log, "INSERT OR REPLACE INTO pending_materializations"),
+        Some(tx),
+        "… inside the commit transaction: {log:#?}"
+    );
+    let commit_at = log.iter().position(|s| s.starts_with("COMMIT")).unwrap();
+    let deletes: Vec<usize> = (0..log.len())
+        .filter(|&i| log[i].starts_with("DELETE FROM pending_materializations"))
+        .collect();
+    assert_eq!(deletes.len(), 2);
+    assert!(
+        deletes.iter().all(|&i| i > commit_at),
+        "every row is deleted after COMMIT, as its file lands: {log:#?}"
+    );
+    assert!(
+        log[commit_at..].iter().all(|s| !s.starts_with("BEGIN")),
+        "… in autocommit: {log:#?}"
+    );
+    assert!(pending(&store, &repo).is_empty());
+    assert_eq!(
+        ds.read("a.md").unwrap().as_deref(),
+        Some("# A\n\nAlpha.\n\nA tail.\n")
+    );
+    assert_eq!(
+        ds.read("b.md").unwrap().as_deref(),
+        Some("# B\n\nBravo.\n\nB tail.\n")
+    );
+}
+
+/// A crash between COMMIT and the writes: the commit, its revisions and its
+/// `changes_since` digest are durable, the files are the old ones, and the
+/// rows say exactly what is owed. `materialize_pending` replays them (files
+/// written, rows gone, the paths returned, the digest unchanged), and the
+/// next observation of each file is an echo.
+#[test]
+fn a_crash_after_commit_leaves_rows_the_materializer_replays() {
+    let (mut store, repo, mut ds) =
+        seeded(&[("a.md", "# A\n\nAlpha.\n"), ("b.md", "# B\n\nBravo.\n")]);
+    crashed(store.apply(
+        &ApplyRequest {
+            repo_id: repo.clone(),
+            ops: vec![insert_end("a.md", "A tail."), insert_end("b.md", "B tail.")],
+            origin: api_origin(),
+            dry_run: false,
+            set_frontmatter: Vec::new(),
+        },
+        &mut Crashed(&mut ds),
+        T1,
+    ));
+    assert_eq!(commits_by_origin(&store, "api"), 1);
+    assert_eq!(
+        current_revs(&store),
+        vec![("a.md".into(), "r_2".into()), ("b.md".into(), "r_3".into())]
+    );
+    assert_eq!(ds.read("a.md").unwrap().as_deref(), Some("# A\n\nAlpha.\n"));
+    assert_eq!(ds.read("b.md").unwrap().as_deref(), Some("# B\n\nBravo.\n"));
+    let rows = pending(&store, &repo);
+    assert_eq!(rows.len(), 2);
+    assert_eq!(
+        rows[0],
+        PendingRow {
+            path: "a.md".into(),
+            kind: PendingKind::Write,
+            from_path: None,
+            doc_id: "d_0".into(),
+            rev_id: Some("r_2".into()),
+            rendered_hash: sha256("# A\n\nAlpha.\n\nA tail.\n".as_bytes()).to_vec(),
+            commit_id: "c_2".into(),
+        }
+    );
+    assert_eq!(rows[1].path, "b.md");
+    assert_eq!(rows[1].rev_id.as_deref(), Some("r_3"));
+    let page = store.changes_since(&repo, 2, 50, None).unwrap();
+    assert_eq!(page.digests.len(), 1);
+    assert_eq!(page.digests[0].commit, "c_2");
+    assert_eq!(page.digests[0].revisions.len(), 2);
+
+    // Recovery: whoever runs next replays the rows.
+    let done = store.materialize_pending(&repo, &mut ds).unwrap();
+    assert_eq!(done, ["a.md", "b.md"]);
+    assert!(pending(&store, &repo).is_empty());
+    assert_eq!(
+        ds.read("a.md").unwrap().as_deref(),
+        Some("# A\n\nAlpha.\n\nA tail.\n")
+    );
+    assert_eq!(
+        ds.read("b.md").unwrap().as_deref(),
+        Some("# B\n\nBravo.\n\nB tail.\n")
+    );
+    let after = store.changes_since(&repo, 2, 50, None).unwrap();
+    assert_eq!(after.digests.len(), 1, "materializing records nothing");
+    for path in ["a.md", "b.md"] {
+        let bytes = ds.read(path).unwrap().unwrap();
+        let o = observe(&mut store, &repo, path, &bytes, T2);
+        assert!(o.echo, "{path}: {o:?}");
+    }
+    assert_eq!(count(&store, "commits"), 3);
+}
+
+/// §5.7's gate rule in the crash window, through `observe_batch`:
+/// the materialized bytes → echo and the row goes; a member gone under a
+/// `write` row → no tombstone (`deleted: false`), the row stays, the doc
+/// stays live; foreign bytes → the file wins, a normal `observed` ingest
+/// that clears the row in its own transaction. A stale file that still
+/// hashes to the previous revision is foreign to the gate too (the design's
+/// rule: only the materializer tells "behind" from "reverted").
+#[test]
+fn observation_in_the_crash_window_follows_the_gate_rule() {
+    let (mut store, repo, mut ds) = seeded(&[
+        ("a.md", "# A\n\nAlpha.\n"),
+        ("b.md", "# B\n\nBravo.\n"),
+        ("c.md", "# C\n\nCharlie.\n"),
+        ("s.md", "# S\n\nStale.\n"),
+    ]);
+    crashed(store.apply(
+        &ApplyRequest {
+            repo_id: repo.clone(),
+            ops: vec![
+                insert_end("a.md", "A tail."),
+                insert_end("b.md", "B tail."),
+                insert_end("c.md", "C tail."),
+                insert_end("s.md", "S tail."),
+            ],
+            origin: api_origin(),
+            dry_run: false,
+            set_frontmatter: Vec::new(),
+        },
+        &mut Crashed(&mut ds),
+        T1,
+    ));
+    assert_eq!(pending(&store, &repo).len(), 4);
+    let revs_before = current_revs(&store);
+    start_trace(store.conn());
+    let out = store
+        .observe_batch(
+            &repo,
+            &[
+                // a: the materialized bytes (a watcher saw B' land elsewhere).
+                BatchItem::observed("a.md", "# A\n\nAlpha.\n\nA tail.\n"),
+                // b: gone — the file the materializer owes is not there yet.
+                BatchItem::gone("b.md"),
+                // c: a human's bytes.
+                BatchItem::observed("c.md", "# C\n\nCharlie, by a human.\n"),
+                // s: the stale file, exactly the previous revision.
+                BatchItem::observed("s.md", "# S\n\nStale.\n"),
+            ],
+            T2,
+            &Config::default(),
+        )
+        .unwrap();
+    let a = out[0].as_observed().unwrap();
+    assert!(a.echo && a.converged, "{a:?}");
+    assert_eq!(a.doc_id, "d_0");
+    let b = out[1].as_deleted().unwrap();
+    assert!(!b.deleted(), "{b:?}");
+    assert_eq!(b.doc_id, None);
+    let c = out[2].as_observed().unwrap();
+    assert!(!c.echo, "{c:?}");
+    assert_eq!(
+        c.commit_id.as_deref(),
+        Some("c_5"),
+        "after c_0..c_3 and the api c_4"
+    );
+    let s = out[3].as_observed().unwrap();
+    assert!(
+        !s.echo,
+        "the stale file is observed, not materialized: {s:?}"
+    );
+    let log = traced();
+    let c_tx = tx_of(&log, "INSERT INTO commits").expect("c.md's observed commit");
+    // a.md's row went in autocommit (the echo); c.md's goes with its commit.
+    let from_c = &log[c_tx..];
+    assert_eq!(
+        tx_of(from_c, "DELETE FROM pending_materializations"),
+        Some(0),
+        "c.md's row goes in its member's transaction: {log:#?}"
+    );
+    let rows = pending(&store, &repo);
+    assert_eq!(
+        rows.iter().map(|r| r.path.as_str()).collect::<Vec<_>>(),
+        ["b.md"],
+        "a.md confirmed, c.md and s.md superseded by the files, b.md still owed"
+    );
+    let revs = current_revs(&store);
+    assert_eq!(revs[0], revs_before[0], "a.md: an echo");
+    assert_eq!(
+        revs[1], revs_before[1],
+        "b.md: not tombstoned, not advanced"
+    );
+    assert_ne!(
+        revs[2], revs_before[2],
+        "c.md advanced by the observed ingest"
+    );
+    assert_eq!(
+        store.reconstruct("d_2").unwrap().as_deref(),
+        Some("# C\n\nCharlie, by a human.\n")
+    );
+    assert_eq!(
+        store.reconstruct("d_3").unwrap().as_deref(),
+        Some("# S\n\nStale.\n"),
+        "file wins"
+    );
+    let live: i64 = store
+        .conn()
+        .query_row(
+            "SELECT count(*) FROM docs WHERE path = 'b.md' AND deleted_commit IS NULL",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(live, 1);
+    // `observe_delete` applies the same gone rule.
+    let d = store.observe_delete(&repo, "b.md", T2).unwrap();
+    assert!(!d.deleted());
+    assert_eq!(pending(&store, &repo).len(), 1);
+    // The materializer still owes b.md and lands it.
+    assert_eq!(store.materialize_pending(&repo, &mut ds).unwrap(), ["b.md"]);
+    assert_eq!(
+        ds.read("b.md").unwrap().as_deref(),
+        Some("# B\n\nBravo.\n\nB tail.\n")
+    );
+    assert!(pending(&store, &repo).is_empty());
+}
+
+/// The materializer never overwrites a human's edit: a `write` row lands
+/// over nothing, over its own bytes or over the previous revision's bytes
+/// (the file the commit left behind); foreign bytes keep the row until the
+/// sweep observes them (file wins) — a `docs_create` whose path a foreign
+/// file took meanwhile is the same rule with no previous revision.
+#[test]
+fn the_materializer_leaves_a_foreign_file_and_keeps_the_row() {
+    let (mut store, repo, mut ds) = seeded(&[("a.md", "# A\n\nAlpha.\n")]);
+    crashed(store.apply(&one_op(&repo, "a.md"), &mut Crashed(&mut ds), T1));
+    let ctx = mcp_ctx(&repo, T1);
+    crashed(store.docs_create(&ctx, &mut Crashed(&mut ds), "n.md", "# N\n", None));
+    assert_eq!(pending(&store, &repo).len(), 2);
+    assert!(!ds.exists("n.md"));
+    // Humans edit both paths in the window.
+    ds.write("a.md", "# A\n\nAlpha, by a human.\n").unwrap();
+    ds.write("n.md", "# Someone else's N\n").unwrap();
+    assert!(
+        store
+            .materialize_pending(&repo, &mut ds)
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(pending(&store, &repo).len(), 2, "both rows stay");
+    assert_eq!(
+        ds.read("a.md").unwrap().as_deref(),
+        Some("# A\n\nAlpha, by a human.\n")
+    );
+    assert_eq!(
+        ds.read("n.md").unwrap().as_deref(),
+        Some("# Someone else's N\n")
+    );
+    // The sweep's observation: the files win and the rows go.
+    let out = store
+        .observe_batch(
+            &repo,
+            &[
+                BatchItem::observed("a.md", "# A\n\nAlpha, by a human.\n"),
+                BatchItem::observed("n.md", "# Someone else's N\n"),
+            ],
+            T2,
+            &Config::default(),
+        )
+        .unwrap();
+    assert!(out.iter().all(|o| !o.as_observed().unwrap().echo));
+    assert!(pending(&store, &repo).is_empty());
+    assert_eq!(
+        store.reconstruct("d_0").unwrap().as_deref(),
+        Some("# A\n\nAlpha, by a human.\n")
+    );
+    assert_eq!(
+        store.reconstruct("d_1").unwrap().as_deref(),
+        Some("# Someone else's N\n")
+    );
+    // An absent file is written; the previous revision's bytes are replaced.
+    crashed(store.apply(&one_op(&repo, "a.md"), &mut Crashed(&mut ds), T2));
+    ds.remove("n.md").unwrap();
+    crashed(store.apply(&one_op(&repo, "n.md"), &mut Crashed(&mut ds), T2));
+    assert_eq!(
+        store.materialize_pending(&repo, &mut ds).unwrap(),
+        ["a.md", "n.md"]
+    );
+    assert_eq!(
+        ds.read("a.md").unwrap().as_deref(),
+        Some("# A\n\nAlpha, by a human.\n\nA tail.\n")
+    );
+    assert_eq!(
+        ds.read("n.md").unwrap().as_deref(),
+        Some("# Someone else's N\n\nA tail.\n")
+    );
+}
+
+/// §6 `docs_delete` (14.0): the tombstone commits with a `remove` row
+/// carrying the last revision's hash; the file is unlinked only while it
+/// still holds those bytes — after a crash, a replay unlinks an unchanged
+/// file and leaves a human's, resolving the row either way (today's
+/// lingering file after a delete crash is healed).
+#[test]
+fn docs_delete_after_a_crash_unlinks_only_an_unchanged_file() {
+    let (mut store, repo, mut ds) =
+        seeded(&[("a.md", "# A\n\nAlpha.\n"), ("b.md", "# B\n\nBravo.\n")]);
+    let ctx = mcp_ctx(&repo, T1);
+    crashed(store.docs_delete(&ctx, &mut Crashed(&mut ds), "a.md"));
+    crashed(store.docs_delete(&ctx, &mut Crashed(&mut ds), "b.md"));
+    let rows = pending(&store, &repo);
+    assert_eq!(rows.len(), 2);
+    assert_eq!(rows[0].kind, PendingKind::Remove);
+    assert_eq!(rows[0].rev_id, None);
+    assert_eq!(
+        rows[0].rendered_hash,
+        sha256("# A\n\nAlpha.\n".as_bytes()).to_vec()
+    );
+    assert!(ds.exists("a.md") && ds.exists("b.md"));
+    // b.md is edited by a human before the replay.
+    ds.write("b.md", "# B\n\nBravo, kept by a human.\n")
+        .unwrap();
+    assert_eq!(
+        store.materialize_pending(&repo, &mut ds).unwrap(),
+        ["a.md", "b.md"]
+    );
+    assert!(!ds.exists("a.md"), "unchanged: unlinked");
+    assert_eq!(
+        ds.read("b.md").unwrap().as_deref(),
+        Some("# B\n\nBravo, kept by a human.\n"),
+        "foreign: left for the sweep"
+    );
+    assert!(pending(&store, &repo).is_empty());
+    // The gate rule for a `remove` row whose file is observed unchanged:
+    // nothing to ingest, the row stays for the materializer.
+    let (mut store, repo, mut ds) = seeded(&[("a.md", "# A\n\nAlpha.\n")]);
+    crashed(store.docs_delete(&ctx, &mut Crashed(&mut ds), "a.md"));
+    let o = observe(&mut store, &repo, "a.md", "# A\n\nAlpha.\n", T2);
+    assert!(o.echo, "{o:?}");
+    assert_eq!(pending(&store, &repo).len(), 1);
+    assert_eq!(count(&store, "commits"), 2, "no revival");
+    assert_eq!(store.materialize_pending(&repo, &mut ds).unwrap(), ["a.md"]);
+    assert!(!ds.exists("a.md"));
+}
+
+/// §6 `docs_move` (14.0): one `rename` row at the new path carrying the
+/// moved document's revision (plus a `write` per other rewritten source).
+/// B' renames; when the rename fails (another device) it writes the
+/// revision's bytes at `to` and retires the old file; when the old file is
+/// gone it writes; when `to` holds foreign bytes the row stays. A moved
+/// document that is itself a retarget source lands its rewritten bytes at
+/// `to` through the same row, and its old file goes with it.
+#[test]
+fn docs_move_falls_back_to_writing_when_the_rename_fails() {
+    let (mut store, repo) = fixture_store();
+    let mut ds = MemDocStore::new();
+    let ctx = mcp_ctx(&repo, T0);
+    store
+        .docs_create(&ctx, &mut ds, "b.md", "# B\n\nTarget.\n", None)
+        .unwrap();
+    store
+        .docs_create(&ctx, &mut ds, "a.md", "# A\n\nSee [b](b.md).\n", None)
+        .unwrap();
+    let ctx1 = mcp_ctx(&repo, T1);
+    // Crash first: the rows say what a move owes.
+    crashed(store.docs_move(&ctx1, &mut Crashed(&mut ds), "b.md", "n/b.md", true));
+    let rows = pending(&store, &repo);
+    assert_eq!(rows.len(), 2);
+    assert_eq!(rows[0].kind, PendingKind::Rename);
+    assert_eq!(rows[0].path, "n/b.md");
+    assert_eq!(rows[0].from_path.as_deref(), Some("b.md"));
+    assert_eq!(
+        rows[0].rev_id.as_deref(),
+        Some("r_0"),
+        "the moved doc's revision"
+    );
+    assert_eq!(
+        rows[0].rendered_hash,
+        sha256("# B\n\nTarget.\n".as_bytes()).to_vec()
+    );
+    assert_eq!(rows[1].kind, PendingKind::Write);
+    assert_eq!(rows[1].path, "a.md");
+    assert!(ds.exists("b.md") && !ds.exists("n/b.md"));
+    // Replay on a device where rename fails: write + retire.
+    assert_eq!(
+        store
+            .materialize_pending(&repo, &mut NoRename(&mut ds))
+            .unwrap(),
+        ["n/b.md", "a.md"]
+    );
+    assert_eq!(
+        ds.read("n/b.md").unwrap().as_deref(),
+        Some("# B\n\nTarget.\n")
+    );
+    assert!(!ds.exists("b.md"), "the old file is retired");
+    assert_eq!(
+        ds.read("a.md").unwrap().as_deref(),
+        Some("# A\n\nSee [b](n/b.md).\n")
+    );
+    assert!(pending(&store, &repo).is_empty());
+
+    // The old file gone before the replay: written from the revision.
+    let ctx2 = mcp_ctx(&repo, T2);
+    crashed(store.docs_move(&ctx2, &mut Crashed(&mut ds), "n/b.md", "m/b.md", false));
+    ds.remove("n/b.md").unwrap();
+    assert_eq!(
+        store.materialize_pending(&repo, &mut ds).unwrap(),
+        ["m/b.md"]
+    );
+    assert_eq!(
+        ds.read("m/b.md").unwrap().as_deref(),
+        Some("# B\n\nTarget.\n")
+    );
+
+    // `to` taken by a foreign file in the window: the row stays.
+    crashed(store.docs_move(&ctx2, &mut Crashed(&mut ds), "m/b.md", "o/b.md", false));
+    ds.write("o/b.md", "# Someone else\n").unwrap();
+    assert!(
+        store
+            .materialize_pending(&repo, &mut ds)
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(pending(&store, &repo).len(), 1);
+    assert!(ds.exists("m/b.md"));
+    ds.remove("o/b.md").unwrap();
+    assert_eq!(
+        store.materialize_pending(&repo, &mut ds).unwrap(),
+        ["o/b.md"]
+    );
+    assert!(!ds.exists("m/b.md"));
+
+    // A self-linking source: the rename row carries the NEW revision, and
+    // the straight B' (no crash) lands the rewritten bytes at `to` only.
+    store
+        .docs_create(&ctx2, &mut ds, "s.md", "# S\n\nSee [me](/s.md).\n", None)
+        .unwrap();
+    start_trace(store.conn());
+    let moved = store
+        .docs_move(&ctx2, &mut ds, "s.md", "t/s.md", true)
+        .unwrap();
+    let log = traced();
+    assert_eq!(
+        log.iter()
+            .filter(|s| s.starts_with("INSERT OR REPLACE INTO pending_materializations"))
+            .count(),
+        1,
+        "one rename row, no separate write for the moved source: {log:#?}"
+    );
+    assert_eq!(moved.retargeted.unwrap().docs, vec![moved.doc_id.clone()]);
+    assert!(!ds.exists("s.md"));
+    assert_eq!(
+        ds.read("t/s.md").unwrap().as_deref(),
+        Some("# S\n\nSee [me](/t/s.md).\n")
+    );
+    assert_eq!(
+        store.reconstruct(&moved.doc_id).unwrap().as_deref(),
+        ds.read("t/s.md").unwrap().as_deref()
+    );
+    assert!(pending(&store, &repo).is_empty());
+}
+
+/// `docs_set_meta` under the same order: the patched bytes are recorded and
+/// written after the commit; a crash leaves the row and the replay lands
+/// them over the previous revision's file.
+#[test]
+fn docs_set_meta_materializes_after_the_commit() {
+    let (mut store, repo, mut ds) = seeded(&[("a.md", "# A\n\nAlpha.\n")]);
+    let ctx = mcp_ctx(&repo, T1);
+    let mut set = serde_json::Map::new();
+    set.insert("status".to_owned(), serde_json::json!("done"));
+    crashed(store.docs_set_meta(&ctx, &mut Crashed(&mut ds), "a.md", Some(&set), &[]));
+    assert_eq!(ds.read("a.md").unwrap().as_deref(), Some("# A\n\nAlpha.\n"));
+    let rows = pending(&store, &repo);
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].rev_id.as_deref(), Some("r_1"));
+    assert_eq!(store.materialize_pending(&repo, &mut ds).unwrap(), ["a.md"]);
+    assert_eq!(
+        ds.read("a.md").unwrap().as_deref(),
+        Some("---\nstatus: done\n---\n\n# A\n\nAlpha.\n")
+    );
+    assert_eq!(
+        store.reconstruct("d_0").unwrap().as_deref(),
+        ds.read("a.md").unwrap().as_deref()
+    );
+}
+
+/// An `observed` commit records no intent: the file is the source.
+#[test]
+fn observed_commits_record_no_intent() {
+    let (mut store, repo) = fixture_store();
+    start_trace(store.conn());
+    observe(&mut store, &repo, "a.md", "# A\n", T0);
+    store
+        .reconciling_ingest(
+            &repo,
+            "b.md",
+            "# B\n",
+            T0,
+            Origin::Observed,
+            None,
+            None,
+            &Config::default(),
+        )
+        .unwrap();
+    store.observe_delete(&repo, "a.md", T1).unwrap();
+    let log = traced();
+    assert!(
+        !log.iter()
+            .any(|s| s.contains("INTO pending_materializations")),
+        "{log:#?}"
+    );
+    assert!(pending(&store, &repo).is_empty());
+}
+
+/// `spec/mutate` §4 step 5 (a): a later request touching a path with a
+/// pending row lands the row before reading the file, so the stale file is
+/// brought to the committed revision instead of being read back as a human
+/// edit (which would have been a `sync_conflict` reverting the first intent).
+/// Rows at other paths are not this request's business: they stay for the
+/// sweep (`materialize::crash-then-second-request-materializes-first`).
+#[test]
+fn a_later_request_materializes_the_pending_row_before_reading() {
+    let (mut store, repo, mut ds) =
+        seeded(&[("a.md", "# A\n\nAlpha.\n"), ("b.md", "# B\n\nBravo.\n")]);
+    crashed(store.apply(&one_op(&repo, "a.md"), &mut Crashed(&mut ds), T1));
+    crashed(store.apply(&one_op(&repo, "b.md"), &mut Crashed(&mut ds), T1));
+    assert_eq!(pending(&store, &repo).len(), 2);
+    let res = store
+        .apply(
+            &ApplyRequest {
+                repo_id: repo.clone(),
+                ops: vec![insert_end("a.md", "Second tail.")],
+                origin: api_origin(),
+                dry_run: false,
+                set_frontmatter: Vec::new(),
+            },
+            &mut ds,
+            T2,
+        )
+        .unwrap();
+    assert!(res.committed);
+    assert_eq!(
+        commits_by_origin(&store, "observed"),
+        2,
+        "no conflict ingest"
+    );
+    assert_eq!(commits_by_origin(&store, "api"), 3);
+    assert_eq!(
+        ds.read("a.md").unwrap().as_deref(),
+        Some("# A\n\nAlpha.\n\nA tail.\n\nSecond tail.\n")
+    );
+    assert_eq!(
+        store.reconstruct("d_0").unwrap().as_deref(),
+        ds.read("a.md").unwrap().as_deref()
+    );
+    let rows = pending(&store, &repo);
+    assert_eq!(
+        rows.iter().map(|r| r.path.as_str()).collect::<Vec<_>>(),
+        ["b.md"],
+        "b.md's row is another request's: left for the sweep"
+    );
+    assert_eq!(ds.read("b.md").unwrap().as_deref(), Some("# B\n\nBravo.\n"));
 }

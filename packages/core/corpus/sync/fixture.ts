@@ -312,7 +312,7 @@ export interface CheckpointProjection extends Omit<StoreProjection, "steps"> {
 }
 
 export const CHECKPOINT_PROJECTION_KEYS = [
-  "steps", "docs", "commits", "revisions", "blobs", "tree_nodes", "blocks", "dispositions", "block_changes", "resurrection_pool", "sections", "checkpoints", "file_stats",
+  "steps", "docs", "commits", "revisions", "blobs", "tree_nodes", "blocks", "dispositions", "block_changes", "resurrection_pool", "sections", "pending_materializations", "checkpoints", "file_stats",
 ] as const;
 
 export interface CheckpointCase {
@@ -906,7 +906,8 @@ export function validateFixtureFile(file: string, doc: unknown, opts: ValidateOp
       onlyKeys(c, ["name", "notes", "config", "steps", "expect"], at, problems);
       if (c.config !== undefined && !isRecord(c.config)) problems.push(`${at}: \`config\` must be an object`);
       const n = validateSteps(at, c.steps, CHECKPOINT_STEPS, validateCheckpointStep, problems);
-      if (c.expect === undefined) {
+      // A regeneration pass rewrites `expect`; a stale projection key set is not a problem then.
+      if (c.expect === undefined || !requireExpect) {
         if (requireExpect) problems.push(`${at}: missing \`expect\` (run SYNC_SPEC_UPDATE=1)`);
         return;
       }

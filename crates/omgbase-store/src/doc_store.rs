@@ -6,6 +6,7 @@
 
 use std::collections::BTreeMap;
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use crate::error::{Error, Result};
@@ -74,7 +75,7 @@ impl DocStore for MemDocStore {
 }
 
 /// A filesystem doc store rooted at a working tree. Writes go to
-/// `<path>.omgtmp` and are renamed into place.
+/// `<path>.omgtmp`, are fsynced, and are renamed into place.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FsDocStore {
     root: PathBuf,
@@ -128,7 +129,15 @@ impl DocStore for FsDocStore {
         let mut tmp = abs.clone().into_os_string();
         tmp.push(".omgtmp");
         let tmp = PathBuf::from(tmp);
-        fs::write(&tmp, bytes).map_err(|e| io_err("cannot write", &tmp, e))?;
+        {
+            let mut f = fs::File::create(&tmp).map_err(|e| io_err("cannot write", &tmp, e))?;
+            f.write_all(bytes.as_bytes())
+                .map_err(|e| io_err("cannot write", &tmp, e))?;
+            // Power-loss safety for the bytes before the rename makes them
+            // visible (no directory fsync: the same loss class as the
+            // database's `synchronous=NORMAL`).
+            f.sync_all().map_err(|e| io_err("cannot fsync", &tmp, e))?;
+        }
         fs::rename(&tmp, &abs).map_err(|e| io_err("cannot rename into", &abs, e))
     }
 

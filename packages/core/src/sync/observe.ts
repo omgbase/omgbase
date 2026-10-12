@@ -8,6 +8,7 @@ import { sweepResurrectionPool } from "../core/store/gc.js";
 import { crossDocMatch, applyCrossDocMatches, type PerDocUnmatched } from "../reconcile/crossdoc.js";
 import type { DocReconcileResult } from "../reconcile/reconcile.js";
 import { DEFAULT_CONFIG, type MatchBlock, type ReconcileConfig } from "../reconcile/types.js";
+import { deletePending, readPending } from "../mutate/materialize.js";
 
 // Observe (ADR-014 §7, D2): the SINGLE reconcile primitive. "Given the current
 // authoritative bytes for a path, echo-gate + reconcile identity + commit as an
@@ -67,17 +68,22 @@ export type BatchOutcome =
       oldHashHex: string | null;
     };
 
-// Pass-1 state per non-echo member.
+// Pass-1 state per non-echo member. `clearPending`: the member's bytes
+// superseded an api intent still pending at its path (spec/store §5.7) — the
+// row goes in the member's transaction.
 type Pending =
   | { kind: "echo"; outcome: BatchOutcome }
   | { kind: "gone"; path: string; docId: string | null; oldHashHex: string | null; oldBlocks: MatchBlock[]; result: DocReconcileResult | null }
-  | { kind: "ingest"; prepared: PreparedReconcile; oldHashHex: string | null; newHashHex: string };
+  | { kind: "ingest"; prepared: PreparedReconcile; oldHashHex: string | null; newHashHex: string; clearPending: boolean };
 
 /**
  * The batch reconcile primitive — one checkpoint's worth of members, in order.
  * Two passes with the cross-document phase between them (reconciliation-spec §8):
  *
- *   1. every member is echo-gated and, when it differs from the stored revision,
+ *   1. every member is gated against a pending materialization row at its path
+ *      (spec/store §5.7: the bytes the api path owes confirm the row, an absent
+ *      file is not a deletion, anything else lets the file win), echo-gated and,
+ *      when it differs from the stored revision,
  *      parsed + reconciled against its own prior tree WITHOUT committing
  *      (`prepareReconcile`; members gone from the source contribute their whole
  *      live tree as deleted). All members see one resurrection-pool snapshot with
@@ -117,6 +123,29 @@ export function observeBatch(
     const existing = liveDoc.get(repoId, it.path) as { doc_id: string; file_hash: Buffer | null } | undefined;
     const oldHashHex = existing?.file_hash?.toString("hex") ?? null;
 
+    // The materialization gate (spec/store §5.7): an api commit still owes this
+    // path a file. The observation decides what the row meant for the disk —
+    // the bytes it named confirm it (echo; a `remove` row stays until the file
+    // is gone), an absent file is NOT a deletion (the materializer still owes
+    // it; `remove` rows are confirmed by the absence), anything else is a later
+    // human edit and the file wins: the normal reconciling ingest below, the
+    // row dropped with it.
+    const owed = readPending(db, repoId, it.path);
+    if (owed && it.content === null) {
+      if (owed.kind === "remove") deletePending(db, repoId, it.path);
+      else {
+        pending.push({ kind: "echo", outcome: { kind: "deleted", path: it.path, docId: null, oldHashHex } });
+        continue;
+      }
+    } else if (owed && sha256(it.content!).equals(owed.renderedHash)) {
+      if (owed.kind !== "remove") deletePending(db, repoId, it.path);
+      pending.push({
+        kind: "echo",
+        outcome: { kind: "observed", docId: owed.docId, path: it.path, rev: null, commitId: null, converged: true, echo: true, conflicted: false, dispositions: [], oldHashHex, newHashHex: sha256(it.content!).toString("hex") },
+      });
+      continue;
+    }
+
     if (it.content === null) {
       const oldBlocks = existing ? loadOldMatchBlocks(db, existing.doc_id) : [];
       const result: DocReconcileResult | null = existing
@@ -132,6 +161,9 @@ export function observeBatch(
     // loop-breaker the coordinator relies on (§6): re-observing what the engine
     // already holds is a no-op.
     if (existing && existing.file_hash && existing.file_hash.equals(diskHash)) {
+      // (A row that names other bytes than the file the database already
+      // agrees with is stale either way; the observation settles it.)
+      if (owed) deletePending(db, repoId, it.path);
       pending.push({
         kind: "echo",
         outcome: { kind: "observed", docId: existing.doc_id, path: it.path, rev: null, commitId: null, converged: true, echo: true, conflicted: false, dispositions: [], oldHashHex, newHashHex },
@@ -140,7 +172,7 @@ export function observeBatch(
     }
 
     const prepared = prepareReconcile(store, repoId, it.path, it.content, { ts, config, pool, consumed });
-    pending.push({ kind: "ingest", prepared, oldHashHex, newHashHex });
+    pending.push({ kind: "ingest", prepared, oldHashHex, newHashHex, clearPending: owed !== null });
   }
 
   // ---- cross-document phase (spec/reconcile §7) --------------------------------
@@ -154,6 +186,14 @@ export function observeBatch(
     } else if (p.kind === "gone") {
       if (p.docId) tombstoneObservedDeletion(store, repoId, p.docId, ts);
       out.push({ kind: "deleted", path: p.path, docId: p.docId, oldHashHex: p.oldHashHex });
+    } else if (p.clearPending) {
+      // File wins (spec/store §5.7): the pending row and the observed commit
+      // that supersedes it go together.
+      out.push(store.write((db) => {
+        const r = commitPrepared(store, repoId, p.prepared, ts, p.oldHashHex, p.newHashHex);
+        deletePending(db, repoId, p.prepared.path);
+        return { kind: "observed", ...r } as const;
+      }));
     } else {
       out.push({ kind: "observed", ...commitPrepared(store, repoId, p.prepared, ts, p.oldHashHex, p.newHashHex) });
     }
@@ -294,6 +334,14 @@ export interface ObserveDeleteResult {
  */
 export function observeDelete(store: Store, repoId: string, path: string, opts: { ts?: string } = {}): ObserveDeleteResult {
   const ts = opts.ts ?? new Date().toISOString();
+  // The §5.7 gate for a gone member: a path the api path still owes a `write`
+  // or `rename` is not tombstoned (the materializer owes the file); a `remove`
+  // row is confirmed by the absence.
+  const owed = readPending(store.db, repoId, path);
+  if (owed) {
+    if (owed.kind !== "remove") return { docId: null, path, deleted: false };
+    deletePending(store.db, repoId, path);
+  }
   const existing = store.db
     .prepare("SELECT doc_id FROM docs WHERE repo_id = ? AND path = ? AND deleted_commit IS NULL")
     .get(repoId, path) as { doc_id: string } | undefined;

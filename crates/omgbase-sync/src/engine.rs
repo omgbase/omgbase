@@ -236,7 +236,10 @@ mod tests {
         );
         let one = client.changes_since(0, Some(1), None).unwrap();
         assert!(one.truncated);
-        assert_eq!(client.store().user_version().unwrap(), 13);
+        assert_eq!(
+            client.store().user_version().unwrap(),
+            omgbase_store::SCHEMA_VERSION
+        );
         client.close().unwrap();
         drop(client);
         let commits: Vec<String> = {

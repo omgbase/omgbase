@@ -14,7 +14,8 @@ import { isContainerBlock } from "../format/index.js";
 // ops see earlier effects; minted ids are referenceable via "$n.ids[i]"
 // placeholders. Atomic: all ops apply or none — validation throws before any
 // file write, and the commit is one transaction with one `commits` row and a
-// revision per touched document (spec/mutate §4 step 5, 2.1; `commit.ts`).
+// revision per touched document, the files materialized after it from the
+// recorded intent (spec/mutate §4 step 5, 2.2; `commit.ts`).
 // dry_run returns rendered diffs without committing. `planChangeset` is the
 // op loop (shared by the dry run and by `docs_move`'s inbound retarget, which
 // commits its effects under the move's own commit); `apply` plans, then commits.
@@ -264,11 +265,11 @@ export function apply(store: Store, req: ApplyRequest): ApplyResult {
     return { results, revisions, diffs, committed: false };
   }
 
-  // Commit (spec/mutate §4 step 5): file-CAS every touched document, write the
-  // rendered files, then one transaction with one `api` commit and a revision
-  // per document — under the cross-process writer lock when a workspace dir is
-  // supplied (spec/sync §7); otherwise the Store's in-process serialization
-  // suffices.
+  // Commit (spec/mutate §4 step 5): one transaction validating every touched
+  // document, one `api` commit and a revision per document plus the file
+  // intent, then the rendered files materialized — under the cross-process
+  // writer lock when a workspace dir is supplied (spec/sync §7); otherwise the
+  // Store's in-process serialization suffices.
   const docStore = resolveDocStore(req);
   const ts = req.ts ?? new Date().toISOString();
   const head = { origin: "api" as const, actor: req.origin.actor, reason: req.origin.reason ?? null };

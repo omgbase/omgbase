@@ -11,14 +11,16 @@ import { changesSince } from "../graph/history.js";
 import { apply } from "./apply.js";
 import { docsMove } from "./docs.js";
 import { FsDocStore } from "./doc-store.js";
+import { listPending, materializePending } from "./materialize.js";
 import { MutationError } from "./tree.js";
 
 // One request, one transaction, one commit (spec/mutate §4 step 5, 2.1;
-// spec/store §5.4 "The api path"). The fixtures pin the projected rows
-// (`changesets::multi-doc-changeset`, `commit::conflict-on-third-doc-commits-
-// nothing`, `docs::move-retarget-inbound`); these tests pin what the fixtures
-// cannot see — the change feed, the filesystem, and a failure injected after
-// the files were written.
+// spec/store §5.4 "The api path"), the files after it (2.2; spec/store §5.7).
+// The fixtures pin the projected rows (`changesets::multi-doc-changeset`,
+// `commit::conflict-on-third-doc-commits-nothing`, `docs::move-retarget-
+// inbound`, the `materialize` suite); these tests pin what the fixtures
+// cannot see — the change feed, the real filesystem, and a failure injected
+// while the files are being materialized.
 
 let dir: string;
 let store: Store;
@@ -108,7 +110,7 @@ describe("commitChangeset — one transaction, one commit per request", () => {
     expect(err).toBeInstanceOf(MutationError);
     expect((err as MutationError).code).toBe("sync_conflict");
 
-    // Phase A caught the dirty third document before phase B wrote anything.
+    // The in-transaction compare caught the dirty third document; nothing was written.
     expect(readFileSync(join(dir, "a.md"), "utf8")).toBe("# A\n\nAlpha.\n");
     expect(readFileSync(join(dir, "b.md"), "utf8")).toBe("# B\n\nBravo.\n");
     expect([fileHash(a), fileHash(b)]).toEqual(hashes);
@@ -119,43 +121,41 @@ describe("commitChangeset — one transaction, one commit per request", () => {
     expect(fileHash(c)).toBe(sha256(human).toString("hex"));
   });
 
-  it("a failure after the files were written rolls the database back; the files are ahead until an observation heals them", () => {
+  it("a failure while materializing leaves the commit durable and the remaining rows pending; materializePending finishes the files (store 14.0)", () => {
     const a = save("a.md", "# A\n\nAlpha.\n");
     const b = save("b.md", "# B\n\nBravo.\n");
     const before = commits();
-    const hashes = [fileHash(a), fileHash(b)];
     const liveBefore = store.db.prepare("SELECT block_id FROM blocks WHERE deleted_commit IS NULL ORDER BY block_id").all().map((r) => (r as { block_id: string }).block_id);
 
-    // A workspace dir turns the stat-cache refresh on; the injected store throws
-    // from it — inside phase C, after both documents' rows were written.
-    const omgbaseDir = join(dir, ".omgbase");
-    mkdirSync(omgbaseDir);
+    // The injected store dies on its SECOND file write: a.md lands, b.md does not.
     class Failing extends FsDocStore {
-      override recordStat(): void {
-        throw new Error("injected: stat cache unavailable");
+      writes = 0;
+      override write(path: string, bytes: string): void {
+        if (++this.writes === 2) throw new Error("injected: disk full");
+        super.write(path, bytes);
       }
     }
-    expect(() =>
-      apply(store, { repoId, docStore: new Failing(dir), omgbaseDir, ops: [appendOp(a, "A tail."), appendOp(b, "B tail.")], origin: { actor: "agent:test", reason: "two docs" } }),
-    ).toThrow(/injected/);
+    const failing = new Failing(dir);
+    expect(() => apply(store, { repoId, docStore: failing, ops: [appendOp(a, "A tail."), appendOp(b, "B tail.")], origin: { actor: "agent:test", reason: "two docs" } })).toThrow(/injected/);
 
-    // Rolled back: no commit row, no revision, the block rows as they were.
-    expect(commits()).toEqual(before);
-    expect([fileHash(a), fileHash(b)]).toEqual(hashes);
-    expect(store.db.prepare("SELECT block_id FROM blocks WHERE deleted_commit IS NULL ORDER BY block_id").all().map((r) => (r as { block_id: string }).block_id)).toEqual(liveBefore);
-    // Ahead: both files carry the rendered bytes.
-    expect(readFileSync(join(dir, "a.md"), "utf8")).toBe("# A\n\nAlpha.\n\nA tail.\n");
-    expect(readFileSync(join(dir, "b.md"), "utf8")).toBe("# B\n\nBravo.\n\nB tail.\n");
-
-    // The next observation heals each as an observed commit and converges.
-    for (const path of ["a.md", "b.md"]) {
-      const res = observeFile(store, repoId, path, readFileSync(join(dir, path), "utf8"));
-      expect(res).toMatchObject({ echo: false, converged: true });
-    }
-    const healed = commits().slice(before.length);
-    expect(healed.map((x) => x.origin)).toEqual(["observed", "observed"]);
+    // Committed: one api commit, both revisions, the rows rewritten.
+    const after = commits();
+    expect(after).toHaveLength(before.length + 1);
+    expect(after[after.length - 1]).toMatchObject({ origin: "api", reason: "two docs" });
     expect(fileHash(a)).toBe(sha256("# A\n\nAlpha.\n\nA tail.\n").toString("hex"));
-    // Identity survived the detour: the heading and paragraph keep their ids.
+    expect(fileHash(b)).toBe(sha256("# B\n\nBravo.\n\nB tail.\n").toString("hex"));
+    // a.md landed and its row went; b.md is behind the database with its row pending.
+    expect(readFileSync(join(dir, "a.md"), "utf8")).toBe("# A\n\nAlpha.\n\nA tail.\n");
+    expect(readFileSync(join(dir, "b.md"), "utf8")).toBe("# B\n\nBravo.\n");
+    expect(listPending(store.db, repoId).map((r) => ({ path: r.path, kind: r.kind, docId: r.docId }))).toEqual([{ path: "b.md", kind: "write", docId: b }]);
+
+    // The materializer finishes from the recorded intent: no new commit, the
+    // file current, the row gone, the known ids intact.
+    expect(materializePending(store, repoId, new FsDocStore(dir))).toEqual(["b.md"]);
+    expect(readFileSync(join(dir, "b.md"), "utf8")).toBe("# B\n\nBravo.\n\nB tail.\n");
+    expect(listPending(store.db, repoId)).toEqual([]);
+    expect(commits()).toEqual(after);
+    for (const path of ["a.md", "b.md"]) expect(observeFile(store, repoId, path, readFileSync(join(dir, path), "utf8"))).toMatchObject({ echo: true });
     const liveAfter = store.db.prepare("SELECT block_id FROM blocks WHERE deleted_commit IS NULL ORDER BY block_id").all().map((r) => (r as { block_id: string }).block_id);
     for (const id of liveBefore) expect(liveAfter).toContain(id);
   });

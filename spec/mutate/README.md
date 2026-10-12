@@ -2,9 +2,10 @@
 
 Mutation is how the store is *written to on purpose*: six kernel operations
 over a document's block tree (insert, update, move, remove, split, merge),
-applied as an atomic changeset, rendered back to bytes by splice, written to
-the file, and committed as an `api`-origin revision whose block identities
-are the ones the operations chose — never re-derived from the bytes. On top
+applied as an atomic changeset, rendered back to bytes by splice, committed
+as an `api`-origin revision whose block identities are the ones the
+operations chose — never re-derived from the bytes — and then written to
+the file from the recorded intent. On top
 of the kernel sit deterministic macros, the document-level operations
 (create, move, delete, set-meta) and the whole-document update planner that
 turns a proposed complete document into an inspectable opset. This directory
@@ -14,7 +15,7 @@ It is owned by neither implementation.
 
 | Implementation | Where | Role |
 | --- | --- | --- |
-| `@omgbase/core` (TypeScript, npm) | `packages/core/src/mutate/{tree,ops,apply,load,known-ids,macros,docs,doc-store,plan-update,lower,opset}.ts` | **Reference.** Mutation decisions land here first. |
+| `@omgbase/core` (TypeScript, npm) | `packages/core/src/mutate/{tree,ops,apply,commit,materialize,load,known-ids,macros,docs,doc-store,plan-update,lower,opset}.ts` | **Reference.** Mutation decisions land here first. |
 | `omgbase-mutate` (Rust, crates.io) | `crates/omgbase-mutate` | Conformance-first port: the working tree, the six ops, the splice renderer, the lowering and the opset (pure); `omgbase-store` loads, commits, plans and runs the macros and document operations. |
 
 The spec is two artifacts, versioned together by `VERSION`: this `README.md`
@@ -274,52 +275,67 @@ Result   { results: [{ ids, removed?, merged_into? }], revisions: [{ id, path, h
    hash the committed revision will carry (2.0; `{ doc, path }` before).
    `dry_run` returns here with `committed: false`.
 5. **Commit**, under the writer lock when a workspace is given (2.1; per
-   document before):
-   - **(a) file-CAS** every loaded document, in load order, before anything
-     is written: if the doc store has bytes at the path and the doc has a
-     `file_hash`, they must match; on the first mismatch the on-disk bytes
-     are ingested as an `observed` commit through the reconciling path
-     (`spec/store` §5) and `sync_conflict` (retriable) is raised — nothing
-     written, nothing committed, no `api` commit row;
-   - **(b) write** every rendered file (atomic: temp file + rename; a
-     headless doc store does nothing);
-   - **(c) in one transaction**, opened `BEGIN IMMEDIATE` so the writer's
-     lock on the database is held from the first statement (2.2): **first
-     re-validate** — for every loaded document re-read `(path, current_rev,
-     file_hash)` through the transaction and compare with the values the
-     plan loaded in step 1; a document that moved on → ROLLBACK before
-     anything is minted, `stale_plan { doc, expected_revision, current: {
-     revision, hash } }` (retriable); a `file_hash` that no longer equals
-     the on-disk hash taken in (a) → ROLLBACK, `sync_conflict` (the bytes
-     are ingested as `observed` afterwards, in their own transaction); the
-     document operations re-check their own guards the same way (`path_taken`
-     for a create and for a move's destination, `doc_missing` for a move's
-     source and a delete). Only then one commit row (`origin = "api"`,
-     `actor`, `reason`, `checkpoint_id = NULL`, `ops = NULL`), then per
-     document in
-     load order `spec/store` §5.4 steps 1–4 and 6–13 naming that commit
-     (`spec/store` §5.4 "The api path") with the **known-id resolver**: the
-     re-parsed body gets the tree's ids by positional key (`"/i/j"`; a
-     position with no id mints — impossible under the round-trip law),
-     dispositions `{ kind: edited if the id was live before else inserted,
-     confidence: 1, reason: "api", matcher_v: null, detail: {} }` for every
-     block (there is **no `deleted` disposition row** on the api path),
-     `deleted` = the prior live ids no longer present (pooled per
-     `spec/store` §5.4 step 7), and `cross_doc_ids` = the ids new to this
-     document that were live elsewhere (a cross-document move), so step 8
-     evicts the source's row whichever document commits first (§10); then
-     refresh the freshness stat cache. Mint order: one `c`, then per
-     document `r`, `x`, `e`.
-   A failure in (c) rolls back every document — no commit row, no revision,
-   no block row of the request survives — while the files written in (b)
-   are ahead of the database until the next observation heals them as
-   `observed` commits (§10).
+   document before). Database first, files after, nothing written before
+   the transaction commits (2.2; files were written before the transaction
+   through 2.1 — §10):
+   - **(a) reads**, outside the transaction: for every path the request
+     touches, a `pending_materializations` row an earlier request left
+     there (`spec/store` §5.7 — a crash, a refused write) is replayed
+     first, so the file is read as the engine left it and not as a human
+     edit; then the bytes on disk of every loaded document are read (a
+     headless doc store has none) — read, not compared: the comparison is
+     (b)'s;
+   - **(b) one transaction**, opened `BEGIN IMMEDIATE` so the writer's lock
+     on the database is held from the first statement: **first re-validate**
+     — for every loaded document re-read `(path, current_rev, file_hash)`
+     through the transaction and compare with the values the plan loaded in
+     step 1; a document that moved on → ROLLBACK before anything is minted,
+     `stale_plan { doc, expected_revision, current: { revision, hash } }`
+     (retriable); a `file_hash` that does not equal the hash of the bytes
+     read in (a) → ROLLBACK, `sync_conflict` (retriable; the bytes are then
+     ingested as `observed` in their own transaction, with any pending row
+     at the path dropped — the file won); the document operations re-check
+     their own guards the same way (`path_taken` for a create and for a
+     move's destination, `doc_missing` for a move's source and a delete).
+     Only then one commit row (`origin = "api"`, `actor`, `reason`,
+     `checkpoint_id = NULL`, `ops = NULL`), then per document in load order
+     `spec/store` §5.4 steps 1–4 and 6–13 naming that commit (`spec/store`
+     §5.4 "The api path") with the **known-id resolver**: the re-parsed body
+     gets the tree's ids by positional key (`"/i/j"`; a position with no id
+     mints — impossible under the round-trip law), dispositions `{ kind:
+     edited if the id was live before else inserted, confidence: 1, reason:
+     "api", matcher_v: null, detail: {} }` for every block (there is **no
+     `deleted` disposition row** on the api path), `deleted` = the prior
+     live ids no longer present (pooled per `spec/store` §5.4 step 7), and
+     `cross_doc_ids` = the ids new to this document that were live elsewhere
+     (a cross-document move), so step 8 evicts the source's row whichever
+     document commits first (§10); finally one **pending row** per file the
+     request owes the disk (`spec/store` §5.4 "The api path (14.0)": `write`
+     per ingested document with its new revision and rendered hash; the
+     document operations' `rename`/`remove` rows, §6). COMMIT. Mint order:
+     one `c`, then per document `r`, `x`, `e`. A failure anywhere in (b)
+     rolls back every document — no commit row, no revision, no block row,
+     no pending row, no file touched;
+   - **(c) materialize**, after COMMIT, in effect order: each pending row the
+     request recorded is materialized through the doc store (`spec/store`
+     §5.7 — the rendered bytes written atomically, temp file fsynced then
+     renamed; a moved file renamed; a deleted file unlinked if it still
+     holds the deleted revision's bytes), the freshness stat cache refreshed
+     for each file that landed, and the row deleted as its file is done.
+     The bytes the materializer may overwrite are the ones (b) validated the
+     file against (the prior `file_hash`); a file a human changed in
+     between keeps its row and the next observation lets it win. A crash or
+     a failed write here leaves the commit durable and the remaining rows
+     pending for the next materializer (the sweep's step 0, recovery, the
+     next request touching the path — `spec/store` §5.7).
    `committed: true`.
 
-Atomicity is per request: one transaction, one `commits` row, one revision
-per loaded document (2.1; one transaction and one commit per document
-before — `commit::conflict-on-third-doc-commits-nothing`,
-`changesets::multi-doc-changeset`).
+Atomicity is per request, in the database: one transaction, one `commits`
+row, one revision per loaded document (2.1; one transaction and one commit
+per document before — `commit::conflict-on-third-doc-commits-nothing`,
+`changesets::multi-doc-changeset`). The files are eventually consistent
+through the recorded intent (2.2; `materialize::apply-crash-then-materialize-
+finishes`): no atomicity across the database and the disk is claimed.
 
 ## 5. Macros
 
@@ -351,44 +367,59 @@ All are `api` commits with a generated `reason`.
   non-empty object: `"---\n" + yaml + "\n---\n" + ("\n" unless the body
   starts with one) + body`, `yaml` being the mapping serialized by the
   reference's YAML emitter — §10); a file already on disk → `path_taken`;
-  write; ingest with the **reconciling** resolver (`reason: "create <path>"`).
+  ingest with the **reconciling** resolver (`reason: "create <path>"`)
+  under §4 step 5's commit, recording a `write` row; the file is written in
+  (c) only if the path is still absent (or already holds the bytes) — a
+  foreign file that appeared keeps the row and the next observation lets it
+  win (`spec/store` §5.7).
 - **`docs_move { doc, to_path, retarget_inbound? = true }`**: `doc_missing`;
   `path_taken` if a live doc or a file exists at the destination; the
   inbound links that name the old path are read and, unless
   `retarget_inbound` is `false`, the deepest hit block per inbound link is
   rewritten in memory as §4 steps 1–4 (relative forms against the source's
   current directory; the moved document, when it links to itself by path,
-  is a source too and renders under the NEW path); the file is renamed (or
-  the bytes written when the source file is absent); then **in one
+  is a source too and renders under the NEW path); then **in one
   transaction with the retarget** (2.1): one `api` commit (`reason: "move
   <from> -> <to>"`), `docs.path` and the current revision's `path` updated,
   every open edge from **another** document into this one re-pointed to
   `phantom:<old path>`, a self-document edge re-pointed only when its link
   names the path (a pure fragment stays), affected rollups rebuilt,
-  phantoms at the new path adopted, and then each rewritten source's
-  revision as §4 step 5(c) under that same commit (so its links resolve to
-  the moved document, not a phantom) — a move means "same document, new
-  place", so the authored links follow it by default (1.3);
-  `retarget_inbound: false` is the opt-out for the rarer intent that the
-  old path become unbound (the commit then carries no revision). Before 2.1
-  the retarget was a second commit (`reason: "retarget inbound links <from>
-  -> <to>"`); that reason no longer appears in history. The
-  result lists the still-dangling inbound links (with the default: the
-  frontmatter relations, which are never rewritten — `docs_set_meta` them)
-  and, when the rewrite ran, `retargeted { blocks, docs }` (empty lists when
-  only frontmatter relations linked in; `null` when it was opted out or
-  nothing linked in).
+  phantoms at the new path adopted, then each rewritten source's revision
+  as §4 step 5(b) under that same commit (so its links resolve to the moved
+  document, not a phantom), and the pending rows (2.2): a `rename` row at
+  the new path (`from_path` = the old one, `rendered_hash` = the moved
+  document's current revision — the retargeted one when it is a source
+  itself) plus a `write` row per other rewritten source. (c) renames the
+  file (`spec/store` §5.7: a destination that appeared with foreign bytes
+  keeps the row and wins; an old file that vanished is replaced by the
+  revision's bytes written at the new path; a self-linking source's renamed
+  file is rewritten with its new bytes), clears the old path's stat row and
+  records the new one's — a move means "same document, new place", so the
+  authored links follow it by default (1.3); `retarget_inbound: false` is
+  the opt-out for the rarer intent that the old path become unbound (the
+  commit then carries no revision). Before 2.1 the retarget was a second
+  commit (`reason: "retarget inbound links <from> -> <to>"`); that reason
+  no longer appears in history. The result lists the still-dangling inbound
+  links (with the default: the frontmatter relations, which are never
+  rewritten — `docs_set_meta` them) and, when the rewrite ran, `retargeted
+  { blocks, docs }` (empty lists when only frontmatter relations linked in;
+  `null` when it was opted out or nothing linked in).
 - **`docs_delete { doc }`**: `doc_missing`; one transaction: `api` commit
   (`reason: "delete <path>"`), FTS rows dropped, live blocks and the doc
   tombstoned — **nothing pooled** (an intentional delete, unlike `spec/store`
-  §5.6); then the file removed and its stat row cleared.
+  §5.6) — and a `remove` row naming the deleted revision's rendered hash
+  (2.2); (c) unlinks the file **iff** it still holds those bytes (a file a
+  human rewrote meanwhile stays, untracked) and clears its stat row. Through
+  2.1 the unlink ran unconditionally after the transaction, and a crash
+  between the two left a file no sweep healed.
 - **`docs_set_meta { doc, set?, unset? }`**: read the file, split the
   frontmatter with `^---\r?\n([\s\S]*?)\r?\n---\r?\n?` (malformed → `{}` and
   the whole content as body), merge `set`, delete `unset`, compose (as
-  create), write, ingest with the reconciling resolver
-  (`reason: "set_meta <path>"`) under §4 step 5's commit: the file-CAS of (a)
-  and the in-transaction re-validation of (c) apply (2.2; before, `set_meta`
-  checked nothing and could overwrite a concurrent edit). Unsetting every
+  create), ingest with the reconciling resolver
+  (`reason: "set_meta <path>"`) under §4 step 5's commit — a `write` row like
+  `apply`'s: the in-transaction re-validation of (b) applies to the bytes
+  the patch was computed from (2.2; before, `set_meta` checked nothing and
+  could overwrite a concurrent edit). Unsetting every
   key leaves the body's
   leading blank line in place (`leading_trivia` becomes `"\n"`, §10).
 
@@ -489,7 +520,16 @@ so file-CAS and the written bytes are checkable) and these steps:
 { "plan":     { "ts": "…", "doc": "a.md", "content": "…", "apply": true, "origin"?: {...},
                 "before_apply"?: [ <observe|disk steps run between plan and apply> ] } }    // stages stale_plan
 { "disk":     { "path": "a.md", "source": "…" } }                                   // a human edit landed on disk
+{ "materialize": {} }                                                                // replay every pending row (spec/store §5.7) → { materialized: [path…] }
 ```
+
+A committing `apply` / `macro` / `docs` step may carry `"crash_after_commit":
+true` (2.2): the process dies after its transaction committed and before the
+first file operation — the doc store's next write/rename/remove throws, the
+runner records `{ crashed_after_commit: true }` (the caller never saw a
+result), and the pending rows and the old files stay for a later step to
+observe or `materialize`. A step that errors before committing never reaches
+a file operation and records its error as usual.
 
 `ts` (spec/store §2.4 format) is required on every committing step: the
 implementations expose a clock seam (`ts` on the apply request, the doc-op
@@ -503,9 +543,12 @@ committed }` or `{ error: { code, op_index?, block?, current?, retriable? } }`
 (only those data fields; `current.markdown` dropped beyond 200 UTF-8 bytes);
 `macro` → `{ ops, hits?, pairs?, ...the apply outcome }`; `docs` → `{ doc,
 path, committed }` (+ `dangling`, `retargeted` for a move) or the error;
-`plan` → `{ opset, before_apply?, apply? }`; `disk` → `{}`. After the last step: `files` (path → bytes of the in-memory doc
-store), and the `spec/store` §9.4 projection of `docs`, `blocks`,
-`commits`, `revisions`, `dispositions`, `resurrection_pool`. The fixture
+`plan` → `{ opset, before_apply?, apply? }`; `disk` → `{}`; `materialize` →
+`{ materialized: [path…] }` (the rows cleared, in insertion order; a row kept
+for a foreign file is not listed). After the last step: `files` (path → bytes
+of the in-memory doc store), and the `spec/store` §9.4 projection of `docs`,
+`blocks`, `commits`, `revisions`, `dispositions`, `resurrection_pool`,
+`pending_materializations` (14.0; `[]` unless a step crashed). The fixture
 minter (`spec/store` §2.2) makes the op-minted `b` ids and the commit ids
 comparable.
 
@@ -515,11 +558,16 @@ blockquote rebuild, table delimiter, tight/loose lists, nested items),
 atomicity on error), `commit.json` (api dispositions, known ids, deleted
 prior ids pooled, file-CAS `sync_conflict` after a `disk` step),
 `macros.json`, `docs.json`, `plan.json` (top-level lowering per case class,
-retile, fallback to replace, non-convergent plan refused, stale plan).
+retile, fallback to replace, non-convergent plan refused, stale plan),
+`materialize.json` (2.2: a crash after COMMIT and what each later step — a
+`materialize`, an observation of the stale, the rendered, new or absent
+file, a second request — does with the pending rows, for `apply`, `create`,
+`set_meta`, `delete` and `move`).
 
 **Runner checks**: every committed document satisfies `spec/store` §8 I1–I8
-and `files[path] == reconstruct(doc)`; then the projection deep-equals
-`expect`. **Generation**: `packages/core/corpus/mutate/spec.test.ts`,
+and `files[path] == reconstruct(doc)` — a path a `disk` step rewrote, or one
+with a pending row, is compared against the store's own reconstruction
+instead; then the projection deep-equals `expect`. **Generation**: `packages/core/corpus/mutate/spec.test.ts`,
 `MUTATE_SPEC_UPDATE=1`. **Allowlist (Rust)**:
 `crates/omgbase-mutate/tests/spec-passing.txt`, `MUTATE_SPEC_UPDATE=1`.
 
@@ -606,13 +654,23 @@ and `files[path] == reconstruct(doc)`; then the projection deep-equals
   precondition's shape — under `BEGIN IMMEDIATE`, before minting. No
   fixture moves: a fixture's conflicts arise from a `disk` step before the
   request, and plan and commit are one step.
-- **Pinned (2.1) — a failed commit leaves every written file ahead of the
-  database.** §4 step 5 writes the files (b) before the transaction (c); a
-  failure inside (c) rolls the database back and the files stay as
-  rendered, so the next observation of each (`spec/store` §5) heals it as
-  an `observed` commit through the reconciling resolver — the intent's
-  actor, reason and known ids are lost for that document. A DB-first
-  materialization that keeps the intent is a later store major.
+- **Fixed (2.2) — a failed commit left every written file ahead of the
+  database.** Through 2.1 §4 step 5 wrote the files (b) before the
+  transaction (c); a failure inside the transaction rolled the database back
+  and the files stayed as rendered, so the next observation of each healed
+  it as an `observed` commit through the reconciling resolver — the intent's
+  actor, reason and known ids lost for that document — and a conflict found
+  inside the transaction had already overwritten a file. The order is now
+  database first (§4 step 5): the transaction records a pending row per
+  file (`spec/store` §5.7, store 14.0) and the files are materialized after
+  COMMIT; a crash leaves the commit and replays the files
+  (`materialize::apply-crash-then-materialize-finishes`), a human edit that
+  lands in the window keeps its file (`materialize::crash-then-materialize-
+  keeps-foreign-file`). One consequence worth knowing: an observation of a
+  file still holding the previous revision after a crash reads as a human
+  revert and commits it as `observed` (`materialize::crash-then-observe-of-
+  stale-file-is-foreign`) — the materializer, which the sweep runs first,
+  is the recovery point, not the observation.
 - **Pinned — a container update re-mints its children** unless `child_ids`
   is supplied; the planner supplies it, hand-authored changesets rarely do.
 - **Pinned — `checked` on a `list_item` retypes it to `task`** even when the
@@ -637,10 +695,19 @@ and `files[path] == reconstruct(doc)`; then the projection deep-equals
 - 2026-10-12, mutate 2.2: the commit transaction opens `BEGIN IMMEDIATE`
   and re-validates every loaded document's `(path, current_rev, file_hash)`
   and the document operations' guards before minting anything (§4 step 5
-  (c)); `docs_set_meta` is under the same CAS. Foundation step 4 of the
+  (b)); `docs_set_meta` is under the same CAS. Foundation step 4 of the
   effect planner: the triple is what a frozen plan's preconditions will
   carry, so `execute` can check them at commit. Procedure change, no
-  fixture movement; a minor.
+  fixture movement; a minor. Same line, foundation step 5: the commit is
+  database first — files are materialized after COMMIT from the pending
+  rows the transaction records (§4 step 5 (c), `spec/store` 14.0 §5.7), so a
+  conflict inside the transaction touches no file and a crash after it
+  loses no intent; `docs_delete` unlinks only the deleted revision's bytes;
+  `docs_move` renames through a `rename` row with the fallbacks §6 lists.
+  Fixtures: every `expect` gains `pending_materializations: []`; the new
+  `materialize.json` suite (16 cases) pins the crash window through the
+  `crash_after_commit` modifier and the `materialize` step; nothing else
+  moved.
 - 2026-10-12, mutate 2.1: a request commits in one transaction with one
   `commits` row and one revision per loaded document (§4 step 5), the
   file-CAS of every document runs before any file is written, and

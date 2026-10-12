@@ -361,7 +361,8 @@
             "first_ordinal": 0,
             "last_ordinal": 3
           }
-        ]
+        ],
+        "pending_materializations": []
       }
     },
     {
@@ -719,7 +720,8 @@
             "first_ordinal": 0,
             "last_ordinal": 3
           }
-        ]
+        ],
+        "pending_materializations": []
       }
     },
     {
@@ -1193,7 +1195,8 @@
             "first_ordinal": 0,
             "last_ordinal": 3
           }
-        ]
+        ],
+        "pending_materializations": []
       }
     },
     {
@@ -1581,7 +1584,8 @@
             "first_ordinal": 0,
             "last_ordinal": 3
           }
-        ]
+        ],
+        "pending_materializations": []
       }
     },
     {
@@ -1944,7 +1948,8 @@
             "first_ordinal": 0,
             "last_ordinal": 3
           }
-        ]
+        ],
+        "pending_materializations": []
       }
     },
     {
@@ -2406,7 +2411,8 @@
             "expires_ts": "2026-10-26T10:01:00.000Z"
           }
         ],
-        "sections": []
+        "sections": [],
+        "pending_materializations": []
       }
     },
     {
@@ -2778,7 +2784,8 @@
             "first_ordinal": 0,
             "last_ordinal": 3
           }
-        ]
+        ],
+        "pending_materializations": []
       }
     },
     {
@@ -3114,7 +3121,8 @@
             "first_ordinal": 0,
             "last_ordinal": 3
           }
-        ]
+        ],
+        "pending_materializations": []
       }
     },
     {
@@ -3451,7 +3459,8 @@
             "first_ordinal": 0,
             "last_ordinal": 3
           }
-        ]
+        ],
+        "pending_materializations": []
       }
     }
   ]

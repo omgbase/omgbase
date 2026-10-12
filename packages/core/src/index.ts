@@ -127,6 +127,7 @@ export { ingestFile, type IngestResult } from "./core/ingest.js";
 // Mutation surface consumed by CLI write commands (11 §5.6).
 export { apply, type ApplyRequest, type ApplyResult, type Op } from "./mutate/apply.js";
 export { type DocStore, FsDocStore, NullDocStore, resolveDocStore } from "./mutate/doc-store.js";
+export { materializePending, materializeRow, listPending, readPending, type PendingRow, type PendingKind } from "./mutate/materialize.js";
 export { type To, type At, type Expect } from "./mutate/ops.js";
 export {
   tasksComplete,

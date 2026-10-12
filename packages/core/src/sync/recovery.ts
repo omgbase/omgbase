@@ -3,22 +3,29 @@ import { sha256 } from "../core/hash.js";
 import { ingestFile } from "../core/ingest.js";
 import { makeReconcilingResolver } from "./reconciling-ingest.js";
 import { nodeFs, type SyncFs } from "./fs-util.js";
+import { materializePending } from "../mutate/materialize.js";
+import { FsDocStore, type DocStore } from "../mutate/doc-store.js";
 
-// Crash recovery (04 §6). The write protocol is file-first: bytes are written
-// (step 5) before the DB transaction (step 7). A crash between them leaves a
-// file whose hash ≠ its recorded rendered_hash. On startup we reconcile every
-// such file through the normal ingest path — the interrupted write is simply
-// observed, healing the store with no special-case logic. spec/sync §4.3
-// "Recovery": one document at a time (§9 — a block moved between two files while
-// the engine was down is `deleted` + `inserted`, the pool may still resurrect it).
+// Crash recovery (spec/sync §4.3 "Recovery"). Since store 14.0 the api path
+// commits DB-first and records each file it still owes as a pending
+// materialization row (spec/store §5.7), so step 0 replays those rows — the
+// recorded intent, with the commit already in history — before anything is
+// compared. What remains is the pre-14.0 rule: a file whose hash ≠ its
+// recorded rendered_hash (a human edit the engine never observed, a write that
+// landed with no row) is reconciled through the normal observed ingest path,
+// one document at a time (§9 — a block moved between two files while the
+// engine was down is `deleted` + `inserted`, the pool may still resurrect it).
 
 export interface RecoveryResult {
+  /** step 0: paths whose pending materialization rows were replayed */
+  materialized: string[];
   healed: string[]; // paths re-ingested
   missing: string[]; // tracked docs whose file vanished
 }
 
-export function recoverRepo(store: Store, repoId: string, rootPath: string, opts: { ts?: string; fs?: SyncFs } = {}): RecoveryResult {
+export function recoverRepo(store: Store, repoId: string, rootPath: string, opts: { ts?: string; fs?: SyncFs; docStore?: DocStore } = {}): RecoveryResult {
   const fs = opts.fs ?? nodeFs;
+  const materialized = materializePending(store, repoId, opts.docStore ?? new FsDocStore(rootPath));
   const docs = store.db
     .prepare(
       `SELECT d.doc_id, d.path, d.file_hash, r.rendered_hash
@@ -49,5 +56,5 @@ export function recoverRepo(store: Store, repoId: string, rootPath: string, opts
     }
   }
 
-  return { healed, missing };
+  return { materialized, healed, missing };
 }

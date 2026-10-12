@@ -48,7 +48,10 @@
 //! update planner). Since 13.7 every `api` request — a changeset over N
 //! documents, a move with its retarget, a create, a delete — commits as one
 //! transaction with one `commits` row through the internal effect set
-//! (`effects`, not public API).
+//! (`effects`, not public API); since 14.0 it commits **DB-first**, recording
+//! the files it owes as `pending_materializations` rows and writing them
+//! after COMMIT ([`materialize`]: the replay the sweep, recovery and the
+//! observe gate rule share).
 //!
 //! Minted ids are opaque; the store asks its [`IdMinter`] for each one. The
 //! default is the CSPRNG-backed [`RandomMinter`]; a fixture runner installs a
@@ -68,6 +71,7 @@ pub mod history;
 pub mod ids;
 pub mod links;
 pub mod macros;
+pub mod materialize;
 pub mod mint;
 pub mod mutate;
 pub mod observe;
@@ -97,6 +101,7 @@ pub use history::{ChangesPage, CommitDigest, DigestRevision};
 pub use ids::{IdMinter, RandomMinter, RepeatingMinter, SequentialMinter, is_valid_id, prefix_of};
 pub use links::InboundLink;
 pub use macros::{LinkRepair, LinkRepairCount, LinkRepairPlan, RetargetHit};
+pub use materialize::{PendingKind, PendingRow};
 pub use mint::{Deferred, MINT_GIVE_UP_AFTER, Mint, id_in_use};
 pub use mutate::{
     ApplyOrigin, ApplyRequest, ApplyResult, Diff, DocInfo, Revision, SetFrontmatter,
@@ -127,7 +132,7 @@ pub use writers::{NewCommit, NewRevision, Origin, TreeInputBlock};
 
 /// The `spec/store/VERSION` this crate implements (`major.minor`); the major
 /// is [`SCHEMA_VERSION`].
-pub const SPEC_VERSION: &str = "13.7";
+pub const SPEC_VERSION: &str = "14.0";
 
 /// This crate's own version (`Cargo.toml`), for the surface's `version` tool.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

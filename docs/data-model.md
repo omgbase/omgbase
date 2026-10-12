@@ -188,6 +188,22 @@ CREATE TABLE checkpoints (
   git_head  TEXT                           -- commit sha if the tree is a git repo
 );
 
+-- Recorded intent of an api commit's working-tree effect (store 14.0): the row
+-- is inserted in the commit's transaction and deleted after the file is
+-- written/renamed/removed, so a crash between the two is replayable with the
+-- intent intact (spec/store §5.7). One row per path; PK (repo_id, path).
+CREATE TABLE pending_materializations (
+  repo_id       TEXT NOT NULL REFERENCES repos(repo_id),
+  path          TEXT NOT NULL,              -- where the file must end up
+  kind          TEXT NOT NULL CHECK (kind IN ('write','rename','remove')),
+  from_path     TEXT,                       -- rename: the old path
+  doc_id        TEXT NOT NULL REFERENCES docs(doc_id),
+  rev_id        TEXT REFERENCES revisions(rev_id),   -- write/rename: the revision the bytes render; NULL for remove
+  rendered_hash BLOB NOT NULL,              -- the bytes expected at path (remove: the bytes it is safe to unlink)
+  commit_id     TEXT NOT NULL REFERENCES commits(commit_id),
+  PRIMARY KEY (repo_id, path)
+);
+
 CREATE TABLE resurrection_pool (
   block_id       TEXT PRIMARY KEY,
   repo_id        TEXT NOT NULL,
@@ -414,6 +430,7 @@ Base-62 fractional indexing (Figma-style). `key_between(a, b)` MUST return a key
 - Default retention: keep all revisions/commits forever (it's text; Merkle sharing keeps it small).
 - Optional pruning (config, off by default): squash observed commits older than N months into checkpoint revisions. GC then removes unreachable blobs/tree_nodes by mark-and-sweep from live revision roots. GC MUST NOT run in v1.0 (ship the flag off; implement in hardening stage).
 - `resurrection_pool` rows expire by `expires_ts` (default 30 days) via lazy sweep at checkpoint time.
+- `pending_materializations` rows live only between an api commit and its file write; the materializer (phase B' of the write, the freshness sweep's step 0, `recoverRepo`) or the next observation of the path deletes them. A long-lived row means a crashed write nobody has swept yet; it is never garbage.
 
 ## 8. Postgres dialect notes (deferred; do not build in v1)
 

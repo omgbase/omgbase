@@ -388,7 +388,10 @@ database and `--stale status --json` reports the drift instead
 (`disk.changed`/`deleted`/`untracked`); and **every sweep records a
 checkpoint** — an empty one too — so `sync --json`'s `checkpointId` (`cp_n`)
 counts the sweeping commands run since the bootstrap (`cp_0`). `shell` skips
-the pre-sweep but each line it runs sweeps on its own.
+the pre-sweep but each line it runs sweeps on its own. Since `spec/sync` 2.2
+the sweep's step 0 replays the api path's pending materialization rows
+(`spec/store` §5.7), so the pre-verb sweep is also the CLI's recovery point
+for a write the previous process did not finish; nothing a fixture can see.
 
 Every write runs under the writer lock of `spec/sync` §7
 (`<workspace>/.omgbase/writer.lock`); a watcher holds the watch lease
@@ -1024,10 +1027,15 @@ without a provider (58 for the alchemy fixture with no vectors).
 `  scanned   <n> files`, then `  ok ingested  <n>` with `      <path>` per
 file, `  x deleted   <n>` with paths, `  ! conflicts <n>` with paths, or
 `  already up to date` when nothing changed; `--json` (every non-human mode)
-the `SweepResult` `{ checkpointId, ingested, suppressed, deleted, conflicted, scanned, candidates, changed }`.
+the `SweepResult` `{ checkpointId, ingested, suppressed, deleted, conflicted, scanned, candidates, changed, materialized }`
+— `materialized` (3.1) is the sweep's step 0 (`spec/sync` §4.3): the paths
+whose pending materialization rows (`spec/store` §5.7) it replayed before
+the walk, `/`-rooted like the other lists and `[]` in every fixture (a
+fixture cannot crash the engine between a commit and its file half). The
+human rendering does not mention it.
 A sourceless repo: stderr `  <slug> has no filesystem source — nothing to sync`
 (an empty-result note, §3.1), `--json`
-`{"scanned":0,"ingested":[],"deleted":[],"conflicted":[],"changed":false}`.
+`{"scanned":0,"ingested":[],"deleted":[],"conflicted":[],"changed":false,"materialized":[]}`.
 `--watch` (a long-running process: lease, adapter, checkpoints, signals) and
 `--server` (the remote coordinator) are **unpinned** — their output depends
 on timing and on a second process; only the card is fixed.
@@ -1555,6 +1563,13 @@ was `b_314`).
 
 ## 10. Decisions
 
+- 2026-10-12, cli 3.1: `sync --json` (and the sourceless fallback) gains
+  `materialized: [path…]`, the freshness sweep's step 0 result (`spec/sync`
+  2.2, `spec/store` 14.0 §5.7). An additive result key: a minor; the five
+  JSON `sync`/`doctor` cases gain `"materialized":[]`, nothing else moves,
+  and the human rendering is unchanged (there is nothing a fixture could
+  show, and a count of files the engine owed itself is noise beside
+  `ingested`).
 - 2026-10-11, cli 3.0 (batch 3 — the attributes drop the `$`): following
   `spec/surface` 3.0's final name rule (§1.2: `$` belongs to OQX, every engine
   attribute is bare and wins on collision, an authored key of the same name is

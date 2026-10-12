@@ -2,6 +2,7 @@ import type { Database } from "better-sqlite3";
 import type { Store } from "../core/store/store.js";
 import { sha256 } from "../core/hash.js";
 import { ingestFile, ingestInto, type IngestResult } from "../core/ingest.js";
+import { deletePending, insertPending, materializeRow, readPending, type PendingRow } from "./materialize.js";
 import { newCommit } from "../core/store/writers.js";
 import { ftsDeleteDoc } from "../core/store/fts.js";
 import { adoptPhantoms, rebuildDocEdges } from "../core/store/edges.js";
@@ -12,43 +13,47 @@ import type { DocStore } from "./doc-store.js";
 import { MutationError, type MutDoc } from "./tree.js";
 
 // The commit of a request (spec/mutate §4 step 5, 2.2; spec/store §5.4 "The
-// api path"): ONE SQLite transaction, ONE `commits` row, one revision per
-// document, all-or-nothing. Every write tool lowers to an ordered list of
-// internal effects — `apply` and its sugar to `ingest_known` per touched
-// document, `docs_create`/`docs_set_meta` to `ingest_reconciled`,
-// `docs_delete` to `tombstone`, `docs_move` to `move_path` followed by the
-// retarget's `ingest_known`s — and `commitChangeset` runs them in three phases:
+// api path", §5.7 "Materialization", 14.0): ONE SQLite transaction, ONE
+// `commits` row, one revision per document, all-or-nothing in the database;
+// the files follow the commit through recorded intent. Every write tool lowers
+// to an ordered list of internal effects — `apply` and its sugar to
+// `ingest_known` per touched document, `docs_create`/`docs_set_meta` to
+// `ingest_reconciled`, `docs_delete` to `tombstone`, `docs_move` to `move_path`
+// followed by the retarget's `ingest_known`s — and `commitChangeset` runs them
+// in three phases, DB first:
 //
-//   A. validate every effect's precondition (reads only): the row triple
-//      `(path, current_rev, file_hash)` each document was planned against must
-//      still be the document's, and the bytes on disk must still hash to the
-//      row's `file_hash`. The first document whose row moved aborts the request
-//      with `stale_plan` (or `doc_missing`/`path_taken` for the effect-specific
-//      rules below); the first whose on-disk bytes moved aborts it with
-//      `sync_conflict` after its bytes are ingested as an `observed` commit of
-//      their own. Nothing is written either way;
-//   B. the file half of every effect, in order: write the rendered bytes,
-//      rename the moved file (atomic writes through the DocStore);
-//   C. the database half of every effect, in order, inside one `BEGIN
-//      IMMEDIATE` transaction (`store.writeImmediate`): the same validation
-//      again through the transaction's handle — the write lock is held, so what
-//      it reads is what the effects will write against — THEN `newCommit`, then
-//      per effect `ingestInto` under that commit, the path change + edge
-//      re-point, the tombstone, the stat-cache refresh. Validating before the
-//      mint means a conflict found here rolls back having minted nothing: no
-//      `c`/`d` id is burned, no fixture-visible gap.
+//   A. reads only, outside the transaction: a pending materialization row left
+//      at a touched path by an earlier request (a crash, a refused write) is
+//      replayed first, so the file is read as the engine left it rather than
+//      as a human edit; then the bytes on disk of every document the request
+//      loaded (I/O stays out of the transaction — phase C compares these);
+//   C. one `BEGIN IMMEDIATE` transaction (`store.writeImmediate`): validate
+//      every effect's precondition through the transaction's handle — the row
+//      triple `(path, current_rev, file_hash)` each document was planned
+//      against must still be the document's, the bytes phase A read must hash
+//      to the row's `file_hash`, the document operations' own guards
+//      (`path_taken`, `doc_missing`) — THEN `newCommit`, then per effect
+//      `ingestInto` under that commit, the path change + edge re-point, the
+//      tombstone; finally one `pending_materializations` row per file the
+//      request owes the disk (`write` / `rename` / `remove`, spec/store §5.7).
+//      Validating before the mint means a conflict found here rolls back having
+//      minted nothing — no `c`/`d` id is burned — and having touched no file;
+//   B'. after COMMIT, in effect order: materialize each effect's row through
+//      the DocStore (`mutate/materialize.ts`: write the rendered bytes, rename
+//      the moved file, unlink the deleted one — each only over bytes the engine
+//      recognises as its own; foreign bytes keep the row and the next
+//      observation lets the file win), refresh the stat cache for the files
+//      that landed, and delete each row as its file is done (autocommit per
+//      file).
 //
-// Files are written BEFORE the transaction (B before C; a DB-first
-// materialization is a later store major): a failure inside C rolls back every
-// document while the files written in B stay ahead of the database until the
-// next observation heals them as `observed` commits (spec/mutate §10). Phase A
-// runs the checks once more OUTSIDE the transaction only so that the common
-// conflict — a human edit that landed before the request — aborts before any
-// file is touched; phase C's run is the authoritative one (an edit that lands
-// between A and B is overwritten by B — the window the reorder closes). A
-// tombstone's file removal is the one file action that runs AFTER the
-// transaction (phase D) — removing first would leave the file BEHIND the
-// database on a rollback, the one direction an observation cannot heal.
+// A failure or crash between C and B' leaves the commit, its revisions and the
+// `changes_since` digest durable and the rows pending: the next materializer
+// (the freshness sweep's step 0, recovery, the next request touching the path,
+// or an observation of the file — spec/store §5.7) finishes the files from the
+// recorded intent with the api actor, reason and known ids intact. Through
+// 13.7 the files were written BEFORE the transaction, so a failure inside it
+// left them ahead of the database and the next observation healed them as
+// `observed` commits — the intent lost (spec/mutate §10 "Fixed (2.2)").
 //
 // This effect set is internal to the engine, not a wire format.
 
@@ -94,8 +99,10 @@ export type Effect =
   | { kind: "ingest_reconciled"; path: string; source: string; precondition: { docId: string; base: DocBase; original: string | null } | null }
   /** `docs_move`'s row half: `docs.path` and the current revision's `path`,
    *  the open inbound edges re-pointed at `phantom:<from>`, phantoms at `to`
-   *  adopted. The file half renames `from` → `to` (or writes `bytes` at `to`
-   *  when the source file is absent). Precondition: the document is live at
+   *  adopted. The file half (a `rename` row, spec/store §5.7) renames `from` →
+   *  `to`, or writes the revision's bytes at `to` when the source file is
+   *  absent; `bytes` is the source file as read at plan time (the hash the row
+   *  falls back to for a document with no revision). Precondition: the document is live at
    *  `from` with `currentRev` (else `stale_plan`; gone → `doc_missing`) and no
    *  live document is at `to` (else `path_taken`). */
   | { kind: "move_path"; docId: string; from: string; to: string; currentRev: string | null; inbound: InboundLink[]; bytes: string }
@@ -104,7 +111,8 @@ export type Effect =
    *  `pool: true` is the observed deletion's snapshot (spec/store §5.6 — the
    *  observe path still commits through `sync/tombstone.ts`; the flag is here
    *  for the day `observe_many` runs through this executor). The file at
-   *  `path` is removed after the transaction. Precondition: the document is
+   *  `path` is unlinked by B' iff it still holds the deleted revision's bytes
+   *  (a `remove` row, spec/store §5.7). Precondition: the document is
    *  live at `path` with `currentRev` (`doc_missing` / `stale_plan`). */
   | { kind: "tombstone"; docId: string; path: string; currentRev: string | null; pool: boolean }
   /** Freshness stat cache (spec/sync §4.3): refresh the row for `path` after
@@ -162,8 +170,13 @@ export function commitChangeset(store: Store, repoId: string, head: CommitHead, 
   if ("conflict" in result) {
     const { path, bytes } = result.conflict;
     // A human edit landed first: ingest it (its own observed commit, after the
-    // rollback), then the caller must retry against the new revision.
-    ingestFile(store, repoId, path, bytes, { ts, resolveIds: makeReconcilingResolver(store, repoId, { ts, path }) });
+    // rollback), then the caller must retry against the new revision. The file
+    // won, so an intent still pending at the path is superseded (spec/store
+    // §5.7) — dropped in the same transaction as the observed commit.
+    store.write((db) => {
+      ingestFile(store, repoId, path, bytes, { ts, resolveIds: makeReconcilingResolver(store, repoId, { ts, path }) });
+      deletePending(db, repoId, path);
+    });
     if (targets.omgbaseDir) targets.docStore.recordStat(store, repoId, path, bytes);
     throw new MutationError("sync_conflict", `file ${path} changed on disk; re-ingested — retry`, { retriable: true });
   }
@@ -180,7 +193,7 @@ class ConflictSignal {
   constructor(readonly conflict: FileConflict) {}
 }
 
-/** Phases A–D over the effects; a disk conflict is returned, not thrown. */
+/** Phases A → C → B' over the effects; a disk conflict is returned, not thrown. */
 export function runPhases(store: Store, repoId: string, head: CommitHead, effects: Effect[], ts: string, docStore: DocStore): CommitPhasesResult {
   // A request with nothing to do (a macro whose plan found no block, a
   // `links_repair` with no hit) writes no file and mints no commit row — an
@@ -188,11 +201,20 @@ export function runPhases(store: Store, repoId: string, head: CommitHead, effect
   // change feed. `macros::links-repair-path-glob-no-hits` pins it.
   if (effects.length === 0) return { committed: { commitId: null, ingests: [] } };
 
-  // Phase A — reads only. The bytes on disk of every `ingest_known` document
-  // (at the path it was loaded under — the moved document of a `docs_move` is
-  // still at `from` here); a `docs_set_meta` carries the bytes it patched. A
-  // path with no file (a headless NullDocStore, a deleted file) has no disk
-  // check. The I/O stays outside the transaction; phase C reuses these hashes.
+  // Phase A — reads only. First the intent an earlier request may have left
+  // at a path this one touches (its file is behind the database until some
+  // materializer runs; this is one): replayed through the DocStore so the
+  // bytes read next are the engine's, not a stale file mistaken for a human
+  // edit (a foreign file keeps its row and is read as it is). Then the bytes
+  // on disk of every `ingest_known` document (at the path it was loaded under
+  // — the moved document of a `docs_move` is still at `from` here); a
+  // `docs_set_meta` carries the bytes it patched. A path with no file (a
+  // headless NullDocStore, a deleted file) has no disk check. The I/O stays
+  // outside the transaction; phase C compares these hashes.
+  for (const path of touchedPaths(effects)) {
+    const row = readPending(store.db, repoId, path);
+    if (row) materializeRow(store, repoId, row, docStore);
+  }
   const onDisk = new Map<string, string>();
   for (const e of effects) {
     if (e.kind === "ingest_known") {
@@ -202,37 +224,11 @@ export function runPhases(store: Store, repoId: string, head: CommitHead, effect
       onDisk.set(e.precondition.docId, e.precondition.original);
     }
   }
-  try {
-    validate(store.db, repoId, effects, onDisk);
-  } catch (err) {
-    if (err instanceof ConflictSignal) return { conflict: err.conflict };
-    throw err;
-  }
 
-  // Phase B — the file half of every effect, in order (a headless NullDocStore
-  // does nothing). A move renames before the retarget writes so a self-linking
-  // moved document's rewritten bytes land at its new path.
-  for (const e of effects) {
-    switch (e.kind) {
-      case "ingest_known":
-        docStore.write(e.path, e.rendered);
-        break;
-      case "ingest_reconciled":
-        docStore.write(e.path, e.source);
-        break;
-      case "move_path":
-        if (docStore.exists(e.from)) docStore.rename(e.from, e.to);
-        else docStore.write(e.to, e.bytes);
-        break;
-      default:
-        break;
-    }
-  }
-
-  // Phase C — one IMMEDIATE transaction: validate again under the write lock,
-  // THEN one commit row, then the database half of every effect in order.
-  // Mint order: one `c`, then per document `r`, `x`, `e` (and `d` for a
-  // created document) — nothing before validation passes.
+  // Phase C — one IMMEDIATE transaction: validate under the write lock, THEN
+  // one commit row, then the database half of every effect in order, then the
+  // file intent. Mint order: one `c`, then per document `r`, `x`, `e` (and `d`
+  // for a created document) — nothing before validation passes.
   let committed: CommitOutcome;
   try {
     committed = store.writeImmediate((db): CommitOutcome => {
@@ -248,38 +244,58 @@ export function runPhases(store: Store, repoId: string, head: CommitHead, effect
       });
       const commitId = commit.commitId;
       const ingests: IngestResult[] = [];
+      // The rows this request will materialize, keyed by the path the file
+      // must end up at (spec/store §5.7): one per path, in effect order.
+      const pending = new Map<string, PendingRow>();
       for (const e of effects) {
         switch (e.kind) {
-          case "ingest_known":
+          case "ingest_known": {
             // INTENT path: persist the ops' tree with its KNOWN block ids — never
             // re-derive identity from the rendered bytes (node-editability).
-            ingests.push(ingestInto(db, repoId, e.path, e.rendered, {
+            const res = ingestInto(db, repoId, e.path, e.rendered, {
               ts,
               commitId,
               resolveIds: makeKnownIdResolver(store, repoId, e.mutDoc, e.priorIds, { path: e.path }),
-            }));
+            });
+            ingests.push(res);
+            recordWrite(pending, e.path, res, sha256(e.rendered), commitId);
             break;
-          case "ingest_reconciled":
-            ingests.push(ingestInto(db, repoId, e.path, e.source, {
+          }
+          case "ingest_reconciled": {
+            const res = ingestInto(db, repoId, e.path, e.source, {
               ts,
               commitId,
               resolveIds: makeReconcilingResolver(store, repoId, { ts, path: e.path }),
-            }));
+            });
+            ingests.push(res);
+            recordWrite(pending, e.path, res, sha256(e.source), commitId);
             break;
-          case "move_path":
+          }
+          case "move_path": {
             movePath(db, e);
+            // The bytes expected at `to`: the moved document's current revision
+            // (a self-linking source's retarget below replaces them with its own).
+            const rev = e.currentRev === null ? undefined : (db.prepare("SELECT rendered_hash FROM revisions WHERE rev_id = ?").get(e.currentRev) as { rendered_hash: Buffer } | undefined);
+            pending.set(e.to, { path: e.to, kind: "rename", fromPath: e.from, docId: e.docId, revId: e.currentRev, renderedHash: rev?.rendered_hash ?? sha256(e.bytes), commitId });
             break;
-          case "tombstone":
+          }
+          case "tombstone": {
+            // The bytes it is safe to unlink: what the document's last revision
+            // rendered (or the last observed bytes when it has no revision).
+            const row = db
+              .prepare("SELECT r.rendered_hash, d.file_hash FROM docs d LEFT JOIN revisions r ON r.rev_id = d.current_rev WHERE d.doc_id = ?")
+              .get(e.docId) as { rendered_hash: Buffer | null; file_hash: Buffer | null } | undefined;
             tombstone(db, commitId, ts, e);
+            pending.set(e.path, { path: e.path, kind: "remove", fromPath: null, docId: e.docId, revId: null, renderedHash: row?.rendered_hash ?? row?.file_hash ?? sha256(""), commitId });
             break;
-          case "record_stat":
-            docStore.recordStat(store, repoId, e.path, e.bytes);
-            break;
-          case "clear_stat":
-            docStore.clearStat(store, repoId, e.path);
+          }
+          default:
+            // record_stat / clear_stat: the stat cache reads the real file,
+            // which does not exist in its new form yet — phase B'.
             break;
         }
       }
+      for (const row of pending.values()) insertPending(db, repoId, row);
       return { commitId, ingests };
     });
   } catch (err) {
@@ -287,17 +303,90 @@ export function runPhases(store: Store, repoId: string, head: CommitHead, effect
     throw err;
   }
 
-  // Phase D — a deleted document's file goes once the tombstone is durable.
-  for (const e of effects) if (e.kind === "tombstone") docStore.remove(e.path);
+  // Phase B' — the file half, in effect order, each row deleted as its file
+  // lands. The stat cache follows only a file that landed: a path whose row was
+  // kept (foreign bytes) must stay a candidate for the next sweep, which is
+  // what lets the human's edit win.
+  const landed = new Set<string>();
+  const land = (path: string, priorHash: Buffer | null | undefined): void => {
+    const row = readPending(store.db, repoId, path);
+    if (!row) return;
+    if (materializeRow(store, repoId, row, docStore, priorHash === undefined ? {} : { priorHash })) landed.add(path);
+  };
+  for (const e of effects) {
+    switch (e.kind) {
+      case "ingest_known":
+        land(e.path, fromHex(e.base.fileHash));
+        break;
+      case "ingest_reconciled":
+        land(e.path, e.precondition ? fromHex(e.precondition.base.fileHash) : null);
+        break;
+      case "move_path":
+        land(e.to, undefined);
+        break;
+      case "tombstone":
+        land(e.path, undefined);
+        break;
+      case "record_stat":
+        if (landed.has(e.path)) docStore.recordStat(store, repoId, e.path, e.bytes);
+        break;
+      case "clear_stat":
+        docStore.clearStat(store, repoId, e.path);
+        break;
+    }
+  }
 
   return { committed };
 }
 
+// The row the file at `path` must become after an ingest: a `write` of the
+// revision's bytes — unless a `rename` already lands the moved document there
+// (the self-linking source of a `docs_move`), which then renders THESE bytes.
+function recordWrite(pending: Map<string, PendingRow>, path: string, res: IngestResult, renderedHash: Buffer, commitId: string): void {
+  const existing = pending.get(path);
+  if (existing && existing.kind === "rename") {
+    existing.revId = res.revId;
+    existing.renderedHash = renderedHash;
+    return;
+  }
+  pending.set(path, { path, kind: "write", fromPath: null, docId: res.docId, revId: res.revId, renderedHash, commitId });
+}
+
+// Every path whose file an effect reads or leaves: where a pending row of an
+// earlier request would stand between the request and the disk.
+function touchedPaths(effects: Effect[]): string[] {
+  const out = new Set<string>();
+  for (const e of effects) {
+    switch (e.kind) {
+      case "ingest_known":
+        out.add(e.base.path);
+        out.add(e.path);
+        break;
+      case "ingest_reconciled":
+        out.add(e.path);
+        break;
+      case "move_path":
+        out.add(e.from);
+        out.add(e.to);
+        break;
+      case "tombstone":
+        out.add(e.path);
+        break;
+      default:
+        break;
+    }
+  }
+  return [...out];
+}
+
+function fromHex(hex: string | null): Buffer | null {
+  return hex === null ? null : Buffer.from(hex, "hex");
+}
+
 // Every effect's precondition against the rows `db` sees now (spec/mutate §4
-// step 5, 2.2). Run twice: outside the transaction (phase A, so a conflict
-// touches no file) and inside it (phase C, authoritative). Row first — a
-// document whose row moved is `stale_plan` whatever its bytes — then the disk:
-// `file_hash` (when the row has one) must name the bytes phase A read.
+// step 5, 2.2), inside the transaction. Row first — a document whose row moved
+// is `stale_plan` whatever its bytes — then the disk: `file_hash` (when the
+// row has one) must name the bytes phase A read.
 function validate(db: Database, repoId: string, effects: Effect[], onDisk: Map<string, string>): void {
   const liveAt = db.prepare("SELECT doc_id FROM docs WHERE repo_id = ? AND path = ? AND deleted_commit IS NULL");
   const pathTaken = (path: string): boolean => liveAt.get(repoId, path) !== undefined;

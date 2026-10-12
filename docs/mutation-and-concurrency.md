@@ -136,36 +136,42 @@ apply(changeset):
      call and the watcher take it once at their boundary and this inner
      acquisition is a re-entrant no-op; a bare library caller without a
      workspace dir gets the Store's in-process serialization only) ---
- 4. phase A — file-CAS EVERY touched doc first: assert sha256(file_on_disk) ==
-      the doc's stored file_hash; on the first mismatch → a human edit landed
-      first: ingest the on-disk file (reconciling resolver, observed commit),
-      refresh the stat cache, and throw a RETRIABLE `sync_conflict` — nothing
-      has been written for any document; the caller re-plans/re-applies
- 5. phase B — atomic write of every rendered file: temp file → rename
- 6. phase C — ONE transaction (spec/mutate 2.1), opened BEGIN IMMEDIATE (2.2):
-    FIRST re-validate — re-read every touched doc's (path, current_rev,
-    file_hash) through the transaction and compare with what the plan loaded;
-    a doc that moved on → ROLLBACK before anything is minted, retriable
-    `stale_plan` with current truth; a file_hash that no longer matches the
-    on-disk hash from phase A → ROLLBACK, `sync_conflict`; the doc ops re-check
-    `path_taken`/`doc_missing` the same way (`docs_set_meta` is under this CAS
-    too — it checked nothing before). Only then mint one commit row with
-    origin:"api" (carrying the caller's actor and reason), then per touched doc
-    re-ingest the rendered bytes under that commit with a KNOWN-ID
-    resolver: the mutated tree already carries deterministic ids (ops keep/mint
-    them), so identity threads onto the re-parsed tree and intent dispositions
-    are recorded at confidence 1.0 — never re-derived from the bytes by the
-    probabilistic matcher. Prior live ids no longer present are pooled; ids
-    new to the document (a cross-document move's arrivals) evict the source
-    document's row and any pool row, whichever document commits first. This
-    ingest persists blobs, tree_nodes, the revision + commit, edge extraction,
-    and index maintenance. The commit timestamp defaults to now; callers may
-    pin it (`ApplyRequest.ts`, `DocOpContext.ts`, `ApplyOpsetRequest.ts`) —
-    the spec fixtures do, so `commits.ts` compares across engines. A failure
-    inside phase C rolls back every document; the files written in phase B are
-    then AHEAD of the database until the next observation (sweep, watcher,
-    `observe`) heals them as an observed commit — the DB-first materialization
-    that closes this window is a later step.
+ 4. phase A — read, outside any transaction: for every touched doc the stored
+      (path, current_rev, file_hash) triple the plan loaded, and the on-disk
+      bytes' hash; nothing is written
+ 5. phase C — ONE transaction (spec/mutate 2.1), opened BEGIN IMMEDIATE (2.2):
+    FIRST re-validate — re-read every touched doc's triple through the
+    transaction and compare with the plan's; a doc that moved on → ROLLBACK
+    before anything is minted, retriable `stale_plan` with current truth; a
+    stored file_hash that no longer matches the on-disk hash from phase A →
+    ROLLBACK, `sync_conflict` (the bytes are then ingested as an observed
+    commit in their own transaction); the doc ops re-check `path_taken` /
+    `doc_missing` the same way (`docs_set_meta` included). Only then mint one
+    commit row with origin:"api" (carrying the caller's actor and reason),
+    then per touched doc re-ingest the rendered bytes under that commit with a
+    KNOWN-ID resolver: the mutated tree already carries deterministic ids (ops
+    keep/mint them), so identity threads onto the re-parsed tree and intent
+    dispositions are recorded at confidence 1.0 — never re-derived from the
+    bytes by the probabilistic matcher. Prior live ids no longer present are
+    pooled; ids new to the document (a cross-document move's arrivals) evict
+    the source document's row. This ingest persists blobs, tree_nodes, the
+    revision + commit, edge extraction and index maintenance — and, last, one
+    `pending_materializations` row per file effect (write / rename / remove,
+    with the hash the file must have; store 14.0). The commit timestamp
+    defaults to now; callers may pin it (`ApplyRequest.ts`, `DocOpContext.ts`,
+    `ApplyOpsetRequest.ts`) — the spec fixtures do, so `commits.ts` compares
+    across engines. A failure anywhere in here rolls back every document and
+    touches no file.
+ 6. phase B' — materialize, after COMMIT, in effect order: write each rendered
+    file (temp file, fsync, rename), rename a moved doc (if the destination
+    appeared meanwhile with foreign bytes the row stays and the sweep applies
+    "file wins"), unlink a deleted doc's file only if its bytes still hash to
+    the recorded hash; delete each row as its file lands. A crash here leaves
+    rows behind: the next write's materializer, the freshness sweep's step 0 or
+    `recoverRepo` replays them with the api intent, commit and change-feed
+    digest intact; an observation of a pending path meanwhile treats bytes that
+    hash to the recorded hash as an echo, a missing file as "not yet written"
+    (no tombstone), and anything else as a human edit that wins (ADR-004).
  7. refresh the freshness stat cache (recordFileStat) so a later sweep won't
     re-hash the engine's own write; the watcher's content-hash echo gate
     suppresses re-ingesting it

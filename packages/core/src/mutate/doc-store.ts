@@ -1,12 +1,12 @@
-import { writeFileSync, readFileSync, existsSync, renameSync, unlinkSync, mkdirSync } from "node:fs";
+import { openSync, writeSync, fsyncSync, closeSync, readFileSync, existsSync, renameSync, unlinkSync, mkdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import type { Store } from "../core/store/store.js";
 import { sha256 } from "../core/hash.js";
-import { recordFileStat } from "../sync/freshness.js";
+import { recordFileStat } from "../sync/stat-cache.js";
 import { EngineError } from "../mcp/errors.js";
 
 // DocStore seam (ADR-014 §5). The mutation write path (apply / docs ops) is
-// "write-through to the file" (ADR-004): render → write bytes → re-ingest. That
+// "write-through to the file" (ADR-004): render → commit → write bytes. That
 // file write is the ONLY thing coupling a mutation to a local disk. This seam
 // abstracts the write target keyed on repo-relative paths so the same kernel can
 // serve a filesystem-backed repo (FsDocStore, today's behavior) or a headless,
@@ -18,6 +18,11 @@ import { EngineError } from "../mcp/errors.js";
 // lives behind the store too: recordStat/clearStat are meaningful only for a
 // filesystem repo and no-op otherwise. Callers still gate these on a real
 // workspace (omgbaseDir) exactly as before.
+//
+// Since store 14.0 the file half of a request runs AFTER its transaction
+// committed (spec/store §5.7): `write`/`rename`/`remove` are called by the
+// materializer (`mutate/materialize.ts`) against a recorded intent row, so a
+// failure here leaves the commit durable and the row for a later replay.
 
 export interface DocStore {
   /** Does a file exist at repo-relative `path`? */
@@ -52,8 +57,19 @@ export class FsDocStore implements DocStore {
   write(path: string, bytes: string): void {
     const abs = this.abs(path);
     mkdirSync(dirname(abs), { recursive: true });
+    // Temp file + rename for atomicity; the temp file is fsynced before the
+    // rename (store 14.0) so a power loss after the commit cannot leave a
+    // truncated file under the final name — the same loss class as SQLite's
+    // `synchronous = NORMAL`. No directory fsync: the rename itself may be lost,
+    // which the pending row then replays.
     const tmp = `${abs}.omgtmp`;
-    writeFileSync(tmp, bytes);
+    const fd = openSync(tmp, "w");
+    try {
+      writeSync(fd, bytes);
+      fsyncSync(fd);
+    } finally {
+      closeSync(fd);
+    }
     renameSync(tmp, abs);
   }
   rename(from: string, to: string): void {

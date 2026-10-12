@@ -1,10 +1,10 @@
 //! Document operations (`spec/mutate/README.md` §6): create, move, delete,
-//! set-meta — `api` commits with generated reasons, each following the
-//! file-first protocol against a [`DocStore`], each re-validating its
-//! precondition inside the commit transaction (2.2: a create's path still
-//! free, a move's source unchanged and destination free, a delete's
-//! document still live at its revision, a set-meta's triple and bytes).
-//! Each has a dry run
+//! set-meta — `api` commits with generated reasons, each committing first
+//! and materializing its files after (store 14.0, [`crate::materialize`]),
+//! each re-validating its precondition inside the commit transaction (2.2:
+//! a create's path still free, a move's source unchanged and destination
+//! free, a delete's document still live at its revision, a set-meta's triple
+//! and bytes). Each has a dry run
 //! (`spec/surface` §4, 1.3) behind [`Store::dry_run`]: every check the real
 //! operation makes runs, nothing is written or committed, and the result
 //! carries the per-file [`Diff`]s the operation would produce.
@@ -22,7 +22,7 @@ use serde_json::{Map, Value, json};
 
 use crate::Store;
 use crate::doc_store::DocStore;
-use crate::effects::{CommitHead, Effect, Guard, Outcome, doc_base};
+use crate::effects::{CommitHead, Effect, Guard, Outcome, doc_base, touched_paths};
 use crate::error::Result;
 use crate::links::{InboundLink, doc_dir_of, inbound_links_to, retarget_links_in_raw};
 use crate::mutate::{ApplyOrigin, ApplyRequest, Diff, Staged, find_doc_by_ref};
@@ -324,7 +324,8 @@ impl Store {
 
     /// §6 `docs_create`: a new document from complete bytes (frontmatter as
     /// a mapping); `path_taken` when a live doc or a file exists; ingested
-    /// with the reconciling resolver (`reason: "create <path>"`).
+    /// with the reconciling resolver (`reason: "create <path>"`), the file
+    /// written after the commit (14.0).
     pub fn docs_create(
         &mut self,
         ctx: &DocOpContext,
@@ -369,12 +370,14 @@ impl Store {
                 diffs: Some(diffs),
             });
         }
-        doc_store.write(&rel, &content)?;
+        let touched = vec![rel.clone()];
+        self.materialize_paths(&ctx.repo_id, &touched, doc_store)?;
         let reason = format!("create {rel}");
         let head = CommitHead {
             origin: Origin::Api,
             actor: ctx.actor.as_deref(),
             reason: Some(&reason),
+            clear_pending: false,
         };
         let c = self
             .reconciling_commit(
@@ -391,6 +394,9 @@ impl Store {
             .ok_or_else(|| {
                 crate::error::Error::Other(format!("create: nothing committed for {rel}"))
             })?;
+        // B': the file — written only over nothing or over these very bytes;
+        // a foreign file that appeared meanwhile keeps the row (file wins).
+        self.materialize_paths(&ctx.repo_id, &touched, doc_store)?;
         Ok(DocOpResult {
             doc_id: c.doc_id,
             path: rel,
@@ -440,8 +446,8 @@ impl Store {
                 "file already exists on disk at {to_rel}"
             )));
         }
-        let content = doc_store.read(&info.path)?.unwrap_or_default();
         if dry_run {
+            let content = doc_store.read(&info.path)?.unwrap_or_default();
             let mut diffs: Diffs = vec![
                 (
                     info.path.clone(),
@@ -489,8 +495,8 @@ impl Store {
         // One request, one transaction, one commit (2.1): the path change
         // and, with `retarget_inbound`, the rewrite of every dangling source
         // — planned over the current blocks (the move itself changes none),
-        // run in memory, file-CAS'd, written, then committed together under
-        // `move <from> -> <to>`. The reads come first, before any file moves.
+        // run in memory, committed together under `move <from> -> <to>`
+        // with the files it owes recorded, then the files (14.0).
         let plan = if retarget_inbound && !inbound.is_empty() {
             Some(self.plan_inbound_retarget(&info.doc_id, &info.path, &to_rel, &inbound)?)
         } else {
@@ -503,10 +509,15 @@ impl Store {
             }
             _ => Vec::new(),
         };
-        // (a) File-CAS every source where it was loaded — the moved document,
+        // (a) Land any row an earlier request left at a touched path, then
+        //     read every source where it was loaded — the moved document,
         //     when it links to itself, under its OLD path, where its file
-        //     still is. A mismatch fails here, before anything is renamed.
-        let on_disk = self.file_cas(&ctx.repo_id, &loaded, doc_store, &ctx.ts)?;
+        //     still is; the transaction compares the bytes with each row.
+        let mut touched = vec![info.path.clone(), to_rel.clone()];
+        touched.extend(loaded.iter().map(|d| d.doc.path.clone()));
+        touched.dedup();
+        self.materialize_paths(&ctx.repo_id, &touched, doc_store)?;
+        let on_disk = crate::mutate::read_on_disk(&loaded, doc_store)?;
         // The moved document was loaded under its old path: its rendered
         // bytes go to, and its ingest names, the new one.
         let staged = crate::mutate::stage(&loaded, on_disk, |d| {
@@ -516,20 +527,17 @@ impl Store {
                 d.doc.path.clone()
             }
         });
-        // (b) Files: the rename, then every rewritten source.
-        if doc_store.exists(&info.path) {
-            doc_store.rename(&info.path, &to_rel)?;
-        } else {
-            doc_store.write(&to_rel, &content)?;
-        }
-        crate::mutate::write_staged(&staged, doc_store)?;
-        // (c) The transaction: the row changes first, so each source's edges
-        //     resolve `[x](<to>)` to the document, then the sources.
+        // (b) The transaction: the row changes first, so each source's edges
+        //     resolve `[x](<to>)` to the document, then the sources; the
+        //     intent recorded is a `rename` at `to` (carrying the revision the
+        //     moved document holds after the request) plus a `write` per
+        //     other source.
         let reason = format!("move {} -> {to_rel}", info.path);
         let head = CommitHead {
             origin: Origin::Api,
             actor: ctx.actor.as_deref(),
             reason: Some(&reason),
+            clear_pending: false,
         };
         let mut effects = vec![Effect::MovePath {
             doc_id: info.doc_id.clone(),
@@ -545,6 +553,10 @@ impl Store {
                 return Err(self.disk_conflict(&ctx.repo_id, &c.path, &c.bytes, &ctx.ts));
             }
         }
+        // (c) Files: the rename (or the revision's bytes written at `to`
+        //     when the old file is gone or the rename fails), then every
+        //     rewritten source.
+        self.materialize_paths(&ctx.repo_id, &touched_paths(&effects), doc_store)?;
         let (dangling, retargeted) = match plan {
             Some(p) => (
                 p.dangling,
@@ -677,7 +689,9 @@ impl Store {
 
     /// §6 `docs_delete`: one transaction — an `api` commit
     /// (`reason: "delete <path>"`), FTS rows dropped, live blocks and the doc
-    /// tombstoned, nothing pooled — then the file removed.
+    /// tombstoned, nothing pooled, a `remove` intent recorded — then the
+    /// file unlinked, only if it still holds what the last revision rendered
+    /// (14.0: a foreign file is left for the sweep).
     pub fn docs_delete(
         &mut self,
         ctx: &DocOpContext,
@@ -712,24 +726,28 @@ impl Store {
                 diffs: Some(diffs),
             });
         }
+        let touched = vec![info.path.clone()];
+        self.materialize_paths(&ctx.repo_id, &touched, doc_store)?;
         let reason = format!("delete {}", info.path);
         let head = CommitHead {
             origin: Origin::Api,
             actor: ctx.actor.as_deref(),
             reason: Some(&reason),
+            clear_pending: false,
         };
         self.commit_effects(
             &ctx.repo_id,
             &head,
             &[Effect::Tombstone {
                 doc_id: info.doc_id.clone(),
+                path: info.path.clone(),
                 pool: false,
                 current_rev: info.current_rev.clone(),
             }],
             &ctx.ts,
         )?
         .committed()?;
-        doc_store.remove(&info.path)?;
+        self.materialize_paths(&ctx.repo_id, &touched, doc_store)?;
         Ok(DocOpResult {
             doc_id: info.doc_id,
             path: info.path,
@@ -739,11 +757,12 @@ impl Store {
     }
 
     /// §6 `docs_set_meta`: read the file, split the frontmatter, merge `set`,
-    /// delete `unset`, compose, write, ingest with the reconciling resolver
-    /// (`reason: "set_meta <path>"`). The file read must hash to the
-    /// document's `file_hash` (2.2: a dirty file is ingested `observed` and
-    /// fails `sync_conflict`, as a changeset's file-CAS does), and the
-    /// transaction re-validates the document's triple before committing.
+    /// delete `unset`, compose, ingest with the reconciling resolver
+    /// (`reason: "set_meta <path>"`), write after the commit (14.0). The
+    /// file read must hash to the document's `file_hash` — compared inside
+    /// the transaction with the triple (2.2: a dirty file is ingested
+    /// `observed` and the operation fails `sync_conflict`, as a changeset's
+    /// does).
     pub fn docs_set_meta(
         &mut self,
         ctx: &DocOpContext,
@@ -767,6 +786,10 @@ impl Store {
         let info = find_doc_by_ref(&self.conn, &ctx.repo_id, doc_ref)?
             .ok_or_else(|| doc_missing(doc_ref))?;
         let base = doc_base(&self.conn, &info.doc_id)?.ok_or_else(|| doc_missing(doc_ref))?;
+        let touched = vec![info.path.clone()];
+        if !dry_run {
+            self.materialize_paths(&ctx.repo_id, &touched, doc_store)?;
+        }
         let on_disk = doc_store.read(&info.path)?;
         let original = on_disk.clone().unwrap_or_default();
         let content = patch_frontmatter(&original, set, unset);
@@ -785,18 +808,12 @@ impl Store {
                 diffs: Some(diffs),
             });
         }
-        // (a) The file must be the one the document's revision renders to.
-        if let (Some(bytes), Some(hash)) = (&on_disk, &base.file_hash) {
-            if omgbase_format::hash::sha256(bytes.as_bytes())[..] != hash[..] {
-                return Err(self.disk_conflict(&ctx.repo_id, &info.path, bytes, &ctx.ts));
-            }
-        }
-        doc_store.write(&info.path, &content)?;
         let reason = format!("set_meta {}", info.path);
         let head = CommitHead {
             origin: Origin::Api,
             actor: ctx.actor.as_deref(),
             reason: Some(&reason),
+            clear_pending: false,
         };
         let c = match self.reconciling_commit(
             &ctx.repo_id,
@@ -814,6 +831,7 @@ impl Store {
                 return Err(self.disk_conflict(&ctx.repo_id, &c.path, &c.bytes, &ctx.ts));
             }
         };
+        self.materialize_paths(&ctx.repo_id, &touched, doc_store)?;
         Ok(DocOpResult {
             doc_id: c.doc_id,
             path: info.path,

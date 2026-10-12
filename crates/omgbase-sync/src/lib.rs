@@ -55,8 +55,8 @@ pub use engine::{DocBytes, EngineClient, InProcessEngineClient};
 pub use error::{Error, Result};
 pub use external::ExternalSource;
 pub use freshness::{
-    DiskDrift, SweepPlan, SweepResult, detect_disk_drift, freshness_sweep, rebuild_file_stats,
-    record_file_stat, sweep_plan,
+    DiskDrift, SweepPlan, SweepResult, detect_disk_drift, freshness_sweep, materialize_pending,
+    rebuild_file_stats, record_file_stat, sweep_plan,
 };
 pub use fs::{FileStat, FileSystem, MemFileSystem, RealFileSystem, is_ignored_dir};
 pub use lock::{WatchLease, WriterLock, WriterLockOptions, pid_alive, with_writer_lock};
@@ -79,7 +79,7 @@ pub use source::{
 pub use workspace::{RepoRow, RepoSelection, Workspace, select_repo};
 
 /// The `spec/sync/VERSION` this crate implements (`major.minor`).
-pub const SPEC_VERSION: &str = "2.1";
+pub const SPEC_VERSION: &str = "2.2";
 
 /// This crate's own version (`Cargo.toml`), for the surface's `version` tool.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

@@ -508,7 +508,8 @@
             "first_ordinal": 0,
             "last_ordinal": 2
           }
-        ]
+        ],
+        "pending_materializations": []
       }
     },
     {
@@ -1018,7 +1019,8 @@
             "first_ordinal": 0,
             "last_ordinal": 2
           }
-        ]
+        ],
+        "pending_materializations": []
       }
     },
     {
@@ -1533,7 +1535,8 @@
             "first_ordinal": 0,
             "last_ordinal": 2
           }
-        ]
+        ],
+        "pending_materializations": []
       }
     },
     {
@@ -2013,7 +2016,8 @@
             "first_ordinal": 0,
             "last_ordinal": 2
           }
-        ]
+        ],
+        "pending_materializations": []
       }
     },
     {
@@ -2419,7 +2423,8 @@
             "first_ordinal": 0,
             "last_ordinal": 1
           }
-        ]
+        ],
+        "pending_materializations": []
       }
     },
     {
@@ -2895,7 +2900,8 @@
             "first_ordinal": 0,
             "last_ordinal": 2
           }
-        ]
+        ],
+        "pending_materializations": []
       }
     },
     {
@@ -3120,7 +3126,8 @@
             "first_ordinal": 0,
             "last_ordinal": 2
           }
-        ]
+        ],
+        "pending_materializations": []
       }
     },
     {
@@ -3784,7 +3791,8 @@
             "first_ordinal": 0,
             "last_ordinal": 1
           }
-        ]
+        ],
+        "pending_materializations": []
       }
     },
     {
@@ -4447,7 +4455,8 @@
             "first_ordinal": 0,
             "last_ordinal": 1
           }
-        ]
+        ],
+        "pending_materializations": []
       }
     }
   ]

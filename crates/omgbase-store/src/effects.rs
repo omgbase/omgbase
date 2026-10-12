@@ -26,6 +26,13 @@
 //! caller can ingest the disk bytes as `observed` in a transaction of its
 //! own and raise `sync_conflict`. The validation runs before `new_commit`,
 //! so a conflict burns no id.
+//!
+//! **Recorded intent** (store 14.0). An `api` commit writes no file inside
+//! the transaction: after its effects it inserts one
+//! `pending_materializations` row per path the request owes the working tree
+//! (`spec/store` §5.7), and the caller materializes them after COMMIT
+//! ([`Store::materialize_pending`](crate::materialize)). An `observed`
+//! commit records nothing — the file is the source.
 
 use omgbase_format::hash::{hex, sha256};
 use omgbase_format::parse_markdown;
@@ -37,6 +44,7 @@ use crate::Store;
 use crate::error::Result;
 use crate::graph::{adopt_phantoms, rebuild_doc_edges};
 use crate::links::InboundLink;
+use crate::materialize::{PendingKind, PendingRow, delete_pending, insert_pending};
 use crate::mint::Mint;
 use crate::mutate::known_plan;
 use crate::observe::{Committed, Prepared, ingest_in, tombstone_in};
@@ -50,6 +58,10 @@ pub(crate) struct CommitHead<'a> {
     pub origin: Origin,
     pub actor: Option<&'a str>,
     pub reason: Option<&'a str>,
+    /// An `observed` ingest of a file that superseded an `api` intent still
+    /// pending at its path (`spec/store` §5.7, the file wins): the row is
+    /// deleted in this transaction, with the commit that supersedes it.
+    pub clear_pending: bool,
 }
 
 /// A live document's precondition as captured when it was loaded (the opset
@@ -139,9 +151,11 @@ pub(crate) enum Effect {
         inbound: Vec<InboundLink>,
     },
     /// `spec/store` §5.6's tombstone: `pool` the live blocks (an observed
-    /// deletion) or not (`docs_delete`). `current_rev` as found.
+    /// deletion) or not (`docs_delete`). `current_rev` as found; `path` the
+    /// document's (the file the `remove` intent names, 14.0).
     Tombstone {
         doc_id: String,
+        path: String,
         pool: bool,
         current_rev: Option<String>,
     },
@@ -170,11 +184,13 @@ impl std::fmt::Debug for Effect {
                 .finish_non_exhaustive(),
             Effect::Tombstone {
                 doc_id,
+                path,
                 pool,
                 current_rev,
             } => f
                 .debug_struct("Tombstone")
                 .field("doc_id", doc_id)
+                .field("path", path)
                 .field("pool", pool)
                 .field("current_rev", current_rev)
                 .finish(),
@@ -265,19 +281,177 @@ impl Store {
                     ops: None,
                 },
             )?;
-            let mut committed = Vec::new();
+            let mut outcomes = Vec::with_capacity(effects.len());
             for effect in effects {
-                if let Some(c) =
-                    run_effect(&tx, &mut mint, repo_id, head, effect, &expires, &commit_id)?
-                {
-                    committed.push(c);
+                outcomes.push(run_effect(
+                    &tx, &mut mint, repo_id, head, effect, &expires, &commit_id,
+                )?);
+            }
+            // 14.0: the files this request owes the working tree, recorded
+            // before COMMIT so a crash loses nothing (`spec/store` §5.7).
+            if head.origin == Origin::Api {
+                record_intent(&tx, repo_id, effects, &outcomes, &commit_id)?;
+            }
+            if head.clear_pending {
+                for path in touched_paths(effects) {
+                    delete_pending(&tx, repo_id, &path)?;
                 }
             }
-            committed
+            outcomes.into_iter().flatten().collect()
         };
         tx.commit()?;
         Ok(Outcome::Committed(committed))
     }
+}
+
+// ---- recorded intent (store 14.0) -----------------------------------------------------------
+
+/// The paths a request's effects touch on disk, in effect order without
+/// repeats: where each document was loaded and where it lands, a move's
+/// old and new path, a tombstoned document's path. What `spec/mutate` §4
+/// step 5 (a) replays before reading and what B' materializes after COMMIT.
+pub(crate) fn touched_paths(effects: &[Effect]) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    let mut push = |p: &str| {
+        if !out.iter().any(|q| q == p) {
+            out.push(p.to_owned());
+        }
+    };
+    for e in effects {
+        match e {
+            Effect::IngestKnown { path, base, .. } => {
+                push(&base.path);
+                push(path);
+            }
+            Effect::IngestReconciled { prepared, .. } => push(&prepared.path),
+            Effect::MovePath { from, to, .. } => {
+                push(from);
+                push(to);
+            }
+            Effect::Tombstone { path, .. } => push(path),
+        }
+    }
+    out
+}
+
+/// The document's `(current_rev, rendered_hash)` after the effects ran: the
+/// revision's hash, else the row's `file_hash` (a document no revision
+/// rendered yet), else the hash of what it reconstructs to.
+fn current_bytes_hash(tx: &Connection, doc_id: &str) -> Result<Option<(Option<String>, Vec<u8>)>> {
+    type Row = (Option<String>, Option<Vec<u8>>, Option<Vec<u8>>);
+    let row: Option<Row> = tx
+        .query_row(
+            "SELECT d.current_rev, r.rendered_hash, d.file_hash
+             FROM docs d LEFT JOIN revisions r ON r.rev_id = d.current_rev
+             WHERE d.doc_id = ?1",
+            params![doc_id],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .optional()?;
+    let Some((rev, rendered, file_hash)) = row else {
+        return Ok(None);
+    };
+    let hash = match rendered.or(file_hash) {
+        Some(h) => h,
+        None => match crate::read::reconstruct(tx, doc_id)? {
+            Some(bytes) => sha256(bytes.as_bytes()).to_vec(),
+            None => return Ok(None),
+        },
+    };
+    Ok(Some((rev, hash)))
+}
+
+/// One `pending_materializations` row per path the request must write,
+/// rename or remove, in effect order: a `write` per ingested document (the
+/// revision just minted), a `rename` for a moved document — carrying the
+/// revision it holds after the whole request, so a moved document that was
+/// also a retarget source lands its rewritten bytes at the new path and the
+/// old file goes with it — and a `remove` for a tombstoned one (the bytes
+/// its last revision rendered, so a foreign file is never unlinked).
+fn record_intent(
+    tx: &Connection,
+    repo_id: &str,
+    effects: &[Effect],
+    outcomes: &[Option<Committed>],
+    commit_id: &str,
+) -> Result<()> {
+    let moved: Option<&str> = effects.iter().find_map(|e| match e {
+        Effect::MovePath { doc_id, .. } => Some(doc_id.as_str()),
+        _ => None,
+    });
+    for (effect, outcome) in effects.iter().zip(outcomes) {
+        let row = match (effect, outcome) {
+            (Effect::IngestKnown { path, .. }, Some(c))
+            | (
+                Effect::IngestReconciled {
+                    prepared: Prepared { path, .. },
+                    ..
+                },
+                Some(c),
+            ) => {
+                if moved == Some(c.doc_id.as_str()) {
+                    continue; // the rename row lands these bytes
+                }
+                let rendered_hash: Vec<u8> = tx.query_row(
+                    "SELECT rendered_hash FROM revisions WHERE rev_id = ?1",
+                    params![c.rev_id],
+                    |r| r.get(0),
+                )?;
+                PendingRow {
+                    path: path.clone(),
+                    kind: PendingKind::Write,
+                    from_path: None,
+                    doc_id: c.doc_id.clone(),
+                    rev_id: Some(c.rev_id.clone()),
+                    rendered_hash,
+                    commit_id: commit_id.to_owned(),
+                }
+            }
+            (
+                Effect::MovePath {
+                    doc_id, from, to, ..
+                },
+                _,
+            ) => {
+                let Some((rev_id, rendered_hash)) = current_bytes_hash(tx, doc_id)? else {
+                    continue;
+                };
+                PendingRow {
+                    path: to.clone(),
+                    kind: PendingKind::Rename,
+                    from_path: Some(from.clone()),
+                    doc_id: doc_id.clone(),
+                    rev_id,
+                    rendered_hash,
+                    commit_id: commit_id.to_owned(),
+                }
+            }
+            (
+                Effect::Tombstone {
+                    doc_id, path, pool, ..
+                },
+                _,
+            ) => {
+                if *pool {
+                    continue; // an observed deletion owes the tree nothing
+                }
+                let rendered_hash = current_bytes_hash(tx, doc_id)?
+                    .map_or_else(|| sha256(b"").to_vec(), |(_, h)| h);
+                PendingRow {
+                    path: path.clone(),
+                    kind: PendingKind::Remove,
+                    from_path: None,
+                    doc_id: doc_id.clone(),
+                    rev_id: None,
+                    rendered_hash,
+                    commit_id: commit_id.to_owned(),
+                }
+            }
+            _ => continue,
+        };
+        insert_pending(tx, repo_id, &row)?;
+    }
+    Ok(())
 }
 
 // ---- validation (mutate 2.2) ------------------------------------------------------------

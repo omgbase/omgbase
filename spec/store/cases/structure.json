@@ -359,7 +359,8 @@
           }
         ],
         "resurrection_pool": [],
-        "sections": []
+        "sections": [],
+        "pending_materializations": []
       }
     },
     {
@@ -564,7 +565,8 @@
           }
         ],
         "resurrection_pool": [],
-        "sections": []
+        "sections": [],
+        "pending_materializations": []
       }
     },
     {
@@ -769,7 +771,8 @@
           }
         ],
         "resurrection_pool": [],
-        "sections": []
+        "sections": [],
+        "pending_materializations": []
       }
     },
     {
@@ -980,7 +983,8 @@
           }
         ],
         "resurrection_pool": [],
-        "sections": []
+        "sections": [],
+        "pending_materializations": []
       }
     },
     {
@@ -2302,7 +2306,8 @@
           }
         ],
         "resurrection_pool": [],
-        "sections": []
+        "sections": [],
+        "pending_materializations": []
       }
     },
     {
@@ -2841,7 +2846,8 @@
             "expires_ts": "2026-10-26T10:01:00.000Z"
           }
         ],
-        "sections": []
+        "sections": [],
+        "pending_materializations": []
       }
     },
     {
@@ -3088,7 +3094,8 @@
           }
         ],
         "resurrection_pool": [],
-        "sections": []
+        "sections": [],
+        "pending_materializations": []
       }
     },
     {
@@ -3475,7 +3482,8 @@
             "first_ordinal": 5,
             "last_ordinal": 6
           }
-        ]
+        ],
+        "pending_materializations": []
       }
     },
     {
@@ -3683,7 +3691,8 @@
           }
         ],
         "resurrection_pool": [],
-        "sections": []
+        "sections": [],
+        "pending_materializations": []
       }
     }
   ]

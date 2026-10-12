@@ -57,7 +57,7 @@ const CONFIG_KEYS: [&str; 13] = [
     "max_scored_blocks",
     "theta_xdoc",
 ];
-const PROJECTED_TABLES: [&str; 10] = [
+const PROJECTED_TABLES: [&str; 11] = [
     "docs",
     "commits",
     "revisions",
@@ -68,6 +68,7 @@ const PROJECTED_TABLES: [&str; 10] = [
     "block_changes",
     "resurrection_pool",
     "sections",
+    "pending_materializations",
 ];
 
 const PASSING_HEADER: &str = "\
@@ -978,6 +979,11 @@ fn project_store(conn: &Connection, repo_id: &str) -> Vec<(String, Json)> {
             .cmp(str_of(b, "doc_id").as_bytes())
             .then(int_of(a, "first_ordinal").cmp(&int_of(b, "first_ordinal")))
     });
+    let pending = query_rows(
+        conn,
+        "SELECT path, kind, from_path, doc_id, rev_id, rendered_hash, commit_id FROM pending_materializations WHERE repo_id = ?1 ORDER BY path",
+        &[&repo_id],
+    );
 
     vec![
         ("docs".to_owned(), Json::Array(docs)),
@@ -990,6 +996,7 @@ fn project_store(conn: &Connection, repo_id: &str) -> Vec<(String, Json)> {
         ("block_changes".to_owned(), Json::Array(block_changes)),
         ("resurrection_pool".to_owned(), Json::Array(pool)),
         ("sections".to_owned(), Json::Array(sections)),
+        ("pending_materializations".to_owned(), Json::Array(pending)),
     ]
 }
 

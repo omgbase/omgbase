@@ -5,7 +5,7 @@
       "name": "fresh",
       "notes": "The fingerprint of a fresh database (README §3.3, §9.2): every table's columns and foreign keys, every index, user_version.",
       "expect": {
-        "user_version": 13,
+        "user_version": 14,
         "tables": {
           "adapters": {
             "columns": [
@@ -1299,6 +1299,96 @@
             ],
             "foreign_keys": []
           },
+          "pending_materializations": {
+            "columns": [
+              {
+                "cid": 0,
+                "name": "repo_id",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 1
+              },
+              {
+                "cid": 1,
+                "name": "path",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 2
+              },
+              {
+                "cid": 2,
+                "name": "kind",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 3,
+                "name": "from_path",
+                "type": "TEXT",
+                "notnull": 0,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 4,
+                "name": "doc_id",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 5,
+                "name": "rev_id",
+                "type": "TEXT",
+                "notnull": 0,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 6,
+                "name": "rendered_hash",
+                "type": "BLOB",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 7,
+                "name": "commit_id",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              }
+            ],
+            "foreign_keys": [
+              {
+                "from": "commit_id",
+                "table": "commits",
+                "to": "commit_id"
+              },
+              {
+                "from": "rev_id",
+                "table": "revisions",
+                "to": "rev_id"
+              },
+              {
+                "from": "doc_id",
+                "table": "docs",
+                "to": "doc_id"
+              },
+              {
+                "from": "repo_id",
+                "table": "repos",
+                "to": "repo_id"
+              }
+            ]
+          },
           "properties": {
             "columns": [
               {
@@ -2178,6 +2268,16 @@
             "columns": [
               "segid",
               "term"
+            ]
+          },
+          "sqlite_autoindex_pending_materializations_1": {
+            "table": "pending_materializations",
+            "unique": 1,
+            "origin": "pk",
+            "partial": 0,
+            "columns": [
+              "repo_id",
+              "path"
             ]
           },
           "sqlite_autoindex_properties_1": {

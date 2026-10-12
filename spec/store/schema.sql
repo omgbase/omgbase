@@ -149,6 +149,18 @@ CREATE TABLE IF NOT EXISTS resurrection_pool (
   expires_ts     TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS pending_materializations (
+  repo_id       TEXT NOT NULL REFERENCES repos(repo_id),
+  path          TEXT NOT NULL,                 -- where the file must end up
+  kind          TEXT NOT NULL CHECK (kind IN ('write','rename','remove')),
+  from_path     TEXT,                          -- rename: the old path
+  doc_id        TEXT NOT NULL REFERENCES docs(doc_id),
+  rev_id        TEXT REFERENCES revisions(rev_id),   -- write/rename: the revision the bytes render (NULL for remove)
+  rendered_hash BLOB NOT NULL,                 -- the bytes expected at path (remove: the bytes it is safe to unlink)
+  commit_id     TEXT NOT NULL REFERENCES commits(commit_id),
+  PRIMARY KEY (repo_id, path)
+);
+
 -- ---- derived tables (02 §4; rebuildable) ------------------------------------
 CREATE TABLE IF NOT EXISTS sections (
   heading_block TEXT NOT NULL,

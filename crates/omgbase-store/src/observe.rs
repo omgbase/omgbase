@@ -5,6 +5,14 @@
 //! [`ingest_in`], runs §5.4 steps 1–4 and 6–13 against a transaction and a
 //! commit id it is handed, so the `api` path ([`crate::effects`], store 13.7)
 //! can run N of them under one commit row.
+//!
+//! **The gate rule** (store 14.0, §5.7). A path with a `pending_materializations`
+//! row — an `api` commit whose file has not landed yet — is observed against
+//! that intent before the echo gate: bytes hashing to the row's
+//! `rendered_hash` are the materialized file (echo; the row goes); a member
+//! gone under a `write`/`rename` row is **not** a deletion (the materializer
+//! still owes the file; the row stays); foreign bytes win (ADR-004) — the
+//! normal reconciling ingest, the row deleted in that member's transaction.
 
 use std::collections::{BTreeMap, HashSet};
 
@@ -27,6 +35,7 @@ use crate::error::{Error, Result};
 use crate::graph::{
     adopt_phantoms, maintain_edges, project_section_nodes, resolve_edges, write_doc_nodes,
 };
+use crate::materialize::{PendingKind, delete_pending, pending_at};
 use crate::mint::Mint;
 use crate::order_key::key_between;
 use crate::properties::{doc_blocks, write_doc_properties};
@@ -212,6 +221,9 @@ enum Pending {
         prepared: Prepared,
         old_hash_hex: Option<String>,
         new_hash_hex: String,
+        /// The path had a pending row the file now supersedes: delete it in
+        /// the member's transaction (§5.7).
+        clear_pending: bool,
     },
 }
 
@@ -808,7 +820,25 @@ impl Store {
                 )
                 .optional()?;
             let old_hash_hex = existing.as_ref().and_then(|(_, h)| h.as_deref()).map(hex);
+            // §5.7: the intent an `api` commit still owes this path, if any.
+            let intent = pending_at(&self.conn, repo_id, &it.path)?;
             let Some(source) = &it.source else {
+                match &intent {
+                    // The file the materializer owes is not here yet: not a
+                    // deletion; the row stays for it.
+                    Some(row) if row.kind != PendingKind::Remove => {
+                        pending.push(Pending::Gone {
+                            path: it.path.clone(),
+                            doc_id: None,
+                            old_hash_hex: None,
+                            old_blocks: Vec::new(),
+                        });
+                        continue;
+                    }
+                    // A `remove` whose file is gone: fulfilled.
+                    Some(_) => delete_pending(&self.conn, repo_id, &it.path)?,
+                    None => {}
+                }
                 let (doc_id, old_blocks) = match &existing {
                     Some((id, _)) => (Some(id.clone()), load_old_match_blocks(&self.conn, id)?),
                     None => (None, Vec::new()),
@@ -823,23 +853,53 @@ impl Store {
             };
             let hash = sha256(source.as_bytes());
             let new_hash_hex = hex(&hash);
-            if let Some((doc_id, Some(stored))) = &existing {
+            let echo = |doc_id: &str| {
+                Pending::Echo(ObserveOutcome {
+                    path: it.path.clone(),
+                    doc_id: doc_id.to_owned(),
+                    rev: None,
+                    commit_id: None,
+                    converged: true,
+                    echo: true,
+                    conflicted: false,
+                    dispositions: BTreeMap::new(),
+                    old_hash_hex: old_hash_hex.clone(),
+                    new_hash_hex: new_hash_hex.clone(),
+                })
+            };
+            if let Some(row) = &intent {
+                if row.rendered_hash[..] == hash[..] {
+                    // The bytes the commit meant: the observation confirms
+                    // the write (the row goes) — or, for a `remove`, finds
+                    // the very file the materializer will unlink (the row
+                    // stays; nothing to ingest).
+                    if row.kind != PendingKind::Remove {
+                        delete_pending(&self.conn, repo_id, &it.path)?;
+                    }
+                    let doc_id = existing
+                        .as_ref()
+                        .map_or(row.doc_id.as_str(), |(id, _)| id.as_str());
+                    pending.push(echo(doc_id));
+                    continue;
+                }
+                // Foreign bytes: the file wins; the normal ingest below
+                // clears the row in its transaction — unless the database
+                // already agrees with the file (a row naming other bytes is
+                // stale either way; the observation settles it).
+                if let Some((doc_id, Some(stored))) = &existing {
+                    if stored[..] == hash[..] {
+                        delete_pending(&self.conn, repo_id, &it.path)?;
+                        pending.push(echo(doc_id));
+                        continue;
+                    }
+                }
+            } else if let Some((doc_id, Some(stored))) = &existing {
                 if stored[..] == hash[..] {
-                    pending.push(Pending::Echo(ObserveOutcome {
-                        path: it.path.clone(),
-                        doc_id: doc_id.clone(),
-                        rev: None,
-                        commit_id: None,
-                        converged: true,
-                        echo: true,
-                        conflicted: false,
-                        dispositions: BTreeMap::new(),
-                        old_hash_hex,
-                        new_hash_hex,
-                    }));
+                    pending.push(echo(doc_id));
                     continue;
                 }
             }
+            let clear_pending = intent.is_some();
             let prepared = prepare_reconcile(
                 &self.conn,
                 &mut self.ids.at(&self.conn),
@@ -854,6 +914,7 @@ impl Store {
                 prepared,
                 old_hash_hex,
                 new_hash_hex,
+                clear_pending,
             });
         }
 
@@ -886,11 +947,19 @@ impl Store {
                     prepared,
                     old_hash_hex,
                     new_hash_hex,
+                    clear_pending,
                 } => {
                     // The flag rides the commit's transaction (step 12), not
-                    // an autocommit after it.
+                    // an autocommit after it; so does the pending row's end.
                     let conflicted = has_conflict_markers(&prepared.source);
-                    let c = self.commit_prepared(repo_id, &prepared, ts, &expires, conflicted)?;
+                    let c = self.commit_prepared(
+                        repo_id,
+                        &prepared,
+                        ts,
+                        &expires,
+                        conflicted,
+                        clear_pending,
+                    )?;
                     let dispositions = {
                         let mut stmt = self.conn.prepare(
                             "SELECT kind, count(*) FROM dispositions WHERE commit_id = ?1 GROUP BY kind ORDER BY kind",
@@ -920,7 +989,8 @@ impl Store {
 
     /// §5.4 steps 1–13 for a prepared (reconciled) member: an `observed`
     /// commit with the matcher's dispositions, `docs.conflicted` set to
-    /// `conflicted` in the same transaction.
+    /// `conflicted` in the same transaction — and, with `clear_pending`,
+    /// the path's pending row deleted in it too (§5.7: the file won).
     fn commit_prepared(
         &mut self,
         repo_id: &str,
@@ -928,6 +998,7 @@ impl Store {
         ts: &str,
         expires: &str,
         conflicted: bool,
+        clear_pending: bool,
     ) -> Result<Committed> {
         let plan = prepared.plan(
             &mut self.ids.at(&self.conn),
@@ -936,7 +1007,13 @@ impl Store {
             None,
             Some(conflicted),
         )?;
-        self.commit_ingest(repo_id, &plan, ts, expires)
+        self.commit_ingest(
+            repo_id,
+            &plan,
+            ts,
+            expires,
+            clear_pending.then_some(prepared.path.as_str()),
+        )
     }
 
     /// §5.1 step 4 for one path outside a batch: the repo's pool at `ts`
@@ -989,6 +1066,7 @@ impl Store {
             origin,
             actor,
             reason,
+            clear_pending: false,
         };
         self.reconciling_commit(repo_id, path, source, ts, &head, config, Guard::None)?
             .committed()?
@@ -1053,13 +1131,14 @@ impl Store {
             reason: None,
             conflicted: None,
         };
-        self.commit_ingest(repo_id, &plan, ts, &expires)
+        self.commit_ingest(repo_id, &plan, ts, &expires, None)
     }
 
     /// §5.4 steps 1–13 in one transaction of their own, under a commit row
     /// of their own (the reference's `ingestFile`): BEGIN, step 5, then
-    /// [`ingest_in`], COMMIT. The observed path and the fresh ingest commit
-    /// through this; the `api` path runs N [`ingest_in`]s under one row via
+    /// [`ingest_in`], the pending row at `clear_pending_at` deleted (§5.7),
+    /// COMMIT. The observed path and the fresh ingest commit through this;
+    /// the `api` path runs N [`ingest_in`]s under one row via
     /// [`Store::commit_effects`](crate::effects).
     pub(crate) fn commit_ingest(
         &mut self,
@@ -1067,6 +1146,7 @@ impl Store {
         plan: &IngestPlan<'_>,
         ts: &str,
         expires: &str,
+        clear_pending_at: Option<&str>,
     ) -> Result<Committed> {
         let tx = self.conn.unchecked_transaction()?;
         let committed = {
@@ -1085,7 +1165,11 @@ impl Store {
                     ops: None,
                 },
             )?;
-            ingest_in(&tx, &mut mint, repo_id, plan, expires, &commit_id)?
+            let committed = ingest_in(&tx, &mut mint, repo_id, plan, expires, &commit_id)?;
+            if let Some(path) = clear_pending_at {
+                delete_pending(&tx, repo_id, path)?;
+            }
+            committed
         };
         tx.commit()?;
         Ok(committed)
@@ -1141,9 +1225,22 @@ impl Store {
 
     /// Observe that `path` is gone (§5.6) and sweep the pool at `ts` (§5.5),
     /// as the reference's `observeDelete` does. A path with no live doc is a
-    /// no-op (`doc_id: None`).
+    /// no-op (`doc_id: None`); so is a path whose file an `api` commit still
+    /// owes (§5.7: a `write`/`rename` row — the materializer, not a
+    /// tombstone, answers for it).
     pub fn observe_delete(&mut self, repo_id: &str, path: &str, ts: &str) -> Result<DeleteOutcome> {
         let expires = pool_expiry(ts)?;
+        match pending_at(&self.conn, repo_id, path)? {
+            Some(row) if row.kind != PendingKind::Remove => {
+                return Ok(DeleteOutcome {
+                    path: path.to_owned(),
+                    doc_id: None,
+                    old_hash_hex: None,
+                });
+            }
+            Some(_) => delete_pending(&self.conn, repo_id, path)?,
+            None => {}
+        }
         let existing: Option<(String, Option<Vec<u8>>)> = self
             .conn
             .query_row(
