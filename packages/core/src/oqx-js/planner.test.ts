@@ -72,6 +72,11 @@ describe("planner — decline (c): a residual that could raise sends the whole q
     expect(planned('from blocks where path == "index.md" && nodes exists { where id == "x" }')).toBe(true); // `id` is not reserved inside a nodes block
   });
 
+  it("a body-level `frontier` (oqx 0.20) plans like the `follow` it needs: unplanned, in memory", () => {
+    expect(planned('from docs where path == "index.md" frontier type == "hub" follow distinct out_links collect { from dst }')).toBe(false);
+    expect(planned('from docs where path == "index.md" frontier type == "hub" follow distinct out_links collect { from dst frontier type == "practitioner" }')).toBe(false);
+  });
+
   it("no pushable conjunct at all → unplanned (as before)", () => {
     expect(planned('from docs where era == stages')).toBe(false); // prop × prop
     expect(planned('from blocks where ordinal == checked')).toBe(false); // int × json

@@ -592,11 +592,14 @@ pub struct Subquery {
     pub select: Vec<SelectItem>,
     pub order_by: Option<Vec<OrderSpec>>,
     pub follow: Option<Follow>,
-    /// `frontier P` / `depth n` (since 0.20) — legal only in a `follow`
-    /// destination block: an occurrence reached through this destination for
-    /// which `P` holds is a frontier (not expanded); the destination expands a
-    /// frontier row only while that row's `$depth < n` (1..8; `None` = the hard
-    /// cap 8). Both are `None` in every other block.
+    /// `frontier P` / `depth n` (since 0.20). In a `follow` destination block
+    /// `frontier` marks the occurrences reached through this destination for
+    /// which `P` holds (not expanded; `P` read one level out, under the walk's
+    /// enclosing scope), and `depth n` makes the destination expand a frontier
+    /// row only while that row's `$depth < n` (1..8; `None` = the hard cap 8).
+    /// In any other block `frontier` is legal only with a `follow` and marks
+    /// the walk's SEEDS, read in the seed's scope like `where` (as on
+    /// [`Query`]); `depth` is destination-only. Both `None` when absent.
     pub frontier: Option<Expr>,
     pub depth: Option<u32>,
     /// `values` — scalar projection mode: the (single) projected expression is
@@ -697,6 +700,11 @@ pub struct Query {
     pub order_by: Option<Vec<OrderSpec>>,
     pub consumer: Consumer,
     pub follow: Option<Follow>,
+    /// `frontier P` (since 0.20) — legal only when the body has a `follow`: a
+    /// seed for which `P` holds (read in the seed's own scope, `^` the
+    /// enclosing scope, like `where`) is a frontier (`$stop == "frontier"`,
+    /// not expanded). `None` without one.
+    pub frontier: Option<Expr>,
     /// `distinct` — dedup the result rows by their projected value (see [`OpNode`]).
     pub distinct: bool,
     /// `values` — scalar projection mode (see [`Subquery`]).

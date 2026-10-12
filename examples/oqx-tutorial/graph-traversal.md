@@ -85,6 +85,26 @@ $ omg query 'select stop: $stop from docs where path == "/index.md" follow disti
 {"id":"d_f7w5k26","path":"/texts/mutus-liber.md","stop":"interior"}
 ```
 
+The body that carries the `follow` may write `frontier` too — after its `where`,
+before `follow` — and there it applies to the **seeds**: a seed that matches stays
+in the result with `$stop == "frontier"` but is not expanded, while each
+destination block's `frontier` keeps governing the rows it reaches. Walking the
+citations of every process but refusing to expand the unverified one:
+
+```console
+$ omg query 'select stop: $stop, verified from docs where type == "process" frontier !verified follow distinct out_links collect { from dst depth 2 } order by path asc' --jsonl
+{"id":"d_e9q7sfr","path":"/lab/2026-02-notes.md","stop":"depth","verified":true}
+{"id":"d_r4afgjj","path":"/processes/calcination.md","stop":"leaf","verified":true}
+{"id":"d_zkbth9e","path":"/processes/coagulation.md","stop":"interior","verified":true}
+{"id":"d_jrbnrez","path":"/processes/dissolution.md","stop":"leaf","verified":true}
+{"id":"d_1z06pq9","path":"/processes/magnum-opus.md","stop":"frontier","verified":false}
+{"id":"d_pjmerqy","path":"/substances/philosophers-stone.md","stop":"depth","verified":false}
+```
+
+`magnum-opus` (`verified: false`) is a seed, so the body's `frontier` cuts it;
+`philosophers-stone` is also unverified but was *reached* (through coagulation),
+so the body's predicate does not apply to it — only the destination block's would.
+
 ## Structure: the heading outline (`section.children`)
 
 Follow works over structure too. From a top heading, `section.children` walks the

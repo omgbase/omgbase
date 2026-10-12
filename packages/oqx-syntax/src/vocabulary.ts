@@ -34,10 +34,13 @@ export const CONSUMERS = ["collect", "exists", "none", "count", "first", "single
 /** Words that open a clause: `order by`, `follow`, `limit`, `offset` (GRAMMAR §3). */
 export const CLAUSE_WORDS = ["order", "by", "follow", "limit", "offset"] as const;
 
-/** The clauses only a `follow` destination block has (GRAMMAR §3, `follow`,
- * since 0.20): `frontier <expr>` and `depth <n>`, after the block's `where`.
- * (The pre-0.20 options block — `where`/`frontier`/`depth`/`by` after the
- * destinations — is gone; `by` is no longer a word of the language.) */
+/** The clauses of a `follow` destination block (GRAMMAR §3, `follow`, since
+ * 0.20): `frontier <expr>` and `depth <n>`, after the block's `where`. `depth`
+ * is a destination block's alone; `frontier` is also a clause of any body that
+ * has a `follow` (its seeds' frontier) — lexically the same word in the same
+ * position, so one rule covers both. (The pre-0.20 options block —
+ * `where`/`frontier`/`depth`/`by` after the destinations — is gone; `by` is no
+ * longer a word of the language.) */
 export const DESTINATION_CLAUSES = ["frontier", "depth"] as const;
 
 /** Modifiers: `distinct` (select/follow/consumer), `asc`/`desc` (order by), `values` (projection). */

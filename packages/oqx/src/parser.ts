@@ -85,11 +85,13 @@ import { printTemplate } from "./print.ts";
 
 const CONSUMERS = new Set<string>(["collect", "exists", "none", "count", "first", "single"]);
 // The fixed clause order of a body (ADR-020). Each clause appears at most once.
-// `frontier` and `depth` are legal only in a follow destination block (0.20);
-// the order sentence names them only there.
+// `frontier` is a clause of every body that has a `follow` (a destination
+// block's marks the occurrences it reaches, any other body's its seeds — 0.20);
+// `depth` is legal only in a follow destination block, and the order sentence
+// names it only there.
 const CLAUSE_ORDER = ["select", "from", "where", "frontier", "depth", "follow", "order by", "limit", "offset"] as const;
 type Clause = (typeof CLAUSE_ORDER)[number];
-const DESTINATION_ONLY: ReadonlySet<Clause> = new Set<Clause>(["frontier", "depth"]);
+const DESTINATION_ONLY: ReadonlySet<Clause> = new Set<Clause>(["depth"]);
 // The clauses a body may hold, in order.
 function clausesOf(ctx: BodyCtx): Clause[] {
   return CLAUSE_ORDER.filter((c) => ctx.destination || !DESTINATION_ONLY.has(c));
@@ -117,7 +119,9 @@ interface BodyCtx {
   op: Consumer | null;
   /** Whether `^name: expr` lift items are legal: only in a where-position `collect { … }`. */
   liftsAllowed: boolean;
-  /** A `follow` destination block (0.20): the only body that admits `frontier` and `depth`. */
+  /** A `follow` destination block (0.20): the only body that admits `depth`, and
+   * the one whose `frontier` marks the occurrences it reaches (read one level out)
+   * rather than the seeds of its own `follow`. */
   destination: boolean;
 }
 const TOP_CTX: BodyCtx = { top: true, op: null, liftsAllowed: false, destination: false };
@@ -249,6 +253,7 @@ class Parser {
       orderBy: body.orderBy,
       consumer: "collect",
       follow: body.follow,
+      frontier: body.frontier,
       distinct: body.distinct,
       values: body.values,
       limit: body.limit,
@@ -261,7 +266,7 @@ class Parser {
   private queryFromOp(e: OpNode, start: number): Query {
     return {
       kind: "query", span: this.sp(start), source: e.receiver, from: e.sub.from, where: e.sub.where, select: e.sub.select,
-      orderBy: e.sub.orderBy, consumer: e.op, follow: e.sub.follow, distinct: e.distinct, values: e.sub.values,
+      orderBy: e.sub.orderBy, consumer: e.op, follow: e.sub.follow, frontier: e.sub.frontier, distinct: e.distinct, values: e.sub.values,
       limit: e.sub.limit, offset: e.sub.offset,
     };
   }
@@ -323,16 +328,19 @@ class Parser {
         where = this.atDepth(rowDepth, () => this.parseWhere());
         continue;
       }
-      // `frontier P` / `depth n` — a follow destination block's own clauses
-      // (0.20). `frontier` is read in the occurrence's scope, whose parent is the
-      // walk's enclosing scope — one level OUT of the block's rows (SEMANTICS
-      // §20) — so `^` there is the enclosing scope, not the frontier row.
-      if (ctx.destination && this.at("ident", "frontier") && this.startsValue(this.peekAt(1))) {
+      // `frontier P` (0.20) — in a follow destination block the destination's
+      // own clause, read in the occurrence's scope whose parent is the walk's
+      // enclosing scope: one level OUT of the block's rows (SEMANTICS §20), so
+      // `^` there is the enclosing scope, not the frontier row. In any other
+      // body it marks the seeds of the body's own `follow` (checked below) and
+      // is read in the seed's scope, like `where`.
+      if (this.at("ident", "frontier") && this.startsValue(this.peekAt(1))) {
         enter("frontier");
         this.next();
-        frontier = this.atDepth(rowDepth - 1, () => this.parseValueExpr());
+        frontier = this.atDepth(ctx.destination ? rowDepth - 1 : rowDepth, () => this.parseValueExpr());
         continue;
       }
+      // `depth n` — a follow destination block's own clause (0.20).
       if (ctx.destination && this.at("ident", "depth") && this.peekAt(1)?.type === "number") {
         enter("depth");
         this.next();
@@ -387,6 +395,11 @@ class Parser {
     // surface form is kept. `where` first: its cycle report follows its own path.
     if (where) resolveWhere(select, where, (msg) => this.fail(msg));
     resolveSelect(select, (msg) => this.fail(msg));
+    // Outside a destination block `frontier` marks the seeds of this body's walk,
+    // so it needs one.
+    if (frontier && !follow && !ctx.destination) {
+      this.fail("`frontier` needs a `follow` — a body's `frontier <expr>` marks which of its rows (the walk's seeds) are frontiers; a destination block's marks the occurrences reached through it");
+    }
     return { froms, where, select, orderBy, follow, frontier, depth, distinct, values, limit, offset };
   }
 
@@ -459,10 +472,11 @@ class Parser {
       if (t.value === "limit" || t.value === "offset") {
         this.fail(`unexpected '${t.value}' after \`${last}\` — a bound is a non-negative number literal, a binding, or (inside a block) an outer reference \`^name\``);
       }
-      if ((t.value === "depth" || t.value === "frontier") && !ctx.destination) {
-        this.fail(`unexpected '${t.value}' after \`${last}\` — \`${t.value}\` is a clause of a follow destination block only (\`follow <relation> { ${t.value === "depth" ? "depth 2" : "frontier <expr>"} }\`)`);
+      if (t.value === "depth" && !ctx.destination) {
+        this.fail(`unexpected 'depth' after \`${last}\` — \`depth\` is a clause of a follow destination block only (\`follow <relation> { depth 2 }\`)`);
       }
-      if (t.value === "depth" && ctx.destination) this.fail("expected an integer after `depth` (`depth 1`..`depth 8`)");
+      if (t.value === "depth") this.fail("expected an integer after `depth` (`depth 1`..`depth 8`)");
+      if (t.value === "frontier") this.fail(`unexpected 'frontier' after \`${last}\` — \`frontier\` takes an expression (\`frontier <expr>\`) and belongs to a body that has a \`follow\``);
     }
     if (last === "from" && t.type === "ident" && CONSUMERS.has(t.value)) {
       this.fail(`unexpected \`${t.value}\` after \`from\` — a whole-query consumer is written \`<collection> ${t.value} { … }\`; to project a field named ${t.value} write \`select ${t.value} from …\`; a predicate needs \`where\``);

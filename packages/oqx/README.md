@@ -653,17 +653,23 @@ where-position tests).
 
 A destination block's body is an ordinary block — `where <succ>` (which
 successors keep participating), a projection, `order by`, `limit`/`offset`,
-`distinct` — plus two clauses only it has, after `where`: `frontier <pred>`
-(an occurrence this destination reached for which it holds is a frontier — cut,
-not expanded) and `depth <n>` (1–8: this destination expands a frontier row
-only while its `$depth < n`). The block's `where` is **correlated**: it reads
+`distinct` — plus two clauses after `where`: `frontier <pred>` (an occurrence
+this destination reached for which it holds is a frontier — cut, not expanded)
+and `depth <n>` (1–8: this destination expands a frontier row only while its
+`$depth < n`; a destination block's clause alone). The block's `where` is **correlated**: it reads
 the candidate successor's scope whose parent is the frontier row's — a bare name
 is the candidate's own property, `^name` is the row being expanded, `^^name` the
 walk's enclosing scope (language 0.14; before, `^` skipped the frontier row). So
 `follow doc.in { where before.contains(^$path) }` steps only into rows that
 name the row they were reached from. `frontier` is not correlated: it reads the
 occurrence with `^` the enclosing scope, as the body does; seeds are reached
-through no destination and are never frontiers.
+through no destination and are never frontiers by a destination's rule. **The
+body that carries the `follow` may write `frontier <pred>` too**, after its
+`where` and before `follow`: it applies to the seeds — a matching seed stays in
+the result with `$stop == "frontier"` and is not expanded (`id from tree frontier
+!active follow children { depth 2 }`); read in the seed's scope like the body's
+`where`. Each destination's `frontier` is its own; without a `follow`, a
+body-level `frontier` is a parse error.
 
 **Identity is `$key`** (language 0.20). Cycle detection, the per-step union,
 `follow distinct`, `distinct` over unprojected rows and `is` all compare one

@@ -88,7 +88,7 @@ test("each of the four legal leading forms parses", () => {
 });
 
 test("out-of-order clauses fail naming the fixed order", () => {
-  const ordering = /OQX clause order is select, from, where, follow, order by, limit, offset/;
+  const ordering = /OQX clause order is select, from, where, frontier, follow, order by, limit, offset/;
   const outOfOrder = (src: string, first: string, second: string) => assert.throws(
     () => parse(src),
     (e: unknown) => e instanceof OqxError && ordering.test(e.message) && e.message.includes(`\`${first}\` must come before \`${second}\``),

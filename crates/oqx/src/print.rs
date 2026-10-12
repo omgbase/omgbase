@@ -198,7 +198,7 @@ fn query(q: &Query) -> Out {
         clauses.extend(tail(
             &q.from,
             q.r#where.as_ref(),
-            None,
+            q.frontier.as_ref(),
             None,
             q.follow.as_ref(),
             q.order_by.as_deref(),
@@ -215,7 +215,7 @@ fn query(q: &Query) -> Out {
     body_clauses.extend(tail(
         &q.from,
         q.r#where.as_ref(),
-        None,
+        q.frontier.as_ref(),
         None,
         q.follow.as_ref(),
         q.order_by.as_deref(),
@@ -234,8 +234,9 @@ fn query(q: &Query) -> Out {
 }
 
 // The clauses after `from` (a query) or after the projection (a block): the
-// fixed clause order, each present clause once. `frontier`/`depth` exist only
-// on a follow destination block's body (a `Query` has neither).
+// fixed clause order, each present clause once. `depth` exists only on a follow
+// destination block's body (a `Query` has none); `frontier` on any body that
+// has a `follow` (0.20).
 #[allow(clippy::too_many_arguments)]
 fn tail(
     from: &[Expr],

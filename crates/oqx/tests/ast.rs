@@ -360,3 +360,34 @@ fn builders_make_empty_span_nodes_that_print() {
         }
     );
 }
+
+#[test]
+fn a_body_frontier_is_read_at_the_row_depth_a_destination_block_s_one_level_out() {
+    struct Frontiers(Vec<(String, usize)>);
+    impl Visitor for Frontiers {
+        fn enter(&mut self, node: Node<'_>, ctx: &VisitContext<'_>) -> bool {
+            if let (Node::Expr(Expr::Ident { name, .. }), Some(Clause::FollowFrontier)) =
+                (node, ctx.clause)
+            {
+                self.0.push((name.clone(), ctx.depth));
+            }
+            true
+        }
+    }
+    let collect = |src: &str| {
+        let q = parse(src);
+        let mut v = Frontiers(Vec::new());
+        visit(Node::Query(&q), &mut v);
+        v.0
+    };
+    // both land at the walk's row depth (1 at the top level)
+    assert_eq!(
+        collect("id from t frontier a follow kids { frontier b }"),
+        vec![("a".to_string(), 1), ("b".to_string(), 1)]
+    );
+    // inside a select-position block the walk's rows are at depth 2
+    assert_eq!(
+        collect("x: kids { id frontier c follow kids { frontier d } } from t"),
+        vec![("c".to_string(), 2), ("d".to_string(), 2)]
+    );
+}

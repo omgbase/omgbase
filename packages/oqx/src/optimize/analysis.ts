@@ -48,24 +48,26 @@ export function whereReadsScopeIn(w: Where, at: number, upTo: number): boolean {
 }
 
 /** A directive evaluated in a scope at depth `at`: its receiver is read there;
- * its rows are scopes at `at + 1`. */
-export function opReadsScopeIn(op: OpNode, at: number, upTo: number): boolean {
-  return exprReadsScopeIn(op.receiver, at, upTo) || subReadsScopeIn(op.sub, at + 1, upTo);
+ * its rows are scopes at `at + 1`. `destination` marks a follow destination
+ * block (its `frontier` is read one level out). */
+export function opReadsScopeIn(op: OpNode, at: number, upTo: number, destination = false): boolean {
+  return exprReadsScopeIn(op.receiver, at, upTo) || subReadsScopeIn(op.sub, at + 1, upTo, destination);
 }
 
 /** A block body whose rows are scopes at depth `at`. `from` re-projections,
  * `where`, `select`, `order by` and the bound are read in the row scope (the
  * bound in a row-less scope at the same depth); a destination block's
- * `frontier` is read one level out, under the walk's enclosing scope (§20);
+ * `frontier` is read one level out, under the walk's enclosing scope (§20),
+ * any other block's `frontier` (its seeds') in the row scope like `where`;
  * `follow` walks occurrences at `at`. */
-function subReadsScopeIn(sub: Subquery, at: number, upTo: number): boolean {
+function subReadsScopeIn(sub: Subquery, at: number, upTo: number, destination: boolean): boolean {
   if (sub.from.some((e) => exprReadsScopeIn(e, at, upTo))) return true;
   if (sub.where && whereReadsScopeIn(sub.where, at, upTo)) return true;
   if (sub.select.some((item) => itemReadsScopeIn(item, at, upTo))) return true;
   if (sub.orderBy?.some((o) => exprReadsScopeIn(o.expr, at, upTo))) return true;
   if (sub.limit && exprReadsScopeIn(sub.limit, at, upTo)) return true;
   if (sub.offset && exprReadsScopeIn(sub.offset, at, upTo)) return true;
-  if (sub.frontier && exprReadsScopeIn(sub.frontier, at - 1, upTo)) return true;
+  if (sub.frontier && exprReadsScopeIn(sub.frontier, destination ? at - 1 : at, upTo)) return true;
   return sub.follow !== null && followReadsScopeIn(sub.follow, at, upTo);
 }
 
@@ -74,7 +76,7 @@ function itemReadsScopeIn(item: SelectItem, at: number, upTo: number): boolean {
 }
 
 function followReadsScopeIn(f: Follow, at: number, upTo: number): boolean {
-  return f.destinations.some((d) => (d.kind === "op" ? opReadsScopeIn(d, at, upTo) : exprReadsScopeIn(d, at, upTo)));
+  return f.destinations.some((d) => (d.kind === "op" ? opReadsScopeIn(d, at, upTo, true) : exprReadsScopeIn(d, at, upTo)));
 }
 
 /** Does `e` read the scope it is evaluated in (a bare identifier anywhere)? */

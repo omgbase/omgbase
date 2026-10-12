@@ -2849,6 +2849,259 @@
           ]
         }
       }
+    },
+    {
+      "name": "a body frontier marks seeds: kept, not expanded",
+      "tags": [
+        "follow",
+        "frontier",
+        "0.20"
+      ],
+      "roots": {
+        "t": [
+          {
+            "id": "a",
+            "active": true,
+            "kids": [
+              {
+                "id": "a1",
+                "active": true,
+                "kids": []
+              }
+            ]
+          },
+          {
+            "id": "b",
+            "active": false,
+            "kids": [
+              {
+                "id": "b1",
+                "active": true,
+                "kids": []
+              }
+            ]
+          }
+        ]
+      },
+      "query": "id, s: $stop, l: $leaf, f: $frontier from t frontier !active follow kids { $key: id } order by $depth, id",
+      "expect": {
+        "result": [
+          {
+            "id": "a",
+            "s": "interior",
+            "l": false,
+            "f": false
+          },
+          {
+            "id": "b",
+            "s": "frontier",
+            "l": false,
+            "f": true
+          },
+          {
+            "id": "a1",
+            "s": "leaf",
+            "l": true,
+            "f": false
+          }
+        ]
+      },
+      "notes": "A body that has a `follow` may carry `frontier P` too (since 0.20); it applies to the SEEDS, read in each seed's own scope like `where`. The inactive seed `b` is kept with `$stop == \"frontier\"` (`$frontier` true, `$leaf` false) and is not expanded, so `b1` is not in the result; the active seed `a` expands."
+    },
+    {
+      "name": "a body frontier in the directive form",
+      "roots": {
+        "t": [
+          {
+            "id": "a",
+            "active": true,
+            "kids": [
+              {
+                "id": "a1",
+                "active": true,
+                "kids": []
+              }
+            ]
+          },
+          {
+            "id": "b",
+            "active": false,
+            "kids": [
+              {
+                "id": "b1",
+                "active": true,
+                "kids": []
+              }
+            ]
+          }
+        ]
+      },
+      "query": "t collect { id, s: $stop frontier !active follow kids { $key: id } order by $depth, id }",
+      "expect": {
+        "result": [
+          {
+            "id": "a",
+            "s": "interior"
+          },
+          {
+            "id": "b",
+            "s": "frontier"
+          },
+          {
+            "id": "a1",
+            "s": "leaf"
+          }
+        ]
+      }
+    },
+    {
+      "name": "a body frontier and a destination frontier in one query",
+      "tags": [
+        "follow",
+        "frontier",
+        "0.20"
+      ],
+      "roots": {
+        "t": [
+          {
+            "id": "root",
+            "tag": "k",
+            "kids": [
+              {
+                "id": "r1",
+                "tag": "m",
+                "kids": [
+                  {
+                    "id": "r1a",
+                    "tag": "stop",
+                    "kids": []
+                  },
+                  {
+                    "id": "r1b",
+                    "tag": "k",
+                    "kids": [
+                      {
+                        "id": "deep",
+                        "tag": "m",
+                        "kids": []
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "id": "r2",
+                "tag": "k",
+                "kids": []
+              }
+            ]
+          },
+          {
+            "id": "x",
+            "tag": "stop",
+            "kids": [
+              {
+                "id": "x1",
+                "tag": "m",
+                "kids": []
+              }
+            ]
+          }
+        ]
+      },
+      "query": "id, s: $stop from t frontier tag == \"stop\" follow kids { $key: id frontier tag == \"k\" } order by $depth, id",
+      "expect": {
+        "result": [
+          {
+            "id": "root",
+            "s": "interior"
+          },
+          {
+            "id": "x",
+            "s": "frontier"
+          },
+          {
+            "id": "r1",
+            "s": "interior"
+          },
+          {
+            "id": "r2",
+            "s": "frontier"
+          },
+          {
+            "id": "r1a",
+            "s": "leaf"
+          },
+          {
+            "id": "r1b",
+            "s": "frontier"
+          }
+        ]
+      },
+      "notes": "The body's `frontier` reads the seeds (`x` is cut; `x1` never reached), the destination block's `frontier` the occurrences it reached (`r2`, `r1b`; `deep` never reached). Neither applies to the other's rows: the seed `root` has the destination's tag `k` and still expands; `r1a` has the body's tag `stop`, was reached through the destination, and is a plain leaf."
+    },
+    {
+      "name": "a body frontier in a block reads the seed with ^ the enclosing row",
+      "tags": [
+        "follow",
+        "frontier",
+        "0.20"
+      ],
+      "roots": {
+        "t": [
+          {
+            "id": "root",
+            "tag": "k",
+            "kids": [
+              {
+                "id": "r1",
+                "tag": "k",
+                "kids": [
+                  {
+                    "id": "r1a",
+                    "tag": "m",
+                    "kids": []
+                  }
+                ]
+              },
+              {
+                "id": "r2",
+                "tag": "m",
+                "kids": [
+                  {
+                    "id": "r2a",
+                    "tag": "k",
+                    "kids": []
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "query": "id, w: kids collect { id, s: $stop frontier tag == ^tag follow kids { $key: id } order by $depth, id } from t",
+      "expect": {
+        "result": [
+          {
+            "id": "root",
+            "w": [
+              {
+                "id": "r1",
+                "s": "frontier"
+              },
+              {
+                "id": "r2",
+                "s": "interior"
+              },
+              {
+                "id": "r2a",
+                "s": "leaf"
+              }
+            ]
+          }
+        ]
+      },
+      "notes": "In a select-position block that carries a `follow`, the body's `frontier` is read in each seed's scope with `^` the enclosing row (`root`, tag `k`) — exactly as the block's `where` is: the seed `r1` (tag `k`) is a frontier and `r1a` is never reached, while `r2a` (tag `k`) is a successor, not a seed, and is a plain leaf."
     }
   ]
 }

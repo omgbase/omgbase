@@ -71,8 +71,10 @@
 //! `collect`/`first`/`single` [`distinct`] `{ body }`, exactly what `try_op`
 //! recognizes in select position (`exists`/`none`/`count` are rejected: they are
 //! where-position tests). Since 0.20 there is no options block: a brace after
-//! ANY destination opens that destination's block, whose body admits two
-//! clauses no other block has — `frontier P` and `depth n`, after `where`.
+//! ANY destination opens that destination's block, whose body admits `depth n`
+//! (no other block does) and `frontier P` as the destination's own clause, after
+//! `where`. Any body that has a `follow` may carry `frontier P` too, marking its
+//! seeds (read in the seed's scope, like `where`).
 //!
 //! Tuples (0.20): `(e1, e2, …)` with two or more elements is a `Tuple` node — a
 //! value and a receiver; one expression in parentheses stays grouping.
@@ -139,8 +141,11 @@ impl Clause {
         }
     }
 
+    /// `depth` is a clause of a follow destination block only; `frontier` is a
+    /// clause of every body that has a `follow` (a destination block's marks
+    /// the occurrences it reaches, any other body's its seeds — 0.20).
     fn destination_only(self) -> bool {
-        matches!(self, Clause::Frontier | Clause::Depth)
+        matches!(self, Clause::Depth)
     }
 }
 
@@ -186,7 +191,9 @@ enum BodyCtx {
         /// `collect { … }`.
         lifts_allowed: bool,
         /// A `follow` destination block (0.20): the only body that admits
-        /// `frontier` and `depth`.
+        /// `depth`, and the one whose `frontier` marks the occurrences it
+        /// reaches (read one level out) rather than the seeds of its own
+        /// `follow`.
         destination: bool,
     },
 }
@@ -406,6 +413,7 @@ impl Parser {
             order_by: body.order_by,
             consumer: Consumer::Collect,
             follow: body.follow,
+            frontier: body.frontier,
             distinct: body.distinct,
             values: body.values,
             limit: body.limit,
@@ -426,6 +434,7 @@ impl Parser {
             order_by: sub.order_by,
             consumer: directive.op,
             follow: sub.follow,
+            frontier: sub.frontier,
             distinct: directive.distinct,
             values: sub.values,
             limit: sub.limit,
@@ -484,21 +493,26 @@ impl Parser {
                 body.r#where = Some(self.with_depth(row_depth, |p| p.parse_where())?);
                 continue;
             }
-            // `frontier P` / `depth n` — a follow destination block's own clauses
-            // (0.20). `frontier` is read in the occurrence's scope, whose parent is
-            // the walk's enclosing scope — one level OUT of the block's rows
-            // (SEMANTICS §20) — so `^` there is the enclosing scope, not the
-            // frontier row.
-            if ctx.is_destination()
-                && self.at_word(TokType::Ident, "frontier")
-                && self.peek_at(1).is_some_and(starts_value)
+            // `frontier P` (0.20) — in a follow destination block the
+            // destination's own clause, read in the occurrence's scope whose
+            // parent is the walk's enclosing scope: one level OUT of the block's
+            // rows (SEMANTICS §20), so `^` there is the enclosing scope, not the
+            // frontier row. In any other body it marks the seeds of the body's
+            // own `follow` (checked at the end) and is read in the seed's scope,
+            // like `where`.
+            if self.at_word(TokType::Ident, "frontier") && self.peek_at(1).is_some_and(starts_value)
             {
                 self.enter(&mut stage, Clause::Frontier, ctx)?;
                 self.next();
-                let d = row_depth.saturating_sub(1);
+                let d = if ctx.is_destination() {
+                    row_depth.saturating_sub(1)
+                } else {
+                    row_depth
+                };
                 body.frontier = Some(self.with_depth(d, |p| p.parse_value_expr())?);
                 continue;
             }
+            // `depth n` — a follow destination block's own clause (0.20).
             if ctx.is_destination()
                 && self.at_word(TokType::Ident, "depth")
                 && self.peek_at(1).is_some_and(|t| t.kind == TokType::Number)
@@ -584,6 +598,13 @@ impl Parser {
         }
         if let Err(msg) = resolve_select(&body.select) {
             return self.fail(msg);
+        }
+        // Outside a destination block `frontier` marks the seeds of this body's
+        // walk, so it needs one.
+        if body.frontier.is_some() && body.follow.is_none() && !ctx.is_destination() {
+            return self.fail(
+                "`frontier` needs a `follow` — a body's `frontier <expr>` marks which of its rows (the walk's seeds) are frontiers; a destination block's marks the occurrences reached through it",
+            );
         }
         Ok(body)
     }
@@ -706,19 +727,19 @@ impl Parser {
                             "unexpected '{v}' after `{last}` — a bound is a non-negative number literal, a binding, or (inside a block) an outer reference `^name`"
                         ));
                     }
-                    "depth" | "frontier" if !ctx.is_destination() => {
-                        let example = if v == "depth" {
-                            "depth 2"
-                        } else {
-                            "frontier <expr>"
-                        };
+                    "depth" if !ctx.is_destination() => {
                         return self.fail(format!(
-                            "unexpected '{v}' after `{last}` — `{v}` is a clause of a follow destination block only (`follow <relation> {{ {example} }}`)"
+                            "unexpected 'depth' after `{last}` — `depth` is a clause of a follow destination block only (`follow <relation> {{ depth 2 }}`)"
                         ));
                     }
                     "depth" => {
                         return self
                             .fail("expected an integer after `depth` (`depth 1`..`depth 8`)");
+                    }
+                    "frontier" => {
+                        return self.fail(format!(
+                            "unexpected 'frontier' after `{last}` — `frontier` takes an expression (`frontier <expr>`) and belongs to a body that has a `follow`"
+                        ));
                     }
                     _ => {}
                 }

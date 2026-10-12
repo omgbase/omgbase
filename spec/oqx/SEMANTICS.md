@@ -623,22 +623,37 @@ no successors is a leaf.
   successor (or none). The block may order, bound and `distinct` its rows like
   any block. Its `$key: expr` item names the successors' identity and is not a
   column (§16).
-- Two clauses belong to a destination block alone (since 0.20; they were
-  options of the whole `follow` before): **`depth n`** — the destination expands
-  a frontier row only while that row's `$depth < n` (so its successors have
-  `$depth ≤ n`; 1–8); **`frontier P`** — an occurrence reached **through this
-  destination** for which `P` holds is a frontier (`$stop == "frontier"`, not
-  expanded). `P` is read in the occurrence's own scope with `^` the **walk's
-  enclosing scope** (not the frontier row), as the body is read; seeds are
-  reached through no destination and are never frontiers by this rule. The hard
-  cap **8** is every destination's ceiling and the default.
+- Two clauses of a destination block (since 0.20; they were options of the
+  whole `follow` before): **`depth n`** — the destination expands a frontier
+  row only while that row's `$depth < n` (so its successors have `$depth ≤ n`;
+  1–8; a clause of a destination block alone); **`frontier P`** — an occurrence
+  reached **through this destination** for which `P` holds is a frontier
+  (`$stop == "frontier"`, not expanded). `P` is read in the occurrence's own
+  scope with `^` the **walk's enclosing scope** (not the frontier row), as the
+  body is read; seeds are reached through no destination and are never
+  frontiers by this rule. The hard cap **8** is every destination's ceiling and
+  the default.
+- **The body's own `frontier P`** (since 0.20): the body that carries the
+  `follow` — the top level, or a select-position block — may carry `frontier P`
+  too, and it applies to the **seeds**: a seed for which `P` holds is a frontier
+  (`$stop == "frontier"`, `$frontier` true, `$leaf` false) and is not expanded,
+  while it stays in the result. `P` is read in the seed's own scope with `^` the
+  enclosing scope, exactly as the body's `where` is (select aliases are not
+  substituted, as in `order by`). Every block that feeds rows into the walk thus
+  says which of its rows are frontiers, and the author defines the frontier
+  relevant to the current `$it` separately from each destination's: the body's
+  `frontier` never applies to an occurrence reached through a destination, a
+  destination's never to a seed. Inside a destination block `frontier` is always
+  the destination's clause, so a `follow` nested in a destination block has no
+  seed frontier.
 
 Each occurrence carries intrinsics:
 
 - `$depth` — 1 for a seed;
 - `$stop` — `cycle` > `frontier` > `depth` > `leaf` > `interior` (first that
-  applies): the row's identity is already on the current path; the destination
-  that reached it marks it a frontier; the row has no successors and some
+  applies): the row's identity is already on the current path; the body (for a
+  seed) or the destination that reached it (for an occurrence) marks it a
+  frontier; the row has no successors and some
   destination **declined** to expand it by its `depth` (or `$depth` is 8); the
   row has no successors and nothing declined; otherwise interior. Only
   `interior` rows expand;

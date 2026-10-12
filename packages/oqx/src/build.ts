@@ -66,7 +66,7 @@ export function follow(destinations: FollowDestination[], opts: { distinct?: boo
 export function query(source: Expr, parts: Partial<Omit<Query, "kind" | "span" | "source">> = {}): Query {
   return {
     kind: "query", span: span(), source,
-    from: [], where: null, select: [], orderBy: null, consumer: "collect", follow: null,
+    from: [], where: null, select: [], orderBy: null, consumer: "collect", follow: null, frontier: null,
     distinct: false, values: false, limit: null, offset: null,
     ...parts,
   };

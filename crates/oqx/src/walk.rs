@@ -67,8 +67,9 @@ pub enum Clause {
     Offset,
     Follow,
     FollowDestination,
-    /// A destination block's `frontier` clause (0.20), read one level OUT of
-    /// the block's rows — under the walk's enclosing scope.
+    /// A `frontier` clause (0.20): a destination block's, read one level OUT
+    /// of the block's rows — under the walk's enclosing scope — or a body's
+    /// own (its seeds'), read in the row scope like `where`.
     FollowFrontier,
 }
 
@@ -154,6 +155,10 @@ fn children<'a>(node: Node<'a>) -> Vec<Child<'a>> {
             if let Some(w) = &q.r#where {
                 out.push(child(Node::Where(w), Some(Clause::Where), 1));
             }
+            // The body's `frontier` (0.20) reads each seed in the row scope, like `where`.
+            if let Some(e) = &q.frontier {
+                out.push(child(Node::Expr(e), Some(Clause::FollowFrontier), 1));
+            }
             if let Some(f) = &q.follow {
                 out.push(child(Node::Follow(f), Some(Clause::Follow), 1));
             }
@@ -185,7 +190,9 @@ fn children<'a>(node: Node<'a>) -> Vec<Child<'a>> {
                 out.push(child(Node::Where(w), Some(Clause::Where), 0));
             }
             // A destination block's `frontier` reads the occurrence under the
-            // walk's enclosing scope — one level OUT of the block's rows.
+            // walk's enclosing scope — one level OUT of the block's rows; any
+            // other block's reads its seeds in the row scope, like `where`
+            // (`go`/`Transformer::subquery` tell the two apart by position).
             if let Some(e) = &s.frontier {
                 out.push(child(Node::Expr(e), Some(Clause::FollowFrontier), -1));
             }
@@ -265,6 +272,27 @@ fn children<'a>(node: Node<'a>) -> Vec<Child<'a>> {
     out
 }
 
+/// A block is a follow destination block when its `OpNode` is a direct
+/// destination of a `Follow` node. `path` is the ancestors with the block
+/// itself last.
+fn is_destination_block(path: &[Node<'_>]) -> bool {
+    let n = path.len();
+    n >= 3 && matches!(path[n - 2], Node::Op(_)) && matches!(path[n - 3], Node::Follow(_))
+}
+
+/// How much deeper a child's scope is: the table's value, except a block's
+/// `frontier`, which is one level OUT only for a destination block (the walk's
+/// enclosing scope) and the row scope itself for a body with its own `follow`.
+fn child_depth(node: Node<'_>, c: &Child<'_>, path: &[Node<'_>]) -> isize {
+    if matches!(node, Node::Subquery(_))
+        && c.clause == Some(Clause::FollowFrontier)
+        && !is_destination_block(path)
+    {
+        return 0;
+    }
+    c.depth
+}
+
 /// A where-position consumer test is the `OpNode` itself (`kind: "op"`).
 fn where_node(w: &Where) -> Node<'_> {
     match w {
@@ -294,7 +322,7 @@ fn go<'a, V: Visitor>(
     if visitor.enter(node, &ctx) {
         path.push(node);
         for c in children(node) {
-            let d = (depth as isize + c.depth).max(0) as usize;
+            let d = (depth as isize + child_depth(node, &c, path)).max(0) as usize;
             go(c.node, c.clause.or(clause), d, path, visitor);
         }
         path.pop();
@@ -326,6 +354,10 @@ where
         source: t.expr(&q.source, Clause::Source, 0),
         from: q.from.iter().map(|e| t.expr(e, Clause::From, 1)).collect(),
         r#where: q.r#where.as_ref().map(|w| t.r#where(w, Clause::Where, 1)),
+        frontier: q
+            .frontier
+            .as_ref()
+            .map(|e| t.expr(e, Clause::FollowFrontier, 1)),
         follow: q.follow.as_ref().map(|fl| t.follow(fl, 1)),
         order_by: q
             .order_by
@@ -418,6 +450,13 @@ where
 
     fn subquery(&mut self, s: &'a Subquery, depth: usize, _outer: Option<Clause>) -> Subquery {
         self.path.push(Node::Subquery(s));
+        // A destination block's `frontier` is read one level OUT of its rows,
+        // any other block's (its seeds') in the row scope.
+        let frontier_depth = if is_destination_block(&self.path) {
+            depth.saturating_sub(1)
+        } else {
+            depth
+        };
         let out = Subquery {
             select: self.items(&s.select, Clause::Select, depth),
             from: s
@@ -432,7 +471,7 @@ where
             frontier: s
                 .frontier
                 .as_ref()
-                .map(|e| self.expr(e, Clause::FollowFrontier, depth.saturating_sub(1))),
+                .map(|e| self.expr(e, Clause::FollowFrontier, frontier_depth)),
             depth: s.depth,
             follow: s.follow.as_ref().map(|fl| self.follow(fl, depth)),
             order_by: s
@@ -626,6 +665,9 @@ fn strip_query_spans(q: &mut Query) {
     q.from.iter_mut().for_each(strip_expr_spans);
     if let Some(w) = &mut q.r#where {
         strip_where_spans(w);
+    }
+    if let Some(e) = &mut q.frontier {
+        strip_expr_spans(e);
     }
     if let Some(f) = &mut q.follow {
         strip_follow_spans(f);

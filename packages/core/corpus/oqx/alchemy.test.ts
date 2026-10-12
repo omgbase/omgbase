@@ -535,7 +535,7 @@ describe("alchemy corpus — the fixed clause order (ADR-020)", () => {
   });
 
   it("clauses out of the fixed order fail naming the order", () => {
-    const order = /OQX clause order is select, from, where, follow, order by, limit, offset/;
+    const order = /OQX clause order is select, from, where, frontier, follow, order by, limit, offset/;
     expect(() => paths('from docs where type == "substance" select path')).toThrow(order);
     expect(() => paths('from docs select path')).toThrow(/`select` must come before `from`/);
     expect(() => paths('from docs order by era where type == "practitioner"')).toThrow(/`where` must come before `order by`/);

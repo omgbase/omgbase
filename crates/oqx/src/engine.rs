@@ -281,6 +281,13 @@ struct Occurrence {
     meta: Object,
 }
 
+/// One `follow` as the walk reads it: the clause and the body's own seed
+/// frontier (0.20; `None` for a destination block's nested walk).
+struct FollowWalk<'a> {
+    follow: &'a Follow,
+    seed_frontier: Option<&'a Expr>,
+}
+
 /// A walked occurrence before ranking: the identity (`$key`), the path of
 /// identities from the seed to this occurrence (compared component-wise as
 /// values by `compare_path`), and the categorical stop reason.
@@ -709,7 +716,12 @@ impl<'e, C: DataContext> Exec<'e, C> {
             }
         }
         let proj = Projection::from(query);
-        let occ = self.follow_walk(self.keyed(seeds, proj, root)?, follow, root)?;
+        let occ = self.follow_walk(
+            self.keyed(seeds, proj, root)?,
+            follow,
+            query.frontier.as_ref(),
+            root,
+        )?;
         let mut scopes: Vec<Scope<'_>> = Vec::with_capacity(occ.len());
         for o in occ {
             let s = self.enter(o.row, root, Some(o.meta));
@@ -792,17 +804,24 @@ impl<'e, C: DataContext> Exec<'e, C> {
     //     destination's ceiling;
     //   • a destination block's `frontier P` marks the occurrences IT reached for
     //     which `P` holds (seeds are reached by none); `P` reads the occurrence's
-    //     own scope with `^` the walk's enclosing scope, as the body does.
+    //     own scope with `^` the walk's enclosing scope, as the body does;
+    //   • the body's own `frontier P` (`seed_frontier`, 0.20) marks the SEEDS for
+    //     which `P` holds, read in the seed's scope exactly like the body's `where`.
     fn follow_walk(
         &self,
         seeds: Vec<Keyed>,
         follow: &Follow,
+        seed_frontier: Option<&Expr>,
         parent: &Scope<'_>,
     ) -> Result<Vec<Occurrence>> {
         let mut walked: Vec<Walked> = Vec::new();
         let mut ancestors: Vec<Value> = Vec::new();
+        let walk = FollowWalk {
+            follow,
+            seed_frontier,
+        };
         for k in seeds {
-            self.follow_visit(follow, parent, k, None, 1, &mut ancestors, &mut walked)?;
+            self.follow_visit(&walk, parent, k, None, 1, &mut ancestors, &mut walked)?;
         }
 
         let mut rows = walked;
@@ -865,7 +884,7 @@ impl<'e, C: DataContext> Exec<'e, C> {
     #[allow(clippy::too_many_arguments)]
     fn follow_visit(
         &self,
-        follow: &Follow,
+        walk: &FollowWalk<'_>,
         parent: &Scope<'_>,
         k: Keyed,
         via: Option<usize>,
@@ -879,12 +898,12 @@ impl<'e, C: DataContext> Exec<'e, C> {
         let stop: &'static str;
         if ancestors.iter().any(|a| equals(a, &k.key)) {
             stop = "cycle";
-        } else if self.frontier_hit(follow, &k, via, parent)? {
+        } else if self.frontier_hit(walk, &k, via, parent)? {
             stop = "frontier";
         } else if depth >= HARD_DEPTH_CAP {
             stop = "depth";
         } else {
-            let (succ, declined) = self.successors_of(follow, &k, depth, parent)?;
+            let (succ, declined) = self.successors_of(walk.follow, &k, depth, parent)?;
             if succ.is_empty() {
                 stop = if declined { "depth" } else { "leaf" };
             } else {
@@ -899,7 +918,7 @@ impl<'e, C: DataContext> Exec<'e, C> {
                 ancestors.push(key);
                 for s in succ {
                     self.follow_visit(
-                        follow,
+                        walk,
                         parent,
                         s.keyed,
                         Some(s.via),
@@ -922,21 +941,26 @@ impl<'e, C: DataContext> Exec<'e, C> {
         Ok(())
     }
 
-    /// Whether the destination that reached `k` marks it a frontier: its block's
-    /// `frontier P`, read in the occurrence's scope under the walk's enclosing
-    /// scope. A seed (reached by no destination) never is.
+    /// Whether `k` is a frontier: for a seed (reached by no destination) the
+    /// body's own `frontier P` (0.20), read in the seed's scope like `where`;
+    /// for an occurrence the destination that reached it marks it through its
+    /// block's `frontier P`, read in the occurrence's scope under the walk's
+    /// enclosing scope.
     fn frontier_hit(
         &self,
-        follow: &Follow,
+        walk: &FollowWalk<'_>,
         k: &Keyed,
         via: Option<usize>,
         parent: &Scope<'_>,
     ) -> Result<bool> {
-        let Some(via) = via else { return Ok(false) };
-        let FollowDestination::Block(op) = &follow.destinations[via] else {
-            return Ok(false);
+        let f = match via {
+            None => walk.seed_frontier,
+            Some(via) => match &walk.follow.destinations[via] {
+                FollowDestination::Block(op) => op.sub.frontier.as_ref(),
+                FollowDestination::Relation(_) => None,
+            },
         };
-        let Some(f) = &op.sub.frontier else {
+        let Some(f) = f else {
             return Ok(false);
         };
         Ok(self.eval_expr(f, &self.keyed_scope(k, parent))?.truthy())
@@ -1001,7 +1025,7 @@ impl<'e, C: DataContext> Exec<'e, C> {
     // item read in the row's scope, else by the host's identity of the row yielded.
     fn destination_rows(&self, dest: &OpNode, frontier: &Scope<'_>) -> Result<Vec<Keyed>> {
         let plan = self.plan_of(dest, frontier);
-        let (scopes, _) = self.eval_collect_scopes(dest, &plan, frontier)?;
+        let (scopes, _) = self.eval_collect_scopes(dest, &plan, frontier, true)?;
         let key = key_item(&dest.sub.select);
         let shaped: Vec<SelectItem>;
         let proj = match key {
@@ -1566,7 +1590,7 @@ impl<'e, C: DataContext> Exec<'e, C> {
         scope: &Scope<'_>,
     ) -> Result<Value> {
         let proj = Projection::from(&op.sub);
-        let (scopes, single) = self.eval_collect_scopes(op, plan, scope)?;
+        let (scopes, single) = self.eval_collect_scopes(op, plan, scope, false)?;
         match op.op {
             // Over a single receiver (one object) a `collect` is the record or
             // absent, not a one-element list (SEMANTICS §3).
@@ -1590,6 +1614,7 @@ impl<'e, C: DataContext> Exec<'e, C> {
         op: &OpNode,
         plan: &Rc<BlockPlan>,
         scope: &'p Scope<'p>,
+        destination: bool,
     ) -> Result<(Vec<Scope<'p>>, bool)> {
         let sub = &op.sub;
         let bound = self.bound_of(sub.limit.as_ref(), sub.offset.as_ref(), scope)?;
@@ -1616,7 +1641,19 @@ impl<'e, C: DataContext> Exec<'e, C> {
                     seeds.push(r);
                 }
             }
-            let occ = self.follow_walk(self.keyed(seeds, proj, scope)?, follow, scope)?;
+            // A destination block's `frontier` is the destination's (read by
+            // the outer walk), never a seed frontier for a `follow` of its own.
+            let seed_frontier = if destination {
+                None
+            } else {
+                sub.frontier.as_ref()
+            };
+            let occ = self.follow_walk(
+                self.keyed(seeds, proj, scope)?,
+                follow,
+                seed_frontier,
+                scope,
+            )?;
             let mut scopes: Vec<Scope<'p>> = occ
                 .into_iter()
                 .map(|o| self.enter(o.row, scope, Some(o.meta)))

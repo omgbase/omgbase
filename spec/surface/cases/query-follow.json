@@ -337,6 +337,66 @@
       }
     },
     {
+      "name": "body-frontier-keeps-seeds-unexpanded",
+      "notes": "oqx 0.20: the body that carries the `follow` may write `frontier <pred>` too; it applies to the SEEDS, read in the seed's scope like `where`. The unverified process (`magnum-opus`) stays in the result with `$stop == \"frontier\"` and is not expanded; the verified processes expand through their links (bounded by the destination's `depth 2`). The destination block's own `frontier` is independent (see `frontier-cuts-the-walk`).",
+      "query": "select p: path, s: $stop, d: $depth, v: verified from docs where type == \"process\" frontier !verified follow distinct out_links collect { from dst depth 2 }",
+      "expect": {
+        "hits": [
+          {
+            "id": "d_10",
+            "path": "/processes/magnum-opus.md",
+            "p": "/processes/magnum-opus.md",
+            "s": "frontier",
+            "d": 1,
+            "v": false
+          },
+          {
+            "id": "d_7",
+            "path": "/processes/calcination.md",
+            "p": "/processes/calcination.md",
+            "s": "leaf",
+            "d": 1,
+            "v": true
+          },
+          {
+            "id": "d_8",
+            "path": "/processes/coagulation.md",
+            "p": "/processes/coagulation.md",
+            "s": "interior",
+            "d": 1,
+            "v": true
+          },
+          {
+            "id": "d_9",
+            "path": "/processes/dissolution.md",
+            "p": "/processes/dissolution.md",
+            "s": "leaf",
+            "d": 1,
+            "v": true
+          },
+          {
+            "id": "d_12",
+            "path": "/substances/philosophers-stone.md",
+            "p": "/substances/philosophers-stone.md",
+            "s": "depth",
+            "d": 2,
+            "v": false
+          },
+          {
+            "id": "d_2",
+            "path": "/lab/2026-02-notes.md",
+            "p": "/lab/2026-02-notes.md",
+            "s": "depth",
+            "d": 2,
+            "v": true
+          }
+        ],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "collect"
+      }
+    },
+    {
       "name": "follow-local-where",
       "notes": "successors failing the follow-local `where` drop out of the walk.",
       "query": "select p: path, d: $depth, s: $stop from docs where path == \"index.md\" follow distinct out_links collect { from dst where layer == \"canon\" depth 2 }",

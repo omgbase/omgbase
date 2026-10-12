@@ -490,6 +490,69 @@
           ]
         }
       }
+    },
+    {
+      "name": "body frontier needs a follow",
+      "roots": {
+        "t": [
+          {
+            "id": 1,
+            "active": true
+          }
+        ]
+      },
+      "query": "id from t frontier active",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "`frontier` needs a `follow`"
+          ]
+        }
+      },
+      "notes": "Outside a destination block `frontier P` marks the seeds of the body's walk (since 0.20), so a body without a `follow` has nothing for it to mark."
+    },
+    {
+      "name": "block frontier needs a follow",
+      "roots": {
+        "t": [
+          {
+            "id": 1,
+            "active": true
+          }
+        ]
+      },
+      "query": "t collect { id frontier active }",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "`frontier` needs a `follow`"
+          ]
+        }
+      }
+    },
+    {
+      "name": "depth at the body level names the destination block",
+      "roots": {
+        "t": [
+          {
+            "id": 1,
+            "kids": []
+          }
+        ]
+      },
+      "query": "id from t depth 2 follow kids",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "`depth` is a clause of a follow destination block only",
+            "follow <relation> { depth 2 }"
+          ]
+        }
+      },
+      "notes": "`depth` stays a destination-block clause: a body-level bound on the whole walk has no meaning when each destination bounds its own expansion."
     }
   ]
 }

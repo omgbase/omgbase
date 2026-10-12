@@ -54,6 +54,8 @@ export const CHILDREN: { readonly [K in AstKind]: readonly ChildKey[] } = {
     { key: "source", clause: "source" },
     { key: "from", clause: "from", depth: 1 },
     { key: "where", clause: "where", depth: 1 },
+    // The body's `frontier` (0.20) reads each seed in the row scope, like `where`.
+    { key: "frontier", clause: "follow.frontier", depth: 1 },
     { key: "follow", clause: "follow", depth: 1 },
     { key: "orderBy", clause: "orderBy", depth: 1 },
     { key: "limit", clause: "limit" },
@@ -64,7 +66,9 @@ export const CHILDREN: { readonly [K in AstKind]: readonly ChildKey[] } = {
     { key: "from", clause: "from" },
     { key: "where", clause: "where" },
     // A destination block's `frontier` reads the occurrence under the walk's
-    // enclosing scope — one level OUT of the block's rows (SEMANTICS §20).
+    // enclosing scope — one level OUT of the block's rows (SEMANTICS §20); any
+    // other block's reads its seeds in the row scope, like `where`
+    // (`childDepth` tells the two apart by the block's position).
     { key: "frontier", clause: "follow.frontier", depth: -1 },
     { key: "follow", clause: "follow" },
     { key: "orderBy", clause: "orderBy" },
@@ -101,6 +105,22 @@ function slot(node: AstNode, key: string): Slot {
   return (node as unknown as Record<string, Slot>)[key] ?? null;
 }
 
+/** A block is a follow destination block when its `op` is a direct destination
+ * of a `follow` node. `path` is the ancestors with the block itself last. */
+function isDestinationBlock(path: readonly AstNode[]): boolean {
+  const op = path[path.length - 2];
+  const owner = path[path.length - 3];
+  return op?.kind === "op" && owner?.kind === "follow";
+}
+
+/** How much deeper a child's scope is: the table's value, except a block's
+ * `frontier`, which is one level OUT only for a destination block (the walk's
+ * enclosing scope) and the row scope itself for a body with its own `follow`. */
+function childDepth(node: AstNode, child: ChildKey, path: readonly AstNode[]): number {
+  if (node.kind === "subquery" && child.key === "frontier" && !isDestinationBlock(path)) return 0;
+  return child.depth ?? 0;
+}
+
 /** Walk a tree depth-first in canonical source order. */
 export function visit(root: AstNode, visitor: Visitor): void {
   const path: AstNode[] = [];
@@ -113,7 +133,7 @@ export function visit(root: AstNode, visitor: Visitor): void {
         const v = slot(node, child.key);
         if (v === null) continue;
         const c = child.clause ?? clause;
-        const d = depth + (child.depth ?? 0);
+        const d = depth + childDepth(node, child, path);
         if (Array.isArray(v)) for (const x of v) go(x, c, d);
         else go(v, c, d);
       }
@@ -138,7 +158,7 @@ export function transform<T extends Query | Subquery>(root: T, f: (expr: Expr, c
       const v = slot(node, child.key);
       if (v === null) continue;
       const c = child.clause ?? clause;
-      const d = depth + (child.depth ?? 0);
+      const d = depth + childDepth(node, child, path);
       let next: Slot;
       if (Array.isArray(v)) {
         let changed = false;

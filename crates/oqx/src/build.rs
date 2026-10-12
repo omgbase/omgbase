@@ -228,6 +228,7 @@ pub fn query(source: Expr) -> Query {
         source,
         from: Vec::new(),
         r#where: None,
+        frontier: None,
         select: Vec::new(),
         order_by: None,
         consumer: Consumer::Collect,

@@ -44,6 +44,7 @@
           "orderBy": null,
           "consumer": "collect",
           "follow": null,
+          "frontier": null,
           "distinct": false,
           "values": false,
           "limit": null,
@@ -141,6 +142,7 @@
           "orderBy": null,
           "consumer": "collect",
           "follow": null,
+          "frontier": null,
           "distinct": false,
           "values": false,
           "limit": null,
@@ -219,6 +221,7 @@
           "orderBy": null,
           "consumer": "collect",
           "follow": null,
+          "frontier": null,
           "distinct": false,
           "values": false,
           "limit": null,
@@ -309,6 +312,7 @@
           "orderBy": null,
           "consumer": "collect",
           "follow": null,
+          "frontier": null,
           "distinct": false,
           "values": false,
           "limit": null,
@@ -399,6 +403,7 @@
           "orderBy": null,
           "consumer": "collect",
           "follow": null,
+          "frontier": null,
           "distinct": false,
           "values": false,
           "limit": null,
@@ -510,6 +515,7 @@
             ],
             "distinct": true
           },
+          "frontier": null,
           "distinct": false,
           "values": false,
           "limit": null,
@@ -660,6 +666,7 @@
           "orderBy": null,
           "consumer": "collect",
           "follow": null,
+          "frontier": null,
           "distinct": false,
           "values": false,
           "limit": null,
@@ -762,6 +769,7 @@
           "orderBy": null,
           "consumer": "collect",
           "follow": null,
+          "frontier": null,
           "distinct": false,
           "values": false,
           "limit": null,
@@ -863,6 +871,7 @@
           "orderBy": null,
           "consumer": "collect",
           "follow": null,
+          "frontier": null,
           "distinct": false,
           "values": false,
           "limit": null,
@@ -943,6 +952,7 @@
           "orderBy": null,
           "consumer": "first",
           "follow": null,
+          "frontier": null,
           "distinct": false,
           "values": false,
           "limit": null,
@@ -1107,6 +1117,7 @@
           "orderBy": null,
           "consumer": "collect",
           "follow": null,
+          "frontier": null,
           "distinct": false,
           "values": false,
           "limit": null,
@@ -1157,6 +1168,7 @@
           "orderBy": null,
           "consumer": "collect",
           "follow": null,
+          "frontier": null,
           "distinct": false,
           "values": false,
           "limit": null,
@@ -1219,6 +1231,7 @@
           "orderBy": null,
           "consumer": "collect",
           "follow": null,
+          "frontier": null,
           "distinct": false,
           "values": false,
           "limit": null,
@@ -1329,6 +1342,7 @@
           "orderBy": null,
           "consumer": "collect",
           "follow": null,
+          "frontier": null,
           "distinct": false,
           "values": false,
           "limit": null,
@@ -1448,6 +1462,7 @@
           "orderBy": null,
           "consumer": "collect",
           "follow": null,
+          "frontier": null,
           "distinct": false,
           "values": false,
           "limit": null,
@@ -1544,6 +1559,7 @@
           "orderBy": null,
           "consumer": "collect",
           "follow": null,
+          "frontier": null,
           "distinct": false,
           "values": false,
           "limit": null,
@@ -1605,6 +1621,7 @@
           "orderBy": null,
           "consumer": "collect",
           "follow": null,
+          "frontier": null,
           "distinct": false,
           "values": false,
           "limit": null,
@@ -1675,6 +1692,7 @@
           "orderBy": null,
           "consumer": "collect",
           "follow": null,
+          "frontier": null,
           "distinct": false,
           "values": false,
           "limit": null,
@@ -1745,6 +1763,7 @@
           "orderBy": null,
           "consumer": "collect",
           "follow": null,
+          "frontier": null,
           "distinct": false,
           "values": false,
           "limit": null,
@@ -1753,6 +1772,81 @@
             0,
             27
           ]
+        }
+      }
+    },
+    {
+      "name": "a body frontier",
+      "query": "id from t frontier x follow k",
+      "spans": true,
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "span": [
+            0,
+            29
+          ],
+          "source": {
+            "kind": "ident",
+            "span": [
+              8,
+              9
+            ],
+            "name": "t"
+          },
+          "from": [],
+          "where": null,
+          "select": [
+            {
+              "kind": "field",
+              "span": [
+                0,
+                2
+              ],
+              "name": "id",
+              "expr": {
+                "kind": "ident",
+                "span": [
+                  0,
+                  2
+                ],
+                "name": "id"
+              },
+              "lift": 0
+            }
+          ],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": {
+            "kind": "follow",
+            "span": [
+              21,
+              29
+            ],
+            "destinations": [
+              {
+                "kind": "ident",
+                "span": [
+                  28,
+                  29
+                ],
+                "name": "k"
+              }
+            ],
+            "distinct": false
+          },
+          "frontier": {
+            "kind": "ident",
+            "span": [
+              19,
+              20
+            ],
+            "name": "x"
+          },
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
         }
       }
     }

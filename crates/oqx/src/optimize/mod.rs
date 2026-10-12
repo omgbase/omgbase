@@ -410,10 +410,20 @@ pub fn where_reads_scope_in(w: &Where, at: usize, up_to: usize) -> bool {
 /// A directive evaluated in a scope at depth `at`: its receiver is read there;
 /// its rows are scopes at `at + 1`.
 pub fn op_reads_scope_in(op: &OpNode, at: usize, up_to: usize) -> bool {
-    expr_reads_scope_in(&op.receiver, at, up_to) || sub_reads_scope_in(&op.sub, at + 1, up_to)
+    op_reads_scope_in_as(op, at, up_to, false)
 }
 
-fn sub_reads_scope_in(sub: &Subquery, at: usize, up_to: usize) -> bool {
+/// [`op_reads_scope_in`] with `destination` marking a follow destination block
+/// (its `frontier` is read one level out).
+fn op_reads_scope_in_as(op: &OpNode, at: usize, up_to: usize, destination: bool) -> bool {
+    expr_reads_scope_in(&op.receiver, at, up_to)
+        || sub_reads_scope_in(&op.sub, at + 1, up_to, destination)
+}
+
+/// A block body whose rows are scopes at depth `at`; a destination block's
+/// `frontier` is read one level out (§20), any other block's (its seeds') in
+/// the row scope like `where`.
+fn sub_reads_scope_in(sub: &Subquery, at: usize, up_to: usize, destination: bool) -> bool {
     sub.from.iter().any(|e| expr_reads_scope_in(e, at, up_to))
         || sub
             .r#where
@@ -437,11 +447,11 @@ fn sub_reads_scope_in(sub: &Subquery, at: usize, up_to: usize) -> bool {
             .as_ref()
             .is_some_and(|e| expr_reads_scope_in(e, at, up_to))
         // a destination block's `frontier` is read one level out, under the
-        // walk's enclosing scope (§20)
-        || sub
-            .frontier
-            .as_ref()
-            .is_some_and(|e| expr_reads_scope_in(e, at.saturating_sub(1), up_to))
+        // walk's enclosing scope (§20); a body's own in the row scope
+        || sub.frontier.as_ref().is_some_and(|e| {
+            let d = if destination { at.saturating_sub(1) } else { at };
+            expr_reads_scope_in(e, d, up_to)
+        })
         || sub
             .follow
             .as_ref()
@@ -451,7 +461,7 @@ fn sub_reads_scope_in(sub: &Subquery, at: usize, up_to: usize) -> bool {
 fn follow_reads_scope_in(f: &Follow, at: usize, up_to: usize) -> bool {
     f.destinations.iter().any(|d| match d {
         FollowDestination::Relation(e) => expr_reads_scope_in(e, at, up_to),
-        FollowDestination::Block(op) => op_reads_scope_in(op, at, up_to),
+        FollowDestination::Block(op) => op_reads_scope_in_as(op, at, up_to, true),
     })
 }
 

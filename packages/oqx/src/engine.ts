@@ -313,7 +313,7 @@ export class InMemoryEngine implements Engine {
   private runFollow(query: Query, rows: unknown[], root: Scope, bound: Bound): OqxResult {
     const { seed, post } = query.where ? partitionRecur(query.where) : { seed: null, post: null };
     const seeds = seed ? rows.filter((r) => this.matches(seed, r, root)) : rows;
-    const occ = this.followWalk(this.keyed(seeds, query, root), query.follow!, root);
+    const occ = this.followWalk(this.keyed(seeds, query, root), query.follow!, query.frontier, root);
     let scopes: Scope[] = occ.map((o) => this.enter(o.row, root, { lifts: {}, meta: o.meta }));
     if (post) scopes = scopes.filter((s) => this.evalWhere(post, s));
     this.sortScopes(scopes, query.orderBy);
@@ -377,8 +377,10 @@ export class InMemoryEngine implements Engine {
   //     cap 8 is every destination's ceiling;
   //   • a destination block's `frontier P` marks the occurrences IT reached for
   //     which `P` holds (seeds are reached by none); `P` reads the occurrence's
-  //     own scope with `^` the walk's enclosing scope, as the body does.
-  private followWalk(seeds: Keyed[], follow: Follow, parent: Scope): Occurrence[] {
+  //     own scope with `^` the walk's enclosing scope, as the body does;
+  //   • the body's own `frontier P` (`seedFrontier`, 0.20) marks the SEEDS for
+  //     which `P` holds, read in the seed's scope exactly like the body's `where`.
+  private followWalk(seeds: Keyed[], follow: Follow, seedFrontier: Expr | null, parent: Scope): Occurrence[] {
     const frontierScope = (k: Keyed): Scope => this.enter(k.row, parent, { meta: { [KEY]: k.key } });
     const succOf = (k: Keyed, depth: number): { succ: (Keyed & { via: number })[]; declined: boolean } => {
       const rowScope = frontierScope(k);
@@ -403,7 +405,7 @@ export class InMemoryEngine implements Engine {
       return { succ, declined };
     };
     const frontierHit = (k: Keyed, via: number | null): boolean => {
-      if (via === null) return false;
+      if (via === null) return seedFrontier !== null && truthy(this.evalExpr(seedFrontier, frontierScope(k)));
       const dest = follow.destinations[via]!;
       if (dest.kind !== "op" || !dest.sub.frontier) return false;
       return truthy(this.evalExpr(dest.sub.frontier, frontierScope(k)));
@@ -463,7 +465,7 @@ export class InMemoryEngine implements Engine {
   // other than `$key` (the raw rows when none remain), keyed by its `$key:`
   // item read in the row's scope, else by the host's identity of the row yielded.
   private destinationRows(dest: OpNode, rowScope: Scope): Keyed[] {
-    const { scopes } = this.evalCollectScopes(dest, rowScope);
+    const { scopes } = this.evalCollectScopes(dest, rowScope, this.planOf(dest, rowScope), true);
     const key = keyItem(dest.sub);
     const shape: Projection = key ? { select: dest.sub.select.filter((it) => it !== key), values: dest.sub.values } : dest.sub;
     return scopes.map((s) => {
@@ -761,8 +763,10 @@ export class InMemoryEngine implements Engine {
 
   // The rows a select-position directive yields, as scopes, reduced by its
   // consumer (`first`/`single` keep at most one; `single` raises on more), and
-  // whether its receiver was a single object.
-  private evalCollectScopes(op: OpNode, scope: Scope, plan: BlockPlan = this.planOf(op, scope)): { scopes: Scope[]; single: boolean } {
+  // whether its receiver was a single object. `destination` marks a follow
+  // destination block: its `frontier` is the destination's (read by the outer
+  // walk), never a seed frontier for a `follow` of its own.
+  private evalCollectScopes(op: OpNode, scope: Scope, plan: BlockPlan = this.planOf(op, scope), destination = false): { scopes: Scope[]; single: boolean } {
     const sub = op.sub;
     const bound = this.boundOf(sub, scope);
     let scopes: Scope[];
@@ -772,7 +776,7 @@ export class InMemoryEngine implements Engine {
       // follow block is never correlated, so `where` here is the whole predicate.
       const { rows, where } = this.access(op, plan, scope);
       const seeds = where ? rows.filter((r) => this.evalWhere(where, this.enter(r, scope, { lifts: {} }))) : rows;
-      scopes = this.followWalk(this.keyed(seeds, sub, scope), sub.follow, scope).map((o) => this.enter(o.row, scope, { meta: o.meta }));
+      scopes = this.followWalk(this.keyed(seeds, sub, scope), sub.follow, destination ? null : sub.frontier, scope).map((o) => this.enter(o.row, scope, { meta: o.meta }));
       this.sortScopes(scopes, sub.orderBy);
       if (op.distinct) scopes = this.dedupByProjection(scopes, sub);
       scopes = sliceBound(scopes, bound);

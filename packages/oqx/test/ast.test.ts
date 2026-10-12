@@ -224,3 +224,16 @@ test("builders make nodes with the empty span and materialized fields, and print
   assert.equal(print(q), 'select _depth: $depth, _edges: doc.out_edges collect { id: $id } from docs where $id == "d_0" or $id == "d_1" follow distinct doc.out collect { depth 2 }');
   assert.deepEqual(stripSpans(parse(print(q))), stripSpans(q));
 });
+
+test("visit: a body's `frontier` reads its seeds at the row depth, a destination block's one level out — both at the walk's row depth", () => {
+  const seen: [string, Clause | null, number][] = [];
+  const collectFrontiers = (src: string): void => {
+    seen.length = 0;
+    visit(parse(src), { enter(node, ctx) { if (node.kind === "ident" && ctx.clause === "follow.frontier") seen.push([node.name, ctx.clause, ctx.depth]); } });
+  };
+  collectFrontiers("id from t frontier a follow kids { frontier b }");
+  assert.deepEqual(seen, [["a", "follow.frontier", 1], ["b", "follow.frontier", 1]]);
+  // inside a select-position block the walk's rows are at depth 2
+  collectFrontiers("x: kids { id frontier c follow kids { frontier d } } from t");
+  assert.deepEqual(seen, [["c", "follow.frontier", 2], ["d", "follow.frontier", 2]]);
+});

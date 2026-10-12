@@ -338,6 +338,9 @@ links:  (the authored link graph as rows — one per open link: the relation a l
                                                    documents, re-read per frontier row
                                                    (^ = that row) = the backlinks walk
     follow out_links collect { from dst frontier type == "practitioner" }   cut, keeping the frontier row
+    from docs where type == "process" frontier !verified follow out_links collect { from dst }
+                                                   the BODY's frontier applies to the seeds:
+                                                   an unverified seed is kept, not expanded
     follow distinct out_links collect { from dst } / … { $key: group from dst }   identity control ($key)
     follow refs(before), ^docs { where ^path in list(after) }    forward over \`before\`, backward
                                                    over every doc whose \`after\` names me
@@ -351,9 +354,13 @@ links:  (the authored link graph as rows — one per open link: the relation a l
   0.17 body rules (where-first, projections) and two clauses of its own after
   \`where\`: frontier <pred> (occurrences reached through this destination that
   match are frontiers; ^ there is the walk's enclosing scope) and depth <n>
-  (this destination expands a frontier row only while $depth < n). There is no
-  options block; the old \`by\` is $key. A bare follow ^docs (no brace, no
-  consumer) is an error naming both block spellings.
+  (this destination expands a frontier row only while $depth < n). The body
+  that carries the follow may write frontier <pred> too, after its where and
+  before follow: it applies to the SEEDS (read like the body's where) — a
+  matching seed stays in the result with $stop == "frontier" and is not
+  expanded; each destination's frontier is its own. There is no options block;
+  the old \`by\` is $key. A bare follow ^docs (no brace, no consumer) is an
+  error naming both block spellings.
   Type-preserving relations: block.children, section.children, section.subsections;
   the citation graph is out_links collect { from dst } / in_links collect { from doc }.
   from links where dst_path == "/notes/x.md"       inbound links to a doc, as rows

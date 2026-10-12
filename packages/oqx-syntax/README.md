@@ -117,7 +117,7 @@ The grammar follows `spec/oqx/GRAMMAR.md` §1. It distinguishes:
 | reserved keywords | `keyword.control.oqx` | `keyword` | `select` `from` `where` |
 | clause words | `keyword.control.clause.oqx` | `keyword.clause` | `follow` `order by` `limit` `offset` |
 | consumers | `keyword.control.consumer.oqx` | `keyword.consumer` | `collect` `exists` `none` `count` `first` `single` (before `{`) |
-| destination-block clauses | `keyword.control.follow.oqx` | `keyword.follow` | `frontier` `depth` (inside a `follow` destination block, since 0.20) |
+| destination-block clauses | `keyword.control.follow.oqx` | `keyword.follow` | `frontier` `depth` (inside a `follow` destination block; `frontier` also at body level before a `follow`, since 0.20) |
 | modifiers | `keyword.other.modifier.oqx` | `keyword.modifier` | `distinct` `asc` `desc` `values` |
 | literals | `constant.language.oqx` | `constant.language` | `true` `false` `null` |
 | numbers | `constant.numeric.oqx` | `number` | `42` `0.5` `1e5` |

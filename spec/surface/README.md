@@ -341,7 +341,9 @@ sources, `in_links collect distinct { from doc }` (`from` over an absent
 `dst` — an external link, a dangling `[[wikilink]]` — contributes no row);
 the citation walk is `follow out_links collect { from dst }` /
 `follow in_links collect { from doc }`, with `depth`/`frontier` as clauses of
-the block (oqx 0.20: `… collect { from dst depth 2 }`). A bare `out`
+the block (oqx 0.20: `… collect { from dst depth 2 }`) and a body-level
+`frontier <pred>` before `follow` applying to the seeds
+(`query-follow::body-frontier-keeps-seeds-unexpanded`). A bare `out`
 or `in` on a doc reads an authored property like any other unknown name
 (`query-docs::linked-docs-through-out-links`,
 `::linking-docs-through-in-links`, `::out-and-in-are-plain-properties`).

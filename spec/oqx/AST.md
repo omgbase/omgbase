@@ -58,8 +58,9 @@ There is no `index` node and no node for any other sugar: a bracket lookup
 `first { where p }`; `single` under `!`), `x { … }` and `x distinct { … }` to a
 `collect` op, `is x` and `not x` to `unary` nodes (GRAMMAR §4). The only shapes
 0.17 adds are `required` and the `is`/`is not` operators of `binary`; 0.20 adds
-`tuple` (a single parenthesized expression is still grouping and leaves no node)
-and the `frontier`/`depth` fields of `subquery`. Nor is there a node
+`tuple` (a single parenthesized expression is still grouping and leaves no node),
+the `frontier`/`depth` fields of `subquery` and the `frontier` field of `query`
+(a body's seed frontier). Nor is there a node
 for an **absolute scope reference** (since 0.18): `N^name` is the `outer` node
 with `levels = depth − N` — the parser knows the depth of every position
 (the `depth` of §5) — and `N^name:` at a select item's head is a `field` with
@@ -82,8 +83,8 @@ as their source words (`"=="`, `"&&"`, `"collect"`).
 
 | Node | Fields |
 | --- | --- |
-| `query` | `source: Expr` — the root collection (`from <source>` or the directive receiver); `from: Expr[]` — further `from E` re-projections (only a directive form's block can hold them); `where: Where \| null`; `select: SelectItem[]`; `orderBy: Order[] \| null`; `consumer: "collect" \| "exists" \| "none" \| "count" \| "first" \| "single"`; `follow: Follow \| null`; `distinct: boolean`; `values: boolean`; `limit: Expr \| null`; `offset: Expr \| null` |
-| `subquery` | `from`, `where`, `select`, `orderBy`, `follow`, `values`, `limit`, `offset` as above (no `source`, `consumer`, `distinct` — those belong to the enclosing `op`); `frontier: Expr \| null` and `depth: number \| null` (1..8) — set only on a `follow` destination block's body (since 0.20), `null` on every other block |
+| `query` | `source: Expr` — the root collection (`from <source>` or the directive receiver); `from: Expr[]` — further `from E` re-projections (only a directive form's block can hold them); `where: Where \| null`; `select: SelectItem[]`; `orderBy: Order[] \| null`; `consumer: "collect" \| "exists" \| "none" \| "count" \| "first" \| "single"`; `follow: Follow \| null`; `frontier: Expr \| null` — the body's seed frontier (since 0.20; set only together with `follow`); `distinct: boolean`; `values: boolean`; `limit: Expr \| null`; `offset: Expr \| null` |
+| `subquery` | `from`, `where`, `select`, `orderBy`, `follow`, `frontier`, `values`, `limit`, `offset` as above (no `source`, `consumer`, `distinct` — those belong to the enclosing `op`); `depth: number \| null` (1..8) — set only on a `follow` destination block's body (since 0.20), `null` on every other block; `frontier` on a destination block's body marks the occurrences reached through it, on any other block's body (with a `follow`) its seeds |
 | `op` | `receiver: Expr`; `op: Consumer`; `sub: Subquery`; `countCmp: { op: RelOp, value: number } \| null` — the `count { … } <relop> N` test, an attribute rather than a node; `distinct: boolean` — `<op> distinct { … }` and `{ select distinct … }` are one flag |
 | `follow` | `destinations: (Expr \| Op)[]` — ≥ 1, in source order (a tuple destination is one `tuple` expression); `distinct: boolean` |
 | `order` | `expr: Expr`; `desc: boolean` |
@@ -198,9 +199,9 @@ Both implementations ship one generic walk driven by a single child-key table
 per `kind` (TypeScript `CHILDREN`, Rust `walk::children`), so a future field
 is added in one place and every tool sees it. Children are visited in
 canonical source order: for `query` — `select`, `source`, `from`, `where`,
-`follow`, `orderBy`, `limit`, `offset`; for `subquery` — `select`, `from`,
-`where`, `frontier`, `follow`, `orderBy`, `limit`, `offset` (`depth` is a
-number, not a node); for `op` — `receiver`, `sub`; for `follow` —
+`frontier`, `follow`, `orderBy`, `limit`, `offset`; for `subquery` — `select`,
+`from`, `where`, `frontier`, `follow`, `orderBy`, `limit`, `offset` (`depth` is
+a number, not a node); for `op` — `receiver`, `sub`; for `follow` —
 `destinations`; then the obvious slots of the smaller nodes (`expr`, `parts`,
 `recv`, `args`, `left`/`right`, `lo`/`hi`, `items`; `required` — `expr`).
 
@@ -212,8 +213,8 @@ number, not a node); for `op` — `receiver`, `sub`; for `follow` —
     (a re-projection), `where`, `select`, `orderBy`, `limit`, `offset`,
     `follow` (the `follow` node itself), `follow.destination` (a destination,
     and everything inside a destination block that opens no clause of its own —
-    its receiver and `subquery`), `follow.frontier` (a destination block's
-    `frontier` expression); the root has none (`null`); a node inherits its
+    its receiver and `subquery`), `follow.frontier` (a `frontier` expression —
+    a destination block's, or a body's own seed frontier); the root has none (`null`); a node inherits its
     parent's clause unless it opens one (a destination block's `where` is
     `where`, as in any block);
   - `depth` — the **scope depth** at which the node is evaluated (SEMANTICS
@@ -223,7 +224,10 @@ number, not a node); for `op` — `receiver`, `sub`; for `follow` —
     depth and its body one deeper — so a destination block's `where` tests a
     successor one deeper than the frontier row; a destination block's
     `frontier` is read one level **out** of the block's rows, under the walk's
-    enclosing scope (SEMANTICS §20).
+    enclosing scope, while a body's own `frontier` (its seeds') is read at the
+    body's row depth like its `where` — the walk tells the two apart by
+    position: a block is a destination block when its `op` is a direct
+    destination of a `follow` node (SEMANTICS §20).
 - **`transform(root, f)`** — rebuilds a `query`/`subquery` with every
   expression mapped through `f(expr, ctx)`, children first (so `f` sees an
   expression whose operands are already mapped). Nodes `f` returns unchanged
@@ -243,8 +247,10 @@ double-quoted strings with the GRAMMAR §1 escapes; the minimal parentheses
 the precedence table (GRAMMAR §4) requires, and the predicate/scalar group
 rule of GRAMMAR §3 for `where`; `distinct` on a directive spelled
 `<op> distinct { … }` (so `x distinct { … }` prints as `x collect distinct { …
-}`); a destination block's clauses in the fixed order — `where`, `frontier`,
-`depth`, then `follow`, `order by`, the bounds — and `follow x { depth 2 }` as
+}`); a body's clauses in the fixed order — `where`, `frontier`, `depth` (a
+destination block's), then `follow`, `order by`, the bounds — so a body's seed
+frontier prints between `where` and `follow` (`select id: id from t frontier
+!active follow kids collect { depth 2 }`), and `follow x { depth 2 }` as
 `follow x collect { depth 2 }`; a tuple with its parentheses `(a, b)`; an empty
 block as `{ }`; the logical connectives as the **words**
 `and` / `or` (since 0.18; `&&` / `||` parse to the same nodes and the JSON
@@ -304,4 +310,4 @@ document says which `major.minor` produced it.
 | 0.16 | `index` expression node removed (never produced). `limit`/`offset`/`countCmp` materialized as `null`, `distinct`/`values` as `false` (they were optional). `kind` added to `query`, `subquery`, `follow`, `order`; `span` added to every node. `where` is no longer alias-inlined at parse time (see §2). |
 | 0.17 | Added (minor): the `required` expression node; `"is"` / `"is not"` as `binary` operators; an `op` may appear in expression position (`member.recv`, operands, `required.expr`, a `field`'s value). Nothing renamed or removed. |
 | 0.18 | No node or field added, renamed or removed: `N^name` parses to the existing `outer` (`levels = depth − N`). The canonical print of `and`/`or` and `logical` nodes changed from the symbols to the words; the JSON `logical.op` is still `"&&"` / `"||"`. |
-| 0.20 | Added (minor): the `tuple` expression node; `subquery.frontier` and `subquery.depth`. **Removed** (pre-1.0, so a minor): `follow.where`, `follow.frontier`, `follow.depth`, `follow.by` — a destination's `where` is its block's `where`, `frontier`/`depth` are its block's new fields, `by` has no replacement (identity is `$key`, SEMANTICS §16, projectable as a `$key:` item). The `follow.where` and `follow.by` traversal clauses are gone; `follow.frontier` now marks a destination block's `frontier` (visited at depth − 1). |
+| 0.20 | Added (minor): the `tuple` expression node; `subquery.frontier` and `subquery.depth`; `query.frontier` (the body's seed frontier, legal only with `follow`). **Removed** (pre-1.0, so a minor): `follow.where`, `follow.frontier`, `follow.depth`, `follow.by` — a destination's `where` is its block's `where`, `frontier`/`depth` are its block's new fields, `by` has no replacement (identity is `$key`, SEMANTICS §16, projectable as a `$key:` item). The `follow.where` and `follow.by` traversal clauses are gone; `follow.frontier` now marks a destination block's `frontier` (visited at depth − 1). |

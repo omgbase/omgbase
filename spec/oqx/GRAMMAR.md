@@ -33,9 +33,10 @@ Keywords and identifiers are **case-sensitive**; `FROM` is an identifier
 **Contextual words** are identifiers that act as syntax only in position:
 `collect exists none count first single order by asc desc follow distinct
 frontier depth in values limit offset`. Outside that position they are field
-names (`limit from r`, `order from r`, `select follow from r`; `frontier` and
-`depth` are clauses only inside a `follow` destination block, §`follow`, and
-field names everywhere else). A contextual word that starts a clause but does
+names (`limit from r`, `order from r`, `select follow from r`; `depth` is a
+clause only inside a `follow` destination block and `frontier` only in a body
+that has a `follow` — the destination block's own, or any body's for its seeds —
+§`follow`; both are field names everywhere else). A contextual word that starts a clause but does
 not complete it is an error naming what the clause needs (`order age` → `order
 by <expr>`; `follow` alone → a relation; `limit x` → a number, binding, or
 `^name`; `where x depth 2` outside a destination block → names the block)
@@ -96,15 +97,22 @@ A body is a sequence of clauses. Each appears **at most once**, in exactly this
 order:
 
 ```
-select  from  where  [ frontier  depth ]  follow  order by  limit  offset
+select  from  where  [ frontier ]  [ depth ]  follow  order by  limit  offset
 ```
 
-`frontier` and `depth` are clauses of a **`follow` destination block only**
-(§`follow`), where they sit after `where`; every other body has the seven.
+`frontier` is a clause of **any body that has a `follow`** (since 0.20): in a
+`follow` destination block it marks the occurrences reached through that
+destination; in any other body — the top level, a select-position block — it
+marks the body's own rows, the walk's **seeds** (§`follow`, SEMANTICS §20). In a
+body without a `follow` it is the parse error `` `frontier` needs a `follow` ``.
+`depth` is a clause of a **`follow` destination block only**. Both sit after
+`where`, so the order of every body is `select from where frontier follow order
+by limit offset`, a destination block's `select from where frontier depth follow
+order by limit offset`.
 
 - A clause out of order is a parse error naming both clauses and the order:
-  `` `select` must come before `from` — OQX clause order is select, from, where, follow, order by, limit, offset `` (inside a destination block the sentence
-  names its two extra clauses: `… where, frontier, depth, follow, …`).
+  `` `select` must come before `from` — OQX clause order is select, from, where, frontier, follow, order by, limit, offset `` (inside a destination block the sentence
+  also names `depth`: `… where, frontier, depth, follow, …`).
 - A repeated clause is `` duplicate `<clause>` clause ``.
 - Every clause is optional, except that a top-level body must have `from`
   (`a query must name its source …`). Inside a consumer block, `from E`
@@ -301,16 +309,26 @@ top-level walk — since the block, not the receiver, is what varies per row.
 `exists`, `none` and `count` are not destinations, with or without a caret (`` a
 follow destination must use collect/first/single, not `exists` … ``).
 
-A destination block's body admits two clauses no other block has, in the fixed
-order after `where` (§2): **`frontier <expr>`** and **`depth <integer>`**, each
-at most once (`` duplicate `depth` clause ``). `depth` must be an integer literal
-in 1..8 (`follow depth must be an integer between 1 and 8`); `frontier` takes any
-value expression. Outside a destination block the two words are field names
-(`select depth, frontier from r`), and `where x depth 2` is a parse error naming
-the destination block. Semantics in SEMANTICS §20. The former options `where P`
-is simply the block's `where`; the former `by E` is gone — identity is `$key`
-(SEMANTICS §16), projected as `{ $key: expr }` when a block needs to name it.
-[`follow`, `sugar`, `ast`, `errors-parse`]
+A destination block's body admits, in the fixed order after `where` (§2),
+**`frontier <expr>`** — the occurrences reached through this destination for
+which it holds are frontiers — and **`depth <integer>`**, each at most once
+(`` duplicate `depth` clause ``). `depth` must be an integer literal in 1..8
+(`follow depth must be an integer between 1 and 8`) and is a clause of a
+destination block alone: elsewhere it is a field name (`select depth from r`),
+and `where x depth 2` is a parse error naming the destination block.
+`frontier` takes any value expression and is a clause of **every body that has
+a `follow`**: the body that carries the `follow` — the top level, or a
+select-position block — may write `frontier <expr>` after its `where` and
+before its `follow` to mark which of its own rows, the walk's **seeds**, are
+frontiers (`id from t frontier !active follow kids { depth 2 }`; read in the
+seed's scope like `where`, SEMANTICS §20). Inside a destination block `frontier`
+is always the destination's clause, even when that block carries a `follow` of
+its own. A body-level `frontier` without a `follow` is the parse error
+`` `frontier` needs a `follow` ``; without a value after it the word is a stray
+field name. The former options `where P` is simply the block's `where`; the
+former `by E` is gone — identity is `$key` (SEMANTICS §16), projected as
+`{ $key: expr }` when a block needs to name it.
+[`follow`, `clause-order`, `sugar`, `ast`, `errors-parse`]
 
 ### `order by`
 
@@ -522,8 +540,9 @@ Every failure is an `OqxError` with a `stage`:
 - `parse` — everything the grammar above rejects, including clause order,
   duplicates, missing `where`, projection naming (unnamed and duplicate items),
   a comma after a where-first predicate, misplaced lifts, alias cycles and
-  forward references, a `frontier`/`depth` clause outside a destination block
-  or out of range, an unclosed tuple, chained comparisons, a top-level
+  forward references, a `depth` clause outside a destination block or out of
+  range, a `frontier` clause in a body without a `follow`, an unclosed tuple,
+  chained comparisons, a top-level
   `limit ^n`, an absolute reference to a scope that does not enclose the
   block (`scope N does not enclose this block …`), `count` comparisons, a
   negative or fractional index, a bare `first`/`single` in `where`.

@@ -512,6 +512,15 @@ mod tests {
             )
             .is_none()
         );
+        // a body-level `frontier` (oqx 0.20) plans like the `follow` it needs
+        assert!(
+            compile(
+                &parse("from docs where path == \"a.md\" frontier type == \"hub\" follow distinct out_links collect { from dst frontier type == \"practitioner\" }"),
+                &[],
+                "r"
+            )
+            .is_none()
+        );
         // not a root scan
         assert!(compile(&parse("from things where path == \"a.md\""), &[], "r").is_none());
         assert!(compile(&parse("from nope where path == \"a.md\""), &[], "r").is_none());

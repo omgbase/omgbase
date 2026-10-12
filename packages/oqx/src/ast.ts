@@ -127,11 +127,14 @@ export interface Subquery {
   select: SelectItem[];
   orderBy: OrderSpec[] | null;
   follow: Follow | null;
-  /** `frontier P` / `depth n` (since 0.20) — legal only in a `follow` destination
-   * block: an occurrence reached through this destination for which `P` holds
-   * is a frontier (not expanded); the destination expands a frontier row only
-   * while that row's `$depth < n` (1..8; `null` = the hard cap 8). Both are
-   * `null` in every other block. */
+  /** `frontier P` / `depth n` (since 0.20). In a `follow` destination block
+   * `frontier` marks the occurrences reached through this destination for
+   * which `P` holds (not expanded; `P` read one level out, under the walk's
+   * enclosing scope), and `depth n` makes the destination expand a frontier
+   * row only while that row's `$depth < n` (1..8; `null` = the hard cap 8).
+   * In any other block `frontier` is legal only with a `follow` and marks the
+   * walk's SEEDS, read in the seed's scope like `where` (as on `Query`);
+   * `depth` is destination-only. Both `null` when absent. */
   frontier: Expr | null;
   depth: number | null;
   /** `values` — scalar projection mode: the (single) projected expression is the
@@ -168,6 +171,11 @@ export interface Query {
   orderBy: OrderSpec[] | null;
   consumer: Consumer;
   follow: Follow | null;
+  /** `frontier P` (since 0.20) — legal only when the body has a `follow`: a
+   * seed for which `P` holds (read in the seed's own scope, `^` the enclosing
+   * scope, like `where`) is a frontier (`$stop == "frontier"`, not expanded).
+   * `null` without one. */
+  frontier: Expr | null;
   /** `distinct` — dedup the result rows by their projected value (see OpNode). */
   distinct: boolean;
   /** `values` — scalar projection mode (see Subquery). */

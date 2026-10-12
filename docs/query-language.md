@@ -440,9 +440,17 @@ nested/correlated scopes:
   block** with the implicit `collect` (there is no options block any more):
   `follow children { depth 2 }`, `follow refs(before), ^docs { where ^path in
   list(after) }` — the latter walks `before` references forward and, backward,
-  every document whose `after` names the frontier row. Two clauses belong to a
-  destination block alone, after its `where`: `frontier <pred>` and `depth
-  <n>` (`follow out_links collect { from dst where layer == "canon" depth 2 }`).
+  every document whose `after` names the frontier row. Two clauses sit after a
+  destination block's `where`: `frontier <pred>` and `depth <n>` (`follow
+  out_links collect { from dst where layer == "canon" depth 2 }`); `depth` is a
+  destination block's alone. **The body that carries the `follow` may write
+  `frontier <pred>` too**, after its `where` and before `follow`, and it applies
+  to the **seeds** — read in the seed's scope like the body's `where`: `from docs
+  where type == "process" frontier !verified follow out_links collect { from dst
+  }` keeps the unverified process in the result (`$stop == "frontier"`) without
+  expanding it, while the destination's `frontier` governs the occurrences it
+  reaches; neither applies to the other's rows. Without a `follow`, a body-level
+  `frontier` is a parse error.
   The former `by <expr>` option is gone: identity is `$key` (a store row's id),
   and a block may project `$key: <expr>` to rekey the rows it yields (`follow
   out_links collect { $key: type from dst }`; in a destination block `$key:` is

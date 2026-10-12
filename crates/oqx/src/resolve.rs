@@ -55,6 +55,9 @@ pub fn resolve_aliases(q: &Query) -> Result<Query> {
         order_by: resolve_order(q.order_by.as_deref())?,
         consumer: q.consumer,
         follow: q.follow.as_ref().map(resolve_follow).transpose()?,
+        // A body's `frontier` (0.20) is not rewritten against the select: it
+        // reads the seed row, not a projected record (like `order by`).
+        frontier: q.frontier.as_ref().map(resolve_expr).transpose()?,
         distinct: q.distinct,
         values: q.values,
         limit: q.limit.as_ref().map(resolve_expr).transpose()?,

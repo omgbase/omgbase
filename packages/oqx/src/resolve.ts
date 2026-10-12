@@ -61,18 +61,17 @@ function resolveBody<T extends Query | Subquery>(node: T, fail: Fail): T {
   });
   const limit = node.limit === null ? null : resolveExpr(node.limit, fail);
   const offset = node.offset === null ? null : resolveExpr(node.offset, fail);
-  // A destination block's `frontier` (0.20) is not rewritten against the
-  // block's select: it reads the occurrence, not a projected record.
-  const frontier = node.kind === "subquery" && node.frontier !== null ? resolveExpr(node.frontier, fail) : null;
+  // `frontier` (0.20) is not rewritten against the select: a destination
+  // block's reads the occurrence, a body's reads the seed row — not a projected
+  // record (like `order by`).
+  const frontier = node.frontier === null ? null : resolveExpr(node.frontier, fail);
   const source = node.kind === "query" ? resolveExpr(node.source, fail) : null;
   const same = where2 === node.where && select === node.select && follow === node.follow && from === node.from
-    && orderBy === node.orderBy && limit === node.limit && offset === node.offset
-    && (node.kind !== "query" || source === node.source)
-    && (node.kind !== "subquery" || frontier === node.frontier);
+    && orderBy === node.orderBy && limit === node.limit && offset === node.offset && frontier === node.frontier
+    && (node.kind !== "query" || source === node.source);
   if (same) return node;
-  const out = { ...node, where: where2, select, follow, from, orderBy, limit, offset };
+  const out = { ...node, where: where2, select, follow, frontier, from, orderBy, limit, offset };
   if (node.kind === "query") (out as Query).source = source!;
-  else (out as Subquery).frontier = frontier;
   return out;
 }
 
