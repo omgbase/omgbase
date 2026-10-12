@@ -2665,7 +2665,7 @@
             "actor": null,
             "reason": "create new.md",
             "checkpoint_id": null,
-            "ops": null
+            "ops": "{\"effects\":[{\"markdown\":\"# New\\n\\nHello.\",\"op\":\"create\",\"path\":\"new.md\"}],\"plan_id\":\"994cb0c3231715d030cf1c5a9a92656f64e6f2fdb621b0fe180ba441e53f211f\",\"v\":1}"
           }
         ],
         "revisions": [
@@ -2685,18 +2685,18 @@
             "commit_id": "c_0",
             "block_id": "b_0",
             "kind": "inserted",
-            "confidence": null,
-            "reason": null,
-            "matcher_v": "m2.3",
+            "confidence": 1,
+            "reason": "api",
+            "matcher_v": null,
             "detail": {}
           },
           {
             "commit_id": "c_0",
             "block_id": "b_1",
             "kind": "inserted",
-            "confidence": null,
-            "reason": null,
-            "matcher_v": "m2.3",
+            "confidence": 1,
+            "reason": "api",
+            "matcher_v": null,
             "detail": {}
           }
         ],
@@ -2816,7 +2816,7 @@
             "actor": null,
             "reason": "set_meta a.md",
             "checkpoint_id": null,
-            "ops": null
+            "ops": "{\"effects\":[{\"field\":\"frontmatter.status\",\"op\":\"set\",\"target\":{\"id\":\"d_0\",\"kind\":\"document\",\"path\":\"a.md\"},\"value\":\"done\"}],\"plan_id\":\"941732be6716389f0da72c45ea57d8facf04fde0f0a8bc85f26e585e093fd3d7\",\"v\":1}"
           }
         ],
         "revisions": [
@@ -2854,10 +2854,10 @@
           {
             "commit_id": "c_1",
             "block_id": "b_0",
-            "kind": "same",
+            "kind": "edited",
             "confidence": 1,
-            "reason": "exact_hash",
-            "matcher_v": "m2.3",
+            "reason": "api",
+            "matcher_v": null,
             "detail": {}
           }
         ],
@@ -2989,7 +2989,7 @@
             "actor": null,
             "reason": "delete a.md",
             "checkpoint_id": null,
-            "ops": null
+            "ops": "{\"effects\":[{\"op\":\"remove\",\"target\":{\"id\":\"d_0\",\"kind\":\"document\",\"path\":\"a.md\"}}],\"plan_id\":\"365fab34ffd1038c4ca3602cebd1198b045491d23a4c346dd868999b5b2f1741\",\"v\":1}"
           }
         ],
         "revisions": [
@@ -3161,7 +3161,7 @@
             "actor": null,
             "reason": "delete a.md",
             "checkpoint_id": null,
-            "ops": null
+            "ops": "{\"effects\":[{\"op\":\"remove\",\"target\":{\"id\":\"d_0\",\"kind\":\"document\",\"path\":\"a.md\"}}],\"plan_id\":\"365fab34ffd1038c4ca3602cebd1198b045491d23a4c346dd868999b5b2f1741\",\"v\":1}"
           }
         ],
         "revisions": [
@@ -3341,7 +3341,7 @@
             "actor": null,
             "reason": "delete a.md",
             "checkpoint_id": null,
-            "ops": null
+            "ops": "{\"effects\":[{\"op\":\"remove\",\"target\":{\"id\":\"d_0\",\"kind\":\"document\",\"path\":\"a.md\"}}],\"plan_id\":\"365fab34ffd1038c4ca3602cebd1198b045491d23a4c346dd868999b5b2f1741\",\"v\":1}"
           }
         ],
         "revisions": [
@@ -3592,7 +3592,7 @@
             "actor": null,
             "reason": "move a.md -> moved/a.md",
             "checkpoint_id": null,
-            "ops": null
+            "ops": "{\"effects\":[{\"op\":\"move\",\"retarget_inbound\":true,\"target\":{\"id\":\"d_0\",\"kind\":\"document\",\"path\":\"a.md\"},\"to\":\"moved/a.md\"}],\"plan_id\":\"ef771c9c1596c5a0928fdffb74bb87c4b2528c7f149676f5e53a131d2605b585\",\"v\":1}"
           }
         ],
         "revisions": [
@@ -3814,7 +3814,7 @@
             "actor": null,
             "reason": "move a.md -> moved/a.md",
             "checkpoint_id": null,
-            "ops": null
+            "ops": "{\"effects\":[{\"op\":\"move\",\"retarget_inbound\":true,\"target\":{\"id\":\"d_0\",\"kind\":\"document\",\"path\":\"a.md\"},\"to\":\"moved/a.md\"}],\"plan_id\":\"0c2895413001f35736579cb969530a7bc0a80e71964def01da78ceb396a7f141\",\"v\":1}"
           }
         ],
         "revisions": [
@@ -4026,7 +4026,7 @@
             "actor": null,
             "reason": "move a.md -> moved/a.md",
             "checkpoint_id": null,
-            "ops": null
+            "ops": "{\"effects\":[{\"op\":\"move\",\"retarget_inbound\":true,\"target\":{\"id\":\"d_0\",\"kind\":\"document\",\"path\":\"a.md\"},\"to\":\"moved/a.md\"}],\"plan_id\":\"42fca1db75e80851b3aa34f9e4c134a21fd141c83d2957e905674c34e4723aad\",\"v\":1}"
           }
         ],
         "revisions": [

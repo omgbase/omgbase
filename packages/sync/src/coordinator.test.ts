@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { Store, ensureRepo, docsCreate, findDoc, NullDocStore, type SyncSource, type SourceCapabilities, type SourceEntry, type SourceItem, type WatchListener, type SourceWatch } from "@omgbase/core";
+import { Store, ensureRepo, applySugar, createEffects, findDoc, NullDocStore, type SyncSource, type SourceCapabilities, type SourceEntry, type SourceItem, type WatchListener, type SourceWatch } from "@omgbase/core";
 import { InProcessEngineClient } from "./engine-client.js";
 import { Coordinator } from "./coordinator.js";
 
@@ -93,7 +93,7 @@ describe("Coordinator", () => {
     await coord.syncIn();
 
     // engine-authored (import origin), headless: should be exported to the source.
-    docsCreate(store, { repoId, docStore: new NullDocStore() }, "authored.md", "# Authored\n", {});
+    applySugar(store, { repoId, docStore: new NullDocStore(), actor: "agent:test" }, createEffects("authored.md", "# Authored\n", {}));
 
     const out = await coord.syncOut();
     expect(out.written).toContain("authored.md");

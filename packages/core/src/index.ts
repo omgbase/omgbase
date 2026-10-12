@@ -141,19 +141,39 @@ export {
   type RetargetHit,
 } from "./mutate/macros.js";
 
-// Admin/maintenance (11 §5.9). Graph traversal is OQX `follow` now (see oqx/).
+// The document operations' shared pieces (spec/mutate §6); the operations themselves are the effect builders below.
+export { canonicalDocPath, composeFile, splitFrontmatter, planInboundRetarget } from "./mutate/docs.js";
+// The effect builders (spec/mutate §6/§10, 3.0; spec/surface §4 "Sugar over effects", 4.0): one per operation,
+// shared by the MCP server, the `omg` verbs and the fixture runner, plus `applySugar` and the Receipt adapters.
 export {
-  docsCreate,
-  docsMove,
-  docsDelete,
-  docsSetMeta,
-  canonicalDocPath,
-  planInboundRetarget,
-  type DocOpContext,
-  type DocOpResult,
-  type DocMoveOptions,
-  type DocMoveResult,
-} from "./mutate/docs.js";
+  createEffects,
+  moveDocEffects,
+  deleteDocEffects,
+  setMetaEffects,
+  updateContentEffects,
+  insertEffects,
+  updateBlockEffects,
+  moveBlocksEffects,
+  removeBlocksEffects,
+  splitEffects,
+  mergeEffects,
+  checkEffects,
+  nodeSetEffects,
+  appendEffects,
+  docsAppendEffects,
+  retargetEffects,
+  guardOf,
+  requireAbsentPath,
+  applySugar,
+  createdDoc,
+  docOutcome,
+  moveLinks,
+  type Sugar,
+  type SugarDoc,
+  type SugarRequest,
+  type DocOpOutcome,
+  type MoveLinks,
+} from "./mutate/sugar.js";
 // The Effect layer (ADR-021, spec/mutate §11): plan / execute / apply { effects } and the plan's shapes.
 export {
   planEffects,
@@ -161,9 +181,7 @@ export {
   executeByDigest,
   applyEffects,
   applyEffectsDetailed,
-  realizeNewIds,
   substituteSymbols,
-  legacyApplyResult,
   admitPlan,
   canonicalJson,
   planDigest,

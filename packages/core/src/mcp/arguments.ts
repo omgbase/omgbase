@@ -14,6 +14,7 @@ import { EngineError } from "./errors.js";
 // arguments"):
 //   unknown argument `q`; did you mean `query`? (blocks_search takes limit?, q, repo?)
 //   `doc` is no longer an argument — pass `id` or `path` (docs_read takes …)
+//   `dry_run` is no longer an argument — preview with `plan { effects: [...] }` (blocks_insert takes …)
 //   `query` is required (query takes …)
 //   `limit` must be an integer (query takes …)
 //   pass id or path (docs_read takes …)                     — a locator tool called with neither
@@ -81,8 +82,11 @@ function issueMessage(key: string, schema: z.ZodTypeAny, issues: readonly { code
 /**
  * What to say about an argument name the tool does not take. The names 3.0
  * retired are called out with their replacement (`doc` → `id`/`path`,
- * `block`/`node` → `id`, `heading` → `section`,
- * `markdown` → `text`) when the tool has the replacement; otherwise the
+ * `block`/`node` → `id`, `heading` → `section`, `markdown` → `text`) when the
+ * tool has the replacement, and so are the inputs 4.0 retired (spec/surface
+ * §4; ADR-021's retirement release): `ops` on a tool that takes `effects`
+ * (the kernel ops are a library/fixture contract), `dry_run` on any tool (the
+ * preview is `plan`), `attrs` on a tool that takes `checked`. Otherwise the
  * nearest valid name (Levenshtein ≤ 2, or one a prefix of the other).
  */
 export function unknownArgumentMessage(key: string, shape: ArgShape): string {
@@ -92,9 +96,17 @@ export function unknownArgumentMessage(key: string, shape: ArgShape): string {
   if ((key === "block" || key === "node") && has("id")) return retired("`id`");
   if (key === "heading" && has("section")) return retired("`section` (the heading's text), or blocks_append with the heading's `id`");
   if (key === "markdown" && has("text")) return retired("`text`");
+  if (key === "ops" && has("effects")) return RETIRED_OPS;
+  if (key === "dry_run") return RETIRED_DRY_RUN;
+  if (key === "attrs" && has("checked")) return RETIRED_ATTRS;
   const near = nearest(key, Object.keys(shape));
   return near === null ? `unknown argument \`${key}\`` : `unknown argument \`${key}\`; did you mean \`${near}\`?`;
 }
+
+/** The retired-input messages of surface 4.0 (spec/surface §4), without the `(tool takes …)` tail. */
+export const RETIRED_OPS = "`ops` is no longer an argument — `apply` takes `effects` (the kernel ops are a library/fixture contract since spec/mutate 3.0)";
+export const RETIRED_DRY_RUN = "`dry_run` is no longer an argument — preview with `plan { effects: [...] }`";
+export const RETIRED_ATTRS = "`attrs` is no longer an argument — pass `checked`";
 
 /** The nearest candidate: Levenshtein distance ≤ 2, or a prefix relation either way; ties → the bytewise-first. */
 export function nearest(name: string, candidates: readonly string[]): string | null {

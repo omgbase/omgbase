@@ -7,7 +7,7 @@ import { ensureRepo } from "../core/attach.js";
 import { processCheckpoint } from "../sync/checkpoint.js";
 import { historyNode, diffBlocks, diffUnified, unifiedDiff, myersScript, diffLines, changesSince, docHistory } from "./history.js";
 import { oqxRun } from "../oqx/run.js";
-import { docsDelete } from "../mutate/docs.js";
+import { docsDelete } from "../mutate/doc-ops.test.helpers.js";
 
 let dir: string;
 let store: Store;

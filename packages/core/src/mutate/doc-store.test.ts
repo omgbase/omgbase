@@ -5,7 +5,7 @@ import { ingestFile } from "../core/ingest.js";
 import { findDoc } from "../core/read/reader.js";
 import { docsRead } from "../core/read/document.js";
 import { apply } from "./apply.js";
-import { docsCreate, docsSetMeta, docsMove, docsDelete } from "./docs.js";
+import { docsCreate, docsSetMeta, docsMove, docsDelete } from "./doc-ops.test.helpers.js";
 import { NullDocStore } from "./doc-store.js";
 
 // The DocStore seam (ADR-014 §5): a headless, DB-canonical repo has no working

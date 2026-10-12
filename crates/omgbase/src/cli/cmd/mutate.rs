@@ -1,17 +1,23 @@
-//! The block mutators (`spec/cli` §6): `apply` (the primitive — a kernel
-//! changeset `{ ops }` or, since ADR-021, a list of effects `{ effects }`
-//! planned and executed in one transaction), `execute` (a frozen plan),
-//! `insert`, `update` (a `b_` target is a block update with CAS; anything
-//! else the whole-document update), `edit`, `move`, `rm` (blocks, or
-//! `--doc`), `done`, `append`, `split`, `merge`. Each is a thin client: it
-//! parses argv, reads its content source (`-m` / `-f` / `-` / stdin),
-//! resolves its refs to block ids, and hands the catalog tool the same
-//! arguments the MCP server would receive; the result is rendered once here
-//! — the commit confirmation, the `--dry-run` diffs (§3.6), or the `--json`
-//! document.
+//! The block mutators (`spec/cli` §6, cli 4.0): `apply` (the primitive — a
+//! list of effects `{ effects }`, ADR-021, planned and executed in one
+//! transaction), `execute` (a frozen plan), `insert`, `update` (a `b_` target
+//! is a block update with CAS; anything else the whole-document update),
+//! `edit`, `move`, `rm` (blocks, or `--doc`), `done`, `append`, `split`,
+//! `merge`. Each is a thin client: it parses argv, reads its content source
+//! (`-m` / `-f` / `-` / stdin), resolves its refs to block ids, and hands the
+//! catalog tool the same arguments the MCP server would receive; the result
+//! — the Receipt (`spec/surface` §4, 4.0) — is rendered once here: the commit
+//! confirmation with the ids the plan's preview names (§4), or the `--json`
+//! document. The global `--dry-run` is a **plan** (§3.6): locally the tool's
+//! preview through the surface's seam, remotely the `plan` tool over the
+//! effects the verb builds with the shared builders (`omgbase_store::sugar`)
+//! from its refs as given — nothing written, no id minted.
 
 use std::process::{Command, Stdio};
 
+use omgbase_store::mutate_kernel::At;
+use omgbase_store::mutate_kernel::effects::{EffectExpect, Target as EffectTarget};
+use omgbase_store::{PublicEffect, is_id_ref, sugar};
 use omgbase_surface::history::unified_diff;
 use omgbase_surface::read::{ResolvedRef, resolve_ref};
 use rusqlite::{OptionalExtension, params};
@@ -195,20 +201,56 @@ pub fn parse_at(at: Option<&str>) -> Result<Json> {
     )))
 }
 
-/// The `ApplyResult` of a tool result: the sugar tools decorate it (`id`/`ids`
-/// on `blocks_update`, `hits`/`pairs`/`applied` on `links_retarget`); the CLI
-/// prints the bare result the reference's library returns.
-pub fn apply_result_of(v: Json) -> Json {
-    // Rebuilt rather than `remove`d: under `preserve_order` a removal swaps
-    // the last entry into the hole, and the key order is the document.
-    match v {
-        Json::Object(m) => Json::Object(
-            m.into_iter()
-                .filter(|(k, _)| !matches!(k.as_str(), "id" | "ids" | "hits" | "pairs" | "applied"))
-                .collect(),
-        ),
-        other => other,
+/// The tools' `at` argument as the effect placement (for a remote `plan`).
+pub fn at_of(at: &Json) -> At {
+    match at {
+        Json::String(s) if s == "start" => At::Start,
+        Json::Object(o) if o.get("before").is_some() => At::Before(str_of(at, "before")),
+        Json::Object(o) if o.get("after").is_some() => At::After(str_of(at, "after")),
+        _ => At::End,
     }
+}
+
+/// A ref as an effect target for a remote `plan` (§3.6): a `b_` id is the
+/// block, a `d_` id the document, anything else a document path — the engine
+/// resolves (the reference's `targetOf`).
+pub fn target_of(r: &str) -> EffectTarget {
+    if is_id_ref(r, "b") {
+        return EffectTarget::Block { id: r.to_owned() };
+    }
+    if is_id_ref(r, "d") {
+        return EffectTarget::Document {
+            id: Some(r.to_owned()),
+            path: None,
+        };
+    }
+    EffectTarget::Document {
+        id: None,
+        path: Some(r.to_owned()),
+    }
+}
+
+/// The builders' effects as the `plan` tool's `effects` argument.
+pub fn effects_json(effects: &[PublicEffect]) -> Json {
+    Json::Array(effects.iter().map(PublicEffect::to_json).collect())
+}
+
+/// `--expect <content_hash>` as an effect guard.
+pub fn content_guard(hash: Option<&str>) -> Option<EffectExpect> {
+    hash.map(|h| EffectExpect {
+        content_hash: Some(h.to_owned()),
+        parent_children_hash: None,
+        revision: None,
+    })
+}
+
+/// `--expect <parent_children_hash>` as an effect guard.
+pub fn parent_guard(hash: Option<&str>) -> Option<EffectExpect> {
+    hash.map(|h| EffectExpect {
+        content_hash: None,
+        parent_children_hash: Some(h.to_owned()),
+        revision: None,
+    })
 }
 
 /// The lines of `unified_diff(before, after)` (§3.6; an empty diff is one empty line).
@@ -244,81 +286,44 @@ pub fn render_diffs(cli: &Cli, diffs: Option<&Json>) {
     }
 }
 
-/// Render an `ApplyResult` (§4): the `--json` document in a machine mode, the
-/// diffs on a dry run, else the commit confirmation and the ids.
-pub fn render_apply(cli: &mut Cli, result: Json) -> Result<i32> {
-    cli.capture(&result);
-    if let Some(code) = machine_out(cli, &result, None, None) {
-        return code;
-    }
-    if cli.flags.dry_run {
-        render_diffs(cli, result.get("diffs"));
-        return Ok(EXIT_OK);
-    }
-    let n = result
-        .get("revisions")
-        .and_then(Json::as_array)
-        .map_or(0, Vec::len);
-    cli.io.err(&cli.style.dim(&format!(
-        "  {} committed · {n} document{} touched",
-        cli.style.ok(cli.style.glyphs().ok),
-        if n == 1 { "" } else { "s" }
-    )));
-    for id in result_ids(&result) {
-        cli.io.out(&id);
-    }
-    Ok(EXIT_OK)
-}
-
-/// `results[*].ids` flattened, duplicates kept.
-fn result_ids(result: &Json) -> Vec<String> {
-    result
-        .get("results")
-        .and_then(Json::as_array)
-        .into_iter()
-        .flatten()
-        .filter_map(|r| r.get("ids").and_then(Json::as_array))
-        .flatten()
-        .filter_map(Json::as_str)
-        .map(str::to_owned)
-        .collect()
-}
-
-/// Run one changeset-producing tool with the actor, `dry_run` threaded from
-/// the global flag, and render its `ApplyResult`. A sourceless repo is the
-/// tool's `repo_not_found` (`repo has no filesystem source; mutation
-/// disabled`, `sync::sourceless`), locally and remotely alike. Remotely
-/// (§2.3) the tool's result is rendered as it came — the reference's
-/// `runOpsRemote` prints the decorated document (`id`/`ids` on
-/// `blocks_update`) verbatim in `--json`, where the local path prints the
-/// bare `ApplyResult`.
+/// Run one sugar tool with the actor and render the outcome (§4): the
+/// Receipt confirmation with the ids the plan's preview names, or the
+/// `--json` document as the tool returned it. With the global `--dry-run`
+/// the verb's preview is a plan (§3.6): locally the tool's own
+/// ([`Cli::preview`]), remotely the `plan` tool over `effects` — the effects
+/// the verb builds from its refs as given, computed only then. A sourceless
+/// repo is the tool's `repo_not_found` (`repo has no filesystem source;
+/// mutation disabled`, `sync::sourceless`), locally and remotely alike.
 pub fn run_tool(
     cli: &mut Cli,
     tool: &str,
-    mut args: Map<String, Json>,
+    args: Map<String, Json>,
     actor: Option<&str>,
+    effects: impl FnOnce(&mut Cli) -> Result<Vec<PublicEffect>>,
 ) -> Result<i32> {
     set_actor(cli, actor)?;
     if cli.flags.dry_run {
-        args.insert("dry_run".to_owned(), json!(true));
+        let effects = if cli.remote_mode() {
+            effects_json(&effects(cli)?)
+        } else {
+            Json::Null
+        };
+        let plan = cli.preview(tool, Json::Object(args), effects)?;
+        return render_plan(cli, plan);
     }
-    let result = cli.call(tool, Json::Object(args))?;
-    if cli.remote_mode() {
-        return render_apply(cli, result);
-    }
-    render_apply(cli, apply_result_of(result))
+    let (result, plan) = cli.call_with_plan(tool, Json::Object(args))?;
+    render_receipt(cli, result, plan.as_ref())
 }
 
 const ACTOR: Opt = Opt::value("actor");
 
 // ---- apply ----------------------------------------------------------------------------
 
-/// `apply -f`: a changeset `{ ops: [...] }` (the six-op kernel) or a list of
-/// effects `{ effects: [...] }` (`spec/mutate` §11; planned + executed in one
-/// transaction by the `apply` tool), exactly one of the two. With `ops` the
-/// legacy `ApplyResult` is rendered as ever; with `effects` a dry run prints
-/// the Plan (`--json`) or its preview's diffs, a commit the Receipt (`--json`)
-/// or the confirmation with the ids the plan minted (`new_ids`, in order).
+/// `apply -f`: a changeset `{ effects: [...] }` (`spec/mutate` §11; planned
+/// and executed in one transaction by the `apply` tool). A dry run prints the
+/// Plan (`--json`) or its preview's diffs, a commit the Receipt (`--json`)
+/// or the confirmation with the ids the plan names. The kernel changeset
+/// `{ ops }` of 3.x is refused by name (§6 `apply`, 4.0).
 pub fn apply(cli: &mut Cli, args: &[String]) -> Result<i32> {
     if wants_help(args) {
         return render_help_for(cli, "apply");
@@ -333,55 +338,38 @@ pub fn apply(cli: &mut Cli, args: &[String]) -> Result<i32> {
     };
     let parsed: Json = serde_json::from_str(&raw)
         .map_err(|e| CliError::usage(format!("changeset is not JSON: {e}")))?;
-    // Exactly one input (`spec/surface` §4 `apply`): the effects, or the
-    // legacy kernel ops — by key, as the reference reads them.
-    if parsed.get("ops").is_some() && parsed.get("effects").is_some() {
+    if parsed.get("ops").is_some() {
         return Err(CliError::usage(
-            "changeset must have exactly one of `ops` or `effects`",
+            "`ops` is no longer an input — apply takes `effects` (the kernel ops are a library/fixture contract since spec/mutate 3.0)",
         ));
     }
-    if let Some(effects) = parsed.get("effects") {
-        let Some(effects) = effects.as_array() else {
-            return Err(CliError::usage("changeset `effects` must be an array"));
-        };
-        if effects.is_empty() {
-            cli.io.err(&cli.style.dim("  nothing to do"));
-            return Ok(EXIT_OK);
-        }
-        let mut m = Map::new();
-        m.insert("effects".to_owned(), Json::Array(effects.clone()));
-        if let Some(r) = a.value("reason") {
-            m.insert("reason".to_owned(), json!(r));
-        }
-        set_actor(cli, a.value("actor"))?;
-        if cli.flags.dry_run {
-            m.insert("dry_run".to_owned(), json!(true));
-        }
-        let (plan, receipt) = cli.call_apply_effects(Json::Object(m))?;
-        return match receipt {
-            None => render_plan(cli, plan),
-            Some(receipt) => render_receipt(cli, receipt, Some(&plan)),
-        };
-    }
-    // `mutate::apply-not-a-changeset` pins the wording.
-    let Some(ops) = parsed.get("ops").and_then(Json::as_array) else {
-        return Err(CliError::usage("changeset must have an `ops` array"));
+    let Some(effects) = parsed.get("effects") else {
+        return Err(CliError::usage("changeset must have an `effects` array"));
     };
-    if ops.is_empty() {
+    let Some(effects) = effects.as_array() else {
+        return Err(CliError::usage("changeset `effects` must be an array"));
+    };
+    if effects.is_empty() {
         cli.io.err(&cli.style.dim("  nothing to do"));
         return Ok(EXIT_OK);
     }
     let mut m = Map::new();
-    m.insert("ops".to_owned(), Json::Array(ops.clone()));
+    m.insert("effects".to_owned(), Json::Array(effects.clone()));
     if let Some(r) = a.value("reason") {
         m.insert("reason".to_owned(), json!(r));
     }
-    run_tool(cli, "apply", m, a.value("actor"))
+    set_actor(cli, a.value("actor"))?;
+    if cli.flags.dry_run {
+        let plan = cli.preview("apply", Json::Object(m), Json::Array(effects.clone()))?;
+        return render_plan(cli, plan);
+    }
+    let (receipt, plan) = cli.call_with_plan("apply", Json::Object(m))?;
+    render_receipt(cli, receipt, plan.as_ref())
 }
 
 /// A Plan, dry-run style: `--json` the Plan verbatim (what `execute` takes
 /// back); human the §3.6 note and the per-file diffs of its preview.
-fn render_plan(cli: &mut Cli, plan: Json) -> Result<i32> {
+pub fn render_plan(cli: &mut Cli, plan: Json) -> Result<i32> {
     cli.capture(&plan);
     if let Some(code) = machine_out(cli, &plan, None, None) {
         return code;
@@ -390,7 +378,8 @@ fn render_plan(cli: &mut Cli, plan: Json) -> Result<i32> {
     Ok(EXIT_OK)
 }
 
-/// A Receipt: `--json` verbatim; human the commit confirmation of §4 (one
+/// A Receipt (the tool's result verbatim — `links_retarget` adds its `hits`
+/// and `pairs`): `--json` as it came; human the commit confirmation of §4 (one
 /// revision per touched document) and, on stdout, the ids the write names —
 /// the plan's `preview.results[].ids` with every `$new.n` realized from
 /// `new_ids` when the plan is at hand with its preview (a local `apply`, any
@@ -398,8 +387,9 @@ fn render_plan(cli: &mut Cli, plan: Json) -> Result<i32> {
 /// without `preview`, a remote `apply`) every id the plan minted, the
 /// `new_ids` values in order — which includes the discarded mints of a
 /// re-parse (`spec/mutate` §10), ids that name no row.
-fn render_receipt(cli: &mut Cli, receipt: Json, plan: Option<&Json>) -> Result<i32> {
-    cli.capture(&receipt);
+pub fn render_receipt(cli: &mut Cli, receipt: Json, plan: Option<&Json>) -> Result<i32> {
+    let ids = receipt_ids(&receipt, plan);
+    capture_receipt(cli, &receipt, &ids);
     if let Some(code) = machine_out(cli, &receipt, None, None) {
         return code;
     }
@@ -412,10 +402,20 @@ fn render_receipt(cli: &mut Cli, receipt: Json, plan: Option<&Json>) -> Result<i
         cli.style.ok(cli.style.glyphs().ok),
         if n == 1 { "" } else { "s" }
     )));
-    for id in receipt_ids(&receipt, plan) {
+    for id in ids {
         cli.io.out(&id);
     }
     Ok(EXIT_OK)
+}
+
+/// The shell's frame for a write (`spec/cli` §7): the Receipt with the ids
+/// the write names as `ids` (the reference captures `{ ...receipt, ids }`).
+fn capture_receipt(cli: &mut Cli, receipt: &Json, ids: &[String]) {
+    let mut framed = receipt.clone();
+    if let Some(o) = framed.as_object_mut() {
+        o.insert("ids".to_owned(), json!(ids));
+    }
+    cli.capture(&framed);
 }
 
 /// See [`render_receipt`]: the preview's ids realized, else `new_ids` values.
@@ -511,11 +511,19 @@ pub fn insert(cli: &mut Cli, args: &[String]) -> Result<i32> {
     let mut m = Map::new();
     m.insert("to".to_owned(), json!(parent));
     m.insert("markdown".to_owned(), json!(markdown));
-    m.insert("at".to_owned(), at);
+    m.insert("at".to_owned(), at.clone());
     if let Some(e) = a.value("expect") {
         m.insert("expect".to_owned(), json!({ "parent_children_hash": e }));
     }
-    run_tool(cli, "blocks_insert", m, a.value("actor"))
+    let expect = parent_guard(a.value("expect"));
+    run_tool(cli, "blocks_insert", m, a.value("actor"), move |_| {
+        Ok(sugar::insert(
+            target_of(&parent),
+            at_of(&at),
+            &markdown,
+            expect,
+        ))
+    })
 }
 
 // ---- update (block or document) -------------------------------------------------------
@@ -562,7 +570,10 @@ fn update_block(cli: &mut Cli, args: &[String]) -> Result<i32> {
             );
         }
     }
-    run_tool(cli, "blocks_update", m, a.value("actor"))
+    let expect = content_guard(a.value("expect"));
+    run_tool(cli, "blocks_update", m, a.value("actor"), move |_| {
+        Ok(sugar::update_block(&block, Some(&markdown), None, expect))
+    })
 }
 
 fn update_doc(cli: &mut Cli, args: &[String]) -> Result<i32> {
@@ -639,18 +650,21 @@ fn update_doc(cli: &mut Cli, args: &[String]) -> Result<i32> {
     if let Some(r) = a.value("reason") {
         m.insert("reason".to_owned(), json!(r));
     }
-    let (plan, receipt) = cli.call_apply_effects(Json::Object(m))?;
-    let receipt = receipt.ok_or_else(|| {
-        CliError::usage("update: the engine returned a plan where a receipt was expected")
-    })?;
-    render_update_receipt(cli, receipt, Some(&plan))
+    let (receipt, plan) = cli.call_with_plan("apply", Json::Object(m))?;
+    render_update_receipt(cli, receipt, plan.as_ref())
 }
 
 /// `update <doc>`'s commit: the Receipt (`--json` verbatim), the §4
 /// confirmation, and every id the write names ONCE each (a block appears in
 /// several ops' results — an update then a retile of the same block).
 fn render_update_receipt(cli: &mut Cli, receipt: Json, plan: Option<&Json>) -> Result<i32> {
-    cli.capture(&receipt);
+    let mut ids: Vec<String> = Vec::new();
+    for id in receipt_ids(&receipt, plan) {
+        if !ids.contains(&id) {
+            ids.push(id);
+        }
+    }
+    capture_receipt(cli, &receipt, &ids);
     if let Some(code) = machine_out(cli, &receipt, None, None) {
         return code;
     }
@@ -663,12 +677,8 @@ fn render_update_receipt(cli: &mut Cli, receipt: Json, plan: Option<&Json>) -> R
         cli.style.ok(cli.style.glyphs().ok),
         if n == 1 { "" } else { "s" }
     )));
-    let mut seen: Vec<String> = Vec::new();
-    for id in receipt_ids(&receipt, plan) {
-        if !seen.contains(&id) {
-            cli.io.out(&id);
-            seen.push(id);
-        }
+    for id in ids {
+        cli.io.out(&id);
     }
     Ok(EXIT_OK)
 }
@@ -875,13 +885,19 @@ pub fn edit(cli: &mut Cli, args: &[String]) -> Result<i32> {
         cli.io.err(&cli.style.dim("  no changes"));
         return Ok(EXIT_OK);
     };
+    // `set markdown` with the PRE-READ hash as `expect.content_hash` (the
+    // `blocks_update` builder; cli 4.0): a mid-edit change by someone else is
+    // a clean `stale_expectation`, never a lost write.
     let mut m = Map::new();
     m.insert("id".to_owned(), json!(block));
     m.insert("markdown".to_owned(), json!(after));
-    if let Some(h) = pre_hash {
+    if let Some(h) = &pre_hash {
         m.insert("expect".to_owned(), json!({ "content_hash": h }));
     }
-    run_tool(cli, "blocks_update", m, a.value("actor"))
+    let expect = content_guard(pre_hash.as_deref());
+    run_tool(cli, "blocks_update", m, a.value("actor"), move |_| {
+        Ok(sugar::update_block(&block, Some(&after), None, expect))
+    })
 }
 
 // ---- move -----------------------------------------------------------------------------
@@ -915,11 +931,19 @@ pub fn r#move(cli: &mut Cli, args: &[String]) -> Result<i32> {
     let mut m = Map::new();
     m.insert("blocks".to_owned(), json!(blocks));
     m.insert("to".to_owned(), json!(parent));
-    m.insert("at".to_owned(), at);
+    m.insert("at".to_owned(), at.clone());
     if let Some(e) = a.value("expect") {
         m.insert("expect".to_owned(), json!({ "parent_children_hash": e }));
     }
-    run_tool(cli, "blocks_move", m, a.value("actor"))
+    let expect = parent_guard(a.value("expect"));
+    run_tool(cli, "blocks_move", m, a.value("actor"), move |_| {
+        Ok(sugar::move_blocks(
+            blocks,
+            target_of(&parent),
+            at_of(&at),
+            expect,
+        ))
+    })
 }
 
 /// Every ref as the tool's `blocks[]` argument (see [`block_arg`]).
@@ -946,33 +970,14 @@ pub fn rm(cli: &mut Cli, args: &[String]) -> Result<i32> {
     let blocks = resolve_blocks(cli, &refs)?;
     let mut m = Map::new();
     m.insert("blocks".to_owned(), json!(blocks));
-    run_tool(cli, "blocks_remove", m, a.value("actor"))
+    run_tool(cli, "blocks_remove", m, a.value("actor"), move |_| {
+        Ok(sugar::remove_blocks(blocks))
+    })
 }
 
 /// `rm --doc` — `docs_delete`, rendered as a document operation (§4).
 fn rm_doc(cli: &mut Cli, doc: &str, actor: Option<&str>) -> Result<i32> {
-    set_actor(cli, actor)?;
-    let mut m = Map::new();
-    doc_locator(&mut m, doc);
-    if cli.flags.dry_run {
-        m.insert("dry_run".to_owned(), json!(true));
-    }
-    let res = cli.call("docs_delete", Json::Object(m))?;
-    cli.capture(&res);
-    if let Some(code) = machine_out(cli, &res, None, None) {
-        return code;
-    }
-    if cli.flags.dry_run {
-        render_diffs(cli, res.get("diffs"));
-        return Ok(EXIT_OK);
-    }
-    cli.io.err(&cli.style.dim(&format!(
-        "  {} deleted {}",
-        cli.style.ok(cli.style.glyphs().ok),
-        cli.style.accent(&str_of(&res, "path"))
-    )));
-    cli.io.out(&str_of(&res, "id"));
-    Ok(EXIT_OK)
+    super::docs::rm_doc(cli, doc, actor)
 }
 
 // ---- done -----------------------------------------------------------------------------
@@ -1001,10 +1006,13 @@ pub fn done(cli: &mut Cli, args: &[String]) -> Result<i32> {
     }
     let mut m = Map::new();
     m.insert("ids".to_owned(), json!(blocks));
-    if a.flag("undo") {
+    let checked = !a.flag("undo");
+    if !checked {
         m.insert("checked".to_owned(), json!(false));
     }
-    run_tool(cli, "blocks_check", m, a.value("actor"))
+    run_tool(cli, "blocks_check", m, a.value("actor"), move |_| {
+        Ok(sugar::check_blocks(&blocks, checked))
+    })
 }
 
 /// §9 Fixed: `done` addresses task blocks only — any other live type is
@@ -1053,7 +1061,20 @@ pub fn append(cli: &mut Cli, args: &[String]) -> Result<i32> {
     let mut m = Map::new();
     m.insert("id".to_owned(), json!(block));
     m.insert("text".to_owned(), json!(markdown));
-    run_tool(cli, "blocks_append", m, a.value("actor"))
+    // A remote dry run reads the kind first: a heading → its section, else
+    // the block as a container.
+    run_tool(cli, "blocks_append", m, a.value("actor"), move |cli| {
+        let read = cli.call(
+            "blocks_read",
+            json!({ "id": block, "resolution": "skeleton" }),
+        )?;
+        let into = if str_of(&read, "type") == "heading" {
+            EffectTarget::Section { heading_id: block }
+        } else {
+            EffectTarget::Block { id: block }
+        };
+        Ok(sugar::insert(into, At::End, &markdown, None))
+    })
 }
 
 // ---- split / merge --------------------------------------------------------------------
@@ -1084,7 +1105,15 @@ pub fn split(cli: &mut Cli, args: &[String]) -> Result<i32> {
     let mut m = Map::new();
     m.insert("id".to_owned(), json!(block));
     m.insert("at".to_owned(), json!(offsets));
-    run_tool(cli, "blocks_split", m, a.value("actor"))
+    run_tool(cli, "blocks_split", m, a.value("actor"), move |_| {
+        Ok(sugar::split_block(
+            &block,
+            offsets
+                .iter()
+                .map(|n| usize::try_from(*n).unwrap_or(usize::MAX))
+                .collect(),
+        ))
+    })
 }
 
 pub fn merge(cli: &mut Cli, args: &[String]) -> Result<i32> {
@@ -1102,13 +1131,15 @@ pub fn merge(cli: &mut Cli, args: &[String]) -> Result<i32> {
     if let Some(sep) = a.value("sep") {
         m.insert("separator".to_owned(), json!(sep));
     }
-    run_tool(cli, "blocks_merge", m, a.value("actor"))
+    let sep = a.value("sep").map(str::to_owned);
+    run_tool(cli, "blocks_merge", m, a.value("actor"), move |_| {
+        Ok(sugar::merge_blocks(blocks, sep.as_deref()))
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cli::output::js_json;
 
     fn v(a: &[&str]) -> Vec<String> {
         a.iter().map(|s| (*s).to_owned()).collect()
@@ -1170,13 +1201,25 @@ mod tests {
     }
 
     #[test]
-    fn strips_tool_decorations() {
-        let r = apply_result_of(
-            json!({ "id": "b_1", "ids": ["b_1"], "results": [], "revisions": [], "committed": true }),
+    fn refs_become_effect_targets_and_placements() {
+        assert_eq!(
+            target_of("b_1").to_json(),
+            json!({ "kind": "block", "id": "b_1" })
         );
         assert_eq!(
-            js_json(&r),
-            r#"{"results":[],"revisions":[],"committed":true}"#
+            target_of("d_1").to_json(),
+            json!({ "kind": "document", "id": "d_1" })
+        );
+        assert_eq!(
+            target_of("notes/a.md").to_json(),
+            json!({ "kind": "document", "path": "notes/a.md" })
+        );
+        assert_eq!(at_of(&json!("end")), At::End);
+        assert_eq!(at_of(&json!("start")), At::Start);
+        assert_eq!(at_of(&json!({ "after": "b_2" })), At::After("b_2".into()));
+        assert_eq!(
+            effects_json(&sugar::remove_blocks(vec!["b_1".into()])),
+            json!([{ "op": "remove", "targets": [{ "kind": "block", "id": "b_1" }] }])
         );
         assert_eq!(unified_diff_lines("a", "a"), vec![String::new()]);
     }

@@ -1011,9 +1011,10 @@ refused `stale_plan` after a `blocks_update`; `plan_mismatch`,
 `unsupported_plan_version`, the argument-shape errors). The migration (3.2)
 adds `write-sugar-over-effects`: the two pinned behaviour changes
 (`blocks_update { expect: {} }` succeeds, `blocks_check` with a repeated id
-is one write), the empty-list argument errors, and a dry-run `blocks_insert`
-followed by a committed one — the committed ids prove the dry run burned
-its ids (§9) through the sugar's realize shim. Batch 2 (3.3) adds one read to
+is one write), the empty-list argument errors, and a `plan` of a
+`blocks_insert` followed by the committed one — the committed ids prove the
+plan burned NOTHING (4.0; through 3.x the case ran the sugar's dry run and
+the ids proved it burned them, §9). Batch 2 (3.3) adds one read to
 `write-docs-set-meta-delete`: `blocks_history` of a block of the patched
 document, whose latest disposition is the known-id head write's
 `edited`/`api` (§9) — the one observable of the migrated `docs_set_meta`.
@@ -1024,9 +1025,15 @@ blocks (`$new.1`…) to the ids the replay minted in the plan's order, the
 blocks' biographies `inserted`/`api` — and rewrites `write-docs-update`
 (`plan { set content }` pinning `preview.identity`, then two `docs_update`
 Receipts, the no-change one `commit: null`); `write-effects-plan-execute`'s
-pinned `plan_id` is p2's. The dry-run cases (`write-apply`,
-`write-links-retarget-repair`, `write-sugar-over-effects`, `reads.json`'s
-sugar dry runs) move onto `plan` with the surface's removals. `apply`'s file-CAS holds in the writing
+pinned `plan_id` is p2's. With the surface's removals (4.0) `write-apply`
+calls `apply { effects }` and previews with `plan { remove }`,
+`write-links-retarget-repair` commits both link macros and previews the
+third pair with `plan { retarget }` (`preview.retarget`), `write-effects-
+stale-plan` pins the retired-name messages (`ops`, `dry_run`, `attrs`) beside
+the argument-shape ones, and `write-sugar-over-effects` plans its insert;
+`reads.json`'s sugar dry runs are `plan { effects }` calls (the failing ones
+stay the tools themselves — a failing write commits nothing) and its
+`arguments` case pins the retired names. `apply`'s file-CAS holds in the writing
 engine's working tree, so a write through one engine and a later read of
 `repos_status`/`sync_status` through the other exercises the sync tables
 (`file_stats`, checkpoints) both engines must maintain alike.
@@ -1230,12 +1237,15 @@ both and runs both harnesses.
 - **Fixed (1.1, with search 1.1) — `semantic()` on blocks read the first
   cache row for the block's content hash**, whatever its context; now the
   current-context row only (`spec/search` §8).
-- **Pinned — a `docs_move` dry run over a self-linking document overwrites
-  the old path's diff entry.** The preview is the two rename entries
-  (`old → ""`, `new ← bytes`) with the inbound-retarget preview assigned over
-  them; when the moved document links to its own path, the retarget preview
-  carries an entry for the *old* path (the doc has not moved yet in a dry
-  run) and replaces the emptied one. Both engines mirror it (1.3).
+- **Pinned (1.3), closed (4.0) — a `docs_move` dry run over a self-linking
+  document overwrote the old path's diff entry.** The preview was the two
+  rename entries (`old → ""`, `new ← bytes`) with the inbound-retarget
+  preview assigned over them; when the moved document linked to its own
+  path, the retarget preview carried an entry for the *old* path (the doc
+  had not moved yet in a dry run) and replaced the emptied one. Gone with
+  the tool's `dry_run`: the preview of a move is `plan { move }`, whose
+  `preview.diffs` puts the rewritten bytes at the NEW path (`spec/mutate`
+  §11.6).
 - **Pinned — `blocks_split` sends an empty `content_hash`** when the block
   has no live row, so the kernel raises `stale_expectation` with the current
   hash rather than `block_missing`. **Superseded (3.2):** the planner pins
@@ -1295,13 +1305,14 @@ both and runs both harnesses.
   takes…)"). Through 3.2 it re-emitted the frontmatter for nothing
   (normalizing its YAML); there is no effect for "touch", and the CLI's
   `meta` already refused it.
-- **Pinned (3.3) — a move's dry-run `diffs` keep the legacy key order and
-  the self-link reading.** The plan's preview lists the rewritten sources
-  before the rename pair and, when the moved document links to itself, puts
-  the rewritten bytes at the NEW path; the tool rebuilds `{ old: bytes → "",
-  new: "" → bytes, …sources }` and, for the self-link, `old: bytes →
-  rewritten` as the 1.3 entry above describes. The Rust port mirrors the
-  rebuild (`plan_inbound_retarget`'s `dangling`/`retargeted` too).
+- **Pinned (3.3), closed (4.0) — a move's dry-run `diffs` kept the legacy
+  key order and the self-link reading.** The tool rebuilt `{ old: bytes →
+  "", new: "" → bytes, …sources }` over the plan's preview (which lists the
+  rewritten sources first and puts a self-link's rewritten bytes at the new
+  path). Retired with `dry_run`: the Plan's own `preview.diffs` is the
+  preview. `docs_move` still computes `dangling`/`retargeted` before the
+  commit (`moveLinks` over `inbound_links_to` + `plan_inbound_retarget`,
+  pure, so equal to what the planner lowered); the Rust port mirrors it.
 
 ## Decisions
 

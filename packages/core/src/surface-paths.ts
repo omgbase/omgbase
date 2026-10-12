@@ -11,15 +11,14 @@
 // Row names (spec/surface §1.2, 3.0): a result that renders a document, block
 // or edge row spells it the way the query binding does — `id`, `path`,
 // `hash`, `raw`, `updated_at`, plain `doc_id`/`block_id` foreign keys. The
-// shapes other specs own under their own names — `spec/mutate`'s document
-// operation result `{ docId, path, … }`, `spec/store`'s observe outcome — are
-// re-shaped HERE too (`SurfaceDocOpResult`, `SurfaceObserveResult`, …).
+// shapes other specs own under their own names — `spec/store`'s observe
+// outcome, a move's dangling inbound links — are re-shaped HERE too
+// (`SurfaceObserveResult`, `surfaceInboundLink`, …).
 //
 // Both the MCP server and the `omg` verbs call these, so the two clients
 // cannot drift. Each function returns a new value; the input is not mutated.
 
 import type { ApplyResult } from "./mutate/apply.js";
-import type { DocOpResult, DocMoveResult } from "./mutate/docs.js";
 import type { RetargetHit } from "./mutate/macros.js";
 import type { Plan, Receipt } from "./mutate/plan.js";
 import type { InboundLink } from "./graph/inbound-links.js";
@@ -29,7 +28,7 @@ import type { TextSearchResult } from "./search/text.js";
 import type { ResolveHit } from "./search/resolve.js";
 import { referencePath, referenceKeyed } from "./core/paths.js";
 
-/** `spec/mutate` §4's result: `revisions[].path` and the dry-run `diffs` keys. */
+/** `spec/mutate` §4's kernel result (the library's `apply`; no tool returns it since 4.0): `revisions[].path` and the dry-run `diffs` keys. */
 export function surfaceApplyResult<T extends ApplyResult>(res: T): T {
   return {
     ...res,
@@ -38,21 +37,9 @@ export function surfaceApplyResult<T extends ApplyResult>(res: T): T {
   };
 }
 
-/** A document operation's result on the wire (spec/surface §4, 3.0): the
- *  library's `{ docId, path, … }` (`spec/mutate` §6, unchanged there) renamed
- *  to the document's row attributes `id`/`path`, the path rooted, the
- *  dry-run `diffs` re-keyed; every other key (`committed`, `deleted`, …) as is. */
-export type SurfaceDocOpResult<T extends DocOpResult> = Omit<T, "docId" | "path"> & { id: string; path: string };
-
-/** `docs_create` / `docs_delete` / `docs_set_meta`. */
-export function surfaceDocOpResult<T extends DocOpResult>(res: T): SurfaceDocOpResult<T> {
-  const { docId, path, ...rest } = res;
-  return { id: docId, path: referencePath(path), ...rest, ...(res.diffs ? { diffs: referenceKeyed(res.diffs) } : {}) };
-}
-
-/** An inbound link on the wire (`docs_move.dangling[]`): an edge row under the
- *  `edges` target's names (spec/surface §1.2) — `doc_id`, `path` (rooted),
- *  `block_id`, `target` (as authored), `anchor`, `field?`. */
+/** An inbound link on the wire (`docs_move.dangling[]`, `omg mv`): a link row
+ *  under the `links` target's names (spec/surface §1.2) — `doc_id`, `path`
+ *  (rooted), `block_id`, `target` (as authored), `anchor`, `field?`. */
 export interface SurfaceInboundLink {
   doc_id: string;
   path: string;
@@ -65,12 +52,6 @@ export interface SurfaceInboundLink {
 export function surfaceInboundLink(l: InboundLink): SurfaceInboundLink {
   const { path, ...rest } = l;
   return { doc_id: rest.doc_id, path: referencePath(path), block_id: rest.block_id, target: rest.target, anchor: rest.anchor, ...(rest.field !== undefined ? { field: rest.field } : {}) };
-}
-
-/** `docs_move`: the document-op fields plus each dangling link (its `target`
- *  stays as authored — that is what the link says). */
-export function surfaceDocMoveResult(res: DocMoveResult): Omit<SurfaceDocOpResult<DocMoveResult>, "dangling"> & { dangling: SurfaceInboundLink[] } {
-  return { ...surfaceDocOpResult(res), dangling: res.dangling.map(surfaceInboundLink) };
 }
 
 /** An observe outcome on the wire (spec/surface §4, 3.0): `spec/store` §5's

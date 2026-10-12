@@ -419,25 +419,39 @@ impl Cli {
         Ok(out?)
     }
 
-    /// `apply { effects }` keeping the plan (`spec/cli` 3.2): locally
-    /// [`Surface::apply_effects_with_plan`] under the writer lock, as
-    /// [`Cli::call`] runs the `apply` tool — `(plan, receipt?)`; remotely the
-    /// `apply` tool, which answers with one of the two (the Plan on a dry
-    /// run, else the Receipt — returned as `(plan, None)` / `(Null, Some)`).
-    pub fn call_apply_effects(&mut self, args: Json) -> Result<(Json, Option<Json>)> {
+    /// Run a write tool keeping the Plan it committed (`spec/cli` §4, the
+    /// Receipt confirmation): locally [`Surface::call_result_with_plan`]
+    /// under the writer lock, as [`Cli::call`] runs the tool — `(result,
+    /// plan?)`, the plan's `preview.results[].ids` realized through the
+    /// receipt's `new_ids` being the ids the confirmation prints; remotely
+    /// the tool alone (`(result, None)`: the engine keeps its plan, so the
+    /// confirmation prints every id the plan minted).
+    pub fn call_with_plan(&mut self, tool: &str, args: Json) -> Result<(Json, Option<Json>)> {
         if self.remote_mode() {
-            let dry = args.get("dry_run").and_then(Json::as_bool).unwrap_or(false);
-            let res = self.remote_call("apply", args)?;
-            return Ok(if dry {
-                (res, None)
-            } else {
-                (Json::Null, Some(res))
-            });
+            return Ok((self.remote_call(tool, args)?, None));
         }
         self.surface(false)?;
         let ws = self.workspace()?;
         let lock = WriterLock::acquire(&ws.omgbase_dir, self.seams.lock_options())?;
-        let out = self.surface(false)?.apply_effects_with_plan(&args);
+        let out = self.surface(false)?.call_result_with_plan(tool, &args);
+        drop(lock);
+        Ok(out?)
+    }
+
+    /// A write verb's `--dry-run` (`spec/cli` §3.6, cli 4.0): the Plan the
+    /// tool would commit — locally [`Surface::preview_call`] under the writer
+    /// lock (the tool's own ref resolution and checks run; nothing is written,
+    /// no id minted); remotely the `plan` tool over `effects`, the effects the
+    /// verb builds from its refs as given (an id names its row, anything else
+    /// a document path — the engine resolves), since no tool takes `dry_run`.
+    pub fn preview(&mut self, tool: &str, args: Json, effects: Json) -> Result<Json> {
+        if self.remote_mode() {
+            return self.remote_call("plan", json!({ "effects": effects }));
+        }
+        self.surface(false)?;
+        let ws = self.workspace()?;
+        let lock = WriterLock::acquire(&ws.omgbase_dir, self.seams.lock_options())?;
+        let out = self.surface(false)?.preview_call(tool, &args);
         drop(lock);
         Ok(out?)
     }

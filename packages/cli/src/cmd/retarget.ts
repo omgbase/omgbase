@@ -1,18 +1,22 @@
 import { parseArgs } from "node:util";
-import { linksRetarget, surfaceRetargetHits } from "@omgbase/core";
+import { applySugar, planEffects, retargetEffects, surfacePlan, surfaceReceipt, type Plan, type Receipt, type RetargetHit } from "@omgbase/core";
 import type { Command } from "../commands.js";
 import type { Cli } from "../context.js";
 import { CliUsageError, EXIT_OK, renderHelp } from "../output.js";
-import { runOps, unifiedDiffLines } from "./_mutate.js";
+import { defaultActor, renderPlan as renderPlanDiffs, renderReceipt, unifiedDiffLines } from "./_mutate.js";
 import { remoteCall } from "./_remote.js";
 
-// A `links_retarget` hit (spec/surface §4, 3.0): the block and its document under the row rule.
-interface RetargetHit { id: string; path?: string; oldRaw: string; newRaw: string; }
+// `omg retarget <from> <to> [--scope glob] [--apply]` (11 §5.6; cli 4.0) —
+// plan-by-default. Without --apply it is `plan { effects: [retarget] }` and
+// prints, per hit of the Plan's `preview.retarget[0].hits`, the unified diff of
+// the block's raw (the same diff every other preview prints — the 06 §4 "always
+// preview first" contract, encoded as the default); the retarget effect comes
+// from the shared `links_retarget` builder. --apply commits it (the Receipt +
+// `hits` + `pairs`, as the `links_retarget` tool returns) and honors the global
+// --dry-run as every mutator does (§3.6).
 
-// `omg retarget <from> <to> [--scope glob] [--apply]` (11 §5.6) — plan-by-default.
-// Without --apply it runs the dry-run and prints, per hit block, the unified
-// diff of its raw (the same diff every other preview prints — the 06 §4 "always
-// dry-run first" contract, encoded as the default). --apply commits.
+/** The retarget effect's preview (spec/mutate §11.4 `preview.retarget[0]`): the hits and per-pair counts. */
+type Retarget = { hits: RetargetHit[]; pairs: { from: string; to: string; hits: number }[] };
 
 async function runRetarget(cli: Cli, args: string[]): Promise<number> {
   const { values, positionals } = parseArgs({
@@ -35,34 +39,42 @@ async function runRetarget(cli: Cli, args: string[]): Promise<number> {
   const from = positionals[0];
   const to = positionals[1];
   if (!from || !to) throw new CliUsageError("retarget requires <from> and <to> targets");
+  const sugar = retargetEffects([{ from, to }], values.scope, "links_retarget");
 
-  // Remote: links_retarget resolves + (optionally) applies server-side.
+  // Remote: the `plan` tool previews, `links_retarget` commits server-side.
   if (cli.flags.server) {
-    const r = await remoteCall<{ hits: RetargetHit[]; applied: boolean }>(cli, "links_retarget", {
-      from_target: from, to_target: to, dry_run: !values.apply, ...(values.scope ? { path_glob: values.scope } : {}),
-    });
-    if (values.apply) {
-      if (cli.flags.mode !== "human") cli.io.out(JSON.stringify(r));
-      else cli.io.err(cli.style.dim(`  ${cli.style.ok(cli.render.g.ok)} retargeted ${r.hits.length} block(s)`));
-      return EXIT_OK;
+    if (!values.apply || cli.flags.dryRun) {
+      const plan = await remoteCall<Plan>(cli, "plan", { effects: sugar.effects });
+      return values.apply ? renderPlanDiffs(cli, plan) : renderHits(cli, from, to, retargetOf(plan).hits);
     }
-    return renderPlan(cli, from, to, r.hits);
+    const r = await remoteCall<Receipt & Retarget>(cli, "links_retarget", { from_target: from, to_target: to, ...(values.scope ? { path_glob: values.scope } : {}) });
+    return renderReceipt(cli, r);
   }
 
   const ws = cli.workspace();
   const repo = cli.repo(ws);
-  const { ops, hits: rawHits } = linksRetarget(ws.store, repo.repoId, from, to, values.scope ? { pathGlob: values.scope } : {});
-  const hits = surfaceRetargetHits(rawHits); // the hits' document paths in the reference form
-
-  // --apply → commit via the shared helper (honors --dry-run too, if combined).
-  if (values.apply) {
-    return runOps(cli, ws, repo, ops, values.actor ? { actor: values.actor } : {});
+  const request = { repoId: repo.repoId, ...(repo.rootPath ? { rootPath: repo.rootPath } : {}), omgbaseDir: ws.omgbaseDir };
+  if (!values.apply) {
+    // The plan (default): what WOULD change, commit nothing, mint nothing.
+    const plan = surfacePlan(planEffects(ws.store, { ...request, effects: sugar.effects }));
+    return renderHits(cli, from, to, retargetOf(plan).hits);
   }
-  return renderPlan(cli, from, to, hits);
+  // --apply → commit (the global --dry-run plans and renders the file diffs instead, §3.6).
+  const { plan, receipt } = applySugar(ws.store, { ...request, actor: values.actor ?? defaultActor(), ...(cli.flags.dryRun ? { dryRun: true } : {}) }, sugar);
+  const rooted = surfacePlan(plan);
+  if (!receipt) return renderPlanDiffs(cli, rooted);
+  const { hits, pairs } = retargetOf(rooted);
+  return renderReceipt(cli, { hits, pairs, ...surfaceReceipt(receipt) } as Receipt & Retarget, plan);
+}
+
+/** The one retarget effect's preview; a plan over no hit still carries it (empty hits, a zero count). */
+function retargetOf(plan: Plan): Retarget {
+  const r = plan.preview?.retarget?.[0];
+  return { hits: r?.hits ?? [], pairs: r?.pairs ?? [] };
 }
 
 // Plan (default): show what WOULD change, commit nothing.
-function renderPlan(cli: Cli, from: string, to: string, hits: RetargetHit[]): number {
+function renderHits(cli: Cli, from: string, to: string, hits: RetargetHit[]): number {
   if (cli.flags.mode === "json") {
     cli.io.out(JSON.stringify({ from, to, hits }));
     return EXIT_OK;

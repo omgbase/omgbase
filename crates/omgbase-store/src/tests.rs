@@ -1732,32 +1732,47 @@ fn find_doc_by_ref_accepts_a_doc_id_and_a_path() {
     );
 }
 
-// ---- document operations: dry runs (spec/surface §4, 1.3) -----------------------------
+// ---- document operations over the builders (spec/mutate §6, 3.0) ----------------------
 
+/// The four document operations are the shared builders' effects through the
+/// planner: `plan_effects` over the same effects previews exactly what each
+/// operation commits (a create `"" → bytes`, a move two entries + the
+/// rewritten source, a delete `bytes → ""`, a set_meta before → after), a
+/// plan burns no id, and the committed operation records the Receipt whose
+/// `plan_id` is that plan's.
 #[test]
-fn doc_op_dry_runs_preview_diffs_and_commit_nothing() {
+fn document_operations_are_planned_effects() {
     let (mut store, repo) = fixture_store();
     let mut ds = MemDocStore::new();
     let ctx = DocOpContext {
-        repo_id: repo,
+        repo_id: repo.clone(),
         actor: Some("agent:mcp".to_owned()),
         ts: T0.to_owned(),
     };
+    let pctx = PlanContext {
+        repo_id: repo.clone(),
+        ts: T0.to_owned(),
+        config: Config::default(),
+    };
     let b_src = "# B\n\nTarget.\n";
     let a_src = "# A\n\nSee [b](b.md).\n";
+    let b = store
+        .docs_create(&ctx, &mut ds, "b.md", b_src, None)
+        .unwrap();
+    assert_eq!(b.doc_id, "d_0");
+    assert_eq!(b.receipt.revisions[0].doc, "d_0");
     assert_eq!(
-        store
-            .docs_create(&ctx, &mut ds, "b.md", b_src, None)
-            .unwrap()
-            .doc_id,
-        "d_0"
+        b.receipt.new_ids[0],
+        ("$new.0".to_owned(), "d_0".to_owned())
     );
+    assert_eq!(b.receipt.commit.as_deref(), Some("c_0"));
+    let a = store
+        .docs_create(&ctx, &mut ds, "a.md", a_src, None)
+        .unwrap();
+    assert_eq!(a.doc_id, "d_1");
     assert_eq!(
-        store
-            .docs_create(&ctx, &mut ds, "a.md", a_src, None)
-            .unwrap()
-            .doc_id,
-        "d_1"
+        a.to_json(),
+        serde_json::json!({ "doc": "d_1", "path": "a.md", "committed": true })
     );
     let snapshot = |store: &Store| {
         (
@@ -1769,105 +1784,141 @@ fn doc_op_dry_runs_preview_diffs_and_commit_nothing() {
     };
     let before = snapshot(&store);
     let files = ds.files().clone();
-    let diff = |b: &str, a: &str| Diff {
-        before: b.to_owned(),
-        after: a.to_owned(),
+    let diffs_of = |plan: &Plan| -> Vec<(String, (String, String))> {
+        plan.preview.as_ref().unwrap().diffs.clone()
     };
+    let d = |b: &str, a: &str| (b.to_owned(), a.to_owned());
 
-    // create: `"" → bytes`, the id minted (and consumed) as the real run would.
+    // create: `"" → bytes`; the plan's symbols are the document, then its blocks.
     let fm: serde_json::Map<String, serde_json::Value> =
         serde_json::from_str(r#"{"title":"C"}"#).unwrap();
-    let c = store
-        .dry_run()
-        .docs_create(&ctx, &mut ds, "c.md", "# C", Some(&fm))
-        .unwrap();
+    let c = sugar::create_document("c.md", "# C", Some(&fm));
+    assert_eq!(c.reason, "create c.md");
+    let plan = store.plan_effects(&pctx, &c.effects, &ds).unwrap();
     assert_eq!(
-        (c.doc_id.as_str(), c.path.as_str(), c.committed),
-        ("d_2", "c.md", false)
+        diffs_of(&plan),
+        vec![("c.md".to_owned(), d("", "---\ntitle: C\n---\n\n# C\n"))]
     );
     assert_eq!(
-        c.diffs,
-        Some(vec![(
-            "c.md".to_owned(),
-            diff("", "---\ntitle: C\n---\n\n# C\n")
-        )])
-    );
-    assert!(
-        store
-            .dry_run()
-            .docs_create(&ctx, &mut ds, "a.md", "x", None)
-            .is_err(),
-        "path_taken is still checked"
+        plan.to_json(false)["new_ids"],
+        serde_json::json!([{ "symbol": "$new.0", "kind": "document" }, { "symbol": "$new.1", "kind": "block" }])
     );
 
-    // move with retarget_inbound: old path emptied, new path filled, then the
-    // rewritten source; `dangling`/`retargeted` as the real run reports them.
-    let m = store
-        .dry_run()
-        .docs_move(&ctx, &mut ds, "b.md", "notes/b.md", true)
-        .unwrap();
+    // move with retarget_inbound: the rewritten source, then the old path
+    // emptied and the new path filled; the link report is the store's.
+    let m = sugar::move_document("d_0", "b.md", "notes/b.md", true);
+    assert_eq!(m.reason, "move b.md -> notes/b.md");
+    let plan = store.plan_effects(&pctx, &m.effects, &ds).unwrap();
     assert_eq!(
-        (m.doc_id.as_str(), m.path.as_str(), m.committed),
-        ("d_0", "notes/b.md", false)
+        diffs_of(&plan),
+        vec![
+            ("a.md".to_owned(), d(a_src, "# A\n\nSee [b](notes/b.md).\n")),
+            ("b.md".to_owned(), d(b_src, "")),
+            ("notes/b.md".to_owned(), d("", b_src)),
+        ]
     );
-    let diffs = m.diffs.clone().unwrap();
-    let keys: Vec<&str> = diffs.iter().map(|(p, _)| p.as_str()).collect();
-    assert_eq!(keys, ["b.md", "notes/b.md", "a.md"]);
-    assert_eq!(diffs[0].1, diff(b_src, ""));
-    assert_eq!(diffs[1].1, diff("", b_src));
-    assert_eq!(diffs[2].1, diff(a_src, "# A\n\nSee [b](notes/b.md).\n"));
-    assert!(m.dangling.is_empty(), "{:?}", m.dangling);
-    let r = m.retargeted.unwrap();
-    assert_eq!(r.blocks.len(), 1);
-    assert_eq!(r.docs, ["d_1"]);
-    // … and without it: the inbound link dangles, two diff entries.
-    let m = store
-        .dry_run()
-        .docs_move(&ctx, &mut ds, "b.md", "notes/b.md", false)
+    let inbound = crate::links::inbound_links_to(store.conn(), &repo, "d_0", "b.md").unwrap();
+    let rt = store
+        .plan_inbound_retarget("d_0", "b.md", "notes/b.md", &inbound)
         .unwrap();
-    assert_eq!(m.diffs.unwrap().len(), 2);
-    assert_eq!(m.dangling.len(), 1);
-    assert!(m.retargeted.is_none());
+    assert!(rt.dangling.is_empty());
+    assert_eq!(rt.blocks.len(), 1);
+    assert_eq!(rt.docs, ["d_1"]);
+    // … and without it: two entries.
+    let m = sugar::move_document("d_0", "b.md", "notes/b.md", false);
+    let plan = store.plan_effects(&pctx, &m.effects, &ds).unwrap();
+    assert_eq!(diffs_of(&plan).len(), 2);
 
     // delete: `bytes → ""`.
-    let d = store.dry_run().docs_delete(&ctx, &mut ds, "a.md").unwrap();
-    assert_eq!(
-        (d.doc_id.as_str(), d.path.as_str(), d.committed),
-        ("d_1", "a.md", false)
-    );
-    assert_eq!(d.diffs, Some(vec![("a.md".to_owned(), diff(a_src, ""))]));
+    let del = sugar::delete_document("d_1", "a.md");
+    assert_eq!(del.reason, "delete a.md");
+    let plan = store.plan_effects(&pctx, &del.effects, &ds).unwrap();
+    assert_eq!(diffs_of(&plan), vec![("a.md".to_owned(), d(a_src, ""))]);
 
     // set_meta: before → after.
     let set: serde_json::Map<String, serde_json::Value> =
         serde_json::from_str(r#"{"status":"open"}"#).unwrap();
-    let s = store
-        .dry_run()
-        .docs_set_meta(&ctx, &mut ds, "a.md", Some(&set), &[])
-        .unwrap();
+    let sm = sugar::set_meta("d_1", "a.md", Some(&set), &[]);
+    assert_eq!(sm.reason, "set_meta a.md");
+    let plan = store.plan_effects(&pctx, &sm.effects, &ds).unwrap();
     assert_eq!(
-        (s.doc_id.as_str(), s.path.as_str(), s.committed),
-        ("d_1", "a.md", false)
-    );
-    assert_eq!(
-        s.diffs,
-        Some(vec![(
+        diffs_of(&plan),
+        vec![(
             "a.md".to_owned(),
-            diff(a_src, "---\nstatus: open\n---\n\n# A\n\nSee [b](b.md).\n")
-        )])
+            d(a_src, "---\nstatus: open\n---\n\n# A\n\nSee [b](b.md).\n")
+        )]
     );
 
-    // Nothing was written or committed; the dry-run create's id is spent.
+    // Nothing was written or committed, and no id was burned: the next
+    // create takes `d_2`, the id the dry run of 3.x would have consumed.
     assert_eq!(snapshot(&store), before);
     assert_eq!(ds.files(), &files);
     let real = store
         .docs_create(&ctx, &mut ds, "c.md", "# C\n", None)
         .unwrap();
-    assert_eq!((real.doc_id.as_str(), real.committed), ("d_3", true));
-    assert!(real.diffs.is_none());
+    assert_eq!((real.doc_id.as_str(), real.committed), ("d_2", true));
     assert_eq!(
         real.to_json(),
-        serde_json::json!({ "doc": "d_3", "path": "c.md", "committed": true })
+        serde_json::json!({ "doc": "d_2", "path": "c.md", "committed": true })
     );
+    // The pre-checks keep the library's messages and an empty `data`.
+    let taken = store
+        .docs_create(&ctx, &mut ds, "/c.md", "x", None)
+        .unwrap_err();
+    let m = expect_mutation(&taken, omgbase_mutate::ErrorCode::PathTaken);
+    assert_eq!(m.message, "document already exists at c.md");
+    assert!(m.data.is_empty(), "{:?}", m.data);
+    let missing = store.docs_delete(&ctx, &mut ds, "nope.md").unwrap_err();
+    assert_eq!(
+        expect_mutation(&missing, omgbase_mutate::ErrorCode::DocMissing).message,
+        "no document nope.md"
+    );
+    let empty = store
+        .docs_set_meta(&ctx, &mut ds, "a.md", None, &[])
+        .unwrap_err();
+    assert!(matches!(empty, Error::InvalidEffect(_)), "{empty}");
+    // A committed set_meta is a head write: every block `edited / api`.
+    let patched = store
+        .docs_set_meta(&ctx, &mut ds, "a.md", Some(&set), &[])
+        .unwrap();
+    assert_eq!(patched.receipt.revisions.len(), 1);
+    let kinds: Vec<(String, String)> = {
+        let mut stmt = store
+            .conn()
+            .prepare("SELECT kind, reason FROM dispositions WHERE commit_id = ?1 ORDER BY block_id")
+            .unwrap();
+        let rows = stmt
+            .query_map([patched.receipt.commit.as_deref().unwrap()], |r| {
+                Ok((r.get(0)?, r.get(1)?))
+            })
+            .unwrap();
+        rows.map(|r| r.unwrap()).collect()
+    };
+    assert!(
+        kinds.iter().all(|(k, r)| k == "edited" && r == "api"),
+        "{kinds:?}"
+    );
+    assert!(
+        ds.read("a.md")
+            .unwrap()
+            .unwrap()
+            .starts_with("---\nstatus: open\n")
+    );
+    // An absent actor records NULL (a fixture `docs` step without one).
+    let anon = DocOpContext {
+        actor: None,
+        ..ctx.clone()
+    };
+    let r = store.docs_delete(&anon, &mut ds, "c.md").unwrap();
+    let actor: Option<String> = store
+        .conn()
+        .query_row(
+            "SELECT actor FROM commits WHERE commit_id = ?1",
+            [r.receipt.commit.as_deref().unwrap()],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(actor, None);
 }
 
 // ---- transaction hygiene: the statement stream ---------------------------------------
@@ -2099,7 +2150,6 @@ fn a_changeset_is_one_commit_with_n_revisions() {
                 ops: vec![insert_end("a.md", "A tail."), insert_end("b.md", "B tail.")],
                 origin: api_origin(),
                 dry_run: false,
-                set_frontmatter: Vec::new(),
             },
             &mut ds,
             T1,
@@ -2206,7 +2256,6 @@ fn a_dirty_third_document_commits_nothing() {
                 ],
                 origin: api_origin(),
                 dry_run: false,
-                set_frontmatter: Vec::new(),
             },
             &mut ds,
             T1,
@@ -2419,7 +2468,6 @@ fn a_failure_in_the_commit_phase_rolls_back_and_touches_no_file() {
                 ops: vec![insert_end("a.md", "A tail."), insert_end("b.md", "B tail.")],
                 origin: api_origin(),
                 dry_run: false,
-                set_frontmatter: Vec::new(),
             },
             &mut ds,
             T1,
@@ -2559,7 +2607,6 @@ fn one_op(repo: &str, doc: &str) -> ApplyRequest {
         ops: vec![insert_end(doc, "A tail.")],
         origin: api_origin(),
         dry_run: false,
-        set_frontmatter: Vec::new(),
     }
 }
 
@@ -3017,7 +3064,6 @@ fn an_api_commit_records_intent_in_its_transaction_and_phase_b_prime_clears_it()
                 ops: vec![insert_end("a.md", "A tail."), insert_end("b.md", "B tail.")],
                 origin: api_origin(),
                 dry_run: false,
-                set_frontmatter: Vec::new(),
             },
             &mut ds,
             T1,
@@ -3074,7 +3120,6 @@ fn a_crash_after_commit_leaves_rows_the_materializer_replays() {
             ops: vec![insert_end("a.md", "A tail."), insert_end("b.md", "B tail.")],
             origin: api_origin(),
             dry_run: false,
-            set_frontmatter: Vec::new(),
         },
         &mut Crashed(&mut ds),
         T1,
@@ -3155,7 +3200,6 @@ fn observation_in_the_crash_window_follows_the_gate_rule() {
             ],
             origin: api_origin(),
             dry_run: false,
-            set_frontmatter: Vec::new(),
         },
         &mut Crashed(&mut ds),
         T1,
@@ -3562,7 +3606,6 @@ fn a_later_request_materializes_the_pending_row_before_reading() {
                 ops: vec![insert_end("a.md", "Second tail.")],
                 origin: api_origin(),
                 dry_run: false,
-                set_frontmatter: Vec::new(),
             },
             &mut ds,
             T2,
@@ -3753,22 +3796,18 @@ fn plan_effects_burns_no_id_and_previews_the_exact_bytes() {
     assert!(back.preview.is_none());
 }
 
-/// ADR-021 migration seam: `apply_effects_detailed` is the plan plus — unless
-/// a dry run — the receipt the one-shot produces, and `realize_symbols`
-/// mints one production id per `new_ids` entry **in order**, the ids a
-/// legacy dry run burned through the kernel (`spec/surface` §9): the next
-/// mint after a realized dry run is the one after a commit's.
+/// `apply_effects_detailed` is the plan plus the receipt the one-shot
+/// produces (the sugar tools read the committed ids from the preview through
+/// `new_ids`), and a plan alone burns nothing (`spec/surface` §9 closed at
+/// 4.0: the next mint after a plan is the mint a commit takes).
 #[test]
-fn apply_effects_detailed_and_realize_symbols_follow_the_legacy_mint_sequence() {
+fn apply_effects_detailed_returns_the_plan_and_the_receipt_and_a_plan_burns_nothing() {
     let (mut store, repo, mut ds) = seeded(&[("a.md", FM_DOC)]);
     let effects = vec![
         insert_section("b_0", "One.\n\nTwo."),
         insert_section("b_0", "Three."),
     ];
-    let (plan, receipt) = store
-        .apply_effects_detailed(&ctx(&repo, T1), &effects, &api_origin(), &mut ds, true)
-        .unwrap();
-    assert!(receipt.is_none(), "a dry run has no receipt");
+    let plan = store.plan_effects(&ctx(&repo, T1), &effects, &ds).unwrap();
     assert_eq!(
         plan.to_json(false)["new_ids"],
         json!([
@@ -3781,35 +3820,24 @@ fn apply_effects_detailed_and_realize_symbols_follow_the_legacy_mint_sequence() 
     assert_eq!(preview.results[0].ids, ["$new.0", "$new.1"]);
     assert_eq!(preview.results[1].ids, ["$new.2"]);
     assert_eq!(count(&store, "commits"), 1, "nothing committed");
-    // The shim: b_0, b_1 are the observed blocks; the three symbols take
-    // b_2, b_3, b_4 in plan order and the store moves on to b_5.
-    let realized = store.realize_symbols(&plan).unwrap();
+    // Committed: b_0, b_1 are the observed blocks; the three symbols take
+    // b_2, b_3, b_4 — the plan above consumed nothing.
+    let (plan2, receipt) = store
+        .apply_effects_detailed(&ctx(&repo, T1), &effects, &api_origin(), &mut ds)
+        .unwrap();
+    assert_eq!(plan2.plan_id, plan.plan_id);
+    assert_eq!(plan2.plan_id, receipt.plan_id);
     assert_eq!(
-        realized,
+        receipt.new_ids,
         [
             ("$new.0".to_owned(), "b_2".to_owned()),
             ("$new.1".to_owned(), "b_3".to_owned()),
             ("$new.2".to_owned(), "b_4".to_owned()),
         ]
     );
-    assert_eq!(store.mint("b").unwrap(), "b_5");
-    // Committed: the receipt maps the same symbols to the ids the replay
-    // minted next, the plan is the one the receipt names.
-    let (plan2, receipt) = store
-        .apply_effects_detailed(&ctx(&repo, T1), &effects, &api_origin(), &mut ds, false)
-        .unwrap();
-    let receipt = receipt.expect("a commit has a receipt");
-    assert_eq!(plan2.plan_id, receipt.plan_id);
-    assert_eq!(
-        receipt.new_ids,
-        [
-            ("$new.0".to_owned(), "b_6".to_owned()),
-            ("$new.1".to_owned(), "b_7".to_owned()),
-            ("$new.2".to_owned(), "b_8".to_owned()),
-        ]
-    );
     assert_eq!(receipt.commit.as_deref(), Some("c_1"));
     assert_eq!(count(&store, "commits"), 2);
+    assert_eq!(store.mint("b").unwrap(), "b_5");
     assert_eq!(
         ds.read("a.md").unwrap().as_deref(),
         Some("---\nstatus: open\n---\n\n# A\n\nAlpha.\n\nOne.\n\nTwo.\n\nThree.\n")

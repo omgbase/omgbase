@@ -14,14 +14,14 @@ import { graphNeighborhood } from "./graph.js";
 import { textSearch } from "../search/text.js";
 import { EngineError, errorBody } from "./errors.js";
 import { argumentError, validateArguments, type ArgShape } from "./arguments.js";
-import { apply, type Op } from "../mutate/apply.js";
 import { linksRetarget, linksRepair } from "../mutate/macros.js";
-import { canonicalDocPath, planInboundRetarget, type DocMoveResult, type DocOpResult } from "../mutate/docs.js";
-import { inboundLinksTo } from "../graph/inbound-links.js";
-import { resolveDocStore } from "../mutate/doc-store.js";
-import { MutationError } from "../mutate/tree.js";
-import { applyEffects, applyEffectsDetailed, executeByDigest, executePlan, legacyApplyResult, planEffects, realizeNewIds, stripEffectIndex, type Plan, type Receipt } from "../mutate/plan.js";
-import type { Effect, EffectExpect, EffectTarget } from "../mutate/effects.js";
+import { canonicalDocPath } from "../mutate/docs.js";
+import { applyEffects, executeByDigest, executePlan, planEffects, type Receipt } from "../mutate/plan.js";
+import type { EffectTarget } from "../mutate/effects.js";
+import {
+  appendEffects, applySugar, checkEffects, createEffects, deleteDocEffects, docsAppendEffects, insertEffects, mergeEffects, moveBlocksEffects, moveDocEffects,
+  moveLinks, nodeSetEffects, removeBlocksEffects, requireAbsentPath, retargetEffects, setMetaEffects, splitEffects, updateBlockEffects, updateContentEffects, type Sugar,
+} from "../mutate/sugar.js";
 import { historyNode, diffBlocks, docDiffUnified, changesSince, docHistory } from "../graph/history.js";
 import { linksStale, linksStaleSummary } from "../graph/link-health.js";
 import { resolve as resolveThing } from "../search/resolve.js";
@@ -33,14 +33,16 @@ import { versionInfo, type HostInfo } from "../version.js";
 import { storagePath, referencePath } from "../core/paths.js";
 import { isContainerBlock } from "../format/index.js";
 import {
-  surfaceApplyResult, surfaceDocOpResult, surfaceDocMoveResult, surfaceObserveResult, surfaceObserveDeleteResult,
+  surfaceInboundLink, surfaceObserveResult, surfaceObserveDeleteResult,
   surfaceTextSearch, surfaceResolveHits, surfaceRetargetHits, surfacePlan, surfaceReceipt,
 } from "../surface-paths.js";
 
 // MCP server (mcp-api). The full tool surface wired to the engine: read
 // (docs_tree, docs_list, docs_outline, docs_read(_many), blocks_read(_many), query, blocks_search,
-// blocks_resolve), mutate (apply + macros), graph, history (blocks_history,
-// docs_diff, changes_since), admin (repos_status, sync_status). Uniform truncated+cursor
+// blocks_resolve), mutate (`plan` / `execute` / `apply { effects }` and the sugar
+// tools over them — spec/surface §4, 4.0: every write tool returns the Receipt,
+// no tool takes `dry_run`), graph, history (blocks_history, docs_diff,
+// changes_since), admin (repos_status, sync_status). Uniform truncated+cursor
 // on lists; stable error-code mapping.
 //
 // Paths (spec/surface §1 "Paths", 2.0): every path a tool returns is the
@@ -108,33 +110,19 @@ export interface ServerContext {
   host?: HostInfo;
 }
 
-// Kernel-op schemas (04 §1) published as the `apply` tool's op grammar. Giving
-// each op a real schema (rather than z.any()) makes the required fields
-// discoverable in the tool's JSON schema and turns a malformed op — e.g. an
-// `update` missing its `block` id — into a boundary validation error naming the
-// field, instead of a downstream `block_missing` for "block undefined". The
-// grammar (`block`, `blocks`, `to`, `at`, `expect.content_hash`, `op`) is
-// spec/mutate's and is not renamed by the surface's argument rule.
+// The placement and guard schemas the block-level sugar shares (spec/mutate
+// §1.1/§1.2; the effect vocabulary spells them the same way). blocks_insert /
+// blocks_move carry the op-level expectation of §1.2: only
+// `parent_children_hash` (the destination parent's live direct child ids joined
+// by "," and sha256-hexed) has a meaning there — there is no target block whose
+// content_hash could be checked — so their schema names that one key alone (an
+// accidental `content_hash` is dropped, not an error).
 const atSchema = z.union([
   z.literal("start"),
   z.literal("end"),
   z.object({ before: z.string() }),
   z.object({ after: z.string() }),
 ]);
-const toSchema = z.object({
-  parent: z.union([
-    z.string().describe("a block id to nest under"),
-    z.object({ doc: z.literal(true) }).describe("the document's top level"),
-    z.object({ heading: z.string(), scope: z.literal("section") }).describe("a heading's section range"),
-  ]),
-  at: atSchema,
-});
-// blocks_insert / blocks_move carry the op-level expectation of spec/mutate §1.2:
-// only `parent_children_hash` (the destination parent's live direct child ids
-// joined by "," and sha256-hexed) has a meaning there — there is no target block
-// whose content_hash could be checked — so the schema names that one key alone
-// (an accidental `content_hash` is dropped, not an error; the kernel would
-// ignore it anyway).
 const parentExpectSchema = z.object({
   parent_children_hash: z.string().optional(),
 });
@@ -142,14 +130,6 @@ const expectSchema = z.object({
   content_hash: z.string().optional(),
   parent_children_hash: z.string().optional(),
 });
-const opSchema = z.discriminatedUnion("op", [
-  z.object({ op: z.literal("insert"), doc: z.string().optional(), to: toSchema, markdown: z.string(), expect: expectSchema.optional() }),
-  z.object({ op: z.literal("update"), block: z.string(), markdown: z.string().optional(), attrs: z.record(z.string(), z.unknown()).optional(), expect: expectSchema.optional() }),
-  z.object({ op: z.literal("move"), blocks: z.array(z.string()), to: toSchema, expect: expectSchema.optional() }),
-  z.object({ op: z.literal("remove"), blocks: z.array(z.string()), expect: z.record(z.string(), expectSchema).optional() }),
-  z.object({ op: z.literal("split"), block: z.string(), at: z.array(z.number().int()), expect: expectSchema.optional() }),
-  z.object({ op: z.literal("merge"), blocks: z.array(z.string()), separator: z.string().optional(), expect: z.record(z.string(), expectSchema).optional() }),
-]);
 
 // The public Effect vocabulary (spec/mutate §11, 2.3) — the `plan` / `execute` /
 // `apply.effects` grammar. The boundary schema is deliberately loose (an
@@ -180,9 +160,9 @@ export const PROVIDER_UNAVAILABLE_MESSAGE =
 /**
  * The tools that can commit — the host serializes these under the writer lock
  * of spec/sync §7. The same list as the Rust catalog's `Surface::is_write_tool`
- * (`crates/omgbase-surface/src/catalog.rs`): a `dry_run` call still counts
- * (only the kernel knows whether a write happened), so a preview waits for a
- * writer exactly as the write would.
+ * (`crates/omgbase-surface/src/catalog.rs`). `plan` is listed too: it reads
+ * the documents a write would touch, so a preview waits for a writer exactly as
+ * the write would (through 3.x the sugar's `dry_run` played that role).
  */
 export const WRITE_TOOLS: ReadonlySet<string> = new Set([
   "apply", "plan", "execute",
@@ -365,13 +345,6 @@ export function buildServer(ctx: ServerContext): McpServer {
     const row = store.db.prepare("SELECT doc_id FROM blocks WHERE block_id = ? AND deleted_commit IS NULL").get(blockId) as { doc_id: string } | undefined;
     return row?.doc_id;
   }
-  // Current raw-content hash (hex) of a block, for CAS `expect` pinning — mirrors
-  // the CLI's rawHashOf. Undefined for an unknown/deleted block (the op then runs
-  // unpinned, exactly as the CLI does when it can't read a hash).
-  function pinHash(blockId: string): string | undefined {
-    const row = store.db.prepare("SELECT lower(hex(raw_hash)) h FROM blocks WHERE block_id = ? AND deleted_commit IS NULL").get(blockId) as { h: string } | undefined;
-    return row?.h;
-  }
   // Resolve the before/after anchor in an `at` spec (itself a block ref) to its
   // id; start/end pass through. Absent ⇒ "end" (append), matching CLI parseAt.
   type AtSpec = z.infer<typeof atSchema>;
@@ -380,35 +353,23 @@ export function buildServer(ctx: ServerContext): McpServer {
     if ("before" in at) return { before: resolveBlockRef(repoId, at.before) };
     return { after: resolveBlockRef(repoId, at.after) };
   }
-  // The sugar tools are `apply { effects }` (spec/surface §4, 3.2; ADR-021's
-  // migration phase): each builds its effects with the tool's fixed `reason`,
-  // runs plan + execute (or the plan alone on a dry run) and renders today's
-  // apply result through the adapter — ids realized (committed: the receipt's
-  // map; dry run: one production mint per `new_ids` entry, so the dry run
-  // still consumes the ids the real run would take), paths rooted, and the
-  // planner's `effect_index` dropped from any error so `data` stays as pinned.
-  function sugarResult(repoId: string, rootPath: string, effects: Effect[], reason: string, dryRun?: boolean) {
-    try {
-      const { plan, receipt } = applyEffectsDetailed(store, { repoId, rootPath, effects, origin: { actor: "agent:mcp", reason }, ...LOCK_DIR, ...(dryRun ? { dryRun: true } : {}) });
-      return surfaceApplyResult(legacyApplyResult(plan, receipt));
-    } catch (e) {
-      throw stripEffectIndex(e);
-    }
+  // The sugar tools are `apply { effects }` (spec/surface §4 "Sugar over
+  // effects", 4.0; ADR-021): each tool resolves its refs and runs its own
+  // pre-checks, hands the ids to the shared builder of `mutate/sugar.ts` (one
+  // builder per operation — the same table the `omg` verbs, the fixture runner
+  // and the Rust port use), and `applySugar` plans + executes the effects as one
+  // request under the tool's fixed `reason` with `actor: "agent:mcp"` — the
+  // planner's `effect_index` dropped from any error, so `data` stays as pinned.
+  // Every sugar tool returns the Receipt (paths rooted); the preview of any of
+  // them is `plan { effects }` — there is no `dry_run` since 4.0.
+  function runSugar(repoId: string, rootPath: string, sugar: Sugar, reason?: string): { receipt: Receipt } {
+    const { receipt } = applySugar(store, { repoId, rootPath, actor: "agent:mcp", ...(reason !== undefined ? { reason } : {}), ...LOCK_DIR }, sugar);
+    return { receipt: receipt! };
   }
-  function sugar(repoId: string, rootPath: string, effects: Effect[], reason: string, dryRun?: boolean) {
-    const res = sugarResult(repoId, rootPath, effects, reason, dryRun);
-    return dryRun ? ok(res) : okMutated(res);
+  function sugar(repoId: string, rootPath: string, built: Sugar): ToolResult {
+    return okMutated(surfaceReceipt(runSugar(repoId, rootPath, built).receipt));
   }
   const blockTarget = (id: string): EffectTarget => ({ kind: "block", id });
-  // The caller's `expect` as an effect guard (absent when not given; an empty
-  // object stays an empty guard — the planner then pins what it needs).
-  const guard = (e: { content_hash?: string | undefined; parent_children_hash?: string | undefined } | undefined): { expect?: EffectExpect } => {
-    if (!e) return {};
-    const expect: EffectExpect = {};
-    if (e.content_hash !== undefined) expect.content_hash = e.content_hash;
-    if (e.parent_children_hash !== undefined) expect.parent_children_hash = e.parent_children_hash;
-    return { expect };
-  };
   // A parent ref as an effect target: a document ref is the document's top level, a block ref the block.
   const parentTarget = (p: { parent: string | { doc: true }; docId: string }): EffectTarget =>
     typeof p.parent === "object" ? { kind: "document", id: p.docId } : { kind: "block", id: p.parent };
@@ -780,12 +741,10 @@ export function buildServer(ctx: ServerContext): McpServer {
     "apply",
     {
       description:
-        "The only real writer. Takes exactly one of two inputs. `effects` (preferred): an ORDERED list of intentional writes — `create insert set unset move remove split merge retarget` over documents, blocks, nodes and sections (the vocabulary `plan` documents) — planned and committed as ONE transaction with one commit: dry_run:true returns the frozen Plan (what `plan` returns; nothing written), without it the result is the Receipt `{ plan_id, commit, revisions: [{ id, path, hash }], new_ids: { \"$new.n\": id }, committed: true }`. `ops` (the kernel, legacy input): a changeset of kernel ops (insert/update/move/remove/split/merge) applied atomically — all apply or none. Each op is a tagged object keyed by \"op\"; the block an op targets is named by its `block` (update/split) or `blocks` (move/remove/merge) field, never `id`/`target` (the op grammar is spec/mutate's, unchanged by the surface's `id`/`path` argument rule). Ops apply in order; later ops see earlier effects; minted ids are referenceable via \"$n.ids[i]\". Pass dry_run:true first for multi-doc changes to preview diffs. The `ops` result is `{ results: [{ ids, … }], revisions: [{ id, path, hash }], diffs?, committed }` — one revision per touched document with its hash after the change (the same shape a changes_since revision has). update/split/merge/remove take a CAS `expect.content_hash` — get it from docs_read include_ids (its `hashes` map) in the same read that gave you the ids, or use the ref-accepting block_* sugar (blocks_update/blocks_split/…) which pins it server-side (effects pin it for you). Conflicts carry current truth (`data.current.hash` + `markdown`) — including a missing/omitted expect.content_hash, whose error returns the current hash — so retry from the error, don't re-read.",
+        "The only real writer: an ORDERED list of `effects` — the intentional-write vocabulary `create insert set unset move remove split merge retarget` over documents, blocks, nodes and sections (the vocabulary `plan` documents, spec/mutate §11) — planned and committed as ONE transaction with one commit. Returns the Receipt `{ plan_id, commit, revisions: [{ id, path, hash }], new_ids: { \"$new.n\": id }, committed: true }` — one revision per touched document with its hash after the change (the same shape a changes_since revision has), `new_ids` the ids minted for the plan's symbolic identities, `commit` null when there was nothing to commit. To PREVIEW, call `plan` with the same `effects`: it returns the frozen Plan (diffs, results, the identity consequences) and burns no id; `execute` then commits exactly that plan. Every mutating tool is sugar over this one and returns the same Receipt. Guards: `expect.content_hash` on a block effect is the CAS of spec/mutate §1.2 (get it from docs_read include_ids' `hashes`, or omit it — effects pin the live hash for you); `expect.parent_children_hash` is the destination-parent CAS of insert/move; `expect.revision` pins a document. Conflicts carry current truth (`data.current.hash` + `markdown`) so retry from the error, don't re-read. Through surface 3.x this tool also took the six kernel ops as `ops` and a `dry_run`; both are retired (the kernel ops are a library/fixture contract since spec/mutate 3.0; the preview is `plan`) and refused by name.",
       inputSchema: {
-        ops: z.array(opSchema).optional(),
-        effects: z.array(effectSchema).optional(),
+        effects: z.array(effectSchema),
         reason: z.string().optional(),
-        dry_run: z.boolean().optional(),
         ...REPO_ARG,
       },
     },
@@ -793,24 +752,9 @@ export function buildServer(ctx: ServerContext): McpServer {
       try {
         const { repoId, rootPath } = repoScope(args.repo);
         if (!rootPath) throw new EngineError("repo_not_found", "repo has no filesystem source; mutation disabled");
-        // Exactly one input (spec/surface §4, 3.1): the legacy kernel `ops` or the effects.
-        if ((args.ops === undefined) === (args.effects === undefined)) throw argumentError("apply", "pass exactly one of `ops` or `effects`", registry.get("apply")!.shape);
         const origin = { actor: "agent:mcp", ...(args.reason ? { reason: args.reason } : {}) };
-        if (args.effects !== undefined) {
-          // `effects` + `dry_run` → the Plan (preview included); without → plan + execute
-          // under one lock and one transaction → the Receipt.
-          const res = applyEffects(store, { repoId, rootPath, effects: args.effects, origin, ...LOCK_DIR, ...(args.dry_run !== undefined ? { dryRun: args.dry_run } : {}) });
-          return args.dry_run ? ok(surfacePlan(res as Plan)) : okMutated(surfaceReceipt(res as Receipt));
-        }
-        const res = surfaceApplyResult(apply(store, {
-          repoId, rootPath,
-          ops: args.ops as Op[],
-          origin,
-          ...LOCK_DIR,
-          ...(args.dry_run !== undefined ? { dryRun: args.dry_run } : {}),
-        }));
-        // A dry run previews without writing — don't schedule a drain for it.
-        return args.dry_run ? ok(res) : okMutated(res);
+        // Plan + execute under one lock and one transaction → the Receipt (spec/mutate §11.7).
+        return okMutated(surfaceReceipt(applyEffects(store, { repoId, rootPath, effects: args.effects, origin, ...LOCK_DIR }) as Receipt));
       } catch (e) {
         return fail(e);
       }
@@ -844,7 +788,7 @@ export function buildServer(ctx: ServerContext): McpServer {
     "execute",
     {
       description:
-        "Commit exactly a plan made by `plan` (or by `apply { effects, dry_run: true }`), as one transaction with one commit. Two forms, exactly one of them: `plan` — the Plan object as returned (`preview` may be dropped; `version` other than 1 → `unsupported_plan_version`, an edited core whose digest no longer equals its `plan_id` → `plan_mismatch`); or `plan_id` + `effects` — the engine re-plans the effects and commits only when the new plan's digest equals `plan_id` (else `plan_mismatch { expected, actual }`: the effects or the documents they target changed). Every precondition the plan froze is re-validated inside the transaction; a document that moved on fails `stale_plan` (retriable: re-plan) with nothing written, and replaying an already executed plan fails the same way. Returns the Receipt `{ plan_id, commit, revisions: [{ id, path, hash }], new_ids: { \"$new.0\": \"b_…\", … }, committed: true }` — `new_ids` maps the plan's symbolic identities to the ids minted. The commit records the plan as its intent (`commits.ops`).",
+        "Commit exactly a plan made by `plan`, as one transaction with one commit. Two forms, exactly one of them: `plan` — the Plan object as returned (`preview` may be dropped; `version` other than 1 → `unsupported_plan_version`, an edited core whose digest no longer equals its `plan_id` → `plan_mismatch`); or `plan_id` + `effects` — the engine re-plans the effects and commits only when the new plan's digest equals `plan_id` (else `plan_mismatch { expected, actual }`: the effects or the documents they target changed). Every precondition the plan froze is re-validated inside the transaction; a document that moved on fails `stale_plan` (retriable: re-plan) with nothing written, and replaying an already executed plan fails the same way. Returns the Receipt `{ plan_id, commit, revisions: [{ id, path, hash }], new_ids: { \"$new.0\": \"b_…\", … }, committed: true }` — `new_ids` maps the plan's symbolic identities to the ids minted. The commit records the plan as its intent (`commits.ops`).",
       inputSchema: { plan: z.record(z.string(), z.unknown()).optional(), plan_id: z.string().optional(), effects: z.array(effectSchema).optional(), reason: z.string().optional(), ...REPO_ARG },
     },
     async (args) => {
@@ -870,16 +814,17 @@ export function buildServer(ctx: ServerContext): McpServer {
   // ---- block-level sugar (ref-accepting peers of the `apply` primitive) -------
   // These mirror the CLI verbs `insert`/`update`/`move`/`rm`/`split`/`merge`
   // 1:1. Each takes human REFS (a block id or anything resolveRef accepts),
-  // resolves them + pins CAS server-side, builds exactly the op the CLI would,
-  // and applies it. This is what lets `omg <verb> --server` feel identical to
-  // local: the resolution that used to live in the CLI now lives next to the
-  // store, so a remote client needs no local database.
+  // resolves them + pins CAS server-side, builds exactly the effects the CLI
+  // would (the shared builders), and applies them. This is what lets
+  // `omg <verb> --server` feel identical to local: the resolution that used to
+  // live in the CLI now lives next to the store, so a remote client needs no
+  // local database.
 
   tool(
     "blocks_insert",
     {
-      description: "Insert new block(s) parsed from `markdown` under a parent, at a position. `to` names the parent: a BLOCK ref (id or locator) nests the new blocks under that block — it must be a CONTAINER (a list, list item, task, blockquote or table); a leaf such as a heading or paragraph fails `type_mismatch` (spec/mutate §1.1) — use blocks_append for \"into this heading's section / this container\" or `at: {after: <ref>}` for \"right after this block\"; or a DOCUMENT ref (doc id or path) places them at the document's top level — so appending a new section to a document is `{ to: \"<path>\", markdown: \"## New\\n\\n…\" }` (the positional generalization of docs_append). `at` places among the parent's children: \"end\" (default) / \"start\" / {before|after: <block ref>}. Optional `expect.parent_children_hash` is the destination-parent CAS: the parent's CURRENT direct child ids (the document's top-level ids for a document `to`) joined by \",\" and sha256-hexed — compute it from docs_read include_ids (`ids` filtered by `parents`) — and the insert fails `stale_expectation` (with `data.current.parent_children_hash`) if the siblings changed under you; `content_hash` has no meaning here (there is no target block) and is not accepted. Expands to one insert op through the kernel writer.",
-      inputSchema: { to: z.string(), markdown: z.string(), at: atSchema.optional(), expect: parentExpectSchema.optional(), dry_run: z.boolean().optional(), ...REPO_ARG },
+      description: "Insert new block(s) parsed from `markdown` under a parent, at a position. `to` names the parent: a BLOCK ref (id or locator) nests the new blocks under that block — it must be a CONTAINER (a list, list item, task, blockquote or table); a leaf such as a heading or paragraph fails `type_mismatch` (spec/mutate §1.1) — use blocks_append for \"into this heading's section / this container\" or `at: {after: <ref>}` for \"right after this block\"; or a DOCUMENT ref (doc id or path) places them at the document's top level — so appending a new section to a document is `{ to: \"<path>\", markdown: \"## New\\n\\n…\" }` (the positional generalization of docs_append). `at` places among the parent's children: \"end\" (default) / \"start\" / {before|after: <block ref>}. Optional `expect.parent_children_hash` is the destination-parent CAS: the parent's CURRENT direct child ids (the document's top-level ids for a document `to`) joined by \",\" and sha256-hexed — compute it from docs_read include_ids (`ids` filtered by `parents`) — and the insert fails `stale_expectation` (with `data.current.parent_children_hash`) if the siblings changed under you; `content_hash` has no meaning here (there is no target block) and is not accepted. Sugar for `apply { effects: [{ op: \"insert\", into, at, markdown, expect? }] }` — returns the Receipt (`new_ids` holds the inserted blocks' ids, `$new.0` first); preview with `plan` over that effect.",
+      inputSchema: { to: z.string(), markdown: z.string(), at: atSchema.optional(), expect: parentExpectSchema.optional(), ...REPO_ARG },
     },
     async (args) => {
       try {
@@ -889,8 +834,7 @@ export function buildServer(ctx: ServerContext): McpServer {
         // (the planner pins the op to it). The caller's expect rides through as
         // the destination-parent expectation (spec/mutate §1.2).
         const into = parentTarget(resolveParentRef(repoId, args.to));
-        const effects: Effect[] = [{ op: "insert", into, at: resolveAt(repoId, args.at), markdown: args.markdown, ...guard(args.expect) }];
-        return sugar(repoId, root, effects, "blocks_insert", args.dry_run);
+        return sugar(repoId, root, insertEffects(into, resolveAt(repoId, args.at), args.markdown, args.expect));
       } catch (e) {
         return fail(e);
       }
@@ -900,51 +844,18 @@ export function buildServer(ctx: ServerContext): McpServer {
   tool(
     "blocks_update",
     {
-      description: "Replace a block's markdown (and/or set attrs) with compare-and-swap. `id` is the block's id (or any ref resolve accepts); `expect.content_hash` is pinned to the block's current bytes server-side when omitted (protects against a concurrent edit). One update op through the kernel writer. `markdown` may parse to SEVERAL sibling blocks (e.g. a paragraph followed by a list): the target keeps its id and takes the first, the rest are inserted right after it with fresh ids — the response carries `id` (the target) and `ids` (all resulting blocks, in order). A list item may likewise be replaced by a multi-item list (`- a\\n- b`), yielding sibling items. Task state is settable flat as `checked` (the same name reads flatten to — `from blocks where checked`), folded into attrs and synced to the `[ ]`/`[x]` in the raw. The general `attrs` bag is still accepted; note every OTHER block attr (heading `level`, code `lang`, list `ordered`) is derived from the markdown, so set those by editing `markdown`, not attrs.",
-      inputSchema: { id: z.string(), markdown: z.string().optional(), checked: z.boolean().optional(), attrs: z.record(z.string(), z.unknown()).optional(), expect: expectSchema.optional(), dry_run: z.boolean().optional(), ...REPO_ARG },
+      description: "Replace a block's markdown and/or set a task's `checked` state, with compare-and-swap. `id` is the block's id (or any ref resolve accepts); `expect.content_hash` is pinned to the block's current bytes server-side when omitted (protects against a concurrent edit). `markdown` may parse to SEVERAL sibling blocks (e.g. a paragraph followed by a list): the target keeps its id and takes the first, the rest are inserted right after it with fresh ids — the Receipt's `new_ids` lists them (`$new.0`, …). A list item may likewise be replaced by a multi-item list (`- a\\n- b`), yielding sibling items. Task state is settable flat as `checked` (the same name reads flatten to — `from blocks where checked`), synced to the `[ ]`/`[x]` in the raw; every OTHER block attr (heading `level`, code `lang`, list `ordered`) is derived from the markdown, so set those by editing `markdown` (the 3.x `attrs` bag is retired and refused by name). Sugar for `apply { effects: [{ op: \"set\", target: { kind: \"block\", id }, field: \"markdown\" | \"attrs.checked\", value, expect? }] }` (both when both are given) — returns the Receipt; preview with `plan`.",
+      inputSchema: { id: z.string(), markdown: z.string().optional(), checked: z.boolean().optional(), expect: expectSchema.optional(), ...REPO_ARG },
     },
     async (args) => {
       try {
         const { repoId, rootPath } = repoScope(args.repo);
         const root = requireRoot(rootPath);
         const block = resolveBlockRef(repoId, args.id);
-        // Flat `checked` sugar and the attrs bag name the same thing (explicit
-        // attrs wins on collision), so a task reads and writes under one bare name.
-        const checked = args.attrs && Object.hasOwn(args.attrs, "checked") ? args.attrs.checked : args.checked;
-        // The effects speak `markdown` and `attrs.checked` only (spec/mutate §11.2).
-        // Anything else the bag can carry — another key, a non-boolean `checked`,
-        // or an update that sets nothing (a no-op revision) — stays on the legacy
-        // kernel path until 4.0 (spec/mutate §10, 3.2).
-        const legacy = (args.attrs !== undefined && Object.keys(args.attrs).some((k) => k !== "checked"))
-          || (checked !== undefined && typeof checked !== "boolean")
-          || (args.markdown === undefined && checked === undefined);
-        let res: ReturnType<typeof sugarResult>;
-        if (legacy) {
-          const expect = args.expect ?? (() => { const h = pinHash(block); return h ? { content_hash: h } : undefined; })();
-          const attrs = (args.checked !== undefined || args.attrs)
-            ? { ...(args.checked !== undefined ? { checked: args.checked } : {}), ...(args.attrs ?? {}) }
-            : undefined;
-          const ops: Op[] = [{ op: "update", block, ...(args.markdown !== undefined ? { markdown: args.markdown } : {}), ...(attrs ? { attrs } : {}), ...(expect ? { expect } : {}) } as Op];
-          res = surfaceApplyResult(apply(store, { repoId, rootPath: root, ops, origin: { actor: "agent:mcp", reason: "blocks_update" }, ...LOCK_DIR, ...(args.dry_run !== undefined ? { dryRun: args.dry_run } : {}) }));
-        } else {
-          // `set markdown` and/or `set attrs.checked`. The caller's `expect` guards
-          // the FIRST effect (the content CAS of §1.2 is checked once, against the
-          // bytes the caller saw); a second effect is pinned by the planner to the
-          // block as the first left it. Two effects are two kernel ops and two
-          // results — the result collapses to the first, today's one-op shape.
-          const target = blockTarget(block);
-          const expect = guard(args.expect);
-          const effects: Effect[] = [];
-          if (args.markdown !== undefined) effects.push({ op: "set", target, field: "markdown", value: args.markdown, ...expect });
-          if (checked !== undefined) effects.push({ op: "set", target, field: "attrs.checked", value: checked, ...(effects.length === 0 ? expect : {}) });
-          const full = sugarResult(repoId, root, effects, "blocks_update", args.dry_run);
-          res = { ...full, results: full.results.slice(0, 1) };
-        }
-        // `ids` lists every resulting block (the target first, then any siblings
-        // minted from multi-block content); `id` keeps the target for convenience.
-        const ids = res.results[0]?.ids ?? [block];
-        const payload = { id: ids[0] ?? block, ids, ...res };
-        return args.dry_run ? ok(payload) : okMutated(payload);
+        const built = updateBlockEffects(block, { markdown: args.markdown, checked: args.checked, expect: args.expect });
+        // Nothing to set is an argument error (4.0): there is no effect for "touch".
+        if (built.effects.length === 0) throw argumentError("blocks_update", "pass `markdown` and/or `checked`", registry.get("blocks_update")!.shape);
+        return sugar(repoId, root, built);
       } catch (e) {
         return fail(e);
       }
@@ -954,8 +865,8 @@ export function buildServer(ctx: ServerContext): McpServer {
   tool(
     "blocks_move",
     {
-      description: "Move block(s) under a new parent at a position. `blocks` are block refs; `to` (the parent) is a block ref (a container — a leaf parent is `type_mismatch`, as for blocks_insert), or the blocks' OWN document (id or path) to move them to its top level — moving to ANOTHER document's root is not expressible (target_missing): anchor on a block in that document with `at` {before|after} instead. `at` is \"end\"/\"start\"/{before|after: <ref>}. Optional `expect.parent_children_hash` is the destination-parent CAS (as blocks_insert: the destination parent's CURRENT direct child ids joined by \",\", sha256 hex), checked once for the whole run before anything moves — `stale_expectation` with `data.current.parent_children_hash` if the destination's children changed; `content_hash` is meaningless here and not accepted. One move op through the kernel writer.",
-      inputSchema: { blocks: z.array(z.string()), to: z.string(), at: atSchema.optional(), expect: parentExpectSchema.optional(), dry_run: z.boolean().optional(), ...REPO_ARG },
+      description: "Move block(s) under a new parent at a position. `blocks` are block refs; `to` (the parent) is a block ref (a container — a leaf parent is `type_mismatch`, as for blocks_insert), or the blocks' OWN document (id or path) to move them to its top level — moving to ANOTHER document's root is not expressible (target_missing): anchor on a block in that document with `at` {before|after} instead. `at` is \"end\"/\"start\"/{before|after: <ref>}. Optional `expect.parent_children_hash` is the destination-parent CAS (as blocks_insert: the destination parent's CURRENT direct child ids joined by \",\", sha256 hex), checked once for the whole run before anything moves — `stale_expectation` with `data.current.parent_children_hash` if the destination's children changed; `content_hash` is meaningless here and not accepted. Sugar for `apply { effects: [{ op: \"move\", targets, into, at, expect? }] }` — returns the Receipt; preview with `plan`.",
+      inputSchema: { blocks: z.array(z.string()), to: z.string(), at: atSchema.optional(), expect: parentExpectSchema.optional(), ...REPO_ARG },
     },
     async (args) => {
       try {
@@ -969,8 +880,7 @@ export function buildServer(ctx: ServerContext): McpServer {
         if (typeof parentRef.parent === "object" && blocks[0] !== undefined && docIdOfBlock(blocks[0]) !== parentRef.docId) {
           throw new EngineError("target_missing", `blocks_move cannot target another document's root (${args.to}); anchor on a block in that document with at.before/at.after`, { data: { to: args.to } });
         }
-        const effects: Effect[] = [{ op: "move", targets: blocks.map(blockTarget), into: parentTarget(parentRef), at: resolveAt(repoId, args.at), ...guard(args.expect) }];
-        return sugar(repoId, root, effects, "blocks_move", args.dry_run);
+        return sugar(repoId, root, moveBlocksEffects(blocks, parentTarget(parentRef), resolveAt(repoId, args.at), args.expect));
       } catch (e) {
         return fail(e);
       }
@@ -980,8 +890,8 @@ export function buildServer(ctx: ServerContext): McpServer {
   tool(
     "blocks_remove",
     {
-      description: "Remove block(s) (the resurrection pool catches regret). `blocks` are refs; removing a block removes its whole subtree, and a set that names both a container and some of its descendants (e.g. every id of a section straight from docs_read include_ids) is fine — it collapses to the top-most blocks and `removed` lists everything that left. One remove op through the kernel writer. To delete a whole document use docs_delete.",
-      inputSchema: { blocks: z.array(z.string()), dry_run: z.boolean().optional(), ...REPO_ARG },
+      description: "Remove block(s) (the resurrection pool catches regret). `blocks` are refs; removing a block removes its whole subtree, and a set that names both a container and some of its descendants (e.g. every id of a section straight from docs_read include_ids) is fine — it collapses to the top-most blocks. Sugar for `apply { effects: [{ op: \"remove\", targets }] }` — returns the Receipt; preview with `plan` (its `preview.results[0].removed` lists everything that would leave). To delete a whole document use docs_delete.",
+      inputSchema: { blocks: z.array(z.string()), ...REPO_ARG },
     },
     async (args) => {
       try {
@@ -989,7 +899,7 @@ export function buildServer(ctx: ServerContext): McpServer {
         const root = requireRoot(rootPath);
         requireSome("blocks_remove", "blocks", args.blocks);
         const blocks = args.blocks.map((b) => resolveBlockRef(repoId, b));
-        return sugar(repoId, root, [{ op: "remove", targets: blocks.map(blockTarget) }], "blocks_remove", args.dry_run);
+        return sugar(repoId, root, removeBlocksEffects(blocks));
       } catch (e) {
         return fail(e);
       }
@@ -999,8 +909,8 @@ export function buildServer(ctx: ServerContext): McpServer {
   tool(
     "blocks_split",
     {
-      description: "Split a block at UTF-8 byte offset(s) into consecutive blocks. `id` is the block's id (or a ref); `at` is a list of integer byte offsets into the block's raw bytes (spec/mutate §2.5; an offset inside a multi-byte character rounds down to its start). CAS is pinned to the block's current bytes server-side. One split op through the kernel writer.",
-      inputSchema: { id: z.string(), at: z.array(z.number().int()), dry_run: z.boolean().optional(), ...REPO_ARG },
+      description: "Split a block at UTF-8 byte offset(s) into consecutive blocks. `id` is the block's id (or a ref); `at` is a list of integer byte offsets into the block's raw bytes (spec/mutate §2.5; an offset inside a multi-byte character rounds down to its start). CAS is pinned to the block's current bytes server-side. Sugar for `apply { effects: [{ op: \"split\", target, at }] }` — returns the Receipt (`new_ids` holds the new siblings); preview with `plan`.",
+      inputSchema: { id: z.string(), at: z.array(z.number().int()), ...REPO_ARG },
     },
     async (args) => {
       try {
@@ -1008,7 +918,7 @@ export function buildServer(ctx: ServerContext): McpServer {
         const root = requireRoot(rootPath);
         const block = resolveBlockRef(repoId, args.id);
         // The planner pins the content CAS from the live row (the block is live: it resolved).
-        return sugar(repoId, root, [{ op: "split", target: blockTarget(block), at: args.at }], "blocks_split", args.dry_run);
+        return sugar(repoId, root, splitEffects(block, args.at));
       } catch (e) {
         return fail(e);
       }
@@ -1018,8 +928,8 @@ export function buildServer(ctx: ServerContext): McpServer {
   tool(
     "blocks_merge",
     {
-      description: "Merge adjacent blocks into the first, joined by `separator` (default a blank line). `blocks` are refs (≥2). One merge op through the kernel writer.",
-      inputSchema: { blocks: z.array(z.string()), separator: z.string().optional(), dry_run: z.boolean().optional(), ...REPO_ARG },
+      description: "Merge adjacent blocks into the first, joined by `separator` (default a blank line). `blocks` are refs (≥2). Sugar for `apply { effects: [{ op: \"merge\", targets, separator? }] }` — returns the Receipt; preview with `plan`.",
+      inputSchema: { blocks: z.array(z.string()), separator: z.string().optional(), ...REPO_ARG },
     },
     async (args) => {
       try {
@@ -1027,8 +937,7 @@ export function buildServer(ctx: ServerContext): McpServer {
         const root = requireRoot(rootPath);
         requireSome("blocks_merge", "blocks", args.blocks);
         const blocks = args.blocks.map((b) => resolveBlockRef(repoId, b));
-        const effects: Effect[] = [{ op: "merge", targets: blocks.map(blockTarget), ...(args.separator !== undefined ? { separator: args.separator } : {}) }];
-        return sugar(repoId, root, effects, "blocks_merge", args.dry_run);
+        return sugar(repoId, root, mergeEffects(blocks, args.separator));
       } catch (e) {
         return fail(e);
       }
@@ -1038,8 +947,8 @@ export function buildServer(ctx: ServerContext): McpServer {
   tool(
     "blocks_check",
     {
-      description: "Macro: check (or uncheck with checked:false) the given task blocks. `ids` are the blocks' ids (or refs). Expands to update(attrs:{checked}) per block, CAS-pinned, applied via the same changeset machinery (tasks_complete { blocks } before surface 3.0).",
-      inputSchema: { ids: z.array(z.string()), checked: z.boolean().optional(), dry_run: z.boolean().optional(), ...REPO_ARG },
+      description: "Macro: check (or uncheck with checked:false) the given task blocks. `ids` are the blocks' ids (or refs). Sugar for `apply { effects: [{ op: \"set\", target: { kind: \"block\", id }, field: \"attrs.checked\", value }, …] }`, one per block, each CAS-pinned — returns the Receipt; preview with `plan` (tasks_complete { blocks } before surface 3.0).",
+      inputSchema: { ids: z.array(z.string()), checked: z.boolean().optional(), ...REPO_ARG },
     },
     async (args) => {
       try {
@@ -1047,11 +956,9 @@ export function buildServer(ctx: ServerContext): McpServer {
         const root = requireRoot(rootPath);
         requireSome("blocks_check", "ids", args.ids);
         const blocks = args.ids.map((b) => resolveBlockRef(repoId, b));
-        const checked = args.checked ?? true;
         // N × `set attrs.checked`, each CAS-pinned by the planner; a block named
         // twice is one write (the planner drops the identical duplicate, 3.2).
-        const effects: Effect[] = blocks.map((block) => ({ op: "set", target: blockTarget(block), field: "attrs.checked", value: checked }));
-        return sugar(repoId, root, effects, "blocks_check", args.dry_run);
+        return sugar(repoId, root, checkEffects(blocks, args.checked ?? true));
       } catch (e) {
         return fail(e);
       }
@@ -1062,8 +969,8 @@ export function buildServer(ctx: ServerContext): McpServer {
     "nodes_set",
     {
       description:
-        "Macro: surgically set one editable property of a projected node (e.g. a link's `name` text or `value` target, a task's `checked`). `id` is the node's id (from `query` over `from nodes` — the one tool that addresses `nodes` rows), `prop` the property, `value` its new value. Resolves the node to its block and rewrites only that node's span, applying one update op. Nodes are read-only projections — this is the affordance to edit what a node represents without hand-rewriting the block. Errors node_not_editable (with the editable prop list) when the kind/prop has no editor. (node_set before surface 3.0.)",
-      inputSchema: { id: z.string(), prop: z.string(), value: z.string(), dry_run: z.boolean().optional(), ...REPO_ARG },
+        "Macro: surgically set one editable property of a projected node (e.g. a link's `name` text or `value` target, a task's `checked`). `id` is the node's id (from `query` over `from nodes` — the one tool that addresses `nodes` rows), `prop` the property, `value` its new value. Resolves the node to its block and rewrites only that node's span. Nodes are read-only projections — this is the affordance to edit what a node represents without hand-rewriting the block. Errors node_not_editable (with the editable prop list) when the kind/prop has no editor. Sugar for `apply { effects: [{ op: \"set\", target: { kind: \"node\", id }, field: prop, value }] }` — returns the Receipt; preview with `plan` (node_set before surface 3.0).",
+      inputSchema: { id: z.string(), prop: z.string(), value: z.string(), ...REPO_ARG },
     },
     async (args) => {
       try {
@@ -1071,7 +978,7 @@ export function buildServer(ctx: ServerContext): McpServer {
         const root = requireRoot(rootPath);
         const known = store.db.prepare("SELECT 1 FROM nodes WHERE node_id = ? AND repo_id = ?").get(args.id, repoId);
         if (!known) throw new EngineError("block_missing", `no node with id ${JSON.stringify(args.id)}`, { data: { id: args.id } });
-        return sugar(repoId, root, [{ op: "set", target: { kind: "node", id: args.id }, field: args.prop, value: args.value }], "nodes_set", args.dry_run);
+        return sugar(repoId, root, nodeSetEffects(args.id, args.prop, args.value));
       } catch (e) {
         return fail(e);
       }
@@ -1082,8 +989,8 @@ export function buildServer(ctx: ServerContext): McpServer {
     "blocks_append",
     {
       description:
-        "Macro: append markdown INTO a block, by what the block is. `id` is a block's id (or a ref). A HEADING: the `text` is inserted at the end of its section range (before the next heading of equal or higher level) — the former sections_append. A CONTAINER (a list, list item, task, blockquote or table — anything the kernel accepts as a parent): inserted at the end of its children (`blocks_insert { to: <id>, at: \"end\" }`). A LEAF (a paragraph, code fence, …) is `block_not_container` — append means \"into\", never a sibling insert; place after it with `blocks_insert { to: <its parent>, at: { after: <id> } }`. Expands to one insert op; to append at a whole document's end, or inside a section named by its heading TEXT, use docs_append.",
-      inputSchema: { id: z.string(), text: z.string(), dry_run: z.boolean().optional(), ...REPO_ARG },
+        "Macro: append markdown INTO a block, by what the block is. `id` is a block's id (or a ref). A HEADING: the `text` is inserted at the end of its section range (before the next heading of equal or higher level) — `insert into { kind: \"section\", heading_id }`. A CONTAINER (a list, list item, task, blockquote or table — anything the kernel accepts as a parent): inserted at the end of its children (`insert into { kind: \"block\", id } at end`). A LEAF (a paragraph, code fence, …) is `block_not_container` — append means \"into\", never a sibling insert; place after it with `blocks_insert { to: <its parent>, at: { after: <id> } }`. Sugar for that one `insert` effect — returns the Receipt; preview with `plan`. To append at a whole document's end, or inside a section named by its heading TEXT, use docs_append.",
+      inputSchema: { id: z.string(), text: z.string(), ...REPO_ARG },
     },
     async (args) => {
       try {
@@ -1104,7 +1011,7 @@ export function buildServer(ctx: ServerContext): McpServer {
             data: { id: block, type: row.type },
           });
         }
-        return sugar(repoId, root, [{ op: "insert", into, at: "end", markdown: args.text }], "blocks_append", args.dry_run);
+        return sugar(repoId, root, appendEffects(into, args.text));
       } catch (e) {
         return fail(e);
       }
@@ -1115,8 +1022,8 @@ export function buildServer(ctx: ServerContext): McpServer {
     "docs_append",
     {
       description:
-        "Macro: append markdown to a document — at its END, or at the end of one of its sections when `section` names a heading by its TEXT (`\"Setup\"`; an ATX spelling `\"## Setup\"` is accepted). The journal/log/running-note primitive. ADDITIVE and identity-preserving, NOT a whole-body replace: the `text` is parsed into blocks and inserted as NEW blocks after the existing ones (at the document's top level, or inside the section's range), so every existing block keeps its stable `b_` id (omgbase deliberately has no whole-body `docs_put` — see mcp-api). Expands to a single insert op; commits atomically through the same kernel path as `apply`, returning the new revision(s) and the inserted block ids. Address the document by `id` or `path` (at least one). The document must already exist — a missing doc errors `doc_missing` (creating one is docs_create's job, never this); a `section` matching no heading in it is `parent_missing`, one matching several is `ambiguous_heading` with `candidates[{ id, doc_id }]` — pass that heading's id to blocks_append, which appends into a block by its id.",
-      inputSchema: { ...DOC_ARGS, text: z.string(), section: z.string().optional(), dry_run: z.boolean().optional(), ...REPO_ARG },
+        "Macro: append markdown to a document — at its END, or at the end of one of its sections when `section` names a heading by its TEXT (`\"Setup\"`; an ATX spelling `\"## Setup\"` is accepted). The journal/log/running-note primitive. ADDITIVE and identity-preserving, NOT a whole-body replace: the `text` is parsed into blocks and inserted as NEW blocks after the existing ones (at the document's top level, or inside the section's range), so every existing block keeps its stable `b_` id (omgbase deliberately has no whole-body `docs_put` — see mcp-api). Sugar for one `insert at end` effect into the document or the resolved section — returns the Receipt (`new_ids` the appended blocks); preview with `plan`. Address the document by `id` or `path` (at least one). The document must already exist — a missing doc errors `doc_missing` (creating one is docs_create's job, never this); a `section` matching no heading in it is `parent_missing`, one matching several is `ambiguous_heading` with `candidates[{ id, doc_id }]` — pass that heading's id to blocks_append, which appends into a block by its id.",
+      inputSchema: { ...DOC_ARGS, text: z.string(), section: z.string().optional(), ...REPO_ARG },
     },
     async (args) => {
       try {
@@ -1124,8 +1031,8 @@ export function buildServer(ctx: ServerContext): McpServer {
         const root = requireRoot(rootPath);
         // Resolve the locator to a live doc id FIRST — a missing doc is doc_missing
         // (locateDoc throws it), never an auto-create. Then expand to the single
-        // insert-at-end op (document top level, or the named section) and apply
-        // it (existing blocks keep their ids; only the appended blocks are minted).
+        // insert-at-end effect (document top level, or the named section) and
+        // apply it (existing blocks keep their ids; only the appended blocks are minted).
         const docId = locateDoc(repoId, "docs_append", registry.get("docs_append")!.shape, args);
         let into: EffectTarget;
         if (args.section !== undefined) {
@@ -1134,7 +1041,7 @@ export function buildServer(ctx: ServerContext): McpServer {
         } else {
           into = { kind: "document", id: docId };
         }
-        return sugar(repoId, root, [{ op: "insert", into, at: "end", markdown: args.text }], "docs_append", args.dry_run);
+        return sugar(repoId, root, docsAppendEffects(into, args.text));
       } catch (e) {
         return fail(e);
       }
@@ -1144,8 +1051,8 @@ export function buildServer(ctx: ServerContext): McpServer {
   tool(
     "links_retarget",
     {
-      description: "Macro: rewrite ONE link destination everywhere it is linked — the single-pair form of links_repair (same matching rules: whole link destinations only, leading `/` optional, fragments preserved; prose/inline code/code fences untouched). Scope source docs with `path_glob`. ALWAYS call with dry_run:true first to preview `hits` + `pairs` (the dry run plans through the kernel, so it fails exactly where the apply would), then dry_run:false to apply.",
-      inputSchema: { from_target: z.string(), to_target: z.string(), path_glob: z.string().optional(), dry_run: z.boolean().optional(), ...REPO_ARG },
+      description: "Macro: rewrite ONE link destination everywhere it is linked — the single-pair form of links_repair (same matching rules: whole link destinations only, leading `/` optional, fragments preserved; prose/inline code/code fences untouched). Scope source docs with `path_glob`. COMMITS: sugar for `apply { effects: [{ op: \"retarget\", repairs: [{ from, to }], path_glob? }] }`; returns `hits[{id,path,oldRaw,newRaw}]` (the rewritten block and its document) and `pairs[{from,to,hits}]` plus the Receipt (`commit` null when nothing matched). To PREVIEW first, call `plan` with that one effect: its `preview.retarget[0]` carries the same `hits` and `pairs` and `preview.diffs` the files, and it fails exactly where the commit would (through surface 3.x this tool was a dry run by default, with `applied`).",
+      inputSchema: { from_target: z.string(), to_target: z.string(), path_glob: z.string().optional(), ...REPO_ARG },
     },
     async (args) => {
       try {
@@ -1155,11 +1062,8 @@ export function buildServer(ctx: ServerContext): McpServer {
         // effect, whose lowering runs the same macro (same ops, same CAS pins).
         const { hits: rawHits, pairs } = linksRetarget(store, repoId, args.from_target, args.to_target, args.path_glob ? { pathGlob: args.path_glob } : {});
         const hits = surfaceRetargetHits(rawHits);
-        const dryRun = args.dry_run !== false;
-        const effects: Effect[] = [{ op: "retarget", repairs: [{ from: args.from_target, to: args.to_target }], ...(args.path_glob ? { path_glob: args.path_glob } : {}) }];
-        const res = sugarResult(repoId, rootPath, effects, "links_retarget", dryRun);
-        if (dryRun) return ok({ hits, pairs, applied: false, ...res });
-        return okMutated({ hits, pairs, applied: true, ...res });
+        const { receipt } = runSugar(repoId, rootPath, retargetEffects([{ from: args.from_target, to: args.to_target }], args.path_glob, "links_retarget"));
+        return okMutated({ hits, pairs, ...surfaceReceipt(receipt) });
       } catch (e) {
         return fail(e);
       }
@@ -1191,13 +1095,12 @@ export function buildServer(ctx: ServerContext): McpServer {
     "links_repair",
     {
       description:
-        "Macro: BULK stale-link repair — rewrite one or MANY LINK DESTINATIONS in ONE changeset. Pass `repairs` (an array of {from,to}) to fix several dangling targets — e.g. those surfaced by links_stale — at once; a single {from_target,to_target} pair is also accepted. MATCHING: `from` must be the WHOLE destination of a Markdown link/image `[t](dest)`, a wikilink `[[dest]]`/`[[dest|alias]]`, or a bare-path inline field `key:: /dest` — a leading `/` is optional on either side (so links_stale's `target` or `authored` both work), and a trailing `#heading`/`^ref` fragment on the link is kept and re-appended to `to`. NOT rewritten: prose mentions, inline code, `code_fence` blocks, longer paths that merely contain `from`, and frontmatter values (use docs_set_meta). Scope source docs with `path_glob` (as in links_stale). Ops coalesce to one update per TOP-MOST block (a list and its items count once), so a batch never trips over its own re-minted children. Returns `hits[{id,path,oldRaw,newRaw}]` (the rewritten block and its document) and `pairs[{from,to,hits}]` (per-pair destination counts; 0 = nothing matched). ALWAYS call with dry_run:true first — the dry run plans through the kernel (returns `diffs`), so it fails exactly where the apply would — then dry_run:false to apply.",
+        "Macro: BULK stale-link repair — rewrite one or MANY LINK DESTINATIONS in ONE changeset. Pass `repairs` (an array of {from,to}) to fix several dangling targets — e.g. those surfaced by links_stale — at once; a single {from_target,to_target} pair is also accepted. MATCHING: `from` must be the WHOLE destination of a Markdown link/image `[t](dest)`, a wikilink `[[dest]]`/`[[dest|alias]]`, or a bare-path inline field `key:: /dest` — a leading `/` is optional on either side (so links_stale's `target` or `authored` both work), and a trailing `#heading`/`^ref` fragment on the link is kept and re-appended to `to`. NOT rewritten: prose mentions, inline code, `code_fence` blocks, longer paths that merely contain `from`, and frontmatter values (use docs_set_meta). Scope source docs with `path_glob` (as in links_stale). Ops coalesce to one update per TOP-MOST block (a list and its items count once), so a batch never trips over its own re-minted children. COMMITS: sugar for `apply { effects: [{ op: \"retarget\", repairs, path_glob? }] }`; returns `hits[{id,path,oldRaw,newRaw}]` (the rewritten block and its document) and `pairs[{from,to,hits}]` (per-pair destination counts; 0 = nothing matched) plus the Receipt (`commit` null when nothing matched). To PREVIEW first, call `plan` with that one effect — its `preview.retarget[0]` carries the same `hits`/`pairs`, `preview.diffs` the files — and it fails exactly where the commit would (through surface 3.x this tool was a dry run by default, with `applied`).",
       inputSchema: {
         repairs: z.array(z.object({ from: z.string(), to: z.string() })).optional(),
         from_target: z.string().optional(),
         to_target: z.string().optional(),
         path_glob: z.string().optional(),
-        dry_run: z.boolean().optional(),
         ...REPO_ARG,
       },
     },
@@ -1215,86 +1118,37 @@ export function buildServer(ctx: ServerContext): McpServer {
         }
         const { hits: rawHits, pairs } = linksRepair(store, repoId, repairs, args.path_glob ? { pathGlob: args.path_glob } : {});
         const hits = surfaceRetargetHits(rawHits);
-        // The dry run plans through the same kernel path (no write, no drain) so
-        // a preview surfaces exactly the failure an apply would hit.
-        const dryRun = args.dry_run !== false;
-        const effects: Effect[] = [{ op: "retarget", repairs: repairs.map((r) => ({ from: r.from, to: r.to })), ...(args.path_glob ? { path_glob: args.path_glob } : {}) }];
-        const res = sugarResult(repoId, rootPath, effects, "links_repair", dryRun);
-        if (dryRun) return ok({ hits, pairs, applied: false, ...res });
-        return okMutated({ hits, pairs, applied: true, ...res });
+        const { receipt } = runSugar(repoId, rootPath, retargetEffects(repairs, args.path_glob, "links_repair"));
+        return okMutated({ hits, pairs, ...surfaceReceipt(receipt) });
       } catch (e) {
         return fail(e);
       }
     },
   );
 
-  // Doc-level operations (06 §API). The workspace dir rides along (LOCK_DIR):
-  // the tool-boundary lock already holds the writer lock for the call, so the
-  // operation's own lock re-enters it, and the stat cache is recorded as on the
-  // CLI path. MCP-originated writes are actor agent:mcp.
-  // `dry_run` validates and returns the per-file `diffs` without writing, the
-  // docs-verb peer of `apply`'s preview.
-  const docResult = <T,>(res: T, dryRun?: boolean) => (dryRun ? ok(res) : okMutated(res));
-
-  // ---- the document operations as effects (spec/surface §4 "Sugar over effects", 3.3) ----
+  // ---- the document operations as effects (spec/surface §4 "The document operations", 3.3; 4.0) ----
   // `docs_create` / `docs_delete` / `docs_move` / `docs_set_meta` are one document
   // effect each — `create`, `remove { target: document }`, `move { target:
   // document, to, retarget_inbound }`, one `set`/`unset frontmatter.<k>` per key —
-  // planned and executed through the same seam as the block-level sugar, under
-  // the legacy document-operation reasons (`create <rel>`, `delete <path>`,
-  // `move <from> -> <to>`, `set_meta <path>`; `spec/mutate` §6) and returning the
-  // legacy `spec/mutate` §6 result shapes, re-shaped by `surfaceDocOpResult` as
-  // before. Each tool keeps its own pre-checks — `locateDoc`'s `doc_missing`, the
-  // create/move `path_taken` pair (no `data`, as pinned) — so the planner's own
-  // copies of them never fire and the error envelopes are unchanged.
-  type Diff = { before: string; after: string };
-  const documentTarget = (id: string): EffectTarget => ({ kind: "document", id });
-  const docEffects = (scope: { repoId: string; rootPath: string | undefined }, effects: Effect[], reason: string | undefined, dryRun?: boolean): { plan: Plan; receipt?: Receipt } => {
-    const rootPath = requireRoot(scope.rootPath);
-    try {
-      return applyEffectsDetailed(store, { repoId: scope.repoId, rootPath, effects, origin: { actor: "agent:mcp", ...(reason !== undefined ? { reason } : {}) }, ...LOCK_DIR, ...(dryRun ? { dryRun: true } : {}) });
-    } catch (e) {
-      throw stripEffectIndex(e);
-    }
-  };
-  /** The dry-run `diffs` (a plan always carries its preview here). */
-  const previewDiffs = (plan: Plan): Record<string, Diff> => plan.preview?.diffs ?? {};
-  // A dry run realizes the plan's symbols exactly as the block-level sugar does
-  // (`realizeNewIds`: one production mint per `new_ids` entry, in order) so it
-  // still consumes the ids the legacy operation burned — a create's `d`, the
-  // discarded `b`s of a move's retarget re-parse (`spec/mutate` §10) — and the
-  // plan's `$new.n` are mapped to them (§9).
-  const dryDocResult = (plan: Plan, docId: string, path: string, diffs: Record<string, Diff> = previewDiffs(plan)): DocOpResult => {
-    const ids = realizeNewIds(plan);
-    return { docId: ids[docId] ?? docId, path, committed: false, diffs };
-  };
+  // built by the shared builders (`mutate/sugar.ts`), planned and executed
+  // through the same seam as the block-level sugar under the `spec/mutate` §6
+  // reasons (`create <rel>`, `delete <path>`, `move <from> -> <to>`, `set_meta
+  // <path>`), each returning the Receipt (4.0). Each tool keeps its own
+  // pre-checks — `locateDoc`'s `doc_missing`, the create/move `path_taken` pair
+  // (no `data`, as pinned) — so the planner's own copies of them never fire and
+  // the error envelopes are unchanged. The workspace dir rides along (LOCK_DIR):
+  // the tool-boundary lock already holds the writer lock for the call, so the
+  // request's own lock re-enters it. MCP-originated writes are actor agent:mcp.
   /** The storage-form path of a document `locateDoc` just found. */
   const pathOfDoc = (docId: string): string => findDoc(store, { docId })!.path;
   /** `path_taken` exactly as the legacy document operations raised it: their message, no `data` (§9). */
-  const requireAbsent = (repoId: string, rootPath: string, rel: string, takenMessage: string): void => {
-    if (findDoc(store, { repoId, path: rel })) throw new MutationError("path_taken", takenMessage);
-    if (resolveDocStore({ rootPath }).exists(rel)) throw new MutationError("path_taken", `file already exists on disk at ${rel}`);
-  };
-  // A move's dry-run `diffs` in the legacy key order — the old path emptied, the
-  // new path filled, then the rewritten sources — rebuilt from the plan's
-  // preview, which lists the sources first (`spec/mutate` §11.6). When the moved
-  // document links to itself by path it is a source too: the legacy preview kept
-  // the OLD path's entry as the rewrite (`bytes → rewritten`; the document has
-  // not moved in a dry run) and the new path as the plain rename (`"" → bytes`),
-  // pinned in §9, where the plan carries the rewritten bytes at the new path —
-  // the rebuild restores the legacy reading.
-  const moveDiffs = (preview: Record<string, Diff>, from: string, to: string): Record<string, Diff> => {
-    const { [from]: old, [to]: dest, ...sources } = preview;
-    const bytes = old?.before ?? "";
-    const rewritten = dest !== undefined && dest.after !== bytes ? dest.after : null;
-    return { [from]: { before: bytes, after: rewritten ?? "" }, [to]: { before: "", after: bytes }, ...sources };
-  };
+  const requireAbsent = (repoId: string, rootPath: string, rel: string, takenMessage: string): void => requireAbsentPath(store, repoId, { rootPath }, rel, takenMessage);
 
   tool(
     "docs_create",
     {
-      description: "Create a new document at `path` (the new document's path, either form) from complete file bytes (`markdown`), with optional structured `frontmatter`; returns `{ id, path, committed }`. Fails path_taken if it already exists. dry_run:true validates and returns the would-be file under `diffs` (committed:false) without writing.",
-      inputSchema: { path: z.string(), markdown: z.string(), frontmatter: z.record(z.string(), z.unknown()).optional(), dry_run: z.boolean().optional(), ...REPO_ARG },
+      description: "Create a new document at `path` (the new document's path, either form) from complete file bytes (`markdown`), with optional structured `frontmatter`. Sugar for `apply { effects: [{ op: \"create\", path, markdown, frontmatter? }] }` — returns the Receipt: `revisions[0]` is the created document (its `id`, rooted `path`, `hash`), `new_ids[\"$new.0\"]` the same id and `$new.1…` its blocks in pre-order. Fails path_taken if it already exists. Preview with `plan` over that effect (`preview.diffs[path]` is `\"\" → the bytes`).",
+      inputSchema: { path: z.string(), markdown: z.string(), frontmatter: z.record(z.string(), z.unknown()).optional(), ...REPO_ARG },
     },
     async (args) => {
       try {
@@ -1302,13 +1156,7 @@ export function buildServer(ctx: ServerContext): McpServer {
         const rootPath = requireRoot(scope.rootPath);
         const rel = canonicalDocPath(args.path);
         requireAbsent(scope.repoId, rootPath, rel, `document already exists at ${rel}`);
-        const { plan, receipt } = docEffects(scope, [{ op: "create", path: rel, markdown: args.markdown, ...(args.frontmatter !== undefined ? { frontmatter: args.frontmatter } : {}) }], `create ${rel}`, args.dry_run);
-        // The new document's id: the receipt's one revision when committed; on a
-        // dry run the `d` the realize shim mints for `$new.0` (the create's symbol).
-        const res: DocOpResult = receipt
-          ? { docId: receipt.revisions[0]!.id, path: rel, committed: true }
-          : dryDocResult(plan, "$new.0", rel);
-        return docResult(surfaceDocOpResult(res), args.dry_run);
+        return sugar(scope.repoId, rootPath, createEffects(rel, args.markdown, args.frontmatter));
       } catch (e) {
         return fail(e);
       }
@@ -1319,30 +1167,25 @@ export function buildServer(ctx: ServerContext): McpServer {
     "docs_move",
     {
       description:
-        "Rename a document to a new path (`to_path`, `/`-rooted or bare; the result `{ id, path, committed, retargeted, dangling }` reports the rooted form); the document is addressed by `id` or `path`. Block identity and history are preserved, and the inbound links FOLLOW it: every link written against the old path (Markdown links/images, wikilinks, bare-path inline fields — anchors, link text, titles and code spans preserved, absolute vs relative style kept) is rewritten to the new path in the same call as one CAS-checked changeset, so a move never leaves the graph broken. Fails path_taken if the destination exists. The result carries `retargeted` (the touched blocks/docs) and `dangling` — what could NOT be rewritten, i.e. frontmatter relations (block null; fix with docs_set_meta). Pass `retarget_inbound:false` to opt out for the rarer intent that the old path become unbound: the links are left as written, listed in `dangling` ({doc_id, path, block_id, target, anchor, field?} per occurrence — a link row under the `links` target's names) and reported by links_stale (their edges become `phantom:<old path>`); links already written against the new path start resolving to this doc either way. dry_run:true validates and returns the plan — `dangling`, `retargeted`, and the per-file `diffs` (the old path emptied, the new path filled, plus the rewritten sources) — without renaming or committing.",
-      inputSchema: { ...DOC_ARGS, to_path: z.string(), retarget_inbound: z.boolean().optional(), dry_run: z.boolean().optional(), ...REPO_ARG },
+        "Rename a document to a new path (`to_path`, `/`-rooted or bare); the document is addressed by `id` or `path`. Block identity and history are preserved, and the inbound links FOLLOW it: every link written against the old path (Markdown links/images, wikilinks, bare-path inline fields — anchors, link text, titles and code spans preserved, absolute vs relative style kept) is rewritten to the new path in the same call as one CAS-checked commit, so a move never leaves the graph broken. Fails path_taken if the destination exists. Sugar for `apply { effects: [{ op: \"move\", target: { kind: \"document\", id }, to, retarget_inbound? }] }` — returns the Receipt (one revision per rewritten source; the moved document's own revision does not advance unless it links to itself) plus `retargeted` (the touched blocks/docs) and `dangling` — what could NOT be rewritten, i.e. frontmatter relations (block null; fix with docs_set_meta). Pass `retarget_inbound:false` to opt out for the rarer intent that the old path become unbound: the links are left as written, listed in `dangling` ({doc_id, path, block_id, target, anchor, field?} per occurrence — a link row under the `links` target's names) and reported by links_stale (their edges become `phantom:<old path>`); links already written against the new path start resolving to this doc either way. Preview with `plan` over that effect: `preview.diffs` holds the old path emptied, the new path filled and the rewritten sources.",
+      inputSchema: { ...DOC_ARGS, to_path: z.string(), retarget_inbound: z.boolean().optional(), ...REPO_ARG },
     },
     async (args) => {
       try {
         const scope = repoScope(args.repo);
         const docId = locateDoc(scope.repoId, "docs_move", registry.get("docs_move")!.shape, args);
         const rootPath = requireRoot(scope.rootPath);
-        const from = pathOfDoc(docId);
+        const doc = { id: docId, path: pathOfDoc(docId) };
         const to = canonicalDocPath(args.to_path);
         requireAbsent(scope.repoId, rootPath, to, `a document already exists at ${to}`);
         const retargetInbound = args.retarget_inbound !== false;
         // Who links here BY PATH, as written — read before the path changes — and
-        // the rewrite the move carries: `planInboundRetarget` is pure over the
-        // current blocks, so computed here, before the commit, it equals what the
-        // planner lowered (`spec/mutate` §11.3) and yields `dangling`/`retargeted`.
-        const inbound = inboundLinksTo(store, scope.repoId, docId, from);
-        const rt = retargetInbound && inbound.length > 0 ? planInboundRetarget(store, docId, from, to, inbound) : null;
-        const links = rt ? { dangling: rt.dangling, retargeted: { blocks: rt.blocks, docs: rt.docs } } : { dangling: inbound, retargeted: null };
-        const { plan, receipt } = docEffects(scope, [{ op: "move", target: documentTarget(docId), to, ...(retargetInbound ? {} : { retarget_inbound: false }) }], `move ${from} -> ${to}`, args.dry_run);
-        const res: DocMoveResult = receipt
-          ? { docId, path: to, committed: true, ...links }
-          : { ...dryDocResult(plan, docId, to, moveDiffs(previewDiffs(plan), from, to)), ...links };
-        return docResult(surfaceDocMoveResult(res), args.dry_run);
+        // the rewrite the move carries (`moveLinks` is pure over the current
+        // blocks, so computed here, before the commit, it equals what the planner
+        // lowered, `spec/mutate` §11.3) → `dangling`/`retargeted`.
+        const links = moveLinks(store, scope.repoId, doc, to, retargetInbound);
+        const { receipt } = runSugar(scope.repoId, rootPath, moveDocEffects(doc, to, retargetInbound));
+        return okMutated({ ...surfaceReceipt(receipt), retargeted: links.retargeted, dangling: links.dangling.map(surfaceInboundLink) });
       } catch (e) {
         return fail(e);
       }
@@ -1352,17 +1195,15 @@ export function buildServer(ctx: ServerContext): McpServer {
   tool(
     "docs_delete",
     {
-      description: "Delete a document: tombstone it and its live blocks (resurrection-poolable) and remove the file. Address it by `id` or `path`. dry_run:true validates and returns the file's removal under `diffs` without deleting.",
-      inputSchema: { ...DOC_ARGS, dry_run: z.boolean().optional(), ...REPO_ARG },
+      description: "Delete a document: tombstone it and its live blocks (resurrection-poolable) and remove the file. Address it by `id` or `path`. Sugar for `apply { effects: [{ op: \"remove\", target: { kind: \"document\", id } }] }` — returns the Receipt (a tombstone advances no revision: `revisions` is empty, `commit` the one commit). Preview with `plan` over that effect (`preview.diffs[path]` is `the bytes → \"\"`).",
+      inputSchema: { ...DOC_ARGS, ...REPO_ARG },
     },
     async (args) => {
       try {
         const scope = repoScope(args.repo);
         const docId = locateDoc(scope.repoId, "docs_delete", registry.get("docs_delete")!.shape, args);
-        const path = pathOfDoc(docId);
-        const { plan, receipt } = docEffects(scope, [{ op: "remove", target: documentTarget(docId) }], `delete ${path}`, args.dry_run);
-        const res: DocOpResult = receipt ? { docId, path, committed: true } : dryDocResult(plan, docId, path);
-        return docResult(surfaceDocOpResult(res), args.dry_run);
+        const rootPath = requireRoot(scope.rootPath);
+        return sugar(scope.repoId, rootPath, deleteDocEffects({ id: docId, path: pathOfDoc(docId) }));
       } catch (e) {
         return fail(e);
       }
@@ -1372,29 +1213,21 @@ export function buildServer(ctx: ServerContext): McpServer {
   tool(
     "docs_set_meta",
     {
-      description: "Surgical frontmatter patch: set the given keys and/or unset named keys on the document addressed by `id` or `path`, re-ingesting it. Other frontmatter is preserved. dry_run:true validates and returns the rewritten file under `diffs` without writing.",
-      inputSchema: { ...DOC_ARGS, set: z.record(z.string(), z.unknown()).optional(), unset: z.array(z.string()).optional(), dry_run: z.boolean().optional(), ...REPO_ARG },
+      description: "Surgical frontmatter patch: set the given keys and/or unset named keys on the document addressed by `id` or `path`. Other frontmatter and the whole body are preserved (every block keeps its id). Sugar for `apply { effects: [{ op: \"set\", target: { kind: \"document\", id }, field: \"frontmatter.<key>\", value }, { op: \"unset\", …, field: \"frontmatter.<key>\" }, …] }`, one effect per key — returns the Receipt; at least one of `set`/`unset` is required. Preview with `plan` over those effects (`preview.diffs[path]` is the file before → after).",
+      inputSchema: { ...DOC_ARGS, set: z.record(z.string(), z.unknown()).optional(), unset: z.array(z.string()).optional(), ...REPO_ARG },
     },
     async (args) => {
       try {
         const scope = repoScope(args.repo);
         const shape = registry.get("docs_set_meta")!.shape;
         const docId = locateDoc(scope.repoId, "docs_set_meta", shape, args);
-        requireRoot(scope.rootPath);
-        const path = pathOfDoc(docId);
-        const unset = args.unset ?? [];
-        // One scalar effect per key, `unset` winning over `set` for a shared key
-        // (the legacy merge spread `set` then deleted `unset`); the planner drops a
-        // repeated `unset`. An empty patch is an argument error (3.3, §9) — it used
-        // to rewrite the frontmatter through the emitter for nothing.
-        const effects: Effect[] = [
-          ...Object.entries(args.set ?? {}).filter(([k]) => !unset.includes(k)).map(([k, value]): Effect => ({ op: "set", target: documentTarget(docId), field: `frontmatter.${k}`, value })),
-          ...unset.map((k): Effect => ({ op: "unset", target: documentTarget(docId), field: `frontmatter.${k}` })),
-        ];
-        if (effects.length === 0) throw argumentError("docs_set_meta", "pass `set` and/or `unset`", shape);
-        const { plan, receipt } = docEffects(scope, effects, `set_meta ${path}`, args.dry_run);
-        const res: DocOpResult = receipt ? { docId, path, committed: true } : dryDocResult(plan, docId, path);
-        return docResult(surfaceDocOpResult(res), args.dry_run);
+        const rootPath = requireRoot(scope.rootPath);
+        // One scalar effect per key, `unset` winning over `set` for a shared key;
+        // the planner drops a repeated `unset`. An empty patch is an argument
+        // error (3.3, §9) — it used to rewrite the frontmatter through the emitter for nothing.
+        const built = setMetaEffects({ id: docId, path: pathOfDoc(docId) }, args.set, args.unset);
+        if (built.effects.length === 0) throw argumentError("docs_set_meta", "pass `set` and/or `unset`", shape);
+        return sugar(scope.repoId, rootPath, built);
       } catch (e) {
         return fail(e);
       }
@@ -1412,8 +1245,9 @@ export function buildServer(ctx: ServerContext): McpServer {
       try {
         const scope = repoScope(args.repo);
         const docId = locateDoc(scope.repoId, "docs_update", registry.get("docs_update")!.shape, args);
-        const { receipt } = docEffects(scope, [{ op: "set", target: documentTarget(docId), field: "content", value: args.content }], args.reason);
-        return okMutated(surfaceReceipt(receipt!));
+        const rootPath = requireRoot(scope.rootPath);
+        const { receipt } = runSugar(scope.repoId, rootPath, updateContentEffects({ id: docId }, args.content), args.reason);
+        return okMutated(surfaceReceipt(receipt));
       } catch (e) {
         return fail(e);
       }

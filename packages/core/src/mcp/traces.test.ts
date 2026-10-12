@@ -68,7 +68,7 @@ describe("trace suite", () => {
     })!;
     // 2. apply the move
     const { payload: res } = await call("apply", {
-      ops: [{ op: "move", blocks: [qId], to: { parent: { heading: decHeading, scope: "section" }, at: "end" } }],
+      effects: [{ op: "move", targets: [{ kind: "block", id: qId }], into: { kind: "section", heading_id: decHeading }, at: "end" }],
       reason: "promote decision",
     });
     expect(res.committed).toBe(true);
@@ -108,14 +108,15 @@ describe("trace suite", () => {
     expect(turns).toBe(1);
   });
 
-  it("T8 — links_retarget with dry-run then apply (≤ 2 turns)", async () => {
+  it("T8 — plan the retarget, then links_retarget commits (≤ 2 turns)", async () => {
     save("l.md", "# L\n\nsee [old](/old.md) here\n");
     await connect();
-    const { payload: preview } = await call("links_retarget", { from_target: "/old.md", to_target: "/new.md", dry_run: true });
-    expect(preview.applied).toBe(false);
-    expect(arr(preview.hits).length).toBe(1);
-    const { payload: applied } = await call("links_retarget", { from_target: "/old.md", to_target: "/new.md", dry_run: false });
-    expect(applied.applied).toBe(true);
+    const { payload: preview } = await call("plan", { effects: [{ op: "retarget", repairs: [{ from: "/old.md", to: "/new.md" }] }] });
+    const retarget = (preview.preview as { retarget: { hits: unknown[] }[] }).retarget[0]!;
+    expect(arr(retarget.hits).length).toBe(1);
+    const { payload: applied } = await call("links_retarget", { from_target: "/old.md", to_target: "/new.md" });
+    expect(applied.committed).toBe(true);
+    expect(arr(applied.hits).length).toBe(1);
     expect(turns).toBeLessThanOrEqual(2);
     expect(readFileSync(join(dir, "l.md"), "utf8")).toContain("/new.md");
   });
@@ -125,7 +126,7 @@ describe("trace suite", () => {
     await connect();
     const bId = (store.db.prepare("SELECT block_id FROM blocks WHERE doc_id=(SELECT doc_id FROM docs WHERE path='c.md') AND text LIKE 'body%'").get() as { block_id: string }).block_id;
     const { payload, isError } = await call("apply", {
-      ops: [{ op: "update", block: bId, markdown: "new", expect: { content_hash: "deadbeef" } }],
+      effects: [{ op: "set", target: { kind: "block", id: bId }, field: "markdown", value: "new", expect: { content_hash: "deadbeef" } }],
     });
     expect(isError).toBe(true);
     expect(payload.error).toBe("stale_expectation");

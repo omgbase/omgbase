@@ -98,11 +98,14 @@ describe("plan / execute / apply { effects } over MCP", () => {
     expect(malformed.payload).toMatchObject({ error: "filter_invalid", data: { hint: "arguments" } });
   });
 
-  it("argument exclusivity: apply takes exactly one of ops/effects; execute exactly one form", async () => {
+  it("apply takes `effects` (required; the 3.x `ops` and `dry_run` are retired by name); execute exactly one form", async () => {
     const neither = await call("apply", {});
-    expect(neither.payload).toMatchObject({ error: "filter_invalid", message: "pass exactly one of `ops` or `effects` (apply takes dry_run?, effects?, ops?, reason?, repo?)", data: { hint: "arguments" } });
-    const both = await call("apply", { ops: [], effects: [] });
-    expect(both.payload.error).toBe("filter_invalid");
+    expect(neither.payload).toMatchObject({ error: "filter_invalid", message: "`effects` is required (apply takes effects, reason?, repo?)", data: { hint: "arguments" } });
+    const ops = await call("apply", { ops: [], effects: [] });
+    expect(ops.payload).toMatchObject({ error: "filter_invalid", message: "`ops` is no longer an argument — `apply` takes `effects` (the kernel ops are a library/fixture contract since spec/mutate 3.0) (apply takes effects, reason?, repo?)", data: { hint: "arguments" } });
+    const dry = await call("apply", { effects: SLICE1, dry_run: true });
+    expect(dry.payload).toMatchObject({ error: "filter_invalid", message: "`dry_run` is no longer an argument — preview with `plan { effects: [...] }` (apply takes effects, reason?, repo?)", data: { hint: "arguments" } });
+    expect(store.db.prepare("SELECT count(*) n FROM commits WHERE origin = 'api'").get()).toEqual({ n: 0 });
     const none = await call("execute", {});
     expect(none.payload).toMatchObject({ error: "filter_invalid", message: "pass exactly one of `plan` or `plan_id` + `effects` (execute takes effects?, plan?, plan_id?, reason?, repo?)" });
     const half = await call("execute", { effects: SLICE1 });
@@ -111,8 +114,8 @@ describe("plan / execute / apply { effects } over MCP", () => {
     expect(bothForms.payload.error).toBe("filter_invalid");
   });
 
-  it("apply { effects, dry_run } is the Plan; apply { effects } is the Receipt; a malformed effect is filter_invalid naming it", async () => {
-    const dry = await call("apply", { effects: SLICE1, dry_run: true });
+  it("plan { effects } is the Plan; apply { effects } is the Receipt with the plan's id; a malformed effect is filter_invalid naming it", async () => {
+    const dry = await call("plan", { effects: SLICE1 });
     expect(dry.isError).toBe(false);
     expect(dry.payload.plan_id).toMatch(/^[0-9a-f]{64}$/);
     expect(dry.payload.preview).toBeDefined();
@@ -127,10 +130,13 @@ describe("plan / execute / apply { effects } over MCP", () => {
     expect(conflict.payload).toMatchObject({ error: "conflicting_effects", retriable: false, data: { effects: [0, 1], focus: { kind: "scalar", target: { kind: "document", id: "d_0" }, field: "frontmatter.status" } } });
   });
 
-  it("the legacy ops path is unchanged", async () => {
-    const { payload, isError } = await call("apply", { ops: [{ op: "insert", doc: "d_0", to: { parent: { doc: true }, at: "end" }, markdown: "Appended." }] });
+  it("every apply records its intent (`commits.ops`): the kernel ops path is gone from the surface (4.0)", async () => {
+    const { payload, isError } = await call("apply", { effects: [{ op: "insert", into: { kind: "document", id: "d_0" }, at: "end", markdown: "Appended." }] });
     expect(isError).toBe(false);
-    expect(payload).toMatchObject({ results: [{ ids: [expect.stringMatching(/^b_/)] }], revisions: [{ id: "d_0", path: "/a.md" }], committed: true });
-    expect(store.db.prepare("SELECT ops FROM commits WHERE origin = 'api'").get()).toEqual({ ops: null });
+    expect(payload).toMatchObject({ revisions: [{ id: "d_0", path: "/a.md" }], new_ids: { "$new.0": expect.stringMatching(/^b_/) }, committed: true });
+    const row = store.db.prepare("SELECT ops FROM commits WHERE origin = 'api'").get() as { ops: string };
+    expect(row.ops).toMatch(/^\{"effects":\[/);
+    const legacy = await call("apply", { ops: [{ op: "insert", doc: "d_0", to: { parent: { doc: true }, at: "end" }, markdown: "Appended." }] });
+    expect(legacy.payload).toMatchObject({ error: "filter_invalid", data: { hint: "arguments" } });
   });
 });

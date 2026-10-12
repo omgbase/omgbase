@@ -43,7 +43,7 @@ function extractFrontmatter(blocks: RawBlock[]): { fmBlock: RawBlock | null; res
 /**
  * Plan a whole-document update. `docRef` is a doc id or repo-relative path;
  * `content` is the proposed complete document. Throws doc_missing if the
- * document does not exist (a create is docsCreate's job). Never writes.
+ * document does not exist (a create is the `create` effect's job). Never writes.
  */
 export function planUpdate(store: Store, repoId: string, rootPath: string, docRef: string, content: string, opts: PlanUpdateOptions = {}): Opset {
   void rootPath; // kept for the call shape; the planner never writes (3.0: the verify runs the in-memory planner, no doc store)

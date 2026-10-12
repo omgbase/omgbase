@@ -214,7 +214,8 @@ pub fn load_mut_doc(conn: &Connection, doc_id: &str) -> Result<Option<MutDoc>> {
 
 // ---- requests and results (§4) ---------------------------------------------------------
 
-/// Who is writing and why (`commits.actor`, `commits.reason`).
+/// Who is writing and why (`commits.actor`, `commits.reason`). An empty
+/// `actor` records `NULL` (a fixture `docs` step without an actor).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ApplyOrigin {
     pub actor: String,
@@ -229,24 +230,23 @@ impl ApplyOrigin {
             reason: reason.map(str::to_owned),
         }
     }
+
+    /// `commits.actor`: the actor, `None` when empty.
+    #[must_use]
+    pub fn commit_actor(&self) -> Option<&str> {
+        Some(self.actor.as_str()).filter(|a| !a.is_empty())
+    }
 }
 
-/// A frontmatter override (§4 `set_frontmatter`): the doc id and the new
-/// frontmatter raw (fences + separator), or `None` to drop it.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct SetFrontmatter {
-    pub doc: String,
-    pub raw: Option<String>,
-}
-
-/// §4 `Request`.
+/// §4 `Request` (mutate 3.0: the library/fixture contract — the public write
+/// is `apply { effects }`, `spec/mutate` §11; the `set_frontmatter` side
+/// channel of 2.x is gone, a plan's frontmatter being a file head, §11.3).
 #[derive(Clone, Debug, PartialEq)]
 pub struct ApplyRequest {
     pub repo_id: String,
     pub ops: Vec<Op>,
     pub origin: ApplyOrigin,
     pub dry_run: bool,
-    pub set_frontmatter: Vec<SetFrontmatter>,
 }
 
 /// `{ id, path, hash }` of a touched document (`spec/mutate` §4, 2.0): the
@@ -364,14 +364,9 @@ impl Store {
             .optional()?)
     }
 
-    /// §4 steps 1–3: load on first touch, apply every op in order (the
-    /// frontmatter overrides first).
+    /// §4 steps 1–3: load on first touch, apply every op in order.
     pub(crate) fn apply_ops(&mut self, req: &ApplyRequest) -> Result<Applied> {
         let mut runner = OpsRunner::new(&req.repo_id);
-        // §4 step 2: frontmatter overrides load their documents first.
-        for fm in &req.set_frontmatter {
-            runner.set_frontmatter(self, &fm.doc, fm.raw.clone())?;
-        }
         for raw_op in &req.ops {
             runner.push(self, raw_op)?;
         }
@@ -454,7 +449,7 @@ impl Store {
         let staged = stage(&loaded, on_disk, |d| d.doc.path.clone());
         let head = CommitHead {
             origin: Origin::Api,
-            actor: Some(req.origin.actor.as_str()),
+            actor: req.origin.commit_actor(),
             reason: req.origin.reason.as_deref(),
             clear_pending: false,
             ops: None,
@@ -636,19 +631,6 @@ impl OpsRunner {
             )
             .into()),
         }
-    }
-
-    /// `ApplyRequest.set_frontmatter`'s semantics: replace the frontmatter
-    /// bytes (fences + separator), leaving the leading trivia.
-    pub(crate) fn set_frontmatter(
-        &mut self,
-        store: &Store,
-        doc_id: &str,
-        raw: Option<String>,
-    ) -> Result<()> {
-        let i = self.ensure_doc(store, doc_id)?;
-        self.loaded[i].doc.frontmatter_raw = raw;
-        Ok(())
     }
 
     /// `spec/mutate` §11.3 (2.3): replace everything before the first block

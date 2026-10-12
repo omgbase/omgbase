@@ -32,7 +32,7 @@ use omgbase_reconcile::Config;
 use omgbase_store::tree::parse_tree_entries;
 use omgbase_store::{
     ApplyOrigin, ApplyRequest, BatchItem, BatchOutcome, DocOpContext, DocStore, EffectsOutcome,
-    LinkRepair, MemDocStore, PlanContext, SequentialMinter, SetFrontmatter, Store, TreeEntry,
+    LinkRepair, MemDocStore, PlanContext, SequentialMinter, Store, TreeEntry,
 };
 use rusqlite::types::Value as Sql;
 use rusqlite::{Connection, OptionalExtension, params};
@@ -316,14 +316,7 @@ fn validate_steps(at: &str, steps: Option<&Json>, nested: bool, problems: &mut V
             "apply" => {
                 only_keys(
                     b,
-                    &[
-                        "ts",
-                        "ops",
-                        "origin",
-                        "dry_run",
-                        "set_frontmatter",
-                        "crash_after_commit",
-                    ],
+                    &["ts", "ops", "origin", "dry_run", "crash_after_commit"],
                     &here,
                     problems,
                 );
@@ -332,11 +325,6 @@ fn validate_steps(at: &str, steps: Option<&Json>, nested: bool, problems: &mut V
                 require_origin(b.get("origin"), &here, problems);
                 if b.get("dry_run").is_some_and(|v| !v.is_boolean()) {
                     problems.push(format!("{here}: `dry_run` must be a boolean"));
-                }
-                if b.get("set_frontmatter").is_some_and(|v| !v.is_array()) {
-                    problems.push(format!(
-                        "{here}: `set_frontmatter` must be an array of {{ doc, raw }}"
-                    ));
                 }
             }
             "macro" => {
@@ -931,24 +919,11 @@ fn with_doc_store(
 
 fn run_apply(r: &mut Runner, ops: Vec<Op>, body: &JsonMap<String, Json>) -> Result<Json, String> {
     let ts = body.get("ts").and_then(Json::as_str).ok_or("apply.ts")?;
-    let set_frontmatter = body
-        .get("set_frontmatter")
-        .and_then(Json::as_array)
-        .map(|arr| {
-            arr.iter()
-                .map(|e| SetFrontmatter {
-                    doc: e["doc"].as_str().unwrap_or_default().to_owned(),
-                    raw: e.get("raw").and_then(Json::as_str).map(str::to_owned),
-                })
-                .collect()
-        })
-        .unwrap_or_default();
     let req = ApplyRequest {
         repo_id: r.repo_id.clone(),
         ops,
         origin: origin_from(body.get("origin")),
         dry_run: body.get("dry_run").and_then(Json::as_bool).unwrap_or(false),
-        set_frontmatter,
     };
     with_doc_store(r, |store, ds| {
         store.apply(&req, ds, ts).map(|res| res.to_json())

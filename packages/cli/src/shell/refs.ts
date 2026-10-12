@@ -62,13 +62,9 @@ export function deriveRows(value: unknown): Row[] | null {
     const o = value as Record<string, unknown>;
     if (Array.isArray(o.hits)) return o.hits.map(rowOf); // query/oqx
     if (Array.isArray(o.digests)) return o.digests.map(rowOf); // log
-    if (Array.isArray(o.results) && Array.isArray(o.revisions)) {
-      // ApplyResult: the minted/affected ids, flattened (one row per id).
-      const ids: string[] = [];
-      for (const r of o.results as { ids?: unknown }[]) {
-        if (Array.isArray(r.ids)) for (const id of r.ids) if (typeof id === "string") ids.push(id);
-      }
-      return ids.map((id) => ({ ref: id, label: id, value: id }));
+    if (typeof o.plan_id === "string" && Array.isArray(o.ids)) {
+      // A write's Receipt as the verbs capture it: the ids the write names (one row per id).
+      return (o.ids as unknown[]).filter((id): id is string => typeof id === "string").map((id) => ({ ref: id, label: id, value: id }));
     }
     if (Array.isArray(o.in) || Array.isArray(o.out)) {
       // links: both directions, each edge's far node is the selectable ref.

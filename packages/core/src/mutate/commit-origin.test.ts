@@ -6,11 +6,12 @@ import { Store } from "../core/store/store.js";
 import { ensureRepo } from "../core/attach.js";
 import { processCheckpoint } from "../sync/checkpoint.js";
 import { apply } from "./apply.js";
-import { docsCreate, docsSetMeta } from "./docs.js";
+import { docsCreate, docsSetMeta } from "./doc-ops.test.helpers.js";
 
 // History honesty (invariant #7): observed transitions are labeled `observed`;
 // only intent writes carry `api` + an actor. Every intent path — the kernel's
-// `apply` and the doc-level create/set_meta — must record origin "api" with the
+// `apply` and the document operations (the effect builders, spec/mutate §6:
+// `create <rel>`, `set_meta <path>` reasons) — must record origin "api" with the
 // caller's actor and reason, never the bulk-ingest `import` label (which is what
 // made `omg log --origin api` come back empty).
 

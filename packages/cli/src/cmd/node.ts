@@ -1,15 +1,16 @@
 import { parseArgs } from "node:util";
-import { nodeSet, editablePropsFor } from "@omgbase/core";
+import { nodeSetEffects, editablePropsFor } from "@omgbase/core";
 import type { Command } from "../commands.js";
 import type { Cli } from "../context.js";
 import { CliUsageError, EngineErrorLike, EXIT_OK, renderHelp } from "../output.js";
 import { requireNode } from "./_remote.js";
-import { runOps, runOpsRemote } from "./_mutate.js";
+import { runSugar, runSugarRemote } from "./_mutate.js";
 
 // `omg node set <nodeId> <prop> <value>` (node-editability) — surgically set an
 // editable property of a projected node (e.g. a link's text/target, a task's
-// checked). Resolves node → block via the adapter's registered editor and
-// applies one update op. `omg node props <nodeId>` reports what's editable.
+// checked): one `set { node, field: prop, value }` effect (the `nodes_set`
+// builder; cli 4.0), lowered by the planner through the adapter's registered
+// editor. `omg node props <nodeId>` reports what's editable.
 
 function nodeKindFormat(cli: Cli, nodeId: string): { kind: string; format: string } {
   const ws = cli.workspace();
@@ -45,11 +46,10 @@ async function runNode(cli: Cli, args: string[]): Promise<number> {
     if (!nodeId || !prop || valueParts.length === 0) throw new CliUsageError("node set <nodeId> <prop> <value>");
     const value = valueParts.join(" ");
     // Remote: nodes_set resolves node → block + rewrites the span server-side.
-    if (cli.flags.server) return runOpsRemote(cli, "nodes_set", { id: nodeId, prop, value });
+    if (cli.flags.server) return runSugarRemote(cli, "nodes_set", { id: nodeId, prop, value }, () => nodeSetEffects(nodeId, prop, value).effects);
     const ws = cli.workspace();
     const repo = cli.repo(ws);
-    const ops = nodeSet(ws.store, requireNode(ws.store, repo.repoId, nodeId), prop, value);
-    return runOps(cli, ws, repo, ops, { reason: `nodes_set ${prop}`, ...(values.actor ? { actor: values.actor } : {}) });
+    return runSugar(cli, ws, repo, nodeSetEffects(requireNode(ws.store, repo.repoId, nodeId), prop, value), values.actor ? { actor: values.actor } : {});
   }
 
   if (sub === "props") {

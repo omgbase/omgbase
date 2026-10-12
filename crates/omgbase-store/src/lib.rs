@@ -43,9 +43,10 @@
 //! (§4.5 sections, FTS, §7 rebuild and GC), and the `spec/mutate` host side
 //! (store 13.4): [`mutate`] (loading the working tree, `apply` with the
 //! file-CAS + known-id `api` commit), [`doc_store`] (the write-target seam),
-//! [`macros`], [`links`] (link-destination rewriting), [`docs_ops`] (create /
-//! move / delete / set_meta, [`yaml_emit`]) and [`plan`] (the whole-document
-//! update planner). Since 13.7 every `api` request — a changeset over N
+//! [`macros`], [`links`] (link-destination rewriting), [`sugar`] (the shared
+//! effect builders every sugar write is made of, mutate 3.0), [`docs_ops`]
+//! (create / move / delete / set_meta over them, [`yaml_emit`]) and [`plan`]
+//! (the whole-document update planner). Since 13.7 every `api` request — a changeset over N
 //! documents, a move with its retarget, a create, a delete — commits as one
 //! transaction with one `commits` row through the internal effect set
 //! (`effects`, not public API); since 14.0 it commits **DB-first**, recording
@@ -84,6 +85,7 @@ pub mod properties;
 pub mod read;
 pub mod schema;
 pub mod search;
+pub mod sugar;
 pub mod time;
 pub mod tree;
 pub mod writers;
@@ -108,8 +110,8 @@ pub use macros::{LinkRepair, LinkRepairCount, LinkRepairPlan, RetargetHit};
 pub use materialize::{PendingKind, PendingRow};
 pub use mint::{Deferred, MINT_GIVE_UP_AFTER, Mint, id_in_use};
 pub use mutate::{
-    ApplyOrigin, ApplyRequest, ApplyResult, Diff, DocInfo, Revision, SetFrontmatter,
-    find_doc_by_ref, is_id_ref, load_mut_doc,
+    ApplyOrigin, ApplyRequest, ApplyResult, Diff, DocInfo, Revision, find_doc_by_ref, is_id_ref,
+    load_mut_doc,
 };
 pub use observe::{
     BatchItem, BatchOutcome, Committed, DeleteOutcome, ObserveOutcome, has_conflict_markers,
@@ -131,6 +133,7 @@ pub use search::{
     ForeignVectors, HybridHit, HybridQuery, QueryVector, ResolveHit, TextHit, TextSearchResult,
     VectorHit, block_vector,
 };
+pub use sugar::Sugar;
 pub use tree::{TreeEntry, canonical_attrs, canonical_json, serialize_tree_entries, tree_hash};
 pub use writers::{NewCommit, NewRevision, Origin, TreeInputBlock};
 

@@ -623,7 +623,6 @@ mod tests {
             }],
             origin: omgbase_store::ApplyOrigin::new("agent:test", Some("fixture")),
             dry_run: false,
-            set_frontmatter: Vec::new(),
         }
     }
 

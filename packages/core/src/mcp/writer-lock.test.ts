@@ -76,7 +76,7 @@ describe("MCP write tools under the workspace writer lock", () => {
     expect(writerLockHeld(ws.omgbaseDir)).toBe(false);
     const { payload, isError } = await ws.call("docs_create", { path: "a.md", markdown: "# A\n" });
     expect(isError).toBe(false);
-    expect(payload.path).toBe("/a.md");
+    expect((payload.revisions as { path: string }[])[0]!.path).toBe("/a.md");
     expect(seen).toEqual({ held: true, file: true });
     expect(writerLockHeld(ws.omgbaseDir)).toBe(false);
     expect(writerLockFree(ws.omgbaseDir)).toBe(true);
@@ -139,8 +139,8 @@ describe("MCP write tools under the workspace writer lock", () => {
     expect(payload.retriable).toBe(false);
     expect(existsSync(join(ws.root, "blocked.md"))).toBe(false); // nothing was written while blocked
 
-    // A dry run is a write for the lock's purposes (Rust `is_write_tool`): it waits too.
-    const dry = await ws.call("docs_create", { path: "blocked.md", markdown: "# B\n", dry_run: true });
+    // A plan is a write for the lock's purposes (Rust `is_write_tool`): it waits too.
+    const dry = await ws.call("plan", { effects: [{ op: "create", path: "blocked.md", markdown: "# B\n" }] });
     expect(dry.isError).toBe(true);
     expect(dry.payload.error).toBe("repo_not_found");
     expect(dry.payload.message).toMatch(/^could not acquire writer lock/);

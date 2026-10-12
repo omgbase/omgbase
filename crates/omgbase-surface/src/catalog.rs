@@ -18,15 +18,13 @@ use omgbase_format::BlockKind;
 use omgbase_format::text::{normalize_text, normalize_visible_text};
 use omgbase_reconcile::Config;
 use omgbase_search::EmbeddingProvider;
-use omgbase_store::docs_ops::canonical;
+use omgbase_store::docs_ops::{canonical, retargeted_json};
 use omgbase_store::links::inbound_links_to;
-use omgbase_store::mutate_kernel::effects::{
-    Admission, EffectExpect, Repair, Target as EffectTarget,
-};
-use omgbase_store::mutate_kernel::{At, ErrorCode, Op, Parent};
+use omgbase_store::mutate_kernel::effects::{Admission, EffectExpect, Target as EffectTarget};
+use omgbase_store::mutate_kernel::{At, ErrorCode, Parent};
 use omgbase_store::{
-    ApplyOrigin, ApplyRequest, ApplyResult, Diff, DocStore, Expect, FsDocStore, MutationError,
-    OpResult, Plan, PlanContext, PublicEffect, QueryVector, Receipt, Retargeted, Revision, Store,
+    ApplyOrigin, DocStore, Expect, FsDocStore, MutationError, Plan, PlanContext, PublicEffect,
+    QueryVector, Receipt, Retargeted, Store, sugar,
 };
 use omgbase_sync::{RealFileSystem, RepoRow};
 use rusqlite::{OptionalExtension, params};
@@ -89,6 +87,14 @@ pub struct Surface {
     actor: String,
     /// What the serving binary knows about itself (the `version` tool).
     build_info: BuildInfo,
+    /// [`Surface::preview_call`] is running: a sugar tool plans its effects
+    /// and answers with the Plan instead of committing (the CLI's local
+    /// `--dry-run`, `spec/cli` §3.6). Never set by a tool call.
+    preview: bool,
+    /// The Plan the last sugar tool or `apply` planned (its preview realizes
+    /// the committed ids through the receipt's `new_ids`), for
+    /// [`Surface::call_result_with_plan`].
+    last_plan: Option<Plan>,
 }
 
 // ---- argument helpers ----------------------------------------------------------------
@@ -194,13 +200,15 @@ fn merge(mut a: Map<String, Json>, b: Json) -> Json {
     Json::Object(a)
 }
 
-// ---- the sugar tools over effects (ADR-021, migration phase) ---------------------------
+// ---- the sugar tools over effects (ADR-021; `spec/surface` §4, 4.0) ---------------------
 //
-// The 21 write tools lower to `apply { effects }` behaviour-preservingly:
-// each handler keeps its own pre-checks (so every pinned error `data` is
-// unchanged), builds the effects of the design's table, and hands them to
-// [`Surface::apply_sugar`], which adapts the plan + receipt back to the
-// legacy `apply` result the handler always returned.
+// Every write tool but `apply`/`plan`/`execute` and the observe tools is
+// sugar over `apply { effects }`: each handler keeps its own pre-checks (so
+// every pinned error `data` is unchanged), builds its effects with the shared
+// builders (`omgbase_store::sugar`, the reference's `mutate/sugar.ts`) and
+// hands them to [`Surface::apply_sugar`], which plans and commits them in one
+// transaction under the tool's name as the commit `reason` and answers with
+// the Receipt. There is no `dry_run` (4.0): the preview is `plan`.
 
 /// An empty block list is an argument error (3.2, §9): `filter_invalid`
 /// "`blocks` must name at least one block (… takes …)" — it used to reach
@@ -243,20 +251,9 @@ fn placement_target(parent: Parent, doc_id: String) -> EffectTarget {
     }
 }
 
-/// `set { block, field, value }` with an optional `expect`.
-fn set_block(id: &str, field: &str, value: Json, expect: Option<EffectExpect>) -> PublicEffect {
-    PublicEffect::Set {
-        target: EffectTarget::Block { id: id.to_owned() },
-        field: field.to_owned(),
-        value,
-        expect,
-    }
-}
-
-/// What [`Surface::apply_sugar_with`] hands a sugar tool: the plan, the
-/// receipt (`None` on a dry run) and the `$new.<n>` → id map (the receipt's,
-/// or the realize-symbols shim's).
-type SugarOutcome = (Plan, Option<Receipt>, Vec<(String, String)>);
+/// What [`Surface::apply_sugar_with`] hands a sugar tool: the plan and, unless
+/// the surface is previewing, the receipt.
+type SugarOutcome = (Plan, Option<Receipt>);
 
 /// The planner stamps `effect_index` on every error it raises; a sugar
 /// tool's caller never passed effects, so the key goes (the kernel's own
@@ -271,70 +268,11 @@ fn strip_effect_index(e: omgbase_store::Error) -> omgbase_store::Error {
     }
 }
 
-/// The legacy `apply` result derived from a plan and (unless a dry run) its
-/// receipt: `results` are the preview's with every `$new.<n>` substituted
-/// from `new_ids` (the receipt's map, or the realize-symbols shim's);
-/// `revisions` the receipt's when committed, else the preview's; `diffs`
-/// the preview's, on a dry run only. Load order is the preview's, which is
-/// the runner's — the same order the legacy path produced.
-fn sugar_result(
-    plan: &Plan,
-    receipt: Option<&Receipt>,
-    new_ids: &[(String, String)],
-) -> ApplyResult {
-    let realize = |id: &String| -> String {
-        new_ids
-            .iter()
-            .find(|(symbol, _)| symbol == id)
-            .map_or_else(|| id.clone(), |(_, minted)| minted.clone())
-    };
-    let realize_all = |ids: &[String]| -> Vec<String> { ids.iter().map(realize).collect() };
-    let preview = plan.preview.as_ref();
-    let results: Vec<OpResult> = preview.map_or_else(Vec::new, |p| {
-        p.results
-            .iter()
-            .map(|r| OpResult {
-                ids: realize_all(&r.ids),
-                removed: r.removed.as_deref().map(realize_all),
-                merged_into: r.merged_into.as_deref().map(realize_all),
-            })
-            .collect()
-    });
-    let revisions: Vec<Revision> = match receipt {
-        Some(r) => r.revisions.clone(),
-        None => preview.map_or_else(Vec::new, |p| {
-            p.revisions
-                .iter()
-                .map(|r| Revision {
-                    doc: realize(&r.id),
-                    path: r.path.clone(),
-                    hash: r.hash.clone(),
-                })
-                .collect()
-        }),
-    };
-    let diffs = match receipt {
-        Some(_) => None,
-        None => Some(preview.map_or_else(Vec::new, |p| {
-            p.diffs
-                .iter()
-                .map(|(path, (before, after))| {
-                    (
-                        path.clone(),
-                        Diff {
-                            before: before.clone(),
-                            after: after.clone(),
-                        },
-                    )
-                })
-                .collect()
-        })),
-    };
-    ApplyResult {
-        results,
-        revisions,
-        diffs,
-        committed: receipt.is_some(),
+/// A sugar tool's answer: the Receipt (§4, 4.0), or — previewing — the Plan.
+fn sugar_json((plan, receipt): &SugarOutcome) -> Json {
+    match receipt {
+        Some(r) => receipt_json(r),
+        None => plan_json(plan),
     }
 }
 
@@ -567,16 +505,8 @@ fn build_catalog() -> Vec<ToolSpec> {
             name: "apply",
             description: d::APPLY,
             input_schema: schema(
-                &[
-                    (
-                        "ops",
-                        json!({ "type": "array", "items": { "type": "object" } }),
-                    ),
-                    ("effects", effects_schema()),
-                    ("reason", s()),
-                    ("dry_run", b()),
-                ],
-                &[],
+                &[("effects", effects_schema()), ("reason", s())],
+                &["effects"],
                 true,
             ),
         },
@@ -608,7 +538,6 @@ fn build_catalog() -> Vec<ToolSpec> {
                     ("markdown", s()),
                     ("at", at_schema()),
                     ("expect", parent_expect_schema()),
-                    ("dry_run", b()),
                 ],
                 &["to", "markdown"],
                 true,
@@ -622,9 +551,7 @@ fn build_catalog() -> Vec<ToolSpec> {
                     ("id", s()),
                     ("markdown", s()),
                     ("checked", b()),
-                    ("attrs", obj()),
                     ("expect", expect_schema()),
-                    ("dry_run", b()),
                 ],
                 &["id"],
                 true,
@@ -639,7 +566,6 @@ fn build_catalog() -> Vec<ToolSpec> {
                     ("to", s()),
                     ("at", at_schema()),
                     ("expect", parent_expect_schema()),
-                    ("dry_run", b()),
                 ],
                 &["blocks", "to"],
                 true,
@@ -648,11 +574,7 @@ fn build_catalog() -> Vec<ToolSpec> {
         ToolSpec {
             name: "blocks_remove",
             description: d::BLOCKS_REMOVE,
-            input_schema: schema(
-                &[("blocks", strings()), ("dry_run", b())],
-                &["blocks"],
-                true,
-            ),
+            input_schema: schema(&[("blocks", strings())], &["blocks"], true),
         },
         ToolSpec {
             name: "blocks_split",
@@ -664,7 +586,6 @@ fn build_catalog() -> Vec<ToolSpec> {
                         "at",
                         json!({ "type": "array", "items": { "type": "integer" } }),
                     ),
-                    ("dry_run", b()),
                 ],
                 &["id", "at"],
                 true,
@@ -674,7 +595,7 @@ fn build_catalog() -> Vec<ToolSpec> {
             name: "blocks_merge",
             description: d::BLOCKS_MERGE,
             input_schema: schema(
-                &[("blocks", strings()), ("separator", s()), ("dry_run", b())],
+                &[("blocks", strings()), ("separator", s())],
                 &["blocks"],
                 true,
             ),
@@ -682,17 +603,13 @@ fn build_catalog() -> Vec<ToolSpec> {
         ToolSpec {
             name: "blocks_check",
             description: d::BLOCKS_CHECK,
-            input_schema: schema(
-                &[("ids", strings()), ("checked", b()), ("dry_run", b())],
-                &["ids"],
-                true,
-            ),
+            input_schema: schema(&[("ids", strings()), ("checked", b())], &["ids"], true),
         },
         ToolSpec {
             name: "nodes_set",
             description: d::NODES_SET,
             input_schema: schema(
-                &[("id", s()), ("prop", s()), ("value", s()), ("dry_run", b())],
+                &[("id", s()), ("prop", s()), ("value", s())],
                 &["id", "prop", "value"],
                 true,
             ),
@@ -700,30 +617,18 @@ fn build_catalog() -> Vec<ToolSpec> {
         ToolSpec {
             name: "blocks_append",
             description: d::BLOCKS_APPEND,
-            input_schema: schema(
-                &[("id", s()), ("text", s()), ("dry_run", b())],
-                &["id", "text"],
-                true,
-            ),
+            input_schema: schema(&[("id", s()), ("text", s())], &["id", "text"], true),
         },
         ToolSpec {
             name: "docs_append",
             description: d::DOCS_APPEND,
-            input_schema: doc(
-                &[("text", s()), ("section", s()), ("dry_run", b())],
-                &["text"],
-            ),
+            input_schema: doc(&[("text", s()), ("section", s())], &["text"]),
         },
         ToolSpec {
             name: "links_retarget",
             description: d::LINKS_RETARGET,
             input_schema: schema(
-                &[
-                    ("from_target", s()),
-                    ("to_target", s()),
-                    ("path_glob", s()),
-                    ("dry_run", b()),
-                ],
+                &[("from_target", s()), ("to_target", s()), ("path_glob", s())],
                 &["from_target", "to_target"],
                 true,
             ),
@@ -749,7 +654,6 @@ fn build_catalog() -> Vec<ToolSpec> {
                     ("from_target", s()),
                     ("to_target", s()),
                     ("path_glob", s()),
-                    ("dry_run", b()),
                 ],
                 &[],
                 true,
@@ -759,12 +663,7 @@ fn build_catalog() -> Vec<ToolSpec> {
             name: "docs_create",
             description: d::DOCS_CREATE,
             input_schema: schema(
-                &[
-                    ("path", s()),
-                    ("markdown", s()),
-                    ("frontmatter", obj()),
-                    ("dry_run", b()),
-                ],
+                &[("path", s()), ("markdown", s()), ("frontmatter", obj())],
                 &["path", "markdown"],
                 true,
             ),
@@ -772,27 +671,17 @@ fn build_catalog() -> Vec<ToolSpec> {
         ToolSpec {
             name: "docs_move",
             description: d::DOCS_MOVE,
-            input_schema: doc(
-                &[
-                    ("to_path", s()),
-                    ("retarget_inbound", b()),
-                    ("dry_run", b()),
-                ],
-                &["to_path"],
-            ),
+            input_schema: doc(&[("to_path", s()), ("retarget_inbound", b())], &["to_path"]),
         },
         ToolSpec {
             name: "docs_delete",
             description: d::DOCS_DELETE,
-            input_schema: doc(&[("dry_run", b())], &[]),
+            input_schema: doc(&[], &[]),
         },
         ToolSpec {
             name: "docs_set_meta",
             description: d::DOCS_SET_META,
-            input_schema: doc(
-                &[("set", obj()), ("unset", strings()), ("dry_run", b())],
-                &[],
-            ),
+            input_schema: doc(&[("set", obj()), ("unset", strings())], &[]),
         },
         ToolSpec {
             name: "docs_update",
@@ -935,6 +824,8 @@ impl Surface {
             config: Config::default(),
             actor: ACTOR.to_owned(),
             build_info: BuildInfo::default(),
+            preview: false,
+            last_plan: None,
         }
     }
 
@@ -1018,8 +909,8 @@ impl Surface {
     }
 
     /// Whether `name` is a tool that can commit (a host serializes these
-    /// under the writer lock of `spec/sync` §7; `dry_run` calls still count
-    /// here — only the mutation hook knows a write actually happened).
+    /// under the writer lock of `spec/sync` §7; `plan` counts — it reads the
+    /// working tree the writes race for).
     #[must_use]
     pub fn is_write_tool(name: &str) -> bool {
         matches!(
@@ -1373,20 +1264,6 @@ impl Surface {
             .optional()?)
     }
 
-    /// The live block's raw hash (hex) for CAS pinning; `None` when unknown.
-    fn pin_hash(&self, block_id: &str) -> Result<Option<String>> {
-        let h: Option<Vec<u8>> = self
-            .store
-            .conn()
-            .query_row(
-                "SELECT raw_hash FROM blocks WHERE block_id = ?1 AND deleted_commit IS NULL",
-                params![block_id],
-                |r| r.get(0),
-            )
-            .optional()?;
-        Ok(h.map(|h| omgbase_format::hash::hex(&h)))
-    }
-
     /// The `at` spec with its anchor ref resolved; absent → end.
     fn resolve_at(&self, repo_id: &str, at: Option<&Json>) -> Result<At> {
         match at {
@@ -1412,76 +1289,53 @@ impl Surface {
 
     // ---- the apply tail -----------------------------------------------------------------
 
-    fn apply_ops(
-        &mut self,
-        repo_id: &str,
-        root: Option<&str>,
-        ops: Vec<Op>,
-        reason: &str,
-        dry_run: bool,
-    ) -> Result<ApplyResult> {
-        let ts = self.now();
-        let req = ApplyRequest {
-            repo_id: repo_id.to_owned(),
-            ops,
-            origin: ApplyOrigin::new(&self.actor, Some(reason)),
-            dry_run,
-            set_frontmatter: Vec::new(),
-        };
-        let res = self.with_writes(root, |store, ds| Ok(store.apply(&req, ds, &ts)?))?;
-        if !dry_run {
-            self.notify();
-        }
-        Ok(res)
-    }
-
-    /// A sugar tool's effects through the planner (ADR-021, migration
-    /// phase), adapted to the legacy `apply` result: `plan` + `execute` in
-    /// one call under one write scope, `reason` the tool's fixed string as
-    /// today; on a dry run the plan's `$new.<n>` are realized through the
-    /// store's shim so the ids a dry run consumes are the ones the legacy
-    /// path burned ([`Store::realize_symbols`]). The mutation hook fires on
-    /// a commit, as [`Surface::apply_ops`] fired it.
+    /// A sugar tool's effects through the planner (ADR-021): `plan` +
+    /// `execute` in one call under one write scope and one transaction,
+    /// `reason` the tool's name — the Receipt (§4, 4.0); previewing
+    /// ([`Surface::preview_call`]) the Plan alone, nothing committed. The
+    /// mutation hook fires on a commit.
     fn apply_sugar(
         &mut self,
         repo_id: &str,
         root: Option<&str>,
         effects: Vec<PublicEffect>,
         reason: &str,
-        dry_run: bool,
-    ) -> Result<ApplyResult> {
-        let (plan, receipt, new_ids) =
-            self.apply_sugar_with(repo_id, root, reason, dry_run, |_, _| Ok(effects))?;
-        Ok(sugar_result(&plan, receipt.as_ref(), &new_ids))
+    ) -> Result<Json> {
+        let out = self.apply_sugar_with(repo_id, root, reason, |_, _| Ok(effects))?;
+        Ok(sugar_json(&out))
     }
 
-    /// [`Surface::apply_sugar`]'s seam for the tools whose result is not an
-    /// `ApplyResult` (the document operations): `build` runs under the write
-    /// scope with the store and the doc store — the tool's own pre-checks,
-    /// then its effects — and the plan, the receipt (unless `dry_run`) and
-    /// the realized `$new.<n>` map come back for the tool to shape.
+    /// [`Surface::apply_sugar`]'s seam for the tools whose result carries
+    /// more than the Receipt (`docs_move`, `links_*`): `build` runs under the
+    /// write scope with the store and the doc store — the tool's own
+    /// pre-checks, then its effects — and the plan and the receipt (`None`
+    /// when previewing) come back for the tool to shape. The plan is kept for
+    /// [`Surface::call_result_with_plan`].
     fn apply_sugar_with(
         &mut self,
         repo_id: &str,
         root: Option<&str>,
         reason: &str,
-        dry_run: bool,
         build: impl FnOnce(&mut Store, &mut dyn DocStore) -> Result<Vec<PublicEffect>>,
     ) -> Result<SugarOutcome> {
         let origin = ApplyOrigin::new(&self.actor, Some(reason));
         let ctx = self.plan_ctx(repo_id);
+        let preview = self.preview;
         let out = self.with_writes(root, |store, ds| {
             let effects = build(store, ds)?;
+            if preview {
+                let plan = store
+                    .plan_effects(&ctx, &effects, ds)
+                    .map_err(strip_effect_index)?;
+                return Ok((plan, None));
+            }
             let (plan, receipt) = store
-                .apply_effects_detailed(&ctx, &effects, &origin, ds, dry_run)
+                .apply_effects_detailed(&ctx, &effects, &origin, ds)
                 .map_err(strip_effect_index)?;
-            let new_ids = match &receipt {
-                Some(r) => r.new_ids.clone(),
-                None => store.realize_symbols(&plan)?,
-            };
-            Ok((plan, receipt, new_ids))
+            Ok((plan, Some(receipt)))
         })?;
-        if !dry_run {
+        self.last_plan = Some(out.0.clone());
+        if out.1.is_some() {
             self.notify();
         }
         Ok(out)
@@ -1500,28 +1354,40 @@ impl Surface {
             })
     }
 
-    /// `apply { effects }` with the plan kept (ADR-021, `spec/cli` 3.2): the
-    /// Plan on the wire and, unless `dry_run`, the Receipt — plan + execute
-    /// in one write scope and one transaction, as the `apply` tool runs them.
-    /// The CLI's local `apply -f { effects }` reads the preview's live ids
-    /// from the plan after the receipt arrives (the reference's
-    /// `applyEffectsDetailed`); the tool itself answers with one of the two.
-    pub fn apply_effects_with_plan(&mut self, args: &Json) -> Result<(Json, Option<Json>)> {
-        let spec = tool_spec("apply").expect("a catalog tool");
-        validate_arguments("apply", &spec.input_schema, args)?;
-        let (repo, root) = self.scope(args)?;
-        self.require_root(root.as_deref())?;
-        if args.get("effects").is_none() || args.get("ops").is_some() {
-            return Err(argument_error(
-                "apply",
-                "pass exactly one of `ops` or `effects`",
-                &spec.input_schema,
-            ));
-        }
-        self.apply_effects_detailed(&repo, root.as_deref(), args)
+    /// Run a write tool and hand back its result **with the Plan it
+    /// committed** (`spec/cli` §4, the Receipt confirmation): a sugar tool's
+    /// or `apply`'s plan, whose `preview.results[].ids` realized through the
+    /// receipt's `new_ids` are the ids the CLI prints; `None` for a tool that
+    /// planned nothing (a read, `execute`, an error). Not a tool: the CLI's
+    /// local seam, as the reference's library-bound verbs hold the plan from
+    /// `applyEffectsDetailed`.
+    pub fn call_result_with_plan(
+        &mut self,
+        name: &str,
+        args: &Json,
+    ) -> Result<(Json, Option<Json>)> {
+        self.last_plan = None;
+        let result = self.call_result(name, args);
+        let plan = self.last_plan.take().map(|p| plan_json(&p));
+        Ok((result?, plan))
     }
 
-    /// The `apply` tool's effects branch: `(plan, receipt?)` on the wire.
+    /// The Plan a sugar tool would commit (`spec/cli` §3.6: every dry run is
+    /// a `plan`) — the tool's own ref resolution and pre-checks run, its
+    /// effects are planned under the symbolic minter, nothing is written and
+    /// no id is minted; the mutation hook stays quiet. `apply` previews its
+    /// effects the same way. Not a tool: the catalog has no `dry_run` (4.0),
+    /// a client previews with `plan { effects }`.
+    pub fn preview_call(&mut self, name: &str, args: &Json) -> Result<Json> {
+        self.preview = true;
+        let out = self.call_result(name, args);
+        self.preview = false;
+        out
+    }
+
+    /// The `apply` tool's effects: `(plan, receipt)` on the wire — plan +
+    /// execute in one write scope and one transaction; previewing, the plan
+    /// and nothing else.
     fn apply_effects_detailed(
         &mut self,
         repo: &str,
@@ -1529,13 +1395,18 @@ impl Surface {
         args: &Json,
     ) -> Result<(Json, Option<Json>)> {
         let effects = parse_effects(&args["effects"])?;
-        let dry = arg_bool(args, "dry_run")?.unwrap_or(false);
         let reason = arg_str(args, "reason").map(str::to_owned);
         let origin = ApplyOrigin::new(&self.actor, reason.as_deref());
         let ctx = self.plan_ctx(repo);
+        let preview = self.preview;
         let (plan, receipt) = self.with_writes(root, |store, ds| {
-            Ok(store.apply_effects_detailed(&ctx, &effects, &origin, ds, dry)?)
+            if preview {
+                return Ok((store.plan_effects(&ctx, &effects, ds)?, None));
+            }
+            let (plan, receipt) = store.apply_effects_detailed(&ctx, &effects, &origin, ds)?;
+            Ok((plan, Some(receipt)))
         })?;
+        self.last_plan = Some(plan.clone());
         if receipt.is_some() {
             self.notify();
         }
@@ -1547,517 +1418,6 @@ impl Surface {
             repo_id: repo_id.to_owned(),
             ts: self.now(),
             config: self.config.clone(),
-        }
-    }
-
-    /// The library document operations' context — the pre-migration
-    /// handlers' (`call_legacy`), tests only since batch 2.
-    #[cfg(test)]
-    fn doc_ctx(&mut self, repo_id: &str) -> omgbase_store::DocOpContext {
-        omgbase_store::DocOpContext {
-            repo_id: repo_id.to_owned(),
-            actor: Some(self.actor.clone()),
-            ts: self.now(),
-        }
-    }
-
-    // ---- the pre-migration handlers (tests only) ---------------------------------------
-
-    /// The sixteen migrated sugar tools as they ran before ADR-021's
-    /// migration phase — the twelve batch-1 block/link tools building their
-    /// kernel ops and calling [`Surface::apply_ops`], the four batch-2
-    /// document operations calling the library's `docs_create` / `docs_move`
-    /// / `docs_delete` / `docs_set_meta` — kept verbatim as the reference the
-    /// equivalence tests compare the effect-driven handlers against
-    /// (`sugar_tests`). Not compiled into the library.
-    #[cfg(test)]
-    #[allow(clippy::too_many_lines)]
-    pub(crate) fn call_legacy(&mut self, name: &str, args: &Json) -> Result<Json> {
-        use omgbase_store::mutate_kernel::To;
-        let spec =
-            tool_spec(name).ok_or_else(|| SurfaceError::other(format!("unknown tool {name}")))?;
-        validate_arguments(name, &spec.input_schema, args)?;
-        match name {
-            "blocks_insert" => {
-                let (repo, root) = self.scope(args)?;
-                self.require_root(root.as_deref())?;
-                let (parent, doc_id) = self.resolve_parent_ref(&repo, &arg_string(args, "to")?)?;
-                let at = self.resolve_at(&repo, args.get("at"))?;
-                let doc = if parent == Parent::Doc {
-                    Some(doc_id)
-                } else {
-                    None
-                };
-                let ops = vec![Op::Insert {
-                    doc,
-                    to: To { parent, at },
-                    markdown: arg_string(args, "markdown")?,
-                    expect: arg_parent_expect(args)?,
-                }];
-                Ok(apply_json(&self.apply_ops(
-                    &repo,
-                    root.as_deref(),
-                    ops,
-                    "blocks_insert",
-                    arg_bool(args, "dry_run")?.unwrap_or(false),
-                )?))
-            }
-            "blocks_update" => {
-                let (repo, root) = self.scope(args)?;
-                self.require_root(root.as_deref())?;
-                let block = self.resolve_block_ref(&repo, &arg_string(args, "id")?)?;
-                let expect = match arg_expect(args)? {
-                    Some(e) => Some(e),
-                    None => self.pin_hash(&block)?.map(Expect::content),
-                };
-                let checked = arg_bool(args, "checked")?;
-                let extra = arg_object(args, "attrs")?;
-                let attrs = if checked.is_some() || extra.is_some() {
-                    let mut a = Map::new();
-                    if let Some(c) = checked {
-                        a.insert("checked".to_owned(), json!(c));
-                    }
-                    if let Some(x) = extra {
-                        for (k, v) in x {
-                            a.insert(k.clone(), v.clone());
-                        }
-                    }
-                    Some(a)
-                } else {
-                    None
-                };
-                let ops = vec![Op::Update {
-                    block: block.clone(),
-                    markdown: arg_str(args, "markdown").map(str::to_owned),
-                    attrs,
-                    expect,
-                    trivia: None,
-                    child_ids: None,
-                }];
-                let dry = arg_bool(args, "dry_run")?.unwrap_or(false);
-                let res = self.apply_ops(&repo, root.as_deref(), ops, "blocks_update", dry)?;
-                let ids: Vec<String> = res
-                    .results
-                    .first()
-                    .map_or_else(|| vec![block.clone()], |r| r.ids.clone());
-                let mut m = Map::new();
-                m.insert(
-                    "id".to_owned(),
-                    json!(ids.first().cloned().unwrap_or(block)),
-                );
-                m.insert("ids".to_owned(), json!(ids));
-                Ok(merge(m, apply_json(&res)))
-            }
-            "blocks_move" => {
-                let (repo, root) = self.scope(args)?;
-                self.require_root(root.as_deref())?;
-                let blocks: Vec<String> = arg_strings(args, "blocks")?
-                    .iter()
-                    .map(|b| self.resolve_block_ref(&repo, b))
-                    .collect::<Result<_>>()?;
-                let to_ref = arg_string(args, "to")?;
-                let (parent, doc_id) = self.resolve_parent_ref(&repo, &to_ref)?;
-                if parent == Parent::Doc {
-                    if let Some(first) = blocks.first() {
-                        if self.doc_id_of_block(first)? != Some(doc_id) {
-                            return Err(SurfaceError::with_data(
-                                "target_missing",
-                                format!(
-                                    "blocks_move cannot target another document's root ({to_ref}); anchor on a block in that document with at.before/at.after"
-                                ),
-                                json!({ "to": to_ref }),
-                            ));
-                        }
-                    }
-                }
-                let at = self.resolve_at(&repo, args.get("at"))?;
-                let ops = vec![Op::Move {
-                    blocks,
-                    to: To { parent, at },
-                    doc: None,
-                    expect: arg_parent_expect(args)?,
-                }];
-                Ok(apply_json(&self.apply_ops(
-                    &repo,
-                    root.as_deref(),
-                    ops,
-                    "blocks_move",
-                    arg_bool(args, "dry_run")?.unwrap_or(false),
-                )?))
-            }
-            "blocks_remove" => {
-                let (repo, root) = self.scope(args)?;
-                self.require_root(root.as_deref())?;
-                let blocks: Vec<String> = arg_strings(args, "blocks")?
-                    .iter()
-                    .map(|b| self.resolve_block_ref(&repo, b))
-                    .collect::<Result<_>>()?;
-                let ops = vec![Op::Remove {
-                    blocks,
-                    expect: None,
-                }];
-                Ok(apply_json(&self.apply_ops(
-                    &repo,
-                    root.as_deref(),
-                    ops,
-                    "blocks_remove",
-                    arg_bool(args, "dry_run")?.unwrap_or(false),
-                )?))
-            }
-            "blocks_split" => {
-                let (repo, root) = self.scope(args)?;
-                self.require_root(root.as_deref())?;
-                let block = self.resolve_block_ref(&repo, &arg_string(args, "id")?)?;
-                let at: Vec<usize> = args
-                    .get("at")
-                    .and_then(Json::as_array)
-                    .ok_or_else(|| bad_args("`at` must be an array of byte offsets"))?
-                    .iter()
-                    .map(|v| {
-                        v.as_u64()
-                            .map(|n| usize::try_from(n).unwrap_or(usize::MAX))
-                            .ok_or_else(|| bad_args("`at` must be an array of byte offsets"))
-                    })
-                    .collect::<Result<_>>()?;
-                let expect = Some(Expect::content(self.pin_hash(&block)?.unwrap_or_default()));
-                let ops = vec![Op::Split { block, at, expect }];
-                Ok(apply_json(&self.apply_ops(
-                    &repo,
-                    root.as_deref(),
-                    ops,
-                    "blocks_split",
-                    arg_bool(args, "dry_run")?.unwrap_or(false),
-                )?))
-            }
-            "blocks_merge" => {
-                let (repo, root) = self.scope(args)?;
-                self.require_root(root.as_deref())?;
-                let blocks: Vec<String> = arg_strings(args, "blocks")?
-                    .iter()
-                    .map(|b| self.resolve_block_ref(&repo, b))
-                    .collect::<Result<_>>()?;
-                let ops = vec![Op::Merge {
-                    blocks,
-                    separator: arg_str(args, "separator").map(str::to_owned),
-                    expect: None,
-                }];
-                Ok(apply_json(&self.apply_ops(
-                    &repo,
-                    root.as_deref(),
-                    ops,
-                    "blocks_merge",
-                    arg_bool(args, "dry_run")?.unwrap_or(false),
-                )?))
-            }
-            "blocks_check" => {
-                let (repo, root) = self.scope(args)?;
-                self.require_root(root.as_deref())?;
-                let blocks: Vec<String> = arg_strings(args, "ids")?
-                    .iter()
-                    .map(|b| self.resolve_block_ref(&repo, b))
-                    .collect::<Result<_>>()?;
-                let ops = if arg_bool(args, "checked")?.unwrap_or(true) {
-                    self.store.tasks_complete(&blocks)?
-                } else {
-                    let mut ops = Vec::with_capacity(blocks.len());
-                    for b in &blocks {
-                        let mut a = Map::new();
-                        a.insert("checked".to_owned(), json!(false));
-                        ops.push(Op::Update {
-                            block: b.clone(),
-                            markdown: None,
-                            attrs: Some(a),
-                            expect: self.pin_hash(b)?.map(Expect::content),
-                            trivia: None,
-                            child_ids: None,
-                        });
-                    }
-                    ops
-                };
-                Ok(apply_json(&self.apply_ops(
-                    &repo,
-                    root.as_deref(),
-                    ops,
-                    "blocks_check",
-                    arg_bool(args, "dry_run")?.unwrap_or(false),
-                )?))
-            }
-            "nodes_set" => {
-                let (repo, root) = self.scope(args)?;
-                self.require_root(root.as_deref())?;
-                let node_id = arg_string(args, "id")?;
-                let known: Option<i64> = self
-                    .store
-                    .conn()
-                    .query_row(
-                        "SELECT 1 FROM nodes WHERE node_id = ?1 AND repo_id = ?2",
-                        params![node_id, repo],
-                        |r| r.get(0),
-                    )
-                    .optional()?;
-                if known.is_none() {
-                    return Err(SurfaceError::with_data(
-                        "block_missing",
-                        format!("no node with id {}", Json::String(node_id.clone())),
-                        json!({ "id": node_id }),
-                    ));
-                }
-                let ops = self.store.node_set(
-                    &node_id,
-                    &arg_string(args, "prop")?,
-                    &arg_string(args, "value")?,
-                )?;
-                Ok(apply_json(&self.apply_ops(
-                    &repo,
-                    root.as_deref(),
-                    ops,
-                    "nodes_set",
-                    arg_bool(args, "dry_run")?.unwrap_or(false),
-                )?))
-            }
-            "blocks_append" => {
-                let (repo, root) = self.scope(args)?;
-                self.require_root(root.as_deref())?;
-                let given = arg_string(args, "id")?;
-                let block = self.resolve_block_ref(&repo, &given)?;
-                let text = arg_string(args, "text")?;
-                let row: Option<(String, Option<String>, i64)> = self
-                    .store
-                    .conn()
-                    .query_row(
-                        "SELECT b.type, d.format, (SELECT count(*) FROM blocks c WHERE c.parent_block = b.block_id AND c.deleted_commit IS NULL) FROM blocks b JOIN docs d ON d.doc_id = b.doc_id WHERE b.block_id = ?1 AND b.deleted_commit IS NULL",
-                        params![block],
-                        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
-                    )
-                    .optional()?;
-                let Some((kind, format, children)) = row else {
-                    return Err(block_missing(&given));
-                };
-                let container = if format.as_deref().unwrap_or("markdown") == "markdown" {
-                    kind.parse::<BlockKind>().is_ok_and(|k| k.is_container())
-                } else {
-                    children > 0
-                };
-                let ops = if kind == "heading" {
-                    Store::sections_append(&block, &text)
-                } else if container {
-                    vec![Op::Insert {
-                        doc: None,
-                        to: To {
-                            parent: Parent::Block(block.clone()),
-                            at: At::End,
-                        },
-                        markdown: text,
-                        expect: None,
-                    }]
-                } else {
-                    return Err(SurfaceError::with_data(
-                        "block_not_container",
-                        format!(
-                            "block {block} is a {kind}, not a heading or a container; append means into — insert after it with blocks_insert {{ to: <its parent>, at: {{ after: {} }} }}",
-                            Json::String(block.clone())
-                        ),
-                        json!({ "id": block, "type": kind }),
-                    ));
-                };
-                Ok(apply_json(&self.apply_ops(
-                    &repo,
-                    root.as_deref(),
-                    ops,
-                    "blocks_append",
-                    arg_bool(args, "dry_run")?.unwrap_or(false),
-                )?))
-            }
-            "docs_append" => {
-                let (repo, root) = self.scope(args)?;
-                self.require_root(root.as_deref())?;
-                let doc_id = self.locate_doc(&repo, name, args)?;
-                let text = arg_string(args, "text")?;
-                let ops = match arg_str(args, "section") {
-                    Some(section) => {
-                        let info = read::find_doc_by_id(self.store.conn(), &doc_id)?
-                            .ok_or_else(|| block_missing(&doc_id))?;
-                        let heading = self.resolve_section_heading(&doc_id, &info.path, section)?;
-                        Store::sections_append(&heading, &text)
-                    }
-                    None => Store::docs_append(&doc_id, &text),
-                };
-                Ok(apply_json(&self.apply_ops(
-                    &repo,
-                    root.as_deref(),
-                    ops,
-                    "docs_append",
-                    arg_bool(args, "dry_run")?.unwrap_or(false),
-                )?))
-            }
-            "links_retarget" | "links_repair" => {
-                let (repo, root) = self.scope(args)?;
-                self.require_root(root.as_deref())?;
-                let repairs: Vec<omgbase_store::LinkRepair> = if name == "links_retarget" {
-                    vec![omgbase_store::LinkRepair {
-                        from: arg_string(args, "from_target")?,
-                        to: arg_string(args, "to_target")?,
-                    }]
-                } else if let Some(list) = args.get("repairs").and_then(Json::as_array) {
-                    list.iter()
-                        .map(|r| {
-                            Ok(omgbase_store::LinkRepair {
-                                from: arg_string(r, "from")?,
-                                to: arg_string(r, "to")?,
-                            })
-                        })
-                        .collect::<Result<_>>()?
-                } else if let (Some(f), Some(t)) =
-                    (arg_str(args, "from_target"), arg_str(args, "to_target"))
-                {
-                    vec![omgbase_store::LinkRepair {
-                        from: f.to_owned(),
-                        to: t.to_owned(),
-                    }]
-                } else {
-                    Vec::new()
-                };
-                if repairs.is_empty() {
-                    return Err(SurfaceError::new(
-                        "target_missing",
-                        "links_repair requires `repairs` (array of {from,to}) or a `from_target`+`to_target` pair",
-                    ));
-                }
-                let plan = self.store.links_repair(
-                    &repo,
-                    &repairs,
-                    arg_str(args, "path_glob").filter(|g| !g.is_empty()),
-                )?;
-                let dry = arg_bool(args, "dry_run")?.unwrap_or(true);
-                let res = self.apply_ops(&repo, root.as_deref(), plan.ops.clone(), name, dry)?;
-                let mut m = Map::new();
-                m.insert(
-                    "hits".to_owned(),
-                    Json::Array(plan.hits.iter().map(|h| json!({ "id": h.block, "path": reference_path(&h.path), "oldRaw": h.old_raw, "newRaw": h.new_raw })).collect()),
-                );
-                m.insert(
-                    "pairs".to_owned(),
-                    Json::Array(
-                        plan.pairs
-                            .iter()
-                            .map(|p| json!({ "from": p.from, "to": p.to, "hits": p.hits }))
-                            .collect(),
-                    ),
-                );
-                m.insert("applied".to_owned(), json!(!dry));
-                Ok(merge(m, apply_json(&res)))
-            }
-            "docs_create" => {
-                let (repo, root) = self.scope(args)?;
-                let ctx = self.doc_ctx(&repo);
-                let path = arg_string(args, "path")?;
-                let markdown = arg_string(args, "markdown")?;
-                let fm = arg_object(args, "frontmatter")?.cloned();
-                let dry = arg_bool(args, "dry_run")?.unwrap_or(false);
-                let res = self.with_writes(root.as_deref(), |store, ds| {
-                    Ok(if dry {
-                        store
-                            .dry_run()
-                            .docs_create(&ctx, ds, &path, &markdown, fm.as_ref())?
-                    } else {
-                        store.docs_create(&ctx, ds, &path, &markdown, fm.as_ref())?
-                    })
-                })?;
-                if !dry {
-                    self.notify();
-                }
-                Ok(doc_op_json(&res))
-            }
-            "docs_move" => {
-                let (repo, root) = self.scope(args)?;
-                let doc = self.locate_doc(&repo, name, args)?;
-                let ctx = self.doc_ctx(&repo);
-                let to = arg_string(args, "to_path")?;
-                // spec/mutate §6 (1.3): the default is `true`; `false` opts out.
-                let retarget = arg_bool(args, "retarget_inbound")?.unwrap_or(true);
-                let dry = arg_bool(args, "dry_run")?.unwrap_or(false);
-                let res = self.with_writes(root.as_deref(), |store, ds| {
-                    Ok(if dry {
-                        store.dry_run().docs_move(&ctx, ds, &doc, &to, retarget)?
-                    } else {
-                        store.docs_move(&ctx, ds, &doc, &to, retarget)?
-                    })
-                })?;
-                if !dry {
-                    self.notify();
-                }
-                // `{ id, path, committed, diffs?, dangling, retargeted }` — the
-                // reference spreads the planned/moved record before the link report.
-                let mut m = Map::new();
-                m.insert("id".to_owned(), json!(res.doc_id));
-                m.insert("path".to_owned(), json!(reference_path(&res.path)));
-                m.insert("committed".to_owned(), json!(res.committed));
-                if let Some(diffs) = &res.diffs {
-                    m.insert(
-                        "diffs".to_owned(),
-                        reference_keyed(&omgbase_store::docs_ops::diffs_json(diffs)),
-                    );
-                }
-                // Each dangling link is an edge row under the `edges` target's
-                // names (§1.2, 3.0) with its source `path` rooted; its `target`
-                // stays as authored — that is what the link says.
-                m.insert(
-                    "dangling".to_owned(),
-                    Json::Array(res.dangling.iter().map(dangling_json).collect()),
-                );
-                m.insert(
-                    "retargeted".to_owned(),
-                    json!(
-                        res.retargeted
-                            .as_ref()
-                            .map(|r| json!({ "blocks": r.blocks, "docs": r.docs }))
-                    ),
-                );
-                Ok(Json::Object(m))
-            }
-            "docs_delete" => {
-                let (repo, root) = self.scope(args)?;
-                let doc = self.locate_doc(&repo, name, args)?;
-                let ctx = self.doc_ctx(&repo);
-                let dry = arg_bool(args, "dry_run")?.unwrap_or(false);
-                let res = self.with_writes(root.as_deref(), |store, ds| {
-                    Ok(if dry {
-                        store.dry_run().docs_delete(&ctx, ds, &doc)?
-                    } else {
-                        store.docs_delete(&ctx, ds, &doc)?
-                    })
-                })?;
-                if !dry {
-                    self.notify();
-                }
-                Ok(doc_op_json(&res))
-            }
-            "docs_set_meta" => {
-                let (repo, root) = self.scope(args)?;
-                let doc = self.locate_doc(&repo, name, args)?;
-                let ctx = self.doc_ctx(&repo);
-                let set = arg_object(args, "set")?.cloned();
-                let unset = if args.get("unset").is_some() {
-                    arg_strings(args, "unset")?
-                } else {
-                    Vec::new()
-                };
-                let dry = arg_bool(args, "dry_run")?.unwrap_or(false);
-                let res = self.with_writes(root.as_deref(), |store, ds| {
-                    Ok(if dry {
-                        store
-                            .dry_run()
-                            .docs_set_meta(&ctx, ds, &doc, set.as_ref(), &unset)?
-                    } else {
-                        store.docs_set_meta(&ctx, ds, &doc, set.as_ref(), &unset)?
-                    })
-                })?;
-                if !dry {
-                    self.notify();
-                }
-                Ok(doc_op_json(&res))
-            }
-            other => self.call_result(other, args),
         }
     }
 
@@ -2294,46 +1654,10 @@ impl Surface {
             "apply" => {
                 let (repo, root) = self.scope(args)?;
                 self.require_root(root.as_deref())?;
-                // §11: `ops` (the kernel changeset) or `effects` (the planner),
-                // exactly one.
-                let (has_ops, has_effects) =
-                    (args.get("ops").is_some(), args.get("effects").is_some());
-                if has_ops == has_effects {
-                    return Err(argument_error(
-                        name,
-                        "pass exactly one of `ops` or `effects`",
-                        &spec.input_schema,
-                    ));
-                }
-                if has_effects {
-                    let (plan, receipt) =
-                        self.apply_effects_detailed(&repo, root.as_deref(), args)?;
-                    return Ok(receipt.unwrap_or(plan));
-                }
-                let ops = args
-                    .get("ops")
-                    .and_then(Json::as_array)
-                    .ok_or_else(|| bad_args("`ops` must be an array"))?;
-                let ops: Vec<Op> = ops
-                    .iter()
-                    .map(|o| Op::from_json(o).map_err(bad_args))
-                    .collect::<Result<_>>()?;
-                let dry = arg_bool(args, "dry_run")?.unwrap_or(false);
-                let reason = arg_str(args, "reason").map(str::to_owned);
-                let ts = self.now();
-                let req = ApplyRequest {
-                    repo_id: repo.clone(),
-                    ops,
-                    origin: ApplyOrigin::new(&self.actor, reason.as_deref()),
-                    dry_run: dry,
-                    set_frontmatter: Vec::new(),
-                };
-                let res =
-                    self.with_writes(root.as_deref(), |store, ds| Ok(store.apply(&req, ds, &ts)?))?;
-                if !dry {
-                    self.notify();
-                }
-                Ok(apply_json(&res))
+                // §4 (4.0): `effects` only — `ops` and `dry_run` are retired
+                // names the shape check above refused with their replacements.
+                let (plan, receipt) = self.apply_effects_detailed(&repo, root.as_deref(), args)?;
+                Ok(receipt.unwrap_or(plan))
             }
             "plan" => {
                 let (repo, root) = self.scope(args)?;
@@ -2397,98 +1721,38 @@ impl Surface {
                 self.require_root(root.as_deref())?;
                 let (parent, doc_id) = self.resolve_parent_ref(&repo, &arg_string(args, "to")?)?;
                 let at = self.resolve_at(&repo, args.get("at"))?;
-                let effects = vec![PublicEffect::Insert {
-                    into: placement_target(parent, doc_id),
+                let effects = sugar::insert(
+                    placement_target(parent, doc_id),
                     at,
-                    markdown: arg_string(args, "markdown")?,
-                    expect: effect_expect(arg_parent_expect(args)?),
-                }];
-                Ok(apply_json(&self.apply_sugar(
-                    &repo,
-                    root.as_deref(),
-                    effects,
-                    "blocks_insert",
-                    arg_bool(args, "dry_run")?.unwrap_or(false),
-                )?))
+                    &arg_string(args, "markdown")?,
+                    effect_expect(arg_parent_expect(args)?),
+                );
+                self.apply_sugar(&repo, root.as_deref(), effects, "blocks_insert")
             }
             "blocks_update" => {
                 let (repo, root) = self.scope(args)?;
                 self.require_root(root.as_deref())?;
                 let block = self.resolve_block_ref(&repo, &arg_string(args, "id")?)?;
-                let markdown = arg_str(args, "markdown").map(str::to_owned);
+                let markdown = arg_str(args, "markdown");
                 let checked = arg_bool(args, "checked")?;
-                let extra = arg_object(args, "attrs")?;
-                let dry = arg_bool(args, "dry_run")?.unwrap_or(false);
-                // The effects vocabulary writes `attrs.checked` only (§11): an
-                // `attrs` bag with any other key, a non-boolean `attrs.checked`,
-                // or an update naming no field at all stays on the kernel path
-                // (legacy until 4.0). `attrs.checked` wins over `checked`, as
-                // the bag always overrode the flag.
-                let attrs_checked = extra.and_then(|x| x.get("checked"));
-                let legacy = extra.is_some_and(|x| x.keys().any(|k| k != "checked"))
-                    || attrs_checked.is_some_and(|v| !v.is_boolean())
-                    || (markdown.is_none() && checked.is_none() && attrs_checked.is_none());
-                let res = if legacy {
-                    let expect = match arg_expect(args)? {
-                        Some(e) => Some(e),
-                        None => self.pin_hash(&block)?.map(Expect::content),
-                    };
-                    let attrs = if checked.is_some() || extra.is_some() {
-                        let mut a = Map::new();
-                        if let Some(c) = checked {
-                            a.insert("checked".to_owned(), json!(c));
-                        }
-                        if let Some(x) = extra {
-                            for (k, v) in x {
-                                a.insert(k.clone(), v.clone());
-                            }
-                        }
-                        Some(a)
-                    } else {
-                        None
-                    };
-                    let ops = vec![Op::Update {
-                        block: block.clone(),
-                        markdown,
-                        attrs,
-                        expect,
-                        trivia: None,
-                        child_ids: None,
-                    }];
-                    self.apply_ops(&repo, root.as_deref(), ops, "blocks_update", dry)?
-                } else {
-                    // `set markdown` then `set attrs.checked`; the caller's
-                    // `expect` rides the first (the planner pins the second
-                    // from the tree after the first op — the hashes the one
-                    // legacy op checked once); a missing `content_hash` is
-                    // pinned from the live block, so `expect: {}` succeeds
-                    // (a pinned 3.2 fix). The two results collapse to the first.
-                    let checked = attrs_checked.and_then(Json::as_bool).or(checked);
-                    let expect = effect_expect(arg_expect(args)?);
-                    let mut effects = Vec::new();
-                    if let Some(md) = markdown {
-                        effects.push(set_block(&block, "markdown", json!(md), expect.clone()));
-                    }
-                    if let Some(c) = checked {
-                        let expect = if effects.is_empty() { expect } else { None };
-                        effects.push(set_block(&block, "attrs.checked", json!(c), expect));
-                    }
-                    let mut res =
-                        self.apply_sugar(&repo, root.as_deref(), effects, "blocks_update", dry)?;
-                    res.results.truncate(1);
-                    res
-                };
-                let ids: Vec<String> = res
-                    .results
-                    .first()
-                    .map_or_else(|| vec![block.clone()], |r| r.ids.clone());
-                let mut m = Map::new();
-                m.insert(
-                    "id".to_owned(),
-                    json!(ids.first().cloned().unwrap_or(block)),
+                // `set markdown` then `set attrs.checked` (4.0: `checked` is
+                // the one editable attribute — `attrs` is a retired name);
+                // the caller's `expect` rides the first, a missing
+                // `content_hash` is pinned from the live block (3.2).
+                let effects = sugar::update_block(
+                    &block,
+                    markdown,
+                    checked,
+                    effect_expect(arg_expect(args)?),
                 );
-                m.insert("ids".to_owned(), json!(ids));
-                Ok(merge(m, apply_json(&res)))
+                if effects.is_empty() {
+                    return Err(argument_error(
+                        name,
+                        "pass `markdown` and/or `checked`",
+                        &spec.input_schema,
+                    ));
+                }
+                self.apply_sugar(&repo, root.as_deref(), effects, "blocks_update")
             }
             "blocks_move" => {
                 let (repo, root) = self.scope(args)?;
@@ -2514,19 +1778,13 @@ impl Surface {
                     }
                 }
                 let at = self.resolve_at(&repo, args.get("at"))?;
-                let effects = vec![PublicEffect::MoveBlocks {
-                    targets: blocks,
-                    into: placement_target(parent, doc_id),
+                let effects = sugar::move_blocks(
+                    blocks,
+                    placement_target(parent, doc_id),
                     at,
-                    expect: effect_expect(arg_parent_expect(args)?),
-                }];
-                Ok(apply_json(&self.apply_sugar(
-                    &repo,
-                    root.as_deref(),
-                    effects,
-                    "blocks_move",
-                    arg_bool(args, "dry_run")?.unwrap_or(false),
-                )?))
+                    effect_expect(arg_parent_expect(args)?),
+                );
+                self.apply_sugar(&repo, root.as_deref(), effects, "blocks_move")
             }
             "blocks_remove" => {
                 let (repo, root) = self.scope(args)?;
@@ -2536,19 +1794,8 @@ impl Surface {
                         .iter()
                         .map(|b| self.resolve_block_ref(&repo, b))
                         .collect::<Result<_>>()?;
-                // The planner pins every target's live hash (invisible in the
-                // result; the kernel op carried none).
-                let effects = vec![PublicEffect::RemoveBlocks {
-                    targets: blocks,
-                    expect: None,
-                }];
-                Ok(apply_json(&self.apply_sugar(
-                    &repo,
-                    root.as_deref(),
-                    effects,
-                    "blocks_remove",
-                    arg_bool(args, "dry_run")?.unwrap_or(false),
-                )?))
+                let effects = sugar::remove_blocks(blocks);
+                self.apply_sugar(&repo, root.as_deref(), effects, "blocks_remove")
             }
             "blocks_split" => {
                 let (repo, root) = self.scope(args)?;
@@ -2565,19 +1812,8 @@ impl Surface {
                             .ok_or_else(|| bad_args("`at` must be an array of byte offsets"))
                     })
                     .collect::<Result<_>>()?;
-                // The planner pins the live hash (§9's own CAS token).
-                let effects = vec![PublicEffect::Split {
-                    target: block,
-                    at,
-                    expect: None,
-                }];
-                Ok(apply_json(&self.apply_sugar(
-                    &repo,
-                    root.as_deref(),
-                    effects,
-                    "blocks_split",
-                    arg_bool(args, "dry_run")?.unwrap_or(false),
-                )?))
+                let effects = sugar::split_block(&block, at);
+                self.apply_sugar(&repo, root.as_deref(), effects, "blocks_split")
             }
             "blocks_merge" => {
                 let (repo, root) = self.scope(args)?;
@@ -2587,18 +1823,8 @@ impl Surface {
                         .iter()
                         .map(|b| self.resolve_block_ref(&repo, b))
                         .collect::<Result<_>>()?;
-                let effects = vec![PublicEffect::Merge {
-                    targets: blocks,
-                    separator: arg_str(args, "separator").map(str::to_owned),
-                    expect: None,
-                }];
-                Ok(apply_json(&self.apply_sugar(
-                    &repo,
-                    root.as_deref(),
-                    effects,
-                    "blocks_merge",
-                    arg_bool(args, "dry_run")?.unwrap_or(false),
-                )?))
+                let effects = sugar::merge_blocks(blocks, arg_str(args, "separator"));
+                self.apply_sugar(&repo, root.as_deref(), effects, "blocks_merge")
             }
             "blocks_check" => {
                 let (repo, root) = self.scope(args)?;
@@ -2612,18 +1838,9 @@ impl Surface {
                 // named twice is one identical scalar write — the planner
                 // drops the duplicate (a pinned 3.2 fix: the second op no
                 // longer fails `stale_expectation`).
-                let checked = arg_bool(args, "checked")?.unwrap_or(true);
-                let effects = blocks
-                    .iter()
-                    .map(|b| set_block(b, "attrs.checked", json!(checked), None))
-                    .collect();
-                Ok(apply_json(&self.apply_sugar(
-                    &repo,
-                    root.as_deref(),
-                    effects,
-                    "blocks_check",
-                    arg_bool(args, "dry_run")?.unwrap_or(false),
-                )?))
+                let effects =
+                    sugar::check_blocks(&blocks, arg_bool(args, "checked")?.unwrap_or(true));
+                self.apply_sugar(&repo, root.as_deref(), effects, "blocks_check")
             }
             "nodes_set" => {
                 let (repo, root) = self.scope(args)?;
@@ -2645,19 +1862,12 @@ impl Surface {
                         json!({ "id": node_id }),
                     ));
                 }
-                let effects = vec![PublicEffect::Set {
-                    target: EffectTarget::Node { id: node_id },
-                    field: arg_string(args, "prop")?,
-                    value: json!(arg_string(args, "value")?),
-                    expect: None,
-                }];
-                Ok(apply_json(&self.apply_sugar(
-                    &repo,
-                    root.as_deref(),
-                    effects,
-                    "nodes_set",
-                    arg_bool(args, "dry_run")?.unwrap_or(false),
-                )?))
+                let effects = sugar::set_node(
+                    &node_id,
+                    &arg_string(args, "prop")?,
+                    &arg_string(args, "value")?,
+                );
+                self.apply_sugar(&repo, root.as_deref(), effects, "nodes_set")
             }
             "blocks_append" => {
                 let (repo, root) = self.scope(args)?;
@@ -2699,19 +1909,8 @@ impl Surface {
                         json!({ "id": block, "type": kind }),
                     ));
                 };
-                let effects = vec![PublicEffect::Insert {
-                    into,
-                    at: At::End,
-                    markdown: text,
-                    expect: None,
-                }];
-                Ok(apply_json(&self.apply_sugar(
-                    &repo,
-                    root.as_deref(),
-                    effects,
-                    "blocks_append",
-                    arg_bool(args, "dry_run")?.unwrap_or(false),
-                )?))
+                let effects = sugar::insert(into, At::End, &text, None);
+                self.apply_sugar(&repo, root.as_deref(), effects, "blocks_append")
             }
             "docs_append" => {
                 let (repo, root) = self.scope(args)?;
@@ -2734,19 +1933,8 @@ impl Surface {
                         path: None,
                     },
                 };
-                let effects = vec![PublicEffect::Insert {
-                    into,
-                    at: At::End,
-                    markdown: text,
-                    expect: None,
-                }];
-                Ok(apply_json(&self.apply_sugar(
-                    &repo,
-                    root.as_deref(),
-                    effects,
-                    "docs_append",
-                    arg_bool(args, "dry_run")?.unwrap_or(false),
-                )?))
+                let effects = sugar::insert(into, At::End, &text, None);
+                self.apply_sugar(&repo, root.as_deref(), effects, "docs_append")
             }
             "links_retarget" | "links_repair" => {
                 let (repo, root) = self.scope(args)?;
@@ -2782,21 +1970,18 @@ impl Surface {
                     ));
                 }
                 // `hits` / `pairs` come from the store's plan as before; the
-                // `retarget` effect re-plans the same rewrite for the commit.
+                // `retarget` effect re-plans the same rewrite for the commit
+                // (4.0: committed like every other tool, no `applied`; the
+                // preview is `plan { retarget }` → `preview.retarget`).
                 let path_glob = arg_str(args, "path_glob").filter(|g| !g.is_empty());
                 let plan = self.store.links_repair(&repo, &repairs, path_glob)?;
-                let dry = arg_bool(args, "dry_run")?.unwrap_or(true);
-                let effects = vec![PublicEffect::Retarget {
-                    repairs: repairs
-                        .iter()
-                        .map(|r| Repair {
-                            from: r.from.clone(),
-                            to: r.to.clone(),
-                        })
-                        .collect(),
-                    path_glob: path_glob.map(str::to_owned),
-                }];
-                let res = self.apply_sugar(&repo, root.as_deref(), effects, name, dry)?;
+                let pairs: Vec<(String, String)> = repairs
+                    .iter()
+                    .map(|r| (r.from.clone(), r.to.clone()))
+                    .collect();
+                let effects = sugar::retarget(&pairs, path_glob);
+                let out =
+                    self.apply_sugar_with(&repo, root.as_deref(), name, |_, _| Ok(effects))?;
                 let mut m = Map::new();
                 m.insert(
                     "hits".to_owned(),
@@ -2811,8 +1996,7 @@ impl Surface {
                             .collect(),
                     ),
                 );
-                m.insert("applied".to_owned(), json!(!dry));
-                Ok(merge(m, apply_json(&res)))
+                Ok(merge(m, sugar_json(&out)))
             }
             "links_stale" => {
                 let (repo, _) = self.scope(args)?;
@@ -2824,41 +2008,26 @@ impl Surface {
             }
             "docs_create" => {
                 let (repo, root) = self.scope(args)?;
-                let rel = canonical(&arg_string(args, "path")?);
-                let markdown = arg_string(args, "markdown")?;
                 let fm = arg_object(args, "frontmatter")?.cloned();
-                let dry = arg_bool(args, "dry_run")?.unwrap_or(false);
-                let reason = format!("create {rel}");
+                let sugar::Sugar { effects, reason } = sugar::create_document(
+                    &arg_string(args, "path")?,
+                    &arg_string(args, "markdown")?,
+                    fm.as_ref(),
+                );
+                let rel = canonical(&arg_string(args, "path")?);
                 // The library's own checks first, in its order and with its
                 // messages (`path_taken` with an empty `data`, as pinned); the
                 // planner's `check_absent` would name the path in `data`.
-                let (plan, receipt, new_ids) =
-                    self.apply_sugar_with(&repo, root.as_deref(), &reason, dry, |store, ds| {
-                        if store.live_doc_at(&repo, &rel)? {
-                            return Err(path_taken(format!("document already exists at {rel}")));
-                        }
-                        if ds.exists(&rel) {
-                            return Err(path_taken(format!(
-                                "file already exists on disk at {rel}"
-                            )));
-                        }
-                        Ok(vec![PublicEffect::Create {
-                            path: rel.clone(),
-                            markdown,
-                            frontmatter: fm,
-                        }])
-                    })?;
-                // `id`: committed, the receipt's first revision is the
-                // create's; on a dry run the plan's one `d` symbol was realized
-                // through the shim — the id the legacy dry run minted.
-                let id = match &receipt {
-                    Some(r) => r.revisions.first().map(|r| r.doc.clone()),
-                    None => new_ids.first().map(|(_, id)| id.clone()),
-                }
-                .ok_or_else(|| {
-                    SurfaceError::other(format!("create: nothing committed for {rel}"))
+                let out = self.apply_sugar_with(&repo, root.as_deref(), &reason, |store, ds| {
+                    if store.live_doc_at(&repo, &rel)? {
+                        return Err(path_taken(format!("document already exists at {rel}")));
+                    }
+                    if ds.exists(&rel) {
+                        return Err(path_taken(format!("file already exists on disk at {rel}")));
+                    }
+                    Ok(effects)
                 })?;
-                Ok(doc_sugar_json(&id, &rel, receipt.is_some(), &plan))
+                Ok(sugar_json(&out))
             }
             "docs_move" => {
                 let (repo, root) = self.scope(args)?;
@@ -2866,105 +2035,74 @@ impl Surface {
                 let to_rel = canonical(&arg_string(args, "to_path")?);
                 // spec/mutate §6 (1.3): the default is `true`; `false` opts out.
                 let retarget = arg_bool(args, "retarget_inbound")?.unwrap_or(true);
-                let dry = arg_bool(args, "dry_run")?.unwrap_or(false);
                 let info = self.doc_info(&repo, &doc)?;
-                let reason = format!("move {} -> {to_rel}", info.path);
+                let sugar::Sugar { effects, reason } =
+                    sugar::move_document(&info.doc_id, &info.path, &to_rel, retarget);
                 // `dangling`/`retargeted` as the library reported them: planned
-                // over the current blocks before anything moves (the move
-                // itself changes no block, so the real run and its dry run
-                // report identically); the planner lowers the same plan.
+                // over the current blocks before anything moves; the planner
+                // lowers the same plan.
                 let mut report: Option<(Vec<omgbase_store::InboundLink>, Option<Retargeted>)> =
                     None;
-                let (plan, receipt, _) =
-                    self.apply_sugar_with(&repo, root.as_deref(), &reason, dry, |store, ds| {
-                        if store.live_doc_at(&repo, &to_rel)? {
-                            return Err(path_taken(format!(
-                                "a document already exists at {to_rel}"
-                            )));
-                        }
-                        let inbound =
-                            inbound_links_to(store.conn(), &repo, &info.doc_id, &info.path)?;
-                        if ds.exists(&to_rel) {
-                            return Err(path_taken(format!(
-                                "file already exists on disk at {to_rel}"
-                            )));
-                        }
-                        report = Some(if retarget && !inbound.is_empty() {
-                            let p = store.plan_inbound_retarget(
-                                &info.doc_id,
-                                &info.path,
-                                &to_rel,
-                                &inbound,
-                            )?;
-                            (
-                                p.dangling,
-                                Some(Retargeted {
-                                    blocks: p.blocks,
-                                    docs: p.docs,
-                                }),
-                            )
-                        } else {
-                            (inbound, None)
-                        });
-                        Ok(vec![PublicEffect::MoveDocument {
-                            target: EffectTarget::Document {
-                                id: Some(info.doc_id.clone()),
-                                path: None,
-                            },
-                            to: to_rel.clone(),
-                            retarget_inbound: retarget,
-                        }])
-                    })?;
+                let out = self.apply_sugar_with(&repo, root.as_deref(), &reason, |store, ds| {
+                    if store.live_doc_at(&repo, &to_rel)? {
+                        return Err(path_taken(format!("a document already exists at {to_rel}")));
+                    }
+                    let inbound = inbound_links_to(store.conn(), &repo, &info.doc_id, &info.path)?;
+                    if ds.exists(&to_rel) {
+                        return Err(path_taken(format!(
+                            "file already exists on disk at {to_rel}"
+                        )));
+                    }
+                    report = Some(if retarget && !inbound.is_empty() {
+                        let p = store.plan_inbound_retarget(
+                            &info.doc_id,
+                            &info.path,
+                            &to_rel,
+                            &inbound,
+                        )?;
+                        (
+                            p.dangling,
+                            Some(Retargeted {
+                                blocks: p.blocks,
+                                docs: p.docs,
+                            }),
+                        )
+                    } else {
+                        (inbound, None)
+                    });
+                    Ok(effects)
+                })?;
                 let (dangling, retargeted) = report.expect("set before the effects were built");
-                // `{ id, path, committed, diffs?, dangling, retargeted }` — the
-                // reference spreads the planned/moved record before the link report.
-                let mut m = Map::new();
-                m.insert("id".to_owned(), json!(info.doc_id));
-                m.insert("path".to_owned(), json!(reference_path(&to_rel)));
-                m.insert("committed".to_owned(), json!(receipt.is_some()));
-                if receipt.is_none() {
-                    m.insert(
-                        "diffs".to_owned(),
-                        move_diffs_json(&plan, &info.path, &to_rel),
-                    );
+                if out.1.is_none() {
+                    // Previewing: the Plan alone (`spec/cli` §3.6).
+                    return Ok(sugar_json(&out));
                 }
-                // Each dangling link is an edge row under the `edges` target's
-                // names (§1.2, 3.0) with its source `path` rooted; its `target`
-                // stays as authored — that is what the link says.
+                // The Receipt, then the link report (§4, the reference's key
+                // order): `retargeted`, then each dangling link as a link row
+                // under the `links` target's names (§1.2, 3.0) with its source
+                // `path` rooted; its `target` stays as authored — that is what
+                // the link says.
+                let mut m = Map::new();
+                m.insert(
+                    "retargeted".to_owned(),
+                    retargeted_json(retargeted.as_ref()),
+                );
                 m.insert(
                     "dangling".to_owned(),
                     Json::Array(dangling.iter().map(dangling_json).collect()),
                 );
-                m.insert(
-                    "retargeted".to_owned(),
-                    json!(
-                        retargeted
-                            .as_ref()
-                            .map(|r| json!({ "blocks": r.blocks, "docs": r.docs }))
-                    ),
-                );
-                Ok(Json::Object(m))
+                let Json::Object(receipt) = sugar_json(&out) else {
+                    unreachable!("a receipt is an object")
+                };
+                Ok(merge(receipt, Json::Object(m)))
             }
             "docs_delete" => {
                 let (repo, root) = self.scope(args)?;
                 let doc = self.locate_doc(&repo, name, args)?;
-                let dry = arg_bool(args, "dry_run")?.unwrap_or(false);
                 let info = self.doc_info(&repo, &doc)?;
-                let reason = format!("delete {}", info.path);
-                let target = EffectTarget::Document {
-                    id: Some(info.doc_id.clone()),
-                    path: None,
-                };
-                let (plan, receipt, _) =
-                    self.apply_sugar_with(&repo, root.as_deref(), &reason, dry, |_, _| {
-                        Ok(vec![PublicEffect::RemoveDocument { target }])
-                    })?;
-                Ok(doc_sugar_json(
-                    &info.doc_id,
-                    &info.path,
-                    receipt.is_some(),
-                    &plan,
-                ))
+                let sugar::Sugar { effects, reason } =
+                    sugar::delete_document(&info.doc_id, &info.path);
+                self.apply_sugar(&repo, root.as_deref(), effects, &reason)
             }
             "docs_set_meta" => {
                 let (repo, root) = self.scope(args)?;
@@ -2975,36 +2113,11 @@ impl Surface {
                 } else {
                     Vec::new()
                 };
-                let dry = arg_bool(args, "dry_run")?.unwrap_or(false);
                 let info = self.doc_info(&repo, &doc)?;
-                // One `set`/`unset frontmatter.<key>` per key; a key in both
-                // lists is only unset (the library merged `set` first and
-                // deleted `unset` after, so `unset` won — and the planner would
-                // call two writes to one scalar a conflict).
-                let target = EffectTarget::Document {
-                    id: Some(info.doc_id.clone()),
-                    path: None,
-                };
-                let mut effects: Vec<PublicEffect> = Vec::new();
-                if let Some(set) = &set {
-                    for (k, v) in set {
-                        if !unset.contains(k) {
-                            effects.push(PublicEffect::Set {
-                                target: target.clone(),
-                                field: format!("frontmatter.{k}"),
-                                value: v.clone(),
-                                expect: None,
-                            });
-                        }
-                    }
-                }
-                for k in &unset {
-                    effects.push(PublicEffect::Unset {
-                        target: target.clone(),
-                        field: format!("frontmatter.{k}"),
-                        expect: None,
-                    });
-                }
+                // One `set`/`unset frontmatter.<key>` per key, `unset` winning
+                // a key named in both (`sugar::set_meta`).
+                let sugar::Sugar { effects, reason } =
+                    sugar::set_meta(&info.doc_id, &info.path, set.as_ref(), &unset);
                 if effects.is_empty() {
                     // Nothing to set or unset: the library path rewrote the
                     // frontmatter through the YAML emitter anyway (a
@@ -3016,17 +2129,7 @@ impl Surface {
                         &spec.input_schema,
                     ));
                 }
-                let reason = format!("set_meta {}", info.path);
-                let (plan, receipt, _) =
-                    self.apply_sugar_with(&repo, root.as_deref(), &reason, dry, |_, _| {
-                        Ok(effects)
-                    })?;
-                Ok(doc_sugar_json(
-                    &info.doc_id,
-                    &info.path,
-                    receipt.is_some(),
-                    &plan,
-                ))
+                self.apply_sugar(&repo, root.as_deref(), effects, &reason)
             }
             "docs_update" => {
                 // Surface 4.0: sugar for `set { document, field: "content" }`
@@ -3042,26 +2145,22 @@ impl Surface {
                 let reason = arg_str(args, "reason").map(str::to_owned);
                 let origin = ApplyOrigin::new(&self.actor, reason.as_deref());
                 let ctx = self.plan_ctx(&repo);
-                let effects = vec![PublicEffect::Set {
-                    target: EffectTarget::Document {
-                        id: Some(info.doc_id),
-                        path: None,
-                    },
-                    field: "content".to_owned(),
-                    value: json!(content),
-                    expect: None,
-                }];
-                let (_, receipt) = self.with_writes(root.as_deref(), |store, ds| {
-                    store
-                        .apply_effects_detailed(&ctx, &effects, &origin, ds, false)
-                        .map_err(strip_effect_index)
-                        .map_err(SurfaceError::from)
+                let effects = sugar::update_content(&info.doc_id, &content);
+                let preview = self.preview;
+                let (plan, receipt) = self.with_writes(root.as_deref(), |store, ds| {
+                    if preview {
+                        return Ok((store.plan_effects(&ctx, &effects, ds)?, None));
+                    }
+                    let (plan, receipt) = store
+                        .apply_effects_detailed(&ctx, &effects, &origin, ds)
+                        .map_err(strip_effect_index)?;
+                    Ok((plan, Some(receipt)))
                 })?;
-                let receipt = receipt.expect("not a dry run");
-                if receipt.commit.is_some() {
+                self.last_plan = Some(plan.clone());
+                if receipt.as_ref().is_some_and(|r| r.commit.is_some()) {
                     self.notify();
                 }
-                Ok(receipt_json(&receipt))
+                Ok(sugar_json(&(plan, receipt)))
             }
             "observe" => {
                 let (repo, _) = self.scope(args)?;
@@ -3311,56 +2410,6 @@ pub fn provider_unavailable() -> SurfaceError {
     )
 }
 
-/// `spec/mutate` §4's result on the wire: `{ results: [{ ids, removed?,
-/// mergedInto? }], revisions, diffs?, committed }` (camelCase, as the
-/// reference).
-#[must_use]
-pub fn apply_json(res: &ApplyResult) -> Json {
-    let mut m = Map::new();
-    m.insert(
-        "results".to_owned(),
-        Json::Array(
-            res.results
-                .iter()
-                .map(|r| {
-                    let mut o = Map::new();
-                    o.insert("ids".to_owned(), json!(r.ids));
-                    if let Some(rm) = &r.removed {
-                        o.insert("removed".to_owned(), json!(rm));
-                    }
-                    if let Some(mi) = &r.merged_into {
-                        o.insert("mergedInto".to_owned(), json!(mi));
-                    }
-                    Json::Object(o)
-                })
-                .collect(),
-        ),
-    );
-    // §1 Paths: `revisions[].path` and the dry-run `diffs` keys in the
-    // reference form; a revision is `{ id, path, hash }` (§4, 3.0).
-    m.insert(
-        "revisions".to_owned(),
-        Json::Array(
-            res.revisions
-                .iter()
-                .map(|r| json!({ "id": r.doc, "path": reference_path(&r.path), "hash": r.hash }))
-                .collect(),
-        ),
-    );
-    if let Some(diffs) = &res.diffs {
-        let mut d = Map::new();
-        for (path, diff) in diffs {
-            d.insert(
-                reference_path(path),
-                json!({ "before": diff.before, "after": diff.after }),
-            );
-        }
-        m.insert("diffs".to_owned(), Json::Object(d));
-    }
-    m.insert("committed".to_owned(), json!(res.committed));
-    Json::Object(m)
-}
-
 /// The `effects` argument (`spec/mutate` §11.1): a malformed effect is
 /// `filter_invalid { reason, hint: "arguments" }` naming `effects[i]`.
 fn parse_effects(v: &Json) -> Result<Vec<PublicEffect>> {
@@ -3378,6 +2427,18 @@ pub fn plan_json(plan: &Plan) -> Json {
         if let Some(revs) = preview.get_mut("revisions").and_then(Json::as_array_mut) {
             for r in revs {
                 root_field(r, "path");
+            }
+        }
+        // The kernel results spell `merged_into` (the `spec/mutate` fixture
+        // spelling); on the wire a result is `{ ids, removed?, mergedInto? }`,
+        // as the reference's `OpResult` is — the 3.x apply result's spelling.
+        if let Some(results) = preview.get_mut("results").and_then(Json::as_array_mut) {
+            for r in results {
+                if let Some(o) = r.as_object_mut() {
+                    if let Some(m) = o.shift_remove("merged_into") {
+                        o.insert("mergedInto".to_owned(), m);
+                    }
+                }
             }
         }
         if let Some(diffs) = preview.get_mut("diffs") {
@@ -3425,81 +2486,10 @@ fn dangling_json(l: &omgbase_store::InboundLink) -> Json {
     Json::Object(m)
 }
 
-/// A document operation's result on the wire: `{ id, path, committed,
-/// diffs? }` — the store's `{ doc, path }` re-shaped under the row rule
-/// (§1.2, 3.0); `diffs` only on a dry run (1.3). The pre-migration handlers'
-/// (`call_legacy`), tests only since batch 2.
-#[cfg(test)]
-fn doc_op_json(res: &omgbase_store::DocOpResult) -> Json {
-    let mut m = Map::new();
-    m.insert("id".to_owned(), json!(res.doc_id));
-    m.insert("path".to_owned(), json!(reference_path(&res.path)));
-    m.insert("committed".to_owned(), json!(res.committed));
-    if let Some(diffs) = &res.diffs {
-        m.insert(
-            "diffs".to_owned(),
-            reference_keyed(&omgbase_store::docs_ops::diffs_json(diffs)),
-        );
-    }
-    Json::Object(m)
-}
-
 /// `path_taken` as the library's document operations raise it: the message
 /// alone, an empty `data` (`spec/surface` §7 pins `path_taken {}`).
 fn path_taken(message: String) -> SurfaceError {
     SurfaceError::from(MutationError::new(ErrorCode::PathTaken, message))
-}
-
-/// A document sugar tool's result (ADR-021 migration): `{ id, path,
-/// committed, diffs? }` — `diffs` the plan preview's, on a dry run only, the
-/// keys in the reference form.
-fn doc_sugar_json(id: &str, path: &str, committed: bool, plan: &Plan) -> Json {
-    let mut m = Map::new();
-    m.insert("id".to_owned(), json!(id));
-    m.insert("path".to_owned(), json!(reference_path(path)));
-    m.insert("committed".to_owned(), json!(committed));
-    if !committed {
-        let mut d = Map::new();
-        for (p, (before, after)) in plan.preview.as_ref().map_or(&[][..], |p| &p.diffs[..]) {
-            d.insert(
-                reference_path(p),
-                json!({ "before": before, "after": after }),
-            );
-        }
-        m.insert("diffs".to_owned(), Json::Object(d));
-    }
-    Json::Object(m)
-}
-
-/// `docs_move`'s dry-run `diffs` in the library's order and content (the
-/// plan preview puts the rewritten sources first, then the emptied old path
-/// and the filled new one): the old path emptied, the new path filled with
-/// the current bytes, then every other rewritten source in preview order.
-/// One library quirk kept: when the moved document links to itself, its
-/// rewrite was loaded under the OLD path and `Object.assign` landed it
-/// there — so the old path shows `bytes → rewritten`, the new path `"" →
-/// bytes` (the preview puts the rewrite at the new path).
-fn move_diffs_json(plan: &Plan, from: &str, to: &str) -> Json {
-    let empty: Vec<(String, (String, String))> = Vec::new();
-    let preview = plan.preview.as_ref().map_or(&empty, |p| &p.diffs);
-    let find = |path: &str| preview.iter().find(|(p, _)| p == path).map(|(_, d)| d);
-    let bytes = find(from).map_or_else(String::new, |d| d.0.clone());
-    let own_after = find(to).map_or_else(|| bytes.clone(), |d| d.1.clone());
-    let entry = |before: &str, after: &str| json!({ "before": before, "after": after });
-    let mut m = Map::new();
-    let from_after = if own_after == bytes {
-        String::new()
-    } else {
-        own_after
-    };
-    m.insert(reference_path(from), entry(&bytes, &from_after));
-    m.insert(reference_path(to), entry("", &bytes));
-    for (path, (before, after)) in preview {
-        if path != from && path != to {
-            m.insert(reference_path(path), entry(before, after));
-        }
-    }
-    Json::Object(m)
 }
 
 /// `changes_since` on the wire (§1 Paths, 2.0): the store renders its digests
@@ -3725,18 +2715,34 @@ mod tests {
             plan["new_ids"],
             json!([{ "symbol": "$new.0", "kind": "block" }])
         );
-        // A dry-run apply with effects is the same plan.
+        // 4.0: the retired inputs name their replacement (`spec/surface` §4);
+        // `effects` is required; nothing is stripped silently.
         let dry = s.call("apply", json!({ "effects": effects, "dry_run": true }));
-        assert!(!dry.is_error, "{}", dry.body);
-        assert_eq!(dry.body["plan_id"], plan["plan_id"]);
-        // Exactly one of ops / effects.
-        let both = s.call("apply", json!({ "ops": [], "effects": effects }));
-        assert!(both.is_error);
-        assert_eq!(both.body["error"], "filter_invalid");
-        assert_eq!(both.body["data"]["hint"], "arguments");
+        assert_eq!(dry.body["error"], "filter_invalid", "{}", dry.body);
+        assert_eq!(
+            dry.body["message"],
+            "`dry_run` is no longer an argument — preview with `plan { effects: [...] }` (apply takes effects, reason?, repo?)"
+        );
+        let ops = s.call("apply", json!({ "ops": [] }));
+        assert_eq!(ops.body["error"], "filter_invalid");
+        assert_eq!(
+            ops.body["message"],
+            "`ops` is no longer an argument — `apply` takes `effects` (the kernel ops are a library/fixture contract since spec/mutate 3.0) (apply takes effects, reason?, repo?)"
+        );
+        assert_eq!(ops.body["data"]["hint"], "arguments");
         let neither = s.call("apply", json!({}));
-        assert!(neither.is_error);
-        assert_eq!(neither.body["data"]["hint"], "arguments");
+        assert_eq!(neither.body["error"], "filter_invalid");
+        assert_eq!(
+            neither.body["message"],
+            "`effects` is required (apply takes effects, reason?, repo?)"
+        );
+        // The CLI's preview seam plans the same effects: the same plan, no
+        // commit, nothing minted.
+        let previewed = s
+            .preview_call("apply", &json!({ "effects": effects }))
+            .unwrap();
+        assert_eq!(previewed["plan_id"], plan["plan_id"]);
+        assert!(previewed.get("preview").is_some());
         let bad = s.call("apply", json!({ "effects": [{ "op": "nope" }] }));
         assert!(bad.is_error);
         assert_eq!(bad.body["error"], "filter_invalid");
@@ -3939,12 +2945,19 @@ mod tests {
         assert!(!ok.is_error, "{}", ok.body);
         let read = s.call("docs_read", json!({ "path": "a.md" }));
         assert_eq!(read.body["raw"], "# T\n\nThree.\n\nOne.\n\nTwo.\n\n");
-        // A `dry_run` still runs the CAS.
+        // The preview (`plan`, or the CLI's seam) still runs the CAS.
         let dry = s.call(
-            "blocks_move",
-            json!({ "blocks": ["b_1"], "to": "a.md", "at": "start", "dry_run": true, "expect": { "parent_children_hash": "00" } }),
+            "plan",
+            json!({ "effects": [{ "op": "move", "targets": [{ "kind": "block", "id": "b_1" }], "into": { "kind": "document", "path": "a.md" }, "at": "start", "expect": { "parent_children_hash": "00" } }] }),
         );
         assert_eq!(dry.body["error"], "stale_expectation", "{}", dry.body);
+        let dry = s
+            .preview_call(
+                "blocks_move",
+                &json!({ "blocks": ["b_1"], "to": "a.md", "at": "start", "expect": { "parent_children_hash": "00" } }),
+            )
+            .unwrap_err();
+        assert_eq!(dry.code, "stale_expectation");
         // §2 (1.2): the budget is applied from the second item on — one item
         // always comes back, `truncated` says more remained.
         let many = s.call(
@@ -3992,16 +3005,34 @@ mod tests {
             json!({ "path": "a.md", "content": "# T\n\nOne.\n" }),
         );
         assert_eq!(fired.get(), 1);
-        let dry = s.call(
-            "blocks_insert",
-            json!({ "to": "a.md", "markdown": "Two.", "dry_run": true }),
+        let dry = s
+            .preview_call(
+                "blocks_insert",
+                &json!({ "to": "a.md", "markdown": "Two." }),
+            )
+            .unwrap();
+        assert!(dry.get("committed").is_none(), "a Plan: {dry}");
+        assert_eq!(
+            dry["new_ids"],
+            json!([{ "symbol": "$new.0", "kind": "block" }])
         );
-        assert!(!dry.is_error, "{}", dry.body);
-        assert_eq!(dry.body["committed"], false);
-        assert_eq!(fired.get(), 1, "a dry run never fires the hook");
+        assert_eq!(fired.get(), 1, "a preview never fires the hook");
+        let plan = s.call("plan", json!({ "effects": [{ "op": "insert", "into": { "kind": "document", "path": "a.md" }, "markdown": "Two." }] }));
+        assert_eq!(
+            plan.body["plan_id"], dry["plan_id"],
+            "the preview IS the plan"
+        );
+        assert_eq!(fired.get(), 1, "`plan` never fires the hook");
         let wet = s.call("blocks_insert", json!({ "to": "a.md", "markdown": "Two." }));
         assert!(!wet.is_error, "{}", wet.body);
         assert_eq!(fired.get(), 2);
+        // The Receipt (4.0), the preview's symbol realized.
+        assert_eq!(wet.body["plan_id"], dry["plan_id"]);
+        assert_eq!(wet.body["committed"], true);
+        assert_eq!(wet.body["commit"], "c_1");
+        assert_eq!(wet.body["new_ids"], json!({ "$new.0": "b_2" }));
+        assert_eq!(wet.body["revisions"][0]["path"], "/a.md");
+        assert!(wet.body.get("results").is_none() && wet.body.get("diffs").is_none());
         let read = s.call("docs_read", json!({ "id": "d_0" }));
         assert_eq!(read.body["raw"], "# T\n\nOne.\n\nTwo.\n");
         let upd = s.call(
@@ -4009,7 +3040,33 @@ mod tests {
             json!({ "id": "b_1", "markdown": "One, edited." }),
         );
         assert!(!upd.is_error, "{}", upd.body);
-        assert_eq!(upd.body["id"], "b_1");
+        assert!(
+            upd.body.get("id").is_none() && upd.body.get("ids").is_none(),
+            "{}",
+            upd.body
+        );
+        assert_eq!(upd.body["revisions"].as_array().map(Vec::len), Some(1));
+        let attrs = s.call(
+            "blocks_update",
+            json!({ "id": "b_1", "attrs": { "checked": true } }),
+        );
+        assert_eq!(
+            attrs.body["message"],
+            "`attrs` is no longer an argument — pass `checked` (blocks_update takes checked?, expect?, id, markdown?, repo?)"
+        );
+        let dry = s.call(
+            "blocks_update",
+            json!({ "id": "b_1", "markdown": "x", "dry_run": true }),
+        );
+        assert_eq!(
+            dry.body["message"],
+            "`dry_run` is no longer an argument — preview with `plan { effects: [...] }` (blocks_update takes checked?, expect?, id, markdown?, repo?)"
+        );
+        let nothing = s.call("blocks_update", json!({ "id": "b_1" }));
+        assert_eq!(
+            nothing.body["message"],
+            "pass `markdown` and/or `checked` (blocks_update takes checked?, expect?, id, markdown?, repo?)"
+        );
         let app = s.call(
             "docs_append",
             json!({ "path": "a.md", "section": "T", "text": "Three." }),
@@ -4039,8 +3096,14 @@ mod tests {
         assert!(du.body["diff"].as_str().unwrap().contains("+Four."));
     }
 
+    /// The document operations (§4, 4.0): each answers with the Receipt —
+    /// `docs_move` adding `dangling`/`retargeted` — and previews through
+    /// `plan` (the CLI's seam runs the tool's own checks): a create `"" →
+    /// bytes`, a move two entries + the rewritten sources, a delete `bytes →
+    /// ""`, a meta patch before → after; a preview commits nothing, fires no
+    /// hook and burns no id.
     #[test]
-    fn doc_tools_dry_run_preview_diffs_and_commit_nothing() {
+    fn doc_tools_return_receipts_and_preview_through_plan() {
         use std::cell::Cell;
         use std::rc::Rc;
         let fired = Rc::new(Cell::new(0));
@@ -4049,9 +3112,14 @@ mod tests {
         let b_src = "# B\n\nTarget.\n";
         let a_src = "# A\n\nSee [b](b.md).\n";
         let b = s.call("docs_create", json!({ "path": "b.md", "markdown": b_src }));
-        assert_eq!(b.body["id"], "d_0", "{}", b.body);
+        assert!(!b.is_error, "{}", b.body);
+        assert_eq!(
+            b.body,
+            json!({ "plan_id": b.body["plan_id"], "commit": "c_0", "revisions": [{ "id": "d_0", "path": "/b.md", "hash": b.body["revisions"][0]["hash"] }], "new_ids": { "$new.0": "d_0", "$new.1": "b_0", "$new.2": "b_1" }, "committed": true }),
+            "the created document is revisions[0], its symbols the document then its blocks"
+        );
         let a = s.call("docs_create", json!({ "path": "a.md", "markdown": a_src }));
-        assert_eq!(a.body["id"], "d_1", "{}", a.body);
+        assert_eq!(a.body["new_ids"]["$new.0"], "d_1", "{}", a.body);
         assert_eq!(fired.get(), 2);
         let count = |s: &Surface, table: &str| -> i64 {
             s.store
@@ -4070,100 +3138,166 @@ mod tests {
         let before = snapshot(&s);
         let keys = |v: &Json| -> Vec<String> { v.as_object().unwrap().keys().cloned().collect() };
 
-        // docs_create: `""` → the composed file; the `d_` id minted as the real run would.
-        let c = s.call(
-            "docs_create",
-            json!({ "path": "c.md", "markdown": "# C", "frontmatter": { "title": "C" }, "dry_run": true }),
-        );
-        assert!(!c.is_error, "{}", c.body);
+        // docs_create preview: `""` → the composed file; the `d_` is a symbol.
+        let c = s
+            .preview_call(
+                "docs_create",
+                &json!({ "path": "c.md", "markdown": "# C", "frontmatter": { "title": "C" } }),
+            )
+            .unwrap();
         assert_eq!(
-            serde_json::to_string(&c.body).unwrap(),
-            r#"{"id":"d_2","path":"/c.md","committed":false,"diffs":{"/c.md":{"before":"","after":"---\ntitle: C\n---\n\n# C\n"}}}"#,
-            "the reference's key order, byte for byte"
+            c["preview"]["diffs"],
+            json!({ "/c.md": { "before": "", "after": "---\ntitle: C\n---\n\n# C\n" } })
+        );
+        assert_eq!(c["preview"]["revisions"][0]["id"], "$new.0");
+        assert_eq!(
+            c["new_ids"],
+            json!([{ "symbol": "$new.0", "kind": "document" }, { "symbol": "$new.1", "kind": "block" }])
         );
 
-        // docs_move with retarget_inbound: old path emptied, new path filled,
-        // the rewritten source appended; `dangling`/`retargeted` previewed.
-        let m = s.call(
-            "docs_move",
-            json!({ "path": "b.md", "to_path": "notes/b.md", "retarget_inbound": true, "dry_run": true }),
-        );
-        assert!(!m.is_error, "{}", m.body);
-        // Byte for byte what the reference prints for
-        // `docsMove(store, { ...ctx, dryRun: true }, "b.md", "notes/b.md", { retargetInbound: true })`
-        // over the same two documents under the sequential minter.
+        // docs_move preview with retarget_inbound: the rewritten source, the
+        // old path emptied, the new path filled — the planner's order.
+        let m = s
+            .preview_call(
+                "docs_move",
+                &json!({ "path": "b.md", "to_path": "notes/b.md", "retarget_inbound": true }),
+            )
+            .unwrap();
         assert_eq!(
-            serde_json::to_string(&m.body).unwrap(),
-            r##"{"id":"d_0","path":"/notes/b.md","committed":false,"diffs":{"/b.md":{"before":"# B\n\nTarget.\n","after":""},"/notes/b.md":{"before":"","after":"# B\n\nTarget.\n"},"/a.md":{"before":"# A\n\nSee [b](b.md).\n","after":"# A\n\nSee [b](notes/b.md).\n"}},"dangling":[],"retargeted":{"blocks":["b_3"],"docs":["d_1"]}}"##
+            keys(&m["preview"]["diffs"]),
+            ["/a.md", "/b.md", "/notes/b.md"]
         );
         assert_eq!(
-            keys(&m.body),
-            ["id", "path", "committed", "diffs", "dangling", "retargeted"]
-        );
-        assert_eq!(keys(&m.body["diffs"]), ["/b.md", "/notes/b.md", "/a.md"]);
-        assert_eq!(
-            m.body["diffs"]["/a.md"],
+            m["preview"]["diffs"]["/a.md"],
             json!({ "before": a_src, "after": "# A\n\nSee [b](notes/b.md).\n" })
         );
-        // … and with `retarget_inbound: false` (mutate 1.3 retargets by default):
-        // two entries, the inbound link dangles.
-        let plain = s.call(
-            "docs_move",
-            json!({ "path": "b.md", "to_path": "notes/b.md", "dry_run": true, "retarget_inbound": false }),
+        assert_eq!(
+            m["preview"]["diffs"]["/b.md"],
+            json!({ "before": b_src, "after": "" })
         );
         assert_eq!(
-            serde_json::to_string(&plain.body).unwrap(),
-            r##"{"id":"d_0","path":"/notes/b.md","committed":false,"diffs":{"/b.md":{"before":"# B\n\nTarget.\n","after":""},"/notes/b.md":{"before":"","after":"# B\n\nTarget.\n"}},"dangling":[{"doc_id":"d_1","path":"/a.md","block_id":"b_3","target":"b.md","anchor":null}],"retargeted":null}"##
+            m["preview"]["diffs"]["/notes/b.md"],
+            json!({ "before": "", "after": b_src })
         );
+        assert!(
+            m.get("dangling").is_none(),
+            "a preview is the Plan alone: {m}"
+        );
+        // … and with `retarget_inbound: false`: two entries.
+        let plain = s
+            .preview_call(
+                "docs_move",
+                &json!({ "path": "b.md", "to_path": "notes/b.md", "retarget_inbound": false }),
+            )
+            .unwrap();
+        assert_eq!(keys(&plain["preview"]["diffs"]), ["/b.md", "/notes/b.md"]);
 
-        // docs_delete: the file → `""`.
-        let d = s.call("docs_delete", json!({ "path": "a.md", "dry_run": true }));
-        assert!(!d.is_error, "{}", d.body);
+        // docs_delete preview: the file → `""`.
+        let d = s
+            .preview_call("docs_delete", &json!({ "path": "a.md" }))
+            .unwrap();
         assert_eq!(
-            d.body,
-            json!({ "id": "d_1", "path": "/a.md", "committed": false, "diffs": { "/a.md": { "before": a_src, "after": "" } } })
+            d["preview"]["diffs"],
+            json!({ "/a.md": { "before": a_src, "after": "" } })
         );
-        assert_eq!(keys(&d.body), ["id", "path", "committed", "diffs"]);
 
-        // docs_set_meta: before → after.
-        let sm = s.call(
-            "docs_set_meta",
-            json!({ "path": "a.md", "set": { "status": "open" }, "dry_run": true }),
-        );
-        assert!(!sm.is_error, "{}", sm.body);
+        // docs_set_meta preview: before → after.
+        let sm = s
+            .preview_call(
+                "docs_set_meta",
+                &json!({ "path": "a.md", "set": { "status": "open" } }),
+            )
+            .unwrap();
         assert_eq!(
-            sm.body,
-            json!({ "id": "d_1", "path": "/a.md", "committed": false, "diffs": { "/a.md": { "before": a_src, "after": "---\nstatus: open\n---\n\n# A\n\nSee [b](b.md).\n" } } })
+            sm["preview"]["diffs"],
+            json!({ "/a.md": { "before": a_src, "after": "---\nstatus: open\n---\n\n# A\n\nSee [b](b.md).\n" } })
         );
 
-        // Nothing committed, no hook, no row changed; the checks still run.
-        assert_eq!(fired.get(), 2, "dry runs never fire the mutation hook");
+        // Nothing committed, no hook, no row changed, no id burned; the
+        // checks still run; `dry_run` is a retired name.
+        assert_eq!(fired.get(), 2, "previews never fire the mutation hook");
         assert_eq!(snapshot(&s), before);
+        let taken = s.preview_call("docs_create", &json!({ "path": "a.md", "markdown": "x" }));
+        assert_eq!(taken.unwrap_err().code, "path_taken");
+        let missing = s.preview_call("docs_delete", &json!({ "path": "nope.md" }));
+        assert_eq!(missing.unwrap_err().code, "doc_missing");
+        let dry = s.call("docs_delete", json!({ "path": "a.md", "dry_run": true }));
         assert_eq!(
-            s.call("docs_read", json!({ "id": "d_0" })).body["path"],
-            "/b.md"
+            dry.body["message"],
+            "`dry_run` is no longer an argument — preview with `plan { effects: [...] }` (docs_delete takes id?, path?, repo?)"
         );
-        assert_eq!(
-            s.call("docs_read", json!({ "id": "d_1" })).body["raw"],
-            a_src
-        );
-        let taken = s.call(
-            "docs_create",
-            json!({ "path": "a.md", "markdown": "x", "dry_run": true }),
-        );
-        assert_eq!(taken.body["error"], "path_taken");
-        let missing = s.call("docs_delete", json!({ "path": "nope.md", "dry_run": true }));
-        assert_eq!(missing.body["error"], "doc_missing");
-        // The dry-run create spent `d_2`: the next real create is `d_3` and carries no `diffs`.
         let real = s.call(
             "docs_create",
             json!({ "path": "c.md", "markdown": "# C\n" }),
         );
         assert_eq!(
-            real.body,
-            json!({ "id": "d_3", "path": "/c.md", "committed": true })
+            real.body["new_ids"]["$new.0"], "d_2",
+            "the preview burned no `d`"
         );
         assert_eq!(fired.get(), 3);
+
+        // The committed move: the Receipt (the rewritten source's revision),
+        // then `dangling` and `retargeted`.
+        let moved = s.call(
+            "docs_move",
+            json!({ "path": "b.md", "to_path": "notes/b.md" }),
+        );
+        assert!(!moved.is_error, "{}", moved.body);
+        assert_eq!(
+            keys(&moved.body),
+            [
+                "plan_id",
+                "commit",
+                "revisions",
+                "new_ids",
+                "committed",
+                "retargeted",
+                "dangling"
+            ]
+        );
+        assert_eq!(
+            moved.body["revisions"],
+            json!([{ "id": "d_1", "path": "/a.md", "hash": moved.body["revisions"][0]["hash"] }])
+        );
+        assert_eq!(moved.body["dangling"], json!([]));
+        assert_eq!(
+            moved.body["retargeted"],
+            json!({ "blocks": ["b_3"], "docs": ["d_1"] })
+        );
+        assert_eq!(
+            s.call("docs_read", json!({ "id": "d_0" })).body["path"],
+            "/notes/b.md"
+        );
+        // Opted out: the link dangles, as a link row with its source rooted.
+        let back = s.call(
+            "docs_move",
+            json!({ "path": "notes/b.md", "to_path": "b.md", "retarget_inbound": false }),
+        );
+        assert_eq!(back.body["revisions"], json!([]), "{}", back.body);
+        assert_eq!(
+            back.body["dangling"],
+            json!([{ "doc_id": "d_1", "path": "/a.md", "block_id": "b_3", "target": "notes/b.md", "anchor": null }])
+        );
+        assert_eq!(back.body["retargeted"], Json::Null);
+        // A set_meta and a delete: Receipts; the delete has no revision.
+        let sm = s.call(
+            "docs_set_meta",
+            json!({ "path": "a.md", "set": { "status": "open" } }),
+        );
+        assert_eq!(
+            sm.body["revisions"].as_array().map(Vec::len),
+            Some(1),
+            "{}",
+            sm.body
+        );
+        assert_eq!(sm.body["committed"], true);
+        let d = s.call("docs_delete", json!({ "path": "a.md" }));
+        assert_eq!(d.body["revisions"], json!([]), "{}", d.body);
+        assert!(d.body["commit"].is_string());
+        assert_eq!(
+            s.call("docs_read", json!({ "path": "a.md" })).body["error"],
+            "doc_missing"
+        );
     }
 
     #[test]

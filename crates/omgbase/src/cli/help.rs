@@ -462,7 +462,7 @@ pub fn card(name: &'static str, prog: &str) -> Option<HelpSpec> {
         ),
         "apply" => spec(
             s(
-                "Apply a changeset — `{ effects: [...] }` (intentional writes, planned + committed as one transaction) or `{ ops: [...] }` (the six-op kernel) — the primitive every other mutator expands to",
+                "Apply a changeset — `{ effects: [...] }`, the intentional writes (create/insert/set/unset/move/remove/split/merge/retarget) planned and committed as one transaction — the primitive every other mutator expands to",
             ),
             vec![s(
                 "apply [-f <changeset.json|->] [--reason <s>] [--actor <s>] [--dry-run]",
@@ -476,7 +476,7 @@ pub fn card(name: &'static str, prog: &str) -> Option<HelpSpec> {
                 ACTOR,
                 (
                     "--dry-run",
-                    "validate + render the diff, commit nothing (effects: --json prints the Plan for `execute`)",
+                    "plan only: render the diff, commit nothing (--json prints the Plan for `execute`)",
                 ),
             ]),
             vec![],

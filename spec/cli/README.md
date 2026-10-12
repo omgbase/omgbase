@@ -433,17 +433,16 @@ The commit **actor** of every CLI write defaults to `human:<os username>`
   line the header read `$id`/`$path` (§10).
 - **the outline wire format** (`outline`): `spec/surface` §2's text
   verbatim, one line per block.
-- **commit confirmation** (block mutators): stderr
-  `  ok committed · <n> document<s> touched` (`document` for one), stdout
-  the ids of `results[*].ids` in order, one per line (duplicates included).
-  For a Receipt (`apply` with `{ effects }`, `execute`; cli 3.2) `<n>` is the
-  receipt's `revisions`, and stdout is the Plan's `preview.results[*].ids`
-  with every `$new.n` realized from the receipt's `new_ids` — the same ids the
-  `ops` form prints — when the Plan is at hand with its preview (a local
-  `apply`, any `execute`); when it is not (a plan echoed without `preview`, a
-  remote `apply`), every id the plan minted: the `new_ids` values in order,
-  which includes the discarded mints of a re-parse (`spec/mutate` §10) — ids
-  that name no row.
+- **commit confirmation** (block mutators; every write is a Receipt since
+  cli 4.0): stderr `  ok committed · <n> document<s> touched` (`document`
+  for one), `<n>` the receipt's `revisions`; stdout the ids the write names,
+  one per line — the Plan's `preview.results[*].ids` in order (duplicates
+  included) with every `$new.n` realized from the receipt's `new_ids`, when
+  the Plan is at hand with its preview (every local write, any `execute`);
+  when it is not (a plan echoed without `preview`, a remote write), every
+  id the plan minted: the `new_ids` values in order, which includes the
+  discarded mints of a re-parse (`spec/mutate` §10) — ids that name no row.
+  `--json` prints the Receipt (a `retarget --apply` adds `hits`/`pairs`).
 - **document-op confirmation** (`new`/`mv`/`rm --doc`/`meta`): stderr
   `  ok <verb> <path>` (`created` / `moved to` / `deleted` / `patched`),
   stdout the document id.
@@ -512,7 +511,7 @@ parsed from the markdown are appended INTO the block — a heading's section
 a leaf is `block_not_container`. `<block>` is a block id or locator (a path
 or heading *text* is `block_missing`, §9). Content: `-m`, `-f <file>`, `-f -`
 or a bare `-` for stdin, else stdin. Commit confirmation (§4);
-`--json` the `ApplyResult`. Missing block → `usage: append requires a <block>`.
+`--json` the Receipt. Missing block → `usage: append requires a <block>`.
 
 ### `apply`
 
@@ -728,7 +727,7 @@ is `usage: bad --at '<v>' (use end|start|before <id>|after <id>)`);
 `--expect` is the destination-parent CAS of `spec/mutate` §1.2 (a mismatch
 is `stale_expectation: parent_children_hash mismatch` with the current hash).
 `<to>` must be a container (`list`, `list_item`, `task`, `blockquote`, `table`) or a document; a leaf such as a heading is the kernel's `type_mismatch` with its hint (`spec/mutate` §1.1, 1.2 — §9).
-Confirmation (§4); `--json` the `ApplyResult`. Missing parent →
+Confirmation (§4); `--json` the Receipt. Missing parent →
 `usage: insert requires a <to> parent (a container block id, or a doc id/path for the top level)`;
 unknown → `block_missing: no block with id "<ref>"`.
 
@@ -932,9 +931,11 @@ old and new raw (`spec/surface` §3's diff, the one every preview prints),
 then an empty line, under the stderr note
 `  plan — <n> block(s) would change; re-run with --apply to commit`; no hits →
 stderr `  no blocks reference <from>`. `--json` the plan
-`{ from, to, hits: [{ block, path, oldRaw, newRaw }] }`. `--apply` commits
-the `links_retarget` tool's call (the Receipt + `hits` + `pairs`) through
-the Receipt confirmation (§4) and honors `--dry-run` as §3.6. Targets are
+`{ from, to, hits: [{ id, path, oldRaw, newRaw }] }` (the hits under the
+row rule: `id` the block, `path` its document, rooted). `--apply` commits
+the `links_retarget` tool's call (the Receipt + `hits` + `pairs`; `--json`
+prints it) through the Receipt confirmation (§4) and honors `--dry-run` as
+§3.6 (the plan's per-file diffs). Targets are
 compared as written: `/texts/x.md` for a Markdown link, `salt` for a
 wikilink. `--scope` is a path glob over the documents searched.
 
@@ -943,7 +944,7 @@ wikilink. `--scope` is a path glob over the documents searched.
 `rm <blocks…|-> [--actor <s>] [--dry-run]` · `rm --doc <doc> [--actor <s>] [--dry-run]`
 — a `remove` op (confirmation lists the removed ids; `--json`'s result
 carries `removed`), or with `--doc` `docs_delete` (document-op confirmation
-`deleted <path>`; `--json` `{ id, path, committed, deleted }`; the file leaves the
+`deleted <path>`; `--json` `{ id, path, committed }`; the file leaves the
 tree; `--dry-run` renders the file's removal, §3.6). Neither →
 `usage: rm requires one or more blocks (or - for stdin), or --doc`.
 
@@ -1151,8 +1152,8 @@ the unknown-command one.
 A **collection** result replaces the frame and prints, on stderr,
 `  <n> row(s) — address with @1..@<n>` (`1 row`, `2 rows`; nothing when
 empty). Collections: `query`/`run` hits (row ref = `id`, label `path`;
-3.0), `ls` rows (ref = `id`, label `path`), `find` hits (`id`), `links` (out then in; ref = `doc_id`), an
-`ApplyResult` (its `results[*].ids`, flattened; ref = the id), any array. A
+3.0), `ls` rows (ref = `id`, label `path`), `find` hits (`id`), `links` (out then in; ref = `doc_id`), a write's
+Receipt (the ids the write names, flattened; ref = the id), any array. A
 card or scalar (`show`, `cat`, a count) sets `@_` and leaves the frame.
 **Not captured** at all (they leave `@_` and the frame untouched): `log`,
 `hist`, `outline`, `diff`, `status`, `repos`, `sync`, the admin verbs (§9).
@@ -1317,7 +1318,7 @@ every mode but `--json` (whose document carries `truncated`/`cursor`);
 `--json` is the mapped tool's result shape for `cat` (doc →
 `docs_read`), `show` (doc → `{ kind: "document", ...docs_read }`, composed
 client-side), `diff` (→ `docs_diff_unified`; `--blocks` → `docs_diff`), `repos`
-(→ `repos`), `retarget`'s plan (→ `links_retarget` dry run) and `status`
+(→ `repos`), `retarget`'s plan (→ `plan { retarget }`, its `preview.retarget[0].hits`) and `status`
 (`{ ...repos_status, sync: sync_status, watcher, embedQueue }`);
 empty-result notes go to stderr; a commit whose revisions were all deleted or
 moved renders `deleted <path>` / `moved <from> → <to>`; an unparsable
@@ -1401,16 +1402,15 @@ fixture change and a version bump, or keep). None was fixed here.
 **`--dry-run` and writes**
 
 - **Fixed — `new`, `mv`, `rm --doc` and `meta` honor `--dry-run`** (they
-  used to accept the flag and commit). The document operations take
-  `dryRun` in their context (`docsCreate`/`docsMove`/`docsDelete`/
-  `docsSetMeta`), validate exactly as the real run, and return
-  `committed: false` with the per-file `diffs` of §3.6; the CLI renders them
-  with the block verbs' renderer. The MCP tools `docs_create`, `docs_move`,
-  `docs_delete`, `docs_set_meta` accept `dry_run` for the same result (a
-  `spec/surface` catalog addition; the default is unchanged).
-  `docs::new-dry-run-commits` keeps its name and now shows the document
-  *not* created; `new-dry-run-json`, `mv-dry-run`, `mv-dry-run-json`,
-  `meta-dry-run`, `rm-doc-dry-run`.
+  used to accept the flag and commit). Through 3.x the document operations
+  took `dryRun` in their library context and returned `committed: false`
+  with the per-file `diffs` of §3.6 (and the MCP tools `docs_create`,
+  `docs_move`, `docs_delete`, `docs_set_meta` accepted `dry_run`); since
+  cli 4.0 the dry run is the `plan` of the verb's document effect, rendered
+  with the one renderer every verb shares. `docs::new-dry-run-commits`
+  keeps its name and shows the document *not* created; `new-dry-run-json`
+  prints the Plan (its revision id `$new.0` — no `d` minted), `mv-dry-run`,
+  `mv-dry-run-json`, `meta-dry-run`, `rm-doc-dry-run` the plan's diffs.
 - **Fixed — `node set <task> checked true` checks the task and honors
   `--actor`.** One bug behind both symptoms: the CLI dropped the tokens that
   *start* with `--` from the positionals but kept `--actor`'s value, so the

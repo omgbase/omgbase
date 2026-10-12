@@ -9,7 +9,7 @@ import { processCheckpoint } from "../sync/checkpoint.js";
 import { observeFile } from "../sync/observe.js";
 import { changesSince } from "../graph/history.js";
 import { apply } from "./apply.js";
-import { docsMove } from "./docs.js";
+import { docsMove } from "./doc-ops.test.helpers.js";
 import { FsDocStore } from "./doc-store.js";
 import { listPending, materializePending } from "./materialize.js";
 import { MutationError } from "./tree.js";

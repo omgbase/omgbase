@@ -3323,7 +3323,7 @@
     },
     {
       "name": "set-frontmatter-adds",
-      "notes": "§4 step 2: `set_frontmatter` with no ops force-loads the document and commits a frontmatter-only change.",
+      "notes": "§11.3 `set content` (3.0; the kernel request's `set_frontmatter` through 2.x): content that adds a frontmatter block to a document with none commits a frontmatter-only change — the body blocks keep their ids and bytes, the file is byte-identical to the proposed content.",
       "steps": [
         {
           "observe": {
@@ -3337,19 +3337,23 @@
           }
         },
         {
-          "apply": {
+          "apply_effects": {
             "ts": "2026-09-26T10:01:00.000Z",
-            "ops": [],
+            "effects": [
+              {
+                "op": "set",
+                "target": {
+                  "kind": "document",
+                  "id": "d_0"
+                },
+                "field": "content",
+                "value": "---\ntitle: Added\n---\n\n# Title\n\nFirst paragraph.\n\nSecond paragraph.\n"
+              }
+            ],
             "origin": {
               "actor": "agent:test",
               "reason": "fixture"
-            },
-            "set_frontmatter": [
-              {
-                "doc": "d_0",
-                "raw": "---\ntitle: Added\n---\n\n"
-              }
-            ]
+            }
           }
         }
       ],
@@ -3370,15 +3374,19 @@
             }
           ],
           {
-            "results": [],
-            "revisions": [
-              {
-                "id": "d_0",
-                "path": "a.md",
-                "hash": "f11a1c0d280f1376f9eeb285fcf652b4247a9c915f77fc3142c8fc91dbd2d6f0"
-              }
-            ],
-            "committed": true
+            "receipt": {
+              "plan_id": "8c42d8c469c30c98e73294e1d448fe119099579acb99487e31c153407bb05a48",
+              "commit": "c_1",
+              "revisions": [
+                {
+                  "id": "d_0",
+                  "path": "a.md",
+                  "hash": "f11a1c0d280f1376f9eeb285fcf652b4247a9c915f77fc3142c8fc91dbd2d6f0"
+                }
+              ],
+              "new_ids": {},
+              "committed": true
+            }
           }
         ],
         "files": {
@@ -3471,7 +3479,7 @@
             "actor": "agent:test",
             "reason": "fixture",
             "checkpoint_id": null,
-            "ops": null
+            "ops": "{\"effects\":[{\"field\":\"content\",\"op\":\"set\",\"target\":{\"id\":\"d_0\",\"kind\":\"document\",\"path\":\"a.md\"},\"value\":\"---\\ntitle: Added\\n---\\n\\n# Title\\n\\nFirst paragraph.\\n\\nSecond paragraph.\\n\"}],\"plan_id\":\"8c42d8c469c30c98e73294e1d448fe119099579acb99487e31c153407bb05a48\",\"v\":1}"
           }
         ],
         "revisions": [
@@ -3558,7 +3566,7 @@
     },
     {
       "name": "set-frontmatter-replaces",
-      "notes": "§4 step 2: the raw (fences + trailing separator) replaces the current frontmatter.",
+      "notes": "§11.3 `set content` (3.0): content whose frontmatter differs replaces the fence (fences + trailing separator) and leaves the body blocks untouched — the same bytes the 2.x `set_frontmatter` raw produced.",
       "steps": [
         {
           "observe": {
@@ -3572,19 +3580,23 @@
           }
         },
         {
-          "apply": {
+          "apply_effects": {
             "ts": "2026-09-26T10:01:00.000Z",
-            "ops": [],
+            "effects": [
+              {
+                "op": "set",
+                "target": {
+                  "kind": "document",
+                  "id": "d_0"
+                },
+                "field": "content",
+                "value": "---\ntitle: Changed\n---\n\n# Body\n\nText.\n"
+              }
+            ],
             "origin": {
               "actor": "agent:test",
               "reason": "fixture"
-            },
-            "set_frontmatter": [
-              {
-                "doc": "d_0",
-                "raw": "---\ntitle: Changed\n---\n\n"
-              }
-            ]
+            }
           }
         }
       ],
@@ -3605,15 +3617,19 @@
             }
           ],
           {
-            "results": [],
-            "revisions": [
-              {
-                "id": "d_0",
-                "path": "a.md",
-                "hash": "776162c54f14e4cd417c0945fc85cee3c1383c3d835ce3d282eb0aabd168828e"
-              }
-            ],
-            "committed": true
+            "receipt": {
+              "plan_id": "cc798c025398c9b0033fdb636758472bd55ebc44015a14e2dfc31a4d29917c20",
+              "commit": "c_1",
+              "revisions": [
+                {
+                  "id": "d_0",
+                  "path": "a.md",
+                  "hash": "776162c54f14e4cd417c0945fc85cee3c1383c3d835ce3d282eb0aabd168828e"
+                }
+              ],
+              "new_ids": {},
+              "committed": true
+            }
           }
         ],
         "files": {
@@ -3689,7 +3705,7 @@
             "actor": "agent:test",
             "reason": "fixture",
             "checkpoint_id": null,
-            "ops": null
+            "ops": "{\"effects\":[{\"field\":\"content\",\"op\":\"set\",\"target\":{\"id\":\"d_0\",\"kind\":\"document\",\"path\":\"a.md\"},\"value\":\"---\\ntitle: Changed\\n---\\n\\n# Body\\n\\nText.\\n\"}],\"plan_id\":\"cc798c025398c9b0033fdb636758472bd55ebc44015a14e2dfc31a4d29917c20\",\"v\":1}"
           }
         ],
         "revisions": [
@@ -3758,7 +3774,7 @@
     },
     {
       "name": "set-frontmatter-drops",
-      "notes": "§4 step 2: `raw: null` drops the frontmatter; the body renders from its first block.",
+      "notes": "§11.3 `set content` (3.0): content without the frontmatter drops it (the 2.x `set_frontmatter: { raw: null }`); the body renders from its first block.",
       "steps": [
         {
           "observe": {
@@ -3772,19 +3788,23 @@
           }
         },
         {
-          "apply": {
+          "apply_effects": {
             "ts": "2026-09-26T10:01:00.000Z",
-            "ops": [],
+            "effects": [
+              {
+                "op": "set",
+                "target": {
+                  "kind": "document",
+                  "id": "d_0"
+                },
+                "field": "content",
+                "value": "# Body\n\nText.\n"
+              }
+            ],
             "origin": {
               "actor": "agent:test",
               "reason": "fixture"
-            },
-            "set_frontmatter": [
-              {
-                "doc": "d_0",
-                "raw": null
-              }
-            ]
+            }
           }
         }
       ],
@@ -3805,15 +3825,19 @@
             }
           ],
           {
-            "results": [],
-            "revisions": [
-              {
-                "id": "d_0",
-                "path": "a.md",
-                "hash": "6b0facbc960878346d9f25ab1d0b6aa786547bd88b132aa47a01b240b373ef0a"
-              }
-            ],
-            "committed": true
+            "receipt": {
+              "plan_id": "deb8c0671c5496665ebc7629c2ecde7c3350d78a8cc6369ce814b28171241094",
+              "commit": "c_1",
+              "revisions": [
+                {
+                  "id": "d_0",
+                  "path": "a.md",
+                  "hash": "6b0facbc960878346d9f25ab1d0b6aa786547bd88b132aa47a01b240b373ef0a"
+                }
+              ],
+              "new_ids": {},
+              "committed": true
+            }
           }
         ],
         "files": {
@@ -3889,7 +3913,7 @@
             "actor": "agent:test",
             "reason": "fixture",
             "checkpoint_id": null,
-            "ops": null
+            "ops": "{\"effects\":[{\"field\":\"content\",\"op\":\"set\",\"target\":{\"id\":\"d_0\",\"kind\":\"document\",\"path\":\"a.md\"},\"value\":\"# Body\\n\\nText.\\n\"}],\"plan_id\":\"deb8c0671c5496665ebc7629c2ecde7c3350d78a8cc6369ce814b28171241094\",\"v\":1}"
           }
         ],
         "revisions": [

@@ -14,7 +14,7 @@ import { recoverRepo } from "../sync/recovery.js";
 import { changesSince } from "../graph/history.js";
 import { apply, planChangeset } from "./apply.js";
 import { commitChangeset } from "./commit.js";
-import { docsCreate, docsDelete, docsMove } from "./docs.js";
+import { docsCreate, docsDelete, docsMove } from "./doc-ops.test.helpers.js";
 import { FsDocStore } from "./doc-store.js";
 import { listPending, materializePending, readPending } from "./materialize.js";
 import { MutationError } from "./tree.js";

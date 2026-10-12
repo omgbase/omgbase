@@ -36,7 +36,6 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use omgbase_format::hash::{hex, sha256};
-use omgbase_format::{BlockKind, parse_markdown};
 use omgbase_mutate::effects::{
     self as fx, BlockPrecondition, ConflictTracker, DocPrecondition, Field, FocusInfo, FocusTarget,
     IdentityOp, IdentityPreview, NewId, NewIdKind, PLAN_VERSION, PLANNER_V, ParentPrecondition,
@@ -206,35 +205,6 @@ fn set_head(p: &mut Planning<'_>, doc_id: &str, head: String) {
         Some(slot) => slot.1 = head,
         None => p.heads.push((doc_id.to_owned(), head)),
     }
-}
-
-/// The block symbols of every create, by structure (§11.3, 3.0): the planner
-/// mints a create's `d` symbol, then its blocks' in pre-order, and nothing
-/// else mints a `d` — so a create's document symbol is followed in `new_ids`
-/// by one block symbol per block of its composed file. Best effort (a plan
-/// that does not fit yields fewer): the dry-run shim's view only — the
-/// replay pairs symbols with mints positionally.
-fn created_block_symbols(plan: &Plan) -> Vec<String> {
-    plan.opset
-        .creates
-        .iter()
-        .filter_map(|c| {
-            let at = plan.new_ids.iter().position(|n| n.symbol == c.symbol)?;
-            let blocks_in_source = parse_markdown(&c.source)
-                .iter()
-                .filter(|b| b.kind != BlockKind::Frontmatter)
-                .count();
-            Some(
-                plan.new_ids[at + 1..]
-                    .iter()
-                    .take_while(|n| n.kind == NewIdKind::Block)
-                    .take(blocks_in_source)
-                    .map(|n| n.symbol.clone())
-                    .collect::<Vec<_>>(),
-            )
-        })
-        .flatten()
-        .collect()
 }
 
 impl Store {
@@ -1932,7 +1902,7 @@ impl Store {
         let record = fx::intent_record(&plan.plan_id, &plan.effects);
         let head = CommitHead {
             origin: Origin::Api,
-            actor: Some(origin.actor.as_str()),
+            actor: origin.commit_actor(),
             reason: origin.reason.as_deref(),
             clear_pending: false,
             ops: Some(&record),
@@ -2012,49 +1982,20 @@ impl Store {
         ))
     }
 
-    /// [`Store::apply_effects`] for the sugar tools (ADR-021, the migration
-    /// phase): the plan always — its preview is what a dry run previews and
-    /// what a committed run's `results` are read from — and the receipt
-    /// unless `dry_run`. The reference is `applyEffectsDetailed`.
+    /// [`Store::apply_effects`] keeping the plan (ADR-021): plan + execute in
+    /// one call and one transaction, the Plan and its Receipt both returned —
+    /// the sugar tools and the CLI's local writes read the committed ids from
+    /// the plan's preview realized through the receipt's `new_ids`. The
+    /// reference is `applyEffectsDetailed`.
     pub fn apply_effects_detailed(
         &mut self,
         ctx: &PlanContext,
         effects: &[Effect],
         origin: &ApplyOrigin,
         doc_store: &mut dyn DocStore,
-        dry_run: bool,
-    ) -> Result<(Plan, Option<Receipt>)> {
+    ) -> Result<(Plan, Receipt)> {
         let plan = self.plan_effects(ctx, effects, doc_store)?;
-        if dry_run {
-            return Ok((plan, None));
-        }
         let receipt = self.execute_admitted(ctx, &plan, origin, doc_store)?;
-        Ok((plan, Some(receipt)))
-    }
-
-    /// The realize-symbols shim of a sugar tool's dry run (ADR-021 migration):
-    /// one production `b`/`d` minted per `plan.new_ids` entry, **in order**,
-    /// as `$new.<n>` → id. The symbolic minter saw the kernel's own mint
-    /// sequence, so this consumes exactly the ids the legacy dry run burned
-    /// (`spec/surface` §9, `spec/cli` §3.6 pin that a dry run consumes ids)
-    /// and the preview's `$new.<n>` substitute to the ids the real run
-    /// would have produced. Only the sugar tools call this; `plan` and
-    /// `apply { effects, dry_run }` keep burning nothing.
-    pub fn realize_symbols(&mut self, plan: &Plan) -> Result<Vec<(String, String)>> {
-        // A created document's blocks (3.0: symbols too) were never minted by
-        // a legacy dry run — its reconciling ingest minted them inside the
-        // transaction — so they are skipped here; the `d` is realized.
-        let created: HashSet<String> = created_block_symbols(plan).into_iter().collect();
-        plan.new_ids
-            .iter()
-            .filter(|n| !created.contains(&n.symbol))
-            .map(|n| {
-                let prefix = match n.kind {
-                    NewIdKind::Block => "b",
-                    NewIdKind::Document => "d",
-                };
-                Ok((n.symbol.clone(), self.mint(prefix)?))
-            })
-            .collect()
+        Ok((plan, receipt))
     }
 }

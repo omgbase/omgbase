@@ -14,7 +14,8 @@
 // with the step's `ts` and the case's page limit threaded through (the
 // coordinator itself passes neither), wrapped to record.
 import {
-  Store, ensureRepo, sequentialMinter, setIdMinter, observeMany, observeDelete, changesSince, docsRead, docsCreate, docsDelete, ingestFile, NullDocStore,
+  Store, ensureRepo, sequentialMinter, setIdMinter, observeMany, observeDelete, changesSince, docsRead, ingestFile, NullDocStore, findDocByRef,
+  applySugar, createEffects, createdDoc, deleteDocEffects,
   type ObserveResult, type ObserveDeleteResult, type SyncSource, type SourceCapabilities, type SourceEntry, type SourceItem,
 } from "@omgbase/core";
 import { Coordinator, type SyncInSummary, type SyncOutSummary } from "../../src/coordinator.js";
@@ -238,17 +239,21 @@ export async function runCoordinatorCase(c: Omit<CoordinatorCase, "expect">): Pr
 }
 
 function runEngineStep(store: Store, repoId: string, s: EngineStep): Record<string, unknown> {
+  // The engine's own writes are the effect builders (spec/mutate §6, 3.0) over a headless NullDocStore.
   if (s.create) {
-    const res = docsCreate(store, { repoId, docStore: new NullDocStore(), ts: s.ts, ...(s.create.actor !== undefined ? { actor: s.create.actor } : {}) }, s.create.path, s.create.markdown, {});
-    return { doc: res.docId, committed: res.committed };
+    const built = createEffects(s.create.path, s.create.markdown, {});
+    const { receipt } = applySugar(store, { repoId, docStore: new NullDocStore(), ts: s.ts, actor: s.create.actor ?? null }, built);
+    return { doc: createdDoc(receipt!, (built.effects[0] as { path: string }).path).id, committed: true };
   }
   if (s.import) {
     const res = ingestFile(store, repoId, s.import.path, s.import.content, { ts: s.ts, origin: "import" });
     return { doc: res.docId, commit: res.commitId };
   }
   if (s.delete) {
-    const res = docsDelete(store, { repoId, docStore: new NullDocStore(), ts: s.ts, ...(s.delete.actor !== undefined ? { actor: s.delete.actor } : {}) }, s.delete.path);
-    return { doc: res.docId, committed: res.committed };
+    const info = findDocByRef(store, repoId, s.delete.path);
+    if (!info) throw new Error(`delete: no document ${s.delete.path}`);
+    applySugar(store, { repoId, docStore: new NullDocStore(), ts: s.ts, actor: s.delete.actor ?? null }, deleteDocEffects({ id: info.docId, path: info.path }));
+    return { doc: info.docId, committed: true };
   }
   const out = observeMany(store, repoId, s.observe ?? [], { ts: s.ts });
   return { observed: out.map((o) => ({ path: o.path, echo: o.echo, commit: o.commitId })) };

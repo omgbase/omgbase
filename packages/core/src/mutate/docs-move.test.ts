@@ -7,7 +7,9 @@ import { ensureRepo } from "../core/attach.js";
 import { processCheckpoint } from "../sync/checkpoint.js";
 import { linksStale } from "../graph/link-health.js";
 import { inboundLinksTo, retargetLinksInRaw } from "../graph/inbound-links.js";
-import { docsCreate, docsDelete, docsMove, docsSetMeta } from "./docs.js";
+import { docsMove } from "./doc-ops.test.helpers.js";
+import { createEffects, deleteDocEffects, moveDocEffects, setMetaEffects } from "./sugar.js";
+import { planEffects } from "./plan.js";
 import { FsDocStore, type DocStore } from "./doc-store.js";
 import { writerLockFree, writerLockHeld } from "../sync/writer-lock.js";
 
@@ -15,7 +17,8 @@ import { writerLockFree, writerLockHeld } from "../sync/writer-lock.js";
 // links written against the old path dangle (links_stale must see them) unless
 // the move rewrites them — which it does by default (spec/mutate 1.3;
 // `retargetInbound: false` opts out) — and phantoms already written against the
-// new path must resolve to the moved doc.
+// new path must resolve to the moved doc. The operations are the effect
+// builders of `sugar.ts` (3.0); `docsMove` here is the test shim over them.
 
 let dir: string;
 let store: Store;
@@ -160,69 +163,64 @@ describe("docsMove — edge index follows the path", () => {
   });
 });
 
-describe("document operations — dryRun validates, plans, commits nothing", () => {
+describe("document operations — `plan` over the builders' effects validates, previews, commits nothing (spec/cli §3.6, 4.0)", () => {
   const commits = (): number => (store.db.prepare("SELECT count(*) n FROM commits").get() as { n: number }).n;
-  const dry = () => ({ ...ctx(), dryRun: true });
+  const docOf = (path: string) => ({ id: docId(path), path });
+  const plan = (effects: unknown) => planEffects(store, { repoId, rootPath: dir, effects });
 
-  it("docsCreate returns the would-be file and the id the real run would mint; the file is not written", () => {
+  it("a create plans the would-be file under a symbolic id ($new.0) and mints nothing; the file is not written", () => {
     save("a.md", "# A\n");
     const n = commits();
-    const res = docsCreate(store, dry(), "/new/b.md", "# B\n\nbody", { title: "B" });
-    expect(res.committed).toBe(false);
-    expect(res.path).toBe("new/b.md");
-    expect(res.docId).toMatch(/^d_/);
-    expect(res.diffs).toEqual({ "new/b.md": { before: "", after: "---\ntitle: B\n---\n\n# B\n\nbody\n" } });
+    const p = plan(createEffects("/new/b.md", "# B\n\nbody", { title: "B" }).effects);
+    expect(p.new_ids[0]).toEqual({ symbol: "$new.0", kind: "document" });
+    expect(p.preview!.revisions[0]).toMatchObject({ id: "$new.0", path: "new/b.md" });
+    expect(p.preview!.diffs).toEqual({ "new/b.md": { before: "", after: "---\ntitle: B\n---\n\n# B\n\nbody\n" } });
     expect(existsSync(join(dir, "new/b.md"))).toBe(false);
     expect(store.db.prepare("SELECT 1 FROM docs WHERE path = 'new/b.md'").get()).toBeUndefined();
     expect(commits()).toBe(n);
     // Validation still runs.
-    expect(() => docsCreate(store, dry(), "a.md", "x")).toThrow(/path_taken|already exists/);
+    expect(() => plan(createEffects("a.md", "x").effects)).toThrow(/path_taken|already exists/);
   });
 
-  it("docsMove dryRun with retargetInbound: false plans a rename as two file diffs, reports the dangling links, and leaves the tree alone", () => {
+  it("a move with retarget_inbound: false plans the rename as two file diffs and leaves the tree alone", () => {
     save("a.md", "# A\n\nSee [old](/old.md).\n");
     save("old.md", "# Old\n");
     const n = commits();
-    const res = docsMove(store, dry(), "old.md", "moved/new.md", { retargetInbound: false });
-    expect(res.committed).toBe(false);
-    expect(res.path).toBe("moved/new.md");
-    expect(res.diffs).toEqual({ "old.md": { before: "# Old\n", after: "" }, "moved/new.md": { before: "", after: "# Old\n" } });
-    expect(res.dangling.map((l) => l.path)).toEqual(["a.md"]);
-    expect(res.retargeted).toBeNull();
+    const p = plan(moveDocEffects(docOf("old.md"), "moved/new.md", false).effects);
+    expect(p.preview!.diffs).toEqual({ "old.md": { before: "# Old\n", after: "" }, "moved/new.md": { before: "", after: "# Old\n" } });
+    expect(p.opset.moves).toEqual([{ id: docId("old.md"), from: "old.md", to: "moved/new.md" }]);
     expect(existsSync(join(dir, "old.md"))).toBe(true);
     expect(existsSync(join(dir, "moved/new.md"))).toBe(false);
     expect(docId("old.md")).toBeDefined();
     expect(commits()).toBe(n);
-    expect(() => docsMove(store, dry(), "old.md", "a.md")).toThrow(/path_taken|already exists/);
-    expect(() => docsMove(store, dry(), "nope.md", "x.md")).toThrow(/doc_missing|no document/);
+    expect(() => plan(moveDocEffects(docOf("old.md"), "a.md").effects)).toThrow(/path_taken|already exists/);
+    expect(() => plan([{ op: "move", target: { kind: "document", path: "nope.md" }, to: "x.md" }])).toThrow(/doc_missing|no document|not found/);
   });
 
-  it("docsMove dryRun previews the rewritten sources too (the default retarget)", () => {
+  it("a move's plan previews the rewritten sources too (the default retarget)", () => {
     save("a.md", "# A\n\nSee [old](/old.md).\n");
     save("old.md", "# Old\n");
-    const res = docsMove(store, dry(), "old.md", "moved/new.md");
-    expect(res.committed).toBe(false);
-    expect(res.dangling).toEqual([]);
-    expect(res.retargeted?.blocks).toHaveLength(1);
-    expect(res.diffs?.["a.md"]).toEqual({ before: "# A\n\nSee [old](/old.md).\n", after: "# A\n\nSee [old](/moved/new.md).\n" });
+    const p = plan(moveDocEffects(docOf("old.md"), "moved/new.md").effects);
+    expect(p.opset.ops).toHaveLength(1);
+    expect(p.preview!.diffs["a.md"]).toEqual({ before: "# A\n\nSee [old](/old.md).\n", after: "# A\n\nSee [old](/moved/new.md).\n" });
     expect(readFileSync(join(dir, "a.md"), "utf8")).toBe("# A\n\nSee [old](/old.md).\n");
   });
 
-  it("docsDelete returns the file's removal and keeps the document live", () => {
+  it("a delete plans the file's removal and keeps the document live", () => {
     save("a.md", "# A\n");
     const n = commits();
-    const res = docsDelete(store, dry(), "a.md");
-    expect(res).toEqual({ docId: docId("a.md"), path: "a.md", committed: false, diffs: { "a.md": { before: "# A\n", after: "" } } });
+    const p = plan(deleteDocEffects(docOf("a.md")).effects);
+    expect(p.opset.tombstones).toEqual([{ id: docId("a.md"), path: "a.md" }]);
+    expect(p.preview!.diffs).toEqual({ "a.md": { before: "# A\n", after: "" } });
     expect(existsSync(join(dir, "a.md"))).toBe(true);
     expect(commits()).toBe(n);
   });
 
-  it("docsSetMeta returns the patched file without writing it", () => {
+  it("a frontmatter patch plans the patched file without writing it", () => {
     save("a.md", "---\nlayer: draft\nera: 1677\n---\n\n# A\n");
     const n = commits();
-    const res = docsSetMeta(store, dry(), "a.md", { set: { era: 1702 }, unset: ["layer"] });
-    expect(res.committed).toBe(false);
-    expect(res.diffs).toEqual({ "a.md": { before: "---\nlayer: draft\nera: 1677\n---\n\n# A\n", after: "---\nera: 1702\n---\n\n# A\n" } });
+    const p = plan(setMetaEffects(docOf("a.md"), { era: 1702 }, ["layer"]).effects);
+    expect(p.preview!.diffs).toEqual({ "a.md": { before: "---\nlayer: draft\nera: 1677\n---\n\n# A\n", after: "---\nera: 1702\n---\n\n# A\n" } });
     expect(readFileSync(join(dir, "a.md"), "utf8")).toBe("---\nlayer: draft\nera: 1677\n---\n\n# A\n");
     expect(commits()).toBe(n);
   });

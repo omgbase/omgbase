@@ -2376,13 +2376,8 @@
             }
           ],
           {
-            "results": [
-              {
-                "ids": [
-                  "b_7"
-                ]
-              }
-            ],
+            "plan_id": "863cdddf23a6a7c968311b842fb899e2f0129ecae02dbef541f17ca17fd96b79",
+            "commit": "c_1",
             "revisions": [
               {
                 "id": "d_0",
@@ -2390,16 +2385,16 @@
                 "hash": "099178c054828be3386027834347cdcbdd5bad7cae89637843210d248e72e25d"
               }
             ],
+            "new_ids": {
+              "$new.0": "b_7",
+              "$new.1": "b_8",
+              "$new.2": "b_9"
+            },
             "committed": true
           },
           {
-            "results": [
-              {
-                "ids": [
-                  "b_12"
-                ]
-              }
-            ],
+            "plan_id": "9f235f45e53b73f3d9afdd6700b47ba3c637bd968c351d8e8ece5b704562c819",
+            "commit": "c_2",
             "revisions": [
               {
                 "id": "d_0",
@@ -2407,6 +2402,10 @@
                 "hash": "0ba5807ee541251e748e484c7508e37d18aeaabfa06d15973fa3ebe9f867d6a0"
               }
             ],
+            "new_ids": {
+              "$new.0": "b_12",
+              "$new.1": "b_13"
+            },
             "committed": true
           },
           {
@@ -2475,7 +2474,7 @@
     },
     {
       "name": "errors-and-sourceless-writes",
-      "notes": "§4: error mapping on a sourceless repo — doc_missing, block_missing, filter_invalid (bad cursor / OQX), semantic_unavailable, repo_not_found for an unknown slug and for a mutation with no working tree; the observe* tools still work (their commits carry the pinned clock).",
+      "notes": "§4: error mapping on a sourceless repo — doc_missing, block_missing, filter_invalid (bad cursor / OQX), provider_unavailable, repo_not_found for an unknown slug and for a mutation with no working tree (`apply { effects }`, `plan`, the sugar tools, `links_retarget` — which commits since 4.0); the 4.0 retired inputs (`apply.ops`, `dry_run`) are argument-shape filter_invalid before the repo is even looked at; the observe* tools still work (their commits carry the pinned clock).",
       "steps": [
         {
           "observe": {
@@ -2623,11 +2622,15 @@
           "read": {
             "tool": "apply",
             "args": {
-              "ops": [
+              "effects": [
                 {
-                  "op": "update",
-                  "block": "b_1",
-                  "markdown": "x"
+                  "op": "set",
+                  "target": {
+                    "kind": "block",
+                    "id": "b_1"
+                  },
+                  "field": "markdown",
+                  "value": "x"
                 }
               ]
             }
@@ -2644,11 +2647,18 @@
         },
         {
           "read": {
-            "tool": "blocks_insert",
+            "tool": "plan",
             "args": {
-              "to": "guide.md",
-              "markdown": "x",
-              "dry_run": true
+              "effects": [
+                {
+                  "op": "insert",
+                  "into": {
+                    "kind": "document",
+                    "path": "guide.md"
+                  },
+                  "markdown": "x"
+                }
+              ]
             }
           }
         },
@@ -2667,8 +2677,7 @@
             "args": {
               "path": "guide.md",
               "section": "Setup",
-              "text": "x",
-              "dry_run": true
+              "text": "x"
             }
           }
         },
@@ -2696,6 +2705,30 @@
             "args": {
               "from_target": "a",
               "to_target": "b"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "apply",
+            "args": {
+              "ops": [
+                {
+                  "op": "update",
+                  "block": "b_1",
+                  "markdown": "x"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "blocks_insert",
+            "args": {
+              "to": "guide.md",
+              "markdown": "x",
+              "dry_run": true
             }
           }
         },
@@ -2946,6 +2979,16 @@
           {
             "error": "repo_not_found",
             "retriable": false
+          },
+          {
+            "error": "filter_invalid",
+            "retriable": false,
+            "message": "`ops` is no longer an argument — `apply` takes `effects` (the kernel ops are a library/fixture contract since spec/mutate 3.0) (apply takes effects, reason?, repo?)"
+          },
+          {
+            "error": "filter_invalid",
+            "retriable": false,
+            "message": "`dry_run` is no longer an argument — preview with `plan { effects: [...] }` (blocks_insert takes at?, expect?, markdown, repo?, to)"
           },
           {
             "id": "d_1",
@@ -3395,7 +3438,7 @@
     {
       "name": "workspace-writes",
       "workspace": true,
-      "notes": "§4: the mutating tools on a repo WITH a working tree (a temp dir seeded from the observe step) — heading resolution (id / text / ATX text / ambiguous / missing), ref resolution, CAS pinning, dry runs, real writes under a pinned clock and the reads that show them. Results of write tools are otherwise pinned by spec/mutate. blocks_insert/blocks_move `expect.parent_children_hash` (1.2, spec/mutate §1.2) is the destination parent's live direct child ids joined by \",\" and sha256-hexed, computed from orientation's docs_read include_ids over the same seed: b_4 (the Setup list) has children b_5,b_6 → a3f99957301ea5fa91d841a2c171bad80dbaec3a5c97d5d992db0a6896aeaf01; guide.md's top level is b_0,b_1,b_2,b_3,b_4,b_7,b_8,b_11,b_13,b_14 → c76eec8461610b3e184d30496652c61724c52a3c6d059606874bb13087527d10. A matching hash passes (the dry run previews the op); a stale one is stale_expectation carrying the current hash.",
+      "notes": "§4: the mutating tools on a repo WITH a working tree (a temp dir seeded from the observe step) — heading resolution (text / ATX text / missing), ref resolution, CAS pinning, the previews, real writes under a pinned clock and the reads that show them. Since 4.0 every preview is `plan { effects }` (the sugar tools have no `dry_run`): the planned inserts into a section (`heading_id` b_19 = notes/one.md's Setup, b_3 = guide.md's), into a document's top level and into a block, the moves, the remove/split/merge, a `set markdown` on the block a node ref (n_7f86eccd7a7c) resolves to, a node `set`, and the two `retarget` plans (`preview.retarget[0]` carries the hits/pairs the 3.x `links_*` dry run returned) — each a Plan whose `preview` is rooted and whose ids are `$new.n`; a plan mints nothing, so the committed ids that follow are the next ones (through 3.x each dry run burned them, §9). The calls that FAIL stay the tools themselves without `dry_run` (a failing write commits nothing): the missing/unknown refs, the cross-document root move (target_missing), the leaf parent (type_mismatch), the stale guards, the inedible node property, `links_repair` with neither form. Results of write tools are the Receipt (`spec/mutate` §11.7). blocks_insert/blocks_move `expect.parent_children_hash` (1.2, spec/mutate §1.2) is the destination parent's live direct child ids joined by \",\" and sha256-hexed, computed from orientation's docs_read include_ids over the same seed: b_4 (the Setup list) has children b_5,b_6 → a3f99957301ea5fa91d841a2c171bad80dbaec3a5c97d5d992db0a6896aeaf01; guide.md's top level is b_0,b_1,b_2,b_3,b_4,b_7,b_8,b_11,b_13,b_14 → c76eec8461610b3e184d30496652c61724c52a3c6d059606874bb13087527d10. A matching hash passes (the plan previews the op); a stale one is stale_expectation carrying the current hash.",
       "steps": [
         {
           "observe": {
@@ -3420,44 +3463,73 @@
         },
         {
           "read": {
-            "tool": "docs_append",
+            "tool": "plan",
             "args": {
-              "path": "notes/one.md",
-              "section": "Setup",
-              "text": "Appended.",
-              "dry_run": true
+              "effects": [
+                {
+                  "op": "insert",
+                  "into": {
+                    "kind": "section",
+                    "heading_id": "b_19"
+                  },
+                  "at": "end",
+                  "markdown": "Appended."
+                }
+              ]
             }
           }
         },
         {
           "read": {
-            "tool": "docs_append",
+            "tool": "plan",
             "args": {
-              "path": "guide.md",
-              "section": "Setup",
-              "text": "Appended.",
-              "dry_run": true
+              "effects": [
+                {
+                  "op": "insert",
+                  "into": {
+                    "kind": "section",
+                    "heading_id": "b_3"
+                  },
+                  "at": "end",
+                  "markdown": "Appended."
+                }
+              ]
             }
           }
         },
         {
           "read": {
-            "tool": "docs_append",
+            "tool": "plan",
             "args": {
-              "id": "d_1",
-              "section": "## Setup",
-              "text": "Appended.",
-              "dry_run": true
+              "effects": [
+                {
+                  "op": "insert",
+                  "into": {
+                    "kind": "section",
+                    "heading_id": "b_19"
+                  },
+                  "at": "end",
+                  "markdown": "Appended."
+                }
+              ]
             }
           }
         },
         {
           "read": {
-            "tool": "blocks_append",
+            "tool": "plan",
             "args": {
-              "id": "b_3",
-              "text": "Appended.",
-              "dry_run": true
+              "effects": [
+                {
+                  "op": "insert",
+                  "into": {
+                    "kind": "section",
+                    "heading_id": "b_3"
+                  },
+                  "at": "end",
+                  "markdown": "Appended."
+                }
+              ]
             }
           }
         },
@@ -3467,8 +3539,7 @@
             "args": {
               "path": "guide.md",
               "section": "Nope",
-              "text": "x",
-              "dry_run": true
+              "text": "x"
             }
           }
         },
@@ -3478,32 +3549,45 @@
             "args": {
               "path": "nope.md",
               "section": "Setup",
-              "text": "x",
-              "dry_run": true
+              "text": "x"
             }
           }
         },
         {
           "read": {
-            "tool": "blocks_insert",
+            "tool": "plan",
             "args": {
-              "to": "guide.md",
-              "markdown": "## New\n\nPara.\n",
-              "at": "start",
-              "dry_run": true
+              "effects": [
+                {
+                  "op": "insert",
+                  "into": {
+                    "kind": "document",
+                    "path": "guide.md"
+                  },
+                  "at": "start",
+                  "markdown": "## New\n\nPara.\n"
+                }
+              ]
             }
           }
         },
         {
           "read": {
-            "tool": "blocks_insert",
+            "tool": "plan",
             "args": {
-              "to": "b_4",
-              "markdown": "- third item\n",
-              "at": {
-                "after": "b_5"
-              },
-              "dry_run": true
+              "effects": [
+                {
+                  "op": "insert",
+                  "into": {
+                    "kind": "block",
+                    "id": "b_4"
+                  },
+                  "at": {
+                    "after": "b_5"
+                  },
+                  "markdown": "- third item\n"
+                }
+              ]
             }
           }
         },
@@ -3512,8 +3596,7 @@
             "tool": "blocks_insert",
             "args": {
               "to": "b_99",
-              "markdown": "x",
-              "dry_run": true
+              "markdown": "x"
             }
           }
         },
@@ -3525,8 +3608,7 @@
               "markdown": "x",
               "at": {
                 "before": "b_99"
-              },
-              "dry_run": true
+              }
             }
           }
         },
@@ -3537,21 +3619,30 @@
               "blocks": [
                 "b_9"
               ],
-              "to": "notes/one.md",
-              "dry_run": true
+              "to": "notes/one.md"
             }
           }
         },
         {
           "read": {
-            "tool": "blocks_move",
+            "tool": "plan",
             "args": {
-              "blocks": [
-                "b_9"
-              ],
-              "to": "guide.md",
-              "at": "start",
-              "dry_run": true
+              "effects": [
+                {
+                  "op": "move",
+                  "targets": [
+                    {
+                      "kind": "block",
+                      "id": "b_9"
+                    }
+                  ],
+                  "into": {
+                    "kind": "document",
+                    "path": "guide.md"
+                  },
+                  "at": "start"
+                }
+              ]
             }
           }
         },
@@ -3565,21 +3656,28 @@
               "to": "b_17",
               "at": {
                 "after": "b_18"
-              },
-              "dry_run": true
+              }
             }
           }
         },
         {
           "read": {
-            "tool": "blocks_insert",
+            "tool": "plan",
             "args": {
-              "to": "b_4",
-              "markdown": "- third item\n",
-              "expect": {
-                "parent_children_hash": "a3f99957301ea5fa91d841a2c171bad80dbaec3a5c97d5d992db0a6896aeaf01"
-              },
-              "dry_run": true
+              "effects": [
+                {
+                  "op": "insert",
+                  "into": {
+                    "kind": "block",
+                    "id": "b_4"
+                  },
+                  "at": "end",
+                  "markdown": "- third item\n",
+                  "expect": {
+                    "parent_children_hash": "a3f99957301ea5fa91d841a2c171bad80dbaec3a5c97d5d992db0a6896aeaf01"
+                  }
+                }
+              ]
             }
           }
         },
@@ -3591,8 +3689,33 @@
               "markdown": "- third item\n",
               "expect": {
                 "parent_children_hash": "00"
-              },
-              "dry_run": true
+              }
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "plan",
+            "args": {
+              "effects": [
+                {
+                  "op": "move",
+                  "targets": [
+                    {
+                      "kind": "block",
+                      "id": "b_9"
+                    }
+                  ],
+                  "into": {
+                    "kind": "document",
+                    "path": "guide.md"
+                  },
+                  "at": "start",
+                  "expect": {
+                    "parent_children_hash": "c76eec8461610b3e184d30496652c61724c52a3c6d059606874bb13087527d10"
+                  }
+                }
+              ]
             }
           }
         },
@@ -3606,74 +3729,94 @@
               "to": "guide.md",
               "at": "start",
               "expect": {
-                "parent_children_hash": "c76eec8461610b3e184d30496652c61724c52a3c6d059606874bb13087527d10"
-              },
-              "dry_run": true
-            }
-          }
-        },
-        {
-          "read": {
-            "tool": "blocks_move",
-            "args": {
-              "blocks": [
-                "b_9"
-              ],
-              "to": "guide.md",
-              "at": "start",
-              "expect": {
                 "parent_children_hash": "00"
-              },
-              "dry_run": true
+              }
             }
           }
         },
         {
           "read": {
-            "tool": "blocks_remove",
+            "tool": "plan",
             "args": {
-              "blocks": [
-                "b_8",
-                "b_9"
-              ],
-              "dry_run": true
+              "effects": [
+                {
+                  "op": "remove",
+                  "targets": [
+                    {
+                      "kind": "block",
+                      "id": "b_8"
+                    },
+                    {
+                      "kind": "block",
+                      "id": "b_9"
+                    }
+                  ]
+                }
+              ]
             }
           }
         },
         {
           "read": {
-            "tool": "blocks_split",
+            "tool": "plan",
             "args": {
-              "id": "b_1",
-              "at": [
-                16
-              ],
-              "dry_run": true
+              "effects": [
+                {
+                  "op": "split",
+                  "target": {
+                    "kind": "block",
+                    "id": "b_1"
+                  },
+                  "at": [
+                    16
+                  ]
+                }
+              ]
             }
           }
         },
         {
           "read": {
-            "tool": "blocks_merge",
+            "tool": "plan",
             "args": {
-              "blocks": [
-                "b_1",
-                "b_2"
-              ],
-              "dry_run": true
+              "effects": [
+                {
+                  "op": "merge",
+                  "targets": [
+                    {
+                      "kind": "block",
+                      "id": "b_1"
+                    },
+                    {
+                      "kind": "block",
+                      "id": "b_2"
+                    }
+                  ]
+                }
+              ]
             }
           }
         },
         {
           "read": {
-            "tool": "blocks_merge",
+            "tool": "plan",
             "args": {
-              "blocks": [
-                "b_1",
-                "b_2"
-              ],
-              "separator": " ",
-              "dry_run": true
+              "effects": [
+                {
+                  "op": "merge",
+                  "targets": [
+                    {
+                      "kind": "block",
+                      "id": "b_1"
+                    },
+                    {
+                      "kind": "block",
+                      "id": "b_2"
+                    }
+                  ],
+                  "separator": " "
+                }
+              ]
             }
           }
         },
@@ -3685,29 +3828,43 @@
               "markdown": "Replaced.",
               "expect": {
                 "content_hash": "00"
-              },
-              "dry_run": true
+              }
             }
           }
         },
         {
           "read": {
-            "tool": "blocks_update",
+            "tool": "plan",
             "args": {
-              "id": "n_7f86eccd7a7c",
-              "markdown": "Replaced via node ref.",
-              "dry_run": true
+              "effects": [
+                {
+                  "op": "set",
+                  "target": {
+                    "kind": "block",
+                    "id": "b_1"
+                  },
+                  "field": "markdown",
+                  "value": "Replaced via node ref."
+                }
+              ]
             }
           }
         },
         {
           "read": {
-            "tool": "nodes_set",
+            "tool": "plan",
             "args": {
-              "id": "n_7f86eccd7a7c",
-              "prop": "value",
-              "value": "/notes/two.md",
-              "dry_run": true
+              "effects": [
+                {
+                  "op": "set",
+                  "target": {
+                    "kind": "node",
+                    "id": "n_7f86eccd7a7c"
+                  },
+                  "field": "value",
+                  "value": "/notes/two.md"
+                }
+              ]
             }
           }
         },
@@ -3717,8 +3874,7 @@
             "args": {
               "id": "n_7f86eccd7a7c",
               "prop": "nope",
-              "value": "x",
-              "dry_run": true
+              "value": "x"
             }
           }
         },
@@ -3738,25 +3894,39 @@
         },
         {
           "read": {
-            "tool": "links_retarget",
+            "tool": "plan",
             "args": {
-              "from_target": "two",
-              "to_target": "notes/one.md"
+              "effects": [
+                {
+                  "op": "retarget",
+                  "repairs": [
+                    {
+                      "from": "two",
+                      "to": "notes/one.md"
+                    }
+                  ]
+                }
+              ]
             }
           }
         },
         {
           "read": {
-            "tool": "links_repair",
+            "tool": "plan",
             "args": {
-              "repairs": [
+              "effects": [
                 {
-                  "from": "two",
-                  "to": "notes/one.md"
-                },
-                {
-                  "from": "/nope.md",
-                  "to": "/x.md"
+                  "op": "retarget",
+                  "repairs": [
+                    {
+                      "from": "two",
+                      "to": "notes/one.md"
+                    },
+                    {
+                      "from": "/nope.md",
+                      "to": "/x.md"
+                    }
+                  ]
                 }
               ]
             }
@@ -3986,96 +4156,312 @@
             ]
           },
           {
-            "results": [
+            "version": 1,
+            "planner_v": "p2",
+            "effects": [
               {
-                "ids": [
-                  "b_21"
-                ]
+                "op": "insert",
+                "into": {
+                  "kind": "section",
+                  "heading_id": "b_19"
+                },
+                "at": "end",
+                "markdown": "Appended."
               }
             ],
-            "revisions": [
-              {
-                "id": "d_1",
-                "path": "/notes/one.md",
-                "hash": "2a3a088150efad810f2fbb1d3604383b0fc9e51554db07d42b383be2973e3b54"
-              }
-            ],
-            "diffs": {
-              "/notes/one.md": {
-                "before": "# One\n\nBack to [guide](/guide.md).\n\n## Setup\n\nAlso a setup section.\n",
-                "after": "# One\n\nBack to [guide](/guide.md).\n\n## Setup\n\nAlso a setup section.\n\nAppended.\n"
-              }
+            "opset": {
+              "creates": [],
+              "moves": [],
+              "tombstones": [],
+              "set_frontmatter": [],
+              "ops": [
+                {
+                  "op": "insert",
+                  "to": {
+                    "parent": {
+                      "heading": "b_19",
+                      "scope": "section"
+                    },
+                    "at": "end"
+                  },
+                  "markdown": "Appended."
+                }
+              ]
             },
-            "committed": false
+            "preconditions": {
+              "docs": [
+                {
+                  "id": "d_1",
+                  "path": "notes/one.md",
+                  "base_revision": "r_1",
+                  "hash": "8d3da64ec85becf7eba0ca7dc2798451da1134d194d999b7856e4824f8efa1b4"
+                }
+              ],
+              "blocks": [],
+              "parents": [],
+              "absent_paths": []
+            },
+            "new_ids": [
+              {
+                "symbol": "$new.0",
+                "kind": "block"
+              }
+            ],
+            "plan_id": "12e74a6f1d5a04634d74544588b56814d1f495153372bab0cbec0f0e90ec0edb",
+            "diagnostics": [],
+            "preview": {
+              "results": [
+                {
+                  "ids": [
+                    "$new.0"
+                  ]
+                }
+              ],
+              "revisions": [
+                {
+                  "id": "d_1",
+                  "path": "/notes/one.md",
+                  "hash": "2a3a088150efad810f2fbb1d3604383b0fc9e51554db07d42b383be2973e3b54"
+                }
+              ],
+              "diffs": {
+                "/notes/one.md": {
+                  "before": "# One\n\nBack to [guide](/guide.md).\n\n## Setup\n\nAlso a setup section.\n",
+                  "after": "# One\n\nBack to [guide](/guide.md).\n\n## Setup\n\nAlso a setup section.\n\nAppended.\n"
+                }
+              }
+            }
           },
           {
-            "results": [
+            "version": 1,
+            "planner_v": "p2",
+            "effects": [
               {
-                "ids": [
-                  "b_22"
-                ]
+                "op": "insert",
+                "into": {
+                  "kind": "section",
+                  "heading_id": "b_3"
+                },
+                "at": "end",
+                "markdown": "Appended."
               }
             ],
-            "revisions": [
-              {
-                "id": "d_0",
-                "path": "/guide.md",
-                "hash": "33e47bb1fdb8e3b96f7a323af78f5c7165cafd894229e00b5f9bc229b9a20687"
-              }
-            ],
-            "diffs": {
-              "/guide.md": {
-                "before": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n",
-                "after": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\nAppended.\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n"
-              }
+            "opset": {
+              "creates": [],
+              "moves": [],
+              "tombstones": [],
+              "set_frontmatter": [],
+              "ops": [
+                {
+                  "op": "insert",
+                  "to": {
+                    "parent": {
+                      "heading": "b_3",
+                      "scope": "section"
+                    },
+                    "at": "end"
+                  },
+                  "markdown": "Appended."
+                }
+              ]
             },
-            "committed": false
+            "preconditions": {
+              "docs": [
+                {
+                  "id": "d_0",
+                  "path": "guide.md",
+                  "base_revision": "r_0",
+                  "hash": "4e6281be3f1fabebb2a0a9b9f20b827c260a261ea01cee8181396ce5f3c86e2b"
+                }
+              ],
+              "blocks": [],
+              "parents": [],
+              "absent_paths": []
+            },
+            "new_ids": [
+              {
+                "symbol": "$new.0",
+                "kind": "block"
+              }
+            ],
+            "plan_id": "306347552e0d28b7dbf2f9ce16739538db87dd09d0a1210ffa839913b5ec97e8",
+            "diagnostics": [],
+            "preview": {
+              "results": [
+                {
+                  "ids": [
+                    "$new.0"
+                  ]
+                }
+              ],
+              "revisions": [
+                {
+                  "id": "d_0",
+                  "path": "/guide.md",
+                  "hash": "33e47bb1fdb8e3b96f7a323af78f5c7165cafd894229e00b5f9bc229b9a20687"
+                }
+              ],
+              "diffs": {
+                "/guide.md": {
+                  "before": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n",
+                  "after": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\nAppended.\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n"
+                }
+              }
+            }
           },
           {
-            "results": [
+            "version": 1,
+            "planner_v": "p2",
+            "effects": [
               {
-                "ids": [
-                  "b_23"
-                ]
+                "op": "insert",
+                "into": {
+                  "kind": "section",
+                  "heading_id": "b_19"
+                },
+                "at": "end",
+                "markdown": "Appended."
               }
             ],
-            "revisions": [
-              {
-                "id": "d_1",
-                "path": "/notes/one.md",
-                "hash": "2a3a088150efad810f2fbb1d3604383b0fc9e51554db07d42b383be2973e3b54"
-              }
-            ],
-            "diffs": {
-              "/notes/one.md": {
-                "before": "# One\n\nBack to [guide](/guide.md).\n\n## Setup\n\nAlso a setup section.\n",
-                "after": "# One\n\nBack to [guide](/guide.md).\n\n## Setup\n\nAlso a setup section.\n\nAppended.\n"
-              }
+            "opset": {
+              "creates": [],
+              "moves": [],
+              "tombstones": [],
+              "set_frontmatter": [],
+              "ops": [
+                {
+                  "op": "insert",
+                  "to": {
+                    "parent": {
+                      "heading": "b_19",
+                      "scope": "section"
+                    },
+                    "at": "end"
+                  },
+                  "markdown": "Appended."
+                }
+              ]
             },
-            "committed": false
+            "preconditions": {
+              "docs": [
+                {
+                  "id": "d_1",
+                  "path": "notes/one.md",
+                  "base_revision": "r_1",
+                  "hash": "8d3da64ec85becf7eba0ca7dc2798451da1134d194d999b7856e4824f8efa1b4"
+                }
+              ],
+              "blocks": [],
+              "parents": [],
+              "absent_paths": []
+            },
+            "new_ids": [
+              {
+                "symbol": "$new.0",
+                "kind": "block"
+              }
+            ],
+            "plan_id": "12e74a6f1d5a04634d74544588b56814d1f495153372bab0cbec0f0e90ec0edb",
+            "diagnostics": [],
+            "preview": {
+              "results": [
+                {
+                  "ids": [
+                    "$new.0"
+                  ]
+                }
+              ],
+              "revisions": [
+                {
+                  "id": "d_1",
+                  "path": "/notes/one.md",
+                  "hash": "2a3a088150efad810f2fbb1d3604383b0fc9e51554db07d42b383be2973e3b54"
+                }
+              ],
+              "diffs": {
+                "/notes/one.md": {
+                  "before": "# One\n\nBack to [guide](/guide.md).\n\n## Setup\n\nAlso a setup section.\n",
+                  "after": "# One\n\nBack to [guide](/guide.md).\n\n## Setup\n\nAlso a setup section.\n\nAppended.\n"
+                }
+              }
+            }
           },
           {
-            "results": [
+            "version": 1,
+            "planner_v": "p2",
+            "effects": [
               {
-                "ids": [
-                  "b_24"
-                ]
+                "op": "insert",
+                "into": {
+                  "kind": "section",
+                  "heading_id": "b_3"
+                },
+                "at": "end",
+                "markdown": "Appended."
               }
             ],
-            "revisions": [
-              {
-                "id": "d_0",
-                "path": "/guide.md",
-                "hash": "33e47bb1fdb8e3b96f7a323af78f5c7165cafd894229e00b5f9bc229b9a20687"
-              }
-            ],
-            "diffs": {
-              "/guide.md": {
-                "before": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n",
-                "after": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\nAppended.\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n"
-              }
+            "opset": {
+              "creates": [],
+              "moves": [],
+              "tombstones": [],
+              "set_frontmatter": [],
+              "ops": [
+                {
+                  "op": "insert",
+                  "to": {
+                    "parent": {
+                      "heading": "b_3",
+                      "scope": "section"
+                    },
+                    "at": "end"
+                  },
+                  "markdown": "Appended."
+                }
+              ]
             },
-            "committed": false
+            "preconditions": {
+              "docs": [
+                {
+                  "id": "d_0",
+                  "path": "guide.md",
+                  "base_revision": "r_0",
+                  "hash": "4e6281be3f1fabebb2a0a9b9f20b827c260a261ea01cee8181396ce5f3c86e2b"
+                }
+              ],
+              "blocks": [],
+              "parents": [],
+              "absent_paths": []
+            },
+            "new_ids": [
+              {
+                "symbol": "$new.0",
+                "kind": "block"
+              }
+            ],
+            "plan_id": "306347552e0d28b7dbf2f9ce16739538db87dd09d0a1210ffa839913b5ec97e8",
+            "diagnostics": [],
+            "preview": {
+              "results": [
+                {
+                  "ids": [
+                    "$new.0"
+                  ]
+                }
+              ],
+              "revisions": [
+                {
+                  "id": "d_0",
+                  "path": "/guide.md",
+                  "hash": "33e47bb1fdb8e3b96f7a323af78f5c7165cafd894229e00b5f9bc229b9a20687"
+                }
+              ],
+              "diffs": {
+                "/guide.md": {
+                  "before": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n",
+                  "after": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\nAppended.\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n"
+                }
+              }
+            }
           },
           {
             "error": "parent_missing",
@@ -4095,51 +4481,169 @@
             }
           },
           {
-            "results": [
+            "version": 1,
+            "planner_v": "p2",
+            "effects": [
               {
-                "ids": [
-                  "b_25",
-                  "b_26"
-                ]
+                "op": "insert",
+                "into": {
+                  "kind": "document",
+                  "id": "d_0",
+                  "path": "guide.md"
+                },
+                "at": "start",
+                "markdown": "## New\n\nPara.\n"
               }
             ],
-            "revisions": [
-              {
-                "id": "d_0",
-                "path": "/guide.md",
-                "hash": "5118653673eb96969040d3d23fbb9dbbd5bf9296333a295b0ed96140fa47780d"
-              }
-            ],
-            "diffs": {
-              "/guide.md": {
-                "before": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n",
-                "after": "---\ntitle: Guide\ntags: [a, b]\n---\n\n## New\n\nPara.\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n"
-              }
+            "opset": {
+              "creates": [],
+              "moves": [],
+              "tombstones": [],
+              "set_frontmatter": [],
+              "ops": [
+                {
+                  "op": "insert",
+                  "doc": "d_0",
+                  "to": {
+                    "parent": {
+                      "doc": true
+                    },
+                    "at": "start"
+                  },
+                  "markdown": "## New\n\nPara.\n"
+                }
+              ]
             },
-            "committed": false
+            "preconditions": {
+              "docs": [
+                {
+                  "id": "d_0",
+                  "path": "guide.md",
+                  "base_revision": "r_0",
+                  "hash": "4e6281be3f1fabebb2a0a9b9f20b827c260a261ea01cee8181396ce5f3c86e2b"
+                }
+              ],
+              "blocks": [],
+              "parents": [],
+              "absent_paths": []
+            },
+            "new_ids": [
+              {
+                "symbol": "$new.0",
+                "kind": "block"
+              },
+              {
+                "symbol": "$new.1",
+                "kind": "block"
+              }
+            ],
+            "plan_id": "34b0270ded7004c8eece2ffffc8b704867166a3bee69c4c5feb1d1d96007c489",
+            "diagnostics": [],
+            "preview": {
+              "results": [
+                {
+                  "ids": [
+                    "$new.0",
+                    "$new.1"
+                  ]
+                }
+              ],
+              "revisions": [
+                {
+                  "id": "d_0",
+                  "path": "/guide.md",
+                  "hash": "5118653673eb96969040d3d23fbb9dbbd5bf9296333a295b0ed96140fa47780d"
+                }
+              ],
+              "diffs": {
+                "/guide.md": {
+                  "before": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n",
+                  "after": "---\ntitle: Guide\ntags: [a, b]\n---\n\n## New\n\nPara.\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n"
+                }
+              }
+            }
           },
           {
-            "results": [
+            "version": 1,
+            "planner_v": "p2",
+            "effects": [
               {
-                "ids": [
-                  "b_28"
-                ]
+                "op": "insert",
+                "into": {
+                  "kind": "block",
+                  "id": "b_4"
+                },
+                "at": {
+                  "after": "b_5"
+                },
+                "markdown": "- third item\n"
               }
             ],
-            "revisions": [
-              {
-                "id": "d_0",
-                "path": "/guide.md",
-                "hash": "26452a66813b0756b76c9fb96836a61634668220af427efef265e6a0ef9bc3a3"
-              }
-            ],
-            "diffs": {
-              "/guide.md": {
-                "before": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n",
-                "after": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- third item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n"
-              }
+            "opset": {
+              "creates": [],
+              "moves": [],
+              "tombstones": [],
+              "set_frontmatter": [],
+              "ops": [
+                {
+                  "op": "insert",
+                  "to": {
+                    "parent": "b_4",
+                    "at": {
+                      "after": "b_5"
+                    }
+                  },
+                  "markdown": "- third item\n"
+                }
+              ]
             },
-            "committed": false
+            "preconditions": {
+              "docs": [
+                {
+                  "id": "d_0",
+                  "path": "guide.md",
+                  "base_revision": "r_0",
+                  "hash": "4e6281be3f1fabebb2a0a9b9f20b827c260a261ea01cee8181396ce5f3c86e2b"
+                }
+              ],
+              "blocks": [],
+              "parents": [],
+              "absent_paths": []
+            },
+            "new_ids": [
+              {
+                "symbol": "$new.0",
+                "kind": "block"
+              },
+              {
+                "symbol": "$new.1",
+                "kind": "block"
+              }
+            ],
+            "plan_id": "cf92d231fbf0e858b31f3ad2abeca9029801fb775e0782c9134f58795d61aeb3",
+            "diagnostics": [],
+            "preview": {
+              "results": [
+                {
+                  "ids": [
+                    "$new.1"
+                  ]
+                }
+              ],
+              "revisions": [
+                {
+                  "id": "d_0",
+                  "path": "/guide.md",
+                  "hash": "26452a66813b0756b76c9fb96836a61634668220af427efef265e6a0ef9bc3a3"
+                }
+              ],
+              "diffs": {
+                "/guide.md": {
+                  "before": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n",
+                  "after": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- third item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n"
+                }
+              }
+            }
           },
           {
             "error": "block_missing",
@@ -4165,27 +4669,84 @@
             }
           },
           {
-            "results": [
+            "version": 1,
+            "planner_v": "p2",
+            "effects": [
               {
-                "ids": [
-                  "b_9"
-                ]
+                "op": "move",
+                "targets": [
+                  {
+                    "kind": "block",
+                    "id": "b_9"
+                  }
+                ],
+                "into": {
+                  "kind": "document",
+                  "id": "d_0",
+                  "path": "guide.md"
+                },
+                "at": "start"
               }
             ],
-            "revisions": [
-              {
-                "id": "d_0",
-                "path": "/guide.md",
-                "hash": "bd79a646f180f64f3269f750aacc6f40002b2a38edd08a785e38147db88661f5"
-              }
-            ],
-            "diffs": {
-              "/guide.md": {
-                "before": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n",
-                "after": "---\ntitle: Guide\ntags: [a, b]\n---\n\n- [ ] open task\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n"
-              }
+            "opset": {
+              "creates": [],
+              "moves": [],
+              "tombstones": [],
+              "set_frontmatter": [],
+              "ops": [
+                {
+                  "op": "move",
+                  "blocks": [
+                    "b_9"
+                  ],
+                  "to": {
+                    "parent": {
+                      "doc": true
+                    },
+                    "at": "start"
+                  },
+                  "doc": "d_0"
+                }
+              ]
             },
-            "committed": false
+            "preconditions": {
+              "docs": [
+                {
+                  "id": "d_0",
+                  "path": "guide.md",
+                  "base_revision": "r_0",
+                  "hash": "4e6281be3f1fabebb2a0a9b9f20b827c260a261ea01cee8181396ce5f3c86e2b"
+                }
+              ],
+              "blocks": [],
+              "parents": [],
+              "absent_paths": []
+            },
+            "new_ids": [],
+            "plan_id": "eecbe237653be8ad25cbcba26f84430e50cad6277efd6ffd4de61abbc649a01e",
+            "diagnostics": [],
+            "preview": {
+              "results": [
+                {
+                  "ids": [
+                    "b_9"
+                  ]
+                }
+              ],
+              "revisions": [
+                {
+                  "id": "d_0",
+                  "path": "/guide.md",
+                  "hash": "bd79a646f180f64f3269f750aacc6f40002b2a38edd08a785e38147db88661f5"
+                }
+              ],
+              "diffs": {
+                "/guide.md": {
+                  "before": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n",
+                  "after": "---\ntitle: Guide\ntags: [a, b]\n---\n\n- [ ] open task\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n"
+                }
+              }
+            }
           },
           {
             "error": "type_mismatch",
@@ -4197,27 +4758,94 @@
             }
           },
           {
-            "results": [
+            "version": 1,
+            "planner_v": "p2",
+            "effects": [
               {
-                "ids": [
-                  "b_30"
-                ]
+                "op": "insert",
+                "into": {
+                  "kind": "block",
+                  "id": "b_4"
+                },
+                "at": "end",
+                "markdown": "- third item\n",
+                "expect": {
+                  "parent_children_hash": "a3f99957301ea5fa91d841a2c171bad80dbaec3a5c97d5d992db0a6896aeaf01"
+                }
               }
             ],
-            "revisions": [
-              {
-                "id": "d_0",
-                "path": "/guide.md",
-                "hash": "77e3f2204cf1ef11e397b03c4bf044ba9332b68f6d17decd5b58708082099831"
-              }
-            ],
-            "diffs": {
-              "/guide.md": {
-                "before": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n",
-                "after": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n- third item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n"
-              }
+            "opset": {
+              "creates": [],
+              "moves": [],
+              "tombstones": [],
+              "set_frontmatter": [],
+              "ops": [
+                {
+                  "op": "insert",
+                  "to": {
+                    "parent": "b_4",
+                    "at": "end"
+                  },
+                  "markdown": "- third item\n",
+                  "expect": {
+                    "parent_children_hash": "a3f99957301ea5fa91d841a2c171bad80dbaec3a5c97d5d992db0a6896aeaf01"
+                  }
+                }
+              ]
             },
-            "committed": false
+            "preconditions": {
+              "docs": [
+                {
+                  "id": "d_0",
+                  "path": "guide.md",
+                  "base_revision": "r_0",
+                  "hash": "4e6281be3f1fabebb2a0a9b9f20b827c260a261ea01cee8181396ce5f3c86e2b"
+                }
+              ],
+              "blocks": [],
+              "parents": [
+                {
+                  "doc": "d_0",
+                  "parent": "b_4",
+                  "parent_children_hash": "a3f99957301ea5fa91d841a2c171bad80dbaec3a5c97d5d992db0a6896aeaf01"
+                }
+              ],
+              "absent_paths": []
+            },
+            "new_ids": [
+              {
+                "symbol": "$new.0",
+                "kind": "block"
+              },
+              {
+                "symbol": "$new.1",
+                "kind": "block"
+              }
+            ],
+            "plan_id": "c3dfd9016813c302589dadf28a74fa6b8006218bd83dc13d389338bf65f29cd5",
+            "diagnostics": [],
+            "preview": {
+              "results": [
+                {
+                  "ids": [
+                    "$new.1"
+                  ]
+                }
+              ],
+              "revisions": [
+                {
+                  "id": "d_0",
+                  "path": "/guide.md",
+                  "hash": "77e3f2204cf1ef11e397b03c4bf044ba9332b68f6d17decd5b58708082099831"
+                }
+              ],
+              "diffs": {
+                "/guide.md": {
+                  "before": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n",
+                  "after": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n- third item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n"
+                }
+              }
+            }
           },
           {
             "error": "stale_expectation",
@@ -4231,27 +4859,96 @@
             }
           },
           {
-            "results": [
+            "version": 1,
+            "planner_v": "p2",
+            "effects": [
               {
-                "ids": [
-                  "b_9"
-                ]
+                "op": "move",
+                "targets": [
+                  {
+                    "kind": "block",
+                    "id": "b_9"
+                  }
+                ],
+                "into": {
+                  "kind": "document",
+                  "id": "d_0",
+                  "path": "guide.md"
+                },
+                "at": "start",
+                "expect": {
+                  "parent_children_hash": "c76eec8461610b3e184d30496652c61724c52a3c6d059606874bb13087527d10"
+                }
               }
             ],
-            "revisions": [
-              {
-                "id": "d_0",
-                "path": "/guide.md",
-                "hash": "bd79a646f180f64f3269f750aacc6f40002b2a38edd08a785e38147db88661f5"
-              }
-            ],
-            "diffs": {
-              "/guide.md": {
-                "before": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n",
-                "after": "---\ntitle: Guide\ntags: [a, b]\n---\n\n- [ ] open task\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n"
-              }
+            "opset": {
+              "creates": [],
+              "moves": [],
+              "tombstones": [],
+              "set_frontmatter": [],
+              "ops": [
+                {
+                  "op": "move",
+                  "blocks": [
+                    "b_9"
+                  ],
+                  "to": {
+                    "parent": {
+                      "doc": true
+                    },
+                    "at": "start"
+                  },
+                  "doc": "d_0",
+                  "expect": {
+                    "parent_children_hash": "c76eec8461610b3e184d30496652c61724c52a3c6d059606874bb13087527d10"
+                  }
+                }
+              ]
             },
-            "committed": false
+            "preconditions": {
+              "docs": [
+                {
+                  "id": "d_0",
+                  "path": "guide.md",
+                  "base_revision": "r_0",
+                  "hash": "4e6281be3f1fabebb2a0a9b9f20b827c260a261ea01cee8181396ce5f3c86e2b"
+                }
+              ],
+              "blocks": [],
+              "parents": [
+                {
+                  "doc": "d_0",
+                  "parent": null,
+                  "parent_children_hash": "c76eec8461610b3e184d30496652c61724c52a3c6d059606874bb13087527d10"
+                }
+              ],
+              "absent_paths": []
+            },
+            "new_ids": [],
+            "plan_id": "8931f3d4190ad391b2b23356aa4d8ea4a8069f458213efa12b532a1d7b542b56",
+            "diagnostics": [],
+            "preview": {
+              "results": [
+                {
+                  "ids": [
+                    "b_9"
+                  ]
+                }
+              ],
+              "revisions": [
+                {
+                  "id": "d_0",
+                  "path": "/guide.md",
+                  "hash": "bd79a646f180f64f3269f750aacc6f40002b2a38edd08a785e38147db88661f5"
+                }
+              ],
+              "diffs": {
+                "/guide.md": {
+                  "before": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n",
+                  "after": "---\ntitle: Guide\ntags: [a, b]\n---\n\n- [ ] open task\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n"
+                }
+              }
+            }
           },
           {
             "error": "stale_expectation",
@@ -4265,109 +4962,370 @@
             }
           },
           {
-            "results": [
+            "version": 1,
+            "planner_v": "p2",
+            "effects": [
               {
-                "ids": [
-                  "b_8",
-                  "b_9"
-                ],
-                "removed": [
-                  "b_8",
-                  "b_9",
-                  "b_10"
+                "op": "remove",
+                "targets": [
+                  {
+                    "kind": "block",
+                    "id": "b_8"
+                  },
+                  {
+                    "kind": "block",
+                    "id": "b_9"
+                  }
                 ]
               }
             ],
-            "revisions": [
-              {
-                "id": "d_0",
-                "path": "/guide.md",
-                "hash": "064f9fd4a5576f2fe734fc82f25bbff4e4ca6a6ce101578fb053d8608437504d"
-              }
-            ],
-            "diffs": {
-              "/guide.md": {
-                "before": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n",
-                "after": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n"
-              }
+            "opset": {
+              "creates": [],
+              "moves": [],
+              "tombstones": [],
+              "set_frontmatter": [],
+              "ops": [
+                {
+                  "op": "remove",
+                  "blocks": [
+                    "b_8",
+                    "b_9"
+                  ],
+                  "expect": {
+                    "b_8": {
+                      "content_hash": "46928f21b3381aea15fd3194ae6c71d1231c9339320a09f2f26eda368bbd8b41"
+                    },
+                    "b_9": {
+                      "content_hash": "cfef6a468aa11b127940c8c6dd34e3c8128029ce52b8793b6d15b8927a6bf188"
+                    }
+                  }
+                }
+              ]
             },
-            "committed": false
+            "preconditions": {
+              "docs": [
+                {
+                  "id": "d_0",
+                  "path": "guide.md",
+                  "base_revision": "r_0",
+                  "hash": "4e6281be3f1fabebb2a0a9b9f20b827c260a261ea01cee8181396ce5f3c86e2b"
+                }
+              ],
+              "blocks": [
+                {
+                  "id": "b_8",
+                  "content_hash": "46928f21b3381aea15fd3194ae6c71d1231c9339320a09f2f26eda368bbd8b41"
+                },
+                {
+                  "id": "b_9",
+                  "content_hash": "cfef6a468aa11b127940c8c6dd34e3c8128029ce52b8793b6d15b8927a6bf188"
+                }
+              ],
+              "parents": [],
+              "absent_paths": []
+            },
+            "new_ids": [],
+            "plan_id": "6519c1b3975d9316e2b18e23f4e171b19139fb092d6c8118d4c829e865505950",
+            "diagnostics": [],
+            "preview": {
+              "results": [
+                {
+                  "ids": [
+                    "b_8",
+                    "b_9"
+                  ],
+                  "removed": [
+                    "b_8",
+                    "b_9",
+                    "b_10"
+                  ]
+                }
+              ],
+              "revisions": [
+                {
+                  "id": "d_0",
+                  "path": "/guide.md",
+                  "hash": "064f9fd4a5576f2fe734fc82f25bbff4e4ca6a6ce101578fb053d8608437504d"
+                }
+              ],
+              "diffs": {
+                "/guide.md": {
+                  "before": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n",
+                  "after": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n"
+                }
+              }
+            }
           },
           {
-            "results": [
+            "version": 1,
+            "planner_v": "p2",
+            "effects": [
               {
-                "ids": [
-                  "b_1",
-                  "b_31"
+                "op": "split",
+                "target": {
+                  "kind": "block",
+                  "id": "b_1"
+                },
+                "at": [
+                  16
                 ]
               }
             ],
-            "revisions": [
+            "opset": {
+              "creates": [],
+              "moves": [],
+              "tombstones": [],
+              "set_frontmatter": [],
+              "ops": [
+                {
+                  "op": "split",
+                  "block": "b_1",
+                  "at": [
+                    16
+                  ],
+                  "expect": {
+                    "content_hash": "15d1319612cc44fbad82e62ad5abd8dd4d892ecf58264891e01d611a1abac9d9"
+                  }
+                }
+              ]
+            },
+            "preconditions": {
+              "docs": [
+                {
+                  "id": "d_0",
+                  "path": "guide.md",
+                  "base_revision": "r_0",
+                  "hash": "4e6281be3f1fabebb2a0a9b9f20b827c260a261ea01cee8181396ce5f3c86e2b"
+                }
+              ],
+              "blocks": [
+                {
+                  "id": "b_1",
+                  "content_hash": "15d1319612cc44fbad82e62ad5abd8dd4d892ecf58264891e01d611a1abac9d9"
+                }
+              ],
+              "parents": [],
+              "absent_paths": []
+            },
+            "new_ids": [
               {
-                "id": "d_0",
-                "path": "/guide.md",
-                "hash": "1ac4dd829d0588366dd47190d0acf5cfeb41f2c60eb6a6cabf0cd7153061be6c"
+                "symbol": "$new.0",
+                "kind": "block"
               }
             ],
-            "diffs": {
-              "/guide.md": {
-                "before": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n",
-                "after": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph \n\nwith a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n"
+            "plan_id": "005fdc7ae15e3457430c6cc48c7a3b0b2ffd4fdb0cab724c82adf422f8a558cb",
+            "diagnostics": [],
+            "preview": {
+              "results": [
+                {
+                  "ids": [
+                    "b_1",
+                    "$new.0"
+                  ]
+                }
+              ],
+              "revisions": [
+                {
+                  "id": "d_0",
+                  "path": "/guide.md",
+                  "hash": "1ac4dd829d0588366dd47190d0acf5cfeb41f2c60eb6a6cabf0cd7153061be6c"
+                }
+              ],
+              "diffs": {
+                "/guide.md": {
+                  "before": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n",
+                  "after": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph \n\nwith a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n"
+                }
               }
-            },
-            "committed": false
+            }
           },
           {
-            "results": [
+            "version": 1,
+            "planner_v": "p2",
+            "effects": [
               {
-                "ids": [
-                  "b_1"
+                "op": "merge",
+                "targets": [
+                  {
+                    "kind": "block",
+                    "id": "b_1"
+                  },
+                  {
+                    "kind": "block",
+                    "id": "b_2"
+                  }
                 ],
-                "mergedInto": [
-                  "b_2"
-                ]
+                "separator": " "
               }
             ],
-            "revisions": [
-              {
-                "id": "d_0",
-                "path": "/guide.md",
-                "hash": "c866fd524664d98f0b7920c23c2c42b20ec78eaa09453dc6d94dad113761b090"
-              }
-            ],
-            "diffs": {
-              "/guide.md": {
-                "before": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n",
-                "after": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]]. owner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n"
-              }
+            "opset": {
+              "creates": [],
+              "moves": [],
+              "tombstones": [],
+              "set_frontmatter": [],
+              "ops": [
+                {
+                  "op": "merge",
+                  "blocks": [
+                    "b_1",
+                    "b_2"
+                  ],
+                  "separator": " ",
+                  "expect": {
+                    "b_1": {
+                      "content_hash": "15d1319612cc44fbad82e62ad5abd8dd4d892ecf58264891e01d611a1abac9d9"
+                    },
+                    "b_2": {
+                      "content_hash": "b5309236857a900fc5930beed173e445a7ed431b9f541017424312682be2f0b1"
+                    }
+                  }
+                }
+              ]
             },
-            "committed": false
+            "preconditions": {
+              "docs": [
+                {
+                  "id": "d_0",
+                  "path": "guide.md",
+                  "base_revision": "r_0",
+                  "hash": "4e6281be3f1fabebb2a0a9b9f20b827c260a261ea01cee8181396ce5f3c86e2b"
+                }
+              ],
+              "blocks": [
+                {
+                  "id": "b_1",
+                  "content_hash": "15d1319612cc44fbad82e62ad5abd8dd4d892ecf58264891e01d611a1abac9d9"
+                },
+                {
+                  "id": "b_2",
+                  "content_hash": "b5309236857a900fc5930beed173e445a7ed431b9f541017424312682be2f0b1"
+                }
+              ],
+              "parents": [],
+              "absent_paths": []
+            },
+            "new_ids": [],
+            "plan_id": "b105fe3bbe5464d1d2664adda56f22698b598e9a00f6e48daa33b274b1c8aa8a",
+            "diagnostics": [],
+            "preview": {
+              "results": [
+                {
+                  "ids": [
+                    "b_1"
+                  ],
+                  "mergedInto": [
+                    "b_2"
+                  ]
+                }
+              ],
+              "revisions": [
+                {
+                  "id": "d_0",
+                  "path": "/guide.md",
+                  "hash": "c866fd524664d98f0b7920c23c2c42b20ec78eaa09453dc6d94dad113761b090"
+                }
+              ],
+              "diffs": {
+                "/guide.md": {
+                  "before": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n",
+                  "after": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]]. owner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n"
+                }
+              }
+            }
           },
           {
-            "results": [
+            "version": 1,
+            "planner_v": "p2",
+            "effects": [
               {
-                "ids": [
-                  "b_1"
+                "op": "merge",
+                "targets": [
+                  {
+                    "kind": "block",
+                    "id": "b_1"
+                  },
+                  {
+                    "kind": "block",
+                    "id": "b_2"
+                  }
                 ],
-                "mergedInto": [
-                  "b_2"
-                ]
+                "separator": " "
               }
             ],
-            "revisions": [
-              {
-                "id": "d_0",
-                "path": "/guide.md",
-                "hash": "c866fd524664d98f0b7920c23c2c42b20ec78eaa09453dc6d94dad113761b090"
-              }
-            ],
-            "diffs": {
-              "/guide.md": {
-                "before": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n",
-                "after": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]]. owner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n"
-              }
+            "opset": {
+              "creates": [],
+              "moves": [],
+              "tombstones": [],
+              "set_frontmatter": [],
+              "ops": [
+                {
+                  "op": "merge",
+                  "blocks": [
+                    "b_1",
+                    "b_2"
+                  ],
+                  "separator": " ",
+                  "expect": {
+                    "b_1": {
+                      "content_hash": "15d1319612cc44fbad82e62ad5abd8dd4d892ecf58264891e01d611a1abac9d9"
+                    },
+                    "b_2": {
+                      "content_hash": "b5309236857a900fc5930beed173e445a7ed431b9f541017424312682be2f0b1"
+                    }
+                  }
+                }
+              ]
             },
-            "committed": false
+            "preconditions": {
+              "docs": [
+                {
+                  "id": "d_0",
+                  "path": "guide.md",
+                  "base_revision": "r_0",
+                  "hash": "4e6281be3f1fabebb2a0a9b9f20b827c260a261ea01cee8181396ce5f3c86e2b"
+                }
+              ],
+              "blocks": [
+                {
+                  "id": "b_1",
+                  "content_hash": "15d1319612cc44fbad82e62ad5abd8dd4d892ecf58264891e01d611a1abac9d9"
+                },
+                {
+                  "id": "b_2",
+                  "content_hash": "b5309236857a900fc5930beed173e445a7ed431b9f541017424312682be2f0b1"
+                }
+              ],
+              "parents": [],
+              "absent_paths": []
+            },
+            "new_ids": [],
+            "plan_id": "b105fe3bbe5464d1d2664adda56f22698b598e9a00f6e48daa33b274b1c8aa8a",
+            "diagnostics": [],
+            "preview": {
+              "results": [
+                {
+                  "ids": [
+                    "b_1"
+                  ],
+                  "mergedInto": [
+                    "b_2"
+                  ]
+                }
+              ],
+              "revisions": [
+                {
+                  "id": "d_0",
+                  "path": "/guide.md",
+                  "hash": "c866fd524664d98f0b7920c23c2c42b20ec78eaa09453dc6d94dad113761b090"
+                }
+              ],
+              "diffs": {
+                "/guide.md": {
+                  "before": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n",
+                  "after": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]]. owner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n"
+                }
+              }
+            }
           },
           {
             "error": "stale_expectation",
@@ -4384,54 +5342,162 @@
             }
           },
           {
-            "id": "b_1",
-            "ids": [
-              "b_1"
-            ],
-            "results": [
+            "version": 1,
+            "planner_v": "p2",
+            "effects": [
               {
-                "ids": [
-                  "b_1"
-                ]
+                "op": "set",
+                "target": {
+                  "kind": "block",
+                  "id": "b_1"
+                },
+                "field": "markdown",
+                "value": "Replaced via node ref."
               }
             ],
-            "revisions": [
-              {
-                "id": "d_0",
-                "path": "/guide.md",
-                "hash": "f9342fa638167356bd62d3e656ad12c7154b3df807c969fe1a21615fbe72acc4"
-              }
-            ],
-            "diffs": {
-              "/guide.md": {
-                "before": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n",
-                "after": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nReplaced via node ref.\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n"
-              }
+            "opset": {
+              "creates": [],
+              "moves": [],
+              "tombstones": [],
+              "set_frontmatter": [],
+              "ops": [
+                {
+                  "op": "update",
+                  "block": "b_1",
+                  "markdown": "Replaced via node ref.",
+                  "expect": {
+                    "content_hash": "15d1319612cc44fbad82e62ad5abd8dd4d892ecf58264891e01d611a1abac9d9"
+                  }
+                }
+              ]
             },
-            "committed": false
+            "preconditions": {
+              "docs": [
+                {
+                  "id": "d_0",
+                  "path": "guide.md",
+                  "base_revision": "r_0",
+                  "hash": "4e6281be3f1fabebb2a0a9b9f20b827c260a261ea01cee8181396ce5f3c86e2b"
+                }
+              ],
+              "blocks": [
+                {
+                  "id": "b_1",
+                  "content_hash": "15d1319612cc44fbad82e62ad5abd8dd4d892ecf58264891e01d611a1abac9d9"
+                }
+              ],
+              "parents": [],
+              "absent_paths": []
+            },
+            "new_ids": [
+              {
+                "symbol": "$new.0",
+                "kind": "block"
+              }
+            ],
+            "plan_id": "2a18307b91162d1455180f3bd9dc464f2ce348f955f8cfd7884325d73efd6926",
+            "diagnostics": [],
+            "preview": {
+              "results": [
+                {
+                  "ids": [
+                    "b_1"
+                  ]
+                }
+              ],
+              "revisions": [
+                {
+                  "id": "d_0",
+                  "path": "/guide.md",
+                  "hash": "f9342fa638167356bd62d3e656ad12c7154b3df807c969fe1a21615fbe72acc4"
+                }
+              ],
+              "diffs": {
+                "/guide.md": {
+                  "before": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n",
+                  "after": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nReplaced via node ref.\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n"
+                }
+              }
+            }
           },
           {
-            "results": [
+            "version": 1,
+            "planner_v": "p2",
+            "effects": [
               {
-                "ids": [
-                  "b_1"
-                ]
+                "op": "set",
+                "target": {
+                  "kind": "node",
+                  "id": "n_7f86eccd7a7c"
+                },
+                "field": "value",
+                "value": "/notes/two.md"
               }
             ],
-            "revisions": [
-              {
-                "id": "d_0",
-                "path": "/guide.md",
-                "hash": "80bbf1a57e2e8ff7694b8ba4248abe1cd8fdd091139951221858df7b936aa07d"
-              }
-            ],
-            "diffs": {
-              "/guide.md": {
-                "before": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n",
-                "after": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/two.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n"
-              }
+            "opset": {
+              "creates": [],
+              "moves": [],
+              "tombstones": [],
+              "set_frontmatter": [],
+              "ops": [
+                {
+                  "op": "update",
+                  "block": "b_1",
+                  "markdown": "Intro paragraph with a [link](/notes/two.md) and [[two]].",
+                  "expect": {
+                    "content_hash": "15d1319612cc44fbad82e62ad5abd8dd4d892ecf58264891e01d611a1abac9d9"
+                  }
+                }
+              ]
             },
-            "committed": false
+            "preconditions": {
+              "docs": [
+                {
+                  "id": "d_0",
+                  "path": "guide.md",
+                  "base_revision": "r_0",
+                  "hash": "4e6281be3f1fabebb2a0a9b9f20b827c260a261ea01cee8181396ce5f3c86e2b"
+                }
+              ],
+              "blocks": [
+                {
+                  "id": "b_1",
+                  "content_hash": "15d1319612cc44fbad82e62ad5abd8dd4d892ecf58264891e01d611a1abac9d9"
+                }
+              ],
+              "parents": [],
+              "absent_paths": []
+            },
+            "new_ids": [
+              {
+                "symbol": "$new.0",
+                "kind": "block"
+              }
+            ],
+            "plan_id": "47254e57db3260d70a6f088ce109f2985091c7f75b1f4d69ffa76db01bb501b6",
+            "diagnostics": [],
+            "preview": {
+              "results": [
+                {
+                  "ids": [
+                    "b_1"
+                  ]
+                }
+              ],
+              "revisions": [
+                {
+                  "id": "d_0",
+                  "path": "/guide.md",
+                  "hash": "80bbf1a57e2e8ff7694b8ba4248abe1cd8fdd091139951221858df7b936aa07d"
+                }
+              ],
+              "diffs": {
+                "/guide.md": {
+                  "before": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n",
+                  "after": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/two.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n"
+                }
+              }
+            }
           },
           {
             "error": "node_not_editable",
@@ -4482,87 +5548,211 @@
             "totalOpenEdges": 3
           },
           {
-            "hits": [
+            "version": 1,
+            "planner_v": "p2",
+            "effects": [
               {
-                "id": "b_1",
-                "path": "/guide.md",
-                "oldRaw": "Intro paragraph with a [link](/notes/one.md) and [[two]].",
-                "newRaw": "Intro paragraph with a [link](/notes/one.md) and [[notes/one.md]]."
-              }
-            ],
-            "pairs": [
-              {
-                "from": "two",
-                "to": "notes/one.md",
-                "hits": 1
-              }
-            ],
-            "applied": false,
-            "results": [
-              {
-                "ids": [
-                  "b_1"
+                "op": "retarget",
+                "repairs": [
+                  {
+                    "from": "two",
+                    "to": "notes/one.md"
+                  }
                 ]
               }
             ],
-            "revisions": [
+            "opset": {
+              "creates": [],
+              "moves": [],
+              "tombstones": [],
+              "set_frontmatter": [],
+              "ops": [
+                {
+                  "op": "update",
+                  "block": "b_1",
+                  "markdown": "Intro paragraph with a [link](/notes/one.md) and [[notes/one.md]].",
+                  "expect": {
+                    "content_hash": "15d1319612cc44fbad82e62ad5abd8dd4d892ecf58264891e01d611a1abac9d9"
+                  }
+                }
+              ]
+            },
+            "preconditions": {
+              "docs": [
+                {
+                  "id": "d_0",
+                  "path": "guide.md",
+                  "base_revision": "r_0",
+                  "hash": "4e6281be3f1fabebb2a0a9b9f20b827c260a261ea01cee8181396ce5f3c86e2b"
+                }
+              ],
+              "blocks": [
+                {
+                  "id": "b_1",
+                  "content_hash": "15d1319612cc44fbad82e62ad5abd8dd4d892ecf58264891e01d611a1abac9d9"
+                }
+              ],
+              "parents": [],
+              "absent_paths": []
+            },
+            "new_ids": [
               {
-                "id": "d_0",
-                "path": "/guide.md",
-                "hash": "d81140060810102157b2d25a41c55b5dadfd7b8b206ff1e7c7d857dbf44e00f9"
+                "symbol": "$new.0",
+                "kind": "block"
               }
             ],
-            "diffs": {
-              "/guide.md": {
-                "before": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n",
-                "after": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[notes/one.md]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n"
-              }
-            },
-            "committed": false
+            "plan_id": "7b193bddc42962761dc1661ccdc150234dbab7413959ea1b34f423dc8204e064",
+            "diagnostics": [],
+            "preview": {
+              "results": [
+                {
+                  "ids": [
+                    "b_1"
+                  ]
+                }
+              ],
+              "revisions": [
+                {
+                  "id": "d_0",
+                  "path": "/guide.md",
+                  "hash": "d81140060810102157b2d25a41c55b5dadfd7b8b206ff1e7c7d857dbf44e00f9"
+                }
+              ],
+              "diffs": {
+                "/guide.md": {
+                  "before": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n",
+                  "after": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[notes/one.md]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n"
+                }
+              },
+              "retarget": [
+                {
+                  "effect_index": 0,
+                  "hits": [
+                    {
+                      "id": "b_1",
+                      "path": "/guide.md",
+                      "oldRaw": "Intro paragraph with a [link](/notes/one.md) and [[two]].",
+                      "newRaw": "Intro paragraph with a [link](/notes/one.md) and [[notes/one.md]]."
+                    }
+                  ],
+                  "pairs": [
+                    {
+                      "from": "two",
+                      "to": "notes/one.md",
+                      "hits": 1
+                    }
+                  ]
+                }
+              ]
+            }
           },
           {
-            "hits": [
+            "version": 1,
+            "planner_v": "p2",
+            "effects": [
               {
-                "id": "b_1",
-                "path": "/guide.md",
-                "oldRaw": "Intro paragraph with a [link](/notes/one.md) and [[two]].",
-                "newRaw": "Intro paragraph with a [link](/notes/one.md) and [[notes/one.md]]."
-              }
-            ],
-            "pairs": [
-              {
-                "from": "two",
-                "to": "notes/one.md",
-                "hits": 1
-              },
-              {
-                "from": "/nope.md",
-                "to": "/x.md",
-                "hits": 0
-              }
-            ],
-            "applied": false,
-            "results": [
-              {
-                "ids": [
-                  "b_1"
+                "op": "retarget",
+                "repairs": [
+                  {
+                    "from": "two",
+                    "to": "notes/one.md"
+                  },
+                  {
+                    "from": "/nope.md",
+                    "to": "/x.md"
+                  }
                 ]
               }
             ],
-            "revisions": [
+            "opset": {
+              "creates": [],
+              "moves": [],
+              "tombstones": [],
+              "set_frontmatter": [],
+              "ops": [
+                {
+                  "op": "update",
+                  "block": "b_1",
+                  "markdown": "Intro paragraph with a [link](/notes/one.md) and [[notes/one.md]].",
+                  "expect": {
+                    "content_hash": "15d1319612cc44fbad82e62ad5abd8dd4d892ecf58264891e01d611a1abac9d9"
+                  }
+                }
+              ]
+            },
+            "preconditions": {
+              "docs": [
+                {
+                  "id": "d_0",
+                  "path": "guide.md",
+                  "base_revision": "r_0",
+                  "hash": "4e6281be3f1fabebb2a0a9b9f20b827c260a261ea01cee8181396ce5f3c86e2b"
+                }
+              ],
+              "blocks": [
+                {
+                  "id": "b_1",
+                  "content_hash": "15d1319612cc44fbad82e62ad5abd8dd4d892ecf58264891e01d611a1abac9d9"
+                }
+              ],
+              "parents": [],
+              "absent_paths": []
+            },
+            "new_ids": [
               {
-                "id": "d_0",
-                "path": "/guide.md",
-                "hash": "d81140060810102157b2d25a41c55b5dadfd7b8b206ff1e7c7d857dbf44e00f9"
+                "symbol": "$new.0",
+                "kind": "block"
               }
             ],
-            "diffs": {
-              "/guide.md": {
-                "before": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n",
-                "after": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[notes/one.md]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n"
-              }
-            },
-            "committed": false
+            "plan_id": "19e3b334fade12458ba88ea3a76b5002f35b9c99ac057dd9b519cbbfb598eeb5",
+            "diagnostics": [],
+            "preview": {
+              "results": [
+                {
+                  "ids": [
+                    "b_1"
+                  ]
+                }
+              ],
+              "revisions": [
+                {
+                  "id": "d_0",
+                  "path": "/guide.md",
+                  "hash": "d81140060810102157b2d25a41c55b5dadfd7b8b206ff1e7c7d857dbf44e00f9"
+                }
+              ],
+              "diffs": {
+                "/guide.md": {
+                  "before": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n",
+                  "after": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[notes/one.md]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n"
+                }
+              },
+              "retarget": [
+                {
+                  "effect_index": 0,
+                  "hits": [
+                    {
+                      "id": "b_1",
+                      "path": "/guide.md",
+                      "oldRaw": "Intro paragraph with a [link](/notes/one.md) and [[two]].",
+                      "newRaw": "Intro paragraph with a [link](/notes/one.md) and [[notes/one.md]]."
+                    }
+                  ],
+                  "pairs": [
+                    {
+                      "from": "two",
+                      "to": "notes/one.md",
+                      "hits": 1
+                    },
+                    {
+                      "from": "/nope.md",
+                      "to": "/x.md",
+                      "hits": 0
+                    }
+                  ]
+                }
+              ]
+            }
           },
           {
             "error": "target_missing",
@@ -4907,17 +6097,8 @@
             }
           },
           {
-            "id": "b_9",
-            "ids": [
-              "b_9"
-            ],
-            "results": [
-              {
-                "ids": [
-                  "b_9"
-                ]
-              }
-            ],
+            "plan_id": "e2e4f24fdc8131a7698f2dd80bd74bef15be354a08233fa74bb9e11994dcda0c",
+            "commit": "c_2",
             "revisions": [
               {
                 "id": "d_0",
@@ -4925,16 +6106,12 @@
                 "hash": "c50d718d83c07e5ecfa1fc293f1f6c81faf3e56830c5fcbfba127574205b9b37"
               }
             ],
+            "new_ids": {},
             "committed": true
           },
           {
-            "results": [
-              {
-                "ids": [
-                  "b_10"
-                ]
-              }
-            ],
+            "plan_id": "6381d0d99dddc2e89ee6f7e3f7e927478545faa23a5768602dd1d5604bbe1816",
+            "commit": "c_3",
             "revisions": [
               {
                 "id": "d_0",
@@ -4942,16 +6119,12 @@
                 "hash": "26a50d576b27a1e9b17b496aa7a4866caef3f657c67a9ffa505893f1c1a53b1f"
               }
             ],
+            "new_ids": {},
             "committed": true
           },
           {
-            "results": [
-              {
-                "ids": [
-                  "b_36"
-                ]
-              }
-            ],
+            "plan_id": "04920fb08ecbbabdd2937f7bf5d0819e0b4b4909d000579574e6bc84b870569b",
+            "commit": "c_4",
             "revisions": [
               {
                 "id": "d_0",
@@ -4959,6 +6132,9 @@
                 "hash": "7f015b40588e946b0fa368db4321b01c50bd4e3329831a6b61cfac69d3423150"
               }
             ],
+            "new_ids": {
+              "$new.0": "b_21"
+            },
             "committed": true
           },
           {
@@ -5074,8 +6250,20 @@
             "truncated": false
           },
           {
-            "id": "d_2",
-            "path": "/new.md",
+            "plan_id": "6ddea4779c4ecca7946e3591c594acb6ecfcda223800c6d6a8bc2f67fe3522f6",
+            "commit": "c_5",
+            "revisions": [
+              {
+                "id": "d_2",
+                "path": "/new.md",
+                "hash": "8a5144dfbeb20f1012aaaf63a4a648fbe3ffa68bf0d698083a7f0dd4e56604cc"
+              }
+            ],
+            "new_ids": {
+              "$new.0": "d_2",
+              "$new.1": "b_22",
+              "$new.2": "b_23"
+            },
             "committed": true
           },
           {
@@ -5084,16 +6272,26 @@
             "data": {}
           },
           {
-            "id": "d_2",
-            "path": "/new.md",
+            "plan_id": "17be24a9c21fdb0c55a2a4f947a4f322d38e258e225b3824dc0c9dae4d677c17",
+            "commit": "c_6",
+            "revisions": [
+              {
+                "id": "d_2",
+                "path": "/new.md",
+                "hash": "d1bfb0daa528a849ed1ea93fbc64bc662f996fb7994e39128bd9f0c9d8dabb67"
+              }
+            ],
+            "new_ids": {},
             "committed": true
           },
           {
-            "id": "d_2",
-            "path": "/moved/new.md",
+            "plan_id": "18bdbadcc96b798d0db6f2e30a857fea69ccc76dd289f56c9266d30e2c33492c",
+            "commit": "c_7",
+            "revisions": [],
+            "new_ids": {},
             "committed": true,
-            "dangling": [],
-            "retargeted": null
+            "retargeted": null,
+            "dangling": []
           },
           {
             "id": "d_2",
@@ -5111,8 +6309,10 @@
             "raw": "---\nlayer: draft\n---\n\n# New\n\nCreated.\n"
           },
           {
-            "id": "d_2",
-            "path": "/moved/new.md",
+            "plan_id": "80b76aaa38fe06834d313921843e3e69383fbfc65fe8ccdd06a9adb7e9e8d746",
+            "commit": "c_8",
+            "revisions": [],
+            "new_ids": {},
             "committed": true
           },
           {
@@ -9236,7 +10436,7 @@
     },
     {
       "name": "arguments",
-      "notes": "§4 \"Arguments\" (3.0): the locator rule and its errors, byte-identical across engines — `doc` and the other retired names are refused with their replacement, an unknown name gets the nearest valid one, a missing/mistyped argument names the expected shape; a document is addressed by `id`/`path` (at least one; both must agree), a block/node by `id`; `doc_missing`/`block_missing` spell the attributes. Also `frontmatter.$version`: an authored `$`-prefixed key is stored and reached through the source handle and `entries(frontmatter)`, while the bare `$version` is the engine's namespace (nothing).",
+      "notes": "§4 \"Arguments\" (3.0): the locator rule and its errors, byte-identical across engines — `doc` and the other retired names are refused with their replacement, an unknown name gets the nearest valid one, a missing/mistyped argument names the expected shape; a document is addressed by `id`/`path` (at least one; both must agree), a block/node by `id`; `doc_missing`/`block_missing` spell the attributes. Also `frontmatter.$version`: an authored `$`-prefixed key is stored and reached through the source handle and `entries(frontmatter)`, while the bare `$version` is the engine's namespace (nothing). The inputs 4.0 retired name their replacement too (never silently stripped): `ops` → `effects` (a missing `effects` is \"`effects` is required\"), `dry_run` → `plan { effects: [...] }` on every tool, `blocks_update.attrs` → `checked`; `links_*`'s `applied` was never an argument (an unknown name with no near neighbour).",
       "steps": [
         {
           "observe": {
@@ -9455,6 +10655,68 @@
         },
         {
           "read": {
+            "tool": "apply",
+            "args": {
+              "ops": [
+                {
+                  "op": "remove",
+                  "blocks": [
+                    "b_1"
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "apply",
+            "args": {}
+          }
+        },
+        {
+          "read": {
+            "tool": "blocks_insert",
+            "args": {
+              "to": "a.md",
+              "markdown": "x",
+              "dry_run": true
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "docs_update",
+            "args": {
+              "path": "a.md",
+              "content": "x",
+              "dry_run": true
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "blocks_update",
+            "args": {
+              "id": "b_1",
+              "attrs": {
+                "checked": true
+              }
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "links_retarget",
+            "args": {
+              "from_target": "a",
+              "to_target": "b",
+              "applied": false
+            }
+          }
+        },
+        {
+          "read": {
             "tool": "repos",
             "args": {
               "repo": "fixture"
@@ -9647,22 +10909,52 @@
           {
             "error": "filter_invalid",
             "retriable": false,
-            "message": "`block` is no longer an argument — pass `id` (blocks_update takes attrs?, checked?, dry_run?, expect?, id, markdown?, repo?)"
+            "message": "`block` is no longer an argument — pass `id` (blocks_update takes checked?, expect?, id, markdown?, repo?)"
           },
           {
             "error": "filter_invalid",
             "retriable": false,
-            "message": "`node` is no longer an argument — pass `id` (nodes_set takes dry_run?, id, prop, repo?, value)"
+            "message": "`node` is no longer an argument — pass `id` (nodes_set takes id, prop, repo?, value)"
           },
           {
             "error": "filter_invalid",
             "retriable": false,
-            "message": "`heading` is no longer an argument — pass `section` (the heading's text), or blocks_append with the heading's `id` (docs_append takes dry_run?, id?, path?, repo?, section?, text)"
+            "message": "`heading` is no longer an argument — pass `section` (the heading's text), or blocks_append with the heading's `id` (docs_append takes id?, path?, repo?, section?, text)"
           },
           {
             "error": "filter_invalid",
             "retriable": false,
-            "message": "unknown argument `content` (docs_create takes dry_run?, frontmatter?, markdown, path, repo?)"
+            "message": "unknown argument `content` (docs_create takes frontmatter?, markdown, path, repo?)"
+          },
+          {
+            "error": "filter_invalid",
+            "retriable": false,
+            "message": "`ops` is no longer an argument — `apply` takes `effects` (the kernel ops are a library/fixture contract since spec/mutate 3.0) (apply takes effects, reason?, repo?)"
+          },
+          {
+            "error": "filter_invalid",
+            "retriable": false,
+            "message": "`effects` is required (apply takes effects, reason?, repo?)"
+          },
+          {
+            "error": "filter_invalid",
+            "retriable": false,
+            "message": "`dry_run` is no longer an argument — preview with `plan { effects: [...] }` (blocks_insert takes at?, expect?, markdown, repo?, to)"
+          },
+          {
+            "error": "filter_invalid",
+            "retriable": false,
+            "message": "`dry_run` is no longer an argument — preview with `plan { effects: [...] }` (docs_update takes content, id?, path?, reason?, repo?)"
+          },
+          {
+            "error": "filter_invalid",
+            "retriable": false,
+            "message": "`attrs` is no longer an argument — pass `checked` (blocks_update takes checked?, expect?, id, markdown?, repo?)"
+          },
+          {
+            "error": "filter_invalid",
+            "retriable": false,
+            "message": "unknown argument `applied` (links_retarget takes from_target, path_glob?, repo?, to_target)"
           },
           {
             "error": "filter_invalid",
@@ -9723,7 +11015,7 @@
     },
     {
       "name": "append-into-blocks",
-      "notes": "§4 (3.0): `blocks_append` by what the block is — a heading appends at the end of its section, a container at the end of its children, a leaf is `block_not_container` (append means into); `docs_append` with `section` names a heading by its TEXT inside the named document — an unknown heading is `parent_missing`, a heading spelled twice in that document is `ambiguous_heading` with `candidates[{ id, doc_id }]` (pass the heading's id to blocks_append), the ATX spelling is accepted; the dry runs preview the kernel's insert, the last call commits.",
+      "notes": "§4 (3.0; 4.0): `blocks_append` by what the block is — a heading appends at the end of its section (`insert into { kind: \"section\", heading_id }`, planned here on b_2), a container at the end of its children (`insert into { kind: \"block\" }`, b_3), a leaf is `block_not_container` (append means into); `docs_append` with `section` names a heading by its TEXT inside the named document — an unknown heading is `parent_missing`, a heading spelled twice in that document is `ambiguous_heading` with `candidates[{ id, doc_id }]` (pass the heading's id to blocks_append), the ATX spelling is accepted (its plan: `heading_id` b_8). The previews are `plan { effects }` over the effect each tool builds (4.0: no tool takes `dry_run`; a plan burns no id), the failing calls are the tools themselves (nothing commits), and the last call commits the planned append — the id it mints is the plan's `$new.0`.",
       "workspace": true,
       "steps": [
         {
@@ -9739,22 +11031,38 @@
         },
         {
           "read": {
-            "tool": "blocks_append",
+            "tool": "plan",
             "args": {
-              "id": "b_2",
-              "text": "- appended under the first Log\n",
-              "dry_run": true
+              "effects": [
+                {
+                  "op": "insert",
+                  "into": {
+                    "kind": "section",
+                    "heading_id": "b_2"
+                  },
+                  "at": "end",
+                  "markdown": "- appended under the first Log\n"
+                }
+              ]
             },
             "ts": "2026-09-27T10:01:00.000Z"
           }
         },
         {
           "read": {
-            "tool": "blocks_append",
+            "tool": "plan",
             "args": {
-              "id": "b_3",
-              "text": "- third\n",
-              "dry_run": true
+              "effects": [
+                {
+                  "op": "insert",
+                  "into": {
+                    "kind": "block",
+                    "id": "b_3"
+                  },
+                  "at": "end",
+                  "markdown": "- third\n"
+                }
+              ]
             },
             "ts": "2026-09-27T10:01:00.000Z"
           }
@@ -9764,8 +11072,7 @@
             "tool": "blocks_append",
             "args": {
               "id": "b_1",
-              "text": "x",
-              "dry_run": true
+              "text": "x"
             },
             "ts": "2026-09-27T10:01:00.000Z"
           }
@@ -9775,8 +11082,7 @@
             "tool": "blocks_append",
             "args": {
               "id": "b_zzz",
-              "text": "x",
-              "dry_run": true
+              "text": "x"
             },
             "ts": "2026-09-27T10:01:00.000Z"
           }
@@ -9787,8 +11093,7 @@
             "args": {
               "path": "notes.md",
               "section": "Log",
-              "text": "x",
-              "dry_run": true
+              "text": "x"
             },
             "ts": "2026-09-27T10:01:00.000Z"
           }
@@ -9799,20 +11104,26 @@
             "args": {
               "path": "notes.md",
               "section": "Nope",
-              "text": "x",
-              "dry_run": true
+              "text": "x"
             },
             "ts": "2026-09-27T10:01:00.000Z"
           }
         },
         {
           "read": {
-            "tool": "docs_append",
+            "tool": "plan",
             "args": {
-              "path": "notes.md",
-              "section": "## Ideas",
-              "text": "Another idea.\n",
-              "dry_run": true
+              "effects": [
+                {
+                  "op": "insert",
+                  "into": {
+                    "kind": "section",
+                    "heading_id": "b_8"
+                  },
+                  "at": "end",
+                  "markdown": "Another idea.\n"
+                }
+              ]
             },
             "ts": "2026-09-27T10:01:00.000Z"
           }
@@ -9854,50 +11165,163 @@
             }
           ],
           {
-            "results": [
+            "version": 1,
+            "planner_v": "p2",
+            "effects": [
               {
-                "ids": [
-                  "b_12"
-                ]
+                "op": "insert",
+                "into": {
+                  "kind": "section",
+                  "heading_id": "b_2"
+                },
+                "at": "end",
+                "markdown": "- appended under the first Log\n"
               }
             ],
-            "revisions": [
-              {
-                "id": "d_0",
-                "path": "/notes.md",
-                "hash": "b7af714b4d34a321c3461a943cbc045f3d6a76dd4d0631c03ad64c9bdce21113"
-              }
-            ],
-            "diffs": {
-              "/notes.md": {
-                "before": "# Notes\n\nIntro.\n\n## Log\n\n- first\n- second\n\n## Log\n\nSecond log section.\n\n## Ideas\n\nA paragraph.\n\n> quoted\n",
-                "after": "# Notes\n\nIntro.\n\n## Log\n\n- first\n- second\n\n- appended under the first Log\n\n## Log\n\nSecond log section.\n\n## Ideas\n\nA paragraph.\n\n> quoted\n"
-              }
+            "opset": {
+              "creates": [],
+              "moves": [],
+              "tombstones": [],
+              "set_frontmatter": [],
+              "ops": [
+                {
+                  "op": "insert",
+                  "to": {
+                    "parent": {
+                      "heading": "b_2",
+                      "scope": "section"
+                    },
+                    "at": "end"
+                  },
+                  "markdown": "- appended under the first Log\n"
+                }
+              ]
             },
-            "committed": false
+            "preconditions": {
+              "docs": [
+                {
+                  "id": "d_0",
+                  "path": "notes.md",
+                  "base_revision": "r_0",
+                  "hash": "5f7fc4e73e1dd88cc41b0dcd11327f21b673196db9f6519331c8456ac35c640c"
+                }
+              ],
+              "blocks": [],
+              "parents": [],
+              "absent_paths": []
+            },
+            "new_ids": [
+              {
+                "symbol": "$new.0",
+                "kind": "block"
+              },
+              {
+                "symbol": "$new.1",
+                "kind": "block"
+              }
+            ],
+            "plan_id": "5d550d14ebdd46823091f1e0194538e9dbe361d0b7e83505d2c414bff9c7341c",
+            "diagnostics": [],
+            "preview": {
+              "results": [
+                {
+                  "ids": [
+                    "$new.0"
+                  ]
+                }
+              ],
+              "revisions": [
+                {
+                  "id": "d_0",
+                  "path": "/notes.md",
+                  "hash": "b7af714b4d34a321c3461a943cbc045f3d6a76dd4d0631c03ad64c9bdce21113"
+                }
+              ],
+              "diffs": {
+                "/notes.md": {
+                  "before": "# Notes\n\nIntro.\n\n## Log\n\n- first\n- second\n\n## Log\n\nSecond log section.\n\n## Ideas\n\nA paragraph.\n\n> quoted\n",
+                  "after": "# Notes\n\nIntro.\n\n## Log\n\n- first\n- second\n\n- appended under the first Log\n\n## Log\n\nSecond log section.\n\n## Ideas\n\nA paragraph.\n\n> quoted\n"
+                }
+              }
+            }
           },
           {
-            "results": [
+            "version": 1,
+            "planner_v": "p2",
+            "effects": [
               {
-                "ids": [
-                  "b_15"
-                ]
+                "op": "insert",
+                "into": {
+                  "kind": "block",
+                  "id": "b_3"
+                },
+                "at": "end",
+                "markdown": "- third\n"
               }
             ],
-            "revisions": [
-              {
-                "id": "d_0",
-                "path": "/notes.md",
-                "hash": "5421a0ddc506aa8da3753b3e75e4cae24fb3cd2957523ea761143722c2673ec0"
-              }
-            ],
-            "diffs": {
-              "/notes.md": {
-                "before": "# Notes\n\nIntro.\n\n## Log\n\n- first\n- second\n\n## Log\n\nSecond log section.\n\n## Ideas\n\nA paragraph.\n\n> quoted\n",
-                "after": "# Notes\n\nIntro.\n\n## Log\n\n- first\n- second\n- third\n\n## Log\n\nSecond log section.\n\n## Ideas\n\nA paragraph.\n\n> quoted\n"
-              }
+            "opset": {
+              "creates": [],
+              "moves": [],
+              "tombstones": [],
+              "set_frontmatter": [],
+              "ops": [
+                {
+                  "op": "insert",
+                  "to": {
+                    "parent": "b_3",
+                    "at": "end"
+                  },
+                  "markdown": "- third\n"
+                }
+              ]
             },
-            "committed": false
+            "preconditions": {
+              "docs": [
+                {
+                  "id": "d_0",
+                  "path": "notes.md",
+                  "base_revision": "r_0",
+                  "hash": "5f7fc4e73e1dd88cc41b0dcd11327f21b673196db9f6519331c8456ac35c640c"
+                }
+              ],
+              "blocks": [],
+              "parents": [],
+              "absent_paths": []
+            },
+            "new_ids": [
+              {
+                "symbol": "$new.0",
+                "kind": "block"
+              },
+              {
+                "symbol": "$new.1",
+                "kind": "block"
+              }
+            ],
+            "plan_id": "394c77ab9b55d501a2db694f780791055ca733c376238722ccdaccdb3d230ef3",
+            "diagnostics": [],
+            "preview": {
+              "results": [
+                {
+                  "ids": [
+                    "$new.1"
+                  ]
+                }
+              ],
+              "revisions": [
+                {
+                  "id": "d_0",
+                  "path": "/notes.md",
+                  "hash": "5421a0ddc506aa8da3753b3e75e4cae24fb3cd2957523ea761143722c2673ec0"
+                }
+              ],
+              "diffs": {
+                "/notes.md": {
+                  "before": "# Notes\n\nIntro.\n\n## Log\n\n- first\n- second\n\n## Log\n\nSecond log section.\n\n## Ideas\n\nA paragraph.\n\n> quoted\n",
+                  "after": "# Notes\n\nIntro.\n\n## Log\n\n- first\n- second\n- third\n\n## Log\n\nSecond log section.\n\n## Ideas\n\nA paragraph.\n\n> quoted\n"
+                }
+              }
+            }
           },
           {
             "error": "block_not_container",
@@ -9945,36 +11369,85 @@
             }
           },
           {
-            "results": [
+            "version": 1,
+            "planner_v": "p2",
+            "effects": [
               {
-                "ids": [
-                  "b_16"
-                ]
+                "op": "insert",
+                "into": {
+                  "kind": "section",
+                  "heading_id": "b_8"
+                },
+                "at": "end",
+                "markdown": "Another idea.\n"
               }
             ],
-            "revisions": [
-              {
-                "id": "d_0",
-                "path": "/notes.md",
-                "hash": "90761b86c5ca3552274aab2a81500ca5a355ca0e051247580af4ceb356cfedce"
-              }
-            ],
-            "diffs": {
-              "/notes.md": {
-                "before": "# Notes\n\nIntro.\n\n## Log\n\n- first\n- second\n\n## Log\n\nSecond log section.\n\n## Ideas\n\nA paragraph.\n\n> quoted\n",
-                "after": "# Notes\n\nIntro.\n\n## Log\n\n- first\n- second\n\n## Log\n\nSecond log section.\n\n## Ideas\n\nA paragraph.\n\n> quoted\n\nAnother idea.\n"
-              }
+            "opset": {
+              "creates": [],
+              "moves": [],
+              "tombstones": [],
+              "set_frontmatter": [],
+              "ops": [
+                {
+                  "op": "insert",
+                  "to": {
+                    "parent": {
+                      "heading": "b_8",
+                      "scope": "section"
+                    },
+                    "at": "end"
+                  },
+                  "markdown": "Another idea.\n"
+                }
+              ]
             },
-            "committed": false
+            "preconditions": {
+              "docs": [
+                {
+                  "id": "d_0",
+                  "path": "notes.md",
+                  "base_revision": "r_0",
+                  "hash": "5f7fc4e73e1dd88cc41b0dcd11327f21b673196db9f6519331c8456ac35c640c"
+                }
+              ],
+              "blocks": [],
+              "parents": [],
+              "absent_paths": []
+            },
+            "new_ids": [
+              {
+                "symbol": "$new.0",
+                "kind": "block"
+              }
+            ],
+            "plan_id": "fa565ae200a5d8907d1a8ebe1044df6fb250dcc3a2c7b8235010992a54e2b3df",
+            "diagnostics": [],
+            "preview": {
+              "results": [
+                {
+                  "ids": [
+                    "$new.0"
+                  ]
+                }
+              ],
+              "revisions": [
+                {
+                  "id": "d_0",
+                  "path": "/notes.md",
+                  "hash": "90761b86c5ca3552274aab2a81500ca5a355ca0e051247580af4ceb356cfedce"
+                }
+              ],
+              "diffs": {
+                "/notes.md": {
+                  "before": "# Notes\n\nIntro.\n\n## Log\n\n- first\n- second\n\n## Log\n\nSecond log section.\n\n## Ideas\n\nA paragraph.\n\n> quoted\n",
+                  "after": "# Notes\n\nIntro.\n\n## Log\n\n- first\n- second\n\n## Log\n\nSecond log section.\n\n## Ideas\n\nA paragraph.\n\n> quoted\n\nAnother idea.\n"
+                }
+              }
+            }
           },
           {
-            "results": [
-              {
-                "ids": [
-                  "b_17"
-                ]
-              }
-            ],
+            "plan_id": "fa565ae200a5d8907d1a8ebe1044df6fb250dcc3a2c7b8235010992a54e2b3df",
+            "commit": "c_1",
             "revisions": [
               {
                 "id": "d_0",
@@ -9982,6 +11455,9 @@
                 "hash": "90761b86c5ca3552274aab2a81500ca5a355ca0e051247580af4ceb356cfedce"
               }
             ],
+            "new_ids": {
+              "$new.0": "b_12"
+            },
             "committed": true
           },
           {

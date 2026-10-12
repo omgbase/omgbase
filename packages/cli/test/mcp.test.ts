@@ -266,7 +266,7 @@ describe("omg mcp — the workspace writer lock (spec/sync §7)", () => {
     // A write succeeds and leaves no lock behind.
     const created = await call("docs_create", { path: "locked/a.md", markdown: "# A\n" });
     expect(created.isError).toBe(false);
-    expect(created.body.path).toBe("/locked/a.md");
+    expect((created.body.revisions as { path: string }[])[0]!.path).toBe("/locked/a.md"); // the Receipt (4.0)
     expect(existsSync(lockFile)).toBe(false);
 
     // A live foreign holder: this vitest process's pid is alive, so the child
@@ -280,8 +280,8 @@ describe("omg mcp — the workspace writer lock (spec/sync §7)", () => {
     expect(blocked.body.message).toMatch(/could not acquire writer lock .*writer\.lock \(held by pid \d+\)/);
     expect(waited).toBeLessThan(3000); // the seam, not the spec's 5 s
     expect(existsSync(join(vault, "locked", "b.md"))).toBe(false);
-    // A dry run waits too (Rust `is_write_tool` counts it).
-    const dry = await call("docs_create", { path: "locked/b.md", markdown: "# B\n", dry_run: true });
+    // A plan waits too (`plan` is a write tool for the lock's purposes; Rust `is_write_tool` counts it).
+    const dry = await call("plan", { effects: [{ op: "create", path: "locked/b.md", markdown: "# B\n" }] });
     expect(dry.isError).toBe(true);
     expect(dry.body.error).toBe("repo_not_found");
     // Reads never touch the lock.

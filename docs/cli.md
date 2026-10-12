@@ -49,7 +49,7 @@ Like git: walk up from the current directory looking for `.omgbase/`. The direct
 
 A global flag whose value is missing (`-C`, `--repo`, `--server`, `-H`) and a stray flag before the command are usage errors like any other: `usage: -C requires a directory`, `usage: unknown flag -n`, exit 2 (`parseGlobals` records the first malformed flag and keeps parsing, so a `--json` anywhere still selects the mode the error is rendered in).
 
-`--dry-run` is global across every mutating command and means exactly what `apply.dry_run` means: full validation + render, per-file unified diffs printed, nothing committed.
+`--dry-run` is global across every mutating command and means exactly what the `plan` tool means (spec/cli 4.0 §3.6): the verb's effects are planned, the plan's per-file unified diffs are printed (`--json` prints the frozen plan), nothing is committed and no id is consumed — new ids print as `$new.n`. Before 4.0 a dry run was `apply.dry_run`, which burned the ids it previewed.
 
 ### 2.3 Arguments: IDs, paths, stdin
 
@@ -188,14 +188,14 @@ There is no `pipeline` command: **the pipeline is the pipe.** `omg q 'from docs 
 | `omg rm <blocks…\|->` | `remove` (resurrection pool catches regret) |
 | `omg done <blocks…\|-> [--undo]` | `blocks_check` (`--undo` ⇒ `update attrs.checked=false`). Every target must be a task block; anything else is `type_mismatch` before any op is built. |
 | `omg append <block> (-m md \| -f \| -)` | `blocks_append` — into a heading's section or a container's children; a leaf is `block_not_container` |
-| `omg retarget <from> <to> [--scope glob] [--apply]` | `links_retarget` — **plan-by-default**: without `--apply` it runs the dry-run and prints, per hit block, the unified diff of the block's raw (the same `unifiedDiff` every preview prints — the 06 §4 "always dry-run first" contract, encoded as the default). |
+| `omg retarget <from> <to> [--scope glob] [--apply]` | the `retarget` effect — **plan-by-default**: without `--apply` it plans (`plan { effects: [retarget] }`) and prints, per hit block, the unified diff of the block's raw; `--apply` commits (`links_retarget`, which commits like every tool since 4.0) and prints the receipt confirmation plus the hits. |
 | `omg split <block> --at n[,n…]` / `omg merge <blocks…>` | `split` / `merge` (`--at` offsets must be integers — a usage error otherwise) |
 | `omg new <path> (-f file \| -)` | `docs_create` — content is complete file bytes, frontmatter included. |
 | `omg mv <doc> <new-path> [--no-retarget]` | `docs_move` — the inbound links are rewritten to the new path by default (spec/mutate 1.3) and counted on stderr; `--no-retarget` leaves them as written. Whatever still dangles (frontmatter relations, or everything under `--no-retarget`) is reported (stderr in human mode, `dangling` in `--json`) with the fix that clears it (`omg retarget … --apply` for authored links, `omg meta … --set` for a frontmatter relation). |
 | `omg rm --doc <doc>` | `docs_delete` (doc deletion always requires the explicit `--doc`) |
 | `omg meta <doc> --set k=v … [--unset k …]` | `docs_set_meta` — surgical frontmatter patch. Values parse as YAML scalars; `--set-json k='…'` for structures. |
 
-The four document verbs honor `--dry-run` like the block verbs: the operation validates (`doc_missing`, `path_taken`, …) and returns `committed: false` with the per-file `diffs` it would make (a create `""` → bytes, a delete bytes → `""`, a rename two entries, a meta patch before → after), rendered as unified diffs; nothing is written. The library ops take `dryRun` in their `DocOpContext`; the MCP tools `docs_create`/`docs_move`/`docs_delete`/`docs_set_meta` take `dry_run`.
+The four document verbs honor `--dry-run` like the block verbs: the verb plans its effects (`create`, `move`, `remove`, `set`/`unset frontmatter`), the pre-checks still fire (`doc_missing`, `path_taken`, …), and the plan's per-file diffs are printed (a create `""` → bytes, a delete bytes → `""`, a rename two entries, a meta patch before → after) as unified diffs; nothing is written and no id is consumed (4.0). The verbs and the MCP tools share one set of effect builders; the MCP tools `docs_create`/`docs_move`/`docs_delete`/`docs_set_meta` take `dry_run`.
 
 ### 5.7 CAS ergonomics
 

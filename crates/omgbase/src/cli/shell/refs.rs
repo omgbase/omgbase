@@ -160,24 +160,21 @@ pub fn derive_rows(value: &Json) -> Option<Vec<Row>> {
     if let Some(digests) = o.get("digests").and_then(Json::as_array) {
         return Some(digests.iter().map(row_of).collect()); // log
     }
-    if let (Some(results), Some(_)) = (
-        o.get("results").and_then(Json::as_array),
-        o.get("revisions").and_then(Json::as_array),
-    ) {
-        // ApplyResult: the minted/affected ids, flattened (one row per id).
-        let mut rows = Vec::new();
-        for r in results {
-            if let Some(ids) = r.get("ids").and_then(Json::as_array) {
-                for id in ids.iter().filter_map(Json::as_str) {
-                    rows.push(Row {
+    if o.get("plan_id").is_some_and(Json::is_string) {
+        if let Some(ids) = o.get("ids").and_then(Json::as_array) {
+            // A write's Receipt as the verbs capture it (cli 4.0): the ids the
+            // write names, one row per id.
+            return Some(
+                ids.iter()
+                    .filter_map(Json::as_str)
+                    .map(|id| Row {
                         r#ref: id.to_owned(),
                         label: id.to_owned(),
                         value: Json::String(id.to_owned()),
-                    });
-                }
-            }
+                    })
+                    .collect(),
+            );
         }
-        return Some(rows);
     }
     let out = o.get("out").and_then(Json::as_array);
     let inbound = o.get("in").and_then(Json::as_array);
@@ -353,8 +350,14 @@ mod tests {
         assert_eq!(coerce(&json!({ "node": "d_3" })).unwrap(), "d_3");
         assert!(derive_rows(&json!({ "kind": "document" })).is_none());
         assert!(derive_rows(&json!("text")).is_none());
-        let apply = json!({ "results": [{ "ids": ["b_1", "b_2"] }], "revisions": [] });
-        assert_eq!(derive_rows(&apply).unwrap().len(), 2);
+        let receipt =
+            json!({ "plan_id": "x", "revisions": [], "new_ids": {}, "ids": ["b_1", "b_2"] });
+        assert_eq!(derive_rows(&receipt).unwrap().len(), 2);
+        let bare = json!({ "plan_id": "x", "revisions": [], "new_ids": {} });
+        assert!(
+            derive_rows(&bare).is_none(),
+            "a receipt without its ids is a card"
+        );
         let links = json!({ "out": [{ "doc_id": "d_1" }], "in": [{ "doc_id": "d_0" }] });
         let rows = derive_rows(&links).unwrap();
         assert_eq!(

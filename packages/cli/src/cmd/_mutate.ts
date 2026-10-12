@@ -1,17 +1,21 @@
 import { readFileSync, readSync } from "node:fs";
 import { userInfo } from "node:os";
-import { apply, applyEffectsDetailed, executePlan, substituteSymbols, unifiedDiff, surfaceApplyResult, surfacePlan, surfaceReceipt, type ApplyRequest, type ApplyResult, type Op, type Plan, type Receipt } from "@omgbase/core";
+import { applyEffectsDetailed, applySugar, executePlan, isValidId, substituteSymbols, unifiedDiff, surfacePlan, surfaceReceipt, type EffectTarget, type Plan, type Receipt, type Sugar } from "@omgbase/core";
 import type { Cli } from "../context.js";
 import type { RepoRow } from "@omgbase/core";
 import type { Workspace } from "@omgbase/core";
 import { CliUsageError, EXIT_OK, EXIT_ERROR } from "../output.js";
 import { remoteCall } from "./_remote.js";
 
-// Shared plumbing for every write command (11 §5.6, §5.7). Sugar commands build
-// their kernel Ops, then hand them here: this sets origin.actor (human:$USER by
-// default, override --actor), runs under the writer flock (omgbaseDir), threads
-// --dry-run (validate + render diffs, commit nothing), and renders results or
-// typed conflicts uniformly.
+// Shared plumbing for every write command (spec/cli §3.6, §4; ADR-021's
+// retirement release, cli 4.0). The sugar verbs build their effects with the
+// shared builders of `@omgbase/core` (`mutate/sugar.ts` — the same table the
+// MCP tools use), then hand them here: this sets origin.actor (human:$USER by
+// default, override --actor), runs under the writer flock (omgbaseDir),
+// threads the global --dry-run as a `plan` (render the preview's diffs, mint
+// nothing, commit nothing), and renders the Receipt or the Plan uniformly.
+// Typed conflicts are rendered by the caller's catch via the output contract;
+// we let the planner throw.
 
 /** Read markdown content from -m, -f (file, or "-" = stdin), or bare stdin. */
 export function readContent(values: { m?: string; f?: string }, allowStdin = true): string {
@@ -109,50 +113,55 @@ export function defaultActor(): string {
   }
 }
 
-export interface RunOpsOptions {
+export interface RunOpts {
   reason?: string;
   actor?: string;
 }
 
 /**
- * Apply a set of kernel ops as one changeset and render the outcome. Honors
- * cli.flags.dryRun (per-file unified diffs to stdout, nothing committed) and
- * cli.flags.mode (--json emits ApplyResult verbatim). Typed conflicts are
- * rendered by the caller's catch via the output contract; we let apply throw.
+ * Run a builder's effects as one request (`applySugar`: plan + execute under the
+ * writer flock, the sugar's reason unless `--reason` overrides it) and render the
+ * outcome. Honors cli.flags.dryRun — the Plan: per-file unified diffs to stdout,
+ * nothing minted, nothing committed (§3.6) — and cli.flags.mode (--json emits
+ * the Receipt, or the Plan on a dry run, verbatim). An empty effect list is
+ * `  nothing to do`.
  */
-export function runOps(cli: Cli, ws: Workspace, repo: RepoRow, ops: Op[], opts: RunOpsOptions = {}): number {
-  if (ops.length === 0) {
+export function runSugar(cli: Cli, ws: Workspace, repo: RepoRow, sugar: Sugar, opts: RunOpts = {}): number {
+  if (sugar.effects.length === 0) {
     cli.io.err(cli.style.dim("  nothing to do"));
     return EXIT_OK;
   }
-  const req: ApplyRequest = {
+  const { plan, receipt } = applySugar(ws.store, {
     repoId: repo.repoId,
     ...(repo.rootPath ? { rootPath: repo.rootPath } : {}),
-    ops,
-    origin: { actor: opts.actor ?? defaultActor(), ...(opts.reason ? { reason: opts.reason } : {}) },
     omgbaseDir: ws.omgbaseDir,
+    actor: opts.actor ?? defaultActor(),
+    ...(opts.reason ? { reason: opts.reason } : {}),
     ...(cli.flags.dryRun ? { dryRun: true } : {}),
-  };
-
-  // The reference form on every printed path (spec/surface §1 "Paths"): the
-  // kernel's result is re-shaped exactly as the MCP server re-shapes it.
-  const result = surfaceApplyResult(apply(ws.store, req));
-  return renderApply(cli, result);
+  }, sugar);
+  if (!receipt) return renderPlan(cli, surfacePlan(plan));
+  return renderReceipt(cli, surfaceReceipt(receipt), plan);
 }
 
 /**
- * Remote peer of runOps: call the changeset-producing tool that mirrors this
- * command (blocks_insert, blocks_check, …) against the `--server` engine — the
- * server resolves refs + pins CAS + applies — then render the returned
- * ApplyResult with the SAME renderers as local. --dry-run is threaded as the
- * tool's dry_run so the preview comes back without committing.
+ * Remote peer of runSugar: call the sugar tool that mirrors this command
+ * (blocks_insert, blocks_check, …) against the `--server` engine — the server
+ * resolves refs + pins CAS + applies — and render the returned Receipt with the
+ * SAME renderers as local. The global --dry-run is the `plan` tool over the
+ * effects the verb would build (`effects` composes them from the refs as given:
+ * an id names its row, anything else a document path — the server resolves);
+ * no tool takes `dry_run` since surface 4.0.
  */
-export async function runOpsRemote(cli: Cli, tool: string, toolArgs: Record<string, unknown>): Promise<number> {
-  const result = await remoteCall<ApplyResult>(cli, tool, {
-    ...toolArgs,
-    ...(cli.flags.dryRun ? { dry_run: true } : {}),
-  });
-  return renderApply(cli, result);
+export async function runSugarRemote(cli: Cli, tool: string, toolArgs: Record<string, unknown>, effects: () => unknown[] | Promise<unknown[]>): Promise<number> {
+  if (cli.flags.dryRun) return renderPlan(cli, await remoteCall<Plan>(cli, "plan", { effects: await effects() }));
+  return renderReceipt(cli, await remoteCall<Receipt>(cli, tool, toolArgs));
+}
+
+/** A ref as an effect target for a remote `plan`: a `b_` id is the block, a `d_` id the document, anything else a document path. */
+export function targetOf(ref: string): EffectTarget {
+  if (isValidId(ref, "b")) return { kind: "block", id: ref };
+  if (isValidId(ref, "d")) return { kind: "document", id: ref };
+  return { kind: "document", path: ref };
 }
 
 // ---- the Effect layer (ADR-021; spec/cli 3.2 `apply -f { effects }`, `execute`) ----
@@ -160,11 +169,11 @@ export async function runOpsRemote(cli: Cli, tool: string, toolArgs: Record<stri
 /**
  * `apply` given `{ effects }`: plan + execute as one transaction
  * (`applyEffects`, spec/mutate §11.7) under the writer flock, rendered as a
- * Receipt. `--dry-run` plans only and renders the Plan — unlike every other
- * dry run (§3.6) it burns no id: planning runs under the symbolic minter and
- * the ids it reports are `$new.n`. An empty list is `nothing to do`, as for `ops`.
+ * Receipt. `--dry-run` plans only and renders the Plan (§3.6: planning runs
+ * under the symbolic minter and the ids it reports are `$new.n`). An empty
+ * list is `nothing to do`.
  */
-export function runEffects(cli: Cli, ws: Workspace, repo: RepoRow, effects: unknown[], opts: RunOpsOptions = {}): number {
+export function runEffects(cli: Cli, ws: Workspace, repo: RepoRow, effects: unknown[], opts: RunOpts = {}): number {
   if (effects.length === 0) {
     cli.io.err(cli.style.dim("  nothing to do"));
     return EXIT_OK;
@@ -181,14 +190,14 @@ export function runEffects(cli: Cli, ws: Workspace, repo: RepoRow, effects: unkn
   return renderReceipt(cli, surfaceReceipt(receipt), plan);
 }
 
-/** Remote peer of `runEffects`: the `apply` tool with `effects` (its `dry_run` returns the Plan, else the Receipt). */
+/** Remote peer of `runEffects`: the `apply` tool with `effects` (the Receipt), or on a dry run the `plan` tool (the Plan). */
 export async function runEffectsRemote(cli: Cli, effects: unknown[], reason?: string): Promise<number> {
-  const res = await remoteCall<Plan | Receipt>(cli, "apply", { effects, ...(reason ? { reason } : {}), ...(cli.flags.dryRun ? { dry_run: true } : {}) });
-  return cli.flags.dryRun ? renderPlan(cli, res as Plan) : renderReceipt(cli, res as Receipt);
+  if (cli.flags.dryRun) return renderPlan(cli, await remoteCall<Plan>(cli, "plan", { effects }));
+  return renderReceipt(cli, await remoteCall<Receipt>(cli, "apply", { effects, ...(reason ? { reason } : {}) }));
 }
 
 /** `execute`: commit exactly a Plan (the plan form, spec/mutate §11.7 — admission, then the one transaction), rendered as a Receipt. */
-export function runExecutePlan(cli: Cli, ws: Workspace, repo: RepoRow, plan: unknown, opts: RunOpsOptions = {}): number {
+export function runExecutePlan(cli: Cli, ws: Workspace, repo: RepoRow, plan: unknown, opts: RunOpts = {}): number {
   const receipt = executePlan(ws.store, {
     repoId: repo.repoId,
     ...(repo.rootPath ? { rootPath: repo.rootPath } : {}),
@@ -216,17 +225,19 @@ export function renderPlan(cli: Cli, plan: Plan): number {
 }
 
 /**
- * A Receipt: `--json` verbatim; human the commit confirmation of §4 (one
- * revision per touched document) and, on stdout, the ids the write names —
- * the plan's `preview.results[].ids` with every `$new.n` realized from
- * `new_ids` when the plan is at hand with its preview (a local `apply`, any
- * `execute`), exactly the ids the `ops` form prints; else (a plan echoed
- * without `preview`, a remote `apply`) every id the plan minted, the `new_ids`
- * values in order — which includes the discarded mints of a re-parse
- * (`spec/mutate` §10), ids that name no row.
+ * A Receipt (any write tool's result since 4.0 — a `links_*` result carries its
+ * `hits`/`pairs` beside the receipt's keys): `--json` verbatim; human the
+ * commit confirmation of §4 (one revision per touched document) and, on
+ * stdout, the ids the write names — the plan's `preview.results[].ids` with
+ * every `$new.n` realized from `new_ids` when the plan is at hand with its
+ * preview (a local write, any `execute`); else (a plan echoed without
+ * `preview`, a remote write) every id the plan minted, the `new_ids` values in
+ * order — which includes the discarded mints of a re-parse (`spec/mutate` §10),
+ * ids that name no row.
  */
 export function renderReceipt(cli: Cli, receipt: Receipt, plan?: unknown): number {
-  cli.capture?.(receipt);
+  const ids = receiptIds(receipt, plan);
+  cli.capture?.({ ...receipt, ids }); // shell: the ids the write names are the frame
   if (cli.flags.mode !== "human") {
     cli.io.out(JSON.stringify(receipt));
     return EXIT_OK;
@@ -234,7 +245,7 @@ export function renderReceipt(cli: Cli, receipt: Receipt, plan?: unknown): numbe
   const { render, style, io } = cli;
   const n = receipt.revisions.length;
   io.err(style.dim(`  ${style.ok(render.g.ok)} committed · ${n} document${n === 1 ? "" : "s"} touched`));
-  for (const id of receiptIds(receipt, plan)) io.out(id);
+  for (const id of ids) io.out(id);
   return EXIT_OK;
 }
 
@@ -246,26 +257,10 @@ export function receiptIds(receipt: Receipt, plan: unknown): string[] {
   return substituteSymbols(ids, receipt.new_ids);
 }
 
-/** Capture + render an ApplyResult (shared by the local and remote paths). */
-function renderApply(cli: Cli, result: ApplyResult): number {
-  cli.capture?.(result); // shell: ApplyResult — its minted/affected ids are the frame
-  if (cli.flags.mode !== "human") {
-    cli.io.out(JSON.stringify(result));
-    return EXIT_OK;
-  }
-  return cli.flags.dryRun ? renderDryRun(cli, result) : renderCommitted(cli, result);
-}
-
-function renderDryRun(cli: Cli, result: ApplyResult): number {
-  renderDiffs(cli, result.diffs ?? {});
-  return EXIT_OK;
-}
-
 /**
  * The dry-run rendering every write verb shares (spec/cli §3.6): the note on
- * stderr, then per changed file the path, the unified diff of before → after
- * (`spec/surface` §3) and an empty line. Document verbs hand their
- * `DocOpResult.diffs` here; block verbs their `ApplyResult.diffs`.
+ * stderr, then per changed file of the Plan's `preview.diffs` the path, the
+ * unified diff of before → after (`spec/surface` §3) and an empty line.
  */
 export function renderDiffs(cli: Cli, diffs: Record<string, { before: string; after: string }>): void {
   const { style, io } = cli;
@@ -285,17 +280,6 @@ export function unifiedDiffLines(cli: Cli, before: string, after: string): strin
     if (line.startsWith("-")) return style.err(line);
     return style.dim(line);
   });
-}
-
-function renderCommitted(cli: Cli, result: ApplyResult): number {
-  const { render, style, io } = cli;
-  const g = render.g;
-  const n = result.revisions.length;
-  io.err(style.dim(`  ${style.ok(g.ok)} committed · ${n} document${n === 1 ? "" : "s"} touched`));
-  // stdout stays useful for pipes: the ids minted/affected, one per line.
-  const ids = result.results.flatMap((r) => r.ids);
-  for (const id of ids) io.out(id);
-  return EXIT_OK;
 }
 
 export { EXIT_OK, EXIT_ERROR };

@@ -58,8 +58,8 @@ describe("deriveRows", () => {
     const rows = deriveRows([{ id: "b_1", locator: "a.md#x" }]);
     expect(rows?.[0]).toMatchObject({ ref: "b_1", label: "a.md#x" });
   });
-  it("derives ids from an ApplyResult", () => {
-    const rows = deriveRows({ results: [{ ids: ["b_9", "b_10"] }], revisions: [{}] });
+  it("derives ids from a write's Receipt as the verbs capture it (the realized ids beside the receipt)", () => {
+    const rows = deriveRows({ plan_id: "x", commit: "c_1", revisions: [{}], new_ids: { "$new.0": "b_9" }, committed: true, ids: ["b_9", "b_10"] });
     expect(rows?.map((r) => r.ref)).toEqual(["b_9", "b_10"]);
   });
   it("derives far nodes from links (out+in): `doc_id` (3.0), `node` from a 2.x server", () => {

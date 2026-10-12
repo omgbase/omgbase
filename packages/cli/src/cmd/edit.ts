@@ -3,16 +3,17 @@ import { spawnSync } from "node:child_process";
 import { writeFileSync, readFileSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { resolveRef, nodesGet, type Op } from "@omgbase/core";
+import { resolveRef, nodesGet, updateBlockEffects } from "@omgbase/core";
 import type { Command } from "../commands.js";
 import type { Cli } from "../context.js";
 import { CliUsageError, EngineErrorLike, EXIT_OK, renderHelp } from "../output.js";
-import { runOps } from "./_mutate.js";
+import { runSugar } from "./_mutate.js";
 
 // `omg edit <block>` (11 §5.6, §5.7): read the block's raw markdown → open it in
-// $EDITOR → update with the PRE-READ hash pinned as CAS. A mid-edit change by
-// someone else lands as a clean stale_expectation (with current truth), never a
-// lost write. The human structural-edit loop.
+// $EDITOR → `set markdown` with the PRE-READ hash pinned as `expect.content_hash`
+// (the `blocks_update` builder; cli 4.0). A mid-edit change by someone else
+// lands as a clean stale_expectation (with current truth), never a lost write.
+// The human structural-edit loop.
 
 function rawHashOf(ws: ReturnType<Cli["workspace"]>, blockId: string): string | null {
   const row = ws.store.db
@@ -68,8 +69,7 @@ function runEdit(cli: Cli, args: string[]): number {
       cli.io.err(cli.style.dim("  no changes"));
       return EXIT_OK;
     }
-    const op: Op = { op: "update", block: blockId, markdown: after, ...(preHash ? { expect: { content_hash: preHash } } : {}) };
-    return runOps(cli, ws, repo, [op], values.actor ? { actor: values.actor } : {});
+    return runSugar(cli, ws, repo, updateBlockEffects(blockId, { markdown: after, ...(preHash ? { expect: { content_hash: preHash } } : {}) }), values.actor ? { actor: values.actor } : {});
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

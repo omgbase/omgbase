@@ -12,7 +12,7 @@ import { observeFile } from "../sync/observe.js";
 import { apply, planChangeset } from "./apply.js";
 import { commitChangeset, readDocBase, type Effect } from "./commit.js";
 import { listPending } from "./materialize.js";
-import { docsMove, docsSetMeta } from "./docs.js";
+import { docsMove, docsSetMeta } from "./doc-ops.test.helpers.js";
 import { FsDocStore } from "./doc-store.js";
 import { MutationError } from "./tree.js";
 

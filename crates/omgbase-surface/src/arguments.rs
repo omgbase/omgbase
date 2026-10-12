@@ -23,6 +23,13 @@ use serde_json::{Map, Value as Json, json};
 
 use crate::error::{Result, SurfaceError};
 
+/// `apply { ops }` (4.0, `spec/surface` §4): the kernel ops `apply` took
+/// through 3.x are a library/fixture contract (`spec/mutate` §4).
+pub const OPS_RETIRED: &str = "`ops` is no longer an argument — `apply` takes `effects` (the kernel ops are a library/fixture contract since spec/mutate 3.0)";
+/// `dry_run` on `apply` and every sugar tool (4.0): the preview is `plan`.
+pub const DRY_RUN_RETIRED: &str =
+    "`dry_run` is no longer an argument — preview with `plan { effects: [...] }`";
+
 /// The `(tool takes …)` tail: property names in bytewise order, `?` on the
 /// ones not in `required`.
 #[must_use]
@@ -109,9 +116,12 @@ pub fn validate_arguments(tool: &str, schema: &Json, args: &Json) -> Result<()> 
 
 /// What to say about an argument name the tool does not take: the names 3.0
 /// retired are called out with their replacement (`doc` → `id`/`path`,
-/// `block`/`node` → `id`, `heading` → `section`,
-/// `markdown` → `text`) when the tool has the replacement; otherwise the
-/// nearest valid name (Levenshtein ≤ 2, or one a prefix of the other).
+/// `block`/`node` → `id`, `heading` → `section`, `markdown` → `text`) when
+/// the tool has the replacement, and so are the inputs 4.0 retired — `ops`
+/// (where the tool takes `effects`: the kernel ops are a library/fixture
+/// contract), `dry_run` (every preview is `plan`), `attrs` (where the tool
+/// takes `checked`); otherwise the nearest valid name (Levenshtein ≤ 2, or
+/// one a prefix of the other).
 #[must_use]
 pub fn unknown_argument_message(key: &str, props: &Map<String, Json>) -> String {
     let has = |n: &str| props.contains_key(n);
@@ -128,6 +138,15 @@ pub fn unknown_argument_message(key: &str, props: &Map<String, Json>) -> String 
     }
     if key == "markdown" && has("text") {
         return retired("`text`");
+    }
+    if key == "ops" && has("effects") {
+        return OPS_RETIRED.to_owned();
+    }
+    if key == "dry_run" {
+        return DRY_RUN_RETIRED.to_owned();
+    }
+    if key == "attrs" && has("checked") {
+        return retired("`checked`");
     }
     let candidates: Vec<&str> = props.keys().map(String::as_str).collect();
     match nearest(key, &candidates) {
@@ -333,6 +352,43 @@ mod tests {
             "`limit` must be an integer (blocks_search takes limit?, q)"
         );
         assert!(validate_arguments("blocks_search", &q, &json!({ "q": "x", "limit": 5 })).is_ok());
+    }
+
+    /// The inputs 4.0 retired name their replacement (`spec/surface` §4).
+    #[test]
+    fn retired_write_inputs_name_their_replacement() {
+        let apply = json!({ "type": "object", "properties": { "effects": { "type": "array" }, "reason": { "type": "string" } }, "required": ["effects"] });
+        let e = validate_arguments("apply", &apply, &json!({ "ops": [] })).unwrap_err();
+        assert_eq!(
+            e.message,
+            "`ops` is no longer an argument — `apply` takes `effects` (the kernel ops are a library/fixture contract since spec/mutate 3.0) (apply takes effects, reason?)"
+        );
+        let e = validate_arguments("apply", &apply, &json!({ "effects": [], "dry_run": true }))
+            .unwrap_err();
+        assert_eq!(
+            e.message,
+            "`dry_run` is no longer an argument — preview with `plan { effects: [...] }` (apply takes effects, reason?)"
+        );
+        let e = validate_arguments("apply", &apply, &json!({})).unwrap_err();
+        assert_eq!(
+            e.message,
+            "`effects` is required (apply takes effects, reason?)"
+        );
+        let update = json!({ "type": "object", "properties": { "id": { "type": "string" }, "checked": { "type": "boolean" } }, "required": ["id"] });
+        let e = validate_arguments(
+            "blocks_update",
+            &update,
+            &json!({ "id": "b_1", "attrs": {} }),
+        )
+        .unwrap_err();
+        assert_eq!(
+            e.message,
+            "`attrs` is no longer an argument — pass `checked` (blocks_update takes checked?, id)"
+        );
+        // Unknown names are never stripped: the check runs before the handler.
+        let e = validate_arguments("blocks_update", &update, &json!({ "id": "b_1", "zzz": 1 }))
+            .unwrap_err();
+        assert!(e.message.starts_with("unknown argument `zzz` ("));
     }
 
     #[test]

@@ -17,8 +17,10 @@ import { isContainerBlock } from "../format/index.js";
 // revision per touched document, the files materialized after it from the
 // recorded intent (spec/mutate §4 step 5, 2.2; `commit.ts`).
 // dry_run returns rendered diffs without committing. `planChangeset` is the
-// op loop (shared by the dry run and by `docs_move`'s inbound retarget, which
-// commits its effects under the move's own commit); `apply` plans, then commits.
+// op loop (shared by the dry run and the whole-document planner's verify);
+// `apply` plans, then commits. Since spec/mutate 3.0 the kernel request is a
+// library/fixture contract: the public write request is the Effect layer's
+// (`plan.ts`), and the sugar over it lives in `sugar.ts`.
 
 export type Op =
   | { op: "insert"; doc?: string; to: To; markdown: string; expect?: Expect }
@@ -44,15 +46,6 @@ export interface ApplyRequest {
    * contexts (tests) where the in-process serialization of Store.write suffices.
    */
   omgbaseDir?: string;
-  /**
-   * Document-level frontmatter overrides (doc id → new frontmatter raw incl.
-   * fences + trailing separator, or null to drop it). Frontmatter is a
-   * document-level materialization unit (rendered before the block tree), not a
-   * block the six ops address; the whole-document update planner sets it here
-   * when the proposed content changes the frontmatter. The doc is force-loaded
-   * so a frontmatter-only change still commits.
-   */
-  setFrontmatter?: { doc: string; raw: string | null }[];
   /**
    * Commit timestamp (RFC 3339 UTC, spec/store §2.4) stamped on every commit this
    * request records — the `api` commits and any `observed` commit a file-CAS
@@ -134,12 +127,9 @@ export interface ChangesetPlan {
 
 /** spec/mutate §4 steps 1–4: resolve, load, apply the ops in memory, render. */
 export function planChangeset(store: Store, req: Omit<ApplyRequest, "dryRun" | "ts">): ChangesetPlan {
+  // The kernel request (spec/mutate §4, 3.0): the ops alone — a document's file
+  // head (frontmatter) is the effect planner's `setHead`, never a request field.
   const planner = new ChangesetPlanner(store, req.repoId, req.omgbaseDir);
-  // Document-level frontmatter overrides, before the op loop (so a change with
-  // no body ops still loads + commits the doc). Applied to the loaded MutDoc;
-  // renderDoc emits frontmatterRaw verbatim and the commit re-ingest re-derives
-  // properties/edges from the rendered bytes.
-  for (const fm of req.setFrontmatter ?? []) planner.setFrontmatter(fm.doc, fm.raw);
   for (const op of req.ops) planner.push(op);
   return planner.finish();
 }
@@ -264,11 +254,6 @@ export class ChangesetPlanner {
       if (f) return { docId, ...f };
     }
     return null;
-  }
-
-  /** `ApplyRequest.setFrontmatter`'s semantics: replace the frontmatter bytes (incl. fences + separator), leaving the leading trivia. */
-  setFrontmatter(docId: string, raw: string | null): void {
-    this.ensureDoc(docId).frontmatterRaw = raw;
   }
 
   /** spec/mutate §11.3 (2.3): replace everything before the first block — the

@@ -12,6 +12,8 @@ use crate::cli::context::Cli;
 use crate::cli::help::render_help_for;
 use crate::cli::output::{CliError, EXIT_OK, Result};
 
+use omgbase_store::sugar;
+
 use super::machine_out;
 use super::mutate::run_tool;
 
@@ -45,7 +47,10 @@ fn set(cli: &mut Cli, rest: &[String]) -> Result<i32> {
     m.insert("id".to_owned(), json!(node_id));
     m.insert("prop".to_owned(), json!(prop));
     m.insert("value".to_owned(), json!(value));
-    run_tool(cli, "nodes_set", m, a.value("actor"))
+    let (node_id, prop) = (node_id.to_owned(), prop.to_owned());
+    run_tool(cli, "nodes_set", m, a.value("actor"), move |_| {
+        Ok(sugar::set_node(&node_id, &prop, &value))
+    })
 }
 
 fn props(cli: &mut Cli, rest: &[String]) -> Result<i32> {

@@ -1,8 +1,11 @@
-//! `retarget` (§6): `links_retarget`, plan by default — per hit the block id
-//! and the unified diff of its raw (§9 Fixed: the same diff every preview
-//! prints); `--apply` commits through the block confirmation and honors
-//! `--dry-run` like any block mutator.
+//! `retarget` (§6; cli 4.0): plan by default — without `--apply` it is `plan
+//! { effects: [retarget] }` and prints, per hit of the Plan's
+//! `preview.retarget[0].hits`, the block id and the unified diff of its raw
+//! (§9 Fixed: the same diff every preview prints); `--apply` commits the
+//! `links_retarget` tool's call (the Receipt + `hits` + `pairs`) through the
+//! Receipt confirmation and honors `--dry-run` like any block mutator (§3.6).
 
+use omgbase_store::sugar;
 use serde_json::{Map, Value as Json, json};
 
 use crate::cli::argv::{Opt, parse_args};
@@ -10,7 +13,7 @@ use crate::cli::context::Cli;
 use crate::cli::help::{render_help_for, wants_help};
 use crate::cli::output::{CliError, EXIT_OK, Result};
 
-use super::mutate::{apply_result_of, render_apply, render_diffs, set_actor, unified_diff_lines};
+use super::mutate::{effects_json, run_tool, unified_diff_lines};
 use super::{machine_out, str_of};
 
 pub fn retarget(cli: &mut Cli, args: &[String]) -> Result<i32> {
@@ -25,46 +28,27 @@ pub fn retarget(cli: &mut Cli, args: &[String]) -> Result<i32> {
         return Err(CliError::usage("retarget requires <from> and <to> targets"));
     };
     let (from, to) = (from.to_owned(), to.to_owned());
-    let apply = a.flag("apply");
-    if apply {
-        set_actor(cli, a.value("actor"))?;
-    }
-    let mut m = Map::new();
-    m.insert("from_target".to_owned(), json!(from));
-    m.insert("to_target".to_owned(), json!(to));
-    if let Some(g) = a.value("scope").filter(|g| !g.is_empty()) {
-        m.insert("path_glob".to_owned(), json!(g));
-    }
-    m.insert("dry_run".to_owned(), json!(!apply || cli.flags.dry_run));
-    let res = cli.call("links_retarget", Json::Object(m))?;
-    if apply && cli.remote_mode() {
-        // §2.3: the reference's remote `--apply` renders the tool's whole
-        // result (`{ hits, pairs, applied, ...apply result }`) in `--json`
-        // and `ok retargeted N block(s)` for humans — not the block
-        // confirmation the local path prints. A dry run previews as every
-        // write does (§3.6).
-        cli.capture(&res);
-        if let Some(code) = machine_out(cli, &res, None, None) {
-            return code;
+    let scope = a
+        .value("scope")
+        .filter(|g| !g.is_empty())
+        .map(str::to_owned);
+    let effects = sugar::retarget(&[(from.clone(), to.clone())], scope.as_deref());
+    if a.flag("apply") {
+        let mut m = Map::new();
+        m.insert("from_target".to_owned(), json!(from));
+        m.insert("to_target".to_owned(), json!(to));
+        if let Some(g) = &scope {
+            m.insert("path_glob".to_owned(), json!(g));
         }
-        if cli.flags.dry_run {
-            render_diffs(cli, res.get("diffs"));
-            return Ok(EXIT_OK);
-        }
-        let n = res.get("hits").and_then(Json::as_array).map_or(0, Vec::len);
-        cli.io.err(&cli.style.dim(&format!(
-            "  {} retargeted {n} block(s)",
-            cli.style.ok(cli.style.glyphs().ok)
-        )));
-        return Ok(EXIT_OK);
+        return run_tool(cli, "links_retarget", m, a.value("actor"), move |_| {
+            Ok(effects)
+        });
     }
-    if apply {
-        return render_apply(cli, apply_result_of(res));
-    }
-    // The plan: `{ from, to, hits }` (§9 Fixed: the `links_retarget` dry run).
-    let hits: Vec<Json> = res
-        .get("hits")
-        .and_then(Json::as_array)
+    // The plan (default): `{ from, to, hits }` from the Plan's
+    // `preview.retarget[0]` (a plan over no hit still carries it, empty).
+    let plan = cli.call("plan", json!({ "effects": effects_json(&effects) }))?;
+    let hits: Vec<Json> = plan["preview"]["retarget"][0]["hits"]
+        .as_array()
         .cloned()
         .unwrap_or_default();
     let plan = json!({ "from": from, "to": to, "hits": hits });

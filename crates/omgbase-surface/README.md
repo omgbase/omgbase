@@ -32,7 +32,7 @@ what a client sees of an omgbase repository.
 - **The tool catalog** (`catalog`): `Surface` — every tool of the §4 table
   with its JSON-schema input, repo scoping by slug, server-side ref and
   heading resolution, CAS pinning, the `{ error, message, data?, retriable }`
-  envelope, `origin.actor = "agent:mcp"`, a post-mutation hook that dry runs
+  envelope, `origin.actor = "agent:mcp"`, a post-mutation hook that `plan`s
   never fire. Transport-agnostic: the `omgbase` binary serves it over MCP
   stdio.
 

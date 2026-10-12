@@ -87,7 +87,7 @@
             "actor": "agent:test",
             "reason": "create new.md",
             "checkpoint_id": null,
-            "ops": null
+            "ops": "{\"effects\":[{\"markdown\":\"# New\\n\\nHello.\",\"op\":\"create\",\"path\":\"new.md\"}],\"plan_id\":\"994cb0c3231715d030cf1c5a9a92656f64e6f2fdb621b0fe180ba441e53f211f\",\"v\":1}"
           }
         ],
         "revisions": [
@@ -107,18 +107,18 @@
             "commit_id": "c_0",
             "block_id": "b_0",
             "kind": "inserted",
-            "confidence": null,
-            "reason": null,
-            "matcher_v": "m2.3",
+            "confidence": 1,
+            "reason": "api",
+            "matcher_v": null,
             "detail": {}
           },
           {
             "commit_id": "c_0",
             "block_id": "b_1",
             "kind": "inserted",
-            "confidence": null,
-            "reason": null,
-            "matcher_v": "m2.3",
+            "confidence": 1,
+            "reason": "api",
+            "matcher_v": null,
             "detail": {}
           }
         ],
@@ -203,7 +203,7 @@
             "actor": null,
             "reason": "create new.md",
             "checkpoint_id": null,
-            "ops": null
+            "ops": "{\"effects\":[{\"frontmatter\":{\"count\":2,\"draft\":true,\"tags\":[\"a\",\"b\"],\"title\":\"Hi\"},\"markdown\":\"# New\\n\",\"op\":\"create\",\"path\":\"new.md\"}],\"plan_id\":\"48169f4bfd825b2ddaf696e59785100da90356360c79654d27dd9db7b9a41d61\",\"v\":1}"
           }
         ],
         "revisions": [
@@ -223,9 +223,9 @@
             "commit_id": "c_0",
             "block_id": "b_0",
             "kind": "inserted",
-            "confidence": null,
-            "reason": null,
-            "matcher_v": "m2.3",
+            "confidence": 1,
+            "reason": "api",
+            "matcher_v": null,
             "detail": {}
           }
         ],
@@ -300,7 +300,7 @@
             "actor": null,
             "reason": "create new.md",
             "checkpoint_id": null,
-            "ops": null
+            "ops": "{\"effects\":[{\"frontmatter\":{},\"markdown\":\"Body only.\\n\",\"op\":\"create\",\"path\":\"new.md\"}],\"plan_id\":\"d121d0e5bd2ef1301b162054ce3998629265b544d5ae3bb3dec2ec1a2c8c952a\",\"v\":1}"
           }
         ],
         "revisions": [
@@ -320,9 +320,9 @@
             "commit_id": "c_0",
             "block_id": "b_0",
             "kind": "inserted",
-            "confidence": null,
-            "reason": null,
-            "matcher_v": "m2.3",
+            "confidence": 1,
+            "reason": "api",
+            "matcher_v": null,
             "detail": {}
           }
         ],
@@ -398,7 +398,7 @@
             "actor": null,
             "reason": "create dir/sub/x.md",
             "checkpoint_id": null,
-            "ops": null
+            "ops": "{\"effects\":[{\"markdown\":\"# X\\n\",\"op\":\"create\",\"path\":\"dir/sub/x.md\"}],\"plan_id\":\"e0405eb3fee2245a14c04b8fa534bc14ca9cd317fa455ce6f2bb72c7621e390c\",\"v\":1}"
           }
         ],
         "revisions": [
@@ -418,9 +418,9 @@
             "commit_id": "c_0",
             "block_id": "b_0",
             "kind": "inserted",
-            "confidence": null,
-            "reason": null,
-            "matcher_v": "m2.3",
+            "confidence": 1,
+            "reason": "api",
+            "matcher_v": null,
             "detail": {}
           }
         ],
@@ -930,7 +930,7 @@
             "actor": null,
             "reason": "move a.md -> moved/a.md",
             "checkpoint_id": null,
-            "ops": null
+            "ops": "{\"effects\":[{\"op\":\"move\",\"retarget_inbound\":false,\"target\":{\"id\":\"d_0\",\"kind\":\"document\",\"path\":\"a.md\"},\"to\":\"moved/a.md\"}],\"plan_id\":\"e4d089ded884194c73157a3a56db05a1d151210659acef64c66b105e9581f099\",\"v\":1}"
           }
         ],
         "revisions": [
@@ -1303,7 +1303,7 @@
             "actor": null,
             "reason": "move a.md -> moved/a.md",
             "checkpoint_id": null,
-            "ops": null
+            "ops": "{\"effects\":[{\"op\":\"move\",\"retarget_inbound\":true,\"target\":{\"id\":\"d_0\",\"kind\":\"document\",\"path\":\"a.md\"},\"to\":\"moved/a.md\"}],\"plan_id\":\"4973477e31b390701a53234705db9e136ef499d76518254fde40805b9e043186\",\"v\":1}"
           }
         ],
         "revisions": [
@@ -1703,7 +1703,7 @@
             "actor": null,
             "reason": "move a.md -> moved/a.md",
             "checkpoint_id": null,
-            "ops": null
+            "ops": "{\"effects\":[{\"op\":\"move\",\"retarget_inbound\":true,\"target\":{\"id\":\"d_0\",\"kind\":\"document\",\"path\":\"a.md\"},\"to\":\"moved/a.md\"}],\"plan_id\":\"4973477e31b390701a53234705db9e136ef499d76518254fde40805b9e043186\",\"v\":1}"
           }
         ],
         "revisions": [
@@ -2595,7 +2595,7 @@
             "actor": null,
             "reason": "delete a.md",
             "checkpoint_id": null,
-            "ops": null
+            "ops": "{\"effects\":[{\"op\":\"remove\",\"target\":{\"id\":\"d_0\",\"kind\":\"document\",\"path\":\"a.md\"}}],\"plan_id\":\"41cfe54a1c14bc5adf428e01247bf0e8ab746c739978e368d84578a8a63cfd6d\",\"v\":1}"
           }
         ],
         "revisions": [
@@ -2942,7 +2942,7 @@
             "actor": null,
             "reason": "set_meta a.md",
             "checkpoint_id": null,
-            "ops": null
+            "ops": "{\"effects\":[{\"field\":\"frontmatter.status\",\"op\":\"set\",\"target\":{\"id\":\"d_0\",\"kind\":\"document\",\"path\":\"a.md\"},\"value\":\"done\"},{\"field\":\"frontmatter.tags\",\"op\":\"unset\",\"target\":{\"id\":\"d_0\",\"kind\":\"document\",\"path\":\"a.md\"}}],\"plan_id\":\"21c8206d1150cc2f581e2932069f23f6fc8d58bf08cf8f98352d35e6ff2e8f8c\",\"v\":1}"
           }
         ],
         "revisions": [
@@ -2989,19 +2989,19 @@
           {
             "commit_id": "c_1",
             "block_id": "b_0",
-            "kind": "same",
+            "kind": "edited",
             "confidence": 1,
-            "reason": "exact_hash",
-            "matcher_v": "m2.3",
+            "reason": "api",
+            "matcher_v": null,
             "detail": {}
           },
           {
             "commit_id": "c_1",
             "block_id": "b_1",
-            "kind": "same",
+            "kind": "edited",
             "confidence": 1,
-            "reason": "exact_hash",
-            "matcher_v": "m2.3",
+            "reason": "api",
+            "matcher_v": null,
             "detail": {}
           }
         ],
@@ -3148,7 +3148,7 @@
             "actor": null,
             "reason": "set_meta a.md",
             "checkpoint_id": null,
-            "ops": null
+            "ops": "{\"effects\":[{\"field\":\"frontmatter.title\",\"op\":\"set\",\"target\":{\"id\":\"d_0\",\"kind\":\"document\",\"path\":\"a.md\"},\"value\":\"T\"}],\"plan_id\":\"51d8f2eb599174dd3e4d4b6daa8a3abf91b1c328d0ced7acf061d2d512826a9e\",\"v\":1}"
           }
         ],
         "revisions": [
@@ -3204,28 +3204,28 @@
           {
             "commit_id": "c_1",
             "block_id": "b_0",
-            "kind": "same",
+            "kind": "edited",
             "confidence": 1,
-            "reason": "exact_hash",
-            "matcher_v": "m2.3",
+            "reason": "api",
+            "matcher_v": null,
             "detail": {}
           },
           {
             "commit_id": "c_1",
             "block_id": "b_1",
-            "kind": "same",
+            "kind": "edited",
             "confidence": 1,
-            "reason": "exact_hash",
-            "matcher_v": "m2.3",
+            "reason": "api",
+            "matcher_v": null,
             "detail": {}
           },
           {
             "commit_id": "c_1",
             "block_id": "b_2",
-            "kind": "same",
+            "kind": "edited",
             "confidence": 1,
-            "reason": "exact_hash",
-            "matcher_v": "m2.3",
+            "reason": "api",
+            "matcher_v": null,
             "detail": {}
           }
         ],
@@ -3356,7 +3356,7 @@
             "actor": null,
             "reason": "set_meta a.md",
             "checkpoint_id": null,
-            "ops": null
+            "ops": "{\"effects\":[{\"field\":\"frontmatter.title\",\"op\":\"unset\",\"target\":{\"id\":\"d_0\",\"kind\":\"document\",\"path\":\"a.md\"}},{\"field\":\"frontmatter.tags\",\"op\":\"unset\",\"target\":{\"id\":\"d_0\",\"kind\":\"document\",\"path\":\"a.md\"}}],\"plan_id\":\"387a016f85a3941458bbf38f8d674abb08eaf0e766eea86eda85f51286efb547\",\"v\":1}"
           }
         ],
         "revisions": [
@@ -3403,19 +3403,19 @@
           {
             "commit_id": "c_1",
             "block_id": "b_0",
-            "kind": "same",
+            "kind": "edited",
             "confidence": 1,
-            "reason": "exact_hash",
-            "matcher_v": "m2.3",
+            "reason": "api",
+            "matcher_v": null,
             "detail": {}
           },
           {
             "commit_id": "c_1",
             "block_id": "b_1",
-            "kind": "same",
+            "kind": "edited",
             "confidence": 1,
-            "reason": "exact_hash",
-            "matcher_v": "m2.3",
+            "reason": "api",
+            "matcher_v": null,
             "detail": {}
           }
         ],

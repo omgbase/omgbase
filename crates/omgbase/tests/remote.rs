@@ -764,6 +764,25 @@ fn every_write_over_the_reference_server_lands_like_local() {
         assert_same(what, &l, &r);
         ok_lines(what, &l)
     };
+    // A block write whose stdout differs by design (cli 4.0, §4): the same
+    // exit and confirmation on both sides; the local path has the plan and
+    // prints the ids the preview names, the remote path holds the Receipt
+    // alone and prints every id the plan minted (`new_ids`) — none for a
+    // write that mints nothing, the wrapper's included for a list re-parse.
+    let same_write =
+        |what: &str, args: &[&str], stdin: Option<&str>| -> (Vec<String>, Vec<String>) {
+            let (l, r) = p.both(&server, args, stdin);
+            assert_eq!(r.status.code(), l.status.code(), "{what}: exit");
+            assert_eq!(
+                sans_mcp(&text(&r.stderr)),
+                text(&l.stderr),
+                "{what}: stderr"
+            );
+            (
+                ok_lines(what, &l),
+                ok_lines(&format!("{what} --server"), &r),
+            )
+        };
     // The lockstep: each step on both workspaces, compared, then the next.
     let created = same("new", &["new", "notes/c.md", "-m", "# C\n\nHello.\n"]);
     assert_eq!(created.len(), 1, "the doc id");
@@ -771,8 +790,15 @@ fn every_write_over_the_reference_server_lands_like_local() {
         "new --dry-run",
         &["--dry-run", "new", "notes/d.md", "-m", "# D\n"],
     );
-    let inserted = same("insert", &["insert", &list, "-m", "- [ ] task three"]);
-    assert_eq!(inserted.len(), 1, "the minted id");
+    let (inserted, minted) =
+        same_write("insert", &["insert", &list, "-m", "- [ ] task three"], None);
+    assert_eq!(inserted.len(), 1, "the live id");
+    assert_eq!(
+        minted.len(),
+        2,
+        "every mint, the wrapper's included: {minted:?}"
+    );
+    assert!(minted.contains(&inserted[0]), "{minted:?} ∌ {inserted:?}");
     same(
         "insert --json --dry-run --at",
         &[
@@ -787,20 +813,43 @@ fn every_write_over_the_reference_server_lands_like_local() {
         ],
     );
     same("append", &["append", &tasks, "-m", "Appended para."]);
-    same("done", &["done", &task_one]);
+    let (done_local, done_remote) = same_write("done", &["done", &task_one], None);
+    assert_eq!(
+        done_local,
+        std::slice::from_ref(&task_one),
+        "the checked task"
+    );
+    assert!(
+        done_remote.is_empty(),
+        "a check mints nothing: {done_remote:?}"
+    );
     same(
         "done --undo --dry-run",
         &["--dry-run", "done", &task_one, "--undo"],
     );
 
     // `update <b_>`: the CAS notice is the local path's; the reference's
-    // remote branch pins CAS server-side and says nothing.
+    // remote branch pins CAS server-side and says nothing. The ids differ
+    // by design (cli 4.0, §4): the local path prints the updated block (the
+    // live id its plan names), the remote path every id the task's re-parse
+    // minted (`new_ids`, discarded wrapper mints included).
     let (l, r) = p.both(
         &server,
         &["update", &task_two, "-m", "- [ ] task two (edited)"],
         None,
     );
-    assert_eq!(text(&r.stdout), text(&l.stdout), "update <b_>: the id");
+    assert_eq!(
+        text(&l.stdout),
+        format!("{task_two}\n"),
+        "update <b_>: the id"
+    );
+    assert!(
+        ok_lines("update --server", &r)
+            .iter()
+            .all(|id| id.starts_with("b_")),
+        "{}",
+        text(&r.stdout)
+    );
     assert_eq!(
         text(&l.stderr),
         format!(
@@ -825,13 +874,12 @@ fn every_write_over_the_reference_server_lands_like_local() {
         None,
     );
     let lv: serde_json::Value = serde_json::from_str(text(&l.stdout).trim()).unwrap();
-    let mut rv: serde_json::Value = serde_json::from_str(text(&r.stdout).trim()).unwrap();
-    assert_eq!(rv["id"], task_two);
-    assert_eq!(rv["ids"], serde_json::json!([task_two]));
-    let rm = rv.as_object_mut().unwrap();
-    rm.remove("id");
-    rm.remove("ids");
-    assert_eq!(rv, lv, "the ApplyResult underneath");
+    let rv: serde_json::Value = serde_json::from_str(text(&r.stdout).trim()).unwrap();
+    assert!(
+        rv.get("id").is_none() && rv.get("ids").is_none(),
+        "4.0: the Receipt alone: {rv}"
+    );
+    assert_eq!(rv, lv, "the Receipt, both sides");
 
     // `update <doc>` (cli 4.0: one `set content` effect): the confirmation
     // is the Receipt's on both sides; the ids differ by design — the local
@@ -882,18 +930,30 @@ fn every_write_over_the_reference_server_lands_like_local() {
             "# C\n\nHello again.\n",
         ],
     );
-    let split = same("split", &["split", &alpha, "--at", "6"]);
+    let (split, split_remote) = same_write("split", &["split", &alpha, "--at", "6"], None);
     assert_eq!(split.len(), 2, "the two halves: {split:?}");
-    same(
+    assert_eq!(
+        split_remote,
+        [split[1].clone()],
+        "the one mint, the second half"
+    );
+    let (merged, merged_remote) = same_write(
         "merge --sep",
         &["merge", &split[0], &split[1], "--sep", " "],
+        None,
     );
-    same(
+    assert_eq!(merged, std::slice::from_ref(&split[0]));
+    assert!(merged_remote.is_empty(), "{merged_remote:?}");
+    let (moved_blocks, moved_remote) = same_write(
         "move --to --at",
         &["move", &task_two, "--to", &list, "--at", "start"],
+        None,
     );
+    assert_eq!(moved_blocks, std::slice::from_ref(&task_two));
+    assert!(moved_remote.is_empty(), "{moved_remote:?}");
     let node = p.id(r#"from nodes where kind == "md:task" && value == "task three""#);
-    same("node set", &["node", "set", &node, "checked", "true"]);
+    let (_, node_remote) = same_write("node set", &["node", "set", &node, "checked", "true"], None);
+    assert!(node_remote.is_empty(), "{node_remote:?}");
     let r = p.remote(&server, &["node", "props", &node], None);
     assert_eq!(r.status.code(), Some(2));
     assert_eq!(
@@ -924,8 +984,9 @@ fn every_write_over_the_reference_server_lands_like_local() {
             "notes/*",
         ],
     );
-    // `retarget --apply`: the reference's remote branch renders the tool's
-    // result its own way — `ok retargeted N block(s)`, no ids on stdout.
+    // `retarget --apply` (cli 4.0): the Receipt confirmation on both sides;
+    // the local path has the plan and lists the rewritten block, the remote
+    // one lists the ids the plan minted — none for a retarget.
     let (l, r) = p.both(
         &server,
         &["retarget", "/notes/b.md", "/notes/moved.md", "--apply"],
@@ -943,8 +1004,19 @@ fn every_write_over_the_reference_server_lands_like_local() {
         1,
         "the block id"
     );
-    assert_eq!(sans_mcp(&text(&r.stderr)), "  ok retargeted 1 block(s)\n");
-    assert_eq!(text(&r.stdout), "");
+    assert_eq!(
+        sans_mcp(&text(&r.stderr)),
+        "  ok committed · 1 document touched\n"
+    );
+    // The remote lists the mints alone: the rewritten paragraph's re-parse
+    // minted one discarded id (`spec/mutate` §10), the live block is not new.
+    assert!(
+        ok_lines("retarget --apply --server", &r)
+            .iter()
+            .all(|id| id.starts_with("b_")),
+        "{}",
+        text(&r.stdout)
+    );
     let (l, r) = p.both(
         &server,
         &[
@@ -958,10 +1030,12 @@ fn every_write_over_the_reference_server_lands_like_local() {
     );
     let lv: serde_json::Value = serde_json::from_str(text(&l.stdout).trim()).unwrap();
     let rv: serde_json::Value = serde_json::from_str(text(&r.stdout).trim()).unwrap();
-    assert_eq!(rv["applied"], true);
+    assert!(rv.get("applied").is_none(), "4.0: no `applied`: {rv}");
     assert_eq!(rv["hits"].as_array().map(Vec::len), Some(1));
-    assert_eq!(rv["results"], lv["results"]);
+    assert_eq!(rv["pairs"], lv["pairs"]);
     assert_eq!(rv["revisions"], lv["revisions"]);
+    assert_eq!(rv["plan_id"], lv["plan_id"]);
+    assert_eq!(rv["committed"], serde_json::json!(true));
     // Back where the plan wants it, for the final state below (the two
     // renderings differ as above; both commit).
     let (l, r) = p.both(
@@ -991,16 +1065,18 @@ fn every_write_over_the_reference_server_lands_like_local() {
         ],
     );
     let changeset = format!(
-        r#"{{"ops":[{{"op":"insert","to":{{"parent":"{list}","at":"end"}},"markdown":"- [ ] via apply"}}]}}"#
+        r#"{{"effects":[{{"op":"insert","into":{{"kind":"block","id":"{list}"}},"markdown":"- [ ] via apply"}}]}}"#
     );
-    let (l, r) = p.both(
-        &server,
+    let (applied, applied_remote) = same_write(
+        "apply -f -",
         &["apply", "-f", "-", "--reason", "probe"],
         Some(&changeset),
     );
-    assert_same("apply -f -", &l, &r);
-    assert_eq!(ok_lines("apply", &l).len(), 1);
-    same("rm", &["rm", &intro]);
+    assert_eq!(applied.len(), 1);
+    assert_eq!(applied_remote.len(), 2, "{applied_remote:?}");
+    let (removed, removed_remote) = same_write("rm", &["rm", &intro], None);
+    assert_eq!(removed, std::slice::from_ref(&intro));
+    assert!(removed_remote.is_empty(), "{removed_remote:?}");
     same("rm --doc", &["rm", "--doc", "notes/c.md"]);
     same(
         "rm --doc --dry-run",
@@ -1100,7 +1176,10 @@ fn the_reference_omg_reaches_omgbase_mcp_as_its_server() {
     // A write: the same confirmation and the same bytes landed on both. The
     // minted id differs: the reference client spawns its stdio engine with
     // the MCP SDK's default (safelisted) environment, so the minter seam
-    // never reaches `omgbase mcp` and the id is a production one.
+    // never reaches `omgbase mcp` and the id is a production one; and the
+    // remote client, holding the Receipt alone, lists every id the plan
+    // minted — the list re-parse's discarded wrapper mint included (cli 4.0
+    // §4) — where the local one lists the live id its plan names.
     let (l, r) = both(&["insert", &list, "-m", "- [ ] from the reference"]);
     assert_eq!(r.status.code(), l.status.code(), "{}", text(&r.stderr));
     assert_eq!(sans_mcp(&text(&r.stderr)), text(&l.stderr));
@@ -1109,9 +1188,9 @@ fn the_reference_omg_reaches_omgbase_mcp_as_its_server() {
         ok_lines("omg --server insert", &r),
     );
     assert_eq!(lid.len(), 1, "{lid:?}");
-    assert_eq!(rid.len(), 1, "{rid:?}");
+    assert_eq!(rid.len(), 2, "{rid:?}");
     assert!(
-        lid[0].starts_with("b_") && rid[0].starts_with("b_"),
+        lid[0].starts_with("b_") && rid.iter().all(|id| id.starts_with("b_")),
         "{lid:?} {rid:?}"
     );
     let (l, r) = both(&["cat", "notes/a.md"]);

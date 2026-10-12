@@ -838,44 +838,50 @@ instead; then the projection deep-equals `expect`. **Generation**: `packages/cor
   plan's `set_frontmatter[].raw` therefore replaces everything before the
   first block (§11.4); the kernel request's `set_frontmatter` was unchanged
   through 2.x and is gone at 3.0 (§4).
-- **Pinned (2.3, with surface 3.2) — the block-level sugar tools lower
-  through the planner.** `blocks_insert`, `blocks_update`, `blocks_move`,
-  `blocks_remove`, `blocks_split`, `blocks_merge`, `blocks_check`,
-  `nodes_set`, `blocks_append`, `docs_append`, `links_retarget` and
-  `links_repair` are `apply { effects }` sugar (ADR-021's migration phase):
-  each tool builds its effects (`insert` / `set markdown` / `set
+- **Pinned (2.3, with surface 3.2; 3.0 with surface 4.0) — the sugar tools
+  lower through the planner.** `blocks_insert`, `blocks_update`,
+  `blocks_move`, `blocks_remove`, `blocks_split`, `blocks_merge`,
+  `blocks_check`, `nodes_set`, `blocks_append`, `docs_append`,
+  `links_retarget`, `links_repair`, and since 3.0 the document operations of
+  §6 (`docs_create`, `docs_move`, `docs_delete`, `docs_set_meta`) and the
+  whole-document update (§7), are `apply { effects }` sugar (ADR-021): each
+  tool builds its effects through the shared builders (`sugar.ts` in the
+  reference — one builder per operation, the same table the `omg` verbs and
+  the fixture `docs` step use: `insert` / `set markdown` / `set
   attrs.checked` / `move` / `remove` / `split` / `merge` / `set` on a node /
-  `retarget`, with the tool's name as `origin.reason`), plans and executes
-  them as one §4 request, and renders the §4 apply result from the plan's
-  `preview` — `results` with every `$new.n` replaced by the receipt's id
-  (committed) or, on a dry run, by one production mint per `new_ids` entry
-  in order (the realize-symbols shim: the symbolic minter is the kernel's
-  own mint sequence, so a dry run consumes exactly the ids the legacy path
-  burned — `spec/surface` §9, `spec/cli` §3.6), `revisions` the receipt's or
-  the preview's, `diffs` on a dry run only; a planner error loses its
-  `effect_index` (the tool built the effects) and keeps the kernel's data.
-  Their commits carry the intent record in `commits.ops`; the library paths
-  (`apply`, the macros, the document operations) keep NULL. Five visible
-  consequences, pinned: (1) **`blocks_update`'s `expect` is a guard the
-  planner completes** — `expect: {}` or an order-only `{
+  `retarget` / `create` / `move document` / `remove document` / `set`+`unset
+  frontmatter.<k>` / `set content`, with the tool's name — or the §6 reason —
+  as `origin.reason`), plans and executes them as one §11.7 request and
+  returns the Receipt; a planner error loses its `effect_index` (the tool
+  built the effects) and keeps the kernel's data. Every such commit carries
+  the intent record in `commits.ops`; the library kernel `apply` and the
+  macros (fixture contracts) keep NULL. Through surface 3.x the tools
+  rendered the §4 apply result from the plan's `preview` — `results` with
+  every `$new.n` replaced by the receipt's id or, on a dry run, by one
+  production mint per `new_ids` entry (the realize-symbols shim, so a dry
+  run consumed exactly the ids the legacy path burned) — retired with
+  `dry_run` at surface 4.0: the preview is `plan`, which mints nothing. Five
+  visible consequences, pinned: (1) **`blocks_update`'s `expect` is a guard
+  the planner completes** — `expect: {}` or an order-only `{
   parent_children_hash }` with `markdown` pins the content hash from the
   live row and proceeds (through surface 3.1 the kernel saw the caller's
   bag as given and failed `stale_expectation` "expect.content_hash
   required"); a given `content_hash` is checked as given. (2)
   **`blocks_check` naming one block twice is one write** — the planner drops
-  the identical duplicate (§11.3) and the result holds one entry per
-  distinct block (through 3.1 the second op failed `stale_expectation`
+  the identical duplicate (§11.3); one effect per distinct block in the
+  intent record (through 3.1 the second op failed `stale_expectation`
   against the pre-check hash). (3) `blocks_update` with `markdown` and
   `checked` together is two effects — the caller's `expect` guards the
   first, the planner pins the second to the block as the first left it —
-  two kernel ops and two results, collapsed to the first (the one-op shape;
-  the intent record shows both). (4) `blocks_remove` / `blocks_merge` now
-  pin `expect[id].content_hash` per block (invisible in results and bytes).
-  (5) `blocks_update`'s `attrs` bag beyond `checked` — another key, a
-  non-boolean `checked`, or a bag that sets nothing (a no-op revision) —
-  stays on the legacy kernel path until 4.0. An empty `blocks`/`ids` list
-  is the surface's argument error (`spec/surface` §4), no longer a
-  malformed kernel op.
+  two kernel ops (both in the intent record). (4) `blocks_remove` /
+  `blocks_merge` pin `expect[id].content_hash` per block (invisible in
+  bytes). (5) `blocks_update`'s `attrs` bag beyond `checked` — another key,
+  a non-boolean `checked`, or a bag that sets nothing (a no-op revision) —
+  stayed on the legacy kernel path through 3.x; at 4.0 `attrs` is a retired
+  name and a `blocks_update` that sets nothing is the argument error "pass
+  `markdown` and/or `checked`". An empty `blocks`/`ids` list is the
+  surface's argument error (`spec/surface` §4), no longer a malformed
+  kernel op.
 
 ## 11. Effects and plans
 

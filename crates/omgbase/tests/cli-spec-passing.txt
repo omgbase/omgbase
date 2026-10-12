@@ -249,6 +249,7 @@ mutate::apply-file
 mutate::apply-file-stdin
 mutate::apply-missing-block
 mutate::apply-not-a-changeset
+mutate::apply-ops-retired
 mutate::apply-placeholder
 mutate::apply-stale
 mutate::done

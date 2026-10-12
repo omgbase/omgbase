@@ -81,8 +81,9 @@ export interface Opset {
   /**
    * Document-level frontmatter change, when the proposed content changes it.
    * `raw` is the new frontmatter incl. fences + trailing separator (null drops
-   * it). Frontmatter is a materialization unit, not a block op; apply sets it
-   * via ApplyRequest.setFrontmatter.
+   * it). Frontmatter is a materialization unit, not a block op; the `set
+   * content` lowering sets it as the document's file head (`setHead`,
+   * spec/mutate §11.3 — the kernel request's `set_frontmatter` through 2.x).
    */
   frontmatter?: { raw: string | null };
   summary: OpsetSummary;

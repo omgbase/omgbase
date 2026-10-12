@@ -370,9 +370,12 @@ describe("doc-level MCP tools (docs_create/move/delete/set_meta)", () => {
       path: "sub/fresh.md",
       markdown: "# Fresh\n\nbody\n",
       frontmatter: { title: "Fresh", status: "draft" },
-    })) as { payload: { id: string; path: string }; isError: boolean };
+    })) as { payload: { revisions: { id: string; path: string }[]; new_ids: Record<string, string>; committed: boolean }; isError: boolean };
     expect(isError).toBe(false);
-    expect(payload.path).toBe("/sub/fresh.md");
+    // The Receipt (4.0): revisions[0] is the created document, `$new.0` its id.
+    expect(payload.revisions[0]!.path).toBe("/sub/fresh.md");
+    expect(payload.new_ids["$new.0"]).toBe(payload.revisions[0]!.id);
+    expect(payload.committed).toBe(true);
     const { payload: q } = (await call("query", { query: 'from docs where status == "draft"' })) as { payload: { hits: { path: string }[] } };
     expect(q.hits.map((h) => h.path)).toContain("/sub/fresh.md");
   });
@@ -391,9 +394,11 @@ describe("doc-level MCP tools (docs_create/move/delete/set_meta)", () => {
   });
 
   it("docs_move renames the document", async () => {
-    const { payload, isError } = (await call("docs_move", { path: "notes.md", to_path: "moved/notes.md" })) as { payload: { path: string }; isError: boolean };
+    const { payload, isError } = (await call("docs_move", { path: "notes.md", to_path: "moved/notes.md" })) as { payload: { committed: boolean; commit: string; revisions: unknown[] }; isError: boolean };
     expect(isError).toBe(false);
-    expect(payload.path).toBe("/moved/notes.md");
+    // The Receipt: a move with nothing to rewrite advances no revision; the commit is the rename.
+    expect(payload).toMatchObject({ committed: true, revisions: [] });
+    expect(payload.commit).toMatch(/^c_/);
     const { payload: q } = (await call("query", { query: 'from docs where layer == "working"' })) as { payload: { hits: { path: string }[] } };
     expect(q.hits.map((h) => h.path)).toContain("/moved/notes.md");
   });
@@ -408,11 +413,11 @@ describe("doc-level MCP tools (docs_create/move/delete/set_meta)", () => {
 
     // Opted-out move: b's link dangles and is reported; a's phantom resolves.
     const { payload, isError } = (await call("docs_move", { path: "notes.md", to_path: "moved/notes.md", retarget_inbound: false })) as {
-      payload: { path: string; dangling: { doc_id: string; path: string; block_id: string | null; target: string; anchor: string | null }[]; retargeted: unknown };
+      payload: { committed: boolean; dangling: { doc_id: string; path: string; block_id: string | null; target: string; anchor: string | null }[]; retargeted: unknown };
       isError: boolean;
     };
     expect(isError).toBe(false);
-    expect(payload.path).toBe("/moved/notes.md");
+    expect(payload.committed).toBe(true);
     expect(payload.dangling).toHaveLength(1);
     expect(payload.dangling[0]).toMatchObject({ path: "/b.md", target: "/notes.md", anchor: "Risks" });
     expect(payload.retargeted).toBeNull();
@@ -433,34 +438,48 @@ describe("doc-level MCP tools (docs_create/move/delete/set_meta)", () => {
     expect(staleEnd.payload.stale.map((s) => `${s.path}→${s.target}`)).toEqual(["/b.md→/notes.md"]);
   });
 
-  it("dry_run on the document tools validates and returns diffs without writing", async () => {
-    const created = (await call("docs_create", { path: "sub/fresh.md", markdown: "# Fresh\n", dry_run: true })) as { payload: { id: string; committed: boolean; diffs: Record<string, { before: string; after: string }> }; isError: boolean };
+  it("`plan` over the document effects validates and previews without writing; `dry_run` is refused by name (4.0)", async () => {
+    const created = (await call("plan", { effects: [{ op: "create", path: "sub/fresh.md", markdown: "# Fresh\n" }] })) as { payload: { new_ids: unknown[]; preview: { diffs: Record<string, { before: string; after: string }> } }; isError: boolean };
     expect(created.isError).toBe(false);
-    expect(created.payload.committed).toBe(false);
-    expect(created.payload.diffs).toEqual({ "/sub/fresh.md": { before: "", after: "# Fresh\n" } });
+    expect(created.payload.new_ids).toEqual([{ symbol: "$new.0", kind: "document" }, { symbol: "$new.1", kind: "block" }]);
+    expect(created.payload.preview.diffs).toEqual({ "/sub/fresh.md": { before: "", after: "# Fresh\n" } });
     expect(existsSync(join(root, "sub/fresh.md"))).toBe(false);
 
-    const meta = (await call("docs_set_meta", { path: "notes.md", set: { status: "active" }, dry_run: true })) as { payload: { committed: boolean; diffs: Record<string, { before: string; after: string }> }; isError: boolean };
+    const meta = (await call("plan", { effects: [{ op: "set", target: { kind: "document", path: "notes.md" }, field: "frontmatter.status", value: "active" }] })) as { payload: { preview: { diffs: Record<string, { before: string; after: string }> } }; isError: boolean };
     expect(meta.isError).toBe(false);
-    expect(meta.payload.committed).toBe(false);
-    expect(meta.payload.diffs["/notes.md"]!.after).toContain("status: active");
+    expect(meta.payload.preview.diffs["/notes.md"]!.after).toContain("status: active");
     expect(readFileSync(join(root, "notes.md"), "utf8")).not.toContain("status: active");
 
-    const moved = (await call("docs_move", { path: "notes.md", to_path: "moved/notes.md", dry_run: true })) as { payload: { committed: boolean; path: string; diffs: Record<string, unknown> }; isError: boolean };
+    const moved = (await call("plan", { effects: [{ op: "move", target: { kind: "document", path: "notes.md" }, to: "moved/notes.md" }] })) as { payload: { preview: { diffs: Record<string, unknown> } }; isError: boolean };
     expect(moved.isError).toBe(false);
-    expect(moved.payload.committed).toBe(false);
-    expect(Object.keys(moved.payload.diffs).sort()).toEqual(["/moved/notes.md", "/notes.md"]);
+    expect(Object.keys(moved.payload.preview.diffs).sort()).toEqual(["/moved/notes.md", "/notes.md"]);
     expect(existsSync(join(root, "notes.md"))).toBe(true);
 
-    const deleted = (await call("docs_delete", { path: "notes.md", dry_run: true })) as { payload: { committed: boolean; diffs: Record<string, { after: string }> }; isError: boolean };
+    const deleted = (await call("plan", { effects: [{ op: "remove", target: { kind: "document", path: "notes.md" } }] })) as { payload: { preview: { diffs: Record<string, { after: string }> } }; isError: boolean };
     expect(deleted.isError).toBe(false);
-    expect(deleted.payload.committed).toBe(false);
-    expect(deleted.payload.diffs["/notes.md"]!.after).toBe("");
+    expect(deleted.payload.preview.diffs["/notes.md"]!.after).toBe("");
     expect(existsSync(join(root, "notes.md"))).toBe(true);
-    // A dry run is still validated.
-    const taken = (await call("docs_create", { path: "notes.md", markdown: "# x\n", dry_run: true })) as { payload: { error: string }; isError: boolean };
+    // A plan is still validated.
+    const taken = (await call("plan", { effects: [{ op: "create", path: "notes.md", markdown: "# x\n" }] })) as { payload: { error: string }; isError: boolean };
     expect(taken.isError).toBe(true);
     expect(taken.payload.error).toBe("path_taken");
+    // The 3.x `dry_run` is a retired name on every write tool, never silently stripped.
+    for (const [tool, args] of [
+      ["docs_create", { path: "sub/fresh.md", markdown: "# Fresh\n" }],
+      ["docs_set_meta", { path: "notes.md", set: { status: "active" } }],
+      ["docs_move", { path: "notes.md", to_path: "moved/notes.md" }],
+      ["docs_delete", { path: "notes.md" }],
+      ["docs_update", { path: "notes.md", content: "# x\n" }],
+      ["apply", { effects: [] }],
+    ] as const) {
+      const r = (await call(tool, { ...args, dry_run: true })) as { payload: { error: string; message: string; data: { hint: string } }; isError: boolean };
+      expect(r.isError, tool).toBe(true);
+      expect(r.payload.error).toBe("filter_invalid");
+      expect(r.payload.data.hint).toBe("arguments");
+      expect(r.payload.message.startsWith("`dry_run` is no longer an argument — preview with `plan { effects: [...] }` ("), r.payload.message).toBe(true);
+    }
+    expect(existsSync(join(root, "sub/fresh.md"))).toBe(false);
+    expect(readFileSync(join(root, "notes.md"), "utf8")).not.toContain("status: active");
   });
 
   it("docs_delete tombstones the document", async () => {
@@ -474,9 +493,11 @@ describe("doc-level MCP tools (docs_create/move/delete/set_meta)", () => {
     const docId = (store.db.prepare("SELECT doc_id FROM docs WHERE path='notes.md'").get() as { doc_id: string }).doc_id;
     const { isError: metaErr } = (await call("docs_set_meta", { id: docId, set: { status: "byid" } })) as { isError: boolean };
     expect(metaErr).toBe(false);
-    const { payload, isError } = (await call("docs_move", { id: docId, to_path: "moved/byid.md" })) as { payload: { path: string }; isError: boolean };
+    const { payload, isError } = (await call("docs_move", { id: docId, to_path: "moved/byid.md" })) as { payload: { committed: boolean }; isError: boolean };
     expect(isError).toBe(false);
-    expect(payload.path).toBe("/moved/byid.md");
+    expect(payload.committed).toBe(true);
+    const { payload: moved } = (await call("docs_read", { id: docId })) as { payload: { path: string } };
+    expect(moved.path).toBe("/moved/byid.md");
   });
 });
 
@@ -512,24 +533,25 @@ describe("link health MCP tools (links_stale / links_repair)", () => {
     expect(payload.truncated).toBe(false);
   });
 
-  it("links_repair dry_run previews, commit rewrites and clears the stale link", async () => {
+  it("plan { retarget } previews; links_repair commits, rewrites and clears the stale link", async () => {
     // Give the repair a real destination doc so the edge re-resolves.
     await call("docs_create", { path: "c.md", markdown: "# C\n" });
 
-    const { payload: dry, isError: dryErr } = (await call("links_repair", {
-      from_target: "/b.md", to_target: "/c.md", dry_run: true,
-    })) as { payload: { hits: unknown[]; applied: boolean }; isError: boolean };
+    const { payload: dry, isError: dryErr } = (await call("plan", {
+      effects: [{ op: "retarget", repairs: [{ from: "/b.md", to: "/c.md" }] }],
+    })) as { payload: { preview: { retarget: { hits: unknown[] }[] } }; isError: boolean };
     expect(dryErr).toBe(false);
-    expect(dry.applied).toBe(false);
-    expect(dry.hits).toHaveLength(1);
-    // Still stale — dry run did not write.
+    expect(dry.preview.retarget[0]!.hits).toHaveLength(1);
+    // Still stale — a plan does not write.
     const { payload: mid } = (await call("links_stale", {})) as { payload: { stale: unknown[] } };
     expect(mid.stale).toHaveLength(1);
 
-    const { isError: commitErr } = (await call("links_repair", {
-      from_target: "/b.md", to_target: "/c.md", dry_run: false,
-    })) as { isError: boolean };
+    const { payload: done, isError: commitErr } = (await call("links_repair", {
+      from_target: "/b.md", to_target: "/c.md",
+    })) as { payload: { committed: boolean; hits: unknown[] }; isError: boolean };
     expect(commitErr).toBe(false);
+    expect(done.committed).toBe(true);
+    expect(done.hits).toHaveLength(1);
     const { payload: after } = (await call("links_stale", {})) as { payload: { stale: unknown[] } };
     expect(after.stale).toHaveLength(0);
   });
@@ -561,21 +583,21 @@ describe("onMutation fires for writes (embed-drain trigger)", () => {
   it("fires once for a successful apply", async () => {
     const { payload: q } = (await call("query", { query: 'select path from docs where layer == "working"' })) as { payload: { hits: { id: string }[] } };
     const docId = q.hits[0]!.id;
-    const { isError } = (await call("apply", { ops: [{ op: "insert", doc: docId, to: { parent: { doc: true }, at: "end" }, markdown: "appended paragraph" }] })) as { isError: boolean };
+    const { isError } = (await call("apply", { effects: [{ op: "insert", into: { kind: "document", id: docId }, at: "end", markdown: "appended paragraph" }] })) as { isError: boolean };
     expect(isError).toBe(false);
     expect(mutations).toBe(1);
   });
 
   it("does not fire for a failed apply (validation error)", async () => {
-    const r = (await client.callTool({ name: "apply", arguments: { ops: [{ op: "update", markdown: "x" }] } })) as { isError?: boolean };
+    const r = (await client.callTool({ name: "apply", arguments: { effects: [{ op: "set", target: { kind: "block" }, field: "markdown", value: "x" }] } })) as { isError?: boolean };
     expect(r.isError).toBe(true);
     expect(mutations).toBe(0);
   });
 
-  it("does not fire for a dry-run apply", async () => {
+  it("does not fire for a plan", async () => {
     const { payload: q } = (await call("query", { query: 'select path from docs where layer == "working"' })) as { payload: { hits: { id: string }[] } };
     const docId = q.hits[0]!.id;
-    const { isError } = (await call("apply", { ops: [{ op: "insert", doc: docId, to: { parent: { doc: true }, at: "end" }, markdown: "preview only" }], dry_run: true })) as { isError: boolean };
+    const { isError } = (await call("plan", { effects: [{ op: "insert", into: { kind: "document", id: docId }, at: "end", markdown: "preview only" }] })) as { isError: boolean };
     expect(isError).toBe(false);
     expect(mutations).toBe(0);
   });
@@ -605,22 +627,25 @@ describe("apply op schema + blocks_append / docs_append section resolution", () 
     rmSync(root, { recursive: true, force: true });
   });
 
-  it("apply publishes a discriminated op schema (update requires `block`)", async () => {
+  it("apply publishes the effect vocabulary (`effects` required, `op` one of the nine); the kernel `ops` are a retired name", async () => {
     const tools = await client.listTools();
     const applyTool = tools.tools.find((t) => t.name === "apply")!;
-    const opsSchema = (applyTool.inputSchema as unknown as { properties: { ops: { items: { anyOf?: unknown[]; oneOf?: unknown[] } } } }).properties.ops;
-    const variants = (opsSchema.items.anyOf ?? opsSchema.items.oneOf) as { properties?: { op?: { const?: string } } }[];
-    expect(variants, "ops.items should be a union of per-op schemas, not z.any()").toBeTruthy();
-    const ops = new Set(variants.map((v) => v.properties?.op?.const));
-    expect(ops).toEqual(new Set(["insert", "update", "move", "remove", "split", "merge"]));
+    const schema = applyTool.inputSchema as unknown as { properties: Record<string, unknown>; required?: string[] };
+    expect(Object.keys(schema.properties).sort()).toEqual(["effects", "reason", "repo"]);
+    expect(schema.required).toEqual(["effects"]);
+    const items = (schema.properties.effects as { items: { properties: { op: { enum: string[] } } } }).items;
+    expect(items.properties.op.enum).toEqual(["create", "insert", "set", "unset", "move", "remove", "split", "merge", "retarget"]);
+    const r = (await call("apply", { ops: [{ op: "update", block: "b_x", markdown: "x" }] })) as { payload: { error: string; message: string }; isError: boolean };
+    expect(r.isError).toBe(true);
+    expect(r.payload.message).toBe("`ops` is no longer an argument — `apply` takes `effects` (the kernel ops are a library/fixture contract since spec/mutate 3.0) (apply takes effects, reason?, repo?)");
   });
 
-  it("apply rejects an update op missing `block` as a validation error, not block_missing", async () => {
-    const r = (await client.callTool({ name: "apply", arguments: { ops: [{ op: "update", markdown: "x" }] } })) as { content: { text: string }[]; isError?: boolean };
+  it("apply rejects a malformed effect as a validation error naming it, not block_missing", async () => {
+    const r = (await client.callTool({ name: "apply", arguments: { effects: [{ op: "set", target: { kind: "block" }, field: "markdown", value: "x" }] } })) as { content: { text: string }[]; isError?: boolean };
     expect(r.isError).toBe(true);
-    // The boundary schema names the missing field; it never reaches the engine's
-    // block_missing path (which would misreport "block undefined not found").
-    expect(r.content[0]!.text).toContain("block");
+    // The planner's validation names the effect and the member; it never reaches
+    // the engine's block_missing path (which would misreport "block undefined not found").
+    expect(r.content[0]!.text).toContain("effects[0]");
     expect(r.content[0]!.text).not.toContain("block_missing");
   });
 
@@ -639,7 +664,7 @@ describe("apply op schema + blocks_append / docs_append section resolution", () 
     expect(target).not.toBe("");
     expect(read.hashes[target]).toMatch(/^[0-9a-f]{64}$/);
     const { payload, isError } = (await call("apply", {
-      ops: [{ op: "update", block: target, markdown: "rewritten intro", expect: { content_hash: read.hashes[target] } }],
+      effects: [{ op: "set", target: { kind: "block", id: target }, field: "markdown", value: "rewritten intro", expect: { content_hash: read.hashes[target] } }],
     })) as { payload: { committed: boolean }; isError: boolean };
     expect(isError).toBe(false);
     expect(payload.committed).toBe(true);
@@ -647,7 +672,7 @@ describe("apply op schema + blocks_append / docs_append section resolution", () 
     expect(after.raw).toContain("rewritten intro");
   });
 
-  it("raw apply update without expect.content_hash returns the current hash so the error is directly retriable", async () => {
+  it("a stale expect.content_hash on a `set markdown` effect returns the current hash so the error is directly retriable", async () => {
     const { payload: read } = (await call("docs_read", { path: "notes.md", include_ids: true })) as {
       payload: { ids: string[]; hashes: Record<string, string> };
     };
@@ -657,7 +682,7 @@ describe("apply op schema + blocks_append / docs_append section resolution", () 
       if (payload.raw === "intro body") { target = id; break; }
     }
     const { payload, isError } = (await call("apply", {
-      ops: [{ op: "update", block: target, markdown: "no hash supplied" }],
+      effects: [{ op: "set", target: { kind: "block", id: target }, field: "markdown", value: "stale hash supplied", expect: { content_hash: "00" } }],
     })) as { payload: { error: string; data: { retriable?: boolean; current?: { hash?: string } } }; isError: boolean };
     expect(isError).toBe(true);
     expect(payload.error).toBe("stale_expectation");
@@ -743,7 +768,11 @@ describe("apply op schema + blocks_append / docs_append section resolution", () 
     expect(both.payload.error).toBe("doc_missing");
     expect(both.payload.message).toBe('no document with id or path "d_0000000"');
     const node = (await call("blocks_update", { block: "b_x", markdown: "x" })) as { payload: { message: string } };
-    expect(node.payload.message).toBe("`block` is no longer an argument — pass `id` (blocks_update takes attrs?, checked?, dry_run?, expect?, id, markdown?, repo?)");
+    expect(node.payload.message).toBe("`block` is no longer an argument — pass `id` (blocks_update takes checked?, expect?, id, markdown?, repo?)");
+    const attrs = (await call("blocks_update", { id: "b_x", attrs: { checked: true } })) as { payload: { message: string } };
+    expect(attrs.payload.message).toBe("`attrs` is no longer an argument — pass `checked` (blocks_update takes checked?, expect?, id, markdown?, repo?)");
+    const dry = (await call("blocks_insert", { to: "notes.md", markdown: "x", dry_run: true })) as { payload: { message: string } };
+    expect(dry.payload.message).toBe("`dry_run` is no longer an argument — preview with `plan { effects: [...] }` (blocks_insert takes at?, expect?, markdown, repo?, to)");
   });
 
   it("docs_append appends to the end of the document, preserving every existing block id", async () => {
@@ -751,14 +780,14 @@ describe("apply op schema + blocks_append / docs_append section resolution", () 
       payload: { ids: string[]; raw: string };
     };
     const { payload, isError } = (await call("docs_append", { path: "notes.md", text: "a fresh trailing note\n" })) as {
-      payload: { committed: boolean; results: { ids: string[] }[]; revisions: { id: string; path: string; hash: string }[] }; isError: boolean;
+      payload: { committed: boolean; new_ids: Record<string, string>; revisions: { id: string; path: string; hash: string }[] }; isError: boolean;
     };
     expect(isError).toBe(false);
     expect(payload.committed).toBe(true);
-    // sibling-macro shape: revision(s) + the single inserted block id
+    // the Receipt: the revision + the single inserted block id under its symbol
     expect(payload.revisions[0]!.path).toBe("/notes.md");
-    expect(payload.results[0]!.ids).toHaveLength(1);
-    const newId = payload.results[0]!.ids[0]!;
+    expect(Object.keys(payload.new_ids)).toEqual(["$new.0"]);
+    const newId = payload.new_ids["$new.0"]!;
 
     const { payload: after } = (await call("docs_read", { path: "notes.md", include_ids: true })) as {
       payload: { ids: string[]; raw: string };
@@ -778,15 +807,16 @@ describe("apply op schema + blocks_append / docs_append section resolution", () 
   it("docs_append inserts MULTI-block markdown as multiple new top-level blocks, none re-minted", async () => {
     const { payload: before } = (await call("docs_read", { path: "notes.md", include_ids: true })) as { payload: { ids: string[] } };
     const { payload, isError } = (await call("docs_append", { path: "notes.md", text: "## New Section\n\nfirst para\n\nsecond para\n" })) as {
-      payload: { committed: boolean; results: { ids: string[] }[] }; isError: boolean;
+      payload: { committed: boolean; new_ids: Record<string, string> }; isError: boolean;
     };
     expect(isError).toBe(false);
     // three new top-level blocks: heading + two paragraphs
-    expect(payload.results[0]!.ids.length).toBe(3);
+    const minted = Object.values(payload.new_ids);
+    expect(minted.length).toBe(3);
     const { payload: after } = (await call("docs_read", { path: "notes.md", include_ids: true })) as { payload: { ids: string[]; raw: string } };
     // no existing block was re-minted (all still present, in order)
     expect(after.ids.slice(0, before.ids.length)).toEqual(before.ids);
-    for (const id of payload.results[0]!.ids) expect(before.ids).not.toContain(id);
+    for (const id of minted) expect(before.ids).not.toContain(id);
     expect(after.ids.length).toBe(before.ids.length + 3);
     expect(after.raw).toContain("## New Section");
     expect(after.raw).toContain("first para");
@@ -892,11 +922,14 @@ describe("block-level MCP tools (blocks_* — ref resolution + CAS server-side)"
     const list = read.ids.find((id) => read.parents[id] === null && read.ids.some((c) => read.parents[c] === id))!;
     const items = read.ids.filter((id) => read.parents[id] === list);
     expect(items.length).toBeGreaterThan(0);
-    const { payload, isError } = (await call("blocks_remove", { blocks: [list, ...items] })) as {
-      payload: { results: { removed: string[] }[] }; isError: boolean;
+    const { payload: plan } = (await call("plan", { effects: [{ op: "remove", targets: [list, ...items].map((id) => ({ kind: "block", id })) }] })) as {
+      payload: { preview: { results: { removed: string[] }[] } };
     };
+    expect(plan.preview.results[0]!.removed.sort()).toEqual([list, ...items].sort());
+    const { payload, isError } = (await call("blocks_remove", { blocks: [list, ...items] })) as { payload: { committed: boolean; commit: string }; isError: boolean };
     expect(isError).toBe(false);
-    expect(payload.results[0]!.removed.sort()).toEqual([list, ...items].sort());
+    expect(payload.committed).toBe(true);
+    expect(payload.commit).toMatch(/^c_/);
     const { payload: after } = (await call("docs_read", { path: "notes.md" })) as { payload: { raw: string } };
     expect(after.raw).not.toContain("wire it");
   });
@@ -949,13 +982,13 @@ describe("block-level MCP tools (blocks_* — ref resolution + CAS server-side)"
     expect(payload.error).toBe("block_missing");
   });
 
-  it("dry_run previews without committing", async () => {
+  it("plan previews an insert without committing", async () => {
     const alpha = await idOf("Alpha para.");
-    const { payload, isError } = (await call("blocks_insert", { to: "notes.md", at: { after: alpha }, markdown: "PREVIEW ONLY", dry_run: true })) as {
-      payload: { diffs?: Record<string, unknown> }; isError: boolean;
+    const { payload, isError } = (await call("plan", { effects: [{ op: "insert", into: { kind: "document", path: "notes.md" }, at: { after: alpha }, markdown: "PREVIEW ONLY" }] })) as {
+      payload: { preview: { diffs?: Record<string, unknown> } }; isError: boolean;
     };
     expect(isError).toBe(false);
-    expect(payload.diffs).toBeTruthy();
+    expect(payload.preview.diffs).toBeTruthy();
     const { payload: read } = (await call("docs_read", { path: "notes.md" })) as { payload: { raw: string } };
     expect(read.raw).not.toContain("PREVIEW ONLY");
   });
@@ -980,7 +1013,8 @@ describe("block-level MCP tools (blocks_* — ref resolution + CAS server-side)"
 
 describe("link maintenance tools: honest dry run, authored targets, summary, scoping, multi-block update", () => {
   let root: string;
-  type Repair = { hits: { id: string; path: string; oldRaw: string; newRaw: string }[]; pairs: { from: string; to: string; hits: number }[]; applied: boolean; committed: boolean; diffs?: Record<string, { before: string; after: string }> };
+  type Repair = { hits: { id: string; path: string; oldRaw: string; newRaw: string }[]; pairs: { from: string; to: string; hits: number }[]; committed: boolean; commit: string | null };
+  type RetargetPlan = { preview: { retarget: { hits: Repair["hits"]; pairs: Repair["pairs"] }[]; diffs: Record<string, { before: string; after: string }> } };
 
   beforeEach(async () => {
     root = mkdtempSync(join(tmpdir(), "omg-mcplinks2-"));
@@ -995,25 +1029,26 @@ describe("link maintenance tools: honest dry run, authored targets, summary, sco
     rmSync(root, { recursive: true, force: true });
   });
 
-  it("links_repair dry_run plans through the kernel (diffs, committed:false); the apply then succeeds on list+item hits", async () => {
+  it("plan { retarget } previews through the planner (diffs, preview.retarget); links_repair then commits on list+item hits", async () => {
     await call("docs_create", { path: "c.md", markdown: "# C\n" });
     const repairs = [{ from: "b.md", to: "/c.md" }];
-    const { payload: dry, isError } = (await call("links_repair", { repairs, dry_run: true })) as { payload: Repair; isError: boolean };
+    const { payload: dry, isError } = (await call("plan", { effects: [{ op: "retarget", repairs }] })) as { payload: RetargetPlan; isError: boolean };
     expect(isError).toBe(false);
-    expect(dry.applied).toBe(false);
-    expect(dry.committed).toBe(false);
-    const after = dry.diffs!["/list.md"]!.after;
+    const after = dry.preview.diffs["/list.md"]!.after;
     expect(after).toContain("- item [b](/c.md) here");
     expect(after).toContain("[b](/c.md#Top) and `[b](/b.md)`.");
     // list (its item hit collapsed) + paragraph; the inline-code mention is not a hit
-    expect(dry.hits.map((h) => h.path)).toEqual(["/list.md", "/list.md"]);
-    expect(dry.pairs).toEqual([{ from: "b.md", to: "/c.md", hits: 2 }]);
+    const preview = dry.preview.retarget[0]!;
+    expect(preview.hits.map((h) => h.path)).toEqual(["/list.md", "/list.md"]);
+    expect(preview.pairs).toEqual([{ from: "b.md", to: "/c.md", hits: 2 }]);
     expect(readFileSync(join(root, "list.md"), "utf8")).not.toContain("/c.md");
 
-    const { payload: done, isError: applyErr } = (await call("links_repair", { repairs, dry_run: false })) as { payload: Repair; isError: boolean };
+    const { payload: done, isError: applyErr } = (await call("links_repair", { repairs })) as { payload: Repair; isError: boolean };
     expect(applyErr).toBe(false);
-    expect(done.applied).toBe(true);
     expect(done.committed).toBe(true);
+    expect(done.commit).toMatch(/^c_/);
+    expect(done.hits).toEqual(preview.hits);
+    expect(done.pairs).toEqual(preview.pairs);
     expect(readFileSync(join(root, "list.md"), "utf8")).toBe(after);
     // Every real link now resolves. The `[b](/b.md)` INSIDE inline code is not
     // an edge at all: the extractor (graph/extract.ts) masks code spans and
@@ -1022,15 +1057,18 @@ describe("link maintenance tools: honest dry run, authored targets, summary, sco
     expect(health.stale.map((s) => s.authored)).toEqual([]);
   });
 
-  it("links_retarget takes the same path (planner-backed dry run, pairs, path_glob)", async () => {
+  it("links_retarget commits (4.0: no dry-run default) with its hits and pairs beside the Receipt; path_glob scopes the sources; no hit → commit null", async () => {
     writeFileSync(join(root, "other.md"), "# O\n\n[b](/b.md)\n");
     processCheckpoint(store, repoId, root, [{ path: "other.md" }]);
-    const { payload } = (await call("links_retarget", { from_target: "/b.md", to_target: "/c.md", path_glob: "other.md" })) as { payload: Repair };
-    expect(payload.applied).toBe(false);
-    expect(payload.committed).toBe(false);
+    const { payload } = (await call("links_retarget", { from_target: "/b.md", to_target: "/c.md", path_glob: "other.md" })) as { payload: Repair & { revisions: { path: string }[] } };
+    expect(payload.committed).toBe(true);
+    expect(payload.commit).toMatch(/^c_/);
     expect(payload.hits.map((h) => h.path)).toEqual(["/other.md"]);
     expect(payload.pairs).toEqual([{ from: "/b.md", to: "/c.md", hits: 1 }]);
-    expect(Object.keys(payload.diffs!)).toEqual(["/other.md"]);
+    expect(payload.revisions.map((r) => r.path)).toEqual(["/other.md"]);
+    expect(readFileSync(join(root, "other.md"), "utf8")).toContain("(/c.md)");
+    const { payload: none } = (await call("links_retarget", { from_target: "/zzz.md", to_target: "/c.md" })) as { payload: Repair };
+    expect(none).toMatchObject({ hits: [], pairs: [{ from: "/zzz.md", to: "/c.md", hits: 0 }], commit: null, committed: true });
   });
 
   it("links_stale rows carry `authored`; summary:true returns counts grouped by target and source", async () => {
@@ -1050,23 +1088,28 @@ describe("link maintenance tools: honest dry run, authored targets, summary, sco
     expect(sum.externalCount).toBe(0);
   });
 
-  it("blocks_update accepts multi-block markdown: target keeps its id, siblings minted, `id` + `ids` returned", async () => {
+  it("blocks_update accepts multi-block markdown: target keeps its id, the siblings are minted under `new_ids` (the Receipt, 4.0)", async () => {
     await call("docs_create", { path: "m.md", markdown: "# M\n\nBody.\n\nTail.\n" });
     const { payload: before } = (await call("docs_read", { path: "m.md", include_ids: true })) as { payload: { ids: string[] } };
     const [headId, bodyId, tailId] = before.ids as [string, string, string];
     const { payload, isError } = (await call("blocks_update", { id: bodyId, markdown: "Body, edited.\n\nExtra para.\n\n- li" })) as {
-      payload: { id: string; ids: string[]; committed: boolean }; isError: boolean;
+      payload: { new_ids: Record<string, string>; committed: boolean; id?: unknown; ids?: unknown }; isError: boolean;
     };
     expect(isError).toBe(false);
     expect(payload.committed).toBe(true);
-    expect(payload.id).toBe(bodyId);
-    expect(payload.ids).toHaveLength(3);
-    expect(payload.ids[0]).toBe(bodyId);
+    expect(payload.id).toBeUndefined();
+    expect(payload.ids).toBeUndefined();
+    // the re-parse mints the first paragraph too (discarded: the target keeps its id, spec/mutate §10),
+    // then the extra paragraph, the list and its nested item — four symbols, three of them live
+    const minted = Object.values(payload.new_ids);
+    expect(minted.length).toBe(4);
     const { payload: after } = (await call("docs_read", { path: "m.md", include_ids: true })) as { payload: { ids: string[]; raw: string } };
     expect(after.raw).toBe("# M\n\nBody, edited.\n\nExtra para.\n\n- li\n\nTail.\n");
     // include_ids flattens children: head, body, extra, list, (its item), tail
     expect(after.ids).toHaveLength(6);
-    expect(after.ids.slice(0, 4)).toEqual([headId, ...payload.ids]);
+    expect(after.ids[0]).toBe(headId);
+    expect(after.ids[1]).toBe(bodyId);
+    expect(after.ids.slice(2, 5).every((id) => minted.includes(id))).toBe(true);
     expect(after.ids[5]).toBe(tailId);
   });
 });

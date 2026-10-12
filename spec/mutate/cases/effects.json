@@ -7003,7 +7003,7 @@
             "actor": "agent:test",
             "reason": "set_meta b.md",
             "checkpoint_id": null,
-            "ops": null
+            "ops": "{\"effects\":[{\"field\":\"frontmatter.status\",\"op\":\"set\",\"target\":{\"id\":\"d_1\",\"kind\":\"document\",\"path\":\"b.md\"},\"value\":\"active\"}],\"plan_id\":\"63f05987a94901d9e354effad99b26a22c27b82bccfe771b0292fec6ed6c5e23\",\"v\":1}"
           }
         ],
         "revisions": [
@@ -7214,55 +7214,55 @@
           {
             "commit_id": "c_3",
             "block_id": "b_10",
-            "kind": "same",
+            "kind": "edited",
             "confidence": 1,
-            "reason": "exact_hash",
-            "matcher_v": "m2.3",
+            "reason": "api",
+            "matcher_v": null,
             "detail": {}
           },
           {
             "commit_id": "c_3",
             "block_id": "b_11",
-            "kind": "same",
+            "kind": "edited",
             "confidence": 1,
-            "reason": "exact_hash",
-            "matcher_v": "m2.3",
+            "reason": "api",
+            "matcher_v": null,
             "detail": {}
           },
           {
             "commit_id": "c_3",
             "block_id": "b_6",
-            "kind": "same",
+            "kind": "edited",
             "confidence": 1,
-            "reason": "exact_hash",
-            "matcher_v": "m2.3",
+            "reason": "api",
+            "matcher_v": null,
             "detail": {}
           },
           {
             "commit_id": "c_3",
             "block_id": "b_7",
-            "kind": "same",
+            "kind": "edited",
             "confidence": 1,
-            "reason": "exact_hash",
-            "matcher_v": "m2.3",
+            "reason": "api",
+            "matcher_v": null,
             "detail": {}
           },
           {
             "commit_id": "c_3",
             "block_id": "b_8",
-            "kind": "same",
+            "kind": "edited",
             "confidence": 1,
-            "reason": "exact_hash",
-            "matcher_v": "m2.3",
+            "reason": "api",
+            "matcher_v": null,
             "detail": {}
           },
           {
             "commit_id": "c_3",
             "block_id": "b_9",
-            "kind": "same",
+            "kind": "edited",
             "confidence": 1,
-            "reason": "exact_hash",
-            "matcher_v": "m2.3",
+            "reason": "api",
+            "matcher_v": null,
             "detail": {}
           }
         ],

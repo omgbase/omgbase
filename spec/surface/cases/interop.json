@@ -3706,27 +3706,29 @@
     },
     {
       "name": "write-apply",
-      "notes": "§4 apply (spec/mutate §4): one changeset with an insert at the document top level and a CAS-pinned update, then a dry run (no commit; dry runs consume minted ids, §9). Reads show the new revision r_18 / commit c_18 through docs_read, docs_history, changes_since, diff, docs_diff_unified, blocks_history of the minted block, docs_read_at of the old revision, and the admin tools' view of the working tree the apply wrote (§7.3).",
+      "notes": "§4 apply (spec/mutate §11.7, 4.0): one `apply { effects }` with an insert at the document top level and a CAS-guarded `set markdown`, committed as one transaction → the Receipt (`new_ids[\"$new.0\"]` the inserted block b_327; the update's re-parse burned b_328, spec/mutate §10), then a `plan { remove }` (the preview: diffs under the rooted path, `results[0].removed`, no commit, no id minted — the sugar's dry run burned ids through 3.x, §9). Reads show the new revision r_20 / commit c_20 through docs_read, docs_history, changes_since, diff, docs_diff_unified, blocks_history of the minted block, docs_read_at of the old revision, and the admin tools' view of the working tree the apply wrote (§7.3).",
       "writes": [
         {
           "tool": "apply",
           "args": {
-            "ops": [
+            "effects": [
               {
                 "op": "insert",
-                "doc": "d_0",
-                "to": {
-                  "parent": {
-                    "doc": true
-                  },
-                  "at": "end"
+                "into": {
+                  "kind": "document",
+                  "id": "d_0"
                 },
+                "at": "end",
                 "markdown": "Appended by apply.\n"
               },
               {
-                "op": "update",
-                "block": "b_30",
-                "markdown": "Working notes live under `lab/`, one file per month.",
+                "op": "set",
+                "target": {
+                  "kind": "block",
+                  "id": "b_30"
+                },
+                "field": "markdown",
+                "value": "Working notes live under `lab/`, one file per month.",
                 "expect": {
                   "content_hash": "8346b26bd6078f9caf9ca19ad755b81184bba060240140ccae597c72e0ef6f3e"
                 }
@@ -3736,17 +3738,19 @@
           }
         },
         {
-          "tool": "apply",
+          "tool": "plan",
           "args": {
-            "ops": [
+            "effects": [
               {
                 "op": "remove",
-                "blocks": [
-                  "b_29"
+                "targets": [
+                  {
+                    "kind": "block",
+                    "id": "b_29"
+                  }
                 ]
               }
-            ],
-            "dry_run": true
+            ]
           }
         }
       ],
@@ -3815,18 +3819,8 @@
       "expect": {
         "writes": [
           {
-            "results": [
-              {
-                "ids": [
-                  "b_327"
-                ]
-              },
-              {
-                "ids": [
-                  "b_30"
-                ]
-              }
-            ],
+            "plan_id": "56bdbf09f149795fa40020537bb64eed76bab92a149f22b91071b0d55e3bfcc4",
+            "commit": "c_20",
             "revisions": [
               {
                 "id": "d_0",
@@ -3834,33 +3828,91 @@
                 "hash": "a15fc92ef7c024f42e92ae256aba5a8509ee46854063daefac54d386ddd6243a"
               }
             ],
+            "new_ids": {
+              "$new.0": "b_327",
+              "$new.1": "b_328"
+            },
             "committed": true
           },
           {
-            "results": [
+            "version": 1,
+            "planner_v": "p2",
+            "effects": [
               {
-                "ids": [
-                  "b_29"
-                ],
-                "removed": [
-                  "b_29"
+                "op": "remove",
+                "targets": [
+                  {
+                    "kind": "block",
+                    "id": "b_29"
+                  }
                 ]
               }
             ],
-            "revisions": [
-              {
-                "id": "d_0",
-                "path": "/index.md",
-                "hash": "f64d4b70756c8ff12ed8ec4a0fbbacdedfed8dee36c5e8bdd8cee2f4640a1430"
-              }
-            ],
-            "diffs": {
-              "/index.md": {
-                "before": "---\ntype: hub\nlayer: canon\ntitle: Alchemy\ntags: [alchemy, index]\nverified: true\n---\n\n# Alchemy\n\nThe art of transformation — part proto-chemistry, part philosophy, part\ncontemplative practice. This repository collects notes on its substances,\nprocesses, practitioners, and primary texts.\n\n## The tria prima\n\nParacelsus reduced the material world to three principles:\n\n- [[mercury]] — the volatile spirit\n- [[sulphur]] — the combustible soul\n- [[salt]] — the fixed body\n\n## Substances\n\n- [prima materia](/substances/prima-materia.md) — the undifferentiated first matter\n- [the philosophers' stone](/substances/philosophers-stone.md) — the goal of the Great Work\n\n## Processes\n\nThe [magnum opus](/processes/magnum-opus.md) organizes the operations into\nstages. Individual operations are documented separately:\n\n- [calcination](/processes/calcination.md)\n- [dissolution](/processes/dissolution.md)\n- [coagulation](/processes/coagulation.md)\n\n## Practitioners\n\n| Practitioner | Tradition | Approximate era |\n|---|---|---|\n| [Maria Prophetissa](/practitioners/maria-prophetissa.md) | Alexandrian | 3rd century |\n| [Jabir ibn Hayyan](/practitioners/jabir-ibn-hayyan.md) | Islamic | 8th century |\n| [Paracelsus](/practitioners/paracelsus.md) | Western | 16th century |\n| [Isaac Newton](/practitioners/newton.md) | Western | 17th century |\n\n## Texts\n\n- [The Emerald Tablet](/texts/emerald-tablet.md)\n- [Mutus Liber](/texts/mutus-liber.md)\n\n## Laboratory\n\nWorking notes live under `lab/`, one file per month.\n\nAppended by apply.\n",
-                "after": "---\ntype: hub\nlayer: canon\ntitle: Alchemy\ntags: [alchemy, index]\nverified: true\n---\n\n# Alchemy\n\nThe art of transformation — part proto-chemistry, part philosophy, part\ncontemplative practice. This repository collects notes on its substances,\nprocesses, practitioners, and primary texts.\n\n## The tria prima\n\nParacelsus reduced the material world to three principles:\n\n- [[mercury]] — the volatile spirit\n- [[sulphur]] — the combustible soul\n- [[salt]] — the fixed body\n\n## Substances\n\n- [prima materia](/substances/prima-materia.md) — the undifferentiated first matter\n- [the philosophers' stone](/substances/philosophers-stone.md) — the goal of the Great Work\n\n## Processes\n\nThe [magnum opus](/processes/magnum-opus.md) organizes the operations into\nstages. Individual operations are documented separately:\n\n- [calcination](/processes/calcination.md)\n- [dissolution](/processes/dissolution.md)\n- [coagulation](/processes/coagulation.md)\n\n## Practitioners\n\n| Practitioner | Tradition | Approximate era |\n|---|---|---|\n| [Maria Prophetissa](/practitioners/maria-prophetissa.md) | Alexandrian | 3rd century |\n| [Jabir ibn Hayyan](/practitioners/jabir-ibn-hayyan.md) | Islamic | 8th century |\n| [Paracelsus](/practitioners/paracelsus.md) | Western | 16th century |\n| [Isaac Newton](/practitioners/newton.md) | Western | 17th century |\n\n## Texts\n\n- [The Emerald Tablet](/texts/emerald-tablet.md)\n- [Mutus Liber](/texts/mutus-liber.md)\n\nWorking notes live under `lab/`, one file per month.\n\nAppended by apply.\n"
-              }
+            "opset": {
+              "creates": [],
+              "moves": [],
+              "tombstones": [],
+              "set_frontmatter": [],
+              "ops": [
+                {
+                  "op": "remove",
+                  "blocks": [
+                    "b_29"
+                  ],
+                  "expect": {
+                    "b_29": {
+                      "content_hash": "0ea6eb263d4f956db48be06cdf734e9dbb2b0ea5ce615b196b4766ff84ed5172"
+                    }
+                  }
+                }
+              ]
             },
-            "committed": false
+            "preconditions": {
+              "docs": [
+                {
+                  "id": "d_0",
+                  "path": "index.md",
+                  "base_revision": "r_20",
+                  "hash": "a15fc92ef7c024f42e92ae256aba5a8509ee46854063daefac54d386ddd6243a"
+                }
+              ],
+              "blocks": [
+                {
+                  "id": "b_29",
+                  "content_hash": "0ea6eb263d4f956db48be06cdf734e9dbb2b0ea5ce615b196b4766ff84ed5172"
+                }
+              ],
+              "parents": [],
+              "absent_paths": []
+            },
+            "new_ids": [],
+            "plan_id": "4bf3701ed6030b5b829fe1f106b77c72e6427282d261000d16adda0faf6ad3b9",
+            "diagnostics": [],
+            "preview": {
+              "results": [
+                {
+                  "ids": [
+                    "b_29"
+                  ],
+                  "removed": [
+                    "b_29"
+                  ]
+                }
+              ],
+              "revisions": [
+                {
+                  "id": "d_0",
+                  "path": "/index.md",
+                  "hash": "f64d4b70756c8ff12ed8ec4a0fbbacdedfed8dee36c5e8bdd8cee2f4640a1430"
+                }
+              ],
+              "diffs": {
+                "/index.md": {
+                  "before": "---\ntype: hub\nlayer: canon\ntitle: Alchemy\ntags: [alchemy, index]\nverified: true\n---\n\n# Alchemy\n\nThe art of transformation — part proto-chemistry, part philosophy, part\ncontemplative practice. This repository collects notes on its substances,\nprocesses, practitioners, and primary texts.\n\n## The tria prima\n\nParacelsus reduced the material world to three principles:\n\n- [[mercury]] — the volatile spirit\n- [[sulphur]] — the combustible soul\n- [[salt]] — the fixed body\n\n## Substances\n\n- [prima materia](/substances/prima-materia.md) — the undifferentiated first matter\n- [the philosophers' stone](/substances/philosophers-stone.md) — the goal of the Great Work\n\n## Processes\n\nThe [magnum opus](/processes/magnum-opus.md) organizes the operations into\nstages. Individual operations are documented separately:\n\n- [calcination](/processes/calcination.md)\n- [dissolution](/processes/dissolution.md)\n- [coagulation](/processes/coagulation.md)\n\n## Practitioners\n\n| Practitioner | Tradition | Approximate era |\n|---|---|---|\n| [Maria Prophetissa](/practitioners/maria-prophetissa.md) | Alexandrian | 3rd century |\n| [Jabir ibn Hayyan](/practitioners/jabir-ibn-hayyan.md) | Islamic | 8th century |\n| [Paracelsus](/practitioners/paracelsus.md) | Western | 16th century |\n| [Isaac Newton](/practitioners/newton.md) | Western | 17th century |\n\n## Texts\n\n- [The Emerald Tablet](/texts/emerald-tablet.md)\n- [Mutus Liber](/texts/mutus-liber.md)\n\n## Laboratory\n\nWorking notes live under `lab/`, one file per month.\n\nAppended by apply.\n",
+                  "after": "---\ntype: hub\nlayer: canon\ntitle: Alchemy\ntags: [alchemy, index]\nverified: true\n---\n\n# Alchemy\n\nThe art of transformation — part proto-chemistry, part philosophy, part\ncontemplative practice. This repository collects notes on its substances,\nprocesses, practitioners, and primary texts.\n\n## The tria prima\n\nParacelsus reduced the material world to three principles:\n\n- [[mercury]] — the volatile spirit\n- [[sulphur]] — the combustible soul\n- [[salt]] — the fixed body\n\n## Substances\n\n- [prima materia](/substances/prima-materia.md) — the undifferentiated first matter\n- [the philosophers' stone](/substances/philosophers-stone.md) — the goal of the Great Work\n\n## Processes\n\nThe [magnum opus](/processes/magnum-opus.md) organizes the operations into\nstages. Individual operations are documented separately:\n\n- [calcination](/processes/calcination.md)\n- [dissolution](/processes/dissolution.md)\n- [coagulation](/processes/coagulation.md)\n\n## Practitioners\n\n| Practitioner | Tradition | Approximate era |\n|---|---|---|\n| [Maria Prophetissa](/practitioners/maria-prophetissa.md) | Alexandrian | 3rd century |\n| [Jabir ibn Hayyan](/practitioners/jabir-ibn-hayyan.md) | Islamic | 8th century |\n| [Paracelsus](/practitioners/paracelsus.md) | Western | 16th century |\n| [Isaac Newton](/practitioners/newton.md) | Western | 17th century |\n\n## Texts\n\n- [The Emerald Tablet](/texts/emerald-tablet.md)\n- [Mutus Liber](/texts/mutus-liber.md)\n\nWorking notes live under `lab/`, one file per month.\n\nAppended by apply.\n"
+                }
+              }
+            }
           }
         ],
         "reads": [
@@ -4214,14 +4266,8 @@
       "expect": {
         "writes": [
           {
-            "results": [
-              {
-                "ids": [
-                  "b_327",
-                  "b_328"
-                ]
-              }
-            ],
+            "plan_id": "6c1253a33ba9aea84bcee09901f1692eef6cf705be7e4fbef12f991c848c0218",
+            "commit": "c_20",
             "revisions": [
               {
                 "id": "d_7",
@@ -4229,16 +4275,15 @@
                 "hash": "63342ca668a0833a29dca83de7995f86e389b928b749792b00b1fb531034fdf3"
               }
             ],
+            "new_ids": {
+              "$new.0": "b_327",
+              "$new.1": "b_328"
+            },
             "committed": true
           },
           {
-            "results": [
-              {
-                "ids": [
-                  "b_330"
-                ]
-              }
-            ],
+            "plan_id": "755fb0e4d10d92fbc9db2174f998ff1a1515515e293b6f3c72b2fb980e20e3d3",
+            "commit": "c_21",
             "revisions": [
               {
                 "id": "d_7",
@@ -4246,6 +4291,10 @@
                 "hash": "fbd43ac6cc7b5e7ba241e046a118fe60a0e3901779f11b9a8c1149497ea35abf"
               }
             ],
+            "new_ids": {
+              "$new.0": "b_329",
+              "$new.1": "b_330"
+            },
             "committed": true
           },
           {
@@ -4547,17 +4596,8 @@
       "expect": {
         "writes": [
           {
-            "id": "b_1",
-            "ids": [
-              "b_1"
-            ],
-            "results": [
-              {
-                "ids": [
-                  "b_1"
-                ]
-              }
-            ],
+            "plan_id": "a98ab79837db504476f45d480b7b947906df68b12b5fbb3bbfec91a163d7d0b4",
+            "commit": "c_20",
             "revisions": [
               {
                 "id": "d_0",
@@ -4565,20 +4605,14 @@
                 "hash": "78de6a57ae18625b34e01619f072674a36a68bf7051af87c87d83c9ca0b9b7a0"
               }
             ],
+            "new_ids": {
+              "$new.0": "b_327"
+            },
             "committed": true
           },
           {
-            "id": "b_56",
-            "ids": [
-              "b_56"
-            ],
-            "results": [
-              {
-                "ids": [
-                  "b_56"
-                ]
-              }
-            ],
+            "plan_id": "fc229142a4a911b03874d7d5dfbb7fd43832eb5b9929be1cd6b264e91ffb164b",
+            "commit": "c_21",
             "revisions": [
               {
                 "id": "d_1",
@@ -4586,6 +4620,7 @@
                 "hash": "0763241a8fc02b24d9a2a6a821222e1a44c0d02b416641d634e1e427aa497549"
               }
             ],
+            "new_ids": {},
             "committed": true
           },
           {
@@ -4873,13 +4908,8 @@
       "expect": {
         "writes": [
           {
-            "results": [
-              {
-                "ids": [
-                  "b_7"
-                ]
-              }
-            ],
+            "plan_id": "80dbe98152b361d64f23ba380e14cf44b0eac06439ee0cd66d87dd8df231f307",
+            "commit": "c_20",
             "revisions": [
               {
                 "id": "d_0",
@@ -4887,17 +4917,12 @@
                 "hash": "e11fdd0be85936e461c8ff1b6ff0f3a3ec8e264f4b35688ad4b7122e873024c8"
               }
             ],
+            "new_ids": {},
             "committed": true
           },
           {
-            "results": [
-              {
-                "ids": [
-                  "b_29",
-                  "b_30"
-                ]
-              }
-            ],
+            "plan_id": "2347eecf467d45bb3974f70a6b8a2be08b4df7770fb0b67f4e29de01de6a27bc",
+            "commit": "c_21",
             "revisions": [
               {
                 "id": "d_0",
@@ -4905,6 +4930,7 @@
                 "hash": "b55dda67e15c34d307070bc54293f795f0db06f80653c013a14efec51fadd32b"
               }
             ],
+            "new_ids": {},
             "committed": true
           },
           {
@@ -5127,14 +5153,8 @@
       "expect": {
         "writes": [
           {
-            "results": [
-              {
-                "ids": [
-                  "b_1",
-                  "b_327"
-                ]
-              }
-            ],
+            "plan_id": "de8861796e37ce17f8a6e9c93e1d00df707368d76a24d2f9806f3808b610cde2",
+            "commit": "c_20",
             "revisions": [
               {
                 "id": "d_0",
@@ -5142,19 +5162,14 @@
                 "hash": "0653953e6560d1ccc97382882219664b9a2e55a6f75df0e3187a00892883521a"
               }
             ],
+            "new_ids": {
+              "$new.0": "b_327"
+            },
             "committed": true
           },
           {
-            "results": [
-              {
-                "ids": [
-                  "b_43"
-                ],
-                "mergedInto": [
-                  "b_44"
-                ]
-              }
-            ],
+            "plan_id": "93cd7e6cadb018b8decc6dd01057aeee2cb00b255d0e16946a1b2078d6b6f07f",
+            "commit": "c_21",
             "revisions": [
               {
                 "id": "d_1",
@@ -5162,21 +5177,12 @@
                 "hash": "46fec76ff0cbfa823dac33cf4eb7687ecfadf6addfb12cc3a15709f88dc74cc9"
               }
             ],
+            "new_ids": {},
             "committed": true
           },
           {
-            "results": [
-              {
-                "ids": [
-                  "b_47",
-                  "b_58"
-                ],
-                "removed": [
-                  "b_47",
-                  "b_58"
-                ]
-              }
-            ],
+            "plan_id": "9ee66040bb422d9449b0e064f9321a7bfc9f786874b1e3d61cf5682348b73ae8",
+            "commit": "c_22",
             "revisions": [
               {
                 "id": "d_1",
@@ -5184,6 +5190,7 @@
                 "hash": "f822354256d015ac1512f8818ac551af0bf2ded2ee0364f9f8c3db9bb8909086"
               }
             ],
+            "new_ids": {},
             "committed": true
           },
           {
@@ -5578,18 +5585,8 @@
       "expect": {
         "writes": [
           {
-            "results": [
-              {
-                "ids": [
-                  "b_56"
-                ]
-              },
-              {
-                "ids": [
-                  "b_57"
-                ]
-              }
-            ],
+            "plan_id": "e2b28064725901e5c3625654321e272c2824b3212049cba026de8f30268e3428",
+            "commit": "c_20",
             "revisions": [
               {
                 "id": "d_1",
@@ -5597,16 +5594,12 @@
                 "hash": "79eb54a243998acee56e491e0112ca2f83d9cd163233344e1df0d53e7771d808"
               }
             ],
+            "new_ids": {},
             "committed": true
           },
           {
-            "results": [
-              {
-                "ids": [
-                  "b_52"
-                ]
-              }
-            ],
+            "plan_id": "585a97bb53b34e41b0b49481647c1879d3f4059550b4342c84b80ffc1ddc77fb",
+            "commit": "c_21",
             "revisions": [
               {
                 "id": "d_1",
@@ -5614,16 +5607,12 @@
                 "hash": "011e76caf8d828442588a0e00e66bf9016489464adf507e5ed08aae5dc2074af"
               }
             ],
+            "new_ids": {},
             "committed": true
           },
           {
-            "results": [
-              {
-                "ids": [
-                  "b_1"
-                ]
-              }
-            ],
+            "plan_id": "681eecad9d8d1c4145339e00621a446a57c5254d59feb9fc1abc43fca7bcf9d4",
+            "commit": "c_22",
             "revisions": [
               {
                 "id": "d_0",
@@ -5631,16 +5620,12 @@
                 "hash": "74252946d208ad5c5e7f3b1a75d9e2feee6d8dfd06386fb09c47f23b797d0bed"
               }
             ],
+            "new_ids": {},
             "committed": true
           },
           {
-            "results": [
-              {
-                "ids": [
-                  "b_15"
-                ]
-              }
-            ],
+            "plan_id": "8b32b6f1398ec40cbf1b6cf02ca5b022b230e3db40c035b4dd4892a6492b6f89",
+            "commit": "c_23",
             "revisions": [
               {
                 "id": "d_0",
@@ -5648,6 +5633,10 @@
                 "hash": "efe35113345462d38bf4a88784899af81796194d509d7b5501b16e29a98be756"
               }
             ],
+            "new_ids": {
+              "$new.0": "b_327",
+              "$new.1": "b_328"
+            },
             "committed": true
           },
           {
@@ -6811,13 +6800,8 @@
       "expect": {
         "writes": [
           {
-            "results": [
-              {
-                "ids": [
-                  "b_327"
-                ]
-              }
-            ],
+            "plan_id": "194fc3e07f85e4150edf9902505198202e2e9673abf0edc89d9bca31cad49458",
+            "commit": "c_20",
             "revisions": [
               {
                 "id": "d_7",
@@ -6825,16 +6809,15 @@
                 "hash": "cd27849756ebe9781e027959fc2f8ade46d07985e0cb71ff0252f9bbad43a356"
               }
             ],
+            "new_ids": {
+              "$new.0": "b_327",
+              "$new.1": "b_328"
+            },
             "committed": true
           },
           {
-            "results": [
-              {
-                "ids": [
-                  "b_333"
-                ]
-              }
-            ],
+            "plan_id": "96d16ce149c86ed34ce859f00e1af65a64de19bfa6cffc85e18660ca56d5a1dd",
+            "commit": "c_21",
             "revisions": [
               {
                 "id": "d_0",
@@ -6842,6 +6825,9 @@
                 "hash": "0170e722b6b0777ef6ed93d33d95ce393ee95a83da23e906d4863b9e56acd524"
               }
             ],
+            "new_ids": {
+              "$new.0": "b_333"
+            },
             "committed": true
           },
           {
@@ -6854,14 +6840,8 @@
             }
           },
           {
-            "results": [
-              {
-                "ids": [
-                  "b_334",
-                  "b_335"
-                ]
-              }
-            ],
+            "plan_id": "d85f2bd6cb787bffc20c791b5073058b60071e02240be1a46b3743e005d40c6e",
+            "commit": "c_22",
             "revisions": [
               {
                 "id": "d_17",
@@ -6869,16 +6849,15 @@
                 "hash": "6ec17354127fc4140b8e75b0ed7ea42c13e52849fbe4f28483862c9de8d8fd7c"
               }
             ],
+            "new_ids": {
+              "$new.0": "b_334",
+              "$new.1": "b_335"
+            },
             "committed": true
           },
           {
-            "results": [
-              {
-                "ids": [
-                  "b_336"
-                ]
-              }
-            ],
+            "plan_id": "f8314a414d7b07fc424362173f36cac1e136e7acf2858eeb658adf56b7d8e44f",
+            "commit": "c_23",
             "revisions": [
               {
                 "id": "d_16",
@@ -6886,6 +6865,9 @@
                 "hash": "66cb89f1fda72e9e341e47308d12256656144074b3902ea2b52915814949e3b3"
               }
             ],
+            "new_ids": {
+              "$new.0": "b_336"
+            },
             "committed": true
           },
           {
@@ -7193,14 +7175,13 @@
     },
     {
       "name": "write-links-retarget-repair",
-      "notes": "§4 links_retarget applied (the phantom [[nigredo]]), links_repair applied over two pairs across many documents (one changeset, one update per top-most block), a dry-run retarget (applied: false), links_repair with neither form → target_missing. Reads: links_stale rows and summary, backlinks of mercury via graph, a rewritten document, an edges scan, the api feed.",
+      "notes": "§4 links_retarget (the phantom [[nigredo]]) and links_repair over two pairs across many documents (one changeset, one update per top-most block) — both COMMIT since 4.0 and return `hits` + `pairs` beside the Receipt; the preview is `plan { retarget }` (the salt pair: `preview.retarget[0]` carries the hits and pair counts the 3.x dry run returned, `preview.diffs` the files, nothing committed); links_repair with neither form → target_missing. Reads: links_stale rows and summary, backlinks of mercury via graph, a rewritten document, a links scan, the api feed.",
       "writes": [
         {
           "tool": "links_retarget",
           "args": {
             "from_target": "nigredo",
-            "to_target": "processes/magnum-opus.md",
-            "dry_run": false
+            "to_target": "processes/magnum-opus.md"
           }
         },
         {
@@ -7215,15 +7196,23 @@
                 "from": "mercury",
                 "to": "substances/mercury.md"
               }
-            ],
-            "dry_run": false
+            ]
           }
         },
         {
-          "tool": "links_retarget",
+          "tool": "plan",
           "args": {
-            "from_target": "salt",
-            "to_target": "substances/salt.md"
+            "effects": [
+              {
+                "op": "retarget",
+                "repairs": [
+                  {
+                    "from": "salt",
+                    "to": "substances/salt.md"
+                  }
+                ]
+              }
+            ]
           }
         },
         {
@@ -7289,14 +7278,8 @@
                 "hits": 1
               }
             ],
-            "applied": true,
-            "results": [
-              {
-                "ids": [
-                  "b_256"
-                ]
-              }
-            ],
+            "plan_id": "38ff5adcb87abded689252baeb6806c32e99f494cdd58f7a848a5761a2b49ba2",
+            "commit": "c_20",
             "revisions": [
               {
                 "id": "d_13",
@@ -7304,6 +7287,9 @@
                 "hash": "9815d80c18380e7aea7ada39dfeeb9259aeacee20795d7ca847bcc930a016531"
               }
             ],
+            "new_ids": {
+              "$new.0": "b_327"
+            },
             "committed": true
           },
           {
@@ -7375,54 +7361,8 @@
                 "hits": 8
               }
             ],
-            "applied": true,
-            "results": [
-              {
-                "ids": [
-                  "b_238"
-                ]
-              },
-              {
-                "ids": [
-                  "b_4"
-                ]
-              },
-              {
-                "ids": [
-                  "b_49"
-                ]
-              },
-              {
-                "ids": [
-                  "b_86"
-                ]
-              },
-              {
-                "ids": [
-                  "b_119"
-                ]
-              },
-              {
-                "ids": [
-                  "b_126"
-                ]
-              },
-              {
-                "ids": [
-                  "b_242"
-                ]
-              },
-              {
-                "ids": [
-                  "b_265"
-                ]
-              },
-              {
-                "ids": [
-                  "b_285"
-                ]
-              }
-            ],
+            "plan_id": "5fea34b83cee58032005cd6381ae08735a2b299b9d9a0bb4ff2cec8e5bc2b21b",
+            "commit": "c_21",
             "revisions": [
               {
                 "id": "d_12",
@@ -7465,146 +7405,359 @@
                 "hash": "2362a833e4f19dd5b6af3b2f9506fbeb27f5c9b768926b0cb5271322b7027bfc"
               }
             ],
+            "new_ids": {
+              "$new.0": "b_328",
+              "$new.1": "b_329",
+              "$new.2": "b_330",
+              "$new.3": "b_331",
+              "$new.4": "b_332",
+              "$new.5": "b_333",
+              "$new.6": "b_334",
+              "$new.7": "b_335",
+              "$new.8": "b_336",
+              "$new.9": "b_337",
+              "$new.10": "b_338",
+              "$new.11": "b_339",
+              "$new.12": "b_340",
+              "$new.13": "b_341",
+              "$new.14": "b_342",
+              "$new.15": "b_343",
+              "$new.16": "b_344"
+            },
             "committed": true
           },
           {
-            "hits": [
+            "version": 1,
+            "planner_v": "p2",
+            "effects": [
               {
-                "id": "b_4",
-                "path": "/index.md",
-                "oldRaw": "- [[substances/mercury.md]] — the volatile spirit\n- [[sulphur]] — the combustible soul\n- [[salt]] — the fixed body",
-                "newRaw": "- [[substances/mercury.md]] — the volatile spirit\n- [[sulphur]] — the combustible soul\n- [[substances/salt.md]] — the fixed body"
-              },
-              {
-                "id": "b_46",
-                "path": "/lab/2026-01-notes.md",
-                "oldRaw": "Burned a batch of wormwood to ash and leached it while the muffle was up to\ntemperature: 40 g dried herb gave 1.1 g of crude salt after a single\nrecrystallization. That is the [[salt]] of the tria prima, obtained in an\nafternoon, and it is easy to see why the operation carried evidential weight.",
-                "newRaw": "Burned a batch of wormwood to ash and leached it while the muffle was up to\ntemperature: 40 g dried herb gave 1.1 g of crude salt after a single\nrecrystallization. That is the [[substances/salt.md]] of the tria prima, obtained in an\nafternoon, and it is easy to see why the operation carried evidential weight."
-              },
-              {
-                "id": "b_126",
-                "path": "/practitioners/paracelsus.md",
-                "oldRaw": "He replaced the four elements with three principles — [[substances/mercury.md]], [[sulphur]],\n[[salt]] — as the constituents of every body. See [index](/index.md) for the\nscheme.",
-                "newRaw": "He replaced the four elements with three principles — [[substances/mercury.md]], [[sulphur]],\n[[substances/salt.md]] — as the constituents of every body. See [index](/index.md) for the\nscheme."
-              },
-              {
-                "id": "b_149",
-                "path": "/processes/calcination.md",
-                "oldRaw": "- calcined lead → yellow massicot, then red minium\n- calcined copper → black tenorite\n- plant matter → ash, source of the [[salt]]",
-                "newRaw": "- calcined lead → yellow massicot, then red minium\n- calcined copper → black tenorite\n- plant matter → ash, source of the [[substances/salt.md]]"
-              },
-              {
-                "id": "b_213",
-                "path": "/substances/mercury.md",
-                "oldRaw": "In the tria prima, mercury is the volatile spirit — the part of a substance that\ncan be driven off and recondensed. It stands opposite [[salt]], the fixed body,\nwith [[sulphur]] mediating.",
-                "newRaw": "In the tria prima, mercury is the volatile spirit — the part of a substance that\ncan be driven off and recondensed. It stands opposite [[substances/salt.md]], the fixed body,\nwith [[sulphur]] mediating."
-              },
-              {
-                "id": "b_285",
-                "path": "/substances/sulphur.md",
-                "oldRaw": "Sulphur is the soul — the combustible principle, what makes a substance\nflammable and gives it colour and character. It mediates between the volatile\n[[substances/mercury.md]] and the fixed [[salt]].",
-                "newRaw": "Sulphur is the soul — the combustible principle, what makes a substance\nflammable and gives it colour and character. It mediates between the volatile\n[[substances/mercury.md]] and the fixed [[substances/salt.md]]."
-              }
-            ],
-            "pairs": [
-              {
-                "from": "salt",
-                "to": "substances/salt.md",
-                "hits": 6
-              }
-            ],
-            "applied": false,
-            "results": [
-              {
-                "ids": [
-                  "b_4"
-                ]
-              },
-              {
-                "ids": [
-                  "b_46"
-                ]
-              },
-              {
-                "ids": [
-                  "b_126"
-                ]
-              },
-              {
-                "ids": [
-                  "b_149"
-                ]
-              },
-              {
-                "ids": [
-                  "b_213"
-                ]
-              },
-              {
-                "ids": [
-                  "b_285"
+                "op": "retarget",
+                "repairs": [
+                  {
+                    "from": "salt",
+                    "to": "substances/salt.md"
+                  }
                 ]
               }
             ],
-            "revisions": [
-              {
-                "id": "d_0",
-                "path": "/index.md",
-                "hash": "6a2387b6e272b0a3c885861fdc17bbcae92dfd6ed6b73d6fae28ff5b54f1cfe3"
-              },
-              {
-                "id": "d_1",
-                "path": "/lab/2026-01-notes.md",
-                "hash": "a3b8dd4f9ef429e8a7f09e00346d71af4793bad227078b5ae07d7e78d6658790"
-              },
-              {
-                "id": "d_6",
-                "path": "/practitioners/paracelsus.md",
-                "hash": "7ded1b40027b3b40c82361489df037ab8de0be0b8a923be68deef853d3ade15c"
-              },
-              {
-                "id": "d_7",
-                "path": "/processes/calcination.md",
-                "hash": "618edc80d80aa950cab2c46aed58b57a7ab9f6b55d0693c05e73a1d4791f7bf3"
-              },
-              {
-                "id": "d_11",
-                "path": "/substances/mercury.md",
-                "hash": "da04ad30a8e308dff9cc5c18d505eed4195ce9d7b58e96d9ab0f224981456213"
-              },
-              {
-                "id": "d_15",
-                "path": "/substances/sulphur.md",
-                "hash": "bae3867acb53265cf7f0a4ff4316565b90292cbd42260cc0f8e36cdc1c63f2e1"
-              }
-            ],
-            "diffs": {
-              "/index.md": {
-                "before": "---\ntype: hub\nlayer: canon\ntitle: Alchemy\ntags: [alchemy, index]\nverified: true\n---\n\n# Alchemy\n\nThe art of transformation — part proto-chemistry, part philosophy, part\ncontemplative practice. This repository collects notes on its substances,\nprocesses, practitioners, and primary texts.\n\n## The tria prima\n\nParacelsus reduced the material world to three principles:\n\n- [[substances/mercury.md]] — the volatile spirit\n- [[sulphur]] — the combustible soul\n- [[salt]] — the fixed body\n\n## Substances\n\n- [prima materia](/substances/prima-materia.md) — the undifferentiated first matter\n- [the philosophers' stone](/substances/philosophers-stone.md) — the goal of the Great Work\n\n## Processes\n\nThe [magnum opus](/processes/magnum-opus.md) organizes the operations into\nstages. Individual operations are documented separately:\n\n- [calcination](/processes/calcination.md)\n- [dissolution](/processes/dissolution.md)\n- [coagulation](/processes/coagulation.md)\n\n## Practitioners\n\n| Practitioner | Tradition | Approximate era |\n|---|---|---|\n| [Maria Prophetissa](/practitioners/maria-prophetissa.md) | Alexandrian | 3rd century |\n| [Jabir ibn Hayyan](/practitioners/jabir-ibn-hayyan.md) | Islamic | 8th century |\n| [Paracelsus](/practitioners/paracelsus.md) | Western | 16th century |\n| [Isaac Newton](/practitioners/newton.md) | Western | 17th century |\n\n## Texts\n\n- [The Emerald Tablet](/texts/emerald-tablet.md)\n- [Mutus Liber](/texts/mutus-liber.md)\n\n## Laboratory\n\nWorking notes live under `lab/`.\n",
-                "after": "---\ntype: hub\nlayer: canon\ntitle: Alchemy\ntags: [alchemy, index]\nverified: true\n---\n\n# Alchemy\n\nThe art of transformation — part proto-chemistry, part philosophy, part\ncontemplative practice. This repository collects notes on its substances,\nprocesses, practitioners, and primary texts.\n\n## The tria prima\n\nParacelsus reduced the material world to three principles:\n\n- [[substances/mercury.md]] — the volatile spirit\n- [[sulphur]] — the combustible soul\n- [[substances/salt.md]] — the fixed body\n\n## Substances\n\n- [prima materia](/substances/prima-materia.md) — the undifferentiated first matter\n- [the philosophers' stone](/substances/philosophers-stone.md) — the goal of the Great Work\n\n## Processes\n\nThe [magnum opus](/processes/magnum-opus.md) organizes the operations into\nstages. Individual operations are documented separately:\n\n- [calcination](/processes/calcination.md)\n- [dissolution](/processes/dissolution.md)\n- [coagulation](/processes/coagulation.md)\n\n## Practitioners\n\n| Practitioner | Tradition | Approximate era |\n|---|---|---|\n| [Maria Prophetissa](/practitioners/maria-prophetissa.md) | Alexandrian | 3rd century |\n| [Jabir ibn Hayyan](/practitioners/jabir-ibn-hayyan.md) | Islamic | 8th century |\n| [Paracelsus](/practitioners/paracelsus.md) | Western | 16th century |\n| [Isaac Newton](/practitioners/newton.md) | Western | 17th century |\n\n## Texts\n\n- [The Emerald Tablet](/texts/emerald-tablet.md)\n- [Mutus Liber](/texts/mutus-liber.md)\n\n## Laboratory\n\nWorking notes live under `lab/`.\n"
-              },
-              "/lab/2026-01-notes.md": {
-                "before": "---\ntype: lab-note\nlayer: working\ntags: [lab, calcination]\nverified: true\nmonth: 1\nsubject: calcination\nwindow: 2026-01-01..2026-01-31\n---\n\n# Laboratory notes — January\n\nBench work on [calcination](/processes/calcination.md), chasing the weight gain.\n\noperator:: bb\nbalance:: analytical\n\n## Setup\n\nLead sheet cut into 2 g pieces, crucible pre-fired to constant weight, muffle at\n600 °C. Weighings after cooling in a desiccator.\n\n```text\ntare crucible → weigh Pb → 600C 2h → cool in desiccator → reweigh\n```\n\n## Results\n\n| Run | Pb in (g) | Calx out (g) | Change |\n|---|---|---|---|\n| 1 | 2.001 | 2.140 | +0.139 |\n| 2 | 2.004 | 2.147 | +0.143 |\n| 3 | 1.998 | 2.138 | +0.140 |\n\nConsistent gain of about 7% by mass. The colour went yellow then, on longer\nheating, red — massicot to minium, as expected.\n\nThe gain is real and reproducible on a bench with 1830s-grade equipment. Anyone\ndoing this carefully before Lavoisier had the fact in hand; what was missing was\na framework that could accept it.\n\n## Side work\n\nBurned a batch of wormwood to ash and leached it while the muffle was up to\ntemperature: 40 g dried herb gave 1.1 g of crude salt after a single\nrecrystallization. That is the [[salt]] of the tria prima, obtained in an\nafternoon, and it is easy to see why the operation carried evidential weight.\n\nSulphide colours are next — sulphur over the same metals, recording colour\nagainst stoichiometry.\n\n## Safety\n\nMercury work deferred — see [[substances/mercury.md]] for the toxicity notes. Not handling it\nwithout a fume hood.\n\n## Tasks\n\n- [x] Pre-fire crucibles to constant weight\n- [x] Three replicate runs on lead\n- [x] Record the colour sequence\n- [x] Extract the salt of wormwood and weigh the yield\n- [ ] Repeat the series with copper\n- [ ] Plot mass gain against heating time\n- [ ] Tabulate the metal sulphides by colour\n",
-                "after": "---\ntype: lab-note\nlayer: working\ntags: [lab, calcination]\nverified: true\nmonth: 1\nsubject: calcination\nwindow: 2026-01-01..2026-01-31\n---\n\n# Laboratory notes — January\n\nBench work on [calcination](/processes/calcination.md), chasing the weight gain.\n\noperator:: bb\nbalance:: analytical\n\n## Setup\n\nLead sheet cut into 2 g pieces, crucible pre-fired to constant weight, muffle at\n600 °C. Weighings after cooling in a desiccator.\n\n```text\ntare crucible → weigh Pb → 600C 2h → cool in desiccator → reweigh\n```\n\n## Results\n\n| Run | Pb in (g) | Calx out (g) | Change |\n|---|---|---|---|\n| 1 | 2.001 | 2.140 | +0.139 |\n| 2 | 2.004 | 2.147 | +0.143 |\n| 3 | 1.998 | 2.138 | +0.140 |\n\nConsistent gain of about 7% by mass. The colour went yellow then, on longer\nheating, red — massicot to minium, as expected.\n\nThe gain is real and reproducible on a bench with 1830s-grade equipment. Anyone\ndoing this carefully before Lavoisier had the fact in hand; what was missing was\na framework that could accept it.\n\n## Side work\n\nBurned a batch of wormwood to ash and leached it while the muffle was up to\ntemperature: 40 g dried herb gave 1.1 g of crude salt after a single\nrecrystallization. That is the [[substances/salt.md]] of the tria prima, obtained in an\nafternoon, and it is easy to see why the operation carried evidential weight.\n\nSulphide colours are next — sulphur over the same metals, recording colour\nagainst stoichiometry.\n\n## Safety\n\nMercury work deferred — see [[substances/mercury.md]] for the toxicity notes. Not handling it\nwithout a fume hood.\n\n## Tasks\n\n- [x] Pre-fire crucibles to constant weight\n- [x] Three replicate runs on lead\n- [x] Record the colour sequence\n- [x] Extract the salt of wormwood and weigh the yield\n- [ ] Repeat the series with copper\n- [ ] Plot mass gain against heating time\n- [ ] Tabulate the metal sulphides by colour\n"
-              },
-              "/practitioners/paracelsus.md": {
-                "before": "---\ntype: practitioner\nlayer: canon\ntradition: western\nera: 1530\ntags: [practitioner, medicine, theory]\nverified: true\n---\n\n# Paracelsus\n\nTheophrastus von Hohenheim, 1493–1541. Redirected alchemy from metallurgy to\nmedicine, and was insufferable about it.\n\nknown_for:: tria prima\ncentury:: 16\n\n## The tria prima\n\nHe replaced the four elements with three principles — [[substances/mercury.md]], [[sulphur]],\n[[salt]] — as the constituents of every body. See [index](/index.md) for the\nscheme.\n\nAs chemistry this is wrong. As a research programme it was an improvement: the\ntria prima are *operationally defined* by what happens when you heat a substance\nand see what flies off, what burns, and what remains. The four elements are not\ndefined by any operation at all.\n\n## Iatrochemistry\n\nHis real contribution: minerals as medicines, prepared by chemical operation and\ndosed by weight. Mercury for syphilis, antimony as an emetic, laudanum for pain.\nSome of these worked. Several were poisons.\n\n> All things are poison and nothing is without poison; only the dose makes a\n> thing not a poison.\n\nThat is the founding statement of dose–response, and it is correct.\n\n## Character\n\nHe burned Avicenna's books publicly, lectured in German rather than Latin,\ninsulted the faculty of every university that employed him, and was run out of\nBasel. His posthumous reputation was built by followers who systematized what he\nleft as invective.\n\n- [ ] Check which mineral remedies survived into the 18th-century pharmacopoeia\n- [x] Confirm the dose–response quotation's source\n",
-                "after": "---\ntype: practitioner\nlayer: canon\ntradition: western\nera: 1530\ntags: [practitioner, medicine, theory]\nverified: true\n---\n\n# Paracelsus\n\nTheophrastus von Hohenheim, 1493–1541. Redirected alchemy from metallurgy to\nmedicine, and was insufferable about it.\n\nknown_for:: tria prima\ncentury:: 16\n\n## The tria prima\n\nHe replaced the four elements with three principles — [[substances/mercury.md]], [[sulphur]],\n[[substances/salt.md]] — as the constituents of every body. See [index](/index.md) for the\nscheme.\n\nAs chemistry this is wrong. As a research programme it was an improvement: the\ntria prima are *operationally defined* by what happens when you heat a substance\nand see what flies off, what burns, and what remains. The four elements are not\ndefined by any operation at all.\n\n## Iatrochemistry\n\nHis real contribution: minerals as medicines, prepared by chemical operation and\ndosed by weight. Mercury for syphilis, antimony as an emetic, laudanum for pain.\nSome of these worked. Several were poisons.\n\n> All things are poison and nothing is without poison; only the dose makes a\n> thing not a poison.\n\nThat is the founding statement of dose–response, and it is correct.\n\n## Character\n\nHe burned Avicenna's books publicly, lectured in German rather than Latin,\ninsulted the faculty of every university that employed him, and was run out of\nBasel. His posthumous reputation was built by followers who systematized what he\nleft as invective.\n\n- [ ] Check which mineral remedies survived into the 18th-century pharmacopoeia\n- [x] Confirm the dose–response quotation's source\n"
-              },
-              "/processes/calcination.md": {
-                "before": "---\ntype: process\nslug: calcination\nlayer: canon\ntradition: western\ntags: [process, fire]\nverified: true\nstage: nigredo\n---\n\n# Calcination\n\nHeating a substance in air until it is reduced to a friable powder — a *calx*.\nThe first of the twelve gates and, in practice, the first thing anyone does.\n\nelement:: fire\nreversible:: no\n\n## Procedure\n\nGrind the material, spread it thinly in an open crucible, and heat steadily\nbelow the melting point. Stir to expose fresh surface. Continue until no further\nweight is lost and no fumes come off.\n\n```text\ncrucible → grind → thin layer → moderate heat → stir → constant weight\n```\n\nThe endpoint is the constant weight, not the colour. Colour tells you which\noxide you have; weight tells you that you are finished.\n\n## What is actually happening\n\nOrganic matter burns away; metals take up oxygen. The characteristic *gain* in\nweight when calcining a metal is the observation that eventually broke the\nphlogiston theory — the calx weighs more than the metal, which a theory of\nescaping substance cannot accommodate.\n\nAlchemical practice recorded this gain for centuries without drawing the\ninference. The data were sound; the framework could not use them.\n\n## Products\n\n- calcined lead → yellow massicot, then red minium\n- calcined copper → black tenorite\n- plant matter → ash, source of the [[salt]]\n\n## Tasks\n\n- [x] Verify the weight gain on lead with a balance\n- [ ] Repeat with copper and record the colour sequence\n- [ ] Chase down the earliest recorded weight-gain measurement\n",
-                "after": "---\ntype: process\nslug: calcination\nlayer: canon\ntradition: western\ntags: [process, fire]\nverified: true\nstage: nigredo\n---\n\n# Calcination\n\nHeating a substance in air until it is reduced to a friable powder — a *calx*.\nThe first of the twelve gates and, in practice, the first thing anyone does.\n\nelement:: fire\nreversible:: no\n\n## Procedure\n\nGrind the material, spread it thinly in an open crucible, and heat steadily\nbelow the melting point. Stir to expose fresh surface. Continue until no further\nweight is lost and no fumes come off.\n\n```text\ncrucible → grind → thin layer → moderate heat → stir → constant weight\n```\n\nThe endpoint is the constant weight, not the colour. Colour tells you which\noxide you have; weight tells you that you are finished.\n\n## What is actually happening\n\nOrganic matter burns away; metals take up oxygen. The characteristic *gain* in\nweight when calcining a metal is the observation that eventually broke the\nphlogiston theory — the calx weighs more than the metal, which a theory of\nescaping substance cannot accommodate.\n\nAlchemical practice recorded this gain for centuries without drawing the\ninference. The data were sound; the framework could not use them.\n\n## Products\n\n- calcined lead → yellow massicot, then red minium\n- calcined copper → black tenorite\n- plant matter → ash, source of the [[substances/salt.md]]\n\n## Tasks\n\n- [x] Verify the weight gain on lead with a balance\n- [ ] Repeat with copper and record the colour sequence\n- [ ] Chase down the earliest recorded weight-gain measurement\n"
-              },
-              "/substances/mercury.md": {
-                "before": "---\ntype: substance\nslug: mercury\nlayer: canon\ntradition: western\nelement: mercury\ntags: substance\nverified: true\n---\n\n# Mercury\n\nQuicksilver: a metal that is liquid at room temperature, and therefore the\nobvious emblem of everything that refuses to hold a fixed form.\n\nsymbol:: ☿\nmelting_point:: -38.8\ntoxic:: yes\n\n## As a principle\n\nIn the tria prima, mercury is the volatile spirit — the part of a substance that\ncan be driven off and recondensed. It stands opposite [[salt]], the fixed body,\nwith [[sulphur]] mediating.\n\n| Principle | Role | Fixed? |\n|---|---|---|\n| Mercury | spirit | no |\n| Sulphur | soul | partly |\n| Salt | body | yes |\n\n## As a material\n\nMercury dissolves gold and silver into amalgams, which made it indispensable to\nassayers and irresistible to alchemists: a substance that visibly *takes gold\ninto itself* invites the inference that it can also give gold back.\n\nIt is also poisonous, a fact the laboratory notes record without connecting it\nto the tremors and mania that follow long exposure. See the\n[January notes](/lab/2026-01-notes.md) for handling precautions.\n\n## Reading\n\n- [Paracelsus](/practitioners/paracelsus.md) on the tria prima\n- [Jabir ibn Hayyan](/practitioners/jabir-ibn-hayyan.md) on the mercury–sulphur theory of metals\n",
-                "after": "---\ntype: substance\nslug: mercury\nlayer: canon\ntradition: western\nelement: mercury\ntags: substance\nverified: true\n---\n\n# Mercury\n\nQuicksilver: a metal that is liquid at room temperature, and therefore the\nobvious emblem of everything that refuses to hold a fixed form.\n\nsymbol:: ☿\nmelting_point:: -38.8\ntoxic:: yes\n\n## As a principle\n\nIn the tria prima, mercury is the volatile spirit — the part of a substance that\ncan be driven off and recondensed. It stands opposite [[substances/salt.md]], the fixed body,\nwith [[sulphur]] mediating.\n\n| Principle | Role | Fixed? |\n|---|---|---|\n| Mercury | spirit | no |\n| Sulphur | soul | partly |\n| Salt | body | yes |\n\n## As a material\n\nMercury dissolves gold and silver into amalgams, which made it indispensable to\nassayers and irresistible to alchemists: a substance that visibly *takes gold\ninto itself* invites the inference that it can also give gold back.\n\nIt is also poisonous, a fact the laboratory notes record without connecting it\nto the tremors and mania that follow long exposure. See the\n[January notes](/lab/2026-01-notes.md) for handling precautions.\n\n## Reading\n\n- [Paracelsus](/practitioners/paracelsus.md) on the tria prima\n- [Jabir ibn Hayyan](/practitioners/jabir-ibn-hayyan.md) on the mercury–sulphur theory of metals\n"
-              },
-              "/substances/sulphur.md": {
-                "before": "---\ntype: substance\nslug: sulphur\nlayer: canon\ntradition: western\nelement: sulphur\ntags: [substance, tria-prima]\nverified: true\n---\n\n# Sulphur\n\nBrimstone: yellow, brittle, and burns with a blue flame and a choking smell.\nIts behaviour under heat made it the natural emblem of combustibility.\n\nsymbol:: 🜍\nmelting_point:: 115.2\ntoxic:: mildly\n\n## As a principle\n\nSulphur is the soul — the combustible principle, what makes a substance\nflammable and gives it colour and character. It mediates between the volatile\n[[substances/mercury.md]] and the fixed [[salt]].\n\nIn the mercury–sulphur theory inherited from\n[Jabir ibn Hayyan](/practitioners/jabir-ibn-hayyan.md), every metal is a\ncompound of the two, and the proportions determine the metal. Gold is a perfect\nbalance; lead is the same pair badly mixed. Transmutation therefore requires no\nnew matter, only a correction of proportion — which is why the theory was so\ndurable and so encouraging.\n\n## As a material\n\nSulphur combines directly with most metals on heating, producing sulphides whose\ncolours are dramatic and reproducible. This is genuinely useful chemistry, and\nmuch of the practical content of the alchemical corpus concerns it. The bench\nwork is tracked in the [January notes](/lab/2026-01-notes.md).\n",
-                "after": "---\ntype: substance\nslug: sulphur\nlayer: canon\ntradition: western\nelement: sulphur\ntags: [substance, tria-prima]\nverified: true\n---\n\n# Sulphur\n\nBrimstone: yellow, brittle, and burns with a blue flame and a choking smell.\nIts behaviour under heat made it the natural emblem of combustibility.\n\nsymbol:: 🜍\nmelting_point:: 115.2\ntoxic:: mildly\n\n## As a principle\n\nSulphur is the soul — the combustible principle, what makes a substance\nflammable and gives it colour and character. It mediates between the volatile\n[[substances/mercury.md]] and the fixed [[substances/salt.md]].\n\nIn the mercury–sulphur theory inherited from\n[Jabir ibn Hayyan](/practitioners/jabir-ibn-hayyan.md), every metal is a\ncompound of the two, and the proportions determine the metal. Gold is a perfect\nbalance; lead is the same pair badly mixed. Transmutation therefore requires no\nnew matter, only a correction of proportion — which is why the theory was so\ndurable and so encouraging.\n\n## As a material\n\nSulphur combines directly with most metals on heating, producing sulphides whose\ncolours are dramatic and reproducible. This is genuinely useful chemistry, and\nmuch of the practical content of the alchemical corpus concerns it. The bench\nwork is tracked in the [January notes](/lab/2026-01-notes.md).\n"
-              }
+            "opset": {
+              "creates": [],
+              "moves": [],
+              "tombstones": [],
+              "set_frontmatter": [],
+              "ops": [
+                {
+                  "op": "update",
+                  "block": "b_4",
+                  "markdown": "- [[substances/mercury.md]] — the volatile spirit\n- [[sulphur]] — the combustible soul\n- [[substances/salt.md]] — the fixed body",
+                  "expect": {
+                    "content_hash": "fad1031b47d96382795fe86d9e8f2af993d12425c045a6b01fdbd53748e10c2a"
+                  }
+                },
+                {
+                  "op": "update",
+                  "block": "b_46",
+                  "markdown": "Burned a batch of wormwood to ash and leached it while the muffle was up to\ntemperature: 40 g dried herb gave 1.1 g of crude salt after a single\nrecrystallization. That is the [[substances/salt.md]] of the tria prima, obtained in an\nafternoon, and it is easy to see why the operation carried evidential weight.",
+                  "expect": {
+                    "content_hash": "d0951bd2e23e5200842f40c290fcedf583698e481049d8d5fc90fbb0c99a9cd2"
+                  }
+                },
+                {
+                  "op": "update",
+                  "block": "b_126",
+                  "markdown": "He replaced the four elements with three principles — [[substances/mercury.md]], [[sulphur]],\n[[substances/salt.md]] — as the constituents of every body. See [index](/index.md) for the\nscheme.",
+                  "expect": {
+                    "content_hash": "28d313c9c21e0e6f6f55e28d2bf9f91724506317f2a4b0dae2c5a0683811f14a"
+                  }
+                },
+                {
+                  "op": "update",
+                  "block": "b_149",
+                  "markdown": "- calcined lead → yellow massicot, then red minium\n- calcined copper → black tenorite\n- plant matter → ash, source of the [[substances/salt.md]]",
+                  "expect": {
+                    "content_hash": "90fa20ce6e161883450ce2623bfadc89252d2a1f06fc4b36e87355f552155385"
+                  }
+                },
+                {
+                  "op": "update",
+                  "block": "b_213",
+                  "markdown": "In the tria prima, mercury is the volatile spirit — the part of a substance that\ncan be driven off and recondensed. It stands opposite [[substances/salt.md]], the fixed body,\nwith [[sulphur]] mediating.",
+                  "expect": {
+                    "content_hash": "7e17d80b677eb809d874cb67e2abe7dfa6fd02b2632de26abe3dece7cbfddbeb"
+                  }
+                },
+                {
+                  "op": "update",
+                  "block": "b_285",
+                  "markdown": "Sulphur is the soul — the combustible principle, what makes a substance\nflammable and gives it colour and character. It mediates between the volatile\n[[substances/mercury.md]] and the fixed [[substances/salt.md]].",
+                  "expect": {
+                    "content_hash": "eefe6064b590473cf9b3a1c3963d35cb00357f175017881cac5c390209f526db"
+                  }
+                }
+              ]
             },
-            "committed": false
+            "preconditions": {
+              "docs": [
+                {
+                  "id": "d_0",
+                  "path": "index.md",
+                  "base_revision": "r_22",
+                  "hash": "8fd589da4e988aa2b78f14119182c411f3ed80168abe3e55cdf5d1b6a6bf577a"
+                },
+                {
+                  "id": "d_1",
+                  "path": "lab/2026-01-notes.md",
+                  "base_revision": "r_23",
+                  "hash": "43a994a38763130d49a3440369708d8524253265cee65dd404137acd129ea958"
+                },
+                {
+                  "id": "d_6",
+                  "path": "practitioners/paracelsus.md",
+                  "base_revision": "r_26",
+                  "hash": "ca10322a9c4c44b9947b7607d7c94a7137f36a15e5b1273ea25bb613b7a55681"
+                },
+                {
+                  "id": "d_7",
+                  "path": "processes/calcination.md",
+                  "base_revision": "r_7",
+                  "hash": "e021b85c0fe843013d75cbe71aa541c45419f7d13a4bc246baebaeff30d605d2"
+                },
+                {
+                  "id": "d_11",
+                  "path": "substances/mercury.md",
+                  "base_revision": "r_11",
+                  "hash": "f144bf5fa170bf2dea89ad6fa7c9e37961a7b3016c454364a97e2d0697131e8f"
+                },
+                {
+                  "id": "d_15",
+                  "path": "substances/sulphur.md",
+                  "base_revision": "r_28",
+                  "hash": "2362a833e4f19dd5b6af3b2f9506fbeb27f5c9b768926b0cb5271322b7027bfc"
+                }
+              ],
+              "blocks": [
+                {
+                  "id": "b_4",
+                  "content_hash": "fad1031b47d96382795fe86d9e8f2af993d12425c045a6b01fdbd53748e10c2a"
+                },
+                {
+                  "id": "b_46",
+                  "content_hash": "d0951bd2e23e5200842f40c290fcedf583698e481049d8d5fc90fbb0c99a9cd2"
+                },
+                {
+                  "id": "b_126",
+                  "content_hash": "28d313c9c21e0e6f6f55e28d2bf9f91724506317f2a4b0dae2c5a0683811f14a"
+                },
+                {
+                  "id": "b_149",
+                  "content_hash": "90fa20ce6e161883450ce2623bfadc89252d2a1f06fc4b36e87355f552155385"
+                },
+                {
+                  "id": "b_213",
+                  "content_hash": "7e17d80b677eb809d874cb67e2abe7dfa6fd02b2632de26abe3dece7cbfddbeb"
+                },
+                {
+                  "id": "b_285",
+                  "content_hash": "eefe6064b590473cf9b3a1c3963d35cb00357f175017881cac5c390209f526db"
+                }
+              ],
+              "parents": [],
+              "absent_paths": []
+            },
+            "new_ids": [
+              {
+                "symbol": "$new.0",
+                "kind": "block"
+              },
+              {
+                "symbol": "$new.1",
+                "kind": "block"
+              },
+              {
+                "symbol": "$new.2",
+                "kind": "block"
+              },
+              {
+                "symbol": "$new.3",
+                "kind": "block"
+              },
+              {
+                "symbol": "$new.4",
+                "kind": "block"
+              },
+              {
+                "symbol": "$new.5",
+                "kind": "block"
+              },
+              {
+                "symbol": "$new.6",
+                "kind": "block"
+              },
+              {
+                "symbol": "$new.7",
+                "kind": "block"
+              },
+              {
+                "symbol": "$new.8",
+                "kind": "block"
+              },
+              {
+                "symbol": "$new.9",
+                "kind": "block"
+              },
+              {
+                "symbol": "$new.10",
+                "kind": "block"
+              },
+              {
+                "symbol": "$new.11",
+                "kind": "block"
+              }
+            ],
+            "plan_id": "3255281fa29d92525cf6f43e0676d875b5c70c529b1cddace3c02a9e2dc7b81f",
+            "diagnostics": [],
+            "preview": {
+              "results": [
+                {
+                  "ids": [
+                    "b_4"
+                  ]
+                },
+                {
+                  "ids": [
+                    "b_46"
+                  ]
+                },
+                {
+                  "ids": [
+                    "b_126"
+                  ]
+                },
+                {
+                  "ids": [
+                    "b_149"
+                  ]
+                },
+                {
+                  "ids": [
+                    "b_213"
+                  ]
+                },
+                {
+                  "ids": [
+                    "b_285"
+                  ]
+                }
+              ],
+              "revisions": [
+                {
+                  "id": "d_0",
+                  "path": "/index.md",
+                  "hash": "6a2387b6e272b0a3c885861fdc17bbcae92dfd6ed6b73d6fae28ff5b54f1cfe3"
+                },
+                {
+                  "id": "d_1",
+                  "path": "/lab/2026-01-notes.md",
+                  "hash": "a3b8dd4f9ef429e8a7f09e00346d71af4793bad227078b5ae07d7e78d6658790"
+                },
+                {
+                  "id": "d_6",
+                  "path": "/practitioners/paracelsus.md",
+                  "hash": "7ded1b40027b3b40c82361489df037ab8de0be0b8a923be68deef853d3ade15c"
+                },
+                {
+                  "id": "d_7",
+                  "path": "/processes/calcination.md",
+                  "hash": "618edc80d80aa950cab2c46aed58b57a7ab9f6b55d0693c05e73a1d4791f7bf3"
+                },
+                {
+                  "id": "d_11",
+                  "path": "/substances/mercury.md",
+                  "hash": "da04ad30a8e308dff9cc5c18d505eed4195ce9d7b58e96d9ab0f224981456213"
+                },
+                {
+                  "id": "d_15",
+                  "path": "/substances/sulphur.md",
+                  "hash": "bae3867acb53265cf7f0a4ff4316565b90292cbd42260cc0f8e36cdc1c63f2e1"
+                }
+              ],
+              "diffs": {
+                "/index.md": {
+                  "before": "---\ntype: hub\nlayer: canon\ntitle: Alchemy\ntags: [alchemy, index]\nverified: true\n---\n\n# Alchemy\n\nThe art of transformation — part proto-chemistry, part philosophy, part\ncontemplative practice. This repository collects notes on its substances,\nprocesses, practitioners, and primary texts.\n\n## The tria prima\n\nParacelsus reduced the material world to three principles:\n\n- [[substances/mercury.md]] — the volatile spirit\n- [[sulphur]] — the combustible soul\n- [[salt]] — the fixed body\n\n## Substances\n\n- [prima materia](/substances/prima-materia.md) — the undifferentiated first matter\n- [the philosophers' stone](/substances/philosophers-stone.md) — the goal of the Great Work\n\n## Processes\n\nThe [magnum opus](/processes/magnum-opus.md) organizes the operations into\nstages. Individual operations are documented separately:\n\n- [calcination](/processes/calcination.md)\n- [dissolution](/processes/dissolution.md)\n- [coagulation](/processes/coagulation.md)\n\n## Practitioners\n\n| Practitioner | Tradition | Approximate era |\n|---|---|---|\n| [Maria Prophetissa](/practitioners/maria-prophetissa.md) | Alexandrian | 3rd century |\n| [Jabir ibn Hayyan](/practitioners/jabir-ibn-hayyan.md) | Islamic | 8th century |\n| [Paracelsus](/practitioners/paracelsus.md) | Western | 16th century |\n| [Isaac Newton](/practitioners/newton.md) | Western | 17th century |\n\n## Texts\n\n- [The Emerald Tablet](/texts/emerald-tablet.md)\n- [Mutus Liber](/texts/mutus-liber.md)\n\n## Laboratory\n\nWorking notes live under `lab/`.\n",
+                  "after": "---\ntype: hub\nlayer: canon\ntitle: Alchemy\ntags: [alchemy, index]\nverified: true\n---\n\n# Alchemy\n\nThe art of transformation — part proto-chemistry, part philosophy, part\ncontemplative practice. This repository collects notes on its substances,\nprocesses, practitioners, and primary texts.\n\n## The tria prima\n\nParacelsus reduced the material world to three principles:\n\n- [[substances/mercury.md]] — the volatile spirit\n- [[sulphur]] — the combustible soul\n- [[substances/salt.md]] — the fixed body\n\n## Substances\n\n- [prima materia](/substances/prima-materia.md) — the undifferentiated first matter\n- [the philosophers' stone](/substances/philosophers-stone.md) — the goal of the Great Work\n\n## Processes\n\nThe [magnum opus](/processes/magnum-opus.md) organizes the operations into\nstages. Individual operations are documented separately:\n\n- [calcination](/processes/calcination.md)\n- [dissolution](/processes/dissolution.md)\n- [coagulation](/processes/coagulation.md)\n\n## Practitioners\n\n| Practitioner | Tradition | Approximate era |\n|---|---|---|\n| [Maria Prophetissa](/practitioners/maria-prophetissa.md) | Alexandrian | 3rd century |\n| [Jabir ibn Hayyan](/practitioners/jabir-ibn-hayyan.md) | Islamic | 8th century |\n| [Paracelsus](/practitioners/paracelsus.md) | Western | 16th century |\n| [Isaac Newton](/practitioners/newton.md) | Western | 17th century |\n\n## Texts\n\n- [The Emerald Tablet](/texts/emerald-tablet.md)\n- [Mutus Liber](/texts/mutus-liber.md)\n\n## Laboratory\n\nWorking notes live under `lab/`.\n"
+                },
+                "/lab/2026-01-notes.md": {
+                  "before": "---\ntype: lab-note\nlayer: working\ntags: [lab, calcination]\nverified: true\nmonth: 1\nsubject: calcination\nwindow: 2026-01-01..2026-01-31\n---\n\n# Laboratory notes — January\n\nBench work on [calcination](/processes/calcination.md), chasing the weight gain.\n\noperator:: bb\nbalance:: analytical\n\n## Setup\n\nLead sheet cut into 2 g pieces, crucible pre-fired to constant weight, muffle at\n600 °C. Weighings after cooling in a desiccator.\n\n```text\ntare crucible → weigh Pb → 600C 2h → cool in desiccator → reweigh\n```\n\n## Results\n\n| Run | Pb in (g) | Calx out (g) | Change |\n|---|---|---|---|\n| 1 | 2.001 | 2.140 | +0.139 |\n| 2 | 2.004 | 2.147 | +0.143 |\n| 3 | 1.998 | 2.138 | +0.140 |\n\nConsistent gain of about 7% by mass. The colour went yellow then, on longer\nheating, red — massicot to minium, as expected.\n\nThe gain is real and reproducible on a bench with 1830s-grade equipment. Anyone\ndoing this carefully before Lavoisier had the fact in hand; what was missing was\na framework that could accept it.\n\n## Side work\n\nBurned a batch of wormwood to ash and leached it while the muffle was up to\ntemperature: 40 g dried herb gave 1.1 g of crude salt after a single\nrecrystallization. That is the [[salt]] of the tria prima, obtained in an\nafternoon, and it is easy to see why the operation carried evidential weight.\n\nSulphide colours are next — sulphur over the same metals, recording colour\nagainst stoichiometry.\n\n## Safety\n\nMercury work deferred — see [[substances/mercury.md]] for the toxicity notes. Not handling it\nwithout a fume hood.\n\n## Tasks\n\n- [x] Pre-fire crucibles to constant weight\n- [x] Three replicate runs on lead\n- [x] Record the colour sequence\n- [x] Extract the salt of wormwood and weigh the yield\n- [ ] Repeat the series with copper\n- [ ] Plot mass gain against heating time\n- [ ] Tabulate the metal sulphides by colour\n",
+                  "after": "---\ntype: lab-note\nlayer: working\ntags: [lab, calcination]\nverified: true\nmonth: 1\nsubject: calcination\nwindow: 2026-01-01..2026-01-31\n---\n\n# Laboratory notes — January\n\nBench work on [calcination](/processes/calcination.md), chasing the weight gain.\n\noperator:: bb\nbalance:: analytical\n\n## Setup\n\nLead sheet cut into 2 g pieces, crucible pre-fired to constant weight, muffle at\n600 °C. Weighings after cooling in a desiccator.\n\n```text\ntare crucible → weigh Pb → 600C 2h → cool in desiccator → reweigh\n```\n\n## Results\n\n| Run | Pb in (g) | Calx out (g) | Change |\n|---|---|---|---|\n| 1 | 2.001 | 2.140 | +0.139 |\n| 2 | 2.004 | 2.147 | +0.143 |\n| 3 | 1.998 | 2.138 | +0.140 |\n\nConsistent gain of about 7% by mass. The colour went yellow then, on longer\nheating, red — massicot to minium, as expected.\n\nThe gain is real and reproducible on a bench with 1830s-grade equipment. Anyone\ndoing this carefully before Lavoisier had the fact in hand; what was missing was\na framework that could accept it.\n\n## Side work\n\nBurned a batch of wormwood to ash and leached it while the muffle was up to\ntemperature: 40 g dried herb gave 1.1 g of crude salt after a single\nrecrystallization. That is the [[substances/salt.md]] of the tria prima, obtained in an\nafternoon, and it is easy to see why the operation carried evidential weight.\n\nSulphide colours are next — sulphur over the same metals, recording colour\nagainst stoichiometry.\n\n## Safety\n\nMercury work deferred — see [[substances/mercury.md]] for the toxicity notes. Not handling it\nwithout a fume hood.\n\n## Tasks\n\n- [x] Pre-fire crucibles to constant weight\n- [x] Three replicate runs on lead\n- [x] Record the colour sequence\n- [x] Extract the salt of wormwood and weigh the yield\n- [ ] Repeat the series with copper\n- [ ] Plot mass gain against heating time\n- [ ] Tabulate the metal sulphides by colour\n"
+                },
+                "/practitioners/paracelsus.md": {
+                  "before": "---\ntype: practitioner\nlayer: canon\ntradition: western\nera: 1530\ntags: [practitioner, medicine, theory]\nverified: true\n---\n\n# Paracelsus\n\nTheophrastus von Hohenheim, 1493–1541. Redirected alchemy from metallurgy to\nmedicine, and was insufferable about it.\n\nknown_for:: tria prima\ncentury:: 16\n\n## The tria prima\n\nHe replaced the four elements with three principles — [[substances/mercury.md]], [[sulphur]],\n[[salt]] — as the constituents of every body. See [index](/index.md) for the\nscheme.\n\nAs chemistry this is wrong. As a research programme it was an improvement: the\ntria prima are *operationally defined* by what happens when you heat a substance\nand see what flies off, what burns, and what remains. The four elements are not\ndefined by any operation at all.\n\n## Iatrochemistry\n\nHis real contribution: minerals as medicines, prepared by chemical operation and\ndosed by weight. Mercury for syphilis, antimony as an emetic, laudanum for pain.\nSome of these worked. Several were poisons.\n\n> All things are poison and nothing is without poison; only the dose makes a\n> thing not a poison.\n\nThat is the founding statement of dose–response, and it is correct.\n\n## Character\n\nHe burned Avicenna's books publicly, lectured in German rather than Latin,\ninsulted the faculty of every university that employed him, and was run out of\nBasel. His posthumous reputation was built by followers who systematized what he\nleft as invective.\n\n- [ ] Check which mineral remedies survived into the 18th-century pharmacopoeia\n- [x] Confirm the dose–response quotation's source\n",
+                  "after": "---\ntype: practitioner\nlayer: canon\ntradition: western\nera: 1530\ntags: [practitioner, medicine, theory]\nverified: true\n---\n\n# Paracelsus\n\nTheophrastus von Hohenheim, 1493–1541. Redirected alchemy from metallurgy to\nmedicine, and was insufferable about it.\n\nknown_for:: tria prima\ncentury:: 16\n\n## The tria prima\n\nHe replaced the four elements with three principles — [[substances/mercury.md]], [[sulphur]],\n[[substances/salt.md]] — as the constituents of every body. See [index](/index.md) for the\nscheme.\n\nAs chemistry this is wrong. As a research programme it was an improvement: the\ntria prima are *operationally defined* by what happens when you heat a substance\nand see what flies off, what burns, and what remains. The four elements are not\ndefined by any operation at all.\n\n## Iatrochemistry\n\nHis real contribution: minerals as medicines, prepared by chemical operation and\ndosed by weight. Mercury for syphilis, antimony as an emetic, laudanum for pain.\nSome of these worked. Several were poisons.\n\n> All things are poison and nothing is without poison; only the dose makes a\n> thing not a poison.\n\nThat is the founding statement of dose–response, and it is correct.\n\n## Character\n\nHe burned Avicenna's books publicly, lectured in German rather than Latin,\ninsulted the faculty of every university that employed him, and was run out of\nBasel. His posthumous reputation was built by followers who systematized what he\nleft as invective.\n\n- [ ] Check which mineral remedies survived into the 18th-century pharmacopoeia\n- [x] Confirm the dose–response quotation's source\n"
+                },
+                "/processes/calcination.md": {
+                  "before": "---\ntype: process\nslug: calcination\nlayer: canon\ntradition: western\ntags: [process, fire]\nverified: true\nstage: nigredo\n---\n\n# Calcination\n\nHeating a substance in air until it is reduced to a friable powder — a *calx*.\nThe first of the twelve gates and, in practice, the first thing anyone does.\n\nelement:: fire\nreversible:: no\n\n## Procedure\n\nGrind the material, spread it thinly in an open crucible, and heat steadily\nbelow the melting point. Stir to expose fresh surface. Continue until no further\nweight is lost and no fumes come off.\n\n```text\ncrucible → grind → thin layer → moderate heat → stir → constant weight\n```\n\nThe endpoint is the constant weight, not the colour. Colour tells you which\noxide you have; weight tells you that you are finished.\n\n## What is actually happening\n\nOrganic matter burns away; metals take up oxygen. The characteristic *gain* in\nweight when calcining a metal is the observation that eventually broke the\nphlogiston theory — the calx weighs more than the metal, which a theory of\nescaping substance cannot accommodate.\n\nAlchemical practice recorded this gain for centuries without drawing the\ninference. The data were sound; the framework could not use them.\n\n## Products\n\n- calcined lead → yellow massicot, then red minium\n- calcined copper → black tenorite\n- plant matter → ash, source of the [[salt]]\n\n## Tasks\n\n- [x] Verify the weight gain on lead with a balance\n- [ ] Repeat with copper and record the colour sequence\n- [ ] Chase down the earliest recorded weight-gain measurement\n",
+                  "after": "---\ntype: process\nslug: calcination\nlayer: canon\ntradition: western\ntags: [process, fire]\nverified: true\nstage: nigredo\n---\n\n# Calcination\n\nHeating a substance in air until it is reduced to a friable powder — a *calx*.\nThe first of the twelve gates and, in practice, the first thing anyone does.\n\nelement:: fire\nreversible:: no\n\n## Procedure\n\nGrind the material, spread it thinly in an open crucible, and heat steadily\nbelow the melting point. Stir to expose fresh surface. Continue until no further\nweight is lost and no fumes come off.\n\n```text\ncrucible → grind → thin layer → moderate heat → stir → constant weight\n```\n\nThe endpoint is the constant weight, not the colour. Colour tells you which\noxide you have; weight tells you that you are finished.\n\n## What is actually happening\n\nOrganic matter burns away; metals take up oxygen. The characteristic *gain* in\nweight when calcining a metal is the observation that eventually broke the\nphlogiston theory — the calx weighs more than the metal, which a theory of\nescaping substance cannot accommodate.\n\nAlchemical practice recorded this gain for centuries without drawing the\ninference. The data were sound; the framework could not use them.\n\n## Products\n\n- calcined lead → yellow massicot, then red minium\n- calcined copper → black tenorite\n- plant matter → ash, source of the [[substances/salt.md]]\n\n## Tasks\n\n- [x] Verify the weight gain on lead with a balance\n- [ ] Repeat with copper and record the colour sequence\n- [ ] Chase down the earliest recorded weight-gain measurement\n"
+                },
+                "/substances/mercury.md": {
+                  "before": "---\ntype: substance\nslug: mercury\nlayer: canon\ntradition: western\nelement: mercury\ntags: substance\nverified: true\n---\n\n# Mercury\n\nQuicksilver: a metal that is liquid at room temperature, and therefore the\nobvious emblem of everything that refuses to hold a fixed form.\n\nsymbol:: ☿\nmelting_point:: -38.8\ntoxic:: yes\n\n## As a principle\n\nIn the tria prima, mercury is the volatile spirit — the part of a substance that\ncan be driven off and recondensed. It stands opposite [[salt]], the fixed body,\nwith [[sulphur]] mediating.\n\n| Principle | Role | Fixed? |\n|---|---|---|\n| Mercury | spirit | no |\n| Sulphur | soul | partly |\n| Salt | body | yes |\n\n## As a material\n\nMercury dissolves gold and silver into amalgams, which made it indispensable to\nassayers and irresistible to alchemists: a substance that visibly *takes gold\ninto itself* invites the inference that it can also give gold back.\n\nIt is also poisonous, a fact the laboratory notes record without connecting it\nto the tremors and mania that follow long exposure. See the\n[January notes](/lab/2026-01-notes.md) for handling precautions.\n\n## Reading\n\n- [Paracelsus](/practitioners/paracelsus.md) on the tria prima\n- [Jabir ibn Hayyan](/practitioners/jabir-ibn-hayyan.md) on the mercury–sulphur theory of metals\n",
+                  "after": "---\ntype: substance\nslug: mercury\nlayer: canon\ntradition: western\nelement: mercury\ntags: substance\nverified: true\n---\n\n# Mercury\n\nQuicksilver: a metal that is liquid at room temperature, and therefore the\nobvious emblem of everything that refuses to hold a fixed form.\n\nsymbol:: ☿\nmelting_point:: -38.8\ntoxic:: yes\n\n## As a principle\n\nIn the tria prima, mercury is the volatile spirit — the part of a substance that\ncan be driven off and recondensed. It stands opposite [[substances/salt.md]], the fixed body,\nwith [[sulphur]] mediating.\n\n| Principle | Role | Fixed? |\n|---|---|---|\n| Mercury | spirit | no |\n| Sulphur | soul | partly |\n| Salt | body | yes |\n\n## As a material\n\nMercury dissolves gold and silver into amalgams, which made it indispensable to\nassayers and irresistible to alchemists: a substance that visibly *takes gold\ninto itself* invites the inference that it can also give gold back.\n\nIt is also poisonous, a fact the laboratory notes record without connecting it\nto the tremors and mania that follow long exposure. See the\n[January notes](/lab/2026-01-notes.md) for handling precautions.\n\n## Reading\n\n- [Paracelsus](/practitioners/paracelsus.md) on the tria prima\n- [Jabir ibn Hayyan](/practitioners/jabir-ibn-hayyan.md) on the mercury–sulphur theory of metals\n"
+                },
+                "/substances/sulphur.md": {
+                  "before": "---\ntype: substance\nslug: sulphur\nlayer: canon\ntradition: western\nelement: sulphur\ntags: [substance, tria-prima]\nverified: true\n---\n\n# Sulphur\n\nBrimstone: yellow, brittle, and burns with a blue flame and a choking smell.\nIts behaviour under heat made it the natural emblem of combustibility.\n\nsymbol:: 🜍\nmelting_point:: 115.2\ntoxic:: mildly\n\n## As a principle\n\nSulphur is the soul — the combustible principle, what makes a substance\nflammable and gives it colour and character. It mediates between the volatile\n[[substances/mercury.md]] and the fixed [[salt]].\n\nIn the mercury–sulphur theory inherited from\n[Jabir ibn Hayyan](/practitioners/jabir-ibn-hayyan.md), every metal is a\ncompound of the two, and the proportions determine the metal. Gold is a perfect\nbalance; lead is the same pair badly mixed. Transmutation therefore requires no\nnew matter, only a correction of proportion — which is why the theory was so\ndurable and so encouraging.\n\n## As a material\n\nSulphur combines directly with most metals on heating, producing sulphides whose\ncolours are dramatic and reproducible. This is genuinely useful chemistry, and\nmuch of the practical content of the alchemical corpus concerns it. The bench\nwork is tracked in the [January notes](/lab/2026-01-notes.md).\n",
+                  "after": "---\ntype: substance\nslug: sulphur\nlayer: canon\ntradition: western\nelement: sulphur\ntags: [substance, tria-prima]\nverified: true\n---\n\n# Sulphur\n\nBrimstone: yellow, brittle, and burns with a blue flame and a choking smell.\nIts behaviour under heat made it the natural emblem of combustibility.\n\nsymbol:: 🜍\nmelting_point:: 115.2\ntoxic:: mildly\n\n## As a principle\n\nSulphur is the soul — the combustible principle, what makes a substance\nflammable and gives it colour and character. It mediates between the volatile\n[[substances/mercury.md]] and the fixed [[substances/salt.md]].\n\nIn the mercury–sulphur theory inherited from\n[Jabir ibn Hayyan](/practitioners/jabir-ibn-hayyan.md), every metal is a\ncompound of the two, and the proportions determine the metal. Gold is a perfect\nbalance; lead is the same pair badly mixed. Transmutation therefore requires no\nnew matter, only a correction of proportion — which is why the theory was so\ndurable and so encouraging.\n\n## As a material\n\nSulphur combines directly with most metals on heating, producing sulphides whose\ncolours are dramatic and reproducible. This is genuinely useful chemistry, and\nmuch of the practical content of the alchemical corpus concerns it. The bench\nwork is tracked in the [January notes](/lab/2026-01-notes.md).\n"
+                }
+              },
+              "retarget": [
+                {
+                  "effect_index": 0,
+                  "hits": [
+                    {
+                      "id": "b_4",
+                      "path": "/index.md",
+                      "oldRaw": "- [[substances/mercury.md]] — the volatile spirit\n- [[sulphur]] — the combustible soul\n- [[salt]] — the fixed body",
+                      "newRaw": "- [[substances/mercury.md]] — the volatile spirit\n- [[sulphur]] — the combustible soul\n- [[substances/salt.md]] — the fixed body"
+                    },
+                    {
+                      "id": "b_46",
+                      "path": "/lab/2026-01-notes.md",
+                      "oldRaw": "Burned a batch of wormwood to ash and leached it while the muffle was up to\ntemperature: 40 g dried herb gave 1.1 g of crude salt after a single\nrecrystallization. That is the [[salt]] of the tria prima, obtained in an\nafternoon, and it is easy to see why the operation carried evidential weight.",
+                      "newRaw": "Burned a batch of wormwood to ash and leached it while the muffle was up to\ntemperature: 40 g dried herb gave 1.1 g of crude salt after a single\nrecrystallization. That is the [[substances/salt.md]] of the tria prima, obtained in an\nafternoon, and it is easy to see why the operation carried evidential weight."
+                    },
+                    {
+                      "id": "b_126",
+                      "path": "/practitioners/paracelsus.md",
+                      "oldRaw": "He replaced the four elements with three principles — [[substances/mercury.md]], [[sulphur]],\n[[salt]] — as the constituents of every body. See [index](/index.md) for the\nscheme.",
+                      "newRaw": "He replaced the four elements with three principles — [[substances/mercury.md]], [[sulphur]],\n[[substances/salt.md]] — as the constituents of every body. See [index](/index.md) for the\nscheme."
+                    },
+                    {
+                      "id": "b_149",
+                      "path": "/processes/calcination.md",
+                      "oldRaw": "- calcined lead → yellow massicot, then red minium\n- calcined copper → black tenorite\n- plant matter → ash, source of the [[salt]]",
+                      "newRaw": "- calcined lead → yellow massicot, then red minium\n- calcined copper → black tenorite\n- plant matter → ash, source of the [[substances/salt.md]]"
+                    },
+                    {
+                      "id": "b_213",
+                      "path": "/substances/mercury.md",
+                      "oldRaw": "In the tria prima, mercury is the volatile spirit — the part of a substance that\ncan be driven off and recondensed. It stands opposite [[salt]], the fixed body,\nwith [[sulphur]] mediating.",
+                      "newRaw": "In the tria prima, mercury is the volatile spirit — the part of a substance that\ncan be driven off and recondensed. It stands opposite [[substances/salt.md]], the fixed body,\nwith [[sulphur]] mediating."
+                    },
+                    {
+                      "id": "b_285",
+                      "path": "/substances/sulphur.md",
+                      "oldRaw": "Sulphur is the soul — the combustible principle, what makes a substance\nflammable and gives it colour and character. It mediates between the volatile\n[[substances/mercury.md]] and the fixed [[salt]].",
+                      "newRaw": "Sulphur is the soul — the combustible principle, what makes a substance\nflammable and gives it colour and character. It mediates between the volatile\n[[substances/mercury.md]] and the fixed [[substances/salt.md]]."
+                    }
+                  ],
+                  "pairs": [
+                    {
+                      "from": "salt",
+                      "to": "substances/salt.md",
+                      "hits": 6
+                    }
+                  ]
+                }
+              ]
+            }
           },
           {
             "error": "target_missing",
@@ -8459,8 +8612,20 @@
       "expect": {
         "writes": [
           {
-            "id": "d_20",
-            "path": "/substances/gold.md",
+            "plan_id": "3f4d138c44600aeab6774b063b8f4b674dd5c425aa71812c6693fbc2a9c3a64f",
+            "commit": "c_20",
+            "revisions": [
+              {
+                "id": "d_20",
+                "path": "/substances/gold.md",
+                "hash": "dec5be2d918d5220c673d3f50edf8a25e7d8c78c2af3a0c0a892d8142c9791cd"
+              }
+            ],
+            "new_ids": {
+              "$new.0": "d_20",
+              "$new.1": "b_327",
+              "$new.2": "b_328"
+            },
             "committed": true
           },
           {
@@ -8469,10 +8634,20 @@
             "data": {}
           },
           {
-            "id": "d_17",
-            "path": "/texts/silent-book.md",
+            "plan_id": "af7a40f832f92928423be937d83002b78d4fc502e141670ba4aaabf0460626f0",
+            "commit": "c_21",
+            "revisions": [
+              {
+                "id": "d_0",
+                "path": "/index.md",
+                "hash": "dde09ad6a7724d469e393ee9c6bf61bfd1f70a5a59d330ba6549687a2ffbfff2"
+              }
+            ],
+            "new_ids": {
+              "$new.0": "b_329",
+              "$new.1": "b_330"
+            },
             "committed": true,
-            "dangling": [],
             "retargeted": {
               "blocks": [
                 "b_28"
@@ -8480,7 +8655,8 @@
               "docs": [
                 "d_0"
               ]
-            }
+            },
+            "dangling": []
           },
           {
             "error": "doc_missing",
@@ -9244,13 +9420,23 @@
       "expect": {
         "writes": [
           {
-            "id": "d_14",
-            "path": "/substances/salt.md",
+            "plan_id": "a62cea1922fb7499021886b0e35640b7411b89fc87a8f5ac7a53d34ad331adf4",
+            "commit": "c_20",
+            "revisions": [
+              {
+                "id": "d_14",
+                "path": "/substances/salt.md",
+                "hash": "8a6675ab980b0a02b376b1af4b2b19b424380c3f86e7df3988bb30da150e68d5"
+              }
+            ],
+            "new_ids": {},
             "committed": true
           },
           {
-            "id": "d_16",
-            "path": "/texts/emerald-tablet.md",
+            "plan_id": "734740fc8b79bf5a6c835ed79fd30c39b29ac723295bda1c92a3d9bff4e3e088",
+            "commit": "c_21",
+            "revisions": [],
+            "new_ids": {},
             "committed": true
           },
           {
@@ -10847,13 +11033,8 @@
       "expect": {
         "writes": [
           {
-            "results": [
-              {
-                "ids": [
-                  "b_57"
-                ]
-              }
-            ],
+            "plan_id": "9861753450da2e29d7af5ddc076e69efa2aa99aa62b3d3ea3dd4afc992890f5c",
+            "commit": "c_20",
             "revisions": [
               {
                 "id": "d_1",
@@ -10866,6 +11047,7 @@
                 "hash": "909732d8ed3aa4aa30413f896b198a621ae5d9b36f2dfea6f69a2c569e869ed1"
               }
             ],
+            "new_ids": {},
             "committed": true
           }
         ],
@@ -11078,17 +11260,8 @@
       "expect": {
         "writes": [
           {
-            "id": "b_277",
-            "ids": [
-              "b_277"
-            ],
-            "results": [
-              {
-                "ids": [
-                  "b_277"
-                ]
-              }
-            ],
+            "plan_id": "1b22cd447aaa575456eb6f2665222bd0d096e2a4bfb004ddcdfec45c85d21a18",
+            "commit": "c_20",
             "revisions": [
               {
                 "id": "d_14",
@@ -11096,6 +11269,9 @@
                 "hash": "1ccfa946ff7ec170e135c0317550517242b5a8bd6a5072992393ec7c180f400f"
               }
             ],
+            "new_ids": {
+              "$new.0": "b_327"
+            },
             "committed": true
           }
         ],
@@ -11979,10 +12155,10 @@
     },
     {
       "name": "write-effects-dry-run",
-      "notes": "§4 (3.1) `apply { effects, dry_run: true }` is the Plan (the same object `plan` returns, `preview` included): nothing is committed and NO real id is minted — the new identity is the symbol `$new.0`. The kernel insert that follows mints `b_327`, the next id after the seed, which pins that the dry run burned nothing (a kernel dry run consumes ids, `write-apply`). Reads: salt.md unchanged, the api feed with one commit, mutus-liber.md with the probe.",
+      "notes": "§4 (3.1; 4.0) `plan { effects }` is the Plan (`preview` included): nothing is committed and NO real id is minted — the new identity is the symbol `$new.0`. The `apply { effects }` that follows mints `b_327`, the next id after the seed, which pins that the plan burned nothing (through 3.x `apply { effects, dry_run: true }` returned the same Plan; `dry_run` is a retired name since 4.0, and the sugar tools' dry runs that DID consume ids are gone with it, §9). Reads: salt.md unchanged, the api feed with one commit, mutus-liber.md with the probe.",
       "writes": [
         {
-          "tool": "apply",
+          "tool": "plan",
           "args": {
             "effects": [
               {
@@ -12003,8 +12179,7 @@
                 "at": "end",
                 "markdown": "Checked against the 1702 edition."
               }
-            ],
-            "dry_run": true
+            ]
           }
         },
         {
@@ -12281,7 +12456,7 @@
     },
     {
       "name": "write-effects-stale-plan",
-      "notes": "§4 (3.1) the plan form and its refusals: `plan` freezes salt.md's triple; a `blocks_update` moves the document's revision; `execute { plan }` with the FULL Plan the reference produced (authored here verbatim — the digest check passes in both engines, then the triple fails) is `stale_plan` (retriable) with nothing written; the digest form with the old `plan_id` is `plan_mismatch { expected, actual }` (the re-plan's preconditions changed); a plan with `version: 2` is `unsupported_plan_version { version, supported }`; `apply` with neither or both of `ops`/`effects`, and `execute` with half of the digest form, are argument-shape `filter_invalid`s whose messages both engines compose alike. Reads: salt.md (only the blocks_update landed), the api feed.",
+      "notes": "§4 (3.1; 4.0) the plan form and its refusals: `plan` freezes salt.md's triple; a `blocks_update` moves the document's revision; `execute { plan }` with the FULL Plan the reference produced (authored here verbatim — the digest check passes in both engines, then the triple fails) is `stale_plan` (retriable) with nothing written; the digest form with the old `plan_id` is `plan_mismatch { expected, actual }` (the re-plan's preconditions changed); a plan with `version: 2` is `unsupported_plan_version { version, supported }`; `apply` without `effects` (\"`effects` is required\"), with the retired `ops` (\"`ops` is no longer an argument …\"), with the retired `dry_run` (\"… preview with `plan { effects: [...] }`\"), `blocks_update` with the retired `attrs` (\"… pass `checked`\"), and `execute` with half of the digest form, are argument-shape `filter_invalid`s whose messages both engines compose alike (§4, the retired-name table). Reads: salt.md (only the blocks_update landed), the api feed.",
       "writes": [
         {
           "tool": "plan",
@@ -12464,6 +12639,22 @@
           }
         },
         {
+          "tool": "apply",
+          "args": {
+            "effects": [],
+            "dry_run": true
+          }
+        },
+        {
+          "tool": "blocks_update",
+          "args": {
+            "id": "b_275",
+            "attrs": {
+              "checked": true
+            }
+          }
+        },
+        {
           "tool": "execute",
           "args": {
             "plan_id": "x"
@@ -12579,17 +12770,8 @@
             }
           },
           {
-            "id": "b_275",
-            "ids": [
-              "b_275"
-            ],
-            "results": [
-              {
-                "ids": [
-                  "b_275"
-                ]
-              }
-            ],
+            "plan_id": "e38046825195bc770ca4b655b5d7bcdedf582b1ce70e52726076ffa9effd1e51",
+            "commit": "c_20",
             "revisions": [
               {
                 "id": "d_14",
@@ -12597,6 +12779,9 @@
                 "hash": "ba9a22102f82a6a528be11f689448fb1894798c217d370556849d666b52bcee9"
               }
             ],
+            "new_ids": {
+              "$new.0": "b_327"
+            },
             "committed": true
           },
           {
@@ -12633,12 +12818,22 @@
           {
             "error": "filter_invalid",
             "retriable": false,
-            "message": "pass exactly one of `ops` or `effects` (apply takes dry_run?, effects?, ops?, reason?, repo?)"
+            "message": "`effects` is required (apply takes effects, reason?, repo?)"
           },
           {
             "error": "filter_invalid",
             "retriable": false,
-            "message": "pass exactly one of `ops` or `effects` (apply takes dry_run?, effects?, ops?, reason?, repo?)"
+            "message": "`ops` is no longer an argument — `apply` takes `effects` (the kernel ops are a library/fixture contract since spec/mutate 3.0) (apply takes effects, reason?, repo?)"
+          },
+          {
+            "error": "filter_invalid",
+            "retriable": false,
+            "message": "`dry_run` is no longer an argument — preview with `plan { effects: [...] }` (apply takes effects, reason?, repo?)"
+          },
+          {
+            "error": "filter_invalid",
+            "retriable": false,
+            "message": "`attrs` is no longer an argument — pass `checked` (blocks_update takes checked?, expect?, id, markdown?, repo?)"
           },
           {
             "error": "filter_invalid",
@@ -12889,7 +13084,7 @@
     },
     {
       "name": "write-sugar-over-effects",
-      "notes": "§4 \"Sugar over effects\" (3.2): the block-level tools are `apply { effects }`. Pinned: blocks_update with `expect: {}` succeeds (the planner pins the content hash; 3.1 failed stale_expectation), blocks_check naming b_56 twice is one write with one result per distinct block, an empty `blocks`/`ids` list is filter_invalid (an argument error, not a kernel op), and a dry-run blocks_insert then a committed one — the update's re-parse burned `b_327` (a discarded mint, spec/mutate §10), the dry run `b_328`/`b_329`, so the commit takes `b_330`/`b_331`: the sugar's dry run still consumes ids (§9). Reads: index.md with ids, the two tasks raw, calcination's outline, the api feed.",
+      "notes": "§4 \"Sugar over effects\" (3.2; 4.0): the block-level tools are `apply { effects }` and return the Receipt. Pinned: blocks_update with `expect: {}` succeeds (the planner pins the content hash; 3.1 failed stale_expectation), blocks_check naming b_56 twice is one write (one `commit`, the two effects in the intent record), an empty `blocks`/`ids` list is filter_invalid (an argument error, not a kernel op), and a `plan` of a blocks_insert then the committed one — the update's re-parse burned `b_327` (a discarded mint, spec/mutate §10), the plan burned NOTHING (its ids are `$new.0`/`$new.1`), so the commit takes `b_328`/`b_329`: the preview no longer consumes ids (§9, closed at 4.0 — through 3.x the sugar's dry run took `b_328`/`b_329` and the commit `b_330`/`b_331`). Reads: index.md with ids, the two tasks raw, calcination's outline, the api feed.",
       "writes": [
         {
           "tool": "blocks_update",
@@ -12922,11 +13117,19 @@
           }
         },
         {
-          "tool": "blocks_insert",
+          "tool": "plan",
           "args": {
-            "to": "processes/calcination.md",
-            "markdown": "## Notes\n\nPreviewed only.\n",
-            "dry_run": true
+            "effects": [
+              {
+                "op": "insert",
+                "into": {
+                  "kind": "document",
+                  "path": "processes/calcination.md"
+                },
+                "at": "end",
+                "markdown": "## Notes\n\nPreviewed only.\n"
+              }
+            ]
           }
         },
         {
@@ -12971,17 +13174,8 @@
       "expect": {
         "writes": [
           {
-            "id": "b_1",
-            "ids": [
-              "b_1"
-            ],
-            "results": [
-              {
-                "ids": [
-                  "b_1"
-                ]
-              }
-            ],
+            "plan_id": "154773104389185623c3778a7cf5cee27500a79e5b06cc1d1923440142f8c72b",
+            "commit": "c_20",
             "revisions": [
               {
                 "id": "d_0",
@@ -12989,21 +13183,14 @@
                 "hash": "8dfca3d55cba927fa359d93104565302228a271f1c25196db355d1e0aa8cbf1a"
               }
             ],
+            "new_ids": {
+              "$new.0": "b_327"
+            },
             "committed": true
           },
           {
-            "results": [
-              {
-                "ids": [
-                  "b_56"
-                ]
-              },
-              {
-                "ids": [
-                  "b_57"
-                ]
-              }
-            ],
+            "plan_id": "e2b28064725901e5c3625654321e272c2824b3212049cba026de8f30268e3428",
+            "commit": "c_21",
             "revisions": [
               {
                 "id": "d_1",
@@ -13011,51 +13198,105 @@
                 "hash": "79eb54a243998acee56e491e0112ca2f83d9cd163233344e1df0d53e7771d808"
               }
             ],
+            "new_ids": {},
             "committed": true
           },
           {
             "error": "filter_invalid",
             "retriable": false,
-            "message": "`blocks` must name at least one block (blocks_remove takes blocks, dry_run?, repo?)"
+            "message": "`blocks` must name at least one block (blocks_remove takes blocks, repo?)"
           },
           {
             "error": "filter_invalid",
             "retriable": false,
-            "message": "`ids` must name at least one block (blocks_check takes checked?, dry_run?, ids, repo?)"
+            "message": "`ids` must name at least one block (blocks_check takes checked?, ids, repo?)"
           },
           {
-            "results": [
+            "version": 1,
+            "planner_v": "p2",
+            "effects": [
               {
-                "ids": [
-                  "b_328",
-                  "b_329"
-                ]
+                "op": "insert",
+                "into": {
+                  "kind": "document",
+                  "id": "d_7",
+                  "path": "processes/calcination.md"
+                },
+                "at": "end",
+                "markdown": "## Notes\n\nPreviewed only.\n"
               }
             ],
-            "revisions": [
-              {
-                "id": "d_7",
-                "path": "/processes/calcination.md",
-                "hash": "7cdb5c6268a0adb7a1cbbfd859716320fb7312de41a80d56804cbffbdfb1fa68"
-              }
-            ],
-            "diffs": {
-              "/processes/calcination.md": {
-                "before": "---\ntype: process\nslug: calcination\nlayer: canon\ntradition: western\ntags: [process, fire]\nverified: true\nstage: nigredo\n---\n\n# Calcination\n\nHeating a substance in air until it is reduced to a friable powder — a *calx*.\nThe first of the twelve gates and, in practice, the first thing anyone does.\n\nelement:: fire\nreversible:: no\n\n## Procedure\n\nGrind the material, spread it thinly in an open crucible, and heat steadily\nbelow the melting point. Stir to expose fresh surface. Continue until no further\nweight is lost and no fumes come off.\n\n```text\ncrucible → grind → thin layer → moderate heat → stir → constant weight\n```\n\nThe endpoint is the constant weight, not the colour. Colour tells you which\noxide you have; weight tells you that you are finished.\n\n## What is actually happening\n\nOrganic matter burns away; metals take up oxygen. The characteristic *gain* in\nweight when calcining a metal is the observation that eventually broke the\nphlogiston theory — the calx weighs more than the metal, which a theory of\nescaping substance cannot accommodate.\n\nAlchemical practice recorded this gain for centuries without drawing the\ninference. The data were sound; the framework could not use them.\n\n## Products\n\n- calcined lead → yellow massicot, then red minium\n- calcined copper → black tenorite\n- plant matter → ash, source of the [[salt]]\n\n## Tasks\n\n- [x] Verify the weight gain on lead with a balance\n- [ ] Repeat with copper and record the colour sequence\n- [ ] Chase down the earliest recorded weight-gain measurement\n",
-                "after": "---\ntype: process\nslug: calcination\nlayer: canon\ntradition: western\ntags: [process, fire]\nverified: true\nstage: nigredo\n---\n\n# Calcination\n\nHeating a substance in air until it is reduced to a friable powder — a *calx*.\nThe first of the twelve gates and, in practice, the first thing anyone does.\n\nelement:: fire\nreversible:: no\n\n## Procedure\n\nGrind the material, spread it thinly in an open crucible, and heat steadily\nbelow the melting point. Stir to expose fresh surface. Continue until no further\nweight is lost and no fumes come off.\n\n```text\ncrucible → grind → thin layer → moderate heat → stir → constant weight\n```\n\nThe endpoint is the constant weight, not the colour. Colour tells you which\noxide you have; weight tells you that you are finished.\n\n## What is actually happening\n\nOrganic matter burns away; metals take up oxygen. The characteristic *gain* in\nweight when calcining a metal is the observation that eventually broke the\nphlogiston theory — the calx weighs more than the metal, which a theory of\nescaping substance cannot accommodate.\n\nAlchemical practice recorded this gain for centuries without drawing the\ninference. The data were sound; the framework could not use them.\n\n## Products\n\n- calcined lead → yellow massicot, then red minium\n- calcined copper → black tenorite\n- plant matter → ash, source of the [[salt]]\n\n## Tasks\n\n- [x] Verify the weight gain on lead with a balance\n- [ ] Repeat with copper and record the colour sequence\n- [ ] Chase down the earliest recorded weight-gain measurement\n\n## Notes\n\nPreviewed only.\n"
-              }
+            "opset": {
+              "creates": [],
+              "moves": [],
+              "tombstones": [],
+              "set_frontmatter": [],
+              "ops": [
+                {
+                  "op": "insert",
+                  "doc": "d_7",
+                  "to": {
+                    "parent": {
+                      "doc": true
+                    },
+                    "at": "end"
+                  },
+                  "markdown": "## Notes\n\nPreviewed only.\n"
+                }
+              ]
             },
-            "committed": false
-          },
-          {
-            "results": [
+            "preconditions": {
+              "docs": [
+                {
+                  "id": "d_7",
+                  "path": "processes/calcination.md",
+                  "base_revision": "r_7",
+                  "hash": "e021b85c0fe843013d75cbe71aa541c45419f7d13a4bc246baebaeff30d605d2"
+                }
+              ],
+              "blocks": [],
+              "parents": [],
+              "absent_paths": []
+            },
+            "new_ids": [
               {
-                "ids": [
-                  "b_330",
-                  "b_331"
-                ]
+                "symbol": "$new.0",
+                "kind": "block"
+              },
+              {
+                "symbol": "$new.1",
+                "kind": "block"
               }
             ],
+            "plan_id": "0fce49bc96cf4e08736f8ca18c5f88e6cffb672bc9d226b78e828c27195f45fb",
+            "diagnostics": [],
+            "preview": {
+              "results": [
+                {
+                  "ids": [
+                    "$new.0",
+                    "$new.1"
+                  ]
+                }
+              ],
+              "revisions": [
+                {
+                  "id": "d_7",
+                  "path": "/processes/calcination.md",
+                  "hash": "7cdb5c6268a0adb7a1cbbfd859716320fb7312de41a80d56804cbffbdfb1fa68"
+                }
+              ],
+              "diffs": {
+                "/processes/calcination.md": {
+                  "before": "---\ntype: process\nslug: calcination\nlayer: canon\ntradition: western\ntags: [process, fire]\nverified: true\nstage: nigredo\n---\n\n# Calcination\n\nHeating a substance in air until it is reduced to a friable powder — a *calx*.\nThe first of the twelve gates and, in practice, the first thing anyone does.\n\nelement:: fire\nreversible:: no\n\n## Procedure\n\nGrind the material, spread it thinly in an open crucible, and heat steadily\nbelow the melting point. Stir to expose fresh surface. Continue until no further\nweight is lost and no fumes come off.\n\n```text\ncrucible → grind → thin layer → moderate heat → stir → constant weight\n```\n\nThe endpoint is the constant weight, not the colour. Colour tells you which\noxide you have; weight tells you that you are finished.\n\n## What is actually happening\n\nOrganic matter burns away; metals take up oxygen. The characteristic *gain* in\nweight when calcining a metal is the observation that eventually broke the\nphlogiston theory — the calx weighs more than the metal, which a theory of\nescaping substance cannot accommodate.\n\nAlchemical practice recorded this gain for centuries without drawing the\ninference. The data were sound; the framework could not use them.\n\n## Products\n\n- calcined lead → yellow massicot, then red minium\n- calcined copper → black tenorite\n- plant matter → ash, source of the [[salt]]\n\n## Tasks\n\n- [x] Verify the weight gain on lead with a balance\n- [ ] Repeat with copper and record the colour sequence\n- [ ] Chase down the earliest recorded weight-gain measurement\n",
+                  "after": "---\ntype: process\nslug: calcination\nlayer: canon\ntradition: western\ntags: [process, fire]\nverified: true\nstage: nigredo\n---\n\n# Calcination\n\nHeating a substance in air until it is reduced to a friable powder — a *calx*.\nThe first of the twelve gates and, in practice, the first thing anyone does.\n\nelement:: fire\nreversible:: no\n\n## Procedure\n\nGrind the material, spread it thinly in an open crucible, and heat steadily\nbelow the melting point. Stir to expose fresh surface. Continue until no further\nweight is lost and no fumes come off.\n\n```text\ncrucible → grind → thin layer → moderate heat → stir → constant weight\n```\n\nThe endpoint is the constant weight, not the colour. Colour tells you which\noxide you have; weight tells you that you are finished.\n\n## What is actually happening\n\nOrganic matter burns away; metals take up oxygen. The characteristic *gain* in\nweight when calcining a metal is the observation that eventually broke the\nphlogiston theory — the calx weighs more than the metal, which a theory of\nescaping substance cannot accommodate.\n\nAlchemical practice recorded this gain for centuries without drawing the\ninference. The data were sound; the framework could not use them.\n\n## Products\n\n- calcined lead → yellow massicot, then red minium\n- calcined copper → black tenorite\n- plant matter → ash, source of the [[salt]]\n\n## Tasks\n\n- [x] Verify the weight gain on lead with a balance\n- [ ] Repeat with copper and record the colour sequence\n- [ ] Chase down the earliest recorded weight-gain measurement\n\n## Notes\n\nPreviewed only.\n"
+                }
+              }
+            }
+          },
+          {
+            "plan_id": "283c7fd15446ef1c7e19e32584f14106502b416df5b89ffaacffc20ba47f7436",
+            "commit": "c_22",
             "revisions": [
               {
                 "id": "d_7",
@@ -13063,6 +13304,10 @@
                 "hash": "5e1b8529e5ef3b85d2b1a2b335a7d4ae94f955a269305a57c1c369ee8a047224"
               }
             ],
+            "new_ids": {
+              "$new.0": "b_328",
+              "$new.1": "b_329"
+            },
             "committed": true
           }
         ],
@@ -13207,7 +13452,7 @@
             "unresolved": []
           },
           {
-            "text": "b_138 h1   Calcination  §\nb_139 p    Heating a substance in air until it is reduced to…\nb_140 p    element:: fire reversible:: no\nb_141 h2   Procedure  §\nb_142 p    Grind the material, spread it thinly in an open crucible,…\nb_143 code crucible → grind → thin layer → moderate heat →…\nb_144 p    The endpoint is the constant weight, not the colour. Colour…\nb_145 h2   What is actually happening  §\nb_146 p    Organic matter burns away; metals take up oxygen. The characteristic…\nb_147 p    Alchemical practice recorded this gain for centuries without drawing the…\nb_148 h2   Products  §\nb_149 ul\n  b_150 li   calcined lead → yellow massicot, then red minium\n  b_151 li   calcined copper → black tenorite\n  b_152 li   plant matter → ash, source of the [[salt]]\nb_153 h2   Tasks  §\nb_154 ul\n  b_155 li   ☑ Verify the weight gain on lead with a balance\n  b_156 li   ☐ Repeat with copper and record the colour sequence\n  b_157 li   ☐ Chase down the earliest recorded weight-gain measurement\nb_330 h2   Notes  §\nb_331 p    Committed after the preview.",
+            "text": "b_138 h1   Calcination  §\nb_139 p    Heating a substance in air until it is reduced to…\nb_140 p    element:: fire reversible:: no\nb_141 h2   Procedure  §\nb_142 p    Grind the material, spread it thinly in an open crucible,…\nb_143 code crucible → grind → thin layer → moderate heat →…\nb_144 p    The endpoint is the constant weight, not the colour. Colour…\nb_145 h2   What is actually happening  §\nb_146 p    Organic matter burns away; metals take up oxygen. The characteristic…\nb_147 p    Alchemical practice recorded this gain for centuries without drawing the…\nb_148 h2   Products  §\nb_149 ul\n  b_150 li   calcined lead → yellow massicot, then red minium\n  b_151 li   calcined copper → black tenorite\n  b_152 li   plant matter → ash, source of the [[salt]]\nb_153 h2   Tasks  §\nb_154 ul\n  b_155 li   ☑ Verify the weight gain on lead with a balance\n  b_156 li   ☐ Repeat with copper and record the colour sequence\n  b_157 li   ☐ Chase down the earliest recorded weight-gain measurement\nb_328 h2   Notes  §\nb_329 p    Committed after the preview.",
             "truncated": false
           },
           {

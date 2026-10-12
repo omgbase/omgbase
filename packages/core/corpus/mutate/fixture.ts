@@ -16,10 +16,11 @@
 //   validateFixtureFile()   the shape check a runner applies before trusting a file
 //
 // Nothing here decides anything about mutation; it drives the same code paths
-// production uses (`apply`, the macros, `docsCreate/Move/Delete/SetMeta`,
-// `planUpdate` + the `set content` effect, `observeBatch`) with the fixture minter installed
-// and a pinned commit clock, and re-expresses the results so two engines can be
-// compared.
+// production uses (`apply`, the macros, the effect builders of `sugar.ts` for
+// the `docs` step — the same builders the MCP server and the `omg` verbs call
+// (3.0) —, `planUpdate` + the `set content` effect, `observeBatch`) with the
+// fixture minter installed and a pinned commit clock, and re-expresses the
+// results so two engines can be compared.
 import { Store } from "../../src/core/store/store.js";
 import { ensureRepo } from "../../src/core/attach.js";
 import { sequentialMinter, withIdMinter } from "../../src/core/ids.js";
@@ -35,7 +36,8 @@ import {
   docsAppend, linksRepair, linksRetarget, listsInsertItem, nodeSet, sectionsAppend, sectionsMove, sectionsRename, tasksComplete,
   type LinkRepairPlan,
 } from "../../src/mutate/macros.js";
-import { docsCreate, docsDelete, docsMove, docsSetMeta, type DocOpContext } from "../../src/mutate/docs.js";
+import { findDocByRef } from "../../src/core/read/reader.js";
+import { applySugar, createEffects, createdDoc, deleteDocEffects, moveDocEffects, moveLinks, setMetaEffects, type SugarDoc } from "../../src/mutate/sugar.js";
 import { listPending, materializePending } from "../../src/mutate/materialize.js";
 import { planUpdate } from "../../src/mutate/plan-update.js";
 import type { Opset } from "../../src/mutate/opset.js";
@@ -77,7 +79,6 @@ export interface ApplyStep extends Crashable {
   ops: SpecOp[];
   origin: Origin;
   dry_run?: boolean;
-  set_frontmatter?: { doc: string; raw: string | null }[];
 }
 
 export const MACROS = [
@@ -540,7 +541,6 @@ function runApply(r: Runner, s: ApplyStep): ApplyOutcome | ErrorOutcome {
       ops: s.ops.map(toKernelOp),
       origin: s.origin,
       ...(s.dry_run !== undefined ? { dryRun: s.dry_run } : {}),
-      ...(s.set_frontmatter !== undefined ? { setFrontmatter: s.set_frontmatter } : {}),
       ts: s.ts,
     }));
   } catch (e) {
@@ -579,24 +579,44 @@ function runMacro(r: Runner, s: MacroStep): StepOutcome {
   return { ops: ops.map(toSpecOp), ...extra, ...outcome };
 }
 
+// README §9 (3.0): the `docs` step runs the effect builders — `create`, `move
+// document`, `remove document`, `set`/`unset frontmatter.<k>` — through the
+// Effect layer under the §6 reasons, exactly as the MCP tools and the `omg`
+// verbs do; the step resolves its `doc` ref itself (`doc_missing` when it names
+// nothing) and records `{ doc, path, committed }` (+ `dangling`/`retargeted`
+// for a move) or the error (the planner's `effect_index` dropped: the step built
+// the effects).
 function runDocs(r: Runner, s: DocsStep): StepOutcome {
-  const ctx: DocOpContext = { repoId: r.repoId, docStore: r.docStore, ts: s.ts, ...(s.actor !== undefined ? { actor: s.actor } : {}) };
+  const request = { repoId: r.repoId, docStore: r.docStore, ts: s.ts, actor: s.actor ?? null };
+  const docOf = (ref: string): SugarDoc => {
+    const info = findDocByRef(r.store, r.repoId, ref);
+    if (!info) throw new MutationError("doc_missing", `no document ${ref}`);
+    return { id: info.docId, path: info.path };
+  };
   try {
     if (s.create) {
-      const res = docsCreate(r.store, ctx, s.create.path, s.create.markdown, s.create.frontmatter);
-      return { doc: res.docId, path: res.path, committed: res.committed };
+      const built = createEffects(s.create.path, s.create.markdown, s.create.frontmatter);
+      const { receipt } = applySugar(r.store, request, built);
+      const res = createdDoc(receipt!, (built.effects[0] as { path: string }).path);
+      return { doc: res.id, path: res.path, committed: res.committed };
     }
     if (s.move) {
-      const res = docsMove(r.store, ctx, s.move.doc, s.move.to_path, s.move.retarget_inbound !== undefined ? { retargetInbound: s.move.retarget_inbound } : {});
-      return { doc: res.docId, path: res.path, committed: res.committed, dangling: res.dangling, retargeted: res.retargeted };
+      const doc = docOf(s.move.doc);
+      const retarget = s.move.retarget_inbound !== false;
+      const links = moveLinks(r.store, r.repoId, doc, s.move.to_path, retarget);
+      const built = moveDocEffects(doc, s.move.to_path, retarget);
+      applySugar(r.store, request, built);
+      return { doc: doc.id, path: (built.effects[0] as { to: string }).to, committed: true, dangling: links.dangling, retargeted: links.retargeted };
     }
     if (s.delete) {
-      const res = docsDelete(r.store, ctx, s.delete.doc);
-      return { doc: res.docId, path: res.path, committed: res.committed };
+      const doc = docOf(s.delete.doc);
+      applySugar(r.store, request, deleteDocEffects(doc));
+      return { doc: doc.id, path: doc.path, committed: true };
     }
     const m = s.set_meta!;
-    const res = docsSetMeta(r.store, ctx, m.doc, { ...(m.set !== undefined ? { set: m.set } : {}), ...(m.unset !== undefined ? { unset: m.unset } : {}) });
-    return { doc: res.docId, path: res.path, committed: res.committed };
+    const doc = docOf(m.doc);
+    applySugar(r.store, request, setMetaEffects(doc, m.set, m.unset));
+    return { doc: doc.id, path: doc.path, committed: true };
   } catch (e) {
     return errorOutcome(e);
   }
@@ -715,13 +735,12 @@ export const EXTRA_STEPS: Record<string, ExtraStepValidator> = {
       problems.push(`${here}: not an object`);
       return;
     }
-    onlyKeys(body, ["ts", "ops", "origin", "dry_run", "set_frontmatter", "crash_after_commit"], here, problems);
+    onlyKeys(body, ["ts", "ops", "origin", "dry_run", "crash_after_commit"], here, problems);
     requireTs(body, here, problems);
     validateOps(body.ops, here, problems);
     requireOrigin(body.origin, here, problems);
     crashFlag(body, here, problems);
     if (body.dry_run !== undefined && typeof body.dry_run !== "boolean") problems.push(`${here}: \`dry_run\` must be a boolean`);
-    if (body.set_frontmatter !== undefined && !Array.isArray(body.set_frontmatter)) problems.push(`${here}: \`set_frontmatter\` must be an array of { doc, raw }`);
   },
   macro: (body, here, problems) => {
     if (!isRecord(body)) {

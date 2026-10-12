@@ -9,16 +9,15 @@
 use omgbase_format::hash::{hex, sha256};
 use omgbase_format::{Block, BlockKind, parse_markdown};
 use omgbase_mutate::{
-    ErrorCode, LowerResult, MutationError, Op, Opset, OpsetPrecondition, lower_replace,
+    ErrorCode, LowerResult, MutationError, Opset, OpsetPrecondition, lower_replace,
     lower_top_level, render, summarize,
 };
 use omgbase_reconcile::{Config, FlatSource, Options, flatten, reconcile_document};
 use serde_json::json;
 
 use crate::Store;
-use crate::doc_store::NullDocStore;
 use crate::error::{Error, Result};
-use crate::mutate::{ApplyOrigin, ApplyRequest, SetFrontmatter, find_doc_by_ref, load_mut_doc};
+use crate::mutate::{DocInfo, OpsRunner, find_doc_by_ref, load_mut_doc};
 use crate::read::load_old_match_blocks;
 
 enum Verified {
@@ -120,22 +119,23 @@ impl Store {
 
         let target_fm: Option<String> = fm_block.map(|b| format!("{}{}", b.raw, b.trivia));
         let fm_changed = target_fm != old_doc.frontmatter_raw;
-        let set_frontmatter: Vec<SetFrontmatter> = if fm_changed {
-            vec![SetFrontmatter {
-                doc: info.doc_id.clone(),
-                raw: target_fm.clone(),
-            }]
-        } else {
-            Vec::new()
-        };
+        // The verify's file head (`spec/mutate` §11.3: `leading_trivia +
+        // raw`), when the frontmatter changes.
+        let head: Option<String> = fm_changed.then(|| {
+            format!(
+                "{}{}",
+                old_doc.leading_trivia,
+                target_fm.as_deref().unwrap_or("")
+            )
+        });
 
         let mut diagnostics: Vec<String> = Vec::new();
         let t2 = lower_top_level(&old_doc, rest, &result.assignment, &result.dispositions);
         let v2 = self.verify(
             repo_id,
-            &info.path,
+            &info,
             &t2,
-            &set_frontmatter,
+            head.as_deref(),
             content,
             &current_content,
         );
@@ -149,9 +149,9 @@ impl Store {
             let t3 = lower_replace(&old_doc, content);
             let v3 = self.verify(
                 repo_id,
-                &info.path,
+                &info,
                 &t3,
-                &set_frontmatter,
+                head.as_deref(),
                 content,
                 &current_content,
             );
@@ -186,36 +186,41 @@ impl Store {
         })
     }
 
-    /// Simulate a lowering by a dry-run apply; the rendered result must equal
-    /// the proposed content exactly.
+    /// Simulate a lowering — §4 steps 1–4 through the incremental runner,
+    /// the file head set first (3.0: the reference's `ChangesetPlanner` with
+    /// `setHead`; the kernel request's `set_frontmatter` before) — and check
+    /// the rendered result equals the exact proposed content. An invalid
+    /// script throws → non-convergent. Nothing is written.
     fn verify(
         &mut self,
         repo_id: &str,
-        path: &str,
+        info: &DocInfo,
         lowering: &LowerResult,
-        set_frontmatter: &[SetFrontmatter],
+        head: Option<&str>,
         expected: &str,
         current_content: &str,
     ) -> Verified {
-        let req = ApplyRequest {
-            repo_id: repo_id.to_owned(),
-            ops: lowering
-                .ops
+        let (doc_id, path) = (info.doc_id.as_str(), info.path.as_str());
+        let simulate = |store: &mut Store| -> Result<Option<String>> {
+            let mut runner = OpsRunner::new(repo_id);
+            if let Some(h) = head {
+                runner.set_head(store, doc_id, h)?;
+            }
+            for planned in &lowering.ops {
+                runner.push(store, &planned.op)?;
+            }
+            let applied = runner.finish();
+            // A document untouched by any op (an empty plan) is not loaded;
+            // its effective result is the unchanged current content.
+            Ok(applied
+                .loaded
                 .iter()
-                .map(|p| p.op.clone())
-                .collect::<Vec<Op>>(),
-            origin: ApplyOrigin::new("plan:verify", None),
-            dry_run: true,
-            set_frontmatter: set_frontmatter.to_vec(),
+                .find(|d| d.doc.path == path)
+                .map(|d| render(&d.doc)))
         };
-        let mut null = NullDocStore;
-        match self.apply(&req, &mut null, "1970-01-01T00:00:00.000Z") {
-            Ok(res) => {
-                let after = res
-                    .diffs
-                    .as_ref()
-                    .and_then(|d| d.iter().find(|(p, _)| p == path))
-                    .map_or(current_content, |(_, diff)| diff.after.as_str());
+        match simulate(self) {
+            Ok(after) => {
+                let after = after.as_deref().unwrap_or(current_content);
                 if after == expected {
                     Verified::Ok
                 } else {

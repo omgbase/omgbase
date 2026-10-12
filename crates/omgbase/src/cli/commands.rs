@@ -89,7 +89,7 @@ pub static COMMANDS: &[Command] = &[
     cmd(
         "apply",
         &[],
-        "Apply a raw changeset (the primitive)",
+        "Apply a changeset of effects (the primitive)",
         cmd::mutate::apply,
     ),
     cmd(
