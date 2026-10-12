@@ -8,7 +8,7 @@
 // Query (server) errors: the `query` tool answers `filter_invalid` with the
 // engine's message. Since surface 1.5 a query whose hits are not store rows
 // (`follow before` over a list of paths — the strings) fails with "a hit must be
-// a document, block, node or edge row — the query reached <value>; to follow
+// a document, block, node or link row — the query reached <value>; to follow
 // document references held in a property use refs(<field>)". The remedy names
 // no field; `describeQueryError` reads the bare `follow` field off the AST and
 // suggests `follow refs(before)` concretely.
@@ -63,7 +63,7 @@ export interface QueryErrorInfo {
   suggestion: string | null;
 }
 
-const HIT_RULE = /^a hit must be a document, block, node or edge row — the query reached (.+?); to follow document references held in a property use (refs\(<field>\))\s*$/;
+const HIT_RULE = /^a hit must be a document, block, node or link row — the query reached (.+?); to follow document references held in a property use (refs\(<field>\))\s*$/;
 
 /** The `query` tool's error, with the surface-1.5 hit rule's remedy made concrete. */
 export function describeQueryError(err: unknown, query: Query | null): QueryErrorInfo {
@@ -72,5 +72,5 @@ export function describeQueryError(err: unknown, query: Query | null): QueryErro
   if (!m) return { message: raw, reached: null, suggestion: null };
   const fields = bareFollowFields(query);
   const suggestion = fields.length > 0 ? `follow ${fields.map((f) => `refs(${f.field})`).join(", ")}` : m[2]!;
-  return { message: `a hit must be a document, block, node or edge row — the query reached ${m[1]}`, reached: m[1]!, suggestion };
+  return { message: `a hit must be a document, block, node or link row — the query reached ${m[1]}`, reached: m[1]!, suggestion };
 }

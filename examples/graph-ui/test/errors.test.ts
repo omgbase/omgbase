@@ -38,12 +38,12 @@ describe("codePointToUtf16", () => {
 });
 
 describe("describeQueryError", () => {
-  const HIT = 'a hit must be a document, block, node or edge row — the query reached a string ("/timeline/beta.md"); to follow document references held in a property use refs(<field>)';
+  const HIT = 'a hit must be a document, block, node or link row — the query reached a string ("/timeline/beta.md"); to follow document references held in a property use refs(<field>)';
 
   it("makes the hit rule's remedy concrete from the query's bare follow field", () => {
     const info = describeQueryError(new Error(HIT), parse(`select path, before from docs where path == "/timeline/alpha.md" follow before`));
     expect(info).toEqual({
-      message: 'a hit must be a document, block, node or edge row — the query reached a string ("/timeline/beta.md")',
+      message: 'a hit must be a document, block, node or link row — the query reached a string ("/timeline/beta.md")',
       reached: 'a string ("/timeline/beta.md")',
       suggestion: "follow refs(before)",
     });
