@@ -201,18 +201,19 @@ fn subquery_may_raise(sub: &Subquery, target: Target) -> bool {
             .follow
             .as_ref()
             .is_some_and(|f| follow_may_raise(f, target))
+        || sub.frontier.as_ref().is_some_and(inner)
         || sub.limit.as_ref().is_some_and(inner)
         || sub.offset.as_ref().is_some_and(inner)
 }
 
+// A destination is a relation read in the frontier row's scope, or a destination
+// block (whose receiver, body, `frontier` and `depth` are its own — oqx 0.20).
 fn follow_may_raise(f: &Follow, target: Target) -> bool {
     let inner = |e: &Expr| expr_may_raise(e, target, false);
     f.destinations.iter().any(|d| match d {
         FollowDestination::Relation(e) => inner(e),
         FollowDestination::Block(op) => op_may_raise(op, target, false),
-    }) || f.r#where.as_ref().is_some_and(inner)
-        || f.frontier.as_ref().is_some_and(inner)
-        || f.by.as_ref().is_some_and(inner)
+    })
 }
 
 fn expr_may_raise(e: &Expr, target: Target, root: bool) -> bool {
@@ -247,6 +248,8 @@ fn expr_may_raise(e: &Expr, target: Target, root: bool) -> bool {
         Expr::Range { lo, hi, .. } => {
             lo.as_deref().is_some_and(again) || hi.as_deref().is_some_and(again)
         }
+        // A tuple (oqx 0.20) is never pushed down; it raises iff an element does.
+        Expr::Tuple { items, .. } => items.iter().any(again),
     }
 }
 

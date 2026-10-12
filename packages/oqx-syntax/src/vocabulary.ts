@@ -10,7 +10,7 @@
 // tests in `test/` pin it to the specification text so it cannot drift silently.
 
 /** The OQX language version (`spec/oqx/VERSION`, `major.minor`) this vocabulary describes. */
-export const LANGUAGE_VERSION = "0.19";
+export const LANGUAGE_VERSION = "0.20";
 
 /** Reserved words: never usable as a bare field name (GRAMMAR §1). `is`, `not`,
  * `and`, `or` are the word operators (GRAMMAR §4, since 0.17). */
@@ -34,8 +34,11 @@ export const CONSUMERS = ["collect", "exists", "none", "count", "first", "single
 /** Words that open a clause: `order by`, `follow`, `limit`, `offset` (GRAMMAR §3). */
 export const CLAUSE_WORDS = ["order", "by", "follow", "limit", "offset"] as const;
 
-/** Options inside a `follow … { … }` block (GRAMMAR §3, `follow`). `where` is a keyword. */
-export const FOLLOW_OPTIONS = ["where", "frontier", "depth", "by"] as const;
+/** The clauses only a `follow` destination block has (GRAMMAR §3, `follow`,
+ * since 0.20): `frontier <expr>` and `depth <n>`, after the block's `where`.
+ * (The pre-0.20 options block — `where`/`frontier`/`depth`/`by` after the
+ * destinations — is gone; `by` is no longer a word of the language.) */
+export const DESTINATION_CLAUSES = ["frontier", "depth"] as const;
 
 /** Modifiers: `distinct` (select/follow/consumer), `asc`/`desc` (order by), `values` (projection). */
 export const MODIFIERS = ["distinct", "asc", "desc", "values"] as const;

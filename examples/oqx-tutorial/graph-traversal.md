@@ -51,7 +51,7 @@ keep only that hop (`$depth == 2`) to get the documents that *directly* cite the
 magnum opus:
 
 ```console
-$ omg query 'from docs where path == "/processes/magnum-opus.md" and $depth == 2 follow in_links collect { from doc } { depth 2 }' | awk '{print $2}' | sort
+$ omg query 'from docs where path == "/processes/magnum-opus.md" and $depth == 2 follow in_links collect { from doc depth 2 }' | awk '{print $2}' | sort
 /index.md
 /practitioners/maria-prophetissa.md
 /practitioners/newton.md
@@ -68,7 +68,7 @@ why each row ended: `interior` (expanded), `leaf` (no further edges), `frontier`
 citations but treating practitioner pages as the frontier:
 
 ```console
-$ omg query 'select stop: $stop from docs where path == "/index.md" follow distinct out_links collect { from dst } { frontier type == "practitioner" } order by path asc' --jsonl
+$ omg query 'select stop: $stop from docs where path == "/index.md" follow distinct out_links collect { from dst frontier type == "practitioner" } order by path asc' --jsonl
 {"id":"d_sz1e8z0","path":"/index.md","stop":"interior"}
 {"id":"d_w18c2st","path":"/lab/2026-02-notes.md","stop":"interior"}
 {"id":"d_nzb61j9","path":"/practitioners/jabir-ibn-hayyan.md","stop":"frontier"}

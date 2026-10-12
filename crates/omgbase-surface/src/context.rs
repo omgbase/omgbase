@@ -189,6 +189,27 @@ pub const SOURCE_HANDLES: [&str; 3] = ["data", "frontmatter", "inline"];
 /// key is stripped with the tag.
 pub const LAZY_KEY: &str = "__oqx_lazy";
 
+/// The value of a statically SINGLE relation that has no row — `dst` on an
+/// external or dangling link, `block` on a node without one (oqx 0.20,
+/// SEMANTICS §3): an object the engine treats as one row with no rows
+/// (`to_rows` empty, `is_single` true), so `dst { title }` is absent rather
+/// than `[]`, while as a VALUE it is absent (`materialize`), so `dst == null`,
+/// `has(dst)` and `dst.title` read as before. The port of the reference's
+/// `ABSENT_SINGLE`.
+pub const ABSENT_KEY: &str = "__oqx_absent";
+
+fn absent_single() -> Value {
+    let mut o = Object::with_capacity(1);
+    o.insert(ABSENT_KEY, Value::Bool(true));
+    Value::Object(o)
+}
+
+/// Whether `v` is the absent-single marker.
+fn is_absent_single(v: &Value) -> bool {
+    v.as_object()
+        .is_some_and(|o| o.len() == 1 && o.contains_key(ABSENT_KEY))
+}
+
 /// A query phrase's embedding: the model whose cache to read and the vector
 /// as a float32 little-endian blob.
 #[derive(Clone, Debug, PartialEq)]
@@ -1058,7 +1079,7 @@ impl<'a> StoreContext<'a> {
             v => v.clone(),
         };
         if id.is_absent() {
-            return Ok(Value::Undefined);
+            return Ok(absent_single());
         }
         match col(row, "__path") {
             Value::Str(path) => Ok(Self::lazy_owner(
@@ -1067,7 +1088,7 @@ impl<'a> StoreContext<'a> {
             )),
             _ => Ok(self
                 .load_owner(Target::Docs, &js_string(&id))?
-                .unwrap_or(Value::Undefined)),
+                .unwrap_or_else(absent_single)),
         }
     }
 
@@ -1079,17 +1100,17 @@ impl<'a> StoreContext<'a> {
     /// the source document.
     fn destination_doc(&self, row: &Value) -> oqx::Result<Value> {
         if col(row, "dst_kind") != &Value::Str("document".to_owned()) {
-            return Ok(Value::Undefined);
+            return Ok(absent_single());
         }
         Ok(self
             .load_owner(Target::Docs, &col_str(row, "dst_node"))?
-            .unwrap_or(Value::Undefined))
+            .unwrap_or_else(absent_single))
     }
 
     fn owning_block(&self, row: &Value) -> oqx::Result<Value> {
         let id = col(row, "block_id");
         if !id.truthy() {
-            return Ok(Value::Undefined);
+            return Ok(absent_single());
         }
         match col(row, "__path") {
             Value::Str(path) => Ok(Self::lazy_owner(
@@ -1102,7 +1123,7 @@ impl<'a> StoreContext<'a> {
             )),
             _ => Ok(self
                 .load_owner(Target::Blocks, &js_string(id))?
-                .unwrap_or(Value::Undefined)),
+                .unwrap_or_else(absent_single)),
         }
     }
 
@@ -1730,6 +1751,7 @@ impl DataContext for StoreContext<'_> {
         match value {
             Value::Undefined | Value::Null => Vec::new(),
             Value::Array(a) => a.clone(),
+            other if is_absent_single(other) => Vec::new(),
             other => match scan_of(other) {
                 Some(t) => self.expand_scan(t),
                 None => vec![other.clone()],
@@ -1737,15 +1759,25 @@ impl DataContext for StoreContext<'_> {
         }
     }
 
+    /// Row position (spec/oqx §3, 0.20): a lazy root scan is a collection; a
+    /// store row, a lazy owner, the absent-single marker and any other object
+    /// are one row.
+    fn is_single(&self, value: &Value) -> bool {
+        scan_of(value).is_none()
+    }
+
     /// A lazy root-scan marker observed as a VALUE is its rows (read once per
-    /// run); everything else is itself. A store row is an object with several
-    /// columns and the marker has exactly one key, so the common case is one
-    /// length check.
+    /// run); the absent-single marker is absent; everything else is itself. A
+    /// store row is an object with several columns and the markers have exactly
+    /// one key, so the common case is one length check.
     fn materialize(&self, value: Value) -> Value {
-        if value.as_object().is_some_and(|o| o.len() == 1)
-            && let Some(t) = scan_of(&value)
-        {
-            return Value::Array(self.expand_scan(t));
+        if value.as_object().is_some_and(|o| o.len() == 1) {
+            if let Some(t) = scan_of(&value) {
+                return Value::Array(self.expand_scan(t));
+            }
+            if is_absent_single(&value) {
+                return Value::Undefined;
+            }
         }
         value
     }

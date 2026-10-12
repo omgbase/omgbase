@@ -235,7 +235,8 @@ planned and in-memory paths agree trivially (`query-root::repo-removed-*`,
   3.0) `` (the parenthesis only for `edges`;
   `query-errors::edges-is-not-a-target`, `::unknown-target-is-loud`).
 
-A row's **identity** (for `distinct`, `follow` cycles) is its id column. A
+A row's **identity** — `$key` (spec/oqx §16; `distinct`, `follow` cycles, `is`)
+— is its id column. A
 relation returns rows of its successor target; a scalar reach-through
 (`doc`, `block`) returns one row.
 
@@ -339,7 +340,8 @@ collect distinct { from dst }`, and the documents linking to it their
 sources, `in_links collect distinct { from doc }` (`from` over an absent
 `dst` — an external link, a dangling `[[wikilink]]` — contributes no row);
 the citation walk is `follow out_links collect { from dst }` /
-`follow in_links collect { from doc }`, options after the block. A bare `out`
+`follow in_links collect { from doc }`, with `depth`/`frontier` as clauses of
+the block (oqx 0.20: `… collect { from dst depth 2 }`). A bare `out`
 or `in` on a doc reads an authored property like any other unknown name
 (`query-docs::linked-docs-through-out-links`,
 `::linking-docs-through-in-links`, `::out-and-in-are-plain-properties`).

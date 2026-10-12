@@ -325,13 +325,14 @@ parser** (the AST, `print`, the planner and the optimizer see the explicit form)
 
 | Written | Means |
 | --- | --- |
-| `nodes { kind == "md:task" }` | `nodes collect { where kind == "md:task" }` — a receiver block without a consumer is `collect`; a block whose *leading* expression is syntactically a predicate (a comparison, `in`, `&&`/`||`, a prefix `!`/`is`/`not`, an infix `is`, a call, a literal, a binding, a parenthesized expression, a consumer test, a bracket chain or `x!` — anything but a bare name, a dotted path or a `^`-lift) is `where`-first. `nodes { name }` still projects; `nodes { is checked }` is the bare-field filter; `{ name where kind == "md:task" }` keeps the keyword. After `follow` only over an outer-reference receiver (spec/oqx 0.19): `follow ^docs { where ^path in list(after) }` is `follow ^docs collect { … }`, while `follow children { depth 2 }` and `follow refs(before) { depth 2 }` are the options block. |
+| `nodes { kind == "md:task" }` | `nodes collect { where kind == "md:task" }` — a receiver block without a consumer is `collect`; a block whose *leading* expression is syntactically a predicate (a comparison, `in`, `&&`/`||`, a prefix `!`/`is`/`not`, an infix `is`, a call, a literal, a binding, a parenthesized expression, a consumer test, a bracket chain or `x!` — anything but a bare name, a dotted path or a `^`-lift) is `where`-first. `nodes { name }` still projects; `nodes { is checked }` is the bare-field filter; `{ name where kind == "md:task" }` keeps the keyword. Wherever a value stands (spec/oqx 0.20), call arguments included (`size(children { is checked })`), and after any `follow` destination: `follow children { depth 2 }` and `follow refs(before) { depth 2 }` are that destination's block. `x distinct { … }` is `x collect distinct { … }`. |
+| `(a, b)` | a tuple (spec/oqx 0.20): two or more expressions, concatenated one level flat — a value (`size((tags, aliases))`, `"x" in (tags, aliases)`) and a receiver (`(mom, dad) { title }`, `follow (before, after) { depth 2 }`); one parenthesized expression is grouping. |
 | `refs(x)[0]`, `refs(x)[${i}]` | `refs(x) first { offset 0 }` — positional (an integer literal or a binding; out of range ⇒ absent); `refs(x)[0].title` navigates the row |
 | `^docs[path == ^company]` | `^docs first { where path == ^company }` — the first match or absent |
 | `^docs[path == ^company]!` | `^docs single { where path == ^company }!` — exactly one match; zero or many is `filter_invalid` |
 | `title!` | required: `title`, or `filter_invalid` naming the expression (`` `title!` is absent on "d_…" ``). Never a filter, never a coercion (`0!`, `""!` are values); tightest precedence (`refs(c)[0]!.name` vs `refs(c)[0].name!`). `select id!, status from docs` insists on identity before a write. |
 | `is x`, `not x` | `!!x`, `!x` (truthiness) |
-| `x is y`, `x is not y` | identity: a row's `id` when present, else structural — so `$it is ^$it` compares rows (which `==` leaves unspecified); `owner is null` is absent; for scalars `is` ≡ `==`. Comparison precedence, no chaining. Never pushed down (residual). |
+| `x is y`, `x is not y` | identity (`$key`, spec/oqx §16): a store row's id, a plain value structurally — so `$it is ^$it` compares rows (which `==` leaves unspecified); `owner is null` is absent; for scalars `is` ≡ `==`. Comparison precedence, no chaining. Never pushed down (residual). |
 | `a and b`, `a or b` | the connectives — exactly `a && b`, `a || b` (precedence, short-circuit, value: `title or path` coalesces); the words are canonical |
 | `boss: ^docs[path == ^manager], bossName: boss.title` | a `select` item may use the items to its left (inlined like a `where` alias; a reference to an item to its right is a parse error) |
 
@@ -408,23 +409,25 @@ nested/correlated scopes:
   (`block.children`, `section.children`/`section.subsections`) or a destination
   block over the link rows — the citation graph is `follow out_links collect {
   from dst }` (outgoing) / `follow in_links collect { from doc }` (backlinks),
-  options after the block (`… { from dst } { depth 2 }`); an external or
-  dangling link has no `dst` and contributes no successor.
+  the knobs as clauses of the block (`… collect { from dst depth 2 }`, spec/oqx
+  0.20); an external or dangling link has no `dst` and contributes no successor.
   Per-path: a node reached by N paths yields N occurrences; `follow distinct`
-  keeps one per identity (`by <expr>` sets that identity). Each occurrence carries
-  `$depth` (seed = 1), `$stop` (`interior|leaf|frontier|depth|cycle`) with
-  `$leaf`/`$frontier` sugar, and `$ordinal` (deterministic 1..N over the walk).
-  A follow-local `{ where <succ> }` shapes participating successors, `{ frontier
-  <pred> }` cuts, `{ depth <n> }` bounds (1..8). A revisited identity on the path
-  is admitted once as `$stop == "cycle"` and never re-expanded. Recursion
-  intrinsics are result metadata (valid in `select`/`order by` and the top-level
-  post-walk `where`), not metadata of the candidate rows the successor
-  `where`/`frontier` read.
+  keeps one per identity (`$key` — a store row's id; a block may project `$key:
+  <expr>` to rekey the rows it yields). Each occurrence carries `$depth` (seed =
+  1), `$stop` (`interior|leaf|frontier|depth|cycle`) with `$leaf`/`$frontier`
+  sugar, `$ordinal` (deterministic 1..N over the walk) and `$key`. A destination
+  block's `where` shapes participating successors, its `frontier <pred>` cuts
+  (occurrences this destination reached), its `depth <n>` bounds the walk
+  through it (1..8). A revisited identity on the path is admitted once as `$stop
+  == "cycle"` and never re-expanded. Recursion intrinsics are result metadata
+  (valid in `select`/`order by` and the top-level post-walk `where`), not
+  metadata of the candidate rows a destination block's `where` reads.
 - **Destination lists** (`spec/oqx` 0.14): `follow out_links collect { from dst
   }, in_links collect { from doc }` walks the union of the destinations — within one step the successors are concatenated
   in source order and deduplicated by identity, so a document both cited by and
-  citing the current row is stepped into once. `frontier`, `depth` and `by`
-  apply whichever destination reached a row.
+  citing the current row is stepped into once; the destination that reached a
+  row first governs it (its `frontier`/`depth`). A tuple is one destination over
+  the union of its elements: `follow (before, after) { depth 2 }`.
 - **Destination blocks:** a destination may be a select-position block
   re-evaluated per frontier row — `follow ^docs collect { where out_links
   exists { where dst_path == ^^path } }` computes backlinks as a block over
@@ -433,29 +436,32 @@ nested/correlated scopes:
   destination is read in that row's scope, so `^docs` there is the root's
   documents); `first`/`single` yield at
   most one successor; `exists`/`none`/`count` are not destinations. Since
-  spec/oqx 0.19 the `collect` is **implicit when the receiver is headed by an
-  outer reference** (`^docs`, `^^docs`, `0^docs`, `^$it.docs`, with any member
-  chain): such a receiver can never be a relation of the current row, so its
-  brace is the block, not the options block — `follow refs(before), ^docs {
-  where ^path in list(after) }` walks `before` references forward and,
-  backward, every document whose `after` names the frontier row. After any
-  other receiver (`children`, `out_links`, `refs(before)`, a binding) a brace is
-  still the options block (an error when that destination is not the last),
-  and an options block may follow a trailing destination block: `follow ^docs
-  { where … } { depth 2 }`. A bare `follow ^docs` (no brace, no consumer) is a
-  parse error naming both block spellings.
-- **Correlated successor `where`:** inside the follow-local `where`, a bare name
-  is the candidate's own property, `^name` is the **frontier row** being
+  spec/oqx 0.20 **a brace after any destination opens that destination's
+  block** with the implicit `collect` (there is no options block any more):
+  `follow children { depth 2 }`, `follow refs(before), ^docs { where ^path in
+  list(after) }` — the latter walks `before` references forward and, backward,
+  every document whose `after` names the frontier row. Two clauses belong to a
+  destination block alone, after its `where`: `frontier <pred>` and `depth
+  <n>` (`follow out_links collect { from dst where layer == "canon" depth 2 }`).
+  The former `by <expr>` option is gone: identity is `$key` (a store row's id),
+  and a block may project `$key: <expr>` to rekey the rows it yields (`follow
+  out_links collect { $key: type from dst }`; in a destination block `$key:` is
+  not a column). A bare `follow ^docs` (no brace, no consumer) is a parse error
+  naming both block spellings.
+- **Correlated successor `where`:** inside a destination block's `where`, a bare
+  name is the candidate's own property, `^name` is the **frontier row** being
   expanded, and `^^name` the walk's enclosing scope — `follow out_links collect
-  { from dst } { where out_links exists { where dst_path == ^^path } }` keeps
+  { from dst where out_links exists { where dst_path == ^^path } }` keeps
   only mutual citations
   (before 0.14 `^` skipped the frontier row and such predicates matched nothing).
 - **Links as rows:** `from links …`, or a doc's `doc.out_links`/`doc.in_links`.
   A link row reaches both ends: `doc` is its source document and `dst` (3.0)
   its destination document — present when `dst_kind == "document"` and the
   document exists, absent for an external or block destination and for a
-  dangling (phantom) target; `dst.title`, `dst { title }`, `where out_links
-  exists { where dst.layer == "draft" }`; `dst.<k>` pushes down like `doc.<k>`.
+  dangling (phantom) target; `dst.title`, `dst { title }` (one record — `dst`
+  is one object, so the block is a record or, when `dst` is absent, absent;
+  spec/oqx 0.20 §3), `where out_links exists { where dst.layer == "draft" }`;
+  `dst.<k>` pushes down like `doc.<k>`.
 - **`distinct`** on any consumer dedups the rows it reduces by their **projected
   value**: `select distinct type`, `nodes collect distinct { select kind }`,
   `nodes count distinct { select kind } == 3`. Empty projection → dedup by

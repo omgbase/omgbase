@@ -26,7 +26,7 @@ import { readStdin } from "./_mutate.js";
 // query to a parent binding, the root row's collections ^docs/^nodes/^blocks for
 // join-equivalents, first/single lookups, full-text text(...) + embedding-score
 // semantic(...) predicates, `order by <expr> [asc|desc]` ranking, and recursive
-// `follow [distinct] <rel> [{ where … frontier … depth n by … }]` traversal over
+// `follow [distinct] <rel> [{ where … frontier … depth n }]` traversal (a brace after a destination is its block, oqx 0.20) over
 // a type-preserving relation with $depth/$stop/$ordinal recursion metadata +
 // post-walk filtering. A top-level consumer directive changes the result shape:
 // `docs count { … }` / `docs exists { … }` reduce to a scalar,
@@ -72,7 +72,7 @@ async function runOqx(cli: Cli, args: string[]): Promise<number> {
     cli.io.out("       query 'docs count { where layer == \"canon\" }'   # scalar; also <target> exists/none/first/single { … } at the top level");
     cli.io.out("       query 'from docs where nodes none { where kind == \"md:task\" and not checked }'   # none = zero rows (≡ not … exists; \"every\" = none over the complement)");
     cli.io.out("       query 'from docs where era is not null and (layer == \"canon\" or layer == \"working\")'   # and / or / not are the connectives (&& || ! accepted); x is y / x is not y = identity, x is null = absent");
-    cli.io.out("       query 'docs { type == \"substance\" and not verified }'   # sugar: a block without a consumer is collect; a leading predicate drops `where` (bare names still project — filter a bare field with `is x`); not after follow, where { … } is options");
+    cli.io.out("       query 'docs { type == \"substance\" and not verified }'   # sugar: a block without a consumer is collect; a leading predicate drops `where` (bare names still project — filter a bare field with `is x`); after a follow destination too: follow children { depth 2 } is its block");
     cli.io.out("       query 'select subject, process: ^docs[slug == ^subject].path from docs where type == \"lab-note\"'   # x[p] = first match or absent; x[p]! = exactly one, required; x[n] = positional; title! = the value or a loud error; a select item may use the items to its left");
     cli.io.out("       query 'select path, $depth from docs where path == \"/timeline/review.md\" follow refs(before), refs(after)'   # refs(field): the live documents a property's references name (either path form or a d_ id; dangling dropped) — a receiver, a source or a follow destination");
     cli.io.out("       query 'select path, next: ^docs { ^path in list(before) } from docs where type == \"milestone\"'   # paths are /-rooted on the surface (path == \"/x.md\"; inputs accept both forms), so a property's reference compares with ^path directly");
@@ -85,7 +85,7 @@ async function runOqx(cli: Cli, args: string[]): Promise<number> {
     cli.io.out("       query 'select s: semantic(\"the great work\") from blocks where semantic(\"the great work\") > 0.6'  # embedding score (needs a provider)");
     cli.io.out("       query 'from docs where type == \"practitioner\" order by era desc'   # order by <expr> [asc|desc]");
     cli.io.out("       query 'select t: text, d: $depth, s: $stop from blocks where id == \"b_x\" follow block.children'   # recursive walk ($depth/$stop metadata)");
-    cli.io.out("       query 'from nodes where name == \"Overview\" follow section.subsections { depth 3 }'   # follow [distinct] <rel> [{ where … frontier … depth n by … }]");
+    cli.io.out("       query 'from nodes where name == \"Overview\" follow section.subsections { depth 3 }'   # follow [distinct] <dest> [{ where … frontier … depth n }] — a brace after any destination is that destination's block (identity is $key: project $key: <expr> to rekey a walk)");
     cli.io.out("       query 'select p: path, d: $depth, s: $stop from docs where path == \"/index.md\" follow out_links collect { from dst }'   # citation graph (cyclic-safe: $stop=cycle)");
     cli.io.out("       query 'from blocks where type == \"list_item\" and $leaf follow block.children'   # $leaf/$depth/$stop filter the walk result post-walk");
     cli.io.out("       query 'select src: doc_id, to: dst_path from links where predicate == \"depends_on\"'   # the links target: predicate/provenance/dst_kind + doc_id/dst_path/uri");

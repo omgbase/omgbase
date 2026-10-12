@@ -143,15 +143,16 @@ fn build_query(root_ids: &[String], dir: &str, depth: u32, user_select: &[Select
     } else {
         build::or(seed)
     });
+    // `depth` is the destination block's own clause (oqx 0.20).
     let mut step = build::subquery();
     step.from = vec![build::ident(if dir == "out" { "dst" } else { "doc" })];
+    step.depth = Some(depth);
     let mut walk = build::follow(vec![FollowDestination::Block(Box::new(build::op(
         build::ident(&format!("{dir}_links")),
         Consumer::Collect,
         step,
     )))]);
     walk.distinct = true;
-    walk.depth = Some(depth);
     q.follow = Some(walk);
     print_query(&q).expect("a built query has no bindings")
 }
@@ -439,7 +440,7 @@ mod tests {
             q.starts_with("select _depth: $depth, _stop: $stop, _links: doc.out_links collect {")
         );
         assert!(q.ends_with(
-            "from docs where id == \"d_0\" follow distinct out_links collect { from dst } { depth 2 }"
+            "from docs where id == \"d_0\" follow distinct out_links collect { from dst depth 2 }"
         ));
         assert!(oqx::parse_string(&q).is_ok());
         // several roots: an `or` seed (the canonical print of the `or` node since
@@ -448,7 +449,7 @@ mod tests {
         let q = build_query(&["d_14".to_owned(), "d_15".to_owned()], "in", 8, &[]);
         assert_eq!(
             q,
-            "select _depth: $depth, _stop: $stop, _links: doc.in_links collect { id: id, doc_id: doc_id, block_id: block_id, via_id: via_id, dst_id: dst_id, dst_path: dst_path, uri: uri, dst_kind: dst_kind, predicate: predicate, provenance: provenance, anchor: anchor, field: field } from docs where id == \"d_14\" or id == \"d_15\" follow distinct in_links collect { from doc } { depth 8 }"
+            "select _depth: $depth, _stop: $stop, _links: doc.in_links collect { id: id, doc_id: doc_id, block_id: block_id, via_id: via_id, dst_id: dst_id, dst_path: dst_path, uri: uri, dst_kind: dst_kind, predicate: predicate, provenance: provenance, anchor: anchor, field: field } from docs where id == \"d_14\" or id == \"d_15\" follow distinct in_links collect { from doc depth 8 }"
         );
     }
 

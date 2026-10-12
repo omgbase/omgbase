@@ -204,8 +204,10 @@ oqx`name from ${users} where entries(prefs) exists { where $key == "dark" and $i
 ```
 
 `entries(array)` yields numeric index keys, a `Map` yields its entries, and
-absence/scalars yield nothing. `$key` exists **only** in an entry scope — an
-ordinary row or array element has no implicit index; `entries(arr)` is how you
+absence/scalars yield nothing. An entry's `$key` is its key — and since
+language 0.20 `$key` is the **identity** every row is known by (§9): an
+ordinary row's `$key` is the host's identity, structurally the row itself for
+plain data; an array element has no implicit index — `entries(arr)` is how you
 ask for one. As a plain value (not a source) `entries(x)` is an array of
 `{ key, value }` records.
 
@@ -592,8 +594,10 @@ Reached rows expose recursion **intrinsics** in `select` / `order by`:
 graph beyond — a boundary or the depth cap), `$ordinal` (a deterministic 1..N
 rank over the walk, ordered by depth then path), and `$stop`
 (`"interior"` / `"leaf"` / `"frontier"` / `"depth"` / `"cycle"`, precedence
-cycle > frontier > depth > leaf > interior — only `interior` rows expand). Options
-go in a trailing block:
+cycle > frontier > depth > leaf > interior — only `interior` rows expand). A
+brace after a destination opens that destination's **block** (language 0.20),
+whose body has two clauses of its own after `where`: `depth <n>` and
+`frontier <pred>`:
 
 ```js
 oqx`id, stop: $stop from ${tree} follow children { depth 2 } order by $ordinal`;
@@ -605,10 +609,10 @@ a nested block (`kids: children collect { … }`) a bare `$depth` is the nested
 row's own `$depth` property (absent unless the data carries one), and the
 occurrence's depth is `^$depth`. The same holds everywhere the metadata is not
 present — outside a `follow`, `$depth`/`$ordinal`/`$stop`/`$leaf`/`$frontier`
-are ordinary property reads (a row `{ "$depth": 3 }` projects `3`), and `$key`
-is likewise an ordinary property read outside an `entries()` scope. Where the
-metadata exists it wins over a same-named property (language 0.13; before, the
-six names read absent everywhere they were not metadata).
+are ordinary property reads (a row `{ "$depth": 3 }` projects `3`). `$key` is
+the exception: it is the row's identity everywhere (below). Where the metadata
+exists it wins over a same-named property (language 0.13; before, the six names
+read absent everywhere they were not metadata).
 
 The walk is **per-path**: a node reached by N distinct paths yields N
 occurrences, and revisiting an identity already on the current path is admitted
@@ -617,49 +621,101 @@ runaway. `follow distinct` collapses occurrences to reached nodes (the minimal
 `(depth, path)` per identity).
 
 **Destinations** (language 0.14) are comma-separated; the walk is their union.
-A **plain destination** is a relation of the current row (`children`, `doc.out`
-— an outer reference `^rel` on its own or a literal is a parse error). A
-**destination block** is a receiver followed by `collect`, `first` or `single`
-(optionally `distinct`) and a block — the same directive you would write in
-`select`, re-evaluated per frontier row with `^` bound to that row. Its receiver
-*may* be an outer reference, so a walk can compute successors from a named root
-— and over such a receiver the `collect` is implicit (language 0.19): `follow
-^people { where manager == ^id }` is `follow ^people collect { … }`, because
-`^people` can never be a relation of the current row, so its brace cannot be
-the options block. After a bare relation or a call (`follow children { depth 2
-}`, `follow entries(kids) { depth 2 }`) a brace is still the options block:
+A **plain destination** is a relation of the current row (`children`, `doc.out`,
+`entries(kids)`, a tuple `(before, after)` — one destination over the union of
+its elements; an outer reference `^rel` on its own or a literal is a parse
+error). A **destination block** is a receiver followed by a block — `children {
+depth 2 }`, `^people { where manager == ^id }`, `(before, after) { depth 2 }`,
+or with its consumer, `^chain first distinct { … }` — the same directive you
+would write in `select`, re-evaluated per frontier row with `^` bound to that
+row. Its receiver *may* be an outer reference, so a walk can compute successors
+from a named root. Since language 0.20 **a brace after any destination opens
+that destination's block** (there is no options block any more):
 
 ```js
 const people = [{ id: 1, manager: null }, { id: 2, manager: 1 }, { id: 3, manager: 1 }, { id: 4, manager: 2 }];
 oqx`id values from ${people} where id == 1 follow ^people { where manager == ^id } order by $ordinal`;
 // [1, 2, 3, 4] — the reporting tree under person 1 (`^people` names the root from a top-level walk)
-oqx`id values from ${people} where id == 1 follow ^people { where manager == ^id } { depth 2 } order by $ordinal`;
-// [1, 2, 3] — an options block may follow a trailing destination block
+oqx`id values from ${people} where id == 1 follow ^people { where manager == ^id depth 2 } order by $ordinal`;
+// [1, 2, 3] — `depth` is a clause of the destination block, after its `where`
 
 const chain = [{ id: "a" }, { id: "b", prev: "a" }, { id: "c", prev: "b" }];
-oqx`id values from ${chain} where id == "b" follow distinct ^chain collect { where id == ^prev }, ^chain collect { where prev == ^id } order by $ordinal`;
+oqx`id values from ${chain} where id == "b" follow distinct ^chain { where id == ^prev }, ^chain { where prev == ^id } order by $ordinal`;
 // ["b", "a", "c"] — both directions of a chain; a block may order, bound and `distinct` its rows
 ```
 
-A row's successors are, per destination in order, that destination's rows,
-filtered by the follow `where`, then **unioned by identity within the step**: a
-node reached by two destinations (or twice by one relation) in the same step is
-a single successor. `exists`/`none`/`count` are not destinations (they are
+A row's successors are, per destination in order, that destination's rows
+(shaped by the block's projection, if any), then **unioned by identity within
+the step**: a node reached by two destinations (or twice by one relation) in the
+same step is a single successor, and the destination that reached it first
+governs it. `exists`/`none`/`count` are not destinations (they are
 where-position tests).
 
-The block accepts: `where <succ>` (which successors keep participating),
-`frontier <pred>` (cut a relation that could continue, whichever destination
-reached it), `depth <n>` (1–8), and `by <expr>` (the identity used for cycle
-detection + `distinct` — default `.id` or the object reference). The follow
-`where` is **correlated**: it reads the candidate successor's scope whose parent
-is the frontier row's — a bare name is the candidate's own property, `^name` is
-the row being expanded, `^^name` the walk's enclosing scope (language 0.14;
-before, `^` skipped the frontier row). So `follow doc.in { where
-before.contains(^$path) }` steps only into rows that name the row they were
-reached from. `frontier` and `by` are not correlated: they read the occurrence
-with `^` the enclosing scope, as the body does. Give `follow` a stable identity
-(`.id` or `by`) when your relation returns fresh objects rather than shared
-references.
+A destination block's body is an ordinary block — `where <succ>` (which
+successors keep participating), a projection, `order by`, `limit`/`offset`,
+`distinct` — plus two clauses only it has, after `where`: `frontier <pred>`
+(an occurrence this destination reached for which it holds is a frontier — cut,
+not expanded) and `depth <n>` (1–8: this destination expands a frontier row
+only while its `$depth < n`). The block's `where` is **correlated**: it reads
+the candidate successor's scope whose parent is the frontier row's — a bare name
+is the candidate's own property, `^name` is the row being expanded, `^^name` the
+walk's enclosing scope (language 0.14; before, `^` skipped the frontier row). So
+`follow doc.in { where before.contains(^$path) }` steps only into rows that
+name the row they were reached from. `frontier` is not correlated: it reads the
+occurrence with `^` the enclosing scope, as the body does; seeds are reached
+through no destination and are never frontiers.
+
+**Identity is `$key`** (language 0.20). Cycle detection, the per-step union,
+`follow distinct`, `distinct` over unprojected rows and `is` all compare one
+thing — the identity a row is known by — and reading `$key` on any row returns
+it. The default is the host's (`DataContext.identityOf`), else the row's
+**structural value**; `DefaultContext` names none, so over plain objects two
+objects with the same `id` are two nodes. A block may project `$key: <expr>` to
+give the rows it yields that identity — the body's `select` names the seeds, a
+destination block its successors (where `$key:` is not a column; the rows keep
+their shape):
+
+```js
+const n1 = { id: 1 }, n2 = { id: 2, next: [n1] }; n1.next = [n2];   // a cyclic graph of fresh references
+oqx`id, stop: $stop, $key: id from ${[n1]} follow next { $key: id } order by $ordinal`;
+// [{ id: 1, stop: "interior", $key: 1 }, { id: 2, stop: "interior", $key: 2 }, { id: 1, stop: "cycle", $key: 1 }]
+oqx`name, $key: email from ${people} follow next { $key: email }`;   // known by email at every step
+```
+
+Identities are compared as values across the whole walk, so destinations that
+can reach the same rows should project the same `$key`, or a cycle through both
+may run to the depth cap. Give a cyclic graph of fresh objects a `$key` (or a
+context with `identityOf`) rather than rely on the structural default.
+
+### 9b. Cardinality and tuples (0.20)
+
+In row position an **array** is a collection and a non-array **object** is one
+row: a block over it yields **one record** (or absent, when the row is filtered
+out) rather than a one-element list, `values` the one value, `first`/`single`
+that object — `doc { title }` is `{ title }`, `doc { status == "active" }` is the
+object or absent (a conditional reach-through), `title from doc` the same record.
+A scalar in row position is an eval error (`list(s)` says "one element"
+explicitly); a `from` re-projection or a `follow` is plural. A host says which
+of its objects are collections through `DataContext.isSingle` (a lazy handle);
+by default a non-iterable object is one row.
+
+```js
+oqx`${settings} { theme }`;             // { theme: "dark" }      (one object → one record)
+oqx`${[settings]} { theme }`;           // [{ theme: "dark" }]    (a collection → a list)
+oqx`from list(${settings})`;            // [settings]             (the explicit one-element collection)
+```
+
+A **tuple** `(e1, e2, …)` — two or more expressions in parentheses — is a value
+and a receiver: its elements concatenated with one level of flattening (a
+collection contributes its items, a row itself; an absent element nothing, a
+`null` is kept; duplicates kept). One parenthesized expression is grouping.
+
+```js
+oqx`n: size((tags, aliases)) from ${people}`;                       // one count over both lists
+oqx`name from ${people} where "x" in (tags, aliases)`;              // membership in the union
+oqx`n: (mom, dad, siblings) { name values } from ${people}`;        // one block over the union
+oqx`id from ${g} follow (before, after) { depth 2 }`;               // one destination over the union
+```
 
 ### 10. Sugar (0.17)
 
@@ -669,11 +725,15 @@ optimizer and any pushdown planner see it), so nothing here has semantics of its
 own except the postfix `!` and the infix `is`:
 
 ```js
-// A receiver block without a consumer is `collect`; a block whose LEADING
-// expression is syntactically a predicate drops `where`.
+// A receiver block without a consumer is `collect` — wherever a value stands
+// (language 0.20): a select item, a where leaf, a follow destination, a call
+// argument; `x distinct { … }` is `x collect distinct { … }`. A block whose
+// LEADING expression is syntactically a predicate drops `where`.
 oqx`name, current: jobs { !end_date } from ${people}`
 //   ≡ name, current: jobs collect { where !end_date } from ${people}
 oqx`${people} { age > 40 }`                  // ≡ ${people} collect { where age > 40 }
+oqx`n: size(jobs { !end_date }) from ${people}`   // a block as a call argument
+oqx`${people} distinct { city }`             // ≡ ${people} collect distinct { city }
 oqx`${people} count { jobs exists { } }`     // a consumer test is predicate-shaped too
 oqx`${people} first { name }`                // a bare name still projects — unchanged
 oqx`${people} first { is active }`           // the bare-field filter: `is x` ≡ `!!x`, `not x` ≡ `!x`
@@ -686,11 +746,11 @@ oqx`name, first_job: jobs[0], primary: jobs[pay > 2]! from ${people}`
 //   jobs[pay > 2]!   ≡ jobs single { where pay > 2 }!  (zero or many matches ⇒ an eval error)
 
 // Postfix `!` — required: the value, or an eval error naming the expression
-// (and the row's id). Never a filter, never a coercion: 0! and ""! are values.
+// (and the row's `$key` when scalar). Never a filter, never a coercion: 0! and ""! are values.
 oqx`select id!, title from ${docs}`           // insist on an identity before a write
 // Tightest precedence: `refs(c)[0]!.name` requires the lookup, `refs(c)[0].name!` the name.
 
-// `is` / `is not` compare IDENTITY (a row's id when present, else structurally):
+// `is` / `is not` compare IDENTITY (`$key`: the host's, else structural — §9):
 oqx`name from ${people} where manager is null`            // absent (same as == null)
 oqx`${people} count { ^people exists { $it is ^$it } }`   // rows compare; `==` leaves that unspecified
 // `and` / `or` / `not` are the canonical connectives; `&&` / `||` / `!` are exact
@@ -719,7 +779,7 @@ where a == b and rel exists { where … } or not c  predicate tree + nested ops 
 rel { pay > 2 }  /  rel { employer }            a block without a consumer is collect; a leading predicate is where-first, a bare name projects
 rel[p]  /  rel[p]!  /  rel[0]  /  rel[0]!       first match / exactly one (required) / positional / required positional
 x!                                               required: the value, or an error when absent (tightest; `a!.b` vs `a.b!`)
-is x / not x  /  x is y / x is not y             truthiness (≡ !!x / !x) / identity (a row's id, else structural; absent ≡ null)
+is x / not x  /  x is y / x is not y             truthiness (≡ !!x / !x) / identity ($key: the host's, else structural; absent ≡ null)
 where alias  /  a: expr, b: a                    `where` and later items may use this body's select aliases (resolved before evaluation; an alias shadows a field)
 where rel none { … }                             zero rows (≡ !rel exists { … }; "all" = none over the complement)
 where x in lo..hi / lo...hi / ..hi / lo..        range membership (incl. / excl. / open-ended)
@@ -734,9 +794,12 @@ from entries(obj) … $key / $it                   a record's properties as a co
 entries(rel) exists { … }                        a free-function call may be a receiver
 order by expr desc, expr2                        ordering
 limit n / offset n                               bound the row set (after where/order/distinct, before the consumer)
-follow rel { where … frontier … depth n by … }  recursion ($depth/$stop/$leaf/$frontier); `^name` in the where is the frontier row
-follow before, after                             several destinations: the union of their rows (per step, by identity)
-follow ^people { where manager == ^id }         a destination block: successors computed per frontier row (`^` = that row; `collect` implicit over `^…`, 0.19)
+follow rel { where … frontier … depth n }       recursion ($depth/$stop/$leaf/$frontier/$key); the brace is the destination's block, `^name` in its where the frontier row
+follow before, after  /  follow (before, after)  several destinations: the union of their rows (per step, by identity) / one tuple destination
+follow ^people { where manager == ^id }         a destination block: successors computed per frontier row (`^` = that row; `collect` implicit, 0.20)
+$key  /  $key: expr                              the identity a row is known by (the host's, else structural) / give the rows a block yields that identity
+(a, b)  /  rel distinct { … }                   a tuple: the elements, one level flat (a value and a receiver) / collect distinct (0.20)
+obj { title }                                   one object → one record (or absent); a collection → a list; a scalar → an error (0.20)
 ${source} <collect|exists|none|count|first|single> { … }   whole-query consumer
 ```
 
@@ -849,9 +912,12 @@ than approximate it. The conformance suite verifies this.
 
 The engine never touches host objects directly; it asks a `DataContext` to
 resolve named roots, read properties/relations, coerce results to rows, and
-compute identity (and, optionally, to supply a `rootObject()` — the root
+optionally to name a row's identity (`identityOf` — `$key`; the default is the
+row's structural value), to say which of its objects are collections rather
+than one row (`isSingle`; by default a non-iterable object is one row, so a
+block over it is one record), and to supply a `rootObject()` — the root
 scope's row, what `$it` is at the root and `^$it` from a top-level row; without
-one the root row is absent). Implement it to query an ORM graph, a remote API,
+one the root row is absent. Implement it to query an ORM graph, a remote API,
 or lazily loaded relations — the query *semantics* stay in OQX. Name resolution is simple
 for a context: a bare `field`, a `.field` segment, and a `^field` outer
 reference each become one `get(row, key)` against exactly the row of the scope
@@ -864,7 +930,7 @@ const graph = {
   root: (name) => name === "tree" ? [nodes.get(1)] : undefined,
   get:  (row, key) => key === "children" ? row.childIds.map(id => nodes.get(id)) : row[key],
   toRows: (v) => v == null ? [] : Array.isArray(v) ? v : [v],
-  identity: (row) => row.id,                                // for follow dedup
+  identityOf: (row) => row.id,                              // `$key`: for follow dedup, distinct, `is` (optional; default: structural)
 };
 run(parse("id, depth: $depth from tree follow children"), { context: graph });
 ```
@@ -1095,7 +1161,7 @@ adapter lives on the `@omgbase/oqx/sqlite` subpath.
   (the optimizer rules for nested blocks, default `DEFAULT_RULES`; `[]` is the
   naive scan) and `trace` (a `(event: TraceEvent) => void` sink for index /
   probe / memo / cardinality / fallback events). See [Performance](#performance-relational-patterns).
-- `DataContext` — the tier-2 interface: `root`, `get`, `toRows`, `identity`,
+- `DataContext` — the tier-2 interface: `root`, `get`, `toRows`, `identityOf`, `isSingle`,
   plus optional `callFunction` / `callMethod` (above), an optional
   `indexFor(collection, path)` returning a `RowIndex` for a pre-built equality
   index (`lookup` → positions; optionally `lookupRows` → rows, probed without
@@ -1108,7 +1174,7 @@ adapter lives on the `@omgbase/oqx/sqlite` subpath.
   "native")`; `BUILTIN_METHODS.matches` is always the baseline.
 - `CallResult` — `{ handled: boolean; value?: unknown }`, returned by those hooks.
 - `DefaultContext` — `new DefaultContext(roots?, options?)`; plain-object
-  access, `.id` identity, and the builtin function/method tables. `options`:
+  access, structural identity (`$key` is the row itself unless projected), and the builtin function/method tables. `options`:
   `{ regexDialect?: RegexDialect }` (see the regex baseline, §4).
 - `compileRegex(pattern, flags?, dialect?)` — the `matches()` compiler: a
   `RegExp`, or an `OqxError` for a bad pattern/flag. `RegexDialect` /

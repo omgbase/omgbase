@@ -48,12 +48,14 @@ $ omg query 'select path, open: nodes { value where kind == "md:task" and not ch
 {"id":"d_w18c2st","path":"/lab/2026-02-notes.md","open":[{"value":"Assay cycle 1 and cycle 4 crops for iron"},{"value":"Write the plateau result up for the coagulation note"}]}
 ```
 
-One carve-out: after a `follow` destination a brace is still the **options**
-block — `follow children { depth 2 }` bounds the walk, it does not collect
-(the citation walk's own block, `follow out_links collect { from dst }`, is a
-destination block, and its options come in a second brace after it). The
-top level is unchanged too: `type == "substance" from docs` is still the
-clause-order error, because `where` follows `from`.
+The sugar reaches everywhere a value stands (OQX 0.20): a call argument
+(`size(nodes { is checked })`), and a `follow` destination — `follow children {
+depth 2 }` is that destination's block, with `depth`/`frontier` as its own
+clauses after `where` (the citation walk's block, `follow out_links collect {
+from dst depth 2 }`, carries them the same way; there is no second brace).
+`x distinct { … }` is `x collect distinct { … }`. The top level is unchanged:
+`type == "substance" from docs` is still the clause-order error, because
+`where` follows `from`.
 
 ## Brackets: `x[p]`, `x[p]!`, `x[n]`
 

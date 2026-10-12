@@ -109,7 +109,7 @@ export const RULES: readonly Rule[] = [
   // `limit` / `offset` are bounds when a number, a binding, or `^name` follows.
   { name: "bound", regex: `${words(["limit", "offset"])}(?=[ \\t]+(?:[0-9^]|\\$\\{))`, groups: ["clause"] },
   // Options in a `follow { … }` block; `where` is already a keyword.
-  { name: "follow-option", regex: `${words(["frontier", "depth", "by"])}${VALUE_START}`, groups: ["followOption"] },
+  { name: "follow-option", regex: `${words(["frontier", "depth"])}${VALUE_START}`, groups: ["followOption"] },
   {
     name: "order-direction",
     regex: `${words(["asc", "desc"])}(?=[ \\t]*(?:,|\\}|$|${words(["limit", "offset"])}))`,

@@ -5,7 +5,7 @@
   "fileTypes": [
     "oqx"
   ],
-  "version": "0.19",
+  "version": "0.20",
   "patterns": [
     {
       "include": "#expression"
@@ -198,7 +198,7 @@
     },
     "follow-option": {
       "comment": "follow-option",
-      "match": "(?:frontier|depth|by)(?![A-Za-z0-9_$])(?![ \\t]*(?:distinct|frontier|collect|exists|follow|offset|select|single|values|count|depth|first|limit|order|where|desc|from|none|and|asc|by|in|or)(?![A-Za-z0-9_$]))(?=[ \\t]*(?:[A-Za-z_$^(\"'0-9!\\-]|\\.\\.))",
+      "match": "(?:frontier|depth)(?![A-Za-z0-9_$])(?![ \\t]*(?:distinct|frontier|collect|exists|follow|offset|select|single|values|count|depth|first|limit|order|where|desc|from|none|and|asc|by|in|or)(?![A-Za-z0-9_$]))(?=[ \\t]*(?:[A-Za-z_$^(\"'0-9!\\-]|\\.\\.))",
       "name": "keyword.control.follow.oqx"
     },
     "order-direction": {

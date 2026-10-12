@@ -86,6 +86,7 @@ function subMayRaise(s: Subquery, target: Target): boolean {
     } else if (opMayRaise(item.op, target, false)) return true;
   }
   if (s.orderBy?.some((o) => exprMayRaise(o.expr, target, false))) return true;
+  if (s.frontier && exprMayRaise(s.frontier, target, false)) return true;
   if (s.follow && followMayRaise(s.follow, target)) return true;
   if (s.limit && exprMayRaise(s.limit, target, false)) return true;
   if (s.offset && exprMayRaise(s.offset, target, false)) return true;
@@ -93,10 +94,10 @@ function subMayRaise(s: Subquery, target: Target): boolean {
 }
 
 // A destination is a relation Expr read in the frontier row's scope, or a
-// destination block (an OpNode) whose receiver and body may each raise.
+// destination block (an OpNode) whose receiver, body, `frontier` and `depth`
+// are its own (oqx 0.20).
 function followMayRaise(f: Follow, target: Target): boolean {
-  if (f.destinations.some((d) => (d.kind === "op" ? opMayRaise(d, target, false) : exprMayRaise(d, target, false)))) return true;
-  return [f.where, f.frontier, f.by].some((e) => e !== null && exprMayRaise(e, target, false));
+  return f.destinations.some((d) => (d.kind === "op" ? opMayRaise(d, target, false) : exprMayRaise(d, target, false)));
 }
 
 function exprMayRaise(e: Expr, target: Target, root: boolean): boolean {
@@ -117,6 +118,8 @@ function exprMayRaise(e: Expr, target: Target, root: boolean): boolean {
       return exprMayRaise(e.left, target, root) || exprMayRaise(e.right, target, root);
     case "range":
       return (e.lo !== null && exprMayRaise(e.lo, target, root)) || (e.hi !== null && exprMayRaise(e.hi, target, root));
+    // A tuple (oqx 0.20) is never pushed down; it raises iff an element does.
+    case "tuple": return e.items.some((x) => exprMayRaise(x, target, root));
     case "lit": case "binding": return false;
   }
 }

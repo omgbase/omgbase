@@ -81,6 +81,13 @@ export const ATTRIBUTES: Readonly<Record<Target, ReadonlySet<string>>> = {
  * (frontmatter + inline), the other two one source each. */
 export const SOURCE_HANDLES: ReadonlySet<string> = new Set(["data", "frontmatter", "inline"]);
 
+/** The value of a statically SINGLE relation that has no row — `dst` on an
+ * external or dangling link, `block` on a node without one (oqx 0.20, SEMANTICS
+ * §3): an object the engine treats as one row with no rows, so `dst { title }`
+ * is absent rather than `[]`, while as a VALUE it is absent (`materialize`),
+ * so `dst == null`, `has(dst)` and `dst.title` read as before. */
+export const ABSENT_SINGLE: object = Object.freeze({});
+
 export interface StoreContextOptions {
   /** Pre-computed query vectors for `semantic("phrase")`, keyed by phrase (the
    * async runner fills this; the sync path leaves it empty and a semantic() with
@@ -555,10 +562,11 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
     if (t === "blocks" && key === "block") return r;
     if (t === "nodes" && key === "section") return r;
 
-    // reach-through to owning entities, and from a link row to its destination.
-    if (t !== "docs" && key === "doc") return owningDoc(r);
-    if (t === "nodes" && key === "block") return owningBlock(r);
-    if (t === "links" && key === "dst") return destinationDoc(r);
+    // reach-through to owning entities, and from a link row to its destination —
+    // statically single relations: absent is the single-with-no-row marker.
+    if (t !== "docs" && key === "doc") return owningDoc(r) ?? ABSENT_SINGLE;
+    if (t === "nodes" && key === "block") return owningBlock(r) ?? ABSENT_SINGLE;
+    if (t === "links" && key === "dst") return destinationDoc(r) ?? ABSENT_SINGLE;
 
     // relations.
     const rels = rel[t];
@@ -725,6 +733,8 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
   // Store indexes by (target, path) — one object, one set of prepared statements,
   // for the whole run (`null`: the path is not indexable).
   const indexes = new Map<string, RowIndex | null>();
+  // A row's identity — `$key` (spec/oqx §16, 0.20): its id column for every
+  // kind; anything else (a property bag, a lifted value) is known structurally.
   const identity = (row: unknown): unknown => {
     const t = (row as Row)?.[TARGET];
     if (t === "docs") return (row as Row).doc_id;
@@ -749,14 +759,21 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
       return rootRow;
     },
     get: getFrom,
+    // Row position (spec/oqx §3): a tagged row is ONE row (single — the engine's
+    // default for a non-iterable object), a lazy scan (an iterable Proxy) a
+    // collection, the absent-single marker one row with none.
     toRows(value: unknown): Iterable<unknown> {
-      if (value == null) return [];
+      if (value == null || value === ABSENT_SINGLE) return [];
       if (Array.isArray(value)) return value;
       if (typeof value === "object" && (value as Row)[TARGET]) return [value];
       if (typeof value === "object" && Symbol.iterator in (value as object)) return value as Iterable<unknown>;
       return [value];
     },
-    identity,
+    // Value position: the absent-single marker is absent.
+    materialize(value: unknown): unknown {
+      return value === ABSENT_SINGLE ? undefined : value;
+    },
+    identityOf: identity,
     // A store-backed equality index for a ROOT SCAN handle on a column or
     // property SQLite indexes (store-index.ts); `undefined` for any other
     // collection (a relation's rows, a lifted array) or path, so the engine

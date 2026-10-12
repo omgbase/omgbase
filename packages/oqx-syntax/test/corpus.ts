@@ -64,9 +64,9 @@ export const CORPUS: Sample[] = [
   {
     name: "follow with every option",
     valid: true,
-    source: "id, depth: $depth from tree follow children { depth 4 where active frontier $leaf by id } order by $depth, id",
+    source: "id, depth: $depth from tree follow children { where active frontier $leaf depth 4 } order by $depth, id",
     tokens:
-      "identifier(id) comma(,) alias(depth) colon(:) intrinsic($depth) keyword(from) identifier(tree) clause(follow) identifier(children) braceOpen({) followOption(depth) number(4) keyword(where) identifier(active) followOption(frontier) intrinsic($leaf) followOption(by) identifier(id) braceClose(}) clause(order) clause(by) intrinsic($depth) comma(,) identifier(id)",
+      "identifier(id) comma(,) alias(depth) colon(:) intrinsic($depth) keyword(from) identifier(tree) clause(follow) identifier(children) braceOpen({) keyword(where) identifier(active) followOption(frontier) intrinsic($leaf) followOption(depth) number(4) braceClose(}) clause(order) clause(by) intrinsic($depth) comma(,) identifier(id)",
   },
   {
     name: "follow distinct over the omgbase `in` relation",

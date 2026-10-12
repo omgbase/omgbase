@@ -1,8 +1,13 @@
 ---
 npm:
   "@omgbase/oqx": minor
+  "@omgbase/oqx-syntax": minor
+  "@omgbase/core": patch
+  omgbase: patch
 crates:
   oqx: minor
+  omgbase-surface: patch
+  omgbase: patch
 ---
 OQX 0.20 (`spec/oqx` 0.19 → 0.20; 1188 → 1245 fixtures, three new suites `tuples`, `identity`, `cardinality`):
 
@@ -11,3 +16,11 @@ OQX 0.20 (`spec/oqx` 0.19 → 0.20; 1188 → 1245 fixtures, three new suites `tu
 - **Identity is `$key`.** One meaning — the key a row is known by — for `follow` cycle detection, the per-step union, `follow distinct`, `distinct` over unprojected rows, `is`, and reading `$key` on any row. The default is the host's identity through a new `DataContext` seam (TS: optional `identityOf(row)`, replacing the required `identity`, which stays as a deprecated alias for one minor; Rust: `identity` now has a structural default), else the row's structural value; an entry's identity is its key. The language never names an `id` property: the "`id` if present" rule is removed, and the in-memory `DefaultContext` names no identity. A block may project `$key: <expr>` to give the rows it yields that identity (`select name, $key: email from people follow next { $key: email }`); in a destination block `$key:` is not a column. Caveat: identities compare as values across the whole walk, so destinations that can reach the same rows should project the same `$key`.
 - **Result shape by receiver cardinality.** In row position an array is a collection and a non-array object is one row: a `collect` over it — `doc { title }`, `title from doc`, a nested `d: dst { title }` — yields the one record (or absent when filtered out; `doc { status == "active" }` is a conditional reach-through), not a one-element list; `values` the one value; `first`/`single` that object. A scalar in row position is an eval error (`` `s` is a string ("abc"), not a collection or an object ``) instead of a one-row collection — `list(s)` says it explicitly. A `from` re-projection or a `follow` makes the result plural. Hosts say which of their objects are collections through the new optional `DataContext.isSingle` (TS; default: a non-iterable object is one row) / `is_single` (Rust; default `true`). TS `OqxResult` for `collect` gains `single: boolean` (`unwrap` yields the record or `null`); Rust gains `OqxResult::Record(Option<Value>)`.
 - **Sugar closures.** `x { … }` ≡ `x collect { … }` wherever a value is accepted, function arguments included (`size(children { is checked })`); `x distinct { … }` ≡ `x collect distinct { … }`.
+
+omgbase binding (surface stays 3.0; the dialect follows the language):
+
+- `DataContext.identityOf` (TS) / `identity` (Rust) answers a store row's id for every kind (`doc_id`, `block_id`, `node_id`, `edge_id`), so `$key` on any hit is its id and walks dedup by it as before; the binding no longer relies on the removed `id`-property rule.
+- The statically single relations `doc`, `block` and `dst` hand out an absent-single marker when they have no row, so `dst { title }` on a link row is one record and, on an external or dangling link, absent — not `[]`; as a value the marker is absent (`dst == null`, `has(dst)`, `dst.title` unchanged). The Rust context's `is_single` marks the lazy root scans as collections.
+- The `graph` tool compiles to `follow distinct <dir>_links collect { from <dst|doc> depth <n> }`; `query_syntax`, the `query` tool description, both help cards, `docs/query-language.md`, `docs/graph-and-query.md`, `docs/mcp-api.md` and the OQX tutorial describe the 0.20 forms; the planners treat a destination block's `frontier`/`depth` as its own and never push a tuple down.
+- `spec/surface` fixtures using the old options block are rewritten to the destination-block forms (`… collect { from dst depth 2 }`; `by type` → `{ $key: type from dst }`) and regenerated; `spec/cli` and `interop.json` regenerated with them.
+- `@omgbase/oqx-syntax`: `LANGUAGE_VERSION` 0.20; `FOLLOW_OPTIONS` → `DESTINATION_CLAUSES` (`frontier`, `depth`; `by` is no longer a word of the language), assets regenerated.

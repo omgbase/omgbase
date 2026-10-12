@@ -58,7 +58,7 @@ describe("graph — neighborhood macro over OQX follow", () => {
   it("delegates: the generated query is an OQX `follow out_links collect { from dst }`", async () => {
     const r = await graph({ roots: ["a.md"], degrees: 1, direction: "out" });
     expect(r.queries).toHaveLength(1);
-    expect(r.queries[0]).toContain("follow distinct out_links collect { from dst } { depth 2 }");
+    expect(r.queries[0]).toContain("follow distinct out_links collect { from dst depth 2 }");
     expect(r.queries[0]).toMatch(/^select _depth: \$depth, .* from docs where \id == "d_/);
   });
 
@@ -69,7 +69,7 @@ describe("graph — neighborhood macro over OQX follow", () => {
     expect(r.documents[0]!.frontier).toBe(true);
     expect(r.frontier.map((f) => f.path)).toEqual(["/a.md"]);
     // depth 1 walk ⇒ seed only.
-    expect(r.queries[0]).toContain("{ depth 1 }");
+    expect(r.queries[0]).toContain("collect { from dst depth 1 }");
   });
 
   it("1-hop out — reaches directly linked docs; frontier is the outer ring", async () => {
@@ -95,7 +95,7 @@ describe("graph — neighborhood macro over OQX follow", () => {
     // c → a and d → a link to a.
     const r = await graph({ roots: ["a.md"], degrees: 1, direction: "in" });
     expect(r.documents.map((d) => d.path).sort()).toEqual(["/a.md", "/c.md", "/d.md"]);
-    expect(r.queries[0]).toContain("follow distinct in_links collect { from doc }");
+    expect(r.queries[0]).toContain("follow distinct in_links collect { from doc depth 2 }");
   });
 
   it("both directions — unions out and in neighbors", async () => {
@@ -103,8 +103,8 @@ describe("graph — neighborhood macro over OQX follow", () => {
     // out: b ; in: c, d ; plus the root a.
     expect(r.documents.map((d) => d.path).sort()).toEqual(["/a.md", "/b.md", "/c.md", "/d.md"]);
     expect(r.queries).toHaveLength(2);
-    expect(r.queries[0]).toContain("out_links collect { from dst }");
-    expect(r.queries[1]).toContain("in_links collect { from doc }");
+    expect(r.queries[0]).toContain("out_links collect { from dst depth 2 }");
+    expect(r.queries[1]).toContain("in_links collect { from doc depth 2 }");
   });
 
   it("edges carry provenance and preserve external + phantom endpoints", async () => {

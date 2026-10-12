@@ -12,7 +12,7 @@ These rules apply to every tool and are non-negotiable:
 
 0. **Multi-repo (ADR-014).** Every repo-scoped tool accepts an optional `repo` (a slug); omitting it uses the server's bound default repo, so single-repo clients are unchanged. An unknown slug is a loud `repo_not_found`. Discover slugs with the `repos` tool; per-repo counts/convergence via `repos_status { repo }`. Mutators resolve the *target* repo's working-tree root, so a write always lands in the right tree.
 1. **Explicit incompleteness.** Every list-shaped result carries `truncated: boolean` and, when true, `cursor`. An agent must never have to guess whether it saw everything.
-2. **Budgets are first-class.** Hydrating tools (`docs_read_many`, `blocks_read_many`, …) accept `budget_tokens` (server estimates ~4 chars/token, truncates at block boundaries, sets `truncated`). Traversals bound the walk instead: `query`'s OQX `follow … { depth n }` / `where $ordinal <= N` and the `graph` tool's `degrees`/`max_documents`.
+2. **Budgets are first-class.** Hydrating tools (`docs_read_many`, `blocks_read_many`, …) accept `budget_tokens` (server estimates ~4 chars/token, truncates at block boundaries, sets `truncated`). Traversals bound the walk instead: `query`'s OQX `follow … collect { … depth n }` / `where $ordinal <= N` and the `graph` tool's `degrees`/`max_documents`.
 3. **Conflicts carry current truth.** See `mutation-and-concurrency.md` §4.
 4. **One resolution ladder** wherever a block is hydrated:
    - `skeleton` — ids + types + one-line labels (~6 tokens/block)
@@ -211,7 +211,7 @@ Budget: 2 turns, < 1k tokens total.
 1. `query { query: 'from links where dst_path == "/x.md" and (predicate == "depends_on" or predicate == "references") select doc_id, block_id, field' }` — 1 turn.
 
 **T5 — "Everything downstream of this assumption."**
-1. `query { query: 'from docs where path == "/assumptions.md" follow in_links collect { from doc } { depth 4 }' }` — 1 turn. (The inbound link rows walked to their source documents — who depends on / references the seed.)
+1. `query { query: 'from docs where path == "/assumptions.md" follow in_links collect { from doc depth 4 }' }` — 1 turn. (The inbound link rows walked to their source documents — who depends on / references the seed.)
 
 **T6 — "Refactor this long note into three notes, provenance intact."**
 1. `docs_outline` → 2. `apply { docs_create ×2 + move runs }` (moves carry identity across docs) → 3. optional `links_retarget`. ≤ 3 turns.

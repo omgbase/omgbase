@@ -7,7 +7,7 @@ pub const QUERY_SYNTAX: &str = r##"# query — OQX syntax reference
 The `query` tool takes ONE plain OQX string (+ optional `limit`/`cursor`). There
 is no {from, filter, order} envelope: every concern is a clause of the string.
 
-  [select <items>] from <target> [where <pred>] [follow <dest>, … [{ … }]]
+  [select <items>] from <target> [where <pred>] [follow <dest> [{ … }], …]
                    [order by <expr> [asc|desc], …] [limit N] [offset N]
   <target> count|exists|none|first|single { <block> }     (scalar/one-row form: a bare target at the root scope)
 
@@ -33,22 +33,25 @@ Every form here is shorthand for an explicit directive (the AST is the explicit 
                                        (comparison, call, !/is/not, in, literal, (…), a consumer test — anything
                                        but a bare name, a dotted path or a ^lift) is where-first. Bare names still
                                        project: nodes { name } ≡ nodes collect { name }; filter a bare field with
-                                       nodes { is checked }. After follow only over an outer-reference receiver (0.19):
-                                       follow ^docs { where … } is a destination block (collect); follow children { depth 2 }
-                                       and follow refs(x) { depth 2 } are the options block.
+                                       nodes { is checked }. Wherever a value stands (0.20), call arguments included:
+                                       size(children { is checked }); x distinct { … } ≡ x collect distinct { … }. After a
+                                       follow destination too: follow children { depth 2 } is that destination's block.
+  (a, b)                              a tuple (0.20): two or more expressions, concatenated one level flat — a value
+                                       (size((tags, aliases)), "x" in (tags, aliases)) and a receiver ((a, b) { … },
+                                       follow (before, after) { depth 2 }); (a) alone is grouping
   refs(x)[0]                          ≡ refs(x) first { offset 0 }   positional (integer literal or ${binding});
                                        out of range ⇒ absent; refs(x)[0].path navigates the row
   ^docs[path == ^company]             ≡ ^docs first { where path == ^company }   first match or absent
   ^docs[path == ^company]!            ≡ … single { … } required: exactly one, else filter_invalid
-  title!                              required: title, or an error naming the expression (and the row's id)
+  title!                              required: title, or an error naming the expression (and the row's $key — its id)
                                        — never a filter, never a coercion (0!, ""! are values); tightest: a!.b vs a.b!
   is x / not x                        truthiness of x, and its negation (prefix; `not` ≡ `!`)
-  x is y / x is not y                 identity (a row's id, else structural) — compares rows, which == does not;
+  x is y / x is not y                 identity ($key: a store row's id, else structural) — compares rows, which == does not;
                                        x is null = absent; for scalars is ≡ ==; comparison precedence, no chaining
   a and b / a or b                    the connectives (≡ && / ||: same precedence, short-circuit, value: data.title or path coalesces)
   boss: ^docs[path == ^manager], bossName: boss.title   a select item may use the items to its LEFT
   Reserved words (never a bare field name): from where select is not and or, true false null.
-  Contextual words (limit order offset follow collect count first distinct desc by in) parse as
+  Contextual words (limit order offset follow collect count first distinct desc by in frontier depth) parse as
   fields in expression position (select o: order from docs).
 
 Results are LEAN hits — { id, path } + whatever `select` projects (or `values`,
@@ -191,7 +194,9 @@ links:  (the authored link graph as rows — one per open link: the relation a l
                 receiver is a list property); ^$it = the enclosing row.
                 $value is NOT an intrinsic (since oqx 0.15): it reads a
                 property literally named $value, absent when there is none.
-  $key          inside an entries(x) block: the entry's key.
+  $key          the row's identity (0.20): a store row's id (doc/block/node/edge), an entries(x)
+                entry's key, a follow occurrence's walk identity; project $key: <expr> to rekey the
+                rows a block yields (a destination block's $key: is not a column).
 
 ## Scalar semantics (@omgbase/oqx)
 
@@ -316,9 +321,9 @@ links:  (the authored link graph as rows — one per open link: the relation a l
   link — it then contributes no successor), doc its source.
   from docs where <seed> follow out_links collect { from dst }     docs the seed links TO
   from docs where <seed> follow in_links collect { from doc }      backlinks
-    follow out_links collect { from dst } { depth 3 }              bound (1..8, default 8)
-    follow out_links collect { from dst } { where layer == "canon" }   keep only matching successors
-    follow in_links collect { from doc } { where ^path in list(before) }   ^ = the row being expanded
+    follow out_links collect { from dst depth 3 }                  bound (1..8, default 8) — a clause of the block
+    follow out_links collect { from dst where layer == "canon" }   keep only matching successors
+    follow in_links collect { from doc where ^path in list(before) }   ^ = the row being expanded
                                                    (^^ = the walk's enclosing scope)
     follow out_links collect { from dst where predicate == "depends_on" }   one predicate only
     follow out_links collect { from dst }, in_links collect { from doc }
@@ -328,24 +333,23 @@ links:  (the authored link graph as rows — one per open link: the relation a l
                                                    a destination block over the root's
                                                    documents, re-read per frontier row
                                                    (^ = that row) = the backlinks walk
-    follow out_links collect { from dst } { frontier type == "practitioner" }   cut, keeping the frontier row
-    follow distinct out_links collect { from dst } / … { by group }   identity control
+    follow out_links collect { from dst frontier type == "practitioner" }   cut, keeping the frontier row
+    follow distinct out_links collect { from dst } / … { $key: group from dst }   identity control ($key)
     follow refs(before), ^docs { where ^path in list(after) }    forward over `before`, backward
                                                    over every doc whose `after` names me
   Per-occurrence metadata: $depth (seed = 1), $stop (interior|leaf|frontier|
-  depth|cycle), $leaf/$frontier, $ordinal — usable in select/order by and the
-  top-level post-walk where, NOT metadata of the candidates the follow-local
-  where/frontier read.
-  Outer-reference destinations (OQX 0.19): a destination whose receiver is headed
-  by an outer reference (^docs, ^^docs, 0^docs, ^$it.docs, with any member chain)
-  can never be a relation of the current row, so a brace right after it is a
-  destination block with the implicit collect — follow refs(before), ^docs { where
-  ^path in list(after) } walks `before` forward and, backward, every document
-  whose `after` names the frontier row (the 0.17 body rules apply: where-first,
-  projections). After children / out_links / refs(x) / a binding a brace is still
-  the options block (an error when that destination is not the last); an options
-  block may follow a trailing block: follow ^docs { where … } { depth 2 }. A bare
-  follow ^docs (no brace, no consumer) is an error naming both block spellings.
+  depth|cycle), $leaf/$frontier, $ordinal, $key — usable in select/order by and
+  the top-level post-walk where, NOT metadata of the candidates a destination
+  block's where reads.
+  Destination blocks (OQX 0.20): a brace after ANY destination opens that
+  destination's block — children { depth 2 }, refs(x) { depth 2 }, out_links
+  collect { from dst depth 2 }, ^docs { where ^path in list(after) } — with the
+  0.17 body rules (where-first, projections) and two clauses of its own after
+  `where`: frontier <pred> (occurrences reached through this destination that
+  match are frontiers; ^ there is the walk's enclosing scope) and depth <n>
+  (this destination expands a frontier row only while $depth < n). There is no
+  options block; the old `by` is $key. A bare follow ^docs (no brace, no
+  consumer) is an error naming both block spellings.
   Type-preserving relations: block.children, section.children, section.subsections;
   the citation graph is out_links collect { from dst } / in_links collect { from doc }.
   from links where dst_path == "/notes/x.md"       inbound links to a doc, as rows

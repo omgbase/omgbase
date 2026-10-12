@@ -12,7 +12,7 @@
 //
 // Mapping (args → follow query):
 //   roots      → the seed `where id == … or …` (refs resolved to doc ids first; literals in the AST, never spliced text)
-//   degrees    → `follow … { depth degrees+1 }` (seed is $depth 1, so N hops = depth N+1)
+//   degrees    → `follow … collect { … depth degrees+1 }` (seed is $depth 1, so N hops = depth N+1)
 //   direction  → `follow out_links collect { from dst }` (the linked documents)
 //                | `follow in_links collect { from doc }` (the linking documents)
 //                | both (two walks, unioned)
@@ -165,7 +165,7 @@ const EDGE_FIELDS: (keyof GraphEdge)[] = [
 // strings: the seed ids are literals, the caller's projections parsed items.
 //
 //   select _depth: $depth, _stop: $stop, _links: doc.<dir>_links collect { <edge fields> } <user items>
-//   from docs where id == <root> or … follow distinct <dir>_links collect { from <dst | doc> } { depth <depth> }
+//   from docs where id == <root> or … follow distinct <dir>_links collect { from <dst | doc> depth <depth> }
 //
 // The destination block walks the link rows to the documents at their other
 // end (spec/surface §1.2, 3.0 follow-up: there are no `out`/`in` relations —
@@ -184,9 +184,10 @@ function buildQuery(rootIds: readonly string[], dir: "out" | "in", depth: number
       ...userSelect,
     ],
     where: seed.length === 1 ? seed[0]! : build.or(seed),
+    // `depth` is the destination block's own clause (oqx 0.20).
     follow: build.follow(
-      [build.op(build.ident(`${dir}_links`), "collect", build.subquery({ from: [build.ident(dir === "out" ? "dst" : "doc")] }))],
-      { distinct: true, depth },
+      [build.op(build.ident(`${dir}_links`), "collect", build.subquery({ from: [build.ident(dir === "out" ? "dst" : "doc")], depth }))],
+      { distinct: true },
     ),
   });
   return print(q);

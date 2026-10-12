@@ -294,31 +294,25 @@
         "hits": [
           {
             "id": "e_51",
-            "path": "/substances/salt.md",
-            "d": []
+            "path": "/substances/salt.md"
           },
           {
             "id": "e_52",
-            "path": "/substances/salt.md",
-            "d": []
+            "path": "/substances/salt.md"
           },
           {
             "id": "e_53",
             "path": "/substances/salt.md",
-            "d": [
-              {
-                "title": "Calcination"
-              }
-            ]
+            "d": {
+              "title": "Calcination"
+            }
           },
           {
             "id": "e_54",
             "path": "/substances/salt.md",
-            "d": [
-              {
-                "title": "Coagulation"
-              }
-            ]
+            "d": {
+              "title": "Coagulation"
+            }
           }
         ],
         "truncated": false,

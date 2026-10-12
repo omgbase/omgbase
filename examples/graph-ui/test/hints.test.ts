@@ -25,7 +25,7 @@ describe("queryHints", () => {
     for (const follow of [
       "refs(before)", "refs(^before)", "refs(before), refs(after)",
       "doc.out", "doc.in", "in", "out", "out_links", "doc.in_links", "children", "subsections", "$it.in", "$it.before",
-      "out_links collect { from dst }", "in_links collect { from doc } { depth 2 }",
+      "out_links collect { from dst }", "in_links collect { from doc depth 2 }",
       "$repo.docs collect { where after.contains(\"/\" + ^$path) }",
       "distinct refs(before), $it.in collect { where (\"/\" + ^$path) in list(after) }",
     ]) {

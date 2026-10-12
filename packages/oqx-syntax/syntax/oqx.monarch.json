@@ -1,6 +1,6 @@
 {
   "languageId": "oqx",
-  "languageVersion": "0.19",
+  "languageVersion": "0.20",
   "defaultToken": "invalid",
   "tokenPostfix": ".oqx",
   "ignoreCase": false,
@@ -166,7 +166,7 @@
         "keyword.clause"
       ],
       [
-        "(?:frontier|depth|by)(?![A-Za-z0-9_$])(?![ \\t]*(?:distinct|frontier|collect|exists|follow|offset|select|single|values|count|depth|first|limit|order|where|desc|from|none|and|asc|by|in|or)(?![A-Za-z0-9_$]))(?=[ \\t]*(?:[A-Za-z_$^(\"'0-9!\\-]|\\.\\.))",
+        "(?:frontier|depth)(?![A-Za-z0-9_$])(?![ \\t]*(?:distinct|frontier|collect|exists|follow|offset|select|single|values|count|depth|first|limit|order|where|desc|from|none|and|asc|by|in|or)(?![A-Za-z0-9_$]))(?=[ \\t]*(?:[A-Za-z_$^(\"'0-9!\\-]|\\.\\.))",
         "keyword.follow"
       ],
       [

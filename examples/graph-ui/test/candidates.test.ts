@@ -78,7 +78,7 @@ describe("inferCandidates", () => {
   it("reads the 3.0 link-graph walk through the link rows: `out_links collect { from dst }` → links, `in_links collect { from doc }` → backlinks, named by the receiver as written", () => {
     const c = inferCandidates(parse(`path from docs where path == "a.md" follow out_links collect { from dst }`), []);
     expect(c.map((x) => [x.name, x.kind, x.sources, x.defaults])).toEqual([["out_links", "links", ["follow"], { edge: true, layout: true, direction: "forward" }]]);
-    const b = inferCandidates(parse(`path from docs where path == "a.md" follow in_links collect { from doc } { depth 2 }`), []);
+    const b = inferCandidates(parse(`path from docs where path == "a.md" follow in_links collect { from doc depth 2 }`), []);
     expect(b.map((x) => [x.name, x.kind, x.sources, x.defaults])).toEqual([["in_links", "backlinks", ["follow"], { edge: true, layout: true, direction: "backward" }]]);
     // dotted receivers, `distinct`, several destinations, a filtered body — the receiver still names the relation
     const d = inferCandidates(parse(`path from docs where path == "a.md" follow distinct doc.out_links collect { from dst where provenance == "link" }, $it.in_links collect { from doc }, refs(before)`), []);

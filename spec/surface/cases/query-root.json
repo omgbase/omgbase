@@ -262,7 +262,7 @@
     {
       "name": "destination-block-rooted-paths-are-live",
       "notes": "§1 Paths, §1.1: a destination block over the root's documents, correlated by the frontier row's rooted `path` against the authored `after` references — kickoff names review, nothing names kickoff.",
-      "query": "select path, $depth from docs where path == \"/timeline/review.md\" follow ^docs collect { where ^path in list(after) } { depth 3 }",
+      "query": "select path, $depth from docs where path == \"/timeline/review.md\" follow ^docs collect { where ^path in list(after) depth 3 }",
       "expect": {
         "hits": [
           {
@@ -284,7 +284,7 @@
     {
       "name": "destination-block-absolute-root",
       "notes": "§1.1: the `0^docs` spelling of the destination block, two scopes below the root.",
-      "query": "select path, $depth from docs where path == \"/timeline/review.md\" follow 0^docs collect { where ^path in list(after) } { depth 3 }",
+      "query": "select path, $depth from docs where path == \"/timeline/review.md\" follow 0^docs collect { where ^path in list(after) depth 3 }",
       "expect": {
         "hits": [
           {

@@ -12,7 +12,7 @@ so no grammar can drift from another.
 - Zero runtime dependencies. Nothing here imports the parser: highlighting is
   lexical and deliberately separate from `@omgbase/oqx`, which stays the semantic
   source of truth.
-- Describes OQX language **0.15** (`LANGUAGE_VERSION`, pinned by tests to
+- Describes OQX language **0.20** (`LANGUAGE_VERSION`, pinned by tests to
   `spec/oqx/VERSION` and to `@omgbase/oqx`).
 
 ## Install
@@ -117,7 +117,7 @@ The grammar follows `spec/oqx/GRAMMAR.md` §1. It distinguishes:
 | reserved keywords | `keyword.control.oqx` | `keyword` | `select` `from` `where` |
 | clause words | `keyword.control.clause.oqx` | `keyword.clause` | `follow` `order by` `limit` `offset` |
 | consumers | `keyword.control.consumer.oqx` | `keyword.consumer` | `collect` `exists` `none` `count` `first` `single` (before `{`) |
-| follow options | `keyword.control.follow.oqx` | `keyword.follow` | `frontier` `depth` `by` |
+| destination-block clauses | `keyword.control.follow.oqx` | `keyword.follow` | `frontier` `depth` (inside a `follow` destination block, since 0.20) |
 | modifiers | `keyword.other.modifier.oqx` | `keyword.modifier` | `distinct` `asc` `desc` `values` |
 | literals | `constant.language.oqx` | `constant.language` | `true` `false` `null` |
 | numbers | `constant.numeric.oqx` | `number` | `42` `0.5` `1e5` |
@@ -156,7 +156,7 @@ the Prism grammar is written to agree with them rather than to be cleverer.
 ## Vocabulary
 
 `@omgbase/oqx-syntax/vocabulary` exports the word lists (`KEYWORDS`,
-`CONTEXTUAL_WORDS`, `CONSUMERS`, `FOLLOW_OPTIONS`, `MODIFIERS`, `LITERALS`,
+`CONTEXTUAL_WORDS`, `CONSUMERS`, `DESTINATION_CLAUSES`, `MODIFIERS`, `LITERALS`,
 `OPERATORS`, `BUILTIN_FUNCTIONS`, `BUILTIN_METHODS`, `INTRINSICS`), the identifier
 shape, the language metadata (`LANGUAGE`, `LANGUAGE_VERSION`) and — kept apart,
 because it is not part of the language — the **omgbase host vocabulary**

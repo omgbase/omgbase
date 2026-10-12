@@ -76,7 +76,7 @@
     },
     {
       "name": "follow-destination-depth-and-stop",
-      "notes": "§1.3 with spec/oqx follow options: a depth bound over refs(before).",
+      "notes": "§1.3 with a spec/oqx destination block: `refs(before) { depth 2 }` is the block over the references with its depth cap (oqx 0.20).",
       "query": "select path, $depth, $stop from docs where path == \"timeline/review.md\" follow refs(before) { depth 2 }",
       "expect": {
         "hits": [

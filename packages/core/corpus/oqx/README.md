@@ -129,12 +129,13 @@ different sets. Several tests depend on this; keep it fully checked.
   filter (the 5 documents that directly cite magnum-opus), **cyclic-safety**
   (`$stop == "cycle"` — paracelsus ⇄ index is admitted once, never looped),
   `frontier type == "practitioner"` (biographies as the edge of the walk),
-  `by type` (re-keying identity so the walk stops when a document *type*
-  repeats), and `$ordinal`; and the `spec/oqx` 0.14 forms — a **correlated
-  follow-local `where`** (`follow out_links collect { from dst } { where type
-  == ^type }`, `^` being the frontier row), a **destination list** (`follow
-  out_links collect { from dst }, in_links collect { from doc }`, unioned by
-  identity within a step) and a **destination block over the root's documents**
+  `$key: type` (re-keying identity — oqx 0.20 — so the walk stops when a
+  document *type* repeats), and `$ordinal`; and the `spec/oqx` 0.14 forms — a
+  **correlated destination-block `where`** (`follow out_links collect { from dst
+  where type == ^type }`, `^` being the frontier row), a **destination list**
+  (`follow out_links collect { from dst depth 2 }, in_links collect { from doc
+  depth 2 }`, unioned by identity within a step, each block with its own
+  `depth`) and a **destination block over the root's documents**
   (`follow ^docs collect { where out_links exists { where dst_path == ^^path }
   }`, backlinks computed per frontier row, equal to `in_links collect { from
   doc }`). The **structural** relations ride the heading
