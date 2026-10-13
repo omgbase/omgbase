@@ -19,6 +19,7 @@ pub fn run_source(
     source: &str,
     limit: Option<i64>,
     cursor: Option<&str>,
+    bare: bool,
 ) -> Result<Json> {
     // §2.3: remotely the engine's own provider (or its `provider_unavailable`)
     // answers; the local provider check would open the workspace.
@@ -37,6 +38,11 @@ pub fn run_source(
     }
     if let Some(c) = cursor {
         req.insert("cursor".to_owned(), json!(c));
+    }
+    if bare {
+        // `--bare` (cli 4.1) is the tool's `bare: true`: the engine strips
+        // the envelope; the hits arrive as their projection only.
+        req.insert("bare".to_owned(), json!(true));
     }
     cli.call_with("query", Json::Object(req), semantic)
 }
@@ -74,8 +80,10 @@ fn capture_result(cli: &mut Cli, result: &Json) {
     cli.capture(&captured);
 }
 
-/// Render an `OqxResult` per the mode and the consumer.
-pub fn render_result(cli: &Cli, result: &Json, source: &str) -> Result<i32> {
+/// Render an `OqxResult` per the mode and the consumer. `bare` hits (cli 4.1)
+/// carry no envelope: the human table has no id/path columns, only the
+/// projection's; `--json`/`--jsonl` print the bare hits as they came.
+pub fn render_result(cli: &Cli, result: &Json, source: &str, bare: bool) -> Result<i32> {
     let style = cli.style;
     let io = cli.io;
     if cli.flags.mode == Mode::Json {
@@ -110,6 +118,9 @@ pub fn render_result(cli: &Cli, result: &Json, source: &str) -> Result<i32> {
         .cloned()
         .unwrap_or_default();
     match cli.flags.mode {
+        // A bare hit carries no id: `--ids` prints the document, as it does
+        // for a scalar result (the reference's `emitMachine`).
+        Mode::Ids if bare => io.out(&js_json(result)),
         Mode::Ids => {
             for h in &hits {
                 io.out(&str_of(h, "id"));
@@ -125,7 +136,7 @@ pub fn render_result(cli: &Cli, result: &Json, source: &str) -> Result<i32> {
                 io.err(&style.dim("  no hits"));
                 return Ok(EXIT_OK);
             }
-            render_hits(io, &style, &hits, &projected_columns(source));
+            render_hits(io, &style, &hits, &projected_columns(source), !bare);
         }
     }
     if truncated {
@@ -144,6 +155,7 @@ pub fn query(cli: &mut Cli, args: &[String]) -> Result<i32> {
             Opt::value_short("n", 'n'),
             Opt::value("cursor"),
             Opt::value_short("file", 'f'),
+            Opt::flag("bare"),
         ],
     )?;
     let source = match a.value("file") {
@@ -157,9 +169,10 @@ pub fn query(cli: &mut Cli, args: &[String]) -> Result<i32> {
         return Err(CliError::usage("query requires a <source> (or -f file|-)"));
     }
     let limit = number(&a, "n")?;
-    let result = run_source(cli, &source, limit, a.value("cursor"))?;
+    let bare = a.flag("bare");
+    let result = run_source(cli, &source, limit, a.value("cursor"), bare)?;
     capture_result(cli, &result);
-    render_result(cli, &result, &source)
+    render_result(cli, &result, &source, bare)
 }
 
 fn first_omg_fence(roots: &[BlockNode]) -> Option<&BlockNode> {
@@ -251,7 +264,7 @@ pub fn run(cli: &mut Cli, args: &[String]) -> Result<i32> {
             format!("the omg fence in {r} is empty"),
         ));
     }
-    let result = run_source(cli, &source, None, None)?;
+    let result = run_source(cli, &source, None, None, false)?;
     capture_result(cli, &result);
-    render_result(cli, &result, &source)
+    render_result(cli, &result, &source, false)
 }

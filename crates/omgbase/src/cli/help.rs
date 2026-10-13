@@ -366,8 +366,8 @@ pub fn card(name: &'static str, prog: &str) -> Option<HelpSpec> {
                 "Composable OQX query: [select …] from <docs|blocks|nodes|links> [where …] [follow …] [order by …] [limit N] (alias: q)",
             ),
             vec![
-                s("query <source> [-n <N>] [--cursor <c>] [--ids|--json|--jsonl]"),
-                s("query -f <file|-> [-n <N>] [--cursor <c>]"),
+                s("query <source> [-n <N>] [--cursor <c>] [--bare] [--ids|--json|--jsonl]"),
+                s("query -f <file|-> [-n <N>] [--cursor <c>] [--bare]"),
             ],
             vec![
                 (
@@ -380,6 +380,12 @@ pub fn card(name: &'static str, prog: &str) -> Option<HelpSpec> {
                 ),
                 (s("-n <N>"), s("page size")),
                 (s("--cursor <c>"), s("continue a truncated result")),
+                (
+                    s("--bare"),
+                    s(
+                        "hits as the projection only — no automatic id/path columns (needs a `select`; `values` is the bare-values form)",
+                    ),
+                ),
                 (
                     s("--ids"),
                     format!("bare ids, one per line — pipe fuel (`… --ids | {prog} cat -`)"),

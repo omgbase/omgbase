@@ -61,6 +61,8 @@ export interface QueryCase {
   limit?: number;
   /** a cursor a previous page issued */
   cursor?: string;
+  /** the tool's `bare` (README §1.4, 4.2): hits are the projection alone */
+  bare?: boolean;
   expect: OqxResult | QueryErrorExpect;
 }
 
@@ -163,7 +165,7 @@ export function carriesCorpus(kind: CaseKind): boolean {
 }
 
 export const CASE_KEYS: Record<CaseKind, readonly string[]> = {
-  query: ["name", "notes", "query", "limit", "cursor", "expect"],
+  query: ["name", "notes", "query", "limit", "cursor", "bare", "expect"],
   reads: ["name", "notes", "workspace", "steps", "expect"],
   cursor: ["name", "notes", "parts", "cursor", "arity", "expect"],
   interop: ["name", "notes", "ts", "writes", "reads", "expect"],
@@ -284,6 +286,7 @@ function runOnce(c: LoadedCorpus, q: QueryCaseInput, plan: boolean): { ok: true;
     const result = oqxRun(c.store, c.repoId, q.query, {
       ...(q.limit !== undefined ? { limit: q.limit } : {}),
       ...(q.cursor !== undefined ? { cursor: q.cursor } : {}),
+      ...(q.bare !== undefined ? { bare: q.bare } : {}),
       ...(plan ? {} : { plan: false }),
     });
     return { ok: true, result: canonical(result) };
@@ -613,6 +616,7 @@ export function validateFixtureFile(file: string, doc: unknown, opts: ValidateOp
       if (typeof c.query !== "string") problems.push(`${at}: \`query\` must be an OQX source`);
       if (c.limit !== undefined && (typeof c.limit !== "number" || !Number.isInteger(c.limit) || c.limit < 0)) problems.push(`${at}: \`limit\` must be a non-negative integer`);
       if (c.cursor !== undefined && typeof c.cursor !== "string") problems.push(`${at}: \`cursor\` must be a string`);
+      if (c.bare !== undefined && typeof c.bare !== "boolean") problems.push(`${at}: \`bare\` must be a boolean`);
     } else if (kind === "reads") {
       if (c.workspace !== undefined && typeof c.workspace !== "boolean") problems.push(`${at}: \`workspace\` must be a boolean`);
       stepCount = validateSteps(at, c.steps, problems, { read: validateRead });

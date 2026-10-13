@@ -360,6 +360,7 @@ fn run_once(
         cursor: c.get("cursor").and_then(Json::as_str),
         provider: None,
         in_memory,
+        bare: c.get("bare").and_then(Json::as_bool).unwrap_or(false),
     };
     let started = Instant::now();
     let out = query(store, repo, source, opts);

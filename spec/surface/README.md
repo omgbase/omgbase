@@ -461,8 +461,8 @@ against the current row:
 
 ### 1.4 The runner
 
-`query(source, limit = 50, cursor?)` → `OqxResult { hits, truncated,
-cursor, consumer, count?, exists?, none?, values? }`:
+`query(source, limit = 50, cursor?, bare = false)` → `OqxResult { hits,
+truncated, cursor, consumer, count?, exists?, none?, values? }`:
 
 - `exists` / `count` / `none` consumers return the scalar and no hits.
 - otherwise **every hit is `{ id, path, ...projection }`** (3.0): the
@@ -524,6 +524,39 @@ cursor, consumer, count?, exists?, none?, values? }`:
 - `values`: the single projected item is returned as `values: [...]` with
   `hits` empty — no hits, so the envelope does not apply
   (`query-docs::values-mode-is-unchanged-by-the-envelope`).
+- **`bare` (4.2).** With `bare: true` every hit is its **projection only** —
+  no automatic `id`/`path` members — so `select title, era from docs …`
+  yields `{ title, era }` rows (`query-docs::bare-projection`; `first`/
+  `single` return their one hit bare too, `::bare-first-is-the-projection`).
+  The rules, checked in this order over the resolved query before the engine
+  runs (so the error never depends on the rows): `values` beside it is
+  `filter_invalid` "`bare` is redundant with `values` — `values` is already
+  the bare-values form; drop one" (`::bare-with-values-refused`); no `select`
+  is `filter_invalid` "`bare` needs a `select` — without a projection a hit is
+  only its envelope" (`::bare-needs-select`); the scalar consumers `count` /
+  `exists` / `none` return no hits, so `bare` has nothing to strip and is not
+  an error (`::bare-scalar-consumer-is-unaffected`). A projected `id`/`path`
+  is the intrinsic the attribute reads everywhere (the 3.0 name rule), here
+  an ordinary column under the key the query gave it — `select id` is
+  `{ id: "d_14" }` (`::bare-select-id-is-the-intrinsic`); `data.id` stays the
+  authored key — and with no envelope there is nothing to collide with: the
+  envelope-collision rule above is not applied, so `select path: layer, id:
+  type` is `{ path: "canon", id: "substance" }` where the default mode refuses
+  it (`::bare-no-envelope-no-collision`). `distinct` dedups by the projection,
+  which under `bare` includes a projected `id`/`path` (every row distinct —
+  `::bare-distinct-counts-a-projected-id`; the default mode's envelope
+  collapses it). **Paging is unchanged**: the runner keeps every row's
+  identity internally and strips the envelope LAST — after `distinct`, the
+  query's own `limit`/`offset` and the keyset page — so `truncated` and
+  `cursor` are exactly the enveloped query's and a cursor continues a bare
+  sequence (`::bare-paging-keeps-cursor` issues the same cursor as the
+  enveloped `select title from docs` with `limit 2`;
+  `::bare-paging-continues-from-cursor`). `follow` results and nested
+  `collect`/`first`/`single` blocks are values, not hits, and are untouched
+  (rows as values below still render `{ id, path }`). The default envelope is
+  what makes a hit a follow-up handle and a selector's write target
+  (`spec/mutate` §11.8); `bare` is for display and export, where identity is
+  noise.
 - **Rows as values (1.2).** Wherever a row surfaces
   as a *value* rather than as a hit — a nested `collect { }` / `first { }` /
   `single { }` with an empty projection (`spec/oqx` §12: "the row itself"),
@@ -810,7 +843,7 @@ identity consequences the 3.x result carried are the Plan's
 | `blocks_read_many` | `ids[]`, `resolution?`, `budget_tokens?` | §2 (`nodes_get_many`, then `blocks_get_many`, before 3.0) |
 | `docs_tree` / `docs_list` | §2 args | §2 |
 | `query_syntax` | — | `{ syntax }` (reference text, unpinned) |
-| `query` | `query`, `limit?`, `cursor?` | §1.4; `semantic(...)` with no provider → `provider_unavailable` (`data: { provider: null }`, the message naming what to configure); a provider whose model has embedded nothing in the repository → `provider_unavailable` too (`data: { provider, model }`), never path-ordered rows with no score (3.0) |
+| `query` | `query`, `limit?`, `cursor?`, `bare?` (4.2) | §1.4; `semantic(...)` with no provider → `provider_unavailable` (`data: { provider: null }`, the message naming what to configure); a provider whose model has embedded nothing in the repository → `provider_unavailable` too (`data: { provider, model }`), never path-ordered rows with no score (3.0) |
 | `graph` | `roots[]`, `degrees? = 1`, `direction? = both`, `predicate?`, `select?[]`, `max_documents? = 200` | `{ roots, degrees, direction, documents: [{ id, path, degree, frontier, ...select }], links: [{ id, doc_id, block_id, via_id, dst_id, dst_path, uri, dst_kind, predicate, provenance, anchor, field }], frontier: [{ id, path, degree }], truncated, queries }` — compiled to `follow distinct out_links collect { from dst }` / `follow distinct in_links collect { from doc }` (the link rows walked to the documents at their other end, §1.2; `follow doc.out`/`doc.in` before the 3.0 follow-up) with `depth = degrees + 1` (≤ 8, so `degrees` clamps to 7 and the result reports the clamped value), roots depth 0; documents ordered bytewise by path (§9); a link row carries the `links` target's fields under their own names (§1.2, 3.0 — `edges[]` until the name pass, and before that a rename table spelled `src`/`dst`/`dst_uri`/`src_field`); an `id`/`path` selection collapses onto the envelope key exactly as a `query` hit's does, any other bare name is its own column (deduped by suffix) and an expression is `sel_<i>` — a `graph` selection can never overwrite the envelope |
 | `blocks_search` | `q`, `limit?` | `spec/search` §1.3 (`text_search` before 3.0): `{ hits: [{ id (the block), doc_id, path (reference form), type, text, score }], truncated }` |
 | `blocks_resolve` | `query`, `limit?` | `spec/search` §4 (`resolve` before 3.0; vector fused when a provider exists): `[{ id, locator, preview, evidence }]`, the `locator`'s path half in the reference form (`/a.md#paragraph[2]`) |
@@ -867,7 +900,8 @@ verbs later.
   embedded copy equal to the files) observed into a fresh repo
   (`spec/store` §9.4 minter, one `observe` batch in bytewise path order at
   `2026-09-27T00:00:00.000Z`, so `d_0` is `index.md`), then `cases: [{ name,
-  notes?, query, limit?, cursor?, expect }]` with `expect` the `OqxResult`
+  notes?, query, limit?, cursor?, bare?, expect }]` — `limit`, `cursor` and
+  `bare` (4.2) are the `query` tool's arguments — with `expect` the `OqxResult`
   as JSON (absent keys for undefined projections; numbers within 1e-9) or
   `{ error: "filter_invalid", message_includes }`. The reference runs every
   case both planned and in-memory and fails on any difference. Suites:
@@ -1333,6 +1367,18 @@ both and runs both harnesses.
 
 ## Decisions
 
+- 2026-10-13, surface 4.2: `query` gains `bare?: boolean` (§1.4) — each hit
+  as its projection only, without the automatic `id`/`path` envelope members,
+  for display and export where identity is noise. Rules: needs a `select`
+  (`filter_invalid`), refused beside `values` (`filter_invalid`; already the
+  bare-values form), ignored by the scalar consumers, no envelope-collision
+  check (a projected `id`/`path` is the intrinsic under the key the query
+  gave it), `distinct` by the whole projection, paging/`truncated`/`cursor`
+  unchanged (identity kept internally, the envelope stripped last). The
+  default is byte-identical to 4.1. An argument added: a minor. Fixtures:
+  `query-docs.json` 96 → 106 (the `bare-*` cases), `reads::arguments` (the
+  `query` argument list names `bare?`), `tool-descriptions.json` (`query`).
+  Rendered by `spec/cli` 4.1 as `query --bare`.
 - 2026-10-13, surface 4.1: query-directed planning (`spec/mutate` 3.1
   §11.8). `plan`, `apply` and `execute` gain `select?` and `expect?`
   (additive — a call without them is byte-identical to 4.0): the `effects`

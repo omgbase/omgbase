@@ -2798,6 +2798,180 @@
           "/substances/sulphur.md"
         ]
       }
+    },
+    {
+      "name": "bare-projection",
+      "notes": "§1.4 (4.2): `bare` returns each hit as its projection only — no automatic `id`/`path` — so a `select title, era` is `{ title, era }` rows, in the query's order.",
+      "query": "select title, era from docs where type == \"practitioner\" order by era",
+      "bare": true,
+      "expect": {
+        "hits": [
+          {
+            "title": "Maria Prophetissa",
+            "era": 250
+          },
+          {
+            "title": "Jabir ibn Hayyan",
+            "era": 800
+          },
+          {
+            "title": "Paracelsus",
+            "era": 1530
+          },
+          {
+            "title": "Isaac Newton",
+            "era": 1680
+          }
+        ],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "collect"
+      }
+    },
+    {
+      "name": "bare-needs-select",
+      "notes": "§1.4 (4.2): without a projection a hit is only its envelope, so `bare` on the bare envelope query is refused before the engine runs.",
+      "query": "from docs where type == \"text\"",
+      "bare": true,
+      "expect": {
+        "error": "filter_invalid",
+        "message_includes": "`bare` needs a `select` — without a projection a hit is only its envelope"
+      }
+    },
+    {
+      "name": "bare-with-values-refused",
+      "notes": "§1.4 (4.2): `values` is already the bare-values form; `bare` beside it is refused (the two name the same thing).",
+      "query": "select path values from docs where type == \"text\"",
+      "bare": true,
+      "expect": {
+        "error": "filter_invalid",
+        "message_includes": "`bare` is redundant with `values` — `values` is already the bare-values form; drop one"
+      }
+    },
+    {
+      "name": "bare-select-id-is-the-intrinsic",
+      "notes": "§1.4 (4.2): `id` in a projection reads the row's intrinsic as everywhere (3.0 name rule); under `bare` it is an ordinary column — `{ id }`, nothing injected beside it. `data.id` stays the authored key.",
+      "query": "select id from docs where path == \"/substances/salt.md\"",
+      "bare": true,
+      "expect": {
+        "hits": [
+          {
+            "id": "d_14"
+          }
+        ],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "collect"
+      }
+    },
+    {
+      "name": "bare-no-envelope-no-collision",
+      "notes": "§1.4 (4.2): with no envelope there is nothing to collide with — a projection keyed `path` or `id` that is not the attribute itself (refused as `envelope-collision-*` in the default mode) is simply the column the query named. (The filter reads `slug`: a select alias is readable in `where`, so `where path == …` here would read `layer`.)",
+      "query": "select path: layer, id: type from docs where slug == \"salt\"",
+      "bare": true,
+      "expect": {
+        "hits": [
+          {
+            "path": "canon",
+            "id": "substance"
+          }
+        ],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "collect"
+      }
+    },
+    {
+      "name": "bare-paging-keeps-cursor",
+      "notes": "§1.4 (4.2): the keyset page runs on identity the runner keeps internally and the envelope is stripped last, so `truncated` and `cursor` are exactly the enveloped query's (`select title from docs limit 2` without `bare` issues the same cursor).",
+      "query": "select title from docs",
+      "limit": 2,
+      "bare": true,
+      "expect": {
+        "hits": [
+          {
+            "title": "Alchemy"
+          },
+          {
+            "title": "Laboratory notes — January"
+          }
+        ],
+        "truncated": true,
+        "cursor": "WyIvbGFiLzIwMjYtMDEtbm90ZXMubWQiLCJkXzEiXQ",
+        "consumer": "collect"
+      }
+    },
+    {
+      "name": "bare-paging-continues-from-cursor",
+      "notes": "§1.4 (4.2): the cursor `bare-paging-keeps-cursor` issued (`[\"/lab/2026-01-notes.md\", \"d_1\"]`) continues the bare page sequence.",
+      "query": "select title from docs",
+      "limit": 2,
+      "cursor": "WyIvbGFiLzIwMjYtMDEtbm90ZXMubWQiLCJkXzEiXQ",
+      "bare": true,
+      "expect": {
+        "hits": [
+          {
+            "title": "Laboratory notes — February"
+          },
+          {
+            "title": "Jabir ibn Hayyan"
+          }
+        ],
+        "truncated": true,
+        "cursor": "WyIvcHJhY3RpdGlvbmVycy9qYWJpci1pYm4taGF5eWFuLm1kIiwiZF8zIl0",
+        "consumer": "collect"
+      }
+    },
+    {
+      "name": "bare-distinct-counts-a-projected-id",
+      "notes": "§1.4 (4.2): a top-level `distinct` dedups by the projection; under `bare` a projected `id` is part of it (every row distinct), where the default mode's envelope would collapse it (one hit).",
+      "query": "select distinct id, type from docs where type == \"text\"",
+      "bare": true,
+      "expect": {
+        "hits": [
+          {
+            "id": "d_16",
+            "type": "text"
+          },
+          {
+            "id": "d_17",
+            "type": "text"
+          }
+        ],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "collect"
+      }
+    },
+    {
+      "name": "bare-scalar-consumer-is-unaffected",
+      "notes": "§1.4 (4.2): `count`/`exists`/`none` return no hits, so `bare` has nothing to strip and is not an error.",
+      "query": "docs count { where type == \"text\" }",
+      "bare": true,
+      "expect": {
+        "hits": [],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "count",
+        "count": 2
+      }
+    },
+    {
+      "name": "bare-first-is-the-projection",
+      "notes": "§1.4 (4.2): `first`/`single` return the one hit bare too.",
+      "query": "docs first { select title, era where type == \"practitioner\" order by era desc }",
+      "bare": true,
+      "expect": {
+        "hits": [
+          {
+            "title": "Isaac Newton",
+            "era": 1680
+          }
+        ],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "first"
+      }
     }
   ]
 }

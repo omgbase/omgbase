@@ -1058,6 +1058,7 @@ pub fn expand(
         cursor: None,
         provider: None,
         in_memory: false,
+        bare: false,
     };
     let res = query_ast(store, repo_id, &c.rewritten, opts, semantic)?;
     if res.truncated || res.hits.len() > c.bound {

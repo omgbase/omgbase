@@ -168,6 +168,50 @@
       }
     },
     {
+      "name": "bare",
+      "notes": "§6 (4.1): `--bare` is the tool's `bare` — a hit is its projection alone, so the table has no id/path columns (`spec/surface` §1.4, 4.2)",
+      "workspace": "alchemy",
+      "argv": [
+        "q",
+        "select title, era from docs where type == \"practitioner\" order by era",
+        "--bare"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "title              era\nMaria Prophetissa  250\nJabir ibn Hayyan   800\nParacelsus         1530\nIsaac Newton       1680\n"
+      }
+    },
+    {
+      "name": "bare-json",
+      "notes": "`--json` the bare hits verbatim; paging unchanged",
+      "workspace": "alchemy",
+      "argv": [
+        "q",
+        "select title, era from docs where type == \"practitioner\" order by era",
+        "--bare",
+        "--json"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "{\"hits\":[{\"title\":\"Maria Prophetissa\",\"era\":250},{\"title\":\"Jabir ibn Hayyan\",\"era\":800},{\"title\":\"Paracelsus\",\"era\":1530},{\"title\":\"Isaac Newton\",\"era\":1680}],\"truncated\":false,\"cursor\":null,\"consumer\":\"collect\"}\n"
+      }
+    },
+    {
+      "name": "bare-needs-select",
+      "notes": "§6 (4.1): the surface's refusal, rendered as every filter_invalid",
+      "workspace": "alchemy",
+      "argv": [
+        "q",
+        "from docs where type == \"text\"",
+        "--bare"
+      ],
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "error[filter_invalid]: `bare` needs a `select` — without a projection a hit is only its envelope\n  {\n    \"reason\": \"`bare` needs a `select` — without a projection a hit is only its envelope\",\n    \"hint\": \"OQX\"\n  }\n"
+      }
+    },
+    {
       "name": "ids",
       "workspace": "alchemy",
       "argv": [

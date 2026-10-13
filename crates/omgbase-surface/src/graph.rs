@@ -225,6 +225,7 @@ pub fn graph_neighborhood(
                 cursor: None,
                 provider,
                 in_memory: false,
+                bare: false,
             },
         )?;
         if res.truncated {

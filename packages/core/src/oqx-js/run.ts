@@ -35,6 +35,10 @@ export interface OqxHit {
 }
 
 export interface OqxResult {
+  /** `{ id, path, ...projection }` per hit — or, under `OqxOptions.bare`, the
+   * projection alone (`id`/`path` present only when the query projected them;
+   * typed as `OqxHit` for the one hit shape every consumer handles, a bare
+   * caller knows it asked). */
   hits: OqxHit[];
   truncated: boolean;
   cursor: string | null;
@@ -53,6 +57,17 @@ export interface OqxResult {
 export interface OqxOptions {
   limit?: number;
   cursor?: string | null;
+  /** Return each hit as its PROJECTION only — no automatic `id`/`path`
+   * members (spec/surface §1.4, 4.2): `select title, era from docs` yields
+   * `{ title, era }` rows. Needs a `select` (without a projection a hit is
+   * only its envelope) and is refused with `values` (already the bare-values
+   * form); both are `filter_invalid` before the engine runs. A projected
+   * `id`/`path` is the intrinsic as everywhere (`select id` → `{ id }`), and
+   * with no envelope there is nothing to collide with (`select path: layer`
+   * is fine). Paging, `distinct`, `truncated` and `cursor` are unchanged —
+   * the runner keeps identity internally and strips the envelope last. The
+   * scalar consumers (`count`/`exists`/`none`) have no hits and ignore it. */
+  bare?: boolean;
   semanticVectors?: Map<string, SemanticVec>;
   /** Force the pure in-memory engine (skip tier-3 pushdown). Internal — used by
    * the differential conformance suite to prove planned == in-memory. */
@@ -258,30 +273,64 @@ function renderValue(v: unknown): unknown {
   return out;
 }
 
-function toHit(row: unknown): OqxHit {
+// A shaped row: the identity the runner injected, kept apart from the user
+// projection until the very end, so distinct, the keyset page and the cursor
+// run on identity whether or not the hits carry it (`bare`, 4.2).
+interface Shaped {
+  id: string;
+  path: string;
+  proj: Record<string, unknown>;
+}
+
+function shapeRow(row: unknown): Shaped {
   const o = row as Record<string, unknown>;
   const { __oqx_id, __oqx_path, __oqx_self, ...rest } = o;
   if (SELF_KEY in o && !rowRef(__oqx_self)) throw notAStoreRow(__oqx_self);
-  // The envelope keys lead; a user projection of `id`/`path` collapses onto
-  // them in place (the same value, read by the same attribute).
-  return { id: String(__oqx_id), path: String(__oqx_path ?? ""), ...(renderValue(rest) as Record<string, unknown>) };
+  return { id: String(__oqx_id), path: String(__oqx_path ?? ""), proj: renderValue(rest) as Record<string, unknown> };
 }
 
-// Top-level `select distinct`: dedup hits by their USER projection (every field
-// except the envelope's `id`/`path`), keeping the first (so the retained hit
-// carries a real identity). Order-preserving.
-function dedupHitsByProjection(hits: OqxHit[]): OqxHit[] {
+// The envelope keys lead; a user projection of `id`/`path` collapses onto
+// them in place (the same value, read by the same attribute).
+function toHit(s: Shaped): OqxHit {
+  return { id: s.id, path: s.path, ...s.proj };
+}
+
+// `bare` (4.2): the projection alone. A projected `id`/`path` is an ordinary
+// column here — the intrinsic the attribute reads, under the key the query
+// gave it — and nothing is injected beside it.
+function toBareHit(s: Shaped): OqxHit {
+  return s.proj as OqxHit;
+}
+
+// Top-level `select distinct`: dedup hits by their USER projection — every
+// field except the envelope's `id`/`path`, which a projection of the attribute
+// collapses onto (so `select distinct id` dedups on nothing but the empty
+// projection, as it always has); under `bare` there is no envelope, so a
+// projected `id`/`path` IS part of the projection and counts. Keeps the first
+// (so the retained hit carries a real identity). Order-preserving.
+function dedupByProjection(rows: Shaped[], bare: boolean): Shaped[] {
   const seen = new Set<string>();
-  const out: OqxHit[] = [];
-  for (const h of hits) {
-    const { id: _id, path: _path, ...proj } = h;
-    void _id; void _path;
-    const key = JSON.stringify(Object.keys(proj).sort().map((k) => [k, proj[k]]));
+  const out: Shaped[] = [];
+  for (const s of rows) {
+    const keys = Object.keys(s.proj).filter((k) => bare || !ENVELOPE_KEYS.has(k)).sort();
+    const key = JSON.stringify(keys.map((k) => [k, s.proj[k]]));
     if (seen.has(key)) continue;
     seen.add(key);
-    out.push(h);
+    out.push(s);
   }
   return out;
+}
+
+// `bare` is examined where hits are built (spec/surface §1.4, 4.2): without a
+// projection a hit is only its envelope, and `values` is already the
+// bare-values form — both refused before the engine runs, over the resolved
+// query, so the error never depends on the rows.
+export const BARE_NEEDS_SELECT_MESSAGE = "`bare` needs a `select` — without a projection a hit is only its envelope";
+export const BARE_WITH_VALUES_MESSAGE = "`bare` is redundant with `values` — `values` is already the bare-values form; drop one";
+function bareMisuse(parsed: Query): FilterInvalid | null {
+  if (parsed.values) return new FilterInvalid(BARE_WITH_VALUES_MESSAGE, "OQX");
+  if (parsed.select.length === 0) return new FilterInvalid(BARE_NEEDS_SELECT_MESSAGE, "OQX");
+  return null;
 }
 
 export function oqxRun(store: Store, repoId: string, source: string, opts: OqxOptions = {}): OqxResult {
@@ -347,10 +396,18 @@ export function oqxRunQuery(store: Store, repoId: string, raw: Query, opts: OqxO
   // the final page below and returned as `values` with `hits` empty.
   const topValues = parsed.values;
   const userSelect = topValues ? [{ ...parsed.select[0]!, name: VALUE_KEY }] : parsed.select;
-  if (!topValues) {
+  // `bare` (4.2): the hits are the projection alone — refused without one and
+  // with `values`; with no envelope there is no collision to refuse either, a
+  // projected `id`/`path` is simply a column.
+  const bare = opts.bare === true;
+  if (bare) {
+    const misuse = bareMisuse(parsed);
+    if (misuse) throw misuse;
+  } else if (!topValues) {
     const collision = envelopeCollision(userSelect);
     if (collision) throw collision;
   }
+  const render = bare ? toBareHit : toHit;
   // On the collect path a top-level `limit`/`offset` is ALSO taken out of the
   // engine query and applied here, after the runner's own distinct — the engine
   // would otherwise bound the raw rows before dedup (`select distinct type
@@ -364,13 +421,13 @@ export function oqxRunQuery(store: Store, repoId: string, raw: Query, opts: OqxO
 
   if (consumer === "first" || consumer === "single") {
     const row = res.consumer === "first" || res.consumer === "single" ? res.row : null;
-    if (topValues) return { hits: [], truncated: false, cursor: null, consumer, values: row == null ? [] : [toHit(row)[VALUE_KEY]] };
-    return { hits: row == null ? [] : [toHit(row)], truncated: false, cursor: null, consumer };
+    if (topValues) return { hits: [], truncated: false, cursor: null, consumer, values: row == null ? [] : [shapeRow(row).proj[VALUE_KEY]] };
+    return { hits: row == null ? [] : [render(shapeRow(row))], truncated: false, cursor: null, consumer };
   }
 
   // collect: keyset pagination on (path, id) when the order is the default.
-  let rows = (res.consumer === "collect" ? res.rows : []).map(toHit);
-  if (topDistinct) rows = dedupHitsByProjection(rows);
+  let rows = (res.consumer === "collect" ? res.rows : []).map(shapeRow);
+  if (topDistinct) rows = dedupByProjection(rows, bare);
   // The query's own bound defines the result SET; the `limit`/`cursor` options
   // then page within it.
   const offset = constBound(topOffset, "offset") ?? 0;
@@ -387,8 +444,10 @@ export function oqxRunQuery(store: Store, repoId: string, raw: Query, opts: OqxO
   page = page.slice(0, cap);
   const last = page[page.length - 1];
   const cursor = truncated && last && !custom ? encodeCursor(last.path, last.id) : null;
-  if (topValues) return { hits: [], truncated, cursor, consumer: "collect", values: page.map((h) => h[VALUE_KEY]) };
-  return { hits: page, truncated, cursor, consumer: "collect" };
+  // The envelope is stripped LAST (`bare`): the page and the cursor above ran
+  // on identity, so a bare result pages exactly like the enveloped one.
+  if (topValues) return { hits: [], truncated, cursor, consumer: "collect", values: page.map((s) => s.proj[VALUE_KEY]) };
+  return { hits: page.map(render), truncated, cursor, consumer: "collect" };
 }
 
 export async function oqxRunAsync(

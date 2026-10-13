@@ -430,7 +430,11 @@ The commit **actor** of every CLI write defaults to `human:<os username>`
   → empty, lists and records as compact JSON; every cell but `id`/`path`
   is clipped to 60 visible characters, the 60th being `…`. Before 3.0 a
   `$path` projection sat beside the `path` column; for a few days of the 3.0
-  line the header read `$id`/`$path` (§10).
+  line the header read `$id`/`$path` (§10). **`--bare` (4.1)**: the hit is
+  its projection alone (`spec/surface` §1.4, 4.2), so the table has no
+  envelope columns — the header is every projected key in first-seen order
+  and a projected `id`/`path` is an ordinary column, clipped like any cell
+  (`query::bare`).
 - **the outline wire format** (`outline`): `spec/surface` §2's text
   verbatim, one line per block.
 - **commit confirmation** (block mutators; every write is a Receipt since
@@ -881,7 +885,7 @@ footer with the word `budget` (every mode but `--json`). Unknown →
 
 ### `query` (alias `q`)
 
-`query <source> [-n <N>] [--cursor <c>] [--ids|--json|--jsonl]` ·
+`query <source> [-n <N>] [--cursor <c>] [--bare] [--ids|--json|--jsonl]` ·
 `query -f <file|->` — `query` (`spec/surface` §1). The source is the
 positionals joined by a space, or the file / stdin. Rendering by the
 result's consumer: `count`/`exists`/`none` → the scalar (`13`, `false`,
@@ -892,7 +896,15 @@ the hit ids (`id`); `--jsonl` one hit per line (`{ id, path, ... }`);
 `--json` the whole `OqxResult` (`{ hits, truncated, cursor, consumer, count?
 | exists? | none? | values? }`, every hit `{ id, path, ...projection }` —
 `spec/surface` §1.4, 3.0; copy a hit's `id` into the next `where id == "…"`
-unchanged).
+unchanged). `--bare` (4.1) is the tool's `bare: true` passed through
+(`spec/surface` §1.4, 4.2): every hit is its projection alone, rendered as
+the bare table (§4) — no id/path columns — and `--json`/`--jsonl` print the
+bare hits; paging, `-n` and `--cursor` are unchanged (`query::bare`,
+`bare-json`). Its refusals are the surface's, rendered as every
+`filter_invalid`: without a `select` — "`bare` needs a `select` — without a
+projection a hit is only its envelope" (`query::bare-needs-select`) — and
+beside `values`. `--bare --ids` has no id to print and prints the document,
+as `--ids` does for a scalar result.
 An empty or missing source is
 `usage: query requires a <source> (or -f file|-)`, exit 2. An OQX error
 (lex, parse, eval) and an invalid `--cursor` are `filter_invalid` — the
@@ -1611,6 +1623,12 @@ was `b_314`).
 
 ## 10. Decisions
 
+- 2026-10-13, cli 4.1: `query --bare` (§4, §6) renders `spec/surface` 4.2's
+  `query { bare: true }` — the hit table without the envelope columns, the
+  bare hits under `--json`/`--jsonl`, the surface's refusals as every
+  `filter_invalid`; nothing else moves. A flag added: a minor. Fixtures:
+  `query.json` 48 → 51 (`bare`, `bare-json`, `bare-needs-select`),
+  `invoke::help-card-query` (the usage lines and the `--bare` option).
 - 2026-10-12, cli 4.0: the retirement release of ADR-021 (with `spec/mutate`
   3.0 and `spec/surface` 4.0; no deprecation period). `apply -f` takes
   `{ effects }` only (`{ ops }` is the usage error naming the replacement);

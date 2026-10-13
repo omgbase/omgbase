@@ -159,6 +159,21 @@ describe("query (oqx)", () => {
     expect(lines[1]!.split("hub.md")).toHaveLength(2);
   });
 
+  // `--bare` (spec/cli §6, 4.1): the tool's `bare` — the projection alone, no id/path columns.
+  it("--bare prints the projection table without the id/path columns; --json the bare hits; no select is the surface's refusal", () => {
+    const { stdout } = omg(["query", 'select title, status from docs where path == "hub.md"', "--bare"]);
+    expect(stdout.trimEnd().split("\n")).toEqual(["title  status", "Hub    active"]);
+    const json = JSON.parse(omg(["query", 'select title, status from docs where path == "hub.md"', "--bare", "--json"]).stdout) as { hits: unknown[]; truncated: boolean };
+    expect(json.hits).toEqual([{ title: "Hub", status: "active" }]);
+    expect(json.truncated).toBe(false);
+    // a projected id is an ordinary column (the intrinsic), rendered like any cell
+    const withId = omg(["query", 'select id, title from docs where path == "hub.md"', "--bare"]).stdout.trimEnd().split("\n");
+    expect(withId[0]).toBe("id         title");
+    expect(withId[1]).toMatch(/^d_[a-z0-9]{7}  Hub$/);
+    const refused = omg(["query", 'from docs where path == "hub.md"', "--bare", "--json"], { expectFail: true });
+    expect(refused.code).toBe(1);
+  });
+
   it("a nested collect renders as compact JSON; an absent field is an empty cell", () => {
     const { stdout } = omg([
       "query",

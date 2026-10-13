@@ -258,6 +258,27 @@ describe("MCP server skeleton", () => {
     expect(payload.hits[0]!.layer).toBe("working");
   });
 
+  it("query bare returns the projection only; refuses no-select and values; names bare in the argument list (spec/surface §1.4, 4.2)", async () => {
+    const { payload } = (await call("query", { query: 'select layer, title from docs where layer == "working"', bare: true })) as { payload: { hits: unknown[] } };
+    expect(payload.hits).toEqual([{ layer: "working", title: "Risks" }]);
+    const noSelect = (await call("query", { query: "from docs", bare: true })) as { payload: { error: string; message: string; data: { hint: string } }; isError: boolean };
+    expect(noSelect.isError).toBe(true);
+    expect(noSelect.payload.error).toBe("filter_invalid");
+    expect(noSelect.payload.message).toBe("`bare` needs a `select` — without a projection a hit is only its envelope");
+    expect(noSelect.payload.data.hint).toBe("OQX");
+    const values = (await call("query", { query: "select path values from docs", bare: true })) as { payload: { error: string; message: string }; isError: boolean };
+    expect(values.isError).toBe(true);
+    expect(values.payload.message).toBe("`bare` is redundant with `values` — `values` is already the bare-values form; drop one");
+    // `bare: false` is the default; a non-boolean is an argument-shape error naming the list
+    const off = (await call("query", { query: "from docs", bare: false })) as { payload: { hits: { id: string; path: string }[] } };
+    expect(off.payload.hits).toEqual([{ id: expect.any(String), path: "/notes.md" }]);
+    const bad = (await call("query", { query: "from docs", bare: "yes" })) as { payload: { error: string; message: string; data: { hint: string } }; isError: boolean };
+    expect(bad.isError).toBe(true);
+    expect(bad.payload.error).toBe("filter_invalid");
+    expect(bad.payload.message).toBe("`bare` must be a boolean (query takes bare?, cursor?, limit?, query, repo?)");
+    expect(bad.payload.data.hint).toBe("arguments");
+  });
+
   it("query semantic without a provider yields provider_unavailable", async () => {
     const { payload, isError } = (await call("query", { query: 'from blocks where semantic("identity across edits") > 0.5' })) as { payload: { error: string }; isError: boolean };
     expect(isError).toBe(true);
@@ -759,9 +780,9 @@ describe("apply op schema + blocks_append / docs_append section resolution", () 
     const typo = (await call("blocks_search", { query: "x" })) as { payload: { message: string } };
     expect(typo.payload.message).toBe("unknown argument `query`; did you mean `q`? (blocks_search takes limit?, q, repo?)");
     const missing = (await call("query", {})) as { payload: { message: string } };
-    expect(missing.payload.message).toBe("`query` is required (query takes cursor?, limit?, query, repo?)");
+    expect(missing.payload.message).toBe("`query` is required (query takes bare?, cursor?, limit?, query, repo?)");
     const typed = (await call("query", { query: "from docs", limit: "5" })) as { payload: { message: string } };
-    expect(typed.payload.message).toBe("`limit` must be an integer (query takes cursor?, limit?, query, repo?)");
+    expect(typed.payload.message).toBe("`limit` must be an integer (query takes bare?, cursor?, limit?, query, repo?)");
     const neither = (await call("docs_read", {})) as { payload: { message: string } };
     expect(neither.payload.message).toBe("pass id or path (docs_read takes id?, include_ids?, path?, repo?)");
     const both = (await call("docs_read", { id: "d_0000000", path: "notes.md" })) as { payload: { error: string; message: string } };

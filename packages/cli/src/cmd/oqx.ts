@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { oqxRun, oqxRunAsync, collectSemanticPhrases, type EmbedQuery, type OqxResult } from "@omgbase/core";
 import type { Command } from "../commands.js";
 import type { Cli } from "../context.js";
-import { truncationFooter, CliUsageError, EngineErrorLike, EXIT_OK, emitMachine, renderHelp, renderHits } from "../output.js";
+import { truncationFooter, CliUsageError, EngineErrorLike, EXIT_OK, emitMachine, renderHelp, renderHits, renderBareHits } from "../output.js";
 import { loadEmbedding } from "./_embed.js";
 import { remoteCall } from "./_remote.js";
 import { readStdin } from "./_mutate.js";
@@ -34,7 +34,11 @@ import { readStdin } from "./_mutate.js";
 // `from …` = collect). Coexists with `omg q` (CEL). Source is a positional
 // string or -f file|-. Human output: one hit per line (id + path), or an aligned
 // id/path/columns table when the query projects (`select`), or the scalar for
-// count/exists/none (see output.ts renderHits); --json/--jsonl/--ids.
+// count/exists/none (see output.ts renderHits); --json/--jsonl/--ids. `--bare`
+// is the tool's `bare` passed through (ADR-012: a thin client; spec/surface
+// §1.4, 4.2): every hit is its projection alone, rendered as a table without
+// the id/path columns (`--json`/`--jsonl` the bare hits; `--ids` has no id to
+// print and falls back to the document, like a scalar result).
 
 async function runOqx(cli: Cli, args: string[]): Promise<number> {
   const { values, positionals } = parseArgs({
@@ -43,6 +47,7 @@ async function runOqx(cli: Cli, args: string[]): Promise<number> {
     options: {
       n: { type: "string", short: "n" },
       cursor: { type: "string" },
+      bare: { type: "boolean" },
       file: { type: "string", short: "f" },
       help: { type: "boolean" },
     },
@@ -51,12 +56,13 @@ async function runOqx(cli: Cli, args: string[]): Promise<number> {
     renderHelp(cli, {
       name: "query",
       summary: "Composable OQX query: [select …] from <docs|blocks|nodes|links> [where …] [follow …] [order by …] [limit N] (alias: q)",
-      usage: ["query <source> [-n <N>] [--cursor <c>] [--ids|--json|--jsonl]", "query -f <file|-> [-n <N>] [--cursor <c>]"],
+      usage: ["query <source> [-n <N>] [--cursor <c>] [--bare] [--ids|--json|--jsonl]", "query -f <file|-> [-n <N>] [--cursor <c>] [--bare]"],
       options: [
         ["<source>", "the OQX query text (quote it); `from` may be omitted inside blocks"],
         ["-f <file|->", "read the query from a file, or stdin with `-`"],
         ["-n <N>", "page size"],
         ["--cursor <c>", "continue a truncated result"],
+        ["--bare", "hits as the projection only — no automatic id/path columns (needs a `select`; `values` is the bare-values form)"],
         ["--ids", `bare ids, one per line — pipe fuel (\`… --ids | ${cli.prog} cat -\`)`],
       ],
       notes: [
@@ -97,9 +103,10 @@ async function runOqx(cli: Cli, args: string[]): Promise<number> {
     : positionals.join(" ").trim();
   if (!source) throw new CliUsageError("query requires a <source> (or -f file|-)");
 
-  const opts: { limit?: number; cursor?: string } = {};
+  const opts: { limit?: number; cursor?: string; bare?: boolean } = {};
   if (values.n) opts.limit = Number(values.n);
   if (values.cursor) opts.cursor = values.cursor;
+  if (values.bare) opts.bare = true;
 
   let result: OqxResult;
   if (cli.flags.server) {
@@ -108,6 +115,7 @@ async function runOqx(cli: Cli, args: string[]): Promise<number> {
       query: source,
       ...(opts.limit !== undefined ? { limit: opts.limit } : {}),
       ...(opts.cursor !== undefined ? { cursor: opts.cursor } : {}),
+      ...(opts.bare !== undefined ? { bare: opts.bare } : {}),
     });
   } else {
     const ws = cli.workspace();
@@ -143,7 +151,7 @@ async function runOqx(cli: Cli, args: string[]): Promise<number> {
       : result.values ?? result,
   );
 
-  return renderOqxResult(cli, result);
+  return renderOqxResult(cli, result, opts.bare === true);
 }
 
 /**
@@ -151,15 +159,16 @@ async function runOqx(cli: Cli, args: string[]): Promise<number> {
  * whole result verbatim (incl. consumer + any scalar), so count/exists round-trip
  * without special-casing; `--jsonl` streams the hits (or the values, as JSON);
  * `--ids` the hit ids — a scalar result has neither, so those modes print the
- * document. The truncation footer prints in every mode but `--json`.
+ * document, and so does a `bare` result (its hits carry no envelope). The
+ * truncation footer prints in every mode but `--json`.
  */
-export function renderOqxResult(cli: Cli, result: OqxResult): number {
+export function renderOqxResult(cli: Cli, result: OqxResult, bare = false): number {
   const cursor = result.truncated ? result.cursor ?? "" : null;
   if (cli.flags.mode !== "human") {
     const list = result.values ?? (result.consumer === "collect" || result.consumer === "first" || result.consumer === "single" ? result.hits : undefined);
     return emitMachine(cli, result, {
       ...(list ? { items: list } : {}),
-      ...(list && !result.values ? { ids: result.hits.map((h) => h.id) } : {}),
+      ...(list && !result.values && !bare ? { ids: result.hits.map((h) => h.id) } : {}),
       cursor,
     });
   }
@@ -184,7 +193,8 @@ export function renderOqxResult(cli: Cli, result: OqxResult): number {
     io.err(style.dim("  no hits"));
     return EXIT_OK;
   }
-  renderHits(cli, result.hits);
+  if (bare) renderBareHits(cli, result.hits);
+  else renderHits(cli, result.hits);
   if (result.truncated) truncationFooter(io, style, result.cursor ?? "");
   return EXIT_OK;
 }

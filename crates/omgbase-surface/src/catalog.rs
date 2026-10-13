@@ -469,6 +469,7 @@ fn build_catalog() -> Vec<ToolSpec> {
                     ("query", s()),
                     ("limit", i()),
                     ("cursor", nullable_string()),
+                    ("bare", b()),
                 ],
                 &["query"],
                 true,
@@ -1635,6 +1636,7 @@ impl Surface {
                     cursor: arg_str(args, "cursor"),
                     provider: self.provider.as_deref(),
                     in_memory: false,
+                    bare: arg_bool(args, "bare")?.unwrap_or(false),
                 };
                 self.require_rankable(
                     &repo,
@@ -3071,6 +3073,138 @@ mod tests {
             .unwrap();
         assert_eq!(ops_count, 1, "the effect commit recorded its intent");
         assert!(Surface::is_write_tool("plan") && Surface::is_write_tool("execute"));
+    }
+
+    /// `bare: true` (§1.4, 4.2): hits are their projection only; identity
+    /// stays internal, so paging is unchanged.
+    #[test]
+    fn bare_hits_are_the_projection_only() {
+        let mut s = surface();
+        for (path, content) in [
+            ("a.md", "---\nlayer: canon\nid: authored-a\n---\n# Alpha\n"),
+            ("b.md", "---\nlayer: canon\n---\n# Beta\n"),
+            ("c.md", "---\nlayer: working\n---\n# Gamma\n"),
+        ] {
+            let out = s.call("observe", json!({ "path": path, "content": content }));
+            assert!(!out.is_error, "{}", out.body);
+        }
+        // the default envelope is untouched
+        let plain = s.call("query", json!({ "query": "select title from docs" }));
+        assert_eq!(
+            plain.body["hits"][0],
+            json!({ "id": "d_0", "path": "/a.md", "title": "Alpha" })
+        );
+        // bare: the projection only, `truncated`/`cursor` as before
+        let bare = s.call(
+            "query",
+            json!({ "query": "select title from docs", "bare": true }),
+        );
+        assert!(!bare.is_error, "{}", bare.body);
+        assert_eq!(
+            bare.body["hits"],
+            json!([{ "title": "Alpha" }, { "title": "Beta" }, { "title": "Gamma" }])
+        );
+        assert_eq!(bare.body["truncated"], false);
+        assert_eq!(bare.body["cursor"], Json::Null);
+        assert_eq!(bare.body["consumer"], "collect");
+        // `select id`/`path` under bare is the row's intrinsic, an ordinary
+        // column in the query's own order; an authored key of the same name
+        // stays `data.<k>`; with no envelope there is nothing to collide with
+        let intrinsic = s.call(
+            "query",
+            json!({ "query": "select i: data.id, id, path from docs where path == \"a.md\"", "bare": true }),
+        );
+        assert_eq!(
+            intrinsic.body["hits"].to_string(),
+            r#"[{"i":"authored-a","id":"d_0","path":"/a.md"}]"#
+        );
+        let no_collision = s.call(
+            "query",
+            json!({ "query": "select path: layer from docs where title == \"Alpha\"", "bare": true }),
+        );
+        assert_eq!(no_collision.body["hits"], json!([{ "path": "canon" }]));
+        assert_eq!(
+            s.call("query", json!({ "query": "select path: layer from docs" }))
+                .body["error"],
+            "filter_invalid"
+        );
+        // the scalar consumers have no hits and ignore it
+        let count = s.call("query", json!({ "query": "docs count { }", "bare": true }));
+        assert_eq!(count.body["count"], 3, "{}", count.body);
+        // paging keeps the keyset cursor: identity is kept until the result is shaped
+        let page1 = s.call(
+            "query",
+            json!({ "query": "select title from docs", "bare": true, "limit": 2 }),
+        );
+        assert_eq!(page1.body["truncated"], true);
+        assert_eq!(
+            page1.body["hits"],
+            json!([{ "title": "Alpha" }, { "title": "Beta" }])
+        );
+        let cursor = page1.body["cursor"].as_str().expect("a cursor").to_owned();
+        let page2 = s.call(
+            "query",
+            json!({ "query": "select title from docs", "bare": true, "limit": 2, "cursor": cursor }),
+        );
+        assert_eq!(page2.body["hits"], json!([{ "title": "Gamma" }]));
+        assert_eq!(page2.body["truncated"], false);
+        // first/single and distinct are shaped the same way
+        let first = s.call(
+            "query",
+            json!({ "query": "docs first { select layer where layer == \"working\" }", "bare": true }),
+        );
+        assert_eq!(first.body["hits"], json!([{ "layer": "working" }]));
+        let distinct = s.call(
+            "query",
+            json!({ "query": "select distinct layer from docs", "bare": true }),
+        );
+        assert_eq!(
+            distinct.body["hits"],
+            json!([{ "layer": "canon" }, { "layer": "working" }])
+        );
+        // nested rows keep their `{ id, path }` reference shape
+        let nested = s.call(
+            "query",
+            json!({ "query": "select b: blocks collect { } from docs where path == \"b.md\"", "bare": true }),
+        );
+        assert_eq!(
+            nested.body["hits"],
+            json!([{ "b": [{ "id": "b_1", "path": "/b.md" }] }])
+        );
+        // refused: no select, values, a non-boolean
+        let no_select = s.call("query", json!({ "query": "from docs", "bare": true }));
+        assert_eq!(no_select.body["error"], "filter_invalid");
+        assert_eq!(
+            no_select.body["message"],
+            "`bare` needs a `select` — without a projection a hit is only its envelope"
+        );
+        let values = s.call(
+            "query",
+            json!({ "query": "select title values from docs", "bare": true }),
+        );
+        assert_eq!(values.body["error"], "filter_invalid");
+        assert_eq!(
+            values.body["message"],
+            crate::query::BARE_WITH_VALUES_MESSAGE
+        );
+        let typed = s.call(
+            "query",
+            json!({ "query": "select title from docs", "bare": "yes" }),
+        );
+        assert_eq!(typed.body["error"], "filter_invalid");
+        assert_eq!(
+            typed.body["message"],
+            "`bare` must be a boolean (query takes bare?, cursor?, limit?, query, repo?)"
+        );
+        // `bare: false` is the default envelope
+        let off = s.call(
+            "query",
+            json!({ "query": "select title from docs", "bare": false }),
+        );
+        assert_eq!(off.body["hits"][0]["id"], "d_0");
+        assert!(s.tools().iter().any(
+            |t| t.name == "query" && t.input_schema["properties"]["bare"]["type"] == "boolean"
+        ));
     }
 
     #[test]

@@ -10865,12 +10865,12 @@
           {
             "error": "filter_invalid",
             "retriable": false,
-            "message": "`query` is required (query takes cursor?, limit?, query, repo?)"
+            "message": "`query` is required (query takes bare?, cursor?, limit?, query, repo?)"
           },
           {
             "error": "filter_invalid",
             "retriable": false,
-            "message": "`limit` must be an integer (query takes cursor?, limit?, query, repo?)"
+            "message": "`limit` must be an integer (query takes bare?, cursor?, limit?, query, repo?)"
           },
           {
             "error": "filter_invalid",

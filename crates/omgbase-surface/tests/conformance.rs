@@ -462,6 +462,7 @@ fn run(
             cursor,
             provider: None,
             in_memory,
+            bare: false,
         },
     )
 }

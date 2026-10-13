@@ -84,6 +84,14 @@ pub struct QueryOptions<'a> {
     /// Force the pure in-memory engine (skip the tier-3 pushdown planner).
     /// The default plans; the differential gate runs both and compares.
     pub in_memory: bool,
+    /// `bare: true` (§1.4, 4.2): every hit is its projection only — the
+    /// automatic `id`/`path` envelope members are stripped when the result is
+    /// shaped, AFTER paging and distinct (identity is kept internally: the
+    /// keyset cursor and the dedup key read the envelope). Needs a `select`
+    /// (without a projection a hit is only its envelope) and is refused with
+    /// `values` (already the bare-values form); a projected `id`/`path` is the
+    /// row's intrinsic, kept as any projected key is.
+    pub bare: bool,
 }
 
 /// §1.4 `OqxResult`.
@@ -591,76 +599,122 @@ fn not_a_store_row(v: &Value) -> SurfaceError {
     )
 }
 
-/// A projected row as a hit: `{ id, path, ...rest }` (§1.4, 3.0: the
-/// envelope keys are the attributes that read them) with the injected columns
-/// peeled off (JavaScript's `String()` on the id, `""` for an absent path). A
-/// user projection of `id`/`path` collapses onto the envelope key in place.
-/// The projection's values are rendered per §1.4 "rows as values": a store row
-/// nested in the result (an empty-projection `collect { }` and friends)
-/// becomes `{ id, path }`. When the row itself was projected under
-/// [`SELF_KEY`] and is not a store row, the query fails (§1.4: a hit is a
-/// store row).
-fn to_hit(row: Value) -> Result<Value> {
-    let Value::Object(mut o) = row else {
-        return Ok(Value::Object(oqx::Object::new()));
+/// A shaped row (the reference's `Shaped`, 4.2): the identity the runner
+/// injected, kept APART from the user projection until the very end, so
+/// `distinct`, the keyset page and the cursor run on identity whether or not
+/// the hits carry it (`bare`). `id` is JavaScript's `String()` on the injected
+/// id, `path` `""` for an absent path; `proj` is the user projection with its
+/// values rendered per §1.4 "rows as values" (a store row nested in the result
+/// — an empty-projection `collect { }` and friends — becomes `{ id, path }`).
+/// When the row itself was projected under [`SELF_KEY`] and is not a store
+/// row, the query fails (§1.4: a hit is a store row).
+#[derive(Debug)]
+struct Shaped {
+    id: String,
+    path: String,
+    proj: oqx::Object,
+}
+
+fn path_string(path: &Value) -> String {
+    if path.is_absent() {
+        String::new()
+    } else {
+        path.to_string()
+    }
+}
+
+fn shape_row(row: Value) -> Result<Shaped> {
+    let mut shaped = Shaped {
+        id: Value::Undefined.to_string(),
+        path: String::new(),
+        proj: oqx::Object::new(),
     };
-    if let Some(me) = o.remove(SELF_KEY) {
-        if target_of(&me).is_none() {
-            return Err(not_a_store_row(&me));
-        }
+    let Value::Object(mut o) = row else {
+        return Ok(shaped);
+    };
+    if let Some(me) = o.remove(SELF_KEY)
+        && target_of(&me).is_none()
+    {
+        return Err(not_a_store_row(&me));
     }
     let Value::Object(o) = render_row_values(Value::Object(o)) else {
-        return Ok(Value::Object(oqx::Object::new()));
+        return Ok(shaped);
     };
-    let mut id = Value::Undefined;
-    let mut path = Value::Undefined;
-    let mut rest = Vec::new();
     for (k, v) in o {
         match k.as_str() {
-            ID_KEY => id = v,
-            PATH_KEY => path = v,
-            _ => rest.push((k, v)),
+            ID_KEY => shaped.id = v.to_string(),
+            PATH_KEY => shaped.path = path_string(&v),
+            _ => {
+                shaped.proj.insert(k, v);
+            }
         }
     }
-    let mut hit = oqx::Object::with_capacity(rest.len() + 2);
-    hit.insert(HIT_ID, Value::Str(id.to_string()));
-    hit.insert(
-        HIT_PATH,
-        Value::Str(if path.is_absent() {
-            String::new()
-        } else {
-            path.to_string()
-        }),
-    );
-    for (k, v) in rest {
+    Ok(shaped)
+}
+
+/// The identity of a row the engine produced, read off the injected columns
+/// without shaping it — exactly the strings [`shape_row`] would carry — so an
+/// unshaped page can be cut by the keyset cursor before shaping (a scan that
+/// projects thousands of rows shapes fifty).
+fn raw_identity(row: &Value) -> (String, String) {
+    let get = |k: &str| {
+        row.as_object()
+            .and_then(|o| o.get(k))
+            .cloned()
+            .unwrap_or(Value::Undefined)
+    };
+    (path_string(&get(PATH_KEY)), get(ID_KEY).to_string())
+}
+
+/// A hit: `{ id, path, ...proj }` (§1.4, 3.0: the envelope keys are the
+/// attributes that read them). The envelope keys lead; a user projection of
+/// `id`/`path` collapses onto them in place (the same value, read by the
+/// same attribute).
+fn to_hit(s: Shaped) -> Value {
+    let mut hit = oqx::Object::with_capacity(s.proj.len() + 2);
+    hit.insert(HIT_ID, Value::Str(s.id));
+    hit.insert(HIT_PATH, Value::Str(s.path));
+    for (k, v) in s.proj {
         hit.insert(k, v);
     }
-    Ok(Value::Object(hit))
+    Value::Object(hit)
 }
 
-fn hit_str(hit: &Value, key: &str) -> String {
-    hit.as_object()
-        .and_then(|o| o.get(key))
-        .map(|v| v.to_string())
-        .unwrap_or_default()
+/// `bare` (§1.4, 4.2): the projection alone, in the query's own order. A
+/// projected `id`/`path` is an ordinary column here — the intrinsic the
+/// attribute reads, under the key the query gave it — and nothing is injected
+/// beside it.
+fn to_bare_hit(s: Shaped) -> Value {
+    Value::Object(s.proj)
 }
 
-/// Top-level `select distinct`: dedup hits by their USER projection (every
-/// field but the envelope's `id`/`path`), keeping the first. The key is the canonical JSON
-/// of the sorted `[key, value]` pairs (`JSON.stringify` in the reference).
-fn dedup_hits_by_projection(hits: Vec<Value>) -> Vec<Value> {
+/// The wire shape of one shaped row: the hit, or the bare hit.
+fn render_hit(s: Shaped, bare: bool) -> Json {
+    if bare {
+        to_bare_hit(s).to_canonical_json()
+    } else {
+        to_hit(s).to_canonical_json()
+    }
+}
+
+/// Top-level `select distinct`: dedup by the USER projection — every field but
+/// the envelope's `id`/`path`, which a projection of the attribute collapses
+/// onto (so `select distinct id` dedups on nothing but the empty projection,
+/// as it always has); under `bare` there is no envelope, so a projected
+/// `id`/`path` IS part of the projection and counts. Keeps the first (so the
+/// retained row carries a real identity), order-preserving. The key is the
+/// canonical JSON of the sorted `[key, value]` pairs (`JSON.stringify` in the
+/// reference).
+fn dedup_by_projection(rows: Vec<Shaped>, bare: bool) -> Vec<Shaped> {
     let mut seen: Vec<String> = Vec::new();
     let mut out = Vec::new();
-    for h in hits {
-        let mut pairs: Vec<(String, Value)> = h
-            .as_object()
-            .map(|o| {
-                o.iter()
-                    .filter(|(k, _)| *k != HIT_ID && *k != HIT_PATH)
-                    .map(|(k, v)| (k.to_owned(), v.clone()))
-                    .collect()
-            })
-            .unwrap_or_default();
+    for s in rows {
+        let mut pairs: Vec<(String, Value)> = s
+            .proj
+            .iter()
+            .filter(|(k, _)| bare || (*k != HIT_ID && *k != HIT_PATH))
+            .map(|(k, v)| (k.to_owned(), v.clone()))
+            .collect();
         pairs.sort_by(|a, b| a.0.cmp(&b.0));
         let key = Value::Array(
             pairs
@@ -674,7 +728,7 @@ fn dedup_hits_by_projection(hits: Vec<Value>) -> Vec<Value> {
             continue;
         }
         seen.push(key);
-        out.push(h);
+        out.push(s);
     }
     out
 }
@@ -695,16 +749,86 @@ fn const_bound(e: Option<&Expr>, word: &str) -> Result<Option<usize>> {
     }
 }
 
-fn value_of(hit: &Value) -> Value {
-    hit.as_object()
-        .and_then(|o| o.get(VALUE_KEY))
-        .cloned()
-        .unwrap_or(Value::Undefined)
+/// The collect page over `rows`, whatever their representation — `ident`
+/// yields a row's `(path, id)`: the query's own `offset`/`limit` define the
+/// result SET, the keyset `cursor` (when given) cuts it, `cap` pages it.
+/// Returns the page, whether more rows followed, and the next cursor (none
+/// under a custom order, §1.4).
+fn page_rows<T>(
+    mut rows: Vec<T>,
+    ident: impl Fn(&T) -> (String, String),
+    offset: usize,
+    limit: Option<usize>,
+    cursor: Option<&str>,
+    cap: usize,
+    custom: bool,
+) -> Result<(Vec<T>, bool, Option<String>)> {
+    if offset > 0 || limit.is_some() {
+        let end = limit.map_or(rows.len(), |l| (offset + l).min(rows.len()));
+        if offset >= rows.len() {
+            rows.clear();
+        } else {
+            rows.truncate(end);
+            rows.drain(..offset);
+        }
+    }
+    if let Some(cursor) = cursor {
+        // The cursor carries the hit's (rooted) path; a 1.x cursor is refused (§1.4).
+        let parts = decode_path_cursor(cursor, "query", 2)?;
+        let (path, id) = (&parts[0], &parts[1]);
+        rows.retain(|r| {
+            let (rp, ri) = ident(r);
+            rp > *path || (rp == *path && ri > *id)
+        });
+    }
+    let truncated = rows.len() > cap;
+    rows.truncate(cap);
+    let next = if truncated && !custom {
+        rows.last().map(|last| {
+            let (p, i) = ident(last);
+            encode_cursor(&[&p, &i])
+        })
+    } else {
+        None
+    };
+    Ok((rows, truncated, next))
 }
 
-fn without_value_key(hit: Value) -> Json {
-    hit.to_canonical_json()
+fn value_of(s: &Shaped) -> Json {
+    s.proj
+        .get(VALUE_KEY)
+        .cloned()
+        .unwrap_or(Value::Undefined)
+        .to_canonical_json()
 }
+
+/// `bare: true` needs a projection and is not the `values` form (§1.4, 4.2):
+/// without a projection a hit is only its envelope, and `values` is already
+/// the bare-values form. Checked over the resolved query where hits are built
+/// (the scalar consumers have no hits and ignore `bare`), before the engine
+/// runs, so the error never depends on the rows and the planned and in-memory
+/// paths agree trivially. The reference's `bareMisuse`.
+pub fn check_bare(q: &Query) -> Result<()> {
+    if q.values {
+        return Err(SurfaceError::filter_invalid(
+            BARE_WITH_VALUES_MESSAGE,
+            "OQX",
+        ));
+    }
+    if q.select.is_empty() {
+        return Err(SurfaceError::filter_invalid(
+            BARE_NEEDS_SELECT_MESSAGE,
+            "OQX",
+        ));
+    }
+    Ok(())
+}
+
+/// The `bare` refusals (4.2): the same text in both engines.
+pub const BARE_NEEDS_SELECT_MESSAGE: &str =
+    "`bare` needs a `select` — without a projection a hit is only its envelope";
+pub const BARE_WITH_VALUES_MESSAGE: &str =
+    "`bare` is redundant with `values` — `values` is already the bare-values form; drop one";
 
 // ---- the run --------------------------------------------------------------------------
 
@@ -873,7 +997,13 @@ fn run_parsed(engine: &Runner<'_>, raw: &Query, opts: QueryOptions<'_>) -> Resul
     } else {
         parsed.select.clone()
     };
-    if !top_values && let Some(e) = envelope_collision(&user_select) {
+    // `bare` (4.2): the hits are the projection alone — refused without one
+    // and with `values`; with no envelope there is no collision to refuse
+    // either, a projected `id`/`path` is simply a column.
+    let bare = opts.bare;
+    if bare {
+        check_bare(&parsed)?;
+    } else if !top_values && let Some(e) = envelope_collision(&user_select) {
         return Err(e);
     }
     let id_item = build::field(ID_KEY, build::ident("id"));
@@ -918,11 +1048,11 @@ fn run_parsed(engine: &Runner<'_>, raw: &Query, opts: QueryOptions<'_>) -> Resul
                 }
             }
             Some(r) => {
-                let hit = to_hit(r)?;
+                let shaped = shape_row(r)?;
                 if top_values {
-                    out.values = Some(vec![value_of(&hit).to_canonical_json()]);
+                    out.values = Some(vec![value_of(&shaped)]);
                 } else {
-                    out.hits = vec![without_value_key(hit)];
+                    out.hits = vec![render_hit(shaped, bare)];
                 }
             }
         }
@@ -930,68 +1060,51 @@ fn run_parsed(engine: &Runner<'_>, raw: &Query, opts: QueryOptions<'_>) -> Resul
     }
 
     // collect: keyset pagination on (path, id) when the order is the default.
-    let mut rows: Vec<Value> = match res {
+    let rows: Vec<Value> = match res {
         oqx::OqxResult::Collect(rows) => rows,
         _ => Vec::new(),
     };
     let custom = parsed.order_by.as_ref().is_some_and(|o| !o.is_empty());
     let cursor = opts.cursor.filter(|c| !c.is_empty() && !custom);
-    // Rows become hits ({ id, path, … }) before anything inspects them — the
-    // distinct key and the cursor's (path, id) read the HIT — else only the
-    // page does (the offset/limit slice and the cap see plain rows), so a
-    // scan that projects thousands of rows shapes fifty.
-    let eager = top_distinct || cursor.is_some();
-    if eager {
-        rows = rows.into_iter().map(to_hit).collect::<Result<_>>()?;
-    }
-    if top_distinct {
-        rows = dedup_hits_by_projection(rows);
-    }
     let offset = const_bound(top_offset.as_ref(), "offset")?.unwrap_or(0);
     let limit = const_bound(top_limit.as_ref(), "limit")?;
-    if offset > 0 || limit.is_some() {
-        let end = limit.map_or(rows.len(), |l| (offset + l).min(rows.len()));
-        if offset >= rows.len() {
-            rows.clear();
-        } else {
-            rows.truncate(end);
-            rows.drain(..offset);
-        }
-    }
     let cap = opts.limit.unwrap_or(DEFAULT_LIMIT);
-    let mut page = rows;
-    if let Some(cursor) = cursor {
-        // The cursor carries the hit's (rooted) path; a 1.x cursor is refused (§1.4).
-        let parts = decode_path_cursor(cursor, "query", 2)?;
-        let (path, id) = (&parts[0], &parts[1]);
-        page.retain(|h| {
-            let hp = hit_str(h, HIT_PATH);
-            let hi = hit_str(h, HIT_ID);
-            hp > *path || (hp == *path && hi > *id)
-        });
-    }
-    let truncated = page.len() > cap;
-    page.truncate(cap);
-    if !eager {
-        page = page.into_iter().map(to_hit).collect::<Result<_>>()?;
-    }
-    let cursor = if truncated && !custom {
-        page.last()
-            .map(|last| encode_cursor(&[&hit_str(last, HIT_PATH), &hit_str(last, HIT_ID)]))
+    // The page runs on IDENTITY, never on the hit: a `distinct` needs every
+    // row shaped first (its key is the projection), else the plain rows are
+    // paged by their injected columns and only the page is shaped. The
+    // envelope is stripped LAST (`bare`), so a bare result pages exactly like
+    // the enveloped one.
+    let (page, truncated, next) = if top_distinct {
+        let shaped = rows
+            .into_iter()
+            .map(shape_row)
+            .collect::<Result<Vec<_>>>()?;
+        let shaped = dedup_by_projection(shaped, bare);
+        page_rows(
+            shaped,
+            |s| (s.path.clone(), s.id.clone()),
+            offset,
+            limit,
+            cursor,
+            cap,
+            custom,
+        )?
     } else {
-        None
+        let (page, truncated, next) =
+            page_rows(rows, raw_identity, offset, limit, cursor, cap, custom)?;
+        let page = page
+            .into_iter()
+            .map(shape_row)
+            .collect::<Result<Vec<_>>>()?;
+        (page, truncated, next)
     };
     let mut out = OqxResult::scalar(Consumer::Collect);
     out.truncated = truncated;
-    out.cursor = cursor;
+    out.cursor = next;
     if top_values {
-        out.values = Some(
-            page.iter()
-                .map(|h| value_of(h).to_canonical_json())
-                .collect(),
-        );
+        out.values = Some(page.iter().map(value_of).collect());
     } else {
-        out.hits = page.into_iter().map(without_value_key).collect();
+        out.hits = page.into_iter().map(|s| render_hit(s, bare)).collect();
     }
     Ok(out)
 }
@@ -1152,7 +1265,9 @@ mod tests {
         o.insert(ID_KEY, Value::Str("d_1".into()));
         o.insert(PATH_KEY, Value::Null);
         o.insert("layer", Value::Str("canon".into()));
-        let hit = to_hit(Value::Object(o)).unwrap();
+        let shaped = shape_row(Value::Object(o)).unwrap();
+        assert_eq!((shaped.id.as_str(), shaped.path.as_str()), ("d_1", ""));
+        let hit = to_hit(shaped);
         let ho = hit.as_object().unwrap();
         assert_eq!(ho.keys().collect::<Vec<_>>(), ["id", "path", "layer"]);
         assert_eq!(ho.get("path"), Some(&Value::Str(String::new())));
@@ -1162,10 +1277,75 @@ mod tests {
         o.insert(ID_KEY, Value::Str("d_1".into()));
         o.insert(PATH_KEY, Value::Str("a.md".into()));
         o.insert("id", Value::Number(7.0));
-        let hit = to_hit(Value::Object(o)).unwrap();
+        let hit = to_hit(shape_row(Value::Object(o)).unwrap());
         let ho = hit.as_object().unwrap();
         assert_eq!(ho.keys().collect::<Vec<_>>(), ["id", "path"]);
         assert_eq!(ho.get("id"), Some(&Value::Number(7.0)));
+        // The unshaped row's identity reads the same strings.
+        let mut o = oqx::Object::new();
+        o.insert(ID_KEY, Value::Str("d_1".into()));
+        o.insert(PATH_KEY, Value::Undefined);
+        let row = Value::Object(o);
+        assert_eq!(raw_identity(&row), (String::new(), "d_1".to_owned()));
+        let shaped = shape_row(row).unwrap();
+        assert_eq!((shaped.path, shaped.id), (String::new(), "d_1".to_owned()));
+    }
+
+    #[test]
+    fn bare_hits_are_the_projection_in_its_own_order() {
+        // `select title, id`: the projected intrinsic under the query's key, in
+        // the query's order — nothing injected beside it.
+        let mut o = oqx::Object::new();
+        o.insert(ID_KEY, Value::Str("d_1".into()));
+        o.insert(PATH_KEY, Value::Str("/a.md".into()));
+        o.insert("title", Value::Str("T".into()));
+        o.insert("id", Value::Str("d_1".into()));
+        let shaped = shape_row(Value::Object(o)).unwrap();
+        let bare = to_bare_hit(shaped);
+        let bo = bare.as_object().unwrap();
+        assert_eq!(bo.keys().collect::<Vec<_>>(), ["title", "id"]);
+        // `select path: layer` is fine bare (no envelope to collide with) and
+        // the identity the page runs on is still the row's own path.
+        let mut o = oqx::Object::new();
+        o.insert(ID_KEY, Value::Str("d_1".into()));
+        o.insert(PATH_KEY, Value::Str("/a.md".into()));
+        o.insert("path", Value::Str("canon".into()));
+        let shaped = shape_row(Value::Object(o)).unwrap();
+        assert_eq!(shaped.path, "/a.md");
+        assert_eq!(
+            render_hit(shaped, true),
+            serde_json::json!({ "path": "canon" })
+        );
+        // the same row, enveloped: the user's value collapses onto the key
+        let mut o = oqx::Object::new();
+        o.insert(ID_KEY, Value::Str("d_1".into()));
+        o.insert(PATH_KEY, Value::Str("/a.md".into()));
+        o.insert("path", Value::Str("/a.md".into()));
+        assert_eq!(
+            render_hit(shape_row(Value::Object(o)).unwrap(), false),
+            serde_json::json!({ "id": "d_1", "path": "/a.md" })
+        );
+    }
+
+    #[test]
+    fn bare_needs_a_select_and_is_not_the_values_form() {
+        let parse = |s: &str| oqx::parse_string(s).unwrap();
+        for q in ["from docs", "from docs where layer == \"canon\""] {
+            let e = check_bare(&parse(q)).unwrap_err();
+            assert_eq!(e.code, "filter_invalid", "{q}");
+            assert_eq!(e.message, BARE_NEEDS_SELECT_MESSAGE, "{q}");
+            assert_eq!(e.data.as_ref().unwrap()["hint"], "OQX");
+        }
+        let e = check_bare(&parse("select path values from docs")).unwrap_err();
+        assert_eq!(e.code, "filter_invalid");
+        assert_eq!(e.message, BARE_WITH_VALUES_MESSAGE);
+        for q in [
+            "select path from docs",
+            "select id, title from docs",
+            "docs first { select t: title }",
+        ] {
+            check_bare(&parse(q)).unwrap_or_else(|e| panic!("{q}: {e}"));
+        }
     }
 
     #[test]
@@ -1226,7 +1406,7 @@ mod tests {
         o.insert(ID_KEY, Value::Undefined);
         o.insert(PATH_KEY, Value::Undefined);
         o.insert(SELF_KEY, Value::Str("/timeline/kickoff.md".into()));
-        let e = to_hit(Value::Object(o)).unwrap_err();
+        let e = shape_row(Value::Object(o)).unwrap_err();
         assert_eq!(e.code, "filter_invalid");
         assert_eq!(
             e.message,
@@ -1241,7 +1421,7 @@ mod tests {
         o.insert(ID_KEY, Value::Str("d_1".into()));
         o.insert(PATH_KEY, Value::Str("a.md".into()));
         o.insert(SELF_KEY, row);
-        let hit = to_hit(Value::Object(o)).unwrap();
+        let hit = to_hit(shape_row(Value::Object(o)).unwrap());
         assert_eq!(
             hit.as_object().unwrap().keys().collect::<Vec<_>>(),
             ["id", "path"]
@@ -1258,16 +1438,67 @@ mod tests {
     #[test]
     fn distinct_dedups_by_user_projection_first_wins() {
         let mk = |id: &str, t: &str| {
-            let mut o = oqx::Object::new();
-            o.insert(HIT_ID, Value::Str(id.into()));
-            o.insert(HIT_PATH, Value::Str("p".into()));
-            o.insert("type", Value::Str(t.into()));
-            Value::Object(o)
+            let mut proj = oqx::Object::new();
+            proj.insert("type", Value::Str(t.into()));
+            Shaped {
+                id: id.to_owned(),
+                path: "p".to_owned(),
+                proj,
+            }
         };
-        let out = dedup_hits_by_projection(vec![mk("1", "a"), mk("2", "b"), mk("3", "a")]);
+        let out = dedup_by_projection(vec![mk("1", "a"), mk("2", "b"), mk("3", "a")], false);
         assert_eq!(out.len(), 2);
-        assert_eq!(hit_str(&out[0], HIT_ID), "1");
-        assert_eq!(hit_str(&out[1], HIT_ID), "2");
+        assert_eq!(out[0].id, "1");
+        assert_eq!(out[1].id, "2");
+        // A projected `id` is the envelope's own selection: not part of the key
+        // enveloped (`select distinct id` dedups on the empty projection), part
+        // of it bare (there is no envelope — it is the projection).
+        let with_id = |id: &str| {
+            let mut proj = oqx::Object::new();
+            proj.insert("id", Value::Str(id.into()));
+            Shaped {
+                id: id.to_owned(),
+                path: "p".to_owned(),
+                proj,
+            }
+        };
+        assert_eq!(
+            dedup_by_projection(vec![with_id("1"), with_id("2")], false).len(),
+            1
+        );
+        assert_eq!(
+            dedup_by_projection(vec![with_id("1"), with_id("2")], true).len(),
+            2
+        );
+    }
+
+    #[test]
+    fn the_page_runs_on_identity() {
+        let rows: Vec<(String, String)> = [("/a.md", "d_1"), ("/a.md", "d_2"), ("/b.md", "d_3")]
+            .iter()
+            .map(|(p, i)| ((*p).to_owned(), (*i).to_owned()))
+            .collect();
+        let ident = |r: &(String, String)| (r.0.clone(), r.1.clone());
+        // cap 2: truncated, the cursor is the last row's (path, id)
+        let (page, truncated, next) =
+            page_rows(rows.clone(), ident, 0, None, None, 2, false).unwrap();
+        assert_eq!(page.len(), 2);
+        assert!(truncated);
+        let next = next.expect("a cursor");
+        assert_eq!(next, encode_cursor(&["/a.md", "d_2"]));
+        // the cursor resumes after it
+        let (page, truncated, next) =
+            page_rows(rows.clone(), ident, 0, None, Some(&next), 2, false).unwrap();
+        assert_eq!(page, vec![("/b.md".to_owned(), "d_3".to_owned())]);
+        assert!(!truncated && next.is_none());
+        // the query's own offset/limit define the set; a custom order has no cursor
+        let (page, truncated, next) =
+            page_rows(rows.clone(), ident, 1, Some(1), None, 50, true).unwrap();
+        assert_eq!(page, vec![("/a.md".to_owned(), "d_2".to_owned())]);
+        assert!(!truncated && next.is_none());
+        let (page, truncated, next) = page_rows(rows, ident, 0, None, None, 1, true).unwrap();
+        assert_eq!(page.len(), 1);
+        assert!(truncated && next.is_none());
     }
 
     #[test]

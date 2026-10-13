@@ -301,6 +301,27 @@ export function renderHits(cli: { io: IO; style: Style }, hits: HitLike[]): void
   for (const line of columns(rows)) io.out(line);
 }
 
+/** The bare hit table (`query --bare`, spec/cli §4, 4.1): a hit is its
+ *  projection alone (`spec/surface` §1.4, 4.2), so the columns are every key in
+ *  first-seen order across the hits — a projected `id`/`path` is an ordinary
+ *  column, rendered as any other cell — with no envelope columns before them.
+ *  Header row, then one row per hit; cells as the enveloped table's. */
+export function renderBareHits(cli: { io: IO; style: Style }, hits: Record<string, unknown>[]): void {
+  const { io, style } = cli;
+  const cols: string[] = [];
+  const seen = new Set<string>();
+  for (const h of hits) {
+    for (const k of Object.keys(h)) {
+      if (seen.has(k)) continue;
+      seen.add(k);
+      cols.push(k);
+    }
+  }
+  const rows: string[][] = [cols.map((c) => style.dim(c))];
+  for (const h of hits) rows.push(cols.map((c) => hitCell(h[c])));
+  for (const line of columns(rows)) io.out(line);
+}
+
 /** Loud truncation footer to stderr (§4.4). Exit code stays 0. */
 export function truncationFooter(io: IO, style: Style, cursor: number | string): void {
   io.err(style.dim(`… truncated; continue with --cursor ${cursor}`));

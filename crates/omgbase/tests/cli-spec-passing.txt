@@ -342,6 +342,9 @@ mutate::update-missing-block
 mutate::update-missing-block-valid-id
 mutate::update-no-target
 query::alias-q
+query::bare
+query::bare-json
+query::bare-needs-select
 query::bare-target-in-block
 query::count
 query::count-json

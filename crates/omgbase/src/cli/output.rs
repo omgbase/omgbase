@@ -398,19 +398,22 @@ fn is_envelope_key(k: &str) -> bool {
 }
 
 /// The projected keys: `projected` (the query's `select` names, in order),
-/// then every other key of `hits`, both minus the envelope's `id`/`path` (a
-/// `select path` collapses onto the envelope key), first-seen order.
-pub fn hit_columns(hits: &[Json], projected: &[String]) -> Vec<String> {
+/// then every other key of `hits`, first-seen order. With `envelope` the
+/// hits carry the automatic `id`/`path` and those are never columns (a
+/// `select path` collapses onto the envelope key); a bare hit (`--bare`, cli
+/// 4.1) has no envelope, so a projected `id`/`path` is a column like any.
+pub fn hit_columns(hits: &[Json], projected: &[String], envelope: bool) -> Vec<String> {
+    let skip = |k: &str| envelope && is_envelope_key(k);
     let mut cols: Vec<String> = Vec::new();
     for k in projected {
-        if !is_envelope_key(k) && !cols.iter().any(|c| c == k) {
+        if !skip(k) && !cols.iter().any(|c| c == k) {
             cols.push(k.clone());
         }
     }
     for h in hits {
         if let Some(m) = h.as_object() {
             for k in m.keys() {
-                if !is_envelope_key(k) && !cols.iter().any(|c| c == k) {
+                if !skip(k) && !cols.iter().any(|c| c == k) {
                     cols.push(k.clone());
                 }
             }
@@ -421,14 +424,28 @@ pub fn hit_columns(hits: &[Json], projected: &[String]) -> Vec<String> {
 
 /// Human-tier hit list: `<id>  <path>` lines, or an aligned table when
 /// projected (header `id`, `path`, then the projected keys — `spec/cli` §4).
-pub fn render_hits(io: Io, style: &Style, hits: &[Json], projected: &[String]) {
+/// Without `envelope` (`--bare`) the table is the projection's columns alone.
+pub fn render_hits(io: Io, style: &Style, hits: &[Json], projected: &[String], envelope: bool) {
     let str_of = |h: &Json, k: &str| -> String {
         h.get(k)
             .and_then(Json::as_str)
             .map(str::to_owned)
             .unwrap_or_default()
     };
-    let projected = hit_columns(hits, projected);
+    let projected = hit_columns(hits, projected, envelope);
+    if !envelope {
+        if projected.is_empty() {
+            return;
+        }
+        let mut rows: Vec<Vec<String>> = vec![projected.iter().map(|c| style.dim(c)).collect()];
+        for h in hits {
+            rows.push(projected.iter().map(|c| hit_cell(h.get(c))).collect());
+        }
+        for line in columns(&rows, &[]) {
+            io.out(&line);
+        }
+        return;
+    }
     if projected.is_empty() {
         for h in hits {
             let line = format!(
@@ -496,16 +513,27 @@ mod tests {
                     json!({ "id": "a", "path": "p", "x": 1 }),
                     json!({ "id": "b", "y": 2 })
                 ],
-                &[]
+                &[],
+                true
             ),
             vec!["x", "y"]
         );
         assert_eq!(
             hit_columns(
                 &[json!({ "id": "a", "path": "p", "x": 1 })],
-                &["path".into(), "x".into(), "nope".into()]
+                &["path".into(), "x".into(), "nope".into()],
+                true
             ),
             vec!["x", "nope"]
+        );
+        // bare hits (cli 4.1): no envelope, so a projected `path` is a column
+        assert_eq!(
+            hit_columns(
+                &[json!({ "path": "p", "x": 1 })],
+                &["path".into(), "x".into()],
+                false
+            ),
+            vec!["path", "x"]
         );
     }
 }
