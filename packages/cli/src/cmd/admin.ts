@@ -12,12 +12,19 @@ import {
   writeRepoSettings,
   ftsIndexedRowCount,
   liveLeafCount,
+  sizeReport,
+  vacuum,
+  reclaimableBytes,
+  humanBytes,
+  formatShare,
+  type SizeReport,
   type Settings,
   type RebuildTarget,
 } from "@omgbase/core";
 import type { Command } from "../commands.js";
 import type { Cli } from "../context.js";
 import { CliUsageError, EngineErrorLike, EXIT_OK, EXIT_ERROR, emitMachine, renderHelp } from "../output.js";
+import { columns } from "../render.js";
 import { loadEmbedding, drainEmbeddings } from "./_embed.js";
 
 // admin/maintenance (11 §5.8–5.9). The live watcher moved to `omg sync --watch`.
@@ -56,13 +63,16 @@ function runRebuild(cli: Cli, args: string[]): number {
 // ---- gc ---------------------------------------------------------------------
 
 function runGcCmd(cli: Cli, args: string[]): number {
-  const { values } = parseArgs({ args, allowPositionals: true, options: { "dry-run": { type: "boolean" }, help: { type: "boolean" } } });
+  const { values } = parseArgs({ args, allowPositionals: true, options: { "dry-run": { type: "boolean" }, vacuum: { type: "boolean" }, help: { type: "boolean" } } });
   if (values.help) {
     return renderHelp(cli, {
       name: "gc",
       summary: "Mark-and-sweep unreferenced blobs and tree nodes (refuses unless gc.enabled is set in repo settings)",
-      usage: "gc [--dry-run]",
-      options: [["--dry-run", "report what would be swept, sweep nothing (allowed even when gc is disabled)"]],
+      usage: "gc [--dry-run] [--vacuum]",
+      options: [
+        ["--dry-run", "report what would be swept, sweep nothing (allowed even when gc is disabled)"],
+        ["--vacuum", "after the sweep, VACUUM the database to return its free pages to the filesystem (`doctor --size` shows how many)"],
+      ],
     });
   }
   // `--dry-run` is also a global flag (parseGlobals consumes it) — honor either spelling.
@@ -74,25 +84,38 @@ function runGcCmd(cli: Cli, args: string[]): number {
   if (!enabled && !dryRun) {
     throw new EngineErrorLike("target_missing", "gc is disabled; set gc.enabled=true (or use --dry-run)");
   }
-  const result = runGc(ws.store, { enabled: enabled || dryRun });
+  const swept = runGc(ws.store, { enabled: enabled || dryRun });
+  // `--vacuum` runs after the sweep (the sweep's freed pages are what it returns);
+  // a dry run measures the free pages and vacuums nothing (spec/store §7).
+  const vac = values.vacuum
+    ? dryRun
+      ? { reclaimable: reclaimableBytes(ws.store), applied: false }
+      : { ...vacuum(ws.store), applied: true }
+    : undefined;
+  const result = vac ? { ...swept, vacuum: vac } : swept;
   if (cli.flags.mode !== "human") return emitMachine(cli, result);
-  cli.io.err(cli.style.dim(`  swept ${result.blobsSwept} blobs, ${result.treeNodesSwept} tree nodes`));
+  cli.io.err(cli.style.dim(`  swept ${swept.blobsSwept} blobs, ${swept.treeNodesSwept} tree nodes`));
+  if (vac) cli.io.err(cli.style.dim(vac.applied ? `  vacuumed, reclaimed ${humanBytes(vac.reclaimable)}` : `  would vacuum ${humanBytes(vac.reclaimable)}`));
   return EXIT_OK;
 }
 
 // ---- doctor -----------------------------------------------------------------
 
 function runDoctor(cli: Cli, args: string[]): number {
-  const { values } = parseArgs({ args, allowPositionals: true, options: { help: { type: "boolean" } } });
+  const { values } = parseArgs({ args, allowPositionals: true, options: { size: { type: "boolean" }, help: { type: "boolean" } } });
   if (values.help) {
     return renderHelp(cli, {
       name: "doctor",
       summary: "Invariant sweep: convergence, FTS rows vs live leaf blocks, dangling revisions, SQLite integrity — exit 1 on any failure (CI-able)",
-      usage: "doctor [--json]",
-      options: [["--json", "`{ ok, checks: [{ name, ok, detail }] }`"]],
+      usage: ["doctor [--json]", "doctor --size [--json]"],
+      options: [
+        ["--size", "instead of the checks: what the database is made of — bytes and rows per category (content, history, search, sync) and table, the file's pages, what VACUUM would reclaim, advice"],
+        ["--json", "`{ ok, checks: [{ name, ok, detail }] }`; with --size `{ file, categories, advice }`"],
+      ],
     });
   }
   const ws = cli.workspace();
+  if (values.size) return runDoctorSize(cli, sizeReport(ws.store));
   const repo = cli.repo(ws);
   const db = ws.store.db;
   const checks: { name: string; ok: boolean; detail?: string }[] = [];
@@ -124,6 +147,48 @@ function runDoctor(cli: Cli, args: string[]): number {
     io.out(`  ${mark} ${c.name}${c.detail && !c.ok ? style.dim(`  (${c.detail})`) : ""}`);
   }
   return allOk ? EXIT_OK : EXIT_ERROR;
+}
+
+// `doctor --size` (spec/cli §6, cli 4.3): the store's size report (spec/store
+// §7 "Size") as one aligned table — each category, then its three biggest
+// tables indented — the file's page accounting, and the advice lines. Exit 0:
+// a size report is information, not a check. The bytes and share cells are
+// right-aligned in fixed widths (the widest humanized size, `1023.9 KB`, is 9;
+// the widest share, `100.0%`, 6) so the layout is the same whatever the
+// numbers — which is what lets the fixtures pin it by shape (§8).
+const TOP_TABLES = 3;
+const NO_BYTES = "—";
+const BYTES_CELL = 9;
+const SHARE_CELL = 6;
+
+function runDoctorSize(cli: Cli, report: SizeReport): number {
+  if (cli.flags.mode !== "human") return emitMachine(cli, report);
+  const { style, io } = cli;
+  const bytes = (n: number | null): string => (n === null ? NO_BYTES : humanBytes(n)).padStart(BYTES_CELL);
+  const share = (n: number | null): string => (n === null ? NO_BYTES : formatShare(n)).padStart(SHARE_CELL);
+  // The last column is never padded by `columns`, so the row counts are
+  // right-aligned here (to the widest count, or the header).
+  const shown = report.categories.flatMap((c) => [c.rows, ...c.tables.slice(0, TOP_TABLES).map((t) => t.rows)]);
+  const rowsWidth = Math.max(4, ...shown.map((n) => String(n).length));
+  const count = (n: number): string => String(n).padStart(rowsWidth);
+  const rows: string[][] = [[style.dim("category"), style.dim("bytes".padStart(BYTES_CELL)), style.dim("share".padStart(SHARE_CELL)), style.dim("rows".padStart(rowsWidth))]];
+  for (const c of report.categories) {
+    rows.push([style.accent(c.name), bytes(c.bytes), share(c.share), count(c.rows)]);
+    for (const t of c.tables.slice(0, TOP_TABLES)) rows.push([`  ${t.name}`, bytes(t.bytes), share(t.share), count(t.rows)]);
+  }
+  for (const line of columns(rows, [{}, { align: "right" }, { align: "right" }])) io.out(`  ${line}`);
+  if (report.detail) io.out(style.dim(`  ${report.detail}: row counts only`));
+  io.out("");
+  const f = report.file;
+  const file: string[][] = [
+    ["file", style.path(f.path)],
+    ["size", `${humanBytes(f.bytes)} on disk, wal ${humanBytes(f.wal_bytes)}`],
+    ["pages", `${f.page_count} x ${f.page_size} bytes, ${f.freelist_count} free`],
+    ["reclaimable", humanBytes(f.reclaimable)],
+  ];
+  for (const line of columns(file)) io.out(`  ${line}`);
+  for (const a of report.advice) io.out(`  ${style.dim("advice:")} ${a}`);
+  return EXIT_OK;
 }
 
 // ---- config -----------------------------------------------------------------

@@ -1086,6 +1086,105 @@
       ]
     },
     {
+      "name": "gc-vacuum-disabled",
+      "notes": "§6 (cli 4.3): --vacuum needs gc.enabled like the sweep — the same refusal",
+      "workspace": "alchemy",
+      "argv": [
+        "gc",
+        "--vacuum"
+      ],
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "error[target_missing]: gc is disabled; set gc.enabled=true (or use --dry-run)\n"
+      }
+    },
+    {
+      "name": "gc-vacuum-dry-run",
+      "notes": "§6: a dry run measures the free pages and vacuums nothing; §8: the bytes are recorded by shape",
+      "workspace": "alchemy",
+      "argv": [
+        "gc",
+        "--dry-run",
+        "--vacuum"
+      ],
+      "pin_stderr": true,
+      "expect": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": "  swept 0 blobs, 0 tree nodes\n  would vacuum <bytes>\n"
+      }
+    },
+    {
+      "name": "gc-vacuum-dry-run-json",
+      "workspace": "alchemy",
+      "argv": [
+        "gc",
+        "--dry-run",
+        "--vacuum",
+        "--json"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "{\"blobsSwept\":0,\"treeNodesSwept\":0,\"vacuum\":{\"reclaimable\":\"<number>\",\"applied\":false}}\n"
+      }
+    },
+    {
+      "name": "gc-vacuum",
+      "notes": "§6: --vacuum runs VACUUM after the sweep; the result gains `vacuum: { reclaimable, applied }`; a second vacuum has nothing left to return",
+      "workspace": "alchemy",
+      "steps": [
+        {
+          "argv": [
+            "config",
+            "set",
+            "gc.enabled",
+            "true"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "",
+            "stderr": "  set gc.enabled (fixture)\n"
+          }
+        },
+        {
+          "argv": [
+            "gc",
+            "--vacuum"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "",
+            "stderr": "  swept 0 blobs, 0 tree nodes\n  vacuumed, reclaimed <bytes>\n"
+          }
+        },
+        {
+          "argv": [
+            "gc",
+            "--vacuum",
+            "--json"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "{\"blobsSwept\":0,\"treeNodesSwept\":0,\"vacuum\":{\"reclaimable\":\"<number>\",\"applied\":true}}\n"
+          }
+        },
+        {
+          "argv": [
+            "doctor",
+            "--size",
+            "--json"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "{\"file\":{\"path\":\"<workspace>/.omgbase/omgbase.db\",\"bytes\":\"<number>\",\"wal_bytes\":\"<number>\",\"page_size\":\"<number>\",\"page_count\":\"<number>\",\"freelist_count\":\"<number>\",\"reclaimable\":\"<number>\"},\"categories\":[{\"name\":\"content\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":996,\"tables\":[{\"name\":\"blocks\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":327,\"indexes\":\"<number>\"},{\"name\":\"properties\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":214,\"indexes\":\"<number>\"},{\"name\":\"nodes\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":214,\"indexes\":\"<number>\"},{\"name\":\"edges\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":69,\"indexes\":\"<number>\"},{\"name\":\"docs\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":20,\"indexes\":\"<number>\"},{\"name\":\"external_nodes\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":0,\"indexes\":\"<number>\"},{\"name\":\"collections\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":0,\"indexes\":\"<number>\"},{\"name\":\"doc_edges\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":69,\"indexes\":\"<number>\"},{\"name\":\"inferred_edges\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":0,\"indexes\":\"<number>\"},{\"name\":\"sections\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":83,\"indexes\":\"<number>\"}]},{\"name\":\"history\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":1083,\"tables\":[{\"name\":\"tree_nodes\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":55,\"indexes\":\"<number>\"},{\"name\":\"blobs\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":334,\"indexes\":\"<number>\"},{\"name\":\"dispositions\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":327,\"indexes\":\"<number>\"},{\"name\":\"block_changes\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":327,\"indexes\":\"<number>\"},{\"name\":\"commits\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":20,\"indexes\":\"<number>\"},{\"name\":\"revisions\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":20,\"indexes\":\"<number>\"},{\"name\":\"pending_materializations\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":0,\"indexes\":\"<number>\"},{\"name\":\"resurrection_pool\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":0,\"indexes\":\"<number>\"}]},{\"name\":\"search\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":506,\"tables\":[{\"name\":\"blocks_fts\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":292,\"indexes\":\"<number>\"},{\"name\":\"nodes_fts\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":214,\"indexes\":\"<number>\"},{\"name\":\"doc_embeddings\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":0,\"indexes\":\"<number>\"},{\"name\":\"embeddings\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":0,\"indexes\":\"<number>\"}]},{\"name\":\"sync\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":115,\"tables\":[{\"name\":\"sqlite_schema\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":85,\"indexes\":\"<number>\"},{\"name\":\"repos\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":1,\"indexes\":\"<number>\"},{\"name\":\"sources\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":1,\"indexes\":\"<number>\"},{\"name\":\"adapters\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":1,\"indexes\":\"<number>\"},{\"name\":\"attachments\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":1,\"indexes\":\"<number>\"},{\"name\":\"checkpoints\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":5,\"indexes\":\"<number>\"},{\"name\":\"file_stats\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":20,\"indexes\":\"<number>\"},{\"name\":\"sync_state\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":0,\"indexes\":\"<number>\"},{\"name\":\"workspace_settings\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":1,\"indexes\":\"<number>\"}]}],\"advice\":[\"nothing to reclaim\"]}\n"
+          }
+        }
+      ]
+    },
+    {
       "name": "doctor",
       "notes": "§6: every check passes → exit 0",
       "workspace": "alchemy",
@@ -1218,6 +1317,92 @@
           "expect": {
             "exit": 0,
             "stdout": "  ok convergence\n  ok fts rows == live leaf blocks\n  ok no dangling current_rev\n  ok sqlite integrity\n"
+          }
+        }
+      ]
+    },
+    {
+      "name": "doctor-size",
+      "notes": "§6 doctor --size (cli 4.3): the size report instead of the checks — the category table with each category's three biggest tables, the file lines, the advice; exit 0. §8: sizes and shares are recorded by shape, names, order, row counts and advice exactly",
+      "workspace": "alchemy",
+      "argv": [
+        "doctor",
+        "--size"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "  category              bytes   share  rows\n  content           <bytes>  <share>   996\n    blocks          <bytes>  <share>   327\n    properties      <bytes>  <share>   214\n    nodes           <bytes>  <share>   214\n  history           <bytes>  <share>  1083\n    tree_nodes      <bytes>  <share>    55\n    blobs           <bytes>  <share>   334\n    dispositions    <bytes>  <share>   327\n  search            <bytes>  <share>   506\n    blocks_fts      <bytes>  <share>   292\n    nodes_fts       <bytes>  <share>   214\n    doc_embeddings  <bytes>  <share>     0\n  sync              <bytes>  <share>   112\n    sqlite_schema   <bytes>  <share>    85\n    repos           <bytes>  <share>     1\n    sources         <bytes>  <share>     1\n\n  file         <workspace>/.omgbase/omgbase.db\n  size         <bytes> on disk, wal <bytes>\n  pages        <number> x <number> bytes, <number> free\n  reclaimable  <bytes>\n  advice: nothing to reclaim\n"
+      }
+    },
+    {
+      "name": "doctor-size-json",
+      "notes": "§6: the store's size report verbatim (spec/store §7 \"Size\"): every table under its category, indexes counted toward their table, shadow tables folded into their FTS table",
+      "workspace": "alchemy",
+      "argv": [
+        "doctor",
+        "--size",
+        "--json"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "{\"file\":{\"path\":\"<workspace>/.omgbase/omgbase.db\",\"bytes\":\"<number>\",\"wal_bytes\":\"<number>\",\"page_size\":\"<number>\",\"page_count\":\"<number>\",\"freelist_count\":\"<number>\",\"reclaimable\":\"<number>\"},\"categories\":[{\"name\":\"content\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":996,\"tables\":[{\"name\":\"blocks\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":327,\"indexes\":\"<number>\"},{\"name\":\"properties\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":214,\"indexes\":\"<number>\"},{\"name\":\"nodes\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":214,\"indexes\":\"<number>\"},{\"name\":\"edges\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":69,\"indexes\":\"<number>\"},{\"name\":\"docs\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":20,\"indexes\":\"<number>\"},{\"name\":\"external_nodes\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":0,\"indexes\":\"<number>\"},{\"name\":\"collections\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":0,\"indexes\":\"<number>\"},{\"name\":\"doc_edges\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":69,\"indexes\":\"<number>\"},{\"name\":\"inferred_edges\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":0,\"indexes\":\"<number>\"},{\"name\":\"sections\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":83,\"indexes\":\"<number>\"}]},{\"name\":\"history\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":1083,\"tables\":[{\"name\":\"tree_nodes\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":55,\"indexes\":\"<number>\"},{\"name\":\"blobs\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":334,\"indexes\":\"<number>\"},{\"name\":\"dispositions\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":327,\"indexes\":\"<number>\"},{\"name\":\"block_changes\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":327,\"indexes\":\"<number>\"},{\"name\":\"commits\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":20,\"indexes\":\"<number>\"},{\"name\":\"revisions\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":20,\"indexes\":\"<number>\"},{\"name\":\"pending_materializations\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":0,\"indexes\":\"<number>\"},{\"name\":\"resurrection_pool\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":0,\"indexes\":\"<number>\"}]},{\"name\":\"search\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":506,\"tables\":[{\"name\":\"blocks_fts\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":292,\"indexes\":\"<number>\"},{\"name\":\"nodes_fts\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":214,\"indexes\":\"<number>\"},{\"name\":\"doc_embeddings\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":0,\"indexes\":\"<number>\"},{\"name\":\"embeddings\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":0,\"indexes\":\"<number>\"}]},{\"name\":\"sync\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":112,\"tables\":[{\"name\":\"sqlite_schema\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":85,\"indexes\":\"<number>\"},{\"name\":\"repos\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":1,\"indexes\":\"<number>\"},{\"name\":\"sources\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":1,\"indexes\":\"<number>\"},{\"name\":\"adapters\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":1,\"indexes\":\"<number>\"},{\"name\":\"attachments\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":1,\"indexes\":\"<number>\"},{\"name\":\"checkpoints\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":2,\"indexes\":\"<number>\"},{\"name\":\"file_stats\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":20,\"indexes\":\"<number>\"},{\"name\":\"sync_state\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":0,\"indexes\":\"<number>\"},{\"name\":\"workspace_settings\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":1,\"indexes\":\"<number>\"}]}],\"advice\":[\"nothing to reclaim\"]}\n"
+      }
+    },
+    {
+      "name": "doctor-size-jsonl",
+      "notes": "§3.2: no list the machine modes stream — the --json document",
+      "workspace": "alchemy",
+      "argv": [
+        "doctor",
+        "--size",
+        "--jsonl"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "{\"file\":{\"path\":\"<workspace>/.omgbase/omgbase.db\",\"bytes\":\"<number>\",\"wal_bytes\":\"<number>\",\"page_size\":\"<number>\",\"page_count\":\"<number>\",\"freelist_count\":\"<number>\",\"reclaimable\":\"<number>\"},\"categories\":[{\"name\":\"content\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":996,\"tables\":[{\"name\":\"blocks\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":327,\"indexes\":\"<number>\"},{\"name\":\"properties\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":214,\"indexes\":\"<number>\"},{\"name\":\"nodes\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":214,\"indexes\":\"<number>\"},{\"name\":\"edges\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":69,\"indexes\":\"<number>\"},{\"name\":\"docs\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":20,\"indexes\":\"<number>\"},{\"name\":\"external_nodes\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":0,\"indexes\":\"<number>\"},{\"name\":\"collections\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":0,\"indexes\":\"<number>\"},{\"name\":\"doc_edges\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":69,\"indexes\":\"<number>\"},{\"name\":\"inferred_edges\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":0,\"indexes\":\"<number>\"},{\"name\":\"sections\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":83,\"indexes\":\"<number>\"}]},{\"name\":\"history\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":1083,\"tables\":[{\"name\":\"tree_nodes\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":55,\"indexes\":\"<number>\"},{\"name\":\"blobs\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":334,\"indexes\":\"<number>\"},{\"name\":\"dispositions\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":327,\"indexes\":\"<number>\"},{\"name\":\"block_changes\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":327,\"indexes\":\"<number>\"},{\"name\":\"commits\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":20,\"indexes\":\"<number>\"},{\"name\":\"revisions\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":20,\"indexes\":\"<number>\"},{\"name\":\"pending_materializations\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":0,\"indexes\":\"<number>\"},{\"name\":\"resurrection_pool\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":0,\"indexes\":\"<number>\"}]},{\"name\":\"search\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":506,\"tables\":[{\"name\":\"blocks_fts\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":292,\"indexes\":\"<number>\"},{\"name\":\"nodes_fts\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":214,\"indexes\":\"<number>\"},{\"name\":\"doc_embeddings\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":0,\"indexes\":\"<number>\"},{\"name\":\"embeddings\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":0,\"indexes\":\"<number>\"}]},{\"name\":\"sync\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":112,\"tables\":[{\"name\":\"sqlite_schema\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":85,\"indexes\":\"<number>\"},{\"name\":\"repos\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":1,\"indexes\":\"<number>\"},{\"name\":\"sources\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":1,\"indexes\":\"<number>\"},{\"name\":\"adapters\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":1,\"indexes\":\"<number>\"},{\"name\":\"attachments\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":1,\"indexes\":\"<number>\"},{\"name\":\"checkpoints\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":2,\"indexes\":\"<number>\"},{\"name\":\"file_stats\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":20,\"indexes\":\"<number>\"},{\"name\":\"sync_state\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":0,\"indexes\":\"<number>\"},{\"name\":\"workspace_settings\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":1,\"indexes\":\"<number>\"}]}],\"advice\":[\"nothing to reclaim\"]}\n"
+      }
+    },
+    {
+      "name": "doctor-size-after-rm",
+      "notes": "a deleted document keeps its rows: blocks, nodes and properties are tombstoned (deleted_commit), not deleted, so of the live state only the FTS index shrinks (292 → 281 live leaves); history gains the commit and keeps every blob; gc sweeps nothing (revisions are never pruned), so the report after a dry-run vacuum is the same database one checkpoint later",
+      "workspace": "alchemy",
+      "steps": [
+        {
+          "argv": [
+            "rm",
+            "--doc",
+            "texts/mutus-liber.md",
+            "--actor",
+            "human:spec"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "d_17\n",
+            "stderr": "  ok deleted /texts/mutus-liber.md\n    remove /texts/mutus-liber.md\n"
+          }
+        },
+        {
+          "argv": [
+            "gc",
+            "--dry-run",
+            "--vacuum"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "",
+            "stderr": "  swept 0 blobs, 0 tree nodes\n  would vacuum <bytes>\n"
+          }
+        },
+        {
+          "argv": [
+            "doctor",
+            "--size"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "  category              bytes   share  rows\n  content           <bytes>  <share>   996\n    blocks          <bytes>  <share>   327\n    properties      <bytes>  <share>   214\n    nodes           <bytes>  <share>   214\n  history           <bytes>  <share>  1084\n    tree_nodes      <bytes>  <share>    55\n    blobs           <bytes>  <share>   334\n    dispositions    <bytes>  <share>   327\n  search            <bytes>  <share>   495\n    blocks_fts      <bytes>  <share>   281\n    nodes_fts       <bytes>  <share>   214\n    doc_embeddings  <bytes>  <share>     0\n  sync              <bytes>  <share>   113\n    sqlite_schema   <bytes>  <share>    85\n    repos           <bytes>  <share>     1\n    sources         <bytes>  <share>     1\n\n  file         <workspace>/.omgbase/omgbase.db\n  size         <bytes> on disk, wal <bytes>\n  pages        <number> x <number> bytes, <number> free\n  reclaimable  <bytes>\n  advice: nothing to reclaim\n"
           }
         }
       ]

@@ -640,6 +640,62 @@ live leaf blocks of `spec/search` §1.1: live rows no live row names as
 FTS check holds after a deletion (observed or `rm --doc`) and after
 `rebuild-index --fts`.
 
+`doctor --size [--json]` (cli 4.3) — the **size report** instead of the
+checks: what the workspace database is made of, and what would reclaim
+space. It is `spec/store` §7 "Size" rendered: the store measures every
+table through SQLite's `dbstat` virtual table (an index counts toward its
+table, an FTS5 table's shadow tables fold into it), groups the tables into
+the four categories the store spec assigns — `content` (the live state:
+docs, blocks, sections, nodes, edges, properties…), `history` (blobs,
+tree nodes, revisions, commits, dispositions, block changes, the pool,
+pending materializations), `search` (the FTS tables, embeddings) and `sync`
+(repos, sources, adapters, attachments, checkpoints, file stats, settings,
+and anything the spec does not name — `sqlite_schema` among them) — counts
+each table's rows, and derives the advice. Needs no repo (the database is
+the workspace's); exit 0 — a size report is information, not a check — and
+an unreadable database is the ordinary open error.
+
+Human, on stdout: a header row `category  bytes  share  rows`, then per
+category (always the four, in the fixed order content, history, search,
+sync) one line `<name>  <bytes>  <share>  <rows>` followed by its three
+biggest tables (by bytes desc, then name) indented two more; the bytes
+cell is the humanized size right-aligned in 9 columns (`4.0 KB`,
+`788.0 KB`, `13.1 MB`; `<n> B` under 1024, else one decimal of a
+1024-based unit, the tenths rounded half up), the share cell `<n>.<d>%` of
+the dbstat total right-aligned in 6, the row count right-aligned to the
+widest (at least `rows`); §4 columns otherwise. Then an empty line, then
+the file block — `file  <path>`, `size  <bytes> on disk, wal <bytes>` (the
+`-wal` file's, `0 B` when absent), `pages  <page_count> x <page_size>
+bytes, <freelist_count> free`, `reclaimable  <bytes>`
+(`freelist_count × page_size`: what a `VACUUM` returns to the filesystem)
+— the keys padded to `reclaimable`; then one `  advice: <text>` line per
+advice. Without `dbstat` in the SQLite build the bytes and share cells are
+`—`, the tables order by rows, and a line `  dbstat unavailable: row counts
+only` follows the table (no fixture: both engines' builds have it).
+
+The advice, in this order, each conditional (`spec/store` §7): `run \`omg
+gc --vacuum\` to return <bytes> of free pages to the filesystem` when the
+free pages exceed 1 MiB and 10 % of the pages; `history dominates
+(<share>): blobs, tree nodes and dispositions grow with every commit —
+enable gc (\`omg config set gc.enabled true\`) and run \`omg gc --vacuum\``
+when `history` holds more than 50 %; `embeddings are <share> of the
+database: a smaller model (\`embedding.model\` / \`embedding.dim\`) or \`omg
+embed drain --prune\` after a model switch shrinks them` when the two
+embedding tables hold more than 25 %; `nothing to reclaim` when none
+applies.
+
+`--json` (and every non-human mode — there is no list the machine modes
+stream): `{ file: { path, bytes, wal_bytes, page_size, page_count,
+freelist_count, reclaimable }, categories: [{ name, bytes, share, rows,
+tables: [{ name, bytes, share, rows, indexes }] }], advice: [string] }`
+(+ `detail: "dbstat unavailable"` in the fallback, where every `bytes`,
+`share` and `indexes` is `null`); `indexes` is the part of a table's
+`bytes` its indexes take; `share` is one decimal; every other number is
+an integer of bytes or rows. Exact bytes: `admin::doctor-size`,
+`doctor-size-json`, `doctor-size-jsonl`, `doctor-size-after-rm` — recorded
+by shape (§8): the sizes and shares are `<bytes>`/`<share>`/`<number>`,
+the names, order, row counts and advice exact.
+
 ### `done`
 
 `done <blocks…|-> [--undo] [--actor <s>] [--dry-run]` — `blocks_check { ids }`
@@ -711,12 +767,22 @@ No text → `usage: find requires <text>`.
 
 ### `gc`
 
-`gc [--dry-run]` — mark-and-sweep (`spec/store` §7). Refuses unless
-`gc.enabled` is true in the effective settings:
+`gc [--dry-run] [--vacuum]` — mark-and-sweep (`spec/store` §7). Refuses
+unless `gc.enabled` is true in the effective settings:
 `error[target_missing]: gc is disabled; set gc.enabled=true (or use --dry-run)`
 (§9: the code). `--dry-run` (the command's own or the global flag) is
 allowed regardless. Human (stderr) `  swept <b> blobs, <t> tree nodes`;
 `--json` `{ blobsSwept, treeNodesSwept }`.
+
+`--vacuum` (cli 4.3) runs `VACUUM` after the sweep (`spec/store` §7
+"Vacuum") — the sweep's freed pages are what it returns — under the same
+refusal (`gc-vacuum-disabled`: `--vacuum` alone is not a dry run). Human
+adds a second stderr line, `  vacuumed, reclaimed <bytes>` (the free pages'
+bytes before the VACUUM, humanized as in `doctor --size`); the result gains
+`vacuum: { reclaimable, applied: true }`. With `--dry-run` nothing is
+vacuumed: the line is `  would vacuum <bytes>` and `applied` is `false`.
+Exact bytes (recorded by shape, §8): `admin::gc-vacuum`,
+`gc-vacuum-dry-run`, `gc-vacuum-dry-run-json`, `gc-vacuum-disabled`.
 
 ### `help`
 
@@ -1314,6 +1380,22 @@ after, and every occurrence of the binary's own version string (what
 fixtures pin the shape of `--version`, not the number. The first step of a sequence runs on the fresh workspace, every
 following step on the workspace the previous one left.
 
+Two verbs' outputs are **recorded by shape** rather than byte for byte,
+because their values are the engine's build, not its behavior: `version`
+(§6: every leaf is its type name) and, since 4.3, `doctor --size` and
+`gc --vacuum`, whose byte counts depend on the SQLite build and its page
+allocation. For those, on a successful run, both harnesses rewrite stdout
+and stderr alike before comparing or recording: in JSON every number under
+the keys `bytes`, `wal_bytes`, `page_size`, `page_count`,
+`freelist_count`, `reclaimable`, `share` and `indexes` becomes
+`"<number>"` (a `null` stays; `rows`, names, the path and the advice are
+kept); in text a size-table row's bytes cell (9 columns, right-aligned)
+becomes `<bytes>` and its share cell (6 columns) `<share>` with the name
+padding and gutters kept, and on every other line each humanized size
+(`788.0 KB`, `0 B`) becomes `<bytes>`, each `<n>.<d>%` `<share>`, and the
+`pages` line's three counts `<number>`. Row counts are never rewritten:
+they are deterministic and pinned.
+
 **Comparing.** `expect.exit` and `expect.stdout` always, byte for byte;
 `expect.stderr` only when present. A case records `stderr` when its exit is
 non-zero (every error is pinned) or when it sets `pin_stderr` (a
@@ -1667,6 +1749,27 @@ was `b_314`).
   `pin_stderr` write case gains its summary lines, every `--json` write case
   the Receipt's `summary`; nothing else moves.
 
+- 2026-10-13, cli 4.3: `doctor --size` and `gc --vacuum` (§6) render
+  `spec/store` 14.1's size report and `VACUUM`. `doctor --size` is a
+  separate mode of `doctor` — the checks still run without it — because the
+  question it answers ("what is this database made of, and what would
+  reclaim space") is the one a 100 MB file over 2 MB of Markdown raises, and
+  the answer is history, not embeddings; it needs no repo and exits 0. The
+  categories print in a fixed order (content, history, search, sync) rather
+  than by size: a report that reads the same across databases is easier to
+  compare, and on the alchemy corpus `search` and `sync` tie to the page,
+  which would have made the order a coin toss between SQLite builds; the
+  tables under a category do order by bytes. `--vacuum` keeps the sweep's
+  refusal rule (`gc.enabled`), since a VACUUM rewrites the whole file and the
+  flag is the operator's consent to maintenance writes; `--dry-run --vacuum`
+  measures. The bytes are recorded by shape (§8) — a new normalizer in both
+  harnesses beside `version`'s — while names, order, row counts and advice
+  are pinned exactly. Two flags added: a minor. Fixtures: `admin.json`
+  60 → 68 (`doctor-size`, `doctor-size-json`, `doctor-size-jsonl`,
+  `doctor-size-after-rm`, `gc-vacuum`, `gc-vacuum-dry-run`,
+  `gc-vacuum-dry-run-json`, `gc-vacuum-disabled`), `invoke::help-card-doctor`
+  and `help-card-gc` re-rendered; the catalog is unchanged (the summaries
+  stand).
 - 2026-10-13, cli 4.2: `mcp --tools <full|minimal>` (§6 `mcp`) serves a
   catalog profile of `spec/surface` 4.3; the `--server` client lists the
   tools once and falls back from a sugar tool to `apply { effects }` where

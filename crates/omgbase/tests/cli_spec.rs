@@ -495,13 +495,16 @@ fn spawn_omg(
         s.replace(&tmp_str, WORKSPACE_TOKEN)
             .replace(env!("CARGO_PKG_VERSION"), VERSION_TOKEN)
     };
-    Ok(normalize_version_output(
+    Ok(normalize_size_output(
         argv,
-        Outcome {
-            exit: status.code().map_or(-1, i64::from),
-            stdout: rewrite(stdout),
-            stderr: rewrite(stderr),
-        },
+        normalize_version_output(
+            argv,
+            Outcome {
+                exit: status.code().map_or(-1, i64::from),
+                stdout: rewrite(stdout),
+                stderr: rewrite(stderr),
+            },
+        ),
     ))
 }
 
@@ -528,11 +531,13 @@ enum VersionMode {
     Json,
 }
 
-/// Does this argv invoke the `version` verb (not `--version`, not its card)?
-fn version_verb_mode(argv: &[String]) -> Option<VersionMode> {
+/// The verb an argv invokes, whether a machine mode is on, and its flags;
+/// `None` when it asks for help.
+fn scan_argv(argv: &[String]) -> Option<(Option<&str>, bool, Vec<&str>)> {
     const TAKES_VALUE: [&str; 6] = ["-C", "--directory", "--repo", "--server", "-H", "--header"];
     let mut command: Option<&str> = None;
     let mut json = false;
+    let mut flags = Vec::new();
     let mut i = 0;
     while i < argv.len() {
         let a = argv[i].as_str();
@@ -552,20 +557,28 @@ fn version_verb_mode(argv: &[String]) -> Option<VersionMode> {
             continue;
         }
         if a.starts_with('-') {
+            flags.push(a);
             continue;
         }
         if command.is_none() {
             command = Some(a);
         }
     }
-    if command != Some("version") {
-        return None;
-    }
-    Some(if json {
+    Some((command, json, flags))
+}
+
+fn mode_of(json: bool) -> VersionMode {
+    if json {
         VersionMode::Json
     } else {
         VersionMode::Human
-    })
+    }
+}
+
+/// Does this argv invoke the `version` verb (not `--version`, not its card)?
+fn version_verb_mode(argv: &[String]) -> Option<VersionMode> {
+    let (command, json, _) = scan_argv(argv)?;
+    (command == Some("version")).then(|| mode_of(json))
 }
 
 /// JSON: leaves → type names; keys kept; `components` → `"<object>"`; `mcp.sdk` dropped.
@@ -677,6 +690,232 @@ fn normalize_version_output(argv: &[String], o: Outcome) -> Outcome {
         }
         Some(VersionMode::Human) => Outcome {
             stdout: type_shape_human(&o.stdout),
+            ..o
+        },
+    }
+}
+
+// ---- §8: `doctor --size` and `gc --vacuum` are recorded by shape ---------------------
+//
+// Byte counts depend on the SQLite build and its page allocation, not on the
+// engine's behavior, so a case pins everything but the bytes (the reference's
+// `fixture.ts` applies the same rule): in JSON every number under the keys
+// `bytes`, `wal_bytes`, `page_size`, `page_count`, `freelist_count`,
+// `reclaimable`, `share` and `indexes` becomes `"<number>"` (a `null` stays
+// `null`; `rows`, every name, the path and the advice are kept); in text a
+// table row's bytes cell (right-aligned in 9 columns) becomes `<bytes>` and
+// its share cell (6 columns) `<share>`, the name column's padding and the
+// two-blank gutters kept; on every other line each humanized size becomes
+// `<bytes>`, each one-decimal percentage `<share>`, and the `pages` line's
+// three counts `<number>`. Row counts are never touched. Applied to stdout
+// and stderr of a successful `doctor --size` or `gc --vacuum`.
+
+const SIZE_KEYS: [&str; 8] = [
+    "bytes",
+    "wal_bytes",
+    "page_size",
+    "page_count",
+    "freelist_count",
+    "reclaimable",
+    "share",
+    "indexes",
+];
+const BYTES_CELL: usize = 9;
+const SHARE_CELL: usize = 6;
+
+/// Is this a successful `doctor --size` or `gc --vacuum` whose outputs are recorded by shape?
+fn size_report_mode(argv: &[String]) -> Option<VersionMode> {
+    let (command, json, flags) = scan_argv(argv)?;
+    let sized = (command == Some("doctor") && flags.contains(&"--size"))
+        || (command == Some("gc") && flags.contains(&"--vacuum"));
+    sized.then(|| mode_of(json))
+}
+
+/// JSON: the numbers under the size keys → `"<number>"`.
+fn size_shape(v: &Json, key: Option<&str>) -> Json {
+    match v {
+        Json::Number(_) if key.is_some_and(|k| SIZE_KEYS.contains(&k)) => Json::from("<number>"),
+        Json::Array(items) => Json::Array(items.iter().map(|x| size_shape(x, None)).collect()),
+        Json::Object(m) => Json::Object(
+            m.iter()
+                .map(|(k, x)| (k.clone(), size_shape(x, Some(k))))
+                .collect(),
+        ),
+        other => other.clone(),
+    }
+}
+
+/// The length of a humanized size at the start of `s` (`4.0 KB`, `0 B`, `13.1 MB`), if one.
+fn size_token(s: &str) -> Option<usize> {
+    let b = s.as_bytes();
+    let mut i = 0;
+    while i < b.len() && b[i].is_ascii_digit() {
+        i += 1;
+    }
+    if i == 0 {
+        return None;
+    }
+    if i + 1 < b.len() && b[i] == b'.' && b[i + 1].is_ascii_digit() {
+        i += 2;
+    }
+    if b.get(i) != Some(&b' ') {
+        return None;
+    }
+    i += 1;
+    if matches!(b.get(i), Some(b'K' | b'M' | b'G' | b'T')) {
+        i += 1;
+    }
+    if b.get(i) != Some(&b'B') {
+        return None;
+    }
+    i += 1;
+    (!b.get(i).is_some_and(u8::is_ascii_alphanumeric)).then_some(i)
+}
+
+/// The length of a one-decimal percentage at the start of `s` (`48.2%`), if one.
+fn share_token(s: &str) -> Option<usize> {
+    let b = s.as_bytes();
+    let mut i = 0;
+    while i < b.len() && b[i].is_ascii_digit() {
+        i += 1;
+    }
+    if i == 0 || b.get(i) != Some(&b'.') || !b.get(i + 1).is_some_and(u8::is_ascii_digit) {
+        return None;
+    }
+    i += 2;
+    (b.get(i) == Some(&b'%')).then_some(i + 1)
+}
+
+fn spaces(s: &str) -> usize {
+    s.len() - s.trim_start_matches(' ').len()
+}
+
+/// A size-table row — `<indent><name><pad><bytes cell><gutter><share cell>
+/// <gutter><rows>` — with its two cells tokenized in place, or `None`.
+fn size_row_shape(line: &str) -> Option<String> {
+    let indent = spaces(line);
+    if indent < 2 {
+        return None;
+    }
+    let name_len = line[indent..].find(' ')?;
+    let head_end = indent + name_len;
+    let pad = spaces(&line[head_end..]);
+    if pad == 0 {
+        return None;
+    }
+    let bytes_at = head_end + pad;
+    let bytes_len = size_token(&line[bytes_at..])?;
+    let gap = spaces(&line[bytes_at + bytes_len..]);
+    if gap == 0 {
+        return None;
+    }
+    let share_at = bytes_at + bytes_len + gap;
+    let share_len = share_token(&line[share_at..])?;
+    let rest = &line[share_at + share_len..];
+    let rest_gap = spaces(rest);
+    if rest_gap == 0
+        || rest[rest_gap..].is_empty()
+        || !rest[rest_gap..].bytes().all(|b| b.is_ascii_digit())
+    {
+        return None;
+    }
+    // The cells are right-aligned in fixed widths: strip exactly their leading blanks.
+    let head = &line[..bytes_at - (BYTES_CELL.checked_sub(bytes_len)?)];
+    let gap_kept = &line[bytes_at + bytes_len..share_at - (SHARE_CELL.checked_sub(share_len)?)];
+    Some(format!("{head}<bytes>{gap_kept}<share>{rest}"))
+}
+
+/// The `pages` line: `  pages  <n> x <n> bytes, <n> free` → its counts tokenized.
+fn pages_line_shape(line: &str) -> Option<String> {
+    let indent = spaces(line);
+    let rest = line[indent..].strip_prefix("pages")?;
+    let gap = spaces(rest);
+    if indent == 0 || gap == 0 {
+        return None;
+    }
+    let body = &rest[gap..];
+    let (count, body) = body.split_once(" x ")?;
+    let (size, body) = body.split_once(" bytes, ")?;
+    let free = body.strip_suffix(" free")?;
+    let digits = |s: &str| !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit());
+    (digits(count) && digits(size) && digits(free)).then(|| {
+        format!(
+            "{}{}<number> x <number> bytes, <number> free",
+            &line[..indent + "pages".len()],
+            &rest[..gap]
+        )
+    })
+}
+
+/// Every humanized size and percentage in a line (at word boundaries) → tokens.
+fn inline_size_shape(line: &str) -> String {
+    let mut out = String::with_capacity(line.len());
+    let b = line.as_bytes();
+    let mut i = 0;
+    while i < b.len() {
+        let boundary = i == 0 || !b[i - 1].is_ascii_alphanumeric();
+        if boundary && b[i].is_ascii_digit() {
+            if let Some(n) = size_token(&line[i..]) {
+                out.push_str("<bytes>");
+                i += n;
+                continue;
+            }
+            if let Some(n) = share_token(&line[i..]) {
+                out.push_str("<share>");
+                i += n;
+                continue;
+            }
+        }
+        // Advance one char (the line is UTF-8; copy the whole scalar).
+        let ch = line[i..].chars().next().expect("in bounds");
+        out.push(ch);
+        i += ch.len_utf8();
+    }
+    out
+}
+
+fn size_shape_text(s: &str) -> String {
+    s.split('\n')
+        .map(|line| {
+            size_row_shape(line)
+                .or_else(|| pages_line_shape(line))
+                .unwrap_or_else(|| inline_size_shape(line))
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// The §8 rewrite of a successful `doctor --size` / `gc --vacuum` step; anything else as is.
+fn normalize_size_output(argv: &[String], o: Outcome) -> Outcome {
+    if o.exit != 0 {
+        return o;
+    }
+    match size_report_mode(argv) {
+        None => o,
+        Some(VersionMode::Json) => {
+            let stdout = o
+                .stdout
+                .split('\n')
+                .map(|l| {
+                    if l.is_empty() {
+                        return String::new();
+                    }
+                    serde_json::from_str::<Json>(l).map_or_else(
+                        |_| l.to_owned(),
+                        |v| size_shape_text(&size_shape(&v, None).to_string()),
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
+            Outcome {
+                stdout,
+                stderr: size_shape_text(&o.stderr),
+                ..o
+            }
+        }
+        Some(VersionMode::Human) => Outcome {
+            stdout: size_shape_text(&o.stdout),
+            stderr: size_shape_text(&o.stderr),
             ..o
         },
     }

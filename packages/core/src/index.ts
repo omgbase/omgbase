@@ -219,4 +219,8 @@ export {
 } from "./mutate/opset.js";
 export { rebuildIndex, type RebuildTarget } from "./core/store/rebuild.js";
 export { runGc, type GcResult } from "./core/store/gc.js";
+export {
+  sizeReport, sizeAdvice, vacuum, reclaimableBytes, humanBytes, formatShare, shareOf, categoryOf, TABLE_CATEGORY, SIZE_CATEGORIES,
+  type SizeReport, type SizeCategory, type SizeCategoryReport, type SizeTable, type SizeFile, type VacuumResult,
+} from "./core/store/size.js";
 export { LIVE_LEAF_SQL, ftsIndexedRowCount, liveLeafCount } from "./core/store/fts.js";

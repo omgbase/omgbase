@@ -5,7 +5,7 @@
 //! and the CLI names what it did.
 
 use omgbase_search::{EmbeddingProvider, EmbeddingSettings, create_external_provider};
-use omgbase_store::{LIVE_LEAF_SQL, RebuildTarget};
+use omgbase_store::{LIVE_LEAF_SQL, RebuildTarget, SizeReport, format_share, human_bytes};
 use omgbase_sync::settings::{
     Settings, repo_own_settings, resolve_settings, workspace_settings, write_repo_settings,
     write_workspace_settings,
@@ -16,6 +16,7 @@ use crate::cli::argv::{Opt, parse_args};
 use crate::cli::context::Cli;
 use crate::cli::help::{render_help_for, wants_help};
 use crate::cli::output::{CliError, EXIT_ERROR, EXIT_OK, Result, js_json};
+use crate::cli::render::{Align, Style, columns, pad_start};
 
 use super::machine_out;
 
@@ -74,15 +75,18 @@ fn truthy(v: Option<&Json>) -> bool {
     }
 }
 
-/// `gc [--dry-run]` — mark-and-sweep, refused unless `gc.enabled` (§9
-/// Pinned: under the code `target_missing`); the command's own `--dry-run`
-/// or the global one previews without deleting.
+/// `gc [--dry-run] [--vacuum]` — mark-and-sweep, refused unless `gc.enabled`
+/// (§9 Pinned: under the code `target_missing`); the command's own `--dry-run`
+/// or the global one previews without deleting. `--vacuum` (cli 4.3) runs
+/// `VACUUM` after the sweep — a dry run measures the free pages instead —
+/// and the result gains `vacuum: { reclaimable, applied }`.
 pub fn gc(cli: &mut Cli, args: &[String]) -> Result<i32> {
     if wants_help(args) {
         return render_help_for(cli, "gc");
     }
-    let a = parse_args(args, &[Opt::flag("dry-run")])?;
+    let a = parse_args(args, &[Opt::flag("dry-run"), Opt::flag("vacuum")])?;
     let dry = a.flag("dry-run") || cli.flags.dry_run;
+    let want_vacuum = a.flag("vacuum");
     cli.workspace()?;
     let repo = cli.repo()?;
     let store = cli.store()?;
@@ -99,8 +103,26 @@ pub fn gc(cli: &mut Cli, args: &[String]) -> Result<i32> {
     } else {
         store.gc(true)?
     };
-    let doc =
-        json!({ "blobsSwept": result.blobs_swept, "treeNodesSwept": result.tree_nodes_swept });
+    // After the sweep: its freed pages are what a VACUUM returns.
+    let vacuum = if want_vacuum {
+        Some(if dry {
+            (store.reclaimable_bytes()?, false)
+        } else {
+            (store.vacuum()?.reclaimable, true)
+        })
+    } else {
+        None
+    };
+    let mut doc = Map::new();
+    doc.insert("blobsSwept".to_owned(), json!(result.blobs_swept));
+    doc.insert("treeNodesSwept".to_owned(), json!(result.tree_nodes_swept));
+    if let Some((reclaimable, applied)) = vacuum {
+        doc.insert(
+            "vacuum".to_owned(),
+            json!({ "reclaimable": reclaimable, "applied": applied }),
+        );
+    }
+    let doc = Json::Object(doc);
     if let Some(code) = machine_out(cli, &doc, None, None) {
         return code;
     }
@@ -108,6 +130,17 @@ pub fn gc(cli: &mut Cli, args: &[String]) -> Result<i32> {
         "  swept {} blobs, {} tree nodes",
         result.blobs_swept, result.tree_nodes_swept
     )));
+    match vacuum {
+        Some((reclaimable, true)) => cli.io.err(&cli.style.dim(&format!(
+            "  vacuumed, reclaimed {}",
+            human_bytes(reclaimable)
+        ))),
+        Some((reclaimable, false)) => cli.io.err(
+            &cli.style
+                .dim(&format!("  would vacuum {}", human_bytes(reclaimable))),
+        ),
+        None => {}
+    }
     Ok(EXIT_OK)
 }
 
@@ -119,13 +152,18 @@ struct Check {
     detail: String,
 }
 
-/// `doctor [--json]` — the four checks on the selected repo; exit 1 when any fails.
+/// `doctor [--json]` — the four checks on the selected repo; exit 1 when any
+/// fails. `doctor --size` (cli 4.3) is the size report instead (exit 0).
 pub fn doctor(cli: &mut Cli, args: &[String]) -> Result<i32> {
     if wants_help(args) {
         return render_help_for(cli, "doctor");
     }
-    parse_args(args, &[])?;
+    let a = parse_args(args, &[Opt::flag("size")])?;
     cli.workspace()?;
+    if a.flag("size") {
+        let report = cli.store()?.size_report()?;
+        return doctor_size(cli, &report);
+    }
     let repo = cli.repo()?;
     let store = cli.store()?;
     let conn = store.conn();
@@ -200,6 +238,118 @@ pub fn doctor(cli: &mut Cli, args: &[String]) -> Result<i32> {
         cli.io.out(&format!("  {mark} {}{detail}", c.name));
     }
     Ok(exit)
+}
+
+/// The tables shown under each category of the human size report.
+const TOP_TABLES: usize = 3;
+/// The bytes/share cell without dbstat.
+const NO_BYTES: &str = "—";
+/// The bytes cell's width: the widest humanized size, `1023.9 KB`.
+const BYTES_CELL: usize = 9;
+/// The share cell's width: `100.0%`.
+const SHARE_CELL: usize = 6;
+
+/// `doctor --size` (§6, cli 4.3): the store's size report (`spec/store` §7
+/// "Size") as one aligned table — each category, then its three biggest
+/// tables indented — the file's page accounting, and the advice lines.
+/// Exit 0: a size report is information, not a check. The bytes and share
+/// cells are right-aligned in fixed widths so the layout is the same
+/// whatever the numbers — which is what lets the fixtures pin it by shape (§8).
+fn doctor_size(cli: &mut Cli, report: &SizeReport) -> Result<i32> {
+    let doc = report.to_json();
+    if let Some(code) = machine_out(cli, &doc, None, None) {
+        return code;
+    }
+    for line in size_lines(report, &cli.style) {
+        cli.io.out(&line);
+    }
+    Ok(EXIT_OK)
+}
+
+/// The human size report's stdout lines (§6 `doctor --size`).
+fn size_lines(report: &SizeReport, style: &Style) -> Vec<String> {
+    let mut out = Vec::new();
+    let bytes = |n: Option<u64>| {
+        pad_start(
+            &n.map_or_else(|| NO_BYTES.to_owned(), human_bytes),
+            BYTES_CELL,
+        )
+    };
+    let share = |s: Option<f64>| {
+        pad_start(
+            &s.map_or_else(|| NO_BYTES.to_owned(), format_share),
+            SHARE_CELL,
+        )
+    };
+    // The last column is never padded by `columns`, so the row counts are
+    // right-aligned here (to the widest count, or the header).
+    let rows_width = report
+        .categories
+        .iter()
+        .flat_map(|c| {
+            std::iter::once(c.rows).chain(c.tables.iter().take(TOP_TABLES).map(|t| t.rows))
+        })
+        .map(|n| n.to_string().len())
+        .max()
+        .unwrap_or(0)
+        .max(4);
+    let count = |n: u64| pad_start(&n.to_string(), rows_width);
+    let mut rows: Vec<Vec<String>> = vec![vec![
+        style.dim("category"),
+        style.dim(&pad_start("bytes", BYTES_CELL)),
+        style.dim(&pad_start("share", SHARE_CELL)),
+        style.dim(&pad_start("rows", rows_width)),
+    ]];
+    for c in &report.categories {
+        rows.push(vec![
+            style.accent(c.name),
+            bytes(c.bytes),
+            share(c.share),
+            count(c.rows),
+        ]);
+        for t in c.tables.iter().take(TOP_TABLES) {
+            rows.push(vec![
+                format!("  {}", t.name),
+                bytes(t.bytes),
+                share(t.share),
+                count(t.rows),
+            ]);
+        }
+    }
+    for line in columns(&rows, &[Align::Left, Align::Right, Align::Right]) {
+        out.push(format!("  {line}"));
+    }
+    if let Some(detail) = report.detail {
+        out.push(style.dim(&format!("  {detail}: row counts only")));
+    }
+    out.push(String::new());
+    let f = &report.file;
+    let file = vec![
+        vec!["file".to_owned(), style.path(&f.path)],
+        vec![
+            "size".to_owned(),
+            format!(
+                "{} on disk, wal {}",
+                human_bytes(f.bytes),
+                human_bytes(f.wal_bytes)
+            ),
+        ],
+        vec![
+            "pages".to_owned(),
+            format!(
+                "{} x {} bytes, {} free",
+                f.page_count, f.page_size, f.freelist_count
+            ),
+        ],
+        vec!["reclaimable".to_owned(), human_bytes(f.reclaimable)],
+    ];
+    for line in columns(&file, &[Align::Left]) {
+        out.push(format!("  {line}"));
+    }
+    for a in &report.advice {
+        out.push(format!("  {} {a}", style.dim("advice:")));
+    }
+    out
 }
 
 // ---- config ---------------------------------------------------------------------------
@@ -598,5 +748,114 @@ mod tests {
         set_path(&mut s, "flag.on", json!(1));
         assert_eq!(get_path(&s, "flag.on"), Some(&json!(1)));
         assert!(truthy(Some(&json!(true))) && !truthy(Some(&json!(0))) && !truthy(None));
+    }
+
+    /// §6 `doctor --size`: the human table — fixed-width bytes/share cells,
+    /// row counts right-aligned, three tables per category, the file block
+    /// and the advice lines — rendered from a report built by hand.
+    #[test]
+    fn size_report_lines() {
+        use omgbase_store::{SizeCategory, SizeFile, SizeTable, share_of};
+        let total = 1_000_000u64;
+        let table = |name: &str, bytes: u64, rows: u64| SizeTable {
+            name: name.to_owned(),
+            bytes: Some(bytes),
+            share: Some(share_of(bytes, total)),
+            rows,
+            indexes: Some(0),
+        };
+        let cat = |name: &'static str, tables: Vec<SizeTable>| {
+            let bytes: u64 = tables.iter().filter_map(|t| t.bytes).sum();
+            SizeCategory {
+                name,
+                bytes: Some(bytes),
+                share: Some(share_of(bytes, total)),
+                rows: tables.iter().map(|t| t.rows).sum(),
+                tables,
+            }
+        };
+        let report = SizeReport {
+            file: SizeFile {
+                path: "/w/.omgbase/omgbase.db".into(),
+                bytes: 1_048_576,
+                wal_bytes: 0,
+                page_size: 4096,
+                page_count: 256,
+                freelist_count: 12,
+                reclaimable: 49_152,
+            },
+            categories: vec![
+                cat(
+                    "content",
+                    vec![
+                        table("blocks", 500_000, 12345),
+                        table("nodes", 100_000, 20),
+                        table("docs", 20_000, 3),
+                        table("edges", 4_096, 0),
+                    ],
+                ),
+                cat("history", vec![table("blobs", 300_000, 400)]),
+                cat("search", vec![]),
+                cat("sync", vec![table("sqlite_schema", 75_904, 85)]),
+            ],
+            advice: vec!["nothing to reclaim".to_owned()],
+            detail: None,
+        };
+        let style = Style::detect(true, false);
+        let lines = size_lines(&report, &style);
+        // The name column is as wide as `  sqlite_schema` (15); three tables
+        // per category at most (`edges` is cut); 624,096 bytes is 609.5 KB.
+        assert_eq!(
+            lines,
+            [
+                "  category             bytes   share   rows",
+                "  content           609.5 KB   62.4%  12368",
+                "    blocks          488.3 KB   50.0%  12345",
+                "    nodes            97.7 KB   10.0%     20",
+                "    docs             19.5 KB    2.0%      3",
+                "  history           293.0 KB   30.0%    400",
+                "    blobs           293.0 KB   30.0%    400",
+                "  search                 0 B    0.0%      0",
+                "  sync               74.1 KB    7.6%     85",
+                "    sqlite_schema    74.1 KB    7.6%     85",
+                "",
+                "  file         /w/.omgbase/omgbase.db",
+                "  size         1.0 MB on disk, wal 0 B",
+                "  pages        256 x 4096 bytes, 12 free",
+                "  reclaimable  48.0 KB",
+                "  advice: nothing to reclaim",
+            ]
+        );
+        // Without dbstat the cells are `—` and the fallback line follows the table.
+        let blind = SizeReport {
+            categories: report
+                .categories
+                .iter()
+                .map(|c| SizeCategory {
+                    bytes: None,
+                    share: None,
+                    tables: c
+                        .tables
+                        .iter()
+                        .map(|t| SizeTable {
+                            bytes: None,
+                            share: None,
+                            indexes: None,
+                            ..t.clone()
+                        })
+                        .collect(),
+                    ..c.clone()
+                })
+                .collect(),
+            detail: Some("dbstat unavailable"),
+            ..report
+        };
+        let lines = size_lines(&blind, &style);
+        assert_eq!(
+            lines[1],
+            format!("  {:<15}  {:>9}  {:>6}  12368", "content", "—", "—")
+        );
+        assert_eq!(lines[10], "  dbstat unavailable: row counts only");
+        assert_eq!(lines[11], "");
     }
 }

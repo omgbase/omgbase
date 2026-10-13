@@ -687,6 +687,64 @@ behind a flag, **off**, and because revisions are never pruned in v1 nothing
 is ever unreachable — §8 I5 checks exactly that. The only routine collection
 is the pool sweep (§5.5).
 
+**Size** (14.1). The store answers "what is this database made of" with
+one report, `size_report`, both engines computing it the same way from the
+open connection:
+
+- *File*: `path` (the connection's; `:memory:` when none), `bytes` (the
+  main file's size on disk; `page_count × page_size` in memory),
+  `wal_bytes` (the `-wal` file's, 0 when absent), `page_size`,
+  `page_count`, `freelist_count` (the pragmas), and `reclaimable =
+  freelist_count × page_size` — the bytes a `VACUUM` returns.
+- *Tables*: every b-tree's pages from the `dbstat` virtual table
+  (`SELECT name, sum(pgsize) FROM dbstat GROUP BY name`). An index's pages
+  count toward its table (`sqlite_master.tbl_name`; `indexes` reports that
+  part); an FTS5 virtual table's shadow tables (`<name>_data`, `_idx`,
+  `_docsize`, `_config`) fold into it, and its `rows` are its `_docsize`
+  rows — the rows it indexes (a `count(*)` on an external-content table
+  answers from the content table); every other table's `rows` is its
+  `count(*)`. The table set is `sqlite_master`'s tables (shadows folded)
+  plus `sqlite_schema` itself. Without `SQLITE_ENABLE_DBSTAT_VTAB` in the
+  build every `bytes`, `share` and `indexes` is null, the report carries
+  `detail: "dbstat unavailable"`, and the tables order by rows.
+- *Categories*, always the four, in this order, each with `bytes`
+  (its tables' sum), `share` (one decimal of the dbstat total, rounded
+  half up), `rows` (its tables' sum) and its tables by bytes desc then
+  name: **content** — the live state: `docs`, `blocks`, `sections`,
+  `nodes`, `edges`, `doc_edges`, `inferred_edges`, `external_nodes`,
+  `properties`, `collections`; **history** — the append-only record:
+  `blobs`, `tree_nodes`, `revisions`, `commits`, `dispositions`,
+  `block_changes`, `resurrection_pool`, `pending_materializations`;
+  **search** — the derived indexes: `blocks_fts`, `nodes_fts`,
+  `embeddings`, `doc_embeddings`; **sync** — the workspace bookkeeping:
+  `repos`, `sources`, `adapters`, `attachments`, `checkpoints`,
+  `file_stats`, `sync_state`, `workspace_settings`, and *anything this
+  spec does not name* (`sqlite_schema`, a `sqlite_stat1`, a table from a
+  newer schema). A table added to `schema.sql` is assigned here in the same
+  change (both engines' tests check the assignment covers the DDL).
+- *Advice*, deterministic strings in this order, each conditional: `run
+  \`omg gc --vacuum\` to return <bytes> of free pages to the filesystem`
+  when `reclaimable` exceeds 1 MiB *and* 10 % of `page_count ×
+  page_size`; `history dominates (<share>): blobs, tree nodes and
+  dispositions grow with every commit — enable gc (\`omg config set
+  gc.enabled true\`) and run \`omg gc --vacuum\`` when `history`'s share
+  exceeds 50; `embeddings are <share> of the database: a smaller model
+  (\`embedding.model\` / \`embedding.dim\`) or \`omg embed drain --prune\`
+  after a model switch shrinks them` when `embeddings` + `doc_embeddings`
+  exceed 25 % of the total; else the single line `nothing to reclaim`.
+  `<bytes>` is humanized — `<n> B` under 1024, else one decimal of a
+  1024-based KB/MB/GB/TB with the tenths rounded half up (`4096` →
+  `4.0 KB`) — and `<share>` is `<n>.<d>%`; both engines format from the
+  integer tenths so no rounding mode can differ.
+
+**Vacuum** (14.1). `vacuum` runs SQLite's `VACUUM` on the bare connection
+(never inside a transaction, which SQLite refuses) and returns the free
+pages' bytes measured just before — what the file shrinks by. It rewrites
+the whole file; the CLI exposes it as `gc --vacuum` behind gc's flag
+(`spec/cli` §6). The pinned behavior: afterwards `freelist_count` is 0, the
+content and history are intact (`integrity_check` is `ok`), and a second
+vacuum returns 0.
+
 ## 8. Invariants
 
 A runner checks these on the database after every observe step and at the
@@ -978,6 +1036,20 @@ brought to it).
 
 ## Decisions
 
+- 2026-10-13, store 14.1: the size report and `vacuum` (§7). Measured by
+  hand, a 100 MB database over 2 MB of Markdown was history — blobs, tree
+  nodes, dispositions, block changes — not embeddings; the report makes
+  that answer a store operation both engines compute identically (the
+  `dbstat` virtual table, which both bundled SQLite builds enable — checked,
+  not assumed; a build without it degrades to row counts and says so) with
+  one categorization of every table in `schema.sql`, so `omg doctor --size`
+  needs no hand SQL. Indexes count toward their table and FTS5 shadow tables
+  fold into their virtual table because a reader asks about `blocks` and
+  `blocks_fts`, not `idx_blocks_rawhash` or `blocks_fts_data`; `sqlite_schema`
+  and anything unassigned land in `sync` rather than a fifth category, so
+  the four names are stable. `VACUUM` becomes a store operation (it was
+  nothing before: `gc` sweeps rows, never pages) because the free pages a
+  sweep leaves are what the operator wants back. No DDL: a minor.
 - 2026-10-12, store 14.0: the api path commits DB-first. The commit
   transaction records each file it owes as a `pending_materializations` row
   (§3.1, migration 14) and the files are materialized after COMMIT from

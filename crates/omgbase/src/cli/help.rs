@@ -843,19 +843,34 @@ pub fn card(name: &'static str, prog: &str) -> Option<HelpSpec> {
             s(
                 "Mark-and-sweep unreferenced blobs and tree nodes (refuses unless gc.enabled is set in repo settings)",
             ),
-            vec![s("gc [--dry-run]")],
-            opts(&[(
-                "--dry-run",
-                "report what would be swept, sweep nothing (allowed even when gc is disabled)",
-            )]),
+            vec![s("gc [--dry-run] [--vacuum]")],
+            opts(&[
+                (
+                    "--dry-run",
+                    "report what would be swept, sweep nothing (allowed even when gc is disabled)",
+                ),
+                (
+                    "--vacuum",
+                    "after the sweep, VACUUM the database to return its free pages to the filesystem (`doctor --size` shows how many)",
+                ),
+            ]),
             vec![],
         ),
         "doctor" => spec(
             s(
                 "Invariant sweep: convergence, FTS rows vs live leaf blocks, dangling revisions, SQLite integrity — exit 1 on any failure (CI-able)",
             ),
-            vec![s("doctor [--json]")],
-            opts(&[("--json", "`{ ok, checks: [{ name, ok, detail }] }`")]),
+            vec![s("doctor [--json]"), s("doctor --size [--json]")],
+            opts(&[
+                (
+                    "--size",
+                    "instead of the checks: what the database is made of — bytes and rows per category (content, history, search, sync) and table, the file's pages, what VACUUM would reclaim, advice",
+                ),
+                (
+                    "--json",
+                    "`{ ok, checks: [{ name, ok, detail }] }`; with --size `{ file, categories, advice }`",
+                ),
+            ]),
             vec![],
         ),
         "config" => spec(

@@ -18,6 +18,10 @@ admin::doctor
 admin::doctor-after-api-delete
 admin::doctor-after-observed-delete
 admin::doctor-json
+admin::doctor-size
+admin::doctor-size-after-rm
+admin::doctor-size-json
+admin::doctor-size-jsonl
 admin::embed-broken-provider
 admin::embed-drain-no-provider
 admin::embed-drain-no-provider-json
@@ -34,6 +38,10 @@ admin::gc-enabled
 admin::gc-global-dry-run
 admin::gc-refused
 admin::gc-refused-json
+admin::gc-vacuum
+admin::gc-vacuum-disabled
+admin::gc-vacuum-dry-run
+admin::gc-vacuum-dry-run-json
 admin::init
 admin::init-embedder-verbatim
 admin::init-json

@@ -85,6 +85,7 @@ pub mod properties;
 pub mod read;
 pub mod schema;
 pub mod search;
+pub mod size;
 pub mod sugar;
 pub mod time;
 pub mod tree;
@@ -133,13 +134,17 @@ pub use search::{
     ForeignVectors, HybridHit, HybridQuery, QueryVector, ResolveHit, TextHit, TextSearchResult,
     VectorHit, block_vector,
 };
+pub use size::{
+    SIZE_CATEGORIES, SizeCategory, SizeFile, SizeReport, SizeTable, TABLE_CATEGORY, VacuumResult,
+    category_of, format_share, human_bytes, share_of, size_advice,
+};
 pub use sugar::Sugar;
 pub use tree::{TreeEntry, canonical_attrs, canonical_json, serialize_tree_entries, tree_hash};
 pub use writers::{NewCommit, NewRevision, Origin, TreeInputBlock};
 
 /// The `spec/store/VERSION` this crate implements (`major.minor`); the major
 /// is [`SCHEMA_VERSION`].
-pub const SPEC_VERSION: &str = "14.0";
+pub const SPEC_VERSION: &str = "14.1";
 
 /// This crate's own version (`Cargo.toml`), for the surface's `version` tool.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -404,6 +409,22 @@ impl Store {
     /// §5.5: delete expired pool rows; returns how many.
     pub fn sweep_pool(&self, ts: &str) -> Result<usize> {
         derived::sweep_pool(&self.conn, ts)
+    }
+
+    /// §7 "Size" (14.1): what the database is made of — bytes per table
+    /// through `dbstat`, grouped into categories, the file's pages, advice.
+    pub fn size_report(&self) -> Result<SizeReport> {
+        size::size_report(&self.conn)
+    }
+
+    /// §7 (14.1): `freelist_count * page_size`, what [`Store::vacuum`] would return.
+    pub fn reclaimable_bytes(&self) -> Result<u64> {
+        size::reclaimable_bytes(&self.conn)
+    }
+
+    /// §7 (14.1): `VACUUM` the database; returns the free-page bytes it returned.
+    pub fn vacuum(&self) -> Result<VacuumResult> {
+        size::vacuum(&self.conn)
     }
 
     /// Close the connection.

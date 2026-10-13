@@ -255,22 +255,29 @@ function cliVersion(): string {
 //
 // Applied only to a successful `version` invocation (exit 0, not its help card).
 
-/** Does this argv invoke the `version` verb (not `--version`, not its card)? Returns the output mode or null. */
-export function versionVerbMode(argv: string[]): "human" | "json" | null {
+/** The verb an argv invokes, whether a machine mode is on, and its flags; null when it asks for help. */
+export function scanArgv(argv: string[]): { command: string | null; json: boolean; flags: Set<string> } | null {
   const takesValue = new Set(["-C", "--directory", "--repo", "--server", "-H", "--header"]);
   let command: string | null = null;
   let json = false;
+  const flags = new Set<string>();
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!;
     if (a === "--") break;
     if (takesValue.has(a)) { i++; continue; }
     if (a === "--help" || a === "-h") return null;
     if (a === "--json" || a === "--jsonl" || a === "--ids") { json = true; continue; }
-    if (a.startsWith("-")) continue;
+    if (a.startsWith("-")) { flags.add(a); continue; }
     if (command === null) command = a;
   }
-  if (command !== "version") return null;
-  return json ? "json" : "human";
+  return { command, json, flags };
+}
+
+/** Does this argv invoke the `version` verb (not `--version`, not its card)? Returns the output mode or null. */
+export function versionVerbMode(argv: string[]): "human" | "json" | null {
+  const scan = scanArgv(argv);
+  if (!scan || scan.command !== "version") return null;
+  return scan.json ? "json" : "human";
 }
 
 /** JSON: leaves → type names; keys kept; `components` → `"<object>"`; `mcp.sdk` dropped. */
@@ -326,6 +333,88 @@ export function normalizeVersionOutput(argv: string[], o: Outcome): Outcome {
   return { ...o, stdout: typeShapeHuman(o.stdout) };
 }
 
+// ---- §8: `doctor --size` and `gc --vacuum` are recorded by shape ----------------------
+//
+// Byte counts depend on the SQLite build and its page allocation, not on the
+// engine's behavior, so a case pins everything but the bytes: in JSON every
+// number under the keys `bytes`, `wal_bytes`, `page_size`, `page_count`,
+// `freelist_count`, `reclaimable`, `share` and `indexes` becomes `"<number>"`
+// (a `null` — no dbstat — stays `null`; `rows`, every name, the path and the
+// advice are kept); in text a table row's bytes cell (right-aligned in 9
+// columns) becomes `<bytes>` and its share cell (6 columns) `<share>`, the
+// name column's padding and the two-blank gutters kept as they are; on every
+// other line each humanized size (`788.0 KB`, `0 B`) becomes `<bytes>`, each
+// one-decimal percentage `<share>`, and the `pages` line's three counts
+// `<number>`. Row counts are never touched (they are deterministic and
+// pinned). Applied to stdout and stderr of a successful `doctor --size` or
+// `gc --vacuum`.
+
+const SIZE_KEYS = new Set(["bytes", "wal_bytes", "page_size", "page_count", "freelist_count", "reclaimable", "share", "indexes"]);
+const BYTES_CELL = 9;
+const SHARE_CELL = 6;
+/** A size-table row: `<indent><name><pad><bytes cell><gutter><share cell><gutter><rows>`. */
+const SIZE_ROW = /^( {2,}\S+ +)(\d+(?:\.\d)? [KMGT]?B)( +)(\d+\.\d%)( +\d+)$/;
+
+/** A table row with its two cells tokenized in place, or null when the line is not one. */
+export function sizeRowShape(line: string): string | null {
+  const m = SIZE_ROW.exec(line);
+  if (!m) return null;
+  const [, head, bytes, gap, share, rest] = m as unknown as [string, string, string, string, string, string];
+  // The cells are right-aligned in fixed widths: strip exactly their leading blanks.
+  const headCut = head.slice(0, head.length - (BYTES_CELL - bytes.length));
+  const gapCut = gap.slice(0, gap.length - (SHARE_CELL - share.length));
+  return `${headCut}<bytes>${gapCut}<share>${rest}`;
+}
+
+export function sizeShape(v: unknown, key: string | null = null): unknown {
+  if (Array.isArray(v)) return v.map((x) => sizeShape(x));
+  if (v !== null && typeof v === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [k, x] of Object.entries(v as Record<string, unknown>)) out[k] = sizeShape(x, k);
+    return out;
+  }
+  if (typeof v === "number" && key !== null && SIZE_KEYS.has(key)) return "<number>";
+  return v;
+}
+
+export function sizeShapeText(s: string): string {
+  return s
+    .split("\n")
+    .map(
+      (line) =>
+        sizeRowShape(line) ??
+        line
+          .replace(/^(\s+pages\s+)\d+ x \d+ bytes, \d+ free$/, "$1<number> x <number> bytes, <number> free")
+          .replace(/\b\d+(?:\.\d)? [KMGT]?B\b/g, "<bytes>")
+          .replace(/\b\d+\.\d%/g, "<share>"),
+    )
+    .join("\n");
+}
+
+/** Is this a successful `doctor --size` or `gc --vacuum` whose outputs are recorded by shape? */
+export function sizeReportMode(argv: string[]): "human" | "json" | null {
+  const scan = scanArgv(argv);
+  if (!scan) return null;
+  const sized = (scan.command === "doctor" && scan.flags.has("--size")) || (scan.command === "gc" && scan.flags.has("--vacuum"));
+  if (!sized) return null;
+  return scan.json ? "json" : "human";
+}
+
+export function normalizeSizeOutput(argv: string[], o: Outcome): Outcome {
+  if (o.exit !== 0) return o;
+  const mode = sizeReportMode(argv);
+  if (mode === null) return o;
+  const text = (s: string): string => sizeShapeText(s);
+  if (mode === "json") {
+    const stdout = o.stdout
+      .split("\n")
+      .map((l) => (l === "" ? l : text(JSON.stringify(sizeShape(JSON.parse(l))))))
+      .join("\n");
+    return { ...o, stdout, stderr: text(o.stderr) };
+  }
+  return { ...o, stdout: text(o.stdout), stderr: text(o.stderr) };
+}
+
 export function spawnOmg(tmp: string, argv: string[], opts: { stdin?: string; env?: Record<string, string> } = {}): Outcome {
   const env = { ...baseEnv(tmp) };
   for (const [k, v] of Object.entries(opts.env ?? {})) env[k] = substituteWorkspace(v, tmp);
@@ -340,7 +429,7 @@ export function spawnOmg(tmp: string, argv: string[], opts: { stdin?: string; en
   });
   if (r.error) throw new Error(`spawn omg ${argv.join(" ")}: ${r.error.message}`);
   if (r.status === null) throw new Error(`omg ${argv.join(" ")} was killed (${r.signal ?? "timeout"})\n${r.stderr}`);
-  return normalizeVersionOutput(argv, { exit: r.status, stdout: rewriteWorkspace(r.stdout, tmp), stderr: rewriteWorkspace(r.stderr, tmp) });
+  return normalizeSizeOutput(argv, normalizeVersionOutput(argv, { exit: r.status, stdout: rewriteWorkspace(r.stdout, tmp), stderr: rewriteWorkspace(r.stderr, tmp) }));
 }
 
 // ---- workspaces -------------------------------------------------------------------
