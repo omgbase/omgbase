@@ -197,6 +197,9 @@ export {
   type ExecuteRequest,
 } from "./mutate/plan.js";
 export { validateEffects, EFFECT_OPS, type Effect, type EffectTarget, type EffectExpect, type ResolvedEffect, type CreateEntry, type RetargetPreview } from "./mutate/effects.js";
+// Query-directed planning (spec/mutate §11.8, 3.1): the selector binding behind `plan`/`apply`/`execute { select }`.
+export { compileSelection, selectionQuery, SELECTION_CEILING, type Selection, type SelectionExpect, type CompiledSelection } from "./mutate/select.js";
+export { oqxRunQuery, reservedAlias } from "./oqx-js/run.js";
 // Inbound-link discovery + destination-aware rewrite (docs_move's dangling report / retarget_inbound).
 export { inboundLinksTo, retargetLinksInRaw, type InboundLink } from "./graph/inbound-links.js";
 // Whole-document update: reconcile → opset (the `set content` effect's internal planner since 3.0; `preview.identity` surfaces it).

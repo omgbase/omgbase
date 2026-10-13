@@ -631,13 +631,13 @@ describe("apply op schema + blocks_append / docs_append section resolution", () 
     const tools = await client.listTools();
     const applyTool = tools.tools.find((t) => t.name === "apply")!;
     const schema = applyTool.inputSchema as unknown as { properties: Record<string, unknown>; required?: string[] };
-    expect(Object.keys(schema.properties).sort()).toEqual(["effects", "reason", "repo"]);
+    expect(Object.keys(schema.properties).sort()).toEqual(["effects", "expect", "reason", "repo", "select"]);
     expect(schema.required).toEqual(["effects"]);
     const items = (schema.properties.effects as { items: { properties: { op: { enum: string[] } } } }).items;
     expect(items.properties.op.enum).toEqual(["create", "insert", "set", "unset", "move", "remove", "split", "merge", "retarget"]);
     const r = (await call("apply", { ops: [{ op: "update", block: "b_x", markdown: "x" }] })) as { payload: { error: string; message: string }; isError: boolean };
     expect(r.isError).toBe(true);
-    expect(r.payload.message).toBe("`ops` is no longer an argument — `apply` takes `effects` (the kernel ops are a library/fixture contract since spec/mutate 3.0) (apply takes effects, reason?, repo?)");
+    expect(r.payload.message).toBe("`ops` is no longer an argument — `apply` takes `effects` (the kernel ops are a library/fixture contract since spec/mutate 3.0) (apply takes effects, expect?, reason?, repo?, select?)");
   });
 
   it("apply rejects a malformed effect as a validation error naming it, not block_missing", async () => {

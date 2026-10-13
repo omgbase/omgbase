@@ -3,7 +3,8 @@
 //   runCase()               §9: run a mutation script — the spec/store §9.4 observation-script
 //                           shape plus the `apply` / `macro` / `docs` / `plan` / `disk` /
 //                           `materialize` steps, the effect layer's `plan_effects` / `execute` /
-//                           `apply_effects` / `canonical` steps (§11, 2.3) and the `crash_after_commit` modifier —
+//                           `apply_effects` / `canonical` steps (§11, 2.3; `select` + `expect` on the three
+//                           effect steps since 3.1, §11.8) and the `crash_after_commit` modifier —
 //                           through the production write paths against a fresh `:memory:` store
 //                           and an in-memory doc store, check the invariants after every step,
 //                           project `files` + the store tables
@@ -127,9 +128,12 @@ export interface DiskStep {
   source: string;
 }
 
-/** README §9 (2.3): `plan { effects }` → the Plan minus `preview`, or the error. */
+/** README §9 (2.3): `plan { effects }` → the Plan minus `preview`, or the error. (3.1, §11.8) `select` makes the
+ *  effects templates bound to the selector's hits; `expect: { max }` bounds the selection. */
 export interface PlanEffectsStep {
   effects: unknown[];
+  select?: string;
+  expect?: { max: number };
 }
 
 /** README §9 (2.3): `execute` in the plan form (`plan_step` names an earlier `plan_effects` /
@@ -141,13 +145,19 @@ export interface ExecuteStep extends Crashable {
   plan?: Record<string, unknown>;
   plan_id?: string;
   effects?: unknown[];
+  /** (3.1) the digest form's selector, re-run and re-digested (§11.8) */
+  select?: string;
+  expect?: { max: number };
   origin: Origin;
 }
 
-/** README §9 (2.3): `apply { effects }` → the Plan minus `preview` (`dry_run`) or the Receipt, or the error. */
+/** README §9 (2.3): `apply { effects }` → the Plan minus `preview` (`dry_run`) or the Receipt, or the error.
+ *  (3.1) with `select`, `expect.max` is required unless `dry_run` (§11.8). */
 export interface ApplyEffectsStep extends Crashable {
   ts: string;
   effects: unknown[];
+  select?: string;
+  expect?: { max: number };
   origin: Origin;
   dry_run?: boolean;
 }
@@ -177,12 +187,15 @@ export interface CrashOutcome {
 }
 
 /** `{ code, op_index?, block?, current?, retriable? }` — README §8's pinned data fields — plus the
- *  effect layer's (2.3): `effect_index`, `effects`, `focus`, `symbol`, `version`, `supported`, `expected`, `actual`. */
+ *  effect layer's (2.3): `effect_index`, `effects`, `focus`, `symbol`, `version`, `supported`, `expected`, `actual`,
+ *  and the selector's (3.1, §11.8): `template_index`, `row`, `expression`, `count`, `cardinality`, `max`, `implicit`. */
 export interface ErrorOutcome {
   error: {
     code: string; op_index?: number; block?: string; current?: Record<string, unknown>; retriable?: boolean;
     effect_index?: number; effects?: number[]; focus?: Record<string, unknown>; symbol?: string;
     version?: unknown; supported?: unknown[]; expected?: string; actual?: string;
+    template_index?: number; row?: Record<string, unknown>; expression?: string; count?: number;
+    cardinality?: string | number; max?: number; implicit?: boolean;
   };
 }
 
@@ -353,6 +366,13 @@ export function errorOutcome(e: unknown): ErrorOutcome {
   if (Array.isArray(d.supported)) error.supported = d.supported;
   if (typeof d.expected === "string") error.expected = d.expected;
   if (typeof d.actual === "string") error.actual = d.actual;
+  if (typeof d.template_index === "number") error.template_index = d.template_index;
+  if (isRecord(d.row)) error.row = d.row;
+  if (typeof d.expression === "string") error.expression = d.expression;
+  if (typeof d.count === "number") error.count = d.count;
+  if (typeof d.cardinality === "string" || typeof d.cardinality === "number") error.cardinality = d.cardinality;
+  if (typeof d.max === "number") error.max = d.max;
+  if (typeof d.implicit === "boolean") error.implicit = d.implicit;
   return { error };
 }
 
@@ -473,9 +493,14 @@ function runStep(r: Runner, step: Step, index = -1): StepOutcome {
 
 // ---- the effect layer (README §9, 2.3) ----
 
+/** The selector half of an effect step, as given (absent keys stay absent). */
+function selectorOf(s: { select?: string; expect?: { max: number } }): { select?: string; expect?: { max: number } } {
+  return { ...(s.select !== undefined ? { select: s.select } : {}), ...(s.expect !== undefined ? { expect: s.expect } : {}) };
+}
+
 function runPlanEffects(r: Runner, s: PlanEffectsStep, index: number): StepOutcome {
   try {
-    const plan = planEffects(r.store, { repoId: r.repoId, docStore: r.docStore, effects: s.effects });
+    const plan = planEffects(r.store, { repoId: r.repoId, docStore: r.docStore, effects: s.effects, ...selectorOf(s) });
     r.plans.set(index, plan);
     return { plan: planOutcome(plan) };
   } catch (e) {
@@ -490,7 +515,7 @@ function receiptOutcome(receipt: Receipt): StepOutcome {
 function runExecute(r: Runner, s: ExecuteStep): StepOutcome {
   const base = { repoId: r.repoId, docStore: r.docStore, origin: s.origin, ts: s.ts };
   try {
-    if (s.plan_id !== undefined) return receiptOutcome(executeByDigest(r.store, { ...base, planId: s.plan_id, effects: s.effects }));
+    if (s.plan_id !== undefined) return receiptOutcome(executeByDigest(r.store, { ...base, planId: s.plan_id, effects: s.effects, ...selectorOf(s) }));
     const plan = s.plan ?? r.plans.get(s.plan_step!);
     if (plan === undefined) throw new Error(`execute: step ${s.plan_step} produced no plan`);
     return receiptOutcome(executePlan(r.store, { ...base, plan }));
@@ -501,7 +526,7 @@ function runExecute(r: Runner, s: ExecuteStep): StepOutcome {
 
 function runApplyEffects(r: Runner, s: ApplyEffectsStep, index: number): StepOutcome {
   try {
-    const res = applyEffects(r.store, { repoId: r.repoId, docStore: r.docStore, effects: s.effects, origin: s.origin, ts: s.ts, ...(s.dry_run !== undefined ? { dryRun: s.dry_run } : {}) });
+    const res = applyEffects(r.store, { repoId: r.repoId, docStore: r.docStore, effects: s.effects, ...selectorOf(s), origin: s.origin, ts: s.ts, ...(s.dry_run !== undefined ? { dryRun: s.dry_run } : {}) });
     if (s.dry_run) {
       r.plans.set(index, res as Plan);
       return { plan: planOutcome(res as Plan) };
@@ -789,20 +814,22 @@ export const EXTRA_STEPS: Record<string, ExtraStepValidator> = {
       problems.push(`${here}: not an object`);
       return;
     }
-    onlyKeys(body, ["effects"], here, problems);
+    onlyKeys(body, ["effects", "select", "expect"], here, problems);
     if (!Array.isArray(body.effects)) problems.push(`${here}: \`effects\` must be an array`);
+    selectorShape(body, here, problems);
   },
   execute: (body, here, problems) => {
     if (!isRecord(body)) {
       problems.push(`${here}: not an object`);
       return;
     }
-    onlyKeys(body, ["ts", "plan_step", "plan", "plan_id", "effects", "origin", "crash_after_commit"], here, problems);
+    onlyKeys(body, ["ts", "plan_step", "plan", "plan_id", "effects", "select", "expect", "origin", "crash_after_commit"], here, problems);
     requireTs(body, here, problems);
     requireOrigin(body.origin, here, problems);
     crashFlag(body, here, problems);
+    selectorShape(body, here, problems);
     const planForm = body.plan_step !== undefined || body.plan !== undefined;
-    const digestForm = body.plan_id !== undefined || body.effects !== undefined;
+    const digestForm = body.plan_id !== undefined || body.effects !== undefined || body.select !== undefined || body.expect !== undefined;
     if (planForm === digestForm) problems.push(`${here}: exactly one of \`plan_step\` / \`plan\` (the plan form) or \`plan_id\` + \`effects\` (the digest form)`);
     if (body.plan_step !== undefined && body.plan !== undefined) problems.push(`${here}: \`plan_step\` and \`plan\` are alternatives`);
     if (body.plan_step !== undefined && typeof body.plan_step !== "number") problems.push(`${here}: \`plan_step\` must be a step index`);
@@ -814,9 +841,10 @@ export const EXTRA_STEPS: Record<string, ExtraStepValidator> = {
       problems.push(`${here}: not an object`);
       return;
     }
-    onlyKeys(body, ["ts", "effects", "origin", "dry_run", "crash_after_commit"], here, problems);
+    onlyKeys(body, ["ts", "effects", "select", "expect", "origin", "dry_run", "crash_after_commit"], here, problems);
     requireTs(body, here, problems);
     if (!Array.isArray(body.effects)) problems.push(`${here}: \`effects\` must be an array`);
+    selectorShape(body, here, problems);
     requireOrigin(body.origin, here, problems);
     crashFlag(body, here, problems);
     if (body.dry_run !== undefined && typeof body.dry_run !== "boolean") problems.push(`${here}: \`dry_run\` must be a boolean`);
@@ -825,6 +853,15 @@ export const EXTRA_STEPS: Record<string, ExtraStepValidator> = {
     if (!isRecord(body) || !("value" in body) || Object.keys(body).length !== 1) problems.push(`${here}: \`canonical\` takes exactly \`value\``);
   },
 };
+
+/** README §9 (3.1): `select` is an OQX string, `expect` is `{ max: <non-negative integer> }`; `expect` needs `select`. */
+function selectorShape(body: Record<string, unknown>, here: string, problems: string[]): void {
+  if (body.select !== undefined && typeof body.select !== "string") problems.push(`${here}: \`select\` must be an OQX query string`);
+  if (body.expect !== undefined) {
+    if (!isRecord(body.expect) || typeof body.expect.max !== "number" || Object.keys(body.expect).some((k) => k !== "max")) problems.push(`${here}: \`expect\` is { max }`);
+    if (body.select === undefined) problems.push(`${here}: \`expect\` needs \`select\``);
+  }
+}
 
 function crashFlag(body: Record<string, unknown>, here: string, problems: string[]): void {
   if (body.crash_after_commit !== undefined && body.crash_after_commit !== true) problems.push(`${here}: \`crash_after_commit\` is \`true\` or absent`);

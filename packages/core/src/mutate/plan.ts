@@ -13,6 +13,7 @@ import {
   type CreateEntry, type Effect, type LoweringContext, type ResolvedEffect, type RetargetPreview,
 } from "./effects.js";
 import type { IdentityPreview } from "./opset.js";
+import { compileSelection, selectionInvalid, type EffectOrigin, type Selection } from "./select.js";
 import { MutationError } from "./tree.js";
 
 // The Plan (spec/mutate §11.4–§11.7, 2.3): the frozen, executable, digest-named
@@ -21,11 +22,13 @@ import { MutationError } from "./tree.js";
 // transaction by `commit.ts` — and `apply({ effects })` is plan + execute under
 // one writer lock and one transaction. New identities are symbolic (`$new.n`,
 // minted at execute, mapped in the receipt); a plan's identity is the sha256 of
-// the canonical JSON of its executable core.
+// the canonical JSON of its executable core. Since 3.1 (§11.8) a request may
+// carry an OQX `select` whose hits, bound to the `effects` as templates, ARE
+// the effects (`select.ts`); the frozen `selection` is the core's seventh member.
 
 export const PLAN_VERSION = 1 as const;
 /** The lowering + conflict rules version (§11.4; the `matcher_v` precedent). */
-export const PLANNER_V = "p2" as const;
+export const PLANNER_V = "p3" as const;
 
 /** A kernel op as the plan spells it on the wire: the fixture spelling (`child_ids`). */
 export type WireOp =
@@ -75,6 +78,8 @@ export interface PlanCore {
   opset: PlanOpset;
   preconditions: PlanPreconditions;
   new_ids: { symbol: string; kind: "block" | "document" }[];
+  /** (3.1, §11.8) the selector, its templates and the hits it bound — present only for a selector plan */
+  selection?: Selection;
 }
 
 export interface Plan extends PlanCore {
@@ -169,9 +174,12 @@ export function canonicalJson(v: unknown): string {
   }
 }
 
-/** The executable core of a plan — the six digested keys, nothing else. */
+/** The executable core of a plan — the six digested keys (seven with `selection`), nothing else. */
 export function planCore(p: PlanCore): PlanCore {
-  return { version: p.version, planner_v: p.planner_v, effects: p.effects, opset: p.opset, preconditions: p.preconditions, new_ids: p.new_ids };
+  return {
+    version: p.version, planner_v: p.planner_v, effects: p.effects, opset: p.opset, preconditions: p.preconditions, new_ids: p.new_ids,
+    ...(p.selection !== undefined ? { selection: p.selection } : {}),
+  };
 }
 
 /** `plan_id = hex(sha256(canonical(core)))` (§11.5). */
@@ -187,8 +195,12 @@ export interface PlanEffectsRequest {
   rootPath?: string;
   docStore?: DocStore;
   omgbaseDir?: string;
-  /** The effects as given (validated here: a shape error is `filter_invalid`). */
+  /** The effects as given (validated here: a shape error is `filter_invalid`); with `select`, the templates (§11.8). */
   effects: unknown;
+  /** (3.1) an OQX selector: its hits × `effects` (templates) are the effects planned */
+  select?: unknown;
+  /** (3.1) `{ max }`: the bound on the selection (`selection_too_large` beyond it); the implicit ceiling without it */
+  expect?: unknown;
 }
 
 /** The kernel op as the plan carries it (`childIds` → `child_ids`). */
@@ -216,7 +228,19 @@ export function kernelOp(o: WireOp): Op {
  * freeze the preconditions, digest the core. Reads only; mints no real id.
  */
 export function planEffects(store: Store, req: PlanEffectsRequest): Plan {
-  const effects: Effect[] = validateEffects(req.effects);
+  // A selector request (§11.8): the templates compile into the concrete effects
+  // — hits × templates — and the frozen `selection` joins the core; an empty
+  // selection is an empty plan (the non-empty rule of §11.1 is the templates').
+  let effects: Effect[];
+  let selection: Selection | undefined;
+  let origins: EffectOrigin[] = [];
+  if (req.select !== undefined || req.expect !== undefined) {
+    if (req.select === undefined) throw selectionInvalid("`expect` bounds a selection — pass `select` with it");
+    const compiled = compileSelection(store, req.repoId, req.select, req.expect, req.effects);
+    effects = compiled.effects;
+    selection = compiled.selection;
+    origins = compiled.origins;
+  } else effects = validateEffects(req.effects);
   const docStore = resolveDocStore(req);
   const symbols = new SymbolTable();
   return withIdMinter(symbolicMinter(symbols), () => {
@@ -231,8 +255,13 @@ export function planEffects(store: Store, req: PlanEffectsRequest): Plan {
       try {
         lowerEffect(ctx, i, e);
       } catch (err) {
-        // Every failure names the effect it arose from (the kernel's own data — `op_index`, `block` — stays).
-        if (err instanceof MutationError && err.data.effect_index === undefined) err.data = { ...err.data, effect_index: i };
+        // Every failure names the effect it arose from (the kernel's own data — `op_index`, `block` — stays);
+        // an expanded effect's names its template and the hit it was bound to as well (§11.8).
+        if (err instanceof MutationError) {
+          if (err.data.effect_index === undefined) err.data = { ...err.data, effect_index: i };
+          const origin = origins[i];
+          if (origin !== undefined && err.data.template_index === undefined) err.data = { ...err.data, template_index: origin.template_index, row: origin.row };
+        }
         throw err;
       }
     });
@@ -255,7 +284,7 @@ export function planEffects(store: Store, req: PlanEffectsRequest): Plan {
       parents: ctx.parents,
       absent_paths: ctx.absentPaths,
     };
-    const core: PlanCore = { version: PLAN_VERSION, planner_v: PLANNER_V, effects: ctx.resolved, opset, preconditions, new_ids: symbols.entries };
+    const core: PlanCore = { version: PLAN_VERSION, planner_v: PLANNER_V, effects: ctx.resolved, opset, preconditions, new_ids: symbols.entries, ...(selection !== undefined ? { selection } : {}) };
     const plan_id = planDigest(core);
 
     // The preview (not digested): the kernel results, every revision the commit
@@ -332,6 +361,14 @@ export function admitPlan(input: unknown): Plan {
     if (!Array.isArray(input.preconditions[k])) throw effectInvalid(`\`plan.preconditions.${k}\` must be an array`);
   }
   if (!Array.isArray(input.new_ids)) throw effectInvalid("`plan.new_ids` must be an array");
+  if (input.selection !== undefined) {
+    // (3.1) the optional seventh member: its shape, so the digest below covers what it says.
+    const sel = input.selection;
+    if (!isRecord(sel) || typeof sel.query !== "string" || !Array.isArray(sel.templates) || typeof sel.cardinality !== "number" || !Array.isArray(sel.identities)) {
+      throw effectInvalid("`plan.selection` is { query, expect?, templates, cardinality, identities }");
+    }
+    if (sel.expect !== undefined && (!isRecord(sel.expect) || typeof sel.expect.max !== "number")) throw effectInvalid("`plan.selection.expect` is { max }");
+  }
   if (typeof input.plan_id !== "string") throw effectInvalid("`plan.plan_id` must be a string");
   const plan = input as unknown as Plan;
   const actual = planDigest(plan);
@@ -348,11 +385,16 @@ export function executePlan(store: Store, req: ExecuteRequest & { plan: unknown 
   return underLock(req, () => executeAdmitted(store, req, plan, docStore));
 }
 
-/** `execute { plan_id, effects }` (§11.7): re-plan; the digest must equal `plan_id`, else `plan_mismatch`. */
-export function executeByDigest(store: Store, req: ExecuteRequest & { planId: string; effects: unknown }): Receipt {
+/** The selector half of a request, threaded to the planner as given (absent keys stay absent). */
+function selectorOf(req: { select?: unknown; expect?: unknown }): { select?: unknown; expect?: unknown } {
+  return { ...(req.select !== undefined ? { select: req.select } : {}), ...(req.expect !== undefined ? { expect: req.expect } : {}) };
+}
+
+/** `execute { plan_id, effects, select?, expect? }` (§11.7): re-plan (with the selector when one is given, §11.8); the digest must equal `plan_id`, else `plan_mismatch`. */
+export function executeByDigest(store: Store, req: ExecuteRequest & { planId: string; effects: unknown; select?: unknown; expect?: unknown }): Receipt {
   const docStore = resolveDocStore(req);
   return underLock(req, () => {
-    const plan = planEffects(store, { repoId: req.repoId, docStore, ...(req.omgbaseDir !== undefined ? { omgbaseDir: req.omgbaseDir } : {}), effects: req.effects });
+    const plan = planEffects(store, { repoId: req.repoId, docStore, ...(req.omgbaseDir !== undefined ? { omgbaseDir: req.omgbaseDir } : {}), effects: req.effects, ...selectorOf(req) });
     if (plan.plan_id !== req.planId) {
       throw new MutationError("plan_mismatch", "the effects or the documents they target changed since the plan was made; re-plan", { expected: req.planId, actual: plan.plan_id });
     }
@@ -367,18 +409,20 @@ export function executeByDigest(store: Store, req: ExecuteRequest & { planId: st
  * spec/cli §3.6). Plan + execute run under one lock and one transaction,
  * exactly as `applyEffects`.
  */
-export function applyEffectsDetailed(store: Store, req: ExecuteRequest & { effects: unknown; dryRun?: boolean }): { plan: Plan; receipt?: Receipt } {
+export function applyEffectsDetailed(store: Store, req: ExecuteRequest & { effects: unknown; select?: unknown; expect?: unknown; dryRun?: boolean }): { plan: Plan; receipt?: Receipt } {
   const docStore = resolveDocStore(req);
-  const planIt = (): Plan => planEffects(store, { repoId: req.repoId, docStore, ...(req.omgbaseDir !== undefined ? { omgbaseDir: req.omgbaseDir } : {}), effects: req.effects });
+  const planIt = (): Plan => planEffects(store, { repoId: req.repoId, docStore, ...(req.omgbaseDir !== undefined ? { omgbaseDir: req.omgbaseDir } : {}), effects: req.effects, ...selectorOf(req) });
   if (req.dryRun) return { plan: planIt() };
+  // One-shot `apply` with a selector must bound it (§11.8): the caller never saw the hits.
+  if (req.select !== undefined && req.expect === undefined) throw selectionInvalid("`expect.max` is required on `apply` with `select` — bound the selection, or preview it with `plan`");
   return underLock(req, () => {
     const plan = planIt();
     return { plan, receipt: executeAdmitted(store, req, plan, docStore) };
   });
 }
 
-/** `apply { effects }` (§11.7): plan + execute under one lock and one transaction; `dryRun` returns the Plan. */
-export function applyEffects(store: Store, req: ExecuteRequest & { effects: unknown; dryRun?: boolean }): Plan | Receipt {
+/** `apply { effects, select?, expect? }` (§11.7): plan + execute under one lock and one transaction; `dryRun` returns the Plan. */
+export function applyEffects(store: Store, req: ExecuteRequest & { effects: unknown; select?: unknown; expect?: unknown; dryRun?: boolean }): Plan | Receipt {
   const { plan, receipt } = applyEffectsDetailed(store, req);
   return receipt ?? plan;
 }
@@ -427,7 +471,8 @@ function underLock<T>(req: { omgbaseDir?: string }, fn: () => T): T {
  * `ingest_known { base: null }`; a moved document's revision lands at its new
  * path), tombstones — and `commitChangeset` re-validates every triple inside
  * `BEGIN IMMEDIATE`. The commit row's `ops` is the intent record
- * `canonical({ v: 1, plan_id, effects })`.
+ * `canonical({ v: 1, plan_id, effects, selection? })` (§11.8: the selector,
+ * its templates and the hits it bound ride along when the plan had one).
  */
 function executeAdmitted(store: Store, req: ExecuteRequest, plan: Plan, docStore: DocStore): Receipt {
   for (const d of plan.preconditions.docs) {
@@ -453,7 +498,7 @@ function executeAdmitted(store: Store, req: ExecuteRequest, plan: Plan, docStore
     origin: "api",
     actor: req.origin.actor,
     reason: req.origin.reason ?? null,
-    ops: canonicalJson({ v: 1, plan_id: plan.plan_id, effects: plan.effects }),
+    ops: canonicalJson({ v: 1, plan_id: plan.plan_id, effects: plan.effects, ...(plan.selection !== undefined ? { selection: plan.selection } : {}) }),
   };
   const stat = req.omgbaseDir !== undefined;
   const moved = new Map(plan.opset.moves.map((m) => [m.id, m]));

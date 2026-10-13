@@ -12,6 +12,7 @@
 //! observe outcomes, opsets, change digests, search hits — are re-shaped
 //! here, exactly as the reference's `surface-paths.ts` re-shapes them.
 
+use std::collections::HashMap;
 use std::path::Path;
 
 use omgbase_format::BlockKind;
@@ -36,9 +37,10 @@ use crate::graph::{GraphArgs, graph_neighborhood};
 use crate::history;
 use crate::links;
 use crate::paths::{reference_keyed, reference_path, root_field, storage_path};
-use crate::query::{QueryOptions, query};
+use crate::query::{QueryOptions, embed_phrases, query};
 use crate::read::{self, Resolution, ResolvedRef};
 use crate::reference::QUERY_SYNTAX;
+use crate::select::{self, SelectRequest};
 use crate::version::{BuildInfo, version_info};
 
 /// The actor every write from this surface records.
@@ -505,7 +507,12 @@ fn build_catalog() -> Vec<ToolSpec> {
             name: "apply",
             description: d::APPLY,
             input_schema: schema(
-                &[("effects", effects_schema()), ("reason", s())],
+                &[
+                    ("effects", effects_schema()),
+                    ("select", s()),
+                    ("expect", obj()),
+                    ("reason", s()),
+                ],
                 &["effects"],
                 true,
             ),
@@ -513,7 +520,15 @@ fn build_catalog() -> Vec<ToolSpec> {
         ToolSpec {
             name: "plan",
             description: d::PLAN,
-            input_schema: schema(&[("effects", effects_schema())], &["effects"], true),
+            input_schema: schema(
+                &[
+                    ("effects", effects_schema()),
+                    ("select", s()),
+                    ("expect", obj()),
+                ],
+                &["effects"],
+                true,
+            ),
         },
         ToolSpec {
             name: "execute",
@@ -523,6 +538,8 @@ fn build_catalog() -> Vec<ToolSpec> {
                     ("plan", obj()),
                     ("plan_id", s()),
                     ("effects", effects_schema()),
+                    ("select", s()),
+                    ("expect", obj()),
                     ("reason", s()),
                 ],
                 &[],
@@ -1387,30 +1404,73 @@ impl Surface {
 
     /// The `apply` tool's effects: `(plan, receipt)` on the wire — plan +
     /// execute in one write scope and one transaction; previewing, the plan
-    /// and nothing else.
+    /// and nothing else. With a `select` (§11.8, 4.1) the effects are the
+    /// templates, the selector is run and expanded under the same write
+    /// scope, and `expect.max` is required: a one-shot write must bound what
+    /// it touches (a `plan` first needs no bound).
     fn apply_effects_detailed(
         &mut self,
         repo: &str,
         root: Option<&str>,
         args: &Json,
     ) -> Result<(Json, Option<Json>)> {
-        let effects = parse_effects(&args["effects"])?;
         let reason = arg_str(args, "reason").map(str::to_owned);
         let origin = ApplyOrigin::new(&self.actor, reason.as_deref());
         let ctx = self.plan_ctx(repo);
         let preview = self.preview;
-        let (plan, receipt) = self.with_writes(root, |store, ds| {
-            if preview {
-                return Ok((store.plan_effects(&ctx, &effects, ds)?, None));
+        let (plan, receipt) = match SelectRequest::from_args(args)? {
+            Some(req) => {
+                if !preview {
+                    select::require_max(&req)?;
+                }
+                let semantic = self.selector_semantic(repo, req.select_str())?;
+                self.with_writes(root, |store, ds| {
+                    if preview {
+                        return Ok((
+                            select::plan_selected(store, ds, &ctx, &req, semantic)?,
+                            None,
+                        ));
+                    }
+                    let (plan, receipt) = store.apply_planned(&ctx, &origin, ds, |store, ds| {
+                        select::plan_selected(store, ds, &ctx, &req, semantic)
+                    })?;
+                    Ok((plan, Some(receipt)))
+                })?
             }
-            let (plan, receipt) = store.apply_effects_detailed(&ctx, &effects, &origin, ds)?;
-            Ok((plan, Some(receipt)))
-        })?;
+            None => {
+                let effects = parse_effects(&args["effects"])?;
+                self.with_writes(root, |store, ds| {
+                    if preview {
+                        return Ok((store.plan_effects(&ctx, &effects, ds)?, None));
+                    }
+                    let (plan, receipt) =
+                        store.apply_effects_detailed(&ctx, &effects, &origin, ds)?;
+                    Ok((plan, Some(receipt)))
+                })?
+            }
+        };
         self.last_plan = Some(plan.clone());
         if receipt.is_some() {
             self.notify();
         }
         Ok((plan_json(&plan), receipt.as_ref().map(receipt_json)))
+    }
+
+    /// A selector's `semantic(...)` phrases embedded ahead of the write scope
+    /// (the provider is the surface's, the expansion runs with the store
+    /// borrowed): no provider is `provider_unavailable`, an unrankable repo
+    /// is refused as the `query` tool refuses it.
+    fn selector_semantic(
+        &self,
+        repo_id: &str,
+        select: &str,
+    ) -> Result<HashMap<String, crate::context::SemanticVec>> {
+        let phrases = crate::query::collect_semantic_phrases(select);
+        if self.provider.is_none() && !phrases.is_empty() {
+            return Err(provider_unavailable());
+        }
+        self.require_rankable(repo_id, !phrases.is_empty())?;
+        embed_phrases(self.provider.as_deref(), phrases)
     }
 
     fn plan_ctx(&mut self, repo_id: &str) -> PlanContext {
@@ -1662,11 +1722,23 @@ impl Surface {
             "plan" => {
                 let (repo, root) = self.scope(args)?;
                 self.require_root(root.as_deref())?;
-                let effects = parse_effects(&args["effects"])?;
                 let ctx = self.plan_ctx(&repo);
-                let plan = self.with_writes(root.as_deref(), |store, ds| {
-                    Ok(store.plan_effects(&ctx, &effects, ds)?)
-                })?;
+                // §11.8 (4.1): with a `select` the effects are templates over
+                // the selector's hits; the Plan carries the `selection`.
+                let plan = match SelectRequest::from_args(args)? {
+                    Some(req) => {
+                        let semantic = self.selector_semantic(&repo, req.select_str())?;
+                        self.with_writes(root.as_deref(), |store, ds| {
+                            select::plan_selected(store, ds, &ctx, &req, semantic)
+                        })?
+                    }
+                    None => {
+                        let effects = parse_effects(&args["effects"])?;
+                        self.with_writes(root.as_deref(), |store, ds| {
+                            Ok(store.plan_effects(&ctx, &effects, ds)?)
+                        })?
+                    }
+                };
                 Ok(plan_json(&plan))
             }
             "execute" => {
@@ -1675,9 +1747,14 @@ impl Surface {
                 let reason = arg_str(args, "reason").map(str::to_owned);
                 let origin = ApplyOrigin::new(&self.actor, reason.as_deref());
                 let ctx = self.plan_ctx(&repo);
-                // §4 (3.1): exactly one form — the plan, or `plan_id` + `effects`.
+                // §4 (3.1): exactly one form — the plan, or `plan_id` +
+                // `effects` (+ `select` / `expect`, 4.1: the re-plan runs the
+                // selector again; a hit that came or went is `plan_mismatch`).
                 let plan_form = args.get("plan").is_some();
-                let digest_form = args.get("plan_id").is_some() || args.get("effects").is_some();
+                let digest_form = args.get("plan_id").is_some()
+                    || args.get("effects").is_some()
+                    || args.get("select").is_some()
+                    || args.get("expect").is_some();
                 if plan_form == digest_form {
                     return Err(argument_error(
                         name,
@@ -1706,11 +1783,24 @@ impl Surface {
                             &spec.input_schema,
                         ));
                     };
-                    let effects = parse_effects(effects)?;
                     let plan_id = plan_id.to_owned();
-                    self.with_writes(root.as_deref(), |store, ds| {
-                        Ok(store.execute_by_digest(&ctx, &plan_id, &effects, &origin, ds)?)
-                    })?
+                    match SelectRequest::from_args(args)? {
+                        Some(req) => {
+                            let semantic = self.selector_semantic(&repo, req.select_str())?;
+                            self.with_writes(root.as_deref(), |store, ds| {
+                                store.execute_replanned(&ctx, &plan_id, &origin, ds, |store, ds| {
+                                    select::plan_selected(store, ds, &ctx, &req, semantic)
+                                })
+                            })?
+                        }
+                        None => {
+                            let effects = parse_effects(effects)?;
+                            self.with_writes(root.as_deref(), |store, ds| {
+                                Ok(store
+                                    .execute_by_digest(&ctx, &plan_id, &effects, &origin, ds)?)
+                            })?
+                        }
+                    }
                 };
                 self.notify();
                 Ok(receipt_json(&receipt))
@@ -2676,6 +2766,176 @@ mod tests {
         }
     }
 
+    /// `spec/mutate` §11.8 at the surface (4.1): `plan` / `apply` / `execute`
+    /// take `select` + `expect`; the Plan carries the digested `selection`;
+    /// the digest form re-runs the selector; a one-shot `apply` needs
+    /// `expect.max`; `expect` without `select` is refused; zero hits commit
+    /// nothing; the refusals carry `hint: "selection"`.
+    #[test]
+    fn plan_apply_and_execute_take_a_selector() {
+        let mut s = surface();
+        for (path, content) in [
+            ("hub.md", "---\ntype: project\n---\n\n# Hub\n\nIntro.\n"),
+            (
+                "ws/alpha.md",
+                "---\ntype: workstream\nstatus: completed\nproject: hub.md\n---\n\n# Alpha\n",
+            ),
+            (
+                "ws/beta.md",
+                "---\ntype: workstream\nstatus: completed\nproject: hub.md\n---\n\n# Beta\n",
+            ),
+            (
+                "ws/gamma.md",
+                "---\ntype: workstream\nstatus: active\nproject: hub.md\n---\n\n# Gamma\n",
+            ),
+        ] {
+            let out = s.call("observe", json!({ "path": path, "content": content }));
+            assert!(!out.is_error, "{}", out.body);
+        }
+        let select = "from docs where type == \"workstream\" and status == \"completed\"";
+        let templates = json!([
+            { "op": "insert", "into": { "kind": "document", "path": { "oqx": "project" } }, "markdown": { "oqx": "\"- [\" + title + \"](\" + path + \")\"" } },
+            { "op": "set", "field": "frontmatter.rolled_up", "value": true },
+        ]);
+        let plan = s.call("plan", json!({ "select": select, "effects": templates }));
+        assert!(!plan.is_error, "{}", plan.body);
+        let plan = plan.body;
+        assert_eq!(plan["planner_v"], "p3");
+        assert_eq!(plan["effects"].as_array().map(Vec::len), Some(4));
+        assert_eq!(
+            plan["effects"][0]["into"],
+            json!({ "kind": "document", "id": "d_0", "path": "hub.md" })
+        );
+        assert_eq!(plan["effects"][0]["markdown"], "- [Alpha](/ws/alpha.md)");
+        assert_eq!(
+            plan["effects"][1]["target"],
+            json!({ "kind": "document", "id": "d_1", "path": "ws/alpha.md" })
+        );
+        assert_eq!(
+            plan["selection"],
+            json!({ "query": select, "templates": templates, "cardinality": 2, "identities": ["d_1", "d_2"] })
+        );
+        assert!(
+            plan["preview"]["diffs"]["/hub.md"]["after"]
+                .as_str()
+                .unwrap()
+                .contains("- [Beta](/ws/beta.md)")
+        );
+        // the plan form carries its selection; the receipt commits all three documents
+        let receipt = s.call(
+            "execute",
+            json!({ "plan": plan.clone(), "reason": "rollup" }),
+        );
+        assert!(!receipt.is_error, "{}", receipt.body);
+        assert_eq!(receipt.body["plan_id"], plan["plan_id"]);
+        assert_eq!(receipt.body["revisions"].as_array().map(Vec::len), Some(3));
+        let ops: String = s
+            .store()
+            .conn()
+            .query_row(
+                "SELECT ops FROM commits WHERE commit_id = ?1",
+                [receipt.body["commit"].as_str().unwrap()],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert!(ops.contains("\"selection\":{\"cardinality\":2"), "{ops}");
+        // the digest form re-runs the selector: the marked hits no longer match (the
+        // selector is the same but `rolled_up` is not in it, so they still do — a new
+        // completed workstream changes the identities → plan_mismatch)
+        let again = s.call(
+            "plan",
+            json!({ "select": select, "effects": templates, "expect": { "max": 5 } }),
+        );
+        assert!(!again.is_error, "{}", again.body);
+        assert_eq!(again.body["selection"]["expect"], json!({ "max": 5 }));
+        let out = s.call("observe", json!({ "path": "ws/delta.md", "content": "---\ntype: workstream\nstatus: completed\nproject: hub.md\n---\n\n# Delta\n" }));
+        assert!(!out.is_error);
+        let stale = s.call("execute", json!({ "plan_id": again.body["plan_id"], "select": select, "effects": templates, "expect": { "max": 5 } }));
+        assert!(stale.is_error);
+        assert_eq!(stale.body["error"], "plan_mismatch", "{}", stale.body);
+        assert_eq!(stale.body["data"]["expected"], again.body["plan_id"]);
+        // a one-shot apply needs the bound; too small a bound is selection_too_large and writes nothing
+        let unbounded = s.call("apply", json!({ "select": select, "effects": templates }));
+        assert!(unbounded.is_error);
+        assert_eq!(unbounded.body["error"], "filter_invalid");
+        assert_eq!(unbounded.body["data"]["hint"], "selection");
+        assert_eq!(
+            unbounded.body["message"],
+            "`expect.max` is required on `apply` with `select` — bound the selection, or preview it with `plan`"
+        );
+        let small = s.call(
+            "apply",
+            json!({ "select": select, "effects": templates, "expect": { "max": 2 } }),
+        );
+        assert!(small.is_error);
+        assert_eq!(small.body["error"], "selection_too_large", "{}", small.body);
+        // three hits under `max: 2`: the page is `bound + 1`, so the count is exact
+        assert_eq!(small.body["data"], json!({ "cardinality": 3, "max": 2 }));
+        let one = s.call(
+            "apply",
+            json!({ "select": select, "effects": templates, "expect": { "max": 1 } }),
+        );
+        assert_eq!(
+            one.body["data"],
+            json!({ "cardinality": ">1", "max": 1 }),
+            "{}",
+            one.body
+        );
+        // zero hits: an empty plan, a receipt with commit null
+        let none = s.call("apply", json!({ "select": "from docs where type == \"nope\"", "effects": templates, "expect": { "max": 10 } }));
+        assert!(!none.is_error, "{}", none.body);
+        assert_eq!(none.body["commit"], Json::Null);
+        assert_eq!(none.body["revisions"], json!([]));
+        let empty = s.call(
+            "plan",
+            json!({ "select": "from docs where type == \"nope\"", "effects": templates }),
+        );
+        assert_eq!(empty.body["effects"], json!([]));
+        assert_eq!(empty.body["selection"]["cardinality"], 0);
+        // `expect` without `select`; a refused selector; the argument hint tail names both
+        let e = s.call(
+            "plan",
+            json!({ "effects": templates, "expect": { "max": 1 } }),
+        );
+        assert_eq!(
+            e.body["message"],
+            "`expect` bounds a selection — pass `select` with it"
+        );
+        let e = s.call(
+            "plan",
+            json!({ "select": "from links", "effects": templates }),
+        );
+        assert_eq!(e.body["error"], "filter_invalid");
+        assert_eq!(e.body["data"]["hint"], "selection");
+        assert!(
+            e.body["message"]
+                .as_str()
+                .unwrap()
+                .starts_with("select: `links` rows")
+        );
+        let e = s.call("execute", json!({ "plan": plan, "select": select }));
+        assert!(
+            e.body["message"]
+                .as_str()
+                .unwrap()
+                .starts_with("pass exactly one of `plan` or `plan_id` + `effects`"),
+            "{}",
+            e.body
+        );
+        let e = s.call(
+            "plan",
+            json!({ "select": select, "effects": templates, "expect": 3 }),
+        );
+        assert!(
+            e.body["message"]
+                .as_str()
+                .unwrap()
+                .starts_with("`expect` must be"),
+            "{}",
+            e.body
+        );
+    }
+
     /// `spec/mutate` §11 at the surface: `plan` returns the frozen plan with
     /// a rooted preview, `execute` commits it (receipt with rooted paths),
     /// `apply` takes `ops` or `effects` (exactly one) and `effects` +
@@ -2721,20 +2981,20 @@ mod tests {
         assert_eq!(dry.body["error"], "filter_invalid", "{}", dry.body);
         assert_eq!(
             dry.body["message"],
-            "`dry_run` is no longer an argument — preview with `plan { effects: [...] }` (apply takes effects, reason?, repo?)"
+            "`dry_run` is no longer an argument — preview with `plan { effects: [...] }` (apply takes effects, expect?, reason?, repo?, select?)"
         );
         let ops = s.call("apply", json!({ "ops": [] }));
         assert_eq!(ops.body["error"], "filter_invalid");
         assert_eq!(
             ops.body["message"],
-            "`ops` is no longer an argument — `apply` takes `effects` (the kernel ops are a library/fixture contract since spec/mutate 3.0) (apply takes effects, reason?, repo?)"
+            "`ops` is no longer an argument — `apply` takes `effects` (the kernel ops are a library/fixture contract since spec/mutate 3.0) (apply takes effects, expect?, reason?, repo?, select?)"
         );
         assert_eq!(ops.body["data"]["hint"], "arguments");
         let neither = s.call("apply", json!({}));
         assert_eq!(neither.body["error"], "filter_invalid");
         assert_eq!(
             neither.body["message"],
-            "`effects` is required (apply takes effects, reason?, repo?)"
+            "`effects` is required (apply takes effects, expect?, reason?, repo?, select?)"
         );
         // The CLI's preview seam plans the same effects: the same plan, no
         // commit, nothing minted.

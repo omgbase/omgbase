@@ -3819,7 +3819,7 @@
       "expect": {
         "writes": [
           {
-            "plan_id": "56bdbf09f149795fa40020537bb64eed76bab92a149f22b91071b0d55e3bfcc4",
+            "plan_id": "f3d673ee79f5baa610ce80d6e797af79f10e14f487d58331ef43c460abc800e3",
             "commit": "c_20",
             "revisions": [
               {
@@ -3836,7 +3836,7 @@
           },
           {
             "version": 1,
-            "planner_v": "p2",
+            "planner_v": "p3",
             "effects": [
               {
                 "op": "remove",
@@ -3886,7 +3886,7 @@
               "absent_paths": []
             },
             "new_ids": [],
-            "plan_id": "4bf3701ed6030b5b829fe1f106b77c72e6427282d261000d16adda0faf6ad3b9",
+            "plan_id": "3dce7581cc67fd0d6202db950ddab1b3015eac0ead8e4ae558cfa9ddd444f23a",
             "diagnostics": [],
             "preview": {
               "results": [
@@ -4266,7 +4266,7 @@
       "expect": {
         "writes": [
           {
-            "plan_id": "6c1253a33ba9aea84bcee09901f1692eef6cf705be7e4fbef12f991c848c0218",
+            "plan_id": "677a86ca76d40a1f9501528ef22a8dd76f4c59f3634686ffffa1c043066bbc86",
             "commit": "c_20",
             "revisions": [
               {
@@ -4282,7 +4282,7 @@
             "committed": true
           },
           {
-            "plan_id": "755fb0e4d10d92fbc9db2174f998ff1a1515515e293b6f3c72b2fb980e20e3d3",
+            "plan_id": "33feb8af7a9d979fd83ca1995687dafda27c6005d068b6daea7b5c00a2dfcad7",
             "commit": "c_21",
             "revisions": [
               {
@@ -4596,7 +4596,7 @@
       "expect": {
         "writes": [
           {
-            "plan_id": "a98ab79837db504476f45d480b7b947906df68b12b5fbb3bbfec91a163d7d0b4",
+            "plan_id": "7c0ff5db2cac18e254630e49d58cae03b86d181ac335b73ebb056de858c3449f",
             "commit": "c_20",
             "revisions": [
               {
@@ -4611,7 +4611,7 @@
             "committed": true
           },
           {
-            "plan_id": "fc229142a4a911b03874d7d5dfbb7fd43832eb5b9929be1cd6b264e91ffb164b",
+            "plan_id": "5148553cd8fccb1ff09971173c9ae88de8ab07435c8f140658b7cca847331a63",
             "commit": "c_21",
             "revisions": [
               {
@@ -4908,7 +4908,7 @@
       "expect": {
         "writes": [
           {
-            "plan_id": "80dbe98152b361d64f23ba380e14cf44b0eac06439ee0cd66d87dd8df231f307",
+            "plan_id": "a57f9ecc75a060ee234b4d4d6a5ec396d6ed994268cbc09ed52ca74d5f901353",
             "commit": "c_20",
             "revisions": [
               {
@@ -4921,7 +4921,7 @@
             "committed": true
           },
           {
-            "plan_id": "2347eecf467d45bb3974f70a6b8a2be08b4df7770fb0b67f4e29de01de6a27bc",
+            "plan_id": "40ceed3ff5c21dba3ef17a0132787ede35942742002bf6474cb804626953691c",
             "commit": "c_21",
             "revisions": [
               {
@@ -5153,7 +5153,7 @@
       "expect": {
         "writes": [
           {
-            "plan_id": "de8861796e37ce17f8a6e9c93e1d00df707368d76a24d2f9806f3808b610cde2",
+            "plan_id": "fe2551462484d95594453aaf977315894af6ea102fee6dff87877425ec6ebaf2",
             "commit": "c_20",
             "revisions": [
               {
@@ -5168,7 +5168,7 @@
             "committed": true
           },
           {
-            "plan_id": "93cd7e6cadb018b8decc6dd01057aeee2cb00b255d0e16946a1b2078d6b6f07f",
+            "plan_id": "c0d0f2c812e2493e777827f1dd07e5e317224ec964f557eda38a15c3969164cf",
             "commit": "c_21",
             "revisions": [
               {
@@ -5181,7 +5181,7 @@
             "committed": true
           },
           {
-            "plan_id": "9ee66040bb422d9449b0e064f9321a7bfc9f786874b1e3d61cf5682348b73ae8",
+            "plan_id": "23784a735942c06ad1f7d8f900457cb460469288fcf0870077c0b3fdc66d709d",
             "commit": "c_22",
             "revisions": [
               {
@@ -5585,7 +5585,7 @@
       "expect": {
         "writes": [
           {
-            "plan_id": "e2b28064725901e5c3625654321e272c2824b3212049cba026de8f30268e3428",
+            "plan_id": "34f957e7ea46c607fb0d31d94a1d52cb78f9086929906c8f46c6565f73a8b53c",
             "commit": "c_20",
             "revisions": [
               {
@@ -5598,7 +5598,7 @@
             "committed": true
           },
           {
-            "plan_id": "585a97bb53b34e41b0b49481647c1879d3f4059550b4342c84b80ffc1ddc77fb",
+            "plan_id": "0f501a15bccfc2da0d13f898930bc96e1c08eee39f47eb84c64f130898568ad6",
             "commit": "c_21",
             "revisions": [
               {
@@ -5611,7 +5611,7 @@
             "committed": true
           },
           {
-            "plan_id": "681eecad9d8d1c4145339e00621a446a57c5254d59feb9fc1abc43fca7bcf9d4",
+            "plan_id": "00f88f6551f8516a7881b3da1ffdd80f2f15e8c4f9d9e3a91e88a375e93a58a1",
             "commit": "c_22",
             "revisions": [
               {
@@ -5624,7 +5624,7 @@
             "committed": true
           },
           {
-            "plan_id": "8b32b6f1398ec40cbf1b6cf02ca5b022b230e3db40c035b4dd4892a6492b6f89",
+            "plan_id": "5bdac7c7784ea74317e2493c3a27190f8a0720c59a03b863010db213bb239f64",
             "commit": "c_23",
             "revisions": [
               {
@@ -6800,7 +6800,7 @@
       "expect": {
         "writes": [
           {
-            "plan_id": "194fc3e07f85e4150edf9902505198202e2e9673abf0edc89d9bca31cad49458",
+            "plan_id": "f2b3395ed1363241f6c443d7107e5f0908a333a25e7ef35cfba9c6ad087e45ff",
             "commit": "c_20",
             "revisions": [
               {
@@ -6816,7 +6816,7 @@
             "committed": true
           },
           {
-            "plan_id": "96d16ce149c86ed34ce859f00e1af65a64de19bfa6cffc85e18660ca56d5a1dd",
+            "plan_id": "2e1a24ce80de7cefdac219612f7f9d2fc0e72b0109544c24cc73ed71ecc959a2",
             "commit": "c_21",
             "revisions": [
               {
@@ -6840,7 +6840,7 @@
             }
           },
           {
-            "plan_id": "d85f2bd6cb787bffc20c791b5073058b60071e02240be1a46b3743e005d40c6e",
+            "plan_id": "953238e3712c795375dda478e14431aafddbd5836a5b751b41d5639f2ab93063",
             "commit": "c_22",
             "revisions": [
               {
@@ -6856,7 +6856,7 @@
             "committed": true
           },
           {
-            "plan_id": "f8314a414d7b07fc424362173f36cac1e136e7acf2858eeb658adf56b7d8e44f",
+            "plan_id": "ae43b39ad3feb424971e661e5cd67d05a3d796e14b8a3741a57ff0dac761a62e",
             "commit": "c_23",
             "revisions": [
               {
@@ -7278,7 +7278,7 @@
                 "hits": 1
               }
             ],
-            "plan_id": "38ff5adcb87abded689252baeb6806c32e99f494cdd58f7a848a5761a2b49ba2",
+            "plan_id": "4c528baa958872b5e40cfb4b9f475034e37c39b9004873120754784dfc110096",
             "commit": "c_20",
             "revisions": [
               {
@@ -7361,7 +7361,7 @@
                 "hits": 8
               }
             ],
-            "plan_id": "5fea34b83cee58032005cd6381ae08735a2b299b9d9a0bb4ff2cec8e5bc2b21b",
+            "plan_id": "eaf3505b653637e13936d18389153715acd89a728584c13bda2db99d63f10b6a",
             "commit": "c_21",
             "revisions": [
               {
@@ -7428,7 +7428,7 @@
           },
           {
             "version": 1,
-            "planner_v": "p2",
+            "planner_v": "p3",
             "effects": [
               {
                 "op": "retarget",
@@ -7614,7 +7614,7 @@
                 "kind": "block"
               }
             ],
-            "plan_id": "3255281fa29d92525cf6f43e0676d875b5c70c529b1cddace3c02a9e2dc7b81f",
+            "plan_id": "c470aa28fc000534968c22410a840e815ddacda19d702b72593186facd54e82a",
             "diagnostics": [],
             "preview": {
               "results": [
@@ -8612,7 +8612,7 @@
       "expect": {
         "writes": [
           {
-            "plan_id": "3f4d138c44600aeab6774b063b8f4b674dd5c425aa71812c6693fbc2a9c3a64f",
+            "plan_id": "d29e4fb6bebedaf362c2b12b1f6e5ef2529828223fd073c289a89be30398cb51",
             "commit": "c_20",
             "revisions": [
               {
@@ -8634,7 +8634,7 @@
             "data": {}
           },
           {
-            "plan_id": "af7a40f832f92928423be937d83002b78d4fc502e141670ba4aaabf0460626f0",
+            "plan_id": "f2192a2959a88762634a582c134c6a82f7d0f032ebe0e863533aba6a60b03474",
             "commit": "c_21",
             "revisions": [
               {
@@ -9420,7 +9420,7 @@
       "expect": {
         "writes": [
           {
-            "plan_id": "a62cea1922fb7499021886b0e35640b7411b89fc87a8f5ac7a53d34ad331adf4",
+            "plan_id": "ea817014e1151f334f22414d69cbe9de04bf1432ca1caec8fffa561112cd0a9d",
             "commit": "c_20",
             "revisions": [
               {
@@ -9433,7 +9433,7 @@
             "committed": true
           },
           {
-            "plan_id": "734740fc8b79bf5a6c835ed79fd30c39b29ac723295bda1c92a3d9bff4e3e088",
+            "plan_id": "944307a11fda01a7128dff17f7cdbf50ad9bb9836f723453d70633f7c543e67c",
             "commit": "c_21",
             "revisions": [],
             "new_ids": {},
@@ -10111,7 +10111,7 @@
         "writes": [
           {
             "version": 1,
-            "planner_v": "p2",
+            "planner_v": "p3",
             "effects": [
               {
                 "op": "set",
@@ -10183,7 +10183,7 @@
                 "kind": "block"
               }
             ],
-            "plan_id": "ee09cab871301598cc551a897b89716a124c214882a7e133565fc9b199e1e3d7",
+            "plan_id": "efcc9d9f06105688805c0f9e241495f3af4ad696bcf3226cd6fecca936ab0940",
             "diagnostics": [],
             "preview": {
               "results": [
@@ -10255,7 +10255,7 @@
             }
           },
           {
-            "plan_id": "ee09cab871301598cc551a897b89716a124c214882a7e133565fc9b199e1e3d7",
+            "plan_id": "efcc9d9f06105688805c0f9e241495f3af4ad696bcf3226cd6fecca936ab0940",
             "commit": "c_20",
             "revisions": [
               {
@@ -10273,7 +10273,7 @@
             "committed": true
           },
           {
-            "plan_id": "f447571a7465a6fff3513d6bfccb3057995be1991e927326174078be97904766",
+            "plan_id": "ddb8f7e6031646700ab5fc4a7d2f9719907053197a749ef0e3ce2f9afc1b2e06",
             "commit": null,
             "revisions": [],
             "new_ids": {},
@@ -11033,7 +11033,7 @@
       "expect": {
         "writes": [
           {
-            "plan_id": "9861753450da2e29d7af5ddc076e69efa2aa99aa62b3d3ea3dd4afc992890f5c",
+            "plan_id": "8834fba0fe417ab5020b368a5a93c9ffebff7dd12adef5f0a0c4887d5af72714",
             "commit": "c_20",
             "revisions": [
               {
@@ -11260,7 +11260,7 @@
       "expect": {
         "writes": [
           {
-            "plan_id": "1b22cd447aaa575456eb6f2665222bd0d096e2a4bfb004ddcdfec45c85d21a18",
+            "plan_id": "db52886cb1557c3e7c901adfceaed33f66b79de0145b384dca7bdbbb4b170ef7",
             "commit": "c_20",
             "revisions": [
               {
@@ -11763,7 +11763,7 @@
         {
           "tool": "execute",
           "args": {
-            "plan_id": "aa6590ed0a8ca343fcae603a6b13bbf2ac8d779c5db398d450810d382f9630e3",
+            "plan_id": "ecdb4ed50d15772a8519eebdc4a839d7dff5136af0076f6b114db961e393c7da",
             "effects": [
               {
                 "op": "set",
@@ -11844,7 +11844,7 @@
         "writes": [
           {
             "version": 1,
-            "planner_v": "p2",
+            "planner_v": "p3",
             "effects": [
               {
                 "op": "set",
@@ -11909,7 +11909,7 @@
                 "kind": "block"
               }
             ],
-            "plan_id": "aa6590ed0a8ca343fcae603a6b13bbf2ac8d779c5db398d450810d382f9630e3",
+            "plan_id": "ecdb4ed50d15772a8519eebdc4a839d7dff5136af0076f6b114db961e393c7da",
             "diagnostics": [],
             "preview": {
               "results": [
@@ -11935,7 +11935,7 @@
             }
           },
           {
-            "plan_id": "aa6590ed0a8ca343fcae603a6b13bbf2ac8d779c5db398d450810d382f9630e3",
+            "plan_id": "ecdb4ed50d15772a8519eebdc4a839d7dff5136af0076f6b114db961e393c7da",
             "commit": "c_20",
             "revisions": [
               {
@@ -11950,7 +11950,7 @@
             "committed": true
           },
           {
-            "plan_id": "8bb3252c7c012d237333ffe2886c1dd0041de341f91741526171797eea6e5eb9",
+            "plan_id": "99ba9c505beabbb6aeb360493e8f8f8298cb4d6831cf4667b3f268898ab3e4ff",
             "commit": "c_21",
             "revisions": [
               {
@@ -12224,7 +12224,7 @@
         "writes": [
           {
             "version": 1,
-            "planner_v": "p2",
+            "planner_v": "p3",
             "effects": [
               {
                 "op": "set",
@@ -12289,7 +12289,7 @@
                 "kind": "block"
               }
             ],
-            "plan_id": "aa6590ed0a8ca343fcae603a6b13bbf2ac8d779c5db398d450810d382f9630e3",
+            "plan_id": "ecdb4ed50d15772a8519eebdc4a839d7dff5136af0076f6b114db961e393c7da",
             "diagnostics": [],
             "preview": {
               "results": [
@@ -12315,7 +12315,7 @@
             }
           },
           {
-            "plan_id": "f5db64ddea0f1782a1f06a3e519fb4ea4370a60deb8a63cad40a2ee2dc506381",
+            "plan_id": "64880675a04e3eb4dead0b8594205d81037cd26ee1865163142ec3839dbab9b9",
             "commit": "c_20",
             "revisions": [
               {
@@ -12679,7 +12679,7 @@
         "writes": [
           {
             "version": 1,
-            "planner_v": "p2",
+            "planner_v": "p3",
             "effects": [
               {
                 "op": "set",
@@ -12744,7 +12744,7 @@
                 "kind": "block"
               }
             ],
-            "plan_id": "aa6590ed0a8ca343fcae603a6b13bbf2ac8d779c5db398d450810d382f9630e3",
+            "plan_id": "ecdb4ed50d15772a8519eebdc4a839d7dff5136af0076f6b114db961e393c7da",
             "diagnostics": [],
             "preview": {
               "results": [
@@ -12770,7 +12770,7 @@
             }
           },
           {
-            "plan_id": "e38046825195bc770ca4b655b5d7bcdedf582b1ce70e52726076ffa9effd1e51",
+            "plan_id": "de2b1ffbe0837d04f9a152763d13a2fc00b462d5fe7fd4a21f107ea39e54f8c5",
             "commit": "c_20",
             "revisions": [
               {
@@ -12802,7 +12802,7 @@
             "retriable": false,
             "data": {
               "expected": "a73934028edf8a789ac75911476d7316aeb580698f788ccda78acfc427e2df1d",
-              "actual": "ae162a006a4fb9c338f872aa0516f277573e1af370b17cdfc4c5e81a956efc84"
+              "actual": "d24d39bb23a2eff3e53f9687844ee246c35b547b848ecd84e423fe1eb89949ba"
             }
           },
           {
@@ -12818,17 +12818,17 @@
           {
             "error": "filter_invalid",
             "retriable": false,
-            "message": "`effects` is required (apply takes effects, reason?, repo?)"
+            "message": "`effects` is required (apply takes effects, expect?, reason?, repo?, select?)"
           },
           {
             "error": "filter_invalid",
             "retriable": false,
-            "message": "`ops` is no longer an argument — `apply` takes `effects` (the kernel ops are a library/fixture contract since spec/mutate 3.0) (apply takes effects, reason?, repo?)"
+            "message": "`ops` is no longer an argument — `apply` takes `effects` (the kernel ops are a library/fixture contract since spec/mutate 3.0) (apply takes effects, expect?, reason?, repo?, select?)"
           },
           {
             "error": "filter_invalid",
             "retriable": false,
-            "message": "`dry_run` is no longer an argument — preview with `plan { effects: [...] }` (apply takes effects, reason?, repo?)"
+            "message": "`dry_run` is no longer an argument — preview with `plan { effects: [...] }` (apply takes effects, expect?, reason?, repo?, select?)"
           },
           {
             "error": "filter_invalid",
@@ -12838,7 +12838,7 @@
           {
             "error": "filter_invalid",
             "retriable": false,
-            "message": "the digest form needs both `plan_id` and `effects` (execute takes effects?, plan?, plan_id?, reason?, repo?)"
+            "message": "the digest form needs both `plan_id` and `effects` (execute takes effects?, expect?, plan?, plan_id?, reason?, repo?, select?)"
           }
         ],
         "reads": [
@@ -12970,7 +12970,7 @@
       "expect": {
         "writes": [
           {
-            "plan_id": "8b16bfbf9469c46968fb45d12288e49458902be66c31dd5021df14ebfc9e16d3",
+            "plan_id": "3586f2d6d2cf20238869c56b9da3d47fab468b11d4f140545ae357e262a87aeb",
             "commit": "c_20",
             "revisions": [
               {
@@ -13174,7 +13174,7 @@
       "expect": {
         "writes": [
           {
-            "plan_id": "154773104389185623c3778a7cf5cee27500a79e5b06cc1d1923440142f8c72b",
+            "plan_id": "4619eda85a4e06344a9a932007d4cdc7ce8a1944127dbf275cbf5e2ad0b2468d",
             "commit": "c_20",
             "revisions": [
               {
@@ -13189,7 +13189,7 @@
             "committed": true
           },
           {
-            "plan_id": "e2b28064725901e5c3625654321e272c2824b3212049cba026de8f30268e3428",
+            "plan_id": "34f957e7ea46c607fb0d31d94a1d52cb78f9086929906c8f46c6565f73a8b53c",
             "commit": "c_21",
             "revisions": [
               {
@@ -13213,7 +13213,7 @@
           },
           {
             "version": 1,
-            "planner_v": "p2",
+            "planner_v": "p3",
             "effects": [
               {
                 "op": "insert",
@@ -13268,7 +13268,7 @@
                 "kind": "block"
               }
             ],
-            "plan_id": "0fce49bc96cf4e08736f8ca18c5f88e6cffb672bc9d226b78e828c27195f45fb",
+            "plan_id": "186adc8df96eed5dc728723d75e1c4f8d7d96308d1e22613ddae0cf641a49e3a",
             "diagnostics": [],
             "preview": {
               "results": [
@@ -13295,7 +13295,7 @@
             }
           },
           {
-            "plan_id": "283c7fd15446ef1c7e19e32584f14106502b416df5b89ffaacffc20ba47f7436",
+            "plan_id": "9c937d0e7c25591dac7b60171501099dadf584369967abe4c6c21602a6ba6049",
             "commit": "c_22",
             "revisions": [
               {
@@ -13503,6 +13503,705 @@
             "cursor": 23,
             "truncated": false,
             "head": 23
+          }
+        ]
+      }
+    },
+    {
+      "name": "write-select-plan-execute",
+      "notes": "§4 plan / execute with `select` (4.1; spec/mutate §11.8): the selector binds the two lab notes (`order by path`), template 0 appends a line to the PROCESS each note studies — `into.id` is the row-scoped expression `^docs single { where type == \"process\" and slug == ^subject }` (a row value, bound by its id), `markdown` an expression over the hit — and template 1 marks the note itself (no target → the hit). The Plan's `effects` are the four concrete effects in hit order, `selection` records the query, templates and hit ids, and `plan_id` digests them (the parity gate: the Rust compiler must bind and digest identically). Then `execute` in the digest form with the same `select` re-runs the selector and commits on digest equality: one commit, four revisions. Reads: the two processes with their appended line, one marked note, the api feed.",
+      "writes": [
+        {
+          "tool": "plan",
+          "args": {
+            "select": "from docs where type == \"lab-note\" order by path",
+            "effects": [
+              {
+                "op": "insert",
+                "into": {
+                  "kind": "document",
+                  "id": {
+                    "oqx": "^docs single { where type == \"process\" and slug == ^subject }"
+                  }
+                },
+                "at": "end",
+                "markdown": {
+                  "oqx": "\"Lab notes: [\" + title + \"](\" + path + \")\""
+                }
+              },
+              {
+                "op": "set",
+                "field": "frontmatter.rolled_up",
+                "value": true
+              }
+            ]
+          }
+        },
+        {
+          "tool": "execute",
+          "args": {
+            "plan_id": "89f5dd73ba0cb9e62279305abda13fb16698cde45fb6bc85efefba9dc2912342",
+            "select": "from docs where type == \"lab-note\" order by path",
+            "effects": [
+              {
+                "op": "insert",
+                "into": {
+                  "kind": "document",
+                  "id": {
+                    "oqx": "^docs single { where type == \"process\" and slug == ^subject }"
+                  }
+                },
+                "at": "end",
+                "markdown": {
+                  "oqx": "\"Lab notes: [\" + title + \"](\" + path + \")\""
+                }
+              },
+              {
+                "op": "set",
+                "field": "frontmatter.rolled_up",
+                "value": true
+              }
+            ],
+            "reason": "interop"
+          }
+        }
+      ],
+      "reads": [
+        {
+          "tool": "docs_read",
+          "args": {
+            "path": "processes/calcination.md"
+          }
+        },
+        {
+          "tool": "docs_read",
+          "args": {
+            "path": "processes/coagulation.md"
+          }
+        },
+        {
+          "tool": "docs_read",
+          "args": {
+            "path": "lab/2026-01-notes.md"
+          }
+        },
+        {
+          "tool": "changes_since",
+          "args": {
+            "origin": "api"
+          }
+        }
+      ],
+      "expect": {
+        "writes": [
+          {
+            "version": 1,
+            "planner_v": "p3",
+            "effects": [
+              {
+                "op": "insert",
+                "into": {
+                  "kind": "document",
+                  "id": "d_7",
+                  "path": "processes/calcination.md"
+                },
+                "at": "end",
+                "markdown": "Lab notes: [Laboratory notes — January](/lab/2026-01-notes.md)"
+              },
+              {
+                "op": "set",
+                "target": {
+                  "kind": "document",
+                  "id": "d_1",
+                  "path": "lab/2026-01-notes.md"
+                },
+                "field": "frontmatter.rolled_up",
+                "value": true
+              },
+              {
+                "op": "insert",
+                "into": {
+                  "kind": "document",
+                  "id": "d_8",
+                  "path": "processes/coagulation.md"
+                },
+                "at": "end",
+                "markdown": "Lab notes: [Laboratory notes — February](/lab/2026-02-notes.md)"
+              },
+              {
+                "op": "set",
+                "target": {
+                  "kind": "document",
+                  "id": "d_2",
+                  "path": "lab/2026-02-notes.md"
+                },
+                "field": "frontmatter.rolled_up",
+                "value": true
+              }
+            ],
+            "opset": {
+              "creates": [],
+              "moves": [],
+              "tombstones": [],
+              "set_frontmatter": [
+                {
+                  "doc": "d_1",
+                  "raw": "---\ntype: lab-note\nlayer: working\ntags:\n  - lab\n  - calcination\nverified: true\nmonth: 1\nsubject: calcination\nwindow: 2026-01-01..2026-01-31\nrolled_up: true\n---\n\n"
+                },
+                {
+                  "doc": "d_2",
+                  "raw": "---\ntype: lab-note\nlayer: working\ntags:\n  - lab\n  - coagulation\nverified: true\nmonth: 2\nsubject: coagulation\nwindow: 2026-02-01..2026-02-28\nrolled_up: true\n---\n\n"
+                }
+              ],
+              "ops": [
+                {
+                  "op": "insert",
+                  "doc": "d_7",
+                  "to": {
+                    "parent": {
+                      "doc": true
+                    },
+                    "at": "end"
+                  },
+                  "markdown": "Lab notes: [Laboratory notes — January](/lab/2026-01-notes.md)"
+                },
+                {
+                  "op": "insert",
+                  "doc": "d_8",
+                  "to": {
+                    "parent": {
+                      "doc": true
+                    },
+                    "at": "end"
+                  },
+                  "markdown": "Lab notes: [Laboratory notes — February](/lab/2026-02-notes.md)"
+                }
+              ]
+            },
+            "preconditions": {
+              "docs": [
+                {
+                  "id": "d_7",
+                  "path": "processes/calcination.md",
+                  "base_revision": "r_7",
+                  "hash": "e021b85c0fe843013d75cbe71aa541c45419f7d13a4bc246baebaeff30d605d2"
+                },
+                {
+                  "id": "d_1",
+                  "path": "lab/2026-01-notes.md",
+                  "base_revision": "r_1",
+                  "hash": "4ca40f92b6dfba673bf7e8f310945285e0b778562d67267c408cc3a0074ca480"
+                },
+                {
+                  "id": "d_8",
+                  "path": "processes/coagulation.md",
+                  "base_revision": "r_8",
+                  "hash": "6f132ed7dd77232f3cb3e8c0b191ff925cc72a1b072c8a0f915bd4eb6a222215"
+                },
+                {
+                  "id": "d_2",
+                  "path": "lab/2026-02-notes.md",
+                  "base_revision": "r_2",
+                  "hash": "785e44677241bf9722ee204777ad1008a68b1360b2189550818800722ff0c7fa"
+                }
+              ],
+              "blocks": [],
+              "parents": [],
+              "absent_paths": []
+            },
+            "new_ids": [
+              {
+                "symbol": "$new.0",
+                "kind": "block"
+              },
+              {
+                "symbol": "$new.1",
+                "kind": "block"
+              }
+            ],
+            "selection": {
+              "query": "from docs where type == \"lab-note\" order by path",
+              "templates": [
+                {
+                  "op": "insert",
+                  "into": {
+                    "kind": "document",
+                    "id": {
+                      "oqx": "^docs single { where type == \"process\" and slug == ^subject }"
+                    }
+                  },
+                  "at": "end",
+                  "markdown": {
+                    "oqx": "\"Lab notes: [\" + title + \"](\" + path + \")\""
+                  }
+                },
+                {
+                  "op": "set",
+                  "field": "frontmatter.rolled_up",
+                  "value": true
+                }
+              ],
+              "cardinality": 2,
+              "identities": [
+                "d_1",
+                "d_2"
+              ]
+            },
+            "plan_id": "89f5dd73ba0cb9e62279305abda13fb16698cde45fb6bc85efefba9dc2912342",
+            "diagnostics": [],
+            "preview": {
+              "results": [
+                {
+                  "ids": [
+                    "$new.0"
+                  ]
+                },
+                {
+                  "ids": [
+                    "$new.1"
+                  ]
+                }
+              ],
+              "revisions": [
+                {
+                  "id": "d_7",
+                  "path": "/processes/calcination.md",
+                  "hash": "1e4485bd4ab9f843307b1a68d919c33117e5d93e85e559dd99e09c5cc46c603b"
+                },
+                {
+                  "id": "d_1",
+                  "path": "/lab/2026-01-notes.md",
+                  "hash": "ffdd2e0ee5c46201077fa1f045360048b39a30305942054349aa04e460bf6570"
+                },
+                {
+                  "id": "d_8",
+                  "path": "/processes/coagulation.md",
+                  "hash": "f79eab034fde42c38f8d5ece973cbfe60768f3eae60c7d831b4ed7276d94f6e6"
+                },
+                {
+                  "id": "d_2",
+                  "path": "/lab/2026-02-notes.md",
+                  "hash": "8edd4b0d870dbdb6ac30405853e5a574faa6e9acb4c703d04c6fe81decbef985"
+                }
+              ],
+              "diffs": {
+                "/processes/calcination.md": {
+                  "before": "---\ntype: process\nslug: calcination\nlayer: canon\ntradition: western\ntags: [process, fire]\nverified: true\nstage: nigredo\n---\n\n# Calcination\n\nHeating a substance in air until it is reduced to a friable powder — a *calx*.\nThe first of the twelve gates and, in practice, the first thing anyone does.\n\nelement:: fire\nreversible:: no\n\n## Procedure\n\nGrind the material, spread it thinly in an open crucible, and heat steadily\nbelow the melting point. Stir to expose fresh surface. Continue until no further\nweight is lost and no fumes come off.\n\n```text\ncrucible → grind → thin layer → moderate heat → stir → constant weight\n```\n\nThe endpoint is the constant weight, not the colour. Colour tells you which\noxide you have; weight tells you that you are finished.\n\n## What is actually happening\n\nOrganic matter burns away; metals take up oxygen. The characteristic *gain* in\nweight when calcining a metal is the observation that eventually broke the\nphlogiston theory — the calx weighs more than the metal, which a theory of\nescaping substance cannot accommodate.\n\nAlchemical practice recorded this gain for centuries without drawing the\ninference. The data were sound; the framework could not use them.\n\n## Products\n\n- calcined lead → yellow massicot, then red minium\n- calcined copper → black tenorite\n- plant matter → ash, source of the [[salt]]\n\n## Tasks\n\n- [x] Verify the weight gain on lead with a balance\n- [ ] Repeat with copper and record the colour sequence\n- [ ] Chase down the earliest recorded weight-gain measurement\n",
+                  "after": "---\ntype: process\nslug: calcination\nlayer: canon\ntradition: western\ntags: [process, fire]\nverified: true\nstage: nigredo\n---\n\n# Calcination\n\nHeating a substance in air until it is reduced to a friable powder — a *calx*.\nThe first of the twelve gates and, in practice, the first thing anyone does.\n\nelement:: fire\nreversible:: no\n\n## Procedure\n\nGrind the material, spread it thinly in an open crucible, and heat steadily\nbelow the melting point. Stir to expose fresh surface. Continue until no further\nweight is lost and no fumes come off.\n\n```text\ncrucible → grind → thin layer → moderate heat → stir → constant weight\n```\n\nThe endpoint is the constant weight, not the colour. Colour tells you which\noxide you have; weight tells you that you are finished.\n\n## What is actually happening\n\nOrganic matter burns away; metals take up oxygen. The characteristic *gain* in\nweight when calcining a metal is the observation that eventually broke the\nphlogiston theory — the calx weighs more than the metal, which a theory of\nescaping substance cannot accommodate.\n\nAlchemical practice recorded this gain for centuries without drawing the\ninference. The data were sound; the framework could not use them.\n\n## Products\n\n- calcined lead → yellow massicot, then red minium\n- calcined copper → black tenorite\n- plant matter → ash, source of the [[salt]]\n\n## Tasks\n\n- [x] Verify the weight gain on lead with a balance\n- [ ] Repeat with copper and record the colour sequence\n- [ ] Chase down the earliest recorded weight-gain measurement\n\nLab notes: [Laboratory notes — January](/lab/2026-01-notes.md)\n"
+                },
+                "/lab/2026-01-notes.md": {
+                  "before": "---\ntype: lab-note\nlayer: working\ntags: [lab, calcination]\nverified: true\nmonth: 1\nsubject: calcination\nwindow: 2026-01-01..2026-01-31\n---\n\n# Laboratory notes — January\n\nBench work on [calcination](/processes/calcination.md), chasing the weight gain.\n\noperator:: bb\nbalance:: analytical\n\n## Setup\n\nLead sheet cut into 2 g pieces, crucible pre-fired to constant weight, muffle at\n600 °C. Weighings after cooling in a desiccator.\n\n```text\ntare crucible → weigh Pb → 600C 2h → cool in desiccator → reweigh\n```\n\n## Results\n\n| Run | Pb in (g) | Calx out (g) | Change |\n|---|---|---|---|\n| 1 | 2.001 | 2.140 | +0.139 |\n| 2 | 2.004 | 2.147 | +0.143 |\n| 3 | 1.998 | 2.138 | +0.140 |\n\nConsistent gain of about 7% by mass. The colour went yellow then, on longer\nheating, red — massicot to minium, as expected.\n\nThe gain is real and reproducible on a bench with 1830s-grade equipment. Anyone\ndoing this carefully before Lavoisier had the fact in hand; what was missing was\na framework that could accept it.\n\n## Side work\n\nBurned a batch of wormwood to ash and leached it while the muffle was up to\ntemperature: 40 g dried herb gave 1.1 g of crude salt after a single\nrecrystallization. That is the [[salt]] of the tria prima, obtained in an\nafternoon, and it is easy to see why the operation carried evidential weight.\n\nSulphide colours are next — sulphur over the same metals, recording colour\nagainst stoichiometry.\n\n## Safety\n\nMercury work deferred — see [[mercury]] for the toxicity notes. Not handling it\nwithout a fume hood.\n\n## Tasks\n\n- [x] Pre-fire crucibles to constant weight\n- [x] Three replicate runs on lead\n- [x] Record the colour sequence\n- [x] Extract the salt of wormwood and weigh the yield\n- [ ] Repeat the series with copper\n- [ ] Plot mass gain against heating time\n- [ ] Tabulate the metal sulphides by colour\n",
+                  "after": "---\ntype: lab-note\nlayer: working\ntags:\n  - lab\n  - calcination\nverified: true\nmonth: 1\nsubject: calcination\nwindow: 2026-01-01..2026-01-31\nrolled_up: true\n---\n\n# Laboratory notes — January\n\nBench work on [calcination](/processes/calcination.md), chasing the weight gain.\n\noperator:: bb\nbalance:: analytical\n\n## Setup\n\nLead sheet cut into 2 g pieces, crucible pre-fired to constant weight, muffle at\n600 °C. Weighings after cooling in a desiccator.\n\n```text\ntare crucible → weigh Pb → 600C 2h → cool in desiccator → reweigh\n```\n\n## Results\n\n| Run | Pb in (g) | Calx out (g) | Change |\n|---|---|---|---|\n| 1 | 2.001 | 2.140 | +0.139 |\n| 2 | 2.004 | 2.147 | +0.143 |\n| 3 | 1.998 | 2.138 | +0.140 |\n\nConsistent gain of about 7% by mass. The colour went yellow then, on longer\nheating, red — massicot to minium, as expected.\n\nThe gain is real and reproducible on a bench with 1830s-grade equipment. Anyone\ndoing this carefully before Lavoisier had the fact in hand; what was missing was\na framework that could accept it.\n\n## Side work\n\nBurned a batch of wormwood to ash and leached it while the muffle was up to\ntemperature: 40 g dried herb gave 1.1 g of crude salt after a single\nrecrystallization. That is the [[salt]] of the tria prima, obtained in an\nafternoon, and it is easy to see why the operation carried evidential weight.\n\nSulphide colours are next — sulphur over the same metals, recording colour\nagainst stoichiometry.\n\n## Safety\n\nMercury work deferred — see [[mercury]] for the toxicity notes. Not handling it\nwithout a fume hood.\n\n## Tasks\n\n- [x] Pre-fire crucibles to constant weight\n- [x] Three replicate runs on lead\n- [x] Record the colour sequence\n- [x] Extract the salt of wormwood and weigh the yield\n- [ ] Repeat the series with copper\n- [ ] Plot mass gain against heating time\n- [ ] Tabulate the metal sulphides by colour\n"
+                },
+                "/processes/coagulation.md": {
+                  "before": "---\ntype: process\nslug: coagulation\nlayer: working\ntradition: western\ntags: [process, earth]\nverified: true\nstage: rubedo\n---\n\n# Coagulation\n\nThe *coagula* half of *solve et coagula*: bringing a dissolved substance back to\na solid, ideally more ordered than before. Crystallization, precipitation, and\nslow evaporation all count.\n\nelement:: earth\nreversible:: yes\n\n## Why it closes the work\n\nDissolution destroys structure; coagulation rebuilds it. The pair is the engine\nof the whole programme — the claim being that matter repeatedly dissolved and\nrecoagulated is progressively refined, and that enough cycles yield the\n[philosophers' stone](/substances/philosophers-stone.md).\n\nThe claim is false, but the intuition is not absurd: recrystallization *does*\npurify, and each cycle *does* leave a cleaner product. The error is extrapolating\nan asymptote into a transformation.\n\n## Practical notes\n\nSlow is better. Rapid cooling gives small, impure crystals that trap solvent;\nslow evaporation at a stable temperature gives large clean ones.\n\n```text\nsaturate hot → filter while hot → cool undisturbed → harvest → repeat on liquor\n```\n\nRepeating on the mother liquor is where the yield is. See the\n[February notes](/lab/2026-02-notes.md) for a worked run.\n\n## Tasks\n\n- [x] Recrystallize alum three times and weigh each crop\n- [ ] Measure purity gain per cycle to find where it plateaus\n",
+                  "after": "---\ntype: process\nslug: coagulation\nlayer: working\ntradition: western\ntags: [process, earth]\nverified: true\nstage: rubedo\n---\n\n# Coagulation\n\nThe *coagula* half of *solve et coagula*: bringing a dissolved substance back to\na solid, ideally more ordered than before. Crystallization, precipitation, and\nslow evaporation all count.\n\nelement:: earth\nreversible:: yes\n\n## Why it closes the work\n\nDissolution destroys structure; coagulation rebuilds it. The pair is the engine\nof the whole programme — the claim being that matter repeatedly dissolved and\nrecoagulated is progressively refined, and that enough cycles yield the\n[philosophers' stone](/substances/philosophers-stone.md).\n\nThe claim is false, but the intuition is not absurd: recrystallization *does*\npurify, and each cycle *does* leave a cleaner product. The error is extrapolating\nan asymptote into a transformation.\n\n## Practical notes\n\nSlow is better. Rapid cooling gives small, impure crystals that trap solvent;\nslow evaporation at a stable temperature gives large clean ones.\n\n```text\nsaturate hot → filter while hot → cool undisturbed → harvest → repeat on liquor\n```\n\nRepeating on the mother liquor is where the yield is. See the\n[February notes](/lab/2026-02-notes.md) for a worked run.\n\n## Tasks\n\n- [x] Recrystallize alum three times and weigh each crop\n- [ ] Measure purity gain per cycle to find where it plateaus\n\nLab notes: [Laboratory notes — February](/lab/2026-02-notes.md)\n"
+                },
+                "/lab/2026-02-notes.md": {
+                  "before": "---\ntype: lab-note\nlayer: working\ntags: [lab, coagulation]\nverified: true\nmonth: 2\nsubject: coagulation\nwindow: 2026-02-01..2026-02-28\n---\n\n# Laboratory notes — February\n\nRecrystallization series on alum, testing the \"purity gain per cycle\" claim from\n[coagulation](/processes/coagulation.md).\n\noperator:: bb\nbalance:: analytical\n\n## Method\n\nSaturate at 80 °C, filter hot through a warmed funnel, cool undisturbed to room\ntemperature overnight, harvest, then re-saturate the mother liquor.\n\n```text\nsaturate 80C → hot filter → cool overnight → harvest → repeat on liquor\n```\n\n## Results\n\n| Cycle | Crop (g) | Notes |\n|---|---|---|\n| 1 | 14.2 | large clean octahedra |\n| 2 | 5.8 | slightly smaller, still clear |\n| 3 | 1.9 | small, some inclusions |\n| 4 | 0.4 | poor, cloudy |\n\nYield falls off fast. Crystal quality is best in cycle 1 and degrades as\nimpurities concentrate in the liquor — the opposite of the alchemical expectation\nthat repeated cycling *improves* the product indefinitely.\n\nThe refinement is real but bounded, and it plateaus by cycle 3. That is exactly\nthe asymptote the tradition mistook for a trajectory.\n\n## Conclusion\n\n`solve et coagula` purifies. It does not transform. The claim in\n[the philosophers' stone](/substances/philosophers-stone.md) does not follow from\nthis bench behaviour, and would not have followed for anyone who weighed the\ncrops.\n\n## Tasks\n\n- [x] Four recrystallization cycles with weights\n- [x] Note crystal quality per cycle\n- [ ] Assay cycle 1 and cycle 4 crops for iron\n- [ ] Write the plateau result up for the coagulation note\n",
+                  "after": "---\ntype: lab-note\nlayer: working\ntags:\n  - lab\n  - coagulation\nverified: true\nmonth: 2\nsubject: coagulation\nwindow: 2026-02-01..2026-02-28\nrolled_up: true\n---\n\n# Laboratory notes — February\n\nRecrystallization series on alum, testing the \"purity gain per cycle\" claim from\n[coagulation](/processes/coagulation.md).\n\noperator:: bb\nbalance:: analytical\n\n## Method\n\nSaturate at 80 °C, filter hot through a warmed funnel, cool undisturbed to room\ntemperature overnight, harvest, then re-saturate the mother liquor.\n\n```text\nsaturate 80C → hot filter → cool overnight → harvest → repeat on liquor\n```\n\n## Results\n\n| Cycle | Crop (g) | Notes |\n|---|---|---|\n| 1 | 14.2 | large clean octahedra |\n| 2 | 5.8 | slightly smaller, still clear |\n| 3 | 1.9 | small, some inclusions |\n| 4 | 0.4 | poor, cloudy |\n\nYield falls off fast. Crystal quality is best in cycle 1 and degrades as\nimpurities concentrate in the liquor — the opposite of the alchemical expectation\nthat repeated cycling *improves* the product indefinitely.\n\nThe refinement is real but bounded, and it plateaus by cycle 3. That is exactly\nthe asymptote the tradition mistook for a trajectory.\n\n## Conclusion\n\n`solve et coagula` purifies. It does not transform. The claim in\n[the philosophers' stone](/substances/philosophers-stone.md) does not follow from\nthis bench behaviour, and would not have followed for anyone who weighed the\ncrops.\n\n## Tasks\n\n- [x] Four recrystallization cycles with weights\n- [x] Note crystal quality per cycle\n- [ ] Assay cycle 1 and cycle 4 crops for iron\n- [ ] Write the plateau result up for the coagulation note\n"
+                }
+              }
+            }
+          },
+          {
+            "plan_id": "89f5dd73ba0cb9e62279305abda13fb16698cde45fb6bc85efefba9dc2912342",
+            "commit": "c_20",
+            "revisions": [
+              {
+                "id": "d_1",
+                "path": "/lab/2026-01-notes.md",
+                "hash": "ffdd2e0ee5c46201077fa1f045360048b39a30305942054349aa04e460bf6570"
+              },
+              {
+                "id": "d_2",
+                "path": "/lab/2026-02-notes.md",
+                "hash": "8edd4b0d870dbdb6ac30405853e5a574faa6e9acb4c703d04c6fe81decbef985"
+              },
+              {
+                "id": "d_7",
+                "path": "/processes/calcination.md",
+                "hash": "1e4485bd4ab9f843307b1a68d919c33117e5d93e85e559dd99e09c5cc46c603b"
+              },
+              {
+                "id": "d_8",
+                "path": "/processes/coagulation.md",
+                "hash": "f79eab034fde42c38f8d5ece973cbfe60768f3eae60c7d831b4ed7276d94f6e6"
+              }
+            ],
+            "new_ids": {
+              "$new.0": "b_327",
+              "$new.1": "b_328"
+            },
+            "committed": true
+          }
+        ],
+        "reads": [
+          {
+            "id": "d_7",
+            "path": "/processes/calcination.md",
+            "rev": "r_22",
+            "properties": {
+              "frontmatter": {
+                "type": "process",
+                "slug": "calcination",
+                "layer": "canon",
+                "tradition": "western",
+                "tags": [
+                  "process",
+                  "fire"
+                ],
+                "verified": true,
+                "stage": "nigredo"
+              },
+              "inline": {
+                "element": "fire",
+                "reversible": "no"
+              },
+              "computed": {
+                "title": "Calcination"
+              }
+            },
+            "raw": "---\ntype: process\nslug: calcination\nlayer: canon\ntradition: western\ntags: [process, fire]\nverified: true\nstage: nigredo\n---\n\n# Calcination\n\nHeating a substance in air until it is reduced to a friable powder — a *calx*.\nThe first of the twelve gates and, in practice, the first thing anyone does.\n\nelement:: fire\nreversible:: no\n\n## Procedure\n\nGrind the material, spread it thinly in an open crucible, and heat steadily\nbelow the melting point. Stir to expose fresh surface. Continue until no further\nweight is lost and no fumes come off.\n\n```text\ncrucible → grind → thin layer → moderate heat → stir → constant weight\n```\n\nThe endpoint is the constant weight, not the colour. Colour tells you which\noxide you have; weight tells you that you are finished.\n\n## What is actually happening\n\nOrganic matter burns away; metals take up oxygen. The characteristic *gain* in\nweight when calcining a metal is the observation that eventually broke the\nphlogiston theory — the calx weighs more than the metal, which a theory of\nescaping substance cannot accommodate.\n\nAlchemical practice recorded this gain for centuries without drawing the\ninference. The data were sound; the framework could not use them.\n\n## Products\n\n- calcined lead → yellow massicot, then red minium\n- calcined copper → black tenorite\n- plant matter → ash, source of the [[salt]]\n\n## Tasks\n\n- [x] Verify the weight gain on lead with a balance\n- [ ] Repeat with copper and record the colour sequence\n- [ ] Chase down the earliest recorded weight-gain measurement\n\nLab notes: [Laboratory notes — January](/lab/2026-01-notes.md)\n"
+          },
+          {
+            "id": "d_8",
+            "path": "/processes/coagulation.md",
+            "rev": "r_23",
+            "properties": {
+              "frontmatter": {
+                "type": "process",
+                "slug": "coagulation",
+                "layer": "working",
+                "tradition": "western",
+                "tags": [
+                  "process",
+                  "earth"
+                ],
+                "verified": true,
+                "stage": "rubedo"
+              },
+              "inline": {
+                "element": "earth",
+                "reversible": "yes"
+              },
+              "computed": {
+                "title": "Coagulation"
+              }
+            },
+            "raw": "---\ntype: process\nslug: coagulation\nlayer: working\ntradition: western\ntags: [process, earth]\nverified: true\nstage: rubedo\n---\n\n# Coagulation\n\nThe *coagula* half of *solve et coagula*: bringing a dissolved substance back to\na solid, ideally more ordered than before. Crystallization, precipitation, and\nslow evaporation all count.\n\nelement:: earth\nreversible:: yes\n\n## Why it closes the work\n\nDissolution destroys structure; coagulation rebuilds it. The pair is the engine\nof the whole programme — the claim being that matter repeatedly dissolved and\nrecoagulated is progressively refined, and that enough cycles yield the\n[philosophers' stone](/substances/philosophers-stone.md).\n\nThe claim is false, but the intuition is not absurd: recrystallization *does*\npurify, and each cycle *does* leave a cleaner product. The error is extrapolating\nan asymptote into a transformation.\n\n## Practical notes\n\nSlow is better. Rapid cooling gives small, impure crystals that trap solvent;\nslow evaporation at a stable temperature gives large clean ones.\n\n```text\nsaturate hot → filter while hot → cool undisturbed → harvest → repeat on liquor\n```\n\nRepeating on the mother liquor is where the yield is. See the\n[February notes](/lab/2026-02-notes.md) for a worked run.\n\n## Tasks\n\n- [x] Recrystallize alum three times and weigh each crop\n- [ ] Measure purity gain per cycle to find where it plateaus\n\nLab notes: [Laboratory notes — February](/lab/2026-02-notes.md)\n"
+          },
+          {
+            "id": "d_1",
+            "path": "/lab/2026-01-notes.md",
+            "rev": "r_20",
+            "properties": {
+              "frontmatter": {
+                "type": "lab-note",
+                "layer": "working",
+                "tags": [
+                  "lab",
+                  "calcination"
+                ],
+                "verified": true,
+                "month": 1,
+                "subject": "calcination",
+                "window": "2026-01-01..2026-01-31",
+                "rolled_up": true
+              },
+              "inline": {
+                "operator": "bb",
+                "balance": "analytical"
+              },
+              "computed": {
+                "title": "Laboratory notes — January"
+              }
+            },
+            "raw": "---\ntype: lab-note\nlayer: working\ntags:\n  - lab\n  - calcination\nverified: true\nmonth: 1\nsubject: calcination\nwindow: 2026-01-01..2026-01-31\nrolled_up: true\n---\n\n# Laboratory notes — January\n\nBench work on [calcination](/processes/calcination.md), chasing the weight gain.\n\noperator:: bb\nbalance:: analytical\n\n## Setup\n\nLead sheet cut into 2 g pieces, crucible pre-fired to constant weight, muffle at\n600 °C. Weighings after cooling in a desiccator.\n\n```text\ntare crucible → weigh Pb → 600C 2h → cool in desiccator → reweigh\n```\n\n## Results\n\n| Run | Pb in (g) | Calx out (g) | Change |\n|---|---|---|---|\n| 1 | 2.001 | 2.140 | +0.139 |\n| 2 | 2.004 | 2.147 | +0.143 |\n| 3 | 1.998 | 2.138 | +0.140 |\n\nConsistent gain of about 7% by mass. The colour went yellow then, on longer\nheating, red — massicot to minium, as expected.\n\nThe gain is real and reproducible on a bench with 1830s-grade equipment. Anyone\ndoing this carefully before Lavoisier had the fact in hand; what was missing was\na framework that could accept it.\n\n## Side work\n\nBurned a batch of wormwood to ash and leached it while the muffle was up to\ntemperature: 40 g dried herb gave 1.1 g of crude salt after a single\nrecrystallization. That is the [[salt]] of the tria prima, obtained in an\nafternoon, and it is easy to see why the operation carried evidential weight.\n\nSulphide colours are next — sulphur over the same metals, recording colour\nagainst stoichiometry.\n\n## Safety\n\nMercury work deferred — see [[mercury]] for the toxicity notes. Not handling it\nwithout a fume hood.\n\n## Tasks\n\n- [x] Pre-fire crucibles to constant weight\n- [x] Three replicate runs on lead\n- [x] Record the colour sequence\n- [x] Extract the salt of wormwood and weigh the yield\n- [ ] Repeat the series with copper\n- [ ] Plot mass gain against heating time\n- [ ] Tabulate the metal sulphides by colour\n"
+          },
+          {
+            "digests": [
+              {
+                "commit": "c_20",
+                "seq": 21,
+                "ts": "2026-09-27T00:00:00.000Z",
+                "origin": "api",
+                "actor": "agent:mcp",
+                "revisions": [
+                  {
+                    "id": "d_1",
+                    "path": "/lab/2026-01-notes.md",
+                    "hash": "ffdd2e0ee5c46201077fa1f045360048b39a30305942054349aa04e460bf6570"
+                  },
+                  {
+                    "id": "d_2",
+                    "path": "/lab/2026-02-notes.md",
+                    "hash": "8edd4b0d870dbdb6ac30405853e5a574faa6e9acb4c703d04c6fe81decbef985"
+                  },
+                  {
+                    "id": "d_7",
+                    "path": "/processes/calcination.md",
+                    "hash": "1e4485bd4ab9f843307b1a68d919c33117e5d93e85e559dd99e09c5cc46c603b"
+                  },
+                  {
+                    "id": "d_8",
+                    "path": "/processes/coagulation.md",
+                    "hash": "f79eab034fde42c38f8d5ece973cbfe60768f3eae60c7d831b4ed7276d94f6e6"
+                  }
+                ]
+              }
+            ],
+            "cursor": 21,
+            "truncated": false,
+            "head": 21
+          }
+        ]
+      }
+    },
+    {
+      "name": "write-select-apply-max",
+      "notes": "§4 the one-shot `apply` with `select` (4.1): `expect.max` is required — the call without it is `filter_invalid { hint: \"selection\" }` and writes nothing; with `max: 1` against the two unverified substances it is `selection_too_large { cardinality: 2, max: 1 }` and writes nothing; with `max: 2` it commits the targetless `set frontmatter.layer` on both hits as one commit. Reads: a query over the two, the api feed.",
+      "writes": [
+        {
+          "tool": "apply",
+          "args": {
+            "select": "from docs where type == \"substance\" and verified == false",
+            "effects": [
+              {
+                "op": "set",
+                "field": "frontmatter.layer",
+                "value": "draft"
+              }
+            ],
+            "reason": "interop"
+          }
+        },
+        {
+          "tool": "apply",
+          "args": {
+            "select": "from docs where type == \"substance\" and verified == false",
+            "expect": {
+              "max": 1
+            },
+            "effects": [
+              {
+                "op": "set",
+                "field": "frontmatter.layer",
+                "value": "draft"
+              }
+            ],
+            "reason": "interop"
+          }
+        },
+        {
+          "tool": "apply",
+          "args": {
+            "select": "from docs where type == \"substance\" and verified == false",
+            "expect": {
+              "max": 2
+            },
+            "effects": [
+              {
+                "op": "set",
+                "field": "frontmatter.layer",
+                "value": "draft"
+              }
+            ],
+            "reason": "interop"
+          }
+        }
+      ],
+      "reads": [
+        {
+          "tool": "query",
+          "args": {
+            "query": "select layer from docs where type == \"substance\" and verified == false"
+          }
+        },
+        {
+          "tool": "changes_since",
+          "args": {
+            "origin": "api"
+          }
+        }
+      ],
+      "expect": {
+        "writes": [
+          {
+            "error": "filter_invalid",
+            "retriable": false
+          },
+          {
+            "error": "selection_too_large",
+            "retriable": false,
+            "data": {
+              "cardinality": 2,
+              "max": 1
+            }
+          },
+          {
+            "plan_id": "435a026584d3c4ab03602d2612bd8399fd01173dfcce18e3aed19bf9006c6f2a",
+            "commit": "c_20",
+            "revisions": [
+              {
+                "id": "d_12",
+                "path": "/substances/philosophers-stone.md",
+                "hash": "8fa2ec39d9a006fcb38ee424ee6e26c789b4e71420550d00169bb79cdaf23fe7"
+              },
+              {
+                "id": "d_13",
+                "path": "/substances/prima-materia.md",
+                "hash": "0848ca60721ccb50d7cd94fafd722a1cdd0d7801d34c22b0d9bb1e4d233aa3e0"
+              }
+            ],
+            "new_ids": {},
+            "committed": true
+          }
+        ],
+        "reads": [
+          {
+            "hits": [
+              {
+                "id": "d_12",
+                "path": "/substances/philosophers-stone.md",
+                "layer": "draft"
+              },
+              {
+                "id": "d_13",
+                "path": "/substances/prima-materia.md",
+                "layer": "draft"
+              }
+            ],
+            "truncated": false,
+            "cursor": null,
+            "consumer": "collect"
+          },
+          {
+            "digests": [
+              {
+                "commit": "c_20",
+                "seq": 21,
+                "ts": "2026-09-27T00:00:00.000Z",
+                "origin": "api",
+                "actor": "agent:mcp",
+                "revisions": [
+                  {
+                    "id": "d_12",
+                    "path": "/substances/philosophers-stone.md",
+                    "hash": "8fa2ec39d9a006fcb38ee424ee6e26c789b4e71420550d00169bb79cdaf23fe7"
+                  },
+                  {
+                    "id": "d_13",
+                    "path": "/substances/prima-materia.md",
+                    "hash": "0848ca60721ccb50d7cd94fafd722a1cdd0d7801d34c22b0d9bb1e4d233aa3e0"
+                  }
+                ]
+              }
+            ],
+            "cursor": 21,
+            "truncated": false,
+            "head": 21
+          }
+        ]
+      }
+    },
+    {
+      "name": "write-select-zero-hits",
+      "notes": "§4 zero hits (4.1): the `plan` of a selector matching nothing is the empty plan (`effects: []`, `selection.cardinality: 0`, `identities: []`), and the one-shot `apply` of it commits nothing — the Receipt with `commit: null`, no revision. Reads: the api feed is empty.",
+      "writes": [
+        {
+          "tool": "plan",
+          "args": {
+            "select": "from docs where type == \"nonexistent\"",
+            "effects": [
+              {
+                "op": "set",
+                "field": "frontmatter.layer",
+                "value": "draft"
+              }
+            ]
+          }
+        },
+        {
+          "tool": "apply",
+          "args": {
+            "select": "from docs where type == \"nonexistent\"",
+            "expect": {
+              "max": 10
+            },
+            "effects": [
+              {
+                "op": "set",
+                "field": "frontmatter.layer",
+                "value": "draft"
+              }
+            ],
+            "reason": "interop"
+          }
+        }
+      ],
+      "reads": [
+        {
+          "tool": "changes_since",
+          "args": {
+            "origin": "api"
+          }
+        }
+      ],
+      "expect": {
+        "writes": [
+          {
+            "version": 1,
+            "planner_v": "p3",
+            "effects": [],
+            "opset": {
+              "creates": [],
+              "moves": [],
+              "tombstones": [],
+              "set_frontmatter": [],
+              "ops": []
+            },
+            "preconditions": {
+              "docs": [],
+              "blocks": [],
+              "parents": [],
+              "absent_paths": []
+            },
+            "new_ids": [],
+            "selection": {
+              "query": "from docs where type == \"nonexistent\"",
+              "templates": [
+                {
+                  "op": "set",
+                  "field": "frontmatter.layer",
+                  "value": "draft"
+                }
+              ],
+              "cardinality": 0,
+              "identities": []
+            },
+            "plan_id": "46af5450d42ab6b0dd6216ea981edc38007166ea41b0571d068e88756eccd172",
+            "diagnostics": [],
+            "preview": {
+              "results": [],
+              "revisions": [],
+              "diffs": {}
+            }
+          },
+          {
+            "plan_id": "1e79f38ba372200252c7bdb8b211866dd407eb6e132c902333a310a797b152c0",
+            "commit": null,
+            "revisions": [],
+            "new_ids": {},
+            "committed": true
+          }
+        ],
+        "reads": [
+          {
+            "digests": [],
+            "cursor": 0,
+            "truncated": false,
+            "head": 20
           }
         ]
       }

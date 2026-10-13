@@ -454,9 +454,74 @@ pub fn collect_semantic_phrases(source: &str) -> Vec<String> {
     let Ok(q) = oqx::parse_string(source) else {
         return Vec::new();
     };
+    semantic_phrases_of(&q)
+}
+
+/// [`collect_semantic_phrases`] over a parsed tree.
+#[must_use]
+pub fn semantic_phrases_of(q: &Query) -> Vec<String> {
     let mut phrases = Phrases(Vec::new());
-    visit(Node::Query(&q), &mut phrases);
+    visit(Node::Query(q), &mut phrases);
     phrases.0
+}
+
+/// Embed the query's phrases through the provider: the vectors
+/// `semantic(...)` ranks by. Without a provider the phrases stay unembedded
+/// and the context reports `filter_invalid` ("needs an embedding provider")
+/// when one is reached — after its target check, so `semantic()` on nodes
+/// names the targets (§9; the `query` tool's pre-check is what reports
+/// `semantic_unavailable`).
+pub fn embed_phrases(
+    provider: Option<&dyn EmbeddingProvider>,
+    phrases: Vec<String>,
+) -> Result<HashMap<String, SemanticVec>> {
+    let mut semantic: HashMap<String, SemanticVec> = HashMap::new();
+    if let Some(provider) = provider.filter(|_| !phrases.is_empty()) {
+        for phrase in phrases {
+            let vec = provider
+                .embed_query(&phrase)
+                .map_err(|e| SurfaceError::new(e.code(), e.to_string()))?;
+            semantic.insert(
+                phrase,
+                SemanticVec {
+                    model: provider.model().to_owned(),
+                    vec: f32_to_blob(&vec),
+                },
+            );
+        }
+    }
+    Ok(semantic)
+}
+
+// ---- reserved projection names ----------------------------------------------------------
+
+/// The runner's own projection names (`__oqx_id`, `__oqx_path`,
+/// `__oqx_self`, `__oqx_value`) and the selector compiler's slots
+/// (`__omg_sel_<t>_<slot>`, [`crate::select`]) share two reserved prefixes.
+/// A user alias under either would shadow an injected item (`select
+/// __oqx_id: 1` overwrote the hit's `id` through 4.0) or collide with a
+/// slot, so it is refused before anything runs (4.1) — over the query's own
+/// top-level items, the only ones the runner injects beside. The reference's
+/// `reservedAlias`.
+pub const RESERVED_ALIAS_PREFIXES: [&str; 2] = ["__oqx_", "__omg_"];
+
+/// Refuse a top-level `select` alias under a reserved prefix.
+pub fn check_reserved_aliases(q: &Query) -> Result<()> {
+    for item in &q.select {
+        if let Some(prefix) = RESERVED_ALIAS_PREFIXES
+            .iter()
+            .find(|p| item.name().starts_with(*p))
+        {
+            return Err(SurfaceError::filter_invalid(
+                format!(
+                    "projection `{}` uses the reserved prefix `{prefix}` — choose another alias",
+                    item.name()
+                ),
+                "OQX",
+            ));
+        }
+    }
+    Ok(())
 }
 
 // ---- name mentions --------------------------------------------------------------------
@@ -650,33 +715,38 @@ pub fn query(
     source: &str,
     opts: QueryOptions<'_>,
 ) -> Result<OqxResult> {
-    // Without a provider the phrases stay unembedded and the context reports
-    // `filter_invalid` ("needs an embedding provider") when one is reached —
-    // after its target check, so `semantic()` on nodes names the targets
-    // (§9; the `query` tool's pre-check is what reports `semantic_unavailable`).
-    let phrases = collect_semantic_phrases(source);
-    let mut semantic: HashMap<String, SemanticVec> = HashMap::new();
-    if let Some(provider) = opts.provider.filter(|_| !phrases.is_empty()) {
-        for phrase in phrases {
-            let vec = provider
-                .embed_query(&phrase)
-                .map_err(|e| SurfaceError::new(e.code(), e.to_string()))?;
-            semantic.insert(
-                phrase,
-                SemanticVec {
-                    model: provider.model().to_owned(),
-                    vec: f32_to_blob(&vec),
-                },
-            );
-        }
-    }
+    let semantic = embed_phrases(opts.provider, collect_semantic_phrases(source))?;
     let runner = Runner {
         store,
         repo_id,
         semantic,
         planned: !opts.in_memory,
     };
-    run_inner(&runner, source, opts)
+    let raw = oqx::parse_string(source)?;
+    check_reserved_aliases(&raw)?;
+    run_parsed(&runner, &raw, opts)
+}
+
+/// Run an already-parsed query (§1.4) — the AST entry the selector compile
+/// uses (`spec/mutate` §11.8: the selector's tree with the templates' slot
+/// projections appended runs as any query does; the reserved-alias check is
+/// the source entry's, so the appended `__omg_sel_*` items pass). `semantic`
+/// holds the embedded phrases ([`embed_phrases`]); `opts.provider` is not
+/// read here.
+pub fn query_ast(
+    store: &Store,
+    repo_id: &str,
+    raw: &Query,
+    opts: QueryOptions<'_>,
+    semantic: HashMap<String, SemanticVec>,
+) -> Result<OqxResult> {
+    let runner = Runner {
+        store,
+        repo_id,
+        semantic,
+        planned: !opts.in_memory,
+    };
+    run_parsed(&runner, raw, opts)
 }
 
 /// One query's engine: a fresh store context per run (the planned path gives
@@ -737,12 +807,11 @@ impl Runner<'_> {
     }
 }
 
-fn run_inner(engine: &Runner<'_>, source: &str, opts: QueryOptions<'_>) -> Result<OqxResult> {
+fn run_parsed(engine: &Runner<'_>, raw: &Query, opts: QueryOptions<'_>) -> Result<OqxResult> {
     // The query's `select` aliases are resolved HERE, once, before the runner
     // renames/injects items (an engine evaluates the query it is given).
-    let raw = oqx::parse_string(source)?;
-    check_root_spellings(&raw)?;
-    let parsed = rewrite_query(&resolve_aliases(&raw)?);
+    check_root_spellings(raw)?;
+    let parsed = rewrite_query(&resolve_aliases(raw)?);
     let consumer = parsed.consumer;
 
     match consumer {
@@ -1040,6 +1109,31 @@ mod tests {
         // the read-time message spells out the rule
         let m = bare_target_message(Target::Blocks, None);
         assert!(m.contains("did you mean `^blocks` (the repository's blocks; one caret per enclosing block, or the absolute `0^blocks`)?"), "{m}");
+    }
+
+    #[test]
+    fn reserved_projection_names_are_refused() {
+        let parse = |s: &str| oqx::parse_string(s).unwrap();
+        let e = check_reserved_aliases(&parse("select __oqx_id: 1 from docs")).unwrap_err();
+        assert_eq!(e.code, "filter_invalid");
+        assert_eq!(
+            e.message,
+            "projection `__oqx_id` uses the reserved prefix `__oqx_` — choose another alias"
+        );
+        assert_eq!(e.data.as_ref().unwrap()["hint"], "OQX");
+        let e = check_reserved_aliases(&parse("select __omg_sel_0_x: 1 from docs")).unwrap_err();
+        assert!(
+            e.message.contains("reserved prefix `__omg_`"),
+            "{}",
+            e.message
+        );
+        // only the top level: the runner injects beside those items alone
+        assert!(
+            check_reserved_aliases(&parse(
+                "select __oqx: 1, x: nodes collect { select __oqx_y: 1 } from docs"
+            ))
+            .is_ok()
+        );
     }
 
     #[test]

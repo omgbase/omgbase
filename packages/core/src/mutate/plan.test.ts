@@ -5,7 +5,7 @@ import { ingestFile } from "../core/ingest.js";
 import { setIdMinter, sequentialMinter, mintId } from "../core/ids.js";
 import { sha256 } from "../core/hash.js";
 import { NullDocStore } from "./doc-store.js";
-import { canonicalJson, planDigest, planEffects, executePlan, executeByDigest, applyEffects, admitPlan, type Plan, type Receipt } from "./plan.js";
+import { canonicalJson, planDigest, planCore, planEffects, executePlan, executeByDigest, applyEffects, admitPlan, PLANNER_V, type Plan, type Receipt } from "./plan.js";
 import { MutationError } from "./tree.js";
 
 // spec/mutate §11.4–§11.7: the canonical JSON and the digest (the exact rules
@@ -51,12 +51,21 @@ describe("canonicalJson (§11.5)", () => {
     }
   });
 
-  it("planDigest covers exactly the six core keys", () => {
+  it("planDigest covers exactly the six core keys — seven with `selection` (3.1); the pinned vectors", () => {
     const core = { version: 1 as const, planner_v: "p1", effects: [], opset: { creates: [], moves: [], tombstones: [], set_frontmatter: [], ops: [] }, preconditions: { docs: [], blocks: [], parents: [], absent_paths: [] }, new_ids: [] };
     const digest = planDigest(core);
     expect(digest).toBe("a20097a9c319b59a1313c83e1fd494bbb3cf4895040fbbddd2866e56b16cddd3");
     expect(planDigest({ ...core, plan_id: "x", diagnostics: ["d"], preview: { results: [] } } as never)).toBe(digest);
     expect(digest).toBe(sha256(canonicalJson(core)).toString("hex"));
+    expect(planDigest({ ...core, planner_v: "p2" })).toBe("6f43b302fdcd58ca4fd182b21a5bdab6fee3787ddc074f5e7c5c23b2cc368bf9");
+    expect(planDigest({ ...core, planner_v: PLANNER_V })).toBe("5051e40051314fa855721d1943b42a9acb867c79a7b49eb4db0fd811559289ff");
+    expect(PLANNER_V).toBe("p3");
+    // `selection` present ⇒ digested (the zero-hit vector of §11.5); absent ⇒ absent, never null.
+    const selection = { query: 'from docs where type == "nope"', templates: [{ op: "set", field: "frontmatter.x", value: 1 }], cardinality: 0, identities: [] };
+    expect(planDigest({ ...core, planner_v: PLANNER_V, selection })).toBe("73ca03407ddf05fb522c4118bd5ef1e88887f8430acbaba7428378a0b1e342c9");
+    expect(planCore({ ...core, planner_v: PLANNER_V, selection })).toEqual({ ...core, planner_v: PLANNER_V, selection });
+    expect(Object.keys(planCore({ ...core, planner_v: PLANNER_V }))).not.toContain("selection");
+    expect(planDigest({ ...core, planner_v: PLANNER_V, selection: { ...selection, expect: { max: 3 } } })).not.toBe(planDigest({ ...core, planner_v: PLANNER_V, selection }));
   });
 });
 
@@ -233,5 +242,55 @@ describe("plan + execute (§11.6, §11.7)", () => {
     expect(executePlan(store, { ...base(), docStore, plan: only }).new_ids).toEqual({ "$new.0": "d_2", "$new.1": "b_11" });
     expect(() => executePlan(store, { ...base(), docStore, plan: only })).toThrow(expect.objectContaining({ code: "path_taken", data: { path: "m.md" } }));
     expect(store.db.prepare("SELECT count(*) n FROM commits WHERE origin = 'api'").get()).toEqual({ n: 2 });
+  });
+});
+
+describe("query-directed plans (§11.8)", () => {
+  const SELECT = 'from docs where type == "note"';
+  const TEMPLATES = [{ op: "set", field: "frontmatter.seen", value: true }];
+  function seed(): void {
+    ingestFile(store, repoId, "n/one.md", "---\ntype: note\n---\n\n# One\n");
+    ingestFile(store, repoId, "n/two.md", "---\ntype: note\n---\n\n# Two\n");
+  }
+
+  it("the selection is the seventh core member: digested, admitted, replayed by the plan form, recorded in the intent", () => {
+    seed();
+    const plan = planEffects(store, { ...base(), select: SELECT, effects: TEMPLATES });
+    expect(plan.selection).toEqual({ query: SELECT, templates: TEMPLATES, cardinality: 2, identities: ["d_1", "d_2"] });
+    expect(plan.effects.map((e) => (e as { target: { id: string } }).target.id)).toEqual(["d_1", "d_2"]);
+    expect(plan.plan_id).toBe(planDigest(plan));
+    expect(planDigest({ ...plan, selection: undefined } as never)).not.toBe(plan.plan_id);
+    // the plan form: a plan with a selection is admitted as it is; an edited selection is plan_mismatch; a malformed one filter_invalid
+    expect(admitPlan(plan).plan_id).toBe(plan.plan_id);
+    expect(() => admitPlan({ ...plan, selection: { ...plan.selection, identities: ["d_1"] } })).toThrow(expect.objectContaining({ code: "plan_mismatch" }));
+    expect(() => admitPlan({ ...plan, selection: { query: SELECT } })).toThrow(expect.objectContaining({ code: "filter_invalid" }));
+    expect(() => admitPlan({ ...plan, selection: { ...plan.selection, expect: { max: "3" } } })).toThrow(expect.objectContaining({ code: "filter_invalid" }));
+    const receipt = executePlan(store, { ...base(), plan });
+    expect(receipt).toMatchObject({ plan_id: plan.plan_id, commit: "c_3", revisions: [{ id: "d_1" }, { id: "d_2" }] });
+    const row = store.db.prepare("SELECT ops FROM commits WHERE commit_id = 'c_3'").get() as { ops: string };
+    expect(row.ops).toBe(canonicalJson({ v: 1, plan_id: plan.plan_id, effects: plan.effects, selection: plan.selection }));
+  });
+
+  it("the digest form takes select + expect: equal state commits, a vanished hit is plan_mismatch; expect rides in the digest", () => {
+    seed();
+    const plan = planEffects(store, { ...base(), select: SELECT, expect: { max: 5 }, effects: TEMPLATES });
+    expect(plan.selection!.expect).toEqual({ max: 5 });
+    expect(() => executeByDigest(store, { ...base(), planId: plan.plan_id, select: SELECT, effects: TEMPLATES })).toThrow(expect.objectContaining({ code: "plan_mismatch" }));
+    expect(() => executeByDigest(store, { ...base(), planId: plan.plan_id, select: SELECT, expect: { max: 6 }, effects: TEMPLATES })).toThrow(expect.objectContaining({ code: "plan_mismatch" }));
+    const r = executeByDigest(store, { ...base(), planId: plan.plan_id, select: SELECT, expect: { max: 5 }, effects: TEMPLATES });
+    expect(r.commit).toBe("c_3");
+    // replanned after the write: the hits are the same documents but their triples moved → the digest form is a mismatch now
+    expect(() => executeByDigest(store, { ...base(), planId: plan.plan_id, select: SELECT, expect: { max: 5 }, effects: TEMPLATES })).toThrow(expect.objectContaining({ code: "plan_mismatch" }));
+  });
+
+  it("one-shot apply with select needs expect.max; a request without select is byte-identical to 3.0's", () => {
+    seed();
+    expect(() => applyEffects(store, { ...base(), select: SELECT, effects: TEMPLATES })).toThrow(expect.objectContaining({ code: "filter_invalid", data: expect.objectContaining({ hint: "selection" }) }));
+    expect(() => planEffects(store, { ...base(), expect: { max: 1 }, effects: TEMPLATES })).toThrow(expect.objectContaining({ code: "filter_invalid", data: expect.objectContaining({ hint: "selection" }) }));
+    const r = applyEffects(store, { ...base(), select: SELECT, expect: { max: 2 }, effects: TEMPLATES }) as Receipt;
+    expect(r.commit).toBe("c_3");
+    const plain = planEffects(store, { ...base(), effects: SLICE1 });
+    expect(plain).not.toHaveProperty("selection");
+    expect(canonicalJson(planCore(plain))).not.toContain("selection");
   });
 });

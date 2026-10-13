@@ -16,7 +16,9 @@ export type ErrorCode =
   | "provider_unavailable" | "embedder_failed" | "sync_conflict" | "repo_not_found" | "node_not_editable" | "seed_unresolved"
   | "block_not_container"
   // spec/mutate §8 (2.3): the effect planner's and `execute`'s own codes
-  | "stale_plan" | "plan_not_convergent" | "conflicting_effects" | "unsupported_plan_version" | "plan_mismatch";
+  | "stale_plan" | "plan_not_convergent" | "conflicting_effects" | "unsupported_plan_version" | "plan_mismatch"
+  // spec/mutate §11.8 (3.1): the selector binding's codes
+  | "ambiguous_target" | "selection_too_large";
 
 export interface EngineErrorBody {
   error: ErrorCode;

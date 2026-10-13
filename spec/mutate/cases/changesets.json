@@ -3375,7 +3375,7 @@
           ],
           {
             "receipt": {
-              "plan_id": "8c42d8c469c30c98e73294e1d448fe119099579acb99487e31c153407bb05a48",
+              "plan_id": "06c0a0abfaf4958af5f0116d86d24b4d1a2dd5f86a62bc73c92316432bac0e14",
               "commit": "c_1",
               "revisions": [
                 {
@@ -3479,7 +3479,7 @@
             "actor": "agent:test",
             "reason": "fixture",
             "checkpoint_id": null,
-            "ops": "{\"effects\":[{\"field\":\"content\",\"op\":\"set\",\"target\":{\"id\":\"d_0\",\"kind\":\"document\",\"path\":\"a.md\"},\"value\":\"---\\ntitle: Added\\n---\\n\\n# Title\\n\\nFirst paragraph.\\n\\nSecond paragraph.\\n\"}],\"plan_id\":\"8c42d8c469c30c98e73294e1d448fe119099579acb99487e31c153407bb05a48\",\"v\":1}"
+            "ops": "{\"effects\":[{\"field\":\"content\",\"op\":\"set\",\"target\":{\"id\":\"d_0\",\"kind\":\"document\",\"path\":\"a.md\"},\"value\":\"---\\ntitle: Added\\n---\\n\\n# Title\\n\\nFirst paragraph.\\n\\nSecond paragraph.\\n\"}],\"plan_id\":\"06c0a0abfaf4958af5f0116d86d24b4d1a2dd5f86a62bc73c92316432bac0e14\",\"v\":1}"
           }
         ],
         "revisions": [
@@ -3618,7 +3618,7 @@
           ],
           {
             "receipt": {
-              "plan_id": "cc798c025398c9b0033fdb636758472bd55ebc44015a14e2dfc31a4d29917c20",
+              "plan_id": "db59bf27423ff538f77f38089a689024c4ecedc06886b4168bcfc079f7825575",
               "commit": "c_1",
               "revisions": [
                 {
@@ -3705,7 +3705,7 @@
             "actor": "agent:test",
             "reason": "fixture",
             "checkpoint_id": null,
-            "ops": "{\"effects\":[{\"field\":\"content\",\"op\":\"set\",\"target\":{\"id\":\"d_0\",\"kind\":\"document\",\"path\":\"a.md\"},\"value\":\"---\\ntitle: Changed\\n---\\n\\n# Body\\n\\nText.\\n\"}],\"plan_id\":\"cc798c025398c9b0033fdb636758472bd55ebc44015a14e2dfc31a4d29917c20\",\"v\":1}"
+            "ops": "{\"effects\":[{\"field\":\"content\",\"op\":\"set\",\"target\":{\"id\":\"d_0\",\"kind\":\"document\",\"path\":\"a.md\"},\"value\":\"---\\ntitle: Changed\\n---\\n\\n# Body\\n\\nText.\\n\"}],\"plan_id\":\"db59bf27423ff538f77f38089a689024c4ecedc06886b4168bcfc079f7825575\",\"v\":1}"
           }
         ],
         "revisions": [
@@ -3826,7 +3826,7 @@
           ],
           {
             "receipt": {
-              "plan_id": "deb8c0671c5496665ebc7629c2ecde7c3350d78a8cc6369ce814b28171241094",
+              "plan_id": "9cf2ff9b9d66c1e39cc44f9187b448300003e23b0055806fdd52b7ae976c5f2c",
               "commit": "c_1",
               "revisions": [
                 {
@@ -3913,7 +3913,7 @@
             "actor": "agent:test",
             "reason": "fixture",
             "checkpoint_id": null,
-            "ops": "{\"effects\":[{\"field\":\"content\",\"op\":\"set\",\"target\":{\"id\":\"d_0\",\"kind\":\"document\",\"path\":\"a.md\"},\"value\":\"# Body\\n\\nText.\\n\"}],\"plan_id\":\"deb8c0671c5496665ebc7629c2ecde7c3350d78a8cc6369ce814b28171241094\",\"v\":1}"
+            "ops": "{\"effects\":[{\"field\":\"content\",\"op\":\"set\",\"target\":{\"id\":\"d_0\",\"kind\":\"document\",\"path\":\"a.md\"},\"value\":\"# Body\\n\\nText.\\n\"}],\"plan_id\":\"9cf2ff9b9d66c1e39cc44f9187b448300003e23b0055806fdd52b7ae976c5f2c\",\"v\":1}"
           }
         ],
         "revisions": [

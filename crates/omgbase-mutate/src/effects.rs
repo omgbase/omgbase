@@ -19,7 +19,9 @@
 //! (shortest round-trip digits; exponential outside `1e-7 ≤ |x| < 1e21`).
 //!
 //! `plan_id = hex(sha256(canonical({ version, planner_v, effects, opset,
-//! preconditions, new_ids })))`.
+//! preconditions, new_ids, selection? })))` — `selection` (3.1, §11.8) is
+//! the seventh core member when the plan was derived from an OQX selector,
+//! absent otherwise.
 
 use std::collections::{BTreeMap, HashMap};
 
@@ -35,9 +37,12 @@ use crate::opset::{OpsetSummary, PlanDisposition};
 pub const PLAN_VERSION: u64 = 1;
 /// The lowering + conflict rules version pinned in `spec/mutate` §11 (the
 /// `matcher_v` precedent): `p2` since mutate 3.0 — a `create` is a loaded
-/// document whose block symbols are in `new_ids`, so every plan with a
-/// `create` digests differently from `p1`.
-pub const PLANNER_V: &str = "p2";
+/// document whose block symbols are in `new_ids`; `p3` since mutate 3.1 —
+/// the core may carry a `selection` (§11.8), so every plan digest changes.
+pub const PLANNER_V: &str = "p3";
+/// §11.8: the most hits a selector may yield when the request names no
+/// `expect.max` — a selection past it is `selection_too_large`.
+pub const SELECTION_CEILING: usize = 1000;
 
 // ---- `$new.<n>` ---------------------------------------------------------------------------
 
@@ -2102,6 +2107,107 @@ impl PlanPreview {
     }
 }
 
+/// §11.8 `selection.expect`: the caller's bound on the selection.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SelectionExpect {
+    pub max: usize,
+}
+
+/// §11.8 `selection` (3.1): the seventh member of the digested core when
+/// the plan was derived from an OQX selector — the query and the templates
+/// **as given** (an `{ oqx }` slot intact; never the rewritten tree), the
+/// bound, the hit count and the hit ids in result order. A hit that appears
+/// or vanishes between `plan` and `execute` changes `identities`, so the
+/// digest form is `plan_mismatch` without re-running anything but the plan.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Selection {
+    pub query: String,
+    pub expect: Option<SelectionExpect>,
+    pub templates: Vec<Value>,
+    pub cardinality: usize,
+    pub identities: Vec<String>,
+}
+
+impl Selection {
+    /// `{ query, expect?, templates, cardinality, identities }`; `expect`
+    /// absent when none was given.
+    #[must_use]
+    pub fn to_json(&self) -> Value {
+        let mut m = Map::new();
+        m.insert("query".to_owned(), json!(self.query));
+        if let Some(e) = &self.expect {
+            m.insert("expect".to_owned(), json!({ "max": e.max }));
+        }
+        m.insert("templates".to_owned(), Value::Array(self.templates.clone()));
+        m.insert("cardinality".to_owned(), json!(self.cardinality));
+        m.insert("identities".to_owned(), json!(self.identities));
+        Value::Object(m)
+    }
+
+    pub fn from_json(v: &Value) -> std::result::Result<Self, String> {
+        let obj = v.as_object().ok_or("`plan.selection` must be an object")?;
+        only_keys(
+            obj,
+            &["query", "expect", "templates", "cardinality", "identities"],
+            "`plan.selection`",
+        )?;
+        let query = obj
+            .get("query")
+            .and_then(Value::as_str)
+            .ok_or("`plan.selection.query` must be a string")?
+            .to_owned();
+        let expect = match obj.get("expect") {
+            None => None,
+            Some(e) => {
+                let e = e
+                    .as_object()
+                    .ok_or("`plan.selection.expect` must be { max }")?;
+                only_keys(e, &["max"], "`plan.selection.expect`")?;
+                let max = e
+                    .get("max")
+                    .and_then(Value::as_u64)
+                    .and_then(|n| usize::try_from(n).ok())
+                    .ok_or("`plan.selection.expect.max` must be a non-negative integer")?;
+                Some(SelectionExpect { max })
+            }
+        };
+        let templates = obj
+            .get("templates")
+            .and_then(Value::as_array)
+            .filter(|t| !t.is_empty())
+            .ok_or("`plan.selection.templates` must be a non-empty array")?
+            .clone();
+        let cardinality = obj
+            .get("cardinality")
+            .and_then(Value::as_u64)
+            .and_then(|n| usize::try_from(n).ok())
+            .ok_or("`plan.selection.cardinality` must be a non-negative integer")?;
+        let identities = obj
+            .get("identities")
+            .and_then(Value::as_array)
+            .ok_or("`plan.selection.identities` must be an array of ids")?
+            .iter()
+            .map(|id| {
+                id.as_str()
+                    .map(str::to_owned)
+                    .ok_or_else(|| "`plan.selection.identities[]` must be strings".to_owned())
+            })
+            .collect::<std::result::Result<Vec<_>, String>>()?;
+        if identities.len() != cardinality {
+            return Err(
+                "`plan.selection.cardinality` must equal the number of identities".to_owned(),
+            );
+        }
+        Ok(Self {
+            query,
+            expect,
+            templates,
+            cardinality,
+            identities,
+        })
+    }
+}
+
 /// §11.4 `Plan`.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Plan {
@@ -2113,6 +2219,8 @@ pub struct Plan {
     pub opset: PlanOpset,
     pub preconditions: Preconditions,
     pub new_ids: Vec<NewId>,
+    /// §11.8: present when the plan was derived from a selector (digested).
+    pub selection: Option<Selection>,
     pub plan_id: String,
     pub diagnostics: Vec<String>,
     pub preview: Option<PlanPreview>,
@@ -2129,17 +2237,22 @@ pub enum Admission {
 
 impl Plan {
     /// The executable core the digest covers: `{ version, planner_v,
-    /// effects, opset, preconditions, new_ids }`.
+    /// effects, opset, preconditions, new_ids, selection? }` (`selection`
+    /// only when present, §11.8).
     #[must_use]
     pub fn core_json(&self) -> Value {
-        json!({
+        let mut core = json!({
             "version": self.version,
             "planner_v": self.planner_v,
             "effects": self.effects.iter().map(Effect::to_json).collect::<Vec<_>>(),
             "opset": self.opset.to_json(),
             "preconditions": self.preconditions.to_json(),
             "new_ids": self.new_ids.iter().map(|n| json!({ "symbol": n.symbol, "kind": n.kind.as_str() })).collect::<Vec<_>>(),
-        })
+        });
+        if let Some(sel) = &self.selection {
+            core["selection"] = sel.to_json();
+        }
+        core
     }
 
     /// `hex(sha256(canonical(core)))`.
@@ -2240,6 +2353,13 @@ impl Plan {
             None | Some(Value::Null) => None,
             Some(p) => Some(PlanPreview::from_json(p)?),
         };
+        // §11.8: an optional member — `null` is not "absent" (a value stays a
+        // value under the canonical rules, so a client's `selection: null`
+        // would digest differently from the planner's omission).
+        let selection = match obj.get("selection") {
+            None => None,
+            Some(s) => Some(Selection::from_json(s)?),
+        };
         Ok(Plan {
             version,
             planner_v,
@@ -2247,6 +2367,7 @@ impl Plan {
             opset,
             preconditions,
             new_ids,
+            selection,
             plan_id,
             diagnostics,
             preview,
@@ -2308,14 +2429,19 @@ pub fn plan_mismatch_replanned(expected: &str, actual: &str) -> MutationError {
 }
 
 /// The intent record an effect-driven commit stores in `commits.ops`
-/// (ADR-003): `canonical({ v: 1, plan_id, effects })`.
+/// (ADR-003): `canonical({ v: 1, plan_id, effects, selection? })` —
+/// `selection` only when the plan carried one (§11.8).
 #[must_use]
-pub fn intent_record(plan_id: &str, effects: &[Effect]) -> String {
-    canonical_json(&json!({
+pub fn intent_record(plan_id: &str, effects: &[Effect], selection: Option<&Selection>) -> String {
+    let mut record = json!({
         "v": 1,
         "plan_id": plan_id,
         "effects": effects.iter().map(Effect::to_json).collect::<Vec<_>>(),
-    }))
+    });
+    if let Some(sel) = selection {
+        record["selection"] = sel.to_json();
+    }
+    canonical_json(&record)
 }
 
 #[cfg(test)]
@@ -2665,6 +2791,13 @@ mod tests {
         current["planner_v"] = json!(PLANNER_V);
         assert_eq!(
             digest(&current),
+            "5051e40051314fa855721d1943b42a9acb867c79a7b49eb4db0fd811559289ff"
+        );
+        // `p2` (the 3.0 vector) is still pinned: a plan echoed from a 3.0
+        // planner is `plan_mismatch`, not a shape error.
+        current["planner_v"] = json!("p2");
+        assert_eq!(
+            digest(&current),
             "6f43b302fdcd58ca4fd182b21a5bdab6fee3787ddc074f5e7c5c23b2cc368bf9"
         );
         // The spec's number vector (`effects::digest-vectors`), byte for byte.
@@ -2710,6 +2843,7 @@ mod tests {
                 symbol: "$new.0".into(),
                 kind: NewIdKind::Block,
             }],
+            selection: None,
             plan_id: String::new(),
             diagnostics: vec![],
             preview: Some(PlanPreview::default()),
@@ -2757,11 +2891,116 @@ mod tests {
             }
             other => panic!("{other:?}"),
         }
-        let record = intent_record(&plan.plan_id, &plan.effects);
+        let record = intent_record(&plan.plan_id, &plan.effects, None);
         assert!(
             record.starts_with("{\"effects\":[{\"field\":\"frontmatter.status\""),
             "{record}"
         );
         assert!(record.ends_with("\"v\":1}"));
+        assert!(!record.contains("selection"));
+    }
+
+    /// §11.8: `selection` is the seventh core member — digested when present,
+    /// omitted (never `null`) when absent; `expect` likewise inside it; the
+    /// intent record carries it; admission reads it back and refuses a
+    /// malformed one as a shape error.
+    #[test]
+    fn a_selection_is_digested_and_round_trips() {
+        let selection = Selection {
+            query: "from docs where status == \"completed\"".into(),
+            expect: Some(SelectionExpect { max: 10 }),
+            templates: vec![
+                json!({ "op": "set", "field": "frontmatter.rolled_up", "value": true }),
+            ],
+            cardinality: 2,
+            identities: vec!["d_1".into(), "d_0".into()],
+        };
+        assert_eq!(
+            canonical_json(&selection.to_json()),
+            "{\"cardinality\":2,\"expect\":{\"max\":10},\"identities\":[\"d_1\",\"d_0\"],\"query\":\"from docs where status == \\\"completed\\\"\",\"templates\":[{\"field\":\"frontmatter.rolled_up\",\"op\":\"set\",\"value\":true}]}"
+        );
+        let without = Selection {
+            expect: None,
+            ..selection.clone()
+        };
+        assert!(!canonical_json(&without.to_json()).contains("expect"));
+        assert_eq!(
+            Selection::from_json(&selection.to_json()),
+            Ok(selection.clone())
+        );
+        assert_eq!(Selection::from_json(&without.to_json()), Ok(without));
+        let bare = Plan {
+            version: PLAN_VERSION,
+            planner_v: PLANNER_V.into(),
+            effects: vec![],
+            opset: PlanOpset::default(),
+            preconditions: Preconditions::default(),
+            new_ids: vec![],
+            selection: None,
+            plan_id: String::new(),
+            diagnostics: vec![],
+            preview: None,
+        }
+        .sealed();
+        let selected = Plan {
+            selection: Some(selection.clone()),
+            ..bare.clone()
+        }
+        .sealed();
+        assert_ne!(bare.plan_id, selected.plan_id);
+        assert!(bare.core_json().get("selection").is_none());
+        assert_eq!(selected.core_json()["selection"], selection.to_json());
+        // The spec's vector (`effects::select-zero-hits-commit-null`): the empty
+        // p3 core with a zero-hit selection, `expect` absent.
+        let zero = Plan {
+            selection: Some(Selection {
+                query: "from docs where type == \"nope\"".into(),
+                expect: None,
+                templates: vec![json!({ "op": "set", "field": "frontmatter.x", "value": 1 })],
+                cardinality: 0,
+                identities: vec![],
+            }),
+            ..bare.clone()
+        }
+        .sealed();
+        assert_eq!(
+            zero.plan_id,
+            "73ca03407ddf05fb522c4118bd5ef1e88887f8430acbaba7428378a0b1e342c9"
+        );
+        // The record and the wire form carry it; admission reads it back.
+        let record = intent_record(
+            &selected.plan_id,
+            &selected.effects,
+            selected.selection.as_ref(),
+        );
+        assert!(
+            record.contains("\"selection\":{\"cardinality\":2"),
+            "{record}"
+        );
+        let wire = selected.to_json(false);
+        assert_eq!(Plan::admit(&wire).unwrap(), selected);
+        // Tampering with the identities is a digest mismatch; a malformed
+        // member is a shape error; `null` is not an omission.
+        let mut tampered = wire.clone();
+        tampered["selection"]["identities"] = json!(["d_1", "d_2"]);
+        assert!(matches!(
+            Plan::admit(&tampered),
+            Err(Admission::Refused(m)) if m.code == ErrorCode::PlanMismatch
+        ));
+        let mut short = wire.clone();
+        short["selection"]["identities"] = json!(["d_1"]);
+        assert!(matches!(
+            Plan::admit(&short),
+            Err(Admission::Invalid(m)) if m.contains("cardinality")
+        ));
+        let mut nulled = wire.clone();
+        nulled["selection"] = Value::Null;
+        assert!(matches!(Plan::admit(&nulled), Err(Admission::Invalid(_))));
+        let mut empty = wire;
+        empty["selection"]["templates"] = json!([]);
+        assert!(matches!(
+            Plan::admit(&empty),
+            Err(Admission::Invalid(m)) if m.contains("templates")
+        ));
     }
 }

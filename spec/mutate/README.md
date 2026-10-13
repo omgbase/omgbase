@@ -15,8 +15,8 @@ It is owned by neither implementation.
 
 | Implementation | Where | Role |
 | --- | --- | --- |
-| `@omgbase/core` (TypeScript, npm) | `packages/core/src/mutate/{tree,ops,apply,commit,materialize,load,known-ids,macros,docs,doc-store,plan-update,lower,opset,effects,plan}.ts` | **Reference.** Mutation decisions land here first. |
-| `omgbase-mutate` (Rust, crates.io) | `crates/omgbase-mutate` | Conformance-first port: the working tree, the six ops, the splice renderer, the lowering and the opset, the effect vocabulary with its conflict rules, lowering and canonical JSON (pure); `omgbase-store` loads, commits, plans and runs the macros, the document operations and the effect planner's `plan`/`execute`. |
+| `@omgbase/core` (TypeScript, npm) | `packages/core/src/mutate/{tree,ops,apply,commit,materialize,load,known-ids,macros,docs,doc-store,plan-update,lower,opset,effects,plan,select}.ts` | **Reference.** Mutation decisions land here first. |
+| `omgbase-mutate` (Rust, crates.io) | `crates/omgbase-mutate` | Conformance-first port: the working tree, the six ops, the splice renderer, the lowering and the opset, the effect vocabulary with its conflict rules, lowering and canonical JSON (pure); `omgbase-store` loads, commits, plans and runs the macros, the document operations and the effect planner's `plan`/`execute`; `omgbase-surface` compiles a selector (§11.8) over its OQX binding. |
 
 The spec is two artifacts, versioned together by `VERSION`: this `README.md`
 and `cases/*.json`. **When prose and fixtures disagree, the fixtures win**,
@@ -560,14 +560,21 @@ Codes: `stale_expectation`, `block_missing`, `target_missing`,
 `plan_not_convergent`, `sync_conflict`, and (2.3, §11) `conflicting_effects`
 (`{ effects: [i, j], focus: { kind, target, field? }, retriable: false }`),
 `unsupported_plan_version` (`{ version, supported: [1] }`), `plan_mismatch`
-(`{ expected, actual }`, two plan ids). A malformed effect or plan object is
-the surface's argument-shape error `filter_invalid { reason, hint:
-"arguments" }` (`spec/surface` §4), thrown by the planner. Fixtures compare
-the code and the listed data fields (`op_index`, `block`, `current`,
-`retriable`, and since 2.3 `effect_index` — the index of the effect a
-planner error arose from, added to every error the planner or its kernel
-ops raise — `effects`, `focus`, `symbol`, `version`, `supported`,
-`expected`, `actual`); messages are not pinned.
+(`{ expected, actual }`, two plan ids), and (3.1, §11.8) `ambiguous_target`
+(`{ effect_index, template_index, row: { id, path }, expression, count }` —
+a target expression yielded a list), `selection_too_large` (`{ cardinality,
+max, implicit? }` — more hits than the bound). A malformed effect or plan
+object is the surface's argument-shape error `filter_invalid { reason, hint:
+"arguments" }` (`spec/surface` §4), thrown by the planner; a selector or a
+template the admission pass of §11.8 refuses, or a slot whose expression
+yielded a value of the wrong type, is `filter_invalid { reason, hint:
+"selection" }`. Fixtures compare the code and the listed data fields
+(`op_index`, `block`, `current`, `retriable`, and since 2.3 `effect_index` —
+the index of the effect a planner error arose from, added to every error the
+planner or its kernel ops raise — `effects`, `focus`, `symbol`, `version`,
+`supported`, `expected`, `actual`, and since 3.1 `template_index`, `row`,
+`expression`, `count`, `cardinality`, `max`, `implicit`); messages are not
+pinned.
 
 ## 9. Fixtures
 
@@ -583,10 +590,10 @@ so file-CAS and the written bytes are checkable) and these steps:
                 "before_apply"?: [ <observe|disk steps run between plan and apply> ] } }    // `apply` commits the content as `apply_effects [set content]` (3.0)
 { "disk":     { "path": "a.md", "source": "…" } }                                   // a human edit landed on disk
 { "materialize": {} }                                                                // replay every pending row (spec/store §5.7) → { materialized: [path…] }
-{ "plan_effects": { "effects": [...] } }                                             // §11.6 `plan` → { plan } (minus preview) or the error
-{ "execute": { "ts": "…", "plan_step": 1 | "plan": {...} | "plan_id": "…", "effects": [...],
-               "origin": {...}, "crash_after_commit"?: true } }                     // §11.7 → { receipt } or the error
-{ "apply_effects": { "ts": "…", "effects": [...], "origin": {...}, "dry_run"?: true } } // §11.7 → { plan } (dry run) | { receipt } | the error
+{ "plan_effects": { "effects": [...], "select"?: "<OQX>", "expect"?: { "max": n } } }  // §11.6 `plan` → { plan } (minus preview) or the error; `select` makes the effects templates (§11.8)
+{ "execute": { "ts": "…", "plan_step": 1 | "plan": {...} | "plan_id": "…", "effects": [...], "select"?: "…", "expect"?: {...},
+               "origin": {...}, "crash_after_commit"?: true } }                     // §11.7 → { receipt } or the error (the digest form re-runs the selector)
+{ "apply_effects": { "ts": "…", "effects": [...], "select"?: "…", "expect"?: {...}, "origin": {...}, "dry_run"?: true } } // §11.7 → { plan } (dry run) | { receipt } | the error
 { "canonical": { "value": <any JSON> } }                                             // §11.5 → { json: canonical(value), digest: hex(sha256(json)) }
 ```
 
@@ -655,7 +662,18 @@ vectors; 3.0 adds writing INTO a created document — `create-then-insert-
 into-new-doc`, `create-then-insert-into-new-section`, `create-then-move-
 block-into-new-doc`, `create-then-set-markdown-on-new-block`, `create-then-
 remove-new-block` — and `insert-into-symbol-before-create-is-target-missing`;
-39 cases).
+3.1 adds the selector cases of §11.8, every name prefixed `select-`: the
+rollup of two workstreams into one hub through `plan` → `execute`, the
+cross-hit scalar collision and its identical twin that dedupes, zero hits,
+`expect.max` exceeded, an expression target yielding nothing and one
+yielding a list, a `blocks` and a `nodes` selection, a user alias read by a
+template, `order by` fixing the insert order, each admission refusal
+(`offset`, `values`, `links`, `distinct`, `count`, `follow`, a body `from`, a
+`retarget` template, a reserved alias, `{ oqx }` out of a slot), `apply`
+without `expect.max`, a `create` per hit, the digest form of `execute`
+refusing a plan whose selection gained a hit, and the p3 digest vectors;
+the ceiling case is a reference unit test — a thousand-document fixture
+would dwarf the suite).
 
 **Runner checks**: every committed document satisfies `spec/store` §8 I1–I8
 and `files[path] == reconstruct(doc)` — a path a `disk` step rewrote, or one
@@ -901,7 +919,9 @@ contract (§4), the opset the planner's internal result (§7), the document
 operations the effect builders (§6); a `create` is a document the planner
 adopts, so a plan may write into the document it creates (`$new.k` names its
 blocks too), and the plan's `preview` carries `identity` and `retarget`
-(§11.4). `planner_v` is `"p2"`.
+(§11.4). Since 3.1 a request may be **query-directed** (§11.8): an OQX
+`select` whose hits, bound to the `effects` as templates, are the effects
+planned, frozen with the plan as its `selection`. `planner_v` is `"p3"`.
 
 ### 11.1 Vocabulary
 
@@ -1007,7 +1027,7 @@ is not retriable. `execute` does no analysis.
 ```text
 Plan {
   version: 1,                    // the plan schema
-  planner_v: "p2",               // the lowering + conflict rules above (the matcher_v precedent; "p1" through 2.3)
+  planner_v: "p3",               // the lowering + conflict rules above (the matcher_v precedent; "p1" through 2.3, "p2" through 3.0)
   effects: [ResolvedEffect],     // in order, duplicates dropped: document targets as { kind: "document", id, path }
                                  // (path in the storage form; a $new.n document keeps its symbol with the create's path),
                                  // defaults made explicit (insert/move `at: "end"`, move `retarget_inbound: true`,
@@ -1022,6 +1042,8 @@ Plan {
                    parents: [{ doc, parent: <block id> | null, parent_children_hash }],   // the caller's destination-parent pins
                    absent_paths: [path] },                         // create paths and move destinations, in effect order
   new_ids: [{ symbol: "$new.n", kind: "block" | "document" }],      // in allocation order (below)
+  selection?: { query, expect?: { max }, templates: [Template], cardinality, identities: [id] },   // (3.1, §11.8) only for a
+                                                                   // query-directed plan: the selector and templates AS GIVEN, the hits
   plan_id: "<64 hex>",           // §11.5
   diagnostics: [string],         // the dropped duplicates
   preview?: { results: [{ ids }], revisions: [{ id, path, hash }], diffs: { path: { before, after } },
@@ -1059,8 +1081,10 @@ move two entries (`from → ""`, `to` filled with the moved document's bytes
 
 `plan_id = hex(sha256(utf8(canonical(core))))` over the **core** — exactly the
 six members `{ version, planner_v, effects, opset, preconditions, new_ids }`
-of the plan (`plan_id`, `diagnostics`, `preview` excluded). `canonical(v)`
-is the JSON text of `v` under these rules, each exact:
+of the plan, plus `selection` when the plan is query-directed (3.1, §11.8:
+present ⇒ digested, absent ⇒ absent — never `null`); `plan_id`,
+`diagnostics`, `preview` excluded. `canonical(v)` is the JSON text of `v`
+under these rules, each exact:
 
 1. No whitespace anywhere.
 2. **Objects**: members sorted by the **UTF-8 bytes** of their keys
@@ -1093,17 +1117,25 @@ is the JSON text of `v` under these rules, each exact:
 6. `true`, `false`, `null`.
 
 The `canonical` fixture step (§9) pins the text and its digest; the empty
-core `{ version: 1, planner_v: "p2", effects: [], opset: { every key [] },
+core `{ version: 1, planner_v: "p3", effects: [], opset: { every key [] },
 preconditions: { every key [] }, new_ids: [] }` digests to
-`6f43b302fdcd58ca4fd182b21a5bdab6fee3787ddc074f5e7c5c23b2cc368bf9` (the
-2.3 core, `planner_v: "p1"`, to
-`a20097a9c319b59a1313c83e1fd494bbb3cf4895040fbbddd2866e56b16cddd3`; both are
-`effects::digest-vectors`).
+`5051e40051314fa855721d1943b42a9acb867c79a7b49eb4db0fd811559289ff` (the
+3.0 core, `planner_v: "p2"`, to
+`6f43b302fdcd58ca4fd182b21a5bdab6fee3787ddc074f5e7c5c23b2cc368bf9`, the 2.3
+core, `planner_v: "p1"`, to
+`a20097a9c319b59a1313c83e1fd494bbb3cf4895040fbbddd2866e56b16cddd3`), and the
+empty core with the selection `{ query: "from docs where type == \"nope\"",
+templates: [{ op: "set", field: "frontmatter.x", value: 1 }], cardinality:
+0, identities: [] }` — a zero-hit plan — to
+`73ca03407ddf05fb522c4118bd5ef1e88887f8430acbaba7428378a0b1e342c9` (all four
+are `effects::digest-vectors`; `select-zero-hits-commit-null`'s plan carries
+the last one as its `plan_id`).
 
 ### 11.6 `plan`
 
-`plan(effects)` → Plan. Validate the shape (§11.1), then under the symbolic
-minter lower each effect in order (§11.3: resolve, classify — dropping or
+`plan(effects, select?, expect?)` → Plan. Validate the shape (§11.1) — or,
+with `select`, compile the selection into the concrete effects (§11.8) —
+then under the symbolic minter lower each effect in order (§11.3: resolve, classify — dropping or
 refusing — then lower), render every loaded document (§4 steps 1–4),
 compose the creates, freeze the preconditions, digest the core. Reads only;
 no id minted; no lock needed beyond the host's (the triples are re-checked
@@ -1138,8 +1170,9 @@ effects in this order — per move `move_path` (the inbound edges read now),
 the rendered documents' `ingest_known`s in load order (a created document's
 with no triple, a moved document's at its new path), per tombstone
 `tombstone { pool: false }` — and commit them as §4 step 5 with `ops` = the
-intent record `canonical({ v: 1, plan_id, effects })` (the plan's resolved
-effects, symbols kept). The transaction re-validates every triple
+intent record `canonical({ v: 1, plan_id, effects, selection? })` (the
+plan's resolved effects, symbols kept; the plan's `selection` when it has
+one, 3.1). The transaction re-validates every triple
 authoritatively and the created paths' absence (the `Absent` guard:
 `path_taken`); a document that moved meanwhile is `stale_plan` with nothing
 minted of `c`/`d`/`r`. Replaying an executed plan fails the same way
@@ -1160,20 +1193,162 @@ document's blocks included, 3.0 — every `b` of the request is a symbol), the
 `i`-th document symbol to the `i`-th `d` minted inside the transaction (the
 created documents' ingests, in load order = effect order).
 
-**`execute { plan_id, effects }`** (the digest form): plan the effects as
-§11.6 (under the lock); the new plan's `plan_id` ≠ the given one →
+**`execute { plan_id, effects, select?, expect? }`** (the digest form): plan
+the effects as §11.6 (under the lock; with the selector when one is given,
+3.1 — the selection runs again and its `identities` are digested, so a hit
+that appeared or vanished is a mismatch, `effects::execute-digest-form-with-
+select-new-hit-mismatch`); the new plan's `plan_id` ≠ the given one →
 `plan_mismatch { expected, actual }` — the effects differ, or the documents
 they target moved (§10: the digest form cannot tell which); equal → commit
 it as above.
 
-**`apply { effects }`**: plan + commit under one writer lock and one
-transaction → the Receipt; the preview is `plan`'s (2.3's `dry_run` on
-`apply` returned the Plan; retired with `spec/surface` 4.0 — a dry run is a
-`plan`). The one-shot and `plan` → `execute` produce the identical store
-projection (`effects::set-fm-and-insert-section-*`).
+**`apply { effects, select?, expect? }`**: plan + commit under one writer
+lock and one transaction → the Receipt; the preview is `plan`'s (2.3's
+`dry_run` on `apply` returned the Plan; retired with `spec/surface` 4.0 — a
+dry run is a `plan`). With `select`, `expect.max` is **required** (§11.8:
+the one-shot never saw the hits; missing → `filter_invalid { hint:
+"selection" }`, `effects::select-apply-requires-max`). The one-shot and
+`plan` → `execute` produce the identical store projection
+(`effects::set-fm-and-insert-section-*`).
+
+### 11.8 Selectors (query-directed planning, 3.1)
+
+A request may name its targets by a **selector** instead of listing them:
+
+```text
+Request  { select: "<OQX>", expect?: { max }, effects: [Template] }
+Template an Effect of §11.1 (not `retarget`) whose target may be ABSENT and whose target or value
+         members may be the directive { "oqx": "<expression>" } — evaluated per hit, in the hit's row scope
+```
+
+The selector is a producer of effects, never a second write engine: the
+hits, bound to the templates, ARE the effects, and the plan that comes out
+is the Plan of §11.4 — fully concrete, executable without OQX — plus the
+frozen `selection`. Both engines compile it the same way (the reference's
+`mutate/select.ts`, the port's `omgbase-surface::select`):
+
+**1. Static admission** (before anything is read; every refusal
+`filter_invalid { reason, hint: "selection" }`). `select` is a non-empty
+string that parses; `expect` is absent or `{ max: <non-negative integer> }`
+and nothing else; `effects` is a non-empty array of templates. The
+selector's consumer is `collect`, `first` or `single` (`count` / `exists` /
+`none` yield no rows); no `values`; its source is a bare root ∈ `docs`,
+`blocks`, `nodes` (`links` rows have no effect target; any other source is
+refused); no `follow`, no body `from` (a hit must be a row of the root),
+no `offset` (a selection is a set, not a page), no `distinct` (first
+release); `limit N` and `order by` are allowed — the order of the hits is
+the order of the effects. A user alias beginning `__omg_` or `__oqx_` is
+refused (the prefixes are the engines'; the runner refuses them on every
+query since 3.1 — `select __oqx_id: 1` overwrote the hit's `id` before). Each
+template: `op` ∈ `create insert set unset move remove split merge`
+(`retarget` is not row-shaped); the directive `{ oqx }` is legal only in the
+**slots** — the primary target (`target` of set/unset/split and of a
+document `move`/`remove`; `into` of insert; `targets[k]` of a block
+`move`/`remove`/`merge`) as `{ kind, id: { oqx } }` or `{ kind: "document",
+path: { oqx } }` (one of the two), the secondary target `into` of a block
+`move`, `at.before` / `at.after`, the strings `markdown`, `to`, `path`,
+`separator`, the JSON `value`, and each top-level value of a `create`'s
+`frontmatter`; anywhere else (`expect`, `field`, a nested value of a target,
+…) it is refused. A `move` is the block form when it has `into`, else the
+document form; a `remove` with neither `target` nor `targets` is the
+document form over `docs` and the block form otherwise; `merge` must name
+`targets`. The template's shape is then checked as §11.1 with a probe value
+in every slot (the absent primary target as the hit's kind), so an unknown
+key, a bad `field` or a target kind the op does not take is the ordinary
+`filter_invalid { hint: "arguments" }` naming `effects[i]` — `insert into`
+over `nodes`, a block-form `remove` over `docs`, fail here. Each expression
+is parsed through the wrapper `select __omg_x: <e> from docs` (OQX has no
+expression entry point) and must be exactly one select item over an
+otherwise empty query — a top-level item is scope depth 1, the hit's, so `^`
+and `N^` validate as they will evaluate; a parse error's offset is shifted
+back by the wrapper's 16 code points.
+
+**2. The rewrite.** One projection item per slot, named
+`__omg_sel_<t>_<slot>` (`t` the template index; `slot` ∈ `target`, `into`,
+`targets_<k>`, `at`, `markdown`, `to`, `path`, `separator`, `value`,
+`fm_<j>`), is appended **after the user's items** on the RAW parsed tree —
+nothing is spliced as text — so the runner's alias resolution inlines a user
+alias a template reads (`select hub: project …` with `{ oqx: "hub" }` reads
+`project`). The worked example — template 0 `insert into { document, path:
+{ oqx: "project" } } at end, markdown: { oqx: "\"- completed: [\" + title +
+\"](\" + path + \")\"" }`, template 1 `set frontmatter.rolled_up = true` on
+the hit (all literal, no slot) — over `from docs where type == "workstream"
+and status == "completed"` prints as
+
+```text
+select __omg_sel_0_into: project, __omg_sel_0_markdown: "- completed: [" + title + "](" + path + ")" from docs where type == "workstream" and status == "completed"
+```
+
+The runner injects `id` / `path` as for any query; every hit carries both
+for all three roots (`path` in the reference form). The query runs ONCE,
+over one snapshot, with the page bound `max + 1` (`SELECTION_CEILING + 1 =
+1001` without `expect`): more hits than the bound → `selection_too_large {
+cardinality: ">" + bound | n, max: bound, implicit?: true }` (`">" + bound`
+when the page was truncated, the exact count when it was `bound + 1`;
+`implicit` present only under the ceiling) — the engine never plans a
+partial set. An OQX error from the run is the runner's `filter_invalid`.
+
+**3. Row → effects.** Hits in result order × templates in order: the
+expanded effect `k = h·T + t` for hit `h` of `H` and template `t` of `T`
+(`H` = `cardinality`). Per template, a copy with every slot filled:
+
+| Template member | Binding |
+| --- | --- |
+| primary target absent | the hit by root: `{ kind: "document", id }` / `{ kind: "block", id }` / `{ kind: "node", id }` (`targets` → the one-element list); the op's kind table still applies |
+| `{ kind, id: { oqx } }` / `{ kind: "document", path: { oqx } }` / `targets[k].id: { oqx }` | the value: a **string** → that `id` / `path` as written; a **row** (the runner renders a row value as `{ id, path }`, spec/surface §1.4 — `^docs single { … }`) → `{ kind, id: <its id> }` whichever member held the expression; absent (`null`, no value) or `[]` → `target_missing { effect_index: k, template_index: t, row: { id, path }, expression }`; a list of one or more → `ambiguous_target { …, count }` (a one-element list is still a list: strictness over guessing); anything else → `filter_invalid { hint: "selection" }`. Then the resolution of §11.3 as for a literal target (`doc_missing`, `block_missing`, `parent_missing`) |
+| `at.before` / `at.after`, `markdown`, `to`, `path`, `separator` | must be a string; absent or another type → `filter_invalid { hint: "selection" }` |
+| `value`, `frontmatter.<k>` | any JSON as the runner rendered it (a row value lands as the record `{ id, path }`, a list as a list, a number by OQX's own arithmetic — nothing is re-formatted); absent → `filter_invalid { hint: "selection" }` ("use `unset`" for a `value`) |
+
+The expanded list is validated (§11.1, `effects[k]`) and lowered by the
+loop of §11.3 **unchanged** — the conflict rules give the cross-hit
+semantics for free: two hits writing one scalar with equal canonical values
+dedupe with a diagnostic (`effect <k> … duplicates effect <j>; dropped`),
+with different values → `conflicting_effects`; inserts into one shared
+document are positional and sequential in hit order. Every error raised
+from an expanded effect — binding, resolution, kernel, conflict — carries
+`effect_index: k` plus `template_index: t` and `row: { id, path }` (the hit's
+identity as the envelope spells it; `conflicting_effects` names the later
+effect's). Zero hits → an empty expansion: a plan with `effects: []`, an
+empty opset, no preconditions, `selection.cardinality: 0` (the non-empty
+rule of §11.1 is the templates'); `execute` / `apply` of it commit nothing
+(`commit: null`, the zero-effects rule of §11.7).
+
+**4. The `selection`.** `{ query: "<select as given>", expect?: { max },
+templates: [<as given>], cardinality: H, identities: [<hit ids, result
+order>] }` — the seventh digested member of the core (§11.5), recorded **as
+given** (the intent; no printing-parity requirement across engines), `expect`
+present only when given. `admitPlan` (§11.7) accepts the member with that
+shape; `execute { plan }` replays the opset without OQX; the digest form
+re-runs the selector (above). The intent record gains it (§11.7).
+
+**Deferred** (first release): `distinct`; provenance analysis of a template
+that writes through a computed value (caught by the typing and resolution
+above); sugar for the common shapes.
 
 ## Decisions
 
+- 2026-10-13, mutate 3.1: query-directed planning (§11.8; ADR-021's
+  follow-on, Brendan's decisions of 2026-10-13): `plan` / `apply` / `execute`
+  take `select` + `expect` and the `effects` become templates; a template
+  without a target writes to the hit, a target or value may be an
+  expression over the row resolving to exactly one identity (`{ oqx }`);
+  the selector compiles into one OQX projection by an AST rewrite (one
+  snapshot, one evaluation; OQX stays pure, `spec/oqx` unchanged) and the
+  concrete expansion feeds the existing lowering loop, so cross-hit
+  collisions are the conflict rules' (`conflicting_effects`); `expect.max`
+  bounds the selection and is required on the one-shot `apply`; a
+  truncated selection refuses (`selection_too_large`); `selection` is the
+  seventh digested member and `planner_v` is `"p3"` (every `plan_id`
+  changes). Two codes (§8), the three effect steps gain `select` / `expect`
+  (§9). Additive — a request without `select` is unchanged — so a minor.
+  Decided against the design brief in one place: a `path: { oqx }` whose
+  expression yields a row binds the row's `id` (a rendered row's `path` is
+  the reference form; the id is the identity). Fixtures: `effects.json` 39 →
+  63 (the `select-*` cases and the p3 vectors); every plan-bearing case of
+  `effects.json` / `plan.json` and every intent record of `changesets.json`
+  / `docs.json` / `materialize.json` re-digested under p3 (the design's
+  estimate missed the `docs` and `materialize` suites' intent records);
+  nothing else moved.
 - 2026-10-12, mutate 3.0: the effects are the only public write request
   (ADR-021's retirement release, with `spec/surface` 4.0 and `spec/cli` 4.0;
   no deprecation period — no client of the retired inputs existed). Removed:

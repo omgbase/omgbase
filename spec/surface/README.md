@@ -484,7 +484,12 @@ cursor, consumer, count?, exists?, none?, values? }`:
   data.path`)" / "projection `id` collides with the hit envelope — alias it
   (`i: data.id`)" (`query-errors::envelope-collision-*`; checked over the
   resolved select items before the engine runs, the first offending item in
-  select order; `values` mode has no envelope and is exempt). Before batch 3
+  select order; `values` mode has no envelope and is exempt). A projection
+  alias beginning `__oqx_` or `__omg_` is refused before the engine runs too
+  (4.1: "projection `__oqx_id` uses the reserved prefix `__oqx_` — choose
+  another alias"; the prefixes name the runner's injected items and the
+  selector compiler's slots, `spec/mutate` §11.8 — through 4.0 `select
+  __oqx_id: 1` overwrote the hit's `id`). Before batch 3
   of 3.0 the envelope was `$id`/`$path` and `id`/`path` were ordinary
   columns; before 3.0 the envelope spelled `id`/`path` while the language
   rejected the bare names and a user column named `id` or `path` overwrote
@@ -678,7 +683,9 @@ Served as MCP over stdio; every result is one text content item holding
 JSON; an error result has `isError: true` and the envelope `{ error: <code>,
 message, data?, retriable }`. Codes: `spec/mutate` §8 plus `filter_invalid`
 (OQX and cursor errors, `data: { reason, hint }`; argument-shape errors,
-`data: { reason, hint: "arguments" }`), `budget_exceeded`,
+`data: { reason, hint: "arguments" }`; a selector or template the
+query-directed admission refuses, `data: { reason, hint: "selection" }`,
+4.1), `budget_exceeded`,
 `provider_unavailable` (3.0; `semantic_unavailable` before), `embedder_failed`,
 `repo_not_found`, `ambiguous_heading`, `block_not_container` (3.0),
 `conflicted_document`, `ambiguous_locator`, `seed_unresolved`. Any other
@@ -807,9 +814,9 @@ identity consequences the 3.x result carried are the Plan's
 | `graph` | `roots[]`, `degrees? = 1`, `direction? = both`, `predicate?`, `select?[]`, `max_documents? = 200` | `{ roots, degrees, direction, documents: [{ id, path, degree, frontier, ...select }], links: [{ id, doc_id, block_id, via_id, dst_id, dst_path, uri, dst_kind, predicate, provenance, anchor, field }], frontier: [{ id, path, degree }], truncated, queries }` — compiled to `follow distinct out_links collect { from dst }` / `follow distinct in_links collect { from doc }` (the link rows walked to the documents at their other end, §1.2; `follow doc.out`/`doc.in` before the 3.0 follow-up) with `depth = degrees + 1` (≤ 8, so `degrees` clamps to 7 and the result reports the clamped value), roots depth 0; documents ordered bytewise by path (§9); a link row carries the `links` target's fields under their own names (§1.2, 3.0 — `edges[]` until the name pass, and before that a rename table spelled `src`/`dst`/`dst_uri`/`src_field`); an `id`/`path` selection collapses onto the envelope key exactly as a `query` hit's does, any other bare name is its own column (deduped by suffix) and an expression is `sel_<i>` — a `graph` selection can never overwrite the envelope |
 | `blocks_search` | `q`, `limit?` | `spec/search` §1.3 (`text_search` before 3.0): `{ hits: [{ id (the block), doc_id, path (reference form), type, text, score }], truncated }` |
 | `blocks_resolve` | `query`, `limit?` | `spec/search` §4 (`resolve` before 3.0; vector fused when a provider exists): `[{ id, locator, preview, evidence }]`, the `locator`'s path half in the reference form (`/a.md#paragraph[2]`) |
-| `apply` | `effects[]`, `reason?` | (4.0) `spec/mutate` §11.7: plan + execute under the one tool-call lock and one transaction → the Receipt `{ plan_id, commit, revisions: [{ id, path, hash }], new_ids: { "$new.n": id }, committed: true }` — `revisions[].path` in the reference form, `hash` the document's hash after the commit (the rendered bytes' sha256; the same shape as a `changes_since` revision, §3), `commit` `null` when the plan had nothing to commit; `origin.actor = "agent:mcp"`. **Every mutating tool below returns this Receipt** (its extras noted per row). `effects` missing → `filter_invalid` "`effects` is required"; the 3.x inputs → the retired-name errors above (`ops` — the kernel ops `apply` took through 3.x are a library/fixture contract, `spec/mutate` §4 — and `dry_run`: the preview is `plan`) |
-| `plan` | `effects[]` | (3.1) `spec/mutate` §11.6: the Plan `{ version, planner_v, effects, opset, preconditions, new_ids, plan_id, diagnostics, preview }` with `preview` included. **The executable core is returned verbatim in the storage form** — `effects[].target.path`, `preconditions.docs[].path`, `preconditions.absent_paths`, `opset.creates[].path`, `opset.moves[].from/to`, `opset.tombstones[].path` — because `plan_id` digests exactly those bytes and the client hands the object back to `execute` (the one result the path rule of §1 exempts, as `dangling[].target` is); only `preview.revisions[].path`, the `preview.diffs` keys and `preview.retarget[].hits[].path` are rooted. `preview` (4.0, `spec/mutate` §11.4) also carries `identity` when the plan has a `set content` — per document `{ matcher_v, summary, ops: [{ op_index, disposition, blocks, confidence, reason, detail? }], diagnostics }`, the whole-document planner's annotations (the 3.x `docs_update { dry_run }` result) — and `retarget` when it has a `retarget` effect: `[{ effect_index, hits: [{ id, path, oldRaw, newRaw }], pairs: [{ from, to, hits }] }]` (the 3.x `links_*` dry run). A malformed effect is `filter_invalid` (`hint: "arguments"`, the message naming `effects[i]` and the member), a contradiction `conflicting_effects`, a stale guard `stale_expectation` / `stale_plan` — `spec/mutate` §8/§11. Listed with the write tools: it runs under the lock. It is **the** preview: no tool takes `dry_run` (4.0) |
-| `execute` | `plan` (an object) or `plan_id` + `effects[]` (exactly one form, else `filter_invalid` "pass exactly one of `plan` or `plan_id` + `effects`"; half of the digest form → "the digest form needs both `plan_id` and `effects`"), `reason?` | (3.1) `spec/mutate` §11.7: the plan form admits (`unsupported_plan_version { version, supported: [1] }`, `filter_invalid`, `plan_mismatch { expected, actual }`) then commits; the digest form re-plans and commits on digest equality else `plan_mismatch`; the committed plan's preconditions re-validated in the transaction (`stale_plan`, retriable). The Receipt `{ plan_id, commit, revisions: [{ id, path, hash }], new_ids: { "$new.n": id }, committed: true }`, `revisions[].path` rooted; `origin.actor = "agent:mcp"` |
+| `apply` | `effects[]`, `select?`, `expect?`, `reason?` | (4.0) `spec/mutate` §11.7: plan + execute under the one tool-call lock and one transaction → the Receipt `{ plan_id, commit, revisions: [{ id, path, hash }], new_ids: { "$new.n": id }, committed: true }` — `revisions[].path` in the reference form, `hash` the document's hash after the commit (the rendered bytes' sha256; the same shape as a `changes_since` revision, §3), `commit` `null` when the plan had nothing to commit; `origin.actor = "agent:mcp"`. **Every mutating tool below returns this Receipt** (its extras noted per row). `effects` missing → `filter_invalid` "`effects` is required"; the 3.x inputs → the retired-name errors above (`ops` — the kernel ops `apply` took through 3.x are a library/fixture contract, `spec/mutate` §4 — and `dry_run`: the preview is `plan`). **Query-directed (4.1, `spec/mutate` §11.8)**: with `select` (an OQX query string) the `effects` are templates bound to the selector's hits exactly as `plan` does below, and `expect: { max }` is **required** — missing → `filter_invalid { hint: "selection" }` ("`expect.max` is required on `apply` with `select`"); more hits than `max` → `selection_too_large`, nothing written; zero hits → the Receipt with `commit: null`. `expect` without `select` is `filter_invalid` too |
+| `plan` | `effects[]`, `select?`, `expect?` | (3.1) `spec/mutate` §11.6: the Plan `{ version, planner_v, effects, opset, preconditions, new_ids, selection?, plan_id, diagnostics, preview }` with `preview` included. **The executable core is returned verbatim in the storage form** — `effects[].target.path`, `preconditions.docs[].path`, `preconditions.absent_paths`, `opset.creates[].path`, `opset.moves[].from/to`, `opset.tombstones[].path` — because `plan_id` digests exactly those bytes and the client hands the object back to `execute` (the one result the path rule of §1 exempts, as `dangling[].target` is); only `preview.revisions[].path`, the `preview.diffs` keys and `preview.retarget[].hits[].path` are rooted. `preview` (4.0, `spec/mutate` §11.4) also carries `identity` when the plan has a `set content` — per document `{ matcher_v, summary, ops: [{ op_index, disposition, blocks, confidence, reason, detail? }], diagnostics }`, the whole-document planner's annotations (the 3.x `docs_update { dry_run }` result) — and `retarget` when it has a `retarget` effect: `[{ effect_index, hits: [{ id, path, oldRaw, newRaw }], pairs: [{ from, to, hits }] }]` (the 3.x `links_*` dry run). A malformed effect is `filter_invalid` (`hint: "arguments"`, the message naming `effects[i]` and the member), a contradiction `conflicting_effects`, a stale guard `stale_expectation` / `stale_plan` — `spec/mutate` §8/§11. Listed with the write tools: it runs under the lock. It is **the** preview: no tool takes `dry_run` (4.0). **Query-directed (4.1, `spec/mutate` §11.8)**: `select` is an OQX query over `docs`, `blocks` or `nodes` whose hits, bound to the `effects` as templates (a template without a target writes to the hit; a target or value member may be `{ "oqx": "<expression>" }` over the hit's row), ARE the planned effects — the Plan's `effects` are the concrete expansion in hit order and `selection: { query, expect?, templates, cardinality, identities }` (the selector and templates as given, the hit ids) joins the digested core, `planner_v` `p3`; `expect: { max }` bounds the selection (`selection_too_large { cardinality, max, implicit? }` beyond it, or beyond 1000 without one); the admission refusals (`offset`, `distinct`, `values`, `follow`, body `from`, `links`, a non-row consumer, a reserved `__omg_`/`__oqx_` alias, a `retarget` template, `{ oqx }` out of a slot) are `filter_invalid { hint: "selection" }`; a target expression yielding nothing is `target_missing { effect_index, template_index, row, expression }`, one yielding a list `ambiguous_target { …, count }`; zero hits is an empty plan (`effects: []`, `selection.cardinality: 0`). `expect` is `{ max: <non-negative integer> }` and nothing else (the argument check: "`expect` must be an object", a nested `max` problem named by path) |
+| `execute` | `plan` (an object) or `plan_id` + `effects[]` + `select?` + `expect?` (exactly one form, else `filter_invalid` "pass exactly one of `plan` or `plan_id` + `effects`" — `select`/`expect` count as the digest form; half of the digest form → "the digest form needs both `plan_id` and `effects`"), `reason?` | (3.1) `spec/mutate` §11.7: the plan form admits (`unsupported_plan_version { version, supported: [1] }`, `filter_invalid`, `plan_mismatch { expected, actual }`) then commits — a query-directed plan carries its `selection` and replays without OQX (4.1); the digest form re-plans (with the selector when `select` is given, 4.1: the hits are digested, so a hit that appeared or vanished is `plan_mismatch`) and commits on digest equality else `plan_mismatch`; the committed plan's preconditions re-validated in the transaction (`stale_plan`, retriable). The Receipt `{ plan_id, commit, revisions: [{ id, path, hash }], new_ids: { "$new.n": id }, committed: true }`, `revisions[].path` rooted; `origin.actor = "agent:mcp"` |
 | `blocks_insert` | `to`, `markdown`, `at? = end`, `expect? { parent_children_hash? }` | the Receipt; `expect` is the destination-parent CAS of `spec/mutate` §1.2 (1.2) |
 | `blocks_update` | `id`, `markdown?`, `checked?`, `expect?` | the Receipt (4.0; `{ id, ids, ...apply result }` and an `attrs` bag through 3.x — `attrs` is a retired name); 3.2: `set markdown` and/or `set attrs.checked` — `expect: {}` or an order-only guard with `markdown` is completed by the planner (`stale_expectation` "expect.content_hash required" before), `markdown` + `checked` is two effects in one plan |
 | `blocks_move` | `blocks[]` (non-empty), `to`, `at?`, `expect? { parent_children_hash? }` | a doc ref as `to` must be the blocks' own document, else `target_missing`; `expect` is the destination-parent CAS, checked once (1.2) |
@@ -1033,7 +1040,17 @@ stale-plan` pins the retired-name messages (`ops`, `dry_run`, `attrs`) beside
 the argument-shape ones, and `write-sugar-over-effects` plans its insert;
 `reads.json`'s sugar dry runs are `plan { effects }` calls (the failing ones
 stay the tools themselves — a failing write commits nothing) and its
-`arguments` case pins the retired names. `apply`'s file-CAS holds in the writing
+`arguments` case pins the retired names. Query-directed planning (4.1,
+`spec/mutate` §11.8) adds `write-select-plan-execute` (a `plan` whose hits
+are the two lab notes and whose templates append a line to each note's
+subject process — `into` an expression `^docs single { … == ^subject }` —
+and mark the note; its `plan_id` digests the `selection`, so the Rust
+compiler must bind and digest identically; then `execute` in the digest form
+with the same `select`), `write-select-apply-max` (the one-shot `apply` with
+`expect.max`, the one without it refused, one with a `max` below the
+cardinality refused `selection_too_large`) and `write-select-zero-hits` (an
+`apply` over a selector matching nothing → `commit: null`; the `plan` of it
+with `cardinality: 0`). `apply`'s file-CAS holds in the writing
 engine's working tree, so a write through one engine and a later read of
 `repos_status`/`sync_status` through the other exercises the sync tables
 (`file_stats`, checkpoints) both engines must maintain alike.
@@ -1316,6 +1333,20 @@ both and runs both harnesses.
 
 ## Decisions
 
+- 2026-10-13, surface 4.1: query-directed planning (`spec/mutate` 3.1
+  §11.8). `plan`, `apply` and `execute` gain `select?` and `expect?`
+  (additive — a call without them is byte-identical to 4.0): the `effects`
+  become templates bound to an OQX selector's hits, the Plan gains the
+  digested `selection` member, `planner_v` is `p3` (every pinned `plan_id`
+  moves: `interop.json` ×7 plans, `reads.json` ×22). `apply` with `select`
+  requires `expect.max`. Two codes join the envelope (`ambiguous_target`,
+  `selection_too_large`) and `filter_invalid` gains the `hint: "selection"`
+  family; the runner refuses a `__omg_`/`__oqx_` projection alias on every
+  query (it could overwrite the hit envelope through 4.0 — §9 closes).
+  Arguments added: a minor. Fixtures: `interop.json` 25 → 28
+  (`write-select-plan-execute`, `write-select-apply-max`,
+  `write-select-zero-hits`), `tool-descriptions.json` (`plan`, `apply`,
+  `execute`).
 - 2026-10-12, surface 4.0: the retirement release of ADR-021 (with
   `spec/mutate` 3.0 and `spec/cli` 4.0; no deprecation period — no client of
   the retired inputs existed). Removed: `apply.ops` (the kernel ops are a

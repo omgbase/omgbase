@@ -33,6 +33,10 @@ regex = "1"
 # crate to apply changesets. Path-only: a dev-dependency cycle Cargo permits
 # and drops when publishing.
 omgbase-store = { path = "../omgbase-store" }
+# The §11.8 selector steps (`select` on `plan_effects` / `execute` /
+# `apply_effects`) compile through the surface, where OQX lives: the same
+# kind of path-only dev-dependency cycle as the store's.
+omgbase-surface = { path = "../omgbase-surface" }
 rusqlite = { version = "0.40", features = ["bundled"] }
 
 [lints]

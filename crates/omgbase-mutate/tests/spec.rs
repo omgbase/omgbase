@@ -5,6 +5,14 @@
 //! `apply_effects` steps — against `omgbase-store` (which calls this crate to apply
 //! changesets) and an in-memory doc store seeded by the `observe` steps, then
 //! checks the §8 invariants, `files[path] == reconstruct(doc)`, and the
+//! projection. A step with a `select` (§11.8, 3.1) is the selector path: the
+//! store has no OQX, so those steps compile through `omgbase-surface`'s
+//! `select` module (a path-only dev-dependency, the same cycle the store
+//! dev-dependency is) and plan through `Store::plan_selected`; the error a
+//! selector step reports is the surface's (`filter_invalid` carries its
+//! `reason`/`hint` data, a §8 code its listed fields). The rest of this
+//! header describes the plain path; the runner then
+//! checks the §8 invariants, `files[path] == reconstruct(doc)`, and the
 //! projection (`steps`, `files`, `docs`, `blocks`, `commits`, `revisions`,
 //! `dispositions`, `resurrection_pool`). The reference runner this mirrors is
 //! `packages/core/corpus/mutate/spec.test.ts` (+ `fixture.ts`).
@@ -18,6 +26,11 @@
 //! ```text
 //! MUTATE_SPEC_UPDATE=1 cargo test -p omgbase-mutate --test spec
 //! ```
+
+// The selector steps' closures return the surface's error (~128 bytes); a
+// cold path at a fixture boundary, not worth boxing (the surface crate
+// allows the same).
+#![allow(clippy::result_large_err)]
 
 use std::cell::Cell;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
@@ -34,6 +47,8 @@ use omgbase_store::{
     ApplyOrigin, ApplyRequest, BatchItem, BatchOutcome, DocOpContext, DocStore, EffectsOutcome,
     LinkRepair, MemDocStore, PlanContext, SequentialMinter, Store, TreeEntry,
 };
+use omgbase_surface::SurfaceError;
+use omgbase_surface::select::{self, SelectRequest};
 use rusqlite::types::Value as Sql;
 use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::{Map as JsonMap, Value as Json, json};
@@ -269,6 +284,25 @@ fn validate_ops(ops: Option<&Json>, here: &str, problems: &mut Vec<String>) {
 
 /// Returns the step count, or -1 when `steps` is malformed. `nested` limits
 /// the kinds to `observe`/`disk` (a plan's `before_apply`).
+/// §11.8 (3.1): `select` is an OQX string, `expect` is `{ max: <number> }`;
+/// `expect` needs `select` (the reference's `selectorShape`).
+fn check_selector(b: &JsonMap<String, Json>, here: &str, problems: &mut Vec<String>) {
+    if b.get("select").is_some_and(|v| !v.is_string()) {
+        problems.push(format!("{here}: `select` must be an OQX query string"));
+    }
+    if let Some(e) = b.get("expect") {
+        let shaped = e
+            .as_object()
+            .is_some_and(|o| o.len() == 1 && o.get("max").is_some_and(Json::is_number));
+        if !shaped {
+            problems.push(format!("{here}: `expect` is {{ max }}"));
+        }
+        if !b.contains_key("select") {
+            problems.push(format!("{here}: `expect` needs `select`"));
+        }
+    }
+}
+
 fn validate_steps(at: &str, steps: Option<&Json>, nested: bool, problems: &mut Vec<String>) -> i64 {
     let Some(steps) = steps.and_then(Json::as_array).filter(|s| !s.is_empty()) else {
         problems.push(format!("{at}: `steps` must be a non-empty array"));
@@ -370,10 +404,11 @@ fn validate_steps(at: &str, steps: Option<&Json>, nested: bool, problems: &mut V
                 }
             }
             "plan_effects" => {
-                only_keys(b, &["effects"], &here, problems);
+                only_keys(b, &["effects", "select", "expect"], &here, problems);
                 if !b.get("effects").is_some_and(Json::is_array) {
                     problems.push(format!("{here}: `effects` must be an array"));
                 }
+                check_selector(b, &here, problems);
             }
             "execute" => {
                 only_keys(
@@ -384,6 +419,8 @@ fn validate_steps(at: &str, steps: Option<&Json>, nested: bool, problems: &mut V
                         "plan",
                         "plan_id",
                         "effects",
+                        "select",
+                        "expect",
                         "origin",
                         "crash_after_commit",
                     ],
@@ -392,8 +429,11 @@ fn validate_steps(at: &str, steps: Option<&Json>, nested: bool, problems: &mut V
                 );
                 require_ts(b, &here, problems);
                 require_origin(b.get("origin"), &here, problems);
+                check_selector(b, &here, problems);
                 let plan_form = b.contains_key("plan_step") || b.contains_key("plan");
-                let digest_form = b.contains_key("plan_id") || b.contains_key("effects");
+                let digest_form = b.contains_key("plan_id")
+                    || b.contains_key("effects")
+                    || b.contains_key("select");
                 if plan_form == digest_form {
                     problems.push(format!(
                         "{here}: exactly one of `plan_step` / `plan` (the plan form) or `plan_id` + `effects` (the digest form)"
@@ -420,7 +460,15 @@ fn validate_steps(at: &str, steps: Option<&Json>, nested: bool, problems: &mut V
             "apply_effects" => {
                 only_keys(
                     b,
-                    &["ts", "effects", "origin", "dry_run", "crash_after_commit"],
+                    &[
+                        "ts",
+                        "effects",
+                        "select",
+                        "expect",
+                        "origin",
+                        "dry_run",
+                        "crash_after_commit",
+                    ],
                     &here,
                     problems,
                 );
@@ -428,6 +476,7 @@ fn validate_steps(at: &str, steps: Option<&Json>, nested: bool, problems: &mut V
                 if !b.get("effects").is_some_and(Json::is_array) {
                     problems.push(format!("{here}: `effects` must be an array"));
                 }
+                check_selector(b, &here, problems);
                 require_origin(b.get("origin"), &here, problems);
                 if b.get("dry_run").is_some_and(|v| !v.is_boolean()) {
                     problems.push(format!("{here}: `dry_run` must be a boolean"));
@@ -767,15 +816,21 @@ fn error_outcome(e: &omgbase_store::Error) -> Result<Json, String> {
 }
 
 fn error_json(m: &MutationError) -> Json {
+    listed_error(m.code.as_str(), &m.data)
+}
+
+/// `{ code, …the pinned fields }` of README §8 plus the effect layer's (2.3)
+/// and the selector's (3.1) — the reference's `errorOutcome`, field by field.
+fn listed_error(code: &str, data: &JsonMap<String, Json>) -> Json {
     let mut error = JsonMap::new();
-    error.insert("code".to_owned(), json!(m.code.as_str()));
-    if let Some(n) = m.data.get("op_index").filter(|v| v.is_number()) {
+    error.insert("code".to_owned(), json!(code));
+    if let Some(n) = data.get("op_index").filter(|v| v.is_number()) {
         error.insert("op_index".to_owned(), n.clone());
     }
-    if let Some(b) = m.data.get("block").filter(|v| v.is_string()) {
+    if let Some(b) = data.get("block").filter(|v| v.is_string()) {
         error.insert("block".to_owned(), b.clone());
     }
-    if let Some(Json::Object(current)) = m.data.get("current") {
+    if let Some(Json::Object(current)) = data.get("current") {
         let mut current = current.clone();
         if current
             .get("markdown")
@@ -786,33 +841,58 @@ fn error_json(m: &MutationError) -> Json {
         }
         error.insert("current".to_owned(), Json::Object(current));
     }
-    if let Some(r) = m.data.get("retriable").filter(|v| v.is_boolean()) {
+    if let Some(r) = data.get("retriable").filter(|v| v.is_boolean()) {
         error.insert("retriable".to_owned(), r.clone());
     }
     // The effect layer's fields (2.3).
-    if let Some(n) = m.data.get("effect_index").filter(|v| v.is_number()) {
+    if let Some(n) = data.get("effect_index").filter(|v| v.is_number()) {
         error.insert("effect_index".to_owned(), n.clone());
     }
-    if let Some(e) = m.data.get("effects").filter(|v| v.is_array()) {
+    if let Some(e) = data.get("effects").filter(|v| v.is_array()) {
         error.insert("effects".to_owned(), e.clone());
     }
-    if let Some(f) = m.data.get("focus").filter(|v| v.is_object()) {
+    if let Some(f) = data.get("focus").filter(|v| v.is_object()) {
         error.insert("focus".to_owned(), f.clone());
     }
-    if let Some(s) = m.data.get("symbol").filter(|v| v.is_string()) {
+    if let Some(s) = data.get("symbol").filter(|v| v.is_string()) {
         error.insert("symbol".to_owned(), s.clone());
     }
-    if let Some(v) = m.data.get("version") {
+    if let Some(v) = data.get("version") {
         error.insert("version".to_owned(), v.clone());
     }
-    if let Some(s) = m.data.get("supported").filter(|v| v.is_array()) {
+    if let Some(s) = data.get("supported").filter(|v| v.is_array()) {
         error.insert("supported".to_owned(), s.clone());
     }
-    if let Some(e) = m.data.get("expected").filter(|v| v.is_string()) {
+    if let Some(e) = data.get("expected").filter(|v| v.is_string()) {
         error.insert("expected".to_owned(), e.clone());
     }
-    if let Some(a) = m.data.get("actual").filter(|v| v.is_string()) {
+    if let Some(a) = data.get("actual").filter(|v| v.is_string()) {
         error.insert("actual".to_owned(), a.clone());
+    }
+    // The selector's fields (3.1, §11.8).
+    if let Some(n) = data.get("template_index").filter(|v| v.is_number()) {
+        error.insert("template_index".to_owned(), n.clone());
+    }
+    if let Some(r) = data.get("row").filter(|v| v.is_object()) {
+        error.insert("row".to_owned(), r.clone());
+    }
+    if let Some(x) = data.get("expression").filter(|v| v.is_string()) {
+        error.insert("expression".to_owned(), x.clone());
+    }
+    if let Some(n) = data.get("count").filter(|v| v.is_number()) {
+        error.insert("count".to_owned(), n.clone());
+    }
+    if let Some(c) = data
+        .get("cardinality")
+        .filter(|v| v.is_string() || v.is_number())
+    {
+        error.insert("cardinality".to_owned(), c.clone());
+    }
+    if let Some(n) = data.get("max").filter(|v| v.is_number()) {
+        error.insert("max".to_owned(), n.clone());
+    }
+    if let Some(b) = data.get("implicit").filter(|v| v.is_boolean()) {
+        error.insert("implicit".to_owned(), b.clone());
     }
     Json::Object(error)
 }
@@ -1110,13 +1190,53 @@ fn plan_ctx(r: &Runner, ts: &str) -> PlanContext {
     }
 }
 
-/// `spec/mutate` §9 (2.3) `plan_effects { effects }`: `{ plan }` — the Plan
-/// minus its preview — or the error. The plan is kept for a later
-/// `execute { plan_step }`.
+/// A step's `select` + `effects` (the templates) + `expect` as the surface's
+/// request (§11.8); `None` without a `select`.
+fn selector_of(body: &JsonMap<String, Json>) -> Result<Option<SelectRequest>, String> {
+    SelectRequest::from_args(&Json::Object(body.clone())).map_err(|e| e.to_string())
+}
+
+/// A selector step's error as the fixture spells it: `{ code, …listed }` —
+/// the same pinned fields as a §8 error's ([`listed_error`]); a
+/// `filter_invalid` (the surface's code, not a §8 one) carries no `reason` /
+/// `hint`, as the reference's `errorOutcome` keeps none.
+fn surface_error_outcome(e: &SurfaceError) -> Json {
+    let data = match &e.data {
+        Some(Json::Object(d)) => d.clone(),
+        _ => JsonMap::new(),
+    };
+    json!({ "error": listed_error(&e.code, &data) })
+}
+
+/// Plan a selector step (§11.8): expand through the surface, plan through
+/// the store; `Ok(Err(outcome))` is the step's error outcome.
+fn plan_selector(
+    r: &mut Runner,
+    ctx: &PlanContext,
+    req: &SelectRequest,
+) -> Result<Result<Plan, Json>, String> {
+    match select::plan_selected(&mut r.store, &r.doc_store, ctx, req, HashMap::new()) {
+        Ok(plan) => Ok(Ok(plan)),
+        Err(e) => Ok(Err(surface_error_outcome(&e))),
+    }
+}
+
+/// `spec/mutate` §9 (2.3) `plan_effects { effects, select?, expect? }`:
+/// `{ plan }` — the Plan minus its preview — or the error. The plan is kept
+/// for a later `execute { plan_step }`.
 fn run_plan_effects(r: &mut Runner, body: &JsonMap<String, Json>) -> Result<Json, String> {
-    let effects = effects_of(body)?;
     let ctx = plan_ctx(r, PLAN_TS);
-    match r.store.plan_effects(&ctx, &effects, &r.doc_store) {
+    let planned = match selector_of(body)? {
+        Some(req) => match plan_selector(r, &ctx, &req)? {
+            Ok(plan) => Ok(plan),
+            Err(outcome) => return Ok(outcome),
+        },
+        None => {
+            let effects = effects_of(body)?;
+            r.store.plan_effects(&ctx, &effects, &r.doc_store)
+        }
+    };
+    match planned {
         Ok(plan) => {
             let out = json!({ "plan": plan.to_json(false) });
             r.plans.insert(r.step_index, plan);
@@ -1138,6 +1258,28 @@ fn run_execute(r: &mut Runner, body: &JsonMap<String, Json>) -> Result<Json, Str
     let ctx = plan_ctx(r, &ts);
     if let Some(plan_id) = body.get("plan_id").and_then(Json::as_str) {
         let plan_id = plan_id.to_owned();
+        if let Some(req) = selector_of(body)? {
+            // §11.8: the digest form re-runs the selector; a hit that came or
+            // went is `plan_mismatch`.
+            let mut surfaced: Option<Json> = None;
+            let out = with_doc_store(r, |store, ds| {
+                let result: Result<_, SurfaceError> =
+                    store.execute_replanned(&ctx, &plan_id, &origin, ds, |store, ds| {
+                        select::plan_selected(store, ds, &ctx, &req, HashMap::new())
+                    });
+                match result {
+                    Ok(receipt) => Ok(json!({ "receipt": receipt.to_json() })),
+                    Err(e) => {
+                        surfaced = Some(surface_error_outcome(&e));
+                        Err(omgbase_store::Error::Other(e.to_string()))
+                    }
+                }
+            });
+            return match surfaced {
+                Some(outcome) => Ok(outcome),
+                None => out,
+            };
+        }
         let effects = effects_of(body)?;
         return with_doc_store(r, |store, ds| {
             store
@@ -1175,19 +1317,54 @@ fn run_execute(r: &mut Runner, body: &JsonMap<String, Json>) -> Result<Json, Str
     })
 }
 
-/// §9 (2.3) `apply_effects { ts, effects, origin, dry_run?, crash_after_commit? }`:
-/// `{ plan }` on a dry run (kept for `plan_step`), else `{ receipt }`; or the error.
+/// §9 (2.3) `apply_effects { ts, effects, select?, expect?, origin, dry_run?,
+/// crash_after_commit? }`: `{ plan }` on a dry run (kept for `plan_step`),
+/// else `{ receipt }`; or the error. With a `select` (§11.8) `expect.max` is
+/// required unless it is a dry run (the one-shot write must be bounded).
 fn run_apply_effects(r: &mut Runner, body: &JsonMap<String, Json>) -> Result<Json, String> {
     let ts = body
         .get("ts")
         .and_then(Json::as_str)
         .ok_or("apply_effects.ts")?
         .to_owned();
-    let effects = effects_of(body)?;
     let origin = origin_from(body.get("origin"));
     let dry_run = body.get("dry_run").and_then(Json::as_bool).unwrap_or(false);
     let ctx = plan_ctx(r, &ts);
     let step_index = r.step_index;
+    if let Some(req) = selector_of(body)? {
+        if !dry_run && let Err(e) = select::require_max(&req) {
+            return Ok(surface_error_outcome(&e));
+        }
+        if dry_run {
+            return match plan_selector(r, &ctx, &req)? {
+                Ok(plan) => {
+                    let json = json!({ "plan": plan.to_json(false) });
+                    r.plans.insert(step_index, plan);
+                    Ok(json)
+                }
+                Err(outcome) => Ok(outcome),
+            };
+        }
+        let mut surfaced: Option<Json> = None;
+        let out = with_doc_store(r, |store, ds| {
+            let result: Result<_, SurfaceError> =
+                store.apply_planned(&ctx, &origin, ds, |store, ds| {
+                    select::plan_selected(store, ds, &ctx, &req, HashMap::new())
+                });
+            match result {
+                Ok((_, receipt)) => Ok(json!({ "receipt": receipt.to_json() })),
+                Err(e) => {
+                    surfaced = Some(surface_error_outcome(&e));
+                    Err(omgbase_store::Error::Other(e.to_string()))
+                }
+            }
+        });
+        return match surfaced {
+            Some(outcome) => Ok(outcome),
+            None => out,
+        };
+    }
+    let effects = effects_of(body)?;
     let mut planned: Option<Plan> = None;
     let outcome = with_doc_store(r, |store, ds| {
         store
@@ -2213,7 +2390,18 @@ fn check(c: &SpecCase) -> Result<(), String> {
     }
     match deep_eq_tol(&ev.actual, &c.case["expect"], "expect", EPS) {
         None => Ok(()),
-        Some(diff) => Err(clip(diff)),
+        Some(diff) => {
+            // `MUTATE_SPEC_DEBUG=1`: the whole actual projection of a failing
+            // case on stderr, for the diff above to be read against.
+            if std::env::var("MUTATE_SPEC_DEBUG").is_ok_and(|v| !v.is_empty() && v != "0") {
+                eprintln!(
+                    "--- {} actual:\n{}",
+                    c.id,
+                    serde_json::to_string_pretty(&ev.actual).unwrap_or_default()
+                );
+            }
+            Err(clip(diff))
+        }
     }
 }
 

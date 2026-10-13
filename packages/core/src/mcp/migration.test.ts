@@ -545,11 +545,11 @@ describe("the retired inputs are refused by name (spec/surface §4; never silent
   it("`ops` on apply, `attrs` on blocks_update, a missing `effects`", async () => {
     const ws = workspace();
     const ops = await viaServer(ws, "apply", { ops: [{ op: "remove", blocks: ["b_47"] }] });
-    expect(ops.payload).toMatchObject({ error: "filter_invalid", message: "`ops` is no longer an argument — `apply` takes `effects` (the kernel ops are a library/fixture contract since spec/mutate 3.0) (apply takes effects, reason?, repo?)" });
+    expect(ops.payload).toMatchObject({ error: "filter_invalid", message: "`ops` is no longer an argument — `apply` takes `effects` (the kernel ops are a library/fixture contract since spec/mutate 3.0) (apply takes effects, expect?, reason?, repo?, select?)" });
     const both = await viaServer(ws, "apply", { ops: [], effects: [] });
     expect((both.payload as { message: string }).message).toMatch(/^`ops` is no longer an argument/);
     const none = await viaServer(ws, "apply", {});
-    expect(none.payload).toMatchObject({ error: "filter_invalid", message: "`effects` is required (apply takes effects, reason?, repo?)" });
+    expect(none.payload).toMatchObject({ error: "filter_invalid", message: "`effects` is required (apply takes effects, expect?, reason?, repo?, select?)" });
     const attrs = await viaServer(ws, "blocks_update", { id: "b_56", attrs: { checked: true } });
     expect(attrs.payload).toMatchObject({ error: "filter_invalid", message: "`attrs` is no longer an argument — pass `checked` (blocks_update takes checked?, expect?, id, markdown?, repo?)" });
     const nothing = await viaServer(ws, "blocks_update", { id: "b_56" });

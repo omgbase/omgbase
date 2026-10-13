@@ -28,11 +28,16 @@ pub enum ErrorCode {
     UnsupportedPlanVersion,
     /// A `plan_id` that does not digest the plan it was given with (§11).
     PlanMismatch,
+    /// A selector template's target expression resolved to several
+    /// identities (§11.8).
+    AmbiguousTarget,
+    /// A selection past its `expect.max` or the ceiling (§11.8).
+    SelectionTooLarge,
 }
 
 impl ErrorCode {
     /// Every code, in the §8 order.
-    pub const ALL: [ErrorCode; 16] = [
+    pub const ALL: [ErrorCode; 18] = [
         ErrorCode::StaleExpectation,
         ErrorCode::BlockMissing,
         ErrorCode::TargetMissing,
@@ -49,6 +54,8 @@ impl ErrorCode {
         ErrorCode::ConflictingEffects,
         ErrorCode::UnsupportedPlanVersion,
         ErrorCode::PlanMismatch,
+        ErrorCode::AmbiguousTarget,
+        ErrorCode::SelectionTooLarge,
     ];
 
     /// The spec's spelling.
@@ -71,6 +78,8 @@ impl ErrorCode {
             ErrorCode::ConflictingEffects => "conflicting_effects",
             ErrorCode::UnsupportedPlanVersion => "unsupported_plan_version",
             ErrorCode::PlanMismatch => "plan_mismatch",
+            ErrorCode::AmbiguousTarget => "ambiguous_target",
+            ErrorCode::SelectionTooLarge => "selection_too_large",
         }
     }
 
@@ -159,7 +168,7 @@ mod tests {
             assert_eq!(ErrorCode::parse(c.as_str()), Some(c));
         }
         assert_eq!(ErrorCode::parse("nope"), None);
-        assert_eq!(ErrorCode::ALL.len(), 16);
+        assert_eq!(ErrorCode::ALL.len(), 18);
     }
 
     #[test]

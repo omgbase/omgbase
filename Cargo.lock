@@ -630,6 +630,7 @@ dependencies = [
  "omgbase-format",
  "omgbase-reconcile",
  "omgbase-store",
+ "omgbase-surface",
  "regex",
  "rusqlite",
  "serde_json",

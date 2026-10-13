@@ -167,6 +167,20 @@ export function collectSemanticPhrases(source: string): string[] {
 
 const ID_ITEM: SelectItem = build.field("__oqx_id", build.ident("id"));
 const PATH_ITEM: SelectItem = build.field("__oqx_path", build.ident("path"));
+// The runner's own projection names (`__oqx_id`, `__oqx_path`, `__oqx_self`,
+// `__oqx_value`) and the selector compiler's slots (`__omg_sel_<t>_<slot>`,
+// mutate/select.ts) share two reserved prefixes. A user alias under either would
+// shadow an injected item (`select __oqx_id: 1` overwrote the hit's `id` through
+// 4.0) or collide with a slot, so it is refused before anything runs — over the
+// query's own top-level items, the only ones the runner injects beside.
+const RESERVED_ALIAS_PREFIXES = ["__oqx_", "__omg_"] as const;
+export function reservedAlias(items: readonly SelectItem[]): FilterInvalid | null {
+  for (const item of items) {
+    const prefix = RESERVED_ALIAS_PREFIXES.find((p) => item.name.startsWith(p));
+    if (prefix !== undefined) return new FilterInvalid(`projection \`${item.name}\` uses the reserved prefix \`${prefix}\` — choose another alias`, "OQX");
+  }
+  return null;
+}
 // Result projections may not overwrite the envelope (spec/surface §1.4, 3.0):
 // a projection whose output key is `id` or `path` is allowed only when it IS
 // the envelope's own selection — the bare attribute of the same name, which
@@ -281,9 +295,22 @@ export function oqxRun(store: Store, repoId: string, source: string, opts: OqxOp
 }
 
 function oqxRunInner(store: Store, repoId: string, source: string, opts: OqxOptions): OqxResult {
+  const raw = parse(source);
+  const reserved = reservedAlias(raw.select);
+  if (reserved) throw reserved;
+  return oqxRunQuery(store, repoId, raw, opts);
+}
+
+/**
+ * The AST entry (4.1): run an already parsed query — the source path above
+ * after `parse`, and the selector compiler (`mutate/select.ts`), which appends
+ * its slot items to the RAW tree so a user alias a template reads is inlined
+ * by the alias resolution here. Errors are the library's own (`OqxError`);
+ * `oqxRun` normalizes them, a caller of this entry does the same.
+ */
+export function oqxRunQuery(store: Store, repoId: string, raw: Query, opts: OqxOptions = {}): OqxResult {
   // The query's `select` aliases are resolved HERE, once, before the runner
   // renames/injects items (an engine evaluates the query it is given).
-  const raw = parse(source);
   checkRootSpellings(raw);
   const parsed = rewriteQuery(resolveAliases(raw));
   const consumer = parsed.consumer as OqxConsumer;

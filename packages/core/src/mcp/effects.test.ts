@@ -54,7 +54,7 @@ describe("plan / execute / apply { effects } over MCP", () => {
     const { payload: plan, isError } = await call("plan", { effects: SLICE1 });
     expect(isError).toBe(false);
     expect(plan.version).toBe(1);
-    expect(plan.planner_v).toBe("p2");
+    expect(plan.planner_v).toBe("p3");
     expect(plan.plan_id).toMatch(/^[0-9a-f]{64}$/);
     expect((plan.effects as { target: { path: string } }[])[0]!.target.path).toBe("a.md");
     expect((plan.preconditions as { docs: { path: string }[] }).docs[0]!.path).toBe("a.md");
@@ -100,16 +100,16 @@ describe("plan / execute / apply { effects } over MCP", () => {
 
   it("apply takes `effects` (required; the 3.x `ops` and `dry_run` are retired by name); execute exactly one form", async () => {
     const neither = await call("apply", {});
-    expect(neither.payload).toMatchObject({ error: "filter_invalid", message: "`effects` is required (apply takes effects, reason?, repo?)", data: { hint: "arguments" } });
+    expect(neither.payload).toMatchObject({ error: "filter_invalid", message: "`effects` is required (apply takes effects, expect?, reason?, repo?, select?)", data: { hint: "arguments" } });
     const ops = await call("apply", { ops: [], effects: [] });
-    expect(ops.payload).toMatchObject({ error: "filter_invalid", message: "`ops` is no longer an argument — `apply` takes `effects` (the kernel ops are a library/fixture contract since spec/mutate 3.0) (apply takes effects, reason?, repo?)", data: { hint: "arguments" } });
+    expect(ops.payload).toMatchObject({ error: "filter_invalid", message: "`ops` is no longer an argument — `apply` takes `effects` (the kernel ops are a library/fixture contract since spec/mutate 3.0) (apply takes effects, expect?, reason?, repo?, select?)", data: { hint: "arguments" } });
     const dry = await call("apply", { effects: SLICE1, dry_run: true });
-    expect(dry.payload).toMatchObject({ error: "filter_invalid", message: "`dry_run` is no longer an argument — preview with `plan { effects: [...] }` (apply takes effects, reason?, repo?)", data: { hint: "arguments" } });
+    expect(dry.payload).toMatchObject({ error: "filter_invalid", message: "`dry_run` is no longer an argument — preview with `plan { effects: [...] }` (apply takes effects, expect?, reason?, repo?, select?)", data: { hint: "arguments" } });
     expect(store.db.prepare("SELECT count(*) n FROM commits WHERE origin = 'api'").get()).toEqual({ n: 0 });
     const none = await call("execute", {});
-    expect(none.payload).toMatchObject({ error: "filter_invalid", message: "pass exactly one of `plan` or `plan_id` + `effects` (execute takes effects?, plan?, plan_id?, reason?, repo?)" });
+    expect(none.payload).toMatchObject({ error: "filter_invalid", message: "pass exactly one of `plan` or `plan_id` + `effects` (execute takes effects?, expect?, plan?, plan_id?, reason?, repo?, select?)" });
     const half = await call("execute", { effects: SLICE1 });
-    expect(half.payload).toMatchObject({ error: "filter_invalid", message: "the digest form needs both `plan_id` and `effects` (execute takes effects?, plan?, plan_id?, reason?, repo?)" });
+    expect(half.payload).toMatchObject({ error: "filter_invalid", message: "the digest form needs both `plan_id` and `effects` (execute takes effects?, expect?, plan?, plan_id?, reason?, repo?, select?)" });
     const bothForms = await call("execute", { plan: { version: 1 }, plan_id: "x", effects: [] });
     expect(bothForms.payload.error).toBe("filter_invalid");
   });
@@ -138,5 +138,74 @@ describe("plan / execute / apply { effects } over MCP", () => {
     expect(row.ops).toMatch(/^\{"effects":\[/);
     const legacy = await call("apply", { ops: [{ op: "insert", doc: "d_0", to: { parent: { doc: true }, at: "end" }, markdown: "Appended." }] });
     expect(legacy.payload).toMatchObject({ error: "filter_invalid", data: { hint: "arguments" } });
+  });
+
+  // ---- query-directed planning (4.1; spec/mutate §11.8) ----
+  const SELECT = 'from docs where type == "note"';
+  const TEMPLATES = [{ op: "set", field: "frontmatter.seen", value: true }];
+  async function seedNotes(): Promise<void> {
+    writeFileSync(join(dir, "one.md"), "---\ntype: note\n---\n\n# One\n");
+    writeFileSync(join(dir, "two.md"), "---\ntype: note\n---\n\n# Two\n");
+    processCheckpoint(store, repoId, dir, [{ path: "one.md" }, { path: "two.md" }]);
+  }
+
+  it("plan { select, effects } returns the Plan with its selection verbatim and the concrete expansion; expect rides along", async () => {
+    await seedNotes();
+    const { payload, isError } = await call("plan", { select: SELECT, effects: TEMPLATES });
+    expect(isError).toBe(false);
+    expect(payload.planner_v).toBe("p3");
+    expect(payload.selection).toEqual({ query: SELECT, templates: TEMPLATES, cardinality: 2, identities: ["d_1", "d_2"] });
+    expect((payload.effects as { target: { id: string; path: string } }[]).map((e) => e.target)).toEqual([
+      { kind: "document", id: "d_1", path: "one.md" }, { kind: "document", id: "d_2", path: "two.md" },
+    ]);
+    expect(Object.keys(payload.preview as object)).toEqual(["results", "revisions", "diffs"]);
+    const bounded = await call("plan", { select: SELECT, effects: TEMPLATES, expect: { max: 2 } });
+    expect((bounded.payload.selection as { expect: unknown }).expect).toEqual({ max: 2 });
+    const tooMany = await call("plan", { select: SELECT, effects: TEMPLATES, expect: { max: 1 } });
+    expect(tooMany.payload).toMatchObject({ error: "selection_too_large", retriable: false, data: { cardinality: 2, max: 1 } });
+    const refused = await call("plan", { select: `${SELECT} offset 1`, effects: TEMPLATES });
+    expect(refused.payload).toMatchObject({ error: "filter_invalid", data: { hint: "selection" } });
+    expect(refused.payload.message).toContain("`offset` is not allowed");
+    const none = await call("plan", { select: 'from docs where type == "nope"', effects: TEMPLATES });
+    expect(none.payload).toMatchObject({ effects: [], selection: { cardinality: 0, identities: [] } });
+    expect(store.db.prepare("SELECT count(*) n FROM commits WHERE origin = 'api'").get()).toEqual({ n: 0 });
+  });
+
+  it("apply { select } requires expect.max; the argument shapes of select/expect are checked first", async () => {
+    await seedNotes();
+    const noMax = await call("apply", { select: SELECT, effects: TEMPLATES });
+    expect(noMax.payload).toMatchObject({ error: "filter_invalid", message: "`expect.max` is required on `apply` with `select` — bound the selection, or preview it with `plan`", data: { hint: "selection" } });
+    const badExpect = await call("apply", { select: SELECT, effects: TEMPLATES, expect: 3 });
+    expect(badExpect.payload).toMatchObject({ error: "filter_invalid", message: "`expect` must be an object (apply takes effects, expect?, reason?, repo?, select?)", data: { hint: "arguments" } });
+    const badSelect = await call("apply", { select: 1, effects: TEMPLATES, expect: { max: 3 } });
+    expect(badSelect.payload).toMatchObject({ error: "filter_invalid", message: "`select` must be a string (apply takes effects, expect?, reason?, repo?, select?)" });
+    const noMaxKey = await call("apply", { select: SELECT, effects: TEMPLATES, expect: {} });
+    expect(noMaxKey.payload).toMatchObject({ error: "filter_invalid", data: { hint: "arguments" } });
+    expect(store.db.prepare("SELECT count(*) n FROM commits WHERE origin = 'api'").get()).toEqual({ n: 0 });
+    const ok = await call("apply", { select: SELECT, effects: TEMPLATES, expect: { max: 2 }, reason: "bulk" });
+    expect(ok.isError).toBe(false);
+    expect(ok.payload).toMatchObject({ commit: "c_3", revisions: [{ id: "d_1", path: "/one.md" }, { id: "d_2", path: "/two.md" }], new_ids: {}, committed: true });
+    const row = store.db.prepare("SELECT ops FROM commits WHERE commit_id = 'c_3'").get() as { ops: string };
+    expect(JSON.parse(row.ops)).toMatchObject({ v: 1, plan_id: ok.payload.plan_id, selection: { query: SELECT, expect: { max: 2 }, cardinality: 2 } });
+    const zero = await call("apply", { select: 'from docs where type == "nope"', effects: TEMPLATES, expect: { max: 2 } });
+    expect(zero.payload).toMatchObject({ commit: null, revisions: [], new_ids: {}, committed: true });
+  });
+
+  it("execute takes select/expect in the digest form only; the selector is re-run and digested", async () => {
+    await seedNotes();
+    const plan = await call("plan", { select: SELECT, effects: TEMPLATES, expect: { max: 5 } });
+    const planForm = await call("execute", { plan: plan.payload, select: SELECT });
+    expect(planForm.payload).toMatchObject({ error: "filter_invalid", message: "pass exactly one of `plan` or `plan_id` + `effects` (execute takes effects?, expect?, plan?, plan_id?, reason?, repo?, select?)" });
+    const half = await call("execute", { select: SELECT, plan_id: plan.payload.plan_id });
+    expect(half.payload).toMatchObject({ error: "filter_invalid", message: "the digest form needs both `plan_id` and `effects` (execute takes effects?, expect?, plan?, plan_id?, reason?, repo?, select?)" });
+    const noExpect = await call("execute", { plan_id: plan.payload.plan_id, select: SELECT, effects: TEMPLATES });
+    expect(noExpect.payload).toMatchObject({ error: "plan_mismatch", data: { expected: plan.payload.plan_id } });
+    const done = await call("execute", { plan_id: plan.payload.plan_id, select: SELECT, effects: TEMPLATES, expect: { max: 5 } });
+    expect(done.isError).toBe(false);
+    expect(done.payload).toMatchObject({ plan_id: plan.payload.plan_id, commit: "c_3", committed: true });
+    // the plan form of a selector plan replays without OQX: a fresh plan over the written state executes as given
+    const again = await call("plan", { select: SELECT, effects: [{ op: "set", field: "frontmatter.twice", value: true }] });
+    const viaPlan = await call("execute", { plan: again.payload });
+    expect(viaPlan.payload).toMatchObject({ plan_id: again.payload.plan_id, commit: "c_4" });
   });
 });

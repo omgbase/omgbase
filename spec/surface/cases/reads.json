@@ -2376,7 +2376,7 @@
             }
           ],
           {
-            "plan_id": "863cdddf23a6a7c968311b842fb899e2f0129ecae02dbef541f17ca17fd96b79",
+            "plan_id": "765f204c32ec2f4e3a16fa2647469850a4a98780108886fab270a4e802767724",
             "commit": "c_1",
             "revisions": [
               {
@@ -2393,7 +2393,7 @@
             "committed": true
           },
           {
-            "plan_id": "9f235f45e53b73f3d9afdd6700b47ba3c637bd968c351d8e8ece5b704562c819",
+            "plan_id": "5b7fe5f499c8769079100bba25b63d458a9cf79be0119ea72883ff5412f43049",
             "commit": "c_2",
             "revisions": [
               {
@@ -2983,7 +2983,7 @@
           {
             "error": "filter_invalid",
             "retriable": false,
-            "message": "`ops` is no longer an argument — `apply` takes `effects` (the kernel ops are a library/fixture contract since spec/mutate 3.0) (apply takes effects, reason?, repo?)"
+            "message": "`ops` is no longer an argument — `apply` takes `effects` (the kernel ops are a library/fixture contract since spec/mutate 3.0) (apply takes effects, expect?, reason?, repo?, select?)"
           },
           {
             "error": "filter_invalid",
@@ -4157,7 +4157,7 @@
           },
           {
             "version": 1,
-            "planner_v": "p2",
+            "planner_v": "p3",
             "effects": [
               {
                 "op": "insert",
@@ -4207,7 +4207,7 @@
                 "kind": "block"
               }
             ],
-            "plan_id": "12e74a6f1d5a04634d74544588b56814d1f495153372bab0cbec0f0e90ec0edb",
+            "plan_id": "395a770c34abf3dd38ec1a630f87b1dea4bca804d43f7bbcc153027e020a0f9f",
             "diagnostics": [],
             "preview": {
               "results": [
@@ -4234,7 +4234,7 @@
           },
           {
             "version": 1,
-            "planner_v": "p2",
+            "planner_v": "p3",
             "effects": [
               {
                 "op": "insert",
@@ -4284,7 +4284,7 @@
                 "kind": "block"
               }
             ],
-            "plan_id": "306347552e0d28b7dbf2f9ce16739538db87dd09d0a1210ffa839913b5ec97e8",
+            "plan_id": "6ba2b17c402aa4550b46ef279ddc0abfa1e4442889ac9483aa9617e41f4aaee7",
             "diagnostics": [],
             "preview": {
               "results": [
@@ -4311,7 +4311,7 @@
           },
           {
             "version": 1,
-            "planner_v": "p2",
+            "planner_v": "p3",
             "effects": [
               {
                 "op": "insert",
@@ -4361,7 +4361,7 @@
                 "kind": "block"
               }
             ],
-            "plan_id": "12e74a6f1d5a04634d74544588b56814d1f495153372bab0cbec0f0e90ec0edb",
+            "plan_id": "395a770c34abf3dd38ec1a630f87b1dea4bca804d43f7bbcc153027e020a0f9f",
             "diagnostics": [],
             "preview": {
               "results": [
@@ -4388,7 +4388,7 @@
           },
           {
             "version": 1,
-            "planner_v": "p2",
+            "planner_v": "p3",
             "effects": [
               {
                 "op": "insert",
@@ -4438,7 +4438,7 @@
                 "kind": "block"
               }
             ],
-            "plan_id": "306347552e0d28b7dbf2f9ce16739538db87dd09d0a1210ffa839913b5ec97e8",
+            "plan_id": "6ba2b17c402aa4550b46ef279ddc0abfa1e4442889ac9483aa9617e41f4aaee7",
             "diagnostics": [],
             "preview": {
               "results": [
@@ -4482,7 +4482,7 @@
           },
           {
             "version": 1,
-            "planner_v": "p2",
+            "planner_v": "p3",
             "effects": [
               {
                 "op": "insert",
@@ -4537,7 +4537,7 @@
                 "kind": "block"
               }
             ],
-            "plan_id": "34b0270ded7004c8eece2ffffc8b704867166a3bee69c4c5feb1d1d96007c489",
+            "plan_id": "12582d8981681f9578e3c860800f3e5a9bcc26102aa0c71944ded22a2f84415e",
             "diagnostics": [],
             "preview": {
               "results": [
@@ -4565,7 +4565,7 @@
           },
           {
             "version": 1,
-            "planner_v": "p2",
+            "planner_v": "p3",
             "effects": [
               {
                 "op": "insert",
@@ -4620,7 +4620,7 @@
                 "kind": "block"
               }
             ],
-            "plan_id": "cf92d231fbf0e858b31f3ad2abeca9029801fb775e0782c9134f58795d61aeb3",
+            "plan_id": "99e4db52daf0483ee483c64d039e5f26d0d1d66108d1006b3d6f37adf46f4700",
             "diagnostics": [],
             "preview": {
               "results": [
@@ -4670,7 +4670,7 @@
           },
           {
             "version": 1,
-            "planner_v": "p2",
+            "planner_v": "p3",
             "effects": [
               {
                 "op": "move",
@@ -4723,7 +4723,7 @@
               "absent_paths": []
             },
             "new_ids": [],
-            "plan_id": "eecbe237653be8ad25cbcba26f84430e50cad6277efd6ffd4de61abbc649a01e",
+            "plan_id": "6055c082073b45e400f91eaa7c5e1b56acd4db7d85c64b6a44d8fc781d21a169",
             "diagnostics": [],
             "preview": {
               "results": [
@@ -4759,7 +4759,7 @@
           },
           {
             "version": 1,
-            "planner_v": "p2",
+            "planner_v": "p3",
             "effects": [
               {
                 "op": "insert",
@@ -4822,7 +4822,7 @@
                 "kind": "block"
               }
             ],
-            "plan_id": "c3dfd9016813c302589dadf28a74fa6b8006218bd83dc13d389338bf65f29cd5",
+            "plan_id": "4cb1e7be581d833082805f35f6114078ac8ad81bedf2adeacee2c917d717d676",
             "diagnostics": [],
             "preview": {
               "results": [
@@ -4860,7 +4860,7 @@
           },
           {
             "version": 1,
-            "planner_v": "p2",
+            "planner_v": "p3",
             "effects": [
               {
                 "op": "move",
@@ -4925,7 +4925,7 @@
               "absent_paths": []
             },
             "new_ids": [],
-            "plan_id": "8931f3d4190ad391b2b23356aa4d8ea4a8069f458213efa12b532a1d7b542b56",
+            "plan_id": "04875ac04164930156345415f9232cde1f4d2011e665ca672dcae67435464405",
             "diagnostics": [],
             "preview": {
               "results": [
@@ -4963,7 +4963,7 @@
           },
           {
             "version": 1,
-            "planner_v": "p2",
+            "planner_v": "p3",
             "effects": [
               {
                 "op": "remove",
@@ -5025,7 +5025,7 @@
               "absent_paths": []
             },
             "new_ids": [],
-            "plan_id": "6519c1b3975d9316e2b18e23f4e171b19139fb092d6c8118d4c829e865505950",
+            "plan_id": "57b36c6070e3b8e58aec3298d65eb811663a18dfa59061bf423228bb09be6575",
             "diagnostics": [],
             "preview": {
               "results": [
@@ -5058,7 +5058,7 @@
           },
           {
             "version": 1,
-            "planner_v": "p2",
+            "planner_v": "p3",
             "effects": [
               {
                 "op": "split",
@@ -5113,7 +5113,7 @@
                 "kind": "block"
               }
             ],
-            "plan_id": "005fdc7ae15e3457430c6cc48c7a3b0b2ffd4fdb0cab724c82adf422f8a558cb",
+            "plan_id": "4b2046b8b663696984dc4037eb37ba053708bdbe4a6606a26243baa6dda5de62",
             "diagnostics": [],
             "preview": {
               "results": [
@@ -5141,7 +5141,7 @@
           },
           {
             "version": 1,
-            "planner_v": "p2",
+            "planner_v": "p3",
             "effects": [
               {
                 "op": "merge",
@@ -5205,7 +5205,7 @@
               "absent_paths": []
             },
             "new_ids": [],
-            "plan_id": "b105fe3bbe5464d1d2664adda56f22698b598e9a00f6e48daa33b274b1c8aa8a",
+            "plan_id": "1ea10a923671b22c6379bc6729a12b60e34260fb1a5f948b88c05d6bb82319cf",
             "diagnostics": [],
             "preview": {
               "results": [
@@ -5235,7 +5235,7 @@
           },
           {
             "version": 1,
-            "planner_v": "p2",
+            "planner_v": "p3",
             "effects": [
               {
                 "op": "merge",
@@ -5299,7 +5299,7 @@
               "absent_paths": []
             },
             "new_ids": [],
-            "plan_id": "b105fe3bbe5464d1d2664adda56f22698b598e9a00f6e48daa33b274b1c8aa8a",
+            "plan_id": "1ea10a923671b22c6379bc6729a12b60e34260fb1a5f948b88c05d6bb82319cf",
             "diagnostics": [],
             "preview": {
               "results": [
@@ -5343,7 +5343,7 @@
           },
           {
             "version": 1,
-            "planner_v": "p2",
+            "planner_v": "p3",
             "effects": [
               {
                 "op": "set",
@@ -5395,7 +5395,7 @@
                 "kind": "block"
               }
             ],
-            "plan_id": "2a18307b91162d1455180f3bd9dc464f2ce348f955f8cfd7884325d73efd6926",
+            "plan_id": "e0edd35454d834595e2e1dbc2f6d945880a324080709d404d2dc6750210438c4",
             "diagnostics": [],
             "preview": {
               "results": [
@@ -5422,7 +5422,7 @@
           },
           {
             "version": 1,
-            "planner_v": "p2",
+            "planner_v": "p3",
             "effects": [
               {
                 "op": "set",
@@ -5474,7 +5474,7 @@
                 "kind": "block"
               }
             ],
-            "plan_id": "47254e57db3260d70a6f088ce109f2985091c7f75b1f4d69ffa76db01bb501b6",
+            "plan_id": "2246416e305546caac73bbef72ea24ef54f850eaf2e0bd4d2d7318be55f97551",
             "diagnostics": [],
             "preview": {
               "results": [
@@ -5549,7 +5549,7 @@
           },
           {
             "version": 1,
-            "planner_v": "p2",
+            "planner_v": "p3",
             "effects": [
               {
                 "op": "retarget",
@@ -5601,7 +5601,7 @@
                 "kind": "block"
               }
             ],
-            "plan_id": "7b193bddc42962761dc1661ccdc150234dbab7413959ea1b34f423dc8204e064",
+            "plan_id": "8f4ab8ae5b7336c270347120b05a5e9dadb1157116b719055ef0b5f101b627a3",
             "diagnostics": [],
             "preview": {
               "results": [
@@ -5648,7 +5648,7 @@
           },
           {
             "version": 1,
-            "planner_v": "p2",
+            "planner_v": "p3",
             "effects": [
               {
                 "op": "retarget",
@@ -5704,7 +5704,7 @@
                 "kind": "block"
               }
             ],
-            "plan_id": "19e3b334fade12458ba88ea3a76b5002f35b9c99ac057dd9b519cbbfb598eeb5",
+            "plan_id": "b659e0e54cc96313885692cc75f12ff4bb3bdcccb7d875c92957c736876c1704",
             "diagnostics": [],
             "preview": {
               "results": [
@@ -5760,7 +5760,7 @@
           },
           {
             "version": 1,
-            "planner_v": "p2",
+            "planner_v": "p3",
             "effects": [
               {
                 "op": "set",
@@ -5834,7 +5834,7 @@
                 "kind": "block"
               }
             ],
-            "plan_id": "bea0b69f4c750a9a4e63a708550b17b615f06b14f5f5d73340840e4ae966746d",
+            "plan_id": "9a108371596ccb8003986f0bd6e2f0b6d899cb8607fd88f2a74e94be19770bd3",
             "diagnostics": [],
             "preview": {
               "results": [
@@ -5929,7 +5929,7 @@
           },
           {
             "version": 1,
-            "planner_v": "p2",
+            "planner_v": "p3",
             "effects": [
               {
                 "op": "set",
@@ -6003,7 +6003,7 @@
                 "kind": "block"
               }
             ],
-            "plan_id": "bea0b69f4c750a9a4e63a708550b17b615f06b14f5f5d73340840e4ae966746d",
+            "plan_id": "9a108371596ccb8003986f0bd6e2f0b6d899cb8607fd88f2a74e94be19770bd3",
             "diagnostics": [],
             "preview": {
               "results": [
@@ -6097,7 +6097,7 @@
             }
           },
           {
-            "plan_id": "e2e4f24fdc8131a7698f2dd80bd74bef15be354a08233fa74bb9e11994dcda0c",
+            "plan_id": "ed11702633961d2a3002f2a986d4fdad824eb08d546e0ebbcb80769256f0be63",
             "commit": "c_2",
             "revisions": [
               {
@@ -6110,7 +6110,7 @@
             "committed": true
           },
           {
-            "plan_id": "6381d0d99dddc2e89ee6f7e3f7e927478545faa23a5768602dd1d5604bbe1816",
+            "plan_id": "6d1c1e89a862102c9bac47ce6b729124babb6aab3ee6a75a46241e5c59a94631",
             "commit": "c_3",
             "revisions": [
               {
@@ -6123,7 +6123,7 @@
             "committed": true
           },
           {
-            "plan_id": "04920fb08ecbbabdd2937f7bf5d0819e0b4b4909d000579574e6bc84b870569b",
+            "plan_id": "5f05e195e4b53cac3f92bd7df7cf87d0b4e32d41f6eadb20251cf41e19ab29ca",
             "commit": "c_4",
             "revisions": [
               {
@@ -6250,7 +6250,7 @@
             "truncated": false
           },
           {
-            "plan_id": "6ddea4779c4ecca7946e3591c594acb6ecfcda223800c6d6a8bc2f67fe3522f6",
+            "plan_id": "04e5a7948bee87fefca4f0e42eead4dd40e46b1e8fd4bc7a05476dff399c0554",
             "commit": "c_5",
             "revisions": [
               {
@@ -6272,7 +6272,7 @@
             "data": {}
           },
           {
-            "plan_id": "17be24a9c21fdb0c55a2a4f947a4f322d38e258e225b3824dc0c9dae4d677c17",
+            "plan_id": "12271f72a9b6402cee09fdd17d7ce375adcf0521c23e8bef63985c13812ea8de",
             "commit": "c_6",
             "revisions": [
               {
@@ -6285,7 +6285,7 @@
             "committed": true
           },
           {
-            "plan_id": "18bdbadcc96b798d0db6f2e30a857fea69ccc76dd289f56c9266d30e2c33492c",
+            "plan_id": "e4822770dbeda536b3ef5bec2edaa4f430fd119fca31a2ef1d316de5741642b0",
             "commit": "c_7",
             "revisions": [],
             "new_ids": {},
@@ -6309,7 +6309,7 @@
             "raw": "---\nlayer: draft\n---\n\n# New\n\nCreated.\n"
           },
           {
-            "plan_id": "80b76aaa38fe06834d313921843e3e69383fbfc65fe8ccdd06a9adb7e9e8d746",
+            "plan_id": "adf9035159e41fa79259671c46a5376f10e5603ab2c03e1bf6a36fc04a10d070",
             "commit": "c_8",
             "revisions": [],
             "new_ids": {},
@@ -10929,12 +10929,12 @@
           {
             "error": "filter_invalid",
             "retriable": false,
-            "message": "`ops` is no longer an argument — `apply` takes `effects` (the kernel ops are a library/fixture contract since spec/mutate 3.0) (apply takes effects, reason?, repo?)"
+            "message": "`ops` is no longer an argument — `apply` takes `effects` (the kernel ops are a library/fixture contract since spec/mutate 3.0) (apply takes effects, expect?, reason?, repo?, select?)"
           },
           {
             "error": "filter_invalid",
             "retriable": false,
-            "message": "`effects` is required (apply takes effects, reason?, repo?)"
+            "message": "`effects` is required (apply takes effects, expect?, reason?, repo?, select?)"
           },
           {
             "error": "filter_invalid",
@@ -11166,7 +11166,7 @@
           ],
           {
             "version": 1,
-            "planner_v": "p2",
+            "planner_v": "p3",
             "effects": [
               {
                 "op": "insert",
@@ -11220,7 +11220,7 @@
                 "kind": "block"
               }
             ],
-            "plan_id": "5d550d14ebdd46823091f1e0194538e9dbe361d0b7e83505d2c414bff9c7341c",
+            "plan_id": "ace1b010f98b803755c72362150fa6bd912c64ffcc979e905f8a8803d39bed74",
             "diagnostics": [],
             "preview": {
               "results": [
@@ -11247,7 +11247,7 @@
           },
           {
             "version": 1,
-            "planner_v": "p2",
+            "planner_v": "p3",
             "effects": [
               {
                 "op": "insert",
@@ -11298,7 +11298,7 @@
                 "kind": "block"
               }
             ],
-            "plan_id": "394c77ab9b55d501a2db694f780791055ca733c376238722ccdaccdb3d230ef3",
+            "plan_id": "d9769bc44389b2d01f7dff851598a6364a83233cc1c170328e2f6390ad929456",
             "diagnostics": [],
             "preview": {
               "results": [
@@ -11370,7 +11370,7 @@
           },
           {
             "version": 1,
-            "planner_v": "p2",
+            "planner_v": "p3",
             "effects": [
               {
                 "op": "insert",
@@ -11420,7 +11420,7 @@
                 "kind": "block"
               }
             ],
-            "plan_id": "fa565ae200a5d8907d1a8ebe1044df6fb250dcc3a2c7b8235010992a54e2b3df",
+            "plan_id": "dd33f3ef6a61f568e8fd641ff352c48bdd15e1eaf5b90ecfb400aa95b8a61637",
             "diagnostics": [],
             "preview": {
               "results": [
@@ -11446,7 +11446,7 @@
             }
           },
           {
-            "plan_id": "fa565ae200a5d8907d1a8ebe1044df6fb250dcc3a2c7b8235010992a54e2b3df",
+            "plan_id": "dd33f3ef6a61f568e8fd641ff352c48bdd15e1eaf5b90ecfb400aa95b8a61637",
             "commit": "c_1",
             "revisions": [
               {

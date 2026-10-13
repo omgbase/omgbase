@@ -1840,7 +1840,7 @@
             },
             "apply": {
               "receipt": {
-                "plan_id": "9ece468d18addf042b17a0c19dd4d8e5a5cfdc3cebb85bd77f8a5a3dc502ad48",
+                "plan_id": "3e79b916d470560323ab1203cecb9a97dd2b6f863c8ef58ccf6eb84bbb8ff462",
                 "commit": "c_1",
                 "revisions": [
                   {
@@ -1928,7 +1928,7 @@
             "actor": "agent:update",
             "reason": null,
             "checkpoint_id": null,
-            "ops": "{\"effects\":[{\"field\":\"content\",\"op\":\"set\",\"target\":{\"id\":\"d_0\",\"kind\":\"document\",\"path\":\"a.md\"},\"value\":\"---\\ntitle: Changed\\ntags:\\n  - x\\n---\\n\\n# Body\\n\\nText.\\n\"}],\"plan_id\":\"9ece468d18addf042b17a0c19dd4d8e5a5cfdc3cebb85bd77f8a5a3dc502ad48\",\"v\":1}"
+            "ops": "{\"effects\":[{\"field\":\"content\",\"op\":\"set\",\"target\":{\"id\":\"d_0\",\"kind\":\"document\",\"path\":\"a.md\"},\"value\":\"---\\ntitle: Changed\\ntags:\\n  - x\\n---\\n\\n# Body\\n\\nText.\\n\"}],\"plan_id\":\"3e79b916d470560323ab1203cecb9a97dd2b6f863c8ef58ccf6eb84bbb8ff462\",\"v\":1}"
           }
         ],
         "revisions": [
@@ -2530,7 +2530,7 @@
           {
             "plan": {
               "version": 1,
-              "planner_v": "p2",
+              "planner_v": "p3",
               "effects": [
                 {
                   "op": "set",
@@ -2578,7 +2578,7 @@
                   "kind": "block"
                 }
               ],
-              "plan_id": "6a786346951f01552e80034dac85621ca71411583f34c61cd2cd7c59f8a4d5d7",
+              "plan_id": "a5feb3ca62990ef64548a1c9ded5d690860578ace6c4784aeb022c8404e9553b",
               "diagnostics": []
             }
           },
@@ -2973,7 +2973,7 @@
             },
             "apply": {
               "receipt": {
-                "plan_id": "22e39abc806b608deacc0a4d898275e6acf842a486428fe3f29362d9ad71f60b",
+                "plan_id": "827cd509ca5d38d0d04e7e0459fea2e16be87ca7957b1dc19fdbf433e3eb8d62",
                 "commit": "c_1",
                 "revisions": [
                   {
@@ -3098,7 +3098,7 @@
             "actor": "agent:test",
             "reason": "whole-document update",
             "checkpoint_id": null,
-            "ops": "{\"effects\":[{\"field\":\"content\",\"op\":\"set\",\"target\":{\"id\":\"d_0\",\"kind\":\"document\",\"path\":\"a.md\"},\"value\":\"# Title\\n\\nAlpha is the first paragraph of this note about planning, revised.\\n\\nDelta arrives as a new paragraph at the end of the note.\\n\\nCharlie closes the note with a third paragraph.\\n\"}],\"plan_id\":\"22e39abc806b608deacc0a4d898275e6acf842a486428fe3f29362d9ad71f60b\",\"v\":1}"
+            "ops": "{\"effects\":[{\"field\":\"content\",\"op\":\"set\",\"target\":{\"id\":\"d_0\",\"kind\":\"document\",\"path\":\"a.md\"},\"value\":\"# Title\\n\\nAlpha is the first paragraph of this note about planning, revised.\\n\\nDelta arrives as a new paragraph at the end of the note.\\n\\nCharlie closes the note with a third paragraph.\\n\"}],\"plan_id\":\"827cd509ca5d38d0d04e7e0459fea2e16be87ca7957b1dc19fdbf433e3eb8d62\",\"v\":1}"
           }
         ],
         "revisions": [

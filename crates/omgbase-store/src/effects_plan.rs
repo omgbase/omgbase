@@ -28,10 +28,21 @@
 //! resolve through), the moves with their inbound edges read now, the
 //! tombstones — committed as one transaction (a created document as a
 //! known-id ingest under the `Absent` guard; its `d` minted by the ingest)
-//! with `commits.ops = canonical({ v: 1, plan_id, effects })`. The receipt
-//! zips the plan's symbols onto the ids the replay minted, per kind. The
-//! digest form ([`Store::execute_by_digest`]) re-plans and commits on digest
-//! equality; [`Store::apply_effects`] is plan + execute in one call.
+//! with `commits.ops = canonical({ v: 1, plan_id, effects, selection? })`.
+//! The receipt zips the plan's symbols onto the ids the replay minted, per
+//! kind. The digest form ([`Store::execute_by_digest`]) re-plans and commits
+//! on digest equality; [`Store::apply_effects`] is plan + execute in one call.
+//!
+//! **Selectors** (§11.8, mutate 3.1) never reach this crate as a query: the
+//! store has no OQX. The surface (`omgbase-surface::select`) runs the
+//! selector, expands hits × templates into the concrete effect list and
+//! hands it to [`Store::plan_selected`] together with the frozen
+//! [`Selection`] record, which the plan digests as its seventh core member
+//! and the commit stores in the intent record. The digest form with a
+//! selector re-plans through a callback the surface supplies
+//! ([`Store::execute_replanned`]); so does the one-shot apply
+//! ([`Store::apply_planned`]). An empty expansion (zero hits) is a legal
+//! plan here: nothing to commit, `commit: null` on execute.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
@@ -41,7 +52,7 @@ use omgbase_mutate::effects::{
     IdentityOp, IdentityPreview, NewId, NewIdKind, PLAN_VERSION, PLANNER_V, ParentPrecondition,
     Plan, PlanCreate, PlanFrontmatter, PlanMove, PlanOpset, PlanPreview, PlanRevision,
     PlanTombstone, Preconditions, RetargetHitPreview, RetargetPairPreview, RetargetPreview,
-    ScalarWrite, Target,
+    ScalarWrite, Selection, Target,
 };
 use omgbase_mutate::{
     At, Effect, ErrorCode, Expect, MutBlock, MutDoc, MutationError, Op, Parent, To, parse_document,
@@ -1487,7 +1498,23 @@ impl Store {
         effects: &[Effect],
         doc_store: &dyn DocStore,
     ) -> Result<Plan> {
-        if effects.is_empty() {
+        self.plan_selected(ctx, effects, None, doc_store)
+    }
+
+    /// §11.8 `plan` over a selector's expansion: `effects` is the concrete
+    /// list the surface derived (hits × templates, in that order) and
+    /// `selection` the frozen record of how — digested as the plan's seventh
+    /// core member and stored in the commit's intent record. With a
+    /// selection an empty list is legal (zero hits: an empty plan, nothing
+    /// to commit); without one it is the `plan_effects` shape error.
+    pub fn plan_selected(
+        &mut self,
+        ctx: &PlanContext,
+        effects: &[Effect],
+        selection: Option<Selection>,
+        doc_store: &dyn DocStore,
+    ) -> Result<Plan> {
+        if effects.is_empty() && selection.is_none() {
             return Err(invalid("`effects` must name at least one effect"));
         }
         let prev = self.ids.set_capture(Some(Capture::Symbolic(Vec::new())));
@@ -1509,6 +1536,7 @@ impl Store {
                 },
             })
             .collect();
+        plan.selection = selection;
         Ok(plan.sealed())
     }
 
@@ -1671,6 +1699,7 @@ impl Store {
             opset,
             preconditions,
             new_ids: Vec::new(),
+            selection: None,
             plan_id: String::new(),
             diagnostics: tracker.diagnostics,
             preview: Some(PlanPreview {
@@ -1899,7 +1928,7 @@ impl Store {
                 current_rev,
             });
         }
-        let record = fx::intent_record(&plan.plan_id, &plan.effects);
+        let record = fx::intent_record(&plan.plan_id, &plan.effects, plan.selection.as_ref());
         let head = CommitHead {
             origin: Origin::Api,
             actor: origin.commit_actor(),
@@ -1956,11 +1985,31 @@ impl Store {
         origin: &ApplyOrigin,
         doc_store: &mut dyn DocStore,
     ) -> Result<Receipt> {
-        let plan = self.plan_effects(ctx, effects, doc_store)?;
+        self.execute_replanned(ctx, plan_id, origin, doc_store, |store, ds| {
+            store.plan_effects(ctx, effects, ds)
+        })
+    }
+
+    /// The digest form over a caller-supplied re-plan (§11.8): `replan` runs
+    /// under this store — the surface's selector expansion followed by
+    /// [`Store::plan_selected`], so the store needs no OQX — and its plan's
+    /// digest must equal `plan_id` (a hit that appeared or vanished changes
+    /// `selection.identities`, so the digest), else `plan_mismatch`. The
+    /// error type is the caller's (the surface's expansion fails in its own
+    /// vocabulary); this store's errors convert into it.
+    pub fn execute_replanned<E: From<Error>>(
+        &mut self,
+        ctx: &PlanContext,
+        plan_id: &str,
+        origin: &ApplyOrigin,
+        doc_store: &mut dyn DocStore,
+        replan: impl FnOnce(&mut Store, &mut dyn DocStore) -> std::result::Result<Plan, E>,
+    ) -> std::result::Result<Receipt, E> {
+        let plan = replan(self, doc_store)?;
         if plan.plan_id != plan_id {
-            return Err(fx::plan_mismatch_replanned(plan_id, &plan.plan_id).into());
+            return Err(Error::from(fx::plan_mismatch_replanned(plan_id, &plan.plan_id)).into());
         }
-        self.execute_admitted(ctx, &plan, origin, doc_store)
+        Ok(self.execute_admitted(ctx, &plan, origin, doc_store)?)
     }
 
     /// §11.7 `apply { effects, dry_run? }`: the Plan on a dry run, else plan
@@ -1994,7 +2043,24 @@ impl Store {
         origin: &ApplyOrigin,
         doc_store: &mut dyn DocStore,
     ) -> Result<(Plan, Receipt)> {
-        let plan = self.plan_effects(ctx, effects, doc_store)?;
+        self.apply_planned(ctx, origin, doc_store, |store, ds| {
+            store.plan_effects(ctx, effects, ds)
+        })
+    }
+
+    /// [`Store::apply_effects_detailed`] over a caller-supplied planner
+    /// (§11.8): `plan` runs under this store — the surface's selector
+    /// expansion and [`Store::plan_selected`] — and the plan it returns is
+    /// committed at once, in the same write scope. The Plan and its Receipt;
+    /// the error type is the caller's, as for [`Store::execute_replanned`].
+    pub fn apply_planned<E: From<Error>>(
+        &mut self,
+        ctx: &PlanContext,
+        origin: &ApplyOrigin,
+        doc_store: &mut dyn DocStore,
+        plan: impl FnOnce(&mut Store, &mut dyn DocStore) -> std::result::Result<Plan, E>,
+    ) -> std::result::Result<(Plan, Receipt), E> {
+        let plan = plan(self, doc_store)?;
         let receipt = self.execute_admitted(ctx, &plan, origin, doc_store)?;
         Ok((plan, receipt))
     }

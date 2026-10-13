@@ -3742,7 +3742,7 @@ fn plan_effects_burns_no_id_and_previews_the_exact_bytes() {
         .plan_effects(&ctx(&repo, T1), &slice_one(), &ds)
         .unwrap();
     assert_eq!(plan.version, 1);
-    assert_eq!(plan.planner_v, "p2");
+    assert_eq!(plan.planner_v, "p3");
     assert_eq!(plan.plan_id.len(), 64);
     assert_eq!(plan.plan_id, plan.digest(), "sealed over its core");
     // Resolved: the document target carries id and path.

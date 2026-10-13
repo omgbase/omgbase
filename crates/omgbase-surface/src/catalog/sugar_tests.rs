@@ -1594,7 +1594,7 @@ fn retired_names_are_argument_errors_on_every_write_tool() {
     ));
     assert_eq!(
         ops["message"],
-        "`ops` is no longer an argument — `apply` takes `effects` (the kernel ops are a library/fixture contract since spec/mutate 3.0) (apply takes effects, reason?, repo?)"
+        "`ops` is no longer an argument — `apply` takes `effects` (the kernel ops are a library/fixture contract since spec/mutate 3.0) (apply takes effects, expect?, reason?, repo?, select?)"
     );
     let both = outcome(s.call_result("apply", &json!({ "ops": [], "effects": [] })));
     assert!(
@@ -1607,7 +1607,7 @@ fn retired_names_are_argument_errors_on_every_write_tool() {
     let none = outcome(s.call_result("apply", &json!({})));
     assert_eq!(
         none["message"],
-        "`effects` is required (apply takes effects, reason?, repo?)"
+        "`effects` is required (apply takes effects, expect?, reason?, repo?, select?)"
     );
     let attrs = outcome(s.call_result(
         "blocks_update",
