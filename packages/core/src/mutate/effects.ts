@@ -13,6 +13,7 @@ import type { At, Expect, To } from "./ops.js";
 import type { IdentityPreview } from "./opset.js";
 import { planUpdate } from "./plan-update.js";
 import { MutationError, rawHashHex, renderDoc, type MutBlock, type MutDoc } from "./tree.js";
+import { fixRequest, withMember, type FixRequest } from "./canonical.js";
 
 // The public Effect layer (spec/mutate §11, 2.3; ADR-021). Nine effects —
 // `create insert set unset move remove split merge retarget` — are the
@@ -99,10 +100,108 @@ function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
 }
 
-/** The argument-shape error of the surface, thrown from the planner: `filter_invalid { reason, hint: "arguments" }`. */
-export function effectInvalid(message: string): MutationError {
-  return new MutationError("filter_invalid", message, { reason: message, hint: "arguments" });
+/** The argument-shape error of the surface, thrown from the planner: `filter_invalid { reason, hint: "arguments" }` — with a `fix` (3.4, §8) when the shape check can spell the corrected call. */
+export function effectInvalid(message: string, fix?: string): MutationError {
+  return new MutationError("filter_invalid", message, { reason: message, hint: "arguments", ...(fix !== undefined ? { fix } : {}) });
 }
+
+/**
+ * What the shape check needs to spell a `fix` for the shape errors of §8
+ * (3.4): the request as given (the corrected call is that request with the
+ * offending effect rewritten — the effect at `effects[i]` AS WRITTEN, before
+ * any desugaring) and a live-row lookup for the one fix that needs the store:
+ * `parentOf(block id)` → the block's parent id (`null` at the top level) and
+ * its document's path (storage form), or `null` when no live block has the id
+ * (then there is no fix). The planner's compile (`select.ts`) supplies it; a
+ * library call without it gets the same errors with no `fix`.
+ */
+export interface ShapeFixContext {
+  request: FixRequest;
+  parentOf: (blockId: string) => { parent: string | null; path: string } | null;
+}
+
+/** The fixer of one effect: `build(effect, expect?)` is the request with `effects[i]` replaced by `effect` (and, when given, its top-level `expect` replaced), canonical. */
+interface EffectFixer {
+  /** the effect as written in the request (the base every corrected effect is spelled from) */
+  written: Record<string, unknown>;
+  build: (effect: Record<string, unknown>, expect?: { value: unknown }) => string;
+  parentOf: ShapeFixContext["parentOf"];
+  request: FixRequest;
+}
+
+function fixerFor(ctx: ShapeFixContext | undefined, i: number, v: Record<string, unknown>): EffectFixer | undefined {
+  if (ctx === undefined) return undefined;
+  const list = Array.isArray(ctx.request.effects) ? (ctx.request.effects as unknown[]) : undefined;
+  const written = list !== undefined && isRecord(list[i]) ? (list[i] as Record<string, unknown>) : v;
+  return {
+    written,
+    build: (effect, expect) => fixRequest({
+      ...ctx.request,
+      effects: withMember(ctx.request.effects, [String(i)], effect),
+      ...(expect !== undefined ? { expect: expect.value } : {}),
+    }),
+    parentOf: ctx.parentOf,
+    request: ctx.request,
+  };
+}
+
+/** A record whose every value is a string. */
+function isStringRecord(v: unknown): v is Record<string, string> {
+  return isRecord(v) && Object.values(v).every((x) => typeof x === "string");
+}
+
+/**
+ * §8 (3.4): an effect-level `expect.max` — the bound belongs to the request's
+ * top-level `expect`, beside `select`. The fix drops it from the effect (the
+ * rest of that `expect` stays; an emptied `expect` goes) and, when the request
+ * has a `select`, moves it to the top level unless a top-level `expect.max` is
+ * already there (then the top-level one is kept as written); without a
+ * `select` a top-level `expect` would itself be refused, so the fix only drops it.
+ */
+function effectLevelMax(v: Record<string, unknown>, here: string, f: EffectFixer | undefined): MutationError {
+  const message = `${here}: \`expect.max\` bounds a selection — it is the request's top-level \`expect\`, beside \`select\`, not an effect's`;
+  if (f === undefined) return effectInvalid(message);
+  const { max, ...rest } = v;
+  const effect: Record<string, unknown> = { ...f.written, expect: Object.keys(rest).length > 0 ? rest : undefined };
+  if (f.request.select === undefined) return effectInvalid(message, f.build(effect));
+  const top = isRecord(f.request.expect) ? f.request.expect : {};
+  return effectInvalid(message, f.build(effect, { value: "max" in top ? top : { ...top, max } }));
+}
+
+/**
+ * §8 (3.4): `at` given as the bare string `"after"` / `"before"` with a block
+ * `into` — "right after block X" is `into: X's parent, at: { after: X }`. The
+ * fix needs the block's live row (its parent, or its document when it is top-
+ * level, spelled as the rooted path); a block the store does not know gets no fix.
+ */
+function bareAnchor(at: "before" | "after", into: EffectTarget, here: string, f: EffectFixer | undefined): MutationError {
+  const message = `${here}: \`at\` must be "start", "end", { before: <block id> } or { after: <block id> } — "${at} block X" is into: X's parent (a block, or the document when X is top-level), at: { ${at}: X }`;
+  if (f === undefined || into.kind !== "block") return effectInvalid(message);
+  const row = f.parentOf(into.id);
+  if (row === null) return effectInvalid(message);
+  const parent: unknown = row.parent === null ? referencePath(row.path) : { kind: "block", id: row.parent };
+  return effectInvalid(message, f.build({ ...f.written, into: parent, at: { [at]: into.id } }));
+}
+
+/**
+ * §8 (3.4): a plural-target `expect` written as `{ content_hash: { <id>: <hash>, … } }`
+ * (every key a guard name, every value a map of strings) — the fix inverts the
+ * nesting to `{ <id>: { content_hash: <hash> }, … }`.
+ */
+function invertedExpectMap(v: Record<string, unknown>, here: string, f: EffectFixer | undefined): MutationError | null {
+  const keys = Object.keys(v);
+  if (keys.length === 0 || !keys.every((k) => k === "content_hash" || k === "parent_children_hash") || !Object.values(v).every(isStringRecord)) return null;
+  const message = `${here}: a plural-target \`expect\` is keyed by block id — { <block id>: { content_hash?, parent_children_hash? }, … }`;
+  if (f === undefined) return effectInvalid(message);
+  const inverted: Record<string, Record<string, string>> = {};
+  for (const [guard, byId] of Object.entries(v) as [string, Record<string, string>][]) {
+    for (const [id, hash] of Object.entries(byId)) inverted[id] = { ...inverted[id], [guard]: hash };
+  }
+  return effectInvalid(message, f.build({ ...f.written, expect: inverted }));
+}
+
+/** §8 (3.4): the block-field misspellings the fix corrects to `markdown`. */
+const BLOCK_FIELD_ALIASES: ReadonlySet<string> = new Set(["text", "content", "body", "raw"]);
 
 function onlyKeys(e: Record<string, unknown>, allowed: readonly string[], here: string): void {
   const extra = Object.keys(e).filter((k) => !allowed.includes(k));
@@ -195,19 +294,21 @@ function validateTargets(v: unknown, here: string): EffectTarget[] {
   return v.map((t, i) => validateTarget(t, `${here}.targets[${i}]`, ["block"]));
 }
 
-function validateAt(v: unknown, here: string): EffectAt | undefined {
+function validateAt(v: unknown, here: string, into?: EffectTarget, f?: EffectFixer): EffectAt | undefined {
   if (v === undefined) return undefined;
   if (v === "start" || v === "end") return v;
   if (isRecord(v) && Object.keys(v).length === 1) {
     if (typeof v.before === "string") return { before: v.before };
     if (typeof v.after === "string") return { after: v.after };
   }
+  if ((v === "before" || v === "after") && into !== undefined) throw bareAnchor(v, into, here, f);
   throw effectInvalid(`${here}: \`at\` must be "start", "end", { before: <block id> } or { after: <block id> }`);
 }
 
-function validateExpect(v: unknown, here: string): EffectExpect | undefined {
+function validateExpect(v: unknown, here: string, f?: EffectFixer): EffectExpect | undefined {
   if (v === undefined) return undefined;
   if (!isRecord(v)) throw effectInvalid(`${here}: \`expect\` must be an object`);
+  if ("max" in v) throw effectLevelMax(v, here, f);
   onlyKeys(v, ["content_hash", "parent_children_hash", "revision"], `${here}.expect`);
   const out: EffectExpect = {};
   for (const k of ["content_hash", "parent_children_hash", "revision"] as const) {
@@ -217,9 +318,12 @@ function validateExpect(v: unknown, here: string): EffectExpect | undefined {
   return out;
 }
 
-function validateExpectMap(v: unknown, here: string): EffectExpectMap | undefined {
+function validateExpectMap(v: unknown, here: string, f?: EffectFixer): EffectExpectMap | undefined {
   if (v === undefined) return undefined;
   if (!isRecord(v)) throw effectInvalid(`${here}: \`expect\` must be an object keyed by block id`);
+  if ("max" in v) throw effectLevelMax(v, here, f);
+  const inverted = invertedExpectMap(v, here, f);
+  if (inverted !== null) throw inverted;
   const out: EffectExpectMap = {};
   for (const [id, x] of Object.entries(v)) {
     if (!isRecord(x)) throw effectInvalid(`${here}.expect[${JSON.stringify(id)}]: must be an object`);
@@ -234,11 +338,12 @@ function validateExpectMap(v: unknown, here: string): EffectExpectMap | undefine
   return out;
 }
 
-/** The shape check of one effect (§11.1). `i` names it in the message (`effects[i]`). */
-export function validateEffect(v: unknown, i: number): Effect {
+/** The shape check of one effect (§11.1). `i` names it in the message (`effects[i]`); `fix` (3.4) lets the shape errors of §8 carry their corrected call. */
+export function validateEffect(v: unknown, i: number, fix?: ShapeFixContext): Effect {
   const here = `effects[${i}]`;
   if (!isRecord(v) || typeof v.op !== "string") throw effectInvalid(`${here}: an effect is an object whose \`op\` is one of ${EFFECT_OPS.join("/")}`);
   if (!(EFFECT_OPS as readonly string[]).includes(v.op)) throw effectInvalid(`${here}: \`op\` must be one of ${EFFECT_OPS.join("/")} (got "${v.op}")`);
+  const f = fixerFor(fix, i, v);
   switch (v.op as Effect["op"]) {
     case "create": {
       onlyKeys(v, ["op", "path", "markdown", "frontmatter"], here);
@@ -250,9 +355,9 @@ export function validateEffect(v: unknown, i: number): Effect {
     case "insert": {
       onlyKeys(v, ["op", "into", "at", "markdown", "expect"], here);
       const into = validateTarget(v.into, `${here}.into`, ["document", "section", "block"]);
-      const at = validateAt(v.at, here);
+      const at = validateAt(v.at, here, into, f);
       const markdown = requireString(v, "markdown", here);
-      const expect = validateExpect(v.expect, here);
+      const expect = validateExpect(v.expect, here, f);
       return { op: "insert", into, ...(at !== undefined ? { at } : {}), markdown, ...(expect !== undefined ? { expect } : {}) };
     }
     case "set": {
@@ -260,8 +365,8 @@ export function validateEffect(v: unknown, i: number): Effect {
       const target = validateTarget(v.target, `${here}.target`, ["document", "block", "node"]);
       const field = requireString(v, "field", here);
       if (!("value" in v)) throw effectInvalid(`${here}: \`value\` is required`);
-      if (target.kind !== "symbol") checkField(target.kind, field, here, "set");
-      const expect = validateExpect(v.expect, here);
+      if (target.kind !== "symbol") checkField(target.kind, field, here, "set", f);
+      const expect = validateExpect(v.expect, here, f);
       return { op: "set", target, field, value: v.value, ...(expect !== undefined ? { expect } : {}) };
     }
     case "unset": {
@@ -269,7 +374,7 @@ export function validateEffect(v: unknown, i: number): Effect {
       const target = validateTarget(v.target, `${here}.target`, ["document"]);
       const field = requireString(v, "field", here);
       if (target.kind !== "symbol") checkField(target.kind, field, here, "unset");
-      const expect = validateExpect(v.expect, here);
+      const expect = validateExpect(v.expect, here, f);
       return { op: "unset", target, field, ...(expect !== undefined ? { expect } : {}) };
     }
     case "move": {
@@ -277,8 +382,8 @@ export function validateEffect(v: unknown, i: number): Effect {
         onlyKeys(v, ["op", "targets", "into", "at", "expect"], here);
         const targets = validateTargets(v.targets, here);
         const into = validateTarget(v.into, `${here}.into`, ["document", "section", "block"]);
-        const at = validateAt(v.at, here);
-        const expect = validateExpect(v.expect, here);
+        const at = validateAt(v.at, here, into, f);
+        const expect = validateExpect(v.expect, here, f);
         return { op: "move", targets, into, ...(at !== undefined ? { at } : {}), ...(expect !== undefined ? { expect } : {}) };
       }
       onlyKeys(v, ["op", "target", "to", "retarget_inbound"], here);
@@ -291,7 +396,7 @@ export function validateEffect(v: unknown, i: number): Effect {
       if ("targets" in v) {
         onlyKeys(v, ["op", "targets", "expect"], here);
         const targets = validateTargets(v.targets, here);
-        const expect = validateExpectMap(v.expect, here);
+        const expect = validateExpectMap(v.expect, here, f);
         return { op: "remove", targets, ...(expect !== undefined ? { expect } : {}) };
       }
       onlyKeys(v, ["op", "target"], here);
@@ -301,14 +406,14 @@ export function validateEffect(v: unknown, i: number): Effect {
       onlyKeys(v, ["op", "target", "at", "expect"], here);
       const target = validateTarget(v.target, `${here}.target`, ["block"]);
       if (!Array.isArray(v.at) || v.at.some((n) => typeof n !== "number" || !Number.isInteger(n) || n < 0)) throw effectInvalid(`${here}: \`at\` must be an array of byte offsets`);
-      const expect = validateExpect(v.expect, here);
+      const expect = validateExpect(v.expect, here, f);
       return { op: "split", target, at: v.at as number[], ...(expect !== undefined ? { expect } : {}) };
     }
     case "merge": {
       onlyKeys(v, ["op", "targets", "separator", "expect"], here);
       const targets = validateTargets(v.targets, here);
       const separator = optionalString(v, "separator", here);
-      const expect = validateExpectMap(v.expect, here);
+      const expect = validateExpectMap(v.expect, here, f);
       return { op: "merge", targets, ...(separator !== undefined ? { separator } : {}), ...(expect !== undefined ? { expect } : {}) };
     }
     case "retarget": {
@@ -326,22 +431,24 @@ export function validateEffect(v: unknown, i: number): Effect {
 }
 
 /** The whole list; a non-array or an empty list is a shape error too. */
-export function validateEffects(v: unknown): Effect[] {
+export function validateEffects(v: unknown, fix?: ShapeFixContext): Effect[] {
   if (!Array.isArray(v)) throw effectInvalid("`effects` must be an array of effects");
   if (v.length === 0) throw effectInvalid("`effects` must name at least one effect");
-  return v.map((e, i) => validateEffect(e, i));
+  return v.map((e, i) => validateEffect(e, i, fix));
 }
 
 // §11.2: the `field` spellings per target kind.
 export const FRONTMATTER_FIELD = /^frontmatter\.(.+)$/;
-function checkField(kind: EffectTarget["kind"], field: string, here: string, op: "set" | "unset"): void {
+function checkField(kind: EffectTarget["kind"], field: string, here: string, op: "set" | "unset", f?: EffectFixer): void {
   if (kind === "document") {
     if (FRONTMATTER_FIELD.test(field) || (op === "set" && field === "content")) return;
     throw effectInvalid(`${here}: a document's \`field\` is \`frontmatter.<key>\`${op === "set" ? " or `content`" : ""} (got "${field}")`);
   }
   if (kind === "block") {
     if (field === "markdown" || field === "attrs.checked") return;
-    throw effectInvalid(`${here}: a block's \`field\` is \`markdown\` or \`attrs.checked\` (got "${field}")`);
+    // (3.4, §8) `text` / `content` / `body` / `raw` on a block: the fix spells `markdown`.
+    const fix = f !== undefined && BLOCK_FIELD_ALIASES.has(field) ? f.build({ ...f.written, field: "markdown" }) : undefined;
+    throw effectInvalid(`${here}: a block's \`field\` is \`markdown\` or \`attrs.checked\` (got "${field}")`, fix);
   }
   // node: the adapter's editable props (`node_not_editable` names them when unknown)
   if (field === "" || field.includes(".")) throw effectInvalid(`${here}: a node's \`field\` is one of its editable properties (got "${field}")`);

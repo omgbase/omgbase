@@ -460,24 +460,56 @@ describe("doc-level MCP tools (docs_create/move/delete/set_meta)", () => {
     expect(staleEnd.payload.stale.map((s) => `${s.path}→${s.target}`)).toEqual(["/b.md→/notes.md"]);
   });
 
+  it("`plan` returns `preview.diffs` only on `diffs: true`; the Plan is otherwise identical and `plan_id` unmoved (4.5)", async () => {
+    const effects = [{ op: "set", target: { kind: "document", path: "notes.md" }, field: "frontmatter.status", value: "active" }];
+    const lean = (await call("plan", { effects })) as { payload: { plan_id: string; preview: Record<string, unknown> }; isError: boolean };
+    expect(lean.isError).toBe(false);
+    expect(Object.keys(lean.payload.preview)).toEqual(["results", "revisions", "summary"]);
+    const full = (await call("plan", { effects, diffs: true })) as { payload: { plan_id: string; preview: Record<string, unknown> }; isError: boolean };
+    expect(Object.keys(full.payload.preview)).toEqual(["results", "revisions", "diffs", "summary"]);
+    expect(full.payload.plan_id).toBe(lean.payload.plan_id);
+    const { diffs: _d, ...rest } = full.payload.preview;
+    expect(rest).toEqual(lean.payload.preview);
+    const off = (await call("plan", { effects, diffs: false })) as { payload: { preview: Record<string, unknown> } };
+    expect(Object.keys(off.payload.preview)).toEqual(["results", "revisions", "summary"]);
+  });
+
+  it("a string-list argument takes one bare string as a one-element list; a comma-joined string is the array error with the split list as its fix (4.5)", async () => {
+    const one = (await call("docs_read_many", { docs: "notes.md" })) as { payload: { items: { path: string }[] }; isError: boolean };
+    expect(one.isError).toBe(false);
+    expect(one.payload.items.map((i) => i.path)).toEqual(["/notes.md"]);
+    const roots = (await call("graph", { roots: "notes.md", degrees: 0 })) as { payload: { roots: string[] }; isError: boolean };
+    expect(roots.isError).toBe(false);
+    expect(roots.payload.roots).toHaveLength(1);
+    const joined = (await call("docs_read_many", { docs: "notes.md, projects/a.md", include_ids: true })) as { payload: { error: string; message: string; data: { hint: string; fix: string } }; isError: boolean };
+    expect(joined.isError).toBe(true);
+    expect(joined.payload.error).toBe("filter_invalid");
+    expect(joined.payload.message).toBe("`docs` must be an array of strings (docs_read_many takes budget_tokens?, docs, include_ids?, repo?)");
+    expect(joined.payload.data).toEqual({ reason: joined.payload.message, hint: "arguments", fix: "{\"docs\":[\"notes.md\",\"projects/a.md\"],\"include_ids\":true}" });
+    const wrong = (await call("docs_read_many", { docs: 7 })) as { payload: { message: string; data: Record<string, unknown> }; isError: boolean };
+    expect(wrong.isError).toBe(true);
+    expect(wrong.payload.message).toBe("`docs` must be an array of strings (docs_read_many takes budget_tokens?, docs, include_ids?, repo?)");
+    expect(wrong.payload.data.fix).toBeUndefined();
+  });
+
   it("`plan` over the document effects validates and previews without writing; `dry_run` is refused by name (4.0)", async () => {
-    const created = (await call("plan", { effects: [{ op: "create", path: "sub/fresh.md", markdown: "# Fresh\n" }] })) as { payload: { new_ids: unknown[]; preview: { diffs: Record<string, { before: string; after: string }> } }; isError: boolean };
+    const created = (await call("plan", { effects: [{ op: "create", path: "sub/fresh.md", markdown: "# Fresh\n" }], diffs: true })) as { payload: { new_ids: unknown[]; preview: { diffs: Record<string, { before: string; after: string }> } }; isError: boolean };
     expect(created.isError).toBe(false);
     expect(created.payload.new_ids).toEqual([{ symbol: "$new.0", kind: "document" }, { symbol: "$new.1", kind: "block" }]);
     expect(created.payload.preview.diffs).toEqual({ "/sub/fresh.md": { before: "", after: "# Fresh\n" } });
     expect(existsSync(join(root, "sub/fresh.md"))).toBe(false);
 
-    const meta = (await call("plan", { effects: [{ op: "set", target: { kind: "document", path: "notes.md" }, field: "frontmatter.status", value: "active" }] })) as { payload: { preview: { diffs: Record<string, { before: string; after: string }> } }; isError: boolean };
+    const meta = (await call("plan", { effects: [{ op: "set", target: { kind: "document", path: "notes.md" }, field: "frontmatter.status", value: "active" }], diffs: true })) as { payload: { preview: { diffs: Record<string, { before: string; after: string }> } }; isError: boolean };
     expect(meta.isError).toBe(false);
     expect(meta.payload.preview.diffs["/notes.md"]!.after).toContain("status: active");
     expect(readFileSync(join(root, "notes.md"), "utf8")).not.toContain("status: active");
 
-    const moved = (await call("plan", { effects: [{ op: "move", target: { kind: "document", path: "notes.md" }, to: "moved/notes.md" }] })) as { payload: { preview: { diffs: Record<string, unknown> } }; isError: boolean };
+    const moved = (await call("plan", { effects: [{ op: "move", target: { kind: "document", path: "notes.md" }, to: "moved/notes.md" }], diffs: true })) as { payload: { preview: { diffs: Record<string, unknown> } }; isError: boolean };
     expect(moved.isError).toBe(false);
     expect(Object.keys(moved.payload.preview.diffs).sort()).toEqual(["/moved/notes.md", "/notes.md"]);
     expect(existsSync(join(root, "notes.md"))).toBe(true);
 
-    const deleted = (await call("plan", { effects: [{ op: "remove", target: { kind: "document", path: "notes.md" } }] })) as { payload: { preview: { diffs: Record<string, { after: string }> } }; isError: boolean };
+    const deleted = (await call("plan", { effects: [{ op: "remove", target: { kind: "document", path: "notes.md" } }], diffs: true })) as { payload: { preview: { diffs: Record<string, { after: string }> } }; isError: boolean };
     expect(deleted.isError).toBe(false);
     expect(deleted.payload.preview.diffs["/notes.md"]!.after).toBe("");
     expect(existsSync(join(root, "notes.md"))).toBe(true);
@@ -1017,7 +1049,7 @@ describe("block-level MCP tools (blocks_* — ref resolution + CAS server-side)"
 
   it("plan previews an insert without committing", async () => {
     const alpha = await idOf("Alpha para.");
-    const { payload, isError } = (await call("plan", { effects: [{ op: "insert", into: { kind: "document", path: "notes.md" }, at: { after: alpha }, markdown: "PREVIEW ONLY" }] })) as {
+    const { payload, isError } = (await call("plan", { effects: [{ op: "insert", into: { kind: "document", path: "notes.md" }, at: { after: alpha }, markdown: "PREVIEW ONLY" }], diffs: true })) as {
       payload: { preview: { diffs?: Record<string, unknown> } }; isError: boolean;
     };
     expect(isError).toBe(false);
@@ -1065,7 +1097,7 @@ describe("link maintenance tools: honest dry run, authored targets, summary, sco
   it("plan { retarget } previews through the planner (diffs, preview.retarget); links_repair then commits on list+item hits", async () => {
     await call("docs_create", { path: "c.md", markdown: "# C\n" });
     const repairs = [{ from: "b.md", to: "/c.md" }];
-    const { payload: dry, isError } = (await call("plan", { effects: [{ op: "retarget", repairs }] })) as { payload: RetargetPlan; isError: boolean };
+    const { payload: dry, isError } = (await call("plan", { effects: [{ op: "retarget", repairs }], diffs: true })) as { payload: RetargetPlan; isError: boolean };
     expect(isError).toBe(false);
     const after = dry.preview.diffs["/list.md"]!.after;
     expect(after).toContain("- item [b](/c.md) here");

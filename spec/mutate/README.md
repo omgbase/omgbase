@@ -603,11 +603,24 @@ list whose first identity is not a string or a row), carries no `fix`:
 | `stale_plan` at execute; `plan_mismatch` on the plan form | re-plan and commit in one call: `apply` over the plan's selector form `{ select: selection.query, effects: selection.templates, expect: selection.expect or { max: selection.cardinality } }` when it has a `selection`, else `{ effects: <the plan's effects> }` (none when the plan has no effects — `apply` takes at least one) |
 | `plan_mismatch` on the digest form | `apply` over the request as given: `{ select?, effects, expect? }` |
 | `target_missing { symbol }` for a `$new.n` no earlier effect created, on a plain request with a later `create` | the next `create` moved before the effect that uses the symbol, that symbol renamed to the one the create will then allocate (`$new.<symbols allocated so far>`) |
+| `filter_invalid` (3.4) "`at` must be … — "after block X" is into: X's parent …": `at` given as the bare string `"after"` / `"before"` on an `insert` or a block `move` whose `into` is a block | the same request with that effect's `into` replaced by the block's **parent** — `{ kind: "block", id: <parent id> }`, or the document's rooted path (`"/a.md"`) when the block is top-level — and `at: { after: <the block id> }` / `{ before: … }`. The one shape fix that reads the store (the block's live `blocks` row: `parent_block`, its document's path); an `into` that is not a live block (a `$new.n`, an unknown id, a document) gets no `fix` |
+| `filter_invalid` (3.4) "a plural-target `expect` is keyed by block id — { <block id>: { content_hash?, parent_children_hash? }, … }": a `remove`/`merge` `expect` whose every key is a guard name (`content_hash` / `parent_children_hash`) and every value a map of strings | the same request with the nesting inverted: `{ <id>: { <guard>: <value> }, … }` (the guards of one id merged into its object) |
+| `filter_invalid` (3.4) "`expect.max` bounds a selection — it is the request's top-level `expect`, beside `select`, not an effect's": `max` inside an effect's `expect` (any op) | the same request with `max` dropped from that effect's `expect` (the other guards stay; an emptied `expect` goes) and, when the request has a `select`, `expect.max` set at the top level to that value — unless the request already has a top-level `expect.max`, which is kept as written; without a `select` nothing is added (a top-level `expect` alone would itself be refused) |
+| `filter_invalid` (3.4) "a block's `field` is `markdown` or `attrs.checked` (got …)" with `field` one of `text`, `content`, `body`, `raw` on a literal block target | the same request with that effect's `field: "markdown"`; any other block field (a `title`) gets the error and no `fix` |
 
-The surface composes three more (`spec/surface` §9: `block_not_container`,
-`parent_missing` and `ambiguous_heading` on the append tools). The `fix` is
-pinned by the fixtures like any data field (`effects::conflicting-*`,
-`select-*`, `sugar-*`, `plan::stale-plan`, …).
+The four shape fixes (3.4) are built by the shape check itself — the
+reference's `effects.ts` `validateEffect` given a `ShapeFixContext { request,
+parentOf }` by the planner's compile (`select.ts` `compilePlain`, and
+`admitTemplate` for a selector's templates, where `parentOf` finds nothing
+because a template's `into` is bound per hit); the port's `omgbase-mutate`
+shape check with the store's row lookup supplied the same way. The corrected
+effect is spelled from the effect **as written** in the request (`effects[i]`
+before desugaring); under a selector `i` is the template's index. The
+surface composes three more (`spec/surface` §9: `block_not_container`,
+`parent_missing` and `ambiguous_heading` on the append tools) and one of its
+own on a comma-joined string-list argument (`spec/surface` §4 "Arguments").
+The `fix` is pinned by the fixtures like any data field
+(`effects::conflicting-*`, `select-*`, `sugar-*`, `shape-*`, `plan::stale-plan`, …).
 
 ## 9. Fixtures
 
@@ -716,7 +729,15 @@ a literal that begins with the leader, constant folding to one `plan_id`, a
 bare path / id / `$new.n` target, a locator refused, a bad expression, the
 leader in a non-expression slot, and the selector-less branch on a
 document, on blocks, over two targets (two synthetic queries, `templates`
-in the intent record) and refused on a `create`).
+in the intent record) and refused on a `create`); 3.4 adds the shape-fix
+cases of §8, every name prefixed `shape-`: the bare `"after"`/`"before"`
+anchor on a nested block (the fix's `into` a block), on a top-level block
+(a rooted path), on an unknown block and on a document (no fix), and on a
+block `move`; the guard-first plural `expect` inverted (and the fix planned
+as given); an effect-level `expect.max` moved beside `select`, kept when
+the request already bounds the selection, dropped without a `select`; a
+block `field` of `text` and of `content` (`markdown`), an unknown one (no
+fix), and a `text` template under a selector (the template rewritten).
 
 **Runner checks**: every committed document satisfies `spec/store` §8 I1–I8
 and `files[path] == reconstruct(doc)` — a path a `disk` step rewrote, or one
@@ -1006,7 +1027,11 @@ symbol where a block is wanted) is `target_missing { symbol }`.
 before anything is resolved — an unknown key, a missing or mistyped member,
 a target kind the op does not take, a `field` not in §11.2 — and a failure
 is `filter_invalid { reason, hint: "arguments" }` naming `effects[i]` and
-the member; an empty `effects` is one too.
+the member; an empty `effects` is one too. Four shape mistakes carry a `fix`
+(3.4, §8): `at` as the bare string `"after"`/`"before"` (the fix anchors on
+the block from its parent), a plural `expect` nested guard-first (inverted),
+`expect.max` inside an effect (moved beside `select`, or dropped), and a
+block `field` of `text`/`content`/`body`/`raw` (`markdown`).
 
 ### 11.2 Fields
 
@@ -1524,6 +1549,22 @@ concrete effects, so the counts are real. The lines are the reference's
 Receipt pins them in every committing fixture step (§9).
 
 ## Decisions
+
+- 2026-10-13, mutate 3.4: the shape errors learn to teach (with
+  `spec/surface` 4.5). A 78-run agent benchmark against the minimal profile
+  passed every task but guessed four effect shapes wrong first — `at:
+  "after"` as a bare string with the anchor block as `into`, a plural
+  `expect` nested guard-first, `expect.max` inside an effect, a block
+  `field: "text"` — and the shape check answered with a rule each time. Now
+  each carries a `fix` (§8, four rows): the corrected call spelled from the
+  effect as written, the anchor fix reading the block's live row for its
+  parent (the one shape fix that touches the store; no live block → no
+  fix), the others pure rewrites; the messages of the first three name the
+  right shape. The shape check takes an optional `ShapeFixContext` from the
+  planner's compile; a library call without it gets the same errors with no
+  `fix`. Additive — no `plan_id`, intent record or `planner_v` moves, every
+  well-formed request is byte-identical to 3.3: a minor. Fixtures:
+  `effects.json` 79 → 92 (the `shape-*` cases of §9); nothing else moves.
 
 - 2026-10-13, mutate 3.3: the teaching surfaces — the plan's `summary`
   (§11.9) and the error `fix` (§8), both additive. A `summary` is one line

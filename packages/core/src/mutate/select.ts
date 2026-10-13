@@ -5,7 +5,7 @@ import { rootTarget } from "../oqx-js/planner.js";
 import { FilterInvalid } from "../search/cel/parser.js";
 import {
   EFFECT_OPS, EXPRESSION_LEADER, bareTarget, effectInvalid, findDocumentTarget, isNewSymbol, isTargetId, looksLikePath, validateEffect, validateTarget,
-  type Effect, type EffectTarget,
+  type Effect, type EffectTarget, type ShapeFixContext,
 } from "./effects.js";
 import { MutationError } from "./tree.js";
 import { fixRequest, narrowedTo, withMember, type FixRequest } from "./canonical.js";
@@ -343,7 +343,7 @@ function containsOqx(v: unknown): boolean {
  * defaults to a hit, and its primary target may not be an expression (the
  * primary target IS the row the expressions read).
  */
-function admitTemplate(raw: unknown, index: number, root: Root, plain: boolean): Template {
+function admitTemplate(raw: unknown, index: number, root: Root, plain: boolean, fix?: ShapeFixContext): Template {
   const here = `effects[${index}]`;
   if (!isRecord(raw) || typeof raw.op !== "string") throw selectionInvalid(`${here}: a template is an effect object whose \`op\` is one of ${EFFECT_OPS.filter((o) => o !== "retarget").join("/")}`);
   if (raw.op === "retarget") throw selectionInvalid(`${here}: \`retarget\` is not row-shaped — it cannot be a selector template`);
@@ -528,8 +528,8 @@ function admitTemplate(raw: unknown, index: number, root: Root, plain: boolean):
     if (slotKeys.has(key) || key === "op") continue;
     if (containsOqx(raw[key])) throw selectionInvalid(`${here}.${key}: \`{ oqx }\` is not allowed here`);
   }
-  // The shape, with a probe in every slot (the §11.1 messages, naming `effects[i]`).
-  validateEffect(probe, index);
+  // The shape, with a probe in every slot (the §11.1 messages, naming `effects[i]`; the §8 shape fixes rewrite the template as written).
+  validateEffect(probe, index, fix);
   return { index, base, slots, defaultTarget };
 }
 
@@ -655,7 +655,9 @@ function admitRequest(select: unknown, templatesRaw: unknown, request?: FixReque
   if (!Array.isArray(templatesRaw)) throw selectionInvalid("`effects` must be an array of effect templates");
   if (templatesRaw.length === 0) throw selectionInvalid("`effects` must name at least one template");
   const { raw, root } = admitSelector(select, request);
-  const templates = templatesRaw.map((t, i) => admitTemplate(desugarEffect(t, i, request), i, root, false));
+  // Under a selector a template's `into` is bound per hit, so the anchor fix (a parent lookup) does not apply: `parentOf` finds nothing.
+  const fix: ShapeFixContext | undefined = request === undefined ? undefined : { request, parentOf: () => null };
+  const templates = templatesRaw.map((t, i) => admitTemplate(desugarEffect(t, i, request), i, root, false, fix));
   // The rewrite: the slot items, named `__omg_sel_<t>_<slot>`, appended after
   // the user's items on the raw tree (so a user alias resolves into them).
   const items: SelectItem[] = [];
@@ -828,26 +830,42 @@ function scopeOf(store: Store, repoId: string, e: Record<string, unknown>, i: nu
  * concrete effects feed the lowering unchanged; `templates` is the list as
  * written, for the intent record.
  */
+/**
+ * The live-row lookup behind the anchor fix (§8, 3.4): a block's parent id
+ * (`null` at the top level) and its document's path, from the `blocks` row
+ * that is not deleted; `null` for an id the store does not know (a `$new.n`,
+ * a typo) — then there is no fix.
+ */
+function parentLookup(store: Store): ShapeFixContext["parentOf"] {
+  return (id) => {
+    const row = store.db
+      .prepare("SELECT b.parent_block AS parent, d.path AS path FROM blocks b JOIN docs d ON d.doc_id = b.doc_id WHERE b.block_id = ? AND b.deleted_commit IS NULL")
+      .get(id) as { parent: string | null; path: string } | undefined;
+    return row === undefined ? null : { parent: row.parent, path: row.path };
+  };
+}
+
 export function compilePlain(store: Store, repoId: string, raw: unknown): CompiledPlain {
   if (!Array.isArray(raw)) throw effectInvalid("`effects` must be an array of effects");
   if (raw.length === 0) throw effectInvalid("`effects` must name at least one effect");
   const request: FixRequest = { effects: raw };
+  const fix: ShapeFixContext = { request, parentOf: parentLookup(store) };
   const desugared = raw.map((e, i) => desugarEffect(e, i, request));
-  if (!desugared.some(containsOqx)) return { effects: desugared.map((e, i) => validateEffect(e, i)), origins: [] };
+  if (!desugared.some(containsOqx)) return { effects: desugared.map((e, i) => validateEffect(e, i, fix)), origins: [] };
 
   const effects: Effect[] = [];
   const origins: (EffectOrigin | undefined)[] = [];
   const scopes = new Map<string, Scope & { members: Template[] }>();
   desugared.forEach((e, i) => {
     if (!containsOqx(e) || !isRecord(e)) {
-      effects[i] = validateEffect(e, i);
+      effects[i] = validateEffect(e, i, fix);
       return;
     }
     const scope = scopeOf(store, repoId, e, i);
-    const t = admitTemplate(e, i, scope.root, true);
+    const t = admitTemplate(e, i, scope.root, true, fix);
     if (t.slots.length === 0) {
       // `{ oqx }` only inside data (a nested `value`): literal, as for a template.
-      effects[i] = validateEffect(e, i);
+      effects[i] = validateEffect(e, i, fix);
       return;
     }
     const key = `${scope.root}:${scope.id}`;

@@ -450,6 +450,9 @@ export function toReadOutcome(tool: string, r: ToolResult): ReadOutcome {
     // store message (spec/mutate, spec/store) is not.
     if (surfaceComposed(env.data) && env.message !== undefined) out.message = env.message;
     if (env.data !== undefined && env.error !== "filter_invalid") out.data = env.data;
+    // (4.5) a `filter_invalid`'s `data` restates the message — except its `fix`,
+    // a corrected call both engines must compose alike: recorded as `data: { fix }`.
+    else if (env.error === "filter_invalid" && isRecord(env.data) && typeof env.data.fix === "string") out.data = { fix: env.data.fix };
     return canonical(out);
   }
   if (tool === "version") return canonical(typeShape(payload)) as ReadOutcome;

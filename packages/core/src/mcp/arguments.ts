@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { EngineError } from "./errors.js";
+import { canonicalJson } from "../mutate/canonical.js";
 
 // Argument-shape errors (spec/surface §4 "Arguments", 3.0). Every tool's
 // arguments are validated here, ahead of the handler, so a malformed call is
@@ -30,10 +31,38 @@ export function argumentsHint(tool: string, shape: ArgShape): string {
   return `${tool} takes ${names.map((n) => (isOptional(shape[n]!) ? `${n}?` : n)).join(", ")}`;
 }
 
-/** A `filter_invalid` for an argument-shape failure: the message plus the tool's shape. */
-export function argumentError(tool: string, message: string, shape: ArgShape): EngineError {
+/** A `filter_invalid` for an argument-shape failure: the message plus the tool's shape — and a `fix` (4.5, spec/surface §4) when the corrected call can be spelled. */
+export function argumentError(tool: string, message: string, shape: ArgShape, fix?: string): EngineError {
   const full = `${message} (${argumentsHint(tool, shape)})`;
-  return new EngineError("filter_invalid", full, { data: { reason: full, hint: "arguments" } });
+  return new EngineError("filter_invalid", full, { data: { reason: full, hint: "arguments", ...(fix !== undefined ? { fix } : {}) } });
+}
+
+// ---- string lists (spec/surface §4 "Arguments", 4.5) ---------------------------------
+//
+// Every list-of-strings argument (`docs`, `ids`, `roots`, `blocks`, `select`,
+// `unset`) also takes ONE bare string as a one-element list — the first guess
+// of a caller who has one ref. A comma-joined string is still "must be an array
+// of strings", but that error carries a `fix`: the same call with the string
+// split on commas (each part trimmed, empty parts dropped), canonical JSON.
+
+const STRING_LISTS = new WeakSet<z.ZodTypeAny>();
+
+/** The schema of a string-list argument: an array of strings, or one bare string (normalized to `[s]` by `validateArguments`). */
+export function stringList(opts: { min?: number } = {}): z.ZodType<string[]> {
+  const list = opts.min !== undefined ? z.array(z.string()).min(opts.min) : z.array(z.string());
+  const schema = z.union([list, z.string()]);
+  STRING_LISTS.add(schema);
+  return schema as unknown as z.ZodType<string[]>;
+}
+
+/** Is this argument a string list (through `optional`/`nullable`)? */
+export function isStringList(schema: z.ZodTypeAny): boolean {
+  return STRING_LISTS.has(unwrap(schema));
+}
+
+/** The parts of a comma-joined string: split on `,`, trimmed, empty parts dropped. */
+export function commaSplit(s: string): string[] {
+  return s.split(",").map((p) => p.trim()).filter((p) => p.length > 0);
 }
 
 /**
@@ -54,6 +83,13 @@ export function validateArguments(tool: string, shape: ArgShape, raw: unknown): 
     const value = args[key];
     if (value === undefined) {
       if (!isOptional(schema)) throw argumentError(tool, `\`${key}\` is required`, shape);
+      continue;
+    }
+    if (isStringList(schema) && typeof value === "string") {
+      // (4.5) one bare string is a one-element list; a comma-joined one is the
+      // array error with the split list as its `fix`.
+      if (value.includes(",")) throw argumentError(tool, `\`${key}\` must be an array of strings`, shape, canonicalJson({ ...args, [key]: commaSplit(value) }));
+      out[key] = [value];
       continue;
     }
     const parsed = schema.safeParse(value);
@@ -161,6 +197,7 @@ function unwrap(schema: z.ZodTypeAny): z.ZodTypeAny {
 
 /** The expected-type phrase of an argument, as the Rust catalog spells it from its JSON schema. */
 export function phraseFor(schema: z.ZodTypeAny): string {
+  if (isStringList(schema)) return "an array of strings";
   const d = defOf(unwrap(schema));
   switch (d.type) {
     case "string": return "a string";

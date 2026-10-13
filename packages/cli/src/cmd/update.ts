@@ -65,7 +65,7 @@ async function runDocUpdate(cli: Cli, args: string[]): Promise<number> {
     // remote `apply` does); the dry run is the `plan` tool over the same effect.
     // A server without `docs_update` (a minimal profile) gets `apply` over the same effect (spec/cli §2.3, 4.2).
     const setContent = { op: "set", target: { kind: "document", ...docLocator(doc) }, field: "content", value: bytes };
-    if (dryRun) plan = await remoteCall<Plan>(cli, "plan", { effects: [setContent] });
+    if (dryRun) plan = await remoteCall<Plan>(cli, "plan", { effects: [setContent], diffs: true });
     else receipt = await remoteSugar<Receipt>(cli, "docs_update", { ...docLocator(doc), content: bytes, ...(values.reason ? { reason: values.reason } : {}) }, () => [setContent]);
   } else {
     const ws = cli.workspace();

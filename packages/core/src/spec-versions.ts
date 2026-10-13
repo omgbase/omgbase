@@ -18,9 +18,9 @@ export const SPEC_VERSIONS = {
   properties: "1.1",
   graph: "1.1",
   search: "2.0",
-  mutate: "3.3",
+  mutate: "3.4",
   sync: "2.2",
-  surface: "4.4",
+  surface: "4.5",
   cli: "4.3",
 } as const;
 

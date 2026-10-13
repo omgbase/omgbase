@@ -55,7 +55,7 @@ afterEach(() => {
 
 describe("plan / execute / apply { effects } over MCP", () => {
   it("plan returns the Plan with its core in the storage form and its preview rooted; nothing is written", async () => {
-    const { payload: plan, isError } = await call("plan", { effects: SLICE1 });
+    const { payload: plan, isError } = await call("plan", { effects: SLICE1, diffs: true });
     expect(isError).toBe(false);
     expect(plan.version).toBe(1);
     expect(plan.planner_v).toBe("p3");
@@ -177,7 +177,7 @@ describe("plan / execute / apply { effects } over MCP", () => {
     expect((payload.effects as { target: { id: string; path: string } }[]).map((e) => e.target)).toEqual([
       { kind: "document", id: "d_1", path: "one.md" }, { kind: "document", id: "d_2", path: "two.md" },
     ]);
-    expect(Object.keys(payload.preview as object)).toEqual(["results", "revisions", "diffs", "summary"]);
+    expect(Object.keys(payload.preview as object)).toEqual(["results", "revisions", "summary"]); // no `diffs` unless asked (4.5)
     const bounded = await call("plan", { select: SELECT, effects: TEMPLATES, expect: { max: 2 } });
     expect((bounded.payload.selection as { expect: unknown }).expect).toEqual({ max: 2 });
     const tooMany = await call("plan", { select: SELECT, effects: TEMPLATES, expect: { max: 1 } });

@@ -4231,12 +4231,6 @@
                   "hash": "2a3a088150efad810f2fbb1d3604383b0fc9e51554db07d42b383be2973e3b54"
                 }
               ],
-              "diffs": {
-                "/notes/one.md": {
-                  "before": "# One\n\nBack to [guide](/guide.md).\n\n## Setup\n\nAlso a setup section.\n",
-                  "after": "# One\n\nBack to [guide](/guide.md).\n\n## Setup\n\nAlso a setup section.\n\nAppended.\n"
-                }
-              },
               "summary": [
                 "insert 1 block at the end of section \"Setup\" in /notes/one.md"
               ]
@@ -4311,12 +4305,6 @@
                   "hash": "33e47bb1fdb8e3b96f7a323af78f5c7165cafd894229e00b5f9bc229b9a20687"
                 }
               ],
-              "diffs": {
-                "/guide.md": {
-                  "before": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n",
-                  "after": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\nAppended.\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n"
-                }
-              },
               "summary": [
                 "insert 1 block at the end of section \"Setup\" in /guide.md"
               ]
@@ -4391,12 +4379,6 @@
                   "hash": "2a3a088150efad810f2fbb1d3604383b0fc9e51554db07d42b383be2973e3b54"
                 }
               ],
-              "diffs": {
-                "/notes/one.md": {
-                  "before": "# One\n\nBack to [guide](/guide.md).\n\n## Setup\n\nAlso a setup section.\n",
-                  "after": "# One\n\nBack to [guide](/guide.md).\n\n## Setup\n\nAlso a setup section.\n\nAppended.\n"
-                }
-              },
               "summary": [
                 "insert 1 block at the end of section \"Setup\" in /notes/one.md"
               ]
@@ -4471,12 +4453,6 @@
                   "hash": "33e47bb1fdb8e3b96f7a323af78f5c7165cafd894229e00b5f9bc229b9a20687"
                 }
               ],
-              "diffs": {
-                "/guide.md": {
-                  "before": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n",
-                  "after": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\nAppended.\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n"
-                }
-              },
               "summary": [
                 "insert 1 block at the end of section \"Setup\" in /guide.md"
               ]
@@ -4575,12 +4551,6 @@
                   "hash": "5118653673eb96969040d3d23fbb9dbbd5bf9296333a295b0ed96140fa47780d"
                 }
               ],
-              "diffs": {
-                "/guide.md": {
-                  "before": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n",
-                  "after": "---\ntitle: Guide\ntags: [a, b]\n---\n\n## New\n\nPara.\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n"
-                }
-              },
               "summary": [
                 "insert 2 blocks at the start of /guide.md"
               ]
@@ -4660,12 +4630,6 @@
                   "hash": "26452a66813b0756b76c9fb96836a61634668220af427efef265e6a0ef9bc3a3"
                 }
               ],
-              "diffs": {
-                "/guide.md": {
-                  "before": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n",
-                  "after": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- third item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n"
-                }
-              },
               "summary": [
                 "insert 1 block after list_item b_5 in /guide.md"
               ]
@@ -4766,12 +4730,6 @@
                   "hash": "bd79a646f180f64f3269f750aacc6f40002b2a38edd08a785e38147db88661f5"
                 }
               ],
-              "diffs": {
-                "/guide.md": {
-                  "before": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n",
-                  "after": "---\ntitle: Guide\ntags: [a, b]\n---\n\n- [ ] open task\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n"
-                }
-              },
               "summary": [
                 "move task b_9 to the start of /guide.md"
               ]
@@ -4868,12 +4826,6 @@
                   "hash": "77e3f2204cf1ef11e397b03c4bf044ba9332b68f6d17decd5b58708082099831"
                 }
               ],
-              "diffs": {
-                "/guide.md": {
-                  "before": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n",
-                  "after": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n- third item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n"
-                }
-              },
               "summary": [
                 "insert 1 block at the end of list b_4 in /guide.md"
               ]
@@ -4974,12 +4926,6 @@
                   "hash": "bd79a646f180f64f3269f750aacc6f40002b2a38edd08a785e38147db88661f5"
                 }
               ],
-              "diffs": {
-                "/guide.md": {
-                  "before": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n",
-                  "after": "---\ntitle: Guide\ntags: [a, b]\n---\n\n- [ ] open task\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n"
-                }
-              },
               "summary": [
                 "move task b_9 to the start of /guide.md"
               ]
@@ -5083,12 +5029,6 @@
                   "hash": "064f9fd4a5576f2fe734fc82f25bbff4e4ca6a6ce101578fb053d8608437504d"
                 }
               ],
-              "diffs": {
-                "/guide.md": {
-                  "before": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n",
-                  "after": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n"
-                }
-              },
               "summary": [
                 "remove 2 blocks from /guide.md"
               ]
@@ -5169,12 +5109,6 @@
                   "hash": "1ac4dd829d0588366dd47190d0acf5cfeb41f2c60eb6a6cabf0cd7153061be6c"
                 }
               ],
-              "diffs": {
-                "/guide.md": {
-                  "before": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n",
-                  "after": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph \n\nwith a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n"
-                }
-              },
               "summary": [
                 "split paragraph b_1 at offset 16 in /guide.md"
               ]
@@ -5266,12 +5200,6 @@
                   "hash": "c866fd524664d98f0b7920c23c2c42b20ec78eaa09453dc6d94dad113761b090"
                 }
               ],
-              "diffs": {
-                "/guide.md": {
-                  "before": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n",
-                  "after": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]]. owner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n"
-                }
-              },
               "summary": [
                 "merge 2 blocks into paragraph b_1 in /guide.md"
               ]
@@ -5363,12 +5291,6 @@
                   "hash": "c866fd524664d98f0b7920c23c2c42b20ec78eaa09453dc6d94dad113761b090"
                 }
               ],
-              "diffs": {
-                "/guide.md": {
-                  "before": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n",
-                  "after": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]]. owner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n"
-                }
-              },
               "summary": [
                 "merge 2 blocks into paragraph b_1 in /guide.md"
               ]
@@ -5459,12 +5381,6 @@
                   "hash": "f9342fa638167356bd62d3e656ad12c7154b3df807c969fe1a21615fbe72acc4"
                 }
               ],
-              "diffs": {
-                "/guide.md": {
-                  "before": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n",
-                  "after": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nReplaced via node ref.\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n"
-                }
-              },
               "summary": [
                 "set markdown of paragraph b_1 in /guide.md"
               ]
@@ -5541,12 +5457,6 @@
                   "hash": "80bbf1a57e2e8ff7694b8ba4248abe1cd8fdd091139951221858df7b936aa07d"
                 }
               ],
-              "diffs": {
-                "/guide.md": {
-                  "before": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n",
-                  "after": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/two.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n"
-                }
-              },
               "summary": [
                 "set value = \"/notes/two.md\" on node n_7f86eccd7a7c in /guide.md"
               ]
@@ -5671,12 +5581,6 @@
                   "hash": "d81140060810102157b2d25a41c55b5dadfd7b8b206ff1e7c7d857dbf44e00f9"
                 }
               ],
-              "diffs": {
-                "/guide.md": {
-                  "before": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n",
-                  "after": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[notes/one.md]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n"
-                }
-              },
               "summary": [
                 "retarget 1 link two → notes/one.md in 1 document"
               ],
@@ -5777,12 +5681,6 @@
                   "hash": "d81140060810102157b2d25a41c55b5dadfd7b8b206ff1e7c7d857dbf44e00f9"
                 }
               ],
-              "diffs": {
-                "/guide.md": {
-                  "before": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n",
-                  "after": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[notes/one.md]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n"
-                }
-              },
               "summary": [
                 "retarget 1 link over 2 pairs in 1 document"
               ],
@@ -5928,12 +5826,6 @@
                   "hash": "53358def7e0e4529862293b6b14d196f6c209951868fe93e95a6fc550cbb6bf9"
                 }
               ],
-              "diffs": {
-                "/notes/one.md": {
-                  "before": "# One\n\nBack to [guide](/guide.md).\n\n## Setup\n\nAlso a setup section.\n",
-                  "after": "# One\n\nBack to [guide](/guide.md), edited.\n\n## Setup\n\nAlso a setup section.\n"
-                }
-              },
               "summary": [
                 "set content of /notes/one.md"
               ],
@@ -6100,12 +5992,6 @@
                   "hash": "53358def7e0e4529862293b6b14d196f6c209951868fe93e95a6fc550cbb6bf9"
                 }
               ],
-              "diffs": {
-                "/notes/one.md": {
-                  "before": "# One\n\nBack to [guide](/guide.md).\n\n## Setup\n\nAlso a setup section.\n",
-                  "after": "# One\n\nBack to [guide](/guide.md), edited.\n\n## Setup\n\nAlso a setup section.\n"
-                }
-              },
               "summary": [
                 "set content of /notes/one.md"
               ],
@@ -10523,7 +10409,7 @@
     },
     {
       "name": "arguments",
-      "notes": "§4 \"Arguments\" (3.0): the locator rule and its errors, byte-identical across engines — `doc` and the other retired names are refused with their replacement, an unknown name gets the nearest valid one, a missing/mistyped argument names the expected shape; a document is addressed by `id`/`path` (at least one; both must agree), a block/node by `id`; `doc_missing`/`block_missing` spell the attributes. Also `frontmatter.$version`: an authored `$`-prefixed key is stored and reached through the source handle and `entries(frontmatter)`, while the bare `$version` is the engine's namespace (nothing). The inputs 4.0 retired name their replacement too (never silently stripped): `ops` → `effects` (a missing `effects` is \"`effects` is required\"), `dry_run` → `plan { effects: [...] }` on every tool, `blocks_update.attrs` → `checked`; `links_*`'s `applied` was never an argument (an unknown name with no near neighbour).",
+      "notes": "§4 \"Arguments\" (3.0): the locator rule and its errors, byte-identical across engines — `doc` and the other retired names are refused with their replacement, an unknown name gets the nearest valid one, a missing/mistyped argument names the expected shape; a document is addressed by `id`/`path` (at least one; both must agree), a block/node by `id`; `doc_missing`/`block_missing` spell the attributes. Also `frontmatter.$version`: an authored `$`-prefixed key is stored and reached through the source handle and `entries(frontmatter)`, while the bare `$version` is the engine's namespace (nothing). The inputs 4.0 retired name their replacement too (never silently stripped): `ops` → `effects` (a missing `effects` is \"`effects` is required\"), `dry_run` → `plan { effects: [...] }` on every tool, `blocks_update.attrs` → `checked`; `links_*`'s `applied` was never an argument (an unknown name with no near neighbour). String lists (4.5): every list-of-strings argument (`docs`, `ids`, `roots`, `blocks`, `select`, `unset`) takes one bare string as a one-element list; a comma-joined string is still \"must be an array of strings\", with the comma-split call as its `fix` (recorded as `data: { fix }`); a non-string is the same message with no fix.",
       "steps": [
         {
           "observe": {
@@ -10839,6 +10725,67 @@
               "query": "from docs where frontmatter.$version == 3"
             }
           }
+        },
+        {
+          "read": {
+            "tool": "docs_read_many",
+            "args": {
+              "docs": "a.md"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "docs_read_many",
+            "args": {
+              "docs": "a.md, b.md",
+              "include_ids": true
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "blocks_read_many",
+            "args": {
+              "ids": "b_1"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "blocks_read_many",
+            "args": {
+              "ids": "b_1,b_zzz,",
+              "resolution": "text"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "graph",
+            "args": {
+              "roots": "a.md",
+              "degrees": 0
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "docs_set_meta",
+            "args": {
+              "path": "a.md",
+              "unset": "title,status"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "docs_set_meta",
+            "args": {
+              "path": "a.md",
+              "unset": 7
+            }
+          }
         }
       ],
       "expect": {
@@ -11096,6 +11043,96 @@
             "truncated": false,
             "cursor": null,
             "consumer": "collect"
+          },
+          {
+            "items": [
+              {
+                "id": "d_0",
+                "path": "/a.md",
+                "rev": "r_0",
+                "properties": {
+                  "frontmatter": {
+                    "$version": 3,
+                    "title": "A"
+                  },
+                  "inline": {},
+                  "computed": {
+                    "title": "A"
+                  }
+                },
+                "raw": "---\n$version: 3\ntitle: A\n---\n\n# A\n\nBody of a.\n\n- item one\n- item two\n"
+              }
+            ],
+            "errors": [],
+            "truncated": false
+          },
+          {
+            "error": "filter_invalid",
+            "retriable": false,
+            "message": "`docs` must be an array of strings (docs_read_many takes budget_tokens?, docs, include_ids?, repo?)",
+            "data": {
+              "fix": "{\"docs\":[\"a.md\",\"b.md\"],\"include_ids\":true}"
+            }
+          },
+          {
+            "nodes": [
+              {
+                "id": "b_1",
+                "type": "paragraph",
+                "text": "Body of a."
+              }
+            ],
+            "truncated": false,
+            "unresolved": []
+          },
+          {
+            "error": "filter_invalid",
+            "retriable": false,
+            "message": "`ids` must be an array of strings (blocks_read_many takes budget_tokens?, ids, repo?, resolution?)",
+            "data": {
+              "fix": "{\"ids\":[\"b_1\",\"b_zzz\"],\"resolution\":\"text\"}"
+            }
+          },
+          {
+            "roots": [
+              "d_0"
+            ],
+            "degrees": 0,
+            "direction": "both",
+            "documents": [
+              {
+                "id": "d_0",
+                "path": "/a.md",
+                "degree": 0,
+                "frontier": true
+              }
+            ],
+            "links": [],
+            "frontier": [
+              {
+                "id": "d_0",
+                "path": "/a.md",
+                "degree": 0
+              }
+            ],
+            "truncated": false,
+            "queries": [
+              "select _depth: $depth, _stop: $stop, _links: doc.out_links collect { id: id, doc_id: doc_id, block_id: block_id, via_id: via_id, dst_id: dst_id, dst_path: dst_path, uri: uri, dst_kind: dst_kind, predicate: predicate, provenance: provenance, anchor: anchor, field: field } from docs where id == \"d_0\" follow distinct out_links collect { from dst depth 1 }",
+              "select _depth: $depth, _stop: $stop, _links: doc.in_links collect { id: id, doc_id: doc_id, block_id: block_id, via_id: via_id, dst_id: dst_id, dst_path: dst_path, uri: uri, dst_kind: dst_kind, predicate: predicate, provenance: provenance, anchor: anchor, field: field } from docs where id == \"d_0\" follow distinct in_links collect { from doc depth 1 }"
+            ]
+          },
+          {
+            "error": "filter_invalid",
+            "retriable": false,
+            "message": "`unset` must be an array of strings (docs_set_meta takes id?, path?, repo?, set?, unset?)",
+            "data": {
+              "fix": "{\"path\":\"a.md\",\"unset\":[\"title\",\"status\"]}"
+            }
+          },
+          {
+            "error": "filter_invalid",
+            "retriable": false,
+            "message": "`unset` must be an array of strings (docs_set_meta takes id?, path?, repo?, set?, unset?)"
           }
         ]
       }
@@ -11324,12 +11361,6 @@
                   "hash": "b7af714b4d34a321c3461a943cbc045f3d6a76dd4d0631c03ad64c9bdce21113"
                 }
               ],
-              "diffs": {
-                "/notes.md": {
-                  "before": "# Notes\n\nIntro.\n\n## Log\n\n- first\n- second\n\n## Log\n\nSecond log section.\n\n## Ideas\n\nA paragraph.\n\n> quoted\n",
-                  "after": "# Notes\n\nIntro.\n\n## Log\n\n- first\n- second\n\n- appended under the first Log\n\n## Log\n\nSecond log section.\n\n## Ideas\n\nA paragraph.\n\n> quoted\n"
-                }
-              },
               "summary": [
                 "insert 1 block at the end of section \"Log\" in /notes.md"
               ]
@@ -11405,12 +11436,6 @@
                   "hash": "5421a0ddc506aa8da3753b3e75e4cae24fb3cd2957523ea761143722c2673ec0"
                 }
               ],
-              "diffs": {
-                "/notes.md": {
-                  "before": "# Notes\n\nIntro.\n\n## Log\n\n- first\n- second\n\n## Log\n\nSecond log section.\n\n## Ideas\n\nA paragraph.\n\n> quoted\n",
-                  "after": "# Notes\n\nIntro.\n\n## Log\n\n- first\n- second\n- third\n\n## Log\n\nSecond log section.\n\n## Ideas\n\nA paragraph.\n\n> quoted\n"
-                }
-              },
               "summary": [
                 "insert 1 block at the end of list b_3 in /notes.md"
               ]
@@ -11533,12 +11558,6 @@
                   "hash": "90761b86c5ca3552274aab2a81500ca5a355ca0e051247580af4ceb356cfedce"
                 }
               ],
-              "diffs": {
-                "/notes.md": {
-                  "before": "# Notes\n\nIntro.\n\n## Log\n\n- first\n- second\n\n## Log\n\nSecond log section.\n\n## Ideas\n\nA paragraph.\n\n> quoted\n",
-                  "after": "# Notes\n\nIntro.\n\n## Log\n\n- first\n- second\n\n## Log\n\nSecond log section.\n\n## Ideas\n\nA paragraph.\n\n> quoted\n\nAnother idea.\n"
-                }
-              },
               "summary": [
                 "insert 1 block at the end of section \"Ideas\" in /notes.md"
               ]

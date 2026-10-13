@@ -156,7 +156,7 @@ export function runSugar(cli: Cli, ws: Workspace, repo: RepoRow, sugar: Sugar, o
  * `refs` are the refs the verb received, refused there when one is a locator.
  */
 export async function runSugarRemote(cli: Cli, tool: string, toolArgs: Record<string, unknown>, effects: () => unknown[] | Promise<unknown[]>, refs: string[] = []): Promise<number> {
-  if (cli.flags.dryRun) return renderPlan(cli, await remoteCall<Plan>(cli, "plan", { effects: await effects() }));
+  if (cli.flags.dryRun) return renderPlan(cli, await remoteCall<Plan>(cli, "plan", { effects: await effects(), diffs: true }));
   return renderReceipt(cli, await remoteSugar<Receipt>(cli, tool, toolArgs, effects, refs));
 }
 
@@ -195,7 +195,7 @@ export function runEffects(cli: Cli, ws: Workspace, repo: RepoRow, effects: unkn
 
 /** Remote peer of `runEffects`: the `apply` tool with `effects` (the Receipt), or on a dry run the `plan` tool (the Plan). */
 export async function runEffectsRemote(cli: Cli, effects: unknown[], reason?: string): Promise<number> {
-  if (cli.flags.dryRun) return renderPlan(cli, await remoteCall<Plan>(cli, "plan", { effects }));
+  if (cli.flags.dryRun) return renderPlan(cli, await remoteCall<Plan>(cli, "plan", { effects, diffs: true }));
   return renderReceipt(cli, await remoteCall<Receipt>(cli, "apply", { effects, ...(reason ? { reason } : {}) }));
 }
 

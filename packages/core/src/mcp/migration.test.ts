@@ -490,7 +490,7 @@ describe("the preview is `plan` and mints nothing (spec/surface §9 'dry runs co
   ];
   for (const p of PLANS) {
     it(`${p.tool}: the plan's preview is the legacy dry run's, under symbols; the commit then takes the ids the legacy dry run burned`, async () => {
-      const planned = await migratedSide("plan", { effects: p.effects });
+      const planned = await migratedSide("plan", { effects: p.effects, diffs: true });
       expect(planned.outcome.ok, JSON.stringify(planned.outcome.payload)).toBe(true);
       const plan = planned.outcome.payload as { new_ids: { symbol: string }[]; preview: { diffs: Record<string, { before: string; after: string }>; revisions: { id: string; path: string; hash: string }[] } };
       expect(planned.mints, "a plan mints nothing").toEqual([]);

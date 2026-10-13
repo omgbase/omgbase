@@ -44,7 +44,7 @@ async function runRetarget(cli: Cli, args: string[]): Promise<number> {
   // Remote: the `plan` tool previews, `links_retarget` commits server-side.
   if (cli.flags.server) {
     if (!values.apply || cli.flags.dryRun) {
-      const plan = await remoteCall<Plan>(cli, "plan", { effects: sugar.effects });
+      const plan = await remoteCall<Plan>(cli, "plan", { effects: sugar.effects, diffs: true });
       return values.apply ? renderPlanDiffs(cli, plan) : renderHits(cli, from, to, retargetOf(plan).hits);
     }
     // `links_retarget` where listed (its result adds `hits`/`pairs`), else `apply { retarget }` (spec/cli §2.3, 4.2).

@@ -87,7 +87,7 @@
           "read": {
             "tool": "query",
             "args": {
-              "query": "select title, stage from docs where type == \"process\""
+              "query": "select title, stage from docs where \"process\" in tags order by path limit 5"
             }
           }
         },
@@ -95,7 +95,7 @@
           "read": {
             "tool": "query",
             "args": {
-              "query": "select b: block_id from nodes where kind == \"md:section\" and name == \"Tasks\" and path == \"/processes/calcination.md\""
+              "query": "select block_id from nodes where kind == \"md:section\" and name == \"Tasks\" and path == \"/processes/calcination.md\""
             }
           }
         },
@@ -103,7 +103,23 @@
           "read": {
             "tool": "query",
             "args": {
-              "query": "select value from nodes where kind == \"md:task\" and not checked and path == \"/processes/calcination.md\""
+              "query": "select path, value from nodes where kind == \"md:task\" and not checked"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "query",
+            "args": {
+              "query": "select path, block_id from links where dst_path == \"/processes/calcination.md\""
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "query",
+            "args": {
+              "query": "select path from docs where title.lower().contains(\"salt\")"
             }
           }
         },
@@ -112,14 +128,6 @@
             "tool": "query",
             "args": {
               "query": "docs count { where layer == \"canon\" }"
-            }
-          }
-        },
-        {
-          "read": {
-            "tool": "query",
-            "args": {
-              "query": "select path from docs where \"process\" in tags order by path limit 5"
             }
           }
         },
@@ -671,7 +679,7 @@
               {
                 "id": "n_494a3234acfd",
                 "path": "/processes/calcination.md",
-                "b": "b_153"
+                "block_id": "b_153"
               }
             ],
             "truncated": false,
@@ -681,6 +689,51 @@
           {
             "hits": [
               {
+                "id": "n_6647b1c32a15",
+                "path": "/lab/2026-01-notes.md",
+                "value": "Tabulate the metal sulphides by colour"
+              },
+              {
+                "id": "n_7d73d8ff9294",
+                "path": "/lab/2026-01-notes.md",
+                "value": "Repeat the series with copper"
+              },
+              {
+                "id": "n_95a191326d69",
+                "path": "/lab/2026-01-notes.md",
+                "value": "Plot mass gain against heating time"
+              },
+              {
+                "id": "n_1b6ff200b17c",
+                "path": "/lab/2026-02-notes.md",
+                "value": "Write the plateau result up for the coagulation note"
+              },
+              {
+                "id": "n_3f352718a47e",
+                "path": "/lab/2026-02-notes.md",
+                "value": "Assay cycle 1 and cycle 4 crops for iron"
+              },
+              {
+                "id": "n_15a04ea1e3a1",
+                "path": "/practitioners/jabir-ibn-hayyan.md",
+                "value": "Separate the Jabirian corpus into strata by vocabulary"
+              },
+              {
+                "id": "n_a66412ae8a33",
+                "path": "/practitioners/newton.md",
+                "value": "Read the Index Chemicus entries on [[mercury]]"
+              },
+              {
+                "id": "n_de814ec1a223",
+                "path": "/practitioners/newton.md",
+                "value": "Cross-check the furnace dates against the Principia years"
+              },
+              {
+                "id": "n_b4cb245daced",
+                "path": "/practitioners/paracelsus.md",
+                "value": "Check which mineral remedies survived into the 18th-century pharmacopoeia"
+              },
+              {
                 "id": "n_a4b26917634c",
                 "path": "/processes/calcination.md",
                 "value": "Chase down the earliest recorded weight-gain measurement"
@@ -689,6 +742,84 @@
                 "id": "n_c047d5a4f7e3",
                 "path": "/processes/calcination.md",
                 "value": "Repeat with copper and record the colour sequence"
+              },
+              {
+                "id": "n_0696803c8b06",
+                "path": "/processes/coagulation.md",
+                "value": "Measure purity gain per cycle to find where it plateaus"
+              },
+              {
+                "id": "n_93d794e3364b",
+                "path": "/processes/dissolution.md",
+                "value": "Write up the alkahest arguments and their rebuttals"
+              },
+              {
+                "id": "n_ad668f58c7c4",
+                "path": "/processes/magnum-opus.md",
+                "value": "Decide whether citrinitas is dropped or absorbed"
+              },
+              {
+                "id": "n_e99bb706e00e",
+                "path": "/processes/magnum-opus.md",
+                "value": "Map the twelve gates onto the four stages across three sources"
+              },
+              {
+                "id": "n_5ebb7234aa44",
+                "path": "/texts/mutus-liber.md",
+                "value": "Obtain a facsimile with plate numbering"
+              },
+              {
+                "id": "n_cb80a4290986",
+                "path": "/texts/mutus-liber.md",
+                "value": "Compare the 1677 and 1702 plate sequences"
+              },
+              {
+                "id": "n_d547e97aa408",
+                "path": "/texts/mutus-liber.md",
+                "value": "Decide whether the dew operation is literal"
+              }
+            ],
+            "truncated": false,
+            "cursor": null,
+            "consumer": "collect"
+          },
+          {
+            "hits": [
+              {
+                "id": "e_6",
+                "path": "/index.md",
+                "block_id": "b_15"
+              },
+              {
+                "id": "e_15",
+                "path": "/lab/2026-01-notes.md",
+                "block_id": "b_32"
+              },
+              {
+                "id": "e_35",
+                "path": "/processes/magnum-opus.md",
+                "block_id": "b_202"
+              },
+              {
+                "id": "e_49",
+                "path": "/substances/prima-materia.md",
+                "block_id": "b_256"
+              },
+              {
+                "id": "e_53",
+                "path": "/substances/salt.md",
+                "block_id": "b_270"
+              }
+            ],
+            "truncated": false,
+            "cursor": null,
+            "consumer": "collect"
+          },
+          {
+            "hits": [
+              {
+                "id": "d_14",
+                "path": "/substances/salt.md"
               }
             ],
             "truncated": false,
@@ -701,29 +832,6 @@
             "cursor": null,
             "consumer": "count",
             "count": 13
-          },
-          {
-            "hits": [
-              {
-                "id": "d_7",
-                "path": "/processes/calcination.md"
-              },
-              {
-                "id": "d_8",
-                "path": "/processes/coagulation.md"
-              },
-              {
-                "id": "d_9",
-                "path": "/processes/dissolution.md"
-              },
-              {
-                "id": "d_10",
-                "path": "/processes/magnum-opus.md"
-              }
-            ],
-            "truncated": false,
-            "cursor": null,
-            "consumer": "collect"
           },
           [
             {
@@ -1000,12 +1108,6 @@
                   "hash": "647b0d8820b6eac9f4c384634d9d3a5028d4b6b480af40e032a0f1ad220d95b4"
                 }
               ],
-              "diffs": {
-                "/processes/calcination.md": {
-                  "before": "---\ntype: process\nslug: calcination\nlayer: canon\ntradition: western\ntags: [process, fire]\nverified: true\nstage: nigredo\n---\n\n# Calcination\n\nHeating a substance in air until it is reduced to a friable powder — a *calx*.\nThe first of the twelve gates and, in practice, the first thing anyone does.\n\nelement:: fire\nreversible:: no\n\n## Procedure\n\nGrind the material, spread it thinly in an open crucible, and heat steadily\nbelow the melting point. Stir to expose fresh surface. Continue until no further\nweight is lost and no fumes come off.\n\n```text\ncrucible → grind → thin layer → moderate heat → stir → constant weight\n```\n\nThe endpoint is the constant weight, not the colour. Colour tells you which\noxide you have; weight tells you that you are finished.\n\n## What is actually happening\n\nOrganic matter burns away; metals take up oxygen. The characteristic *gain* in\nweight when calcining a metal is the observation that eventually broke the\nphlogiston theory — the calx weighs more than the metal, which a theory of\nescaping substance cannot accommodate.\n\nAlchemical practice recorded this gain for centuries without drawing the\ninference. The data were sound; the framework could not use them.\n\n## Products\n\n- calcined lead → yellow massicot, then red minium\n- calcined copper → black tenorite\n- plant matter → ash, source of the [[salt]]\n\n## Tasks\n\n- [x] Verify the weight gain on lead with a balance\n- [x] Repeat with copper and record the colour sequence\n- [x] Chase down the earliest recorded weight-gain measurement\n",
-                  "after": "---\ntype: process\nslug: calcination\nlayer: canon\ntradition: western\ntags:\n  - process\n  - fire\nverified: false\nstage: nigredo\n---\n\n# Calcination\n\nHeating a substance in air until it is reduced to a friable powder — a *calx*.\nThe first of the twelve gates and, in practice, the first thing anyone does.\n\nelement:: fire\nreversible:: no\n\n## Procedure\n\nGrind the material, spread it thinly in an open crucible, and heat steadily\nbelow the melting point. Stir to expose fresh surface. Continue until no further\nweight is lost and no fumes come off.\n\n```text\ncrucible → grind → thin layer → moderate heat → stir → constant weight\n```\n\nThe endpoint is the constant weight, not the colour. Colour tells you which\noxide you have; weight tells you that you are finished.\n\n## What is actually happening\n\nOrganic matter burns away; metals take up oxygen. The characteristic *gain* in\nweight when calcining a metal is the observation that eventually broke the\nphlogiston theory — the calx weighs more than the metal, which a theory of\nescaping substance cannot accommodate.\n\nAlchemical practice recorded this gain for centuries without drawing the\ninference. The data were sound; the framework could not use them.\n\n## Products\n\n- calcined lead → yellow massicot, then red minium\n- calcined copper → black tenorite\n- plant matter → ash, source of the [[salt]]\n\n## Tasks\n\n- [x] Verify the weight gain on lead with a balance\n- [x] Repeat with copper and record the colour sequence\n- [x] Chase down the earliest recorded weight-gain measurement\n"
-                }
-              },
               "summary": [
                 "set frontmatter.verified = false in /processes/calcination.md"
               ]
@@ -1084,12 +1186,6 @@
                   "hash": "6be53fc5be75c7dcf7aaf0fdd22fc74965f847c3508ec9e89afae6142679c956"
                 }
               ],
-              "diffs": {
-                "/processes/calcination.md": {
-                  "before": "---\ntype: process\nslug: calcination\nlayer: canon\ntradition: western\ntags: [process, fire]\nverified: true\nstage: nigredo\n---\n\n# Calcination\n\nHeating a substance in air until it is reduced to a friable powder — a *calx*.\nThe first of the twelve gates and, in practice, the first thing anyone does.\n\nelement:: fire\nreversible:: no\n\n## Procedure\n\nGrind the material, spread it thinly in an open crucible, and heat steadily\nbelow the melting point. Stir to expose fresh surface. Continue until no further\nweight is lost and no fumes come off.\n\n```text\ncrucible → grind → thin layer → moderate heat → stir → constant weight\n```\n\nThe endpoint is the constant weight, not the colour. Colour tells you which\noxide you have; weight tells you that you are finished.\n\n## What is actually happening\n\nOrganic matter burns away; metals take up oxygen. The characteristic *gain* in\nweight when calcining a metal is the observation that eventually broke the\nphlogiston theory — the calx weighs more than the metal, which a theory of\nescaping substance cannot accommodate.\n\nAlchemical practice recorded this gain for centuries without drawing the\ninference. The data were sound; the framework could not use them.\n\n## Products\n\n- calcined lead → yellow massicot, then red minium\n- calcined copper → black tenorite\n- plant matter → ash, source of the [[salt]]\n\n## Tasks\n\n- [x] Verify the weight gain on lead with a balance\n- [x] Repeat with copper and record the colour sequence\n- [x] Chase down the earliest recorded weight-gain measurement\n",
-                  "after": "---\ntype: process\nslug: calcination\nlayer: canon\ntradition: western\ntags: [process, fire]\nverified: true\nstage: nigredo\n---\n\n# Calcination\n\nHeating a substance in air until it is reduced to a friable powder — a *calx*.\nThe first of the twelve gates and, in practice, the first thing anyone does.\n\nelement:: fire\nreversible:: no\n\n## Procedure\n\nGrind the material, spread it thinly in an open crucible, and heat steadily\nbelow the melting point. Stir to expose fresh surface. Continue until no further\nweight is lost and no fumes come off.\n\n```text\ncrucible → grind → thin layer → moderate heat → stir → constant weight\n```\n\nThe endpoint is the constant weight, not the colour. Colour tells you which\noxide you have; weight tells you that you are finished.\n\n## What is actually happening\n\nOrganic matter burns away; metals take up oxygen. The characteristic *gain* in\nweight when calcining a metal is the observation that eventually broke the\nphlogiston theory — the calx weighs more than the metal, which a theory of\nescaping substance cannot accommodate.\n\nAlchemical practice recorded this gain for centuries without drawing the\ninference. The data were sound; the framework could not use them.\n\n## Products\n\n- calcined lead → yellow massicot, then red minium\n- calcined copper → black tenorite\n- plant matter → ash, source of the [[salt]]\n\n## Tasks\n\n- [x] Verify the weight gain on lead with a balance\n- [x] Repeat with copper and record the colour sequence\n- [x] Chase down the earliest recorded weight-gain measurement\n\n- [ ] Weigh the calx\n"
-                }
-              },
               "summary": [
                 "insert 1 block at the end of section \"Tasks\" in /processes/calcination.md"
               ]
@@ -1180,12 +1276,6 @@
                   "hash": "13c05605e536802ce8b199cd5eb752e23787f2efcdd25312d3b7b3d27ae1deea"
                 }
               ],
-              "diffs": {
-                "/lab/march.md": {
-                  "before": "",
-                  "after": "# March\n\nHi.\n"
-                }
-              },
               "summary": [
                 "create /lab/march.md (1 block)",
                 "insert 1 block at the end of /lab/march.md"
@@ -1284,16 +1374,6 @@
                   "hash": "d26a62f4a0843483d22de367f7c2258156cd7ee83bd204851c5c4caf8805494f"
                 }
               ],
-              "diffs": {
-                "/processes/calcination.md": {
-                  "before": "---\ntype: process\nslug: calcination\nlayer: canon\ntradition: western\ntags: [process, fire]\nverified: true\nstage: nigredo\n---\n\n# Calcination\n\nHeating a substance in air until it is reduced to a friable powder — a *calx*.\nThe first of the twelve gates and, in practice, the first thing anyone does.\n\nelement:: fire\nreversible:: no\n\n## Procedure\n\nGrind the material, spread it thinly in an open crucible, and heat steadily\nbelow the melting point. Stir to expose fresh surface. Continue until no further\nweight is lost and no fumes come off.\n\n```text\ncrucible → grind → thin layer → moderate heat → stir → constant weight\n```\n\nThe endpoint is the constant weight, not the colour. Colour tells you which\noxide you have; weight tells you that you are finished.\n\n## What is actually happening\n\nOrganic matter burns away; metals take up oxygen. The characteristic *gain* in\nweight when calcining a metal is the observation that eventually broke the\nphlogiston theory — the calx weighs more than the metal, which a theory of\nescaping substance cannot accommodate.\n\nAlchemical practice recorded this gain for centuries without drawing the\ninference. The data were sound; the framework could not use them.\n\n## Products\n\n- calcined lead → yellow massicot, then red minium\n- calcined copper → black tenorite\n- plant matter → ash, source of the [[salt]]\n\n## Tasks\n\n- [x] Verify the weight gain on lead with a balance\n- [x] Repeat with copper and record the colour sequence\n- [x] Chase down the earliest recorded weight-gain measurement\n",
-                  "after": "---\ntype: process\nslug: calcination\nlayer: canon\ntradition: western\ntags:\n  - process\n  - fire\nverified: true\nstage: nigredo\nok: true\n---\n\n# Calcination\n\nHeating a substance in air until it is reduced to a friable powder — a *calx*.\nThe first of the twelve gates and, in practice, the first thing anyone does.\n\nelement:: fire\nreversible:: no\n\n## Procedure\n\nGrind the material, spread it thinly in an open crucible, and heat steadily\nbelow the melting point. Stir to expose fresh surface. Continue until no further\nweight is lost and no fumes come off.\n\n```text\ncrucible → grind → thin layer → moderate heat → stir → constant weight\n```\n\nThe endpoint is the constant weight, not the colour. Colour tells you which\noxide you have; weight tells you that you are finished.\n\n## What is actually happening\n\nOrganic matter burns away; metals take up oxygen. The characteristic *gain* in\nweight when calcining a metal is the observation that eventually broke the\nphlogiston theory — the calx weighs more than the metal, which a theory of\nescaping substance cannot accommodate.\n\nAlchemical practice recorded this gain for centuries without drawing the\ninference. The data were sound; the framework could not use them.\n\n## Products\n\n- calcined lead → yellow massicot, then red minium\n- calcined copper → black tenorite\n- plant matter → ash, source of the [[salt]]\n\n## Tasks\n\n- [x] Verify the weight gain on lead with a balance\n- [x] Repeat with copper and record the colour sequence\n- [x] Chase down the earliest recorded weight-gain measurement\n"
-                },
-                "/processes/dissolution.md": {
-                  "before": "---\ntype: process\nslug: dissolution\nlayer: canon\ntradition: western\ntags: [process, water]\nverified: true\nstage: nigredo\n---\n\n# Dissolution\n\nTaking the calx into a liquid — *solve* of the maxim *solve et coagula*. The\nsecond gate, and the operation that produced most of alchemy's real chemical\ndiscoveries.\n\nelement:: water\nreversible:: yes\n\n## Solvents\n\nThe search for solvents is where the practical payoff was. Distilling vitriol\nand nitre gave the mineral acids, and those genuinely dissolve things nothing\nelse will:\n\n```text\nnitre + vitriol      → aqua fortis     (nitric acid)\naqua fortis + sal    → aqua regia      (dissolves gold)\n```\n\n*Aqua regia* — royal water, because it dissolves the royal metal — is the single\nmost consequential thing to come out of the laboratory tradition. It is a real\nreagent, it does something no other liquid does, and its discovery was driven\nentirely by the transmutation programme.\n\n## The alkahest\n\nThe hypothetical universal solvent, said to dissolve any substance into its\nprima materia. Never produced. The obvious objection — that no vessel could hold\nit — was raised at the time and answered with the claim that it dissolves only\nwhat is imperfect.\n\nThis is unfalsifiable, and its defenders were not troubled by that.\n\n## Tasks\n\n- [x] Distil aqua fortis from nitre and vitriol\n- [x] Prepare aqua regia and test on gold leaf\n- [ ] Write up the alkahest arguments and their rebuttals\n",
-                  "after": "---\ntype: process\nslug: dissolution\nlayer: canon\ntradition: western\ntags:\n  - process\n  - water\nverified: true\nstage: nigredo\nok: true\n---\n\n# Dissolution\n\nTaking the calx into a liquid — *solve* of the maxim *solve et coagula*. The\nsecond gate, and the operation that produced most of alchemy's real chemical\ndiscoveries.\n\nelement:: water\nreversible:: yes\n\n## Solvents\n\nThe search for solvents is where the practical payoff was. Distilling vitriol\nand nitre gave the mineral acids, and those genuinely dissolve things nothing\nelse will:\n\n```text\nnitre + vitriol      → aqua fortis     (nitric acid)\naqua fortis + sal    → aqua regia      (dissolves gold)\n```\n\n*Aqua regia* — royal water, because it dissolves the royal metal — is the single\nmost consequential thing to come out of the laboratory tradition. It is a real\nreagent, it does something no other liquid does, and its discovery was driven\nentirely by the transmutation programme.\n\n## The alkahest\n\nThe hypothetical universal solvent, said to dissolve any substance into its\nprima materia. Never produced. The obvious objection — that no vessel could hold\nit — was raised at the time and answered with the claim that it dissolves only\nwhat is imperfect.\n\nThis is unfalsifiable, and its defenders were not troubled by that.\n\n## Tasks\n\n- [x] Distil aqua fortis from nitre and vitriol\n- [x] Prepare aqua regia and test on gold leaf\n- [ ] Write up the alkahest arguments and their rebuttals\n"
-                }
-              },
               "summary": [
                 "set frontmatter.ok = true in /processes/calcination.md",
                 "set frontmatter.ok = true in /processes/dissolution.md"
@@ -1426,16 +1506,6 @@
                   "hash": "9d3b9f51a3f77a639161931db340e908030bb9a6392e43625b6bbe158afee82e"
                 }
               ],
-              "diffs": {
-                "/processes/calcination.md": {
-                  "before": "---\ntype: process\nslug: calcination\nlayer: canon\ntradition: western\ntags: [process, fire]\nverified: true\nstage: nigredo\n---\n\n# Calcination\n\nHeating a substance in air until it is reduced to a friable powder — a *calx*.\nThe first of the twelve gates and, in practice, the first thing anyone does.\n\nelement:: fire\nreversible:: no\n\n## Procedure\n\nGrind the material, spread it thinly in an open crucible, and heat steadily\nbelow the melting point. Stir to expose fresh surface. Continue until no further\nweight is lost and no fumes come off.\n\n```text\ncrucible → grind → thin layer → moderate heat → stir → constant weight\n```\n\nThe endpoint is the constant weight, not the colour. Colour tells you which\noxide you have; weight tells you that you are finished.\n\n## What is actually happening\n\nOrganic matter burns away; metals take up oxygen. The characteristic *gain* in\nweight when calcining a metal is the observation that eventually broke the\nphlogiston theory — the calx weighs more than the metal, which a theory of\nescaping substance cannot accommodate.\n\nAlchemical practice recorded this gain for centuries without drawing the\ninference. The data were sound; the framework could not use them.\n\n## Products\n\n- calcined lead → yellow massicot, then red minium\n- calcined copper → black tenorite\n- plant matter → ash, source of the [[salt]]\n\n## Tasks\n\n- [x] Verify the weight gain on lead with a balance\n- [x] Repeat with copper and record the colour sequence\n- [x] Chase down the earliest recorded weight-gain measurement\n",
-                  "after": "---\ntype: process\nslug: calcination\nlayer: canon\ntradition: western\ntags: [process, fire]\nverified: true\nstage: nigredo\n---\n\n# Calcination\n\nHeating a substance in air until it is reduced to a friable powder — a *calx*.\nThe first of the twelve gates and, in practice, the first thing anyone does.\n\nelement:: fire\nreversible:: no\n\n## Procedure\n\nGrind the material, spread it thinly in an open crucible, and heat steadily\nbelow the melting point. Stir to expose fresh surface. Continue until no further\nweight is lost and no fumes come off.\n\n```text\ncrucible → grind → thin layer → moderate heat → stir → constant weight\n```\n\nThe endpoint is the constant weight, not the colour. Colour tells you which\noxide you have; weight tells you that you are finished.\n\n## What is actually happening\n\nOrganic matter burns away; metals take up oxygen. The characteristic *gain* in\nweight when calcining a metal is the observation that eventually broke the\nphlogiston theory — the calx weighs more than the metal, which a theory of\nescaping substance cannot accommodate.\n\nAlchemical practice recorded this gain for centuries without drawing the\ninference. The data were sound; the framework could not use them.\n\n## Products\n\n- calcined lead → yellow massicot, then red minium\n- calcined copper → black tenorite\n- plant matter → ash, source of the [[salt]]\n\n## Tasks\n\n- [x] Verify the weight gain on lead with a balance\n- [x] Repeat with copper and record the colour sequence\n- [x] Chase down the earliest recorded weight-gain measurement\n\n[Laboratory notes — January](/lab/2026-01-notes.md)\n"
-                },
-                "/processes/coagulation.md": {
-                  "before": "---\ntype: process\nslug: coagulation\nlayer: working\ntradition: western\ntags: [process, earth]\nverified: true\nstage: rubedo\n---\n\n# Coagulation\n\nThe *coagula* half of *solve et coagula*: bringing a dissolved substance back to\na solid, ideally more ordered than before. Crystallization, precipitation, and\nslow evaporation all count.\n\nelement:: earth\nreversible:: yes\n\n## Why it closes the work\n\nDissolution destroys structure; coagulation rebuilds it. The pair is the engine\nof the whole programme — the claim being that matter repeatedly dissolved and\nrecoagulated is progressively refined, and that enough cycles yield the\n[philosophers' stone](/substances/philosophers-stone.md).\n\nThe claim is false, but the intuition is not absurd: recrystallization *does*\npurify, and each cycle *does* leave a cleaner product. The error is extrapolating\nan asymptote into a transformation.\n\n## Practical notes\n\nSlow is better. Rapid cooling gives small, impure crystals that trap solvent;\nslow evaporation at a stable temperature gives large clean ones.\n\n```text\nsaturate hot → filter while hot → cool undisturbed → harvest → repeat on liquor\n```\n\nRepeating on the mother liquor is where the yield is. See the\n[February notes](/lab/2026-02-notes.md) for a worked run.\n\n## Tasks\n\n- [x] Recrystallize alum three times and weigh each crop\n- [ ] Measure purity gain per cycle to find where it plateaus\n",
-                  "after": "---\ntype: process\nslug: coagulation\nlayer: working\ntradition: western\ntags: [process, earth]\nverified: true\nstage: rubedo\n---\n\n# Coagulation\n\nThe *coagula* half of *solve et coagula*: bringing a dissolved substance back to\na solid, ideally more ordered than before. Crystallization, precipitation, and\nslow evaporation all count.\n\nelement:: earth\nreversible:: yes\n\n## Why it closes the work\n\nDissolution destroys structure; coagulation rebuilds it. The pair is the engine\nof the whole programme — the claim being that matter repeatedly dissolved and\nrecoagulated is progressively refined, and that enough cycles yield the\n[philosophers' stone](/substances/philosophers-stone.md).\n\nThe claim is false, but the intuition is not absurd: recrystallization *does*\npurify, and each cycle *does* leave a cleaner product. The error is extrapolating\nan asymptote into a transformation.\n\n## Practical notes\n\nSlow is better. Rapid cooling gives small, impure crystals that trap solvent;\nslow evaporation at a stable temperature gives large clean ones.\n\n```text\nsaturate hot → filter while hot → cool undisturbed → harvest → repeat on liquor\n```\n\nRepeating on the mother liquor is where the yield is. See the\n[February notes](/lab/2026-02-notes.md) for a worked run.\n\n## Tasks\n\n- [x] Recrystallize alum three times and weigh each crop\n- [ ] Measure purity gain per cycle to find where it plateaus\n\n[Laboratory notes — February](/lab/2026-02-notes.md)\n"
-                }
-              },
               "summary": [
                 "insert 1 block at the end of /processes/calcination.md",
                 "insert 1 block at the end of /processes/coagulation.md"

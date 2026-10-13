@@ -13,7 +13,7 @@ import { oqxRunAsync, collectSemanticPhrases, type EmbedQuery } from "../oqx/run
 import { graphNeighborhood } from "./graph.js";
 import { textSearch } from "../search/text.js";
 import { EngineError, errorBody } from "./errors.js";
-import { argumentError, validateArguments, type ArgShape } from "./arguments.js";
+import { argumentError, stringList, validateArguments, type ArgShape } from "./arguments.js";
 import { linksRetarget, linksRepair } from "../mutate/macros.js";
 import { canonicalDocPath } from "../mutate/docs.js";
 import { applyEffects, executeByDigest, executePlan, planEffects, type Receipt } from "../mutate/plan.js";
@@ -182,7 +182,7 @@ function selectorArgs(args: { select?: string | undefined; expect?: { max: numbe
   return { ...(args.select !== undefined ? { select: args.select } : {}), ...(args.expect !== undefined ? { expect: args.expect } : {}) };
 }
 const effectSchema = z.looseObject({ op: z.enum(["create", "insert", "set", "unset", "move", "remove", "split", "merge", "retarget"]) }).describe(
-  "one effect: { op: \"create\", path, markdown, frontmatter? } | { op: \"insert\", into: Target, at?, markdown, expect? } | { op: \"set\", target, field, value, expect? } | { op: \"unset\", target, field, expect? } | { op: \"move\", target: document, to, retarget_inbound? } | { op: \"move\", targets: [block…], into, at?, expect? } | { op: \"remove\", target: document } | { op: \"remove\", targets: [block…], expect? } | { op: \"split\", target: block, at: [byte…], expect? } | { op: \"merge\", targets: [block…], separator?, expect? } | { op: \"retarget\", repairs: [{ from, to }], path_glob? }; Target = { kind: \"document\", id? | path? } | { kind: \"block\", id } | { kind: \"node\", id } | { kind: \"section\", heading_id }; any id may be $new.<n> for an identity an earlier effect creates",
+  "one effect: { op: \"create\", path, markdown, frontmatter? } | { op: \"insert\", into: Target, at?, markdown, expect? } | { op: \"set\", target, field, value, expect? } | { op: \"unset\", target: document, field: \"frontmatter.<key>\", expect? } | { op: \"move\", target: document, to, retarget_inbound? } | { op: \"move\", targets: [block…], into, at?, expect? } | { op: \"remove\", target: document } | { op: \"remove\", targets: [block…], expect? } | { op: \"split\", target: block, at: [byte…], expect? } | { op: \"merge\", targets: [block…], separator?, expect? } | { op: \"retarget\", repairs: [{ from, to }], path_glob? }. Target: a bare document path, a block/node id, $new.<n> (an identity an earlier effect creates), or { kind: \"document\", id? | path? } | { kind: \"block\", id } | { kind: \"node\", id } | { kind: \"section\", heading_id }. at: \"start\" | \"end\" | { before: <block id> } | { after: <block id> } — a place among the children of `into`, so \"right after block X\" is into: X's parent (its parent block id, or the document path when X is top-level), at: { after: X }. field: a block's is \"markdown\" or \"attrs.checked\"; a document's \"frontmatter.<key>\" or (set only) \"content\"; a node's an editable property (value, name, checked). expect on a single-target op: { content_hash?, parent_children_hash?, revision? }; on remove/merge targets it is keyed by block id: { <block id>: { content_hash?, parent_children_hash? } }. expect: { max } is the request's top-level argument beside select, never inside an effect.",
 );
 
 // An example ladder (spec/surface §4 "Descriptions", 4.3): the description of
@@ -560,7 +560,7 @@ export function buildServer(ctx: ServerContext): McpServer {
       description:
         "Batch whole-document read — the hydrate half of query→hydrate. The plural of docs_read: pass `docs`, a list of refs (each a document id OR a path, in either form), and get back one full read per ref. Returns `{ items, errors, truncated }`: each found doc is a full docs_read projection (`raw` = complete file bytes verbatim, `properties` grouped by source, plus `id`/`path`/`rev`, and — with include_ids:true — the document's ordered block `ids`, a `hashes` {block `id` → block `hash`} map for raw-`apply` CAS pinning, and a `parents` {block id → parent block id | null} map so top-level vs nested blocks are distinguishable without an outline read); a ref that resolves to no live document lands in `errors` as {ref, error:\"doc_not_found\"} WITHOUT failing the call, so one bad ref never sinks the batch. Duplicate refs collapse first-seen (a repeated ref yields a single item). Capped at " + MANY_DOCS_CAP + " refs per call; excess refs are dropped and `truncated` is set. Pass budget_tokens to cap total hydrated size — the batch stops early and flags `truncated` when the next doc would exceed it; the FIRST doc always ships even when it alone exceeds the budget (the same at-least-one-row contract as docs_list/docs_tree, so a budgeted caller always makes progress). Use this after query/blocks_search/blocks_resolve to pull N whole docs in ONE round-trip instead of N serial docs_read calls; for a single doc use docs_read, and for lean structure-only orientation use docs_outline (docs_get_many before surface 3.0).",
       inputSchema: {
-        docs: z.array(z.string()),
+        docs: stringList(),
         include_ids: z.boolean().optional(),
         budget_tokens: z.number().int().optional(),
         ...REPO_ARG,
@@ -636,7 +636,7 @@ export function buildServer(ctx: ServerContext): McpServer {
       description:
         "Fetch up to 100 blocks by id (in request order) with budget truncation — the plural of blocks_read (nodes_get_many before surface 3.0). Block ids are globally unique, so `ids` may span ANY number of documents — each id is resolved to its owning doc server-side. Result carries `nodes` (the hydrated blocks, one per resolved id), `truncated` (cap or `budget_tokens` hit — the first resolved block always ships even when it alone exceeds the budget, so a budgeted caller always makes progress), and `unresolved` — the requested ids that name no live block (never silently dropped).",
       inputSchema: {
-        ids: z.array(z.string()),
+        ids: stringList(),
         resolution: z.enum(["skeleton", "outline", "text", "raw", "full"]).optional(),
         budget_tokens: z.number().int().optional(),
         ...REPO_ARG,
@@ -740,13 +740,14 @@ export function buildServer(ctx: ServerContext): McpServer {
     "query",
     {
       description: ladder(
-        "query — Read anything: rows with id and path plus your projection, from docs, blocks, nodes or links.",
-        "{\"query\":\"select title, stage from docs where type == \\\"process\\\"\"}   frontmatter fields by name",
-        "{\"query\":\"select b: block_id from nodes where kind == \\\"md:section\\\" and name == \\\"Tasks\\\" and path == \\\"/processes/calcination.md\\\"\"}   a heading's block id by its text (the heading_id an insert into a section takes)",
-        "{\"query\":\"select value from nodes where kind == \\\"md:task\\\" and not checked and path == \\\"/processes/calcination.md\\\"\"}   open tasks in one document (a task node's text is its value)",
+        "query — Read anything: rows (id, path, your projection) from docs, blocks, nodes or links.",
+        "{\"query\":\"select title, stage from docs where \\\"process\\\" in tags order by path limit 5\"}   frontmatter by name; membership; order, limit, cursor",
+        "{\"query\":\"select block_id from nodes where kind == \\\"md:section\\\" and name == \\\"Tasks\\\" and path == \\\"/processes/calcination.md\\\"\"}   a heading's block id by its text",
+        "{\"query\":\"select path, value from nodes where kind == \\\"md:task\\\" and not checked\"}   open tasks (value = the text)",
+        "{\"query\":\"select path, block_id from links where dst_path == \\\"/processes/calcination.md\\\"\"}   inbound links (path = source)",
+        "{\"query\":\"select path from docs where title.lower().contains(\\\"salt\\\")\"}   substring, case-folded; regex: matches(\\\"^Merc\\\")",
         "{\"query\":\"docs count { where layer == \\\"canon\\\" }\"}   a scalar",
-        "{\"query\":\"select path from docs where \\\"process\\\" in tags order by path limit 5\"}   list membership, ordering; a truncated page's cursor continues it",
-        "Full grammar, follow, ^docs joins, text()/semantic(): call query_syntax.",
+        "follow, ^docs joins, text()/semantic(), the grammar: query_syntax.",
       ),
       inputSchema: {
         query: z.string(),
@@ -779,11 +780,11 @@ export function buildServer(ctx: ServerContext): McpServer {
       description:
         "Neighborhood macro: the bounded graph AROUND one or more root documents in ONE call — { documents, links, frontier } — so you can orient without hand-writing an OQX `follow`. This is a CONVENIENCE WRAPPER, not a new engine: it compiles its args into an OQX `follow out_links collect { from dst }` / `follow in_links collect { from doc }` query and runs it through the same `query` path (the returned `queries` field is the exact follow query it generated). It does NOT replace `follow` or `from links` — reach for the `query` tool directly when you need successor/frontier predicates, `$key`-keyed identity, `$ordinal` budgets, cross-document correlation, or the links scan with its own projections. `roots` are one or more doc refs (paths and/or ids); they are depth 0. `degrees` is the max hop distance (root = 0; maps to `follow … collect { … depth degrees+1 }`, capped so degrees+1 ≤ 8; default 1). `direction` is `out` (outgoing links), `in` (backlinks), or `both` (default). `predicate` restricts the neighborhood to documents reachable from a root via edges of that predicate (both the documents and the edges are filtered). `select` adds document projections (OQX select expressions, e.g. \"layer\", \"path\"). `max_documents` caps the distinct document set (default 200) with a `truncated` flag. Returns: `documents` (each with `id`/`path`/`degree` = min hops from a root/`frontier` bool + your projections — a bare-name selection such as \"title\" is its own key, `id`/`path` land on the envelope keys, and any other expression is `sel_<i>`), `links` (the traversed links as rows of the `links` target under its own field names — `id`, `doc_id`/`block_id` (the source), `via_id`, `dst_id`, `dst_path`, `uri`, `dst_kind`, `predicate`, `provenance`, `anchor`, `field`; external `x_…` and dangling phantom endpoints are preserved as edge stubs, exactly as `from links` surfaces them), and `frontier` (the documents on the outer boundary — `{ id, path, degree }`, min degree == degrees; at degrees 0 that is the roots themselves).",
       inputSchema: {
-        roots: z.array(z.string()).min(1),
+        roots: stringList({ min: 1 }),
         degrees: z.number().int().optional(),
         direction: z.enum(["in", "out", "both"]).optional(),
         predicate: z.string().optional(),
-        select: z.array(z.string()).optional(),
+        select: stringList().optional(),
         max_documents: z.number().int().optional(),
         ...REPO_ARG,
       },
@@ -882,21 +883,27 @@ export function buildServer(ctx: ServerContext): McpServer {
     "plan",
     {
       description: ladder(
-        "plan — Preview a write: the frozen Plan (summary, diffs, $new.n per minted id) burns no id; execute next.",
-        "{\"effects\":[{\"op\":\"set\",\"target\":\"/processes/calcination.md\",\"field\":\"frontmatter.verified\",\"value\":false}]}   path = document",
-        "{\"effects\":[{\"op\":\"insert\",\"into\":{\"kind\":\"section\",\"heading_id\":\"b_153\"},\"markdown\":\"- [ ] Weigh the calx\"}]}   under a heading",
+        "plan — Preview a write: the Plan (summary, $new.n ids) burns no id; execute next. diffs: true for file bodies.",
+        "{\"effects\":[{\"op\":\"set\",\"target\":\"/processes/calcination.md\",\"field\":\"frontmatter.verified\",\"value\":false}]}   path = doc",
+        "{\"effects\":[{\"op\":\"insert\",\"into\":{\"kind\":\"section\",\"heading_id\":\"b_153\"},\"markdown\":\"- [ ] Weigh the calx\"}]}   in a section",
         "{\"effects\":[{\"op\":\"create\",\"path\":\"lab/march.md\",\"markdown\":\"# March\\n\"},{\"op\":\"insert\",\"into\":\"$new.0\",\"markdown\":\"Hi.\"}]}   fill it: $new.0",
-        "{\"select\":\"from docs where stage == \\\"nigredo\\\"\",\"effects\":[{\"op\":\"set\",\"field\":\"frontmatter.ok\",\"value\":true}]}   no target = the hit",
+        "{\"select\":\"from docs where stage == \\\"nigredo\\\"\",\"effects\":[{\"op\":\"set\",\"field\":\"frontmatter.ok\",\"value\":true}]}   no target: the hit",
         "{\"select\":\"from docs where type == \\\"lab-note\\\"\",\"effects\":[{\"op\":\"insert\",\"into\":\"-> `/processes/${subject}.md`\",\"markdown\":\"-> `[${title}](${path})`\"}]}   -> reads the row",
-        "Ops: create insert set unset move remove split merge retarget. Grammar: query_syntax.",
+        "Ops: create insert set unset move remove split merge retarget; grammar: query_syntax.",
       ),
-      inputSchema: { effects: z.array(effectSchema), select: z.string().optional(), expect: selectionExpectSchema.optional(), ...REPO_ARG },
+      inputSchema: { effects: z.array(effectSchema), select: z.string().optional(), expect: selectionExpectSchema.optional(), diffs: z.boolean().optional(), ...REPO_ARG },
     },
     async (args) => {
       try {
         const { repoId, rootPath } = repoScope(args.repo);
         if (!rootPath) throw new EngineError("repo_not_found", "repo has no filesystem source; mutation disabled");
-        return ok(surfacePlan(planEffects(store, { repoId, rootPath, effects: args.effects, ...selectorArgs(args), ...LOCK_DIR })));
+        const plan = surfacePlan(planEffects(store, { repoId, rootPath, effects: args.effects, ...selectorArgs(args), ...LOCK_DIR }));
+        // (4.5) `preview.diffs` — whole before/after bodies of every touched
+        // document — only on request: `diffs: true`. The digest is over the
+        // core, never the preview, so `plan_id` is the same either way.
+        if (args.diffs === true || plan.preview === undefined) return ok(plan);
+        const { diffs: _diffs, ...preview } = plan.preview;
+        return ok({ ...plan, preview });
       } catch (e) {
         return fail(e);
       }
@@ -989,7 +996,7 @@ export function buildServer(ctx: ServerContext): McpServer {
     "blocks_move",
     {
       description: "Move block(s) under a new parent at a position. `blocks` are block refs; `to` (the parent) is a block ref (a container — a leaf parent is `type_mismatch`, as for blocks_insert), or the blocks' OWN document (id or path) to move them to its top level — moving to ANOTHER document's root is not expressible (target_missing): anchor on a block in that document with `at` {before|after} instead. `at` is \"end\"/\"start\"/{before|after: <ref>}. Optional `expect.parent_children_hash` is the destination-parent CAS (as blocks_insert: the destination parent's CURRENT direct child ids joined by \",\", sha256 hex), checked once for the whole run before anything moves — `stale_expectation` with `data.current.parent_children_hash` if the destination's children changed; `content_hash` is meaningless here and not accepted. Sugar for `apply { effects: [{ op: \"move\", targets, into, at, expect? }] }` — returns the Receipt; preview with `plan`.",
-      inputSchema: { blocks: z.array(z.string()), to: z.string(), at: atSchema.optional(), expect: parentExpectSchema.optional(), ...REPO_ARG },
+      inputSchema: { blocks: stringList(), to: z.string(), at: atSchema.optional(), expect: parentExpectSchema.optional(), ...REPO_ARG },
     },
     async (args) => {
       try {
@@ -1014,7 +1021,7 @@ export function buildServer(ctx: ServerContext): McpServer {
     "blocks_remove",
     {
       description: "Remove block(s) (the resurrection pool catches regret). `blocks` are refs; removing a block removes its whole subtree, and a set that names both a container and some of its descendants (e.g. every id of a section straight from docs_read include_ids) is fine — it collapses to the top-most blocks. Sugar for `apply { effects: [{ op: \"remove\", targets }] }` — returns the Receipt; preview with `plan` (its `preview.results[0].removed` lists everything that would leave). To delete a whole document use docs_delete.",
-      inputSchema: { blocks: z.array(z.string()), ...REPO_ARG },
+      inputSchema: { blocks: stringList(), ...REPO_ARG },
     },
     async (args) => {
       try {
@@ -1052,7 +1059,7 @@ export function buildServer(ctx: ServerContext): McpServer {
     "blocks_merge",
     {
       description: "Merge adjacent blocks into the first, joined by `separator` (default a blank line). `blocks` are refs (≥2). Sugar for `apply { effects: [{ op: \"merge\", targets, separator? }] }` — returns the Receipt; preview with `plan`.",
-      inputSchema: { blocks: z.array(z.string()), separator: z.string().optional(), ...REPO_ARG },
+      inputSchema: { blocks: stringList(), separator: z.string().optional(), ...REPO_ARG },
     },
     async (args) => {
       try {
@@ -1071,7 +1078,7 @@ export function buildServer(ctx: ServerContext): McpServer {
     "blocks_check",
     {
       description: "Macro: check (or uncheck with checked:false) the given task blocks. `ids` are the blocks' ids (or refs). Sugar for `apply { effects: [{ op: \"set\", target: { kind: \"block\", id }, field: \"attrs.checked\", value }, …] }`, one per block, each CAS-pinned — returns the Receipt; preview with `plan` (tasks_complete { blocks } before surface 3.0).",
-      inputSchema: { ids: z.array(z.string()), checked: z.boolean().optional(), ...REPO_ARG },
+      inputSchema: { ids: stringList(), checked: z.boolean().optional(), ...REPO_ARG },
     },
     async (args) => {
       try {
@@ -1338,7 +1345,7 @@ export function buildServer(ctx: ServerContext): McpServer {
     "docs_set_meta",
     {
       description: "Surgical frontmatter patch: set the given keys and/or unset named keys on the document addressed by `id` or `path`. Other frontmatter and the whole body are preserved (every block keeps its id). Sugar for `apply { effects: [{ op: \"set\", target: { kind: \"document\", id }, field: \"frontmatter.<key>\", value }, { op: \"unset\", …, field: \"frontmatter.<key>\" }, …] }`, one effect per key — returns the Receipt; at least one of `set`/`unset` is required. Preview with `plan` over those effects (`preview.diffs[path]` is the file before → after).",
-      inputSchema: { ...DOC_ARGS, set: z.record(z.string(), z.unknown()).optional(), unset: z.array(z.string()).optional(), ...REPO_ARG },
+      inputSchema: { ...DOC_ARGS, set: z.record(z.string(), z.unknown()).optional(), unset: stringList().optional(), ...REPO_ARG },
     },
     async (args) => {
       try {
