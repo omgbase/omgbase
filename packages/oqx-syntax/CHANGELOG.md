@@ -4,6 +4,14 @@ All notable changes to `@omgbase/oqx-syntax` are recorded here. The format follo
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [Semantic Versioning](https://semver.org/) (pre-1.0: a minor bump may break).
 
+## [0.4.0] - 2026-10-13
+
+### Minor
+- OQX 0.21: template literals. A backtick string with `${expr}` interpolations — `` `${title} (${era})` `` — is a primary expression whose value is the concatenation of its text and each interpolation's string form (the `+` rule): an absent interpolation makes the whole literal absent, a list, record or range is an evaluation error (`cannot interpolate …`), every interpolation is evaluated before the result is decided. Text decodes with the same escapes as a string literal (`` \` `` a backtick, `\$` a dollar that does not open an interpolation, `\\` a backslash), newlines are kept verbatim, an interpolation holds one full expression including nested literals and `{ … }` blocks. The canonical printer round-trips the form. Fifty fixtures in `spec/oqx/cases/template-literals.json`; the syntax package highlights the new token in every target grammar. Templates are never pushed down to SQL. Groundwork for the `-> expr` sugar in effect templates, where a string such as `-> `## ${title}`` reads the hit's row. (`@omgbase/oqx` and the `oqx` crate are bumped to 0.21.0 by hand with their own CHANGELOG entries, per the standalone-package convention, so this note records them as `none`.)
+
+### Notes
+- Regenerated `vscode/package.json` (its `version` is generated from the package's and had stayed at 0.2.5 after the 0.3.0 release, failing `test/assets.test.ts`'s "is current" check). No behaviour change.
+
 ## [0.3.0] - 2026-10-11
 
 ### Minor
