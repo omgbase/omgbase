@@ -1,0 +1,26 @@
+{
+  "id": "noop",
+  "prompt": "Make sure /substances/mercury.md is marked as verified in its frontmatter (`verified: true`). If it already is, leave the document alone and say so.",
+  "checks": [
+    {
+      "kind": "unchanged",
+      "path": "/substances/mercury.md"
+    },
+    {
+      "kind": "final_text",
+      "matches": "already|nothing to do|no change|unchanged|as is|left .* alone"
+    }
+  ],
+  "solution": {
+    "steps": [
+      {
+        "tool": "docs_read",
+        "args": {
+          "path": "/substances/mercury.md"
+        }
+      }
+    ],
+    "final_text": "/substances/mercury.md already has verified: true — nothing to do."
+  },
+  "notes": "The engine records a commit for a frontmatter write even when the bytes come out identical (and re-renders flow-style YAML lists), so the check is: bytes equal the fixture AND no api-origin commit touched the document. Only `set content` with identical bytes yields commit: null."
+}

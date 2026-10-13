@@ -1,0 +1,67 @@
+{
+  "id": "create-then-section",
+  "prompt": "Create a new process note at processes/sublimation.md with frontmatter `type: process` and `layer: draft`, a top-level heading `Sublimation` and one short introductory paragraph. Then add a section to that new note: a `## Procedure` heading followed by one paragraph describing the steps.",
+  "checks": [
+    {
+      "kind": "query",
+      "query": "select type, layer from docs where path == \"/processes/sublimation.md\"",
+      "hits": [
+        {
+          "type": "process",
+          "layer": "draft"
+        }
+      ]
+    },
+    {
+      "kind": "query",
+      "query": "select name from nodes where kind == \"md:section\" and path == \"/processes/sublimation.md\" order by name",
+      "hits": [
+        {
+          "name": "Procedure"
+        },
+        {
+          "name": "Sublimation"
+        }
+      ]
+    },
+    {
+      "kind": "read",
+      "path": "/processes/sublimation.md",
+      "matches": [
+        "^---\\n",
+        "\\n# Sublimation\\n",
+        "\\n## Procedure\\n\\s*\\S"
+      ]
+    }
+  ],
+  "solution": {
+    "steps": [
+      {
+        "tool": "apply",
+        "args": {
+          "effects": [
+            {
+              "op": "create",
+              "path": "processes/sublimation.md",
+              "markdown": "# Sublimation\n\nDriving a solid straight into vapour and condensing it again, skipping the liquid.\n",
+              "frontmatter": {
+                "type": "process",
+                "layer": "draft"
+              }
+            },
+            {
+              "op": "insert",
+              "into": {
+                "kind": "document",
+                "id": "$new.0"
+              },
+              "at": "end",
+              "markdown": "## Procedure\n\nHeat the material gently in a closed vessel with a cool head and collect the deposit."
+            }
+          ]
+        }
+      }
+    ],
+    "final_text": "Created /processes/sublimation.md with a Procedure section."
+  }
+}

@@ -1,0 +1,52 @@
+{
+  "id": "bulk-check-off",
+  "prompt": "All three open tasks in /texts/mutus-liber.md have been done. Check them all off.",
+  "checks": [
+    {
+      "kind": "query",
+      "query": "select checked from nodes where kind == \"md:task\" and path == \"/texts/mutus-liber.md\"",
+      "hits": [
+        {
+          "checked": true
+        },
+        {
+          "checked": true
+        },
+        {
+          "checked": true
+        }
+      ]
+    },
+    {
+      "kind": "read",
+      "path": "/texts/mutus-liber.md",
+      "not_matches": [
+        "- \\[ \\]"
+      ],
+      "matches": [
+        "- \\[x\\] Obtain a facsimile with plate numbering\\n- \\[x\\] Compare the 1677 and 1702 plate sequences\\n- \\[x\\] Decide whether the dew operation is literal"
+      ]
+    }
+  ],
+  "solution": {
+    "steps": [
+      {
+        "tool": "apply",
+        "args": {
+          "select": "from blocks where type == \"task\" and not checked and path == \"/texts/mutus-liber.md\"",
+          "effects": [
+            {
+              "op": "set",
+              "field": "attrs.checked",
+              "value": true
+            }
+          ],
+          "expect": {
+            "max": 10
+          }
+        }
+      }
+    ],
+    "final_text": "Checked off the three tasks in /texts/mutus-liber.md."
+  }
+}

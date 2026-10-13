@@ -3,6 +3,7 @@ packages:
   - "examples/graph-ui"
   - "examples/webdevproxy"
   - "examples/live-tail"
+  - "examples/agent-bench"
 
 allowBuilds:
   better-sqlite3: true

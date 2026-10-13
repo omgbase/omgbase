@@ -1,0 +1,60 @@
+{
+  "id": "doc-move",
+  "prompt": "Rename the Newton note: move /practitioners/newton.md to /practitioners/isaac-newton.md, and make sure every link in the repository that pointed at the old path now points at the new one.",
+  "checks": [
+    {
+      "kind": "query",
+      "query": "select path from docs where path == \"/practitioners/isaac-newton.md\"",
+      "hits": [
+        {
+          "path": "/practitioners/isaac-newton.md"
+        }
+      ]
+    },
+    {
+      "kind": "query",
+      "query": "select path from docs where path == \"/practitioners/newton.md\"",
+      "hits": []
+    },
+    {
+      "kind": "read",
+      "path": "/index.md",
+      "matches": [
+        "\\(/practitioners/isaac-newton\\.md\\)"
+      ],
+      "not_matches": [
+        "\\(/practitioners/newton\\.md\\)"
+      ]
+    },
+    {
+      "kind": "read",
+      "path": "/texts/emerald-tablet.md",
+      "matches": [
+        "\\(/practitioners/isaac-newton\\.md\\)"
+      ],
+      "not_matches": [
+        "\\(/practitioners/newton\\.md\\)"
+      ]
+    }
+  ],
+  "solution": {
+    "steps": [
+      {
+        "tool": "apply",
+        "args": {
+          "effects": [
+            {
+              "op": "move",
+              "target": {
+                "kind": "document",
+                "path": "/practitioners/newton.md"
+              },
+              "to": "practitioners/isaac-newton.md"
+            }
+          ]
+        }
+      }
+    ],
+    "final_text": "Moved the note to /practitioners/isaac-newton.md; the two inbound links were retargeted."
+  }
+}

@@ -1,0 +1,71 @@
+{
+  "id": "link-retarget",
+  "prompt": "The philosophers' stone note is about to be renamed. Retarget every link in the repository that points at /substances/philosophers-stone.md so that it points at /substances/lapis.md instead. Do not move, rename or otherwise edit the philosophers' stone note itself.",
+  "checks": [
+    {
+      "kind": "read",
+      "path": "/index.md",
+      "matches": [
+        "\\]\\(/substances/lapis\\.md\\)"
+      ],
+      "not_matches": [
+        "/substances/philosophers-stone\\.md"
+      ]
+    },
+    {
+      "kind": "read",
+      "path": "/processes/coagulation.md",
+      "matches": [
+        "\\]\\(/substances/lapis\\.md\\)"
+      ],
+      "not_matches": [
+        "/substances/philosophers-stone\\.md"
+      ]
+    },
+    {
+      "kind": "read",
+      "path": "/processes/magnum-opus.md",
+      "matches": [
+        "\\]\\(/substances/lapis\\.md\\)"
+      ],
+      "not_matches": [
+        "/substances/philosophers-stone\\.md"
+      ]
+    },
+    {
+      "kind": "read",
+      "path": "/lab/2026-02-notes.md",
+      "matches": [
+        "\\]\\(/substances/lapis\\.md\\)"
+      ],
+      "not_matches": [
+        "/substances/philosophers-stone\\.md"
+      ]
+    },
+    {
+      "kind": "unchanged",
+      "path": "/substances/philosophers-stone.md"
+    }
+  ],
+  "solution": {
+    "steps": [
+      {
+        "tool": "apply",
+        "args": {
+          "effects": [
+            {
+              "op": "retarget",
+              "repairs": [
+                {
+                  "from": "/substances/philosophers-stone.md",
+                  "to": "/substances/lapis.md"
+                }
+              ]
+            }
+          ]
+        }
+      }
+    ],
+    "final_text": "Retargeted the links in four documents to /substances/lapis.md."
+  }
+}

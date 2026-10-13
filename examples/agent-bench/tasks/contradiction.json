@@ -1,0 +1,46 @@
+{
+  "id": "contradiction",
+  "prompt": "Set the `layer` frontmatter field of /processes/coagulation.md to `canon`, and also set the `layer` field of that same document to `draft`.",
+  "checks": [
+    {
+      "kind": "unchanged",
+      "path": "/processes/coagulation.md"
+    },
+    {
+      "kind": "final_text",
+      "matches": "conflict|contradict|incompatible|both|cannot|can't|which|clarif|mutually|only one"
+    }
+  ],
+  "solution": {
+    "steps": [
+      {
+        "tool": "plan",
+        "args": {
+          "effects": [
+            {
+              "op": "set",
+              "target": {
+                "kind": "document",
+                "path": "/processes/coagulation.md"
+              },
+              "field": "frontmatter.layer",
+              "value": "canon"
+            },
+            {
+              "op": "set",
+              "target": {
+                "kind": "document",
+                "path": "/processes/coagulation.md"
+              },
+              "field": "frontmatter.layer",
+              "value": "draft"
+            }
+          ]
+        },
+        "expect_error": "conflicting_effects"
+      }
+    ],
+    "final_text": "The request is contradictory: `layer` cannot be both canon and draft, so I made no change. Which value do you want?"
+  },
+  "notes": "The correct behaviour is to report the conflict, not to pick a value: the document must be untouched and the final answer must mention the conflict."
+}

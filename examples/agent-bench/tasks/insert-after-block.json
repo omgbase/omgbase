@@ -1,0 +1,46 @@
+{
+  "id": "insert-after-block",
+  "prompt": "In /processes/magnum-opus.md, insert a new paragraph immediately after the stages table (the table whose rows are Nigredo, Albedo, Citrinitas and Rubedo), reading exactly: `The colours are those of the vessel, not of the matter.`",
+  "checks": [
+    {
+      "kind": "read",
+      "path": "/processes/magnum-opus.md",
+      "matches": [
+        "\\| the completed stone \\|\\n\\n?The colours are those of the vessel, not of the matter\\.\\n\\nLater writers"
+      ]
+    }
+  ],
+  "solution": {
+    "steps": [
+      {
+        "tool": "query",
+        "args": {
+          "query": "select id from blocks where path == \"/processes/magnum-opus.md\" and type == \"table\""
+        }
+      },
+      {
+        "tool": "apply",
+        "args": {
+          "effects": [
+            {
+              "op": "insert",
+              "into": {
+                "kind": "document",
+                "path": "/processes/magnum-opus.md"
+              },
+              "at": {
+                "after": {
+                  "$result": 0,
+                  "$get": "hits.0.id"
+                }
+              },
+              "markdown": "The colours are those of the vessel, not of the matter."
+            }
+          ]
+        }
+      }
+    ],
+    "final_text": "Inserted the paragraph after the stages table."
+  },
+  "notes": "A read-then-write that needs a block id for the anchor."
+}

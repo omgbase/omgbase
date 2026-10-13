@@ -1,0 +1,41 @@
+{
+  "id": "rollup",
+  "prompt": "Under the \"Processes\" heading of /index.md, append one line per process note (frontmatter `type: process`) that has a `stage` field, ordered by path, each in the exact form `- <slug>: <stage>` using the note's frontmatter `slug` and `stage` values.",
+  "checks": [
+    {
+      "kind": "read",
+      "path": "/index.md",
+      "matches": [
+        "\\(/processes/coagulation\\.md\\)\\n\\n?- calcination: nigredo\\n- coagulation: rubedo\\n- dissolution: nigredo\\n\\n## Practitioners"
+      ]
+    }
+  ],
+  "solution": {
+    "steps": [
+      {
+        "tool": "query",
+        "args": {
+          "query": "select slug, stage from docs where type == \"process\" and stage != null order by path"
+        }
+      },
+      {
+        "tool": "apply",
+        "args": {
+          "effects": [
+            {
+              "op": "insert",
+              "into": {
+                "kind": "section",
+                "heading_id": "b_12"
+              },
+              "at": "end",
+              "markdown": "- calcination: nigredo\n- coagulation: rubedo\n- dissolution: nigredo"
+            }
+          ]
+        }
+      }
+    ],
+    "final_text": "Appended three stage lines under Processes in /index.md."
+  },
+  "notes": "A multi-document read rolled up into one write. b_12 is the Processes heading of /index.md."
+}

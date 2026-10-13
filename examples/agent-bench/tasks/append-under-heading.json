@@ -1,0 +1,49 @@
+{
+  "id": "append-under-heading",
+  "prompt": "In the calcination process note (/processes/calcination.md), add a new open task reading `Weigh the calx after cooling` at the end of its \"Tasks\" section. Keep the existing tasks exactly as they are.",
+  "checks": [
+    {
+      "kind": "read",
+      "path": "/processes/calcination.md",
+      "matches": [
+        "- \\[ \\] Chase down the earliest recorded weight-gain measurement\\n\\n?- \\[ \\] Weigh the calx after cooling\\n"
+      ]
+    },
+    {
+      "kind": "query",
+      "query": "nodes count { where kind == \"md:task\" and path == \"/processes/calcination.md\" }",
+      "count": 4
+    },
+    {
+      "kind": "query",
+      "query": "select checked from nodes where kind == \"md:task\" and path == \"/processes/calcination.md\" and value == \"Weigh the calx after cooling\"",
+      "hits": [
+        {
+          "checked": false
+        }
+      ]
+    }
+  ],
+  "solution": {
+    "steps": [
+      {
+        "tool": "apply",
+        "args": {
+          "effects": [
+            {
+              "op": "insert",
+              "into": {
+                "kind": "section",
+                "heading_id": "b_153"
+              },
+              "at": "end",
+              "markdown": "- [ ] Weigh the calx after cooling"
+            }
+          ]
+        }
+      }
+    ],
+    "final_text": "Added the task under Tasks in /processes/calcination.md."
+  },
+  "notes": "b_153 is the Tasks heading of calcination under the sequential minter (spec/surface §4 Descriptions names it too)."
+}

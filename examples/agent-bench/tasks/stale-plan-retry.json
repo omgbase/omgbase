@@ -1,0 +1,74 @@
+{
+  "id": "stale-plan-retry",
+  "prompt": "Append a new paragraph at the very end of /timeline/review.md reading exactly: `Decisions deferred to spring are tracked in the March notes.` Preview the change with plan, then execute that plan.",
+  "hook": {
+    "kind": "disk_edit",
+    "on": "after_first_plan",
+    "path": "timeline/review.md",
+    "append": "- Confirm the alum order before the dissolution trials resume.\n"
+  },
+  "checks": [
+    {
+      "kind": "read",
+      "path": "/timeline/review.md",
+      "matches": [
+        "- Who keeps the lab notes in March\\?\\n- Confirm the alum order before the dissolution trials resume\\.\\n\\n?Decisions deferred to spring are tracked in the March notes\\.\\n*$"
+      ]
+    }
+  ],
+  "solution": {
+    "steps": [
+      {
+        "tool": "plan",
+        "args": {
+          "effects": [
+            {
+              "op": "insert",
+              "into": {
+                "kind": "document",
+                "path": "/timeline/review.md"
+              },
+              "at": "end",
+              "markdown": "Decisions deferred to spring are tracked in the March notes."
+            }
+          ]
+        }
+      },
+      {
+        "tool": "execute",
+        "args": {
+          "plan": {
+            "$result": 0
+          }
+        },
+        "expect_error": "sync_conflict"
+      },
+      {
+        "tool": "plan",
+        "args": {
+          "effects": [
+            {
+              "op": "insert",
+              "into": {
+                "kind": "document",
+                "path": "/timeline/review.md"
+              },
+              "at": "end",
+              "markdown": "Decisions deferred to spring are tracked in the March notes."
+            }
+          ]
+        }
+      },
+      {
+        "tool": "execute",
+        "args": {
+          "plan": {
+            "$result": 2
+          }
+        }
+      }
+    ],
+    "final_text": "The document changed on disk after the first plan; re-planned and executed the append."
+  },
+  "notes": "The harness appends a list item to the file on disk right after the model's first plan (or before its first write when it never plans); the server answers the stale commit with sync_conflict (retriable) and re-ingests, so the model must plan again. The check needs both the disk line and the model's paragraph, in order."
+}

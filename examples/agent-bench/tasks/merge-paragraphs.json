@@ -1,0 +1,44 @@
+{
+  "id": "merge-paragraphs",
+  "prompt": "In /processes/coagulation.md, under the heading \"Why it closes the work\", merge the two paragraphs into a single paragraph, joining them with one space. Do not change the wording.",
+  "checks": [
+    {
+      "kind": "read",
+      "path": "/processes/coagulation.md",
+      "matches": [
+        "philosophers-stone\\.md\\)\\. The claim is false, but the intuition is not absurd"
+      ]
+    },
+    {
+      "kind": "query",
+      "query": "blocks count { where path == \"/processes/coagulation.md\" and type == \"paragraph\" }",
+      "count": 5
+    }
+  ],
+  "solution": {
+    "steps": [
+      {
+        "tool": "apply",
+        "args": {
+          "effects": [
+            {
+              "op": "merge",
+              "targets": [
+                {
+                  "kind": "block",
+                  "id": "b_162"
+                },
+                {
+                  "kind": "block",
+                  "id": "b_163"
+                }
+              ],
+              "separator": " "
+            }
+          ]
+        }
+      }
+    ],
+    "final_text": "Merged the two paragraphs under \"Why it closes the work\"."
+  }
+}

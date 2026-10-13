@@ -1,0 +1,41 @@
+{
+  "id": "split-paragraph",
+  "prompt": "In /texts/emerald-tablet.md, the first paragraph under the heading \"Why it dominated\" holds two sentences. Split it into two paragraphs so that the second one begins with `Every practitioner from`. Do not change the wording.",
+  "checks": [
+    {
+      "kind": "read",
+      "path": "/texts/emerald-tablet.md",
+      "matches": [
+        "support any reading\\.\\s*\\n\\s*\\nEvery practitioner from\\n\\[Jabir\\]"
+      ]
+    },
+    {
+      "kind": "query",
+      "query": "blocks count { where path == \"/texts/emerald-tablet.md\" and type == \"paragraph\" }",
+      "count": 8
+    }
+  ],
+  "solution": {
+    "steps": [
+      {
+        "tool": "apply",
+        "args": {
+          "effects": [
+            {
+              "op": "split",
+              "target": {
+                "kind": "block",
+                "id": "b_298"
+              },
+              "at": [
+                117
+              ]
+            }
+          ]
+        }
+      }
+    ],
+    "final_text": "Split the paragraph before \"Every practitioner from\"."
+  },
+  "notes": "b_298 is the paragraph; byte 117 is the start of \"Every\" in its raw bytes."
+}

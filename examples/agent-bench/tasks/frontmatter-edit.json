@@ -1,0 +1,47 @@
+{
+  "id": "frontmatter-edit",
+  "prompt": "Mark the philosophers' stone note (/substances/philosophers-stone.md) as verified: set its frontmatter field `verified` to true. Change nothing else.",
+  "checks": [
+    {
+      "kind": "query",
+      "query": "select verified from docs where path == \"/substances/philosophers-stone.md\"",
+      "hits": [
+        {
+          "verified": true
+        }
+      ]
+    },
+    {
+      "kind": "read",
+      "path": "/substances/philosophers-stone.md",
+      "matches": [
+        "^---\\n(?:[^\\n]*\\n)*?verified: true\\n(?:[^\\n]*\\n)*?---\\n"
+      ],
+      "not_matches": [
+        "verified: false"
+      ]
+    }
+  ],
+  "solution": {
+    "steps": [
+      {
+        "tool": "apply",
+        "args": {
+          "effects": [
+            {
+              "op": "set",
+              "target": {
+                "kind": "document",
+                "path": "/substances/philosophers-stone.md"
+              },
+              "field": "frontmatter.verified",
+              "value": true
+            }
+          ],
+          "reason": "verified"
+        }
+      }
+    ],
+    "final_text": "Set verified: true on /substances/philosophers-stone.md."
+  }
+}
