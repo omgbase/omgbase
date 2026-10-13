@@ -66,7 +66,7 @@ const OR = 1, AND = 2, CMP = 3, RANGE = 4, ADD = 5, MUL = 6, UNARY = 7, POSTFIX 
 
 function prec(e: Expr): number {
   switch (e.kind) {
-    case "lit": case "ident": case "outer": case "binding": case "tuple": return PRIMARY;
+    case "lit": case "ident": case "outer": case "binding": case "tuple": case "template": return PRIMARY;
     case "member": case "call": case "required": case "op": return POSTFIX;
     case "unary": return UNARY;
     case "binary": return e.op === "+" || e.op === "-" ? ADD : e.op === "*" || e.op === "/" || e.op === "%" ? MUL : CMP;
@@ -231,6 +231,10 @@ function expr(e: Expr): Out {
       return cat(e.lo ? operand(e.lo, ADD) : "", e.exclusiveEnd ? "..." : "..", e.hi ? operand(e.hi, ADD) : "");
     // A tuple is self-delimiting; its elements are full expressions.
     case "tuple": return cat("(", join(e.items.map(expr), ", "), ")");
+    // A template literal prints as one: its text with the GRAMMAR §1 escapes
+    // (`` \` ``, `\\`, `\$` before a `{`, and the control characters), each
+    // interpolation as `${…}` around the full expression.
+    case "template": return cat("`", ...e.parts.map((p) => (typeof p === "string" ? templateText(p) : cat("${", expr(p), "}"))), "`");
   }
 }
 
@@ -264,13 +268,35 @@ function quote(s: string): string {
   for (const ch of s) {
     switch (ch) {
       case '"': out += '\\"'; break;
-      case "\\": out += "\\\\"; break;
-      case "\n": out += "\\n"; break;
-      case "\t": out += "\\t"; break;
-      case "\r": out += "\\r"; break;
-      case "\0": out += "\\0"; break;
-      default: out += ch;
+      default: out += escapeChar(ch);
     }
   }
   return out + '"';
+}
+
+/** The text of a template literal part, escaped so it re-lexes to itself: the
+ * backtick and the backslash, the control characters as in a string, and a `$`
+ * that a `{` follows (which would otherwise open an interpolation). */
+function templateText(s: string): string {
+  const cps = Array.from(s);
+  let out = "";
+  for (let i = 0; i < cps.length; i++) {
+    const ch = cps[i]!;
+    if (ch === "`") out += "\\`";
+    else if (ch === "$" && cps[i + 1] === "{") out += "\\$";
+    else out += escapeChar(ch);
+  }
+  return out;
+}
+
+/** The escapes a string literal and a template literal share (GRAMMAR §1). */
+function escapeChar(ch: string): string {
+  switch (ch) {
+    case "\\": return "\\\\";
+    case "\n": return "\\n";
+    case "\t": return "\\t";
+    case "\r": return "\\r";
+    case "\0": return "\\0";
+    default: return ch;
+  }
 }

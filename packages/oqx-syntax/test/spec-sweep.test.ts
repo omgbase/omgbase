@@ -31,6 +31,17 @@ describe("spec/oqx fixtures", () => {
       else if (why.includes("unterminated string")) {
         const last = tokens.at(-1);
         expect(last?.cls === "string" || last?.cls === "stringEscape", label).toBe(true);
+      } else if (why.includes("unterminated template literal") && why.includes("binding")) {
+        // A fragment boundary inside the literal: the display source (the `${n}`
+        // marker standing in for the value) is lexically a complete literal.
+        expect(tokens.some((t) => t.cls === "template"), label).toBe(true);
+        expect(tokens.some((t) => t.cls === "illegal"), label).toBe(false);
+      } else if (why.includes("unterminated template literal")) {
+        // The literal is open: it runs to the end of the source.
+        expect(tokens.at(-1)?.cls, label).toBe("template");
+      } else if (why.includes("interpolation")) {
+        expect(tokens.some((t) => t.cls === "interpolation" && t.text === "${"), label).toBe(true);
+        expect(tokens.some((t) => t.cls === "interpolation" && t.text === "}"), label).toBe(false);
       } else throw new Error(`unrecognized lex error in fixture: ${label}`);
     }
   });

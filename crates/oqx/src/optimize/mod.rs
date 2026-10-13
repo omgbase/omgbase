@@ -26,6 +26,7 @@ use std::rc::Rc;
 use crate::ast::{
     BinaryOp, Consumer, Expr, Follow, FollowDestination, OpNode, SelectItem, Span, Subquery, Where,
 };
+use crate::walk::template_exprs;
 pub use hash_index::{HashIndex, RowIndex, index_key, intersect_positions};
 
 // ---- IR ----------------------------------------------------------------------
@@ -393,6 +394,9 @@ pub fn expr_reads_scope_in(e: &Expr, at: usize, up_to: usize) -> bool {
                     .is_some_and(|x| expr_reads_scope_in(x, at, up_to))
         }
         Expr::Tuple { items, .. } => items.iter().any(|x| expr_reads_scope_in(x, at, up_to)),
+        Expr::Template { parts, .. } => {
+            template_exprs(parts).any(|x| expr_reads_scope_in(x, at, up_to))
+        }
     }
 }
 
@@ -489,6 +493,10 @@ pub fn expr_raise_free(e: &Expr, ctx: &RuleContext) -> bool {
                 && hi.as_deref().is_none_or(|x| expr_raise_free(x, ctx))
         }
         Expr::Tuple { items, .. } => items.iter().all(|x| expr_raise_free(x, ctx)),
+        // A template literal raises on a list or record interpolation (§7b),
+        // which only the data decides: with an interpolation it is never
+        // raise-free.
+        Expr::Template { parts, .. } => template_exprs(parts).next().is_none(),
     }
 }
 

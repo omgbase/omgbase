@@ -22,7 +22,9 @@ objects, plus two engine-internal value kinds (ranges, entries).
   [`arithmetic`, `scalar-equality`]
 - **Strings are sequences of Unicode code points** (portability): they order by
   code point and `.size()` counts code points. Literals may use either quote and
-  the escapes in GRAMMAR §1. [`strings`, `scalar-ordering`]
+  the escapes in GRAMMAR §1; a **template literal** `` `…${e}…` `` is a string
+  built by interpolation (§7b, since 0.21). [`strings`, `scalar-ordering`,
+  `template-literals`]
 - **Objects keep insertion order** (portability), observed by `entries()` and
   by projection. Property lookup is by exact key on the object's **own**
   properties only (§2). [`entries`, `properties`]
@@ -255,6 +257,40 @@ Arithmetic on other operand kinds (booleans, non-numeric strings, arrays,
 objects), division by zero, and the string form of very large or very small
 magnitudes are **not specified**; a result that would be NaN or infinite must
 not appear in a fixture. [`arithmetic`]
+
+### 7b. Template literals (since 0.21)
+
+`` `text ${e1} text ${e2} …` `` (GRAMMAR §4) evaluates to a **string**: the text
+parts verbatim (already decoded, newlines included) and, in place of each
+interpolation, the **string form** of its value as §7 defines it — a string is
+itself, a number renders as a double with no fraction when integer-valued (`-0`
+is `"0"`, `2.0` is `"2"`, `25e-1` is `"2.5"`), `true`/`false` are the words —
+concatenated in source order. A literal with no interpolation is its text; the
+empty literal `` `` `` is `""`.
+
+- **Absent propagates**, as in `+`: when any interpolated value is absent the
+  whole literal is **absent** (never `"undefined"`, `"null"` or the text around
+  it), so `` `${nope} x` `` is absent, `` `${nope}` == null `` is true, and an
+  absent literal is a dropped property in a record.
+- **A list, a record or a range cannot be interpolated**: it is an **eval
+  error** whose message includes `cannot interpolate` and names the kind (`it is
+  a list` / `a record` / `a range`). The language does not stringify a
+  collection silently — where `+` leaves such operands unspecified (§7), a
+  template literal refuses them. An entry value (§21) is a record here.
+- **Every interpolation is evaluated**, left to right, before the result is
+  decided: an error in a later interpolation is raised even when an earlier one
+  was absent (`` `${nope}${tags}` `` with `tags` a list is the error, not
+  absent), and an unknown function in any interpolation is its usual error.
+- An interpolation is any value expression, read in the **same scope** as the
+  literal: a bare name is the current row's property, `^name` the enclosing
+  row's, `N^name` the scope at depth N, a block its own rows (`` `${jobs single
+  { employer values where primary }}` ``), a nested template literal the same.
+
+A template literal is a value everywhere a value stands — a `select` item, a
+`where` operand (`` `${title}!` == "Alpha!" ``), an `order by` key, a function
+argument or a method receiver (`` `${title}`.size() `` counts code points like
+any string), the haystack of `in` — and is never a receiver or a source (it is a
+literal: GRAMMAR §4). [`template-literals`, `errors-eval`]
 
 ## 8. Logical operators in value position
 
@@ -721,7 +757,8 @@ Every failure is an `OqxError` whose `stage` is `lex`, `parse`, or `eval`
 method; `single` with more than one row; a required value that is absent
 (§5b); an invalid `limit`/`offset` value (a bracket index is an `offset`);
 `follow` in a where-position directive; an invalid or unsupported regex or
-regex flag (§11); a scalar in row position (§3);
+regex flag (§11); a scalar in row position (§3); a list, record or range
+interpolated into a template literal (§7b);
 a range in a result (§1); a binding out of range (§22). Evaluation is otherwise
 total: absent navigation, arithmetic over absent, comparisons over absent or
 mismatched types, membership in a non-container, and `range()` of a bad string

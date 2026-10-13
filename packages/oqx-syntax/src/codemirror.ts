@@ -13,10 +13,11 @@
 // Execution model (identical to Monarch's, and to what the parity tests hold the
 // TextMate grammar to): at each position the rules are tried in order against
 // the rest of the line, the first match wins, a multi-group match is emitted as
-// consecutive tokens, and a string carries its state across lines.
+// consecutive tokens, and a string — or a template literal (0.21), with the
+// stack of its open interpolations and blocks — carries its state across lines.
 
-import { RULES, STRINGS, STRING_ESCAPE, WHITESPACE, withIdent, type GroupAction, type Rule } from "./rules.js";
-import { LANGUAGE, TOKEN_CLASSES, type TokenClass } from "./vocabulary.js";
+import { RULES, STRINGS, STRING_ESCAPE, TEMPLATE_LITERAL, WHITESPACE, withIdent, type GroupAction, type Rule } from "./rules.js";
+import { LANGUAGE, TEMPLATE, TOKEN_CLASSES, type TokenClass } from "./vocabulary.js";
 
 /** The part of a CodeMirror `StringStream` (5 or 6) the tokenizer touches. */
 export interface StreamLike {
@@ -24,11 +25,17 @@ export interface StreamLike {
   pos: number;
 }
 
+/** Where the tokenizer stands inside a template literal (0.21): in its text, in
+ * a `${ … }` interpolation, or in a `{ … }` block nested in an interpolation. */
+export type TemplateMode = "template" | "interpolation" | "block";
+
 export interface OqxStreamState {
   /** The quote of the string being lexed, or null. */
   quote: string | null;
   /** Remaining tokens of a multi-group match on this line: `[length, class]`. */
   pending: Array<[number, TokenClass | null]>;
+  /** The open template literals, interpolations and blocks, innermost last. */
+  stack: TemplateMode[];
 }
 
 interface CompiledRule {
@@ -40,6 +47,7 @@ const compiled: CompiledRule[] = RULES.map((r: Rule) => ({ regex: new RegExp(`^(
 const whitespace = new RegExp(`^${WHITESPACE}`);
 const escape = new RegExp(`^${STRING_ESCAPE}`);
 const stringBodies = new Map<string, RegExp>(STRINGS.map((s) => [s.quote, new RegExp(`^${s.body}`)]));
+const templateText = new RegExp(`^${TEMPLATE_LITERAL.text}`);
 
 function resolve(g: GroupAction, text: string): TokenClass | null {
   if (g === "whitespace") return null;
@@ -76,16 +84,58 @@ export function nextToken(stream: StreamLike, state: OqxStreamState): TokenClass
     stream.pos += 1; // unreachable in practice: every character is a body, an escape or the quote
     return "string";
   }
+  const mode = state.stack[state.stack.length - 1];
+  // The text of a template literal: an escape, the `${` of an interpolation, the
+  // closing backtick, or a run of text.
+  if (mode === "template") {
+    let m = escape.exec(rest);
+    if (m) {
+      stream.pos += m[0].length;
+      return "stringEscape";
+    }
+    if (rest.startsWith(TEMPLATE.interpolationOpen)) {
+      stream.pos += TEMPLATE.interpolationOpen.length;
+      state.stack.push("interpolation");
+      return "interpolation";
+    }
+    if (rest.startsWith(TEMPLATE.quote)) {
+      stream.pos += 1;
+      state.stack.pop();
+      return "template";
+    }
+    m = templateText.exec(rest);
+    stream.pos += m ? m[0].length : 1; // the text rule covers every other character
+    return "template";
+  }
   let m = whitespace.exec(rest);
   if (m) {
     stream.pos += m[0].length;
     return null;
+  }
+  if (rest.startsWith(TEMPLATE.quote)) {
+    stream.pos += 1;
+    state.stack.push("template");
+    return "template";
   }
   for (const s of STRINGS) {
     if (rest.startsWith(s.quote)) {
       stream.pos += 1;
       state.quote = s.quote;
       return "string";
+    }
+  }
+  // Inside an interpolation the braces are balanced: a `{` opens a nested block,
+  // a `}` closes the innermost block or, at depth 0, the interpolation itself.
+  if (mode !== undefined) {
+    if (rest.startsWith("{")) {
+      stream.pos += 1;
+      state.stack.push("block");
+      return "braceOpen";
+    }
+    if (rest.startsWith("}")) {
+      stream.pos += 1;
+      state.stack.pop();
+      return mode === "interpolation" ? "interpolation" : "braceClose";
     }
   }
   for (const rule of compiled) {
@@ -106,11 +156,11 @@ export function nextToken(stream: StreamLike, state: OqxStreamState): TokenClass
 }
 
 export function startState(): OqxStreamState {
-  return { quote: null, pending: [] };
+  return { quote: null, pending: [], stack: [] };
 }
 
 export function copyState(state: OqxStreamState): OqxStreamState {
-  return { quote: state.quote, pending: [...state.pending] };
+  return { quote: state.quote, pending: [...state.pending], stack: [...state.stack] };
 }
 
 /** The shape of `@lezer/highlight`'s `tags` export this adapter relies on:
@@ -157,7 +207,7 @@ export function oqxStreamParser<Tag>(tags: HighlightTagsLike<Tag>): {
     token: nextToken,
     tokenTable: oqxTokenTable(tags),
     languageData: {
-      closeBrackets: { brackets: ["(", "{", '"', "'"] },
+      closeBrackets: { brackets: ["(", "{", '"', "'", "`"] },
       wordChars: "$",
     },
   };

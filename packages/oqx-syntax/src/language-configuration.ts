@@ -24,6 +24,7 @@ export const oqxLanguageConfiguration: LanguageConfiguration = {
     { open: "[", close: "]" },
     { open: '"', close: '"', notIn: ["string"] },
     { open: "'", close: "'", notIn: ["string"] },
+    { open: "`", close: "`", notIn: ["string"] },
   ],
   surroundingPairs: [
     ["{", "}"],
@@ -31,6 +32,7 @@ export const oqxLanguageConfiguration: LanguageConfiguration = {
     ["[", "]"],
     ['"', '"'],
     ["'", "'"],
+    ["`", "`"],
   ],
   wordPattern: IDENTIFIER,
 };

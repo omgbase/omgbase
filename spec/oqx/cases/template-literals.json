@@ -1,0 +1,2524 @@
+{
+  "suite": "template-literals",
+  "cases": [
+    {
+      "name": "plain text",
+      "tags": [
+        "template"
+      ],
+      "roots": {
+        "docs": [
+          {
+            "title": "Alpha",
+            "era": 3,
+            "n": 2.5,
+            "active": true,
+            "tags": [
+              "a",
+              "b"
+            ],
+            "meta": {
+              "a": 1
+            },
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "primary": true
+              },
+              {
+                "employer": "Initech"
+              }
+            ]
+          },
+          {
+            "title": "Beta",
+            "era": 2,
+            "n": 2,
+            "active": false,
+            "tags": [],
+            "meta": {},
+            "jobs": [
+              {
+                "employer": "Initech",
+                "primary": true
+              }
+            ]
+          }
+        ]
+      },
+      "query": "x: `hello` from docs",
+      "expect": {
+        "result": [
+          {
+            "x": "hello"
+          },
+          {
+            "x": "hello"
+          }
+        ]
+      }
+    },
+    {
+      "name": "one interpolation",
+      "tags": [
+        "template"
+      ],
+      "roots": {
+        "docs": [
+          {
+            "title": "Alpha",
+            "era": 3,
+            "n": 2.5,
+            "active": true,
+            "tags": [
+              "a",
+              "b"
+            ],
+            "meta": {
+              "a": 1
+            },
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "primary": true
+              },
+              {
+                "employer": "Initech"
+              }
+            ]
+          },
+          {
+            "title": "Beta",
+            "era": 2,
+            "n": 2,
+            "active": false,
+            "tags": [],
+            "meta": {},
+            "jobs": [
+              {
+                "employer": "Initech",
+                "primary": true
+              }
+            ]
+          }
+        ]
+      },
+      "query": "x: `${title}` from docs",
+      "expect": {
+        "result": [
+          {
+            "x": "Alpha"
+          },
+          {
+            "x": "Beta"
+          }
+        ]
+      }
+    },
+    {
+      "name": "two interpolations with text around them",
+      "tags": [
+        "template"
+      ],
+      "roots": {
+        "docs": [
+          {
+            "title": "Alpha",
+            "era": 3,
+            "n": 2.5,
+            "active": true,
+            "tags": [
+              "a",
+              "b"
+            ],
+            "meta": {
+              "a": 1
+            },
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "primary": true
+              },
+              {
+                "employer": "Initech"
+              }
+            ]
+          },
+          {
+            "title": "Beta",
+            "era": 2,
+            "n": 2,
+            "active": false,
+            "tags": [],
+            "meta": {},
+            "jobs": [
+              {
+                "employer": "Initech",
+                "primary": true
+              }
+            ]
+          }
+        ]
+      },
+      "query": "x: `${title} (${era})` from docs",
+      "expect": {
+        "result": [
+          {
+            "x": "Alpha (3)"
+          },
+          {
+            "x": "Beta (2)"
+          }
+        ]
+      }
+    },
+    {
+      "name": "adjacent interpolations",
+      "tags": [
+        "template"
+      ],
+      "roots": {
+        "docs": [
+          {
+            "title": "Alpha",
+            "era": 3,
+            "n": 2.5,
+            "active": true,
+            "tags": [
+              "a",
+              "b"
+            ],
+            "meta": {
+              "a": 1
+            },
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "primary": true
+              },
+              {
+                "employer": "Initech"
+              }
+            ]
+          },
+          {
+            "title": "Beta",
+            "era": 2,
+            "n": 2,
+            "active": false,
+            "tags": [],
+            "meta": {},
+            "jobs": [
+              {
+                "employer": "Initech",
+                "primary": true
+              }
+            ]
+          }
+        ]
+      },
+      "query": "x: `${title}${era}` from docs",
+      "expect": {
+        "result": [
+          {
+            "x": "Alpha3"
+          },
+          {
+            "x": "Beta2"
+          }
+        ]
+      }
+    },
+    {
+      "name": "the empty literal",
+      "tags": [
+        "template"
+      ],
+      "roots": {
+        "docs": [
+          {
+            "title": "Alpha",
+            "era": 3,
+            "n": 2.5,
+            "active": true,
+            "tags": [
+              "a",
+              "b"
+            ],
+            "meta": {
+              "a": 1
+            },
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "primary": true
+              },
+              {
+                "employer": "Initech"
+              }
+            ]
+          }
+        ]
+      },
+      "query": "x: `` from docs",
+      "expect": {
+        "result": [
+          {
+            "x": ""
+          }
+        ]
+      }
+    },
+    {
+      "name": "a number interpolates as its string form",
+      "tags": [
+        "template"
+      ],
+      "notes": "The string form of SEMANTICS §7: an integer-valued double renders without a fraction.",
+      "roots": {
+        "docs": [
+          {
+            "title": "Alpha",
+            "era": 3,
+            "n": 2.5,
+            "active": true,
+            "tags": [
+              "a",
+              "b"
+            ],
+            "meta": {
+              "a": 1
+            },
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "primary": true
+              },
+              {
+                "employer": "Initech"
+              }
+            ]
+          },
+          {
+            "title": "Beta",
+            "era": 2,
+            "n": 2,
+            "active": false,
+            "tags": [],
+            "meta": {},
+            "jobs": [
+              {
+                "employer": "Initech",
+                "primary": true
+              }
+            ]
+          }
+        ]
+      },
+      "query": "x: `n=${n}` from docs",
+      "expect": {
+        "result": [
+          {
+            "x": "n=2.5"
+          },
+          {
+            "x": "n=2"
+          }
+        ]
+      }
+    },
+    {
+      "name": "negative zero and exponent literals render as numbers do in `+`",
+      "tags": [
+        "template"
+      ],
+      "roots": {
+        "docs": [
+          {
+            "title": "Alpha",
+            "era": 3,
+            "n": 2.5,
+            "active": true,
+            "tags": [
+              "a",
+              "b"
+            ],
+            "meta": {
+              "a": 1
+            },
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "primary": true
+              },
+              {
+                "employer": "Initech"
+              }
+            ]
+          }
+        ]
+      },
+      "query": "x: `${-0} ${2.0} ${1e3} ${25e-1}` from docs",
+      "expect": {
+        "result": [
+          {
+            "x": "0 2 1000 2.5"
+          }
+        ]
+      }
+    },
+    {
+      "name": "booleans interpolate as the words",
+      "tags": [
+        "template"
+      ],
+      "roots": {
+        "docs": [
+          {
+            "title": "Alpha",
+            "era": 3,
+            "n": 2.5,
+            "active": true,
+            "tags": [
+              "a",
+              "b"
+            ],
+            "meta": {
+              "a": 1
+            },
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "primary": true
+              },
+              {
+                "employer": "Initech"
+              }
+            ]
+          },
+          {
+            "title": "Beta",
+            "era": 2,
+            "n": 2,
+            "active": false,
+            "tags": [],
+            "meta": {},
+            "jobs": [
+              {
+                "employer": "Initech",
+                "primary": true
+              }
+            ]
+          }
+        ]
+      },
+      "query": "x: `${active} ${era == 3}` from docs",
+      "expect": {
+        "result": [
+          {
+            "x": "true true"
+          },
+          {
+            "x": "false false"
+          }
+        ]
+      }
+    },
+    {
+      "name": "arithmetic inside an interpolation",
+      "tags": [
+        "template"
+      ],
+      "roots": {
+        "docs": [
+          {
+            "title": "Alpha",
+            "era": 3,
+            "n": 2.5,
+            "active": true,
+            "tags": [
+              "a",
+              "b"
+            ],
+            "meta": {
+              "a": 1
+            },
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "primary": true
+              },
+              {
+                "employer": "Initech"
+              }
+            ]
+          },
+          {
+            "title": "Beta",
+            "era": 2,
+            "n": 2,
+            "active": false,
+            "tags": [],
+            "meta": {},
+            "jobs": [
+              {
+                "employer": "Initech",
+                "primary": true
+              }
+            ]
+          }
+        ]
+      },
+      "query": "x: `${era + 1}` from docs",
+      "expect": {
+        "result": [
+          {
+            "x": "4"
+          },
+          {
+            "x": "3"
+          }
+        ]
+      }
+    },
+    {
+      "name": "an interpolation may hold a single block with a values projection",
+      "tags": [
+        "template"
+      ],
+      "notes": "The lexer balances the braces: the first `}` closes the block, the second the interpolation.",
+      "roots": {
+        "docs": [
+          {
+            "title": "Alpha",
+            "era": 3,
+            "n": 2.5,
+            "active": true,
+            "tags": [
+              "a",
+              "b"
+            ],
+            "meta": {
+              "a": 1
+            },
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "primary": true
+              },
+              {
+                "employer": "Initech"
+              }
+            ]
+          },
+          {
+            "title": "Beta",
+            "era": 2,
+            "n": 2,
+            "active": false,
+            "tags": [],
+            "meta": {},
+            "jobs": [
+              {
+                "employer": "Initech",
+                "primary": true
+              }
+            ]
+          }
+        ]
+      },
+      "query": "x: `${jobs single { employer values where primary }}` from docs",
+      "expect": {
+        "result": [
+          {
+            "x": "Globocorp"
+          },
+          {
+            "x": "Initech"
+          }
+        ]
+      }
+    },
+    {
+      "name": "an interpolation may hold a bracket lookup and a navigation",
+      "tags": [
+        "template"
+      ],
+      "roots": {
+        "docs": [
+          {
+            "title": "Alpha",
+            "era": 3,
+            "n": 2.5,
+            "active": true,
+            "tags": [
+              "a",
+              "b"
+            ],
+            "meta": {
+              "a": 1
+            },
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "primary": true
+              },
+              {
+                "employer": "Initech"
+              }
+            ]
+          },
+          {
+            "title": "Beta",
+            "era": 2,
+            "n": 2,
+            "active": false,
+            "tags": [],
+            "meta": {},
+            "jobs": [
+              {
+                "employer": "Initech",
+                "primary": true
+              }
+            ]
+          }
+        ]
+      },
+      "query": "x: `${jobs[0].employer}!` from docs",
+      "expect": {
+        "result": [
+          {
+            "x": "Globocorp!"
+          },
+          {
+            "x": "Initech!"
+          }
+        ]
+      }
+    },
+    {
+      "name": "a nested template literal",
+      "tags": [
+        "template"
+      ],
+      "roots": {
+        "docs": [
+          {
+            "title": "Alpha",
+            "era": 3,
+            "n": 2.5,
+            "active": true,
+            "tags": [
+              "a",
+              "b"
+            ],
+            "meta": {
+              "a": 1
+            },
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "primary": true
+              },
+              {
+                "employer": "Initech"
+              }
+            ]
+          },
+          {
+            "title": "Beta",
+            "era": 2,
+            "n": 2,
+            "active": false,
+            "tags": [],
+            "meta": {},
+            "jobs": [
+              {
+                "employer": "Initech",
+                "primary": true
+              }
+            ]
+          }
+        ]
+      },
+      "query": "x: `a ${ `b ${era}` } c` from docs",
+      "expect": {
+        "result": [
+          {
+            "x": "a b 3 c"
+          },
+          {
+            "x": "a b 2 c"
+          }
+        ]
+      }
+    },
+    {
+      "name": "a nested template literal holding a block",
+      "tags": [
+        "template"
+      ],
+      "roots": {
+        "docs": [
+          {
+            "title": "Alpha",
+            "era": 3,
+            "n": 2.5,
+            "active": true,
+            "tags": [
+              "a",
+              "b"
+            ],
+            "meta": {
+              "a": 1
+            },
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "primary": true
+              },
+              {
+                "employer": "Initech"
+              }
+            ]
+          },
+          {
+            "title": "Beta",
+            "era": 2,
+            "n": 2,
+            "active": false,
+            "tags": [],
+            "meta": {},
+            "jobs": [
+              {
+                "employer": "Initech",
+                "primary": true
+              }
+            ]
+          }
+        ]
+      },
+      "query": "x: `${ `<${jobs first { employer values }}>` }` from docs",
+      "expect": {
+        "result": [
+          {
+            "x": "<Globocorp>"
+          },
+          {
+            "x": "<Initech>"
+          }
+        ]
+      }
+    },
+    {
+      "name": "an absent interpolation makes the whole literal absent",
+      "tags": [
+        "template"
+      ],
+      "notes": "As `+` with an absent operand (SEMANTICS §7): the literal is absent, not `\" x\"`.",
+      "roots": {
+        "docs": [
+          {
+            "title": "Alpha",
+            "era": 3,
+            "n": 2.5,
+            "active": true,
+            "tags": [
+              "a",
+              "b"
+            ],
+            "meta": {
+              "a": 1
+            },
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "primary": true
+              },
+              {
+                "employer": "Initech"
+              }
+            ]
+          },
+          {
+            "title": "Beta",
+            "era": 2,
+            "n": 2,
+            "active": false,
+            "tags": [],
+            "meta": {},
+            "jobs": [
+              {
+                "employer": "Initech",
+                "primary": true
+              }
+            ]
+          }
+        ]
+      },
+      "query": "x: `${nope} x` values from docs",
+      "expect": {
+        "result": [
+          null,
+          null
+        ]
+      }
+    },
+    {
+      "name": "one absent interpolation among present ones makes the literal absent",
+      "tags": [
+        "template"
+      ],
+      "roots": {
+        "docs": [
+          {
+            "title": "Alpha",
+            "era": 3,
+            "n": 2.5,
+            "active": true,
+            "tags": [
+              "a",
+              "b"
+            ],
+            "meta": {
+              "a": 1
+            },
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "primary": true
+              },
+              {
+                "employer": "Initech"
+              }
+            ]
+          }
+        ]
+      },
+      "query": "x: `${title} ${nope}` values from docs",
+      "expect": {
+        "result": [
+          null
+        ]
+      }
+    },
+    {
+      "name": "an absent literal is an absent property",
+      "tags": [
+        "template"
+      ],
+      "roots": {
+        "docs": [
+          {
+            "title": "Alpha",
+            "era": 3,
+            "n": 2.5,
+            "active": true,
+            "tags": [
+              "a",
+              "b"
+            ],
+            "meta": {
+              "a": 1
+            },
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "primary": true
+              },
+              {
+                "employer": "Initech"
+              }
+            ]
+          }
+        ]
+      },
+      "query": "x: `${nope}`, title from docs",
+      "expect": {
+        "result": [
+          {
+            "title": "Alpha"
+          }
+        ]
+      }
+    },
+    {
+      "name": "an absent literal compares as absent",
+      "tags": [
+        "template"
+      ],
+      "roots": {
+        "docs": [
+          {
+            "title": "Alpha",
+            "era": 3,
+            "n": 2.5,
+            "active": true,
+            "tags": [
+              "a",
+              "b"
+            ],
+            "meta": {
+              "a": 1
+            },
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "primary": true
+              },
+              {
+                "employer": "Initech"
+              }
+            ]
+          },
+          {
+            "title": "Beta",
+            "era": 2,
+            "n": 2,
+            "active": false,
+            "tags": [],
+            "meta": {},
+            "jobs": [
+              {
+                "employer": "Initech",
+                "primary": true
+              }
+            ]
+          }
+        ]
+      },
+      "query": "docs count { where `${nope}` == null }",
+      "expect": {
+        "result": 2
+      }
+    },
+    {
+      "name": "escapes: a backtick, a dollar before a brace, a backslash",
+      "tags": [
+        "template"
+      ],
+      "notes": "The text decodes with the string escapes (GRAMMAR §1): `\\<c>` is `<c>`, so `\\`` keeps a backtick and `\\$` a dollar that no longer opens an interpolation.",
+      "roots": {
+        "docs": [
+          {
+            "title": "Alpha",
+            "era": 3,
+            "n": 2.5,
+            "active": true,
+            "tags": [
+              "a",
+              "b"
+            ],
+            "meta": {
+              "a": 1
+            },
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "primary": true
+              },
+              {
+                "employer": "Initech"
+              }
+            ]
+          }
+        ]
+      },
+      "query": "x: `a \\` b \\${x} \\\\ c` from docs",
+      "expect": {
+        "result": [
+          {
+            "x": "a ` b ${x} \\ c"
+          }
+        ]
+      }
+    },
+    {
+      "name": "escapes: the control escapes of a string apply",
+      "tags": [
+        "template"
+      ],
+      "roots": {
+        "docs": [
+          {
+            "title": "Alpha",
+            "era": 3,
+            "n": 2.5,
+            "active": true,
+            "tags": [
+              "a",
+              "b"
+            ],
+            "meta": {
+              "a": 1
+            },
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "primary": true
+              },
+              {
+                "employer": "Initech"
+              }
+            ]
+          }
+        ]
+      },
+      "query": "x: `a\\nb\\tc\\r\\0` from docs",
+      "expect": {
+        "result": [
+          {
+            "x": "a\nb\tc\r\u0000"
+          }
+        ]
+      }
+    },
+    {
+      "name": "escapes: any other escaped character is itself",
+      "tags": [
+        "template"
+      ],
+      "roots": {
+        "docs": [
+          {
+            "title": "Alpha",
+            "era": 3,
+            "n": 2.5,
+            "active": true,
+            "tags": [
+              "a",
+              "b"
+            ],
+            "meta": {
+              "a": 1
+            },
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "primary": true
+              },
+              {
+                "employer": "Initech"
+              }
+            ]
+          }
+        ]
+      },
+      "query": "x: `\\q \\$ \\{ \\}` from docs",
+      "expect": {
+        "result": [
+          {
+            "x": "q $ { }"
+          }
+        ]
+      }
+    },
+    {
+      "name": "a lone dollar or brace is text; `${` opens an interpolation only when adjacent",
+      "tags": [
+        "template"
+      ],
+      "roots": {
+        "docs": [
+          {
+            "title": "Alpha",
+            "era": 3,
+            "n": 2.5,
+            "active": true,
+            "tags": [
+              "a",
+              "b"
+            ],
+            "meta": {
+              "a": 1
+            },
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "primary": true
+              },
+              {
+                "employer": "Initech"
+              }
+            ]
+          }
+        ]
+      },
+      "query": "x: `$ {y} {z} cost: $${era}` from docs",
+      "expect": {
+        "result": [
+          {
+            "x": "$ {y} {z} cost: $3"
+          }
+        ]
+      }
+    },
+    {
+      "name": "a dollar before a name is text, not an intrinsic",
+      "tags": [
+        "template"
+      ],
+      "roots": {
+        "docs": [
+          {
+            "title": "Alpha",
+            "era": 3,
+            "n": 2.5,
+            "active": true,
+            "tags": [
+              "a",
+              "b"
+            ],
+            "meta": {
+              "a": 1
+            },
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "primary": true
+              },
+              {
+                "employer": "Initech"
+              }
+            ]
+          }
+        ]
+      },
+      "query": "x: `$it ${$it.title}` from docs",
+      "expect": {
+        "result": [
+          {
+            "x": "$it Alpha"
+          }
+        ]
+      }
+    },
+    {
+      "name": "newlines are kept verbatim (a multi-line literal)",
+      "tags": [
+        "template"
+      ],
+      "roots": {
+        "docs": [
+          {
+            "title": "Alpha",
+            "era": 3,
+            "n": 2.5,
+            "active": true,
+            "tags": [
+              "a",
+              "b"
+            ],
+            "meta": {
+              "a": 1
+            },
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "primary": true
+              },
+              {
+                "employer": "Initech"
+              }
+            ]
+          }
+        ]
+      },
+      "query": "x: `line one\n  ${title}\nline three` from docs",
+      "expect": {
+        "result": [
+          {
+            "x": "line one\n  Alpha\nline three"
+          }
+        ]
+      }
+    },
+    {
+      "name": "a quote inside a template literal is an ordinary character",
+      "tags": [
+        "template"
+      ],
+      "roots": {
+        "docs": [
+          {
+            "title": "Alpha",
+            "era": 3,
+            "n": 2.5,
+            "active": true,
+            "tags": [
+              "a",
+              "b"
+            ],
+            "meta": {
+              "a": 1
+            },
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "primary": true
+              },
+              {
+                "employer": "Initech"
+              }
+            ]
+          }
+        ]
+      },
+      "query": "x: `\"${title}\" 'quoted'` from docs",
+      "expect": {
+        "result": [
+          {
+            "x": "\"Alpha\" 'quoted'"
+          }
+        ]
+      }
+    },
+    {
+      "name": "a backtick inside a string literal is an ordinary character",
+      "tags": [
+        "template"
+      ],
+      "roots": {
+        "docs": [
+          {
+            "title": "Alpha",
+            "era": 3,
+            "n": 2.5,
+            "active": true,
+            "tags": [
+              "a",
+              "b"
+            ],
+            "meta": {
+              "a": 1
+            },
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "primary": true
+              },
+              {
+                "employer": "Initech"
+              }
+            ]
+          }
+        ]
+      },
+      "query": "x: \"`\" from docs",
+      "expect": {
+        "result": [
+          {
+            "x": "`"
+          }
+        ]
+      }
+    },
+    {
+      "name": "a template literal in where",
+      "tags": [
+        "template"
+      ],
+      "roots": {
+        "docs": [
+          {
+            "title": "Alpha",
+            "era": 3,
+            "n": 2.5,
+            "active": true,
+            "tags": [
+              "a",
+              "b"
+            ],
+            "meta": {
+              "a": 1
+            },
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "primary": true
+              },
+              {
+                "employer": "Initech"
+              }
+            ]
+          },
+          {
+            "title": "Beta",
+            "era": 2,
+            "n": 2,
+            "active": false,
+            "tags": [],
+            "meta": {},
+            "jobs": [
+              {
+                "employer": "Initech",
+                "primary": true
+              }
+            ]
+          }
+        ]
+      },
+      "query": "title from docs where `${title}!` == \"Alpha!\"",
+      "expect": {
+        "result": [
+          {
+            "title": "Alpha"
+          }
+        ]
+      }
+    },
+    {
+      "name": "a template literal leads a where-first block",
+      "tags": [
+        "template"
+      ],
+      "notes": "A literal is syntactically a predicate (GRAMMAR §2), so the block drops `where`.",
+      "roots": {
+        "docs": [
+          {
+            "title": "Alpha",
+            "era": 3,
+            "n": 2.5,
+            "active": true,
+            "tags": [
+              "a",
+              "b"
+            ],
+            "meta": {
+              "a": 1
+            },
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "primary": true
+              },
+              {
+                "employer": "Initech"
+              }
+            ]
+          },
+          {
+            "title": "Beta",
+            "era": 2,
+            "n": 2,
+            "active": false,
+            "tags": [],
+            "meta": {},
+            "jobs": [
+              {
+                "employer": "Initech",
+                "primary": true
+              }
+            ]
+          }
+        ]
+      },
+      "query": "title from docs where jobs exists { `${employer}` == \"Globocorp\" }",
+      "expect": {
+        "result": [
+          {
+            "title": "Alpha"
+          }
+        ]
+      }
+    },
+    {
+      "name": "a template literal as a method receiver and as a function argument",
+      "tags": [
+        "template"
+      ],
+      "roots": {
+        "docs": [
+          {
+            "title": "Alpha",
+            "era": 3,
+            "n": 2.5,
+            "active": true,
+            "tags": [
+              "a",
+              "b"
+            ],
+            "meta": {
+              "a": 1
+            },
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "primary": true
+              },
+              {
+                "employer": "Initech"
+              }
+            ]
+          }
+        ]
+      },
+      "query": "a: `${title}`.size(), b: size(`${title}${era}`), c: `${title}`.lower() from docs",
+      "expect": {
+        "result": [
+          {
+            "a": 5,
+            "b": 6,
+            "c": "alpha"
+          }
+        ]
+      }
+    },
+    {
+      "name": "a template literal in order by",
+      "tags": [
+        "template"
+      ],
+      "roots": {
+        "docs": [
+          {
+            "title": "Alpha",
+            "era": 3,
+            "n": 2.5,
+            "active": true,
+            "tags": [
+              "a",
+              "b"
+            ],
+            "meta": {
+              "a": 1
+            },
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "primary": true
+              },
+              {
+                "employer": "Initech"
+              }
+            ]
+          },
+          {
+            "title": "Beta",
+            "era": 2,
+            "n": 2,
+            "active": false,
+            "tags": [],
+            "meta": {},
+            "jobs": [
+              {
+                "employer": "Initech",
+                "primary": true
+              }
+            ]
+          }
+        ]
+      },
+      "query": "title from docs order by `${era}-${title}`",
+      "expect": {
+        "result": [
+          {
+            "title": "Beta"
+          },
+          {
+            "title": "Alpha"
+          }
+        ]
+      }
+    },
+    {
+      "name": "a template literal as the haystack of in",
+      "tags": [
+        "template"
+      ],
+      "roots": {
+        "docs": [
+          {
+            "title": "Alpha",
+            "era": 3,
+            "n": 2.5,
+            "active": true,
+            "tags": [
+              "a",
+              "b"
+            ],
+            "meta": {
+              "a": 1
+            },
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "primary": true
+              },
+              {
+                "employer": "Initech"
+              }
+            ]
+          },
+          {
+            "title": "Beta",
+            "era": 2,
+            "n": 2,
+            "active": false,
+            "tags": [],
+            "meta": {},
+            "jobs": [
+              {
+                "employer": "Initech",
+                "primary": true
+              }
+            ]
+          }
+        ]
+      },
+      "query": "docs count { where \"lph\" in `${title}` }",
+      "expect": {
+        "result": 1
+      }
+    },
+    {
+      "name": "an interpolation reads the enclosing row through ^",
+      "tags": [
+        "template"
+      ],
+      "roots": {
+        "docs": [
+          {
+            "title": "Alpha",
+            "era": 3,
+            "n": 2.5,
+            "active": true,
+            "tags": [
+              "a",
+              "b"
+            ],
+            "meta": {
+              "a": 1
+            },
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "primary": true
+              },
+              {
+                "employer": "Initech"
+              }
+            ]
+          },
+          {
+            "title": "Beta",
+            "era": 2,
+            "n": 2,
+            "active": false,
+            "tags": [],
+            "meta": {},
+            "jobs": [
+              {
+                "employer": "Initech",
+                "primary": true
+              }
+            ]
+          }
+        ]
+      },
+      "query": "x: jobs collect { label: `${^title}: ${employer}` values } from docs",
+      "expect": {
+        "result": [
+          {
+            "x": [
+              "Alpha: Globocorp",
+              "Alpha: Initech"
+            ]
+          },
+          {
+            "x": [
+              "Beta: Initech"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "an absolute scope reference inside an interpolation",
+      "tags": [
+        "template"
+      ],
+      "roots": {
+        "docs": [
+          {
+            "title": "Alpha",
+            "era": 3,
+            "n": 2.5,
+            "active": true,
+            "tags": [
+              "a",
+              "b"
+            ],
+            "meta": {
+              "a": 1
+            },
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "primary": true
+              },
+              {
+                "employer": "Initech"
+              }
+            ]
+          }
+        ]
+      },
+      "query": "x: jobs collect { label: `${1^title}/${employer}` values } from docs",
+      "expect": {
+        "result": [
+          {
+            "x": [
+              "Alpha/Globocorp",
+              "Alpha/Initech"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "a template literal in a nested block's where reads its own row",
+      "tags": [
+        "template"
+      ],
+      "roots": {
+        "docs": [
+          {
+            "title": "Alpha",
+            "era": 3,
+            "n": 2.5,
+            "active": true,
+            "tags": [
+              "a",
+              "b"
+            ],
+            "meta": {
+              "a": 1
+            },
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "primary": true
+              },
+              {
+                "employer": "Initech"
+              }
+            ]
+          }
+        ]
+      },
+      "query": "x: jobs collect { employer values where `${employer}` == \"Initech\" } from docs",
+      "expect": {
+        "result": [
+          {
+            "x": [
+              "Initech"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "a binding beside a template literal",
+      "tags": [
+        "template",
+        "binding"
+      ],
+      "template": {
+        "strings": [
+          "x: `${title}` from ",
+          ""
+        ],
+        "values": [
+          [
+            {
+              "title": "Z"
+            }
+          ]
+        ]
+      },
+      "expect": {
+        "result": [
+          {
+            "x": "Z"
+          }
+        ]
+      }
+    },
+    {
+      "name": "a range cannot be interpolated",
+      "tags": [
+        "template",
+        "error"
+      ],
+      "notes": "Only a string, a number, a boolean or an absent value has a string form (SEMANTICS §7b); lists and records are pinned in `errors-eval`.",
+      "roots": {
+        "docs": [
+          {
+            "title": "Alpha",
+            "era": 3,
+            "n": 2.5,
+            "active": true,
+            "tags": [
+              "a",
+              "b"
+            ],
+            "meta": {
+              "a": 1
+            },
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "primary": true
+              },
+              {
+                "employer": "Initech"
+              }
+            ]
+          },
+          {
+            "title": "Beta",
+            "era": 2,
+            "n": 2,
+            "active": false,
+            "tags": [],
+            "meta": {},
+            "jobs": [
+              {
+                "employer": "Initech",
+                "primary": true
+              }
+            ]
+          }
+        ]
+      },
+      "query": "x: `${1..3}` from docs",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "cannot interpolate",
+            "range"
+          ]
+        }
+      }
+    },
+    {
+      "name": "every interpolation is evaluated: a list after an absent interpolation still raises",
+      "tags": [
+        "template",
+        "error"
+      ],
+      "notes": "The interpolations are evaluated in order, all of them; absence is decided after.",
+      "roots": {
+        "docs": [
+          {
+            "title": "Alpha",
+            "era": 3,
+            "n": 2.5,
+            "active": true,
+            "tags": [
+              "a",
+              "b"
+            ],
+            "meta": {
+              "a": 1
+            },
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "primary": true
+              },
+              {
+                "employer": "Initech"
+              }
+            ]
+          },
+          {
+            "title": "Beta",
+            "era": 2,
+            "n": 2,
+            "active": false,
+            "tags": [],
+            "meta": {},
+            "jobs": [
+              {
+                "employer": "Initech",
+                "primary": true
+              }
+            ]
+          }
+        ]
+      },
+      "query": "x: `${nope}${tags}` from docs",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "cannot interpolate",
+            "list"
+          ]
+        }
+      }
+    },
+    {
+      "name": "an empty interpolation",
+      "tags": [
+        "template",
+        "error"
+      ],
+      "roots": {
+        "docs": [
+          {
+            "title": "Alpha",
+            "era": 3,
+            "n": 2.5,
+            "active": true,
+            "tags": [
+              "a",
+              "b"
+            ],
+            "meta": {
+              "a": 1
+            },
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "primary": true
+              },
+              {
+                "employer": "Initech"
+              }
+            ]
+          },
+          {
+            "title": "Beta",
+            "era": 2,
+            "n": 2,
+            "active": false,
+            "tags": [],
+            "meta": {},
+            "jobs": [
+              {
+                "employer": "Initech",
+                "primary": true
+              }
+            ]
+          }
+        ]
+      },
+      "query": "x: `${}` from docs",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "empty interpolation"
+          ]
+        }
+      }
+    },
+    {
+      "name": "an interpolation holds one expression",
+      "tags": [
+        "template",
+        "error"
+      ],
+      "roots": {
+        "docs": [
+          {
+            "title": "Alpha",
+            "era": 3,
+            "n": 2.5,
+            "active": true,
+            "tags": [
+              "a",
+              "b"
+            ],
+            "meta": {
+              "a": 1
+            },
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "primary": true
+              },
+              {
+                "employer": "Initech"
+              }
+            ]
+          },
+          {
+            "title": "Beta",
+            "era": 2,
+            "n": 2,
+            "active": false,
+            "tags": [],
+            "meta": {},
+            "jobs": [
+              {
+                "employer": "Initech",
+                "primary": true
+              }
+            ]
+          }
+        ]
+      },
+      "query": "x: `${title era}` from docs",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "expected '}' to close the `${…}` interpolation"
+          ]
+        }
+      }
+    },
+    {
+      "name": "an unterminated literal",
+      "tags": [
+        "template",
+        "error"
+      ],
+      "roots": {
+        "docs": [
+          {
+            "title": "Alpha",
+            "era": 3,
+            "n": 2.5,
+            "active": true,
+            "tags": [
+              "a",
+              "b"
+            ],
+            "meta": {
+              "a": 1
+            },
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "primary": true
+              },
+              {
+                "employer": "Initech"
+              }
+            ]
+          },
+          {
+            "title": "Beta",
+            "era": 2,
+            "n": 2,
+            "active": false,
+            "tags": [],
+            "meta": {},
+            "jobs": [
+              {
+                "employer": "Initech",
+                "primary": true
+              }
+            ]
+          }
+        ]
+      },
+      "query": "x: `abc from docs",
+      "expect": {
+        "error": {
+          "stage": "lex",
+          "includes": [
+            "unterminated template literal"
+          ]
+        }
+      }
+    },
+    {
+      "name": "an unterminated interpolation",
+      "tags": [
+        "template",
+        "error"
+      ],
+      "roots": {
+        "docs": [
+          {
+            "title": "Alpha",
+            "era": 3,
+            "n": 2.5,
+            "active": true,
+            "tags": [
+              "a",
+              "b"
+            ],
+            "meta": {
+              "a": 1
+            },
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "primary": true
+              },
+              {
+                "employer": "Initech"
+              }
+            ]
+          },
+          {
+            "title": "Beta",
+            "era": 2,
+            "n": 2,
+            "active": false,
+            "tags": [],
+            "meta": {},
+            "jobs": [
+              {
+                "employer": "Initech",
+                "primary": true
+              }
+            ]
+          }
+        ]
+      },
+      "query": "x: `${title from docs",
+      "expect": {
+        "error": {
+          "stage": "lex",
+          "includes": [
+            "unterminated",
+            "interpolation"
+          ]
+        }
+      }
+    },
+    {
+      "name": "a brace left open in an interpolation never closes the literal",
+      "tags": [
+        "template",
+        "error"
+      ],
+      "notes": "The `}` closes the block, so the backtick opens a nested literal that runs to the end of the input.",
+      "roots": {
+        "docs": [
+          {
+            "title": "Alpha",
+            "era": 3,
+            "n": 2.5,
+            "active": true,
+            "tags": [
+              "a",
+              "b"
+            ],
+            "meta": {
+              "a": 1
+            },
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "primary": true
+              },
+              {
+                "employer": "Initech"
+              }
+            ]
+          },
+          {
+            "title": "Beta",
+            "era": 2,
+            "n": 2,
+            "active": false,
+            "tags": [],
+            "meta": {},
+            "jobs": [
+              {
+                "employer": "Initech",
+                "primary": true
+              }
+            ]
+          }
+        ]
+      },
+      "query": "x: `${jobs first { employer values }` from docs",
+      "expect": {
+        "error": {
+          "stage": "lex",
+          "includes": [
+            "unterminated template literal"
+          ]
+        }
+      }
+    },
+    {
+      "name": "a template literal is not a receiver",
+      "tags": [
+        "template",
+        "error"
+      ],
+      "roots": {
+        "docs": [
+          {
+            "title": "Alpha",
+            "era": 3,
+            "n": 2.5,
+            "active": true,
+            "tags": [
+              "a",
+              "b"
+            ],
+            "meta": {
+              "a": 1
+            },
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "primary": true
+              },
+              {
+                "employer": "Initech"
+              }
+            ]
+          },
+          {
+            "title": "Beta",
+            "era": 2,
+            "n": 2,
+            "active": false,
+            "tags": [],
+            "meta": {},
+            "jobs": [
+              {
+                "employer": "Initech",
+                "primary": true
+              }
+            ]
+          }
+        ]
+      },
+      "query": "`x` collect { }",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "is a literal, not a collection"
+          ]
+        }
+      }
+    },
+    {
+      "name": "a template literal is not a bracket receiver",
+      "tags": [
+        "template",
+        "error"
+      ],
+      "roots": {
+        "docs": [
+          {
+            "title": "Alpha",
+            "era": 3,
+            "n": 2.5,
+            "active": true,
+            "tags": [
+              "a",
+              "b"
+            ],
+            "meta": {
+              "a": 1
+            },
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "primary": true
+              },
+              {
+                "employer": "Initech"
+              }
+            ]
+          },
+          {
+            "title": "Beta",
+            "era": 2,
+            "n": 2,
+            "active": false,
+            "tags": [],
+            "meta": {},
+            "jobs": [
+              {
+                "employer": "Initech",
+                "primary": true
+              }
+            ]
+          }
+        ]
+      },
+      "query": "`${title}`[0] from docs",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "is a literal, not a collection"
+          ]
+        }
+      }
+    },
+    {
+      "name": "an unaliased template literal needs an alias",
+      "tags": [
+        "template",
+        "error"
+      ],
+      "roots": {
+        "docs": [
+          {
+            "title": "Alpha",
+            "era": 3,
+            "n": 2.5,
+            "active": true,
+            "tags": [
+              "a",
+              "b"
+            ],
+            "meta": {
+              "a": 1
+            },
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "primary": true
+              },
+              {
+                "employer": "Initech"
+              }
+            ]
+          },
+          {
+            "title": "Beta",
+            "era": 2,
+            "n": 2,
+            "active": false,
+            "tags": [],
+            "meta": {},
+            "jobs": [
+              {
+                "employer": "Initech",
+                "primary": true
+              }
+            ]
+          }
+        ]
+      },
+      "query": "`${title}` from docs",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "needs an alias"
+          ]
+        }
+      }
+    },
+    {
+      "name": "a binding inside a backtick literal is a lex error",
+      "tags": [
+        "template",
+        "binding",
+        "error"
+      ],
+      "notes": "Fragments are lexed independently (GRAMMAR §1), so a fragment that ends inside a backtick literal is an unterminated literal: a bound value never stands inside one.",
+      "template": {
+        "strings": [
+          "x: `",
+          "` from docs"
+        ],
+        "values": [
+          "A"
+        ]
+      },
+      "expect": {
+        "error": {
+          "stage": "lex",
+          "includes": [
+            "unterminated template literal",
+            "binding"
+          ]
+        }
+      }
+    },
+    {
+      "name": "ast: a plain literal is one text part",
+      "tags": [
+        "template",
+        "ast"
+      ],
+      "query": "x: `hi` from docs",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "docs"
+          },
+          "from": [],
+          "where": null,
+          "select": [
+            {
+              "kind": "field",
+              "name": "x",
+              "expr": {
+                "kind": "template",
+                "parts": [
+                  "hi"
+                ]
+              },
+              "lift": 0
+            }
+          ],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": null,
+          "frontier": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "ast: parts alternate text and expression, text first and last",
+      "tags": [
+        "template",
+        "ast"
+      ],
+      "query": "x: `${title} (${era})` from docs",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "docs"
+          },
+          "from": [],
+          "where": null,
+          "select": [
+            {
+              "kind": "field",
+              "name": "x",
+              "expr": {
+                "kind": "template",
+                "parts": [
+                  "",
+                  {
+                    "kind": "ident",
+                    "name": "title"
+                  },
+                  " (",
+                  {
+                    "kind": "ident",
+                    "name": "era"
+                  },
+                  ")"
+                ]
+              },
+              "lift": 0
+            }
+          ],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": null,
+          "frontier": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "ast: a nested literal and a block interpolation",
+      "tags": [
+        "template",
+        "ast"
+      ],
+      "query": "x: `${ `${a}` }${jobs single { employer values }}` from docs",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "docs"
+          },
+          "from": [],
+          "where": null,
+          "select": [
+            {
+              "kind": "field",
+              "name": "x",
+              "expr": {
+                "kind": "template",
+                "parts": [
+                  "",
+                  {
+                    "kind": "template",
+                    "parts": [
+                      "",
+                      {
+                        "kind": "ident",
+                        "name": "a"
+                      },
+                      ""
+                    ]
+                  },
+                  "",
+                  {
+                    "kind": "op",
+                    "receiver": {
+                      "kind": "ident",
+                      "name": "jobs"
+                    },
+                    "op": "single",
+                    "sub": {
+                      "kind": "subquery",
+                      "from": [],
+                      "where": null,
+                      "select": [
+                        {
+                          "kind": "field",
+                          "name": "employer",
+                          "expr": {
+                            "kind": "ident",
+                            "name": "employer"
+                          },
+                          "lift": 0
+                        }
+                      ],
+                      "orderBy": null,
+                      "follow": null,
+                      "frontier": null,
+                      "depth": null,
+                      "values": true,
+                      "limit": null,
+                      "offset": null
+                    },
+                    "countCmp": null,
+                    "distinct": false
+                  },
+                  ""
+                ]
+              },
+              "lift": 0
+            }
+          ],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": null,
+          "frontier": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "ast: the text parts hold the decoded escapes",
+      "tags": [
+        "template",
+        "ast"
+      ],
+      "query": "x: `a\\`b\\${c}\\\\d\\n` from docs",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "docs"
+          },
+          "from": [],
+          "where": null,
+          "select": [
+            {
+              "kind": "field",
+              "name": "x",
+              "expr": {
+                "kind": "template",
+                "parts": [
+                  "a`b${c}\\d\n"
+                ]
+              },
+              "lift": 0
+            }
+          ],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": null,
+          "frontier": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "spans: a template literal spans its backticks, an interpolation its expression",
+      "tags": [
+        "template",
+        "ast"
+      ],
+      "spans": true,
+      "query": "select x: `a${b}c` from r",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "span": [
+            0,
+            25
+          ],
+          "source": {
+            "kind": "ident",
+            "span": [
+              24,
+              25
+            ],
+            "name": "r"
+          },
+          "from": [],
+          "where": null,
+          "select": [
+            {
+              "kind": "field",
+              "span": [
+                7,
+                18
+              ],
+              "name": "x",
+              "expr": {
+                "kind": "template",
+                "span": [
+                  10,
+                  18
+                ],
+                "parts": [
+                  "a",
+                  {
+                    "kind": "ident",
+                    "span": [
+                      14,
+                      15
+                    ],
+                    "name": "b"
+                  },
+                  "c"
+                ]
+              },
+              "lift": 0
+            }
+          ],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": null,
+          "frontier": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    }
+  ]
+}

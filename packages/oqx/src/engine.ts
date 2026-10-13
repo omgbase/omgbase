@@ -26,7 +26,7 @@ import type { DataContext } from "./context.ts";
 import { DefaultContext } from "./context.ts";
 import { OqxError } from "./errors.ts";
 import {
-  relate, arith, membership, truthy, compareForSort, compare, canonicalKey, makeRange, isEntry, isRange,
+  relate, arith, membership, truthy, compareForSort, compare, canonicalKey, makeRange, isEntry, isRange, stringForm,
 } from "./semantics.ts";
 import type { BlockPlan, Correlation, Rule, RowIndex } from "./optimize/index.ts";
 import { printTemplate } from "./print.ts";
@@ -904,6 +904,26 @@ export class InMemoryEngine implements Engine {
         }
         return out;
       }
+      // A template literal (SEMANTICS §7b): the text parts verbatim and each
+      // interpolated value's string form (§7), concatenated. Every interpolation
+      // is evaluated, in order; a list, a record or a range is an eval error (it
+      // has no string form the language specifies); an absent value makes the
+      // whole literal absent, as `+` does.
+      case "template": {
+        let out = "";
+        let absent = false;
+        for (const part of e.parts) {
+          if (typeof part === "string") { out += part; continue; }
+          const v = this.evalExpr(part, scope);
+          if (v == null) { absent = true; continue; }
+          if (typeof v === "object") {
+            const what = isRange(v) ? "a range" : Array.isArray(v) || Symbol.iterator in v ? "a list" : "a record";
+            throw new OqxError(`cannot interpolate \`\${${describe(part)}}\` in a template literal: it is ${what} — only a string, a number, a boolean or an absent value has a string form`, "eval");
+          }
+          out += stringForm(v)!;
+        }
+        return absent ? undefined : out;
+      }
     }
   }
 
@@ -1093,6 +1113,7 @@ function exprHasRecur(e: Expr): boolean {
     case "binary": case "logical": case "in": return exprHasRecur(e.left) || exprHasRecur(e.right);
     case "range": return (e.lo != null && exprHasRecur(e.lo)) || (e.hi != null && exprHasRecur(e.hi));
     case "tuple": return e.items.some(exprHasRecur);
+    case "template": return e.parts.some((p) => typeof p !== "string" && exprHasRecur(p));
     default: return false;
   }
 }

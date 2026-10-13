@@ -1,6 +1,6 @@
 {
   "languageId": "oqx",
-  "languageVersion": "0.20",
+  "languageVersion": "0.21",
   "defaultToken": "invalid",
   "tokenPostfix": ".oqx",
   "ignoreCase": false,
@@ -68,6 +68,13 @@
         {
           "token": "string",
           "next": "@stringSingle"
+        }
+      ],
+      [
+        "`",
+        {
+          "token": "string.template",
+          "next": "@template"
         }
       ],
       [
@@ -289,6 +296,68 @@
           "next": "@pop"
         }
       ]
+    ],
+    "template": [
+      [
+        "\\\\(?:.|$)",
+        "string.escape"
+      ],
+      [
+        "\\$\\{",
+        {
+          "token": "delimiter.interpolation",
+          "next": "@templateInterpolation"
+        }
+      ],
+      [
+        "`",
+        {
+          "token": "string.template",
+          "next": "@pop"
+        }
+      ],
+      [
+        "(?:[^`\\\\$]|\\$(?!\\{))+",
+        "string.template"
+      ]
+    ],
+    "templateInterpolation": [
+      [
+        "\\{",
+        {
+          "token": "delimiter.curly",
+          "next": "@templateBlock"
+        }
+      ],
+      [
+        "\\}",
+        {
+          "token": "delimiter.interpolation",
+          "next": "@pop"
+        }
+      ],
+      {
+        "include": "@root"
+      }
+    ],
+    "templateBlock": [
+      [
+        "\\{",
+        {
+          "token": "delimiter.curly",
+          "next": "@templateBlock"
+        }
+      ],
+      [
+        "\\}",
+        {
+          "token": "delimiter.curly",
+          "next": "@pop"
+        }
+      ],
+      {
+        "include": "@root"
+      }
     ],
     "whitespace": [
       [

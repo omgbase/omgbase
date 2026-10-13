@@ -10,7 +10,14 @@
 // alter the grammar — the prepared-statement / injection-safe property the
 // host-bindings design note calls for. (A consequence: `${x}` inside a string
 // literal does not interpolate — that fragment would be an unterminated string —
-// which is exactly the desired "interpolation is a value, never source text".)
+// which is exactly the desired "interpolation is a value, never source text".
+// The same holds for a backtick template literal (0.21): a fragment that ends
+// inside one is an unterminated literal, so a bound value never stands in one.)
+//
+// Template literals `` `text ${expr}` `` are lexed with a mode stack: the text
+// between the backticks is one `tmpl_text` token per run (decoded), a `${`
+// opens an interpolation whose tokens are ordinary source until the `}` that
+// balances it, and an interpolation may hold another template literal.
 //
 // Positions (`Token.pos` / `Token.end`, the `span` of every AST node, and the
 // offsets quoted in error messages) count Unicode CODE POINTS over the raw
@@ -39,13 +46,21 @@ export type TokType =
   | "range" // `..` (inclusive) or `...` (exclusive end) — a Ruby-style range operator (value carries which)
   | "op" // == != <= >= < > && || ! + - * / %  (value carries the operator)
   | "binding" // a ${…} interpolation; `index` names the value slot
+  // A template literal (since 0.21): the opening and closing backticks, a run of
+  // its decoded text, and the `${` / `}` around an interpolation — whose `}` is a
+  // token of its own, so a block's `}` inside the interpolation stays `rbrace`.
+  | "tmpl_start"
+  | "tmpl_text"
+  | "tmpl_interp_start"
+  | "tmpl_interp_end"
+  | "tmpl_end"
   | "eof";
 
 export interface Token {
   type: TokType;
   /** The source text of the token, except: a `string` token carries its decoded
-   * value (quotes stripped, escapes resolved); a `binding` carries the display
-   * marker `${N}`; `eof` carries `""`. */
+   * value (quotes stripped, escapes resolved), and so does a `tmpl_text` run; a
+   * `binding` carries the display marker `${N}`; `eof` carries `""`. */
   value: string;
   /** Code-point offset of the token's first character. */
   pos: number;
@@ -78,7 +93,16 @@ export function lexTemplate(fragments: readonly string[], values: number): Token
   const tokens: Token[] = [];
   let base = 0; // running offset across fragments + rendered `${…}` markers
   for (let f = 0; f < fragments.length; f++) {
-    lexFragment(fragments[f]!, base, tokens);
+    try {
+      lexFragment(fragments[f]!, base, tokens);
+    } catch (err) {
+      // A fragment ends inside a backtick literal: the bound value would have
+      // to stand inside it, and a bound value is never source text (GRAMMAR §1).
+      if (err instanceof OqxError && f < fragments.length - 1 && err.message.startsWith("unterminated template literal")) {
+        throw new OqxError(`${err.message} — a template literal must be complete within one fragment: a \${…} binding cannot stand inside a backtick literal (interpolate a name, or bind the whole string)`, "lex");
+      }
+      throw err;
+    }
     base += codePointLength(fragments[f]!);
     if (f < fragments.length - 1) {
       // account for the value's rendered width in the display source (see rawSource)
@@ -103,6 +127,14 @@ export function lexString(src: string): Token[] {
   return tokens;
 }
 
+// The lexer's mode inside a template literal (GRAMMAR §1, since 0.21): the text of
+// the literal, or a `${…}` interpolation, which is ordinary source again — with a
+// brace depth, so the `}` that closes the interpolation is told from a block's.
+// Nesting is a stack: an interpolation may hold another template literal.
+type Mode =
+  | { kind: "template"; start: number }
+  | { kind: "interp"; start: number; depth: number };
+
 function lexFragment(src: string, base: number, out: Token[]): void {
   // One entry per code point, so every index below is a code-point offset.
   const cps = Array.from(src);
@@ -113,16 +145,47 @@ function lexFragment(src: string, base: number, out: Token[]): void {
   const push = (type: TokType, value: string, start: number, end: number): void => {
     out.push({ type, value, pos: base + start, end: base + end });
   };
+  const modes: Mode[] = [];
 
   while (i < n) {
+    const mode = modes[modes.length - 1];
+
+    // Template text: everything up to the closing backtick or the `${` of an
+    // interpolation, decoded with the string escapes (`\<c>` is `<c>`, so `` \` ``
+    // and `\$` keep a backtick or a dollar literal). Newlines are kept verbatim.
+    if (mode?.kind === "template") {
+      const start = i;
+      let sval = "";
+      while (i < n) {
+        const c = cps[i]!;
+        if (c === "`" || (c === "$" && at(i + 1) === "{")) break;
+        if (c === "\\") { i++; sval += unescape(cps[i]); i++; continue; }
+        sval += c;
+        i++;
+      }
+      if (i > start) push("tmpl_text", sval, start, Math.min(i, n));
+      if (i >= n) break; // unterminated — reported below
+      if (cps[i] === "`") { push("tmpl_end", "`", i, i + 1); i++; modes.pop(); continue; }
+      push("tmpl_interp_start", "${", i, i + 2);
+      modes.push({ kind: "interp", start: i, depth: 0 });
+      i += 2;
+      continue;
+    }
+
     const c = cps[i]!;
 
     if (c === " " || c === "\t" || c === "\n" || c === "\r") { i++; continue; }
 
+    if (c === "`") { push("tmpl_start", c, i, i + 1); modes.push({ kind: "template", start: i }); i++; continue; }
     if (c === "(") { push("lparen", c, i, i + 1); i++; continue; }
     if (c === ")") { push("rparen", c, i, i + 1); i++; continue; }
-    if (c === "{") { push("lbrace", c, i, i + 1); i++; continue; }
-    if (c === "}") { push("rbrace", c, i, i + 1); i++; continue; }
+    if (c === "{") { if (mode) mode.depth++; push("lbrace", c, i, i + 1); i++; continue; }
+    if (c === "}") {
+      // Inside an interpolation a `}` at depth 0 closes it; deeper, it closes a block.
+      if (mode && mode.depth === 0) { push("tmpl_interp_end", c, i, i + 1); i++; modes.pop(); continue; }
+      if (mode) mode.depth--;
+      push("rbrace", c, i, i + 1); i++; continue;
+    }
     if (c === "[") { push("lbracket", c, i, i + 1); i++; continue; }
     if (c === "]") { push("rbracket", c, i, i + 1); i++; continue; }
     if (c === ",") { push("comma", c, i, i + 1); i++; continue; }
@@ -199,6 +262,13 @@ function lexFragment(src: string, base: number, out: Token[]): void {
     }
 
     throw new OqxError(`unexpected character ${JSON.stringify(c)} at ${base + i}`, "lex");
+  }
+
+  // The end of the source inside a template literal.
+  const open = modes[modes.length - 1];
+  if (open?.kind === "template") throw new OqxError(`unterminated template literal at ${base + open.start}`, "lex");
+  if (open?.kind === "interp") {
+    throw new OqxError(`unterminated \${…} interpolation in a template literal at ${base + open.start} — expected '}'`, "lex");
   }
 }
 

@@ -15,8 +15,11 @@ const classes = new Set(Object.keys(TOKEN_CLASSES));
 function flatten(tokens: Array<string | Prism.Token>, out: Array<{ text: string; cls: TokenClass | null }>, parent: TokenClass | null): void {
   for (const t of tokens) {
     if (typeof t === "string") {
+      // Text inside a classed token is content of that class, blank or not (the
+      // space between two interpolations of a template literal is template text);
+      // outside one it may only be whitespace.
       if (t.trim() !== "" && parent === null) throw new Error(`untokenized text ${JSON.stringify(t)}`);
-      out.push({ text: t, cls: t.trim() === "" ? null : parent });
+      out.push({ text: t, cls: parent });
       continue;
     }
     const aliasList = Array.isArray(t.alias) ? t.alias : t.alias ? [t.alias] : [];
@@ -63,11 +66,23 @@ describe("Prism grammar", () => {
   });
 
   it("every pattern has the m flag and the keys are unique rule names", () => {
+    // A container (a multi-group match, an interpolation) is named by the tokens
+    // inside it; `rest` is Prism's re-entry into the whole grammar, not a token.
+    const named = (k: string, t: { alias: string[] }) => classes.has(k) || t.alias.some((a) => classes.has(a) || a === CONTAINER);
     for (const [key, token] of Object.entries(oqxPrismGrammar)) {
+      if (key === "rest") continue;
       expect(token.pattern.flags, key).toContain("m");
-      const named = (k: string, t: { alias: string[] }) => classes.has(k) || t.alias.some((a) => classes.has(a));
-      if (token.inside) for (const [k, inner] of Object.entries(token.inside)) expect(named(k, inner), k).toBe(true);
-      else expect(named(key, token), key).toBe(true);
+      if (token.inside) {
+        for (const [k, inner] of Object.entries(token.inside)) {
+          if (k === "rest") continue;
+          expect(named(k, inner as { alias: string[] }), k).toBe(true);
+        }
+      } else expect(named(key, token), key).toBe(true);
     }
+    // Before Prism first runs it, an interpolation's inside grammar re-enters the
+    // whole grammar through `rest` (Prism then splices the tokens in and drops the key).
+    const interpolation = oqxPrismGrammar.template!.inside!["template-interpolation"]!;
+    const inside = interpolation.inside as Record<string, unknown>;
+    expect(inside.rest === oqxPrismGrammar || inside.template === oqxPrismGrammar.template).toBe(true);
   });
 });

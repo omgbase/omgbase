@@ -46,12 +46,18 @@ guess the default of.
 | `in` | membership | expressions |
 | `range` | `lo..hi`, `lo...hi`, `..hi`, `lo..` | expressions |
 | `tuple` | `(e1, e2, …)` — two or more expressions, a value and a receiver (since 0.20) | expressions |
+| `template` | `` `text ${expr} text` `` — a template literal: text parts and interpolated expressions, a string value (since 0.21) | expressions |
 
 The `where` tree and value expressions are distinct families: `and`/`or`/`not`
 own the boolean structure of a predicate so consumer tests compose with scalar
 leaves, while `logical` is `&&`/`||` *as a value* (`(a || b) == 5`). A
 where-position consumer test is the `op` node itself; discriminate a `where`
 node on `kind`.
+
+A `template` node (since 0.21) holds the only child slot with non-node values:
+its `parts` list alternates plain JSON strings (the decoded text) with
+expressions, text first and last. The text is data, not a node — it has no
+`kind` and no span — so the traversal (§5) visits only the interpolations.
 
 There is no `index` node and no node for any other sugar: a bracket lookup
 `x[n]` / `x[p]` is parsed straight to the `op` (`first { offset n }`,
@@ -106,6 +112,7 @@ as their source words (`"=="`, `"&&"`, `"collect"`).
 | `in` | `left: Expr`; `right: Expr` |
 | `range` | `lo: Expr \| null`; `hi: Expr \| null`; `exclusiveEnd: boolean` |
 | `tuple` | `items: Expr[]` (≥ 2) |
+| `template` | `parts: (string \| Expr)[]` — **strictly alternating**: a text part, an interpolation, a text part, … — so the list has odd length (≥ 1) and begins and ends with a text part, which may be `""` (`` `${a}` `` is `["", a, ""]`, `` `${a}${b}` `` is `["", a, "", b, ""]`, `` `hi` `` is `["hi"]`, `` `` `` is `[""]`). A text part is a **plain JSON string**, not a node (no `kind`, no span), holding the **decoded** text (GRAMMAR §1 escapes resolved, newlines verbatim); an interpolation is any `Expr` (a nested `template` or a value-position `op` included) |
 
 Shape rules the parser guarantees (and `cases/ast.json` pins):
 
@@ -134,7 +141,8 @@ Shape rules the parser guarantees (and `cases/ast.json` pins):
   the evaluated predicate calls it; a tool that wants what the user wrote reads
   the tree as parsed.
 - Numbers are doubles (`1e3` is `1000`); string literals are decoded (`"a\nb"`
-  holds a newline).
+  holds a newline), and so are a template literal's text parts (`` `a\`b` `` is
+  `["a`b"]`; `` `\${x}` `` is `["${x}"]`, one text part and no interpolation).
 
 ## 3. Spans
 
@@ -167,6 +175,8 @@ last:
   through `}` as a written directive would;
 - `outer`: the carets (or the `N^`) through the name; `lit`: a string's quotes
   inclusive; `binding`: its `${n}` marker; `tuple`: its parentheses inclusive;
+  `template`: its backticks inclusive, while each interpolated expression spans
+  itself (not its `${` `}`), and a text part has no span;
 - a **parenthesized operand** takes the span of its parentheses (`(a + 1) > 2`:
   the `+` node spans `(a + 1)`), so an editor can select exactly what the user
   grouped.
@@ -203,7 +213,9 @@ canonical source order: for `query` — `select`, `source`, `from`, `where`,
 `from`, `where`, `frontier`, `follow`, `orderBy`, `limit`, `offset` (`depth` is
 a number, not a node); for `op` — `receiver`, `sub`; for `follow` —
 `destinations`; then the obvious slots of the smaller nodes (`expr`, `parts`,
-`recv`, `args`, `left`/`right`, `lo`/`hi`, `items`; `required` — `expr`).
+`recv`, `args`, `left`/`right`, `lo`/`hi`, `items`; `required` — `expr`;
+`template` — `parts`, visiting the interpolated expressions in order and
+skipping the text strings, which are not nodes).
 
 - **`visit(root, { enter?(node, ctx), leave?(node, ctx) })`** — depth-first.
   `enter` may return `false` to skip the node's children (`leave` is still
@@ -254,7 +266,13 @@ frontier prints between `where` and `follow` (`select id: id from t frontier
 `follow x collect { depth 2 }`; a tuple with its parentheses `(a, b)`; an empty
 block as `{ }`; the logical connectives as the **words**
 `and` / `or` (since 0.18; `&&` / `||` parse to the same nodes and the JSON
-`op` stays `"&&"` / `"||"`), the prefix negation as `!`. **Sugar prints as the
+`op` stays `"&&"` / `"||"`), the prefix negation as `!`; a **template literal
+as a template literal** (since 0.21): backticks around its parts, each text part
+escaped so it re-lexes to itself — `\\` for a backslash, `` \` `` for a backtick,
+`\$` for a `$` that a `{` follows, and `\n` `\t` `\r` `\0` for those characters,
+every other character verbatim — and each interpolation as `${…}` around the
+expression's canonical text (`` `a ${ `b ${n}` } c` `` prints as `` `a ${`b
+${n}`} c` ``). **Sugar prints as the
 explicit form** it parsed to (since 0.17): `x { p }` as `x collect { where p }`,
 `jobs[0].pay` as `jobs first { offset 0 }.pay`, `x[p]!` as `x single { where
 p }!`, `is x` as `!!x`, `not x` as `!x`, an absolute `N^name` as the caret
@@ -311,3 +329,4 @@ document says which `major.minor` produced it.
 | 0.17 | Added (minor): the `required` expression node; `"is"` / `"is not"` as `binary` operators; an `op` may appear in expression position (`member.recv`, operands, `required.expr`, a `field`'s value). Nothing renamed or removed. |
 | 0.18 | No node or field added, renamed or removed: `N^name` parses to the existing `outer` (`levels = depth − N`). The canonical print of `and`/`or` and `logical` nodes changed from the symbols to the words; the JSON `logical.op` is still `"&&"` / `"||"`. |
 | 0.20 | Added (minor): the `tuple` expression node; `subquery.frontier` and `subquery.depth`; `query.frontier` (the body's seed frontier, legal only with `follow`). **Removed** (pre-1.0, so a minor): `follow.where`, `follow.frontier`, `follow.depth`, `follow.by` — a destination's `where` is its block's `where`, `frontier`/`depth` are its block's new fields, `by` has no replacement (identity is `$key`, SEMANTICS §16, projectable as a `$key:` item). The `follow.where` and `follow.by` traversal clauses are gone; `follow.frontier` now marks a destination block's `frontier` (visited at depth − 1). |
+| 0.21 | Added (minor): the `template` expression node (`parts: (string \| Expr)[]`, strictly alternating text and interpolation). Its text parts are the first non-node values a child slot holds: a walk over `parts` skips them. Nothing renamed or removed. |

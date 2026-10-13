@@ -10,7 +10,7 @@
 // tests in `test/` pin it to the specification text so it cannot drift silently.
 
 /** The OQX language version (`spec/oqx/VERSION`, `major.minor`) this vocabulary describes. */
-export const LANGUAGE_VERSION = "0.20";
+export const LANGUAGE_VERSION = "0.21";
 
 /** Reserved words: never usable as a bare field name (GRAMMAR §1). `is`, `not`,
  * `and`, `or` are the word operators (GRAMMAR §4, since 0.17). */
@@ -66,6 +66,13 @@ export const OPERATORS = {
  * bracket lookup (since 0.17). */
 export const PUNCTUATION = ["(", ")", "{", "}", "[", "]", ",", ":", ".", "^"] as const;
 
+/** The template literal (GRAMMAR §1, §4, since 0.21): a backtick-delimited string
+ * whose `${ … }` interpolations hold ordinary source — braces balanced, so an
+ * interpolation may hold a `{ … }` block or another template literal — and whose
+ * text decodes with the string escapes. The grammars highlight the delimiters and
+ * the text as `template`, the `${` and `}` as `interpolation`. */
+export const TEMPLATE = { quote: "`", interpolationOpen: "${", interpolationClose: "}" } as const;
+
 /** Free functions defined by the language (SEMANTICS §11). */
 export const BUILTIN_FUNCTIONS = ["list", "size", "has", "range", "entries"] as const;
 
@@ -82,8 +89,9 @@ export const INTRINSICS = ["$it", "$key", "$depth", "$stop", "$leaf", "$frontier
 export const IDENTIFIER = "[A-Za-z_$][A-Za-z0-9_$]*";
 
 /** Characters that are lex errors anywhere (GRAMMAR §1): there are no comments
- * and no single `=`/`&`/`|`. */
-export const ILLEGAL_CHARACTERS = ["=", "&", "|", "@", ";", "#", "`", "~", "?", "\\"] as const;
+ * and no single `=`/`&`/`|`. (The backtick left this list in 0.21: it opens a
+ * template literal.) */
+export const ILLEGAL_CHARACTERS = ["=", "&", "|", "@", ";", "#", "~", "?", "\\"] as const;
 
 /** Language metadata shared by every editor integration. */
 export const LANGUAGE = {
@@ -158,6 +166,10 @@ export const TOKEN_CLASSES = {
   numberInvalid: { textmate: "invalid.illegal.number.oqx", monarch: "invalid.number", codemirror: "invalid", legacy: "error", prism: "invalid" },
   string: { textmate: "string.quoted.oqx", monarch: "string", codemirror: "string", legacy: "string", prism: "string" },
   stringEscape: { textmate: "constant.character.escape.oqx", monarch: "string.escape", codemirror: "escape", legacy: "string-2", prism: "symbol" },
+  /** A template literal's backticks and text (0.21); its escapes are `stringEscape`. */
+  template: { textmate: "string.template.oqx", monarch: "string.template", codemirror: "special(string)", legacy: "string-2", prism: "string" },
+  /** The `${` and `}` around an interpolation (0.21); the source between them is ordinary OQX. */
+  interpolation: { textmate: "punctuation.section.interpolation.oqx", monarch: "delimiter.interpolation", codemirror: "special(brace)", legacy: "bracket", prism: "punctuation" },
   binding: { textmate: "variable.other.binding.oqx", monarch: "variable.binding", codemirror: "meta", legacy: "meta", prism: "variable" },
   intrinsic: { textmate: "variable.language.oqx", monarch: "variable.predefined", codemirror: "special(variableName)", legacy: "variable-2", prism: "builtin" },
   lift: { textmate: "keyword.operator.lift.oqx", monarch: "operator.lift", codemirror: "operator", legacy: "operator", prism: "operator" },

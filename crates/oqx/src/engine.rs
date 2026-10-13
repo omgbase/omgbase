@@ -44,7 +44,7 @@ use std::rc::Rc;
 use crate::Result;
 use crate::ast::{
     BinaryOp, Consumer, CountCmp, Expr, Follow, FollowDestination, LogicalOp, OpNode, OrderSpec,
-    Query, SelectItem, Subquery, UnaryOp, Where,
+    Query, SelectItem, Subquery, TemplatePart, UnaryOp, Where,
 };
 use crate::context::DataContext;
 use crate::errors::OqxError;
@@ -55,10 +55,10 @@ use crate::optimize::{
 use crate::print::print_template;
 use crate::semantics::{
     arith, canonical_key, compare, compare_for_sort_dir, entries_of, equals, is_range, make_range,
-    membership, relate, to_number,
+    membership, relate, string_form, to_number,
 };
 use crate::value::{Object, Value, js_number_to_string};
-use crate::walk::Node;
+use crate::walk::{Node, template_exprs};
 
 /// A query's result, shaped by its consumer. [`OqxResult::into_value`] gives
 /// the consumer-shaped plain value the tagged-template API and the spec
@@ -1877,6 +1877,45 @@ impl<'e, C: DataContext> Exec<'e, C> {
                 }
                 Ok(Value::Array(out))
             }
+            // A template literal (SEMANTICS §7b, since 0.21): the text parts
+            // verbatim and each interpolated value's string form (§7),
+            // concatenated. Every interpolation is evaluated, in order; a list,
+            // a record or a range is an eval error (it has no string form the
+            // language specifies); an absent value makes the whole literal
+            // absent, as `+` does.
+            Expr::Template { parts, .. } => {
+                let mut out = String::new();
+                let mut absent = false;
+                for part in parts {
+                    match part {
+                        TemplatePart::Text(t) => out.push_str(t),
+                        TemplatePart::Expr(e) => {
+                            let v = self.eval_expr(e, scope)?;
+                            let what = match &v {
+                                Value::Range(_) => Some("a range"),
+                                Value::Array(_) => Some("a list"),
+                                Value::Object(_) => Some("a record"),
+                                _ => None,
+                            };
+                            if let Some(what) = what {
+                                return Err(OqxError::eval(format!(
+                                    "cannot interpolate `${{{}}}` in a template literal: it is {what} — only a string, a number, a boolean or an absent value has a string form",
+                                    describe(e)
+                                )));
+                            }
+                            match string_form(&v) {
+                                Some(s) => out.push_str(&s),
+                                None => absent = true,
+                            }
+                        }
+                    }
+                }
+                Ok(if absent {
+                    Value::Undefined
+                } else {
+                    Value::Str(out)
+                })
+            }
         }
     }
 
@@ -2118,6 +2157,7 @@ fn expr_has_recur(e: &Expr) -> bool {
             lo.as_deref().is_some_and(expr_has_recur) || hi.as_deref().is_some_and(expr_has_recur)
         }
         Expr::Tuple { items, .. } => items.iter().any(expr_has_recur),
+        Expr::Template { parts, .. } => template_exprs(parts).any(expr_has_recur),
         Expr::Lit { .. } | Expr::Binding { .. } | Expr::Outer { .. } => false,
     }
 }
@@ -3387,5 +3427,138 @@ mod tests {
         o.insert("a", Value::Undefined);
         o.insert("b", Value::Array(vec![Value::Undefined, Value::Bool(true)]));
         assert_eq!(json_string(&Value::Object(o)), "{\"b\":[null,true]}");
+    }
+
+    #[test]
+    fn template_literals_concatenate_string_forms() {
+        let r = json!({ "p": [
+            { "title": "Ars Magna", "era": 1545, "ok": true, "ratio": 2.5, "neg": -0.0, "big": 1e21,
+              "none": null, "tags": ["a", "b"], "meta": { "k": 1 }, "n": 3 }
+        ] });
+        check(
+            "select s: `${title} (${era})` from p",
+            r.clone(),
+            json!([{ "s": "Ars Magna (1545)" }]),
+        );
+        // Numbers and booleans take their `+` string form (an integer-valued
+        // double without a fraction, `-0` as `0`, JS exponent form).
+        check(
+            "`${ok}|${ratio}|${neg}|${big}|${n * 2}` values from p",
+            r.clone(),
+            json!(["true|2.5|0|1e+21|6"]),
+        );
+        // Text only, empty, adjacent interpolations, a nested template, a block.
+        check("`plain` values from p", r.clone(), json!(["plain"]));
+        check("`` values from p", r.clone(), json!([""]));
+        check(
+            "`${title}${era}` values from p",
+            r.clone(),
+            json!(["Ars Magna1545"]),
+        );
+        check(
+            "`<${`${title}!`}>` values from p",
+            r.clone(),
+            json!(["<Ars Magna!>"]),
+        );
+        check(
+            "`${size(tags)} tags: ${tags first { }}` values from p",
+            r.clone(),
+            json!(["2 tags: a"]),
+        );
+        // Escapes decode; a newline stands verbatim.
+        check(
+            "`\\`${title}\\` \\${x} \\\\\nend` values from p",
+            r.clone(),
+            json!(["`Ars Magna` ${x} \\\nend"]),
+        );
+        // The same text as the `+` rule produces.
+        check(
+            "p exists { `${title} (${era})` == title + \" (\" + era + \")\" }",
+            r.clone(),
+            json!(true),
+        );
+        // A template is a value everywhere: where, order by, a call argument, in.
+        check(
+            "select n: size(`${title}`) from p where `${era}` == \"1545\" order by `${title}`",
+            r.clone(),
+            json!([{ "n": 9 }]),
+        );
+        check(
+            "p exists { \"Magna\" in `${title}` }",
+            r.clone(),
+            json!(true),
+        );
+        check(
+            "`${title}`.lower() values from p",
+            r.clone(),
+            json!(["ars magna"]),
+        );
+        // A binding is a value, never source text: it cannot stand inside the
+        // literal (the fragment ends inside it), but a bound string compares
+        // equal to the template's result.
+        let e = run_t(&["`${", "}` values from p"], vec![json!("x")], r.clone()).unwrap_err();
+        assert_eq!(e.stage, crate::Stage::Lex);
+        let e = run_t(&["`", "` values from p"], vec![json!("x")], r.clone()).unwrap_err();
+        assert!(
+            e.message.contains("binding cannot stand inside"),
+            "{}",
+            e.message
+        );
+        assert_eq!(
+            run_t(
+                &["`${title}` == ", " values from p"],
+                vec![json!("Ars Magna")],
+                r.clone()
+            )
+            .unwrap(),
+            v(json!([true]))
+        );
+    }
+
+    #[test]
+    fn template_literals_are_absent_on_an_absent_interpolation_and_refuse_collections() {
+        let r = json!({ "p": [
+            { "title": "T", "none": null, "tags": ["a", "b"], "meta": { "k": 1 } }
+        ] });
+        // Absent anywhere → absent (the `+` string rule): null and a missing field.
+        check("`${title}${none}` values from p", r.clone(), json!([null]));
+        check("`a${missing}b` values from p", r.clone(), json!([null]));
+        check("select s: `${missing}` from p", r.clone(), json!([{}]));
+        check("p exists { `${missing}` == null }", r.clone(), json!(true));
+        // A list, a record or a range is an eval error, not a stringification.
+        check_err(
+            "`${tags}` values from p",
+            r.clone(),
+            &[
+                "cannot interpolate `${tags}` in a template literal: it is a list — only a string, a number, a boolean or an absent value has a string form",
+            ],
+        );
+        check_err(
+            "`${meta}` values from p",
+            r.clone(),
+            &["cannot interpolate `${meta}` in a template literal: it is a record"],
+        );
+        check_err(
+            "`${1..5}` values from p",
+            r.clone(),
+            &["cannot interpolate `${1..5}` in a template literal: it is a range"],
+        );
+        check_err(
+            "`${tags collect { }}` values from p",
+            r.clone(),
+            &["it is a list"],
+        );
+        // Every interpolation is evaluated, so the error surfaces after an
+        // absent piece too; a later eval error does as well.
+        check_err(
+            "`${none}${tags}` values from p",
+            r.clone(),
+            &["it is a list"],
+        );
+        check_err(
+            "`${none}${title.nope()}` values from p",
+            r.clone(),
+            &["nope"],
+        );
     }
 }

@@ -391,3 +391,150 @@ fn a_body_frontier_is_read_at_the_row_depth_a_destination_block_s_one_level_out(
         vec![("c".to_string(), 2), ("d".to_string(), 2)]
     );
 }
+
+// ---- template literals (0.21) ---------------------------------------------------
+
+#[test]
+fn print_writes_template_literals_back_with_escapes() {
+    assert_eq!(
+        canon("select s: `${title} (${era})` from p"),
+        "select s: `${title} (${era})` from p"
+    );
+    // Escapes: the backtick, the backslash, a `${` opener and the control
+    // characters; a lone `$` and braces stay verbatim.
+    assert_eq!(
+        canon("select s: `a\\`b \\${c} \\\\ $d {e}\n\tf` from p"),
+        "select s: `a\\`b \\${c} \\\\ $d {e}\\n\\tf` from p"
+    );
+    // Interpolations print as full expressions, blocks and nested templates too.
+    assert_eq!(
+        canon("select s: `${a+1}: ${xs first {where n>2}} ${`<${b.lower()}>`}` from p"),
+        "select s: `${a + 1}: ${xs first { where n > 2 }} ${`<${b.lower()}>`}` from p"
+    );
+    assert_eq!(
+        canon("select s: ``, t: `${a}${b}` from p"),
+        "select s: ``, t: `${a}${b}` from p"
+    );
+    // A template is primary: no parentheses as an operand or a receiver.
+    assert_eq!(
+        canon("select s: (`${a}`).upper(), t: -(`${a}`) from p where (`${a}`) == b"),
+        "select s: `${a}`.upper(), t: -`${a}` from p where `${a}` == b"
+    );
+    // The round-trip law over every form above.
+    for src in [
+        "select s: `${title} (${era})` from p",
+        "select s: `a\\`b \\${c} \\\\ $d {e}\n\tf\\0\\r` from p",
+        "select s: `${a+1}: ${xs first {where n>2}} ${`<${b.lower()}>`}` from p",
+        "select s: ``, t: `${a}${b}` from p",
+        "p exists { `${a}` in tags }",
+    ] {
+        let once = parse(src);
+        let again = parse(&print_query(&once).unwrap());
+        assert_eq!(strip_spans(&again), strip_spans(&once), "{src}");
+    }
+    // A binding next to a template literal prints as a template fragment; one
+    // inside it never lexes (a binding is a value, not source text).
+    let q = parse_template(&["select s: `${a}`, b: ", " from p"], 1).unwrap();
+    assert!(matches!(
+        print(Node::Query(&q)),
+        Err(OqxError {
+            stage: Stage::Print,
+            ..
+        })
+    ));
+    let t = print_template(Node::Query(&q));
+    assert_eq!(t.strings, vec!["select s: `${a}`, b: ", " from p"]);
+    assert_eq!(t.indices, vec![0]);
+    let e = parse_template(&["select s: `${", "}` from p"], 1).unwrap_err();
+    assert_eq!(e.stage, Stage::Lex);
+}
+
+#[test]
+fn a_template_literal_serializes_as_a_template_node_over_strings_and_exprs() {
+    let src = "select s: `a ${b} c` from p";
+    let q = parse(src);
+    let j = ast_to_json(&q);
+    let t = &j["select"][0]["expr"];
+    assert_eq!(
+        *t,
+        json!({
+            "kind": "template",
+            "parts": ["a ", { "kind": "ident", "name": "b", "span": [15, 16] }, " c"],
+            "span": [10, 20]
+        })
+    );
+    assert_eq!(query_from_json(&j).unwrap(), q);
+    assert_eq!(
+        ast_to_json(&parse("select s: `` from p"))["select"][0]["expr"]["parts"],
+        json!([""])
+    );
+    assert_eq!(
+        ast_to_json(&parse("select s: `${a}${b}` from p"))["select"][0]["expr"]["parts"],
+        json!([
+            "",
+            { "kind": "ident", "name": "a", "span": [13, 14] },
+            "",
+            { "kind": "ident", "name": "b", "span": [17, 18] },
+            ""
+        ])
+    );
+    // Built by hand: normalized to the strict alternation (adjacent texts
+    // merged, empty texts between adjacent interpolations and at the ends).
+    let built = build::template(vec![
+        build::text("a"),
+        build::text("b"),
+        build::interp(build::ident("x")),
+        build::interp(build::ident("y")),
+    ]);
+    assert_eq!(
+        built,
+        Expr::Template {
+            parts: vec![
+                oqx::TemplatePart::Text("ab".into()),
+                oqx::TemplatePart::Expr(build::ident("x")),
+                oqx::TemplatePart::Text(String::new()),
+                oqx::TemplatePart::Expr(build::ident("y")),
+                oqx::TemplatePart::Text(String::new()),
+            ],
+            span: Span::EMPTY,
+        }
+    );
+}
+
+#[test]
+fn traversal_sees_a_template_literal_and_its_interpolations() {
+    let q = parse("select s: `${a} and ${b.c}` from p");
+    let mut names = Vec::new();
+    struct V<'a>(&'a mut Vec<String>);
+    impl<'a> Visitor for V<'a> {
+        fn enter(&mut self, node: Node<'_>, _ctx: &VisitContext<'_>) -> bool {
+            if let Node::Expr(e) = node {
+                self.0.push(e.kind().to_owned());
+            }
+            true
+        }
+    }
+    visit(Node::Query(&q), &mut V(&mut names));
+    // Canonical clause order: the select items, then the source.
+    assert_eq!(names, vec!["template", "ident", "member", "ident", "ident"]);
+    // `transform` maps the interpolations and rebuilds the template; the
+    // texts are untouched.
+    let mapped = transform(&q, &mut |e, _| match e {
+        Expr::Ident { name, span } => Expr::Ident {
+            name: name.to_uppercase(),
+            span,
+        },
+        other => other,
+    });
+    assert_eq!(
+        print_query(&mapped).unwrap(),
+        "select s: `${A} and ${B.c}` from P"
+    );
+    // Alias resolution substitutes inside an interpolation.
+    let q = parse("select full: `${first} ${last}`, greeting: `hi ${full}` from p");
+    let r = resolve_aliases(&q).unwrap();
+    assert_eq!(
+        print_query(&r).unwrap(),
+        "select full: `${first} ${last}`, greeting: `hi ${`${first} ${last}`}` from p"
+    );
+}

@@ -1,9 +1,13 @@
 // The TextMate grammar (`source.oqx`), serialized from `rules.ts`. A `cases`
 // group becomes one rule per word list (most specific first) plus the default;
 // everything else maps one to one. The grammar is flat: no begin/end states
-// except strings, so a stray bracket never swallows the rest of the document.
+// except strings and template literals, so a stray bracket never swallows the
+// rest of the document. A template literal (0.21) is a begin/end rule whose
+// `${ … }` interpolation re-enters `#expression`; a `{` inside an interpolation
+// opens a nested begin/end block so the interpolation's own `}` is the one that
+// balances it.
 
-import { RULES, STRINGS, STRING_ESCAPE, expandCases, withIdent, type GroupAction, type Rule } from "./rules.js";
+import { RULES, STRINGS, STRING_ESCAPE, TEMPLATE_LITERAL, expandCases, withIdent, type GroupAction, type Rule } from "./rules.js";
 import { LANGUAGE, LANGUAGE_VERSION, TOKEN_CLASSES, type TokenClass } from "./vocabulary.js";
 
 export interface TextMateRule {
@@ -75,6 +79,38 @@ export function buildTextMateGrammar(): TextMateGrammar {
   };
   for (const s of STRINGS) add(s.name, stringRule(s.name, s.quote));
   repository["string-escape"] = { comment: "string-escape", match: STRING_ESCAPE, name: scope("stringEscape") };
+  // The template literal: the backticks and the text are `template`, an escape is
+  // the string escape, `${` … `}` is an interpolation holding `#expression` again.
+  // The rule carries no `name` of its own, so whitespace inside an interpolation
+  // stays unscoped exactly as it is at the top level.
+  const mark = (cls: TokenClass): Record<string, { name: string }> => ({ "0": { name: scope(cls) } });
+  add("template", {
+    comment: "template",
+    begin: TEMPLATE_LITERAL.quote,
+    end: TEMPLATE_LITERAL.quote,
+    beginCaptures: mark("template"),
+    endCaptures: mark("template"),
+    patterns: [{ include: "#string-escape" }, { include: "#template-interpolation" }, { include: "#template-text" }],
+  });
+  repository["template-text"] = { comment: "template-text", match: TEMPLATE_LITERAL.text, name: scope("template") };
+  repository["template-interpolation"] = {
+    comment: "template-interpolation",
+    begin: TEMPLATE_LITERAL.interpolationOpen,
+    end: TEMPLATE_LITERAL.interpolationClose,
+    beginCaptures: mark("interpolation"),
+    endCaptures: mark("interpolation"),
+    // A `{` opens a nested block before the flat brace rule can claim it, so the
+    // block's `}` ends the block rather than the interpolation.
+    patterns: [{ include: "#template-block" }, { include: "#expression" }],
+  };
+  repository["template-block"] = {
+    comment: "template-block",
+    begin: "\\{",
+    end: "\\}",
+    beginCaptures: mark("braceOpen"),
+    endCaptures: mark("braceClose"),
+    patterns: [{ include: "#template-block" }, { include: "#expression" }],
+  };
   for (const rule of RULES) for (const r of expand(rule)) add(r.comment!, r);
   repository["expression"] = { patterns: order.map((key) => ({ include: `#${key}` })) };
   return {

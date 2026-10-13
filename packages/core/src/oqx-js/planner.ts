@@ -120,6 +120,10 @@ function exprMayRaise(e: Expr, target: Target, root: boolean): boolean {
       return (e.lo !== null && exprMayRaise(e.lo, target, root)) || (e.hi !== null && exprMayRaise(e.hi, target, root));
     // A tuple (oqx 0.20) is never pushed down; it raises iff an element does.
     case "tuple": return e.items.some((x) => exprMayRaise(x, target, root));
+    // A template literal (oqx 0.21) is never pushed down; interpolating a list or
+    // a record is an eval error only the data decides, so with any interpolation
+    // it may raise.
+    case "template": return e.parts.some((p) => typeof p !== "string");
     case "lit": case "binding": return false;
   }
 }

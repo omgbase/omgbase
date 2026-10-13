@@ -250,6 +250,10 @@ fn expr_may_raise(e: &Expr, target: Target, root: bool) -> bool {
         }
         // A tuple (oqx 0.20) is never pushed down; it raises iff an element does.
         Expr::Tuple { items, .. } => items.iter().any(again),
+        // A template literal (oqx 0.21) is never pushed down; interpolating a
+        // list or a record is an eval error only the data decides, so with any
+        // interpolation it may raise.
+        Expr::Template { parts, .. } => oqx::walk::template_exprs(parts).next().is_some(),
     }
 }
 

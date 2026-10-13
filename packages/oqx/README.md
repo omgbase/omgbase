@@ -723,6 +723,33 @@ oqx`n: (mom, dad, siblings) { name values } from ${people}`;        // one block
 oqx`id from ${g} follow (before, after) { depth 2 }`;               // one destination over the union
 ```
 
+### 9c. Template literals (0.21)
+
+`` `text ${expr} text` `` is a string value: the text and each interpolated
+value's **string form** (numbers without a fraction when integer-valued,
+booleans as the words) concatenated. It stands wherever a value does — a
+`select` item, a `where` operand, an `order by` key, a function argument, a
+method receiver. The text decodes with the same escapes as a string (`` \` ``
+keeps a backtick, `\$` a dollar that opens nothing); newlines are kept, so a
+literal may span lines. An interpolation holds any expression with balanced
+braces — a `{ … }` block or another template literal included.
+
+```js
+oqx`label: \`\${title} (\${era})\` from ${docs}`;                             // "Alpha (3)"
+oqx`x: \`\${jobs single { employer values where primary }}\` from ${docs}`;  // the block's one value
+oqx`title from ${docs} where \`\${title}!\` == "Alpha!"`;
+oqx`x: jobs collect { label: \`\${^title}: \${employer}\` values } from ${docs}`;  // `^` reads the enclosing row
+```
+
+Two rules keep it honest: **absent propagates** — any absent interpolation makes
+the whole literal absent (as `+` does), never `"undefined"` — and **a list, a
+record or a range cannot be interpolated**: that is an eval error (`cannot
+interpolate …`), not a silent `[object Object]`. Inside a JavaScript tagged
+template write the backticks and `${` escaped as above (`` \` ``, `\${`), or
+pass the whole query as a string: a `${…}` *binding* can stand beside a template
+literal but never inside one (a fragment that ends inside the literal is an
+unterminated-literal error).
+
 ### 10. Sugar (0.17)
 
 Every form below is shorthand for an explicit directive — it **desugars in the
@@ -805,6 +832,7 @@ follow before, after  /  follow (before, after)  several destinations: the union
 follow ^people { where manager == ^id }         a destination block: successors computed per frontier row (`^` = that row; `collect` implicit, 0.20)
 $key  /  $key: expr                              the identity a row is known by (the host's, else structural) / give the rows a block yields that identity
 (a, b)  /  rel distinct { … }                   a tuple: the elements, one level flat (a value and a receiver) / collect distinct (0.20)
+`${title} (${era})`                             a template literal: text + string forms; absent anywhere → absent; a list/record → error (0.21)
 obj { title }                                   one object → one record (or absent); a collection → a list; a scalar → an error (0.20)
 ${source} <collect|exists|none|count|first|single> { … }   whole-query consumer
 ```

@@ -141,6 +141,10 @@ function mapExpr(e: Expr, f: (e: Expr) => Expr | null): Expr {
       const items = mapSame(e.items, go);
       return items === e.items ? e : { ...e, items };
     }
+    case "template": { // the text parts are strings; only the interpolations are expressions
+      const parts = mapSame(e.parts, (p) => (typeof p === "string" ? p : go(p)));
+      return parts === e.parts ? e : { ...e, parts };
+    }
     case "op": { // the receiver is read in this scope; the block is its own scope
       const receiver = go(e.receiver);
       return receiver === e.receiver ? e : { ...e, receiver };

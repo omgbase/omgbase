@@ -35,6 +35,7 @@ export function exprReadsScopeIn(e: Expr, at: number, upTo: number): boolean {
     case "binary": case "logical": case "in": return exprReadsScopeIn(e.left, at, upTo) || exprReadsScopeIn(e.right, at, upTo);
     case "range": return (e.lo !== null && exprReadsScopeIn(e.lo, at, upTo)) || (e.hi !== null && exprReadsScopeIn(e.hi, at, upTo));
     case "tuple": return e.items.some((x) => exprReadsScopeIn(x, at, upTo));
+    case "template": return e.parts.some((p) => typeof p !== "string" && exprReadsScopeIn(p, at, upTo));
   }
 }
 
@@ -101,6 +102,9 @@ export function exprRaiseFree(e: Expr, ctx: RuleContext): boolean {
     case "binary": case "logical": case "in": return exprRaiseFree(e.left, ctx) && exprRaiseFree(e.right, ctx);
     case "range": return (e.lo === null || exprRaiseFree(e.lo, ctx)) && (e.hi === null || exprRaiseFree(e.hi, ctx));
     case "tuple": return e.items.every((x) => exprRaiseFree(x, ctx));
+    // A template literal raises on a list or record interpolation (§7b), which
+    // only the data decides: with an interpolation it is never raise-free.
+    case "template": return e.parts.every((p) => typeof p === "string");
   }
 }
 

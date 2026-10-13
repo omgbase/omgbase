@@ -29,9 +29,11 @@
 use std::collections::HashMap;
 
 use crate::ast::{
-    Expr, Follow, FollowDestination, OpNode, OrderSpec, Query, SelectItem, Subquery, Where,
+    Expr, Follow, FollowDestination, OpNode, OrderSpec, Query, SelectItem, Subquery, TemplatePart,
+    Where,
 };
 use crate::errors::{OqxError, Result};
+use crate::walk::template_exprs;
 
 /// Resolve every `where` and `select` of a query (its own and every nested
 /// block's) against the `select` of the same body. Pure. Fails (stage `parse`)
@@ -276,6 +278,19 @@ where
                 span,
             }
         }
+        Expr::Template { parts, span } => {
+            let mut mapped = Vec::with_capacity(parts.len());
+            for p in parts {
+                mapped.push(match p {
+                    TemplatePart::Text(t) => TemplatePart::Text(t),
+                    TemplatePart::Expr(x) => TemplatePart::Expr(*go(Box::new(x))?),
+                });
+            }
+            Expr::Template {
+                parts: mapped,
+                span,
+            }
+        }
         // The receiver is read in this scope; the block is its own scope.
         Expr::Op(mut op) => {
             op.receiver = *go(Box::new(op.receiver))?;
@@ -333,6 +348,9 @@ fn alias_refs(it: &SelectItem, index: &HashMap<&str, usize>) -> Vec<String> {
                 }
             }
             Expr::Tuple { items, .. } => items.iter().for_each(|x| visit(x, own, index, out)),
+            Expr::Template { parts, .. } => {
+                template_exprs(parts).for_each(|x| visit(x, own, index, out))
+            }
             Expr::Op(op) => visit(&op.receiver, own, index, out),
         }
     }

@@ -5,7 +5,7 @@
   "fileTypes": [
     "oqx"
   ],
-  "version": "0.20",
+  "version": "0.21",
   "patterns": [
     {
       "include": "#expression"
@@ -58,6 +58,83 @@
       "comment": "string-escape",
       "match": "\\\\(?:.|$)",
       "name": "constant.character.escape.oqx"
+    },
+    "template": {
+      "comment": "template",
+      "begin": "`",
+      "end": "`",
+      "beginCaptures": {
+        "0": {
+          "name": "string.template.oqx"
+        }
+      },
+      "endCaptures": {
+        "0": {
+          "name": "string.template.oqx"
+        }
+      },
+      "patterns": [
+        {
+          "include": "#string-escape"
+        },
+        {
+          "include": "#template-interpolation"
+        },
+        {
+          "include": "#template-text"
+        }
+      ]
+    },
+    "template-text": {
+      "comment": "template-text",
+      "match": "(?:[^`\\\\$]|\\$(?!\\{))+",
+      "name": "string.template.oqx"
+    },
+    "template-interpolation": {
+      "comment": "template-interpolation",
+      "begin": "\\$\\{",
+      "end": "\\}",
+      "beginCaptures": {
+        "0": {
+          "name": "punctuation.section.interpolation.oqx"
+        }
+      },
+      "endCaptures": {
+        "0": {
+          "name": "punctuation.section.interpolation.oqx"
+        }
+      },
+      "patterns": [
+        {
+          "include": "#template-block"
+        },
+        {
+          "include": "#expression"
+        }
+      ]
+    },
+    "template-block": {
+      "comment": "template-block",
+      "begin": "\\{",
+      "end": "\\}",
+      "beginCaptures": {
+        "0": {
+          "name": "punctuation.section.block.begin.oqx"
+        }
+      },
+      "endCaptures": {
+        "0": {
+          "name": "punctuation.section.block.end.oqx"
+        }
+      },
+      "patterns": [
+        {
+          "include": "#template-block"
+        },
+        {
+          "include": "#expression"
+        }
+      ]
     },
     "binding": {
       "comment": "binding",
@@ -318,6 +395,9 @@
         },
         {
           "include": "#string-single"
+        },
+        {
+          "include": "#template"
         },
         {
           "include": "#binding"

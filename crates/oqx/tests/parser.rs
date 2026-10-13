@@ -2987,3 +2987,254 @@ fn follow_destination_errors() {
     // plain and the word is leftover
     assert_parse_error("id from tree follow children collect", &["unexpected"]);
 }
+
+// ---- template literals (0.21) ---------------------------------------------------
+
+// `build::template` normalizes to the strict alternation the parser produces.
+fn tpl(parts: Vec<oqx::TemplatePart>) -> Expr {
+    build::template(parts)
+}
+fn raw_tpl(parts: Vec<oqx::TemplatePart>) -> Expr {
+    Expr::Template {
+        parts,
+        span: Span::EMPTY,
+    }
+}
+fn txt(s: &str) -> oqx::TemplatePart {
+    build::text(s)
+}
+fn interp(e: Expr) -> oqx::TemplatePart {
+    build::interp(e)
+}
+
+#[test]
+fn a_template_literal_parses_to_its_parts() {
+    // Text and interpolations alternate strictly: a (possibly empty) text
+    // first and last, one between any two interpolations.
+    let q = parse("select s: `${title} (${era})` from p");
+    assert_eq!(
+        q.select,
+        vec![field(
+            "s",
+            raw_tpl(vec![
+                txt(""),
+                interp(ident("title")),
+                txt(" ("),
+                interp(ident("era")),
+                txt(")"),
+            ])
+        )]
+    );
+    assert_eq!(
+        parse("select s: `plain` from p").select,
+        vec![field("s", raw_tpl(vec![txt("plain")]))]
+    );
+    assert_eq!(
+        parse("select s: `` from p").select,
+        vec![field("s", raw_tpl(vec![txt("")]))]
+    );
+    assert_eq!(
+        parse("select s: `${a}${b}` from p").select,
+        vec![field(
+            "s",
+            raw_tpl(vec![
+                txt(""),
+                interp(ident("a")),
+                txt(""),
+                interp(ident("b")),
+                txt("")
+            ])
+        )]
+    );
+    // `build::template` produces the same shape from loose parts.
+    assert_eq!(
+        tpl(vec![interp(ident("a")), interp(ident("b"))]),
+        raw_tpl(vec![
+            txt(""),
+            interp(ident("a")),
+            txt(""),
+            interp(ident("b")),
+            txt("")
+        ])
+    );
+    assert_eq!(tpl(vec![]), raw_tpl(vec![txt("")]));
+    // An interpolation is a full expression: arithmetic, calls, blocks, a
+    // nested template, a binding.
+    let q = parse("select s: `${a + 1}: ${xs first { where n > 2 }} ${`<${b.lower()}>`}` from p");
+    let mut body = sub();
+    body.r#where = Some(scalar(bin(BinaryOp::Gt, ident("n"), num(2.0))));
+    assert_eq!(
+        q.select,
+        vec![field(
+            "s",
+            tpl(vec![
+                interp(bin(BinaryOp::Add, ident("a"), num(1.0))),
+                txt(": "),
+                interp(Expr::Op(Box::new(op(ident("xs"), Consumer::First, body)))),
+                txt(" "),
+                interp(tpl(vec![
+                    txt("<"),
+                    interp(call(Some(ident("b")), "lower", vec![])),
+                    txt(">"),
+                ])),
+            ])
+        )]
+    );
+    // A host binding is never source text: a fragment boundary inside a
+    // template literal (in an interpolation or in its text) leaves the literal
+    // unterminated, exactly as inside a string literal.
+    let e = strip_template(&["select s: `${", "}` from p"], 1).unwrap_err();
+    assert_eq!(e.stage, Stage::Lex);
+    assert_eq!(
+        e.message,
+        "unterminated ${…} interpolation in a template literal at 11 — expected '}'"
+    );
+    let e = strip_template(&["select s: `hi ", "` from p"], 1).unwrap_err();
+    assert!(
+        e.message.starts_with("unterminated template literal at 10 — a template literal must be complete within one fragment"),
+        "{}",
+        e.message
+    );
+    // Outside the literal a binding interpolates like any value expression.
+    let q = strip_template(&["select s: `${a}` from ", ""], 1).unwrap();
+    assert_eq!(q.source, binding(0));
+}
+
+#[test]
+fn a_template_literal_stands_wherever_a_value_does() {
+    // where position, a comparison operand, a call argument, order by, a
+    // where-first block (a literal is predicate-shaped), a tuple element.
+    let q = parse("from p where `${a}-${b}` == key");
+    assert_eq!(
+        q.r#where,
+        Some(scalar(bin(
+            BinaryOp::Eq,
+            tpl(vec![interp(ident("a")), txt("-"), interp(ident("b"))]),
+            ident("key")
+        )))
+    );
+    let q = parse("select n: size(`${a}`) from p order by `${b}` desc");
+    assert_eq!(
+        q.select,
+        vec![field(
+            "n",
+            call(None, "size", vec![tpl(vec![interp(ident("a"))])])
+        )]
+    );
+    assert_eq!(q.order_by, Some(vec![desc(tpl(vec![interp(ident("b"))]))]));
+    let q = parse("p exists { `${a}` in tags }");
+    assert_eq!(
+        q.r#where,
+        Some(scalar(in_(tpl(vec![interp(ident("a"))]), ident("tags"))))
+    );
+    let q = parse("select t: (`x`, `${y}`) from p");
+    assert_eq!(
+        q.select,
+        vec![field(
+            "t",
+            Expr::Tuple {
+                items: vec![tpl(vec![txt("x")]), tpl(vec![interp(ident("y"))])],
+                span: Span::EMPTY,
+            }
+        )]
+    );
+    // Postfix on a template: a method call.
+    let q = parse("select u: `${a}`.upper() from p");
+    assert_eq!(
+        q.select,
+        vec![field(
+            "u",
+            call(Some(tpl(vec![interp(ident("a"))])), "upper", vec![])
+        )]
+    );
+    // An unaliased template has no default key: `values` is the way.
+    assert_eq!(
+        parse("`${name}` values from p").select,
+        vec![SelectItem::Field {
+            name: "".into(),
+            expr: tpl(vec![interp(ident("name"))]),
+            lift: 0,
+            span: Span::EMPTY,
+        }]
+    );
+    assert_parse_error("select `${name}` from p", &["alias"]);
+}
+
+#[test]
+fn template_literal_spans_cover_the_backticks_and_each_interpolation_its_own_text() {
+    let src = "select s: `a ${b.c} d` from p";
+    let q = parse_string(src).unwrap();
+    let SelectItem::Field { expr, .. } = &q.select[0] else {
+        panic!()
+    };
+    let Expr::Template { parts, span } = expr else {
+        panic!("{expr:?}")
+    };
+    assert_eq!(*span, Span::new(10, 22));
+    let oqx::TemplatePart::Expr(inner) = &parts[1] else {
+        panic!()
+    };
+    assert_eq!(inner.span(), Span::new(15, 18));
+    // Code points, not bytes: a non-ASCII text piece.
+    let q = parse_string("select s: `é${b}` from p").unwrap();
+    let SelectItem::Field { expr, .. } = &q.select[0] else {
+        panic!()
+    };
+    let Expr::Template { parts, span } = expr else {
+        panic!()
+    };
+    assert_eq!(*span, Span::new(10, 17));
+    let oqx::TemplatePart::Expr(inner) = &parts[1] else {
+        panic!()
+    };
+    assert_eq!(inner.span(), Span::new(14, 15));
+}
+
+#[test]
+fn template_literal_errors() {
+    // An empty interpolation names the `${`.
+    let e = parse_err("select s: `a${}b` from p");
+    assert_eq!(
+        e.message,
+        "empty interpolation `${}` in a template literal — an interpolation holds an expression (`${name}`) (at offset 12)"
+    );
+    assert_parse_error(
+        "select s: `${a}${}` from p",
+        &["empty interpolation", "(at offset 15)"],
+    );
+    // Unterminated forms are lex errors: at the opening backtick in the text,
+    // at the `${` inside an interpolation.
+    assert_lex_error(
+        "select s: `abc from p",
+        &["unterminated template literal at 10"],
+    );
+    assert_lex_error(
+        "select s: `${a} from p",
+        &["unterminated template literal at 10"],
+    );
+    assert_lex_error(
+        "select s: `${a from p",
+        &["unterminated ${…} interpolation in a template literal at 11 — expected '}'"],
+    );
+    // A stray token where `}` should close the interpolation.
+    assert_parse_error(
+        "select s: `${a b}` from p",
+        &["expected '}' to close the `${…}` interpolation of a template literal (at offset 15)"],
+    );
+    assert_parse_error(
+        "select s: `${a,}` from p",
+        &["expected '}' to close the `${…}` interpolation of a template literal"],
+    );
+    // A second literal right after one is just an unexpected backtick.
+    assert_parse_error("select s: `a` `b` from p", &["unexpected '`'"]);
+    // A template is a string, never a collection: brackets, blocks and
+    // `from` refuse it like any literal.
+    assert_parse_error(
+        "select s: `a`[0] from p",
+        &["``a`` is a literal, not a collection"],
+    );
+    assert_parse_error(
+        "select s: `${a}` { x } from p",
+        &["is a literal, not a collection"],
+    );
+}

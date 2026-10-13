@@ -172,6 +172,21 @@ export const STRINGS = [
 ] as const;
 export const STRING_ESCAPE = "\\\\(?:.|$)";
 
+/** The template literal (GRAMMAR §1, §4, since 0.21), shared by every grammar.
+ * Between the backticks: an escape is `STRING_ESCAPE` (the same `\<c>` rule as a
+ * string, so `` \` `` and `\$` keep their character), `${` opens an interpolation,
+ * and `text` is any run of the rest — anything but a backtick, a backslash or a
+ * `$` that a `{` follows. Inside an interpolation the source is ordinary OQX
+ * again with balanced braces: a grammar pushes a state per `{` (a nested block)
+ * so the `}` that closes the interpolation is told from a block's, and may meet
+ * another template literal there. A literal may span lines. */
+export const TEMPLATE_LITERAL = {
+  quote: "`",
+  text: "(?:[^`\\\\$]|\\$(?!\\{))+",
+  interpolationOpen: "\\$\\{",
+  interpolationClose: "\\}",
+} as const;
+
 /** Whitespace as OQX defines it (GRAMMAR §1): space, tab, newline, carriage return. */
 export const WHITESPACE = "[ \\t\\r\\n]+";
 

@@ -478,6 +478,67 @@
           ]
         }
       }
+    },
+    {
+      "name": "a template literal cannot interpolate a list",
+      "tags": [
+        "template"
+      ],
+      "notes": "SEMANTICS §7b: only a string, a number, a boolean or an absent value has a string form the language specifies; a list or a record in an interpolation is an eval error, never a silent rendering (`+` leaves the same operands unspecified).",
+      "roots": {
+        "docs": [
+          {
+            "title": "Alpha",
+            "tags": [
+              "a",
+              "b"
+            ],
+            "meta": {
+              "a": 1
+            }
+          }
+        ]
+      },
+      "query": "x: `${tags}` from docs",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "cannot interpolate",
+            "list"
+          ]
+        }
+      }
+    },
+    {
+      "name": "a template literal cannot interpolate a record",
+      "tags": [
+        "template"
+      ],
+      "roots": {
+        "docs": [
+          {
+            "title": "Alpha",
+            "tags": [
+              "a",
+              "b"
+            ],
+            "meta": {
+              "a": 1
+            }
+          }
+        ]
+      },
+      "query": "x: `${meta}` from docs",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "cannot interpolate",
+            "record"
+          ]
+        }
+      }
     }
   ]
 }

@@ -19,13 +19,15 @@ Tokens:
 | keyword | `from`, `where`, `select`, `is`, `not`, `and`, `or` — **reserved**; never usable as a bare field name (`select where from r` is a parse error). `is`, `not`, `and`, `or` are operators (§4, since 0.17) |
 | number | `digits [ "." digits ] [ ("e"\|"E") ["+"\|"-"] digits ]`. A `.` is a decimal point only when a digit follows, so `1..5` lexes as `1`, `..`, `5` and `1.5..2` as `1.5`, `..`, `2`. A **malformed number is a lex error** whose message names `malformed number`: a trailing decimal point (`1.`, `1.x`), an exponent without digits (`1e`, `1e+`), and a leading-dot numeral (`.5` — write `0.5`; `xs.0` is the same error, since a property name cannot be a digit and there is no index access) [`errors-lex`, `lexing`]. A digits-only number **immediately** followed by `^` (no whitespace) heads an absolute scope reference (`0^docs`, §4; since 0.18) |
 | string | `"…"` or `'…'`, the two quotes interchangeable. Escapes: `\n` `\t` `\r` `\0` and `\<c>` for any other character `<c>` itself (`\"`, `\'`, `\\`). An unterminated string is a lex error |
+| template literal | `` `…` `` — a backtick-delimited string with **interpolations** `${expr}` (since 0.21, §4). The text between the backticks and the interpolations is decoded with the **same escapes as a string** (`\n` `\t` `\r` `\0`, `\<c>` for any other `<c>` itself), so `` \` `` keeps a backtick, `\$` a dollar that no longer opens an interpolation (`\${` is text), `\\` a backslash; **newlines are kept verbatim** (a literal may span lines). A `$` not followed by `{`, a `{` or `}` outside an interpolation, and quotes are ordinary text. An interpolation holds one full value expression — braces inside it are balanced, so it may hold a `{ … }` block or another template literal — and is lexed as ordinary source until the `}` that closes it. An unterminated literal (`unterminated template literal at N`) and an unterminated interpolation (`unterminated ${…} interpolation …`) are lex errors; an empty interpolation `${}` is a parse error naming its offset |
 | punctuation | `(` `)` `{` `}` `[` `]` `,` `:` `.` `^` — `[`/`]` since 0.17 (brackets, §4); `^` is the outer-reference / lift marker, relative (`^^name`) or, after an integer, absolute (`0^name`, §4) |
 | range | `..` (inclusive) and `...` (exclusive high end), scanned before `.` |
 | operator | `==` `!=` `<=` `>=` `<` `>` `&&` `\|\|` `!` `+` `-` `*` `/` `%` — `!=` is one token, so `a! == b` (a required value compared) needs the space: `a!==b` lexes as `a`, `!=`, `=` |
 | binding | a `${…}` interpolation of the tagged-template form; index `n` names the n-th bound value |
 
 Any other character (`=`, `&`, `\|`, `@`, `;`, `#`, …) is a lex error
-`unexpected character …` [`errors-lex`].
+`unexpected character …` [`errors-lex`]. (The backtick is no longer one since
+0.21: it opens a template literal.)
 
 Keywords and identifiers are **case-sensitive**; `FROM` is an identifier
 [`clause-order`].
@@ -61,7 +63,11 @@ bound value between each adjacent pair. Each fragment is lexed independently and
 a `binding` token is inserted between fragments. A bound value therefore never
 becomes source text: it cannot supply an identifier, a keyword, an operator, or
 close a block [`bindings`]. A binding is legal wherever a primary value, a
-source, or a receiver is legal.
+source, or a receiver is legal. Because fragments are lexed independently, a
+fragment that ends inside a backtick template literal (§4) — in its text or in
+one of its interpolations — is the lex error `unterminated template literal`:
+a bound value never stands inside a template literal; interpolate a name, or
+bind the whole string [`template-literals`].
 
 ## 2. Query structure
 
@@ -362,7 +368,8 @@ top-level row is `limit ^n`). The value is checked at evaluation time
 ## 4. Expressions
 
 Value position (`select`, `order by`, `from`, function arguments, a destination
-block's `frontier`) accepts the full grammar. Precedence, loosest to tightest:
+block's `frontier`, a template literal's `${…}` interpolation) accepts the full
+grammar. Precedence, loosest to tightest:
 
 | Level | Operators | Notes |
 | --- | --- | --- |
@@ -374,7 +381,7 @@ block's `frontier`) accepts the full grammar. Precedence, loosest to tightest:
 | mul | `* / %` | left-assoc |
 | unary | `!` `-` `is` `not` | prefix, right-assoc (`--5`); `!` has this same precedence in `where` (§3). `is x` ≡ `!!x`, `not x` ≡ `!x` — pure sugar, desugared in the parser (since 0.17) |
 | postfix | `.name` `.name(args)` `name(args)` `x!` `x[…]` `x <consumer> { … }` `x { … }` `x distinct { … }` | navigation, method call, free-function call, the required operator, a bracket lookup, a value-position directive (the bare brace is the implicit `collect`, since 0.20 in every value position) — left to right, tightest of all: `refs(c)[0]!.name` requires the lookup, `refs(c)[0].name!` the name |
-| primary | literal, identifier, `^…name`, `N^name`, binding, `( expr )`, `( expr, expr, … )` | `N^name` is the absolute spelling of an outer reference (below; since 0.18); two or more comma-separated expressions in parentheses are a **tuple** (below; since 0.20), one is grouping |
+| primary | literal, template literal, identifier, `^…name`, `N^name`, binding, `( expr )`, `( expr, expr, … )` | `N^name` is the absolute spelling of an outer reference (below; since 0.18); two or more comma-separated expressions in parentheses are a **tuple** (below; since 0.20), one is grouping; a template literal `` `…${expr}…` `` is a string value (below; since 0.21) |
 
 ```
 expr     = or
@@ -397,6 +404,7 @@ suffix   = "." ident [ "(" args ")" ]                       ; navigation, method
 bracket  = "[" ( integer | binding ) "]" [ "!" ]            ; positional
          | "[" where "]" [ "!" ]                             ; predicate
 primary  = number | string | "true" | "false" | "null"
+         | template                                  ; a template literal (0.21)
          | ident                                     ; a property of the CURRENT scope only
          | scoperef ident                            ; an outer reference: `^^name` exactly N scopes out,
                                                      ; `N^name` the scope at depth N (below)
@@ -404,6 +412,8 @@ primary  = number | string | "true" | "false" | "null"
          | "(" expr ")"                              ; grouping — no node
          | "(" expr "," expr { "," expr } ")"        ; a tuple (0.20)
 args     = [ expr { "," expr } ]
+template = "`" { text | "${" expr "}" } "`"          ; text: any run of characters other than "`" and "${",
+                                                     ; with the string escapes decoded (§1)
 ```
 
 A range bound is a value; an open end stops at any token that cannot begin a
@@ -416,6 +426,43 @@ not begin a value, so `where age in 18.. order by name` parses as intended and
 
 There is no array or object literal; bound values (bindings), named roots and
 tuples are how collections enter a query.
+
+### Template literals (since 0.21)
+
+`` `text ${expr} text` `` is a **string value**: a backtick-delimited literal whose
+`${…}` **interpolations** each hold one full value expression (§1 for the lexical
+rule). It is a primary and stands wherever a value does — a `select` item (`label:
+`${title} (${era})``), a `where` operand (`` where `${title}!` == "Alpha!" ``), an
+`order by` key, a function argument or method receiver (`` size(`${a}${b}`) ``,
+`` `${title}`.lower() ``), the haystack of `in`, a nested block's item reading the
+enclosing row (`` jobs collect { label: `${^title}: ${employer}` values } ``). Its
+value is the concatenation of the text and the interpolated values' string forms
+(SEMANTICS §7b): absent anywhere makes the whole literal absent; a list or a
+record is an eval error.
+
+The text between the backticks is decoded with the **string escapes** (§1): `\n`,
+`\t`, `\r`, `\0`, and `\<c>` for any other character — so `` \` `` is a backtick,
+`\${` the two characters `${` (the escaped `$` opens nothing), `\\` a backslash;
+every other character, newlines included, is itself. A `$` not followed by `{`,
+a `{` or `}` outside an interpolation, `"` and `'` are ordinary text (`` `$ {y}
+cost: $${n}` ``). Inside an interpolation the source is ordinary OQX again:
+braces are **balanced**, so it may hold a `{ … }` block (`` `${jobs single {
+employer values where primary }}` `` — the first `}` closes the block, the second
+the interpolation) or another template literal (`` `a ${ `b ${n}` } c` ``), to
+any depth. An interpolation is read at the current scope depth (`^` and `N^`
+work as in the enclosing expression).
+
+Errors: an unterminated literal and an unterminated interpolation are **lex**
+errors (`unterminated template literal at N`, `` unterminated ${…} interpolation
+in a template literal at N ``, `N` the offset of the opening backtick or `${`);
+an empty interpolation `${}` is a **parse** error (`` empty interpolation `${}` in
+a template literal … (at offset N) `` with `N` the offset of the `${`); an
+interpolation holding more than one expression is `expected '}' to close the
+`${…}` interpolation`. A template literal is a literal: it is not a receiver
+(`` `x` collect { } `` and `` `${t}`[0] `` are `… is a literal, not a collection`)
+and an unaliased item needs an alias. The AST node is `template` (AST.md);
+`print` writes the literal back with the escapes it needs. [`template-literals`,
+`errors-eval`]
 
 ### Tuples (since 0.20)
 
@@ -536,13 +583,15 @@ is the same parse error (`expected a property name after '.'`).
 
 Every failure is an `OqxError` with a `stage`:
 
-- `lex` — an unexpected character, an unterminated string, or a malformed number.
+- `lex` — an unexpected character, an unterminated string, an unterminated
+  template literal or interpolation (since 0.21), or a malformed number.
 - `parse` — everything the grammar above rejects, including clause order,
   duplicates, missing `where`, projection naming (unnamed and duplicate items),
   a comma after a where-first predicate, misplaced lifts, alias cycles and
   forward references, a `depth` clause outside a destination block or out of
   range, a `frontier` clause in a body without a `follow`, an unclosed tuple,
-  chained comparisons, a top-level
+  an empty `${}` interpolation or one holding more than one expression (since
+  0.21), chained comparisons, a top-level
   `limit ^n`, an absolute reference to a scope that does not enclose the
   block (`scope N does not enclose this block …`), `count` comparisons, a
   negative or fractional index, a bare `first`/`single` in `where`.
@@ -550,7 +599,8 @@ Every failure is an `OqxError` with a `stage`:
   value that is absent (`` `x!` is absent ``), an invalid `limit`/`offset` value
   (including a bracket index binding), `follow` inside a where-position
   directive, a scalar in row position (`` `s` is a string ("abc"), not a
-  collection or an object ``, SEMANTICS §3).
+  collection or an object ``, SEMANTICS §3), a list, record or range interpolated
+  into a template literal (`cannot interpolate …`, SEMANTICS §7b; since 0.21).
 
 Messages carry a `(at offset N)` suffix for lex/parse errors; `N` counts
 Unicode code points over the raw source, the unit of every AST span (AST.md

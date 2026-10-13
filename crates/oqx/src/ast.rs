@@ -381,6 +381,17 @@ pub enum Expr {
     /// receiver (`(a, b) { … }`, `follow (a, b) { depth 2 }`). One expression in
     /// parentheses is grouping and leaves no node.
     Tuple { items: Vec<Expr>, span: Span },
+    /// A template literal `` `text ${expr} text` `` (since 0.21): `parts`
+    /// alternates strictly — text, interpolation, text, … — so it always has an
+    /// odd length and begins and ends with a (possibly empty) text part; the
+    /// text is decoded (the GRAMMAR §1 escapes resolved). Evaluates to the
+    /// concatenation of the text and the interpolated values' string forms
+    /// (SEMANTICS §7b): absent anywhere makes it absent; a list, a record or a
+    /// range is an eval error.
+    Template {
+        parts: Vec<TemplatePart>,
+        span: Span,
+    },
     /// A value-position directive (since 0.17): `recv first { … }.pay`, and
     /// what a bracket lookup `x[…]` desugars to. Serializes as the bare
     /// `OpNode` (`kind: "op"`): an op is an expression only by position.
@@ -404,7 +415,8 @@ impl Expr {
             | Expr::Logical { span, .. }
             | Expr::In { span, .. }
             | Expr::Range { span, .. }
-            | Expr::Tuple { span, .. } => *span,
+            | Expr::Tuple { span, .. }
+            | Expr::Template { span, .. } => *span,
             Expr::Op(op) => op.span,
         }
     }
@@ -430,7 +442,8 @@ impl Expr {
             | Expr::Logical { span, .. }
             | Expr::In { span, .. }
             | Expr::Range { span, .. }
-            | Expr::Tuple { span, .. } => span,
+            | Expr::Tuple { span, .. }
+            | Expr::Template { span, .. } => span,
             Expr::Op(op) => &mut op.span,
         }
     }
@@ -452,8 +465,19 @@ impl Expr {
             Expr::In { .. } => "in",
             Expr::Range { .. } => "range",
             Expr::Tuple { .. } => "tuple",
+            Expr::Template { .. } => "template",
         }
     }
+}
+
+/// One part of a template literal (`Expr::Template`): a decoded text run, or an
+/// interpolated expression. The strings are not nodes (no `kind`, no span):
+/// a part serializes as the bare string or the expression node.
+#[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "json", derive(Serialize, Deserialize), serde(untagged))]
+pub enum TemplatePart {
+    Text(String),
+    Expr(Expr),
 }
 
 /// One `order by` term.

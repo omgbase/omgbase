@@ -6,7 +6,8 @@
 //! `visit` and `transform` both read it.
 
 use crate::ast::{
-    Expr, Follow, FollowDestination, OpNode, OrderSpec, Query, SelectItem, Span, Subquery, Where,
+    Expr, Follow, FollowDestination, OpNode, OrderSpec, Query, SelectItem, Span, Subquery,
+    TemplatePart, Where,
 };
 
 /// A borrowed node of any kind.
@@ -267,9 +268,21 @@ fn children<'a>(node: Node<'a>) -> Vec<Child<'a>> {
             Expr::Tuple { items, .. } => {
                 out.extend(items.iter().map(|x| child(Node::Expr(x), None, 0)));
             }
+            // A template's interpolated expressions, in order; its texts are not nodes.
+            Expr::Template { parts, .. } => {
+                out.extend(template_exprs(parts).map(|x| child(Node::Expr(x), None, 0)));
+            }
         },
     }
     out
+}
+
+/// The interpolated expressions of a template literal's parts, in order.
+pub fn template_exprs(parts: &[TemplatePart]) -> impl Iterator<Item = &Expr> {
+    parts.iter().filter_map(|p| match p {
+        TemplatePart::Expr(x) => Some(x),
+        TemplatePart::Text(_) => None,
+    })
 }
 
 /// A block is a follow destination block when its `OpNode` is a direct
@@ -640,6 +653,16 @@ where
                 items: items.iter().map(|x| self.expr(x, clause, depth)).collect(),
                 span: *span,
             },
+            Expr::Template { parts, span } => Expr::Template {
+                parts: parts
+                    .iter()
+                    .map(|p| match p {
+                        TemplatePart::Text(t) => TemplatePart::Text(t.clone()),
+                        TemplatePart::Expr(x) => TemplatePart::Expr(self.expr(x, clause, depth)),
+                    })
+                    .collect(),
+                span: *span,
+            },
         };
         self.path.pop();
         let ctx = self.ctx(Some(clause), depth);
@@ -791,6 +814,11 @@ fn strip_expr_spans(e: &mut Expr) {
                     }
                 }
                 Expr::Tuple { items, .. } => items.iter_mut().for_each(strip_expr_spans),
+                Expr::Template { parts, .. } => parts.iter_mut().for_each(|p| {
+                    if let TemplatePart::Expr(x) = p {
+                        strip_expr_spans(x);
+                    }
+                }),
                 Expr::Op(_) => unreachable!("handled above"),
             }
         }

@@ -97,9 +97,13 @@ export const CHILDREN: { readonly [K in AstKind]: readonly ChildKey[] } = {
   in: [{ key: "left" }, { key: "right" }],
   range: [{ key: "lo" }, { key: "hi" }],
   tuple: [{ key: "items" }],
+  // The interpolations; the text parts between them are strings, not nodes.
+  template: [{ key: "parts" }],
 };
 
-type Slot = AstNode | AstNode[] | null;
+/** A child slot's value: a node, a list of nodes (a template's `parts` also
+ * holds its text strings, which the walks skip), or `null`. */
+type Slot = AstNode | (AstNode | string)[] | null;
 
 function slot(node: AstNode, key: string): Slot {
   return (node as unknown as Record<string, Slot>)[key] ?? null;
@@ -134,7 +138,7 @@ export function visit(root: AstNode, visitor: Visitor): void {
         if (v === null) continue;
         const c = child.clause ?? clause;
         const d = depth + childDepth(node, child, path);
-        if (Array.isArray(v)) for (const x of v) go(x, c, d);
+        if (Array.isArray(v)) { for (const x of v) if (typeof x !== "string") go(x, c, d); }
         else go(v, c, d);
       }
       path.pop();
@@ -162,7 +166,7 @@ export function transform<T extends Query | Subquery>(root: T, f: (expr: Expr, c
       let next: Slot;
       if (Array.isArray(v)) {
         let changed = false;
-        const mapped = v.map((x) => { const y = go(x, c, d); if (y !== x) changed = true; return y; });
+        const mapped = v.map((x) => { if (typeof x === "string") return x; const y = go(x, c, d); if (y !== x) changed = true; return y; });
         next = changed ? mapped : v;
       } else next = go(v, c, d);
       if (next !== v) out = { ...out, [child.key]: next } as AstNode;

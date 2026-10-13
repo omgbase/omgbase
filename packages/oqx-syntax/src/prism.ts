@@ -22,7 +22,7 @@
 // `group`) whose `inside` grammar carries the per-group tokens. Lookbehind needs a modern JavaScript
 // engine (every current browser; Safari since 16.4).
 
-import { RULES, STRINGS, STRING_ESCAPE, expandCases, splitGroups, withIdent, type GroupAction, type Rule } from "./rules.js";
+import { RULES, STRINGS, STRING_ESCAPE, TEMPLATE_LITERAL, expandCases, splitGroups, withIdent, type GroupAction, type Rule } from "./rules.js";
 import { LANGUAGE, TOKEN_CLASSES, type TokenClass } from "./vocabulary.js";
 
 export interface PrismToken {
@@ -34,7 +34,14 @@ export interface PrismToken {
   greedy?: boolean;
   inside?: PrismGrammar;
 }
+/** A grammar. An `inside` grammar may also carry Prism's own `rest` key — a
+ * grammar whose tokens follow the explicit ones (how an interpolation re-enters
+ * the whole language); it is set with `withRest` so the token index stays typed. */
 export type PrismGrammar = Record<string, PrismToken>;
+
+function withRest(inside: PrismGrammar, rest: PrismGrammar): PrismGrammar {
+  return Object.assign(inside, { rest });
+}
 
 /** The alias marking a container token (a multi-group match split by `inside`). */
 export const CONTAINER = "group";
@@ -85,9 +92,43 @@ function tokenOf(rule: Rule): [string, PrismToken] {
   return [rule.name, { pattern: whole, alias: [CONTAINER], greedy: true, inside }];
 }
 
-/** Build the grammar. `inside` of a string holds its escapes. */
+// An interpolation's body with its braces balanced — to three levels, the depth a
+// regular expression can state (TextMate and the scanners nest without limit).
+const BALANCED = "(?:[^{}]|\\{(?:[^{}]|\\{[^}]*\\})*\\})*";
+// Prism's lookbehind group: the `${` is not escaped (an even run of backslashes
+// before it, or none).
+const UNESCAPED = "((?:^|[^\\\\])(?:\\\\\\\\)*)";
+
+/** Build the grammar. `inside` of a string holds its escapes; a template literal's
+ * holds its escapes and its interpolations, each a container whose `rest` is the
+ * grammar itself (so a nested block or template literal highlights in full). An
+ * interpolation that never closes runs to the end of the text, as it does in
+ * the scanners. */
 export function buildPrismGrammar(): PrismGrammar {
   const grammar: PrismGrammar = {};
+  const q = TEMPLATE_LITERAL.quote;
+  const open = TEMPLATE_LITERAL.interpolationOpen;
+  const punctuation = (pattern: RegExp): PrismToken => ({ pattern, alias: aliases("interpolation", "template-interpolation-punctuation") });
+  grammar["template"] = {
+    pattern: new RegExp(`${q}(?:\\\\[\\s\\S]|${open}${BALANCED}\\}|(?!${open})[^\\\\${q}]|${open}[\\s\\S]*)*${q}?`, "m"),
+    alias: aliases("template", "template"),
+    greedy: true,
+    inside: {
+      "template-interpolation": {
+        pattern: new RegExp(`${UNESCAPED}${open}${BALANCED}\\}`, "m"),
+        lookbehind: true,
+        alias: [CONTAINER],
+        inside: withRest({ "template-interpolation-punctuation": punctuation(/^\$\{|\}$/m) }, grammar),
+      },
+      "template-interpolation-open": {
+        pattern: new RegExp(`${UNESCAPED}${open}[\\s\\S]*`, "m"),
+        lookbehind: true,
+        alias: [CONTAINER],
+        inside: withRest({ "template-interpolation-punctuation": punctuation(/^\$\{/m) }, grammar),
+      },
+      "template-escape": { pattern: new RegExp(STRING_ESCAPE, "m"), alias: aliases("stringEscape", "template-escape") },
+    },
+  };
   for (const s of STRINGS) {
     const q = s.quote;
     grammar[s.name] = {

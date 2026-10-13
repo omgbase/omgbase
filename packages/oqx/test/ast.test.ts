@@ -98,7 +98,7 @@ test("CHILDREN names every node kind and every child slot", () => {
   const kinds = Object.keys(CHILDREN).sort();
   assert.deepEqual(kinds, [
     "and", "binary", "binding", "call", "collect", "field", "follow", "ident", "in", "lit", "logical", "member", "not", "op",
-    "or", "order", "outer", "query", "range", "required", "scalar", "subquery", "tuple", "unary",
+    "or", "order", "outer", "query", "range", "required", "scalar", "subquery", "template", "tuple", "unary",
   ]);
   // Every node reached by the walk has exactly the children the table names
   // (no slot holding a node is missing from the table).
@@ -207,7 +207,7 @@ test("toJSON stamps the language version on the plain-data tree", () => {
   const j = toJSON(q);
   assert.equal(j.oqx, LANGUAGE_VERSION);
   assert.equal(j.kind, "query");
-  assert.deepEqual(JSON.parse(JSON.stringify(j)), { oqx: "0.20", ...q });
+  assert.deepEqual(JSON.parse(JSON.stringify(j)), { oqx: "0.21", ...q });
 });
 
 test("builders make nodes with the empty span and materialized fields, and print them", () => {

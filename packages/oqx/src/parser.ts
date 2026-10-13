@@ -64,6 +64,11 @@
 // Tuples (0.20): `(e1, e2, …)` with two or more elements is a `tuple` node — a
 // value and a receiver; one expression in parentheses stays grouping.
 //
+// Template literals (0.21): `` `text ${expr} text` `` is a `template` node — a
+// primary value whose interpolations are full expressions read at the current
+// depth (`parseTemplateLiteral`); the lexer balances the braces, so an
+// interpolation may hold a `{ … }` block or another template literal.
+//
 // Principle of least surprise, applied to the grammar: a rule a careful user
 // would not predict is a bug. Hence `!` binds tighter than comparison in every
 // position (`!a == b` is `(!a) == b`, as in C); parentheses in `where` group a
@@ -78,7 +83,7 @@ import { lexTemplate, lexString } from "./lexer.ts";
 import { OqxError } from "./errors.ts";
 import type {
   Query, Where, Expr, OpNode, Subquery, SelectItem, OrderSpec, Follow, FollowDestination, Consumer, RelOp,
-  BinaryOp, Span,
+  BinaryOp, Span, TemplatePart,
 } from "./ast.ts";
 import { resolveSelect, resolveWhere } from "./resolve.ts";
 import { printTemplate } from "./print.ts";
@@ -194,7 +199,10 @@ class Parser {
     return t.type === "op" && t.value === value;
   }
   private fail(msg: string): never {
-    throw new OqxError(`${msg} (at offset ${this.peek().pos})`, "parse");
+    this.failAt(this.peek().pos, msg);
+  }
+  private failAt(pos: number, msg: string): never {
+    throw new OqxError(`${msg} (at offset ${pos})`, "parse");
   }
   /** Code-point offset of the next token (the start of a node about to be parsed). */
   private start(): number { return this.peek().pos; }
@@ -1042,7 +1050,7 @@ class Parser {
   // `recv first { where p }`; a trailing `!` makes the index required and the
   // predicate a `single` (required too, so that zero matches is an error).
   private parseBracket(recv: Expr): Expr {
-    if (recv.kind === "lit") this.fail(`\`${describe(recv)}\` is a literal, not a collection`);
+    if (recv.kind === "lit" || recv.kind === "template") this.fail(`\`${describe(recv)}\` is a literal, not a collection`);
     const start = recv.span[0];
     const lbracket = this.next().pos; // '['
     let index: Expr | null = null;
@@ -1170,7 +1178,7 @@ class Parser {
     if (!t) return false;
     if (t.type === "ident") return !CLAUSE_WORDS.has(t.value);
     if (t.type === "kw") return t.value === "is" || t.value === "not"; // the prefix operators
-    if (t.type === "number" || t.type === "string" ||
+    if (t.type === "number" || t.type === "string" || t.type === "tmpl_start" ||
         t.type === "binding" || t.type === "lparen" || t.type === "caret") return true;
     return t.type === "op" && (t.value === "-" || t.value === "!");
   }
@@ -1242,7 +1250,7 @@ class Parser {
         // { … }` (0.20: the receiver-block sugar stands wherever a value does,
         // `size(children { is checked })`). exists/none/count have no value form
         // and are left to the body's own error.
-        if (expr.kind === "lit") this.fail(`\`${describe(expr)}\` is a literal, not a collection`);
+        if (expr.kind === "lit" || expr.kind === "template") this.fail(`\`${describe(expr)}\` is a literal, not a collection`);
         expr = this.parseConsumerBlock(expr, this.atBlock()!, false);
       } else {
         break; // anything else ends the chain
@@ -1282,6 +1290,7 @@ class Parser {
     }
     if (t.type === "number") { this.next(); return { kind: "lit", span: [t.pos, t.end], value: Number(t.value) }; }
     if (t.type === "string") { this.next(); return { kind: "lit", span: [t.pos, t.end], value: t.value }; }
+    if (t.type === "tmpl_start") return this.parseTemplateLiteral();
     if (t.type === "binding") { this.next(); return this.bindingNode(t); }
     if (t.type === "lparen") {
       this.next();
@@ -1307,6 +1316,39 @@ class Parser {
       return { kind: "ident", span, name: t.value };
     }
     this.fail(`unexpected ${this.tokDesc()} — expected a value`);
+  }
+
+  // A template literal (GRAMMAR §4, since 0.21): the cursor is at the opening
+  // backtick. The lexer has already split the literal into text runs and `${ … }`
+  // interpolations (with balanced braces, so an interpolation may hold a block
+  // or another template literal); each interpolation holds one full value
+  // expression, read at the current scope depth. `parts` alternates strictly —
+  // text, expression, text, … — with a (possibly empty) text part first and last.
+  private parseTemplateLiteral(): Expr {
+    const open = this.next(); // the backtick
+    const parts: TemplatePart[] = [];
+    let text = "";
+    for (;;) {
+      const t = this.peek();
+      if (t.type === "tmpl_text") { this.next(); text += t.value; continue; }
+      if (t.type === "tmpl_end") { this.next(); break; }
+      if (t.type === "tmpl_interp_start") {
+        this.next();
+        if (this.at("tmpl_interp_end")) {
+          this.failAt(t.pos, "empty interpolation `${}` in a template literal — an interpolation holds an expression (`${name}`)");
+        }
+        const e = this.parseValueExpr();
+        if (!this.at("tmpl_interp_end")) this.fail("expected '}' to close the `${…}` interpolation of a template literal");
+        this.next();
+        parts.push(text, e);
+        text = "";
+        continue;
+      }
+      // Unreachable: the lexer closes every literal it opens or fails.
+      this.fail(`unexpected ${this.tokDesc()} in a template literal`);
+    }
+    parts.push(text);
+    return { kind: "template", span: [open.pos, this.end()], parts };
   }
 }
 

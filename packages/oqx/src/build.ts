@@ -5,7 +5,7 @@
 
 import type {
   BinaryOp, Consumer, CountCmp, Expr, Follow, FollowDestination, LogicalOp, OpNode, OrderSpec, Query, SelectItem, Span,
-  Subquery, UnaryOp, Where,
+  Subquery, TemplatePart, UnaryOp, Where,
 } from "./ast.ts";
 
 /** A fresh empty span (never shared: spans are mutable tuples). */
@@ -28,6 +28,9 @@ export const inOp = (left: Expr, right: Expr): Expr => ({ kind: "in", span: span
 export const range = (lo: Expr | null, hi: Expr | null, exclusiveEnd = false): Expr => ({ kind: "range", span: span(), lo, hi, exclusiveEnd });
 /** `(e1, e2, …)` — a tuple of two or more expressions (SEMANTICS §3b). */
 export const tuple = (items: Expr[]): Expr => ({ kind: "tuple", span: span(), items });
+/** `` `text ${expr} …` `` — a template literal (SEMANTICS §7b); `parts` alternates
+ * text, expression, text, … (odd length, text first and last). */
+export const template = (parts: TemplatePart[]): Expr => ({ kind: "template", span: span(), parts });
 
 export const scalar = (expr: Expr): Where => ({ kind: "scalar", span: span(), expr });
 export const and = (parts: Where[]): Where => ({ kind: "and", span: span(), parts });

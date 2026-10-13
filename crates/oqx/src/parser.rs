@@ -86,7 +86,7 @@ use std::collections::HashSet;
 
 use crate::ast::{
     BinaryOp, Consumer, CountCmp, Expr, Follow, FollowDestination, LogicalOp, OpNode, OrderSpec,
-    Query, RelOp, SelectItem, Span, Subquery, UnaryOp, Where,
+    Query, RelOp, SelectItem, Span, Subquery, TemplatePart, UnaryOp, Where,
 };
 use crate::errors::{OqxError, Result};
 use crate::lexer::{TokType, Token, lex_string, lex_template};
@@ -1623,7 +1623,7 @@ impl Parser {
     // `recv first { where p }`; a trailing `!` makes the index required and the
     // predicate a `single` (required too, so that zero matches is an error).
     fn parse_bracket(&mut self, recv: Expr) -> Result<Expr> {
-        if matches!(recv, Expr::Lit { .. }) {
+        if matches!(recv, Expr::Lit { .. } | Expr::Template { .. }) {
             return self.fail(format!(
                 "`{}` is a literal, not a collection",
                 describe(Node::Expr(&recv))
@@ -2086,7 +2086,7 @@ impl Parser {
                 // `distinct { … }` (0.20: the receiver-block sugar stands wherever
                 // a value does, `size(children { is checked })`). exists/none/count
                 // have no value form and are left to the body's own error.
-                if matches!(expr, Expr::Lit { .. }) {
+                if matches!(expr, Expr::Lit { .. } | Expr::Template { .. }) {
                     return self.fail(format!(
                         "`{}` is a literal, not a collection",
                         describe(Node::Expr(&expr))
@@ -2100,6 +2100,62 @@ impl Parser {
             }
         }
         Ok(expr)
+    }
+
+    // A template literal (GRAMMAR §4, since 0.21): the cursor is at the opening
+    // backtick. The lexer has already split the literal into text runs and
+    // `${ … }` interpolations (with balanced braces, so an interpolation may
+    // hold a block or another template literal); each interpolation holds one
+    // full value expression, read at the current scope depth. `parts`
+    // alternates strictly — text, expression, text, … — with a (possibly empty)
+    // text part first and last.
+    fn parse_template_literal(&mut self) -> Result<Expr> {
+        let open = self.next(); // the backtick
+        let mut parts = Vec::new();
+        let mut text = String::new();
+        loop {
+            let t = self.peek().clone();
+            match t.kind {
+                TokType::TmplText => {
+                    self.next();
+                    text.push_str(&t.value);
+                }
+                TokType::TmplEnd => {
+                    self.next();
+                    break;
+                }
+                TokType::TmplInterpStart => {
+                    self.next();
+                    if self.at(TokType::TmplInterpEnd) {
+                        return Err(OqxError::parse(format!(
+                            "empty interpolation `${{}}` in a template literal — an interpolation holds an expression (`${{name}}`) (at offset {})",
+                            t.pos
+                        )));
+                    }
+                    let e = self.parse_value_expr()?;
+                    if !self.at(TokType::TmplInterpEnd) {
+                        return self.fail(
+                            "expected '}' to close the `${…}` interpolation of a template literal",
+                        );
+                    }
+                    self.next();
+                    parts.push(TemplatePart::Text(std::mem::take(&mut text)));
+                    parts.push(TemplatePart::Expr(e));
+                }
+                // Unreachable: the lexer closes every literal it opens or fails.
+                _ => {
+                    return self.fail(format!(
+                        "unexpected {} in a template literal",
+                        self.tok_desc()
+                    ));
+                }
+            }
+        }
+        parts.push(TemplatePart::Text(text));
+        Ok(Expr::Template {
+            parts,
+            span: Span::new(open.pos, self.end()),
+        })
     }
 
     fn parse_args(&mut self) -> Result<Vec<Expr>> {
@@ -2158,6 +2214,7 @@ impl Parser {
                 self.next();
                 Ok(binding_node(&t))
             }
+            TokType::TmplStart => self.parse_template_literal(),
             TokType::LParen => {
                 self.next();
                 let e = self.parse_value_expr()?;
@@ -2215,9 +2272,12 @@ fn starts_value(t: &Token) -> bool {
     match t.kind {
         TokType::Ident => !CLAUSE_WORDS.contains(&t.value.as_str()),
         TokType::Kw => t.value == "is" || t.value == "not", // the prefix operators
-        TokType::Number | TokType::Str | TokType::Binding | TokType::LParen | TokType::Caret => {
-            true
-        }
+        TokType::Number
+        | TokType::Str
+        | TokType::Binding
+        | TokType::LParen
+        | TokType::Caret
+        | TokType::TmplStart => true,
         TokType::Op => t.value == "-" || t.value == "!",
         _ => false,
     }

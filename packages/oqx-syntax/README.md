@@ -12,7 +12,7 @@ so no grammar can drift from another.
 - Zero runtime dependencies. Nothing here imports the parser: highlighting is
   lexical and deliberately separate from `@omgbase/oqx`, which stays the semantic
   source of truth.
-- Describes OQX language **0.20** (`LANGUAGE_VERSION`, pinned by tests to
+- Describes OQX language **0.21** (`LANGUAGE_VERSION`, pinned by tests to
   `spec/oqx/VERSION` and to `@omgbase/oqx`).
 
 ## Install
@@ -123,6 +123,8 @@ The grammar follows `spec/oqx/GRAMMAR.md` §1. It distinguishes:
 | numbers | `constant.numeric.oqx` | `number` | `42` `0.5` `1e5` |
 | malformed numbers | `invalid.illegal.number.oqx` | `invalid.number` | `1.` `1e` `.5` |
 | strings, escapes | `string.quoted.{double,single}.oqx`, `constant.character.escape.oqx` | `string`, `string.escape` | `"a\"b"` `'x'` |
+| template literals | `string.template.oqx` (the backticks and the text; escapes as above) | `string.template` | `` `${title} (${era})` `` (0.21; may span lines) |
+| interpolation delimiters | `punctuation.section.interpolation.oqx` | `delimiter.interpolation` | the `${` and `}` of an interpolation — the source between them is ordinary OQX, braces balanced (a `{ … }` block, a nested literal) |
 | bindings | `variable.other.binding.oqx` | `variable.binding` | `${0}` (the tagged-template form) |
 | intrinsics | `variable.language.oqx` | `variable.predefined` | `$it` `$key` `$depth` `$stop` — any `$name` (OQX's own; omgbase's attributes `id`/`path`/… are plain identifiers) |
 | lift / outer reference | `keyword.operator.lift.oqx` | `operator.lift` | `^budget` `^name:` |
@@ -135,7 +137,7 @@ The grammar follows `spec/oqx/GRAMMAR.md` §1. It distinguishes:
 | range, membership | `keyword.operator.range.oqx`, `keyword.operator.membership.oqx` | `operator.range`, `keyword.operator.membership` | `..` `...` `in` |
 | word operators | `keyword.operator.word.oqx` | `keyword.operator.word` | `is` `not` `and` `or` (0.17; reserved words) |
 | punctuation | `punctuation.*.oqx` | `delimiter.*` | `{ } ( ) [ ] , : .` — `[ ]` is the bracket lookup (0.17) |
-| lex errors | `invalid.illegal.oqx` | `invalid` | `=` `&` `\|` `@` `;` `#` — OQX has no comments |
+| lex errors | `invalid.illegal.oqx` | `invalid` | `=` `&` `\|` `@` `;` `#` — OQX has no comments (the backtick is no longer one: it opens a template literal) |
 
 **Contextual words are colored only in position.** `count` is a consumer before
 `{`, `limit` a clause before a number, `in` an operator before a value, `asc` a
@@ -147,6 +149,14 @@ The full table — with the CodeMirror 6 highlight tag, the CodeMirror 5 class
 and the Prism class for each token class — is `TOKEN_CLASSES` in the vocabulary
 export.
 
+**Template literals are the one nested construct.** Every grammar enters a
+state at the backtick, re-enters the whole language at `${` and tracks the
+braces inside the interpolation (one state per `{`), so a `{ … }` block or a
+nested template literal inside an interpolation highlights in full and the `}`
+that closes the interpolation is the one that balances it. TextMate, Monarch and
+CodeMirror nest without limit; the Prism grammar, being a set of regular
+expressions, balances braces to three levels inside one interpolation.
+
 One limit is shared by every grammar here: **position is decided within the
 line.** A consumer word at the end of a line with its `{` on the next line, or
 `in` followed by its value on the next line, is read as a field. The
@@ -157,7 +167,8 @@ the Prism grammar is written to agree with them rather than to be cleverer.
 
 `@omgbase/oqx-syntax/vocabulary` exports the word lists (`KEYWORDS`,
 `CONTEXTUAL_WORDS`, `CONSUMERS`, `DESTINATION_CLAUSES`, `MODIFIERS`, `LITERALS`,
-`OPERATORS`, `BUILTIN_FUNCTIONS`, `BUILTIN_METHODS`, `INTRINSICS`), the identifier
+`OPERATORS`, `BUILTIN_FUNCTIONS`, `BUILTIN_METHODS`, `INTRINSICS`), the template
+literal's delimiters (`TEMPLATE`), the identifier
 shape, the language metadata (`LANGUAGE`, `LANGUAGE_VERSION`) and — kept apart,
 because it is not part of the language — the **omgbase host vocabulary**
 (`OMGBASE`: roots, row functions, attributes per target, source handles, relations). Completion

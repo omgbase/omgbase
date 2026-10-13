@@ -17,7 +17,7 @@
 
 use crate::ast::{
     BinaryOp, Expr, Follow, FollowDestination, LogicalOp, OpNode, OrderSpec, Query, SelectItem,
-    Subquery, Where,
+    Subquery, TemplatePart, Where,
 };
 use crate::errors::{OqxError, Result};
 use crate::value::{Value, js_number_to_string};
@@ -134,7 +134,8 @@ fn prec(e: &Expr) -> u8 {
         | Expr::Ident { .. }
         | Expr::Outer { .. }
         | Expr::Binding { .. }
-        | Expr::Tuple { .. } => PRIMARY,
+        | Expr::Tuple { .. }
+        | Expr::Template { .. } => PRIMARY,
         Expr::Member { .. } | Expr::Call { .. } | Expr::Required { .. } | Expr::Op(_) => POSTFIX,
         Expr::Unary { .. } => UNARY,
         Expr::Binary { op, .. } => match op {
@@ -487,6 +488,21 @@ fn expr(e: &Expr) -> Out {
             join(items.iter().map(expr).collect(), ", "),
             text(")"),
         ]),
+        // A template literal: its texts escaped for the backtick form, each
+        // interpolation a full expression between `${` and `}`.
+        Expr::Template { parts, .. } => {
+            let mut out = text("`");
+            for part in parts {
+                match part {
+                    TemplatePart::Text(t) => out.push(Piece::Text(template_text(t))),
+                    TemplatePart::Expr(e) => {
+                        out.extend(cat(vec![text("${"), expr(e), text("}")]));
+                    }
+                }
+            }
+            out.push(Piece::Text("`".to_owned()));
+            out
+        }
     }
 }
 
@@ -516,6 +532,27 @@ fn literal(v: &Value) -> String {
         Value::Str(s) => quote(s),
         other => other.to_string(),
     }
+}
+
+/// The text piece of a template literal, escaped for the backtick form: the
+/// backtick, the backslash and a `${` opener (as `\${`) with the GRAMMAR §1
+/// control-character escapes; everything else verbatim.
+fn template_text(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut chars = s.chars().peekable();
+    while let Some(ch) = chars.next() {
+        match ch {
+            '`' => out.push_str("\\`"),
+            '\\' => out.push_str("\\\\"),
+            '$' if chars.peek() == Some(&'{') => out.push_str("\\$"),
+            '\n' => out.push_str("\\n"),
+            '\t' => out.push_str("\\t"),
+            '\r' => out.push_str("\\r"),
+            '\0' => out.push_str("\\0"),
+            c => out.push(c),
+        }
+    }
+    out
 }
 
 /// A double-quoted string literal with the GRAMMAR §1 escapes.

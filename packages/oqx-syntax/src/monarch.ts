@@ -4,7 +4,7 @@
 // attributes, and `tokenPostfix` appends `.oqx` to every token as Monaco's own
 // languages do. `syntax/oqx.monarch.json` is this object serialized.
 
-import { RULES, STRINGS, STRING_ESCAPE, WHITESPACE, withIdent, type GroupAction, type Rule } from "./rules.js";
+import { RULES, STRINGS, STRING_ESCAPE, TEMPLATE_LITERAL, WHITESPACE, withIdent, type GroupAction, type Rule } from "./rules.js";
 import { LANGUAGE, LANGUAGE_VERSION, TOKEN_CLASSES, type TokenClass } from "./vocabulary.js";
 
 export type MonarchAction =
@@ -65,6 +65,27 @@ export function buildMonarchGrammar(): MonarchGrammar {
       [s.quote, { token: token("string"), next: "@pop" }],
     ];
   }
+  // The template literal (0.21): a `template` state for the text, an
+  // `templateInterpolation` state that is the root grammar again plus the braces,
+  // and a `templateBlock` state per `{` inside it so the interpolation's own `}`
+  // is the one that pops back to the text.
+  root.push([TEMPLATE_LITERAL.quote, { token: token("template"), next: "@template" }]);
+  tokenizer["template"] = [
+    [STRING_ESCAPE, token("stringEscape")],
+    [TEMPLATE_LITERAL.interpolationOpen, { token: token("interpolation"), next: "@templateInterpolation" }],
+    [TEMPLATE_LITERAL.quote, { token: token("template"), next: "@pop" }],
+    [TEMPLATE_LITERAL.text, token("template")],
+  ];
+  tokenizer["templateInterpolation"] = [
+    ["\\{", { token: token("braceOpen"), next: "@templateBlock" }],
+    [TEMPLATE_LITERAL.interpolationClose, { token: token("interpolation"), next: "@pop" }],
+    { include: "@root" },
+  ];
+  tokenizer["templateBlock"] = [
+    ["\\{", { token: token("braceOpen"), next: "@templateBlock" }],
+    ["\\}", { token: token("braceClose"), next: "@pop" }],
+    { include: "@root" },
+  ];
   for (const rule of RULES) root.push(convert(rule, lists));
   tokenizer["whitespace"] = [[WHITESPACE, "white"]];
   return {

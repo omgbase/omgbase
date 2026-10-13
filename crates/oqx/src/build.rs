@@ -6,7 +6,7 @@
 
 use crate::ast::{
     BinaryOp, Consumer, CountCmp, Expr, Follow, FollowDestination, LogicalOp, OpNode, OrderSpec,
-    Query, SelectItem, Span, Subquery, UnaryOp, Where,
+    Query, SelectItem, Span, Subquery, TemplatePart, UnaryOp, Where,
 };
 use crate::value::Value;
 
@@ -109,6 +109,39 @@ pub fn tuple(items: Vec<Expr>) -> Expr {
         items,
         span: Span::EMPTY,
     }
+}
+/// `` `text ${expr} …` `` — a template literal (SEMANTICS §7b). The parts are
+/// normalized to the parsed shape — strictly alternating text, expression,
+/// text, … (odd length, a possibly empty text first and last): adjacent texts
+/// are merged and an empty text is inserted between adjacent expressions and
+/// at either end when missing.
+pub fn template(parts: Vec<TemplatePart>) -> Expr {
+    let mut out: Vec<TemplatePart> = vec![TemplatePart::Text(String::new())];
+    for part in parts {
+        match (out.last_mut(), part) {
+            (Some(TemplatePart::Text(prev)), TemplatePart::Text(t)) => prev.push_str(&t),
+            (Some(TemplatePart::Expr(_)), TemplatePart::Expr(e)) => {
+                out.push(TemplatePart::Text(String::new()));
+                out.push(TemplatePart::Expr(e));
+            }
+            (_, part) => out.push(part),
+        }
+    }
+    if matches!(out.last(), Some(TemplatePart::Expr(_))) {
+        out.push(TemplatePart::Text(String::new()));
+    }
+    Expr::Template {
+        parts: out,
+        span: Span::EMPTY,
+    }
+}
+/// A text piece of a template literal.
+pub fn text(s: impl Into<String>) -> TemplatePart {
+    TemplatePart::Text(s.into())
+}
+/// An interpolated piece of a template literal.
+pub fn interp(e: Expr) -> TemplatePart {
+    TemplatePart::Expr(e)
 }
 
 pub fn scalar(expr: Expr) -> Where {

@@ -35,6 +35,10 @@ export type UnaryOp = "!" | "-";
 /** The operator of a `logical` expression. */
 export type LogicalOp = "&&" | "||";
 
+/** One part of a template literal (since 0.21): a decoded text run, or an
+ * interpolated expression. The strings are not nodes (no `kind`, no span). */
+export type TemplatePart = string | Expr;
+
 /** Scalar value/predicate expression, evaluated against a row scope + bindings. */
 export type Expr =
   | { kind: "lit"; span: Span; value: string | number | boolean | null }
@@ -58,6 +62,12 @@ export type Expr =
   // receiver (`(a, b) { … }`, `follow (a, b) { depth 2 }`). One expression in
   // parentheses is grouping and leaves no node.
   | { kind: "tuple"; span: Span; items: Expr[] }
+  // A template literal `` `text ${expr} text` `` (since 0.21): `parts` alternates
+  // strictly — text, interpolation, text, … — so it always has an odd length and
+  // begins and ends with a (possibly empty) text part; the text is decoded (the
+  // GRAMMAR §1 escapes resolved). Evaluates to the concatenation of the text and
+  // the interpolated values' string forms (SEMANTICS §7b).
+  | { kind: "template"; span: Span; parts: TemplatePart[] }
   // A value-position directive (since 0.17): `recv first { … }.pay`, and what a
   // bracket lookup `x[…]` desugars to. `isExpr` is false for it — an op is an
   // expression only by position; discriminate on `kind === "op"`.
@@ -193,7 +203,7 @@ export type AstKind = AstNode["kind"];
 
 /** The expression kinds (`Expr["kind"]`), for `isExpr`. */
 const EXPR_KINDS: ReadonlySet<string> = new Set([
-  "lit", "ident", "outer", "binding", "member", "call", "unary", "required", "binary", "logical", "in", "range", "tuple",
+  "lit", "ident", "outer", "binding", "member", "call", "unary", "required", "binary", "logical", "in", "range", "tuple", "template",
 ]);
 
 /** Whether a node is a scalar `Expr` (an `op` in expression position is not: it

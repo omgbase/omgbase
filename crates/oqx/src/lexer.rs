@@ -12,6 +12,18 @@
 //! literal does not interpolate — that fragment would be an unterminated string —
 //! which is exactly the desired "interpolation is a value, never source text".)
 //!
+//! The same holds for a backtick template literal (0.21): a fragment that ends
+//! inside one is an unterminated literal, so a bound value never stands in one.
+//!
+//! Template literals `` `text ${expr}` `` (language 0.21) are lexed with a mode
+//! stack: the opening and closing backticks are `TmplStart` / `TmplEnd`, the
+//! text between them one `TmplText` token per run (decoded with the string
+//! literal's escape rule — `\<c>` → `c`, so `` \` ``, `\$` and `\\`; newlines
+//! verbatim), a `${` opens an interpolation (`TmplInterpStart`) whose tokens are
+//! ordinary source until the `}` that balances it (`TmplInterpEnd` — a block's
+//! `}` inside the interpolation stays `RBrace`), and an interpolation may hold
+//! another template literal.
+//!
 //! Positions (`Token::pos` / `Token::end`, the `span` of every AST node, and
 //! the offsets quoted in error messages) count Unicode code points (`char`s)
 //! over the raw source (`raw_source` for a template, where a binding occupies
@@ -47,6 +59,16 @@ pub enum TokType {
     Op,
     /// A `${…}` interpolation; `index` names the value slot.
     Binding,
+    /// The opening backtick of a template literal (since 0.21).
+    TmplStart,
+    /// A run of a template literal's text; the value is the decoded text.
+    TmplText,
+    /// The `${` opening an interpolation.
+    TmplInterpStart,
+    /// The `}` closing an interpolation (a block's `}` inside it stays `RBrace`).
+    TmplInterpEnd,
+    /// The closing backtick of a template literal.
+    TmplEnd,
     Eof,
 }
 
@@ -71,6 +93,11 @@ impl TokType {
             TokType::Range => "range",
             TokType::Op => "op",
             TokType::Binding => "binding",
+            TokType::TmplStart => "tmpl_start",
+            TokType::TmplText => "tmpl_text",
+            TokType::TmplInterpStart => "tmpl_interp_start",
+            TokType::TmplInterpEnd => "tmpl_interp_end",
+            TokType::TmplEnd => "tmpl_end",
             TokType::Eof => "eof",
         }
     }
@@ -81,8 +108,8 @@ pub struct Token {
     /// The TS `type` (a Rust keyword, hence `kind`).
     pub kind: TokType,
     /// The source text of the token, except: a `Str` token carries its decoded
-    /// value (quotes stripped, escapes resolved); a `Binding` carries the
-    /// display marker `${N}`; `Eof` carries `""`.
+    /// value (quotes stripped, escapes resolved), and so does a `TmplText` run;
+    /// a `Binding` carries the display marker `${N}`; `Eof` carries `""`.
     pub value: String,
     /// Code-point offset of the token's first character.
     pub pos: usize,
@@ -117,7 +144,18 @@ pub fn lex_template<S: AsRef<str>>(fragments: &[S], values: usize) -> Result<Vec
     let last = fragments.len().checked_sub(1);
     for (f, fragment) in fragments.iter().enumerate() {
         let fragment = fragment.as_ref();
-        lex_fragment(fragment, base, &mut tokens)?;
+        if let Err(e) = lex_fragment(fragment, base, &mut tokens) {
+            // A fragment ends inside a backtick literal: the bound value would
+            // have to stand inside it, and a bound value is never source text
+            // (GRAMMAR §1).
+            if Some(f) != last && e.message.starts_with(UNTERMINATED_TEMPLATE) {
+                return Err(OqxError::lex(format!(
+                    "{} — a template literal must be complete within one fragment: a ${{…}} binding cannot stand inside a backtick literal (interpolate a name, or bind the whole string)",
+                    e.message
+                )));
+            }
+            return Err(e);
+        }
         base += fragment.chars().count();
         if Some(f) != last {
             // account for the value's rendered width in the display source (see raw_source)
@@ -180,13 +218,82 @@ fn lex_fragment(src: &str, base: usize, out: &mut Vec<Token>) -> Result<()> {
             index: None,
         });
     };
+    // The lexer's mode inside a template literal (GRAMMAR §1, since 0.21):
+    // the text of the literal, or a `${…}` interpolation, which is ordinary
+    // source again — with a brace depth, so the `}` that closes the
+    // interpolation is told from a block's. Nesting is a stack: an
+    // interpolation may hold another template literal.
+    let mut modes: Vec<Mode> = Vec::new();
 
     while i < n {
+        // Template text: everything up to the closing backtick or the `${` of
+        // an interpolation, decoded with the string escapes (`\<c>` is `<c>`,
+        // so `` \` `` and `\$` keep a backtick or a dollar literal). Newlines
+        // are kept verbatim.
+        if matches!(modes.last(), Some(Mode::Template { .. })) {
+            let start = i;
+            let mut sval = String::new();
+            while i < n {
+                let c = chars[i];
+                if c == '`' || (c == '$' && at(i + 1) == Some('{')) {
+                    break;
+                }
+                if c == '\\' {
+                    i += 1;
+                    if let Some(e) = at(i) {
+                        sval.push(unescape(e));
+                    }
+                    i += 1;
+                    continue;
+                }
+                sval.push(c);
+                i += 1;
+            }
+            if i > start {
+                push(TokType::TmplText, sval, start, i.min(n));
+            }
+            if i >= n {
+                break; // unterminated — reported below
+            }
+            if chars[i] == '`' {
+                push(TokType::TmplEnd, "`".to_string(), i, i + 1);
+                i += 1;
+                modes.pop();
+                continue;
+            }
+            push(TokType::TmplInterpStart, "${".to_string(), i, i + 2);
+            modes.push(Mode::Interp { start: i, depth: 0 });
+            i += 2;
+            continue;
+        }
+
         let c = chars[i];
 
         if c == ' ' || c == '\t' || c == '\n' || c == '\r' {
             i += 1;
             continue;
+        }
+
+        if c == '`' {
+            push(TokType::TmplStart, c.to_string(), i, i + 1);
+            modes.push(Mode::Template { start: i });
+            i += 1;
+            continue;
+        }
+        // Inside an interpolation a `{` deepens it and a `}` at depth 0 closes
+        // it; deeper, a `}` closes a block.
+        if let Some(Mode::Interp { depth, .. }) = modes.last_mut() {
+            if c == '{' {
+                *depth += 1;
+            } else if c == '}' {
+                if *depth == 0 {
+                    push(TokType::TmplInterpEnd, c.to_string(), i, i + 1);
+                    i += 1;
+                    modes.pop();
+                    continue;
+                }
+                *depth -= 1;
+            }
         }
 
         let single = match c {
@@ -317,7 +424,28 @@ fn lex_fragment(src: &str, base: usize, out: &mut Vec<Token>) -> Result<()> {
             base + i
         )));
     }
-    Ok(())
+    // The end of the source inside a template literal.
+    match modes.last() {
+        Some(Mode::Template { start }) => Err(OqxError::lex(format!(
+            "{UNTERMINATED_TEMPLATE} at {}",
+            base + start
+        ))),
+        Some(Mode::Interp { start, .. }) => Err(OqxError::lex(format!(
+            "unterminated ${{…}} interpolation in a template literal at {} — expected '}}'",
+            base + start
+        ))),
+        None => Ok(()),
+    }
+}
+
+const UNTERMINATED_TEMPLATE: &str = "unterminated template literal";
+
+/// The lexer's mode inside a template literal (see `lex_fragment`): the
+/// literal's text, or an interpolation with its brace depth. `start` is the
+/// offset of the opening backtick / `${`, which the unterminated errors name.
+enum Mode {
+    Template { start: usize },
+    Interp { start: usize, depth: usize },
 }
 
 /// Scan a number whose first digit is at `i`; return the index just past it.
@@ -803,5 +931,229 @@ mod tests {
         );
         assert_eq!(raw_source(&["from xs"]), "from xs");
         assert_eq!(raw_source::<&str>(&[]), "");
+    }
+
+    #[test]
+    fn template_literals_lex_into_their_pieces() {
+        use TokType::*;
+        // The backticks, one decoded text run, and `${` / `}` around an interpolation.
+        let toks = lex_string("`${title} (${era})`").unwrap();
+        let summary: Vec<(TokType, &str, usize, usize)> = toks
+            .iter()
+            .map(|t| (t.kind, t.value.as_str(), t.pos, t.end))
+            .collect();
+        assert_eq!(
+            summary,
+            vec![
+                (TmplStart, "`", 0, 1),
+                (TmplInterpStart, "${", 1, 3),
+                (Ident, "title", 3, 8),
+                (TmplInterpEnd, "}", 8, 9),
+                (TmplText, " (", 9, 11),
+                (TmplInterpStart, "${", 11, 13),
+                (Ident, "era", 13, 16),
+                (TmplInterpEnd, "}", 16, 17),
+                (TmplText, ")", 17, 18),
+                (TmplEnd, "`", 18, 19),
+                (Eof, "", 19, 19),
+            ]
+        );
+        // No interpolation; the empty literal has no text token.
+        assert_eq!(
+            kinds("`hello`"),
+            vec![
+                tok(TmplStart, "`"),
+                tok(TmplText, "hello"),
+                tok(TmplEnd, "`"),
+                tok(Eof, "")
+            ]
+        );
+        assert_eq!(
+            kinds("``"),
+            vec![tok(TmplStart, "`"), tok(TmplEnd, "`"), tok(Eof, "")]
+        );
+        // Escapes decode with the string rule: \` \$ \\ and the control escapes;
+        // a `$` not followed by `{` and a lone `{` are text; newlines are verbatim.
+        assert_eq!(
+            kinds("`a\\`b \\${c} \\\\ d $e {f}\\n\nz`"),
+            vec![
+                tok(TmplStart, "`"),
+                tok(TmplText, "a`b ${c} \\ d $e {f}\n\nz"),
+                tok(TmplEnd, "`"),
+                tok(Eof, "")
+            ]
+        );
+        assert_eq!(
+            kinds("`\\x\\/\\'`"),
+            vec![
+                tok(TmplStart, "`"),
+                tok(TmplText, "x/'"),
+                tok(TmplEnd, "`"),
+                tok(Eof, "")
+            ]
+        );
+        // Quotes inside a template are text; a template inside a string is text.
+        assert_eq!(
+            kinds("`it's \"q\"`"),
+            vec![
+                tok(TmplStart, "`"),
+                tok(TmplText, "it's \"q\""),
+                tok(TmplEnd, "`"),
+                tok(Eof, "")
+            ]
+        );
+        assert_eq!(kinds("\"`${x}`\""), vec![tok(Str, "`${x}`"), tok(Eof, "")]);
+    }
+
+    #[test]
+    fn template_interpolations_track_braces_and_nest() {
+        use TokType::*;
+        // A block inside an interpolation keeps its braces; only the matching `}`
+        // closes the interpolation.
+        assert_eq!(
+            kinds("`n=${xs first { where a > 1 }}!`"),
+            vec![
+                tok(TmplStart, "`"),
+                tok(TmplText, "n="),
+                tok(TmplInterpStart, "${"),
+                tok(Ident, "xs"),
+                tok(Ident, "first"),
+                tok(LBrace, "{"),
+                tok(Kw, "where"),
+                tok(Ident, "a"),
+                tok(Op, ">"),
+                tok(Number, "1"),
+                tok(RBrace, "}"),
+                tok(TmplInterpEnd, "}"),
+                tok(TmplText, "!"),
+                tok(TmplEnd, "`"),
+                tok(Eof, ""),
+            ]
+        );
+        // A template inside an interpolation.
+        assert_eq!(
+            kinds("`a${`b${c}d`}e`"),
+            vec![
+                tok(TmplStart, "`"),
+                tok(TmplText, "a"),
+                tok(TmplInterpStart, "${"),
+                tok(TmplStart, "`"),
+                tok(TmplText, "b"),
+                tok(TmplInterpStart, "${"),
+                tok(Ident, "c"),
+                tok(TmplInterpEnd, "}"),
+                tok(TmplText, "d"),
+                tok(TmplEnd, "`"),
+                tok(TmplInterpEnd, "}"),
+                tok(TmplText, "e"),
+                tok(TmplEnd, "`"),
+                tok(Eof, ""),
+            ]
+        );
+        // Adjacent interpolations: no text token between them.
+        assert_eq!(
+            kinds("`${a}${b}`"),
+            vec![
+                tok(TmplStart, "`"),
+                tok(TmplInterpStart, "${"),
+                tok(Ident, "a"),
+                tok(TmplInterpEnd, "}"),
+                tok(TmplInterpStart, "${"),
+                tok(Ident, "b"),
+                tok(TmplInterpEnd, "}"),
+                tok(TmplEnd, "`"),
+                tok(Eof, ""),
+            ]
+        );
+        // A brace after the literal is an ordinary token again.
+        assert_eq!(
+            kinds("`${a}` }"),
+            vec![
+                tok(TmplStart, "`"),
+                tok(TmplInterpStart, "${"),
+                tok(Ident, "a"),
+                tok(TmplInterpEnd, "}"),
+                tok(TmplEnd, "`"),
+                tok(RBrace, "}"),
+                tok(Eof, ""),
+            ]
+        );
+        // Positions count code points through the pieces.
+        let toks = lex_string("x == `é${y}`").unwrap();
+        let pos: Vec<(usize, usize)> = toks.iter().map(|t| (t.pos, t.end)).collect();
+        assert_eq!(
+            pos,
+            vec![
+                (0, 1),
+                (2, 4),
+                (5, 6),
+                (6, 7),
+                (7, 9),
+                (9, 10),
+                (10, 11),
+                (11, 12),
+                (12, 12)
+            ]
+        );
+    }
+
+    #[test]
+    fn unterminated_template_literals() {
+        // The end of the source in the literal's text names its backtick (the
+        // innermost open literal's; an escaped backtick opens nothing).
+        for (src, at) in [
+            ("`abc", 0),
+            ("`a${b}c", 0),
+            ("`${`x", 3),
+            ("`a\\`", 0),
+            ("x == `a${b}", 5),
+        ] {
+            let e = lex_err(src);
+            assert_eq!(e.stage, Stage::Lex, "{src:?}");
+            assert_eq!(
+                e.message,
+                format!("unterminated template literal at {at}"),
+                "{src:?}"
+            );
+        }
+        // Inside an interpolation it names the `${` and asks for the `}`.
+        for (src, at) in [
+            ("`a${b", 2),
+            ("`a${b}c${", 7),
+            ("`${`x`", 1),
+            ("x == `a${b { c }", 7),
+        ] {
+            let e = lex_err(src);
+            assert_eq!(e.stage, Stage::Lex, "{src:?}");
+            assert_eq!(
+                e.message,
+                format!(
+                    "unterminated ${{…}} interpolation in a template literal at {at} — expected '}}'"
+                ),
+                "{src:?}"
+            );
+        }
+        // A lex error inside an interpolation is reported as itself.
+        assert_eq!(
+            lex_err("`${a @ b}`").message,
+            "unexpected character \"@\" at 5"
+        );
+        // A host binding cannot stand inside a template literal: the fragment
+        // ends inside the open literal, and the message says why.
+        let e = lex_template(&["where name == `", "`"], 1).unwrap_err();
+        assert_eq!(e.stage, Stage::Lex);
+        assert_eq!(
+            e.message,
+            "unterminated template literal at 14 — a template literal must be complete within one fragment: a ${…} binding cannot stand inside a backtick literal (interpolate a name, or bind the whole string)"
+        );
+        // Inside an interpolation the plain interpolation error stands; so does a
+        // literal left open by the LAST fragment.
+        let e = lex_template(&["`${", "}`"], 1).unwrap_err();
+        assert_eq!(
+            e.message,
+            "unterminated ${…} interpolation in a template literal at 1 — expected '}'"
+        );
+        let e = lex_template(&["", " `x"], 1).unwrap_err();
+        assert_eq!(e.message, "unterminated template literal at 5");
     }
 }

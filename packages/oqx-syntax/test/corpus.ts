@@ -90,6 +90,13 @@ export const CORPUS: Sample[] = [
       "alias(n) colon(:) builtinFunction(size) parenOpen(() identifier(jobs) parenClose()) comma(,) alias(lo) colon(:) identifier(name) accessor(.) builtinMethod(lower) parenOpen(() parenClose()) comma(,) alias(m) colon(:) identifier(name) accessor(.) builtinMethod(matches) parenOpen(() string(\"^a) stringEscape(\\\\) string(d\") comma(,) string(\"i\") parenClose()) keyword(from) identifier(people) keyword(where) identifier(age) membership(in) number(18) range(..) number(65) operator(&&) identifier(x) membership(in) number(1) range(...) number(5) operator(&&) identifier(y) membership(in) range(..) number(3) operator(&&) identifier(z) membership(in) number(4) range(..)",
   },
   {
+    name: "template literal (0.21): interpolations, a block inside one, escapes, a nested literal",
+    valid: true,
+    source: "label: `${title} (${era}) ${jobs single { employer values where primary }} \\` \\${x} $y ${ `<${n}>` }` from docs",
+    tokens:
+      "alias(label) colon(:) template(`) interpolation(${) identifier(title) interpolation(}) template( () interpolation(${) identifier(era) interpolation(}) template() ) interpolation(${) identifier(jobs) consumer(single) braceOpen({) identifier(employer) modifier(values) keyword(where) identifier(primary) braceClose(}) interpolation(}) template( ) stringEscape(\\`) template( ) stringEscape(\\$) template({x} $y ) interpolation(${) template(`<) interpolation(${) identifier(n) interpolation(}) template(>`) interpolation(}) template(`) keyword(from) identifier(docs)",
+  },
+  {
     name: "a bracket lookup (0.17) and a lex error: a comment",
     valid: false,
     source: "from r where a[0] == 1 # comment",

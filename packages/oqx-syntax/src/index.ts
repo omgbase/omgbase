@@ -22,6 +22,7 @@ export {
   LITERALS,
   OPERATORS,
   PUNCTUATION,
+  TEMPLATE,
   BUILTIN_FUNCTIONS,
   BUILTIN_METHODS,
   INTRINSICS,
@@ -31,7 +32,7 @@ export {
   TOKEN_CLASSES,
   type TokenClass,
 } from "./vocabulary.js";
-export { RULES, STRINGS, STRING_ESCAPE, WHITESPACE, type Rule, type GroupAction } from "./rules.js";
+export { RULES, STRINGS, STRING_ESCAPE, TEMPLATE_LITERAL, WHITESPACE, type Rule, type GroupAction } from "./rules.js";
 export { oqxTextMateGrammar, buildTextMateGrammar, type TextMateGrammar, type TextMateRule } from "./textmate.js";
 export { oqxMonarchGrammar, buildMonarchGrammar, type MonarchGrammar, type MonarchRule, type MonarchAction } from "./monarch.js";
 export { oqxLanguageConfiguration, type LanguageConfiguration } from "./language-configuration.js";
@@ -61,6 +62,7 @@ export {
   copyState,
   type StreamLike,
   type OqxStreamState,
+  type TemplateMode,
   type HighlightTagsLike,
 } from "./codemirror.js";
 export { oqxPrismGrammar, buildPrismGrammar, registerOqxPrism, type PrismGrammar, type PrismToken } from "./prism.js";
