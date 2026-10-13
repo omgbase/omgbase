@@ -12,18 +12,27 @@ afterAll(() => rmSync(out, { recursive: true, force: true }));
 
 describe("parseBenchArgs", () => {
   it("defaults to both profiles, 3 runs, the recommended model, high effort, 20 turns", () => {
-    const o = parseBenchArgs([]);
-    expect(o).toMatchObject({ profiles: ["full", "minimal"], runs: 3, model: "claude-opus-5", effort: "high", maxTurns: 20, dry: false });
+    const o = parseBenchArgs([], {});
+    expect(o).toMatchObject({ profiles: ["full", "minimal"], runs: 3, model: "claude-opus-5", provider: "anthropic", effort: "high", maxTurns: 20, dry: false });
     expect("tasks" in o).toBe(false);
   });
 
+  it("picks Bedrock from a Claude Code Bedrock shell, or by flag, and maps the model id", () => {
+    expect(parseBenchArgs([], { CLAUDE_CODE_USE_BEDROCK: "1", AWS_PROFILE: "work" })).toMatchObject({ provider: "bedrock", model: "global.anthropic.claude-opus-5" });
+    expect(parseBenchArgs([], { CLAUDE_CODE_USE_BEDROCK: "1", ANTHROPIC_API_KEY: "sk-ant-x" })).toMatchObject({ provider: "anthropic", model: "claude-opus-5" });
+    expect(parseBenchArgs(["--provider", "bedrock", "--model", "claude-sonnet-5"], {})).toMatchObject({ provider: "bedrock", model: "global.anthropic.claude-sonnet-5" });
+    expect(parseBenchArgs(["--provider", "bedrock", "--model", "eu.anthropic.claude-opus-5"], {})).toMatchObject({ model: "eu.anthropic.claude-opus-5" });
+    expect(parseBenchArgs([], { AGENT_BENCH_PROVIDER: "bedrock", ANTHROPIC_API_KEY: "sk-ant-x" })).toMatchObject({ provider: "bedrock" });
+    expect(parseBenchArgs(["--provider", "azure"], {})).toMatchObject({ error: expect.stringMatching(/--provider/) });
+  });
+
   it("parses every flag and refuses bad values", () => {
-    expect(parseBenchArgs(["--profiles", "minimal", "--runs", "1", "--tasks", "noop,rollup", "--model", "claude-sonnet-5", "--effort", "low", "--max-turns", "5", "--out", "/tmp/x", "--dry"]))
+    expect(parseBenchArgs(["--profiles", "minimal", "--runs", "1", "--tasks", "noop,rollup", "--model", "claude-sonnet-5", "--effort", "low", "--max-turns", "5", "--out", "/tmp/x", "--dry"], {}))
       .toMatchObject({ profiles: ["minimal"], runs: 1, tasks: ["noop", "rollup"], model: "claude-sonnet-5", effort: "low", maxTurns: 5, out: "/tmp/x", dry: true });
-    expect(parseBenchArgs(["--runs", "0"])).toEqual({ error: "--runs must be a positive integer" });
-    expect(parseBenchArgs(["--effort", "huge"])).toMatchObject({ error: expect.stringMatching(/--effort/) });
-    expect(parseBenchArgs(["--bogus"])).toMatchObject({ error: expect.stringMatching(/bogus/) });
-    expect(parseBenchArgs(["--help"])).toEqual({ help: true });
+    expect(parseBenchArgs(["--runs", "0"], {})).toEqual({ error: "--runs must be a positive integer" });
+    expect(parseBenchArgs(["--effort", "huge"], {})).toMatchObject({ error: expect.stringMatching(/--effort/) });
+    expect(parseBenchArgs(["--bogus"], {})).toMatchObject({ error: expect.stringMatching(/bogus/) });
+    expect(parseBenchArgs(["--help"], {})).toEqual({ help: true });
   });
 });
 
@@ -31,7 +40,7 @@ describe("bench", () => {
   it("runs the cells with an injected model and writes report.md, results.json and the transcripts", async () => {
     const log: string[] = [];
     const { dir, results, problems } = await bench({
-      profiles: ["full"], runs: 1, tasks: ["frontmatter-edit", "noop"], model: "scripted", effort: "high", maxTurns: 20, out, dry: false,
+      profiles: ["full"], runs: 1, tasks: ["frontmatter-edit", "noop"], model: "scripted", provider: "anthropic", effort: "high", maxTurns: 20, out, dry: false,
       makeModel: (task) => new ScriptedModel(task.solution),
       log: (l) => log.push(l),
     });
@@ -53,7 +62,7 @@ describe("bench", () => {
   });
 
   it("refuses an unknown task id", async () => {
-    await expect(bench({ profiles: ["full"], runs: 1, tasks: ["nope"], model: "scripted", effort: "high", maxTurns: 20, out, dry: true, log: () => {} }))
+    await expect(bench({ profiles: ["full"], runs: 1, tasks: ["nope"], model: "scripted", provider: "anthropic", effort: "high", maxTurns: 20, out, dry: true, log: () => {} }))
       .rejects.toThrow(/unknown task\(s\): nope/);
     expect(existsSync(join(out, "nope"))).toBe(false);
   });

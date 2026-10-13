@@ -7,6 +7,8 @@ import type { Profile, RunMetrics } from "./types.ts";
 
 export interface ReportMeta {
   model: string;
+  /** anthropic | bedrock */
+  provider?: string;
   started: string;
   finished: string;
   profiles: Profile[];
@@ -82,7 +84,7 @@ export function renderReport(results: RunMetrics[], meta: ReportMeta): string {
   const profiles = meta.profiles.length > 0 ? meta.profiles : [...new Set(results.map((r) => r.profile))];
   const out: string[] = [];
   out.push("# agent-bench report", "");
-  out.push(`- model: \`${meta.model}\`${meta.effort ? ` (effort ${meta.effort})` : ""}`);
+  out.push(`- model: \`${meta.model}\`${meta.provider ? ` via ${meta.provider}` : ""}${meta.effort ? ` (effort ${meta.effort})` : ""}`);
   out.push(`- profiles: ${profiles.map((p) => `\`${p}\``).join(", ")} · runs per cell: ${meta.runs} · turn cap: ${meta.max_turns}`);
   out.push(`- tasks: ${tasks.length} · runs: ${results.length}`);
   if (meta.omg_version) out.push(`- omg: ${meta.omg_version}`);

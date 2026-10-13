@@ -17,7 +17,7 @@ import { fileURLToPath } from "node:url";
 import { runAgent, DEFAULT_MAX_TURNS, SYSTEM_PROMPT } from "./agent.ts";
 import { runChecks } from "./checks.ts";
 import { OmgServer } from "./mcp.ts";
-import { ClaudeModel, DEFAULT_MODEL, ScriptedModel, type Model } from "./model.ts";
+import { ClaudeModel, DEFAULT_MODEL, ScriptedModel, modelIdFor, resolveProvider, type Model, type Provider } from "./model.ts";
 import { renderReport, type ReportMeta } from "./report.ts";
 import { loadTasks } from "./tasks.ts";
 import type { Profile, RunMetrics, Task, TranscriptEvent } from "./types.ts";
@@ -28,6 +28,7 @@ export interface BenchOptions {
   runs: number;
   tasks?: string[];
   model: string;
+  provider: Provider;
   effort: "low" | "medium" | "high" | "xhigh" | "max";
   maxTurns: number;
   out: string;
@@ -38,13 +39,17 @@ export interface BenchOptions {
 }
 
 export const USAGE = `usage: pnpm bench [--profiles full,minimal] [--runs 3] [--tasks id,id] [--model ${DEFAULT_MODEL}]
-                  [--effort low|medium|high|xhigh|max] [--max-turns ${DEFAULT_MAX_TURNS}] [--out results] [--dry]
+                  [--provider anthropic|bedrock] [--effort low|medium|high|xhigh|max] [--max-turns ${DEFAULT_MAX_TURNS}]
+                  [--out results] [--dry]
+  --provider  anthropic (ANTHROPIC_API_KEY) or bedrock (the AWS credential chain: AWS_PROFILE/SSO, AWS_REGION);
+          default bedrock when CLAUDE_CODE_USE_BEDROCK is set and no ANTHROPIC_API_KEY is, else anthropic
+          (AGENT_BENCH_PROVIDER overrides). On bedrock a bare model id maps to global.anthropic.<id>
   --dry   validate tasks and prove every check: replay each task's scripted solution against a
           fresh workspace (checks must pass), then run the checks on an untouched one (must fail)`;
 
 const EFFORTS = new Set(["low", "medium", "high", "xhigh", "max"]);
 
-export function parseBenchArgs(argv: string[]): BenchOptions | { help: true } | { error: string } {
+export function parseBenchArgs(argv: string[], env: Record<string, string | undefined> = process.env): BenchOptions | { help: true } | { error: string } {
   let v: ReturnType<typeof parseArgs>["values"];
   try {
     ({ values: v } = parseArgs({
@@ -53,7 +58,8 @@ export function parseBenchArgs(argv: string[]): BenchOptions | { help: true } | 
         profiles: { type: "string", default: "full,minimal" },
         runs: { type: "string", default: "3" },
         tasks: { type: "string" },
-        model: { type: "string", default: DEFAULT_MODEL },
+        model: { type: "string" },
+        provider: { type: "string" },
         effort: { type: "string", default: "high" },
         "max-turns": { type: "string", default: String(DEFAULT_MAX_TURNS) },
         out: { type: "string", default: join(PACKAGE_ROOT, "results") },
@@ -73,11 +79,14 @@ export function parseBenchArgs(argv: string[]): BenchOptions | { help: true } | 
   if (!EFFORTS.has(v.effort as string)) return { error: `--effort must be one of ${[...EFFORTS].join("|")}` };
   const profiles = (v.profiles as string).split(",").map((s) => s.trim()).filter(Boolean);
   if (profiles.length === 0) return { error: "--profiles must name at least one profile" };
+  const provider = resolveProvider(v.provider as string | undefined, env);
+  if (typeof provider !== "string") return provider;
   return {
     profiles,
     runs,
     ...(v.tasks ? { tasks: (v.tasks as string).split(",").map((s) => s.trim()).filter(Boolean) } : {}),
-    model: v.model as string,
+    model: modelIdFor(provider, v.model as string | undefined),
+    provider,
     effort: v.effort as BenchOptions["effort"],
     maxTurns,
     out: v.out as string,
@@ -207,7 +216,7 @@ export async function bench(opts: BenchOptions): Promise<{ dir: string | null; r
   const dir = join(opts.out, stamp(started));
   mkdirSync(join(dir, "transcripts"), { recursive: true });
   const results: RunMetrics[] = [];
-  const makeModel = opts.makeModel ?? (() => new ClaudeModel({ model: opts.model, effort: opts.effort }));
+  const makeModel = opts.makeModel ?? (() => new ClaudeModel({ model: opts.model, provider: opts.provider, effort: opts.effort }));
   let omgVersion: string | undefined;
   for (const task of tasks) {
     for (const profile of opts.profiles) {
@@ -218,7 +227,7 @@ export async function bench(opts: BenchOptions): Promise<{ dir: string | null; r
         log(`  ${metrics.passed ? "pass" : "FAIL"} ${task.id} [${profile}] #${run}: ${metrics.turns} turn(s), ${metrics.tool_calls} call(s), ${metrics.failed_calls} failed, ${metrics.input_tokens + metrics.cache_read_input_tokens + metrics.cache_creation_input_tokens} in / ${metrics.output_tokens} out, ${(metrics.wall_ms / 1000).toFixed(1)} s${metrics.error ? ` — ${metrics.error}` : ""}`);
         // keep the report current after every cell, so an interrupted run still has one
         if (omgVersion === undefined) omgVersion = await readOmgVersion();
-        const meta: ReportMeta = { model: opts.model, effort: opts.effort, started: started.toISOString(), finished: new Date().toISOString(), profiles: opts.profiles, runs: opts.runs, max_turns: opts.maxTurns, ...(omgVersion ? { omg_version: omgVersion } : {}) };
+        const meta: ReportMeta = { model: opts.model, provider: opts.provider, effort: opts.effort, started: started.toISOString(), finished: new Date().toISOString(), profiles: opts.profiles, runs: opts.runs, max_turns: opts.maxTurns, ...(omgVersion ? { omg_version: omgVersion } : {}) };
         writeFileSync(join(dir, "results.json"), JSON.stringify({ meta, results }, null, 2) + "\n");
         writeFileSync(join(dir, "report.md"), renderReport(results, meta));
       }

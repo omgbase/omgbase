@@ -30,33 +30,93 @@ export function usageOf(m: Anthropic.Message): TokenUsage {
 
 // ---- Claude ---------------------------------------------------------------------------
 
+/**
+ * Where the model is served from. `anthropic` is the Anthropic API (`ANTHROPIC_API_KEY`
+ * or an `ant auth login` profile); `bedrock` is Amazon Bedrock through
+ * `@anthropic-ai/bedrock-sdk`, which signs with the default AWS credential chain
+ * (`AWS_PROFILE` / SSO, `AWS_REGION`) — the same setup Claude Code uses when
+ * `CLAUDE_CODE_USE_BEDROCK=1`.
+ */
+export type Provider = "anthropic" | "bedrock";
+
+export const PROVIDERS: ReadonlySet<string> = new Set(["anthropic", "bedrock"]);
+
+export const DEFAULT_MODEL = "claude-opus-5";
+/** the Bedrock inference profile of the same model (cross-region) */
+export const DEFAULT_BEDROCK_MODEL = "global.anthropic.claude-opus-5";
+
+type Env = Record<string, string | undefined>;
+
+/**
+ * The provider when none is named: `AGENT_BENCH_PROVIDER` if set; else Bedrock when the
+ * shell is already set up for it (`CLAUDE_CODE_USE_BEDROCK`) and no Anthropic key is
+ * present; else the Anthropic API.
+ */
+export function resolveProvider(explicit: string | undefined, env: Env = process.env): Provider | { error: string } {
+  const named = explicit ?? env.AGENT_BENCH_PROVIDER;
+  if (named !== undefined && named !== "") {
+    if (!PROVIDERS.has(named)) return { error: `--provider must be one of ${[...PROVIDERS].join("|")} (got "${named}")` };
+    return named as Provider;
+  }
+  const bedrockShell = env.CLAUDE_CODE_USE_BEDROCK !== undefined && env.CLAUDE_CODE_USE_BEDROCK !== "" && env.CLAUDE_CODE_USE_BEDROCK !== "0";
+  return bedrockShell && !env.ANTHROPIC_API_KEY ? "bedrock" : "anthropic";
+}
+
+/**
+ * The model id to send. On Bedrock a bare Anthropic id (`claude-opus-5`) becomes the
+ * cross-region inference profile `global.anthropic.claude-opus-5`; an id that already
+ * carries a region prefix (`eu.anthropic.…`, `us.anthropic.…`, `global.anthropic.…`) is
+ * passed through, minus a Claude Code `[1m]`-style annotation.
+ */
+export function modelIdFor(provider: Provider, model: string | undefined): string {
+  if (provider === "anthropic") return model ?? DEFAULT_MODEL;
+  if (model === undefined) return DEFAULT_BEDROCK_MODEL;
+  const clean = model.replace(/\[[^\]]*\]$/, "");
+  return /^[a-z-]+\.anthropic\./.test(clean) ? clean : `global.anthropic.${clean}`;
+}
+
+/** the part of a client the model uses — `Anthropic` and `AnthropicBedrock` both have it */
+export type MessagesClient = { messages: { create(params: Anthropic.MessageCreateParamsNonStreaming): Promise<Anthropic.Message> } };
+
+/** Build the client for a provider. Bedrock is imported lazily so an Anthropic-API run never loads the AWS stack. */
+export async function createClient(provider: Provider, env: Env = process.env): Promise<MessagesClient> {
+  if (provider === "bedrock") {
+    const { default: AnthropicBedrock } = await import("@anthropic-ai/bedrock-sdk");
+    const region = env.AWS_REGION ?? env.AWS_DEFAULT_REGION;
+    return new AnthropicBedrock(region ? { awsRegion: region } : {}) as unknown as MessagesClient;
+  }
+  return new Anthropic();
+}
+
 export interface ClaudeOptions {
-  /** default `claude-opus-5` — the current recommendation for agentic tool use */
+  /** default `claude-opus-5` — the current recommendation for agentic tool use (the Bedrock id when `provider` is bedrock) */
   model?: string;
+  provider?: Provider;
   /** `output_config.effort`; default `high` */
   effort?: "low" | "medium" | "high" | "xhigh" | "max";
   /** default 16000 (non-streaming; a tool-calling turn is short) */
   maxTokens?: number;
-  client?: Anthropic;
+  /** the client; built from `provider` on first use when absent */
+  client?: MessagesClient;
 }
-
-export const DEFAULT_MODEL = "claude-opus-5";
 
 export class ClaudeModel implements Model {
   readonly name: string;
-  private readonly client: Anthropic;
+  readonly provider: Provider;
+  private client: MessagesClient | undefined;
   private readonly effort: NonNullable<ClaudeOptions["effort"]>;
   private readonly maxTokens: number;
 
   constructor(opts: ClaudeOptions = {}) {
-    this.name = opts.model ?? DEFAULT_MODEL;
+    this.provider = opts.provider ?? "anthropic";
+    this.name = modelIdFor(this.provider, opts.model);
     this.effort = opts.effort ?? "high";
     this.maxTokens = opts.maxTokens ?? 16000;
-    // Credentials from the environment (ANTHROPIC_API_KEY, or an `ant auth login` profile).
-    this.client = opts.client ?? new Anthropic();
+    this.client = opts.client;
   }
 
   async complete(req: ModelRequest): Promise<Anthropic.Message> {
+    this.client ??= await createClient(this.provider);
     return this.client.messages.create({
       model: this.name,
       max_tokens: this.maxTokens,

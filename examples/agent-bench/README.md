@@ -32,7 +32,7 @@ gateway.
 
 ```
 pnpm build                                      # at the repo root: the harness spawns packages/cli/dist/src/main.js
-export ANTHROPIC_API_KEY=sk-ant-…              # or an `ant auth login` profile — the SDK resolves either
+export ANTHROPIC_API_KEY=sk-ant-…              # or an `ant auth login` profile — the SDK resolves either; or Bedrock, below
 pnpm --filter agent-bench bench                 # 13 tasks × {full, minimal} × 3 runs → results/<timestamp>/
 pnpm --filter agent-bench bench --dry           # no model: prove the tasks and checks (below)
 ```
@@ -50,6 +50,30 @@ The profile is a plain config value: `--profiles full` runs today's catalog,
 else changes, so the harness runs unchanged once that flag exists in a build
 (it does in the current one; `test/workspace.test.ts` skips the profile test
 on a build without it).
+
+### Running on Amazon Bedrock
+
+The same model through Bedrock, with the AWS credentials you already have
+(`AWS_PROFILE` / SSO, `AWS_REGION`) — no Anthropic key needed:
+
+```
+pnpm --filter agent-bench bench --provider bedrock              # model → global.anthropic.claude-opus-5
+pnpm --filter agent-bench bench --provider bedrock --model eu.anthropic.claude-opus-5
+```
+
+The provider defaults to `bedrock` when the shell is already set up for it
+(`CLAUDE_CODE_USE_BEDROCK` is set and no `ANTHROPIC_API_KEY` is), else to
+`anthropic`; `AGENT_BENCH_PROVIDER=bedrock|anthropic` overrides the guess and
+`--provider` overrides both. On Bedrock a bare Anthropic id (`claude-opus-5`,
+`claude-sonnet-5`) is sent as the cross-region inference profile
+`global.anthropic.<id>`; an id that already carries a region prefix
+(`eu.anthropic.…`, `us.anthropic.…`, `global.anthropic.…`) is passed through
+(a Claude Code `[1m]` suffix is dropped). Everything else — adaptive thinking,
+effort, prompt caching, the metrics — is identical; the report names the
+provider next to the model. The Bedrock client (`@anthropic-ai/bedrock-sdk`)
+is loaded only when used, so an Anthropic-API run never touches the AWS stack.
+Check what your account serves with
+`aws bedrock list-inference-profiles --query "inferenceProfileSummaries[].inferenceProfileId"`.
 
 The run writes `results/<timestamp>/`:
 

@@ -16,6 +16,7 @@
     "lint:fix": "eslint . --fix"
   },
   "dependencies": {
+    "@anthropic-ai/bedrock-sdk": "^0.34.4",
     "@anthropic-ai/sdk": "^0.133.0",
     "@modelcontextprotocol/sdk": "^1.30.0"
   }
