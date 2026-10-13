@@ -10,14 +10,20 @@
 // loop (so the hook fires too) against a fresh workspace and its checks must
 // pass; then the checks run against an untouched workspace and must FAIL
 // (unless the task says `trivial_on_fresh`), proving each check discriminates.
+//
+// The very first model request of a bench is its credential probe: when it fails
+// with an authentication/credential error (no AWS credentials, an expired SSO
+// token, a rejected API key) the whole bench aborts with that one message and
+// exit 1 instead of writing one FAIL per cell. A later failure is the run's own.
 import { parseArgs } from "node:util";
-import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { runAgent, DEFAULT_MAX_TURNS, SYSTEM_PROMPT } from "./agent.ts";
 import { runChecks } from "./checks.ts";
 import { OmgServer } from "./mcp.ts";
-import { ClaudeModel, DEFAULT_MODEL, ScriptedModel, modelIdFor, resolveProvider, type Model, type Provider } from "./model.ts";
+import { ClaudeModel, DEFAULT_MODEL, ScriptedModel, isCredentialError, modelIdFor, resolveProvider, type Model, type ModelRequest, type Provider } from "./model.ts";
+import { fmtDollars, runCost } from "./pricing.ts";
 import { renderReport, type ReportMeta } from "./report.ts";
 import { loadTasks } from "./tasks.ts";
 import type { Profile, RunMetrics, Task, TranscriptEvent } from "./types.ts";
@@ -94,6 +100,53 @@ export function parseBenchArgs(argv: string[], env: Record<string, string | unde
   };
 }
 
+/** Thrown through `runCell` when the bench's first model request fails on credentials; `bench` turns it into the one message. */
+export class CredentialsAbort extends Error {
+  constructor(message: string, cause: unknown) {
+    super(message, { cause });
+    this.name = "CredentialsAbort";
+  }
+}
+
+/** What to try, per provider, when the first request is refused for credentials. */
+export function credentialHint(provider: Provider): string {
+  return provider === "bedrock"
+    ? "check AWS_PROFILE / AWS_REGION and run `aws sso login` (the AWS credential chain could not sign the request)"
+    : "check ANTHROPIC_API_KEY or run `ant auth login`";
+}
+
+/**
+ * Wraps the models of one bench so its very first request is the credential probe:
+ * a credential error there becomes a `CredentialsAbort`; any other error, and every
+ * error after the first request, passes through untouched.
+ */
+export class FirstRequestGuard {
+  private requests = 0;
+  private readonly provider: Provider;
+
+  constructor(provider: Provider) {
+    this.provider = provider;
+  }
+
+  wrap(model: Model): Model {
+    const complete = async (req: ModelRequest) => {
+      const first = this.requests === 0;
+      this.requests += 1;
+      try {
+        return await model.complete(req);
+      } catch (e) {
+        if (first && isCredentialError(e)) {
+          const message = e instanceof Error ? e.message : String(e);
+          const cause = e instanceof Error && e.cause instanceof Error ? ` (${e.cause.message})` : "";
+          throw new CredentialsAbort(`the first model request failed on credentials — ${message}${cause}; ${credentialHint(this.provider)}`, e);
+        }
+        throw e;
+      }
+    };
+    return { name: model.name, complete };
+  }
+}
+
 function stamp(d = new Date()): string {
   return d.toISOString().replace(/[:.]/g, "-").replace(/-\d{3}Z$/, "Z");
 }
@@ -106,7 +159,7 @@ function selectTasks(all: Task[], ids: string[] | undefined): Task[] {
   return ids.map((id) => byId.get(id)!);
 }
 
-/** One cell: fresh workspace → server → loop → checks. Never throws; a failure is recorded in `error`. */
+/** One cell: fresh workspace → server → loop → checks. Never throws — a failure is recorded in `error` — except a `CredentialsAbort`, which is the bench's to handle. */
 export async function runCell(args: {
   task: Task;
   profile: Profile;
@@ -134,8 +187,11 @@ export async function runCell(args: {
     const loop = await runAgent({ task, model, server, workspace, tools, maxTurns, onEvent });
     const failures = await runChecks(task, { server, finalText: loop.metrics.final_text });
     onEvent({ type: "check", t: new Date().toISOString(), passed: failures.length === 0, failures });
-    return { ...base, ...loop.metrics, passed: failures.length === 0, check_failures: failures };
+    const metrics: RunMetrics = { ...base, ...loop.metrics, passed: failures.length === 0, check_failures: failures };
+    const cost = runCost(metrics);
+    return cost === undefined ? metrics : { ...metrics, cost_usd: cost };
   } catch (e) {
+    if (e instanceof CredentialsAbort) throw e;
     const message = e instanceof Error ? e.message : String(e);
     onEvent({ type: "error", t: new Date().toISOString(), message });
     return { ...base, error: message, check_failures: [`harness: ${message}`] };
@@ -214,17 +270,28 @@ export async function bench(opts: BenchOptions): Promise<{ dir: string | null; r
 
   const started = new Date();
   const dir = join(opts.out, stamp(started));
+  const fresh = !existsSync(dir);
   mkdirSync(join(dir, "transcripts"), { recursive: true });
   const results: RunMetrics[] = [];
   const makeModel = opts.makeModel ?? (() => new ClaudeModel({ model: opts.model, provider: opts.provider, effort: opts.effort }));
+  const guard = new FirstRequestGuard(opts.provider);
   let omgVersion: string | undefined;
   for (const task of tasks) {
     for (const profile of opts.profiles) {
       for (let run = 1; run <= opts.runs; run++) {
         const rel = join("transcripts", `${task.id}.${profile}.${run}.jsonl`);
-        const metrics = await runCell({ task, profile, run, model: makeModel(task), maxTurns: opts.maxTurns, transcriptPath: join(dir, rel), transcriptRel: rel });
+        let metrics: RunMetrics;
+        try {
+          metrics = await runCell({ task, profile, run, model: guard.wrap(makeModel(task)), maxTurns: opts.maxTurns, transcriptPath: join(dir, rel), transcriptRel: rel });
+        } catch (e) {
+          if (!(e instanceof CredentialsAbort)) throw e;
+          // nothing was measured: no report, no results — take the directory back if this bench made it
+          if (fresh) rmSync(dir, { recursive: true, force: true });
+          return { dir: null, results: [], problems: [`aborted: ${e.message}`] };
+        }
         results.push(metrics);
-        log(`  ${metrics.passed ? "pass" : "FAIL"} ${task.id} [${profile}] #${run}: ${metrics.turns} turn(s), ${metrics.tool_calls} call(s), ${metrics.failed_calls} failed, ${metrics.input_tokens + metrics.cache_read_input_tokens + metrics.cache_creation_input_tokens} in / ${metrics.output_tokens} out, ${(metrics.wall_ms / 1000).toFixed(1)} s${metrics.error ? ` — ${metrics.error}` : ""}`);
+        const cost = metrics.cost_usd === undefined ? "" : `, ${fmtDollars(metrics.cost_usd)}`;
+        log(`  ${metrics.passed ? "pass" : "FAIL"} ${task.id} [${profile}] #${run}: ${metrics.turns} turn(s), ${metrics.tool_calls} call(s), ${metrics.failed_calls} failed, ${metrics.input_tokens} uncached / ${metrics.cache_read_input_tokens + metrics.cache_creation_input_tokens} cached / ${metrics.output_tokens} out${cost}, ${(metrics.wall_ms / 1000).toFixed(1)} s${metrics.error ? ` — ${metrics.error}` : ""}`);
         // keep the report current after every cell, so an interrupted run still has one
         if (omgVersion === undefined) omgVersion = await readOmgVersion();
         const meta: ReportMeta = { model: opts.model, provider: opts.provider, effort: opts.effort, started: started.toISOString(), finished: new Date().toISOString(), profiles: opts.profiles, runs: opts.runs, max_turns: opts.maxTurns, ...(omgVersion ? { omg_version: omgVersion } : {}) };
@@ -264,7 +331,7 @@ async function main(): Promise<void> {
     console.error(`${parsed.error}\n${USAGE}`);
     process.exit(2);
   }
-  if (!parsed.dry && !process.env.ANTHROPIC_API_KEY && !process.env.ANTHROPIC_AUTH_TOKEN) {
+  if (!parsed.dry && parsed.provider === "anthropic" && !process.env.ANTHROPIC_API_KEY && !process.env.ANTHROPIC_AUTH_TOKEN) {
     console.error("note: ANTHROPIC_API_KEY is not set — the SDK will fall back to an `ant auth login` profile if one exists");
   }
   const { problems } = await bench(parsed);

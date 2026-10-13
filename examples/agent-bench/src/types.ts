@@ -112,6 +112,7 @@ export interface Task {
 
 // ---- metrics -----------------------------------------------------------------------------
 
+/** The four usage counters, kept apart because they bill apart: uncached input (1×), cache reads (0.1×), cache writes (1.25×), output. */
 export interface TokenUsage {
   input_tokens: number;
   output_tokens: number;
@@ -136,6 +137,8 @@ export interface RunMetrics extends TokenUsage {
   write_calls: number;
   /** did a `plan` precede the first write? null when nothing was written */
   plan_before_write: boolean | null;
+  /** the run's cost in US dollars at list price (`src/pricing.ts`); absent for a model the table does not price */
+  cost_usd?: number;
   wall_ms: number;
   hit_turn_cap: boolean;
   hook_fired: boolean;

@@ -23,8 +23,18 @@ describe("cellStats", () => {
     ]);
     expect(s).toMatchObject({ n: 3, passed: 2, turns: 3, calls: 2, failed: 2 / 3, plan_before_write: 0.5, turn_caps: 1, errors: 0 });
     expect(s.pass_rate).toBeCloseTo(2 / 3);
-    expect(s.input_tokens).toBe(21000);
+    expect(s).toMatchObject({ input_tokens: 21000, uncached_tokens: 1000, cached_tokens: 20000, cache_read: 20000, cache_write: 0, output_tokens: 100 });
+    expect(s.cost).toBeNull(); // model "m" is not priced
     expect(cellStats([]).plan_before_write).toBeNull();
+    expect(cellStats([]).cost).toBeNull();
+  });
+
+  it("prices a cell from each run's model, splitting reads from writes, and refuses a partial mean", () => {
+    const priced = run({ model: "global.anthropic.claude-opus-5", input_tokens: 28_314, cache_read_input_tokens: 5_690, cache_creation_input_tokens: 1_000, output_tokens: 632 });
+    const s = cellStats([priced, priced]);
+    expect(s).toMatchObject({ uncached_tokens: 28_314, cached_tokens: 6_690, cache_read: 5_690, cache_write: 1_000 });
+    expect(s.cost).toBeCloseTo((28_314 * 5 + 5_690 * 0.5 + 1_000 * 6.25 + 632 * 25) / 1e6, 9);
+    expect(cellStats([priced, run({ model: "scripted" })]).cost).toBeNull();
   });
 });
 
@@ -41,15 +51,32 @@ describe("renderReport", () => {
   it("has the header, the task × profile table, the totals and the run list", () => {
     expect(md).toMatch(/^# agent-bench report/);
     expect(md).toContain("- model: `claude-opus-5` (effort high)");
-    expect(md).toContain("| a | `full` | 1/2 (50%) | 3.0 | 2.0 | 0.5 | 21.0k / 100 | 4.0 | 0% |");
-    expect(md).toContain("| a | `minimal` | 2/2 (100%) | 3.0 | 2.0 | 0.0 | 21.0k / 100 | 4.0 | 100% |");
+    expect(md).toContain("| task | profile | pass | turns | calls | failed | uncached / cached / out | $ / run | wall s | plan→write |");
+    expect(md).toContain("| a | `full` | 1/2 (50%) | 3.0 | 2.0 | 0.5 | 1000 / 20.0k / 100 |  | 4.0 | 0% |");
+    expect(md).toContain("| a | `minimal` | 2/2 (100%) | 3.0 | 2.0 | 0.0 | 1000 / 20.0k / 100 |  | 4.0 | 100% |");
     expect(md).toContain("| all | `full` | 1/3 (33%) |");
     expect(md).toContain("| all | `minimal` | 2/2 (100%) |");
+    expect(md).not.toContain("- cost:"); // an unpriced model prints no cost anywhere
     expect(md).toContain("Failed calls by code: `filter_invalid` 1");
     expect(md).toContain("Tool calls: `execute` 2, `plan` 2");
     expect(md).toContain("Harness/API errors in 1 run(s): b#1 — boom");
     expect(md).toContain("| a | `full` | 2 | FAIL | 3 | 2 | 1 | hit 0.verified = false ≠ true \\| x | [transcripts/t.full.1.jsonl](transcripts/t.full.1.jsonl) |");
     expect(md).toContain("[transcripts/b.full.1.jsonl](transcripts/b.full.1.jsonl)");
+  });
+
+  it("prices every row and the header when the model is in the table — at list price, however the model was addressed", () => {
+    const opus = { model: "global.anthropic.claude-opus-5", input_tokens: 28_314, cache_read_input_tokens: 5_690, cache_creation_input_tokens: 0, output_tokens: 632 };
+    const priced = renderReport([
+      run({ ...opus, task: "a", profile: "full", run: 1 }),
+      run({ ...opus, task: "a", profile: "full", run: 2 }),
+      run({ ...opus, task: "a", profile: "minimal", run: 1, input_tokens: 1_000, cache_read_input_tokens: 90_000 }),
+    ], { ...META, model: "global.anthropic.claude-opus-5", provider: "bedrock", profiles: ["full", "minimal"] });
+    expect(priced).toContain("- model: `global.anthropic.claude-opus-5` via bedrock (effort high)");
+    // 2 × $0.160215 + $0.065800
+    expect(priced).toContain("- cost: $0.386 for 3 run(s) at Anthropic list price (`src/pricing.ts`)");
+    expect(priced).toContain("| a | `full` | 2/2 (100%) | 3.0 | 2.0 | 0.0 | 28.3k / 5690 / 632 | $0.160 | 4.0 | 0% |");
+    expect(priced).toContain("| a | `minimal` | 1/1 (100%) | 3.0 | 2.0 | 0.0 | 1000 / 90.0k / 632 | $0.066 | 4.0 | 0% |");
+    expect(priced).toContain("| all | `full` | 2/2 (100%) | 3.0 | 2.0 | 0.0 | 28.3k / 5690 / 632 | $0.160 | 4.0 | 0% |");
   });
 
   it("renders an empty result set without throwing", () => {

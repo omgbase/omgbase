@@ -1,10 +1,11 @@
 // The model seam: the agent loop asks a `Model` for the next assistant message and
 // never cares whether Claude or a script answered. `ClaudeModel` drives the Anthropic
-// SDK (one request per turn, prompt caching on the stable tools + system prefix);
-// `ScriptedModel` replays a task's solution — one tool call per turn, then the
-// final text — so the loop, the hooks and the checks are tested against the real
-// `omg mcp` without API spend.
+// SDK (one request per turn, prompt caching on the stable tools + system prefix AND
+// on the conversation so far); `ScriptedModel` replays a task's solution — one tool
+// call per turn, then the final text — so the loop, the hooks and the checks are
+// tested against the real `omg mcp` without API spend.
 import Anthropic from "@anthropic-ai/sdk";
+import { stripAnnotation } from "./pricing.ts";
 import type { Solution, SolutionStep, TokenUsage } from "./types.ts";
 
 export interface ModelRequest {
@@ -71,9 +72,51 @@ export function resolveProvider(explicit: string | undefined, env: Env = process
 export function modelIdFor(provider: Provider, model: string | undefined): string {
   if (provider === "anthropic") return model ?? DEFAULT_MODEL;
   if (model === undefined) return DEFAULT_BEDROCK_MODEL;
-  const clean = model.replace(/\[[^\]]*\]$/, "");
+  const clean = stripAnnotation(model);
   return /^[a-z-]+\.anthropic\./.test(clean) ? clean : `global.anthropic.${clean}`;
 }
+
+const EPHEMERAL: Anthropic.CacheControlEphemeral = { type: "ephemeral" };
+
+/**
+ * The conversation with a cache breakpoint on its last block — a `tool_result` on
+ * every turn after the first, the prompt's text block on turn 1. Caching is a prefix
+ * match, so with the breakpoint on the system block alone the whole history came back
+ * uncached on every turn (28 k uncached tokens by turn 10 of a run); moving a second
+ * breakpoint to the end of the messages makes turn n's history turn n+1's cache read.
+ * The caller's array and its messages are not touched: the last message is copied.
+ * A `redacted_thinking` tail (never the case in this loop) takes no breakpoint.
+ */
+export function withCacheBreakpoint(messages: Anthropic.MessageParam[]): Anthropic.MessageParam[] {
+  const last = messages[messages.length - 1];
+  if (last === undefined) return messages;
+  const blocks: Anthropic.ContentBlockParam[] = typeof last.content === "string" ? [{ type: "text", text: last.content }] : [...last.content];
+  const tail = blocks[blocks.length - 1];
+  if (tail === undefined || tail.type === "redacted_thinking") return messages;
+  blocks[blocks.length - 1] = { ...tail, cache_control: EPHEMERAL } as Anthropic.ContentBlockParam;
+  return [...messages.slice(0, -1), { ...last, content: blocks }];
+}
+
+/**
+ * Is this failure about who we are, not what we asked? True for the Anthropic API's
+ * 401 `authentication_error` / 403 `permission_error`, for the Bedrock SDK's
+ * "Failed to resolve AWS credentials from the credential provider chain" (an
+ * `APIConnectionError` whose `cause` is the AWS error — an expired SSO token reads
+ * "Token is expired. To refresh this SSO session run 'aws sso login'"), and for an
+ * AWS signature rejected as expired or unknown. The bench aborts on one of these as
+ * its very first request; later ones are recorded like any other error.
+ */
+export function isCredentialError(e: unknown): boolean {
+  if (e instanceof Anthropic.AuthenticationError || e instanceof Anthropic.PermissionDeniedError) return true;
+  if (e instanceof Anthropic.APIError && (e.type === "authentication_error" || e.type === "permission_error")) return true;
+  for (let err: unknown = e, depth = 0; err instanceof Error && depth < 8; err = err.cause, depth++) {
+    if (CREDENTIAL_MESSAGE.test(err.message)) return true;
+  }
+  return false;
+}
+
+const CREDENTIAL_MESSAGE =
+  /Failed to resolve AWS credentials|Could not load credentials from any providers|Token is expired|aws sso login|security token included in the request is (invalid|expired)|ExpiredToken|UnrecognizedClientException|authentication_error|invalid x-api-key/i;
 
 /** the part of a client the model uses — `Anthropic` and `AnthropicBedrock` both have it */
 export type MessagesClient = { messages: { create(params: Anthropic.MessageCreateParamsNonStreaming): Promise<Anthropic.Message> } };
@@ -124,11 +167,14 @@ export class ClaudeModel implements Model {
       // ride along in `content` and are echoed back by the loop unchanged.
       thinking: { type: "adaptive" },
       output_config: { effort: this.effort },
-      // tools → system → messages is the cache prefix; both are identical for every
-      // turn of a run (and every run of a profile), so cache the end of the system block.
-      system: [{ type: "text", text: req.system, cache_control: { type: "ephemeral" } }],
+      // tools → system → messages is the cache prefix. Tools and system are identical
+      // for every turn of a run (and every run of a profile): breakpoint 1 on the end of
+      // the system block. The history grows by one exchange per turn: breakpoint 2 on
+      // its last block, so each turn reads the previous turn's write. Two of the API's
+      // four breakpoints, on both providers (the Bedrock client takes the same params).
+      system: [{ type: "text", text: req.system, cache_control: EPHEMERAL }],
       tools: req.tools,
-      messages: req.messages,
+      messages: withCacheBreakpoint(req.messages),
     });
   }
 }

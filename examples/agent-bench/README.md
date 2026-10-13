@@ -87,6 +87,16 @@ and is visible in the transcript. A benchmark comparing two tool surfaces must
 be answered by one model, so the server-side fallback the SDK offers is
 deliberately not enabled.
 
+The very first model request of a bench is its **credential probe**: when it
+fails on credentials — the Anthropic API's 401 `authentication_error` / 403, the
+Bedrock SDK's `Failed to resolve AWS credentials from the credential provider
+chain` (an expired SSO token reads `Token is expired … run 'aws sso login'`
+underneath) — the whole bench aborts with that one message and a hint for the
+provider, exit 1, and the empty `results/<timestamp>/` is removed; no FAIL rows
+are written. A failure on any later request is that run's own and is recorded
+as today (`error` in `results.json`, a FAIL row), so a token that expires
+mid-bench shows up per run, not as an abort.
+
 ### `--dry`: proving the checks without the model
 
 `pnpm bench --dry` loads and validates every task, then for each task and
@@ -106,23 +116,43 @@ starting one. ~30 s per profile.
 
 ## Cost expectations
 
-Per model request the full catalog's tool definitions are ~51 k characters
-(≈ 13–15 k tokens); the minimal profile's ~9 k characters. Tools and the
-system prompt are the stable prefix and are cached (`cache_control` on the
-system block), so after the first turn of a cell they come back as cache reads.
-A typical run is 3–8 turns; with the conversation growing a few k tokens per
-turn, expect roughly:
+Per model request the full catalog's tool definitions are ~51 k characters, the
+minimal profile's ~9 k; with the system prompt the first real run measured them
+as 22.3 k and 5.7 k tokens of cached prefix per request (Opus 5 on Bedrock).
+Prompt caching is a prefix match, so the harness places **two cache
+breakpoints** on every request (`src/model.ts`, both providers): one on the
+system block — tools + system are identical for every turn of a run and every
+run of a profile, so they come back as cache reads from the second request on —
+and one on the **last block of the last message** (the prompt's text on turn 1,
+the turn's last `tool_result` after that), so turn n's conversation is turn
+n+1's cache read and only the newest exchange is billed uncached. The first
+real run (before the second breakpoint) showed why that matters: cache reads
+stayed flat at 5.7 k / 22 k per turn while uncached input grew to 28 k+ by turn
+10, so the minimal profile — half the input tokens of full — cost *more*
+($11.03 vs $9.23 for 39 runs each at list price), because full's big catalog
+was the cheap cached part and minimal's history the expensive uncached part.
+
+A typical run is 3–8 turns; expect roughly, per run:
 
 | | full | minimal |
 | --- | --- | --- |
-| input tokens per run (incl. cache reads) | 60–150 k | 20–60 k |
-| of which uncached | 10–30 k | 5–20 k |
-| output tokens per run | 1–4 k | 1–4 k |
+| uncached input tokens | 5–30 k | 5–30 k |
+| cached input tokens (reads + writes) | 100–250 k | 30–100 k |
+| output tokens | 1–4 k | 1–4 k |
 
-At Opus 5 list prices ($5 / $25 per MTok, cache reads at a tenth) a full
-13 × 2 × 3 run is on the order of a few dollars. The report prints the exact
-token counts per cell; `results.json` has them per run. `--tasks` and `--runs 1`
-are the knobs for a cheap smoke run.
+The report splits every cell's tokens into `uncached / cached / out` and adds a
+`$ / run` column (and a total in the header) at **Anthropic list price**, from
+the table in `src/pricing.ts` — keyed by the bare model id (a Bedrock
+`global.anthropic.…` / `us.` / `eu.` prefix and a `[1m]` annotation are
+stripped), with the four per-MTok rates the usage counters bill at: input, cache
+read (0.1×), cache write (1.25×, the 5-minute TTL), output. Today: Opus 5 at
+$5 / $0.50 / $6.25 / $25, Sonnet 5 at $2 / $0.20 / $2.50 / $10. A model the table
+does not know prints a blank. The `$` is list price, not a bill: Amazon Bedrock
+prices on its own schedule, and the run's per-request `usage` is the ground
+truth (`results.json` keeps the four counters and `cost_usd` per run; the
+transcript has them per request). A full 13 × 2 × 3 run is on the order of
+ten to twenty dollars; `--tasks` and `--runs 1` are the knobs for a cheap smoke
+run.
 
 ## The tasks
 
@@ -195,7 +225,7 @@ that is supposed to fail says `"expect_error": "<code>"`.
 ## Reading the report
 
 ```
-| task | profile | pass | turns | calls | failed | tokens in / out | wall s | plan→write |
+| task | profile | pass | turns | calls | failed | uncached / cached / out | $ / run | wall s | plan→write |
 ```
 
 - **pass** — runs whose every check passed, over runs (`k/n (p%)`).
@@ -205,8 +235,11 @@ that is supposed to fail says `"expect_error": "<code>"`.
   error envelope or were refused (`unknown_tool` under a profile); the
   per-profile sections list the codes (`filter_invalid`, `sync_conflict`,
   `conflicting_effects`, …) and the tool-call histogram.
-- **tokens in / out** — mean input tokens (uncached + cache reads + cache
-  writes) and output tokens per run; `results.json` splits them.
+- **uncached / cached / out** — mean tokens per run: input billed at full price,
+  input served from or written to the cache (reads + writes; a tenth and 1.25×
+  of the input price), and output. `results.json` keeps the four counters apart.
+- **$ / run** — mean cost per run at Anthropic list price (`src/pricing.ts`);
+  blank when the model is not in the table. The header carries the total.
 - **wall s** — mean wall time per run (model + server).
 - **plan→write** — of the runs that wrote something, the share whose first
   write was preceded by a `plan` (`—` when no run wrote: the no-op, the
@@ -225,7 +258,8 @@ each run with its check failures and a link to its transcript.
 | `failed_calls`, `failed_by_code` | calls that failed, and per error code (`unknown_tool` = refused by the profile, `rpc_error` = transport) |
 | `plan_calls`, `execute_calls`, `write_calls` | counts; a write is any tool not in `READ_TOOLS` (`src/types.ts`; `plan` counts as a read) |
 | `plan_before_write` | did a `plan` precede the first write? `null` when nothing was written |
-| `input_tokens`, `output_tokens`, `cache_read_input_tokens`, `cache_creation_input_tokens` | summed over the run's requests |
+| `input_tokens`, `output_tokens`, `cache_read_input_tokens`, `cache_creation_input_tokens` | summed over the run's requests; `input_tokens` is the *uncached* input |
+| `cost_usd` | the run at Anthropic list price (`src/pricing.ts`); absent for an unpriced model |
 | `wall_ms`, `hit_turn_cap`, `hook_fired` | |
 | `passed`, `check_failures` | the end-state verdict and why |
 | `final_text` | the model's last assistant text |
@@ -242,12 +276,13 @@ code / ms / the parsed result), `hook`, `end`, `check`, `error`.
 ```
 src/workspace.ts   fresh alchemy workspace under the seams; fixture bytes
 src/mcp.ts         spawn omg mcp, tools/list → Anthropic tool defs, forward calls
-src/model.ts       the Model seam: ClaudeModel (SDK) and ScriptedModel (a task's solution)
+src/model.ts       the Model seam: ClaudeModel (SDK; the two cache breakpoints; isCredentialError) and ScriptedModel (a task's solution)
 src/agent.ts       the tool-use loop, the hook, the per-run metrics and events
 src/checks.ts      the four check kinds
 src/tasks.ts       load + validate tasks/*.json
+src/pricing.ts     list prices per bare model id; a run's cost from its four counters
 src/report.ts      results → report.md
-src/bench.ts       the CLI: cells, --dry, results/<timestamp>/
+src/bench.ts       the CLI: cells, --dry, results/<timestamp>/, the first-request credential probe
 tasks/*.json       the thirteen tasks
 test/*.test.ts     vitest: tasks validate; deterministic bootstrap; the loop end to end
                    against the real omg mcp with the scripted model (no API spend);
