@@ -122,8 +122,12 @@ pub struct Token {
 const KEYWORDS: [&str; 7] = ["from", "where", "select", "is", "not", "and", "or"];
 
 // Multi-char operators, longest first (the scanner tries these before singles).
-const MULTI_OPS: [&str; 6] = ["==", "!=", "<=", ">=", "&&", "||"];
-const SINGLE_OPS: [char; 8] = ['<', '>', '!', '+', '-', '*', '/', '%'];
+// The regex operators (since 0.22) are among them: `!~*` is tried before `!~`,
+// which is tried before `!` — so `name!~"B"` is `name !~ "B"`, not a required
+// `name!` — and `~*` before `~`, so `x~*y` is `x ~* y`.
+const TRIPLE_OPS: [&str; 1] = ["!~*"];
+const MULTI_OPS: [&str; 8] = ["==", "!=", "<=", ">=", "&&", "||", "!~", "~*"];
+const SINGLE_OPS: [char; 9] = ['<', '>', '!', '+', '-', '*', '/', '%', '~'];
 
 fn is_ident_start(c: char) -> bool {
     c.is_ascii_alphabetic() || c == '_' || c == '$'
@@ -386,7 +390,15 @@ fn lex_fragment(src: &str, base: usize, out: &mut Vec<Token>) -> Result<()> {
             continue;
         }
 
-        // operators (multi-char first)
+        // operators (multi-char first, longest first)
+        if let (Some(&d), Some(&e)) = (chars.get(i + 1), chars.get(i + 2)) {
+            let three: String = [c, d, e].iter().collect();
+            if TRIPLE_OPS.contains(&three.as_str()) {
+                push(TokType::Op, three, i, i + 3);
+                i += 3;
+                continue;
+            }
+        }
         if let Some(&d) = chars.get(i + 1) {
             let two: String = [c, d].iter().collect();
             if MULTI_OPS.contains(&two.as_str()) {
@@ -648,9 +660,10 @@ mod tests {
     fn all_operators() {
         use TokType::*;
         assert_eq!(
-            kinds("== != <= >= < > && || ! + - * / %"),
+            kinds("== != <= >= < > && || ! + - * / % ~ ~* !~ !~*"),
             [
-                "==", "!=", "<=", ">=", "<", ">", "&&", "||", "!", "+", "-", "*", "/", "%"
+                "==", "!=", "<=", ">=", "<", ">", "&&", "||", "!", "+", "-", "*", "/", "%", "~",
+                "~*", "!~", "!~*"
             ]
             .iter()
             .map(|o| tok(Op, o))

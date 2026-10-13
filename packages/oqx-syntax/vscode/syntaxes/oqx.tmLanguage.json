@@ -5,7 +5,7 @@
   "fileTypes": [
     "oqx"
   ],
-  "version": "0.21",
+  "version": "0.22",
   "patterns": [
     {
       "include": "#expression"
@@ -335,7 +335,7 @@
     },
     "operator": {
       "comment": "operator",
-      "match": "!=|&&|<=|==|>=|\\|\\||!|%|\\*|\\+|-|\\/|<|>",
+      "match": "!~\\*|!=|!~|&&|<=|==|>=|\\|\\||~\\*|!|%|\\*|\\+|-|\\/|<|>|~",
       "name": "keyword.operator.oqx"
     },
     "lift": {

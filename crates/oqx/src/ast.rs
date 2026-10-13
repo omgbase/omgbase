@@ -169,9 +169,11 @@ impl RelOp {
 }
 serde_as_word!(RelOp);
 
-/// The `op` of a `binary` expression: arithmetic, comparison, or identity
-/// (`is` / `is not`, SEMANTICS §5b, since 0.17). The TS keeps this as a
-/// string; `as_str()` is that string.
+/// The `op` of a `binary` expression: arithmetic, comparison, identity
+/// (`is` / `is not`, SEMANTICS §5b, since 0.17), or a regex match (`~` `~*`
+/// `!~` `!~*`, SEMANTICS §11, since 0.22 — sugar over `matches`, kept as
+/// written so the canonical print is what the user wrote). The TS keeps this
+/// as a string; `as_str()` is that string.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum BinaryOp {
     Eq,
@@ -182,6 +184,14 @@ pub enum BinaryOp {
     Ge,
     Is,
     IsNot,
+    /// `a ~ b` ≡ `a.matches(b)`.
+    Match,
+    /// `a ~* b` ≡ `a.matches(b, "i")`.
+    MatchI,
+    /// `a !~ b` ≡ `!a.matches(b)`.
+    NotMatch,
+    /// `a !~* b` ≡ `!a.matches(b, "i")`.
+    NotMatchI,
     Add,
     Sub,
     Mul,
@@ -191,7 +201,8 @@ pub enum BinaryOp {
 
 impl BinaryOp {
     const WORDS: &'static [&'static str] = &[
-        "==", "!=", "<", "<=", ">", ">=", "is", "is not", "+", "-", "*", "/", "%",
+        "==", "!=", "<", "<=", ">", ">=", "is", "is not", "~", "~*", "!~", "!~*", "+", "-", "*",
+        "/", "%",
     ];
 
     pub fn as_str(self) -> &'static str {
@@ -204,6 +215,10 @@ impl BinaryOp {
             BinaryOp::Ge => ">=",
             BinaryOp::Is => "is",
             BinaryOp::IsNot => "is not",
+            BinaryOp::Match => "~",
+            BinaryOp::MatchI => "~*",
+            BinaryOp::NotMatch => "!~",
+            BinaryOp::NotMatchI => "!~*",
             BinaryOp::Add => "+",
             BinaryOp::Sub => "-",
             BinaryOp::Mul => "*",
@@ -222,6 +237,10 @@ impl BinaryOp {
             ">=" => BinaryOp::Ge,
             "is" => BinaryOp::Is,
             "is not" => BinaryOp::IsNot,
+            "~" => BinaryOp::Match,
+            "~*" => BinaryOp::MatchI,
+            "!~" => BinaryOp::NotMatch,
+            "!~*" => BinaryOp::NotMatchI,
             "+" => BinaryOp::Add,
             "-" => BinaryOp::Sub,
             "*" => BinaryOp::Mul,
@@ -229,6 +248,25 @@ impl BinaryOp {
             "%" => BinaryOp::Mod,
             _ => return None,
         })
+    }
+
+    /// For a regex operator (SEMANTICS §11, since 0.22), the `matches` call it
+    /// stands for: `(negated, flags)` — `~` is `(false, None)`, `~*` is
+    /// `(false, Some("i"))`, `!~` is `(true, None)`, `!~*` is `(true,
+    /// Some("i"))`. `None` for every other operator.
+    pub fn regex(self) -> Option<(bool, Option<&'static str>)> {
+        match self {
+            BinaryOp::Match => Some((false, None)),
+            BinaryOp::MatchI => Some((false, Some("i"))),
+            BinaryOp::NotMatch => Some((true, None)),
+            BinaryOp::NotMatchI => Some((true, Some("i"))),
+            _ => None,
+        }
+    }
+
+    /// True for the four regex operators (`~` `~*` `!~` `!~*`).
+    pub fn is_regex(self) -> bool {
+        self.regex().is_some()
     }
 
     /// True for the six comparison operators (the ones `relate` handles);

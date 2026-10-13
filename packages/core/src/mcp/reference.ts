@@ -232,6 +232,10 @@ links:  (the authored link graph as rows — one per open link: the relation a l
   strings      x.contains("s") x.startsWith("p") x.endsWith("s") x.matches("^re$")
                (real regex) x.lower() x.upper() size(x). ALL CASE-SENSITIVE —
                fold with .lower(): title.lower().contains("aurora").
+               Infix regex: x ~ "re" is x.matches("re"); x ~* "re" is the
+               case-insensitive match; x !~ "re" and x !~* "re" negate them.
+               Unanchored unless the pattern anchors; an absent x is false
+               under ~ and TRUE under !~ (not SQL's NULL).
   functions    has(f)  size(x)  list(x)  entries(x)  range(s)
   literals     "str" 'str' 123 1.5 true false null
   determinism  no now()/clock/random. Lists/structs are not literals; ternary is

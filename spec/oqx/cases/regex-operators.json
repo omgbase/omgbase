@@ -1,0 +1,1289 @@
+{
+  "suite": "regex-operators",
+  "notes": "The infix regex operators (since 0.22): `a ~ b` ≡ `a.matches(b)`, `a ~* b` ≡ `a.matches(b, \"i\")`, `a !~ b` ≡ `!a.matches(b)`, `a !~* b` ≡ `!a.matches(b, \"i\")`. Pure sugar over SEMANTICS §11's `matches` — same regex baseline, same unanchored search, same string forms, same absent rule (an absent receiver matches nothing, so `~` is false and `!~` is TRUE; not SQL's NULL) — at comparison precedence, non-associative, parsed to a `binary` node carrying the operator as written.",
+  "cases": [
+    {
+      "name": "parse: `~` is a binary node carrying the operator",
+      "tags": [
+        "ast",
+        "regex-operators"
+      ],
+      "query": "select a: title ~ \"^Eng\" from people",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "people"
+          },
+          "from": [],
+          "where": null,
+          "select": [
+            {
+              "kind": "field",
+              "name": "a",
+              "expr": {
+                "kind": "binary",
+                "op": "~",
+                "left": {
+                  "kind": "ident",
+                  "name": "title"
+                },
+                "right": {
+                  "kind": "lit",
+                  "value": "^Eng"
+                }
+              },
+              "lift": 0
+            }
+          ],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": null,
+          "frontier": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "parse: the four spellings are four binary operators",
+      "tags": [
+        "ast",
+        "regex-operators"
+      ],
+      "query": "select a: x ~ y, b: x ~* y, c: x !~ y, d: x !~* y from r",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "r"
+          },
+          "from": [],
+          "where": null,
+          "select": [
+            {
+              "kind": "field",
+              "name": "a",
+              "expr": {
+                "kind": "binary",
+                "op": "~",
+                "left": {
+                  "kind": "ident",
+                  "name": "x"
+                },
+                "right": {
+                  "kind": "ident",
+                  "name": "y"
+                }
+              },
+              "lift": 0
+            },
+            {
+              "kind": "field",
+              "name": "b",
+              "expr": {
+                "kind": "binary",
+                "op": "~*",
+                "left": {
+                  "kind": "ident",
+                  "name": "x"
+                },
+                "right": {
+                  "kind": "ident",
+                  "name": "y"
+                }
+              },
+              "lift": 0
+            },
+            {
+              "kind": "field",
+              "name": "c",
+              "expr": {
+                "kind": "binary",
+                "op": "!~",
+                "left": {
+                  "kind": "ident",
+                  "name": "x"
+                },
+                "right": {
+                  "kind": "ident",
+                  "name": "y"
+                }
+              },
+              "lift": 0
+            },
+            {
+              "kind": "field",
+              "name": "d",
+              "expr": {
+                "kind": "binary",
+                "op": "!~*",
+                "left": {
+                  "kind": "ident",
+                  "name": "x"
+                },
+                "right": {
+                  "kind": "ident",
+                  "name": "y"
+                }
+              },
+              "lift": 0
+            }
+          ],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": null,
+          "frontier": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "precedence: `~` binds tighter than `and`",
+      "tags": [
+        "ast",
+        "precedence",
+        "regex-operators"
+      ],
+      "query": "from people where title ~ \"Eng\" and city ~ \"^P\"",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "people"
+          },
+          "from": [],
+          "where": {
+            "kind": "and",
+            "parts": [
+              {
+                "kind": "scalar",
+                "expr": {
+                  "kind": "binary",
+                  "op": "~",
+                  "left": {
+                    "kind": "ident",
+                    "name": "title"
+                  },
+                  "right": {
+                    "kind": "lit",
+                    "value": "Eng"
+                  }
+                }
+              },
+              {
+                "kind": "scalar",
+                "expr": {
+                  "kind": "binary",
+                  "op": "~",
+                  "left": {
+                    "kind": "ident",
+                    "name": "city"
+                  },
+                  "right": {
+                    "kind": "lit",
+                    "value": "^P"
+                  }
+                }
+              }
+            ]
+          },
+          "select": [],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": null,
+          "frontier": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "precedence: `not` binds tighter than `~`, as it does than `==`",
+      "notes": "GRAMMAR §3: `!` has one precedence everywhere. `not a ~ b` is `(!a) ~ b`, exactly as `not a == b` is `(!a) == b`; negate the match with `a !~ b` or `not (a ~ b)`.",
+      "tags": [
+        "ast",
+        "precedence",
+        "regex-operators"
+      ],
+      "query": "from people where not active ~ \"true\"",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "people"
+          },
+          "from": [],
+          "where": {
+            "kind": "scalar",
+            "expr": {
+              "kind": "binary",
+              "op": "~",
+              "left": {
+                "kind": "unary",
+                "op": "!",
+                "expr": {
+                  "kind": "ident",
+                  "name": "active"
+                }
+              },
+              "right": {
+                "kind": "lit",
+                "value": "true"
+              }
+            }
+          },
+          "select": [],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": null,
+          "frontier": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "precedence: `not (a ~ b)` negates the match",
+      "tags": [
+        "ast",
+        "precedence",
+        "regex-operators"
+      ],
+      "query": "from people where not (title ~ \"Eng\")",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "people"
+          },
+          "from": [],
+          "where": {
+            "kind": "not",
+            "expr": {
+              "kind": "scalar",
+              "expr": {
+                "kind": "binary",
+                "op": "~",
+                "left": {
+                  "kind": "ident",
+                  "name": "title"
+                },
+                "right": {
+                  "kind": "lit",
+                  "value": "Eng"
+                }
+              }
+            }
+          },
+          "select": [],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": null,
+          "frontier": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "precedence: arithmetic binds tighter than `~`",
+      "tags": [
+        "eval",
+        "precedence",
+        "regex-operators"
+      ],
+      "roots": {
+        "r": [
+          {
+            "n": 2
+          }
+        ]
+      },
+      "query": "r exists { where n * 2 ~ \"^4$\" }",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "name": "precedence: a regex comparison does not chain",
+      "tags": [
+        "parse",
+        "precedence",
+        "regex-operators"
+      ],
+      "query": "from r where a ~ b ~ c",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "comparisons do not chain"
+          ]
+        }
+      }
+    },
+    {
+      "name": "precedence: a regex comparison does not chain with `==`",
+      "tags": [
+        "parse",
+        "precedence",
+        "regex-operators"
+      ],
+      "query": "from r where a ~ b == true",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "comparisons do not chain"
+          ]
+        }
+      }
+    },
+    {
+      "name": "precedence: a parenthesized match is a comparison operand",
+      "tags": [
+        "ast",
+        "precedence",
+        "print",
+        "regex-operators"
+      ],
+      "query": "select a: (title ~ \"Eng\") == true from people",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "people"
+          },
+          "from": [],
+          "where": null,
+          "select": [
+            {
+              "kind": "field",
+              "name": "a",
+              "expr": {
+                "kind": "binary",
+                "op": "==",
+                "left": {
+                  "kind": "binary",
+                  "op": "~",
+                  "left": {
+                    "kind": "ident",
+                    "name": "title"
+                  },
+                  "right": {
+                    "kind": "lit",
+                    "value": "Eng"
+                  }
+                },
+                "right": {
+                  "kind": "lit",
+                  "value": true
+                }
+              },
+              "lift": 0
+            }
+          ],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": null,
+          "frontier": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "lexing: `~*` is one token (`x~*y` is `x ~* y`)",
+      "tags": [
+        "lex",
+        "ast",
+        "regex-operators"
+      ],
+      "query": "select a: x~*y from r",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "r"
+          },
+          "from": [],
+          "where": null,
+          "select": [
+            {
+              "kind": "field",
+              "name": "a",
+              "expr": {
+                "kind": "binary",
+                "op": "~*",
+                "left": {
+                  "kind": "ident",
+                  "name": "x"
+                },
+                "right": {
+                  "kind": "ident",
+                  "name": "y"
+                }
+              },
+              "lift": 0
+            }
+          ],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": null,
+          "frontier": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "lexing: `!~` lexes ahead of `!` (`name!~\"B\"` is `name !~ \"B\"`, not `name! ~ \"B\"`)",
+      "tags": [
+        "lex",
+        "ast",
+        "regex-operators"
+      ],
+      "query": "select a: name!~\"B\" from r",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "r"
+          },
+          "from": [],
+          "where": null,
+          "select": [
+            {
+              "kind": "field",
+              "name": "a",
+              "expr": {
+                "kind": "binary",
+                "op": "!~",
+                "left": {
+                  "kind": "ident",
+                  "name": "name"
+                },
+                "right": {
+                  "kind": "lit",
+                  "value": "B"
+                }
+              },
+              "lift": 0
+            }
+          ],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": null,
+          "frontier": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "lexing: `name! ~ \"B\"` with the space is the required value matched",
+      "tags": [
+        "lex",
+        "ast",
+        "regex-operators"
+      ],
+      "query": "select a: name! ~ \"B\" from r",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "r"
+          },
+          "from": [],
+          "where": null,
+          "select": [
+            {
+              "kind": "field",
+              "name": "a",
+              "expr": {
+                "kind": "binary",
+                "op": "~",
+                "left": {
+                  "kind": "required",
+                  "expr": {
+                    "kind": "ident",
+                    "name": "name"
+                  }
+                },
+                "right": {
+                  "kind": "lit",
+                  "value": "B"
+                }
+              },
+              "lift": 0
+            }
+          ],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": null,
+          "frontier": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "lexing: `!~*` is one token, longest match first",
+      "tags": [
+        "lex",
+        "ast",
+        "regex-operators"
+      ],
+      "query": "select a: x!~*y from r",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "r"
+          },
+          "from": [],
+          "where": null,
+          "select": [
+            {
+              "kind": "field",
+              "name": "a",
+              "expr": {
+                "kind": "binary",
+                "op": "!~*",
+                "left": {
+                  "kind": "ident",
+                  "name": "x"
+                },
+                "right": {
+                  "kind": "ident",
+                  "name": "y"
+                }
+              },
+              "lift": 0
+            }
+          ],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": null,
+          "frontier": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "lexing: `!~` wins over `!`, so `!~=` leaves a stray `=`",
+      "tags": [
+        "lex",
+        "regex-operators"
+      ],
+      "query": "from r where a !~= b",
+      "expect": {
+        "error": {
+          "stage": "lex",
+          "includes": [
+            "unexpected character",
+            "\"=\""
+          ]
+        }
+      }
+    },
+    {
+      "name": "lexing: `*` is still multiplication",
+      "tags": [
+        "lex",
+        "eval",
+        "regex-operators"
+      ],
+      "roots": {
+        "r": [
+          {
+            "x": 3,
+            "y": 2
+          }
+        ]
+      },
+      "query": "select a: x*y, b: x ~ y from r",
+      "expect": {
+        "result": [
+          {
+            "a": 6,
+            "b": false
+          }
+        ]
+      }
+    },
+    {
+      "name": "parse: `~` needs a right operand",
+      "tags": [
+        "parse",
+        "regex-operators"
+      ],
+      "query": "from r where a ~",
+      "expect": {
+        "error": {
+          "stage": "parse"
+        }
+      }
+    },
+    {
+      "name": "`~` is an unanchored case-sensitive match",
+      "tags": [
+        "eval",
+        "regex-operators"
+      ],
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "title": "Engineer"
+          },
+          {
+            "name": "Alice",
+            "title": "Director"
+          },
+          {
+            "name": "Carol",
+            "title": "Analyst"
+          }
+        ]
+      },
+      "query": "name values from people where title ~ \"ngin\"",
+      "expect": {
+        "result": [
+          "Bob"
+        ]
+      }
+    },
+    {
+      "name": "`~` is anchored only by the pattern",
+      "tags": [
+        "eval",
+        "regex-operators"
+      ],
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "title": "Engineer"
+          },
+          {
+            "name": "Alice",
+            "title": "Director"
+          },
+          {
+            "name": "Carol",
+            "title": "Analyst"
+          }
+        ]
+      },
+      "query": "select p: title ~ \"^Eng\", s: title ~ \"or$\", m: title ~ \"^gin\" from people",
+      "expect": {
+        "result": [
+          {
+            "p": true,
+            "s": false,
+            "m": false
+          },
+          {
+            "p": false,
+            "s": true,
+            "m": false
+          },
+          {
+            "p": false,
+            "s": false,
+            "m": false
+          }
+        ]
+      }
+    },
+    {
+      "name": "`~` is case-sensitive",
+      "tags": [
+        "eval",
+        "regex-operators"
+      ],
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "title": "Engineer"
+          },
+          {
+            "name": "Alice",
+            "title": "Director"
+          },
+          {
+            "name": "Carol",
+            "title": "Analyst"
+          }
+        ]
+      },
+      "query": "name values from people where title ~ \"eng\"",
+      "expect": {
+        "result": []
+      }
+    },
+    {
+      "name": "`~*` is `matches` under the `i` flag",
+      "tags": [
+        "eval",
+        "regex-operators"
+      ],
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "title": "Engineer"
+          },
+          {
+            "name": "Alice",
+            "title": "Director"
+          },
+          {
+            "name": "Carol",
+            "title": "Analyst"
+          }
+        ]
+      },
+      "query": "name values from people where title ~* \"eng\"",
+      "expect": {
+        "result": [
+          "Bob"
+        ]
+      }
+    },
+    {
+      "name": "`~*` folds non-ASCII letters like the `i` flag",
+      "tags": [
+        "eval",
+        "regex-operators"
+      ],
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"É\" ~* \"é\" && \"É\" !~ \"é\" }",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "name": "`!~` is the negation of `~`",
+      "tags": [
+        "eval",
+        "regex-operators"
+      ],
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "title": "Engineer"
+          },
+          {
+            "name": "Alice",
+            "title": "Director"
+          },
+          {
+            "name": "Carol",
+            "title": "Analyst"
+          }
+        ]
+      },
+      "query": "name values from people where title !~ \"Eng\"",
+      "expect": {
+        "result": [
+          "Alice",
+          "Carol"
+        ]
+      }
+    },
+    {
+      "name": "`!~*` is the negation of `~*`",
+      "tags": [
+        "eval",
+        "regex-operators"
+      ],
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "title": "Engineer"
+          },
+          {
+            "name": "Alice",
+            "title": "Director"
+          },
+          {
+            "name": "Carol",
+            "title": "Analyst"
+          }
+        ]
+      },
+      "query": "name values from people where title !~* \"ENG\"",
+      "expect": {
+        "result": [
+          "Alice",
+          "Carol"
+        ]
+      }
+    },
+    {
+      "name": "the four spellings agree with the `matches` calls they stand for",
+      "tags": [
+        "eval",
+        "regex-operators"
+      ],
+      "roots": {
+        "r": [
+          {
+            "s": "Hello"
+          }
+        ]
+      },
+      "query": "r exists { where (s ~ \"ell\") == s.matches(\"ell\") && (s ~* \"HELLO\") == s.matches(\"HELLO\", \"i\") && (s !~ \"x\") == !s.matches(\"x\") && (s !~* \"h\") == !s.matches(\"h\", \"i\") }",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "name": "absent receiver: `~` is false",
+      "notes": "SEMANTICS §11: `matches` on an absent receiver is false, so `~` is too. Not SQL: in Postgres `NULL ~ 'x'` is NULL and excludes the row from both the match and its negation.",
+      "tags": [
+        "eval",
+        "absent",
+        "regex-operators"
+      ],
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "nickname": "Bobby"
+          },
+          {
+            "name": "Alice"
+          },
+          {
+            "name": "Carol",
+            "nickname": null
+          }
+        ]
+      },
+      "query": "name values from people where nickname ~ \".\"",
+      "expect": {
+        "result": [
+          "Bob"
+        ]
+      }
+    },
+    {
+      "name": "absent receiver: `!~` is true",
+      "notes": "The exact negation of `~`: an absent value matches nothing, so it fails to match everything. Differs from SQL's NULL, where `NULL !~ 'x'` is NULL.",
+      "tags": [
+        "eval",
+        "absent",
+        "regex-operators"
+      ],
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "nickname": "Bobby"
+          },
+          {
+            "name": "Alice"
+          },
+          {
+            "name": "Carol",
+            "nickname": null
+          }
+        ]
+      },
+      "query": "name values from people where nickname !~ \".\"",
+      "expect": {
+        "result": [
+          "Alice",
+          "Carol"
+        ]
+      }
+    },
+    {
+      "name": "absent receiver: `~*` is false and `!~*` is true",
+      "tags": [
+        "eval",
+        "absent",
+        "regex-operators"
+      ],
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where (nope ~* \".\") == false && (nope !~* \".\") == true }",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "name": "field vs field: the right side is any expression, taken by its string form",
+      "tags": [
+        "eval",
+        "regex-operators"
+      ],
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "title": "Engineer",
+            "pattern": "^Eng"
+          },
+          {
+            "name": "Alice",
+            "title": "Director",
+            "pattern": "x"
+          },
+          {
+            "name": "Carol",
+            "title": "Analyst",
+            "pattern": "lyst$"
+          }
+        ]
+      },
+      "query": "name values from people where title ~ pattern",
+      "expect": {
+        "result": [
+          "Bob",
+          "Carol"
+        ]
+      }
+    },
+    {
+      "name": "field vs field: `!~` over two fields",
+      "tags": [
+        "eval",
+        "regex-operators"
+      ],
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "title": "Engineer",
+            "pattern": "^Eng"
+          },
+          {
+            "name": "Alice",
+            "title": "Director",
+            "pattern": "x"
+          },
+          {
+            "name": "Carol",
+            "title": "Analyst",
+            "pattern": "lyst$"
+          }
+        ]
+      },
+      "query": "name values from people where title !~ pattern",
+      "expect": {
+        "result": [
+          "Alice"
+        ]
+      }
+    },
+    {
+      "name": "a number receiver uses its text form, as `matches` does",
+      "tags": [
+        "eval",
+        "regex-operators"
+      ],
+      "roots": {
+        "r": [
+          {
+            "n": 42
+          }
+        ]
+      },
+      "query": "r exists { where n ~ \"^4\" }",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "name": "a number pattern uses its text form, as `matches` does",
+      "tags": [
+        "eval",
+        "regex-operators"
+      ],
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"a1b\" ~ 1 }",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "name": "the right side may be any expression",
+      "tags": [
+        "eval",
+        "regex-operators"
+      ],
+      "roots": {
+        "r": [
+          {
+            "s": "Engineer",
+            "head": "Eng"
+          }
+        ]
+      },
+      "query": "r exists { where s ~ \"^\" + head && s ~* head.lower() }",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "name": "value position: a match is a boolean value",
+      "tags": [
+        "eval",
+        "regex-operators"
+      ],
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "title": "Engineer"
+          },
+          {
+            "name": "Alice",
+            "title": "Director"
+          },
+          {
+            "name": "Carol",
+            "title": "Analyst"
+          }
+        ]
+      },
+      "query": "select name, hit: title ~ \"Eng\", miss: title !~ \"Eng\" from people",
+      "expect": {
+        "result": [
+          {
+            "name": "Bob",
+            "hit": true,
+            "miss": false
+          },
+          {
+            "name": "Alice",
+            "hit": false,
+            "miss": true
+          },
+          {
+            "name": "Carol",
+            "hit": false,
+            "miss": true
+          }
+        ]
+      }
+    },
+    {
+      "name": "`not a ~ b` matches the negated truthiness of `a`, like `not a == b`",
+      "tags": [
+        "eval",
+        "precedence",
+        "regex-operators"
+      ],
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "active": true
+          },
+          {
+            "name": "Alice",
+            "active": true
+          },
+          {
+            "name": "Carol",
+            "active": false
+          }
+        ]
+      },
+      "query": "name values from people where not active ~ \"true\"",
+      "expect": {
+        "result": [
+          "Carol"
+        ]
+      }
+    },
+    {
+      "name": "a pattern outside the baseline is rejected by name, as under `matches`",
+      "tags": [
+        "eval",
+        "errors",
+        "regex-operators"
+      ],
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"A\" ~ \"(?i)a\" }",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "not supported in OQX regular expressions",
+            "an inline flag (?i)"
+          ]
+        }
+      }
+    },
+    {
+      "name": "an invalid pattern is an eval error under `~`",
+      "tags": [
+        "eval",
+        "errors",
+        "regex-operators"
+      ],
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"a\" ~ \"(\" }",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "invalid regular expression"
+          ]
+        }
+      }
+    },
+    {
+      "name": "an invalid pattern is an eval error under `!~*` too",
+      "tags": [
+        "eval",
+        "errors",
+        "regex-operators"
+      ],
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"a\" !~* \"[z-a]\" }",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "invalid regular expression"
+          ]
+        }
+      }
+    },
+    {
+      "name": "an empty source never evaluates the pattern",
+      "tags": [
+        "eval",
+        "errors",
+        "regex-operators"
+      ],
+      "roots": {
+        "r": []
+      },
+      "query": "r exists { where s ~ \"(\" }",
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "name": "the match works inside a nested block over the enclosing row",
+      "tags": [
+        "eval",
+        "regex-operators"
+      ],
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "jobs": [
+              {
+                "employer": "Globocorp"
+              },
+              {
+                "employer": "Initech"
+              }
+            ]
+          },
+          {
+            "name": "Alice",
+            "jobs": [
+              {
+                "employer": "Initech"
+              }
+            ]
+          }
+        ]
+      },
+      "query": "name values from people where jobs exists { where employer ~* \"^globo\" }",
+      "expect": {
+        "result": [
+          "Bob"
+        ]
+      }
+    },
+    {
+      "name": "a template literal pattern",
+      "tags": [
+        "eval",
+        "regex-operators"
+      ],
+      "roots": {
+        "r": [
+          {
+            "s": "/texts/newton.md",
+            "name": "newton"
+          }
+        ]
+      },
+      "query": "r exists { where s ~ `/${name}\\.md$` }",
+      "expect": {
+        "result": true
+      }
+    }
+  ]
+}

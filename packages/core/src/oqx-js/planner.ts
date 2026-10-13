@@ -16,7 +16,7 @@
 // bare reserved docs basename — the WHOLE query runs unplanned.
 
 import type { Query, Expr, Where, OpNode, Subquery, Follow, QueryPlanner, Plan, DataContext } from "@omgbase/oqx";
-import { ROWS_ROOT, partitionPushable, residualQuery } from "@omgbase/oqx";
+import { ROWS_ROOT, isRegexOp, partitionPushable, residualQuery } from "@omgbase/oqx";
 import type { Store } from "../core/store/store.js";
 import { makeStoreContext, tagRows, type StoreContextOptions } from "./context.js";
 import { translatePredicate, type Target, type TranslateCtx } from "./sql/translate.js";
@@ -114,7 +114,11 @@ function exprMayRaise(e: Expr, target: Target, root: boolean): boolean {
     // read anything its block reads.
     case "required": return true;
     case "op": return opMayRaise(e, target, root);
-    case "binary": case "logical": case "in":
+    // A regex operator (oqx 0.22) is a `matches` call: an invalid pattern
+    // raises, exactly as the call would.
+    case "binary":
+      return isRegexOp(e.op) || exprMayRaise(e.left, target, root) || exprMayRaise(e.right, target, root);
+    case "logical": case "in":
       return exprMayRaise(e.left, target, root) || exprMayRaise(e.right, target, root);
     case "range":
       return (e.lo !== null && exprMayRaise(e.lo, target, root)) || (e.hi !== null && exprMayRaise(e.hi, target, root));

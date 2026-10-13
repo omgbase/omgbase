@@ -10,7 +10,7 @@
 // tests in `test/` pin it to the specification text so it cannot drift silently.
 
 /** The OQX language version (`spec/oqx/VERSION`, `major.minor`) this vocabulary describes. */
-export const LANGUAGE_VERSION = "0.21";
+export const LANGUAGE_VERSION = "0.22";
 
 /** Reserved words: never usable as a bare field name (GRAMMAR §1). `is`, `not`,
  * `and`, `or` are the word operators (GRAMMAR §4, since 0.17). */
@@ -52,6 +52,10 @@ export const LITERALS = ["true", "false", "null"] as const;
 /** Operators, longest first (GRAMMAR §1; the lexer's MULTI_OPS then SINGLE_OPS). */
 export const OPERATORS = {
   comparison: ["==", "!=", "<=", ">=", "<", ">"],
+  /** The infix regex operators (GRAMMAR §4, since 0.22): sugar over `matches`
+   * at comparison precedence. Longest first — `!~*` before `!~` before `!`, so
+   * `name!~"B"` is `name !~ "B"` and not a required `name!`; `~*` before `~`. */
+  regex: ["!~*", "!~", "~*", "~"],
   /** `!` is also the postfix required operator (`x!`, GRAMMAR §4) — lexically one token. */
   logical: ["&&", "||", "!"],
   arithmetic: ["+", "-", "*", "/", "%"],
@@ -90,8 +94,8 @@ export const IDENTIFIER = "[A-Za-z_$][A-Za-z0-9_$]*";
 
 /** Characters that are lex errors anywhere (GRAMMAR §1): there are no comments
  * and no single `=`/`&`/`|`. (The backtick left this list in 0.21: it opens a
- * template literal.) */
-export const ILLEGAL_CHARACTERS = ["=", "&", "|", "@", ";", "#", "~", "?", "\\"] as const;
+ * template literal; `~` left it in 0.22: it is the regex match operator.) */
+export const ILLEGAL_CHARACTERS = ["=", "&", "|", "@", ";", "#", "?", "\\"] as const;
 
 /** Language metadata shared by every editor integration. */
 export const LANGUAGE = {

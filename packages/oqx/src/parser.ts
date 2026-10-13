@@ -109,7 +109,10 @@ const CLAUSE_WORDS = new Set<string>([
   "limit", "offset",
 ]);
 const RELOPS = new Set<string>(["==", "!=", "<", "<=", ">", ">="]);
-const CMP_OPS = new Set<string>(["==", "!=", "<", "<=", ">", ">="]);
+// The comparison level (GRAMMAR §4): the six relational operators and, since
+// 0.22, the four regex operators — sugar over `matches`, non-associative like
+// the rest of the level.
+const CMP_OPS = new Set<string>(["==", "!=", "<", "<=", ">", ">=", "~", "~*", "!~", "!~*"]);
 const ADD_OPS = new Set<string>(["+", "-"]);
 const MUL_OPS = new Set<string>(["*", "/", "%"]);
 // `true`/`false`/`null` are literals in every position, so they can never name a

@@ -69,6 +69,7 @@ function prec(e: Expr): number {
     case "lit": case "ident": case "outer": case "binding": case "tuple": case "template": return PRIMARY;
     case "member": case "call": case "required": case "op": return POSTFIX;
     case "unary": return UNARY;
+    // Comparison, identity and the regex operators (0.22) share the cmp level.
     case "binary": return e.op === "+" || e.op === "-" ? ADD : e.op === "*" || e.op === "/" || e.op === "%" ? MUL : CMP;
     case "in": return CMP;
     case "range": return RANGE;

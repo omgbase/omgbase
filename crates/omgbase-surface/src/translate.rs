@@ -718,9 +718,16 @@ fn is_op(op: BinaryOp) -> Option<&'static str> {
         BinaryOp::Ge => ">=",
         // Identity (`is` / `is not`, SEMANTICS §5b) compares the engine's
         // structural identities — not provably SQL's `IS` over typed cells —
-        // so it stays residual, like arithmetic in predicate position.
+        // so it stays residual, like arithmetic in predicate position. A regex
+        // operator (oqx 0.22) is `matches` in disguise and needs the OQX regex
+        // baseline (a `regexp` UDF the store does not register), so it stays
+        // residual exactly as the `matches` call does.
         BinaryOp::Is
         | BinaryOp::IsNot
+        | BinaryOp::Match
+        | BinaryOp::MatchI
+        | BinaryOp::NotMatch
+        | BinaryOp::NotMatchI
         | BinaryOp::Add
         | BinaryOp::Sub
         | BinaryOp::Mul

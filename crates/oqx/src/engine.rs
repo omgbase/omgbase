@@ -1814,6 +1814,23 @@ impl<'e, C: DataContext> Exec<'e, C> {
                         == canonical_key(&self.ctx.identity(&r));
                     return Ok(Value::Bool(if *op == BinaryOp::Is { same } else { !same }));
                 }
+                if let Some((negated, flags)) = op.regex() {
+                    // The regex operators (SEMANTICS §11, since 0.22) are sugar
+                    // over `matches`: `a ~ b` is `a.matches(b)`, `~*` adds the
+                    // `i` flag, `!~` / `!~*` negate. They go through the same
+                    // method dispatch as the call would, so a host's `matches`
+                    // (and its regex dialect) applies.
+                    let mut args = vec![r];
+                    if let Some(f) = flags {
+                        args.push(Value::Str(f.to_owned()));
+                    }
+                    let hit = self.call_method("matches", &l, &args)?;
+                    return Ok(if negated {
+                        Value::Bool(!hit.truthy())
+                    } else {
+                        hit
+                    });
+                }
                 if op.is_comparison() {
                     Ok(Value::Bool(relate(op.as_str(), &l, &r)?))
                 } else {
@@ -1999,11 +2016,17 @@ impl<'e, C: DataContext> Exec<'e, C> {
             },
             Some(recv) => {
                 let recv = self.eval_expr(recv, scope)?;
-                match self.ctx.call_method(name, &recv, &vals) {
-                    Some(r) => r,
-                    None => Err(OqxError::eval(format!("unknown method '.{name}(…)'"))),
-                }
+                self.call_method(name, &recv, &vals)
             }
+        }
+    }
+
+    // `recv.name(args)` on evaluated values — the dispatch a method call and the
+    // regex operators share.
+    fn call_method(&self, name: &str, recv: &Value, args: &[Value]) -> Result<Value> {
+        match self.ctx.call_method(name, recv, args) {
+            Some(r) => r,
+            None => Err(OqxError::eval(format!("unknown method '.{name}(…)'"))),
         }
     }
 }

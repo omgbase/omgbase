@@ -22,7 +22,7 @@ Tokens:
 | template literal | `` `…` `` — a backtick-delimited string with **interpolations** `${expr}` (since 0.21, §4). The text between the backticks and the interpolations is decoded with the **same escapes as a string** (`\n` `\t` `\r` `\0`, `\<c>` for any other `<c>` itself), so `` \` `` keeps a backtick, `\$` a dollar that no longer opens an interpolation (`\${` is text), `\\` a backslash; **newlines are kept verbatim** (a literal may span lines). A `$` not followed by `{`, a `{` or `}` outside an interpolation, and quotes are ordinary text. An interpolation holds one full value expression — braces inside it are balanced, so it may hold a `{ … }` block or another template literal — and is lexed as ordinary source until the `}` that closes it. An unterminated literal (`unterminated template literal at N`) and an unterminated interpolation (`unterminated ${…} interpolation …`) are lex errors; an empty interpolation `${}` is a parse error naming its offset |
 | punctuation | `(` `)` `{` `}` `[` `]` `,` `:` `.` `^` — `[`/`]` since 0.17 (brackets, §4); `^` is the outer-reference / lift marker, relative (`^^name`) or, after an integer, absolute (`0^name`, §4) |
 | range | `..` (inclusive) and `...` (exclusive high end), scanned before `.` |
-| operator | `==` `!=` `<=` `>=` `<` `>` `&&` `\|\|` `!` `+` `-` `*` `/` `%` — `!=` is one token, so `a! == b` (a required value compared) needs the space: `a!==b` lexes as `a`, `!=`, `=` |
+| operator | `==` `!=` `<=` `>=` `<` `>` `&&` `\|\|` `!` `+` `-` `*` `/` `%` and the regex operators `~` `~*` `!~` `!~*` (since 0.22, §4) — scanned **longest first**, so each is one token: `!=` is one token, so `a! == b` (a required value compared) needs the space (`a!==b` lexes as `a`, `!=`, `=`); `!~` and `!~*` win over `!`, so `name!~"B"` is `name !~ "B"` and not a required `name!` (write `name! ~ "B"` for that); `~*` wins over `~`, so `x~*y` is `x ~* y`, while `*` alone is still multiplication (`x*y`) [`regex-operators`] |
 | binding | a `${…}` interpolation of the tagged-template form; index `n` names the n-th bound value |
 
 Any other character (`=`, `&`, `\|`, `@`, `;`, `#`, …) is a lex error
@@ -375,7 +375,7 @@ grammar. Precedence, loosest to tightest:
 | --- | --- | --- |
 | or | `\|\|` `or` | left-assoc; yields an operand (SEMANTICS §logical). `or` is an exact synonym of `\|\|` (since 0.17): the same node, the same short-circuit, the same value (`title or $path` coalesces); `print` writes `or` (since 0.18) |
 | and | `&&` `and` | left-assoc; `and` is an exact synonym of `&&` (since 0.17); `print` writes `and` (since 0.18) |
-| cmp | `== != < <= > >=` `in` `is` `is not` | **non-associative**: a second comparison in a row is a parse error `comparisons do not chain` (`a == b == c`, `a == b in c`, `a is b is c`). `x is y` is identity, `x is not y` its negation (SEMANTICS §5; since 0.17) |
+| cmp | `== != < <= > >=` `in` `is` `is not` `~ ~* !~ !~*` | **non-associative**: a second comparison in a row is a parse error `comparisons do not chain` (`a == b == c`, `a == b in c`, `a is b is c`, `a ~ b ~ c`, `a ~ b == c`). `x is y` is identity, `x is not y` its negation (SEMANTICS §5; since 0.17). The **regex operators** (since 0.22) are sugar over `matches` at this level: `a ~ b` ≡ `a.matches(b)`, `a ~* b` ≡ `a.matches(b, "i")`, `a !~ b` ≡ `!a.matches(b)`, `a !~* b` ≡ `!a.matches(b, "i")` (SEMANTICS §11). Either side is any expression at this level (`title ~ pattern`, `s ~ "^" + head`); the right side is the pattern, taken by its string form exactly as `matches` takes it. Because `!`/`not` bind tighter than every comparison (§3), `not a ~ b` is `(!a) ~ b` just as `not a == b` is `(!a) == b` — negate a match with `a !~ b` or `not (a ~ b)`. The tree keeps the operator as written: a `binary` node with `op` `"~"`, `"~*"`, `"!~"` or `"!~*"` (AST.md §2) [`regex-operators`] |
 | range | `lo..hi` `lo...hi` `..hi` `lo..` | binds looser than arithmetic, tighter than comparison: `n in 1+1..2*3` is `n in (2..6)`. At least one bound is required |
 | add | `+ -` | left-assoc |
 | mul | `* / %` | left-assoc |
@@ -387,7 +387,9 @@ grammar. Precedence, loosest to tightest:
 expr     = or
 or       = and { ("||" | "or") and }
 and      = cmp { ("&&" | "and") cmp }
-cmp      = range [ relop range | "in" range | "is" [ "not" ] range ]
+cmp      = range [ relop range | "in" range | "is" [ "not" ] range | regexop range ]
+relop    = "==" | "!=" | "<" | "<=" | ">" | ">="
+regexop  = "~" | "~*" | "!~" | "!~*"                 ; sugar over matches (0.22)
 range    = ( ".." | "..." ) add                     ; open low end; the high bound is required
          | add [ ( ".." | "..." ) [ add ] ]          ; the high bound is omitted when the next
                                                      ; token cannot start a value (clause words included)

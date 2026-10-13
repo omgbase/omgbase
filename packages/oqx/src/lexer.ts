@@ -44,7 +44,7 @@ export type TokType =
   | "caret" // ^ — one-scope lift marker
   | "dot"
   | "range" // `..` (inclusive) or `...` (exclusive end) — a Ruby-style range operator (value carries which)
-  | "op" // == != <= >= < > && || ! + - * / %  (value carries the operator)
+  | "op" // == != <= >= < > && || ! + - * / % ~ ~* !~ !~*  (value carries the operator)
   | "binding" // a ${…} interpolation; `index` names the value slot
   // A template literal (since 0.21): the opening and closing backticks, a run of
   // its decoded text, and the `${` / `}` around an interpolation — whose `}` is a
@@ -72,8 +72,12 @@ export interface Token {
 const KEYWORDS = new Set(["from", "where", "select", "is", "not", "and", "or"]);
 
 // Multi-char operators, longest first (the scanner tries these before singles).
-const MULTI_OPS = ["==", "!=", "<=", ">=", "&&", "||"];
-const SINGLE_OPS = new Set(["<", ">", "!", "+", "-", "*", "/", "%"]);
+// The regex operators (since 0.22) are among them: `!~*` is tried before `!~`,
+// which is tried before `!` — so `name!~"B"` is `name !~ "B"`, not a required
+// `name!` — and `~*` before `~`, so `x~*y` is `x ~* y`.
+const TRIPLE_OPS = ["!~*"];
+const MULTI_OPS = ["==", "!=", "<=", ">=", "&&", "||", "!~", "~*"];
+const SINGLE_OPS = new Set(["<", ">", "!", "+", "-", "*", "/", "%", "~"]);
 
 const isIdentStart = (c: string): boolean => /^[A-Za-z_$]$/.test(c);
 const isIdentPart = (c: string): boolean => /^[A-Za-z0-9_$]$/.test(c);
@@ -246,7 +250,9 @@ function lexFragment(src: string, base: number, out: Token[]): void {
       continue;
     }
 
-    // operators (multi-char first)
+    // operators (multi-char first, longest first)
+    const three = c + at(i + 1) + at(i + 2);
+    if (TRIPLE_OPS.includes(three)) { push("op", three, i, i + 3); i += 3; continue; }
     const two = c + at(i + 1);
     if (MULTI_OPS.includes(two)) { push("op", two, i, i + 2); i += 2; continue; }
     if (SINGLE_OPS.has(c)) { push("op", c, i, i + 1); i++; continue; }

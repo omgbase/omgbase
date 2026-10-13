@@ -485,9 +485,14 @@ pub fn expr_raise_free(e: &Expr, ctx: &RuleContext) -> bool {
         Expr::Op(op) => op_raise_free(op, ctx), // a value-position directive projects: never raise-free
         Expr::Member { recv, .. } => expr_raise_free(recv, ctx),
         Expr::Unary { expr, .. } => expr_raise_free(expr, ctx),
-        Expr::Binary { left, right, .. }
-        | Expr::Logical { left, right, .. }
-        | Expr::In { left, right, .. } => expr_raise_free(left, ctx) && expr_raise_free(right, ctx),
+        // A regex operator (0.22) is a `matches` call in disguise: the pattern
+        // may be invalid, so it is never raise-free.
+        Expr::Binary {
+            op, left, right, ..
+        } => !op.is_regex() && expr_raise_free(left, ctx) && expr_raise_free(right, ctx),
+        Expr::Logical { left, right, .. } | Expr::In { left, right, .. } => {
+            expr_raise_free(left, ctx) && expr_raise_free(right, ctx)
+        }
         Expr::Range { lo, hi, .. } => {
             lo.as_deref().is_none_or(|x| expr_raise_free(x, ctx))
                 && hi.as_deref().is_none_or(|x| expr_raise_free(x, ctx))

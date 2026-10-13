@@ -4,6 +4,15 @@ All notable changes to `oqx` are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [Semantic Versioning](https://semver.org/) (pre-1.0: a minor bump may break).
 
+## [0.22.0] - 2026-10-13
+
+### Minor
+- OQX 0.22 (`spec/oqx` 0.21 → 0.22): **infix regex operators**. `a ~ b` ≡ `a.matches(b)`, `a ~* b` ≡ `a.matches(b, "i")`, `a !~ b` ≡ `!a.matches(b)`, `a !~* b` ≡ `!a.matches(b, "i")` — pure sugar over `matches` at comparison precedence, non-associative, with every `matches` rule intact (unanchored search, the OQX regex baseline, string forms, an absent receiver false — so `absent !~ "x"` is **true**, unlike SQL's NULL). New suite `regex-operators` (40 cases; 1350 fixtures, every one round-tripping through `print`).
+  - Lexer: `!~*`, `!~`, `~*`, `~` are `Op` tokens scanned longest first (`TRIPLE_OPS` before `MULTI_OPS` before `SINGLE_OPS`), so `!~` wins over `!` and `~*` over `~`/`*`.
+  - AST: `BinaryOp::Match` (`~`), `MatchI` (`~*`), `NotMatch` (`!~`), `NotMatchI` (`!~*`) — the node keeps the operator as written (serde word, `as_str`, `from_word`); `BinaryOp::regex()` yields the `(negated, flags)` of the `matches` call it stands for, `is_regex()` tests for one. `print` writes the operator back at comparison level.
+  - Engine: evaluated through `DataContext::call_method("matches", …)`, the same dispatch as the call, so a host's `matches` and `regex_dialect` apply.
+  - Planners: never translated to SQL (`SqliteTable` leaves a regex operator residual, like the call) and never raise-free in the optimizer.
+
 ## [0.21.0] - 2026-10-13
 
 ### Minor

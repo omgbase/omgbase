@@ -171,7 +171,10 @@ const CLAUSE_WORDS: [&str; 18] = [
     "follow", "distinct", "frontier", "depth", "in", "values", "limit", "offset",
 ];
 const RELOPS: [&str; 6] = ["==", "!=", "<", "<=", ">", ">="];
-const CMP_OPS: [&str; 6] = ["==", "!=", "<", "<=", ">", ">="];
+// The comparison level (GRAMMAR §4): the six relational operators and, since
+// 0.22, the four regex operators — sugar over `matches`, non-associative like
+// the rest of the level.
+const CMP_OPS: [&str; 10] = ["==", "!=", "<", "<=", ">", ">=", "~", "~*", "!~", "!~*"];
 const ADD_OPS: [&str; 2] = ["+", "-"];
 const MUL_OPS: [&str; 3] = ["*", "/", "%"];
 // `true`/`false`/`null` are literals in every position, so they can never name a

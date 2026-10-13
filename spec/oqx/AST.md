@@ -41,7 +41,7 @@ guess the default of.
 | `call` | `name(args)` (`recv: null`) or `recv.name(args)` | expressions |
 | `unary` | `!x`, `-x` (also what `is x` ≡ `!!x` and `not x` ≡ `!x` parse to) | expressions |
 | `required` | `x!` — the value, or an eval error when absent (since 0.17) | expressions |
-| `binary` | arithmetic, comparison, or identity (`is`, `is not`), `op` the source operator | expressions |
+| `binary` | arithmetic, comparison, identity (`is`, `is not`), or a regex match (`~`, `~*`, `!~`, `!~*` — since 0.22), `op` the source operator | expressions |
 | `logical` | `&&`, `||` in value position | expressions |
 | `in` | membership | expressions |
 | `range` | `lo..hi`, `lo...hi`, `..hi`, `lo..` | expressions |
@@ -107,7 +107,7 @@ as their source words (`"=="`, `"&&"`, `"collect"`).
 | `call` | `recv: Expr \| null`; `name: string`; `args: Expr[]` |
 | `unary` | `op: "!" \| "-"`; `expr: Expr` |
 | `required` | `expr: Expr` |
-| `binary` | `op: "==" \| "!=" \| "<" \| "<=" \| ">" \| ">=" \| "is" \| "is not" \| "+" \| "-" \| "*" \| "/" \| "%"`; `left: Expr`; `right: Expr` |
+| `binary` | `op: "==" \| "!=" \| "<" \| "<=" \| ">" \| ">=" \| "is" \| "is not" \| "~" \| "~*" \| "!~" \| "!~*" \| "+" \| "-" \| "*" \| "/" \| "%"`; `left: Expr`; `right: Expr`. The four regex operators (since 0.22) are sugar over `matches` (SEMANTICS §11) but are **not desugared in the tree**: the node carries the operator as written, so `print` writes `a ~ b` back and a tool sees what the user wrote; evaluation is `a.matches(b)` / `a.matches(b, "i")` and the negations |
 | `logical` | `op: "&&" \| "\|\|"`; `left: Expr`; `right: Expr` |
 | `in` | `left: Expr`; `right: Expr` |
 | `range` | `lo: Expr \| null`; `hi: Expr \| null`; `exclusiveEnd: boolean` |
@@ -278,7 +278,10 @@ explicit form** it parsed to (since 0.17): `x { p }` as `x collect { where p }`,
 p }!`, `is x` as `!!x`, `not x` as `!x`, an absolute `N^name` as the caret
 form `^…name` (since 0.18); `x!` prints as written, with its operand
 parenthesized below postfix level (`(a + 1)!`); `x is y` / `x is not y` print
-as written.
+as written, and so do the regex operators `x ~ y` / `x ~* y` / `x !~ y` /
+`x !~* y` (since 0.22) — they are sugar over `matches` in evaluation only, not
+in the tree, and sit at comparison level (a nested comparison on either side is
+parenthesized: `(a ~ b) == true`).
 
 Form: a `collect` query prints in body form (`select … from S …`) — unless it
 carries body-level `from` re-projections, which only a block can hold, in
@@ -330,3 +333,4 @@ document says which `major.minor` produced it.
 | 0.18 | No node or field added, renamed or removed: `N^name` parses to the existing `outer` (`levels = depth − N`). The canonical print of `and`/`or` and `logical` nodes changed from the symbols to the words; the JSON `logical.op` is still `"&&"` / `"||"`. |
 | 0.20 | Added (minor): the `tuple` expression node; `subquery.frontier` and `subquery.depth`; `query.frontier` (the body's seed frontier, legal only with `follow`). **Removed** (pre-1.0, so a minor): `follow.where`, `follow.frontier`, `follow.depth`, `follow.by` — a destination's `where` is its block's `where`, `frontier`/`depth` are its block's new fields, `by` has no replacement (identity is `$key`, SEMANTICS §16, projectable as a `$key:` item). The `follow.where` and `follow.by` traversal clauses are gone; `follow.frontier` now marks a destination block's `frontier` (visited at depth − 1). |
 | 0.21 | Added (minor): the `template` expression node (`parts: (string \| Expr)[]`, strictly alternating text and interpolation). Its text parts are the first non-node values a child slot holds: a walk over `parts` skips them. Nothing renamed or removed. |
+| 0.22 | Added (minor): `"~"`, `"~*"`, `"!~"`, `"!~*"` as `binary` operators (the infix regex operators, sugar over `matches`). No node or field added, renamed or removed; a reader of an older minor may meet an unknown `binary.op`. The canonical print writes the operator as written (`a ~ b`), at comparison precedence. |

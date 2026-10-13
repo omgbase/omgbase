@@ -375,6 +375,18 @@ oqx`name from ${people} where tags.contains("admin")`;       // array membership
   written in the **OQX regex baseline** (below), unanchored unless the pattern
   anchors. `flags` is an optional string of `i` (case-insensitive), `m` (`^`/`$`
   also at newlines), `s` (`.` also matches `\n`); an absent receiver is `false`.
+- The **infix regex operators** (0.22) are sugar over `matches` at comparison
+  precedence: `a ~ b` is `a.matches(b)`, `a ~* b` is `a.matches(b, "i")`,
+  `a !~ b` and `a !~* b` are their negations. Either side is any expression
+  (`title ~ pattern`). An absent receiver is `false` under `~` and therefore
+  `true` under `!~` — OQX's absent, not SQL's NULL. `!`/`not` bind tighter
+  (`not a ~ b` is `(!a) ~ b`; write `a !~ b` or `not (a ~ b)`).
+
+  ```js
+  oqx`name from ${people} where title ~ "^Eng"`;          // → Bob
+  oqx`name from ${people} where title ~* "director"`;     // → Alice
+  oqx`name from ${people} where title !~ "Eng"`;          // → Alice, Carol
+  ```
 
 Anything not in these tables is an **eval error** (`unknown function 'f(…)'` /
 `unknown method '.m(…)'`) — see [custom functions](#custom-functions-and-methods)

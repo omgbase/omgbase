@@ -293,6 +293,19 @@ arithmetic and general `in` are supported.]**
   as methods; `matches` is a real **regexp**. **All string ops are
   CASE-SENSITIVE** — use `.lower()`/`.upper()` to fold. **[was CEL: `LIKE`-based
   ops were case-insensitive and `matches` was unimplemented.]**
+- **Infix regex operators** (OQX 0.22; `spec/oqx` SEMANTICS §11): pure sugar
+  over `matches`, at comparison precedence, non-associative —
+  `x ~ "re"` is `x.matches("re")`, `x ~* "re"` is `x.matches("re", "i")`
+  (case-insensitive), `x !~ "re"` and `x !~* "re"` are their negations. Both
+  sides are expressions (`path ~ dst_path` compares two fields); the pattern is
+  the OQX regex baseline, unanchored unless it anchors (`path ~ "^/texts/"`).
+  **Absent follows OQX, not SQL**: `absent ~ "x"` is false, so `absent !~ "x"`
+  is **true** (a row without the field passes `!~`; Postgres would drop it as
+  NULL). `!`/`not` bind tighter than `~`, as than `==`: `not a ~ b` is
+  `(!a) ~ b`; write `a !~ b` or `not (a ~ b)`. The planner treats them as it
+  treats `matches` — never pushed to SQL (no `regexp` UDF), evaluated in memory
+  as a residual, and a predicate holding one declines the pushdown of its
+  siblings because an invalid pattern must raise.
 - `x in y`: array → typed membership (`"5" in [5]` is false); string → substring;
   object → key existence; **range → interval coverage** (§3.5).
 

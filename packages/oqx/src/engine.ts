@@ -22,6 +22,7 @@
 import type {
   Query, Where, Expr, OpNode, SelectItem, OrderSpec, Follow, Subquery,
 } from "./ast.ts";
+import { isRegexOp, REGEX_OPS } from "./ast.ts";
 import type { DataContext } from "./context.ts";
 import { DefaultContext } from "./context.ts";
 import { OqxError } from "./errors.ts";
@@ -877,6 +878,15 @@ export class InMemoryEngine implements Engine {
           const same = canonicalKey(this.hostIdentity(l)) === canonicalKey(this.hostIdentity(r));
           return e.op === "is" ? same : !same;
         }
+        if (isRegexOp(e.op)) {
+          // The regex operators (SEMANTICS §11, since 0.22) are sugar over
+          // `matches`: `a ~ b` is `a.matches(b)`, `~*` adds the `i` flag, `!~`
+          // / `!~*` negate. They go through the same method dispatch as the
+          // call would, so a host's `matches` (and its regex dialect) applies.
+          const { negated, flags } = REGEX_OPS[e.op];
+          const hit = this.callMethod("matches", l, flags === undefined ? [r] : [r, flags]);
+          return negated ? !truthy(hit) : hit;
+        }
         return isRelOp(e.op) ? relate(e.op, l, r) : arith(e.op, l, r);
       }
       case "logical": {
@@ -978,9 +988,15 @@ export class InMemoryEngine implements Engine {
       throw new OqxError(`unknown function '${e.name}(…)'`, "eval");
     }
     const recv = this.evalExpr(e.recv, scope);
-    const r = this.ctx.callMethod?.(e.name, recv, args);
+    return this.callMethod(e.name, recv, args);
+  }
+
+  // `recv.name(args)` on evaluated values — the dispatch a method call and the
+  // regex operators share.
+  private callMethod(name: string, recv: unknown, args: unknown[]): unknown {
+    const r = this.ctx.callMethod?.(name, recv, args);
     if (r?.handled) return r.value;
-    throw new OqxError(`unknown method '.${e.name}(…)'`, "eval");
+    throw new OqxError(`unknown method '.${name}(…)'`, "eval");
   }
 }
 

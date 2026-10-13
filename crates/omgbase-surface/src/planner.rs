@@ -242,9 +242,14 @@ fn expr_may_raise(e: &Expr, target: Target, root: bool) -> bool {
         // or read anything its block reads.
         Expr::Required { .. } => true,
         Expr::Op(op) => op_may_raise(op, target, root),
-        Expr::Binary { left, right, .. }
-        | Expr::Logical { left, right, .. }
-        | Expr::In { left, right, .. } => again(left) || again(right),
+        // A regex operator (oqx 0.22) is a `matches` call: an invalid pattern
+        // raises, exactly as the call would.
+        Expr::Binary {
+            op, left, right, ..
+        } => op.is_regex() || again(left) || again(right),
+        Expr::Logical { left, right, .. } | Expr::In { left, right, .. } => {
+            again(left) || again(right)
+        }
         Expr::Range { lo, hi, .. } => {
             lo.as_deref().is_some_and(again) || hi.as_deref().is_some_and(again)
         }

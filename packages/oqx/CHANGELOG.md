@@ -4,6 +4,11 @@ All notable changes to `@omgbase/oqx` are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [Semantic Versioning](https://semver.org/) (pre-1.0: a minor bump may break).
 
+## [0.22.0] - 2026-10-13
+
+### Minor
+- **OQX 0.22 — infix regex operators** (`spec/oqx` 0.21 → 0.22; new suite `regex-operators` (40 cases): 1310 → 1350 fixtures). Four operators at comparison precedence, pure sugar over `matches` (SEMANTICS §11): `a ~ b` ≡ `a.matches(b)`, `a ~* b` ≡ `a.matches(b, "i")`, `a !~ b` ≡ `!a.matches(b)`, `a !~* b` ≡ `!a.matches(b, "i")` — the PostgreSQL spellings, so `uri ~ "newton"` is no longer `unexpected character "~"`. Every rule of `matches` carries over: unanchored unless the pattern anchors, case-sensitive except under `~*`, string forms for a number receiver or pattern, either side any expression (`title ~ pattern` is field-vs-field), the OQX regex baseline (a construct outside it is rejected by name, a malformed pattern is `invalid regular expression`, raised when evaluated). **Absent follows OQX, not SQL**: `absent ~ "x"` is false, so `absent !~ "x"` is **true** (Postgres would yield NULL for both). Non-associative like the rest of the level (`a ~ b ~ c`, `a ~ b == c` are `comparisons do not chain`); `!`/`not` bind tighter, so `not a ~ b` is `(!a) ~ b` — write `a !~ b` or `not (a ~ b)`. Lexer: `!~*`, `!~`, `~*`, `~` are single tokens scanned longest first (`!~` wins over `!`, so `name!~"B"` is `name !~ "B"`; `~*` wins over `~`, so `x~*y` is `x ~* y`; `*` alone is still multiplication). **AST**: the operators are `binary` nodes carrying the operator as written (`op: "~" | "~*" | "!~" | "!~*"`; `RegexOp`, `REGEX_OPS`, `isRegexOp` exported) — not desugared in the tree, so `print` writes `a ~ b` back and the round-trip law holds over every fixture; evaluation goes through the same method dispatch as `.matches(…)`, so a host's `matches` and its `regexDialect` apply. Planners: a regex operator is never translated to SQL (the SQLite adapter leaves it residual, as it leaves the call) and is never raise-free (`exprRaiseFree`). `LANGUAGE_VERSION` 0.22.
+
 ## [0.21.0] - 2026-10-13
 
 ### Minor

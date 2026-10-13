@@ -229,10 +229,16 @@ impl<'c> SqliteTable<'c> {
                 self.translatable(left) && self.translatable(right)
             }
             // Every comparison and arithmetic op translates; identity (`is`) is
-            // the engine's structural notion and stays residual.
+            // the engine's structural notion and a regex operator (0.22) needs
+            // the OQX regex baseline — both stay residual.
             Expr::Binary {
                 op, left, right, ..
-            } => !op.is_identity() && self.translatable(left) && self.translatable(right),
+            } => {
+                !op.is_identity()
+                    && !op.is_regex()
+                    && self.translatable(left)
+                    && self.translatable(right)
+            }
             // member/index/call/in/range/outer(^) → residual
             _ => false,
         }
@@ -344,6 +350,9 @@ fn binary_sql(op: BinaryOp) -> &'static str {
         BinaryOp::Gt => ">",
         BinaryOp::Ge => ">=",
         BinaryOp::Is | BinaryOp::IsNot => unreachable!("identity operators are never pushed"),
+        BinaryOp::Match | BinaryOp::MatchI | BinaryOp::NotMatch | BinaryOp::NotMatchI => {
+            unreachable!("regex operators are never pushed")
+        }
         BinaryOp::Add => "+",
         BinaryOp::Sub => "-",
         BinaryOp::Mul => "*",

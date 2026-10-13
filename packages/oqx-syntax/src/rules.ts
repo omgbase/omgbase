@@ -145,9 +145,11 @@ export const RULES: readonly Rule[] = [
   { name: "identifier", regex: "IDENT", groups: ["identifier"] },
 
   // ---- operators and punctuation -------------------------------------------
+  // `alternation` sorts longest first, so `!~*` wins over `!~` over `!=`/`!`,
+  // and `~*` over `~` (GRAMMAR §1, the lexer's rule).
   {
     name: "operator",
-    regex: alternation([...OPERATORS.comparison, ...OPERATORS.logical, ...OPERATORS.arithmetic]),
+    regex: alternation([...OPERATORS.comparison, ...OPERATORS.regex, ...OPERATORS.logical, ...OPERATORS.arithmetic]),
     groups: ["operator"],
   },
   { name: "lift", regex: "\\^", groups: ["lift"] },

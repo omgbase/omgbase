@@ -359,6 +359,41 @@ Methods:
 | `s.matches(re, flags?)` | absent receiver → false; otherwise the receiver's string form is searched (unanchored unless the pattern anchors) with `re`'s string form compiled in the OQX regex baseline below, under the given flags |
 | `x.size()` | as `size(x)` |
 
+**Infix regex operators** (since 0.22). Four operators at comparison precedence
+(GRAMMAR §4) are **pure sugar over `matches`** — one desugar each, no semantics
+of their own:
+
+| Spelling | Means | So |
+| --- | --- | --- |
+| `a ~ b` | `a.matches(b)` | true iff `b`'s string form, compiled in the baseline below with no flags, matches somewhere in `a`'s string form |
+| `a ~* b` | `a.matches(b, "i")` | the same under the `i` flag (case-insensitive by simple case folding, so `"É" ~* "é"`) |
+| `a !~ b` | `!a.matches(b)` | the exact negation of `a ~ b` |
+| `a !~* b` | `!a.matches(b, "i")` | the exact negation of `a ~* b` |
+
+Every rule of `matches` carries over unchanged: the search is **unanchored**
+unless the pattern anchors (`title ~ "ngin"` matches `Engineer`; `"^Eng"`,
+`"or$"` anchor); it is **case-sensitive** except under `~*`; a number receiver
+or pattern is taken by its **string form** (`42 ~ "^4"`, `"a1b" ~ 1`); either
+side is any expression (`title ~ pattern` compares two fields, `s ~ "^" + head`
+builds the pattern); the pattern is compiled in the **OQX regex baseline**
+below, so a construct outside it is rejected **by name** (`"A" ~ "(?i)a"` is
+the eval error `… an inline flag (?i) … not supported in OQX regular
+expressions`) and a malformed pattern is `invalid regular expression`, raised
+when the operator is evaluated (an empty source never evaluates it). An
+implementation evaluates the operator through the same method dispatch as the
+call, so a host that overrides `matches` or chooses the native dialect sees the
+operators behave as its `matches` does.
+
+**Absent operands follow OQX, not SQL.** `matches` on an absent receiver is
+**false**, so `absent ~ "x"` is false — and `absent !~ "x"`, its exact
+negation, is **true**: a row lacking the field matches nothing, so it fails to
+match everything. This differs from PostgreSQL, where `NULL ~ 'x'` and
+`NULL !~ 'x'` are both NULL and the row drops out of either filter; in OQX
+`where nickname !~ "."` keeps every row with no `nickname`, exactly as
+`where !nickname.matches(".")` does and as `nope != 5` is true (§5). Write
+`has(nickname) && nickname !~ "."` to exclude the absent rows.
+[`regex-operators`]
+
 **Regular expressions** (portability). `matches(pattern, flags?)` compiles
 `pattern` in the **OQX regex baseline**: a fixed grammar in which every
 construct has one spec-defined meaning, so a pattern that compiles in one

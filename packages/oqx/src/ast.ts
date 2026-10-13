@@ -26,8 +26,26 @@ export type RelOp = "==" | "!=" | "<" | "<=" | ">" | ">=";
 /** The identity operators (SEMANTICS §5b, since 0.17). */
 export type IdentityOp = "is" | "is not";
 
-/** The operator of a `binary` expression: a comparison, an identity test, or arithmetic. */
-export type BinaryOp = RelOp | IdentityOp | "+" | "-" | "*" | "/" | "%";
+/** The infix regex operators (SEMANTICS §11, since 0.22): sugar over `matches` —
+ * `a ~ b` ≡ `a.matches(b)`, `a ~* b` ≡ `a.matches(b, "i")`, `a !~ b` ≡
+ * `!a.matches(b)`, `a !~* b` ≡ `!a.matches(b, "i")`. The tree keeps the
+ * operator as written so the canonical print is what the user wrote. */
+export type RegexOp = "~" | "~*" | "!~" | "!~*";
+
+/** The operator of a `binary` expression: a comparison, an identity test, a regex match, or arithmetic. */
+export type BinaryOp = RelOp | IdentityOp | RegexOp | "+" | "-" | "*" | "/" | "%";
+
+/** The regex operators, with the `matches` call each stands for. */
+export const REGEX_OPS: Readonly<Record<RegexOp, { negated: boolean; flags: string | undefined }>> = {
+  "~": { negated: false, flags: undefined },
+  "~*": { negated: false, flags: "i" },
+  "!~": { negated: true, flags: undefined },
+  "!~*": { negated: true, flags: "i" },
+};
+
+export function isRegexOp(op: string): op is RegexOp {
+  return Object.hasOwn(REGEX_OPS, op);
+}
 
 /** The operator of a `unary` expression. */
 export type UnaryOp = "!" | "-";

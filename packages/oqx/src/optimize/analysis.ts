@@ -16,6 +16,7 @@
 //     value into an enclosing scope (§19), observable by later conjuncts.
 
 import type { Expr, Follow, OpNode, SelectItem, Subquery, Where } from "../ast.ts";
+import { isRegexOp } from "../ast.ts";
 import type { RuleContext } from "./ir.ts";
 
 // ---- scope reads --------------------------------------------------------------
@@ -99,7 +100,10 @@ export function exprRaiseFree(e: Expr, ctx: RuleContext): boolean {
     case "op": return opRaiseFree(e, ctx); // a value-position directive projects: never raise-free
     case "member": return exprRaiseFree(e.recv, ctx);
     case "unary": return exprRaiseFree(e.expr, ctx);
-    case "binary": case "logical": case "in": return exprRaiseFree(e.left, ctx) && exprRaiseFree(e.right, ctx);
+    // A regex operator (0.22) is a `matches` call in disguise: the pattern may
+    // be invalid, so it is never raise-free.
+    case "binary": return !isRegexOp(e.op) && exprRaiseFree(e.left, ctx) && exprRaiseFree(e.right, ctx);
+    case "logical": case "in": return exprRaiseFree(e.left, ctx) && exprRaiseFree(e.right, ctx);
     case "range": return (e.lo === null || exprRaiseFree(e.lo, ctx)) && (e.hi === null || exprRaiseFree(e.hi, ctx));
     case "tuple": return e.items.every((x) => exprRaiseFree(x, ctx));
     // A template literal raises on a list or record interpolation (§7b), which
