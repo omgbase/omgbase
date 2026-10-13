@@ -1191,7 +1191,10 @@ fn plan_ctx(r: &Runner, ts: &str) -> PlanContext {
 }
 
 /// A step's `select` + `effects` (the templates) + `expect` as the surface's
-/// request (§11.8); `None` without a `select`.
+/// request (§11.8); since 3.2 also a selector-less step whose `effects`
+/// carry sugar (a bare target, a `-> ` leader, an `{ oqx }`), which the
+/// surface desugars and evaluates in the targets' own rows; `None` for the
+/// plain `effects` path.
 fn selector_of(body: &JsonMap<String, Json>) -> Result<Option<SelectRequest>, String> {
     SelectRequest::from_args(&Json::Object(body.clone())).map_err(|e| e.to_string())
 }

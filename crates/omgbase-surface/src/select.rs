@@ -42,6 +42,32 @@
 //! an expanded effect carries `effect_index` (the expanded position) plus
 //! `template_index` and `row`.
 //!
+//! **Sugar** (`spec/mutate` §11.8 "Sugar", 3.2). In every expression slot a
+//! JSON string beginning exactly [`LEADER`] (`-> `) desugars to `{ oqx: rest
+//! }` before the admission — typing follows the value as `{ oqx }` does; a
+//! string not beginning `-> ` is literal, always (no escaping, no `${`
+//! scanning; `-> "-> …"` spells a literal that begins with the leader). A
+//! leader whose expression is a bare string literal or a template literal
+//! without an interpolation **folds** to the plain literal before planning
+//! (`-> "x"` and `"x"` give one `plan_id`). A **bare target** string (with or
+//! without a selector) normalizes before resolution: a path-looking string
+//! (a `/` or ending `.md`) is `{ kind: "document", path }`, a `b_` / `d_` /
+//! `n_` id its kind, `"$new.n"` the symbol's kind (an `into` is settled from
+//! the prefix plan's `new_ids`, [`settle_into_symbols`]), `"-> expr"` the
+//! identity the value names (a row → kind by id prefix, a path string → a
+//! document), a `#` locator is refused with a fix. **Without a selector** a
+//! `-> ` / `{ oqx }` slot evaluates in its own target's row scope: the
+//! effects are grouped by resolved target identity and one synthetic query
+//! per identity (`from <root> where id == "<id>"`, the slot items appended as
+//! `__omg_sel_<effectIndex>_<slot>`) runs through the AST runner; the plan
+//! has no `selection`, `planner_v` stays p3 and the intent record gains
+//! `templates` (the effects as written) — a plain request without the leader
+//! produces none, so no existing digest moves. A `-> ` slot on a `create`
+//! without a selector, a `-> ` target without a selector, an unparsable
+//! expression (offsets relative to the slot string, past the leader) and a
+//! leader in `expect` / `field` / `op` are `filter_invalid { hint:
+//! "selection" }`.
+//!
 //! **Cardinality.** `expect.max` (a non-negative integer; required on a
 //! one-shot `apply`, optional on `plan` / `execute`) bounds the selection; the
 //! query runs with `limit = max + 1` (or `SELECTION_CEILING + 1` without a
@@ -54,13 +80,15 @@ use std::collections::HashMap;
 use omgbase_mutate::effects::{SELECTION_CEILING, Selection, SelectionExpect, js_number};
 use omgbase_mutate::{Effect, ErrorCode, MutationError};
 use omgbase_store::effects_plan::PlanContext;
+use omgbase_store::mutate::is_id_ref;
 use omgbase_store::{DocStore, Store};
 use oqx::Consumer;
-use oqx::ast::{Expr, Query, SelectItem};
+use oqx::ast::{Expr, Query, SelectItem, TemplatePart};
 use serde_json::{Map, Value as Json, json};
 
 use crate::context::{SemanticVec, Target};
 use crate::error::{Result, SurfaceError};
+use crate::paths::storage_path;
 use crate::planner::root_target;
 use crate::query::{
     HIT_ID, HIT_PATH, QueryOptions, check_reserved_aliases, check_root_spellings, query_ast,
@@ -76,6 +104,9 @@ const WRAP_TAIL: &str = " from docs";
 /// reference's `$sel`).
 const PROBE: &str = "$sel";
 const OPS: &str = "create/insert/set/unset/move/remove/split/merge";
+/// §11.8 "Sugar" (3.2): the leader a string slot begins with to be an
+/// expression — exactly dash, greater-than, space.
+pub const LEADER: &str = "-> ";
 
 /// The admission pass's refusal: `filter_invalid { reason, hint: "selection" }`
 /// (the reference's `selectionInvalid`), with extra `data` members when given.
@@ -100,10 +131,419 @@ fn shape_error(message: String) -> SurfaceError {
     SurfaceError::filter_invalid(message, "arguments")
 }
 
+// ---- sugar (§11.8 "Sugar", 3.2) --------------------------------------------------------
+
+/// The expression a `-> ` string spells (`None`: not a string, or a string
+/// that does not begin exactly with the leader — `->x`, ` -> x`, `-->` and a
+/// mid-string `-> ` are literals).
+fn leader_of(v: &Json) -> Option<&str> {
+    v.as_str()?.strip_prefix(LEADER)
+}
+
+/// A string anywhere under `v` begins with the leader.
+fn contains_leader(v: &Json) -> bool {
+    match v {
+        Json::String(_) => leader_of(v).is_some(),
+        Json::Array(a) => a.iter().any(contains_leader),
+        Json::Object(o) => o.values().any(contains_leader),
+        _ => false,
+    }
+}
+
+/// A path-looking string: contains `/` or ends `.md` (the reference's
+/// `looksLikePath`).
+fn path_looking(s: &str) -> bool {
+    s.contains('/') || s.ends_with(".md")
+}
+
+/// A node id: `n_` + 12 lower-case hex (the reference's `NODE_ID_RE`).
+fn is_node_id(s: &str) -> bool {
+    s.len() == 14
+        && s.starts_with("n_")
+        && s[2..]
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+}
+
+/// A bare id of the three target kinds (the reference's `isTargetId`; the
+/// `b_` / `d_` rule is the reference's `ID_RE` — one to seven alphabet
+/// characters, so the fixture minter's `b_5` is an id too).
+fn is_target_id(s: &str) -> bool {
+    is_id_ref(s, "b") || is_id_ref(s, "d") || is_node_id(s)
+}
+
+/// Which target member a bare string sits in: the member decides the
+/// provisional kind a `$new.n` takes until the symbol table settles it (an
+/// `into` is ambiguous — document or block; `set`'s follows its field;
+/// `targets[k]` is a block).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Member {
+    Target,
+    Into,
+    Targets(usize),
+}
+
+/// The provisional kind of a bare `$new.n` in `member` — always one the
+/// slot admits, so the first shape check passes and the settled kind is
+/// what the slot's kind table judges ([`finish`]).
+fn symbol_kind(member: Member, op: &str, field: Option<&str>) -> &'static str {
+    match member {
+        Member::Targets(_) => "block",
+        Member::Into => "document",
+        Member::Target => match op {
+            "split" => "block",
+            "set" => match field {
+                Some(f) if f == "markdown" || f == "attrs.checked" => "block",
+                _ => "document",
+            },
+            _ => "document",
+        },
+    }
+}
+
+const LOCATOR_FIX: &str = "resolve the locator to an id first: `blocks_resolve { locator }`, or a `query` whose hit is the block";
+
+/// A bare target string → the target object (the reference's `bareTarget`,
+/// in its order): a `#` anywhere is a locator (`filter_invalid { hint:
+/// "arguments", fix }`), a `$new.n` the symbol (provisional kind), a `b_` /
+/// `d_` id by validity, an `n_` id, a path-looking string a document by
+/// path; anything else is no target (hint `arguments`).
+fn bare_target(s: &str, here: &str, member: Member, op: &str, field: Option<&str>) -> Result<Json> {
+    if s.contains('#') {
+        let message = format!(
+            "{here}: {} is a locator, not a target — a bare target is a document path, a `b_`/`d_`/`n_` id or `$new.n`",
+            Json::String(s.to_owned())
+        );
+        return Err(SurfaceError::with_data(
+            "filter_invalid",
+            message.clone(),
+            json!({ "reason": message, "hint": "arguments", "fix": LOCATOR_FIX }),
+        ));
+    }
+    if omgbase_mutate::parse_new_symbol(s).is_some() {
+        return Ok(json!({ "kind": symbol_kind(member, op, field), "id": s }));
+    }
+    if is_id_ref(s, "b") {
+        return Ok(json!({ "kind": "block", "id": s }));
+    }
+    if is_id_ref(s, "d") {
+        return Ok(json!({ "kind": "document", "id": s }));
+    }
+    if is_node_id(s) {
+        return Ok(json!({ "kind": "node", "id": s }));
+    }
+    if path_looking(s) {
+        return Ok(json!({ "kind": "document", "path": s }));
+    }
+    Err(shape_error(format!(
+        "{here}: a target is {{ kind: …, … }} or a bare document path, a `b_`/`d_`/`n_` id or `$new.n` (got {})",
+        Json::String(s.to_owned())
+    )))
+}
+
+/// `"-> <expr>"` → `{ oqx: "<expr>" }`, or the folded literal when the
+/// expression is a bare string literal or a template literal without an
+/// interpolation (the reference's `desugarLeader`). A parse error is
+/// `filter_invalid { hint: "selection" }` with its offset counted from the
+/// start of the written string (past the leader).
+fn desugar_expression(src: &str, here: &str) -> Result<Json> {
+    let wrapped = format!("{WRAP_HEAD}{src}{WRAP_TAIL}");
+    let head = WRAP_HEAD.chars().count();
+    let shift = LEADER.chars().count() as isize - head as isize;
+    let q = oqx::parse_string(&wrapped)
+        .map_err(|e| refused(format!("{here}: {}", shift_offsets(&e.message, shift))))?;
+    let one = q.select.len() == 1
+        && matches!(&q.source, Expr::Ident { name, .. } if name == "docs")
+        && q.from.is_empty()
+        && q.r#where.is_none()
+        && q.order_by.is_none()
+        && q.follow.is_none()
+        && q.frontier.is_none()
+        && q.limit.is_none()
+        && q.offset.is_none()
+        && !q.distinct
+        && !q.values
+        && q.consumer == Consumer::Collect;
+    if !one {
+        return Err(refused(format!(
+            "{here}: `oqx` must be one expression over the hit, not a query"
+        )));
+    }
+    let folded = match q.select.first() {
+        Some(SelectItem::Field { expr, .. }) => match expr {
+            Expr::Lit {
+                value: oqx::Value::Str(text),
+                ..
+            } => Some(text.clone()),
+            Expr::Template { parts, .. } if parts.len() == 1 => match &parts[0] {
+                TemplatePart::Text(text) => Some(text.clone()),
+                TemplatePart::Expr(_) => None,
+            },
+            _ => None,
+        },
+        _ => None,
+    };
+    Ok(match folded {
+        Some(text) => Json::String(text),
+        None => json!({ "oqx": src }),
+    })
+}
+
+/// What the desugar of one effect saw: the target members written as a
+/// bare `$new.n` (provisional kinds, settled against the symbol table).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+struct Desugared {
+    symbols: Vec<Member>,
+}
+
+/// A `-> ` string where no expression is admitted — anywhere under `v`
+/// (the reference's `refuseLeader`).
+fn refuse_leader(v: &Json, here: &str) -> Result<()> {
+    match v {
+        Json::String(_) if leader_of(v).is_some() => Err(refused(format!(
+            "{here}: `-> ` is not allowed here — this member takes no expression"
+        ))),
+        Json::Array(a) => a
+            .iter()
+            .enumerate()
+            .try_for_each(|(k, x)| refuse_leader(x, &format!("{here}[{k}]"))),
+        Json::Object(o) => o
+            .iter()
+            .try_for_each(|(k, x)| refuse_leader(x, &format!("{here}.{k}"))),
+        _ => Ok(()),
+    }
+}
+
+/// The desugar of one effect as written (the reference's `desugarEffect`):
+/// in the slots of its op a leader becomes `{ oqx }` or folds, a bare target
+/// string normalizes ([`bare_target`]; a leader target is the whole-target
+/// directive, a folded one a bare string), and a leader anywhere else —
+/// `op`, `field`, `expect`, a target's other members, a whole `at`, an
+/// unknown key — is refused. An unknown `op` is left for the shape check.
+fn desugar_effect(raw: &Json, index: usize) -> Result<(Json, Desugared)> {
+    let mut d = Desugared::default();
+    let Some(o) = raw.as_object() else {
+        return Ok((raw.clone(), d));
+    };
+    let Some(op) = o.get("op").and_then(Json::as_str).map(str::to_owned) else {
+        return Ok((raw.clone(), d));
+    };
+    let here = format!("effects[{index}]");
+    let field = o.get("field").and_then(Json::as_str).map(str::to_owned);
+    let mut out = o.clone();
+    let mut slot_keys: Vec<&str> = vec!["op"];
+
+    fn leader_at(
+        out: &mut Map<String, Json>,
+        slot_keys: &mut Vec<&str>,
+        key: &'static str,
+        here: &str,
+    ) -> Result<()> {
+        slot_keys.push(key);
+        if let Some(src) = out.get(key).and_then(leader_of).map(str::to_owned) {
+            let v = desugar_expression(&src, &format!("{here}.{key}"))?;
+            out.insert(key.to_owned(), v);
+        }
+        Ok(())
+    }
+    // One target member: a bare string normalizes (a leader → the whole-target
+    // directive, or its folded literal normalized); an object's `id` / `path`
+    // take a leader, its other members may not.
+    fn one_target(
+        v: &Json,
+        here: &str,
+        member: Member,
+        op: &str,
+        field: Option<&str>,
+        d: &mut Desugared,
+    ) -> Result<Json> {
+        match v {
+            Json::String(s) => {
+                let literal = match leader_of(v) {
+                    Some(src) => match desugar_expression(src, here)? {
+                        Json::String(folded) => folded,
+                        directive => return Ok(directive),
+                    },
+                    None => s.clone(),
+                };
+                let t = bare_target(&literal, here, member, op, field)?;
+                if omgbase_mutate::parse_new_symbol(&literal).is_some() {
+                    d.symbols.push(member);
+                }
+                Ok(t)
+            }
+            Json::Object(t) => {
+                let mut out = t.clone();
+                for m in ["id", "path"] {
+                    if let Some(src) = t.get(m).and_then(leader_of) {
+                        let v = desugar_expression(src, &format!("{here}.{m}"))?;
+                        out.insert(m.to_owned(), v);
+                    }
+                }
+                for (k, x) in t {
+                    if k != "id" && k != "path" {
+                        refuse_leader(x, &format!("{here}.{k}"))?;
+                    }
+                }
+                Ok(Json::Object(out))
+            }
+            other => Ok(other.clone()),
+        }
+    }
+    let target = |out: &mut Map<String, Json>,
+                  slot_keys: &mut Vec<&str>,
+                  key: &'static str,
+                  member: Member,
+                  d: &mut Desugared|
+     -> Result<()> {
+        slot_keys.push(key);
+        if let Some(v) = out.get(key).cloned() {
+            let t = one_target(
+                &v,
+                &format!("{here}.{key}"),
+                member,
+                &op,
+                field.as_deref(),
+                d,
+            )?;
+            out.insert(key.to_owned(), t);
+        }
+        Ok(())
+    };
+    let targets =
+        |out: &mut Map<String, Json>, slot_keys: &mut Vec<&str>, d: &mut Desugared| -> Result<()> {
+            slot_keys.push("targets");
+            if let Some(Json::Array(list)) = out.get("targets").cloned() {
+                let mut items = Vec::with_capacity(list.len());
+                for (k, v) in list.iter().enumerate() {
+                    items.push(one_target(
+                        v,
+                        &format!("{here}.targets[{k}]"),
+                        Member::Targets(k),
+                        &op,
+                        field.as_deref(),
+                        d,
+                    )?);
+                }
+                out.insert("targets".to_owned(), Json::Array(items));
+            }
+            Ok(())
+        };
+    let at = |out: &mut Map<String, Json>, slot_keys: &mut Vec<&str>| -> Result<()> {
+        slot_keys.push("at");
+        let Some(a) = out.get("at").cloned() else {
+            return Ok(());
+        };
+        let Some(a) = a.as_object() else {
+            return refuse_leader(&a, &format!("{here}.at"));
+        };
+        let mut next = a.clone();
+        for m in ["before", "after"] {
+            if let Some(src) = a.get(m).and_then(leader_of) {
+                let v = desugar_expression(src, &format!("{here}.at.{m}"))?;
+                next.insert(m.to_owned(), v);
+            }
+        }
+        for (k, x) in a {
+            if k != "before" && k != "after" {
+                refuse_leader(x, &format!("{here}.at.{k}"))?;
+            }
+        }
+        out.insert("at".to_owned(), Json::Object(next));
+        Ok(())
+    };
+    match op.as_str() {
+        "create" => {
+            leader_at(&mut out, &mut slot_keys, "path", &here)?;
+            leader_at(&mut out, &mut slot_keys, "markdown", &here)?;
+            slot_keys.push("frontmatter");
+            if let Some(Json::Object(fm)) = o.get("frontmatter") {
+                let mut next = fm.clone();
+                for (k, v) in fm {
+                    if let Some(src) = leader_of(v) {
+                        let x = desugar_expression(src, &format!("{here}.frontmatter.{k}"))?;
+                        next.insert(k.clone(), x);
+                    }
+                }
+                out.insert("frontmatter".to_owned(), Json::Object(next));
+            }
+        }
+        "insert" => {
+            target(&mut out, &mut slot_keys, "into", Member::Into, &mut d)?;
+            at(&mut out, &mut slot_keys)?;
+            leader_at(&mut out, &mut slot_keys, "markdown", &here)?;
+        }
+        "set" => {
+            target(&mut out, &mut slot_keys, "target", Member::Target, &mut d)?;
+            leader_at(&mut out, &mut slot_keys, "value", &here)?;
+        }
+        "unset" => target(&mut out, &mut slot_keys, "target", Member::Target, &mut d)?,
+        "move" => {
+            if o.contains_key("targets") || o.contains_key("into") {
+                targets(&mut out, &mut slot_keys, &mut d)?;
+                target(&mut out, &mut slot_keys, "into", Member::Into, &mut d)?;
+                at(&mut out, &mut slot_keys)?;
+            } else {
+                target(&mut out, &mut slot_keys, "target", Member::Target, &mut d)?;
+                leader_at(&mut out, &mut slot_keys, "to", &here)?;
+            }
+        }
+        "remove" => {
+            if o.contains_key("targets") {
+                targets(&mut out, &mut slot_keys, &mut d)?;
+            } else {
+                target(&mut out, &mut slot_keys, "target", Member::Target, &mut d)?;
+            }
+        }
+        // `at` is byte offsets: no expression
+        "split" => target(&mut out, &mut slot_keys, "target", Member::Target, &mut d)?,
+        "merge" => {
+            targets(&mut out, &mut slot_keys, &mut d)?;
+            leader_at(&mut out, &mut slot_keys, "separator", &here)?;
+        }
+        // not row-shaped: no slot
+        "retarget" => {}
+        // an unknown op: the shape check names it
+        _ => return Ok((Json::Object(out), d)),
+    }
+    for (key, v) in o {
+        if !slot_keys.contains(&key.as_str()) {
+            refuse_leader(v, &format!("{here}.{key}"))?;
+        }
+    }
+    Ok((Json::Object(out), d))
+}
+
+/// Does a request's `effects` carry any sugar — a bare string target, a `-> `
+/// leader anywhere, or an `{ oqx }` directive — so that a selector-less
+/// call must take the sugar path instead of the plain `effects` one? (The
+/// reference always desugars; without sugar the desugar is the identity, so
+/// the plain path stays byte-identical.)
+fn needs_sugar(effects: &Json) -> bool {
+    let Some(list) = effects.as_array() else {
+        return false;
+    };
+    list.iter().any(|e| {
+        let Some(o) = e.as_object() else {
+            return false;
+        };
+        o.get("target").is_some_and(Json::is_string)
+            || o.get("into").is_some_and(Json::is_string)
+            || o.get("targets")
+                .and_then(Json::as_array)
+                .is_some_and(|a| a.iter().any(Json::is_string))
+            || contains_leader(e)
+            || contains_oqx(e)
+    })
+}
+
 // ---- the request ----------------------------------------------------------------------
 
-/// `plan` / `apply` / `execute` with a `select`: the selector, the templates
-/// (the call's `effects`) and the optional bound, as given.
+/// `plan` / `apply` / `execute` with a `select` — the selector, the
+/// templates (the call's `effects`) and the optional bound, as given — or,
+/// since 3.2, a selector-less call whose `effects` carry sugar (`select` is
+/// `null`: the effects are desugared and their `-> ` / `{ oqx }` slots
+/// evaluated in their own targets' row scopes).
 #[derive(Clone, Debug, PartialEq)]
 pub struct SelectRequest {
     pub select: Json,
@@ -113,14 +553,22 @@ pub struct SelectRequest {
 
 impl SelectRequest {
     /// Read a tool's or a fixture step's arguments: `None` when the call
-    /// names neither `select` nor `expect` (the plain `effects` path);
-    /// `expect` without `select` is refused as the reference's planner
-    /// refuses it. Nothing else is checked here — [`compile`] does, in the
-    /// reference's order.
+    /// names neither `select` nor `expect` and its `effects` carry no sugar
+    /// (the plain `effects` path, untouched); `expect` without `select` is
+    /// refused as the reference's planner refuses it. Nothing else is
+    /// checked here — [`compile`] does, in the reference's order.
     pub fn from_args(args: &Json) -> Result<Option<Self>> {
         let select = args.get("select").filter(|v| !v.is_null());
         let expect = args.get("expect").filter(|v| !v.is_null());
+        let effects = args.get("effects").cloned().unwrap_or(Json::Null);
         if select.is_none() && expect.is_none() {
+            if needs_sugar(&effects) {
+                return Ok(Some(Self {
+                    select: Json::Null,
+                    templates: effects,
+                    expect: None,
+                }));
+            }
             return Ok(None);
         }
         let Some(select) = select else {
@@ -130,9 +578,15 @@ impl SelectRequest {
         };
         Ok(Some(Self {
             select: select.clone(),
-            templates: args.get("effects").cloned().unwrap_or(Json::Null),
+            templates: effects,
             expect: expect.cloned(),
         }))
+    }
+
+    /// The call names a selector (else it is the selector-less sugar path).
+    #[must_use]
+    pub fn has_selector(&self) -> bool {
+        !self.select.is_null()
     }
 
     /// The selector as given, when it is a string.
@@ -186,6 +640,12 @@ enum SlotKind {
     Identity { key: String, member: String },
     /// `targets[k].id`.
     TargetsIdentity { k: usize },
+    /// A whole target (`target` / `into`) as one expression (3.2): the value
+    /// names the identity — a row by its id, a string as [`bare_target`]
+    /// reads it.
+    WholeTarget { key: String, member: Member },
+    /// `targets[k]` as one expression: a block.
+    WholeTargets { k: usize },
     /// `markdown`, `to`, `path`, `separator` — a top-level string member.
     Str { key: String },
     /// `at.before` / `at.after`.
@@ -219,13 +679,16 @@ enum DefaultTarget {
 }
 
 /// One admitted template: the template with every slot removed (the binder
-/// copies it and fills the slots), its slots and the default target.
+/// copies it and fills the slots), its slots, the default target and the
+/// target members written as a bare `$new.n`.
 #[derive(Clone, Debug)]
 pub struct Template {
     index: usize,
     base: Map<String, Json>,
     slots: Vec<Slot>,
     default_target: Option<DefaultTarget>,
+    symbols: Vec<Member>,
+    op: String,
 }
 
 impl Template {
@@ -288,8 +751,9 @@ fn describe(v: Option<&Json>) -> String {
     }
 }
 
-/// Shift the `(at offset N)` of a parse error back by the wrapper's head.
-fn shift_offsets(message: &str, by: usize) -> String {
+/// Shift the `(at offset N)` of a parse error by `delta` (back by the
+/// wrapper's head; a `-> ` slot's forward by the leader).
+fn shift_offsets(message: &str, delta: isize) -> String {
     const MARK: &str = "(at offset ";
     let Some(i) = message.find(MARK) else {
         return message.to_owned();
@@ -299,11 +763,11 @@ fn shift_offsets(message: &str, by: usize) -> String {
     if digits.is_empty() {
         return message.to_owned();
     }
-    let n: usize = digits.parse().unwrap_or(0);
+    let n: isize = digits.parse().unwrap_or(0);
     format!(
         "{}{MARK}{}{}",
         &message[..i],
-        n.saturating_sub(by),
+        (n + delta).max(0),
         &rest[digits.len()..]
     )
 }
@@ -313,8 +777,12 @@ fn shift_offsets(message: &str, by: usize) -> String {
 fn parse_expression(source: &str, here: &str) -> Result<SelectItem> {
     let wrapped = format!("{WRAP_HEAD}{source}{WRAP_TAIL}");
     let head = WRAP_HEAD.chars().count();
-    let mut q = oqx::parse_string(&wrapped)
-        .map_err(|e| refused(format!("{here}: {}", shift_offsets(&e.message, head))))?;
+    let mut q = oqx::parse_string(&wrapped).map_err(|e| {
+        refused(format!(
+            "{here}: {}",
+            shift_offsets(&e.message, -(head as isize))
+        ))
+    })?;
     let one = q.select.len() == 1
         && matches!(&q.source, Expr::Ident { name, .. } if name == "docs")
         && q.from.is_empty()
@@ -367,11 +835,22 @@ fn hit_ref(root: Target, id: &str) -> Json {
     json!({ "kind": hit_kind(root), "id": id })
 }
 
+/// The selector-less refusal of an expression where the row would come from
+/// (the reference's `needsSelector`).
+fn needs_selector(where_: &str) -> SurfaceError {
+    refused(format!(
+        "{where_}: an expression target needs a selector — without `select` there is no row to read it from"
+    ))
+}
+
 /// The reference's `admitTemplate`, member by member.
 struct Admit<'a> {
     here: String,
     raw: &'a Map<String, Json>,
     root: Target,
+    /// A plain effect (no selector, 3.2): an absent target is not the hit's
+    /// (there is none), and an expression as the primary target is refused.
+    plain: bool,
     base: Map<String, Json>,
     probe: Map<String, Json>,
     slots: Vec<Slot>,
@@ -425,16 +904,47 @@ impl Admit<'_> {
     }
 
     /// A target member: `{ kind, id: { oqx } }` or `{ kind: "document", path:
-    /// { oqx } }`; absent → the hit when `defaultable`.
-    fn target_slot(&mut self, key: &'static str, defaultable: bool) -> Result<bool> {
+    /// { oqx } }`, or (3.2) the whole target `{ oqx }` — the identity the
+    /// value names, `probe_kind` standing in for its unknown kind; absent →
+    /// the hit when `defaultable` (never on a plain effect).
+    fn target_slot(
+        &mut self,
+        key: &'static str,
+        defaultable: bool,
+        probe_kind: &str,
+        primary: bool,
+    ) -> Result<bool> {
         self.slot_keys.push(key);
         let Some(t) = self.raw.get(key) else {
-            if !defaultable {
+            if !defaultable || self.plain {
                 return Ok(false);
             }
             self.probe.insert(key.to_owned(), hit_ref(self.root, PROBE));
             return Ok(true);
         };
+        if let Some(src) = oqx_of(t).map(str::to_owned) {
+            if self.plain && primary {
+                return Err(needs_selector(&format!("{}.{key}", self.here)));
+            }
+            self.base.remove(key);
+            self.probe
+                .insert(key.to_owned(), json!({ "kind": probe_kind, "id": PROBE }));
+            let member = if key == "into" {
+                Member::Into
+            } else {
+                Member::Target
+            };
+            self.push(
+                key.to_owned(),
+                SlotKind::WholeTarget {
+                    key: key.to_owned(),
+                    member,
+                },
+                key,
+                &src,
+            )?;
+            return Ok(false);
+        }
         if let Some(t) = t.as_object() {
             let id_x = t.get("id").and_then(oqx_of).map(str::to_owned);
             let path_x = t.get("path").and_then(oqx_of).map(str::to_owned);
@@ -448,6 +958,9 @@ impl Admit<'_> {
                 .map(|s| ("id", s))
                 .or_else(|| path_x.map(|s| ("path", s)))
             {
+                if self.plain && primary {
+                    return Err(needs_selector(&format!("{}.{key}", self.here)));
+                }
                 let mut literal = t.clone();
                 literal.remove(member);
                 self.base.insert(key.to_owned(), Json::Object(literal));
@@ -476,12 +989,13 @@ impl Admit<'_> {
         Ok(false)
     }
 
-    /// `targets[]`: each element `{ kind: "block", id: { oqx } }` yields one
-    /// block id; absent → `[the hit]` when `defaultable`.
+    /// `targets[]`: each element `{ kind: "block", id: { oqx } }` (or, 3.2, a
+    /// whole `{ oqx }`) yields one block; absent → `[the hit]` when
+    /// `defaultable`. The list is always the primary target of its op.
     fn targets_slot(&mut self, defaultable: bool) -> Result<bool> {
         self.slot_keys.push("targets");
         let Some(list) = self.raw.get("targets") else {
-            if !defaultable {
+            if !defaultable || self.plain {
                 return Ok(false);
             }
             self.probe
@@ -492,6 +1006,24 @@ impl Admit<'_> {
             return Ok(false);
         };
         for (k, t) in list.iter().enumerate() {
+            if let Some(src) = oqx_of(t).map(str::to_owned) {
+                if self.plain {
+                    return Err(needs_selector(&format!("{}.targets[{k}]", self.here)));
+                }
+                if let Some(arr) = self.base.get_mut("targets").and_then(Json::as_array_mut) {
+                    arr[k] = json!({});
+                }
+                if let Some(arr) = self.probe.get_mut("targets").and_then(Json::as_array_mut) {
+                    arr[k] = json!({ "kind": "block", "id": PROBE });
+                }
+                self.push(
+                    format!("targets_{k}"),
+                    SlotKind::WholeTargets { k },
+                    &format!("targets[{k}]"),
+                    &src,
+                )?;
+                continue;
+            }
             let Some(t) = t.as_object() else {
                 continue;
             };
@@ -502,6 +1034,9 @@ impl Admit<'_> {
                 )));
             }
             if let Some(src) = t.get("id").and_then(oqx_of).map(str::to_owned) {
+                if self.plain {
+                    return Err(needs_selector(&format!("{}.targets[{k}].id", self.here)));
+                }
                 let mut literal = t.clone();
                 literal.remove("id");
                 if let Some(arr) = self.base.get_mut("targets").and_then(Json::as_array_mut) {
@@ -596,8 +1131,15 @@ impl Admit<'_> {
 /// Admit `effects[t]` statically (before the query runs): a row-shaped op,
 /// the `{ oqx }` directives only in the slots, every expression parseable,
 /// and the template's shape valid with a probe value in each slot (§11.1's
-/// `effects[i]` messages, `hint: "arguments"`).
-fn admit_template(index: usize, raw: &Json, root: Target) -> Result<Template> {
+/// `effects[i]` messages, `hint: "arguments"`). `plain` is the
+/// selector-less mode (3.2); `sugar` what the desugar saw.
+fn admit_template(
+    index: usize,
+    raw: &Json,
+    root: Target,
+    plain: bool,
+    sugar: &Desugared,
+) -> Result<Template> {
     let here = format!("effects[{index}]");
     let Some(op) = raw
         .as_object()
@@ -626,6 +1168,7 @@ fn admit_template(index: usize, raw: &Json, root: Target) -> Result<Template> {
         here: here.clone(),
         raw,
         root,
+        plain,
         base: raw.clone(),
         probe: raw.clone(),
         slots: Vec::new(),
@@ -639,20 +1182,20 @@ fn admit_template(index: usize, raw: &Json, root: Target) -> Result<Template> {
             a.frontmatter_slots()?;
         }
         "insert" => {
-            if a.target_slot("into", true)? {
+            if a.target_slot("into", true, "document", true)? {
                 default_target = Some(DefaultTarget::Into);
             }
             a.at_slot()?;
             a.string_slot("markdown")?;
         }
         "set" => {
-            if a.target_slot("target", true)? {
+            if a.target_slot("target", true, "document", true)? {
                 default_target = Some(DefaultTarget::Target);
             }
             a.value_slot()?;
         }
-        "unset" | "split" => {
-            if a.target_slot("target", true)? {
+        "unset" => {
+            if a.target_slot("target", true, "document", true)? {
                 default_target = Some(DefaultTarget::Target);
             }
         }
@@ -662,10 +1205,10 @@ fn admit_template(index: usize, raw: &Json, root: Target) -> Result<Template> {
                 if a.targets_slot(true)? {
                     default_target = Some(DefaultTarget::Targets);
                 }
-                a.target_slot("into", false)?;
+                a.target_slot("into", false, "document", false)?;
                 a.at_slot()?;
             } else {
-                if a.target_slot("target", true)? {
+                if a.target_slot("target", true, "document", true)? {
                     default_target = Some(DefaultTarget::Target);
                 }
                 a.string_slot("to")?;
@@ -675,11 +1218,16 @@ fn admit_template(index: usize, raw: &Json, root: Target) -> Result<Template> {
             let doc_form = raw.contains_key("target")
                 || (!raw.contains_key("targets") && root == Target::Docs);
             if doc_form {
-                if a.target_slot("target", true)? {
+                if a.target_slot("target", true, "document", true)? {
                     default_target = Some(DefaultTarget::Target);
                 }
             } else if a.targets_slot(true)? {
                 default_target = Some(DefaultTarget::Targets);
+            }
+        }
+        "split" => {
+            if a.target_slot("target", true, "block", true)? {
+                default_target = Some(DefaultTarget::Target);
             }
         }
         "merge" => {
@@ -714,6 +1262,8 @@ fn admit_template(index: usize, raw: &Json, root: Target) -> Result<Template> {
         base,
         slots,
         default_target,
+        symbols: sugar.symbols.clone(),
+        op: op.to_owned(),
     })
 }
 
@@ -794,8 +1344,8 @@ fn admit_selector(select: &str) -> Result<(Query, Target)> {
 
 /// The static half (§11.8 steps 1 and 2; the reference's `validateExpect` +
 /// `admitRequest`): `expect`, then `select` and the templates, then the
-/// selector's admission, the templates' admission and the rewrite. Nothing
-/// is read.
+/// selector's admission, the templates' desugar (3.2) and admission, and
+/// the rewrite. Nothing is read.
 pub fn compile(req: &SelectRequest) -> Result<Compiled> {
     let expect = validate_expect(req.expect.as_ref())?;
     let select = req
@@ -814,7 +1364,10 @@ pub fn compile(req: &SelectRequest) -> Result<Compiled> {
     let templates = templates
         .iter()
         .enumerate()
-        .map(|(t, v)| admit_template(t, v, root))
+        .map(|(t, v)| {
+            let (v, d) = desugar_effect(v, t)?;
+            admit_template(t, &v, root, false, &d)
+        })
         .collect::<Result<Vec<_>>>()?;
     let mut rewritten = raw.clone();
     for tpl in &templates {
@@ -840,75 +1393,142 @@ pub fn compile(req: &SelectRequest) -> Result<Compiled> {
 /// A hit's `(id, path)`.
 pub type Row = (String, String);
 
-/// `{ effect_index, template_index, row, expression }` — what every error
-/// from a slot carries.
-fn slot_data(k: usize, t: usize, row: &Row, expression: &str) -> Json {
-    json!({
+/// `{ effect_index, template_index?, row, expression }` — what every error
+/// from a slot carries (`template_index` only under a selector).
+fn slot_data(k: usize, t: Option<usize>, row: &Row, expression: &str) -> Json {
+    let mut d = json!({
         "effect_index": k,
-        "template_index": t,
         "row": { "id": row.0, "path": row.1 },
         "expression": expression,
-    })
+    });
+    if let Some(t) = t {
+        d["template_index"] = json!(t);
+    }
+    d
 }
 
-/// One hit × one template → the concrete effect (§11.8's table; the
-/// reference's `bind`).
-fn bind_one(c: &Compiled, hit: &Json, t: &Template, k: usize, row: &Row) -> Result<Effect> {
+/// Where a slot's binding reports: the expanded index, the template index
+/// under a selector, the row.
+struct Origin<'a> {
+    k: usize,
+    template: Option<usize>,
+    row: &'a Row,
+}
+
+/// A bound identity slot's value → the identity (a string or a row) or the
+/// §11.8 refusals (`target_missing`, `ambiguous_target`, a typed
+/// `filter_invalid`).
+fn identity_value<'v>(v: Option<&'v Json>, s: &Slot, o: &Origin<'_>) -> Result<&'v Json> {
+    let data = || slot_data(o.k, o.template, o.row, &s.expression);
+    let absent = v.is_none_or(Json::is_null);
+    if absent || v.and_then(Json::as_array).is_some_and(Vec::is_empty) {
+        return Err(MutationError::with_data(
+            ErrorCode::TargetMissing,
+            format!(
+                "{}: the expression yielded no identity for row {}",
+                s.here, o.row.0
+            ),
+            data(),
+        )
+        .into());
+    }
+    let v = v.expect("not absent");
+    if let Some(a) = v.as_array() {
+        let mut d = data();
+        d["count"] = json!(a.len());
+        return Err(MutationError::with_data(
+            ErrorCode::AmbiguousTarget,
+            format!(
+                "{}: the expression yielded {} identities for row {}; a target resolves to exactly one",
+                s.here,
+                a.len(),
+                o.row.0
+            ),
+            d,
+        )
+        .into());
+    }
+    if v.as_str().is_none() && row_ref(v).is_none() {
+        return Err(refused_with(
+            format!(
+                "{}: the expression yielded {}, not an identity (a string or a row)",
+                s.here,
+                describe(Some(v))
+            ),
+            data(),
+        ));
+    }
+    Ok(v)
+}
+
+/// A whole-target slot's value → the target object (3.2): a row by its id,
+/// a string as [`bare_target`] reads it (a path → a document, an id → its
+/// kind, a `$new.n` → the symbol, provisional). `Ok((target, symbol))`.
+fn whole_target(
+    v: &Json,
+    s: &Slot,
+    o: &Origin<'_>,
+    member: Member,
+    op: &str,
+    field: Option<&str>,
+) -> Result<(Json, bool)> {
+    let is_row = row_ref(v).is_some();
+    let r = match row_ref(v) {
+        Some((id, _)) => id,
+        None => v
+            .as_str()
+            .expect("identity_value admitted a string or a row"),
+    };
+    if !is_row
+        && !path_looking(r)
+        && !is_target_id(r)
+        && omgbase_mutate::parse_new_symbol(r).is_none()
+    {
+        return Err(refused_with(
+            format!(
+                "{}: the expression yielded {}, not an identity (a document path, an id or a row)",
+                s.here,
+                describe(Some(v))
+            ),
+            slot_data(o.k, o.template, o.row, &s.expression),
+        ));
+    }
+    let t = bare_target(r, &s.here, member, op, field)?;
+    Ok((t, omgbase_mutate::parse_new_symbol(r).is_some()))
+}
+
+/// One hit × one template → the effect JSON with every slot filled and the
+/// target members holding a bare `$new.n` (§11.8's table; the reference's
+/// `bind`). `root` is the selector's (the hit's kind for a defaulted
+/// target). The shape is checked once here with the provisional kinds;
+/// [`finish`] settles the symbols and checks again.
+fn bind_one(root: Target, hit: &Json, t: &Template, o: &Origin<'_>) -> Result<(Json, Vec<Member>)> {
     let mut e = Json::Object(t.base.clone());
+    let mut symbols = t.symbols.clone();
     match t.default_target {
-        Some(DefaultTarget::Target) => e["target"] = hit_ref(c.root, &row.0),
-        Some(DefaultTarget::Into) => e["into"] = hit_ref(c.root, &row.0),
-        Some(DefaultTarget::Targets) => e["targets"] = json!([hit_ref(c.root, &row.0)]),
+        Some(DefaultTarget::Target) => e["target"] = hit_ref(root, &o.row.0),
+        Some(DefaultTarget::Into) => e["into"] = hit_ref(root, &o.row.0),
+        Some(DefaultTarget::Targets) => e["targets"] = json!([hit_ref(root, &o.row.0)]),
         None => {}
     }
+    let field = t
+        .base
+        .get("field")
+        .and_then(Json::as_str)
+        .map(str::to_owned);
     for s in &t.slots {
         let v = hit.get(slot_name(t.index, &s.name));
         let absent = v.is_none_or(Json::is_null);
-        let data = || slot_data(k, t.index, row, &s.expression);
+        let data = || slot_data(o.k, o.template, o.row, &s.expression);
         match &s.kind {
             SlotKind::Identity { .. } | SlotKind::TargetsIdentity { .. } => {
-                if absent || v.and_then(Json::as_array).is_some_and(Vec::is_empty) {
-                    return Err(MutationError::with_data(
-                        ErrorCode::TargetMissing,
-                        format!(
-                            "{}: the expression yielded no identity for row {}",
-                            s.here, row.0
-                        ),
-                        data(),
-                    )
-                    .into());
-                }
-                let v = v.expect("not absent");
-                if let Some(a) = v.as_array() {
-                    let mut d = data();
-                    d["count"] = json!(a.len());
-                    return Err(MutationError::with_data(
-                        ErrorCode::AmbiguousTarget,
-                        format!(
-                            "{}: the expression yielded {} identities for row {}; a target resolves to exactly one",
-                            s.here,
-                            a.len(),
-                            row.0
-                        ),
-                        d,
-                    )
-                    .into());
-                }
+                let v = identity_value(v, s, o)?;
                 // A string lands as the member that held the expression; a
                 // row ref as `id` (the reference's `identityMember`).
                 let (member, value) = match (v.as_str(), row_ref(v)) {
                     (Some(s), _) => (None, json!(s)),
                     (None, Some((id, _))) => (Some("id".to_owned()), json!(id)),
-                    (None, None) => {
-                        return Err(refused_with(
-                            format!(
-                                "{}: the expression yielded {}, not an identity (a string or a row)",
-                                s.here,
-                                describe(Some(v))
-                            ),
-                            data(),
-                        ));
-                    }
+                    (None, None) => unreachable!("identity_value admitted it"),
                 };
                 let (target, written) = match &s.kind {
                     SlotKind::Identity { key, member } => (e.get_mut(key), member.clone()),
@@ -924,12 +1544,34 @@ fn bind_one(c: &Compiled, hit: &Json, t: &Template, k: usize, row: &Row) -> Resu
                     obj.insert(member.unwrap_or(written), value);
                 }
             }
+            SlotKind::WholeTarget { key, member } => {
+                let v = identity_value(v, s, o)?;
+                let (target, symbol) = whole_target(v, s, o, *member, &t.op, field.as_deref())?;
+                if symbol {
+                    symbols.push(*member);
+                }
+                e[key] = target;
+            }
+            SlotKind::WholeTargets { k } => {
+                let v = identity_value(v, s, o)?;
+                let (target, symbol) = whole_target(v, s, o, Member::Targets(*k), &t.op, None)?;
+                if symbol {
+                    symbols.push(Member::Targets(*k));
+                }
+                if let Some(slot) = e
+                    .get_mut("targets")
+                    .and_then(Json::as_array_mut)
+                    .and_then(|a| a.get_mut(*k))
+                {
+                    *slot = target;
+                }
+            }
             SlotKind::Str { .. } | SlotKind::At { .. } => {
                 if absent {
                     return Err(refused_with(
                         format!(
                             "{}: the expression yielded absent for row {}",
-                            s.here, row.0
+                            s.here, o.row.0
                         ),
                         data(),
                     ));
@@ -956,7 +1598,7 @@ fn bind_one(c: &Compiled, hit: &Json, t: &Template, k: usize, row: &Row) -> Resu
                         format!(
                             "{}: the expression yielded absent for row {}{}",
                             s.here,
-                            row.0,
+                            o.row.0,
                             if s.kind == SlotKind::Value {
                                 " — use `unset` to remove a key"
                             } else {
@@ -978,32 +1620,132 @@ fn bind_one(c: &Compiled, hit: &Json, t: &Template, k: usize, row: &Row) -> Resu
             }
         }
     }
-    Effect::validate(&e, k).map_err(shape_error)
+    Effect::validate(&e, o.k).map_err(shape_error)?;
+    Ok((e, symbols))
 }
 
-/// The concrete effects of `hits × templates` (§11.8's expansion rule), with
-/// each hit's `(id, path)` in result order.
-pub fn bind(c: &Compiled, hits: &[Json]) -> Result<(Vec<Effect>, Vec<Row>)> {
-    let mut effects = Vec::with_capacity(hits.len() * c.templates.len());
-    let mut rows = Vec::with_capacity(hits.len());
-    for hit in hits {
-        let row: Row = (
-            hit.get(HIT_ID)
-                .and_then(Json::as_str)
-                .unwrap_or_default()
-                .to_owned(),
-            hit.get(HIT_PATH)
-                .and_then(Json::as_str)
-                .unwrap_or_default()
-                .to_owned(),
-        );
-        for t in &c.templates {
-            let k = effects.len();
-            effects.push(bind_one(c, hit, t, k, &row)?);
-        }
-        rows.push(row);
+/// The settlement of bare `$new.n` targets (3.2): given the effect JSON, the
+/// members holding a symbol and the concrete effects before it, rewrite
+/// each symbol's `kind` to the one the symbol table records — the kind
+/// `plan` over that prefix allocated to `$new.n` (`new_ids[n].kind`).
+pub type Settle<'a> = dyn FnMut(&mut Json, &[Member], &[Effect]) + 'a;
+
+/// A settlement that leaves every provisional kind in place (tests; a path
+/// with no store at hand).
+pub fn no_settle(_: &mut Json, _: &[Member], _: &[Effect]) {}
+
+/// The settlement over a store: `plan` the prefix (nothing written, no id
+/// minted) and read the symbols' kinds off its `new_ids`. A prefix that does
+/// not plan, or a symbol it did not mint, is left provisional — the real
+/// plan reports it (`target_missing { symbol }` for one nothing created).
+pub fn settle_symbols(
+    store: &mut Store,
+    ctx: &PlanContext,
+    doc_store: &dyn DocStore,
+    e: &mut Json,
+    members: &[Member],
+    prefix: &[Effect],
+) {
+    if prefix.is_empty() {
+        return;
     }
-    Ok((effects, rows))
+    let Ok(plan) = store.plan_selected(ctx, prefix, None, doc_store) else {
+        return;
+    };
+    for m in members {
+        let slot = match m {
+            Member::Target => e.get_mut("target"),
+            Member::Into => e.get_mut("into"),
+            Member::Targets(k) => e
+                .get_mut("targets")
+                .and_then(Json::as_array_mut)
+                .and_then(|a| a.get_mut(*k)),
+        };
+        let Some(obj) = slot.and_then(Json::as_object_mut) else {
+            continue;
+        };
+        let Some(n) = obj
+            .get("id")
+            .and_then(Json::as_str)
+            .and_then(omgbase_mutate::parse_new_symbol)
+        else {
+            continue;
+        };
+        if let Some(x) = plan.new_ids.get(n) {
+            obj.insert("kind".to_owned(), json!(x.kind.as_str()));
+        }
+    }
+}
+
+/// The concrete effect of a bound (or literal) effect JSON: settle its bare
+/// `$new.n` members against the effects before it, then the shape check
+/// again — a settled kind the slot does not admit, or a `field` the settled
+/// kind does not take, is the §11.1 message with `effect_index` (the
+/// reference resolves the symbol in the lowering, where every error gains
+/// it).
+fn finish(
+    e: &mut Json,
+    k: usize,
+    symbols: &[Member],
+    prefix: &[Effect],
+    settle: &mut Settle<'_>,
+) -> Result<Effect> {
+    if symbols.is_empty() || prefix.is_empty() {
+        return Effect::validate(e, k).map_err(shape_error);
+    }
+    Effect::validate(e, k).map_err(shape_error)?;
+    settle(e, symbols, prefix);
+    Effect::validate(e, k).map_err(|m| {
+        let mut err = shape_error(m);
+        if let Some(d) = err.data.as_mut().and_then(Json::as_object_mut) {
+            d.insert("effect_index".to_owned(), json!(k));
+        }
+        err
+    })
+}
+
+/// The hit's `(id, path)` as the envelope spells it.
+fn row_of(hit: &Json) -> Row {
+    (
+        hit.get(HIT_ID)
+            .and_then(Json::as_str)
+            .unwrap_or_default()
+            .to_owned(),
+        hit.get(HIT_PATH)
+            .and_then(Json::as_str)
+            .unwrap_or_default()
+            .to_owned(),
+    )
+}
+
+/// What [`bind`] produced: the concrete effects and each hit's `(id, path)`
+/// in result order.
+#[derive(Clone, Debug, Default)]
+pub struct Bound {
+    pub effects: Vec<Effect>,
+    pub rows: Vec<Row>,
+}
+
+/// The concrete effects of `hits × templates` (§11.8's expansion rule);
+/// `settle` resolves the bare `$new.n` kinds ([`settle_symbols`]).
+pub fn bind(c: &Compiled, hits: &[Json], settle: &mut Settle<'_>) -> Result<Bound> {
+    let mut b = Bound::default();
+    for hit in hits {
+        let row = row_of(hit);
+        for t in &c.templates {
+            let k = b.effects.len();
+            let o = Origin {
+                k,
+                template: Some(t.index),
+                row: &row,
+            };
+            let (mut e, symbols) = bind_one(c.root, hit, t, &o)?;
+            let effect = finish(&mut e, k, &symbols, &b.effects, settle)?;
+            b.effects.push(effect);
+        }
+        b.rows.push(row);
+    }
+    Ok(b)
 }
 
 /// `selection_too_large { cardinality, max, implicit? }`: `cardinality` is
@@ -1034,24 +1776,35 @@ fn too_large(truncated: bool, hits: usize, c: &Compiled) -> SurfaceError {
     MutationError::with_data(ErrorCode::SelectionTooLarge, message, data).into()
 }
 
-/// What the selector produced: the concrete effects, the frozen record, and
-/// the hits' identities for error annotation.
+/// What the selector (or the selector-less sugar) produced: the concrete
+/// effects, the frozen record (a selector's), the hits' identities for error
+/// annotation, and the effects as written when a selector-less request
+/// evaluated an expression (the plan's and the intent record's
+/// `templates`).
 #[derive(Clone, Debug)]
 pub struct Expansion {
     pub effects: Vec<Effect>,
-    pub selection: Selection,
+    pub selection: Option<Selection>,
     pub rows: Vec<Row>,
+    pub templates: Option<Vec<Json>>,
 }
 
 /// Run the selector and expand it (module docs; the reference's
-/// `compileSelection`). `semantic` is the embedded phrases of the selector
-/// ([`crate::query::embed_phrases`]).
+/// `compileSelection`), or — without a selector (3.2) — desugar the effects
+/// and evaluate their slots in their own targets' row scopes
+/// ([`expand_plain`]). `semantic` is the embedded phrases of the selector
+/// ([`crate::query::embed_phrases`]). The store is borrowed mutably only for
+/// the prefix plans that settle bare `$new.n` kinds; nothing is written.
 pub fn expand(
-    store: &Store,
-    repo_id: &str,
+    store: &mut Store,
+    ctx: &PlanContext,
+    doc_store: &dyn DocStore,
     req: &SelectRequest,
     semantic: HashMap<String, SemanticVec>,
 ) -> Result<Expansion> {
+    if !req.has_selector() {
+        return expand_plain(store, ctx, doc_store, req);
+    }
     let c = compile(req)?;
     let opts = QueryOptions {
         limit: Some(c.bound.saturating_add(1)),
@@ -1060,22 +1813,394 @@ pub fn expand(
         in_memory: false,
         bare: false,
     };
-    let res = query_ast(store, repo_id, &c.rewritten, opts, semantic)?;
+    let res = query_ast(store, &ctx.repo_id, &c.rewritten, opts, semantic)?;
     if res.truncated || res.hits.len() > c.bound {
         return Err(too_large(res.truncated, res.hits.len(), &c));
     }
-    let (effects, rows) = bind(&c, &res.hits)?;
+    let mut settle = |e: &mut Json, m: &[Member], p: &[Effect]| {
+        settle_symbols(store, ctx, doc_store, e, m, p);
+    };
+    let b = bind(&c, &res.hits, &mut settle)?;
     let selection = Selection {
         query: req.select_str().to_owned(),
         expect: c.expect,
         templates: req.templates.as_array().cloned().unwrap_or_default(),
-        cardinality: rows.len(),
-        identities: rows.iter().map(|(id, _)| id.clone()).collect(),
+        cardinality: b.rows.len(),
+        identities: b.rows.iter().map(|(id, _)| id.clone()).collect(),
     };
     Ok(Expansion {
+        effects: b.effects,
+        selection: Some(selection),
+        rows: b.rows,
+        templates: None,
+    })
+}
+
+// ---- the selector-less path (3.2) -----------------------------------------------------
+
+/// The error when a plain effect's row is gone (the reference's
+/// `Scope.missing`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum Missing {
+    Doc(String),
+    Block(String),
+    Parent(String),
+    Node(String),
+}
+
+impl Missing {
+    fn error(&self) -> SurfaceError {
+        let (code, message, data) = match self {
+            Missing::Doc(id) => (
+                ErrorCode::DocMissing,
+                format!("doc {id} not found"),
+                json!({ "doc": id }),
+            ),
+            Missing::Block(id) => (
+                ErrorCode::BlockMissing,
+                format!("block {id} not found"),
+                json!({ "block": id }),
+            ),
+            Missing::Parent(id) => (
+                ErrorCode::ParentMissing,
+                format!("parent {id} not found"),
+                json!({}),
+            ),
+            Missing::Node(id) => (
+                ErrorCode::BlockMissing,
+                format!("node {id} not found"),
+                json!({}),
+            ),
+        };
+        MutationError::with_data(code, message, data).into()
+    }
+}
+
+/// The row a plain effect's expressions read: its primary target's root and
+/// id, and the error when that row is gone.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct Scope {
+    root: Target,
+    id: String,
+    missing: Missing,
+}
+
+/// The primary target of a plain effect (the §11.8 table's: `target` of
+/// set/unset/split and of a document move/remove, `into` of insert, the
+/// first of `targets` for the block forms) as a row (the reference's
+/// `scopeOf`): a `create` has none; an expression there needs a selector; a
+/// bare `$new.n` has no row yet; a document is looked up (`doc_missing`).
+fn scope_of(
+    store: &Store,
+    repo_id: &str,
+    e: &Map<String, Json>,
+    i: usize,
+    sugar: &Desugared,
+) -> Result<Scope> {
+    let here = format!("effects[{i}]");
+    let op = e.get("op").and_then(Json::as_str).unwrap_or_default();
+    let first = |kinds: &'static [&'static str]| -> Result<(String, Option<Json>, &'static [&'static str], Member)> {
+        let list = e.get("targets").and_then(Json::as_array);
+        if list.is_none_or(Vec::is_empty) {
+            // the shape check's `targets` message
+            Effect::validate(&Json::Object(e.clone()), i).map_err(shape_error)?;
+        }
+        Ok((
+            "targets[0]".to_owned(),
+            list.and_then(|l| l.first()).cloned(),
+            kinds,
+            Member::Targets(0),
+        ))
+    };
+    const PLACEMENT: &[&str] = &["document", "section", "block"];
+    const DOCUMENT: &[&str] = &["document"];
+    const BLOCK: &[&str] = &["block"];
+    const SET: &[&str] = &["document", "block", "node"];
+    let target = |kinds: &'static [&'static str]| {
+        (
+            "target".to_owned(),
+            e.get("target").cloned(),
+            kinds,
+            Member::Target,
+        )
+    };
+    let mut placement = false;
+    let (key, v, kinds, member) = match op {
+        "create" => {
+            return Err(refused(format!(
+                "{here}: a `create` has no row — an expression on a create needs a selector (`select`)"
+            )));
+        }
+        "insert" => {
+            placement = true;
+            (
+                "into".to_owned(),
+                e.get("into").cloned(),
+                PLACEMENT,
+                Member::Into,
+            )
+        }
+        "set" => target(SET),
+        "unset" => target(DOCUMENT),
+        "move" => {
+            if e.contains_key("targets") || e.contains_key("into") {
+                first(BLOCK)?
+            } else {
+                target(DOCUMENT)
+            }
+        }
+        "remove" => {
+            if e.contains_key("targets") {
+                first(BLOCK)?
+            } else {
+                target(DOCUMENT)
+            }
+        }
+        "split" => target(BLOCK),
+        "merge" => first(BLOCK)?,
+        _ => {
+            // an unknown op (or `retarget`): the shape check refuses it
+            Effect::validate(&Json::Object(e.clone()), i).map_err(shape_error)?;
+            return Err(shape_error(format!(
+                "{here}: `op` {} is not row-shaped",
+                Json::String(op.to_owned())
+            )));
+        }
+    };
+    let where_ = format!("{here}.{key}");
+    if v.as_ref().is_some_and(|v| {
+        oqx_of(v).is_some()
+            || v.as_object().is_some_and(|o| {
+                o.get("id").is_some_and(|x| oqx_of(x).is_some())
+                    || o.get("path").is_some_and(|x| oqx_of(x).is_some())
+            })
+    }) {
+        return Err(needs_selector(&where_));
+    }
+    let kinds_text = kinds
+        .iter()
+        .map(|k| format!("\"{k}\""))
+        .collect::<Vec<_>>()
+        .join(" | ");
+    let Some(t) = v
+        .as_ref()
+        .and_then(Json::as_object)
+        .filter(|o| o.get("kind").is_some_and(Json::is_string))
+    else {
+        return Err(shape_error(format!(
+            "{where_}: a target is {{ kind: {kinds_text}, … }}"
+        )));
+    };
+    let kind = t["kind"].as_str().expect("checked");
+    let id_of = |key: &str| t.get(key).and_then(Json::as_str).map(str::to_owned);
+    // A bare `$new.n` (the desugar's record) has no row yet.
+    if sugar.symbols.contains(&member)
+        && let Some(sym) = id_of("id").filter(|id| omgbase_mutate::parse_new_symbol(id).is_some())
+    {
+        return Err(refused(format!(
+            "{where_}: {sym} has no row yet — it is created by this plan; use a literal target or a selector"
+        )));
+    }
+    if !kinds.contains(&kind) {
+        return Err(shape_error(format!(
+            "{where_}: `kind` must be one of {} (got \"{kind}\")",
+            kinds.join(", ")
+        )));
+    }
+    Ok(match kind {
+        "document" => {
+            let id = id_of("id");
+            let path = id_of("path");
+            if id.is_none() && path.is_none() {
+                return Err(shape_error(format!(
+                    "{where_}: a document target needs `id` or `path`"
+                )));
+            }
+            let by_id = match &id {
+                Some(id) => {
+                    let found = store.find_doc_by_ref(repo_id, id)?;
+                    Some(found.ok_or_else(|| Missing::Doc(id.clone()).error())?)
+                }
+                None => None,
+            };
+            let by_path = match &path {
+                Some(path) => {
+                    let found = store.find_doc_by_ref(repo_id, storage_path(path))?;
+                    Some(found.ok_or_else(|| Missing::Doc(path.clone()).error())?)
+                }
+                None => None,
+            };
+            if let (Some(a), Some(b)) = (&by_id, &by_path)
+                && a.doc_id != b.doc_id
+            {
+                return Err(shape_error(format!(
+                    "id {} and path {} name different documents",
+                    Json::String(id.clone().unwrap_or_default()),
+                    Json::String(path.clone().unwrap_or_default())
+                )));
+            }
+            let info = by_id.or(by_path).expect("one of the two");
+            Scope {
+                root: Target::Docs,
+                id: info.doc_id.clone(),
+                missing: Missing::Doc(info.doc_id),
+            }
+        }
+        "block" => {
+            let id = id_of("id").unwrap_or_default();
+            Scope {
+                root: Target::Blocks,
+                id: id.clone(),
+                missing: if placement {
+                    Missing::Parent(id)
+                } else {
+                    Missing::Block(id)
+                },
+            }
+        }
+        "section" => {
+            let id = id_of("heading_id").unwrap_or_default();
+            Scope {
+                root: Target::Blocks,
+                id: id.clone(),
+                missing: Missing::Parent(id),
+            }
+        }
+        _ => {
+            let id = id_of("id").unwrap_or_default();
+            Scope {
+                root: Target::Nodes,
+                id: id.clone(),
+                missing: Missing::Node(id),
+            }
+        }
+    })
+}
+
+/// What a plain effect becomes before the final shape check.
+enum Plain {
+    /// Validated as written (no expression): the JSON and its bare symbols.
+    Literal(Json, Vec<Member>),
+    /// Bound from its scope's row.
+    Bound(Json, Vec<Member>),
+}
+
+/// Compile a plain `effects` list (no selector; the reference's
+/// `compilePlain`): desugar the `-> ` leaders, then — when nothing is an
+/// expression — the shape check as before (3.1-identical, no `templates`).
+/// Otherwise each effect with expression slots is admitted as a template
+/// over its own primary target's row ([`scope_of`]): the effects are grouped
+/// by that row's identity, one synthetic query per identity — `from <root>
+/// where id == "<id>"` with the slot items appended, named
+/// `__omg_sel_<effectIndex>_<slot>` — runs (`limit 2`), and the row binds the
+/// slots exactly as a selector's hit would. Bare `$new.n` kinds are settled
+/// last, in request order, each against the effects before it.
+pub fn expand_plain(
+    store: &mut Store,
+    ctx: &PlanContext,
+    doc_store: &dyn DocStore,
+    req: &SelectRequest,
+) -> Result<Expansion> {
+    let raw = req
+        .templates
+        .as_array()
+        .ok_or_else(|| shape_error("`effects` must be an array of effects".to_owned()))?;
+    if raw.is_empty() {
+        return Err(shape_error(
+            "`effects` must name at least one effect".to_owned(),
+        ));
+    }
+    let mut desugared = Vec::with_capacity(raw.len());
+    for (i, v) in raw.iter().enumerate() {
+        desugared.push(desugar_effect(v, i)?);
+    }
+    let any_expression = desugared.iter().any(|(v, _)| contains_oqx(v));
+    let mut staged: Vec<Option<Plain>> = (0..raw.len()).map(|_| None).collect();
+    if any_expression {
+        // Scope and admit the effects with expressions; group them by row.
+        struct Group {
+            scope: Scope,
+            members: Vec<Template>,
+        }
+        let mut groups: Vec<Group> = Vec::new();
+        for (i, (v, d)) in desugared.iter().enumerate() {
+            let Some(o) = v.as_object().filter(|_| contains_oqx(v)) else {
+                staged[i] = Some(Plain::Literal(v.clone(), d.symbols.clone()));
+                continue;
+            };
+            let scope = scope_of(store, &ctx.repo_id, o, i, d)?;
+            let t = admit_template(i, v, scope.root, true, d)?;
+            if t.slots.is_empty() {
+                // `{ oqx }` only inside data (a nested `value`): literal, as for a template.
+                staged[i] = Some(Plain::Literal(v.clone(), d.symbols.clone()));
+                continue;
+            }
+            match groups.iter_mut().find(|g| g.scope == scope) {
+                Some(g) => g.members.push(t),
+                None => groups.push(Group {
+                    scope,
+                    members: vec![t],
+                }),
+            }
+        }
+        for g in &groups {
+            let src = format!(
+                "from {} where id == {}",
+                g.scope.root.as_str(),
+                Json::String(g.scope.id.clone())
+            );
+            let mut q = oqx::parse_string(&src)?;
+            for t in &g.members {
+                for s in &t.slots {
+                    q.select
+                        .push(renamed(&s.item, &slot_name(t.index, &s.name)));
+                }
+            }
+            let opts = QueryOptions {
+                limit: Some(2),
+                cursor: None,
+                provider: None,
+                in_memory: false,
+                bare: false,
+            };
+            let res = query_ast(store, &ctx.repo_id, &q, opts, HashMap::new())?;
+            let Some(hit) = res.hits.first() else {
+                return Err(g.scope.missing.error());
+            };
+            let row = row_of(hit);
+            for t in &g.members {
+                let o = Origin {
+                    k: t.index,
+                    template: None,
+                    row: &row,
+                };
+                let (e, symbols) = bind_one(g.scope.root, hit, t, &o)?;
+                staged[t.index] = Some(Plain::Bound(e, symbols));
+            }
+        }
+    } else {
+        for (i, (v, d)) in desugared.into_iter().enumerate() {
+            staged[i] = Some(Plain::Literal(v, d.symbols));
+        }
+    }
+    // The final shape check in request order, each effect's bare `$new.n`
+    // settled against the effects before it.
+    let mut effects: Vec<Effect> = Vec::with_capacity(raw.len());
+    for (i, p) in staged.into_iter().enumerate() {
+        let (mut e, symbols) = match p.expect("every effect staged") {
+            Plain::Literal(e, s) | Plain::Bound(e, s) => (e, s),
+        };
+        let mut settle = |e: &mut Json, m: &[Member], p: &[Effect]| {
+            settle_symbols(store, ctx, doc_store, e, m, p);
+        };
+        let effect = finish(&mut e, i, &symbols, &effects, &mut settle)?;
+        effects.push(effect);
+    }
+    Ok(Expansion {
         effects,
-        selection,
-        rows,
+        selection: None,
+        rows: Vec::new(),
+        templates: any_expression.then(|| raw.clone()),
     })
 }
 
@@ -1102,7 +2227,9 @@ pub fn annotate(mut e: SurfaceError, rows: &[Row], templates: usize) -> SurfaceE
 
 /// Expand and plan in one write scope: the store callback the catalog hands
 /// to [`Store::plan_selected`], [`Store::execute_replanned`] and
-/// [`Store::apply_planned`].
+/// [`Store::apply_planned`]. Without a selector (3.2) the plan carries no
+/// `selection` but records the effects as written as `templates` when one
+/// evaluated an expression.
 pub fn plan_selected(
     store: &mut Store,
     doc_store: &dyn DocStore,
@@ -1110,16 +2237,24 @@ pub fn plan_selected(
     req: &SelectRequest,
     semantic: HashMap<String, SemanticVec>,
 ) -> Result<omgbase_mutate::Plan> {
-    let x = expand(store, &ctx.repo_id, req, semantic)?;
-    store
-        .plan_selected(ctx, &x.effects, Some(x.selection), doc_store)
-        .map_err(|e| annotate(SurfaceError::from(e), &x.rows, req.templates()))
+    let x = expand(store, ctx, doc_store, req, semantic)?;
+    let templates = if req.has_selector() {
+        req.templates()
+    } else {
+        0
+    };
+    let mut plan = store
+        .plan_selected(ctx, &x.effects, x.selection, doc_store)
+        .map_err(|e| annotate(SurfaceError::from(e), &x.rows, templates))?;
+    plan.templates = x.templates;
+    Ok(plan)
 }
 
 /// The one-shot `apply` rule (§11.8): a selector must be bounded — the
 /// caller never saw the hits (a preview is a `plan`, which needs no bound).
+/// The selector-less sugar path names its targets and needs none.
 pub fn require_max(req: &SelectRequest) -> Result<()> {
-    if req.expect.is_none() {
+    if req.has_selector() && req.expect.is_none() {
         return Err(refused(
             "`expect.max` is required on `apply` with `select` — bound the selection, or preview it with `plan`",
         ));
@@ -1392,17 +2527,18 @@ mod tests {
             None,
         );
         assert!(e.message.contains("(got \"block\")"), "{}", e.message);
-        // a bare `{ oqx }` element of `targets` is a target shape error
-        let e = refuse(
+        // (3.2) a whole `{ oqx }` element of `targets` is a whole-target slot
+        let c = compile(&req(
             "from blocks",
             json!([{ "op": "remove", "targets": [{ "oqx": "x" }] }]),
             None,
-        );
-        assert!(
-            e.message.starts_with("effects[0].targets[0]: a target is"),
-            "{}",
-            e.message
-        );
+        ))
+        .unwrap();
+        assert_eq!(c.templates[0].slot_names(), ["__omg_sel_0_targets_0"]);
+        assert!(matches!(
+            c.templates[0].slots[0].kind,
+            SlotKind::WholeTargets { k: 0 }
+        ));
         // an expression that does not parse names the slot; the offset is shifted by 16
         let e = refuse(
             "from docs",
@@ -1467,7 +2603,7 @@ mod tests {
                 json!({ "__omg_sel_0_into": { "id": "d_9", "path": "/projects/y.md" }, "__omg_sel_0_markdown": "- completed: [B](/workstreams/b.md)" }),
             ),
         ];
-        let (effects, rows) = bind(&c, &hits).unwrap();
+        let Bound { effects, rows, .. } = bind(&c, &hits, &mut no_settle).unwrap();
         assert_eq!(
             rows,
             [
@@ -1494,7 +2630,7 @@ mod tests {
         ] {
             let mut h = hit("d_2", "/w.md", absent);
             h["__omg_sel_0_markdown"] = json!("x");
-            let e = bind(&c, &[h]).unwrap_err();
+            let e = bind(&c, &[h], &mut no_settle).unwrap_err();
             assert_eq!(e.code, "target_missing");
             assert_eq!(
                 e.message,
@@ -1511,7 +2647,7 @@ mod tests {
             "/w.md",
             json!({ "__omg_sel_0_into": ["/a.md"], "__omg_sel_0_markdown": "x" }),
         );
-        let e = bind(&c, &[h]).unwrap_err();
+        let e = bind(&c, &[h], &mut no_settle).unwrap_err();
         assert_eq!(e.code, "ambiguous_target");
         assert_eq!(
             e.message,
@@ -1525,7 +2661,7 @@ mod tests {
             "/w.md",
             json!({ "__omg_sel_0_into": 3, "__omg_sel_0_markdown": "x" }),
         );
-        let e = bind(&c, &[h]).unwrap_err();
+        let e = bind(&c, &[h], &mut no_settle).unwrap_err();
         assert_eq!(e.code, "filter_invalid");
         assert_eq!(
             e.message,
@@ -1541,13 +2677,13 @@ mod tests {
             "/w.md",
             json!({ "__omg_sel_0_into": "/p.md", "__omg_sel_0_markdown": 7.5 }),
         );
-        let e = bind(&c, &[h]).unwrap_err();
+        let e = bind(&c, &[h], &mut no_settle).unwrap_err();
         assert_eq!(
             e.message,
             "effects[0].markdown: the expression yielded a number (7.5), expected a string"
         );
         let h = hit("d_2", "/w.md", json!({ "__omg_sel_0_into": "/p.md" }));
-        let e = bind(&c, &[h]).unwrap_err();
+        let e = bind(&c, &[h], &mut no_settle).unwrap_err();
         assert_eq!(
             e.message,
             "effects[0].markdown: the expression yielded absent for row d_2"
@@ -1561,6 +2697,7 @@ mod tests {
                 "/a.md",
                 json!({ "__omg_sel_1_into": { "id": "d_2", "path": "/p.md", "extra": 1 } }),
             )],
+            &mut no_settle,
         )
         .unwrap_err();
         assert_eq!(
@@ -1619,7 +2756,7 @@ mod tests {
                 "__omg_sel_4_targets_0": "b_4", "__omg_sel_4_separator": " / ",
             }),
         );
-        let (effects, _) = bind(&c, &[h]).unwrap();
+        let Bound { effects, .. } = bind(&c, &[h], &mut no_settle).unwrap();
         let json: Vec<Json> = effects.iter().map(Effect::to_json).collect();
         assert_eq!(
             json[0],
@@ -1649,13 +2786,14 @@ mod tests {
         let c = compile(&req("from docs", json!([{ "op": "remove" }, { "op": "move", "to": { "oqx": "\"archive/\" + title + \".md\"" } }]), None)).unwrap();
         assert_eq!(c.templates[0].default_target, Some(DefaultTarget::Target));
         assert_eq!(c.templates[1].slot_names(), ["__omg_sel_1_to"]);
-        let (effects, _) = bind(
+        let Bound { effects, .. } = bind(
             &c,
             &[hit(
                 "d_1",
                 "/a.md",
                 json!({ "__omg_sel_1_to": "archive/A.md" }),
             )],
+            &mut no_settle,
         )
         .unwrap();
         assert_eq!(
@@ -1673,18 +2811,19 @@ mod tests {
             None,
         ))
         .unwrap();
-        let e = bind(&c, &[hit("d_1", "/a.md", json!({}))]).unwrap_err();
+        let e = bind(&c, &[hit("d_1", "/a.md", json!({}))], &mut no_settle).unwrap_err();
         assert_eq!(
             e.message,
             "effects[0].value: the expression yielded absent for row d_1 — use `unset` to remove a key"
         );
-        let (effects, _) = bind(
+        let Bound { effects, .. } = bind(
             &c,
             &[hit(
                 "d_1",
                 "/a.md",
                 json!({ "__omg_sel_0_value": { "id": "d_2", "path": "/p.md" } }),
             )],
+            &mut no_settle,
         )
         .unwrap();
         assert_eq!(
@@ -1706,7 +2845,7 @@ mod tests {
                 "__omg_sel_0_fm_0"
             ]
         );
-        let (effects, _) = bind(&c, &[hit("d_1", "/a.md", json!({ "__omg_sel_0_path": "/notes/a.md", "__omg_sel_0_markdown": "# A", "__omg_sel_0_fm_0": "/a.md" }))]).unwrap();
+        let Bound { effects, .. } = bind(&c, &[hit("d_1", "/a.md", json!({ "__omg_sel_0_path": "/notes/a.md", "__omg_sel_0_markdown": "# A", "__omg_sel_0_fm_0": "/a.md" }))], &mut no_settle).unwrap();
         assert_eq!(
             effects[0].to_json(),
             json!({ "op": "create", "path": "/notes/a.md", "markdown": "# A", "frontmatter": { "layer": "draft", "source": "/a.md" } })
@@ -1718,6 +2857,7 @@ mod tests {
                 "/a.md",
                 json!({ "__omg_sel_0_path": "/notes/a.md", "__omg_sel_0_markdown": "# A" }),
             )],
+            &mut no_settle,
         )
         .unwrap_err();
         assert_eq!(
@@ -1725,7 +2865,7 @@ mod tests {
             "effects[0].frontmatter.source: the expression yielded absent for row d_1"
         );
         // zero hits bind to nothing
-        let (effects, rows) = bind(&c, &[]).unwrap();
+        let Bound { effects, rows, .. } = bind(&c, &[], &mut no_settle).unwrap();
         assert!(effects.is_empty() && rows.is_empty());
     }
 
@@ -1754,14 +2894,601 @@ mod tests {
     #[test]
     fn offsets_shift_back_by_the_wrapper() {
         assert_eq!(
-            shift_offsets("unexpected ')' (at offset 20)", 16),
+            shift_offsets("unexpected ')' (at offset 20)", -16),
             "unexpected ')' (at offset 4)"
         );
-        assert_eq!(shift_offsets("no offset here", 16), "no offset here");
-        assert_eq!(shift_offsets("x (at offset 3)", 16), "x (at offset 0)");
+        assert_eq!(shift_offsets("no offset here", -16), "no offset here");
+        assert_eq!(shift_offsets("x (at offset 3)", -16), "x (at offset 0)");
+        assert_eq!(shift_offsets("x (at offset 3)", 3), "x (at offset 6)");
         assert_eq!(describe(Some(&json!(2.0))), "a number (2)");
         assert_eq!(describe(Some(&json!([1, 2]))), "a list of 2");
         assert_eq!(describe(Some(&json!("q"))), "a string (\"q\")");
         assert_eq!(describe(None), "absent");
+    }
+
+    // ---- §11.8 "Sugar" (3.2) ----------------------------------------------------------
+
+    fn desugar(v: Json) -> Result<Json> {
+        desugar_effect(&v, 0).map(|(v, _)| v)
+    }
+
+    /// The leader is exactly `-> ` at the start; `->x`, ` -> x`, `-->`, a
+    /// bare `->` and a mid-string `-> ` are literals; `-> "-> …"` spells a
+    /// literal that begins with the leader.
+    #[test]
+    fn the_leader_is_exact_and_everything_else_is_literal() {
+        for literal in ["->x", " -> x", "-->", "->", "a -> b", "${HOME}", "x"] {
+            let e = json!({ "op": "insert", "into": { "kind": "document", "path": "hub.md" }, "markdown": literal });
+            assert_eq!(desugar(e.clone()).unwrap(), e, "{literal}");
+            assert!(!needs_sugar(&json!([e])), "{literal}");
+        }
+        assert_eq!(
+            desugar(json!({ "op": "insert", "into": { "kind": "document", "path": "hub.md" }, "markdown": "-> \"-> note\"" })).unwrap(),
+            json!({ "op": "insert", "into": { "kind": "document", "path": "hub.md" }, "markdown": "-> note" })
+        );
+        assert_eq!(
+            desugar(json!({ "op": "insert", "into": { "kind": "document", "path": "hub.md" }, "markdown": "-> title" })).unwrap(),
+            json!({ "op": "insert", "into": { "kind": "document", "path": "hub.md" }, "markdown": { "oqx": "title" } })
+        );
+        // typing follows the value: `-> 1` stays an expression (a number lands as one)
+        assert_eq!(
+            desugar(json!({ "op": "set", "target": "d_0", "field": "frontmatter.priority", "value": "-> priority + 1" })).unwrap(),
+            json!({ "op": "set", "target": { "kind": "document", "id": "d_0" }, "field": "frontmatter.priority", "value": { "oqx": "priority + 1" } })
+        );
+        // nested strings of a `value` are data
+        let nested = json!({ "op": "set", "target": "d_0", "field": "frontmatter.x", "value": { "a": "-> b" } });
+        assert_eq!(desugar(nested.clone()).unwrap()["value"], nested["value"]);
+        // the request routes through the sugar path exactly when something is sugar
+        assert!(needs_sugar(
+            &json!([{ "op": "insert", "into": "hub.md", "markdown": "x" }])
+        ));
+        assert!(needs_sugar(
+            &json!([{ "op": "insert", "into": { "kind": "document", "path": "hub.md" }, "markdown": "-> title" }])
+        ));
+        assert!(needs_sugar(
+            &json!([{ "op": "remove", "targets": ["b_1"] }])
+        ));
+        let plain = SelectRequest::from_args(&json!({ "effects": [{ "op": "insert", "into": { "kind": "document", "path": "hub.md" }, "markdown": "->x" }] })).unwrap();
+        assert!(plain.is_none());
+        let sugar = SelectRequest::from_args(
+            &json!({ "effects": [{ "op": "insert", "into": "hub.md", "markdown": "-> x" }] }),
+        )
+        .unwrap()
+        .unwrap();
+        assert!(!sugar.has_selector());
+        assert!(require_max(&sugar).is_ok());
+    }
+
+    /// A bare string literal or an interpolation-free template literal folds
+    /// to the plain literal (no `{ oqx }`); anything else is an expression.
+    #[test]
+    fn constant_folding_of_literal_leaders() {
+        assert_eq!(desugar_expression("\"x\"", "h").unwrap(), json!("x"));
+        assert_eq!(desugar_expression("`x`", "h").unwrap(), json!("x"));
+        assert_eq!(desugar_expression("`a\\`b`", "h").unwrap(), json!("a`b"));
+        assert_eq!(
+            desugar_expression("`${title} (${era})`", "h").unwrap(),
+            json!({ "oqx": "`${title} (${era})`" })
+        );
+        assert_eq!(desugar_expression("1", "h").unwrap(), json!({ "oqx": "1" }));
+        assert_eq!(
+            desugar_expression("\"a\" + \"b\"", "h").unwrap(),
+            json!({ "oqx": "\"a\" + \"b\"" })
+        );
+        // a folded leader in a target is a bare string, then normalized
+        assert_eq!(
+            desugar(json!({ "op": "insert", "into": "-> \"hub.md\"", "markdown": "x" })).unwrap(),
+            json!({ "op": "insert", "into": { "kind": "document", "path": "hub.md" }, "markdown": "x" })
+        );
+        // an unparsable expression: the offset counts from the written string
+        let e =
+            desugar(json!({ "op": "insert", "into": "hub.md", "markdown": "-> 1 +" })).unwrap_err();
+        assert_eq!(e.code, "filter_invalid");
+        assert_eq!(data(&e)["hint"], HINT);
+        assert_eq!(
+            e.message,
+            "effects[0].markdown: unexpected 'from' — expected a value (at offset 7)"
+        );
+        let e =
+            desugar(json!({ "op": "insert", "into": "hub.md", "markdown": "-> a from blocks" }))
+                .unwrap_err();
+        assert!(e.message.ends_with("(at offset 17)"), "{}", e.message);
+    }
+
+    /// Bare targets: a path, an id by its prefix, a `$new.n` (provisional
+    /// kind, recorded for the settlement), a `-> ` expression as the whole
+    /// target; a locator is refused with the fix; anything else is no target.
+    #[test]
+    fn bare_targets_normalize_before_the_shape_check() {
+        let d = |v: Json| desugar(v).unwrap();
+        assert_eq!(
+            d(json!({ "op": "insert", "into": "hub.md", "markdown": "x" }))["into"],
+            json!({ "kind": "document", "path": "hub.md" })
+        );
+        assert_eq!(
+            d(json!({ "op": "insert", "into": "/notes/a", "markdown": "x" }))["into"],
+            json!({ "kind": "document", "path": "/notes/a" })
+        );
+        assert_eq!(
+            d(json!({ "op": "insert", "into": "d_2", "markdown": "x" }))["into"],
+            json!({ "kind": "document", "id": "d_2" })
+        );
+        assert_eq!(
+            d(json!({ "op": "set", "target": "b_5", "field": "attrs.checked", "value": true }))["target"],
+            json!({ "kind": "block", "id": "b_5" })
+        );
+        assert_eq!(
+            d(json!({ "op": "set", "target": "n_0123456789ab", "field": "value", "value": 1 }))["target"],
+            json!({ "kind": "node", "id": "n_0123456789ab" })
+        );
+        assert_eq!(
+            d(json!({ "op": "remove", "targets": ["b_8", { "kind": "block", "id": "b_9" }] }))["targets"],
+            json!([{ "kind": "block", "id": "b_8" }, { "kind": "block", "id": "b_9" }])
+        );
+        // `$new.n`: a provisional kind the slot admits, and the member recorded
+        let (v, sugar) = desugar_effect(
+            &json!({ "op": "insert", "into": "$new.0", "markdown": "x" }),
+            0,
+        )
+        .unwrap();
+        assert_eq!(v["into"], json!({ "kind": "document", "id": "$new.0" }));
+        assert_eq!(sugar.symbols, [Member::Into]);
+        let (v, sugar) = desugar_effect(
+            &json!({ "op": "set", "target": "$new.2", "field": "markdown", "value": "x" }),
+            0,
+        )
+        .unwrap();
+        assert_eq!(v["target"], json!({ "kind": "block", "id": "$new.2" }));
+        assert_eq!(sugar.symbols, [Member::Target]);
+        let (v, sugar) =
+            desugar_effect(&json!({ "op": "remove", "targets": ["$new.1"] }), 0).unwrap();
+        assert_eq!(v["targets"], json!([{ "kind": "block", "id": "$new.1" }]));
+        assert_eq!(sugar.symbols, [Member::Targets(0)]);
+        // a `-> ` whole target is the directive; a leader in `id` / `path` too
+        assert_eq!(
+            d(json!({ "op": "insert", "into": "-> project", "markdown": "x" }))["into"],
+            json!({ "oqx": "project" })
+        );
+        assert_eq!(
+            d(
+                json!({ "op": "insert", "into": { "kind": "document", "path": "-> project" }, "markdown": "x" })
+            )["into"],
+            json!({ "kind": "document", "path": { "oqx": "project" } })
+        );
+        // a locator: hint arguments, with the fix
+        let e = desugar(json!({ "op": "insert", "into": "hub.md#Status", "markdown": "x" }))
+            .unwrap_err();
+        assert_eq!(e.code, "filter_invalid");
+        assert_eq!(data(&e)["hint"], "arguments");
+        assert_eq!(data(&e)["fix"], LOCATOR_FIX);
+        assert_eq!(
+            e.message,
+            "effects[0].into: \"hub.md#Status\" is a locator, not a target — a bare target is a document path, a `b_`/`d_`/`n_` id or `$new.n`"
+        );
+        // anything else is no target
+        let e = desugar(json!({ "op": "insert", "into": "hub", "markdown": "x" })).unwrap_err();
+        assert_eq!(data(&e)["hint"], "arguments");
+        assert_eq!(
+            e.message,
+            "effects[0].into: a target is { kind: …, … } or a bare document path, a `b_`/`d_`/`n_` id or `$new.n` (got \"hub\")"
+        );
+        // the op's kind table still applies to the normalized kind (the probe check)
+        let e = compile(&req(
+            "from docs",
+            json!([{ "op": "split", "target": "d_0", "at": [1] }]),
+            None,
+        ))
+        .unwrap_err();
+        assert_eq!(
+            e.message,
+            "effects[0].target: `kind` must be one of block (got \"document\")"
+        );
+        assert_eq!(data(&e)["hint"], "arguments");
+    }
+
+    /// A leader where no expression is admitted — `op`, `field`, `expect`, a
+    /// target's other members, a whole `at`, `split.at`, an unknown key — is
+    /// refused with `hint: "selection"`.
+    #[test]
+    fn a_leader_in_a_non_expression_slot_is_refused() {
+        let refuse = |v: Json| -> SurfaceError {
+            let e = desugar(v).unwrap_err();
+            assert_eq!(e.code, "filter_invalid");
+            assert_eq!(data(&e)["hint"], HINT);
+            e
+        };
+        for (v, here) in [
+            (
+                json!({ "op": "set", "target": "d_0", "field": "-> f", "value": 1 }),
+                "effects[0].field",
+            ),
+            (
+                json!({ "op": "set", "target": "d_0", "field": "frontmatter.x", "value": 1, "expect": { "revision": "-> r" } }),
+                "effects[0].expect.revision",
+            ),
+            (
+                json!({ "op": "insert", "into": { "kind": "section", "heading_id": "-> h" }, "markdown": "x" }),
+                "effects[0].into.heading_id",
+            ),
+            (
+                json!({ "op": "insert", "into": "hub.md", "at": "-> end", "markdown": "x" }),
+                "effects[0].at",
+            ),
+            (
+                json!({ "op": "insert", "into": "hub.md", "at": { "before": "b_1", "x": "-> y" }, "markdown": "x" }),
+                "effects[0].at.x",
+            ),
+            (
+                json!({ "op": "split", "target": "b_1", "at": ["-> 2"] }),
+                "effects[0].at[0]",
+            ),
+            (
+                json!({ "op": "set", "target": "d_0", "field": "frontmatter.x", "value": 1, "bogus": "-> z" }),
+                "effects[0].bogus",
+            ),
+            (
+                json!({ "op": "retarget", "repairs": [{ "from": "-> a", "to": "b" }] }),
+                "effects[0].repairs[0].from",
+            ),
+        ] {
+            let e = refuse(v);
+            assert_eq!(
+                e.message,
+                format!("{here}: `-> ` is not allowed here — this member takes no expression")
+            );
+        }
+        // an unknown op — `-> set` included — is left for the shape check (hint arguments)
+        for v in [
+            json!({ "op": "frobnicate", "x": "-> y" }),
+            json!({ "op": "-> set", "target": "d_0", "field": "frontmatter.x", "value": 1 }),
+        ] {
+            assert_eq!(desugar(v.clone()).unwrap(), v);
+            let e = Effect::validate(&v, 0).map_err(shape_error).unwrap_err();
+            assert!(e.message.contains("`op` must be one of"), "{}", e.message);
+            assert_eq!(data(&e)["hint"], "arguments");
+        }
+    }
+
+    /// The whole-target binding: a row by its id, a string as a bare target,
+    /// anything else refused; a `$new.n` string is a symbol to settle.
+    #[test]
+    fn binding_a_whole_target() {
+        let c = compile(&req(
+            "from docs",
+            json!([{ "op": "insert", "into": "-> project", "markdown": "x" }, { "op": "set", "target": "-> hub", "field": "frontmatter.x", "value": 1 }]),
+            None,
+        ))
+        .unwrap();
+        let Bound { effects, .. } = bind(
+            &c,
+            &[hit("d_1", "/a.md", json!({ "__omg_sel_0_into": "hub.md", "__omg_sel_1_target": { "id": "d_7", "path": "/hub.md" } }))],
+            &mut no_settle,
+        )
+        .unwrap();
+        assert_eq!(
+            effects.iter().map(Effect::to_json).collect::<Vec<_>>(),
+            [
+                json!({ "op": "insert", "into": { "kind": "document", "path": "hub.md" }, "at": "end", "markdown": "x" }),
+                json!({ "op": "set", "target": { "kind": "document", "id": "d_7" }, "field": "frontmatter.x", "value": 1 }),
+            ]
+        );
+        let Bound { effects, .. } = bind(
+            &c,
+            &[hit(
+                "d_1",
+                "/a.md",
+                json!({ "__omg_sel_0_into": "b_3", "__omg_sel_1_target": "d_2" }),
+            )],
+            &mut no_settle,
+        )
+        .unwrap();
+        assert_eq!(
+            effects[0].to_json()["into"],
+            json!({ "kind": "block", "id": "b_3" })
+        );
+        let e = bind(
+            &c,
+            &[hit(
+                "d_1",
+                "/a.md",
+                json!({ "__omg_sel_0_into": "hub", "__omg_sel_1_target": "d_2" }),
+            )],
+            &mut no_settle,
+        )
+        .unwrap_err();
+        assert_eq!(
+            e.message,
+            "effects[0].into: the expression yielded a string (\"hub\"), not an identity (a document path, an id or a row)"
+        );
+        assert_eq!(data(&e)["hint"], HINT);
+        assert_eq!(data(&e)["template_index"], 0);
+        // a `$new.n` is a symbol: provisional kind, settled by the caller
+        let mut seen: Vec<(Vec<Member>, usize)> = Vec::new();
+        let mut settle =
+            |_: &mut Json, m: &[Member], p: &[Effect]| seen.push((m.to_vec(), p.len()));
+        let Bound { effects, .. } = bind(
+            &c,
+            &[hit(
+                "d_1",
+                "/a.md",
+                json!({ "__omg_sel_0_into": "$new.0", "__omg_sel_1_target": "d_2" }),
+            )],
+            &mut settle,
+        )
+        .unwrap();
+        assert_eq!(
+            effects[0].to_json()["into"],
+            json!({ "kind": "document", "id": "$new.0" })
+        );
+        // the prefix is empty for the first effect: nothing to settle against yet
+        assert!(seen.is_empty());
+    }
+
+    // ---- the selector-less path, over a store ----------------------------------------
+
+    use omgbase_store::{Config, MemDocStore, SequentialMinter};
+
+    const TS: &str = "2026-10-13T10:00:00.000Z";
+
+    fn seeded() -> (Store, PlanContext, MemDocStore) {
+        let mut store =
+            Store::open_in_memory_with_minter(Box::new(SequentialMinter::new())).unwrap();
+        let repo = store.create_repo("fixture").unwrap();
+        for (path, source) in [
+            (
+                "hub.md",
+                "---\ntype: project\n---\n\n# Hub\n\n## Status\n\nNothing yet.\n",
+            ),
+            (
+                "ws/alpha.md",
+                "---\ntype: workstream\nstatus: completed\nproject: hub.md\n---\n\n# Alpha\n",
+            ),
+        ] {
+            store
+                .observe_one(&repo, path, source, TS, &Config::default())
+                .unwrap();
+        }
+        let ctx = PlanContext {
+            repo_id: repo,
+            ts: "2026-10-13T10:01:00.000Z".to_owned(),
+            config: Config::default(),
+        };
+        (store, ctx, MemDocStore::new())
+    }
+
+    fn plan_plain(
+        store: &mut Store,
+        ctx: &PlanContext,
+        ds: &MemDocStore,
+        effects: Json,
+    ) -> Result<omgbase_mutate::Plan> {
+        let req = SelectRequest::from_args(&json!({ "effects": effects }))
+            .unwrap()
+            .expect("sugar");
+        plan_selected(store, ds, ctx, &req, HashMap::new())
+    }
+
+    /// Without a selector a `-> ` slot evaluates in its own target's row:
+    /// the plan has no `selection`, records the effects as written as
+    /// `templates`, and its core equals the literal plan's (`plan_id`); a
+    /// folded leader needs no row and yields no `templates`.
+    #[test]
+    fn the_selector_less_path_evaluates_in_the_targets_row() {
+        let (mut store, ctx, ds) = seeded();
+        let plan = plan_plain(
+            &mut store,
+            &ctx,
+            &ds,
+            json!([
+                { "op": "insert", "into": "hub.md", "markdown": "-> `## ${title} (${type})`" },
+                { "op": "set", "target": "/ws/alpha.md", "field": "frontmatter.hub", "value": "-> project" },
+                { "op": "set", "target": "d_1", "field": "frontmatter.n", "value": "-> 1 + 1" },
+            ]),
+        )
+        .unwrap();
+        assert!(plan.selection.is_none());
+        assert_eq!(plan.planner_v, "p3");
+        let effects: Vec<Json> = plan.effects.iter().map(Effect::to_json).collect();
+        assert_eq!(effects[0]["markdown"], "## Hub (project)");
+        assert_eq!(effects[1]["value"], "hub.md");
+        assert_eq!(
+            effects[1]["target"],
+            json!({ "kind": "document", "id": "d_1", "path": "ws/alpha.md" })
+        );
+        assert_eq!(effects[2]["value"], 2);
+        let templates = plan.templates.clone().expect("templates");
+        assert_eq!(templates[0]["markdown"], "-> `## ${title} (${type})`");
+        assert_eq!(templates[1]["target"], "/ws/alpha.md");
+        let wire = plan.to_json(false);
+        assert!(wire.get("templates").is_some());
+        assert!(plan.core_json().get("templates").is_none());
+        // the literal spelling (no sugar: the plain path) digests identically
+        let literal = store
+            .plan_effects(
+                &ctx,
+                &omgbase_mutate::Effect::list_from_json(&json!([
+                    { "op": "insert", "into": { "kind": "document", "path": "hub.md" }, "markdown": "## Hub (project)" },
+                    { "op": "set", "target": { "kind": "document", "path": "ws/alpha.md" }, "field": "frontmatter.hub", "value": "hub.md" },
+                    { "op": "set", "target": { "kind": "document", "id": "d_1" }, "field": "frontmatter.n", "value": 2 },
+                ]))
+                .unwrap(),
+                &ds,
+            )
+            .unwrap();
+        assert_eq!(literal.plan_id, plan.plan_id);
+        assert!(literal.templates.is_none());
+        // folded leaders and bare targets alone: no expression, no `templates`, same digest
+        let folded = plan_plain(
+            &mut store,
+            &ctx,
+            &ds,
+            json!([
+                { "op": "insert", "into": "hub.md", "markdown": "-> \"## Hub (project)\"" },
+                { "op": "set", "target": "/ws/alpha.md", "field": "frontmatter.hub", "value": "-> `hub.md`" },
+                { "op": "set", "target": "d_1", "field": "frontmatter.n", "value": 2 },
+            ]),
+        )
+        .unwrap();
+        assert_eq!(folded.plan_id, plan.plan_id);
+        assert!(folded.templates.is_none());
+        // the intent record carries `templates` only when the plan does
+        let record = omgbase_mutate::effects::intent_record(
+            &plan.plan_id,
+            &plan.effects,
+            None,
+            plan.templates.as_deref(),
+        );
+        assert!(
+            record.contains("\"templates\":[{\"into\":\"hub.md\""),
+            "{record}"
+        );
+    }
+
+    /// The selector-less refusals and the row scope's errors.
+    #[test]
+    fn the_selector_less_path_refuses_what_has_no_row() {
+        let (mut store, ctx, ds) = seeded();
+        let refuse = |store: &mut Store, effects: Json| -> SurfaceError {
+            plan_plain(store, &ctx, &ds, effects).unwrap_err()
+        };
+        let e = refuse(
+            &mut store,
+            json!([{ "op": "create", "path": "n.md", "markdown": "-> title" }]),
+        );
+        assert_eq!(e.code, "filter_invalid");
+        assert_eq!(data(&e)["hint"], HINT);
+        assert_eq!(
+            e.message,
+            "effects[0]: a `create` has no row — an expression on a create needs a selector (`select`)"
+        );
+        // a folded leader on a create is a literal and fine
+        let plan = plan_plain(
+            &mut store,
+            &ctx,
+            &ds,
+            json!([{ "op": "create", "path": "n.md", "markdown": "-> \"# N\"" }]),
+        )
+        .unwrap();
+        assert_eq!(plan.effects[0].to_json()["markdown"], "# N");
+        assert!(plan.templates.is_none());
+        let e = refuse(
+            &mut store,
+            json!([{ "op": "insert", "into": "-> project", "markdown": "-> title" }]),
+        );
+        assert_eq!(
+            e.message,
+            "effects[0].into: an expression target needs a selector — without `select` there is no row to read it from"
+        );
+        let e = refuse(
+            &mut store,
+            json!([{ "op": "set", "target": { "kind": "document", "id": "-> x" }, "field": "frontmatter.a", "value": "-> title" }]),
+        );
+        assert!(
+            e.message
+                .starts_with("effects[0].target: an expression target needs a selector"),
+            "{}",
+            e.message
+        );
+        let e = refuse(
+            &mut store,
+            json!([
+                { "op": "create", "path": "n.md", "markdown": "# N" },
+                { "op": "insert", "into": "$new.0", "markdown": "-> title" },
+            ]),
+        );
+        assert_eq!(
+            e.message,
+            "effects[1].into: $new.0 has no row yet — it is created by this plan; use a literal target or a selector"
+        );
+        // a literal target that names no row is the lowering's own error
+        let e = refuse(
+            &mut store,
+            json!([{ "op": "set", "target": "gone.md", "field": "frontmatter.a", "value": "-> title" }]),
+        );
+        assert_eq!(e.code, "doc_missing");
+        assert_eq!(data(&e)["doc"], "gone.md");
+        let e = refuse(
+            &mut store,
+            json!([{ "op": "insert", "into": "b_99", "markdown": "-> text" }]),
+        );
+        assert_eq!(e.code, "parent_missing");
+        let e = refuse(
+            &mut store,
+            json!([{ "op": "set", "target": "b_99", "field": "markdown", "value": "-> text" }]),
+        );
+        assert_eq!(e.code, "block_missing");
+        // a binding error names the effect and the row, never a template
+        let e = refuse(
+            &mut store,
+            json!([{ "op": "insert", "into": "hub.md", "markdown": "-> nope" }]),
+        );
+        assert_eq!(
+            e.message,
+            "effects[0].markdown: the expression yielded absent for row d_0"
+        );
+        assert_eq!(
+            *data(&e),
+            json!({ "reason": e.message, "hint": HINT, "effect_index": 0, "row": { "id": "d_0", "path": "/hub.md" }, "expression": "nope" })
+        );
+    }
+
+    /// A bare `$new.n` takes the kind the symbol table recorded; the slot's
+    /// kind table then applies to it (with `effect_index`); a symbol nothing
+    /// created is the planner's `target_missing { symbol }`.
+    #[test]
+    fn bare_new_symbols_settle_against_the_prefix_plan() {
+        let (mut store, ctx, ds) = seeded();
+        let plan = plan_plain(
+            &mut store,
+            &ctx,
+            &ds,
+            json!([
+                { "op": "create", "path": "n.md", "markdown": "# N\n\nBody." },
+                { "op": "insert", "into": "$new.0", "markdown": "Tail." },
+                { "op": "set", "target": "$new.2", "field": "markdown", "value": "Body, edited." },
+                { "op": "remove", "targets": ["$new.1"] },
+            ]),
+        )
+        .unwrap();
+        let effects: Vec<Json> = plan.effects.iter().map(Effect::to_json).collect();
+        assert_eq!(
+            effects[1]["into"],
+            json!({ "kind": "document", "id": "$new.0", "path": "n.md" })
+        );
+        assert_eq!(
+            effects[2]["target"],
+            json!({ "kind": "block", "id": "$new.2" })
+        );
+        assert_eq!(
+            effects[3]["targets"],
+            json!([{ "kind": "block", "id": "$new.1" }])
+        );
+        assert!(plan.templates.is_none());
+        let e = plan_plain(
+            &mut store,
+            &ctx,
+            &ds,
+            json!([
+                { "op": "create", "path": "n.md", "markdown": "# N" },
+                { "op": "unset", "target": "$new.1", "field": "frontmatter.k" },
+            ]),
+        )
+        .unwrap_err();
+        assert_eq!(e.code, "filter_invalid");
+        assert_eq!(
+            e.message,
+            "effects[1].target: `kind` must be one of document (got \"block\")"
+        );
+        assert_eq!(data(&e)["effect_index"], 1);
+        assert_eq!(data(&e)["hint"], "arguments");
+        let e = plan_plain(
+            &mut store,
+            &ctx,
+            &ds,
+            json!([{ "op": "insert", "into": "$new.3", "markdown": "x" }]),
+        )
+        .unwrap_err();
+        assert_eq!(e.code, "target_missing");
+        assert_eq!(data(&e)["symbol"], "$new.3");
     }
 }

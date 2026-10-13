@@ -9,11 +9,11 @@ import { commitChangeset, readDocBase, type CommitHead, type Effect as InternalE
 import { resolveDocStore, type DocStore } from "./doc-store.js";
 import { parseNewDoc } from "./docs.js";
 import {
-  ConflictTracker, SymbolTable, isNewSymbol, lowerEffect, symbolicMinter, validateEffects, effectInvalid,
+  ConflictTracker, SymbolTable, isNewSymbol, lowerEffect, symbolicMinter, effectInvalid,
   type CreateEntry, type Effect, type LoweringContext, type ResolvedEffect, type RetargetPreview,
 } from "./effects.js";
 import type { IdentityPreview } from "./opset.js";
-import { compileSelection, selectionInvalid, type EffectOrigin, type Selection } from "./select.js";
+import { compilePlain, compileSelection, selectionInvalid, type EffectOrigin, type Selection } from "./select.js";
 import { MutationError } from "./tree.js";
 
 // The Plan (spec/mutate §11.4–§11.7, 2.3): the frozen, executable, digest-named
@@ -85,6 +85,9 @@ export interface PlanCore {
 export interface Plan extends PlanCore {
   plan_id: string;
   diagnostics: string[];
+  /** (3.2, §11.8 "Sugar") a plain request's effects AS WRITTEN when one carried a `-> ` / `{ oqx }` expression;
+   *  not digested (the core already holds the concrete effects), recorded in the intent record as `templates` */
+  templates?: unknown[];
   /** excluded from the digest; omittable on echo */
   preview?: PlanPreview;
 }
@@ -233,14 +236,21 @@ export function planEffects(store: Store, req: PlanEffectsRequest): Plan {
   // selection is an empty plan (the non-empty rule of §11.1 is the templates').
   let effects: Effect[];
   let selection: Selection | undefined;
-  let origins: EffectOrigin[] = [];
+  let templates: unknown[] | undefined;
+  let origins: (EffectOrigin | undefined)[] = [];
   if (req.select !== undefined || req.expect !== undefined) {
     if (req.select === undefined) throw selectionInvalid("`expect` bounds a selection — pass `select` with it");
     const compiled = compileSelection(store, req.repoId, req.select, req.expect, req.effects);
     effects = compiled.effects;
     selection = compiled.selection;
     origins = compiled.origins;
-  } else effects = validateEffects(req.effects);
+  } else {
+    // (3.2) the `-> ` sugar and expressions over each effect's own target row; without any, the shape check alone.
+    const compiled = compilePlain(store, req.repoId, req.effects);
+    effects = compiled.effects;
+    templates = compiled.templates;
+    origins = compiled.origins;
+  }
   const docStore = resolveDocStore(req);
   const symbols = new SymbolTable();
   return withIdMinter(symbolicMinter(symbols), () => {
@@ -260,7 +270,9 @@ export function planEffects(store: Store, req: PlanEffectsRequest): Plan {
         if (err instanceof MutationError) {
           if (err.data.effect_index === undefined) err.data = { ...err.data, effect_index: i };
           const origin = origins[i];
-          if (origin !== undefined && err.data.template_index === undefined) err.data = { ...err.data, template_index: origin.template_index, row: origin.row };
+          if (origin !== undefined && err.data.row === undefined) {
+            err.data = { ...err.data, ...(origin.template_index !== undefined ? { template_index: origin.template_index } : {}), row: origin.row };
+          }
         }
         throw err;
       }
@@ -309,7 +321,7 @@ export function planEffects(store: Store, req: PlanEffectsRequest): Plan {
     const preview: PlanPreview = { results: changeset.results, revisions, diffs };
     if (ctx.identity.size > 0) preview.identity = Object.fromEntries(ctx.identity);
     if (ctx.retargets.length > 0) preview.retarget = ctx.retargets;
-    return { ...core, plan_id, diagnostics: ctx.tracker.diagnostics, preview };
+    return { ...core, plan_id, diagnostics: ctx.tracker.diagnostics, ...(templates !== undefined ? { templates } : {}), preview };
   });
 }
 
@@ -370,6 +382,8 @@ export function admitPlan(input: unknown): Plan {
     if (sel.expect !== undefined && (!isRecord(sel.expect) || typeof sel.expect.max !== "number")) throw effectInvalid("`plan.selection.expect` is { max }");
   }
   if (typeof input.plan_id !== "string") throw effectInvalid("`plan.plan_id` must be a string");
+  // (3.2) the written effects ride outside the digest, like `diagnostics`; their shape is all that is checked.
+  if (input.templates !== undefined && !Array.isArray(input.templates)) throw effectInvalid("`plan.templates` must be an array");
   const plan = input as unknown as Plan;
   const actual = planDigest(plan);
   if (actual !== plan.plan_id) {
@@ -471,8 +485,9 @@ function underLock<T>(req: { omgbaseDir?: string }, fn: () => T): T {
  * `ingest_known { base: null }`; a moved document's revision lands at its new
  * path), tombstones — and `commitChangeset` re-validates every triple inside
  * `BEGIN IMMEDIATE`. The commit row's `ops` is the intent record
- * `canonical({ v: 1, plan_id, effects, selection? })` (§11.8: the selector,
- * its templates and the hits it bound ride along when the plan had one).
+ * `canonical({ v: 1, plan_id, effects, selection?, templates? })` (§11.8: the
+ * selector, its templates and the hits it bound ride along when the plan had
+ * one; a plain request's written effects when one carried an expression, 3.2).
  */
 function executeAdmitted(store: Store, req: ExecuteRequest, plan: Plan, docStore: DocStore): Receipt {
   for (const d of plan.preconditions.docs) {
@@ -498,7 +513,11 @@ function executeAdmitted(store: Store, req: ExecuteRequest, plan: Plan, docStore
     origin: "api",
     actor: req.origin.actor,
     reason: req.origin.reason ?? null,
-    ops: canonicalJson({ v: 1, plan_id: plan.plan_id, effects: plan.effects, ...(plan.selection !== undefined ? { selection: plan.selection } : {}) }),
+    ops: canonicalJson({
+      v: 1, plan_id: plan.plan_id, effects: plan.effects,
+      ...(plan.selection !== undefined ? { selection: plan.selection } : {}),
+      ...(plan.templates !== undefined ? { templates: plan.templates } : {}),
+    }),
   };
   const stat = req.omgbaseDir !== undefined;
   const moved = new Map(plan.opset.moves.map((m) => [m.id, m]));

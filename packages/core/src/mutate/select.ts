@@ -3,7 +3,10 @@ import type { Store } from "../core/store/store.js";
 import { checkRootSpellings, oqxRunQuery, reservedAlias, type OqxHit } from "../oqx-js/run.js";
 import { rootTarget } from "../oqx-js/planner.js";
 import { FilterInvalid } from "../search/cel/parser.js";
-import { EFFECT_OPS, validateEffect, type Effect } from "./effects.js";
+import {
+  EFFECT_OPS, EXPRESSION_LEADER, bareTarget, effectInvalid, findDocumentTarget, isNewSymbol, isTargetId, looksLikePath, validateEffect, validateTarget,
+  type Effect, type EffectTarget,
+} from "./effects.js";
 import { MutationError } from "./tree.js";
 
 // Query-directed planning (spec/mutate §11.8, 3.1): an OQX **selector** plus
@@ -20,6 +23,12 @@ import { MutationError } from "./tree.js";
 // binding (hits in result order × templates in order, `k = h·T + t`). The
 // expanded list feeds the existing lowering loop unchanged, so the conflict
 // tracker gives cross-hit semantics for free. Nothing is spliced as text.
+//
+// Since 3.2 (§11.8 "Sugar") the `-> expr` leader is the written form of a
+// `{ oqx }` directive (`desugarEffect` runs before admission, for templates
+// and plain effects alike), a bare string is a target, and a plain request —
+// no selector — may carry expressions too: each evaluates in its own primary
+// target's row through one synthetic query per target (`compilePlain`).
 
 /** The implicit bound on a selection without `expect.max` (hits beyond it are `selection_too_large`). */
 export const SELECTION_CEILING = 1000;
@@ -38,9 +47,10 @@ export interface Selection {
   identities: string[];
 }
 
-/** Where an expanded effect came from (every error from one carries both, §11.8). */
+/** Where an expanded effect came from (every error from one carries both, §11.8); a plain effect's
+ *  expressions (3.2) have a row but no template. */
 export interface EffectOrigin {
-  template_index: number;
+  template_index?: number;
   row: { id: string; path: string };
 }
 
@@ -52,11 +62,24 @@ export interface CompiledSelection {
   origins: EffectOrigin[];
 }
 
+/** (3.2) A plain request compiled: the concrete effects and, when any effect carried an expression, the list as written. */
+export interface CompiledPlain {
+  effects: Effect[];
+  /** the effects AS WRITTEN — present only when at least one slot was an expression (the intent record's `templates`) */
+  templates?: unknown[];
+  /** effect index → the row its expressions were read from (sparse; literal effects have none) */
+  origins: (EffectOrigin | undefined)[];
+}
+
 // ---- errors -------------------------------------------------------------------------
 
 /** The admission pass's refusal: `filter_invalid { reason, hint: "selection" }`. */
 export function selectionInvalid(message: string, data: Record<string, unknown> = {}): MutationError {
   return new MutationError("filter_invalid", message, { reason: message, hint: "selection", ...data });
+}
+
+function needsSelector(where: string): MutationError {
+  return selectionInvalid(`${where}: an expression target needs a selector — without \`select\` there is no row to read it from`);
 }
 
 function isRecord(v: unknown): v is Record<string, unknown> {
@@ -91,14 +114,15 @@ const WRAPPER_PREFIX = "select __omg_x: ";
 const WRAPPER_SUFFIX = " from docs";
 const OFFSET_RE = /\(at offset (\d+)\)/;
 
-function parseExpression(src: string, here: string): SelectItem {
+/** Parse one expression; a parse error's offset is shifted back by the wrapper and forward by `shift` (the `-> ` leader's 3). */
+function parseExpression(src: string, here: string, shift = 0): SelectItem {
   let q: Query;
   try {
     q = parse(WRAPPER_PREFIX + src + WRAPPER_SUFFIX);
   } catch (e) {
     if (!(e instanceof OqxError)) throw e;
     // Parse-error offsets are shifted by the wrapper prefix (ASCII, so code points = chars).
-    const message = e.message.replace(OFFSET_RE, (_m, n: string) => `(at offset ${Math.max(0, Number(n) - WRAPPER_PREFIX.length)})`);
+    const message = e.message.replace(OFFSET_RE, (_m, n: string) => `(at offset ${Math.max(0, Number(n) - WRAPPER_PREFIX.length) + shift})`);
     throw selectionInvalid(`${here}: ${message}`);
   }
   // The whole source must have been one expression: a query smuggled into the
@@ -109,9 +133,147 @@ function parseExpression(src: string, here: string): SelectItem {
   return q.select[0]!;
 }
 
+// ---- the `-> ` sugar (3.2, §11.8 "Sugar") -----------------------------------------------
+
+/** Exactly `-> ` (dash, greater-than, space) at the start: `->x`, ` -> x` and `-->` are literal. */
+function isLeader(v: unknown): v is string {
+  return typeof v === "string" && v.startsWith(EXPRESSION_LEADER);
+}
+
+/**
+ * `"-> <expr>"` → `{ oqx: "<expr>" }` — or, when the expression is a bare
+ * string literal or a template literal without interpolation, the literal
+ * itself (constant folding: `-> "x"` and `"x"` plan identically, and
+ * `-> "-> note"` is how a literal that begins with the leader is spelled).
+ * A parse error is `filter_invalid { hint: "selection" }` with its offset
+ * counted from the start of the written string (past the leader).
+ */
+export function desugarLeader(v: string, here: string): unknown {
+  const src = v.slice(EXPRESSION_LEADER.length);
+  const item = parseExpression(src, here, EXPRESSION_LEADER.length);
+  if (item.kind === "field") {
+    const x = item.expr;
+    if (x.kind === "lit" && typeof x.value === "string") return x.value;
+    if (x.kind === "template" && x.parts.length === 1) return x.parts[0] as string;
+  }
+  return { oqx: src };
+}
+
+/** A `-> ` string where no expression is admitted — anywhere under `v`. */
+function refuseLeader(v: unknown, here: string): void {
+  if (isLeader(v)) throw selectionInvalid(`${here}: \`-> \` is not allowed here — this member takes no expression`);
+  if (Array.isArray(v)) v.forEach((x, k) => refuseLeader(x, `${here}[${k}]`));
+  else if (isRecord(v)) for (const [k, x] of Object.entries(v)) refuseLeader(x, `${here}.${k}`);
+}
+
+/**
+ * Desugar one effect or template as written (§11.8 "Sugar"), before the shape
+ * check and the admission: in every slot that admits an expression — the
+ * strings `markdown`, `to`, `path`, `separator`, `at.before` / `at.after`,
+ * the JSON `value`, each top-level `create.frontmatter` value, a target's `id`
+ * / `path`, and a whole target (`into`, `target`, `targets[k]`) — a string
+ * beginning `-> ` becomes `{ oqx }` (or folds to its literal); a `-> ` string
+ * anywhere else (`expect`, `field`, `op`, a section's `heading_id`, …) is
+ * refused. Every other string is literal data, with no escaping and no `${`
+ * scanning; a string nested inside a `value` or a frontmatter value is data
+ * (the slot is the top-level value, as for `{ oqx }`). Shape problems are the
+ * shape check's.
+ */
+export function desugarEffect(raw: unknown, index: number): unknown {
+  if (!isRecord(raw) || typeof raw.op !== "string") return raw;
+  const here = `effects[${index}]`;
+  const out: Record<string, unknown> = clone(raw);
+  const slotKeys = new Set<string>(["op"]);
+  const leaderAt = (key: string): void => {
+    slotKeys.add(key);
+    if (isLeader(out[key])) out[key] = desugarLeader(out[key], `${here}.${key}`);
+  };
+  const target = (key: string): void => {
+    slotKeys.add(key);
+    const t = out[key];
+    // A bare `-> expr` target: the whole target is the directive (a folded literal stays a bare string for the shape check).
+    if (isLeader(t)) out[key] = desugarLeader(t, `${here}.${key}`);
+    else if (isRecord(t)) {
+      for (const member of ["id", "path"] as const) if (isLeader(t[member])) t[member] = desugarLeader(t[member], `${here}.${key}.${member}`);
+      for (const k of Object.keys(t)) if (k !== "id" && k !== "path") refuseLeader(t[k], `${here}.${key}.${k}`);
+    }
+  };
+  const targets = (): void => {
+    slotKeys.add("targets");
+    const list = out.targets;
+    if (!Array.isArray(list)) return;
+    list.forEach((t, k) => {
+      if (isLeader(t)) list[k] = desugarLeader(t, `${here}.targets[${k}]`);
+      else if (isRecord(t)) {
+        if (isLeader(t.id)) t.id = desugarLeader(t.id, `${here}.targets[${k}].id`);
+        for (const m of Object.keys(t)) if (m !== "id") refuseLeader(t[m], `${here}.targets[${k}].${m}`);
+      }
+    });
+  };
+  const at = (): void => {
+    slotKeys.add("at");
+    const a = out.at;
+    if (!isRecord(a)) {
+      refuseLeader(a, `${here}.at`);
+      return;
+    }
+    for (const member of ["before", "after"] as const) if (isLeader(a[member])) a[member] = desugarLeader(a[member], `${here}.at.${member}`);
+    for (const k of Object.keys(a)) if (k !== "before" && k !== "after") refuseLeader(a[k], `${here}.at.${k}`);
+  };
+  switch (out.op) {
+    case "create": {
+      leaderAt("path");
+      leaderAt("markdown");
+      slotKeys.add("frontmatter");
+      const fm = out.frontmatter;
+      if (isRecord(fm)) for (const k of Object.keys(fm)) if (isLeader(fm[k])) fm[k] = desugarLeader(fm[k], `${here}.frontmatter.${k}`);
+      break;
+    }
+    case "insert":
+      target("into");
+      at();
+      leaderAt("markdown");
+      break;
+    case "set":
+      target("target");
+      leaderAt("value");
+      break;
+    case "unset":
+      target("target");
+      break;
+    case "move":
+      if ("targets" in out || "into" in out) {
+        targets();
+        target("into");
+        at();
+      } else {
+        target("target");
+        leaderAt("to");
+      }
+      break;
+    case "remove":
+      if ("targets" in out) targets();
+      else target("target");
+      break;
+    case "split":
+      target("target"); // `at` is byte offsets: no expression
+      break;
+    case "merge":
+      targets();
+      leaderAt("separator");
+      break;
+    case "retarget":
+      break; // not row-shaped: no slot
+    default:
+      return out; // an unknown op: the shape check names it
+  }
+  for (const key of Object.keys(out)) if (!slotKeys.has(key)) refuseLeader(out[key], `${here}.${key}`);
+  return out;
+}
+
 // ---- the templates --------------------------------------------------------------------
 
-type SlotKind = "identity" | "string" | "json";
+type SlotKind = "identity" | "target" | "string" | "json";
 
 interface Slot {
   /** the suffix of the reserved item name (`target`, `into`, `markdown`, `fm_<j>`, `targets_<k>`, …) */
@@ -154,8 +316,11 @@ function containsOqx(v: unknown): boolean {
  * `{ oqx }` directives only in the slots the design names, every expression
  * parseable, and the template's SHAPE valid with a probe value in each slot
  * (`validateEffect`, the `effects[i]` messages of §11.1, `hint: "arguments"`).
+ * `plain` (3.2): a plain effect — no selector — keeps its own target: nothing
+ * defaults to a hit, and its primary target may not be an expression (the
+ * primary target IS the row the expressions read).
  */
-function admitTemplate(raw: unknown, index: number, root: Root): Template {
+function admitTemplate(raw: unknown, index: number, root: Root, plain: boolean): Template {
   const here = `effects[${index}]`;
   if (!isRecord(raw) || typeof raw.op !== "string") throw selectionInvalid(`${here}: a template is an effect object whose \`op\` is one of ${EFFECT_OPS.filter((o) => o !== "retarget").join("/")}`);
   if (raw.op === "retarget") throw selectionInvalid(`${here}: \`retarget\` is not row-shaped — it cannot be a selector template`);
@@ -186,20 +351,31 @@ function admitTemplate(raw: unknown, index: number, root: Root): Template {
     probe[key] = null;
     slots.push({ name: key, kind: "json", here: `${here}.${key}`, expression: src, item: expr(src, key), put: (e, v) => { e[key] = v; } });
   };
-  // A target member: `{ kind, id: { oqx } }` or `{ kind: "document", path: { oqx } }`; absent → the hit when `defaultable`.
-  const targetSlot = (key: string, defaultable: boolean): { key: string; list: false } | null => {
+  // A target member: `{ kind, id: { oqx } }` or `{ kind: "document", path: { oqx } }`, or (3.2) the whole target
+  // `{ oqx }` — the identity the value names; absent → the hit when `defaultable` (never on a plain effect).
+  // `probeKind` is a kind the slot admits, standing in for the whole-target expression's unknown kind.
+  const targetSlot = (key: string, defaultable: boolean, probeKind: EffectTarget["kind"], primary: boolean): { key: string; list: false } | null => {
     slotKeys.add(key);
     const t = raw[key];
     if (t === undefined) {
-      if (!defaultable) return null;
+      if (!defaultable || plain) return null;
       probe[key] = { kind: HIT_KIND[root], id: "$sel" };
       return { key, list: false };
+    }
+    if (isOqx(t)) {
+      if (plain && primary) throw needsSelector(`${here}.${key}`);
+      const src = t.oqx;
+      delete base[key];
+      probe[key] = { kind: probeKind, id: "$sel" };
+      slots.push({ name: key, kind: "target", here: `${here}.${key}`, expression: src, item: expr(src, key), put: (e, v) => { e[key] = v; } });
+      return null;
     }
     if (isRecord(t)) {
       const idX = isOqx(t.id);
       const pathX = isOqx(t.path);
       if (idX && pathX) throw selectionInvalid(`${here}.${key}: give \`id\` or \`path\` as an expression, not both`);
       if (idX || pathX) {
+        if (plain && primary) throw needsSelector(`${here}.${key}`);
         const member = idX ? "id" : "path";
         const src = (t[member] as { oqx: string }).oqx;
         const literal = { ...t };
@@ -215,20 +391,33 @@ function admitTemplate(raw: unknown, index: number, root: Root): Template {
     }
     return null;
   };
-  // A `targets` list: each element `{ kind: "block", id: { oqx } }` yields one block id; absent → `[the hit]` when `defaultable`.
+  // A `targets` list: each element `{ kind: "block", id: { oqx } }` (or, 3.2, a whole `{ oqx }`) yields one block;
+  // absent → `[the hit]` when `defaultable`. The list is always the primary target of its op.
   const targetsSlot = (defaultable: boolean): { key: "targets"; list: true } | null => {
     slotKeys.add("targets");
     const list = raw.targets;
     if (list === undefined) {
-      if (!defaultable) return null;
+      if (!defaultable || plain) return null;
       probe.targets = [{ kind: HIT_KIND[root], id: "$sel" }];
       return { key: "targets", list: true };
     }
     if (Array.isArray(list)) {
       list.forEach((t, k) => {
+        if (isOqx(t)) {
+          if (plain) throw needsSelector(`${here}.targets[${k}]`);
+          const src = t.oqx;
+          (base.targets as unknown[])[k] = {};
+          (probe.targets as unknown[])[k] = { kind: "block", id: "$sel" };
+          slots.push({
+            name: `targets_${k}`, kind: "target", here: `${here}.targets[${k}]`, expression: src, item: expr(src, `targets[${k}]`),
+            put: (e, v) => { (e.targets as unknown[])[k] = v; },
+          });
+          return;
+        }
         if (!isRecord(t)) return;
         if (isOqx(t.path)) throw selectionInvalid(`${here}.targets[${k}]: a block target has \`id\`, not \`path\``);
         if (isOqx(t.id)) {
+          if (plain) throw needsSelector(`${here}.targets[${k}].id`);
           const src = t.id.oqx;
           const literal = { ...t };
           delete literal.id;
@@ -275,35 +464,35 @@ function admitTemplate(raw: unknown, index: number, root: Root): Template {
       break;
     }
     case "insert":
-      defaultTarget = targetSlot("into", true);
+      defaultTarget = targetSlot("into", true, "document", true);
       atSlot();
       stringSlot("markdown");
       break;
     case "set":
-      defaultTarget = targetSlot("target", true);
+      defaultTarget = targetSlot("target", true, "document", true);
       jsonSlot("value");
       break;
     case "unset":
-      defaultTarget = targetSlot("target", true);
+      defaultTarget = targetSlot("target", true, "document", true);
       break;
     case "move":
       if ("into" in raw) {
         // the block form: `targets` default to the hit, `into` is the destination
         defaultTarget = targetsSlot(true);
-        targetSlot("into", false);
+        targetSlot("into", false, "document", false);
         atSlot();
       } else {
-        defaultTarget = targetSlot("target", true);
+        defaultTarget = targetSlot("target", true, "document", true);
         stringSlot("to");
       }
       break;
     case "remove": {
       const docForm = "target" in raw || (!("targets" in raw) && root === "docs");
-      defaultTarget = docForm ? targetSlot("target", true) : targetsSlot(true);
+      defaultTarget = docForm ? targetSlot("target", true, "document", true) : targetsSlot(true);
       break;
     }
     case "split":
-      defaultTarget = targetSlot("target", true);
+      defaultTarget = targetSlot("target", true, "block", true);
       break;
     case "merge":
       if (raw.targets === undefined) throw selectionInvalid(`${here}: \`merge\` needs \`targets\` — one hit cannot be merged with itself`);
@@ -365,6 +554,17 @@ function admitSelector(select: string): { raw: Query; root: Root } {
   return { raw, root };
 }
 
+/** Run a compiled query over the store; an OQX error is the runner's `filter_invalid`. */
+function runQuery(store: Store, repoId: string, q: Query, limit: number): { hits: OqxHit[]; truncated: boolean } {
+  try {
+    const res = oqxRunQuery(store, repoId, q, { limit });
+    return { hits: res.hits, truncated: res.truncated };
+  } catch (e) {
+    if (e instanceof OqxError) throw new FilterInvalid(e.message, "OQX");
+    throw e;
+  }
+}
+
 // ---- compile ---------------------------------------------------------------------------
 
 /**
@@ -378,16 +578,7 @@ export function compileSelection(store: Store, repoId: string, select: unknown, 
   const { rewritten, root, templates } = admitRequest(select, templatesRaw);
 
   const bound = expect?.max ?? SELECTION_CEILING;
-  let hits: OqxHit[];
-  let truncated: boolean;
-  try {
-    const res = oqxRunQuery(store, repoId, rewritten, { limit: bound + 1 });
-    hits = res.hits;
-    truncated = res.truncated;
-  } catch (e) {
-    if (e instanceof OqxError) throw new FilterInvalid(e.message, "OQX");
-    throw e;
-  }
+  const { hits, truncated } = runQuery(store, repoId, rewritten, bound + 1);
   if (truncated || hits.length > bound) {
     throw new MutationError("selection_too_large", `the selection has ${truncated ? `more than ${bound}` : String(hits.length)} hits, over the bound of ${bound}${expect === undefined ? " (the implicit ceiling; pass expect.max to raise it)" : ""} — narrow the selector or raise \`expect.max\``, {
       cardinality: truncated ? `>${bound}` : hits.length, max: bound, ...(expect === undefined ? { implicit: true } : {}),
@@ -422,7 +613,7 @@ function admitRequest(select: unknown, templatesRaw: unknown): { rewritten: Quer
   if (!Array.isArray(templatesRaw)) throw selectionInvalid("`effects` must be an array of effect templates");
   if (templatesRaw.length === 0) throw selectionInvalid("`effects` must name at least one template");
   const { raw, root } = admitSelector(select);
-  const templates = templatesRaw.map((t, i) => admitTemplate(t, i, root));
+  const templates = templatesRaw.map((t, i) => admitTemplate(desugarEffect(t, i), i, root, false));
   // The rewrite: the slot items, named `__omg_sel_<t>_<slot>`, appended after
   // the user's items on the raw tree (so a user alias resolves into them).
   const items: SelectItem[] = [];
@@ -442,7 +633,7 @@ function slotName(t: number, slot: string): string {
 /** One hit × one template → the concrete effect (the binding table of §11.8). */
 function bind(hit: OqxHit, t: Template, k: number, origin: EffectOrigin, root: Root): Effect {
   const e: Record<string, unknown> = clone(t.base);
-  const data = { effect_index: k, template_index: origin.template_index, row: origin.row };
+  const data = { effect_index: k, ...(origin.template_index !== undefined ? { template_index: origin.template_index } : {}), row: origin.row };
   if (t.defaultTarget !== null) {
     const target = { kind: HIT_KIND[root], id: hit.id };
     e[t.defaultTarget.key] = t.defaultTarget.list ? [target] : target;
@@ -451,7 +642,8 @@ function bind(hit: OqxHit, t: Template, k: number, origin: EffectOrigin, root: R
     const v = hit[slotName(t.index, s.name)];
     const absent = v === undefined || v === null;
     switch (s.kind) {
-      case "identity": {
+      case "identity":
+      case "target": {
         if (absent || (Array.isArray(v) && v.length === 0)) {
           throw new MutationError("target_missing", `${s.here}: the expression yielded no identity for row ${hit.id}`, { ...data, expression: s.expression });
         }
@@ -459,7 +651,16 @@ function bind(hit: OqxHit, t: Template, k: number, origin: EffectOrigin, root: R
           throw new MutationError("ambiguous_target", `${s.here}: the expression yielded ${v.length} identities for row ${hit.id}; a target resolves to exactly one`, { ...data, expression: s.expression, count: v.length });
         }
         if (typeof v !== "string" && !isRowRef(v)) throw selectionInvalid(`${s.here}: the expression yielded ${describeValue(v)}, not an identity (a string or a row)`, { ...data, expression: s.expression });
-        s.put(e, v);
+        if (s.kind === "identity") {
+          s.put(e, v);
+          break;
+        }
+        // (3.2) a whole target: a row by its id's prefix, a string as a bare target (a path → document, an id → its kind).
+        const ref = isRowRef(v) ? v.id : v;
+        if (!isRowRef(v) && !looksLikePath(ref) && !isTargetId(ref) && !isNewSymbol(ref)) {
+          throw selectionInvalid(`${s.here}: the expression yielded ${describeValue(v)}, not an identity (a document path, an id or a row)`, { ...data, expression: s.expression });
+        }
+        s.put(e, bareTarget(ref, s.here));
         break;
       }
       case "string":
@@ -474,4 +675,143 @@ function bind(hit: OqxHit, t: Template, k: number, origin: EffectOrigin, root: R
     }
   }
   return validateEffect(e, k);
+}
+
+// ---- plain requests with expressions (3.2, §11.8 "Sugar") ---------------------------------
+
+const PLACEMENT_KINDS: readonly EffectTarget["kind"][] = ["document", "section", "block"];
+const DOCUMENT_KIND: readonly EffectTarget["kind"][] = ["document"];
+const BLOCK_KIND: readonly EffectTarget["kind"][] = ["block"];
+const SET_KINDS: readonly EffectTarget["kind"][] = ["document", "block", "node"];
+
+/** The row a plain effect's expressions read: its primary target's root and id, and the error when that row is gone. */
+interface Scope {
+  root: Root;
+  id: string;
+  missing: () => MutationError;
+}
+
+/**
+ * The primary target of a plain effect (the §11.8 table's: `target` of
+ * set/unset/split and of a document move/remove, `into` of insert, the first
+ * of `targets` for the block forms) as a row: a `create` has none; an
+ * expression there needs a selector; a `$new.n` has no row yet.
+ */
+function scopeOf(store: Store, repoId: string, e: Record<string, unknown>, i: number): Scope {
+  const here = `effects[${i}]`;
+  let key: string;
+  let v: unknown;
+  let kinds: readonly EffectTarget["kind"][];
+  let placement = false;
+  const first = (): void => {
+    if (!Array.isArray(e.targets) || e.targets.length === 0) validateEffect(e, i); // the shape check's `targets` message
+    key = "targets[0]";
+    v = (e.targets as unknown[])[0];
+    kinds = BLOCK_KIND;
+  };
+  switch (e.op) {
+    case "create":
+      throw selectionInvalid(`${here}: a \`create\` has no row — an expression on a create needs a selector (\`select\`)`);
+    case "insert":
+      key = "into"; v = e.into; kinds = PLACEMENT_KINDS; placement = true;
+      break;
+    case "set":
+      key = "target"; v = e.target; kinds = SET_KINDS;
+      break;
+    case "unset":
+      key = "target"; v = e.target; kinds = DOCUMENT_KIND;
+      break;
+    case "move":
+      if ("targets" in e || "into" in e) first();
+      else { key = "target"; v = e.target; kinds = DOCUMENT_KIND; }
+      break;
+    case "remove":
+      if ("targets" in e) first();
+      else { key = "target"; v = e.target; kinds = DOCUMENT_KIND; }
+      break;
+    case "split":
+      key = "target"; v = e.target; kinds = BLOCK_KIND;
+      break;
+    case "merge":
+      first();
+      break;
+    default:
+      validateEffect(e, i); // an unknown op (or `retarget`): the shape check refuses it
+      throw effectInvalid(`${here}: \`op\` ${JSON.stringify(e.op)} is not row-shaped`);
+  }
+  if (isOqx(v) || (isRecord(v) && (isOqx(v.id) || isOqx(v.path)))) throw needsSelector(`${here}.${key!}`);
+  const t = validateTarget(v, `${here}.${key!}`, kinds!);
+  switch (t.kind) {
+    case "symbol":
+      throw selectionInvalid(`${here}.${key!}: ${t.id} has no row yet — it is created by this plan; use a literal target or a selector`);
+    case "document": {
+      const d = findDocumentTarget(store, repoId, t);
+      return { root: "docs", id: d.id, missing: () => new MutationError("doc_missing", `doc ${d.id} not found`, { doc: d.id }) };
+    }
+    case "block":
+      return {
+        root: "blocks", id: t.id,
+        missing: () => (placement ? new MutationError("parent_missing", `parent ${t.id} not found`) : new MutationError("block_missing", `block ${t.id} not found`, { block: t.id })),
+      };
+    case "section":
+      return { root: "blocks", id: t.heading_id, missing: () => new MutationError("parent_missing", `parent ${t.heading_id} not found`) };
+    case "node":
+      return { root: "nodes", id: t.id, missing: () => new MutationError("block_missing", `node ${t.id} not found`, {}) };
+  }
+}
+
+/**
+ * Compile a plain `effects` list (no selector): desugar the `-> ` leaders,
+ * then — when nothing is an expression — the shape check as before (3.0
+ * byte-identical). Otherwise each effect with expressions is admitted as a
+ * template over its own primary target's row: the effects are grouped by that
+ * row's identity, one synthetic query per identity — `from <root> where id ==
+ * "<id>"` with the slot items appended, named `__omg_sel_<effectIndex>_<slot>`
+ * — runs, and the row binds the slots exactly as a selector's hit would. The
+ * concrete effects feed the lowering unchanged; `templates` is the list as
+ * written, for the intent record.
+ */
+export function compilePlain(store: Store, repoId: string, raw: unknown): CompiledPlain {
+  if (!Array.isArray(raw)) throw effectInvalid("`effects` must be an array of effects");
+  if (raw.length === 0) throw effectInvalid("`effects` must name at least one effect");
+  const desugared = raw.map((e, i) => desugarEffect(e, i));
+  if (!desugared.some(containsOqx)) return { effects: desugared.map((e, i) => validateEffect(e, i)), origins: [] };
+
+  const effects: Effect[] = [];
+  const origins: (EffectOrigin | undefined)[] = [];
+  const scopes = new Map<string, Scope & { members: Template[] }>();
+  desugared.forEach((e, i) => {
+    if (!containsOqx(e) || !isRecord(e)) {
+      effects[i] = validateEffect(e, i);
+      return;
+    }
+    const scope = scopeOf(store, repoId, e, i);
+    const t = admitTemplate(e, i, scope.root, true);
+    if (t.slots.length === 0) {
+      // `{ oqx }` only inside data (a nested `value`): literal, as for a template.
+      effects[i] = validateEffect(e, i);
+      return;
+    }
+    const key = `${scope.root}:${scope.id}`;
+    let g = scopes.get(key);
+    if (g === undefined) {
+      g = { ...scope, members: [] };
+      scopes.set(key, g);
+    }
+    g.members.push(t);
+  });
+  for (const g of scopes.values()) {
+    const q = parse(`from ${g.root} where id == ${JSON.stringify(g.id)}`);
+    const items: SelectItem[] = [];
+    for (const t of g.members) for (const s of t.slots) items.push({ ...s.item, name: slotName(t.index, s.name) } as SelectItem);
+    const { hits } = runQuery(store, repoId, { ...q, select: items }, 2);
+    const hit = hits[0];
+    if (hit === undefined) throw g.missing();
+    for (const t of g.members) {
+      const origin: EffectOrigin = { row: { id: hit.id, path: hit.path } };
+      effects[t.index] = bind(hit, t, t.index, origin, g.root);
+      origins[t.index] = origin;
+    }
+  }
+  return { effects, templates: raw, origins };
 }

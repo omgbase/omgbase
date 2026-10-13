@@ -4,7 +4,7 @@ import { ensureRepo } from "../core/attach.js";
 import { observeBatch } from "../sync/observe.js";
 import { setIdMinter, sequentialMinter } from "../core/ids.js";
 import { NullDocStore } from "./doc-store.js";
-import { validateEffects, validateEffect, type Effect } from "./effects.js";
+import { bareTarget, validateEffects, validateEffect, type Effect } from "./effects.js";
 import { planEffects, type Plan } from "./plan.js";
 import { planUpdate } from "./plan-update.js";
 import { MutationError, rawHashHex } from "./tree.js";
@@ -89,6 +89,50 @@ describe("validateEffects (§11.1)", () => {
 
   it("names the effect index in a nested failure", () => {
     expect(() => validateEffect({ op: "retarget", repairs: [{ from: 1 }] }, 4)).toThrow(/effects\[4\]\.repairs\[0\]: `from` must be a string/);
+  });
+
+  describe("bare targets (3.2, §11.8 Sugar)", () => {
+    it("a bare string where a target object is expected: a path-looking string is a document, an id its kind, `$new.n` a deferred symbol", () => {
+      expect(bareTarget("ws/alpha.md", "x")).toEqual({ kind: "document", path: "ws/alpha.md" });
+      expect(bareTarget("/a.md", "x")).toEqual({ kind: "document", path: "/a.md" });
+      expect(bareTarget("notes.md", "x")).toEqual({ kind: "document", path: "notes.md" });
+      expect(bareTarget("dir/file.yaml", "x")).toEqual({ kind: "document", path: "dir/file.yaml" });
+      expect(bareTarget("d_0", "x")).toEqual({ kind: "document", id: "d_0" });
+      expect(bareTarget("b_1", "x")).toEqual({ kind: "block", id: "b_1" });
+      expect(bareTarget("n_0123456789ab", "x")).toEqual({ kind: "node", id: "n_0123456789ab" });
+      expect(bareTarget("$new.3", "x")).toEqual({ kind: "symbol", id: "$new.3" });
+      // the shape check normalizes them in every target slot; the op's kind table applies to the normalized kind
+      expect(validateEffect({ op: "insert", into: "a.md", markdown: "p" }, 0)).toEqual({ op: "insert", into: { kind: "document", path: "a.md" }, markdown: "p" });
+      expect(validateEffect({ op: "set", target: "b_1", field: "markdown", value: "p" }, 0)).toEqual({ op: "set", target: { kind: "block", id: "b_1" }, field: "markdown", value: "p" });
+      expect(validateEffect({ op: "remove", targets: ["b_1", { kind: "block", id: "b_2" }] }, 0)).toEqual({ op: "remove", targets: [{ kind: "block", id: "b_1" }, { kind: "block", id: "b_2" }] });
+      expect(validateEffect({ op: "move", targets: ["b_1"], into: "$new.0" }, 0)).toEqual({ op: "move", targets: [{ kind: "block", id: "b_1" }], into: { kind: "symbol", id: "$new.0" } });
+      expect(() => validateEffect({ op: "split", target: "a.md", at: [1] }, 0)).toThrow('effects[0].target: `kind` must be one of block (got "document")');
+      expect(() => validateEffect({ op: "unset", target: "b_1", field: "frontmatter.k" }, 0)).toThrow('effects[0].target: `kind` must be one of document (got "block")');
+      // a symbol defers its kind AND its field check (§11.2) to resolution
+      expect(validateEffect({ op: "set", target: "$new.0", field: "frontmatter.k", value: 1 }, 0)).toEqual({ op: "set", target: { kind: "symbol", id: "$new.0" }, field: "frontmatter.k", value: 1 });
+      expect(validateEffect({ op: "set", target: "$new.0", field: "markdown", value: "x" }, 0)).toMatchObject({ target: { kind: "symbol" } });
+    });
+
+    it.each<[string, string, string]>([
+      ["a locator", "hub.md#Status", "is a locator, not a target"],
+      ["a bare word", "hello", 'a target is { kind: …, … } or a bare document path, a `b_`/`d_`/`n_` id or `$new.n` (got "hello")'],
+      ["an id of another prefix", "c_0", '(got "c_0")'],
+      ["a node id of the wrong length", "n_01", '(got "n_01")'],
+      ["a `-> ` leader (the planner's, not the shape check's)", "-> project", "is bound by the planner"],
+    ])("refuses %s as filter_invalid", (_what, ref, message) => {
+      // the shape check itself (the planner desugars a leader before it gets here)
+      let e: MutationError | undefined;
+      try {
+        validateEffects([{ op: "insert", into: ref, markdown: "p" }]);
+      } catch (x) {
+        e = x as MutationError;
+      }
+      expect(e).toBeInstanceOf(MutationError);
+      e = e!;
+      expect(e.code).toBe("filter_invalid");
+      expect(e.message).toContain(message);
+      if (ref.includes("#")) expect(e.data).toMatchObject({ hint: "arguments", fix: expect.stringContaining("blocks_resolve") });
+    });
   });
 });
 

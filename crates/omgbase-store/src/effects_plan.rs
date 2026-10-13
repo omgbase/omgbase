@@ -1700,6 +1700,7 @@ impl Store {
             preconditions,
             new_ids: Vec::new(),
             selection: None,
+            templates: None,
             plan_id: String::new(),
             diagnostics: tracker.diagnostics,
             preview: Some(PlanPreview {
@@ -1928,7 +1929,12 @@ impl Store {
                 current_rev,
             });
         }
-        let record = fx::intent_record(&plan.plan_id, &plan.effects, plan.selection.as_ref());
+        let record = fx::intent_record(
+            &plan.plan_id,
+            &plan.effects,
+            plan.selection.as_ref(),
+            plan.templates.as_deref(),
+        );
         let head = CommitHead {
             origin: Origin::Api,
             actor: origin.commit_actor(),

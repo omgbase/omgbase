@@ -673,7 +673,15 @@ template, `order by` fixing the insert order, each admission refusal
 without `expect.max`, a `create` per hit, the digest form of `execute`
 refusing a plan whose selection gained a hit, and the p3 digest vectors;
 the ceiling case is a reference unit test — a thousand-document fixture
-would dwarf the suite).
+would dwarf the suite; 3.2 adds the sugar cases of §11.8 "Sugar", every
+name prefixed `sugar-`: the worked example spelled with the leader
+(`into: "-> project"`), a template-literal markdown, a typed value
+(`-> priority + 1` a number), a literal without the leader left untouched,
+a literal that begins with the leader, constant folding to one `plan_id`, a
+bare path / id / `$new.n` target, a locator refused, a bad expression, the
+leader in a non-expression slot, and the selector-less branch on a
+document, on blocks, over two targets (two synthetic queries, `templates`
+in the intent record) and refused on a `create`).
 
 **Runner checks**: every committed document satisfies `spec/store` §8 I1–I8
 and `files[path] == reconstruct(doc)` — a path a `disk` step rewrote, or one
@@ -921,7 +929,10 @@ adopts, so a plan may write into the document it creates (`$new.k` names its
 blocks too), and the plan's `preview` carries `identity` and `retarget`
 (§11.4). Since 3.1 a request may be **query-directed** (§11.8): an OQX
 `select` whose hits, bound to the `effects` as templates, are the effects
-planned, frozen with the plan as its `selection`. `planner_v` is `"p3"`.
+planned, frozen with the plan as its `selection`. Since 3.2 the `-> expr`
+**leader** is the written form of an expression, a bare string is a target,
+and a plain request's expressions evaluate in their own target's row
+(§11.8 "Sugar"). `planner_v` is `"p3"`.
 
 ### 11.1 Vocabulary
 
@@ -952,11 +963,12 @@ tree (3.0, pre-order), the blocks an `insert`/`split`/`update` mints. A
 symbol no earlier effect created (or one of the other kind: a document
 symbol where a block is wanted) is `target_missing { symbol }`.
 `move`/`remove` are distinguished by `target` (a document) vs `targets`
-(blocks). The shape is checked before anything is resolved — an unknown
-key, a missing or mistyped member, a target kind the op does not take, a
-`field` not in §11.2 — and a failure is `filter_invalid { reason, hint:
-"arguments" }` naming `effects[i]` and the member; an empty `effects` is one
-too.
+(blocks). Where a target object is expected a **bare string** is one too
+(3.2, §11.8 "Sugar"): a path, an id or a `$new.n`. The shape is checked
+before anything is resolved — an unknown key, a missing or mistyped member,
+a target kind the op does not take, a `field` not in §11.2 — and a failure
+is `filter_invalid { reason, hint: "arguments" }` naming `effects[i]` and
+the member; an empty `effects` is one too.
 
 ### 11.2 Fields
 
@@ -1046,6 +1058,8 @@ Plan {
                                                                    // query-directed plan: the selector and templates AS GIVEN, the hits
   plan_id: "<64 hex>",           // §11.5
   diagnostics: [string],         // the dropped duplicates
+  templates?: [Effect as written],   // (3.2, §11.8 "Sugar") a plain request's effects AS WRITTEN when one carried an
+                                     // expression; not digested (the core holds the concrete effects); the intent record's
   preview?: { results: [{ ids }], revisions: [{ id, path, hash }], diffs: { path: { before, after } },
               identity?: { <doc id>: { matcher_v, summary, ops: [{ op_index, disposition, blocks, confidence, reason, detail? }], diagnostics } },
               retarget?: [{ effect_index, hits: [{ id, path, oldRaw, newRaw }], pairs: [{ from, to, hits }] }] }   // not digested; omittable
@@ -1151,7 +1165,8 @@ the recomputed digest of the core ≠ `plan_id` → `plan_mismatch { expected:
 plan_id, actual }` (an edited plan, or another planner's digest — the
 parity gate: `effects::execute-plan-edited-is-plan-mismatch` pins `actual`
 for the empty core). `planner_v` is digested, not checked: the opset is
-executable whatever planned it. Then, under the writer lock when a
+executable whatever planned it. A `templates` member must be an array when
+present (3.2); like `diagnostics` it is outside the digest and only recorded. Then, under the writer lock when a
 workspace is given: pre-check every `preconditions.docs` triple against the
 rows (`doc_missing`; a difference → `stale_plan { doc, expected_revision,
 current: { revision, hash }, retriable }`) and every `absent_paths` entry
@@ -1170,9 +1185,10 @@ effects in this order — per move `move_path` (the inbound edges read now),
 the rendered documents' `ingest_known`s in load order (a created document's
 with no triple, a moved document's at its new path), per tombstone
 `tombstone { pool: false }` — and commit them as §4 step 5 with `ops` = the
-intent record `canonical({ v: 1, plan_id, effects, selection? })` (the
-plan's resolved effects, symbols kept; the plan's `selection` when it has
-one, 3.1). The transaction re-validates every triple
+intent record `canonical({ v: 1, plan_id, effects, selection?, templates? })`
+(the plan's resolved effects, symbols kept; the plan's `selection` when it
+has one, 3.1; a plain request's effects as written when one carried an
+expression — the plan's `templates`, 3.2). The transaction re-validates every triple
 authoritatively and the created paths' absence (the `Absent` guard:
 `path_taken`); a document that moved meanwhile is `stale_plan` with nothing
 minted of `c`/`d`/`r`. Replaying an executed plan fails the same way
@@ -1323,9 +1339,113 @@ re-runs the selector (above). The intent record gains it (§11.7).
 
 **Deferred** (first release): `distinct`; provenance analysis of a template
 that writes through a computed value (caught by the typing and resolution
-above); sugar for the common shapes.
+above).
+
+#### Sugar (3.2)
+
+Three conveniences, each a rewrite of the request **before** the admission
+above — the plan that comes out is the plan the spelled-out request gives
+(`planner_v` stays `"p3"`; no existing digest moves), and both engines
+rewrite identically (the reference's `select.ts` `desugarEffect` /
+`compilePlain`, `effects.ts` `bareTarget`):
+
+**The leader.** In every slot the table of step 1 admits an expression —
+`markdown`, `to`, `path`, `separator`, `at.before` / `at.after`, `value`,
+each top-level `create.frontmatter` value, a target's `id` / `path`, and a
+whole target (below) — a JSON string beginning exactly **`-> `** (dash,
+greater-than, space) is an OQX expression: the rest of the string. It
+desugars to `{ oqx: rest }` before the compile, so typing follows the value
+exactly as `{ oqx }` does (an identity for a target, a number for `value`,
+a string for `markdown`). A string NOT beginning `-> ` is literal data,
+always — no escaping, no `${` scanning (`->x`, ` -> x`, `-->`, a mid-string
+`-> ` and `${HOME}` land verbatim; `effects::sugar-literal-without-leader-
+untouched`). A literal that must begin `-> ` is spelled `-> "-> …"`
+(`sugar-literal-that-begins-with-leader`). OQX 0.21 template literals are the
+string-building form: `"-> `## ${title}`"`. A string nested inside a `value`
+or a frontmatter value is data (the slot is the top-level value, as for
+`{ oqx }`).
+
+**Constant folding.** A `-> ` expression that is a bare string literal or a
+template literal with no interpolation folds to the plain literal before
+planning — it never emits `{ oqx }`, needs no row and no query — so `-> "x"`,
+`` -> `x` `` and `"x"` digest identically
+(`effects::sugar-constant-fold-equal-plan-id`:
+`dd0f05613d10645355cfb33139767424d9f1ade0c36d04bce363df06e66477c3` three
+times).
+
+**Bare targets.** Where a target object is expected (`target`, `into`, each
+`targets[k]`; with or without a selector) a bare string is sugar, normalized
+by the shape check before resolution: a **path-looking** string — contains
+`/` or ends `.md`, either path form — is `{ kind: "document", path }`; a
+`b_` / `d_` id (`spec/store` §2.2) or an `n_` id (`n_` + 12 hex) is the
+matching kind; `"$new.n"` is the kind the symbol table recorded when the
+effect is resolved (a document → `{ kind: "document", id }`, a block →
+`{ kind: "block", id }`; a symbol nothing created → `target_missing
+{ symbol }`; the slot's kind table and the §11.2 `field` rule then apply to
+the recorded kind — `effects::sugar-bare-new-symbol-target`); `"-> expr"` is
+a whole-target expression — the identity the value names: a row → its kind
+by its id's prefix, a path string → a document, an id string → its kind,
+anything else `filter_invalid { hint: "selection" }`, absent / a list as in
+step 3; a string containing `#` is a **locator**, refused `filter_invalid
+{ hint: "arguments", fix }` (the `fix` names `blocks_resolve` and a
+`query`); any other string is no target (`filter_invalid`, hint
+`arguments`). The op's kind table still applies to the normalized kind
+(`split` of `"d_0"` is `kind must be one of block (got "document")`). The
+plan's `effects[]` record the resolved objects, so the digest equals the
+object form's (`sugar-bare-path-target` plans both; `sugar-bare-id-target`).
+
+**Without a selector.** On a plain effect (no `select`) a `-> ` slot (or
+`{ oqx }`) evaluates in its own **primary target's row** — `target` of
+set/unset/split and of a document move/remove, `into` of insert, the first
+of `targets` for the block forms (a section's row is its heading block's, a
+node's its own): the effects are grouped by that row's identity, one
+synthetic query per identity runs — `from <docs|blocks|nodes> where id ==
+"<id>"` with the slot items appended exactly as step 2's rewrite, named
+`__omg_sel_<effectIndex>_<slot>` — and the row binds the slots as step 3
+binds a hit; the concrete effects then lower unchanged. There is no
+`selection` member (there is no selector); instead the plan gains
+**`templates`** — the effects AS WRITTEN — outside the digest (the core
+already holds the concrete effects; `plan_id` equals the literal plan's),
+present only when at least one slot was an expression (a plain request
+without one, or with only folded leaders, produces no `templates`), and the
+intent record (§11.7) gains the same key. Refused, each `filter_invalid
+{ hint: "selection" }`: a `create` with an expression — it has no row ("an
+expression on a create needs a selector"; a folded leader on a create is a
+literal and fine); an expression as the primary target itself ("an
+expression target needs a selector — without `select` there is no row to
+read it from"); a `$new.n` primary target ("has no row yet"). A literal
+primary target that names no row is the lowering's own error (`doc_missing`,
+`block_missing`, `parent_missing` for an `into`). A binding error carries
+`effect_index`, `row` and `expression` — no `template_index`.
+`effects::sugar-leader-without-select-on-doc`, `-on-block`, `-two-targets`
+(two synthetic queries), `-on-create-refused`.
+
+**Errors.** A `-> ` expression that does not parse is `filter_invalid
+{ hint: "selection" }` naming the slot, the OQX offset counted from the
+start of the written string (the wrapper's shift plus the leader's 3;
+`sugar-leader-bad-expression`); a query smuggled into the leader fails as for
+`{ oqx }`. `-> ` in a slot that takes no expression — `expect`, `field`,
+`op`, a section's `heading_id`, `split.at`, a `retarget`'s members, a
+whole `at`, a target member beside `id` / `path` — is `filter_invalid { hint:
+"selection" }` (`sugar-leader-in-non-expression-slot`), never literal data.
 
 ## Decisions
+
+- 2026-10-13, mutate 3.2: the `-> expr` sugar (§11.8 "Sugar"; the
+  minimal-tools-profile design §3/§8 as revised). The leader rule is exact
+  (`-> ` and nothing else opens an expression; everything else is literal,
+  no escaping); a folded literal is the literal (constant folding, so the
+  sugar and the spelled form digest alike); bare strings are targets (path /
+  id / `$new.n`, a locator refused with a `fix`); and — the recommended
+  branch, implemented — a plain request's expressions evaluate in their own
+  target's row through one synthetic query per target, recorded as the
+  plan's and the intent record's `templates`, with a `create` refused for
+  want of a row. Additive: `planner_v` stays `"p3"`, no existing `plan_id`
+  or intent record moves, a request without `-> `, bare targets or `{ oqx }`
+  is byte-identical to 3.1 — a minor. The `symbol` target kind exists only
+  between the shape check and resolution (a bare `$new.n`), never in a
+  resolved effect. Fixtures: `effects.json` 63 → 79 (the `sugar-*` cases of
+  §9); nothing else moved.
 
 - 2026-10-13, mutate 3.1: query-directed planning (§11.8; ADR-021's
   follow-on, Brendan's decisions of 2026-10-13): `plan` / `apply` / `execute`

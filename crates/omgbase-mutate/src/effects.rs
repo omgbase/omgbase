@@ -2221,6 +2221,12 @@ pub struct Plan {
     pub new_ids: Vec<NewId>,
     /// §11.8: present when the plan was derived from a selector (digested).
     pub selection: Option<Selection>,
+    /// §11.8 "Sugar" (3.2): the effects **as written** when a selector-less
+    /// request carried a `-> ` leader or an `{ oqx }` directive that was
+    /// evaluated in its target's row scope — outside the digest (a plain
+    /// request produces none, so no existing `plan_id` moves), on the wire,
+    /// and in the intent record as `templates`.
+    pub templates: Option<Vec<Value>>,
     pub plan_id: String,
     pub diagnostics: Vec<String>,
     pub preview: Option<PlanPreview>,
@@ -2274,6 +2280,9 @@ impl Plan {
         let Value::Object(mut m) = self.core_json() else {
             unreachable!("core_json is an object")
         };
+        if let Some(t) = &self.templates {
+            m.insert("templates".to_owned(), Value::Array(t.clone()));
+        }
         m.insert("plan_id".to_owned(), json!(self.plan_id));
         m.insert("diagnostics".to_owned(), json!(self.diagnostics));
         if with_preview {
@@ -2360,6 +2369,16 @@ impl Plan {
             None => None,
             Some(s) => Some(Selection::from_json(s)?),
         };
+        // 3.2: the selector-less sugar's record of the effects as written;
+        // outside the digest, so a client may drop it — never mistype it.
+        let templates = match obj.get("templates") {
+            None | Some(Value::Null) => None,
+            Some(t) => Some(
+                t.as_array()
+                    .ok_or("`plan.templates` must be an array of effects as written")?
+                    .clone(),
+            ),
+        };
         Ok(Plan {
             version,
             planner_v,
@@ -2368,6 +2387,7 @@ impl Plan {
             preconditions,
             new_ids,
             selection,
+            templates,
             plan_id,
             diagnostics,
             preview,
@@ -2429,10 +2449,17 @@ pub fn plan_mismatch_replanned(expected: &str, actual: &str) -> MutationError {
 }
 
 /// The intent record an effect-driven commit stores in `commits.ops`
-/// (ADR-003): `canonical({ v: 1, plan_id, effects, selection? })` —
-/// `selection` only when the plan carried one (§11.8).
+/// (ADR-003): `canonical({ v: 1, plan_id, effects, selection?, templates? })`
+/// — `selection` only when the plan carried one (§11.8), `templates` only
+/// when a selector-less request wrote `-> ` / `{ oqx }` slots (3.2, §11.8
+/// "Sugar": the effects as written).
 #[must_use]
-pub fn intent_record(plan_id: &str, effects: &[Effect], selection: Option<&Selection>) -> String {
+pub fn intent_record(
+    plan_id: &str,
+    effects: &[Effect],
+    selection: Option<&Selection>,
+    templates: Option<&[Value]>,
+) -> String {
     let mut record = json!({
         "v": 1,
         "plan_id": plan_id,
@@ -2440,6 +2467,9 @@ pub fn intent_record(plan_id: &str, effects: &[Effect], selection: Option<&Selec
     });
     if let Some(sel) = selection {
         record["selection"] = sel.to_json();
+    }
+    if let Some(t) = templates {
+        record["templates"] = Value::Array(t.to_vec());
     }
     canonical_json(&record)
 }
@@ -2817,12 +2847,73 @@ mod tests {
         assert_eq!(canonical_json(&json!("a/b\u{1f}é😀")), "\"a/b\\u001fé😀\"");
     }
 
+    /// 3.2 (§11.8 "Sugar"): `templates` — the effects as written of a
+    /// selector-less request that evaluated an expression — rides outside the
+    /// digest: on the wire and in the intent record, never in the core, so a
+    /// plan with it has the literal plan's `plan_id`; admission keeps it and
+    /// refuses a mistyped one; `null` is an omission.
+    #[test]
+    fn templates_ride_outside_the_digest() {
+        let bare = Plan {
+            version: PLAN_VERSION,
+            planner_v: PLANNER_V.into(),
+            effects: vec![fm_set("status", json!("done"))],
+            opset: PlanOpset::default(),
+            preconditions: Preconditions::default(),
+            new_ids: vec![],
+            selection: None,
+            templates: None,
+            plan_id: String::new(),
+            diagnostics: vec![],
+            preview: None,
+        }
+        .sealed();
+        let written = vec![
+            json!({ "op": "set", "target": "a.md", "field": "frontmatter.status", "value": "-> `done`" }),
+        ];
+        let sugared = Plan {
+            templates: Some(written.clone()),
+            ..bare.clone()
+        }
+        .sealed();
+        assert_eq!(sugared.plan_id, bare.plan_id);
+        assert!(sugared.core_json().get("templates").is_none());
+        assert!(bare.to_json(false).get("templates").is_none());
+        let wire = sugared.to_json(false);
+        assert_eq!(wire["templates"], Value::Array(written.clone()));
+        assert_eq!(Plan::admit(&wire).unwrap(), sugared);
+        let mut nulled = wire.clone();
+        nulled["templates"] = Value::Null;
+        assert_eq!(Plan::admit(&nulled).unwrap(), bare);
+        let mut mistyped = wire;
+        mistyped["templates"] = json!("x");
+        assert!(matches!(
+            Plan::admit(&mistyped),
+            Err(Admission::Invalid(m)) if m.contains("`plan.templates` must be an array")
+        ));
+        let plain = intent_record(&bare.plan_id, &bare.effects, None, None);
+        assert!(!plain.contains("templates"), "{plain}");
+        let record = intent_record(
+            &sugared.plan_id,
+            &sugared.effects,
+            None,
+            sugared.templates.as_deref(),
+        );
+        assert!(
+            record.ends_with(
+                "\"templates\":[{\"field\":\"frontmatter.status\",\"op\":\"set\",\"target\":\"a.md\",\"value\":\"-> `done`\"}],\"v\":1}"
+            ),
+            "{record}"
+        );
+    }
+
     #[test]
     fn a_plan_digests_its_core_and_round_trips() {
         let plan = Plan {
             version: PLAN_VERSION,
             planner_v: PLANNER_V.into(),
             effects: vec![fm_set("status", json!("done"))],
+            templates: None,
             opset: PlanOpset {
                 set_frontmatter: vec![PlanFrontmatter {
                     doc: "d_0".into(),
@@ -2891,7 +2982,7 @@ mod tests {
             }
             other => panic!("{other:?}"),
         }
-        let record = intent_record(&plan.plan_id, &plan.effects, None);
+        let record = intent_record(&plan.plan_id, &plan.effects, None, None);
         assert!(
             record.starts_with("{\"effects\":[{\"field\":\"frontmatter.status\""),
             "{record}"
@@ -2937,6 +3028,7 @@ mod tests {
             preconditions: Preconditions::default(),
             new_ids: vec![],
             selection: None,
+            templates: None,
             plan_id: String::new(),
             diagnostics: vec![],
             preview: None,
@@ -2972,6 +3064,7 @@ mod tests {
             &selected.plan_id,
             &selected.effects,
             selected.selection.as_ref(),
+            None,
         );
         assert!(
             record.contains("\"selection\":{\"cardinality\":2"),

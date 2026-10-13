@@ -7,8 +7,8 @@ import { setIdMinter, sequentialMinter } from "../core/ids.js";
 import { oqxRun } from "../oqx-js/run.js";
 import { FilterInvalid } from "../search/cel/parser.js";
 import { NullDocStore } from "./doc-store.js";
-import { applyEffects, executeByDigest, planEffects, type Plan, type Receipt } from "./plan.js";
-import { SELECTION_CEILING, compileSelection, selectionQuery } from "./select.js";
+import { admitPlan, applyEffects, executeByDigest, executePlan, planDigest, planEffects, type Plan, type Receipt } from "./plan.js";
+import { SELECTION_CEILING, compileSelection, desugarEffect, selectionQuery } from "./select.js";
 import { MutationError } from "./tree.js";
 
 // spec/mutate §11.8: the selector binding — the rewrite (printed), the static
@@ -358,5 +358,270 @@ describe("execute (§11.8 step 4)", () => {
       { template_index: 1, row: { id: "d_2", path: "/ws/beta.md" } },
     ]);
     expect(c.selection.templates).toBe(ROLLUP);
+  });
+});
+
+describe("the `-> ` sugar (§11.8 Sugar, 3.2)", () => {
+  const insert = (into: unknown, markdown: unknown, extra: Record<string, unknown> = {}): Record<string, unknown> => ({ op: "insert", into, markdown, ...extra });
+  const planPlain = (effects: unknown): Plan => planEffects(store, { repoId, docStore, effects });
+  const refusedPlain = (effects: unknown): MutationError => failure(() => planPlain(effects));
+
+  describe("desugarEffect (the leader rule)", () => {
+    it("exactly `-> ` opens an expression; `->x`, ` -> x`, `-->`, a mid-string `-> ` and `${` are literal", () => {
+      expect(desugarEffect(insert("hub.md", "-> title"), 0)).toEqual(insert("hub.md", { oqx: "title" }));
+      for (const literal of ["->x", " -> x", "--> x", "see -> there", "Costs: ${HOME}", "->", "- > x"]) {
+        expect(desugarEffect(insert("hub.md", literal), 0)).toEqual(insert("hub.md", literal));
+      }
+    });
+
+    it("folds a bare string literal and an interpolation-free template literal; `-> \"-> note\"` spells a literal that begins with the leader", () => {
+      expect(desugarEffect(insert("hub.md", '-> "Hello"'), 0)).toEqual(insert("hub.md", "Hello"));
+      expect(desugarEffect(insert("hub.md", "-> `Hello`"), 0)).toEqual(insert("hub.md", "Hello"));
+      expect(desugarEffect(insert("hub.md", '-> "-> note"'), 0)).toEqual(insert("hub.md", "-> note"));
+      expect(desugarEffect(insert("hub.md", "-> `a\\n${title}`"), 0)).toEqual(insert("hub.md", { oqx: "`a\\n${title}`" }));
+      expect(desugarEffect(insert("hub.md", "-> 1 + 1"), 0)).toEqual(insert("hub.md", { oqx: "1 + 1" }));
+      // a folded target stays a bare string for the shape check; an unfolded one is the whole-target directive
+      expect(desugarEffect(insert('-> "hub.md"', "x"), 0)).toEqual(insert("hub.md", "x"));
+      expect(desugarEffect(insert("-> project", "x"), 0)).toEqual(insert({ oqx: "project" }, "x"));
+    });
+
+    it("desugars every slot of the §11.8 table and nothing else", () => {
+      expect(desugarEffect({ op: "create", path: "-> p", markdown: "-> m", frontmatter: { a: "-> x", b: { nested: "-> data" } } }, 0)).toEqual(
+        { op: "create", path: { oqx: "p" }, markdown: { oqx: "m" }, frontmatter: { a: { oqx: "x" }, b: { nested: "-> data" } } },
+      );
+      expect(desugarEffect({ op: "insert", into: { kind: "document", path: "-> project" }, at: { after: "-> id" }, markdown: "x" }, 0)).toEqual(
+        { op: "insert", into: { kind: "document", path: { oqx: "project" } }, at: { after: { oqx: "id" } }, markdown: "x" },
+      );
+      expect(desugarEffect({ op: "set", target: "-> id", field: "frontmatter.k", value: "-> n + 1" }, 0)).toEqual({ op: "set", target: { oqx: "id" }, field: "frontmatter.k", value: { oqx: "n + 1" } });
+      expect(desugarEffect({ op: "set", target: "d_0", field: "frontmatter.k", value: { note: "-> data" } }, 0)).toEqual({ op: "set", target: "d_0", field: "frontmatter.k", value: { note: "-> data" } });
+      expect(desugarEffect({ op: "move", targets: ["-> id", { kind: "block", id: "-> id" }], into: "-> doc_id", at: { before: "-> id" } }, 0)).toEqual(
+        { op: "move", targets: [{ oqx: "id" }, { kind: "block", id: { oqx: "id" } }], into: { oqx: "doc_id" }, at: { before: { oqx: "id" } } },
+      );
+      expect(desugarEffect({ op: "move", target: "-> id", to: "-> path" }, 0)).toEqual({ op: "move", target: { oqx: "id" }, to: { oqx: "path" } });
+      expect(desugarEffect({ op: "merge", targets: ["b_1", "-> id"], separator: '-> " "' }, 0)).toEqual({ op: "merge", targets: ["b_1", { oqx: "id" }], separator: " " });
+      // not an effect object / an unknown op: untouched, the shape check names it
+      expect(desugarEffect("nope", 0)).toBe("nope");
+      expect(desugarEffect({ op: "zap", x: "-> y" }, 0)).toEqual({ op: "zap", x: "-> y" });
+    });
+
+    it.each<[string, Record<string, unknown>, string]>([
+      ["field", { op: "set", target: "d_0", field: '-> "frontmatter.x"', value: 1 }, "effects[0].field: `-> ` is not allowed here"],
+      ["expect.revision", { op: "insert", into: "d_0", markdown: "x", expect: { revision: "-> rev" } }, "effects[0].expect.revision: `-> `"],
+      ["a section's heading_id", { op: "insert", into: { kind: "section", heading_id: "-> id" }, markdown: "x" }, "effects[0].into.heading_id: `-> `"],
+      ["a whole `at`", { op: "insert", into: "d_0", at: "-> x", markdown: "x" }, "effects[0].at: `-> `"],
+      ["split.at", { op: "split", target: "b_1", at: ["-> 3"] }, "effects[0].at[0]: `-> `"],
+      ["retarget.repairs", { op: "retarget", repairs: [{ from: "-> a", to: "b" }] }, "effects[0].repairs[0].from: `-> `"],
+      ["a targets[k] member beside id", { op: "remove", targets: [{ kind: "block", id: "b_1", extra: "-> x" }] }, "effects[0].targets[0].extra: `-> `"],
+    ])("refuses the leader in a slot that takes no expression: %s", (_what, effect, message) => {
+      const e = failure(() => desugarEffect(effect, 0));
+      expect(e.code).toBe("filter_invalid");
+      expect(e.data).toMatchObject({ hint: "selection" });
+      expect(e.message).toContain(message);
+    });
+
+    it("a leader whose expression does not parse is filter_invalid with the offset counted from the written string", () => {
+      const e = failure(() => desugarEffect(insert("hub.md", "-> 1 +"), 2));
+      expect(e.code).toBe("filter_invalid");
+      expect(e.data).toMatchObject({ hint: "selection" });
+      expect(e.message).toContain("effects[2].markdown:");
+      expect(e.message).toContain("(at offset 7)"); // "-> 1 +" — the error at the end of the 7-char string
+      // a query smuggled into the leader: the wrapper's trailing `from docs` makes it a parse error, as for `{ oqx }`
+      expect(failure(() => desugarEffect(insert("hub.md", "-> title from blocks"), 0)).message).toContain("effects[0].markdown: duplicate `from`");
+    });
+  });
+
+  describe("bare targets", () => {
+    it("a path-looking string is a document, an id its kind, `$new.n` the symbol table's kind; a locator and anything else are refused", () => {
+      const p = planPlain([
+        insert("ws/alpha.md", "A"),
+        insert("/hub.md", "H"),
+        insert("d_2", "B"),
+        { op: "set", target: "b_5", field: "attrs.checked", value: true },
+        { op: "remove", targets: ["b_8"] },
+      ]);
+      expect(p.effects.map((e) => ("into" in e ? e.into : "target" in e ? e.target : (e as { targets: unknown[] }).targets))).toEqual([
+        { kind: "document", id: "d_1", path: "ws/alpha.md" },
+        { kind: "document", id: "d_0", path: "hub.md" },
+        { kind: "document", id: "d_2", path: "ws/beta.md" },
+        { kind: "block", id: "b_5" },
+        [{ kind: "block", id: "b_8" }],
+      ]);
+      expect(p).not.toHaveProperty("templates");
+      const nodeId = (oqxRun(store, repoId, 'from nodes where kind == "md:link"').hits[0] as { id: string }).id;
+      expect(planPlain([{ op: "set", target: nodeId, field: "value", value: "hub.md#status" }]).effects[0]).toMatchObject({ target: { kind: "node", id: nodeId } });
+      // the bare form and the object form plan identically
+      expect(planPlain([insert("ws/alpha.md", "A")]).plan_id).toBe(planPlain([insert({ kind: "document", path: "ws/alpha.md" }, "A")]).plan_id);
+      // the op's kind table still applies
+      expect(refusedPlain([{ op: "split", target: "d_0", at: [1] }]).message).toBe('effects[0].target: `kind` must be one of block (got "document")');
+      expect(refusedPlain([{ op: "remove", targets: ["ws/alpha.md"] }]).message).toBe('effects[0].targets[0]: `kind` must be one of block (got "document")');
+      const locator = refusedPlain([insert("hub.md#Status", "x")]);
+      expect(locator.code).toBe("filter_invalid");
+      expect(locator.data).toMatchObject({ hint: "arguments", fix: expect.stringContaining("blocks_resolve") });
+      expect(locator.message).toContain("is a locator, not a target");
+      expect(refusedPlain([insert("hello", "x")]).message).toContain('a target is { kind: …, … } or a bare document path, a `b_`/`d_`/`n_` id or `$new.n` (got "hello")');
+      expect(refusedPlain([insert("c_0", "x")]).message).toContain("(got \"c_0\")");
+    });
+
+    it("`$new.n` takes the kind the symbol table recorded when the effect is resolved", () => {
+      const p = planPlain([
+        { op: "create", path: "n.md", markdown: "# N\n\nBody." },
+        insert("$new.0", "Tail."),
+        { op: "set", target: "$new.2", field: "markdown", value: "Body, edited." },
+        { op: "set", target: "$new.0", field: "frontmatter.k", value: 1 },
+        { op: "remove", targets: ["$new.1"] },
+      ]);
+      expect(p.effects.map((e) => ("into" in e ? e.into : "target" in e ? e.target : (e as { targets: unknown[] }).targets))).toEqual([
+        undefined,
+        { kind: "document", id: "$new.0", path: "n.md" },
+        { kind: "block", id: "$new.2" },
+        { kind: "document", id: "$new.0", path: "n.md" },
+        [{ kind: "block", id: "$new.1" }],
+      ]);
+      expect(p.plan_id).toBe(planPlain([
+        { op: "create", path: "n.md", markdown: "# N\n\nBody." },
+        insert({ kind: "document", id: "$new.0" }, "Tail."),
+        { op: "set", target: { kind: "block", id: "$new.2" }, field: "markdown", value: "Body, edited." },
+        { op: "set", target: { kind: "document", id: "$new.0" }, field: "frontmatter.k", value: 1 },
+        { op: "remove", targets: [{ kind: "block", id: "$new.1" }] },
+      ]).plan_id);
+      // the slot's kind table applies to the recorded kind; a symbol nothing created is target_missing; the field rule follows the kind
+      expect(refusedPlain([{ op: "create", path: "n.md", markdown: "# N" }, { op: "unset", target: "$new.1", field: "frontmatter.k" }])).toMatchObject({ code: "filter_invalid", message: 'effects[1].target: `kind` must be one of document (got "block")' });
+      expect(refusedPlain([insert("$new.0", "x")])).toMatchObject({ code: "target_missing", data: { symbol: "$new.0", effect_index: 0 } });
+      expect(refusedPlain([{ op: "create", path: "n.md", markdown: "# N" }, { op: "set", target: "$new.1", field: "frontmatter.k", value: 1 }]).message).toContain("a block's `field` is `markdown` or `attrs.checked`");
+      expect(refusedPlain([{ op: "create", path: "n.md", markdown: "# N" }, { op: "set", target: "$new.0", field: "markdown", value: "x" }]).message).toContain("a document's `field` is `frontmatter.<key>` or `content`");
+    });
+  });
+
+  describe("with a selector", () => {
+    it("`into: \"-> project\"` is the worked example; a template literal builds the markdown; the plan is the `{ oqx }` plan but for the recorded templates", () => {
+      const sugar = plan(COMPLETED, [insert("-> project", "-> `- completed: [${title}](${path})`", { at: "end" }), { op: "set", field: "frontmatter.rolled_up", value: true }]);
+      const spelled = plan(COMPLETED, ROLLUP);
+      expect(sugar.effects).toEqual(spelled.effects);
+      expect(sugar.opset).toEqual(spelled.opset);
+      expect(sugar.plan_id).not.toBe(spelled.plan_id);
+      expect(sugar.selection!.templates[0]).toEqual(insert("-> project", "-> `- completed: [${title}](${path})`", { at: "end" }));
+      expect(sugar).not.toHaveProperty("templates");
+      expect(print(selectionQuery(COMPLETED, sugar.selection!.templates))).toBe(
+        "select __omg_sel_0_into: project, __omg_sel_0_markdown: `- completed: [${title}](${path})` from docs where type == \"workstream\" and status == \"completed\"",
+      );
+    });
+
+    it("a whole-target expression binds the identity the value names: a row by its id's prefix, a path string as a document, an id string as its kind", () => {
+      const byRow = plan(COMPLETED, [insert('-> ^docs single { where type == "project" }', "x")]);
+      expect(byRow.effects.map((e) => (e as { into: unknown }).into)).toEqual([{ kind: "document", id: "d_0", path: "hub.md" }, { kind: "document", id: "d_0", path: "hub.md" }]);
+      expect(plan(COMPLETED, [insert("-> project", "x")]).effects).toEqual(byRow.effects);
+      expect(plan(COMPLETED, [insert('-> "d_0"', "x")]).effects).toEqual(byRow.effects);
+      const block = plan('from blocks where type == "paragraph" and text == "Nothing yet."', [{ op: "move", targets: ["-> id"], into: "-> doc_id", at: "start" }]);
+      expect(block.effects).toEqual([{ op: "move", targets: [{ kind: "block", id: "b_2" }], into: { kind: "document", id: "d_0", path: "hub.md" }, at: "start" }]);
+      // the op's kind table applies to the bound kind
+      const wrong = refused(COMPLETED, [{ op: "split", target: "-> id", at: [1] }]);
+      expect(wrong.data).toMatchObject({ hint: "arguments" });
+      expect(wrong.message).toBe('effects[0].target: `kind` must be one of block (got "document")');
+      // a value that names no identity
+      expect(refused(COMPLETED, [insert("-> parent", "x")])).toMatchObject({ code: "target_missing", data: { effect_index: 0, template_index: 0, row: { id: "d_1", path: "/ws/alpha.md" }, expression: "parent" } });
+      expect(refused(COMPLETED, [insert('-> ^docs collect { where type == "workstream" }', "x")])).toMatchObject({ code: "ambiguous_target", data: { count: 3 } });
+      expect(refused(COMPLETED, [insert("-> title", "x")]).message).toContain("not an identity (a document path, an id or a row)");
+      expect(refused(COMPLETED, [insert("-> 1", "x")]).message).toContain("not an identity (a string or a row)");
+    });
+
+    it("a typed value: `-> priority + 1` is a number; `value: \"-> \\\"x\\\"\"` folds to the string", () => {
+      ingestFile(store, repoId, "ws/delta.md", "---\ntype: workstream\nstatus: completed\nproject: hub.md\npriority: 2\n---\n\n# Delta\n");
+      const p = plan('from docs where type == "workstream" and priority != null', [{ op: "set", field: "frontmatter.priority", value: "-> priority + 1" }, { op: "set", field: "frontmatter.note", value: '-> "x"' }]);
+      expect(p.effects.map((e) => (e as { value: unknown }).value)).toEqual([3, "x"]);
+      expect(p.opset.set_frontmatter[0]!.raw).toContain("priority: 3\nnote: x\n");
+    });
+
+    it("constant folding: `-> \"x\"`, `-> `x`` and `\"x\"` plan to one plan_id (but for the recorded templates, which are as written)", () => {
+      const a = plan(COMPLETED, [{ op: "set", field: "frontmatter.note", value: '-> "x"' }]);
+      const b = plan(COMPLETED, [{ op: "set", field: "frontmatter.note", value: "-> `x`" }]);
+      const c = plan(COMPLETED, [{ op: "set", field: "frontmatter.note", value: "x" }]);
+      expect(a.effects).toEqual(c.effects);
+      expect(b.effects).toEqual(c.effects);
+      expect(a.opset).toEqual(c.opset);
+      expect(print(selectionQuery(COMPLETED, a.selection!.templates))).toBe(COMPLETED); // no slot item: nothing to evaluate
+    });
+  });
+
+  describe("without a selector", () => {
+    it("a `-> ` slot on a plain effect evaluates in its own target's row; the plan carries `templates` (as written), the core is the literal plan's", () => {
+      const p = planPlain([insert("ws/alpha.md", "-> `## ${title}`")]);
+      expect(p.effects).toEqual([{ op: "insert", into: { kind: "document", id: "d_1", path: "ws/alpha.md" }, at: "end", markdown: "## Alpha" }]);
+      expect(p.templates).toEqual([insert("ws/alpha.md", "-> `## ${title}`")]);
+      expect(p).not.toHaveProperty("selection");
+      const literal = planPlain([insert("ws/alpha.md", "## Alpha")]);
+      expect(p.plan_id).toBe(literal.plan_id);
+      expect(planDigest(p)).toBe(p.plan_id); // `templates` is not digested
+      expect(literal).not.toHaveProperty("templates");
+      // `{ oqx }` spelled out is the same request
+      expect(planPlain([insert("ws/alpha.md", { oqx: "`## ${title}`" })]).plan_id).toBe(p.plan_id);
+    });
+
+    it("the scope is the primary target's row: a document, a block (`into` a block or section, a `set` target), a node", () => {
+      const block = planPlain([{ op: "set", target: "b_2", field: "markdown", value: "-> `${text} (archived)`" }]);
+      expect(block.effects[0]).toMatchObject({ value: "Nothing yet. (archived)" });
+      const section = planPlain([insert({ kind: "section", heading_id: "b_1" }, "-> `Under ${text}`")]);
+      expect(section.effects[0]).toMatchObject({ markdown: "Under Status" });
+      const nodeId = (oqxRun(store, repoId, 'from nodes where kind == "md:link"').hits[0] as { id: string }).id;
+      const node = planPlain([{ op: "set", target: nodeId, field: "value", value: "-> value + \"#status\"" }]);
+      expect(node.effects[0]).toMatchObject({ value: "hub.md#status" });
+      // a block form: targets[0] is the scope; `into` and `at` may be expressions over it
+      const moved = planPlain([{ op: "move", targets: ["b_2"], into: "-> doc_id", at: "start" }]);
+      expect(moved.effects[0]).toEqual({ op: "move", targets: [{ kind: "block", id: "b_2" }], into: { kind: "document", id: "d_0", path: "hub.md" }, at: "start" });
+    });
+
+    it("effects on several targets run one synthetic query per target identity; a binding error names the effect and its row (no template)", () => {
+      const p = planPlain([
+        insert("ws/alpha.md", "-> `Summary of ${title}`"),
+        insert("ws/beta.md", "-> `Summary of ${title}`"),
+        insert("ws/alpha.md", "-> `Again ${title}`"),
+        { op: "set", target: "ws/gamma.md", field: "frontmatter.seen", value: true },
+      ]);
+      expect(p.effects.map((e) => ("markdown" in e ? e.markdown : e.op))).toEqual(["Summary of Alpha", "Summary of Beta", "Again Alpha", "set"]);
+      expect(p.templates).toHaveLength(4);
+      const r = applyEffects(store, { repoId, docStore, effects: p.templates, origin }) as Receipt;
+      expect(r.plan_id).toBe(p.plan_id);
+      const ops = store.db.prepare("SELECT ops FROM commits WHERE commit_id = ?").pluck().get(r.commit) as string;
+      const intent = JSON.parse(ops) as { effects: unknown[]; templates: unknown[]; selection?: unknown };
+      expect(intent.templates).toEqual(p.templates);
+      expect(intent.effects).toEqual(p.effects);
+      expect(intent.selection).toBeUndefined();
+      const absent = refusedPlain([insert("ws/alpha.md", "-> nothing")]);
+      expect(absent.code).toBe("filter_invalid");
+      expect(absent.data).toEqual({ reason: absent.message, hint: "selection", effect_index: 0, row: { id: "d_1", path: "/ws/alpha.md" }, expression: "nothing" });
+      expect(absent.data).not.toHaveProperty("template_index");
+    });
+
+    it("refuses what has no row: a `create`, an expression as the primary target, a `$new.n` scope", () => {
+      const create = refusedPlain([{ op: "create", path: "n.md", markdown: "-> title" }]);
+      expect(create.code).toBe("filter_invalid");
+      expect(create.data).toMatchObject({ hint: "selection" });
+      expect(create.message).toBe("effects[0]: a `create` has no row — an expression on a create needs a selector (`select`)");
+      // a folded leader on a create is a literal: fine
+      expect(planPlain([{ op: "create", path: '-> "n.md"', markdown: "-> `# N`" }]).effects[0]).toEqual({ op: "create", path: "n.md", markdown: "# N" });
+      for (const effects of [[insert("-> project", "x")], [insert({ kind: "document", path: "-> project" }, "x")], [{ op: "remove", targets: ["-> id"] }], [{ op: "merge", targets: [{ kind: "block", id: "-> id" }, "b_2"] }]]) {
+        const e = refusedPlain(effects);
+        expect(e.code).toBe("filter_invalid");
+        expect(e.message).toContain("an expression target needs a selector");
+      }
+      const fresh = refusedPlain([{ op: "create", path: "n.md", markdown: "# N" }, insert("$new.0", "-> title")]);
+      expect(fresh.message).toBe("effects[1].into: $new.0 has no row yet — it is created by this plan; use a literal target or a selector");
+      // a literal that is no row is the lowering's own error
+      expect(refusedPlain([insert("nowhere.md", "-> title")]).code).toBe("doc_missing");
+      expect(refusedPlain([{ op: "set", target: "b_99", field: "markdown", value: "-> text" }])).toMatchObject({ code: "block_missing", data: { block: "b_99" } });
+      expect(refusedPlain([insert({ kind: "block", id: "b_99" }, "-> text")]).code).toBe("parent_missing");
+    });
+
+    it("`templates` rides on the plan outside the digest: admitted by the plan form, recorded by execute; a mistyped one is filter_invalid", () => {
+      const p = planPlain([insert("ws/alpha.md", "-> `## ${title}`")]);
+      expect(admitPlan(p).templates).toEqual(p.templates);
+      expect(admitPlan({ ...p, templates: undefined }).plan_id).toBe(p.plan_id);
+      expect(() => admitPlan({ ...p, templates: "nope" })).toThrow(expect.objectContaining({ code: "filter_invalid" }));
+      const r = executePlan(store, { repoId, docStore, plan: p, origin });
+      const ops = store.db.prepare("SELECT ops FROM commits WHERE commit_id = ?").pluck().get(r.commit) as string;
+      expect(JSON.parse(ops)).toEqual({ v: 1, plan_id: p.plan_id, effects: p.effects, templates: p.templates });
+      // the digest form re-plans from the written effects
+      const again = planPlain([insert("ws/beta.md", "-> `## ${title}`")]);
+      expect(executeByDigest(store, { repoId, docStore, planId: again.plan_id, effects: again.templates, origin }).commit).toBe("c_5");
+    });
   });
 });

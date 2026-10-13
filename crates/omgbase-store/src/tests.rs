@@ -3844,6 +3844,49 @@ fn apply_effects_detailed_returns_the_plan_and_the_receipt_and_a_plan_burns_noth
     );
 }
 
+/// 3.2 (§11.8 "Sugar"): a plan carrying `templates` (the effects as written
+/// of a selector-less request that evaluated an expression) commits an
+/// intent record with the same `templates`; without it the record is the
+/// 3.1 shape — and both plans have one `plan_id`, `templates` being outside
+/// the digest.
+#[test]
+fn the_intent_record_carries_the_templates_a_plan_carries() {
+    let origin = api_origin();
+    let (mut a, repo_a, mut ds_a) = seeded(&[("a.md", FM_DOC)]);
+    let effects = vec![set_fm(doc_by_path("a.md"), "status", json!("done"))];
+    let mut plan = a.plan_effects(&ctx(&repo_a, T1), &effects, &ds_a).unwrap();
+    let plain_id = plan.plan_id.clone();
+    let written = json!([{ "op": "set", "target": "a.md", "field": "frontmatter.status", "value": "-> `done`" }]);
+    plan.templates = written.as_array().cloned();
+    let receipt = a
+        .execute_plan(&ctx(&repo_a, T1), &plan, &origin, &mut ds_a)
+        .unwrap();
+    assert_eq!(receipt.plan_id, plain_id);
+    let ops: String = a
+        .conn()
+        .query_row("SELECT ops FROM commits WHERE commit_id = 'c_1'", [], |r| {
+            r.get(0)
+        })
+        .unwrap();
+    let record: Value = serde_json::from_str(&ops).unwrap();
+    assert_eq!(record["templates"], written);
+    assert_eq!(record["plan_id"], json!(plain_id));
+    assert_eq!(record["v"], 1);
+    assert!(record.get("selection").is_none());
+    let (mut b, repo_b, mut ds_b) = seeded(&[("a.md", FM_DOC)]);
+    let plan = b.plan_effects(&ctx(&repo_b, T1), &effects, &ds_b).unwrap();
+    assert_eq!(plan.plan_id, plain_id);
+    b.execute_plan(&ctx(&repo_b, T1), &plan, &origin, &mut ds_b)
+        .unwrap();
+    let ops: String = b
+        .conn()
+        .query_row("SELECT ops FROM commits WHERE commit_id = 'c_1'", [], |r| {
+            r.get(0)
+        })
+        .unwrap();
+    assert!(!ops.contains("templates"), "{ops}");
+}
+
 /// `plan` → `execute` and the one-shot `apply({ effects })` leave the same
 /// store and files behind: one `api` commit whose `ops` is the intent
 /// record, one revision, the inserted block minted under the same id.
