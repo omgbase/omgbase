@@ -245,7 +245,7 @@ describe("a stale file at start-up", () => {
       track(proxy.remote!);
       await proxy.ready;
       expect(proxy.remote).toBeInstanceOf(RemoteAuth);
-      expect(proxy.whoami().auth).toEqual({ state: "ok", issuer: gw.issuer, recovered: true, recoveredAt: expect.any(String) as unknown as string });
+      expect(proxy.whoami().auth).toEqual({ state: "ok", issuer: gw.issuer, recovered: true, recoveredAt: expect.any(String) as unknown as string, client: { source: "registered", id: "client-stale" } });
       expect(browser.opened).toHaveLength(1);
       expect(logs).toContain(`stored sign-in for ${gw.serverUrl} was rejected (invalid_grant: unknown refresh token); signing in again`);
       const transport = new StreamableHTTPClientTransport(new URL(proxy.url));
@@ -270,7 +270,7 @@ describe("a stale file at start-up", () => {
     try {
       track(proxy.remote!);
       await proxy.ready;
-      expect(proxy.whoami().auth).toEqual({ state: "error", issuer: gw.issuer, error: "access_denied: the user declined" });
+      expect(proxy.whoami().auth).toEqual({ state: "error", issuer: gw.issuer, error: "access_denied: the user declined", client: { source: "registered", id: "client-stale" } });
       expect(gw.hits).toMatchObject({ refresh: 1, exchange: 0 });
     } finally {
       await proxy.close();
@@ -369,7 +369,7 @@ describe("half-states of the file", () => {
       track(proxy.remote!);
       await proxy.ready;
       const expected = `the issuer refused to register the client (HTTP 403: Forbidden: You reached the limit of entities of this type for this tenant. (too_many_entities)); ${TOO_MANY_ENTITIES_HINT}`;
-      expect(proxy.whoami().auth).toEqual({ state: "error", issuer: gw.issuer, error: expected });
+      expect(proxy.whoami().auth).toEqual({ state: "error", issuer: gw.issuer, error: expected, client: { source: "registered", id: null } }); // no registration yet: the issuer refused it
       expect(logs.at(-1)).toBe(`sign-in failed (issuer ${gw.issuer}): ${expected}`);
       expect(browser.opened).toHaveLength(0);
       expect(gw.hits).toMatchObject({ register: 1, refresh: 0 });

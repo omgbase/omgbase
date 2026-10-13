@@ -8,6 +8,10 @@ export interface ProxyArgs {
   omg: string;
   /** The upstream MCP URL. */
   remote: string | null;
+  /** `--client-id` / `WEBDEVPROXY_CLIENT_ID`: a pre-registered public OAuth client to present instead of registering one dynamically; null = register. */
+  clientId: string | null;
+  /** `--callback-port` / `WEBDEVPROXY_CALLBACK_PORT`: the sign-in loopback listener's port; null = ephemeral (or `DEFAULT_CALLBACK_PORT` with a client id). */
+  callbackPort: number | null;
   port: number;
   path: string;
   idleSeconds: number;
@@ -40,6 +44,8 @@ export interface WhoAmI {
     /** `ok` reached by replacing a stored sign-in the issuer rejected with a fresh one, by itself. */
     recovered?: true;
     recoveredAt?: string;
+    /** Remote mode: which OAuth client the proxy presents — the configured `--client-id`, or the file's dynamic registration (`id` null before the first one). Client ids are public. */
+    client?: { source: "configured" | "registered"; id: string | null };
   };
   tokenFile: string | null;
   sessions: { id: string; upstream: string | null }[];
@@ -59,6 +65,7 @@ export interface Proxy {
   close(): Promise<void>;
 }
 
+/** `Partial<ProxyArgs>` includes `clientId` (`--client-id`), `remote`, `tokenFile`, … */
 export type StartProxyOptions = Partial<ProxyArgs> & {
   log?: (message: string) => void;
   /** Parsed for defaults when given; `options` override. */
@@ -103,6 +110,8 @@ export const USAGE: string;
 export const DEFAULT_PORT: number;
 export const DEFAULT_PATH: string;
 export const DEFAULT_IDLE_SECONDS: number;
+/** The fixed loopback callback port a `--client-id` run uses without `--callback-port` (8790): `http://127.0.0.1:8790/callback` is the application's allowed callback URL. */
+export const DEFAULT_CALLBACK_PORT: number;
 export const LISTEN_HOST: string;
 export const MONOREPO_OMG: string;
 
@@ -143,6 +152,12 @@ export const SIGN_IN_CANCELLED: string;
 export const STALE_DISCOVERY: string;
 /** Appended to the sign-in failure when the issuer's dynamic registration is capped (Auth0 `too_many_entities`). */
 export const TOO_MANY_ENTITIES_HINT: string;
+/** `error.name` of the failure when the token endpoint rejects a configured `--client-id` (`invalid_client` / `unauthorized_client`); never recovered by registering. */
+export const CONFIGURED_CLIENT_REJECTED: string;
+/** `the configured client id <id> was rejected by the issuer (<code>) — check WEBDEVPROXY_CLIENT_ID / --client-id against the tenant's application` */
+export function configuredClientRejected(clientId: string, code?: string): string;
+/** The start-up failure when a fixed callback port is taken (another port would not match the application's allowed callback URL). */
+export function callbackPortInUse(port: number): string;
 export function loopbackRedirectUrls(port: number): string[];
 export type LoopbackOutcome =
   | { kind: "code"; code: string }
@@ -166,6 +181,8 @@ export class FileOAuthProvider {
     serverUrl: string;
     file: string;
     redirectUrls: string[];
+    /** A pre-registered public client: `clientInformation()` answers `{ client_id, token_endpoint_auth_method: "none" }` whatever the file holds, `saveClientInformation` stores nothing, `invalidateCredentials("all")` keeps it (tokens + discovery go). */
+    clientId?: string | null;
     clientName?: string;
     log?: (message: string) => void;
     openBrowser?: (url: string) => Promise<boolean>;
@@ -176,6 +193,7 @@ export class FileOAuthProvider {
   serverUrl: string;
   file: string;
   redirectUrls: string[];
+  clientId: string | null;
   pending: { url: string; state: string | undefined } | null;
   readonly redirectUrl: string;
   readonly clientMetadata: Record<string, unknown>;
@@ -200,6 +218,10 @@ export class RemoteAuth {
     serverUrl: string;
     file?: string;
     legacyFile?: string | null;
+    /** `--client-id`: present this public client, never register one; an `invalid_client` from the token endpoint is then a configuration error (`configuredClientRejected`), not a dead credential. */
+    clientId?: string | null;
+    /** Bind the loopback listener to this port (taken → `start()` rejects with `callbackPortInUse`); null = ephemeral, or `DEFAULT_CALLBACK_PORT` with a client id. */
+    callbackPort?: number | null;
     log?: (message: string) => void;
     fetch?: typeof globalThis.fetch;
     openBrowser?: (url: string) => Promise<boolean>;
@@ -209,6 +231,10 @@ export class RemoteAuth {
   serverUrl: string;
   file: string;
   legacyFile: string | null;
+  /** The configured public client, else null (dynamic registration). */
+  clientId: string | null;
+  /** The fixed loopback port, else null (ephemeral). */
+  callbackPort: number | null;
   status: WhoAmI["auth"];
   /** ISO time of the last automatic recovery (a stored sign-in the issuer rejected, replaced by a fresh one). */
   recoveredAt: string | undefined;
@@ -217,6 +243,8 @@ export class RemoteAuth {
   bearer(): string | undefined;
   identity(): Identity | null;
   issuer(): string | undefined;
+  /** Which OAuth client the proxy presents (`/whoami`'s `auth.client`). */
+  client(): { source: "configured" | "registered"; id: string | null };
   /** Subscribe to status changes; returns the unsubscribe. */
   onStatus(listener: (status: WhoAmI["auth"]) => void): () => void;
   /** The provider over the token file (after `start()`). */

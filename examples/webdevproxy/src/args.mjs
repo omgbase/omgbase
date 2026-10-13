@@ -3,11 +3,11 @@
 // Vite (`--open`, `--host`, …).
 //
 //   webdevproxy --local <workspace-dir> [--omg <omg entry or binary>]
-//   webdevproxy --remote <mcp-url> [--no-browser] [--token-file <f>]
+//   webdevproxy --remote <mcp-url> [--client-id <id> [--callback-port <n>]] [--no-browser] [--token-file <f>]
 //   webdevproxy --logout [--remote <mcp-url>] [--token-file <f>]
 //   common: [--port 8787] [--path /mcp] [--idle 3600] [--origin <origin>]…
-//   env: WEBDEVPROXY_LOCAL, WEBDEVPROXY_OMG, WEBDEVPROXY_REMOTE, WEBDEVPROXY_PORT,
-//        WEBDEVPROXY_PATH, WEBDEVPROXY_TOKEN_FILE, WEBDEVPROXY_NO_BROWSER, WEBDEVPROXY_ORIGIN (comma-separated)
+//   env: WEBDEVPROXY_LOCAL, WEBDEVPROXY_OMG, WEBDEVPROXY_REMOTE, WEBDEVPROXY_CLIENT_ID, WEBDEVPROXY_CALLBACK_PORT,
+//        WEBDEVPROXY_PORT, WEBDEVPROXY_PATH, WEBDEVPROXY_TOKEN_FILE, WEBDEVPROXY_NO_BROWSER, WEBDEVPROXY_ORIGIN (comma-separated)
 
 import { existsSync } from "node:fs";
 import { dirname, resolve } from "node:path";
@@ -16,10 +16,17 @@ import { fileURLToPath } from "node:url";
 export const DEFAULT_PORT = 8787;
 export const DEFAULT_PATH = "/mcp";
 export const DEFAULT_IDLE_SECONDS = 3600;
+/**
+ * The loopback callback port when `--client-id` is given and `--callback-port` is not: the
+ * application's allowed callback URL must name an exact port (Auth0 rejects a port wildcard),
+ * so it is fixed and well-known — `http://127.0.0.1:8790/callback`. Clear of the demos' proxy
+ * ports (graph-ui 8787, live-tail 8788). Without `--client-id` the port stays ephemeral.
+ */
+export const DEFAULT_CALLBACK_PORT = 8790;
 /** The listener binds here and nowhere else: this is a dev-only proxy. */
 export const LISTEN_HOST = "127.0.0.1";
 
-const VALUE_FLAGS = ["local", "omg", "remote", "port", "path", "idle", "origin", "token-file"];
+const VALUE_FLAGS = ["local", "omg", "remote", "client-id", "callback-port", "port", "path", "idle", "origin", "token-file"];
 const BOOL_FLAGS = ["logout", "no-browser", "help"];
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -48,6 +55,8 @@ export function omgCommand(omg) {
  * @property {string | null} local       workspace directory for `omg mcp -C <dir>`
  * @property {string} omg                the `omg` entry (`.js`) or binary
  * @property {string | null} remote      the upstream MCP URL
+ * @property {string | null} clientId    a pre-registered public OAuth client to present instead of registering one (remote mode)
+ * @property {number | null} callbackPort  bind the sign-in loopback listener to this port (null: ephemeral — or DEFAULT_CALLBACK_PORT with a client id)
  * @property {number} port
  * @property {string} path
  * @property {number} idleSeconds
@@ -84,12 +93,15 @@ export function parseArgs(argv = process.argv.slice(2), env = process.env) {
   }
   const envTrim = (k) => (env[k] && env[k].trim() ? env[k].trim() : null);
   const remote = flags.remote ?? envTrim("WEBDEVPROXY_REMOTE");
+  const callbackPort = flags["callback-port"] ?? envTrim("WEBDEVPROXY_CALLBACK_PORT");
   const local = flags.local ?? envTrim("WEBDEVPROXY_LOCAL");
   for (const o of (envTrim("WEBDEVPROXY_ORIGIN") ?? "").split(",")) if (o.trim()) origins.push(o.trim());
   return {
     local: local ? resolve(local) : null,
     omg: flags.omg ?? defaultOmg(env),
     remote,
+    clientId: flags["client-id"] ?? envTrim("WEBDEVPROXY_CLIENT_ID"),
+    callbackPort: callbackPort === null ? null : Number(callbackPort),
     port: Number(flags.port ?? envTrim("WEBDEVPROXY_PORT") ?? DEFAULT_PORT),
     path: flags.path ?? envTrim("WEBDEVPROXY_PATH") ?? DEFAULT_PATH,
     idleSeconds: Number(flags.idle ?? DEFAULT_IDLE_SECONDS),
@@ -119,6 +131,7 @@ export function validateArgs(o) {
     }
   }
   if (!Number.isInteger(o.port) || o.port < 0 || o.port > 65535) return `--port must be 0..65535, got ${o.port}`;
+  if (o.callbackPort !== null && (!Number.isInteger(o.callbackPort) || o.callbackPort < 1 || o.callbackPort > 65535)) return `--callback-port must be 1..65535, got ${o.callbackPort}`;
   if (!o.path.startsWith("/")) return `--path must start with /, got ${o.path}`;
   if (!Number.isFinite(o.idleSeconds) || o.idleSeconds < 0) return `--idle must be a number of seconds, got ${o.idleSeconds}`;
   return null;
@@ -135,7 +148,7 @@ export const USAGE = `webdevproxy — a development-only local web proxy for MCP
 
 usage:
   webdevproxy --local <workspace-dir> [--omg <omg entry or binary>]
-  webdevproxy --remote <mcp-url> [--no-browser] [--token-file <file>]
+  webdevproxy --remote <mcp-url> [--client-id <id> [--callback-port <n>]] [--no-browser] [--token-file <file>]
   webdevproxy --logout [--remote <mcp-url>] [--token-file <file>]
 
 options:
@@ -143,6 +156,16 @@ options:
   --omg <path>         the omg CLI: a .js entry (run with node) or a binary
                        (default: the monorepo's packages/cli build, else \`omg\` on PATH)
   --remote <url>       relay to a remote MCP endpoint; the proxy is the OAuth client
+  --client-id <id>     present this pre-registered public client to the issuer instead of registering
+                       one dynamically (RFC 7591) — one application for every run, so an issuer that
+                       caps registrations (Auth0's too_many_entities) never fills up. The application
+                       must be a public (native) client with no secret, grants authorization_code +
+                       refresh_token and exactly one allowed callback URL: http://127.0.0.1:<callback
+                       port>/callback. The id is config, not state: --logout and \`l\` keep it
+  --callback-port <n>  bind the sign-in loopback listener to this port, so the redirect_uri is exactly
+                       http://127.0.0.1:<n>/callback (default: an ephemeral port; with --client-id
+                       ${DEFAULT_CALLBACK_PORT}, since the application's allowed callback must name the port — Auth0
+                       accepts no port wildcard). A fixed port that is in use is an error, never another port
   --port <n>           listen on 127.0.0.1:<n> (default ${DEFAULT_PORT})
   --path <p>           the MCP endpoint path (default ${DEFAULT_PATH}); GET /whoami is always served
   --idle <seconds>     close a browser session (and its upstream: the \`omg mcp\` child or the
@@ -163,6 +186,7 @@ keys (remote mode, when stdin is a terminal; each followed by Enter):
   l                    forget this server's tokens (= --logout) and sign in fresh, without a restart
   q                    close every session and quit
 
-env: WEBDEVPROXY_LOCAL, WEBDEVPROXY_OMG, WEBDEVPROXY_REMOTE, WEBDEVPROXY_PORT, WEBDEVPROXY_PATH,
-     WEBDEVPROXY_ORIGIN (comma-separated), WEBDEVPROXY_TOKEN_FILE, WEBDEVPROXY_NO_BROWSER
+env: WEBDEVPROXY_LOCAL, WEBDEVPROXY_OMG, WEBDEVPROXY_REMOTE, WEBDEVPROXY_CLIENT_ID, WEBDEVPROXY_CALLBACK_PORT,
+     WEBDEVPROXY_PORT, WEBDEVPROXY_PATH, WEBDEVPROXY_ORIGIN (comma-separated), WEBDEVPROXY_TOKEN_FILE,
+     WEBDEVPROXY_NO_BROWSER
 `;

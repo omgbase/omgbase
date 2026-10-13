@@ -4,11 +4,16 @@
 // with rotation) and a tiny JSON-RPC MCP endpoint behind the bearer check. The
 // "browser" is a function that reads the authorization URL and answers the
 // loopback itself. Knobs simulate a reset gateway: revoke tokens or clients,
-// script the refresh answer, move the token endpoint.
+// script the refresh answer, move the token endpoint. `fixedClient(id, port)` is
+// an application created by hand in the tenant's dashboard (Auth0 Native app, no
+// secret) whose one allowed callback URL is `http://127.0.0.1:<port>/callback`,
+// compared exactly as Auth0 does (no port wildcard) — for `--client-id`.
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 
 export interface Hits { mcp: number; metadata: number; register: number; refresh: number; exchange: number; notFound: number }
+/** One token request as the issuer saw it: the grant, the client and how it authenticated (`none` = `client_id` in the form alone — a public client). */
+export interface TokenRequest { grant: string | null; clientId: string; auth: "none" | "basic" | "post"; redirectUri: string | null }
 export interface Scripted { status: number; body: unknown; contentType?: string }
 export type BrowserMode = "consent" | "decline" | "hang";
 export interface FakeBrowser { (url: string): Promise<boolean>; opened: string[]; mode: BrowserMode }
@@ -33,6 +38,10 @@ export class FakeGateway {
   readonly accessTokens = new Set<string>();
   readonly codes = new Map<string, string>();
   readonly hits: Hits = { mcp: 0, metadata: 0, register: 0, refresh: 0, exchange: 0, notFound: 0 };
+  /** Every token request in order. */
+  readonly tokenRequests: TokenRequest[] = [];
+  /** Clients created by hand, with the exact callback URLs the tenant allows them (Auth0 compares `redirect_uri` to the application's list verbatim). */
+  readonly callbacks = new Map<string, string[]>();
   /** When set, every refresh is answered with this instead of the real logic. */
   refreshResponse: Scripted | null = null;
   /** When set, every registration is answered with this. */
@@ -62,6 +71,17 @@ export class FakeGateway {
 
   close(): Promise<void> {
     return new Promise((r) => { this.server.closeAllConnections(); this.server.close(() => r()); });
+  }
+
+  /**
+   * A pre-registered public client (what `--client-id` names): known to the issuer without any
+   * registration call, allowed exactly one callback URL, `http://127.0.0.1:<callbackPort>/callback`,
+   * and nothing else (Auth0 accepts no port wildcard). Returns the id.
+   */
+  fixedClient(id: string, callbackPort: number): string {
+    this.clients.add(id);
+    this.callbacks.set(id, [`http://127.0.0.1:${callbackPort}/callback`]);
+    return id;
   }
 
   /** The identity provider forgot every token (refresh → `invalid_grant`); the gateway rejects every bearer. */
@@ -110,6 +130,7 @@ export class FakeGateway {
       let callback: string;
       if (u.pathname !== "/issuer/authorize") callback = `${redirect}?error=invalid_request&error_description=no+such+page&state=${state}`;
       else if (!this.clients.has(clientId)) callback = `${redirect}?error=invalid_request&error_description=unknown+client&state=${state}`;
+      else if (this.callbacks.has(clientId) && !this.callbacks.get(clientId)!.includes(redirect)) callback = `${redirect}?error=invalid_request&error_description=callback+URL+mismatch&state=${state}`;
       else if (fn.mode === "decline") callback = `${redirect}?error=access_denied&error_description=the+user+declined&state=${state}`;
       else callback = `${redirect}?code=${this.mintCode(clientId)}&state=${state}`;
       void fetch(callback).then((r) => r.body?.cancel(), () => undefined);
@@ -166,7 +187,9 @@ export class FakeGateway {
     if (path === this.tokenPath && req.method === "POST") {
       const form = new URLSearchParams(await readBody(req));
       const grant = form.get("grant_type");
-      const clientId = form.get("client_id") ?? "";
+      const basic = typeof req.headers.authorization === "string" && req.headers.authorization.startsWith("Basic ") ? Buffer.from(req.headers.authorization.slice(6), "base64").toString("utf8").split(":")[0] : undefined;
+      const clientId = basic ?? form.get("client_id") ?? "";
+      this.tokenRequests.push({ grant, clientId, auth: basic !== undefined ? "basic" : form.has("client_secret") ? "post" : "none", redirectUri: form.get("redirect_uri") });
       if (grant === "refresh_token") {
         this.hits.refresh++;
         if (this.refreshResponse) { this.scripted(res, this.refreshResponse); return; }

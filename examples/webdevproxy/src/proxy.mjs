@@ -5,9 +5,10 @@
 //   • `omg mcp -C <workspace>` over stdio (`--local`), or
 //   • a remote MCP gateway (`--remote <url>`), where the proxy itself is the
 //     OAuth client — a native app with a loopback redirect, dynamic client
-//     registration, PKCE and a refresh token kept in a 0600 file under
-//     ~/.config/omgbase-webdevproxy/ — so the browser needs no CORS on the
-//     gateway and the identity provider needs no web origins. See remote-auth.mjs.
+//     registration (or one pre-registered public client, `--client-id`), PKCE
+//     and a refresh token kept in a 0600 file under ~/.config/omgbase-webdevproxy/
+//     — so the browser needs no CORS on the gateway and the identity provider
+//     needs no web origins. See remote-auth.mjs.
 //
 // The stdio shape is the same as usergenic/stdio-mcp-to-http, which could not
 // be reused because it is not on npm and sends no CORS headers.
@@ -92,7 +93,7 @@ export async function startProxy(options = {}) {
   /** @type {RemoteAuth | null} */
   let remote = null;
   if (o.remote) {
-    remote = await new RemoteAuth({ serverUrl: o.remote, file: o.tokenFile ?? undefined, log, noBrowser: o.noBrowser, env, ...(open ? { openBrowser: open } : {}) }).start();
+    remote = await new RemoteAuth({ serverUrl: o.remote, file: o.tokenFile ?? undefined, clientId: o.clientId ?? null, callbackPort: o.callbackPort ?? null, log, noBrowser: o.noBrowser, env, ...(open ? { openBrowser: open } : {}) }).start();
   }
   const makeUpstream = remote ? remoteUpstream(remote) : stdioUpstream(o);
 
@@ -161,7 +162,8 @@ export async function startProxy(options = {}) {
     mode: remote ? "remote" : "local",
     upstream: remote ? remote.serverUrl : `omg mcp -C ${o.local}`,
     identity: remote ? remote.identity() : null,
-    auth: remote ? { ...remote.status, issuer: remote.status.issuer ?? remote.issuer() } : { state: "none" },
+    // `client`: which OAuth client the proxy presents — `--client-id` (`configured`) or the file's registration (`registered`, `id` null before the first one).
+    auth: remote ? { ...remote.status, issuer: remote.status.issuer ?? remote.issuer(), client: remote.client() } : { state: "none" },
     tokenFile: remote ? remote.file : null,
     sessions: sessions.describe(),
   });

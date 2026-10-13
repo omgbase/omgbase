@@ -36,7 +36,13 @@ pnpm install                                                  # at the repositor
 pnpm --filter graph-ui dev --remote https://mcp.example.com/omg
 ```
 
-(`WEBDEVPROXY_REMOTE=<mcp-url>` is the same as `--remote`.) Open
+(`WEBDEVPROXY_REMOTE=<mcp-url>` is the same as `--remote`.) Add `--client-id
+<id>` (or `WEBDEVPROXY_CLIENT_ID=<id>`) to present one pre-registered public
+client instead of registering a new one per run — the fix for an Auth0 tenant
+whose application cap is full; the sign-in callback is then exactly
+`http://127.0.0.1:8790/callback` (`--callback-port <n>` to change it), and the
+application's settings are in the
+[webdevproxy README](../webdevproxy/README.md#a-pre-registered-client---client-id). Open
 <http://localhost:5173>; the page talks to the bridge either way and the
 *MCP settings* mode **follows the bridge**: when `GET /whoami` says `mode:
 "remote"` the header reads `via local proxy → <upstream host>` with the
@@ -266,7 +272,7 @@ see the hint and the server's error (with the `refs()` fix) in the status line.
 
 Scripts: `dev [--remote <url>]` (all of it; the proxy's flags — `--port 8787`,
 `--path /mcp`, `--idle 3600`, `--origin <o>`, `--omg <path>`, `--remote <url>`,
-`--no-browser`, `--token-file <f>`, plus this demo's `--workspace <dir>` for the
+`--client-id <id>`, `--callback-port <n>`, `--no-browser`, `--token-file <f>`, plus this demo's `--workspace <dir>` for the
 proxy's `--local` — are consumed by `scripts/dev-args.mjs`, anything else goes
 to Vite; `GRAPH_UI_*` variables from earlier runs still work as fallbacks for
 their `WEBDEVPROXY_*` names), `dev:workspace [--force]` (just the workspace),

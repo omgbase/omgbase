@@ -5,7 +5,9 @@
 //   401 + `WWW-Authenticate: Bearer resource_metadata=…`
 //     → protected-resource metadata → the issuer's metadata        (SDK `auth()`)
 //     → dynamic client registration, public client, PKCE          (SDK `auth()`)
-//       with loopback redirect URIs http://127.0.0.1:<port>/callback
+//       with loopback redirect URIs http://127.0.0.1:<port>/callback — or, with
+//       `--client-id`, no registration at all: the configured public client is
+//       presented as-is and the issuer's registration endpoint is never called
 //     → the system browser opens the authorization URL once
 //     → the loopback listener catches ?code=…&state=…
 //     → code → tokens (`auth()` again with the code), persisted to a 0600 file
@@ -29,6 +31,7 @@ import { dirname, join } from "node:path";
 import { auth, extractWWWAuthenticateParams } from "@modelcontextprotocol/sdk/client/auth.js";
 import { OAuthError } from "@modelcontextprotocol/sdk/server/auth/errors.js";
 import { callbackParams, identityFromTokens, normalizeServerUrl } from "./oauth-shared.mjs";
+import { DEFAULT_CALLBACK_PORT } from "./args.mjs";
 
 // ---- the token file -------------------------------------------------------------
 
@@ -173,6 +176,16 @@ export const SIGN_IN_CANCELLED = "SignInCancelled";
 export const STALE_DISCOVERY = "StaleDiscovery";
 /** Appended to the failure when the issuer's dynamic registration is capped (Auth0 `too_many_entities`: the tenant is full of auto-registered clients). */
 export const TOO_MANY_ENTITIES_HINT = "the issuer's application limit is full — delete stale auto-registered clients in the tenant's dashboard, then press a + Enter";
+/** `error.name` of the failure when the issuer's token endpoint rejects a `--client-id` (`invalid_client` / `unauthorized_client`): a configuration error, never recovered from by registering. */
+export const CONFIGURED_CLIENT_REJECTED = "ConfiguredClientRejected";
+/** The failure message for a configured client id the issuer does not accept. */
+export function configuredClientRejected(clientId, code = "invalid_client") {
+  return `the configured client id ${clientId} was rejected by the issuer (${code}) — check WEBDEVPROXY_CLIENT_ID / --client-id against the tenant's application`;
+}
+/** The start-up failure when a fixed callback port (`--callback-port`, or the `--client-id` default) is taken: another port would not match the application's allowed callback URL. */
+export function callbackPortInUse(port) {
+  return `callback port ${port} is in use — the sign-in redirect must be exactly http://127.0.0.1:${port}/callback (the application's allowed callback URL), so another port will not do; free the port, or pick one with --callback-port <n> / WEBDEVPROXY_CALLBACK_PORT and allow http://127.0.0.1:<n>/callback on the application`;
+}
 
 /** An Error with a `name` the callers switch on. */
 function tagged(name, message) {
@@ -275,18 +288,29 @@ export function openBrowser(url) {
  * `OAuthClientProvider` over a token file, with loopback redirect URIs. The
  * SDK's `auth()` drives it; `redirectToAuthorization` records the pending
  * round trip for `RemoteAuth` to finish and opens the browser (once).
+ *
+ * With a configured `clientId` (`--client-id`) the provider presents that
+ * public client — `{ client_id, token_endpoint_auth_method: "none" }`, no
+ * secret — whatever the file holds, so the SDK skips RFC 7591 registration and
+ * goes straight to PKCE authorization. The id is configuration, not state: it
+ * is never written to the file (`saveClientInformation` stores nothing — the
+ * SDK never calls it when `clientInformation()` answers), `invalidateCredentials`
+ * cannot drop it, and a `clientInformation` a run without the flag left in the
+ * file is neither read nor touched (it is that mode's registration).
  */
 export class FileOAuthProvider {
   /**
-   * @param {{ serverUrl: string, file: string, redirectUrls: string[], clientName?: string, log?: (m: string) => void,
+   * @param {{ serverUrl: string, file: string, redirectUrls: string[], clientId?: string | null, clientName?: string, log?: (m: string) => void,
    *   openBrowser?: (url: string) => Promise<boolean>, noBrowser?: boolean,
    *   onRedirect?: (pending: { url: string, state: string | undefined }) => void | Promise<void> }} opts
    *   `onRedirect` runs before the browser opens (RemoteAuth registers its loopback waiter there); it may throw to abort the redirect.
    */
-  constructor({ serverUrl, file, redirectUrls, clientName = "omgbase webdevproxy (local dev proxy)", log = () => {}, openBrowser: open = openBrowser, noBrowser = false, onRedirect = undefined }) {
+  constructor({ serverUrl, file, redirectUrls, clientId = null, clientName = "omgbase webdevproxy (local dev proxy)", log = () => {}, openBrowser: open = openBrowser, noBrowser = false, onRedirect = undefined }) {
     this.serverUrl = serverUrl;
     this.file = file;
     this.redirectUrls = redirectUrls;
+    /** @type {string | null} the pre-registered public client to present instead of registering one */
+    this.clientId = clientId || null;
     this.clientName = clientName;
     this.log = log;
     this.open = open;
@@ -329,11 +353,15 @@ export class FileOAuthProvider {
     return state;
   }
 
+  /** The configured public client when there is one (no secret → the SDK authenticates with `client_id` alone), else the file's registration. */
   clientInformation() {
+    if (this.clientId) return { client_id: this.clientId, token_endpoint_auth_method: "none" };
     return this.read().clientInformation;
   }
 
+  /** The registration the SDK just made. Unreachable with a configured client (the SDK registers only when `clientInformation()` is empty); stores nothing then, so the file never claims a registration that is not in use. */
   saveClientInformation(clientInformation) {
+    if (this.clientId) return;
     this.patch({ clientInformation });
   }
 
@@ -369,12 +397,15 @@ export class FileOAuthProvider {
    * calls it for the rejections the SDK does not recover from. Dropping tokens drops the
    * cached discovery too: an issuer that refuses what we stored may well have moved
    * (the gateway upgraded), and the next `auth()` rediscovers from the 401's
-   * `WWW-Authenticate` at the cost of two GETs.
+   * `WWW-Authenticate` at the cost of two GETs. With a configured client id,
+   * `"all"` drops the tokens and the discovery and `"client"` nothing: the id
+   * is configuration (and a registration left in the file by a run without the
+   * flag is not ours to drop).
    */
   invalidateCredentials(scope) {
     switch (scope) {
-      case "all": this.patch({ clientInformation: undefined, tokens: undefined, tokensSavedAt: undefined, codeVerifier: undefined, state: undefined, discovery: undefined }); return;
-      case "client": this.patch({ clientInformation: undefined }); return;
+      case "all": this.patch({ ...(this.clientId ? {} : { clientInformation: undefined }), tokens: undefined, tokensSavedAt: undefined, codeVerifier: undefined, state: undefined, discovery: undefined }); return;
+      case "client": if (!this.clientId) this.patch({ clientInformation: undefined }); return;
       case "tokens": this.patch({ tokens: undefined, tokensSavedAt: undefined, discovery: undefined }); return;
       case "verifier": this.patch({ codeVerifier: undefined }); return;
       case "discovery": this.patch({ discovery: undefined }); return;
@@ -430,12 +461,19 @@ export class FileOAuthProvider {
  */
 export class RemoteAuth {
   /**
-   * @param {{ serverUrl: string, file?: string, legacyFile?: string | null, log?: (m: string) => void, fetch?: typeof globalThis.fetch,
-   *   openBrowser?: (url: string) => Promise<boolean>, noBrowser?: boolean, env?: Record<string, string | undefined> }} opts
+   * @param {{ serverUrl: string, file?: string, legacyFile?: string | null, clientId?: string | null, callbackPort?: number | null, log?: (m: string) => void,
+   *   fetch?: typeof globalThis.fetch, openBrowser?: (url: string) => Promise<boolean>, noBrowser?: boolean, env?: Record<string, string | undefined> }} opts
+   *   `clientId` (`--client-id` / `WEBDEVPROXY_CLIENT_ID`): present this pre-registered public client; never register one.
+   *   `callbackPort` (`--callback-port` / `WEBDEVPROXY_CALLBACK_PORT`): bind the loopback listener there; null = ephemeral,
+   *   or `DEFAULT_CALLBACK_PORT` with a client id (the application's allowed callback URL names an exact port).
    */
-  constructor({ serverUrl, file, legacyFile, log = () => {}, fetch: fetchFn = globalThis.fetch, openBrowser: open = openBrowser, noBrowser = false, env = process.env }) {
+  constructor({ serverUrl, file, legacyFile, clientId = null, callbackPort = null, log = () => {}, fetch: fetchFn = globalThis.fetch, openBrowser: open = openBrowser, noBrowser = false, env = process.env }) {
     this.serverUrl = normalizeServerUrl(serverUrl);
     this.file = file ?? tokenFilePath(serverUrl, { env });
+    /** @type {string | null} the configured public client, else null (dynamic registration) */
+    this.clientId = clientId || null;
+    /** @type {number | null} the fixed loopback port, else null (ephemeral) */
+    this.callbackPort = callbackPort ?? (this.clientId ? DEFAULT_CALLBACK_PORT : null);
     // The graph-ui bridge's file for the same server, unless the caller named a file of its own.
     this.legacyFile = legacyFile === undefined ? (file ? null : legacyTokenFilePath(serverUrl, { env })) : legacyFile;
     this.log = log;
@@ -470,16 +508,25 @@ export class RemoteAuth {
       this.log(`copied the graph-ui bridge's tokens from ${this.legacyFile} to ${this.file}`);
     }
     const stored = readTokenFile(this.file);
-    const wantPort = stored?.clientInformation && stored.redirectPort ? stored.redirectPort : 0;
+    // A fixed callback port (`--callback-port`, or the `--client-id` default) is the application's allowed
+    // callback URL: taken means an error, never another port. Otherwise a registered client's port is
+    // reused when free (its redirect URIs name it), else any ephemeral port.
+    const fixed = this.callbackPort;
+    const wantPort = fixed ?? (stored?.clientInformation && stored.redirectPort ? stored.redirectPort : 0);
     this.loopback = await startLoopback({ port: wantPort }).catch((e) => {
-      if (wantPort && e?.code === "EADDRINUSE") return startLoopback({ port: 0 });
+      if (e?.code === "EADDRINUSE") {
+        if (fixed) throw new Error(callbackPortInUse(fixed));
+        if (wantPort) return startLoopback({ port: 0 });
+      }
       throw e;
     });
     this.provider = new FileOAuthProvider({
-      serverUrl: this.serverUrl, file: this.file, redirectUrls: this.loopback.redirectUrls,
+      serverUrl: this.serverUrl, file: this.file, redirectUrls: this.loopback.redirectUrls, clientId: this.clientId,
       log: this.log, openBrowser: this.open, noBrowser: this.noBrowser,
       onRedirect: (pending) => this.onRedirect(pending),
     });
+    if (this.clientId) this.log(`using the configured client id ${this.clientId} (no dynamic registration)`);
+    if (fixed) this.log(`sign-in callback fixed at ${this.loopback.redirectUrl} — the application's allowed callback URL`);
     if (wantPort && this.loopback.port !== wantPort) {
       // The registered redirect URIs name the old port; register afresh.
       this.log(`loopback port ${wantPort} is busy — using ${this.loopback.port} and re-registering the client`);
@@ -503,6 +550,17 @@ export class RemoteAuth {
 
   issuer() {
     return this.provider?.discoveryState()?.authorizationServerUrl;
+  }
+
+  /**
+   * Which OAuth client the proxy presents (for `/whoami`): the configured one, or the
+   * registration in the file (`id: null` before the first registration). Ids are public.
+   * @returns {{ source: "configured" | "registered", id: string | null }}
+   */
+  client() {
+    if (this.clientId) return { source: "configured", id: this.clientId };
+    const id = this.provider?.read().clientInformation?.client_id;
+    return { source: "registered", id: typeof id === "string" ? id : null };
   }
 
   /** Set the status and tell the listeners (the terminal prompt prints its hint on `waiting` / `error`). */
@@ -601,11 +659,19 @@ export class RemoteAuth {
    * OAuth error nor a 400/401 (a 404 after the issuer moved, say): the SDK would
    * carry on to a stale authorization endpoint; abort before the browser opens
    * and rediscover. A bare 400/401 is the token being refused, not the issuer moving.
+   *
+   * Nor when the token endpoint just rejected the configured client id itself
+   * (`invalid_client` / `unauthorized_client`): the SDK's answer to that is
+   * "drop everything, register anew" — which, with the id configured, is the same
+   * id again in a browser tab. The id is wrong or deleted on the tenant; say so.
    */
   onRedirect(pending) {
     const r = this.observed.rejection;
     if (r && r.endpoint === "token" && r.grant === "refresh_token" && !r.code && r.status !== 400 && r.status !== 401 && !this.observed.discovered) {
       throw tagged(STALE_DISCOVERY, `the stored token endpoint answered HTTP ${r.status} to the refresh`);
+    }
+    if (this.clientId && r && r.endpoint === "token" && (r.code === "invalid_client" || r.code === "unauthorized_client")) {
+      throw tagged(CONFIGURED_CLIENT_REJECTED, configuredClientRejected(this.clientId, r.code));
     }
     const waiter = this.loopback.waitForCallback(pending.state);
     waiter.catch(() => undefined); // handled where it is awaited
@@ -623,9 +689,10 @@ export class RemoteAuth {
     let hadTokens = Boolean(stored.tokens);
     const hadCredential = hadTokens || Boolean(stored.clientInformation);
     // Half-states the SDK would stumble on: say so, drop the tokens up front and go straight to the browser.
-    // (A registration without tokens is the normal state after the first registration — nothing to do.)
+    // (A registration without tokens is the normal state after the first registration — nothing to do;
+    // with a configured client id, no registration is ever needed, so tokens alone are whole.)
     const unusable = !stored.tokens ? null
-      : !stored.clientInformation ? "has no client registration; registering and signing in again"
+      : !stored.clientInformation && !this.clientId ? "has no client registration; registering and signing in again"
       : !stored.tokens.refresh_token ? "has no refresh token; signing in again"
       : null;
     if (unusable) {
@@ -701,6 +768,12 @@ export class RemoteAuth {
   failureMessage(e) {
     const raw = (e instanceof Error ? e.message : e === undefined || e === null ? "" : String(e)).trim();
     const r = this.observed.rejection;
+    if (this.clientId) {
+      // The token endpoint (refresh or code exchange) does not know the configured client: a configuration error, named as such.
+      if (e instanceof Error && e.name === CONFIGURED_CLIENT_REJECTED) return e.message;
+      const code = e instanceof OAuthError ? e.errorCode : r?.endpoint === "token" ? r.code : undefined;
+      if (code === "invalid_client" || code === "unauthorized_client") return configuredClientRejected(this.clientId, code);
+    }
     if (r?.endpoint === "registration") {
       // The SDK's ServerError drops the issuer's body; say what it said, and what to do about a full tenant.
       const said = this.describeRejection();
@@ -728,14 +801,17 @@ export class RemoteAuth {
    *   a token endpoint that no longer answers like one, or a registration endpoint refusing
    *     with any other status, on cached metadata                                       → "discovery"
    * Anything else (the issuer unreachable or 5xx, a malformed metadata document) is not.
+   * With a configured client id, `invalid_client` / `unauthorized_client` is not a dead
+   * credential either but a wrong configuration: there is no registration to redo.
    * @returns {{ scope: "all" | "tokens" | "discovery", reason: string } | null}
    */
   deadCredential(e) {
     if (e instanceof Error && e.name === STALE_DISCOVERY) return { scope: "discovery", reason: e.message };
+    if (e instanceof Error && e.name === CONFIGURED_CLIENT_REJECTED) return null;
     const r = this.observed.rejection;
     const code = e instanceof OAuthError ? e.errorCode : r?.code;
     const reason = this.describeRejection() ?? (e instanceof Error ? e.message : String(e));
-    if (code === "invalid_client" || code === "unauthorized_client") return { scope: "all", reason };
+    if (code === "invalid_client" || code === "unauthorized_client") return this.clientId ? null : { scope: "all", reason };
     if (code === "invalid_grant") return { scope: "tokens", reason };
     if (r && (r.status === 400 || r.status === 401)) return { scope: r.endpoint === "registration" ? "all" : "tokens", reason };
     // A registration the issuer refuses otherwise (403, 404, …) while we worked from cached metadata: the endpoint may have moved.
@@ -778,7 +854,8 @@ export class RemoteAuth {
    * launched again — and nothing else changes; otherwise the tokens are dropped
    * (the client registration kept) and a fresh authorization starts. With
    * `forget` (`l`): the token file is deleted first — `--logout` without a
-   * restart — so the client is registered anew. A sign-in still pending is
+   * restart — so the client is registered anew (a configured client id is not
+   * in the file: it is kept and presented again). A sign-in still pending is
    * superseded, not failed.
    */
   async reauthorize({ forget = false } = {}) {

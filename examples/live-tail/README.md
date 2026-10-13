@@ -53,9 +53,15 @@ The proxy (the [`webdevproxy`](../webdevproxy/README.md) workspace package)
 signs in for you — the page says *waiting for sign-in in your browser* while
 it polls `GET /whoami` — and the header reads `via local proxy → <host> ·
 <identity>`. `WEBDEVPROXY_REMOTE=<url>` is the same as `--remote`;
-`--no-browser`, `--token-file`, `--port` (default 8788, one above graph-ui's so
-both demos can run), `--path`, `--idle` and `--origin` are the proxy's flags
-(consumed by `scripts/dev-args.mjs`; anything else goes to Vite);
+`--no-browser`, `--token-file`, `--client-id <id>` (one pre-registered public
+client instead of a dynamic registration per run — for an Auth0 tenant whose
+application cap is full; `WEBDEVPROXY_CLIENT_ID` too; the sign-in callback is
+then exactly `http://127.0.0.1:8790/callback`, `--callback-port <n>` to change
+it; settings in the
+[webdevproxy README](../webdevproxy/README.md#a-pre-registered-client---client-id)),
+`--port` (default 8788, one above graph-ui's so both demos can run), `--path`,
+`--idle` and `--origin` are the proxy's flags (consumed by
+`scripts/dev-args.mjs`; anything else goes to Vite);
 `pnpm --filter live-tail logout` forgets the tokens.
 
 Scripts: `dev [--remote <url>]`, `dev:workspace [--force]` (just the
