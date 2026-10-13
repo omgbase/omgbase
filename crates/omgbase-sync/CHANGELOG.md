@@ -4,6 +4,11 @@ All notable changes to `omgbase-sync` are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [Semantic Versioning](https://semver.org/) (pre-1.0: a minor bump may break).
 
+## [2.2.7] - 2026-10-13
+
+### Patch
+- Dependency pins moved: omgbase-store 14.0.6 → 14.1.0.
+
 ## [2.2.6] - 2026-10-13
 
 ### Patch
