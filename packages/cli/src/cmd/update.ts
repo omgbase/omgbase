@@ -5,7 +5,7 @@ import type { Command } from "../commands.js";
 import { CliUsageError, EXIT_OK, renderHelp } from "../output.js";
 import { readContent, extractContentOpts, receiptIds, defaultActor } from "./_mutate.js";
 import { cmdUpdate as cmdUpdateBlock } from "./mutate.js";
-import { remoteCall, docLocator, requireDoc } from "./_remote.js";
+import { remoteCall, remoteSugar, docLocator, requireDoc } from "./_remote.js";
 
 // `omg update <target> (-f file | -)`: a polymorphic-target command (the omgbase
 // north-star — every command accepts any entity ref). A block id (b_…) replaces
@@ -63,8 +63,10 @@ async function runDocUpdate(cli: Cli, args: string[]): Promise<number> {
     // Remote: the `docs_update` tool commits the `set content` server-side and
     // returns the Receipt (the confirmation then lists the ids it minted, as a
     // remote `apply` does); the dry run is the `plan` tool over the same effect.
-    if (dryRun) plan = await remoteCall<Plan>(cli, "plan", { effects: [{ op: "set", target: { kind: "document", ...docLocator(doc) }, field: "content", value: bytes }] });
-    else receipt = await remoteCall<Receipt>(cli, "docs_update", { ...docLocator(doc), content: bytes, ...(values.reason ? { reason: values.reason } : {}) });
+    // A server without `docs_update` (a minimal profile) gets `apply` over the same effect (spec/cli §2.3, 4.2).
+    const setContent = { op: "set", target: { kind: "document", ...docLocator(doc) }, field: "content", value: bytes };
+    if (dryRun) plan = await remoteCall<Plan>(cli, "plan", { effects: [setContent] });
+    else receipt = await remoteSugar<Receipt>(cli, "docs_update", { ...docLocator(doc), content: bytes, ...(values.reason ? { reason: values.reason } : {}) }, () => [setContent]);
   } else {
     const ws = cli.workspace();
     const repo = cli.repo(ws);

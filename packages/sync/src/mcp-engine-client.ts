@@ -22,7 +22,29 @@ interface ToolResult {
 
 /** Wraps a connected MCP SDK Client, calling the engine's sync tools. */
 export class McpEngineClient implements EngineClient {
+  private tools: Set<string> | null = null;
+
   constructor(private readonly client: Client) {}
+
+  /**
+   * The tool names the server lists (`tools/list`), fetched once per
+   * connection — `connectEngine` does it on connect, so a caller may ask
+   * `hasTool` synchronously afterwards. A server may serve a catalog PROFILE
+   * (spec/surface §4 "Profiles", 4.3: `omg mcp --tools minimal` lists ten
+   * tools); the CLI's `--server` verbs ask before calling a sugar tool and fall
+   * back to `apply { effects }` when it is not listed (spec/cli §2.3, 4.2).
+   */
+  async listTools(): Promise<ReadonlySet<string>> {
+    if (this.tools) return this.tools;
+    const res = await this.client.listTools();
+    this.tools = new Set(res.tools.map((t) => t.name));
+    return this.tools;
+  }
+
+  /** Whether the server lists `name` — after `listTools()` ran (it has, for a client `connectEngine` returned); `true` while unknown, so a never-listed client behaves as before. */
+  hasTool(name: string): boolean {
+    return this.tools === null ? true : this.tools.has(name);
+  }
 
   /** Call any MCP tool and return its parsed JSON result. Throws on a tool
    *  error (the message carries the engine error code) or non-JSON output. The
@@ -94,7 +116,13 @@ export async function connectStdioEngine(spec: { command: string; args?: string[
     ...(spec.env ? { env: spec.env } : {}),
   });
   await client.connect(transport);
-  return new McpEngineClient(client);
+  return listed(new McpEngineClient(client));
+}
+
+/** The one `tools/list` of a connection (see `McpEngineClient.listTools`), so `hasTool` answers synchronously. */
+async function listed(engine: McpEngineClient): Promise<McpEngineClient> {
+  await engine.listTools();
+  return engine;
 }
 
 /** Connect to an omgbase MCP server over Streamable HTTP at `url`. The full URL
@@ -111,7 +139,7 @@ export async function connectHttpEngine(spec: { url: string; headers?: Record<st
     ...(spec.headers && Object.keys(spec.headers).length > 0 ? { requestInit: { headers: spec.headers } } : {}),
   }) as Transport;
   await client.connect(transport);
-  return new McpEngineClient(client);
+  return listed(new McpEngineClient(client));
 }
 
 /** Where a `--server` value points: an http(s) endpoint (Streamable HTTP, with

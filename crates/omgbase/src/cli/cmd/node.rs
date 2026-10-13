@@ -48,7 +48,8 @@ fn set(cli: &mut Cli, rest: &[String]) -> Result<i32> {
     m.insert("prop".to_owned(), json!(prop));
     m.insert("value".to_owned(), json!(value));
     let (node_id, prop) = (node_id.to_owned(), prop.to_owned());
-    run_tool(cli, "nodes_set", m, a.value("actor"), move |_| {
+    let refs = vec![node_id.clone()];
+    run_tool(cli, "nodes_set", m, a.value("actor"), refs, move |_| {
         Ok(sugar::set_node(&node_id, &prop, &value))
     })
 }

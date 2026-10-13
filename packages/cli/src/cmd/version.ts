@@ -44,7 +44,7 @@ async function runVersion(cli: Cli, args: string[]): Promise<number> {
 
   const { io, style } = cli;
   const dash = "—";
-  const keys = ["engine", "version", "specs", "schema", "mcp", "runtime", "commit", "built"];
+  const keys = ["engine", "version", "specs", "schema", "mcp", "runtime", "commit", "built", "profile"];
   const width = Math.max(...keys.map((k) => k.length));
   const line = (key: string, value: string | number | null): void => {
     io.out(`${style.dim(key.padEnd(width))}  ${value === null ? style.dim(dash) : String(value)}`);
@@ -60,6 +60,9 @@ async function runVersion(cli: Cli, args: string[]): Promise<number> {
   line("runtime", info.runtime);
   line("commit", info.commit);
   line("built", info.built);
+  // The catalog profile served (spec/surface §4 "Profiles", 4.3): `full` for
+  // the library itself; over --server, whatever the remote serves.
+  line("profile", info.profile);
   return EXIT_OK;
 }
 

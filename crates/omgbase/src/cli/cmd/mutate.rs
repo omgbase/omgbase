@@ -211,6 +211,20 @@ pub fn at_of(at: &Json) -> At {
     }
 }
 
+/// The block ref an `at` anchor names (none for start/end) — a ref the
+/// remote fallback must be able to send as an id.
+pub fn anchor_of(at: &Json) -> Vec<String> {
+    match at {
+        Json::Object(o) => o
+            .get("before")
+            .or_else(|| o.get("after"))
+            .and_then(Json::as_str)
+            .map(|s| vec![s.to_owned()])
+            .unwrap_or_default(),
+        _ => Vec::new(),
+    }
+}
+
 /// A ref as an effect target for a remote `plan` (§3.6): a `b_` id is the
 /// block, a `d_` id the document, anything else a document path — the engine
 /// resolves (the reference's `targetOf`).
@@ -288,7 +302,9 @@ pub fn render_diffs(cli: &Cli, diffs: Option<&Json>) {
 
 /// Run one sugar tool with the actor and render the outcome (§4): the
 /// Receipt confirmation with the ids the plan's preview names, or the
-/// `--json` document as the tool returned it. With the global `--dry-run`
+/// `--json` document as the tool returned it. `refs` are the block refs the
+/// verb received (a parent, an anchor, the blocks), for the remote fallback's
+/// locator check. With the global `--dry-run`
 /// the verb's preview is a plan (§3.6): locally the tool's own
 /// ([`Cli::preview`]), remotely the `plan` tool over `effects` — the effects
 /// the verb builds from its refs as given, computed only then. A sourceless
@@ -299,6 +315,7 @@ pub fn run_tool(
     tool: &str,
     args: Map<String, Json>,
     actor: Option<&str>,
+    refs: Vec<String>,
     effects: impl FnOnce(&mut Cli) -> Result<Vec<PublicEffect>>,
 ) -> Result<i32> {
     set_actor(cli, actor)?;
@@ -310,6 +327,15 @@ pub fn run_tool(
         };
         let plan = cli.preview(tool, Json::Object(args), effects)?;
         return render_plan(cli, plan);
+    }
+    if cli.remote_mode() {
+        // §2.3 (cli 4.2): the tool when the engine lists it, else `apply`
+        // over the same effects (`refs` are the verb's refs as given, refused
+        // there when one is a locator) — the engine keeps its plan either way.
+        let result = cli.remote_sugar(tool, Json::Object(args), &refs, |cli| {
+            Ok(effects_json(&effects(cli)?))
+        })?;
+        return render_receipt(cli, result, None);
     }
     let (result, plan) = cli.call_with_plan(tool, Json::Object(args))?;
     render_receipt(cli, result, plan.as_ref())
@@ -516,7 +542,9 @@ pub fn insert(cli: &mut Cli, args: &[String]) -> Result<i32> {
         m.insert("expect".to_owned(), json!({ "parent_children_hash": e }));
     }
     let expect = parent_guard(a.value("expect"));
-    run_tool(cli, "blocks_insert", m, a.value("actor"), move |_| {
+    let mut refs = vec![to];
+    refs.extend(anchor_of(&at));
+    run_tool(cli, "blocks_insert", m, a.value("actor"), refs, move |_| {
         Ok(sugar::insert(
             target_of(&parent),
             at_of(&at),
@@ -571,9 +599,14 @@ fn update_block(cli: &mut Cli, args: &[String]) -> Result<i32> {
         }
     }
     let expect = content_guard(a.value("expect"));
-    run_tool(cli, "blocks_update", m, a.value("actor"), move |_| {
-        Ok(sugar::update_block(&block, Some(&markdown), None, expect))
-    })
+    run_tool(
+        cli,
+        "blocks_update",
+        m,
+        a.value("actor"),
+        vec![r],
+        move |_| Ok(sugar::update_block(&block, Some(&markdown), None, expect)),
+    )
 }
 
 fn update_doc(cli: &mut Cli, args: &[String]) -> Result<i32> {
@@ -618,11 +651,22 @@ fn update_doc(cli: &mut Cli, args: &[String]) -> Result<i32> {
             let plan = cli.call("plan", json!({ "effects": [effect] }))?;
             return render_update_plan(cli, plan);
         }
-        m.insert("content".to_owned(), json!(bytes));
+        let mut target = m.clone();
+        target.insert("kind".to_owned(), json!("document"));
+        m.insert("content".to_owned(), json!(bytes.clone()));
         if let Some(r) = a.value("reason") {
             m.insert("reason".to_owned(), json!(r));
         }
-        let receipt = cli.call("docs_update", Json::Object(m))?;
+        // The `docs_update` tool when the engine lists it, else `apply` over
+        // the one `set content` effect (§2.3, cli 4.2).
+        let receipt = cli.remote_sugar("docs_update", Json::Object(m), &[], |_| {
+            Ok(json!([{
+                "op": "set",
+                "target": Json::Object(target),
+                "field": "content",
+                "value": bytes,
+            }]))
+        })?;
         return render_update_receipt(cli, receipt, None);
     }
     // Locally the document is resolved first (the reference's `requireDoc`:
@@ -895,9 +939,14 @@ pub fn edit(cli: &mut Cli, args: &[String]) -> Result<i32> {
         m.insert("expect".to_owned(), json!({ "content_hash": h }));
     }
     let expect = content_guard(pre_hash.as_deref());
-    run_tool(cli, "blocks_update", m, a.value("actor"), move |_| {
-        Ok(sugar::update_block(&block, Some(&after), None, expect))
-    })
+    run_tool(
+        cli,
+        "blocks_update",
+        m,
+        a.value("actor"),
+        vec![r],
+        move |_| Ok(sugar::update_block(&block, Some(&after), None, expect)),
+    )
 }
 
 // ---- move -----------------------------------------------------------------------------
@@ -936,14 +985,24 @@ pub fn r#move(cli: &mut Cli, args: &[String]) -> Result<i32> {
         m.insert("expect".to_owned(), json!({ "parent_children_hash": e }));
     }
     let expect = parent_guard(a.value("expect"));
-    run_tool(cli, "blocks_move", m, a.value("actor"), move |_| {
-        Ok(sugar::move_blocks(
-            blocks,
-            target_of(&parent),
-            at_of(&at),
-            expect,
-        ))
-    })
+    let mut all_refs = refs;
+    all_refs.push(to);
+    all_refs.extend(anchor_of(&at));
+    run_tool(
+        cli,
+        "blocks_move",
+        m,
+        a.value("actor"),
+        all_refs,
+        move |_| {
+            Ok(sugar::move_blocks(
+                blocks,
+                target_of(&parent),
+                at_of(&at),
+                expect,
+            ))
+        },
+    )
 }
 
 /// Every ref as the tool's `blocks[]` argument (see [`block_arg`]).
@@ -970,7 +1029,7 @@ pub fn rm(cli: &mut Cli, args: &[String]) -> Result<i32> {
     let blocks = resolve_blocks(cli, &refs)?;
     let mut m = Map::new();
     m.insert("blocks".to_owned(), json!(blocks));
-    run_tool(cli, "blocks_remove", m, a.value("actor"), move |_| {
+    run_tool(cli, "blocks_remove", m, a.value("actor"), refs, move |_| {
         Ok(sugar::remove_blocks(blocks))
     })
 }
@@ -1010,7 +1069,7 @@ pub fn done(cli: &mut Cli, args: &[String]) -> Result<i32> {
     if !checked {
         m.insert("checked".to_owned(), json!(false));
     }
-    run_tool(cli, "blocks_check", m, a.value("actor"), move |_| {
+    run_tool(cli, "blocks_check", m, a.value("actor"), refs, move |_| {
         Ok(sugar::check_blocks(&blocks, checked))
     })
 }
@@ -1061,20 +1120,39 @@ pub fn append(cli: &mut Cli, args: &[String]) -> Result<i32> {
     let mut m = Map::new();
     m.insert("id".to_owned(), json!(block));
     m.insert("text".to_owned(), json!(markdown));
-    // A remote dry run reads the kind first: a heading → its section, else
-    // the block as a container.
-    run_tool(cli, "blocks_append", m, a.value("actor"), move |cli| {
-        let read = cli.call(
-            "blocks_read",
-            json!({ "id": block, "resolution": "skeleton" }),
-        )?;
-        let into = if str_of(&read, "type") == "heading" {
-            EffectTarget::Section { heading_id: block }
-        } else {
-            EffectTarget::Block { id: block }
-        };
-        Ok(sugar::insert(into, At::End, &markdown, None))
-    })
+    // A remote dry run (or a remote engine without the sugar tool) reads
+    // the kind first: a heading → its section, else the block as a
+    // container — through `blocks_read` when the engine lists it, else a
+    // `query` over `blocks` (the minimal profile).
+    run_tool(
+        cli,
+        "blocks_append",
+        m,
+        a.value("actor"),
+        vec![target],
+        move |cli| {
+            let kind = if cli.remote_mode() && !cli.remote_has_tool("blocks_read")? {
+                let q = format!(
+                    "select t: type from blocks where id == {}",
+                    Json::String(block.clone())
+                );
+                let res = cli.call("query", json!({ "query": q }))?;
+                str_of(&res["hits"][0], "t")
+            } else {
+                let read = cli.call(
+                    "blocks_read",
+                    json!({ "id": block, "resolution": "skeleton" }),
+                )?;
+                str_of(&read, "type")
+            };
+            let into = if kind == "heading" {
+                EffectTarget::Section { heading_id: block }
+            } else {
+                EffectTarget::Block { id: block }
+            };
+            Ok(sugar::insert(into, At::End, &markdown, None))
+        },
+    )
 }
 
 // ---- split / merge --------------------------------------------------------------------
@@ -1105,15 +1183,22 @@ pub fn split(cli: &mut Cli, args: &[String]) -> Result<i32> {
     let mut m = Map::new();
     m.insert("id".to_owned(), json!(block));
     m.insert("at".to_owned(), json!(offsets));
-    run_tool(cli, "blocks_split", m, a.value("actor"), move |_| {
-        Ok(sugar::split_block(
-            &block,
-            offsets
-                .iter()
-                .map(|n| usize::try_from(*n).unwrap_or(usize::MAX))
-                .collect(),
-        ))
-    })
+    run_tool(
+        cli,
+        "blocks_split",
+        m,
+        a.value("actor"),
+        vec![r],
+        move |_| {
+            Ok(sugar::split_block(
+                &block,
+                offsets
+                    .iter()
+                    .map(|n| usize::try_from(*n).unwrap_or(usize::MAX))
+                    .collect(),
+            ))
+        },
+    )
 }
 
 pub fn merge(cli: &mut Cli, args: &[String]) -> Result<i32> {
@@ -1132,7 +1217,7 @@ pub fn merge(cli: &mut Cli, args: &[String]) -> Result<i32> {
         m.insert("separator".to_owned(), json!(sep));
     }
     let sep = a.value("sep").map(str::to_owned);
-    run_tool(cli, "blocks_merge", m, a.value("actor"), move |_| {
+    run_tool(cli, "blocks_merge", m, a.value("actor"), refs, move |_| {
         Ok(sugar::merge_blocks(blocks, sep.as_deref()))
     })
 }

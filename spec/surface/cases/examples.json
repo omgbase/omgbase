@@ -1,0 +1,1981 @@
+{
+  "suite": "examples",
+  "corpus": {
+    "index.md": "---\ntype: hub\nlayer: canon\ntitle: Alchemy\ntags: [alchemy, index]\nverified: true\n---\n\n# Alchemy\n\nThe art of transformation — part proto-chemistry, part philosophy, part\ncontemplative practice. This repository collects notes on its substances,\nprocesses, practitioners, and primary texts.\n\n## The tria prima\n\nParacelsus reduced the material world to three principles:\n\n- [[mercury]] — the volatile spirit\n- [[sulphur]] — the combustible soul\n- [[salt]] — the fixed body\n\n## Substances\n\n- [prima materia](/substances/prima-materia.md) — the undifferentiated first matter\n- [the philosophers' stone](/substances/philosophers-stone.md) — the goal of the Great Work\n\n## Processes\n\nThe [magnum opus](/processes/magnum-opus.md) organizes the operations into\nstages. Individual operations are documented separately:\n\n- [calcination](/processes/calcination.md)\n- [dissolution](/processes/dissolution.md)\n- [coagulation](/processes/coagulation.md)\n\n## Practitioners\n\n| Practitioner | Tradition | Approximate era |\n|---|---|---|\n| [Maria Prophetissa](/practitioners/maria-prophetissa.md) | Alexandrian | 3rd century |\n| [Jabir ibn Hayyan](/practitioners/jabir-ibn-hayyan.md) | Islamic | 8th century |\n| [Paracelsus](/practitioners/paracelsus.md) | Western | 16th century |\n| [Isaac Newton](/practitioners/newton.md) | Western | 17th century |\n\n## Texts\n\n- [The Emerald Tablet](/texts/emerald-tablet.md)\n- [Mutus Liber](/texts/mutus-liber.md)\n\n## Laboratory\n\nWorking notes live under `lab/`.\n",
+    "lab/2026-01-notes.md": "---\ntype: lab-note\nlayer: working\ntags: [lab, calcination]\nverified: true\nmonth: 1\nsubject: calcination\nwindow: 2026-01-01..2026-01-31\n---\n\n# Laboratory notes — January\n\nBench work on [calcination](/processes/calcination.md), chasing the weight gain.\n\noperator:: bb\nbalance:: analytical\n\n## Setup\n\nLead sheet cut into 2 g pieces, crucible pre-fired to constant weight, muffle at\n600 °C. Weighings after cooling in a desiccator.\n\n```text\ntare crucible → weigh Pb → 600C 2h → cool in desiccator → reweigh\n```\n\n## Results\n\n| Run | Pb in (g) | Calx out (g) | Change |\n|---|---|---|---|\n| 1 | 2.001 | 2.140 | +0.139 |\n| 2 | 2.004 | 2.147 | +0.143 |\n| 3 | 1.998 | 2.138 | +0.140 |\n\nConsistent gain of about 7% by mass. The colour went yellow then, on longer\nheating, red — massicot to minium, as expected.\n\nThe gain is real and reproducible on a bench with 1830s-grade equipment. Anyone\ndoing this carefully before Lavoisier had the fact in hand; what was missing was\na framework that could accept it.\n\n## Side work\n\nBurned a batch of wormwood to ash and leached it while the muffle was up to\ntemperature: 40 g dried herb gave 1.1 g of crude salt after a single\nrecrystallization. That is the [[salt]] of the tria prima, obtained in an\nafternoon, and it is easy to see why the operation carried evidential weight.\n\nSulphide colours are next — sulphur over the same metals, recording colour\nagainst stoichiometry.\n\n## Safety\n\nMercury work deferred — see [[mercury]] for the toxicity notes. Not handling it\nwithout a fume hood.\n\n## Tasks\n\n- [x] Pre-fire crucibles to constant weight\n- [x] Three replicate runs on lead\n- [x] Record the colour sequence\n- [x] Extract the salt of wormwood and weigh the yield\n- [ ] Repeat the series with copper\n- [ ] Plot mass gain against heating time\n- [ ] Tabulate the metal sulphides by colour\n",
+    "lab/2026-02-notes.md": "---\ntype: lab-note\nlayer: working\ntags: [lab, coagulation]\nverified: true\nmonth: 2\nsubject: coagulation\nwindow: 2026-02-01..2026-02-28\n---\n\n# Laboratory notes — February\n\nRecrystallization series on alum, testing the \"purity gain per cycle\" claim from\n[coagulation](/processes/coagulation.md).\n\noperator:: bb\nbalance:: analytical\n\n## Method\n\nSaturate at 80 °C, filter hot through a warmed funnel, cool undisturbed to room\ntemperature overnight, harvest, then re-saturate the mother liquor.\n\n```text\nsaturate 80C → hot filter → cool overnight → harvest → repeat on liquor\n```\n\n## Results\n\n| Cycle | Crop (g) | Notes |\n|---|---|---|\n| 1 | 14.2 | large clean octahedra |\n| 2 | 5.8 | slightly smaller, still clear |\n| 3 | 1.9 | small, some inclusions |\n| 4 | 0.4 | poor, cloudy |\n\nYield falls off fast. Crystal quality is best in cycle 1 and degrades as\nimpurities concentrate in the liquor — the opposite of the alchemical expectation\nthat repeated cycling *improves* the product indefinitely.\n\nThe refinement is real but bounded, and it plateaus by cycle 3. That is exactly\nthe asymptote the tradition mistook for a trajectory.\n\n## Conclusion\n\n`solve et coagula` purifies. It does not transform. The claim in\n[the philosophers' stone](/substances/philosophers-stone.md) does not follow from\nthis bench behaviour, and would not have followed for anyone who weighed the\ncrops.\n\n## Tasks\n\n- [x] Four recrystallization cycles with weights\n- [x] Note crystal quality per cycle\n- [ ] Assay cycle 1 and cycle 4 crops for iron\n- [ ] Write the plateau result up for the coagulation note\n",
+    "practitioners/jabir-ibn-hayyan.md": "---\ntype: practitioner\nlayer: canon\ntradition: islamic\nera: 800\ntags: [practitioner, theory, method]\nverified: true\n---\n\n# Jabir ibn Hayyan\n\n8th–9th century, the towering figure of the Islamic alchemical tradition, and the\nsource — through the Latin *Geber* — of most of what medieval Europe knew.\n\nknown_for:: mercury-sulphur theory\ncentury:: 8\n\n## The mercury–sulphur theory\n\nEvery metal is a compound of [[mercury]] and [[sulphur]]; the proportion and the\npurity of the mixture determine which metal you have. Gold is the balanced,\nperfectly mixed case.\n\nThe consequence is the whole transmutation programme: if lead and gold differ\nonly in proportion, changing lead into gold requires no new substance, just\nrebalancing. This is a *coherent* research question given the premises, and it\nkept competent people busy for eight centuries.\n\n## Method\n\nMore important than the theory is the insistence on procedure. The Jabirian\ncorpus specifies quantities, apparatus, and sequence, and expects the reader to\nreproduce the result. It describes the preparation of what became the mineral\nacids — see [dissolution](/processes/dissolution.md) — and classifies substances\nby observable behaviour rather than by symbol.\n\nThat is recognisably experimental practice, several centuries before the\nvocabulary existed for it.\n\n## The corpus problem\n\nThousands of works bear the name; they cannot all be one author. The consensus is\na school writing under an authoritative name over generations. Attribution\nquestions remain open.\n\n- [ ] Separate the Jabirian corpus into strata by vocabulary\n",
+    "practitioners/maria-prophetissa.md": "---\ntype: practitioner\nlayer: canon\ntradition: alexandrian\nera: 250\ntags: [practitioner, apparatus]\nverified: true\n---\n\n# Maria Prophetissa\n\nAlexandrian alchemist, probably 1st–3rd century, known only through quotation.\nThe earliest named practitioner whose *apparatus* survives in continuous use.\n\nknown_for:: balneum mariae\ncentury:: 3\n\n## The water bath\n\nThe *balneum Mariae* — Mary's bath — is a vessel heated indirectly by sitting it\nin hot water. It holds a temperature that cannot exceed the boiling point of\nwater, which is exactly what you want for anything that scorches.\n\nIt is still standard equipment, still called a bain-marie, and it works for the\nsame reason it always did. Very little else in the alchemical inventory has that\nrecord.\n\nShe is also credited with the *tribikos*, a three-armed still, and the *kerotakis*,\na sealed vessel for exposing metals to vapours.\n\n## The axiom\n\n> One becomes two, two becomes three, and out of the third comes the one as the\n> fourth.\n\nQuoted endlessly and explained never. Readings range from a distillation\nschedule to a numerological gloss on the four stages of the\n[magnum opus](/processes/magnum-opus.md). The honest position is that we do not\nknow what she meant.\n\n## Assessment\n\nHer reputation rests on hardware, not theory — and the hardware was right. Among\nthe practitioners here she is the one whose contribution needed no correction.\n",
+    "practitioners/newton.md": "---\ntype: practitioner\nlayer: working\ntradition: western\nera: 1680\ntags: [practitioner, transmutation]\nverified: true\n---\n\n# Isaac Newton\n\n1643–1727. Wrote more on alchemy than on physics, and published none of it.\n\nknown_for:: unpublished alchemical corpus\ncentury:: 17\n\n## Scale of the work\n\nRoughly a million words of alchemical manuscript survive: transcriptions,\nindexes of authors, and his own laboratory records with quantities and dates. He\nkept furnaces at Trinity for decades and ran the work himself rather than\ndelegating it.\n\nKeynes, who bought a large part of the papers at auction in 1936, called him\n\"the last of the magicians.\" The phrase is memorable and slightly unfair — the\nnotebooks are methodical, quantitative, and unmystical in tone.\n\n## The index of authors\n\nHis *Index Chemicus* cross-references hundreds of alchemical texts by topic. It\nis a serious piece of scholarship on a corpus he expected to contain a real\nsecret, encoded.\n\nThat expectation was the error, and it was not a careless one: the tradition\n*claimed* to encode a secret, and Newton took the claim at face value and tested\nit with the most rigorous method available. The method was sound; the corpus was\nempty.\n\n## Why it matters here\n\nNewton is the clean case against reading alchemy as mere credulity. The most\ncapable investigator of the era worked the programme for thirty years with full\nrigour and got nothing, because there was nothing there. That is a result, and\nthe [magnum opus](/processes/magnum-opus.md) framework does not survive it.\n\n- [ ] Read the Index Chemicus entries on [[mercury]]\n- [ ] Cross-check the furnace dates against the Principia years\n",
+    "practitioners/paracelsus.md": "---\ntype: practitioner\nlayer: canon\ntradition: western\nera: 1530\ntags: [practitioner, medicine, theory]\nverified: true\n---\n\n# Paracelsus\n\nTheophrastus von Hohenheim, 1493–1541. Redirected alchemy from metallurgy to\nmedicine, and was insufferable about it.\n\nknown_for:: tria prima\ncentury:: 16\n\n## The tria prima\n\nHe replaced the four elements with three principles — [[mercury]], [[sulphur]],\n[[salt]] — as the constituents of every body. See [index](/index.md) for the\nscheme.\n\nAs chemistry this is wrong. As a research programme it was an improvement: the\ntria prima are *operationally defined* by what happens when you heat a substance\nand see what flies off, what burns, and what remains. The four elements are not\ndefined by any operation at all.\n\n## Iatrochemistry\n\nHis real contribution: minerals as medicines, prepared by chemical operation and\ndosed by weight. Mercury for syphilis, antimony as an emetic, laudanum for pain.\nSome of these worked. Several were poisons.\n\n> All things are poison and nothing is without poison; only the dose makes a\n> thing not a poison.\n\nThat is the founding statement of dose–response, and it is correct.\n\n## Character\n\nHe burned Avicenna's books publicly, lectured in German rather than Latin,\ninsulted the faculty of every university that employed him, and was run out of\nBasel. His posthumous reputation was built by followers who systematized what he\nleft as invective.\n\n- [ ] Check which mineral remedies survived into the 18th-century pharmacopoeia\n- [x] Confirm the dose–response quotation's source\n",
+    "processes/calcination.md": "---\ntype: process\nslug: calcination\nlayer: canon\ntradition: western\ntags: [process, fire]\nverified: true\nstage: nigredo\n---\n\n# Calcination\n\nHeating a substance in air until it is reduced to a friable powder — a *calx*.\nThe first of the twelve gates and, in practice, the first thing anyone does.\n\nelement:: fire\nreversible:: no\n\n## Procedure\n\nGrind the material, spread it thinly in an open crucible, and heat steadily\nbelow the melting point. Stir to expose fresh surface. Continue until no further\nweight is lost and no fumes come off.\n\n```text\ncrucible → grind → thin layer → moderate heat → stir → constant weight\n```\n\nThe endpoint is the constant weight, not the colour. Colour tells you which\noxide you have; weight tells you that you are finished.\n\n## What is actually happening\n\nOrganic matter burns away; metals take up oxygen. The characteristic *gain* in\nweight when calcining a metal is the observation that eventually broke the\nphlogiston theory — the calx weighs more than the metal, which a theory of\nescaping substance cannot accommodate.\n\nAlchemical practice recorded this gain for centuries without drawing the\ninference. The data were sound; the framework could not use them.\n\n## Products\n\n- calcined lead → yellow massicot, then red minium\n- calcined copper → black tenorite\n- plant matter → ash, source of the [[salt]]\n\n## Tasks\n\n- [x] Verify the weight gain on lead with a balance\n- [ ] Repeat with copper and record the colour sequence\n- [ ] Chase down the earliest recorded weight-gain measurement\n",
+    "processes/coagulation.md": "---\ntype: process\nslug: coagulation\nlayer: working\ntradition: western\ntags: [process, earth]\nverified: true\nstage: rubedo\n---\n\n# Coagulation\n\nThe *coagula* half of *solve et coagula*: bringing a dissolved substance back to\na solid, ideally more ordered than before. Crystallization, precipitation, and\nslow evaporation all count.\n\nelement:: earth\nreversible:: yes\n\n## Why it closes the work\n\nDissolution destroys structure; coagulation rebuilds it. The pair is the engine\nof the whole programme — the claim being that matter repeatedly dissolved and\nrecoagulated is progressively refined, and that enough cycles yield the\n[philosophers' stone](/substances/philosophers-stone.md).\n\nThe claim is false, but the intuition is not absurd: recrystallization *does*\npurify, and each cycle *does* leave a cleaner product. The error is extrapolating\nan asymptote into a transformation.\n\n## Practical notes\n\nSlow is better. Rapid cooling gives small, impure crystals that trap solvent;\nslow evaporation at a stable temperature gives large clean ones.\n\n```text\nsaturate hot → filter while hot → cool undisturbed → harvest → repeat on liquor\n```\n\nRepeating on the mother liquor is where the yield is. See the\n[February notes](/lab/2026-02-notes.md) for a worked run.\n\n## Tasks\n\n- [x] Recrystallize alum three times and weigh each crop\n- [ ] Measure purity gain per cycle to find where it plateaus\n",
+    "processes/dissolution.md": "---\ntype: process\nslug: dissolution\nlayer: canon\ntradition: western\ntags: [process, water]\nverified: true\nstage: nigredo\n---\n\n# Dissolution\n\nTaking the calx into a liquid — *solve* of the maxim *solve et coagula*. The\nsecond gate, and the operation that produced most of alchemy's real chemical\ndiscoveries.\n\nelement:: water\nreversible:: yes\n\n## Solvents\n\nThe search for solvents is where the practical payoff was. Distilling vitriol\nand nitre gave the mineral acids, and those genuinely dissolve things nothing\nelse will:\n\n```text\nnitre + vitriol      → aqua fortis     (nitric acid)\naqua fortis + sal    → aqua regia      (dissolves gold)\n```\n\n*Aqua regia* — royal water, because it dissolves the royal metal — is the single\nmost consequential thing to come out of the laboratory tradition. It is a real\nreagent, it does something no other liquid does, and its discovery was driven\nentirely by the transmutation programme.\n\n## The alkahest\n\nThe hypothetical universal solvent, said to dissolve any substance into its\nprima materia. Never produced. The obvious objection — that no vessel could hold\nit — was raised at the time and answered with the claim that it dissolves only\nwhat is imperfect.\n\nThis is unfalsifiable, and its defenders were not troubled by that.\n\n## Tasks\n\n- [x] Distil aqua fortis from nitre and vitriol\n- [x] Prepare aqua regia and test on gold leaf\n- [ ] Write up the alkahest arguments and their rebuttals\n",
+    "processes/magnum-opus.md": "---\ntype: process\nslug: magnum-opus\nlayer: canon\ntradition: western\ntags: [process, framework]\nverified: false\nstages: 4\nstage_range: 1..4\n---\n\n# The magnum opus\n\nThe Great Work: the full sequence that carries the matter from its raw state to\nthe [philosophers' stone](/substances/philosophers-stone.md). The operations vary\nbetween authors; the *colour sequence* is remarkably stable.\n\n## The four stages\n\n| Stage | Colour | Sense |\n|---|---|---|\n| Nigredo | black | putrefaction, reduction to [prima materia](/substances/prima-materia.md) |\n| Albedo | white | washing, purification |\n| Citrinitas | yellow | dawning of the solar principle |\n| Rubedo | red | the completed stone |\n\nLater writers frequently drop citrinitas, giving a three-colour scheme. The\ncompression is worth noting: it tracks a shift from observing the vessel to\nallegorizing the soul.\n\n## Why colour\n\nColour change is the one signal a pre-instrumental laboratory can read reliably.\nIt is reproducible, it is public, and it does not depend on the operator's\njudgement. Building the whole framework on the colour sequence was, given the\navailable instruments, a reasonable methodological choice.\n\n## Operations\n\nThe twelve gates assign operations to the stages. The three documented here:\n\n- [calcination](/processes/calcination.md) — nigredo\n- [dissolution](/processes/dissolution.md) — nigredo into albedo\n- [coagulation](/processes/coagulation.md) — rubedo\n\n## Open questions\n\n- [ ] Map the twelve gates onto the four stages across three sources\n- [ ] Decide whether citrinitas is dropped or absorbed\n",
+    "substances/mercury.md": "---\ntype: substance\nslug: mercury\nlayer: canon\ntradition: western\nelement: mercury\ntags: substance\nverified: true\n---\n\n# Mercury\n\nQuicksilver: a metal that is liquid at room temperature, and therefore the\nobvious emblem of everything that refuses to hold a fixed form.\n\nsymbol:: ☿\nmelting_point:: -38.8\ntoxic:: yes\n\n## As a principle\n\nIn the tria prima, mercury is the volatile spirit — the part of a substance that\ncan be driven off and recondensed. It stands opposite [[salt]], the fixed body,\nwith [[sulphur]] mediating.\n\n| Principle | Role | Fixed? |\n|---|---|---|\n| Mercury | spirit | no |\n| Sulphur | soul | partly |\n| Salt | body | yes |\n\n## As a material\n\nMercury dissolves gold and silver into amalgams, which made it indispensable to\nassayers and irresistible to alchemists: a substance that visibly *takes gold\ninto itself* invites the inference that it can also give gold back.\n\nIt is also poisonous, a fact the laboratory notes record without connecting it\nto the tremors and mania that follow long exposure. See the\n[January notes](/lab/2026-01-notes.md) for handling precautions.\n\n## Reading\n\n- [Paracelsus](/practitioners/paracelsus.md) on the tria prima\n- [Jabir ibn Hayyan](/practitioners/jabir-ibn-hayyan.md) on the mercury–sulphur theory of metals\n",
+    "substances/philosophers-stone.md": "---\ntype: substance\nslug: philosophers-stone\nlayer: canon\ntradition: western\ntags: [substance, goal, legendary]\nverified: false\n---\n\n# The philosophers' stone\n\nThe *lapis philosophorum* is the end of the [magnum opus](/processes/magnum-opus.md):\na substance said to transmute base metals into gold and to perfect whatever it\ntouches.\n\nappearance:: red\nalso_known_as:: lapis\ntransmutes:: lead\n\n## Claims\n\nThree powers are attributed to it, in descending order of plausibility:\n\n1. **Transmutation** of lead or mercury into gold.\n2. **Medicine** — the *panacea*, curing illness and extending life.\n3. **Perfection** of the practitioner, the stone being a mirror of the soul.\n\nThe third reading dominates the later literature, where the laboratory work is\nexplicitly allegorical.\n\n## Preparation\n\nEvery account is incomplete, and deliberately so. The common skeleton:\n\n- reduce the matter to [prima materia](/substances/prima-materia.md)\n- carry it through the four stages of the [[magnum-opus]]\n- fix the volatile and volatilize the fixed\n\nCompare [[mercury]], whose duality the stone is supposed to resolve.\n\n## Open questions\n\n- The surviving transmutation claims have never been gathered in one place with\n  dates and provenance attached.\n- The shift from literal to allegorical readings is well documented; what caused\n  it is still disputed.\n",
+    "substances/prima-materia.md": "---\ntype: substance\nslug: prima-materia\nlayer: canon\ntradition: western\ntags: [substance, theory]\nverified: false\n---\n\n# Prima materia\n\nThe *prima materia* is the formless first matter from which all substances are\ncomposed — not a reagent you can order, but the state a substance is reduced to\nbefore it can be rebuilt.\n\nstate:: undifferentiated\nobtainable:: no\n\n## Descriptions\n\nThe texts are deliberately evasive. It is called the dragon, the chaos, the\nlead of the philosophers, the vile black earth. Practitioners took this\nmultiplicity as proof that the *prima materia* is a condition rather than an\ningredient.\n\n> That which is below is like that which is above.\n\nThe [Emerald Tablet](/texts/emerald-tablet.md) is usually read as describing\nthis reduction and return.\n\n## Relation to the Great Work\n\nReduction to the *prima materia* is the purpose of [[nigredo]], the blackening\nthat opens the [magnum opus](/processes/magnum-opus.md). [Calcination](/processes/calcination.md)\nis the usual first operation.\n\n## Open questions\n\n- Whether the \"chaos\" and the \"lead of the philosophers\" readings can be\n  reconciled, or whether they simply belong to different schools.\n- How far the term can honestly be traced back through the Alexandrian corpus\n  before it becomes a later retrojection.\n",
+    "substances/salt.md": "---\ntype: substance\nslug: salt\nlayer: canon\ntradition: western\nelement: salt\ntags: [substance, tria-prima]\nverified: true\n---\n\n# Salt\n\nWhat remains. Burn a plant to ash and leach the ash with water, and the residue\nthat crystallizes out is the salt — the incombustible, fixed body.\n\nsymbol:: 🜔\nsoluble:: yes\ntoxic:: no\n\n## As a principle\n\nSalt is the third of the tria prima: the body that gives a substance its\npersistence and form. Where [[mercury]] flies off and [[sulphur]] burns, salt\nstays behind.\n\nThe operation that produces it is straightforward and repeatable, which gave the\nprinciple an evidential weight the other two lacked. You can *show* someone the\nsalt of a plant.\n\n## Practical extraction\n\nThe standard route, still sound:\n\n1. Incinerate the material completely — see [calcination](/processes/calcination.md).\n2. Leach the ash with distilled water.\n3. Filter, then evaporate slowly to crystallize.\n\n[Coagulation](/processes/coagulation.md) is the general name for step 3.\n\n## Note\n\nThe alchemical \"salt\" is not sodium chloride but the mixed carbonates and\npotash left after combustion. The terminology predates the distinction.\n\n## Supplies\n\nBench stock for the leaching work. Nothing outstanding.\n\n- [x] Buy more salt of tartar\n- [x] Replace the leaching filter papers\n",
+    "substances/sulphur.md": "---\ntype: substance\nslug: sulphur\nlayer: canon\ntradition: western\nelement: sulphur\ntags: [substance, tria-prima]\nverified: true\n---\n\n# Sulphur\n\nBrimstone: yellow, brittle, and burns with a blue flame and a choking smell.\nIts behaviour under heat made it the natural emblem of combustibility.\n\nsymbol:: 🜍\nmelting_point:: 115.2\ntoxic:: mildly\n\n## As a principle\n\nSulphur is the soul — the combustible principle, what makes a substance\nflammable and gives it colour and character. It mediates between the volatile\n[[mercury]] and the fixed [[salt]].\n\nIn the mercury–sulphur theory inherited from\n[Jabir ibn Hayyan](/practitioners/jabir-ibn-hayyan.md), every metal is a\ncompound of the two, and the proportions determine the metal. Gold is a perfect\nbalance; lead is the same pair badly mixed. Transmutation therefore requires no\nnew matter, only a correction of proportion — which is why the theory was so\ndurable and so encouraging.\n\n## As a material\n\nSulphur combines directly with most metals on heating, producing sulphides whose\ncolours are dramatic and reproducible. This is genuinely useful chemistry, and\nmuch of the practical content of the alchemical corpus concerns it. The bench\nwork is tracked in the [January notes](/lab/2026-01-notes.md).\n",
+    "texts/emerald-tablet.md": "---\ntype: text\nlayer: canon\ntradition: islamic\nera: 800\ntags: [text, hermetic]\nverified: true\n---\n\n# The Emerald Tablet\n\n*Tabula Smaragdina.* A few hundred words attributed to Hermes Trismegistus,\nearliest surviving in Arabic around the 8th century, and the most quoted text in\nthe entire tradition.\n\nlength:: short\nattributed_to:: hermes\n\n## The text\n\n> That which is above is from that which is below, and that which is below is\n> from that which is above, working the miracles of one.\n\n> And as all things have been and arose from one by the mediation of one, so all\n> things have their birth from this one thing by adaptation.\n\n## Why it dominated\n\nIt is short enough to memorize, concrete enough to sound like instructions, and\nvague enough to support any reading. Every practitioner from\n[Jabir](/practitioners/jabir-ibn-hayyan.md) to [Newton](/practitioners/newton.md)\nproduced a commentary, and the commentaries agree on nothing.\n\nNewton's translation survives in his own hand. He read it, plausibly, as\ndescribing distillation and condensation — the below rising and the above\nreturning — which maps onto [dissolution](/processes/dissolution.md) and\n[coagulation](/processes/coagulation.md).\n\n## Assessment\n\nRead as chemistry it says nothing operational. Read as a statement that the same\nlaws hold at every scale, it is a decent piece of natural philosophy that happens\nto be true, arrived at for no good reason.\n",
+    "texts/mutus-liber.md": "---\ntype: text\nlayer: draft\ntradition: western\nera: 1677\ntags: [text, images]\nverified: false\n---\n\n# Mutus Liber\n\nThe \"silent book,\" La Rochelle, 1677: fifteen engraved plates and essentially no\ntext. The entire Great Work, allegedly, in pictures.\n\nlength:: fifteen plates\nattributed_to:: altus\n\n## Contents\n\nThe plates show a couple gathering dew in sheets stretched between poles,\nprocessing it through vessels, and attending a furnace, framed by angels and\nzodiacal signs. A sequence is clearly intended. What it instructs is not clear.\n\nThe dew-gathering is the one concretely readable operation, and it connects to a\nreal strand of practice: dew was held to be a celestial condensate and a candidate\n[prima materia](/substances/prima-materia.md).\n\n## Status of these notes\n\nDraft. I have not worked through the plates in order against a commentary, and\nthe secondary literature disagrees about even the number of stages depicted.\n\n- [ ] Obtain a facsimile with plate numbering\n- [ ] Compare the 1677 and 1702 plate sequences\n- [ ] Decide whether the dew operation is literal\n",
+    "timeline/kickoff.md": "---\ntype: milestone\nlayer: working\ntags: [timeline, milestone]\nverified: true\nwhen: 2026-01-05\nafter: /timeline/review.md\nsee_also: [processes/calcination.md, d_0, /timeline/lost-notes.md]\n---\n# Kickoff of the Great Work\n\nThe laboratory year opened with the furnace lit for the first calcination\nseries. The plan for the season: run the nigredo processes in order and keep\nthe monthly lab notes current. (Fixture note: `after` is a repo-root-absolute\npath, `see_also` mixes a bare repo-relative path, a document id — `d_0` under\nthe spec minter, `index.md` — and a dangling reference, for `refs(x)`.)\n\n## Agenda\n\n- Light the athanor and season the crucibles\n- Agree the order of operations for the season\n- Name the scribe for the monthly notes\n",
+    "timeline/review.md": "---\ntype: milestone\nlayer: working\ntags: [timeline, milestone]\nverified: false\nwhen: 2026-02-27\nbefore: [/timeline/kickoff.md, processes/dissolution.md, /timeline/lost-notes.md]\nafter: /timeline/next-season.md\nsee_also: d_0\n---\n# Review of the season\n\nTwo months in: the calcination series is tabulated, the dissolution trials are\nhalf done, and the coagulation plateau is written up. Decisions for the next\nseason are deferred to a note that does not exist yet. (Fixture note: `before`\nholds a repo-root-absolute path, a bare repo-relative path and a dangling\nreference; `after` is a dangling scalar; `see_also` is a document id.)\n\n## Questions for spring\n\n- Should the dissolution trials move to the spring?\n- Who keeps the lab notes in March?\n"
+  },
+  "cases": [
+    {
+      "name": "ladders",
+      "notes": "§4 \"Descriptions\": every example rung of the minimal tools' descriptions, extracted mechanically (mcp/examples.test.ts) and run in catalog order over the alchemy corpus in a workspace — the reads first (docs_read, docs_tree, query, blocks_resolve), then apply's commits, plan's previews over the written state, execute's digest form, and changes_since/version last. A write rung runs under the clock 2026-10-13T00:00:00.000Z.",
+      "workspace": true,
+      "steps": [
+        {
+          "read": {
+            "tool": "docs_read",
+            "args": {
+              "path": "/processes/calcination.md"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "docs_read",
+            "args": {
+              "path": "/processes/calcination.md",
+              "include_ids": true
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "docs_read",
+            "args": {
+              "id": "d_14"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "docs_tree",
+            "args": {}
+          }
+        },
+        {
+          "read": {
+            "tool": "docs_tree",
+            "args": {
+              "path": "/processes/",
+              "depth": 1
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "docs_tree",
+            "args": {
+              "depth": 2,
+              "limit": 5
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "query_syntax",
+            "args": {}
+          }
+        },
+        {
+          "read": {
+            "tool": "query",
+            "args": {
+              "query": "select title, stage from docs where type == \"process\""
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "query",
+            "args": {
+              "query": "select b: block_id from nodes where kind == \"md:section\" and name == \"Tasks\" and path == \"/processes/calcination.md\""
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "query",
+            "args": {
+              "query": "select value from nodes where kind == \"md:task\" and not checked and path == \"/processes/calcination.md\""
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "query",
+            "args": {
+              "query": "docs count { where layer == \"canon\" }"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "query",
+            "args": {
+              "query": "select path from docs where \"process\" in tags order by path limit 5"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "blocks_resolve",
+            "args": {
+              "query": "calcination"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "blocks_resolve",
+            "args": {
+              "query": "Emerald Tablet",
+              "limit": 3
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "apply",
+            "args": {
+              "effects": [
+                {
+                  "op": "set",
+                  "target": {
+                    "kind": "document",
+                    "path": "/substances/salt.md"
+                  },
+                  "field": "frontmatter.verified",
+                  "value": false
+                }
+              ],
+              "reason": "re-check salt"
+            },
+            "ts": "2026-10-13T00:00:00.000Z"
+          }
+        },
+        {
+          "read": {
+            "tool": "apply",
+            "args": {
+              "effects": [
+                {
+                  "op": "insert",
+                  "into": {
+                    "kind": "document",
+                    "path": "/lab/2026-02-notes.md"
+                  },
+                  "at": "end",
+                  "markdown": "## Follow-ups\n\n- [ ] re-run cycle 4"
+                }
+              ]
+            },
+            "ts": "2026-10-13T00:00:00.000Z"
+          }
+        },
+        {
+          "read": {
+            "tool": "apply",
+            "args": {
+              "select": "from blocks where type == \"task\" and not checked and path == \"/processes/calcination.md\"",
+              "effects": [
+                {
+                  "op": "set",
+                  "field": "attrs.checked",
+                  "value": true
+                }
+              ],
+              "expect": {
+                "max": 10
+              }
+            },
+            "ts": "2026-10-13T00:00:00.000Z"
+          }
+        },
+        {
+          "read": {
+            "tool": "plan",
+            "args": {
+              "effects": [
+                {
+                  "op": "set",
+                  "target": {
+                    "kind": "document",
+                    "path": "/processes/calcination.md"
+                  },
+                  "field": "frontmatter.verified",
+                  "value": false
+                }
+              ]
+            },
+            "ts": "2026-10-13T00:00:00.000Z"
+          }
+        },
+        {
+          "read": {
+            "tool": "plan",
+            "args": {
+              "effects": [
+                {
+                  "op": "insert",
+                  "into": {
+                    "kind": "section",
+                    "heading_id": "b_153"
+                  },
+                  "at": "end",
+                  "markdown": "- [ ] Weigh the calx"
+                }
+              ]
+            },
+            "ts": "2026-10-13T00:00:00.000Z"
+          }
+        },
+        {
+          "read": {
+            "tool": "plan",
+            "args": {
+              "effects": [
+                {
+                  "op": "create",
+                  "path": "lab/2026-03-notes.md",
+                  "markdown": "# March\n"
+                },
+                {
+                  "op": "insert",
+                  "into": {
+                    "kind": "document",
+                    "id": "$new.0"
+                  },
+                  "markdown": "First entry."
+                }
+              ]
+            },
+            "ts": "2026-10-13T00:00:00.000Z"
+          }
+        },
+        {
+          "read": {
+            "tool": "plan",
+            "args": {
+              "select": "from docs where type == \"process\" and stage == \"nigredo\"",
+              "effects": [
+                {
+                  "op": "set",
+                  "field": "frontmatter.reviewed",
+                  "value": true
+                }
+              ],
+              "expect": {
+                "max": 5
+              }
+            },
+            "ts": "2026-10-13T00:00:00.000Z"
+          }
+        },
+        {
+          "read": {
+            "tool": "plan",
+            "args": {
+              "select": "from docs where type == \"lab-note\"",
+              "effects": [
+                {
+                  "op": "insert",
+                  "into": {
+                    "kind": "document",
+                    "path": {
+                      "oqx": "\"/processes/\" + subject + \".md\""
+                    }
+                  },
+                  "at": "end",
+                  "markdown": {
+                    "oqx": "\"- see [\" + title + \"](\" + path + \")\""
+                  }
+                }
+              ],
+              "expect": {
+                "max": 5
+              }
+            },
+            "ts": "2026-10-13T00:00:00.000Z"
+          }
+        },
+        {
+          "read": {
+            "tool": "execute",
+            "args": {
+              "plan_id": "3ece126452106400210f07047029a961691b814252ba4437f5a5f1c3301629da",
+              "effects": [
+                {
+                  "op": "set",
+                  "target": {
+                    "kind": "document",
+                    "path": "/processes/calcination.md"
+                  },
+                  "field": "frontmatter.verified",
+                  "value": false
+                }
+              ]
+            },
+            "ts": "2026-10-13T00:00:00.000Z"
+          }
+        },
+        {
+          "read": {
+            "tool": "changes_since",
+            "args": {}
+          }
+        },
+        {
+          "read": {
+            "tool": "changes_since",
+            "args": {
+              "cursor": 20,
+              "limit": 5
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "changes_since",
+            "args": {
+              "origin": "api"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "version",
+            "args": {}
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          {
+            "id": "d_7",
+            "path": "/processes/calcination.md",
+            "rev": "r_7",
+            "properties": {
+              "frontmatter": {
+                "type": "process",
+                "slug": "calcination",
+                "layer": "canon",
+                "tradition": "western",
+                "tags": [
+                  "process",
+                  "fire"
+                ],
+                "verified": true,
+                "stage": "nigredo"
+              },
+              "inline": {
+                "element": "fire",
+                "reversible": "no"
+              },
+              "computed": {
+                "title": "Calcination"
+              }
+            },
+            "raw": "---\ntype: process\nslug: calcination\nlayer: canon\ntradition: western\ntags: [process, fire]\nverified: true\nstage: nigredo\n---\n\n# Calcination\n\nHeating a substance in air until it is reduced to a friable powder — a *calx*.\nThe first of the twelve gates and, in practice, the first thing anyone does.\n\nelement:: fire\nreversible:: no\n\n## Procedure\n\nGrind the material, spread it thinly in an open crucible, and heat steadily\nbelow the melting point. Stir to expose fresh surface. Continue until no further\nweight is lost and no fumes come off.\n\n```text\ncrucible → grind → thin layer → moderate heat → stir → constant weight\n```\n\nThe endpoint is the constant weight, not the colour. Colour tells you which\noxide you have; weight tells you that you are finished.\n\n## What is actually happening\n\nOrganic matter burns away; metals take up oxygen. The characteristic *gain* in\nweight when calcining a metal is the observation that eventually broke the\nphlogiston theory — the calx weighs more than the metal, which a theory of\nescaping substance cannot accommodate.\n\nAlchemical practice recorded this gain for centuries without drawing the\ninference. The data were sound; the framework could not use them.\n\n## Products\n\n- calcined lead → yellow massicot, then red minium\n- calcined copper → black tenorite\n- plant matter → ash, source of the [[salt]]\n\n## Tasks\n\n- [x] Verify the weight gain on lead with a balance\n- [ ] Repeat with copper and record the colour sequence\n- [ ] Chase down the earliest recorded weight-gain measurement\n"
+          },
+          {
+            "id": "d_7",
+            "path": "/processes/calcination.md",
+            "rev": "r_7",
+            "properties": {
+              "frontmatter": {
+                "type": "process",
+                "slug": "calcination",
+                "layer": "canon",
+                "tradition": "western",
+                "tags": [
+                  "process",
+                  "fire"
+                ],
+                "verified": true,
+                "stage": "nigredo"
+              },
+              "inline": {
+                "element": "fire",
+                "reversible": "no"
+              },
+              "computed": {
+                "title": "Calcination"
+              }
+            },
+            "raw": "---\ntype: process\nslug: calcination\nlayer: canon\ntradition: western\ntags: [process, fire]\nverified: true\nstage: nigredo\n---\n\n# Calcination\n\nHeating a substance in air until it is reduced to a friable powder — a *calx*.\nThe first of the twelve gates and, in practice, the first thing anyone does.\n\nelement:: fire\nreversible:: no\n\n## Procedure\n\nGrind the material, spread it thinly in an open crucible, and heat steadily\nbelow the melting point. Stir to expose fresh surface. Continue until no further\nweight is lost and no fumes come off.\n\n```text\ncrucible → grind → thin layer → moderate heat → stir → constant weight\n```\n\nThe endpoint is the constant weight, not the colour. Colour tells you which\noxide you have; weight tells you that you are finished.\n\n## What is actually happening\n\nOrganic matter burns away; metals take up oxygen. The characteristic *gain* in\nweight when calcining a metal is the observation that eventually broke the\nphlogiston theory — the calx weighs more than the metal, which a theory of\nescaping substance cannot accommodate.\n\nAlchemical practice recorded this gain for centuries without drawing the\ninference. The data were sound; the framework could not use them.\n\n## Products\n\n- calcined lead → yellow massicot, then red minium\n- calcined copper → black tenorite\n- plant matter → ash, source of the [[salt]]\n\n## Tasks\n\n- [x] Verify the weight gain on lead with a balance\n- [ ] Repeat with copper and record the colour sequence\n- [ ] Chase down the earliest recorded weight-gain measurement\n",
+            "ids": [
+              "b_138",
+              "b_139",
+              "b_140",
+              "b_141",
+              "b_142",
+              "b_143",
+              "b_144",
+              "b_145",
+              "b_146",
+              "b_147",
+              "b_148",
+              "b_149",
+              "b_150",
+              "b_151",
+              "b_152",
+              "b_153",
+              "b_154",
+              "b_155",
+              "b_156",
+              "b_157"
+            ],
+            "hashes": {
+              "b_138": "c80957125cbf96b568d93b2fd598465181bd8a0bd2465b037cc566e7c24cd724",
+              "b_139": "3a1707ddb5a4ff6f7aeada6b4ac037a466ecf373d9a04e95758f1fa7fbdf65e8",
+              "b_140": "3f1c3fe75e6bd5511da9b41b5133283442c8c516c8c9c3126382383202a77383",
+              "b_141": "5da93bd3e25731d2786cd3c17c54b84047ba82401bc69b04138a3a1a9b0c0402",
+              "b_142": "d56009e58fc97123a43b00bd99360b068d5084e639900b273d78be02a3df2ec8",
+              "b_143": "69621ba7fbc976d6aef0d3e02803291b80445aafb4c849cfd565fefc66922217",
+              "b_144": "e9585e4b4ea64a6ed2a7b8647070f01068b0f10c7caa5dfb297545d14a1eab94",
+              "b_145": "74647fb24f18743a0c3514079596b12996689ea588a22a970e73a84830269075",
+              "b_146": "2c13fe31981c35b31ca9779ad9b2b6c8fe7a075d1d95555b9569993046dbbfe6",
+              "b_147": "81182631587217866828c2c06423a634e9181008e69d2939cb20152170706c63",
+              "b_148": "a7d9b6e0901063a46ad0bd5f358041262dfd9772530c4bce47c91fb988ef388a",
+              "b_149": "90fa20ce6e161883450ce2623bfadc89252d2a1f06fc4b36e87355f552155385",
+              "b_150": "2c6eb790b6de163036e3740f6013754c3af1aded51abe79076b2a8d835d6bbc4",
+              "b_151": "8d2e464371ea5cb4bf15a00a6fcc252707b1a9134f8756a3c1adf7046a35676e",
+              "b_152": "853ca0777d8eb1f83697e086926000fcbddf13159353769909e8522dc974cdff",
+              "b_153": "fd67d489c7528e070c4dbe7e6b7d2eb8ce82617196a7248b9b5dfe7d50e33d33",
+              "b_154": "3cb82c6ee8cc5faf97287d34d229235209159fffd65ddce724c54257f32166ec",
+              "b_155": "440ab374742d03d3e87c14f355e0715af7d3edc95d27e859ba5e851d81917262",
+              "b_156": "486941ab0289c44861dbb27a24a15ead06b99010198d50b08929464e0a4ef491",
+              "b_157": "994aab71eeef4ab790507ae7dffa6af8fe5eb4de7227289af58156da719ea96b"
+            },
+            "parents": {
+              "b_138": null,
+              "b_139": null,
+              "b_140": null,
+              "b_141": null,
+              "b_142": null,
+              "b_143": null,
+              "b_144": null,
+              "b_145": null,
+              "b_146": null,
+              "b_147": null,
+              "b_148": null,
+              "b_149": null,
+              "b_150": "b_149",
+              "b_151": "b_149",
+              "b_152": "b_149",
+              "b_153": null,
+              "b_154": null,
+              "b_155": "b_154",
+              "b_156": "b_154",
+              "b_157": "b_154"
+            }
+          },
+          {
+            "id": "d_14",
+            "path": "/substances/salt.md",
+            "rev": "r_14",
+            "properties": {
+              "frontmatter": {
+                "type": "substance",
+                "slug": "salt",
+                "layer": "canon",
+                "tradition": "western",
+                "element": "salt",
+                "tags": [
+                  "substance",
+                  "tria-prima"
+                ],
+                "verified": true
+              },
+              "inline": {
+                "symbol": "🜔",
+                "soluble": "yes",
+                "toxic": "no"
+              },
+              "computed": {
+                "title": "Salt"
+              }
+            },
+            "raw": "---\ntype: substance\nslug: salt\nlayer: canon\ntradition: western\nelement: salt\ntags: [substance, tria-prima]\nverified: true\n---\n\n# Salt\n\nWhat remains. Burn a plant to ash and leach the ash with water, and the residue\nthat crystallizes out is the salt — the incombustible, fixed body.\n\nsymbol:: 🜔\nsoluble:: yes\ntoxic:: no\n\n## As a principle\n\nSalt is the third of the tria prima: the body that gives a substance its\npersistence and form. Where [[mercury]] flies off and [[sulphur]] burns, salt\nstays behind.\n\nThe operation that produces it is straightforward and repeatable, which gave the\nprinciple an evidential weight the other two lacked. You can *show* someone the\nsalt of a plant.\n\n## Practical extraction\n\nThe standard route, still sound:\n\n1. Incinerate the material completely — see [calcination](/processes/calcination.md).\n2. Leach the ash with distilled water.\n3. Filter, then evaporate slowly to crystallize.\n\n[Coagulation](/processes/coagulation.md) is the general name for step 3.\n\n## Note\n\nThe alchemical \"salt\" is not sodium chloride but the mixed carbonates and\npotash left after combustion. The terminology predates the distinction.\n\n## Supplies\n\nBench stock for the leaching work. Nothing outstanding.\n\n- [x] Buy more salt of tartar\n- [x] Replace the leaching filter papers\n"
+          },
+          {
+            "prefix": "/",
+            "depth": 1,
+            "total": {
+              "docs": 20,
+              "blocks": 327
+            },
+            "entries": [
+              {
+                "id": "d_0",
+                "path": "/index.md",
+                "kind": "doc",
+                "docs": 1,
+                "blocks": 31,
+                "updated_at": "2026-09-27T00:00:00.000Z"
+              },
+              {
+                "path": "/lab/",
+                "kind": "dir",
+                "docs": 2,
+                "blocks": 51,
+                "updated_at": "2026-09-27T00:00:00.000Z"
+              },
+              {
+                "path": "/practitioners/",
+                "kind": "dir",
+                "docs": 4,
+                "blocks": 56,
+                "updated_at": "2026-09-27T00:00:00.000Z"
+              },
+              {
+                "path": "/processes/",
+                "kind": "dir",
+                "docs": 4,
+                "blocks": 71,
+                "updated_at": "2026-09-27T00:00:00.000Z"
+              },
+              {
+                "path": "/substances/",
+                "kind": "dir",
+                "docs": 5,
+                "blocks": 80,
+                "updated_at": "2026-09-27T00:00:00.000Z"
+              },
+              {
+                "path": "/texts/",
+                "kind": "dir",
+                "docs": 2,
+                "blocks": 25,
+                "updated_at": "2026-09-27T00:00:00.000Z"
+              },
+              {
+                "path": "/timeline/",
+                "kind": "dir",
+                "docs": 2,
+                "blocks": 13,
+                "updated_at": "2026-09-27T00:00:00.000Z"
+              }
+            ],
+            "truncated": false,
+            "cursor": null
+          },
+          {
+            "prefix": "/processes/",
+            "depth": 1,
+            "total": {
+              "docs": 4,
+              "blocks": 71
+            },
+            "entries": [
+              {
+                "id": "d_7",
+                "path": "/processes/calcination.md",
+                "kind": "doc",
+                "docs": 1,
+                "blocks": 20,
+                "updated_at": "2026-09-27T00:00:00.000Z"
+              },
+              {
+                "id": "d_8",
+                "path": "/processes/coagulation.md",
+                "kind": "doc",
+                "docs": 1,
+                "blocks": 14,
+                "updated_at": "2026-09-27T00:00:00.000Z"
+              },
+              {
+                "id": "d_9",
+                "path": "/processes/dissolution.md",
+                "kind": "doc",
+                "docs": 1,
+                "blocks": 15,
+                "updated_at": "2026-09-27T00:00:00.000Z"
+              },
+              {
+                "id": "d_10",
+                "path": "/processes/magnum-opus.md",
+                "kind": "doc",
+                "docs": 1,
+                "blocks": 22,
+                "updated_at": "2026-09-27T00:00:00.000Z"
+              }
+            ],
+            "truncated": false,
+            "cursor": null
+          },
+          {
+            "prefix": "/",
+            "depth": 2,
+            "total": {
+              "docs": 20,
+              "blocks": 327
+            },
+            "entries": [
+              {
+                "id": "d_0",
+                "path": "/index.md",
+                "kind": "doc",
+                "docs": 1,
+                "blocks": 31,
+                "updated_at": "2026-09-27T00:00:00.000Z"
+              },
+              {
+                "id": "d_1",
+                "path": "/lab/2026-01-notes.md",
+                "kind": "doc",
+                "docs": 1,
+                "blocks": 28,
+                "updated_at": "2026-09-27T00:00:00.000Z"
+              },
+              {
+                "id": "d_2",
+                "path": "/lab/2026-02-notes.md",
+                "kind": "doc",
+                "docs": 1,
+                "blocks": 23,
+                "updated_at": "2026-09-27T00:00:00.000Z"
+              },
+              {
+                "id": "d_3",
+                "path": "/practitioners/jabir-ibn-hayyan.md",
+                "kind": "doc",
+                "docs": 1,
+                "blocks": 13,
+                "updated_at": "2026-09-27T00:00:00.000Z"
+              },
+              {
+                "id": "d_4",
+                "path": "/practitioners/maria-prophetissa.md",
+                "kind": "doc",
+                "docs": 1,
+                "blocks": 13,
+                "updated_at": "2026-09-27T00:00:00.000Z"
+              }
+            ],
+            "truncated": true,
+            "cursor": "WyIvcHJhY3RpdGlvbmVycy9tYXJpYS1wcm9waGV0aXNzYS5tZCJd"
+          },
+          {
+            "syntax": "# query — OQX syntax reference\n\nThe `query` tool takes ONE plain OQX string (+ optional `limit`/`cursor`, and\n`bare: true` to drop the automatic `id`/`path` envelope — needs a `select`).\nThere is no {from, filter, order} envelope: every concern is a clause of the\nstring. Two rules tell the two syntaxes apart: DOT navigation belongs to the\nhost object model (`doc.layer`, `section.blocks`, `dst.title`); WHITESPACE\nquery directives belong to OQX — a nested query is `<receiver> collect|exists|\ncount|first|single { <block> }` (a postfix directive + a `{ … }` block), never a\nmethod. Its distinctive power is the receiver-constrained nested query that\ncorrelates to the current row: `from docs where nodes exists { where kind ==\n\"md:task\" }` returns only the docs that themselves contain a matching node.\n\n  [select <items>] from <target> [where <pred>] [frontier <pred>] [follow <dest> [{ … }], …]\n                   [order by <expr> [asc|desc], …] [limit N] [offset N]\n  <target> count|exists|none|first|single { <block> }     (scalar/one-row form: a bare target at the root scope)\n\nCLAUSE ORDER IS FIXED: select, from, where, frontier, follow, order by, limit, offset —\neach at most once; an out-of-order clause is a parse error naming the order.\nOnly `select` may drop its keyword, and only as the first clause\n(`path, era from docs where …`). A top-level predicate needs `where`, because\n`where` follows `from` (`era > 1600 from docs` is the clause-order error); a\nblock may LEAD with a predicate (see Sugar), but a predicate after a projection\nstill needs the keyword (`{ name where kind == \"md:task\" }`, not\n`{ name, kind == \"md:task\" }`); `from docs count` is an error (write\n`docs count { … }`). `where` and later `select` items may use the same body's\n`select` aliases (`select path, old: era < 1000 from docs where old`; an alias\nshadows a same-named field there). `and` / `or` / `not` are the connectives;\nthe symbols `&&` / `||` / `!` are accepted synonyms (the words are canonical and\nwhat `print` writes).\n\n## Sugar (OQX 0.17)\n\nEvery form here is shorthand for an explicit directive (the AST is the explicit form):\n  nodes { kind == \"md:task\" }        ≡ nodes collect { where kind == \"md:task\" } — a receiver block with\n                                       no consumer is collect; a block whose LEADING expression is a predicate\n                                       (comparison, call, !/is/not, in, literal, (…), a consumer test — anything\n                                       but a bare name, a dotted path or a ^lift) is where-first. Bare names still\n                                       project: nodes { name } ≡ nodes collect { name }; filter a bare field with\n                                       nodes { is checked }. Wherever a value stands (0.20), call arguments included:\n                                       size(children { is checked }); x distinct { … } ≡ x collect distinct { … }. After a\n                                       follow destination too: follow children { depth 2 } is that destination's block.\n  (a, b)                              a tuple (0.20): two or more expressions, concatenated one level flat — a value\n                                       (size((tags, aliases)), \"x\" in (tags, aliases)) and a receiver ((a, b) { … },\n                                       follow (before, after) { depth 2 }); (a) alone is grouping\n  refs(x)[0]                          ≡ refs(x) first { offset 0 }   positional (integer literal or ${binding});\n                                       out of range ⇒ absent; refs(x)[0].path navigates the row\n  ^docs[path == ^company]             ≡ ^docs first { where path == ^company }   first match or absent\n  ^docs[path == ^company]!            ≡ … single { … } required: exactly one, else filter_invalid\n  title!                              required: title, or an error naming the expression (and the row's $key — its id)\n                                       — never a filter, never a coercion (0!, \"\"! are values); tightest: a!.b vs a.b!\n  is x / not x                        truthiness of x, and its negation (prefix; `not` ≡ `!`)\n  x is y / x is not y                 identity ($key: a store row's id, else structural) — compares rows, which == does not;\n                                       x is null = absent; for scalars is ≡ ==; comparison precedence, no chaining\n  a and b / a or b                    the connectives (≡ && / ||: same precedence, short-circuit, value: data.title or path coalesces)\n  boss: ^docs[path == ^manager], bossName: boss.title   a select item may use the items to its LEFT\n  Reserved words (never a bare field name): from where select is not and or, true false null.\n  Contextual words (limit order offset follow collect count first distinct desc by in frontier depth) parse as\n  fields in expression position (select o: order from docs).\n\nResults are LEAN hits — { id, path } + whatever `select` projects (or `values`,\n`count`, `exists`, `none`). The envelope keys ARE the attributes: copy a hit's\n`id` straight into `where id == \"…\"` (no translation); `select id, path` is simply\nthe envelope (no duplicate columns); any OTHER projection whose output key would\nbe `id` or `path` must be aliased — `select data.path` is refused (\"projection\n`path` collides with the hit envelope — alias it (`p: data.path`)\"); a row\nsurfacing as a value (an empty `collect { }`) is the same `{ id, path }`. Every\nother tool spells a row the same way (`docs_read` → `{ id, path, rev, properties,\nraw }`, `blocks_read` → `{ id, type, text, raw, hash, … }`, `docs_list` → `{ id,\npath, updated_at, blocks }`, a revision → `{ id, path, hash }`): hydrate by id via\nblocks_read/docs_read.\n\n## Paths\n\nEvery path the surface returns is `/`-rooted — the form a reference is\nwritten in (`[x](/projects/oqx.md)`, `before: [/timeline/kickoff.md]`): a\nhit's `path`, an edge's `dst_path`, every tool's paths. Every path it\naccepts tolerates both forms (`/a.md` or `a.md`): tool arguments, `refs(x)`,\n`within(...)`, and a string LITERAL compared with `path`/`dst_path` (bare, or\nthrough a row handle: `doc.path`) by `==`/`!=` or passed to their\n`.startsWith(...)` (it is rooted first, so `path == \"a.md\"` and `path == \"/a.md\"`\nboth match). A property holding a reference compares directly — and is never\nrooted: `where ^path in list(after)`, `where customer == ^path`,\n`where data.path == \"/x.md\"` (the author's `path:` key, as written) — no\n`\"/\" + ...` glue.\n\n## Targets & field namespaces\n\nTHE NAME RULE: `$` belongs to OQX — $it, $key, $depth, $stop, $leaf, $frontier,\n$ordinal are values the LANGUAGE injects into a scope; omgbase adds NO $ names\n(a `$id` in a query is an unknown name, absent). Every engine attribute is a BARE\nsnake_case name that WINS on collision — the convention the relations (children,\nblocks, out, in, doc, frontmatter, …) always followed: a bare name that is an\nengine attribute reads the engine's value, never yours. Your data is bare too;\nwhere a key of yours collides with an engine name, reach it through a source\nhandle: `data.<k>` (the merged authored view — frontmatter + inline, exactly the\nread a bare non-colliding key performs), `frontmatter.<k>`, `inline.<k>`. So\n`path` is the engine's /-rooted location and `data.path` your `path:` key;\n`tags` is your tags ∪ the body #hashtags and `data.tags` the authored list alone;\n`title` the computed title (the first H1) and `data.title` your `title:`;\n`entries(data)` lists every authored top-level key. Same value, same name\neverywhere: a hit's `id` is docs_read's `id` and the `id` argument of blocks_read.\n\n  Reserved bare names per kind (engine attributes; handles; self; relations):\n    docs    id path raw hash updated_at title tags format | data frontmatter inline | doc | blocks nodes out in out_links in_links\n    blocks  id path doc_id raw hash updated_at type text attrs depth ordinal | block doc | children nodes out_links section\n    nodes   id path doc_id block_id kind name value attrs | section doc block | blocks subsections children\n    links   id path doc_id block_id via_id dst_id dst_path uri field dst_kind predicate provenance anchor | doc\n  A key of yours with any of these names is `data.<k>` (or frontmatter.<k> /\n  inline.<k> by source; attrs.<k> on a block or node).\n\ndocs:\n  - bare identifier  = a document PROPERTY (frontmatter + inline `key:: value`,\n                       unioned; nested via dots: meta.owner). YAML/JSON docs\n                       expose the parsed object's keys the same way.\n  - source handles   = data.<k> (merged authored view) / frontmatter.<k> /\n                       inline.<k>; the whole bag as a collection via entries(data)\n                       / entries(frontmatter) / entries(inline) (see entries()).\n  - attributes       = id, path (/-rooted, see Paths), updated_at (ISO-8601,\n                       sorts chronologically), raw (the whole file, frontmatter\n                       included), hash (its sha256, 64 hex), title (the computed\n                       title: the first H1; data.title is the authored key), tags\n                       (authored tags ∪ body #hashtags, deduped, authored first;\n                       data.tags is the authored list), format (the doc's format —\n                       \"markdown\"/\"yaml\"/\"json\"; present on EVERY doc, so\n                       has(format) is always true and `format == \"yaml\"` is the\n                       filter).\n  - relations        = nodes, blocks, doc.out_links / doc.in_links (a doc's\n                       links as rows; the documents at their other end are\n                       out_links collect distinct { from dst } and\n                       in_links collect distinct { from doc } — there is no\n                       out / in relation).\n\nblocks:\n  - bare fields      = doc_id (the owning doc), type, text (normalized), ordinal\n                       (0-based among siblings), depth (0 at the top level), and\n                       every attrs key FLATTENED onto the row (bare `checked`\n                       reads attrs.checked; `attrs.<k>` still works; the\n                       structural fields win on collision; absent ⇒ false).\n  - attributes       = id, path (the owning doc's path), raw (the block's raw\n                       source — a container's raw holds its children), hash\n                       (its sha256 — the value update/split expect as\n                       expect.content_hash), updated_at.\n  - reach-through    = doc.<key> / doc.path / doc.id / doc.format = the\n                       CONTAINING doc (doc.id and doc.path cost nothing — they\n                       read the row's own doc_id / joined path, no lookup).\n  - relations        = block.children, block.nodes, block.out_links, section.\n  NOTE: inside a `follow`, $depth/$ordinal are ALWAYS the walk's metadata; a\n  block's own nesting is `depth` / `ordinal` (no $) everywhere.\n\nnodes:\n  - bare fields      = doc_id, block_id (null for a block-less node), kind\n                       (md:task / md:link / md:section / yaml:…), name, value,\n                       + attrs keys flattened (checked, level).\n  - attributes       = id, path.\n  - reach-through    = doc.<key> / doc.id / doc.path, block.type / block.text\n                       / block.id / block.path.\n  - relations        = section.blocks, section.children, section.subsections.\n\nlinks:  (the authored link graph as rows — one per open link: the relation a link\n        establishes; the md:link NODE is its occurrence in the text and via_id\n        points at it — a frontmatter link has a row and no node)\n  - bare fields      = doc_id (the SOURCE doc), block_id (the source block; null\n                       for a frontmatter edge), via_id, dst_id (the destination\n                       node id: a doc id, an external node id or phantom:<path>),\n                       dst_path (target doc path, /-rooted; NULL when\n                       dangling/external), uri (external URL; NULL otherwise),\n                       predicate (\"references\"/\"embeds\"/freeform), provenance\n                       (\"link\"/\"frontmatter\"/\"inline_field\"/…), dst_kind\n                       (\"document\"/\"external\"/\"collection\"), anchor, field (the\n                       frontmatter key / inline field it was authored in).\n  - attributes       = id, path (the SOURCE doc's path); doc.<key> reaches the\n                       source document. There is no from_commit: a query sees\n                       open edges only (history is blocks_history/changes_since).\n  - text()/semantic() are N/A on links.\n\n## Scoping (ADR-015; the root row since surface 2.0): bare names are LOCAL\n\n  name          the CURRENT row only — never falls through to an enclosing row\n                or the repository; an absent field is simply absent.\n  ^name         one scope OUT (the enclosing row's fields/intrinsics/lifts);\n                ^^name two scopes out. `^path` = the enclosing row's path.\n  ^docs ^nodes ^blocks ^links\n                THE ROOT ROW (surface 2.0, oqx 0.18): the repository is the root\n                scope's row, one scope out from a top-level row, so ^docs there is\n                the whole documents scan (uncorrelated until you add a ^ predicate);\n                one caret per enclosing block (^^docs from depth two), or the\n                absolute 0^docs from ANY depth. ^id / 0^id = the repository id.\n                ^$it = the root object: ^$it.docs ≡ ^docs, entries(^$it) names the\n                four collections. At the root scope itself a bare target is the scan\n                (docs count { … }, from docs, entries(docs)).\n                ERRORS: a bare `docs` INSIDE a block reads a property of the current\n                row, which has none — refused (\"did you mean ^docs\"); `^docs` AT THE\n                TOP LEVEL reaches past the root — refused (write the bare `docs`);\n                so is `$repo` (surface < 2.0; the message names the replacement).\n                nodes/blocks on a doc row are that doc's RELATIONS, not the root.\n  $it           the current item itself (a row, or each ELEMENT when the\n                receiver is a list property); ^$it = the enclosing row.\n                $value is NOT an intrinsic (since oqx 0.15): it reads a\n                property literally named $value, absent when there is none.\n  $key          the row's identity (0.20): a store row's id (doc/block/node/edge), an entries(x)\n                entry's key, a follow occurrence's walk identity; project $key: <expr> to rekey the\n                rows a block yields (a destination block's $key: is not a column).\n\n## Scalar semantics (@omgbase/oqx)\n\n  comparisons  ==  !=  <  <=  >  >=    strict & typed (5 == \"5\" is false); either\n                                       side may be a field (field-vs-field OK).\n  absence      null and a missing field are the same \"absent\" value; two absents\n               are EQUAL, so `absent != \"x\"` is TRUE and `absent == null` is TRUE.\n               Relational (< <= > >=) on an absent operand → FALSE. Bare `f` in\n               boolean position uses JS truthiness (absent/false/0/\"\" ⇒ false;\n               NOTE: \"false\", [] and {} are truthy). has(f) = explicit presence.\n  boolean      and  or  not    grouping ( … )   — && || ! are accepted synonyms\n  arithmetic   + - * / %    (+ concatenates if either side is a string)\n  membership   x in y       array → typed membership; string → substring;\n                            object → key exists; range → coverage. Any list\n                            property works directly: \"pricing\" in tags. list(f)\n                            coerces scalar-or-list (absent → []) — use it when a\n                            key is sometimes scalar, sometimes a list.\n  ranges       lo..hi (inclusive)  lo...hi (exclusive hi)  ..hi  lo..\n               era in 800..1680; works over ISO dates. range(prop) reads a\n               range-shaped STRING property as an interval: \"2026-01-15\" in range(window).\n  strings      x.contains(\"s\") x.startsWith(\"p\") x.endsWith(\"s\") x.matches(\"^re$\")\n               (real regex) x.lower() x.upper() size(x). ALL CASE-SENSITIVE —\n               fold with .lower(): title.lower().contains(\"aurora\").\n  functions    has(f)  size(x)  list(x)  entries(x)  range(s)\n  literals     \"str\" 'str' 123 1.5 true false null\n  determinism  no now()/clock/random. Lists/structs are not literals; ternary is\n               not supported. Errors surface as filter_invalid.\n  scalars vs lists  a list-authored key never == a scalar (tags == \"x\" is false\n               when tags is a list) — use `\"x\" in tags` / `in list(tags)`.\n\n## Domain predicates (omgbase)\n\n  text(\"terms\")        FTS5 PRUNING predicate (docs match via their blocks, nodes\n                       via the node index); composes anywhere, incl. nested scopes.\n  semantic(\"phrase\")   embedding cosine SCORE (docs/blocks): threshold it\n                       (semantic(\"x\") > 0.6), project it, or `order by semantic(\"x\")\n                       desc` for top-K. Needs a provider that has embedded the repository; else provider_unavailable.\n  blocks target only:\n    under(id_or_heading)      block in the containment subtree / section range\n    under_heading(\"Launch\")   an ancestor section heading contains the text (ci)\n    under_kind(type[, name])  an ancestor block has that type (name: its text\n                              contains / its key equals name)\n    within(\"path\" | \"d_..\")   containing doc = id, exact path, or path glob (*);\n                              either path form\n    yaml_path(\"a.b\")          YAML docs: the block at that key path\n    json_pointer(\"#/a/b\")     JSON docs: the block at that pointer\n    has_edge(\"pred\"[, target])  an open authored edge with that predicate leaves here\n    has_anchor()              block carries an authored ^ref\n    parent_type() == \"x\"      parent block's type (must be compared)\n    child_count() > 0         number of direct children (must be compared)\n  refs(x)              the live documents a property's document references name:\n                       x is a string, a list or absent; each \"/a/b.md\", \"a/b.md\"\n                       or \"d_…\" element resolves to that doc's row; dangling and\n                       non-string elements are dropped. Yields docs rows, so it is\n                       a source, a receiver or a follow destination:\n                       follow refs(before), refs(after) walks a timeline both ways.\n                       The reverse direction needs no function: a document's\n                       path is already the reference form, so\n                       ^docs { where ^path in list(after) } is\n                       \"the documents whose `after` names me\".\n  A HIT IS A STORE ROW: a top-level row that is not a doc/block/node/edge fails\n                       (filter_invalid). `follow before` over a list of paths\n                       reaches the STRINGS — write `follow refs(before)`.\n\n## Nested queries & consumers\n\n  <receiver> collect|exists|none|count|first|single { <block> }\n    receiver = a relation (nodes, blocks, doc.out_links, section.blocks, …), a\n               reach-through row (dst, doc: one row — dst { title }), a\n    list property (tags), entries(x), or a root collection (^docs; 0^docs at depth ≥ 2).\n    block    = [select …] [from E] [where …] [frontier …] [follow …] [order by …] [limit N] [offset N]\n               — the same fixed order as the top level (`from` optional; the\n               receiver supplies the rows). A leading name/alias list is the\n               projection (`select` dropped); a predicate always needs `where`.\n               A `from E` inside a block RE-PROJECTS the rows through a relation\n               (a typed flatMap): `docs collect { from nodes where kind == \"md:task\" }`\n               starts at docs, projects each through `nodes`, and queries the\n               resulting nodes; a scalar relation (`from doc`) contributes one\n               row; a missing or non-navigable relation is a loud error, never a\n               global scan.\n  exists    ≥1 row      nodes exists { where kind == \"md:task\" and not checked }\n  none      0 rows      nodes none { where kind == \"md:task\" and not checked }  (\"every task done\")\n  count     a number    nodes count { where kind == \"md:task\" } >= 2\n  collect   rows (default) — in select for nested results; in where with a lift\n  first / single   zero-or-one (single errors on >1) — lookups in select\n  distinct  on any consumer: dedup by projected value — nodes count distinct { select kind }\n  limit/offset  bound the block's rows AFTER where/order/distinct, BEFORE the\n            consumer reduces: nodes exists { offset 1 } = at least two;\n            first { … offset 1 } = the second.\n  lift      `^name:` in a where-collect binds values outward:\n            select path, open from docs where nodes collect { ^open: value where kind == \"md:task\" and not checked }\n  joins     ^<t> exists { where slug == ^ref }  semi-join; not … exists  anti-join;\n            ^nodes single { where kind == \"person\" and attrs.id == ^owner_id }  lookup;\n            x in ^keys  membership over a lifted set.\n\n## select — projection\n\n  select a, alias: expr, nested: nodes collect { … }\n  bare key → the attribute when it is one (id, path, title, …), else the property\n  (scalar-authored → scalar; list → array); data.<k> forces the property;\n  a call/arithmetic needs an alias (n: size(tags)) unless in values mode;\n  an output key of id/path other than the attribute itself needs an alias.\n  raw         whole file bytes (docs) — docs_read is cheaper for one doc.\n  distinct    select distinct type   (dedup hits by projected value)\n  values      select <ONE item> values → bare values instead of records:\n                select distinct type values from docs          → values: [\"hub\",\"lab-note\",…]\n                select path values from docs                   → values: [\"/index.md\", …]\n                tags: tags collect { $it values }             → a plain array\n                h: nodes first { name values where kind == \"md:section\" order by first_ordinal }\n  entries(x)  a record as a collection ($key / $it per entry), key order:\n                select fm: entries(data) collect { k: $key, v: $it }\n                where entries(frontmatter) exists { where $key == \"era\" and $it > 1600 }\n                entries(inline), entries(attrs), a nested map, or a list (index keys)\n  $semantic_score is not a field — project semantic(\"…\") under an alias instead.\n\n## order by, limit/offset, pagination\n\n  order by era desc, path asc      absent values sort LAST (asc); ties → (path, id)\n  limit N / offset N               define the result SET (integer literals);\n                                   the tool's limit/cursor then page WITHIN it\n  cursor                           opaque keyset on (path,id); a custom order by\n                                   disables it (you get the top page + truncated)\n\n## Graph traversal (follow) and links\n\n  The citation graph is the LINK ROWS walked through a destination block:\n  dst is a link's destination document (absent for an external or dangling\n  link — it then contributes no successor), doc its source.\n  from docs where <seed> follow out_links collect { from dst }     docs the seed links TO\n  from docs where <seed> follow in_links collect { from doc }      backlinks\n    follow out_links collect { from dst depth 3 }                  bound (1..8, default 8) — a clause of the block\n    follow out_links collect { from dst where layer == \"canon\" }   keep only matching successors\n    follow in_links collect { from doc where ^path in list(before) }   ^ = the row being expanded\n                                                   (^^ = the walk's enclosing scope)\n    follow out_links collect { from dst where predicate == \"depends_on\" }   one predicate only\n    follow out_links collect { from dst }, in_links collect { from doc }\n                                                   several destinations: their union\n                                                   (one step dedups by identity)\n    follow ^docs { where out_links exists { where dst_path == ^^path } }\n                                                   a destination block over the root's\n                                                   documents, re-read per frontier row\n                                                   (^ = that row) = the backlinks walk\n    follow out_links collect { from dst frontier type == \"practitioner\" }   cut, keeping the frontier row\n    from docs where type == \"process\" frontier !verified follow out_links collect { from dst }\n                                                   the BODY's frontier applies to the seeds:\n                                                   an unverified seed is kept, not expanded\n    follow distinct out_links collect { from dst } / … { $key: group from dst }   identity control ($key)\n    follow refs(before), ^docs { where ^path in list(after) }    forward over `before`, backward\n                                                   over every doc whose `after` names me\n  Per-occurrence metadata: $depth (seed = 1), $stop (interior|leaf|frontier|\n  depth|cycle), $leaf/$frontier, $ordinal (a deterministic 1..N rank over the\n  walk, ordered by depth then path — `order by $ordinal` for walk order,\n  `where $ordinal <= N` for a deterministic budget cut), $key — usable in\n  select/order by and the top-level post-walk where (a where conjunct that\n  reads one filters the walk's RESULT; the other conjuncts remain the seed\n  predicate), NOT metadata of the candidates a destination block's where reads,\n  nor valid inside a consumer directive. Cyclic graphs are safe: a revisited\n  node is admitted once as a `$stop == \"cycle\"` occurrence and never\n  re-expanded. The default keeps one occurrence per distinct walk path;\n  `follow distinct` dedups reached rows by identity.\n  Destination blocks (OQX 0.20): a brace after ANY destination opens that\n  destination's block — children { depth 2 }, refs(x) { depth 2 }, out_links\n  collect { from dst depth 2 }, ^docs { where ^path in list(after) } — with the\n  0.17 body rules (where-first, projections) and two clauses of its own after\n  `where`: frontier <pred> (occurrences reached through this destination that\n  match are frontiers; ^ there is the walk's enclosing scope) and depth <n>\n  (this destination expands a frontier row only while $depth < n). The body\n  that carries the follow may write frontier <pred> too, after its where and\n  before follow: it applies to the SEEDS (read like the body's where) — a\n  matching seed stays in the result with $stop == \"frontier\" and is not\n  expanded; each destination's frontier is its own. There is no options block;\n  the old `by` is $key. A bare follow ^docs (no brace, no consumer) is an\n  error naming both block spellings.\n  Type-preserving relations: block.children, section.children, section.subsections;\n  the citation graph is out_links collect { from dst } / in_links collect { from doc }.\n  from links where dst_path == \"/notes/x.md\"       inbound links to a doc, as rows\n  select d: dst.title, k: dst_kind from links       the destination document's title\n  from docs where out_links exists { where dst.layer == \"draft\" }   links into drafts\n  select b: in_links collect distinct { from doc } from docs     backlinks as { id, path }\n  select doc_id, dst_path from links where predicate == \"depends_on\"\n  from docs where not doc.in_links exists { }      orphans (nothing links in)\n  (The `graph` tool is a convenience wrapper that compiles to a follow query.)\n\n## semantic grain\n\nfrom docs ranks whole DOCUMENTS (one hit per file); from blocks ranks PASSAGES.\ntext()/where prune the candidate set; only order by reweights.\n\n## Examples\n\n  from docs where layer == \"working\"\n  from docs where path.startsWith(\"/guides/\") and updated_at >= \"2026-08-01\"\n  select layer, tags from docs where \"pricing\" in list(tags)\n  from docs where inline.owner == \"alice\"\n  from docs where title.lower().contains(\"q3 plan\")\n  from docs where format == \"yaml\"\n  from docs where type == \"practitioner\" order by era desc limit 2\n  from docs where nodes none { where kind == \"md:task\" and not checked }\n  from docs where tags exists { where $it == \"tria-prima\" }\n  select fm: entries(data) collect { k: $key, v: $it } from docs where path == \"/x.md\"\n  select owner_id, owner: ^nodes single { where kind == \"person\" and attrs.id == ^owner_id } from docs\n  from blocks where type == \"task\" and not checked and under_heading(\"Launch\") and doc.layer == \"working\"\n  from blocks where type == \"paragraph\" and has_edge(\"references\", \"d_92aaaaa\")\n  select path, $depth from docs where path == \"/timeline/review.md\" follow refs(before), refs(after)\n  select path, next: ^docs collect { path where ^path in list(before) } from docs where type == \"milestone\"\n  select path, n: size(^docs), repo: ^id from docs limit 1\n  select p: data.path, t: data.title from docs where has(data.path)\n  docs { type == \"substance\" and not verified }\n  select subject, process: ^docs[slug == ^subject]!.path from docs where type == \"lab-note\"\n  select path, back: nodes first { select p: 0^docs collect { path where ^^path in list(after) } values } from docs where type == \"milestone\"\n  select path, prior: refs(before) collect { path, when } from docs where type == \"milestone\"\n  from blocks order by semantic(\"identity preservation across edits\") desc limit 10\n  select uri from links where dst_kind == \"external\"\n  docs count { where layer == \"canon\" }\n\nCommon mistake: `$path`/`$id` (the 2.x spelling) — omgbase has no $ names; write\n`path`/`id`. Another: `where tags == \"x\"` on a list-valued key is false — write\n`\"x\" in tags`. Another: `select data.path` — alias it (`p: data.path`).\n"
+          },
+          {
+            "hits": [
+              {
+                "id": "d_7",
+                "path": "/processes/calcination.md",
+                "title": "Calcination",
+                "stage": "nigredo"
+              },
+              {
+                "id": "d_8",
+                "path": "/processes/coagulation.md",
+                "title": "Coagulation",
+                "stage": "rubedo"
+              },
+              {
+                "id": "d_9",
+                "path": "/processes/dissolution.md",
+                "title": "Dissolution",
+                "stage": "nigredo"
+              },
+              {
+                "id": "d_10",
+                "path": "/processes/magnum-opus.md",
+                "title": "The magnum opus"
+              }
+            ],
+            "truncated": false,
+            "cursor": null,
+            "consumer": "collect"
+          },
+          {
+            "hits": [
+              {
+                "id": "n_494a3234acfd",
+                "path": "/processes/calcination.md",
+                "b": "b_153"
+              }
+            ],
+            "truncated": false,
+            "cursor": null,
+            "consumer": "collect"
+          },
+          {
+            "hits": [
+              {
+                "id": "n_a4b26917634c",
+                "path": "/processes/calcination.md",
+                "value": "Chase down the earliest recorded weight-gain measurement"
+              },
+              {
+                "id": "n_c047d5a4f7e3",
+                "path": "/processes/calcination.md",
+                "value": "Repeat with copper and record the colour sequence"
+              }
+            ],
+            "truncated": false,
+            "cursor": null,
+            "consumer": "collect"
+          },
+          {
+            "hits": [],
+            "truncated": false,
+            "cursor": null,
+            "consumer": "count",
+            "count": 13
+          },
+          {
+            "hits": [
+              {
+                "id": "d_7",
+                "path": "/processes/calcination.md"
+              },
+              {
+                "id": "d_8",
+                "path": "/processes/coagulation.md"
+              },
+              {
+                "id": "d_9",
+                "path": "/processes/dissolution.md"
+              },
+              {
+                "id": "d_10",
+                "path": "/processes/magnum-opus.md"
+              }
+            ],
+            "truncated": false,
+            "cursor": null,
+            "consumer": "collect"
+          },
+          [
+            {
+              "id": "b_138",
+              "locator": "/processes/calcination.md#heading[0]",
+              "preview": "Calcination",
+              "evidence": {
+                "rrf": 0.015873015873015872,
+                "boosts": {
+                  "heading": 1.15,
+                  "path": 1.1,
+                  "layer": 1.3
+                },
+                "ftsRank": 3
+              }
+            },
+            {
+              "id": "b_151",
+              "locator": "/processes/calcination.md#list_item[1]",
+              "preview": "calcined copper → black tenorite",
+              "evidence": {
+                "rrf": 0.015151515151515152,
+                "boosts": {
+                  "heading": 1.15,
+                  "path": 1.1,
+                  "layer": 1.3
+                },
+                "ftsRank": 6
+              }
+            },
+            {
+              "id": "b_150",
+              "locator": "/processes/calcination.md#list_item[0]",
+              "preview": "calcined lead → yellow massicot, then red minium",
+              "evidence": {
+                "rrf": 0.014925373134328358,
+                "boosts": {
+                  "heading": 1.15,
+                  "path": 1.1,
+                  "layer": 1.3
+                },
+                "ftsRank": 7
+              }
+            },
+            {
+              "id": "b_146",
+              "locator": "/processes/calcination.md#paragraph[8]",
+              "preview": "Organic matter burns away; metals take up oxygen. The characteristic *gain* in…",
+              "evidence": {
+                "rrf": 0.014492753623188406,
+                "boosts": {
+                  "heading": 1.15,
+                  "path": 1.1,
+                  "layer": 1.3
+                },
+                "ftsRank": 9
+              }
+            },
+            {
+              "id": "b_15",
+              "locator": "/index.md#list_item[0]",
+              "preview": "[calcination](/processes/calcination.md)",
+              "evidence": {
+                "rrf": 0.01639344262295082,
+                "boosts": {
+                  "layer": 1.3
+                },
+                "ftsRank": 1
+              }
+            },
+            {
+              "id": "b_202",
+              "locator": "/processes/magnum-opus.md#list_item[0]",
+              "preview": "[calcination](/processes/calcination.md) — nigredo",
+              "evidence": {
+                "rrf": 0.016129032258064516,
+                "boosts": {
+                  "layer": 1.3
+                },
+                "ftsRank": 2
+              }
+            },
+            {
+              "id": "b_270",
+              "locator": "/substances/salt.md#list_item[0]",
+              "preview": "Incinerate the material completely — see [calcination](/processes/calcination.md).",
+              "evidence": {
+                "rrf": 0.015625,
+                "boosts": {
+                  "layer": 1.3
+                },
+                "ftsRank": 4
+              }
+            },
+            {
+              "id": "b_256",
+              "locator": "/substances/prima-materia.md#paragraph[8]",
+              "preview": "Reduction to the *prima materia* is the purpose of [[nigredo]], the blackening…",
+              "evidence": {
+                "rrf": 0.014705882352941176,
+                "boosts": {
+                  "layer": 1.3
+                },
+                "ftsRank": 8
+              }
+            },
+            {
+              "id": "b_32",
+              "locator": "/lab/2026-01-notes.md#paragraph[1]",
+              "preview": "Bench work on [calcination](/processes/calcination.md), chasing the weight gain.",
+              "evidence": {
+                "rrf": 0.015384615384615385,
+                "boosts": {
+                  "layer": 1.15
+                },
+                "ftsRank": 5
+              }
+            },
+            {
+              "id": "b_322",
+              "locator": "/timeline/review.md#paragraph[1]",
+              "preview": "Two months in: the calcination series is tabulated, the dissolution trials are…",
+              "evidence": {
+                "rrf": 0.014285714285714285,
+                "boosts": {
+                  "layer": 1.15
+                },
+                "ftsRank": 10
+              }
+            }
+          ],
+          [
+            {
+              "id": "b_289",
+              "locator": "/texts/emerald-tablet.md#heading[0]",
+              "preview": "The Emerald Tablet",
+              "evidence": {
+                "rrf": 0.016129032258064516,
+                "boosts": {
+                  "heading": 1.15,
+                  "path": 1.1,
+                  "layer": 1.3
+                },
+                "ftsRank": 2
+              }
+            },
+            {
+              "id": "b_27",
+              "locator": "/index.md#list_item[0]",
+              "preview": "[The Emerald Tablet](/texts/emerald-tablet.md)",
+              "evidence": {
+                "rrf": 0.01639344262295082,
+                "boosts": {
+                  "layer": 1.3
+                },
+                "ftsRank": 1
+              }
+            },
+            {
+              "id": "b_254",
+              "locator": "/substances/prima-materia.md#paragraph[6]",
+              "preview": "The [Emerald Tablet](/texts/emerald-tablet.md) is usually read as describing this reduction and return.",
+              "evidence": {
+                "rrf": 0.015873015873015872,
+                "boosts": {
+                  "layer": 1.3
+                },
+                "ftsRank": 3
+              }
+            }
+          ],
+          {
+            "plan_id": "cd124e64dfc05c5fbf938afbb0b112207fab04216584925e4c2a68c81c439581",
+            "commit": "c_20",
+            "revisions": [
+              {
+                "id": "d_14",
+                "path": "/substances/salt.md",
+                "hash": "624e77d18095c4d2f9a430cffd42c4035d0850d1d053c7efc7f4e8071393da00"
+              }
+            ],
+            "new_ids": {},
+            "committed": true
+          },
+          {
+            "plan_id": "8b7827024a4569f93ca00b30ef6d1042302a81a2c85d88cce7137aa9a0487fdb",
+            "commit": "c_21",
+            "revisions": [
+              {
+                "id": "d_2",
+                "path": "/lab/2026-02-notes.md",
+                "hash": "f3e0234562b35be5ff95444a0655b426cd104aa61e116be67df64490a3798818"
+              }
+            ],
+            "new_ids": {
+              "$new.0": "b_327",
+              "$new.1": "b_328",
+              "$new.2": "b_329"
+            },
+            "committed": true
+          },
+          {
+            "plan_id": "2cedd989a0b4ab67f54cc99e9673d6bb47c6906e43604cd674bd3bcb2aae0a65",
+            "commit": "c_22",
+            "revisions": [
+              {
+                "id": "d_7",
+                "path": "/processes/calcination.md",
+                "hash": "150da782ae8892f4c335c40ebfda849375fb1bc25ec76fd48e52a461d8930db8"
+              }
+            ],
+            "new_ids": {},
+            "committed": true
+          },
+          {
+            "version": 1,
+            "planner_v": "p3",
+            "effects": [
+              {
+                "op": "set",
+                "target": {
+                  "kind": "document",
+                  "id": "d_7",
+                  "path": "processes/calcination.md"
+                },
+                "field": "frontmatter.verified",
+                "value": false
+              }
+            ],
+            "opset": {
+              "creates": [],
+              "moves": [],
+              "tombstones": [],
+              "set_frontmatter": [
+                {
+                  "doc": "d_7",
+                  "raw": "---\ntype: process\nslug: calcination\nlayer: canon\ntradition: western\ntags:\n  - process\n  - fire\nverified: false\nstage: nigredo\n---\n\n"
+                }
+              ],
+              "ops": []
+            },
+            "preconditions": {
+              "docs": [
+                {
+                  "id": "d_7",
+                  "path": "processes/calcination.md",
+                  "base_revision": "r_22",
+                  "hash": "150da782ae8892f4c335c40ebfda849375fb1bc25ec76fd48e52a461d8930db8"
+                }
+              ],
+              "blocks": [],
+              "parents": [],
+              "absent_paths": []
+            },
+            "new_ids": [],
+            "plan_id": "3ece126452106400210f07047029a961691b814252ba4437f5a5f1c3301629da",
+            "diagnostics": [],
+            "preview": {
+              "results": [],
+              "revisions": [
+                {
+                  "id": "d_7",
+                  "path": "/processes/calcination.md",
+                  "hash": "647b0d8820b6eac9f4c384634d9d3a5028d4b6b480af40e032a0f1ad220d95b4"
+                }
+              ],
+              "diffs": {
+                "/processes/calcination.md": {
+                  "before": "---\ntype: process\nslug: calcination\nlayer: canon\ntradition: western\ntags: [process, fire]\nverified: true\nstage: nigredo\n---\n\n# Calcination\n\nHeating a substance in air until it is reduced to a friable powder — a *calx*.\nThe first of the twelve gates and, in practice, the first thing anyone does.\n\nelement:: fire\nreversible:: no\n\n## Procedure\n\nGrind the material, spread it thinly in an open crucible, and heat steadily\nbelow the melting point. Stir to expose fresh surface. Continue until no further\nweight is lost and no fumes come off.\n\n```text\ncrucible → grind → thin layer → moderate heat → stir → constant weight\n```\n\nThe endpoint is the constant weight, not the colour. Colour tells you which\noxide you have; weight tells you that you are finished.\n\n## What is actually happening\n\nOrganic matter burns away; metals take up oxygen. The characteristic *gain* in\nweight when calcining a metal is the observation that eventually broke the\nphlogiston theory — the calx weighs more than the metal, which a theory of\nescaping substance cannot accommodate.\n\nAlchemical practice recorded this gain for centuries without drawing the\ninference. The data were sound; the framework could not use them.\n\n## Products\n\n- calcined lead → yellow massicot, then red minium\n- calcined copper → black tenorite\n- plant matter → ash, source of the [[salt]]\n\n## Tasks\n\n- [x] Verify the weight gain on lead with a balance\n- [x] Repeat with copper and record the colour sequence\n- [x] Chase down the earliest recorded weight-gain measurement\n",
+                  "after": "---\ntype: process\nslug: calcination\nlayer: canon\ntradition: western\ntags:\n  - process\n  - fire\nverified: false\nstage: nigredo\n---\n\n# Calcination\n\nHeating a substance in air until it is reduced to a friable powder — a *calx*.\nThe first of the twelve gates and, in practice, the first thing anyone does.\n\nelement:: fire\nreversible:: no\n\n## Procedure\n\nGrind the material, spread it thinly in an open crucible, and heat steadily\nbelow the melting point. Stir to expose fresh surface. Continue until no further\nweight is lost and no fumes come off.\n\n```text\ncrucible → grind → thin layer → moderate heat → stir → constant weight\n```\n\nThe endpoint is the constant weight, not the colour. Colour tells you which\noxide you have; weight tells you that you are finished.\n\n## What is actually happening\n\nOrganic matter burns away; metals take up oxygen. The characteristic *gain* in\nweight when calcining a metal is the observation that eventually broke the\nphlogiston theory — the calx weighs more than the metal, which a theory of\nescaping substance cannot accommodate.\n\nAlchemical practice recorded this gain for centuries without drawing the\ninference. The data were sound; the framework could not use them.\n\n## Products\n\n- calcined lead → yellow massicot, then red minium\n- calcined copper → black tenorite\n- plant matter → ash, source of the [[salt]]\n\n## Tasks\n\n- [x] Verify the weight gain on lead with a balance\n- [x] Repeat with copper and record the colour sequence\n- [x] Chase down the earliest recorded weight-gain measurement\n"
+                }
+              }
+            }
+          },
+          {
+            "version": 1,
+            "planner_v": "p3",
+            "effects": [
+              {
+                "op": "insert",
+                "into": {
+                  "kind": "section",
+                  "heading_id": "b_153"
+                },
+                "at": "end",
+                "markdown": "- [ ] Weigh the calx"
+              }
+            ],
+            "opset": {
+              "creates": [],
+              "moves": [],
+              "tombstones": [],
+              "set_frontmatter": [],
+              "ops": [
+                {
+                  "op": "insert",
+                  "to": {
+                    "parent": {
+                      "heading": "b_153",
+                      "scope": "section"
+                    },
+                    "at": "end"
+                  },
+                  "markdown": "- [ ] Weigh the calx"
+                }
+              ]
+            },
+            "preconditions": {
+              "docs": [
+                {
+                  "id": "d_7",
+                  "path": "processes/calcination.md",
+                  "base_revision": "r_22",
+                  "hash": "150da782ae8892f4c335c40ebfda849375fb1bc25ec76fd48e52a461d8930db8"
+                }
+              ],
+              "blocks": [],
+              "parents": [],
+              "absent_paths": []
+            },
+            "new_ids": [
+              {
+                "symbol": "$new.0",
+                "kind": "block"
+              },
+              {
+                "symbol": "$new.1",
+                "kind": "block"
+              }
+            ],
+            "plan_id": "70b41c26104eb9976be7691337c56f61bdae0512e73e69e161e8dd24a6b81979",
+            "diagnostics": [],
+            "preview": {
+              "results": [
+                {
+                  "ids": [
+                    "$new.0"
+                  ]
+                }
+              ],
+              "revisions": [
+                {
+                  "id": "d_7",
+                  "path": "/processes/calcination.md",
+                  "hash": "6be53fc5be75c7dcf7aaf0fdd22fc74965f847c3508ec9e89afae6142679c956"
+                }
+              ],
+              "diffs": {
+                "/processes/calcination.md": {
+                  "before": "---\ntype: process\nslug: calcination\nlayer: canon\ntradition: western\ntags: [process, fire]\nverified: true\nstage: nigredo\n---\n\n# Calcination\n\nHeating a substance in air until it is reduced to a friable powder — a *calx*.\nThe first of the twelve gates and, in practice, the first thing anyone does.\n\nelement:: fire\nreversible:: no\n\n## Procedure\n\nGrind the material, spread it thinly in an open crucible, and heat steadily\nbelow the melting point. Stir to expose fresh surface. Continue until no further\nweight is lost and no fumes come off.\n\n```text\ncrucible → grind → thin layer → moderate heat → stir → constant weight\n```\n\nThe endpoint is the constant weight, not the colour. Colour tells you which\noxide you have; weight tells you that you are finished.\n\n## What is actually happening\n\nOrganic matter burns away; metals take up oxygen. The characteristic *gain* in\nweight when calcining a metal is the observation that eventually broke the\nphlogiston theory — the calx weighs more than the metal, which a theory of\nescaping substance cannot accommodate.\n\nAlchemical practice recorded this gain for centuries without drawing the\ninference. The data were sound; the framework could not use them.\n\n## Products\n\n- calcined lead → yellow massicot, then red minium\n- calcined copper → black tenorite\n- plant matter → ash, source of the [[salt]]\n\n## Tasks\n\n- [x] Verify the weight gain on lead with a balance\n- [x] Repeat with copper and record the colour sequence\n- [x] Chase down the earliest recorded weight-gain measurement\n",
+                  "after": "---\ntype: process\nslug: calcination\nlayer: canon\ntradition: western\ntags: [process, fire]\nverified: true\nstage: nigredo\n---\n\n# Calcination\n\nHeating a substance in air until it is reduced to a friable powder — a *calx*.\nThe first of the twelve gates and, in practice, the first thing anyone does.\n\nelement:: fire\nreversible:: no\n\n## Procedure\n\nGrind the material, spread it thinly in an open crucible, and heat steadily\nbelow the melting point. Stir to expose fresh surface. Continue until no further\nweight is lost and no fumes come off.\n\n```text\ncrucible → grind → thin layer → moderate heat → stir → constant weight\n```\n\nThe endpoint is the constant weight, not the colour. Colour tells you which\noxide you have; weight tells you that you are finished.\n\n## What is actually happening\n\nOrganic matter burns away; metals take up oxygen. The characteristic *gain* in\nweight when calcining a metal is the observation that eventually broke the\nphlogiston theory — the calx weighs more than the metal, which a theory of\nescaping substance cannot accommodate.\n\nAlchemical practice recorded this gain for centuries without drawing the\ninference. The data were sound; the framework could not use them.\n\n## Products\n\n- calcined lead → yellow massicot, then red minium\n- calcined copper → black tenorite\n- plant matter → ash, source of the [[salt]]\n\n## Tasks\n\n- [x] Verify the weight gain on lead with a balance\n- [x] Repeat with copper and record the colour sequence\n- [x] Chase down the earliest recorded weight-gain measurement\n\n- [ ] Weigh the calx\n"
+                }
+              }
+            }
+          },
+          {
+            "version": 1,
+            "planner_v": "p3",
+            "effects": [
+              {
+                "op": "create",
+                "path": "lab/2026-03-notes.md",
+                "markdown": "# March\n"
+              },
+              {
+                "op": "insert",
+                "into": {
+                  "kind": "document",
+                  "id": "$new.0",
+                  "path": "lab/2026-03-notes.md"
+                },
+                "at": "end",
+                "markdown": "First entry."
+              }
+            ],
+            "opset": {
+              "creates": [
+                {
+                  "symbol": "$new.0",
+                  "path": "lab/2026-03-notes.md",
+                  "source": "# March\n",
+                  "before_op": 0
+                }
+              ],
+              "moves": [],
+              "tombstones": [],
+              "set_frontmatter": [],
+              "ops": [
+                {
+                  "op": "insert",
+                  "doc": "$new.0",
+                  "to": {
+                    "parent": {
+                      "doc": true
+                    },
+                    "at": "end"
+                  },
+                  "markdown": "First entry."
+                }
+              ]
+            },
+            "preconditions": {
+              "docs": [],
+              "blocks": [],
+              "parents": [],
+              "absent_paths": [
+                "lab/2026-03-notes.md"
+              ]
+            },
+            "new_ids": [
+              {
+                "symbol": "$new.0",
+                "kind": "document"
+              },
+              {
+                "symbol": "$new.1",
+                "kind": "block"
+              },
+              {
+                "symbol": "$new.2",
+                "kind": "block"
+              }
+            ],
+            "plan_id": "54784aed607b60304c93be5417f9763c34f5189da3a2bb847f22228096678dfe",
+            "diagnostics": [],
+            "preview": {
+              "results": [
+                {
+                  "ids": [
+                    "$new.2"
+                  ]
+                }
+              ],
+              "revisions": [
+                {
+                  "id": "$new.0",
+                  "path": "/lab/2026-03-notes.md",
+                  "hash": "2bb81deaa7dcc0ee14d68aab902fc3e4ff803b9da0f78608bf669fe717b94a1f"
+                }
+              ],
+              "diffs": {
+                "/lab/2026-03-notes.md": {
+                  "before": "",
+                  "after": "# March\n\nFirst entry.\n"
+                }
+              }
+            }
+          },
+          {
+            "version": 1,
+            "planner_v": "p3",
+            "effects": [
+              {
+                "op": "set",
+                "target": {
+                  "kind": "document",
+                  "id": "d_7",
+                  "path": "processes/calcination.md"
+                },
+                "field": "frontmatter.reviewed",
+                "value": true
+              },
+              {
+                "op": "set",
+                "target": {
+                  "kind": "document",
+                  "id": "d_9",
+                  "path": "processes/dissolution.md"
+                },
+                "field": "frontmatter.reviewed",
+                "value": true
+              }
+            ],
+            "opset": {
+              "creates": [],
+              "moves": [],
+              "tombstones": [],
+              "set_frontmatter": [
+                {
+                  "doc": "d_7",
+                  "raw": "---\ntype: process\nslug: calcination\nlayer: canon\ntradition: western\ntags:\n  - process\n  - fire\nverified: true\nstage: nigredo\nreviewed: true\n---\n\n"
+                },
+                {
+                  "doc": "d_9",
+                  "raw": "---\ntype: process\nslug: dissolution\nlayer: canon\ntradition: western\ntags:\n  - process\n  - water\nverified: true\nstage: nigredo\nreviewed: true\n---\n\n"
+                }
+              ],
+              "ops": []
+            },
+            "preconditions": {
+              "docs": [
+                {
+                  "id": "d_7",
+                  "path": "processes/calcination.md",
+                  "base_revision": "r_22",
+                  "hash": "150da782ae8892f4c335c40ebfda849375fb1bc25ec76fd48e52a461d8930db8"
+                },
+                {
+                  "id": "d_9",
+                  "path": "processes/dissolution.md",
+                  "base_revision": "r_9",
+                  "hash": "fc915a41f88b1c5888038c386a4cab8f1e65032137ed8be91c3fee3a42cfc546"
+                }
+              ],
+              "blocks": [],
+              "parents": [],
+              "absent_paths": []
+            },
+            "new_ids": [],
+            "selection": {
+              "query": "from docs where type == \"process\" and stage == \"nigredo\"",
+              "expect": {
+                "max": 5
+              },
+              "templates": [
+                {
+                  "op": "set",
+                  "field": "frontmatter.reviewed",
+                  "value": true
+                }
+              ],
+              "cardinality": 2,
+              "identities": [
+                "d_7",
+                "d_9"
+              ]
+            },
+            "plan_id": "2fc42b30f077a671a706ae496a555dbf6f0274e98ae74a0646f34d38aec6684b",
+            "diagnostics": [],
+            "preview": {
+              "results": [],
+              "revisions": [
+                {
+                  "id": "d_7",
+                  "path": "/processes/calcination.md",
+                  "hash": "9ae544341ed1bd017e9041505fcc5dd0296d4e512619db5d51496c534eb4a7df"
+                },
+                {
+                  "id": "d_9",
+                  "path": "/processes/dissolution.md",
+                  "hash": "a824fb01e36a22a74a90b281095b789680ca16fb7e6d1937b042b61f26363340"
+                }
+              ],
+              "diffs": {
+                "/processes/calcination.md": {
+                  "before": "---\ntype: process\nslug: calcination\nlayer: canon\ntradition: western\ntags: [process, fire]\nverified: true\nstage: nigredo\n---\n\n# Calcination\n\nHeating a substance in air until it is reduced to a friable powder — a *calx*.\nThe first of the twelve gates and, in practice, the first thing anyone does.\n\nelement:: fire\nreversible:: no\n\n## Procedure\n\nGrind the material, spread it thinly in an open crucible, and heat steadily\nbelow the melting point. Stir to expose fresh surface. Continue until no further\nweight is lost and no fumes come off.\n\n```text\ncrucible → grind → thin layer → moderate heat → stir → constant weight\n```\n\nThe endpoint is the constant weight, not the colour. Colour tells you which\noxide you have; weight tells you that you are finished.\n\n## What is actually happening\n\nOrganic matter burns away; metals take up oxygen. The characteristic *gain* in\nweight when calcining a metal is the observation that eventually broke the\nphlogiston theory — the calx weighs more than the metal, which a theory of\nescaping substance cannot accommodate.\n\nAlchemical practice recorded this gain for centuries without drawing the\ninference. The data were sound; the framework could not use them.\n\n## Products\n\n- calcined lead → yellow massicot, then red minium\n- calcined copper → black tenorite\n- plant matter → ash, source of the [[salt]]\n\n## Tasks\n\n- [x] Verify the weight gain on lead with a balance\n- [x] Repeat with copper and record the colour sequence\n- [x] Chase down the earliest recorded weight-gain measurement\n",
+                  "after": "---\ntype: process\nslug: calcination\nlayer: canon\ntradition: western\ntags:\n  - process\n  - fire\nverified: true\nstage: nigredo\nreviewed: true\n---\n\n# Calcination\n\nHeating a substance in air until it is reduced to a friable powder — a *calx*.\nThe first of the twelve gates and, in practice, the first thing anyone does.\n\nelement:: fire\nreversible:: no\n\n## Procedure\n\nGrind the material, spread it thinly in an open crucible, and heat steadily\nbelow the melting point. Stir to expose fresh surface. Continue until no further\nweight is lost and no fumes come off.\n\n```text\ncrucible → grind → thin layer → moderate heat → stir → constant weight\n```\n\nThe endpoint is the constant weight, not the colour. Colour tells you which\noxide you have; weight tells you that you are finished.\n\n## What is actually happening\n\nOrganic matter burns away; metals take up oxygen. The characteristic *gain* in\nweight when calcining a metal is the observation that eventually broke the\nphlogiston theory — the calx weighs more than the metal, which a theory of\nescaping substance cannot accommodate.\n\nAlchemical practice recorded this gain for centuries without drawing the\ninference. The data were sound; the framework could not use them.\n\n## Products\n\n- calcined lead → yellow massicot, then red minium\n- calcined copper → black tenorite\n- plant matter → ash, source of the [[salt]]\n\n## Tasks\n\n- [x] Verify the weight gain on lead with a balance\n- [x] Repeat with copper and record the colour sequence\n- [x] Chase down the earliest recorded weight-gain measurement\n"
+                },
+                "/processes/dissolution.md": {
+                  "before": "---\ntype: process\nslug: dissolution\nlayer: canon\ntradition: western\ntags: [process, water]\nverified: true\nstage: nigredo\n---\n\n# Dissolution\n\nTaking the calx into a liquid — *solve* of the maxim *solve et coagula*. The\nsecond gate, and the operation that produced most of alchemy's real chemical\ndiscoveries.\n\nelement:: water\nreversible:: yes\n\n## Solvents\n\nThe search for solvents is where the practical payoff was. Distilling vitriol\nand nitre gave the mineral acids, and those genuinely dissolve things nothing\nelse will:\n\n```text\nnitre + vitriol      → aqua fortis     (nitric acid)\naqua fortis + sal    → aqua regia      (dissolves gold)\n```\n\n*Aqua regia* — royal water, because it dissolves the royal metal — is the single\nmost consequential thing to come out of the laboratory tradition. It is a real\nreagent, it does something no other liquid does, and its discovery was driven\nentirely by the transmutation programme.\n\n## The alkahest\n\nThe hypothetical universal solvent, said to dissolve any substance into its\nprima materia. Never produced. The obvious objection — that no vessel could hold\nit — was raised at the time and answered with the claim that it dissolves only\nwhat is imperfect.\n\nThis is unfalsifiable, and its defenders were not troubled by that.\n\n## Tasks\n\n- [x] Distil aqua fortis from nitre and vitriol\n- [x] Prepare aqua regia and test on gold leaf\n- [ ] Write up the alkahest arguments and their rebuttals\n",
+                  "after": "---\ntype: process\nslug: dissolution\nlayer: canon\ntradition: western\ntags:\n  - process\n  - water\nverified: true\nstage: nigredo\nreviewed: true\n---\n\n# Dissolution\n\nTaking the calx into a liquid — *solve* of the maxim *solve et coagula*. The\nsecond gate, and the operation that produced most of alchemy's real chemical\ndiscoveries.\n\nelement:: water\nreversible:: yes\n\n## Solvents\n\nThe search for solvents is where the practical payoff was. Distilling vitriol\nand nitre gave the mineral acids, and those genuinely dissolve things nothing\nelse will:\n\n```text\nnitre + vitriol      → aqua fortis     (nitric acid)\naqua fortis + sal    → aqua regia      (dissolves gold)\n```\n\n*Aqua regia* — royal water, because it dissolves the royal metal — is the single\nmost consequential thing to come out of the laboratory tradition. It is a real\nreagent, it does something no other liquid does, and its discovery was driven\nentirely by the transmutation programme.\n\n## The alkahest\n\nThe hypothetical universal solvent, said to dissolve any substance into its\nprima materia. Never produced. The obvious objection — that no vessel could hold\nit — was raised at the time and answered with the claim that it dissolves only\nwhat is imperfect.\n\nThis is unfalsifiable, and its defenders were not troubled by that.\n\n## Tasks\n\n- [x] Distil aqua fortis from nitre and vitriol\n- [x] Prepare aqua regia and test on gold leaf\n- [ ] Write up the alkahest arguments and their rebuttals\n"
+                }
+              }
+            }
+          },
+          {
+            "version": 1,
+            "planner_v": "p3",
+            "effects": [
+              {
+                "op": "insert",
+                "into": {
+                  "kind": "document",
+                  "id": "d_7",
+                  "path": "processes/calcination.md"
+                },
+                "at": "end",
+                "markdown": "- see [Laboratory notes — January](/lab/2026-01-notes.md)"
+              },
+              {
+                "op": "insert",
+                "into": {
+                  "kind": "document",
+                  "id": "d_8",
+                  "path": "processes/coagulation.md"
+                },
+                "at": "end",
+                "markdown": "- see [Laboratory notes — February](/lab/2026-02-notes.md)"
+              }
+            ],
+            "opset": {
+              "creates": [],
+              "moves": [],
+              "tombstones": [],
+              "set_frontmatter": [],
+              "ops": [
+                {
+                  "op": "insert",
+                  "doc": "d_7",
+                  "to": {
+                    "parent": {
+                      "doc": true
+                    },
+                    "at": "end"
+                  },
+                  "markdown": "- see [Laboratory notes — January](/lab/2026-01-notes.md)"
+                },
+                {
+                  "op": "insert",
+                  "doc": "d_8",
+                  "to": {
+                    "parent": {
+                      "doc": true
+                    },
+                    "at": "end"
+                  },
+                  "markdown": "- see [Laboratory notes — February](/lab/2026-02-notes.md)"
+                }
+              ]
+            },
+            "preconditions": {
+              "docs": [
+                {
+                  "id": "d_7",
+                  "path": "processes/calcination.md",
+                  "base_revision": "r_22",
+                  "hash": "150da782ae8892f4c335c40ebfda849375fb1bc25ec76fd48e52a461d8930db8"
+                },
+                {
+                  "id": "d_8",
+                  "path": "processes/coagulation.md",
+                  "base_revision": "r_8",
+                  "hash": "6f132ed7dd77232f3cb3e8c0b191ff925cc72a1b072c8a0f915bd4eb6a222215"
+                }
+              ],
+              "blocks": [],
+              "parents": [],
+              "absent_paths": []
+            },
+            "new_ids": [
+              {
+                "symbol": "$new.0",
+                "kind": "block"
+              },
+              {
+                "symbol": "$new.1",
+                "kind": "block"
+              },
+              {
+                "symbol": "$new.2",
+                "kind": "block"
+              },
+              {
+                "symbol": "$new.3",
+                "kind": "block"
+              }
+            ],
+            "selection": {
+              "query": "from docs where type == \"lab-note\"",
+              "expect": {
+                "max": 5
+              },
+              "templates": [
+                {
+                  "op": "insert",
+                  "into": {
+                    "kind": "document",
+                    "path": {
+                      "oqx": "\"/processes/\" + subject + \".md\""
+                    }
+                  },
+                  "at": "end",
+                  "markdown": {
+                    "oqx": "\"- see [\" + title + \"](\" + path + \")\""
+                  }
+                }
+              ],
+              "cardinality": 2,
+              "identities": [
+                "d_1",
+                "d_2"
+              ]
+            },
+            "plan_id": "2b5fd9740be55e91968bebfaa27420a7b0422342a96e6f25ef2bfb02f127fe8d",
+            "diagnostics": [],
+            "preview": {
+              "results": [
+                {
+                  "ids": [
+                    "$new.0"
+                  ]
+                },
+                {
+                  "ids": [
+                    "$new.2"
+                  ]
+                }
+              ],
+              "revisions": [
+                {
+                  "id": "d_7",
+                  "path": "/processes/calcination.md",
+                  "hash": "54f7eb9cc5dc9c6be049ec702ae37d2958763c5ae03b0aa3a7d07c282d0d87fc"
+                },
+                {
+                  "id": "d_8",
+                  "path": "/processes/coagulation.md",
+                  "hash": "09e6ad8187ed803dd634def08e5ed32f8bd7e543698416cff34ba709dc8fb6b2"
+                }
+              ],
+              "diffs": {
+                "/processes/calcination.md": {
+                  "before": "---\ntype: process\nslug: calcination\nlayer: canon\ntradition: western\ntags: [process, fire]\nverified: true\nstage: nigredo\n---\n\n# Calcination\n\nHeating a substance in air until it is reduced to a friable powder — a *calx*.\nThe first of the twelve gates and, in practice, the first thing anyone does.\n\nelement:: fire\nreversible:: no\n\n## Procedure\n\nGrind the material, spread it thinly in an open crucible, and heat steadily\nbelow the melting point. Stir to expose fresh surface. Continue until no further\nweight is lost and no fumes come off.\n\n```text\ncrucible → grind → thin layer → moderate heat → stir → constant weight\n```\n\nThe endpoint is the constant weight, not the colour. Colour tells you which\noxide you have; weight tells you that you are finished.\n\n## What is actually happening\n\nOrganic matter burns away; metals take up oxygen. The characteristic *gain* in\nweight when calcining a metal is the observation that eventually broke the\nphlogiston theory — the calx weighs more than the metal, which a theory of\nescaping substance cannot accommodate.\n\nAlchemical practice recorded this gain for centuries without drawing the\ninference. The data were sound; the framework could not use them.\n\n## Products\n\n- calcined lead → yellow massicot, then red minium\n- calcined copper → black tenorite\n- plant matter → ash, source of the [[salt]]\n\n## Tasks\n\n- [x] Verify the weight gain on lead with a balance\n- [x] Repeat with copper and record the colour sequence\n- [x] Chase down the earliest recorded weight-gain measurement\n",
+                  "after": "---\ntype: process\nslug: calcination\nlayer: canon\ntradition: western\ntags: [process, fire]\nverified: true\nstage: nigredo\n---\n\n# Calcination\n\nHeating a substance in air until it is reduced to a friable powder — a *calx*.\nThe first of the twelve gates and, in practice, the first thing anyone does.\n\nelement:: fire\nreversible:: no\n\n## Procedure\n\nGrind the material, spread it thinly in an open crucible, and heat steadily\nbelow the melting point. Stir to expose fresh surface. Continue until no further\nweight is lost and no fumes come off.\n\n```text\ncrucible → grind → thin layer → moderate heat → stir → constant weight\n```\n\nThe endpoint is the constant weight, not the colour. Colour tells you which\noxide you have; weight tells you that you are finished.\n\n## What is actually happening\n\nOrganic matter burns away; metals take up oxygen. The characteristic *gain* in\nweight when calcining a metal is the observation that eventually broke the\nphlogiston theory — the calx weighs more than the metal, which a theory of\nescaping substance cannot accommodate.\n\nAlchemical practice recorded this gain for centuries without drawing the\ninference. The data were sound; the framework could not use them.\n\n## Products\n\n- calcined lead → yellow massicot, then red minium\n- calcined copper → black tenorite\n- plant matter → ash, source of the [[salt]]\n\n## Tasks\n\n- [x] Verify the weight gain on lead with a balance\n- [x] Repeat with copper and record the colour sequence\n- [x] Chase down the earliest recorded weight-gain measurement\n\n- see [Laboratory notes — January](/lab/2026-01-notes.md)\n"
+                },
+                "/processes/coagulation.md": {
+                  "before": "---\ntype: process\nslug: coagulation\nlayer: working\ntradition: western\ntags: [process, earth]\nverified: true\nstage: rubedo\n---\n\n# Coagulation\n\nThe *coagula* half of *solve et coagula*: bringing a dissolved substance back to\na solid, ideally more ordered than before. Crystallization, precipitation, and\nslow evaporation all count.\n\nelement:: earth\nreversible:: yes\n\n## Why it closes the work\n\nDissolution destroys structure; coagulation rebuilds it. The pair is the engine\nof the whole programme — the claim being that matter repeatedly dissolved and\nrecoagulated is progressively refined, and that enough cycles yield the\n[philosophers' stone](/substances/philosophers-stone.md).\n\nThe claim is false, but the intuition is not absurd: recrystallization *does*\npurify, and each cycle *does* leave a cleaner product. The error is extrapolating\nan asymptote into a transformation.\n\n## Practical notes\n\nSlow is better. Rapid cooling gives small, impure crystals that trap solvent;\nslow evaporation at a stable temperature gives large clean ones.\n\n```text\nsaturate hot → filter while hot → cool undisturbed → harvest → repeat on liquor\n```\n\nRepeating on the mother liquor is where the yield is. See the\n[February notes](/lab/2026-02-notes.md) for a worked run.\n\n## Tasks\n\n- [x] Recrystallize alum three times and weigh each crop\n- [ ] Measure purity gain per cycle to find where it plateaus\n",
+                  "after": "---\ntype: process\nslug: coagulation\nlayer: working\ntradition: western\ntags: [process, earth]\nverified: true\nstage: rubedo\n---\n\n# Coagulation\n\nThe *coagula* half of *solve et coagula*: bringing a dissolved substance back to\na solid, ideally more ordered than before. Crystallization, precipitation, and\nslow evaporation all count.\n\nelement:: earth\nreversible:: yes\n\n## Why it closes the work\n\nDissolution destroys structure; coagulation rebuilds it. The pair is the engine\nof the whole programme — the claim being that matter repeatedly dissolved and\nrecoagulated is progressively refined, and that enough cycles yield the\n[philosophers' stone](/substances/philosophers-stone.md).\n\nThe claim is false, but the intuition is not absurd: recrystallization *does*\npurify, and each cycle *does* leave a cleaner product. The error is extrapolating\nan asymptote into a transformation.\n\n## Practical notes\n\nSlow is better. Rapid cooling gives small, impure crystals that trap solvent;\nslow evaporation at a stable temperature gives large clean ones.\n\n```text\nsaturate hot → filter while hot → cool undisturbed → harvest → repeat on liquor\n```\n\nRepeating on the mother liquor is where the yield is. See the\n[February notes](/lab/2026-02-notes.md) for a worked run.\n\n## Tasks\n\n- [x] Recrystallize alum three times and weigh each crop\n- [ ] Measure purity gain per cycle to find where it plateaus\n\n- see [Laboratory notes — February](/lab/2026-02-notes.md)\n"
+                }
+              }
+            }
+          },
+          {
+            "plan_id": "3ece126452106400210f07047029a961691b814252ba4437f5a5f1c3301629da",
+            "commit": "c_23",
+            "revisions": [
+              {
+                "id": "d_7",
+                "path": "/processes/calcination.md",
+                "hash": "647b0d8820b6eac9f4c384634d9d3a5028d4b6b480af40e032a0f1ad220d95b4"
+              }
+            ],
+            "new_ids": {},
+            "committed": true
+          },
+          {
+            "digests": [
+              {
+                "commit": "c_0",
+                "seq": 1,
+                "ts": "2026-09-27T00:00:00.000Z",
+                "origin": "observed",
+                "actor": null,
+                "revisions": [
+                  {
+                    "id": "d_0",
+                    "path": "/index.md",
+                    "hash": "74252946d208ad5c5e7f3b1a75d9e2feee6d8dfd06386fb09c47f23b797d0bed"
+                  }
+                ]
+              },
+              {
+                "commit": "c_1",
+                "seq": 2,
+                "ts": "2026-09-27T00:00:00.000Z",
+                "origin": "observed",
+                "actor": null,
+                "revisions": [
+                  {
+                    "id": "d_1",
+                    "path": "/lab/2026-01-notes.md",
+                    "hash": "4ca40f92b6dfba673bf7e8f310945285e0b778562d67267c408cc3a0074ca480"
+                  }
+                ]
+              },
+              {
+                "commit": "c_2",
+                "seq": 3,
+                "ts": "2026-09-27T00:00:00.000Z",
+                "origin": "observed",
+                "actor": null,
+                "revisions": [
+                  {
+                    "id": "d_2",
+                    "path": "/lab/2026-02-notes.md",
+                    "hash": "785e44677241bf9722ee204777ad1008a68b1360b2189550818800722ff0c7fa"
+                  }
+                ]
+              },
+              {
+                "commit": "c_3",
+                "seq": 4,
+                "ts": "2026-09-27T00:00:00.000Z",
+                "origin": "observed",
+                "actor": null,
+                "revisions": [
+                  {
+                    "id": "d_3",
+                    "path": "/practitioners/jabir-ibn-hayyan.md",
+                    "hash": "346dd857fb0acc23191d10939cde5d9c8b58317f2073968ea2cabbc5a6536ddc"
+                  }
+                ]
+              },
+              {
+                "commit": "c_4",
+                "seq": 5,
+                "ts": "2026-09-27T00:00:00.000Z",
+                "origin": "observed",
+                "actor": null,
+                "revisions": [
+                  {
+                    "id": "d_4",
+                    "path": "/practitioners/maria-prophetissa.md",
+                    "hash": "2041503c1ff937ac1e30e76153cb145d6033faa9bc828f02b68fbcb3d25370f5"
+                  }
+                ]
+              },
+              {
+                "commit": "c_5",
+                "seq": 6,
+                "ts": "2026-09-27T00:00:00.000Z",
+                "origin": "observed",
+                "actor": null,
+                "revisions": [
+                  {
+                    "id": "d_5",
+                    "path": "/practitioners/newton.md",
+                    "hash": "2d1f0bd3f92e3ab006e4f4220ab3cb6d7959184b9a41e1fd52a95e965750c06c"
+                  }
+                ]
+              },
+              {
+                "commit": "c_6",
+                "seq": 7,
+                "ts": "2026-09-27T00:00:00.000Z",
+                "origin": "observed",
+                "actor": null,
+                "revisions": [
+                  {
+                    "id": "d_6",
+                    "path": "/practitioners/paracelsus.md",
+                    "hash": "61b196d9470ef9c65e6330b6a0772c7d81b6c8636f1f5a54669404808365085d"
+                  }
+                ]
+              },
+              {
+                "commit": "c_7",
+                "seq": 8,
+                "ts": "2026-09-27T00:00:00.000Z",
+                "origin": "observed",
+                "actor": null,
+                "revisions": [
+                  {
+                    "id": "d_7",
+                    "path": "/processes/calcination.md",
+                    "hash": "e021b85c0fe843013d75cbe71aa541c45419f7d13a4bc246baebaeff30d605d2"
+                  }
+                ]
+              },
+              {
+                "commit": "c_8",
+                "seq": 9,
+                "ts": "2026-09-27T00:00:00.000Z",
+                "origin": "observed",
+                "actor": null,
+                "revisions": [
+                  {
+                    "id": "d_8",
+                    "path": "/processes/coagulation.md",
+                    "hash": "6f132ed7dd77232f3cb3e8c0b191ff925cc72a1b072c8a0f915bd4eb6a222215"
+                  }
+                ]
+              },
+              {
+                "commit": "c_9",
+                "seq": 10,
+                "ts": "2026-09-27T00:00:00.000Z",
+                "origin": "observed",
+                "actor": null,
+                "revisions": [
+                  {
+                    "id": "d_9",
+                    "path": "/processes/dissolution.md",
+                    "hash": "fc915a41f88b1c5888038c386a4cab8f1e65032137ed8be91c3fee3a42cfc546"
+                  }
+                ]
+              },
+              {
+                "commit": "c_10",
+                "seq": 11,
+                "ts": "2026-09-27T00:00:00.000Z",
+                "origin": "observed",
+                "actor": null,
+                "revisions": [
+                  {
+                    "id": "d_10",
+                    "path": "/processes/magnum-opus.md",
+                    "hash": "500f49be074b792b89fddd9661e93dc5afc9948c1506c67b23c2b4c006f9a85e"
+                  }
+                ]
+              },
+              {
+                "commit": "c_11",
+                "seq": 12,
+                "ts": "2026-09-27T00:00:00.000Z",
+                "origin": "observed",
+                "actor": null,
+                "revisions": [
+                  {
+                    "id": "d_11",
+                    "path": "/substances/mercury.md",
+                    "hash": "f144bf5fa170bf2dea89ad6fa7c9e37961a7b3016c454364a97e2d0697131e8f"
+                  }
+                ]
+              },
+              {
+                "commit": "c_12",
+                "seq": 13,
+                "ts": "2026-09-27T00:00:00.000Z",
+                "origin": "observed",
+                "actor": null,
+                "revisions": [
+                  {
+                    "id": "d_12",
+                    "path": "/substances/philosophers-stone.md",
+                    "hash": "fdcdf3fe4c43caadb8fa3535c705b274c2dc6e1a3ee5dcd0a27e62c2ff6512e3"
+                  }
+                ]
+              },
+              {
+                "commit": "c_13",
+                "seq": 14,
+                "ts": "2026-09-27T00:00:00.000Z",
+                "origin": "observed",
+                "actor": null,
+                "revisions": [
+                  {
+                    "id": "d_13",
+                    "path": "/substances/prima-materia.md",
+                    "hash": "11f1d67bf403bbae11bd9904d2679f534a2315a058b6f6bc7da043b9ab3e4c19"
+                  }
+                ]
+              },
+              {
+                "commit": "c_14",
+                "seq": 15,
+                "ts": "2026-09-27T00:00:00.000Z",
+                "origin": "observed",
+                "actor": null,
+                "revisions": [
+                  {
+                    "id": "d_14",
+                    "path": "/substances/salt.md",
+                    "hash": "bd46557a5b70181f7b5ed3478e6ddf646a92c7560a44607bbf92485e35e48cd3"
+                  }
+                ]
+              },
+              {
+                "commit": "c_15",
+                "seq": 16,
+                "ts": "2026-09-27T00:00:00.000Z",
+                "origin": "observed",
+                "actor": null,
+                "revisions": [
+                  {
+                    "id": "d_15",
+                    "path": "/substances/sulphur.md",
+                    "hash": "0531f667b6f371786055f368fc3b036cf51d31f63fd09c2437546d7255dd1ec0"
+                  }
+                ]
+              },
+              {
+                "commit": "c_16",
+                "seq": 17,
+                "ts": "2026-09-27T00:00:00.000Z",
+                "origin": "observed",
+                "actor": null,
+                "revisions": [
+                  {
+                    "id": "d_16",
+                    "path": "/texts/emerald-tablet.md",
+                    "hash": "fd4aa62c7b28de19a0f9c9dfc5145263bdbd2bd84528ef77fa4f6ce2fa99693b"
+                  }
+                ]
+              },
+              {
+                "commit": "c_17",
+                "seq": 18,
+                "ts": "2026-09-27T00:00:00.000Z",
+                "origin": "observed",
+                "actor": null,
+                "revisions": [
+                  {
+                    "id": "d_17",
+                    "path": "/texts/mutus-liber.md",
+                    "hash": "ccd682da7c3f643751e4aee291b18b75995ef9f883ececc5f925031bb319f4b5"
+                  }
+                ]
+              },
+              {
+                "commit": "c_18",
+                "seq": 19,
+                "ts": "2026-09-27T00:00:00.000Z",
+                "origin": "observed",
+                "actor": null,
+                "revisions": [
+                  {
+                    "id": "d_18",
+                    "path": "/timeline/kickoff.md",
+                    "hash": "be02e5d0c7b12d980c95181613db581ce4563d1bcf23ff01bc180840a9b1e141"
+                  }
+                ]
+              },
+              {
+                "commit": "c_19",
+                "seq": 20,
+                "ts": "2026-09-27T00:00:00.000Z",
+                "origin": "observed",
+                "actor": null,
+                "revisions": [
+                  {
+                    "id": "d_19",
+                    "path": "/timeline/review.md",
+                    "hash": "291498bbafd37e417d70f374e620346c879b1d72fdf6f0cdce5f8b8a88d11701"
+                  }
+                ]
+              },
+              {
+                "commit": "c_20",
+                "seq": 21,
+                "ts": "2026-10-13T00:00:00.000Z",
+                "origin": "api",
+                "actor": "agent:mcp",
+                "revisions": [
+                  {
+                    "id": "d_14",
+                    "path": "/substances/salt.md",
+                    "hash": "624e77d18095c4d2f9a430cffd42c4035d0850d1d053c7efc7f4e8071393da00"
+                  }
+                ]
+              },
+              {
+                "commit": "c_21",
+                "seq": 22,
+                "ts": "2026-10-13T00:00:00.000Z",
+                "origin": "api",
+                "actor": "agent:mcp",
+                "revisions": [
+                  {
+                    "id": "d_2",
+                    "path": "/lab/2026-02-notes.md",
+                    "hash": "f3e0234562b35be5ff95444a0655b426cd104aa61e116be67df64490a3798818"
+                  }
+                ]
+              },
+              {
+                "commit": "c_22",
+                "seq": 23,
+                "ts": "2026-10-13T00:00:00.000Z",
+                "origin": "api",
+                "actor": "agent:mcp",
+                "revisions": [
+                  {
+                    "id": "d_7",
+                    "path": "/processes/calcination.md",
+                    "hash": "150da782ae8892f4c335c40ebfda849375fb1bc25ec76fd48e52a461d8930db8"
+                  }
+                ]
+              },
+              {
+                "commit": "c_23",
+                "seq": 24,
+                "ts": "2026-10-13T00:00:00.000Z",
+                "origin": "api",
+                "actor": "agent:mcp",
+                "revisions": [
+                  {
+                    "id": "d_7",
+                    "path": "/processes/calcination.md",
+                    "hash": "647b0d8820b6eac9f4c384634d9d3a5028d4b6b480af40e032a0f1ad220d95b4"
+                  }
+                ]
+              }
+            ],
+            "cursor": 24,
+            "truncated": false,
+            "head": 24
+          },
+          {
+            "digests": [
+              {
+                "commit": "c_20",
+                "seq": 21,
+                "ts": "2026-10-13T00:00:00.000Z",
+                "origin": "api",
+                "actor": "agent:mcp",
+                "revisions": [
+                  {
+                    "id": "d_14",
+                    "path": "/substances/salt.md",
+                    "hash": "624e77d18095c4d2f9a430cffd42c4035d0850d1d053c7efc7f4e8071393da00"
+                  }
+                ]
+              },
+              {
+                "commit": "c_21",
+                "seq": 22,
+                "ts": "2026-10-13T00:00:00.000Z",
+                "origin": "api",
+                "actor": "agent:mcp",
+                "revisions": [
+                  {
+                    "id": "d_2",
+                    "path": "/lab/2026-02-notes.md",
+                    "hash": "f3e0234562b35be5ff95444a0655b426cd104aa61e116be67df64490a3798818"
+                  }
+                ]
+              },
+              {
+                "commit": "c_22",
+                "seq": 23,
+                "ts": "2026-10-13T00:00:00.000Z",
+                "origin": "api",
+                "actor": "agent:mcp",
+                "revisions": [
+                  {
+                    "id": "d_7",
+                    "path": "/processes/calcination.md",
+                    "hash": "150da782ae8892f4c335c40ebfda849375fb1bc25ec76fd48e52a461d8930db8"
+                  }
+                ]
+              },
+              {
+                "commit": "c_23",
+                "seq": 24,
+                "ts": "2026-10-13T00:00:00.000Z",
+                "origin": "api",
+                "actor": "agent:mcp",
+                "revisions": [
+                  {
+                    "id": "d_7",
+                    "path": "/processes/calcination.md",
+                    "hash": "647b0d8820b6eac9f4c384634d9d3a5028d4b6b480af40e032a0f1ad220d95b4"
+                  }
+                ]
+              }
+            ],
+            "cursor": 24,
+            "truncated": false,
+            "head": 24
+          },
+          {
+            "digests": [
+              {
+                "commit": "c_20",
+                "seq": 21,
+                "ts": "2026-10-13T00:00:00.000Z",
+                "origin": "api",
+                "actor": "agent:mcp",
+                "revisions": [
+                  {
+                    "id": "d_14",
+                    "path": "/substances/salt.md",
+                    "hash": "624e77d18095c4d2f9a430cffd42c4035d0850d1d053c7efc7f4e8071393da00"
+                  }
+                ]
+              },
+              {
+                "commit": "c_21",
+                "seq": 22,
+                "ts": "2026-10-13T00:00:00.000Z",
+                "origin": "api",
+                "actor": "agent:mcp",
+                "revisions": [
+                  {
+                    "id": "d_2",
+                    "path": "/lab/2026-02-notes.md",
+                    "hash": "f3e0234562b35be5ff95444a0655b426cd104aa61e116be67df64490a3798818"
+                  }
+                ]
+              },
+              {
+                "commit": "c_22",
+                "seq": 23,
+                "ts": "2026-10-13T00:00:00.000Z",
+                "origin": "api",
+                "actor": "agent:mcp",
+                "revisions": [
+                  {
+                    "id": "d_7",
+                    "path": "/processes/calcination.md",
+                    "hash": "150da782ae8892f4c335c40ebfda849375fb1bc25ec76fd48e52a461d8930db8"
+                  }
+                ]
+              },
+              {
+                "commit": "c_23",
+                "seq": 24,
+                "ts": "2026-10-13T00:00:00.000Z",
+                "origin": "api",
+                "actor": "agent:mcp",
+                "revisions": [
+                  {
+                    "id": "d_7",
+                    "path": "/processes/calcination.md",
+                    "hash": "647b0d8820b6eac9f4c384634d9d3a5028d4b6b480af40e032a0f1ad220d95b4"
+                  }
+                ]
+              }
+            ],
+            "cursor": 24,
+            "truncated": false,
+            "head": 24
+          },
+          {
+            "engine": "<string>",
+            "version": "<string>",
+            "components": "<object>",
+            "specs": {
+              "oqx": "<string>",
+              "format": "<string>",
+              "reconcile": "<string>",
+              "store": "<string>",
+              "properties": "<string>",
+              "graph": "<string>",
+              "search": "<string>",
+              "mutate": "<string>",
+              "sync": "<string>",
+              "surface": "<string>",
+              "cli": "<string>"
+            },
+            "schema": "<number>",
+            "mcp": {
+              "protocol": "<string>"
+            },
+            "runtime": "<string>",
+            "commit": "<string|null>",
+            "built": "<string|null>",
+            "profile": "<string>"
+          }
+        ]
+      }
+    }
+  ]
+}

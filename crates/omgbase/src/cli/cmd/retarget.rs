@@ -40,9 +40,14 @@ pub fn retarget(cli: &mut Cli, args: &[String]) -> Result<i32> {
         if let Some(g) = &scope {
             m.insert("path_glob".to_owned(), json!(g));
         }
-        return run_tool(cli, "links_retarget", m, a.value("actor"), move |_| {
-            Ok(effects)
-        });
+        return run_tool(
+            cli,
+            "links_retarget",
+            m,
+            a.value("actor"),
+            Vec::new(),
+            move |_| Ok(effects),
+        );
     }
     // The plan (default): `{ from, to, hits }` from the Plan's
     // `preview.retarget[0]` (a plan over no hit still carries it, empty).

@@ -21,7 +21,7 @@ import type { Cli } from "../context.js";
 import { CliUsageError, EngineErrorLike, renderHelp } from "../output.js";
 import { runSugar, runSugarRemote, runEffects, runEffectsRemote, runExecutePlan, runExecutePlanRemote, readContent, readStdin, expandBlockArgs, extractContentOpts, targetOf } from "./_mutate.js";
 import { runRmDoc } from "./docs.js";
-import { remoteCall } from "./_remote.js";
+import { remoteCall, remoteHasTool } from "./_remote.js";
 
 // Write sugar (11 §5.6; cli 4.0): each command resolves its refs, builds its
 // effects with the shared builders of `@omgbase/core` (the same table the MCP
@@ -59,6 +59,12 @@ function taskBlock(ws: ReturnType<Cli["workspace"]>, ref: string, blockId: strin
     throw new EngineErrorLike("type_mismatch", `not a task: ${ref} is a ${row.type}`, { data: { block: blockId, type: row.type } });
   }
   return blockId;
+}
+
+/** The block ref an `--at` anchor names (none for start/end) — a ref the remote fallback must be able to send as an id. */
+function anchorOf(at: At): string[] {
+  if (typeof at === "string") return [];
+  return "before" in at ? [at.before] : [at.after];
 }
 
 // Parse an `--at` spec: end|start|before X|after X (default end).
@@ -170,7 +176,7 @@ async function runInsert(cli: Cli, args: string[]): Promise<number> {
   const expect = values.expect ? { parent_children_hash: values.expect } : undefined;
   const at = parseAt(values);
   if (cli.flags.server) {
-    return runSugarRemote(cli, "blocks_insert", { to, markdown, at, ...(expect ? { expect } : {}) }, () => insertEffects(targetOf(to), at, markdown, expect).effects);
+    return runSugarRemote(cli, "blocks_insert", { to, markdown, at, ...(expect ? { expect } : {}) }, () => insertEffects(targetOf(to), at, markdown, expect).effects, [to, ...anchorOf(at)]);
   }
   const ws = cli.workspace();
   const repo = cli.repo(ws);
@@ -206,7 +212,7 @@ async function runUpdate(cli: Cli, args: string[]): Promise<number> {
   const expect = values.expect ? { content_hash: values.expect } : undefined;
   // Remote: the server pins CAS from current bytes when --expect is absent.
   if (cli.flags.server) {
-    return runSugarRemote(cli, "blocks_update", { id: ref, markdown, ...(expect ? { expect } : {}) }, () => updateBlockEffects(ref, { markdown, expect }).effects);
+    return runSugarRemote(cli, "blocks_update", { id: ref, markdown, ...(expect ? { expect } : {}) }, () => updateBlockEffects(ref, { markdown, expect }).effects, [ref]);
   }
   const ws = cli.workspace();
   const repo = cli.repo(ws);
@@ -250,7 +256,7 @@ async function runMove(cli: Cli, args: string[]): Promise<number> {
   const at = parseAt(values);
   const to = values.to;
   if (cli.flags.server) {
-    return runSugarRemote(cli, "blocks_move", { blocks: refs, to, at, ...(expect ? { expect } : {}) }, () => moveBlocksEffects(refs, targetOf(to), at, expect).effects);
+    return runSugarRemote(cli, "blocks_move", { blocks: refs, to, at, ...(expect ? { expect } : {}) }, () => moveBlocksEffects(refs, targetOf(to), at, expect).effects, [...refs, to, ...anchorOf(at)]);
   }
   const ws = cli.workspace();
   const repo = cli.repo(ws);
@@ -284,7 +290,7 @@ async function runRm(cli: Cli, args: string[]): Promise<number> {
   }
   const refs = expandBlockArgs(positionals);
   if (refs.length === 0) throw new CliUsageError("rm requires one or more blocks (or - for stdin), or --doc");
-  if (cli.flags.server) return runSugarRemote(cli, "blocks_remove", { blocks: refs }, () => removeBlocksEffects(refs).effects);
+  if (cli.flags.server) return runSugarRemote(cli, "blocks_remove", { blocks: refs }, () => removeBlocksEffects(refs).effects, refs);
   const ws = cli.workspace();
   const repo = cli.repo(ws);
   const blocks = refs.map((r) => block(cli, ws, repo.repoId, r));
@@ -314,7 +320,7 @@ async function runDone(cli: Cli, args: string[]): Promise<number> {
   const refs = expandBlockArgs(positionals);
   if (refs.length === 0) throw new CliUsageError("done requires one or more task blocks (or - for stdin)");
   const checked = !values.undo;
-  if (cli.flags.server) return runSugarRemote(cli, "blocks_check", { ids: refs, ...(values.undo ? { checked: false } : {}) }, () => checkEffects(refs, checked).effects);
+  if (cli.flags.server) return runSugarRemote(cli, "blocks_check", { ids: refs, ...(values.undo ? { checked: false } : {}) }, () => checkEffects(refs, checked).effects, refs);
   const ws = cli.workspace();
   const repo = cli.repo(ws);
   const blocks = refs.map((r) => taskBlock(ws, r, block(cli, ws, repo.repoId, r)));
@@ -351,9 +357,13 @@ async function runAppend(cli: Cli, args: string[]): Promise<number> {
   // server-side (spec/surface §4); a remote dry run reads the kind first.
   if (cli.flags.server) {
     return runSugarRemote(cli, "blocks_append", { id: target, text: markdown }, async () => {
-      const { type } = await remoteCall<{ type: string }>(cli, "blocks_read", { id: target, resolution: "skeleton" });
+      // The block's type decides the effect; `blocks_read` reads it on a full
+      // server, a `query` over the blocks target on a minimal one (§2.3).
+      const type = (await remoteHasTool(cli, "blocks_read"))
+        ? (await remoteCall<{ type: string }>(cli, "blocks_read", { id: target, resolution: "skeleton" })).type
+        : (await remoteCall<{ hits: { type?: string }[] }>(cli, "query", { query: `select type from blocks where id == ${JSON.stringify(target)}` })).hits[0]?.type;
       return appendEffects(type === "heading" ? { kind: "section", heading_id: target } : { kind: "block", id: target }, markdown).effects;
-    });
+    }, [target]);
   }
   const ws = cli.workspace();
   const repo = cli.repo(ws);
@@ -405,7 +415,7 @@ async function runSplit(cli: Cli, args: string[]): Promise<number> {
     if (s.trim() === "" || !Number.isInteger(n)) throw new CliUsageError(`bad --at '${values.at}' (offsets must be integers: n[,n…])`);
     return n;
   });
-  if (cli.flags.server) return runSugarRemote(cli, "blocks_split", { id: ref, at }, () => splitEffects(ref, at).effects);
+  if (cli.flags.server) return runSugarRemote(cli, "blocks_split", { id: ref, at }, () => splitEffects(ref, at).effects, [ref]);
   const ws = cli.workspace();
   const repo = cli.repo(ws);
   const blockId = block(cli, ws, repo.repoId, ref);
@@ -433,7 +443,7 @@ async function runMerge(cli: Cli, args: string[]): Promise<number> {
   }
   const refs = expandBlockArgs(positionals);
   if (refs.length < 2) throw new CliUsageError("merge requires at least two blocks");
-  if (cli.flags.server) return runSugarRemote(cli, "blocks_merge", { blocks: refs, ...(values.sep !== undefined ? { separator: values.sep } : {}) }, () => mergeEffects(refs, values.sep).effects);
+  if (cli.flags.server) return runSugarRemote(cli, "blocks_merge", { blocks: refs, ...(values.sep !== undefined ? { separator: values.sep } : {}) }, () => mergeEffects(refs, values.sep).effects, refs);
   const ws = cli.workspace();
   const repo = cli.repo(ws);
   const blocks = refs.map((r) => block(cli, ws, repo.repoId, r));

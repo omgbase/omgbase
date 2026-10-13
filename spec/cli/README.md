@@ -155,6 +155,29 @@ The remote path itself (spawning or connecting, the tool calls, their
 rendering) is **unpinned** here: it is the catalog of `spec/surface` §4 called
 from a client, and it needs a second process.
 
+**Profiles (cli 4.2).** The server may serve a catalog profile
+(`spec/surface` §4 "Profiles": `omg mcp --tools minimal` lists ten tools).
+The client lists the tools once per connection (`tools/list`, on connect);
+a sugar verb (`insert`, `update <block>`, `move`, `rm`, `done`, `append`,
+`split`, `merge`, `node set`, `new`, `mv`, `rm --doc`, `meta`, `update
+<doc>`, `retarget --apply`) calls its sugar tool when the server lists it —
+the server resolves refs and pins CAS — and otherwise sends `apply {
+effects, reason }` with the effects the shared builders make from the refs
+as given (the same closure the verb's `--dry-run` `plan` uses: a `b_`/`d_`
+id names its row, anything else a document path), `reason` the verb's
+`--reason` where it has one, else the sugar tool's name. Against a `full`
+server nothing changes (every tool is listed, every call is the same as
+before); `--dry-run` is `plan { effects }` under either profile. The one
+thing a minimal server cannot do is resolve a `#` locator (`path#type[n]`),
+so a verb falling back to `apply` with such a ref is the usage error
+`usage: "<ref>" is a locator, and this server does not list <tool> (a minimal tools profile) — refs are not resolved server-side there; pass a block or document id instead`,
+exit 2. `mv` over a minimal server reports no `retargeted`/`dangling` (the
+Receipt alone carries neither); `retarget --apply` prints the Receipt without
+`hits`/`pairs`; `append <block>` reads the block's type through `query`
+instead of `blocks_read`. Unpinned here like the rest of the remote path
+(the reference's `packages/cli/test/remote-minimal.test.ts` proves it against
+`omg mcp --tools minimal`).
+
 ### 2.4 Unknown command
 
 An unrecognized command is a usage error, exit 2, on stderr:
@@ -786,9 +809,15 @@ blocks }]`; `--jsonl` one row per line.
 
 ### `mcp`
 
-`mcp [-C <workspace-dir>] [--repo <slug>] [--no-watch]` — the MCP server on
-stdio (`spec/surface` §4, §7). Pinned: the card; the seam announcements on
-stderr when the seams are set —
+`mcp [-C <workspace-dir>] [--repo <slug>] [--no-watch] [--tools full|minimal]`
+— the MCP server on stdio (`spec/surface` §4, §7). `--tools` (cli 4.2) picks
+the catalog profile of `spec/surface` §4 "Profiles" (`full`, the default, or
+`minimal`); it overrides the workspace's `mcp.tools` setting, and any other
+value is the usage error `usage: --tools must be one of full|minimal (got
+"<value>")`, exit 2, before the workspace is opened (an unrecognized
+*setting* value is reported on stderr and the full catalog served). Pinned:
+the card; `mcp --tools <bad>` (`invoke::mcp-bad-tools`); the seam
+announcements on stderr when the seams are set —
 `[mcp] spec seam: sequential id minter (OMGBASE_SPEC_MINTER=sequential) — conformance run, not for production`
 and `[mcp] spec seam: clock pinned to <canonical instant> (OMGBASE_SPEC_CLOCK) — conformance run, not for production`;
 and, with no workspace, `repo_not_found` with the tailored hint
@@ -1623,6 +1652,15 @@ was `b_314`).
 
 ## 10. Decisions
 
+- 2026-10-13, cli 4.2: `mcp --tools <full|minimal>` (§6 `mcp`) serves a
+  catalog profile of `spec/surface` 4.3; the `--server` client lists the
+  tools once and falls back from a sugar tool to `apply { effects }` where
+  the server does not list it (§2.3 "Profiles"), refusing a `#` locator
+  there. `version` prints a last `profile` line (the tool's new key; `full`
+  locally, the remote's over `--server`). A flag added, a line added: a
+  minor. Fixtures: `invoke::help-card-mcp`, `invoke::mcp-bad-tools` (new),
+  `read::version`, `read::version-json`, `invoke::version-verb-no-workspace`
+  (the `profile` line/key by shape).
 - 2026-10-13, cli 4.1: `query --bare` (§4, §6) renders `spec/surface` 4.2's
   `query { bare: true }` — the hit table without the envelope columns, the
   bare hits under `--json`/`--jsonl`, the surface's refusals as every

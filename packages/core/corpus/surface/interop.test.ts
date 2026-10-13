@@ -24,6 +24,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { McpError } from "@modelcontextprotocol/sdk/types.js";
 import { ReadBuffer, serializeMessage } from "@modelcontextprotocol/sdk/shared/stdio.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import type { JSONRPCMessage } from "@modelcontextprotocol/sdk/types.js";
@@ -31,7 +32,7 @@ import { Store } from "../../src/core/store/store.js";
 import { ensureRepo } from "../../src/core/attach.js";
 import { sequentialMinter, withIdMinter } from "../../src/core/ids.js";
 import {
-  CORPUS_TS, FIXTURE_REPO_SLUG, cmpBytes, deepEqualTol, describeChange, readCorpusFromDisk, sortKeys, toReadOutcome, validateFixtureFile,
+  CORPUS_TS, FIXTURE_REPO_SLUG, cmpBytes, deepEqualTol, describeChange, readCorpusFromDisk, sortKeys, toReadOutcome, toRpcErrorOutcome, validateFixtureFile,
   type InteropCall, type InteropCase, type InteropSuite, type ReadOutcome, type ToolResult,
 } from "./fixture.js";
 
@@ -64,7 +65,8 @@ interface Peer {
   engine: Engine;
   /** the executable to spawn (may be a path that does not exist — `available` says) */
   command: string;
-  args(workspace: string): string[];
+  /** the server argv over `workspace`, plus a case's `server_args` (§7.2, 4.3: `["--tools", "minimal"]` serves the minimal profile) */
+  args(workspace: string, extra: string[]): string[];
   available: boolean;
   /** the command that builds it, for the failure message */
   build: string;
@@ -84,7 +86,7 @@ const PEERS: Record<Engine, Peer> = {
   ts: {
     engine: "ts",
     command: process.execPath,
-    args: (W) => [TS_MAIN, "mcp", "-C", W, "--no-watch"],
+    args: (W, extra) => [TS_MAIN, "mcp", "-C", W, "--no-watch", ...extra],
     available: existsSync(TS_MAIN),
     build: "pnpm build",
   },
@@ -93,7 +95,7 @@ const PEERS: Record<Engine, Peer> = {
     return {
       engine: "rust",
       command: bin ?? join(REPO_ROOT, "target", "debug", "omgbase"),
-      args: (W) => ["mcp", "--workspace", W, "--no-watch"],
+      args: (W, extra) => ["mcp", "--workspace", W, "--no-watch", ...extra],
       available: bin !== null && existsSync(bin),
       build: "cargo build -p omgbase",
     };
@@ -239,16 +241,31 @@ interface Session {
  * Any failure — spawn, timeout, protocol error, a non-zero exit — throws with
  * the peer's stderr appended; the child never survives the call.
  */
-async function session(peer: Peer, W: string, env: NodeJS.ProcessEnv, calls: InteropCall[]): Promise<Session> {
-  const transport = new ChildTransport(peer.command, peer.args(W), env);
+async function session(peer: Peer, W: string, env: NodeJS.ProcessEnv, calls: InteropCall[], serverArgs: string[]): Promise<Session> {
+  const transport = new ChildTransport(peer.command, peer.args(W, serverArgs), env);
   const client = new Client({ name: "surface-interop", version: "0" });
   const outcomes: ReadOutcome[] = [];
   let failure: unknown = null;
   try {
     await withTimeout(client.connect(transport), CONNECT_MS, `${peer.engine}: connect`);
     for (const call of calls) {
-      const r = await withTimeout(client.callTool({ name: call.tool, arguments: call.args }), CALL_MS, `${peer.engine}: ${call.tool}`);
-      outcomes.push(rewriteWorkspace(toReadOutcome(call.tool, r as ToolResult), W));
+      if ("method" in call) {
+        // §7.3 (4.3): the listing, recorded as the names in the order served.
+        const listed = await withTimeout(client.listTools(), CALL_MS, `${peer.engine}: tools/list`);
+        outcomes.push({ tools: listed.tools.map((t) => t.name) });
+        continue;
+      }
+      let r: ToolResult;
+      try {
+        r = (await withTimeout(client.callTool({ name: call.tool, arguments: call.args }), CALL_MS, `${peer.engine}: ${call.tool}`)) as ToolResult;
+      } catch (e) {
+        // A JSON-RPC error (not a tool result) is an outcome too (§7.3, 4.3):
+        // `unknown tool <name>` for a tool the profile hides. A timeout is not.
+        if (!(e instanceof McpError)) throw e;
+        outcomes.push(toRpcErrorOutcome(e));
+        continue;
+      }
+      outcomes.push(rewriteWorkspace(toReadOutcome(call.tool, r), W));
     }
   } catch (e) {
     failure = e;
@@ -319,9 +336,12 @@ async function runCase(corpus: Record<string, string>, c: InteropCaseInput, writ
     bootstrap(W);
     const env: NodeJS.ProcessEnv = { ...process.env, OMGBASE_SPEC_MINTER: "sequential", OMGBASE_SPEC_CLOCK: c.ts ?? CORPUS_TS };
     const seed: InteropCall = { tool: "observe_many", args: { files: paths.map((path) => ({ path, content: corpus[path]! })) } };
-    const w = await session(writer, W, env, [seed, ...(c.writes ?? [])]);
+    // `server_args` (§7.2, 4.3) profiles the READER's server; the writer seeds
+    // through `observe_many`, a tool outside the minimal profile, so it is
+    // always spawned plain.
+    const w = await session(writer, W, env, [seed, ...(c.writes ?? [])], []);
     checkSeed(w.outcomes[0], paths, writer.engine);
-    const r = await session(reader, W, env, c.reads);
+    const r = await session(reader, W, env, c.reads, c.server_args ?? []);
     return { writes: w.outcomes.slice(1), reads: r.outcomes, stderr: { writer: w.stderr, reader: r.stderr } };
   } finally {
     rmSync(W, { recursive: true, force: true });

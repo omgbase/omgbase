@@ -120,11 +120,13 @@ export interface CursorSuite {
   cases: CursorCase[];
 }
 
-/** One MCP tool call of the interop suite (README §7): no `ts` — the whole process runs under the case's clock. */
-export interface InteropCall {
-  tool: string;
-  args: Record<string, unknown>;
-}
+/**
+ * One call of the interop suite (README §7): a `tools/call` — `{ tool, args }`,
+ * no `ts`, the whole process runs under the case's clock — or (4.3) the
+ * listing, `{ method: "tools/list" }`, recorded as `{ tools: [names in catalog
+ * order] }` so a profiled server's catalog is pinned (§4 "Profiles").
+ */
+export type InteropCall = { tool: string; args: Record<string, unknown> } | { method: "tools/list" };
 
 /**
  * README §7: a cross-engine case. The writer observes the corpus, then runs
@@ -136,6 +138,8 @@ export interface InteropCase {
   name: string;
   notes?: string;
   ts?: string;
+  /** (4.3) extra argv appended to the READER's server command (`["--tools", "minimal"]` spawns the minimal profile, §4 "Profiles"); the writer, which seeds through `observe_many`, is spawned plain */
+  server_args?: string[];
   writes?: InteropCall[];
   reads: InteropCall[];
   expect: { writes: ReadOutcome[]; reads: ReadOutcome[] };
@@ -147,28 +151,48 @@ export interface InteropSuite {
   corpus: Record<string, string>;
   cases: InteropCase[];
 }
-export type FixtureFile = QuerySuite | ReadsSuite | CursorSuite | InteropSuite;
+/**
+ * README §6, 4.3: `examples.json` — the example ladders of the minimal tools'
+ * descriptions (§4 "Descriptions") as `read` steps over the alchemy corpus,
+ * which the suite carries like a query suite and the runner observes before
+ * the steps (into the case's workspace, since the ladders write).
+ */
+export interface ExamplesSuite {
+  suite: string;
+  corpus: Record<string, string>;
+  cases: ReadsCase[];
+}
+/** README §6, 4.3: `profiles.json` — each catalog profile's tool names in registration order (§4 "Profiles"). */
+export interface ProfilesSuite {
+  suite: string;
+  profiles: Record<string, string[]>;
+}
+export type FixtureFile = QuerySuite | ReadsSuite | CursorSuite | InteropSuite | ExamplesSuite | ProfilesSuite;
 
-export type CaseKind = "query" | "reads" | "cursor" | "interop";
+export type CaseKind = "query" | "reads" | "cursor" | "interop" | "examples" | "profiles";
 
-/** The four suite kinds, told apart by the file stem (README §6). */
+/** The suite kinds, told apart by the file stem (README §6). */
 export function suiteKind(suite: string): CaseKind {
   if (suite === "reads") return "reads";
   if (suite === "cursor") return "cursor";
   if (suite === "interop") return "interop";
+  if (suite === "examples") return "examples";
+  if (suite === "profiles") return "profiles";
   return "query";
 }
 
 /** The suites that embed the alchemy corpus (README §6). */
 export function carriesCorpus(kind: CaseKind): boolean {
-  return kind === "query" || kind === "interop";
+  return kind === "query" || kind === "interop" || kind === "examples";
 }
 
 export const CASE_KEYS: Record<CaseKind, readonly string[]> = {
   query: ["name", "notes", "query", "limit", "cursor", "bare", "expect"],
   reads: ["name", "notes", "workspace", "steps", "expect"],
+  examples: ["name", "notes", "workspace", "steps", "expect"],
   cursor: ["name", "notes", "parts", "cursor", "arity", "expect"],
-  interop: ["name", "notes", "ts", "writes", "reads", "expect"],
+  interop: ["name", "notes", "ts", "server_args", "writes", "reads", "expect"],
+  profiles: [],
 };
 
 // ---- helpers ------------------------------------------------------------------
@@ -395,6 +419,20 @@ export function surfaceComposed(data: unknown): boolean {
   return Object.keys(data).some((k) => SURFACE_ERROR_KEYS.has(k));
 }
 
+/**
+ * README §7.3 (4.3): a `tools/call` the server refuses at the protocol level —
+ * a JSON-RPC error rather than a tool result — is recorded as `{ rpc_error: {
+ * code, message } }`, the message as the server sent it (the SDK client's
+ * "MCP error <code>: " prefix removed). The one such text both engines pin is
+ * `unknown tool <name>` (`-32602`, §4 "Profiles").
+ */
+export function toRpcErrorOutcome(e: unknown): ReadOutcome {
+  const err = e as { code?: unknown; message?: unknown };
+  const code = typeof err.code === "number" ? err.code : null;
+  const message = String(err.message ?? e).replace(/^MCP error -?\d+: /, "");
+  return { rpc_error: { code, message } };
+}
+
 export function toReadOutcome(tool: string, r: ToolResult): ReadOutcome {
   const text = r.content[0]?.text ?? "";
   let payload: unknown;
@@ -429,7 +467,7 @@ export function toReadOutcome(tool: string, r: ToolResult): ReadOutcome {
  * `sweep` through the store paths, `read` through the tool handler under its
  * pinned clock.
  */
-export async function runReadsCase(c: ReadsCaseInput): Promise<ReadsEvaluation> {
+export async function runReadsCase(c: ReadsCaseInput, corpus?: Record<string, string>): Promise<ReadsEvaluation> {
   return withFixtureMinterAsync(async () => {
     const store = new Store({ path: ":memory:" });
     const dir = c.workspace ? mkdtempSync(join(tmpdir(), "omgbase-surface-spec-")) : null;
@@ -437,6 +475,19 @@ export async function runReadsCase(c: ReadsCaseInput): Promise<ReadsEvaluation> 
     let server: ReturnType<typeof buildServer> | null = null;
     try {
       const repoId = ensureRepo(store, FIXTURE_REPO_SLUG, dir);
+      if (corpus) {
+        // An examples suite (README §6, 4.3): the alchemy corpus observed as one
+        // batch in bytewise path order at CORPUS_TS (so `d_0` is index.md, as in
+        // every corpus-backed suite), mirrored into the workspace when there is one.
+        const paths = Object.keys(corpus).sort(cmpBytes);
+        observeBatch(store, repoId, paths.map((path) => ({ path, content: corpus[path]! })), CORPUS_TS);
+        if (dir) {
+          for (const p of paths) {
+            mkdirSync(dirname(join(dir, p)), { recursive: true });
+            writeFileSync(join(dir, p), corpus[p]!);
+          }
+        }
+      }
       const ctx: ServerContext = { store, repoId, ...(dir ? { rootPath: dir } : {}) };
       server = buildServer(ctx);
       const [clientT, serverT] = InMemoryTransport.createLinkedPair();
@@ -532,11 +583,17 @@ function validateCalls(at: string, calls: unknown, problems: string[]): number {
       problems.push(`${here}: not an object`);
       return;
     }
+    if ("method" in c) {
+      // (4.3) the listing: exactly `{ method: "tools/list" }`.
+      if (Object.keys(c).join(",") !== "method" || c.method !== "tools/list") problems.push(`${here}: a listing call is exactly { method: "tools/list" }`);
+      return;
+    }
     const extra = Object.keys(c).filter((k) => !["tool", "args"].includes(k));
     if (extra.length > 0) problems.push(`${here}: a call takes \`tool\`, \`args\` (got ${extra.join(", ")})`);
     if (typeof c.tool !== "string" || c.tool === "") problems.push(`${here}: \`tool\` must be a tool name`);
     else if (c.tool === "query_syntax") problems.push(`${here}: query_syntax is not compared (README §7.3)`);
-    else if (c.tool === "version") problems.push(`${here}: version is engine-specific by nature and never interop-compared (README §6)`);
+    // `version` is recorded by SHAPE (README §6), which is engine-neutral by
+    // construction, so a case may call it (4.3: it pins `profile`).
     if (!isRecord(c.args)) problems.push(`${here}: \`args\` must be an object`);
   });
   return calls.length;
@@ -575,6 +632,7 @@ export function validateFixtureFile(file: string, doc: unknown, opts: ValidateOp
   const stem = file.replace(/\.json$/, "");
   const kind = suiteKind(stem);
   if (doc.suite !== stem) problems.push(`${file}: \`suite\` must equal the file stem '${stem}' (got ${JSON.stringify(doc.suite)})`);
+  if (kind === "profiles") return [...problems, ...validateProfiles(file, doc)];
   const topKeys = carriesCorpus(kind) ? ["suite", "corpus", "cases"] : ["suite", "cases"];
   const extra = Object.keys(doc).filter((k) => !topKeys.includes(k));
   if (extra.length > 0) problems.push(`${file}: unknown top-level keys ${extra.join(", ")}`);
@@ -609,6 +667,7 @@ export function validateFixtureFile(file: string, doc: unknown, opts: ValidateOp
     let readCount = -1;
     if (kind === "interop") {
       if (c.ts !== undefined && (typeof c.ts !== "string" || !TS_RE.test(c.ts))) problems.push(`${at}: \`ts\` must be RFC 3339 UTC with three fractional digits and Z (spec/store §2.4)`);
+      if (c.server_args !== undefined && (!Array.isArray(c.server_args) || !c.server_args.every((a) => typeof a === "string"))) problems.push(`${at}: \`server_args\` must be an array of strings`);
       if (c.writes !== undefined) writeCount = validateCalls(`${at}.writes`, c.writes, problems);
       readCount = validateCalls(`${at}.reads`, c.reads, problems);
       if (readCount === 0) problems.push(`${at}.reads: must not be empty (README §7.2)`);
@@ -617,7 +676,7 @@ export function validateFixtureFile(file: string, doc: unknown, opts: ValidateOp
       if (c.limit !== undefined && (typeof c.limit !== "number" || !Number.isInteger(c.limit) || c.limit < 0)) problems.push(`${at}: \`limit\` must be a non-negative integer`);
       if (c.cursor !== undefined && typeof c.cursor !== "string") problems.push(`${at}: \`cursor\` must be a string`);
       if (c.bare !== undefined && typeof c.bare !== "boolean") problems.push(`${at}: \`bare\` must be a boolean`);
-    } else if (kind === "reads") {
+    } else if (kind === "reads" || kind === "examples") {
       if (c.workspace !== undefined && typeof c.workspace !== "boolean") problems.push(`${at}: \`workspace\` must be a boolean`);
       stepCount = validateSteps(at, c.steps, problems, { read: validateRead });
     } else {
@@ -641,7 +700,7 @@ export function validateFixtureFile(file: string, doc: unknown, opts: ValidateOp
         if (readCount >= 0 && e.reads.length !== readCount) problems.push(`${at}.expect.reads: ${e.reads.length} outcomes for ${readCount} reads`);
       }
     } else if (kind === "query") validateQueryExpect(`${at}.expect`, c.expect, problems);
-    else if (kind === "reads") {
+    else if (kind === "reads" || kind === "examples") {
       if (!isRecord(c.expect) || Object.keys(c.expect).join(",") !== "steps" || !Array.isArray(c.expect.steps)) problems.push(`${at}.expect: must be exactly { steps: [...] }`);
       else if (stepCount >= 0 && c.expect.steps.length !== stepCount) problems.push(`${at}.expect.steps: ${c.expect.steps.length} outcomes for ${stepCount} steps`);
     } else {
@@ -653,5 +712,26 @@ export function validateFixtureFile(file: string, doc: unknown, opts: ValidateOp
       if (!ok) problems.push(`${at}.expect: { cursor } for an encode case, { parts } or { error: "filter_invalid" } for a decode case`);
     }
   });
+  return problems;
+}
+
+/** README §6 (4.3): `profiles.json` is `{ suite: "profiles", profiles: { full: [names…], minimal: [names…] } }` — distinct names, `minimal` ⊆ `full`. */
+function validateProfiles(file: string, doc: Record<string, unknown>): string[] {
+  const problems: string[] = [];
+  const extra = Object.keys(doc).filter((k) => !["suite", "profiles"].includes(k));
+  if (extra.length > 0) problems.push(`${file}: unknown top-level keys ${extra.join(", ")}`);
+  const profiles = doc.profiles;
+  if (!isRecord(profiles)) return [...problems, `${file}: \`profiles\` must be an object (profile → tool names)`];
+  if (Object.keys(profiles).join(",") !== "full,minimal") problems.push(`${file}: \`profiles\` has exactly the keys full, minimal (in that order)`);
+  for (const [name, list] of Object.entries(profiles)) {
+    if (!Array.isArray(list) || !list.every((t) => typeof t === "string" && t !== "")) {
+      problems.push(`${file}: profiles.${name} must be an array of tool names`);
+      continue;
+    }
+    if (new Set(list).size !== list.length) problems.push(`${file}: profiles.${name} repeats a name`);
+  }
+  const full = Array.isArray(profiles.full) ? (profiles.full as string[]) : [];
+  const minimal = Array.isArray(profiles.minimal) ? (profiles.minimal as string[]) : [];
+  for (const t of minimal) if (!full.includes(t)) problems.push(`${file}: profiles.minimal names ${t}, which profiles.full does not`);
   return problems;
 }

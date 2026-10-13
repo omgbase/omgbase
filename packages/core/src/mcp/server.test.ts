@@ -8,7 +8,8 @@ import { Store } from "../core/store/store.js";
 import { ensureRepo } from "../core/attach.js";
 import { ingestFile } from "../core/ingest.js";
 import { processCheckpoint } from "../sync/checkpoint.js";
-import { buildServer } from "./server.js";
+import { McpError } from "@modelcontextprotocol/sdk/types.js";
+import { buildServer, MINIMAL_TOOLS, PROFILES, TOOLS_PROFILES, parseToolsProfile, unknownTool } from "./server.js";
 
 let store: Store;
 let repoId: string;
@@ -1132,5 +1133,83 @@ describe("link maintenance tools: honest dry run, authored targets, summary, sco
     expect(after.ids[1]).toBe(bodyId);
     expect(after.ids.slice(2, 5).every((id) => minted.includes(id))).toBe(true);
     expect(after.ids[5]).toBe(tailId);
+  });
+});
+
+// ---- profiles (spec/surface §4 "Profiles", 4.3) -----------------------------------
+describe("tools profiles (spec/surface §4 \"Profiles\", 4.3)", () => {
+  async function profiled(tools: "full" | "minimal"): Promise<{ client: Client; close: () => Promise<void> }> {
+    const server = buildServer({ store, repoId, tools });
+    const [clientT, serverT] = InMemoryTransport.createLinkedPair();
+    const c = new Client({ name: "t", version: "0" });
+    await Promise.all([server.connect(serverT), c.connect(clientT)]);
+    return { client: c, close: async () => { await c.close(); await server.close(); } };
+  }
+
+  it("the minimal profile lists exactly MINIMAL_TOOLS, in registration order; full lists everything", async () => {
+    const min = await profiled("minimal");
+    const names = (await min.client.listTools()).tools.map((t) => t.name);
+    expect([...names].sort()).toEqual([...MINIMAL_TOOLS].sort());
+    const full = await profiled("full");
+    const all = (await full.client.listTools()).tools.map((t) => t.name);
+    expect(all.length).toBeGreaterThan(names.length);
+    expect(all.filter((n) => MINIMAL_TOOLS.includes(n))).toEqual(names);
+    await min.close();
+    await full.close();
+  });
+
+  it("a tools/call on a tool the profile hides — or one that never existed — is the JSON-RPC -32602 error `unknown tool <name>`", async () => {
+    const min = await profiled("minimal");
+    for (const name of ["blocks_insert", "docs_outline", "nope"]) {
+      let err: unknown = null;
+      try {
+        await min.client.callTool({ name, arguments: {} });
+      } catch (e) {
+        err = e;
+      }
+      expect(err).toBeInstanceOf(McpError);
+      expect((err as McpError).code).toBe(-32602);
+      // The SDK client prefixes the wire message; the wire text itself is the pinned one.
+      expect((err as McpError).message.replace(/^MCP error -?\d+: /, "")).toBe(`unknown tool ${name}`);
+    }
+    await min.close();
+    // The same text under full for an unknown name (the profile does not change it).
+    let full: unknown = null;
+    try {
+      await client.callTool({ name: "docs_lits", arguments: {} });
+    } catch (e) {
+      full = e;
+    }
+    expect((full as McpError).code).toBe(-32602);
+    expect((full as McpError).message.replace(/^MCP error -?\d+: /, "")).toBe("unknown tool docs_lits");
+  });
+
+  it("a profile filters listing and calling, never semantics: a kept tool answers as under full; version reports the profile", async () => {
+    const min = await profiled("minimal");
+    const read = async (c: Client, name: string, args: Record<string, unknown>): Promise<unknown> => {
+      const r = (await c.callTool({ name, arguments: args })) as { content: { text: string }[] };
+      return JSON.parse(r.content[0]!.text) as unknown;
+    };
+    const argsErr = (await read(min.client, "docs_read", { q: "x" })) as { error: string; message: string };
+    expect(argsErr.error).toBe("filter_invalid");
+    expect(argsErr.message).toContain("unknown argument `q`");
+    expect(await read(min.client, "docs_read", { path: "notes.md" })).toEqual(await read(client, "docs_read", { path: "notes.md" }));
+    expect((await read(min.client, "version", {}) as { profile: string }).profile).toBe("minimal");
+    expect((await read(client, "version", {}) as { profile: string }).profile).toBe("full");
+    await min.close();
+  });
+
+  it("the constants agree: PROFILES.minimal admits exactly MINIMAL_TOOLS, full admits anything; parseToolsProfile knows the two names", () => {
+    for (const t of MINIMAL_TOOLS) expect(PROFILES.minimal(t)).toBe(true);
+    expect(PROFILES.minimal("blocks_insert")).toBe(false);
+    expect(PROFILES.full("blocks_insert")).toBe(true);
+    expect(TOOLS_PROFILES).toEqual(["full", "minimal"]);
+    expect(parseToolsProfile("minimal")).toBe("minimal");
+    expect(parseToolsProfile("full")).toBe("full");
+    expect(parseToolsProfile("lite")).toBeNull();
+    expect(parseToolsProfile(undefined)).toBeNull();
+    const e = unknownTool("x") as Error & { code: number };
+    expect(e.message).toBe("unknown tool x");
+    expect(e.code).toBe(-32602);
   });
 });

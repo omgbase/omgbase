@@ -161,12 +161,15 @@ struct Peer {
 }
 
 impl Peer {
-    /// Spawn `engine` on `w` under the §7.1 seams and run the MCP handshake.
-    fn spawn(engine: Engine, w: &str, clock: &str) -> Result<Self, String> {
+    /// Spawn `engine` on `w` under the §7.1 seams — plus the case's
+    /// `server_args` (§7.2, 4.3: `["--tools", "minimal"]` serves the minimal
+    /// profile) — and run the MCP handshake.
+    fn spawn(engine: Engine, w: &str, clock: &str, extra: &[String]) -> Result<Self, String> {
         let argv = peer_command(engine)?;
         let mut cmd = Command::new(&argv[0]);
         cmd.args(&argv[1..])
             .args(mcp_args(engine, w))
+            .args(extra)
             .env("OMGBASE_SPEC_MINTER", "sequential")
             .env("OMGBASE_SPEC_CLOCK", clock)
             .env_remove("OMGBASE_WORKSPACE")
@@ -264,9 +267,26 @@ impl Peer {
 
     /// One JSON-RPC request; the matching `result`, or the peer's error.
     fn request(&mut self, method: &str, params: Json) -> Result<Json, String> {
+        match self.request_raw(method, params)? {
+            Ok(result) => Ok(result),
+            Err(err) => Err(self.fail(&format!("{method} failed: {err}"))),
+        }
+    }
+
+    /// One JSON-RPC request: `Ok(Ok(result))`, `Ok(Err(error))` for the
+    /// peer's JSON-RPC error object (§7.3, 4.3: an outcome of its own —
+    /// `unknown tool <name>` for a tool the profile hides), `Err` for a
+    /// transport failure (timeout, closed pipe, non-JSON).
+    fn request_raw(&mut self, method: &str, params: Json) -> Result<Result<Json, Json>, String> {
         self.next_id += 1;
         let id = self.next_id;
-        self.send(&json!({ "jsonrpc": "2.0", "id": id, "method": method, "params": params }))?;
+        // A request without parameters omits the key: the reference's SDK
+        // server silently drops a `tools/list` whose `params` is `null`.
+        let mut req = json!({ "jsonrpc": "2.0", "id": id, "method": method });
+        if !params.is_null() {
+            req["params"] = params;
+        }
+        self.send(&req)?;
         let deadline = Instant::now() + CALL_TIMEOUT;
         loop {
             let remaining = deadline.saturating_duration_since(Instant::now());
@@ -294,18 +314,35 @@ impl Peer {
                 continue;
             }
             if let Some(err) = msg.get("error") {
-                return Err(self.fail(&format!("{method} failed: {err}")));
+                return Ok(Err(err.clone()));
             }
             return msg
                 .get("result")
                 .cloned()
+                .map(Ok)
                 .ok_or_else(|| self.fail(&format!("{method}: reply without result")));
         }
     }
 
-    /// `tools/call`: the raw MCP result (`content`, `isError?`).
-    fn call_tool(&mut self, name: &str, args: &Json) -> Result<Json, String> {
-        self.request("tools/call", json!({ "name": name, "arguments": args }))
+    /// `tools/call`: the raw MCP result (`content`, `isError?`), or the
+    /// JSON-RPC error object the peer answered with.
+    fn call_tool(&mut self, name: &str, args: &Json) -> Result<Result<Json, Json>, String> {
+        self.request_raw("tools/call", json!({ "name": name, "arguments": args }))
+    }
+
+    /// `tools/list`: the names in the order served (§7.3, 4.3).
+    fn list_tools(&mut self) -> Result<Vec<Json>, String> {
+        let res = self.request("tools/list", Json::Null)?;
+        Ok(res
+            .get("tools")
+            .and_then(Json::as_array)
+            .map(|tools| {
+                tools
+                    .iter()
+                    .filter_map(|t| t.get("name").cloned())
+                    .collect()
+            })
+            .unwrap_or_default())
     }
 
     /// §7.2: stdin EOF, then wait for the exit (kill after a grace period).
@@ -349,7 +386,8 @@ impl Drop for Peer {
 /// The MCP result as the fixture records it: the parsed JSON of the single
 /// text content item; an error result as `{ error, retriable, data? }`
 /// (`message` dropped, `data` dropped for `filter_invalid`); `changes_since`
-/// digests without `summary`; then the `<workspace>` rewrite.
+/// digests without `summary`; a `version` read by shape (§6); then the
+/// `<workspace>` rewrite.
 fn record(tool: &str, result: &Json, w: &str) -> Result<Json, String> {
     let content = result
         .get("content")
@@ -413,8 +451,69 @@ fn record(tool: &str, result: &Json, w: &str) -> Result<Json, String> {
                 }
             }
         }
+    } else if tool == "version" {
+        return Ok(type_shape(&body, &[]));
     }
     Ok(rewrite_workspace(body, w))
+}
+
+/// README §6: a `version` read is recorded by shape — leaves → `"<string>"` /
+/// `"<number>"` / `"<null>"` / `"<boolean>"`; objects keep their keys, arrays
+/// their length; the top-level `components` is one `"<object>"`, `mcp.sdk` is
+/// dropped, and the top-level `commit`/`built` — null or not by build
+/// environment — are one token either way, `"<string|null>"` (the reference
+/// runner's `typeShape`; the surface crate's `tests/spec.rs` has the twin).
+fn type_shape(v: &Json, path: &[String]) -> Json {
+    let child = |k: &str| {
+        let mut p = path.to_vec();
+        p.push(k.to_owned());
+        p
+    };
+    match v {
+        Json::Null => json!("<null>"),
+        Json::Bool(_) => json!("<boolean>"),
+        Json::Number(_) => json!("<number>"),
+        Json::String(_) => json!("<string>"),
+        Json::Array(items) => Json::Array(
+            items
+                .iter()
+                .enumerate()
+                .map(|(i, x)| type_shape(x, &child(&i.to_string())))
+                .collect(),
+        ),
+        Json::Object(_) if path == ["components"] => json!("<object>"),
+        Json::Object(m) => Json::Object(
+            m.iter()
+                .filter(|(k, _)| !(path == ["mcp"] && *k == "sdk"))
+                .map(|(k, x)| {
+                    let shape = if path.is_empty() && (k == "commit" || k == "built") {
+                        json!("<string|null>")
+                    } else {
+                        type_shape(x, &child(k))
+                    };
+                    (k.clone(), shape)
+                })
+                .collect(),
+        ),
+    }
+}
+
+/// §7.3 (4.3): a `tools/call` the peer refused at the protocol level — a
+/// JSON-RPC error rather than a tool result — as `{ rpc_error: { code,
+/// message } }`, the message as the server sent it (the reference strips its
+/// SDK client's "MCP error <code>: " prefix; this client sees the wire, but
+/// strips the same prefix should a server send it).
+fn record_rpc_error(err: &Json) -> Json {
+    let code = err.get("code").cloned().unwrap_or(Json::Null);
+    let message = err
+        .get("message")
+        .and_then(Json::as_str)
+        .map_or_else(|| err.to_string(), str::to_owned);
+    let message = match message.find(": ") {
+        Some(i) if message.starts_with("MCP error ") => message[i + 2..].to_owned(),
+        _ => message,
+    };
+    json!({ "rpc_error": { "code": code, "message": message } })
 }
 
 /// §7.3: every string equal to `W`, or beginning with `W/`, has that prefix
@@ -446,14 +545,35 @@ fn rewrite_workspace(v: Json, w: &str) -> Json {
 
 // ---- the suite -------------------------------------------------------------------------------
 
-struct Step {
-    tool: String,
-    args: Json,
+/// One call of a case: a `tools/call`, or (4.3) the listing.
+#[derive(Debug, PartialEq)]
+enum Step {
+    Call { tool: String, args: Json },
+    List,
+}
+
+impl Step {
+    /// The label a mismatch report prints.
+    fn tool(&self) -> &str {
+        match self {
+            Self::Call { tool, .. } => tool,
+            Self::List => "tools/list",
+        }
+    }
+
+    fn args(&self) -> Json {
+        match self {
+            Self::Call { args, .. } => args.clone(),
+            Self::List => Json::Null,
+        }
+    }
 }
 
 struct Case {
     name: String,
     ts: String,
+    /// Extra argv appended to the reader's server command (§7.2, 4.3).
+    server_args: Vec<String>,
     writes: Vec<Step>,
     reads: Vec<Step>,
     expect: Json,
@@ -478,7 +598,16 @@ fn steps_of(v: Option<&Json>, what: &str, case: &str) -> Result<Vec<Step>, Strin
         .iter()
         .enumerate()
         .map(|(i, s)| {
-            Ok(Step {
+            if let Some(method) = s.get("method") {
+                return if method == "tools/list" {
+                    Ok(Step::List)
+                } else {
+                    Err(format!(
+                        "{case}: {what}[{i}].method must be \"tools/list\" (got {method})"
+                    ))
+                };
+            }
+            Ok(Step::Call {
                 tool: s
                     .get("tool")
                     .and_then(Json::as_str)
@@ -486,6 +615,22 @@ fn steps_of(v: Option<&Json>, what: &str, case: &str) -> Result<Vec<Step>, Strin
                     .to_owned(),
                 args: s.get("args").cloned().unwrap_or_else(|| json!({})),
             })
+        })
+        .collect()
+}
+
+/// A case's `server_args` (4.3): strings, or none.
+fn server_args_of(v: Option<&Json>, case: &str) -> Result<Vec<String>, String> {
+    let Some(v) = v else {
+        return Ok(Vec::new());
+    };
+    v.as_array()
+        .ok_or_else(|| format!("{case}: `server_args` must be an array of strings"))?
+        .iter()
+        .map(|a| {
+            a.as_str()
+                .map(str::to_owned)
+                .ok_or_else(|| format!("{case}: `server_args` must be an array of strings"))
         })
         .collect()
 }
@@ -530,6 +675,7 @@ fn load_suite() -> Result<Suite, String> {
                     .and_then(Json::as_str)
                     .unwrap_or(DEFAULT_TS)
                     .to_owned(),
+                server_args: server_args_of(c.get("server_args"), &name)?,
                 writes: steps_of(c.get("writes"), "writes", &name)?,
                 reads: steps_of(c.get("reads"), "reads", &name)?,
                 expect: c
@@ -619,29 +765,43 @@ fn run_pair(
     prepare_workspace(&w, &suite.corpus)?;
 
     let mut writes = Vec::with_capacity(case.writes.len());
-    let mut peer = Peer::spawn(writer, &w_str, &case.ts)?;
+    // §7.2: the writer is spawned plain — it seeds through `observe_many`, a
+    // tool outside the minimal profile; `server_args` profile the reader.
+    let mut peer = Peer::spawn(writer, &w_str, &case.ts, &[])?;
     let files: Vec<Json> = suite
         .corpus
         .iter()
         .map(|(path, content)| json!({ "path": path, "content": content }))
         .collect();
-    let seed = peer.call_tool("observe_many", &json!({ "files": files }))?;
+    let seed = peer
+        .call_tool("observe_many", &json!({ "files": files }))?
+        .map_err(|e| peer.fail(&format!("observe_many failed: {e}")))?;
     let paths: Vec<&String> = suite.corpus.keys().collect();
     check_seed(&record("observe_many", &seed, &w_str)?, &paths, writer)?;
     for step in &case.writes {
-        let out = peer.call_tool(&step.tool, &step.args)?;
-        writes.push(record(&step.tool, &out, &w_str)?);
+        writes.push(run_step(&mut peer, step, &w_str)?);
     }
     peer.close()?;
 
     let mut reads = Vec::with_capacity(case.reads.len());
-    let mut peer = Peer::spawn(reader, &w_str, &case.ts)?;
+    let mut peer = Peer::spawn(reader, &w_str, &case.ts, &case.server_args)?;
     for step in &case.reads {
-        let out = peer.call_tool(&step.tool, &step.args)?;
-        reads.push(record(&step.tool, &out, &w_str)?);
+        reads.push(run_step(&mut peer, step, &w_str)?);
     }
     peer.close()?;
     Ok(Recorded { writes, reads })
+}
+
+/// One step's recorded outcome: a tool result as [`record`] frames it, a
+/// JSON-RPC error as `{ rpc_error }`, the listing as `{ tools }` (§7.3).
+fn run_step(peer: &mut Peer, step: &Step, w: &str) -> Result<Json, String> {
+    match step {
+        Step::Call { tool, args } => match peer.call_tool(tool, args)? {
+            Ok(out) => record(tool, &out, w),
+            Err(err) => Ok(record_rpc_error(&err)),
+        },
+        Step::List => Ok(json!({ "tools": peer.list_tools()? })),
+    }
 }
 
 // ---- comparison ------------------------------------------------------------------------------------
@@ -747,8 +907,8 @@ fn mismatches(case: &Case, rec: &Recorded) -> Vec<String> {
         for (i, step) in case.writes.iter().enumerate() {
             out.extend(compare_step(
                 &format!("writes[{i}]"),
-                &step.tool,
-                &step.args,
+                step.tool(),
+                &step.args(),
                 &rec.writes[i],
                 &exp_writes[i],
             ));
@@ -771,8 +931,8 @@ fn mismatches(case: &Case, rec: &Recorded) -> Vec<String> {
         for (i, step) in case.reads.iter().enumerate() {
             out.extend(compare_step(
                 &format!("reads[{i}]"),
-                &step.tool,
-                &step.args,
+                step.tool(),
+                &step.args(),
                 &rec.reads[i],
                 &exp_reads[i],
             ));
@@ -927,5 +1087,52 @@ fn record_normalizes_like_reads_json() {
     assert_eq!(
         record("docs_read", &err2, "/w").unwrap(),
         json!({ "error": "doc_missing", "data": { "doc": "x" }, "retriable": false })
+    );
+}
+
+#[test]
+fn listing_steps_and_rpc_errors_are_outcomes() {
+    let steps = steps_of(
+        Some(&json!([
+            { "method": "tools/list" },
+            { "tool": "version", "args": {} }
+        ])),
+        "reads",
+        "c",
+    )
+    .unwrap();
+    assert_eq!(steps[0], Step::List);
+    assert_eq!(steps[0].tool(), "tools/list");
+    assert_eq!(
+        steps[1],
+        Step::Call {
+            tool: "version".into(),
+            args: json!({})
+        }
+    );
+    assert!(steps_of(Some(&json!([{ "method": "tools/x" }])), "reads", "c").is_err());
+    assert_eq!(
+        server_args_of(Some(&json!(["--tools", "minimal"])), "c").unwrap(),
+        vec!["--tools".to_owned(), "minimal".to_owned()]
+    );
+    assert!(server_args_of(Some(&json!(["--tools", 1])), "c").is_err());
+    assert_eq!(
+        record_rpc_error(&json!({ "code": -32602, "message": "unknown tool docs_list" })),
+        json!({ "rpc_error": { "code": -32602, "message": "unknown tool docs_list" } })
+    );
+    assert_eq!(
+        record_rpc_error(
+            &json!({ "code": -32602, "message": "MCP error -32602: unknown tool docs_list" })
+        ),
+        json!({ "rpc_error": { "code": -32602, "message": "unknown tool docs_list" } })
+    );
+}
+
+#[test]
+fn a_version_read_is_recorded_by_shape() {
+    let version = json!({ "content": [{ "type": "text", "text": "{\"engine\":\"rust\",\"components\":{\"omgbase\":\"1\"},\"specs\":{\"cli\":null},\"schema\":14,\"mcp\":{\"protocol\":\"p\",\"sdk\":\"s\"},\"commit\":null,\"built\":\"t\",\"profile\":\"minimal\"}" }] });
+    assert_eq!(
+        record("version", &version, "/w").unwrap(),
+        json!({ "engine": "<string>", "components": "<object>", "specs": { "cli": "<null>" }, "schema": "<number>", "mcp": { "protocol": "<string>" }, "commit": "<string|null>", "built": "<string|null>", "profile": "<string>" })
     );
 }

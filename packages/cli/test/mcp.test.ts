@@ -318,3 +318,57 @@ function readFileSyncUtf8(path: string): string {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   return (require("node:fs") as typeof import("node:fs")).readFileSync(path, "utf8");
 }
+
+describe("omg mcp --tools (spec/surface §4 \"Profiles\", spec/cli `mcp` 4.2)", () => {
+  it("--tools minimal lists the ten tools, refuses a hidden one with `unknown tool <name>` (-32602), and version says minimal", async () => {
+    const child = spawn("node", [BIN, "-C", vault, "mcp", "--no-watch", "--tools", "minimal"], {
+      stdio: ["pipe", "pipe", "pipe"],
+      env: { ...process.env, NO_COLOR: "1" },
+    }) as ChildProcessWithoutNullStreams;
+    const rpc = new RpcClient(child);
+    await rpc.send("initialize", { protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: "vitest", version: "0" } });
+    rpc.notify("notifications/initialized", {});
+    const tools = await rpc.send("tools/list", {});
+    const names = ((tools.result as { tools?: { name: string }[] })?.tools ?? []).map((t) => t.name);
+    expect(names).toEqual(["docs_read", "docs_tree", "query_syntax", "query", "blocks_resolve", "apply", "plan", "execute", "changes_since", "version"]);
+    const hidden = await rpc.send("tools/call", { name: "blocks_insert", arguments: { to: "hub.md", markdown: "x" } });
+    expect(hidden.error).toEqual({ code: -32602, message: "unknown tool blocks_insert" });
+    const v = await rpc.send("tools/call", { name: "version", arguments: {} });
+    const body = JSON.parse(((v.result as { content?: { text?: string }[] })?.content?.[0]?.text) ?? "{}") as { profile?: string };
+    expect(body.profile).toBe("minimal");
+    expect(rpc.nonJsonStdout).toEqual([]);
+    const exitCode = await new Promise<number>((res) => {
+      child.on("exit", (code) => res(code ?? -1));
+      child.stdin.end();
+      setTimeout(() => { child.kill("SIGKILL"); res(-99); }, 4000);
+    });
+    expect(exitCode).toBe(0);
+  }, 15000);
+
+  it("--tools with an unknown profile is the usage error, exit 2", () => {
+    const r = spawnSync("node", [BIN, "-C", vault, "mcp", "--no-watch", "--tools", "lite"], { encoding: "utf8", env: { ...process.env, NO_COLOR: "1" } });
+    expect(r.status).toBe(2);
+    expect(r.stderr).toContain('usage: --tools must be one of full|minimal (got "lite")');
+    expect(r.stdout).toBe("");
+  });
+
+  it("the mcp.tools workspace setting selects the profile; the flag wins over it", async () => {
+    execFileSync("node", [BIN, "-C", vault, "config", "set", "mcp.tools", "minimal"], { encoding: "utf8", env: { ...process.env, NO_COLOR: "1" } });
+    try {
+      const count = async (extra: string[]): Promise<number> => {
+        const child = spawn("node", [BIN, "-C", vault, "mcp", "--no-watch", ...extra], { stdio: ["pipe", "pipe", "pipe"], env: { ...process.env, NO_COLOR: "1" } }) as ChildProcessWithoutNullStreams;
+        const rpc = new RpcClient(child);
+        await rpc.send("initialize", { protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: "vitest", version: "0" } });
+        rpc.notify("notifications/initialized", {});
+        const tools = await rpc.send("tools/list", {});
+        const n = ((tools.result as { tools?: { name: string }[] })?.tools ?? []).length;
+        await new Promise<void>((res) => { child.on("exit", () => res()); child.stdin.end(); setTimeout(() => { child.kill("SIGKILL"); res(); }, 4000); });
+        return n;
+      };
+      expect(await count([])).toBe(10);
+      expect(await count(["--tools", "full"])).toBeGreaterThan(10);
+    } finally {
+      execFileSync("node", [BIN, "-C", vault, "config", "set", "mcp.tools", "full"], { encoding: "utf8", env: { ...process.env, NO_COLOR: "1" } });
+    }
+  }, 30000);
+});

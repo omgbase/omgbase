@@ -798,7 +798,9 @@ pub fn card(name: &'static str, prog: &str) -> Option<HelpSpec> {
             s(
                 "Serve the MCP tool surface on stdio for an MCP host (Claude Code, Cursor, …); the host owns the process lifetime",
             ),
-            vec![s("mcp [-C <workspace-dir>] [--repo <slug>] [--no-watch]")],
+            vec![s(
+                "mcp [-C <workspace-dir>] [--repo <slug>] [--no-watch] [--tools full|minimal]",
+            )],
             opts(&[
                 (
                     "-C <dir>",
@@ -811,6 +813,10 @@ pub fn card(name: &'static str, prog: &str) -> Option<HelpSpec> {
                 (
                     "--no-watch",
                     "don't run the in-process file watcher (it is auto-off when another live watcher holds the lease)",
+                ),
+                (
+                    "--tools <profile>",
+                    "the catalog profile to serve: full (default — every tool) or minimal (ten tools: query, query_syntax, docs_read, docs_tree, blocks_resolve, changes_since, plan, execute, apply, version); overrides the mcp.tools setting",
                 ),
             ]),
             vec![format!(

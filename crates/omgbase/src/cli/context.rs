@@ -5,6 +5,7 @@
 //! connection that becomes the [`Surface`] every verb calls tools on, the
 //! embedding provider when a verb wants `semantic()`.
 
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 use omgbase_search::{EmbeddingProvider, EmbeddingSettings, create_external_provider};
@@ -66,6 +67,10 @@ pub struct Cli {
     repo: Option<RepoRow>,
     /// The `--server` engine, connected on first use (§2.3).
     remote: Option<McpEngineClient>,
+    /// The remote engine's catalog (`tools/list`, once per connection): a
+    /// profiled server (`mcp --tools minimal`) lists a subset, and a sugar
+    /// verb falls back to `apply` for a tool it does not list (§2.3, cli 4.2).
+    remote_tools: Option<BTreeSet<String>>,
     /// The shell's typed-result sink is armed (`spec/cli` §7). See [`Cli::capture`].
     pub capturing: bool,
     /// The shell wants the `N rows — address with @1..@N` hint printed at
@@ -120,6 +125,7 @@ impl Cli {
             engine: Engine::Closed,
             repo: None,
             remote: None,
+            remote_tools: None,
             capturing: false,
             announce_frame: false,
             captured: None,
@@ -513,6 +519,64 @@ impl Cli {
         Ok(self.remote.as_mut().expect("connected above"))
     }
 
+    /// Whether the remote engine lists `tool` (`tools/list`, asked once per
+    /// connection and remembered): a server under the minimal profile
+    /// (`spec/surface` §4 "Profiles") lists ten tools, none of the sugar
+    /// writers.
+    pub fn remote_has_tool(&mut self, tool: &str) -> Result<bool> {
+        if self.remote_tools.is_none() {
+            let listed = self
+                .remote()?
+                .list_tools()
+                .map_err(|e| CliError::engine("remote_unavailable", e.to_string()))?;
+            self.remote_tools = Some(
+                listed
+                    .iter()
+                    .filter_map(|t| t.get("name").and_then(Json::as_str))
+                    .map(str::to_owned)
+                    .collect(),
+            );
+        }
+        Ok(self
+            .remote_tools
+            .as_ref()
+            .is_some_and(|tools| tools.contains(tool)))
+    }
+
+    /// A sugar write over `--server` (§2.3, cli 4.2): the mirroring tool
+    /// when the engine lists it — the same call as before, its refs resolved
+    /// server-side; else `apply { effects, reason }` over the effects the verb
+    /// builds locally with the shared builders (the closure a remote dry run
+    /// already uses), so every write verb works against a server under the
+    /// minimal profile. The reason is the verb's own `reason` argument when
+    /// the tool takes one, else the tool's name. The one thing that profile
+    /// loses is the server-side locator resolution: a `#` locator among the
+    /// verb's `refs` would reach the engine as a document path, so it is
+    /// refused here as a usage error (the reference's `remoteSugar`).
+    pub fn remote_sugar(
+        &mut self,
+        tool: &str,
+        args: Json,
+        refs: &[String],
+        effects: impl FnOnce(&mut Cli) -> Result<Json>,
+    ) -> Result<Json> {
+        if self.remote_has_tool(tool)? {
+            return self.remote_call(tool, args);
+        }
+        if let Some(locator) = refs.iter().find(|r| is_locator(r)) {
+            return Err(CliError::usage(format!(
+                "{} is a locator, and this server does not list {tool} (a minimal tools profile) — refs are not resolved server-side there; pass a block or document id instead",
+                super::output::js_string(locator)
+            )));
+        }
+        let reason = args
+            .get("reason")
+            .and_then(Json::as_str)
+            .map_or_else(|| tool.to_owned(), str::to_owned);
+        let effects = effects(self)?;
+        self.remote_call("apply", json!({ "effects": effects, "reason": reason }))
+    }
+
     /// Call a tool on the remote engine, threading the global `--repo`
     /// slug. A tool error comes back as the engine error its envelope
     /// spells (`{ error, message, data? }`), rendered like a local one.
@@ -592,8 +656,31 @@ impl Cli {
     /// the remote session, if one was opened.
     pub fn close(&mut self) {
         self.engine = Engine::Closed;
+        self.remote_tools = None;
         if let Some(mut remote) = self.remote.take() {
             let _ = remote.close();
         }
+    }
+}
+
+/// A `#` locator (`path#type[n]`, `#^anchor`): a ref only a server with the
+/// sugar tools resolves (the reference's `isLocator`).
+fn is_locator(r: &str) -> bool {
+    r.contains('#') && !omgbase_store::is_id_ref(r, "b") && !omgbase_store::is_id_ref(r, "d")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_locator_is_a_hash_ref_that_is_not_an_id() {
+        assert!(is_locator("a.md#Tasks"));
+        assert!(is_locator("a.md#b_1"));
+        assert!(is_locator("#^anchor"));
+        assert!(!is_locator("a.md"));
+        assert!(!is_locator("b_1"));
+        assert!(!is_locator("d_7"));
+        assert!(!is_locator("/projects/x.md"));
     }
 }

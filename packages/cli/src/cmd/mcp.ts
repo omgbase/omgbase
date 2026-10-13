@@ -1,8 +1,11 @@
 import { parseArgs } from "node:util";
-import { serveStdio, Watcher, WatchLease, watchLeaseLive, freshnessSweep, withWriterLock, awaitReady, WATCH_READY_PATIENCE_MS, EmbedDrainer, EngineError, type SyncSource } from "@omgbase/core";
+import {
+  serveStdio, Watcher, WatchLease, watchLeaseLive, freshnessSweep, withWriterLock, awaitReady, WATCH_READY_PATIENCE_MS, EmbedDrainer, EngineError, resolveSettings,
+  parseToolsProfile, TOOLS_PROFILES, type SyncSource, type ToolsProfile,
+} from "@omgbase/core";
 import type { Command } from "../commands.js";
 import type { Cli } from "../context.js";
-import { EngineErrorLike, EXIT_OK, renderHelp } from "../output.js";
+import { CliUsageError, EngineErrorLike, EXIT_OK, renderHelp } from "../output.js";
 import { installSpecSeams, WRITER_LOCK_TIMEOUT_ENV } from "../seams.js";
 import { loadEmbedding } from "./_embed.js";
 import { openRepoSource } from "./_source.js";
@@ -39,20 +42,27 @@ async function runMcp(cli: Cli, args: string[]): Promise<number> {
   const { values } = parseArgs({
     args,
     allowPositionals: true,
-    options: { "no-watch": { type: "boolean" }, help: { type: "boolean" } },
+    options: { "no-watch": { type: "boolean" }, tools: { type: "string" }, help: { type: "boolean" } },
   });
   if (values.help) {
     return renderHelp(cli, {
       name: "mcp",
       summary: "Serve the MCP tool surface on stdio for an MCP host (Claude Code, Cursor, …); the host owns the process lifetime",
-      usage: "mcp [-C <workspace-dir>] [--repo <slug>] [--no-watch]",
+      usage: "mcp [-C <workspace-dir>] [--repo <slug>] [--no-watch] [--tools full|minimal]",
       options: [
         ["-C <dir>", "the workspace to serve — a directory at or below one containing .omgbase/ (the host rarely starts you inside it)"],
         ["--repo <slug>", "which repo, when the workspace has several"],
         ["--no-watch", "don't run the in-process file watcher (it is auto-off when another live watcher holds the lease)"],
+        ["--tools <profile>", "the catalog profile to serve: full (default — every tool) or minimal (ten tools: query, query_syntax, docs_read, docs_tree, blocks_resolve, changes_since, plan, execute, apply, version); overrides the mcp.tools setting"],
       ],
       notes: [`host config: {"command": "${cli.prog}", "args": ["mcp", "-C", "/path/to/notes"]}`],
     });
+  }
+  // The profile flag is checked before anything is opened: a bad value is the
+  // usage error (exit 2) whatever the workspace holds.
+  const flagProfile = values.tools === undefined ? undefined : parseToolsProfile(values.tools);
+  if (values.tools !== undefined && flagProfile === null) {
+    throw new CliUsageError(`--tools must be one of ${TOOLS_PROFILES.join("|")} (got ${JSON.stringify(values.tools)})`);
   }
 
   announceSpecSeams(cli);
@@ -72,6 +82,19 @@ async function runMcp(cli: Cli, args: string[]): Promise<number> {
     throw err;
   }
   const repo = cli.repo(ws);
+
+  // The catalog profile (spec/surface §4 "Profiles", spec/cli `mcp` 4.2): the
+  // flag wins over the workspace's `mcp.tools` setting (repo overrides
+  // inherit, as every setting does); an unrecognized setting value is reported
+  // and ignored — the server comes up `full`, never silently reduced.
+  const settingProfile = (resolveSettings(ws.store, repo.repoId).mcp as { tools?: unknown } | undefined)?.tools;
+  let tools: ToolsProfile = "full";
+  if (flagProfile !== undefined && flagProfile !== null) tools = flagProfile;
+  else if (settingProfile !== undefined) {
+    const parsed = parseToolsProfile(settingProfile);
+    if (parsed === null) cli.io.err(cli.style.warn(`[mcp] ignoring setting mcp.tools = ${JSON.stringify(settingProfile)} (expected ${TOOLS_PROFILES.join("|")}); serving the full catalog`));
+    else tools = parsed;
+  }
 
   // Connect the configured embedder once (if any) so the query tool's
   // `semantic` mode has a vectorizer for the session. Unset ⇒ semantic queries
@@ -160,6 +183,7 @@ async function runMcp(cli: Cli, args: string[]): Promise<number> {
   }
 
   if (drainer) cli.io.err(cli.style.dim(`[mcp] auto-embed on mutation enabled`));
+  if (tools !== "full") cli.io.err(cli.style.dim(`[mcp] tools profile: ${tools}`));
 
   // The query surface's `embedQuery`: a live vectorizer when the embedder loaded,
   // or — when it's configured-but-broken — a hook that throws `embedder_failed`
@@ -188,6 +212,7 @@ async function runMcp(cli: Cli, args: string[]): Promise<number> {
     ...(loaded ? { embedProvider: loaded.providerName } : {}),
     // The `version` tool's view of this binary (spec/surface §4).
     host: hostInfo(),
+    tools,
   });
 
   let shuttingDown = false;

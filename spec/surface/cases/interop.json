@@ -14205,6 +14205,115 @@
           }
         ]
       }
+    },
+    {
+      "name": "profile-minimal",
+      "notes": "§4 \"Profiles\" (4.3): both peers spawned with `--tools minimal` list the same ten tools in catalog order, `version` reports `profile: \"minimal\"` (recorded by shape, like every version read), and a `tools/call` on a tool the profile hides — `blocks_insert`, a write a full server accepts — is the JSON-RPC -32602 error `unknown tool blocks_insert`, not a tool result. No writes: the profile filters listing and calling, never semantics.",
+      "server_args": [
+        "--tools",
+        "minimal"
+      ],
+      "reads": [
+        {
+          "method": "tools/list"
+        },
+        {
+          "tool": "version",
+          "args": {}
+        },
+        {
+          "tool": "blocks_insert",
+          "args": {
+            "to": "index.md",
+            "markdown": "- never written"
+          }
+        },
+        {
+          "tool": "docs_read",
+          "args": {
+            "path": "substances/salt.md"
+          }
+        }
+      ],
+      "expect": {
+        "writes": [],
+        "reads": [
+          {
+            "tools": [
+              "docs_read",
+              "docs_tree",
+              "query_syntax",
+              "query",
+              "blocks_resolve",
+              "apply",
+              "plan",
+              "execute",
+              "changes_since",
+              "version"
+            ]
+          },
+          {
+            "engine": "<string>",
+            "version": "<string>",
+            "components": "<object>",
+            "specs": {
+              "oqx": "<string>",
+              "format": "<string>",
+              "reconcile": "<string>",
+              "store": "<string>",
+              "properties": "<string>",
+              "graph": "<string>",
+              "search": "<string>",
+              "mutate": "<string>",
+              "sync": "<string>",
+              "surface": "<string>",
+              "cli": "<string>"
+            },
+            "schema": "<number>",
+            "mcp": {
+              "protocol": "<string>"
+            },
+            "runtime": "<string>",
+            "commit": "<string|null>",
+            "built": "<string|null>",
+            "profile": "<string>"
+          },
+          {
+            "rpc_error": {
+              "code": -32602,
+              "message": "unknown tool blocks_insert"
+            }
+          },
+          {
+            "id": "d_14",
+            "path": "/substances/salt.md",
+            "rev": "r_14",
+            "properties": {
+              "frontmatter": {
+                "type": "substance",
+                "slug": "salt",
+                "layer": "canon",
+                "tradition": "western",
+                "element": "salt",
+                "tags": [
+                  "substance",
+                  "tria-prima"
+                ],
+                "verified": true
+              },
+              "inline": {
+                "symbol": "🜔",
+                "soluble": "yes",
+                "toxic": "no"
+              },
+              "computed": {
+                "title": "Salt"
+              }
+            },
+            "raw": "---\ntype: substance\nslug: salt\nlayer: canon\ntradition: western\nelement: salt\ntags: [substance, tria-prima]\nverified: true\n---\n\n# Salt\n\nWhat remains. Burn a plant to ash and leach the ash with water, and the residue\nthat crystallizes out is the salt — the incombustible, fixed body.\n\nsymbol:: 🜔\nsoluble:: yes\ntoxic:: no\n\n## As a principle\n\nSalt is the third of the tria prima: the body that gives a substance its\npersistence and form. Where [[mercury]] flies off and [[sulphur]] burns, salt\nstays behind.\n\nThe operation that produces it is straightforward and repeatable, which gave the\nprinciple an evidential weight the other two lacked. You can *show* someone the\nsalt of a plant.\n\n## Practical extraction\n\nThe standard route, still sound:\n\n1. Incinerate the material completely — see [calcination](/processes/calcination.md).\n2. Leach the ash with distilled water.\n3. Filter, then evaporate slowly to crystallize.\n\n[Coagulation](/processes/coagulation.md) is the general name for step 3.\n\n## Note\n\nThe alchemical \"salt\" is not sodium chloride but the mixed carbonates and\npotash left after combustion. The terminology predates the distinction.\n\n## Supplies\n\nBench stock for the leaching work. Nothing outstanding.\n\n- [x] Buy more salt of tartar\n- [x] Replace the leaching filter papers\n"
+          }
+        ]
+      }
     }
   ]
 }

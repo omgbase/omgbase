@@ -1,5 +1,8 @@
 //! `mcp` (§6): the MCP server on stdio (`spec/surface` §4, §7) with the
-//! in-process filesystem watcher and the background embed drain.
+//! in-process filesystem watcher and the background embed drain. `--tools
+//! <full|minimal>` (cli 4.2) picks the catalog profile the surface serves
+//! (`spec/surface` §4 "Profiles"); the `mcp.tools` setting is the default
+//! when the flag is absent.
 //!
 //! Thin by design: workspace discovery and repo selection are the context's
 //! (`-C` / `--workspace`), the tools are `omgbase-surface`'s, the transport
@@ -35,18 +38,20 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use omgbase_search::{EmbeddingProvider, EmbeddingSettings, create_external_provider};
-use omgbase_surface::Surface;
+use omgbase_surface::{Profile, Surface};
 use omgbase_sync::workspace::{WORKSPACE_ENV, find_root};
 
 use crate::cli::argv::{Opt, parse_args};
 use crate::cli::context::Cli;
 use crate::cli::help::{render_help_for, wants_help};
-use crate::cli::output::{CliError, EXIT_OK, Result};
+use crate::cli::output::{CliError, EXIT_OK, Io, Result};
+use crate::cli::render::Style;
 use crate::cli::seams::{
     MinterSource, SPEC_CLOCK_ENV, SPEC_MINTER_ENV, WRITER_LOCK_TIMEOUT_ENV, open_store,
 };
 use crate::drain::{DrainFn, DrainReport, Drainer, SharedProvider};
 use crate::{mcp as transport, watch};
+use serde_json::Value as Json;
 
 /// The seams announced on stderr (§6 `mcp`), so a conformance run is
 /// visibly not a production one.
@@ -208,6 +213,48 @@ fn spawn_signal_thread(shared: Shared) {
         .expect("spawn the signal thread");
 }
 
+// ---- the tools profile (`spec/surface` §4 "Profiles"; `spec/cli` §6 `mcp`, 4.2) -------
+
+/// `--tools <full|minimal>`: the flag's value as a profile, or the usage
+/// error (exit 2) naming both (the reference's wording).
+fn profile_flag(value: &str) -> Result<Profile> {
+    value.parse::<Profile>().map_err(|_| {
+        CliError::usage(format!(
+            "--tools must be one of full|minimal (got {})",
+            Json::String(value.to_owned())
+        ))
+    })
+}
+
+/// The profile to serve: the flag, else the `mcp.tools` setting (the repo's
+/// over the workspace's), else `full`. A setting value that is not one of
+/// the two names is reported on stderr and ignored — the server comes up
+/// `full`, never silently reduced (as the reference does).
+fn tools_profile(
+    io: Io,
+    style: &Style,
+    flag: Option<&str>,
+    store: &omgbase_store::Store,
+    repo_id: &str,
+) -> Result<Profile> {
+    if let Some(v) = flag {
+        return profile_flag(v);
+    }
+    let settings = omgbase_sync::resolve_settings(store, Some(repo_id))?;
+    match settings.get("mcp").and_then(|m| m.get("tools")) {
+        None => Ok(Profile::Full),
+        Some(v) => match v.as_str().and_then(|s| s.parse::<Profile>().ok()) {
+            Some(p) => Ok(p),
+            None => {
+                io.err(&style.warn(&format!(
+                    "[mcp] ignoring setting mcp.tools = {v} (expected full|minimal); serving the full catalog"
+                )));
+                Ok(Profile::Full)
+            }
+        },
+    }
+}
+
 // ---- the command --------------------------------------------------------------------------
 
 /// `spec/sync` §1 precedence for the served workspace: an explicit
@@ -240,11 +287,25 @@ pub fn mcp(cli: &mut Cli, args: &[String]) -> Result<i32> {
     }
     // `--workspace <dir>` is the host-config spelling this binary has always
     // accepted (an alias of the global `-C` for the served workspace).
-    let a = parse_args(args, &[Opt::flag("no-watch"), Opt::value("workspace")])?;
+    let a = parse_args(
+        args,
+        &[
+            Opt::flag("no-watch"),
+            Opt::value("workspace"),
+            Opt::value("tools"),
+        ],
+    )?;
+    // The flag is checked before the workspace is opened: a bad value is a
+    // usage error wherever the host starts us.
+    if let Some(v) = a.value("tools") {
+        profile_flag(v)?;
+    }
     announce_seams(cli);
 
     let ws = locate(cli, a.value("workspace"))?;
     let repo = cli.repo()?;
+    let (io, style) = (cli.io, cli.style);
+    let profile = tools_profile(io, &style, a.value("tools"), cli.store()?, &repo.repo_id)?;
 
     // Connect the configured embedder once (if any) for `semantic()`; a
     // configured-but-broken embedder is reported, never fatal.
@@ -307,6 +368,9 @@ pub fn mcp(cli: &mut Cli, args: &[String]) -> Result<i32> {
     if drainer.is_some() {
         eprintln!("[mcp] auto-embed on mutation enabled");
     }
+    if profile != Profile::Full {
+        eprintln!("[mcp] tools profile: {profile}");
+    }
 
     let shared: Shared = Arc::new(Mutex::new(Some(Helpers { watcher, drainer })));
     spawn_signal_thread(Arc::clone(&shared));
@@ -318,7 +382,8 @@ pub fn mcp(cli: &mut Cli, args: &[String]) -> Result<i32> {
     let query_provider: Option<Box<dyn EmbeddingProvider>> =
         provider.map(|p| Box::new(p) as Box<dyn EmbeddingProvider>);
     let mut surface = Surface::new(store, &repo.repo_id, query_provider)
-        .with_build_info(crate::cli::build_info());
+        .with_build_info(crate::cli::build_info())
+        .with_profile(profile);
     if let Some(ts) = clock {
         surface = surface.with_clock(move || ts.clone());
     }
@@ -341,4 +406,39 @@ pub fn mcp(cli: &mut Cli, args: &[String]) -> Result<i32> {
     drop(surface);
     served.map_err(|e| CliError::engine("error", e.to_string()))?;
     Ok(EXIT_OK)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_flag_beats_the_setting_and_a_bad_setting_serves_full() {
+        let style = Style::detect(true, false);
+        let t = |flag: Option<&str>, store: &omgbase_store::Store, repo: &str| {
+            tools_profile(Io, &style, flag, store, repo)
+        };
+        let mut store = omgbase_store::Store::open_in_memory().unwrap();
+        let repo = store.create_repo("r").unwrap();
+        assert_eq!(t(None, &store, &repo).unwrap(), Profile::Full);
+        assert_eq!(t(Some("minimal"), &store, &repo).unwrap(), Profile::Minimal);
+        let err = t(Some("lite"), &store, &repo).unwrap_err();
+        assert!(matches!(err, CliError::Usage { .. }));
+        assert_eq!(
+            err.message(),
+            "--tools must be one of full|minimal (got \"lite\")"
+        );
+        let mut settings = serde_json::Map::new();
+        settings.insert("mcp".to_owned(), serde_json::json!({ "tools": "minimal" }));
+        omgbase_sync::write_repo_settings(&store, &repo, &settings).unwrap();
+        assert_eq!(t(None, &store, &repo).unwrap(), Profile::Minimal);
+        assert_eq!(t(Some("full"), &store, &repo).unwrap(), Profile::Full);
+        // An unrecognized setting is reported (stderr) and the full catalog served.
+        settings.insert("mcp".to_owned(), serde_json::json!({ "tools": "lite" }));
+        omgbase_sync::write_repo_settings(&store, &repo, &settings).unwrap();
+        assert_eq!(t(None, &store, &repo).unwrap(), Profile::Full);
+        settings.insert("mcp".to_owned(), serde_json::json!({ "tools": 3 }));
+        omgbase_sync::write_repo_settings(&store, &repo, &settings).unwrap();
+        assert_eq!(t(None, &store, &repo).unwrap(), Profile::Full);
+    }
 }

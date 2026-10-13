@@ -228,6 +228,54 @@ mod tests {
         assert_eq!(nf["error"]["code"], METHOD_NOT_FOUND);
     }
 
+    /// `spec/surface` §4 "Profiles": a profiled surface lists its subset,
+    /// `tools/call` on a hidden name is the pinned `-32602` `unknown tool
+    /// <name>` (the same text an unknown name gets), a kept tool behaves as
+    /// under `full`, and `version` reports the profile.
+    #[test]
+    fn a_profile_filters_listing_and_calling_only() {
+        let mut s = surface().with_profile(omgbase_surface::Profile::Minimal);
+        let list = handle(
+            &mut s,
+            "0.1.0",
+            &json!({ "jsonrpc": "2.0", "id": 1, "method": "tools/list" }),
+        )
+        .unwrap();
+        let names: Vec<&str> = list["result"]["tools"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|t| t["name"].as_str().unwrap())
+            .collect();
+        assert_eq!(names.len(), 10);
+        assert_eq!(
+            names,
+            omgbase_surface::Profile::Minimal
+                .tools()
+                .iter()
+                .map(|t| t.name)
+                .collect::<Vec<_>>()
+        );
+        let hidden = handle(&mut s, "0.1.0", &json!({ "jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": { "name": "docs_list", "arguments": {} } })).unwrap();
+        assert_eq!(hidden["error"]["code"], INVALID_PARAMS);
+        assert_eq!(hidden["error"]["message"], "unknown tool docs_list");
+        let unknown = handle(&mut s, "0.1.0", &json!({ "jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": { "name": "nope", "arguments": {} } })).unwrap();
+        assert_eq!(unknown["error"]["message"], "unknown tool nope");
+        let kept = handle(&mut s, "0.1.0", &json!({ "jsonrpc": "2.0", "id": 4, "method": "tools/call", "params": { "name": "query", "arguments": { "query": "docs count { }" } } })).unwrap();
+        let text = kept["result"]["content"][0]["text"].as_str().unwrap();
+        assert_eq!(
+            serde_json::from_str::<Json>(text).unwrap()["count"],
+            0,
+            "{text}"
+        );
+        let version = handle(&mut s, "0.1.0", &json!({ "jsonrpc": "2.0", "id": 5, "method": "tools/call", "params": { "name": "version", "arguments": {} } })).unwrap();
+        let text = version["result"]["content"][0]["text"].as_str().unwrap();
+        assert_eq!(
+            serde_json::from_str::<Json>(text).unwrap()["profile"],
+            "minimal"
+        );
+    }
+
     #[test]
     fn write_tools_take_and_release_the_writer_lock() {
         let tmp = omgbase_sync::fs::TempDir::new("mcp-lock");

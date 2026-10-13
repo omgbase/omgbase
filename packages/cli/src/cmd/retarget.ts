@@ -4,7 +4,7 @@ import type { Command } from "../commands.js";
 import type { Cli } from "../context.js";
 import { CliUsageError, EXIT_OK, renderHelp } from "../output.js";
 import { defaultActor, renderPlan as renderPlanDiffs, renderReceipt, unifiedDiffLines } from "./_mutate.js";
-import { remoteCall } from "./_remote.js";
+import { remoteCall, remoteSugar } from "./_remote.js";
 
 // `omg retarget <from> <to> [--scope glob] [--apply]` (11 §5.6; cli 4.0) —
 // plan-by-default. Without --apply it is `plan { effects: [retarget] }` and
@@ -47,7 +47,8 @@ async function runRetarget(cli: Cli, args: string[]): Promise<number> {
       const plan = await remoteCall<Plan>(cli, "plan", { effects: sugar.effects });
       return values.apply ? renderPlanDiffs(cli, plan) : renderHits(cli, from, to, retargetOf(plan).hits);
     }
-    const r = await remoteCall<Receipt & Retarget>(cli, "links_retarget", { from_target: from, to_target: to, ...(values.scope ? { path_glob: values.scope } : {}) });
+    // `links_retarget` where listed (its result adds `hits`/`pairs`), else `apply { retarget }` (spec/cli §2.3, 4.2).
+    const r = await remoteSugar<Receipt & Partial<Retarget>>(cli, "links_retarget", { from_target: from, to_target: to, ...(values.scope ? { path_glob: values.scope } : {}) }, () => sugar.effects);
     return renderReceipt(cli, r);
   }
 

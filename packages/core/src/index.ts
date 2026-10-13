@@ -69,7 +69,7 @@ export {
 } from "./sync/sources.js";
 export { reconcileChanges, attachSource } from "./sync/driver.js";
 export { observeFile, observeMany, observeOne, observeDelete, observeBatch, type ObserveResult, type ObserveOneResult, type ObserveDeleteResult, type BatchItem, type BatchOutcome } from "./sync/observe.js";
-export { buildServer, WRITE_TOOLS, type ServerContext } from "./mcp/server.js";
+export { buildServer, toolDescriptions, toolNames, unknownTool, UNKNOWN_TOOL_CODE, WRITE_TOOLS, MINIMAL_TOOLS, PROFILES, TOOLS_PROFILES, parseToolsProfile, type ServerContext, type ToolsProfile } from "./mcp/server.js";
 export { serveStdio, type ServeStdioHandle } from "./mcp/stdio.js";
 export { processCheckpoint, type CheckpointResult } from "./sync/checkpoint.js";
 export { reposStatus, syncStatus, reposList, type RepoStatus, type SyncStatus, type DiskStatus, type ReposList } from "./sync/admin.js";

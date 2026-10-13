@@ -31,8 +31,9 @@ const NO_RETARGET: Opt = Opt::flag("no-retarget");
 
 /// Run one document operation: locally the builder's effects through
 /// `apply` under its reason (the reference's `applySugar`), remotely the
-/// mirroring tool with `args`; the global `--dry-run` is the plan of the
-/// effects on both sides. Returns the Receipt (the tool's result remotely),
+/// mirroring tool with `args` — or, against an engine that does not list it
+/// (the minimal profile), `apply` over the same effects; the global
+/// `--dry-run` is the plan of the effects on both sides. Returns the Receipt (the tool's result remotely),
 /// or `None` after a rendered plan.
 fn run_doc(
     cli: &mut Cli,
@@ -49,7 +50,14 @@ fn run_doc(
         return Ok(None);
     }
     if cli.remote_mode() {
-        return Ok(Some(cli.call(tool, Json::Object(args))?));
+        // The mirroring tool when the engine lists it, else `apply` over the
+        // builder's effects (§2.3, cli 4.2).
+        return Ok(Some(cli.remote_sugar(
+            tool,
+            Json::Object(args),
+            &[],
+            |_| Ok(effects),
+        )?));
     }
     let (receipt, _) = cli.call_with_plan(
         "apply",

@@ -202,6 +202,7 @@ invoke::help-card-update
 invoke::help-command
 invoke::help-flag
 invoke::help-h-before-command
+invoke::mcp-bad-tools
 invoke::no-workspace
 invoke::no-workspace-json
 invoke::no-workspace-mcp

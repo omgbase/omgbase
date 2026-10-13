@@ -4,12 +4,16 @@
 //! observed with the fixture minter, `spec/store` §9.4), each query run
 //! BOTH planned (the tier-3 pushdown) and purely in memory, which must agree
 //! (§1: a planner is invisible), `reads.json` as observation scripts whose
-//! `read` steps call the catalog in-process ([`Surface::call`]), and
-//! `cursor.json` through the cursor codec — and compares each outcome to the
-//! case's `expect`. `interop.json` (§7) is run by the `omgbase` binary's
-//! `tests/interop.rs`; here its top-level shape is validated and its cases
-//! are skipped. The fixture contract is `spec/surface/README.md` §6; the
-//! reference runner this mirrors is `packages/core/corpus/surface/spec.test.ts`.
+//! `read` steps call the catalog in-process ([`Surface::call`]),
+//! `examples.json` (4.3) as a corpus-backed reads script — the example rungs
+//! of the minimal tools' descriptions, which a test below re-extracts from
+//! the catalog's text and pins against the suite's steps — `profiles.json`
+//! (4.3) as each catalog profile's listing, and `cursor.json` through the
+//! cursor codec — and compares each outcome to the case's `expect`.
+//! `interop.json` (§7) is run by the `omgbase` binary's `tests/interop.rs`;
+//! here its top-level shape is validated and its cases are skipped. The
+//! fixture contract is `spec/surface/README.md` §6; the reference runner this
+//! mirrors is `packages/core/corpus/surface/spec.test.ts`.
 //!
 //! Allowlist (`tests/spec-passing.txt`, one `<file-stem>::<name>` per line):
 //! while the port is incomplete it names the cases that must pass. A listed
@@ -32,7 +36,8 @@ use std::time::{Duration, Instant};
 use omgbase_reconcile::Config;
 use omgbase_store::{BatchItem, BatchOutcome, SequentialMinter, Store};
 use omgbase_surface::{
-    OqxResult, QueryOptions, Surface, SurfaceError, decode_cursor, encode_cursor, query,
+    MINIMAL_TOOLS, OqxResult, Profile, QueryOptions, Surface, SurfaceError, decode_cursor,
+    encode_cursor, query,
 };
 use serde_json::{Map as JsonMap, Value as Json, json};
 
@@ -47,6 +52,12 @@ const EPS: f64 = 1e-9;
 const FIXTURE_REPO_SLUG: &str = "fixture";
 /// When the corpus of a query suite is observed (§6).
 const CORPUS_TS: &str = "2026-09-27T00:00:00.000Z";
+/// §4 "Descriptions" (4.3): the clock a writing rung of `examples.json` runs
+/// under (the reference's `EXAMPLES_TS`), so the suite's commits are
+/// deterministic.
+const EXAMPLES_TS: &str = "2026-10-13T00:00:00.000Z";
+/// The one case of `examples.json` (the reference's `EXAMPLES_CASE`).
+const EXAMPLES_CASE: &str = "ladders";
 
 const PASSING_HEADER: &str = "\
 # Surface spec cases (spec/surface/cases) that the Rust port must pass, one
@@ -68,6 +79,11 @@ enum Kind {
     Cursor,
     /// §7 cross-engine interop: shape-checked here, run by `crates/omgbase`.
     Interop,
+    /// 4.3: the description ladders as a corpus-backed reads script.
+    Examples,
+    /// 4.3: each catalog profile's tool names in registration order; one
+    /// synthetic case per profile (`profiles::full`, `profiles::minimal`).
+    Profiles,
 }
 
 #[derive(Debug)]
@@ -108,6 +124,8 @@ fn validate(file: &str, doc: &Json) -> Result<SpecFile, Vec<String>> {
         "cursor" => Kind::Cursor,
         "reads" => Kind::Reads,
         "interop" => Kind::Interop,
+        "examples" => Kind::Examples,
+        "profiles" => Kind::Profiles,
         s if s.starts_with("query-") => Kind::Query,
         _ => {
             problems.push(format!("{file}: unknown suite"));
@@ -119,8 +137,11 @@ fn validate(file: &str, doc: &Json) -> Result<SpecFile, Vec<String>> {
             "{file}: the interop suite carries a `corpus` object"
         ));
     }
+    if kind == Kind::Profiles {
+        return validate_profiles(file, stem, obj, problems);
+    }
     let mut corpus = Vec::new();
-    if kind == Kind::Query {
+    if matches!(kind, Kind::Query | Kind::Examples) {
         match obj.get("corpus").and_then(Json::as_object) {
             Some(c) if !c.is_empty() => {
                 for (path, source) in c {
@@ -132,7 +153,7 @@ fn validate(file: &str, doc: &Json) -> Result<SpecFile, Vec<String>> {
                 corpus.sort_by(|a, b| a.0.as_bytes().cmp(b.0.as_bytes()));
             }
             _ => problems.push(format!(
-                "{file}: a query suite carries a non-empty `corpus`"
+                "{file}: a corpus-backed suite carries a non-empty `corpus`"
             )),
         }
     }
@@ -169,7 +190,7 @@ fn validate(file: &str, doc: &Json) -> Result<SpecFile, Vec<String>> {
                     problems.push(format!("{at}: `query` must be a string"));
                 }
             }
-            Kind::Reads => {
+            Kind::Reads | Kind::Examples => {
                 if !cobj
                     .get("steps")
                     .and_then(Json::as_array)
@@ -185,6 +206,7 @@ fn validate(file: &str, doc: &Json) -> Result<SpecFile, Vec<String>> {
             }
             // Only the top-level shape is this runner's business (§7).
             Kind::Interop => continue,
+            Kind::Profiles => unreachable!("validated above"),
         }
         if !cobj.contains_key("expect") {
             problems.push(format!(
@@ -207,6 +229,76 @@ fn validate(file: &str, doc: &Json) -> Result<SpecFile, Vec<String>> {
     } else {
         Err(problems)
     }
+}
+
+/// README §6 (4.3): `profiles.json` is `{ suite: "profiles", profiles: {
+/// full: [names…], minimal: [names…] } }` — distinct names, `minimal` ⊆
+/// `full`, exactly those two keys in that order; one case per profile.
+fn validate_profiles(
+    file: &str,
+    stem: &str,
+    obj: &JsonMap<String, Json>,
+    mut problems: Vec<String>,
+) -> Result<SpecFile, Vec<String>> {
+    if let Some(extra) = obj
+        .keys()
+        .find(|k| !["suite", "profiles"].contains(&k.as_str()))
+    {
+        problems.push(format!("{file}: unknown top-level key {extra}"));
+    }
+    let Some(profiles) = obj.get("profiles").and_then(Json::as_object) else {
+        problems.push(format!(
+            "{file}: `profiles` must be an object (profile → tool names)"
+        ));
+        return Err(problems);
+    };
+    if profiles.keys().map(String::as_str).collect::<Vec<_>>() != ["full", "minimal"] {
+        problems.push(format!(
+            "{file}: `profiles` has exactly the keys full, minimal (in that order)"
+        ));
+    }
+    let mut lists: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
+    for (name, list) in profiles {
+        let Some(names) = list
+            .as_array()
+            .and_then(|l| l.iter().map(Json::as_str).collect::<Option<Vec<_>>>())
+            .filter(|l| l.iter().all(|t| !t.is_empty()))
+        else {
+            problems.push(format!(
+                "{file}: profiles.{name} must be an array of tool names"
+            ));
+            continue;
+        };
+        if names.iter().collect::<BTreeSet<_>>().len() != names.len() {
+            problems.push(format!("{file}: profiles.{name} repeats a name"));
+        }
+        lists.insert(name, names);
+    }
+    if let (Some(full), Some(minimal)) = (lists.get("full"), lists.get("minimal")) {
+        for t in minimal {
+            if !full.contains(t) {
+                problems.push(format!(
+                    "{file}: profiles.minimal names {t}, which profiles.full does not"
+                ));
+            }
+        }
+    }
+    if !problems.is_empty() {
+        return Err(problems);
+    }
+    Ok(SpecFile {
+        stem: stem.to_owned(),
+        kind: Kind::Profiles,
+        corpus: Vec::new(),
+        cases: profiles
+            .iter()
+            .map(|(name, tools)| SpecCase {
+                id: format!("{stem}::{name}"),
+                kind: Kind::Profiles,
+                case: json!({ "name": name, "tools": tools }),
+            })
+            .collect(),
+    })
 }
 
 /// The fixtures live in the monorepo, outside this crate, and are not shipped
@@ -595,7 +687,12 @@ fn normalize_outcome(tool: &str, out: &omgbase_surface::ToolOutcome) -> Json {
     body
 }
 
-fn run_reads_case(c: &Json) -> Result<Json, String> {
+/// README §6: a `reads` case over a fresh store (and a workspace directory
+/// when `workspace`); an `examples` case (4.3) the same, after the suite's
+/// corpus is observed as one batch in bytewise path order at `CORPUS_TS` (so
+/// `d_0` is `index.md`, as in every corpus-backed suite) and mirrored into
+/// the workspace, since the ladders write.
+fn run_reads_case(c: &Json, corpus: Option<&[(String, String)]>) -> Result<Json, String> {
     let config = config_from(c.get("config"))?;
     let workspace = c.get("workspace").and_then(Json::as_bool).unwrap_or(false);
     let mut store = fresh_store();
@@ -612,6 +709,24 @@ fn run_reads_case(c: &Json) -> Result<Json, String> {
             &dir.0.to_string_lossy(),
         )
         .map_err(|e| e.to_string())?;
+    }
+    if let Some(corpus) = corpus {
+        let items: Vec<BatchItem> = corpus
+            .iter()
+            .map(|(p, s)| BatchItem::observed(p, s))
+            .collect();
+        store
+            .observe_batch(&repo_id, &items, CORPUS_TS, &config)
+            .map_err(|e| format!("corpus: {e}"))?;
+        if let Some(dir) = &temp {
+            for (path, source) in corpus {
+                let file = dir.0.join(path);
+                if let Some(parent) = file.parent() {
+                    fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+                }
+                fs::write(&file, source).map_err(|e| e.to_string())?;
+            }
+        }
     }
     let clock: Rc<RefCell<String>> = Rc::new(RefCell::new(CORPUS_TS.to_owned()));
     let tick = Rc::clone(&clock);
@@ -686,12 +801,37 @@ fn run_reads_case(c: &Json) -> Result<Json, String> {
 
 // ---- driving ------------------------------------------------------------------------
 
-struct SuiteState {
+struct SuiteState<'a> {
     /// The corpus store of the suite (query suites).
     store: Option<(Store, String)>,
+    /// The suite's corpus (corpus-backed suites; empty otherwise).
+    corpus: &'a [(String, String)],
 }
 
-fn check(c: &SpecCase, suite: &SuiteState) -> Result<(), String> {
+/// README §4 "Profiles" (4.3): the tool names a surface under `profile`
+/// lists, in registration order, equal the suite's list for it.
+fn run_profile_case(c: &Json) -> Result<(), String> {
+    let name = c["name"].as_str().ok_or("name")?;
+    let profile: Profile = name.parse()?;
+    let want: Vec<&str> = c["tools"]
+        .as_array()
+        .ok_or("tools")?
+        .iter()
+        .filter_map(Json::as_str)
+        .collect();
+    let (mut store, _) = corpus_store(&[])?;
+    let repo = store.create_repo("profiled").map_err(|e| e.to_string())?;
+    let surface = Surface::new(store, &repo, None).with_profile(profile);
+    let listed: Vec<&str> = surface.tools().iter().map(|t| t.name).collect();
+    if listed != want {
+        return Err(format!(
+            "profile {name} lists {listed:?}, the suite pins {want:?}"
+        ));
+    }
+    Ok(())
+}
+
+fn check(c: &SpecCase, suite: &SuiteState<'_>) -> Result<(), String> {
     match c.kind {
         Kind::Query => {
             let (store, repo) = suite.store.as_ref().ok_or("suite store")?;
@@ -702,9 +842,14 @@ fn check(c: &SpecCase, suite: &SuiteState) -> Result<(), String> {
             deep_eq_tol(&actual, &c.case["expect"], "expect", EPS).map_or(Ok(()), |d| Err(clip(d)))
         }
         Kind::Reads => {
-            let actual = run_reads_case(&c.case)?;
+            let actual = run_reads_case(&c.case, None)?;
             deep_eq_tol(&actual, &c.case["expect"], "expect", EPS).map_or(Ok(()), |d| Err(clip(d)))
         }
+        Kind::Examples => {
+            let actual = run_reads_case(&c.case, Some(suite.corpus))?;
+            deep_eq_tol(&actual, &c.case["expect"], "expect", EPS).map_or(Ok(()), |d| Err(clip(d)))
+        }
+        Kind::Profiles => run_profile_case(&c.case),
         Kind::Interop => Err("interop cases are run by crates/omgbase/tests/interop.rs".to_owned()),
     }
 }
@@ -723,7 +868,7 @@ fn panic_message(payload: Box<dyn std::any::Any + Send>) -> String {
     }
 }
 
-fn run_case(c: &SpecCase, suite: &SuiteState) -> Result<(), String> {
+fn run_case(c: &SpecCase, suite: &SuiteState<'_>) -> Result<(), String> {
     IN_CASE.with(|f| f.set(true));
     let outcome = panic::catch_unwind(AssertUnwindSafe(|| check(c, suite)));
     IN_CASE.with(|f| f.set(false));
@@ -831,6 +976,7 @@ fn spec() {
                 },
                 _ => None,
             },
+            corpus: &file.corpus,
         };
         for c in &file.cases {
             all_ids.insert(c.id.clone());
@@ -1072,6 +1218,176 @@ fn tool_descriptions_match_the_reference() {
             t.name
         );
     }
+}
+
+// ---- the example ladders (§4 "Descriptions", 4.3) ----------------------------------------
+
+/// One rung of a description's ladder: the call's arguments (parsed) and
+/// the comment after the three spaces.
+struct Rung {
+    args: Json,
+    comment: String,
+    line: String,
+}
+
+/// The rungs of one description — the reference's `extractLadder`, rule for
+/// rule: (1) only lines beginning `{` are candidates; (2) a rung is the
+/// arguments as JSON, then three or more spaces, then a comment — the JSON
+/// ends where the first run of three spaces begins; (3) a candidate holding
+/// `…` or an angle-bracket placeholder (`<64 hex>`) is a schema line,
+/// skipped (and listed).
+fn extract_ladder(description: &str) -> (Vec<Rung>, Vec<String>) {
+    let mut rungs = Vec::new();
+    let mut skipped = Vec::new();
+    for line in description.split('\n') {
+        if !line.starts_with('{') {
+            continue;
+        }
+        if line.contains('…') || has_placeholder(line) {
+            skipped.push(line.to_owned());
+            continue;
+        }
+        let (json, comment) = match line.find("   ") {
+            Some(i) => (&line[..i], line[i..].trim_start_matches(' ')),
+            None => (line, ""),
+        };
+        let args: Json = serde_json::from_str(json)
+            .unwrap_or_else(|e| panic!("a rung's arguments are not JSON ({e}): {line}"));
+        rungs.push(Rung {
+            args,
+            comment: comment.to_owned(),
+            line: line.to_owned(),
+        });
+    }
+    (rungs, skipped)
+}
+
+/// `<…>` with no `>` inside (the reference's `/<[^>]*>/`).
+fn has_placeholder(line: &str) -> bool {
+    line.find('<')
+        .is_some_and(|open| line[open + 1..].contains('>'))
+}
+
+/// Rule 4: the suite's steps from the catalog's descriptions — tool by tool
+/// in registration order, the minimal tools only, a tool's rungs in
+/// description order; a write tool's steps carry the fixed clock.
+fn example_steps() -> Vec<Json> {
+    let mut steps = Vec::new();
+    for t in omgbase_surface::catalog::tools() {
+        if !MINIMAL_TOOLS.contains(&t.name) {
+            continue;
+        }
+        for rung in extract_ladder(t.description).0 {
+            let mut read = JsonMap::new();
+            read.insert("tool".to_owned(), json!(t.name));
+            read.insert("args".to_owned(), rung.args);
+            if Surface::is_write_tool(t.name) {
+                read.insert("ts".to_owned(), json!(EXAMPLES_TS));
+            }
+            steps.push(json!({ "read": read }));
+        }
+    }
+    steps
+}
+
+/// README §4 "Descriptions" (4.3): every minimal tool's description is a
+/// ladder — a summary line `<tool> — …`, at least one rung, a last line naming
+/// `query_syntax` — whose rungs parse as the call's arguments followed by a
+/// comment; and `examples.json`'s one case holds exactly the extraction,
+/// bytewise (the drift gate: an example edited in the description without
+/// regenerating the suite fails here, in both engines).
+#[test]
+fn example_ladders_are_well_formed_and_match_the_suite_bytewise() {
+    let tools = omgbase_surface::catalog::tools();
+    for t in tools.iter().filter(|t| MINIMAL_TOOLS.contains(&t.name)) {
+        let lines: Vec<&str> = t.description.split('\n').collect();
+        assert!(
+            lines[0].starts_with(&format!("{} — ", t.name)),
+            "{}: the first line is the summary",
+            t.name
+        );
+        let last = lines.last().expect("a line");
+        assert!(
+            last.contains("query_syntax") && !last.starts_with('{'),
+            "{}: the last line is prose pointing at query_syntax",
+            t.name
+        );
+        let (rungs, skipped) = extract_ladder(t.description);
+        assert!(!rungs.is_empty(), "{}: no example rung", t.name);
+        for r in &rungs {
+            assert!(r.args.is_object(), "{}: {}", t.name, r.line);
+            assert!(
+                !r.comment.is_empty(),
+                "{}: a rung needs its comment — {}",
+                t.name,
+                r.line
+            );
+        }
+        for s in &skipped {
+            assert!(s.contains('…') || has_placeholder(s), "{}: {s}", t.name);
+        }
+    }
+    let extracted = example_steps();
+    let mut seen: Vec<&str> = Vec::new();
+    for s in &extracted {
+        let tool = s["read"]["tool"].as_str().unwrap();
+        if seen.last() != Some(&tool) {
+            seen.push(tool);
+        }
+    }
+    let order: Vec<&str> = tools
+        .iter()
+        .map(|t| t.name)
+        .filter(|n| MINIMAL_TOOLS.contains(n))
+        .collect();
+    assert_eq!(
+        seen, order,
+        "the ladders cover every minimal tool, in catalog order"
+    );
+
+    let path = Path::new(CASES_DIR).join("examples.json");
+    if !path.is_file() {
+        eprintln!(
+            "spec: {} not present; skipping the drift gate",
+            path.display()
+        );
+        return;
+    }
+    let file: Json =
+        serde_json::from_str(&fs::read_to_string(&path).expect("examples.json")).expect("json");
+    assert_eq!(file["suite"], "examples");
+    let cases = file["cases"].as_array().expect("cases");
+    assert_eq!(
+        cases
+            .iter()
+            .map(|c| c["name"].as_str().unwrap())
+            .collect::<Vec<_>>(),
+        [EXAMPLES_CASE]
+    );
+    assert_eq!(cases[0]["workspace"], true);
+    let pinned = serde_json::to_string_pretty(&cases[0]["steps"]).unwrap();
+    let ours = serde_json::to_string_pretty(&Json::Array(extracted)).unwrap();
+    assert!(
+        pinned == ours,
+        "spec/surface/cases/examples.json's steps drifted from the descriptions' rungs (SURFACE_SPEC_UPDATE=1 on mcp/examples.test.ts regenerates)\n--- suite\n{pinned}\n--- extracted\n{ours}"
+    );
+}
+
+#[test]
+fn ladder_extraction_follows_the_rung_grammar() {
+    let text = "tool — Summary.\n{\"a\":1}   one\n{\"b\":\"x  y\"}    two spaces inside, four after\n{\"c\":\"<64 hex>\"}   schema\n{\"d\":[1]}   with … ellipsis\nprose { not a rung }\n{}   empty\nGrammar: query_syntax.";
+    let (rungs, skipped) = extract_ladder(text);
+    assert_eq!(
+        rungs.iter().map(|r| r.args.clone()).collect::<Vec<_>>(),
+        [json!({ "a": 1 }), json!({ "b": "x  y" }), json!({})]
+    );
+    assert_eq!(rungs[0].comment, "one");
+    // Two spaces do not end the JSON; the first run of three or more does
+    // (the reference's rule — a rung's JSON never holds one, by its own test).
+    assert_eq!(rungs[1].comment, "two spaces inside, four after");
+    assert_eq!(rungs[2].comment, "empty");
+    assert_eq!(skipped.len(), 2);
+    assert!(has_placeholder("{\"x\":\"<a>\"}") && !has_placeholder("{\"x\":\"a < b\"}"));
 }
 
 // ---- comparison ----------------------------------------------------------------------

@@ -46,7 +46,7 @@ async function runNode(cli: Cli, args: string[]): Promise<number> {
     if (!nodeId || !prop || valueParts.length === 0) throw new CliUsageError("node set <nodeId> <prop> <value>");
     const value = valueParts.join(" ");
     // Remote: nodes_set resolves node → block + rewrites the span server-side.
-    if (cli.flags.server) return runSugarRemote(cli, "nodes_set", { id: nodeId, prop, value }, () => nodeSetEffects(nodeId, prop, value).effects);
+    if (cli.flags.server) return runSugarRemote(cli, "nodes_set", { id: nodeId, prop, value }, () => nodeSetEffects(nodeId, prop, value).effects, [nodeId]);
     const ws = cli.workspace();
     const repo = cli.repo(ws);
     return runSugar(cli, ws, repo, nodeSetEffects(requireNode(ws.store, repo.repoId, nodeId), prop, value), values.actor ? { actor: values.actor } : {});

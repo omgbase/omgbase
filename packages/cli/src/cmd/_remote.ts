@@ -61,6 +61,38 @@ export async function remoteCall<T>(cli: Cli, tool: string, args: Record<string,
   return eng.callTool<T>(tool, { ...args, ...(cli.flags.repo ? { repo: cli.flags.repo } : {}) });
 }
 
+/** Whether the remote engine lists `tool` (spec/surface §4 "Profiles": a `--tools minimal` server lists ten). */
+export async function remoteHasTool(cli: Cli, tool: string): Promise<boolean> {
+  return (await remoteEngine(cli)).hasTool(tool);
+}
+
+/** A `#` locator (`path#type[n]`, `#^anchor`): a ref only a server with the sugar tools resolves. */
+export function isLocator(ref: string): boolean {
+  return ref.includes("#") && !isValidId(ref, "b") && !isValidId(ref, "d");
+}
+
+/**
+ * The remote sugar call (spec/cli §2.3, 4.2): call `tool` with `toolArgs` when
+ * the server lists it — the server resolves refs and pins CAS — else send
+ * `apply { effects, reason: <tool> }` with the effects the local builders make
+ * from the refs as given (the closure a dry run already uses: an id names its
+ * row, anything else a document path). Server-side locator resolution is the
+ * one thing a minimal server cannot do, so a `#` locator among `refs` is a
+ * usage error there rather than a bogus document path.
+ */
+export async function remoteSugar<T>(cli: Cli, tool: string, toolArgs: Record<string, unknown>, effects: () => unknown[] | Promise<unknown[]>, refs: string[] = []): Promise<T> {
+  if (await remoteHasTool(cli, tool)) return remoteCall<T>(cli, tool, toolArgs);
+  const locator = refs.find(isLocator);
+  if (locator !== undefined) {
+    throw new CliUsageError(
+      `${JSON.stringify(locator)} is a locator, and this server does not list ${tool} (a minimal tools profile) — refs are not resolved server-side there; pass a block or document id instead`,
+    );
+  }
+  // The commit reason: the caller's own `reason` argument when the tool takes one, else the tool's name.
+  const reason = typeof toolArgs.reason === "string" ? toolArgs.reason : tool;
+  return remoteCall<T>(cli, "apply", { effects: await effects(), reason });
+}
+
 /** A document ref as the surface's locator (spec/surface §4 "Arguments", 3.0):
  *  a `d_` id is the `id` argument, anything else the `path` — the two names a
  *  `docs_*` tool takes (one of them required). */

@@ -97,6 +97,9 @@ pub struct Surface {
     /// the committed ids through the receipt's `new_ids`), for
     /// [`Surface::call_result_with_plan`].
     last_plan: Option<Plan>,
+    /// Which tools this surface lists and accepts ([`Surface::tools`]);
+    /// `Full` unless the host chose otherwise (`omgbase mcp --tools`).
+    profile: Profile,
 }
 
 // ---- argument helpers ----------------------------------------------------------------
@@ -330,6 +333,86 @@ fn effects_schema() -> Json {
 
 fn parent_expect_schema() -> Json {
     json!({ "type": "object", "properties": { "parent_children_hash": { "type": "string" } } })
+}
+
+/// A catalog profile (§4 "Profiles", surface 4.3): which tools a server
+/// lists and accepts. A profile filters listing and calling, never
+/// semantics — every tool it keeps behaves exactly as under `Full`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Profile {
+    /// Every tool of the table (the default).
+    #[default]
+    Full,
+    /// The ten tools an agent works a knowledge base with: the reads not
+    /// covered by `query`, the one writer and its preview, `version`.
+    Minimal,
+}
+
+/// The `minimal` profile's tools (§4 "Profiles"); [`Profile::tools`] lists
+/// them in the catalog's registration order.
+pub const MINIMAL_TOOLS: &[&str] = &[
+    "query",
+    "query_syntax",
+    "docs_read",
+    "docs_tree",
+    "blocks_resolve",
+    "changes_since",
+    "plan",
+    "execute",
+    "apply",
+    "version",
+];
+
+impl Profile {
+    /// The profile's name as the flag and the `version` tool spell it.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Full => "full",
+            Self::Minimal => "minimal",
+        }
+    }
+
+    /// Whether `tool` is listed (and callable) under this profile.
+    #[must_use]
+    pub fn includes(self, tool: &str) -> bool {
+        match self {
+            Self::Full => true,
+            Self::Minimal => MINIMAL_TOOLS.contains(&tool),
+        }
+    }
+
+    /// The catalog filtered to this profile, in catalog order.
+    #[must_use]
+    pub fn tools(self) -> Vec<ToolSpec> {
+        catalog()
+            .iter()
+            .filter(|t| self.includes(t.name))
+            .cloned()
+            .collect()
+    }
+}
+
+impl std::str::FromStr for Profile {
+    type Err = String;
+
+    /// `full` | `minimal`; anything else is the error naming both.
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        match s {
+            "full" => Ok(Self::Full),
+            "minimal" => Ok(Self::Minimal),
+            other => Err(format!(
+                "unknown tools profile {} (expected full|minimal)",
+                Json::String(other.to_owned())
+            )),
+        }
+    }
+}
+
+impl std::fmt::Display for Profile {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
 }
 
 /// The catalog (§4 table), in the reference's registration order. The
@@ -844,7 +927,24 @@ impl Surface {
             build_info: BuildInfo::default(),
             preview: false,
             last_plan: None,
+            profile: Profile::Full,
         }
+    }
+
+    /// Serve `profile` (§4 "Profiles"): [`Surface::tools`] lists only its
+    /// tools, so a host's `tools/list` and its membership check follow;
+    /// nothing else changes — the dispatch, the schemas and
+    /// [`Surface::is_write_tool`] stay the full table's.
+    #[must_use]
+    pub fn with_profile(mut self, profile: Profile) -> Self {
+        self.profile = profile;
+        self
+    }
+
+    /// The profile this surface serves.
+    #[must_use]
+    pub fn profile(&self) -> Profile {
+        self.profile
     }
 
     /// Name the configured embedding provider (`embedding.provider`) so a
@@ -920,10 +1020,11 @@ impl Surface {
         &self.default_repo
     }
 
-    /// The catalog.
+    /// The catalog this surface serves: the table filtered by its
+    /// [`Profile`] (the whole table under `Full`).
     #[must_use]
     pub fn tools(&self) -> Vec<ToolSpec> {
-        tools()
+        self.profile.tools()
     }
 
     /// Whether `name` is a tool that can commit (a host serializes these
@@ -2464,7 +2565,8 @@ impl Surface {
                     "repos": rows.iter().map(|r| json!({ "slug": r.slug, "hasSource": r.root_path.is_some() })).collect::<Vec<_>>(),
                 }))
             }
-            "version" => version_info(Some(&self.store), &self.build_info),
+            // §4 "Profiles": the tool reports which profile the host serves.
+            "version" => version_info(Some(&self.store), &self.build_info, self.profile),
             other => Err(SurfaceError::other(format!("unknown tool {other}"))),
         }
     }
@@ -2766,6 +2868,72 @@ mod tests {
         for t in tools() {
             assert_eq!(t.input_schema["type"], "object");
         }
+    }
+
+    /// §4 "Profiles" (4.3): `minimal` lists exactly the ten in catalog
+    /// order; `full` the whole table; a profile filters listing and calling
+    /// only — the schemas, the write set and the dispatch stay the table's.
+    #[test]
+    fn profiles_filter_the_listing_not_the_semantics() {
+        let full = surface();
+        assert_eq!(full.profile(), Profile::Full);
+        assert_eq!(full.tools(), tools());
+        let minimal = surface().with_profile(Profile::Minimal);
+        assert_eq!(minimal.profile(), Profile::Minimal);
+        let names: Vec<&str> = minimal.tools().iter().map(|t| t.name).collect();
+        // The ten, in the table's registration order (not the list's).
+        let mut sorted_names = names.clone();
+        sorted_names.sort_unstable();
+        let mut sorted_set = MINIMAL_TOOLS.to_vec();
+        sorted_set.sort_unstable();
+        assert_eq!(sorted_names, sorted_set);
+        assert_eq!(
+            names,
+            [
+                "docs_read",
+                "docs_tree",
+                "query_syntax",
+                "query",
+                "blocks_resolve",
+                "apply",
+                "plan",
+                "execute",
+                "changes_since",
+                "version",
+            ]
+        );
+        for t in minimal.tools() {
+            assert_eq!(
+                Some(&t),
+                tool_spec(t.name),
+                "{} is the full table's spec",
+                t.name
+            );
+        }
+        assert!(
+            Surface::is_write_tool("docs_create"),
+            "the write set is static"
+        );
+        assert_eq!("full".parse::<Profile>(), Ok(Profile::Full));
+        assert_eq!("minimal".parse::<Profile>(), Ok(Profile::Minimal));
+        assert_eq!(
+            "lite".parse::<Profile>(),
+            Err("unknown tools profile \"lite\" (expected full|minimal)".to_owned())
+        );
+        assert_eq!(Profile::Minimal.to_string(), "minimal");
+        // `version` reports the profile; a tool the profile hides still
+        // dispatches at the library level (the host's membership check is the
+        // gate: `tools/call` on an unlisted name is `unknown tool <name>`).
+        let mut minimal = minimal;
+        let v = minimal.call("version", json!({}));
+        assert_eq!(v.body["profile"], "minimal");
+        let mut full = full;
+        assert_eq!(full.call("version", json!({})).body["profile"], "full");
+        let listed = minimal.call("docs_list", json!({}));
+        assert!(!listed.is_error);
+        let unknown = minimal.call("docs_lits", json!({}));
+        assert!(unknown.is_error);
+        assert_eq!(unknown.body["message"], "unknown tool docs_lits");
     }
 
     /// `spec/mutate` §11.8 at the surface (4.1): `plan` / `apply` / `execute`

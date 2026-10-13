@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { LATEST_PROTOCOL_VERSION } from "@modelcontextprotocol/sdk/types.js";
 import type { Store } from "./core/store/store.js";
 import { SPEC_VERSIONS } from "./spec-versions.js";
+import type { ToolsProfile } from "./mcp/server.js";
 
 // The `version` tool (spec/surface §4, 1.4) and `omg version` (spec/cli §6,
 // 1.1): which engine, its own version, every component's version, the spec
@@ -45,6 +46,8 @@ export interface VersionInfo {
   runtime: string;
   commit: string | null;
   built: string | null;
+  /** the catalog profile the server serves (spec/surface §4 "Profiles", 4.3): `omg version` itself reports `full` */
+  profile: ToolsProfile;
 }
 
 /** The omgbase packages the reference binary is built from (spec/surface §4). */
@@ -117,9 +120,11 @@ export function coreVersion(): string {
 
 /**
  * The `version` result. `store` supplies `schema`; `host` the binary's own
- * version, build info and resolution anchor (see the module comment).
+ * version, build info and resolution anchor (see the module comment);
+ * `profile` the catalog profile served (the MCP server's `--tools`; the CLI's
+ * own `version` verb is the full library and says `full`).
  */
-export function versionInfo(store?: Store | null, host?: HostInfo): VersionInfo {
+export function versionInfo(store?: Store | null, host?: HostInfo, profile: ToolsProfile = "full"): VersionInfo {
   const anchors = [...(host?.resolveFrom ? [host.resolveFrom] : []), import.meta.url];
   const components: Record<string, string> = {};
   for (const name of COMPONENT_PACKAGES) {
@@ -141,5 +146,6 @@ export function versionInfo(store?: Store | null, host?: HostInfo): VersionInfo 
     runtime: `node ${process.versions.node}`,
     commit: host?.commit ?? null,
     built: host?.built ?? null,
+    profile,
   };
 }

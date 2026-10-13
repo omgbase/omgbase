@@ -778,7 +778,8 @@
             },
             "runtime": "<string>",
             "commit": "<string|null>",
-            "built": "<string|null>"
+            "built": "<string|null>",
+            "profile": "<string>"
           }
         ]
       }

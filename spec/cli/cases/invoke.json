@@ -49,7 +49,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "engine   <string>\nversion  <string>\n  <object>\nspecs    <string>\nschema   <null>\nmcp      <string>\nruntime  <string>\ncommit   <string|null>\nbuilt    <string|null>\n"
+        "stdout": "engine   <string>\nversion  <string>\n  <object>\nspecs    <string>\nschema   <null>\nmcp      <string>\nruntime  <string>\ncommit   <string|null>\nbuilt    <string|null>\nprofile  <string>\n"
       }
     },
     {
@@ -538,7 +538,23 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "  mcp — Serve the MCP tool surface on stdio for an MCP host (Claude Code, Cursor, …); the host owns the process lifetime\n  usage: omg mcp [-C <workspace-dir>] [--repo <slug>] [--no-watch]\n  options:\n    -C <dir>       the workspace to serve — a directory at or below one containing .omgbase/ (the host rarely starts you inside it)\n    --repo <slug>  which repo, when the workspace has several\n    --no-watch     don't run the in-process file watcher (it is auto-off when another live watcher holds the lease)\n    -h, --help     show this help\n\n  host config: {\"command\": \"omg\", \"args\": [\"mcp\", \"-C\", \"/path/to/notes\"]}\n"
+        "stdout": "  mcp — Serve the MCP tool surface on stdio for an MCP host (Claude Code, Cursor, …); the host owns the process lifetime\n  usage: omg mcp [-C <workspace-dir>] [--repo <slug>] [--no-watch] [--tools full|minimal]\n  options:\n    -C <dir>           the workspace to serve — a directory at or below one containing .omgbase/ (the host rarely starts you inside it)\n    --repo <slug>      which repo, when the workspace has several\n    --no-watch         don't run the in-process file watcher (it is auto-off when another live watcher holds the lease)\n    --tools <profile>  the catalog profile to serve: full (default — every tool) or minimal (ten tools: query, query_syntax, docs_read, docs_tree, blocks_resolve, changes_since, plan, execute, apply, version); overrides the mcp.tools setting\n    -h, --help         show this help\n\n  host config: {\"command\": \"omg\", \"args\": [\"mcp\", \"-C\", \"/path/to/notes\"]}\n"
+      }
+    },
+    {
+      "name": "mcp-bad-tools",
+      "notes": "§6 `mcp` (cli 4.2): an unknown --tools profile is the usage error before any workspace is opened (there is none here).",
+      "workspace": "none",
+      "argv": [
+        "mcp",
+        "--tools",
+        "lite"
+      ],
+      "pin_stderr": true,
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "usage: --tools must be one of full|minimal (got \"lite\")\n"
       }
     },
     {

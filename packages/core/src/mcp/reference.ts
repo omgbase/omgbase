@@ -8,8 +8,16 @@
 
 export const QUERY_SYNTAX = `# query — OQX syntax reference
 
-The \`query\` tool takes ONE plain OQX string (+ optional \`limit\`/\`cursor\`). There
-is no {from, filter, order} envelope: every concern is a clause of the string.
+The \`query\` tool takes ONE plain OQX string (+ optional \`limit\`/\`cursor\`, and
+\`bare: true\` to drop the automatic \`id\`/\`path\` envelope — needs a \`select\`).
+There is no {from, filter, order} envelope: every concern is a clause of the
+string. Two rules tell the two syntaxes apart: DOT navigation belongs to the
+host object model (\`doc.layer\`, \`section.blocks\`, \`dst.title\`); WHITESPACE
+query directives belong to OQX — a nested query is \`<receiver> collect|exists|
+count|first|single { <block> }\` (a postfix directive + a \`{ … }\` block), never a
+method. Its distinctive power is the receiver-constrained nested query that
+correlates to the current row: \`from docs where nodes exists { where kind ==
+"md:task" }\` returns only the docs that themselves contain a matching node.
 
   [select <items>] from <target> [where <pred>] [frontier <pred>] [follow <dest> [{ … }], …]
                    [order by <expr> [asc|desc], …] [limit N] [offset N]
@@ -271,10 +279,16 @@ links:  (the authored link graph as rows — one per open link: the relation a l
     receiver = a relation (nodes, blocks, doc.out_links, section.blocks, …), a
                reach-through row (dst, doc: one row — dst { title }), a
     list property (tags), entries(x), or a root collection (^docs; 0^docs at depth ≥ 2).
-    block    = [select …] [where …] [frontier …] [follow …] [order by …] [limit N] [offset N]
+    block    = [select …] [from E] [where …] [frontier …] [follow …] [order by …] [limit N] [offset N]
                — the same fixed order as the top level (\`from\` optional; the
                receiver supplies the rows). A leading name/alias list is the
                projection (\`select\` dropped); a predicate always needs \`where\`.
+               A \`from E\` inside a block RE-PROJECTS the rows through a relation
+               (a typed flatMap): \`docs collect { from nodes where kind == "md:task" }\`
+               starts at docs, projects each through \`nodes\`, and queries the
+               resulting nodes; a scalar relation (\`from doc\`) contributes one
+               row; a missing or non-navigable relation is a loud error, never a
+               global scan.
   exists    ≥1 row      nodes exists { where kind == "md:task" and not checked }
   none      0 rows      nodes none { where kind == "md:task" and not checked }  ("every task done")
   count     a number    nodes count { where kind == "md:task" } >= 2
@@ -345,9 +359,16 @@ links:  (the authored link graph as rows — one per open link: the relation a l
     follow refs(before), ^docs { where ^path in list(after) }    forward over \`before\`, backward
                                                    over every doc whose \`after\` names me
   Per-occurrence metadata: $depth (seed = 1), $stop (interior|leaf|frontier|
-  depth|cycle), $leaf/$frontier, $ordinal, $key — usable in select/order by and
-  the top-level post-walk where, NOT metadata of the candidates a destination
-  block's where reads.
+  depth|cycle), $leaf/$frontier, $ordinal (a deterministic 1..N rank over the
+  walk, ordered by depth then path — \`order by $ordinal\` for walk order,
+  \`where $ordinal <= N\` for a deterministic budget cut), $key — usable in
+  select/order by and the top-level post-walk where (a where conjunct that
+  reads one filters the walk's RESULT; the other conjuncts remain the seed
+  predicate), NOT metadata of the candidates a destination block's where reads,
+  nor valid inside a consumer directive. Cyclic graphs are safe: a revisited
+  node is admitted once as a \`$stop == "cycle"\` occurrence and never
+  re-expanded. The default keeps one occurrence per distinct walk path;
+  \`follow distinct\` dedups reached rows by identity.
   Destination blocks (OQX 0.20): a brace after ANY destination opens that
   destination's block — children { depth 2 }, refs(x) { depth 2 }, out_links
   collect { from dst depth 2 }, ^docs { where ^path in list(after) } — with the

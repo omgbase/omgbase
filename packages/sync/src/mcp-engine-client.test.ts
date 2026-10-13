@@ -55,6 +55,13 @@ describe("connectHttpEngine (Streamable HTTP)", () => {
     seenAuth.length = 0;
   });
 
+  it("lists the server's tools once on connect, so hasTool answers synchronously (spec/surface §4 \"Profiles\")", async () => {
+    engine = await connectHttpEngine({ url: baseUrl });
+    expect([...(await engine.listTools())]).toEqual(["whoami"]);
+    expect(engine.hasTool("whoami")).toBe(true);
+    expect(engine.hasTool("blocks_insert")).toBe(false);
+  });
+
   it("connects through the secret base path and forwards -H headers", async () => {
     engine = await connectHttpEngine({ url: baseUrl, headers: { "X-Test": "hi" } });
     const res = await engine.callTool<{ seen: string | null }>("whoami", {});

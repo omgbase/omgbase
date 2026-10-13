@@ -770,6 +770,51 @@ the names given), then presence and type per declared name (bytewise); the
 nested shapes (`apply.ops`, `expect`, `at`) are each engine's own. The
 messages above are pinned by the fixtures (§6).
 
+**Profiles (4.3, normative).** A server serves one of two catalog
+profiles, chosen by the host (`omg mcp --tools <full|minimal>` / `omgbase mcp
+--tools …`, default `full`; a workspace may set `mcp.tools`, the flag wins;
+any other value is the CLI's usage error). `full` is the whole table below.
+`minimal` is the ten tools an agent works a knowledge base with: `query`
+(every read it covers), `query_syntax`, `docs_read`, `docs_tree`,
+`blocks_resolve`, `changes_since`, `plan`, `execute`, `apply`, `version` —
+listed in registration order, so `docs_read, docs_tree, query_syntax, query,
+blocks_resolve, apply, plan, execute, changes_since, version`
+(`cases/profiles.json` pins both lists; both engines check their listing
+against it). **A profile filters listing and calling, never semantics**: a
+tool the profile keeps behaves exactly as under `full` (same arguments,
+results, errors, locks), `tools/list` shows the profile's tools and nothing
+else, and `tools/call` on any other name — hidden by the profile, or never a
+tool — is the JSON-RPC error `-32602` with the message `unknown tool
+<name>`, byte for byte in both engines (not a tool result, not the
+`filter_invalid` envelope). `version` reports the profile served:
+`profile: "full" | "minimal"`, a new last key (§6 pins it by shape; `omg
+version` itself says `full`). Nothing else about a tool depends on the
+profile. The CLI's `--server` verbs ask `tools/list` once per connection and
+send `apply { effects }` where a sugar tool is not listed (`spec/cli` §2.3).
+
+**Descriptions (4.3).** A tool's `description` is the same text under every
+profile (`tool-descriptions.json`). The descriptions of the ten minimal tools
+are **example ladders**: a one-line summary (`<tool> — …`), then one example
+call per line, then a last line pointing at `query_syntax`. A **rung** is a
+line beginning `{` holding the call's arguments as JSON, then three or more
+spaces, then a comment; the JSON ends where the first run of three spaces
+begins (so a rung's JSON never holds one); a line beginning `{` that holds an
+ellipsis (`…`) or an angle-bracket placeholder (`<…>`) is a schema line, not
+a rung. Every rung is a real call over the alchemy corpus: the reference
+extracts them mechanically (`packages/core/src/mcp/examples.test.ts`), tool
+by tool in registration order and rung by rung, into the step list of
+`cases/examples.json` — one case over one workspace, a write tool's steps
+under the clock `2026-10-13T00:00:00.000Z` — and the suite runs them like a
+`reads.json` case, so an example that stops being true fails the suite and a
+rung edited without regenerating the suite fails the extraction test (the
+drift gate: extraction(descriptions) equals the suite's steps bytewise). The
+ids and paths in the rungs are the fixture's (`d_14` is `substances/salt.md`,
+`b_153` the `Tasks` heading of `processes/calcination.md`); the `execute`
+rung's `plan_id` is the digest of the `plan` rung over the same effects, so
+it re-pins whenever `planner_v` moves. Each ladder stays under about 900
+characters for client portability (`plan`'s is longer until the selector
+sugar of `spec/mutate` 3.2 shortens its targets).
+
 **Repo scoping.** Every repo-scoped tool takes an optional `repo` slug;
 omitted → the server's default repo; unknown → `repo_not_found`. A repo's
 root is derived (`spec/sync` §1); a mutating tool on a sourceless repo fails
@@ -870,7 +915,7 @@ identity consequences the 3.x result carried are the Plan's
 | `docs_diff` / `docs_diff_unified` / `docs_read_at` / `docs_history` / `changes_since` | §3 | §3 (`diff` / `diff_unified` before 3.0) |
 | `repos_status` / `sync_status` | `repo?` | `spec/sync` §4.4; `repos_status` names the repository `{ id, slug, … }` (its own identity under the row rule) |
 | `repos` | — | `{ repos: [{ slug, has_source }] }` by slug |
-| `version` | — | (1.4) which engine and which versions: `{ engine: "typescript" \| "rust", version, components: { <package or crate>: <version>, … }, specs: { oqx, format, reconcile, store, properties, graph, search, mutate, sync, surface, cli }, schema, mcp: { protocol, sdk? }, runtime, commit, built }` — `version` is the serving binary's own (the `omgbase` npm package or crate); `components` every omgbase package the binary is built from with its version (the reference: `omgbase`, `@omgbase/core`, `@omgbase/oqx`, `@omgbase/sync`, `@omgbase/fs-adapter`; the port: `omgbase` and each `omgbase-*` crate and `oqx`), keys sorted bytewise; `specs` the `spec/<x>/VERSION` each was built against (a compile-time constant, not a file read); `schema` the open database's `PRAGMA user_version`; `mcp.protocol` the protocol version served, `mcp.sdk` the SDK's version when one is used; `runtime` `node <version>` or `rustc <version>`; `commit` the build's git revision (short, `null` when unknown — a published crate reads `.cargo_vcs_info.json`, the npm package a `build-info.json` written by `pnpm build`), `built` its RFC 3339 build time or `null`. Values are engine- and release-specific, so §6 pins the **shape**: leaves are recorded as their type. No repo scope, no workspace needed beyond the database for `schema` (`null` without one). |
+| `version` | — | (1.4) which engine and which versions: `{ engine: "typescript" \| "rust", version, components: { <package or crate>: <version>, … }, specs: { oqx, format, reconcile, store, properties, graph, search, mutate, sync, surface, cli }, schema, mcp: { protocol, sdk? }, runtime, commit, built }` — `version` is the serving binary's own (the `omgbase` npm package or crate); `components` every omgbase package the binary is built from with its version (the reference: `omgbase`, `@omgbase/core`, `@omgbase/oqx`, `@omgbase/sync`, `@omgbase/fs-adapter`; the port: `omgbase` and each `omgbase-*` crate and `oqx`), keys sorted bytewise; `specs` the `spec/<x>/VERSION` each was built against (a compile-time constant, not a file read); `schema` the open database's `PRAGMA user_version`; `mcp.protocol` the protocol version served, `mcp.sdk` the SDK's version when one is used; `runtime` `node <version>` or `rustc <version>`; `commit` the build's git revision (short, `null` when unknown — a published crate reads `.cargo_vcs_info.json`, the npm package a `build-info.json` written by `pnpm build`), `built` its RFC 3339 build time or `null`; `profile` (4.3, the last key) the catalog profile served, `"full"` or `"minimal"` (§4 "Profiles"). Values are engine- and release-specific, so §6 pins the **shape**: leaves are recorded as their type. No repo scope, no workspace needed beyond the database for `schema` (`null` without one). |
 
 `plan` never triggers the host's post-mutation hook (the embed drain);
 successful writes do.
@@ -941,13 +986,36 @@ verbs later.
 
 - **`interop.json`** (§7): the cross-engine suite. The suite carries the
   alchemy `corpus` like a query suite; each case is `{ name, notes?, ts?,
-  writes?: [{ tool, args }], reads: [{ tool, args }], expect: { writes,
-  reads } }`. It is run by a different harness from the other suites (both
+  server_args?, writes?: [call…], reads: [call…], expect: { writes, reads }
+  }`, a call `{ tool, args }` or (4.3) the listing `{ method: "tools/list"
+  }`; `server_args` (4.3) is extra argv for the reader's server command
+  (§7.2). It is run by a different harness from the other suites (both
   engines as separate processes over MCP stdio, every writer × reader
   combination) — `packages/core/corpus/surface/interop.test.ts` and
   `crates/omgbase/tests/interop.rs`; `spec.test.ts` and the surface crate's
   `spec.rs` validate its shape and otherwise leave it to them.
 
+- **`examples.json`** (§4 "Descriptions", 4.3): the example ladders as a
+  suite. It carries the alchemy `corpus` like a query suite (the runner
+  observes it as one batch at `2026-09-27T00:00:00.000Z` before the steps,
+  mirrored into the case's workspace) and one case, `ladders`, shaped as a
+  `reads.json` case (`workspace: true`, `read` steps only, outcomes recorded
+  the same way): its `steps` are the rungs of the ten minimal tools'
+  descriptions in registration order — `docs_read`, `docs_tree`,
+  `query_syntax`, `query`, `blocks_resolve` (reads over the pristine corpus),
+  `apply` (three commits under `ts: 2026-10-13T00:00:00.000Z`), `plan` (five
+  previews over the written state, burning nothing), `execute` (the digest
+  form; `plan_mismatch` would show the rung's `plan_id` is stale),
+  `changes_since`, `version`. The steps are WRITTEN by the extraction test
+  (`packages/core/src/mcp/examples.test.ts` under `SURFACE_SPEC_UPDATE=1`,
+  run before the spec runner), never by hand; the runner regenerates the
+  corpus and `expect`. A port runs the case as it runs `reads.json` and pins
+  its own extraction against the same step list.
+- **`profiles.json`** (§4 "Profiles", 4.3): `{ suite: "profiles", profiles:
+  { full: [names…], minimal: [names…] } }` — each profile's tool names in
+  registration order (`full` equals the keys of `tool-descriptions.json`;
+  `minimal` ⊆ `full`). Both engines check the listing of a server built for
+  each profile against it. Regenerated by the reference like every fixture.
 - **`tool-descriptions.json`** (§4, 3.0): the catalog's tool names in
   registration order with their `description` strings — one source for both
   engines. Written by the reference from its registrations under
@@ -1017,8 +1085,11 @@ A case runs in a fresh temporary directory `W`:
    recorded (§7.3), so `expect.writes` holds one outcome per entry of
    `writes`. The writer is then closed (stdin EOF) and the harness waits for
    it to exit.
-3. The **reader** is spawned the same way on `W` and each of `reads` is
-   called in order and recorded; then closed.
+3. The **reader** is spawned the same way on `W` — with the case's
+   `server_args` appended to its command when given (4.3: `["--tools",
+   "minimal"]` serves the minimal profile of §4; the writer is always spawned
+   plain, since it seeds through `observe_many`, a tool outside that profile)
+   — and each of `reads` is called in order and recorded; then closed.
 4. The recorded `writes` and `reads` must equal the case's `expect`.
 
 Every case runs for every `(writer, reader)` in `{typescript, rust}²`: the
@@ -1036,7 +1107,14 @@ normalization: every string equal to `W`, or beginning with `W` followed by
 `/`, has that prefix replaced by `<workspace>` (the temporary directory
 differs per run; a tool that reports absolute paths still compares).
 Numbers compare within 1e-9. No case calls `query_syntax` (its text is
-unpinned); a harness may compare whatever it is asked to call.
+unpinned); a harness may compare whatever it is asked to call. A `version`
+call is recorded by shape (§6), which is engine-neutral by construction, so a
+case may make one (4.3: it pins `profile`). Two more outcome forms (4.3): the
+listing `{ method: "tools/list" }` records `{ tools: [names in the order
+served] }`, and a `tools/call` the server answers with a JSON-RPC **error**
+rather than a tool result records `{ rpc_error: { code, message } }` — the
+message as sent (a client library's "MCP error <code>: " prefix removed);
+the one such text pinned is `unknown tool <name>` (`-32602`).
 
 The suite's cases call **every read tool** of §4 at least once over the
 corpus, and every writing tool at least once followed by reads that show
@@ -1084,7 +1162,11 @@ with the same `select`), `write-select-apply-max` (the one-shot `apply` with
 `expect.max`, the one without it refused, one with a `max` below the
 cardinality refused `selection_too_large`) and `write-select-zero-hits` (an
 `apply` over a selector matching nothing → `commit: null`; the `plan` of it
-with `cardinality: 0`). `apply`'s file-CAS holds in the writing
+with `cardinality: 0`). The profiles (4.3) add `profile-minimal`: the reader spawned with
+`server_args: ["--tools", "minimal"]` lists exactly the ten tools, its
+`version` reports `profile: "minimal"` (by shape), a `blocks_insert` is the
+`-32602` `unknown tool blocks_insert`, and a `docs_read` answers as under
+`full`. `apply`'s file-CAS holds in the writing
 engine's working tree, so a write through one engine and a later read of
 `repos_status`/`sync_status` through the other exercises the sync tables
 (`file_stats`, checkpoints) both engines must maintain alike.
@@ -1367,6 +1449,30 @@ both and runs both harnesses.
 
 ## Decisions
 
+- 2026-10-13, surface 4.3: catalog **profiles** and example-ladder
+  **descriptions** (§4 "Profiles", "Descriptions"). A server serves `full`
+  (every tool, the default) or `minimal` (ten tools: `query`, `query_syntax`,
+  `docs_read`, `docs_tree`, `blocks_resolve`, `changes_since`, `plan`,
+  `execute`, `apply`, `version`), chosen by the host (`--tools`, the
+  `mcp.tools` setting); a profile filters listing and calling, never
+  semantics; `tools/call` on a name the server does not serve is the JSON-RPC
+  `-32602` error `unknown tool <name>` in both engines (the reference said
+  "Tool <name> not found" through 4.2 — a protocol-level text no fixture
+  pinned); `version` gains `profile` (its last key). The ten minimal tools'
+  descriptions become example ladders whose rungs are extracted mechanically
+  into `cases/examples.json` (27 steps over the alchemy corpus) and run — the
+  drift gate — and `query`'s grammar prose folds into `query_syntax`'s
+  reference text (the DOT/WHITESPACE rule, `bare`, the relative `from E`
+  inside a block, `$ordinal`/cycle detail); the other 37 descriptions are
+  unchanged. A tool-visibility option and a result key added, descriptions
+  reworded: a minor. Fixtures: `examples.json` (new), `profiles.json` (new),
+  `interop.json` 28 → 29 (`profile-minimal`, with the harness's `server_args`,
+  `tools/list` and `rpc_error` forms, §7.2/§7.3), `reads::orientation`
+  (`version`'s shape gains `profile`), `tool-descriptions.json` (the ten).
+  The selector rungs are written in the `{ "oqx": … }` form and the document
+  targets as `{ kind: "document", path }`; both move to the `->` leader and
+  bare targets with `spec/mutate` 3.2 (the next release), when the ladders
+  shorten.
 - 2026-10-13, surface 4.2: `query` gains `bare?: boolean` (§1.4) — each hit
   as its projection only, without the automatic `id`/`path` envelope members,
   for display and export where identity is noise. Rules: needs a `select`

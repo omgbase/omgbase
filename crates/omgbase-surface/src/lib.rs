@@ -51,7 +51,7 @@ pub mod store_index;
 pub mod translate;
 pub mod version;
 
-pub use catalog::{Surface, ToolOutcome, ToolSpec};
+pub use catalog::{MINIMAL_TOOLS, Profile, Surface, ToolOutcome, ToolSpec};
 pub use context::{SemanticVec, StoreContext, Target, glob_to_like};
 pub use cursor::{decode_cursor, decode_path_cursor, encode_cursor};
 pub use error::{Result, SurfaceError};
@@ -64,7 +64,7 @@ pub use query::{
 pub use version::{BuildInfo, MCP_PROTOCOL_VERSION, version_info};
 
 /// The `spec/surface/VERSION` this crate implements (`major.minor`).
-pub const SPEC_VERSION: &str = "4.2";
+pub const SPEC_VERSION: &str = "4.3";
 
 /// This crate's own version (`Cargo.toml`), for the surface's `version` tool.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

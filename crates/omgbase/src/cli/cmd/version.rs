@@ -24,7 +24,13 @@ fn info(cli: &mut Cli) -> Result<Json> {
     // workspace that cannot be opened is reported as none.
     let build = crate::cli::build_info();
     let store = cli.workspace().ok().and_then(|_| cli.store().ok());
-    Ok(omgbase_surface::version_info(store, &build)?)
+    // The CLI's own verb is the full library: `profile` is `full` (the MCP
+    // server's `--tools` is what makes it `minimal`).
+    Ok(omgbase_surface::version_info(
+        store,
+        &build,
+        omgbase_surface::Profile::Full,
+    )?)
 }
 
 /// A leaf as the human tier prints it: strings verbatim, numbers as JSON,
@@ -49,8 +55,8 @@ pub fn version(cli: &mut Cli, args: &[String]) -> Result<i32> {
     }
 
     let style = cli.style;
-    const KEYS: [&str; 8] = [
-        "engine", "version", "specs", "schema", "mcp", "runtime", "commit", "built",
+    const KEYS: [&str; 9] = [
+        "engine", "version", "specs", "schema", "mcp", "runtime", "commit", "built", "profile",
     ];
     let width = KEYS.iter().map(|k| k.len()).max().unwrap_or(0);
     let dash = style.dim("—");
@@ -96,5 +102,8 @@ pub fn version(cli: &mut Cli, args: &[String]) -> Result<i32> {
     line("runtime", &field("runtime"));
     line("commit", &field("commit"));
     line("built", &field("built"));
+    // The catalog profile served (`spec/surface` §4 "Profiles", 4.3): `full`
+    // for the library itself; over --server, whatever the remote serves.
+    line("profile", &field("profile"));
     Ok(EXIT_OK)
 }

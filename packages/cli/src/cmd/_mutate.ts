@@ -5,7 +5,7 @@ import type { Cli } from "../context.js";
 import type { RepoRow } from "@omgbase/core";
 import type { Workspace } from "@omgbase/core";
 import { CliUsageError, EXIT_OK, EXIT_ERROR } from "../output.js";
-import { remoteCall } from "./_remote.js";
+import { remoteCall, remoteSugar } from "./_remote.js";
 
 // Shared plumbing for every write command (spec/cli §3.6, §4; ADR-021's
 // retirement release, cli 4.0). The sugar verbs build their effects with the
@@ -150,11 +150,14 @@ export function runSugar(cli: Cli, ws: Workspace, repo: RepoRow, sugar: Sugar, o
  * SAME renderers as local. The global --dry-run is the `plan` tool over the
  * effects the verb would build (`effects` composes them from the refs as given:
  * an id names its row, anything else a document path — the server resolves);
- * no tool takes `dry_run` since surface 4.0.
+ * no tool takes `dry_run` since surface 4.0. A server that does not list the
+ * tool (spec/surface §4 "Profiles": `--tools minimal`) gets `apply { effects,
+ * reason: <tool> }` from the same closure (`remoteSugar`, spec/cli §2.3);
+ * `refs` are the refs the verb received, refused there when one is a locator.
  */
-export async function runSugarRemote(cli: Cli, tool: string, toolArgs: Record<string, unknown>, effects: () => unknown[] | Promise<unknown[]>): Promise<number> {
+export async function runSugarRemote(cli: Cli, tool: string, toolArgs: Record<string, unknown>, effects: () => unknown[] | Promise<unknown[]>, refs: string[] = []): Promise<number> {
   if (cli.flags.dryRun) return renderPlan(cli, await remoteCall<Plan>(cli, "plan", { effects: await effects() }));
-  return renderReceipt(cli, await remoteCall<Receipt>(cli, tool, toolArgs));
+  return renderReceipt(cli, await remoteSugar<Receipt>(cli, tool, toolArgs, effects, refs));
 }
 
 /** A ref as an effect target for a remote `plan`: a `b_` id is the block, a `d_` id the document, anything else a document path. */

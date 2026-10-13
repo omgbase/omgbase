@@ -867,7 +867,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "engine   <string>\nversion  <string>\n  <object>\nspecs    <string>\nschema   <number>\nmcp      <string>\nruntime  <string>\ncommit   <string|null>\nbuilt    <string|null>\n"
+        "stdout": "engine   <string>\nversion  <string>\n  <object>\nspecs    <string>\nschema   <number>\nmcp      <string>\nruntime  <string>\ncommit   <string|null>\nbuilt    <string|null>\nprofile  <string>\n"
       }
     },
     {
@@ -880,7 +880,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "{\"engine\":\"<string>\",\"version\":\"<string>\",\"components\":\"<object>\",\"specs\":{\"oqx\":\"<string>\",\"format\":\"<string>\",\"reconcile\":\"<string>\",\"store\":\"<string>\",\"properties\":\"<string>\",\"graph\":\"<string>\",\"search\":\"<string>\",\"mutate\":\"<string>\",\"sync\":\"<string>\",\"surface\":\"<string>\",\"cli\":\"<string>\"},\"schema\":\"<number>\",\"mcp\":{\"protocol\":\"<string>\"},\"runtime\":\"<string>\",\"commit\":\"<string|null>\",\"built\":\"<string|null>\"}\n"
+        "stdout": "{\"engine\":\"<string>\",\"version\":\"<string>\",\"components\":\"<object>\",\"specs\":{\"oqx\":\"<string>\",\"format\":\"<string>\",\"reconcile\":\"<string>\",\"store\":\"<string>\",\"properties\":\"<string>\",\"graph\":\"<string>\",\"search\":\"<string>\",\"mutate\":\"<string>\",\"sync\":\"<string>\",\"surface\":\"<string>\",\"cli\":\"<string>\"},\"schema\":\"<number>\",\"mcp\":{\"protocol\":\"<string>\"},\"runtime\":\"<string>\",\"commit\":\"<string|null>\",\"built\":\"<string|null>\",\"profile\":\"<string>\"}\n"
       }
     },
     {

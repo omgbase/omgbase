@@ -16,6 +16,8 @@
 use omgbase_store::Store;
 use serde_json::{Map, Value as Json, json};
 
+use crate::catalog::Profile;
+
 /// The MCP protocol revision the catalog (§4) is written against and the
 /// `omgbase` binary serves by default when a client names none (the
 /// reference's SDK `LATEST_PROTOCOL_VERSION`). A client's own revision is
@@ -95,9 +97,15 @@ fn specs(build: &BuildInfo) -> Json {
 }
 
 /// The `version` result: `{ engine, version, components, specs, schema,
-/// mcp, runtime, commit, built }`. `store` supplies `schema` (its
-/// `PRAGMA user_version`; `null` without one).
-pub fn version_info(store: Option<&Store>, build: &BuildInfo) -> crate::Result<Json> {
+/// mcp, runtime, commit, built, profile }`. `store` supplies `schema` (its
+/// `PRAGMA user_version`; `null` without one); `profile` is the catalog
+/// profile the host serves (§4 "Profiles", 4.3) — a server's `--tools`, and
+/// `Full` for the CLI's own `version` verb and a library embedding.
+pub fn version_info(
+    store: Option<&Store>,
+    build: &BuildInfo,
+    profile: Profile,
+) -> crate::Result<Json> {
     let schema = match store {
         Some(s) => Json::from(s.user_version()?),
         None => Json::Null,
@@ -113,6 +121,7 @@ pub fn version_info(store: Option<&Store>, build: &BuildInfo) -> crate::Result<J
         "runtime": runtime,
         "commit": build.commit,
         "built": build.built,
+        "profile": profile.as_str(),
     }))
 }
 
@@ -123,7 +132,7 @@ mod tests {
     #[test]
     fn library_embedding_answers_with_its_own_version_and_nulls() {
         let store = Store::open_in_memory().unwrap();
-        let v = version_info(Some(&store), &BuildInfo::default()).unwrap();
+        let v = version_info(Some(&store), &BuildInfo::default(), Profile::Full).unwrap();
         assert_eq!(v["engine"], "rust");
         assert_eq!(v["version"], crate::VERSION);
         assert_eq!(v["components"]["omgbase-surface"], crate::VERSION);
@@ -158,6 +167,7 @@ mod tests {
         assert_eq!(v["runtime"], "rustc");
         assert_eq!(v["commit"], Json::Null);
         assert_eq!(v["built"], Json::Null);
+        assert_eq!(v["profile"], "full");
         assert_eq!(
             v.as_object().unwrap().keys().collect::<Vec<_>>(),
             [
@@ -169,10 +179,11 @@ mod tests {
                 "mcp",
                 "runtime",
                 "commit",
-                "built"
+                "built",
+                "profile"
             ]
         );
-        let none = version_info(None, &BuildInfo::default()).unwrap();
+        let none = version_info(None, &BuildInfo::default(), Profile::Full).unwrap();
         assert_eq!(none["schema"], Json::Null);
     }
 
@@ -185,7 +196,7 @@ mod tests {
             built: Some("2026-09-27T00:00:00Z".to_owned()),
             rustc: Some("rustc 1.97.0".to_owned()),
         };
-        let v = version_info(None, &build).unwrap();
+        let v = version_info(None, &build, Profile::Minimal).unwrap();
         assert_eq!(v["version"], "9.9.9");
         assert_eq!(v["components"]["omgbase"], "9.9.9");
         assert_eq!(v["specs"]["cli"], "1.1");
