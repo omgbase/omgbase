@@ -60,7 +60,7 @@ The proxy describes itself for a page's status line:
   "mode": "remote",
   "upstream": "https://mcp.example.com/omg",
   "identity": { "email": "brendan@example.com", "name": null, "subject": "auth0|…" },
-  "auth": { "state": "ok", "issuer": "https://example.us.auth0.com/" },
+  "auth": { "state": "ok", "issuer": "https://example.us.auth0.com/", "recovered": true, "recoveredAt": "2026-10-12T19:04:11.512Z" },
   "tokenFile": "/home/me/.config/omgbase-webdevproxy/0123456789abcdef.json",
   "sessions": [{ "id": "<browser Mcp-Session-Id>", "upstream": "<gateway session id or omg mcp pid>" }]
 }
@@ -69,9 +69,13 @@ The proxy describes itself for a page's status line:
 In local mode `mode` is `"local"`, `upstream` is `omg mcp -C <dir>`, `identity`
 and `tokenFile` are `null` and `auth` is `{ "state": "none" }`. `auth.state` is
 `"waiting"` while the sign-in is open in your browser (with
-`authorizationUrl`), `"error"` with `error` when it failed, `"ok"` when tokens
-are in hand, `"unknown"` before the first upstream request. The type is
-`WhoAmI` in [`index.d.ts`](./index.d.ts); the demos poll it while `waiting`.
+`authorizationUrl` — the demos render it as a link, for a browser that did not
+open by itself), `"error"` with `error` when it failed, `"ok"` when tokens are
+in hand, `"unknown"` before the first upstream request. `recovered: true` (with
+`recoveredAt`) is on an `"ok"` the proxy reached by replacing a stored sign-in
+the issuer had rejected with a fresh one, by itself (below) — a page can say
+"signed in again" rather than nothing. The type is `WhoAmI` in
+[`index.d.ts`](./index.d.ts); the demos poll it while `waiting`.
 
 ### The remote sign-in
 
@@ -92,8 +96,39 @@ prints the authorization URL and opens your browser once:
 
 Consent lands on the loopback listener, the code is exchanged, and from then on
 every browser session gets its own upstream session with the bearer added per
-request; a `401` later is answered with a silent refresh (`offline_access`), and
-only a rejected refresh re-runs the browser flow.
+request; a `401` later is answered with a silent refresh (`offline_access`).
+
+**When the stored sign-in is dead** — the gateway or its identity provider was
+reset or upgraded, the refresh token or the client registration revoked — the
+proxy recovers by itself, once per `401` round, at start-up (the probe) as well
+as later:
+
+| the issuer answers the refresh with | the proxy clears | then |
+| --- | --- | --- |
+| `invalid_grant`, any other OAuth error, or a bare `400`/`401` from the token endpoint | `tokens` (and the cached `discovery`) | rediscovers from the `401`'s `WWW-Authenticate` and opens the browser again |
+| `invalid_client` / `unauthorized_client`, or a `400`/`401` from the registration endpoint | everything (`clientInformation`, `tokens`, `discovery`) | re-registers the client, then the browser |
+| something that is not an OAuth answer at all (a `404` page: the token endpoint moved) while working from cached metadata | `discovery` only | rediscovers and retries the refresh — silently when the refresh token is still good |
+
+It logs one line, `[webdevproxy] stored sign-in for <url> was rejected (<reason>);
+signing in again` (`stored issuer metadata for <url> is stale (…); rediscovering`
+for the last row), then the usual sign-in lines; `/whoami` reports
+`recovered: true`. Only when the fresh sign-in **also** fails (you declined, the
+code exchange failed) does `auth.state` become `"error"` — and that is never
+retried by itself: the next `401` is one more browser flow, no refresh, so a
+broken issuer costs one browser tab per request round, not a loop. A failure
+inside the browser flow is never mistaken for a dead credential. Concurrent
+`401`s share the one sign-in.
+
+**Keys.** When the proxy runs from `webdevproxy` on a terminal (stdin a TTY —
+never under the demos' `scripts/dev.mjs` or in CI), it prints
+`press a + Enter to (re)open the sign-in in your browser, l + Enter to forget
+this server's tokens and sign in fresh, q + Enter to quit` whenever the sign-in
+is `waiting` or has failed. `a` re-opens a waiting sign-in and prints its URL
+again (for a session over SSH: copy it), or — when none is waiting — drops the
+tokens, keeps the client registration and starts a fresh authorization; `l` is
+`--logout` for this server without a restart (the client is registered anew);
+`q` closes every session and exits `0`. A sign-in still pending is superseded,
+not reported as failed.
 
 **Token files** live at `~/.config/omgbase-webdevproxy/<sha256 of the normalized
 server URL, 16 hex>.json` (`$XDG_CONFIG_HOME` honoured; `--token-file` /
@@ -106,7 +141,8 @@ move. Nothing in the file is ever logged.
 
 `webdevproxy --logout --remote <url>` deletes that server's file (and the
 legacy copy); `webdevproxy --logout` alone deletes every file under both
-directories.
+directories. Since the proxy replaces a rejected sign-in by itself, `--logout`
+is for switching accounts or servers, not for repairing one.
 
 ### Session recovery
 
@@ -151,9 +187,12 @@ export default defineConfig({ server: { proxy: viteProxy() } });
 ```
 
 so the app's server URL is just `/mcp` and the browser never needs CORS at
-all. `startProxy` resolves once listening with `{ url, port, path, mode,
+all. `startProxy` resolves once listening with `{ url, port, path, mode, remote,
 whoami(), ready, close() }` (`ready` settles when the remote sign-in or refresh
-attempted at startup is done; it never rejects). `logout(options)` is the
+attempted at startup is done; it never rejects; `remote` is the `RemoteAuth` in
+remote mode, which `startPrompt({ remote, proxy })` — the terminal keys — takes;
+`startProxy` itself never reads stdin; `openBrowser` replaces the system
+browser). `logout(options)` is the
 `--logout` behaviour as a function. Everything else the package exports
 (`RemoteAuth`, `FileOAuthProvider`, `SessionTable`, the token-file helpers, the
 CORS rules) is in [`index.d.ts`](./index.d.ts).
@@ -162,8 +201,13 @@ CORS rules) is in [`index.d.ts`](./index.d.ts).
 
 `pnpm --filter webdevproxy test` — vitest over the argument parsing, the CORS
 rules, the session table (injected timers), the token files and the legacy
-migration (a fake loopback sign-in), the Vite entries, and the proxy end to end
-over a fake `omg mcp` (`test/fixtures/fake-omg.mjs`) on an ephemeral port: a
+migration (a fake loopback sign-in), the Vite entries, the proxy end to end
+over a fake `omg mcp` (`test/fixtures/fake-omg.mjs`) on an ephemeral port (a
 browser-shaped SDK client connects, each session gets its own child, `/whoami`
-describes them, a `DELETE` ends the upstream, the CORS and 404 answers hold.
-No network.
+describes them, a `DELETE` ends the upstream, the CORS and 404 answers hold),
+and the remote sign-in over a fake gateway + issuer on another ephemeral port
+(`test/fixtures/fake-gateway.ts`: the 401, RFC 9728/8414 metadata, RFC 7591
+registration, code exchange and refresh, a "browser" that answers the loopback
+itself) — the first run, every recovery row above, the bounded failure, a stale
+file at start-up through `startProxy`, `--logout`, and the terminal keys from a
+fake stdin. No network, no real browser.

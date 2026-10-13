@@ -157,6 +157,12 @@ options:
   --logout             delete the token file(s) and exit
   --help               this text
 
+keys (remote mode, when stdin is a terminal; each followed by Enter):
+  a                    (re)open the sign-in in your browser and print its URL again; when none is
+                       waiting, drop the tokens (the client registration stays) and sign in afresh
+  l                    forget this server's tokens (= --logout) and sign in fresh, without a restart
+  q                    close every session and quit
+
 env: WEBDEVPROXY_LOCAL, WEBDEVPROXY_OMG, WEBDEVPROXY_REMOTE, WEBDEVPROXY_PORT, WEBDEVPROXY_PATH,
      WEBDEVPROXY_ORIGIN (comma-separated), WEBDEVPROXY_TOKEN_FILE, WEBDEVPROXY_NO_BROWSER
 `;

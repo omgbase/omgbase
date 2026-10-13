@@ -423,7 +423,7 @@ async function connect(): Promise<void> {
     if (!list.some((r) => r.slug === repo.get())) repo.set(list[0]?.slug ?? "");
     localStorage.setItem(REPO_KEY, repo.get());
     connection.set("ok");
-    connectionMessage.set(`${list.length} repo${list.length === 1 ? "" : "s"} · surface ${v}`);
+    connectionMessage.set(`${list.length} repo${list.length === 1 ? "" : "s"} · surface ${v}${w.auth.recovered ? " · signed in again" : ""}`);
     await refreshWhoAmI();
     await Promise.all([loadRecent(), startFeed()]);
   } catch (e) {
@@ -520,7 +520,9 @@ export class LiveTailApp extends SignalWatcher(LitElement) {
       <header>
         <h1>live tail</h1>
         <span class="label">${headerLabel.get()}${surface.get() ? ` · surface ${surface.get()}` : ""}</span>
-        <span class="msg ${state === "error" ? "err" : ""}">${connectionMessage.get()}</span>
+        <span class="msg ${state === "error" ? "err" : ""}">${connectionMessage.get()}${state === "sign-in" && whoami.get()?.auth.authorizationUrl
+          ? html` (<a href=${whoami.get()!.auth.authorizationUrl!} target="_blank" rel="noopener">open the sign-in page</a>)`
+          : nothing}</span>
         <div class="controls">
           <label>repo
             <select .value=${repo.get()} @change=${(e: Event) => switchRepo((e.target as HTMLSelectElement).value)} ?disabled=${state !== "ok"}>

@@ -10,7 +10,11 @@
 //     → the loopback listener catches ?code=…&state=…
 //     → code → tokens (`auth()` again with the code), persisted to a 0600 file
 //     → later runs refresh silently (`offline_access` → refresh token);
-//       a failed refresh re-runs the browser flow.
+//       a refresh the issuer refuses (the gateway or its identity provider was
+//       reset; the refresh token or the client registration revoked) drops the
+//       dead part of the file — and the cached discovery — and re-runs the
+//       browser flow by itself, once per 401 round (`RemoteAuth.run`); `--logout`
+//       is only for switching accounts or servers.
 //
 // Pure helpers (token-file path hashing, read/write, the legacy graph-ui file
 // fallback, callback parsing) are exported for the tests; the network-touching
@@ -23,6 +27,7 @@ import { createServer } from "node:http";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { auth, extractWWWAuthenticateParams } from "@modelcontextprotocol/sdk/client/auth.js";
+import { OAuthError } from "@modelcontextprotocol/sdk/server/auth/errors.js";
 import { callbackParams, identityFromTokens, normalizeServerUrl } from "./oauth-shared.mjs";
 
 // ---- the token file -------------------------------------------------------------
@@ -162,13 +167,26 @@ export function parseLoopbackCallback(requestUrl, expectedState) {
   return { kind: "code", code: cb.code };
 }
 
+/** `error.name` of the rejection a cancelled round trip ends with: the sign-in was superseded, not failed. */
+export const SIGN_IN_CANCELLED = "SignInCancelled";
+/** `error.name` of RemoteAuth's abort of a browser flow built on cached issuer metadata the token endpoint just failed to honour. */
+export const STALE_DISCOVERY = "StaleDiscovery";
+
+/** An Error with a `name` the callers switch on. */
+function tagged(name, message) {
+  const e = new Error(message);
+  e.name = name;
+  return e;
+}
+
 const CALLBACK_PAGE = (title, body) => `<!doctype html><meta charset="utf-8"><title>${title}</title>
 <body style="font: 15px/1.5 system-ui, sans-serif; margin: 3em auto; max-width: 36em; color: #1e2430">
 <h1 style="font-size: 18px">${title}</h1><p>${body}</p></body>`;
 
 /**
  * Start the loopback listener. `port` 0 picks an ephemeral port. Returns the
- * bound port, the redirect URLs, and `waitForCallback(state)`; only one
+ * bound port, the redirect URLs, `waitForCallback(state)` and `cancel(reason)`
+ * (rejects the pending round trip with a `SignInCancelled` error); only one
  * round trip is pending at a time.
  */
 export function startLoopback({ port = 0, host = "127.0.0.1" } = {}) {
@@ -213,9 +231,17 @@ export function startLoopback({ port = 0, host = "127.0.0.1" } = {}) {
         redirectUrl: loopbackRedirectUrls(bound)[0],
         /** @param {string | undefined} state */
         waitForCallback: (state) => new Promise((res, rej) => {
-          if (pending) pending.reject(new Error("superseded by a newer sign-in"));
+          if (pending) pending.reject(tagged(SIGN_IN_CANCELLED, "superseded by a newer sign-in"));
           pending = { state, resolve: res, reject: rej };
         }),
+        /** @param {string} reason */
+        cancel: (reason) => {
+          if (!pending) return false;
+          const p = pending;
+          pending = null;
+          p.reject(tagged(SIGN_IN_CANCELLED, reason));
+          return true;
+        },
         close: () => new Promise((r) => server.close(() => r())),
       });
     });
@@ -251,9 +277,11 @@ export function openBrowser(url) {
 export class FileOAuthProvider {
   /**
    * @param {{ serverUrl: string, file: string, redirectUrls: string[], clientName?: string, log?: (m: string) => void,
-   *   openBrowser?: (url: string) => Promise<boolean>, noBrowser?: boolean }} opts
+   *   openBrowser?: (url: string) => Promise<boolean>, noBrowser?: boolean,
+   *   onRedirect?: (pending: { url: string, state: string | undefined }) => void | Promise<void> }} opts
+   *   `onRedirect` runs before the browser opens (RemoteAuth registers its loopback waiter there); it may throw to abort the redirect.
    */
-  constructor({ serverUrl, file, redirectUrls, clientName = "omgbase webdevproxy (local dev proxy)", log = () => {}, openBrowser: open = openBrowser, noBrowser = false }) {
+  constructor({ serverUrl, file, redirectUrls, clientName = "omgbase webdevproxy (local dev proxy)", log = () => {}, openBrowser: open = openBrowser, noBrowser = false, onRedirect = undefined }) {
     this.serverUrl = serverUrl;
     this.file = file;
     this.redirectUrls = redirectUrls;
@@ -261,6 +289,7 @@ export class FileOAuthProvider {
     this.log = log;
     this.open = open;
     this.noBrowser = noBrowser;
+    this.onRedirect = onRedirect;
     /** @type {{ url: string, state: string | undefined } | null} the authorization the user has yet to complete */
     this.pending = null;
   }
@@ -332,11 +361,19 @@ export class FileOAuthProvider {
     return this.read().discovery;
   }
 
+  /**
+   * The SDK's `auth()` calls this with `"all"` when the issuer answers `invalid_client` /
+   * `unauthorized_client` and with `"tokens"` on `invalid_grant`, then retries; `RemoteAuth`
+   * calls it for the rejections the SDK does not recover from. Dropping tokens drops the
+   * cached discovery too: an issuer that refuses what we stored may well have moved
+   * (the gateway upgraded), and the next `auth()` rediscovers from the 401's
+   * `WWW-Authenticate` at the cost of two GETs.
+   */
   invalidateCredentials(scope) {
     switch (scope) {
       case "all": this.patch({ clientInformation: undefined, tokens: undefined, tokensSavedAt: undefined, codeVerifier: undefined, state: undefined, discovery: undefined }); return;
       case "client": this.patch({ clientInformation: undefined }); return;
-      case "tokens": this.patch({ tokens: undefined, tokensSavedAt: undefined }); return;
+      case "tokens": this.patch({ tokens: undefined, tokensSavedAt: undefined, discovery: undefined }); return;
       case "verifier": this.patch({ codeVerifier: undefined }); return;
       case "discovery": this.patch({ discovery: undefined }); return;
     }
@@ -344,7 +381,9 @@ export class FileOAuthProvider {
 
   async redirectToAuthorization(authorizationUrl) {
     const url = authorizationUrl.href;
-    this.pending = { url, state: this.read().state };
+    const pending = { url, state: this.read().state };
+    await this.onRedirect?.(pending);
+    this.pending = pending;
     this.log(`sign-in required for ${this.serverUrl}`);
     const issuer = this.read().discovery?.authorizationServerUrl;
     if (issuer) this.log(`issuer: ${issuer}`);
@@ -368,6 +407,24 @@ export class FileOAuthProvider {
  * One remote per proxy: owns the loopback listener, the provider, and the
  * sign-in state the proxy reports on /whoami. `authorize(response)` is the
  * serialized "we got a 401" handler the forwarding fetch calls.
+ *
+ * Recovery (the stored sign-in is dead — the gateway or its identity provider
+ * was reset, the refresh token or the client registration revoked):
+ *
+ *   • `invalid_grant` on the refresh → the SDK's `auth()` itself drops the tokens
+ *     (our provider drops the cached discovery with them) and starts the browser
+ *     flow; `invalid_client` / `unauthorized_client` → it drops everything and
+ *     re-registers first. We only notice (log, `recovered`).
+ *   • any other refusal the SDK gives up on — another OAuth error code, or a
+ *     400/401 from the token endpoint (→ tokens) or the registration endpoint
+ *     (→ all), or a token endpoint that no longer answers like one while we
+ *     worked from cached metadata (→ discovery) — is handled here: clear that
+ *     part of the file, run `auth()` once more. Only when that also fails does
+ *     the status become `error`.
+ *
+ * One recovery per 401 round; a failure inside the browser flow (the user
+ * declined, the code exchange failed) is a failed sign-in, not a dead credential,
+ * and is never retried by itself.
  */
 export class RemoteAuth {
   /**
@@ -383,11 +440,25 @@ export class RemoteAuth {
     this.fetch = fetchFn;
     this.open = open;
     this.noBrowser = noBrowser;
-    /** @type {{ state: "unknown" | "ok" | "waiting" | "error", issuer?: string, authorizationUrl?: string, error?: string }} */
+    /** @type {{ state: "unknown" | "ok" | "waiting" | "error", issuer?: string, authorizationUrl?: string, error?: string, recovered?: true, recoveredAt?: string }} */
     this.status = { state: "unknown" };
+    /** @type {((status: RemoteAuth["status"]) => void)[]} */
+    this.listeners = [];
     this.inflight = null;
     this.resourceMetadataUrl = undefined;
     this.scope = undefined;
+    /** @type {string | undefined} when a dead stored sign-in was last replaced by a fresh one, by itself */
+    this.recoveredAt = undefined;
+    /**
+     * What the issuer answered during the current `auth()` pass (see `authFetch`).
+     * @type {{ rejection: { endpoint: "token" | "registration", status: number, grant?: string, code?: string, description?: string } | null, discovered: boolean }}
+     */
+    this.observed = { rejection: null, discovered: false };
+    /** @type {"stored" | "browser"} where the current pass is: still on the stored credential, or in the browser flow */
+    this.phase = "stored";
+    /** @type {Promise<{ code: string }> | null} the loopback waiter the redirect hook registered */
+    this.callback = null;
+    this.authFetch = this.authFetch.bind(this);
   }
 
   async start() {
@@ -403,6 +474,7 @@ export class RemoteAuth {
     this.provider = new FileOAuthProvider({
       serverUrl: this.serverUrl, file: this.file, redirectUrls: this.loopback.redirectUrls,
       log: this.log, openBrowser: this.open, noBrowser: this.noBrowser,
+      onRedirect: (pending) => this.onRedirect(pending),
     });
     if (wantPort && this.loopback.port !== wantPort) {
       // The registered redirect URIs name the old port; register afresh.
@@ -429,10 +501,27 @@ export class RemoteAuth {
     return this.provider?.discoveryState()?.authorizationServerUrl;
   }
 
+  /** Set the status and tell the listeners (the terminal prompt prints its hint on `waiting` / `error`). */
+  setStatus(status) {
+    this.status = status;
+    for (const l of this.listeners) l(status);
+  }
+
+  /** Subscribe to status changes; returns the unsubscribe. */
+  onStatus(listener) {
+    this.listeners.push(listener);
+    return () => { this.listeners = this.listeners.filter((l) => l !== listener); };
+  }
+
+  okStatus() {
+    return { state: "ok", issuer: this.issuer(), ...(this.recoveredAt ? { recovered: true, recoveredAt: this.recoveredAt } : {}) };
+  }
+
   /**
    * Make sure we hold tokens the gateway accepts, signing in if needed. Sends
    * the request a browser would send first (an unauthenticated `initialize`)
-   * so discovery starts from the gateway's own 401.
+   * so discovery starts from the gateway's own 401. A stored sign-in the
+   * issuer rejects goes through the same recovery as one rejected later.
    */
   async ensure() {
     const res = await this.fetch(this.serverUrl, {
@@ -445,7 +534,7 @@ export class RemoteAuth {
       // No auth in front of this server: nothing to do (and nothing to keep of the probe's session).
       const sid = res.headers.get("mcp-session-id");
       if (sid) await this.fetch(this.serverUrl, { method: "DELETE", headers: { "mcp-session-id": sid } }).then((r) => r.body?.cancel(), () => undefined);
-      this.status = { state: "ok" };
+      this.setStatus({ state: "ok" });
       return;
     }
     await this.authorize(res);
@@ -461,34 +550,146 @@ export class RemoteAuth {
     return this.inflight;
   }
 
+  /**
+   * The `fetch` handed to the SDK's `auth()`: the upstream fetch, plus a note of
+   * what the issuer answered — a refused token or registration request (status,
+   * the OAuth `error` when the body is one) and whether metadata was
+   * (re)discovered on the way — so `run` can tell a dead stored credential from
+   * a failed sign-in. Bodies are read from a clone; the SDK still gets its own.
+   */
+  async authFetch(input, init) {
+    const res = await this.fetch(input, init);
+    const url = String(input instanceof Request ? input.url : input);
+    if (url.includes("/.well-known/")) this.observed.discovered = true;
+    if (!res.ok) {
+      const body = init?.body;
+      const endpoint = body instanceof URLSearchParams ? "token" : typeof body === "string" && body.includes('"redirect_uris"') ? "registration" : null;
+      if (endpoint) {
+        /** @type {NonNullable<RemoteAuth["observed"]["rejection"]>} */
+        const rejection = { endpoint, status: res.status };
+        if (body instanceof URLSearchParams) rejection.grant = body.get("grant_type") ?? undefined;
+        try {
+          const parsed = await res.clone().json();
+          if (parsed && typeof parsed.error === "string") {
+            rejection.code = parsed.error;
+            if (typeof parsed.error_description === "string") rejection.description = parsed.error_description;
+          }
+        } catch {
+          // not an OAuth error body (an HTML 404 after the issuer moved, say)
+        }
+        this.observed.rejection = rejection;
+      }
+    }
+    return res;
+  }
+
+  /**
+   * The provider is about to send the user to the authorization server.
+   * Register the loopback waiter first, so an answer can never arrive before
+   * anyone listens — unless the flow is built on cached issuer metadata whose
+   * token endpoint just answered the refresh with something that is neither an
+   * OAuth error nor a 400/401 (a 404 after the issuer moved, say): the SDK would
+   * carry on to a stale authorization endpoint; abort before the browser opens
+   * and rediscover. A bare 400/401 is the token being refused, not the issuer moving.
+   */
+  onRedirect(pending) {
+    const r = this.observed.rejection;
+    if (r && r.endpoint === "token" && r.grant === "refresh_token" && !r.code && r.status !== 400 && r.status !== 401 && !this.observed.discovered) {
+      throw tagged(STALE_DISCOVERY, `the stored token endpoint answered HTTP ${r.status} to the refresh`);
+    }
+    const waiter = this.loopback.waitForCallback(pending.state);
+    waiter.catch(() => undefined); // handled where it is awaited
+    this.callback = waiter;
+  }
+
   async run(response) {
     if (response) {
       const { resourceMetadataUrl, scope } = extractWWWAuthenticateParams(response);
       if (resourceMetadataUrl) this.resourceMetadataUrl = resourceMetadataUrl;
       if (scope) this.scope = scope;
     }
-    const opts = { serverUrl: this.serverUrl, resourceMetadataUrl: this.resourceMetadataUrl, scope: this.scope, fetchFn: this.fetch };
+    const opts = { serverUrl: this.serverUrl, resourceMetadataUrl: this.resourceMetadataUrl, scope: this.scope, fetchFn: this.authFetch };
+    const stored = this.provider.read();
+    const hadTokens = Boolean(stored.tokens);
+    const hadCredential = hadTokens || Boolean(stored.clientInformation);
     try {
-      let result = await auth(this.provider, opts);
-      if (result === "REDIRECT") {
-        const pending = this.provider.pending;
-        this.status = { state: "waiting", issuer: this.issuer(), authorizationUrl: pending?.url };
-        const { code } = await this.loopback.waitForCallback(pending?.state);
-        this.provider.pending = null;
-        this.provider.patch({ state: undefined });
-        result = await auth(this.provider, { ...opts, authorizationCode: code });
+      let recovered = false;
+      try {
+        recovered = (await this.attempt(opts, hadTokens)) && hadTokens;
+      } catch (e) {
+        // A stored credential the issuer refused before any browser flow began: drop the dead part and sign in afresh, once.
+        const dead = hadCredential && this.phase === "stored" ? this.deadCredential(e) : null;
+        if (!dead) throw e;
+        if (dead.scope === "discovery") this.log(`stored issuer metadata for ${this.serverUrl} is stale (${dead.reason}); rediscovering`);
+        else this.log(`stored sign-in for ${this.serverUrl} was rejected (${dead.reason}); signing in again`);
+        this.provider.invalidateCredentials(dead.scope);
+        recovered = (await this.attempt(opts, false)) || dead.scope !== "discovery";
       }
-      if (result !== "AUTHORIZED") throw new Error(`authorization ended in ${result}`);
+      if (recovered) this.recoveredAt = new Date().toISOString();
       const who = this.identity();
-      this.log(`signed in to ${this.serverUrl}${who ? ` as ${who.email ?? who.name ?? who.subject}` : ""} (tokens in ${this.file})`);
-      this.status = { state: "ok", issuer: this.issuer() };
+      this.log(`signed in${recovered ? " again" : ""} to ${this.serverUrl}${who ? ` as ${who.email ?? who.name ?? who.subject}` : ""} (tokens in ${this.file})`);
+      this.setStatus(this.okStatus());
     } catch (e) {
-      const message = e instanceof Error ? e.message : String(e);
       this.provider.pending = null;
-      this.status = { state: "error", issuer: this.issuer(), error: message };
+      if (e instanceof Error && e.name === SIGN_IN_CANCELLED) throw e; // superseded by a fresh sign-in, which reports for itself
+      const message = e instanceof Error ? e.message : String(e);
+      this.setStatus({ state: "error", issuer: this.issuer(), error: message });
       this.log(`sign-in failed${this.issuer() ? ` (issuer ${this.issuer()})` : ""}: ${message}`);
       throw e;
     }
+  }
+
+  /**
+   * One pass of the SDK's `auth()`, plus the loopback round trip when it
+   * redirects. Resolves to whether the browser flow ran; when it did while we
+   * held tokens, the SDK found the stored refresh token dead (and already
+   * dropped it), which is logged here.
+   */
+  async attempt(opts, hadTokens) {
+    this.observed = { rejection: null, discovered: false };
+    this.phase = "stored";
+    let result = await auth(this.provider, opts);
+    const redirected = result === "REDIRECT";
+    if (redirected) {
+      this.phase = "browser";
+      if (hadTokens) this.log(`stored sign-in for ${this.serverUrl} was rejected (${this.describeRejection() ?? "no usable refresh token"}); signing in again`);
+      const pending = this.provider.pending;
+      const callback = this.callback;
+      this.callback = null;
+      if (!callback) throw new Error("the sign-in redirect registered no loopback waiter");
+      this.setStatus({ state: "waiting", issuer: this.issuer(), authorizationUrl: pending?.url });
+      const { code } = await callback;
+      this.provider.pending = null;
+      this.provider.patch({ state: undefined });
+      result = await auth(this.provider, { ...opts, authorizationCode: code });
+    }
+    if (result !== "AUTHORIZED") throw new Error(`authorization ended in ${result}`);
+    return redirected;
+  }
+
+  /**
+   * Does this failure of the stored credential mean it is dead, and which part?
+   *   invalid_client / unauthorized_client, or a 400/401 from the registration endpoint → "all"
+   *   invalid_grant, or a 400/401 from the token endpoint                               → "tokens" (which drops discovery too)
+   *   a token endpoint that no longer answers like one, on cached metadata             → "discovery"
+   * Anything else (the issuer unreachable or 5xx, a malformed metadata document) is not.
+   * @returns {{ scope: "all" | "tokens" | "discovery", reason: string } | null}
+   */
+  deadCredential(e) {
+    if (e instanceof Error && e.name === STALE_DISCOVERY) return { scope: "discovery", reason: e.message };
+    const r = this.observed.rejection;
+    const code = e instanceof OAuthError ? e.errorCode : r?.code;
+    const reason = this.describeRejection() ?? (e instanceof Error ? e.message : String(e));
+    if (code === "invalid_client" || code === "unauthorized_client") return { scope: "all", reason };
+    if (code === "invalid_grant") return { scope: "tokens", reason };
+    if (r && (r.status === 400 || r.status === 401)) return { scope: r.endpoint === "registration" ? "all" : "tokens", reason };
+    return null;
+  }
+
+  describeRejection() {
+    const r = this.observed.rejection;
+    if (!r) return undefined;
+    return r.code ? `${r.code}${r.description ? `: ${r.description}` : ""}` : `HTTP ${r.status} from the ${r.endpoint} endpoint`;
   }
 
   /**
@@ -510,6 +711,38 @@ export class RemoteAuth {
       await this.authorize(first);
       return attempt();
     };
+  }
+
+  /**
+   * The terminal's escape hatch (src/prompt.mjs). Without `forget` (`a`): a
+   * sign-in that is `waiting` is re-opened — the URL printed again, the browser
+   * launched again — and nothing else changes; otherwise the tokens are dropped
+   * (the client registration kept) and a fresh authorization starts. With
+   * `forget` (`l`): the token file is deleted first — `--logout` without a
+   * restart — so the client is registered anew. A sign-in still pending is
+   * superseded, not failed.
+   */
+  async reauthorize({ forget = false } = {}) {
+    if (!forget && this.status.state === "waiting" && this.provider.pending && this.inflight) {
+      const { url } = this.provider.pending;
+      this.log(`open this URL in your browser to finish the sign-in:`);
+      this.log(`  ${url}`);
+      if (!this.noBrowser && !(await this.open(url))) this.log("could not launch a browser; use the URL above");
+      return this.inflight;
+    }
+    if (this.inflight) {
+      this.loopback.cancel("superseded by a fresh sign-in");
+      await this.inflight.catch(() => undefined);
+    }
+    if (forget) {
+      this.log(`forgetting the tokens for ${this.serverUrl} (${this.file}) — signing in fresh`);
+      this.logout();
+      this.provider.patch({ redirectPort: this.loopback.port });
+    } else {
+      this.log(`dropping the tokens for ${this.serverUrl} — signing in again`);
+      this.provider.invalidateCredentials("tokens");
+    }
+    return this.authorize(undefined);
   }
 
   /** `--logout`: forget everything about this server. */

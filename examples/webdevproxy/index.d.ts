@@ -31,7 +31,16 @@ export interface WhoAmI {
   mode: "local" | "remote";
   upstream: string;
   identity: Identity | null;
-  auth: { state: "none" | "unknown" | "ok" | "waiting" | "error"; issuer?: string; authorizationUrl?: string; error?: string };
+  auth: {
+    state: "none" | "unknown" | "ok" | "waiting" | "error";
+    issuer?: string;
+    /** While `waiting`: the page to finish the sign-in on, for a browser that did not open by itself. */
+    authorizationUrl?: string;
+    error?: string;
+    /** `ok` reached by replacing a stored sign-in the issuer rejected with a fresh one, by itself. */
+    recovered?: true;
+    recoveredAt?: string;
+  };
   tokenFile: string | null;
   sessions: { id: string; upstream: string | null }[];
 }
@@ -42,6 +51,8 @@ export interface Proxy {
   port: number;
   path: string;
   mode: "local" | "remote";
+  /** The OAuth client in remote mode (for `startPrompt`), else null. */
+  remote: RemoteAuth | null;
   whoami(): WhoAmI;
   /** Resolves once the remote sign-in (or refresh) attempted at startup has settled; never rejects. */
   ready: Promise<void>;
@@ -53,12 +64,29 @@ export type StartProxyOptions = Partial<ProxyArgs> & {
   /** Parsed for defaults when given; `options` override. */
   argv?: string[];
   env?: Record<string, string | undefined>;
+  /** Replaces the system browser for the remote sign-in (a test's fake user). */
+  openBrowser?: (url: string) => Promise<boolean>;
 };
 
 export function startProxy(options?: StartProxyOptions): Promise<Proxy>;
 /** The message in the 404 `-32000` body for a session id the proxy does not know (expired after `--idle`, or the proxy restarted). */
 export const UNKNOWN_SESSION_MESSAGE: string;
 export function logout(options: { remote?: string | null; tokenFile?: string | null; env?: Record<string, string | undefined> }, log?: (message: string) => void): string[];
+
+/** The one-line hint the terminal prompt prints when a sign-in is `waiting` or failed. */
+export const PROMPT_HINT: string;
+/**
+ * Remote mode's terminal keys over readline (`a` / `l` / `q` + Enter) — attach only when stdin is a TTY.
+ * `a` re-opens a waiting sign-in (URL printed again) or drops the tokens and signs in afresh; `l` forgets the
+ * token file and signs in fresh; `q` closes the proxy and calls `exit(0)`.
+ */
+export function startPrompt(options: {
+  remote: RemoteAuth;
+  proxy: { close(): Promise<void> };
+  input?: NodeJS.ReadableStream;
+  log?: (message: string) => void;
+  exit?: (code: number) => void;
+}): { close(): void };
 
 export interface ViteProxyEntry {
   target: string;
@@ -109,6 +137,10 @@ export function deleteTokenFile(file: string): boolean;
 export function listTokenFiles(dir?: string): string[];
 
 export const CALLBACK_PATH: string;
+/** `error.name` of a loopback round trip that was superseded or cancelled (`Loopback.cancel`, `RemoteAuth.reauthorize`). */
+export const SIGN_IN_CANCELLED: string;
+/** `error.name` of RemoteAuth's abort of a browser flow built on stale cached issuer metadata (it rediscovers instead). */
+export const STALE_DISCOVERY: string;
 export function loopbackRedirectUrls(port: number): string[];
 export type LoopbackOutcome =
   | { kind: "code"; code: string }
@@ -120,6 +152,8 @@ export interface Loopback {
   redirectUrls: string[];
   redirectUrl: string;
   waitForCallback(state: string | undefined): Promise<{ code: string }>;
+  /** Reject the pending round trip with a `SIGN_IN_CANCELLED` error; false when none was pending. */
+  cancel(reason: string): boolean;
   close(): Promise<void>;
 }
 export function startLoopback(opts?: { port?: number; host?: string }): Promise<Loopback>;
@@ -134,6 +168,8 @@ export class FileOAuthProvider {
     log?: (message: string) => void;
     openBrowser?: (url: string) => Promise<boolean>;
     noBrowser?: boolean;
+    /** Runs before the browser opens (RemoteAuth registers its loopback waiter here); may throw to abort the redirect. */
+    onRedirect?: (pending: { url: string; state: string | undefined }) => void | Promise<void>;
   });
   serverUrl: string;
   file: string;
@@ -172,14 +208,23 @@ export class RemoteAuth {
   file: string;
   legacyFile: string | null;
   status: WhoAmI["auth"];
+  /** ISO time of the last automatic recovery (a stored sign-in the issuer rejected, replaced by a fresh one). */
+  recoveredAt: string | undefined;
   start(): Promise<this>;
   close(): Promise<void>;
   bearer(): string | undefined;
   identity(): Identity | null;
   issuer(): string | undefined;
+  /** Subscribe to status changes; returns the unsubscribe. */
+  onStatus(listener: (status: WhoAmI["auth"]) => void): () => void;
   ensure(): Promise<void>;
   authorize(response?: Response): Promise<void>;
   fetchWithAuth(): typeof globalThis.fetch;
+  /**
+   * The terminal's `a` (re-open a waiting sign-in, else drop the tokens and sign in afresh) and `l`
+   * (`forget`: delete the token file, then sign in fresh). A pending sign-in is superseded.
+   */
+  reauthorize(opts?: { forget?: boolean }): Promise<void>;
   logout(): boolean;
 }
 

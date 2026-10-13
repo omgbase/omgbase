@@ -75,11 +75,14 @@ function remoteUpstream(remote) {
 /**
  * Start the proxy. `options` are `parseArgs()`' fields (any subset; the rest
  * come from argv/env), plus `log`. Resolves once listening, with
- * `{ url, port, path, mode, whoami(), ready, close() }`.
- * @param {Partial<import("./args.mjs").ProxyArgs> & { log?: (m: string) => void, argv?: string[], env?: Record<string, string | undefined> }} [options]
+ * `{ url, port, path, mode, remote, whoami(), ready, close() }` (`remote` is the
+ * RemoteAuth in remote mode — bin/webdevproxy.mjs hands it to the terminal
+ * prompt — else null). Nothing here reads stdin.
+ * @param {Partial<import("./args.mjs").ProxyArgs> & { log?: (m: string) => void, argv?: string[], env?: Record<string, string | undefined>,
+ *   openBrowser?: (url: string) => Promise<boolean> }} [options]   `openBrowser` replaces the system browser (the tests' fake user)
  */
 export async function startProxy(options = {}) {
-  const { log: logOpt, argv, env = process.env, ...overrides } = options;
+  const { log: logOpt, argv, env = process.env, openBrowser: open, ...overrides } = options;
   const o = { ...parseArgs(argv ?? [], env), ...overrides };
   const problem = validateArgs(o);
   if (problem) throw new Error(problem);
@@ -89,7 +92,7 @@ export async function startProxy(options = {}) {
   /** @type {RemoteAuth | null} */
   let remote = null;
   if (o.remote) {
-    remote = await new RemoteAuth({ serverUrl: o.remote, file: o.tokenFile ?? undefined, log, noBrowser: o.noBrowser, env }).start();
+    remote = await new RemoteAuth({ serverUrl: o.remote, file: o.tokenFile ?? undefined, log, noBrowser: o.noBrowser, env, ...(open ? { openBrowser: open } : {}) }).start();
   }
   const makeUpstream = remote ? remoteUpstream(remote) : stdioUpstream(o);
 
@@ -225,6 +228,7 @@ export async function startProxy(options = {}) {
         port,
         path,
         mode: remote ? "remote" : "local",
+        remote,
         whoami,
         ready,
         close: async () => {

@@ -3,7 +3,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-  FileOAuthProvider, RemoteAuth, configDir, deleteTokenFile, legacyConfigDir, legacyTokenFilePath, listTokenFiles, loopbackRedirectUrls,
+  FileOAuthProvider, RemoteAuth, SIGN_IN_CANCELLED, configDir, deleteTokenFile, legacyConfigDir, legacyTokenFilePath, listTokenFiles, loopbackRedirectUrls,
   migrateLegacyTokenFile, parseLoopbackCallback, readTokenFile, serverUrlHash, startLoopback, tokenFilePath, writeTokenFile,
 } from "../src/remote-auth.mjs";
 import { normalizeServerUrl } from "../src/oauth-shared.mjs";
@@ -132,6 +132,12 @@ describe("loopback redirect", () => {
       const declined = await fetch(`${lb.redirectUrl}?error=access_denied&state=st2`);
       expect(declined.status).toBe(400);
       await failing;
+      // cancel() ends a pending round trip as superseded, not failed; nothing pending → false.
+      const third = lb.waitForCallback("st3");
+      expect(lb.cancel("superseded by a fresh sign-in")).toBe(true);
+      await expect(third).rejects.toMatchObject({ name: SIGN_IN_CANCELLED, message: "superseded by a fresh sign-in" });
+      expect(lb.cancel("again")).toBe(false);
+      expect((await fetch(`${lb.redirectUrl}?code=x&state=st3`)).status).toBe(409);
     } finally {
       await lb.close();
     }
@@ -173,6 +179,7 @@ describe("FileOAuthProvider", () => {
 
     p.invalidateCredentials("tokens");
     expect(again.tokens()).toBeUndefined();
+    expect(again.discoveryState()).toBeUndefined(); // a refused token means the issuer may have moved: rediscover next time
     expect(again.clientInformation()).toEqual({ client_id: "cid" });
     p.invalidateCredentials("all");
     expect(readTokenFile(file)).toEqual({ serverUrl: SERVER });
