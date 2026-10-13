@@ -119,7 +119,7 @@
           "read": {
             "tool": "query",
             "args": {
-              "query": "select path from docs where title.lower().contains(\"salt\")"
+              "query": "select path from docs where title ~* \"salt\""
             }
           }
         },

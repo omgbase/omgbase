@@ -745,7 +745,7 @@ export function buildServer(ctx: ServerContext): McpServer {
         "{\"query\":\"select block_id from nodes where kind == \\\"md:section\\\" and name == \\\"Tasks\\\" and path == \\\"/processes/calcination.md\\\"\"}   a heading's block id by its text",
         "{\"query\":\"select path, value from nodes where kind == \\\"md:task\\\" and not checked\"}   open tasks (value = the text)",
         "{\"query\":\"select path, block_id from links where dst_path == \\\"/processes/calcination.md\\\"\"}   inbound links (path = source)",
-        "{\"query\":\"select path from docs where title.lower().contains(\\\"salt\\\")\"}   substring, case-folded; regex: matches(\\\"^Merc\\\")",
+        "{\"query\":\"select path from docs where title ~* \\\"salt\\\"\"}   regex (~ exact, ~* ci, !~ not); substring: .contains(\\\"s\\\")",
         "{\"query\":\"docs count { where layer == \\\"canon\\\" }\"}   a scalar",
         "follow, ^docs joins, text()/semantic(), the grammar: query_syntax.",
       ),
