@@ -12,6 +12,8 @@ export interface ProxyArgs {
   clientId: string | null;
   /** `--callback-port` / `WEBDEVPROXY_CALLBACK_PORT`: the sign-in loopback listener's port; null = ephemeral (or `DEFAULT_CALLBACK_PORT` with a client id). */
   callbackPort: number | null;
+  /** `--reset-client`: forget the client registration stored for the remote (and its tokens) at start-up and register anew. */
+  resetClient: boolean;
   port: number;
   path: string;
   idleSeconds: number;
@@ -83,9 +85,10 @@ export function logout(options: { remote?: string | null; tokenFile?: string | n
 /** The one-line hint the terminal prompt prints when a sign-in is `waiting` or failed. */
 export const PROMPT_HINT: string;
 /**
- * Remote mode's terminal keys over readline (`a` / `l` / `q` + Enter) — attach only when stdin is a TTY.
- * `a` re-opens a waiting sign-in (URL printed again) or drops the tokens and signs in afresh; `l` forgets the
- * token file and signs in fresh; `q` closes the proxy and calls `exit(0)`.
+ * Remote mode's terminal keys over readline (`a` / `r` / `l` / `q` + Enter) — attach only when stdin is a TTY.
+ * `a` re-opens a waiting sign-in (URL printed again) or drops the tokens and signs in afresh; `r` forgets the
+ * client registration (and its tokens) and registers anew; `l` forgets the token file and signs in fresh;
+ * `q` closes the proxy and calls `exit(0)`.
  */
 export function startPrompt(options: {
   remote: RemoteAuth;
@@ -124,6 +127,8 @@ export interface TokenFile {
   serverUrl: string;
   redirectPort?: number;
   clientInformation?: Record<string, unknown>;
+  /** The authorization server `clientInformation` was registered with; a registration made with another issuer is dropped, not presented. */
+  clientIssuer?: string;
   tokens?: Record<string, unknown> & { access_token?: string; refresh_token?: string; id_token?: string };
   tokensSavedAt?: number;
   codeVerifier?: string;
@@ -154,8 +159,20 @@ export const STALE_DISCOVERY: string;
 export const TOO_MANY_ENTITIES_HINT: string;
 /** `error.name` of the failure when the token endpoint rejects a configured `--client-id` (`invalid_client` / `unauthorized_client`); never recovered by registering. */
 export const CONFIGURED_CLIENT_REJECTED: string;
-/** `the configured client id <id> was rejected by the issuer (<code>) — check WEBDEVPROXY_CLIENT_ID / --client-id against the tenant's application` */
-export function configuredClientRejected(clientId: string, code?: string): string;
+/** Appended to a rejected `--client-id` when the issuer advertises a `registration_endpoint`: drop the flag and the proxy registers by itself. */
+export const REGISTER_INSTEAD_HINT: string;
+/** `the configured client id <id> was rejected by the issuer (<code>) — check WEBDEVPROXY_CLIENT_ID / --client-id against the tenant's application[; <REGISTER_INSTEAD_HINT>]` */
+export function configuredClientRejected(clientId: string, code?: string, canRegister?: boolean): string;
+/** `error.name` of the pre-browser check's verdict: the token endpoint does not know the stored client registration; `RemoteAuth.run` drops it and registers anew. */
+export const CLIENT_UNKNOWN: string;
+/** The bogus refresh token the pre-browser check sends. */
+export const REGISTRATION_CHECK_TOKEN: string;
+/** `the client registration <id> is unknown to <issuer> (<code>: the gateway was reset or started with a fresh state directory)` */
+export function clientUnknown(clientId: string, issuer: string, code: string): string;
+/** The loopback port a registration's `redirect_uris` name, or undefined. */
+export function registeredPort(clientInformation: Record<string, unknown> | undefined): number | undefined;
+/** Whether a registration's `redirect_uris` allow `redirectUrl` (a registration without the list is allowed). */
+export function registrationAllows(clientInformation: Record<string, unknown> | undefined, redirectUrl: string): boolean;
 /** The start-up failure when a fixed callback port is taken (another port would not match the application's allowed callback URL). */
 export function callbackPortInUse(port: number): string;
 export function loopbackRedirectUrls(port: number): string[];
@@ -222,6 +239,8 @@ export class RemoteAuth {
     clientId?: string | null;
     /** Bind the loopback listener to this port (taken → `start()` rejects with `callbackPortInUse`); null = ephemeral, or `DEFAULT_CALLBACK_PORT` with a client id. */
     callbackPort?: number | null;
+    /** `--reset-client`: forget the stored client registration (and its tokens) in `start()` and register anew. */
+    resetClient?: boolean;
     log?: (message: string) => void;
     fetch?: typeof globalThis.fetch;
     openBrowser?: (url: string) => Promise<boolean>;
@@ -235,6 +254,8 @@ export class RemoteAuth {
   clientId: string | null;
   /** The fixed loopback port, else null (ephemeral). */
   callbackPort: number | null;
+  /** `--reset-client` was given. */
+  resetClient: boolean;
   status: WhoAmI["auth"];
   /** ISO time of the last automatic recovery (a stored sign-in the issuer rejected, replaced by a fresh one). */
   recoveredAt: string | undefined;
@@ -256,14 +277,21 @@ export class RemoteAuth {
   lastResult: string | undefined;
   /** The error's message, or — for an empty one (an issuer answer without `error_description`) — one made from the phase and the issuer's answer. Never empty. */
   failureMessage(e: unknown): string;
+  /** Drop the stored client registration and its tokens (`--reset-client`, `r`); with a configured id, the tokens only. Returns whether a registration was dropped. */
+  resetRegistration(why: string): boolean;
+  /** The issuer's metadata advertises a `registration_endpoint`. */
+  advertisesRegistration(): boolean;
+  /** Before a browser round trip with a registration this pass did not make: ask the token endpoint whether it still knows the client; throws a `CLIENT_UNKNOWN` error when not. */
+  verifyRegistration(): Promise<void>;
   ensure(): Promise<void>;
   authorize(response?: Response): Promise<void>;
   fetchWithAuth(): typeof globalThis.fetch;
   /**
-   * The terminal's `a` (re-open a waiting sign-in, else drop the tokens and sign in afresh) and `l`
-   * (`forget`: delete the token file, then sign in fresh). A pending sign-in is superseded.
+   * The terminal's `a` (re-open a waiting sign-in, else drop the tokens and sign in afresh), `r`
+   * (`resetClient`: drop the client registration and its tokens, register anew) and `l` (`forget`:
+   * delete the token file, then sign in fresh). A pending sign-in is superseded.
    */
-  reauthorize(opts?: { forget?: boolean }): Promise<void>;
+  reauthorize(opts?: { forget?: boolean; resetClient?: boolean }): Promise<void>;
   logout(): boolean;
 }
 

@@ -3,7 +3,7 @@
 // Vite (`--open`, `--host`, …).
 //
 //   webdevproxy --local <workspace-dir> [--omg <omg entry or binary>]
-//   webdevproxy --remote <mcp-url> [--client-id <id> [--callback-port <n>]] [--no-browser] [--token-file <f>]
+//   webdevproxy --remote <mcp-url> [--client-id <id> [--callback-port <n>]] [--reset-client] [--no-browser] [--token-file <f>]
 //   webdevproxy --logout [--remote <mcp-url>] [--token-file <f>]
 //   common: [--port 8787] [--path /mcp] [--idle 3600] [--origin <origin>]…
 //   env: WEBDEVPROXY_LOCAL, WEBDEVPROXY_OMG, WEBDEVPROXY_REMOTE, WEBDEVPROXY_CLIENT_ID, WEBDEVPROXY_CALLBACK_PORT,
@@ -27,7 +27,7 @@ export const DEFAULT_CALLBACK_PORT = 8790;
 export const LISTEN_HOST = "127.0.0.1";
 
 const VALUE_FLAGS = ["local", "omg", "remote", "client-id", "callback-port", "port", "path", "idle", "origin", "token-file"];
-const BOOL_FLAGS = ["logout", "no-browser", "help"];
+const BOOL_FLAGS = ["logout", "no-browser", "reset-client", "help"];
 
 const here = dirname(fileURLToPath(import.meta.url));
 /** The monorepo's built `omg` entry, when the proxy runs from its checkout. */
@@ -57,6 +57,7 @@ export function omgCommand(omg) {
  * @property {string | null} remote      the upstream MCP URL
  * @property {string | null} clientId    a pre-registered public OAuth client to present instead of registering one (remote mode)
  * @property {number | null} callbackPort  bind the sign-in loopback listener to this port (null: ephemeral — or DEFAULT_CALLBACK_PORT with a client id)
+ * @property {boolean} resetClient       forget the stored client registration for the remote at start-up and register anew
  * @property {number} port
  * @property {string} path
  * @property {number} idleSeconds
@@ -108,6 +109,7 @@ export function parseArgs(argv = process.argv.slice(2), env = process.env) {
     origins,
     tokenFile: flags["token-file"] ?? envTrim("WEBDEVPROXY_TOKEN_FILE"),
     noBrowser: Boolean(flags["no-browser"]) || Boolean(envTrim("WEBDEVPROXY_NO_BROWSER")),
+    resetClient: Boolean(flags["reset-client"]),
     logout: Boolean(flags.logout),
     help: Boolean(flags.help),
     rest,
@@ -148,7 +150,7 @@ export const USAGE = `webdevproxy — a development-only local web proxy for MCP
 
 usage:
   webdevproxy --local <workspace-dir> [--omg <omg entry or binary>]
-  webdevproxy --remote <mcp-url> [--client-id <id> [--callback-port <n>]] [--no-browser] [--token-file <file>]
+  webdevproxy --remote <mcp-url> [--client-id <id> [--callback-port <n>]] [--reset-client] [--no-browser] [--token-file <file>]
   webdevproxy --logout [--remote <mcp-url>] [--token-file <file>]
 
 options:
@@ -166,6 +168,11 @@ options:
                        http://127.0.0.1:<n>/callback (default: an ephemeral port; with --client-id
                        ${DEFAULT_CALLBACK_PORT}, since the application's allowed callback must name the port — Auth0
                        accepts no port wildcard). A fixed port that is in use is an error, never another port
+  --reset-client       forget the client registration stored for the remote (and its tokens) and register
+                       anew at start-up — when the gateway's sign-in page says "Unknown client" (it was
+                       restarted with a fresh state directory). The proxy normally notices that by itself:
+                       before the browser opens with a stored registration it asks the token endpoint
+                       whether the client is still known, and re-registers when it is not
   --port <n>           listen on 127.0.0.1:<n> (default ${DEFAULT_PORT})
   --path <p>           the MCP endpoint path (default ${DEFAULT_PATH}); GET /whoami is always served
   --idle <seconds>     close a browser session (and its upstream: the \`omg mcp\` child or the
@@ -183,6 +190,8 @@ options:
 keys (remote mode, when stdin is a terminal; each followed by Enter):
   a                    (re)open the sign-in in your browser and print its URL again; when none is
                        waiting, drop the tokens (the client registration stays) and sign in afresh
+  r                    forget this server's client registration and register anew (= --reset-client,
+                       without a restart) — the key for a gateway page that says "Unknown client"
   l                    forget this server's tokens (= --logout) and sign in fresh, without a restart
   q                    close every session and quit
 

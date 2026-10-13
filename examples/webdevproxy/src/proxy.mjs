@@ -5,8 +5,10 @@
 //   • `omg mcp -C <workspace>` over stdio (`--local`), or
 //   • a remote MCP gateway (`--remote <url>`), where the proxy itself is the
 //     OAuth client — a native app with a loopback redirect, dynamic client
-//     registration (or one pre-registered public client, `--client-id`), PKCE
-//     and a refresh token kept in a 0600 file under ~/.config/omgbase-webdevproxy/
+//     registration (or one pre-registered public client, `--client-id`;
+//     `--reset-client` forgets a stored registration the gateway no longer
+//     knows), PKCE and a refresh token kept in a 0600 file under
+//     ~/.config/omgbase-webdevproxy/
 //     — so the browser needs no CORS on the gateway and the identity provider
 //     needs no web origins. See remote-auth.mjs.
 //
@@ -93,7 +95,7 @@ export async function startProxy(options = {}) {
   /** @type {RemoteAuth | null} */
   let remote = null;
   if (o.remote) {
-    remote = await new RemoteAuth({ serverUrl: o.remote, file: o.tokenFile ?? undefined, clientId: o.clientId ?? null, callbackPort: o.callbackPort ?? null, log, noBrowser: o.noBrowser, env, ...(open ? { openBrowser: open } : {}) }).start();
+    remote = await new RemoteAuth({ serverUrl: o.remote, file: o.tokenFile ?? undefined, clientId: o.clientId ?? null, callbackPort: o.callbackPort ?? null, resetClient: Boolean(o.resetClient), log, noBrowser: o.noBrowser, env, ...(open ? { openBrowser: open } : {}) }).start();
   }
   const makeUpstream = remote ? remoteUpstream(remote) : stdioUpstream(o);
 

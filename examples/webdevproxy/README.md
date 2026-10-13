@@ -26,7 +26,7 @@ which could not be reused because it is not on npm and sends no CORS headers.
 
 ```
 webdevproxy --local <workspace-dir> [--omg <omg entry or binary>]
-webdevproxy --remote <mcp-url> [--client-id <id> [--callback-port <n>]] [--no-browser] [--token-file <file>]
+webdevproxy --remote <mcp-url> [--client-id <id> [--callback-port <n>]] [--reset-client] [--no-browser] [--token-file <file>]
 webdevproxy --logout [--remote <mcp-url>] [--token-file <file>]
 ```
 
@@ -37,6 +37,7 @@ webdevproxy --logout [--remote <mcp-url>] [--token-file <file>]
 | `--remote <url>` | relay to a remote MCP endpoint (`http(s)`); the proxy signs in |
 | `--client-id <id>` | present this **pre-registered public client** to the issuer instead of registering one dynamically — one application for every run, so an issuer that caps registrations (Auth0's `too_many_entities`) never fills up; the id is configuration, not state (`--logout` and `l` keep it). Settings the application needs: [below](#a-pre-registered-client---client-id) |
 | `--callback-port <n>` | bind the sign-in loopback listener to this port, so the `redirect_uri` is exactly `http://127.0.0.1:<n>/callback`. Default: an ephemeral port — but **`8790` with `--client-id`**, because the application's allowed callback URL must name the port (Auth0 accepts no port wildcard). A fixed port that is taken is a start-up error naming this flag, never a silent switch to another port |
+| `--reset-client` | forget the client registration stored for the remote (and the tokens issued to it) and register anew at start-up — the flag for a gateway whose sign-in page says **Unknown client** (it registers clients itself and was restarted with a fresh state directory). The proxy normally notices that by itself ([below](#unknown-client)); this is the explicit way, the `r` key its no-restart twin |
 | `--port <n>` | listen on `127.0.0.1:<n>` (default `8787`; `0` = an ephemeral port, for tests) |
 | `--path <p>` | the MCP endpoint path (default `/mcp`); `GET /whoami` is always served |
 | `--idle <seconds>` | close a browser session **and its upstream** (the `omg mcp` child, or the remote session) after this long without a request (default `3600`; `0` = never). A page that comes back later gets `404 unknown session` on its next POST and must `initialize` again — see [Session recovery](#session-recovery) |
@@ -93,6 +94,8 @@ URIs `http://127.0.0.1:<ephemeral>/callback` and `http://localhost:<port>/callba
 prints the authorization URL and opens your browser once:
 
 ```
+[webdevproxy] no client registration for https://mcp.example.com/omg yet — one is registered with the issuer at the first sign-in
+[webdevproxy] registered client abc123 with https://example.us.auth0.com/ for https://mcp.example.com/omg
 [webdevproxy] sign-in required for https://mcp.example.com/omg
 [webdevproxy] issuer: https://example.us.auth0.com/
 [webdevproxy] open this URL in your browser if it does not open by itself:
@@ -103,6 +106,15 @@ prints the authorization URL and opens your browser once:
 Consent lands on the loopback listener, the code is exchanged, and from then on
 every browser session gets its own upstream session with the bearer added per
 request; a `401` later is answered with a silent refresh (`offline_access`).
+
+The registration is kept in the token file **with the issuer it was made with**
+(`clientIssuer`) and the loopback port its `redirect_uris` name; a later start
+says which client it presents — `presenting the client registration abc123 for
+https://mcp.example.com/omg (registered with https://example.us.auth0.com/)` —
+and reuses that port when it is free. A registration made with another
+authorization server (the gateway changed its identity provider), or whose
+redirect URIs do not name the port the proxy could bind, is dropped and the
+client registered anew rather than presented to an issuer that would refuse it.
 
 **When the stored sign-in is dead** — the gateway or its identity provider was
 reset or upgraded, the refresh token or the client registration revoked — the
@@ -115,6 +127,8 @@ as later:
 | `invalid_client` / `unauthorized_client`, or a `400`/`401` from the registration endpoint | everything (`clientInformation`, `tokens`, `discovery`) | re-registers the client, then the browser — except with [`--client-id`](#a-pre-registered-client---client-id), where a rejected id is a configuration error reported as such, never a registration |
 | something that is not an OAuth answer at all (a `404` page: the token endpoint moved) while working from cached metadata, or a registration refused with another status on cached metadata | `discovery` only | rediscovers and retries the refresh — silently when the refresh token is still good |
 | **before** asking the issuer: the file has tokens but no `clientInformation` (a lost registration — not with `--client-id`, where no registration is needed), or tokens without a `refresh_token` | `tokens` (and `discovery`) | logs `stored sign-in for <url> has no client registration; registering and signing in again` (or `… has no refresh token; signing in again`), registers if needed, opens the browser |
+| **before the browser opens** with a registration this round did not make (no tokens at all — the state after `a`, or a gateway reset between the registration and the consent — or a refresh refused for another reason): the proxy asks the token endpoint whether it still knows the client (one refresh request with a bogus token, `client_id` alone) and it answers `invalid_client` / `unauthorized_client` | everything | registers anew and opens the browser as the **new** client, in the same round — `stored sign-in for <url> was rejected (the client registration <id> is unknown to <issuer> (invalid_client: the gateway was reset or started with a fresh state directory)); signing in again`. Any other answer (`invalid_grant` = the client is known; a 5xx; no OAuth body) is no verdict: the browser flow goes ahead as before |
+| at start-up: the registration was made with another authorization server than discovery now names (`clientIssuer`), or its `redirect_uris` do not name the loopback port the proxy bound | `clientInformation` | registers with the issuer the server names now, on our port — `the client registration <id> for <url> was made with <old issuer>, not <issuer> — registering anew` / `… names <uris>, not <our redirect URL> — registering anew` |
 
 It logs one line, `[webdevproxy] stored sign-in for <url> was rejected (<reason>);
 signing in again` (`stored issuer metadata for <url> is stale (…); rediscovering`
@@ -135,6 +149,25 @@ retried by itself: the next `401` is one more browser flow, no refresh, so a
 broken issuer costs one browser tab per request round, not a loop. A failure
 inside the browser flow is never mistaken for a dead credential. Concurrent
 `401`s share the one sign-in.
+
+<a id="unknown-client"></a>
+**"Unknown client"** on the gateway's sign-in page (`This client is not
+registered with the gateway. MCP clients register automatically; if the gateway
+was restarted with a fresh state directory, reconnect from the client to
+register again. client_id: …`) means exactly that: the `client_id` the proxy
+presented is a registration the gateway's state no longer holds. That page is
+the authorization server's — it never redirects back to the loopback (RFC 6749
+§4.1.2.1), so without the check in the row above the proxy would sit in
+`waiting` for a sign-in that cannot finish. With it, the proxy drops the dead
+registration and registers anew before the browser opens; if you still see the
+page (the token endpoint did not say `invalid_client`), press **`r` + Enter**
+in the proxy's terminal — or restart it with **`--reset-client`**, or run
+`webdevproxy --logout --remote <url>` — and the next sign-in is as a fresh
+client. Both drop the registration and its tokens for this server only, nothing
+else. With `--client-id` there is no registration to drop: a rejected fixed id
+is a configuration error, and when the issuer advertises a `registration_endpoint`
+the message says so — `the issuer advertises a registration endpoint — drop
+--client-id / WEBDEVPROXY_CLIENT_ID and the proxy registers a client by itself`.
 
 ### A pre-registered client (`--client-id`)
 
@@ -174,9 +207,13 @@ webdevproxy --remote https://mcp.example.com/omg --client-id aBc123…
   `invalid_client` / `unauthorized_client` (the id is wrong, or the application
   was deleted), `auth.state` becomes `"error"` with `the configured client id
   <id> was rejected by the issuer (invalid_client) — check WEBDEVPROXY_CLIENT_ID
-  / --client-id against the tenant's application` — the proxy does **not** fall
-  back to registering a client (that would defeat the point) and opens no
-  browser tab; the next `401` round tries the same id again.
+  / --client-id against the tenant's application` (plus `; the issuer advertises
+  a registration endpoint — drop --client-id / WEBDEVPROXY_CLIENT_ID and the
+  proxy registers a client by itself` when its metadata has one) — the proxy
+  does **not** fall back to registering a client (that would defeat the point)
+  and opens no browser tab; the next `401` round tries the same id again. A
+  configured id is never put through the pre-browser check either: there is
+  nothing the proxy could repair.
 - **One exact redirect URI, on a fixed port.** The authorization request and
   the code exchange carry exactly one `redirect_uri`,
   `http://127.0.0.1:<port>/callback` (the `localhost` twin and the list
@@ -211,20 +248,25 @@ dynamically registered ones were.
 
 **Keys.** When the proxy runs from `webdevproxy` on a terminal (stdin a TTY —
 never under the demos' `scripts/dev.mjs` or in CI), it prints
-`press a + Enter to (re)open the sign-in in your browser, l + Enter to forget
-this server's tokens and sign in fresh, q + Enter to quit` whenever the sign-in
-is `waiting` or has failed. `a` re-opens a waiting sign-in and prints its URL
-again (for a session over SSH: copy it), or — when none is waiting — drops the
-tokens, keeps the client registration and starts a fresh authorization; `l` is
-`--logout` for this server without a restart (the client is registered anew);
-`q` closes every session and exits `0`. A sign-in still pending is superseded,
-not reported as failed.
+`press a + Enter to (re)open the sign-in in your browser, r + Enter to forget
+this server's client registration and register anew (the gateway's page says
+"Unknown client"), l + Enter to forget this server's tokens and sign in fresh,
+q + Enter to quit` whenever the sign-in is `waiting` or has failed. `a` re-opens
+a waiting sign-in and prints its URL again (for a session over SSH: copy it), or
+— when none is waiting — drops the tokens, keeps the client registration (the
+pre-browser check still replaces one the issuer has forgotten) and starts a
+fresh authorization; `r` is `--reset-client` without a restart (the registration
+and its tokens go, a new client is registered); `l` is `--logout` for this
+server without a restart (the client is registered anew); `q` closes every
+session and exits `0`. A sign-in still pending is superseded, not reported as
+failed.
 
 **Token files** live at `~/.config/omgbase-webdevproxy/<sha256 of the normalized
 server URL, 16 hex>.json` (`$XDG_CONFIG_HOME` honoured; `--token-file` /
 `WEBDEVPROXY_TOKEN_FILE` override), mode `0600`, shaped
-`{ serverUrl, redirectPort, clientInformation, tokens, tokensSavedAt, codeVerifier?, state?, discovery }`
-(no `clientInformation` with `--client-id`: the id is configuration).
+`{ serverUrl, redirectPort, clientInformation, clientIssuer, tokens, tokensSavedAt, codeVerifier?, state?, discovery }`
+(`clientIssuer` is the authorization server the registration was made with; no
+`clientInformation` with `--client-id`: the id is configuration).
 A file the graph-ui demo's former bridge wrote under `~/.config/omgbase-graph-ui/`
 for the same server is **copied into place on the first start** (never
 overwriting, the old file left alone), so an existing sign-in survives the
@@ -301,7 +343,12 @@ and the remote sign-in over a fake gateway + issuer on another ephemeral port
 registration, code exchange and refresh, a "browser" that answers the loopback
 itself) — the first run, every recovery row above, the bounded failure, a stale
 file at start-up through `startProxy`, `--logout`, the terminal keys from a
-fake stdin, and `--client-id` over a `fixedClient` whose allowed callbacks are
+fake stdin, a stored registration the gateway no longer knows
+(`test/unknown-client.test.ts`: the pre-browser check finds it and the client is
+registered anew before any browser tab — at start-up, through `startProxy` and
+after `a`; a known one passes; the check is fail-open; `r`, `--reset-client`;
+a registration kept with its issuer and its redirect URIs; the start-up and
+registration log lines), and `--client-id` over a `fixedClient` whose allowed callbacks are
 one exact callback URL (`test/configured-client.test.ts`: zero registrations
 across first run, refresh, dead-refresh recovery, `a`, `l` and `--logout`;
 exactly the fixed `redirect_uri` and a secret-less token request; the

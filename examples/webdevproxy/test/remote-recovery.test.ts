@@ -84,7 +84,8 @@ describe("recovery from a dead stored sign-in", () => {
     const res = await fetch(gw.serverUrl, initialize());
     expect(res.status).toBe(200);
     expect(ra.status).toEqual({ state: "ok", issuer: gw.issuer, recovered: true, recoveredAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/) as unknown as string });
-    expect(gw.hits).toMatchObject({ refresh: 1, exchange: 2, register: 1, metadata: 4 }); // rediscovered, not re-registered
+    // rediscovered, not re-registered; the second refresh is the pre-browser check of the stored registration (answered invalid_grant: the client is known)
+    expect(gw.hits).toMatchObject({ refresh: 2, exchange: 2, register: 1, metadata: 4 });
     expect(browser.opened).toHaveLength(2);
     const stored = readTokenFile(file())!;
     expect(stored.clientInformation).toMatchObject({ client_id: "client-1" });
@@ -94,7 +95,7 @@ describe("recovery from a dead stored sign-in", () => {
     expect(logs.join("\n")).toMatch(/^signed in again to /m);
     // Settled: the next request neither refreshes nor opens a browser.
     expect((await fetch(gw.serverUrl, initialize())).status).toBe(200);
-    expect(gw.hits.refresh).toBe(1);
+    expect(gw.hits.refresh).toBe(2);
     expect(browser.opened).toHaveLength(2);
   });
 
@@ -115,7 +116,7 @@ describe("recovery from a dead stored sign-in", () => {
     gw.refreshResponse = { status: 400, body: { error: "invalid_request", error_description: "refresh tokens were reset" } };
     expect((await fetch(gw.serverUrl, initialize())).status).toBe(200);
     expect(ra.status).toMatchObject({ state: "ok", recovered: true });
-    expect(gw.hits).toMatchObject({ refresh: 1, register: 1, exchange: 2 });
+    expect(gw.hits).toMatchObject({ refresh: 2, register: 1, exchange: 2 }); // + the pre-browser check, which the scripted invalid_request leaves undecided
     expect(browser.opened).toHaveLength(2);
     expect(logs).toContain(`stored sign-in for ${gw.serverUrl} was rejected (invalid_request: refresh tokens were reset); signing in again`);
     expect(readTokenFile(file())!.clientInformation).toMatchObject({ client_id: "client-1" });
@@ -150,7 +151,7 @@ describe("recovery from a dead stored sign-in", () => {
     gw.revokeTokens();
     expect((await fetch(gw.serverUrl, initialize())).status).toBe(200);
     expect(ra.status).toMatchObject({ state: "ok", recovered: true });
-    expect(gw.hits).toMatchObject({ refresh: 1, exchange: 2, register: 1 });
+    expect(gw.hits).toMatchObject({ refresh: 2, exchange: 2, register: 1 }); // a bare 401 to the pre-browser check is no verdict either: the registration stays
     expect(browser.opened).toHaveLength(2);
     expect(logs).toContain(`stored sign-in for ${gw.serverUrl} was rejected (HTTP 401 from the token endpoint); signing in again`);
   });
@@ -175,14 +176,14 @@ describe("recovery from a dead stored sign-in", () => {
     await expect(fetch(gw.serverUrl, initialize())).rejects.toThrow(/access_denied: the user declined/);
     expect(ra.status).toEqual({ state: "error", issuer: gw.issuer, error: "access_denied: the user declined" });
     expect(ra.recoveredAt).toBeUndefined();
-    expect(gw.hits).toMatchObject({ refresh: 1, exchange: 1 });
+    expect(gw.hits).toMatchObject({ refresh: 2, exchange: 1 }); // the dead refresh + the pre-browser check
     expect(browser.opened).toHaveLength(2); // the first sign-in, and this one — a declined consent is not retried by itself
     expect(logs).toContain(`stored sign-in for ${gw.serverUrl} was rejected (invalid_grant: unknown refresh token); signing in again`);
     expect(logs.join("\n")).toMatch(/sign-in failed \(issuer .*\): access_denied: the user declined/);
     // The next 401 round is one more browser flow, and no refresh: the dead token is gone from the file.
     expect(readTokenFile(file())!.tokens).toBeUndefined();
     await expect(fetch(gw.serverUrl, initialize())).rejects.toThrow(/access_denied/);
-    expect(gw.hits).toMatchObject({ refresh: 1, exchange: 1 });
+    expect(gw.hits).toMatchObject({ refresh: 3, exchange: 1 }); // one pre-browser check per browser round, no refresh of a token that is gone
     expect(browser.opened).toHaveLength(3);
     // The user relents: the round after that signs in.
     browser.mode = "consent";
@@ -205,7 +206,7 @@ describe("recovery from a dead stored sign-in", () => {
     gw.revokeTokens();
     const results = await Promise.all([1, 2, 3].map(() => fetch(gw.serverUrl, initialize())));
     expect(results.map((r) => r.status)).toEqual([200, 200, 200]);
-    expect(gw.hits.refresh).toBe(1);
+    expect(gw.hits.refresh).toBe(2); // one dead refresh, one pre-browser check — not three of each
     expect(browser.opened).toHaveLength(2);
   });
 });
@@ -231,7 +232,7 @@ describe("a stale file at start-up", () => {
     await ra.ensure();
     expect(ra.status).toMatchObject({ state: "ok", issuer: gw.issuer, recovered: true });
     expect(browser.opened).toHaveLength(1);
-    expect(gw.hits).toMatchObject({ refresh: 1, exchange: 1, register: 0 });
+    expect(gw.hits).toMatchObject({ refresh: 2, exchange: 1, register: 0 }); // the dead refresh, then the pre-browser check (known: invalid_grant)
     expect(readTokenFile(file())!.clientInformation).toMatchObject({ client_id: "client-stale" });
     expect(readTokenFile(file())!.tokens?.refresh_token).not.toBe("rt-dead");
     expect(logs).toContain(`stored sign-in for ${gw.serverUrl} was rejected (invalid_grant: unknown refresh token); signing in again`);
@@ -271,7 +272,7 @@ describe("a stale file at start-up", () => {
       track(proxy.remote!);
       await proxy.ready;
       expect(proxy.whoami().auth).toEqual({ state: "error", issuer: gw.issuer, error: "access_denied: the user declined", client: { source: "registered", id: "client-stale" } });
-      expect(gw.hits).toMatchObject({ refresh: 1, exchange: 0 });
+      expect(gw.hits).toMatchObject({ refresh: 2, exchange: 0 });
     } finally {
       await proxy.close();
     }
@@ -304,8 +305,9 @@ describe("half-states of the file", () => {
     await ra.ensure();
     expect(ra.status).toMatchObject({ state: "ok", issuer: gw.issuer, recovered: true });
     expect(browser.opened).toHaveLength(1);
-    expect(gw.hits).toMatchObject({ register: 1, refresh: 0, exchange: 1 }); // never a refresh without a client id
-    expect(logs[0]).toBe(`stored sign-in for ${gw.serverUrl} has no client registration; registering and signing in again`);
+    expect(gw.hits).toMatchObject({ register: 1, refresh: 0, exchange: 1 }); // never a refresh without a client id (nor a pre-browser check: the registration is this pass's)
+    expect(logs[0]).toBe(`no client registration for ${gw.serverUrl} yet — one is registered with the issuer at the first sign-in`);
+    expect(logs[1]).toBe(`stored sign-in for ${gw.serverUrl} has no client registration; registering and signing in again`);
     const stored = readTokenFile(file())!;
     expect(stored.clientInformation).toMatchObject({ client_id: expect.any(String) as unknown as string });
     expect(stored.tokens?.refresh_token).not.toBe("rt-orphan");
@@ -329,8 +331,9 @@ describe("half-states of the file", () => {
     ra = track(await new RemoteAuth({ serverUrl: gw.serverUrl, file: file(), log, openBrowser: browser }).start());
     await ra.ensure();
     expect(ra.status).toMatchObject({ state: "ok", recovered: true });
-    expect(gw.hits).toMatchObject({ register: 0, refresh: 0, exchange: 1 });
-    expect(logs[0]).toBe(`stored sign-in for ${gw.serverUrl} has no refresh token; signing in again`);
+    expect(gw.hits).toMatchObject({ register: 0, refresh: 1, exchange: 1 }); // the refresh is the pre-browser check of client-stale
+    expect(logs[0]).toBe(`presenting the client registration client-stale for ${gw.serverUrl}`);
+    expect(logs[1]).toBe(`stored sign-in for ${gw.serverUrl} has no refresh token; signing in again`);
     await ra.close();
     // Registration only (the first registration happened, no consent yet): no half-state message, not a recovery.
     logs.length = 0;
@@ -351,7 +354,7 @@ describe("half-states of the file", () => {
     expect(browser.opened).toHaveLength(0);
     // Dropping the orphaned tokens dropped the cached discovery with them, so the registration already ran on fresh metadata: refused once, final.
     expect(gw.hits).toMatchObject({ register: 1, refresh: 0, metadata: 2 });
-    expect(logs[0]).toBe(`stored sign-in for ${gw.serverUrl} has no client registration; registering and signing in again`);
+    expect(logs[1]).toBe(`stored sign-in for ${gw.serverUrl} has no client registration; registering and signing in again`);
     expect(logs.join("\n")).not.toMatch(/is stale/);
     expect(logs.at(-1)).toBe(`sign-in failed (issuer ${gw.issuer}): the issuer refused to register the client (HTTP 403: access_denied)`);
     // Once the issuer registers again, the next 401 round signs in.

@@ -56,7 +56,7 @@ describe("startPrompt", () => {
     await until(() => gw.hits.exchange === 2 && settled());
     expect(ra.status).toEqual({ state: "ok", issuer: gw.issuer }); // by hand, not a recovery
     expect(browser.opened).toHaveLength(2);
-    expect(gw.hits).toMatchObject({ register: 1, refresh: 0 });
+    expect(gw.hits).toMatchObject({ register: 1, refresh: 1 }); // the one refresh is the pre-browser check that the issuer still knows the registration
     expect(readTokenFile(ra.file)!.clientInformation!.client_id).toBe(clientId);
     expect(logs[0]).toMatch(/^dropping the tokens for /);
     expect(logs.filter((l) => l === PROMPT_HINT)).toHaveLength(1);

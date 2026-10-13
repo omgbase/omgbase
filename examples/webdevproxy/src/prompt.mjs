@@ -5,7 +5,11 @@
 //
 //   a   re-open the sign-in waiting in the browser and print its URL again (for
 //       a user over SSH); when none is waiting, drop the tokens (the client
-//       registration stays) and start a fresh authorization
+//       registration stays — unless the issuer no longer knows it, which the
+//       pre-browser check finds, and then it is registered anew) and start a
+//       fresh authorization
+//   r   forget this server's client registration (and its tokens) and register
+//       anew — for a gateway whose sign-in page says "Unknown client"
 //   l   forget this server's token file (= `--logout`) and sign in fresh
 //   q   close every session and exit 0
 //
@@ -14,7 +18,7 @@
 
 import { createInterface } from "node:readline";
 
-export const PROMPT_HINT = "press a + Enter to (re)open the sign-in in your browser, l + Enter to forget this server's tokens and sign in fresh, q + Enter to quit";
+export const PROMPT_HINT = "press a + Enter to (re)open the sign-in in your browser, r + Enter to forget this server's client registration and register anew (the gateway's page says \"Unknown client\"), l + Enter to forget this server's tokens and sign in fresh, q + Enter to quit";
 
 /**
  * @param {{ remote: import("./remote-auth.mjs").RemoteAuth, proxy: { close: () => Promise<void> }, input?: NodeJS.ReadableStream,
@@ -32,6 +36,7 @@ export function startPrompt({ remote, proxy, input = process.stdin, log = (m) =>
     if (!key || quitting) return;
     // RemoteAuth logs the outcome of a sign-in itself; a rejection here is already reported.
     if (key === "a") { void remote.reauthorize().catch(() => undefined); return; }
+    if (key === "r") { void remote.reauthorize({ resetClient: true }).catch(() => undefined); return; }
     if (key === "l") { void remote.reauthorize({ forget: true }).catch(() => undefined); return; }
     if (key === "q") {
       quitting = true;

@@ -19,7 +19,7 @@ import { InvalidClientError } from "@modelcontextprotocol/sdk/server/auth/errors
 import { DEFAULT_CALLBACK_PORT, parseArgs, validateArgs } from "../src/args.mjs";
 import { startPrompt } from "../src/prompt.mjs";
 import { logout, startProxy } from "../src/proxy.mjs";
-import { CONFIGURED_CLIENT_REJECTED, FileOAuthProvider, RemoteAuth, callbackPortInUse, configuredClientRejected, loopbackRedirectUrls, readTokenFile, writeTokenFile } from "../src/remote-auth.mjs";
+import { CONFIGURED_CLIENT_REJECTED, FileOAuthProvider, REGISTER_INSTEAD_HINT, RemoteAuth, callbackPortInUse, configuredClientRejected, loopbackRedirectUrls, readTokenFile, writeTokenFile } from "../src/remote-auth.mjs";
 import { FakeGateway, type FakeBrowser, until } from "./fixtures/fake-gateway.ts";
 
 const CLIENT = "fixed-native-app";
@@ -74,7 +74,8 @@ const initialize = () => ({
 });
 const track = (r: RemoteAuth) => { r.onStatus((s) => statuses.push(s)); return r; };
 const callback = () => `http://127.0.0.1:${port}/callback`;
-const REJECTED = `the configured client id ${CLIENT} was rejected by the issuer (invalid_client) — check WEBDEVPROXY_CLIENT_ID / --client-id against the tenant's application`;
+/** The fake issuer advertises a `registration_endpoint`, so the rejection carries the hint to drop the flag. */
+const REJECTED = `the configured client id ${CLIENT} was rejected by the issuer (invalid_client) — check WEBDEVPROXY_CLIENT_ID / --client-id against the tenant's application; ${REGISTER_INSTEAD_HINT}`;
 
 /** Signed in once as the configured client: no registration, one browser tab, one code exchange. */
 async function signedIn(browser: FakeBrowser = gw.browser()) {
@@ -188,7 +189,8 @@ describe("the token endpoint rejects the configured id", () => {
     gw.expireAccessTokens();
     await expect(fetch(gw.serverUrl, initialize())).rejects.toThrow();
     expect(ra.status).toEqual({ state: "error", issuer: gw.issuer, error: REJECTED });
-    expect(REJECTED).toBe(configuredClientRejected(CLIENT));
+    expect(REJECTED).toBe(configuredClientRejected(CLIENT, "invalid_client", true));
+    expect(REGISTER_INSTEAD_HINT).toBe("the issuer advertises a registration endpoint — drop --client-id / WEBDEVPROXY_CLIENT_ID and the proxy registers a client by itself");
     expect(logs.at(-1)).toBe(`sign-in failed (issuer ${gw.issuer}): ${REJECTED}`);
     expect(logs.join("\n")).not.toMatch(/stored sign-in .* was rejected|registering/);
     // The SDK's own answer to invalid_client — drop everything, register — did not happen: zero registrations, the browser never opened again.
@@ -211,7 +213,7 @@ describe("the token endpoint rejects the configured id", () => {
     gw.expireAccessTokens();
     gw.refreshResponse = { status: 400, body: { error: "unauthorized_client", error_description: "grant not allowed" } };
     await expect(fetch(gw.serverUrl, initialize())).rejects.toThrow();
-    expect(ra.status).toEqual({ state: "error", issuer: gw.issuer, error: configuredClientRejected(CLIENT, "unauthorized_client") });
+    expect(ra.status).toEqual({ state: "error", issuer: gw.issuer, error: configuredClientRejected(CLIENT, "unauthorized_client", true) });
     expect(ra.status.error).toMatch(/\(unauthorized_client\) — check WEBDEVPROXY_CLIENT_ID/);
     expect(gw.hits).toMatchObject({ register: 0, refresh: 1 });
     expect(browser.opened).toHaveLength(1);
@@ -236,7 +238,9 @@ describe("the token endpoint rejects the configured id", () => {
   it("failureMessage names the configured id for an invalid_client from the code exchange too, and deadCredential never calls it dead", () => {
     const r = new RemoteAuth({ serverUrl: gw.serverUrl, file: file(), clientId: CLIENT });
     r.phase = "browser";
-    expect(r.failureMessage(new InvalidClientError("unknown client"))).toBe(REJECTED);
+    // Not started: no discovery, so no registration endpoint is known and the hint is left off.
+    expect(r.failureMessage(new InvalidClientError("unknown client"))).toBe(configuredClientRejected(CLIENT));
+    expect(r.failureMessage(new InvalidClientError("unknown client"))).not.toMatch(/registration endpoint/);
     expect(r.deadCredential(new InvalidClientError("unknown client"))).toBeNull();
     const tagged = Object.assign(new Error(REJECTED), { name: CONFIGURED_CLIENT_REJECTED });
     expect(r.failureMessage(tagged)).toBe(REJECTED);
@@ -384,9 +388,15 @@ describe("the callback port", () => {
     const run = () => startProxy({ remote: gw.serverUrl, tokenFile: join(dir, "default.json"), clientId: DEFAULT, port: 0, log, openBrowser: browser });
     let probe: Server | null = null;
     try { probe = await occupy(DEFAULT_CALLBACK_PORT); } catch { probe = null; }
-    if (probe) {
-      // Something on this machine owns 8790 right now: the proxy must refuse to start rather than drift to another port.
-      await new Promise<void>((r) => probe!.close(() => r()));
+    if (!probe) {
+      // Another process on this machine owns 8790 right now (a proxy running with --client-id, say): the
+      // start-up must refuse, naming the flag, rather than drift to another port. Nothing more to assert here.
+      await expect(run()).rejects.toThrow(callbackPortInUse(DEFAULT_CALLBACK_PORT));
+      return;
+    }
+    {
+      // The port is free: hold it ourselves and the proxy must refuse the same way.
+      await new Promise<void>((r) => probe.close(() => r()));
       const holder = await occupy(DEFAULT_CALLBACK_PORT).catch(() => null);
       if (!holder) return; // raced; nothing to assert either way
       try {
@@ -426,8 +436,9 @@ describe("the callback port", () => {
       writeTokenFile(file(), { serverUrl: gw.serverUrl, redirectPort: port, clientInformation: { client_id: "client-old", redirect_uris: loopbackRedirectUrls(port) } });
       ra = await new RemoteAuth({ serverUrl: gw.serverUrl, file: file(), log }).start();
       expect(ra.loopback!.port).not.toBe(port);
-      expect(logs).toContain(`loopback port ${port} is busy — using ${ra.loopback!.port} and re-registering the client`);
+      expect(logs).toContain(`the client registration client-old names ${loopbackRedirectUrls(port).join(", ")}, not ${ra.loopback!.redirectUrl} (port ${port} is busy) — registering anew`);
       expect(readTokenFile(file())!.clientInformation).toBeUndefined();
+      expect(logs.at(-1)).toBe(`no client registration for ${gw.serverUrl} yet — one is registered with the issuer at the first sign-in`);
     } finally {
       await new Promise<void>((r) => holder.close(() => r()));
     }
