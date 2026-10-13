@@ -14,7 +14,7 @@ import { join } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
-import { RemoteAuth, loopbackRedirectUrls, readTokenFile, writeTokenFile } from "../src/remote-auth.mjs";
+import { RemoteAuth, TOO_MANY_ENTITIES_HINT, loopbackRedirectUrls, readTokenFile, writeTokenFile } from "../src/remote-auth.mjs";
 import { logout, startProxy } from "../src/proxy.mjs";
 import { FakeGateway, type FakeBrowser } from "./fixtures/fake-gateway.ts";
 
@@ -126,7 +126,7 @@ describe("recovery from a dead stored sign-in", () => {
     gw.revokeClients();
     gw.registerResponse = { status: 403, body: { error: "access_denied" } };
     await expect(fetch(gw.serverUrl, initialize())).rejects.toThrow();
-    expect(ra.status).toEqual({ state: "error", issuer: gw.issuer, error: "authorization failed while registering the client (access_denied, HTTP 403 from the registration endpoint, AccessDeniedError)" });
+    expect(ra.status).toEqual({ state: "error", issuer: gw.issuer, error: "the issuer refused to register the client (HTTP 403: access_denied)" });
     // refresh → invalid_client → the SDK drops all (discovery too) and rediscovers → registers (refused) → ours: fresh metadata already, no second pass.
     expect(gw.hits).toMatchObject({ refresh: 1, register: 2, metadata: 4 });
     expect(logs.join("\n")).not.toMatch(/is stale/);
@@ -137,7 +137,7 @@ describe("recovery from a dead stored sign-in", () => {
     gw.revokeClients();
     gw.registerResponse = { status: 400, body: { error: "invalid_client_metadata", error_description: "loopback clients are closed" } };
     await expect(fetch(gw.serverUrl, initialize())).rejects.toThrow(/loopback clients are closed/);
-    expect(ra.status).toMatchObject({ state: "error", error: "loopback clients are closed" });
+    expect(ra.status).toMatchObject({ state: "error", error: "the issuer refused to register the client (HTTP 400: invalid_client_metadata: loopback clients are closed)" });
     // The SDK's own retry (invalid_client → all) registered once and failed; ours registered once more and failed: bounded.
     expect(gw.hits).toMatchObject({ refresh: 1, register: 3 });
     expect(logs).toContain(`stored sign-in for ${gw.serverUrl} was rejected (invalid_client_metadata: loopback clients are closed); signing in again`);
@@ -347,17 +347,48 @@ describe("half-states of the file", () => {
     const browser = gw.browser();
     ra = track(await new RemoteAuth({ serverUrl: gw.serverUrl, file: file(), log, openBrowser: browser }).start());
     await expect(ra.ensure()).rejects.toThrow();
-    expect(ra.status).toEqual({ state: "error", issuer: gw.issuer, error: "authorization failed while registering the client (access_denied, HTTP 403 from the registration endpoint, AccessDeniedError)" });
+    expect(ra.status).toEqual({ state: "error", issuer: gw.issuer, error: "the issuer refused to register the client (HTTP 403: access_denied)" });
     expect(browser.opened).toHaveLength(0);
     // Dropping the orphaned tokens dropped the cached discovery with them, so the registration already ran on fresh metadata: refused once, final.
     expect(gw.hits).toMatchObject({ register: 1, refresh: 0, metadata: 2 });
     expect(logs[0]).toBe(`stored sign-in for ${gw.serverUrl} has no client registration; registering and signing in again`);
     expect(logs.join("\n")).not.toMatch(/is stale/);
-    expect(logs.at(-1)).toBe(`sign-in failed (issuer ${gw.issuer}): authorization failed while registering the client (access_denied, HTTP 403 from the registration endpoint, AccessDeniedError)`);
+    expect(logs.at(-1)).toBe(`sign-in failed (issuer ${gw.issuer}): the issuer refused to register the client (HTTP 403: access_denied)`);
     // Once the issuer registers again, the next 401 round signs in.
     gw.registerResponse = null;
     expect((await ra.fetchWithAuth()(gw.serverUrl, initialize())).status).toBe(200);
     expect(ra.status).toMatchObject({ state: "ok" });
+  });
+
+  it("Auth0's capped tenant (HTTP 403 too_many_entities, which the SDK turns into an empty ServerError) is named, with the hint, in /whoami and the log", async () => {
+    fileWithoutRegistration();
+    gw.registerResponse = { status: 403, body: { error: "Forbidden", message: "You reached the limit of entities of this type for this tenant.", errorCode: "too_many_entities" } };
+    const browser = gw.browser();
+    const proxy = await startProxy({ remote: gw.serverUrl, tokenFile: file(), port: 0, log, openBrowser: browser });
+    try {
+      track(proxy.remote!);
+      await proxy.ready;
+      const expected = `the issuer refused to register the client (HTTP 403: Forbidden: You reached the limit of entities of this type for this tenant. (too_many_entities)); ${TOO_MANY_ENTITIES_HINT}`;
+      expect(proxy.whoami().auth).toEqual({ state: "error", issuer: gw.issuer, error: expected });
+      expect(logs.at(-1)).toBe(`sign-in failed (issuer ${gw.issuer}): ${expected}`);
+      expect(browser.opened).toHaveLength(0);
+      expect(gw.hits).toMatchObject({ register: 1, refresh: 0 });
+      // The tenant is cleaned up; the user presses a.
+      gw.registerResponse = null;
+      await proxy.remote!.reauthorize();
+      expect(proxy.whoami().auth).toMatchObject({ state: "ok" });
+      expect(gw.hits).toMatchObject({ register: 2, exchange: 1 });
+    } finally {
+      await proxy.close();
+    }
+  });
+
+  it("a registration refused with a message but no OAuth code still names what the issuer said", async () => {
+    fileWithoutRegistration();
+    gw.registerResponse = { status: 429, body: { message: "slow down" } };
+    ra = track(await new RemoteAuth({ serverUrl: gw.serverUrl, file: file(), log, openBrowser: gw.browser() }).start());
+    await expect(ra.ensure()).rejects.toThrow();
+    expect(ra.status.error).toBe("the issuer refused to register the client (HTTP 429: slow down)");
   });
 
   it("failureMessage never returns an empty string", () => {
@@ -369,6 +400,39 @@ describe("half-states of the file", () => {
     r.phase = "browser";
     r.lastResult = "REDIRECT";
     expect(r.failureMessage(new TypeError(""))).toBe("authorization failed in the browser flow (TypeError); auth() returned REDIRECT");
+  });
+});
+
+describe("registration conservation", () => {
+  it("a dead refresh token with a valid registration never re-registers — across every token-side failure and the half-state audit", async () => {
+    const { ra, browser, fetch } = await signedIn();
+    const registration = JSON.stringify(readTokenFile(file())!.clientInformation);
+    const rounds: (() => void)[] = [
+      () => gw.revokeTokens(),                                                                                          // invalid_grant
+      () => { gw.revokeTokens(); gw.refreshResponse = { status: 400, body: { error: "invalid_request" } }; },           // another code, no description
+      () => { gw.revokeTokens(); gw.refreshResponse = { status: 401, body: "nope", contentType: "text/plain" }; },     // bare 401
+      () => { gw.expireAccessTokens(); ra.provider!.patch({ tokens: { access_token: "at-only", token_type: "Bearer" } }); }, // no refresh token
+      () => { gw.moveTokenEndpoint(); gw.expireAccessTokens(); },                                                      // stale metadata
+    ];
+    for (const [i, round] of rounds.entries()) {
+      gw.refreshResponse = null;
+      round();
+      expect((await fetch(gw.serverUrl, initialize())).status, `round ${i}`).toBe(200);
+      expect(ra.status.state, `round ${i}`).toBe("ok");
+      expect(gw.hits.register, `round ${i}`).toBe(1);
+      expect(JSON.stringify(readTokenFile(file())!.clientInformation), `round ${i}`).toBe(registration);
+    }
+    expect(browser.opened).toHaveLength(5); // the first sign-in + one per round except the silent rediscovery
+    expect(logs.join("\n")).not.toMatch(/registering/);
+  });
+
+  it("the half-state audit on a file with a registration drops tokens only", async () => {
+    gw.clients.add("client-kept");
+    writeTokenFile(file(), { serverUrl: gw.serverUrl, clientInformation: { client_id: "client-kept", redirect_uris: loopbackRedirectUrls(4242) }, tokens: { access_token: "at", token_type: "Bearer" }, discovery: { authorizationServerUrl: gw.issuer } });
+    ra = track(await new RemoteAuth({ serverUrl: gw.serverUrl, file: file(), log, openBrowser: gw.browser() }).start());
+    await ra.ensure();
+    expect(gw.hits.register).toBe(0);
+    expect(readTokenFile(file())!.clientInformation).toMatchObject({ client_id: "client-kept" });
   });
 });
 

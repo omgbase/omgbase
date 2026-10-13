@@ -118,8 +118,13 @@ the first registration and consent; nothing is said.) Only when the fresh sign-i
 **also** fails (you declined, the code exchange failed, the issuer refuses to
 register the client) does `auth.state` become `"error"` — with a message that is
 never empty: the SDK's error for an issuer answer without `error_description` has
-none, so the proxy says where it was (`authorization failed while registering the
-client (access_denied, HTTP 403 from the registration endpoint, …)`) — and that is never
+none, so the proxy says where it was and what the issuer's body said (`the issuer
+refused to register the client (HTTP 403: Forbidden: You reached the limit of
+entities of this type for this tenant. (too_many_entities)); the issuer's
+application limit is full — delete stale auto-registered clients in the tenant's
+dashboard, then press a + Enter` — Auth0 caps dynamic registrations per tenant;
+a registration is never dropped for a token-side failure, so the cap fills only
+with lost files) — and that is never
 retried by itself: the next `401` is one more browser flow, no refresh, so a
 broken issuer costs one browser tab per request round, not a loop. A failure
 inside the browser flow is never mistaken for a dead credential. Concurrent

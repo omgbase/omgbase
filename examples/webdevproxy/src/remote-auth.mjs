@@ -171,6 +171,8 @@ export function parseLoopbackCallback(requestUrl, expectedState) {
 export const SIGN_IN_CANCELLED = "SignInCancelled";
 /** `error.name` of RemoteAuth's abort of a browser flow built on cached issuer metadata the token endpoint just failed to honour. */
 export const STALE_DISCOVERY = "StaleDiscovery";
+/** Appended to the failure when the issuer's dynamic registration is capped (Auth0 `too_many_entities`: the tenant is full of auto-registered clients). */
+export const TOO_MANY_ENTITIES_HINT = "the issuer's application limit is full — delete stale auto-registered clients in the tenant's dashboard, then press a + Enter";
 
 /** An Error with a `name` the callers switch on. */
 function tagged(name, message) {
@@ -451,7 +453,7 @@ export class RemoteAuth {
     this.recoveredAt = undefined;
     /**
      * What the issuer answered during the current `auth()` pass (see `authFetch`).
-     * @type {{ rejection: { endpoint: "token" | "registration", status: number, grant?: string, code?: string, description?: string } | null, discovered: boolean }}
+     * @type {{ rejection: { endpoint: "token" | "registration", status: number, grant?: string, code?: string, description?: string, errorCode?: string } | null, discovered: boolean }}
      */
     this.observed = { rejection: null, discovered: false };
     /** @type {"stored" | "browser"} where the current pass is: still on the stored credential, or in the browser flow */
@@ -575,9 +577,12 @@ export class RemoteAuth {
         if (body instanceof URLSearchParams) rejection.grant = body.get("grant_type") ?? undefined;
         try {
           const parsed = await res.clone().json();
-          if (parsed && typeof parsed.error === "string") {
-            rejection.code = parsed.error;
-            if (typeof parsed.error_description === "string") rejection.description = parsed.error_description;
+          if (parsed && typeof parsed === "object") {
+            // RFC 6749 `error` / `error_description`; Auth0's management-style bodies say `error: "Forbidden", message, errorCode`.
+            if (typeof parsed.error === "string") rejection.code = parsed.error;
+            const description = typeof parsed.error_description === "string" ? parsed.error_description : typeof parsed.message === "string" ? parsed.message : undefined;
+            if (description) rejection.description = description;
+            if (typeof parsed.errorCode === "string") rejection.errorCode = parsed.errorCode;
           }
         } catch {
           // not an OAuth error body (an HTML 404 after the issuer moved, say)
@@ -694,9 +699,18 @@ export class RemoteAuth {
    * one made from where the pass was, the OAuth code and the issuer's answer.
    */
   failureMessage(e) {
-    const raw = e instanceof Error ? e.message : e === undefined || e === null ? "" : String(e);
-    if (raw.trim()) return raw;
+    const raw = (e instanceof Error ? e.message : e === undefined || e === null ? "" : String(e)).trim();
     const r = this.observed.rejection;
+    if (r?.endpoint === "registration") {
+      // The SDK's ServerError drops the issuer's body; say what it said, and what to do about a full tenant.
+      const said = this.describeRejection();
+      const quoted = said && !said.startsWith("HTTP ") ? said : undefined; // what the body said, when it said anything
+      let message = `the issuer refused to register the client (HTTP ${r.status}${quoted ? `: ${quoted}` : ""})`;
+      if (raw && !quoted) message += ` — ${raw}`; // else the SDK's text repeats (or Zod-dumps) the body
+      if (r.errorCode === "too_many_entities" || /too_many_entities/.test(`${r.code ?? ""} ${r.description ?? ""}`)) message += `; ${TOO_MANY_ENTITIES_HINT}`;
+      return message;
+    }
+    if (raw) return raw;
     const where = this.phase === "browser" ? "in the browser flow"
       : r?.endpoint === "registration" ? "while registering the client"
       : r?.endpoint === "token" ? "while refreshing"
@@ -732,7 +746,9 @@ export class RemoteAuth {
   describeRejection() {
     const r = this.observed.rejection;
     if (!r) return undefined;
-    return r.code ? `${r.code}${r.description ? `: ${r.description}` : ""}` : `HTTP ${r.status} from the ${r.endpoint} endpoint`;
+    const text = [r.code, r.description].filter(Boolean).join(": ");
+    const withCode = r.errorCode && r.errorCode !== r.code ? `${text ? `${text} ` : ""}(${r.errorCode})` : text;
+    return withCode || `HTTP ${r.status} from the ${r.endpoint} endpoint`;
   }
 
   /**

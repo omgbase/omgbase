@@ -106,7 +106,7 @@ describe("startPrompt", () => {
     gw.registerResponse = { status: 403, body: { error: "access_denied" } };
     await ra.ensure().catch(() => undefined);
     expect(ra.status.state).toBe("error");
-    expect(ra.status.error).toMatch(/^authorization failed while registering the client/);
+    expect(ra.status.error).toBe("the issuer refused to register the client (HTTP 403: access_denied)");
     expect(Object.keys(readTokenFile(ra.file)!)).not.toContain("clientInformation");
     gw.registerResponse = null;
     logs.length = 0;

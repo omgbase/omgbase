@@ -141,6 +141,8 @@ export const CALLBACK_PATH: string;
 export const SIGN_IN_CANCELLED: string;
 /** `error.name` of RemoteAuth's abort of a browser flow built on stale cached issuer metadata (it rediscovers instead). */
 export const STALE_DISCOVERY: string;
+/** Appended to the sign-in failure when the issuer's dynamic registration is capped (Auth0 `too_many_entities`). */
+export const TOO_MANY_ENTITIES_HINT: string;
 export function loopbackRedirectUrls(port: number): string[];
 export type LoopbackOutcome =
   | { kind: "code"; code: string }
