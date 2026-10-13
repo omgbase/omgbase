@@ -31,6 +31,7 @@ pub mod lower;
 pub mod ops;
 pub mod opset;
 pub mod render;
+pub mod summary;
 pub mod tree;
 
 pub use changeset::{Op, parse_placeholder, resolve_op, resolve_placeholder, resolve_to};
@@ -52,10 +53,13 @@ pub use ops::{
 };
 pub use opset::{Opset, OpsetPrecondition, OpsetSummary, PlanDisposition, PlanOp, summarize};
 pub use render::{render, render_block};
+pub use summary::{
+    NoLookup, SummaryLookup, block_count, plural, summarize_effect, visible_text_of,
+};
 pub use tree::{BlockPath, MutBlock, MutDoc, child_ids, parent_children_hash, raw_hash_hex};
 
 /// The `spec/mutate/VERSION` this crate implements (`major.minor`).
-pub const SPEC_VERSION: &str = "3.2";
+pub const SPEC_VERSION: &str = "3.3";
 
 /// This crate's own version (`Cargo.toml`), for the surface's `version` tool.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

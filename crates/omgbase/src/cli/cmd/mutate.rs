@@ -428,10 +428,27 @@ pub fn render_receipt(cli: &mut Cli, receipt: Json, plan: Option<&Json>) -> Resu
         cli.style.ok(cli.style.glyphs().ok),
         if n == 1 { "" } else { "s" }
     )));
+    render_summary(cli, &receipt);
     for id in ids {
         cli.io.out(&id);
     }
     Ok(EXIT_OK)
+}
+
+/// The Receipt's `summary` (`spec/cli` §4, cli 4.3): what was committed, in
+/// words — one line per effect, indented under the confirmation, on stderr.
+pub fn render_summary(cli: &mut Cli, receipt: &Json) {
+    let lines = receipt
+        .get("summary")
+        .and_then(Json::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(Json::as_str)
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
+    for line in lines {
+        cli.io.err(&cli.style.dim(&format!("    {line}")));
+    }
 }
 
 /// The shell's frame for a write (`spec/cli` §7): the Receipt with the ids
@@ -721,6 +738,7 @@ fn render_update_receipt(cli: &mut Cli, receipt: Json, plan: Option<&Json>) -> R
         cli.style.ok(cli.style.glyphs().ok),
         if n == 1 { "" } else { "s" }
     )));
+    render_summary(cli, &receipt);
     for id in ids {
         cli.io.out(&id);
     }

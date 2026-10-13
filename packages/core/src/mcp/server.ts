@@ -22,6 +22,7 @@ import {
   appendEffects, applySugar, checkEffects, createEffects, deleteDocEffects, docsAppendEffects, insertEffects, mergeEffects, moveBlocksEffects, moveDocEffects,
   moveLinks, nodeSetEffects, removeBlocksEffects, requireAbsentPath, retargetEffects, setMetaEffects, splitEffects, updateBlockEffects, updateContentEffects, type Sugar,
 } from "../mutate/sugar.js";
+import { fixTool } from "../mutate/canonical.js";
 import { historyNode, diffBlocks, docDiffUnified, changesSince, docHistory } from "../graph/history.js";
 import { linksStale, linksStaleSummary } from "../graph/link-health.js";
 import { resolve as resolveThing } from "../search/resolve.js";
@@ -192,12 +193,11 @@ const effectSchema = z.looseObject({ op: z.enum(["create", "insert", "set", "uns
 // (`mcp/examples.test.ts`) into `spec/surface/cases/examples.json` and run
 // against the alchemy corpus, so every example stays true. Ids and paths are
 // the alchemy fixture's (`d_14` is substances/salt.md, `b_153` the `Tasks`
-// heading of processes/calcination.md).
-//
-// TODO(mutate 3.2 sugar, the next commit): the selector rungs switch from the
-// `{ "oqx": "<expr>" }` slot form to the `-> expr` leader, and the document
-// targets from `{ kind: "document", path }` to a bare path, once that sugar
-// lands in both engines — the ladders shorten accordingly.
+// heading of processes/calcination.md). Since 4.4 the rungs are written in
+// the `spec/mutate` 3.2 sugar — a bare path, id or `$new.n` as a target, the
+// `-> expr` leader for an expression — and each trailing comment teaches one
+// thing; the plans they produce equal the 4.3 object-form rungs' (pinned by
+// `mcp/examples.test.ts`).
 const ladder = (...lines: string[]): string => lines.join("\n");
 
 type ToolResult = { content: { type: "text"; text: string }[]; isError?: true };
@@ -370,7 +370,12 @@ export function buildServer(ctx: ServerContext): McpServer {
   // several → `ambiguous_heading` with the candidates `[{ id, doc_id }]` (pass
   // the heading's id to `blocks_append` instead). Never an id lookup — the
   // id form is `blocks_append`'s (§9).
-  function resolveSectionHeading(docId: string, docPath: string, section: string): string {
+  //
+  // Each miss carries a `fix` (spec/surface §9, 4.4): a literal corrected call.
+  // Several matches → `blocks_append` with the first candidate's id; none → the
+  // one heading whose text matches up to ASCII case, as `blocks_append`, else
+  // the same `docs_append` without `section` (the document's end).
+  function resolveSectionHeading(docId: string, docPath: string, section: string, call: { id?: string; path?: string; text: string }): string {
     const needle = /^[ \t]*#/.test(section) ? normalizeVisibleText(section, "heading") : normalizeText(section);
     const rows = store.db
       .prepare("SELECT block_id, doc_id, text FROM blocks WHERE doc_id = ? AND type = 'heading' AND deleted_commit IS NULL")
@@ -378,11 +383,16 @@ export function buildServer(ctx: ServerContext): McpServer {
     const matches = rows.filter((r) => normalizeText(r.text) === needle);
     const shown = referencePath(docPath);
     if (matches.length === 0) {
-      throw new EngineError("parent_missing", `no heading ${JSON.stringify(section)} in ${shown}`, { data: { section, path: shown } });
+      const fold = (t: string): string => t.replace(/[A-Z]/g, (c) => c.toLowerCase());
+      const near = rows.filter((r) => fold(normalizeText(r.text)) === fold(needle));
+      const fix = near.length === 1
+        ? fixTool("blocks_append", { id: near[0]!.block_id, text: call.text })
+        : fixTool("docs_append", { ...(call.id !== undefined ? { id: call.id } : {}), ...(call.path !== undefined ? { path: call.path } : {}), text: call.text });
+      throw new EngineError("parent_missing", `no heading ${JSON.stringify(section)} in ${shown}`, { data: { section, path: shown, fix } });
     }
     if (matches.length > 1) {
       throw new EngineError("ambiguous_heading", `heading ${JSON.stringify(section)} matches ${matches.length} headings in ${shown}; pass the heading's id to blocks_append`, {
-        data: { section, path: shown, candidates: matches.map((m) => ({ id: m.block_id, doc_id: m.doc_id })) },
+        data: { section, path: shown, candidates: matches.map((m) => ({ id: m.block_id, doc_id: m.doc_id })), fix: fixTool("blocks_append", { id: matches[0]!.block_id, text: call.text }) },
       });
     }
     return matches[0]!.block_id;
@@ -836,11 +846,11 @@ export function buildServer(ctx: ServerContext): McpServer {
     "apply",
     {
       description: ladder(
-        "apply — plan and commit in one call; returns the Receipt { plan_id, commit, revisions, new_ids, committed }.",
-        "{\"effects\":[{\"op\":\"set\",\"target\":{\"kind\":\"document\",\"path\":\"/substances/salt.md\"},\"field\":\"frontmatter.verified\",\"value\":false}],\"reason\":\"re-check salt\"}   one scalar",
-        "{\"effects\":[{\"op\":\"insert\",\"into\":{\"kind\":\"document\",\"path\":\"/lab/2026-02-notes.md\"},\"at\":\"end\",\"markdown\":\"## Follow-ups\\n\\n- [ ] re-run cycle 4\"}]}   append at a document's end",
+        "apply — plan and commit in one call; returns the Receipt { plan_id, commit, revisions, new_ids, committed, summary }.",
+        "{\"effects\":[{\"op\":\"set\",\"target\":\"/substances/salt.md\",\"field\":\"frontmatter.verified\",\"value\":false}],\"reason\":\"re-check salt\"}   one scalar; a bare path is a document target",
+        "{\"effects\":[{\"op\":\"insert\",\"into\":\"/lab/2026-02-notes.md\",\"at\":\"end\",\"markdown\":\"## Follow-ups\\n\\n- [ ] re-run cycle 4\"}]}   append at a document's end",
         "{\"select\":\"from blocks where type == \\\"task\\\" and not checked and path == \\\"/processes/calcination.md\\\"\",\"effects\":[{\"op\":\"set\",\"field\":\"attrs.checked\",\"value\":true}],\"expect\":{\"max\":10}}   bulk check-off; expect.max is REQUIRED with select",
-        "Plan first for anything you cannot undo by hand; a stale guard or a conflict carries the current truth in data. Grammar: query_syntax.",
+        "Plan first for anything you cannot undo by hand; every error's data.fix is a corrected call to copy. Grammar: query_syntax.",
       ),
       inputSchema: {
         effects: z.array(effectSchema),
@@ -872,13 +882,13 @@ export function buildServer(ctx: ServerContext): McpServer {
     "plan",
     {
       description: ladder(
-        "plan — Preview a write: the frozen Plan (diffs, results, $new.n for each identity it would mint) burns no id. Unsure? plan, then execute it.",
-        "{\"effects\":[{\"op\":\"set\",\"target\":{\"kind\":\"document\",\"path\":\"/processes/calcination.md\"},\"field\":\"frontmatter.verified\",\"value\":false}]}   one frontmatter key",
-        "{\"effects\":[{\"op\":\"insert\",\"into\":{\"kind\":\"section\",\"heading_id\":\"b_153\"},\"at\":\"end\",\"markdown\":\"- [ ] Weigh the calx\"}]}   append under a heading (id: query md:section nodes)",
-        "{\"effects\":[{\"op\":\"create\",\"path\":\"lab/2026-03-notes.md\",\"markdown\":\"# March\\n\"},{\"op\":\"insert\",\"into\":{\"kind\":\"document\",\"id\":\"$new.0\"},\"markdown\":\"First entry.\"}]}   create, then fill it ($new.n = an identity this request creates)",
-        "{\"select\":\"from docs where type == \\\"process\\\" and stage == \\\"nigredo\\\"\",\"effects\":[{\"op\":\"set\",\"field\":\"frontmatter.reviewed\",\"value\":true}],\"expect\":{\"max\":5}}   one effect per hit (no target = the hit itself)",
-        "{\"select\":\"from docs where type == \\\"lab-note\\\"\",\"effects\":[{\"op\":\"insert\",\"into\":{\"kind\":\"document\",\"path\":{\"oqx\":\"\\\"/processes/\\\" + subject + \\\".md\\\"\"}},\"at\":\"end\",\"markdown\":{\"oqx\":\"\\\"- see [\\\" + title + \\\"](\\\" + path + \\\")\\\"\"}}],\"expect\":{\"max\":5}}   { oqx } reads the hit's row",
-        "Effects: create insert set unset move remove split merge retarget; Target: { kind: document, id|path } | { kind: block|node, id } | { kind: section, heading_id }. Grammar: query_syntax.",
+        "plan — Preview a write: the frozen Plan (summary, diffs, $new.n per minted id) burns no id; execute next.",
+        "{\"effects\":[{\"op\":\"set\",\"target\":\"/processes/calcination.md\",\"field\":\"frontmatter.verified\",\"value\":false}]}   path = document",
+        "{\"effects\":[{\"op\":\"insert\",\"into\":{\"kind\":\"section\",\"heading_id\":\"b_153\"},\"markdown\":\"- [ ] Weigh the calx\"}]}   under a heading",
+        "{\"effects\":[{\"op\":\"create\",\"path\":\"lab/march.md\",\"markdown\":\"# March\\n\"},{\"op\":\"insert\",\"into\":\"$new.0\",\"markdown\":\"Hi.\"}]}   fill it: $new.0",
+        "{\"select\":\"from docs where stage == \\\"nigredo\\\"\",\"effects\":[{\"op\":\"set\",\"field\":\"frontmatter.ok\",\"value\":true}]}   no target = the hit",
+        "{\"select\":\"from docs where type == \\\"lab-note\\\"\",\"effects\":[{\"op\":\"insert\",\"into\":\"-> `/processes/${subject}.md`\",\"markdown\":\"-> `[${title}](${path})`\"}]}   -> reads the row",
+        "Ops: create insert set unset move remove split merge retarget. Grammar: query_syntax.",
       ),
       inputSchema: { effects: z.array(effectSchema), select: z.string().optional(), expect: selectionExpectSchema.optional(), ...REPO_ARG },
     },
@@ -898,7 +908,7 @@ export function buildServer(ctx: ServerContext): McpServer {
     {
       description: ladder(
         "execute — Commit exactly a plan from plan: the plan form (the whole Plan object) or the digest form (plan_id plus the same effects, re-planned and committed only if the digest still matches).",
-        "{\"plan_id\":\"3ece126452106400210f07047029a961691b814252ba4437f5a5f1c3301629da\",\"effects\":[{\"op\":\"set\",\"target\":{\"kind\":\"document\",\"path\":\"/processes/calcination.md\"},\"field\":\"frontmatter.verified\",\"value\":false}]}   digest form: the plan_id plan returned for these effects",
+        "{\"plan_id\":\"3ece126452106400210f07047029a961691b814252ba4437f5a5f1c3301629da\",\"effects\":[{\"op\":\"set\",\"target\":\"/processes/calcination.md\",\"field\":\"frontmatter.verified\",\"value\":false}]}   digest form: the plan_id plan returned for these effects",
         "Or pass the whole object: {\"plan\": the Plan as returned}. A document that moved on fails stale_plan (retriable: call plan again). Grammar: query_syntax.",
       ),
       inputSchema: { plan: z.record(z.string(), z.unknown()).optional(), plan_id: z.string().optional(), effects: z.array(effectSchema).optional(), select: z.string().optional(), expect: selectionExpectSchema.optional(), reason: z.string().optional(), ...REPO_ARG },
@@ -1111,8 +1121,8 @@ export function buildServer(ctx: ServerContext): McpServer {
         const root = requireRoot(rootPath);
         const block = resolveBlockRef(repoId, args.id);
         const row = store.db
-          .prepare("SELECT b.type AS type, d.format AS format, (SELECT count(*) FROM blocks c WHERE c.parent_block = b.block_id AND c.deleted_commit IS NULL) AS children FROM blocks b JOIN docs d ON d.doc_id = b.doc_id WHERE b.block_id = ? AND b.deleted_commit IS NULL")
-          .get(block) as { type: string; format: string | null; children: number } | undefined;
+          .prepare("SELECT b.type AS type, d.format AS format, b.parent_block AS parent, d.path AS path, (SELECT count(*) FROM blocks c WHERE c.parent_block = b.block_id AND c.deleted_commit IS NULL) AS children FROM blocks b JOIN docs d ON d.doc_id = b.doc_id WHERE b.block_id = ? AND b.deleted_commit IS NULL")
+          .get(block) as { type: string; format: string | null; parent: string | null; path: string; children: number } | undefined;
         if (!row) throw blockMissing(args.id);
         let into: EffectTarget;
         if (row.type === "heading") {
@@ -1120,8 +1130,9 @@ export function buildServer(ctx: ServerContext): McpServer {
         } else if (isContainerBlock(row.format ?? "markdown", { type: row.type, children: new Array<unknown>(row.children) })) {
           into = blockTarget(block);
         } else {
+          // The fix (4.4): the sibling insert spelled out — its parent block, or the document when it is top-level.
           throw new EngineError("block_not_container", `block ${block} is a ${row.type}, not a heading or a container; append means into — insert after it with blocks_insert { to: <its parent>, at: { after: ${JSON.stringify(block)} } }`, {
-            data: { id: block, type: row.type },
+            data: { id: block, type: row.type, fix: fixTool("blocks_insert", { to: row.parent ?? referencePath(row.path), at: { after: block }, markdown: args.text }) },
           });
         }
         return sugar(repoId, root, appendEffects(into, args.text));
@@ -1150,7 +1161,7 @@ export function buildServer(ctx: ServerContext): McpServer {
         let into: EffectTarget;
         if (args.section !== undefined) {
           const info = findDoc(store, { docId })!;
-          into = { kind: "section", heading_id: resolveSectionHeading(docId, info.path, args.section) };
+          into = { kind: "section", heading_id: resolveSectionHeading(docId, info.path, args.section, { ...(args.id !== undefined ? { id: args.id } : {}), ...(args.path !== undefined ? { path: args.path } : {}), text: args.text }) };
         } else {
           into = { kind: "document", id: docId };
         }

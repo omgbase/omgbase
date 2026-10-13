@@ -65,24 +65,24 @@ pub const BLOCKS_RESOLVE: &str = r#"blocks_resolve — "the id of the thing I me
 Open questions or passages: query with text("...") or order by semantic("...") desc. Grammar: query_syntax."#;
 
 /// `apply`
-pub const APPLY: &str = r###"apply — plan and commit in one call; returns the Receipt { plan_id, commit, revisions, new_ids, committed }.
-{"effects":[{"op":"set","target":{"kind":"document","path":"/substances/salt.md"},"field":"frontmatter.verified","value":false}],"reason":"re-check salt"}   one scalar
-{"effects":[{"op":"insert","into":{"kind":"document","path":"/lab/2026-02-notes.md"},"at":"end","markdown":"## Follow-ups\n\n- [ ] re-run cycle 4"}]}   append at a document's end
+pub const APPLY: &str = r###"apply — plan and commit in one call; returns the Receipt { plan_id, commit, revisions, new_ids, committed, summary }.
+{"effects":[{"op":"set","target":"/substances/salt.md","field":"frontmatter.verified","value":false}],"reason":"re-check salt"}   one scalar; a bare path is a document target
+{"effects":[{"op":"insert","into":"/lab/2026-02-notes.md","at":"end","markdown":"## Follow-ups\n\n- [ ] re-run cycle 4"}]}   append at a document's end
 {"select":"from blocks where type == \"task\" and not checked and path == \"/processes/calcination.md\"","effects":[{"op":"set","field":"attrs.checked","value":true}],"expect":{"max":10}}   bulk check-off; expect.max is REQUIRED with select
-Plan first for anything you cannot undo by hand; a stale guard or a conflict carries the current truth in data. Grammar: query_syntax."###;
+Plan first for anything you cannot undo by hand; every error's data.fix is a corrected call to copy. Grammar: query_syntax."###;
 
 /// `plan`
-pub const PLAN: &str = r##"plan — Preview a write: the frozen Plan (diffs, results, $new.n for each identity it would mint) burns no id. Unsure? plan, then execute it.
-{"effects":[{"op":"set","target":{"kind":"document","path":"/processes/calcination.md"},"field":"frontmatter.verified","value":false}]}   one frontmatter key
-{"effects":[{"op":"insert","into":{"kind":"section","heading_id":"b_153"},"at":"end","markdown":"- [ ] Weigh the calx"}]}   append under a heading (id: query md:section nodes)
-{"effects":[{"op":"create","path":"lab/2026-03-notes.md","markdown":"# March\n"},{"op":"insert","into":{"kind":"document","id":"$new.0"},"markdown":"First entry."}]}   create, then fill it ($new.n = an identity this request creates)
-{"select":"from docs where type == \"process\" and stage == \"nigredo\"","effects":[{"op":"set","field":"frontmatter.reviewed","value":true}],"expect":{"max":5}}   one effect per hit (no target = the hit itself)
-{"select":"from docs where type == \"lab-note\"","effects":[{"op":"insert","into":{"kind":"document","path":{"oqx":"\"/processes/\" + subject + \".md\""}},"at":"end","markdown":{"oqx":"\"- see [\" + title + \"](\" + path + \")\""}}],"expect":{"max":5}}   { oqx } reads the hit's row
-Effects: create insert set unset move remove split merge retarget; Target: { kind: document, id|path } | { kind: block|node, id } | { kind: section, heading_id }. Grammar: query_syntax."##;
+pub const PLAN: &str = r##"plan — Preview a write: the frozen Plan (summary, diffs, $new.n per minted id) burns no id; execute next.
+{"effects":[{"op":"set","target":"/processes/calcination.md","field":"frontmatter.verified","value":false}]}   path = document
+{"effects":[{"op":"insert","into":{"kind":"section","heading_id":"b_153"},"markdown":"- [ ] Weigh the calx"}]}   under a heading
+{"effects":[{"op":"create","path":"lab/march.md","markdown":"# March\n"},{"op":"insert","into":"$new.0","markdown":"Hi."}]}   fill it: $new.0
+{"select":"from docs where stage == \"nigredo\"","effects":[{"op":"set","field":"frontmatter.ok","value":true}]}   no target = the hit
+{"select":"from docs where type == \"lab-note\"","effects":[{"op":"insert","into":"-> `/processes/${subject}.md`","markdown":"-> `[${title}](${path})`"}]}   -> reads the row
+Ops: create insert set unset move remove split merge retarget. Grammar: query_syntax."##;
 
 /// `execute`
 pub const EXECUTE: &str = r#"execute — Commit exactly a plan from plan: the plan form (the whole Plan object) or the digest form (plan_id plus the same effects, re-planned and committed only if the digest still matches).
-{"plan_id":"3ece126452106400210f07047029a961691b814252ba4437f5a5f1c3301629da","effects":[{"op":"set","target":{"kind":"document","path":"/processes/calcination.md"},"field":"frontmatter.verified","value":false}]}   digest form: the plan_id plan returned for these effects
+{"plan_id":"3ece126452106400210f07047029a961691b814252ba4437f5a5f1c3301629da","effects":[{"op":"set","target":"/processes/calcination.md","field":"frontmatter.verified","value":false}]}   digest form: the plan_id plan returned for these effects
 Or pass the whole object: {"plan": the Plan as returned}. A document that moved on fails stale_plan (retriable: call plan again). Grammar: query_syntax."#;
 
 /// `blocks_insert`

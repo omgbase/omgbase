@@ -48,6 +48,7 @@ use omgbase_store::{
     LinkRepair, MemDocStore, PlanContext, SequentialMinter, Store, TreeEntry,
 };
 use omgbase_surface::SurfaceError;
+use omgbase_surface::fixes;
 use omgbase_surface::select::{self, SelectRequest};
 use rusqlite::types::Value as Sql;
 use rusqlite::{Connection, OptionalExtension, params};
@@ -860,6 +861,11 @@ fn listed_error(code: &str, data: &JsonMap<String, Json>) -> Json {
     if let Some(v) = data.get("version") {
         error.insert("version".to_owned(), v.clone());
     }
+    // The corrected example (3.3): a literal call both engines compose byte
+    // for byte.
+    if let Some(f) = data.get("fix").filter(|v| v.is_string()) {
+        error.insert("fix".to_owned(), f.clone());
+    }
     if let Some(s) = data.get("supported").filter(|v| v.is_array()) {
         error.insert("supported".to_owned(), s.clone());
     }
@@ -1211,6 +1217,61 @@ fn surface_error_outcome(e: &SurfaceError) -> Json {
     json!({ "error": listed_error(&e.code, &data) })
 }
 
+/// A plain request's planning error with its `fix` (§8, 3.3): the surface's
+/// `planning_fix` over the step's `effects` as written — what the catalog
+/// does for `apply`/`plan`/`execute` and the reference's `planEffects` does
+/// itself. A missing `$new.n` counts the symbols the effects before it
+/// allocate through a prefix plan.
+fn plain_error_outcome(
+    r: &mut Runner,
+    ctx: &PlanContext,
+    body: &JsonMap<String, Json>,
+    m: &MutationError,
+) -> Result<Json, String> {
+    let Some(raw) = body.get("effects").filter(|v| v.is_array()) else {
+        return Ok(json!({ "error": error_json(m) }));
+    };
+    let req = fixes::Request {
+        select: None,
+        effects: raw.clone(),
+        expect: None,
+    };
+    let allocated = |i: usize| -> Option<usize> {
+        if i == 0 {
+            return Some(0);
+        }
+        let prefix = Effect::list_from_json(&Json::Array(raw.as_array()?[..i].to_vec())).ok()?;
+        r.store
+            .plan_effects(ctx, &prefix, &r.doc_store)
+            .ok()
+            .map(|p| p.new_ids.len())
+    };
+    let fixed = fixes::planning_fix(&req, SurfaceError::from(m.clone()), None, allocated);
+    Ok(surface_error_outcome(&fixed))
+}
+
+/// An execute-time error with its `fix` (§8, 3.3): a plan that cannot run
+/// as it stands re-plans through `apply` over its own core (`replan`); the
+/// digest form's mismatch re-plans the request as given.
+fn execute_error_outcome(
+    m: &MutationError,
+    plan: Option<&Json>,
+    request: Option<&fixes::Request>,
+) -> Result<Json, String> {
+    let fix = match (m.code.as_str(), plan, request) {
+        ("stale_plan" | "plan_mismatch", Some(plan), _) => fixes::replan(plan),
+        ("plan_mismatch", None, Some(req)) => Some(fixes::fix_request(req)),
+        _ => None,
+    };
+    let mut m = m.clone();
+    if let Some(fix) = fix
+        && !m.data.contains_key("fix")
+    {
+        m.data.insert("fix".to_owned(), json!(fix));
+    }
+    Ok(json!({ "error": error_json(&m) }))
+}
+
 /// Plan a selector step (§11.8): expand through the surface, plan through
 /// the store; `Ok(Err(outcome))` is the step's error outcome.
 fn plan_selector(
@@ -1245,7 +1306,10 @@ fn run_plan_effects(r: &mut Runner, body: &JsonMap<String, Json>) -> Result<Json
             r.plans.insert(r.step_index, plan);
             Ok(out)
         }
-        Err(e) => error_outcome(&e),
+        Err(e) => match e.as_mutation() {
+            Some(m) => plain_error_outcome(r, &ctx, body, &m.clone()),
+            None => error_outcome(&e),
+        },
     }
 }
 
@@ -1265,6 +1329,11 @@ fn run_execute(r: &mut Runner, body: &JsonMap<String, Json>) -> Result<Json, Str
             // §11.8: the digest form re-runs the selector; a hit that came or
             // went is `plan_mismatch`.
             let mut surfaced: Option<Json> = None;
+            let request = fixes::Request {
+                select: Some(req.select.clone()),
+                effects: req.templates.clone(),
+                expect: req.expect.clone(),
+            };
             let out = with_doc_store(r, |store, ds| {
                 let result: Result<_, SurfaceError> =
                     store.execute_replanned(&ctx, &plan_id, &origin, ds, |store, ds| {
@@ -1272,7 +1341,14 @@ fn run_execute(r: &mut Runner, body: &JsonMap<String, Json>) -> Result<Json, Str
                     });
                 match result {
                     Ok(receipt) => Ok(json!({ "receipt": receipt.to_json() })),
-                    Err(e) => {
+                    Err(mut e) => {
+                        // The digest form's mismatch (3.3): the request as given.
+                        if e.code == "plan_mismatch"
+                            && let Some(d) = e.data.as_mut().and_then(Json::as_object_mut)
+                            && !d.contains_key("fix")
+                        {
+                            d.insert("fix".to_owned(), json!(fixes::fix_request(&request)));
+                        }
                         surfaced = Some(surface_error_outcome(&e));
                         Err(omgbase_store::Error::Other(e.to_string()))
                     }
@@ -1284,11 +1360,27 @@ fn run_execute(r: &mut Runner, body: &JsonMap<String, Json>) -> Result<Json, Str
             };
         }
         let effects = effects_of(body)?;
-        return with_doc_store(r, |store, ds| {
+        let request = fixes::Request {
+            select: None,
+            effects: body.get("effects").cloned().unwrap_or(Json::Null),
+            expect: None,
+        };
+        let mut failed: Option<MutationError> = None;
+        let out = with_doc_store(r, |store, ds| {
             store
                 .execute_by_digest(&ctx, &plan_id, &effects, &origin, ds)
                 .map(|receipt| json!({ "receipt": receipt.to_json() }))
+                .inspect_err(|e| failed = e.as_mutation().cloned())
         });
+        return match failed {
+            // A re-plan's own error (a conflict, a stale guard) is a planning
+            // error of the request as given; a mismatch re-plans it whole.
+            Some(m) if m.code.as_str() == "plan_mismatch" => {
+                execute_error_outcome(&m, None, Some(&request))
+            }
+            Some(m) => plain_error_outcome(r, &ctx, body, &m),
+            None => out,
+        };
     }
     // The plan form: an earlier step's plan, or an authored object (admitted
     // as a client's would be: version, shape, digest).
@@ -1296,6 +1388,13 @@ fn run_execute(r: &mut Runner, body: &JsonMap<String, Json>) -> Result<Json, Str
         Some(v) => match Plan::admit(v) {
             Ok(plan) => plan,
             Err(Admission::Refused(m)) => {
+                // A mismatched plan's fix (3.3): the `apply` over its core.
+                let mut m = m;
+                if m.code.as_str() == "plan_mismatch"
+                    && let Some(fix) = fixes::replan(v)
+                {
+                    m.data.insert("fix".to_owned(), json!(fix));
+                }
                 return Ok(json!({ "error": error_json(&m) }));
             }
             Err(Admission::Invalid(msg)) => {
@@ -1313,11 +1412,18 @@ fn run_execute(r: &mut Runner, body: &JsonMap<String, Json>) -> Result<Json, Str
                 .ok_or_else(|| format!("execute: step {step} produced no plan"))?
         }
     };
-    with_doc_store(r, |store, ds| {
+    let plan_json = plan.to_json(false);
+    let mut failed: Option<MutationError> = None;
+    let out = with_doc_store(r, |store, ds| {
         store
             .execute_plan(&ctx, &plan, &origin, ds)
             .map(|receipt| json!({ "receipt": receipt.to_json() }))
-    })
+            .inspect_err(|e| failed = e.as_mutation().cloned())
+    });
+    match failed {
+        Some(m) => execute_error_outcome(&m, Some(&plan_json), None),
+        None => out,
+    }
 }
 
 /// §9 (2.3) `apply_effects { ts, effects, select?, expect?, origin, dry_run?,
@@ -1335,8 +1441,15 @@ fn run_apply_effects(r: &mut Runner, body: &JsonMap<String, Json>) -> Result<Jso
     let ctx = plan_ctx(r, &ts);
     let step_index = r.step_index;
     if let Some(req) = selector_of(body)? {
-        if !dry_run && let Err(e) = select::require_max(&req) {
-            return Ok(surface_error_outcome(&e));
+        if !dry_run && req.has_selector() && req.expect.is_none() {
+            // The fix (3.3): the same call bounded at the selection's size —
+            // the selector compiled (reads only) to count it; a selection the
+            // compile refuses reports its own error and fix.
+            let counted = select::expand(&mut r.store, &ctx, &r.doc_store, &req, HashMap::new());
+            return Ok(surface_error_outcome(&match counted {
+                Ok(x) => select::unbounded_apply(&req, x.selection.map_or(0, |s| s.cardinality)),
+                Err(e) => e,
+            }));
         }
         if dry_run {
             return match plan_selector(r, &ctx, &req)? {
@@ -1369,6 +1482,7 @@ fn run_apply_effects(r: &mut Runner, body: &JsonMap<String, Json>) -> Result<Jso
     }
     let effects = effects_of(body)?;
     let mut planned: Option<Plan> = None;
+    let mut failed: Option<MutationError> = None;
     let outcome = with_doc_store(r, |store, ds| {
         store
             .apply_effects(&ctx, &effects, &origin, ds, dry_run)
@@ -1380,7 +1494,14 @@ fn run_apply_effects(r: &mut Runner, body: &JsonMap<String, Json>) -> Result<Jso
                 }
                 EffectsOutcome::Receipt(receipt) => json!({ "receipt": receipt.to_json() }),
             })
-    })?;
+            .inspect_err(|e| failed = e.as_mutation().cloned())
+    });
+    if let Some(m) = failed {
+        // The one-shot apply fails at plan time (its execute follows the
+        // plan in one scope): the planning fix over the effects as written.
+        return plain_error_outcome(r, &ctx, body, &m);
+    }
+    let outcome = outcome?;
     if let Some(plan) = planned {
         r.plans.insert(step_index, plan);
     }

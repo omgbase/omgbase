@@ -580,7 +580,7 @@
           "expect": {
             "exit": 0,
             "stdout": "d_20\n",
-            "stderr": "  ok created /q.md\n"
+            "stderr": "  ok created /q.md\n    create /q.md (3 blocks)\n"
           }
         },
         {
@@ -687,7 +687,7 @@
           "expect": {
             "exit": 0,
             "stdout": "d_20\n",
-            "stderr": "  ok created /q.md\n"
+            "stderr": "  ok created /q.md\n    create /q.md (2 blocks)\n"
           }
         },
         {
@@ -751,7 +751,7 @@
           "expect": {
             "exit": 0,
             "stdout": "d_20\n",
-            "stderr": "  ok created /q.md\n"
+            "stderr": "  ok created /q.md\n    create /q.md (1 block)\n"
           }
         },
         {

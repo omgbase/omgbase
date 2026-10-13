@@ -850,15 +850,19 @@ fn every_write_over_the_reference_server_lands_like_local() {
         "{}",
         text(&r.stdout)
     );
+    // cli 4.3: the confirmation carries the Receipt's `summary` lines on
+    // both paths (the remote one from the reference server's Receipt).
     assert_eq!(
         text(&l.stderr),
         format!(
-            "  updating {task_two} (CAS pinned from current bytes)\n  ok committed · 1 document touched\n"
+            "  updating {task_two} (CAS pinned from current bytes)\n  ok committed · 1 document touched\n    set markdown of task {task_two} in /notes/a.md\n"
         )
     );
     assert_eq!(
         sans_mcp(&text(&r.stderr)),
-        "  ok committed · 1 document touched\n"
+        format!(
+            "  ok committed · 1 document touched\n    set markdown of task {task_two} in /notes/a.md\n"
+        )
     );
     // `--json` on the block sugar: the reference's remote branch prints the
     // tool's decorated result (`id`/`ids`), the local path the bare `ApplyResult`.
@@ -903,7 +907,10 @@ fn every_write_over_the_reference_server_lands_like_local() {
         text(&l.stderr),
         "update <doc>: stderr"
     );
-    assert_eq!(text(&l.stderr), "  ok committed · 1 document touched\n");
+    assert_eq!(
+        text(&l.stderr),
+        "  ok committed · 1 document touched\n    set content of /notes/c.md\n"
+    );
     let local_ids = ok_lines("update <doc>", &l);
     let remote_ids = ok_lines("update <doc>", &r);
     assert!(!remote_ids.is_empty(), "the minted id of the new paragraph");
@@ -998,16 +1005,14 @@ fn every_write_over_the_reference_server_lands_like_local() {
         text(&l.stderr),
         text(&r.stderr)
     );
-    assert_eq!(text(&l.stderr), "  ok committed · 1 document touched\n");
+    let confirmation = "  ok committed · 1 document touched\n    retarget 1 link /notes/b.md → /notes/moved.md in 1 document\n";
+    assert_eq!(text(&l.stderr), confirmation);
     assert_eq!(
         ok_lines("retarget --apply local", &l).len(),
         1,
         "the block id"
     );
-    assert_eq!(
-        sans_mcp(&text(&r.stderr)),
-        "  ok committed · 1 document touched\n"
-    );
+    assert_eq!(sans_mcp(&text(&r.stderr)), confirmation);
     // The remote lists the mints alone: the rewritten paragraph's re-parse
     // minted one discarded id (`spec/mutate` §10), the live block is not new.
     assert!(

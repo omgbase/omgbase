@@ -33,6 +33,7 @@ use serde_json::{Map, Value as Json, json};
 
 use crate::arguments::{argument_error, validate_arguments};
 use crate::error::{Result, SurfaceError};
+use crate::fixes;
 use crate::graph::{GraphArgs, graph_neighborhood};
 use crate::history;
 use crate::links;
@@ -1272,11 +1273,18 @@ impl Surface {
     /// the candidates `[{ id, doc_id }]` (pass the heading's id to
     /// `blocks_append` instead). Never an id lookup — the id form is
     /// `blocks_append`'s (§9).
+    ///
+    /// Each miss carries a `fix` (§9, 4.4): several matches → `blocks_append`
+    /// with the first candidate's id; none → the one heading whose text
+    /// matches up to ASCII case, as `blocks_append`, else the same
+    /// `docs_append` without `section` (the document's end). `call` is the
+    /// tool's own locator and text.
     fn resolve_section_heading(
         &self,
         doc_id: &str,
         doc_path: &str,
         section: &str,
+        call: (Option<&str>, Option<&str>, &str),
     ) -> Result<String> {
         let conn = self.store.conn();
         let needle = if section.trim_start_matches([' ', '\t']).starts_with('#') {
@@ -1295,12 +1303,23 @@ impl Surface {
             .filter(|(_, _, text)| normalize_text(text) == needle)
             .collect();
         let shown = reference_path(doc_path);
+        let (id, path, text) = call;
         match matches.len() {
-            0 => Err(SurfaceError::with_data(
-                "parent_missing",
-                format!("no heading {} in {shown}", Json::String(section.to_owned())),
-                json!({ "section": section, "path": shown }),
-            )),
+            0 => {
+                let near: Vec<&(String, String, String)> = rows
+                    .iter()
+                    .filter(|(_, _, t)| normalize_text(t).eq_ignore_ascii_case(&needle))
+                    .collect();
+                let fix = match near.as_slice() {
+                    [one] => fixes::append_into_heading(&one.0, text),
+                    _ => fixes::append_without_section(id, path, text),
+                };
+                Err(SurfaceError::with_data(
+                    "parent_missing",
+                    format!("no heading {} in {shown}", Json::String(section.to_owned())),
+                    json!({ "section": section, "path": shown, "fix": fix }),
+                ))
+            }
             1 => Ok(matches[0].0.clone()),
             n => Err(SurfaceError::with_data(
                 "ambiguous_heading",
@@ -1312,6 +1331,7 @@ impl Surface {
                     "section": section,
                     "path": shown,
                     "candidates": matches.iter().map(|(b, d, _)| json!({ "id": b, "doc_id": d })).collect::<Vec<_>>(),
+                    "fix": fixes::append_into_heading(&matches[0].0, text),
                 }),
             )),
         }
@@ -1522,9 +1542,6 @@ impl Surface {
         let preview = self.preview;
         let (plan, receipt) = match SelectRequest::from_args(args)? {
             Some(req) => {
-                if !preview {
-                    select::require_max(&req)?;
-                }
                 let semantic = self.selector_semantic(repo, req.select_str())?;
                 self.with_writes(root, |store, ds| {
                     if preview {
@@ -1532,6 +1549,16 @@ impl Surface {
                             select::plan_selected(store, ds, &ctx, &req, semantic)?,
                             None,
                         ));
+                    }
+                    // One-shot `apply` with a selector must bound it (§11.8):
+                    // the caller never saw the hits. The fix (3.3) is the same
+                    // call bounded at the selection's actual size — the
+                    // selector compiled (reads only) to count it; a selection
+                    // the compile itself refuses reports its own error and fix.
+                    if req.has_selector() && req.expect.is_none() {
+                        let x = select::expand(store, &ctx, ds, &req, semantic)?;
+                        let cardinality = x.selection.map_or(0, |s| s.cardinality);
+                        return Err(select::unbounded_apply(&req, cardinality));
                     }
                     let (plan, receipt) = store.apply_planned(&ctx, &origin, ds, |store, ds| {
                         select::plan_selected(store, ds, &ctx, &req, semantic)
@@ -1585,9 +1612,34 @@ impl Surface {
 
     // ---- dispatch -------------------------------------------------------------------------
 
-    /// Run a tool, returning its result or the error.
-    #[allow(clippy::too_many_lines)]
+    /// Run a tool, returning its result or the error — every error of the
+    /// effect tools carrying its corrected call (`data.fix`, `spec/surface`
+    /// §4 "Teaching", 4.4; [`crate::fixes`]).
     pub fn call_result(&mut self, name: &str, args: &Json) -> Result<Json> {
+        self.call_result_inner(name, args)
+            .map_err(|e| fixes::attach(name, args, e, |i| self.allocated_before(args, i)))
+    }
+
+    /// The symbols the first `i` effects of a plain request allocate (a
+    /// `$new.n` fix renames the symbol to the next one): a symbolic plan over
+    /// that prefix, nothing written; `None` when it cannot be planned.
+    fn allocated_before(&mut self, args: &Json, i: usize) -> Option<usize> {
+        if i == 0 {
+            return Some(0);
+        }
+        let prefix = args.get("effects")?.as_array()?.get(..i)?.to_vec();
+        let effects = parse_effects(&Json::Array(prefix)).ok()?;
+        let (repo, root) = self.scope(args).ok()?;
+        let ctx = self.plan_ctx(&repo);
+        self.with_writes(root.as_deref(), |store, ds| {
+            Ok(store.plan_effects(&ctx, &effects, ds)?)
+        })
+        .ok()
+        .map(|p| p.new_ids.len())
+    }
+
+    #[allow(clippy::too_many_lines)]
+    fn call_result_inner(&mut self, name: &str, args: &Json) -> Result<Json> {
         // §4 "Arguments": the shape first, so a wrong name is one
         // `filter_invalid` naming the nearest valid one.
         let spec =
@@ -2071,16 +2123,17 @@ impl Surface {
                 // By what the block is (the reference's `blocks_append`): a heading
                 // → the end of its section; a container → the end of its children;
                 // a leaf → `block_not_container` (append means into).
-                let row: Option<(String, Option<String>, i64)> = self
+                type AppendRow = (String, Option<String>, i64, Option<String>, String);
+                let row: Option<AppendRow> = self
                     .store
                     .conn()
                     .query_row(
-                        "SELECT b.type, d.format, (SELECT count(*) FROM blocks c WHERE c.parent_block = b.block_id AND c.deleted_commit IS NULL) FROM blocks b JOIN docs d ON d.doc_id = b.doc_id WHERE b.block_id = ?1 AND b.deleted_commit IS NULL",
+                        "SELECT b.type, d.format, (SELECT count(*) FROM blocks c WHERE c.parent_block = b.block_id AND c.deleted_commit IS NULL), b.parent_block, d.path FROM blocks b JOIN docs d ON d.doc_id = b.doc_id WHERE b.block_id = ?1 AND b.deleted_commit IS NULL",
                         params![block],
-                        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+                        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
                     )
                     .optional()?;
-                let Some((kind, format, children)) = row else {
+                let Some((kind, format, children, parent, doc_path)) = row else {
                     return Err(block_missing(&given));
                 };
                 let container = if format.as_deref().unwrap_or("markdown") == "markdown" {
@@ -2099,7 +2152,17 @@ impl Surface {
                             "block {block} is a {kind}, not a heading or a container; append means into — insert after it with blocks_insert {{ to: <its parent>, at: {{ after: {} }} }}",
                             Json::String(block.clone())
                         ),
-                        json!({ "id": block, "type": kind }),
+                        json!({
+                            "id": block,
+                            "type": kind,
+                            // §4 "Teaching" (4.4): the sibling insert, under the
+                            // leaf's parent (the document when top-level).
+                            "fix": fixes::append_after(
+                                parent.as_deref().unwrap_or(&reference_path(&doc_path)),
+                                &block,
+                                &text,
+                            ),
+                        }),
                     ));
                 };
                 let effects = sugar::insert(into, At::End, &text, None);
@@ -2116,7 +2179,12 @@ impl Surface {
                     Some(section) => {
                         let info = read::find_doc_by_id(self.store.conn(), &doc_id)?
                             .ok_or_else(|| block_missing(&doc_id))?;
-                        let heading = self.resolve_section_heading(&doc_id, &info.path, section)?;
+                        let heading = self.resolve_section_heading(
+                            &doc_id,
+                            &info.path,
+                            section,
+                            (arg_str(args, "id"), arg_str(args, "path"), &text),
+                        )?;
                         EffectTarget::Section {
                             heading_id: heading,
                         }
@@ -3039,15 +3107,29 @@ mod tests {
         );
         assert!(small.is_error);
         assert_eq!(small.body["error"], "selection_too_large", "{}", small.body);
-        // three hits under `max: 2`: the page is `bound + 1`, so the count is exact
-        assert_eq!(small.body["data"], json!({ "cardinality": 3, "max": 2 }));
+        // three hits under `max: 2`: the page is `bound + 1`, so the count is
+        // exact — and the fix (4.4) is the same call bounded at it.
+        assert_eq!(
+            small.body["data"],
+            json!({
+                "cardinality": 3,
+                "max": 2,
+                "fix": omgbase_mutate::canonical_json(&json!({ "select": select, "effects": templates, "expect": { "max": 3 } })),
+            })
+        );
         let one = s.call(
             "apply",
             json!({ "select": select, "effects": templates, "expect": { "max": 1 } }),
         );
+        // the page was cut at the bound: the count for the fix comes from a
+        // second, unbounded run — the same three.
         assert_eq!(
             one.body["data"],
-            json!({ "cardinality": ">1", "max": 1 }),
+            json!({
+                "cardinality": ">1",
+                "max": 1,
+                "fix": omgbase_mutate::canonical_json(&json!({ "select": select, "effects": templates, "expect": { "max": 3 } })),
+            }),
             "{}",
             one.body
         );
@@ -3645,9 +3727,11 @@ mod tests {
         assert!(!into.is_error, "{}", into.body);
         let leaf = s.call("blocks_append", json!({ "id": "b_1", "text": "x" }));
         assert_eq!(leaf.body["error"], "block_not_container", "{}", leaf.body);
+        // The fix (4.4): the sibling insert under the leaf's parent — the
+        // document itself for a top-level leaf.
         assert_eq!(
             leaf.body["data"],
-            json!({ "id": "b_1", "type": "paragraph" })
+            json!({ "id": "b_1", "type": "paragraph", "fix": "blocks_insert {\"at\":{\"after\":\"b_1\"},\"markdown\":\"x\",\"to\":\"/a.md\"}" })
         );
         let hist = s.call("blocks_history", json!({ "id": "b_1" }));
         let entries = hist.body.as_array().unwrap();
@@ -3677,7 +3761,7 @@ mod tests {
         assert!(!b.is_error, "{}", b.body);
         assert_eq!(
             b.body,
-            json!({ "plan_id": b.body["plan_id"], "commit": "c_0", "revisions": [{ "id": "d_0", "path": "/b.md", "hash": b.body["revisions"][0]["hash"] }], "new_ids": { "$new.0": "d_0", "$new.1": "b_0", "$new.2": "b_1" }, "committed": true }),
+            json!({ "plan_id": b.body["plan_id"], "commit": "c_0", "revisions": [{ "id": "d_0", "path": "/b.md", "hash": b.body["revisions"][0]["hash"] }], "new_ids": { "$new.0": "d_0", "$new.1": "b_0", "$new.2": "b_1" }, "committed": true, "summary": ["create /b.md (2 blocks)"] }),
             "the created document is revisions[0], its symbols the document then its blocks"
         );
         let a = s.call("docs_create", json!({ "path": "a.md", "markdown": a_src }));
@@ -3813,6 +3897,7 @@ mod tests {
                 "revisions",
                 "new_ids",
                 "committed",
+                "summary",
                 "retargeted",
                 "dangling"
             ]

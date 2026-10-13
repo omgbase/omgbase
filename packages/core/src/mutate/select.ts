@@ -8,6 +8,7 @@ import {
   type Effect, type EffectTarget,
 } from "./effects.js";
 import { MutationError } from "./tree.js";
+import { fixRequest, narrowedTo, withMember, type FixRequest } from "./canonical.js";
 
 // Query-directed planning (spec/mutate §11.8, 3.1): an OQX **selector** plus
 // effect **templates** compile into the concrete effects the planner lowers.
@@ -159,11 +160,28 @@ export function desugarLeader(v: string, here: string): unknown {
   return { oqx: src };
 }
 
-/** A `-> ` string where no expression is admitted — anywhere under `v`. */
-function refuseLeader(v: unknown, here: string): void {
-  if (isLeader(v)) throw selectionInvalid(`${here}: \`-> \` is not allowed here — this member takes no expression`);
-  if (Array.isArray(v)) v.forEach((x, k) => refuseLeader(x, `${here}[${k}]`));
-  else if (isRecord(v)) for (const [k, x] of Object.entries(v)) refuseLeader(x, `${here}.${k}`);
+/** The text a stray leader meant literally: a quoted string literal or an interpolation-free template literal folds to its text (as constant folding does), anything else is the rest of the string verbatim. */
+function literalOf(v: string): string {
+  const src = v.slice(EXPRESSION_LEADER.length);
+  try {
+    const item = parseExpression(src, "");
+    if (item.kind === "field") {
+      if (item.expr.kind === "lit" && typeof item.expr.value === "string") return item.expr.value;
+      if (item.expr.kind === "template" && item.expr.parts.length === 1 && typeof item.expr.parts[0] === "string") return item.expr.parts[0];
+    }
+  } catch {
+    // not an expression at all: the rest of the string is the literal
+  }
+  return src;
+}
+
+/** A `-> ` string where no expression is admitted — anywhere under `v`. The fix (3.3): the literal form, the same request with that member spelled literally (`literalOf`). */
+function refuseLeader(v: unknown, here: string, path: string[], fix: ((path: string[], literal: string) => string) | undefined): void {
+  if (isLeader(v)) {
+    throw selectionInvalid(`${here}: \`-> \` is not allowed here — this member takes no expression`, fix !== undefined ? { fix: fix(path, literalOf(v)) } : {});
+  }
+  if (Array.isArray(v)) v.forEach((x, k) => refuseLeader(x, `${here}[${k}]`, [...path, String(k)], fix));
+  else if (isRecord(v)) for (const [k, x] of Object.entries(v)) refuseLeader(x, `${here}.${k}`, [...path, k], fix);
 }
 
 /**
@@ -179,11 +197,14 @@ function refuseLeader(v: unknown, here: string): void {
  * (the slot is the top-level value, as for `{ oqx }`). Shape problems are the
  * shape check's.
  */
-export function desugarEffect(raw: unknown, index: number): unknown {
+export function desugarEffect(raw: unknown, index: number, request?: FixRequest): unknown {
   if (!isRecord(raw) || typeof raw.op !== "string") return raw;
   const here = `effects[${index}]`;
   const out: Record<string, unknown> = clone(raw);
   const slotKeys = new Set<string>(["op"]);
+  // The corrected example of a leader in a literal slot: the request as given with that member spelled literally.
+  const literalFix = request === undefined ? undefined : (path: string[], literal: string): string => fixRequest({ ...request, effects: withMember(request.effects, [String(index), ...path], literal) });
+  const refuse = (v: unknown, at: string, path: string[]): void => refuseLeader(v, at, path, literalFix);
   const leaderAt = (key: string): void => {
     slotKeys.add(key);
     if (isLeader(out[key])) out[key] = desugarLeader(out[key], `${here}.${key}`);
@@ -195,7 +216,7 @@ export function desugarEffect(raw: unknown, index: number): unknown {
     if (isLeader(t)) out[key] = desugarLeader(t, `${here}.${key}`);
     else if (isRecord(t)) {
       for (const member of ["id", "path"] as const) if (isLeader(t[member])) t[member] = desugarLeader(t[member], `${here}.${key}.${member}`);
-      for (const k of Object.keys(t)) if (k !== "id" && k !== "path") refuseLeader(t[k], `${here}.${key}.${k}`);
+      for (const k of Object.keys(t)) if (k !== "id" && k !== "path") refuse(t[k], `${here}.${key}.${k}`, [key, k]);
     }
   };
   const targets = (): void => {
@@ -206,7 +227,7 @@ export function desugarEffect(raw: unknown, index: number): unknown {
       if (isLeader(t)) list[k] = desugarLeader(t, `${here}.targets[${k}]`);
       else if (isRecord(t)) {
         if (isLeader(t.id)) t.id = desugarLeader(t.id, `${here}.targets[${k}].id`);
-        for (const m of Object.keys(t)) if (m !== "id") refuseLeader(t[m], `${here}.targets[${k}].${m}`);
+        for (const m of Object.keys(t)) if (m !== "id") refuse(t[m], `${here}.targets[${k}].${m}`, ["targets", String(k), m]);
       }
     });
   };
@@ -214,11 +235,11 @@ export function desugarEffect(raw: unknown, index: number): unknown {
     slotKeys.add("at");
     const a = out.at;
     if (!isRecord(a)) {
-      refuseLeader(a, `${here}.at`);
+      refuse(a, `${here}.at`, ["at"]);
       return;
     }
     for (const member of ["before", "after"] as const) if (isLeader(a[member])) a[member] = desugarLeader(a[member], `${here}.at.${member}`);
-    for (const k of Object.keys(a)) if (k !== "before" && k !== "after") refuseLeader(a[k], `${here}.at.${k}`);
+    for (const k of Object.keys(a)) if (k !== "before" && k !== "after") refuse(a[k], `${here}.at.${k}`, ["at", k]);
   };
   switch (out.op) {
     case "create": {
@@ -267,7 +288,7 @@ export function desugarEffect(raw: unknown, index: number): unknown {
     default:
       return out; // an unknown op: the shape check names it
   }
-  for (const key of Object.keys(out)) if (!slotKeys.has(key)) refuseLeader(out[key], `${here}.${key}`);
+  for (const key of Object.keys(out)) if (!slotKeys.has(key)) refuse(out[key], `${here}.${key}`, [key]);
   return out;
 }
 
@@ -281,6 +302,8 @@ interface Slot {
   kind: SlotKind;
   /** `effects[t].<path>` for messages */
   here: string;
+  /** the member's path inside the template as written (keys and indices), for a `fix` that rewrites it */
+  path: string[];
   expression: string;
   item: SelectItem;
   /** how a bound value lands in the concrete effect */
@@ -340,7 +363,7 @@ function admitTemplate(raw: unknown, index: number, root: Root, plain: boolean):
     const src = raw[key].oqx;
     delete base[key];
     probe[key] = "$sel";
-    slots.push({ name: key, kind: "string", here: `${here}.${key}`, expression: src, item: expr(src, key), put: (e, v) => { e[key] = v; } });
+    slots.push({ name: key, kind: "string", here: `${here}.${key}`, path: [key], expression: src, item: expr(src, key), put: (e, v) => { e[key] = v; } });
   };
   // A JSON-valued member (`value`): the top-level `{ oqx }` is the expression; nested ones are data.
   const jsonSlot = (key: string): void => {
@@ -349,7 +372,7 @@ function admitTemplate(raw: unknown, index: number, root: Root, plain: boolean):
     const src = raw[key].oqx;
     delete base[key];
     probe[key] = null;
-    slots.push({ name: key, kind: "json", here: `${here}.${key}`, expression: src, item: expr(src, key), put: (e, v) => { e[key] = v; } });
+    slots.push({ name: key, kind: "json", here: `${here}.${key}`, path: [key], expression: src, item: expr(src, key), put: (e, v) => { e[key] = v; } });
   };
   // A target member: `{ kind, id: { oqx } }` or `{ kind: "document", path: { oqx } }`, or (3.2) the whole target
   // `{ oqx }` — the identity the value names; absent → the hit when `defaultable` (never on a plain effect).
@@ -367,7 +390,7 @@ function admitTemplate(raw: unknown, index: number, root: Root, plain: boolean):
       const src = t.oqx;
       delete base[key];
       probe[key] = { kind: probeKind, id: "$sel" };
-      slots.push({ name: key, kind: "target", here: `${here}.${key}`, expression: src, item: expr(src, key), put: (e, v) => { e[key] = v; } });
+      slots.push({ name: key, kind: "target", here: `${here}.${key}`, path: [key], expression: src, item: expr(src, key), put: (e, v) => { e[key] = v; } });
       return null;
     }
     if (isRecord(t)) {
@@ -383,7 +406,7 @@ function admitTemplate(raw: unknown, index: number, root: Root, plain: boolean):
         base[key] = literal;
         (probe[key] as Record<string, unknown>)[member] = "$sel";
         slots.push({
-          name: key, kind: "identity", here: `${here}.${key}.${member}`, expression: src, item: expr(src, `${key}.${member}`),
+          name: key, kind: "identity", here: `${here}.${key}.${member}`, path: [key, member], expression: src, item: expr(src, `${key}.${member}`),
           put: (e, v) => { e[key] = { ...(e[key] as Record<string, unknown>), ...identityMember(member, v) }; },
         });
       }
@@ -409,7 +432,7 @@ function admitTemplate(raw: unknown, index: number, root: Root, plain: boolean):
           (base.targets as unknown[])[k] = {};
           (probe.targets as unknown[])[k] = { kind: "block", id: "$sel" };
           slots.push({
-            name: `targets_${k}`, kind: "target", here: `${here}.targets[${k}]`, expression: src, item: expr(src, `targets[${k}]`),
+            name: `targets_${k}`, kind: "target", here: `${here}.targets[${k}]`, path: ["targets", String(k)], expression: src, item: expr(src, `targets[${k}]`),
             put: (e, v) => { (e.targets as unknown[])[k] = v; },
           });
           return;
@@ -424,7 +447,7 @@ function admitTemplate(raw: unknown, index: number, root: Root, plain: boolean):
           (base.targets as unknown[])[k] = literal;
           ((probe.targets as unknown[])[k] as Record<string, unknown>).id = "$sel";
           slots.push({
-            name: `targets_${k}`, kind: "identity", here: `${here}.targets[${k}].id`, expression: src, item: expr(src, `targets[${k}].id`),
+            name: `targets_${k}`, kind: "identity", here: `${here}.targets[${k}].id`, path: ["targets", String(k), "id"], expression: src, item: expr(src, `targets[${k}].id`),
             put: (e, v) => { const arr = e.targets as Record<string, unknown>[]; arr[k] = { ...arr[k], ...identityMember("id", v) }; },
           });
         }
@@ -443,7 +466,7 @@ function admitTemplate(raw: unknown, index: number, root: Root, plain: boolean):
       const src = at[member].oqx;
       base.at = {};
       probe.at = { [member]: "$sel" };
-      slots.push({ name: "at", kind: "string", here: `${here}.at.${member}`, expression: src, item: expr(src, `at.${member}`), put: (e, v) => { e.at = { [member]: v }; } });
+      slots.push({ name: "at", kind: "string", here: `${here}.at.${member}`, path: ["at", member], expression: src, item: expr(src, `at.${member}`), put: (e, v) => { e.at = { [member]: v }; } });
     }
   };
 
@@ -458,7 +481,7 @@ function admitTemplate(raw: unknown, index: number, root: Root, plain: boolean):
           if (!isOqx(v)) return;
           delete (base.frontmatter as Record<string, unknown>)[k];
           (probe.frontmatter as Record<string, unknown>)[k] = null;
-          slots.push({ name: `fm_${j}`, kind: "json", here: `${here}.frontmatter.${k}`, expression: v.oqx, item: expr(v.oqx, `frontmatter.${k}`), put: (e, x) => { (e.frontmatter as Record<string, unknown>)[k] = x; } });
+          slots.push({ name: `fm_${j}`, kind: "json", here: `${here}.frontmatter.${k}`, path: ["frontmatter", k], expression: v.oqx, item: expr(v.oqx, `frontmatter.${k}`), put: (e, x) => { (e.frontmatter as Record<string, unknown>)[k] = x; } });
         });
       }
       break;
@@ -527,8 +550,21 @@ function validateExpect(v: unknown): SelectionExpect | undefined {
   return { max: v.max };
 }
 
+/**
+ * The fix of a refused selector source (3.3): the same request over an
+ * admitted root — `links` becomes `blocks` (a link lives in a block), any other
+ * source `docs` — spliced over the source's span of the written query.
+ */
+function rootFix(select: string, source: Query["source"], request: FixRequest | undefined): Record<string, unknown> {
+  if (request === undefined) return {};
+  const [start, end] = source.span;
+  const cps = Array.from(select);
+  const root = source.kind === "ident" && source.name === "links" ? "blocks" : "docs";
+  return { fix: fixRequest({ ...request, select: cps.slice(0, start).join("") + root + cps.slice(end).join("") }) };
+}
+
 /** The static admission of the selector itself (the design's writability pass, first release). */
-function admitSelector(select: string): { raw: Query; root: Root } {
+function admitSelector(select: string, request?: FixRequest): { raw: Query; root: Root } {
   let raw: Query;
   try {
     raw = parse(select);
@@ -545,8 +581,8 @@ function admitSelector(select: string): { raw: Query; root: Root } {
   }
   if (raw.values) throw selectionInvalid("select: a selector yields rows, not `values`");
   const root = rootTarget(raw.source);
-  if (root === null) throw selectionInvalid("select: a selector scans a root collection — `from docs`, `from blocks` or `from nodes`");
-  if (root === "links") throw selectionInvalid("select: `links` rows have no effect target — select docs, blocks or nodes");
+  if (root === null) throw selectionInvalid("select: a selector scans a root collection — `from docs`, `from blocks` or `from nodes`", rootFix(select, raw.source, request));
+  if (root === "links") throw selectionInvalid("select: `links` rows have no effect target — select docs, blocks or nodes", rootFix(select, raw.source, request));
   if (raw.follow !== null) throw selectionInvalid("select: `follow` is not allowed in a selector — a hit must be a row of the root");
   if (raw.from.length > 0) throw selectionInvalid("select: a body `from` re-projects the rows — a hit must be a row of the root");
   if (raw.offset !== null) throw selectionInvalid("select: `offset` is not allowed — a selection is a set, not a page");
@@ -575,13 +611,19 @@ function runQuery(store: Store, repoId: string, q: Query, limit: number): { hits
  */
 export function compileSelection(store: Store, repoId: string, select: unknown, expectRaw: unknown, templatesRaw: unknown): CompiledSelection {
   const expect = validateExpect(expectRaw);
-  const { rewritten, root, templates } = admitRequest(select, templatesRaw);
+  const request: FixRequest = { select, effects: templatesRaw, ...(expectRaw !== undefined ? { expect: expectRaw } : {}) };
+  const { rewritten, root, templates } = admitRequest(select, templatesRaw, request);
 
   const bound = expect?.max ?? SELECTION_CEILING;
   const { hits, truncated } = runQuery(store, repoId, rewritten, bound + 1);
   if (truncated || hits.length > bound) {
+    // The fix (3.3): the same request bounded at the selection's actual size — counted
+    // by a second, unbounded run when the first page was cut (the engine never plans
+    // a partial set, so the page bound is what it is; the count is for the example).
+    const count = truncated ? runQuery(store, repoId, rewritten, Number.MAX_SAFE_INTEGER).hits.length : hits.length;
     throw new MutationError("selection_too_large", `the selection has ${truncated ? `more than ${bound}` : String(hits.length)} hits, over the bound of ${bound}${expect === undefined ? " (the implicit ceiling; pass expect.max to raise it)" : ""} — narrow the selector or raise \`expect.max\``, {
       cardinality: truncated ? `>${bound}` : hits.length, max: bound, ...(expect === undefined ? { implicit: true } : {}),
+      fix: fixRequest({ select, effects: templatesRaw, expect: { max: count } }),
     });
   }
 
@@ -593,7 +635,7 @@ export function compileSelection(store: Store, repoId: string, select: unknown, 
       const k = effects.length;
       const row = { id: hit.id, path: hit.path };
       const origin: EffectOrigin = { template_index: t.index, row };
-      effects.push(bind(hit, t, k, origin, root));
+      effects.push(bind(hit, t, k, origin, root, request));
       origins.push(origin);
     }
   });
@@ -608,12 +650,12 @@ export function compileSelection(store: Store, repoId: string, select: unknown, 
 }
 
 /** The static half (admission + rewrite; no store): the rewritten query, its root and the admitted templates. */
-function admitRequest(select: unknown, templatesRaw: unknown): { rewritten: Query; root: Root; templates: Template[] } {
+function admitRequest(select: unknown, templatesRaw: unknown, request?: FixRequest): { rewritten: Query; root: Root; templates: Template[] } {
   if (typeof select !== "string" || select.trim() === "") throw selectionInvalid("`select` must be an OQX query (a non-empty string)");
   if (!Array.isArray(templatesRaw)) throw selectionInvalid("`effects` must be an array of effect templates");
   if (templatesRaw.length === 0) throw selectionInvalid("`effects` must name at least one template");
-  const { raw, root } = admitSelector(select);
-  const templates = templatesRaw.map((t, i) => admitTemplate(desugarEffect(t, i), i, root, false));
+  const { raw, root } = admitSelector(select, request);
+  const templates = templatesRaw.map((t, i) => admitTemplate(desugarEffect(t, i, request), i, root, false));
   // The rewrite: the slot items, named `__omg_sel_<t>_<slot>`, appended after
   // the user's items on the raw tree (so a user alias resolves into them).
   const items: SelectItem[] = [];
@@ -623,15 +665,30 @@ function admitRequest(select: unknown, templatesRaw: unknown): { rewritten: Quer
 
 /** The query a selector request compiles to (admission + rewrite, before any row is read) — `print` it to see what runs. */
 export function selectionQuery(select: unknown, templates: unknown): Query {
-  return admitRequest(select, templates).rewritten;
+  return admitRequest(select, templates, { select, effects: templates }).rewritten;
 }
 
 function slotName(t: number, slot: string): string {
   return `__omg_sel_${t}_${slot}`;
 }
 
+/**
+ * The fix of an ambiguous target (3.3): the slot spelled as the FIRST identity the
+ * expression yielded (a row by its id), and under a selector the selector narrowed
+ * to the row the expression was read from (`expect.max: 1`); a plain request keeps
+ * its effects with the slot rewritten.
+ */
+function ambiguousFix(request: FixRequest, t: Template, s: Slot, hit: OqxHit, root: Root, list: unknown[]): Record<string, unknown> {
+  const head = list[0];
+  const first = isRowRef(head) ? head.id : head;
+  if (typeof first !== "string") return {};
+  const effects = withMember(request.effects, [String(t.index), ...s.path], first);
+  if (request.select === undefined) return { fix: fixRequest({ effects }) };
+  return { fix: fixRequest({ select: narrowedTo(root, hit.id), effects, expect: { max: 1 } }) };
+}
+
 /** One hit × one template → the concrete effect (the binding table of §11.8). */
-function bind(hit: OqxHit, t: Template, k: number, origin: EffectOrigin, root: Root): Effect {
+function bind(hit: OqxHit, t: Template, k: number, origin: EffectOrigin, root: Root, request: FixRequest): Effect {
   const e: Record<string, unknown> = clone(t.base);
   const data = { effect_index: k, ...(origin.template_index !== undefined ? { template_index: origin.template_index } : {}), row: origin.row };
   if (t.defaultTarget !== null) {
@@ -648,7 +705,7 @@ function bind(hit: OqxHit, t: Template, k: number, origin: EffectOrigin, root: R
           throw new MutationError("target_missing", `${s.here}: the expression yielded no identity for row ${hit.id}`, { ...data, expression: s.expression });
         }
         if (Array.isArray(v)) {
-          throw new MutationError("ambiguous_target", `${s.here}: the expression yielded ${v.length} identities for row ${hit.id}; a target resolves to exactly one`, { ...data, expression: s.expression, count: v.length });
+          throw new MutationError("ambiguous_target", `${s.here}: the expression yielded ${v.length} identities for row ${hit.id}; a target resolves to exactly one`, { ...data, expression: s.expression, count: v.length, ...ambiguousFix(request, t, s, hit, root, v) });
         }
         if (typeof v !== "string" && !isRowRef(v)) throw selectionInvalid(`${s.here}: the expression yielded ${describeValue(v)}, not an identity (a string or a row)`, { ...data, expression: s.expression });
         if (s.kind === "identity") {
@@ -774,7 +831,8 @@ function scopeOf(store: Store, repoId: string, e: Record<string, unknown>, i: nu
 export function compilePlain(store: Store, repoId: string, raw: unknown): CompiledPlain {
   if (!Array.isArray(raw)) throw effectInvalid("`effects` must be an array of effects");
   if (raw.length === 0) throw effectInvalid("`effects` must name at least one effect");
-  const desugared = raw.map((e, i) => desugarEffect(e, i));
+  const request: FixRequest = { effects: raw };
+  const desugared = raw.map((e, i) => desugarEffect(e, i, request));
   if (!desugared.some(containsOqx)) return { effects: desugared.map((e, i) => validateEffect(e, i)), origins: [] };
 
   const effects: Effect[] = [];
@@ -809,7 +867,7 @@ export function compilePlain(store: Store, repoId: string, raw: unknown): Compil
     if (hit === undefined) throw g.missing();
     for (const t of g.members) {
       const origin: EffectOrigin = { row: { id: hit.id, path: hit.path } };
-      effects[t.index] = bind(hit, t, t.index, origin, g.root);
+      effects[t.index] = bind(hit, t, t.index, origin, g.root, request);
       origins[t.index] = origin;
     }
   }

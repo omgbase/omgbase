@@ -572,9 +572,42 @@ yielded a value of the wrong type, is `filter_invalid { reason, hint:
 (`op_index`, `block`, `current`, `retriable`, and since 2.3 `effect_index` —
 the index of the effect a planner error arose from, added to every error the
 planner or its kernel ops raise — `effects`, `focus`, `symbol`, `version`,
-`supported`, `expected`, `actual`, and since 3.1 `template_index`, `row`,
-`expression`, `count`, `cardinality`, `max`, `implicit`); messages are not
-pinned.
+`supported`, `expected`, `actual`, since 3.1 `template_index`, `row`,
+`expression`, `count`, `cardinality`, `max`, `implicit`, and since 3.3
+`fix`); messages are not pinned.
+
+**`fix` (3.3).** An error the engine can correct mechanically carries
+`data.fix`: a **literal corrected call** — the arguments the caller should
+send instead, as the canonical JSON of §11.5 (so both engines compose the
+same bytes; the members `select`, `effects`, `expect` appear only when the
+corrected call has them, in canonical key order), prefixed by a tool's name
+and one space when the corrected call is to another tool (`spec/surface`
+§9). It is built from the request that failed and from what the engine saw —
+never from a prose template with a hole left in it — and is the second of
+the three teaching surfaces (the ladders of `spec/surface` §4 are the first,
+the `summary` of §11.9 the third). The table; an error not listed, or one
+whose correction cannot be computed (a `$new.n` with no later `create`, a
+list whose first identity is not a string or a row), carries no `fix`:
+
+| Error | `fix` |
+| --- | --- |
+| `conflicting_effects` on a plain request | the same `effects` minus the **earlier** of the two (keep the later effect, as written) |
+| `conflicting_effects` under a selector, two hits | the request narrowed to the later effect's hit: `select` = `from <root> where id == "<hit id>"` (`<root>` by the id's prefix), the templates as written, `expect: { max: 1 }` |
+| `conflicting_effects` under a selector, one hit | the request minus the earlier effect's template |
+| `ambiguous_target` | the slot's member spelled as the **first** identity the expression yielded (a row by its `id`); under a selector the `select` is narrowed to the hit as above with `expect: { max: 1 }` |
+| `selection_too_large` | the same request with `expect: { max: <count> }`, `<count>` the selection's exact size — the page the engine refused when it was `bound + 1` rows, else a second, unbounded run of the same compiled query |
+| `filter_invalid` "`expect.max` is required on `apply` with `select`" | the same request with `expect: { max: <cardinality> }`, the selector compiled (reads only) to count it — a selection the compile refuses reports its own error and fix |
+| `filter_invalid` on a refused selector source (§11.8 step 1: `links`, or a source that is not a bare root) | the same request with the source spliced over its span in the written query: `links` → `blocks` (a link lives in a block), anything else → `docs` |
+| `filter_invalid` "`-> ` is not allowed here" (§11.8 "Sugar", a leader in a slot that takes no expression) | the literal form: the same request with that member spelled literally — a quoted string literal or an interpolation-free template literal folded to its text (as constant folding folds it), anything else the rest of the string after the leader |
+| `stale_plan` at plan time (an `expect.revision` that no longer holds) | the same request with that effect's `expect.revision` set to the document's current revision |
+| `stale_plan` at execute; `plan_mismatch` on the plan form | re-plan and commit in one call: `apply` over the plan's selector form `{ select: selection.query, effects: selection.templates, expect: selection.expect or { max: selection.cardinality } }` when it has a `selection`, else `{ effects: <the plan's effects> }` (none when the plan has no effects — `apply` takes at least one) |
+| `plan_mismatch` on the digest form | `apply` over the request as given: `{ select?, effects, expect? }` |
+| `target_missing { symbol }` for a `$new.n` no earlier effect created, on a plain request with a later `create` | the next `create` moved before the effect that uses the symbol, that symbol renamed to the one the create will then allocate (`$new.<symbols allocated so far>`) |
+
+The surface composes three more (`spec/surface` §9: `block_not_container`,
+`parent_missing` and `ambiguous_heading` on the append tools). The `fix` is
+pinned by the fixtures like any data field (`effects::conflicting-*`,
+`select-*`, `sugar-*`, `plan::stale-plan`, …).
 
 ## 9. Fixtures
 
@@ -634,7 +667,9 @@ through `plan_effects` → `observe` → `execute`, `plan::stale-plan`); `disk` 
 `{ materialized: [path…] }` (the rows cleared, in insertion order; a row kept
 for a foreign file is not listed); `plan_effects` → `{ plan }` or the error;
 `execute` → `{ receipt }` or the error; `apply_effects` → `{ plan }` /
-`{ receipt }` / the error; `canonical` → `{ json, digest }`. After the last step: `files` (path → bytes
+`{ receipt }` / the error (the Receipt whole, its `summary` included — the
+one place §11.9's lines are pinned, since a recorded Plan omits its
+`preview`); `canonical` → `{ json, digest }`. After the last step: `files` (path → bytes
 of the in-memory doc store), and the `spec/store` §9.4 projection of `docs`,
 `blocks`, `commits`, `revisions`, `dispositions`, `resurrection_pool`,
 `pending_materializations` (14.0; `[]` unless a step crashed). The fixture
@@ -932,7 +967,10 @@ blocks too), and the plan's `preview` carries `identity` and `retarget`
 planned, frozen with the plan as its `selection`. Since 3.2 the `-> expr`
 **leader** is the written form of an expression, a bare string is a target,
 and a plain request's expressions evaluate in their own target's row
-(§11.8 "Sugar"). `planner_v` is `"p3"`.
+(§11.8 "Sugar"). Since 3.3 the preview carries a **`summary`** — one line in
+words per effect, the plan as a worked example of itself (§11.9), repeated by
+the Receipt — and a correctable error a **`fix`**, a literal corrected call
+(§8). `planner_v` is `"p3"`.
 
 ### 11.1 Vocabulary
 
@@ -1061,6 +1099,7 @@ Plan {
   templates?: [Effect as written],   // (3.2, §11.8 "Sugar") a plain request's effects AS WRITTEN when one carried an
                                      // expression; not digested (the core holds the concrete effects); the intent record's
   preview?: { results: [{ ids }], revisions: [{ id, path, hash }], diffs: { path: { before, after } },
+              summary: [string],   // (3.3, §11.9) one line in words per resolved effect, in order; [] for a zero-hit selection
               identity?: { <doc id>: { matcher_v, summary, ops: [{ op_index, disposition, blocks, confidence, reason, detail? }], diagnostics } },
               retarget?: [{ effect_index, hits: [{ id, path, oldRaw, newRaw }], pairs: [{ from, to, hits }] }] }   // not digested; omittable
 }
@@ -1200,9 +1239,12 @@ and touches no file: the **zero-effects rule** (`spec/surface`
 `write-docs-update`).
 
 **Receipt** `{ plan_id, commit, revisions: [{ id, path, hash }], new_ids:
-{ "$new.n": <id> }, committed: true }`: `commit` the one `commits` row
-(`null` when the plan had nothing to commit); `revisions` one per ingest in
-effect order (a created document's `id` is the `d` its ingest minted);
+{ "$new.n": <id> }, committed: true, summary: [string] }`: `commit` the one
+`commits` row (`null` when the plan had nothing to commit); `revisions` one
+per ingest in effect order (a created document's `id` is the `d` its ingest
+minted); `summary` (3.3) the plan's `preview.summary` verbatim — what was
+committed, in words (§11.9; `[]` when the plan form was handed back without
+its `preview`);
 `new_ids` maps the plan's symbols to the ids the replay minted — the `i`-th
 block symbol to the `i`-th `b` minted during the replay (a created
 document's blocks included, 3.0 — every `b` of the request is a symbol), the
@@ -1429,7 +1471,82 @@ start of the written string (the wrapper's shift plus the leader's 3;
 whole `at`, a target member beside `id` / `path` — is `filter_invalid { hint:
 "selection" }` (`sugar-leader-in-non-expression-slot`), never literal data.
 
+### 11.9 The summary (3.3)
+
+`preview.summary` is **one line per resolved effect**, in plan order — the
+dropped duplicates of §11.3 produce none, a zero-hit selection gives `[]` —
+each a sentence in words a reader (or the agent that wrote the request) can
+check against its intent: the plan as a worked example of itself, which the
+Receipt repeats as `summary` and the CLI prints under its commit
+confirmation (`spec/cli` §4). Not digested. Both engines spell every line
+byte for byte by this table; the vocabulary:
+
+- **a document**: its `/`-rooted path (`spec/surface` §1 Paths); a created
+  document by its `create`'s path.
+- **a block**: a heading by its text, `heading "Risks"` (the visible text of
+  `spec/format` §4.1, as the live row's `text`; a block the plan creates —
+  a `$new.k` of a created document, a block an earlier insert minted — from
+  the planner's tree); any other block by its type and id, `paragraph b_12`,
+  `task b_9`, `list b_3`; a block whose row and tree are both unknown
+  `block <id>`. A block already in the store is named from its live row even
+  when an earlier effect of the plan rewrote it.
+- **a section**: `section "Risks"` (its heading's text).
+- **a value**: the canonical JSON of §11.5 (`false`, `"salt"`, `[1,2]`).
+- **counts**: `<n> <noun>` with an `s` on every noun but one — `1 block`,
+  `2 blocks`, `1 link`, `3 documents`, `2 pairs`, `offset` / `offsets`.
+- **a placement** (`insert` / `move` blocks): `at|to the end of <container>`
+  or `at|to the start of <container>` — `at` for an insert, `to` for a move;
+  the container a document (its path, nothing after it), a section
+  (`section "Risks" in <path>`) or a block (`<block name> in <path>`) — or
+  `before|after <block name> in <path>` for an anchored `at`.
+
+| Effect | Line |
+| --- | --- |
+| `create` | `create <path> (<n> blocks)` — `<n>` the top-level blocks of the parsed body (`create /lab/2026-03-notes.md (3 blocks)`) |
+| `insert` | `insert <n> blocks <placement>` — `<n>` the top-level blocks the markdown parsed to (the kernel result's `ids`): `insert 2 blocks at the end of section "Risks" in /x.md`, `insert 1 block after paragraph b_7 in /x.md`, `insert 1 block at the end of /x.md` |
+| `set frontmatter.<k>` | `set frontmatter.<k> = <value> in <path>` (`set frontmatter.verified = false in /substances/salt.md`) |
+| `unset frontmatter.<k>` | `unset frontmatter.<k> in <path>` |
+| `set content` | `set content of <path>` |
+| `set markdown` | `set markdown of <block> in <path>` (`set markdown of paragraph b_12 in /x.md`) |
+| `set attrs.checked` | `check <block> in <path>` for `true`, `uncheck <block> in <path>` for `false` (`check task b_9 in /x.md`) |
+| `set <prop>` on a node | `set <prop> = <value> on node <id> in <path>` |
+| `move` a document | `move <from> → <to>` (U+2192), plus ` (retarget <n> links in <m> documents)` when the inbound rewrite lowered — `<n>` the inbound links rewritten (the links that were not left dangling), `<m>` the source documents |
+| `move` blocks | `move <block> <placement>` for one block, `move <n> blocks <placement>` for several (`move paragraph b_12 after task b_7 in /x.md`, `move 3 blocks to the end of /b.md`) |
+| `remove` a document | `remove <path>` |
+| `remove` blocks | `remove <block> from <path>` for one, `remove <n> blocks from <path>` for several (`<path>` the first block's document — a kernel `remove` names blocks of one document) |
+| `split` | `split <block> at offset <a> in <path>`; several offsets `at offsets <a>, <b>` (`split paragraph b_12 at offset 40 in /x.md`) |
+| `merge` | `merge <n> blocks into <first block> in <path>` (`merge 2 blocks into paragraph b_12 in /x.md`) |
+| `retarget` | `retarget <n> links <from> → <to> in <m> documents` for one repair pair (as written), `retarget <n> links over <k> pairs in <m> documents` for several — `<n>` the hits, `<m>` the distinct documents they fall in (`retarget 3 links /a.md → /b.md in 2 documents`; `retarget 0 links /a.md → /b.md in 0 documents` for no hit) |
+
+A selector-expanded plan prefixes nothing: the lines are those of its
+concrete effects, so the counts are real. The lines are the reference's
+`effects.ts` (`ctx.summary`) and the port's `omgbase-mutate::effects`; the
+Receipt pins them in every committing fixture step (§9).
+
 ## Decisions
+
+- 2026-10-13, mutate 3.3: the teaching surfaces — the plan's `summary`
+  (§11.9) and the error `fix` (§8), both additive. A `summary` is one line
+  per resolved effect in a fixed vocabulary (documents by rooted path,
+  headings by text, other blocks by type and id, values in canonical JSON,
+  counts with plural `s`), outside the digest and repeated by the Receipt so
+  a committed write reads back in words; a `fix` is a literal corrected call
+  in canonical JSON (a tool name prefixed when it is another tool's), built
+  from the failed request — keep the later of two conflicting effects, the
+  first identity of an ambiguous list, the exact count of an oversized
+  selection, the literal form of a stray leader, the plan's effects as an
+  `apply` for a stale or mismatched plan, a `create` moved before the symbol
+  that needs it. No `plan_id` or intent record moves (`planner_v` stays
+  `"p3"`); the fixture `error` outcome gains `fix`, the recorded Receipt
+  `summary`: a minor. Fixtures: every committing step's receipt gains
+  `summary`; `effects::conflicting-effects-*`, `select-scalar-collision-
+  across-hits`, `select-expression-target-ambiguous`,
+  `select-expect-max-exceeded`, `select-apply-requires-max`,
+  `select-links-refused`, `sugar-leader-in-non-expression-slot`,
+  `insert-into-symbol-before-create-is-target-missing`, `plan-rejects-stale-
+  revision`, the stale/mismatch cases and `plan::stale-plan` gain `fix` (a
+  `plan_mismatch` over the authored empty core gains none — `apply` takes at
+  least one effect); nothing else moves.
 
 - 2026-10-13, mutate 3.2: the `-> expr` sugar (§11.8 "Sugar"; the
   minimal-tools-profile design §3/§8 as revised). The leader rule is exact

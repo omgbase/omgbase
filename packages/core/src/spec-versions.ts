@@ -18,10 +18,10 @@ export const SPEC_VERSIONS = {
   properties: "1.1",
   graph: "1.1",
   search: "2.0",
-  mutate: "3.2",
+  mutate: "3.3",
   sync: "2.2",
-  surface: "4.3",
-  cli: "4.2",
+  surface: "4.4",
+  cli: "4.3",
 } as const;
 
 export type SpecName = keyof typeof SPEC_VERSIONS;

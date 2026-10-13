@@ -3385,7 +3385,10 @@
                 }
               ],
               "new_ids": {},
-              "committed": true
+              "committed": true,
+              "summary": [
+                "set content of /a.md"
+              ]
             }
           }
         ],
@@ -3628,7 +3631,10 @@
                 }
               ],
               "new_ids": {},
-              "committed": true
+              "committed": true,
+              "summary": [
+                "set content of /a.md"
+              ]
             }
           }
         ],
@@ -3836,7 +3842,10 @@
                 }
               ],
               "new_ids": {},
-              "committed": true
+              "committed": true,
+              "summary": [
+                "set content of /a.md"
+              ]
             }
           }
         ],

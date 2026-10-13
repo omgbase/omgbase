@@ -10,6 +10,10 @@ import { NullDocStore } from "./doc-store.js";
 import { admitPlan, applyEffects, executeByDigest, executePlan, planDigest, planEffects, type Plan, type Receipt } from "./plan.js";
 import { SELECTION_CEILING, compileSelection, desugarEffect, selectionQuery } from "./select.js";
 import { MutationError } from "./tree.js";
+import { canonicalJson } from "./canonical.js";
+
+/** The `fix` of a selection error: the same request bounded (spec/mutate §8). */
+const fixOf = (select: unknown, effects: unknown, max: number): string => canonicalJson({ select, effects, expect: { max } });
 
 // spec/mutate §11.8: the selector binding — the rewrite (printed), the static
 // admission pass, the row → effects binding table and its typing, the
@@ -208,7 +212,11 @@ describe("row → effects (§11.8 step 3)", () => {
     expect(emptyList.code).toBe("target_missing");
     const one = refused(COMPLETED, [{ op: "set", target: { kind: "document", id: { oqx: '^docs collect { where type == "project" }' } }, field: "frontmatter.x", value: 1 }]);
     expect(one.code).toBe("ambiguous_target");
-    expect(one.data).toEqual({ effect_index: 0, template_index: 0, row: { id: "d_1", path: "/ws/alpha.md" }, expression: '^docs collect { where type == "project" }', count: 1 });
+    expect(one.data).toEqual({
+      effect_index: 0, template_index: 0, row: { id: "d_1", path: "/ws/alpha.md" }, expression: '^docs collect { where type == "project" }', count: 1,
+      // (3.3) the fix: the slot spelled as the first identity, the selector narrowed to the hit
+      fix: '{"effects":[{"field":"frontmatter.x","op":"set","target":{"id":"d_0","kind":"document"},"value":1}],"expect":{"max":1},"select":"from docs where id == \\"d_1\\""}',
+    });
     const many = refused(COMPLETED, [{ op: "set", target: { kind: "document", id: { oqx: '^docs collect { where type == "workstream" }' } }, field: "frontmatter.x", value: 1 }]);
     expect(many.data).toMatchObject({ count: 3 });
     const other = refused(COMPLETED, [{ op: "set", target: { kind: "document", id: { oqx: "1" } }, field: "frontmatter.x", value: 1 }]);
@@ -292,7 +300,7 @@ describe("cardinality (§11.8 step 2)", () => {
     expect(p.preconditions).toEqual({ docs: [], blocks: [], parents: [], absent_paths: [] });
     expect(p.selection).toEqual({ query: 'from docs where type == "nope"', templates: MARK, cardinality: 0, identities: [] });
     const r = applyEffects(store, { repoId, docStore, select: 'from docs where type == "nope"', expect: { max: 10 }, effects: MARK, origin }) as Receipt;
-    expect(r).toEqual({ plan_id: expect.any(String), commit: null, revisions: [], new_ids: {}, committed: true });
+    expect(r).toEqual({ plan_id: expect.any(String), commit: null, revisions: [], new_ids: {}, committed: true, summary: [] });
     expect(store.db.prepare("SELECT count(*) n FROM commits WHERE origin = 'api'").get()).toEqual({ n: 0 });
   });
 
@@ -300,14 +308,14 @@ describe("cardinality (§11.8 step 2)", () => {
     expect(plan(COMPLETED, MARK, 2).selection).toMatchObject({ expect: { max: 2 }, cardinality: 2 });
     const e = refused(COMPLETED, MARK, 1);
     expect(e.code).toBe("selection_too_large");
-    expect(e.data).toEqual({ cardinality: 2, max: 1 });
-    // a bound of 0 runs with a page of 1, so the page is truncated: the ">" form
-    expect(refused(COMPLETED, MARK, 0).data).toEqual({ cardinality: ">0", max: 0 });
+    expect(e.data).toEqual({ cardinality: 2, max: 1, fix: fixOf(COMPLETED, MARK, 2) });
+    // a bound of 0 runs with a page of 1, so the page is truncated: the ">" form (the fix counts the selection again, unbounded)
+    expect(refused(COMPLETED, MARK, 0).data).toEqual({ cardinality: ">0", max: 0, fix: fixOf(COMPLETED, MARK, 2) });
     // a first/single selection against max 0: the exact count too
-    expect(refused('docs first { where type == "project" }', MARK, 0).data).toEqual({ cardinality: 1, max: 0 });
+    expect(refused('docs first { where type == "project" }', MARK, 0).data).toEqual({ cardinality: 1, max: 0, fix: fixOf('docs first { where type == "project" }', MARK, 1) });
     const noMax = failure(() => applyEffects(store, { repoId, docStore, select: COMPLETED, effects: MARK, origin }));
     expect(noMax.code).toBe("filter_invalid");
-    expect(noMax.data).toMatchObject({ hint: "selection" });
+    expect(noMax.data).toMatchObject({ hint: "selection", fix: fixOf(COMPLETED, MARK, 2) });
     expect(noMax.message).toBe("`expect.max` is required on `apply` with `select` — bound the selection, or preview it with `plan`");
     expect(store.db.prepare("SELECT count(*) n FROM commits WHERE origin = 'api'").get()).toEqual({ n: 0 });
     // a dry run is a plan: no bound needed
@@ -320,10 +328,11 @@ describe("cardinality (§11.8 step 2)", () => {
     for (let i = 0; i < SELECTION_CEILING + 1; i++) ingestFile(store, repoId, `many/${String(i).padStart(4, "0")}.md`, "---\ntype: many\n---\n\n# M\n");
     const e = refused('from docs where type == "many"', MARK);
     expect(e.code).toBe("selection_too_large");
-    expect(e.data).toEqual({ cardinality: SELECTION_CEILING + 1, max: SELECTION_CEILING, implicit: true });
-    expect(refused('from docs where type == "many"', MARK, SELECTION_CEILING).data).toEqual({ cardinality: SELECTION_CEILING + 1, max: SELECTION_CEILING });
+    const many = 'from docs where type == "many"';
+    expect(e.data).toEqual({ cardinality: SELECTION_CEILING + 1, max: SELECTION_CEILING, implicit: true, fix: fixOf(many, MARK, SELECTION_CEILING + 1) });
+    expect(refused(many, MARK, SELECTION_CEILING).data).toEqual({ cardinality: SELECTION_CEILING + 1, max: SELECTION_CEILING, fix: fixOf(many, MARK, SELECTION_CEILING + 1) });
     ingestFile(store, repoId, "many/9999.md", "---\ntype: many\n---\n\n# M\n");
-    expect(refused('from docs where type == "many"', MARK).data).toEqual({ cardinality: `>${SELECTION_CEILING}`, max: SELECTION_CEILING, implicit: true });
+    expect(refused(many, MARK).data).toEqual({ cardinality: `>${SELECTION_CEILING}`, max: SELECTION_CEILING, implicit: true, fix: fixOf(many, MARK, SELECTION_CEILING + 2) });
     // exactly the ceiling passes
     expect(plan('from docs where type == "many" limit 1000', MARK).selection!.cardinality).toBe(SELECTION_CEILING);
   });
@@ -623,5 +632,30 @@ describe("the `-> ` sugar (§11.8 Sugar, 3.2)", () => {
       const again = planPlain([insert("ws/beta.md", "-> `## ${title}`")]);
       expect(executeByDigest(store, { repoId, docStore, planId: again.plan_id, effects: again.templates, origin }).commit).toBe("c_5");
     });
+  });
+});
+
+describe("the fix (§8, 3.3) under a selector", () => {
+  it("a refused source is respelled over an admitted root: links → blocks, anything else → docs", () => {
+    const links = refused('from links where dst_path == "/hub.md"', MARK);
+    expect(links.data.fix).toBe(canonicalJson({ select: 'from blocks where dst_path == "/hub.md"', effects: MARK }));
+    const nested = refused("from docs.blocks", MARK, 5);
+    expect(nested.code).toBe("filter_invalid");
+    expect(nested.data.fix).toBe(canonicalJson({ select: "from docs", effects: MARK, expect: { max: 5 } }));
+  });
+
+  it("a cross-hit collision narrows the selector to the later hit; a same-hit collision drops the earlier template", () => {
+    const cross = refused(COMPLETED, [{ op: "set", target: "hub.md", field: "frontmatter.x", value: "-> path" }]);
+    expect(cross.code).toBe("conflicting_effects");
+    expect(cross.data.fix).toBe(canonicalJson({ select: 'from docs where id == "d_2"', effects: [{ op: "set", target: "hub.md", field: "frontmatter.x", value: "-> path" }], expect: { max: 1 } }));
+    const same = refused(COMPLETED, [{ op: "set", field: "frontmatter.x", value: 1 }, { op: "set", field: "frontmatter.x", value: 2 }], 5);
+    expect(same.code).toBe("conflicting_effects");
+    expect(same.data.fix).toBe(canonicalJson({ select: COMPLETED, effects: [{ op: "set", field: "frontmatter.x", value: 2 }], expect: { max: 5 } }));
+  });
+
+  it("a stray leader in a template is spelled literally in the same request", () => {
+    const e = refused(COMPLETED, [{ op: "set", field: "-> frontmatter.x", value: 1 }], 5);
+    expect(e.code).toBe("filter_invalid");
+    expect(e.data.fix).toBe(canonicalJson({ select: COMPLETED, effects: [{ op: "set", field: "frontmatter.x", value: 1 }], expect: { max: 5 } }));
   });
 });

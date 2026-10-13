@@ -475,7 +475,12 @@ fn call_legacy(s: &mut Surface, name: &str, args: &Json) -> Result<Json, Surface
                 Some(section) => {
                     let info = read::find_doc_by_id(s.store.conn(), &doc_id)?
                         .ok_or_else(|| block_missing(&doc_id))?;
-                    let heading = s.resolve_section_heading(&doc_id, &info.path, section)?;
+                    let heading = s.resolve_section_heading(
+                        &doc_id,
+                        &info.path,
+                        section,
+                        (arg_str(args, "id"), arg_str(args, "path"), &text),
+                    )?;
                     Store::sections_append(&heading, &text)
                 }
                 None => Store::docs_append(&doc_id, &text),
@@ -546,7 +551,9 @@ struct Pair {
 /// (`hits`, `pairs`) as they came.
 fn as_kernel_view(tool: &str, result: &Json, plan: Option<&Json>) -> Json {
     if result.get("error").is_some() {
-        return result.clone();
+        // The corrected example (`data.fix`, 4.4) is the effect path's
+        // teaching; the kernel oracle never had one.
+        return strip_fix(result.clone());
     }
     let new_ids = result["new_ids"].as_object().cloned().unwrap_or_default();
     let realize = |id: &Json| -> Json {
@@ -589,6 +596,14 @@ fn as_kernel_view(tool: &str, result: &Json, plan: Option<&Json>) -> Json {
     Json::Object(m)
 }
 
+/// An error without its `data.fix` (4.4), for the oracle comparison.
+fn strip_fix(mut v: Json) -> Json {
+    if let Some(d) = v.get_mut("data").and_then(Json::as_object_mut) {
+        d.remove("fix");
+    }
+    v
+}
+
 impl Pair {
     fn new() -> Option<Self> {
         let files = corpus()?;
@@ -601,7 +616,9 @@ impl Pair {
     /// Run one call both ways; every observable must agree. Returns the
     /// sugar path's result (the Receipt, or the error).
     fn check(&mut self, label: &str, tool: &str, args: Json) -> Json {
-        let old = outcome(call_legacy(&mut self.legacy, tool, &args));
+        // The legacy path shares the heading resolution, so its miss carries
+        // the 4.4 `fix` too; the oracle compares everything but that.
+        let old = strip_fix(outcome(call_legacy(&mut self.legacy, tool, &args)));
         let (new, plan) = match self.sugar.call_result_with_plan(tool, &args) {
             Ok((r, p)) => (r, p),
             Err(e) => (e.to_json(), None),
@@ -1017,7 +1034,8 @@ fn effect_driven_sugar_tools_match_the_kernel_oracle_over_the_alchemy_corpus() {
             "commit",
             "revisions",
             "new_ids",
-            "committed"
+            "committed",
+            "summary"
         ]
     );
     p.ok(
@@ -1482,6 +1500,7 @@ fn document_operations_are_the_stores_builders() {
             "revisions",
             "new_ids",
             "committed",
+            "summary",
             "retargeted",
             "dangling"
         ]

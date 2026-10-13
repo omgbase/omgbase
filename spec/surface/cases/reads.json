@@ -2391,7 +2391,10 @@
               "$new.1": "b_8",
               "$new.2": "b_9"
             },
-            "committed": true
+            "committed": true,
+            "summary": [
+              "insert 1 block at the end of /log.md"
+            ]
           },
           {
             "plan_id": "5b7fe5f499c8769079100bba25b63d458a9cf79be0119ea72883ff5412f43049",
@@ -2407,7 +2410,10 @@
               "$new.0": "b_12",
               "$new.1": "b_13"
             },
-            "committed": true
+            "committed": true,
+            "summary": [
+              "insert 1 block at the end of /log.md"
+            ]
           },
           {
             "id": "d_0",
@@ -4230,7 +4236,10 @@
                   "before": "# One\n\nBack to [guide](/guide.md).\n\n## Setup\n\nAlso a setup section.\n",
                   "after": "# One\n\nBack to [guide](/guide.md).\n\n## Setup\n\nAlso a setup section.\n\nAppended.\n"
                 }
-              }
+              },
+              "summary": [
+                "insert 1 block at the end of section \"Setup\" in /notes/one.md"
+              ]
             }
           },
           {
@@ -4307,7 +4316,10 @@
                   "before": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n",
                   "after": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\nAppended.\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n"
                 }
-              }
+              },
+              "summary": [
+                "insert 1 block at the end of section \"Setup\" in /guide.md"
+              ]
             }
           },
           {
@@ -4384,7 +4396,10 @@
                   "before": "# One\n\nBack to [guide](/guide.md).\n\n## Setup\n\nAlso a setup section.\n",
                   "after": "# One\n\nBack to [guide](/guide.md).\n\n## Setup\n\nAlso a setup section.\n\nAppended.\n"
                 }
-              }
+              },
+              "summary": [
+                "insert 1 block at the end of section \"Setup\" in /notes/one.md"
+              ]
             }
           },
           {
@@ -4461,7 +4476,10 @@
                   "before": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n",
                   "after": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\nAppended.\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n"
                 }
-              }
+              },
+              "summary": [
+                "insert 1 block at the end of section \"Setup\" in /guide.md"
+              ]
             }
           },
           {
@@ -4470,7 +4488,8 @@
             "message": "no heading \"Nope\" in /guide.md",
             "data": {
               "section": "Nope",
-              "path": "/guide.md"
+              "path": "/guide.md",
+              "fix": "docs_append {\"path\":\"guide.md\",\"text\":\"x\"}"
             }
           },
           {
@@ -4561,7 +4580,10 @@
                   "before": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n",
                   "after": "---\ntitle: Guide\ntags: [a, b]\n---\n\n## New\n\nPara.\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n"
                 }
-              }
+              },
+              "summary": [
+                "insert 2 blocks at the start of /guide.md"
+              ]
             }
           },
           {
@@ -4643,7 +4665,10 @@
                   "before": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n",
                   "after": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- third item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n"
                 }
-              }
+              },
+              "summary": [
+                "insert 1 block after list_item b_5 in /guide.md"
+              ]
             }
           },
           {
@@ -4746,7 +4771,10 @@
                   "before": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n",
                   "after": "---\ntitle: Guide\ntags: [a, b]\n---\n\n- [ ] open task\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n"
                 }
-              }
+              },
+              "summary": [
+                "move task b_9 to the start of /guide.md"
+              ]
             }
           },
           {
@@ -4845,7 +4873,10 @@
                   "before": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n",
                   "after": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n- third item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n"
                 }
-              }
+              },
+              "summary": [
+                "insert 1 block at the end of list b_4 in /guide.md"
+              ]
             }
           },
           {
@@ -4948,7 +4979,10 @@
                   "before": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n",
                   "after": "---\ntitle: Guide\ntags: [a, b]\n---\n\n- [ ] open task\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n"
                 }
-              }
+              },
+              "summary": [
+                "move task b_9 to the start of /guide.md"
+              ]
             }
           },
           {
@@ -5054,7 +5088,10 @@
                   "before": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n",
                   "after": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n"
                 }
-              }
+              },
+              "summary": [
+                "remove 2 blocks from /guide.md"
+              ]
             }
           },
           {
@@ -5137,7 +5174,10 @@
                   "before": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n",
                   "after": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph \n\nwith a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n"
                 }
-              }
+              },
+              "summary": [
+                "split paragraph b_1 at offset 16 in /guide.md"
+              ]
             }
           },
           {
@@ -5231,7 +5271,10 @@
                   "before": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n",
                   "after": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]]. owner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n"
                 }
-              }
+              },
+              "summary": [
+                "merge 2 blocks into paragraph b_1 in /guide.md"
+              ]
             }
           },
           {
@@ -5325,7 +5368,10 @@
                   "before": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n",
                   "after": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]]. owner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n"
                 }
-              }
+              },
+              "summary": [
+                "merge 2 blocks into paragraph b_1 in /guide.md"
+              ]
             }
           },
           {
@@ -5418,7 +5464,10 @@
                   "before": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n",
                   "after": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nReplaced via node ref.\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n"
                 }
-              }
+              },
+              "summary": [
+                "set markdown of paragraph b_1 in /guide.md"
+              ]
             }
           },
           {
@@ -5497,7 +5546,10 @@
                   "before": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n",
                   "after": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/two.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n"
                 }
-              }
+              },
+              "summary": [
+                "set value = \"/notes/two.md\" on node n_7f86eccd7a7c in /guide.md"
+              ]
             }
           },
           {
@@ -5625,6 +5677,9 @@
                   "after": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[notes/one.md]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n"
                 }
               },
+              "summary": [
+                "retarget 1 link two → notes/one.md in 1 document"
+              ],
               "retarget": [
                 {
                   "effect_index": 0,
@@ -5728,6 +5783,9 @@
                   "after": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[notes/one.md]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n"
                 }
               },
+              "summary": [
+                "retarget 1 link over 2 pairs in 1 document"
+              ],
               "retarget": [
                 {
                   "effect_index": 0,
@@ -5876,6 +5934,9 @@
                   "after": "# One\n\nBack to [guide](/guide.md), edited.\n\n## Setup\n\nAlso a setup section.\n"
                 }
               },
+              "summary": [
+                "set content of /notes/one.md"
+              ],
               "identity": {
                 "d_1": {
                   "matcher_v": "m2.3",
@@ -6045,6 +6106,9 @@
                   "after": "# One\n\nBack to [guide](/guide.md), edited.\n\n## Setup\n\nAlso a setup section.\n"
                 }
               },
+              "summary": [
+                "set content of /notes/one.md"
+              ],
               "identity": {
                 "d_1": {
                   "matcher_v": "m2.3",
@@ -6108,7 +6172,10 @@
               }
             ],
             "new_ids": {},
-            "committed": true
+            "committed": true,
+            "summary": [
+              "check task b_9 in /guide.md"
+            ]
           },
           {
             "plan_id": "6d1c1e89a862102c9bac47ce6b729124babb6aab3ee6a75a46241e5c59a94631",
@@ -6121,7 +6188,10 @@
               }
             ],
             "new_ids": {},
-            "committed": true
+            "committed": true,
+            "summary": [
+              "uncheck task b_10 in /guide.md"
+            ]
           },
           {
             "plan_id": "5f05e195e4b53cac3f92bd7df7cf87d0b4e32d41f6eadb20251cf41e19ab29ca",
@@ -6136,7 +6206,10 @@
             "new_ids": {
               "$new.0": "b_21"
             },
-            "committed": true
+            "committed": true,
+            "summary": [
+              "insert 1 block at the end of /guide.md"
+            ]
           },
           {
             "id": "d_0",
@@ -6265,7 +6338,10 @@
               "$new.1": "b_22",
               "$new.2": "b_23"
             },
-            "committed": true
+            "committed": true,
+            "summary": [
+              "create /new.md (2 blocks)"
+            ]
           },
           {
             "error": "path_taken",
@@ -6283,7 +6359,11 @@
               }
             ],
             "new_ids": {},
-            "committed": true
+            "committed": true,
+            "summary": [
+              "set frontmatter.layer = \"draft\" in /new.md",
+              "unset frontmatter.kind in /new.md"
+            ]
           },
           {
             "plan_id": "e4822770dbeda536b3ef5bec2edaa4f430fd119fca31a2ef1d316de5741642b0",
@@ -6291,6 +6371,9 @@
             "revisions": [],
             "new_ids": {},
             "committed": true,
+            "summary": [
+              "move /new.md → /moved/new.md"
+            ],
             "retargeted": null,
             "dangling": []
           },
@@ -6314,7 +6397,10 @@
             "commit": "c_8",
             "revisions": [],
             "new_ids": {},
-            "committed": true
+            "committed": true,
+            "summary": [
+              "remove /moved/new.md"
+            ]
           },
           {
             "error": "doc_missing",
@@ -11243,7 +11329,10 @@
                   "before": "# Notes\n\nIntro.\n\n## Log\n\n- first\n- second\n\n## Log\n\nSecond log section.\n\n## Ideas\n\nA paragraph.\n\n> quoted\n",
                   "after": "# Notes\n\nIntro.\n\n## Log\n\n- first\n- second\n\n- appended under the first Log\n\n## Log\n\nSecond log section.\n\n## Ideas\n\nA paragraph.\n\n> quoted\n"
                 }
-              }
+              },
+              "summary": [
+                "insert 1 block at the end of section \"Log\" in /notes.md"
+              ]
             }
           },
           {
@@ -11321,7 +11410,10 @@
                   "before": "# Notes\n\nIntro.\n\n## Log\n\n- first\n- second\n\n## Log\n\nSecond log section.\n\n## Ideas\n\nA paragraph.\n\n> quoted\n",
                   "after": "# Notes\n\nIntro.\n\n## Log\n\n- first\n- second\n- third\n\n## Log\n\nSecond log section.\n\n## Ideas\n\nA paragraph.\n\n> quoted\n"
                 }
-              }
+              },
+              "summary": [
+                "insert 1 block at the end of list b_3 in /notes.md"
+              ]
             }
           },
           {
@@ -11330,7 +11422,8 @@
             "message": "block b_1 is a paragraph, not a heading or a container; append means into — insert after it with blocks_insert { to: <its parent>, at: { after: \"b_1\" } }",
             "data": {
               "id": "b_1",
-              "type": "paragraph"
+              "type": "paragraph",
+              "fix": "blocks_insert {\"at\":{\"after\":\"b_1\"},\"markdown\":\"x\",\"to\":\"/notes.md\"}"
             }
           },
           {
@@ -11357,7 +11450,8 @@
                   "id": "b_6",
                   "doc_id": "d_0"
                 }
-              ]
+              ],
+              "fix": "blocks_append {\"id\":\"b_2\",\"text\":\"x\"}"
             }
           },
           {
@@ -11366,7 +11460,8 @@
             "message": "no heading \"Nope\" in /notes.md",
             "data": {
               "section": "Nope",
-              "path": "/notes.md"
+              "path": "/notes.md",
+              "fix": "docs_append {\"path\":\"notes.md\",\"text\":\"x\"}"
             }
           },
           {
@@ -11443,7 +11538,10 @@
                   "before": "# Notes\n\nIntro.\n\n## Log\n\n- first\n- second\n\n## Log\n\nSecond log section.\n\n## Ideas\n\nA paragraph.\n\n> quoted\n",
                   "after": "# Notes\n\nIntro.\n\n## Log\n\n- first\n- second\n\n## Log\n\nSecond log section.\n\n## Ideas\n\nA paragraph.\n\n> quoted\n\nAnother idea.\n"
                 }
-              }
+              },
+              "summary": [
+                "insert 1 block at the end of section \"Ideas\" in /notes.md"
+              ]
             }
           },
           {
@@ -11459,7 +11557,10 @@
             "new_ids": {
               "$new.0": "b_12"
             },
-            "committed": true
+            "committed": true,
+            "summary": [
+              "insert 1 block at the end of section \"Ideas\" in /notes.md"
+            ]
           },
           {
             "id": "d_0",

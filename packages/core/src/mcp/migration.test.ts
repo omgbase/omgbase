@@ -415,6 +415,13 @@ async function migratedSide(tool: string, args: Args): Promise<Snapshot> {
 type Receipt = { plan_id: string; commit: string | null; revisions: { id: string; path: string; hash: string }[]; new_ids: Record<string, string>; committed: true; hits?: unknown; pairs?: unknown };
 type LegacyResult = { results: { ids: string[] }[]; revisions: { id: string; path: string; hash: string }[]; diffs?: Record<string, { before: string; after: string }>; committed: boolean; hits?: unknown; pairs?: unknown };
 
+function withoutFix(payload: unknown): unknown {
+  const p = payload as { data?: Record<string, unknown> };
+  if (!p || typeof p !== "object" || !p.data || !("fix" in p.data)) return payload;
+  const { fix: _fix, ...data } = p.data;
+  return { ...p, data };
+}
+
 async function compare(s: Scenario): Promise<void> {
   const legacyDry = await legacySide(s.tool, { ...s.args, dry_run: true });
   const legacy = await legacySide(s.tool, s.args);
@@ -423,7 +430,8 @@ async function compare(s: Scenario): Promise<void> {
   expect(migrated.outcome.ok, `4.0 ${migrated.outcome.ok ? "succeeded" : "failed"} where legacy ${legacy.outcome.ok ? "succeeded" : "failed"}: ${JSON.stringify(migrated.outcome.payload)}`).toBe(legacy.outcome.ok);
   if (!legacy.outcome.ok) {
     // The same error envelope: every tool keeps its pre-checks, the planner's `effect_index` is dropped.
-    expect(migrated.outcome.payload).toEqual(legacy.outcome.payload);
+    // (4.4) the `fix` is new on the Receipt path — the legacy envelope never carried one — so it is set aside here.
+    expect(withoutFix(migrated.outcome.payload)).toEqual(legacy.outcome.payload);
     expect(migrated.projection).toEqual(legacy.projection);
     expect(migrated.mints).toEqual(legacy.mints);
     return;

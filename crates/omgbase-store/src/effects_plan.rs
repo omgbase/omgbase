@@ -55,8 +55,8 @@ use omgbase_mutate::effects::{
     ScalarWrite, Selection, Target,
 };
 use omgbase_mutate::{
-    At, Effect, ErrorCode, Expect, MutBlock, MutDoc, MutationError, Op, Parent, To, parse_document,
-    render, render_block,
+    At, Effect, ErrorCode, Expect, MutBlock, MutDoc, MutationError, Op, Parent, SummaryLookup, To,
+    parse_document, render, render_block, summarize_effect, visible_text_of,
 };
 use omgbase_reconcile::Config;
 use rusqlite::{OptionalExtension, params};
@@ -85,7 +85,8 @@ pub struct PlanContext {
     pub config: Config,
 }
 
-/// §11.7 `Receipt`: `{ plan_id, commit, revisions, new_ids, committed: true }`.
+/// §11.7 `Receipt`: `{ plan_id, commit, revisions, new_ids, committed: true,
+/// summary }`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Receipt {
     pub plan_id: String,
@@ -95,6 +96,9 @@ pub struct Receipt {
     pub revisions: Vec<Revision>,
     /// `$new.<n>` → the id the replay minted for it.
     pub new_ids: Vec<(String, String)>,
+    /// The plan's `preview.summary` (3.3): what was committed, in words —
+    /// the confirmation text.
+    pub summary: Vec<String>,
 }
 
 impl Receipt {
@@ -110,6 +114,7 @@ impl Receipt {
             "revisions": self.revisions.iter().map(|r| json!({ "id": r.doc, "path": r.path, "hash": r.hash })).collect::<Vec<_>>(),
             "new_ids": new_ids,
             "committed": true,
+            "summary": self.summary,
         })
     }
 }
@@ -202,6 +207,97 @@ struct Planning<'a> {
     identity: Vec<(String, IdentityPreview)>,
     /// `preview.retarget`: per `retarget` effect, its hits and pairs (3.0).
     retarget: Vec<RetargetPreview>,
+    /// `preview.summary`: one line per resolved effect (3.3).
+    summary: Vec<String>,
+    /// Doc id → `(links, documents)` its `move` rewrote (`retarget_inbound`
+    /// over at least one inbound link), for the summary.
+    move_retargets: Vec<(String, (usize, usize))>,
+}
+
+/// What the summary words read (`omgbase_mutate::summary`, 3.3): the live
+/// row first — a block as it was before the plan — then the planner's trees
+/// (a `$new.k` of a created document), a created document's path by its
+/// symbol.
+struct Lookup<'a> {
+    store: &'a Store,
+    p: &'a Planning<'a>,
+    /// The `insert` effect being summarized: the ids its op reported.
+    inserted: Option<usize>,
+    /// The `retarget` effect being summarized: `(hits, documents)`.
+    retarget: Option<(usize, usize)>,
+}
+
+impl Lookup<'_> {
+    fn live_block(&self, id: &str) -> Option<(String, String, String)> {
+        if fx::parse_new_symbol(id).is_some() {
+            return None;
+        }
+        self.store
+            .conn
+            .query_row(
+                "SELECT type, text, doc_id FROM blocks WHERE block_id = ?1 AND deleted_commit IS NULL",
+                params![id],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .optional()
+            .ok()
+            .flatten()
+    }
+}
+
+impl SummaryLookup for Lookup<'_> {
+    fn block_descriptor(&self, id: &str) -> Option<(String, String)> {
+        if let Some((kind, text, _)) = self.live_block(id) {
+            return Some((kind, text));
+        }
+        let (_, b) = self.p.runner.locate_loaded(id)?;
+        Some((b.kind.clone(), visible_text_of(&b.raw, &b.kind)))
+    }
+
+    fn block_doc(&self, id: &str) -> Option<String> {
+        if let Some((_, _, doc)) = self.live_block(id) {
+            return Some(doc);
+        }
+        self.p
+            .runner
+            .locate_loaded(id)
+            .map(|(d, _)| d.doc.doc_id.clone())
+    }
+
+    fn doc_path(&self, doc_id: &str) -> Option<String> {
+        if fx::parse_new_symbol(doc_id).is_some() {
+            return self
+                .p
+                .creates
+                .iter()
+                .find(|c| c.symbol == doc_id)
+                .map(|c| c.path.clone());
+        }
+        doc_base(&self.store.conn, doc_id)
+            .ok()
+            .flatten()
+            .map(|b| b.path)
+    }
+
+    fn node_doc(&self, node_id: &str) -> Option<String> {
+        self.store.node_block(node_id).ok().map(|(doc, _)| doc)
+    }
+
+    fn inserted(&self) -> Option<usize> {
+        self.inserted
+    }
+
+    fn move_retarget(&self, doc_id: &str) -> Option<(usize, usize)> {
+        self.p
+            .move_retargets
+            .iter()
+            .find(|(d, _)| d == doc_id)
+            .map(|(_, counts)| *counts)
+    }
+
+    fn retarget_hits(&self) -> Option<(usize, usize)> {
+        self.retarget
+    }
 }
 
 /// The live row of a block as the planner needs it.
@@ -1036,6 +1132,12 @@ impl Store {
                 let inbound = inbound_links_to(&self.conn, &p.ctx.repo_id, id, from)?;
                 if *retarget_inbound && !inbound.is_empty() {
                     let plan = self.plan_inbound_retarget(id, from, to, &inbound)?;
+                    // The summary's counts (3.3): the links rewritten — every
+                    // inbound link but the dangling — in how many documents.
+                    p.move_retargets.push((
+                        id.clone(),
+                        (inbound.len() - plan.dangling.len(), plan.docs.len()),
+                    ));
                     for op in plan.ops {
                         if let Op::Update { block, expect, .. } = &op {
                             self.pin(
@@ -1482,10 +1584,55 @@ impl Store {
             return Ok(());
         }
         p.resolved.push(e.clone());
+        // The summary line (3.3) names its blocks BEFORE the lowering, as the
+        // reference does — a removed or merged `$new.k` is still in the tree
+        // — the live rows first (a block as it was before the plan), the
+        // trees for what the plan created. An insert counts the ids its op
+        // reported and a document move its rewritten links, so those two
+        // are worded after; a retarget its hits and their documents.
+        let retarget_counts = retarget_preview.as_ref().map(|r| {
+            let mut docs: Vec<&str> = Vec::new();
+            for h in &r.hits {
+                if !docs.contains(&h.path.as_str()) {
+                    docs.push(&h.path);
+                }
+            }
+            (r.hits.len(), docs.len())
+        });
         if let Some(preview) = retarget_preview {
             p.retarget.push(preview);
         }
-        self.apply_lowering(p, &e, retarget_ops)
+        let after = matches!(e, Effect::Insert { .. } | Effect::MoveDocument { .. });
+        let worded = (!after).then(|| self.summary_line(p, &e, None, retarget_counts));
+        self.apply_lowering(p, &e, retarget_ops)?;
+        let line = worded.unwrap_or_else(|| {
+            let inserted = match e {
+                Effect::Insert { .. } => p.runner.results.last().map(|r| r.ids.len()),
+                _ => None,
+            };
+            self.summary_line(p, &e, inserted, retarget_counts)
+        });
+        p.summary.push(line);
+        Ok(())
+    }
+
+    /// One resolved effect in words (`preview.summary`, 3.3).
+    fn summary_line(
+        &self,
+        p: &Planning<'_>,
+        e: &Effect,
+        inserted: Option<usize>,
+        retarget: Option<(usize, usize)>,
+    ) -> String {
+        summarize_effect(
+            e,
+            &Lookup {
+                store: self,
+                p,
+                inserted,
+                retarget,
+            },
+        )
     }
 
     // ---- plan (§11.6) ----------------------------------------------------------------------
@@ -1564,6 +1711,8 @@ impl Store {
             resolved: Vec::new(),
             identity: Vec::new(),
             retarget: Vec::new(),
+            summary: Vec::new(),
+            move_retargets: Vec::new(),
         };
         for (i, e) in effects.iter().enumerate() {
             self.lower_effect(&mut p, i, e)?;
@@ -1583,6 +1732,7 @@ impl Store {
             resolved,
             identity,
             retarget,
+            summary,
             ..
         } = p;
         let applied = runner.finish();
@@ -1709,6 +1859,7 @@ impl Store {
                 diffs,
                 identity,
                 retarget,
+                summary,
             }),
         })
     }
@@ -1800,6 +1951,13 @@ impl Store {
             commit,
             revisions,
             new_ids,
+            // The plan's words are the commit's (3.3): a plan echoed without
+            // its preview commits with an empty summary.
+            summary: plan
+                .preview
+                .as_ref()
+                .map(|p| p.summary.clone())
+                .unwrap_or_default(),
         })
     }
 

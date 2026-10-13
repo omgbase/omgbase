@@ -153,7 +153,11 @@
               "new_ids": {
                 "$new.0": "b_6"
               },
-              "committed": true
+              "committed": true,
+              "summary": [
+                "set frontmatter.status = \"active\" in /a.md",
+                "insert 1 block at the end of section \"Notes\" in /a.md"
+              ]
             }
           }
         ],
@@ -542,7 +546,11 @@
               "new_ids": {
                 "$new.0": "b_6"
               },
-              "committed": true
+              "committed": true,
+              "summary": [
+                "set frontmatter.status = \"active\" in /a.md",
+                "insert 1 block at the end of section \"Notes\" in /a.md"
+              ]
             }
           }
         ],
@@ -1512,7 +1520,8 @@
                 "revision": "r_1",
                 "hash": "8cc148bcce49b60b5f3df836f8c70e9b14692c5b6bd74492ab7af9564173fa68"
               },
-              "retriable": true
+              "retriable": true,
+              "fix": "{\"effects\":[{\"field\":\"frontmatter.status\",\"op\":\"set\",\"target\":{\"id\":\"d_0\",\"kind\":\"document\",\"path\":\"a.md\"},\"value\":\"active\"},{\"at\":\"end\",\"into\":{\"heading_id\":\"b_2\",\"kind\":\"section\"},\"markdown\":\"Second note.\",\"op\":\"insert\"}]}"
             }
           }
         ],
@@ -2150,7 +2159,8 @@
                 "hash": "f95225d3c9fdb3f4b24d3a293e96851cc013a3c067737efca85aabb20ae828e6"
               },
               "retriable": true,
-              "effect_index": 0
+              "effect_index": 0,
+              "fix": "{\"effects\":[{\"expect\":{\"revision\":\"r_0\"},\"into\":{\"kind\":\"document\",\"path\":\"a.md\"},\"markdown\":\"Appended.\",\"op\":\"insert\"}]}"
             }
           }
         ],
@@ -2536,7 +2546,11 @@
               "new_ids": {
                 "$new.0": "b_6"
               },
-              "committed": true
+              "committed": true,
+              "summary": [
+                "set frontmatter.status = \"active\" in /a.md",
+                "insert 1 block at the end of section \"Notes\" in /a.md"
+              ]
             }
           }
         ],
@@ -2916,7 +2930,8 @@
             "error": {
               "code": "plan_mismatch",
               "expected": "0000000000000000000000000000000000000000000000000000000000000000",
-              "actual": "8553091fda5e3833450a74e49c41bd3363c88c3dfce40f1dbf8ea5d61beff45f"
+              "actual": "8553091fda5e3833450a74e49c41bd3363c88c3dfce40f1dbf8ea5d61beff45f",
+              "fix": "{\"effects\":[{\"field\":\"frontmatter.status\",\"op\":\"set\",\"target\":{\"kind\":\"document\",\"path\":\"a.md\"},\"value\":\"active\"},{\"at\":\"end\",\"into\":{\"heading_id\":\"b_2\",\"kind\":\"section\"},\"markdown\":\"Second note.\",\"op\":\"insert\"}]}"
             }
           }
         ],
@@ -3751,7 +3766,8 @@
                   "id": "d_0"
                 },
                 "field": "frontmatter.status"
-              }
+              },
+              "fix": "{\"effects\":[{\"field\":\"frontmatter.status\",\"op\":\"set\",\"target\":{\"kind\":\"document\",\"path\":\"a.md\"},\"value\":\"done\"}]}"
             }
           }
         ],
@@ -4386,7 +4402,8 @@
                   "id": "d_0"
                 },
                 "field": "frontmatter.status"
-              }
+              },
+              "fix": "{\"effects\":[{\"field\":\"frontmatter.status\",\"op\":\"unset\",\"target\":{\"kind\":\"document\",\"path\":\"a.md\"}}]}"
             }
           }
         ],
@@ -4671,7 +4688,8 @@
                   "kind": "block",
                   "id": "b_3"
                 }
-              }
+              },
+              "fix": "{\"effects\":[{\"field\":\"markdown\",\"op\":\"set\",\"target\":{\"id\":\"b_3\",\"kind\":\"block\"},\"value\":\"gone\"}]}"
             }
           }
         ],
@@ -4956,7 +4974,8 @@
                   "kind": "block",
                   "id": "b_2"
                 }
-              }
+              },
+              "fix": "{\"effects\":[{\"field\":\"attrs.checked\",\"op\":\"set\",\"target\":{\"id\":\"b_2\",\"kind\":\"block\"},\"value\":true}]}"
             }
           }
         ],
@@ -5191,7 +5210,8 @@
                   "kind": "document",
                   "id": "d_0"
                 }
-              }
+              },
+              "fix": "{\"effects\":[{\"field\":\"content\",\"op\":\"set\",\"target\":{\"kind\":\"document\",\"path\":\"a.md\"},\"value\":\"# Title\\n\\nRewritten.\\n\"}]}"
             }
           }
         ],
@@ -5832,7 +5852,11 @@
               "new_ids": {
                 "$new.0": "b_6"
               },
-              "committed": true
+              "committed": true,
+              "summary": [
+                "set frontmatter.status = \"active\" in /a.md",
+                "insert 1 block at the end of section \"Notes\" in /a.md"
+              ]
             }
           },
           {
@@ -5842,7 +5866,8 @@
                 "revision": "r_1",
                 "hash": "b339f5187c030c344ff1f1adbca0c650d17625d0e98484a11c09cd10111db2f2"
               },
-              "retriable": true
+              "retriable": true,
+              "fix": "{\"effects\":[{\"field\":\"frontmatter.status\",\"op\":\"set\",\"target\":{\"id\":\"d_0\",\"kind\":\"document\",\"path\":\"a.md\"},\"value\":\"active\"},{\"at\":\"end\",\"into\":{\"heading_id\":\"b_2\",\"kind\":\"section\"},\"markdown\":\"Second note.\",\"op\":\"insert\"}]}"
             }
           }
         ],
@@ -6709,7 +6734,10 @@
                 }
               ],
               "new_ids": {},
-              "committed": true
+              "committed": true,
+              "summary": [
+                "set frontmatter.status = \"active\" in /a.md"
+              ]
             }
           },
           {
@@ -7334,7 +7362,10 @@
                 }
               ],
               "new_ids": {},
-              "committed": true
+              "committed": true,
+              "summary": [
+                "set frontmatter.layer = \"canon\" in /b.md"
+              ]
             }
           }
         ],
@@ -7541,7 +7572,10 @@
                 }
               ],
               "new_ids": {},
-              "committed": true
+              "committed": true,
+              "summary": [
+                "unset frontmatter.status in /a.md"
+              ]
             }
           }
         ],
@@ -7917,7 +7951,12 @@
                 "$new.1": "b_7",
                 "$new.2": "b_8"
               },
-              "committed": true
+              "committed": true,
+              "summary": [
+                "insert 1 block at the end of /a.md",
+                "insert 1 block after paragraph $new.0 in /a.md",
+                "set markdown of paragraph $new.0 in /a.md"
+              ]
             }
           }
         ],
@@ -8321,7 +8360,10 @@
                 }
               ],
               "new_ids": {},
-              "committed": true
+              "committed": true,
+              "summary": [
+                "check task b_2 in /list.md"
+              ]
             }
           }
         ],
@@ -8608,7 +8650,10 @@
                 "$new.0": "b_6",
                 "$new.1": "b_7"
               },
-              "committed": true
+              "committed": true,
+              "summary": [
+                "set content of /a.md"
+              ]
             }
           }
         ],
@@ -9036,7 +9081,13 @@
               "new_ids": {
                 "$new.0": "b_6"
               },
-              "committed": true
+              "committed": true,
+              "summary": [
+                "move paragraph b_5 to the end of section \"Notes\" in /a.md",
+                "split paragraph b_1 at offset 6 in /a.md",
+                "merge 2 blocks into paragraph b_3 in /a.md",
+                "remove heading \"Later\" from /a.md"
+              ]
             }
           }
         ],
@@ -9387,7 +9438,10 @@
               "commit": "c_2",
               "revisions": [],
               "new_ids": {},
-              "committed": true
+              "committed": true,
+              "summary": [
+                "remove /b.md"
+              ]
             }
           }
         ],
@@ -9772,7 +9826,11 @@
                 "$new.1": "b_6",
                 "$new.2": "b_7"
               },
-              "committed": true
+              "committed": true,
+              "summary": [
+                "create /new.md (2 blocks)",
+                "set frontmatter.status = \"draft\" in /new.md"
+              ]
             }
           }
         ],
@@ -10146,7 +10204,11 @@
                 "$new.2": "b_7",
                 "$new.3": "b_8"
               },
-              "committed": true
+              "committed": true,
+              "summary": [
+                "create /new.md (2 blocks)",
+                "insert 1 block at the end of /new.md"
+              ]
             }
           }
         ],
@@ -10548,7 +10610,11 @@
                 "$new.5": "b_10",
                 "$new.6": "b_11"
               },
-              "committed": true
+              "committed": true,
+              "summary": [
+                "create /new.md (5 blocks)",
+                "insert 1 block at the end of section \"Sec\" in /new.md"
+              ]
             }
           }
         ],
@@ -11038,7 +11104,11 @@
                 "$new.0": "d_1",
                 "$new.1": "b_6"
               },
-              "committed": true
+              "committed": true,
+              "summary": [
+                "create /new.md (1 block)",
+                "move paragraph b_5 to the end of /new.md"
+              ]
             }
           }
         ],
@@ -11450,7 +11520,11 @@
                 "$new.2": "b_7",
                 "$new.3": "b_8"
               },
-              "committed": true
+              "committed": true,
+              "summary": [
+                "create /new.md (2 blocks)",
+                "set markdown of paragraph $new.2 in /new.md"
+              ]
             }
           }
         ],
@@ -11824,7 +11898,11 @@
                 "$new.2": "b_7",
                 "$new.3": "b_8"
               },
-              "committed": true
+              "committed": true,
+              "summary": [
+                "create /new.md (3 blocks)",
+                "remove paragraph $new.2 from /new.md"
+              ]
             }
           }
         ],
@@ -12179,7 +12257,8 @@
             "error": {
               "code": "target_missing",
               "effect_index": 0,
-              "symbol": "$new.0"
+              "symbol": "$new.0",
+              "fix": "{\"effects\":[{\"markdown\":\"# New\",\"op\":\"create\",\"path\":\"new.md\"},{\"into\":{\"id\":\"$new.0\",\"kind\":\"document\"},\"markdown\":\"x\",\"op\":\"insert\"}]}"
             }
           }
         ],
@@ -12734,7 +12813,10 @@
               "new_ids": {
                 "$new.0": "b_8"
               },
-              "committed": true
+              "committed": true,
+              "summary": [
+                "move /a.md → /moved/a.md (retarget 1 link in 1 document)"
+              ]
             }
           }
         ],
@@ -13163,7 +13245,11 @@
               "new_ids": {
                 "$new.0": "b_8"
               },
-              "committed": true
+              "committed": true,
+              "summary": [
+                "move /a.md → /moved/a.md",
+                "retarget 1 link /a.md → /moved/a.md in 1 document"
+              ]
             }
           }
         ],
@@ -13567,7 +13653,8 @@
                   "kind": "path",
                   "path": "a.md"
                 }
-              }
+              },
+              "fix": "{\"effects\":[{\"markdown\":\"# Replacement\\n\",\"op\":\"create\",\"path\":\"a.md\"}]}"
             }
           }
         ],
@@ -14083,7 +14170,13 @@
                 "$new.2": "b_12",
                 "$new.3": "b_13"
               },
-              "committed": true
+              "committed": true,
+              "summary": [
+                "insert 1 block at the end of /hub.md",
+                "set frontmatter.rolled_up = true in /ws/alpha.md",
+                "insert 1 block at the end of /hub.md",
+                "set frontmatter.rolled_up = true in /ws/beta.md"
+              ]
             }
           }
         ],
@@ -14829,7 +14922,8 @@
               "row": {
                 "id": "d_2",
                 "path": "/ws/beta.md"
-              }
+              },
+              "fix": "{\"effects\":[{\"field\":\"frontmatter.last\",\"op\":\"set\",\"target\":{\"kind\":\"document\",\"path\":{\"oqx\":\"project\"}},\"value\":{\"oqx\":\"title\"}}],\"expect\":{\"max\":1},\"select\":\"from docs where id == \\\"d_2\\\"\"}"
             }
           }
         ],
@@ -15442,7 +15536,10 @@
                 }
               ],
               "new_ids": {},
-              "committed": true
+              "committed": true,
+              "summary": [
+                "set frontmatter.rolled_up = true in /hub.md"
+              ]
             }
           }
         ],
@@ -16066,7 +16163,8 @@
               "commit": null,
               "revisions": [],
               "new_ids": {},
-              "committed": true
+              "committed": true,
+              "summary": []
             }
           }
         ],
@@ -16589,7 +16687,8 @@
             "error": {
               "code": "selection_too_large",
               "cardinality": 2,
-              "max": 1
+              "max": 1,
+              "fix": "{\"effects\":[{\"field\":\"frontmatter.rolled_up\",\"op\":\"set\",\"value\":true}],\"expect\":{\"max\":2},\"select\":\"from docs where type == \\\"workstream\\\" and status == \\\"completed\\\"\"}"
             }
           }
         ],
@@ -17651,7 +17750,8 @@
                 "path": "/ws/alpha.md"
               },
               "expression": "^docs collect { where type == \"project\" }",
-              "count": 1
+              "count": 1,
+              "fix": "{\"effects\":[{\"field\":\"frontmatter.x\",\"op\":\"set\",\"target\":{\"id\":\"d_0\",\"kind\":\"document\"},\"value\":1}],\"expect\":{\"max\":1},\"select\":\"from docs where id == \\\"d_1\\\"\"}"
             }
           }
         ],
@@ -18187,7 +18287,10 @@
                 }
               ],
               "new_ids": {},
-              "committed": true
+              "committed": true,
+              "summary": [
+                "check task b_5 in /ws/alpha.md"
+              ]
             }
           }
         ],
@@ -18781,7 +18884,10 @@
               "new_ids": {
                 "$new.0": "b_10"
               },
-              "committed": true
+              "committed": true,
+              "summary": [
+                "set value = \"hub.md#status\" on node n_87022dd5cfad in /ws/beta.md"
+              ]
             }
           }
         ],
@@ -20000,7 +20106,11 @@
                 "$new.2": "b_12",
                 "$new.3": "b_13"
               },
-              "committed": true
+              "committed": true,
+              "summary": [
+                "insert 1 block at the end of /hub.md",
+                "insert 1 block at the end of /hub.md"
+              ]
             }
           }
         ],
@@ -20642,7 +20752,8 @@
         "steps": [
           {
             "error": {
-              "code": "filter_invalid"
+              "code": "filter_invalid",
+              "fix": "{\"effects\":[{\"field\":\"frontmatter.rolled_up\",\"op\":\"set\",\"value\":true}],\"select\":\"from blocks where predicate == \\\"links_to\\\"\"}"
             }
           }
         ],
@@ -21006,7 +21117,8 @@
           ],
           {
             "error": {
-              "code": "filter_invalid"
+              "code": "filter_invalid",
+              "fix": "{\"effects\":[{\"field\":\"frontmatter.rolled_up\",\"op\":\"set\",\"value\":true}],\"expect\":{\"max\":2},\"select\":\"from docs where type == \\\"workstream\\\" and status == \\\"completed\\\"\"}"
             }
           }
         ],
@@ -21562,7 +21674,11 @@
                 "$new.2": "d_5",
                 "$new.3": "b_11"
               },
-              "committed": true
+              "committed": true,
+              "summary": [
+                "create /notes/alpha.md (1 block)",
+                "create /notes/beta.md (1 block)"
+              ]
             }
           }
         ],
@@ -22316,7 +22432,8 @@
             "error": {
               "code": "plan_mismatch",
               "expected": "89fbfac4cb2ad7aec2e55c24a6bc5fbb7f125403441e0829ae1db44cd0e18e28",
-              "actual": "eba6250c136e602f4ec7f019e2792bc335967c4729fe493cdfb6db692ce8ff1b"
+              "actual": "eba6250c136e602f4ec7f019e2792bc335967c4729fe493cdfb6db692ce8ff1b",
+              "fix": "{\"effects\":[{\"field\":\"frontmatter.rolled_up\",\"op\":\"set\",\"value\":true}],\"select\":\"from docs where type == \\\"workstream\\\" and status == \\\"completed\\\"\"}"
             }
           }
         ],
@@ -23276,7 +23393,13 @@
                 "$new.2": "b_12",
                 "$new.3": "b_13"
               },
-              "committed": true
+              "committed": true,
+              "summary": [
+                "insert 1 block at the end of /hub.md",
+                "set frontmatter.rolled_up = true in /ws/alpha.md",
+                "insert 1 block at the end of /hub.md",
+                "set frontmatter.rolled_up = true in /ws/beta.md"
+              ]
             }
           }
         ],
@@ -24021,7 +24144,11 @@
                 "$new.0": "b_10",
                 "$new.1": "b_11"
               },
-              "committed": true
+              "committed": true,
+              "summary": [
+                "insert 1 block at the end of /ws/alpha.md",
+                "insert 1 block at the end of /ws/beta.md"
+              ]
             }
           }
         ],
@@ -25162,7 +25289,10 @@
               "new_ids": {
                 "$new.0": "b_10"
               },
-              "committed": true
+              "committed": true,
+              "summary": [
+                "insert 1 block at the end of /hub.md"
+              ]
             }
           }
         ],
@@ -25832,7 +25962,10 @@
               "new_ids": {
                 "$new.0": "b_10"
               },
-              "committed": true
+              "committed": true,
+              "summary": [
+                "insert 1 block at the end of /hub.md"
+              ]
             }
           }
         ],
@@ -27425,7 +27558,12 @@
                 "$new.0": "b_10",
                 "$new.1": "b_11"
               },
-              "committed": true
+              "committed": true,
+              "summary": [
+                "insert 1 block at the end of /ws/alpha.md",
+                "insert 1 block at the end of /hub.md",
+                "set frontmatter.seen = true in /ws/gamma.md"
+              ]
             }
           }
         ],
@@ -28275,7 +28413,12 @@
               "new_ids": {
                 "$new.0": "b_10"
               },
-              "committed": true
+              "committed": true,
+              "summary": [
+                "insert 1 block at the end of /ws/beta.md",
+                "check task b_5 in /ws/alpha.md",
+                "remove paragraph b_8 from /ws/beta.md"
+              ]
             }
           }
         ],
@@ -29090,7 +29233,14 @@
                 "$new.3": "b_12",
                 "$new.4": "b_13"
               },
-              "committed": true
+              "committed": true,
+              "summary": [
+                "create /n.md (2 blocks)",
+                "insert 1 block at the end of /n.md",
+                "set markdown of paragraph $new.2 in /n.md",
+                "set frontmatter.k = 1 in /n.md",
+                "remove heading \"N\" from /n.md"
+              ]
             }
           }
         ],
@@ -29618,7 +29768,8 @@
         "steps": [
           {
             "error": {
-              "code": "filter_invalid"
+              "code": "filter_invalid",
+              "fix": "resolve the locator to an id first: `blocks_resolve { locator }`, or a `query` whose hit is the block"
             }
           }
         ],
@@ -29687,7 +29838,8 @@
         "steps": [
           {
             "error": {
-              "code": "filter_invalid"
+              "code": "filter_invalid",
+              "fix": "{\"effects\":[{\"field\":\"frontmatter.x\",\"op\":\"set\",\"target\":\"hub.md\",\"value\":1}]}"
             }
           }
         ],
@@ -29881,7 +30033,10 @@
               "new_ids": {
                 "$new.0": "b_10"
               },
-              "committed": true
+              "committed": true,
+              "summary": [
+                "insert 1 block at the end of /ws/alpha.md"
+              ]
             }
           }
         ],
@@ -30509,7 +30664,11 @@
                 "$new.0": "b_10",
                 "$new.1": "b_11"
               },
-              "committed": true
+              "committed": true,
+              "summary": [
+                "set markdown of paragraph b_2 in /hub.md",
+                "insert 1 block at the end of section \"Status\" in /hub.md"
+              ]
             }
           }
         ],
@@ -31307,7 +31466,13 @@
                 "$new.1": "b_11",
                 "$new.2": "b_12"
               },
-              "committed": true
+              "committed": true,
+              "summary": [
+                "insert 1 block at the end of /ws/alpha.md",
+                "insert 1 block at the end of /ws/beta.md",
+                "insert 1 block at the end of /ws/alpha.md",
+                "set frontmatter.seen = true in /ws/gamma.md"
+              ]
             }
           }
         ],

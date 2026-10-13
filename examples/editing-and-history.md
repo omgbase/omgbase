@@ -38,11 +38,13 @@ $ omg query 'blocks count { where type == "task" and not attrs.checked and path 
 The idiom: a query emits the target block ids with `--ids`, and `omg done -`
 reads them from stdin and completes them. The pipe is the changeset boundary —
 `done` gathers every id into **one atomic commit** (here, one document touched).
-It echoes the ids it changed:
+It says what it did, one line per effect, then echoes the ids it changed:
 
 ```console
 $ omg query 'from blocks where type == "task" and not attrs.checked and path == "/lab/2026-02-notes.md"' --ids | omg done -
   ok committed · 1 document touched
+    check task b_as1y4cr in /lab/2026-02-notes.md
+    check task b_wp3t2ax in /lab/2026-02-notes.md
 b_as1y4cr
 b_wp3t2ax
 ```

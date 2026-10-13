@@ -3,7 +3,7 @@ import { applyEffectsDetailed, planEffects, referencePath, renderIdentityPlan, s
 import type { Cli } from "../context.js";
 import type { Command } from "../commands.js";
 import { CliUsageError, EXIT_OK, renderHelp } from "../output.js";
-import { readContent, extractContentOpts, receiptIds, defaultActor } from "./_mutate.js";
+import { readContent, extractContentOpts, receiptIds, defaultActor, renderSummary } from "./_mutate.js";
 import { cmdUpdate as cmdUpdateBlock } from "./mutate.js";
 import { remoteCall, remoteSugar, docLocator, requireDoc } from "./_remote.js";
 
@@ -111,6 +111,7 @@ async function runDocUpdate(cli: Cli, args: string[]): Promise<number> {
   const g = cli.render.g;
   const n = receipt.revisions.length;
   cli.io.err(cli.style.dim(`  ${cli.style.ok(g.ok)} committed · ${n} document${n === 1 ? "" : "s"} touched`));
+  renderSummary(cli, receipt.summary);
   for (const id of new Set(receiptIds(receipt, plan))) cli.io.out(id);
   return EXIT_OK;
 }

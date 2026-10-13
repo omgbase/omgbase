@@ -108,7 +108,7 @@ describe("plan + execute (§11.6, §11.7)", () => {
     expect(plan.new_ids).toEqual([{ symbol: "$new.0", kind: "block" }]);
     expect(mintId("b")).toBe("b_6"); // nothing burned by planning
     const receipt = executePlan(store, { ...base(), plan });
-    expect(receipt).toEqual({ plan_id: plan.plan_id, commit: "c_1", revisions: [{ id: "d_0", path: "a.md", hash: expect.any(String) }], new_ids: { "$new.0": "b_7" }, committed: true });
+    expect(receipt).toEqual({ plan_id: plan.plan_id, commit: "c_1", revisions: [{ id: "d_0", path: "a.md", hash: expect.any(String) }], new_ids: { "$new.0": "b_7" }, committed: true, summary: ['set frontmatter.status = "active" in /a.md', 'insert 1 block at the end of section "Notes" in /a.md'] });
     const commit = store.db.prepare("SELECT ops FROM commits WHERE commit_id = 'c_1'").get() as { ops: string };
     expect(commit.ops).toBe(canonicalJson({ v: 1, plan_id: plan.plan_id, effects: plan.effects }));
     expect(store.db.prepare("SELECT text FROM blocks WHERE block_id = 'b_7'").get()).toEqual({ text: "Second note." });
@@ -146,7 +146,7 @@ describe("plan + execute (§11.6, §11.7)", () => {
     const { preview: _p, ...noPreview } = plan;
     expect(admitPlan({ ...noPreview, diagnostics: ["whatever"] }).plan_id).toBe(plan.plan_id);
     const edited = { ...noPreview, effects: [...plan.effects].reverse() };
-    expect(() => admitPlan(edited)).toThrow(expect.objectContaining({ code: "plan_mismatch", data: { expected: plan.plan_id, actual: planDigest(edited as Plan) } }));
+    expect(() => admitPlan(edited)).toThrow(expect.objectContaining({ code: "plan_mismatch", data: { expected: plan.plan_id, actual: planDigest(edited as Plan), fix: canonicalJson({ effects: edited.effects }) } }));
     expect(() => admitPlan("nope")).toThrow(expect.objectContaining({ code: "filter_invalid" }));
   });
 
@@ -242,6 +242,59 @@ describe("plan + execute (§11.6, §11.7)", () => {
     expect(executePlan(store, { ...base(), docStore, plan: only }).new_ids).toEqual({ "$new.0": "d_2", "$new.1": "b_11" });
     expect(() => executePlan(store, { ...base(), docStore, plan: only })).toThrow(expect.objectContaining({ code: "path_taken", data: { path: "m.md" } }));
     expect(store.db.prepare("SELECT count(*) n FROM commits WHERE origin = 'api'").get()).toEqual({ n: 2 });
+  });
+});
+
+describe("the summary and the fix (§11.9, §8; 3.3)", () => {
+  const caught = (fn: () => unknown): MutationError => {
+    try {
+      fn();
+    } catch (e) {
+      if (e instanceof MutationError) return e;
+      throw e;
+    }
+    throw new Error("expected a MutationError");
+  };
+
+  it("the summary is one line per effect, deterministic, outside the digest, and the Receipt repeats it", () => {
+    const a = planEffects(store, { ...base(), effects: SLICE1 });
+    const b = planEffects(store, { ...base(), effects: SLICE1 });
+    expect(a.preview!.summary).toEqual(['set frontmatter.status = "active" in /a.md', 'insert 1 block at the end of section "Notes" in /a.md']);
+    expect(b.preview!.summary).toEqual(a.preview!.summary);
+    expect(Object.keys(planCore(a))).not.toContain("summary");
+    const receipt = executePlan(store, { ...base(), plan: a });
+    expect(receipt.summary).toEqual(a.preview!.summary);
+    // The plan form handed back without its preview: nothing to repeat.
+    const bare = planEffects(store, { ...base(), effects: [{ op: "set", target: "a.md", field: "frontmatter.k", value: 1 }] });
+    const { preview: _p, ...noPreview } = bare;
+    expect(executePlan(store, { ...base(), plan: noPreview }).summary).toEqual([]);
+  });
+
+  it("a stale replay and a digest mismatch carry the `apply` that re-plans: the plan's effects, or its selector form", () => {
+    const plan = planEffects(store, { ...base(), effects: SLICE1 });
+    executePlan(store, { ...base(), plan });
+    const stale = caught(() => executePlan(store, { ...base(), plan }));
+    expect(stale.code).toBe("stale_plan");
+    expect(stale.data.fix).toBe(canonicalJson({ effects: plan.effects }));
+    const mismatch = caught(() => executeByDigest(store, { ...base(), planId: "0".repeat(64), effects: SLICE1 }));
+    expect(mismatch.code).toBe("plan_mismatch");
+    expect(mismatch.data.fix).toBe(canonicalJson({ effects: SLICE1 }));
+    const select = 'from docs where path == "/a.md"';
+    const templates = [{ op: "set", field: "frontmatter.seen", value: true }];
+    const sp = planEffects(store, { ...base(), select, effects: templates });
+    executePlan(store, { ...base(), plan: sp });
+    const staleSel = caught(() => executePlan(store, { ...base(), plan: sp }));
+    expect(staleSel.data.fix).toBe(canonicalJson({ select, effects: templates, expect: { max: 1 } }));
+    const mismatchSel = caught(() => executeByDigest(store, { ...base(), planId: "0".repeat(64), effects: templates, select, expect: { max: 3 } }));
+    expect(mismatchSel.data.fix).toBe(canonicalJson({ select, effects: templates, expect: { max: 3 } }));
+  });
+
+  it("apply with select and no expect.max: the fix is the same call bounded at the selection's size", () => {
+    const select = "from docs";
+    const templates = [{ op: "set", field: "frontmatter.seen", value: true }];
+    const e = caught(() => applyEffects(store, { ...base(), select, effects: templates }));
+    expect(e.code).toBe("filter_invalid");
+    expect(e.data.fix).toBe(canonicalJson({ select, effects: templates, expect: { max: 1 } }));
   });
 });
 

@@ -230,7 +230,8 @@ export function renderPlan(cli: Cli, plan: Plan): number {
 /**
  * A Receipt (any write tool's result since 4.0 — a `links_*` result carries its
  * `hits`/`pairs` beside the receipt's keys): `--json` verbatim; human the
- * commit confirmation of §4 (one revision per touched document) and, on
+ * commit confirmation of §4 (one revision per touched document), the plan's
+ * summary lines under it (4.3: what was committed, in words) and, on
  * stdout, the ids the write names — the plan's `preview.results[].ids` with
  * every `$new.n` realized from `new_ids` when the plan is at hand with its
  * preview (a local write, any `execute`); else (a plan echoed without
@@ -248,8 +249,14 @@ export function renderReceipt(cli: Cli, receipt: Receipt, plan?: unknown): numbe
   const { render, style, io } = cli;
   const n = receipt.revisions.length;
   io.err(style.dim(`  ${style.ok(render.g.ok)} committed · ${n} document${n === 1 ? "" : "s"} touched`));
+  renderSummary(cli, receipt.summary);
   for (const id of ids) io.out(id);
   return EXIT_OK;
+}
+
+/** The Receipt's `summary` (spec/cli §4, 4.3): what was committed in words, one line per effect, indented under the confirmation on stderr. */
+export function renderSummary(cli: Cli, summary: readonly string[] | undefined): void {
+  for (const line of summary ?? []) cli.io.err(cli.style.dim(`    ${line}`));
 }
 
 export function receiptIds(receipt: Receipt, plan: unknown): string[] {

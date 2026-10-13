@@ -222,7 +222,7 @@
           "expect": {
             "exit": 0,
             "stdout": "b_309\n",
-            "stderr": "  updating b_309 (CAS pinned from current bytes)\n  ok committed · 1 document touched\n"
+            "stderr": "  updating b_309 (CAS pinned from current bytes)\n  ok committed · 1 document touched\n    set markdown of paragraph b_309 in /texts/mutus-liber.md\n"
           }
         },
         {
@@ -236,7 +236,7 @@
           "expect": {
             "exit": 0,
             "stdout": "b_311\n",
-            "stderr": "  ok committed · 1 document touched\n"
+            "stderr": "  ok committed · 1 document touched\n    check task b_311 in /texts/mutus-liber.md\n"
           }
         },
         {
@@ -398,7 +398,7 @@
           "expect": {
             "exit": 0,
             "stdout": "b_309\n",
-            "stderr": "  updating b_309 (CAS pinned from current bytes)\n  ok committed · 1 document touched\n"
+            "stderr": "  updating b_309 (CAS pinned from current bytes)\n  ok committed · 1 document touched\n    set markdown of paragraph b_309 in /texts/mutus-liber.md\n"
           }
         },
         {
@@ -414,7 +414,7 @@
           "expect": {
             "exit": 0,
             "stdout": "b_309\n",
-            "stderr": "  updating b_309 (CAS pinned from current bytes)\n  ok committed · 1 document touched\n"
+            "stderr": "  updating b_309 (CAS pinned from current bytes)\n  ok committed · 1 document touched\n    set markdown of paragraph b_309 in /texts/mutus-liber.md\n"
           }
         },
         {
@@ -535,7 +535,7 @@
           "expect": {
             "exit": 0,
             "stdout": "b_309\n",
-            "stderr": "  updating b_309 (CAS pinned from current bytes)\n  ok committed · 1 document touched\n"
+            "stderr": "  updating b_309 (CAS pinned from current bytes)\n  ok committed · 1 document touched\n    set markdown of paragraph b_309 in /texts/mutus-liber.md\n"
           }
         },
         {
@@ -551,7 +551,7 @@
           "expect": {
             "exit": 0,
             "stdout": "b_309\n",
-            "stderr": "  updating b_309 (CAS pinned from current bytes)\n  ok committed · 1 document touched\n"
+            "stderr": "  updating b_309 (CAS pinned from current bytes)\n  ok committed · 1 document touched\n    set markdown of paragraph b_309 in /texts/mutus-liber.md\n"
           }
         },
         {

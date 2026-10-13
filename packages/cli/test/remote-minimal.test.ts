@@ -60,7 +60,8 @@ describe("omg --server against `omg mcp --tools minimal`", () => {
   }, 60_000);
 
   it("done falls back to apply { effects } (no blocks_check on the server) and the file changes", () => {
-    const ids = local(["query", 'from blocks where type == "task" and not checked', "--ids"]).trim().split("\n").filter(Boolean);
+    // `order by text`: the default order is (path, id) and ids are random here, so without it `ids[0]` is either task.
+    const ids = local(["query", 'from blocks where type == "task" and not checked order by text', "--ids"]).trim().split("\n").filter(Boolean);
     expect(ids).toHaveLength(2);
     const receipt = JSON.parse(remote(["done", ids[0]!, "--json"])) as { committed: boolean; revisions: { path: string }[] };
     expect(receipt.committed).toBe(true);

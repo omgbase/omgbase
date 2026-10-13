@@ -188,7 +188,8 @@ export interface CrashOutcome {
 
 /** `{ code, op_index?, block?, current?, retriable? }` — README §8's pinned data fields — plus the
  *  effect layer's (2.3): `effect_index`, `effects`, `focus`, `symbol`, `version`, `supported`, `expected`, `actual`,
- *  and the selector's (3.1, §11.8): `template_index`, `row`, `expression`, `count`, `cardinality`, `max`, `implicit`. */
+ *  the selector's (3.1, §11.8): `template_index`, `row`, `expression`, `count`, `cardinality`, `max`, `implicit`,
+ *  and (3.3) `fix` — the corrected example, a literal call both engines compose byte for byte. */
 export interface ErrorOutcome {
   error: {
     code: string; op_index?: number; block?: string; current?: Record<string, unknown>; retriable?: boolean;
@@ -196,6 +197,7 @@ export interface ErrorOutcome {
     version?: unknown; supported?: unknown[]; expected?: string; actual?: string;
     template_index?: number; row?: Record<string, unknown>; expression?: string; count?: number;
     cardinality?: string | number; max?: number; implicit?: boolean;
+    fix?: string;
   };
 }
 
@@ -373,6 +375,7 @@ export function errorOutcome(e: unknown): ErrorOutcome {
   if (typeof d.cardinality === "string" || typeof d.cardinality === "number") error.cardinality = d.cardinality;
   if (typeof d.max === "number") error.max = d.max;
   if (typeof d.implicit === "boolean") error.implicit = d.implicit;
+  if (typeof d.fix === "string") error.fix = d.fix;
   return { error };
 }
 

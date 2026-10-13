@@ -19,10 +19,9 @@
 //     rungs of a tool in description order. A write tool's steps (WRITE_TOOLS)
 //     carry the fixed clock EXAMPLES_TS so their commits are deterministic.
 //
-// TODO(mutate 3.2 sugar, the next commit): the selector rungs are written in
-// the `{ "oqx": "<expr>" }` slot form and the document targets as `{ kind:
-// "document", path }`; both switch to the `-> expr` leader and bare paths when
-// that sugar lands in both engines (the design's §3), and the ladders shorten.
+// Since 4.4 the write rungs are spelled in the `spec/mutate` 3.2 sugar (bare
+// paths and `$new.n` as targets, the `-> expr` leader); the plans they produce
+// are the 4.3 object-form rungs' — PINNED_4_3 below holds those digests.
 import { describe, it, expect } from "vitest";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -36,8 +35,27 @@ const EXAMPLES_FILE = fileURLToPath(new URL("../../../../spec/surface/cases/exam
 export const EXAMPLES_TS = "2026-10-13T00:00:00.000Z";
 /** The one case of the suite: every rung, in order, over one workspace. */
 export const EXAMPLES_CASE = "ladders";
-/** Client portability: keep a description under about this many characters (the design's bound is ~900; `plan`'s targets shrink with the sugar of the next commit). */
-const DESCRIPTION_BUDGET = 1400;
+/** Client portability: keep a description under about this many characters (the design's bound; `plan`'s is the longest). */
+const DESCRIPTION_BUDGET = 900;
+
+/**
+ * The `plan_id`s the 4.3 ladders produced (spec/surface 4.3 `examples.json`,
+ * object-form targets and `{ oqx }` slots) for the rungs whose INTENT the 4.4
+ * sugar rewrite kept — keyed by the rung's position among the `plan`/`apply`/
+ * `execute` steps. A rung respelled in the 3.2 sugar must still produce exactly
+ * these (the sugar rewrites the request, never the plan — spec/mutate §11.8
+ * "Sugar"). The three other `plan` rungs changed intent to fit the 900-char
+ * budget (shorter path and texts, no `expect`, a `-> ` template in the digested
+ * `selection.templates`), so their digests moved and are pinned by the suite.
+ */
+export const PINNED_4_3: Record<string, string> = {
+  "apply:0": "cd124e64dfc05c5fbf938afbb0b112207fab04216584925e4c2a68c81c439581",
+  "apply:1": "8b7827024a4569f93ca00b30ef6d1042302a81a2c85d88cce7137aa9a0487fdb",
+  "apply:2": "2cedd989a0b4ab67f54cc99e9673d6bb47c6906e43604cd674bd3bcb2aae0a65",
+  "plan:0": "3ece126452106400210f07047029a961691b814252ba4437f5a5f1c3301629da",
+  "plan:1": "70b41c26104eb9976be7691337c56f61bdae0512e73e69e161e8dd24a6b81979",
+  "execute:0": "3ece126452106400210f07047029a961691b814252ba4437f5a5f1c3301629da",
+};
 
 const PLACEHOLDER = /<[^>]*>/;
 
@@ -165,6 +183,22 @@ describe("example ladders (spec/surface §4 \"Descriptions\")", () => {
     expect(tools.sort()).toEqual([...MINIMAL_TOOLS].sort());
     const order = Object.keys(descriptions).filter((t) => MINIMAL_TOOLS.includes(t));
     expect([...new Set(exampleSteps(descriptions).map((s) => s.read.tool))]).toEqual(order);
+  });
+
+  it("the sugar-spelled write rungs produce exactly the plans the 4.3 object-form rungs did (examples.json's recorded plan_ids)", () => {
+    const file = JSON.parse(readFileSync(EXAMPLES_FILE, "utf8")) as ExamplesFile;
+    const c = file.cases[0]!;
+    const results = (c.expect as { steps: { plan_id?: string }[] }).steps;
+    const seen: Record<string, number> = {};
+    const found: Record<string, string> = {};
+    c.steps.forEach((s, i) => {
+      const t = s.read.tool;
+      if (t !== "plan" && t !== "apply" && t !== "execute") return;
+      found[`${t}:${seen[t] ?? 0}`] = results[i]!.plan_id ?? "<no plan_id>";
+      seen[t] = (seen[t] ?? 0) + 1;
+    });
+    for (const [k, digest] of Object.entries(PINNED_4_3)) expect(found[k], k).toBe(digest);
+    expect(Object.keys(found).sort()).toEqual(["apply:0", "apply:1", "apply:2", "execute:0", "plan:0", "plan:1", "plan:2", "plan:3", "plan:4"]);
   });
 
   it("spec/surface/cases/examples.json's steps are exactly the extraction, bytewise (the drift gate; SURFACE_SPEC_UPDATE=1 regenerates)", () => {

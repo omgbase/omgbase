@@ -19,7 +19,7 @@
           "expect": {
             "exit": 0,
             "stdout": "b_328\n",
-            "stderr": "  ok committed · 1 document touched\n"
+            "stderr": "  ok committed · 1 document touched\n    insert 1 block at the end of list b_310 in /texts/mutus-liber.md\n"
           }
         },
         {
@@ -64,7 +64,7 @@
           "expect": {
             "exit": 0,
             "stdout": "b_328\n",
-            "stderr": "  ok committed · 1 document touched\n"
+            "stderr": "  ok committed · 1 document touched\n    insert 1 block at the start of list b_310 in /texts/mutus-liber.md\n"
           }
         },
         {
@@ -98,7 +98,7 @@
           "expect": {
             "exit": 0,
             "stdout": "b_328\n",
-            "stderr": "  ok committed · 1 document touched\n"
+            "stderr": "  ok committed · 1 document touched\n    insert 1 block after task b_311 in /texts/mutus-liber.md\n"
           }
         },
         {
@@ -116,7 +116,7 @@
           "expect": {
             "exit": 0,
             "stdout": "b_329\n",
-            "stderr": "  ok committed · 1 document touched\n"
+            "stderr": "  ok committed · 1 document touched\n    insert 1 block before task b_311 in /texts/mutus-liber.md\n"
           }
         },
         {
@@ -216,7 +216,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "{\"version\":1,\"planner_v\":\"p3\",\"effects\":[{\"op\":\"insert\",\"into\":{\"kind\":\"block\",\"id\":\"b_310\"},\"at\":\"start\",\"markdown\":\"- [ ] Zeroth\"}],\"opset\":{\"creates\":[],\"moves\":[],\"tombstones\":[],\"set_frontmatter\":[],\"ops\":[{\"op\":\"insert\",\"to\":{\"parent\":\"b_310\",\"at\":\"start\"},\"markdown\":\"- [ ] Zeroth\"}]},\"preconditions\":{\"docs\":[{\"id\":\"d_17\",\"path\":\"texts/mutus-liber.md\",\"base_revision\":\"r_17\",\"hash\":\"ccd682da7c3f643751e4aee291b18b75995ef9f883ececc5f925031bb319f4b5\"}],\"blocks\":[],\"parents\":[],\"absent_paths\":[]},\"new_ids\":[{\"symbol\":\"$new.0\",\"kind\":\"block\"},{\"symbol\":\"$new.1\",\"kind\":\"block\"}],\"plan_id\":\"1d3119423af4ae29caec4985abe58da0629786079f23562d16514e715e2cf3f9\",\"diagnostics\":[],\"preview\":{\"results\":[{\"ids\":[\"$new.1\"]}],\"revisions\":[{\"id\":\"d_17\",\"path\":\"/texts/mutus-liber.md\",\"hash\":\"f276b4db160831ee5780ee160e6c575d8ee068ca61b7ee69668ea003fce4e726\"}],\"diffs\":{\"/texts/mutus-liber.md\":{\"before\":\"---\\ntype: text\\nlayer: draft\\ntradition: western\\nera: 1677\\ntags: [text, images]\\nverified: false\\n---\\n\\n# Mutus Liber\\n\\nThe \\\"silent book,\\\" La Rochelle, 1677: fifteen engraved plates and essentially no\\ntext. The entire Great Work, allegedly, in pictures.\\n\\nlength:: fifteen plates\\nattributed_to:: altus\\n\\n## Contents\\n\\nThe plates show a couple gathering dew in sheets stretched between poles,\\nprocessing it through vessels, and attending a furnace, framed by angels and\\nzodiacal signs. A sequence is clearly intended. What it instructs is not clear.\\n\\nThe dew-gathering is the one concretely readable operation, and it connects to a\\nreal strand of practice: dew was held to be a celestial condensate and a candidate\\n[prima materia](/substances/prima-materia.md).\\n\\n## Status of these notes\\n\\nDraft. I have not worked through the plates in order against a commentary, and\\nthe secondary literature disagrees about even the number of stages depicted.\\n\\n- [ ] Obtain a facsimile with plate numbering\\n- [ ] Compare the 1677 and 1702 plate sequences\\n- [ ] Decide whether the dew operation is literal\\n\",\"after\":\"---\\ntype: text\\nlayer: draft\\ntradition: western\\nera: 1677\\ntags: [text, images]\\nverified: false\\n---\\n\\n# Mutus Liber\\n\\nThe \\\"silent book,\\\" La Rochelle, 1677: fifteen engraved plates and essentially no\\ntext. The entire Great Work, allegedly, in pictures.\\n\\nlength:: fifteen plates\\nattributed_to:: altus\\n\\n## Contents\\n\\nThe plates show a couple gathering dew in sheets stretched between poles,\\nprocessing it through vessels, and attending a furnace, framed by angels and\\nzodiacal signs. A sequence is clearly intended. What it instructs is not clear.\\n\\nThe dew-gathering is the one concretely readable operation, and it connects to a\\nreal strand of practice: dew was held to be a celestial condensate and a candidate\\n[prima materia](/substances/prima-materia.md).\\n\\n## Status of these notes\\n\\nDraft. I have not worked through the plates in order against a commentary, and\\nthe secondary literature disagrees about even the number of stages depicted.\\n\\n- [ ] Zeroth\\n- [ ] Obtain a facsimile with plate numbering\\n- [ ] Compare the 1677 and 1702 plate sequences\\n- [ ] Decide whether the dew operation is literal\\n\"}}}}\n"
+        "stdout": "{\"version\":1,\"planner_v\":\"p3\",\"effects\":[{\"op\":\"insert\",\"into\":{\"kind\":\"block\",\"id\":\"b_310\"},\"at\":\"start\",\"markdown\":\"- [ ] Zeroth\"}],\"opset\":{\"creates\":[],\"moves\":[],\"tombstones\":[],\"set_frontmatter\":[],\"ops\":[{\"op\":\"insert\",\"to\":{\"parent\":\"b_310\",\"at\":\"start\"},\"markdown\":\"- [ ] Zeroth\"}]},\"preconditions\":{\"docs\":[{\"id\":\"d_17\",\"path\":\"texts/mutus-liber.md\",\"base_revision\":\"r_17\",\"hash\":\"ccd682da7c3f643751e4aee291b18b75995ef9f883ececc5f925031bb319f4b5\"}],\"blocks\":[],\"parents\":[],\"absent_paths\":[]},\"new_ids\":[{\"symbol\":\"$new.0\",\"kind\":\"block\"},{\"symbol\":\"$new.1\",\"kind\":\"block\"}],\"plan_id\":\"1d3119423af4ae29caec4985abe58da0629786079f23562d16514e715e2cf3f9\",\"diagnostics\":[],\"preview\":{\"results\":[{\"ids\":[\"$new.1\"]}],\"revisions\":[{\"id\":\"d_17\",\"path\":\"/texts/mutus-liber.md\",\"hash\":\"f276b4db160831ee5780ee160e6c575d8ee068ca61b7ee69668ea003fce4e726\"}],\"diffs\":{\"/texts/mutus-liber.md\":{\"before\":\"---\\ntype: text\\nlayer: draft\\ntradition: western\\nera: 1677\\ntags: [text, images]\\nverified: false\\n---\\n\\n# Mutus Liber\\n\\nThe \\\"silent book,\\\" La Rochelle, 1677: fifteen engraved plates and essentially no\\ntext. The entire Great Work, allegedly, in pictures.\\n\\nlength:: fifteen plates\\nattributed_to:: altus\\n\\n## Contents\\n\\nThe plates show a couple gathering dew in sheets stretched between poles,\\nprocessing it through vessels, and attending a furnace, framed by angels and\\nzodiacal signs. A sequence is clearly intended. What it instructs is not clear.\\n\\nThe dew-gathering is the one concretely readable operation, and it connects to a\\nreal strand of practice: dew was held to be a celestial condensate and a candidate\\n[prima materia](/substances/prima-materia.md).\\n\\n## Status of these notes\\n\\nDraft. I have not worked through the plates in order against a commentary, and\\nthe secondary literature disagrees about even the number of stages depicted.\\n\\n- [ ] Obtain a facsimile with plate numbering\\n- [ ] Compare the 1677 and 1702 plate sequences\\n- [ ] Decide whether the dew operation is literal\\n\",\"after\":\"---\\ntype: text\\nlayer: draft\\ntradition: western\\nera: 1677\\ntags: [text, images]\\nverified: false\\n---\\n\\n# Mutus Liber\\n\\nThe \\\"silent book,\\\" La Rochelle, 1677: fifteen engraved plates and essentially no\\ntext. The entire Great Work, allegedly, in pictures.\\n\\nlength:: fifteen plates\\nattributed_to:: altus\\n\\n## Contents\\n\\nThe plates show a couple gathering dew in sheets stretched between poles,\\nprocessing it through vessels, and attending a furnace, framed by angels and\\nzodiacal signs. A sequence is clearly intended. What it instructs is not clear.\\n\\nThe dew-gathering is the one concretely readable operation, and it connects to a\\nreal strand of practice: dew was held to be a celestial condensate and a candidate\\n[prima materia](/substances/prima-materia.md).\\n\\n## Status of these notes\\n\\nDraft. I have not worked through the plates in order against a commentary, and\\nthe secondary literature disagrees about even the number of stages depicted.\\n\\n- [ ] Zeroth\\n- [ ] Obtain a facsimile with plate numbering\\n- [ ] Compare the 1677 and 1702 plate sequences\\n- [ ] Decide whether the dew operation is literal\\n\"}},\"summary\":[\"insert 1 block at the start of list b_310 in /texts/mutus-liber.md\"]}}\n"
       }
     },
     {
@@ -233,7 +233,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "{\"plan_id\":\"c7e2e9e107ee5a3276fe045c02fec2df649e9214023a0cc667972a1bcbb9fd84\",\"commit\":\"c_20\",\"revisions\":[{\"id\":\"d_17\",\"path\":\"/texts/mutus-liber.md\",\"hash\":\"84dc0550503fbff7d6f22aa44d49b1537f6cd7d488b41bb971ba07ccd803399f\"}],\"new_ids\":{\"$new.0\":\"b_327\",\"$new.1\":\"b_328\"},\"committed\":true}\n"
+        "stdout": "{\"plan_id\":\"c7e2e9e107ee5a3276fe045c02fec2df649e9214023a0cc667972a1bcbb9fd84\",\"commit\":\"c_20\",\"revisions\":[{\"id\":\"d_17\",\"path\":\"/texts/mutus-liber.md\",\"hash\":\"84dc0550503fbff7d6f22aa44d49b1537f6cd7d488b41bb971ba07ccd803399f\"}],\"new_ids\":{\"$new.0\":\"b_327\",\"$new.1\":\"b_328\"},\"committed\":true,\"summary\":[\"insert 1 block at the end of list b_310 in /texts/mutus-liber.md\"]}\n"
       }
     },
     {
@@ -295,7 +295,7 @@
           "expect": {
             "exit": 0,
             "stdout": "b_328\n",
-            "stderr": "  ok committed · 1 document touched\n"
+            "stderr": "  ok committed · 1 document touched\n    insert 1 block at the end of list b_310 in /texts/mutus-liber.md\n"
           }
         },
         {
@@ -361,7 +361,7 @@
           "expect": {
             "exit": 0,
             "stdout": "b_328\n",
-            "stderr": "  ok committed · 1 document touched\n"
+            "stderr": "  ok committed · 1 document touched\n    insert 1 block at the end of list b_310 in /texts/mutus-liber.md\n"
           }
         },
         {
@@ -396,7 +396,7 @@
           "expect": {
             "exit": 0,
             "stdout": "b_328\n",
-            "stderr": "  ok committed · 1 document touched\n"
+            "stderr": "  ok committed · 1 document touched\n    insert 1 block at the end of list b_310 in /texts/mutus-liber.md\n"
           }
         },
         {
@@ -460,7 +460,7 @@
           "expect": {
             "exit": 0,
             "stdout": "b_309\n",
-            "stderr": "  updating b_309 (CAS pinned from current bytes)\n  ok committed · 1 document touched\n"
+            "stderr": "  updating b_309 (CAS pinned from current bytes)\n  ok committed · 1 document touched\n    set markdown of paragraph b_309 in /texts/mutus-liber.md\n"
           }
         },
         {
@@ -504,7 +504,7 @@
           "expect": {
             "exit": 0,
             "stdout": "b_309\n",
-            "stderr": "  updating b_309 (CAS pinned from current bytes)\n  ok committed · 1 document touched\n"
+            "stderr": "  updating b_309 (CAS pinned from current bytes)\n  ok committed · 1 document touched\n    set markdown of paragraph b_309 in /texts/mutus-liber.md\n"
           }
         },
         {
@@ -539,7 +539,7 @@
           "expect": {
             "exit": 0,
             "stdout": "b_309\n",
-            "stderr": "  ok committed · 1 document touched\n"
+            "stderr": "  ok committed · 1 document touched\n    set markdown of paragraph b_309 in /texts/mutus-liber.md\n"
           }
         },
         {
@@ -643,7 +643,7 @@
       "pin_stderr": true,
       "expect": {
         "exit": 0,
-        "stdout": "{\"version\":1,\"planner_v\":\"p3\",\"effects\":[{\"op\":\"set\",\"target\":{\"kind\":\"block\",\"id\":\"b_309\"},\"field\":\"markdown\",\"value\":\"Draft, revised.\"}],\"opset\":{\"creates\":[],\"moves\":[],\"tombstones\":[],\"set_frontmatter\":[],\"ops\":[{\"op\":\"update\",\"block\":\"b_309\",\"markdown\":\"Draft, revised.\",\"expect\":{\"content_hash\":\"50505887d336b1bbe5fa9461f9e2ef7a93e54446d4ac16b9848ceade1c0e841e\"}}]},\"preconditions\":{\"docs\":[{\"id\":\"d_17\",\"path\":\"texts/mutus-liber.md\",\"base_revision\":\"r_17\",\"hash\":\"ccd682da7c3f643751e4aee291b18b75995ef9f883ececc5f925031bb319f4b5\"}],\"blocks\":[{\"id\":\"b_309\",\"content_hash\":\"50505887d336b1bbe5fa9461f9e2ef7a93e54446d4ac16b9848ceade1c0e841e\"}],\"parents\":[],\"absent_paths\":[]},\"new_ids\":[{\"symbol\":\"$new.0\",\"kind\":\"block\"}],\"plan_id\":\"0f44ba252be098213530e7426b0b148ed1936e340e9c83f89084b00a33093535\",\"diagnostics\":[],\"preview\":{\"results\":[{\"ids\":[\"b_309\"]}],\"revisions\":[{\"id\":\"d_17\",\"path\":\"/texts/mutus-liber.md\",\"hash\":\"ff981464d3f8e6ba3e8b031b2d0471498b9fd6fdb374ca8bdf639c8612a4268f\"}],\"diffs\":{\"/texts/mutus-liber.md\":{\"before\":\"---\\ntype: text\\nlayer: draft\\ntradition: western\\nera: 1677\\ntags: [text, images]\\nverified: false\\n---\\n\\n# Mutus Liber\\n\\nThe \\\"silent book,\\\" La Rochelle, 1677: fifteen engraved plates and essentially no\\ntext. The entire Great Work, allegedly, in pictures.\\n\\nlength:: fifteen plates\\nattributed_to:: altus\\n\\n## Contents\\n\\nThe plates show a couple gathering dew in sheets stretched between poles,\\nprocessing it through vessels, and attending a furnace, framed by angels and\\nzodiacal signs. A sequence is clearly intended. What it instructs is not clear.\\n\\nThe dew-gathering is the one concretely readable operation, and it connects to a\\nreal strand of practice: dew was held to be a celestial condensate and a candidate\\n[prima materia](/substances/prima-materia.md).\\n\\n## Status of these notes\\n\\nDraft. I have not worked through the plates in order against a commentary, and\\nthe secondary literature disagrees about even the number of stages depicted.\\n\\n- [ ] Obtain a facsimile with plate numbering\\n- [ ] Compare the 1677 and 1702 plate sequences\\n- [ ] Decide whether the dew operation is literal\\n\",\"after\":\"---\\ntype: text\\nlayer: draft\\ntradition: western\\nera: 1677\\ntags: [text, images]\\nverified: false\\n---\\n\\n# Mutus Liber\\n\\nThe \\\"silent book,\\\" La Rochelle, 1677: fifteen engraved plates and essentially no\\ntext. The entire Great Work, allegedly, in pictures.\\n\\nlength:: fifteen plates\\nattributed_to:: altus\\n\\n## Contents\\n\\nThe plates show a couple gathering dew in sheets stretched between poles,\\nprocessing it through vessels, and attending a furnace, framed by angels and\\nzodiacal signs. A sequence is clearly intended. What it instructs is not clear.\\n\\nThe dew-gathering is the one concretely readable operation, and it connects to a\\nreal strand of practice: dew was held to be a celestial condensate and a candidate\\n[prima materia](/substances/prima-materia.md).\\n\\n## Status of these notes\\n\\nDraft, revised.\\n\\n- [ ] Obtain a facsimile with plate numbering\\n- [ ] Compare the 1677 and 1702 plate sequences\\n- [ ] Decide whether the dew operation is literal\\n\"}}}}\n",
+        "stdout": "{\"version\":1,\"planner_v\":\"p3\",\"effects\":[{\"op\":\"set\",\"target\":{\"kind\":\"block\",\"id\":\"b_309\"},\"field\":\"markdown\",\"value\":\"Draft, revised.\"}],\"opset\":{\"creates\":[],\"moves\":[],\"tombstones\":[],\"set_frontmatter\":[],\"ops\":[{\"op\":\"update\",\"block\":\"b_309\",\"markdown\":\"Draft, revised.\",\"expect\":{\"content_hash\":\"50505887d336b1bbe5fa9461f9e2ef7a93e54446d4ac16b9848ceade1c0e841e\"}}]},\"preconditions\":{\"docs\":[{\"id\":\"d_17\",\"path\":\"texts/mutus-liber.md\",\"base_revision\":\"r_17\",\"hash\":\"ccd682da7c3f643751e4aee291b18b75995ef9f883ececc5f925031bb319f4b5\"}],\"blocks\":[{\"id\":\"b_309\",\"content_hash\":\"50505887d336b1bbe5fa9461f9e2ef7a93e54446d4ac16b9848ceade1c0e841e\"}],\"parents\":[],\"absent_paths\":[]},\"new_ids\":[{\"symbol\":\"$new.0\",\"kind\":\"block\"}],\"plan_id\":\"0f44ba252be098213530e7426b0b148ed1936e340e9c83f89084b00a33093535\",\"diagnostics\":[],\"preview\":{\"results\":[{\"ids\":[\"b_309\"]}],\"revisions\":[{\"id\":\"d_17\",\"path\":\"/texts/mutus-liber.md\",\"hash\":\"ff981464d3f8e6ba3e8b031b2d0471498b9fd6fdb374ca8bdf639c8612a4268f\"}],\"diffs\":{\"/texts/mutus-liber.md\":{\"before\":\"---\\ntype: text\\nlayer: draft\\ntradition: western\\nera: 1677\\ntags: [text, images]\\nverified: false\\n---\\n\\n# Mutus Liber\\n\\nThe \\\"silent book,\\\" La Rochelle, 1677: fifteen engraved plates and essentially no\\ntext. The entire Great Work, allegedly, in pictures.\\n\\nlength:: fifteen plates\\nattributed_to:: altus\\n\\n## Contents\\n\\nThe plates show a couple gathering dew in sheets stretched between poles,\\nprocessing it through vessels, and attending a furnace, framed by angels and\\nzodiacal signs. A sequence is clearly intended. What it instructs is not clear.\\n\\nThe dew-gathering is the one concretely readable operation, and it connects to a\\nreal strand of practice: dew was held to be a celestial condensate and a candidate\\n[prima materia](/substances/prima-materia.md).\\n\\n## Status of these notes\\n\\nDraft. I have not worked through the plates in order against a commentary, and\\nthe secondary literature disagrees about even the number of stages depicted.\\n\\n- [ ] Obtain a facsimile with plate numbering\\n- [ ] Compare the 1677 and 1702 plate sequences\\n- [ ] Decide whether the dew operation is literal\\n\",\"after\":\"---\\ntype: text\\nlayer: draft\\ntradition: western\\nera: 1677\\ntags: [text, images]\\nverified: false\\n---\\n\\n# Mutus Liber\\n\\nThe \\\"silent book,\\\" La Rochelle, 1677: fifteen engraved plates and essentially no\\ntext. The entire Great Work, allegedly, in pictures.\\n\\nlength:: fifteen plates\\nattributed_to:: altus\\n\\n## Contents\\n\\nThe plates show a couple gathering dew in sheets stretched between poles,\\nprocessing it through vessels, and attending a furnace, framed by angels and\\nzodiacal signs. A sequence is clearly intended. What it instructs is not clear.\\n\\nThe dew-gathering is the one concretely readable operation, and it connects to a\\nreal strand of practice: dew was held to be a celestial condensate and a candidate\\n[prima materia](/substances/prima-materia.md).\\n\\n## Status of these notes\\n\\nDraft, revised.\\n\\n- [ ] Obtain a facsimile with plate numbering\\n- [ ] Compare the 1677 and 1702 plate sequences\\n- [ ] Decide whether the dew operation is literal\\n\"}},\"summary\":[\"set markdown of paragraph b_309 in /texts/mutus-liber.md\"]}}\n",
         "stderr": "  updating b_309 (CAS pinned from current bytes)\n"
       }
     },
@@ -662,7 +662,7 @@
       "pin_stderr": true,
       "expect": {
         "exit": 0,
-        "stdout": "{\"plan_id\":\"0f44ba252be098213530e7426b0b148ed1936e340e9c83f89084b00a33093535\",\"commit\":\"c_20\",\"revisions\":[{\"id\":\"d_17\",\"path\":\"/texts/mutus-liber.md\",\"hash\":\"ff981464d3f8e6ba3e8b031b2d0471498b9fd6fdb374ca8bdf639c8612a4268f\"}],\"new_ids\":{\"$new.0\":\"b_327\"},\"committed\":true}\n",
+        "stdout": "{\"plan_id\":\"0f44ba252be098213530e7426b0b148ed1936e340e9c83f89084b00a33093535\",\"commit\":\"c_20\",\"revisions\":[{\"id\":\"d_17\",\"path\":\"/texts/mutus-liber.md\",\"hash\":\"ff981464d3f8e6ba3e8b031b2d0471498b9fd6fdb374ca8bdf639c8612a4268f\"}],\"new_ids\":{\"$new.0\":\"b_327\"},\"committed\":true,\"summary\":[\"set markdown of paragraph b_309 in /texts/mutus-liber.md\"]}\n",
         "stderr": "  updating b_309 (CAS pinned from current bytes)\n"
       }
     },
@@ -734,7 +734,7 @@
           "expect": {
             "exit": 0,
             "stdout": "b_313\n",
-            "stderr": "  ok committed · 1 document touched\n"
+            "stderr": "  ok committed · 1 document touched\n    move task b_313 to the start of list b_310 in /texts/mutus-liber.md\n"
           }
         },
         {
@@ -763,7 +763,7 @@
           "expect": {
             "exit": 0,
             "stdout": "b_311\nb_312\n",
-            "stderr": "  ok committed · 1 document touched\n"
+            "stderr": "  ok committed · 1 document touched\n    move 2 blocks to the start of list b_310 in /texts/mutus-liber.md\n"
           }
         },
         {
@@ -798,7 +798,7 @@
           "expect": {
             "exit": 0,
             "stdout": "b_313\n",
-            "stderr": "  ok committed · 1 document touched\n"
+            "stderr": "  ok committed · 1 document touched\n    move task b_313 to the start of list b_310 in /texts/mutus-liber.md\n"
           }
         },
         {
@@ -912,7 +912,7 @@
           "expect": {
             "exit": 0,
             "stdout": "b_304\n",
-            "stderr": "  ok committed · 1 document touched\n"
+            "stderr": "  ok committed · 1 document touched\n    remove paragraph b_304 from /texts/mutus-liber.md\n"
           }
         },
         {
@@ -956,7 +956,7 @@
           "expect": {
             "exit": 0,
             "stdout": "b_311\nb_312\n",
-            "stderr": "  ok committed · 1 document touched\n"
+            "stderr": "  ok committed · 1 document touched\n    remove 2 blocks from /texts/mutus-liber.md\n"
           }
         },
         {
@@ -1000,7 +1000,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "{\"plan_id\":\"ad685d4a9cdbf95c5b6d9c7105e6f06d51dbb0a47ea76aa2f2abc25784e7087f\",\"commit\":\"c_20\",\"revisions\":[{\"id\":\"d_17\",\"path\":\"/texts/mutus-liber.md\",\"hash\":\"7484fddcb44efddfd25e94e5f00e57a1a6293652905384f177d6a355c658268d\"}],\"new_ids\":{},\"committed\":true}\n"
+        "stdout": "{\"plan_id\":\"ad685d4a9cdbf95c5b6d9c7105e6f06d51dbb0a47ea76aa2f2abc25784e7087f\",\"commit\":\"c_20\",\"revisions\":[{\"id\":\"d_17\",\"path\":\"/texts/mutus-liber.md\",\"hash\":\"7484fddcb44efddfd25e94e5f00e57a1a6293652905384f177d6a355c658268d\"}],\"new_ids\":{},\"committed\":true,\"summary\":[\"remove paragraph b_304 from /texts/mutus-liber.md\"]}\n"
       }
     },
     {
@@ -1031,7 +1031,7 @@
           "expect": {
             "exit": 0,
             "stdout": "b_311\n",
-            "stderr": "  ok committed · 1 document touched\n"
+            "stderr": "  ok committed · 1 document touched\n    check task b_311 in /texts/mutus-liber.md\n"
           }
         },
         {
@@ -1056,7 +1056,7 @@
           "expect": {
             "exit": 0,
             "stdout": "b_311\n",
-            "stderr": "  ok committed · 1 document touched\n"
+            "stderr": "  ok committed · 1 document touched\n    uncheck task b_311 in /texts/mutus-liber.md\n"
           }
         },
         {
@@ -1087,7 +1087,7 @@
           "expect": {
             "exit": 0,
             "stdout": "b_311\nb_312\n",
-            "stderr": "  ok committed · 1 document touched\n"
+            "stderr": "  ok committed · 1 document touched\n    check task b_311 in /texts/mutus-liber.md\n    check task b_312 in /texts/mutus-liber.md\n"
           }
         },
         {
@@ -1114,7 +1114,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "{\"plan_id\":\"86aed1dad997f50902ec47b065402a45df9a719cc967fc9469a302db0e26de48\",\"commit\":\"c_20\",\"revisions\":[{\"id\":\"d_17\",\"path\":\"/texts/mutus-liber.md\",\"hash\":\"3e2171c34e3fbc890ceb339f351288ef375bee4dae1e65dc83fc8ec5c62d0da0\"}],\"new_ids\":{},\"committed\":true}\n"
+        "stdout": "{\"plan_id\":\"86aed1dad997f50902ec47b065402a45df9a719cc967fc9469a302db0e26de48\",\"commit\":\"c_20\",\"revisions\":[{\"id\":\"d_17\",\"path\":\"/texts/mutus-liber.md\",\"hash\":\"3e2171c34e3fbc890ceb339f351288ef375bee4dae1e65dc83fc8ec5c62d0da0\"}],\"new_ids\":{},\"committed\":true,\"summary\":[\"check task b_311 in /texts/mutus-liber.md\"]}\n"
       }
     },
     {
@@ -1206,7 +1206,7 @@
           "expect": {
             "exit": 0,
             "stdout": "b_327\n",
-            "stderr": "  ok committed · 1 document touched\n"
+            "stderr": "  ok committed · 1 document touched\n    insert 1 block at the end of section \"Contents\" in /texts/mutus-liber.md\n"
           }
         },
         {
@@ -1238,7 +1238,7 @@
           "expect": {
             "exit": 0,
             "stdout": "b_327\n",
-            "stderr": "  ok committed · 1 document touched\n"
+            "stderr": "  ok committed · 1 document touched\n    insert 1 block at the end of section \"Status of these notes\" in /texts/mutus-liber.md\n"
           }
         },
         {
@@ -1319,7 +1319,7 @@
           "expect": {
             "exit": 0,
             "stdout": "b_303\nb_327\n",
-            "stderr": "  ok committed · 1 document touched\n"
+            "stderr": "  ok committed · 1 document touched\n    split paragraph b_303 at offset 10 in /texts/mutus-liber.md\n"
           }
         },
         {
@@ -1361,7 +1361,7 @@
           "expect": {
             "exit": 0,
             "stdout": "b_303\nb_327\nb_328\n",
-            "stderr": "  ok committed · 1 document touched\n"
+            "stderr": "  ok committed · 1 document touched\n    split paragraph b_303 at offsets 10, 20 in /texts/mutus-liber.md\n"
           }
         },
         {
@@ -1454,7 +1454,7 @@
           "expect": {
             "exit": 0,
             "stdout": "b_306\n",
-            "stderr": "  ok committed · 1 document touched\n"
+            "stderr": "  ok committed · 1 document touched\n    merge 2 blocks into paragraph b_306 in /texts/mutus-liber.md\n"
           }
         },
         {
@@ -1515,7 +1515,7 @@
           "expect": {
             "exit": 0,
             "stdout": "b_306\n",
-            "stderr": "  ok committed · 1 document touched\n"
+            "stderr": "  ok committed · 1 document touched\n    merge 2 blocks into paragraph b_306 in /texts/mutus-liber.md\n"
           }
         },
         {
@@ -1612,7 +1612,7 @@
           "expect": {
             "exit": 0,
             "stdout": "b_26\n",
-            "stderr": "  ok committed · 1 document touched\n"
+            "stderr": "  ok committed · 1 document touched\n    retarget 1 link /texts/mutus-liber.md → /texts/silent-book.md in 1 document\n"
           }
         },
         {
@@ -1737,7 +1737,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "{\"hits\":[{\"id\":\"b_26\",\"path\":\"/index.md\",\"oldRaw\":\"- [The Emerald Tablet](/texts/emerald-tablet.md)\\n- [Mutus Liber](/texts/mutus-liber.md)\",\"newRaw\":\"- [The Emerald Tablet](/texts/emerald-tablet.md)\\n- [Mutus Liber](/x.md)\"}],\"pairs\":[{\"from\":\"/texts/mutus-liber.md\",\"to\":\"/x.md\",\"hits\":1}],\"plan_id\":\"615b3d844611de65c3e402c0e31fb35607fda8e379a4c04b69061548705c1fc6\",\"commit\":\"c_20\",\"revisions\":[{\"id\":\"d_0\",\"path\":\"/index.md\",\"hash\":\"c6bb3ed295f236591d6ea821cadcaa801e7f849fe9d62a7c35eea6dbb343a2ec\"}],\"new_ids\":{\"$new.0\":\"b_327\",\"$new.1\":\"b_328\",\"$new.2\":\"b_329\"},\"committed\":true}\n"
+        "stdout": "{\"hits\":[{\"id\":\"b_26\",\"path\":\"/index.md\",\"oldRaw\":\"- [The Emerald Tablet](/texts/emerald-tablet.md)\\n- [Mutus Liber](/texts/mutus-liber.md)\",\"newRaw\":\"- [The Emerald Tablet](/texts/emerald-tablet.md)\\n- [Mutus Liber](/x.md)\"}],\"pairs\":[{\"from\":\"/texts/mutus-liber.md\",\"to\":\"/x.md\",\"hits\":1}],\"plan_id\":\"615b3d844611de65c3e402c0e31fb35607fda8e379a4c04b69061548705c1fc6\",\"commit\":\"c_20\",\"revisions\":[{\"id\":\"d_0\",\"path\":\"/index.md\",\"hash\":\"c6bb3ed295f236591d6ea821cadcaa801e7f849fe9d62a7c35eea6dbb343a2ec\"}],\"new_ids\":{\"$new.0\":\"b_327\",\"$new.1\":\"b_328\",\"$new.2\":\"b_329\"},\"committed\":true,\"summary\":[\"retarget 1 link /texts/mutus-liber.md → /x.md in 1 document\"]}\n"
       }
     },
     {
@@ -1813,7 +1813,7 @@
           "expect": {
             "exit": 0,
             "stdout": "b_311\n",
-            "stderr": "  ok committed · 1 document touched\n"
+            "stderr": "  ok committed · 1 document touched\n    set checked = \"true\" on node n_5ebb7234aa44 in /texts/mutus-liber.md\n"
           }
         },
         {
@@ -1882,7 +1882,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "{\"plan_id\":\"dc09bde1ac72673da9eaaa1264ae71f59ce007f34b68550eaa5b6b81d2f64e69\",\"commit\":\"c_20\",\"revisions\":[{\"id\":\"d_17\",\"path\":\"/texts/mutus-liber.md\",\"hash\":\"3e2171c34e3fbc890ceb339f351288ef375bee4dae1e65dc83fc8ec5c62d0da0\"}],\"new_ids\":{},\"committed\":true}\n"
+        "stdout": "{\"plan_id\":\"dc09bde1ac72673da9eaaa1264ae71f59ce007f34b68550eaa5b6b81d2f64e69\",\"commit\":\"c_20\",\"revisions\":[{\"id\":\"d_17\",\"path\":\"/texts/mutus-liber.md\",\"hash\":\"3e2171c34e3fbc890ceb339f351288ef375bee4dae1e65dc83fc8ec5c62d0da0\"}],\"new_ids\":{},\"committed\":true,\"summary\":[\"set checked = \\\"true\\\" on node n_5ebb7234aa44 in /texts/mutus-liber.md\"]}\n"
       }
     },
     {
@@ -1993,7 +1993,7 @@
           "expect": {
             "exit": 0,
             "stdout": "b_309\n",
-            "stderr": "  ok committed · 1 document touched\n"
+            "stderr": "  ok committed · 1 document touched\n    set markdown of paragraph b_309 in /texts/mutus-liber.md\n"
           }
         },
         {
@@ -2059,7 +2059,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "{\"plan_id\":\"b4281d125c50ff9bead94790a5424ab4b1e1d23dfe19ed67c6f5a4ffeba7f9b9\",\"commit\":\"c_20\",\"revisions\":[{\"id\":\"d_17\",\"path\":\"/texts/mutus-liber.md\",\"hash\":\"c85268661b7d7a65dba2b58c6ed7b2c8b3504bed3ecfc1de0544b38fc27f7857\"}],\"new_ids\":{\"$new.0\":\"b_327\"},\"committed\":true}\n"
+        "stdout": "{\"plan_id\":\"b4281d125c50ff9bead94790a5424ab4b1e1d23dfe19ed67c6f5a4ffeba7f9b9\",\"commit\":\"c_20\",\"revisions\":[{\"id\":\"d_17\",\"path\":\"/texts/mutus-liber.md\",\"hash\":\"c85268661b7d7a65dba2b58c6ed7b2c8b3504bed3ecfc1de0544b38fc27f7857\"}],\"new_ids\":{\"$new.0\":\"b_327\"},\"committed\":true,\"summary\":[\"set markdown of paragraph b_309 in /texts/mutus-liber.md\"]}\n"
       }
     },
     {
@@ -2123,7 +2123,7 @@
           "expect": {
             "exit": 0,
             "stdout": "b_309\n",
-            "stderr": "  ok committed · 1 document touched\n"
+            "stderr": "  ok committed · 1 document touched\n    set markdown of paragraph b_309 in /texts/mutus-liber.md\n"
           }
         },
         {
@@ -2231,7 +2231,7 @@
           "expect": {
             "exit": 0,
             "stdout": "b_328\n",
-            "stderr": "  ok committed · 1 document touched\n"
+            "stderr": "  ok committed · 1 document touched\n    insert 1 block at the end of list b_310 in /texts/mutus-liber.md\n"
           }
         },
         {
@@ -2277,7 +2277,7 @@
           "expect": {
             "exit": 0,
             "stdout": "b_304\n",
-            "stderr": "  ok committed · 1 document touched\n"
+            "stderr": "  ok committed · 1 document touched\n    remove paragraph b_304 from /texts/mutus-liber.md\n"
           }
         },
         {
@@ -2306,7 +2306,7 @@
       "stdin": "{\"effects\": [{\"op\": \"remove\", \"targets\": [{\"kind\": \"block\", \"id\": \"b_304\"}]}]}",
       "expect": {
         "exit": 0,
-        "stdout": "{\"plan_id\":\"ad685d4a9cdbf95c5b6d9c7105e6f06d51dbb0a47ea76aa2f2abc25784e7087f\",\"commit\":\"c_20\",\"revisions\":[{\"id\":\"d_17\",\"path\":\"/texts/mutus-liber.md\",\"hash\":\"7484fddcb44efddfd25e94e5f00e57a1a6293652905384f177d6a355c658268d\"}],\"new_ids\":{},\"committed\":true}\n"
+        "stdout": "{\"plan_id\":\"ad685d4a9cdbf95c5b6d9c7105e6f06d51dbb0a47ea76aa2f2abc25784e7087f\",\"commit\":\"c_20\",\"revisions\":[{\"id\":\"d_17\",\"path\":\"/texts/mutus-liber.md\",\"hash\":\"7484fddcb44efddfd25e94e5f00e57a1a6293652905384f177d6a355c658268d\"}],\"new_ids\":{},\"committed\":true,\"summary\":[\"remove paragraph b_304 from /texts/mutus-liber.md\"]}\n"
       },
       "notes": "§6 apply: `--json` prints the Receipt"
     },
@@ -2341,7 +2341,7 @@
       "stdin": "{\"effects\": [{\"op\": \"insert\", \"into\": {\"kind\": \"block\", \"id\": \"b_310\"}, \"markdown\": \"- [ ] One\"}, {\"op\": \"set\", \"target\": {\"kind\": \"block\", \"id\": \"$new.1\"}, \"field\": \"attrs.checked\", \"value\": true}]}",
       "expect": {
         "exit": 0,
-        "stdout": "{\"plan_id\":\"ea813bb33314ecf18cd7a9a297438a46dcb42967a2d43bba1a63fe803ba0ca40\",\"commit\":\"c_20\",\"revisions\":[{\"id\":\"d_17\",\"path\":\"/texts/mutus-liber.md\",\"hash\":\"c62ca66c6e32bf96a3f5d44fea2fe29ed40d579053b7385ff0c53a9f2dc2ab7b\"}],\"new_ids\":{\"$new.0\":\"b_327\",\"$new.1\":\"b_328\"},\"committed\":true}\n"
+        "stdout": "{\"plan_id\":\"ea813bb33314ecf18cd7a9a297438a46dcb42967a2d43bba1a63fe803ba0ca40\",\"commit\":\"c_20\",\"revisions\":[{\"id\":\"d_17\",\"path\":\"/texts/mutus-liber.md\",\"hash\":\"c62ca66c6e32bf96a3f5d44fea2fe29ed40d579053b7385ff0c53a9f2dc2ab7b\"}],\"new_ids\":{\"$new.0\":\"b_327\",\"$new.1\":\"b_328\"},\"committed\":true,\"summary\":[\"insert 1 block at the end of list b_310 in /texts/mutus-liber.md\",\"check task $new.1 in /texts/mutus-liber.md\"]}\n"
       }
     },
     {
@@ -2429,7 +2429,7 @@
           "expect": {
             "exit": 0,
             "stdout": "b_328\n",
-            "stderr": "  ok committed · 1 document touched\n"
+            "stderr": "  ok committed · 1 document touched\n    insert 1 block at the end of list b_310 in /texts/mutus-liber.md\n"
           }
         },
         {
@@ -2492,7 +2492,7 @@
           "expect": {
             "exit": 0,
             "stdout": "b_328\n",
-            "stderr": "  ok committed · 1 document touched\n"
+            "stderr": "  ok committed · 1 document touched\n    insert 1 block at the end of list b_310 in /texts/mutus-liber.md\n"
           }
         }
       ]
@@ -2514,7 +2514,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "{\"plan_id\":\"58f990ef639f1a519d139b7de0ee37ba3439673d7e93cdc037952740cda59096\",\"commit\":\"c_20\",\"revisions\":[{\"id\":\"d_17\",\"path\":\"/texts/mutus-liber.md\",\"hash\":\"97fa8e1175b89d94092673f07fd9bdeb3fde121ac8143077211423a622e344c9\"}],\"new_ids\":{\"$new.0\":\"b_327\",\"$new.1\":\"b_328\"},\"committed\":true}\n"
+        "stdout": "{\"plan_id\":\"58f990ef639f1a519d139b7de0ee37ba3439673d7e93cdc037952740cda59096\",\"commit\":\"c_20\",\"revisions\":[{\"id\":\"d_17\",\"path\":\"/texts/mutus-liber.md\",\"hash\":\"97fa8e1175b89d94092673f07fd9bdeb3fde121ac8143077211423a622e344c9\"}],\"new_ids\":{\"$new.0\":\"b_327\",\"$new.1\":\"b_328\"},\"committed\":true,\"summary\":[\"insert 1 block at the end of list b_310 in /texts/mutus-liber.md\"]}\n"
       }
     },
     {
@@ -2562,7 +2562,7 @@
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "error[conflicting_effects]: effects 0 and 1 contradict each other on block b_309 markdown\n  {\n    \"effects\": [\n      0,\n      1\n    ],\n    \"focus\": {\n      \"kind\": \"scalar\",\n      \"target\": {\n        \"kind\": \"block\",\n        \"id\": \"b_309\"\n      },\n      \"field\": \"markdown\"\n    },\n    \"retriable\": false,\n    \"effect_index\": 1\n  }\n"
+        "stderr": "error[conflicting_effects]: effects 0 and 1 contradict each other on block b_309 markdown\n  {\n    \"effects\": [\n      0,\n      1\n    ],\n    \"focus\": {\n      \"kind\": \"scalar\",\n      \"target\": {\n        \"kind\": \"block\",\n        \"id\": \"b_309\"\n      },\n      \"field\": \"markdown\"\n    },\n    \"retriable\": false,\n    \"effect_index\": 1,\n    \"fix\": \"{\\\"effects\\\":[{\\\"field\\\":\\\"markdown\\\",\\\"op\\\":\\\"set\\\",\\\"target\\\":{\\\"id\\\":\\\"b_309\\\",\\\"kind\\\":\\\"block\\\"},\\\"value\\\":\\\"two\\\"}]}\"\n  }\n"
       }
     },
     {
@@ -2626,7 +2626,7 @@
       "stdin": "{\"version\":1,\"planner_v\":\"p1\",\"effects\":[{\"op\":\"insert\",\"into\":{\"kind\":\"block\",\"id\":\"b_310\"},\"at\":\"end\",\"markdown\":\"- [ ] Via effects\"}],\"opset\":{\"creates\":[],\"moves\":[],\"tombstones\":[],\"set_frontmatter\":[],\"ops\":[{\"op\":\"insert\",\"to\":{\"parent\":\"b_310\",\"at\":\"end\"},\"markdown\":\"- [ ] Via effects\"}]},\"preconditions\":{\"docs\":[{\"id\":\"d_17\",\"path\":\"texts/mutus-liber.md\",\"base_revision\":\"r_17\",\"hash\":\"ccd682da7c3f643751e4aee291b18b75995ef9f883ececc5f925031bb319f4b5\"}],\"blocks\":[],\"parents\":[],\"absent_paths\":[]},\"new_ids\":[{\"symbol\":\"$new.0\",\"kind\":\"block\"},{\"symbol\":\"$new.1\",\"kind\":\"block\"}],\"plan_id\":\"3658b8a5158debce266e2a682cdbe21a60c1e13f32c89846a780603e7da898b7\",\"diagnostics\":[],\"preview\":{\"results\":[{\"ids\":[\"$new.1\"]}],\"revisions\":[{\"id\":\"d_17\",\"path\":\"/texts/mutus-liber.md\",\"hash\":\"97fa8e1175b89d94092673f07fd9bdeb3fde121ac8143077211423a622e344c9\"}],\"diffs\":{\"/texts/mutus-liber.md\":{\"before\":\"---\\ntype: text\\nlayer: draft\\ntradition: western\\nera: 1677\\ntags: [text, images]\\nverified: false\\n---\\n\\n# Mutus Liber\\n\\nThe \\\"silent book,\\\" La Rochelle, 1677: fifteen engraved plates and essentially no\\ntext. The entire Great Work, allegedly, in pictures.\\n\\nlength:: fifteen plates\\nattributed_to:: altus\\n\\n## Contents\\n\\nThe plates show a couple gathering dew in sheets stretched between poles,\\nprocessing it through vessels, and attending a furnace, framed by angels and\\nzodiacal signs. A sequence is clearly intended. What it instructs is not clear.\\n\\nThe dew-gathering is the one concretely readable operation, and it connects to a\\nreal strand of practice: dew was held to be a celestial condensate and a candidate\\n[prima materia](/substances/prima-materia.md).\\n\\n## Status of these notes\\n\\nDraft. I have not worked through the plates in order against a commentary, and\\nthe secondary literature disagrees about even the number of stages depicted.\\n\\n- [ ] Obtain a facsimile with plate numbering\\n- [ ] Compare the 1677 and 1702 plate sequences\\n- [ ] Decide whether the dew operation is literal\\n\",\"after\":\"---\\ntype: text\\nlayer: draft\\ntradition: western\\nera: 1677\\ntags: [text, images]\\nverified: false\\n---\\n\\n# Mutus Liber\\n\\nThe \\\"silent book,\\\" La Rochelle, 1677: fifteen engraved plates and essentially no\\ntext. The entire Great Work, allegedly, in pictures.\\n\\nlength:: fifteen plates\\nattributed_to:: altus\\n\\n## Contents\\n\\nThe plates show a couple gathering dew in sheets stretched between poles,\\nprocessing it through vessels, and attending a furnace, framed by angels and\\nzodiacal signs. A sequence is clearly intended. What it instructs is not clear.\\n\\nThe dew-gathering is the one concretely readable operation, and it connects to a\\nreal strand of practice: dew was held to be a celestial condensate and a candidate\\n[prima materia](/substances/prima-materia.md).\\n\\n## Status of these notes\\n\\nDraft. I have not worked through the plates in order against a commentary, and\\nthe secondary literature disagrees about even the number of stages depicted.\\n\\n- [ ] Obtain a facsimile with plate numbering\\n- [ ] Compare the 1677 and 1702 plate sequences\\n- [ ] Decide whether the dew operation is literal\\n- [ ] Via effects\\n\"}}}}",
       "expect": {
         "exit": 0,
-        "stdout": "{\"plan_id\":\"3658b8a5158debce266e2a682cdbe21a60c1e13f32c89846a780603e7da898b7\",\"commit\":\"c_20\",\"revisions\":[{\"id\":\"d_17\",\"path\":\"/texts/mutus-liber.md\",\"hash\":\"97fa8e1175b89d94092673f07fd9bdeb3fde121ac8143077211423a622e344c9\"}],\"new_ids\":{\"$new.0\":\"b_327\",\"$new.1\":\"b_328\"},\"committed\":true}\n"
+        "stdout": "{\"plan_id\":\"3658b8a5158debce266e2a682cdbe21a60c1e13f32c89846a780603e7da898b7\",\"commit\":\"c_20\",\"revisions\":[{\"id\":\"d_17\",\"path\":\"/texts/mutus-liber.md\",\"hash\":\"97fa8e1175b89d94092673f07fd9bdeb3fde121ac8143077211423a622e344c9\"}],\"new_ids\":{\"$new.0\":\"b_327\",\"$new.1\":\"b_328\"},\"committed\":true,\"summary\":[]}\n"
       }
     },
     {
@@ -2650,7 +2650,7 @@
           "expect": {
             "exit": 0,
             "stdout": "b_309\n",
-            "stderr": "  updating b_309 (CAS pinned from current bytes)\n  ok committed · 1 document touched\n"
+            "stderr": "  updating b_309 (CAS pinned from current bytes)\n  ok committed · 1 document touched\n    set markdown of paragraph b_309 in /texts/mutus-liber.md\n"
           }
         },
         {
@@ -2664,7 +2664,7 @@
           "expect": {
             "exit": 1,
             "stdout": "",
-            "stderr": "error[stale_plan]: document d_17 changed since the plan was made; re-plan\n  {\n    \"doc\": \"d_17\",\n    \"expected_revision\": \"r_17\",\n    \"current\": {\n      \"revision\": \"r_20\",\n      \"hash\": \"ff981464d3f8e6ba3e8b031b2d0471498b9fd6fdb374ca8bdf639c8612a4268f\"\n    },\n    \"retriable\": true\n  }\n"
+            "stderr": "error[stale_plan]: document d_17 changed since the plan was made; re-plan\n  {\n    \"doc\": \"d_17\",\n    \"expected_revision\": \"r_17\",\n    \"current\": {\n      \"revision\": \"r_20\",\n      \"hash\": \"ff981464d3f8e6ba3e8b031b2d0471498b9fd6fdb374ca8bdf639c8612a4268f\"\n    },\n    \"retriable\": true,\n    \"fix\": \"{\\\"effects\\\":[{\\\"at\\\":\\\"end\\\",\\\"into\\\":{\\\"id\\\":\\\"b_310\\\",\\\"kind\\\":\\\"block\\\"},\\\"markdown\\\":\\\"- [ ] Via effects\\\",\\\"op\\\":\\\"insert\\\"}]}\"\n  }\n"
           }
         },
         {
@@ -2696,7 +2696,7 @@
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "error[plan_mismatch]: the plan's digest does not match its plan_id; it was edited or produced by a different planner — re-plan\n  {\n    \"expected\": \"3658b8a5158debce266e2a682cdbe21a60c1e13f32c89846a780603e7da898b7\",\n    \"actual\": \"88b158bb77362d39f4c59ed9a83a374fe74b348610fd54f2277aab4d88e109bc\"\n  }\n"
+        "stderr": "error[plan_mismatch]: the plan's digest does not match its plan_id; it was edited or produced by a different planner — re-plan\n  {\n    \"expected\": \"3658b8a5158debce266e2a682cdbe21a60c1e13f32c89846a780603e7da898b7\",\n    \"actual\": \"88b158bb77362d39f4c59ed9a83a374fe74b348610fd54f2277aab4d88e109bc\",\n    \"fix\": \"{\\\"effects\\\":[{\\\"at\\\":\\\"end\\\",\\\"into\\\":{\\\"id\\\":\\\"b_310\\\",\\\"kind\\\":\\\"block\\\"},\\\"markdown\\\":\\\"- [ ] Edited after planning\\\",\\\"op\\\":\\\"insert\\\"}]}\"\n  }\n"
       }
     },
     {

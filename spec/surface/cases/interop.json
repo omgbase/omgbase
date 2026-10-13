@@ -3832,7 +3832,11 @@
               "$new.0": "b_327",
               "$new.1": "b_328"
             },
-            "committed": true
+            "committed": true,
+            "summary": [
+              "insert 1 block at the end of /index.md",
+              "set markdown of paragraph b_30 in /index.md"
+            ]
           },
           {
             "version": 1,
@@ -3911,7 +3915,10 @@
                   "before": "---\ntype: hub\nlayer: canon\ntitle: Alchemy\ntags: [alchemy, index]\nverified: true\n---\n\n# Alchemy\n\nThe art of transformation — part proto-chemistry, part philosophy, part\ncontemplative practice. This repository collects notes on its substances,\nprocesses, practitioners, and primary texts.\n\n## The tria prima\n\nParacelsus reduced the material world to three principles:\n\n- [[mercury]] — the volatile spirit\n- [[sulphur]] — the combustible soul\n- [[salt]] — the fixed body\n\n## Substances\n\n- [prima materia](/substances/prima-materia.md) — the undifferentiated first matter\n- [the philosophers' stone](/substances/philosophers-stone.md) — the goal of the Great Work\n\n## Processes\n\nThe [magnum opus](/processes/magnum-opus.md) organizes the operations into\nstages. Individual operations are documented separately:\n\n- [calcination](/processes/calcination.md)\n- [dissolution](/processes/dissolution.md)\n- [coagulation](/processes/coagulation.md)\n\n## Practitioners\n\n| Practitioner | Tradition | Approximate era |\n|---|---|---|\n| [Maria Prophetissa](/practitioners/maria-prophetissa.md) | Alexandrian | 3rd century |\n| [Jabir ibn Hayyan](/practitioners/jabir-ibn-hayyan.md) | Islamic | 8th century |\n| [Paracelsus](/practitioners/paracelsus.md) | Western | 16th century |\n| [Isaac Newton](/practitioners/newton.md) | Western | 17th century |\n\n## Texts\n\n- [The Emerald Tablet](/texts/emerald-tablet.md)\n- [Mutus Liber](/texts/mutus-liber.md)\n\n## Laboratory\n\nWorking notes live under `lab/`, one file per month.\n\nAppended by apply.\n",
                   "after": "---\ntype: hub\nlayer: canon\ntitle: Alchemy\ntags: [alchemy, index]\nverified: true\n---\n\n# Alchemy\n\nThe art of transformation — part proto-chemistry, part philosophy, part\ncontemplative practice. This repository collects notes on its substances,\nprocesses, practitioners, and primary texts.\n\n## The tria prima\n\nParacelsus reduced the material world to three principles:\n\n- [[mercury]] — the volatile spirit\n- [[sulphur]] — the combustible soul\n- [[salt]] — the fixed body\n\n## Substances\n\n- [prima materia](/substances/prima-materia.md) — the undifferentiated first matter\n- [the philosophers' stone](/substances/philosophers-stone.md) — the goal of the Great Work\n\n## Processes\n\nThe [magnum opus](/processes/magnum-opus.md) organizes the operations into\nstages. Individual operations are documented separately:\n\n- [calcination](/processes/calcination.md)\n- [dissolution](/processes/dissolution.md)\n- [coagulation](/processes/coagulation.md)\n\n## Practitioners\n\n| Practitioner | Tradition | Approximate era |\n|---|---|---|\n| [Maria Prophetissa](/practitioners/maria-prophetissa.md) | Alexandrian | 3rd century |\n| [Jabir ibn Hayyan](/practitioners/jabir-ibn-hayyan.md) | Islamic | 8th century |\n| [Paracelsus](/practitioners/paracelsus.md) | Western | 16th century |\n| [Isaac Newton](/practitioners/newton.md) | Western | 17th century |\n\n## Texts\n\n- [The Emerald Tablet](/texts/emerald-tablet.md)\n- [Mutus Liber](/texts/mutus-liber.md)\n\nWorking notes live under `lab/`, one file per month.\n\nAppended by apply.\n"
                 }
-              }
+              },
+              "summary": [
+                "remove heading \"Laboratory\" from /index.md"
+              ]
             }
           }
         ],
@@ -4279,7 +4286,10 @@
               "$new.0": "b_327",
               "$new.1": "b_328"
             },
-            "committed": true
+            "committed": true,
+            "summary": [
+              "insert 2 blocks at the end of /processes/calcination.md"
+            ]
           },
           {
             "plan_id": "33feb8af7a9d979fd83ca1995687dafda27c6005d068b6daea7b5c00a2dfcad7",
@@ -4295,7 +4305,10 @@
               "$new.0": "b_329",
               "$new.1": "b_330"
             },
-            "committed": true
+            "committed": true,
+            "summary": [
+              "insert 1 block after list_item b_150 in /processes/calcination.md"
+            ]
           },
           {
             "error": "block_missing",
@@ -4608,7 +4621,10 @@
             "new_ids": {
               "$new.0": "b_327"
             },
-            "committed": true
+            "committed": true,
+            "summary": [
+              "set markdown of paragraph b_1 in /index.md"
+            ]
           },
           {
             "plan_id": "5148553cd8fccb1ff09971173c9ae88de8ab07435c8f140658b7cca847331a63",
@@ -4621,7 +4637,10 @@
               }
             ],
             "new_ids": {},
-            "committed": true
+            "committed": true,
+            "summary": [
+              "check task b_56 in /lab/2026-01-notes.md"
+            ]
           },
           {
             "error": "stale_expectation",
@@ -4918,7 +4937,10 @@
               }
             ],
             "new_ids": {},
-            "committed": true
+            "committed": true,
+            "summary": [
+              "move list_item b_7 to the start of list b_4 in /index.md"
+            ]
           },
           {
             "plan_id": "40ceed3ff5c21dba3ef17a0132787ede35942742002bf6474cb804626953691c",
@@ -4931,7 +4953,10 @@
               }
             ],
             "new_ids": {},
-            "committed": true
+            "committed": true,
+            "summary": [
+              "move 2 blocks before heading \"The tria prima\" in /index.md"
+            ]
           },
           {
             "error": "target_missing",
@@ -5165,7 +5190,10 @@
             "new_ids": {
               "$new.0": "b_327"
             },
-            "committed": true
+            "committed": true,
+            "summary": [
+              "split paragraph b_1 at offset 98 in /index.md"
+            ]
           },
           {
             "plan_id": "c0d0f2c812e2493e777827f1dd07e5e317224ec964f557eda38a15c3969164cf",
@@ -5178,7 +5206,10 @@
               }
             ],
             "new_ids": {},
-            "committed": true
+            "committed": true,
+            "summary": [
+              "merge 2 blocks into paragraph b_43 in /lab/2026-01-notes.md"
+            ]
           },
           {
             "plan_id": "23784a735942c06ad1f7d8f900457cb460469288fcf0870077c0b3fdc66d709d",
@@ -5191,7 +5222,10 @@
               }
             ],
             "new_ids": {},
-            "committed": true
+            "committed": true,
+            "summary": [
+              "remove 2 blocks from /lab/2026-01-notes.md"
+            ]
           },
           {
             "error": "block_missing",
@@ -5595,7 +5629,11 @@
               }
             ],
             "new_ids": {},
-            "committed": true
+            "committed": true,
+            "summary": [
+              "check task b_56 in /lab/2026-01-notes.md",
+              "check task b_57 in /lab/2026-01-notes.md"
+            ]
           },
           {
             "plan_id": "0f501a15bccfc2da0d13f898930bc96e1c08eee39f47eb84c64f130898568ad6",
@@ -5608,7 +5646,10 @@
               }
             ],
             "new_ids": {},
-            "committed": true
+            "committed": true,
+            "summary": [
+              "uncheck task b_52 in /lab/2026-01-notes.md"
+            ]
           },
           {
             "plan_id": "00f88f6551f8516a7881b3da1ffdd80f2f15e8c4f9d9e3a91e88a375e93a58a1",
@@ -5621,7 +5662,10 @@
               }
             ],
             "new_ids": {},
-            "committed": true
+            "committed": true,
+            "summary": [
+              "check paragraph b_1 in /index.md"
+            ]
           },
           {
             "plan_id": "5bdac7c7784ea74317e2493c3a27190f8a0720c59a03b863010db213bb239f64",
@@ -5637,7 +5681,10 @@
               "$new.0": "b_327",
               "$new.1": "b_328"
             },
-            "committed": true
+            "committed": true,
+            "summary": [
+              "set name = \"Calcination\" on node n_c7ebbf77d614 in /index.md"
+            ]
           },
           {
             "error": "node_not_editable",
@@ -6813,7 +6860,10 @@
               "$new.0": "b_327",
               "$new.1": "b_328"
             },
-            "committed": true
+            "committed": true,
+            "summary": [
+              "insert 1 block at the end of section \"Products\" in /processes/calcination.md"
+            ]
           },
           {
             "plan_id": "2e1a24ce80de7cefdac219612f7f9d2fc0e72b0109544c24cc73ed71ecc959a2",
@@ -6828,7 +6878,10 @@
             "new_ids": {
               "$new.0": "b_333"
             },
-            "committed": true
+            "committed": true,
+            "summary": [
+              "insert 1 block at the end of section \"Laboratory\" in /index.md"
+            ]
           },
           {
             "error": "parent_missing",
@@ -6836,7 +6889,8 @@
             "message": "no heading \"Nope\" in /processes/calcination.md",
             "data": {
               "section": "Nope",
-              "path": "/processes/calcination.md"
+              "path": "/processes/calcination.md",
+              "fix": "docs_append {\"path\":\"processes/calcination.md\",\"text\":\"x\"}"
             }
           },
           {
@@ -6853,7 +6907,10 @@
               "$new.0": "b_334",
               "$new.1": "b_335"
             },
-            "committed": true
+            "committed": true,
+            "summary": [
+              "insert 2 blocks at the end of /texts/mutus-liber.md"
+            ]
           },
           {
             "plan_id": "ae43b39ad3feb424971e661e5cd67d05a3d796e14b8a3741a57ff0dac761a62e",
@@ -6868,7 +6925,10 @@
             "new_ids": {
               "$new.0": "b_336"
             },
-            "committed": true
+            "committed": true,
+            "summary": [
+              "insert 1 block at the end of /texts/emerald-tablet.md"
+            ]
           },
           {
             "error": "doc_missing",
@@ -7290,7 +7350,10 @@
             "new_ids": {
               "$new.0": "b_327"
             },
-            "committed": true
+            "committed": true,
+            "summary": [
+              "retarget 1 link nigredo → processes/magnum-opus.md in 1 document"
+            ]
           },
           {
             "hits": [
@@ -7424,7 +7487,10 @@
               "$new.15": "b_343",
               "$new.16": "b_344"
             },
-            "committed": true
+            "committed": true,
+            "summary": [
+              "retarget 9 links over 2 pairs in 8 documents"
+            ]
           },
           {
             "version": 1,
@@ -7707,6 +7773,9 @@
                   "after": "---\ntype: substance\nslug: sulphur\nlayer: canon\ntradition: western\nelement: sulphur\ntags: [substance, tria-prima]\nverified: true\n---\n\n# Sulphur\n\nBrimstone: yellow, brittle, and burns with a blue flame and a choking smell.\nIts behaviour under heat made it the natural emblem of combustibility.\n\nsymbol:: 🜍\nmelting_point:: 115.2\ntoxic:: mildly\n\n## As a principle\n\nSulphur is the soul — the combustible principle, what makes a substance\nflammable and gives it colour and character. It mediates between the volatile\n[[substances/mercury.md]] and the fixed [[substances/salt.md]].\n\nIn the mercury–sulphur theory inherited from\n[Jabir ibn Hayyan](/practitioners/jabir-ibn-hayyan.md), every metal is a\ncompound of the two, and the proportions determine the metal. Gold is a perfect\nbalance; lead is the same pair badly mixed. Transmutation therefore requires no\nnew matter, only a correction of proportion — which is why the theory was so\ndurable and so encouraging.\n\n## As a material\n\nSulphur combines directly with most metals on heating, producing sulphides whose\ncolours are dramatic and reproducible. This is genuinely useful chemistry, and\nmuch of the practical content of the alchemical corpus concerns it. The bench\nwork is tracked in the [January notes](/lab/2026-01-notes.md).\n"
                 }
               },
+              "summary": [
+                "retarget 6 links salt → substances/salt.md in 6 documents"
+              ],
               "retarget": [
                 {
                   "effect_index": 0,
@@ -8626,7 +8695,10 @@
               "$new.1": "b_327",
               "$new.2": "b_328"
             },
-            "committed": true
+            "committed": true,
+            "summary": [
+              "create /substances/gold.md (2 blocks)"
+            ]
           },
           {
             "error": "path_taken",
@@ -8648,6 +8720,9 @@
               "$new.1": "b_330"
             },
             "committed": true,
+            "summary": [
+              "move /texts/mutus-liber.md → /texts/silent-book.md (retarget 1 link in 1 document)"
+            ],
             "retargeted": {
               "blocks": [
                 "b_28"
@@ -9430,14 +9505,22 @@
               }
             ],
             "new_ids": {},
-            "committed": true
+            "committed": true,
+            "summary": [
+              "set frontmatter.verified = false in /substances/salt.md",
+              "set frontmatter.reviewed = \"2026-09\" in /substances/salt.md",
+              "unset frontmatter.tradition in /substances/salt.md"
+            ]
           },
           {
             "plan_id": "944307a11fda01a7128dff17f7cdbf50ad9bb9836f723453d70633f7c543e67c",
             "commit": "c_21",
             "revisions": [],
             "new_ids": {},
-            "committed": true
+            "committed": true,
+            "summary": [
+              "remove /texts/emerald-tablet.md"
+            ]
           },
           {
             "error": "doc_missing",
@@ -10211,6 +10294,9 @@
                   "after": "---\ntype: practitioner\nlayer: working\ntradition: western\nera: 1680\ntags: [practitioner, transmutation]\nverified: true\n---\n\n# Isaac Newton\n\n1643–1727. Wrote more on alchemy than on physics, and published almost none of it.\n\nknown_for:: unpublished alchemical corpus\ncentury:: 17\n\n## Scale of the work\n\nRoughly a million words of alchemical manuscript survive: transcriptions,\nindexes of authors, and his own laboratory records with quantities and dates. He\nkept furnaces at Trinity for decades and ran the work himself rather than\ndelegating it.\n\nKeynes, who bought a large part of the papers at auction in 1936, called him\n\"the last of the magicians.\" The phrase is memorable and slightly unfair — the\nnotebooks are methodical, quantitative, and unmystical in tone.\n\n## The index of authors\n\nHis *Index Chemicus* cross-references hundreds of alchemical texts by topic. It\nis a serious piece of scholarship on a corpus he expected to contain a real\nsecret, encoded.\n\nThat expectation was the error, and it was not a careless one: the tradition\n*claimed* to encode a secret, and Newton took the claim at face value and tested\nit with the most rigorous method available. The method was sound; the corpus was\nempty.\n\n## Why it matters here\n\nNewton is the clean case against reading alchemy as mere credulity. The most\ncapable investigator of the era worked the programme for thirty years with full\nrigour and got nothing, because there was nothing there. That is a result, and\nthe [magnum opus](/processes/magnum-opus.md) framework does not survive it.\n\n- [x] Read the Index Chemicus entries on [[mercury]]\n- [ ] Compare Keynes's catalogue with the Sotheby's lot list\n"
                 }
               },
+              "summary": [
+                "set content of /practitioners/newton.md"
+              ],
               "identity": {
                 "d_5": {
                   "matcher_v": "m2.3",
@@ -10270,14 +10356,20 @@
               "$new.2": "b_329",
               "$new.3": "b_330"
             },
-            "committed": true
+            "committed": true,
+            "summary": [
+              "set content of /practitioners/newton.md"
+            ]
           },
           {
             "plan_id": "ddb8f7e6031646700ab5fc4a7d2f9719907053197a749ef0e3ce2f9afc1b2e06",
             "commit": null,
             "revisions": [],
             "new_ids": {},
-            "committed": true
+            "committed": true,
+            "summary": [
+              "set content of /practitioners/newton.md"
+            ]
           }
         ],
         "reads": [
@@ -11048,7 +11140,10 @@
               }
             ],
             "new_ids": {},
-            "committed": true
+            "committed": true,
+            "summary": [
+              "move task b_57 to the end of list b_77 in /lab/2026-02-notes.md"
+            ]
           }
         ],
         "reads": [
@@ -11272,7 +11367,10 @@
             "new_ids": {
               "$new.0": "b_327"
             },
-            "committed": true
+            "committed": true,
+            "summary": [
+              "set markdown of paragraph b_277 in /substances/salt.md"
+            ]
           }
         ],
         "reads": [
@@ -11931,7 +12029,11 @@
                   "before": "---\ntype: substance\nslug: salt\nlayer: canon\ntradition: western\nelement: salt\ntags: [substance, tria-prima]\nverified: true\n---\n\n# Salt\n\nWhat remains. Burn a plant to ash and leach the ash with water, and the residue\nthat crystallizes out is the salt — the incombustible, fixed body.\n\nsymbol:: 🜔\nsoluble:: yes\ntoxic:: no\n\n## As a principle\n\nSalt is the third of the tria prima: the body that gives a substance its\npersistence and form. Where [[mercury]] flies off and [[sulphur]] burns, salt\nstays behind.\n\nThe operation that produces it is straightforward and repeatable, which gave the\nprinciple an evidential weight the other two lacked. You can *show* someone the\nsalt of a plant.\n\n## Practical extraction\n\nThe standard route, still sound:\n\n1. Incinerate the material completely — see [calcination](/processes/calcination.md).\n2. Leach the ash with distilled water.\n3. Filter, then evaporate slowly to crystallize.\n\n[Coagulation](/processes/coagulation.md) is the general name for step 3.\n\n## Note\n\nThe alchemical \"salt\" is not sodium chloride but the mixed carbonates and\npotash left after combustion. The terminology predates the distinction.\n\n## Supplies\n\nBench stock for the leaching work. Nothing outstanding.\n\n- [x] Buy more salt of tartar\n- [x] Replace the leaching filter papers\n",
                   "after": "---\ntype: substance\nslug: salt\nlayer: canon\ntradition: western\nelement: salt\ntags:\n  - substance\n  - tria-prima\nverified: true\nreviewed: 2026-10\n---\n\n# Salt\n\nWhat remains. Burn a plant to ash and leach the ash with water, and the residue\nthat crystallizes out is the salt — the incombustible, fixed body.\n\nsymbol:: 🜔\nsoluble:: yes\ntoxic:: no\n\n## As a principle\n\nSalt is the third of the tria prima: the body that gives a substance its\npersistence and form. Where [[mercury]] flies off and [[sulphur]] burns, salt\nstays behind.\n\nThe operation that produces it is straightforward and repeatable, which gave the\nprinciple an evidential weight the other two lacked. You can *show* someone the\nsalt of a plant.\n\n## Practical extraction\n\nThe standard route, still sound:\n\n1. Incinerate the material completely — see [calcination](/processes/calcination.md).\n2. Leach the ash with distilled water.\n3. Filter, then evaporate slowly to crystallize.\n\n[Coagulation](/processes/coagulation.md) is the general name for step 3.\n\n## Note\n\nThe alchemical \"salt\" is not sodium chloride but the mixed carbonates and\npotash left after combustion. The terminology predates the distinction.\n\nChecked against the 1702 edition.\n\n## Supplies\n\nBench stock for the leaching work. Nothing outstanding.\n\n- [x] Buy more salt of tartar\n- [x] Replace the leaching filter papers\n"
                 }
-              }
+              },
+              "summary": [
+                "set frontmatter.reviewed = \"2026-10\" in /substances/salt.md",
+                "insert 1 block at the end of section \"Note\" in /substances/salt.md"
+              ]
             }
           },
           {
@@ -11947,7 +12049,11 @@
             "new_ids": {
               "$new.0": "b_327"
             },
-            "committed": true
+            "committed": true,
+            "summary": [
+              "set frontmatter.reviewed = \"2026-10\" in /substances/salt.md",
+              "insert 1 block at the end of section \"Note\" in /substances/salt.md"
+            ]
           },
           {
             "plan_id": "99ba9c505beabbb6aeb360493e8f8f8298cb4d6831cf4667b3f268898ab3e4ff",
@@ -11964,7 +12070,11 @@
               "$new.1": "b_328",
               "$new.2": "b_329"
             },
-            "committed": true
+            "committed": true,
+            "summary": [
+              "create /texts/rosarium.md (2 blocks)",
+              "set frontmatter.layer = \"canon\" in /texts/rosarium.md"
+            ]
           }
         ],
         "reads": [
@@ -12311,7 +12421,11 @@
                   "before": "---\ntype: substance\nslug: salt\nlayer: canon\ntradition: western\nelement: salt\ntags: [substance, tria-prima]\nverified: true\n---\n\n# Salt\n\nWhat remains. Burn a plant to ash and leach the ash with water, and the residue\nthat crystallizes out is the salt — the incombustible, fixed body.\n\nsymbol:: 🜔\nsoluble:: yes\ntoxic:: no\n\n## As a principle\n\nSalt is the third of the tria prima: the body that gives a substance its\npersistence and form. Where [[mercury]] flies off and [[sulphur]] burns, salt\nstays behind.\n\nThe operation that produces it is straightforward and repeatable, which gave the\nprinciple an evidential weight the other two lacked. You can *show* someone the\nsalt of a plant.\n\n## Practical extraction\n\nThe standard route, still sound:\n\n1. Incinerate the material completely — see [calcination](/processes/calcination.md).\n2. Leach the ash with distilled water.\n3. Filter, then evaporate slowly to crystallize.\n\n[Coagulation](/processes/coagulation.md) is the general name for step 3.\n\n## Note\n\nThe alchemical \"salt\" is not sodium chloride but the mixed carbonates and\npotash left after combustion. The terminology predates the distinction.\n\n## Supplies\n\nBench stock for the leaching work. Nothing outstanding.\n\n- [x] Buy more salt of tartar\n- [x] Replace the leaching filter papers\n",
                   "after": "---\ntype: substance\nslug: salt\nlayer: canon\ntradition: western\nelement: salt\ntags:\n  - substance\n  - tria-prima\nverified: true\nreviewed: 2026-10\n---\n\n# Salt\n\nWhat remains. Burn a plant to ash and leach the ash with water, and the residue\nthat crystallizes out is the salt — the incombustible, fixed body.\n\nsymbol:: 🜔\nsoluble:: yes\ntoxic:: no\n\n## As a principle\n\nSalt is the third of the tria prima: the body that gives a substance its\npersistence and form. Where [[mercury]] flies off and [[sulphur]] burns, salt\nstays behind.\n\nThe operation that produces it is straightforward and repeatable, which gave the\nprinciple an evidential weight the other two lacked. You can *show* someone the\nsalt of a plant.\n\n## Practical extraction\n\nThe standard route, still sound:\n\n1. Incinerate the material completely — see [calcination](/processes/calcination.md).\n2. Leach the ash with distilled water.\n3. Filter, then evaporate slowly to crystallize.\n\n[Coagulation](/processes/coagulation.md) is the general name for step 3.\n\n## Note\n\nThe alchemical \"salt\" is not sodium chloride but the mixed carbonates and\npotash left after combustion. The terminology predates the distinction.\n\nChecked against the 1702 edition.\n\n## Supplies\n\nBench stock for the leaching work. Nothing outstanding.\n\n- [x] Buy more salt of tartar\n- [x] Replace the leaching filter papers\n"
                 }
-              }
+              },
+              "summary": [
+                "set frontmatter.reviewed = \"2026-10\" in /substances/salt.md",
+                "insert 1 block at the end of section \"Note\" in /substances/salt.md"
+              ]
             }
           },
           {
@@ -12327,7 +12441,10 @@
             "new_ids": {
               "$new.0": "b_327"
             },
-            "committed": true
+            "committed": true,
+            "summary": [
+              "insert 1 block at the end of /texts/mutus-liber.md"
+            ]
           }
         ],
         "reads": [
@@ -12766,7 +12883,11 @@
                   "before": "---\ntype: substance\nslug: salt\nlayer: canon\ntradition: western\nelement: salt\ntags: [substance, tria-prima]\nverified: true\n---\n\n# Salt\n\nWhat remains. Burn a plant to ash and leach the ash with water, and the residue\nthat crystallizes out is the salt — the incombustible, fixed body.\n\nsymbol:: 🜔\nsoluble:: yes\ntoxic:: no\n\n## As a principle\n\nSalt is the third of the tria prima: the body that gives a substance its\npersistence and form. Where [[mercury]] flies off and [[sulphur]] burns, salt\nstays behind.\n\nThe operation that produces it is straightforward and repeatable, which gave the\nprinciple an evidential weight the other two lacked. You can *show* someone the\nsalt of a plant.\n\n## Practical extraction\n\nThe standard route, still sound:\n\n1. Incinerate the material completely — see [calcination](/processes/calcination.md).\n2. Leach the ash with distilled water.\n3. Filter, then evaporate slowly to crystallize.\n\n[Coagulation](/processes/coagulation.md) is the general name for step 3.\n\n## Note\n\nThe alchemical \"salt\" is not sodium chloride but the mixed carbonates and\npotash left after combustion. The terminology predates the distinction.\n\n## Supplies\n\nBench stock for the leaching work. Nothing outstanding.\n\n- [x] Buy more salt of tartar\n- [x] Replace the leaching filter papers\n",
                   "after": "---\ntype: substance\nslug: salt\nlayer: canon\ntradition: western\nelement: salt\ntags:\n  - substance\n  - tria-prima\nverified: true\nreviewed: 2026-10\n---\n\n# Salt\n\nWhat remains. Burn a plant to ash and leach the ash with water, and the residue\nthat crystallizes out is the salt — the incombustible, fixed body.\n\nsymbol:: 🜔\nsoluble:: yes\ntoxic:: no\n\n## As a principle\n\nSalt is the third of the tria prima: the body that gives a substance its\npersistence and form. Where [[mercury]] flies off and [[sulphur]] burns, salt\nstays behind.\n\nThe operation that produces it is straightforward and repeatable, which gave the\nprinciple an evidential weight the other two lacked. You can *show* someone the\nsalt of a plant.\n\n## Practical extraction\n\nThe standard route, still sound:\n\n1. Incinerate the material completely — see [calcination](/processes/calcination.md).\n2. Leach the ash with distilled water.\n3. Filter, then evaporate slowly to crystallize.\n\n[Coagulation](/processes/coagulation.md) is the general name for step 3.\n\n## Note\n\nThe alchemical \"salt\" is not sodium chloride but the mixed carbonates and\npotash left after combustion. The terminology predates the distinction.\n\nChecked against the 1702 edition.\n\n## Supplies\n\nBench stock for the leaching work. Nothing outstanding.\n\n- [x] Buy more salt of tartar\n- [x] Replace the leaching filter papers\n"
                 }
-              }
+              },
+              "summary": [
+                "set frontmatter.reviewed = \"2026-10\" in /substances/salt.md",
+                "insert 1 block at the end of section \"Note\" in /substances/salt.md"
+              ]
             }
           },
           {
@@ -12782,7 +12903,10 @@
             "new_ids": {
               "$new.0": "b_327"
             },
-            "committed": true
+            "committed": true,
+            "summary": [
+              "set markdown of paragraph b_275 in /substances/salt.md"
+            ]
           },
           {
             "error": "stale_plan",
@@ -12794,7 +12918,8 @@
                 "revision": "r_20",
                 "hash": "ba9a22102f82a6a528be11f689448fb1894798c217d370556849d666b52bcee9"
               },
-              "retriable": true
+              "retriable": true,
+              "fix": "{\"effects\":[{\"field\":\"frontmatter.reviewed\",\"op\":\"set\",\"target\":{\"id\":\"d_14\",\"kind\":\"document\",\"path\":\"substances/salt.md\"},\"value\":\"2026-10\"},{\"at\":\"end\",\"into\":{\"heading_id\":\"b_274\",\"kind\":\"section\"},\"markdown\":\"Checked against the 1702 edition.\",\"op\":\"insert\"}]}"
             }
           },
           {
@@ -12802,7 +12927,8 @@
             "retriable": false,
             "data": {
               "expected": "a73934028edf8a789ac75911476d7316aeb580698f788ccda78acfc427e2df1d",
-              "actual": "d24d39bb23a2eff3e53f9687844ee246c35b547b848ecd84e423fe1eb89949ba"
+              "actual": "d24d39bb23a2eff3e53f9687844ee246c35b547b848ecd84e423fe1eb89949ba",
+              "fix": "{\"effects\":[{\"field\":\"frontmatter.reviewed\",\"op\":\"set\",\"target\":{\"kind\":\"document\",\"path\":\"substances/salt.md\"},\"value\":\"2026-10\"},{\"at\":\"end\",\"into\":{\"heading_id\":\"b_274\",\"kind\":\"section\"},\"markdown\":\"Checked against the 1702 edition.\",\"op\":\"insert\"}]}"
             }
           },
           {
@@ -12989,7 +13115,13 @@
               "$new.6": "b_332",
               "$new.7": "b_333"
             },
-            "committed": true
+            "committed": true,
+            "summary": [
+              "create /texts/aurora.md (5 blocks)",
+              "insert 1 block at the end of section \"Plates\" in /texts/aurora.md",
+              "insert 1 block at the end of /texts/aurora.md",
+              "set frontmatter.layer = \"draft\" in /texts/aurora.md"
+            ]
           }
         ],
         "reads": [
@@ -13186,7 +13318,10 @@
             "new_ids": {
               "$new.0": "b_327"
             },
-            "committed": true
+            "committed": true,
+            "summary": [
+              "set markdown of paragraph b_1 in /index.md"
+            ]
           },
           {
             "plan_id": "34f957e7ea46c607fb0d31d94a1d52cb78f9086929906c8f46c6565f73a8b53c",
@@ -13199,7 +13334,11 @@
               }
             ],
             "new_ids": {},
-            "committed": true
+            "committed": true,
+            "summary": [
+              "check task b_56 in /lab/2026-01-notes.md",
+              "check task b_57 in /lab/2026-01-notes.md"
+            ]
           },
           {
             "error": "filter_invalid",
@@ -13291,7 +13430,10 @@
                   "before": "---\ntype: process\nslug: calcination\nlayer: canon\ntradition: western\ntags: [process, fire]\nverified: true\nstage: nigredo\n---\n\n# Calcination\n\nHeating a substance in air until it is reduced to a friable powder — a *calx*.\nThe first of the twelve gates and, in practice, the first thing anyone does.\n\nelement:: fire\nreversible:: no\n\n## Procedure\n\nGrind the material, spread it thinly in an open crucible, and heat steadily\nbelow the melting point. Stir to expose fresh surface. Continue until no further\nweight is lost and no fumes come off.\n\n```text\ncrucible → grind → thin layer → moderate heat → stir → constant weight\n```\n\nThe endpoint is the constant weight, not the colour. Colour tells you which\noxide you have; weight tells you that you are finished.\n\n## What is actually happening\n\nOrganic matter burns away; metals take up oxygen. The characteristic *gain* in\nweight when calcining a metal is the observation that eventually broke the\nphlogiston theory — the calx weighs more than the metal, which a theory of\nescaping substance cannot accommodate.\n\nAlchemical practice recorded this gain for centuries without drawing the\ninference. The data were sound; the framework could not use them.\n\n## Products\n\n- calcined lead → yellow massicot, then red minium\n- calcined copper → black tenorite\n- plant matter → ash, source of the [[salt]]\n\n## Tasks\n\n- [x] Verify the weight gain on lead with a balance\n- [ ] Repeat with copper and record the colour sequence\n- [ ] Chase down the earliest recorded weight-gain measurement\n",
                   "after": "---\ntype: process\nslug: calcination\nlayer: canon\ntradition: western\ntags: [process, fire]\nverified: true\nstage: nigredo\n---\n\n# Calcination\n\nHeating a substance in air until it is reduced to a friable powder — a *calx*.\nThe first of the twelve gates and, in practice, the first thing anyone does.\n\nelement:: fire\nreversible:: no\n\n## Procedure\n\nGrind the material, spread it thinly in an open crucible, and heat steadily\nbelow the melting point. Stir to expose fresh surface. Continue until no further\nweight is lost and no fumes come off.\n\n```text\ncrucible → grind → thin layer → moderate heat → stir → constant weight\n```\n\nThe endpoint is the constant weight, not the colour. Colour tells you which\noxide you have; weight tells you that you are finished.\n\n## What is actually happening\n\nOrganic matter burns away; metals take up oxygen. The characteristic *gain* in\nweight when calcining a metal is the observation that eventually broke the\nphlogiston theory — the calx weighs more than the metal, which a theory of\nescaping substance cannot accommodate.\n\nAlchemical practice recorded this gain for centuries without drawing the\ninference. The data were sound; the framework could not use them.\n\n## Products\n\n- calcined lead → yellow massicot, then red minium\n- calcined copper → black tenorite\n- plant matter → ash, source of the [[salt]]\n\n## Tasks\n\n- [x] Verify the weight gain on lead with a balance\n- [ ] Repeat with copper and record the colour sequence\n- [ ] Chase down the earliest recorded weight-gain measurement\n\n## Notes\n\nPreviewed only.\n"
                 }
-              }
+              },
+              "summary": [
+                "insert 2 blocks at the end of /processes/calcination.md"
+              ]
             }
           },
           {
@@ -13308,7 +13450,10 @@
               "$new.0": "b_328",
               "$new.1": "b_329"
             },
-            "committed": true
+            "committed": true,
+            "summary": [
+              "insert 2 blocks at the end of /processes/calcination.md"
+            ]
           }
         ],
         "reads": [
@@ -13801,7 +13946,13 @@
                   "before": "---\ntype: lab-note\nlayer: working\ntags: [lab, coagulation]\nverified: true\nmonth: 2\nsubject: coagulation\nwindow: 2026-02-01..2026-02-28\n---\n\n# Laboratory notes — February\n\nRecrystallization series on alum, testing the \"purity gain per cycle\" claim from\n[coagulation](/processes/coagulation.md).\n\noperator:: bb\nbalance:: analytical\n\n## Method\n\nSaturate at 80 °C, filter hot through a warmed funnel, cool undisturbed to room\ntemperature overnight, harvest, then re-saturate the mother liquor.\n\n```text\nsaturate 80C → hot filter → cool overnight → harvest → repeat on liquor\n```\n\n## Results\n\n| Cycle | Crop (g) | Notes |\n|---|---|---|\n| 1 | 14.2 | large clean octahedra |\n| 2 | 5.8 | slightly smaller, still clear |\n| 3 | 1.9 | small, some inclusions |\n| 4 | 0.4 | poor, cloudy |\n\nYield falls off fast. Crystal quality is best in cycle 1 and degrades as\nimpurities concentrate in the liquor — the opposite of the alchemical expectation\nthat repeated cycling *improves* the product indefinitely.\n\nThe refinement is real but bounded, and it plateaus by cycle 3. That is exactly\nthe asymptote the tradition mistook for a trajectory.\n\n## Conclusion\n\n`solve et coagula` purifies. It does not transform. The claim in\n[the philosophers' stone](/substances/philosophers-stone.md) does not follow from\nthis bench behaviour, and would not have followed for anyone who weighed the\ncrops.\n\n## Tasks\n\n- [x] Four recrystallization cycles with weights\n- [x] Note crystal quality per cycle\n- [ ] Assay cycle 1 and cycle 4 crops for iron\n- [ ] Write the plateau result up for the coagulation note\n",
                   "after": "---\ntype: lab-note\nlayer: working\ntags:\n  - lab\n  - coagulation\nverified: true\nmonth: 2\nsubject: coagulation\nwindow: 2026-02-01..2026-02-28\nrolled_up: true\n---\n\n# Laboratory notes — February\n\nRecrystallization series on alum, testing the \"purity gain per cycle\" claim from\n[coagulation](/processes/coagulation.md).\n\noperator:: bb\nbalance:: analytical\n\n## Method\n\nSaturate at 80 °C, filter hot through a warmed funnel, cool undisturbed to room\ntemperature overnight, harvest, then re-saturate the mother liquor.\n\n```text\nsaturate 80C → hot filter → cool overnight → harvest → repeat on liquor\n```\n\n## Results\n\n| Cycle | Crop (g) | Notes |\n|---|---|---|\n| 1 | 14.2 | large clean octahedra |\n| 2 | 5.8 | slightly smaller, still clear |\n| 3 | 1.9 | small, some inclusions |\n| 4 | 0.4 | poor, cloudy |\n\nYield falls off fast. Crystal quality is best in cycle 1 and degrades as\nimpurities concentrate in the liquor — the opposite of the alchemical expectation\nthat repeated cycling *improves* the product indefinitely.\n\nThe refinement is real but bounded, and it plateaus by cycle 3. That is exactly\nthe asymptote the tradition mistook for a trajectory.\n\n## Conclusion\n\n`solve et coagula` purifies. It does not transform. The claim in\n[the philosophers' stone](/substances/philosophers-stone.md) does not follow from\nthis bench behaviour, and would not have followed for anyone who weighed the\ncrops.\n\n## Tasks\n\n- [x] Four recrystallization cycles with weights\n- [x] Note crystal quality per cycle\n- [ ] Assay cycle 1 and cycle 4 crops for iron\n- [ ] Write the plateau result up for the coagulation note\n"
                 }
-              }
+              },
+              "summary": [
+                "insert 1 block at the end of /processes/calcination.md",
+                "set frontmatter.rolled_up = true in /lab/2026-01-notes.md",
+                "insert 1 block at the end of /processes/coagulation.md",
+                "set frontmatter.rolled_up = true in /lab/2026-02-notes.md"
+              ]
             }
           },
           {
@@ -13833,7 +13984,13 @@
               "$new.0": "b_327",
               "$new.1": "b_328"
             },
-            "committed": true
+            "committed": true,
+            "summary": [
+              "insert 1 block at the end of /processes/calcination.md",
+              "set frontmatter.rolled_up = true in /lab/2026-01-notes.md",
+              "insert 1 block at the end of /processes/coagulation.md",
+              "set frontmatter.rolled_up = true in /lab/2026-02-notes.md"
+            ]
           }
         ],
         "reads": [
@@ -14036,7 +14193,8 @@
             "retriable": false,
             "data": {
               "cardinality": 2,
-              "max": 1
+              "max": 1,
+              "fix": "{\"effects\":[{\"field\":\"frontmatter.layer\",\"op\":\"set\",\"value\":\"draft\"}],\"expect\":{\"max\":2},\"select\":\"from docs where type == \\\"substance\\\" and verified == false\"}"
             }
           },
           {
@@ -14055,7 +14213,11 @@
               }
             ],
             "new_ids": {},
-            "committed": true
+            "committed": true,
+            "summary": [
+              "set frontmatter.layer = \"draft\" in /substances/philosophers-stone.md",
+              "set frontmatter.layer = \"draft\" in /substances/prima-materia.md"
+            ]
           }
         ],
         "reads": [
@@ -14185,7 +14347,8 @@
             "preview": {
               "results": [],
               "revisions": [],
-              "diffs": {}
+              "diffs": {},
+              "summary": []
             }
           },
           {
@@ -14193,7 +14356,8 @@
             "commit": null,
             "revisions": [],
             "new_ids": {},
-            "committed": true
+            "committed": true,
+            "summary": []
           }
         ],
         "reads": [

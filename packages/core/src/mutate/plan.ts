@@ -15,6 +15,7 @@ import {
 import type { IdentityPreview } from "./opset.js";
 import { compilePlain, compileSelection, selectionInvalid, type EffectOrigin, type Selection } from "./select.js";
 import { MutationError } from "./tree.js";
+import { canonicalJson, fixRequest, rootOfId, narrowedTo, type FixRequest } from "./canonical.js";
 
 // The Plan (spec/mutate §11.4–§11.7, 2.3): the frozen, executable, digest-named
 // result of lowering an ordered effect list. `plan` writes nothing; `execute`
@@ -68,6 +69,8 @@ export interface PlanPreview {
   identity?: Record<string, IdentityPreview>;
   /** (3.0) per `retarget` effect: its hits and pair counts; present when a plan has one */
   retarget?: RetargetPreview[];
+  /** (3.3, §11.9) one line in words per resolved effect, in order — the plan as a worked example; `[]` for a zero-hit selection */
+  summary: string[];
 }
 
 /** The executable core the digest covers. */
@@ -100,82 +103,13 @@ export interface Receipt {
   /** `$new.n` → the minted id */
   new_ids: Record<string, string>;
   committed: true;
+  /** (3.3, §11.9) the plan's `preview.summary` — what was committed, in words (`[]` when the plan was handed back without its preview) */
+  summary: string[];
 }
 
 // ---- canonical JSON and the digest (§11.5) ----------------------------------------------
 
-function cmpUtf8(a: string, b: string): number {
-  return Buffer.compare(Buffer.from(a, "utf8"), Buffer.from(b, "utf8"));
-}
-
-// A lone surrogate has no UTF-8 encoding: it cannot be digested (nor sent as JSON text).
-function isWellFormed(s: string): boolean {
-  for (let i = 0; i < s.length; i++) {
-    const c = s.charCodeAt(i);
-    if (c >= 0xd800 && c <= 0xdbff) {
-      const n = s.charCodeAt(i + 1);
-      if (!(n >= 0xdc00 && n <= 0xdfff)) return false;
-      i++;
-    } else if (c >= 0xdc00 && c <= 0xdfff) return false;
-  }
-  return true;
-}
-
-function canonicalString(s: string): string {
-  if (!isWellFormed(s)) throw effectInvalid("strings must be well-formed Unicode (a lone surrogate cannot be digested)");
-  let out = '"';
-  for (let i = 0; i < s.length; i++) {
-    const c = s.charCodeAt(i);
-    switch (c) {
-      case 0x22: out += '\\"'; break;
-      case 0x5c: out += "\\\\"; break;
-      case 0x08: out += "\\b"; break;
-      case 0x0c: out += "\\f"; break;
-      case 0x0a: out += "\\n"; break;
-      case 0x0d: out += "\\r"; break;
-      case 0x09: out += "\\t"; break;
-      default:
-        out += c < 0x20 ? `\\u${c.toString(16).padStart(4, "0")}` : s[i]!;
-    }
-  }
-  return out + '"';
-}
-
-function canonicalNumber(n: number): string {
-  if (!Number.isFinite(n)) throw effectInvalid("a number in a plan must be finite");
-  if (Number.isInteger(n) && Math.abs(n) < 2 ** 53) return String(n === 0 ? 0 : n);
-  return String(n);
-}
-
-/**
- * Canonical JSON (§11.5): no whitespace; object keys sorted by their UTF-8
- * bytes; members whose value is `undefined` omitted (an optional key absent is
- * absent, never `null`; a JSON `null` value stays `null`); strings escaped only
- * as JSON requires — `"`, `\`, and U+0000–U+001F (`\b \f \n \r \t`, else
- * `\u00xx` lower-case) — everything else literal UTF-8; a number that is
- * integral with |n| < 2^53 printed as a plain integer (`-0` as `0`), any other
- * finite number by ECMAScript `Number::toString` (shortest round-trip digits);
- * `true`/`false`/`null`.
- */
-export function canonicalJson(v: unknown): string {
-  if (v === null) return "null";
-  switch (typeof v) {
-    case "boolean":
-      return v ? "true" : "false";
-    case "number":
-      return canonicalNumber(v);
-    case "string":
-      return canonicalString(v);
-    case "object": {
-      if (Array.isArray(v)) return `[${v.map((x) => canonicalJson(x === undefined ? null : x)).join(",")}]`;
-      const o = v as Record<string, unknown>;
-      const keys = Object.keys(o).filter((k) => o[k] !== undefined).sort(cmpUtf8);
-      return `{${keys.map((k) => `${canonicalString(k)}:${canonicalJson(o[k])}`).join(",")}}`;
-    }
-    default:
-      throw effectInvalid(`a ${typeof v} cannot be digested`);
-  }
-}
+export { canonicalJson } from "./canonical.js";
 
 /** The executable core of a plan — the six digested keys (seven with `selection`), nothing else. */
 export function planCore(p: PlanCore): PlanCore {
@@ -259,7 +193,7 @@ export function planEffects(store: Store, req: PlanEffectsRequest): Plan {
       store, repoId: req.repoId, docStore, planner, symbols,
       blockSymbols: new Map(), creates: [], identity: new Map(), retargets: [], moves: [], tombstones: [], heads: new Map(), ops: [],
       pins: new Map(), parents: [], absentPaths: [], docBases: new Map(),
-      tracker: new ConflictTracker(canonicalJson), canonical: canonicalJson, resolved: [],
+      tracker: new ConflictTracker(canonicalJson), canonical: canonicalJson, resolved: [], summary: [],
     };
     effects.forEach((e, i) => {
       try {
@@ -273,6 +207,9 @@ export function planEffects(store: Store, req: PlanEffectsRequest): Plan {
           if (origin !== undefined && err.data.row === undefined) {
             err.data = { ...err.data, ...(origin.template_index !== undefined ? { template_index: origin.template_index } : {}), row: origin.row };
           }
+          // (3.3) the corrected example, built from the request as given (§8 "fix").
+          const fix = planningFix(err, i, req, origins, symbols);
+          if (fix !== undefined && err.data.fix === undefined) err.data = { ...err.data, fix };
         }
         throw err;
       }
@@ -318,11 +255,68 @@ export function planEffects(store: Store, req: PlanEffectsRequest): Plan {
       const moved = ctx.moves.find((m) => m.id === r.id);
       if (moved) r.path = moved.to;
     }
-    const preview: PlanPreview = { results: changeset.results, revisions, diffs };
+    const preview: PlanPreview = { results: changeset.results, revisions, diffs, summary: ctx.summary };
     if (ctx.identity.size > 0) preview.identity = Object.fromEntries(ctx.identity);
     if (ctx.retargets.length > 0) preview.retarget = ctx.retargets;
     return { ...core, plan_id, diagnostics: ctx.tracker.diagnostics, ...(templates !== undefined ? { templates } : {}), preview };
   });
+}
+
+// ---- the corrected examples of planning errors (§8 "fix", 3.3) ------------------------------
+
+/** The request as the caller gave it, for a `fix`: `select`/`expect` only when present. */
+function requestOf(req: { effects: unknown; select?: unknown; expect?: unknown }): FixRequest {
+  return { effects: req.effects, ...(req.select !== undefined ? { select: req.select } : {}), ...(req.expect !== undefined ? { expect: req.expect } : {}) };
+}
+
+/**
+ * `conflicting_effects`: keep the later effect — the request minus the earlier
+ * one; under a selector, a cross-hit collision narrows the selector to the
+ * later hit (`from <root> where id == …`, `expect.max: 1`) and a same-hit
+ * collision drops the earlier template. `stale_plan` at plan time (an
+ * `expect.revision` that no longer holds): the same request with the current
+ * revision in that guard. `target_missing { symbol }` for a `$new.n` no earlier
+ * effect created: the next `create` of a plain request moved before the effect
+ * that uses it, the symbol renamed to the one that create will allocate.
+ */
+function planningFix(err: MutationError, i: number, req: PlanEffectsRequest, origins: (EffectOrigin | undefined)[], symbols: SymbolTable): string | undefined {
+  const effects = Array.isArray(req.effects) ? (req.effects as unknown[]) : null;
+  if (effects === null) return undefined;
+  const selector = req.select !== undefined;
+  if (err.code === "conflicting_effects" && Array.isArray(err.data.effects)) {
+    const [a, b] = err.data.effects as [number, number];
+    if (!selector) return fixRequest({ effects: effects.filter((_, k) => k !== a) });
+    const oa = origins[a];
+    const ob = origins[b];
+    if (oa === undefined || ob === undefined || oa.template_index === undefined) return undefined;
+    if (oa.row.id !== ob.row.id) return fixRequest({ select: narrowedTo(rootOfId(ob.row.id), ob.row.id), effects, expect: { max: 1 } });
+    return fixRequest({ ...requestOf(req), effects: effects.filter((_, k) => k !== oa.template_index) });
+  }
+  if (err.code === "stale_plan" && isRecord(err.data.current) && typeof err.data.current.revision === "string") {
+    const t = selector ? origins[i]?.template_index : i;
+    if (t === undefined || !isRecord(effects[t])) return undefined;
+    const e = effects[t] as Record<string, unknown>;
+    const expect = { ...(isRecord(e.expect) ? e.expect : {}), revision: err.data.current.revision };
+    return fixRequest({ ...requestOf(req), effects: effects.map((x, k) => (k === t ? { ...e, expect } : x)) });
+  }
+  if (err.code === "target_missing" && typeof err.data.symbol === "string" && !selector && symbols.kindOf(err.data.symbol) === undefined) {
+    const c = effects.findIndex((e, k) => k > i && isRecord(e) && e.op === "create");
+    if (c < 0) return undefined;
+    const symbol = `$new.${symbols.entries.length}`;
+    const reordered = effects.filter((_, k) => k !== c);
+    reordered.splice(i, 0, effects[c]);
+    return fixRequest({ effects: reordered.map((e, k) => (k === i + 1 ? substituteSymbols(e, { [err.data.symbol as string]: symbol }) : e)) });
+  }
+  return undefined;
+}
+
+/** The `fix` of a plan that cannot be executed as it stands (`stale_plan`, `plan_mismatch`): re-plan and commit in one call — `apply` over the plan's selector form when it has one, else over its concrete effects (none when the plan has no effects: `apply` takes at least one). */
+function replanFix(plan: Pick<Plan, "effects"> & { selection?: Selection }): string | undefined {
+  if (plan.selection !== undefined) {
+    const sel = plan.selection;
+    return fixRequest({ select: sel.query, effects: sel.templates, expect: sel.expect ?? { max: sel.cardinality } });
+  }
+  return Array.isArray(plan.effects) && plan.effects.length > 0 ? fixRequest({ effects: plan.effects }) : undefined;
 }
 
 // ---- executing (§11.7) --------------------------------------------------------------------
@@ -387,7 +381,7 @@ export function admitPlan(input: unknown): Plan {
   const plan = input as unknown as Plan;
   const actual = planDigest(plan);
   if (actual !== plan.plan_id) {
-    throw new MutationError("plan_mismatch", "the plan's digest does not match its plan_id; it was edited or produced by a different planner — re-plan", { expected: plan.plan_id, actual });
+    throw new MutationError("plan_mismatch", "the plan's digest does not match its plan_id; it was edited or produced by a different planner — re-plan", { expected: plan.plan_id, actual, fix: replanFix(plan) });
   }
   return plan;
 }
@@ -410,7 +404,7 @@ export function executeByDigest(store: Store, req: ExecuteRequest & { planId: st
   return underLock(req, () => {
     const plan = planEffects(store, { repoId: req.repoId, docStore, ...(req.omgbaseDir !== undefined ? { omgbaseDir: req.omgbaseDir } : {}), effects: req.effects, ...selectorOf(req) });
     if (plan.plan_id !== req.planId) {
-      throw new MutationError("plan_mismatch", "the effects or the documents they target changed since the plan was made; re-plan", { expected: req.planId, actual: plan.plan_id });
+      throw new MutationError("plan_mismatch", "the effects or the documents they target changed since the plan was made; re-plan", { expected: req.planId, actual: plan.plan_id, fix: fixRequest(requestOf(req)) });
     }
     return executeAdmitted(store, req, plan, docStore);
   });
@@ -427,8 +421,14 @@ export function applyEffectsDetailed(store: Store, req: ExecuteRequest & { effec
   const docStore = resolveDocStore(req);
   const planIt = (): Plan => planEffects(store, { repoId: req.repoId, docStore, ...(req.omgbaseDir !== undefined ? { omgbaseDir: req.omgbaseDir } : {}), effects: req.effects, ...selectorOf(req) });
   if (req.dryRun) return { plan: planIt() };
-  // One-shot `apply` with a selector must bound it (§11.8): the caller never saw the hits.
-  if (req.select !== undefined && req.expect === undefined) throw selectionInvalid("`expect.max` is required on `apply` with `select` — bound the selection, or preview it with `plan`");
+  // One-shot `apply` with a selector must bound it (§11.8): the caller never saw
+  // the hits. The fix (3.3) is the same call bounded at the selection's actual
+  // size — the selector compiles (reads only) to count it; a selection the
+  // compile itself refuses reports its own error and fix.
+  if (req.select !== undefined && req.expect === undefined) {
+    const { selection } = compileSelection(store, req.repoId, req.select, undefined, req.effects);
+    throw selectionInvalid("`expect.max` is required on `apply` with `select` — bound the selection, or preview it with `plan`", { fix: fixRequest({ select: req.select, effects: req.effects, expect: { max: selection.cardinality } }) });
+  }
   return underLock(req, () => {
     const plan = planIt();
     return { plan, receipt: executeAdmitted(store, req, plan, docStore) };
@@ -499,6 +499,7 @@ function executeAdmitted(store: Store, req: ExecuteRequest, plan: Plan, docStore
         expected_revision: d.base_revision,
         current: { revision: row.currentRev, hash: row.fileHash },
         retriable: true,
+        fix: replanFix(plan),
       });
     }
   }
@@ -600,5 +601,5 @@ function executeAdmitted(store: Store, req: ExecuteRequest, plan: Plan, docStore
     const id = s.kind === "block" ? minted.b[bi++] : minted.d[di++];
     if (id !== undefined) newIds[s.symbol] = id;
   }
-  return { plan_id: plan.plan_id, commit: outcome.commitId, revisions, new_ids: newIds, committed: true };
+  return { plan_id: plan.plan_id, commit: outcome.commitId, revisions, new_ids: newIds, committed: true, summary: plan.preview?.summary ?? [] };
 }

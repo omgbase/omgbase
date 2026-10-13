@@ -28,6 +28,7 @@ b_write02  /lab/2026-02-notes.md
 omg> done @1
   1 row — address with @1..@1
   ok committed · 1 document touched
+    check task b_assay01 in /lab/2026-02-notes.md
 b_assay01
 omg> query 'from blocks where type == "task" and not attrs.checked and path == "/lab/2026-02-notes.md"'
   1 row — address with @1..@1

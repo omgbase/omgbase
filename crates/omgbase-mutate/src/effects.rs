@@ -1972,7 +1972,7 @@ impl RetargetPreview {
 
 /// §11.4 `preview`: excluded from the digest, omittable on echo. `identity`
 /// (per document, in effect order) and `retarget` (per effect) are present
-/// on the wire only when non-empty (mutate 3.0).
+/// on the wire only when non-empty (mutate 3.0); `summary` (3.3) always.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct PlanPreview {
     pub results: Vec<OpResult>,
@@ -1982,6 +1982,9 @@ pub struct PlanPreview {
     /// Doc id → the whole-document planner's identity decision.
     pub identity: Vec<(String, IdentityPreview)>,
     pub retarget: Vec<RetargetPreview>,
+    /// One line in words per resolved effect (3.3, [`crate::summary`]);
+    /// always on the wire (`[]` for a plan with nothing to do).
+    pub summary: Vec<String>,
 }
 
 impl PlanPreview {
@@ -2006,6 +2009,7 @@ impl PlanPreview {
             ),
         );
         m.insert("diffs".to_owned(), Value::Object(diffs));
+        m.insert("summary".to_owned(), json!(self.summary));
         if !self.identity.is_empty() {
             let mut identity = Map::new();
             for (doc, i) in &self.identity {
@@ -2097,12 +2101,14 @@ impl PlanPreview {
             })
             .transpose()?
             .unwrap_or_default();
+        let summary = strings(obj.get("summary")).unwrap_or_default();
         Ok(Self {
             results,
             revisions,
             diffs,
             identity,
             retarget,
+            summary,
         })
     }
 }

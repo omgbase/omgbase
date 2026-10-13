@@ -23,7 +23,9 @@ use crate::cli::context::Cli;
 use crate::cli::help::{render_help_for, wants_help};
 use crate::cli::output::{CliError, EXIT_OK, Result};
 
-use super::mutate::{effects_json, extract_content_opts, read_content, render_plan, set_actor};
+use super::mutate::{
+    effects_json, extract_content_opts, read_content, render_plan, render_summary, set_actor,
+};
 use super::{doc_locator, machine_out, str_of};
 
 const ACTOR: Opt = Opt::value("actor");
@@ -96,8 +98,9 @@ fn doc_identity(cli: &mut Cli, r: &str) -> Result<(String, String)> {
 
 /// §4 document-op confirmation over `{ id, path, committed: true }` (+ `mv`'s
 /// extras): the `--json` document in a machine mode, else `  ok <verb>
-/// <path>` on stderr and the id on stdout.
-fn report(cli: &mut Cli, verb: &str, res: &Json) -> Result<i32> {
+/// <path>` on stderr, the Receipt's `summary` lines under it (cli 4.3), and
+/// the id on stdout.
+fn report(cli: &mut Cli, verb: &str, res: &Json, receipt: &Json) -> Result<i32> {
     cli.capture(res);
     if let Some(code) = machine_out(cli, res, None, None) {
         return code;
@@ -107,6 +110,7 @@ fn report(cli: &mut Cli, verb: &str, res: &Json) -> Result<i32> {
         cli.style.ok(cli.style.glyphs().ok),
         cli.style.accent(&str_of(res, "path"))
     )));
+    render_summary(cli, receipt);
     cli.io.out(&str_of(res, "id"));
     Ok(EXIT_OK)
 }
@@ -169,7 +173,7 @@ pub fn new(cli: &mut Cli, args: &[String]) -> Result<i32> {
         .or_else(|| res["revisions"][0]["id"].as_str())
         .unwrap_or_default()
         .to_owned();
-    report(cli, "created", &doc_op(&id, &rel))
+    report(cli, "created", &doc_op(&id, &rel), &res)
 }
 
 // ---- mv -------------------------------------------------------------------------------
@@ -267,7 +271,7 @@ pub fn mv(cli: &mut Cli, args: &[String]) -> Result<i32> {
             out["retargeted"] = res.get("retargeted").cloned().unwrap_or(Json::Null);
         }
     }
-    let code = report(cli, "moved to", &out)?;
+    let code = report(cli, "moved to", &out, &res)?;
     if cli.machine() {
         return Ok(code);
     }
@@ -367,10 +371,10 @@ pub fn rm_doc(cli: &mut Cli, doc: &str, actor: Option<&str>) -> Result<i32> {
     }
     let (id, path) = doc_identity(cli, doc)?;
     let built = sugar::delete_document(&id, &path);
-    let Some(_) = run_doc(cli, "docs_delete", m, actor, &built)? else {
+    let Some(res) = run_doc(cli, "docs_delete", m, actor, &built)? else {
         return Ok(EXIT_OK);
     };
-    report(cli, "deleted", &doc_op(&id, &path))
+    report(cli, "deleted", &doc_op(&id, &path), &res)
 }
 
 // ---- meta -----------------------------------------------------------------------------
@@ -508,10 +512,10 @@ pub fn meta(cli: &mut Cli, args: &[String]) -> Result<i32> {
     }
     let (id, path) = doc_identity(cli, doc)?;
     let built = sugar::set_meta(&id, &path, Some(&set), &opts.unset);
-    let Some(_) = run_doc(cli, "docs_set_meta", m, a.value("actor"), &built)? else {
+    let Some(res) = run_doc(cli, "docs_set_meta", m, a.value("actor"), &built)? else {
         return Ok(EXIT_OK);
     };
-    report(cli, "patched", &doc_op(&id, &path))
+    report(cli, "patched", &doc_op(&id, &path), &res)
 }
 
 #[cfg(test)]

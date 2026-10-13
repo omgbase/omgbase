@@ -462,7 +462,10 @@ The commit **actor** of every CLI write defaults to `human:<os username>`
   verbatim, one line per block.
 - **commit confirmation** (block mutators; every write is a Receipt since
   cli 4.0): stderr `  ok committed · <n> document<s> touched` (`document`
-  for one), `<n>` the receipt's `revisions`; stdout the ids the write names,
+  for one), `<n>` the receipt's `revisions`, then (cli 4.3) the Receipt's
+  `summary` — one line per effect, in words (`spec/mutate` §11.9), each
+  indented four spaces on stderr (`    set frontmatter.verified = false in
+  /substances/salt.md`); stdout the ids the write names,
   one per line — the Plan's `preview.results[*].ids` in order (duplicates
   included) with every `$new.n` realized from the receipt's `new_ids`, when
   the Plan is at hand with its preview (every local write, any `execute`);
@@ -472,7 +475,9 @@ The commit **actor** of every CLI write defaults to `human:<os username>`
   `--json` prints the Receipt (a `retarget --apply` adds `hits`/`pairs`).
 - **document-op confirmation** (`new`/`mv`/`rm --doc`/`meta`): stderr
   `  ok <verb> <path>` (`created` / `moved to` / `deleted` / `patched`),
-  stdout the document id.
+  then (cli 4.3) the Receipt's `summary` lines indented four spaces as
+  above; stdout the document id. `--json` prints `{ id, path, committed }`
+  as before — the summary is the human rendering's.
 - **relative time** (`ls`): `<n>s ago` under a minute, then `<n>m ago`,
   `<n>h ago`, `<n>d ago`, computed from "now" (`0s ago` under the pinned
   clock); `—` when the document has no commit.
@@ -1651,6 +1656,16 @@ was `b_314`).
   `nothing to do` for an empty `apply`, where the reference posts the call.
 
 ## 10. Decisions
+
+- 2026-10-13, cli 4.3: the commit confirmation and the document-op
+  confirmation print the Receipt's `summary` (`spec/mutate` 3.3 §11.9) —
+  one line per effect in words, indented four spaces on stderr under the
+  `ok` line — for `apply`, `execute`, every block mutator, `retarget
+  --apply`, `update` and the four document verbs, local and `--server`
+  alike; `--json` carries `summary` inside the Receipt it already prints.
+  Rendering only, a key added to a JSON result: a minor. Fixtures: every
+  `pin_stderr` write case gains its summary lines, every `--json` write case
+  the Receipt's `summary`; nothing else moves.
 
 - 2026-10-13, cli 4.2: `mcp --tools <full|minimal>` (§6 `mcp`) serves a
   catalog profile of `spec/surface` 4.3; the `--server` client lists the

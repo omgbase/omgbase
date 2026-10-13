@@ -9,6 +9,10 @@ import { ensureRepo } from "../core/attach.js";
 import { setIdMinter, sequentialMinter } from "../core/ids.js";
 import { processCheckpoint } from "../sync/checkpoint.js";
 import { buildServer } from "./server.js";
+import { canonicalJson } from "../mutate/canonical.js";
+
+/** The `fix` of a stale or mismatched plan without a selector: `apply` over its effects (spec/mutate §8). */
+const canonicalFix = (effects: unknown): string => canonicalJson({ effects });
 
 // spec/surface §4 (3.1): the Effect layer's verbs over MCP — `plan`, `execute`
 // (both forms), `apply { effects }`; the argument exclusivity rules and their
@@ -70,12 +74,27 @@ describe("plan / execute / apply { effects } over MCP", () => {
     const { payload: plan } = await call("plan", { effects: SLICE1 });
     const { payload: receipt, isError } = await call("execute", { plan, reason: "via mcp" });
     expect(isError).toBe(false);
-    expect(receipt).toEqual({ plan_id: plan.plan_id, commit: "c_1", revisions: [{ id: "d_0", path: "/a.md", hash: expect.any(String) }], new_ids: { "$new.0": expect.stringMatching(/^b_/) }, committed: true });
+    expect(receipt).toEqual({ plan_id: plan.plan_id, commit: "c_1", revisions: [{ id: "d_0", path: "/a.md", hash: expect.any(String) }], new_ids: { "$new.0": expect.stringMatching(/^b_/) }, committed: true, summary: ['set frontmatter.status = "active" in /a.md', 'insert 1 block at the end of section "Notes" in /a.md'] });
     expect(readFileSync(join(dir, "a.md"), "utf8")).toBe("---\nstatus: active\n---\n\n# Title\n\nIntro.\n\n## Notes\n\nFirst note.\n\nSecond note.\n");
     expect(store.db.prepare("SELECT actor, reason FROM commits WHERE commit_id = 'c_1'").get()).toEqual({ actor: "agent:mcp", reason: "via mcp" });
     const again = await call("execute", { plan });
     expect(again.isError).toBe(true);
     expect(again.payload).toMatchObject({ error: "stale_plan", retriable: true, data: { doc: "d_0", expected_revision: "r_0" } });
+    // (4.4) the fix is the `apply` that re-plans and commits in one call, over the plan's concrete effects.
+    expect((again.payload.data as { fix: string }).fix).toBe(canonicalFix(plan.effects));
+  });
+
+  it("the teaching surfaces (4.4): plan and every Receipt carry the summary in words; a selector plan's summary is its concrete effects'", async () => {
+    const { payload: plan } = await call("plan", { effects: SLICE1 });
+    expect((plan.preview as { summary: string[] }).summary).toEqual(['set frontmatter.status = "active" in /a.md', 'insert 1 block at the end of section "Notes" in /a.md']);
+    const { payload: receipt } = await call("apply", { effects: SLICE1 });
+    expect(receipt.summary).toEqual((plan.preview as { summary: string[] }).summary);
+    const sugar = await call("blocks_check", { ids: [] });
+    expect(sugar.isError).toBe(true); // an empty list is refused — the sugar tools' Receipts are covered by migration.test.ts
+    const sel = await call("plan", { select: 'from docs where path == "/a.md"', effects: [{ op: "set", field: "frontmatter.seen", value: true }] });
+    expect((sel.payload.preview as { summary: string[] }).summary).toEqual(["set frontmatter.seen = true in /a.md"]);
+    const none = await call("plan", { select: 'from docs where path == "/nope.md"', effects: [{ op: "set", field: "frontmatter.seen", value: true }] });
+    expect((none.payload.preview as { summary: string[] }).summary).toEqual([]);
   });
 
   it("execute { plan_id, effects } commits on digest equality and is plan_mismatch otherwise", async () => {
@@ -158,7 +177,7 @@ describe("plan / execute / apply { effects } over MCP", () => {
     expect((payload.effects as { target: { id: string; path: string } }[]).map((e) => e.target)).toEqual([
       { kind: "document", id: "d_1", path: "one.md" }, { kind: "document", id: "d_2", path: "two.md" },
     ]);
-    expect(Object.keys(payload.preview as object)).toEqual(["results", "revisions", "diffs"]);
+    expect(Object.keys(payload.preview as object)).toEqual(["results", "revisions", "diffs", "summary"]);
     const bounded = await call("plan", { select: SELECT, effects: TEMPLATES, expect: { max: 2 } });
     expect((bounded.payload.selection as { expect: unknown }).expect).toEqual({ max: 2 });
     const tooMany = await call("plan", { select: SELECT, effects: TEMPLATES, expect: { max: 1 } });

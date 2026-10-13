@@ -88,6 +88,7 @@ use serde_json::{Map, Value as Json, json};
 
 use crate::context::{SemanticVec, Target};
 use crate::error::{Result, SurfaceError};
+use crate::fixes;
 use crate::paths::storage_path;
 use crate::planner::root_target;
 use crate::query::{
@@ -201,8 +202,6 @@ fn symbol_kind(member: Member, op: &str, field: Option<&str>) -> &'static str {
     }
 }
 
-const LOCATOR_FIX: &str = "resolve the locator to an id first: `blocks_resolve { locator }`, or a `query` whose hit is the block";
-
 /// A bare target string → the target object (the reference's `bareTarget`,
 /// in its order): a `#` anywhere is a locator (`filter_invalid { hint:
 /// "arguments", fix }`), a `$new.n` the symbol (provisional kind), a `b_` /
@@ -217,7 +216,7 @@ fn bare_target(s: &str, here: &str, member: Member, op: &str, field: Option<&str
         return Err(SurfaceError::with_data(
             "filter_invalid",
             message.clone(),
-            json!({ "reason": message, "hint": "arguments", "fix": LOCATOR_FIX }),
+            json!({ "reason": message, "hint": "arguments", "fix": crate::fixes::LOCATOR }),
         ));
     }
     if omgbase_mutate::parse_new_symbol(s).is_some() {
@@ -289,6 +288,16 @@ fn desugar_expression(src: &str, here: &str) -> Result<Json> {
     })
 }
 
+/// The literal a `-> ` string reads as when its leader is dropped (the
+/// reference's `literalOf`): a quoted string or an interpolation-free
+/// template folds to its text; anything else is the rest of the string.
+pub(crate) fn literal_of(src: &str) -> String {
+    match desugar_expression(src, "") {
+        Ok(Json::String(text)) => text,
+        _ => src.to_owned(),
+    }
+}
+
 /// What the desugar of one effect saw: the target members written as a
 /// bare `$new.n` (provisional kinds, settled against the symbol table).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -297,19 +306,25 @@ struct Desugared {
 }
 
 /// A `-> ` string where no expression is admitted — anywhere under `v`
-/// (the reference's `refuseLeader`).
-fn refuse_leader(v: &Json, here: &str) -> Result<()> {
+/// (the reference's `refuseLeader`). The fix (3.3): the literal form, the
+/// same request with the leader dropped from that member.
+fn refuse_leader(v: &Json, here: &str, request: Option<&fixes::Request>) -> Result<()> {
     match v {
-        Json::String(_) if leader_of(v).is_some() => Err(refused(format!(
-            "{here}: `-> ` is not allowed here — this member takes no expression"
-        ))),
+        Json::String(_) if leader_of(v).is_some() => {
+            let message =
+                format!("{here}: `-> ` is not allowed here — this member takes no expression");
+            Err(match request.and_then(|r| fixes::literal_slot(r, here)) {
+                Some(fix) => refused_with(message, json!({ "fix": fix })),
+                None => refused(message),
+            })
+        }
         Json::Array(a) => a
             .iter()
             .enumerate()
-            .try_for_each(|(k, x)| refuse_leader(x, &format!("{here}[{k}]"))),
+            .try_for_each(|(k, x)| refuse_leader(x, &format!("{here}[{k}]"), request)),
         Json::Object(o) => o
             .iter()
-            .try_for_each(|(k, x)| refuse_leader(x, &format!("{here}.{k}"))),
+            .try_for_each(|(k, x)| refuse_leader(x, &format!("{here}.{k}"), request)),
         _ => Ok(()),
     }
 }
@@ -320,7 +335,11 @@ fn refuse_leader(v: &Json, here: &str) -> Result<()> {
 /// directive, a folded one a bare string), and a leader anywhere else —
 /// `op`, `field`, `expect`, a target's other members, a whole `at`, an
 /// unknown key — is refused. An unknown `op` is left for the shape check.
-fn desugar_effect(raw: &Json, index: usize) -> Result<(Json, Desugared)> {
+fn desugar_effect(
+    raw: &Json,
+    index: usize,
+    request: Option<&fixes::Request>,
+) -> Result<(Json, Desugared)> {
     let mut d = Desugared::default();
     let Some(o) = raw.as_object() else {
         return Ok((raw.clone(), d));
@@ -356,6 +375,7 @@ fn desugar_effect(raw: &Json, index: usize) -> Result<(Json, Desugared)> {
         op: &str,
         field: Option<&str>,
         d: &mut Desugared,
+        request: Option<&fixes::Request>,
     ) -> Result<Json> {
         match v {
             Json::String(s) => {
@@ -382,7 +402,7 @@ fn desugar_effect(raw: &Json, index: usize) -> Result<(Json, Desugared)> {
                 }
                 for (k, x) in t {
                     if k != "id" && k != "path" {
-                        refuse_leader(x, &format!("{here}.{k}"))?;
+                        refuse_leader(x, &format!("{here}.{k}"), request)?;
                     }
                 }
                 Ok(Json::Object(out))
@@ -405,6 +425,7 @@ fn desugar_effect(raw: &Json, index: usize) -> Result<(Json, Desugared)> {
                 &op,
                 field.as_deref(),
                 d,
+                request,
             )?;
             out.insert(key.to_owned(), t);
         }
@@ -423,6 +444,7 @@ fn desugar_effect(raw: &Json, index: usize) -> Result<(Json, Desugared)> {
                         &op,
                         field.as_deref(),
                         d,
+                        request,
                     )?);
                 }
                 out.insert("targets".to_owned(), Json::Array(items));
@@ -435,7 +457,7 @@ fn desugar_effect(raw: &Json, index: usize) -> Result<(Json, Desugared)> {
             return Ok(());
         };
         let Some(a) = a.as_object() else {
-            return refuse_leader(&a, &format!("{here}.at"));
+            return refuse_leader(&a, &format!("{here}.at"), request);
         };
         let mut next = a.clone();
         for m in ["before", "after"] {
@@ -446,7 +468,7 @@ fn desugar_effect(raw: &Json, index: usize) -> Result<(Json, Desugared)> {
         }
         for (k, x) in a {
             if k != "before" && k != "after" {
-                refuse_leader(x, &format!("{here}.at.{k}"))?;
+                refuse_leader(x, &format!("{here}.at.{k}"), request)?;
             }
         }
         out.insert("at".to_owned(), Json::Object(next));
@@ -508,7 +530,7 @@ fn desugar_effect(raw: &Json, index: usize) -> Result<(Json, Desugared)> {
     }
     for (key, v) in o {
         if !slot_keys.contains(&key.as_str()) {
-            refuse_leader(v, &format!("{here}.{key}"))?;
+            refuse_leader(v, &format!("{here}.{key}"), request)?;
         }
     }
     Ok((Json::Object(out), d))
@@ -1280,6 +1302,9 @@ pub struct Compiled {
     pub expect: Option<SelectionExpect>,
     /// The most hits allowed (`expect.max`, or the ceiling).
     pub bound: usize,
+    /// The request as given (`select`, the templates, `expect?`), for the
+    /// corrected examples (3.3).
+    pub request: fixes::Request,
 }
 
 impl Compiled {
@@ -1292,8 +1317,17 @@ impl Compiled {
 
 /// The static admission of the selector itself (the reference's
 /// `admitSelector`): every refusal is prefixed `select: `.
-fn admit_selector(select: &str) -> Result<(Query, Target)> {
+fn admit_selector(select: &str, request: Option<&fixes::Request>) -> Result<(Query, Target)> {
     let raw = oqx::parse_string(select).map_err(|e| refused(format!("select: {}", e.message)))?;
+    // The fix of a refused source (3.3): the same request over an admitted
+    // root, spliced over the source's span of the written query.
+    let root_fix = |links: bool| -> Json {
+        let span = raw.source.span();
+        match request {
+            Some(r) => json!({ "fix": fixes::root_fix(r, select, (span.start, span.end), links) }),
+            None => json!({}),
+        }
+    };
     check_root_spellings(&raw).map_err(|e| refused(format!("select: {}", e.message)))?;
     check_reserved_aliases(&raw).map_err(|e| refused(format!("select: {}", e.message)))?;
     if !matches!(
@@ -1310,13 +1344,15 @@ fn admit_selector(select: &str) -> Result<(Query, Target)> {
     }
     let root = match root_target(&raw.source) {
         None => {
-            return Err(refused(
+            return Err(refused_with(
                 "select: a selector scans a root collection — `from docs`, `from blocks` or `from nodes`",
+                root_fix(false),
             ));
         }
         Some(Target::Links) => {
-            return Err(refused(
+            return Err(refused_with(
                 "select: `links` rows have no effect target — select docs, blocks or nodes",
+                root_fix(true),
             ));
         }
         Some(t) => t,
@@ -1360,12 +1396,18 @@ pub fn compile(req: &SelectRequest) -> Result<Compiled> {
     if templates.is_empty() {
         return Err(refused("`effects` must name at least one template"));
     }
-    let (raw, root) = admit_selector(select)?;
+    // The request as given, for every fix the compile composes (3.3).
+    let request = fixes::Request {
+        select: Some(req.select.clone()),
+        effects: req.templates.clone(),
+        expect: req.expect.clone(),
+    };
+    let (raw, root) = admit_selector(select, Some(&request))?;
     let templates = templates
         .iter()
         .enumerate()
         .map(|(t, v)| {
-            let (v, d) = desugar_effect(v, t)?;
+            let (v, d) = desugar_effect(v, t, Some(&request))?;
             admit_template(t, &v, root, false, &d)
         })
         .collect::<Result<Vec<_>>>()?;
@@ -1385,6 +1427,7 @@ pub fn compile(req: &SelectRequest) -> Result<Compiled> {
         rewritten,
         expect,
         bound,
+        request,
     })
 }
 
@@ -1413,6 +1456,10 @@ struct Origin<'a> {
     k: usize,
     template: Option<usize>,
     row: &'a Row,
+    /// The root the row belongs to (the selector's; a plain effect's scope).
+    root: Target,
+    /// The request as given, for an `ambiguous_target` fix (3.3).
+    request: Option<&'a fixes::Request>,
 }
 
 /// A bound identity slot's value → the identity (a string or a row) or the
@@ -1436,6 +1483,18 @@ fn identity_value<'v>(v: Option<&'v Json>, s: &Slot, o: &Origin<'_>) -> Result<&
     if let Some(a) = v.as_array() {
         let mut d = data();
         d["count"] = json!(a.len());
+        // The fix (3.3): the slot spelled as the FIRST identity the
+        // expression yielded (a row by its id); under a selector the
+        // selector narrowed to this row.
+        let first = a
+            .first()
+            .and_then(|h| row_ref(h).map(|(id, _)| id).or_else(|| h.as_str()));
+        if let (Some(req), Some(first)) = (o.request, first)
+            && let Some(fix) =
+                fixes::ambiguous_slot(req, &s.here, first, (o.root.as_str(), &o.row.0))
+        {
+            d["fix"] = json!(fix);
+        }
         return Err(MutationError::with_data(
             ErrorCode::AmbiguousTarget,
             format!(
@@ -1738,6 +1797,8 @@ pub fn bind(c: &Compiled, hits: &[Json], settle: &mut Settle<'_>) -> Result<Boun
                 k,
                 template: Some(t.index),
                 row: &row,
+                root: c.root,
+                request: Some(&c.request),
             };
             let (mut e, symbols) = bind_one(c.root, hit, t, &o)?;
             let effect = finish(&mut e, k, &symbols, &b.effects, settle)?;
@@ -1751,7 +1812,7 @@ pub fn bind(c: &Compiled, hits: &[Json], settle: &mut Settle<'_>) -> Result<Boun
 /// `selection_too_large { cardinality, max, implicit? }`: `cardinality` is
 /// `">max"` when the page was truncated at the bound, the exact count when
 /// it was `bound + 1` (`first`/`single` under `max: 0`).
-fn too_large(truncated: bool, hits: usize, c: &Compiled) -> SurfaceError {
+fn too_large(truncated: bool, hits: usize, c: &Compiled, count: usize) -> SurfaceError {
     let mut data = json!({
         "cardinality": if truncated { json!(format!(">{}", c.bound)) } else { json!(hits) },
         "max": c.bound,
@@ -1759,6 +1820,8 @@ fn too_large(truncated: bool, hits: usize, c: &Compiled) -> SurfaceError {
     if c.implicit() {
         data["implicit"] = json!(true);
     }
+    // The fix (3.3): the same request bounded at the selection's actual size.
+    data["fix"] = json!(fixes::bounded(&c.request, count));
     let message = format!(
         "the selection has {} hits, over the bound of {}{} — narrow the selector or raise `expect.max`",
         if truncated {
@@ -1815,7 +1878,24 @@ pub fn expand(
     };
     let res = query_ast(store, &ctx.repo_id, &c.rewritten, opts, semantic)?;
     if res.truncated || res.hits.len() > c.bound {
-        return Err(too_large(res.truncated, res.hits.len(), &c));
+        // The exact size for the fix: a second, unbounded run when the first
+        // page was cut (the engine never plans a partial set; the count is
+        // for the example).
+        let count = if res.truncated {
+            let unbounded = QueryOptions {
+                limit: Some(usize::MAX >> 2),
+                cursor: None,
+                provider: None,
+                in_memory: false,
+                bare: false,
+            };
+            query_ast(store, &ctx.repo_id, &c.rewritten, unbounded, HashMap::new())?
+                .hits
+                .len()
+        } else {
+            res.hits.len()
+        };
+        return Err(too_large(res.truncated, res.hits.len(), &c, count));
     }
     let mut settle = |e: &mut Json, m: &[Member], p: &[Effect]| {
         settle_symbols(store, ctx, doc_store, e, m, p);
@@ -2110,9 +2190,15 @@ pub fn expand_plain(
             "`effects` must name at least one effect".to_owned(),
         ));
     }
+    // The request as given (the effects alone), for every fix (3.3).
+    let request = fixes::Request {
+        select: None,
+        effects: Json::Array(raw.clone()),
+        expect: None,
+    };
     let mut desugared = Vec::with_capacity(raw.len());
     for (i, v) in raw.iter().enumerate() {
-        desugared.push(desugar_effect(v, i)?);
+        desugared.push(desugar_effect(v, i, Some(&request))?);
     }
     let any_expression = desugared.iter().any(|(v, _)| contains_oqx(v));
     let mut staged: Vec<Option<Plain>> = (0..raw.len()).map(|_| None).collect();
@@ -2173,6 +2259,8 @@ pub fn expand_plain(
                     k: t.index,
                     template: None,
                     row: &row,
+                    root: g.scope.root,
+                    request: Some(&request),
                 };
                 let (e, symbols) = bind_one(g.scope.root, hit, t, &o)?;
                 staged[t.index] = Some(Plain::Bound(e, symbols));
@@ -2243,21 +2331,83 @@ pub fn plan_selected(
     } else {
         0
     };
-    let mut plan = store
+    let concrete = x.effects.len();
+    let plan = store
         .plan_selected(ctx, &x.effects, x.selection, doc_store)
-        .map_err(|e| annotate(SurfaceError::from(e), &x.rows, templates))?;
+        .map_err(|e| annotate(SurfaceError::from(e), &x.rows, templates));
+    let mut plan = match plan {
+        Ok(plan) => plan,
+        // §8 "fix" (3.3): the corrected example, from the request as given
+        // — under a selector with the hits' origins; the selector-less
+        // sugar as a plain request, its symbols counted by a prefix plan.
+        Err(e) => {
+            let req_fix = fixes::Request {
+                select: req.has_selector().then(|| req.select.clone()),
+                effects: req.templates.clone(),
+                expect: req.expect.clone(),
+            };
+            let origins: Option<Vec<fixes::Origin>> = (templates > 0).then(|| {
+                (0..concrete)
+                    .map(|k| fixes::Origin {
+                        row_id: x
+                            .rows
+                            .get(k / templates)
+                            .map(|(id, _)| id.clone())
+                            .unwrap_or_default(),
+                        template_index: k % templates,
+                    })
+                    .collect()
+            });
+            let allocated = |i: usize| -> Option<usize> {
+                if i == 0 {
+                    return Some(0);
+                }
+                store
+                    .plan_selected(ctx, &x.effects[..i.min(concrete)], None, doc_store)
+                    .ok()
+                    .map(|p| p.new_ids.len())
+            };
+            return Err(fixes::planning_fix(
+                &req_fix,
+                e,
+                origins.as_deref(),
+                allocated,
+            ));
+        }
+    };
     plan.templates = x.templates;
     Ok(plan)
 }
+
+/// The one-shot `apply` rule's refusal with its corrected example (3.3): the
+/// same call bounded at the selection's actual size — the caller never saw
+/// the hits, so the engine counts them (the selector compiled, nothing
+/// written) and spells the bound.
+#[must_use]
+pub fn unbounded_apply(req: &SelectRequest, cardinality: usize) -> SurfaceError {
+    refused_with(
+        UNBOUNDED,
+        json!({
+            "fix": fixes::bounded(
+                &fixes::Request {
+                    select: Some(req.select.clone()),
+                    effects: req.templates.clone(),
+                    expect: None,
+                },
+                cardinality,
+            )
+        }),
+    )
+}
+
+const UNBOUNDED: &str = "`expect.max` is required on `apply` with `select` — bound the selection, or preview it with `plan`";
 
 /// The one-shot `apply` rule (§11.8): a selector must be bounded — the
 /// caller never saw the hits (a preview is a `plan`, which needs no bound).
 /// The selector-less sugar path names its targets and needs none.
 pub fn require_max(req: &SelectRequest) -> Result<()> {
     if req.has_selector() && req.expect.is_none() {
-        return Err(refused(
-            "`expect.max` is required on `apply` with `select` — bound the selection, or preview it with `plan`",
-        ));
+        return Err(refused(UNBOUNDED));
     }
     Ok(())
 }
@@ -2909,7 +3059,7 @@ mod tests {
     // ---- §11.8 "Sugar" (3.2) ----------------------------------------------------------
 
     fn desugar(v: Json) -> Result<Json> {
-        desugar_effect(&v, 0).map(|(v, _)| v)
+        desugar_effect(&v, 0, None).map(|(v, _)| v)
     }
 
     /// The leader is exactly `-> ` at the start; `->x`, ` -> x`, `-->`, a
@@ -3029,6 +3179,7 @@ mod tests {
         let (v, sugar) = desugar_effect(
             &json!({ "op": "insert", "into": "$new.0", "markdown": "x" }),
             0,
+            None,
         )
         .unwrap();
         assert_eq!(v["into"], json!({ "kind": "document", "id": "$new.0" }));
@@ -3036,12 +3187,13 @@ mod tests {
         let (v, sugar) = desugar_effect(
             &json!({ "op": "set", "target": "$new.2", "field": "markdown", "value": "x" }),
             0,
+            None,
         )
         .unwrap();
         assert_eq!(v["target"], json!({ "kind": "block", "id": "$new.2" }));
         assert_eq!(sugar.symbols, [Member::Target]);
         let (v, sugar) =
-            desugar_effect(&json!({ "op": "remove", "targets": ["$new.1"] }), 0).unwrap();
+            desugar_effect(&json!({ "op": "remove", "targets": ["$new.1"] }), 0, None).unwrap();
         assert_eq!(v["targets"], json!([{ "kind": "block", "id": "$new.1" }]));
         assert_eq!(sugar.symbols, [Member::Targets(0)]);
         // a `-> ` whole target is the directive; a leader in `id` / `path` too
@@ -3060,7 +3212,7 @@ mod tests {
             .unwrap_err();
         assert_eq!(e.code, "filter_invalid");
         assert_eq!(data(&e)["hint"], "arguments");
-        assert_eq!(data(&e)["fix"], LOCATOR_FIX);
+        assert_eq!(data(&e)["fix"], crate::fixes::LOCATOR);
         assert_eq!(
             e.message,
             "effects[0].into: \"hub.md#Status\" is a locator, not a target — a bare target is a document path, a `b_`/`d_`/`n_` id or `$new.n`"

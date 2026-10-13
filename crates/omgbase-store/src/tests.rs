@@ -3916,6 +3916,10 @@ fn plan_then_execute_and_one_shot_apply_leave_identical_footprints() {
             "revisions": [{ "id": "d_0", "path": "a.md", "hash": hex(&sha256(SLICE_ONE_AFTER.as_bytes())) }],
             "new_ids": { "$new.0": "b_2" },
             "committed": true,
+            "summary": [
+                "set frontmatter.status = \"done\" in /a.md",
+                "insert 1 block at the end of section \"A\" in /a.md",
+            ],
         })
     );
     assert_eq!(footprint(&a, &ds_a), footprint(&b, &ds_b));

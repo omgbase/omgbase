@@ -1850,7 +1850,10 @@
                   }
                 ],
                 "new_ids": {},
-                "committed": true
+                "committed": true,
+                "summary": [
+                  "set content of /a.md"
+                ]
               }
             }
           }
@@ -2604,7 +2607,8 @@
                 "revision": "r_1",
                 "hash": "c5ddd63fd27275985f72c78197f0812beb92ff3d66f7d759a0cebc018a8e4acc"
               },
-              "retriable": true
+              "retriable": true,
+              "fix": "{\"effects\":[{\"field\":\"content\",\"op\":\"set\",\"target\":{\"id\":\"d_0\",\"kind\":\"document\",\"path\":\"a.md\"},\"value\":\"# Title\\n\\nAlpha is the first paragraph of this note about planning.\\n\\nBravo is the second paragraph, which talks about something else.\\n\\nCharlie really closes the note with a third paragraph.\\n\"}]}"
             }
           }
         ],
@@ -2986,7 +2990,10 @@
                   "$new.0": "b_7",
                   "$new.1": "b_8"
                 },
-                "committed": true
+                "committed": true,
+                "summary": [
+                  "set content of /a.md"
+                ]
               }
             }
           }

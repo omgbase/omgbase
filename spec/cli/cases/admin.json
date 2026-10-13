@@ -1049,7 +1049,7 @@
           "expect": {
             "exit": 0,
             "stdout": "d_17\n",
-            "stderr": "  ok deleted /texts/mutus-liber.md\n"
+            "stderr": "  ok deleted /texts/mutus-liber.md\n    remove /texts/mutus-liber.md\n"
           }
         },
         {
@@ -1185,7 +1185,7 @@
           "expect": {
             "exit": 0,
             "stdout": "d_17\n",
-            "stderr": "  ok deleted /texts/mutus-liber.md\n"
+            "stderr": "  ok deleted /texts/mutus-liber.md\n    remove /texts/mutus-liber.md\n"
           }
         },
         {
@@ -1208,7 +1208,7 @@
           "expect": {
             "exit": 0,
             "stdout": "b_1\n",
-            "stderr": "  ok committed · 1 document touched\n"
+            "stderr": "  ok committed · 1 document touched\n    remove paragraph b_1 from /index.md\n"
           }
         },
         {

@@ -748,7 +748,8 @@ describe("apply op schema + blocks_append / docs_append section resolution", () 
     const leaf = (await call("blocks_append", { id: para, text: "x" })) as { payload: { error: string; message: string; data: { id: string; type: string } }; isError: boolean };
     expect(leaf.isError).toBe(true);
     expect(leaf.payload.error).toBe("block_not_container");
-    expect(leaf.payload.data).toEqual({ id: para, type: "paragraph" });
+    // (4.4) the fix IS the sibling insert the message describes — a top-level leaf's parent is its document.
+    expect(leaf.payload.data).toEqual({ id: para, type: "paragraph", fix: `blocks_insert {"at":{"after":"${para}"},"markdown":"x","to":"/list.md"}` });
     expect(leaf.payload.message).toContain("blocks_insert");
   });
 
@@ -756,12 +757,13 @@ describe("apply op schema + blocks_append / docs_append section resolution", () 
     writeFileSync(join(root, "twice.md"), "## Launch\n\na\n\n## Launch\n\nb\n");
     ingestFile(store, repoId, "twice.md", "## Launch\n\na\n\n## Launch\n\nb\n");
     const { payload, isError } = (await call("docs_append", { path: "twice.md", section: "Launch", text: "x" })) as {
-      payload: { error: string; message: string; data: { section: string; candidates: { id: string; doc_id: string }[] } }; isError: boolean;
+      payload: { error: string; message: string; data: { section: string; candidates: { id: string; doc_id: string }[]; fix: string } }; isError: boolean;
     };
     expect(isError).toBe(true);
     expect(payload.error).toBe("ambiguous_heading");
     expect(payload.data.section).toBe("Launch");
     expect(payload.data.candidates.length).toBe(2);
+    expect(payload.data.fix).toBe(`blocks_append {"id":"${payload.data.candidates[0]!.id}","text":"x"}`);
     expect(payload.message).toBe('heading "Launch" matches 2 headings in /twice.md; pass the heading\'s id to blocks_append');
   });
 
@@ -772,6 +774,15 @@ describe("apply op schema + blocks_append / docs_append section resolution", () 
     expect(isError).toBe(true);
     expect(payload.error).toBe("parent_missing");
     expect(payload.message).toBe('no heading "Nonexistent" in /notes.md');
+    // (4.4) no heading near it: the fix is the same append at the document's end.
+    expect((payload as unknown as { data: { fix: string } }).data.fix).toBe('docs_append {"path":"notes.md","text":"x"}');
+    // one heading equal up to ASCII case: the fix names it for blocks_append.
+    writeFileSync(join(root, "case.md"), "## Launch\n\na\n");
+    ingestFile(store, repoId, "case.md", "## Launch\n\na\n");
+    const heading = (store.db.prepare("SELECT block_id FROM blocks WHERE doc_id = (SELECT doc_id FROM docs WHERE path = 'case.md') AND type = 'heading'").get() as { block_id: string }).block_id;
+    const near = (await call("docs_append", { path: "case.md", section: "launch", text: "x" })) as { payload: { error: string; data: { fix: string } } };
+    expect(near.payload.error).toBe("parent_missing");
+    expect(near.payload.data.fix).toBe(`blocks_append {"id":"${heading}","text":"x"}`);
   });
 
   it("argument-shape errors are filter_invalid with the nearest name and the tool's shape", async () => {

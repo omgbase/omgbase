@@ -1,5 +1,7 @@
 import type { Store } from "../core/store/store.js";
 import { findDoc } from "../core/read/reader.js";
+import { normalizeVisibleText } from "../core/hash.js";
+import { referencePath } from "../core/paths.js";
 import { isValidId, withIdMinter, type IdMinter } from "../core/ids.js";
 import { inboundLinksTo, type InboundLink } from "../graph/inbound-links.js";
 import type { ChangesetPlanner, Op } from "./apply.js";
@@ -512,6 +514,8 @@ export interface LoweringContext {
   canonical: (v: unknown) => string;
   /** the resolved effects kept (dropped duplicates excluded) */
   resolved: ResolvedEffect[];
+  /** `preview.summary` (3.3, §11.9): one line in words per resolved effect, in order */
+  summary: string[];
 }
 
 // ---- resolution --------------------------------------------------------------------
@@ -589,6 +593,84 @@ function blockInfo(ctx: LoweringContext, id: string): { docId: string; hash: str
     .get(id) as { doc_id: string; h: string } | undefined;
   if (!row) throw new MutationError("block_missing", `block ${id} not found`, { block: id });
   return { docId: row.doc_id, hash: row.h, block: null };
+}
+
+// ---- the summary (§11.9, 3.3) ---------------------------------------------------------
+//
+// Channel 3 of the teaching surfaces: the plan is a worked example of itself.
+// One line in words per resolved effect — `preview.summary`, which the Receipt
+// repeats as its `summary` and the CLI prints under the commit confirmation.
+// Deterministic and byte-identical across engines (the wording table of §11.9):
+// a document by its rooted path, a heading by its text in quotes, any other
+// block by its type and id, counts with their nouns pluralized by an `s`.
+
+/** `1 block` / `2 blocks` (an `s` on every noun of the table). */
+export function plural(n: number, noun: string): string {
+  return `${n} ${noun}${n === 1 ? "" : "s"}`;
+}
+
+/** The rooted path of a document the plan addresses — a created document's from its `create`. */
+function docPathOf(ctx: LoweringContext, docId: string): string {
+  if (isNewSymbol(docId)) {
+    const created = ctx.creates.find((c) => c.symbol === docId);
+    if (created) return referencePath(created.path);
+  }
+  const info = findDoc(ctx.store, { docId });
+  return referencePath(info?.path ?? docId);
+}
+
+/** A block's type and visible text: the live row when it has one, else the planner's tree (a `$new.k`). */
+function blockDescriptor(ctx: LoweringContext, id: string): { type: string; text: string } | null {
+  if (!isNewSymbol(id)) {
+    const row = ctx.store.db.prepare("SELECT type, text FROM blocks WHERE block_id = ? AND deleted_commit IS NULL").get(id) as { type: string; text: string } | undefined;
+    if (row) return { type: row.type, text: row.text };
+  }
+  const inTree = locateLoaded(ctx, id);
+  if (!inTree) return null;
+  return { type: inTree.block.type, text: normalizeVisibleText(inTree.block.raw, inTree.block.type) };
+}
+
+/** The name of a block in a summary line: `heading "Text"` for a heading, else `<type> <id>` (`paragraph b_12`, `task b_9`). */
+function blockName(ctx: LoweringContext, id: string): string {
+  const d = blockDescriptor(ctx, id);
+  if (d === null) return `block ${id}`;
+  return d.type === "heading" ? `heading ${ctx.canonical(d.text)}` : `${d.type} ${id}`;
+}
+
+/** A section by its heading's text: `section "Risks"`. */
+function sectionName(ctx: LoweringContext, headingId: string): string {
+  const d = blockDescriptor(ctx, headingId);
+  return `section ${ctx.canonical(d?.text ?? headingId)}`;
+}
+
+/**
+ * The placement half of an `insert` / `move blocks` line: `<verb> the end|start
+ * of <container> [in <path>]` — the container a document (its path; no `in`), a
+ * section (`section "Risks"`) or a block (its name) — or `before|after <block>
+ * in <path>`. `verb` is `at` for an insert, `to` for a move.
+ */
+function placeWords(ctx: LoweringContext, into: ResolvedTarget, at: EffectAt, verb: "at" | "to"): string {
+  const path = docPathOf(ctx, targetDoc(ctx, into));
+  if (at !== "start" && at !== "end") {
+    const anchor = "before" in at ? at.before : at.after;
+    return `${"before" in at ? "before" : "after"} ${blockName(ctx, anchor)} in ${path}`;
+  }
+  const edge = `${verb} the ${at}`;
+  switch (into.kind) {
+    case "document":
+      return `${edge} of ${path}`;
+    case "section":
+      return `${edge} of ${sectionName(ctx, into.heading_id)} in ${path}`;
+    case "block":
+      return `${edge} of ${blockName(ctx, into.id)} in ${path}`;
+    case "node":
+      return `${edge} of node ${into.id} in ${path}`;
+  }
+}
+
+/** The document of a block list's first block (a kernel `remove`/`merge` names blocks of one document). */
+function docOfBlocks(ctx: LoweringContext, ids: string[]): string {
+  return docPathOf(ctx, blockInfo(ctx, ids[0]!).docId);
 }
 
 /** Every descendant id of a block: the planner's tree when loaded, else the store's live rows. */
@@ -962,9 +1044,11 @@ function applyLowering(ctx: LoweringContext, i: number, e: ResolvedEffect): void
       // document, so every later effect addresses it and its blocks like any other.
       const symbol = ctx.symbols.alloc("document");
       const source = composeFile(e.markdown, e.frontmatter);
-      ctx.planner.adoptNew(symbol, parseNewDoc(symbol, e.path, source));
+      const tree = parseNewDoc(symbol, e.path, source);
+      ctx.planner.adoptNew(symbol, tree);
       ctx.creates.push({ symbol, path: e.path, source, before_op: ctx.ops.length });
       ctx.absentPaths.push(e.path);
+      ctx.summary.push(`create ${referencePath(e.path)} (${plural(tree.children.length, "block")})`);
       return;
     }
     case "insert": {
@@ -973,7 +1057,9 @@ function applyLowering(ctx: LoweringContext, i: number, e: ResolvedEffect): void
       recordParentPin(ctx, doc, e.into, e.expect);
       const to = placement(ctx, e.into, e.at);
       const expect = kernelExpect(e.expect);
+      const where = placeWords(ctx, e.into, e.at, "at");
       pushOp(ctx, { op: "insert", ...(e.into.kind === "document" ? { doc } : {}), to, markdown: e.markdown, ...(expect !== undefined ? { expect } : {}) });
+      ctx.summary.push(`insert ${plural(ctx.planner.results[ctx.planner.results.length - 1]!.ids.length, "block")} ${where}`);
       return;
     }
     case "set":
@@ -985,6 +1071,7 @@ function applyLowering(ctx: LoweringContext, i: number, e: ResolvedEffect): void
           if (e.op !== "set" || typeof e.value !== "string") throw effectInvalid("`content` takes a string value: the complete proposed document");
           if (isNewSymbol(docId)) throw new MutationError("target_missing", `${docId} is a document this plan creates; its content is the create's markdown`, { symbol: docId });
           lowerContent(ctx, docId, e.value);
+          ctx.summary.push(`set content of ${docPathOf(ctx, docId)}`);
           return;
         }
         // `frontmatter.<key>` — on a created document too (3.0): its tree is loaded, the patch is a head like any other.
@@ -994,6 +1081,7 @@ function applyLowering(ctx: LoweringContext, i: number, e: ResolvedEffect): void
         if (e.op === "set") merged[key] = e.value;
         else delete merged[key];
         patchFrontmatter(ctx, docId, merged, body);
+        ctx.summary.push(e.op === "set" ? `set ${e.field} = ${ctx.canonical(e.value)} in ${docPathOf(ctx, docId)}` : `unset ${e.field} in ${docPathOf(ctx, docId)}`);
         return;
       }
       if (e.op !== "set") throw effectInvalid("`unset` takes a document target");
@@ -1002,12 +1090,15 @@ function applyLowering(ctx: LoweringContext, i: number, e: ResolvedEffect): void
         const { docId } = blockInfo(ctx, id);
         checkRevision(ctx, docId, e.expect);
         const hash = pin(ctx, id, e.expect?.content_hash);
+        const name = blockName(ctx, id);
         if (e.field === "markdown") {
           if (typeof e.value !== "string") throw effectInvalid("`markdown` takes a string value");
           pushOp(ctx, { op: "update", block: kernelBlockId(ctx, id), markdown: e.value, expect: kernelExpect(e.expect, hash)! });
+          ctx.summary.push(`set markdown of ${name} in ${docPathOf(ctx, docId)}`);
         } else {
           if (typeof e.value !== "boolean") throw effectInvalid("`attrs.checked` takes a boolean value");
           pushOp(ctx, { op: "update", block: kernelBlockId(ctx, id), attrs: { checked: e.value }, expect: kernelExpect(e.expect, hash)! });
+          ctx.summary.push(`${e.value ? "check" : "uncheck"} ${name} in ${docPathOf(ctx, docId)}`);
         }
         return;
       }
@@ -1021,6 +1112,7 @@ function applyLowering(ctx: LoweringContext, i: number, e: ResolvedEffect): void
         const hash = pin(ctx, blockId, e.expect?.content_hash ?? u.expect?.content_hash);
         pushOp(ctx, { ...u, expect: { ...(u.expect ?? {}), content_hash: hash } });
       }
+      ctx.summary.push(`set ${e.field} = ${ctx.canonical(e.value)} on node ${node.id} in ${docPathOf(ctx, docId)}`);
       return;
     }
     case "move": {
@@ -1031,9 +1123,12 @@ function applyLowering(ctx: LoweringContext, i: number, e: ResolvedEffect): void
         recordParentPin(ctx, dst, e.into, e.expect);
         const to = placement(ctx, e.into, e.at);
         const expect = kernelExpect(e.expect);
+        const what = ids.length === 1 ? blockName(ctx, ids[0]!) : plural(ids.length, "block");
+        const where = placeWords(ctx, e.into, e.at, "to");
         // `doc` names the destination when `into` is a document (§2.3, 3.0): a
         // top-level start/end would otherwise mean the SOURCE document's.
         pushOp(ctx, { op: "move", blocks: ids.map((id) => kernelBlockId(ctx, id)), to, ...(e.into.kind === "document" ? { doc: dst } : {}), ...(expect !== undefined ? { expect } : {}) });
+        ctx.summary.push(`move ${what} ${where}`);
         return;
       }
       const t = docTarget(e.target);
@@ -1047,6 +1142,7 @@ function applyLowering(ctx: LoweringContext, i: number, e: ResolvedEffect): void
       if (!ctx.docBases.has(t.id)) ctx.docBases.set(t.id, base);
       const inbound = inboundLinksTo(ctx.store, ctx.repoId, t.id, t.path);
       let retargeted: MoveDraft["retargeted"] = null;
+      let links = "";
       if (e.retarget_inbound && inbound.length > 0) {
         const plan = planInboundRetarget(ctx.store, t.id, t.path, e.to, inbound);
         for (const op of plan.ops) {
@@ -1055,8 +1151,10 @@ function applyLowering(ctx: LoweringContext, i: number, e: ResolvedEffect): void
           pushOp(ctx, u);
         }
         retargeted = { blocks: plan.blocks, docs: plan.docs };
+        links = ` (retarget ${plural(inbound.length - plan.dangling.length, "link")} in ${plural(plan.docs.length, "document")})`;
       }
       ctx.moves.push({ id: t.id, from: t.path, to: e.to, currentRev: base.currentRev, inbound, retargeted });
+      ctx.summary.push(`move ${referencePath(t.path)} → ${referencePath(e.to)}${links}`);
       return;
     }
     case "remove": {
@@ -1068,7 +1166,9 @@ function applyLowering(ctx: LoweringContext, i: number, e: ResolvedEffect): void
           const hash = pin(ctx, id, given?.content_hash);
           expect[kernelBlockId(ctx, id)] = { ...(given ?? {}), content_hash: hash };
         }
+        const line = `remove ${ids.length === 1 ? blockName(ctx, ids[0]!) : plural(ids.length, "block")} from ${docOfBlocks(ctx, ids)}`;
         pushOp(ctx, { op: "remove", blocks: ids.map((id) => kernelBlockId(ctx, id)), expect });
+        ctx.summary.push(line);
         return;
       }
       const t = docTarget(e.target);
@@ -1077,6 +1177,7 @@ function applyLowering(ctx: LoweringContext, i: number, e: ResolvedEffect): void
       if (!base) throw docMissing(t.id);
       if (!ctx.docBases.has(t.id)) ctx.docBases.set(t.id, base);
       ctx.tombstones.push({ id: t.id, path: t.path, currentRev: base.currentRev });
+      ctx.summary.push(`remove ${referencePath(t.path)}`);
       return;
     }
     case "split": {
@@ -1084,7 +1185,9 @@ function applyLowering(ctx: LoweringContext, i: number, e: ResolvedEffect): void
       const { docId } = blockInfo(ctx, id);
       checkRevision(ctx, docId, e.expect);
       const hash = pin(ctx, id, e.expect?.content_hash);
+      const name = blockName(ctx, id);
       pushOp(ctx, { op: "split", block: kernelBlockId(ctx, id), at: [...e.at], expect: kernelExpect(e.expect, hash)! });
+      ctx.summary.push(`split ${name} at offset${e.at.length === 1 ? "" : "s"} ${e.at.join(", ")} in ${docPathOf(ctx, docId)}`);
       return;
     }
     case "merge": {
@@ -1095,7 +1198,9 @@ function applyLowering(ctx: LoweringContext, i: number, e: ResolvedEffect): void
         const hash = pin(ctx, id, given?.content_hash);
         expect[kernelBlockId(ctx, id)] = { ...(given ?? {}), content_hash: hash };
       }
+      const line = `merge ${plural(ids.length, "block")} into ${blockName(ctx, ids[0]!)} in ${docOfBlocks(ctx, ids)}`;
       pushOp(ctx, { op: "merge", blocks: ids.map((id) => kernelBlockId(ctx, id)), separator: e.separator, expect });
+      ctx.summary.push(line);
       return;
     }
     case "retarget": {
@@ -1106,6 +1211,9 @@ function applyLowering(ctx: LoweringContext, i: number, e: ResolvedEffect): void
         pin(ctx, u.block, u.expect?.content_hash);
         pushOp(ctx, u);
       }
+      const docs = new Set(plan.hits.map((h) => h.path)).size;
+      const pair = e.repairs.length === 1 ? `${e.repairs[0]!.from} → ${e.repairs[0]!.to}` : `over ${plural(e.repairs.length, "pair")}`;
+      ctx.summary.push(`retarget ${plural(plan.hits.length, "link")} ${pair} in ${plural(docs, "document")}`);
       return;
     }
   }

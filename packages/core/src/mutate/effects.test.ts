@@ -8,6 +8,7 @@ import { bareTarget, validateEffects, validateEffect, type Effect } from "./effe
 import { planEffects, type Plan } from "./plan.js";
 import { planUpdate } from "./plan-update.js";
 import { MutationError, rawHashHex } from "./tree.js";
+import { canonicalJson } from "./canonical.js";
 
 // spec/mutate §11.1–§11.3: the vocabulary's shape check, the lowering table
 // row by row (what each effect becomes in the plan's opset), and each conflict
@@ -352,7 +353,7 @@ describe("conflict rules (§11.3)", () => {
   it("scalar: a different value is conflicting_effects naming both effects and the focus", () => {
     const e = failure([set("a"), set("b")]);
     expect(e.code).toBe("conflicting_effects");
-    expect(e.data).toEqual({ effects: [0, 1], focus: { kind: "scalar", target: { kind: "document", id: "d_0" }, field: "frontmatter.status" }, retriable: false, effect_index: 1 });
+    expect(e.data).toEqual({ effects: [0, 1], focus: { kind: "scalar", target: { kind: "document", id: "d_0" }, field: "frontmatter.status" }, retriable: false, effect_index: 1, fix: canonicalJson({ effects: [set("b")] }) });
   });
 
   it("scalar: an identical value is dropped with a diagnostic (canonical JSON equality: 1 and 1.0 are identical)", () => {
@@ -411,5 +412,71 @@ describe("conflict rules (§11.3)", () => {
       { op: "retarget", repairs: [{ from: "/a.md", to: "/z.md" }] },
     ]);
     expect(e.data).toMatchObject({ effects: [0, 1], focus: { kind: "scalar", target: { kind: "block", id: "b_11" }, field: "markdown" } });
+  });
+});
+
+describe("the summary (§11.9, 3.3)", () => {
+  const lines = (effects: unknown): string[] => plan(effects).preview!.summary;
+
+  it("names documents by rooted path, headings by text, other blocks by type and id; counts pluralize", () => {
+    expect(lines([{ op: "set", target: "a.md", field: "frontmatter.verified", value: false }])).toEqual(["set frontmatter.verified = false in /a.md"]);
+    expect(lines([{ op: "unset", target: doc, field: "frontmatter.status" }])).toEqual(["unset frontmatter.status in /a.md"]);
+    expect(lines([{ op: "insert", into: "a.md", markdown: "P1\n\nP2" }])).toEqual(["insert 2 blocks at the end of /a.md"]);
+    expect(lines([{ op: "insert", into: { kind: "section", heading_id: "b_2" }, markdown: "- [ ] x" }])).toEqual(['insert 1 block at the end of section "Notes" in /a.md']);
+    expect(lines([{ op: "insert", into: doc, at: { after: "b_1" }, markdown: "P" }])).toEqual(["insert 1 block after paragraph b_1 in /a.md"]);
+    expect(lines([{ op: "insert", into: doc, at: { before: "b_2" }, markdown: "P" }])).toEqual(['insert 1 block before heading "Notes" in /a.md']);
+    expect(lines([{ op: "insert", into: { kind: "block", id: "b_5" }, at: "start", markdown: "- [ ] gamma" }])).toEqual(["insert 1 block at the start of list b_5 in /a.md"]);
+    expect(lines([{ op: "set", target: "b_1", field: "markdown", value: "New intro." }])).toEqual(["set markdown of paragraph b_1 in /a.md"]);
+    expect(lines([{ op: "set", target: "b_6", field: "attrs.checked", value: true }, { op: "set", target: "b_7", field: "attrs.checked", value: false }])).toEqual(["check task b_6 in /a.md", "uncheck task b_7 in /a.md"]);
+    expect(lines([{ op: "set", target: doc, field: "content", value: DOC.replace("Tail.", "Tail!") }])).toEqual(["set content of /a.md"]);
+    const node = (store.db.prepare("SELECT node_id FROM nodes WHERE kind = 'md:task' AND block_id = 'b_6'").get() as { node_id: string }).node_id;
+    expect(lines([{ op: "set", target: { kind: "node", id: node }, field: "checked", value: true }])).toEqual([`set checked = true on node ${node} in /a.md`]);
+  });
+
+  it("create, move, remove, split, merge, retarget — and a created document's blocks are named from its tree", () => {
+    expect(lines([
+      { op: "create", path: "lab/x.md", markdown: "# X\n\nHello.\n" },
+      { op: "insert", into: "$new.0", markdown: "More." },
+      { op: "set", target: "$new.0", field: "frontmatter.k", value: [1, 2] },
+      { op: "set", target: "$new.2", field: "markdown", value: "Hi." },
+      { op: "insert", into: { kind: "section", heading_id: "$new.1" }, markdown: "Under X." },
+    ])).toEqual(["create /lab/x.md (2 blocks)", "insert 1 block at the end of /lab/x.md", "set frontmatter.k = [1,2] in /lab/x.md", "set markdown of paragraph $new.2 in /lab/x.md", 'insert 1 block at the end of section "X" in /lab/x.md']);
+    expect(lines([{ op: "move", target: doc, to: "c.md" }])).toEqual(["move /a.md → /c.md (retarget 1 link in 1 document)"]);
+    expect(lines([{ op: "move", target: doc, to: "c.md", retarget_inbound: false }])).toEqual(["move /a.md → /c.md"]);
+    expect(lines([{ op: "move", targets: ["b_3"], into: { kind: "section", heading_id: "b_8" } }, { op: "move", targets: ["b_4", "b_1"], into: "b.md" }]))
+      .toEqual(['move paragraph b_3 to the end of section "Later" in /a.md', "move 2 blocks to the end of /b.md"]);
+    expect(lines([{ op: "remove", target: "b.md" }])).toEqual(["remove /b.md"]);
+    expect(lines([{ op: "remove", targets: ["b_3"] }, { op: "remove", targets: ["b_4", "b_9"] }])).toEqual(["remove paragraph b_3 from /a.md", "remove 2 blocks from /a.md"]);
+    expect(lines([{ op: "split", target: "b_1", at: [5] }, { op: "split", target: "b_3", at: [2, 4] }])).toEqual(["split paragraph b_1 at offset 5 in /a.md", "split paragraph b_3 at offsets 2, 4 in /a.md"]);
+    expect(lines([{ op: "merge", targets: ["b_3", "b_4"] }])).toEqual(["merge 2 blocks into paragraph b_3 in /a.md"]);
+    expect(lines([{ op: "retarget", repairs: [{ from: "/a.md", to: "/z.md" }] }, { op: "retarget", repairs: [{ from: "/q.md", to: "/z.md" }, { from: "/r.md", to: "/s.md" }] }]))
+      .toEqual(["retarget 1 link /a.md → /z.md in 1 document", "retarget 0 links over 2 pairs in 0 documents"]);
+  });
+
+  it("a dropped duplicate has no line; the lines are not digested", () => {
+    const p = plan([{ op: "set", target: doc, field: "frontmatter.k", value: 1 }, { op: "set", target: doc, field: "frontmatter.k", value: 1 }]);
+    expect(p.preview!.summary).toEqual(["set frontmatter.k = 1 in /a.md"]);
+    expect(p.diagnostics).toHaveLength(1);
+  });
+});
+
+describe("the fix (§8, 3.3): a literal corrected call", () => {
+  it("conflicting_effects keeps the later effect; a stale expect.revision takes the current one; a stray leader is spelled literally", () => {
+    const conflict = failure([{ op: "set", target: "a.md", field: "frontmatter.x", value: 1 }, { op: "set", target: "a.md", field: "frontmatter.x", value: 2 }]);
+    expect(conflict.data.fix).toBe('{"effects":[{"field":"frontmatter.x","op":"set","target":"a.md","value":2}]}');
+    const stale = failure([{ op: "set", target: "a.md", field: "frontmatter.x", value: 1, expect: { revision: "r_999" } }]);
+    expect(stale.code).toBe("stale_plan");
+    expect(stale.data.fix).toBe('{"effects":[{"expect":{"revision":"r_0"},"field":"frontmatter.x","op":"set","target":"a.md","value":1}]}');
+    const leader = failure([{ op: "set", target: "a.md", field: "-> frontmatter.x", value: 1 }]);
+    expect(leader.code).toBe("filter_invalid");
+    expect(leader.data.fix).toBe('{"effects":[{"field":"frontmatter.x","op":"set","target":"a.md","value":1}]}');
+  });
+
+  it("a $new.n used before its create: the create moved first, the symbol renamed to the one it will allocate; no later create, no fix", () => {
+    const e = failure([{ op: "set", target: "a.md", field: "frontmatter.x", value: 1 }, { op: "insert", into: "$new.3", markdown: "x" }, { op: "create", path: "n.md", markdown: "# N" }]);
+    expect(e.code).toBe("target_missing");
+    expect(e.data.symbol).toBe("$new.3");
+    expect(e.data.fix).toBe('{"effects":[{"field":"frontmatter.x","op":"set","target":"a.md","value":1},{"markdown":"# N","op":"create","path":"n.md"},{"into":"$new.0","markdown":"x","op":"insert"}]}');
+    expect(failure([{ op: "insert", into: "$new.0", markdown: "x" }]).data.fix).toBeUndefined();
   });
 });

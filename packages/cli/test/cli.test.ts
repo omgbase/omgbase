@@ -538,3 +538,16 @@ describe("init / attach split (consent-gated ingest)", () => {
     }
   });
 });
+
+describe("the commit confirmation prints the Receipt's summary (spec/cli §4, 4.3)", () => {
+  it("a block mutator: `ok committed`, then one indented line per effect in words; --json carries `summary`", () => {
+    const r = spawnSync("node", [BIN, "-C", vault, "insert", "hub.md", "-m", "Appended paragraph."], { encoding: "utf8", env: { ...process.env, NO_COLOR: "1" } });
+    expect(r.status).toBe(0);
+    expect(r.stderr).toContain("  ok committed · 1 document touched\n    insert 1 block at the end of /hub.md\n");
+    const j = spawnSync("node", [BIN, "-C", vault, "meta", "hub.md", "--set", "status=done", "--json"], { encoding: "utf8", env: { ...process.env, NO_COLOR: "1" } });
+    expect(j.status).toBe(0);
+    expect(JSON.parse(j.stdout)).toMatchObject({ committed: true }); // the document-op JSON is unchanged …
+    const h = spawnSync("node", [BIN, "-C", vault, "meta", "hub.md", "--set", "status=active"], { encoding: "utf8", env: { ...process.env, NO_COLOR: "1" } });
+    expect(h.stderr).toContain("  ok patched /hub.md\n    set frontmatter.status = \"active\" in /hub.md\n"); // … the summary rides under the human confirmation
+  });
+});
