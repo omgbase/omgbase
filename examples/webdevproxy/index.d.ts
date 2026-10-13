@@ -217,6 +217,15 @@ export class RemoteAuth {
   issuer(): string | undefined;
   /** Subscribe to status changes; returns the unsubscribe. */
   onStatus(listener: (status: WhoAmI["auth"]) => void): () => void;
+  /** The provider over the token file (after `start()`). */
+  provider: FileOAuthProvider | undefined;
+  loopback: Loopback | undefined;
+  /** Where the current `auth()` pass is. */
+  phase: "stored" | "browser";
+  /** What the SDK's `auth()` last resolved to in the current pass. */
+  lastResult: string | undefined;
+  /** The error's message, or — for an empty one (an issuer answer without `error_description`) — one made from the phase and the issuer's answer. Never empty. */
+  failureMessage(e: unknown): string;
   ensure(): Promise<void>;
   authorize(response?: Response): Promise<void>;
   fetchWithAuth(): typeof globalThis.fetch;

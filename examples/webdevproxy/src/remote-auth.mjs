@@ -458,6 +458,8 @@ export class RemoteAuth {
     this.phase = "stored";
     /** @type {Promise<{ code: string }> | null} the loopback waiter the redirect hook registered */
     this.callback = null;
+    /** @type {string | undefined} what the SDK's `auth()` last resolved to in this pass, for a failure message */
+    this.lastResult = undefined;
     this.authFetch = this.authFetch.bind(this);
   }
 
@@ -507,7 +509,10 @@ export class RemoteAuth {
     for (const l of this.listeners) l(status);
   }
 
-  /** Subscribe to status changes; returns the unsubscribe. */
+  /**
+   * Subscribe to status changes; returns the unsubscribe.
+   * @param {(status: RemoteAuth["status"]) => void} listener
+   */
   onStatus(listener) {
     this.listeners.push(listener);
     return () => { this.listeners = this.listeners.filter((l) => l !== listener); };
@@ -610,12 +615,25 @@ export class RemoteAuth {
     }
     const opts = { serverUrl: this.serverUrl, resourceMetadataUrl: this.resourceMetadataUrl, scope: this.scope, fetchFn: this.authFetch };
     const stored = this.provider.read();
-    const hadTokens = Boolean(stored.tokens);
+    let hadTokens = Boolean(stored.tokens);
     const hadCredential = hadTokens || Boolean(stored.clientInformation);
+    // Half-states the SDK would stumble on: say so, drop the tokens up front and go straight to the browser.
+    // (A registration without tokens is the normal state after the first registration — nothing to do.)
+    const unusable = !stored.tokens ? null
+      : !stored.clientInformation ? "has no client registration; registering and signing in again"
+      : !stored.tokens.refresh_token ? "has no refresh token; signing in again"
+      : null;
+    if (unusable) {
+      this.log(`stored sign-in for ${this.serverUrl} ${unusable}`);
+      this.provider.invalidateCredentials("tokens");
+      hadTokens = false;
+    }
+    this.phase = "stored";
+    this.lastResult = undefined;
     try {
-      let recovered = false;
+      let recovered = Boolean(unusable);
       try {
-        recovered = (await this.attempt(opts, hadTokens)) && hadTokens;
+        recovered = (await this.attempt(opts, hadTokens)) && (hadTokens || recovered);
       } catch (e) {
         // A stored credential the issuer refused before any browser flow began: drop the dead part and sign in afresh, once.
         const dead = hadCredential && this.phase === "stored" ? this.deadCredential(e) : null;
@@ -632,7 +650,7 @@ export class RemoteAuth {
     } catch (e) {
       this.provider.pending = null;
       if (e instanceof Error && e.name === SIGN_IN_CANCELLED) throw e; // superseded by a fresh sign-in, which reports for itself
-      const message = e instanceof Error ? e.message : String(e);
+      const message = this.failureMessage(e);
       this.setStatus({ state: "error", issuer: this.issuer(), error: message });
       this.log(`sign-in failed${this.issuer() ? ` (issuer ${this.issuer()})` : ""}: ${message}`);
       throw e;
@@ -649,6 +667,7 @@ export class RemoteAuth {
     this.observed = { rejection: null, discovered: false };
     this.phase = "stored";
     let result = await auth(this.provider, opts);
+    this.lastResult = result;
     const redirected = result === "REDIRECT";
     if (redirected) {
       this.phase = "browser";
@@ -662,16 +681,38 @@ export class RemoteAuth {
       this.provider.pending = null;
       this.provider.patch({ state: undefined });
       result = await auth(this.provider, { ...opts, authorizationCode: code });
+      this.lastResult = result;
     }
-    if (result !== "AUTHORIZED") throw new Error(`authorization ended in ${result}`);
+    if (result !== "AUTHORIZED") throw new Error(`authorization ended in ${String(result)}`);
     return redirected;
+  }
+
+  /**
+   * What `/whoami` and the log say about a failed sign-in: the error's message,
+   * or — the SDK builds an OAuthError from an issuer answer without
+   * `error_description` with an EMPTY message, and a non-Error can be thrown —
+   * one made from where the pass was, the OAuth code and the issuer's answer.
+   */
+  failureMessage(e) {
+    const raw = e instanceof Error ? e.message : e === undefined || e === null ? "" : String(e);
+    if (raw.trim()) return raw;
+    const r = this.observed.rejection;
+    const where = this.phase === "browser" ? "in the browser flow"
+      : r?.endpoint === "registration" ? "while registering the client"
+      : r?.endpoint === "token" ? "while refreshing"
+      : "before the issuer was contacted (stored credential unusable)";
+    const code = e instanceof OAuthError ? e.errorCode : r?.code;
+    const detail = [code, r ? `HTTP ${r.status} from the ${r.endpoint} endpoint` : undefined, e instanceof Error && e.name !== "Error" ? e.name : undefined].filter(Boolean).join(", ");
+    const result = this.lastResult !== undefined ? `; auth() returned ${String(this.lastResult)}` : "";
+    return `authorization failed ${where}${detail ? ` (${detail})` : ""}${result}`;
   }
 
   /**
    * Does this failure of the stored credential mean it is dead, and which part?
    *   invalid_client / unauthorized_client, or a 400/401 from the registration endpoint → "all"
    *   invalid_grant, or a 400/401 from the token endpoint                               → "tokens" (which drops discovery too)
-   *   a token endpoint that no longer answers like one, on cached metadata             → "discovery"
+   *   a token endpoint that no longer answers like one, or a registration endpoint refusing
+   *     with any other status, on cached metadata                                       → "discovery"
    * Anything else (the issuer unreachable or 5xx, a malformed metadata document) is not.
    * @returns {{ scope: "all" | "tokens" | "discovery", reason: string } | null}
    */
@@ -683,6 +724,8 @@ export class RemoteAuth {
     if (code === "invalid_client" || code === "unauthorized_client") return { scope: "all", reason };
     if (code === "invalid_grant") return { scope: "tokens", reason };
     if (r && (r.status === 400 || r.status === 401)) return { scope: r.endpoint === "registration" ? "all" : "tokens", reason };
+    // A registration the issuer refuses otherwise (403, 404, …) while we worked from cached metadata: the endpoint may have moved.
+    if (r && r.endpoint === "registration" && !this.observed.discovered) return { scope: "discovery", reason: `the stored registration endpoint answered HTTP ${r.status}${r.code ? ` ${r.code}` : ""}` };
     return null;
   }
 

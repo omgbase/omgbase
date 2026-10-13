@@ -22,14 +22,18 @@ let dir: string;
 let gw: FakeGateway;
 let logs: string[];
 let ra: RemoteAuth | null;
+/** Every status any RemoteAuth of the test went through; an `error` without a message is a bug (afterEach). */
+let statuses: RemoteAuth["status"][];
 
 beforeEach(async () => {
   dir = mkdtempSync(join(tmpdir(), "webdevproxy-recovery-"));
   gw = await FakeGateway.start();
   logs = [];
   ra = null;
+  statuses = [];
 });
 afterEach(async () => {
+  for (const s of statuses) if (s.state === "error") expect(s.error).toMatch(/\S/);
   await ra?.close();
   await gw.close();
   rmSync(dir, { recursive: true, force: true });
@@ -43,9 +47,11 @@ const initialize = () => ({
   body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "t", version: "0" } } }),
 });
 
+const track = (r: RemoteAuth) => { r.onStatus((s) => statuses.push(s)); return r; };
+
 /** A RemoteAuth over the fake gateway, signed in once through the fake user's browser. */
 async function signedIn(browser: FakeBrowser = gw.browser()) {
-  ra = await new RemoteAuth({ serverUrl: gw.serverUrl, file: file(), log, openBrowser: browser }).start();
+  ra = track(await new RemoteAuth({ serverUrl: gw.serverUrl, file: file(), log, openBrowser: browser }).start());
   await ra.ensure();
   expect(ra.status).toEqual({ state: "ok", issuer: gw.issuer });
   expect(browser.opened).toHaveLength(1);
@@ -113,6 +119,17 @@ describe("recovery from a dead stored sign-in", () => {
     expect(browser.opened).toHaveLength(2);
     expect(logs).toContain(`stored sign-in for ${gw.serverUrl} was rejected (invalid_request: refresh tokens were reset); signing in again`);
     expect(readTokenFile(file())!.clientInformation).toMatchObject({ client_id: "client-1" });
+  });
+
+  it("a registration refused on cached metadata with a status that is not 400/401 is rediscovered once, then final", async () => {
+    const { ra, fetch } = await signedIn();
+    gw.revokeClients();
+    gw.registerResponse = { status: 403, body: { error: "access_denied" } };
+    await expect(fetch(gw.serverUrl, initialize())).rejects.toThrow();
+    expect(ra.status).toEqual({ state: "error", issuer: gw.issuer, error: "authorization failed while registering the client (access_denied, HTTP 403 from the registration endpoint, AccessDeniedError)" });
+    // refresh → invalid_client → the SDK drops all (discovery too) and rediscovers → registers (refused) → ours: fresh metadata already, no second pass.
+    expect(gw.hits).toMatchObject({ refresh: 1, register: 2, metadata: 4 });
+    expect(logs.join("\n")).not.toMatch(/is stale/);
   });
 
   it("a registration the issuer refuses with another code (HTTP 400) drops everything and tries once more, then reports the error", async () => {
@@ -210,7 +227,7 @@ describe("a stale file at start-up", () => {
   it("(d) RemoteAuth.ensure() goes through the same recovery: the dead token is replaced by a fresh browser sign-in", async () => {
     staleFile();
     const browser = gw.browser();
-    ra = await new RemoteAuth({ serverUrl: gw.serverUrl, file: file(), log, openBrowser: browser }).start();
+    ra = track(await new RemoteAuth({ serverUrl: gw.serverUrl, file: file(), log, openBrowser: browser }).start());
     await ra.ensure();
     expect(ra.status).toMatchObject({ state: "ok", issuer: gw.issuer, recovered: true });
     expect(browser.opened).toHaveLength(1);
@@ -225,6 +242,7 @@ describe("a stale file at start-up", () => {
     const browser = gw.browser();
     const proxy = await startProxy({ remote: gw.serverUrl, tokenFile: file(), port: 0, log, openBrowser: browser });
     try {
+      track(proxy.remote!);
       await proxy.ready;
       expect(proxy.remote).toBeInstanceOf(RemoteAuth);
       expect(proxy.whoami().auth).toEqual({ state: "ok", issuer: gw.issuer, recovered: true, recoveredAt: expect.any(String) as unknown as string });
@@ -250,12 +268,107 @@ describe("a stale file at start-up", () => {
     const browser = gw.browser("decline");
     const proxy = await startProxy({ remote: gw.serverUrl, tokenFile: file(), port: 0, log, openBrowser: browser });
     try {
+      track(proxy.remote!);
       await proxy.ready;
       expect(proxy.whoami().auth).toEqual({ state: "error", issuer: gw.issuer, error: "access_denied: the user declined" });
       expect(gw.hits).toMatchObject({ refresh: 1, exchange: 0 });
     } finally {
       await proxy.close();
     }
+  });
+});
+
+describe("half-states of the file", () => {
+  /** Exactly the file found on a real machine: tokens with a refresh token, discovery, a PKCE verifier — and no client registration. */
+  function fileWithoutRegistration(port = 4242) {
+    writeTokenFile(file(), {
+      codeVerifier: "stale-verifier",
+      discovery: {
+        authorizationServerUrl: gw.issuer,
+        resourceMetadataUrl: `${gw.base}/.well-known/oauth-protected-resource/omg`,
+        resourceMetadata: { resource: gw.serverUrl, authorization_servers: [gw.issuer] },
+        authorizationServerMetadata: { issuer: gw.issuer, authorization_endpoint: `${gw.issuer}/authorize`, token_endpoint: `${gw.base}/issuer/token`, registration_endpoint: `${gw.issuer}/register`, response_types_supported: ["code"] },
+      },
+      redirectPort: port,
+      serverUrl: gw.serverUrl,
+      tokens: { access_token: "at-orphan", token_type: "Bearer", refresh_token: "rt-orphan", expires_in: 3600 },
+      tokensSavedAt: 1,
+    });
+    expect(Object.keys(readTokenFile(file())!).sort()).toEqual(["codeVerifier", "discovery", "redirectPort", "serverUrl", "tokens", "tokensSavedAt"]);
+  }
+
+  it("tokens without a client registration at start-up: the tokens go up front, the client is registered, the browser opens, recovered", async () => {
+    fileWithoutRegistration();
+    const browser = gw.browser();
+    ra = track(await new RemoteAuth({ serverUrl: gw.serverUrl, file: file(), log, openBrowser: browser }).start());
+    await ra.ensure();
+    expect(ra.status).toMatchObject({ state: "ok", issuer: gw.issuer, recovered: true });
+    expect(browser.opened).toHaveLength(1);
+    expect(gw.hits).toMatchObject({ register: 1, refresh: 0, exchange: 1 }); // never a refresh without a client id
+    expect(logs[0]).toBe(`stored sign-in for ${gw.serverUrl} has no client registration; registering and signing in again`);
+    const stored = readTokenFile(file())!;
+    expect(stored.clientInformation).toMatchObject({ client_id: expect.any(String) as unknown as string });
+    expect(stored.tokens?.refresh_token).not.toBe("rt-orphan");
+  });
+
+  it("the same shape met in a 401 round recovers the same way", async () => {
+    const { ra, browser, fetch } = await signedIn();
+    ra.provider!.patch({ clientInformation: undefined });
+    gw.expireAccessTokens();
+    expect((await fetch(gw.serverUrl, initialize())).status).toBe(200);
+    expect(ra.status).toMatchObject({ state: "ok", recovered: true });
+    expect(browser.opened).toHaveLength(2);
+    expect(gw.hits).toMatchObject({ register: 2, refresh: 0, exchange: 2 });
+    expect(logs[0]).toBe(`stored sign-in for ${gw.serverUrl} has no client registration; registering and signing in again`);
+  });
+
+  it("tokens without a refresh token are expired: the browser opens, recovered; a registration without tokens is simply the first run", async () => {
+    gw.clients.add("client-stale");
+    writeTokenFile(file(), { serverUrl: gw.serverUrl, clientInformation: { client_id: "client-stale", redirect_uris: loopbackRedirectUrls(4242) }, tokens: { access_token: "at-only", token_type: "Bearer" }, discovery: { authorizationServerUrl: gw.issuer } });
+    const browser = gw.browser();
+    ra = track(await new RemoteAuth({ serverUrl: gw.serverUrl, file: file(), log, openBrowser: browser }).start());
+    await ra.ensure();
+    expect(ra.status).toMatchObject({ state: "ok", recovered: true });
+    expect(gw.hits).toMatchObject({ register: 0, refresh: 0, exchange: 1 });
+    expect(logs[0]).toBe(`stored sign-in for ${gw.serverUrl} has no refresh token; signing in again`);
+    await ra.close();
+    // Registration only (the first registration happened, no consent yet): no half-state message, not a recovery.
+    logs.length = 0;
+    writeTokenFile(file(), { serverUrl: gw.serverUrl, clientInformation: { client_id: "client-stale", redirect_uris: loopbackRedirectUrls(4242) }, discovery: { authorizationServerUrl: gw.issuer } });
+    ra = track(await new RemoteAuth({ serverUrl: gw.serverUrl, file: file(), log, openBrowser: browser }).start());
+    await ra.ensure();
+    expect(ra.status).toEqual({ state: "ok", issuer: gw.issuer });
+    expect(logs.join("\n")).not.toMatch(/stored sign-in/);
+  });
+
+  it("an issuer answer without error_description (the SDK's error then has an empty message) still yields a message in `error`", async () => {
+    fileWithoutRegistration();
+    gw.registerResponse = { status: 403, body: { error: "access_denied" } };
+    const browser = gw.browser();
+    ra = track(await new RemoteAuth({ serverUrl: gw.serverUrl, file: file(), log, openBrowser: browser }).start());
+    await expect(ra.ensure()).rejects.toThrow();
+    expect(ra.status).toEqual({ state: "error", issuer: gw.issuer, error: "authorization failed while registering the client (access_denied, HTTP 403 from the registration endpoint, AccessDeniedError)" });
+    expect(browser.opened).toHaveLength(0);
+    // Dropping the orphaned tokens dropped the cached discovery with them, so the registration already ran on fresh metadata: refused once, final.
+    expect(gw.hits).toMatchObject({ register: 1, refresh: 0, metadata: 2 });
+    expect(logs[0]).toBe(`stored sign-in for ${gw.serverUrl} has no client registration; registering and signing in again`);
+    expect(logs.join("\n")).not.toMatch(/is stale/);
+    expect(logs.at(-1)).toBe(`sign-in failed (issuer ${gw.issuer}): authorization failed while registering the client (access_denied, HTTP 403 from the registration endpoint, AccessDeniedError)`);
+    // Once the issuer registers again, the next 401 round signs in.
+    gw.registerResponse = null;
+    expect((await ra.fetchWithAuth()(gw.serverUrl, initialize())).status).toBe(200);
+    expect(ra.status).toMatchObject({ state: "ok" });
+  });
+
+  it("failureMessage never returns an empty string", () => {
+    const r = new RemoteAuth({ serverUrl: gw.serverUrl, file: file() });
+    expect(r.failureMessage(new Error(""))).toBe("authorization failed before the issuer was contacted (stored credential unusable)");
+    expect(r.failureMessage(undefined)).toMatch(/^authorization failed/);
+    expect(r.failureMessage("")).toMatch(/^authorization failed/);
+    expect(r.failureMessage(new Error("real"))).toBe("real");
+    r.phase = "browser";
+    r.lastResult = "REDIRECT";
+    expect(r.failureMessage(new TypeError(""))).toBe("authorization failed in the browser flow (TypeError); auth() returned REDIRECT");
   });
 });
 

@@ -100,6 +100,25 @@ describe("startPrompt", () => {
     expect(logs.join("\n")).not.toMatch(/sign-in failed/); // the superseded sign-in is not a failure
   });
 
+  it("a from `error` on a file with tokens but no client registration (the issuer refused the registration once) signs in again", async () => {
+    ra.provider!.patch({ clientInformation: undefined });
+    gw.expireAccessTokens();
+    gw.registerResponse = { status: 403, body: { error: "access_denied" } };
+    await ra.ensure().catch(() => undefined);
+    expect(ra.status.state).toBe("error");
+    expect(ra.status.error).toMatch(/^authorization failed while registering the client/);
+    expect(Object.keys(readTokenFile(ra.file)!)).not.toContain("clientInformation");
+    gw.registerResponse = null;
+    logs.length = 0;
+    attach();
+    expect(logs).toEqual([PROMPT_HINT]); // the state is error on attach
+    input.write("a\n");
+    await until(() => ra.status.state === "ok" && settled());
+    expect(gw.hits.exchange).toBe(2);
+    expect(readTokenFile(ra.file)!.clientInformation).toMatchObject({ client_id: expect.any(String) as unknown as string });
+    expect(logs.filter((l) => l === PROMPT_HINT)).toHaveLength(2); // once on attach, once while waiting
+  });
+
   it("q: closes the proxy and exits 0; later keys are ignored", async () => {
     attach();
     input.write("q\n");

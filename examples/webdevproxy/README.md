@@ -107,13 +107,19 @@ as later:
 | --- | --- | --- |
 | `invalid_grant`, any other OAuth error, or a bare `400`/`401` from the token endpoint | `tokens` (and the cached `discovery`) | rediscovers from the `401`'s `WWW-Authenticate` and opens the browser again |
 | `invalid_client` / `unauthorized_client`, or a `400`/`401` from the registration endpoint | everything (`clientInformation`, `tokens`, `discovery`) | re-registers the client, then the browser |
-| something that is not an OAuth answer at all (a `404` page: the token endpoint moved) while working from cached metadata | `discovery` only | rediscovers and retries the refresh — silently when the refresh token is still good |
+| something that is not an OAuth answer at all (a `404` page: the token endpoint moved) while working from cached metadata, or a registration refused with another status on cached metadata | `discovery` only | rediscovers and retries the refresh — silently when the refresh token is still good |
+| **before** asking the issuer: the file has tokens but no `clientInformation` (a lost registration), or tokens without a `refresh_token` | `tokens` (and `discovery`) | logs `stored sign-in for <url> has no client registration; registering and signing in again` (or `… has no refresh token; signing in again`), registers if needed, opens the browser |
 
 It logs one line, `[webdevproxy] stored sign-in for <url> was rejected (<reason>);
 signing in again` (`stored issuer metadata for <url> is stale (…); rediscovering`
 for the last row), then the usual sign-in lines; `/whoami` reports
-`recovered: true`. Only when the fresh sign-in **also** fails (you declined, the
-code exchange failed) does `auth.state` become `"error"` — and that is never
+`recovered: true`. (A registration without tokens is the normal state between
+the first registration and consent; nothing is said.) Only when the fresh sign-in
+**also** fails (you declined, the code exchange failed, the issuer refuses to
+register the client) does `auth.state` become `"error"` — with a message that is
+never empty: the SDK's error for an issuer answer without `error_description` has
+none, so the proxy says where it was (`authorization failed while registering the
+client (access_denied, HTTP 403 from the registration endpoint, …)`) — and that is never
 retried by itself: the next `401` is one more browser flow, no refresh, so a
 broken issuer costs one browser tab per request round, not a loop. A failure
 inside the browser flow is never mistaken for a dead credential. Concurrent
