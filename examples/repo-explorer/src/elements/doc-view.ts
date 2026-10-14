@@ -53,7 +53,7 @@ export class DocView extends LitElement {
     table.props .src { color: #8a94a6; font-size: 11px; padding-right: 8px; }
     table.props td.val { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; word-break: break-word; }
     table.props button { font-size: 11px; padding: 0 5px; margin-left: 4px; border: 1px solid #c9cdd6; border-radius: 3px; background: #fff; cursor: pointer; }
-    .editor { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 12.5px; margin: 0 0 12px; padding: 6px 8px; border: 1px dashed #c9cdd6; border-radius: 6px; background: #fafbfc; }
+    .editor { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 12.5px; margin: 8px 0 0; padding: 6px 8px; border: 1px dashed #c9cdd6; border-radius: 6px; background: #fafbfc; }
     .editor input { font: inherit; font-size: 12.5px; padding: 2px 6px; border: 1px solid #c9cdd6; border-radius: 4px; }
     .editor input.key { width: 10em; } .editor input.value { flex: 1; min-width: 12em; }
     .editor button, .pending button { font: inherit; font-size: 12.5px; padding: 2px 10px; border: 1px solid #c9cdd6; border-radius: 4px; background: #fff; cursor: pointer; }
@@ -162,10 +162,11 @@ export class DocView extends LitElement {
   private renderProps() {
     if (!this.doc) return nothing;
     const rows = propertyRows(this.doc.properties);
-    if (rows.length === 0) return html`<div class="anchors">no properties</div>`;
+    if (rows.length === 0 && !this.canWrite) return html`<div class="anchors">no properties</div>`;
     // Collapsible: a long property bag (frontmatter + inline + computed) can push
     // the body below the fold. Open by default while it is short; the user's
-    // choice sticks across documents once made.
+    // choice sticks across documents once made. The frontmatter editor lives
+    // inside — it is only wanted while looking at the properties.
     const open = this.propsOpen ?? rows.length <= PROPS_OPEN_MAX;
     return html`<details class="props-wrap" data-props-details ?open=${open} @toggle=${(e: Event) => { this.propsOpen = (e.target as HTMLDetailsElement).open; }}>
       <summary>properties <span class="count">(${rows.length})</span></summary>
@@ -176,6 +177,7 @@ export class DocView extends LitElement {
           <td class="val">${r.text}${this.canWrite && r.source === "frontmatter" ? html`<button type="button" title="edit this key" @click=${() => this.startEdit(r.key, r.text)}>edit</button>` : nothing}</td>
         </tr>`)}
       </table>
+      ${this.renderEditor()}
     </details>`;
   }
 
@@ -229,7 +231,6 @@ export class DocView extends LitElement {
         </span>
       </div>
       ${this.renderProps()}
-      ${this.renderEditor()}
       ${this.renderPending()}
       ${m ? html`<div class="msg ${m.kind}" data-write-message>${m.text}${m.fix ? html` · fix: <code>${m.fix}</code>` : nothing}</div>` : nothing}
       ${this.view === "raw"
