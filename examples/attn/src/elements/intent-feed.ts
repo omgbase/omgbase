@@ -37,6 +37,16 @@ const ON_LABEL: Record<CueOn, string> = {
   "query-exit": "a row leaves a query's result",
 };
 
+/** The meta line's parts, joined by " · " only between parts that exist (a tag-less intent never starts with the separator). */
+export function metaLine(i: Intent): string {
+  const parts: string[] = [];
+  if (i.tags.length) parts.push(i.tags.map((t) => `#${t}`).join(" "));
+  if (i.project) parts.push(i.project);
+  if (i.updatedAt) parts.push(`edited ${i.updatedAt.slice(0, 16).replace("T", " ")}Z`);
+  if (i.status === "released") parts.push("released");
+  return parts.join(" · ");
+}
+
 @customElement("intent-feed")
 export class IntentFeed extends LitElement {
   static override styles = css`
@@ -45,16 +55,19 @@ export class IntentFeed extends LitElement {
     h2:first-child { margin-top: 0; }
     h2 label { font-weight: 400; text-transform: none; letter-spacing: 0; margin-left: auto; font-size: 12px; }
     h2.cued { color: #8a5a00; }
-    .intent { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; padding: 6px 10px; border: 1px solid #e3e6ec; border-radius: 8px; margin-bottom: 6px; background: #fff; }
+    /* Two columns: the text column shrinks (titles ellipsize) and the actions
+       column is as wide as its buttons and never wraps, so every row's buttons
+       line up on the right regardless of title length. */
+    .intent { display: grid; grid-template-columns: minmax(0, 1fr) max-content; gap: 2px 12px; padding: 6px 10px; border: 1px solid #e3e6ec; border-radius: 8px; margin-bottom: 6px; background: #fff; }
     .intent.cued { border-color: #ffe082; background: #fffdf5; animation: arrive 1.2s ease-out; }
     @keyframes arrive { from { box-shadow: 0 0 0 3px #ffe082; } to { box-shadow: 0 0 0 0 transparent; } }
     .intent.released { opacity: 0.7; background: #fafbfc; }
-    .intent .title { font-weight: 600; cursor: pointer; }
+    .intent .title { font-weight: 600; cursor: pointer; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .intent .title:hover { color: #1565c0; }
-    .intent .meta { color: #5a6270; font-size: 12px; grid-column: 1; }
+    .intent .meta { color: #5a6270; font-size: 12px; grid-column: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .intent .why { grid-column: 1 / span 2; color: #6d4c00; font-size: 12px; }
     .intent .why code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11.5px; }
-    .intent .actions { grid-row: 1 / span 2; display: flex; gap: 4px; align-items: flex-start; flex-wrap: wrap; justify-content: flex-end; }
+    .intent .actions { grid-row: 1 / span 2; grid-column: 2; display: flex; gap: 4px; align-items: flex-start; flex-wrap: nowrap; justify-content: flex-end; white-space: nowrap; }
     .intent .cues { grid-column: 1 / span 2; font-size: 12px; color: #5a6270; }
     .intent .cues .c { display: flex; gap: 6px; align-items: baseline; }
     .intent .cues code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; white-space: pre-wrap; }
@@ -177,7 +190,7 @@ export class IntentFeed extends LitElement {
           <button type="button" ?disabled=${this.busy} title="set status: released — let it go; its cues stop firing" @click=${() => this.emit<IntentStatusDetail>("intent-status", { path: i.path, status: "released" })}>release</button>`
         : html`<button type="button" ?disabled=${this.busy} @click=${() => this.emit<IntentStatusDetail>("intent-status", { path: i.path, status: "active" })}>reactivate</button>`}
       </div>
-      <div class="meta">${i.tags.map((t) => `#${t}`).join(" ")}${i.project ? ` · ${i.project}` : ""}${i.updatedAt ? ` · edited ${i.updatedAt.slice(0, 16).replace("T", " ")}Z` : ""}${i.status === "released" ? " · released" : ""}</div>
+      <div class="meta">${metaLine(i)}</div>
       ${why ? html`<div class="why">${why.map((w) => html`<div>why now: <code>${w}</code></div>`)}</div>` : nothing}
       ${i.cues.length ? html`<div class="cues">${i.cues.map((c) => this.renderCue(i, c))}</div>` : nothing}
       ${this.cueFor === i.path ? this.renderCueEditor(i) : nothing}
