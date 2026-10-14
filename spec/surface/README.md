@@ -726,17 +726,20 @@ present only when there is one):
 **case-insensitively**: a candidate qualifies when its optimal-string-alignment
 distance (Levenshtein with adjacent transpositions, every edit 1) to the name is
 **≤ 2**, OR when one of the two is a substring of the other and the shorter has
-**≥ 3** characters; the lowest distance wins; ties go to the shorter candidate,
-then the alphabetically first; no qualifying candidate, no clause. Pinned
-(`query-unknown.json`): `titel` → `title`, `ttile` → `title` (a transposition),
-`layr` → `layer`, `stag` → `stage` (a prefix at distance 1), `txt` → `text`,
-`checkd` → `checked`, `dst_pth` → `dst_path`; `preview` on blocks, `value` on
-blocks (distance 5 from `text`), `target` on links (`dst_path` is not within the
-rule's reach) and `meta.owner` on docs get no clause; and two edges of the rule
-as decided, pinned as truth rather than special-cased: a one-letter name (`x`,
-`n`) reaches `id` (distance 2, the shortest and first candidate), and `via` on
-links gets `id` (distance 2) over its own prefix `via_id` (distance 3) because
-the lowest distance wins.
+**≥ 3** characters. Ranking: a candidate at distance **1** (one typo) wins
+first; otherwise a substring match outranks a distance-2 match; within a class
+the lowest distance wins, ties go to the shorter candidate, then the
+alphabetically first. A name under **3** characters gets no suggestion (it is
+within distance 2 of nearly everything, and too short for the substring rule).
+No qualifying candidate, no clause. Pinned (`query-unknown.json`): `titel` →
+`title`, `ttile` → `title` (a transposition), `layr` → `layer`, `stag` → `stage`
+(a prefix at distance 1), `txt` → `text`, `checkd` → `checked`, `dst_pth` →
+`dst_path` (one typo, over the handle `dst`), `via` → `via_id` (its substring,
+over `id` at distance 2), `tag` →
+`tags`, `out` → `out_links`; `preview` on blocks, `value` on blocks (distance 5
+from `text`), `target` on links (`dst_path` is not within the rule's reach),
+`meta.owner` on docs and the one- and two-letter names `x`, `n`, `in` get no
+clause.
 
 Pinned by `query-unknown.json` (33 cases: the three tiers, each clause and
 scope shape, the dedup order, the message forms, the nearest-match truths, the

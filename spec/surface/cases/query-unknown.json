@@ -407,7 +407,7 @@
         "cursor": null,
         "consumer": "collect",
         "hints": [
-          "`x` is not a field of docs and no document in this repository carries a property by that name; did you mean `id`?"
+          "`x` is not a field of docs and no document in this repository carries a property by that name"
         ]
       }
     },
@@ -486,7 +486,7 @@
         "cursor": null,
         "consumer": "collect",
         "hints": [
-          "`n` is not a field of nodes and no node in this repository carries a property by that name; did you mean `id`?"
+          "`n` is not a field of nodes and no node in this repository carries a property by that name"
         ]
       }
     },
@@ -567,7 +567,7 @@
       "query": "select via from links",
       "expect": {
         "error": "filter_invalid",
-        "message_includes": "`via` is not a field of links (fields: id, path, doc_id, block_id, via_id, dst_id, dst_path, uri, field, dst_kind, predicate, provenance, anchor); did you mean `id`?"
+        "message_includes": "`via` is not a field of links (fields: id, path, doc_id, block_id, via_id, dst_id, dst_path, uri, field, dst_kind, predicate, provenance, anchor); did you mean `via_id`?"
       }
     },
     {

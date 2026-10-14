@@ -132,15 +132,19 @@ describe("the nearest match (§1.5)", () => {
     expect(editDistance("x", "id")).toBe(2);
   });
 
-  it("distance ≤ 2 or a substring of ≥ 3 characters, case-insensitive; lowest distance, then shorter, then alphabetical; none → null", () => {
+  it("distance ≤ 2 or a substring of ≥ 3 characters, case-insensitive; one typo first, then a substring, then distance 2; shorter, alphabetical; under 3 characters or none → null", () => {
     const links = ["id", "path", "doc_id", "block_id", "via_id", "dst_id", "dst_path", "uri", "field", "dst_kind", "predicate", "provenance", "anchor"];
     expect(nearest("dst_pth", links)).toBe("dst_path");
     expect(nearest("target", links)).toBeNull();
     expect(nearest("DST", links)).toBe("dst_id"); // three prefix matches at distance 3, 5, 5 — the lowest distance
-    expect(nearest("via", links)).toBe("id"); // the rule as decided: distance 2 beats the prefix at distance 3
+    expect(nearest("via", links)).toBe("via_id"); // the substring outranks `id` at distance 2
+    expect(nearest("x", links)).toBeNull(); // under three characters: no suggestion
+    expect(nearest("in", ["id", "in_links", "out_links"])).toBeNull();
+    expect(nearest("tag", ["id", "path", "tags", "title"])).toBe("tags");
     expect(nearest("preview", ["id", "path", "type", "text", "attrs", "depth", "ordinal", "children"])).toBeNull();
     expect(nearest("predicat", links)).toBe("predicate");
-    expect(nearest("ab", ["ba", "ab_x", "abc"])).toBe("ba"); // distance 1 beats the substrings (both too short for the substring rule anyway)
+    expect(nearest("abc", ["acb", "abc_x", "abd"])).toBe("abd"); // one typo (two of them, alphabetical) beats the substring
+    expect(nearest("abcd", ["abxy", "abcd_x"])).toBe("abcd_x");
     expect(nearest("abc", ["abcd", "xabc"])).toBe("abcd"); // equal distance: alphabetical
   });
 });

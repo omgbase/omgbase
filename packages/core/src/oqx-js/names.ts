@@ -289,16 +289,28 @@ export function editDistance(a: string, b: string): number {
  */
 export function nearest(name: string, candidates: readonly string[]): string | null {
   const needle = name.toLowerCase();
-  let best: { c: string; d: number } | null = null;
+  // A name under three characters is within distance 2 of nearly anything, so
+  // only a substring match (which needs three characters anyway) could qualify.
+  if (needle.length < 3) return null;
+  let best: { c: string; d: number; sub: boolean } | null = null;
   for (const c of new Set(candidates)) {
     const hay = c.toLowerCase();
     if (hay === needle) continue;
     const d = editDistance(needle, hay);
     const shorter = needle.length <= hay.length ? needle : hay;
     const longer = shorter === needle ? hay : needle;
-    const close = d <= 2 || (shorter.length >= 3 && longer.includes(shorter));
-    if (!close) continue;
-    if (best === null || d < best.d || (d === best.d && (c.length < best.c.length || (c.length === best.c.length && c < best.c)))) best = { c, d };
+    const sub = shorter.length >= 3 && longer.includes(shorter);
+    if (!(d <= 2 || sub)) continue;
+    // One typo (distance 1) wins first; then a substring match outranks a
+    // distance-2 match (`via` → `via_id`, not `id`; `dst_pth` → `dst_path`, not
+    // `dst`); within a class the lowest distance, then the shorter candidate,
+    // then alphabetical.
+    const rank = (x: { d: number; sub: boolean }): number => (x.d === 1 ? 0 : x.sub ? 1 : 2);
+    const better =
+      best === null ||
+      rank({ d, sub }) < rank(best) ||
+      (rank({ d, sub }) === rank(best) && (d < best.d || (d === best.d && (c.length < best.c.length || (c.length === best.c.length && c < best.c)))));
+    if (better) best = { c, d, sub };
   }
   return best === null ? null : best.c;
 }

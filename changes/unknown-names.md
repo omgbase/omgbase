@@ -31,10 +31,11 @@ selector** (`plan`/`apply`/`execute` with `select`) is refused through the
 runner's AST entry (`unknownNames: "refuse"`, its default; the source entry
 every read uses hints), since `where target != "x"` would select every row. The
 verdict never depends on the query's filter; a repository with no object of a
-kind skips the check for that kind. The nearest match is case-insensitive
-Damerau–Levenshtein ≤ 2 or a substring of ≥ 3 characters, lowest distance first
-(two awkward edges — `x` → `id`, `via` → `id` over `via_id` — are pinned as
-truth, not special-cased). The vocabulary is cached per repository on its head
+kind skips the check for that kind. The refusal wears the admission's `select: ` prefix and `hint: "selection"`
+(`spec/mutate` §11.8, fixture `select-unknown-name-refused`). The nearest match
+is case-insensitive Damerau–Levenshtein ≤ 2 or a substring of ≥ 3 characters; one
+typo wins first, then a substring outranks a distance-2 match (`via` →
+`via_id`, not `id`), then the lowest distance; a name under three characters gets no suggestion (`x`, `in`). The vocabulary is cached per repository on its head
 commit.
 
 - `@omgbase/oqx` 0.23.0 (hand-bumped with its CHANGELOG, per the standalone

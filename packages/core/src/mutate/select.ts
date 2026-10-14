@@ -597,6 +597,9 @@ function runQuery(store: Store, repoId: string, q: Query, limit: number): { hits
     return { hits: res.hits, truncated: res.truncated };
   } catch (e) {
     if (e instanceof OqxError) throw new FilterInvalid(e.message, "OQX");
+    // An unknown name (spec/surface §1.5) is refused before any row is read; a
+    // selector's refusal wears the admission prefix and hint like every other.
+    if (e instanceof FilterInvalid) throw selectionInvalid(`select: ${e.message}`);
     throw e;
   }
 }

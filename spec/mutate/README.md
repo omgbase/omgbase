@@ -1381,7 +1381,12 @@ over one snapshot, with the page bound `max + 1` (`SELECTION_CEILING + 1 =
 cardinality: ">" + bound | n, max: bound, implicit?: true }` (`">" + bound`
 when the page was truncated, the exact count when it was `bound + 1`;
 `implicit` present only under the ceiling) — the engine never plans a
-partial set. An OQX error from the run is the runner's `filter_invalid`.
+partial set. An OQX error from the run is the runner's `filter_invalid`. A
+name no row of the selector's kind can carry (`spec/surface` §1.5 "Unknown
+names", 4.6) is refused BEFORE the run — `where typ == "workstream"` would
+otherwise select nothing and `where typ != "x"` everything — as
+`filter_invalid { hint: "selection" }` whose message is the §1.5 text under
+the `select: ` prefix (`select-unknown-name-refused`).
 
 **3. Row → effects.** Hits in result order × templates in order: the
 expanded effect `k = h·T + t` for hit `h` of `H` and template `t` of `T`

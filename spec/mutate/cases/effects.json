@@ -20982,6 +20982,208 @@
       }
     },
     {
+      "name": "select-unknown-name-refused",
+      "notes": "§11.8 (spec/surface §1.5 \"Unknown names\", 4.6): the selector reads `typ`, a name no document in the repository carries (the vocabulary is the live frontmatter/inline keys — `type`, `status`, `project` here) → refused before the run with `filter_invalid { hint: \"selection\" }` whose message is the §1.5 hint text under the `select: ` prefix (`select: `typ` is not a field of docs and no document in this repository carries a property by that name; did you mean `type`?`). The check needs a vocabulary, so the case observes first: a repository with no document skips it.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-10-13T10:00:00.000Z",
+            "items": [
+              {
+                "path": "hub.md",
+                "source": "---\ntype: project\n---\n\n# Hub\n"
+              },
+              {
+                "path": "ws/alpha.md",
+                "source": "---\ntype: workstream\nstatus: completed\nproject: hub.md\n---\n\n# Alpha\n"
+              }
+            ]
+          }
+        },
+        {
+          "plan_effects": {
+            "select": "from docs where typ == \"workstream\"",
+            "effects": [
+              {
+                "op": "set",
+                "field": "frontmatter.rolled_up",
+                "value": true
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "hub.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 1
+              }
+            },
+            {
+              "path": "ws/alpha.md",
+              "echo": false,
+              "doc": "d_1",
+              "commit": "c_1",
+              "rev": "r_1",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 1
+              }
+            }
+          ],
+          {
+            "error": {
+              "code": "filter_invalid"
+            }
+          }
+        ],
+        "files": {
+          "hub.md": "---\ntype: project\n---\n\n# Hub\n",
+          "ws/alpha.md": "---\ntype: workstream\nstatus: completed\nproject: hub.md\n---\n\n# Alpha\n"
+        },
+        "docs": [
+          {
+            "doc_id": "d_0",
+            "path": "hub.md",
+            "format": "markdown",
+            "current_rev": "r_0",
+            "file_hash": "3ef53c275bfc06a76a403592c47bef56abf45793d3b1939267afc10b317c4b16",
+            "conflicted": 0,
+            "leading_trivia": "",
+            "frontmatter_trivia": "\n\n",
+            "deleted_commit": null
+          },
+          {
+            "doc_id": "d_1",
+            "path": "ws/alpha.md",
+            "format": "markdown",
+            "current_rev": "r_1",
+            "file_hash": "4e90e6205cb76f93d2c949c6c2020b811d8e7fc15cb7ef3cbdae22ca89aecb79",
+            "conflicted": 0,
+            "leading_trivia": "",
+            "frontmatter_trivia": "\n\n",
+            "deleted_commit": null
+          }
+        ],
+        "blocks": [
+          {
+            "block_id": "b_0",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "V",
+            "ordinal": 0,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "heading",
+            "attrs": {
+              "level": 1
+            },
+            "text": "Hub",
+            "raw_hash": "1dc5fc0d3fb9c9e408b6273579fb88cf49aa3df6a0b252368328588b0b9bc866",
+            "norm_hash": "d87c9ca31f373cc5ce5d1d8efc602ef809fefbb9cafd79961260d31ccfd49363",
+            "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+            "created_commit": "c_0",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_1",
+            "doc_id": "d_1",
+            "parent_block": null,
+            "order_key": "V",
+            "ordinal": 0,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "heading",
+            "attrs": {
+              "level": 1
+            },
+            "text": "Alpha",
+            "raw_hash": "2c5bfe837877f81eff587c2afba18d27b2ab28afaa7f164072500fdd3f3f8536",
+            "norm_hash": "b1a96dd646bccaa24cef7a3db22a6f995f05658f4f1c3272913e258c03e6fb24",
+            "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+            "created_commit": "c_1",
+            "deleted_commit": null
+          }
+        ],
+        "commits": [
+          {
+            "commit_id": "c_0",
+            "seq": 1,
+            "ts": "2026-10-13T10:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "checkpoint_id": null,
+            "ops": null
+          },
+          {
+            "commit_id": "c_1",
+            "seq": 2,
+            "ts": "2026-10-13T10:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "checkpoint_id": null,
+            "ops": null
+          }
+        ],
+        "revisions": [
+          {
+            "rev_id": "r_0",
+            "doc_id": "d_0",
+            "seq": 1,
+            "root_tree": "18aebb605fdbd0fb49178ce740d6c058552bebbce8019d9317342629037095d0",
+            "frontmatter_blob": "3f162db8e980bd1b38bccb30fa97d0fa15e334764407b0b28fd36557440aa64a",
+            "rendered_hash": "3ef53c275bfc06a76a403592c47bef56abf45793d3b1939267afc10b317c4b16",
+            "path": "hub.md",
+            "commit_id": "c_0"
+          },
+          {
+            "rev_id": "r_1",
+            "doc_id": "d_1",
+            "seq": 1,
+            "root_tree": "d80546c285243b8cdeee172323712b655365ffb81ef669c597a521075659c0c2",
+            "frontmatter_blob": "260f78109a1d61c48b273c414c93f0b6717536a9da91dac0f81812c63a9c5903",
+            "rendered_hash": "4e90e6205cb76f93d2c949c6c2020b811d8e7fc15cb7ef3cbdae22ca89aecb79",
+            "path": "ws/alpha.md",
+            "commit_id": "c_1"
+          }
+        ],
+        "dispositions": [
+          {
+            "commit_id": "c_0",
+            "block_id": "b_0",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_1",
+            "block_id": "b_1",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          }
+        ],
+        "resurrection_pool": [],
+        "pending_materializations": []
+      }
+    },
+    {
       "name": "select-oqx-out-of-slot-refused",
       "notes": "§11.8 static admission (before the query runs): `{ oqx }` outside a slot (`field` is literal) → `filter_invalid` with `hint: \"selection\"`; no store is read, so the case needs no observation.",
       "steps": [
