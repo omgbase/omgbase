@@ -1109,7 +1109,10 @@ fn every_write_over_the_reference_server_lands_like_local() {
     assert!(a.contains("- [x] task one"), "{a}");
     assert!(a.contains("- [x] task three"), "{a}");
     assert!(a.contains("- [ ] via apply"), "{a}");
-    assert!(a.contains("Alpha  beta."), "{a}");
+    // mutate 3.5: the split trimmed the seam (`Alpha` + `beta.`), so the merge
+    // with a single-space separator restores the authored text — one space.
+    assert!(a.contains("Alpha beta."), "{a}");
+    assert!(!a.contains("Alpha  beta."), "{a}");
     assert!(!a.contains("Intro paragraph"), "{a}");
     assert!(
         !p.elsewhere.path().join(".omgbase").exists(),

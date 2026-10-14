@@ -44,14 +44,14 @@ pub const QUERY_SYNTAX: &str = r#"query_syntax — The full OQX reference: claus
 Call it before writing a non-trivial query; every other tool's examples end here, at query_syntax."#;
 
 /// `query`
-pub const QUERY: &str = r#"query — Read anything: rows (id, path, your projection) from docs, blocks, nodes or links.
-{"query":"select title, stage from docs where \"process\" in tags order by path limit 5"}   frontmatter by name; membership; order, limit, cursor
-{"query":"select block_id from nodes where kind == \"md:section\" and name == \"Tasks\" and path == \"/processes/calcination.md\""}   a heading's block id by its text
-{"query":"select path, value from nodes where kind == \"md:task\" and not checked"}   open tasks (value = the text)
+pub const QUERY: &str = r#"query — rows (id, path, projection) from docs, blocks, nodes or links.
+{"query":"select title, stage from docs where \"process\" in tags order by path limit 5"}   frontmatter; membership; order, limit
+{"query":"select type, text from blocks where path == \"/processes/calcination.md\""}   a document's blocks in order
+{"query":"select block_id from nodes where kind == \"md:section\" and name == \"Tasks\" and path == \"/processes/calcination.md\""}   a heading's block id
+{"query":"select path, value from nodes where kind == \"md:task\" and not checked"}   open tasks
 {"query":"select path, block_id from links where dst_path == \"/processes/calcination.md\""}   inbound links (path = source)
-{"query":"select path from docs where title ~* \"salt\""}   regex (~ exact, ~* ci, !~ not); substring: .contains(\"s\")
-{"query":"docs count { where layer == \"canon\" }"}   a scalar
-follow, ^docs joins, text()/semantic(), the grammar: query_syntax."#;
+{"query":"select path from docs where title ~* \"salt\""}   regex (~* ci, !~ not); substring: .contains(\"s\")
+Also docs count { where … }, follow, ^docs joins, text()/semantic(): query_syntax."#;
 
 /// `graph`
 pub const GRAPH: &str = r#"Neighborhood macro: the bounded graph AROUND one or more root documents in ONE call — { documents, links, frontier } — so you can orient without hand-writing an OQX `follow`. This is a CONVENIENCE WRAPPER, not a new engine: it compiles its args into an OQX `follow out_links collect { from dst }` / `follow in_links collect { from doc }` query and runs it through the same `query` path (the returned `queries` field is the exact follow query it generated). It does NOT replace `follow` or `from links` — reach for the `query` tool directly when you need successor/frontier predicates, `$key`-keyed identity, `$ordinal` budgets, cross-document correlation, or the links scan with its own projections. `roots` are one or more doc refs (paths and/or ids); they are depth 0. `degrees` is the max hop distance (root = 0; maps to `follow … collect { … depth degrees+1 }`, capped so degrees+1 ≤ 8; default 1). `direction` is `out` (outgoing links), `in` (backlinks), or `both` (default). `predicate` restricts the neighborhood to documents reachable from a root via edges of that predicate (both the documents and the edges are filtered). `select` adds document projections (OQX select expressions, e.g. "layer", "path"). `max_documents` caps the distinct document set (default 200) with a `truncated` flag. Returns: `documents` (each with `id`/`path`/`degree` = min hops from a root/`frontier` bool + your projections — a bare-name selection such as "title" is its own key, `id`/`path` land on the envelope keys, and any other expression is `sel_<i>`), `links` (the traversed links as rows of the `links` target under its own field names — `id`, `doc_id`/`block_id` (the source), `via_id`, `dst_id`, `dst_path`, `uri`, `dst_kind`, `predicate`, `provenance`, `anchor`, `field`; external `x_…` and dangling phantom endpoints are preserved as edge stubs, exactly as `from links` surfaces them), and `frontier` (the documents on the outer boundary — `{ id, path, degree }`, min degree == degrees; at degrees 0 that is the roots themselves)."#;

@@ -6,6 +6,7 @@
 use std::collections::{BTreeMap, HashSet};
 
 use omgbase_format::json::attrs_to_json;
+use omgbase_format::text::is_js_whitespace;
 use omgbase_format::{Block, BlockKind, parse_markdown};
 use omgbase_reconcile::Minter;
 use serde_json::{Map, Value, json};
@@ -902,6 +903,42 @@ fn char_boundary(s: &str, at: usize) -> usize {
     i
 }
 
+/// §2.5 (3.5): the pieces of a split are trimmed at the CUT edges only —
+/// every piece but the last loses its trailing whitespace, every piece but
+/// the first its leading whitespace — so an offset on either side of a space
+/// (or inside the run, at a `\n`, in a hard break's `  \n`) yields the same
+/// pieces and no piece ends in a stray space. The raw's own start and end
+/// are not cut edges and stay as authored (a last piece keeps the raw's
+/// trailing spaces). The whitespace set is the format's trim set
+/// (`spec/format` §4.1 step 4, [`is_js_whitespace`]) — what the reference's
+/// `trimStart`/`trimEnd` remove. A piece that was whitespace-only comes back
+/// empty; the caller drops it (the twin of the reference's `trimCutEdges`).
+fn trim_cut_edges<'a>(pieces: impl Iterator<Item = &'a str>) -> Vec<&'a str> {
+    let pieces: Vec<&str> = pieces.collect();
+    let last = pieces.len().saturating_sub(1);
+    pieces
+        .iter()
+        .enumerate()
+        .map(|(i, p)| {
+            let mut out = *p;
+            if i < last {
+                out = out.trim_end_matches(is_js_whitespace);
+            }
+            if i > 0 {
+                out = out.trim_start_matches(is_js_whitespace);
+            }
+            // A whitespace-only first or last piece (or a lone piece) is
+            // dropped by the caller as the reference's `p.trim().length > 0`
+            // filter drops it: an all-whitespace raw end is still "empty".
+            if out.chars().all(is_js_whitespace) {
+                ""
+            } else {
+                out
+            }
+        })
+        .collect()
+}
+
 /// §2.5 `split`.
 pub fn op_split(
     doc: &mut MutDoc,
@@ -927,10 +964,9 @@ pub fn op_split(
     cuts.extend(at.iter().map(|&a| char_boundary(&raw, a)));
     cuts.push(raw.len());
     cuts.sort_unstable();
-    let pieces: Vec<&str> = cuts
-        .windows(2)
-        .map(|w| &raw[w[0]..w[1]])
-        .filter(|p| !p.trim().is_empty())
+    let pieces: Vec<&str> = trim_cut_edges(cuts.windows(2).map(|w| &raw[w[0]..w[1]]))
+        .into_iter()
+        .filter(|p| !p.is_empty())
         .collect();
     if pieces.len() < 2 {
         return Err(err(
@@ -1924,15 +1960,16 @@ mod tests {
             .split(&b, &[cut], 0, Some(&hash_at(&d, 0)), &mut m)
             .unwrap();
         assert_eq!(r.ids, [b.clone(), "b_1".to_owned()]);
-        assert_eq!(d.children[0].raw, "first sentence. ");
+        // 3.5: the cut edge is trimmed — no stray space on the first piece.
+        assert_eq!(d.children[0].raw, "first sentence.");
         assert_eq!(d.children[1].raw, "second sentence.");
         assert_eq!(d.children[1].trivia, "\n");
         // The block's trailing trivia moves to the last piece; the seam separates.
-        assert_eq!(render(&d), "first sentence. \n\nsecond sentence.\n");
+        assert_eq!(render(&d), "first sentence.\n\nsecond sentence.\n");
         let (mut d, mut m) = doc("héllo wörld — café tail\n");
         d.split(&id_at(&d, 0), &[24], 0, Some(&hash_at(&d, 0)), &mut m)
             .unwrap();
-        assert_eq!(d.children[0].raw, "héllo wörld — café ");
+        assert_eq!(d.children[0].raw, "héllo wörld — café");
         assert_eq!(d.children[1].raw, "tail");
         let (mut d, mut m) = doc("aé b\n");
         d.split(&id_at(&d, 0), &[2], 0, Some(&hash_at(&d, 0)), &mut m)
@@ -1947,6 +1984,54 @@ mod tests {
         assert_eq!(e.code, ErrorCode::StaleExpectation);
         let e = d.split("zz", &[1], 1, None, &mut m).unwrap_err();
         assert_eq!(e.code, ErrorCode::BlockMissing);
+    }
+
+    #[test]
+    fn split_trims_the_cut_edges_only() {
+        // §2.5 (3.5): before, after or inside the whitespace run — same pieces.
+        for at in [5usize, 6, 7] {
+            let (mut d, mut m) = doc("Alpha  beta\n");
+            d.split(&id_at(&d, 0), &[at], 0, Some(&hash_at(&d, 0)), &mut m)
+                .unwrap();
+            let raws: Vec<&str> = d.children.iter().map(|b| b.raw.as_str()).collect();
+            assert_eq!(raws, ["Alpha", "beta"], "offset {at}");
+        }
+        // Two offsets trim both seams; the middle piece loses both edges.
+        let (mut d, mut m) = doc("one two three\n");
+        d.split(&id_at(&d, 0), &[3, 8], 0, Some(&hash_at(&d, 0)), &mut m)
+            .unwrap();
+        let raws: Vec<&str> = d.children.iter().map(|b| b.raw.as_str()).collect();
+        assert_eq!(raws, ["one", "two", "three"]);
+        // The raw's own ends are not cut edges: trailing spaces on the last
+        // piece stay as authored, as does a leading tab on the first.
+        let (mut d, mut m) = doc("- \tlead tail  \n");
+        let raw = d.children[0].raw.clone();
+        let cut = raw.find("tail").unwrap();
+        d.split(&id_at(&d, 0), &[cut], 0, Some(&hash_at(&d, 0)), &mut m)
+            .unwrap();
+        let raws: Vec<&str> = d.children.iter().map(|b| b.raw.as_str()).collect();
+        assert_eq!(raws, ["- \tlead", "tail  "]);
+        // A whitespace-only piece between two cuts is still dropped; a cut
+        // whose pieces are all whitespace is still `type_mismatch`.
+        let (mut d, mut m) = doc("a   b\n");
+        d.split(&id_at(&d, 0), &[2, 3], 0, Some(&hash_at(&d, 0)), &mut m)
+            .unwrap();
+        let raws: Vec<&str> = d.children.iter().map(|b| b.raw.as_str()).collect();
+        assert_eq!(raws, ["a", "b"]);
+        let (mut d, mut m) = doc("ab  \n");
+        let e = d
+            .split(&id_at(&d, 0), &[2], 0, Some(&hash_at(&d, 0)), &mut m)
+            .unwrap_err();
+        assert_eq!(e.code, ErrorCode::TypeMismatch);
+        // The trim set is the format's (JS): U+FEFF trims, U+0085 does not.
+        let a = trim_cut_edges(["x\u{FEFF}", "\u{FEFF}y"].into_iter());
+        assert_eq!(a, ["x", "y"]);
+        let b = trim_cut_edges(["x\u{85}", "\u{85}y"].into_iter());
+        assert_eq!(b, ["x\u{85}", "\u{85}y"]);
+        assert_eq!(
+            trim_cut_edges(["  ", " a ", "  "].into_iter()),
+            ["", "a", ""]
+        );
     }
 
     #[test]
