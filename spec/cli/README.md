@@ -678,7 +678,11 @@ gc --vacuum\` to return <bytes> of free pages to the filesystem` when the
 free pages exceed 1 MiB and 10 % of the pages; `history dominates
 (<share>): blobs, tree nodes and dispositions grow with every commit —
 enable gc (\`omg config set gc.enabled true\`) and run \`omg gc --vacuum\``
-when `history` holds more than 50 %; `embeddings are <share> of the
+when `history` holds more than 50 %; `<n> same dispositions are history
+nothing reads (store 14.2): \`omg gc\` removes them, \`--vacuum\` reclaims
+the pages` when the `same` rows a pre-14.2 store wrote exceed 25 % of the
+`dispositions` table (cli 4.5; never on a workspace the fixtures build);
+`embeddings are <share> of the
 database: a smaller model (\`embedding.model\` / \`embedding.dim\`) or \`omg
 embed drain --prune\` after a model switch shrinks them` when the two
 embedding tables hold more than 25 %; `nothing to reclaim` when none
@@ -687,11 +691,13 @@ applies.
 `--json` (and every non-human mode — there is no list the machine modes
 stream): `{ file: { path, bytes, wal_bytes, page_size, page_count,
 freelist_count, reclaimable }, categories: [{ name, bytes, share, rows,
-tables: [{ name, bytes, share, rows, indexes }] }], advice: [string] }`
+tables: [{ name, bytes, share, rows, indexes }] }], same_dispositions,
+advice: [string] }`
 (+ `detail: "dbstat unavailable"` in the fallback, where every `bytes`,
 `share` and `indexes` is `null`); `indexes` is the part of a table's
-`bytes` its indexes take; `share` is one decimal; every other number is
-an integer of bytes or rows. Exact bytes: `admin::doctor-size`,
+`bytes` its indexes take; `share` is one decimal; `same_dispositions`
+(cli 4.5) is the `same` row count of `spec/store` §7, `0` on a 14.2 store;
+every other number is an integer of bytes or rows. Exact bytes: `admin::doctor-size`,
 `doctor-size-json`, `doctor-size-jsonl`, `doctor-size-after-rm` — recorded
 by shape (§8): the sizes and shares are `<bytes>`/`<share>`/`<number>`,
 the names, order, row counts and advice exact.
@@ -767,12 +773,18 @@ No text → `usage: find requires <text>`.
 
 ### `gc`
 
-`gc [--dry-run] [--vacuum]` — mark-and-sweep (`spec/store` §7). Refuses
+`gc [--dry-run] [--vacuum]` — mark-and-sweep (`spec/store` §7), which
+since store 14.2 also removes the `same` disposition rows a 14.1 store wrote
+(`spec/store` §7 "The `same` sweep"). Refuses
 unless `gc.enabled` is true in the effective settings:
 `error[target_missing]: gc is disabled; set gc.enabled=true (or use --dry-run)`
 (§9: the code). `--dry-run` (the command's own or the global flag) is
-allowed regardless. Human (stderr) `  swept <b> blobs, <t> tree nodes`;
-`--json` `{ blobsSwept, treeNodesSwept }`.
+allowed regardless and deletes nothing — it counts all three sweeps. Human
+(stderr) `  swept <b> blobs, <t> tree nodes, <s> same dispositions` (cli
+4.5; through 4.4 the line stopped at the tree nodes); `--json`
+`{ blobsSwept, treeNodesSwept, sameDispositionsSwept }`. On a workspace
+this spec's fixtures build every count is `0`: a fresh store has no `same`
+rows to sweep.
 
 `--vacuum` (cli 4.3) runs `VACUUM` after the sweep (`spec/store` §7
 "Vacuum") — the sweep's freed pages are what it returns — under the same
@@ -1744,6 +1756,19 @@ was `b_314`).
 
 ## 10. Decisions
 
+- 2026-10-13, cli 4.5: `gc` prints its third count and `doctor --size`
+  carries `same_dispositions` (§6), rendering `spec/store` 14.2 — `same`
+  dispositions are no longer persisted, the default gc sweep removes a 14.1
+  store's, and the size report says when that sweep is worth running. The
+  stderr line gains `, <s> same dispositions` and the JSON a key
+  (`sameDispositionsSwept`; `same_dispositions` on the report): additive
+  renderings, a minor as 4.3 and 4.4 were. `--dry-run` now really deletes
+  nothing — through 4.4 it ran the (always empty) mark-and-sweep for real,
+  which was harmless only because nothing was ever unreachable. Fixtures:
+  the `gc` cases gain the count, the `doctor --size` cases the key, the
+  `hist` and `log` cases over api writes lose the untouched blocks' entries
+  and the inflated `<n> edited` summaries, `version` reports the new spec
+  lines; the help cards re-render.
 - 2026-10-13, cli 4.4: `query` prints the result's `hints` (`spec/surface`
   4.6 §1.5 — names the query reads that no row of their kind carries) as dim
   stderr lines `  hint: <text>`, one per entry, after everything else, in

@@ -156,7 +156,13 @@ apply(changeset):
     KNOWN-ID resolver: the mutated tree already carries deterministic ids (ops
     keep/mint them), so identity threads onto the re-parsed tree and intent
     dispositions are recorded at confidence 1.0 — never re-derived from the
-    bytes by the probabilistic matcher. Prior live ids no longer present are
+    bytes by the probabilistic matcher. Each carried block is classified
+    against its live row the way `spec/reconcile` §2 classifies a carry
+    (`mutate/known-ids.ts` `classifyCarries`: raw hash, parent, sibling index →
+    `same` / `edited` / `moved` / `edited_moved`), and `same` is not persisted
+    (`spec/store` §5.4 step 10, 14.2) — a one-paragraph edit writes one
+    disposition row and moves one block's `updated_at`, not its siblings'
+    (through store 14.1 every carried block was stamped `edited`). Prior live ids no longer present are
     pooled; ids new to the document (a cross-document move's arrivals) evict
     the source document's row. This ingest persists blobs, tree_nodes, the
     revision + commit, edge extraction and index maintenance — and, last, one

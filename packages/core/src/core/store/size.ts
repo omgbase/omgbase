@@ -91,6 +91,8 @@ export interface SizeReport {
   file: SizeFile;
   /** Always the four categories, in the fixed order content, history, search, sync. */
   categories: SizeCategoryReport[];
+  /** spec/store §7 (14.2): `dispositions` rows with `kind = 'same'` — what a store through 14.1 wrote and `omg gc` removes. */
+  same_dispositions: number;
   advice: string[];
   /** Present only when the SQLite build lacks `dbstat` (row counts only). */
   detail?: "dbstat unavailable";
@@ -100,6 +102,7 @@ export interface SizeReport {
 export const VACUUM_ADVICE_MIN_BYTES = 1024 * 1024;
 export const VACUUM_ADVICE_MIN_SHARE = 10;
 export const HISTORY_ADVICE_MIN_SHARE = 50;
+export const SAME_ADVICE_MIN_SHARE = 25;
 export const EMBEDDINGS_ADVICE_MIN_SHARE = 25;
 
 /**
@@ -133,7 +136,7 @@ export function shareOf(bytes: number, total: number): number {
 }
 
 /** spec/store §7: the advice lines, in this order; `nothing to reclaim` when none applies. */
-export function sizeAdvice(file: SizeFile, categories: SizeCategoryReport[]): string[] {
+export function sizeAdvice(file: SizeFile, categories: SizeCategoryReport[], sameDispositions = 0): string[] {
   const advice: string[] = [];
   const logical = file.page_count * file.page_size;
   if (file.reclaimable > VACUUM_ADVICE_MIN_BYTES && file.reclaimable * 100 > logical * VACUUM_ADVICE_MIN_SHARE) {
@@ -142,6 +145,13 @@ export function sizeAdvice(file: SizeFile, categories: SizeCategoryReport[]): st
   const history = categories.find((c) => c.name === "history");
   if (history && history.share !== null && history.share > HISTORY_ADVICE_MIN_SHARE) {
     advice.push(`history dominates (${formatShare(history.share)}): blobs, tree nodes and dispositions grow with every commit — enable gc (\`omg config set gc.enabled true\`) and run \`omg gc --vacuum\``);
+  }
+  // 14.2: `same` rows are what a 14.1 store wrote for every untouched block;
+  // past a quarter of the table they are worth a sweep (the share is over rows,
+  // so it holds with or without dbstat).
+  const dispositionRows = history?.tables.find((t) => t.name === "dispositions")?.rows ?? 0;
+  if (sameDispositions > 0 && sameDispositions * 100 > dispositionRows * SAME_ADVICE_MIN_SHARE) {
+    advice.push(`${sameDispositions} same dispositions are history nothing reads (store 14.2): \`omg gc\` removes them, \`--vacuum\` reclaims the pages`);
   }
   const search = categories.find((c) => c.name === "search");
   if (search && search.bytes !== null) {
@@ -256,7 +266,8 @@ export function sizeReport(store: Store): SizeReport {
     return { name, bytes, share: bytes === null ? null : shareOf(bytes, total), rows: tables.reduce((n, t) => n + t.rows, 0), tables };
   });
 
-  const report: SizeReport = { file, categories, advice: sizeAdvice(file, categories) };
+  const same_dispositions = (db.prepare("SELECT count(*) AS c FROM dispositions WHERE kind = 'same'").get() as { c: number }).c;
+  const report: SizeReport = { file, categories, same_dispositions, advice: sizeAdvice(file, categories, same_dispositions) };
   if (!stat) report.detail = "dbstat unavailable";
   return report;
 }

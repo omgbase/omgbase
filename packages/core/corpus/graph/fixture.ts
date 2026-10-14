@@ -21,7 +21,7 @@ import { sequentialMinter, withIdMinter } from "../../src/core/ids.js";
 import { sweepResurrectionPool } from "../../src/core/store/gc.js";
 import { observeBatch } from "../../src/sync/observe.js";
 import { toReconcileConfig, deepEqualTol, type FixtureConfig } from "../reconcile/fixture.js";
-import { FIXTURE_REPO_SLUG, validateSteps, type Step } from "../store/fixture.js";
+import { FIXTURE_REPO_SLUG, runExecStep, runGcStep, validateSteps, type Step } from "../store/fixture.js";
 
 export { deepEqualTol, FIXTURE_REPO_SLUG };
 export type { Step };
@@ -304,8 +304,12 @@ export function runCase(c: FixtureCaseInput): Evaluation {
         if ("observe" in step) {
           const items = step.observe.items.map((it) => ({ path: it.path, content: it.source }));
           observeBatch(store, repoId, items, step.observe.ts, { config });
-        } else {
+        } else if ("sweep" in step) {
           sweepResurrectionPool(store, step.sweep.ts);
+        } else if ("gc" in step) {
+          runGcStep(store);
+        } else {
+          runExecStep(store, step.exec.sql);
         }
       }
       const projected = projectGraph(store.db, repoId);

@@ -248,33 +248,6 @@
           },
           {
             "commit_id": "c_1",
-            "block_id": "b_0",
-            "kind": "edited",
-            "confidence": 1,
-            "reason": "api",
-            "matcher_v": null,
-            "detail": {}
-          },
-          {
-            "commit_id": "c_1",
-            "block_id": "b_1",
-            "kind": "edited",
-            "confidence": 1,
-            "reason": "api",
-            "matcher_v": null,
-            "detail": {}
-          },
-          {
-            "commit_id": "c_1",
-            "block_id": "b_2",
-            "kind": "edited",
-            "confidence": 1,
-            "reason": "api",
-            "matcher_v": null,
-            "detail": {}
-          },
-          {
-            "commit_id": "c_1",
             "block_id": "b_3",
             "kind": "inserted",
             "confidence": 1,
@@ -1021,34 +994,7 @@
           },
           {
             "commit_id": "c_2",
-            "block_id": "b_0",
-            "kind": "edited",
-            "confidence": 1,
-            "reason": "api",
-            "matcher_v": null,
-            "detail": {}
-          },
-          {
-            "commit_id": "c_2",
             "block_id": "b_1",
-            "kind": "edited",
-            "confidence": 1,
-            "reason": "api",
-            "matcher_v": null,
-            "detail": {}
-          },
-          {
-            "commit_id": "c_2",
-            "block_id": "b_2",
-            "kind": "edited",
-            "confidence": 1,
-            "reason": "api",
-            "matcher_v": null,
-            "detail": {}
-          },
-          {
-            "commit_id": "c_2",
-            "block_id": "b_3",
             "kind": "edited",
             "confidence": 1,
             "reason": "api",
@@ -1406,15 +1352,6 @@
           },
           {
             "commit_id": "c_2",
-            "block_id": "b_0",
-            "kind": "edited",
-            "confidence": 1,
-            "reason": "api",
-            "matcher_v": null,
-            "detail": {}
-          },
-          {
-            "commit_id": "c_2",
             "block_id": "b_1",
             "kind": "inserted",
             "confidence": 1,
@@ -1425,16 +1362,7 @@
           {
             "commit_id": "c_2",
             "block_id": "b_2",
-            "kind": "edited",
-            "confidence": 1,
-            "reason": "api",
-            "matcher_v": null,
-            "detail": {}
-          },
-          {
-            "commit_id": "c_2",
-            "block_id": "b_3",
-            "kind": "edited",
+            "kind": "moved",
             "confidence": 1,
             "reason": "api",
             "matcher_v": null,
@@ -1443,7 +1371,7 @@
           {
             "commit_id": "c_2",
             "block_id": "b_4",
-            "kind": "edited",
+            "kind": "moved",
             "confidence": 1,
             "reason": "api",
             "matcher_v": null,
@@ -1804,15 +1732,6 @@
           },
           {
             "commit_id": "c_2",
-            "block_id": "b_0",
-            "kind": "edited",
-            "confidence": 1,
-            "reason": "api",
-            "matcher_v": null,
-            "detail": {}
-          },
-          {
-            "commit_id": "c_2",
             "block_id": "b_1",
             "kind": "inserted",
             "confidence": 1,
@@ -1823,16 +1742,7 @@
           {
             "commit_id": "c_2",
             "block_id": "b_2",
-            "kind": "edited",
-            "confidence": 1,
-            "reason": "api",
-            "matcher_v": null,
-            "detail": {}
-          },
-          {
-            "commit_id": "c_2",
-            "block_id": "b_3",
-            "kind": "edited",
+            "kind": "moved",
             "confidence": 1,
             "reason": "api",
             "matcher_v": null,
@@ -1841,7 +1751,7 @@
           {
             "commit_id": "c_2",
             "block_id": "b_4",
-            "kind": "edited",
+            "kind": "edited_moved",
             "confidence": 1,
             "reason": "api",
             "matcher_v": null,
@@ -2189,44 +2099,8 @@
           },
           {
             "commit_id": "c_2",
-            "block_id": "b_0",
-            "kind": "edited",
-            "confidence": 1,
-            "reason": "api",
-            "matcher_v": null,
-            "detail": {}
-          },
-          {
-            "commit_id": "c_2",
-            "block_id": "b_1",
-            "kind": "edited",
-            "confidence": 1,
-            "reason": "api",
-            "matcher_v": null,
-            "detail": {}
-          },
-          {
-            "commit_id": "c_2",
             "block_id": "b_2",
             "kind": "inserted",
-            "confidence": 1,
-            "reason": "api",
-            "matcher_v": null,
-            "detail": {}
-          },
-          {
-            "commit_id": "c_2",
-            "block_id": "b_3",
-            "kind": "edited",
-            "confidence": 1,
-            "reason": "api",
-            "matcher_v": null,
-            "detail": {}
-          },
-          {
-            "commit_id": "c_2",
-            "block_id": "b_4",
-            "kind": "edited",
             "confidence": 1,
             "reason": "api",
             "matcher_v": null,
@@ -2577,15 +2451,6 @@
           },
           {
             "commit_id": "c_2",
-            "block_id": "b_0",
-            "kind": "edited",
-            "confidence": 1,
-            "reason": "api",
-            "matcher_v": null,
-            "detail": {}
-          },
-          {
-            "commit_id": "c_2",
             "block_id": "b_1",
             "kind": "inserted",
             "confidence": 1,
@@ -2596,16 +2461,7 @@
           {
             "commit_id": "c_2",
             "block_id": "b_2",
-            "kind": "edited",
-            "confidence": 1,
-            "reason": "api",
-            "matcher_v": null,
-            "detail": {}
-          },
-          {
-            "commit_id": "c_2",
-            "block_id": "b_3",
-            "kind": "edited",
+            "kind": "moved",
             "confidence": 1,
             "reason": "api",
             "matcher_v": null,
@@ -2614,7 +2470,7 @@
           {
             "commit_id": "c_2",
             "block_id": "b_4",
-            "kind": "edited",
+            "kind": "moved",
             "confidence": 1,
             "reason": "api",
             "matcher_v": null,
@@ -3534,33 +3390,6 @@
             "reason": null,
             "matcher_v": "m2.3",
             "detail": {}
-          },
-          {
-            "commit_id": "c_1",
-            "block_id": "b_0",
-            "kind": "edited",
-            "confidence": 1,
-            "reason": "api",
-            "matcher_v": null,
-            "detail": {}
-          },
-          {
-            "commit_id": "c_1",
-            "block_id": "b_1",
-            "kind": "edited",
-            "confidence": 1,
-            "reason": "api",
-            "matcher_v": null,
-            "detail": {}
-          },
-          {
-            "commit_id": "c_1",
-            "block_id": "b_2",
-            "kind": "edited",
-            "confidence": 1,
-            "reason": "api",
-            "matcher_v": null,
-            "detail": {}
           }
         ],
         "resurrection_pool": [],
@@ -3754,24 +3583,6 @@
             "reason": null,
             "matcher_v": "m2.3",
             "detail": {}
-          },
-          {
-            "commit_id": "c_1",
-            "block_id": "b_0",
-            "kind": "edited",
-            "confidence": 1,
-            "reason": "api",
-            "matcher_v": null,
-            "detail": {}
-          },
-          {
-            "commit_id": "c_1",
-            "block_id": "b_1",
-            "kind": "edited",
-            "confidence": 1,
-            "reason": "api",
-            "matcher_v": null,
-            "detail": {}
           }
         ],
         "resurrection_pool": [],
@@ -3964,24 +3775,6 @@
             "confidence": null,
             "reason": null,
             "matcher_v": "m2.3",
-            "detail": {}
-          },
-          {
-            "commit_id": "c_1",
-            "block_id": "b_0",
-            "kind": "edited",
-            "confidence": 1,
-            "reason": "api",
-            "matcher_v": null,
-            "detail": {}
-          },
-          {
-            "commit_id": "c_1",
-            "block_id": "b_1",
-            "kind": "edited",
-            "confidence": 1,
-            "reason": "api",
-            "matcher_v": null,
             "detail": {}
           }
         ],
@@ -4224,7 +4017,7 @@
           {
             "commit_id": "c_1",
             "block_id": "b_0",
-            "kind": "edited",
+            "kind": "moved",
             "confidence": 1,
             "reason": "api",
             "matcher_v": null,
@@ -4233,7 +4026,7 @@
           {
             "commit_id": "c_1",
             "block_id": "b_1",
-            "kind": "edited",
+            "kind": "moved",
             "confidence": 1,
             "reason": "api",
             "matcher_v": null,
@@ -4242,7 +4035,7 @@
           {
             "commit_id": "c_1",
             "block_id": "b_2",
-            "kind": "edited",
+            "kind": "moved",
             "confidence": 1,
             "reason": "api",
             "matcher_v": null,

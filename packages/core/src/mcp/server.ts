@@ -1461,7 +1461,7 @@ export function buildServer(ctx: ServerContext): McpServer {
   tool(
     "blocks_history",
     {
-      description: "A block's biography: the commits that touched the block `id` names, with disposition kind/confidence/reason, newest first (history_node before surface 3.0 — it always took a block id and returned the block's changes). Not repo-scoped: block ids are global.",
+      description: "A block's biography: the commits that CHANGED the block `id` names — inserted, edited, moved, split/merge lineage, resurrected — with disposition kind/confidence/reason, newest first. A commit that rewrote the document but left this block byte-identical in place is not listed (store 14.2: `same` verdicts are not persisted; through 14.1 every commit to the document appeared here), so the newest entry's `ts` is the block's `updated_at`; to learn whether the block was present in some other commit, diff two revisions with docs_diff (history_node before surface 3.0 — it always took a block id and returned the block's changes). Not repo-scoped: block ids are global.",
       inputSchema: { id: z.string(), limit: z.number().int().optional() },
     },
     async (args) => {

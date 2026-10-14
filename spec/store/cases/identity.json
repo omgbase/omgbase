@@ -275,37 +275,10 @@
           },
           {
             "commit_id": "c_1",
-            "block_id": "b_0",
-            "kind": "same",
-            "confidence": 1,
-            "reason": "exact_hash",
-            "matcher_v": "m2.3",
-            "detail": {}
-          },
-          {
-            "commit_id": "c_1",
-            "block_id": "b_1",
-            "kind": "same",
-            "confidence": 1,
-            "reason": "exact_hash",
-            "matcher_v": "m2.3",
-            "detail": {}
-          },
-          {
-            "commit_id": "c_1",
             "block_id": "b_2",
             "kind": "edited",
             "confidence": 0.9239130434782609,
             "reason": "context_unique",
-            "matcher_v": "m2.3",
-            "detail": {}
-          },
-          {
-            "commit_id": "c_1",
-            "block_id": "b_3",
-            "kind": "same",
-            "confidence": 1,
-            "reason": "exact_hash",
             "matcher_v": "m2.3",
             "detail": {}
           }
@@ -332,24 +305,9 @@
             "kind": "inserted"
           },
           {
-            "block_id": "b_0",
-            "commit_id": "c_1",
-            "kind": "same"
-          },
-          {
-            "block_id": "b_1",
-            "commit_id": "c_1",
-            "kind": "same"
-          },
-          {
             "block_id": "b_2",
             "commit_id": "c_1",
             "kind": "edited"
-          },
-          {
-            "block_id": "b_3",
-            "commit_id": "c_1",
-            "kind": "same"
           }
         ],
         "resurrection_pool": [],
@@ -634,15 +592,6 @@
           },
           {
             "commit_id": "c_1",
-            "block_id": "b_0",
-            "kind": "same",
-            "confidence": 1,
-            "reason": "exact_hash",
-            "matcher_v": "m2.3",
-            "detail": {}
-          },
-          {
-            "commit_id": "c_1",
             "block_id": "b_1",
             "kind": "moved",
             "confidence": 1,
@@ -654,15 +603,6 @@
             "commit_id": "c_1",
             "block_id": "b_2",
             "kind": "moved",
-            "confidence": 1,
-            "reason": "exact_hash",
-            "matcher_v": "m2.3",
-            "detail": {}
-          },
-          {
-            "commit_id": "c_1",
-            "block_id": "b_3",
-            "kind": "same",
             "confidence": 1,
             "reason": "exact_hash",
             "matcher_v": "m2.3",
@@ -691,11 +631,6 @@
             "kind": "inserted"
           },
           {
-            "block_id": "b_0",
-            "commit_id": "c_1",
-            "kind": "same"
-          },
-          {
             "block_id": "b_1",
             "commit_id": "c_1",
             "kind": "moved"
@@ -704,11 +639,6 @@
             "block_id": "b_2",
             "commit_id": "c_1",
             "kind": "moved"
-          },
-          {
-            "block_id": "b_3",
-            "commit_id": "c_1",
-            "kind": "same"
           }
         ],
         "resurrection_pool": [],
@@ -1053,46 +983,10 @@
           },
           {
             "commit_id": "c_1",
-            "block_id": "b_0",
-            "kind": "same",
-            "confidence": 1,
-            "reason": "exact_hash",
-            "matcher_v": "m2.3",
-            "detail": {}
-          },
-          {
-            "commit_id": "c_1",
-            "block_id": "b_1",
-            "kind": "same",
-            "confidence": 1,
-            "reason": "exact_hash",
-            "matcher_v": "m2.3",
-            "detail": {}
-          },
-          {
-            "commit_id": "c_1",
             "block_id": "b_2",
             "kind": "edited",
             "confidence": 0.9239130434782609,
             "reason": "context_unique",
-            "matcher_v": "m2.3",
-            "detail": {}
-          },
-          {
-            "commit_id": "c_1",
-            "block_id": "b_3",
-            "kind": "same",
-            "confidence": 1,
-            "reason": "exact_hash",
-            "matcher_v": "m2.3",
-            "detail": {}
-          },
-          {
-            "commit_id": "c_2",
-            "block_id": "b_0",
-            "kind": "same",
-            "confidence": 1,
-            "reason": "exact_hash",
             "matcher_v": "m2.3",
             "detail": {}
           },
@@ -1102,24 +996,6 @@
             "kind": "edited",
             "confidence": 0.925,
             "reason": "context_unique",
-            "matcher_v": "m2.3",
-            "detail": {}
-          },
-          {
-            "commit_id": "c_2",
-            "block_id": "b_2",
-            "kind": "same",
-            "confidence": 1,
-            "reason": "exact_hash",
-            "matcher_v": "m2.3",
-            "detail": {}
-          },
-          {
-            "commit_id": "c_2",
-            "block_id": "b_3",
-            "kind": "same",
-            "confidence": 1,
-            "reason": "exact_hash",
             "matcher_v": "m2.3",
             "detail": {}
           }
@@ -1146,44 +1022,14 @@
             "kind": "inserted"
           },
           {
-            "block_id": "b_0",
-            "commit_id": "c_1",
-            "kind": "same"
-          },
-          {
-            "block_id": "b_1",
-            "commit_id": "c_1",
-            "kind": "same"
-          },
-          {
             "block_id": "b_2",
             "commit_id": "c_1",
             "kind": "edited"
           },
           {
-            "block_id": "b_3",
-            "commit_id": "c_1",
-            "kind": "same"
-          },
-          {
-            "block_id": "b_0",
-            "commit_id": "c_2",
-            "kind": "same"
-          },
-          {
             "block_id": "b_1",
             "commit_id": "c_2",
             "kind": "edited"
-          },
-          {
-            "block_id": "b_2",
-            "commit_id": "c_2",
-            "kind": "same"
-          },
-          {
-            "block_id": "b_3",
-            "commit_id": "c_2",
-            "kind": "same"
           }
         ],
         "resurrection_pool": [],
@@ -1474,37 +1320,10 @@
           },
           {
             "commit_id": "c_1",
-            "block_id": "b_0",
-            "kind": "same",
-            "confidence": 1,
-            "reason": "exact_hash",
-            "matcher_v": "m2.3",
-            "detail": {}
-          },
-          {
-            "commit_id": "c_1",
-            "block_id": "b_1",
-            "kind": "same",
-            "confidence": 1,
-            "reason": "exact_hash",
-            "matcher_v": "m2.3",
-            "detail": {}
-          },
-          {
-            "commit_id": "c_1",
             "block_id": "b_2",
             "kind": "deleted",
             "confidence": null,
             "reason": "tombstone",
-            "matcher_v": "m2.3",
-            "detail": {}
-          },
-          {
-            "commit_id": "c_1",
-            "block_id": "b_3",
-            "kind": "same",
-            "confidence": 1,
-            "reason": "exact_hash",
             "matcher_v": "m2.3",
             "detail": {}
           },
@@ -1540,24 +1359,9 @@
             "kind": "inserted"
           },
           {
-            "block_id": "b_0",
-            "commit_id": "c_1",
-            "kind": "same"
-          },
-          {
-            "block_id": "b_1",
-            "commit_id": "c_1",
-            "kind": "same"
-          },
-          {
             "block_id": "b_2",
             "commit_id": "c_1",
             "kind": "deleted"
-          },
-          {
-            "block_id": "b_3",
-            "commit_id": "c_1",
-            "kind": "same"
           },
           {
             "block_id": "b_4",
@@ -1868,33 +1672,6 @@
             "reason": "context_unique",
             "matcher_v": "m2.3",
             "detail": {}
-          },
-          {
-            "commit_id": "c_1",
-            "block_id": "b_1",
-            "kind": "same",
-            "confidence": 1,
-            "reason": "exact_hash",
-            "matcher_v": "m2.3",
-            "detail": {}
-          },
-          {
-            "commit_id": "c_1",
-            "block_id": "b_2",
-            "kind": "same",
-            "confidence": 1,
-            "reason": "exact_hash",
-            "matcher_v": "m2.3",
-            "detail": {}
-          },
-          {
-            "commit_id": "c_1",
-            "block_id": "b_3",
-            "kind": "same",
-            "confidence": 1,
-            "reason": "exact_hash",
-            "matcher_v": "m2.3",
-            "detail": {}
           }
         ],
         "block_changes": [
@@ -1922,21 +1699,6 @@
             "block_id": "b_0",
             "commit_id": "c_1",
             "kind": "edited"
-          },
-          {
-            "block_id": "b_1",
-            "commit_id": "c_1",
-            "kind": "same"
-          },
-          {
-            "block_id": "b_2",
-            "commit_id": "c_1",
-            "kind": "same"
-          },
-          {
-            "block_id": "b_3",
-            "commit_id": "c_1",
-            "kind": "same"
           }
         ],
         "resurrection_pool": [],
@@ -2673,15 +2435,6 @@
           },
           {
             "commit_id": "c_1",
-            "block_id": "b_0",
-            "kind": "same",
-            "confidence": 1,
-            "reason": "exact_hash",
-            "matcher_v": "m2.3",
-            "detail": {}
-          },
-          {
-            "commit_id": "c_1",
             "block_id": "b_1",
             "kind": "deleted",
             "confidence": null,
@@ -2738,11 +2491,6 @@
             "block_id": "b_1",
             "commit_id": "c_0",
             "kind": "inserted"
-          },
-          {
-            "block_id": "b_0",
-            "commit_id": "c_1",
-            "kind": "same"
           },
           {
             "block_id": "b_1",
@@ -3045,15 +2793,6 @@
           },
           {
             "commit_id": "c_1",
-            "block_id": "b_0",
-            "kind": "same",
-            "confidence": 1,
-            "reason": "exact_hash",
-            "matcher_v": "m2.3",
-            "detail": {}
-          },
-          {
-            "commit_id": "c_1",
             "block_id": "b_1",
             "kind": "edited_moved",
             "confidence": 0.8833333333333333,
@@ -3090,11 +2829,6 @@
             "block_id": "b_1",
             "commit_id": "c_0",
             "kind": "inserted"
-          },
-          {
-            "block_id": "b_0",
-            "commit_id": "c_1",
-            "kind": "same"
           },
           {
             "block_id": "b_1",
@@ -3383,15 +3117,6 @@
           },
           {
             "commit_id": "c_1",
-            "block_id": "b_0",
-            "kind": "same",
-            "confidence": 1,
-            "reason": "exact_hash",
-            "matcher_v": "m2.3",
-            "detail": {}
-          },
-          {
-            "commit_id": "c_1",
             "block_id": "b_1",
             "kind": "edited_moved",
             "confidence": 0.8833333333333333,
@@ -3430,11 +3155,6 @@
             "kind": "inserted"
           },
           {
-            "block_id": "b_0",
-            "commit_id": "c_1",
-            "kind": "same"
-          },
-          {
             "block_id": "b_1",
             "commit_id": "c_1",
             "kind": "edited_moved"
@@ -3448,6 +3168,659 @@
             "block_id": "b_3",
             "commit_id": "c_1",
             "kind": "inserted"
+          }
+        ],
+        "resurrection_pool": [],
+        "sections": [
+          {
+            "doc_id": "d_0",
+            "heading_block": "b_0",
+            "level": 1,
+            "first_ordinal": 0,
+            "last_ordinal": 3
+          }
+        ],
+        "pending_materializations": []
+      }
+    },
+    {
+      "name": "edit-one-of-three-writes-one-row",
+      "notes": "§5.4 step 10 (14.2): the second observation edits one word of the beta paragraph. The matcher sees four verdicts (the outcome counts `same: 3, edited: 1`) but the tables gain exactly one row — `b_2` `edited` under `c_1`; the heading and the two untouched paragraphs keep only their `inserted` rows from `c_0`, so their last change (MAX commit ts over `block_changes`, the surface's `updated_at`) stays at `c_0` and only `b_2`'s moves. Through 14.1 four rows were written, three of them `same`.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-10-13T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "# Three paragraphs\n\nAlpha paragraph about apples and orchards, the long rows of trees that line the valley road.\n\nBeta paragraph about bees and honey, the hives at the edge of the meadow and the keeper's slow summer work.\n\nGamma paragraph about goats and cheese, the herd on the hillside and the small dairy by the market.\n"
+              }
+            ]
+          }
+        },
+        {
+          "observe": {
+            "ts": "2026-10-13T10:01:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "# Three paragraphs\n\nAlpha paragraph about apples and orchards, the long rows of trees that line the valley road.\n\nBeta paragraph about bees and honey, the hives at the edge of the meadow and the keeper's patient summer work.\n\nGamma paragraph about goats and cheese, the herd on the hillside and the small dairy by the market.\n"
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 4
+              }
+            }
+          ],
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_1",
+              "rev": "r_1",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "edited": 1,
+                "same": 3
+              }
+            }
+          ]
+        ],
+        "docs": [
+          {
+            "doc_id": "d_0",
+            "path": "a.md",
+            "format": "markdown",
+            "current_rev": "r_1",
+            "file_hash": "c9a8d3f66fdb5a196422661437d0b3e38e4133d2f082ab0deafb294c3fb420a5",
+            "conflicted": 0,
+            "leading_trivia": "",
+            "frontmatter_trivia": null,
+            "deleted_commit": null
+          }
+        ],
+        "commits": [
+          {
+            "commit_id": "c_0",
+            "seq": 1,
+            "ts": "2026-10-13T10:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "checkpoint_id": null,
+            "ops": null
+          },
+          {
+            "commit_id": "c_1",
+            "seq": 2,
+            "ts": "2026-10-13T10:01:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "checkpoint_id": null,
+            "ops": null
+          }
+        ],
+        "revisions": [
+          {
+            "rev_id": "r_0",
+            "doc_id": "d_0",
+            "seq": 1,
+            "root_tree": "a7987dede593723e068f2db0e94a7406a9a181cf996dc064cbb6d036c910db60",
+            "frontmatter_blob": null,
+            "rendered_hash": "7fad2d9da78cc7f306e7b9e61a943ee899d27396b3116950d26a828eba32df14",
+            "path": "a.md",
+            "commit_id": "c_0"
+          },
+          {
+            "rev_id": "r_1",
+            "doc_id": "d_0",
+            "seq": 2,
+            "root_tree": "055fbd52d03be880a5ac7fa97e7d8789f2f0b62a861ab46e01cb381fe195eb21",
+            "frontmatter_blob": null,
+            "rendered_hash": "c9a8d3f66fdb5a196422661437d0b3e38e4133d2f082ab0deafb294c3fb420a5",
+            "path": "a.md",
+            "commit_id": "c_1"
+          }
+        ],
+        "blobs": [
+          {
+            "hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+            "size": 1,
+            "bytes": "\n"
+          },
+          {
+            "hash": "23f15e956c6c2d5ca00847b2fa6c5a003089699b981b324802fb7a66048fe39d",
+            "size": 107,
+            "bytes": "Beta paragraph about bees and honey, the hives at the edge of the meadow and the keeper's slow summer work."
+          },
+          {
+            "hash": "3b5e6393141655cfecf30626a803eb52f9b65c58315487f472625726e92f7664",
+            "size": 99,
+            "bytes": "Gamma paragraph about goats and cheese, the herd on the hillside and the small dairy by the market."
+          },
+          {
+            "hash": "4c9e19659afd85cd993a625573905aacb5b74d6e67cae31c774a36959bde519c",
+            "size": 92,
+            "bytes": "Alpha paragraph about apples and orchards, the long rows of trees that line the valley road."
+          },
+          {
+            "hash": "5e1fff476b11f06a7daea57fb42de421a23919621e2617230a8f9426ccaad226",
+            "size": 18,
+            "bytes": "# Three paragraphs"
+          },
+          {
+            "hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "size": 2,
+            "bytes": "\n\n"
+          },
+          {
+            "hash": "e8ed02cea012300bb85e9b58f4dd81b501bd5f77663a1491691d49ec20dfdbb1",
+            "size": 110,
+            "bytes": "Beta paragraph about bees and honey, the hives at the edge of the meadow and the keeper's patient summer work."
+          }
+        ],
+        "tree_nodes": [
+          {
+            "hash": "055fbd52d03be880a5ac7fa97e7d8789f2f0b62a861ab46e01cb381fe195eb21",
+            "entries": "[[\"b_0\",\"5e1fff476b11f06a7daea57fb42de421a23919621e2617230a8f9426ccaad226\",null,\"heading\",{\"level\":1},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_1\",\"4c9e19659afd85cd993a625573905aacb5b74d6e67cae31c774a36959bde519c\",null,\"paragraph\",{},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_2\",\"e8ed02cea012300bb85e9b58f4dd81b501bd5f77663a1491691d49ec20dfdbb1\",null,\"paragraph\",{},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_3\",\"3b5e6393141655cfecf30626a803eb52f9b65c58315487f472625726e92f7664\",null,\"paragraph\",{},\"01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b\"]]"
+          },
+          {
+            "hash": "a7987dede593723e068f2db0e94a7406a9a181cf996dc064cbb6d036c910db60",
+            "entries": "[[\"b_0\",\"5e1fff476b11f06a7daea57fb42de421a23919621e2617230a8f9426ccaad226\",null,\"heading\",{\"level\":1},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_1\",\"4c9e19659afd85cd993a625573905aacb5b74d6e67cae31c774a36959bde519c\",null,\"paragraph\",{},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_2\",\"23f15e956c6c2d5ca00847b2fa6c5a003089699b981b324802fb7a66048fe39d\",null,\"paragraph\",{},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_3\",\"3b5e6393141655cfecf30626a803eb52f9b65c58315487f472625726e92f7664\",null,\"paragraph\",{},\"01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b\"]]"
+          }
+        ],
+        "blocks": [
+          {
+            "block_id": "b_0",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "V",
+            "ordinal": 0,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "heading",
+            "attrs": {
+              "level": 1
+            },
+            "text": "Three paragraphs",
+            "raw_hash": "5e1fff476b11f06a7daea57fb42de421a23919621e2617230a8f9426ccaad226",
+            "norm_hash": "a266b87f6ecff79f44ccd4d1957d053a943647c5cd57b27e2e404cb2f11d7bbe",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_commit": "c_1",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_1",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "W",
+            "ordinal": 1,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "Alpha paragraph about apples and orchards, the long rows of trees that line the valley road.",
+            "raw_hash": "4c9e19659afd85cd993a625573905aacb5b74d6e67cae31c774a36959bde519c",
+            "norm_hash": "4c9e19659afd85cd993a625573905aacb5b74d6e67cae31c774a36959bde519c",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_commit": "c_1",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_2",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "X",
+            "ordinal": 2,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "Beta paragraph about bees and honey, the hives at the edge of the meadow and the keeper's patient summer work.",
+            "raw_hash": "e8ed02cea012300bb85e9b58f4dd81b501bd5f77663a1491691d49ec20dfdbb1",
+            "norm_hash": "e8ed02cea012300bb85e9b58f4dd81b501bd5f77663a1491691d49ec20dfdbb1",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_commit": "c_1",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_3",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "Y",
+            "ordinal": 3,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "Gamma paragraph about goats and cheese, the herd on the hillside and the small dairy by the market.",
+            "raw_hash": "3b5e6393141655cfecf30626a803eb52f9b65c58315487f472625726e92f7664",
+            "norm_hash": "3b5e6393141655cfecf30626a803eb52f9b65c58315487f472625726e92f7664",
+            "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+            "created_commit": "c_1",
+            "deleted_commit": null
+          }
+        ],
+        "dispositions": [
+          {
+            "commit_id": "c_0",
+            "block_id": "b_0",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_1",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_2",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_3",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_1",
+            "block_id": "b_2",
+            "kind": "edited",
+            "confidence": 0.9166666666666667,
+            "reason": "context_unique",
+            "matcher_v": "m2.3",
+            "detail": {}
+          }
+        ],
+        "block_changes": [
+          {
+            "block_id": "b_0",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_1",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_2",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_3",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_2",
+            "commit_id": "c_1",
+            "kind": "edited"
+          }
+        ],
+        "resurrection_pool": [],
+        "sections": [
+          {
+            "doc_id": "d_0",
+            "heading_block": "b_0",
+            "level": 1,
+            "first_ordinal": 0,
+            "last_ordinal": 3
+          }
+        ],
+        "pending_materializations": []
+      }
+    },
+    {
+      "name": "move-only-change-writes-moved-rows",
+      "notes": "§5.4 step 10 (14.2): the second observation swaps the beta and gamma paragraphs without touching their bytes. `spec/reconcile` §2 classifies both as `moved` (same raw hash, different sibling index) and the heading and alpha as `same`; only the two `moved` rows are persisted — a block's position change is its own change, its siblings' are not.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-10-13T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "# Three paragraphs\n\nAlpha paragraph about apples and orchards, the long rows of trees that line the valley road.\n\nBeta paragraph about bees and honey, the hives at the edge of the meadow and the keeper's slow summer work.\n\nGamma paragraph about goats and cheese, the herd on the hillside and the small dairy by the market.\n"
+              }
+            ]
+          }
+        },
+        {
+          "observe": {
+            "ts": "2026-10-13T10:01:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "# Three paragraphs\n\nAlpha paragraph about apples and orchards, the long rows of trees that line the valley road.\n\nGamma paragraph about goats and cheese, the herd on the hillside and the small dairy by the market.\n\nBeta paragraph about bees and honey, the hives at the edge of the meadow and the keeper's slow summer work.\n"
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 4
+              }
+            }
+          ],
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_1",
+              "rev": "r_1",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "moved": 2,
+                "same": 2
+              }
+            }
+          ]
+        ],
+        "docs": [
+          {
+            "doc_id": "d_0",
+            "path": "a.md",
+            "format": "markdown",
+            "current_rev": "r_1",
+            "file_hash": "3ad4a6aae17aefea11b63be7be699dd2dacf9615ca76e54d635d8bf5441f69b1",
+            "conflicted": 0,
+            "leading_trivia": "",
+            "frontmatter_trivia": null,
+            "deleted_commit": null
+          }
+        ],
+        "commits": [
+          {
+            "commit_id": "c_0",
+            "seq": 1,
+            "ts": "2026-10-13T10:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "checkpoint_id": null,
+            "ops": null
+          },
+          {
+            "commit_id": "c_1",
+            "seq": 2,
+            "ts": "2026-10-13T10:01:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "checkpoint_id": null,
+            "ops": null
+          }
+        ],
+        "revisions": [
+          {
+            "rev_id": "r_0",
+            "doc_id": "d_0",
+            "seq": 1,
+            "root_tree": "a7987dede593723e068f2db0e94a7406a9a181cf996dc064cbb6d036c910db60",
+            "frontmatter_blob": null,
+            "rendered_hash": "7fad2d9da78cc7f306e7b9e61a943ee899d27396b3116950d26a828eba32df14",
+            "path": "a.md",
+            "commit_id": "c_0"
+          },
+          {
+            "rev_id": "r_1",
+            "doc_id": "d_0",
+            "seq": 2,
+            "root_tree": "7eede325d46cc11e7f49f156b415aee776db29b4eb683de85fb5bf0f81564f3f",
+            "frontmatter_blob": null,
+            "rendered_hash": "3ad4a6aae17aefea11b63be7be699dd2dacf9615ca76e54d635d8bf5441f69b1",
+            "path": "a.md",
+            "commit_id": "c_1"
+          }
+        ],
+        "blobs": [
+          {
+            "hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+            "size": 1,
+            "bytes": "\n"
+          },
+          {
+            "hash": "23f15e956c6c2d5ca00847b2fa6c5a003089699b981b324802fb7a66048fe39d",
+            "size": 107,
+            "bytes": "Beta paragraph about bees and honey, the hives at the edge of the meadow and the keeper's slow summer work."
+          },
+          {
+            "hash": "3b5e6393141655cfecf30626a803eb52f9b65c58315487f472625726e92f7664",
+            "size": 99,
+            "bytes": "Gamma paragraph about goats and cheese, the herd on the hillside and the small dairy by the market."
+          },
+          {
+            "hash": "4c9e19659afd85cd993a625573905aacb5b74d6e67cae31c774a36959bde519c",
+            "size": 92,
+            "bytes": "Alpha paragraph about apples and orchards, the long rows of trees that line the valley road."
+          },
+          {
+            "hash": "5e1fff476b11f06a7daea57fb42de421a23919621e2617230a8f9426ccaad226",
+            "size": 18,
+            "bytes": "# Three paragraphs"
+          },
+          {
+            "hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "size": 2,
+            "bytes": "\n\n"
+          }
+        ],
+        "tree_nodes": [
+          {
+            "hash": "7eede325d46cc11e7f49f156b415aee776db29b4eb683de85fb5bf0f81564f3f",
+            "entries": "[[\"b_0\",\"5e1fff476b11f06a7daea57fb42de421a23919621e2617230a8f9426ccaad226\",null,\"heading\",{\"level\":1},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_1\",\"4c9e19659afd85cd993a625573905aacb5b74d6e67cae31c774a36959bde519c\",null,\"paragraph\",{},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_3\",\"3b5e6393141655cfecf30626a803eb52f9b65c58315487f472625726e92f7664\",null,\"paragraph\",{},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_2\",\"23f15e956c6c2d5ca00847b2fa6c5a003089699b981b324802fb7a66048fe39d\",null,\"paragraph\",{},\"01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b\"]]"
+          },
+          {
+            "hash": "a7987dede593723e068f2db0e94a7406a9a181cf996dc064cbb6d036c910db60",
+            "entries": "[[\"b_0\",\"5e1fff476b11f06a7daea57fb42de421a23919621e2617230a8f9426ccaad226\",null,\"heading\",{\"level\":1},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_1\",\"4c9e19659afd85cd993a625573905aacb5b74d6e67cae31c774a36959bde519c\",null,\"paragraph\",{},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_2\",\"23f15e956c6c2d5ca00847b2fa6c5a003089699b981b324802fb7a66048fe39d\",null,\"paragraph\",{},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_3\",\"3b5e6393141655cfecf30626a803eb52f9b65c58315487f472625726e92f7664\",null,\"paragraph\",{},\"01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b\"]]"
+          }
+        ],
+        "blocks": [
+          {
+            "block_id": "b_0",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "V",
+            "ordinal": 0,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "heading",
+            "attrs": {
+              "level": 1
+            },
+            "text": "Three paragraphs",
+            "raw_hash": "5e1fff476b11f06a7daea57fb42de421a23919621e2617230a8f9426ccaad226",
+            "norm_hash": "a266b87f6ecff79f44ccd4d1957d053a943647c5cd57b27e2e404cb2f11d7bbe",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_commit": "c_1",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_1",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "W",
+            "ordinal": 1,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "Alpha paragraph about apples and orchards, the long rows of trees that line the valley road.",
+            "raw_hash": "4c9e19659afd85cd993a625573905aacb5b74d6e67cae31c774a36959bde519c",
+            "norm_hash": "4c9e19659afd85cd993a625573905aacb5b74d6e67cae31c774a36959bde519c",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_commit": "c_1",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_3",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "X",
+            "ordinal": 2,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "Gamma paragraph about goats and cheese, the herd on the hillside and the small dairy by the market.",
+            "raw_hash": "3b5e6393141655cfecf30626a803eb52f9b65c58315487f472625726e92f7664",
+            "norm_hash": "3b5e6393141655cfecf30626a803eb52f9b65c58315487f472625726e92f7664",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_commit": "c_1",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_2",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "Y",
+            "ordinal": 3,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "Beta paragraph about bees and honey, the hives at the edge of the meadow and the keeper's slow summer work.",
+            "raw_hash": "23f15e956c6c2d5ca00847b2fa6c5a003089699b981b324802fb7a66048fe39d",
+            "norm_hash": "23f15e956c6c2d5ca00847b2fa6c5a003089699b981b324802fb7a66048fe39d",
+            "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+            "created_commit": "c_1",
+            "deleted_commit": null
+          }
+        ],
+        "dispositions": [
+          {
+            "commit_id": "c_0",
+            "block_id": "b_0",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_1",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_2",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_3",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_1",
+            "block_id": "b_2",
+            "kind": "moved",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_1",
+            "block_id": "b_3",
+            "kind": "moved",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "matcher_v": "m2.3",
+            "detail": {}
+          }
+        ],
+        "block_changes": [
+          {
+            "block_id": "b_0",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_1",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_2",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_3",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_2",
+            "commit_id": "c_1",
+            "kind": "moved"
+          },
+          {
+            "block_id": "b_3",
+            "commit_id": "c_1",
+            "kind": "moved"
           }
         ],
         "resurrection_pool": [],

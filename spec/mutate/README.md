@@ -328,10 +328,19 @@ Result   { results: [{ ids, removed?, merged_into? }], revisions: [{ id, path, h
      `spec/store` §5.4 steps 1–4 and 6–13 naming that commit (`spec/store`
      §5.4 "The api path") with the **known-id resolver**: the re-parsed body
      gets the tree's ids by positional key (`"/i/j"`; a position with no id
-     mints — impossible under the round-trip law), dispositions `{ kind:
-     edited if the id was live before else inserted, confidence: 1, reason:
-     "api", matcher_v: null, detail: {} }` for every block (there is **no
-     `deleted` disposition row** on the api path), `deleted` = the prior
+     mints — impossible under the round-trip law), dispositions `{ kind,
+     confidence: 1, reason: "api", matcher_v: null, detail: {} }` for every
+     block, where `kind` is `inserted` for an id that was not live in this
+     document before and otherwise **the matcher's carry classification**
+     (`spec/reconcile` §2, store 14.2): against the block's live row, `same`
+     when the raw bytes, the parent and the sibling index are unchanged,
+     `moved` when only the position differs, `edited` when only the bytes,
+     `edited_moved` when both — and `spec/store` §5.4 step 10 persists every
+     kind **but `same`**, so a block the changeset did not touch leaves no
+     row and keeps its own `updated_at` (through store 14.1 every carried
+     block was stamped `edited`, and a one-paragraph edit moved every
+     sibling's timestamp — Decisions). There is **no `deleted` disposition
+     row** on the api path; `deleted` = the prior
      live ids no longer present (pooled per `spec/store` §5.4 step 7), and
      `cross_doc_ids` = the ids new to this document that were live elsewhere
      (a cross-document move), so step 8 evicts the source's row whichever
@@ -1567,6 +1576,24 @@ Receipt pins them in every committing fixture step (§9).
 
 ## Decisions
 
+- 2026-10-13 (store 14.2; no mutate version move): the api path's
+  dispositions are the matcher's carry classification, and `same` is not
+  persisted (§4 step 5(b)). Through store 14.1 the known-id resolver stamped
+  every carried block `edited / 1 / api`, so a one-paragraph `plan`/`execute`
+  edit wrote a row for every block of the document and moved every sibling's
+  `updated_at` — the api path was the worse offender, since the matcher at
+  least said `same`. The resolver now compares each carried block with its
+  live row the way `spec/reconcile` §2 does (raw hash, parent, sibling
+  index), so untouched blocks are `same` and leave no row, and a block that
+  only changed position is `moved` rather than `edited`. The fixture contract
+  (§9) is unchanged — the projection still lists `dispositions` — which is
+  why this is not a mutate minor: the rows moved because the store's rule
+  moved. Fixtures: 132 cases lost their untouched blocks' `edited / api` rows
+  (326 rows), 81 position-only carries became `moved` / `edited_moved`, and
+  the 15 observe-step `same` rows went with the store's; nothing else in any
+  `expect` changed (no receipt, revision or file). New:
+  `commit::api-edit-one-of-three-leaves-siblings-same`,
+  `commit::api-move-only-writes-moved-rows`.
 - 2026-10-13, mutate 3.5: `split` trims whitespace at the cut (§2.5). Exact
   byte offsets were a trap: in a 78-run agent benchmark every one of the six
   split-paragraph runs fought a stray space at the seam — an offset on either

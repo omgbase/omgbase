@@ -310,7 +310,7 @@
           ],
           "expect": {
             "exit": 0,
-            "stdout": "#21 api      api(human:spec): moved /texts/mutus-liber.md → /texts/silent-book.md; /index.md — 31 edited\n"
+            "stdout": "#21 api      api(human:spec): moved /texts/mutus-liber.md → /texts/silent-book.md; /index.md — 2 edited\n"
           }
         }
       ]
@@ -879,7 +879,7 @@
           ],
           "expect": {
             "exit": 0,
-            "stdout": "#21 api      api(human:spec): /texts/mutus-liber.md — 9 edited, 1 inserted\n"
+            "stdout": "#21 api      api(human:spec): /texts/mutus-liber.md — 1 edited, 1 edited_moved, 1 inserted, 1 moved\n"
           }
         }
       ]

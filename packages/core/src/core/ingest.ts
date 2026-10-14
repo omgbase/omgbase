@@ -33,6 +33,11 @@ export interface DispositionRow {
   detail: Record<string, unknown>;
 }
 
+/** spec/store §5.4 step 10 (14.2): which verdicts the store persists — every kind but `same`. */
+export function persistsDisposition(kind: string): boolean {
+  return kind !== "same";
+}
+
 // A resolved edge to persist (05 §2). Kept structural so core does not depend
 // on the graph module's extractor.
 export interface ResolvedEdgeRow {
@@ -432,12 +437,20 @@ export function ingestInto(
       ? resolved.dispositions
       : rows.map((r) => ({ blockId: r.blockId, kind: "inserted", confidence: null, reason: null, matcherV: null, detail: {} }));
 
+  // spec/store §5.4 step 10 (14.2): a `same` verdict is not persisted. The
+  // matcher (and the known-id resolver) still produce one per untouched block
+  // — the outcome counts them — but the table records what CHANGED, so a
+  // block's `updated_at` (MAX commit ts over its `block_changes`) and its
+  // `blocks_history` are the block's own changes, not its siblings'. Every
+  // other kind — the first revision's `inserted` rows the mint oracle (§2.1)
+  // depends on included — is written as before.
   const insDisp = db.prepare(
     `INSERT OR IGNORE INTO dispositions (commit_id, block_id, kind, confidence, reason, matcher_v, detail)
      VALUES (?, ?, ?, ?, ?, ?, ?)`,
   );
   const bc = db.prepare("INSERT OR IGNORE INTO block_changes (block_id, commit_id, kind) VALUES (?, ?, ?)");
   for (const d of dispositions) {
+    if (!persistsDisposition(d.kind)) continue;
     insDisp.run(commitId, d.blockId, d.kind, d.confidence, d.reason, d.matcherV, JSON.stringify(d.detail));
     bc.run(d.blockId, commitId, d.kind);
   }

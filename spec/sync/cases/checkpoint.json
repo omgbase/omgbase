@@ -1007,15 +1007,6 @@
           },
           {
             "commit_id": "c_1",
-            "block_id": "b_0",
-            "kind": "same",
-            "confidence": 1,
-            "reason": "exact_hash",
-            "matcher_v": "m2.3",
-            "detail": {}
-          },
-          {
-            "commit_id": "c_1",
             "block_id": "b_1",
             "kind": "edited",
             "confidence": 0.93,
@@ -1034,11 +1025,6 @@
             "block_id": "b_1",
             "commit_id": "c_0",
             "kind": "inserted"
-          },
-          {
-            "block_id": "b_0",
-            "commit_id": "c_1",
-            "kind": "same"
           },
           {
             "block_id": "b_1",
@@ -2323,24 +2309,6 @@
             "detail": {}
           },
           {
-            "commit_id": "c_2",
-            "block_id": "b_0",
-            "kind": "same",
-            "confidence": 1,
-            "reason": "exact_hash",
-            "matcher_v": "m2.3",
-            "detail": {}
-          },
-          {
-            "commit_id": "c_2",
-            "block_id": "b_1",
-            "kind": "same",
-            "confidence": 1,
-            "reason": "exact_hash",
-            "matcher_v": "m2.3",
-            "detail": {}
-          },
-          {
             "commit_id": "c_3",
             "block_id": "b_2",
             "kind": "moved",
@@ -2350,24 +2318,6 @@
             "detail": {
               "fromDoc": "d_0"
             }
-          },
-          {
-            "commit_id": "c_3",
-            "block_id": "b_3",
-            "kind": "same",
-            "confidence": 1,
-            "reason": "exact_hash",
-            "matcher_v": "m2.3",
-            "detail": {}
-          },
-          {
-            "commit_id": "c_3",
-            "block_id": "b_4",
-            "kind": "same",
-            "confidence": 1,
-            "reason": "exact_hash",
-            "matcher_v": "m2.3",
-            "detail": {}
           }
         ],
         "block_changes": [
@@ -2397,29 +2347,9 @@
             "kind": "inserted"
           },
           {
-            "block_id": "b_0",
-            "commit_id": "c_2",
-            "kind": "same"
-          },
-          {
-            "block_id": "b_1",
-            "commit_id": "c_2",
-            "kind": "same"
-          },
-          {
             "block_id": "b_2",
             "commit_id": "c_3",
             "kind": "moved"
-          },
-          {
-            "block_id": "b_3",
-            "commit_id": "c_3",
-            "kind": "same"
-          },
-          {
-            "block_id": "b_4",
-            "commit_id": "c_3",
-            "kind": "same"
           }
         ],
         "resurrection_pool": [],
@@ -3420,15 +3350,6 @@
           },
           {
             "commit_id": "c_2",
-            "block_id": "b_0",
-            "kind": "same",
-            "confidence": 1,
-            "reason": "exact_hash",
-            "matcher_v": "m2.3",
-            "detail": {}
-          },
-          {
-            "commit_id": "c_2",
             "block_id": "b_1",
             "kind": "edited",
             "confidence": 0.93,
@@ -3466,11 +3387,6 @@
             "block_id": "b_3",
             "commit_id": "c_1",
             "kind": "inserted"
-          },
-          {
-            "block_id": "b_0",
-            "commit_id": "c_2",
-            "kind": "same"
           },
           {
             "block_id": "b_1",
@@ -4133,15 +4049,6 @@
           },
           {
             "commit_id": "c_2",
-            "block_id": "b_0",
-            "kind": "same",
-            "confidence": 1,
-            "reason": "exact_hash",
-            "matcher_v": "m2.3",
-            "detail": {}
-          },
-          {
-            "commit_id": "c_2",
             "block_id": "b_1",
             "kind": "edited",
             "confidence": 0.93,
@@ -4170,11 +4077,6 @@
             "block_id": "b_3",
             "commit_id": "c_1",
             "kind": "inserted"
-          },
-          {
-            "block_id": "b_0",
-            "commit_id": "c_2",
-            "kind": "same"
           },
           {
             "block_id": "b_1",

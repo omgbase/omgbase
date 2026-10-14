@@ -113,7 +113,7 @@ describe("gc --vacuum", () => {
 
     omg(["config", "set", "gc.enabled", "true"]);
     const run = JSON.parse(omg(["gc", "--vacuum", "--json"]).stdout) as typeof dry;
-    expect(run).toEqual({ blobsSwept: 0, treeNodesSwept: 0, vacuum: { reclaimable: before.file.reclaimable, applied: true } });
+    expect(run).toEqual({ blobsSwept: 0, treeNodesSwept: 0, sameDispositionsSwept: 0, vacuum: { reclaimable: before.file.reclaimable, applied: true } });
     const after = JSON.parse(omg(["doctor", "--size", "--json"]).stdout) as SizeJson;
     expect(after.file.freelist_count).toBe(0);
     expect(after.file.reclaimable).toBe(0);

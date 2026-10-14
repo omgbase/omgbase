@@ -129,7 +129,8 @@ describe("a crash after COMMIT", () => {
     const feed = changesSince(store, repoId, { cursor: head });
     expect(feed.digests).toHaveLength(1);
     expect(feed.digests[0]!.revisions.map((r) => r.path)).toEqual(["/a.md", "/b.md"]);
-    expect(feed.digests[0]!.summary).toBe("api(agent:test): /a.md, /b.md — 4 edited, 2 inserted");
+    // store 14.2: untouched blocks are `same` and not persisted ("4 edited, 2 inserted" through 14.1).
+    expect(feed.digests[0]!.summary).toBe("api(agent:test): /a.md, /b.md — 2 inserted");
     const rowA = readPending(store.db, repoId, "a.md")!;
     expect(rowA.docId).toBe(a);
     expect(rowA.renderedHash.equals(sha256("# A\n\nAlpha.\n\nA tail.\n"))).toBe(true);

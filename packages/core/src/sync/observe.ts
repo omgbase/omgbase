@@ -257,9 +257,14 @@ function commitPrepared(store: Store, repoId: string, prepared: PreparedReconcil
   const resolveIds = makeReconcilingResolver(store, repoId, { ts, path, prepared });
   const res = ingestFile(store, repoId, path, content, { ts, origin: "observed", resolveIds, parsed: prepared.tree, conflicted });
 
-  const rows = store.db
-    .prepare("SELECT kind, count(*) n FROM dispositions WHERE commit_id = ? GROUP BY kind ORDER BY kind")
-    .all(res.commitId) as { kind: string; n: number }[];
+  // The outcome counts every verdict the matcher produced, `same` included —
+  // it describes what the matcher saw; the `dispositions` table describes
+  // what changed (spec/store §5.4 step 10, 14.2: `same` is not persisted), so
+  // the counts come from the in-memory result, not the table. Kinds in
+  // bytewise order, as the table query listed them through 14.1.
+  const counts = new Map<string, number>();
+  for (const d of prepared.result.dispositions) counts.set(d.kind, (counts.get(d.kind) ?? 0) + 1);
+  const rows = [...counts].map(([kind, n]) => ({ kind, n })).sort((a, b) => (a.kind < b.kind ? -1 : a.kind > b.kind ? 1 : 0));
 
   return {
     docId: res.docId,

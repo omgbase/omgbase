@@ -22,7 +22,7 @@ import { ensureRepo } from "../../src/core/attach.js";
 import { repeatingMinter, sequentialMinter, setIdMinter } from "../../src/core/ids.js";
 import { sha256 } from "../../src/core/hash.js";
 import { reconstructContent, readDocumentAtRevision } from "../../src/core/read/document.js";
-import { sweepResurrectionPool } from "../../src/core/store/gc.js";
+import { runGc, sweepResurrectionPool } from "../../src/core/store/gc.js";
 import { observeBatch, type BatchOutcome } from "../../src/sync/observe.js";
 import { CONFIG_KEYS, toReconcileConfig, deepEqualTol, type FixtureConfig } from "../reconcile/fixture.js";
 
@@ -95,7 +95,13 @@ export interface ObserveItem {
   /** the exact file content, or null when the path is gone */
   source: string | null;
 }
-export type Step = { observe: { ts: string; items: ObserveItem[] } } | { sweep: { ts: string } };
+export type Step =
+  | { observe: { ts: string; items: ObserveItem[] } }
+  | { sweep: { ts: string } }
+  /** README §9.4 (14.2): the §7 garbage collection, enabled → `{ gc: { blobs, tree_nodes, same_dispositions } }` */
+  | { gc: Record<string, never> }
+  /** README §9.4 (14.2): authored SQL run verbatim — the device that puts a 14.1 store's rows into a case → `{ changes: n }` */
+  | { exec: { sql: string[] } };
 
 export interface ObservedOutcome {
   path: string;
@@ -112,7 +118,25 @@ export interface GoneOutcome {
   deleted: boolean;
   doc: string | null;
 }
-export type StepOutcome = (ObservedOutcome | GoneOutcome)[] | { swept: number };
+export interface GcOutcome {
+  gc: { blobs: number; tree_nodes: number; same_dispositions: number };
+}
+export type StepOutcome = (ObservedOutcome | GoneOutcome)[] | { swept: number } | GcOutcome | { changes: number };
+
+/** README §9.4 (14.2): the `gc` step — `runGc` enabled, never a dry run; the counts in the fixture's spelling. */
+export function runGcStep(store: Store): GcOutcome {
+  const r = runGc(store, { enabled: true });
+  return { gc: { blobs: r.blobsSwept, tree_nodes: r.treeNodesSwept, same_dispositions: r.sameDispositionsSwept } };
+}
+
+/** README §9.4 (14.2): the `exec` step — every statement run verbatim, in order, in one transaction; the rows changed summed. */
+export function runExecStep(store: Store, sql: string[]): { changes: number } {
+  return store.write((db) => {
+    let changes = 0;
+    for (const statement of sql) changes += db.prepare(statement).run().changes;
+    return { changes };
+  });
+}
 
 export interface Projection {
   steps: StepOutcome[];
@@ -360,8 +384,13 @@ export function runObserveCase(c: ObserveCaseInput): ObserveEvaluation {
           }
           steps.push(outcomes.map(toOutcome));
           for (const p of checkInvariants(store, repoId, lastSource)) problems.push(`after step ${i}: ${p}`);
-        } else {
+        } else if ("sweep" in step) {
           steps.push({ swept: sweepResurrectionPool(store, step.sweep.ts) });
+        } else if ("gc" in step) {
+          steps.push(runGcStep(store));
+          for (const p of checkInvariants(store, repoId, lastSource)) problems.push(`after step ${i}: ${p}`);
+        } else {
+          steps.push(runExecStep(store, step.exec.sql));
         }
       });
       for (const p of checkInvariants(store, repoId, lastSource)) problems.push(`at end: ${p}`);
@@ -719,6 +748,14 @@ export function checkInvariants(store: Store, repoId: string, lastSource: Readon
       if (!gone && !liveHere) problems.push(`I7: ${x.kind} block ${x.block_id} of ${x.commit_id} is not live in ${label}`);
     }
   }
+  // 14.2: `same` is never persisted (§5.4 step 10; the §7 sweep removes a 14.1
+  // store's), and a block's rows are its own history — so every live block has
+  // at least one (its `inserted`, lineage or resurrection row).
+  for (const x of dispositions) if (x.kind === "same") problems.push(`I7: disposition ${x.block_id} of ${x.commit_id} is a persisted \`same\``);
+  const unchanged = db
+    .prepare("SELECT b.block_id FROM blocks b JOIN docs d ON d.doc_id = b.doc_id WHERE d.repo_id = ? AND b.deleted_commit IS NULL AND NOT EXISTS (SELECT 1 FROM block_changes bc WHERE bc.block_id = b.block_id) ORDER BY b.block_id")
+    .all(repoId) as { block_id: string }[];
+  for (const r of unchanged) problems.push(`I7: live block ${r.block_id} has no block_changes row`);
 
   // ---- I8 rebuild equivalence -------------------------------------------------------
   for (const d of docs) {
@@ -784,7 +821,7 @@ export function validateSteps(at: string, steps: unknown, problems: string[], ex
     problems.push(`${at}: \`steps\` must be a non-empty array`);
     return -1;
   }
-  const kinds = ["observe", "sweep", ...Object.keys(extra)];
+  const kinds = ["observe", "sweep", "gc", "exec", ...Object.keys(extra)];
   steps.forEach((s, i) => {
     const here = `${at}.steps[${i}]`;
     if (!isRecord(s)) {
@@ -800,6 +837,17 @@ export function validateSteps(at: string, steps: unknown, problems: string[], ex
     const validator = extra[keys[0]!];
     if (validator) {
       validator(body, here, problems);
+      return;
+    }
+    if (keys[0] === "gc") {
+      if (!isRecord(body) || Object.keys(body).length > 0) problems.push(`${here}: gc takes an empty object`);
+      return;
+    }
+    if (keys[0] === "exec") {
+      if (!isRecord(body) || Object.keys(body).some((k) => k !== "sql")) problems.push(`${here}: exec takes only \`sql\``);
+      if (!isRecord(body) || !Array.isArray(body.sql) || body.sql.length === 0 || body.sql.some((q) => typeof q !== "string" || q === "")) {
+        problems.push(`${here}: \`sql\` must be a non-empty array of statements`);
+      }
       return;
     }
     if (!isRecord(body) || typeof body.ts !== "string" || !TS_RE.test(body.ts)) {

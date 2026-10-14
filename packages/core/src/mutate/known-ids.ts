@@ -4,6 +4,7 @@ import type { RawBlock } from "../core/parse/types.js";
 import type { TreeInputBlock } from "../core/store/writers.js";
 import type { IdResolver, DispositionRow, ResolvedEdgeRow } from "../core/ingest.js";
 import { mintId } from "../core/ids.js";
+import { sha256 } from "../core/hash.js";
 import { extractFromBlock, extractFromFrontmatter, resolveRelativePath } from "../graph/extract.js";
 import { resolveExternal, resolveDocPath } from "../core/store/edges.js";
 import { adapterForPath, type AdapterEdge } from "../format/index.js";
@@ -96,12 +97,19 @@ export function makeKnownIdResolver(
     const nowIds = collectIds(assigned);
     const nowSet = new Set(nowIds);
 
-    // Dispositions are INTENT, not inference: a carried id that existed before is
-    // `same`/`edited` (confidence 1.0); an id new this commit is `inserted`; a
-    // prior id no longer present is `deleted`.
-    const dispositions: DispositionRow[] = nowIds.map((id) => ({
-      blockId: id,
-      kind: priorIds.has(id) ? "edited" : "inserted",
+    // Dispositions are INTENT, not inference (confidence 1.0, reason `api`): an
+    // id new this commit is `inserted`; a prior id no longer present is
+    // `deleted` (pooled, no row); a carried id is classified exactly as
+    // spec/reconcile §2 classifies a carry — `same` when its raw bytes, parent
+    // and sibling index are those of its live row, else `edited` / `moved` /
+    // `edited_moved` — so a block the changeset did not touch is `same` and
+    // (spec/store §5.4 step 10, 14.2) never persisted: a one-paragraph edit
+    // moves that paragraph's `updated_at`, not its siblings'. Through store
+    // 14.1 every carried block was stamped `edited`.
+    const prior = docId === null ? new Map<string, PriorRow>() : priorRows(db, docId);
+    const dispositions: DispositionRow[] = classifyCarries(assigned, prior, priorIds).map((c) => ({
+      blockId: c.id,
+      kind: c.kind,
       confidence: 1,
       reason: "api",
       matcherV: null,
@@ -135,9 +143,48 @@ export function makeKnownIdResolver(
       return out;
     };
 
-    void docId;
     return { assigned, dispositions, deleted, crossDocIds, extractEdges };
   };
+}
+
+/** A carried block's live row, as spec/reconcile §2's carry classification reads it. */
+interface PriorRow {
+  parent: string | null;
+  ordinal: number;
+  rawHashHex: string;
+}
+
+function priorRows(db: Database, docId: string): Map<string, PriorRow> {
+  const rows = db
+    .prepare("SELECT block_id, parent_block, ordinal, raw_hash FROM blocks WHERE doc_id = ? AND deleted_commit IS NULL")
+    .all(docId) as { block_id: string; parent_block: string | null; ordinal: number; raw_hash: Buffer }[];
+  return new Map(rows.map((r) => [r.block_id, { parent: r.parent_block, ordinal: r.ordinal, rawHashHex: r.raw_hash.toString("hex") }]));
+}
+
+/**
+ * spec/reconcile §2 "Classifying a carry", applied to the api path's known ids:
+ * `moved` = the parent or the sibling index differs from the live row,
+ * `content_equal` = the raw bytes hash the same; `same` / `moved` / `edited` /
+ * `edited_moved` follow. An id with no prior row (new to this document — a
+ * mint or a cross-document arrival) is `inserted`. Pre-order over the tree.
+ */
+export function classifyCarries(blocks: TreeInputBlock[], prior: Map<string, PriorRow>, priorIds: Set<string>): { id: string; kind: string }[] {
+  const out: { id: string; kind: string }[] = [];
+  const walk = (list: TreeInputBlock[], parent: string | null): void => {
+    list.forEach((b, index) => {
+      const row = priorIds.has(b.blockId) ? prior.get(b.blockId) : undefined;
+      if (!row) {
+        out.push({ id: b.blockId, kind: "inserted" });
+      } else {
+        const moved = row.parent !== parent || row.ordinal !== index;
+        const contentEqual = row.rawHashHex === sha256(b.raw).toString("hex");
+        out.push({ id: b.blockId, kind: contentEqual ? (moved ? "moved" : "same") : moved ? "edited_moved" : "edited" });
+      }
+      if (b.children.length > 0) walk(b.children, b.blockId);
+    });
+  };
+  walk(blocks, null);
+  return out;
 }
 
 // Edge resolution — mirrors reconciling-ingest's resolvers (block-anchor targets

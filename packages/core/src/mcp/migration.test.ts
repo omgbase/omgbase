@@ -646,7 +646,7 @@ describe("the document operations return the Receipt and commit through the buil
     expect(onDisk.outcome.payload).toEqual({ error: "path_taken", message: "file already exists on disk at lab", retriable: false, data: {} });
   });
 
-  it("docs_set_meta: the Receipt's one revision is the patched document, the bytes are the merged compose, `edited/api` dispositions, reason `set_meta <path>`", async () => {
+  it("docs_set_meta: the Receipt's one revision is the patched document, the bytes are the merged compose, no body dispositions (store 14.2: every body block is `same`), reason `set_meta <path>`", async () => {
     const snap = await migratedSide("docs_set_meta", { path: "substances/salt.md", set: { verified: false, reviewed: "2026-09" }, unset: ["tradition"] });
     expect(snap.outcome.ok).toBe(true);
     const receipt = snap.outcome.payload as Receipt;
@@ -657,7 +657,11 @@ describe("the document operations return the Receipt and commit through the buil
     delete merged.tradition;
     expect(snap.files["substances/salt.md"]).toBe(composeFile(body, merged));
     expect(snap.last).toMatchObject({ reason: "set_meta substances/salt.md" });
-    expect([...new Set(dispositionsOf(snap, receipt.commit!))]).toEqual(["edited/1/api/null"]);
+    // store 14.2: a frontmatter patch leaves every body block byte-identical in
+    // place — `same`, which the store does not persist — so the commit has no
+    // disposition rows at all (through 14.1 the head write stamped every carried
+    // block `edited/1/api/null`).
+    expect([...new Set(dispositionsOf(snap, receipt.commit!))]).toEqual([]);
     // Neither the head write nor the legacy re-ingest minted a block: the commit and the revision only.
     expect(snap.mints).toEqual(["c_20", "r_20"]);
     const empty = await migratedSide("docs_set_meta", { path: "index.md" });

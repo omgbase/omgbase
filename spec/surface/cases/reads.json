@@ -6068,24 +6068,6 @@
           },
           [
             {
-              "commitId": "c_4",
-              "seq": 5,
-              "ts": "2026-09-27T10:07:00.000Z",
-              "origin": "api",
-              "kind": "edited",
-              "confidence": 1,
-              "reason": "api"
-            },
-            {
-              "commitId": "c_3",
-              "seq": 4,
-              "ts": "2026-09-27T10:06:00.000Z",
-              "origin": "api",
-              "kind": "edited",
-              "confidence": 1,
-              "reason": "api"
-            },
-            {
               "commitId": "c_2",
               "seq": 3,
               "ts": "2026-09-27T10:05:00.000Z",
@@ -12868,6 +12850,161 @@
             ],
             "truncated": false
           }
+        ]
+      }
+    },
+    {
+      "name": "sibling-updated-at-does-not-move",
+      "workspace": true,
+      "notes": "§1.2 `updated_at` on blocks (store 14.2): after an `apply` that edits only the beta paragraph at 10:01, `query` shows the heading, alpha and gamma still at 10:00 (their only `block_changes` row is `c_0`'s `inserted`) and beta at 10:01; `blocks_history` of alpha lists `c_0` alone, of beta `c_1` then `c_0`. Through store 14.1 every block of the document moved to 10:01 and alpha's history listed both commits.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-10-13T10:00:00.000Z",
+            "items": [
+              {
+                "path": "three.md",
+                "source": "# Three paragraphs\n\nAlpha paragraph about apples and orchards, the long rows of trees that line the valley road.\n\nBeta paragraph about bees and honey, the hives at the edge of the meadow and the keeper's slow summer work.\n\nGamma paragraph about goats and cheese, the herd on the hillside and the small dairy by the market.\n"
+              }
+            ]
+          }
+        },
+        {
+          "read": {
+            "tool": "apply",
+            "ts": "2026-10-13T10:01:00.000Z",
+            "args": {
+              "effects": [
+                {
+                  "op": "set",
+                  "target": {
+                    "kind": "block",
+                    "id": "b_2"
+                  },
+                  "field": "markdown",
+                  "value": "Beta paragraph about bees and honey, the hives at the edge of the meadow and the keeper's patient summer work."
+                }
+              ]
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "query",
+            "args": {
+              "query": "select id, updated_at from blocks where path == \"/three.md\" order by ordinal"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "blocks_history",
+            "args": {
+              "id": "b_1"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "blocks_history",
+            "args": {
+              "id": "b_2"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "three.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 4
+              }
+            }
+          ],
+          {
+            "plan_id": "e4495895f542c30983456599173a0e17adb29adc95d1f9deee74330aedc31ac3",
+            "commit": "c_1",
+            "revisions": [
+              {
+                "id": "d_0",
+                "path": "/three.md",
+                "hash": "c9a8d3f66fdb5a196422661437d0b3e38e4133d2f082ab0deafb294c3fb420a5"
+              }
+            ],
+            "new_ids": {
+              "$new.0": "b_4"
+            },
+            "committed": true,
+            "summary": [
+              "set markdown of paragraph b_2 in /three.md"
+            ]
+          },
+          {
+            "hits": [
+              {
+                "id": "b_0",
+                "path": "/three.md",
+                "updated_at": "2026-10-13T10:00:00.000Z"
+              },
+              {
+                "id": "b_1",
+                "path": "/three.md",
+                "updated_at": "2026-10-13T10:00:00.000Z"
+              },
+              {
+                "id": "b_2",
+                "path": "/three.md",
+                "updated_at": "2026-10-13T10:01:00.000Z"
+              },
+              {
+                "id": "b_3",
+                "path": "/three.md",
+                "updated_at": "2026-10-13T10:00:00.000Z"
+              }
+            ],
+            "truncated": false,
+            "cursor": null,
+            "consumer": "collect"
+          },
+          [
+            {
+              "commitId": "c_0",
+              "seq": 1,
+              "ts": "2026-10-13T10:00:00.000Z",
+              "origin": "observed",
+              "kind": "inserted",
+              "confidence": null,
+              "reason": null
+            }
+          ],
+          [
+            {
+              "commitId": "c_1",
+              "seq": 2,
+              "ts": "2026-10-13T10:01:00.000Z",
+              "origin": "api",
+              "kind": "edited",
+              "confidence": 1,
+              "reason": "api"
+            },
+            {
+              "commitId": "c_0",
+              "seq": 1,
+              "ts": "2026-10-13T10:00:00.000Z",
+              "origin": "observed",
+              "kind": "inserted",
+              "confidence": null,
+              "reason": null
+            }
+          ]
         ]
       }
     }

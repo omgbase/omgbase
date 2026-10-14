@@ -45,7 +45,7 @@ import type { Opset } from "../../src/mutate/opset.js";
 import { applyEffects, canonicalJson, executeByDigest, executePlan, planEffects, type Plan, type Receipt } from "../../src/mutate/plan.js";
 import { toReconcileConfig, deepEqualTol, type FixtureConfig } from "../reconcile/fixture.js";
 import {
-  FIXTURE_REPO_SLUG, TS_RE, checkInvariants, projectStore, toOutcome, validateSteps,
+  FIXTURE_REPO_SLUG, TS_RE, checkInvariants, projectStore, runExecStep, runGcStep, toOutcome, validateSteps,
   type ExtraStepValidator, type JsonRow, type Row, type Step as StoreStep, type StepOutcome as StoreStepOutcome,
 } from "../store/fixture.js";
 
@@ -475,6 +475,8 @@ function runStep(r: Runner, step: Step, index = -1): StepOutcome {
     return outcomes.map(toOutcome);
   }
   if ("sweep" in step) return { swept: sweepResurrectionPool(r.store, step.sweep.ts) };
+  if ("gc" in step) return runGcStep(r.store);
+  if ("exec" in step) return runExecStep(r.store, step.exec.sql);
   if ("disk" in step) {
     r.docStore.write(step.disk.path, step.disk.source);
     r.pendingDisk.add(step.disk.path);

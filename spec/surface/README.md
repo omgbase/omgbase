@@ -358,7 +358,12 @@ or `in` on a doc reads an authored property like any other unknown name
 
 **blocks.** Attributes: `id`, `path` (owning doc's path), `raw` (the
 block's raw source bytes), `hash` (hex `raw_hash`), `updated_at` (the
-latest commit `ts` among the block's `block_changes`, null when none),
+latest commit `ts` among the block's `block_changes`, null when none —
+since store 14.2 those rows are the commits that *changed* the block, so
+this is the block's own last change: its insertion, edit, move, split/merge
+lineage or resurrection, never a sibling's edit; through 14.1 every commit
+to the document wrote a `same` row and the value was the document's —
+`reads::sibling-updated-at-does-not-move`),
 `doc_id` (the owning document's id), `type`, `text`, `attrs`
 (parsed), `ordinal` (the block's 0-based ordinal among its siblings — the
 `ordinal` column), `depth` (its nesting depth, 0 at the top level — the
@@ -1800,6 +1805,22 @@ both and runs both harnesses.
 
 ## Decisions
 
+- 2026-10-13 (store 14.2; no surface version move): a block's `updated_at`
+  is the block's own last change and `blocks_history` lists the commits that
+  changed it (§1.2). The surface pinned the mechanism — `MAX(commits.ts)`
+  over the block's `block_changes`, newest-first over the same rows — and
+  the store changed what the rows are: a `same` verdict is no longer
+  persisted, and the api path classifies carries as the matcher does, so a
+  commit that left a block byte-identical in place no longer appears in its
+  history or moves its timestamp. The wording of §1.2 names the new meaning;
+  the shapes are unchanged, which is why the surface version stays. What a
+  reader loses — "this block was present and unchanged in commit X" — is
+  `docs_diff` over two revisions, and the `blocks_history` description says
+  so. Fixtures: `reads::workspace-writes` lost the `edited / api` entries of
+  untouched blocks from its `blocks_history` reads, and `interop.json`'s
+  write cases their siblings' rows the same way; new
+  `reads::sibling-updated-at-does-not-move` pins the four timestamps and two
+  histories after a one-block `apply`.
 - 2026-10-13, surface 4.7: history is queryable — the `revisions` target and
   `docs_read { at }`. The two web clients over the MCP surface (`graph-ui`,
   `live-tail`) run against the minimal tools profile, where everything they do

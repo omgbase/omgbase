@@ -67,7 +67,7 @@ function runGcCmd(cli: Cli, args: string[]): number {
   if (values.help) {
     return renderHelp(cli, {
       name: "gc",
-      summary: "Mark-and-sweep unreferenced blobs and tree nodes (refuses unless gc.enabled is set in repo settings)",
+      summary: "Mark-and-sweep unreferenced blobs and tree nodes, and the `same` disposition rows a pre-14.2 store wrote (refuses unless gc.enabled is set in repo settings)",
       usage: "gc [--dry-run] [--vacuum]",
       options: [
         ["--dry-run", "report what would be swept, sweep nothing (allowed even when gc is disabled)"],
@@ -84,7 +84,9 @@ function runGcCmd(cli: Cli, args: string[]): number {
   if (!enabled && !dryRun) {
     throw new EngineErrorLike("target_missing", "gc is disabled; set gc.enabled=true (or use --dry-run)");
   }
-  const swept = runGc(ws.store, { enabled: enabled || dryRun });
+  // A dry run counts every sweep — blobs, tree nodes and the `same` disposition
+  // rows a 14.1 store wrote (spec/store §7, 14.2) — and deletes nothing.
+  const swept = runGc(ws.store, { enabled: enabled || dryRun, dryRun });
   // `--vacuum` runs after the sweep (the sweep's freed pages are what it returns);
   // a dry run measures the free pages and vacuums nothing (spec/store §7).
   const vac = values.vacuum
@@ -94,7 +96,7 @@ function runGcCmd(cli: Cli, args: string[]): number {
     : undefined;
   const result = vac ? { ...swept, vacuum: vac } : swept;
   if (cli.flags.mode !== "human") return emitMachine(cli, result);
-  cli.io.err(cli.style.dim(`  swept ${swept.blobsSwept} blobs, ${swept.treeNodesSwept} tree nodes`));
+  cli.io.err(cli.style.dim(`  swept ${swept.blobsSwept} blobs, ${swept.treeNodesSwept} tree nodes, ${swept.sameDispositionsSwept} same dispositions`));
   if (vac) cli.io.err(cli.style.dim(vac.applied ? `  vacuumed, reclaimed ${humanBytes(vac.reclaimable)}` : `  would vacuum ${humanBytes(vac.reclaimable)}`));
   return EXIT_OK;
 }
@@ -110,7 +112,7 @@ function runDoctor(cli: Cli, args: string[]): number {
       usage: ["doctor [--json]", "doctor --size [--json]"],
       options: [
         ["--size", "instead of the checks: what the database is made of — bytes and rows per category (content, history, search, sync) and table, the file's pages, what VACUUM would reclaim, advice"],
-        ["--json", "`{ ok, checks: [{ name, ok, detail }] }`; with --size `{ file, categories, advice }`"],
+        ["--json", "`{ ok, checks: [{ name, ok, detail }] }`; with --size `{ file, categories, same_dispositions, advice }`"],
       ],
     });
   }

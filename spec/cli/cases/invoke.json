@@ -578,7 +578,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "  gc — Mark-and-sweep unreferenced blobs and tree nodes (refuses unless gc.enabled is set in repo settings)\n  usage: omg gc [--dry-run] [--vacuum]\n  options:\n    --dry-run   report what would be swept, sweep nothing (allowed even when gc is disabled)\n    --vacuum    after the sweep, VACUUM the database to return its free pages to the filesystem (`doctor --size` shows how many)\n    -h, --help  show this help\n"
+        "stdout": "  gc — Mark-and-sweep unreferenced blobs and tree nodes, and the `same` disposition rows a pre-14.2 store wrote (refuses unless gc.enabled is set in repo settings)\n  usage: omg gc [--dry-run] [--vacuum]\n  options:\n    --dry-run   report what would be swept, sweep nothing (allowed even when gc is disabled)\n    --vacuum    after the sweep, VACUUM the database to return its free pages to the filesystem (`doctor --size` shows how many)\n    -h, --help  show this help\n"
       }
     },
     {
@@ -590,7 +590,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "  doctor — Invariant sweep: convergence, FTS rows vs live leaf blocks, dangling revisions, SQLite integrity — exit 1 on any failure (CI-able)\n  usage: omg doctor [--json]\n         omg doctor --size [--json]\n  options:\n    --size      instead of the checks: what the database is made of — bytes and rows per category (content, history, search, sync) and table, the file's pages, what VACUUM would reclaim, advice\n    --json      `{ ok, checks: [{ name, ok, detail }] }`; with --size `{ file, categories, advice }`\n    -h, --help  show this help\n"
+        "stdout": "  doctor — Invariant sweep: convergence, FTS rows vs live leaf blocks, dangling revisions, SQLite integrity — exit 1 on any failure (CI-able)\n  usage: omg doctor [--json]\n         omg doctor --size [--json]\n  options:\n    --size      instead of the checks: what the database is made of — bytes and rows per category (content, history, search, sync) and table, the file's pages, what VACUUM would reclaim, advice\n    --json      `{ ok, checks: [{ name, ok, detail }] }`; with --size `{ file, categories, same_dispositions, advice }`\n    -h, --help  show this help\n"
       }
     },
     {

@@ -36,7 +36,7 @@ import { oqxRun, type OqxResult } from "../../src/oqx-js/run.js";
 import { FilterInvalid } from "../../src/search/cel/parser.js";
 import { buildServer, type ServerContext } from "../../src/mcp/server.js";
 import { deepEqualTol } from "../reconcile/fixture.js";
-import { FIXTURE_REPO_SLUG, TS_RE, toOutcome, validateSteps, type ExtraStepValidator, type Step as StoreStep, type StepOutcome as StoreStepOutcome } from "../store/fixture.js";
+import { FIXTURE_REPO_SLUG, TS_RE, runExecStep, runGcStep, toOutcome, validateSteps, type ExtraStepValidator, type Step as StoreStep, type StepOutcome as StoreStepOutcome } from "../store/fixture.js";
 
 export { deepEqualTol, FIXTURE_REPO_SLUG };
 
@@ -518,6 +518,10 @@ export async function runReadsCase(c: ReadsCaseInput, corpus?: Record<string, st
           steps.push(outcomes.map(toOutcome));
         } else if ("sweep" in step) {
           steps.push({ swept: sweepResurrectionPool(store, step.sweep.ts) });
+        } else if ("gc" in step) {
+          steps.push(runGcStep(store));
+        } else if ("exec" in step) {
+          steps.push(runExecStep(store, step.exec.sql));
         } else {
           const { tool, args, ts } = step.read;
           const cl = client;

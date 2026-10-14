@@ -8,6 +8,8 @@ import type { Store } from "./store.js";
 export interface GcResult {
   blobsSwept: number;
   treeNodesSwept: number;
+  /** spec/store §7 (14.2): `same` rows a 14.1 store wrote into `dispositions`/`block_changes` — history nothing reads. */
+  sameDispositionsSwept: number;
 }
 
 // Collect the set of tree-node hashes reachable from every revision root, and
@@ -40,29 +42,48 @@ function markReachable(store: Store): { trees: Set<string>; blobs: Set<string> }
   return { trees, blobs };
 }
 
+/** The `same` rows a store through 14.1 persisted (spec/store §7, 14.2). */
+export function countSameDispositions(store: Store): number {
+  return (store.db.prepare("SELECT count(*) AS c FROM dispositions WHERE kind = 'same'").get() as { c: number }).c;
+}
+
 /**
  * Mark-and-sweep GC (flag-gated; enabled must be true to run — v1.0 ships it
  * off). Removes blobs/tree_nodes unreachable from any revision root. Because
  * revisions are append-only and never pruned in v1, nothing is actually
- * unreachable unless revision pruning ran first — so this is a no-op in a
+ * unreachable unless revision pruning ran first — so that half is a no-op in a
  * default v1 repo, exactly as specified. Rebuild-equivalence is preserved.
+ *
+ * spec/store §7 (14.2): the same sweep deletes every `same` row of
+ * `dispositions` and `block_changes` — what a 14.1 store wrote for every
+ * untouched block of every commit, and nothing reads (`updated_at` and
+ * `blocks_history` are the block's own changes now). Not a migration: a
+ * data-only change needs no `user_version`, and opening a database must never
+ * bulk-delete. `dryRun` counts everything and deletes nothing.
  */
-export function runGc(store: Store, opts: { enabled?: boolean } = {}): GcResult {
-  if (!opts.enabled) return { blobsSwept: 0, treeNodesSwept: 0 };
+export function runGc(store: Store, opts: { enabled?: boolean; dryRun?: boolean } = {}): GcResult {
+  if (!opts.enabled) return { blobsSwept: 0, treeNodesSwept: 0, sameDispositionsSwept: 0 };
   return store.write((db): GcResult => {
     const { trees, blobs } = markReachable(store);
+    const dry = Boolean(opts.dryRun);
 
     let treeNodesSwept = 0;
     const allTrees = db.prepare("SELECT hash FROM tree_nodes").all() as { hash: Buffer }[];
     const delTree = db.prepare("DELETE FROM tree_nodes WHERE hash = ?");
-    for (const t of allTrees) if (!trees.has(t.hash.toString("hex"))) { delTree.run(t.hash); treeNodesSwept++; }
+    for (const t of allTrees) if (!trees.has(t.hash.toString("hex"))) { if (!dry) delTree.run(t.hash); treeNodesSwept++; }
 
     let blobsSwept = 0;
     const allBlobs = db.prepare("SELECT hash FROM blobs").all() as { hash: Buffer }[];
     const delBlob = db.prepare("DELETE FROM blobs WHERE hash = ?");
-    for (const b of allBlobs) if (!blobs.has(b.hash.toString("hex"))) { delBlob.run(b.hash); blobsSwept++; }
+    for (const b of allBlobs) if (!blobs.has(b.hash.toString("hex"))) { if (!dry) delBlob.run(b.hash); blobsSwept++; }
 
-    return { blobsSwept, treeNodesSwept };
+    const sameDispositionsSwept = countSameDispositions(store);
+    if (!dry && sameDispositionsSwept > 0) {
+      db.prepare("DELETE FROM block_changes WHERE kind = 'same'").run();
+      db.prepare("DELETE FROM dispositions WHERE kind = 'same'").run();
+    }
+
+    return { blobsSwept, treeNodesSwept, sameDispositionsSwept };
   });
 }
 

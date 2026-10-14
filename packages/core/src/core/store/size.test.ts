@@ -184,6 +184,29 @@ describe("advice", () => {
     const blind: SizeCategoryReport = { name: "history", bytes: null, share: null, rows: 9, tables: [] };
     expect(sizeAdvice(file(), [blind])).toEqual(["nothing to reclaim"]);
   });
+  it("names `same` dispositions past 25 % of the table, after history and before embeddings (store 14.2)", () => {
+    const history = (rows: number): SizeCategoryReport => ({
+      name: "history", bytes: 40, share: 40, rows,
+      tables: [{ name: "dispositions", bytes: 40, share: 40, rows, indexes: 0 }],
+    });
+    expect(sizeAdvice(file(), [cat("content", 60, 100), history(100)], 26)).toEqual([
+      "26 same dispositions are history nothing reads (store 14.2): `omg gc` removes them, `--vacuum` reclaims the pages",
+    ]);
+    // Exactly 25 % does not fire; zero never does; the share is over rows, so it holds without dbstat.
+    expect(sizeAdvice(file(), [cat("content", 60, 100), history(100)], 25)).toEqual(["nothing to reclaim"]);
+    expect(sizeAdvice(file(), [cat("content", 60, 100), history(100)], 0)).toEqual(["nothing to reclaim"]);
+    const blind: SizeCategoryReport = { name: "history", bytes: null, share: null, rows: 10, tables: [{ name: "dispositions", bytes: null, share: null, rows: 10, indexes: null }] };
+    expect(sizeAdvice(file(), [blind], 9)).toEqual([
+      "9 same dispositions are history nothing reads (store 14.2): `omg gc` removes them, `--vacuum` reclaims the pages",
+    ]);
+    const cats = [cat("content", 13, 100), cat("history", 57, 100, [["dispositions", 57]]), cat("search", 30, 100, [["embeddings", 26]])];
+    cats[1]!.tables[0]!.rows = 4;
+    expect(sizeAdvice(file(), cats, 3).map((a) => a.split(":")[0])).toEqual([
+      "history dominates (57.0%)",
+      "3 same dispositions are history nothing reads (store 14.2)",
+      "embeddings are 26.0% of the database",
+    ]);
+  });
 });
 
 describe("vacuum", () => {

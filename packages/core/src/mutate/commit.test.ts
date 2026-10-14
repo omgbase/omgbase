@@ -89,7 +89,10 @@ describe("commitChangeset — one transaction, one commit per request", () => {
     expect(d.origin).toBe("api");
     expect(d.revisions.map((r) => r.path)).toEqual(["/a.md", "/b.md"]);
     expect(d.revisions.map((r) => r.id)).toEqual([a, b]);
-    expect(d.summary).toBe("api(agent:test): /a.md, /b.md — 4 edited, 2 inserted");
+    // store 14.2: the untouched blocks of both documents are `same` and not
+    // persisted, so the digest counts only the two appended blocks (through
+    // 14.1 every carried block was `edited`: "4 edited, 2 inserted").
+    expect(d.summary).toBe("api(agent:test): /a.md, /b.md — 2 inserted");
   });
 
   it("a sync_conflict on the third document commits nothing: no file written, no api row, one observed commit for the dirty bytes", () => {
@@ -184,7 +187,9 @@ describe("docsMove — one commit with the retarget", () => {
 
     const feed = changesSince(store, repoId, { cursor: head });
     expect(feed.digests).toHaveLength(1);
-    expect(feed.digests[0]!.summary).toBe("api(agent:test): moved /old.md → /moved/new.md; /b.md, /c.md — 5 edited");
+    // store 14.2: only the link-bearing blocks the retarget rewrote are `edited`;
+    // the sources' other blocks are `same` and not persisted ("5 edited" through 14.1).
+    expect(feed.digests[0]!.summary).toBe("api(agent:test): moved /old.md → /moved/new.md; /b.md, /c.md — 3 edited");
     expect(feed.digests[0]!.revisions.map((r) => r.path)).toEqual(["/b.md", "/c.md"]);
     expect(readFileSync(join(dir, "b.md"), "utf8")).toBe("# B\n\nSee [old](/moved/new.md#Top) here.\n");
     expect(existsSync(join(dir, "old.md"))).toBe(false);

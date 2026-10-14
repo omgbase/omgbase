@@ -1537,28 +1537,10 @@
           },
           {
             "commit_id": "c_1",
-            "block_id": "b_0",
-            "kind": "same",
-            "confidence": 1,
-            "reason": "exact_hash",
-            "matcher_v": "m2.3",
-            "detail": {}
-          },
-          {
-            "commit_id": "c_1",
             "block_id": "b_1",
             "kind": "deleted",
             "confidence": null,
             "reason": "tombstone",
-            "matcher_v": "m2.3",
-            "detail": {}
-          },
-          {
-            "commit_id": "c_2",
-            "block_id": "b_0",
-            "kind": "same",
-            "confidence": 1,
-            "reason": "exact_hash",
             "matcher_v": "m2.3",
             "detail": {}
           },
@@ -1584,19 +1566,9 @@
             "kind": "inserted"
           },
           {
-            "block_id": "b_0",
-            "commit_id": "c_1",
-            "kind": "same"
-          },
-          {
             "block_id": "b_1",
             "commit_id": "c_1",
             "kind": "deleted"
-          },
-          {
-            "block_id": "b_0",
-            "commit_id": "c_2",
-            "kind": "same"
           },
           {
             "block_id": "b_1",

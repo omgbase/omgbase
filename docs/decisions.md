@@ -23,6 +23,7 @@ Format: one ADR per decision; status is `proposed` until Brendan ratifies (`acce
 **Context:** If edges/search/CAS hang off heuristic identity, matcher errors corrupt data. A file diff cannot testify to operations, only to states.
 **Decision:** All operational data (edges, indexes, embeddings, rendering, CAS) derives from current parsed content. Identity threads only history/lineage. API commits record operations (intent); observed commits record dispositions (kind, confidence, reason, matcher_v). Snapshot chain is the source of truth; the commit log is the change feed (no event sourcing).
 **Consequences:** matcher fallibility degrades biographies, never truth; history is honest about inference; replay/audit still possible via ops on api commits.
+**Amendment (2026-10-13, store 14.2):** dispositions record what *changed*. A `same` verdict is produced and counted but never persisted, and the api path classifies carries as the matcher does instead of stamping every carried block `edited`; a block's `updated_at` and `blocks_history` are therefore its own changes, and "present and unchanged in commit X" is derived by diffing two revisions. Measured on a real repository, nine in ten persisted rows had been `same` (`spec/store` §10, Decisions). The retention question of `docs/data-model.md` §7 is touched only this far: a pre-14.2 database's `same` rows are swept by `omg gc`'s default sweep, not by a migration; revisions and commits are still kept forever.
 
 ## ADR-004 — Canonicality split
 **Status:** proposed

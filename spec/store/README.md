@@ -458,11 +458,26 @@ prepared result):
    `norm_hash`, `trivia_hash` (`NULL` when the trivia is empty; nested blocks
    always), `created_commit = this commit`, `deleted_commit = NULL`. Then
    rebuild `sections` (§4.5) and the FTS rows for the doc (live leaves).
-10. **Dispositions.** For each disposition of the result: `INSERT OR IGNORE`
-    `(commit_id, block_id, kind, confidence, reason, matcher_v, detail as
-    JSON)` into `dispositions`, and `INSERT OR IGNORE (block_id, commit_id,
-    kind)` into `block_changes`. `detail` keeps the matcher's key spelling
-    (`spec/reconcile` §10).
+10. **Dispositions.** For each disposition of the result **whose `kind` is
+    not `same`** (14.2): `INSERT OR IGNORE` `(commit_id, block_id, kind,
+    confidence, reason, matcher_v, detail as JSON)` into `dispositions`, and
+    `INSERT OR IGNORE (block_id, commit_id, kind)` into `block_changes`.
+    `detail` keeps the matcher's key spelling (`spec/reconcile` §10). A
+    `same` verdict — the block's raw bytes, parent and sibling index are
+    those of the old tree — is **not persisted**: the matcher still
+    produces one per untouched block (and the outcome below counts it), but
+    the two tables record what *changed*, so a block's rows are its own
+    history — its `inserted` row (the first revision writes one for every
+    block; the mint oracle of §2.1 depends on it), then one row per commit
+    that edited, moved, split, merged or resurrected it — and `MAX(commits.ts)`
+    over a block's `block_changes` is the block's own last change, not its
+    siblings'. Every other kind (`inserted`, `edited`, `moved`,
+    `edited_moved`, `deleted`, `split_from`, `merged_into`, `copied_from`,
+    `resurrected`, `bulk_rewrite`, and the cross-document kinds) is written
+    as before, confidence, reason, matcher version and detail untouched
+    (`spec/reconcile` R5/R6 hold for what is persisted). Through 14.1 every
+    verdict was written: about 18.5 rows per revision on a real repository,
+    nine in ten of them `same`, read by nothing (§10, Decisions).
 11. **Consume the pool.** Delete the `resurrection_pool` row of every id in
     `consumed_pool`.
 12. **Pointers.** `UPDATE docs SET current_rev = rev_id, file_hash =
@@ -483,7 +498,11 @@ prepared result):
     flag; an `api` ingest (`spec/mutate` §4) leaves it untouched.
 
 The member's outcome is `{ echo: false, doc, commit, rev, converged,
-conflicted, dispositions: kind → count over this commit }`.
+conflicted, dispositions: kind → count over this commit }`. The counts are
+over **every verdict the matcher produced**, `same` included — the outcome
+describes what the matcher saw; the tables describe what changed (step
+10) — so an implementation counts the in-memory result, never the rows
+(14.2; through 14.1 the two were the same list).
 
 **The api path (13.7).** `spec/mutate` §4 step 5(c) runs this procedure for
 every document of a changeset inside **one transaction**: step 5 runs once,
@@ -498,7 +517,10 @@ cross-document move run in load order, so only their visibility changes —
 `spec/mutate` §10); step 14 never runs. The observe path is unchanged: one
 transaction per member, one commit per member (the per-member commit ids
 `spec/store` fixtures pin). Mint order on the api path: one `c`, then per
-document `r`, `x`, `e`.
+document `r`, `x`, `e`. The known-id resolver's verdicts are
+`spec/mutate` §4 step 5(b)'s — since 14.2 a carried block is classified
+exactly as `spec/reconcile` §2 classifies a carry, so an untouched block is
+`same` and step 10 drops it there too; a one-block edit writes one row.
 
 **The api path (14.0).** The same transaction records the file half as
 intent, after every document's steps and before COMMIT: one
@@ -687,6 +709,25 @@ behind a flag, **off**, and because revisions are never pruned in v1 nothing
 is ever unreachable — §8 I5 checks exactly that. The only routine collection
 is the pool sweep (§5.5).
 
+**The `same` sweep** (14.2). The same collection — the default sweep, under
+the same flag, no option — also deletes every `block_changes` row and every
+`dispositions` row with `kind = 'same'`: what a store through 14.1 wrote for
+every untouched block of every commit (§5.4 step 10) and nothing reads. The
+result reports the three counts side by side — `blobs`, `tree_nodes`,
+`same_dispositions` (the reference's `GcResult` spells them `blobsSwept`,
+`treeNodesSwept`, `sameDispositionsSwept`; the CLI prints `swept <b> blobs,
+<t> tree nodes, <s> same dispositions`, `spec/cli` §6). A **dry run** counts
+all three and deletes nothing. A fresh 14.2 store never has such rows, so
+the sweep is a no-op there; on a 14.1 database it is the whole reduction.
+It is a sweep and not a migration on purpose: a data-only change needs no
+`user_version` (a store major for nothing), opening a database must never
+bulk-delete (writer lock, WAL growth and startup time on a 130 MB file),
+gc already has the fixture device in both engines and runs on the user's
+schedule, and `gc --vacuum` is what returns the pages afterwards. Rebuild
+(above) is unchanged — `block_changes` is still derived from `dispositions`
+— and since the sweep deletes the same rows from both tables, §8 I8 holds
+before and after it. `garbage::sweep-removes-pre-14.2-same-rows` pins it.
+
 **Size** (14.1). The store answers "what is this database made of" with
 one report, `size_report`, both engines computing it the same way from the
 open connection:
@@ -722,13 +763,21 @@ open connection:
   spec does not name* (`sqlite_schema`, a `sqlite_stat1`, a table from a
   newer schema). A table added to `schema.sql` is assigned here in the same
   change (both engines' tests check the assignment covers the DDL).
+- *`same_dispositions`* (14.2): `count(*)` of `dispositions` rows with
+  `kind = 'same'` — the rows a store through 14.1 wrote and the `same`
+  sweep removes; 0 on a fresh 14.2 store. A top-level integer beside
+  `categories`.
 - *Advice*, deterministic strings in this order, each conditional: `run
   \`omg gc --vacuum\` to return <bytes> of free pages to the filesystem`
   when `reclaimable` exceeds 1 MiB *and* 10 % of `page_count ×
   page_size`; `history dominates (<share>): blobs, tree nodes and
   dispositions grow with every commit — enable gc (\`omg config set
   gc.enabled true\`) and run \`omg gc --vacuum\`` when `history`'s share
-  exceeds 50; `embeddings are <share> of the database: a smaller model
+  exceeds 50; `<n> same dispositions are history nothing reads (store
+  14.2): \`omg gc\` removes them, \`--vacuum\` reclaims the pages` when
+  `same_dispositions` is positive and exceeds 25 % of the `dispositions`
+  table's `rows` (a share over rows, so it holds without `dbstat` too;
+  14.2); `embeddings are <share> of the database: a smaller model
   (\`embedding.model\` / \`embedding.dim\`) or \`omg embed drain --prune\`
   after a model switch shrinks them` when `embeddings` + `doc_embeddings`
   exceed 25 % of the total; else the single line `nothing to reclaim`.
@@ -787,7 +836,12 @@ end of every case; an implementation may assert them in its own tests.
   docs, and every `deleted`/`merged_into` one names no live row of any of
   them. (Older commits are not checked against `blocks`: a block `inserted`
   under one doc may legitimately be live in another after a later
-  cross-document resurrection.)
+  cross-document resurrection.) No row has `kind = 'same'` (14.2; §5.4
+  step 10 never writes one and the §7 sweep removes a 14.1 store's), and
+  `block_changes` is exactly the `(block_id, commit_id, kind)` projection
+  of `dispositions` (I8) — so every live block has at least its `inserted`
+  (or lineage/resurrection) row, and a block's rows are the commits that
+  changed it.
 - **I8 Rebuild equivalence.** `sections` and `block_changes` recomputed per
   §7 equal the stored rows.
 
@@ -906,8 +960,14 @@ pins `database schema (v15) is newer than this build (v14); upgrade omgbase`.
   by the validator) and `items` in batch order; an item is `{ path, source }`
   with `source` a string (the exact file content) or `null` (the path is
   gone). Paths are repo-relative, no leading slash, end in `.md`, and are
-  distinct within one batch. `sweep` carries `ts`. `expect.steps` has one
-  entry per step.
+  distinct within one batch. `sweep` carries `ts`. `gc` (14.2) is `{}`: the
+  §7 collection, enabled, never a dry run. `exec` (14.2) is `{ sql: [
+  "<statement>", … ] }`: authored SQL run verbatim, in order, in one
+  transaction — the device that puts rows a 14.2 store never writes (a 14.1
+  store's `same` dispositions) into a case; a statement may not reference
+  anything the fixture minter has not issued, and the invariants are not
+  checked after it (only after the next `observe`/`gc`). `expect.steps` has
+  one entry per step.
 - `config` overrides any subset of `spec/reconcile` §6 for every observe step
   of the case (the store passes it through).
 
@@ -916,9 +976,12 @@ pins `database schema (v15) is newer than this build (v14); upgrade omgbase`.
 - `steps`: one entry per step. For `observe`, a list of outcomes in item
   order — observed items as `{ path, echo, doc, commit, rev, converged,
   conflicted, dispositions }` (`commit`/`rev` `null` on an echo;
-  `dispositions` a kind → count object, `{}` on an echo), gone items as
+  `dispositions` a kind → count object over every verdict, `same` included
+  — §5.4; `{}` on an echo), gone items as
   `{ path, deleted, doc }` (`doc` null when nothing was live). For `sweep`,
-  `{ swept: <rows deleted> }`.
+  `{ swept: <rows deleted> }`. For `gc` (14.2), `{ gc: { blobs, tree_nodes,
+  same_dispositions } }` — the three counts of §7. For `exec` (14.2),
+  `{ changes: <rows changed, summed over the statements> }`.
 - `docs` ordered by `path`; `commits` by `seq`; `revisions` by `(doc_id
   bytewise, seq)`; `blobs` and `tree_nodes` by `hash`; `blocks` by doc (in
   `docs` order) then **pre-order** over the doc's rows (children by
@@ -960,6 +1023,21 @@ Each is **pinned** (a fixture asserts it; changing it is a store change under
 "Versioning") or **fixed** (the prose above is the fix and the reference is
 brought to it).
 
+- **Changed (14.2) — `same` dispositions are not persisted.** Through 14.1
+  both engines wrote one `dispositions` row and one `block_changes` row for
+  every verdict of every commit, `same` included — and the api path stamped
+  every carried block `edited` even when the changeset never touched it. So
+  a block's `updated_at` (`MAX(commits.ts)` over its `block_changes`) was
+  the document's, and `blocks_history` listed every commit to the document.
+  §5.4 step 10 now drops `same`, the known-id resolver classifies carries
+  as the matcher does, and §7's default sweep removes a 14.1 store's rows.
+  What is lost: `blocks_history` can no longer say "present and unchanged
+  in commit X" — derivable on demand by diffing two trees, as `docs_diff`
+  does. The observe outcome still counts `same` (it reports the matcher).
+  Fixtures: every observation case's `dispositions`/`block_changes` lost
+  exactly its `same` rows and nothing else; `identity::edit-one-of-three-
+  writes-one-row`, `::move-only-change-writes-moved-rows` and
+  `garbage::sweep-removes-pre-14.2-same-rows` pin the new rule.
 - **Fixed (13.6) — two observe-path writes sat outside their transaction.**
   §5.4 step 14's `conflicted` flag was an autocommit after the member's
   transaction in both engines, and §5.6's observed tombstone was bare
@@ -1036,6 +1114,32 @@ brought to it).
 
 ## Decisions
 
+- 2026-10-13, store 14.2: `same` dispositions are not persisted (§5.4 step
+  10), the api path classifies carries as the matcher does, and the default
+  gc sweep removes a 14.1 store's `same` rows (§7). The measurement: on a
+  real repository the matcher wrote about 18.5 disposition rows per
+  revision, nine in ten of them `same` — 11 MB of `dispositions` and an
+  estimated 5–7 MB of `block_changes` that nothing read afterwards, since
+  every reader (`updated_at`, `blocks_history`, the change-feed summary,
+  which already filtered `same`) asks what changed. The meaning chosen: a
+  block's `updated_at` is the block's own last change — inserted, edited,
+  moved, split/merge lineage, resurrection — not its siblings'; a block is
+  updated only when it is updated, and a one-paragraph `plan`/`execute`
+  edit moves one timestamp (through 14.1 the api path stamped every carried
+  block `edited`, so it moved them all). `blocks_history` lists the commits
+  that changed the block. What is lost: the table can no longer say "present
+  and unchanged in commit X" — derivable on demand by diffing two trees, as
+  `docs_diff` does, and never asked of the rows. The outcome keeps counting
+  `same` because it reports the matcher, not the table, and `spec/sync`'s
+  summary buckets read it. Shedding a 14.1 database's rows is gc's default
+  sweep rather than a migration or a flag: a data-only change would need a
+  `user_version` bump (a store major) for nothing, opening a database must
+  never bulk-delete (writer lock, WAL growth, startup time on a 130 MB
+  file), gc already has the fixture device in both engines and runs on the
+  user's schedule, and `gc --vacuum` (14.1) is what returns the pages. The
+  size report gains `same_dispositions` and an advice line past 25 % of the
+  table so `omg doctor --size` says when the sweep is worth running. No
+  DDL: a procedure minor.
 - 2026-10-13, store 14.1: the size report and `vacuum` (§7). Measured by
   hand, a 100 MB database over 2 MB of Markdown was history — blobs, tree
   nodes, dispositions, block changes — not embeddings; the report makes
