@@ -691,18 +691,11 @@
     },
     {
       "name": "no-relations",
-      "notes": "§1.2: edges have no relations — a navigation by a name that is not a target's yields undefined (a target name there is the §1.1 bare-target error: `query-root::bare-target-nodes-on-edge-row`).",
+      "notes": "§1.2 / §1.5: edges have no relations and a closed row shape — a navigation by a name that is not a link field is the §1.5 `filter_invalid` naming the fields (through 4.5 it read absent; a target name there is the §1.1 bare-target error: `query-root::bare-target-nodes-on-edge-row`).",
       "query": "select x: children, y: out_links from links where path == \"index.md\" limit 1",
       "expect": {
-        "hits": [
-          {
-            "id": "e_0",
-            "path": "/index.md"
-          }
-        ],
-        "truncated": false,
-        "cursor": null,
-        "consumer": "collect"
+        "error": "filter_invalid",
+        "message_includes": "`children` is not a field of links (fields: id, path, doc_id, block_id, via_id, dst_id, dst_path, uri, field, dst_kind, predicate, provenance, anchor)"
       }
     },
     {

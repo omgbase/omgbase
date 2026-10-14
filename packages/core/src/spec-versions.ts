@@ -20,8 +20,8 @@ export const SPEC_VERSIONS = {
   search: "2.0",
   mutate: "3.5",
   sync: "2.2",
-  surface: "4.5",
-  cli: "4.3",
+  surface: "4.6",
+  cli: "4.4",
 } as const;
 
 export type SpecName = keyof typeof SPEC_VERSIONS;

@@ -12168,7 +12168,11 @@
             ],
             "truncated": false,
             "cursor": null,
-            "consumer": "collect"
+            "consumer": "collect",
+            "hints": [
+              "`out` is not a field of docs and no document in this repository carries a property by that name; did you mean `out_links`?",
+              "`in` is not a field of docs and no document in this repository carries a property by that name; did you mean `id`?"
+            ]
           },
           {
             "hits": [

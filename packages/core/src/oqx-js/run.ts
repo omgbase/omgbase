@@ -11,6 +11,7 @@ import type { Query, Expr, SelectItem } from "@omgbase/oqx";
 import { makeStoreContext, rowRef, type StoreContextOptions } from "./context.js";
 import { SQLiteQueryPlanner, rootTarget } from "./planner.js";
 import { REPO_REMOVED_MESSAGE, TARGETS, bareTargetMessage, pastRootMessage, unknownTargetMessage } from "./root-row.js";
+import { checkNames, type UnknownNames } from "./names.js";
 import type { Store } from "../core/store/store.js";
 import { FilterInvalid } from "../search/cel/parser.js";
 import type { SemanticVec } from "../search/cel/compile.js";
@@ -52,6 +53,12 @@ export interface OqxResult {
    * empty). Paged/deduped exactly like hits — `truncated`/`cursor` apply. For
    * first/single it holds zero or one value. */
   values?: unknown[];
+  /** Unknown names (spec/surface §1.5, 4.6): one line per name the query reads
+   * that is neither a field of its row kind nor a property any object of that
+   * kind in the repository carries — the rows are still returned. First-
+   * reference order, deduplicated; absent when there is none (never `[]`).
+   * Last member of the result, after everything above. */
+  hints?: string[];
 }
 
 export interface OqxOptions {
@@ -72,6 +79,13 @@ export interface OqxOptions {
   /** Force the pure in-memory engine (skip tier-3 pushdown). Internal — used by
    * the differential conformance suite to prove planned == in-memory. */
   plan?: boolean;
+  /** What a tier-3 name on an open kind does (spec/surface §1.5, 4.6; a tier-3
+   * name on `links` is `filter_invalid` either way): `"hint"` records it in
+   * `hints` and runs the query — the default of the source entry (`oqxRun`,
+   * every read); `"refuse"` throws `filter_invalid` before any row is read —
+   * the default of the AST entry (`oqxRunQuery`), whose caller is the write
+   * selector compiler, where a name no row carries would select every row. */
+  unknownNames?: UnknownNames;
 }
 
 // Row-scoped domain functions: authored as free calls (`text("x")`) that
@@ -347,7 +361,8 @@ function oqxRunInner(store: Store, repoId: string, source: string, opts: OqxOpti
   const raw = parse(source);
   const reserved = reservedAlias(raw.select);
   if (reserved) throw reserved;
-  return oqxRunQuery(store, repoId, raw, opts);
+  // The source entry is every read: a tier-3 name on an open kind is a hint.
+  return oqxRunQuery(store, repoId, raw, { unknownNames: "hint", ...opts });
 }
 
 /**
@@ -355,12 +370,29 @@ function oqxRunInner(store: Store, repoId: string, source: string, opts: OqxOpti
  * after `parse`, and the selector compiler (`mutate/select.ts`), which appends
  * its slot items to the RAW tree so a user alias a template reads is inlined
  * by the alias resolution here. Errors are the library's own (`OqxError`);
- * `oqxRun` normalizes them, a caller of this entry does the same.
+ * `oqxRun` normalizes them, a caller of this entry does the same. Unknown
+ * names (4.6) default to `"refuse"` here: this entry's caller is the write
+ * selector, where a name no row carries would select every row; the source
+ * entry passes `"hint"`.
  */
 export function oqxRunQuery(store: Store, repoId: string, raw: Query, opts: OqxOptions = {}): OqxResult {
+  checkRootSpellings(raw);
+  // Unknown names (spec/surface §1.5): judged over the RAW tree — before alias
+  // resolution and the runner's own items — so an alias is never mistaken for
+  // a row property and the verdict never depends on the rows. The selector
+  // compiler's slot items (`__omg_sel_*`, the templates' expressions) are not
+  // the selector: an expression reading an absent property there is
+  // spec/mutate's `target_missing` / absent value, not an unknown name.
+  const own = { ...raw, select: raw.select.filter((it) => !RESERVED_ALIAS_PREFIXES.some((p) => it.name.startsWith(p))) };
+  const hints = checkNames(store, repoId, own, opts.unknownNames ?? "refuse");
+  const result = runResolved(store, repoId, raw, opts);
+  // `hints` is the last member, present only when there is something to say.
+  return hints.length === 0 ? result : { ...result, hints };
+}
+
+function runResolved(store: Store, repoId: string, raw: Query, opts: OqxOptions): OqxResult {
   // The query's `select` aliases are resolved HERE, once, before the runner
   // renames/injects items (an engine evaluates the query it is given).
-  checkRootSpellings(raw);
   const parsed = rewriteQuery(resolveAliases(raw));
   const consumer = parsed.consumer as OqxConsumer;
   const ctxOpts: StoreContextOptions = opts.semanticVectors ? { semanticVectors: opts.semanticVectors } : {};

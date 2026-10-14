@@ -108,9 +108,28 @@ error). A foreign key is named for what it is (`doc_id`, `block_id`, `via_id`,
 `ordinal`, `kind`, `predicate`, `field`). **Same value, same name, everywhere:**
 tool results and arguments spell a row the same way (`id`, `path`, `raw`,
 `hash`, `updated_at`, `doc_id`, …), so a key read from any result pastes into a
-query and into a tool's `id` argument. On the closed `blocks`/`nodes`/`links`
-targets an unknown bare field reads as absent; on the open `docs` target a bare
-key that is not an attribute, a handle or a relation is a document property.
+query and into a tool's `id` argument. On the `blocks`/`nodes` targets a bare
+name that is not an attribute, a handle or a relation reads the row's `attrs`
+key of that name; on the open `docs` target it is a document property.
+
+**Unknown names (spec/surface §1.5, 4.6).** Every name a query reads is judged
+*statically*, before any row is read, against the vocabulary of the row kind
+its scope holds — the kind's attributes, handles and relations, plus every
+authored property at least one live object of that kind in the repository
+carries (a frontmatter/inline key on docs; an `attrs` key on blocks and nodes).
+A name no object carries is reported: on `links` (a closed row shape) it is a
+`filter_invalid` naming the fields; on `docs`, `blocks` and `nodes` a read
+still returns its rows and gains `hints: [string…]` (one line per name, with a
+nearest match when there is one — `` `titel` is not a field of docs and no
+document in this repository carries a property by that name; did you mean
+`title`? ``), while a write selector (`plan`/`apply`/`execute` with `select`) is
+refused, since `where target != "x"` would select every row. The verdict never
+depends on the query's filter: a property some documents carry (`stage` on the
+processes alone) is known, and a repository with no object of a kind has no
+vocabulary to judge by. The judged names are the ones `@omgbase/oqx`'s
+`references` pass lists (spec/oqx AST.md §5b): bare identifiers, dotted
+navigations, outer references, method receivers, every nested block —
+not aliases, `$`-names, bindings or function names.
 
 | kind | attributes | handles / self / relations |
 | --- | --- | --- |

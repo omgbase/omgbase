@@ -1,0 +1,1763 @@
+{
+  "suite": "references",
+  "cases": [
+    {
+      "name": "bare names in select and where, scoped to the source rows",
+      "tags": [
+        "select",
+        "where"
+      ],
+      "notes": "Every bare identifier is a reference to the current row; the scope's one step is the query's source, producing rows at depth 1.",
+      "query": "select name, age from people where age >= 18",
+      "expect": {
+        "references": [
+          {
+            "name": "name",
+            "clause": "select",
+            "scope": {
+              "depth": 1,
+              "steps": [
+                {
+                  "expr": "people",
+                  "depth": 1
+                }
+              ]
+            }
+          },
+          {
+            "name": "age",
+            "clause": "select",
+            "scope": {
+              "depth": 1,
+              "steps": [
+                {
+                  "expr": "people",
+                  "depth": 1
+                }
+              ]
+            }
+          },
+          {
+            "name": "people",
+            "clause": "source",
+            "scope": {
+              "depth": 0,
+              "steps": []
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "the head of the top-level source is a root name",
+      "tags": [
+        "source",
+        "root"
+      ],
+      "notes": "Reported at depth 0 with no steps: nothing is read from a row at the root scope, the host knows its roots.",
+      "query": "from people",
+      "expect": {
+        "references": [
+          {
+            "name": "people",
+            "clause": "source",
+            "scope": {
+              "depth": 0,
+              "steps": []
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "a dotted navigation is one reference with its full path",
+      "tags": [
+        "member"
+      ],
+      "notes": "`meta.owner` is one reference, not `meta` plus `owner`; the host splits it as its data model requires.",
+      "query": "select owner: meta.owner from docs where meta.owner == \"x\"",
+      "expect": {
+        "references": [
+          {
+            "name": "meta.owner",
+            "clause": "select",
+            "scope": {
+              "depth": 1,
+              "steps": [
+                {
+                  "expr": "docs",
+                  "depth": 1
+                }
+              ]
+            }
+          },
+          {
+            "name": "docs",
+            "clause": "source",
+            "scope": {
+              "depth": 0,
+              "steps": []
+            }
+          },
+          {
+            "name": "meta.owner",
+            "clause": "where",
+            "scope": {
+              "depth": 1,
+              "steps": [
+                {
+                  "expr": "docs",
+                  "depth": 1
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "a method call references its receiver, never its name",
+      "tags": [
+        "call"
+      ],
+      "notes": "`lower`, `has` and `size` are not references; `title`, `stage` and `jobs` are.",
+      "query": "from docs where title.lower() == \"x\" and has(stage) and size(jobs) > 1",
+      "expect": {
+        "references": [
+          {
+            "name": "docs",
+            "clause": "source",
+            "scope": {
+              "depth": 0,
+              "steps": []
+            }
+          },
+          {
+            "name": "title",
+            "clause": "where",
+            "scope": {
+              "depth": 1,
+              "steps": [
+                {
+                  "expr": "docs",
+                  "depth": 1
+                }
+              ]
+            }
+          },
+          {
+            "name": "stage",
+            "clause": "where",
+            "scope": {
+              "depth": 1,
+              "steps": [
+                {
+                  "expr": "docs",
+                  "depth": 1
+                }
+              ]
+            }
+          },
+          {
+            "name": "jobs",
+            "clause": "where",
+            "scope": {
+              "depth": 1,
+              "steps": [
+                {
+                  "expr": "docs",
+                  "depth": 1
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "a binding is a host value, not a reference",
+      "tags": [
+        "binding"
+      ],
+      "template": {
+        "strings": [
+          "name from people where employer == ",
+          " and age > ",
+          ""
+        ],
+        "values": [
+          "Globocorp",
+          30
+        ]
+      },
+      "expect": {
+        "references": [
+          {
+            "name": "name",
+            "clause": "select",
+            "scope": {
+              "depth": 1,
+              "steps": [
+                {
+                  "expr": "people",
+                  "depth": 1
+                }
+              ]
+            }
+          },
+          {
+            "name": "people",
+            "clause": "source",
+            "scope": {
+              "depth": 0,
+              "steps": []
+            }
+          },
+          {
+            "name": "employer",
+            "clause": "where",
+            "scope": {
+              "depth": 1,
+              "steps": [
+                {
+                  "expr": "people",
+                  "depth": 1
+                }
+              ]
+            }
+          },
+          {
+            "name": "age",
+            "clause": "where",
+            "scope": {
+              "depth": 1,
+              "steps": [
+                {
+                  "expr": "people",
+                  "depth": 1
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "a select alias is not a reference in where; a row field of the same name inside its own item is",
+      "tags": [
+        "alias",
+        "where"
+      ],
+      "notes": "SEMANTICS §14: `senior` and `n` in `where` are substituted by the language, so they are the aliases' expressions, not row properties; `name` inside `name: name.upper()` is the row field.",
+      "query": "select name: name.upper(), senior: age > 50 from people where senior and name == \"X\"",
+      "expect": {
+        "references": [
+          {
+            "name": "name",
+            "clause": "select",
+            "scope": {
+              "depth": 1,
+              "steps": [
+                {
+                  "expr": "people",
+                  "depth": 1
+                }
+              ]
+            }
+          },
+          {
+            "name": "age",
+            "clause": "select",
+            "scope": {
+              "depth": 1,
+              "steps": [
+                {
+                  "expr": "people",
+                  "depth": 1
+                }
+              ]
+            }
+          },
+          {
+            "name": "people",
+            "clause": "source",
+            "scope": {
+              "depth": 0,
+              "steps": []
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "a later item reading an earlier alias is not a reference; the alias's own expression is",
+      "tags": [
+        "alias",
+        "select"
+      ],
+      "query": "select a: x, b: a + y from people",
+      "expect": {
+        "references": [
+          {
+            "name": "x",
+            "clause": "select",
+            "scope": {
+              "depth": 1,
+              "steps": [
+                {
+                  "expr": "people",
+                  "depth": 1
+                }
+              ]
+            }
+          },
+          {
+            "name": "y",
+            "clause": "select",
+            "scope": {
+              "depth": 1,
+              "steps": [
+                {
+                  "expr": "people",
+                  "depth": 1
+                }
+              ]
+            }
+          },
+          {
+            "name": "people",
+            "clause": "source",
+            "scope": {
+              "depth": 0,
+              "steps": []
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "order by is not rewritten against aliases, so an alias there is a row property",
+      "tags": [
+        "alias",
+        "orderBy"
+      ],
+      "notes": "SEMANTICS §17: `order by n` reads the row's `n`, whatever `select` named — reported so a host can say the row has none.",
+      "query": "select n: name from people order by n",
+      "expect": {
+        "references": [
+          {
+            "name": "name",
+            "clause": "select",
+            "scope": {
+              "depth": 1,
+              "steps": [
+                {
+                  "expr": "people",
+                  "depth": 1
+                }
+              ]
+            }
+          },
+          {
+            "name": "people",
+            "clause": "source",
+            "scope": {
+              "depth": 0,
+              "steps": []
+            }
+          },
+          {
+            "name": "n",
+            "clause": "orderBy",
+            "scope": {
+              "depth": 1,
+              "steps": [
+                {
+                  "expr": "people",
+                  "depth": 1
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "a block alias standing alone in where is the alias",
+      "tags": [
+        "alias",
+        "where",
+        "sugar"
+      ],
+      "query": "select boss: ^people[id == ^manager] from people where boss",
+      "expect": {
+        "references": [
+          {
+            "name": "people",
+            "clause": "select",
+            "scope": {
+              "depth": 0,
+              "steps": []
+            }
+          },
+          {
+            "name": "id",
+            "clause": "where",
+            "scope": {
+              "depth": 2,
+              "steps": [
+                {
+                  "expr": "people",
+                  "depth": 1
+                },
+                {
+                  "expr": "^people",
+                  "depth": 2
+                }
+              ]
+            }
+          },
+          {
+            "name": "manager",
+            "clause": "where",
+            "scope": {
+              "depth": 1,
+              "steps": [
+                {
+                  "expr": "people",
+                  "depth": 1
+                }
+              ]
+            }
+          },
+          {
+            "name": "people",
+            "clause": "source",
+            "scope": {
+              "depth": 0,
+              "steps": []
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "a where-position block scopes its names to its receiver, one deeper",
+      "tags": [
+        "where",
+        "block"
+      ],
+      "query": "from docs where nodes exists { where kind == \"md:task\" and not checked }",
+      "expect": {
+        "references": [
+          {
+            "name": "docs",
+            "clause": "source",
+            "scope": {
+              "depth": 0,
+              "steps": []
+            }
+          },
+          {
+            "name": "nodes",
+            "clause": "where",
+            "scope": {
+              "depth": 1,
+              "steps": [
+                {
+                  "expr": "docs",
+                  "depth": 1
+                }
+              ]
+            }
+          },
+          {
+            "name": "kind",
+            "clause": "where",
+            "scope": {
+              "depth": 2,
+              "steps": [
+                {
+                  "expr": "docs",
+                  "depth": 1
+                },
+                {
+                  "expr": "nodes",
+                  "depth": 2
+                }
+              ]
+            }
+          },
+          {
+            "name": "checked",
+            "clause": "where",
+            "scope": {
+              "depth": 2,
+              "steps": [
+                {
+                  "expr": "docs",
+                  "depth": 1
+                },
+                {
+                  "expr": "nodes",
+                  "depth": 2
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "a select-position block likewise; its own select and where are the block's",
+      "tags": [
+        "select",
+        "block"
+      ],
+      "query": "select tasks: blocks collect { select text where type == \"task\" } from docs",
+      "expect": {
+        "references": [
+          {
+            "name": "blocks",
+            "clause": "select",
+            "scope": {
+              "depth": 1,
+              "steps": [
+                {
+                  "expr": "docs",
+                  "depth": 1
+                }
+              ]
+            }
+          },
+          {
+            "name": "text",
+            "clause": "select",
+            "scope": {
+              "depth": 2,
+              "steps": [
+                {
+                  "expr": "docs",
+                  "depth": 1
+                },
+                {
+                  "expr": "blocks",
+                  "depth": 2
+                }
+              ]
+            }
+          },
+          {
+            "name": "type",
+            "clause": "where",
+            "scope": {
+              "depth": 2,
+              "steps": [
+                {
+                  "expr": "docs",
+                  "depth": 1
+                },
+                {
+                  "expr": "blocks",
+                  "depth": 2
+                }
+              ]
+            }
+          },
+          {
+            "name": "docs",
+            "clause": "source",
+            "scope": {
+              "depth": 0,
+              "steps": []
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "an outer reference is read in the scope its carets name",
+      "tags": [
+        "outer"
+      ],
+      "notes": "`^title` from depth 2 is read at depth 1; its steps are cut after the last depth-1 step.",
+      "query": "from docs where blocks exists { where text == ^title }",
+      "expect": {
+        "references": [
+          {
+            "name": "docs",
+            "clause": "source",
+            "scope": {
+              "depth": 0,
+              "steps": []
+            }
+          },
+          {
+            "name": "blocks",
+            "clause": "where",
+            "scope": {
+              "depth": 1,
+              "steps": [
+                {
+                  "expr": "docs",
+                  "depth": 1
+                }
+              ]
+            }
+          },
+          {
+            "name": "text",
+            "clause": "where",
+            "scope": {
+              "depth": 2,
+              "steps": [
+                {
+                  "expr": "docs",
+                  "depth": 1
+                },
+                {
+                  "expr": "blocks",
+                  "depth": 2
+                }
+              ]
+            }
+          },
+          {
+            "name": "title",
+            "clause": "where",
+            "scope": {
+              "depth": 1,
+              "steps": [
+                {
+                  "expr": "docs",
+                  "depth": 1
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "absolute references and $it heads resolve the same way",
+      "tags": [
+        "outer",
+        "absolute"
+      ],
+      "notes": "`1^title` is `^title` from depth 2; `^$it.layer` is `^layer`; `$it.text` is `text`.",
+      "query": "from docs where blocks exists { where $it.text == 1^title and ^$it.layer == \"x\" }",
+      "expect": {
+        "references": [
+          {
+            "name": "docs",
+            "clause": "source",
+            "scope": {
+              "depth": 0,
+              "steps": []
+            }
+          },
+          {
+            "name": "blocks",
+            "clause": "where",
+            "scope": {
+              "depth": 1,
+              "steps": [
+                {
+                  "expr": "docs",
+                  "depth": 1
+                }
+              ]
+            }
+          },
+          {
+            "name": "text",
+            "clause": "where",
+            "scope": {
+              "depth": 2,
+              "steps": [
+                {
+                  "expr": "docs",
+                  "depth": 1
+                },
+                {
+                  "expr": "blocks",
+                  "depth": 2
+                }
+              ]
+            }
+          },
+          {
+            "name": "title",
+            "clause": "where",
+            "scope": {
+              "depth": 1,
+              "steps": [
+                {
+                  "expr": "docs",
+                  "depth": 1
+                }
+              ]
+            }
+          },
+          {
+            "name": "layer",
+            "clause": "where",
+            "scope": {
+              "depth": 1,
+              "steps": [
+                {
+                  "expr": "docs",
+                  "depth": 1
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "an outer root collection as a receiver is a root name; the lookup's names are the block's",
+      "tags": [
+        "outer",
+        "root",
+        "block"
+      ],
+      "query": "from docs where ^docs exists { where layer == ^layer }",
+      "expect": {
+        "references": [
+          {
+            "name": "docs",
+            "clause": "source",
+            "scope": {
+              "depth": 0,
+              "steps": []
+            }
+          },
+          {
+            "name": "docs",
+            "clause": "where",
+            "scope": {
+              "depth": 0,
+              "steps": []
+            }
+          },
+          {
+            "name": "layer",
+            "clause": "where",
+            "scope": {
+              "depth": 2,
+              "steps": [
+                {
+                  "expr": "docs",
+                  "depth": 1
+                },
+                {
+                  "expr": "^docs",
+                  "depth": 2
+                }
+              ]
+            }
+          },
+          {
+            "name": "layer",
+            "clause": "where",
+            "scope": {
+              "depth": 1,
+              "steps": [
+                {
+                  "expr": "docs",
+                  "depth": 1
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "a plain follow destination is read on the frontier row",
+      "tags": [
+        "follow"
+      ],
+      "notes": "The `follow` node is a step: the walk's frontier rows, at the body's depth.",
+      "query": "from docs follow out_links",
+      "expect": {
+        "references": [
+          {
+            "name": "docs",
+            "clause": "source",
+            "scope": {
+              "depth": 0,
+              "steps": []
+            }
+          },
+          {
+            "name": "out_links",
+            "clause": "follow.destination",
+            "scope": {
+              "depth": 1,
+              "steps": [
+                {
+                  "expr": "docs",
+                  "depth": 1
+                },
+                {
+                  "expr": "follow out_links",
+                  "depth": 1
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "a destination block: its receiver on the frontier row, its body one deeper, its from re-projecting",
+      "tags": [
+        "follow",
+        "block",
+        "from"
+      ],
+      "query": "from docs follow out_links collect { from dst where layer == \"canon\" }",
+      "expect": {
+        "references": [
+          {
+            "name": "docs",
+            "clause": "source",
+            "scope": {
+              "depth": 0,
+              "steps": []
+            }
+          },
+          {
+            "name": "out_links",
+            "clause": "follow.destination",
+            "scope": {
+              "depth": 1,
+              "steps": [
+                {
+                  "expr": "docs",
+                  "depth": 1
+                },
+                {
+                  "expr": "follow out_links collect { from dst where layer == \"canon\" }",
+                  "depth": 1
+                }
+              ]
+            }
+          },
+          {
+            "name": "dst",
+            "clause": "from",
+            "scope": {
+              "depth": 2,
+              "steps": [
+                {
+                  "expr": "docs",
+                  "depth": 1
+                },
+                {
+                  "expr": "follow out_links collect { from dst where layer == \"canon\" }",
+                  "depth": 1
+                },
+                {
+                  "expr": "out_links",
+                  "depth": 2
+                }
+              ]
+            }
+          },
+          {
+            "name": "layer",
+            "clause": "where",
+            "scope": {
+              "depth": 2,
+              "steps": [
+                {
+                  "expr": "docs",
+                  "depth": 1
+                },
+                {
+                  "expr": "follow out_links collect { from dst where layer == \"canon\" }",
+                  "depth": 1
+                },
+                {
+                  "expr": "out_links",
+                  "depth": 2
+                },
+                {
+                  "expr": "dst",
+                  "depth": 2
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "a destination block's frontier reads the occurrence, one level out for the carets",
+      "tags": [
+        "follow",
+        "frontier"
+      ],
+      "notes": "SEMANTICS §20: the clause's depth is the block's minus one (`^` is the walk's enclosing scope) while its bare names read the destination's rows.",
+      "query": "from docs follow out_links collect { from dst frontier layer == \"canon\" }",
+      "expect": {
+        "references": [
+          {
+            "name": "docs",
+            "clause": "source",
+            "scope": {
+              "depth": 0,
+              "steps": []
+            }
+          },
+          {
+            "name": "out_links",
+            "clause": "follow.destination",
+            "scope": {
+              "depth": 1,
+              "steps": [
+                {
+                  "expr": "docs",
+                  "depth": 1
+                },
+                {
+                  "expr": "follow out_links collect { from dst frontier layer == \"canon\" }",
+                  "depth": 1
+                }
+              ]
+            }
+          },
+          {
+            "name": "dst",
+            "clause": "from",
+            "scope": {
+              "depth": 2,
+              "steps": [
+                {
+                  "expr": "docs",
+                  "depth": 1
+                },
+                {
+                  "expr": "follow out_links collect { from dst frontier layer == \"canon\" }",
+                  "depth": 1
+                },
+                {
+                  "expr": "out_links",
+                  "depth": 2
+                }
+              ]
+            }
+          },
+          {
+            "name": "layer",
+            "clause": "follow.frontier",
+            "scope": {
+              "depth": 1,
+              "steps": [
+                {
+                  "expr": "docs",
+                  "depth": 1
+                },
+                {
+                  "expr": "follow out_links collect { from dst frontier layer == \"canon\" }",
+                  "depth": 1
+                },
+                {
+                  "expr": "out_links",
+                  "depth": 2
+                },
+                {
+                  "expr": "dst",
+                  "depth": 2
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "a body's own frontier reads the seed row",
+      "tags": [
+        "follow",
+        "frontier"
+      ],
+      "query": "from docs where layer == \"canon\" frontier verified follow out_links collect { from dst }",
+      "expect": {
+        "references": [
+          {
+            "name": "docs",
+            "clause": "source",
+            "scope": {
+              "depth": 0,
+              "steps": []
+            }
+          },
+          {
+            "name": "layer",
+            "clause": "where",
+            "scope": {
+              "depth": 1,
+              "steps": [
+                {
+                  "expr": "docs",
+                  "depth": 1
+                }
+              ]
+            }
+          },
+          {
+            "name": "verified",
+            "clause": "follow.frontier",
+            "scope": {
+              "depth": 1,
+              "steps": [
+                {
+                  "expr": "docs",
+                  "depth": 1
+                }
+              ]
+            }
+          },
+          {
+            "name": "out_links",
+            "clause": "follow.destination",
+            "scope": {
+              "depth": 1,
+              "steps": [
+                {
+                  "expr": "docs",
+                  "depth": 1
+                },
+                {
+                  "expr": "follow out_links collect { from dst }",
+                  "depth": 1
+                }
+              ]
+            }
+          },
+          {
+            "name": "dst",
+            "clause": "from",
+            "scope": {
+              "depth": 2,
+              "steps": [
+                {
+                  "expr": "docs",
+                  "depth": 1
+                },
+                {
+                  "expr": "follow out_links collect { from dst }",
+                  "depth": 1
+                },
+                {
+                  "expr": "out_links",
+                  "depth": 2
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "a body from re-projects the receiver rows; it is read on the rows before it",
+      "tags": [
+        "from"
+      ],
+      "notes": "`docs collect { from blocks … }` is a top-level body whose `from` re-projects each document into its blocks: `blocks` is read on the docs rows, `text` on the blocks.",
+      "query": "docs collect { from blocks where text == \"x\" }",
+      "expect": {
+        "references": [
+          {
+            "name": "docs",
+            "clause": "source",
+            "scope": {
+              "depth": 0,
+              "steps": []
+            }
+          },
+          {
+            "name": "blocks",
+            "clause": "from",
+            "scope": {
+              "depth": 1,
+              "steps": [
+                {
+                  "expr": "docs",
+                  "depth": 1
+                }
+              ]
+            }
+          },
+          {
+            "name": "text",
+            "clause": "where",
+            "scope": {
+              "depth": 1,
+              "steps": [
+                {
+                  "expr": "docs",
+                  "depth": 1
+                },
+                {
+                  "expr": "blocks",
+                  "depth": 1
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "bracket sugar: the receiver is read here, the predicate in the block, the trailing member is not a name",
+      "tags": [
+        "sugar",
+        "member"
+      ],
+      "notes": "`blocks[type == \"task\"].text` is `blocks first { where type == \"task\" }.text`: `.text` navigates a block's value, not a row of any scope.",
+      "query": "select first_task: blocks[type == \"task\"].text from docs",
+      "expect": {
+        "references": [
+          {
+            "name": "blocks",
+            "clause": "select",
+            "scope": {
+              "depth": 1,
+              "steps": [
+                {
+                  "expr": "docs",
+                  "depth": 1
+                }
+              ]
+            }
+          },
+          {
+            "name": "type",
+            "clause": "where",
+            "scope": {
+              "depth": 2,
+              "steps": [
+                {
+                  "expr": "docs",
+                  "depth": 1
+                },
+                {
+                  "expr": "blocks",
+                  "depth": 2
+                }
+              ]
+            }
+          },
+          {
+            "name": "docs",
+            "clause": "source",
+            "scope": {
+              "depth": 0,
+              "steps": []
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "tuple elements and template interpolations are references",
+      "tags": [
+        "tuple",
+        "template"
+      ],
+      "query": "select label: `${title} (${era})`, both: (tags, aliases) from docs",
+      "expect": {
+        "references": [
+          {
+            "name": "title",
+            "clause": "select",
+            "scope": {
+              "depth": 1,
+              "steps": [
+                {
+                  "expr": "docs",
+                  "depth": 1
+                }
+              ]
+            }
+          },
+          {
+            "name": "era",
+            "clause": "select",
+            "scope": {
+              "depth": 1,
+              "steps": [
+                {
+                  "expr": "docs",
+                  "depth": 1
+                }
+              ]
+            }
+          },
+          {
+            "name": "tags",
+            "clause": "select",
+            "scope": {
+              "depth": 1,
+              "steps": [
+                {
+                  "expr": "docs",
+                  "depth": 1
+                }
+              ]
+            }
+          },
+          {
+            "name": "aliases",
+            "clause": "select",
+            "scope": {
+              "depth": 1,
+              "steps": [
+                {
+                  "expr": "docs",
+                  "depth": 1
+                }
+              ]
+            }
+          },
+          {
+            "name": "docs",
+            "clause": "source",
+            "scope": {
+              "depth": 0,
+              "steps": []
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "the language's $-names are not references",
+      "tags": [
+        "dollar"
+      ],
+      "query": "select $key: id, me: $it from docs where $depth > 1 and $it.layer == \"x\"",
+      "expect": {
+        "references": [
+          {
+            "name": "id",
+            "clause": "select",
+            "scope": {
+              "depth": 1,
+              "steps": [
+                {
+                  "expr": "docs",
+                  "depth": 1
+                }
+              ]
+            }
+          },
+          {
+            "name": "docs",
+            "clause": "source",
+            "scope": {
+              "depth": 0,
+              "steps": []
+            }
+          },
+          {
+            "name": "layer",
+            "clause": "where",
+            "scope": {
+              "depth": 1,
+              "steps": [
+                {
+                  "expr": "docs",
+                  "depth": 1
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "a navigation headed by a value is not a reference; the head's own names are",
+      "tags": [
+        "member",
+        "call",
+        "tuple"
+      ],
+      "query": "select n: refs(before).title, p: (a, b).x from docs",
+      "expect": {
+        "references": [
+          {
+            "name": "before",
+            "clause": "select",
+            "scope": {
+              "depth": 1,
+              "steps": [
+                {
+                  "expr": "docs",
+                  "depth": 1
+                }
+              ]
+            }
+          },
+          {
+            "name": "a",
+            "clause": "select",
+            "scope": {
+              "depth": 1,
+              "steps": [
+                {
+                  "expr": "docs",
+                  "depth": 1
+                }
+              ]
+            }
+          },
+          {
+            "name": "b",
+            "clause": "select",
+            "scope": {
+              "depth": 1,
+              "steps": [
+                {
+                  "expr": "docs",
+                  "depth": 1
+                }
+              ]
+            }
+          },
+          {
+            "name": "docs",
+            "clause": "source",
+            "scope": {
+              "depth": 0,
+              "steps": []
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "membership and range operands are references",
+      "tags": [
+        "in",
+        "range"
+      ],
+      "query": "from docs where era in 1500..1600 and \"x\" in tags",
+      "expect": {
+        "references": [
+          {
+            "name": "docs",
+            "clause": "source",
+            "scope": {
+              "depth": 0,
+              "steps": []
+            }
+          },
+          {
+            "name": "era",
+            "clause": "where",
+            "scope": {
+              "depth": 1,
+              "steps": [
+                {
+                  "expr": "docs",
+                  "depth": 1
+                }
+              ]
+            }
+          },
+          {
+            "name": "tags",
+            "clause": "where",
+            "scope": {
+              "depth": 1,
+              "steps": [
+                {
+                  "expr": "docs",
+                  "depth": 1
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "a block's limit reads the row scope like its where",
+      "tags": [
+        "limit",
+        "outer"
+      ],
+      "query": "from docs where blocks exists { limit ^n }",
+      "expect": {
+        "references": [
+          {
+            "name": "docs",
+            "clause": "source",
+            "scope": {
+              "depth": 0,
+              "steps": []
+            }
+          },
+          {
+            "name": "blocks",
+            "clause": "where",
+            "scope": {
+              "depth": 1,
+              "steps": [
+                {
+                  "expr": "docs",
+                  "depth": 1
+                }
+              ]
+            }
+          },
+          {
+            "name": "n",
+            "clause": "limit",
+            "scope": {
+              "depth": 1,
+              "steps": [
+                {
+                  "expr": "docs",
+                  "depth": 1
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "a count body with a nested count test",
+      "tags": [
+        "count",
+        "block"
+      ],
+      "query": "docs count { where layer == \"canon\" and blocks count { where type == \"task\" } > 2 }",
+      "expect": {
+        "references": [
+          {
+            "name": "docs",
+            "clause": "source",
+            "scope": {
+              "depth": 0,
+              "steps": []
+            }
+          },
+          {
+            "name": "layer",
+            "clause": "where",
+            "scope": {
+              "depth": 1,
+              "steps": [
+                {
+                  "expr": "docs",
+                  "depth": 1
+                }
+              ]
+            }
+          },
+          {
+            "name": "blocks",
+            "clause": "where",
+            "scope": {
+              "depth": 1,
+              "steps": [
+                {
+                  "expr": "docs",
+                  "depth": 1
+                }
+              ]
+            }
+          },
+          {
+            "name": "type",
+            "clause": "where",
+            "scope": {
+              "depth": 2,
+              "steps": [
+                {
+                  "expr": "docs",
+                  "depth": 1
+                },
+                {
+                  "expr": "blocks",
+                  "depth": 2
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "a lifted name is a binding of the scope it lands on, not a reference",
+      "tags": [
+        "lift",
+        "binding"
+      ],
+      "notes": "SEMANTICS §19: `^open: value` in the nested block binds `open` on the enclosing row's record, so `open` in the top-level select is not a row property; `value` inside the block is.",
+      "query": "select p: path, open from docs where nodes collect { ^open: value where kind == \"md:task\" }",
+      "expect": {
+        "references": [
+          {
+            "name": "path",
+            "clause": "select",
+            "scope": {
+              "depth": 1,
+              "steps": [
+                {
+                  "expr": "docs",
+                  "depth": 1
+                }
+              ]
+            }
+          },
+          {
+            "name": "docs",
+            "clause": "source",
+            "scope": {
+              "depth": 0,
+              "steps": []
+            }
+          },
+          {
+            "name": "nodes",
+            "clause": "where",
+            "scope": {
+              "depth": 1,
+              "steps": [
+                {
+                  "expr": "docs",
+                  "depth": 1
+                }
+              ]
+            }
+          },
+          {
+            "name": "value",
+            "clause": "select",
+            "scope": {
+              "depth": 2,
+              "steps": [
+                {
+                  "expr": "docs",
+                  "depth": 1
+                },
+                {
+                  "expr": "nodes",
+                  "depth": 2
+                }
+              ]
+            }
+          },
+          {
+            "name": "kind",
+            "clause": "where",
+            "scope": {
+              "depth": 2,
+              "steps": [
+                {
+                  "expr": "docs",
+                  "depth": 1
+                },
+                {
+                  "expr": "nodes",
+                  "depth": 2
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "a lifted name read back from deeper through an outer reference is the same binding",
+      "tags": [
+        "lift",
+        "binding",
+        "outer"
+      ],
+      "notes": "`^refs` inside the `^docs` block resolves to depth 1, where `refs` is lifted by the where block — a binding, not a reference; `slug`, `path`, `value`, `kind` are.",
+      "query": "select p: path, cites: ^docs collect { select target: path where slug in ^refs } from docs where nodes collect { ^refs: value where kind == \"md:wikilink\" }",
+      "expect": {
+        "references": [
+          {
+            "name": "path",
+            "clause": "select",
+            "scope": {
+              "depth": 1,
+              "steps": [
+                {
+                  "expr": "docs",
+                  "depth": 1
+                }
+              ]
+            }
+          },
+          {
+            "name": "docs",
+            "clause": "select",
+            "scope": {
+              "depth": 0,
+              "steps": []
+            }
+          },
+          {
+            "name": "path",
+            "clause": "select",
+            "scope": {
+              "depth": 2,
+              "steps": [
+                {
+                  "expr": "docs",
+                  "depth": 1
+                },
+                {
+                  "expr": "^docs",
+                  "depth": 2
+                }
+              ]
+            }
+          },
+          {
+            "name": "slug",
+            "clause": "where",
+            "scope": {
+              "depth": 2,
+              "steps": [
+                {
+                  "expr": "docs",
+                  "depth": 1
+                },
+                {
+                  "expr": "^docs",
+                  "depth": 2
+                }
+              ]
+            }
+          },
+          {
+            "name": "docs",
+            "clause": "source",
+            "scope": {
+              "depth": 0,
+              "steps": []
+            }
+          },
+          {
+            "name": "nodes",
+            "clause": "where",
+            "scope": {
+              "depth": 1,
+              "steps": [
+                {
+                  "expr": "docs",
+                  "depth": 1
+                }
+              ]
+            }
+          },
+          {
+            "name": "value",
+            "clause": "select",
+            "scope": {
+              "depth": 2,
+              "steps": [
+                {
+                  "expr": "docs",
+                  "depth": 1
+                },
+                {
+                  "expr": "nodes",
+                  "depth": 2
+                }
+              ]
+            }
+          },
+          {
+            "name": "kind",
+            "clause": "where",
+            "scope": {
+              "depth": 2,
+              "steps": [
+                {
+                  "expr": "docs",
+                  "depth": 1
+                },
+                {
+                  "expr": "nodes",
+                  "depth": 2
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "spans cover the whole navigation",
+      "tags": [
+        "spans"
+      ],
+      "query": "select name from people where meta.owner == \"x\"",
+      "spans": true,
+      "expect": {
+        "references": [
+          {
+            "name": "name",
+            "clause": "select",
+            "scope": {
+              "depth": 1,
+              "steps": [
+                {
+                  "expr": "people",
+                  "depth": 1
+                }
+              ]
+            },
+            "span": [
+              7,
+              11
+            ]
+          },
+          {
+            "name": "people",
+            "clause": "source",
+            "scope": {
+              "depth": 0,
+              "steps": []
+            },
+            "span": [
+              17,
+              23
+            ]
+          },
+          {
+            "name": "meta.owner",
+            "clause": "where",
+            "scope": {
+              "depth": 1,
+              "steps": [
+                {
+                  "expr": "people",
+                  "depth": 1
+                }
+              ]
+            },
+            "span": [
+              30,
+              40
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

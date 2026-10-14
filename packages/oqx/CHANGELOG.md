@@ -4,6 +4,12 @@ All notable changes to `@omgbase/oqx` are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [Semantic Versioning](https://semver.org/) (pre-1.0: a minor bump may break).
 
+## [0.23.0] - 2026-10-13
+
+### Minor
+- **OQX 0.23 — the `references` static pass** (`spec/oqx` 0.22 → 0.23; `AST.md` §5b; new suite `references` (27 cases): 1350 → 1377 fixtures; new fixture kind `expect.references`). `references(query)` lists every **name a query reads from a row** — a bare identifier, a dotted navigation headed by one (one reference, the full path: `doc.layer`, `meta.owner`), an outer reference (`^title`, `1^title`; `$it` heads dropped) — in canonical source order, each as `{ name, clause, scope: { depth, steps }, span }`. `scope.steps` is the row chain producing the scope's rows, root first with the depth each step produces: the source, a body's `from`, a block's receiver (one deeper), a `follow` node (the walk's frontier rows, which destinations are read on); an outer reference's steps are cut at its depth; the empty list is the root scope (the source head `from people` is reported there with depth 0). Not references: `$`-names, bindings, function/method names (the receiver and arguments are), projection keys, a `select` alias where the language substitutes it (the same body's `where`; items to its right — an alias's own name inside its own item is the row field; `order by`/`frontier`/`limit`/`offset`/`from`/`follow` are never rewritten, so a name there is a reference), and the trailing members of a navigation headed by a value (`refs(before).title` references `before` only). The pass is host-agnostic and knows no data: a host maps each scope to a row type and judges the name (omgbase's "unknown names" hints and errors, spec/surface 4.6, are built on it). Grammar, semantics and AST shape are unchanged. `LANGUAGE_VERSION` 0.23.
+- `@omgbase/oqx-syntax`: `LANGUAGE_VERSION` 0.23 (no lexical change).
+
 ## [0.22.0] - 2026-10-13
 
 ### Minor

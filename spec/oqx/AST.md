@@ -249,6 +249,76 @@ Rust: `walk::visit(Node::Query(&q), &mut visitor)` with a `Visitor` trait
 (`enter` / `leave`), `walk::transform(&q, &mut f)`; `Node` is a borrowed
 enum over the node kinds, `Clause` the enum above.
 
+## 5b. References (since 0.23)
+
+**`references(root)`** — the static pass over a `query` or `subquery` that
+lists every **name the query reads from a row**, in canonical source order
+(the `visit` order), each with the clause it stands in and the **scope** whose
+rows it is read from. The pass knows no data: it is the host (which knows
+what rows an expression yields) that maps a scope to a row type and judges the
+name against it — omgbase's "`target` is not a field of links" is built on it.
+Both implementations produce the same list for the same query; the fixtures
+`cases/references.json` pin it (`expect.references`, README).
+
+A reference is `{ name, clause, scope: { depth, steps }, span }`:
+
+- `name` — the name **as written**: a bare identifier's name, or for a
+  navigation headed by one the whole dotted path (`doc.layer`, `meta.owner`).
+  A `$it` head is the row itself and is dropped (`$it.title` → `title`,
+  `^$it.layer` → `layer`).
+- `clause` — the `visit` clause the reference sits in (`select`, `source`,
+  `from`, `where`, `orderBy`, `limit`, `offset`, `follow.destination`,
+  `follow.frontier`).
+- `scope.depth` — the scope depth the name is evaluated at (§5 `depth`); for an
+  outer reference, the depth of the position minus its `levels`.
+- `scope.steps` — the expressions that produce the scope's rows, root first,
+  each with the depth of the rows it produces: the query's `source` (depth 1);
+  a body's `from` re-projection (the same depth — a `from` replaces the rows); a
+  block's receiver (one deeper than the scope it is read in), then the block's
+  own `from`; a **`follow` node** (the walk's frontier rows, at the body's
+  depth — the destinations are read on them, a destination block's receiver
+  producing rows one deeper). A name inside a `from` expression sees only the
+  steps before it. For an outer reference the steps are cut after the last
+  step producing rows at its depth. The empty list is the root scope.
+- `span` — the span of the whole reference (the chain, for a navigation).
+
+What is a reference:
+
+- a bare `ident`; a `member` chain headed by an `ident` or an `outer` (one
+  reference, the full path); an `outer` (`^name`, `N^name`), read in the scope
+  its carets name;
+- a `follow` destination that is a plain expression (read on the frontier row,
+  clause `follow.destination`), like a `from`;
+- a method's **receiver** and a function's **arguments** (`target.contains("x")`
+  references `target`; `has(stage)`, `size(jobs)` reference `stage`, `jobs`);
+  the operands of every operator, `in`, a range, a tuple's elements, a
+  template's interpolations;
+- a name read at the **root scope** — the head of the top-level `source`
+  (`from people`, clause `source`), an outer reference with as many carets as
+  there are enclosing scopes (`^docs` from a top-level row) — reported with
+  `depth` 0 and no steps: it names one of the host's roots.
+
+What is not:
+
+- `$`-names (`$key`, `$depth`, `$stop`, …) — the language's values; `$it` alone;
+  a `binding`; a function or method **name**; the keys of a projection (an
+  item's alias, a lift's name);
+- a `select` alias where the language substitutes it (§14 of SEMANTICS): a
+  bare identifier naming an alias — or a chain headed by it — in the same
+  body's `where`, or in a `select` item to the alias's right. An alias's own
+  name inside its own item is the row field and **is** a reference. `order
+  by`, `frontier`, `limit`/`offset`, `from` and `follow` are not rewritten
+  against aliases, so a name there is a reference whatever the `select` says
+  (`select n: name from people order by n` references `n` — the row's);
+- the trailing `.name`s of a navigation whose head is **not** a name — a call
+  (`refs(before).title`), a block (`blocks[type == "task"].text`), a tuple, a
+  literal: the head's value is not a row of any scope, so only the names inside
+  the head are references (`before`; `blocks` and `type`).
+
+TypeScript: `references(root): Reference[]` with `Reference`, `ReferenceScope`,
+`ReferenceStep` (`expr: Expr | Follow`). Rust: `references::references(&q)`
+returning `Vec<Reference>` over borrowed nodes, the same fields.
+
 ## 6. Printing
 
 `print(node)` renders a tree as canonical source: single spaces; `select`
@@ -334,3 +404,4 @@ document says which `major.minor` produced it.
 | 0.20 | Added (minor): the `tuple` expression node; `subquery.frontier` and `subquery.depth`; `query.frontier` (the body's seed frontier, legal only with `follow`). **Removed** (pre-1.0, so a minor): `follow.where`, `follow.frontier`, `follow.depth`, `follow.by` — a destination's `where` is its block's `where`, `frontier`/`depth` are its block's new fields, `by` has no replacement (identity is `$key`, SEMANTICS §16, projectable as a `$key:` item). The `follow.where` and `follow.by` traversal clauses are gone; `follow.frontier` now marks a destination block's `frontier` (visited at depth − 1). |
 | 0.21 | Added (minor): the `template` expression node (`parts: (string \| Expr)[]`, strictly alternating text and interpolation). Its text parts are the first non-node values a child slot holds: a walk over `parts` skips them. Nothing renamed or removed. |
 | 0.22 | Added (minor): `"~"`, `"~*"`, `"!~"`, `"!~*"` as `binary` operators (the infix regex operators, sugar over `matches`). No node or field added, renamed or removed; a reader of an older minor may meet an unknown `binary.op`. The canonical print writes the operator as written (`a ~ b`), at comparison precedence. |
+| 0.23 | Added (minor): the `references` static pass (§5b) and the fixture kind `expect.references` (README). No node or field added, renamed or removed; the grammar and the semantics are unchanged. |

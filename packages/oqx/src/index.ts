@@ -58,6 +58,8 @@ export { parseTemplate } from "./parser.ts";
 export { rawSource, toUtf16, codePointLength } from "./lexer.ts";
 export { resolveAliases } from "./resolve.ts";
 export type { Clause, VisitContext, Visitor, ChildKey, Stripped } from "./walk.ts";
+export type { Reference, ReferenceScope, ReferenceStep } from "./references.ts";
+export { references } from "./references.ts";
 export { CHILDREN, visit, transform, stripSpans, toJSON } from "./walk.ts";
 export type { Template } from "./print.ts";
 export { print, printTemplate } from "./print.ts";

@@ -173,10 +173,20 @@ export function renderOqxResult(cli: Cli, result: OqxResult, bare = false): numb
     });
   }
 
+  // Unknown names (spec/surface §1.5, spec/cli §6 `query`): the result's `hints`
+  // — names the query reads that no row of their kind carries — print LAST on
+  // stderr, one dim `  hint: …` line each, in every human rendering (the
+  // machine modes carry the member itself).
+  const { style, io } = cli;
+  const hints = (): void => {
+    for (const h of result.hints ?? []) io.err(style.dim(`  hint: ${h}`));
+  };
+
   // Scalar consumers (count/exists/none) have no hits — render the reduction itself.
   if (result.consumer === "count" || result.consumer === "exists" || result.consumer === "none") {
     const scalar = result.consumer === "count" ? String(result.count) : result.consumer === "exists" ? String(result.exists) : String(result.none);
     cli.io.out(scalar);
+    hints();
     return EXIT_OK;
   }
 
@@ -185,17 +195,19 @@ export function renderOqxResult(cli: Cli, result: OqxResult, bare = false): numb
   if (result.values) {
     for (const v of result.values) cli.io.out(typeof v === "string" ? v : JSON.stringify(v));
     if (cursor !== null) truncationFooter(cli.io, cli.style, cursor);
+    hints();
     return EXIT_OK;
   }
 
-  const { style, io } = cli;
   if (result.hits.length === 0) {
     io.err(style.dim("  no hits"));
+    hints();
     return EXIT_OK;
   }
   if (bare) renderBareHits(cli, result.hits);
   else renderHits(cli, result.hits);
   if (result.truncated) truncationFooter(io, style, result.cursor ?? "");
+  hints();
   return EXIT_OK;
 }
 

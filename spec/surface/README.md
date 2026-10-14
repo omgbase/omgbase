@@ -593,6 +593,156 @@ not /-rooted); start the page sequence again without a cursor` (and the same
 text as `data.reason`; `query-errors::cursor-from-1x-rejected`, `reads::alchemy`).
 The generic decoder (`cursor.json`) is unchanged.
 
+### 1.5 Unknown names (4.6)
+
+A query that projects, filters or orders by a name no row of the scope's kind
+can carry used to run silently: `select path, target from links` (links have
+`dst_path`) returned rows of an absent column; `where target == "x"` matched
+nothing, `where target != "x"` and `not has(target)` matched **everything** —
+and a write selector aimed by such a name would have selected every row. Since
+4.6 every name a query reads is judged **statically**, before any row is read,
+against the vocabulary of the row kind it is read from. The verdict never
+depends on the query's own filter or on which rows come back: a correct query
+never warns because of what it happens to match.
+
+**Which names are judged.** The references of the query per `spec/oqx`
+AST.md §5b (`references`): every bare identifier, every dotted navigation
+headed by one (`doc.layer`, `meta.owner`, `data.x`), every outer reference
+(`^title`), in `select` items, `where`, `order by`, `frontier`, a `follow`
+destination (plain or the receiver of a destination block) and inside every
+nested block (`nodes exists { where kind == … }` judges `kind` against nodes;
+`^docs exists { where layer == … }` judges `layer` against docs), and the
+receiver of a method call (`target.contains("x")` references `target`). The
+kind a name is judged against is the kind of the rows of its scope, resolved
+along the scope's row chain: the root collection, each `from`, each block
+receiver, a `follow` walk (its frontier rows have the seeds' kind when every
+destination yields rows of that kind, else no kind), through the handles and
+relations of §1.2 (`doc.x` on a block or link judges `x` against docs; `dst.x`
+on a link likewise; `children.x` on a block against blocks). **Not judged:**
+`select` aliases where the language resolves them (the same body's `where`
+and later items — `resolve` already validates them), names a nested block
+lifts onto the scope (`^open: value`), `$`-names (`$it`, `$key`, `$depth`, …),
+`${}` bindings, function and method names, relation and handle names, root
+names (`docs` in `from docs`, `^docs`; an unknown one is §1.1's error), the
+member tail under an engine attribute (`attrs.anything`, `tags.size()`), a
+scope whose kind cannot be determined (a `refs(x)`-free value receiver, a
+walk over mixed kinds), and the root scope (depth 0).
+
+**The three tiers** of a judged name at a scope whose kind is known:
+
+1. an **engine attribute, handle or relation** of the kind (the §1.2 table) —
+   known, silent;
+2. an **authored property at least one live object of the kind in the
+   repository carries** — known, silent, however partial (`stage` on three
+   processes out of twenty documents is the data model working);
+3. a name **no object of the kind carries** — the complaint.
+
+**Severity.**
+
+| the scope's kind | on a read (`query`, and every read that evaluates OQX) | in a write selector (`select` of `plan` / `apply` / `execute`, `spec/mutate` §11.8) |
+| --- | --- | --- |
+| `links` — a **closed** row shape (no authored data reaches a link row) | `filter_invalid`, `data.hint` `"OQX"` | the same refusal |
+| `docs`, `blocks`, `nodes` — **open** | the result gains **`hints`** (below); the rows are still returned | `filter_invalid`: the refusal, before any row is read, no partial write |
+| any kind, in `order by` | as `where` | as `where` |
+| any open kind with **no live object** in the repository | no vocabulary — the check is skipped for that kind (no hint, no error) | the same |
+
+A tier-3 name in a selector is refused because a name no row carries selects
+every row (`where target != "x"`) or none; the refusal is raised at the
+selector's compile step through the runner's AST entry (`unknownNames:
+"refuse"`, the default of that entry; the source entry every read uses
+defaults to `"hint"`). Only the **selector's own text** is judged: the
+expressions of the request's effect templates (`-> parent`, `{ oqx: … }`),
+which the compiler appends to the selector's tree as its slot items, are not
+the selector — an expression there that reads a property no row carries is
+`spec/mutate` §11.8's own outcome (`target_missing`, an absent value), not an
+unknown name. `links` are never a selector root (§11.8), so a links error
+reaches a selector only through a nested block.
+
+**`hints`.** A member of the `query` result (and of every `OqxResult`): an
+array of strings, one per offending name of an open kind, in **first-reference
+order** — the canonical walk order of `spec/oqx` AST.md §5: `select`, then the
+source and `from`, `where`, `frontier`, `follow`, `order by`, `limit`,
+`offset`, each nested block's clauses where the block stands — **deduplicated**
+by text. It is the **last** member, after `hits`/`truncated`/`cursor`/
+`consumer` and the scalar members, and **absent when empty** (never `[]`). It
+rides on every result shape: hits, `bare` hits, `values`, `count`, `exists`,
+`none`. It is not the error envelope's `data.hint` (which names a grammar).
+
+**The vocabulary.** Per (repository, kind), read from the store the first time
+a judged name is not intrinsic:
+
+- `docs`: `SELECT DISTINCT key FROM properties WHERE repo_id = ? AND
+  deleted_commit IS NULL AND source IN ('frontmatter', 'inline')` — the
+  flattened dotted keys of every live frontmatter or inline property, both
+  document-scoped and block-scoped rows, since a document's bare read merges
+  them (§1.2). Computed keys (`$title`, `$tags`, source `computed`) are the
+  intrinsics `title`/`tags`, never authored vocabulary; an authored
+  `$`-prefixed key (`$version:`) is vocabulary (reached as
+  `frontmatter.$version`, `reads::arguments`). A dotted name is known when it
+  **equals a key or is a dotted prefix of one** (`meta` is known when
+  `meta.owner` exists; `stage.x` is not known when `stage` is a scalar key).
+  `frontmatter.<k>` and `inline.<k>` are judged against the same merged
+  vocabulary (not split by source).
+- `blocks`, `nodes`: a bare name on a block or node reads its `attrs` (§1.2),
+  so the vocabulary is `SELECT DISTINCT j.key FROM <the §1.1 scan of the kind>,
+  json_each(<alias>.attrs) j` over the live rows — the attrs keys the format
+  layer writes (`spec/format`: `level`, `ordered`, `start`, `checked`, `lang`,
+  `info`; `key`, `index`, `value` for YAML/JSON documents; `spec/graph`:
+  `checked`, `level`, `first_ordinal`, `last_ordinal` on nodes) **as present in
+  this repository**: `lang` is known in a repository with a code fence, `checked`
+  in one with a task. Block-scoped rows of the `properties` table are NOT a
+  block's vocabulary — a block row does not read inline fields by bare name
+  (`spec/surface` §1.2); they are the owning document's.
+- `links`: none (closed).
+- "No live object of the kind" is the §1.1 scan with `LIMIT 1` coming back
+  empty.
+
+**Caching.** The vocabulary is cached per (store, repository, kind), keyed on
+the repository's **head commit** — `MAX(seq)` over `commits` for the
+repository — the one value every property or attrs change moves (every write
+is a commit); a read on an unchanged repository costs one indexed scalar
+query. The Rust port keys its cache the same way.
+
+**Messages** (byte-identical across engines; the nearest-match clause is
+present only when there is one):
+
+- a closed kind (`links`), and a selector reaching one:
+  `` `target` is not a field of links (fields: id, path, doc_id, block_id, via_id, dst_id, dst_path, uri, field, dst_kind, predicate, provenance, anchor); did you mean `dst_path`? ``
+  — `<name>` as judged (the path after any handle or relation), the kind's
+  attributes in the §1.2 order;
+- an open kind, bare or under a handle/relation (the hint, and the selector's refusal):
+  `` `preview` is not a field of blocks and no block in this repository carries a property by that name; did you mean `text`? ``
+  — the kind's name (`docs` / `blocks` / `nodes`) and its singular noun
+  (`document` / `block` / `node`);
+- an open kind under a **source handle** (`data.x`, `frontmatter.x`,
+  `inline.x`), where the name is an authored lookup by construction:
+  `` no document in this repository carries a property `path` (`data.path`); did you mean `paths`? ``
+  — the nearest match drawn from the authored keys alone;
+- a selector: the same text under the `select: ` prefix the selector's other
+  refusals carry (`spec/mutate` §11.8; `filter_invalid { hint: "selection" }`).
+
+**The nearest match.** Over the kind's vocabulary — its attributes, handles
+(the source handles for docs), relations and authored keys — compared
+**case-insensitively**: a candidate qualifies when its optimal-string-alignment
+distance (Levenshtein with adjacent transpositions, every edit 1) to the name is
+**≤ 2**, OR when one of the two is a substring of the other and the shorter has
+**≥ 3** characters; the lowest distance wins; ties go to the shorter candidate,
+then the alphabetically first; no qualifying candidate, no clause. Pinned
+(`query-unknown.json`): `titel` → `title`, `ttile` → `title` (a transposition),
+`layr` → `layer`, `stag` → `stage` (a prefix at distance 1), `txt` → `text`,
+`checkd` → `checked`, `dst_pth` → `dst_path`; `preview` on blocks, `value` on
+blocks (distance 5 from `text`), `target` on links (`dst_path` is not within the
+rule's reach) and `meta.owner` on docs get no clause; and two edges of the rule
+as decided, pinned as truth rather than special-cased: a one-letter name (`x`,
+`n`) reaches `id` (distance 2, the shortest and first candidate), and `via` on
+links gets `id` (distance 2) over its own prefix `via_id` (distance 3) because
+the lowest distance wins.
+
+Pinned by `query-unknown.json` (33 cases: the three tiers, each clause and
+scope shape, the dedup order, the message forms, the nearest-match truths, the
+links errors, `hints` on every result shape); the moved cases of 4.6 are listed
+in §9.
+
 ## 2. Reads
 
 - **`resolve_ref(ref)`**: an `n_` + 12 hex node id → its block when the block
@@ -996,14 +1146,18 @@ verbs later.
   `2026-09-27T00:00:00.000Z`, so `d_0` is `index.md`), then `cases: [{ name,
   notes?, query, limit?, cursor?, bare?, expect }]` — `limit`, `cursor` and
   `bare` (4.2) are the `query` tool's arguments — with `expect` the `OqxResult`
-  as JSON (absent keys for undefined projections; numbers within 1e-9) or
-  `{ error: "filter_invalid", message_includes }`. The reference runs every
+  as JSON (absent keys for undefined projections; numbers within 1e-9; since
+  4.6 `hints: [string…]` as the last key when the query reads a tier-3 name of
+  an open kind, §1.5 — recorded verbatim, so the hint text is pinned; never
+  `[]`) or `{ error: "filter_invalid", message_includes }`. The reference runs every
   case both planned and in-memory and fails on any difference. Suites:
   `query-docs.json`, `query-blocks.json`, `query-nodes.json`,
   `query-links.json`, `query-follow.json`, `query-functions.json`,
   `query-refs.json`, `query-errors.json` (incl. the 3.0 envelope-collision
   and `$`-name cases), `query-root.json` (the root row, 2.0: `^docs` /
-  `0^docs` / `^id` / `^$it`, the `$repo` and bare-target errors).
+  `0^docs` / `^id` / `^$it`, the `$repo` and bare-target errors),
+  `query-unknown.json` (unknown names, 4.6 §1.5: the three tiers, `hints`,
+  the links errors, the nearest-match truths).
 - **`reads.json`**: observation scripts (`spec/store` §9.4) with `read`
   steps (a `version` read is recorded with every leaf value replaced by its
   type name — `"<string>"`, `"<number>"`, `"<null>"`, `"<boolean>"` — since the
@@ -1237,6 +1391,24 @@ both and runs both harnesses.
 
 ## 9. Reference oddities surfaced while specifying, and decisions
 
+- **Added (4.6) — unknown names** (§1.5): every name a query reads is judged
+  statically against the vocabulary of its scope's kind; a tier-3 name on
+  `links` is `filter_invalid`, on an open kind a `hints` entry (reads) or the
+  selector's refusal (writes). New suite `query-unknown.json` (33). Moved
+  cases, each reviewed: `query-docs::source-handles-reach-an-authored-key-of-an-attributes-name`
+  (the corpus authors no `path:` key — three handle-form hints),
+  `query-docs::contextual-words-are-fields-in-expression-position` (`order`,
+  `limit`, `count` are fields no document carries — three hints),
+  `query-docs::out-and-in-are-plain-properties` and `reads::dst-on-links`
+  (`out` → `out_links`, `in` → `id`), `query-errors::bare-body-is-an-absent-property`
+  (`body` — the hint says so), `query-nodes::no-relations-beyond-section`
+  (`out_links` on a node), and `query-links::no-relations` — `select x:
+  children, y: out_links from links`, which read two absent columns through
+  4.5 and is now the links error naming `children` (the case's intent, that
+  links have no relations, now spoken). Nothing else moved: every
+  `examples.json` rung, every `query-*` case of the other suites and every
+  `reads` step read only known names — the sign the rule is quiet on correct
+  queries.
 - **Added (4.5) — a string-list argument takes one bare string**, and a
   comma-joined one is refused with the split list as its `fix`
   (`docs_read_many {"docs":"a.md, b.md","include_ids":true}` → "`docs` must
@@ -1519,6 +1691,35 @@ both and runs both harnesses.
   pure, so equal to what the planner lowered); the Rust port mirrors it.
 
 ## Decisions
+
+- 2026-10-13, surface 4.6: unknown names (§1.5; with `spec/oqx` 0.23's
+  `references` pass). A 78-run agent benchmark showed models projecting and
+  filtering on names that do not exist — `select path, target from links`,
+  `select type, value from blocks`, `select id, type, preview from blocks` —
+  each returning rows of absent columns without complaint, each followed by a
+  31 kB `query_syntax` call; in `where` such a name is worse because it is
+  invisible (`target != "x"` matches every row), and in a write selector it
+  selects every row. The rule is **deterministic and filter-independent**:
+  the judgement is static, over the query's references and the repository's
+  vocabulary, so a correct query never warns because of its own filter, and
+  both engines reach the same verdict from the same store. The row-level
+  heuristic — "warn on a name absent in every returned row" — was rejected
+  for exactly that reason: it would warn on a correct `where stage == "x"`
+  that happens to match no process, go quiet on a typo once a page is empty,
+  and differ between the planned and in-memory paths by what a page holds.
+  Severity follows the shape: `links` is closed, so an unknown name there is
+  an error; docs, blocks and nodes are open — partial presence is the data
+  model working — so a read gets a hint and its rows, a write selector a
+  refusal. Blocks and nodes are judged by the attrs keys live rows carry
+  (their bare-name read), not by the block-scoped `properties` rows a block
+  row cannot read; treating nodes as closed (their attrs keys are
+  graph-defined) was considered and declined, since `not checked` would then
+  be an error on any repository without a task. The nearest-match rule
+  (distance ≤ 2, or a substring of ≥ 3 characters; lowest distance, shorter,
+  alphabetical) is implemented as decided and its two awkward edges (`x` →
+  `id`, `via` → `id` over `via_id`) are pinned as truth for a later decision
+  rather than special-cased. `hints` is a result member, not an error: a
+  minor. Fixtures: `query-unknown.json` (33), the moved cases listed in §9.
 
 - 2026-10-13, surface 4.5: the second teaching pass (with `spec/mutate`
   3.4), driven by a 78-run agent benchmark against the minimal profile that

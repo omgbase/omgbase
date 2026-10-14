@@ -48,7 +48,10 @@
         "hits": [],
         "truncated": false,
         "cursor": null,
-        "consumer": "collect"
+        "consumer": "collect",
+        "hints": [
+          "`body` is not a field of docs and no document in this repository carries a property by that name"
+        ]
       },
       "notes": "§1.2: `body` is not an engine attribute (the bytes are `raw`), so it is an ordinary property read — absent on every document."
     },

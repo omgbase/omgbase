@@ -6,8 +6,8 @@ import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseString, parseTemplate } from "../src/parser.ts";
-import { run, OqxError, stripSpans, print, printTemplate, transform } from "../src/index.ts";
-import type { OqxResult, Query } from "../src/index.ts";
+import { run, OqxError, stripSpans, print, printTemplate, transform, references } from "../src/index.ts";
+import type { OqxResult, Query, Reference } from "../src/index.ts";
 
 const CASES_DIR = join(import.meta.dirname, "../../../spec/oqx/cases");
 
@@ -21,9 +21,9 @@ interface SpecCase {
   roots?: Record<string, unknown>;
   query?: string;
   template?: { strings: string[]; values: unknown[] };
-  /** With `expect.ast`: compare spans too (the default strips them). */
+  /** With `expect.ast` / `expect.references`: compare spans too (the default strips them). */
   spans?: boolean;
-  expect: { result?: unknown; error?: SpecError; ast?: unknown };
+  expect: { result?: unknown; error?: SpecError; ast?: unknown; references?: unknown };
 }
 interface SpecFile { suite: string; cases: SpecCase[] }
 
@@ -55,10 +55,11 @@ function validate(file: string, doc: unknown): string[] {
     }
     if (c.roots !== undefined && !isRecord(c.roots)) problems.push(`${at}: \`roots\` must be an object`);
     if (!isRecord(c.expect)) { problems.push(`${at}: missing \`expect\``); return; }
-    const kinds = ["result", "error", "ast"].filter((k) => k in (c.expect as Record<string, unknown>));
+    const kinds = ["result", "error", "ast", "references"].filter((k) => k in (c.expect as Record<string, unknown>));
     const hasError = "error" in c.expect;
-    if (kinds.length !== 1) problems.push(`${at}: \`expect\` needs exactly one of \`result\` / \`error\` / \`ast\``);
-    if (c.spans !== undefined && (typeof c.spans !== "boolean" || !("ast" in c.expect))) problems.push(`${at}: \`spans\` is a boolean and needs \`expect.ast\``);
+    if (kinds.length !== 1) problems.push(`${at}: \`expect\` needs exactly one of \`result\` / \`error\` / \`ast\` / \`references\``);
+    if (c.spans !== undefined && (typeof c.spans !== "boolean" || !("ast" in c.expect || "references" in c.expect))) problems.push(`${at}: \`spans\` is a boolean and needs \`expect.ast\` or \`expect.references\``);
+    if ("references" in c.expect && !Array.isArray(c.expect.references)) problems.push(`${at}: \`expect.references\` must be an array`);
     if (hasError) {
       const e = c.expect.error;
       if (!isRecord(e) || !["lex", "parse", "eval"].includes(e.stage as string)) problems.push(`${at}: \`expect.error.stage\` must be lex | parse | eval`);
@@ -154,7 +155,25 @@ function checkRoundTrip(c: SpecCase): void {
   assert.deepStrictEqual(stripSpans(again), stripSpans(query), `round trip of ${JSON.stringify(printed)}`);
 }
 
+// The `references` pass as the fixture records it (README): each reference with
+// its scope's steps printed as canonical source (a `follow` step prints as the
+// `follow` clause), spans stripped unless the case asks for them.
+function referencesJson(refs: Reference[], spans: boolean): unknown {
+  return refs.map((r) => ({
+    name: r.name,
+    clause: r.clause,
+    scope: { depth: r.scope.depth, steps: r.scope.steps.map((s) => ({ expr: print(s.expr), depth: s.depth })) },
+    ...(spans ? { span: r.span } : {}),
+  }));
+}
+
 function runCase(c: SpecCase): void {
+  if ("references" in c.expect) {
+    const { query } = parseCase(c);
+    const actual = sortKeys(canonicalize(referencesJson(references(query), c.spans === true)));
+    assert.deepStrictEqual(actual, sortKeys(c.expect.references));
+    return;
+  }
   if ("ast" in c.expect) {
     const { query } = parseCase(c);
     const actual = sortKeys(canonicalize(c.spans ? query : stripSpans(query)));

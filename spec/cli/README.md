@@ -991,10 +991,15 @@ positionals joined by a space, or the file / stdin. Rendering by the
 result's consumer: `count`/`exists`/`none` → the scalar (`13`, `false`,
 `true`); a `values` projection → one value per line (strings verbatim,
 others as JSON; `--jsonl` all as JSON); otherwise the hit table (§4); no
-hits → stderr `  no hits`; truncated → the footer with the cursor. `--ids`
+hits → stderr `  no hits`; truncated → the footer with the cursor; (cli 4.4)
+the result's `hints` (`spec/surface` §1.5: names the query reads that no row
+of their kind carries) → one stderr line `  hint: <text>` per entry, LAST, in
+every human rendering (scalar, values, table, `no hits`); the machine modes
+carry the member itself (`query::unknown-name-hint`, `unknown-name-no-hits`,
+`unknown-name-hint-json`; a links field is the error: `unknown-field-on-links`). `--ids`
 the hit ids (`id`); `--jsonl` one hit per line (`{ id, path, ... }`);
 `--json` the whole `OqxResult` (`{ hits, truncated, cursor, consumer, count?
-| exists? | none? | values? }`, every hit `{ id, path, ...projection }` —
+| exists? | none? | values?, hints? }`, every hit `{ id, path, ...projection }` —
 `spec/surface` §1.4, 3.0; copy a hit's `id` into the next `where id == "…"`
 unchanged). `--bare` (4.1) is the tool's `bare: true` passed through
 (`spec/surface` §1.4, 4.2): every hit is its projection alone, rendered as
@@ -1738,6 +1743,15 @@ was `b_314`).
   `nothing to do` for an empty `apply`, where the reference posts the call.
 
 ## 10. Decisions
+
+- 2026-10-13, cli 4.4: `query` prints the result's `hints` (`spec/surface`
+  4.6 §1.5 — names the query reads that no row of their kind carries) as dim
+  stderr lines `  hint: <text>`, one per entry, after everything else, in
+  every human rendering; `--json` already carried the member. Dropping them
+  in the human mode would have been the silence the surface rule exists to
+  end. A stderr line added to one verb's rendering: a minor, as 4.3 was.
+  Fixtures: `query.json` 51 → 55 (`unknown-name-hint`, `unknown-name-hint-json`,
+  `unknown-name-no-hits`, `unknown-field-on-links`); nothing else moved.
 
 - 2026-10-13, cli 4.3: the commit confirmation and the document-op
   confirmation print the Receipt's `summary` (`spec/mutate` 3.3 §11.9) —

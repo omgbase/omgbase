@@ -115,6 +115,12 @@ everywhere: a hit's `id` is docs_read's `id` and the `id` argument of blocks_rea
     links   id path doc_id block_id via_id dst_id dst_path uri field dst_kind predicate provenance anchor | doc
   A key of yours with any of these names is `data.<k>` (or frontmatter.<k> /
   inline.<k> by source; attrs.<k> on a block or node).
+  UNKNOWN NAMES: a name that is none of the above AND that no object of the
+  kind in this repository carries is reported before any row is read — on
+  links as a filter_invalid error naming the fields; on docs/blocks/nodes the
+  result gains `hints` (one line per name, nearest match when there is one)
+  and the rows still come back; in a plan/apply/execute selector it is refused.
+  A property some objects carry is known (partial presence is normal).
 
 docs:
   - bare identifier  = a document PROPERTY (frontmatter + inline `key:: value`,

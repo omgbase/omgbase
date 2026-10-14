@@ -630,7 +630,12 @@
         ],
         "truncated": false,
         "cursor": null,
-        "consumer": "collect"
+        "consumer": "collect",
+        "hints": [
+          "no document in this repository carries a property `path` (`data.path`)",
+          "no document in this repository carries a property `path` (`frontmatter.path`)",
+          "no document in this repository carries a property `path` (`inline.path`)"
+        ]
       }
     },
     {
@@ -897,7 +902,12 @@
         ],
         "truncated": false,
         "cursor": null,
-        "consumer": "collect"
+        "consumer": "collect",
+        "hints": [
+          "`order` is not a field of docs and no document in this repository carries a property by that name",
+          "`limit` is not a field of docs and no document in this repository carries a property by that name",
+          "`count` is not a field of docs and no document in this repository carries a property by that name"
+        ]
       }
     },
     {
@@ -1415,7 +1425,11 @@
         ],
         "truncated": false,
         "cursor": null,
-        "consumer": "collect"
+        "consumer": "collect",
+        "hints": [
+          "`out` is not a field of docs and no document in this repository carries a property by that name; did you mean `out_links`?",
+          "`in` is not a field of docs and no document in this repository carries a property by that name; did you mean `id`?"
+        ]
       }
     },
     {

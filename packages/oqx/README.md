@@ -921,6 +921,29 @@ defaults (`build.query(source, { select, where, … })`, `build.op(receiver,
 `build.follow`, `build.ident`, `build.lit`, `build.binary`, `build.and`, …), so
 a tree you assemble prints with `print` and has the shape of a parsed one.
 
+`references(query)` (0.23, `spec/oqx/AST.md` §5b) lists every **name the query
+reads from a row**, in source order, with the clause it stands in and the scope
+it is read from — so a host that knows what rows an expression yields can say
+which names exist there:
+
+```ts
+references(parse('select title, age from docs where blocks exists { where text == ^titel }'));
+// [ { name: "title", clause: "select", scope: { depth: 1, steps: [{ expr: <docs>, depth: 1 }] }, span: [7, 12] },
+//   { name: "age",   clause: "select", scope: { depth: 1, steps: [<docs>@1] }, … },
+//   { name: "docs",  clause: "source", scope: { depth: 0, steps: [] }, … },          // a root name
+//   { name: "blocks", clause: "where", scope: { depth: 1, steps: [<docs>@1] }, … },
+//   { name: "text",  clause: "where", scope: { depth: 2, steps: [<docs>@1, <blocks>@2] }, … },
+//   { name: "titel", clause: "where", scope: { depth: 1, steps: [<docs>@1] }, … } ]  // ^titel: the enclosing row
+```
+
+A dotted navigation headed by a name is one reference with its full path
+(`meta.owner`, `doc.layer`); `$it.x` is `x`; a `follow` node is a step (the
+walk's frontier rows). Not references: `$`-names, bindings, function and
+method names (their receiver and arguments are), an item's alias where the
+language substitutes it (the same body's `where`, later items), and the members
+of a navigation headed by a value (`refs(before).title` references `before`
+alone).
+
 ## Data context: string queries and named roots
 
 When you don't need interpolation, `execute` runs a plain string query against a
@@ -1300,6 +1323,8 @@ adapter lives on the `@omgbase/oqx/sqlite` subpath.
   `{ strings, count, indices }`).
 - `resolveAliases(query)` — the `select`-alias substitution the entry points
   apply before evaluation (SEMANTICS §14).
+- `references(query)` — every name the query reads from a row, with its
+  clause and scope (`Reference`, `ReferenceScope`, `ReferenceStep`; AST.md §5b).
 - `toJSON(query)` — the tree stamped with `oqx: LANGUAGE_VERSION`; `stripSpans(node)`
   — the tree without spans (`Stripped<T>`); `toUtf16(span, source)` and
   `codePointLength(s)` — code-point ↔ UTF-16 offsets; `rawSource(strings)` —

@@ -683,7 +683,10 @@
         ],
         "truncated": false,
         "cursor": null,
-        "consumer": "collect"
+        "consumer": "collect",
+        "hints": [
+          "`out_links` is not a field of nodes and no node in this repository carries a property by that name"
+        ]
       }
     },
     {

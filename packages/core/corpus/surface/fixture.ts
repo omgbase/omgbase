@@ -602,7 +602,7 @@ function validateCalls(at: string, calls: unknown, problems: string[]): number {
   return calls.length;
 }
 
-const OQX_RESULT_KEYS = ["hits", "truncated", "cursor", "consumer", "count", "exists", "none", "values"];
+const OQX_RESULT_KEYS = ["hits", "truncated", "cursor", "consumer", "count", "exists", "none", "values", "hints"];
 
 function validateQueryExpect(at: string, e: unknown, problems: string[]): void {
   if (!isRecord(e)) {

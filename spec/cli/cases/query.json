@@ -440,6 +440,64 @@
       "pin_stderr": true
     },
     {
+      "name": "unknown-name-hint",
+      "notes": "§6 / spec/surface §1.5 (4.6): a name no document carries is a `hints` entry — the rows print, then one dim `  hint: …` line per entry on stderr, last.",
+      "workspace": "alchemy",
+      "argv": [
+        "query",
+        "select titel from docs where type == \"text\""
+      ],
+      "pin_stderr": true,
+      "expect": {
+        "exit": 0,
+        "stdout": "id    path                      titel\nd_16  /texts/emerald-tablet.md\nd_17  /texts/mutus-liber.md\n",
+        "stderr": "  hint: `titel` is not a field of docs and no document in this repository carries a property by that name; did you mean `title`?\n"
+      }
+    },
+    {
+      "name": "unknown-name-hint-json",
+      "notes": "§6: `--json` carries the result's `hints` member as the surface returns it (the last key).",
+      "workspace": "alchemy",
+      "argv": [
+        "query",
+        "--json",
+        "select titel from docs where type == \"text\""
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "{\"hits\":[{\"id\":\"d_16\",\"path\":\"/texts/emerald-tablet.md\"},{\"id\":\"d_17\",\"path\":\"/texts/mutus-liber.md\"}],\"truncated\":false,\"cursor\":null,\"consumer\":\"collect\",\"hints\":[\"`titel` is not a field of docs and no document in this repository carries a property by that name; did you mean `title`?\"]}\n"
+      }
+    },
+    {
+      "name": "unknown-name-no-hits",
+      "notes": "§6: a misspelled `where` name matches nothing — `no hits`, then the hint that says why.",
+      "workspace": "alchemy",
+      "argv": [
+        "query",
+        "select path from docs where layr == \"canon\""
+      ],
+      "pin_stderr": true,
+      "expect": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": "  no hits\n  hint: `layr` is not a field of docs and no document in this repository carries a property by that name; did you mean `layer`?\n"
+      }
+    },
+    {
+      "name": "unknown-field-on-links",
+      "notes": "§6 / spec/surface §1.5: a name that is no link field is the surface's `filter_invalid` (links are closed), rendered like any error.",
+      "workspace": "alchemy",
+      "argv": [
+        "query",
+        "select path, target from links"
+      ],
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "error[filter_invalid]: `target` is not a field of links (fields: id, path, doc_id, block_id, via_id, dst_id, dst_path, uri, field, dst_kind, predicate, provenance, anchor)\n  {\n    \"reason\": \"`target` is not a field of links (fields: id, path, doc_id, block_id, via_id, dst_id, dst_path, uri, field, dst_kind, predicate, provenance, anchor)\",\n    \"hint\": \"OQX\"\n  }\n"
+      }
+    },
+    {
       "name": "semantic-unavailable",
       "notes": "§6: no provider → semantic_unavailable with the config hint",
       "workspace": "alchemy",
