@@ -204,9 +204,9 @@ themselves, and a hit must be a store row —
 
 ```console
 $ omg query 'from docs where path == "/timeline/review.md" follow before'
-error[filter_invalid]: a hit must be a document, block, node or link row — the query reached a string ("/timeline/kickoff.md"); to follow document references held in a property use refs(<field>)
+error[filter_invalid]: a hit must be a document, block, node, link or revision row — the query reached a string ("/timeline/kickoff.md"); to follow document references held in a property use refs(<field>)
   {
-    "reason": "a hit must be a document, block, node or link row — the query reached a string (\"/timeline/kickoff.md\"); to follow document references held in a property use refs(<field>)",
+    "reason": "a hit must be a document, block, node, link or revision row — the query reached a string (\"/timeline/kickoff.md\"); to follow document references held in a property use refs(<field>)",
     "hint": "OQX"
   }
 ```

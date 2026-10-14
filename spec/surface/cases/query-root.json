@@ -131,7 +131,7 @@
     },
     {
       "name": "root-object-entries-names",
-      "notes": "§1.1: the root object exposes exactly the four collections as entries, in target order; `id` is an intrinsic, not an entry.",
+      "notes": "§1.1: the root object exposes exactly the five collections as entries, in target order (`revisions` since 4.7); `id` is an intrinsic, not an entry.",
       "query": "select ks: entries(^$it) collect { $key values } from docs where path == \"/index.md\"",
       "expect": {
         "hits": [
