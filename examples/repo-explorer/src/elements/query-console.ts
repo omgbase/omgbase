@@ -19,7 +19,9 @@ export interface ConsoleOpenDetail { link: CellLink }
 @customElement("query-console")
 export class QueryConsole extends LitElement {
   static override styles = css`
-    :host { display: flex; flex-direction: column; min-height: 0; font: 13px/1.5 system-ui, sans-serif; color: #1e2430; }
+    /* The host never grows past its container: a wide result table scrolls
+       inside .results (both axes) while the query, buttons and footer stay put. */
+    :host { display: flex; flex-direction: column; min-height: 0; min-width: 0; max-width: 100%; overflow: hidden; font: 13px/1.5 system-ui, sans-serif; color: #1e2430; }
     .bar { display: flex; gap: 8px; align-items: center; margin-bottom: 6px; flex-wrap: wrap; }
     .bar .title { font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; color: #5a6270; font-weight: 600; }
     .bar .spacer { flex: 1; }
@@ -32,7 +34,7 @@ export class QueryConsole extends LitElement {
     .error { margin: 6px 0 0; padding: 6px 10px; border-radius: 6px; background: #fff5f5; border: 1px solid #ef9a9a; color: #c62828; font-size: 12.5px; }
     .error .code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-weight: 600; }
     .error pre { margin: 4px 0 0; white-space: pre-wrap; word-break: break-all; font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; color: #1e2430; background: #fff; border: 1px solid #e8eaef; border-radius: 4px; padding: 4px 8px; }
-    .results { margin-top: 6px; overflow: auto; min-height: 0; flex: 1; }
+    .results { margin-top: 6px; overflow: auto; min-height: 0; min-width: 0; max-width: 100%; flex: 1; }
     table { border-collapse: collapse; font-size: 12.5px; }
     th, td { text-align: left; padding: 2px 10px 2px 0; border-bottom: 1px solid #eef0f4; vertical-align: top; white-space: nowrap; max-width: 36em; overflow: hidden; text-overflow: ellipsis; }
     th { color: #5a6270; font-weight: 600; position: sticky; top: 0; background: #fff; }

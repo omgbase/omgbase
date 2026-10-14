@@ -572,9 +572,9 @@ export class RepoExplorerApp extends SignalWatcher(LitElement) {
     sl-split-panel::part(panel) { min-width: 0; min-height: 0; }
     .left { height: 100%; overflow: auto; padding: 8px 8px 8px 10px; box-sizing: border-box; }
     .left .deleted-link { display: block; margin-top: 12px; font-size: 12px; color: #1565c0; cursor: pointer; }
-    .right { display: grid; grid-template-rows: minmax(0, 1fr) auto; height: 100%; min-height: 0; }
+    .right { display: grid; grid-template-rows: minmax(0, 1fr) auto; height: 100%; min-height: 0; min-width: 0; }
     .main { overflow: auto; padding: 10px 16px; min-height: 0; }
-    .console { border-top: 1px solid #e3e6ec; padding: 8px 16px 10px; max-height: 45vh; display: flex; flex-direction: column; min-height: 0; background: #fafbfc; }
+    .console { border-top: 1px solid #e3e6ec; padding: 8px 16px 10px; max-height: 45vh; display: flex; flex-direction: column; min-height: 0; min-width: 0; overflow: hidden; background: #fafbfc; }
     .console query-console { flex: 1; min-height: 0; }
     .welcome { color: #5a6270; max-width: 64ch; }
     .welcome code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; background: #f0f1f4; padding: 0 3px; border-radius: 3px; }
