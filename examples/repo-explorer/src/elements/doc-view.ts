@@ -44,8 +44,8 @@ export class DocView extends LitElement {
     details.props-wrap { margin: 0 0 12px; }
     details.props-wrap > summary { cursor: pointer; font-size: 12px; color: #5a6270; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600; user-select: none; list-style: none; display: inline-flex; align-items: center; gap: 6px; }
     details.props-wrap > summary::-webkit-details-marker { display: none; }
-    details.props-wrap > summary::before { content: "\25B8"; font-size: 11px; color: #8a94a6; }
-    details.props-wrap[open] > summary::before { content: "\25BE"; }
+    details.props-wrap > summary::before { content: "▸"; font-size: 11px; color: #8a94a6; }
+    details.props-wrap[open] > summary::before { content: "▾"; }
     details.props-wrap > summary .count { font-weight: 400; text-transform: none; letter-spacing: 0; color: #8a94a6; }
     table.props { border-collapse: collapse; font-size: 12.5px; margin: 6px 0 0; }
     table.props th, table.props td { text-align: left; padding: 2px 10px 2px 0; vertical-align: top; border-bottom: 1px solid #eef0f4; }
