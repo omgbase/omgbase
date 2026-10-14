@@ -78,7 +78,7 @@
 use std::collections::HashMap;
 
 use omgbase_mutate::effects::{SELECTION_CEILING, Selection, SelectionExpect, js_number};
-use omgbase_mutate::{Effect, ErrorCode, MutationError};
+use omgbase_mutate::{Effect, ErrorCode, MutationError, ParentRow, ShapeError, ShapeFixContext};
 use omgbase_store::effects_plan::PlanContext;
 use omgbase_store::mutate::is_id_ref;
 use omgbase_store::{DocStore, Store};
@@ -130,6 +130,85 @@ fn refused(message: impl Into<String>) -> SurfaceError {
 /// ordinary `filter_invalid { hint: "arguments" }` naming `effects[i]`.
 fn shape_error(message: String) -> SurfaceError {
     SurfaceError::filter_invalid(message, "arguments")
+}
+
+/// A shape error with its `fix` (§8, 3.4) when the shape check spelled one.
+fn shape_error_of(e: ShapeError) -> SurfaceError {
+    let mut err = shape_error(e.message);
+    if let Some(fix) = e.fix
+        && let Some(d) = err.data.as_mut().and_then(Json::as_object_mut)
+    {
+        d.insert("fix".to_owned(), json!(fix));
+    }
+    err
+}
+
+/// The live-row lookup behind the anchor fix (§8, 3.4; the reference's
+/// `parentLookup`): a block's parent id (`None` at the top level) and its
+/// document's path, from the `blocks` row that is not deleted; `None` for an
+/// id the store does not know (a `$new.n`, a typo) — then there is no fix.
+fn parent_lookup(store: &Store) -> impl Fn(&str) -> Option<ParentRow> + '_ {
+    move |id: &str| {
+        store
+            .conn()
+            .query_row(
+                "SELECT b.parent_block, d.path FROM blocks b JOIN docs d ON d.doc_id = b.doc_id WHERE b.block_id = ? AND b.deleted_commit IS NULL",
+                [id],
+                |row| {
+                    Ok(ParentRow {
+                        parent: row.get(0)?,
+                        path: row.get(1)?,
+                    })
+                },
+            )
+            .ok()
+    }
+}
+
+/// A template's `into` is bound per hit, so the anchor fix (a parent lookup)
+/// does not apply under a selector: `parent_of` finds nothing.
+fn no_parent(_: &str) -> Option<ParentRow> {
+    None
+}
+
+/// The shape check's context over a request (the reference's
+/// `ShapeFixContext`): the request as written and a row lookup.
+fn shape_fix<'a>(
+    request: &'a fixes::Request,
+    parent_of: &'a dyn Fn(&str) -> Option<ParentRow>,
+) -> ShapeFixContext<'a> {
+    ShapeFixContext {
+        select: request.select.as_ref(),
+        effects: &request.effects,
+        expect: request.expect.as_ref(),
+        parent_of,
+    }
+}
+
+/// The plain `effects` of a request (no selector, no sugar: the catalog's
+/// `parse_effects` path) shape-checked with the §8 fixes of 3.4 — the
+/// reference's `compilePlain` over effects without an expression, where the
+/// fix context reads the store for the anchor fix.
+pub fn validate_plain(store: &Store, effects: &Json) -> Result<Vec<Effect>> {
+    let list = effects
+        .as_array()
+        .ok_or_else(|| shape_error("`effects` must be an array of effects".to_owned()))?;
+    if list.is_empty() {
+        return Err(shape_error(
+            "`effects` must name at least one effect".to_owned(),
+        ));
+    }
+    let request = fixes::Request {
+        select: None,
+        effects: effects.clone(),
+        expect: None,
+    };
+    let lookup = parent_lookup(store);
+    let fix = shape_fix(&request, &lookup);
+    list.iter()
+        .enumerate()
+        .map(|(i, e)| Effect::validate_with(e, i, Some(&fix)).map_err(shape_error_of))
+        .collect()
 }
 
 // ---- sugar (§11.8 "Sugar", 3.2) --------------------------------------------------------
@@ -1161,6 +1240,7 @@ fn admit_template(
     root: Target,
     plain: bool,
     sugar: &Desugared,
+    fix: Option<&ShapeFixContext<'_>>,
 ) -> Result<Template> {
     let here = format!("effects[{index}]");
     let Some(op) = raw
@@ -1277,8 +1357,9 @@ fn admit_template(
     let Admit {
         base, probe, slots, ..
     } = a;
-    // The shape, with a probe in every slot (the §11.1 messages, naming `effects[i]`).
-    Effect::validate(&Json::Object(probe), index).map_err(shape_error)?;
+    // The shape, with a probe in every slot (the §11.1 messages, naming
+    // `effects[i]`; the §8 shape fixes rewrite the template as written).
+    Effect::validate_with(&Json::Object(probe), index, fix).map_err(shape_error_of)?;
     Ok(Template {
         index,
         base,
@@ -1403,12 +1484,15 @@ pub fn compile(req: &SelectRequest) -> Result<Compiled> {
         expect: req.expect.clone(),
     };
     let (raw, root) = admit_selector(select, Some(&request))?;
+    // Under a selector a template's `into` is bound per hit, so the anchor
+    // fix (a parent lookup) does not apply: `parent_of` finds nothing.
+    let fix = shape_fix(&request, &no_parent);
     let templates = templates
         .iter()
         .enumerate()
         .map(|(t, v)| {
             let (v, d) = desugar_effect(v, t, Some(&request))?;
-            admit_template(t, &v, root, false, &d)
+            admit_template(t, &v, root, false, &d, Some(&fix))
         })
         .collect::<Result<Vec<_>>>()?;
     let mut rewritten = raw.clone();
@@ -1748,11 +1832,11 @@ fn finish(
     symbols: &[Member],
     prefix: &[Effect],
     settle: &mut Settle<'_>,
+    first: Effect,
 ) -> Result<Effect> {
     if symbols.is_empty() || prefix.is_empty() {
-        return Effect::validate(e, k).map_err(shape_error);
+        return Ok(first);
     }
-    Effect::validate(e, k).map_err(shape_error)?;
     settle(e, symbols, prefix);
     Effect::validate(e, k).map_err(|m| {
         let mut err = shape_error(m);
@@ -1801,7 +1885,8 @@ pub fn bind(c: &Compiled, hits: &[Json], settle: &mut Settle<'_>) -> Result<Boun
                 request: Some(&c.request),
             };
             let (mut e, symbols) = bind_one(c.root, hit, t, &o)?;
-            let effect = finish(&mut e, k, &symbols, &b.effects, settle)?;
+            let first = Effect::validate(&e, k).map_err(shape_error)?;
+            let effect = finish(&mut e, k, &symbols, &b.effects, settle, first)?;
             b.effects.push(effect);
         }
         b.rows.push(row);
@@ -2215,7 +2300,9 @@ pub fn expand_plain(
                 continue;
             };
             let scope = scope_of(store, &ctx.repo_id, o, i, d)?;
-            let t = admit_template(i, v, scope.root, true, d)?;
+            let lookup = parent_lookup(store);
+            let fix = shape_fix(&request, &lookup);
+            let t = admit_template(i, v, scope.root, true, d, Some(&fix))?;
             if t.slots.is_empty() {
                 // `{ oqx }` only inside data (a nested `value`): literal, as for a template.
                 staged[i] = Some(Plain::Literal(v.clone(), d.symbols.clone()));
@@ -2278,10 +2365,17 @@ pub fn expand_plain(
         let (mut e, symbols) = match p.expect("every effect staged") {
             Plain::Literal(e, s) | Plain::Bound(e, s) => (e, s),
         };
+        // The shape check with the §8 fixes (3.4) reads the store for the
+        // anchor fix; the settlement that follows plans through it.
+        let first = {
+            let lookup = parent_lookup(store);
+            let fix = shape_fix(&request, &lookup);
+            Effect::validate_with(&e, i, Some(&fix)).map_err(shape_error_of)?
+        };
         let mut settle = |e: &mut Json, m: &[Member], p: &[Effect]| {
             settle_symbols(store, ctx, doc_store, e, m, p);
         };
-        let effect = finish(&mut e, i, &symbols, &effects, &mut settle)?;
+        let effect = finish(&mut e, i, &symbols, &effects, &mut settle, first)?;
         effects.push(effect);
     }
     Ok(Expansion {

@@ -610,6 +610,7 @@ fn build_catalog() -> Vec<ToolSpec> {
                     ("effects", effects_schema()),
                     ("select", s()),
                     ("expect", obj()),
+                    ("diffs", b()),
                 ],
                 &["effects"],
                 true,
@@ -1567,8 +1568,10 @@ impl Surface {
                 })?
             }
             None => {
-                let effects = parse_effects(&args["effects"])?;
                 self.with_writes(root, |store, ds| {
+                    // The shape check with the §8 fixes (3.4): the anchor fix
+                    // reads the block's live row, so it runs over the store.
+                    let effects = select::validate_plain(store, &args["effects"])?;
                     if preview {
                         return Ok((store.plan_effects(&ctx, &effects, ds)?, None));
                     }
@@ -1644,7 +1647,9 @@ impl Surface {
         // `filter_invalid` naming the nearest valid one.
         let spec =
             tool_spec(name).ok_or_else(|| SurfaceError::other(format!("unknown tool {name}")))?;
-        validate_arguments(name, &spec.input_schema, args)?;
+        // (4.5) a bare string in a string-list slot reaches the handler as `[s]`.
+        let normalized = validate_arguments(name, &spec.input_schema, args)?;
+        let args = normalized.as_ref().unwrap_or(args);
         match name {
             "docs_outline" => {
                 let (repo, _) = self.scope(args)?;
@@ -1887,14 +1892,22 @@ impl Surface {
                             select::plan_selected(store, ds, &ctx, &req, semantic)
                         })?
                     }
-                    None => {
-                        let effects = parse_effects(&args["effects"])?;
-                        self.with_writes(root.as_deref(), |store, ds| {
-                            Ok(store.plan_effects(&ctx, &effects, ds)?)
-                        })?
-                    }
+                    None => self.with_writes(root.as_deref(), |store, ds| {
+                        let effects = select::validate_plain(store, &args["effects"])?;
+                        Ok(store.plan_effects(&ctx, &effects, ds)?)
+                    })?,
                 };
-                Ok(plan_json(&plan))
+                let mut plan = plan_json(&plan);
+                // (4.5) `preview.diffs` — whole before/after bodies of every
+                // touched document — only on request: `diffs: true`. The
+                // digest is over the core, never the preview, so `plan_id`
+                // is the same either way.
+                if args.get("diffs").and_then(Json::as_bool) != Some(true)
+                    && let Some(preview) = plan.get_mut("preview").and_then(Json::as_object_mut)
+                {
+                    preview.remove("diffs");
+                }
+                Ok(plan)
             }
             "execute" => {
                 let (repo, root) = self.scope(args)?;
@@ -1948,13 +1961,10 @@ impl Surface {
                                 })
                             })?
                         }
-                        None => {
-                            let effects = parse_effects(effects)?;
-                            self.with_writes(root.as_deref(), |store, ds| {
-                                Ok(store
-                                    .execute_by_digest(&ctx, &plan_id, &effects, &origin, ds)?)
-                            })?
-                        }
+                        None => self.with_writes(root.as_deref(), |store, ds| {
+                            let effects = select::validate_plain(store, effects)?;
+                            Ok(store.execute_by_digest(&ctx, &plan_id, &effects, &origin, ds)?)
+                        })?,
                     }
                 };
                 self.notify();
@@ -3035,7 +3045,10 @@ mod tests {
             { "op": "insert", "into": { "kind": "document", "path": { "oqx": "project" } }, "markdown": { "oqx": "\"- [\" + title + \"](\" + path + \")\"" } },
             { "op": "set", "field": "frontmatter.rolled_up", "value": true },
         ]);
-        let plan = s.call("plan", json!({ "select": select, "effects": templates }));
+        let plan = s.call(
+            "plan",
+            json!({ "select": select, "effects": templates, "diffs": true }),
+        );
         assert!(!plan.is_error, "{}", plan.body);
         let plan = plan.body;
         assert_eq!(plan["planner_v"], "p3");
@@ -3204,7 +3217,7 @@ mod tests {
             { "op": "set", "target": { "kind": "document", "path": "/a.md" }, "field": "frontmatter.status", "value": "done" },
             { "op": "insert", "into": { "kind": "section", "heading_id": "b_0" }, "markdown": "Tail." },
         ]);
-        let plan = s.call("plan", json!({ "effects": effects }));
+        let plan = s.call("plan", json!({ "effects": effects, "diffs": true }));
         assert!(!plan.is_error, "{}", plan.body);
         let plan = plan.body;
         assert_eq!(plan["version"], 1);
@@ -3974,5 +3987,90 @@ mod tests {
         }));
         assert_eq!(page["digests"][0]["revisions"][0]["path"], "/a.md");
         assert_eq!(page["digests"][0]["summary"], "observed: /a.md");
+    }
+
+    /// `spec/surface` §4 (4.5): `plan` returns `preview.diffs` only on
+    /// `diffs: true`; the preview is otherwise identical and `plan_id` the
+    /// same either way (the digest is over the core).
+    #[test]
+    fn plan_returns_diffs_only_on_request() {
+        let mut s = surface();
+        let out = s.call(
+            "observe",
+            json!({ "path": "a.md", "content": "# A\n\nOne.\n" }),
+        );
+        assert!(!out.is_error, "{}", out.body);
+        let effects = json!([{ "op": "insert", "into": "/a.md", "markdown": "Two." }]);
+        let bare = s.call("plan", json!({ "effects": effects }));
+        assert!(!bare.is_error, "{}", bare.body);
+        assert!(bare.body["preview"].get("diffs").is_none(), "{}", bare.body);
+        assert!(bare.body["preview"].get("summary").is_some());
+        let with = s.call("plan", json!({ "effects": effects, "diffs": true }));
+        assert_eq!(
+            with.body["preview"]["diffs"]["/a.md"]["after"],
+            "# A\n\nOne.\n\nTwo.\n"
+        );
+        assert_eq!(with.body["plan_id"], bare.body["plan_id"]);
+        let mut p = with.body["preview"].as_object().unwrap().clone();
+        p.remove("diffs");
+        assert_eq!(Json::Object(p), bare.body["preview"]);
+        let off = s.call("plan", json!({ "effects": effects, "diffs": false }));
+        assert!(off.body["preview"].get("diffs").is_none());
+    }
+
+    /// `spec/surface` §4 "Arguments" (4.5): a bare string in a string-list
+    /// slot reaches the handler as a one-element list; a comma-joined one is
+    /// refused with the split call as its `fix`.
+    #[test]
+    fn string_list_arguments_take_one_bare_string() {
+        let mut s = surface();
+        for (path, content) in [("a.md", "# A\n\nOne.\n"), ("b.md", "# B\n")] {
+            let out = s.call("observe", json!({ "path": path, "content": content }));
+            assert!(!out.is_error, "{}", out.body);
+        }
+        let one = s.call("docs_read_many", json!({ "docs": "a.md" }));
+        assert!(!one.is_error, "{}", one.body);
+        assert_eq!(one.body["items"][0]["path"], "/a.md");
+        let ids = s.call("blocks_read_many", json!({ "ids": "b_1" }));
+        assert_eq!(ids.body["nodes"][0]["id"], "b_1");
+        let roots = s.call("graph", json!({ "roots": "a.md", "degrees": 0 }));
+        assert_eq!(roots.body["roots"], json!(["d_0"]));
+        let joined = s.call(
+            "docs_read_many",
+            json!({ "docs": "a.md, b.md", "include_ids": true }),
+        );
+        assert!(joined.is_error);
+        assert_eq!(joined.body["error"], "filter_invalid");
+        assert_eq!(
+            joined.body["data"]["fix"],
+            r#"{"docs":["a.md","b.md"],"include_ids":true}"#
+        );
+    }
+
+    /// `spec/mutate` §8 (3.4): the shape fixes reach the catalog's plain
+    /// `effects` path — the anchor fix reads the block's live row.
+    #[test]
+    fn plain_shape_errors_carry_their_fix() {
+        let mut s = surface();
+        let out = s.call(
+            "observe",
+            json!({ "path": "a.md", "content": "# A\n\n- one\n  - nested\n" }),
+        );
+        assert!(!out.is_error, "{}", out.body);
+        for tool in ["plan", "apply"] {
+            let e = s.call(tool, json!({ "effects": [{ "op": "insert", "into": { "kind": "block", "id": "b_3" }, "at": "after", "markdown": "x" }] }));
+            assert!(e.is_error, "{tool}: {}", e.body);
+            assert_eq!(e.body["error"], "filter_invalid");
+            assert_eq!(
+                e.body["data"]["fix"],
+                r#"{"effects":[{"at":{"after":"b_3"},"into":{"id":"b_2","kind":"block"},"markdown":"x","op":"insert"}]}"#,
+                "{tool}"
+            );
+        }
+        let e = s.call("plan", json!({ "effects": [{ "op": "set", "target": { "kind": "block", "id": "b_1" }, "field": "text", "value": "x" }] }));
+        assert_eq!(
+            e.body["data"]["fix"],
+            r#"{"effects":[{"field":"markdown","op":"set","target":{"id":"b_1","kind":"block"},"value":"x"}]}"#
+        );
     }
 }

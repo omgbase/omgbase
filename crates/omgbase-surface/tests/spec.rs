@@ -658,7 +658,7 @@ fn surface_composed(data: Option<&Json>) -> bool {
 }
 
 /// The fixture's view of an outcome: an error envelope without its
-/// `message` (and without `data` for `filter_invalid`); `changes_since`
+/// `message` (and without `data` for `filter_invalid`, save a `fix` — 4.5); `changes_since`
 /// digests without `summary`; a `version` result by shape (§6).
 fn normalize_outcome(tool: &str, out: &omgbase_surface::ToolOutcome) -> Json {
     let mut body = out.body.clone();
@@ -669,8 +669,19 @@ fn normalize_outcome(tool: &str, out: &omgbase_surface::ToolOutcome) -> Json {
             if !surface_composed(o.get("data")) {
                 o.remove("message");
             }
+            // (4.5) a `filter_invalid`'s `data` restates the message — except
+            // its `fix`, a corrected call both engines must compose alike:
+            // recorded as `data: { fix }`.
             if o.get("error").and_then(Json::as_str) == Some("filter_invalid") {
+                let fix = o
+                    .get("data")
+                    .and_then(|d| d.get("fix"))
+                    .filter(|f| f.is_string())
+                    .cloned();
                 o.remove("data");
+                if let Some(fix) = fix {
+                    o.insert("data".to_owned(), json!({ "fix": fix }));
+                }
             }
         }
     } else if tool == "version" {

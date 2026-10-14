@@ -452,7 +452,9 @@ impl Cli {
     /// a document path — the engine resolves), since no tool takes `dry_run`.
     pub fn preview(&mut self, tool: &str, args: Json, effects: Json) -> Result<Json> {
         if self.remote_mode() {
-            return self.remote_call("plan", json!({ "effects": effects }));
+            // (surface 4.5) `plan` returns `preview.diffs` only on request;
+            // the dry run prints them.
+            return self.remote_call("plan", json!({ "effects": effects, "diffs": true }));
         }
         self.surface(false)?;
         let ws = self.workspace()?;

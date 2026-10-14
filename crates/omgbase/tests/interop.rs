@@ -385,7 +385,7 @@ impl Drop for Peer {
 
 /// The MCP result as the fixture records it: the parsed JSON of the single
 /// text content item; an error result as `{ error, retriable, data? }`
-/// (`message` dropped, `data` dropped for `filter_invalid`); `changes_since`
+/// (`message` dropped, `data` dropped for `filter_invalid` save its `fix`); `changes_since`
 /// digests without `summary`; a `version` read by shape (§6); then the
 /// `<workspace>` rewrite.
 fn record(tool: &str, result: &Json, w: &str) -> Result<Json, String> {
@@ -439,8 +439,18 @@ fn record(tool: &str, result: &Json, w: &str) -> Result<Json, String> {
             if !composed {
                 o.remove("message");
             }
+            // (4.5) a `filter_invalid`'s `data` is dropped save its `fix`,
+            // recorded as `data: { fix }`.
             if o.get("error").and_then(Json::as_str) == Some("filter_invalid") {
+                let fix = o
+                    .get("data")
+                    .and_then(|d| d.get("fix"))
+                    .filter(|f| f.is_string())
+                    .cloned();
                 o.remove("data");
+                if let Some(fix) = fix {
+                    o.insert("data".to_owned(), json!({ "fix": fix }));
+                }
             }
         }
     } else if tool == "changes_since" {

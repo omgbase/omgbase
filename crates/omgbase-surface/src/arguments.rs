@@ -56,24 +56,65 @@ pub fn arguments_hint(tool: &str, schema: &Json) -> String {
 /// A `filter_invalid` for an argument-shape failure: `message` plus the tool's shape.
 #[must_use]
 pub fn argument_error(tool: &str, message: &str, schema: &Json) -> SurfaceError {
+    argument_error_fix(tool, message, schema, None)
+}
+
+/// [`argument_error`] with a `fix` (4.5, `spec/surface` §4 "Arguments")
+/// when the corrected call can be spelled.
+#[must_use]
+pub fn argument_error_fix(
+    tool: &str,
+    message: &str,
+    schema: &Json,
+    fix: Option<String>,
+) -> SurfaceError {
     let full = format!("{message} ({})", arguments_hint(tool, schema));
-    SurfaceError::with_data(
-        "filter_invalid",
-        full.clone(),
-        json!({ "reason": full, "hint": "arguments" }),
-    )
+    let mut data = json!({ "reason": full, "hint": "arguments" });
+    if let Some(fix) = fix
+        && let Some(d) = data.as_object_mut()
+    {
+        d.insert("fix".to_owned(), json!(fix));
+    }
+    SurfaceError::with_data("filter_invalid", full, data)
+}
+
+// ---- string lists (`spec/surface` §4 "Arguments", 4.5) -----------------------------------
+//
+// Every list-of-strings argument (`docs`, `ids`, `roots`, `blocks`, `select`,
+// `unset`) also takes ONE bare string as a one-element list — the first guess
+// of a caller who has one ref. A comma-joined string is still "must be an
+// array of strings", but that error carries a `fix`: the same call with the
+// string split on commas (each part trimmed, empty parts dropped), canonical
+// JSON.
+
+/// Is this argument's schema a string list (`{ type: array, items: { type: string } }`)?
+fn is_string_list(schema: &Json) -> bool {
+    type_of(schema) == Some("array") && schema.get("items").and_then(type_of) == Some("string")
+}
+
+/// The parts of a comma-joined string: split on `,`, trimmed, empty parts dropped.
+#[must_use]
+pub fn comma_split(s: &str) -> Vec<String> {
+    s.split(',')
+        .map(str::trim)
+        .filter(|p| !p.is_empty())
+        .map(str::to_owned)
+        .collect()
 }
 
 /// Check `args` against the tool's schema: unknown names first (bytewise
 /// order), then each declared argument (bytewise order) for presence and
 /// type. Nested shapes (`ops`, `expect`, `at`) are checked by their handlers.
-pub fn validate_arguments(tool: &str, schema: &Json, args: &Json) -> Result<()> {
+/// Returns the arguments as the handler sees them when the check normalized
+/// one (4.5: a bare string in a string-list slot becomes `[s]`), else `None`.
+pub fn validate_arguments(tool: &str, schema: &Json, args: &Json) -> Result<Option<Json>> {
     let Some(obj) = args.as_object() else {
         if args.is_null() {
-            return Ok(());
+            return Ok(None);
         }
         return Err(argument_error(tool, "arguments must be an object", schema));
     };
+    let mut normalized: Option<Map<String, Json>> = None;
     let props = properties(schema);
     let mut given: Vec<&String> = obj.keys().collect();
     given.sort_unstable();
@@ -101,6 +142,27 @@ pub fn validate_arguments(tool: &str, schema: &Json, args: &Json) -> Result<()> 
                 }
             }
             Some(value) => {
+                if is_string_list(prop)
+                    && let Some(s) = value.as_str()
+                {
+                    // (4.5) one bare string is a one-element list; a
+                    // comma-joined one is the array error with the split
+                    // list as its `fix`.
+                    if s.contains(',') {
+                        let mut fixed = obj.clone();
+                        fixed.insert(key.clone(), json!(comma_split(s)));
+                        return Err(argument_error_fix(
+                            tool,
+                            &format!("`{key}` must be an array of strings"),
+                            schema,
+                            Some(omgbase_mutate::canonical_json(&Json::Object(fixed))),
+                        ));
+                    }
+                    normalized
+                        .get_or_insert_with(|| obj.clone())
+                        .insert(key.clone(), json!([s]));
+                    continue;
+                }
                 if !matches_schema(prop, value) {
                     return Err(argument_error(
                         tool,
@@ -111,7 +173,7 @@ pub fn validate_arguments(tool: &str, schema: &Json, args: &Json) -> Result<()> 
             }
         }
     }
-    Ok(())
+    Ok(normalized.map(Json::Object))
 }
 
 /// What to say about an argument name the tool does not take: the names 3.0
@@ -398,5 +460,43 @@ mod tests {
         assert_eq!(nearest("q", &["query", "limit"]), Some("query"));
         assert_eq!(nearest("id", &["id", "path"]), Some("id"));
         assert_eq!(nearest("zzzz", &["id", "path"]), None);
+    }
+
+    /// `spec/surface` §4 "Arguments" (4.5): a string list takes one bare
+    /// string; a comma-joined one is the array error with the split call as
+    /// its `fix`; anything else is the array error alone.
+    #[test]
+    fn string_lists_take_one_bare_string_and_fix_a_comma_joined_one() {
+        let s = json!({ "type": "object", "properties": {
+            "docs": { "type": "array", "items": { "type": "string" } }, "include_ids": { "type": "boolean" }, "repo": { "type": "string" }
+        }, "required": ["docs"] });
+        assert_eq!(
+            validate_arguments("docs_read_many", &s, &json!({ "docs": "a.md" })).unwrap(),
+            Some(json!({ "docs": ["a.md"] }))
+        );
+        assert_eq!(
+            validate_arguments("docs_read_many", &s, &json!({ "docs": ["a.md"] })).unwrap(),
+            None
+        );
+        let e = validate_arguments(
+            "docs_read_many",
+            &s,
+            &json!({ "docs": "a.md, b.md,", "include_ids": true }),
+        )
+        .unwrap_err();
+        assert_eq!(
+            e.message,
+            "`docs` must be an array of strings (docs_read_many takes docs, include_ids?, repo?)"
+        );
+        let d = e.data.unwrap();
+        assert_eq!(d["hint"], "arguments");
+        assert_eq!(d["fix"], r#"{"docs":["a.md","b.md"],"include_ids":true}"#);
+        let e = validate_arguments("docs_read_many", &s, &json!({ "docs": 7 })).unwrap_err();
+        assert!(
+            e.message
+                .starts_with("`docs` must be an array of strings (")
+        );
+        assert!(e.data.unwrap().get("fix").is_none());
+        assert_eq!(comma_split(" a , ,b,"), ["a", "b"]);
     }
 }

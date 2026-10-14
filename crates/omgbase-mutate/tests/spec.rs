@@ -1181,11 +1181,16 @@ fn run_docs(r: &mut Runner, body: &JsonMap<String, Json>) -> Result<Json, String
     }
 }
 
-/// The `effects` of a step; a shape error is the planner's `filter_invalid`
-/// and records as an error outcome — `{ error: { code: "filter_invalid" } }`
-/// is not a §8 code, so the runner reports it as a runner problem.
-fn effects_of(body: &JsonMap<String, Json>) -> Result<Vec<Effect>, String> {
-    Effect::list_from_json(body.get("effects").ok_or("effects")?)
+/// The `effects` of a plain step, shape-checked as the surface's compile
+/// does (`select::validate_plain`: the §11.1 messages with the §8 shape fixes
+/// of 3.4, the anchor fix reading the store); a shape error is the planner's
+/// `filter_invalid` and records as the step's error outcome (`Err(outcome)`).
+fn effects_of(
+    r: &Runner,
+    body: &JsonMap<String, Json>,
+) -> Result<Result<Vec<Effect>, Json>, String> {
+    let raw = body.get("effects").ok_or("effects")?;
+    Ok(select::validate_plain(&r.store, raw).map_err(|e| surface_error_outcome(&e)))
 }
 
 fn plan_ctx(r: &Runner, ts: &str) -> PlanContext {
@@ -1295,10 +1300,10 @@ fn run_plan_effects(r: &mut Runner, body: &JsonMap<String, Json>) -> Result<Json
             Ok(plan) => Ok(plan),
             Err(outcome) => return Ok(outcome),
         },
-        None => {
-            let effects = effects_of(body)?;
-            r.store.plan_effects(&ctx, &effects, &r.doc_store)
-        }
+        None => match effects_of(r, body)? {
+            Ok(effects) => r.store.plan_effects(&ctx, &effects, &r.doc_store),
+            Err(outcome) => return Ok(outcome),
+        },
     };
     match planned {
         Ok(plan) => {
@@ -1359,7 +1364,10 @@ fn run_execute(r: &mut Runner, body: &JsonMap<String, Json>) -> Result<Json, Str
                 None => out,
             };
         }
-        let effects = effects_of(body)?;
+        let effects = match effects_of(r, body)? {
+            Ok(effects) => effects,
+            Err(outcome) => return Ok(outcome),
+        };
         let request = fixes::Request {
             select: None,
             effects: body.get("effects").cloned().unwrap_or(Json::Null),
@@ -1480,7 +1488,10 @@ fn run_apply_effects(r: &mut Runner, body: &JsonMap<String, Json>) -> Result<Jso
             None => out,
         };
     }
-    let effects = effects_of(body)?;
+    let effects = match effects_of(r, body)? {
+        Ok(effects) => effects,
+        Err(outcome) => return Ok(outcome),
+    };
     let mut planned: Option<Plan> = None;
     let mut failed: Option<MutationError> = None;
     let outcome = with_doc_store(r, |store, ds| {

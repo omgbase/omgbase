@@ -37,11 +37,11 @@ pub mod tree;
 pub use changeset::{Op, parse_placeholder, resolve_op, resolve_placeholder, resolve_to};
 pub use effects::{
     Admission, ConflictTracker, Effect, EffectExpect, ExpectMap, Field, Focus, FocusInfo,
-    FocusTarget, IdentityOp, IdentityPreview, NewId, NewIdKind, PLAN_VERSION, PLANNER_V, Plan,
-    PlanCreate, PlanFrontmatter, PlanMove, PlanOpset, PlanPreview, PlanRevision, PlanTombstone,
-    Preconditions, Repair, RetargetHitPreview, RetargetPairPreview, RetargetPreview,
-    SELECTION_CEILING, ScalarWrite, Selection, SelectionExpect, Target, canonical_json,
-    classify_field, map_block_ids, parse_new_symbol, shift_placeholders,
+    FocusTarget, IdentityOp, IdentityPreview, NewId, NewIdKind, PLAN_VERSION, PLANNER_V, ParentRow,
+    Plan, PlanCreate, PlanFrontmatter, PlanMove, PlanOpset, PlanPreview, PlanRevision,
+    PlanTombstone, Preconditions, Repair, RetargetHitPreview, RetargetPairPreview, RetargetPreview,
+    SELECTION_CEILING, ScalarWrite, Selection, SelectionExpect, ShapeError, ShapeFixContext,
+    Target, canonical_json, classify_field, map_block_ids, parse_new_symbol, shift_placeholders,
 };
 pub use error::{ErrorCode, MutationError, Result};
 pub use lower::{LowerResult, body_of, lcs, lower_replace, lower_top_level, strip_frontmatter};
@@ -59,7 +59,7 @@ pub use summary::{
 pub use tree::{BlockPath, MutBlock, MutDoc, child_ids, parent_children_hash, raw_hash_hex};
 
 /// The `spec/mutate/VERSION` this crate implements (`major.minor`).
-pub const SPEC_VERSION: &str = "3.3";
+pub const SPEC_VERSION: &str = "3.4";
 
 /// This crate's own version (`Cargo.toml`), for the surface's `version` tool.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

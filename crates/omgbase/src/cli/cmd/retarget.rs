@@ -51,7 +51,10 @@ pub fn retarget(cli: &mut Cli, args: &[String]) -> Result<i32> {
     }
     // The plan (default): `{ from, to, hits }` from the Plan's
     // `preview.retarget[0]` (a plan over no hit still carries it, empty).
-    let plan = cli.call("plan", json!({ "effects": effects_json(&effects) }))?;
+    let plan = cli.call(
+        "plan",
+        json!({ "effects": effects_json(&effects), "diffs": true }),
+    )?;
     let hits: Vec<Json> = plan["preview"]["retarget"][0]["hits"]
         .as_array()
         .cloned()

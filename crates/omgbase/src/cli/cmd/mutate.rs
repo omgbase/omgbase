@@ -665,7 +665,7 @@ fn update_doc(cli: &mut Cli, args: &[String]) -> Result<i32> {
                 "field": "content",
                 "value": bytes,
             });
-            let plan = cli.call("plan", json!({ "effects": [effect] }))?;
+            let plan = cli.call("plan", json!({ "effects": [effect], "diffs": true }))?;
             return render_update_plan(cli, plan);
         }
         let mut target = m.clone();
@@ -703,7 +703,7 @@ fn update_doc(cli: &mut Cli, args: &[String]) -> Result<i32> {
         "value": bytes,
     });
     if cli.flags.dry_run {
-        let plan = cli.call("plan", json!({ "effects": [effect] }))?;
+        let plan = cli.call("plan", json!({ "effects": [effect], "diffs": true }))?;
         return render_update_plan(cli, plan);
     }
     let mut m = Map::new();

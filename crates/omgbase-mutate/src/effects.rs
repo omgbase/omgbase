@@ -62,6 +62,230 @@ pub fn new_symbol(n: usize) -> String {
     format!("$new.{n}")
 }
 
+// ---- the shape check's `fix` (§8, 3.4) ----------------------------------------------------
+
+/// A §11.1 shape error: the message (naming `effects[i]` and the member) and,
+/// since 3.4 (§8), the corrected call when the check can spell it — the
+/// request as given with the offending effect rewritten, canonical JSON.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ShapeError {
+    pub message: String,
+    pub fix: Option<String>,
+}
+
+impl From<String> for ShapeError {
+    fn from(message: String) -> Self {
+        Self { message, fix: None }
+    }
+}
+
+/// A live block's row for the anchor fix: its parent block id (`None` at the
+/// top level) and its document's path (storage form).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ParentRow {
+    pub parent: Option<String>,
+    pub path: String,
+}
+
+/// What the shape check needs to spell a `fix` for the shape errors of §8
+/// (3.4; the reference's `ShapeFixContext`): the request as given — `select`
+/// and `expect` when present, the `effects` list (the corrected call is that
+/// request with `effects[i]` AS WRITTEN rewritten, before any desugaring) —
+/// and the live-row lookup for the one fix that reads the store: `parent_of`
+/// a block id → its row, or `None` when no live block has the id (then there
+/// is no fix). The planner's compile supplies it; a call without it gets the
+/// same errors with no `fix`.
+pub struct ShapeFixContext<'a> {
+    pub select: Option<&'a Value>,
+    pub effects: &'a Value,
+    pub expect: Option<&'a Value>,
+    pub parent_of: &'a dyn Fn(&str) -> Option<ParentRow>,
+}
+
+/// The fixer of one effect (the reference's `EffectFixer`): `build(effect,
+/// expect)` is the request with `effects[i]` replaced by `effect` (and, when
+/// given, its top-level `expect` replaced), canonical.
+struct Fixer<'a> {
+    ctx: &'a ShapeFixContext<'a>,
+    i: usize,
+    /// the effect as written in the request (the base every corrected effect is spelled from)
+    written: Map<String, Value>,
+}
+
+impl<'a> Fixer<'a> {
+    fn new(ctx: Option<&'a ShapeFixContext<'a>>, i: usize, v: &Map<String, Value>) -> Option<Self> {
+        let ctx = ctx?;
+        let written = ctx
+            .effects
+            .as_array()
+            .and_then(|l| l.get(i))
+            .and_then(Value::as_object)
+            .unwrap_or(v)
+            .clone();
+        Some(Self { ctx, i, written })
+    }
+
+    fn build(&self, effect: Map<String, Value>, expect: Option<Value>) -> String {
+        let effects = match self.ctx.effects {
+            Value::Array(list) => {
+                let mut copy = list.clone();
+                if self.i < copy.len() {
+                    copy[self.i] = Value::Object(effect);
+                } else {
+                    copy.resize(self.i, Value::Null);
+                    copy.push(Value::Object(effect));
+                }
+                Value::Array(copy)
+            }
+            other => {
+                let mut o = other.as_object().cloned().unwrap_or_default();
+                o.insert(self.i.to_string(), Value::Object(effect));
+                Value::Object(o)
+            }
+        };
+        let mut m = Map::new();
+        if let Some(s) = self.ctx.select {
+            m.insert("select".to_owned(), s.clone());
+        }
+        m.insert("effects".to_owned(), effects);
+        match expect {
+            Some(e) => {
+                m.insert("expect".to_owned(), e);
+            }
+            None => {
+                if let Some(e) = self.ctx.expect {
+                    m.insert("expect".to_owned(), e.clone());
+                }
+            }
+        }
+        canonical_json(&Value::Object(m))
+    }
+}
+
+/// The reference form of a storage path: exactly one leading `/`.
+fn reference_path(path: &str) -> String {
+    format!("/{}", path.trim_start_matches('/'))
+}
+
+/// §8 (3.4): an effect-level `expect.max` — the bound belongs to the
+/// request's top-level `expect`, beside `select`. The fix drops it from the
+/// effect (the rest of that `expect` stays; an emptied `expect` goes) and,
+/// when the request has a `select`, moves it to the top level unless a
+/// top-level `expect.max` is already there (then the top-level one is kept
+/// as written); without a `select` a top-level `expect` would itself be
+/// refused, so the fix only drops it.
+fn effect_level_max(v: &Map<String, Value>, here: &str, f: Option<&Fixer<'_>>) -> ShapeError {
+    let message = format!(
+        "{here}: `expect.max` bounds a selection — it is the request's top-level `expect`, beside `select`, not an effect's"
+    );
+    let Some(f) = f else {
+        return message.into();
+    };
+    let mut rest = v.clone();
+    let max = rest.remove("max").unwrap_or(Value::Null);
+    let mut effect = f.written.clone();
+    if rest.is_empty() {
+        effect.remove("expect");
+    } else {
+        effect.insert("expect".to_owned(), Value::Object(rest));
+    }
+    if f.ctx.select.is_none() {
+        return ShapeError {
+            message,
+            fix: Some(f.build(effect, None)),
+        };
+    }
+    let mut top = f
+        .ctx
+        .expect
+        .and_then(Value::as_object)
+        .cloned()
+        .unwrap_or_default();
+    if !top.contains_key("max") {
+        top.insert("max".to_owned(), max);
+    }
+    ShapeError {
+        message,
+        fix: Some(f.build(effect, Some(Value::Object(top)))),
+    }
+}
+
+/// §8 (3.4): `at` given as the bare string `"after"` / `"before"` with a
+/// block `into` — "right after block X" is `into: X's parent, at: { after:
+/// X }`. The fix needs the block's live row (its parent, or its document
+/// when it is top-level, spelled as the rooted path); a block the store does
+/// not know gets no fix.
+fn bare_anchor(at: &str, into: &Target, here: &str, f: Option<&Fixer<'_>>) -> ShapeError {
+    let message = format!(
+        "{here}: `at` must be \"start\", \"end\", {{ before: <block id> }} or {{ after: <block id> }} — \"{at} block X\" is into: X's parent (a block, or the document when X is top-level), at: {{ {at}: X }}"
+    );
+    let (Some(f), Target::Block { id }) = (f, into) else {
+        return message.into();
+    };
+    let Some(row) = (f.ctx.parent_of)(id) else {
+        return message.into();
+    };
+    let parent = match row.parent {
+        None => json!(reference_path(&row.path)),
+        Some(p) => json!({ "kind": "block", "id": p }),
+    };
+    let mut effect = f.written.clone();
+    effect.insert("into".to_owned(), parent);
+    effect.insert("at".to_owned(), json!({ at: id }));
+    ShapeError {
+        message,
+        fix: Some(f.build(effect, None)),
+    }
+}
+
+/// §8 (3.4): a plural-target `expect` written as `{ content_hash: { <id>:
+/// <hash>, … } }` (every key a guard name, every value a map of strings) —
+/// the fix inverts the nesting to `{ <id>: { content_hash: <hash> }, … }`.
+fn inverted_expect_map(
+    v: &Map<String, Value>,
+    here: &str,
+    f: Option<&Fixer<'_>>,
+) -> Option<ShapeError> {
+    let is_string_record = |x: &Value| {
+        x.as_object()
+            .is_some_and(|o| o.values().all(Value::is_string))
+    };
+    if v.is_empty()
+        || !v
+            .keys()
+            .all(|k| k == "content_hash" || k == "parent_children_hash")
+        || !v.values().all(is_string_record)
+    {
+        return None;
+    }
+    let message = format!(
+        "{here}: a plural-target `expect` is keyed by block id — {{ <block id>: {{ content_hash?, parent_children_hash? }}, … }}"
+    );
+    let Some(f) = f else {
+        return Some(message.into());
+    };
+    let mut inverted: Map<String, Value> = Map::new();
+    for (guard, by_id) in v {
+        for (id, hash) in by_id.as_object().expect("checked") {
+            let entry = inverted
+                .entry(id.clone())
+                .or_insert_with(|| Value::Object(Map::new()));
+            if let Some(o) = entry.as_object_mut() {
+                o.insert(guard.clone(), hash.clone());
+            }
+        }
+    }
+    let mut effect = f.written.clone();
+    effect.insert("expect".to_owned(), Value::Object(inverted));
+    Some(ShapeError {
+        message,
+        fix: Some(f.build(effect, None)),
+    })
+}
+
+/// §8 (3.4): the block-field misspellings the fix corrects to `markdown`.
+const BLOCK_FIELD_ALIASES: &[&str] = &["text", "content", "body", "raw"];
+
 // ---- targets ------------------------------------------------------------------------------
 
 /// What an effect addresses (§11 `Target`). A document is named by `id`
@@ -186,7 +410,9 @@ impl EffectExpect {
     }
 
     pub fn from_json(v: &Value) -> std::result::Result<Self, String> {
-        validate_expect(Some(v), "expect").map(|e| e.expect("given"))
+        validate_expect(Some(v), "expect", None)
+            .map(|e| e.expect("given"))
+            .map_err(|e| e.message)
     }
 }
 
@@ -311,6 +537,24 @@ pub fn at_from_json(v: Option<&Value>, here: &str) -> std::result::Result<At, St
     }
 }
 
+/// `at` of an `insert` / block `move` (the reference's `validateAt`): the
+/// bare string `"before"` / `"after"` is the anchor mistake of §8 (3.4), its
+/// message naming the right shape and its fix anchoring on the block from
+/// its parent.
+fn validate_at(
+    v: Option<&Value>,
+    here: &str,
+    into: &Target,
+    f: Option<&Fixer<'_>>,
+) -> std::result::Result<At, ShapeError> {
+    if let Some(Value::String(s)) = v
+        && (s == "before" || s == "after")
+    {
+        return Err(bare_anchor(s, into, here, f));
+    }
+    at_from_json(v, here).map_err(Into::into)
+}
+
 fn require_string(
     obj: &Map<String, Value>,
     key: &str,
@@ -429,11 +673,15 @@ fn validate_targets(v: Option<&Value>, here: &str) -> std::result::Result<Vec<St
 fn validate_expect(
     v: Option<&Value>,
     here: &str,
-) -> std::result::Result<Option<EffectExpect>, String> {
+    f: Option<&Fixer<'_>>,
+) -> std::result::Result<Option<EffectExpect>, ShapeError> {
     let Some(v) = v else { return Ok(None) };
     let obj = v
         .as_object()
         .ok_or_else(|| format!("{here}: `expect` must be an object"))?;
+    if obj.contains_key("max") {
+        return Err(effect_level_max(obj, here, f));
+    }
     let at = format!("{here}.expect");
     only_keys(
         obj,
@@ -450,11 +698,18 @@ fn validate_expect(
 fn validate_expect_map(
     v: Option<&Value>,
     here: &str,
-) -> std::result::Result<Option<ExpectMap>, String> {
+    f: Option<&Fixer<'_>>,
+) -> std::result::Result<Option<ExpectMap>, ShapeError> {
     let Some(v) = v else { return Ok(None) };
     let obj = v
         .as_object()
         .ok_or_else(|| format!("{here}: `expect` must be an object keyed by block id"))?;
+    if obj.contains_key("max") {
+        return Err(effect_level_max(obj, here, f));
+    }
+    if let Some(e) = inverted_expect_map(obj, here, f) {
+        return Err(e);
+    }
     let mut out = ExpectMap::new();
     for (id, x) in obj {
         let at = format!("{here}.expect[{}]", Value::String(id.clone()));
@@ -479,7 +734,8 @@ fn check_field(
     field: &str,
     here: &str,
     op: &str,
-) -> std::result::Result<(), String> {
+    f: Option<&Fixer<'_>>,
+) -> std::result::Result<(), ShapeError> {
     match target {
         Target::Document { .. } => {
             if field
@@ -492,28 +748,39 @@ fn check_field(
                 Err(format!(
                     "{here}: a document's `field` is `frontmatter.<key>`{} (got \"{field}\")",
                     if op == "set" { " or `content`" } else { "" }
-                ))
+                )
+                .into())
             }
         }
         Target::Block { .. } => {
             if field == "markdown" || field == "attrs.checked" {
                 Ok(())
             } else {
-                Err(format!(
-                    "{here}: a block's `field` is `markdown` or `attrs.checked` (got \"{field}\")"
-                ))
+                // (3.4, §8) `text` / `content` / `body` / `raw` on a block: the fix spells `markdown`.
+                let fix = f.filter(|_| BLOCK_FIELD_ALIASES.contains(&field)).map(|f| {
+                    let mut effect = f.written.clone();
+                    effect.insert("field".to_owned(), json!("markdown"));
+                    f.build(effect, None)
+                });
+                Err(ShapeError {
+                    message: format!(
+                        "{here}: a block's `field` is `markdown` or `attrs.checked` (got \"{field}\")"
+                    ),
+                    fix,
+                })
             }
         }
         Target::Node { .. } => {
             if field.is_empty() || field.contains('.') {
                 Err(format!(
                     "{here}: a node's `field` is one of its editable properties (got \"{field}\")"
-                ))
+                )
+                .into())
             } else {
                 Ok(())
             }
         }
-        Target::Section { .. } => Err(format!("{here}: a section has no settable field")),
+        Target::Section { .. } => Err(format!("{here}: a section has no settable field").into()),
     }
 }
 
@@ -683,6 +950,18 @@ impl Effect {
     /// §11.2 — the message names `effects[i]` and the member (the surface
     /// reports it as `filter_invalid { reason, hint: "arguments" }`).
     pub fn validate(v: &Value, i: usize) -> std::result::Result<Effect, String> {
+        Effect::validate_with(v, i, None).map_err(|e| e.message)
+    }
+
+    /// [`Effect::validate`] with the shape fixes of §8 (3.4): given a
+    /// [`ShapeFixContext`] — the request as written and the store's row
+    /// lookup — the four shape mistakes carry their corrected call as
+    /// [`ShapeError::fix`]; without one the same errors carry none.
+    pub fn validate_with(
+        v: &Value,
+        i: usize,
+        fix: Option<&ShapeFixContext<'_>>,
+    ) -> std::result::Result<Effect, ShapeError> {
         let here = format!("effects[{i}]");
         let ops = "create/insert/set/unset/move/remove/split/merge/retarget";
         let obj = v
@@ -690,6 +969,8 @@ impl Effect {
             .filter(|o| o.get("op").is_some_and(Value::is_string))
             .ok_or_else(|| format!("{here}: an effect is an object whose `op` is one of {ops}"))?;
         let op = obj["op"].as_str().expect("checked");
+        let fixer = Fixer::new(fix, i, obj);
+        let f = fixer.as_ref();
         Ok(match op {
             "create" => {
                 only_keys(obj, &["op", "path", "markdown", "frontmatter"], &here)?;
@@ -698,7 +979,9 @@ impl Effect {
                 let frontmatter = match obj.get("frontmatter") {
                     None => None,
                     Some(Value::Object(fm)) => Some(fm.clone()),
-                    Some(_) => return Err(format!("{here}: `frontmatter` must be an object")),
+                    Some(_) => {
+                        return Err(format!("{here}: `frontmatter` must be an object").into());
+                    }
                 };
                 Effect::Create {
                     path,
@@ -713,9 +996,9 @@ impl Effect {
                     &format!("{here}.into"),
                     &["document", "section", "block"],
                 )?;
-                let at = at_from_json(obj.get("at"), &here)?;
+                let at = validate_at(obj.get("at"), &here, &into, f)?;
                 let markdown = require_string(obj, "markdown", &here)?;
-                let expect = validate_expect(obj.get("expect"), &here)?;
+                let expect = validate_expect(obj.get("expect"), &here, f)?;
                 Effect::Insert {
                     into,
                     at,
@@ -735,8 +1018,8 @@ impl Effect {
                     .get("value")
                     .cloned()
                     .ok_or_else(|| format!("{here}: `value` is required"))?;
-                check_field(&target, &field, &here, "set")?;
-                let expect = validate_expect(obj.get("expect"), &here)?;
+                check_field(&target, &field, &here, "set", f)?;
+                let expect = validate_expect(obj.get("expect"), &here, f)?;
                 Effect::Set {
                     target,
                     field,
@@ -749,8 +1032,8 @@ impl Effect {
                 let target =
                     validate_target(obj.get("target"), &format!("{here}.target"), &["document"])?;
                 let field = require_string(obj, "field", &here)?;
-                check_field(&target, &field, &here, "unset")?;
-                let expect = validate_expect(obj.get("expect"), &here)?;
+                check_field(&target, &field, &here, "unset", None)?;
+                let expect = validate_expect(obj.get("expect"), &here, f)?;
                 Effect::Unset {
                     target,
                     field,
@@ -766,8 +1049,8 @@ impl Effect {
                         &format!("{here}.into"),
                         &["document", "section", "block"],
                     )?;
-                    let at = at_from_json(obj.get("at"), &here)?;
-                    let expect = validate_expect(obj.get("expect"), &here)?;
+                    let at = validate_at(obj.get("at"), &here, &into, f)?;
+                    let expect = validate_expect(obj.get("expect"), &here, f)?;
                     Effect::MoveBlocks {
                         targets,
                         into,
@@ -786,7 +1069,9 @@ impl Effect {
                         None => true,
                         Some(Value::Bool(b)) => *b,
                         Some(_) => {
-                            return Err(format!("{here}: `retarget_inbound` must be a boolean"));
+                            return Err(
+                                format!("{here}: `retarget_inbound` must be a boolean").into()
+                            );
                         }
                     };
                     Effect::MoveDocument {
@@ -801,7 +1086,7 @@ impl Effect {
                     only_keys(obj, &["op", "targets", "expect"], &here)?;
                     Effect::RemoveBlocks {
                         targets: validate_targets(obj.get("targets"), &here)?,
-                        expect: validate_expect_map(obj.get("expect"), &here)?,
+                        expect: validate_expect_map(obj.get("expect"), &here, f)?,
                     }
                 } else {
                     only_keys(obj, &["op", "target"], &here)?;
@@ -830,7 +1115,7 @@ impl Effect {
                             .collect::<Option<Vec<usize>>>()
                     })
                     .ok_or_else(|| format!("{here}: `at` must be an array of byte offsets"))?;
-                let expect = validate_expect(obj.get("expect"), &here)?;
+                let expect = validate_expect(obj.get("expect"), &here, f)?;
                 Effect::Split {
                     target: id,
                     at,
@@ -842,7 +1127,7 @@ impl Effect {
                 Effect::Merge {
                     targets: validate_targets(obj.get("targets"), &here)?,
                     separator: optional_string(obj, "separator", &here)?,
-                    expect: validate_expect_map(obj.get("expect"), &here)?,
+                    expect: validate_expect_map(obj.get("expect"), &here, f)?,
                 }
             }
             "retarget" => {
@@ -871,9 +1156,7 @@ impl Effect {
                 }
             }
             other => {
-                return Err(format!(
-                    "{here}: `op` must be one of {ops} (got \"{other}\")"
-                ));
+                return Err(format!("{here}: `op` must be one of {ops} (got \"{other}\")").into());
             }
         })
     }
@@ -972,7 +1255,7 @@ pub fn classify_field<'a>(
     target: &Target,
     field: &'a str,
 ) -> std::result::Result<Field<'a>, String> {
-    check_field(target, field, "field", "set")?;
+    check_field(target, field, "field", "set", None).map_err(|e| e.message)?;
     Ok(match target {
         Target::Document { .. } => match field.strip_prefix("frontmatter.") {
             Some(key) => Field::Frontmatter(key),
@@ -3101,5 +3384,192 @@ mod tests {
             Plan::admit(&empty),
             Err(Admission::Invalid(m)) if m.contains("templates")
         ));
+    }
+
+    // ---- the shape fixes (§8, 3.4) ----------------------------------------------------------
+
+    fn ctx<'a>(
+        effects: &'a Value,
+        select: Option<&'a Value>,
+        expect: Option<&'a Value>,
+        parent_of: &'a dyn Fn(&str) -> Option<ParentRow>,
+    ) -> ShapeFixContext<'a> {
+        ShapeFixContext {
+            select,
+            effects,
+            expect,
+            parent_of,
+        }
+    }
+
+    fn rows(id: &str) -> Option<ParentRow> {
+        match id {
+            "b_4" => Some(ParentRow {
+                parent: Some("b_3".to_owned()),
+                path: "a.md".to_owned(),
+            }),
+            "b_1" => Some(ParentRow {
+                parent: None,
+                path: "a.md".to_owned(),
+            }),
+            _ => None,
+        }
+    }
+
+    #[test]
+    fn a_bare_anchor_is_fixed_from_the_blocks_parent() {
+        let effects = json!([{ "op": "insert", "into": { "kind": "block", "id": "b_4" }, "at": "after", "markdown": "x" }]);
+        let c = ctx(&effects, None, None, &rows);
+        let e = Effect::validate_with(&effects[0], 0, Some(&c)).unwrap_err();
+        assert_eq!(
+            e.message,
+            "effects[0]: `at` must be \"start\", \"end\", { before: <block id> } or { after: <block id> } — \"after block X\" is into: X's parent (a block, or the document when X is top-level), at: { after: X }"
+        );
+        assert_eq!(
+            e.fix.as_deref(),
+            Some(
+                r#"{"effects":[{"at":{"after":"b_4"},"into":{"id":"b_3","kind":"block"},"markdown":"x","op":"insert"}]}"#
+            )
+        );
+        // top-level: the document's rooted path; the written effect is the base
+        let effects = json!([{ "op": "move", "targets": [{ "kind": "block", "id": "b_6" }], "into": { "kind": "block", "id": "b_1" }, "at": "before" }]);
+        let c = ctx(&effects, None, None, &rows);
+        let e = Effect::validate_with(&effects[0], 0, Some(&c)).unwrap_err();
+        assert!(e.message.contains("\"before block X\""));
+        assert_eq!(
+            e.fix.as_deref(),
+            Some(
+                r#"{"effects":[{"at":{"before":"b_1"},"into":"/a.md","op":"move","targets":[{"id":"b_6","kind":"block"}]}]}"#
+            )
+        );
+        // an unknown block, a document `into`, or no context: the message alone
+        let effects = json!([{ "op": "insert", "into": { "kind": "block", "id": "b_99" }, "at": "after", "markdown": "x" }]);
+        let c = ctx(&effects, None, None, &rows);
+        assert_eq!(
+            Effect::validate_with(&effects[0], 0, Some(&c))
+                .unwrap_err()
+                .fix,
+            None
+        );
+        let effects = json!([{ "op": "insert", "into": { "kind": "document", "path": "a.md" }, "at": "after", "markdown": "x" }]);
+        let c = ctx(&effects, None, None, &rows);
+        assert_eq!(
+            Effect::validate_with(&effects[0], 0, Some(&c))
+                .unwrap_err()
+                .fix,
+            None
+        );
+        assert_eq!(
+            Effect::validate_with(&effects[0], 0, None).unwrap_err().fix,
+            None
+        );
+    }
+
+    #[test]
+    fn a_guard_first_plural_expect_is_inverted() {
+        let effects = json!([{ "op": "remove", "targets": [{ "kind": "block", "id": "b_1" }, { "kind": "block", "id": "b_8" }],
+            "expect": { "content_hash": { "b_1": "h1", "b_8": "h8" }, "parent_children_hash": { "b_1": "p1" } } }]);
+        let c = ctx(&effects, None, None, &rows);
+        let e = Effect::validate_with(&effects[0], 0, Some(&c)).unwrap_err();
+        assert_eq!(
+            e.message,
+            "effects[0]: a plural-target `expect` is keyed by block id — { <block id>: { content_hash?, parent_children_hash? }, … }"
+        );
+        assert_eq!(
+            e.fix.as_deref(),
+            Some(
+                r#"{"effects":[{"expect":{"b_1":{"content_hash":"h1","parent_children_hash":"p1"},"b_8":{"content_hash":"h8"}},"op":"remove","targets":[{"id":"b_1","kind":"block"},{"id":"b_8","kind":"block"}]}]}"#
+            )
+        );
+        // a value that is not a map of strings is the plain per-id message
+        let effects = json!([{ "op": "merge", "targets": [{ "kind": "block", "id": "b_1" }], "expect": { "content_hash": "h1" } }]);
+        let c = ctx(&effects, None, None, &rows);
+        let e = Effect::validate_with(&effects[0], 0, Some(&c)).unwrap_err();
+        assert_eq!(
+            e.message,
+            "effects[0].expect[\"content_hash\"]: must be an object"
+        );
+        assert_eq!(e.fix, None);
+    }
+
+    #[test]
+    fn an_effect_level_max_moves_beside_select_or_is_dropped() {
+        let select = json!("from blocks where type == \"paragraph\"");
+        let effects =
+            json!([{ "op": "set", "field": "markdown", "value": "x", "expect": { "max": 5 } }]);
+        // the probe the compile validates (a target in the slot)
+        let probe = json!({ "op": "set", "target": { "kind": "block", "id": "b_1" }, "field": "markdown", "value": "x", "expect": { "max": 5 } });
+        let c = ctx(&effects, Some(&select), None, &rows);
+        let e = Effect::validate_with(&probe, 0, Some(&c)).unwrap_err();
+        assert_eq!(
+            e.message,
+            "effects[0]: `expect.max` bounds a selection — it is the request's top-level `expect`, beside `select`, not an effect's"
+        );
+        assert_eq!(
+            e.fix.as_deref(),
+            Some(
+                r#"{"effects":[{"field":"markdown","op":"set","value":"x"}],"expect":{"max":5},"select":"from blocks where type == \"paragraph\""}"#
+            )
+        );
+        // a top-level `max` already there is kept; the other guards stay
+        let effects = json!([{ "op": "set", "field": "markdown", "value": "x", "expect": { "max": 9, "revision": "r_0" } }]);
+        let probe = json!({ "op": "set", "target": { "kind": "block", "id": "b_1" }, "field": "markdown", "value": "x", "expect": { "max": 9, "revision": "r_0" } });
+        let top = json!({ "max": 2 });
+        let c = ctx(&effects, Some(&select), Some(&top), &rows);
+        let e = Effect::validate_with(&probe, 0, Some(&c)).unwrap_err();
+        assert_eq!(
+            e.fix.as_deref(),
+            Some(
+                r#"{"effects":[{"expect":{"revision":"r_0"},"field":"markdown","op":"set","value":"x"}],"expect":{"max":2},"select":"from blocks where type == \"paragraph\""}"#
+            )
+        );
+        // without a `select`: only the drop (a plural `expect` too)
+        let effects = json!([{ "op": "remove", "targets": [{ "kind": "block", "id": "b_1" }], "expect": { "max": 2 } }]);
+        let c = ctx(&effects, None, None, &rows);
+        let e = Effect::validate_with(&effects[0], 0, Some(&c)).unwrap_err();
+        assert_eq!(
+            e.fix.as_deref(),
+            Some(r#"{"effects":[{"op":"remove","targets":[{"id":"b_1","kind":"block"}]}]}"#)
+        );
+    }
+
+    #[test]
+    fn a_block_field_alias_is_fixed_to_markdown() {
+        for alias in ["text", "content", "body", "raw"] {
+            let effects = json!([{ "op": "set", "target": { "kind": "block", "id": "b_1" }, "field": alias, "value": "x" }]);
+            let c = ctx(&effects, None, None, &rows);
+            let e = Effect::validate_with(&effects[0], 0, Some(&c)).unwrap_err();
+            assert_eq!(
+                e.message,
+                format!(
+                    "effects[0]: a block's `field` is `markdown` or `attrs.checked` (got \"{alias}\")"
+                )
+            );
+            assert_eq!(
+                e.fix.as_deref(),
+                Some(
+                    r#"{"effects":[{"field":"markdown","op":"set","target":{"id":"b_1","kind":"block"},"value":"x"}]}"#
+                )
+            );
+        }
+        let effects = json!([{ "op": "set", "target": { "kind": "block", "id": "b_1" }, "field": "title", "value": "x" }]);
+        let c = ctx(&effects, None, None, &rows);
+        assert_eq!(
+            Effect::validate_with(&effects[0], 0, Some(&c))
+                .unwrap_err()
+                .fix,
+            None
+        );
+        // the corrected effect is spelled from the request as written, not the probe
+        let effects = json!([{ "op": "set", "target": "b_1", "field": "text", "value": "x" }]);
+        let probe = json!({ "op": "set", "target": { "kind": "block", "id": "b_1" }, "field": "text", "value": "x" });
+        let c = ctx(&effects, None, None, &rows);
+        assert_eq!(
+            Effect::validate_with(&probe, 0, Some(&c))
+                .unwrap_err()
+                .fix
+                .as_deref(),
+            Some(r#"{"effects":[{"field":"markdown","op":"set","target":"b_1","value":"x"}]}"#)
+        );
     }
 }
