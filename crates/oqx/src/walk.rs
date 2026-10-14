@@ -106,16 +106,18 @@ pub struct VisitContext<'a> {
     pub depth: usize,
 }
 
-/// The callbacks of [`visit`].
-pub trait Visitor {
+/// The callbacks of [`visit`]. `'a` is the tree's lifetime: a visitor may
+/// keep the nodes it is handed (the `references` pass does; 0.23). An
+/// implementor that keeps nothing writes `impl Visitor<'_> for V`.
+pub trait Visitor<'a> {
     /// Called before a node's children; return `false` to skip the subtree
     /// (`leave` is still called for the node).
-    fn enter(&mut self, node: Node<'_>, ctx: &VisitContext<'_>) -> bool {
+    fn enter(&mut self, node: Node<'a>, ctx: &VisitContext<'a>) -> bool {
         let _ = (node, ctx);
         true
     }
     /// Called after a node's children.
-    fn leave(&mut self, node: Node<'_>, ctx: &VisitContext<'_>) {
+    fn leave(&mut self, node: Node<'a>, ctx: &VisitContext<'a>) {
         let _ = (node, ctx);
     }
 }
@@ -315,12 +317,12 @@ fn where_node(w: &Where) -> Node<'_> {
 }
 
 /// Walk a tree depth-first in canonical source order.
-pub fn visit<'a, V: Visitor>(root: Node<'a>, visitor: &mut V) {
+pub fn visit<'a, V: Visitor<'a>>(root: Node<'a>, visitor: &mut V) {
     let mut path: Vec<Node<'a>> = Vec::new();
     go(root, None, 0, &mut path, visitor);
 }
 
-fn go<'a, V: Visitor>(
+fn go<'a, V: Visitor<'a>>(
     node: Node<'a>,
     clause: Option<Clause>,
     depth: usize,

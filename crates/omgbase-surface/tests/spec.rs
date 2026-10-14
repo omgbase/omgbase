@@ -453,6 +453,8 @@ fn run_once(
         provider: None,
         in_memory,
         bare: c.get("bare").and_then(Json::as_bool).unwrap_or(false),
+        unknown_names: None,
+        vocabulary: None,
     };
     let started = Instant::now();
     let out = query(store, repo, source, opts);

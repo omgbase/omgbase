@@ -4,6 +4,13 @@ All notable changes to `oqx` are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [Semantic Versioning](https://semver.org/) (pre-1.0: a minor bump may break).
 
+## [0.23.0] - 2026-10-13
+
+### Minor
+- OQX 0.23 (`spec/oqx` 0.22 → 0.23): **the `references` static pass** (`AST.md` §5b; new suite `references`, 29 cases: 1350 → 1379 fixtures; new fixture kind `expect.references`). `references::references(&query)` lists every **name a query reads from a row** — a bare identifier, a dotted navigation headed by one (one reference, the full path: `doc.layer`, `meta.owner`), an outer reference (`^title`, `1^title`; `$it` heads dropped) — in canonical source order, each as `Reference { name, clause, scope: ReferenceScope { depth, steps }, span }` over nodes borrowed from the tree. `scope.steps` is the row chain producing the scope's rows, root first with the depth each step produces (`ReferenceStep { expr: StepExpr::Expr(&Expr) | StepExpr::Follow(&Follow), depth }`): the source, a body's `from`, a block's receiver (one deeper), a `follow` node (the walk's frontier rows, which destinations are read on); an outer reference's steps are cut at its depth; the empty list is the root scope (the source head `from people` is reported there with depth 0). Not references: `$`-names, bindings, function/method names (the receiver and arguments are), projection keys, a `select` alias where the language substitutes it (the same body's `where`; items to its right — an alias's own name inside its own item is the row field; `order by`/`frontier`/`limit`/`offset`/`from`/`follow` are never rewritten, so a name there is a reference), names a nested block lifts onto the scope, and the trailing members of a navigation headed by a value (`refs(before).title` references `before` only). The pass is host-agnostic and knows no data: a host maps each scope to a row type and judges the name (omgbase's "unknown names" hints and errors, spec/surface 4.6, are built on it). `references_in_subquery(&Subquery)` runs it over a block body. Grammar, semantics and AST shape are unchanged. `LANGUAGE_VERSION` 0.23.
+  - `walk::Visitor` gains the tree's lifetime — `Visitor<'a>` with `enter(&mut self, node: Node<'a>, ctx: &VisitContext<'a>)` — so a visitor may keep the nodes it is handed (the pass does). An implementor that keeps nothing writes `impl Visitor<'_> for V` and changes nothing else; `visit` is `visit<'a, V: Visitor<'a>>(root: Node<'a>, &mut V)`. (Pre-1.0: a minor bump may break.)
+  - `tests/spec.rs` runs `expect.references` (steps as canonical `print`, a `follow` step as the `follow` clause, spans under `"spans": true`).
+
 ## [0.22.0] - 2026-10-13
 
 ### Minor

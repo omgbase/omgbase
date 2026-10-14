@@ -26,9 +26,9 @@ use std::path::{Path, PathBuf};
 
 use oqx::walk::Node;
 use oqx::{
-    DefaultContext, Engine, InMemoryEngine, Object, OqxError, Query, Value, parse_string,
-    parse_template, print_query, print_template, resolve_aliases, run_query, strip_spans,
-    transform,
+    DefaultContext, Engine, InMemoryEngine, Object, OqxError, Query, Reference, Value,
+    parse_string, parse_template, print, print_query, print_template, references, resolve_aliases,
+    run_query, strip_spans, transform,
 };
 use serde_json::Value as Json;
 
@@ -63,6 +63,10 @@ enum Expect {
     /// The JSON tree of `parse(query)`; compared with spans stripped unless the
     /// case sets `spans: true`.
     Ast(Json),
+    /// The `references` pass over `parse(query)` (AST.md §5b, 0.23): each
+    /// reference with its scope's steps as canonical source; spans only when
+    /// the case sets `spans: true`.
+    References(Json),
 }
 
 struct Template {
@@ -170,21 +174,32 @@ fn validate(file: &str, doc: &Json) -> Result<Vec<SpecCase>, Vec<String>> {
         let result = expect.get("result");
         let error = expect.get("error");
         let ast = expect.get("ast");
-        if [result.is_some(), error.is_some(), ast.is_some()]
-            .iter()
-            .filter(|b| **b)
-            .count()
+        let refs = expect.get("references");
+        if [
+            result.is_some(),
+            error.is_some(),
+            ast.is_some(),
+            refs.is_some(),
+        ]
+        .iter()
+        .filter(|b| **b)
+        .count()
             != 1
         {
             problems.push(format!(
-                "{at}: `expect` needs exactly one of `result` / `error` / `ast`"
+                "{at}: `expect` needs exactly one of `result` / `error` / `ast` / `references`"
             ));
+        }
+        if refs.is_some_and(|r| !r.is_array()) {
+            problems.push(format!("{at}: `expect.references` must be an array"));
         }
         let spans = match c.get("spans") {
             None => false,
             Some(Json::Bool(b)) => {
-                if ast.is_none() {
-                    problems.push(format!("{at}: `spans` needs `expect.ast`"));
+                if ast.is_none() && refs.is_none() {
+                    problems.push(format!(
+                        "{at}: `spans` needs `expect.ast` or `expect.references`"
+                    ));
                 }
                 *b
             }
@@ -195,6 +210,8 @@ fn validate(file: &str, doc: &Json) -> Result<Vec<SpecCase>, Vec<String>> {
         };
         let expect = if let Some(a) = ast {
             Expect::Ast(a.clone())
+        } else if let Some(r) = refs {
+            Expect::References(r.clone())
         } else if let Some(e) = error {
             let stage = e.get("stage").and_then(Json::as_str);
             let Some(stage) = stage.filter(|s| ["lex", "parse", "eval"].contains(s)) else {
@@ -481,6 +498,48 @@ fn check_ast(c: &SpecCase, expected: &Json) -> Result<(), String> {
     }
 }
 
+/// `expect.references`: the pass as the fixture records it (README) — each
+/// reference with its scope's steps printed as canonical source (a `follow`
+/// step prints as the `follow` clause), spans only when the case asks.
+fn check_references(c: &SpecCase, expected: &Json) -> Result<(), String> {
+    let (query, _) = parse_case(c).map_err(|e| clip(format!("unexpected {e}")))?;
+    let actual = references_json(&references(&query), c.spans).map_err(clip)?;
+    if json_eq(&actual, expected) {
+        Ok(())
+    } else {
+        Err(clip(format!("expected {expected} got {actual}")))
+    }
+}
+
+fn references_json(refs: &[Reference<'_>], spans: bool) -> Result<Json, String> {
+    let mut out = Vec::with_capacity(refs.len());
+    for r in refs {
+        let mut steps = Vec::with_capacity(r.scope.steps.len());
+        for s in &r.scope.steps {
+            let expr = print(s.expr.node()).map_err(|e| format!("print: {e}"))?;
+            steps.push(serde_json::json!({ "expr": expr, "depth": s.depth }));
+        }
+        let mut m = serde_json::Map::new();
+        m.insert("name".to_owned(), Json::String(r.name.clone()));
+        m.insert(
+            "clause".to_owned(),
+            Json::String(r.clause.as_str().to_owned()),
+        );
+        m.insert(
+            "scope".to_owned(),
+            serde_json::json!({ "depth": r.scope.depth, "steps": steps }),
+        );
+        if spans {
+            m.insert(
+                "span".to_owned(),
+                serde_json::json!([r.span.start, r.span.end]),
+            );
+        }
+        out.push(Json::Object(m));
+    }
+    Ok(Json::Array(out))
+}
+
 fn drop_spans(j: &mut Json) {
     match j {
         Json::Object(o) => {
@@ -543,6 +602,7 @@ fn check_round_trip(c: &SpecCase) -> Result<(), String> {
 fn check(c: &SpecCase) -> Result<(), String> {
     match &c.expect {
         Expect::Ast(expected) => check_ast(c, expected),
+        Expect::References(expected) => check_references(c, expected),
         Expect::Error(want) => match execute(c) {
             Ok(v) => Err(clip(format!(
                 "expected an OqxError at stage {}, but the query succeeded with {}",

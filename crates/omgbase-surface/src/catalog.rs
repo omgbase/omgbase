@@ -37,6 +37,7 @@ use crate::fixes;
 use crate::graph::{GraphArgs, graph_neighborhood};
 use crate::history;
 use crate::links;
+use crate::names::VocabularyCache;
 use crate::paths::{reference_keyed, reference_path, root_field, storage_path};
 use crate::query::{QueryOptions, embed_phrases, query};
 use crate::read::{self, Resolution, ResolvedRef};
@@ -101,6 +102,10 @@ pub struct Surface {
     /// Which tools this surface lists and accepts ([`Surface::tools`]);
     /// `Full` unless the host chose otherwise (`omgbase mcp --tools`).
     profile: Profile,
+    /// The unknown-names vocabulary of this store (`spec/surface` §1.5
+    /// "Caching"): per repository, keyed on the head commit; it lives here
+    /// because it describes exactly the store this surface owns.
+    vocabulary: VocabularyCache,
 }
 
 // ---- argument helpers ----------------------------------------------------------------
@@ -930,6 +935,7 @@ impl Surface {
             preview: false,
             last_plan: None,
             profile: Profile::Full,
+            vocabulary: VocabularyCache::default(),
         }
     }
 
@@ -1795,6 +1801,8 @@ impl Surface {
                     provider: self.provider.as_deref(),
                     in_memory: false,
                     bare: arg_bool(args, "bare")?.unwrap_or(false),
+                    unknown_names: None,
+                    vocabulary: Some(&self.vocabulary),
                 };
                 self.require_rankable(
                     &repo,

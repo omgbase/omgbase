@@ -89,10 +89,12 @@ use serde_json::{Map, Value as Json, json};
 use crate::context::{SemanticVec, Target};
 use crate::error::{Result, SurfaceError};
 use crate::fixes;
+use crate::names;
 use crate::paths::storage_path;
 use crate::planner::root_target;
 use crate::query::{
-    HIT_ID, HIT_PATH, QueryOptions, check_reserved_aliases, check_root_spellings, query_ast,
+    HIT_ID, HIT_PATH, QueryOptions, RESERVED_ALIAS_PREFIXES, check_reserved_aliases,
+    check_root_spellings, query_ast,
 };
 
 /// The `hint` of every `filter_invalid` the selector admission raises.
@@ -1954,12 +1956,47 @@ pub fn expand(
         return expand_plain(store, ctx, doc_store, req);
     }
     let c = compile(req)?;
+    // Unknown names (spec/surface §1.5, 4.6; spec/mutate §11.8): a name no row
+    // of the selector's kind carries would select every row or none, so the
+    // selector's OWN text is judged before the run and refused under the
+    // admission's prefix and hint like every other refusal (the reference's
+    // `runQuery` rewraps the runner's `filter_invalid`). The slot items the
+    // rewrite appended are not the selector. The vocabulary read here is
+    // handed to the run, whose own `Refuse` pass (the AST entry's default)
+    // then finds nothing new to read.
+    let vocabulary = names::VocabularyCache::default();
+    {
+        let own = Query {
+            select: c
+                .rewritten
+                .select
+                .iter()
+                .filter(|it| {
+                    !RESERVED_ALIAS_PREFIXES
+                        .iter()
+                        .any(|p| it.name().starts_with(p))
+                })
+                .cloned()
+                .collect(),
+            ..c.rewritten.clone()
+        };
+        names::check_names(
+            store,
+            &ctx.repo_id,
+            &own,
+            names::UnknownNames::Refuse,
+            &vocabulary,
+        )
+        .map_err(|e| refused(format!("select: {}", e.message)))?;
+    }
     let opts = QueryOptions {
         limit: Some(c.bound.saturating_add(1)),
         cursor: None,
         provider: None,
         in_memory: false,
         bare: false,
+        unknown_names: None,
+        vocabulary: Some(&vocabulary),
     };
     let res = query_ast(store, &ctx.repo_id, &c.rewritten, opts, semantic)?;
     if res.truncated || res.hits.len() > c.bound {
@@ -1973,6 +2010,8 @@ pub fn expand(
                 provider: None,
                 in_memory: false,
                 bare: false,
+                unknown_names: None,
+                vocabulary: Some(&vocabulary),
             };
             query_ast(store, &ctx.repo_id, &c.rewritten, unbounded, HashMap::new())?
                 .hits
@@ -2335,6 +2374,8 @@ pub fn expand_plain(
                 provider: None,
                 in_memory: false,
                 bare: false,
+                unknown_names: None,
+                vocabulary: None,
             };
             let res = query_ast(store, &ctx.repo_id, &q, opts, HashMap::new())?;
             let Some(hit) = res.hits.first() else {

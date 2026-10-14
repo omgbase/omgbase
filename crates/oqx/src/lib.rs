@@ -29,6 +29,7 @@ pub mod parser;
 pub mod plan;
 pub mod planner;
 pub mod print;
+pub mod references;
 pub mod regex_dialect;
 pub mod resolve;
 pub mod semantics;
@@ -44,7 +45,7 @@ pub use ast::{
 };
 /// The OQX language version this crate conforms to (`spec/oqx/VERSION`). It is
 /// also this crate's `major.minor`: the patch digit is the crate's own.
-pub const LANGUAGE_VERSION: &str = "0.22";
+pub const LANGUAGE_VERSION: &str = "0.23";
 
 /// This crate's own version (`Cargo.toml`).
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -62,6 +63,7 @@ pub use plan::{
 };
 pub use planner::{Plan, PlannedEngine, QueryPlanner};
 pub use print::{Template, print, print_query, print_template};
+pub use references::{Reference, ReferenceScope, ReferenceStep, StepExpr, references};
 pub use regex_dialect::{CompiledRegex, RegexDialect, RegexFlags, compile_regex};
 pub use resolve::{resolve_aliases, resolve_subquery};
 pub use value::{Object, Range, Value};

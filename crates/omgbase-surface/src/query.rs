@@ -21,6 +21,7 @@ use serde_json::{Map, Value as Json};
 use crate::context::{SemanticVec, StoreContext, Target, render_row_values, target_of};
 use crate::cursor::{decode_path_cursor, encode_cursor};
 use crate::error::{Result, SurfaceError};
+use crate::names::{UnknownNames, VocabularyCache, check_names};
 use crate::paths::reference_path;
 use crate::planner::{SqlitePlanner, root_target};
 
@@ -92,6 +93,17 @@ pub struct QueryOptions<'a> {
     /// `values` (already the bare-values form); a projected `id`/`path` is the
     /// row's intrinsic, kept as any projected key is.
     pub bare: bool,
+    /// What a tier-3 name on an open kind does (`spec/surface` §1.5, 4.6; a
+    /// tier-3 name on `links` is `filter_invalid` either way): `Hint` records
+    /// it in `hints` and runs the query — the default of the source entry
+    /// ([`query`], every read); `Refuse` fails with `filter_invalid` before
+    /// any row is read — the default of the AST entry ([`query_ast`]), whose
+    /// caller is the write selector compiler, where a name no row carries
+    /// would select every row. `None` takes the entry's default.
+    pub unknown_names: Option<UnknownNames>,
+    /// The vocabulary cache of the store (§1.5 "Caching"), kept by the
+    /// `Surface` beside its store; `None` judges with a cache of the run's own.
+    pub vocabulary: Option<&'a VocabularyCache>,
 }
 
 /// §1.4 `OqxResult`.
@@ -106,6 +118,12 @@ pub struct OqxResult {
     pub none: Option<bool>,
     /// A top-level `values` projection's bare values, in place of `hits`.
     pub values: Option<Vec<Json>>,
+    /// Unknown names (`spec/surface` §1.5, 4.6): one line per name the query
+    /// reads that is neither a field of its row kind nor a property any object
+    /// of that kind in the repository carries — the rows are still returned.
+    /// First-reference order, deduplicated; empty = absent on the wire (never
+    /// `[]`). The last member of the result.
+    pub hints: Vec<String>,
 }
 
 impl OqxResult {
@@ -119,11 +137,12 @@ impl OqxResult {
             exists: None,
             none: None,
             values: None,
+            hints: Vec::new(),
         }
     }
 
     /// The wire shape: `{ hits, truncated, cursor, consumer, count?, exists?,
-    /// none?, values? }`.
+    /// none?, values?, hints? }` — `hints` last, only when there is one.
     #[must_use]
     pub fn to_json(&self) -> Json {
         let mut m = Map::new();
@@ -148,6 +167,12 @@ impl OqxResult {
         }
         if let Some(v) = &self.values {
             m.insert("values".to_owned(), Json::Array(v.clone()));
+        }
+        if !self.hints.is_empty() {
+            m.insert(
+                "hints".to_owned(),
+                Json::Array(self.hints.iter().cloned().map(Json::String).collect()),
+            );
         }
         Json::Object(m)
     }
@@ -391,7 +416,7 @@ pub fn check_root_spellings(q: &Query) -> Result<()> {
         }
     }
     struct Check(Option<SurfaceError>);
-    impl Visitor for Check {
+    impl Visitor<'_> for Check {
         fn enter(&mut self, node: Node<'_>, ctx: &VisitContext<'_>) -> bool {
             if self.0.is_some() {
                 return false;
@@ -434,7 +459,7 @@ pub fn check_root_spellings(q: &Query) -> Result<()> {
 /// Collects the distinct `semantic("…")` phrases of a tree.
 struct Phrases(Vec<String>);
 
-impl Visitor for Phrases {
+impl Visitor<'_> for Phrases {
     fn enter(&mut self, node: Node<'_>, _ctx: &VisitContext<'_>) -> bool {
         if let Node::Expr(Expr::Call {
             recv: None,
@@ -542,7 +567,7 @@ fn mentions_outside_source(q: &Query, name: &str) -> bool {
         name: &'n str,
         found: bool,
     }
-    impl Visitor for Mentions<'_> {
+    impl Visitor<'_> for Mentions<'_> {
         fn enter(&mut self, node: Node<'_>, ctx: &VisitContext<'_>) -> bool {
             if self.found {
                 return false;
@@ -848,7 +873,13 @@ pub fn query(
     };
     let raw = oqx::parse_string(source)?;
     check_reserved_aliases(&raw)?;
-    run_parsed(&runner, &raw, opts)
+    // The source entry is every read: a tier-3 name on an open kind is a hint.
+    run_parsed(
+        &runner,
+        &raw,
+        opts,
+        opts.unknown_names.unwrap_or(UnknownNames::Hint),
+    )
 }
 
 /// Run an already-parsed query (§1.4) — the AST entry the selector compile
@@ -856,7 +887,9 @@ pub fn query(
 /// projections appended runs as any query does; the reserved-alias check is
 /// the source entry's, so the appended `__omg_sel_*` items pass). `semantic`
 /// holds the embedded phrases ([`embed_phrases`]); `opts.provider` is not
-/// read here.
+/// read here. Unknown names (4.6) default to [`UnknownNames::Refuse`] here:
+/// this entry's caller is the write selector, where a name no row carries
+/// would select every row; the source entry passes `Hint`.
 pub fn query_ast(
     store: &Store,
     repo_id: &str,
@@ -870,7 +903,12 @@ pub fn query_ast(
         semantic,
         planned: !opts.in_memory,
     };
-    run_parsed(&runner, raw, opts)
+    run_parsed(
+        &runner,
+        raw,
+        opts,
+        opts.unknown_names.unwrap_or(UnknownNames::Refuse),
+    )
 }
 
 /// One query's engine: a fresh store context per run (the planned path gives
@@ -931,10 +969,45 @@ impl Runner<'_> {
     }
 }
 
-fn run_parsed(engine: &Runner<'_>, raw: &Query, opts: QueryOptions<'_>) -> Result<OqxResult> {
+fn run_parsed(
+    engine: &Runner<'_>,
+    raw: &Query,
+    opts: QueryOptions<'_>,
+    mode: UnknownNames,
+) -> Result<OqxResult> {
+    check_root_spellings(raw)?;
+    // Unknown names (spec/surface §1.5): judged over the RAW tree — before
+    // alias resolution and the runner's own items — so an alias is never
+    // mistaken for a row property and the verdict never depends on the rows.
+    // The selector compiler's slot items (`__omg_sel_*`, the templates'
+    // expressions) are not the selector: an expression reading an absent
+    // property there is spec/mutate's `target_missing` / absent value, not an
+    // unknown name.
+    let own = Query {
+        select: raw
+            .select
+            .iter()
+            .filter(|it| {
+                !RESERVED_ALIAS_PREFIXES
+                    .iter()
+                    .any(|p| it.name().starts_with(p))
+            })
+            .cloned()
+            .collect(),
+        ..raw.clone()
+    };
+    let local = VocabularyCache::default();
+    let cache = opts.vocabulary.unwrap_or(&local);
+    let hints = check_names(engine.store, engine.repo_id, &own, mode, cache)?;
+    let mut result = run_resolved(engine, raw, opts)?;
+    // `hints` is the last member, present only when there is something to say.
+    result.hints = hints;
+    Ok(result)
+}
+
+fn run_resolved(engine: &Runner<'_>, raw: &Query, opts: QueryOptions<'_>) -> Result<OqxResult> {
     // The query's `select` aliases are resolved HERE, once, before the runner
     // renames/injects items (an engine evaluates the query it is given).
-    check_root_spellings(raw)?;
     let parsed = rewrite_query(&resolve_aliases(raw)?);
     let consumer = parsed.consumer;
 

@@ -90,9 +90,28 @@ pub fn render_result(cli: &Cli, result: &Json, source: &str, bare: bool) -> Resu
         io.out(&js_json(result));
         return Ok(EXIT_OK);
     }
+    // Unknown names (spec/surface §1.5, spec/cli §6 `query`, 4.4): the
+    // result's `hints` — names the query reads that no row of their kind
+    // carries — print LAST on stderr, one dim `  hint: …` line each, in every
+    // human rendering (the machine modes carry the member itself).
+    let hints = || {
+        if cli.flags.mode != Mode::Human {
+            return;
+        }
+        for h in result
+            .get("hints")
+            .and_then(Json::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(Json::as_str)
+        {
+            io.err(&style.dim(&format!("  hint: {h}")));
+        }
+    };
     let consumer = str_of(result, "consumer");
     if matches!(consumer.as_str(), "count" | "exists" | "none") {
         io.out(&fmt_value(result.get(&consumer).unwrap_or(&Json::Null)));
+        hints();
         return Ok(EXIT_OK);
     }
     let truncated = result
@@ -110,6 +129,7 @@ pub fn render_result(cli: &Cli, result: &Json, source: &str, bare: bool) -> Resu
         if truncated {
             truncation_footer(io, &style, &cursor);
         }
+        hints();
         return Ok(EXIT_OK);
     }
     let hits: Vec<Json> = result
@@ -134,6 +154,7 @@ pub fn render_result(cli: &Cli, result: &Json, source: &str, bare: bool) -> Resu
         _ => {
             if hits.is_empty() {
                 io.err(&style.dim("  no hits"));
+                hints();
                 return Ok(EXIT_OK);
             }
             render_hits(io, &style, &hits, &projected_columns(source), !bare);
@@ -142,6 +163,7 @@ pub fn render_result(cli: &Cli, result: &Json, source: &str, bare: bool) -> Resu
     if truncated {
         truncation_footer(io, &style, &cursor);
     }
+    hints();
     Ok(EXIT_OK)
 }
 

@@ -463,6 +463,8 @@ fn run(
             provider: None,
             in_memory,
             bare: false,
+            unknown_names: None,
+            vocabulary: None,
         },
     )
 }

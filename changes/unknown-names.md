@@ -51,6 +51,13 @@ commit.
   rule; `spec-versions.ts` surface 4.6.
 - `omgbase` (CLI): `omg query` prints each hint as a dim `  hint: …` line on
   stderr after its rows (`--json` carries the member); four `spec/cli` cases.
+- `oqx` (crate) 0.23.0 (hand-bumped, `none` here): `references::references(&Query)`
+  over borrowed nodes (`Reference`, `ReferenceScope`, `ReferenceStep`, `StepExpr`);
+  to carry those borrows `walk::Visitor` gains the tree's lifetime — `Visitor<'a>`,
+  an implementor that keeps nothing writes `impl Visitor<'_> for V` (pre-1.0 minor).
+  `omgbase-surface`: `names` (the judgement, `VocabularyCache` held by the `Surface`
+  and passed through `QueryOptions.vocabulary`; `QueryOptions.unknown_names`,
+  `OqxResult.hints`), the selector's `select: ` refusal in `select::expand`.
 - `omgbase-surface` / `omgbase` (crates): `reference.rs` synced byte for byte;
   the Rust judgement, `hints` and the `references` twin are the Rust change
   that follows this one (the new `query-unknown.json` and `references.json`

@@ -56,7 +56,7 @@ fn visit_reports_order_path_clause_and_depth() {
         "select n: jobs collect { employer where !end limit ^k } from people where active follow kids { where x > ^id } order by name limit 2",
     );
     struct Seen(Vec<(&'static str, Option<Clause>, usize, usize)>);
-    impl Visitor for Seen {
+    impl Visitor<'_> for Seen {
         fn enter(&mut self, node: Node<'_>, ctx: &VisitContext<'_>) -> bool {
             self.0
                 .push((node.kind(), ctx.clause, ctx.depth, ctx.path.len()));
@@ -106,7 +106,7 @@ fn visit_enter_may_skip_a_subtree_and_leave_still_runs() {
         entered: Vec<&'static str>,
         left: Vec<&'static str>,
     }
-    impl Visitor for Skip {
+    impl Visitor<'_> for Skip {
         fn enter(&mut self, node: Node<'_>, _ctx: &VisitContext<'_>) -> bool {
             self.entered.push(node.kind());
             node.kind() != "op"
@@ -364,7 +364,7 @@ fn builders_make_empty_span_nodes_that_print() {
 #[test]
 fn a_body_frontier_is_read_at_the_row_depth_a_destination_block_s_one_level_out() {
     struct Frontiers(Vec<(String, usize)>);
-    impl Visitor for Frontiers {
+    impl Visitor<'_> for Frontiers {
         fn enter(&mut self, node: Node<'_>, ctx: &VisitContext<'_>) -> bool {
             if let (Node::Expr(Expr::Ident { name, .. }), Some(Clause::FollowFrontier)) =
                 (node, ctx.clause)
@@ -506,7 +506,7 @@ fn traversal_sees_a_template_literal_and_its_interpolations() {
     let q = parse("select s: `${a} and ${b.c}` from p");
     let mut names = Vec::new();
     struct V<'a>(&'a mut Vec<String>);
-    impl<'a> Visitor for V<'a> {
+    impl<'a> Visitor<'_> for V<'a> {
         fn enter(&mut self, node: Node<'_>, _ctx: &VisitContext<'_>) -> bool {
             if let Node::Expr(e) = node {
                 self.0.push(e.kind().to_owned());

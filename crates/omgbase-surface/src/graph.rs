@@ -226,6 +226,8 @@ pub fn graph_neighborhood(
                 provider,
                 in_memory: false,
                 bare: false,
+                unknown_names: None,
+                vocabulary: None,
             },
         )?;
         if res.truncated {
