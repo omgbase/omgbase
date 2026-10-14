@@ -434,7 +434,7 @@
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "error[filter_invalid]: `nope` is not a target — the repository's collections are `docs`, `blocks`, `nodes`, `links`\n  {\n    \"reason\": \"`nope` is not a target — the repository's collections are `docs`, `blocks`, `nodes`, `links`\",\n    \"hint\": \"OQX\"\n  }\n"
+        "stderr": "error[filter_invalid]: `nope` is not a target — the repository's collections are `docs`, `blocks`, `nodes`, `links`, `revisions`\n  {\n    \"reason\": \"`nope` is not a target — the repository's collections are `docs`, `blocks`, `nodes`, `links`, `revisions`\",\n    \"hint\": \"OQX\"\n  }\n"
       },
       "notes": "§9: an unknown root is `filter_invalid` naming the four collections (surface 3.0 name pass; silently empty before)",
       "pin_stderr": true
