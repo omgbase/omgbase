@@ -1328,7 +1328,7 @@ string that parses; `expect` is absent or `{ max: <non-negative integer> }`
 and nothing else; `effects` is a non-empty array of templates. The
 selector's consumer is `collect`, `first` or `single` (`count` / `exists` /
 `none` yield no rows); no `values`; its source is a bare root ∈ `docs`,
-`blocks`, `nodes` (`links` rows have no effect target; any other source is
+`blocks`, `nodes` (`links` and `revisions` rows have no effect target; any other source is
 refused); no `follow`, no body `from` (a hit must be a row of the root),
 no `offset` (a selection is a set, not a page), no `distinct` (first
 release); `limit N` and `order by` are allowed — the order of the hits is

@@ -120,7 +120,7 @@ export const LANGUAGE = {
  */
 export const OMGBASE = {
   /** The named roots of the repository (the root row: `^docs` from a row, bare `docs` at the top). */
-  roots: ["docs", "blocks", "nodes", "links"],
+  roots: ["docs", "blocks", "nodes", "links", "revisions"],
   /** Row functions written as free calls, evaluated against the current row. */
   rowFunctions: [
     "text", "semantic",

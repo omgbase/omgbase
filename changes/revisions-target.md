@@ -1,6 +1,7 @@
 ---
 npm:
   "@omgbase/core": minor
+  "@omgbase/oqx-syntax": patch
   omgbase: minor
 crates:
   omgbase-surface: minor
@@ -19,3 +20,10 @@ refused) — and `docs_read_at` is now its sugar with the identical result (the
 current property bag flagged `propertiesAreCurrent` is gone from it). The
 minimal tools profile reaches history through `query` and `docs_read` alone;
 `docs_history`/`docs_read_at`/`docs_diff_unified` stay as sugar.
+
+The unknown-names pass (§1.5) knows the kind: `revisions` is a closed row shape
+(`` `commited` is not a field of revisions (fields: id, path, rev, seq, doc_id,
+commit, ts, origin, actor, reason, hash, is_current); did you mean `commit`? ``),
+`revisions` is a relation of docs and `doc` a handle of a revision row; a write
+selector over `revisions` is refused like one over `links` (`spec/mutate` §11.8,
+`select-revisions-refused`). `@omgbase/oqx-syntax` lists the fifth root.

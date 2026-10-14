@@ -591,6 +591,55 @@
           "`titel` is not a field of docs and no document in this repository carries a property by that name; did you mean `title`?"
         ]
       }
+    },
+    {
+      "name": "revisions-is-closed",
+      "notes": "§1.5: `revisions` (4.7) is a closed kind like `links` — a name outside its row shape is the error listing the fields.",
+      "query": "select commited from revisions",
+      "expect": {
+        "error": "filter_invalid",
+        "message_includes": "`commited` is not a field of revisions (fields: id, path, rev, seq, doc_id, commit, ts, origin, actor, reason, hash, is_current); did you mean `commit`?"
+      }
+    },
+    {
+      "name": "revisions-relation-and-doc-handle-are-known",
+      "notes": "§1.5 tier 1 on the new kind: `revisions` is a relation of docs and `is_current`/`origin` attributes of a revision row — nothing to say.",
+      "query": "select path from docs where revisions exists { where is_current and origin == \"observed\" } order by path limit 2",
+      "expect": {
+        "hits": [
+          {
+            "id": "d_0",
+            "path": "/index.md"
+          },
+          {
+            "id": "d_1",
+            "path": "/lab/2026-01-notes.md"
+          }
+        ],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "collect"
+      }
+    },
+    {
+      "name": "revisions-doc-handle-reaches-the-docs-vocabulary",
+      "notes": "§1.5: through `doc` a revision row reads a document, so a tier-3 name there is the docs hint.",
+      "query": "select rev, t: doc.titel from revisions order by path, id limit 1",
+      "expect": {
+        "hits": [
+          {
+            "id": "r_0",
+            "path": "/index.md",
+            "rev": "r_0"
+          }
+        ],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "collect",
+        "hints": [
+          "`titel` is not a field of docs and no document in this repository carries a property by that name; did you mean `title`?"
+        ]
+      }
     }
   ]
 }

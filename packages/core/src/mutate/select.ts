@@ -553,7 +553,7 @@ function validateExpect(v: unknown): SelectionExpect | undefined {
 /**
  * The fix of a refused selector source (3.3): the same request over an
  * admitted root — `links` becomes `blocks` (a link lives in a block), any other
- * source `docs` — spliced over the source's span of the written query.
+ * source (`revisions` included) `docs` — spliced over the source's span of the written query.
  */
 function rootFix(select: string, source: Query["source"], request: FixRequest | undefined): Record<string, unknown> {
   if (request === undefined) return {};
@@ -581,6 +581,9 @@ function admitSelector(select: string, request?: FixRequest): { raw: Query; root
   }
   if (raw.values) throw selectionInvalid("select: a selector yields rows, not `values`");
   const root = rootTarget(raw.source);
+  if (root === null && raw.source.kind === "ident" && raw.source.name === "revisions") {
+    throw selectionInvalid("select: `revisions` rows have no effect target — select docs, blocks or nodes", rootFix(select, raw.source, request));
+  }
   if (root === null) throw selectionInvalid("select: a selector scans a root collection — `from docs`, `from blocks` or `from nodes`", rootFix(select, raw.source, request));
   if (root === "links") throw selectionInvalid("select: `links` rows have no effect target — select docs, blocks or nodes", rootFix(select, raw.source, request));
   if (raw.follow !== null) throw selectionInvalid("select: `follow` is not allowed in a selector — a hit must be a row of the root");

@@ -74,12 +74,9 @@ function tagAll(rows: Record<string, unknown>[], t: Kind): Row[] {
 // `hash`/`raw` is simply the engine's attribute (before this batch of 3.0 the
 // attributes were `$`-prefixed and the bare spelling was an error, §9). A bare
 // target name — `docs`, `links`, … — is a loud error of its own (root-row.ts).
-// `revisions` on a document is a RELATION (its revision list, §1.2, 4.7), not
-// an attribute; it is listed here so the unknown-names pass (names.ts, whose
-// relation table does not yet know the kind) accepts the name — `attribute()`
-// answers it with the rows. Move it to names.ts's `RELATIONS.docs` when that
-// pass learns `revisions`.
-const DOC_ATTRIBUTES = new Set(["id", "path", "raw", "hash", "updated_at", "title", "tags", "format", "revisions"]);
+// `revisions` on a document is a RELATION (its revision list, §1.2, 4.7) in
+// `rel.docs` below, and names.ts's `RELATIONS.docs` knows it as one.
+const DOC_ATTRIBUTES = new Set(["id", "path", "raw", "hash", "updated_at", "title", "tags", "format"]);
 const BLOCK_ATTRIBUTES = new Set(["id", "path", "raw", "hash", "updated_at", "doc_id", "type", "text", "attrs", "depth", "ordinal"]);
 const NODE_ATTRIBUTES = new Set(["id", "path", "doc_id", "block_id", "kind", "name", "value", "attrs"]);
 const EDGE_ATTRIBUTES = new Set(["id", "path", "doc_id", "block_id", "via_id", "dst_id", "dst_path", "uri", "field", "dst_kind", "predicate", "provenance", "anchor"]);
@@ -339,6 +336,8 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
     docs: {
       nodes: (r) => docNodesInOrder(r.doc_id, r.path),
       blocks: (r) => tagAll(docBlocksPreorder(r.doc_id, r.path).map((x) => x.row), "blocks"),
+      // A document's revision list (spec/surface §1.2, 4.7), oldest first.
+      revisions: (r) => docRevisions(r.doc_id),
       // The linked / linking DOCUMENTS are reached through the link rows (3.0
       // follow-up, §9: the `out` / `in` relations are gone): `out_links collect
       // distinct { from dst }` and `in_links collect distinct { from doc }`.
@@ -497,8 +496,6 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
       // `data.tags` is the authored list alone.
       case "tags": return docTags(String(row.doc_id));
       case "format": return row.format;
-      // the `revisions` relation (listed with the attributes for names.ts's sake, above).
-      case "revisions": return docRevisions(row.doc_id);
     }
     if (t === "blocks") switch (name) {
       case "id": return row.block_id;

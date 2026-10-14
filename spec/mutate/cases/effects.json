@@ -20768,6 +20768,42 @@
       }
     },
     {
+      "name": "select-revisions-refused",
+      "notes": "§11.8 static admission (before the query runs): the `revisions` root (spec/surface 4.7): a revision row has no effect target → `filter_invalid` with `hint: \"selection\"`; the fix is the same request over `docs`; no store is read, so the case needs no observation.",
+      "steps": [
+        {
+          "plan_effects": {
+            "select": "from revisions where origin == \"api\"",
+            "effects": [
+              {
+                "op": "set",
+                "field": "frontmatter.rolled_up",
+                "value": true
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          {
+            "error": {
+              "code": "filter_invalid",
+              "fix": "{\"effects\":[{\"field\":\"frontmatter.rolled_up\",\"op\":\"set\",\"value\":true}],\"select\":\"from docs where origin == \\\"api\\\"\"}"
+            }
+          }
+        ],
+        "files": {},
+        "docs": [],
+        "blocks": [],
+        "commits": [],
+        "revisions": [],
+        "dispositions": [],
+        "resurrection_pool": [],
+        "pending_materializations": []
+      }
+    },
+    {
       "name": "select-distinct-refused",
       "notes": "§11.8 static admission (before the query runs): `distinct` (first release) → `filter_invalid` with `hint: \"selection\"`; no store is read, so the case needs no observation.",
       "steps": [

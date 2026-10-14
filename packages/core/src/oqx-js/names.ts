@@ -26,8 +26,8 @@
 
 import type { Expr, Follow, Query, ReferenceStep } from "@omgbase/oqx";
 import { references } from "@omgbase/oqx";
-import { ATTRIBUTES, SOURCE_HANDLES, type Target } from "./context.js";
-import { TARGETS } from "./root-row.js";
+import { ATTRIBUTES, SOURCE_HANDLES, type Kind } from "./context.js";
+import { ROOTS } from "./root-row.js";
 import { FROM, guards } from "./sql/scan.js";
 import type { Store } from "../core/store/store.js";
 import { FilterInvalid } from "../search/cel/parser.js";
@@ -36,25 +36,27 @@ import { FilterInvalid } from "../search/cel/parser.js";
 export type UnknownNames = "hint" | "refuse";
 
 /** The relations of each kind and the kind of the rows they yield (spec/surface §1.2). */
-export const RELATIONS: Readonly<Record<Target, Readonly<Record<string, Target>>>> = {
-  docs: { blocks: "blocks", nodes: "nodes", out_links: "links", in_links: "links" },
+export const RELATIONS: Readonly<Record<Kind, Readonly<Record<string, Kind>>>> = {
+  docs: { blocks: "blocks", nodes: "nodes", out_links: "links", in_links: "links", revisions: "revisions" },
   blocks: { children: "blocks", nodes: "nodes", out_links: "links", section: "nodes" },
   nodes: { blocks: "blocks", subsections: "nodes", children: "nodes" },
   links: {},
+  revisions: {},
 };
 
 /** The self and reach-through handles of each kind and the kind of the row they reach (§1.2). */
-export const HANDLES: Readonly<Record<Target, Readonly<Record<string, Target>>>> = {
+export const HANDLES: Readonly<Record<Kind, Readonly<Record<string, Kind>>>> = {
   docs: { doc: "docs" },
   blocks: { block: "blocks", doc: "docs" },
   nodes: { section: "nodes", doc: "docs", block: "blocks" },
   links: { doc: "docs", dst: "docs" },
+  revisions: { doc: "docs" },
 };
 
 /** The kinds whose row shape is closed: no authored data reaches a row by bare name. */
-const CLOSED: ReadonlySet<Target> = new Set<Target>(["links"]);
+const CLOSED: ReadonlySet<Kind> = new Set<Kind>(["links", "revisions"]);
 
-const NOUN: Readonly<Record<Target, string>> = { docs: "document", blocks: "block", nodes: "node", links: "link" };
+const NOUN: Readonly<Record<Kind, string>> = { docs: "document", blocks: "block", nodes: "node", links: "link", revisions: "revision" };
 
 // ---- vocabulary ------------------------------------------------------------
 
@@ -69,7 +71,7 @@ interface Vocabulary {
 
 interface RepoCache {
   head: number;
-  vocab: Partial<Record<Target, Vocabulary>>;
+  vocab: Partial<Record<Kind, Vocabulary>>;
 }
 
 const CACHE = new WeakMap<Store, Map<string, RepoCache>>();
@@ -92,8 +94,7 @@ function repoCache(store: Store, repoId: string): RepoCache {
  * key (the merged read a bare name performs); blocks and nodes — every key a
  * live row's `attrs` holds (the bare-name read of those kinds). Computed keys
  * (`$title`, `$tags`) are the intrinsics `title`/`tags`, not authored keys. */
-function authoredKeys(store: Store, repoId: string, target: Target): string[] {
-  const g = guards(target, repoId);
+function authoredKeys(store: Store, repoId: string, target: Kind): string[] {
   let sql: string;
   switch (target) {
     case "docs":
@@ -101,26 +102,30 @@ function authoredKeys(store: Store, repoId: string, target: Target): string[] {
       return (store.db.prepare(sql).all(repoId) as { key: string }[]).map((r) => r.key);
     case "blocks":
     case "nodes": {
+      const g = guards(target, repoId);
       const alias = target === "blocks" ? "b" : "n";
       sql = `SELECT DISTINCT j.key AS key FROM ${FROM[target]}, json_each(${alias}.attrs) j WHERE ${g.sql} ORDER BY key`;
       return (store.db.prepare(sql).all(...g.params) as { key: string }[]).map((r) => r.key);
     }
-    case "links": return [];
+    case "links":
+    case "revisions": return [];
   }
 }
 
-function present(store: Store, repoId: string, target: Target): boolean {
+function present(store: Store, repoId: string, target: Kind): boolean {
+  // A closed kind has no authored vocabulary to be absent; the question never reaches it.
+  if (target === "revisions") return true;
   const g = guards(target, repoId);
   return store.db.prepare(`SELECT 1 FROM ${FROM[target]} WHERE ${g.sql} LIMIT 1`).get(...g.params) !== undefined;
 }
 
 /** The vocabulary of a kind in a repository (cached on the head commit; the SQL runs only when a name is not intrinsic). */
-export function vocabulary(store: Store, repoId: string, target: Target): { present: boolean; keys: readonly string[] } {
+export function vocabulary(store: Store, repoId: string, target: Kind): { present: boolean; keys: readonly string[] } {
   const v = vocabularyOf(store, repoId, target);
   return { present: v.present, keys: v.list };
 }
 
-function vocabularyOf(store: Store, repoId: string, target: Target): Vocabulary {
+function vocabularyOf(store: Store, repoId: string, target: Kind): Vocabulary {
   const c = repoCache(store, repoId);
   let v = c.vocab[target];
   if (v) return v;
@@ -137,10 +142,10 @@ function vocabularyOf(store: Store, repoId: string, target: Target): Vocabulary 
 
 // ---- the kind of a scope ---------------------------------------------------
 
-type RowKind = Target | "root";
+type RowKind = Kind | "root";
 
 /** The kind of the rows an expression yields when read on rows of `on` (`"root"`: the root scope), or null when unknown. */
-function kindOfExpr(e: Expr, on: RowKind | null, readDepth: number, byDepth: ReadonlyMap<number, RowKind | null>): Target | null {
+function kindOfExpr(e: Expr, on: RowKind | null, readDepth: number, byDepth: ReadonlyMap<number, RowKind | null>): Kind | null {
   switch (e.kind) {
     case "ident": return kindOfPath(on, [e.name]);
     case "outer": {
@@ -159,7 +164,7 @@ function kindOfExpr(e: Expr, on: RowKind | null, readDepth: number, byDepth: Rea
     // A value-position block with no projection passes its receiver's rows through (then its own `from`).
     case "op": {
       if (e.sub.select.some((it) => it.name !== "$key") || e.sub.values) return null;
-      let k: Target | null = kindOfExpr(e.receiver, on, readDepth, byDepth);
+      let k: Kind | null = kindOfExpr(e.receiver, on, readDepth, byDepth);
       for (const f of e.sub.from) k = k === null ? null : kindOfExpr(f, k, readDepth + 1, byDepth);
       return k;
     }
@@ -176,19 +181,19 @@ function dotted(e: Expr): { head: Expr & { kind: "ident" | "outer" }; rest: stri
 }
 
 /** Follow a dotted path from a row kind through handles and relations (`doc.blocks` on a link → blocks). */
-function kindOfPath(on: RowKind | null, path: readonly string[]): Target | null {
+function kindOfPath(on: RowKind | null, path: readonly string[]): Kind | null {
   let cur: RowKind | null = on;
   for (let i = 0; i < path.length; i++) {
     const seg = path[i]!;
     if (cur === null) return null;
     if (cur === "root") {
       if (seg === "$it") continue;
-      if (!TARGETS.has(seg)) return null;
-      cur = seg as Target;
+      if (!ROOTS.has(seg)) return null;
+      cur = seg as Kind;
       continue;
     }
     if (seg === "$it" && i === 0) continue;
-    const next: Target | undefined = HANDLES[cur][seg] ?? RELATIONS[cur][seg];
+    const next: Kind | undefined = HANDLES[cur][seg] ?? RELATIONS[cur][seg];
     if (next === undefined) return null;
     cur = next;
   }
@@ -196,7 +201,7 @@ function kindOfPath(on: RowKind | null, path: readonly string[]): Target | null 
 }
 
 /** The kind of the frontier rows of a walk: the seeds' kind when every destination yields rows of that same kind, else unknown. */
-function kindOfFrontier(seed: Target | null, f: Follow, readDepth: number, byDepth: ReadonlyMap<number, RowKind | null>): Target | null {
+function kindOfFrontier(seed: Kind | null, f: Follow, readDepth: number, byDepth: ReadonlyMap<number, RowKind | null>): Kind | null {
   if (seed === null) return null;
   // A destination block is a value-position `op`: its receiver on the frontier row, then its own `from`.
   for (const d of f.destinations) if (kindOfExpr(d, seed, readDepth, byDepth) !== seed) return null;
@@ -204,7 +209,7 @@ function kindOfFrontier(seed: Target | null, f: Follow, readDepth: number, byDep
 }
 
 /** The kind of the rows a scope holds, from its row chain (AST.md §5b); null when the chain reaches a value no kind describes. */
-export function kindOfScope(steps: readonly ReferenceStep[]): Target | null {
+export function kindOfScope(steps: readonly ReferenceStep[]): Kind | null {
   if (steps.length === 0) return null; // the root scope: root names are judged elsewhere
   const byDepth = new Map<number, RowKind | null>([[0, "root"]]);
   let cur: RowKind | null = "root";
@@ -222,7 +227,7 @@ export function kindOfScope(steps: readonly ReferenceStep[]): Target | null {
 // ---- judging a name --------------------------------------------------------
 
 interface Verdict {
-  target: Target;
+  target: Kind;
   /** the dotted name judged (the path after any handle or relation) */
   name: string;
   closed: boolean;
@@ -231,7 +236,7 @@ interface Verdict {
 }
 
 /** Judge a dotted name read on rows of `target`; null = known. */
-function judge(store: Store, repoId: string, target: Target, path: readonly string[]): Verdict | null {
+function judge(store: Store, repoId: string, target: Kind, path: readonly string[]): Verdict | null {
   const [head, ...rest] = path as [string, ...string[]];
   // An engine attribute wins on collision; what follows it (`attrs.checked`, `tags.size`) is the value's own navigation.
   if (ATTRIBUTES[target].has(head)) return null;
@@ -240,11 +245,11 @@ function judge(store: Store, repoId: string, target: Target, path: readonly stri
   const via = HANDLES[target][head] ?? RELATIONS[target][head];
   if (via !== undefined) return rest.length === 0 ? null : judge(store, repoId, via, rest);
   // A bare target name on a row is the context's own loud error (root-row.ts); not doubled here.
-  if (TARGETS.has(head)) return null;
+  if (ROOTS.has(head)) return null;
   return judgeAuthored(store, repoId, target, path);
 }
 
-function judgeAuthored(store: Store, repoId: string, target: Target, path: readonly string[], handle?: string): Verdict | null {
+function judgeAuthored(store: Store, repoId: string, target: Kind, path: readonly string[], handle?: string): Verdict | null {
   const name = path.join(".");
   if (CLOSED.has(target)) return { target, name, closed: true };
   const v = vocabularyOf(store, repoId, target);
@@ -256,7 +261,7 @@ function judgeAuthored(store: Store, repoId: string, target: Target, path: reado
 // ---- messages --------------------------------------------------------------
 
 /** The names a kind knows, for the nearest match: attributes, handles, relations, the authored keys. */
-function candidates(store: Store, repoId: string, target: Target): string[] {
+function candidates(store: Store, repoId: string, target: Kind): string[] {
   const out = [...ATTRIBUTES[target], ...Object.keys(HANDLES[target]), ...(target === "docs" ? [...SOURCE_HANDLES] : []), ...Object.keys(RELATIONS[target])];
   if (!CLOSED.has(target)) out.push(...vocabularyOf(store, repoId, target).list);
   return out;
@@ -321,7 +326,7 @@ function suggestion(name: string, candidates: readonly string[]): string {
 }
 
 /** The error of a closed kind: `` `target` is not a field of links (fields: id, path, …); did you mean `…`? ``. */
-export function fieldErrorMessage(store: Store, repoId: string, target: Target, name: string): string {
+export function fieldErrorMessage(store: Store, repoId: string, target: Kind, name: string): string {
   return `\`${name}\` is not a field of ${target} (fields: ${[...ATTRIBUTES[target]].join(", ")})${suggestion(name, candidates(store, repoId, target))}`;
 }
 
@@ -329,7 +334,7 @@ export function fieldErrorMessage(store: Store, repoId: string, target: Target, 
  * Under a source handle the name is an authored lookup by construction, so the
  * hint says only that: `` no document in this repository carries a property `path` (`data.path`); did you mean `…`? ``,
  * the nearest match drawn from the authored keys alone. */
-export function propertyHintMessage(store: Store, repoId: string, target: Target, name: string, handle?: string): string {
+export function propertyHintMessage(store: Store, repoId: string, target: Kind, name: string, handle?: string): string {
   if (handle !== undefined) {
     return `no ${NOUN[target]} in this repository carries a property \`${name}\` (\`${handle}.${name}\`)${suggestion(name, vocabularyOf(store, repoId, target).list)}`;
   }
