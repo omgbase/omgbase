@@ -9,8 +9,8 @@ import { parse, PlannedEngine, InMemoryEngine, OqxError, resolveAliases, transfo
 import type { Engine } from "@omgbase/oqx";
 import type { Query, Expr, SelectItem } from "@omgbase/oqx";
 import { makeStoreContext, rowRef, type StoreContextOptions } from "./context.js";
-import { SQLiteQueryPlanner, rootTarget } from "./planner.js";
-import { REPO_REMOVED_MESSAGE, TARGETS, bareTargetMessage, pastRootMessage, unknownTargetMessage } from "./root-row.js";
+import { SQLiteQueryPlanner } from "./planner.js";
+import { REPO_REMOVED_MESSAGE, ROOTS, bareTargetMessage, pastRootMessage, unknownTargetMessage } from "./root-row.js";
 import { checkNames, type UnknownNames } from "./names.js";
 import type { Store } from "../core/store/store.js";
 import { FilterInvalid } from "../search/cel/parser.js";
@@ -147,8 +147,8 @@ export function rootPathLiterals(e: Expr): Expr {
 export function checkRootSpellings(q: Query): void {
   // A top-level `from <name>` that is no collection (`from edges`, the links
   // target's name before 3.0) would scan an absent root and come back empty:
-  // refused, naming the four collections (root-row.ts).
-  if (q.source.kind === "ident" && !TARGETS.has(q.source.name)) throw new FilterInvalid(unknownTargetMessage(q.source.name), "OQX");
+  // refused, naming the five collections (root-row.ts).
+  if (q.source.kind === "ident" && !ROOTS.has(q.source.name)) throw new FilterInvalid(unknownTargetMessage(q.source.name), "OQX");
   visit(q, {
     enter(node, ctx) {
       if (node.kind !== "ident" && node.kind !== "outer") return;
@@ -156,7 +156,7 @@ export function checkRootSpellings(q: Query): void {
       if (node.kind === "ident" && ctx.depth >= 1 && (node.name === "docs" || node.name === "links")) {
         throw new FilterInvalid(bareTargetMessage(node.name, ctx.depth), "OQX");
       }
-      if (node.kind === "outer" && TARGETS.has(node.name) && node.levels > ctx.depth) {
+      if (node.kind === "outer" && ROOTS.has(node.name) && node.levels > ctx.depth) {
         throw new FilterInvalid(pastRootMessage(node.name, node.levels), "OQX");
       }
     },
@@ -230,8 +230,9 @@ function envelopeCollision(items: readonly SelectItem[]): FilterInvalid | null {
   return null;
 }
 // A hit is a store row (spec/surface §1.4, 1.5). The engine's top-level rows
-// are store rows by construction when the source is a bare root scan and
-// nothing re-projects them; a `follow` destination (`follow before` over a
+// are store rows by construction when the source is a bare root scan (one of
+// the five collections, `revisions` included — the planner's `rootTarget` is
+// narrower: the four it can plan) and nothing re-projects them; a `follow` destination (`follow before` over a
 // frontmatter list of paths), a `from E` re-projection or any other source can
 // reach a scalar, which the injected `id`/`path` reads would render as the
 // junk hit `{ id: "undefined", path: "" }`. For those queries the row itself is
@@ -242,7 +243,7 @@ function envelopeCollision(items: readonly SelectItem[]): FilterInvalid | null {
 const SELF_KEY = "__oqx_self";
 const SELF_ITEM: SelectItem = build.field(SELF_KEY, build.ident("$it"));
 function mayReachNonRows(q: Query): boolean {
-  return q.follow !== null || q.from.length > 0 || rootTarget(q.source) === null;
+  return q.follow !== null || q.from.length > 0 || !(q.source.kind === "ident" && ROOTS.has(q.source.name));
 }
 function describeValue(v: unknown): string {
   if (v === null || v === undefined) return "an absent value";
@@ -255,7 +256,7 @@ function describeValue(v: unknown): string {
 }
 function notAStoreRow(v: unknown): FilterInvalid {
   return new FilterInvalid(
-    `a hit must be a document, block, node or link row — the query reached ${describeValue(v)}; to follow document references held in a property use refs(<field>)`,
+    `a hit must be a document, block, node, link or revision row — the query reached ${describeValue(v)}; to follow document references held in a property use refs(<field>)`,
     "OQX",
   );
 }

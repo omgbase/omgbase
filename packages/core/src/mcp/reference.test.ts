@@ -19,8 +19,8 @@
 //     not a query; one carrying sentence punctuation (`. `, `; `, a trailing
 //     `.` `:` `;`) is commentary wrapped under the column. Both are skipped.
 //  4. A candidate is a query when it begins `select `, `from `, or a root
-//     target (`docs` `blocks` `nodes` `links`) followed by a consumer directive
-//     or `{`. A `^`-led line is an expression fragment (a lift or an outer
+//     target (`docs` `blocks` `nodes` `links` `revisions`) followed by a
+//     consumer directive or `{`. A `^`-led line is an expression fragment (a lift or an outer
 //     reference is only meaningful inside a block), never a query.
 //  5. A `select`-led candidate with no ` from ` at brace depth 0 is a FRAGMENT
 //     (a projection shown on its own: `select fm: entries(data) collect { … }`)
@@ -31,7 +31,7 @@ import { parse } from "@omgbase/oqx";
 import { QUERY_SYNTAX } from "./reference.js";
 
 const PLACEHOLDER = /<[A-Za-z][A-Za-z_| …]*>/;
-const ROOT_CONSUMER = /^(docs|blocks|nodes|links) (collect|exists|none|count|first|single|distinct|\{)/;
+const ROOT_CONSUMER = /^(docs|blocks|nodes|links|revisions) (collect|exists|none|count|first|single|distinct|\{)/;
 const PROSE = /\. |; |[.:;]$/;
 
 /** `true` when `q` has a ` from ` at brace depth 0 (outside string literals). */
@@ -88,7 +88,7 @@ describe("query_syntax (reference.ts)", () => {
     expect(queries.length - inExamples.length, `${queries.length - inExamples.length} outside Examples`).toBeGreaterThanOrEqual(10);
     // Fragments are projections shown on their own; the rule names them so a
     // reviewer can see what was NOT checked.
-    for (const f of fragments) expect(f, "a fragment must not carry a top-level from").not.toMatch(/ from (docs|blocks|nodes|links)\b/);
+    for (const f of fragments) expect(f, "a fragment must not carry a top-level from").not.toMatch(/ from (docs|blocks|nodes|links|revisions)\b/);
   });
 
   it("every extracted example parses", () => {

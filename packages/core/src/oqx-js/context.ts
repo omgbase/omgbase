@@ -15,7 +15,7 @@
 import type { DataContext, CallResult, RowIndex } from "@omgbase/oqx";
 import { semantics } from "@omgbase/oqx";
 import { storeIndexFor } from "./store-index.js";
-import { TARGETS, bareTargetMessage } from "./root-row.js";
+import { ROOTS, ROOT_NAMES, bareTargetMessage, type Root } from "./root-row.js";
 import { COLS, FROM, ORDER, guards } from "./sql/scan.js";
 import type { Store } from "../core/store/store.js";
 import { detectRange } from "../core/store/properties.js";
@@ -29,21 +29,27 @@ import { makeBlockContextResolver, type BlockContextResolver } from "../search/t
 import type { SemanticVec } from "../search/cel/compile.js";
 
 export type Target = "docs" | "blocks" | "nodes" | "links";
+/** Every row kind the context tags (spec/surface §1.1): the four targets and
+ * `revisions` (4.7) — the history target, whose rows are the `revisions` ×
+ * `commits` join. `Target` stays the four kinds the unknown-names pass judges
+ * (names.ts keys its tables by it); everything that tags, scans or renders a
+ * row is keyed by `Kind`. */
+export type Kind = Root;
 
 const TARGET = Symbol("oqx.target");
-type Row = Record<string, unknown> & { [TARGET]?: Target };
+type Row = Record<string, unknown> & { [TARGET]?: Kind };
 const ROOT_ROW = Symbol("oqx.rootRow");
 const PROP_SOURCE = Symbol("oqx.propSource");
 
 interface RootRow { [ROOT_ROW]: true }
 interface PropSourceRef { [PROP_SOURCE]: true; docId: string; source: string | null }
 
-function tag(row: Record<string, unknown> | undefined, t: Target): Row | undefined {
+function tag(row: Record<string, unknown> | undefined, t: Kind): Row | undefined {
   if (!row) return undefined;
   (row as Row)[TARGET] = t;
   return row as Row;
 }
-function tagAll(rows: Record<string, unknown>[], t: Target): Row[] {
+function tagAll(rows: Record<string, unknown>[], t: Kind): Row[] {
   for (const r of rows) (r as Row)[TARGET] = t;
   return rows as Row[];
 }
@@ -68,15 +74,33 @@ function tagAll(rows: Record<string, unknown>[], t: Target): Row[] {
 // `hash`/`raw` is simply the engine's attribute (before this batch of 3.0 the
 // attributes were `$`-prefixed and the bare spelling was an error, §9). A bare
 // target name — `docs`, `links`, … — is a loud error of its own (root-row.ts).
-const DOC_ATTRIBUTES = new Set(["id", "path", "raw", "hash", "updated_at", "title", "tags", "format"]);
+// `revisions` on a document is a RELATION (its revision list, §1.2, 4.7), not
+// an attribute; it is listed here so the unknown-names pass (names.ts, whose
+// relation table does not yet know the kind) accepts the name — `attribute()`
+// answers it with the rows. Move it to names.ts's `RELATIONS.docs` when that
+// pass learns `revisions`.
+const DOC_ATTRIBUTES = new Set(["id", "path", "raw", "hash", "updated_at", "title", "tags", "format", "revisions"]);
 const BLOCK_ATTRIBUTES = new Set(["id", "path", "raw", "hash", "updated_at", "doc_id", "type", "text", "attrs", "depth", "ordinal"]);
 const NODE_ATTRIBUTES = new Set(["id", "path", "doc_id", "block_id", "kind", "name", "value", "attrs"]);
 const EDGE_ATTRIBUTES = new Set(["id", "path", "doc_id", "block_id", "via_id", "dst_id", "dst_path", "uri", "field", "dst_kind", "predicate", "provenance", "anchor"]);
+// The history target (spec/surface §1.2, 4.7): a revision row's own columns
+// under the names `docs_history` already uses (`rev`, `seq`, `commit`, `origin`,
+// `actor`, `hash`), the commit's `ts` and `reason`, and `is_current`.
+const REVISION_ATTRIBUTES = new Set(["id", "path", "rev", "seq", "doc_id", "commit", "ts", "origin", "actor", "reason", "hash", "is_current"]);
 /** The engine attributes per kind (spec/surface §1.2 table). Exported so the
  * translator's tests pin the two against each other. */
-export const ATTRIBUTES: Readonly<Record<Target, ReadonlySet<string>>> = {
-  docs: DOC_ATTRIBUTES, blocks: BLOCK_ATTRIBUTES, nodes: NODE_ATTRIBUTES, links: EDGE_ATTRIBUTES,
+export const ATTRIBUTES: Readonly<Record<Kind, ReadonlySet<string>>> = {
+  docs: DOC_ATTRIBUTES, blocks: BLOCK_ATTRIBUTES, nodes: NODE_ATTRIBUTES, links: EDGE_ATTRIBUTES, revisions: REVISION_ATTRIBUTES,
 };
+
+// The revisions scan (spec/surface §1.1, 4.7): every revision of every document
+// of the repository — tombstoned documents included, history is history — with
+// its commit, in the keyset order `(path as of the revision, rev_id)`. The
+// `revisions` table carries no `repo_id`, so the repository guard joins `docs`.
+// `is_current` is `docs_history`'s `isCurrent`: the revision is the document's
+// `current_rev`.
+const REVISION_COLS = "r.rev_id, r.doc_id, r.seq, r.rendered_hash, r.path, r.commit_id, c.ts, c.origin, c.actor, c.reason, (d.current_rev = r.rev_id) AS is_current";
+const REVISION_FROM = "revisions r JOIN docs d ON d.doc_id = r.doc_id JOIN commits c ON c.commit_id = r.commit_id";
 /** The source handles of a document (§1.2): `data` is the merged authored view
  * (frontmatter + inline), the other two one source each. */
 export const SOURCE_HANDLES: ReadonlySet<string> = new Set(["data", "frontmatter", "inline"]);
@@ -114,11 +138,17 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
   };
 
   // ---- root collections (the shared scan shape of sql/scan.ts: live rows of
-  // this repo, ordered for a stable (path, id) default) -----------------------
-  const scan = (t: Target): Row[] => {
+  // this repo, ordered for a stable (path, id) default; the revisions scan is
+  // its own statement above, in the same (path, id) keyset order) -------------
+  const scan = (t: Kind): Row[] => {
+    if (t === "revisions") return tagAll(all(`SELECT ${REVISION_COLS} FROM ${REVISION_FROM} WHERE d.repo_id = ? ORDER BY r.path, r.rev_id`, repoId), t);
     const g = guards(t, repoId);
     return tagAll(all(`SELECT ${COLS[t]} FROM ${FROM[t]} WHERE ${g.sql} ORDER BY ${ORDER[t]}`, ...g.params), t);
   };
+  // A document's revisions (the `revisions` relation of a docs row, §1.2, 4.7):
+  // oldest first, as `docs_history` lists them.
+  const docRevisions = (docId: unknown): Row[] =>
+    tagAll(all(`SELECT ${REVISION_COLS} FROM ${REVISION_FROM} WHERE r.doc_id = ? ORDER BY r.seq`, docId), "revisions");
 
   // A root scan is handed out LAZILY: an array (a `Proxy` over one — `Array.isArray`,
   // iteration, indexing, `length`, rendering all see a plain array of tagged
@@ -135,14 +165,14 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
   // array, this context needs no `DataContext.materialize` (the Rust port's
   // marker value does); `spec/surface` `lazy-root-*` pins what the language
   // sees either way.
-  const rootScans = new WeakMap<object, { target: Target; rows(): Row[] }>();
-  const handles = new Map<Target, Row[]>();
-  const lazyRoot = (t: Target): Row[] => {
+  const rootScans = new WeakMap<object, { target: Kind; rows(): Row[] }>();
+  const handles = new Map<Kind, Row[]>();
+  const lazyRoot = (t: Kind): Row[] => {
     let h = handles.get(t);
     if (!h) handles.set(t, (h = makeLazyRoot(t)));
     return h;
   };
-  const makeLazyRoot = (t: Target): Row[] => {
+  const makeLazyRoot = (t: Kind): Row[] => {
     const backing: Row[] = [];
     let filled = false;
     const fill = (): Row[] => {
@@ -162,21 +192,17 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
     return proxy;
   };
 
-  const rootFns: Record<string, () => Row[]> = {
-    docs: () => lazyRoot("docs"), blocks: () => lazyRoot("blocks"), nodes: () => lazyRoot("nodes"), links: () => lazyRoot("links"),
-  };
+  const rootFns: Record<string, () => Row[]> = Object.fromEntries(ROOT_NAMES.map((t) => [t, () => lazyRoot(t)]));
   // The root row (spec/surface §1.1, 2.0; spec/oqx 0.18 `rootObject`): the
   // repository, reached as `^$it` from a top-level row (`0^$it` from any depth).
-  // Its own enumerable keys are the four collections — lazy getters, so
-  // `entries(^$it)` names them without running a scan and `^$it.docs` is the
-  // same handle as `^docs` — and `get` answers `id` with the repository id (an
-  // attribute, not an entry). Tagged so `get` recognizes it.
-  const rootRow: RootRow = Object.defineProperties({ [ROOT_ROW]: true } as RootRow, {
-    docs: { enumerable: true, get: () => lazyRoot("docs") },
-    blocks: { enumerable: true, get: () => lazyRoot("blocks") },
-    nodes: { enumerable: true, get: () => lazyRoot("nodes") },
-    links: { enumerable: true, get: () => lazyRoot("links") },
-  });
+  // Its own enumerable keys are the five collections in `ROOT_NAMES` order —
+  // lazy getters, so `entries(^$it)` names them without running a scan and
+  // `^$it.docs` is the same handle as `^docs` — and `get` answers `id` with the
+  // repository id (an attribute, not an entry). Tagged so `get` recognizes it.
+  const rootRow: RootRow = Object.defineProperties(
+    { [ROOT_ROW]: true } as RootRow,
+    Object.fromEntries(ROOT_NAMES.map((t) => [t, { enumerable: true, get: () => lazyRoot(t) }])),
+  );
 
   // ---- attrs / property decoding --------------------------------------------
   const parseJson = (v: unknown): unknown => {
@@ -309,7 +335,7 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
   };
 
   // ---- relations (return row arrays) ----------------------------------------
-  const rel: Record<Target, Record<string, (row: Row) => Row[] | Row | undefined>> = {
+  const rel: Record<Kind, Record<string, (row: Row) => Row[] | Row | undefined>> = {
     docs: {
       nodes: (r) => docNodesInOrder(r.doc_id, r.path),
       blocks: (r) => tagAll(docBlocksPreorder(r.doc_id, r.path).map((x) => x.row), "blocks"),
@@ -369,6 +395,7 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
       },
     },
     links: {},
+    revisions: {},
   };
 
   const jattr = (row: Row, k: string): unknown => {
@@ -388,7 +415,7 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
   // `block.text`). The translator mirrors this in SQL (`doc.id` → the FK
   // column). A Proxy over the backing object so the engine sees a plain tagged
   // row either way (indexing, rendering, `rowRef`).
-  const lazyOwner = (known: Record<string, unknown>, t: Target, load: () => Record<string, unknown> | undefined): Row | undefined => {
+  const lazyOwner = (known: Record<string, unknown>, t: Kind, load: () => Record<string, unknown> | undefined): Row | undefined => {
     const backing: Row = tag({ ...known }, t)!;
     const knownKeys = new Set<string>(Object.keys(known));
     let filled = false;
@@ -429,6 +456,12 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
     if (row.dst_kind !== "document") return undefined;
     return tag(one(`SELECT * FROM docs WHERE doc_id = ?`, row.dst_node), "docs");
   };
+  // `doc` on a revision row (spec/surface §1.2, 4.7): the document's CURRENT
+  // live row — the revision's `path` may be an earlier one — and absent (the
+  // single-with-no-row marker, as `dst` on a dangling link) for a tombstoned
+  // document: its revisions are rows, `doc == null` tells them apart.
+  const revisionDoc = (row: Row): Row | undefined =>
+    tag(one(`SELECT * FROM docs WHERE doc_id = ? AND deleted_commit IS NULL`, row.doc_id), "docs");
   const owningBlock = (row: Row): Row | undefined => {
     if (!row.block_id) return undefined;
     const load = (): Record<string, unknown> | undefined =>
@@ -445,7 +478,7 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
   // changes. run.ts roots the string literals a query compares them with.
   // `undefined` means "not an attribute" — the caller falls through to the
   // handles, relations and the author's data.
-  const attribute = (row: Row, t: Target, name: string): unknown => {
+  const attribute = (row: Row, t: Kind, name: string): unknown => {
     if (t === "docs") switch (name) {
       case "id": return row.doc_id;
       case "path": return referencePath(String(row.path));
@@ -464,6 +497,8 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
       // `data.tags` is the authored list alone.
       case "tags": return docTags(String(row.doc_id));
       case "format": return row.format;
+      // the `revisions` relation (listed with the attributes for names.ts's sake, above).
+      case "revisions": return docRevisions(row.doc_id);
     }
     if (t === "blocks") switch (name) {
       case "id": return row.block_id;
@@ -505,6 +540,20 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
       case "uri": return scalar(`SELECT uri FROM external_nodes WHERE node_id = ?`, row.dst_node) ?? null;
       case "field": return row.src_field ?? null;
       case "predicate": case "provenance": case "dst_kind": case "anchor": return row[name];
+    }
+    if (t === "revisions") switch (name) {
+      // the `revisions` × `commits` columns under docs_history's names (spec/surface §1.2, 4.7).
+      case "id": case "rev": return row.rev_id;
+      case "path": return referencePath(String(row.path));
+      case "seq": return row.seq;
+      case "doc_id": return row.doc_id;
+      case "commit": return row.commit_id;
+      case "ts": return row.ts;
+      case "origin": return row.origin;
+      case "actor": return row.actor ?? null;
+      case "reason": return row.reason ?? null;
+      case "hash": return hex(row.rendered_hash);
+      case "is_current": return row.is_current === 1 || row.is_current === true;
     }
     return undefined;
   };
@@ -562,8 +611,10 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
     if (t === "blocks" && key === "block") return r;
     if (t === "nodes" && key === "section") return r;
 
-    // reach-through to owning entities, and from a link row to its destination —
-    // statically single relations: absent is the single-with-no-row marker.
+    // reach-through to owning entities, from a link row to its destination and
+    // from a revision to its document's current row — statically single
+    // relations: absent is the single-with-no-row marker.
+    if (t === "revisions" && key === "doc") return revisionDoc(r) ?? ABSENT_SINGLE;
     if (t !== "docs" && key === "doc") return owningDoc(r) ?? ABSENT_SINGLE;
     if (t === "nodes" && key === "block") return owningBlock(r) ?? ABSENT_SINGLE;
     if (t === "links" && key === "dst") return destinationDoc(r) ?? ABSENT_SINGLE;
@@ -574,9 +625,9 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
     // A bare target name that is not one of this row's relations reads a
     // property the row has none of (spec/surface §1.1, 2.0): loud, naming the
     // root-row spelling. `docs`/`links` never get here (run.ts refuses them
-    // statically); `blocks` on a block or edge row and `nodes` on a node or
-    // edge row do.
-    if (TARGETS.has(key)) throw new FilterInvalid(bareTargetMessage(key, null), "OQX");
+    // statically); `blocks` on a block or edge row, `nodes` on a node or edge
+    // row and `revisions` on anything but a document do.
+    if (ROOTS.has(key)) throw new FilterInvalid(bareTargetMessage(key, null), "OQX");
 
     // the author's data.
     if (t === "docs") {
@@ -631,8 +682,8 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
     }
   };
 
-  const textMatch = (t: Target | undefined, r: Row, terms: string): boolean => {
-    if (t === "links") throw new FilterInvalid("text(...) is not available on the links target", "10 §5");
+  const textMatch = (t: Kind | undefined, r: Row, terms: string): boolean => {
+    if (t === "links" || t === "revisions") throw new FilterInvalid(`text(...) is not available on the ${t} target`, "10 §5");
     const match = sanitizeFtsQuery(terms);
     if (match === "") return false;
     if (t === "docs") return !!one(`SELECT 1 FROM blocks_fts JOIN blocks b ON b.rowid = blocks_fts.rowid WHERE b.doc_id = ? AND blocks_fts MATCH ? LIMIT 1`, r.doc_id, match);
@@ -652,8 +703,8 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
     const ctx = blockContexts.ctx({ doc_id: String(r.doc_id), path, ordinal: Number(r.ordinal), type: String(r.type) });
     return one(`SELECT vec FROM embeddings WHERE content_hash = ? AND ctx_hash = ? AND model = ?`, r.raw_hash, Buffer.from(ctxHashHex(ctx), "hex"), model);
   };
-  const semanticScore = (t: Target | undefined, r: Row, phrase: string): number | null => {
-    if (t === "nodes" || t === "links") throw new FilterInvalid("semantic(...) is available on the docs and blocks targets", "OQX semantic");
+  const semanticScore = (t: Kind | undefined, r: Row, phrase: string): number | null => {
+    if (t === "nodes" || t === "links" || t === "revisions") throw new FilterInvalid("semantic(...) is available on the docs and blocks targets", "OQX semantic");
     const resolved = sv?.get(phrase);
     if (!resolved) throw new FilterInvalid(`semantic(${JSON.stringify(phrase)}) needs an embedding provider; none is configured for this query`, "OQX semantic");
     const row = t === "docs"
@@ -741,11 +792,12 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
     if (t === "blocks") return (row as Row).block_id;
     if (t === "nodes") return (row as Row).node_id;
     if (t === "links") return (row as Row).edge_id;
+    if (t === "revisions") return (row as Row).rev_id;
     return row;
   };
 
   return {
-    // The root scope's names (spec/oqx §2 step 5 at the root): the four lazy
+    // The root scope's names (spec/oqx §2 step 5 at the root): the five lazy
     // scans and `id`, the repository id — so `^docs` / `0^docs` from any row is
     // the scan and `^id` / `0^id` the id.
     root(name: string): unknown {
@@ -781,7 +833,9 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
     indexFor(collection: unknown, path: readonly string[]): RowIndex | undefined {
       if (collection === null || typeof collection !== "object") return undefined;
       const root = rootScans.get(collection);
-      if (!root) return undefined;
+      // The revisions scan has no store index (4.7): the engine builds its own
+      // over the materialized rows (one SELECT per context).
+      if (!root || root.target === "revisions") return undefined;
       const key = `${root.target}\u0000${JSON.stringify(path)}`;
       let index = indexes.get(key);
       if (index === undefined) {
@@ -826,7 +880,7 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
   };
 }
 
-function requireTarget(t: Target | undefined, want: Target, fn: string): void {
+function requireTarget(t: Kind | undefined, want: Target, fn: string): void {
   if (t !== want) throw new FilterInvalid(`${fn}() is only available on the ${want} target`, "10 §5");
 }
 function hex(b: unknown): string {
@@ -835,7 +889,7 @@ function hex(b: unknown): string {
 
 /** Tag SQL rows with their target so the store context resolves them (used by the
  * tier-3 planner to hand produced rows back for residual evaluation). */
-export function tagRows(rows: Record<string, unknown>[], target: Target): unknown[] {
+export function tagRows(rows: Record<string, unknown>[], target: Kind): unknown[] {
   return tagAll(rows, target);
 }
 
@@ -852,8 +906,10 @@ export function rowRef(value: unknown): { id: string; path: string } | undefined
   const t = (value as Row | null | undefined)?.[TARGET];
   if (!t) return undefined;
   const r = value as Row;
-  const id = t === "docs" ? r.doc_id : t === "blocks" ? r.block_id : t === "nodes" ? r.node_id : r.edge_id;
-  const path = t === "docs" ? r.path : r.__path;
+  const id = t === "docs" ? r.doc_id : t === "blocks" ? r.block_id : t === "nodes" ? r.node_id : t === "revisions" ? r.rev_id : r.edge_id;
+  // a revision's path is `revisions.path` — the path it was committed under
+  // (a move re-paths the current revision; §1.2, 4.7).
+  const path = t === "docs" || t === "revisions" ? r.path : r.__path;
   return { id: String(id), path: path == null ? "" : referencePath(String(path)) };
 }
 

@@ -1412,14 +1412,14 @@ describe("alchemy corpus — sugar, refs() and the root row", () => {
     const next = hits('select path, next: ^docs { ^path in list(before) } from docs where type == "milestone"').hits;
     expect(next.map((h) => (h.next as { path: string }[]).map((n) => n.path))).toEqual([["/timeline/review.md"], []]);
     // the strings themselves are not hits
-    expect(() => paths('from docs where path == "/timeline/review.md" follow before')).toThrow(/a hit must be a document, block, node or link row.*refs\(<field>\)/);
+    expect(() => paths('from docs where path == "/timeline/review.md" follow before')).toThrow(/a hit must be a document, block, node, link or revision row.*refs\(<field>\)/);
   });
 
   it("the repository is the root row: ^docs / ^id / entries(^$it) from a row, 0^docs from any depth, a bare target inside a block is loud", () => {
     const root = hits("select n: size(^docs), repo: ^id from docs limit 1").hits[0]!;
     expect(root.n).toBe(20);
     expect(root.repo).toBe(repoId);
-    expect(hits("select ks: entries(^$it) collect { $key values } from docs limit 1").hits[0]!.ks).toEqual(["docs", "blocks", "nodes", "links"]);
+    expect(hits("select ks: entries(^$it) collect { $key values } from docs limit 1").hits[0]!.ks).toEqual(["docs", "blocks", "nodes", "links", "revisions"]);
     // two scopes down: ^^docs and the absolute 0^docs agree
     const deep = hits('select a: nodes first { select c: size(^^docs) values where kind == "md:section" }, b: nodes first { select c: size(0^docs) values where kind == "md:section" } from docs where path == "/index.md"').hits[0]!;
     expect([deep.a, deep.b]).toEqual([20, 20]);

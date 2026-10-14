@@ -65,8 +65,8 @@ Legend: `--server` = is this CLI command remote-capable? ✅ wired · ▫️ pla
 | Commit feed | `changesSince` | `log` | `changes_since` | ✅ |
 | Block biography | `historyNode` | `hist` | `blocks_history` | ✅ |
 | Diff two revisions | `diffBlocks`/`diffUnified` | `diff` (`--blocks`) | **`docs_diff_unified`** + `docs_diff` (block-grain) | ✅ |
-| Read doc at a revision | `readDocumentAtRevision` | (`cat --rev` ✳️) | `docs_read_at` | ▫️ |
-| Per-document version list | `docHistory` | — | `docs_history` | — |
+| Read doc at a revision | `readDocumentAtRevision` | (`cat --rev` ✳️) | `docs_read { at }` (`docs_read_at` is its sugar, surface 4.7) | ▫️ |
+| Per-document version list | `docHistory` | — | `docs_history`; as rows: `query` over the `revisions` target (surface 4.7) | — |
 
 ### Links
 

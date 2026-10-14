@@ -21,12 +21,13 @@ import type { Store } from "../core/store/store.js";
 import { makeStoreContext, tagRows, type StoreContextOptions } from "./context.js";
 import { translatePredicate, type Target, type TranslateCtx } from "./sql/translate.js";
 import { ALIAS, COLS, FROM, ORDER, guards } from "./sql/scan.js";
-import { REACH_THROUGH, TARGETS, isTargetRelationOf } from "./root-row.js";
+import { REACH_THROUGH, ROOTS, TARGETS, isTargetRelationOf } from "./root-row.js";
 
 // The root collection a query scans, if it is a bare `docs|blocks|nodes|links`
 // source at the root scope (else null — not a pushable shape; a nested `^docs`
-// is a block's receiver, never the query's source). run.ts also asks: a bare
-// root scan's rows are store rows by construction.
+// is a block's receiver, never the query's source). `revisions` (4.7) is a root
+// the planner never plans — it is not a `Target` here — so a revisions scan
+// always runs in memory.
 export function rootTarget(source: Expr): Target | null {
   if (source.kind === "ident" && TARGETS.has(source.name)) return source.name as Target;
   return null;
@@ -46,9 +47,9 @@ export function rootTarget(source: Expr): Target | null {
  *   • a bare reserved docs basename (`id path updated_at hash raw`): as
  *     an `ident` at the ROOT scope when the target is `docs`, or as `doc.<name>`
  *     on any target at any depth (the reach-through row is a doc)
- *   • a bare target name (`docs blocks nodes links`, root-row.ts) read as a
- *     property: as an `ident` at the ROOT scope when it is not a relation of
- *     the target's rows (`blocks` on blocks, `nodes` on nodes, any on links),
+ *   • a bare root name (`docs blocks nodes links revisions`, root-row.ts) read
+ *     as a property: as an `ident` at the ROOT scope when it is not a relation
+ *     of the target's rows (`blocks` on blocks, `nodes` on nodes, any on links),
  *     as an `ident` at any depth below (the rows there are unknown), or as
  *     `<head>.<name>` unless the head is a reach-through whose row has that
  *     relation (`doc.nodes`, `doc.blocks`, `block.nodes`, `section.blocks`)
@@ -105,9 +106,9 @@ function exprMayRaise(e: Expr, target: Target, root: boolean): boolean {
     case "call": return true;
     case "outer": return true;
     case "ident":
-      return TARGETS.has(e.name) && (!root || !isTargetRelationOf(target, e.name));
+      return ROOTS.has(e.name) && (!root || !isTargetRelationOf(target, e.name));
     case "member":
-      if (TARGETS.has(e.name) && !(e.recv.kind === "ident" && isTargetRelationOf(REACH_THROUGH[e.recv.name], e.name))) return true;
+      if (ROOTS.has(e.name) && !(e.recv.kind === "ident" && isTargetRelationOf(REACH_THROUGH[e.recv.name], e.name))) return true;
       return exprMayRaise(e.recv, target, root);
     case "unary": return exprMayRaise(e.expr, target, root);
     // `x!` raises when absent; a value-position directive may `single`-fail or

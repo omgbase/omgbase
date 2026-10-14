@@ -1896,46 +1896,14 @@
             "path": "/guide.md",
             "rev": "r_0",
             "raw": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n",
-            "renderedHashMatch": true,
-            "properties": {
-              "frontmatter": {
-                "title": "Guide",
-                "tags": [
-                  "a",
-                  "b"
-                ]
-              },
-              "inline": {
-                "owner": "bb"
-              },
-              "computed": {
-                "title": "Guide"
-              }
-            },
-            "propertiesAreCurrent": true
+            "renderedHashMatch": true
           },
           {
             "id": "d_0",
             "path": "/guide.md",
             "rev": "r_2",
             "raw": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph, edited, with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n\nA closing paragraph.\n",
-            "renderedHashMatch": true,
-            "properties": {
-              "frontmatter": {
-                "title": "Guide",
-                "tags": [
-                  "a",
-                  "b"
-                ]
-              },
-              "inline": {
-                "owner": "bb"
-              },
-              "computed": {
-                "title": "Guide"
-              }
-            },
-            "propertiesAreCurrent": true
+            "renderedHashMatch": true
           },
           {
             "error": "target_missing",
@@ -2420,34 +2388,14 @@
             "path": "/log.md",
             "rev": "r_1",
             "raw": "---\ntitle: Log\n---\n\n# Log\n\nA journal.\n\n## Log\n\n- item a\n\n- item b\n\n- item c\n\n- item d\n- item e\n",
-            "renderedHashMatch": true,
-            "properties": {
-              "frontmatter": {
-                "title": "Log"
-              },
-              "inline": {},
-              "computed": {
-                "title": "Log"
-              }
-            },
-            "propertiesAreCurrent": true
+            "renderedHashMatch": true
           },
           {
             "id": "d_0",
             "path": "/log.md",
             "rev": "r_2",
             "raw": "---\ntitle: Log\n---\n\n# Log\n\nA journal.\n\n## Log\n\n- item a\n\n- item b\n\n- item c\n\n- item d\n- item e\n\n- item f\n",
-            "renderedHashMatch": true,
-            "properties": {
-              "frontmatter": {
-                "title": "Log"
-              },
-              "inline": {},
-              "computed": {
-                "title": "Log"
-              }
-            },
-            "propertiesAreCurrent": true
+            "renderedHashMatch": true
           },
           {
             "id": "d_0",
@@ -2844,7 +2792,7 @@
           {
             "error": "filter_invalid",
             "retriable": false,
-            "message": "pass id or path (docs_read takes id?, include_ids?, path?, repo?)"
+            "message": "pass id or path (docs_read takes at?, id?, include_ids?, path?, repo?)"
           },
           {
             "error": "doc_missing",
@@ -10819,17 +10767,17 @@
           {
             "error": "filter_invalid",
             "retriable": false,
-            "message": "`doc` is no longer an argument — pass `id` or `path` (docs_read takes id?, include_ids?, path?, repo?)"
+            "message": "`doc` is no longer an argument — pass `id` or `path` (docs_read takes at?, id?, include_ids?, path?, repo?)"
           },
           {
             "error": "filter_invalid",
             "retriable": false,
-            "message": "pass id or path (docs_read takes id?, include_ids?, path?, repo?)"
+            "message": "pass id or path (docs_read takes at?, id?, include_ids?, path?, repo?)"
           },
           {
             "error": "filter_invalid",
             "retriable": false,
-            "message": "id \"d_0\" and path \"b.md\" name different documents (docs_read takes id?, include_ids?, path?, repo?)"
+            "message": "id \"d_0\" and path \"b.md\" name different documents (docs_read takes at?, id?, include_ids?, path?, repo?)"
           },
           {
             "id": "d_0",
@@ -10866,12 +10814,12 @@
           {
             "error": "filter_invalid",
             "retriable": false,
-            "message": "unknown argument `include_id`; did you mean `include_ids`? (docs_read takes id?, include_ids?, path?, repo?)"
+            "message": "unknown argument `include_id`; did you mean `include_ids`? (docs_read takes at?, id?, include_ids?, path?, repo?)"
           },
           {
             "error": "filter_invalid",
             "retriable": false,
-            "message": "`path` must be a string (docs_read takes id?, include_ids?, path?, repo?)"
+            "message": "`path` must be a string (docs_read takes at?, id?, include_ids?, path?, repo?)"
           },
           {
             "error": "filter_invalid",
@@ -12188,6 +12136,737 @@
           {
             "error": "filter_invalid",
             "retriable": false
+          }
+        ]
+      }
+    },
+    {
+      "name": "revisions",
+      "notes": "§1.2 the revisions target and §2 docs_read { at } (4.7) over a document edited once (guide.md: r_0, then r_3), one edited then moved through docs_move (notes/one.md: r_1, r_4; the move re-paths the CURRENT revision r_4 to /notes/two.md and mints none — spec/mutate §6 — so r_1 keeps the old path), and one observed deleted (scratch.md: r_2 — a tombstone; its revision stays a row, `doc` is absent, `is_current` holds, its body is unreachable: doc_missing). docs_read { at } of guide's first revision returns the pre-edit bytes; docs_read_at is the same call; the current revision through `at` equals the plain read's raw; include_ids with at is refused; a revision of another document, or no revision, is target_missing.",
+      "workspace": true,
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-27T10:00:00.000Z",
+            "items": [
+              {
+                "path": "guide.md",
+                "source": "---\ntitle: Guide\nlayer: working\n---\n\n# Guide\n\nThe first paragraph, as first written.\n\n## Setup\n\n- one\n- two\n"
+              },
+              {
+                "path": "notes/one.md",
+                "source": "# One\n\nA note that will be moved.\n"
+              },
+              {
+                "path": "scratch.md",
+                "source": "# Scratch\n\nA note that will be deleted.\n"
+              }
+            ]
+          }
+        },
+        {
+          "observe": {
+            "ts": "2026-09-27T10:01:00.000Z",
+            "items": [
+              {
+                "path": "guide.md",
+                "source": "---\ntitle: Guide\nlayer: canon\n---\n\n# Guide\n\nThe first paragraph, edited in the second revision.\n\n## Setup\n\n- one\n- two\n\nA closing paragraph.\n"
+              }
+            ]
+          }
+        },
+        {
+          "observe": {
+            "ts": "2026-09-27T10:01:30.000Z",
+            "items": [
+              {
+                "path": "notes/one.md",
+                "source": "# One\n\nA note that will be moved, edited once before the move.\n"
+              }
+            ]
+          }
+        },
+        {
+          "read": {
+            "tool": "docs_move",
+            "args": {
+              "path": "notes/one.md",
+              "to_path": "notes/two.md"
+            },
+            "ts": "2026-09-27T10:02:00.000Z"
+          }
+        },
+        {
+          "observe": {
+            "ts": "2026-09-27T10:03:00.000Z",
+            "items": [
+              {
+                "path": "scratch.md",
+                "source": null
+              }
+            ]
+          }
+        },
+        {
+          "read": {
+            "tool": "query",
+            "args": {
+              "query": "select rev, seq, commit, ts, origin, actor, reason, hash, is_current, l: doc.layer from revisions where doc_id == \"d_0\" order by seq"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "query",
+            "args": {
+              "query": "select path, seq, is_current, o: origin, now: doc.path from revisions where doc_id == \"d_1\" order by seq"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "query",
+            "args": {
+              "query": "from revisions where path == \"/notes/one.md\""
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "query",
+            "args": {
+              "query": "select seq, is_current, gone: doc == null, t: doc { title } from revisions where doc == null"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "query",
+            "args": {
+              "query": "from docs where revisions count { } > 1"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "query",
+            "args": {
+              "query": "select r: revisions collect { seq, origin, reason } from docs where path == \"/notes/two.md\""
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "query",
+            "args": {
+              "query": "from revisions order by ts desc, seq desc"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "query",
+            "args": {
+              "query": "revisions count { }"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "query",
+            "args": {
+              "query": "from revisions"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "docs_read",
+            "args": {
+              "path": "guide.md",
+              "at": "r_0"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "docs_read_at",
+            "args": {
+              "path": "guide.md",
+              "rev": "r_0"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "docs_read",
+            "args": {
+              "id": "d_0",
+              "at": "r_3"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "docs_read",
+            "args": {
+              "path": "guide.md"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "docs_read",
+            "args": {
+              "path": "notes/two.md",
+              "at": "r_1"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "docs_read",
+            "args": {
+              "path": "notes/two.md",
+              "at": "r_4"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "docs_read",
+            "args": {
+              "path": "guide.md",
+              "at": "r_0",
+              "include_ids": true
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "docs_read",
+            "args": {
+              "path": "guide.md",
+              "at": "r_1"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "docs_read",
+            "args": {
+              "path": "guide.md",
+              "at": "r_nope"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "docs_read",
+            "args": {
+              "path": "scratch.md",
+              "at": "r_2"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "docs_read_at",
+            "args": {
+              "path": "scratch.md",
+              "rev": "r_2"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "docs_history",
+            "args": {
+              "path": "guide.md"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "docs_history",
+            "args": {
+              "path_glob": "*",
+              "include_deleted": true
+            }
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "guide.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 6
+              }
+            },
+            {
+              "path": "notes/one.md",
+              "echo": false,
+              "doc": "d_1",
+              "commit": "c_1",
+              "rev": "r_1",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 2
+              }
+            },
+            {
+              "path": "scratch.md",
+              "echo": false,
+              "doc": "d_2",
+              "commit": "c_2",
+              "rev": "r_2",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 2
+              }
+            }
+          ],
+          [
+            {
+              "path": "guide.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_3",
+              "rev": "r_3",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "deleted": 1,
+                "inserted": 2,
+                "same": 5
+              }
+            }
+          ],
+          [
+            {
+              "path": "notes/one.md",
+              "echo": false,
+              "doc": "d_1",
+              "commit": "c_4",
+              "rev": "r_4",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "edited": 1,
+                "same": 1
+              }
+            }
+          ],
+          {
+            "plan_id": "9ca17bd018f89fc9b544c974f80283dec376aed1249c9e4d4b44754d776255ac",
+            "commit": "c_5",
+            "revisions": [],
+            "new_ids": {},
+            "committed": true,
+            "summary": [
+              "move /notes/one.md → /notes/two.md"
+            ],
+            "retargeted": null,
+            "dangling": []
+          },
+          [
+            {
+              "path": "scratch.md",
+              "deleted": true,
+              "doc": "d_2"
+            }
+          ],
+          {
+            "hits": [
+              {
+                "id": "r_0",
+                "path": "/guide.md",
+                "rev": "r_0",
+                "seq": 1,
+                "commit": "c_0",
+                "ts": "2026-09-27T10:00:00.000Z",
+                "origin": "observed",
+                "actor": null,
+                "reason": null,
+                "hash": "83ad50d1307f135f6a627742465cfbc90f9b75a2f36c995ed3d9776613ce2e7f",
+                "is_current": false,
+                "l": "canon"
+              },
+              {
+                "id": "r_3",
+                "path": "/guide.md",
+                "rev": "r_3",
+                "seq": 2,
+                "commit": "c_3",
+                "ts": "2026-09-27T10:01:00.000Z",
+                "origin": "observed",
+                "actor": null,
+                "reason": null,
+                "hash": "85dee9c71280a95b842ac17130b4b932331d52d5f807051210a031b42328d6fc",
+                "is_current": true,
+                "l": "canon"
+              }
+            ],
+            "truncated": false,
+            "cursor": null,
+            "consumer": "collect"
+          },
+          {
+            "hits": [
+              {
+                "id": "r_1",
+                "path": "/notes/one.md",
+                "seq": 1,
+                "is_current": false,
+                "o": "observed",
+                "now": "/notes/two.md"
+              },
+              {
+                "id": "r_4",
+                "path": "/notes/two.md",
+                "seq": 2,
+                "is_current": true,
+                "o": "observed",
+                "now": "/notes/two.md"
+              }
+            ],
+            "truncated": false,
+            "cursor": null,
+            "consumer": "collect"
+          },
+          {
+            "hits": [
+              {
+                "id": "r_1",
+                "path": "/notes/one.md"
+              }
+            ],
+            "truncated": false,
+            "cursor": null,
+            "consumer": "collect"
+          },
+          {
+            "hits": [
+              {
+                "id": "r_2",
+                "path": "/scratch.md",
+                "seq": 1,
+                "is_current": true,
+                "gone": true
+              }
+            ],
+            "truncated": false,
+            "cursor": null,
+            "consumer": "collect"
+          },
+          {
+            "hits": [
+              {
+                "id": "d_0",
+                "path": "/guide.md"
+              },
+              {
+                "id": "d_1",
+                "path": "/notes/two.md"
+              }
+            ],
+            "truncated": false,
+            "cursor": null,
+            "consumer": "collect"
+          },
+          {
+            "hits": [
+              {
+                "id": "d_1",
+                "path": "/notes/two.md",
+                "r": [
+                  {
+                    "seq": 1,
+                    "origin": "observed",
+                    "reason": null
+                  },
+                  {
+                    "seq": 2,
+                    "origin": "observed",
+                    "reason": null
+                  }
+                ]
+              }
+            ],
+            "truncated": false,
+            "cursor": null,
+            "consumer": "collect"
+          },
+          {
+            "hits": [
+              {
+                "id": "r_4",
+                "path": "/notes/two.md"
+              },
+              {
+                "id": "r_3",
+                "path": "/guide.md"
+              },
+              {
+                "id": "r_0",
+                "path": "/guide.md"
+              },
+              {
+                "id": "r_1",
+                "path": "/notes/one.md"
+              },
+              {
+                "id": "r_2",
+                "path": "/scratch.md"
+              }
+            ],
+            "truncated": false,
+            "cursor": null,
+            "consumer": "collect"
+          },
+          {
+            "hits": [],
+            "truncated": false,
+            "cursor": null,
+            "consumer": "count",
+            "count": 5
+          },
+          {
+            "hits": [
+              {
+                "id": "r_0",
+                "path": "/guide.md"
+              },
+              {
+                "id": "r_3",
+                "path": "/guide.md"
+              },
+              {
+                "id": "r_1",
+                "path": "/notes/one.md"
+              },
+              {
+                "id": "r_4",
+                "path": "/notes/two.md"
+              },
+              {
+                "id": "r_2",
+                "path": "/scratch.md"
+              }
+            ],
+            "truncated": false,
+            "cursor": null,
+            "consumer": "collect"
+          },
+          {
+            "id": "d_0",
+            "path": "/guide.md",
+            "rev": "r_0",
+            "raw": "---\ntitle: Guide\nlayer: working\n---\n\n# Guide\n\nThe first paragraph, as first written.\n\n## Setup\n\n- one\n- two\n",
+            "renderedHashMatch": true
+          },
+          {
+            "id": "d_0",
+            "path": "/guide.md",
+            "rev": "r_0",
+            "raw": "---\ntitle: Guide\nlayer: working\n---\n\n# Guide\n\nThe first paragraph, as first written.\n\n## Setup\n\n- one\n- two\n",
+            "renderedHashMatch": true
+          },
+          {
+            "id": "d_0",
+            "path": "/guide.md",
+            "rev": "r_3",
+            "raw": "---\ntitle: Guide\nlayer: canon\n---\n\n# Guide\n\nThe first paragraph, edited in the second revision.\n\n## Setup\n\n- one\n- two\n\nA closing paragraph.\n",
+            "renderedHashMatch": true
+          },
+          {
+            "id": "d_0",
+            "path": "/guide.md",
+            "rev": "r_3",
+            "properties": {
+              "frontmatter": {
+                "title": "Guide",
+                "layer": "canon"
+              },
+              "inline": {},
+              "computed": {
+                "title": "Guide"
+              }
+            },
+            "raw": "---\ntitle: Guide\nlayer: canon\n---\n\n# Guide\n\nThe first paragraph, edited in the second revision.\n\n## Setup\n\n- one\n- two\n\nA closing paragraph.\n"
+          },
+          {
+            "id": "d_1",
+            "path": "/notes/one.md",
+            "rev": "r_1",
+            "raw": "# One\n\nA note that will be moved.\n",
+            "renderedHashMatch": true
+          },
+          {
+            "id": "d_1",
+            "path": "/notes/two.md",
+            "rev": "r_4",
+            "raw": "# One\n\nA note that will be moved, edited once before the move.\n",
+            "renderedHashMatch": true
+          },
+          {
+            "error": "filter_invalid",
+            "retriable": false,
+            "message": "`include_ids` is not available with `at` (docs_read takes at?, id?, include_ids?, path?, repo?)"
+          },
+          {
+            "error": "target_missing",
+            "retriable": false,
+            "data": {
+              "doc": "d_0",
+              "rev": "r_1"
+            }
+          },
+          {
+            "error": "target_missing",
+            "retriable": false,
+            "data": {
+              "doc": "d_0",
+              "rev": "r_nope"
+            }
+          },
+          {
+            "error": "doc_missing",
+            "retriable": false,
+            "message": "no document with id or path \"scratch.md\"",
+            "data": {
+              "path": "scratch.md"
+            }
+          },
+          {
+            "error": "doc_missing",
+            "retriable": false,
+            "message": "no document with id or path \"scratch.md\"",
+            "data": {
+              "path": "scratch.md"
+            }
+          },
+          {
+            "docs": [
+              {
+                "id": "d_0",
+                "path": "/guide.md",
+                "deleted": false,
+                "currentRev": "r_3",
+                "versions": [
+                  {
+                    "rev": "r_0",
+                    "seq": 1,
+                    "commit": "c_0",
+                    "updated_at": "2026-09-27T10:00:00.000Z",
+                    "origin": "observed",
+                    "actor": null,
+                    "hash": "83ad50d1307f135f6a627742465cfbc90f9b75a2f36c995ed3d9776613ce2e7f",
+                    "isCurrent": false
+                  },
+                  {
+                    "rev": "r_3",
+                    "seq": 2,
+                    "commit": "c_3",
+                    "updated_at": "2026-09-27T10:01:00.000Z",
+                    "origin": "observed",
+                    "actor": null,
+                    "hash": "85dee9c71280a95b842ac17130b4b932331d52d5f807051210a031b42328d6fc",
+                    "isCurrent": true
+                  }
+                ]
+              }
+            ],
+            "truncated": false
+          },
+          {
+            "docs": [
+              {
+                "id": "d_0",
+                "path": "/guide.md",
+                "deleted": false,
+                "currentRev": "r_3",
+                "versions": [
+                  {
+                    "rev": "r_0",
+                    "seq": 1,
+                    "commit": "c_0",
+                    "updated_at": "2026-09-27T10:00:00.000Z",
+                    "origin": "observed",
+                    "actor": null,
+                    "hash": "83ad50d1307f135f6a627742465cfbc90f9b75a2f36c995ed3d9776613ce2e7f",
+                    "isCurrent": false
+                  },
+                  {
+                    "rev": "r_3",
+                    "seq": 2,
+                    "commit": "c_3",
+                    "updated_at": "2026-09-27T10:01:00.000Z",
+                    "origin": "observed",
+                    "actor": null,
+                    "hash": "85dee9c71280a95b842ac17130b4b932331d52d5f807051210a031b42328d6fc",
+                    "isCurrent": true
+                  }
+                ]
+              },
+              {
+                "id": "d_1",
+                "path": "/notes/two.md",
+                "deleted": false,
+                "currentRev": "r_4",
+                "versions": [
+                  {
+                    "rev": "r_1",
+                    "seq": 1,
+                    "commit": "c_1",
+                    "updated_at": "2026-09-27T10:00:00.000Z",
+                    "origin": "observed",
+                    "actor": null,
+                    "hash": "738a39d100d6df6da78304efcc782450e2be5de21d4631e8111872c87d36f6f4",
+                    "isCurrent": false
+                  },
+                  {
+                    "rev": "r_4",
+                    "seq": 2,
+                    "commit": "c_4",
+                    "updated_at": "2026-09-27T10:01:30.000Z",
+                    "origin": "observed",
+                    "actor": null,
+                    "hash": "d48645d8dd922a50c5617dd6094511b977331ab5fbbf79f8eb1501da305d579b",
+                    "isCurrent": true
+                  }
+                ]
+              },
+              {
+                "id": "d_2",
+                "path": "/scratch.md",
+                "deleted": true,
+                "currentRev": "r_2",
+                "versions": [
+                  {
+                    "rev": "r_2",
+                    "seq": 1,
+                    "commit": "c_2",
+                    "updated_at": "2026-09-27T10:00:00.000Z",
+                    "origin": "observed",
+                    "actor": null,
+                    "hash": "a782b29acbf00b88552b2803b991f457e01fa1844c735e9b4a6a33ce224d526e",
+                    "isCurrent": true
+                  }
+                ]
+              }
+            ],
+            "truncated": false
           }
         ]
       }

@@ -70,7 +70,7 @@
       "query": "from edges",
       "expect": {
         "error": "filter_invalid",
-        "message_includes": "`edges` is not a target — the repository's collections are `docs`, `blocks`, `nodes`, `links` (`edges` was renamed `links` in surface 3.0)"
+        "message_includes": "`edges` is not a target — the repository's collections are `docs`, `blocks`, `nodes`, `links`, `revisions` (`edges` was renamed `links` in surface 3.0)"
       }
     },
     {
@@ -307,7 +307,7 @@
       "query": "select path from docs where path == \"timeline/review.md\" follow before",
       "expect": {
         "error": "filter_invalid",
-        "message_includes": "a hit must be a document, block, node or link row — the query reached a string (\"/timeline/kickoff.md\")"
+        "message_includes": "a hit must be a document, block, node, link or revision row — the query reached a string (\"/timeline/kickoff.md\"); to follow document references held in a property use refs(<field>)"
       }
     },
     {
@@ -316,7 +316,7 @@
       "query": "select path from docs where path == \"timeline/review.md\" follow before first { }",
       "expect": {
         "error": "filter_invalid",
-        "message_includes": "a hit must be a document, block, node or link row — the query reached a string (\"/timeline/kickoff.md\")"
+        "message_includes": "a hit must be a document, block, node, link or revision row — the query reached a string (\"/timeline/kickoff.md\"); to follow document references held in a property use refs(<field>)"
       }
     },
     {
@@ -325,7 +325,7 @@
       "query": "docs collect { select $it from tags }",
       "expect": {
         "error": "filter_invalid",
-        "message_includes": "a hit must be a document, block, node or link row — the query reached a string (\"alchemy\")"
+        "message_includes": "a hit must be a document, block, node, link or revision row — the query reached a string (\"alchemy\"); to follow document references held in a property use refs(<field>)"
       }
     },
     {

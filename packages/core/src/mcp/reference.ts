@@ -110,10 +110,11 @@ read a bare non-colliding key performs), \`frontmatter.<k>\`, \`inline.<k>\`. So
 everywhere: a hit's \`id\` is docs_read's \`id\` and the \`id\` argument of blocks_read.
 
   Reserved bare names per kind (engine attributes; handles; self; relations):
-    docs    id path raw hash updated_at title tags format | data frontmatter inline | doc | blocks nodes out in out_links in_links
+    docs    id path raw hash updated_at title tags format | data frontmatter inline | doc | blocks nodes out_links in_links revisions
     blocks  id path doc_id raw hash updated_at type text attrs depth ordinal | block doc | children nodes out_links section
     nodes   id path doc_id block_id kind name value attrs | section doc block | blocks subsections children
     links   id path doc_id block_id via_id dst_id dst_path uri field dst_kind predicate provenance anchor | doc
+    revisions  id path rev seq doc_id commit ts origin actor reason hash is_current | doc
   A key of yours with any of these names is \`data.<k>\` (or frontmatter.<k> /
   inline.<k> by source; attrs.<k> on a block or node).
   UNKNOWN NAMES: a name that is none of the above AND that no object of the
@@ -143,7 +144,8 @@ docs:
                        links as rows; the documents at their other end are
                        out_links collect distinct { from dst } and
                        in_links collect distinct { from doc } — there is no
-                       out / in relation).
+                       out / in relation), revisions (the document's stored
+                       revisions, oldest first — see revisions below).
 
 blocks:
   - bare fields      = doc_id (the owning doc), type, text (normalized), ordinal
@@ -188,20 +190,37 @@ links:  (the authored link graph as rows — one per open link: the relation a l
                        open edges only (history is blocks_history/changes_since).
   - text()/semantic() are N/A on links.
 
+revisions:  (history as rows — one per stored revision of every document of the
+        repository, deleted documents included: what docs_history lists, queryable)
+  - bare fields      = rev (= id), seq (1, 2, … per document), doc_id, commit,
+                       ts (the commit's time, sorts chronologically), origin
+                       ("observed"/"api"/"import"/"projection"), actor, reason,
+                       hash (the rendered file's sha256 — docs_history's hash),
+                       is_current (true for the document's current revision).
+  - attributes       = id (the revision id, r_…), path (the path the revision
+                       was committed under — a move re-paths only the current
+                       revision, so earlier ones keep the old path). doc.<key>
+                       reaches the document's CURRENT row; absent for a deleted
+                       document, so where doc == null is the revisions of deleted documents.
+  - on docs          = revisions is a relation (oldest first): a document with
+                       more than one version is docs { revisions count { } > 1 }.
+  - text()/semantic() are N/A on revisions. The body as of a revision is
+    docs_read { path, at: "<rev>" } (docs_read_at is the same call).
+
 ## Scoping (ADR-015; the root row since surface 2.0): bare names are LOCAL
 
   name          the CURRENT row only — never falls through to an enclosing row
                 or the repository; an absent field is simply absent.
   ^name         one scope OUT (the enclosing row's fields/intrinsics/lifts);
                 ^^name two scopes out. \`^path\` = the enclosing row's path.
-  ^docs ^nodes ^blocks ^links
+  ^docs ^nodes ^blocks ^links ^revisions
                 THE ROOT ROW (surface 2.0, oqx 0.18): the repository is the root
                 scope's row, one scope out from a top-level row, so ^docs there is
                 the whole documents scan (uncorrelated until you add a ^ predicate);
                 one caret per enclosing block (^^docs from depth two), or the
                 absolute 0^docs from ANY depth. ^id / 0^id = the repository id.
                 ^$it = the root object: ^$it.docs ≡ ^docs, entries(^$it) names the
-                four collections. At the root scope itself a bare target is the scan
+                five collections. At the root scope itself a bare target is the scan
                 (docs count { … }, from docs, entries(docs)).
                 ERRORS: a bare \`docs\` INSIDE a block reads a property of the current
                 row, which has none — refused ("did you mean ^docs"); \`^docs\` AT THE
@@ -433,6 +452,9 @@ text()/where prune the candidate set; only order by reweights.
   from blocks order by semantic("identity preservation across edits") desc limit 10
   select uri from links where dst_kind == "external"
   docs count { where layer == "canon" }
+  select seq, origin, ts, hash from revisions where path == "/processes/calcination.md" order by seq desc
+  from docs where revisions count { where origin == "api" } > 0
+  select p: path, d: doc.path from revisions where doc == null
 
 Common mistake: \`$path\`/\`$id\` (the 2.x spelling) — omgbase has no $ names; write
 \`path\`/\`id\`. Another: \`where tags == "x"\` on a list-valued key is false — write

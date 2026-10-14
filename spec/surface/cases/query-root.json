@@ -142,7 +142,8 @@
               "docs",
               "blocks",
               "nodes",
-              "links"
+              "links",
+              "revisions"
             ]
           }
         ],

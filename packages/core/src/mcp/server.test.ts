@@ -820,7 +820,7 @@ describe("apply op schema + blocks_append / docs_append section resolution", () 
   it("argument-shape errors are filter_invalid with the nearest name and the tool's shape", async () => {
     const retired = (await call("docs_read", { doc: "notes.md" })) as { payload: { error: string; message: string } };
     expect(retired.payload.error).toBe("filter_invalid");
-    expect(retired.payload.message).toBe("`doc` is no longer an argument — pass `id` or `path` (docs_read takes id?, include_ids?, path?, repo?)");
+    expect(retired.payload.message).toBe("`doc` is no longer an argument — pass `id` or `path` (docs_read takes at?, id?, include_ids?, path?, repo?)");
     const typo = (await call("blocks_search", { query: "x" })) as { payload: { message: string } };
     expect(typo.payload.message).toBe("unknown argument `query`; did you mean `q`? (blocks_search takes limit?, q, repo?)");
     const missing = (await call("query", {})) as { payload: { message: string } };
@@ -828,7 +828,7 @@ describe("apply op schema + blocks_append / docs_append section resolution", () 
     const typed = (await call("query", { query: "from docs", limit: "5" })) as { payload: { message: string } };
     expect(typed.payload.message).toBe("`limit` must be an integer (query takes bare?, cursor?, limit?, query, repo?)");
     const neither = (await call("docs_read", {})) as { payload: { message: string } };
-    expect(neither.payload.message).toBe("pass id or path (docs_read takes id?, include_ids?, path?, repo?)");
+    expect(neither.payload.message).toBe("pass id or path (docs_read takes at?, id?, include_ids?, path?, repo?)");
     const both = (await call("docs_read", { id: "d_0000000", path: "notes.md" })) as { payload: { error: string; message: string } };
     expect(both.payload.error).toBe("doc_missing");
     expect(both.payload.message).toBe('no document with id or path "d_0000000"');

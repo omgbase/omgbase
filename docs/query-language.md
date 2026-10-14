@@ -133,10 +133,11 @@ not aliases, `$`-names, bindings or function names.
 
 | kind | attributes | handles / self / relations |
 | --- | --- | --- |
-| docs | `id` `path` `raw` `hash` `updated_at` `title` `tags` `format` | `data` `frontmatter` `inline`; `doc`; `blocks` `nodes` `out_links` `in_links` |
+| docs | `id` `path` `raw` `hash` `updated_at` `title` `tags` `format` | `data` `frontmatter` `inline`; `doc`; `blocks` `nodes` `out_links` `in_links` `revisions` |
 | blocks | `id` `path` `doc_id` `raw` `hash` `updated_at` `type` `text` `attrs` `depth` `ordinal` | `block` `doc`; `children` `nodes` `out_links` `section` |
 | nodes | `id` `path` `doc_id` `block_id` `kind` `name` `value` `attrs` | `section` `doc` `block`; `blocks` `subsections` `children` |
 | links | `id` `path` `doc_id` `block_id` `via_id` `dst_id` `dst_path` `uri` `field` `dst_kind` `predicate` `provenance` `anchor` | `doc` |
+| revisions | `id` `path` `rev` `seq` `doc_id` `commit` `ts` `origin` `actor` `reason` `hash` `is_current` | `doc` (the document's current row) |
 
 Language words that can never be a bare field: `select from where is not and
 or`, the literals `true false null`. The contextual words (`limit order offset
@@ -195,7 +196,7 @@ column) so pushed SQL and the in-memory engine agree.
   scope's row. From a top-level row `^docs` / `^blocks` / `^nodes` / `^links` are
   the explicit root scans (§3.4; one caret per enclosing block, or the absolute
   `0^docs` from any depth), `^id` / `0^id` the repository id, and `^$it` the
-  root object itself — `^$it.docs` ≡ `^docs`, `entries(^$it)` names the four
+  root object itself — `^$it.docs` ≡ `^docs`, `entries(^$it)` names the five
   collections (`id` is an attribute, not an entry). **[was: `$repo.<target>` /
   `$repo.id`, an intrinsic of every scope — removed in surface 2.0; reading
   `$repo` anywhere is `filter_invalid` naming the replacement. A bare target
@@ -271,6 +272,36 @@ inline-field link has a row and no node.
   (`blocks_history`, `changes_since`).
 - Source-document reach-through: `doc.<key>` / `doc.id` / `doc.path`.
   `text()`/`semantic()` are unavailable (links carry no text/embedding).
+
+### `revisions`
+History as rows (spec/surface 4.7) — one row per stored revision of every
+document of the repository, the `revisions` × `commits` join of the store;
+**deleted documents' revisions are rows too** (history is history). It is what
+`docs_history` lists, as a query target: `select seq, origin, ts from revisions
+where path == "/x.md" order by seq desc` is a document's timeline, and the body
+as of a revision is `docs_read { path, at: "<rev>" }`.
+- **Bare fields:** `rev` (= `id`), `seq` (1, 2, … per document — the
+  revision's own sequence, not the commit's), `doc_id`, `commit` (the commit
+  id), `ts` (the commit's time; sorts chronologically), `origin`
+  (`observed`/`api`/`import`/`projection`), `actor`, `reason`, `hash` (the
+  rendered file's sha256 hex — `docs_history`'s `hash`), `is_current` (true for
+  the document's current revision; for a deleted document its last one).
+- **Attributes:** `id` (the revision id, `r_…`), `path` (`revisions.path`,
+  `/`-rooted: the path the revision was committed under — a document move
+  re-paths the *current* revision to the new path and mints none, so the
+  revisions before it keep the old path).
+- **Reach-through:** `doc.<key>` is the document's **current** row (`doc.path`
+  the current path); **absent for a deleted document**, so `from revisions
+  where doc == null` lists the revisions of deleted documents and `doc { title
+  }` is empty for them.
+- **On docs:** `revisions` is a relation of every document (its revisions,
+  oldest first): `from docs where revisions count { where origin == "api" } > 0`,
+  `select r: revisions collect { seq, ts } from docs where path == "/x.md"`;
+  `doc.revisions` from a block or link row reaches the same list.
+- Default order `(path, id)` like every target (so the keyset cursor pages it);
+  `order by seq` for chronology. `text()`/`semantic()` are unavailable (a
+  revision is bytes and a hash, not an indexed body). Revisions are never a
+  write selector's root.
 
 ## 3. Scalar semantics (`@omgbase/oqx` contract)
 

@@ -253,6 +253,15 @@ export function docsReadMany(
   return { items, errors, truncated };
 }
 
+/**
+ * `docs_read { at }` / `docs_read_at` (spec/surface §2, 4.7): the document AS
+ * OF a revision. No `properties`: the properties table is current-state only
+ * (`spec/properties`), and recomputing the bag from the reconstructed bytes is
+ * not yet a one-call affair of the format layer (the inline fields come out of
+ * the ingest's node projection) — so the time-travel read carries the bytes
+ * and nothing it would have to guess at (through 4.6 `docs_read_at` returned
+ * the CURRENT bag flagged `propertiesAreCurrent: true`).
+ */
 export interface DocsReadAtResult {
   id: string;
   /** The path as of that revision, in the reference form. */
@@ -265,14 +274,6 @@ export interface DocsReadAtResult {
    *  rendered_hash — a byte-faithful round-trip. False flags the fidelity gap
    *  described below (doc-level trivia may differ for an old revision). */
   renderedHashMatch: boolean;
-  /**
-   * Properties as they are CURRENTLY (not at `rev`): the properties table is
-   * current-state only (properties-table), so historical property values are
-   * not recoverable. Included as best-effort context, flagged by
-   * `propertiesAreCurrent: true`.
-   */
-  properties: Record<string, Record<string, unknown>>;
-  propertiesAreCurrent: true;
 }
 
 /**
@@ -337,7 +338,5 @@ export function readDocumentAtRevision(store: Store, docId: string, revId: strin
     rev: revId,
     raw: content,
     renderedHashMatch,
-    properties: surfaceProperties(docPropertiesGrouped(db, docId)),
-    propertiesAreCurrent: true,
   };
 }

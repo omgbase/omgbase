@@ -1842,7 +1842,8 @@
                   "docs",
                   "blocks",
                   "nodes",
-                  "links"
+                  "links",
+                  "revisions"
                 ]
               }
             ],
@@ -3010,7 +3011,7 @@
     },
     {
       "name": "read-history-admin",
-      "notes": "§3 history over a one-commit-per-document corpus (blocks_history, diff of a revision with itself and with a foreign one → target_missing, docs_diff_unified with a single revision, docs_read_at incl. an unknown rev, docs_history by doc and by glob, changes_since paging/filters) and the §4 admin tools (repos_status/sync_status with the fs source — disk scan of the workspace — and repos).",
+      "notes": "§3 history over a one-commit-per-document corpus (blocks_history, diff of a revision with itself and with a foreign one → target_missing, docs_diff_unified with a single revision, docs_read_at incl. an unknown rev, the revisions target and docs_read { at } (4.7), docs_history by doc and by glob, changes_since paging/filters) and the §4 admin tools (repos_status/sync_status with the fs source — disk scan of the workspace — and repos).",
       "reads": [
         {
           "tool": "blocks_history",
@@ -3067,6 +3068,25 @@
           "args": {
             "id": "d_0",
             "rev": "r_1"
+          }
+        },
+        {
+          "tool": "query",
+          "args": {
+            "query": "select rev, seq, commit, origin, hash, is_current, t: doc.title from revisions where path == \"/index.md\""
+          }
+        },
+        {
+          "tool": "query",
+          "args": {
+            "query": "revisions count { }"
+          }
+        },
+        {
+          "tool": "docs_read",
+          "args": {
+            "path": "index.md",
+            "at": "r_0"
           }
         },
         {
@@ -3175,28 +3195,7 @@
             "path": "/texts/mutus-liber.md",
             "rev": "r_17",
             "raw": "---\ntype: text\nlayer: draft\ntradition: western\nera: 1677\ntags: [text, images]\nverified: false\n---\n\n# Mutus Liber\n\nThe \"silent book,\" La Rochelle, 1677: fifteen engraved plates and essentially no\ntext. The entire Great Work, allegedly, in pictures.\n\nlength:: fifteen plates\nattributed_to:: altus\n\n## Contents\n\nThe plates show a couple gathering dew in sheets stretched between poles,\nprocessing it through vessels, and attending a furnace, framed by angels and\nzodiacal signs. A sequence is clearly intended. What it instructs is not clear.\n\nThe dew-gathering is the one concretely readable operation, and it connects to a\nreal strand of practice: dew was held to be a celestial condensate and a candidate\n[prima materia](/substances/prima-materia.md).\n\n## Status of these notes\n\nDraft. I have not worked through the plates in order against a commentary, and\nthe secondary literature disagrees about even the number of stages depicted.\n\n- [ ] Obtain a facsimile with plate numbering\n- [ ] Compare the 1677 and 1702 plate sequences\n- [ ] Decide whether the dew operation is literal\n",
-            "renderedHashMatch": true,
-            "properties": {
-              "frontmatter": {
-                "type": "text",
-                "layer": "draft",
-                "tradition": "western",
-                "era": 1677,
-                "tags": [
-                  "text",
-                  "images"
-                ],
-                "verified": false
-              },
-              "inline": {
-                "length": "fifteen plates",
-                "attributed_to": "altus"
-              },
-              "computed": {
-                "title": "Mutus Liber"
-              }
-            },
-            "propertiesAreCurrent": true
+            "renderedHashMatch": true
           },
           {
             "error": "target_missing",
@@ -3205,6 +3204,38 @@
               "doc": "d_0",
               "rev": "r_1"
             }
+          },
+          {
+            "hits": [
+              {
+                "id": "r_0",
+                "path": "/index.md",
+                "rev": "r_0",
+                "seq": 1,
+                "commit": "c_0",
+                "origin": "observed",
+                "hash": "74252946d208ad5c5e7f3b1a75d9e2feee6d8dfd06386fb09c47f23b797d0bed",
+                "is_current": true,
+                "t": "Alchemy"
+              }
+            ],
+            "truncated": false,
+            "cursor": null,
+            "consumer": "collect"
+          },
+          {
+            "hits": [],
+            "truncated": false,
+            "cursor": null,
+            "consumer": "count",
+            "count": 20
+          },
+          {
+            "id": "d_0",
+            "path": "/index.md",
+            "rev": "r_0",
+            "raw": "---\ntype: hub\nlayer: canon\ntitle: Alchemy\ntags: [alchemy, index]\nverified: true\n---\n\n# Alchemy\n\nThe art of transformation — part proto-chemistry, part philosophy, part\ncontemplative practice. This repository collects notes on its substances,\nprocesses, practitioners, and primary texts.\n\n## The tria prima\n\nParacelsus reduced the material world to three principles:\n\n- [[mercury]] — the volatile spirit\n- [[sulphur]] — the combustible soul\n- [[salt]] — the fixed body\n\n## Substances\n\n- [prima materia](/substances/prima-materia.md) — the undifferentiated first matter\n- [the philosophers' stone](/substances/philosophers-stone.md) — the goal of the Great Work\n\n## Processes\n\nThe [magnum opus](/processes/magnum-opus.md) organizes the operations into\nstages. Individual operations are documented separately:\n\n- [calcination](/processes/calcination.md)\n- [dissolution](/processes/dissolution.md)\n- [coagulation](/processes/coagulation.md)\n\n## Practitioners\n\n| Practitioner | Tradition | Approximate era |\n|---|---|---|\n| [Maria Prophetissa](/practitioners/maria-prophetissa.md) | Alexandrian | 3rd century |\n| [Jabir ibn Hayyan](/practitioners/jabir-ibn-hayyan.md) | Islamic | 8th century |\n| [Paracelsus](/practitioners/paracelsus.md) | Western | 16th century |\n| [Isaac Newton](/practitioners/newton.md) | Western | 17th century |\n\n## Texts\n\n- [The Emerald Tablet](/texts/emerald-tablet.md)\n- [Mutus Liber](/texts/mutus-liber.md)\n\n## Laboratory\n\nWorking notes live under `lab/`.\n",
+            "renderedHashMatch": true
           },
           {
             "docs": [
@@ -3706,7 +3737,7 @@
     },
     {
       "name": "write-apply",
-      "notes": "§4 apply (spec/mutate §11.7, 4.0): one `apply { effects }` with an insert at the document top level and a CAS-guarded `set markdown`, committed as one transaction → the Receipt (`new_ids[\"$new.0\"]` the inserted block b_327; the update's re-parse burned b_328, spec/mutate §10), then a `plan { remove }` (the preview: diffs under the rooted path, `results[0].removed`, no commit, no id minted — the sugar's dry run burned ids through 3.x, §9). Reads show the new revision r_20 / commit c_20 through docs_read, docs_history, changes_since, diff, docs_diff_unified, blocks_history of the minted block, docs_read_at of the old revision, and the admin tools' view of the working tree the apply wrote (§7.3).",
+      "notes": "§4 apply (spec/mutate §11.7, 4.0): one `apply { effects }` with an insert at the document top level and a CAS-guarded `set markdown`, committed as one transaction → the Receipt (`new_ids[\"$new.0\"]` the inserted block b_327; the update's re-parse burned b_328, spec/mutate §10), then a `plan { remove }` (the preview: diffs under the rooted path, `results[0].removed`, no commit, no id minted — the sugar's dry run burned ids through 3.x, §9). Reads show the new revision r_20 / commit c_20 through docs_read, docs_history, changes_since, diff, docs_diff_unified, blocks_history of the minted block, docs_read_at of the old revision (and docs_read { at }, the same bytes; the revisions target lists both versions with the api commit's actor and reason), and the admin tools' view of the working tree the apply wrote (§7.3).",
       "writes": [
         {
           "tool": "apply",
@@ -3805,6 +3836,19 @@
           "args": {
             "id": "d_0",
             "rev": "r_0"
+          }
+        },
+        {
+          "tool": "query",
+          "args": {
+            "query": "select seq, origin, actor, reason, is_current from revisions where path == \"index.md\" order by seq"
+          }
+        },
+        {
+          "tool": "docs_read",
+          "args": {
+            "id": "d_0",
+            "at": "r_0"
           }
         },
         {
@@ -4151,24 +4195,39 @@
             "path": "/index.md",
             "rev": "r_0",
             "raw": "---\ntype: hub\nlayer: canon\ntitle: Alchemy\ntags: [alchemy, index]\nverified: true\n---\n\n# Alchemy\n\nThe art of transformation — part proto-chemistry, part philosophy, part\ncontemplative practice. This repository collects notes on its substances,\nprocesses, practitioners, and primary texts.\n\n## The tria prima\n\nParacelsus reduced the material world to three principles:\n\n- [[mercury]] — the volatile spirit\n- [[sulphur]] — the combustible soul\n- [[salt]] — the fixed body\n\n## Substances\n\n- [prima materia](/substances/prima-materia.md) — the undifferentiated first matter\n- [the philosophers' stone](/substances/philosophers-stone.md) — the goal of the Great Work\n\n## Processes\n\nThe [magnum opus](/processes/magnum-opus.md) organizes the operations into\nstages. Individual operations are documented separately:\n\n- [calcination](/processes/calcination.md)\n- [dissolution](/processes/dissolution.md)\n- [coagulation](/processes/coagulation.md)\n\n## Practitioners\n\n| Practitioner | Tradition | Approximate era |\n|---|---|---|\n| [Maria Prophetissa](/practitioners/maria-prophetissa.md) | Alexandrian | 3rd century |\n| [Jabir ibn Hayyan](/practitioners/jabir-ibn-hayyan.md) | Islamic | 8th century |\n| [Paracelsus](/practitioners/paracelsus.md) | Western | 16th century |\n| [Isaac Newton](/practitioners/newton.md) | Western | 17th century |\n\n## Texts\n\n- [The Emerald Tablet](/texts/emerald-tablet.md)\n- [Mutus Liber](/texts/mutus-liber.md)\n\n## Laboratory\n\nWorking notes live under `lab/`.\n",
-            "renderedHashMatch": true,
-            "properties": {
-              "frontmatter": {
-                "type": "hub",
-                "layer": "canon",
-                "title": "Alchemy",
-                "tags": [
-                  "alchemy",
-                  "index"
-                ],
-                "verified": true
+            "renderedHashMatch": true
+          },
+          {
+            "hits": [
+              {
+                "id": "r_0",
+                "path": "/index.md",
+                "seq": 1,
+                "origin": "observed",
+                "actor": null,
+                "reason": null,
+                "is_current": false
               },
-              "inline": {},
-              "computed": {
-                "title": "Alchemy"
+              {
+                "id": "r_20",
+                "path": "/index.md",
+                "seq": 2,
+                "origin": "api",
+                "actor": "agent:mcp",
+                "reason": "interop",
+                "is_current": true
               }
-            },
-            "propertiesAreCurrent": true
+            ],
+            "truncated": false,
+            "cursor": null,
+            "consumer": "collect"
+          },
+          {
+            "id": "d_0",
+            "path": "/index.md",
+            "rev": "r_0",
+            "raw": "---\ntype: hub\nlayer: canon\ntitle: Alchemy\ntags: [alchemy, index]\nverified: true\n---\n\n# Alchemy\n\nThe art of transformation — part proto-chemistry, part philosophy, part\ncontemplative practice. This repository collects notes on its substances,\nprocesses, practitioners, and primary texts.\n\n## The tria prima\n\nParacelsus reduced the material world to three principles:\n\n- [[mercury]] — the volatile spirit\n- [[sulphur]] — the combustible soul\n- [[salt]] — the fixed body\n\n## Substances\n\n- [prima materia](/substances/prima-materia.md) — the undifferentiated first matter\n- [the philosophers' stone](/substances/philosophers-stone.md) — the goal of the Great Work\n\n## Processes\n\nThe [magnum opus](/processes/magnum-opus.md) organizes the operations into\nstages. Individual operations are documented separately:\n\n- [calcination](/processes/calcination.md)\n- [dissolution](/processes/dissolution.md)\n- [coagulation](/processes/coagulation.md)\n\n## Practitioners\n\n| Practitioner | Tradition | Approximate era |\n|---|---|---|\n| [Maria Prophetissa](/practitioners/maria-prophetissa.md) | Alexandrian | 3rd century |\n| [Jabir ibn Hayyan](/practitioners/jabir-ibn-hayyan.md) | Islamic | 8th century |\n| [Paracelsus](/practitioners/paracelsus.md) | Western | 16th century |\n| [Isaac Newton](/practitioners/newton.md) | Western | 17th century |\n\n## Texts\n\n- [The Emerald Tablet](/texts/emerald-tablet.md)\n- [Mutus Liber](/texts/mutus-liber.md)\n\n## Laboratory\n\nWorking notes live under `lab/`.\n",
+            "renderedHashMatch": true
           },
           {
             "id": "rp_0",

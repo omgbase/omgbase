@@ -447,7 +447,7 @@ describe("source handles (3.0) — a key read through a handle is pushed, the wh
 
 describe("decline (b) — relation, reach-through and source-handle names are not property reads", () => {
   it("the name sets per target", () => {
-    expect([...NON_PROPERTY_NAMES.docs].sort()).toEqual(["blocks", "data", "doc", "frontmatter", "inline", "nodes", "out_links", "in_links"].sort());
+    expect([...NON_PROPERTY_NAMES.docs].sort()).toEqual(["blocks", "data", "doc", "frontmatter", "inline", "nodes", "out_links", "in_links", "revisions"].sort());
     expect([...NON_PROPERTY_NAMES.blocks].sort()).toEqual(["attrs", "block", "children", "doc", "nodes", "out_links", "section"].sort());
     expect([...NON_PROPERTY_NAMES.nodes].sort()).toEqual(["attrs", "block", "blocks", "children", "doc", "section", "subsections"].sort());
     expect([...NON_PROPERTY_NAMES.links].sort()).toEqual(["doc", "dst"]);

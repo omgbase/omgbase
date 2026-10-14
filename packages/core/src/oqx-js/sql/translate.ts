@@ -115,7 +115,7 @@ export interface Operand extends Frag {
  * `translate.test.ts` asserts this set against the store context.
  */
 export const NON_PROPERTY_NAMES: Readonly<Record<Target, ReadonlySet<string>>> = {
-  docs: new Set(["doc", "nodes", "blocks", "out_links", "in_links", "data", "frontmatter", "inline"]),
+  docs: new Set(["doc", "nodes", "blocks", "out_links", "in_links", "revisions", "data", "frontmatter", "inline"]),
   blocks: new Set(["block", "doc", "children", "nodes", "out_links", "section", "attrs"]),
   nodes: new Set(["section", "doc", "block", "blocks", "subsections", "children", "attrs"]),
   links: new Set(["doc", "dst"]),

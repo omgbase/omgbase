@@ -363,11 +363,10 @@ describe("readDocumentAtRevision — whole-doc time travel", () => {
     expect(readDocumentAtRevision(store, a, bRev)).toBeNull();
   });
 
-  it("carries current properties flagged propertiesAreCurrent", () => {
+  it("carries no properties (spec/surface 4.7: the table is current-state only; through 4.6 the current bag rode along flagged propertiesAreCurrent)", () => {
     const { docId, revs } = ingestRevs("guide.md", [V1, V2]);
     const res = readDocumentAtRevision(store!, docId, revs[0]!)!;
-    expect(res.propertiesAreCurrent).toBe(true);
-    expect(res.properties.frontmatter).toEqual({ layer: "working" });
+    expect(Object.keys(res).sort()).toEqual(["id", "path", "raw", "renderedHashMatch", "rev"]);
   });
 });
 

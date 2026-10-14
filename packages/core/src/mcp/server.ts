@@ -3,7 +3,7 @@ import { CallToolRequestSchema, ErrorCode } from "@modelcontextprotocol/sdk/type
 import { z } from "zod";
 import type { Store } from "../core/store/store.js";
 import { docsOutline } from "../core/read/outline.js";
-import { docsRead, docsReadMany, MANY_DOCS_CAP, readDocumentAtRevision } from "../core/read/document.js";
+import { docsRead, docsReadMany, MANY_DOCS_CAP, readDocumentAtRevision, type DocsReadAtResult } from "../core/read/document.js";
 import { nodesGet, nodesGetMany } from "../core/read/nodes.js";
 import { findDoc, docsList, docsTree, DOCS_LIST_DEFAULT_LIMIT } from "../core/read/reader.js";
 import { resolveRef } from "../core/read/refs.js";
@@ -199,6 +199,10 @@ const effectSchema = z.looseObject({ op: z.enum(["create", "insert", "set", "uns
 // thing; the plans they produce equal the 4.3 object-form rungs' (pinned by
 // `mcp/examples.test.ts`).
 const ladder = (...lines: string[]): string => lines.join("\n");
+// The `docs_read` ladder's time-travel rung (4.7): the revision id is the one
+// the spec minter gives `/processes/calcination.md`'s ingest revision over the
+// alchemy corpus (`examples.json` runs the rung before any write).
+const REVISION_RUNG = "{\"path\":\"/processes/calcination.md\",\"at\":\"r_7\"}   as of a revision (rev ids: from revisions where path == \"/processes/calcination.md\")";
 
 type ToolResult = { content: { type: "text"; text: string }[]; isError?: true };
 
@@ -342,6 +346,14 @@ export function buildServer(ctx: ServerContext): McpServer {
       throw argumentError(toolName, `${idKey} ${JSON.stringify(id)} and ${pathKey} ${JSON.stringify(path)} name different documents`, shape);
     }
     return (byId ?? byPath)!.docId;
+  }
+  // `docs_read { at }` and its sugar `docs_read_at` (spec/surface §2, 4.7): the
+  // document AS OF a revision, `spec/store` §6.2 reconstruct; a revision that is
+  // not the document's is `target_missing`.
+  function docsReadAt(docId: string, rev: string): DocsReadAtResult {
+    const res = readDocumentAtRevision(store, docId, rev);
+    if (!res) throw new EngineError("target_missing", `no revision ${JSON.stringify(rev)} for document ${docId}`, { data: { doc: docId, rev } });
+    return res;
   }
   // The owning document of a block id (`blocks_read`): the block must be live.
   function docOfBlock(blockId: string): string {
@@ -533,18 +545,28 @@ export function buildServer(ctx: ServerContext): McpServer {
         "{\"path\":\"/processes/calcination.md\"}   by path (either form)",
         "{\"path\":\"/processes/calcination.md\",\"include_ids\":true}   plus ids (pre-order), hashes (the CAS tokens expect.content_hash takes), parents (null = top level)",
         "{\"id\":\"d_14\"}   by id (a query hit's id)",
+        REVISION_RUNG,
         "Structure only: query md:section nodes. Many documents: a query with select raw. Grammar: query_syntax.",
       ),
       inputSchema: {
         ...DOC_ARGS,
         include_ids: z.boolean().optional(),
+        at: z.string().optional(),
         ...REPO_ARG,
       },
     },
     async (args) => {
       try {
         const { repoId } = repoScope(args.repo);
-        const docId = locateDoc(repoId, "docs_read", registry.get("docs_read")!.shape, args);
+        const shape = registry.get("docs_read")!.shape;
+        const docId = locateDoc(repoId, "docs_read", shape, args);
+        if (args.at !== undefined) {
+          // `at` (4.7): the document AS OF that revision — `docs_read_at`'s
+          // code path, so the two return the same bytes. Block ids at a past
+          // revision are a later question: `include_ids` is refused with `at`.
+          if (args.include_ids) throw argumentError("docs_read", "`include_ids` is not available with `at`", shape);
+          return ok(docsReadAt(docId, args.at));
+        }
         const res = docsRead(store, docId, args.include_ids ? { includeIds: true } : {});
         if (!res) throw new EngineError("doc_missing", `no document with id or path ${JSON.stringify(args.id ?? args.path)}`, { data: { id: docId } });
         return ok(res);
@@ -1498,16 +1520,14 @@ export function buildServer(ctx: ServerContext): McpServer {
     "docs_read_at",
     {
       description:
-        "TIME-TRAVEL read: the whole file bytes of a document AS OF a past revision — `raw` is the reconstructed source at that `rev` (fences/tables/list markers preserved), plus `id`/`path` (the path as of that revision)/`rev`. Use this to audit or answer 'what did this doc say at revision N', or to fetch the exact prior text before reverting. Get a `rev` from docs_diff, blocks_history, docs_history or changes_since. Contrast: docs_read = current bytes; docs_diff = block-grain changes BETWEEN two revisions. `renderedHashMatch` is true when the reconstruction is byte-for-byte the file at that revision; it can be false for an old revision ONLY when the document's leading/frontmatter trivia (separator bytes, not block content) changed since — block content always reconstructs faithfully. `properties` are CURRENT values (propertiesAreCurrent:true), since property history is not stored. Address the document by `id` or `path` plus a `rev` id.",
+        "TIME-TRAVEL read: the whole file bytes of a document AS OF a past revision — `raw` is the reconstructed source at that `rev` (fences/tables/list markers preserved), plus `id`/`path` (the path as of that revision)/`rev`. Sugar for `docs_read { id | path, at: rev }` (surface 4.7) — the same result, byte for byte. Use this to audit or answer 'what did this doc say at revision N', or to fetch the exact prior text before reverting. Get a `rev` from `query` over the `revisions` target (`from revisions where path == … order by seq`), docs_diff, blocks_history, docs_history or changes_since. Contrast: docs_read = current bytes; docs_diff = block-grain changes BETWEEN two revisions. `renderedHashMatch` is true when the reconstruction is byte-for-byte the file at that revision; it can be false for an old revision ONLY when the document's leading/frontmatter trivia (separator bytes, not block content) changed since — block content always reconstructs faithfully. No `properties`: the property table is current-state only (through 4.6 the current bag rode along flagged propertiesAreCurrent). Address the document by `id` or `path` plus a `rev` id.",
       inputSchema: { ...DOC_ARGS, rev: z.string(), ...REPO_ARG },
     },
     async (args) => {
       try {
         const { repoId } = repoScope(args.repo);
         const docId = locateDoc(repoId, "docs_read_at", registry.get("docs_read_at")!.shape, args);
-        const res = readDocumentAtRevision(store, docId, args.rev);
-        if (!res) throw new EngineError("target_missing", `no revision ${JSON.stringify(args.rev)} for document ${docId}`, { data: { doc: docId, rev: args.rev } });
-        return ok(res);
+        return ok(docsReadAt(docId, args.rev));
       } catch (e) {
         return fail(e);
       }

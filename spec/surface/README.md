@@ -168,9 +168,10 @@ proves each decline: `query-errors::planned-*` and the `planned-*` cases of
 
 ### 1.1 Roots and rows
 
-`from docs | blocks | nodes | links` — and, from inside a row, `^docs | ^blocks
-| ^nodes | ^links` (the root row, below) — scan the repo's **live** rows in a
-fixed order:
+`from docs | blocks | nodes | links | revisions` — and, from inside a row,
+`^docs | ^blocks | ^nodes | ^links | ^revisions` (the root row, below) — scan
+the repo's rows in a fixed order (the four **live** collections, and the
+history, 4.7):
 
 | root | rows | order |
 | --- | --- | --- |
@@ -178,17 +179,18 @@ fixed order:
 | `blocks` | live blocks of live docs | `(doc path, block_id)` |
 | `nodes` | `nodes` of live docs | `(doc path, node_id)` |
 | `links` | open `edges` rows (`to_commit IS NULL`) of live source docs — the link RELATIONS, §1.2 | `(source doc path, edge_id)` |
+| `revisions` | (4.7) every `revisions` row of every document of the repository, joined to its commit — **deleted documents' revisions included** (history is history; the repository guard is the owning `docs` row's `repo_id`, the table carries none) | `(revisions.path, rev_id)` — the keyset order of every target, so the cursor pages it (§1.4); `order by seq` for a document's chronology |
 
 **The repository is the root row** (2.0, with `spec/oqx` 0.18 §2). The root
-scope's names are the four scans above and **`id`**, the repository id; the
+scope's names are the five scans above and **`id`**, the repository id; the
 root scope's **row** (`DataContext.rootObject` / `root_object`) is the root
-object, whose entries are exactly the four collections in that order (`id`
-is an intrinsic of it, not an entry). So from a top-level row `^docs` is the
+object, whose entries are exactly the five collections in that order (`id`
+is an intrinsic of it, not an entry; `revisions` the fifth since 4.7). So from a top-level row `^docs` is the
 documents scan and `^id` the repository id; from a block's rows one caret
 deeper (`^^docs`), or the absolute `0^docs` / `0^id` from any depth; `^$it`
 is the root object, `^$it.docs` the same handle as `^docs` (a receiver, a
-value, a probe), `entries(^$it)` yields `docs`, `blocks`, `nodes`, `links`
-(`query-root.json`). At the root scope a bare target name is the scan — the
+value, a probe), `entries(^$it)` yields `docs`, `blocks`, `nodes`, `links`,
+`revisions` (`query-root.json`). At the root scope a bare target name is the scan — the
 receiver of a top-level directive (`docs count { … }`), `from docs`,
 `entries(docs)` — because a bare name there is `root(name)`.
 
@@ -210,12 +212,13 @@ planned and in-memory paths agree trivially (`query-root::repo-removed-*`,
   current row, which has none — did you mean `^docs` (the repository's
   documents)? `` (the carets count the depth: `^^docs` from depth two).
   `docs` and `links` are no row's relation, so they are refused statically.
-  `blocks` and `nodes` ARE relations of some rows (`docs.blocks`,
-  `docs.nodes`, `blocks.nodes`, `section.blocks`, §1.2) and stay those; on a
-  row that lacks the relation (`blocks` on a block or link row, `nodes` on a
-  node or link row, `block.blocks`) the context raises the same error when
-  the name is read, the hint spelling the rule (`one caret per enclosing
-  block, or the absolute 0^blocks`). Consequence: a frontmatter key named
+  `blocks`, `nodes` and `revisions` ARE relations of some rows (`docs.blocks`,
+  `docs.nodes`, `docs.revisions`, `blocks.nodes`, `section.blocks`, §1.2) and
+  stay those; on a row that lacks the relation (`blocks` on a block or link
+  row, `nodes` on a node or link row, `revisions` on anything but a document,
+  `block.blocks`) the context raises the same error when the name is read,
+  the hint spelling the rule (`one caret per enclosing block, or the absolute
+  0^blocks`). Consequence: a frontmatter key named
   `docs`, `blocks`, `nodes` or `links` is unreachable by bare name — read it
   as `frontmatter.<k>`. The planner declines a bare target name as a property
   read and treats one that could raise as a residual that may raise (§1), so
@@ -226,13 +229,13 @@ planned and in-memory paths agree trivially (`query-root::repo-removed-*`,
   `` `^docs` reaches past the root — there is no enclosing row at this depth;
   at the top level the repository's documents are the bare `docs` (`docs count
   { … }`, `from docs`, `entries(docs)`) `` (statically, by the same walk;
-  `query-root::root-caret-past-the-root*`). Only the four target names: any
+  `query-root::root-caret-past-the-root*`). Only the five target names: any
   other outer reference past the root keeps the language's absent.
 - **A top-level `from <name>` that is no collection** (3.0 name pass) —
   `from edges`, `from nope` — would scan an absent root and come back empty;
   refused with `` `edges` is not a target — the repository's collections are
-  `docs`, `blocks`, `nodes`, `links` (`edges` was renamed `links` in surface
-  3.0) `` (the parenthesis only for `edges`;
+  `docs`, `blocks`, `nodes`, `links`, `revisions` (`edges` was renamed `links`
+  in surface 3.0) `` (the parenthesis only for `edges`;
   `query-errors::edges-is-not-a-target`, `::unknown-target-is-loud`).
 
 A row's **identity** — `$key` (spec/oqx §16; `distinct`, `follow` cycles, `is`)
@@ -278,11 +281,12 @@ block or node as `attrs.<k>`):
 
 | kind | attributes | handles | self | relations |
 | --- | --- | --- | --- | --- |
-| docs | `id` `path` `raw` `hash` `updated_at` `title` `tags` `format` | `data` `frontmatter` `inline` | `doc` | `blocks` `nodes` `out_links` `in_links` |
+| docs | `id` `path` `raw` `hash` `updated_at` `title` `tags` `format` | `data` `frontmatter` `inline` | `doc` | `blocks` `nodes` `out_links` `in_links` `revisions` |
 | blocks | `id` `path` `doc_id` `raw` `hash` `updated_at` `type` `text` `attrs` `depth` `ordinal` | — | `block` (+ `doc`) | `children` `nodes` `out_links` `section` |
 | nodes | `id` `path` `doc_id` `block_id` `kind` `name` `value` `attrs` | — | `section` (+ `doc`, `block`) | `blocks` `subsections` `children` |
 | links | `id` `path` `doc_id` `block_id` `via_id` `dst_id` `dst_path` `uri` `field` `dst_kind` `predicate` `provenance` `anchor` | — | — (`doc` reaches the source, `dst` the destination document) | `doc` `dst` |
-| root | `id` | — | — | the four collections (§1.1) |
+| revisions | `id` `path` `rev` `seq` `doc_id` `commit` `ts` `origin` `actor` `reason` `hash` `is_current` | — | — (`doc` reaches the document's current row) | `doc` |
+| root | `id` | — | — | the five collections (§1.1) |
 
 Language words that can never be a bare field: `select from where is not and
 or`, the literals `true false null`. Contextual words (`limit order offset
@@ -343,7 +347,11 @@ the citation walk is `follow out_links collect { from dst }` /
 `follow in_links collect { from doc }`, with `depth`/`frontier` as clauses of
 the block (oqx 0.20: `… collect { from dst depth 2 }`) and a body-level
 `frontier <pred>` before `follow` applying to the seeds
-(`query-follow::body-frontier-keeps-seeds-unexpanded`). A bare `out`
+(`query-follow::body-frontier-keeps-seeds-unexpanded`); `revisions` (4.7) —
+the document's revision rows (below), **oldest first** (`seq`), so `revisions
+count { where origin == "api" } > 0` is "edited through the API" and
+`revisions collect { seq, ts }` its timeline (`query-revisions::docs-relation-*`;
+`doc.revisions` from a block or link row reaches the same list). A bare `out`
 or `in` on a doc reads an authored property like any other unknown name
 (`query-docs::linked-docs-through-out-links`,
 `::linking-docs-through-in-links`, `::out-and-in-are-plain-properties`).
@@ -409,6 +417,41 @@ The creating commit
 (`from_commit`) is not a field: a query sees open edges only and the commit
 is history (`blocks_history`, `changes_since`), §9.
 
+**revisions** (4.7)**.** History as rows: one row per `revisions` row of every
+document of the repository (`spec/store` §4 — a revision is minted by every
+commit that renders the document; a deletion commits no revision), joined to
+its commit, **tombstoned documents' revisions included**. It is `docs_history`'s
+list as a target, so its fields carry `docs_history`'s names. Attributes: `id`
+(the revision id, `r_…`), `path` (`revisions.path` in the reference form: the
+path the revision was committed under — except that a document move
+(`spec/mutate` §6) re-paths the **current** revision to the new path and mints
+none, so after a move the revisions before the current one keep the old path
+and the current one reads the new; `reads::revisions`), `rev` (= `id`, for symmetry with
+`docs_history`), `seq` (`revisions.seq`, `1..k` per document — not the
+commit's), `doc_id`, `commit` (the `commit_id`), `ts` / `origin` / `actor` /
+`reason` (the commit's columns; `actor`/`reason` null when none), `hash` (hex
+of `rendered_hash` — the document's `hash` as of the revision, `docs_history`'s
+`hash`), `is_current` (boolean: the revision is the document's `current_rev`
+— `docs_history`'s `isCurrent`; a deleted document's last revision stays its
+current one, the tombstone keeps `current_rev`). No other name: a revision
+carries no authored data, so its row shape is **closed** like `links` (§1.5).
+One reach-through: `doc` is the document's **current** live row (`doc.path`
+the path NOW, `doc.title`, `doc.layer`, …) and **absent** — the single-with-
+no-row marker, as `dst` on a dangling link — for a tombstoned document, so
+`doc == null` selects the revisions of deleted documents, `doc { title }`
+yields nothing for them, and `doc.revisions` is the document's whole list
+again. No relations of its own. `text()` and `semantic()` are `filter_invalid`
+on revisions (a revision is bytes and a hash, not an indexed body); the bytes
+as of a revision are `docs_read { at }` (§2). The root scan (§1.1) orders
+`(path, rev_id)` so the keyset cursor pages it like every target
+(`query-revisions::page-*`); `order by seq` is a document's chronology,
+`order by ts desc, seq desc` the repository's. The planner never plans a
+revisions scan (it runs in memory; there is no store index for it, so a
+correlated `^revisions` block materializes the scan once per query). Pinned by
+`query-revisions.json` (the one-revision corpus: shape, `doc`, `is_current`,
+ordering, paging, the N/A functions, the relation) and `reads::revisions`
+(edits, a move, a deletion; `docs_read { at }` against the pre-write bytes).
+
 ### 1.3 Functions
 
 Free: the `spec/oqx` builtins, plus `entries(<source handle>)` (§1.2: `data`, `frontmatter`, `inline`),
@@ -438,7 +481,8 @@ against the current row:
 
 - `text("terms")`: `spec/search` §1.2 sanitize; empty → false; docs → any
   live block of the doc matches; blocks → the block's FTS row matches;
-  nodes → the node's FTS row matches; links → `filter_invalid`.
+  nodes → the node's FTS row matches; links and revisions → `filter_invalid`
+  (`text(...) is not available on the <kind> target`).
 - `semantic("phrase")`: docs/blocks only (else `filter_invalid`); the phrase
   must have been embedded for this query (`provider_unavailable` when no
   provider, §4); the score is `cosine` over the row's stored vector for the
@@ -495,13 +539,14 @@ truncated, cursor, consumer, count?, exists?, none?, values? }`:
   rejected the bare names and a user column named `id` or `path` overwrote
   it (§9). `first`/`single` return zero or one hit, no cursor.
 - **A hit is a store row (1.5).** Every top-level row of a `collect`, `first`
-  or `single` query must be a docs, blocks, nodes or links row; a query whose
-  rows reach anything else — `follow before` over a frontmatter list of paths
-  (the strings), a block re-projected to scalars (`docs collect { select
-  $it from tags }`) — fails as `filter_invalid` with the message `` a hit must
-  be a document, block, node or link row — the query reached a string
-  ("/timeline/kickoff.md"); to follow document references held in a property
-  use refs(<field>) `` (the value's kind and, for a string, number or boolean,
+  or `single` query must be a docs, blocks, nodes, links or (4.7) revisions
+  row; a query whose rows reach anything else — `follow before` over a
+  frontmatter list of paths (the strings), a block re-projected to scalars
+  (`docs collect { select $it from tags }`) — fails as `filter_invalid` with
+  the message `` a hit must be a document, block, node, link or revision row —
+  the query reached a string ("/timeline/kickoff.md"); to follow document
+  references held in a property use refs(<field>) `` (`… node or link row …`
+  through 4.6) (the value's kind and, for a string, number or boolean,
   its value: `a string ("…")`, `a number (3)`, `a boolean (true)`, `an absent
   value`, `an array`, `an object`, `a range`). Before 1.5 such a row rendered
   as the junk hit `{ id: "undefined", path: "" }` (§9). The rule is about
@@ -617,8 +662,9 @@ kind a name is judged against is the kind of the rows of its scope, resolved
 along the scope's row chain: the root collection, each `from`, each block
 receiver, a `follow` walk (its frontier rows have the seeds' kind when every
 destination yields rows of that kind, else no kind), through the handles and
-relations of §1.2 (`doc.x` on a block or link judges `x` against docs; `dst.x`
-on a link likewise; `children.x` on a block against blocks). **Not judged:**
+relations of §1.2 (`doc.x` on a block, link or revision judges `x` against
+docs; `dst.x` on a link likewise; `children.x` on a block against blocks;
+`revisions.x` on a document against revisions). **Not judged:**
 `select` aliases where the language resolves them (the same body's `where`
 and later items — `resolve` already validates them), names a nested block
 lifts onto the scope (`^open: value`), `$`-names (`$it`, `$key`, `$depth`, …),
@@ -641,7 +687,7 @@ walk over mixed kinds), and the root scope (depth 0).
 
 | the scope's kind | on a read (`query`, and every read that evaluates OQX) | in a write selector (`select` of `plan` / `apply` / `execute`, `spec/mutate` §11.8) |
 | --- | --- | --- |
-| `links` — a **closed** row shape (no authored data reaches a link row) | `filter_invalid`, `data.hint` `"OQX"` | the same refusal |
+| `links`, `revisions` (4.7) — a **closed** row shape (no authored data reaches a link or revision row) | `filter_invalid`, `data.hint` `"OQX"` | the same refusal |
 | `docs`, `blocks`, `nodes` — **open** | the result gains **`hints`** (below); the rows are still returned | `filter_invalid`: the refusal, before any row is read, no partial write |
 | any kind, in `order by` | as `where` | as `where` |
 | any open kind with **no live object** in the repository | no vocabulary — the check is skipped for that kind (no hint, no error) | the same |
@@ -693,7 +739,7 @@ a judged name is not intrinsic:
   in one with a task. Block-scoped rows of the `properties` table are NOT a
   block's vocabulary — a block row does not read inline fields by bare name
   (`spec/surface` §1.2); they are the owning document's.
-- `links`: none (closed).
+- `links`, `revisions`: none (closed).
 - "No live object of the kind" is the §1.1 scan with `LIMIT 1` coming back
   empty.
 
@@ -706,10 +752,11 @@ query. The Rust port keys its cache the same way.
 **Messages** (byte-identical across engines; the nearest-match clause is
 present only when there is one):
 
-- a closed kind (`links`), and a selector reaching one:
+- a closed kind (`links`, `revisions`), and a selector reaching one:
   `` `target` is not a field of links (fields: id, path, doc_id, block_id, via_id, dst_id, dst_path, uri, field, dst_kind, predicate, provenance, anchor); did you mean `dst_path`? ``
   — `<name>` as judged (the path after any handle or relation), the kind's
-  attributes in the §1.2 order;
+  attributes in the §1.2 order (`fields: id, path, rev, seq, doc_id, commit,
+  ts, origin, actor, reason, hash, is_current` for revisions);
 - an open kind, bare or under a handle/relation (the hint, and the selector's refusal):
   `` `preview` is not a field of blocks and no block in this repository carries a property by that name; did you mean `text`? ``
   — the kind's name (`docs` / `blocks` / `nodes`) and its singular noun
@@ -751,7 +798,7 @@ in §9.
 - **`resolve_ref(ref)`**: an `n_` + 12 hex node id → its block when the block
   is live, else its doc; a `b_` id → its live block; a `d_` id → the live doc;
   anything else → the live doc at that path; null when nothing matches.
-- **`docs_read(id? | path?, include_ids?)`**: `{ id, path (reference form), rev,
+- **`docs_read(id? | path?, include_ids?, at?)`**: `{ id, path (reference form), rev,
   properties (grouped, spec/properties §5 — with the `computed` group's keys
   spelled as the attributes that read them, `{ title, tags }`, the stored
   `$title`/`$tags` rows re-keyed at this boundary; the authored groups
@@ -764,9 +811,35 @@ in §9.
   early with `truncated` — but **at least one item is always returned**
   (1.2, the uniform list contract of `docs_list`/`docs_tree`: the budget
   is checked before the second item onward; a first item that alone exceeds
-  it is still emitted and the batch is `truncated` if more remained). `docs_read_at(id? | path?, rev)`: `spec/store` §6.2 as
-  `{ id, path (the path as of that revision), rev, raw, renderedHashMatch,
-  properties (current), propertiesAreCurrent: true }`.
+  it is still emitted and the batch is `truncated` if more remained).
+  **`at` (4.7).** `docs_read { id | path, at: <rev> }` is the document **as of
+  that revision**: `{ id, path (the path AS OF the revision — `revisions.path`,
+  reference form), rev (the given one), raw (`spec/store` §6.2 reconstruct:
+  leading trivia, the revision's frontmatter blob, the top-level raws with
+  their trivia in order — exactly the bytes a `docs_read` without `at`
+  returned when that revision was current), renderedHashMatch (the
+  reconstruction hashes to the revision's `rendered_hash`; false only when the
+  document-level trivia, stored per document, changed since) }` and nothing
+  else: **no `properties`** — the property table is current-state only
+  (`spec/properties`) and the authored bag is not yet recomputable from the
+  bytes in one call of the format layer, so the read carries nothing it would
+  have to guess at (a client wanting the frontmatter as of a revision parses
+  `raw`). `include_ids` together with `at` is `filter_invalid` "`include_ids`
+  is not available with `at` (docs_read takes at?, id?, include_ids?, path?,
+  repo?)" — `data.hint` `"arguments"`, raised after the locator (a missing
+  document is `doc_missing` first), since each argument is valid on its own
+  (block ids at a past revision are a later question); a `rev` that
+  is not a revision of the document — unknown, or another document's — is
+  `target_missing` "no revision \"<rev>\" for document <id>" (`data: { doc,
+  rev }`); the document itself must be live (`doc_missing` otherwise, as every
+  `docs_` locator). **`docs_read_at(id? | path?, rev)` is sugar** for `docs_read
+  { id | path, at: rev }` — the same code path, the identical result (through
+  4.6 it also returned the CURRENT property bag flagged `propertiesAreCurrent:
+  true`, §9). Revision ids come from the `revisions` target (§1.2: `from
+  revisions where path == "/x.md" order by seq`), `docs_history`, `changes_since`
+  or `docs_diff`. Pinned by `reads::revisions` (the first revision's bytes
+  equal the pre-edit source; `docs_read_at` equals `docs_read { at }`), the
+  moved cases of `reads::history` and `interop::read-history-admin`.
 - **`blocks_read(id, resolution = full)`** (`nodes_get`, then `blocks_get`,
   before 3.0 — it always took a block id and returned a block; `nodes` now
   names the extracted-entity rows and `read` is the one verb for "return the
@@ -861,7 +934,11 @@ role keys keep the reference's **camelCase** (`isCurrent`, `hasSource`,
   unless `include_deleted`, `limit + 1` for `truncated`; each `{ id, path
   (reference form), deleted, currentRev, versions: [{ rev, seq, commit,
   updated_at (the commit's ts), origin, actor, hash (the rendered hash),
-  isCurrent }] }` oldest first.
+  isCurrent }] }` oldest first. The same list is the `revisions` query target
+  (§1.2, 4.7): `from revisions where path == … order by seq` — the names
+  match (`rev`, `seq`, `commit`, `origin`, `actor`, `hash`; `updated_at` is
+  `ts` there, `isCurrent` is `is_current`), and a `select raw`-less client of
+  the minimal profile reads history through `query` + `docs_read { at }`.
 
 ## 4. The MCP tool catalog
 
@@ -917,7 +994,7 @@ argument — pass `checked`") — a missing one "`query` is required", a
 mistyped one "`limit` must be an integer" (`a string`, `a boolean`, `an
 object`, `an array of strings|integers|objects`, `one of a, b, c`), each
 followed by the tool's shape in bytewise order with `?` on the optional
-names: "(docs_read takes id?, include_ids?, path?, repo?)"; a tool with none
+names: "(docs_read takes at?, id?, include_ids?, path?, repo?)"; a tool with none
 "takes no arguments". The unknown-name check runs first (bytewise order of
 the names given), then presence and type per declared name (bytewise); the
 nested shapes (`apply.ops`, `expect`, `at`) are each engine's own. The
@@ -987,7 +1064,11 @@ carries a `links` rung (`select path, block_id from links where dst_path ==
 string-method rung (`title.lower().contains("salt")`, the comment naming
 `matches("^Merc")` for a regex), its first rung folding the tag-membership
 and paging example into the frontmatter one to stay in budget; `plan`'s
-summary line names `diffs: true`. The ladders are the first of
+summary line names `diffs: true`. Since 4.7 the `docs_read` ladder carries
+the time-travel rung `{"path":"/processes/calcination.md","at":"r_7"}` (the
+comment pointing at `from revisions where path == …` for the ids; `r_7` is
+the revision the fixture minter gives that document's ingest, so the rung
+runs before any write) — 29 steps. The ladders are the first of
 three teaching surfaces: the second is the error `fix` — every error the
 engine can correct carries `data.fix`, a literal corrected call (§9;
 `spec/mutate` §8) — and the third the plan's `summary`, one line in words per
@@ -1063,7 +1144,7 @@ identity consequences the 3.x result carried are the Plan's
 | Tool | Args | Result |
 | --- | --- | --- |
 | `docs_outline` | `id?`, `path?`, `resolution?`, `depth?`, `budget_tokens?` | §2 |
-| `docs_read` | `id?`, `path?`, `include_ids?` | §2 |
+| `docs_read` | `id?`, `path?`, `include_ids?`, `at?` (4.7) | §2 |
 | `docs_read_many` | `docs[]`, `include_ids?`, `budget_tokens?` | §2 (`docs_get_many` before 3.0) |
 | `blocks_read` | `id`, `resolution?` | §2 (the document inferred from the block; `id` is a block id — an `n_` id is `block_missing` naming `nodes_block_read`; `nodes_get { doc?, path?, id }`, then `blocks_get`, before 3.0) |
 | `nodes_block_read` | `id`, `resolution?` | §2 (3.0 follow-up): `id` is a node id; the block it was projected from, exactly as `blocks_read` renders it |
@@ -1094,7 +1175,7 @@ identity consequences the 3.x result carried are the Plan's
 | `docs_update` | `id?`, `path?`, `content`, `reason?` | (4.0) sugar for `apply { effects: [{ op: "set", target: { kind: "document", id }, field: "content", value: content }] }` → the Receipt; content equal to the document → `commit: null`, `revisions: []` (`spec/mutate` §11.7). The plan-only call is `plan` over that effect, its `preview.identity[<id>]` the opset's annotations (through 3.x `{ opset, plan, result }` with `dry_run` the plan-only call — the removed `docs_plan_update` was exactly that dry run, §9) |
 | `observe` / `observe_many` / `observe_delete` | `spec/store` §5 (`path` in either form) | its outcomes (`observe` sweeps the pool) as `{ id, path, rev, commitId, converged, echo, conflicted, dispositions }` (`observe_many`: one per item, `observe_delete`: `{ id, path, deleted }`) — the store's own `{ doc, commit, rev }` outcome of `spec/store` §9 is re-shaped at this boundary, `path` in the reference form |
 | `blocks_history` | `id`, `limit?` | §3 (not repo-scoped; `history_node` before 3.0) |
-| `docs_diff` / `docs_diff_unified` / `docs_read_at` / `docs_history` / `changes_since` | §3 | §3 (`diff` / `diff_unified` before 3.0) |
+| `docs_diff` / `docs_diff_unified` / `docs_read_at` / `docs_history` / `changes_since` | §3 | §3 (`diff` / `diff_unified` before 3.0; `docs_read_at` is `docs_read { at }`'s sugar since 4.7, §2) |
 | `repos_status` / `sync_status` | `repo?` | `spec/sync` §4.4; `repos_status` names the repository `{ id, slug, … }` (its own identity under the row rule) |
 | `repos` | — | `{ repos: [{ slug, has_source }] }` by slug |
 | `version` | — | (1.4) which engine and which versions: `{ engine: "typescript" \| "rust", version, components: { <package or crate>: <version>, … }, specs: { oqx, format, reconcile, store, properties, graph, search, mutate, sync, surface, cli }, schema, mcp: { protocol, sdk? }, runtime, commit, built }` — `version` is the serving binary's own (the `omgbase` npm package or crate); `components` every omgbase package the binary is built from with its version (the reference: `omgbase`, `@omgbase/core`, `@omgbase/oqx`, `@omgbase/sync`, `@omgbase/fs-adapter`; the port: `omgbase` and each `omgbase-*` crate and `oqx`), keys sorted bytewise; `specs` the `spec/<x>/VERSION` each was built against (a compile-time constant, not a file read); `schema` the open database's `PRAGMA user_version`; `mcp.protocol` the protocol version served, `mcp.sdk` the SDK's version when one is used; `runtime` `node <version>` or `rustc <version>`; `commit` the build's git revision (short, `null` when unknown — a published crate reads `.cargo_vcs_info.json`, the npm package a `build-info.json` written by `pnpm build`), `built` its RFC 3339 build time or `null`; `profile` (4.3, the last key) the catalog profile served, `"full"` or `"minimal"` (§4 "Profiles"). Values are engine- and release-specific, so §6 pins the **shape**: leaves are recorded as their type. No repo scope, no workspace needed beyond the database for `schema` (`null` without one). |
@@ -1160,7 +1241,10 @@ verbs later.
   and `$`-name cases), `query-root.json` (the root row, 2.0: `^docs` /
   `0^docs` / `^id` / `^$it`, the `$repo` and bare-target errors),
   `query-unknown.json` (unknown names, 4.6 §1.5: the three tiers, `hints`,
-  the links errors, the nearest-match truths).
+  the links errors, the nearest-match truths), `query-revisions.json` (the
+  history target, 4.7 §1.2: over the one-revision corpus — row shape, `doc`,
+  `is_current`, the docs relation, ordering, paging, the N/A functions; the
+  multi-revision scripts are `reads::revisions`).
 - **`reads.json`**: observation scripts (`spec/store` §9.4) with `read`
   steps (a `version` read is recorded with every leaf value replaced by its
   type name — `"<string>"`, `"<number>"`, `"<null>"`, `"<boolean>"` — since the
@@ -1213,8 +1297,8 @@ verbs later.
   `apply` (three commits under `ts: 2026-10-13T00:00:00.000Z`), `plan` (five
   previews over the written state, burning nothing; without `diffs` since
   4.5), `execute` (the digest form; `plan_mismatch` would show the rung's
-  `plan_id` is stale), `changes_since`, `version` — 28 steps since 4.5 (the
-  `query` ladder's `links` and string-method rungs; 27 through 4.4). The
+  `plan_id` is stale), `changes_since`, `version` — 29 steps since 4.7 (the
+  `docs_read` ladder's `at` rung; 28 through 4.6, 27 through 4.4). The
   steps are WRITTEN by the extraction test
   (`packages/core/src/mcp/examples.test.ts` under `SURFACE_SPEC_UPDATE=1`,
   run before the spec runner), never by hand; the runner regenerates the
@@ -1394,6 +1478,27 @@ both and runs both harnesses.
 
 ## 9. Reference oddities surfaced while specifying, and decisions
 
+- **Added (4.7) — history is queryable**: the `revisions` target (§1.1, §1.2)
+  and `docs_read { at }` (§2), `docs_read_at` becoming its sugar. Moved cases,
+  each reviewed: every recorded `docs_read_at` result (`reads::history` ×2,
+  `reads::diff-unified-list-append` ×2, `interop::read-history-admin` ×2,
+  `interop::write-apply` ×1) loses `properties` and `propertiesAreCurrent`;
+  `query-root::root-object-entries-names` and `interop::read-query` gain
+  `revisions` as the fifth root entry; `query-errors::edges-is-not-a-target`
+  names five collections and the three `query-errors::hit-not-a-row-*` the
+  five row kinds; the `reads::arguments` ×6 and
+  `reads::errors-and-sourceless-writes` steps that print `docs_read`'s shape
+  gain `at?`;
+  `examples.json` gains the `docs_read` rung (28 → 29 steps). New:
+  `query-revisions.json` (35), `reads::revisions`, three reads in
+  `interop::read-history-admin` and two in `interop::write-apply`. The default order of the revisions scan is
+  `(path, rev_id)` rather than the `(doc_id, seq)` first proposed: the runner's
+  keyset cursor is `(path, id)` for every target, and a default order that is
+  not the keyset order cannot be paged by it; `order by seq` is one clause
+  away. The unknown-names pass (§1.5) judges `revisions` rows as a closed kind;
+  the reference's pass learns the kind in the follow-up that lands beside this
+  one (until then a tier-3 name on a revision row reads absent, as every name
+  did before 4.6).
 - **Added (4.6) — unknown names** (§1.5): every name a query reads is judged
   statically against the vocabulary of its scope's kind; a tier-3 name on
   `links` is `filter_invalid`, on an open kind a `hints` entry (reads) or the
@@ -1694,6 +1799,32 @@ both and runs both harnesses.
   pure, so equal to what the planner lowered); the Rust port mirrors it.
 
 ## Decisions
+
+- 2026-10-13, surface 4.7: history is queryable — the `revisions` target and
+  `docs_read { at }`. The two web clients over the MCP surface (`graph-ui`,
+  `live-tail`) run against the minimal tools profile, where everything they do
+  is already OQX or one `apply` effect — except history: `live-tail` needed
+  `docs_history`, `docs_read_at` and `docs_diff_unified`, none of them in the
+  profile. Rather than widen the profile, history becomes one more thing
+  `query` reads: a target over the `revisions` × `commits` join (one row per
+  stored revision, deleted documents included, `doc` reaching the current row
+  and absent for a tombstone, `revisions` a relation of every document), so a
+  document's timeline is `from revisions where path == … order by seq desc`
+  and "edited through the API" is a `revisions count { … }` on docs — and
+  `docs_read { at }` makes the body as of a revision reachable from the one
+  read tool the profile has. The history tools stay as sugar (`docs_read_at`
+  literally: the same code path, the identical result); the unified diff is a
+  client-side computation over two bodies (two `docs_read { at }` calls), so
+  `docs_diff_unified` needs no query form. Two details the code decided: the
+  scan's default order is `(path, rev_id)`, the keyset every target pages by,
+  not `(doc_id, seq)`; and `docs_read { at }` carries **no `properties`** — the
+  table is current-state only and recomputing the bag from the bytes is not a
+  one-call affair of the format layer today (the inline fields come out of the
+  ingest's node projection), so rather than present current values as
+  historical (what `docs_read_at` did, flagged) the read returns the bytes and
+  the honesty bit. A target added, an argument added, a result shape narrowed
+  on a tool that is now sugar: a minor. Fixtures: `query-revisions.json`,
+  `reads::revisions`, the moved cases of §9.
 
 - 2026-10-13, surface 4.6: unknown names (§1.5; with `spec/oqx` 0.23's
   `references` pass). A 78-run agent benchmark showed models projecting and
