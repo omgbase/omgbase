@@ -43,9 +43,10 @@ Not tutorials, but also here:
 
 - **[graph-ui/](./graph-ui/README.md)** — a Lit demo that runs an OQX query over MCP and renders the result as a graph, with the relationships that draw edges and lay the graph out inferred from the query (a probe of the reflection API).
 - **[live-tail/](./live-tail/README.md)** — a Lit demo of the change feed: the most recently updated documents with the unified diff of their latest change, then every commit as it lands (`changes_since` polled with a cursor, each digest prepended with its revisions' diffs), both narrowed by an OQX `where` filter typed into the hole of the recent query itself (a CodeMirror editor whose frame is read-only).
+- **[repo-explorer/](./repo-explorer/README.md)** — a Lit demo that browses a repository end to end over the **minimal tools profile** (`omg mcp --tools minimal`, ten tools): the tree (`docs_tree`), a document rendered with every block an anchor verified against its hash (`docs_read { include_ids }`), backlinks and outlinks and history as OQX over `links` and `revisions`, time travel (`docs_read { at }`) with a client-side diff, a live strip (`changes_since`), a query console with `hints` and `data.fix`, and frontmatter edits previewed with `plan` and committed with `execute`.
 - **[webdevproxy/](./webdevproxy/README.md)** — the development-only local web proxy the browser demos use to reach an omgbase MCP server (a local `omg mcp`, or a remote gateway behind OAuth) from a Vite dev server without CORS or OAuth setup on the server side. Private, unpublished, loopback only.
 
-The two browser demos require an omgbase server speaking **surface ≥ 3.0** (the current `omg`); they check the `version` tool on connect and refuse an older server with a clear message.
+The browser demos require an omgbase server speaking **surface ≥ 3.0** (repo-explorer ≥ 4.7, for the `revisions` target and `docs_read { at }`; the current `omg` serves both); they check the `version` tool on connect and refuse an older server with a clear message.
 
 ## The corpus
 

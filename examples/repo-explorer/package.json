@@ -1,0 +1,35 @@
+{
+  "name": "repo-explorer",
+  "version": "0.0.0",
+  "private": true,
+  "description": "omgbase repo-explorer demo: browse a repository end to end over the MINIMAL tools profile — tree, rendered documents with block anchors, backlinks, an OQX console, history with client-side diffs, a live change feed, frontmatter edits through plan/execute (Lit 3 + signals, Shoelace, MCP over Streamable HTTP through webdevproxy)",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "dev:workspace": "node scripts/dev-workspace.mjs",
+    "dev:mcp": "node scripts/dev.mjs --proxy-only",
+    "logout": "webdevproxy --logout",
+    "dev:vite": "vite",
+    "build": "tsc -p tsconfig.json --noEmit && vite build",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix"
+  },
+  "dependencies": {
+    "@lit-labs/signals": "^0.3.0",
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "@shoelace-style/shoelace": "^2.20.1",
+    "lit": "^3.3.0",
+    "markdown-it": "^15.0.2"
+  },
+  "devDependencies": {
+    "vite": "^7.1.0",
+    "webdevproxy": "workspace:^"
+  }
+}

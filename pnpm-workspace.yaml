@@ -4,6 +4,7 @@ packages:
   - "examples/webdevproxy"
   - "examples/live-tail"
   - "examples/agent-bench"
+  - "examples/repo-explorer"
 
 allowBuilds:
   better-sqlite3: true
