@@ -95,6 +95,14 @@
           "read": {
             "tool": "query",
             "args": {
+              "query": "select type, text from blocks where path == \"/processes/calcination.md\""
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "query",
+            "args": {
               "query": "select block_id from nodes where kind == \"md:section\" and name == \"Tasks\" and path == \"/processes/calcination.md\""
             }
           }
@@ -120,14 +128,6 @@
             "tool": "query",
             "args": {
               "query": "select path from docs where title ~* \"salt\""
-            }
-          }
-        },
-        {
-          "read": {
-            "tool": "query",
-            "args": {
-              "query": "docs count { where layer == \"canon\" }"
             }
           }
         },
@@ -677,6 +677,133 @@
           {
             "hits": [
               {
+                "id": "b_138",
+                "path": "/processes/calcination.md",
+                "type": "heading",
+                "text": "Calcination"
+              },
+              {
+                "id": "b_139",
+                "path": "/processes/calcination.md",
+                "type": "paragraph",
+                "text": "Heating a substance in air until it is reduced to a friable powder — a *calx*. The first of the twelve gates and, in practice, the first thing anyone does."
+              },
+              {
+                "id": "b_140",
+                "path": "/processes/calcination.md",
+                "type": "paragraph",
+                "text": "element:: fire reversible:: no"
+              },
+              {
+                "id": "b_141",
+                "path": "/processes/calcination.md",
+                "type": "heading",
+                "text": "Procedure"
+              },
+              {
+                "id": "b_142",
+                "path": "/processes/calcination.md",
+                "type": "paragraph",
+                "text": "Grind the material, spread it thinly in an open crucible, and heat steadily below the melting point. Stir to expose fresh surface. Continue until no further weight is lost and no fumes come off."
+              },
+              {
+                "id": "b_143",
+                "path": "/processes/calcination.md",
+                "type": "code_fence",
+                "text": "crucible → grind → thin layer → moderate heat → stir → constant weight"
+              },
+              {
+                "id": "b_144",
+                "path": "/processes/calcination.md",
+                "type": "paragraph",
+                "text": "The endpoint is the constant weight, not the colour. Colour tells you which oxide you have; weight tells you that you are finished."
+              },
+              {
+                "id": "b_145",
+                "path": "/processes/calcination.md",
+                "type": "heading",
+                "text": "What is actually happening"
+              },
+              {
+                "id": "b_146",
+                "path": "/processes/calcination.md",
+                "type": "paragraph",
+                "text": "Organic matter burns away; metals take up oxygen. The characteristic *gain* in weight when calcining a metal is the observation that eventually broke the phlogiston theory — the calx weighs more than the metal, which a theory of escaping substance cannot accommodate."
+              },
+              {
+                "id": "b_147",
+                "path": "/processes/calcination.md",
+                "type": "paragraph",
+                "text": "Alchemical practice recorded this gain for centuries without drawing the inference. The data were sound; the framework could not use them."
+              },
+              {
+                "id": "b_148",
+                "path": "/processes/calcination.md",
+                "type": "heading",
+                "text": "Products"
+              },
+              {
+                "id": "b_149",
+                "path": "/processes/calcination.md",
+                "type": "list",
+                "text": "calcined lead → yellow massicot, then red minium calcined copper → black tenorite plant matter → ash, source of the [[salt]]"
+              },
+              {
+                "id": "b_150",
+                "path": "/processes/calcination.md",
+                "type": "list_item",
+                "text": "calcined lead → yellow massicot, then red minium"
+              },
+              {
+                "id": "b_151",
+                "path": "/processes/calcination.md",
+                "type": "list_item",
+                "text": "calcined copper → black tenorite"
+              },
+              {
+                "id": "b_152",
+                "path": "/processes/calcination.md",
+                "type": "list_item",
+                "text": "plant matter → ash, source of the [[salt]]"
+              },
+              {
+                "id": "b_153",
+                "path": "/processes/calcination.md",
+                "type": "heading",
+                "text": "Tasks"
+              },
+              {
+                "id": "b_154",
+                "path": "/processes/calcination.md",
+                "type": "list",
+                "text": "Verify the weight gain on lead with a balance Repeat with copper and record the colour sequence Chase down the earliest recorded weight-gain measurement"
+              },
+              {
+                "id": "b_155",
+                "path": "/processes/calcination.md",
+                "type": "task",
+                "text": "Verify the weight gain on lead with a balance"
+              },
+              {
+                "id": "b_156",
+                "path": "/processes/calcination.md",
+                "type": "task",
+                "text": "Repeat with copper and record the colour sequence"
+              },
+              {
+                "id": "b_157",
+                "path": "/processes/calcination.md",
+                "type": "task",
+                "text": "Chase down the earliest recorded weight-gain measurement"
+              }
+            ],
+            "truncated": false,
+            "cursor": null,
+            "consumer": "collect"
+          },
+          {
+            "hits": [
+              {
                 "id": "n_494a3234acfd",
                 "path": "/processes/calcination.md",
                 "block_id": "b_153"
@@ -825,13 +952,6 @@
             "truncated": false,
             "cursor": null,
             "consumer": "collect"
-          },
-          {
-            "hits": [],
-            "truncated": false,
-            "cursor": null,
-            "consumer": "count",
-            "count": 13
           },
           [
             {

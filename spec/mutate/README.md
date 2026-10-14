@@ -200,7 +200,19 @@ the owner dirty.
 
 Locate (`block_missing`); CAS required. Cut the raw at the sorted **byte
 offsets** `at` plus 0 and the length (§10: the reference cut at UTF-16
-indices), drop pieces that are whitespace-only; fewer than two →
+indices; an offset inside a multi-byte character rounds down to that
+character's start, one past the end clamps). **Trim the cut edges** (3.5):
+every piece but the last loses its trailing whitespace and every piece but
+the first its leading whitespace, where whitespace is the format's trim set
+(`spec/format` §4.1 step 4: Unicode `White_Space` minus U+0085, plus
+U+FEFF — space, tab, `\n` and `\r` included). The raw's own start and end
+are not cut edges and stay as authored (a last piece keeps the raw's
+trailing spaces; the block's trivia is not part of the raw and is handled
+by the seams below). Consequences: an offset immediately before or after a
+run of whitespace yields the same pieces; a cut inside the run — at a `\n`,
+or anywhere in the `  \n` of a Markdown hard break, which could not survive
+a block boundary anyway — yields the two trimmed neighbours. Then drop the
+pieces that are whitespace-only (empty after the trim); fewer than two →
 `type_mismatch`. The first piece stays in the block (dirty); each further
 piece becomes a new sibling right after, same `type`, a copy of `attrs`,
 dirty. **Seams**: the block's trailing trivia moves to the last piece; every
@@ -1550,6 +1562,25 @@ Receipt pins them in every committing fixture step (§9).
 
 ## Decisions
 
+- 2026-10-13, mutate 3.5: `split` trims whitespace at the cut (§2.5). Exact
+  byte offsets were a trap: in a 78-run agent benchmark every one of the six
+  split-paragraph runs fought a stray space at the seam — an offset on either
+  side of the space left it on one of the pieces, one run called `plan` four
+  times and then added a `set markdown` effect just to strip it — and with
+  `plan { diffs }` off by default (surface 4.5) the model commits what it
+  cannot see. Agents and humans alike never want a paragraph that ends in a
+  space, so the kernel trims the cut edges only (the format's trim set), the
+  raw's own ends stay as authored, and a cut before, after or inside a run
+  of whitespace yields the same pieces. What an op produces changed: a
+  minor. `preview.summary` (`split <block> at offset <a> in <path>`) and
+  the `plan_id` of a split plan are unchanged. Fixtures: `ops::split-last-
+  block-heals-seams` (`Alpha ` → `Alpha`), `ops::split-with-parent-
+  children-hash` (` paragraph.` → `paragraph.`) and `effects::block-effects-
+  move-split-merge-remove` (`Intro ` → `Intro`) move — the pieces lose the
+  stray space and the hashes follow, nothing else; new
+  `ops::split-trims-before-the-space`, `split-trims-after-the-space`,
+  `split-inside-whitespace-run`, `split-at-newline`, `split-at-hard-break`,
+  `split-two-offsets-trim-both-seams`, `split-keeps-raw-ends`.
 - 2026-10-13, mutate 3.4: the shape errors learn to teach (with
   `spec/surface` 4.5). A 78-run agent benchmark against the minimal profile
   passed every task but guessed four effect shapes wrong first — `at:

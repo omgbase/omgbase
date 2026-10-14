@@ -9075,7 +9075,7 @@
                 {
                   "id": "d_0",
                   "path": "a.md",
-                  "hash": "ca9a40bc6a61de10208d966ef83beb29906ba70b83e6d818b0fee5446e2a1630"
+                  "hash": "b30ddd4233cce442ddbabc651cfeb43f872f0c0eb6f88b77a45827f8dd3da70d"
                 }
               ],
               "new_ids": {
@@ -9092,7 +9092,7 @@
           }
         ],
         "files": {
-          "a.md": "---\nstatus: draft\n---\n\n# Title\n\nIntro \n\nparagraph.\n\n## Notes\n\nFirst note. Tail.\n\n"
+          "a.md": "---\nstatus: draft\n---\n\n# Title\n\nIntro\n\nparagraph.\n\n## Notes\n\nFirst note. Tail.\n\n"
         },
         "docs": [
           {
@@ -9100,7 +9100,7 @@
             "path": "a.md",
             "format": "markdown",
             "current_rev": "r_1",
-            "file_hash": "ca9a40bc6a61de10208d966ef83beb29906ba70b83e6d818b0fee5446e2a1630",
+            "file_hash": "b30ddd4233cce442ddbabc651cfeb43f872f0c0eb6f88b77a45827f8dd3da70d",
             "conflicted": 0,
             "leading_trivia": "",
             "frontmatter_trivia": "\n\n",
@@ -9138,7 +9138,7 @@
             "type": "paragraph",
             "attrs": {},
             "text": "Intro",
-            "raw_hash": "fd924fc78ac38d6ffe911df5c7d5cea3deb053c2a134839c78a3eba0a7874b75",
+            "raw_hash": "24601bcaae6e170b381367ec4f4475786c6dbef5e8332f8903779c76d298d304",
             "norm_hash": "24601bcaae6e170b381367ec4f4475786c6dbef5e8332f8903779c76d298d304",
             "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
             "created_commit": "c_1",
@@ -9235,9 +9235,9 @@
             "rev_id": "r_1",
             "doc_id": "d_0",
             "seq": 2,
-            "root_tree": "0fca73d7ba5e996451ec28ab12c4058502aaa00d24fc3d9b20fa8927f19ca21f",
+            "root_tree": "29fac62363f89d0741df7ee9d1ecac63764396494d2a472ce11390d11e8a1935",
             "frontmatter_blob": "98266800b4cde7498463888ddcf174daca3645090b8b05554269c18a06b5cd60",
-            "rendered_hash": "ca9a40bc6a61de10208d966ef83beb29906ba70b83e6d818b0fee5446e2a1630",
+            "rendered_hash": "b30ddd4233cce442ddbabc651cfeb43f872f0c0eb6f88b77a45827f8dd3da70d",
             "path": "a.md",
             "commit_id": "c_1"
           }

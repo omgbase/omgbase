@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { parseTree } from "../core/parse/tree.js";
 import { mintId } from "../core/ids.js";
 import { renderDoc, rawHashHex, MutationError, locate, type MutBlock, type MutDoc } from "./tree.js";
-import { opInsert, opUpdate, opMove, opRemove, opSplit, opMerge } from "./ops.js";
+import { opInsert, opUpdate, opMove, opRemove, opSplit, opMerge, trimCutEdges } from "./ops.js";
 
 // Build a MutDoc from markdown (parse + mint ids), top-level blocks only.
 function doc(markdown: string): MutDoc {
@@ -251,7 +251,7 @@ describe("split — byte offsets", () => {
     expect(cutBytes).toBe(24);
     const { ids } = opSplit(d, idAt(d, 0), [cutBytes], 0, { content_hash: hashAt(d, 0) });
     expect(ids).toHaveLength(2);
-    expect(d.children[0]!.raw).toBe("héllo wörld — café ");
+    expect(d.children[0]!.raw).toBe("héllo wörld — café"); // the cut edge is trimmed (3.5)
     expect(d.children[1]!.raw).toBe("tail");
     void raw;
   });
@@ -273,13 +273,49 @@ describe("split — seams", () => {
     const { ids } = opSplit(d, idAt(d, 0), [6], 0, { content_hash: hashAt(d, 0) });
     expect(ids).toHaveLength(2);
     expect(d.children.map((b) => b.trivia)).toEqual(["\n\n", "\n"]);
-    expect(renderDoc(d)).toBe("Alpha \n\nbeta gamma.\n");
+    expect(renderDoc(d)).toBe("Alpha\n\nbeta gamma.\n");
   });
 
   it("three pieces: every earlier piece separates, the last carries the original trivia", () => {
     const d = doc("one two three\n\nTail.\n");
     opSplit(d, idAt(d, 0), [4, 8], 0, { content_hash: hashAt(d, 0) });
     expect(d.children.map((b) => b.trivia)).toEqual(["\n\n", "\n\n", "\n\n", "\n"]);
-    expect(renderDoc(d)).toBe("one \n\ntwo \n\nthree\n\nTail.\n");
+    expect(renderDoc(d)).toBe("one\n\ntwo\n\nthree\n\nTail.\n");
+  });
+});
+
+// spec/mutate §2.5 (3.5): the pieces are trimmed at the cut edges only, so no
+// piece ends (or begins) in the whitespace the cut fell beside; the raw's own
+// start and end are left as authored.
+describe("split — trims the cut", () => {
+  const pieces = (src: string, at: number[]): string[] => {
+    const d = doc(src);
+    opSplit(d, idAt(d, 0), at, 0, { content_hash: hashAt(d, 0) });
+    return d.children.slice(0, -1).map((b) => b.raw);
+  };
+
+  it("an offset before the space, after it, or inside a run of whitespace yields the same pieces", () => {
+    expect(pieces("Alpha beta gamma.\n\nAfter.\n", [5])).toEqual(["Alpha", "beta gamma."]);
+    expect(pieces("Alpha beta gamma.\n\nAfter.\n", [6])).toEqual(["Alpha", "beta gamma."]);
+    expect(pieces("Alpha\tbeta  gamma.\n\nAfter.\n", [11])).toEqual(["Alpha\tbeta", "gamma."]);
+  });
+
+  it("a cut at a line ending — a soft break or a two-space hard break — trims it", () => {
+    expect(pieces("Alpha beta\ngamma delta.\n\nAfter.\n", [10])).toEqual(["Alpha beta", "gamma delta."]);
+    expect(pieces("Alpha beta  \ngamma delta.\n\nAfter.\n", [12])).toEqual(["Alpha beta", "gamma delta."]);
+  });
+
+  it("two offsets trim both seams; a whitespace-only middle piece is still dropped", () => {
+    expect(pieces("one two three\n\nTail.\n", [3, 7])).toEqual(["one", "two", "three"]);
+    expect(pieces("one two three\n\nTail.\n", [3, 4])).toEqual(["one", "two three"]);
+  });
+
+  it("the raw's own ends are not cut edges: a last piece keeps the raw's trailing spaces", () => {
+    expect(pieces("Alpha beta gamma.  \n\nAfter.\n", [5])).toEqual(["Alpha", "beta gamma.  "]);
+  });
+
+  it("trimCutEdges: first keeps its start, last keeps its end, every seam is trimmed", () => {
+    expect(trimCutEdges(["  a \n", " b\t", "\r\nc  "])).toEqual(["  a", "b", "c  "]);
+    expect(trimCutEdges(["only"])).toEqual(["only"]);
   });
 });

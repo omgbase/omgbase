@@ -740,14 +740,14 @@ export function buildServer(ctx: ServerContext): McpServer {
     "query",
     {
       description: ladder(
-        "query — Read anything: rows (id, path, your projection) from docs, blocks, nodes or links.",
-        "{\"query\":\"select title, stage from docs where \\\"process\\\" in tags order by path limit 5\"}   frontmatter by name; membership; order, limit, cursor",
-        "{\"query\":\"select block_id from nodes where kind == \\\"md:section\\\" and name == \\\"Tasks\\\" and path == \\\"/processes/calcination.md\\\"\"}   a heading's block id by its text",
-        "{\"query\":\"select path, value from nodes where kind == \\\"md:task\\\" and not checked\"}   open tasks (value = the text)",
+        "query — rows (id, path, projection) from docs, blocks, nodes or links.",
+        "{\"query\":\"select title, stage from docs where \\\"process\\\" in tags order by path limit 5\"}   frontmatter; membership; order, limit",
+        "{\"query\":\"select type, text from blocks where path == \\\"/processes/calcination.md\\\"\"}   a document's blocks in order",
+        "{\"query\":\"select block_id from nodes where kind == \\\"md:section\\\" and name == \\\"Tasks\\\" and path == \\\"/processes/calcination.md\\\"\"}   a heading's block id",
+        "{\"query\":\"select path, value from nodes where kind == \\\"md:task\\\" and not checked\"}   open tasks",
         "{\"query\":\"select path, block_id from links where dst_path == \\\"/processes/calcination.md\\\"\"}   inbound links (path = source)",
-        "{\"query\":\"select path from docs where title ~* \\\"salt\\\"\"}   regex (~ exact, ~* ci, !~ not); substring: .contains(\\\"s\\\")",
-        "{\"query\":\"docs count { where layer == \\\"canon\\\" }\"}   a scalar",
-        "follow, ^docs joins, text()/semantic(), the grammar: query_syntax.",
+        "{\"query\":\"select path from docs where title ~* \\\"salt\\\"\"}   regex (~* ci, !~ not); substring: .contains(\\\"s\\\")",
+        "Also docs count { where … }, follow, ^docs joins, text()/semantic(): query_syntax.",
       ),
       inputSchema: {
         query: z.string(),

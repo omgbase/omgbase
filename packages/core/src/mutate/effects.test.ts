@@ -215,7 +215,8 @@ describe("the lowering table (§11.3)", () => {
     expect(p.opset.ops[3]).toMatchObject({ blocks: ["b_3", "b_4"], separator: " " });
     expect(p.preconditions.blocks.map((b) => b.id)).toEqual(["b_8", "b_1", "b_3", "b_4"]);
     const after = p.preview!.diffs["a.md"]!.after;
-    expect(after).toContain("Intro \n\nparagraph.\n\n## Notes\n\nFirst note. Second note.\n\n- [ ] alpha\n- [ ] beta\n\nTail.");
+    // The split at byte 6 falls on the space after `Intro`; the cut edge is trimmed (spec/mutate §2.5, 3.5).
+    expect(after).toContain("Intro\n\nparagraph.\n\n## Notes\n\nFirst note. Second note.\n\n- [ ] alpha\n- [ ] beta\n\nTail.");
     expect(after).not.toContain("## Later");
   });
 

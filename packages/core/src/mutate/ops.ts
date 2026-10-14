@@ -492,7 +492,7 @@ export function opSplit(doc: MutDoc, blockId: string, at: number[], opIndex: num
   const cuts = [0, ...at.map((b) => codeUnitIndexOf(raw, b)), raw.length].sort((a, b) => a - b);
   const pieces: string[] = [];
   for (let i = 1; i < cuts.length; i++) pieces.push(raw.slice(cuts[i - 1]!, cuts[i]!));
-  const nonEmpty = pieces.filter((p) => p.trim().length > 0);
+  const nonEmpty = trimCutEdges(pieces).filter((p) => p.trim().length > 0);
   if (nonEmpty.length < 2) throw new MutationError("type_mismatch", "split must yield ≥2 non-empty fragments");
 
   // First fragment carries the id (authored intent, 04 §1); rest minted.
@@ -516,6 +516,24 @@ export function opSplit(doc: MutDoc, blockId: string, at: number[], opIndex: num
   found.siblings.splice(found.index + 1, 0, ...newBlocks);
   markContainerDirty(doc, found.siblings);
   return { ids: [blockId, ...newBlocks.map((b) => b.id)] };
+}
+
+// spec/mutate §2.5 (3.5): the pieces of a split are trimmed at the CUT edges
+// only — every piece but the last loses its trailing whitespace, every piece
+// but the first its leading whitespace — so an offset on either side of a
+// space (or inside the run, a `\n`, a hard break's `  \n`) yields the same
+// pieces and no piece ends in a stray space. The raw's own start and end are
+// not cut edges and stay as authored (a last piece keeps the raw's trailing
+// spaces). The whitespace set is the format's trim set (`spec/format` §4.1
+// step 4) — exactly what JavaScript's `trimStart`/`trimEnd` remove.
+export function trimCutEdges(pieces: readonly string[]): string[] {
+  const last = pieces.length - 1;
+  return pieces.map((p, i) => {
+    let out = p;
+    if (i < last) out = out.trimEnd();
+    if (i > 0) out = out.trimStart();
+    return out;
+  });
 }
 
 export function opMerge(doc: MutDoc, blockIds: string[], opIndex: number, separator = " ", expectPer?: Record<string, Expect>): { ids: string[]; mergedInto: string[] } {
