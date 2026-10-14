@@ -1,0 +1,33 @@
+{
+  "name": "attn",
+  "version": "0.0.0",
+  "private": true,
+  "description": "attn — an omgbase-native prototype of a hyper-low-friction attention app: intents and cues are Markdown documents, the focus is a pointer document, the Stream an append-only daily log, `#focus` a virtual OQX join; every switch one atomic `apply` under CAS, over the MINIMAL tools profile (Lit 3 + signals, MCP over Streamable HTTP through webdevproxy)",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "dev:workspace": "node scripts/dev-workspace.mjs",
+    "dev:mcp": "node scripts/dev.mjs --proxy-only",
+    "logout": "webdevproxy --logout",
+    "dev:vite": "vite",
+    "build": "tsc -p tsconfig.json --noEmit && vite build",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix"
+  },
+  "dependencies": {
+    "@lit-labs/signals": "^0.3.0",
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "lit": "^3.3.0"
+  },
+  "devDependencies": {
+    "vite": "^7.1.0",
+    "webdevproxy": "workspace:^"
+  }
+}

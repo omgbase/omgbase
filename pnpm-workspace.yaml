@@ -5,6 +5,7 @@ packages:
   - "examples/live-tail"
   - "examples/agent-bench"
   - "examples/repo-explorer"
+  - "examples/attn"
 
 allowBuilds:
   better-sqlite3: true
