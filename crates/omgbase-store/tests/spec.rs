@@ -167,9 +167,9 @@ fn validate_steps(at: &str, steps: Option<&Json>, problems: &mut Vec<String>) ->
             continue;
         };
         let keys: Vec<&String> = obj.keys().collect();
-        if keys.len() != 1 || (keys[0] != "observe" && keys[0] != "sweep") {
+        if keys.len() != 1 || !["observe", "sweep", "gc", "exec"].contains(&keys[0].as_str()) {
             problems.push(format!(
-                "{here}: a step is exactly one of `observe` / `sweep` (got {})",
+                "{here}: a step is exactly one of `observe` / `sweep` / `gc` / `exec` (got {})",
                 keys.iter()
                     .map(|k| k.as_str())
                     .collect::<Vec<_>>()
@@ -178,6 +178,10 @@ fn validate_steps(at: &str, steps: Option<&Json>, problems: &mut Vec<String>) ->
             continue;
         }
         let body = &obj[keys[0]];
+        if keys[0] == "gc" || keys[0] == "exec" {
+            validate_gc_exec_body(&here, keys[0], body, problems);
+            continue;
+        }
         let ts_ok = body
             .get("ts")
             .and_then(Json::as_str)
@@ -781,8 +785,15 @@ fn run_observe_case(c: &Json) -> Result<ObserveEvaluation, String> {
             let ts = sweep["ts"].as_str().ok_or("sweep.ts")?;
             let swept = store.sweep_pool(ts).map_err(|e| format!("step {i}: {e}"))?;
             steps.push(json!({ "swept": swept }));
+        } else if step.get("gc").is_some() {
+            steps.push(run_gc_step(&store).map_err(|e| format!("step {i}: {e}"))?);
+            for p in check_invariants(&store, &repo_id, &last_source) {
+                problems.push(format!("after step {i}: {p}"));
+            }
+        } else if let Some(exec) = step.get("exec") {
+            steps.push(run_exec_step(store.conn(), exec).map_err(|e| format!("step {i}: {e}"))?);
         } else {
-            return Err(format!("step {i}: neither observe nor sweep"));
+            return Err(format!("step {i}: none of observe, sweep, gc, exec"));
         }
     }
     for p in check_invariants(&store, &repo_id, &last_source) {
@@ -797,6 +808,57 @@ fn run_observe_case(c: &Json) -> Result<ObserveEvaluation, String> {
         expect: Json::Object(expect),
         problems,
     })
+}
+
+/// README §9.4 (14.2): `gc` is `{}` and `exec` is `{ sql: [<statement>, …] }`.
+fn validate_gc_exec_body(here: &str, kind: &str, body: &Json, problems: &mut Vec<String>) {
+    let Some(b) = body.as_object() else {
+        problems.push(format!("{here}: {kind} must be an object"));
+        return;
+    };
+    if kind == "gc" {
+        if !b.is_empty() {
+            problems.push(format!("{here}: gc takes an empty object"));
+        }
+        return;
+    }
+    if b.keys().any(|k| k != "sql") {
+        problems.push(format!("{here}: exec takes only `sql`"));
+    }
+    let sql_ok = b.get("sql").and_then(Json::as_array).is_some_and(|a| {
+        !a.is_empty() && a.iter().all(|q| q.as_str().is_some_and(|s| !s.is_empty()))
+    });
+    if !sql_ok {
+        problems.push(format!(
+            "{here}: `sql` must be a non-empty array of statements"
+        ));
+    }
+}
+
+/// README §9.4 (14.2): the `gc` step — the §7 collection, enabled, never a
+/// dry run; the counts in the fixture's spelling.
+fn run_gc_step(store: &Store) -> Result<Json, String> {
+    let r = store.gc(true).map_err(|e| e.to_string())?;
+    Ok(json!({ "gc": {
+        "blobs": r.blobs_swept,
+        "tree_nodes": r.tree_nodes_swept,
+        "same_dispositions": r.same_dispositions_swept,
+    } }))
+}
+
+/// README §9.4 (14.2): the `exec` step — every statement run verbatim, in
+/// order, in one transaction; the rows changed summed. The invariants are not
+/// checked after it (the device plants rows a 14.2 store never writes).
+fn run_exec_step(conn: &Connection, exec: &Json) -> Result<Json, String> {
+    let sql = exec["sql"].as_array().ok_or("exec.sql")?;
+    let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+    let mut changes = 0usize;
+    for statement in sql {
+        let s = statement.as_str().ok_or("exec.sql[]")?;
+        changes += tx.execute(s, []).map_err(|e| format!("{s}: {e}"))?;
+    }
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(json!({ "changes": changes }))
 }
 
 // ---- projection (§9.4 "Expect") -----------------------------------------------------------
@@ -1518,6 +1580,27 @@ fn check_invariants(
                 ));
             }
         }
+    }
+    // 14.2: `same` is never persisted (§5.4 step 10; the §7 sweep removes a
+    // 14.1 store's), and a block's rows are its own history — so every live
+    // block has at least one (its `inserted`, lineage or resurrection row).
+    for (commit_id, block_id, kind) in &dispositions {
+        if kind == "same" {
+            problems.push(format!(
+                "I7: disposition {block_id} of {commit_id} is a persisted `same`"
+            ));
+        }
+    }
+    let unchanged: Vec<String> = all_rows(
+        conn,
+        "SELECT b.block_id FROM blocks b JOIN docs d ON d.doc_id = b.doc_id WHERE d.repo_id = ?1 AND b.deleted_commit IS NULL AND NOT EXISTS (SELECT 1 FROM block_changes bc WHERE bc.block_id = b.block_id) ORDER BY b.block_id",
+        &[&repo_id],
+        |r| r.get(0),
+    );
+    for block_id in unchanged {
+        problems.push(format!(
+            "I7: live block {block_id} has no block_changes row"
+        ));
     }
 
     // ---- I8 rebuild equivalence -----------------------------------------------------------

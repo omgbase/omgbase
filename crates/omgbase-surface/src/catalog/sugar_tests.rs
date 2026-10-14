@@ -1296,9 +1296,11 @@ fn previews_are_plans_that_burn_nothing() {
         );
     }
     // The pinned relabels (3.0; `spec/mutate` §6, §10): a committed
-    // `docs_set_meta` is a head write — every block `edited / api`, no
-    // matcher — and a committed `docs_create` a known-id ingest — every
-    // block `inserted / api`.
+    // `docs_set_meta` is a head write — no matcher; every carried block is
+    // `same / api` (`spec/mutate` §4 step 5(b)) and `same` is not persisted
+    // (store 14.2), so a frontmatter-only commit writes no disposition row —
+    // and a committed `docs_create` a known-id ingest — every block
+    // `inserted / api`.
     let created = s.call(
         "docs_create",
         json!({ "path": "notes/other.md", "markdown": "# O\n\nP.\n" }),
@@ -1315,12 +1317,7 @@ fn previews_are_plans_that_burn_nothing() {
         json!({ "path": SALT, "set": { "verified": true } }),
     );
     let rows = dispositions_of(&s, patched.body["commit"].as_str().unwrap());
-    assert!(!rows.is_empty());
-    assert!(
-        rows.iter()
-            .all(|(k, r, m)| k == "edited" && r == "api" && m.is_none()),
-        "{rows:?}"
-    );
+    assert!(rows.is_empty(), "{rows:?}");
 }
 
 /// The four document operations at the surface are the store's own (the same

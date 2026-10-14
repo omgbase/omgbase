@@ -67,6 +67,8 @@ pub fn category_of(table: &str) -> &'static str {
 pub const VACUUM_ADVICE_MIN_BYTES: u64 = 1024 * 1024;
 pub const VACUUM_ADVICE_MIN_SHARE: u64 = 10;
 pub const HISTORY_ADVICE_MIN_SHARE: f64 = 50.0;
+/// 14.2: `same` rows past this share of the `dispositions` table's rows.
+pub const SAME_ADVICE_MIN_SHARE: u64 = 25;
 pub const EMBEDDINGS_ADVICE_MIN_SHARE: f64 = 25.0;
 
 /// `<n> B` under 1024, else one decimal of KB/MB/GB/TB (1024-based), the
@@ -152,6 +154,9 @@ pub struct SizeReport {
     pub file: SizeFile,
     /// Always the four categories, in [`SIZE_CATEGORIES`] order.
     pub categories: Vec<SizeCategory>,
+    /// §7 (14.2): `dispositions` rows with `kind = 'same'` — what a store
+    /// through 14.1 wrote and `omg gc` removes; 0 on a fresh 14.2 store.
+    pub same_dispositions: u64,
     pub advice: Vec<String>,
     /// `Some("dbstat unavailable")` when the SQLite build lacks the virtual table.
     pub detail: Option<&'static str>,
@@ -199,6 +204,7 @@ impl SizeReport {
                     .collect(),
             ),
         );
+        m.insert("same_dispositions".into(), json!(self.same_dispositions));
         m.insert("advice".into(), json!(self.advice));
         if let Some(d) = self.detail {
             m.insert("detail".into(), json!(d));
@@ -208,8 +214,13 @@ impl SizeReport {
 }
 
 /// §7: the advice lines, in this order; `nothing to reclaim` when none applies.
+/// `same_dispositions` (14.2) is the report's count of `same` rows.
 #[must_use]
-pub fn size_advice(file: &SizeFile, categories: &[SizeCategory]) -> Vec<String> {
+pub fn size_advice(
+    file: &SizeFile,
+    categories: &[SizeCategory],
+    same_dispositions: u64,
+) -> Vec<String> {
     let mut advice = Vec::new();
     let logical = file.page_count * file.page_size;
     if file.reclaimable > VACUUM_ADVICE_MIN_BYTES
@@ -220,14 +231,25 @@ pub fn size_advice(file: &SizeFile, categories: &[SizeCategory]) -> Vec<String> 
             human_bytes(file.reclaimable)
         ));
     }
-    let history_share = categories
-        .iter()
-        .find(|c| c.name == "history")
-        .and_then(|c| c.share);
-    if let Some(share) = history_share.filter(|s| *s > HISTORY_ADVICE_MIN_SHARE) {
+    let history = categories.iter().find(|c| c.name == "history");
+    if let Some(share) = history
+        .and_then(|c| c.share)
+        .filter(|s| *s > HISTORY_ADVICE_MIN_SHARE)
+    {
         advice.push(format!(
             "history dominates ({}): blobs, tree nodes and dispositions grow with every commit — enable gc (`omg config set gc.enabled true`) and run `omg gc --vacuum`",
             format_share(share)
+        ));
+    }
+    // 14.2: `same` rows are what a 14.1 store wrote for every untouched block;
+    // past a quarter of the table they are worth a sweep (the share is over
+    // rows, so it holds with or without dbstat).
+    let disposition_rows = history
+        .and_then(|c| c.tables.iter().find(|t| t.name == "dispositions"))
+        .map_or(0, |t| t.rows);
+    if same_dispositions > 0 && same_dispositions * 100 > disposition_rows * SAME_ADVICE_MIN_SHARE {
+        advice.push(format!(
+            "{same_dispositions} same dispositions are history nothing reads (store 14.2): `omg gc` removes them, `--vacuum` reclaims the pages"
         ));
     }
     if let Some(search) = categories
@@ -440,10 +462,19 @@ pub fn size_report(conn: &Connection) -> Result<SizeReport> {
         }
     }
 
-    let advice = size_advice(&file, &categories);
+    let same_dispositions = {
+        let n: i64 = conn.query_row(
+            "SELECT count(*) FROM dispositions WHERE kind = 'same'",
+            [],
+            |r| r.get(0),
+        )?;
+        u64::try_from(n).unwrap_or(0)
+    };
+    let advice = size_advice(&file, &categories, same_dispositions);
     Ok(SizeReport {
         file,
         categories,
+        same_dispositions,
         advice,
         detail: stat.is_none().then_some("dbstat unavailable"),
     })
@@ -558,7 +589,8 @@ mod tests {
         assert_eq!(
             size_advice(
                 &file_of(|_| {}),
-                &[cat("content", 60, 100, &[]), cat("history", 40, 100, &[])]
+                &[cat("content", 60, 100, &[]), cat("history", 40, 100, &[])],
+                0
             ),
             none
         );
@@ -567,19 +599,19 @@ mod tests {
             f.freelist_count = 200;
             f.reclaimable = 200 * 4096;
         });
-        assert_eq!(size_advice(&small, &[]), none);
+        assert_eq!(size_advice(&small, &[], 0), none);
         let thin = file_of(|f| {
             f.page_count = 100_000;
             f.freelist_count = 300;
             f.reclaimable = 300 * 4096;
         });
-        assert_eq!(size_advice(&thin, &[]), none);
+        assert_eq!(size_advice(&thin, &[], 0), none);
         let fat = file_of(|f| {
             f.freelist_count = 300;
             f.reclaimable = 300 * 4096;
         });
         assert_eq!(
-            size_advice(&fat, &[]),
+            size_advice(&fat, &[], 0),
             vec!["run `omg gc --vacuum` to return 1.2 MB of free pages to the filesystem"]
         );
         // History past 50 %, embeddings past 25 %, in order.
@@ -589,7 +621,7 @@ mod tests {
             cat("search", 30, 100, &[("embeddings", 26), ("blocks_fts", 4)]),
         ];
         assert_eq!(
-            size_advice(&file_of(|_| {}), &cats),
+            size_advice(&file_of(|_| {}), &cats, 0),
             vec![
                 "history dominates (57.0%): blobs, tree nodes and dispositions grow with every commit — enable gc (`omg config set gc.enabled true`) and run `omg gc --vacuum`",
                 "embeddings are 26.0% of the database: a smaller model (`embedding.model` / `embedding.dim`) or `omg embed drain --prune` after a model switch shrinks them",
@@ -601,7 +633,7 @@ mod tests {
             cat("history", 50, 100, &[]),
             cat("search", 25, 100, &[("embeddings", 25)]),
         ];
-        assert_eq!(size_advice(&file_of(|_| {}), &edge), none);
+        assert_eq!(size_advice(&file_of(|_| {}), &edge, 0), none);
         let blind = SizeCategory {
             name: "history",
             bytes: None,
@@ -609,7 +641,58 @@ mod tests {
             rows: 9,
             tables: vec![],
         };
-        assert_eq!(size_advice(&file_of(|_| {}), &[blind]), none);
+        assert_eq!(size_advice(&file_of(|_| {}), &[blind], 0), none);
+    }
+
+    /// 14.2: the `same` line fires past 25 % of the `dispositions` rows,
+    /// ordered after the history line and before the embeddings line; the
+    /// share is over rows, so a blind (no dbstat) history category counts.
+    #[test]
+    fn same_dispositions_advice() {
+        let none = vec!["nothing to reclaim".to_owned()];
+        let with_rows = |same: u64, rows: u64| {
+            let mut history = cat("history", 57, 100, &[("dispositions", 10)]);
+            history.tables[0].rows = rows;
+            history.rows = rows;
+            let cats = [
+                cat("content", 13, 100, &[]),
+                history,
+                cat("search", 30, 100, &[("embeddings", 26)]),
+            ];
+            size_advice(&file_of(|_| {}), &cats, same)
+        };
+        assert_eq!(
+            with_rows(30, 100),
+            vec![
+                "history dominates (57.0%): blobs, tree nodes and dispositions grow with every commit — enable gc (`omg config set gc.enabled true`) and run `omg gc --vacuum`",
+                "30 same dispositions are history nothing reads (store 14.2): `omg gc` removes them, `--vacuum` reclaims the pages",
+                "embeddings are 26.0% of the database: a smaller model (`embedding.model` / `embedding.dim`) or `omg embed drain --prune` after a model switch shrinks them",
+            ]
+        );
+        // Exactly 25 % does not fire; zero never does.
+        assert_eq!(with_rows(25, 100).len(), 2);
+        assert_eq!(with_rows(0, 100).len(), 2);
+        // Without dbstat the row share still decides.
+        let blind = SizeCategory {
+            name: "history",
+            bytes: None,
+            share: None,
+            rows: 8,
+            tables: vec![SizeTable {
+                name: "dispositions".into(),
+                bytes: None,
+                share: None,
+                rows: 8,
+                indexes: None,
+            }],
+        };
+        assert_eq!(
+            size_advice(&file_of(|_| {}), std::slice::from_ref(&blind), 3),
+            vec![
+                "3 same dispositions are history nothing reads (store 14.2): `omg gc` removes them, `--vacuum` reclaims the pages"
+            ]
+        );
+        assert_eq!(size_advice(&file_of(|_| {}), &[blind], 2), none);
     }
 
     fn observed_store() -> Store {
@@ -689,10 +772,15 @@ mod tests {
             sorted.sort_by(|a, b| b.bytes.cmp(&a.bytes).then_with(|| a.name.cmp(&b.name)));
             assert_eq!(c.tables, sorted);
         }
+        assert_eq!(r.same_dispositions, 0, "a 14.2 store writes no `same` row");
         assert_eq!(r.advice, vec!["nothing to reclaim"]);
-        // The JSON shape the CLI prints.
+        // The JSON shape the CLI prints: `same_dispositions` between the
+        // categories and the advice (spec/cli §6).
         let j = r.to_json();
         assert_eq!(j["file"]["page_size"], json!(r.file.page_size));
+        assert_eq!(j["same_dispositions"], json!(0));
+        let keys: Vec<&String> = j.as_object().unwrap().keys().collect();
+        assert_eq!(keys, ["file", "categories", "same_dispositions", "advice"]);
         assert_eq!(j["categories"][0]["name"], json!("content"));
         assert_eq!(j["categories"][0]["tables"][0]["name"], json!("blocks"));
         assert!(j.get("detail").is_none());

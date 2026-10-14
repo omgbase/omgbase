@@ -841,7 +841,7 @@ pub fn card(name: &'static str, prog: &str) -> Option<HelpSpec> {
         ),
         "gc" => spec(
             s(
-                "Mark-and-sweep unreferenced blobs and tree nodes (refuses unless gc.enabled is set in repo settings)",
+                "Mark-and-sweep unreferenced blobs and tree nodes, and the `same` disposition rows a pre-14.2 store wrote (refuses unless gc.enabled is set in repo settings)",
             ),
             vec![s("gc [--dry-run] [--vacuum]")],
             opts(&[
@@ -868,7 +868,7 @@ pub fn card(name: &'static str, prog: &str) -> Option<HelpSpec> {
                 ),
                 (
                     "--json",
-                    "`{ ok, checks: [{ name, ok, detail }] }`; with --size `{ file, categories, advice }`",
+                    "`{ ok, checks: [{ name, ok, detail }] }`; with --size `{ file, categories, same_dispositions, advice }`",
                 ),
             ]),
             vec![],

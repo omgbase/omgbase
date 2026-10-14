@@ -797,6 +797,33 @@ fn run_reads_case(c: &Json, corpus: Option<&[(String, String)]>) -> Result<Json,
                 .sweep_pool(ts)
                 .map_err(|e| format!("step {i}: {e}"))?;
             steps.push(json!({ "swept": swept }));
+        } else if step.get("gc").is_some() {
+            // `spec/store` §9.4 (14.2): the §7 collection, enabled.
+            let r = surface
+                .store_mut()
+                .gc(true)
+                .map_err(|e| format!("step {i}: {e}"))?;
+            steps.push(json!({ "gc": {
+                "blobs": r.blobs_swept,
+                "tree_nodes": r.tree_nodes_swept,
+                "same_dispositions": r.same_dispositions_swept,
+            } }));
+        } else if let Some(exec) = step.get("exec") {
+            // `spec/store` §9.4 (14.2): authored SQL, verbatim, one transaction.
+            let sql = exec["sql"].as_array().ok_or("exec.sql")?;
+            let conn = surface.store_mut().conn();
+            let tx = conn
+                .unchecked_transaction()
+                .map_err(|e| format!("step {i}: {e}"))?;
+            let mut changes = 0usize;
+            for statement in sql {
+                let s = statement.as_str().ok_or("exec.sql[]")?;
+                changes += tx
+                    .execute(s, [])
+                    .map_err(|e| format!("step {i}: {s}: {e}"))?;
+            }
+            tx.commit().map_err(|e| format!("step {i}: {e}"))?;
+            steps.push(json!({ "changes": changes }));
         } else if let Some(read) = step.get("read") {
             let tool = read["tool"].as_str().ok_or("read.tool")?;
             let args = read.get("args").cloned().unwrap_or_else(|| json!({}));
@@ -806,7 +833,7 @@ fn run_reads_case(c: &Json, corpus: Option<&[(String, String)]>) -> Result<Json,
             let out = surface.call(tool, args);
             steps.push(normalize_outcome(tool, &out));
         } else {
-            return Err(format!("step {i}: neither observe, sweep nor read"));
+            return Err(format!("step {i}: none of observe, sweep, gc, exec, read"));
         }
     }
     Ok(json!({ "steps": steps }))

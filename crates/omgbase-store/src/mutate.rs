@@ -869,14 +869,95 @@ pub(crate) fn read_on_disk(
     loaded.iter().map(|d| doc_store.read(&d.doc.path)).collect()
 }
 
+/// A carried block's live row, as `spec/reconcile` §2's carry classification
+/// reads it: parent, sibling index, raw hash.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct PriorRow {
+    pub(crate) parent: Option<String>,
+    pub(crate) ordinal: usize,
+    pub(crate) raw_hash_hex: String,
+}
+
+/// The live rows of a document by block id (`spec/mutate` §4 step 5(b), store
+/// 14.2) — what [`classify_carries`] compares each carried block with. Empty
+/// for a document with no row yet (a `create` effect's `$new` symbol).
+pub(crate) fn prior_rows(conn: &Connection, doc_id: &str) -> Result<HashMap<String, PriorRow>> {
+    let mut stmt = conn.prepare(
+        "SELECT block_id, parent_block, ordinal, raw_hash FROM blocks WHERE doc_id = ?1 AND deleted_commit IS NULL",
+    )?;
+    let rows = stmt.query_map(params![doc_id], |r| {
+        Ok((
+            r.get::<_, String>(0)?,
+            PriorRow {
+                parent: r.get(1)?,
+                ordinal: usize::try_from(r.get::<_, i64>(2)?).unwrap_or(usize::MAX),
+                raw_hash_hex: omgbase_format::hash::hex(&r.get::<_, Vec<u8>>(3)?),
+            },
+        ))
+    })?;
+    rows.collect::<std::result::Result<HashMap<_, _>, _>>()
+        .map_err(Into::into)
+}
+
+/// `spec/reconcile` §2 "Classifying a carry", applied to the api path's known
+/// ids (`spec/mutate` §4 step 5(b), store 14.2): `moved` = the parent or the
+/// sibling index differs from the live row, `content_equal` = the raw bytes
+/// hash the same; `same` / `moved` / `edited` / `edited_moved` follow. An id
+/// with no prior row (new to this document — a mint or a cross-document
+/// arrival) is `inserted`. Pre-order over the tree, as `collect_ids` walks it.
+pub(crate) fn classify_carries(
+    blocks: &[TreeInputBlock],
+    prior: &HashMap<String, PriorRow>,
+    prior_ids: &HashSet<&str>,
+) -> Vec<(String, &'static str)> {
+    fn walk(
+        list: &[TreeInputBlock],
+        parent: Option<&str>,
+        prior: &HashMap<String, PriorRow>,
+        prior_ids: &HashSet<&str>,
+        out: &mut Vec<(String, &'static str)>,
+    ) {
+        for (index, b) in list.iter().enumerate() {
+            let row = prior_ids
+                .contains(b.block_id.as_str())
+                .then(|| prior.get(&b.block_id))
+                .flatten();
+            let kind = match row {
+                None => "inserted",
+                Some(row) => {
+                    let moved = row.parent.as_deref() != parent || row.ordinal != index;
+                    let content_equal =
+                        row.raw_hash_hex == omgbase_format::hash::hex(&sha256(b.raw.as_bytes()));
+                    match (content_equal, moved) {
+                        (true, false) => "same",
+                        (true, true) => "moved",
+                        (false, false) => "edited",
+                        (false, true) => "edited_moved",
+                    }
+                }
+            };
+            out.push((b.block_id.clone(), kind));
+            if !b.children.is_empty() {
+                walk(&b.children, Some(&b.block_id), prior, prior_ids, out);
+            }
+        }
+    }
+    let mut out = Vec::new();
+    walk(blocks, None, prior, prior_ids, &mut out);
+    out
+}
+
 /// §4 step 5 (c) for one document: the known-id [`IngestPlan`] over the
 /// re-parsed `rendered` bytes — ids by position from the working tree (a
 /// position with no id mints `b`, impossible under the round-trip law), the
-/// `api` dispositions (`edited` for a prior id, `inserted` otherwise), the
-/// prior ids now gone (pooled), and the ids new to this document as
-/// `cross_doc_ids` (a cross-document move's source may hold them live or
-/// pooled; `spec/store` §5.4 step 8 evicts those rows, and finds nothing for
-/// a freshly minted id). An `api` commit never touches `docs.conflicted`.
+/// `api` dispositions (`inserted` for an id not live in this document before,
+/// else the matcher's carry classification against its live row in
+/// `prior_rows` — `same` / `moved` / `edited` / `edited_moved`; `spec/store` §5.4 step 10
+/// drops the `same` ones, 14.2), the prior ids now gone (pooled), and the ids
+/// new to this document as `cross_doc_ids` (a cross-document move's source
+/// may hold them live or pooled; `spec/store` §5.4 step 8 evicts those rows,
+/// and finds nothing for a freshly minted id). An `api` commit never touches
+/// `docs.conflicted`.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn known_plan<'a>(
     tree: &'a omgbase_format::BlockTree,
@@ -884,6 +965,7 @@ pub(crate) fn known_plan<'a>(
     rendered: &'a str,
     by_key: &BTreeMap<String, String>,
     prior_ids: &[String],
+    prior_rows: &HashMap<String, PriorRow>,
     minter: &mut crate::mint::Mint<'_>,
     origin: Origin,
     actor: Option<&'a str>,
@@ -898,15 +980,11 @@ pub(crate) fn known_plan<'a>(
     collect_ids(&assigned, &mut now_ids);
     let prior: HashSet<&str> = prior_ids.iter().map(String::as_str).collect();
     let now: HashSet<&str> = now_ids.iter().map(String::as_str).collect();
-    let dispositions = now_ids
-        .iter()
-        .map(|id| DispositionRow {
-            block_id: id.clone(),
-            kind: if prior.contains(id.as_str()) {
-                "edited".to_owned()
-            } else {
-                "inserted".to_owned()
-            },
+    let dispositions = classify_carries(&assigned, prior_rows, &prior)
+        .into_iter()
+        .map(|(block_id, kind)| DispositionRow {
+            block_id,
+            kind: kind.to_owned(),
             confidence: Some(1.0),
             reason: Some("api".to_owned()),
             matcher_v: None,

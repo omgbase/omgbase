@@ -229,6 +229,20 @@ pub fn rebuild_index(conn: &Connection, target: RebuildTarget) -> Result<()> {
 pub struct GcResult {
     pub blobs_swept: usize,
     pub tree_nodes_swept: usize,
+    /// §7 "The `same` sweep" (14.2): the `same` rows a store through 14.1
+    /// wrote into `dispositions` / `block_changes` — history nothing reads.
+    pub same_dispositions_swept: usize,
+}
+
+/// The `same` rows a store through 14.1 persisted (§7, 14.2): `count(*)` of
+/// `dispositions` with `kind = 'same'`.
+pub fn count_same_dispositions(conn: &Connection) -> Result<usize> {
+    let n: i64 = conn.query_row(
+        "SELECT count(*) FROM dispositions WHERE kind = 'same'",
+        [],
+        |r| r.get(0),
+    )?;
+    Ok(usize::try_from(n).unwrap_or(0))
 }
 
 /// The mark phase: tree nodes reachable from every `revisions.root_tree`
@@ -304,17 +318,25 @@ fn unreachable_rows(conn: &Connection) -> Result<Unreachable> {
     ))
 }
 
-/// What a collection would sweep, without deleting anything (§8 I5).
+/// What a collection would sweep, without deleting anything (§8 I5) — all
+/// three counts, the `same` rows included (14.2).
 pub fn gc_dry_run(conn: &Connection) -> Result<GcResult> {
     let (trees, blobs) = unreachable_rows(conn)?;
     Ok(GcResult {
         blobs_swept: blobs.len(),
         tree_nodes_swept: trees.len(),
+        same_dispositions_swept: count_same_dispositions(conn)?,
     })
 }
 
 /// Mark-and-sweep, flag-gated (`enabled = false` is a no-op). Because
-/// revisions are never pruned, nothing is unreachable in practice.
+/// revisions are never pruned, nothing is unreachable in practice. The same
+/// collection (§7 "The `same` sweep", 14.2) deletes every `block_changes` and
+/// `dispositions` row with `kind = 'same'` — what a store through 14.1 wrote
+/// for every untouched block of every commit, and nothing reads. A sweep, not
+/// a migration: a data-only change needs no `user_version`, and opening a
+/// database never bulk-deletes. Rebuild is unchanged (`block_changes` stays
+/// the projection of `dispositions`), so §8 I8 holds before and after.
 pub fn run_gc(conn: &Connection, enabled: bool) -> Result<GcResult> {
     if !enabled {
         return Ok(GcResult::default());
@@ -327,10 +349,16 @@ pub fn run_gc(conn: &Connection, enabled: bool) -> Result<GcResult> {
     for h in &blobs {
         tx.execute("DELETE FROM blobs WHERE hash = ?1", params![h])?;
     }
+    let same_dispositions_swept = count_same_dispositions(&tx)?;
+    if same_dispositions_swept > 0 {
+        tx.execute("DELETE FROM block_changes WHERE kind = 'same'", [])?;
+        tx.execute("DELETE FROM dispositions WHERE kind = 'same'", [])?;
+    }
     tx.commit()?;
     Ok(GcResult {
         blobs_swept: blobs.len(),
         tree_nodes_swept: trees.len(),
+        same_dispositions_swept,
     })
 }
 

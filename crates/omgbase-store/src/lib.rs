@@ -144,7 +144,7 @@ pub use writers::{NewCommit, NewRevision, Origin, TreeInputBlock};
 
 /// The `spec/store/VERSION` this crate implements (`major.minor`); the major
 /// is [`SCHEMA_VERSION`].
-pub const SPEC_VERSION: &str = "14.1";
+pub const SPEC_VERSION: &str = "14.2";
 
 /// This crate's own version (`Cargo.toml`), for the surface's `version` tool.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -396,14 +396,21 @@ impl Store {
         derived::rebuild_index(&self.conn, target)
     }
 
-    /// §7: mark-and-sweep garbage collection, flag-gated (off → no-op).
+    /// §7: mark-and-sweep garbage collection, flag-gated (off → no-op); since
+    /// 14.2 the same sweep removes a 14.1 store's `same` disposition rows.
     pub fn gc(&self, enabled: bool) -> Result<GcResult> {
         derived::run_gc(&self.conn, enabled)
     }
 
-    /// What [`Store::gc`] would sweep, without deleting (§8 I5).
+    /// What [`Store::gc`] would sweep, without deleting (§8 I5) — the three
+    /// counts, the `same` rows (14.2) included.
     pub fn gc_dry_run(&self) -> Result<GcResult> {
         derived::gc_dry_run(&self.conn)
+    }
+
+    /// §7 (14.2): the `same` disposition rows a store through 14.1 wrote.
+    pub fn count_same_dispositions(&self) -> Result<usize> {
+        derived::count_same_dispositions(&self.conn)
     }
 
     /// §5.5: delete expired pool rows; returns how many.

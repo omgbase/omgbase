@@ -137,16 +137,31 @@ mod tests {
             store.reconstruct(&doc).unwrap().as_deref(),
             Some("# A\n\nOne, edited.\n")
         );
-        // The heading kept its id: the reconciling resolver was used.
-        let carried: i64 = store
+        // The heading kept its id: the reconciling resolver was used. Its
+        // `same` verdict is not persisted (store 14.2; through 14.1 this
+        // commit held one `same` row), so the commit's rows are the short
+        // paragraph's replacement alone — a fresh ingest would have written
+        // `inserted` for the heading too, under a new id.
+        let kinds: Vec<String> = {
+            let mut stmt = store
+                .conn()
+                .prepare("SELECT kind FROM dispositions WHERE commit_id = 'c_3' ORDER BY kind")
+                .unwrap();
+            stmt.query_map([], |r| r.get(0))
+                .unwrap()
+                .map(|r| r.unwrap())
+                .collect()
+        };
+        assert_eq!(kinds, ["deleted", "inserted"]);
+        let heading: String = store
             .conn()
             .query_row(
-                "SELECT count(*) FROM dispositions WHERE commit_id = 'c_3' AND kind = 'same'",
-                [],
+                "SELECT block_id FROM blocks WHERE doc_id = ?1 AND type = 'heading' AND deleted_commit IS NULL",
+                params![doc],
                 |r| r.get(0),
             )
             .unwrap();
-        assert_eq!(carried, 1);
+        assert_eq!(heading, "b_0");
         // Idempotent.
         let again = recover_repo(&mut store, &repo, &fs, root, TS, &cfg).unwrap();
         assert!(again.healed.is_empty());

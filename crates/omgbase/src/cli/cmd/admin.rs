@@ -79,7 +79,9 @@ fn truthy(v: Option<&Json>) -> bool {
 /// (§9 Pinned: under the code `target_missing`); the command's own `--dry-run`
 /// or the global one previews without deleting. `--vacuum` (cli 4.3) runs
 /// `VACUUM` after the sweep — a dry run measures the free pages instead —
-/// and the result gains `vacuum: { reclaimable, applied }`.
+/// and the result gains `vacuum: { reclaimable, applied }`. Since store 14.2
+/// (cli 4.5) the sweep also removes the `same` disposition rows a 14.1 store
+/// wrote, reported as the third count (`sameDispositionsSwept`).
 pub fn gc(cli: &mut Cli, args: &[String]) -> Result<i32> {
     if wants_help(args) {
         return render_help_for(cli, "gc");
@@ -116,6 +118,10 @@ pub fn gc(cli: &mut Cli, args: &[String]) -> Result<i32> {
     let mut doc = Map::new();
     doc.insert("blobsSwept".to_owned(), json!(result.blobs_swept));
     doc.insert("treeNodesSwept".to_owned(), json!(result.tree_nodes_swept));
+    doc.insert(
+        "sameDispositionsSwept".to_owned(),
+        json!(result.same_dispositions_swept),
+    );
     if let Some((reclaimable, applied)) = vacuum {
         doc.insert(
             "vacuum".to_owned(),
@@ -127,8 +133,8 @@ pub fn gc(cli: &mut Cli, args: &[String]) -> Result<i32> {
         return code;
     }
     cli.io.err(&cli.style.dim(&format!(
-        "  swept {} blobs, {} tree nodes",
-        result.blobs_swept, result.tree_nodes_swept
+        "  swept {} blobs, {} tree nodes, {} same dispositions",
+        result.blobs_swept, result.tree_nodes_swept, result.same_dispositions_swept
     )));
     match vacuum {
         Some((reclaimable, true)) => cli.io.err(&cli.style.dim(&format!(
@@ -798,6 +804,7 @@ mod tests {
                 cat("search", vec![]),
                 cat("sync", vec![table("sqlite_schema", 75_904, 85)]),
             ],
+            same_dispositions: 0,
             advice: vec!["nothing to reclaim".to_owned()],
             detail: None,
         };

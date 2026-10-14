@@ -86,6 +86,20 @@ fn unknown_keys(obj: &JsonMap<String, Json>, allowed: &[&str]) -> Vec<String> {
 }
 
 /// `spec/store` §2.4: `YYYY-MM-DDTHH:MM:SS.fffZ`.
+/// `spec/store` §9.4 (14.2): the `exec` step's statements, verbatim, in order,
+/// in one transaction; the rows changed summed.
+fn exec_sql(conn: &Connection, exec: &Json) -> Result<usize, String> {
+    let sql = exec["sql"].as_array().ok_or("exec.sql")?;
+    let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+    let mut changes = 0usize;
+    for statement in sql {
+        let s = statement.as_str().ok_or("exec.sql[]")?;
+        changes += tx.execute(s, []).map_err(|e| format!("{s}: {e}"))?;
+    }
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(changes)
+}
+
 fn is_spec_ts(s: &str) -> bool {
     let b = s.as_bytes();
     b.len() == 24
@@ -126,9 +140,9 @@ fn validate_steps(at: &str, steps: Option<&Json>, problems: &mut Vec<String>) ->
             continue;
         };
         let keys: Vec<&String> = obj.keys().collect();
-        if keys.len() != 1 || (keys[0] != "observe" && keys[0] != "sweep") {
+        if keys.len() != 1 || !["observe", "sweep", "gc", "exec"].contains(&keys[0].as_str()) {
             problems.push(format!(
-                "{here}: a step is exactly one of `observe` / `sweep` (got {})",
+                "{here}: a step is exactly one of `observe` / `sweep` / `gc` / `exec` (got {})",
                 keys.iter()
                     .map(|k| k.as_str())
                     .collect::<Vec<_>>()
@@ -137,6 +151,27 @@ fn validate_steps(at: &str, steps: Option<&Json>, problems: &mut Vec<String>) ->
             continue;
         }
         let body = &obj[keys[0]];
+        // `spec/store` §9.4 (14.2): `gc` is `{}`, `exec` is `{ sql: [...] }`.
+        if keys[0] == "gc" {
+            if !body.as_object().is_some_and(serde_json::Map::is_empty) {
+                problems.push(format!("{here}: gc takes an empty object"));
+            }
+            continue;
+        }
+        if keys[0] == "exec" {
+            let sql_ok = body.as_object().is_some_and(|b| {
+                b.keys().all(|k| k == "sql")
+                    && b.get("sql").and_then(Json::as_array).is_some_and(|a| {
+                        !a.is_empty() && a.iter().all(|q| q.as_str().is_some_and(|s| !s.is_empty()))
+                    })
+            });
+            if !sql_ok {
+                problems.push(format!(
+                    "{here}: exec takes only `sql`, a non-empty array of statements"
+                ));
+            }
+            continue;
+        }
         let ts_ok = body
             .get("ts")
             .and_then(Json::as_str)
@@ -514,8 +549,20 @@ fn run_case_script(c: &Json) -> Result<Evaluation, String> {
             let ts = sweep["ts"].as_str().ok_or("sweep.ts")?;
             let swept = store.sweep_pool(ts).map_err(|e| format!("step {i}: {e}"))?;
             steps.push(json!({ "swept": swept }));
+        } else if step.get("gc").is_some() {
+            // `spec/store` §9.4 (14.2): the §7 collection, enabled.
+            let r = store.gc(true).map_err(|e| format!("step {i}: {e}"))?;
+            steps.push(json!({ "gc": {
+                "blobs": r.blobs_swept,
+                "tree_nodes": r.tree_nodes_swept,
+                "same_dispositions": r.same_dispositions_swept,
+            } }));
+        } else if let Some(exec) = step.get("exec") {
+            // `spec/store` §9.4 (14.2): authored SQL, verbatim, one transaction.
+            let changes = exec_sql(store.conn(), exec).map_err(|e| format!("step {i}: {e}"))?;
+            steps.push(json!({ "changes": changes }));
         } else {
-            return Err(format!("step {i}: neither observe nor sweep"));
+            return Err(format!("step {i}: none of observe, sweep, gc, exec"));
         }
     }
     for p in check_graph(store.conn(), &repo_id) {

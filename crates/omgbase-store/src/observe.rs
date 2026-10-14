@@ -531,6 +531,24 @@ pub(crate) struct IngestPlan<'a> {
     pub conflicted: Option<bool>,
 }
 
+/// §5.4 step 10 (14.2): which verdicts the store persists — every kind but
+/// `same`.
+#[must_use]
+pub fn persists_disposition(kind: &str) -> bool {
+    kind != "same"
+}
+
+/// §5.4 (14.2): kind → count over every verdict of a reconcile result, `same`
+/// included — what the observe outcome reports. A `BTreeMap` orders the kinds
+/// bytewise, as `ORDER BY kind` did through 14.1.
+fn count_kinds(result: &ReconcileResult) -> BTreeMap<String, u64> {
+    let mut counts = BTreeMap::new();
+    for d in &result.dispositions {
+        *counts.entry(d.kind.as_str().to_owned()).or_insert(0) += 1;
+    }
+    counts
+}
+
 fn disposition_rows(result: &ReconcileResult) -> Vec<DispositionRow> {
     result
         .dispositions
@@ -706,7 +724,14 @@ pub(crate) fn ingest_in(
     let resolved = resolve_edges(tx, minter, repo_id, &doc_id, plan.path, &descriptors)?;
     maintain_edges(tx, minter, repo_id, &doc_id, commit_id, &resolved)?;
 
-    // 10. Dispositions and block_changes.
+    // 10. Dispositions and block_changes — every verdict but `same` (14.2).
+    //     The matcher (and the known-id resolver) still produce one per
+    //     untouched block, and the outcome counts them, but the two tables
+    //     record what CHANGED: a block's rows are its own history, so
+    //     `MAX(commits.ts)` over its `block_changes` and `blocks_history`
+    //     are the block's changes, not its siblings'. Every other kind — the
+    //     first revision's `inserted` rows the mint oracle (§2.1) depends on
+    //     included — is written as before.
     {
         let mut ins = tx.prepare(
             "INSERT OR IGNORE INTO dispositions (commit_id, block_id, kind, confidence, reason, matcher_v, detail)
@@ -715,7 +740,11 @@ pub(crate) fn ingest_in(
         let mut bc = tx.prepare(
             "INSERT OR IGNORE INTO block_changes (block_id, commit_id, kind) VALUES (?1, ?2, ?3)",
         )?;
-        for d in &plan.dispositions {
+        for d in plan
+            .dispositions
+            .iter()
+            .filter(|d| persists_disposition(&d.kind))
+        {
             ins.execute(params![
                 commit_id,
                 d.block_id,
@@ -960,15 +989,13 @@ impl Store {
                         conflicted,
                         clear_pending,
                     )?;
-                    let dispositions = {
-                        let mut stmt = self.conn.prepare(
-                            "SELECT kind, count(*) FROM dispositions WHERE commit_id = ?1 GROUP BY kind ORDER BY kind",
-                        )?;
-                        let rows = stmt.query_map(params![c.commit_id], |r| {
-                            Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)? as u64))
-                        })?;
-                        rows.collect::<std::result::Result<BTreeMap<_, _>, _>>()?
-                    };
+                    // §5.4 (14.2): the outcome counts every verdict the
+                    // matcher produced, `same` included — it describes what
+                    // the matcher saw; the table describes what changed
+                    // (step 10 drops `same`) — so the counts come from the
+                    // in-memory result, never the rows. Kinds in bytewise
+                    // order, as the table query listed them through 14.1.
+                    let dispositions = count_kinds(&prepared.result);
                     out.push(BatchOutcome::Observed(ObserveOutcome {
                         path: prepared.path,
                         doc_id: c.doc_id,

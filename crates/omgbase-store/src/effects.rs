@@ -654,6 +654,7 @@ fn run_effect(
 ) -> Result<Option<Committed>> {
     match effect {
         Effect::IngestKnown {
+            doc_id,
             path,
             rendered,
             by_key,
@@ -661,12 +662,22 @@ fn run_effect(
             ..
         } => {
             let tree = parse_markdown(rendered);
+            // The live rows the carries are classified against (`spec/mutate`
+            // §4 step 5(b), store 14.2) — read inside the transaction, after
+            // every earlier effect; none for a created document (no row yet,
+            // and its `doc_id` is a `$new` symbol).
+            let prior = if prior_ids.is_empty() {
+                std::collections::HashMap::new()
+            } else {
+                crate::mutate::prior_rows(tx, doc_id)?
+            };
             let plan = known_plan(
                 &tree,
                 path,
                 rendered,
                 by_key,
                 prior_ids,
+                &prior,
                 mint,
                 head.origin,
                 head.actor,

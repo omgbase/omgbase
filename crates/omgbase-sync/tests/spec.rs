@@ -2999,6 +2999,28 @@ fn check_invariants(
             }
         }
     }
+    // 14.2: `same` is never persisted (`spec/store` §5.4 step 10; the §7
+    // sweep removes a 14.1 store's), and a block's rows are its own history —
+    // so every live block has at least one (its `inserted`, lineage or
+    // resurrection row).
+    for (commit_id, block_id, kind) in &dispositions {
+        if kind == "same" {
+            problems.push(format!(
+                "I7: disposition {block_id} of {commit_id} is a persisted `same`"
+            ));
+        }
+    }
+    let unchanged: Vec<String> = all_rows(
+        conn,
+        "SELECT b.block_id FROM blocks b JOIN docs d ON d.doc_id = b.doc_id WHERE d.repo_id = ?1 AND b.deleted_commit IS NULL AND NOT EXISTS (SELECT 1 FROM block_changes bc WHERE bc.block_id = b.block_id) ORDER BY b.block_id",
+        &[&repo_id],
+        |r| r.get(0),
+    );
+    for block_id in unchanged {
+        problems.push(format!(
+            "I7: live block {block_id} has no block_changes row"
+        ));
+    }
 
     // ---- I8 rebuild equivalence -----------------------------------------------------------
     for d in &docs {

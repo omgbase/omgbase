@@ -680,7 +680,10 @@ fn edit_carries_ids_and_stamps_created_commit_as_last_written() {
             .collect()
     };
     assert_eq!(seqs, [1, 2]);
-    assert_eq!(count(&store, "block_changes"), 4);
+    // Two `inserted` rows from the first revision, one `edited` from the
+    // second; the heading's `same` verdict is counted above, not persisted
+    // (§5.4 step 10, 14.2 — through 14.1 this was 4).
+    assert_eq!(count(&store, "block_changes"), 3);
 }
 
 #[test]
@@ -1247,20 +1250,103 @@ fn gc_is_off_by_default_and_finds_nothing_unreachable_when_on() {
         store.gc_dry_run().unwrap(),
         GcResult {
             blobs_swept: 1,
-            tree_nodes_swept: 1
+            tree_nodes_swept: 1,
+            same_dispositions_swept: 0,
         }
     );
     assert_eq!(
         store.gc(true).unwrap(),
         GcResult {
             blobs_swept: 1,
-            tree_nodes_swept: 1
+            tree_nodes_swept: 1,
+            same_dispositions_swept: 0,
         }
     );
     assert_eq!(
         (count(&store, "blobs"), count(&store, "tree_nodes")),
         before
     );
+}
+
+/// §7 "The `same` sweep" (14.2): the rows a 14.1 store wrote go with the
+/// default sweep, from both tables; a dry run counts them and deletes nothing;
+/// a fresh 14.2 store never has any.
+#[test]
+fn gc_sweeps_a_pre_14_2_stores_same_rows() {
+    let (mut store, repo) = fixture_store();
+    observe(
+        &mut store,
+        &repo,
+        "a.md",
+        "# Title\n\nThe first paragraph has enough words to be matched by similarity.\n",
+        T0,
+    );
+    let o = observe(
+        &mut store,
+        &repo,
+        "a.md",
+        "# Title\n\nThe first paragraph has enough words to be matched by similarity, edited.\n",
+        T1,
+    );
+    // The outcome counts the matcher's `same`; the table holds none.
+    assert_eq!(
+        kinds(&o),
+        [("edited".to_owned(), 1), ("same".to_owned(), 1)]
+    );
+    assert_eq!(store.count_same_dispositions().unwrap(), 0);
+    let commit = o.commit_id.clone().expect("a commit");
+    let persisted: Vec<String> = {
+        let mut stmt = store
+            .conn()
+            .prepare("SELECT kind FROM dispositions WHERE commit_id = ?1 ORDER BY kind")
+            .unwrap();
+        stmt.query_map([&commit], |r| r.get(0))
+            .unwrap()
+            .map(|r| r.unwrap())
+            .collect()
+    };
+    assert_eq!(persisted, ["edited"]);
+    // Plant what 14.1 would have written for the untouched heading.
+    store
+        .conn()
+        .execute(
+            "INSERT INTO dispositions (commit_id, block_id, kind, confidence, reason, matcher_v, detail)
+               VALUES (?1, 'b_0', 'same', 1.0, 'exact_hash', 'm2.3', '{}')",
+            [&commit],
+        )
+        .unwrap();
+    store
+        .conn()
+        .execute(
+            "INSERT INTO block_changes (block_id, commit_id, kind) VALUES ('b_0', ?1, 'same')",
+            [&commit],
+        )
+        .unwrap();
+    assert_eq!(store.count_same_dispositions().unwrap(), 1);
+    let before = (
+        count(&store, "dispositions"),
+        count(&store, "block_changes"),
+    );
+    assert_eq!(store.gc_dry_run().unwrap().same_dispositions_swept, 1);
+    assert_eq!(
+        (
+            count(&store, "dispositions"),
+            count(&store, "block_changes")
+        ),
+        before,
+        "a dry run deletes nothing"
+    );
+    assert_eq!(store.gc(false).unwrap(), GcResult::default());
+    assert_eq!(store.gc(true).unwrap().same_dispositions_swept, 1);
+    assert_eq!(store.count_same_dispositions().unwrap(), 0);
+    assert_eq!(
+        (
+            count(&store, "dispositions"),
+            count(&store, "block_changes")
+        ),
+        (before.0 - 1, before.1 - 1)
+    );
+    assert_eq!(store.gc(true).unwrap(), GcResult::default());
 }
 
 #[test]
@@ -1877,7 +1963,10 @@ fn document_operations_are_planned_effects() {
         .docs_set_meta(&ctx, &mut ds, "a.md", None, &[])
         .unwrap_err();
     assert!(matches!(empty, Error::InvalidEffect(_)), "{empty}");
-    // A committed set_meta is a head write: every block `edited / api`.
+    // A committed set_meta is a head write over the body's carries: every
+    // block is `same` (bytes, parent and index unchanged — `spec/mutate` §4
+    // step 5(b)), and `same` is not persisted (store 14.2), so a
+    // frontmatter-only commit writes no disposition row at all.
     let patched = store
         .docs_set_meta(&ctx, &mut ds, "a.md", Some(&set), &[])
         .unwrap();
@@ -1894,10 +1983,7 @@ fn document_operations_are_planned_effects() {
             .unwrap();
         rows.map(|r| r.unwrap()).collect()
     };
-    assert!(
-        kinds.iter().all(|(k, r)| k == "edited" && r == "api"),
-        "{kinds:?}"
-    );
+    assert!(kinds.is_empty(), "{kinds:?}");
     assert!(
         ds.read("a.md")
             .unwrap()
@@ -2223,10 +2309,11 @@ fn a_changeset_is_one_commit_with_n_revisions() {
     assert_eq!(d.revisions.len(), 2);
     assert_eq!(d.revisions[0].path, "a.md");
     assert_eq!(d.revisions[1].path, "b.md");
-    assert_eq!(
-        d.summary,
-        "api(agent:test): a.md, b.md — 4 edited, 2 inserted"
-    );
+    // The two appended tails are `inserted`; the four carried blocks are
+    // `same` — bytes, parent and index unchanged (`spec/mutate` §4 step
+    // 5(b)) — and not persisted (store 14.2; through 14.1 the summary read
+    // `4 edited, 2 inserted`).
+    assert_eq!(d.summary, "api(agent:test): a.md, b.md — 2 inserted");
 }
 
 /// §4 step 5 + §10 Fixed (2.1): every loaded document's disk bytes are
@@ -2389,9 +2476,11 @@ fn docs_move_with_retarget_is_one_commit() {
     assert_eq!(dst, "d_0");
     let page = store.changes_since(&repo, 2, 50, None).unwrap();
     assert_eq!(page.digests.len(), 1);
+    // Only the paragraph whose link was rewritten is `edited`; the heading's
+    // `same` carry leaves no row (store 14.2; `2 edited` through 14.1).
     assert_eq!(
         page.digests[0].summary,
-        "api(agent:mcp): moved b.md → n/b.md; a.md — 2 edited"
+        "api(agent:mcp): moved b.md → n/b.md; a.md — 1 edited"
     );
     assert_eq!(page.digests[0].revisions.len(), 1);
     assert_eq!(page.digests[0].revisions[0].path, "a.md");
