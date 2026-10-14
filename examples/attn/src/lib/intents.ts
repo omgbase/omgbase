@@ -1,17 +1,20 @@
-// Intents as rows: one `query` over `docs` whose `type == "intent"`, with the
+// Intents as rows: one `query` over `docs` whose `type` is the intent type,
+// most recently edited first, each row carrying its `cues` list and the
 // VIRTUAL `#focus` — no intent is ever tagged as focused; the focused one is
 // found by a correlated join against the pointer document:
 //
-//   focus: ^docs first { select since where path == "/attn/current.md" and focused == ^path }
+//   focus: ^docs first { select since where path == "/attn/focus.md" and focused_intent == ^path }
 //
 // reads, for each intent row, the pointer's `since` when the pointer's
-// `focused` names this row's path (`^path` is the enclosing intent's path), and
-// absent otherwise. The where-form of the same join — the one row in focus —
-// is `VIRTUAL_FOCUS_QUERY`. Also here: the fuzzy chooser's ranking and the
-// release / reactivate effects.
+// `focused_intent` names this row's path (`^path` is the enclosing intent's
+// path), and null otherwise. The where-form of the same join — the one row in
+// focus — is `VIRTUAL_FOCUS_QUERY`. Also here: the feed's sections (the Cued
+// lift, recent, released), the chooser's ranking, and the intent edits
+// (status, content).
 
+import { cuesOf, type Cue } from "./cues.ts";
 import type { Caller, Wire } from "./mcp-client.ts";
-import { INTENTS_DIR, POINTER_PATH, str, strList, strOrNull, type IntentStatus } from "./model.ts";
+import { INTENTS_DIR, INTENT_TYPE, POINTER_PATH, record, str, strList, strOrNull, type IntentStatus } from "./model.ts";
 import { runQuery } from "./query.ts";
 import type { Effect } from "./writes.ts";
 
@@ -25,47 +28,84 @@ export interface Intent {
   /** The pointer's `since` when this intent is in focus (the virtual #focus), else null. */
   focusSince: string | null;
   updatedAt: string | null;
+  /** The intent's embedded cues (its `cues` frontmatter list). */
+  cues: Cue[];
 }
 
-/** Every intent (active and released) with the virtual `#focus` column. */
-export const INTENTS_QUERY = `select path, title, status, tags, project, updated_at, focus: ^docs first { select since where path == ${JSON.stringify(POINTER_PATH)} and focused == ^path } from docs where type == "intent" and path.startsWith(${JSON.stringify(INTENTS_DIR)})`;
+/** Every intent (active and released), most recently edited first, with its cues and the virtual `#focus` column. */
+export const INTENTS_QUERY = `select path, title, status, tags, project, updated_at, cues, focus: ^docs first { select since where path == ${JSON.stringify(POINTER_PATH)} and focused_intent == ^path } from docs where type == ${JSON.stringify(INTENT_TYPE)} and path.startsWith(${JSON.stringify(INTENTS_DIR)}) order by updated_at desc`;
 
 /** The intent in focus, as a semi-join — the README's one-row form of the virtual `#focus`. */
-export const VIRTUAL_FOCUS_QUERY = `select path, title, status, tags from docs where type == "intent" and status == "active" and ^docs exists { where path == ${JSON.stringify(POINTER_PATH)} and focused == ^path }`;
-
-const record = (v: unknown): Record<string, unknown> => (v !== null && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {});
+export const VIRTUAL_FOCUS_QUERY = `select path, title, status, tags from docs where type == ${JSON.stringify(INTENT_TYPE)} and status == "active" and ^docs exists { where path == ${JSON.stringify(POINTER_PATH)} and focused_intent == ^path }`;
 
 export function intentOf(hit: Record<string, unknown>): Intent {
   const focus = record(hit.focus);
+  const path = str(hit.path);
   return {
     id: str(hit.id),
-    path: str(hit.path),
-    title: str(hit.title) || str(hit.path).replace(/^.*\//, "").replace(/\.md$/, ""),
+    path,
+    title: str(hit.title) || path.replace(/^.*\//, "").replace(/\.md$/, ""),
     status: hit.status === "released" ? "released" : "active",
     tags: strList(hit.tags),
     project: strOrNull(hit.project),
     focusSince: strOrNull(focus.since),
     updatedAt: strOrNull(hit.updated_at),
+    cues: cuesOf(path, hit.cues),
   };
 }
 
-/** Focused first, then active before released, then by title. */
-export function sortIntents(intents: readonly Intent[]): Intent[] {
-  return [...intents].sort((a, b) => {
-    if ((a.focusSince !== null) !== (b.focusSince !== null)) return a.focusSince !== null ? -1 : 1;
-    if (a.status !== b.status) return a.status === "active" ? -1 : 1;
-    return a.title.localeCompare(b.title);
-  });
+/** Most recently edited first (the feed's order), ties by title. */
+export function sortByEdited(intents: readonly Intent[]): Intent[] {
+  return [...intents].sort((a, b) => (b.updatedAt ?? "").localeCompare(a.updatedAt ?? "") || a.title.localeCompare(b.title));
 }
 
 export async function fetchIntents(caller: Caller, repo: string | null): Promise<Intent[]> {
   const page = await runQuery(caller, INTENTS_QUERY, { repo, limit: 500 });
-  return sortIntents(page.hits.map(intentOf));
+  return sortByEdited(page.hits.map(intentOf));
 }
+
+/** Every cue of the ACTIVE intents (a released intent's cues do not fire). */
+export function activeCues(intents: readonly Intent[]): Cue[] {
+  return intents.filter((i) => i.status === "active").flatMap((i) => i.cues);
+}
+
+// ---- the feed ---------------------------------------------------------------------------------
+
+export interface CuedIntent { intent: Intent; why: string[] }
+
+export interface Feed {
+  /** Active intents a cue lifted, deduped by intent, most recently edited first; never the focused one. */
+  cued: CuedIntent[];
+  /** The rest of the active intents, most recently edited first; never the focused one. */
+  recent: Intent[];
+  /** Hidden behind the toggle. */
+  released: Intent[];
+}
+
+/** The feed's sections: the focused intent is shown in the bar, never sorted in; cued intents are lifted out of recent. */
+export function feedOf(intents: readonly Intent[], focused: string | null, cued: ReadonlyMap<string, string[]>): Feed {
+  const ordered = sortByEdited(intents);
+  const feed: Feed = { cued: [], recent: [], released: [] };
+  for (const i of ordered) {
+    if (i.status === "released") { feed.released.push(i); continue; }
+    if (i.path === focused) continue;
+    const why = cued.get(i.path);
+    if (why && why.length) feed.cued.push({ intent: i, why });
+    else feed.recent.push(i);
+  }
+  return feed;
+}
+
+// ---- the edits ----------------------------------------------------------------------------------
 
 /** `set frontmatter.status = released | active` on an intent — a bare rooted path is the document target. */
 export function setStatusEffect(path: string, status: IntentStatus): Effect {
   return { op: "set", target: path, field: "frontmatter.status", value: status };
+}
+
+/** `set content` — the whole document's bytes (frontmatter and body); the one edit that legitimately moves `updated_at`. */
+export function setContentEffect(path: string, content: string): Effect {
+  return { op: "set", target: path, field: "content", value: content };
 }
 
 // ---- the chooser -----------------------------------------------------------------------------
@@ -92,12 +132,12 @@ export function fuzzyScore(query: string, text: string): number {
 
 export interface ChooserRow {
   intent: Intent;
-  /** When it last had focus (from the stream), or null. */
+  /** When it last had focus (from the history), or null. */
   lastFocused: string | null;
 }
 
 /** The chooser's rows: active intents that match the query, most recently
- * focused first (the stream's transitions supply `recent`: intent path → last ISO), then by score. */
+ * focused first (the history supplies `recent`: intent path → last ISO), then by score. */
 export function rankIntents(intents: readonly Intent[], recent: ReadonlyMap<string, string>, query: string, limit = 8): ChooserRow[] {
   return intents
     .filter((i) => i.status === "active")

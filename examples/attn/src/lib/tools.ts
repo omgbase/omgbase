@@ -38,14 +38,14 @@ export function capabilities(tools: string[] | null): Capabilities {
 
 /** Which feature a missing minimal tool takes with it (for the warning banner). */
 export const TOOL_FEATURES: Readonly<Record<string, string>> = {
-  docs_read: "the focus pointer and the stream days",
-  docs_tree: "the stream's date picker",
+  docs_read: "the focus pointer (and its CAS token), every past pointer state of the stream, the intent editor",
+  docs_tree: "nothing here",
   query_syntax: "nothing here (the cue editor links to it)",
-  query: "the intents list, the virtual #focus, every cue evaluation",
+  query: "the feed, the virtual #focus, every cue evaluation, the pointer's revisions",
   blocks_resolve: "nothing here",
   plan: "the cue editor's preview",
   execute: "the cue editor's commit",
-  apply: "every focus switch, declaration, release and dismissal",
+  apply: "every focus switch, declaration, edit, release and cue removal",
   changes_since: "staying in sync with other windows and the CLI",
   version: "the surface gate and the profile label",
 };

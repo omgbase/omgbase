@@ -1,12 +1,13 @@
 // Paths and the surface gate (the subset of repo-explorer's lib/paths.ts this
-// app needs). attn speaks omgbase surface 4.4 (spec/surface): a bare path as an
-// effect's target (spec/mutate 3.2), `$new.n` for a document the same request
-// creates, `expect.revision` on an effect, the Receipt's `summary` and the
-// error `fix` (4.4). The connected server's version comes from the `version`
-// tool's `specs.surface` and is checked once per connection (`surfaceProblem`).
+// app needs). attn speaks omgbase surface 4.7 (spec/surface): a bare path as an
+// effect's target (spec/mutate 3.2), `expect.revision` on an effect, the
+// Receipt's `summary` and the error `fix` (4.4), and — for the Stream — the
+// `revisions` query target and `docs_read { at }` (4.7). The connected server's
+// version comes from the `version` tool's `specs.surface` and is checked once
+// per connection (`surfaceProblem`).
 
 /** The surface this app is written against. */
-export const REQUIRED_SURFACE = "4.4";
+export const REQUIRED_SURFACE = "4.7";
 
 /** The `version` tool's `specs.surface` ("major.minor"), or null when the result does not carry one. */
 export function surfaceOf(versionResult: unknown): string | null {
@@ -34,10 +35,10 @@ export function surfaceAtLeast(surface: string | null, required: string = REQUIR
   return a[0] > b[0] || (a[0] === b[0] && a[1] >= b[1]);
 }
 
-/** Null when the server speaks a surface this app understands (≥ 4.4); else the message to show instead of connecting. */
+/** Null when the server speaks a surface this app understands (≥ 4.7); else the message to show instead of connecting. */
 export function surfaceProblem(surface: string | null): string | null {
   if (surfaceAtLeast(surface)) return null;
-  return `attn needs omgbase surface ≥ ${REQUIRED_SURFACE} (bare-path effect targets, expect.revision, the Receipt's summary) — the server reports ${surface ?? "no surface version (no `version` tool)"}`;
+  return `attn needs omgbase surface ≥ ${REQUIRED_SURFACE} (bare-path effect targets, expect.revision, the revisions target and docs_read { at }) — the server reports ${surface ?? "no surface version (no `version` tool)"}`;
 }
 
 /** A query hit's document path as returned (`/`-rooted), else null. */

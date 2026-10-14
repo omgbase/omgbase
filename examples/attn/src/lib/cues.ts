@@ -1,97 +1,84 @@
-// Cues: something to come back to mind under relevant circumstances — a
-// trigger plus a payload. A cue never steals focus; it is OFFERED, and
-// "what should resurface" is computed, not stored:
+// Cues: something to come back to mind under relevant circumstances. A cue is
+// NOT a document — it is one entry of its intent's `cues` frontmatter list, a
+// value object with an intent-local stable `id`, an `on` variant and its
+// definition:
 //
-//   trigger: focus   the cue's `when` is an OQX predicate over the newly focused
-//                    intent's row, evaluated as ONE query per cue wrapped around
-//                    that row — `docs exists { where path == "<focused>" and (<when>) }`
-//                    — so user text that does not parse is the engine's
-//                    `filter_invalid`, reported per cue, never a crash;
-//   trigger: time    `at` ≤ the client clock (OQX has no now(); the app injects it);
-//   trigger: query   the ```oqx fence in the body is run after each changes_since
-//                    poll and its ids diffed against a checkpoint kept in
-//                    localStorage — ids ENTERING the set fire the cue.
+//   on: focus         `query` — a whole OQX query over docs; the cue matches when the
+//                     NEWLY FOCUSED intent is a member of its result set (the query is run
+//                     as given and the focused intent's path / id looked for among the hits)
+//   on: time          `at` ≤ now (the client clock; OQX has no now())
+//   on: query-enter   `query` — ids ENTERING its membership set since the last checkpoint
+//   on: query-exit    `query` — ids LEAVING it (checkpoint key = intent path + cue id, in
+//                     localStorage; the first evaluation baselines silently)
 //
-// Delivery state (fired, snoozed, checkpoints) is app-local, in `Delivery`,
-// never in the repository; a cue fires once per (cue, focus episode).
+// A matching cue makes its intent eligible for the Cued section; it never
+// changes focus and never writes anything. Delivery state (fired, snoozed,
+// checkpoints) is app-local, in `Delivery`; a firing is deduplicated per
+// (intent, cue id, focus episode). Editing the cue DEFINITIONS is the one
+// write: `set frontmatter.cues` with the whole list (lib/writes.ts uses it).
 
-import { OmgError, type Caller, type Wire } from "./mcp-client.ts";
-import { CUES_DIR, proseOf, str, strOrNull, type CueStatus, type CueTrigger } from "./model.ts";
-import { queryAll, runQuery } from "./query.ts";
+import { OmgError, type Caller } from "./mcp-client.ts";
+import { CUE_ONS, record, str, strOrNull, type CueOn } from "./model.ts";
+import { queryAll } from "./query.ts";
 import type { Effect } from "./writes.ts";
 
 export interface Cue {
-  id: string;
-  path: string;
-  title: string;
-  /** The intent the cue belongs to (its path). */
+  /** The owning intent's path. */
   intent: string;
-  trigger: CueTrigger;
-  status: CueStatus;
-  /** `trigger: focus` — the predicate as authored. */
-  when: string | null;
-  /** `trigger: time` — the ISO timestamp as authored. */
-  at: string | null;
-  /** `trigger: query` — the OQX from the body's ```oqx fence. */
+  /** Intent-local, stable. */
+  id: string;
+  on: CueOn;
+  /** `on: focus | query-enter | query-exit` — the OQX as authored (a `query: |` block keeps its newlines). */
   query: string | null;
-  /** The cue's text (the body without its title and fences). */
-  text: string;
+  /** `on: time` — the ISO timestamp as authored. */
+  at: string | null;
 }
 
-export const CUES_QUERY = `select path, title, intent, trigger, status, when, at, raw from docs where type == "cue" and path.startsWith(${JSON.stringify(CUES_DIR)})`;
-
-/** The OQX inside the first ```oqx fence of a document, or null. */
-export function extractOqxFence(raw: string): string | null {
-  const m = /```oqx[ \t]*\n([\s\S]*?)\n```/.exec(raw);
-  return m ? m[1]!.trim() : null;
+/** The identity delivery state keys on: the intent path + the cue id. */
+export function cueKey(cue: Pick<Cue, "intent" | "id">): string {
+  return `${cue.intent}#${cue.id}`;
 }
 
-export function cueOf(hit: Record<string, unknown>): Cue {
-  const raw = str(hit.raw);
-  const trigger = hit.trigger === "time" || hit.trigger === "query" ? hit.trigger : "focus";
-  return {
-    id: str(hit.id),
-    path: str(hit.path),
-    title: str(hit.title) || str(hit.path).replace(/^.*\//, "").replace(/\.md$/, ""),
-    intent: str(hit.intent),
-    trigger,
-    status: hit.status === "dismissed" ? "dismissed" : "active",
-    when: strOrNull(hit.when),
-    at: strOrNull(hit.at),
-    query: extractOqxFence(raw),
-    text: proseOf(raw),
-  };
+/** A `cues` value as a `query` hit carries it → the cues. A frontmatter list
+ * of maps projects as a one-element list wrapping the list (`[[{…}, {…}]]`),
+ * where a list of scalars (`tags`) projects flat — both shapes are read.
+ * Entries without an `id` or with an unknown `on` are skipped. */
+export function cuesOf(intent: string, value: unknown): Cue[] {
+  let list: unknown[] = Array.isArray(value) ? value : [];
+  if (list.length === 1 && Array.isArray(list[0])) list = list[0] as unknown[];
+  const out: Cue[] = [];
+  for (const entry of list) {
+    const r = record(entry);
+    const id = str(r.id);
+    const on = str(r.on) as CueOn;
+    if (!id || !CUE_ONS.includes(on)) continue;
+    out.push({ intent, id, on, query: strOrNull(r.query), at: strOrNull(r.at) });
+  }
+  return out;
 }
 
-export async function fetchCues(caller: Caller, repo: string | null): Promise<Cue[]> {
-  const page = await runQuery(caller, CUES_QUERY, { repo, limit: 500 });
-  return page.hits.map(cueOf).sort((a, b) => a.title.localeCompare(b.title));
+/** A cue as the frontmatter spells it: `{ id, on, query | at }`. A query gets a
+ * trailing newline so the engine composes it as a `query: |` block scalar. */
+export function wireCue(cue: Pick<Cue, "id" | "on" | "query" | "at">): Record<string, unknown> {
+  const out: Record<string, unknown> = { id: cue.id, on: cue.on };
+  if (cue.on === "time") { if (cue.at) out.at = cue.at; }
+  else if (cue.query) out.query = cue.query.replace(/\s+$/, "") + "\n";
+  return out;
 }
 
-/** `set frontmatter.status = dismissed` on a cue. */
-export function dismissCueEffect(path: string): Effect {
-  return { op: "set", target: path, field: "frontmatter.status", value: "dismissed" };
+/** The one cue write: the intent's WHOLE `cues` list (`set frontmatter.cues`), or `unset` when none remain. */
+export function setCuesEffect(intent: string, cues: readonly Pick<Cue, "id" | "on" | "query" | "at">[]): Effect {
+  if (cues.length === 0) return { op: "unset", target: intent, field: "frontmatter.cues" };
+  return { op: "set", target: intent, field: "frontmatter.cues", value: cues.map(wireCue) };
 }
 
 // ---- evaluation ------------------------------------------------------------------------------
 
-/** The focus-cue query: the predicate wrapped around the focused intent's row, as an `exists` scalar. */
-export function focusCueQuery(focused: string, when: string): string {
-  return `docs exists { where path == ${JSON.stringify(focused)} and (${when}) }`;
-}
-
 export interface CueError {
   code: string;
   message: string;
-  /** The engine's `data.hint` (`OQX` for a predicate that does not parse). */
+  /** The engine's `data.hint` (`OQX` for a query that does not parse). */
   hint: string | null;
-}
-
-export interface FocusEvaluation {
-  cue: Cue;
-  fired: boolean;
-  /** The engine's error for this cue's predicate (a `filter_invalid`, typically), or null. */
-  error: CueError | null;
 }
 
 export function cueErrorOf(e: unknown): CueError {
@@ -102,26 +89,42 @@ export function cueErrorOf(e: unknown): CueError {
   return { code: "error", message: e instanceof Error ? e.message : String(e), hint: null };
 }
 
-/** Evaluate every active `trigger: focus` cue against the newly focused intent — one `query` per cue. */
-export async function evaluateFocusCues(caller: Caller, cues: readonly Cue[], focused: string, repo: string | null): Promise<FocusEvaluation[]> {
+export interface FocusedRef { path: string; id: string | null }
+
+/** Is the focused intent a member of a cue query's result set? By path, or by id when the row carries no path. */
+export function isMember(hits: readonly Record<string, unknown>[], focused: FocusedRef): boolean {
+  return hits.some((h) => str(h.path) === focused.path || (focused.id !== null && str(h.id) === focused.id));
+}
+
+export interface FocusEvaluation {
+  cue: Cue;
+  matched: boolean;
+  /** The engine's error for this cue's query (a `filter_invalid`, typically), or null. */
+  error: CueError | null;
+}
+
+/** Every `on: focus` cue of the given intents against the newly focused intent — one
+ * `query` per cue, run as authored; the cue matches when the focused intent is among the hits. */
+export async function evaluateFocusCues(caller: Caller, cues: readonly Cue[], focused: FocusedRef, repo: string | null): Promise<FocusEvaluation[]> {
   const out: FocusEvaluation[] = [];
   for (const cue of cues) {
-    if (cue.trigger !== "focus" || cue.status !== "active" || !cue.when) continue;
+    if (cue.on !== "focus") continue;
+    if (!cue.query) { out.push({ cue, matched: false, error: { code: "no_query", message: "the cue has no `query`", hint: null } }); continue; }
     try {
-      const r = await runQuery(caller, focusCueQuery(focused, cue.when), { repo });
-      out.push({ cue, fired: r.exists === true, error: null });
+      const hits = await queryAll(caller, cue.query, repo);
+      out.push({ cue, matched: isMember(hits, focused), error: null });
     } catch (e) {
-      out.push({ cue, fired: false, error: cueErrorOf(e) });
+      out.push({ cue, matched: false, error: cueErrorOf(e) });
     }
   }
   return out;
 }
 
-/** The active `trigger: time` cues whose `at` is at or before the clock. An `at` that is not a date never fires. */
+/** The `on: time` cues whose `at` is at or before the clock. An `at` that is not a date never fires. */
 export function dueTimeCues(cues: readonly Cue[], now: string): Cue[] {
   const t = Date.parse(now);
   return cues.filter((c) => {
-    if (c.trigger !== "time" || c.status !== "active" || !c.at) return false;
+    if (c.on !== "time" || !c.at) return false;
     const at = Date.parse(c.at);
     return Number.isFinite(at) && at <= t;
   });
@@ -131,26 +134,32 @@ export interface QueryDelta {
   cue: Cue;
   /** The membership set now (hit ids, sorted). */
   ids: string[];
-  /** Ids that were not in the checkpoint; empty on the first run (the checkpoint is taken, nothing fires). */
+  /** Ids not in the checkpoint; empty on the first run (the checkpoint is taken, nothing fires). */
   entered: string[];
-  /** `{ id, path }` of the entered hits, for the message. */
-  enteredHits: { id: string; path: string }[];
+  /** Ids in the checkpoint that are gone. */
+  exited: string[];
+  /** The ids the cue's variant watches (`entered` for query-enter, `exited` for query-exit), with the path when known. */
+  fires: { id: string; path: string | null }[];
   error: CueError | null;
 }
 
-/** Run a `trigger: query` cue's OQX and diff the ids against the checkpoint (null = never run). */
-export async function queryCueDelta(caller: Caller, cue: Cue, checkpoint: readonly string[] | null, repo: string | null): Promise<QueryDelta> {
-  if (!cue.query) return { cue, ids: checkpoint ? [...checkpoint] : [], entered: [], enteredHits: [], error: { code: "no_query", message: "the cue has no ```oqx fence", hint: null } };
+/** Run a `query-enter` / `query-exit` cue's OQX and diff the ids against the checkpoint (null = never run). */
+export async function queryTransitionDelta(caller: Caller, cue: Cue, checkpoint: readonly string[] | null, repo: string | null): Promise<QueryDelta> {
+  const kept = checkpoint ? [...checkpoint] : [];
+  if (!cue.query) return { cue, ids: kept, entered: [], exited: [], fires: [], error: { code: "no_query", message: "the cue has no `query`", hint: null } };
   try {
     const hits = await queryAll(caller, cue.query, repo);
+    const paths = new Map(hits.map((h) => [str(h.id), strOrNull(h.path)]));
     const ids = [...new Set(hits.map((h) => str(h.id)).filter(Boolean))].sort();
-    if (checkpoint === null) return { cue, ids, entered: [], enteredHits: [], error: null };
-    const seen = new Set(checkpoint);
-    const entered = ids.filter((id) => !seen.has(id));
-    const enteredHits = hits.filter((h) => entered.includes(str(h.id))).map((h) => ({ id: str(h.id), path: str(h.path) }));
-    return { cue, ids, entered, enteredHits, error: null };
+    if (checkpoint === null) return { cue, ids, entered: [], exited: [], fires: [], error: null };
+    const before = new Set(checkpoint);
+    const now = new Set(ids);
+    const entered = ids.filter((id) => !before.has(id));
+    const exited = [...checkpoint].filter((id) => !now.has(id)).sort();
+    const watched = cue.on === "query-exit" ? exited : entered;
+    return { cue, ids, entered, exited, fires: watched.map((id) => ({ id, path: paths.get(id) ?? null })), error: null };
   } catch (e) {
-    return { cue, ids: checkpoint ? [...checkpoint] : [], entered: [], enteredHits: [], error: cueErrorOf(e) };
+    return { cue, ids: kept, entered: [], exited: [], fires: [], error: cueErrorOf(e) };
   }
 }
 
@@ -171,25 +180,29 @@ export class MemoryStorage implements StorageLike {
 export const DELIVERY_KEY = "omgbase-attn.delivery";
 
 interface DeliveryState {
-  /** `<cue path>|<scope>` → when it fired (ISO). The scope is the focus episode for focus cues, `time:<at>` for time cues, `id:<entered id>` for query cues. */
+  /** `<cue key>|<scope>` → when it fired (ISO). The scope is the focus episode for focus cues, `time:<at>` for time cues, `id:<x>` for enter/exit cues. */
   fired: Record<string, string>;
-  /** `<cue path>` → the episode key during which it was snoozed (it stays quiet until the episode changes). */
+  /** `<cue key>` → the episode key during which it was snoozed (quiet until the episode changes). */
   snoozed: Record<string, string>;
-  /** `<cue path>` → the ids last seen by a query cue. */
+  /** `<cue key>` → the ids last seen by an enter/exit cue (the checkpoint). */
   checkpoints: Record<string, string[]>;
 }
 
 /** The scope a firing is deduped on. */
-export function firingScope(cue: Cue, episode: string | null, enteredId?: string): string {
-  if (cue.trigger === "time") return `time:${cue.at ?? ""}`;
-  if (cue.trigger === "query") return `id:${enteredId ?? ""}`;
+export function firingScope(cue: Cue, episode: string | null, id?: string): string {
+  if (cue.on === "time") return `time:${cue.at ?? ""}`;
+  if (cue.on === "query-enter" || cue.on === "query-exit") return `${cue.on === "query-exit" ? "exit" : "enter"}:${id ?? ""}`;
   return `episode:${episode ?? "none"}`;
 }
 
 export class Delivery {
   private state: DeliveryState;
+  private readonly storage: StorageLike;
+  private readonly key: string;
 
-  constructor(private readonly storage: StorageLike = new MemoryStorage(), private readonly key = DELIVERY_KEY) {
+  constructor(storage: StorageLike = new MemoryStorage(), key = DELIVERY_KEY) {
+    this.storage = storage;
+    this.key = key;
     this.state = Delivery.load(storage, key);
   }
 
@@ -209,50 +222,65 @@ export class Delivery {
     this.storage.setItem(this.key, JSON.stringify(this.state));
   }
 
-  /** Has this cue already fired in this scope? */
   hasFired(cue: Cue, scope: string): boolean {
-    return `${cue.path}|${scope}` in this.state.fired;
+    return `${cueKey(cue)}|${scope}` in this.state.fired;
   }
 
   markFired(cue: Cue, scope: string, now: string): void {
-    this.state.fired[`${cue.path}|${scope}`] = now;
+    this.state.fired[`${cueKey(cue)}|${scope}`] = now;
     this.save();
   }
 
   /** Quiet until the next focus boundary: snoozed during this episode (the key), offered again when it changes. */
   snooze(cue: Cue, episode: string | null): void {
-    this.state.snoozed[cue.path] = episode ?? "none";
+    this.state.snoozed[cueKey(cue)] = episode ?? "none";
     this.save();
   }
 
   isSnoozed(cue: Cue, episode: string | null): boolean {
-    return this.state.snoozed[cue.path] === (episode ?? "none");
+    return this.state.snoozed[cueKey(cue)] === (episode ?? "none");
   }
 
   checkpoint(cue: Cue): string[] | null {
-    return this.state.checkpoints[cue.path] ?? null;
+    return this.state.checkpoints[cueKey(cue)] ?? null;
   }
 
   setCheckpoint(cue: Cue, ids: readonly string[]): void {
-    this.state.checkpoints[cue.path] = [...ids];
+    this.state.checkpoints[cueKey(cue)] = [...ids];
     this.save();
   }
 
   /** Should a firing in this scope be offered now? Not when it already fired there, nor while snoozed in this episode. */
   shouldOffer(cue: Cue, scope: string, episode: string | null): boolean {
-    return cue.status === "active" && !this.hasFired(cue, scope) && !this.isSnoozed(cue, episode);
+    return !this.hasFired(cue, scope) && !this.isSnoozed(cue, episode);
   }
 }
 
 export interface FiredCue {
   cue: Cue;
-  /** Why it fired, in words. */
+  /** Why now, in words (the cue id and kind). */
   reason: string;
   scope: string;
   firedAt: string;
 }
 
-/** A `query` result page as the server spells it (tests). */
-export function cuesPage(hits: Wire[]): Wire {
-  return { hits, truncated: false, cursor: null, consumer: "collect" };
+/** The Cued lift: intent path → its "why now" lines, one intent once however many cues matched. */
+export function cuedByIntent(fired: readonly FiredCue[]): Map<string, string[]> {
+  const out = new Map<string, string[]>();
+  for (const f of fired) {
+    const list = out.get(f.cue.intent) ?? [];
+    if (!list.includes(f.reason)) list.push(f.reason);
+    out.set(f.cue.intent, list);
+  }
+  return out;
+}
+
+/** The one-line "why now" of a firing. */
+export function whyNow(cue: Cue, detail?: string): string {
+  switch (cue.on) {
+    case "focus": return `${cue.id} — the focused intent matches its query`;
+    case "time": return `${cue.id} — due ${cue.at ?? ""}`.trimEnd();
+    case "query-enter": return `${cue.id} — ${detail ?? "a row"} entered its query`;
+    case "query-exit": return `${cue.id} — ${detail ?? "a row"} left its query`;
+  }
 }

@@ -1,27 +1,35 @@
 // <focus-bar>: the one question, always visible and low-distraction — the
 // focused intent's title, the time since `since` (live), its tags — and the
-// one-line input: type and press Enter to declare a new intent AND focus it
-// (`#tags` in the text become tags); Shift+Enter does the same as an
-// `interrupt` (the displaced intent goes on the return stack); Ctrl/Cmd+R
-// opens the chooser over recent intents (Enter resumes, Tab loads the text for
-// editing, Esc closes); `back` appears while the stack is non-empty and names
-// the return target; `stop` clears the focus. The bar never writes: it emits
-// `attn-declare { text, interrupt }`, `attn-resume { path, interrupt }`,
-// `attn-back`, `attn-stop`; the page does the `apply`.
+// one-line input. Enter ADDS the text as a new intent (it goes to the top of
+// the feed; `#tags` in the text become tags) without focusing it; ⌘/⌃+Enter
+// adds AND focuses it; Shift+Enter adds and focuses it as an `interrupt` (the
+// displaced intent goes on the return stack). Ctrl/Cmd+R opens the chooser
+// over recent intents (Enter resumes, Shift+Enter interrupts, Tab loads the
+// text for editing, Esc closes); `back` appears while the stack is non-empty
+// and names the return target; `stop` clears the focus. The bar never writes:
+// it emits `attn-declare { text, focus, interrupt }`, `attn-resume { path,
+// interrupt }`, `attn-back`, `attn-stop`; the page does the `apply`.
 
 import { LitElement, css, html, nothing } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import { rankIntents, type ChooserRow, type Intent } from "../lib/intents.ts";
 import { formatDuration, nowIso, secondsBetween } from "../lib/model.ts";
-import { returnTarget, type FocusState } from "../lib/pointer.ts";
+import { NO_FOCUS, returnTarget, type FocusState } from "../lib/pointer.ts";
 
-export interface DeclareDetail { text: string; interrupt: boolean }
+export interface DeclareDetail { text: string; focus: boolean; interrupt: boolean }
 export interface ResumeDetail { path: string; interrupt: boolean }
 export interface BarMessage { kind: "error" | "info"; text: string; fix?: string | null }
 
 /** Ctrl+R (or Cmd+R on a Mac) opens the chooser. */
 export function isChooserShortcut(e: { key: string; metaKey: boolean; ctrlKey: boolean }): boolean {
   return (e.key === "r" || e.key === "R") && (e.metaKey || e.ctrlKey);
+}
+
+/** What Enter means with its modifiers: add; ⌘/⌃ add + focus; Shift add + interrupt. */
+export function declareIntent(e: { metaKey: boolean; ctrlKey: boolean; shiftKey: boolean }): Pick<DeclareDetail, "focus" | "interrupt"> {
+  if (e.shiftKey) return { focus: true, interrupt: true };
+  if (e.metaKey || e.ctrlKey) return { focus: true, interrupt: false };
+  return { focus: false, interrupt: false };
 }
 
 @customElement("focus-bar")
@@ -56,11 +64,11 @@ export class FocusBar extends LitElement {
     .chooser .foot { padding: 4px 12px 6px; color: #8a94a6; font-size: 11.5px; border-top: 1px solid #eef0f4; }
   `;
 
-  @property({ attribute: false }) pointer: FocusState = { exists: false, docId: null, rev: null, focused: null, since: null, returnStack: [] };
+  @property({ attribute: false }) pointer: FocusState = NO_FOCUS;
   /** The focused intent's row (null when nothing is in focus, or it is not among the intents). */
   @property({ attribute: false }) intent: Intent | null = null;
   @property({ attribute: false }) intents: Intent[] = [];
-  /** Intent path → when it last took focus (the stream), for the chooser's order. */
+  /** Intent path → when it last took focus (the history), for the chooser's order. */
   @property({ attribute: false }) recent: Map<string, string> = new Map();
   @property({ attribute: false }) titles: Map<string, string> = new Map();
   @property({ type: Boolean }) busy = false;
@@ -91,10 +99,10 @@ export class FocusBar extends LitElement {
     return rankIntents(this.intents, this.recent, this.text);
   }
 
-  private declare(interrupt: boolean): void {
+  private declare(how: Pick<DeclareDetail, "focus" | "interrupt">): void {
     const text = this.text.trim();
     if (!text || this.busy) return;
-    this.emit<DeclareDetail>("attn-declare", { text, interrupt });
+    this.emit<DeclareDetail>("attn-declare", { text, ...how });
     this.text = "";
     this.chooserOpen = false;
   }
@@ -122,14 +130,14 @@ export class FocusBar extends LitElement {
       }
       if (e.key === "Enter") { e.preventDefault(); this.resume(rows[Math.min(this.selected, rows.length - 1)]!, e.shiftKey); return; }
     }
-    if (e.key === "Enter") { e.preventDefault(); this.declare(e.shiftKey); }
+    if (e.key === "Enter") { e.preventDefault(); this.declare(declareIntent(e)); }
   }
 
   private renderChooser() {
     if (!this.chooserOpen) return nothing;
     const rows = this.rows();
     return html`<div class="chooser" data-chooser>
-      ${rows.length === 0 ? html`<div class="empty">no active intent matches — Enter declares "${this.text.trim()}"</div>` : rows.map((r, i) => html`
+      ${rows.length === 0 ? html`<div class="empty">no active intent matches — Enter adds "${this.text.trim()}"</div>` : rows.map((r, i) => html`
         <div class="row ${i === this.selected ? "sel" : ""}" @mousedown=${(e: Event) => { e.preventDefault(); this.resume(r, false); }} @mouseenter=${() => { this.selected = i; }}>
           <span>${r.intent.title}</span>
           <span class="tags">${r.intent.tags.map((t) => `#${t}`).join(" ")}</span>
@@ -157,14 +165,14 @@ export class FocusBar extends LitElement {
         ${p.focused ? html`<button type="button" ?disabled=${this.busy} @click=${() => this.emit("attn-stop", {})}>stop</button>` : nothing}
       </div>
       <div class="input">
-        <input type="text" spellcheck="false" placeholder=${p.focused ? "switch to… (Enter declares and focuses; Shift+Enter interrupts; ⌃/⌘R recent)" : "what has your attention? (Enter declares and focuses; ⌃/⌘R recent)"}
+        <input type="text" spellcheck="false" placeholder=${p.focused ? "add an intent… (Enter adds; ⌘/⌃Enter adds and focuses; Shift+Enter interrupts; ⌃/⌘R recent)" : "what has your attention? (Enter adds; ⌘/⌃Enter adds and focuses; ⌃/⌘R recent)"}
           .value=${this.text} ?disabled=${this.busy}
           @input=${(e: Event) => { this.text = (e.target as HTMLInputElement).value; this.selected = 0; }}
           @keydown=${this.onKeydown}
           @blur=${() => { setTimeout(() => { this.chooserOpen = false; }, 120); }}>
         ${this.renderChooser()}
       </div>
-      <div class="hint"><kbd>Enter</kbd> declare + focus (<code>#tags</code> become tags) · <kbd>Shift</kbd>+<kbd>Enter</kbd> interrupt · <kbd>⌃/⌘</kbd>+<kbd>R</kbd> recent intents</div>
+      <div class="hint"><kbd>Enter</kbd> add (<code>#tags</code> become tags) · <kbd>⌘/⌃</kbd>+<kbd>Enter</kbd> add + focus · <kbd>Shift</kbd>+<kbd>Enter</kbd> add + interrupt · <kbd>⌃/⌘</kbd>+<kbd>R</kbd> recent intents</div>
       ${m ? html`<div class="msg ${m.kind}" data-message>${m.text}${m.fix ? html`<div>the engine's corrected call (<code>data.fix</code>) — shown, not taken: another device switched first</div><pre>${m.fix}</pre>` : nothing}</div>` : nothing}
     `;
   }

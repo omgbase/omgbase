@@ -36,10 +36,19 @@ export interface OmgClientOptions {
   transportFactory?: () => Transport;
 }
 
-/** The server's error envelope (spec/surface §4): `{ error, message, data?, retriable }`. */
+/** The server's error envelope (spec/surface §4): `{ error, message, data?, retriable }`.
+ * (Plain fields rather than parameter properties, so Node's type stripping can
+ * import this module — scripts/dev-workspace.mjs seeds the sample through the
+ * app's own effect builders.) */
 export class OmgError extends Error {
-  constructor(public code: string, message: string, public data?: unknown, public retriable = false) {
+  code: string;
+  data: unknown;
+  retriable: boolean;
+  constructor(code: string, message: string, data?: unknown, retriable = false) {
     super(message);
+    this.code = code;
+    this.data = data;
+    this.retriable = retriable;
   }
 }
 
@@ -68,8 +77,11 @@ export class OmgClient implements Caller {
   private connecting: Promise<Client> | null = null;
   /** How many times the server forgot our session and a fresh one was opened. */
   recoveries = 0;
+  readonly options: Readonly<OmgClientOptions>;
 
-  constructor(readonly options: Readonly<OmgClientOptions>) {}
+  constructor(options: Readonly<OmgClientOptions>) {
+    this.options = options;
+  }
 
   private transport(): Transport {
     if (this.options.transportFactory) return this.options.transportFactory();

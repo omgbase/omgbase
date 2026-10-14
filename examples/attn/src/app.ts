@@ -1,13 +1,14 @@
-// The page: one element composing the focus bar, the cue feed, the intents
-// panel and the stream, over module-level signals.
+// The page: one element composing the focus bar, the intent feed and the
+// stream, over module-level signals.
 //
-//   connect → (whoami) → version (surface ≥ 4.4, the profile) + tools/list →
-//   [repos, when listed] → load: the pointer (docs_read), the intents (one
-//   query with the virtual #focus join), the cues (one query), the stream days
-//   (docs_tree) and the chosen day (docs_read) → the cue engine → changes_since
-//   polled: anything under /attn/ reloads and re-evaluates.
-//   Writes: ONE apply per switch / interrupt / back / stop / declare / release /
-//   dismiss (lib/writes.ts); a new cue is plan { diffs: true } → execute.
+//   connect → (whoami) → version (surface ≥ 4.7, the profile) + tools/list →
+//   [repos, when listed] → load: the pointer (docs_read), the intents with their
+//   cues and the virtual #focus (one query), the pointer's history (one query
+//   over revisions + docs_read { at } per revision not yet cached) → the cue
+//   engine → changes_since polled: anything under /attn/ reloads and re-evaluates.
+//   Writes: ONE apply per switch / interrupt / back / stop / add / add + focus /
+//   release / reactivate / edit / cue removal (lib/writes.ts); a new cue is
+//   plan { diffs: true } → execute over the intent's whole `cues` list.
 //
 // Everything runs on the MINIMAL tools profile (lib/tools.ts); `repos` is the one
 // optional tool (a picker when listed). The data path is MCP only
@@ -18,23 +19,21 @@ import { customElement } from "lit/decorators.js";
 import { SignalWatcher, computed, signal } from "@lit-labs/signals";
 import type { WhoAmI } from "webdevproxy";
 import "./elements/focus-bar.ts";
-import "./elements/cue-feed.ts";
+import "./elements/intent-feed.ts";
 import "./elements/stream-view.ts";
-import "./elements/intents-panel.ts";
 import type { BarMessage, DeclareDetail, ResumeDetail } from "./elements/focus-bar.ts";
-import type { CueActionDetail, CueProblem } from "./elements/cue-feed.ts";
+import type { CuePlanDetail, CueProblem, CueRemoveDetail, EditingIntent, IntentEditSaveDetail, IntentPathDetail, IntentStatusDetail, PanelMessage } from "./elements/intent-feed.ts";
 import type { StreamDayDetail } from "./elements/stream-view.ts";
-import type { CuePathDetail, CuePlanDetail, IntentFocusDetail, IntentStatusDetail, PanelMessage } from "./elements/intents-panel.ts";
-import { OmgClient, OmgError, fetchWhoAmI, type Wire } from "./lib/mcp-client.ts";
+import { OmgClient, OmgError, fetchWhoAmI, repoArg, type Wire } from "./lib/mcp-client.ts";
 import { profileOf, surfaceOf, surfaceProblem } from "./lib/paths.ts";
 import { capabilities, missingToolsText, profileLabel, type Capabilities } from "./lib/tools.ts";
-import { dayOf, nowIso, parseDeclaration, intentPath } from "./lib/model.ts";
+import { POINTER_PATH, dayOf, intentPath, nowIso, parseDeclaration, str } from "./lib/model.ts";
 import { NO_FOCUS, episodeKey, fetchPointer, type FocusState } from "./lib/pointer.ts";
-import { fetchIntents, findByTitle, setStatusEffect, type Intent } from "./lib/intents.ts";
-import { Delivery, dismissCueEffect, dueTimeCues, evaluateFocusCues, fetchCues, firingScope, queryCueDelta, type Cue, type FiredCue } from "./lib/cues.ts";
-import { episodesOf, fetchStreamDay, fetchStreamDays, lastFocused, type Transition } from "./lib/stream.ts";
+import { activeCues, feedOf, fetchIntents, findByTitle, setContentEffect, setStatusEffect, type Intent } from "./lib/intents.ts";
+import { Delivery, cuedByIntent, dueTimeCues, evaluateFocusCues, firingScope, queryTransitionDelta, setCuesEffect, whyNow, type Cue, type FiredCue } from "./lib/cues.ts";
+import { daysOf, episodesOf, episodesOn, fetchPointerHistory, lastFocused, transitionsOf, type HistoryCache, type PointerSnapshot } from "./lib/history.ts";
 import { advanceCursor, fetchChanges, pollMs, startCursor, touchesAttn } from "./lib/feed.ts";
-import { applyEffects, backEffects, createCueEffect, declareEffects, executePlan, interruptEffects, planEffects, stopEffects, switchEffects, type Effect, type Plan, type SwitchContext } from "./lib/writes.ts";
+import { applyEffects, backEffects, declareAndFocusEffects, declareEffects, executePlan, interruptEffects, planEffects, stopEffects, switchEffects, type Effect, type Plan, type SwitchContext } from "./lib/writes.ts";
 import { effect } from "./lib/effect.ts";
 
 const MCP_URL = "/mcp";
@@ -57,11 +56,9 @@ const repoArgValue = computed<string | null>(() => repo.get() || null);
 
 const pointer = signal<FocusState>(NO_FOCUS);
 const intents = signal<Intent[]>([]);
-const cues = signal<Cue[]>([]);
-const streamDays = signal<string[]>([]);
+const history = signal<PointerSnapshot[]>([]);
+const historyCache: HistoryCache = new Map();
 const streamDay = signal<string>(dayOf(nowIso()));
-const transitions = signal<Transition[]>([]);
-const todayTransitions = signal<Transition[]>([]);
 const streamLoading = signal(false);
 const streamError = signal<string | null>(null);
 const clock = signal<string>(nowIso());
@@ -74,6 +71,7 @@ const busy = signal(false);
 const barMessage = signal<BarMessage | null>(null);
 const panelMessage = signal<PanelMessage | null>(null);
 const pendingCue = signal<Plan | null>(null);
+const editing = signal<EditingIntent | null>(null);
 
 const feedCursor = signal<number | null>(null);
 const feedError = signal<string | null>(null);
@@ -83,8 +81,12 @@ const lastChange = signal<string | null>(null);
 const intentsByPath = computed<Map<string, Intent>>(() => new Map(intents.get().map((i) => [i.path, i])));
 const titles = computed<Map<string, string>>(() => new Map(intents.get().map((i) => [i.path, i.title])));
 const focusedIntent = computed<Intent | null>(() => { const f = pointer.get().focused; return f ? intentsByPath.get().get(f) ?? null : null; });
-const recent = computed<Map<string, string>>(() => lastFocused([...transitions.get(), ...todayTransitions.get()]));
-const episodes = computed(() => episodesOf(transitions.get(), streamDay.get(), { now: clock.get(), pointer: pointer.get() }));
+const transitions = computed(() => transitionsOf(history.get()));
+const recent = computed<Map<string, string>>(() => lastFocused(transitions.get()));
+const allEpisodes = computed(() => episodesOf(transitions.get(), clock.get()));
+const episodes = computed(() => episodesOn(allEpisodes.get(), streamDay.get()));
+const streamDays = computed(() => daysOf(transitions.get(), clock.get()));
+const feed = computed(() => feedOf(intents.get(), pointer.get().focused, cuedByIntent(fired.get())));
 
 const headerLabel = computed(() => {
   const w = whoami.get();
@@ -122,24 +124,22 @@ async function loadAll(): Promise<void> {
   const gen = ++loadGeneration;
   const r = repoArgValue.get();
   try {
-    const [p, is, cs, days] = await Promise.all([fetchPointer(client, r), fetchIntents(client, r), fetchCues(client, r), fetchStreamDays(client, r)]);
+    const [p, is] = await Promise.all([fetchPointer(client, r), fetchIntents(client, r), loadHistory(gen)]);
     if (gen !== loadGeneration) return;
     pointer.set(p);
     intents.set(is);
-    cues.set(cs);
-    streamDays.set(days);
-    await Promise.all([loadDay(streamDay.get(), gen), loadToday(gen)]);
   } catch (e) {
     if (gen === loadGeneration) connectionMessage.set(`load failed: ${describe(e)}`);
   }
 }
 
-async function loadDay(day: string, gen = loadGeneration): Promise<void> {
+/** The pointer's revisions → every state (cached by rev; only new revisions are read). */
+async function loadHistory(gen = loadGeneration): Promise<void> {
   streamLoading.set(true);
   streamError.set(null);
   try {
-    const t = await fetchStreamDay(client, day, repoArgValue.get());
-    if (gen === loadGeneration && streamDay.get() === day) transitions.set(t);
+    const states = await fetchPointerHistory(client, repoArgValue.get(), historyCache);
+    if (gen === loadGeneration) history.set(states);
   } catch (e) {
     if (gen === loadGeneration) streamError.set(describe(e));
   } finally {
@@ -147,19 +147,8 @@ async function loadDay(day: string, gen = loadGeneration): Promise<void> {
   }
 }
 
-/** Today's lines feed the chooser's recency even while another day is shown. */
-async function loadToday(gen = loadGeneration): Promise<void> {
-  const today = dayOf(nowIso());
-  if (today === streamDay.get()) { todayTransitions.set([]); return; }
-  try {
-    const t = await fetchStreamDay(client, today, repoArgValue.get());
-    if (gen === loadGeneration) todayTransitions.set(t);
-  } catch { /* the chooser just loses recency */ }
-}
-
 function pickDay(day: string): void {
   streamDay.set(day);
-  void loadDay(day);
 }
 
 // ---- the cue engine ------------------------------------------------------------------------
@@ -169,13 +158,18 @@ let lastEpisode: string | null | undefined;
 function offer(cue: Cue, scope: string, reason: string): void {
   const episode = episodeKey(pointer.get());
   if (!delivery.shouldOffer(cue, scope, episode)) return;
-  if (fired.get().some((f) => f.cue.path === cue.path && f.scope === scope)) return;
+  if (fired.get().some((f) => f.cue.intent === cue.intent && f.cue.id === cue.id && f.scope === scope)) return;
   const now = nowIso();
   delivery.markFired(cue, scope, now);
   fired.set([...fired.get(), { cue, scope, reason, firedAt: now }]);
 }
 
-/** On a focus change: the `trigger: focus` cues against the newly focused intent (one query each). */
+function setProblem(cue: Cue, error: CueProblem["error"] | null): void {
+  const rest = cueProblems.get().filter((p) => !(p.cue.intent === cue.intent && p.cue.id === cue.id));
+  cueProblems.set(error ? [...rest, { cue, error }] : rest);
+}
+
+/** On a focus change: every `on: focus` cue of the active intents against the newly focused intent (one query each, membership). */
 async function evaluateFocus(): Promise<void> {
   const p = pointer.get();
   const episode = episodeKey(p);
@@ -183,33 +177,33 @@ async function evaluateFocus(): Promise<void> {
   lastEpisode = episode;
   // Focus cues offered for an earlier episode are no longer relevant; time and query cues stay.
   fired.set(fired.get().filter((f) => !f.scope.startsWith("episode:")));
-  cueProblems.set([]);
+  cueProblems.set(cueProblems.get().filter((pr) => pr.cue.on !== "focus"));
   if (!p.focused) return;
-  const results = await evaluateFocusCues(client, cues.get(), p.focused, repoArgValue.get());
+  const focused = { path: p.focused, id: intentsByPath.get().get(p.focused)?.id ?? null };
+  const results = await evaluateFocusCues(client, activeCues(intents.get()), focused, repoArgValue.get());
   if (episodeKey(pointer.get()) !== episode) return;
-  const problems: CueProblem[] = [];
   for (const r of results) {
-    if (r.error) problems.push({ cuePath: r.cue.path, title: r.cue.title, error: r.error });
-    else if (r.fired) offer(r.cue, firingScope(r.cue, episode), `focus matched \`${r.cue.when}\``);
+    setProblem(r.cue, r.error);
+    if (!r.error && r.matched) offer(r.cue, firingScope(r.cue, episode), whyNow(r.cue));
   }
-  cueProblems.set(problems);
 }
 
-/** The `trigger: time` cues whose `at` has passed (the client clock). */
+/** The `on: time` cues whose `at` has passed (the client clock). */
 function evaluateTime(): void {
   const now = nowIso();
   clock.set(now);
-  for (const cue of dueTimeCues(cues.get(), now)) offer(cue, firingScope(cue, null), `due at ${cue.at}`);
+  for (const cue of dueTimeCues(activeCues(intents.get()), now)) offer(cue, firingScope(cue, null), whyNow(cue));
 }
 
-/** The `trigger: query` cues: run each fence, diff the ids against the browser-side checkpoint. */
+/** The `query-enter` / `query-exit` cues: run each query, diff the ids against the browser-side checkpoint. */
 async function evaluateQueries(): Promise<void> {
-  for (const cue of cues.get()) {
-    if (cue.trigger !== "query" || cue.status !== "active") continue;
-    const d = await queryCueDelta(client, cue, delivery.checkpoint(cue), repoArgValue.get());
-    if (d.error) { cueProblems.set([...cueProblems.get().filter((p) => p.cuePath !== cue.path), { cuePath: cue.path, title: cue.title, error: d.error }]); continue; }
+  for (const cue of activeCues(intents.get())) {
+    if (cue.on !== "query-enter" && cue.on !== "query-exit") continue;
+    const d = await queryTransitionDelta(client, cue, delivery.checkpoint(cue), repoArgValue.get());
+    setProblem(cue, d.error);
+    if (d.error) continue;
     delivery.setCheckpoint(cue, d.ids);
-    for (const h of d.enteredHits) offer(cue, firingScope(cue, null, h.id), `${h.path} entered the watched query`);
+    for (const h of d.fires) offer(cue, firingScope(cue, null, h.id), whyNow(cue, h.path ?? h.id));
   }
 }
 
@@ -218,38 +212,30 @@ async function runCueEngine(): Promise<void> {
   await Promise.all([evaluateFocus(), evaluateQueries()]);
 }
 
-function snoozeCue(path: string): void {
-  const cue = cues.get().find((c) => c.path === path);
-  if (cue) delivery.snooze(cue, episodeKey(pointer.get()));
-  fired.set(fired.get().filter((f) => f.cue.path !== path));
+/** Snooze every firing of an intent until the next focus boundary (app-local). */
+function snoozeIntent(path: string): void {
+  const episode = episodeKey(pointer.get());
+  for (const f of fired.get()) if (f.cue.intent === path) delivery.snooze(f.cue, episode);
+  fired.set(fired.get().filter((f) => f.cue.intent !== path));
 }
 
 // ---- writes ---------------------------------------------------------------------------------
 
 function switchContext(): SwitchContext {
-  return { pointer: pointer.get(), now: nowIso(), streamDays: new Set(streamDays.get()) };
+  return { pointer: pointer.get(), now: nowIso() };
 }
 
-/** One `apply`; on `path_taken` (a stream day created meanwhile) reload and retry once; `stale_plan` shows the fix and reloads. */
+/** One `apply`; `stale_plan` shows the fix and reloads the pointer rather than taking it. */
 async function write(build: (ctx: SwitchContext) => Effect[] | null, reason: string, target: "bar" | "panel" = "bar"): Promise<boolean> {
   if (busy.get()) return false;
   const say = (m: BarMessage | null) => (target === "bar" ? barMessage : panelMessage).set(m);
   busy.set(true);
   say(null);
   try {
-    let effects = build(switchContext());
+    const effects = build(switchContext());
     if (!effects) return false;
-    let receipt;
-    try {
-      receipt = await applyEffects(client, effects, repoArgValue.get(), reason);
-    } catch (e) {
-      if (!(e instanceof OmgError && e.code === "path_taken")) throw e;
-      streamDays.set(await fetchStreamDays(client, repoArgValue.get()));
-      effects = build(switchContext());
-      if (!effects) return false;
-      receipt = await applyEffects(client, effects, repoArgValue.get(), reason);
-    }
-    say({ kind: "info", text: receipt.commit ? `${receipt.summary.join(" · ")}` : "nothing to commit" });
+    const receipt = await applyEffects(client, effects, repoArgValue.get(), reason);
+    say({ kind: "info", text: receipt.commit ? receipt.summary.join(" · ") : "nothing to commit" });
     await loadAll();
     void runCueEngine();
     return true;
@@ -268,13 +254,21 @@ function doResume(path: string, interrupt: boolean): void {
   void write((ctx) => (interrupt ? interruptEffects(ctx, path) : switchEffects(ctx, path)), interrupt ? "attn interrupt" : "attn switch");
 }
 
-function doDeclare(text: string, interrupt: boolean): void {
+/** Add Intent: Enter adds (the feed's top), ⌘/⌃Enter adds and focuses, Shift+Enter adds and interrupts. */
+function doDeclare(text: string, focus: boolean, interrupt: boolean): void {
   const d = parseDeclaration(text);
   if (!d.title) return;
   const existing = findByTitle(intents.get().filter((i) => i.status === "active"), d.title);
-  if (existing) { doResume(existing.path, interrupt); return; }
-  const path = intentPath(d.title, intents.get().map((i) => i.path));
-  void write((ctx) => declareEffects(ctx, { path, title: d.title, tags: d.tags }, interrupt ? "interrupt" : "switch"), interrupt ? "attn declare + interrupt" : "attn declare + focus");
+  if (existing) {
+    if (focus) doResume(existing.path, interrupt);
+    else barMessage.set({ kind: "info", text: `"${existing.title}" is already an active intent` });
+    return;
+  }
+  const now = nowIso();
+  const path = intentPath(d.title, now, intents.get().map((i) => i.path));
+  const intent = { path, title: d.title, tags: d.tags };
+  if (!focus) { void write(() => declareEffects(intent), "attn add intent"); return; }
+  void write((ctx) => declareAndFocusEffects({ ...ctx, now }, intent, interrupt ? "interrupt" : "switch"), interrupt ? "attn add + interrupt" : "attn add + focus");
 }
 
 function doBack(): void {
@@ -289,9 +283,24 @@ function doStatus(path: string, status: "active" | "released"): void {
   void write(() => [setStatusEffect(path, status)], `attn ${status === "released" ? "release" : "reactivate"}`, "panel");
 }
 
-function doDismiss(path: string): void {
-  fired.set(fired.get().filter((f) => f.cue.path !== path));
-  void write(() => [dismissCueEffect(path)], "attn dismiss cue", "panel");
+function doRemoveCue(path: string, id: string): void {
+  const intent = intentsByPath.get().get(path);
+  if (!intent) return;
+  void write(() => [setCuesEffect(path, intent.cues.filter((c) => c.id !== id))], "attn remove cue", "panel");
+}
+
+async function openEditor(path: string): Promise<void> {
+  panelMessage.set(null);
+  try {
+    const doc = await client.call<Wire>("docs_read", { path, ...repoArg(repoArgValue.get()) });
+    editing.set({ path, raw: str(doc.raw) });
+  } catch (e) {
+    panelMessage.set({ kind: "error", text: `docs_read: ${describe(e)}` });
+  }
+}
+
+function doSaveEdit(path: string, content: string): void {
+  void write(() => [setContentEffect(path, content)], "attn edit intent", "panel").then((ok) => { if (ok) editing.set(null); });
 }
 
 async function planCue(detail: CuePlanDetail): Promise<void> {
@@ -299,7 +308,7 @@ async function planCue(detail: CuePlanDetail): Promise<void> {
   panelMessage.set(null);
   pendingCue.set(null);
   try {
-    pendingCue.set(await planEffects(client, [createCueEffect(detail.cue)], repoArgValue.get()));
+    pendingCue.set(await planEffects(client, [setCuesEffect(detail.path, detail.cues)], repoArgValue.get()));
   } catch (e) {
     panelMessage.set({ kind: "error", text: `plan: ${e instanceof OmgError ? e.code : "error"} — ${describe(e)}`, fix: fixOf(e) });
   } finally {
@@ -312,7 +321,7 @@ async function executeCue(): Promise<void> {
   if (!plan) return;
   busy.set(true);
   try {
-    const receipt = await executePlan(client, plan, repoArgValue.get(), "attn new cue");
+    const receipt = await executePlan(client, plan, repoArgValue.get(), "attn define cue");
     pendingCue.set(null);
     panelMessage.set({ kind: "info", text: receipt.commit ? `committed ${receipt.commit}: ${receipt.summary.join("; ")}` : "nothing to commit" });
     await loadAll();
@@ -462,6 +471,7 @@ function switchRepo(slug: string): void {
   repo.set(slug);
   localStorage.setItem(REPO_KEY, slug);
   fired.set([]);
+  historyCache.clear();
   lastEpisode = undefined;
   void Promise.all([loadAll(), startFeed()]).then(() => runCueEngine());
 }
@@ -521,7 +531,7 @@ export class AttnApp extends SignalWatcher(LitElement) {
       ${missing ? html`<div class="banner">${missing}</div>` : nothing}
       <div class="bar">
         ${ok ? html`<focus-bar .pointer=${pointer.get()} .intent=${focusedIntent.get()} .intents=${intents.get()} .recent=${recent.get()} .titles=${titles.get()} ?busy=${busy.get()} .message=${barMessage.get()}
-          @attn-declare=${(e: CustomEvent<DeclareDetail>) => doDeclare(e.detail.text, e.detail.interrupt)}
+          @attn-declare=${(e: CustomEvent<DeclareDetail>) => doDeclare(e.detail.text, e.detail.focus, e.detail.interrupt)}
           @attn-resume=${(e: CustomEvent<ResumeDetail>) => doResume(e.detail.path, e.detail.interrupt)}
           @attn-back=${doBack}
           @attn-stop=${doStop}></focus-bar>` : html`<div class="welcome">${connectionMessage.get() || "connecting…"}</div>`}
@@ -529,28 +539,26 @@ export class AttnApp extends SignalWatcher(LitElement) {
       ${ok ? html`<main>
         <div class="col">
           <section>
-            <cue-feed .fired=${fired.get()} .titles=${titles.get()} .problems=${cueProblems.get()} ?busy=${busy.get()}
-              @cue-focus=${(e: CustomEvent<CueActionDetail>) => doResume(e.detail.path, false)}
-              @cue-snooze=${(e: CustomEvent<CueActionDetail>) => snoozeCue(e.detail.path)}
-              @cue-dismiss=${(e: CustomEvent<CueActionDetail>) => doDismiss(e.detail.path)}></cue-feed>
-          </section>
-          <section>
-            <intents-panel .intents=${intents.get()} .cues=${cues.get()} .focused=${pointer.get().focused} ?busy=${busy.get()} .pending=${pendingCue.get()} .message=${panelMessage.get()}
-              @intent-focus=${(e: CustomEvent<IntentFocusDetail>) => doResume(e.detail.path, false)}
+            <intent-feed .feed=${feed.get()} .problems=${cueProblems.get()} ?busy=${busy.get()} .pending=${pendingCue.get()} .editing=${editing.get()} .message=${panelMessage.get()}
+              @intent-focus=${(e: CustomEvent<IntentPathDetail>) => doResume(e.detail.path, false)}
               @intent-status=${(e: CustomEvent<IntentStatusDetail>) => doStatus(e.detail.path, e.detail.status)}
+              @cue-snooze=${(e: CustomEvent<IntentPathDetail>) => snoozeIntent(e.detail.path)}
               @cue-plan=${(e: CustomEvent<CuePlanDetail>) => { void planCue(e.detail); }}
               @cue-execute=${() => { void executeCue(); }}
               @cue-cancel=${() => { pendingCue.set(null); panelMessage.set(null); }}
-              @cue-dismiss=${(e: CustomEvent<CuePathDetail>) => doDismiss(e.detail.path)}></intents-panel>
+              @cue-remove=${(e: CustomEvent<CueRemoveDetail>) => doRemoveCue(e.detail.path, e.detail.id)}
+              @intent-edit-open=${(e: CustomEvent<IntentPathDetail>) => { void openEditor(e.detail.path); }}
+              @intent-edit-save=${(e: CustomEvent<IntentEditSaveDetail>) => doSaveEdit(e.detail.path, e.detail.content)}
+              @intent-edit-cancel=${() => { editing.set(null); panelMessage.set(null); }}></intent-feed>
           </section>
         </div>
         <div class="col">
           <section>
-            <stream-view .days=${streamDays.get()} .day=${streamDay.get()} .episodes=${episodes.get()} .intents=${intentsByPath.get()} ?loading=${streamLoading.get()} .error=${streamError.get()}
+            <stream-view .days=${streamDays.get()} .day=${streamDay.get()} .episodes=${episodes.get()} .intents=${intentsByPath.get()} ?loading=${streamLoading.get()} .error=${streamError.get()} .revisions=${history.get().length}
               @stream-day=${(e: CustomEvent<StreamDayDetail>) => pickDay(e.detail.day)}></stream-view>
           </section>
           <section class="welcome" style="padding: 10px 14px">
-            <p style="margin:0">Built on <code>omg mcp --tools minimal</code>: the pointer is <code>docs_read</code>, intents and cues one <code>query</code> each (the focused intent found by a join against the pointer, never a tag), the stream <code>docs_tree</code> + <code>docs_read</code>, every switch one <code>apply</code> under <code>expect.revision</code>, a new cue <code>plan</code> → <code>execute</code>, other windows seen through <code>changes_since</code>.</p>
+            <p style="margin:0">Built on <code>omg mcp --tools minimal</code>: the pointer <code>${POINTER_PATH}</code> is <code>docs_read</code>; the feed is one <code>query</code> (each intent with its <code>cues</code> list; the focused one found by a join against the pointer, never a tag); the stream is reconstructed from the pointer's <code>revisions</code> with <code>docs_read { at }</code>; every switch writes the pointer only, one <code>apply</code> under <code>expect.revision</code>; a new cue is <code>plan</code> → <code>execute</code> over the intent's whole <code>cues</code> list; other windows are seen through <code>changes_since</code>.</p>
           </section>
         </div>
       </main>` : nothing}

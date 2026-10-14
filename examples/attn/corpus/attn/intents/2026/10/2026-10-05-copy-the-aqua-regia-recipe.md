@@ -1,8 +1,10 @@
 ---
-type: intent
+type: /terms/types/intent.md
+layer: draft
 status: released
+title: Copy the recipe for aqua regia
 tags: [reading]
-project: magnum-opus
+project: /projects/magnum-opus.md
 ---
 
 # Copy the recipe for aqua regia

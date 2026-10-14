@@ -1,24 +1,31 @@
 // The attn storage model's fixed points — where things live under one folder
 // of an ordinary omgbase workspace — and the pure text rules: the declaration
-// line (`#tags` become tags), slugs, the clock (ISO strings; the day and the
-// `HH:MM:SSZ` a stream line carries). Everything is UTC: the stream's days are
-// UTC days, so two devices in two time zones write into the same file.
+// line (`#tags` become tags), slugs and dated paths, the clock, and the tiny
+// frontmatter reader the history needs (`docs_read { at }` returns a past
+// revision's raw bytes and no properties).
 //
-//   /attn/intents/<slug>.md      type: intent, status: active | released, tags?, project?
-//   /attn/cues/<slug>.md         type: cue, intent, trigger: focus | time | query, status: active | dismissed
-//   /attn/current.md             type: attn-state, focused, since, return_stack   (the Focus pointer)
-//   /attn/stream/YYYY-MM-DD.md   type: attn-stream — one list item per transition (the Stream)
+//   /attn/focus.md                                type: /terms/types/attn-state.md — the Focus pointer:
+//                                                 focused_intent (an intent path | null), since (ISO), return_stack
+//   /attn/intents/YYYY/MM/YYYY-MM-DD-<slug>.md    type: /terms/types/intent.md — one Intent, named for its
+//                                                 declaration date (editing never renames): status active | released,
+//                                                 title, tags?, project?, cues? (a list of cue value objects)
+//
+// Cues are NOT documents: a cue is one entry of its intent's `cues` list
+// (lib/cues.ts). Focus history is NOT a document either: it is reconstructed
+// from the pointer's revisions (lib/history.ts).
 
 export const ATTN_ROOT = "/attn";
-export const POINTER_PATH = `${ATTN_ROOT}/current.md`;
+export const POINTER_PATH = `${ATTN_ROOT}/focus.md`;
 export const INTENTS_DIR = `${ATTN_ROOT}/intents/`;
-export const CUES_DIR = `${ATTN_ROOT}/cues/`;
-export const STREAM_DIR = `${ATTN_ROOT}/stream/`;
+/** The type paths the documents carry (the notes repository's convention: a type is a path to its definition). */
+export const INTENT_TYPE = "/terms/types/intent.md";
+export const STATE_TYPE = "/terms/types/attn-state.md";
 
 export type IntentStatus = "active" | "released";
-export type CueTrigger = "focus" | "time" | "query";
-export type CueStatus = "active" | "dismissed";
-/** How a focus transition came about (the word in parentheses on a stream line). */
+/** A cue's `on` variant: when its intent should resurface. */
+export type CueOn = "focus" | "time" | "query-enter" | "query-exit";
+export const CUE_ONS: readonly CueOn[] = ["focus", "time", "query-enter", "query-exit"];
+/** How a focus transition came about — inferred from two consecutive pointer states (lib/history.ts). */
 export type TransitionKind = "switch" | "interrupt" | "back" | "stop";
 
 /** The clock the app injects — OQX has no `now()`, and ISO strings compare lexically. */
@@ -29,27 +36,6 @@ export function nowIso(now: Date = new Date()): string {
 /** The UTC day of an ISO timestamp: `2026-10-13T15:02:00.000Z` → `2026-10-13`. */
 export function dayOf(iso: string): string {
   return iso.slice(0, 10);
-}
-
-/** The stream document of an ISO timestamp's day. */
-export function streamPath(iso: string): string {
-  return `${STREAM_DIR}${dayOf(iso)}.md`;
-}
-
-/** The day a stream path names (`/attn/stream/2026-10-13.md` → `2026-10-13`), null for anything else. */
-export function streamDay(path: string): string | null {
-  const m = /^\/attn\/stream\/(\d{4}-\d{2}-\d{2})\.md$/.exec(path);
-  return m ? m[1]! : null;
-}
-
-/** The clock a stream line carries: `2026-10-13T15:02:00.000Z` → `15:02:00Z` (whole seconds). */
-export function clockOf(iso: string): string {
-  return `${iso.slice(11, 19)}Z`;
-}
-
-/** The ISO timestamp of a stream line's clock on its day: (`2026-10-13`, `15:02:00Z`) → `2026-10-13T15:02:00.000Z`. */
-export function isoOf(day: string, clock: string): string {
-  return `${day}T${clock.replace(/Z$/, "")}.000Z`;
 }
 
 /** The end of a UTC day, as the first instant of the next one. */
@@ -110,22 +96,24 @@ export function slugify(title: string): string {
   return s || "intent";
 }
 
-/** The intent document a title gets, avoiding the paths `taken` (`-2`, `-3`, …). */
-export function intentPath(title: string, taken: ReadonlySet<string> | readonly string[] = []): string {
+/** The intent document a title gets when declared at `now`: `/attn/intents/YYYY/MM/YYYY-MM-DD-<slug>.md`
+ * (the declaration date, UTC), avoiding the paths `taken` (`-2`, `-3`, …). */
+export function intentPath(title: string, now: string, taken: ReadonlySet<string> | readonly string[] = []): string {
   const set = taken instanceof Set ? taken : new Set(taken);
+  const day = dayOf(now);
+  const dir = `${INTENTS_DIR}${day.slice(0, 4)}/${day.slice(5, 7)}/`;
   const slug = slugify(title);
-  let path = `${INTENTS_DIR}${slug}.md`;
-  for (let n = 2; set.has(path); n++) path = `${INTENTS_DIR}${slug}-${n}.md`;
+  let path = `${dir}${day}-${slug}.md`;
+  for (let n = 2; set.has(path); n++) path = `${dir}${day}-${slug}-${n}.md`;
   return path;
 }
 
-/** The cue document a title gets, likewise. */
-export function cuePath(title: string, taken: ReadonlySet<string> | readonly string[] = []): string {
-  const set = taken instanceof Set ? taken : new Set(taken);
-  const slug = slugify(title);
-  let path = `${CUES_DIR}${slug}.md`;
-  for (let n = 2; set.has(path); n++) path = `${CUES_DIR}${slug}-${n}.md`;
-  return path;
+/** A cue's intent-local id from a label: `When the fire is lit` → `when-the-fire-is-lit`, unique among `taken`. */
+export function cueId(label: string, taken: readonly string[] = []): string {
+  const base = slugify(label).replace(/^intent$/, "cue");
+  let id = base;
+  for (let n = 2; taken.includes(id); n++) id = `${base}-${n}`;
+  return id;
 }
 
 /** The body of a Markdown document: everything after the frontmatter fence. */
@@ -138,15 +126,65 @@ export function bodyOf(raw: string): string {
   return raw;
 }
 
-/** The body without its leading H1 (the title is shown separately) and without fenced code blocks, trimmed. */
+/** The body without its leading H1 (the title is shown separately), trimmed. */
 export function proseOf(raw: string): string {
-  return bodyOf(raw)
-    .replace(/^\s*# .*\n?/, "")
-    .replace(/```[\s\S]*?```\n?/g, "")
-    .trim();
+  return bodyOf(raw).replace(/^\s*# .*\n?/, "").trim();
+}
+
+// ---- the pointer's frontmatter, from raw bytes ------------------------------------------------
+
+/** One YAML scalar as the pointer writes them: quoted strings, `null`/`~`, booleans, numbers, else the text. */
+export function yamlScalar(text: string): unknown {
+  const t = text.trim();
+  if (t === "" || t === "null" || t === "~") return null;
+  if (t === "true") return true;
+  if (t === "false") return false;
+  if (/^-?\d+(\.\d+)?$/.test(t)) return Number(t);
+  if ((t.startsWith('"') && t.endsWith('"')) || (t.startsWith("'") && t.endsWith("'"))) {
+    const inner = t.slice(1, -1);
+    return t.startsWith('"') ? inner.replace(/\\"/g, '"').replace(/\\\\/g, "\\") : inner.replace(/''/g, "'");
+  }
+  return t;
+}
+
+/** The frontmatter of a document's raw bytes, read by the small grammar the
+ * pointer uses — top-level `key: scalar`, `key: [a, b]`, and `key:` over a block
+ * list of `- item` scalars. Enough for `focused_intent`, `since` and `return_stack`
+ * at a past revision (`docs_read { at }` carries no `properties`); anything the
+ * grammar does not know is skipped, never an error. Not a YAML parser. */
+export function frontmatterOf(raw: string): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  const lines = raw.split("\n");
+  if (lines[0] !== "---") return out;
+  let key: string | null = null;
+  for (let i = 1; i < lines.length; i++) {
+    const line = lines[i]!;
+    if (line === "---" || line === "...") break;
+    const item = /^\s+-\s*(.*)$/.exec(line);
+    if (item && key) {
+      const list = Array.isArray(out[key]) ? (out[key] as unknown[]) : [];
+      list.push(yamlScalar(item[1]!));
+      out[key] = list;
+      continue;
+    }
+    const kv = /^([A-Za-z_$][\w$-]*):(?:\s+(.*))?$/.exec(line);
+    if (!kv) continue;
+    key = kv[1]!;
+    const value = kv[2];
+    if (value === undefined || value.trim() === "") { out[key] = []; continue; }
+    const v = value.trim();
+    if (v.startsWith("[") && v.endsWith("]")) {
+      const inner = v.slice(1, -1).trim();
+      out[key] = inner === "" ? [] : inner.split(",").map(yamlScalar);
+    } else {
+      out[key] = yamlScalar(v);
+    }
+  }
+  return out;
 }
 
 const str = (v: unknown): string => (typeof v === "string" ? v : "");
 const strOrNull = (v: unknown): string | null => (typeof v === "string" ? v : null);
 const strList = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : typeof v === "string" && v ? [v] : []);
-export { str, strOrNull, strList };
+const record = (v: unknown): Record<string, unknown> => (v !== null && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {});
+export { str, strOrNull, strList, record };

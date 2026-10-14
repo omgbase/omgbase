@@ -1,6 +1,8 @@
 ---
-type: intent
+type: /terms/types/intent.md
+layer: draft
 status: active
+title: Enjoy lunch
 tags: [rest]
 ---
 

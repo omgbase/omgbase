@@ -2,7 +2,7 @@
   "name": "attn",
   "version": "0.0.0",
   "private": true,
-  "description": "attn — an omgbase-native prototype of a hyper-low-friction attention app: intents and cues are Markdown documents, the focus is a pointer document, the Stream an append-only daily log, `#focus` a virtual OQX join; every switch one atomic `apply` under CAS, over the MINIMAL tools profile (Lit 3 + signals, MCP over Streamable HTTP through webdevproxy)",
+  "description": "attn — an omgbase-native prototype of a hyper-low-friction attention app: intents are dated Markdown documents that carry their cues as a `cues:` frontmatter list, the focus is one pointer document (the only thing a switch writes), the Stream is reconstructed from the pointer's revisions, `#focus` a virtual OQX join; every switch one atomic `apply` under CAS, over the MINIMAL tools profile (Lit 3 + signals, MCP over Streamable HTTP through webdevproxy)",
   "license": "MIT",
   "type": "module",
   "engines": {
