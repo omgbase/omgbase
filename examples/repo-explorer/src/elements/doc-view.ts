@@ -26,6 +26,9 @@ export interface OpenWikiDetail { name: string }
 export interface ViewChangeDetail { view: DocViewMode }
 export interface WritePlanDetail { key: string; value: string; unset: boolean }
 
+/** A property table with more rows than this starts collapsed. */
+const PROPS_OPEN_MAX = 8;
+
 @customElement("doc-view")
 export class DocView extends LitElement {
   static override styles = css`
@@ -38,7 +41,13 @@ export class DocView extends LitElement {
     .toggle { display: inline-flex; border: 1px solid #c9cdd6; border-radius: 4px; overflow: hidden; font-size: 12px; }
     .toggle button { font: inherit; border: 0; background: #fff; padding: 2px 8px; cursor: pointer; color: #5a6270; }
     .toggle button.on { background: #e3edfb; color: #0d47a1; }
-    table.props { border-collapse: collapse; font-size: 12.5px; margin: 0 0 12px; }
+    details.props-wrap { margin: 0 0 12px; }
+    details.props-wrap > summary { cursor: pointer; font-size: 12px; color: #5a6270; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600; user-select: none; list-style: none; display: inline-flex; align-items: center; gap: 6px; }
+    details.props-wrap > summary::-webkit-details-marker { display: none; }
+    details.props-wrap > summary::before { content: "\25B8"; font-size: 11px; color: #8a94a6; }
+    details.props-wrap[open] > summary::before { content: "\25BE"; }
+    details.props-wrap > summary .count { font-weight: 400; text-transform: none; letter-spacing: 0; color: #8a94a6; }
+    table.props { border-collapse: collapse; font-size: 12.5px; margin: 6px 0 0; }
     table.props th, table.props td { text-align: left; padding: 2px 10px 2px 0; vertical-align: top; border-bottom: 1px solid #eef0f4; }
     table.props th { color: #5a6270; font-weight: 500; white-space: nowrap; }
     table.props .src { color: #8a94a6; font-size: 11px; padding-right: 8px; }
@@ -49,6 +58,7 @@ export class DocView extends LitElement {
     .editor input.key { width: 10em; } .editor input.value { flex: 1; min-width: 12em; }
     .editor button, .pending button { font: inherit; font-size: 12.5px; padding: 2px 10px; border: 1px solid #c9cdd6; border-radius: 4px; background: #fff; cursor: pointer; }
     .editor button.primary, .pending button.primary { background: #1565c0; color: #fff; border-color: #1565c0; }
+    .editor button.clear { padding: 2px 7px; color: #5a6270; }
     .editor .hint { color: #8a94a6; font-size: 11.5px; flex-basis: 100%; }
     .pending { margin: 0 0 12px; padding: 8px 10px; border: 1px solid #ffe082; background: #fff8e1; border-radius: 6px; font-size: 12.5px; color: #6d4c00; }
     .pending .summary { margin: 0 0 6px; }
@@ -100,6 +110,8 @@ export class DocView extends LitElement {
 
   @state() private editKey = "";
   @state() private editValue = "";
+  /** Whether the properties table is expanded; null = not chosen yet (open when the table is short). */
+  @state() private propsOpen: boolean | null = null;
 
   private emit<T>(name: string, detail: T): void {
     this.dispatchEvent(new CustomEvent<T>(name, { detail, bubbles: true, composed: true }));
@@ -130,6 +142,12 @@ export class DocView extends LitElement {
     }
   }
 
+  /** The editor's [×]: empty both fields (the pending plan, if any, is untouched). */
+  private clearEdit(): void {
+    this.editKey = "";
+    this.editValue = "";
+  }
+
   private startEdit(key: string, text: string): void {
     this.editKey = key;
     this.editValue = text;
@@ -145,13 +163,20 @@ export class DocView extends LitElement {
     if (!this.doc) return nothing;
     const rows = propertyRows(this.doc.properties);
     if (rows.length === 0) return html`<div class="anchors">no properties</div>`;
-    return html`<table class="props" data-props>
-      ${rows.map((r) => html`<tr>
-        <td class="src">${r.source}</td>
-        <th>${r.key}</th>
-        <td class="val">${r.text}${this.canWrite && r.source === "frontmatter" ? html`<button type="button" title="edit this key" @click=${() => this.startEdit(r.key, r.text)}>edit</button>` : nothing}</td>
-      </tr>`)}
-    </table>`;
+    // Collapsible: a long property bag (frontmatter + inline + computed) can push
+    // the body below the fold. Open by default while it is short; the user's
+    // choice sticks across documents once made.
+    const open = this.propsOpen ?? rows.length <= PROPS_OPEN_MAX;
+    return html`<details class="props-wrap" data-props-details ?open=${open} @toggle=${(e: Event) => { this.propsOpen = (e.target as HTMLDetailsElement).open; }}>
+      <summary>properties <span class="count">(${rows.length})</span></summary>
+      <table class="props" data-props>
+        ${rows.map((r) => html`<tr>
+          <td class="src">${r.source}</td>
+          <th>${r.key}</th>
+          <td class="val">${r.text}${this.canWrite && r.source === "frontmatter" ? html`<button type="button" title="edit this key" @click=${() => this.startEdit(r.key, r.text)}>edit</button>` : nothing}</td>
+        </tr>`)}
+      </table>
+    </details>`;
   }
 
   private renderEditor() {
@@ -163,6 +188,7 @@ export class DocView extends LitElement {
       <input class="value" placeholder='value (true, 3, "text", [a, b] as JSON)' .value=${this.editValue} @input=${(e: Event) => { this.editValue = (e.target as HTMLInputElement).value; }}>
       <button type="submit" class="primary" ?disabled=${this.writing || !this.editKey.trim()}>plan set</button>
       <button type="button" ?disabled=${this.writing || !this.editKey.trim()} @click=${() => this.submitPlan(true)}>plan unset</button>
+      <button type="button" class="clear" title="clear the key and value" aria-label="clear" ?disabled=${this.writing || (this.editKey === "" && this.editValue === "")} @click=${() => this.clearEdit()}>×</button>
       <span class="hint">a change is previewed with <code>plan</code> (its summary and diff below) and committed with <code>execute</code> only when you confirm</span>
     </form>`;
   }
