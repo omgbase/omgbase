@@ -339,12 +339,7 @@ pub const REPO_REMOVED_MESSAGE: &str = "`$repo` was removed in surface 2.0 — r
 #[must_use]
 pub fn bare_target_message(t: Target, depth: Option<usize>) -> String {
     let name = t.as_str();
-    let noun = match t {
-        Target::Docs => "documents",
-        Target::Blocks => "blocks",
-        Target::Nodes => "nodes",
-        Target::Links => "links",
-    };
+    let noun = t.noun();
     let carets = "^".repeat(depth.unwrap_or(1));
     let how = if depth.is_none() {
         format!("; one caret per enclosing block, or the absolute `0^{name}`")
@@ -357,9 +352,10 @@ pub fn bare_target_message(t: Target, depth: Option<usize>) -> String {
 }
 
 /// The unknown-target error (3.0 name pass): a top-level `from <name>` whose
-/// name is not one of the four collections would read an absent root and
-/// return an empty result — refused instead, naming the collections; `edges`,
-/// the links target's name before 3.0, gets its new name spelled out.
+/// name is not one of the five collections would read an absent root and
+/// return an empty result — refused instead, naming the collections (in the
+/// root object's order, `revisions` the fifth since 4.7); `edges`, the links
+/// target's name before 3.0, gets its new name spelled out.
 #[must_use]
 pub fn unknown_target_message(name: &str) -> String {
     let was = if name == "edges" {
@@ -367,8 +363,13 @@ pub fn unknown_target_message(name: &str) -> String {
     } else {
         ""
     };
+    let roots: Vec<String> = crate::context::ALL_TARGETS
+        .iter()
+        .map(|t| format!("`{}`", t.as_str()))
+        .collect();
     format!(
-        "`{name}` is not a target — the repository's collections are `docs`, `blocks`, `nodes`, `links`{was}"
+        "`{name}` is not a target — the repository's collections are {}{was}",
+        roots.join(", ")
     )
 }
 
@@ -378,12 +379,7 @@ pub fn unknown_target_message(name: &str) -> String {
 #[must_use]
 pub fn past_root_message(t: Target, levels: usize) -> String {
     let name = t.as_str();
-    let noun = match t {
-        Target::Docs => "documents",
-        Target::Blocks => "blocks",
-        Target::Nodes => "nodes",
-        Target::Links => "links",
-    };
+    let noun = t.noun();
     let carets = "^".repeat(levels);
     format!(
         "`{carets}{name}` reaches past the root — there is no enclosing row at this depth; at the top level the repository's {noun} are the bare `{name}` (`{name} count {{ … }}`, `from {name}`, `entries({name})`)"
@@ -406,7 +402,7 @@ pub fn past_root_message(t: Target, levels: usize) -> String {
 pub fn check_root_spellings(q: &Query) -> Result<()> {
     // A top-level `from <name>` that is no collection (`from edges`, the links
     // target's name before 3.0) would scan an absent root and come back empty:
-    // refused, naming the four collections.
+    // refused, naming the five collections.
     if let Expr::Ident { name, .. } = &q.source {
         if Target::parse(name).is_none() {
             return Err(SurfaceError::filter_invalid(
@@ -593,7 +589,9 @@ fn mentions_outside_source(q: &Query, name: &str) -> bool {
 
 /// Whether the engine's top-level rows can be anything but store rows: a
 /// `follow` (a destination may be a property's value), a `from E`
-/// re-projection, or a source that is not a bare root scan.
+/// re-projection, or a source that is not a bare root scan (one of the five
+/// collections, `revisions` included — the planner's `compile` is narrower:
+/// the four it can push down).
 fn may_reach_non_rows(q: &Query) -> bool {
     q.follow.is_some() || !q.from.is_empty() || root_target(&q.source).is_none()
 }
@@ -617,7 +615,7 @@ fn describe_value(v: &Value) -> String {
 fn not_a_store_row(v: &Value) -> SurfaceError {
     SurfaceError::filter_invalid(
         format!(
-            "a hit must be a document, block, node or link row — the query reached {}; to follow document references held in a property use refs(<field>)",
+            "a hit must be a document, block, node, link or revision row — the query reached {}; to follow document references held in a property use refs(<field>)",
             describe_value(v)
         ),
         "OQX",
@@ -1483,7 +1481,7 @@ mod tests {
         assert_eq!(e.code, "filter_invalid");
         assert_eq!(
             e.message,
-            "a hit must be a document, block, node or link row — the query reached a string (\"/timeline/kickoff.md\"); to follow document references held in a property use refs(<field>)"
+            "a hit must be a document, block, node, link or revision row — the query reached a string (\"/timeline/kickoff.md\"); to follow document references held in a property use refs(<field>)"
         );
         // A tagged row under SELF_KEY passes and the key is peeled off.
         let mut row = oqx::Object::new();

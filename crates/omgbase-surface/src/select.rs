@@ -931,6 +931,7 @@ fn hit_kind(root: Target) -> &'static str {
         Target::Blocks => "block",
         Target::Nodes => "node",
         Target::Links => "link",
+        Target::Revisions => "revision",
     }
 }
 
@@ -1436,6 +1437,13 @@ fn admit_selector(select: &str, request: Option<&fixes::Request>) -> Result<(Que
             return Err(refused_with(
                 "select: `links` rows have no effect target — select docs, blocks or nodes",
                 root_fix(true),
+            ));
+        }
+        // the history (spec/surface 4.7, spec/mutate §11.8): refused by name, the fix over `docs`
+        Some(Target::Revisions) => {
+            return Err(refused_with(
+                "select: `revisions` rows have no effect target — select docs, blocks or nodes",
+                root_fix(false),
             ));
         }
         Some(t) => t,
@@ -2637,7 +2645,7 @@ mod tests {
             assert_eq!(e.code, "filter_invalid", "{select}");
             e
         };
-        let selector: [(&str, &str); 10] = [
+        let selector: [(&str, &str); 11] = [
             (
                 "docs count { }",
                 "select: `count` yields no rows — a selector's consumer is collect, first or single",
@@ -2649,6 +2657,10 @@ mod tests {
             (
                 "from links",
                 "select: `links` rows have no effect target — select docs, blocks or nodes",
+            ),
+            (
+                "from revisions where origin == \"api\"",
+                "select: `revisions` rows have no effect target — select docs, blocks or nodes",
             ),
             (
                 "entries(docs) collect { }",

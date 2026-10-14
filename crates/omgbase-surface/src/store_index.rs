@@ -147,6 +147,9 @@ pub fn indexable_paths(t: Target) -> &'static [&'static str] {
         Target::Blocks => &["id", "doc_id", "type", "path"],
         Target::Nodes => &["id", "doc_id", "kind", "name", "path"],
         Target::Links => &["id", "doc_id", "dst_id", "path", "dst_path"],
+        // the history has no store index (4.7): the engine builds its own
+        // over the materialized scan (one SELECT per context)
+        Target::Revisions => &[],
     }
 }
 

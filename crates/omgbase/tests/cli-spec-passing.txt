@@ -401,7 +401,6 @@ query::unknown-field-on-links
 query::unknown-name-hint
 query::unknown-name-hint-json
 query::unknown-name-no-hits
-query::unknown-root
 query::values
 query::values-jsonl
 query::values-non-string

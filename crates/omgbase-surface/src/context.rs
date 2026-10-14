@@ -64,17 +64,24 @@ pub const TAG_KEY: &str = "__oqx_target";
 /// no identity or laziness of its own, so this is the port of that handle.
 pub const SCAN_KEY: &str = "__oqx_scan";
 
-/// The four scan targets.
+/// The five root collections (`spec/surface` §1.1): the four live row kinds
+/// and, since 4.7, `revisions` — the history target, one row per revision of
+/// the repository's documents (the `revisions` × `commits` join). The
+/// reference splits the name in two (`Target`, the four kinds its planner
+/// pushes down and its unknown-names pass first keyed by; `Kind`/`Root`, all
+/// five); here one enum tags every row, and the planner declines the fifth
+/// (`crate::planner::root_target` is five-wide, `compile` plans four).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Target {
     Docs,
     Blocks,
     Nodes,
     Links,
+    Revisions,
 }
 
 impl Target {
-    /// The root name: `docs` | `blocks` | `nodes` | `links`.
+    /// The root name: `docs` | `blocks` | `nodes` | `links` | `revisions`.
     #[must_use]
     pub fn as_str(self) -> &'static str {
         match self {
@@ -82,6 +89,7 @@ impl Target {
             Target::Blocks => "blocks",
             Target::Nodes => "nodes",
             Target::Links => "links",
+            Target::Revisions => "revisions",
         }
     }
 
@@ -93,8 +101,22 @@ impl Target {
             "blocks" => Target::Blocks,
             "nodes" => Target::Nodes,
             "links" => Target::Links,
+            "revisions" => Target::Revisions,
             _ => return None,
         })
+    }
+
+    /// The plural noun of the kind's rows, as the root-row messages spell it
+    /// (`crate::query`: "the repository's documents").
+    #[must_use]
+    pub fn noun(self) -> &'static str {
+        match self {
+            Target::Docs => "documents",
+            Target::Blocks => "blocks",
+            Target::Nodes => "nodes",
+            Target::Links => "links",
+            Target::Revisions => "revisions",
+        }
     }
 }
 
@@ -160,6 +182,24 @@ const EDGE_ATTRIBUTES: [&str; 13] = [
     "provenance",
     "anchor",
 ];
+/// The history target (`spec/surface` §1.2, 4.7): a revision row's own
+/// columns under the names `docs_history` already uses (`rev`, `seq`,
+/// `commit`, `origin`, `actor`, `hash`), the commit's `ts` and `reason`, and
+/// `is_current`.
+const REVISION_ATTRIBUTES: [&str; 12] = [
+    "id",
+    "path",
+    "rev",
+    "seq",
+    "doc_id",
+    "commit",
+    "ts",
+    "origin",
+    "actor",
+    "reason",
+    "hash",
+    "is_current",
+];
 /// The engine attributes per kind (`spec/surface` §1.2 table).
 #[must_use]
 pub fn attributes(t: Target) -> &'static [&'static str] {
@@ -168,8 +208,20 @@ pub fn attributes(t: Target) -> &'static [&'static str] {
         Target::Blocks => &BLOCK_ATTRIBUTES,
         Target::Nodes => &NODE_ATTRIBUTES,
         Target::Links => &EDGE_ATTRIBUTES,
+        Target::Revisions => &REVISION_ATTRIBUTES,
     }
 }
+
+/// The revisions scan (`spec/surface` §1.1, 4.7): every revision of every
+/// document of the repository — tombstoned documents included, history is
+/// history — with its commit. The `revisions` table carries no `repo_id`, so
+/// the repository guard joins `docs`. `is_current` is `docs_history`'s
+/// `isCurrent`: the revision is the document's `current_rev`. The planner's
+/// clauses for the kind ([`crate::planner::columns`], `from_clause`) are
+/// these same strings.
+pub(crate) const REVISION_COLS: &str = "r.rev_id, r.doc_id, r.seq, r.rendered_hash, r.path, r.commit_id, c.ts, c.origin, c.actor, c.reason, (d.current_rev = r.rev_id) AS is_current";
+pub(crate) const REVISION_FROM: &str =
+    "revisions r JOIN docs d ON d.doc_id = r.doc_id JOIN commits c ON c.commit_id = r.commit_id";
 /// The source handles of a document (§1.2): `data` is the merged authored
 /// view (frontmatter + inline), the other two one source each.
 pub const SOURCE_HANDLES: [&str; 3] = ["data", "frontmatter", "inline"];
@@ -336,11 +388,18 @@ fn scan_marker(t: Target) -> Value {
     Value::Object(o)
 }
 
-/// The four targets, in the order the root object lists them.
-const ALL_TARGETS: [Target; 4] = [Target::Docs, Target::Blocks, Target::Nodes, Target::Links];
+/// The five root collections, in the order the root object lists them
+/// (`spec/surface` §1.1; `revisions` the fifth since 4.7).
+pub const ALL_TARGETS: [Target; 5] = [
+    Target::Docs,
+    Target::Blocks,
+    Target::Nodes,
+    Target::Links,
+    Target::Revisions,
+];
 
 /// Whether `row` is the root object ([`StoreContext::root_object`]): a plain
-/// object whose own keys are exactly the four collections, each the lazy
+/// object whose own keys are exactly the five collections, each the lazy
 /// marker of its target. Recognized by shape — a hidden tag would show up in
 /// `entries(^$it)`, which must name exactly the collections.
 fn is_root_object(row: &Value) -> bool {
@@ -399,6 +458,9 @@ pub fn render_row_values(v: Value) -> Value {
                     Target::Blocks => ("block_id", "__path"),
                     Target::Nodes => ("node_id", "__path"),
                     Target::Links => ("edge_id", "__path"),
+                    // a revision's path is `revisions.path` — the path it was
+                    // committed under (a move re-paths the current revision; §1.2, 4.7).
+                    Target::Revisions => ("rev_id", "path"),
                 };
                 let mut out = Object::with_capacity(2);
                 out.insert(crate::query::HIT_ID, Value::Str(col_str(&row, id_col)));
@@ -633,7 +695,8 @@ impl<'a> StoreContext<'a> {
 
     /// The root row (`spec/surface` §1.1, 2.0; `spec/oqx` 0.18 `root_object`):
     /// the repository, reached as `^$it` from a top-level row (`0^$it` from any
-    /// depth). Its own keys are the four collections as lazy markers, so
+    /// depth). Its own keys are the five collections as lazy markers (in
+    /// [`ALL_TARGETS`] order), so
     /// `entries(^$it)` names them without running a scan and `^$it.docs` is
     /// the same scan as `^docs`; `get` answers `id` with the repository id (an
     /// intrinsic, not an entry). Same shape as the reference's root row.
@@ -677,8 +740,28 @@ impl<'a> StoreContext<'a> {
                  WHERE d.repo_id = ?1 AND +e.repo_id = ?1 AND e.to_commit IS NULL AND d.deleted_commit IS NULL
                  ORDER BY d.path, e.edge_id"
             }
+            // The history (4.7): its own statement, in the same `(path, id)`
+            // keyset order as every target — `(path as of the revision, rev_id)`.
+            Target::Revisions => {
+                let sql = format!(
+                    "SELECT {REVISION_COLS} FROM {REVISION_FROM} WHERE d.repo_id = ?1 ORDER BY r.path, r.rev_id"
+                );
+                return Ok(Self::tag_all(self.all(&sql, &repo)?, t));
+            }
         };
         Ok(Self::tag_all(self.all(sql, &repo)?, t))
+    }
+
+    /// A document's revisions (the `revisions` relation of a docs row, §1.2,
+    /// 4.7): oldest first, as `docs_history` lists them.
+    fn doc_revisions(&self, doc_id: &str) -> oqx::Result<Value> {
+        let sql = format!(
+            "SELECT {REVISION_COLS} FROM {REVISION_FROM} WHERE r.doc_id = ?1 ORDER BY r.seq"
+        );
+        Ok(Self::tag_all(
+            self.all(&sql, &[SqlValue::Text(doc_id.to_owned())])?,
+            Target::Revisions,
+        ))
     }
 
     // ---- properties ---------------------------------------------------------------------
@@ -934,6 +1017,8 @@ impl<'a> StoreContext<'a> {
             (Target::Docs, "blocks") => {
                 Value::Array(self.doc_blocks_preorder(&col_str(row, "doc_id"), &col_str(row, "path"))?)
             }
+            // A document's revision list (`spec/surface` §1.2, 4.7), oldest first.
+            (Target::Docs, "revisions") => self.doc_revisions(&col_str(row, "doc_id"))?,
             // The linked / linking DOCUMENTS are reached through the link rows
             // (3.0 follow-up, §9: the `out` / `in` relations are gone):
             // `out_links collect distinct { from dst }` and `in_links collect
@@ -1107,6 +1192,21 @@ impl<'a> StoreContext<'a> {
             .unwrap_or_else(absent_single))
     }
 
+    /// `doc` on a revision row (`spec/surface` §1.2, 4.7): the document's
+    /// CURRENT live row — the revision's `path` may be an earlier one — and
+    /// absent (the single-with-no-row marker, as `dst` on a dangling link)
+    /// for a tombstoned document: its revisions are rows, `doc == null` tells
+    /// them apart. Read in full, as the reference does (not a lazy owner: the
+    /// liveness test is the point of the read).
+    fn revision_doc(&self, row: &Value) -> oqx::Result<Value> {
+        Ok(self
+            .one(
+                "SELECT * FROM docs WHERE doc_id = ?1 AND deleted_commit IS NULL",
+                &[SqlValue::Text(col_str(row, "doc_id"))],
+            )?
+            .map_or_else(absent_single, |o| Self::tag(o, Target::Docs)))
+    }
+
     fn owning_block(&self, row: &Value) -> oqx::Result<Value> {
         let id = col(row, "block_id");
         if !id.truthy() {
@@ -1178,7 +1278,8 @@ impl<'a> StoreContext<'a> {
                         | "out_links"
                 ) && Target::parse(key).is_none()
             }
-            Target::Nodes | Target::Links => true,
+            // never handed out as lazy owners
+            Target::Nodes | Target::Links | Target::Revisions => true,
         }
     }
 
@@ -1300,6 +1401,19 @@ impl<'a> StoreContext<'a> {
             )?),
             (Target::Links, "field") => Self::null_if_absent(c("src_field")),
             (Target::Links, "predicate" | "provenance" | "dst_kind" | "anchor") => c(name),
+            // revisions: the `revisions` × `commits` columns under
+            // docs_history's names (`spec/surface` §1.2, 4.7). `rendered_hash`
+            // is a blob, already hex (`sql_value`).
+            (Target::Revisions, "id" | "rev") => c("rev_id"),
+            (Target::Revisions, "path") => rooted("path"),
+            (Target::Revisions, "seq" | "doc_id" | "ts" | "origin") => c(name),
+            (Target::Revisions, "commit") => c("commit_id"),
+            (Target::Revisions, "actor" | "reason") => Self::null_if_absent(c(name)),
+            (Target::Revisions, "hash") => c("rendered_hash"),
+            (Target::Revisions, "is_current") => Value::Bool(matches!(
+                c("is_current"),
+                Value::Number(n) if n == 1.0
+            )),
             _ => Value::Undefined,
         })
     }
@@ -1479,10 +1593,12 @@ impl<'a> StoreContext<'a> {
     }
 
     fn text_match(&self, t: Target, row: &Value, terms: &str) -> oqx::Result<Value> {
-        if t == Target::Links {
-            return Err(OqxError::eval(
-                "text(...) is not available on the links target",
-            ));
+        // links and revisions (4.7) have no indexed body: `filter_invalid`.
+        if matches!(t, Target::Links | Target::Revisions) {
+            return Err(OqxError::eval(format!(
+                "text(...) is not available on the {} target",
+                t.as_str()
+            )));
         }
         let m = sanitize_fts_query(terms);
         if m.is_empty() {
@@ -1539,7 +1655,7 @@ impl<'a> StoreContext<'a> {
     }
 
     fn semantic_score(&self, t: Target, row: &Value, phrase: &str) -> oqx::Result<Value> {
-        if matches!(t, Target::Nodes | Target::Links) {
+        if matches!(t, Target::Nodes | Target::Links | Target::Revisions) {
             return Err(OqxError::eval(
                 "semantic(...) is available on the docs and blocks targets",
             ));
@@ -1653,7 +1769,7 @@ impl DataContext for StoreContext<'_> {
             let rows = if rr.once { slot.take() } else { slot.clone() };
             return Value::Array(rows.unwrap_or_default());
         }
-        // The root scope's names (`spec/oqx` §2 step 5 at the root): the four
+        // The root scope's names (`spec/oqx` §2 step 5 at the root): the five
         // lazy scans and `id`, the repository id — so `^docs` / `0^docs` from
         // any row is the scan and `^id` / `0^id` the id.
         if name == "id" {
@@ -1707,6 +1823,9 @@ impl DataContext for StoreContext<'_> {
             (Target::Docs, "doc") | (Target::Blocks, "block") | (Target::Nodes, "section") => {
                 return Ok(row.clone());
             }
+            // from a revision to its document's CURRENT row (4.7), before the
+            // owning-doc arm the other kinds share.
+            (Target::Revisions, "doc") => return self.revision_doc(row),
             (_, "doc") => return self.owning_doc(row),
             (Target::Nodes, "block") => return self.owning_block(row),
             (Target::Links, "dst") => return self.destination_doc(row),
@@ -1718,8 +1837,9 @@ impl DataContext for StoreContext<'_> {
         // A bare target name that is not one of this row's relations reads a
         // property the row has none of (`spec/surface` §1.1, 2.0): loud, naming
         // the root-row spelling. `docs`/`links` never get here (the runner
-        // refuses them statically); `blocks` on a block or edge row and `nodes`
-        // on a node or edge row do. The reference throws from `get` too.
+        // refuses them statically); `blocks` on a block or edge row, `nodes`
+        // on a node or edge row and `revisions` on anything but a document do.
+        // The reference throws from `get` too.
         if let Some(named) = Target::parse(key) {
             return Err(OqxError::eval(crate::query::bare_target_message(
                 named, None,
@@ -1743,7 +1863,10 @@ impl DataContext for StoreContext<'_> {
             // `attrs.<k>` (the attributes above win on collision); an absent
             // key is undefined, matching a doc's missing frontmatter key.
             Target::Blocks | Target::Nodes => Self::jattr(row, key),
-            Target::Links => Value::Undefined,
+            // closed row shapes (§1.5): no authored data reaches a link or
+            // revision row — an unknown name is absent (the names pass has
+            // already refused a tier-3 name statically).
+            Target::Links | Target::Revisions => Value::Undefined,
         })
     }
 
@@ -1792,6 +1915,7 @@ impl DataContext for StoreContext<'_> {
             Some(Target::Blocks) => col(row, "block_id").clone(),
             Some(Target::Nodes) => col(row, "node_id").clone(),
             Some(Target::Links) => col(row, "edge_id").clone(),
+            Some(Target::Revisions) => col(row, "rev_id").clone(),
             None => row.clone(),
         }
     }

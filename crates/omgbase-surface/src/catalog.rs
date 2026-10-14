@@ -470,7 +470,7 @@ fn build_catalog() -> Vec<ToolSpec> {
         ToolSpec {
             name: "docs_read",
             description: d::DOCS_READ,
-            input_schema: doc(&[("include_ids", b())], &[]),
+            input_schema: doc(&[("include_ids", b()), ("at", s())], &[]),
         },
         ToolSpec {
             name: "docs_read_many",
@@ -1170,6 +1170,23 @@ impl Surface {
         self.locate_doc(repo_id, "docs_update", args)
     }
 
+    /// `docs_read { at }` and its sugar `docs_read_at` (`spec/surface` §2,
+    /// 4.7): the document AS OF a revision, `spec/store` §6.2 reconstruct; a
+    /// revision that is not the document's — unknown, or another document's —
+    /// is `target_missing { doc, rev }`. The reference's `docsReadAt`.
+    fn docs_read_at(&self, doc_id: &str, rev: &str) -> Result<Json> {
+        read::docs_read_at(&self.store, doc_id, rev)?.ok_or_else(|| {
+            SurfaceError::with_data(
+                "target_missing",
+                format!(
+                    "no revision {} for document {doc_id}",
+                    Json::String(rev.to_owned())
+                ),
+                json!({ "doc": doc_id, "rev": rev }),
+            )
+        })
+    }
+
     fn locate_doc(&self, repo_id: &str, tool: &str, args: &Json) -> Result<String> {
         let (id_key, path_key) = ("id", "path");
         let schema = &tool_spec(tool).expect("a catalog tool").input_schema;
@@ -1676,6 +1693,21 @@ impl Surface {
             "docs_read" => {
                 let (repo, _) = self.scope(args)?;
                 let doc_id = self.locate_doc(&repo, name, args)?;
+                if let Some(rev) = arg_str(args, "at") {
+                    // `at` (4.7): the document AS OF that revision —
+                    // `docs_read_at`'s code path, so the two return the same
+                    // bytes. Block ids at a past revision are a later
+                    // question: `include_ids` is refused with `at`, after the
+                    // locator (each argument is valid on its own).
+                    if arg_bool(args, "include_ids")?.unwrap_or(false) {
+                        return Err(argument_error(
+                            name,
+                            "`include_ids` is not available with `at`",
+                            &tool_spec(name).expect("a catalog tool").input_schema,
+                        ));
+                    }
+                    return self.docs_read_at(&doc_id, rev);
+                }
                 read::docs_read(
                     &self.store,
                     &doc_id,
@@ -2548,20 +2580,13 @@ impl Surface {
                     json!({ "id": doc_id, "path": path.as_deref().map_or_else(String::new, reference_path), "from": from, "to": to, "diff": diff }),
                 )
             }
+            // sugar for `docs_read { id | path, at: rev }` (4.7): the same code
+            // path, the identical result.
             "docs_read_at" => {
                 let (repo, _) = self.scope(args)?;
                 let doc_id = self.locate_doc(&repo, name, args)?;
                 let rev = arg_string(args, "rev")?;
-                read::docs_read_at(&self.store, &doc_id, &rev)?.ok_or_else(|| {
-                    SurfaceError::with_data(
-                        "target_missing",
-                        format!(
-                            "no revision {} for document {doc_id}",
-                            Json::String(rev.clone())
-                        ),
-                        json!({ "doc": doc_id, "rev": rev }),
-                    )
-                })
+                self.docs_read_at(&doc_id, &rev)
             }
             "docs_history" => {
                 let (repo, _) = self.scope(args)?;
@@ -3498,12 +3523,12 @@ mod tests {
         assert_eq!(retired.body["error"], "filter_invalid");
         assert_eq!(
             retired.body["message"],
-            "`doc` is no longer an argument — pass `id` or `path` (docs_read takes id?, include_ids?, path?, repo?)"
+            "`doc` is no longer an argument — pass `id` or `path` (docs_read takes at?, id?, include_ids?, path?, repo?)"
         );
         let neither = s.call("docs_read", json!({}));
         assert_eq!(
             neither.body["message"],
-            "pass id or path (docs_read takes id?, include_ids?, path?, repo?)"
+            "pass id or path (docs_read takes at?, id?, include_ids?, path?, repo?)"
         );
         assert_eq!(
             s.call("docs_read", json!({ "path": "//a.md" })).body["id"],

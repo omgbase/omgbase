@@ -29,7 +29,7 @@ use oqx::{Plan, QueryPlanner, Value, partition_pushable, residual_query};
 use rusqlite::Connection;
 use rusqlite::types::Value as SqlValue;
 
-use crate::context::{Target, fetch_rows, tag_rows};
+use crate::context::{REVISION_COLS, REVISION_FROM, Target, fetch_rows, tag_rows};
 use crate::translate::{TranslateCtx, translate_predicate};
 
 /// The SQL aliases of the scanned row (`self`) and its owning doc (`doc`).
@@ -39,15 +39,21 @@ fn aliases(t: Target) -> (&'static str, &'static str) {
         Target::Blocks => ("b", "d"),
         Target::Nodes => ("n", "d"),
         Target::Links => ("e", "d"),
+        Target::Revisions => ("r", "d"),
     }
 }
 
+/// The scan's `FROM`. The `revisions` arms here and below (4.7) are the
+/// context's own scan spelled as clauses, so a caller keyed by target
+/// (`names::present`, a probe) can speak of the kind; the planner itself
+/// never plans a revisions scan ([`compile`]).
 pub(crate) fn from_clause(t: Target) -> &'static str {
     match t {
         Target::Docs => "docs d",
         Target::Blocks => "blocks b JOIN docs d ON d.doc_id = b.doc_id",
         Target::Nodes => "nodes n JOIN docs d ON d.doc_id = n.doc_id",
         Target::Links => "edges e JOIN docs d ON d.doc_id = e.src_doc",
+        Target::Revisions => REVISION_FROM,
     }
 }
 
@@ -59,6 +65,7 @@ pub(crate) fn columns(t: Target) -> &'static str {
         Target::Blocks => "b.*, d.path AS __path",
         Target::Nodes => "n.*, d.path AS __path",
         Target::Links => "e.*, d.path AS __path",
+        Target::Revisions => REVISION_COLS,
     }
 }
 
@@ -69,16 +76,21 @@ pub(crate) fn order_clause(t: Target) -> &'static str {
         Target::Blocks => "d.path, b.block_id",
         Target::Nodes => "d.path, n.node_id",
         Target::Links => "d.path, e.edge_id",
+        Target::Revisions => "r.path, r.rev_id",
     }
 }
 
-/// The liveness guards of the root scan, with the repo id bound.
+/// The liveness guards of the root scan, with the repo id bound. The history
+/// has no liveness: every revision of every document of the repository,
+/// tombstoned ones included (§1.1, 4.7) — the repository guard through the
+/// owning `docs` row, since `revisions` carries no `repo_id`.
 pub(crate) fn guards(t: Target) -> &'static str {
     match t {
         Target::Docs => "d.repo_id = ? AND d.deleted_commit IS NULL",
         Target::Blocks => "b.repo_id = ? AND b.deleted_commit IS NULL AND d.deleted_commit IS NULL",
         Target::Nodes => "n.repo_id = ? AND d.deleted_commit IS NULL",
         Target::Links => "e.repo_id = ? AND e.to_commit IS NULL AND d.deleted_commit IS NULL",
+        Target::Revisions => "d.repo_id = ?",
     }
 }
 
@@ -89,7 +101,7 @@ pub(crate) fn guards(t: Target) -> &'static str {
 /// `path` probes). [`guards_by_doc`] goes with it; `Docs` is `from_clause`.
 pub(crate) fn from_by_doc(t: Target) -> &'static str {
     match t {
-        Target::Docs => from_clause(t),
+        Target::Docs | Target::Revisions => from_clause(t),
         Target::Blocks => "docs d CROSS JOIN blocks b ON b.doc_id = d.doc_id",
         Target::Nodes => "docs d CROSS JOIN nodes n ON n.doc_id = d.doc_id",
         Target::Links => "docs d CROSS JOIN edges e ON e.src_doc = d.doc_id",
@@ -102,7 +114,7 @@ pub(crate) fn from_by_doc(t: Target) -> &'static str {
 /// `doc_id` one. Two repo-id binds (`Docs`: one, as `guards`).
 pub(crate) fn guards_by_doc(t: Target) -> &'static str {
     match t {
-        Target::Docs => guards(t),
+        Target::Docs | Target::Revisions => guards(t),
         Target::Blocks => {
             "d.repo_id = ? AND +b.repo_id = ? AND b.deleted_commit IS NULL AND d.deleted_commit IS NULL"
         }
@@ -113,10 +125,12 @@ pub(crate) fn guards_by_doc(t: Target) -> &'static str {
     }
 }
 
-/// The root collection a query scans, if it is a bare `docs|blocks|nodes|links`
-/// source at the root scope (else `None` — not a pushable shape; a nested
-/// `^docs` is a block's receiver, never the query's source). The runner asks
-/// too: a bare root scan's rows are store rows by construction.
+/// The root collection a query scans, if it is a bare
+/// `docs|blocks|nodes|links|revisions` source at the root scope (else `None` —
+/// a nested `^docs` is a block's receiver, never the query's source). The
+/// runner asks too: a bare root scan's rows are store rows by construction.
+/// Five-wide (the reference's `ROOTS` test); [`compile`] plans four — a
+/// `revisions` scan (4.7) always runs in memory.
 pub(crate) fn root_target(source: &Expr) -> Option<Target> {
     match source {
         Expr::Ident { name, .. } => Target::parse(name),
@@ -125,11 +139,14 @@ pub(crate) fn root_target(source: &Expr) -> Option<Target> {
 }
 
 /// Whether `name` is a relation of `target`'s rows that is spelled like a
-/// target (§1.2: `docs.nodes`, `docs.blocks`, `blocks.nodes`, `section.blocks`).
+/// target (§1.2: `docs.nodes`, `docs.blocks`, `docs.revisions` (4.7),
+/// `blocks.nodes`, `section.blocks`).
 fn is_target_relation_of(target: Target, name: &str) -> bool {
     matches!(
         (target, name),
-        (Target::Docs, "nodes" | "blocks") | (Target::Blocks, "nodes") | (Target::Nodes, "blocks")
+        (Target::Docs, "nodes" | "blocks" | "revisions")
+            | (Target::Blocks, "nodes")
+            | (Target::Nodes, "blocks")
     )
 }
 
@@ -281,6 +298,11 @@ pub fn compile(query: &Query, params: &[Value], repo_id: &str) -> Option<Compile
         return None;
     }
     let target = root_target(&query.source)?;
+    // The history (4.7) is never planned: no store index, no pushdown — the
+    // scan runs in memory, as the reference's four-wide `rootTarget` decides.
+    if target == Target::Revisions {
+        return None;
+    }
     let (self_alias, doc_alias) = aliases(target);
     let ctx = TranslateCtx {
         target,

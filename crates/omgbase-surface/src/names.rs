@@ -57,6 +57,7 @@ pub fn relations(t: Target) -> &'static [(&'static str, Target)] {
             ("nodes", Target::Nodes),
             ("out_links", Target::Links),
             ("in_links", Target::Links),
+            ("revisions", Target::Revisions),
         ],
         Target::Blocks => &[
             ("children", Target::Blocks),
@@ -69,7 +70,7 @@ pub fn relations(t: Target) -> &'static [(&'static str, Target)] {
             ("subsections", Target::Nodes),
             ("children", Target::Nodes),
         ],
-        Target::Links => &[],
+        Target::Links | Target::Revisions => &[],
     }
 }
 
@@ -85,6 +86,8 @@ pub fn handles(t: Target) -> &'static [(&'static str, Target)] {
             ("block", Target::Blocks),
         ],
         Target::Links => &[("doc", Target::Docs), ("dst", Target::Docs)],
+        // `doc` reaches the document's current row (4.7)
+        Target::Revisions => &[("doc", Target::Docs)],
     }
 }
 
@@ -92,9 +95,10 @@ fn lookup(table: &[(&str, Target)], name: &str) -> Option<Target> {
     table.iter().find(|(n, _)| *n == name).map(|(_, t)| *t)
 }
 
-/// The kinds whose row shape is closed: no authored data reaches a row by bare name.
+/// The kinds whose row shape is closed: no authored data reaches a row by bare
+/// name — `links`, and `revisions` since 4.7.
 fn closed(t: Target) -> bool {
-    t == Target::Links
+    matches!(t, Target::Links | Target::Revisions)
 }
 
 fn noun(t: Target) -> &'static str {
@@ -103,6 +107,7 @@ fn noun(t: Target) -> &'static str {
         Target::Blocks => "block",
         Target::Nodes => "node",
         Target::Links => "link",
+        Target::Revisions => "revision",
     }
 }
 
@@ -160,7 +165,7 @@ fn authored_keys(store: &Store, repo_id: &str, target: Target) -> Result<Vec<Str
                 planner::guards(target)
             )
         }
-        Target::Links => return Ok(Vec::new()),
+        Target::Links | Target::Revisions => return Ok(Vec::new()),
     };
     let mut stmt = store.conn().prepare(&sql)?;
     let rows = stmt.query_map(params![repo_id], |r| r.get::<_, String>(0))?;
@@ -168,6 +173,10 @@ fn authored_keys(store: &Store, repo_id: &str, target: Target) -> Result<Vec<Str
 }
 
 fn present(store: &Store, repo_id: &str, target: Target) -> Result<bool> {
+    // A closed kind has no authored vocabulary to be absent; the question never reaches it.
+    if target == Target::Revisions {
+        return Ok(true);
+    }
     let sql = format!(
         "SELECT 1 FROM {} WHERE {} LIMIT 1",
         planner::from_clause(target),

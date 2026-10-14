@@ -399,7 +399,15 @@ pub fn docs_read_many(
     Ok(json!({ "items": items, "errors": errors, "truncated": truncated }))
 }
 
-/// §2 `docs_read_at`: `spec/store` §6.2 plus the current properties.
+/// §2 `docs_read { at }` / `docs_read_at` (4.7): the document AS OF a
+/// revision — `spec/store` §6.2 reconstruct, the path as of the revision in
+/// the reference form. No `properties`: the properties table is current-state
+/// only (`spec/properties`), and recomputing the bag from the reconstructed
+/// bytes is not a one-call affair of the format layer (the inline fields come
+/// out of the ingest's node projection) — so the time-travel read carries the
+/// bytes and nothing it would have to guess at (through 4.6 `docs_read_at`
+/// returned the CURRENT bag flagged `propertiesAreCurrent: true`). `None`
+/// when `rev` is not a revision of the (live) document.
 pub fn docs_read_at(store: &Store, doc_id: &str, rev: &str) -> Result<Option<Json>> {
     let Some(r) = store.read_at_revision(doc_id, rev)? else {
         return Ok(None);
@@ -410,8 +418,6 @@ pub fn docs_read_at(store: &Store, doc_id: &str, rev: &str) -> Result<Option<Jso
         "rev": rev,
         "raw": r.content,
         "renderedHashMatch": r.rendered_hash_match,
-        "properties": surface_properties(store.properties_grouped(doc_id)?),
-        "propertiesAreCurrent": true,
     })))
 }
 

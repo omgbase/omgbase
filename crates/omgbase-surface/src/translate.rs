@@ -205,6 +205,7 @@ pub fn non_property_handles(t: Target) -> &'static [&'static str] {
             "nodes",
             "out_links",
             "in_links",
+            "revisions",
             "data",
             "frontmatter",
             "inline",
@@ -228,6 +229,8 @@ pub fn non_property_handles(t: Target) -> &'static [&'static str] {
             "attrs",
         ],
         Target::Links => &["doc", "dst"],
+        // a revision's one reach-through: the document's current row (4.7)
+        Target::Revisions => &["doc"],
     }
 }
 
@@ -241,7 +244,7 @@ pub(crate) fn row_attributes(t: Target) -> &'static [&'static str] {
     match t {
         Target::Docs => &["id", "path", "raw", "hash", "updated_at", "title", "tags"],
         Target::Blocks => &["id", "path", "raw", "hash", "updated_at"],
-        Target::Nodes | Target::Links => &["id", "path"],
+        Target::Nodes | Target::Links | Target::Revisions => &["id", "path"],
     }
 }
 
@@ -550,6 +553,8 @@ fn operand(e: &Expr, ctx: &TranslateCtx<'_>) -> Option<Operand> {
                     Operand::json(format!("{s}.attrs"), &[name])
                 }
                 Target::Links => edge_field(name, s),
+                // never reached: the planner declines a revisions scan (4.7)
+                Target::Revisions => None,
             }
         }
         Expr::Member { .. } => {
@@ -1818,7 +1823,7 @@ mod tests {
             .expect("observe");
         let ctx = StoreContext::new(store.conn(), &repo, HashMap::new());
 
-        let mut universe: Vec<&str> = [Target::Docs, Target::Blocks, Target::Nodes, Target::Links]
+        let mut universe: Vec<&str> = crate::context::ALL_TARGETS
             .into_iter()
             .flat_map(|t| non_property_handles(t).iter().copied())
             .collect();
@@ -1842,7 +1847,7 @@ mod tests {
         universe.dedup();
 
         let is_shape = |v: &Value| matches!(v, Value::Array(_) | Value::Object(_));
-        for target in [Target::Docs, Target::Blocks, Target::Nodes, Target::Links] {
+        for target in crate::context::ALL_TARGETS {
             // a root is a lazy scan marker; `to_rows` reads it
             let rows = ctx.to_rows(&ctx.root(target.as_str()));
             assert!(!rows.is_empty(), "{target:?} has rows");
