@@ -4,6 +4,110 @@ All notable changes to `omgbase-surface` are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [Semantic Versioning](https://semver.org/) (pre-1.0: a minor bump may break).
 
+## [4.7.0] - 2026-10-13
+
+### Minor
+- History is queryable (spec/surface 4.7). A `revisions` target in OQX — one row
+  per stored revision of every document of the repository, deleted documents
+  included: `id`/`rev`, `path` (as of the revision), `seq`, `doc_id`, `commit`,
+  `ts`, `origin`, `actor`, `reason`, `hash`, `is_current`, with `doc` reaching the
+  document's current row (absent for a deleted one) and `revisions` a relation of
+  every document (`from docs where revisions count { where origin == "api" } > 0`);
+  `^revisions` from a row, `entries(^$it)` names five collections. `docs_read`
+  takes `at: <rev>` — the document as of that revision (`raw` reconstructed,
+  `path` as of the revision, `renderedHashMatch`; no `properties`, `include_ids`
+  refused) — and `docs_read_at` is now its sugar with the identical result (the
+  current property bag flagged `propertiesAreCurrent` is gone from it). The
+  minimal tools profile reaches history through `query` and `docs_read` alone;
+  `docs_history`/`docs_read_at`/`docs_diff_unified` stay as sugar.
+
+  The unknown-names pass (§1.5) knows the kind: `revisions` is a closed row shape
+  (`` `commited` is not a field of revisions (fields: id, path, rev, seq, doc_id,
+  commit, ts, origin, actor, reason, hash, is_current); did you mean `commit`? ``),
+  `revisions` is a relation of docs and `doc` a handle of a revision row; a write
+  selector over `revisions` is refused like one over `links` (`spec/mutate` §11.8,
+  `select-revisions-refused`). `@omgbase/oqx-syntax` lists the fifth root.
+- Teaching surfaces, second pass (spec/mutate 3.4, spec/surface 4.5), from a 78-run agent benchmark against the minimal profile that passed every task but guessed four effect shapes wrong first. The `effects` schema description now spells `at` ("right after block X" is `into: X's parent, at: { after: X }`), the per-op `expect` shapes, the `field` list per target kind and where `expect.max` lives. Four shape errors carry a literal corrected call in `data.fix`: a bare `"after"`/`"before"` anchor (the fix anchors on the block from its parent — the one shape fix that reads the store), a guard-first plural `expect` (inverted), an effect-level `expect.max` (moved beside `select`, or dropped), a block `field` of `text`/`content`/`body`/`raw` (`markdown`). The `query` ladder gains a `links` rung and a string-method rung. `plan { diffs?: boolean }` (default `false`) returns `preview.diffs` only on request; `plan_id` is unaffected, and the CLI's `--server` dry runs pass `diffs: true`. Every string-list argument (`docs`, `ids`, `roots`, `select`, `blocks`, `unset`) takes one bare string as a one-element list; a comma-joined string stays "must be an array of strings" with the comma-split call as its `fix`. Fixtures: `spec/mutate/cases/effects.json` 79 → 92 (`shape-*`), `spec/surface` `examples.json` (28 steps), `reads.json` (`arguments` 35 → 42 steps; plan previews without `diffs`), `interop.json`, `tool-descriptions.json`.
+- **Unknown names** (`spec/surface` 4.5 → 4.6, §1.5; `spec/oqx` 0.22 → 0.23,
+  AST.md §5b). A query that read a name no row of its kind can carry — `select
+  path, target from links` (links have `dst_path`), `select type, value from
+  blocks`, `where preview != ""` — used to run silently, returning absent columns
+  or matching every row. Now every name a query reads is judged **statically**,
+  before any row is read, against the vocabulary of the row kind it is read from:
+  tier 1, an engine attribute, handle or relation; tier 2, an authored property at
+  least one live object of the kind in the repository carries (a frontmatter or
+  inline key on docs — `stage` on three processes is enough; an `attrs` key on
+  blocks and nodes); tier 3, a name no object carries — the complaint. On `links`
+  (a closed row shape) a tier-3 name is `filter_invalid` listing the fields with
+  a nearest match (`` `dst_pth` is not a field of links (fields: id, path, …); did
+  you mean `dst_path`? ``); on docs, blocks and nodes a read returns its rows and
+  gains **`hints: [string…]`**, the last member of the `query` result, one line per
+  name in first-reference order (`` `titel` is not a field of docs and no document
+  in this repository carries a property by that name; did you mean `title`? ``;
+  under a source handle: `` no document in this repository carries a property
+  `path` (`data.path`) ``), absent when there is nothing to say; a **write
+  selector** (`plan`/`apply`/`execute` with `select`) is refused through the
+  runner's AST entry (`unknownNames: "refuse"`, its default; the source entry
+  every read uses hints), since `where target != "x"` would select every row. The
+  verdict never depends on the query's filter; a repository with no object of a
+  kind skips the check for that kind. The refusal wears the admission's `select: ` prefix and `hint: "selection"`
+  (`spec/mutate` §11.8, fixture `select-unknown-name-refused`). The nearest match
+  is case-insensitive Damerau–Levenshtein ≤ 2 or a substring of ≥ 3 characters; one
+  typo wins first, then a substring outranks a distance-2 match (`via` →
+  `via_id`, not `id`), then the lowest distance; a name under three characters gets no suggestion (`x`, `in`). The vocabulary is cached per repository on its head
+  commit.
+
+  - `@omgbase/oqx` 0.23.0 (hand-bumped with its CHANGELOG, per the standalone
+    convention — `none` here): the **`references(query)`** static pass — every name
+    a query reads from a row, with its clause and the row chain of its scope, for
+    a host to judge against its data model; new fixture kind `expect.references`
+    and suite `spec/oqx/cases/references.json` (29). The `oqx` crate's twin
+    follows (`none` here; hand-bumped to 0.23.0 by the Rust change).
+  - `@omgbase/oqx-syntax`: `LANGUAGE_VERSION` 0.23 (no lexical change).
+  - `@omgbase/core`: `oqx-js/names.ts` (the vocabulary, the kind of a scope, the
+    judgement, the messages, the nearest match), `oqxRun`/`oqxRunQuery` with
+    `OqxOptions.unknownNames` and `OqxResult.hints`; `query_syntax` names the
+    rule; `spec-versions.ts` surface 4.6.
+  - `omgbase` (CLI): `omg query` prints each hint as a dim `  hint: …` line on
+    stderr after its rows (`--json` carries the member); four `spec/cli` cases.
+  - `oqx` (crate) 0.23.0 (hand-bumped, `none` here): `references::references(&Query)`
+    over borrowed nodes (`Reference`, `ReferenceScope`, `ReferenceStep`, `StepExpr`);
+    to carry those borrows `walk::Visitor` gains the tree's lifetime — `Visitor<'a>`,
+    an implementor that keeps nothing writes `impl Visitor<'_> for V` (pre-1.0 minor).
+    `omgbase-surface`: `names` (the judgement, `VocabularyCache` held by the `Surface`
+    and passed through `QueryOptions.vocabulary`; `QueryOptions.unknown_names`,
+    `OqxResult.hints`), the selector's `select: ` refusal in `select::expand`.
+  - `omgbase-surface` / `omgbase` (crates): `reference.rs` synced byte for byte;
+    the Rust judgement, `hints` and the `references` twin are the Rust change
+    that follows this one (the new `query-unknown.json` and `references.json`
+    suites wait on it).
+
+### Patch
+- OQX 0.22 (`spec/oqx` 0.21 → 0.22): **infix regex operators**, sugar over
+  `matches` at comparison precedence — `a ~ b` ≡ `a.matches(b)`, `a ~* b` ≡
+  `a.matches(b, "i")`, `a !~ b` ≡ `!a.matches(b)`, `a !~* b` ≡ `!a.matches(b,
+  "i")` (the PostgreSQL spellings; `uri ~ "newton"` is no longer `unexpected
+  character "~"`). Same unanchored search, same regex baseline, same string forms,
+  same absent rule (an absent receiver is false under `~`, hence **true** under
+  `!~` — OQX's absent, not SQL's NULL); non-associative; `!`/`not` bind tighter
+  (`not a ~ b` is `(!a) ~ b`). The AST keeps the operator as written (`binary.op`
+  `"~"` `"~*"` `"!~"` `"!~*"`), so `print` round-trips it. New suite
+  `spec/oqx/cases/regex-operators.json` (40 cases; 1350 fixtures).
+
+  - `@omgbase/oqx` 0.22.0 and the `oqx` crate 0.22.0 are bumped by hand with
+    their CHANGELOGs, per the standalone convention (`none` here so the release
+    does not bump them again); `omgbase-surface` and `omgbase` move their pin to
+    `oqx = "0.22.0"`.
+  - `@omgbase/oqx-syntax`: `LANGUAGE_VERSION` 0.22; `OPERATORS.regex` (`!~*` `!~`
+    `~*` `~`) highlighted as operators in every grammar (TextMate, Monarch,
+    CodeMirror, Prism); `~` left `ILLEGAL_CHARACTERS`; assets regenerated.
+  - `@omgbase/core`: the `query_syntax` reference names the infix spellings under
+    `strings`; the tier-3 planner treats a regex operator as it treats a
+    `matches` call (never pushed, may raise, so the pushdown declines).
+  - `omgbase-surface`: `reference.rs` twin updated byte for byte; `translate.rs`
+    leaves the four operators residual; `planner.rs` counts them as may-raise.
+    `spec/surface/cases/examples.json` regenerated (the `query_syntax` text).
+
 ## [4.4.0] - 2026-10-13
 
 ### Minor
