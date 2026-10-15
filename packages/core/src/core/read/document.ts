@@ -4,6 +4,7 @@ import { findDoc, findDocByRef, loadDocBlocks, type BlockNode } from "./reader.j
 import { docPropertiesGrouped, type PropertySource } from "../store/properties.js";
 import { sha256 } from "../hash.js";
 import { referencePath } from "../paths.js";
+import { revisionBody } from "../store/archive.js";
 
 // Whole-document read (06 §3). The one-shot cold-start read: reconstruct a
 // document's full file bytes in a single call, so an agent can "read the guide
@@ -284,7 +285,10 @@ export interface DocsReadAtResult {
  * IN ORDER — but sourced from the revision's Merkle `root_tree` instead of the
  * live `blocks` table. Returns null when the doc is missing, or when `revId`
  * does not name a revision of this document (so the caller can raise a clean
- * not-found error).
+ * not-found error). An ARCHIVED revision (spec/store §7 "Retention", 15.0)
+ * reads through its segment, attached on demand; when the segment is not
+ * recorded or not on disk this throws `RevisionArchived` (the surface's
+ * `revision_archived`).
  *
  * FIDELITY CAVEAT: `leading_trivia` and `frontmatter_trivia` are stored ONLY on
  * the current `docs` row, NOT per-revision (see schema.ts — the `docs` row is
@@ -304,27 +308,33 @@ export function readDocumentAtRevision(store: Store, docId: string, revId: strin
     .get(docId) as { path: string; leading_trivia: string; frontmatter_trivia: string | null } | undefined;
   if (!doc) return null;
 
-  const rev = db.prepare("SELECT root_tree, frontmatter_blob, rendered_hash, path FROM revisions WHERE rev_id = ? AND doc_id = ?").get(revId, docId) as
-    | { root_tree: Buffer; frontmatter_blob: Buffer | null; rendered_hash: Buffer; path: string }
-    | undefined;
+  // The revision's bodies: the store's for a live revision, its segment's for
+  // an archived one (spec/store §6.2 "through a segment", 15.0 — `prefix` is
+  // the attached alias; an unavailable segment throws RevisionArchived).
+  const rev = revisionBody(store, revId, docId);
   if (!rev) return null;
+  const at = (table: string): string => `${rev.prefix}${table}`;
+  const blobAt = (hash: Buffer): string => {
+    const row = db.prepare(`SELECT bytes FROM ${at("blobs")} WHERE hash = ?`).get(hash) as { bytes: Buffer } | undefined;
+    return row ? row.bytes.toString("utf8") : "";
+  };
 
   const out: string[] = [doc.leading_trivia];
 
   // Frontmatter blob for THIS revision (per-revision), then the doc-level
   // separator (best-effort — see fidelity caveat).
-  if (rev.frontmatter_blob) out.push(blob(db, rev.frontmatter_blob) + (doc.frontmatter_trivia ?? ""));
+  if (rev.frontmatter_blob) out.push(blobAt(rev.frontmatter_blob) + (doc.frontmatter_trivia ?? ""));
 
   // Top-level blocks in tree order, from THIS revision's Merkle root tree node.
   // A container's raw already holds its children verbatim, so we deliberately do
   // NOT recurse into childTreeHashHex (mirrors reconstructContent's
   // parent_block IS NULL walk). An absent tree node yields empty body bytes.
-  const node = db.prepare("SELECT entries FROM tree_nodes WHERE hash = ?").get(rev.root_tree) as { entries: string } | undefined;
+  const node = db.prepare(`SELECT entries FROM ${at("tree_nodes")} WHERE hash = ?`).get(rev.root_tree) as { entries: string } | undefined;
   if (node) {
     const entries = JSON.parse(node.entries) as TreeEntryTuple[];
     for (const [, rawHashHex, , , , triviaHashHex] of entries) {
-      out.push(blob(db, Buffer.from(rawHashHex, "hex")));
-      if (triviaHashHex) out.push(blob(db, Buffer.from(triviaHashHex, "hex")));
+      out.push(blobAt(Buffer.from(rawHashHex, "hex")));
+      if (triviaHashHex) out.push(blobAt(Buffer.from(triviaHashHex, "hex")));
     }
   }
 

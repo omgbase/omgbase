@@ -45,7 +45,7 @@ import type { Opset } from "../../src/mutate/opset.js";
 import { applyEffects, canonicalJson, executeByDigest, executePlan, planEffects, type Plan, type Receipt } from "../../src/mutate/plan.js";
 import { toReconcileConfig, deepEqualTol, type FixtureConfig } from "../reconcile/fixture.js";
 import {
-  FIXTURE_REPO_SLUG, TS_RE, checkInvariants, projectStore, runExecStep, runGcStep, toOutcome, validateSteps,
+  FIXTURE_REPO_SLUG, TS_RE, checkInvariants, isHistoryStep, projectStore, runExecStep, runGcStep, toOutcome, validateSteps,
   type ExtraStepValidator, type JsonRow, type Row, type Step as StoreStep, type StepOutcome as StoreStepOutcome,
 } from "../store/fixture.js";
 
@@ -477,6 +477,7 @@ function runStep(r: Runner, step: Step, index = -1): StepOutcome {
   if ("sweep" in step) return { swept: sweepResurrectionPool(r.store, step.sweep.ts) };
   if ("gc" in step) return runGcStep(r.store);
   if ("exec" in step) return runExecStep(r.store, step.exec.sql);
+  if (isHistoryStep(step)) throw new Error("retention steps (spec/store §9.4, 15.0) are not run by the mutate runner");
   if ("disk" in step) {
     r.docStore.write(step.disk.path, step.disk.source);
     r.pendingDisk.add(step.disk.path);

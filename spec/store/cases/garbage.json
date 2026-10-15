@@ -149,7 +149,8 @@
             "frontmatter_blob": null,
             "rendered_hash": "7fad2d9da78cc7f306e7b9e61a943ee899d27396b3116950d26a828eba32df14",
             "path": "a.md",
-            "commit_id": "c_0"
+            "commit_id": "c_0",
+            "archive": null
           },
           {
             "rev_id": "r_1",
@@ -159,7 +160,8 @@
             "frontmatter_blob": null,
             "rendered_hash": "c9a8d3f66fdb5a196422661437d0b3e38e4133d2f082ab0deafb294c3fb420a5",
             "path": "a.md",
-            "commit_id": "c_1"
+            "commit_id": "c_1",
+            "archive": null
           }
         ],
         "blobs": [
@@ -365,7 +367,8 @@
             "last_ordinal": 3
           }
         ],
-        "pending_materializations": []
+        "pending_materializations": [],
+        "archives": []
       }
     }
   ]

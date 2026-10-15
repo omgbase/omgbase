@@ -501,7 +501,7 @@ The **catalog** (no command / `--help` / `help`), on stdout:
 
 Groups, in order: `bootstrap` (init, source, repos), `orient & read` (status,
 ls, outline, cat, show, find), `query` (query, run), `history & links` (log,
-hist, diff, links), `mutate` (apply, execute, insert, update, edit, move, rm,
+hist, diff, links, history), `mutate` (apply, execute, insert, update, edit, move, rm,
 done, append, retarget, split, merge, node), `documents` (new, mv, meta), `session`
 (shell), `sync & serve` (sync, mcp), `admin` (rebuild-index, gc, doctor,
 config, embed, version). `help` is unlisted. The exact bytes are
@@ -523,8 +523,8 @@ The **card** (`<command> --help`), on stdout:
 
 `omg` is the invoked name. Every card's bytes are pinned by
 `invoke::help-card-*`; the `query` card is followed by its example lines.
-`source` and `node` with no subcommand print their card; `config help`,
-`embed help`, `node help` and `source help` print theirs. The help words are
+`source`, `node` and `history` with no subcommand print their card; `config help`,
+`embed help`, `history help`, `node help` and `source help` print theirs. The help words are
 the `--help` flag spelled differently: they are routed before any workspace
 is opened or swept, so every card prints from any directory.
 
@@ -667,9 +667,11 @@ widest (at least `rows`); §4 columns otherwise. Then an empty line, then
 the file block — `file  <path>`, `size  <bytes> on disk, wal <bytes>` (the
 `-wal` file's, `0 B` when absent), `pages  <page_count> x <page_size>
 bytes, <freelist_count> free`, `reclaimable  <bytes>`
-(`freelist_count × page_size`: what a `VACUUM` returns to the filesystem)
-— the keys padded to `reclaimable`; then one `  advice: <text>` line per
-advice. Without `dbstat` in the SQLite build the bytes and share cells are
+(`freelist_count × page_size`: what a `VACUUM` returns to the filesystem),
+and (cli 4.6) `archived  <n> revisions in <s> segments, <bytes> on disk`
+(`spec/store` §7 "Size" `archived`: the history already moved to archive
+segments) — the keys padded to `reclaimable`; then one `  advice: <text>`
+line per advice. Without `dbstat` in the SQLite build the bytes and share cells are
 `—`, the tables order by rows, and a line `  dbstat unavailable: row counts
 only` follows the table (no fixture: both engines' builds have it).
 
@@ -682,6 +684,12 @@ when `history` holds more than 50 %; `<n> same dispositions are history
 nothing reads (store 14.2): \`omg gc\` removes them, \`--vacuum\` reclaims
 the pages` when the `same` rows a pre-14.2 store wrote exceed 25 % of the
 `dispositions` table (cli 4.5; never on a workspace the fixtures build);
+`<n> revisions older than the policy would archive <bytes>: \`omg history
+export --prune\`` when the retention plan of the store's repositories
+(`spec/store` §7.1, each under its effective policy, at the spec clock)
+would archive something worth more than 10 % of the `history` category
+(cli 4.6; never on a workspace the fixtures build — every revision there is
+younger than the default `keep_days`);
 `embeddings are <share> of the
 database: a smaller model (\`embedding.model\` / \`embedding.dim\`) or \`omg
 embed drain --prune\` after a model switch shrinks them` when the two
@@ -692,7 +700,7 @@ applies.
 stream): `{ file: { path, bytes, wal_bytes, page_size, page_count,
 freelist_count, reclaimable }, categories: [{ name, bytes, share, rows,
 tables: [{ name, bytes, share, rows, indexes }] }], same_dispositions,
-advice: [string] }`
+archived: { revisions, segments, bytes }, advice: [string] }`
 (+ `detail: "dbstat unavailable"` in the fallback, where every `bytes`,
 `share` and `indexes` is `null`); `indexes` is the part of a table's
 `bytes` its indexes take; `share` is one decimal; `same_dispositions`
@@ -807,6 +815,103 @@ unknown id, is `block_missing: hist needs a block id; got <ref>`). Human,
 newest first: `#<seq> <kind>[ (<confidence to 2 decimals>)] <origin> <ts>`;
 none → stderr `  no history`. `--json` the change array; `--jsonl` one per
 line; `--ids` the same array (a change carries no id).
+
+### `history`
+
+`history plan [--before <ts>] [--policy <json|@file>]` ·
+`history export [--prune] [--dest <dir>] [--before <ts>] [--policy <json|@file>] [--dry-run]` ·
+`history attach <file|dir>` · `history detach <segment_id|path>` ·
+`history list` — (cli 4.6) the operator surface of history retention
+(`spec/store` §7.1, 15.0): which revisions the policy would move to an
+archive segment, writing the segment, squashing the store, and the segment
+registry. Needs a repo (`repo_not_found` on a workspace without one, as
+every repo verb); not `--server`; a bare `history`, `history help` and
+`--help` print the card (§5); an unknown subcommand is
+`usage: unknown history subcommand '<x>' (plan|export|attach|detach|list)`
+with the card as hint. `--policy` is a JSON object merged over the
+repository's effective `history.retention` settings for the run
+(`@<file>` reads it from a file); not JSON →
+`usage: --policy: not JSON (pass an object, or @file)`; a malformed key →
+`usage: --policy: <the policy error>` (`policy.keep_days must be a
+non-negative integer`). `--before` is an RFC 3339 instant (`usage: bad
+--before '<x>' (use an RFC 3339 instant)`); only revisions committed
+strictly before it are candidates.
+
+**`plan`** evaluates the policy at the process clock and prints, on stdout,
+a §4 table `path  revisions  keep  archive  bytes` (one row per document
+with something to archive, by path; the counts right-aligned; `bytes` the
+humanized logical bytes of `spec/store` §7.1 — blobs and tree-node entries
+reachable from the archived revisions alone — so the line is exact, not a
+shape), then the summary `  <a> of <r> revisions in <d> document(s) would
+archive <bytes>` or `  nothing to archive: <r> revisions, all kept`, then
+`  policy  <the effective policy as compact JSON>` and, when given, `
+before  <ts>`. `--json` the plan verbatim (`spec/store` §7.1: `{ policy,
+now, before, docs: [{ id, path, revisions, keep, archive, bytes }], totals
+}`); `--jsonl` one document per line; `--ids` the document ids. Exact
+bytes: `history::history-plan-nothing`, `history-plan`,
+`history-plan-json`, `history-plan-policy-file`, `history-plan-before`,
+`history-plan-bad-policy`, `history-plan-not-json`,
+`history-plan-bad-before`.
+
+**`export`** writes ONE new segment file (`spec/store` §7.1: a SQLite
+database with `archive.sql`'s DDL, named
+`<repo_id>-<seq_lo>-<seq_hi>-<segment_id>.omgarchive.db`) under `--dest`
+(resolved against the cwd; created) or `<workspace>/.omgbase/archives/`,
+holding the bodies of the revisions the plan archives — and with `--prune`,
+under the writer lock, squashes the store afterwards (the archived
+revisions lose their bodies and gain `archive`, the wholly archived
+commits' dispositions and non-earliest block changes go, the unreachable
+blobs and tree nodes are swept, the segment is recorded). Stdout the
+segment's path; stderr `  wrote segment <id>: <n> revision(s) (commit #<k>
+| commits #<lo>–#<hi>), <bytes>` and with `--prune` `  squashed <n>
+revision(s), <c> commit(s), <d> disposition(s), <b> block change(s); swept
+<x> blob(s), <y> tree node(s)`. The crash rule (`spec/store` §7.1): a
+complete, unrecorded segment under the destination whose revisions are
+still live — what a crash between the two phases or an export without
+`--prune` leaves — is finished instead of writing a new file, the first
+line reading `  finished the unrecorded segment <id>: …`; a stale one is
+`target_missing` with `data { path, rev }`. Nothing to archive → stderr `
+nothing to archive`, no file, exit 0. `--dry-run` (the flag or the global)
+is `plan`. `--json` `{ segment: { id, path, seq_lo, seq_hi, created_at,
+revision_count, bytes, previous_segment } | null, reused, squashed: {
+revisions, commits, dispositions, block_changes } | null, gc: { blobs,
+tree_nodes } | null, totals }`. Exact bytes (the file sizes by shape, §8):
+`history::history-export-dry-run`, `history-export-nothing`,
+`history-export`, `history-export-prune`, `history-export-prune-json`,
+`history-export-dest`, `history-export-reuses-pending`.
+
+**`attach <file|dir>`** records a segment (idempotent: an already recorded
+segment's path is re-recorded) or every `.omgarchive.db` of a directory
+whose manifest names this repository (the rest are skipped and counted);
+stderr `  attached <id>: <n> revision(s) (<commit range>) <path>` per
+segment, `  skipped <n> file(s) that is/are not this repository's segments`
+when any, `  nothing to attach` for an empty directory. A missing path or a
+file that is not a segment, or one of another repository, is
+`target_missing: <path>: no such file | not an archive segment | a segment
+of repository <rp_x>, not <rp_y>` with `data { path }`. `--json` `{
+attached: [{ segment_id, path, seq_lo, seq_hi, revision_count, bytes }],
+skipped }`. **`detach <segment_id|path>`** forgets a segment (a ref holding
+`/` or ending in `.db` is a path, resolved against the cwd): stderr `
+detached <id>`; `--json` `{ detached }`; unknown → `target_missing: no
+archive segment "<ref>"` with `data { segment }`. A detached segment's
+revisions stay listed everywhere; reading one's bytes (`diff`, `cat` at a
+revision through the surface) is `error[revision_archived]: revision "<rev>"
+is archived in segment <id>, which is not attached (omg history attach
+<file>)` with `data { rev, archive }` (`path` added when the segment is
+recorded but its file is gone). **`list`** prints the §4 table `segment
+commits  revisions  bytes  state  path` over the repository's recorded
+segments (`attached` / `missing`) followed by the unrecorded ones under the
+default archives directory (`pending` / `detached` / `stale`, `spec/store`
+§7.1); none → stderr `  no segments`. `--json` the listing array (`[{
+segment_id, path, seq_lo, seq_hi, revision_count, bytes, created_at, state
+}]`), `--jsonl` one per line, `--ids` the segment ids. Exact bytes (sizes
+by shape): `history::history-detach-attach`, `history-attach-dir`,
+`history-attach-not-a-segment`, `history-attach-missing`,
+`history-detach-unknown`, `history-list-empty`; the refusals
+`history-no-repo`, `history-no-workspace`, `history-unknown-sub`,
+`history-attach-no-arg`, `history-detach-no-arg`,
+`history-server-rejected`; the card `invoke::help-card-history`,
+`help-card-history-bare`, `help-card-history-word`.
 
 ### `init`
 
@@ -1350,7 +1455,7 @@ prompt the batch runner reads everything first.
 ```
 
 Suites: `invoke.json` (the invocation model, help, seams), `read.json`,
-`query.json` (with `run`), `history.json` (`log`, `hist`, `diff`, `links`),
+`query.json` (with `run`), `history.json` (`log`, `hist`, `diff`, `links`, `history`),
 `mutate.json`, `docs.json`, `shell.json`, `sync.json`, `admin.json` (`init`,
 `source`, `rebuild-index`, `gc`, `doctor`, `config`, `embed`).
 
@@ -1397,11 +1502,13 @@ after, and every occurrence of the binary's own version string (what
 fixtures pin the shape of `--version`, not the number. The first step of a sequence runs on the fresh workspace, every
 following step on the workspace the previous one left.
 
-Two verbs' outputs are **recorded by shape** rather than byte for byte,
+Some verbs' outputs are **recorded by shape** rather than byte for byte,
 because their values are the engine's build, not its behavior: `version`
 (§6: every leaf is its type name) and, since 4.3, `doctor --size` and
 `gc --vacuum`, whose byte counts depend on the SQLite build and its page
-allocation. For those, on a successful run, both harnesses rewrite stdout
+allocation — joined in 4.6 by `history export` (not `--dry-run`, which is
+the plan over logical bytes and is exact), `history list` and `history
+attach`, whose segment-file sizes are a page layout too. For those, on a successful run, both harnesses rewrite stdout
 and stderr alike before comparing or recording: in JSON every number under
 the keys `bytes`, `wal_bytes`, `page_size`, `page_count`,
 `freelist_count`, `reclaimable`, `share` and `indexes` becomes
@@ -1756,6 +1863,23 @@ was `b_314`).
 
 ## 10. Decisions
 
+- 2026-10-15, cli 4.6: `history plan | export | attach | detach | list`
+  (§6) — the operator surface of `spec/store` 15.0's retention (§7.1 there),
+  and `doctor --size`'s `archived` line and retention advice. A CLI verb
+  family and no MCP tool, on purpose: archiving is an operator's act over
+  the workspace's files (it writes a segment under `.omgbase/`, takes the
+  writer lock, and its inputs are a policy and a directory), the agent-facing
+  consequence is already in the catalog — `revisions.archived` and the
+  `revision_archived` error (`spec/surface` 4.9) — and a remote client that
+  wants history archived asks its operator. One subcommand word, so the
+  catalog gains one entry (`history & links`) rather than five; `history`
+  prints its card bare, like `source` and `node`. The plan prints in logical
+  bytes (blobs and tree-node entries) and is pinned exactly; the export,
+  list and attach outputs carry a segment file's size, which is SQLite's
+  page layout, so §8's shape rule covers them as it does `doctor --size`.
+  Fixtures: `history.json` 42 → 70, `invoke.json` 90 → 93 (the card three
+  ways), `help-bare`/`help-flag`/`help-command` and `help-card-doctor`
+  re-rendered, the `doctor --size` cases gain the `archived` key and line.
 - 2026-10-13, cli 4.5: `gc` prints its third count and `doctor --size`
   carries `same_dispositions` (§6), rendering `spec/store` 14.2 — `same`
   dispositions are no longer persisted, the default gc sweep removes a 14.1

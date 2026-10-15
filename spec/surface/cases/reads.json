@@ -1929,7 +1929,8 @@
                     "origin": "observed",
                     "actor": null,
                     "hash": "4e6281be3f1fabebb2a0a9b9f20b827c260a261ea01cee8181396ce5f3c86e2b",
-                    "isCurrent": false
+                    "isCurrent": false,
+                    "archived": false
                   },
                   {
                     "rev": "r_2",
@@ -1939,7 +1940,8 @@
                     "origin": "observed",
                     "actor": null,
                     "hash": "7a202de4338a315c36631ee8e902aee2c985490ad5025c1584715781bb630e0d",
-                    "isCurrent": true
+                    "isCurrent": true,
+                    "archived": false
                   }
                 ]
               }
@@ -1962,7 +1964,8 @@
                     "origin": "observed",
                     "actor": null,
                     "hash": "4e6281be3f1fabebb2a0a9b9f20b827c260a261ea01cee8181396ce5f3c86e2b",
-                    "isCurrent": false
+                    "isCurrent": false,
+                    "archived": false
                   },
                   {
                     "rev": "r_2",
@@ -1972,7 +1975,8 @@
                     "origin": "observed",
                     "actor": null,
                     "hash": "7a202de4338a315c36631ee8e902aee2c985490ad5025c1584715781bb630e0d",
-                    "isCurrent": true
+                    "isCurrent": true,
+                    "archived": false
                   }
                 ]
               }
@@ -1995,7 +1999,8 @@
                     "origin": "observed",
                     "actor": null,
                     "hash": "4e6281be3f1fabebb2a0a9b9f20b827c260a261ea01cee8181396ce5f3c86e2b",
-                    "isCurrent": false
+                    "isCurrent": false,
+                    "archived": false
                   },
                   {
                     "rev": "r_2",
@@ -2005,7 +2010,8 @@
                     "origin": "observed",
                     "actor": null,
                     "hash": "7a202de4338a315c36631ee8e902aee2c985490ad5025c1584715781bb630e0d",
-                    "isCurrent": true
+                    "isCurrent": true,
+                    "archived": false
                   }
                 ]
               }
@@ -2028,7 +2034,8 @@
                     "origin": "observed",
                     "actor": null,
                     "hash": "8d3da64ec85becf7eba0ca7dc2798451da1134d194d999b7856e4824f8efa1b4",
-                    "isCurrent": true
+                    "isCurrent": true,
+                    "archived": false
                   }
                 ]
               }
@@ -2051,7 +2058,8 @@
                     "origin": "observed",
                     "actor": null,
                     "hash": "4e6281be3f1fabebb2a0a9b9f20b827c260a261ea01cee8181396ce5f3c86e2b",
-                    "isCurrent": false
+                    "isCurrent": false,
+                    "archived": false
                   },
                   {
                     "rev": "r_2",
@@ -2061,7 +2069,8 @@
                     "origin": "observed",
                     "actor": null,
                     "hash": "7a202de4338a315c36631ee8e902aee2c985490ad5025c1584715781bb630e0d",
-                    "isCurrent": true
+                    "isCurrent": true,
+                    "archived": false
                   }
                 ]
               }
@@ -2092,7 +2101,8 @@
                     "origin": "observed",
                     "actor": null,
                     "hash": "8d3da64ec85becf7eba0ca7dc2798451da1134d194d999b7856e4824f8efa1b4",
-                    "isCurrent": true
+                    "isCurrent": true,
+                    "archived": false
                   }
                 ]
               }
@@ -3125,7 +3135,8 @@
                     "origin": "observed",
                     "actor": null,
                     "hash": "6abdec03027fcc6c831ee477cc7966dfc855a2e3f34d00b68fcf7ddac4b04cba",
-                    "isCurrent": true
+                    "isCurrent": true,
+                    "archived": false
                   }
                 ]
               },
@@ -3143,7 +3154,8 @@
                     "origin": "observed",
                     "actor": null,
                     "hash": "90dd49e97e52b83a3a242a34dccf76a7f0a9e8a92f18f5d4a76b907d1c77beeb",
-                    "isCurrent": false
+                    "isCurrent": false,
+                    "archived": false
                   },
                   {
                     "rev": "r_2",
@@ -3153,7 +3165,8 @@
                     "origin": "observed",
                     "actor": null,
                     "hash": "ef8bc0606ce2a50fd288190c0f3d69b818d81703b47b85401ebcd069aa3d1efa",
-                    "isCurrent": true
+                    "isCurrent": true,
+                    "archived": false
                   }
                 ]
               },
@@ -3171,7 +3184,8 @@
                     "origin": "observed",
                     "actor": null,
                     "hash": "b5b79e2b70a4030a0d207081f0982cccc59a5d906d506d1975b1dfc91cb4bc0c",
-                    "isCurrent": true
+                    "isCurrent": true,
+                    "archived": false
                   }
                 ]
               }
@@ -6102,7 +6116,8 @@
                     "origin": "observed",
                     "actor": null,
                     "hash": "4e6281be3f1fabebb2a0a9b9f20b827c260a261ea01cee8181396ce5f3c86e2b",
-                    "isCurrent": false
+                    "isCurrent": false,
+                    "archived": false
                   },
                   {
                     "rev": "r_2",
@@ -6112,7 +6127,8 @@
                     "origin": "api",
                     "actor": "agent:mcp",
                     "hash": "c50d718d83c07e5ecfa1fc293f1f6c81faf3e56830c5fcbfba127574205b9b37",
-                    "isCurrent": false
+                    "isCurrent": false,
+                    "archived": false
                   },
                   {
                     "rev": "r_3",
@@ -6122,7 +6138,8 @@
                     "origin": "api",
                     "actor": "agent:mcp",
                     "hash": "26a50d576b27a1e9b17b496aa7a4866caef3f657c67a9ffa505893f1c1a53b1f",
-                    "isCurrent": false
+                    "isCurrent": false,
+                    "archived": false
                   },
                   {
                     "rev": "r_4",
@@ -6132,7 +6149,8 @@
                     "origin": "api",
                     "actor": "agent:mcp",
                     "hash": "7f015b40588e946b0fa368db4321b01c50bd4e3329831a6b61cfac69d3423150",
-                    "isCurrent": true
+                    "isCurrent": true,
+                    "archived": false
                   }
                 ]
               }
@@ -12754,7 +12772,8 @@
                     "origin": "observed",
                     "actor": null,
                     "hash": "83ad50d1307f135f6a627742465cfbc90f9b75a2f36c995ed3d9776613ce2e7f",
-                    "isCurrent": false
+                    "isCurrent": false,
+                    "archived": false
                   },
                   {
                     "rev": "r_3",
@@ -12764,7 +12783,8 @@
                     "origin": "observed",
                     "actor": null,
                     "hash": "85dee9c71280a95b842ac17130b4b932331d52d5f807051210a031b42328d6fc",
-                    "isCurrent": true
+                    "isCurrent": true,
+                    "archived": false
                   }
                 ]
               }
@@ -12787,7 +12807,8 @@
                     "origin": "observed",
                     "actor": null,
                     "hash": "83ad50d1307f135f6a627742465cfbc90f9b75a2f36c995ed3d9776613ce2e7f",
-                    "isCurrent": false
+                    "isCurrent": false,
+                    "archived": false
                   },
                   {
                     "rev": "r_3",
@@ -12797,7 +12818,8 @@
                     "origin": "observed",
                     "actor": null,
                     "hash": "85dee9c71280a95b842ac17130b4b932331d52d5f807051210a031b42328d6fc",
-                    "isCurrent": true
+                    "isCurrent": true,
+                    "archived": false
                   }
                 ]
               },
@@ -12815,7 +12837,8 @@
                     "origin": "observed",
                     "actor": null,
                     "hash": "738a39d100d6df6da78304efcc782450e2be5de21d4631e8111872c87d36f6f4",
-                    "isCurrent": false
+                    "isCurrent": false,
+                    "archived": false
                   },
                   {
                     "rev": "r_4",
@@ -12825,7 +12848,8 @@
                     "origin": "observed",
                     "actor": null,
                     "hash": "d48645d8dd922a50c5617dd6094511b977331ab5fbbf79f8eb1501da305d579b",
-                    "isCurrent": true
+                    "isCurrent": true,
+                    "archived": false
                   }
                 ]
               },
@@ -12843,7 +12867,8 @@
                     "origin": "observed",
                     "actor": null,
                     "hash": "a782b29acbf00b88552b2803b991f457e01fa1844c735e9b4a6a33ce224d526e",
-                    "isCurrent": true
+                    "isCurrent": true,
+                    "archived": false
                   }
                 ]
               }
@@ -13005,6 +13030,635 @@
               "reason": null
             }
           ]
+        ]
+      }
+    },
+    {
+      "name": "archived",
+      "notes": "§1.2 `revisions.archived` and §2 `revision_archived` (4.9; spec/store §7 \"Retention\", 15.0): three revisions of guide.md on three days; `history_export { prune }` under a one-per-month ladder archives r_0 and r_1 into segment s_0 (the current r_2 stays). The `revisions` target and `docs_history` list every revision with `archived`; `docs_read { at }`, `docs_read_at`, `docs_diff` and `docs_diff_unified` reconstruct an archived revision through the attached segment; after `history_detach` the same reads are `revision_archived { rev, archive }` (no path: the segment is not recorded); `history_attach` restores them. `changes_since` keeps listing the archived commits (their summaries lose the disposition counts, which moved with the segment).",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-01-01T10:00:00.000Z",
+            "items": [
+              {
+                "path": "guide.md",
+                "source": "---\ntitle: Guide\n---\n\n# Guide\n\nThe first paragraph, as first written.\n"
+              }
+            ]
+          }
+        },
+        {
+          "observe": {
+            "ts": "2026-01-02T10:00:00.000Z",
+            "items": [
+              {
+                "path": "guide.md",
+                "source": "---\ntitle: Guide\n---\n\n# Guide\n\nThe first paragraph, edited on the second day.\n"
+              }
+            ]
+          }
+        },
+        {
+          "observe": {
+            "ts": "2026-01-03T10:00:00.000Z",
+            "items": [
+              {
+                "path": "guide.md",
+                "source": "---\ntitle: Guide\n---\n\n# Guide\n\nThe first paragraph, edited on the third day.\n\nA closing paragraph.\n"
+              }
+            ]
+          }
+        },
+        {
+          "read": {
+            "tool": "query",
+            "args": {
+              "query": "select seq, is_current, archived from revisions where path == \"/guide.md\" order by seq"
+            }
+          }
+        },
+        {
+          "history_export": {
+            "ts": "2026-02-10T00:00:00.000Z",
+            "policy": {
+              "keep_days": 0,
+              "per_doc_max": 1,
+              "ladder": [
+                {
+                  "after_days": 0,
+                  "keep": "one per month"
+                }
+              ]
+            },
+            "prune": true
+          }
+        },
+        {
+          "read": {
+            "tool": "query",
+            "args": {
+              "query": "select seq, is_current, archived from revisions where path == \"/guide.md\" order by seq"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "query",
+            "args": {
+              "query": "from revisions where archived order by seq"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "query",
+            "args": {
+              "query": "select n: revisions count { where archived } from docs"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "docs_history",
+            "args": {
+              "path": "guide.md"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "docs_read",
+            "args": {
+              "path": "guide.md",
+              "at": "r_0"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "docs_read_at",
+            "args": {
+              "path": "guide.md",
+              "rev": "r_1"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "docs_diff",
+            "args": {
+              "path": "guide.md",
+              "from_rev": "r_0",
+              "to_rev": "r_2"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "docs_diff_unified",
+            "args": {
+              "path": "guide.md",
+              "from_rev": "r_0",
+              "to_rev": "r_2"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "docs_read",
+            "args": {
+              "path": "guide.md"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "changes_since",
+            "args": {}
+          }
+        },
+        {
+          "history_detach": {
+            "segment": "s_0"
+          }
+        },
+        {
+          "read": {
+            "tool": "docs_read",
+            "args": {
+              "path": "guide.md",
+              "at": "r_0"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "docs_read_at",
+            "args": {
+              "path": "guide.md",
+              "rev": "r_0"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "docs_diff",
+            "args": {
+              "path": "guide.md",
+              "from_rev": "r_0",
+              "to_rev": "r_2"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "docs_diff_unified",
+            "args": {
+              "path": "guide.md",
+              "from_rev": "r_1",
+              "to_rev": "r_2"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "docs_read",
+            "args": {
+              "path": "guide.md",
+              "at": "r_2"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "docs_history",
+            "args": {
+              "path": "guide.md"
+            }
+          }
+        },
+        {
+          "history_attach": {
+            "segment": "s_0"
+          }
+        },
+        {
+          "read": {
+            "tool": "docs_read",
+            "args": {
+              "path": "guide.md",
+              "at": "r_0"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "guide.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 2
+              }
+            }
+          ],
+          [
+            {
+              "path": "guide.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_1",
+              "rev": "r_1",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "deleted": 1,
+                "inserted": 1,
+                "same": 1
+              }
+            }
+          ],
+          [
+            {
+              "path": "guide.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_2",
+              "rev": "r_2",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "edited": 1,
+                "inserted": 1,
+                "same": 1
+              }
+            }
+          ],
+          {
+            "hits": [
+              {
+                "id": "r_0",
+                "path": "/guide.md",
+                "seq": 1,
+                "is_current": false,
+                "archived": false
+              },
+              {
+                "id": "r_1",
+                "path": "/guide.md",
+                "seq": 2,
+                "is_current": false,
+                "archived": false
+              },
+              {
+                "id": "r_2",
+                "path": "/guide.md",
+                "seq": 3,
+                "is_current": true,
+                "archived": false
+              }
+            ],
+            "truncated": false,
+            "cursor": null,
+            "consumer": "collect"
+          },
+          {
+            "export": {
+              "segment": {
+                "id": "s_0",
+                "seq_lo": 1,
+                "seq_hi": 2,
+                "revision_count": 2,
+                "previous_segment": null
+              },
+              "reused": false,
+              "squashed": {
+                "revisions": 2,
+                "commits": 2,
+                "dispositions": 4,
+                "block_changes": 1
+              },
+              "gc": {
+                "blobs": 2,
+                "tree_nodes": 2
+              }
+            }
+          },
+          {
+            "hits": [
+              {
+                "id": "r_0",
+                "path": "/guide.md",
+                "seq": 1,
+                "is_current": false,
+                "archived": true
+              },
+              {
+                "id": "r_1",
+                "path": "/guide.md",
+                "seq": 2,
+                "is_current": false,
+                "archived": true
+              },
+              {
+                "id": "r_2",
+                "path": "/guide.md",
+                "seq": 3,
+                "is_current": true,
+                "archived": false
+              }
+            ],
+            "truncated": false,
+            "cursor": null,
+            "consumer": "collect"
+          },
+          {
+            "hits": [
+              {
+                "id": "r_0",
+                "path": "/guide.md"
+              },
+              {
+                "id": "r_1",
+                "path": "/guide.md"
+              }
+            ],
+            "truncated": false,
+            "cursor": null,
+            "consumer": "collect"
+          },
+          {
+            "hits": [
+              {
+                "id": "d_0",
+                "path": "/guide.md",
+                "n": 2
+              }
+            ],
+            "truncated": false,
+            "cursor": null,
+            "consumer": "collect"
+          },
+          {
+            "docs": [
+              {
+                "id": "d_0",
+                "path": "/guide.md",
+                "deleted": false,
+                "currentRev": "r_2",
+                "versions": [
+                  {
+                    "rev": "r_0",
+                    "seq": 1,
+                    "commit": "c_0",
+                    "updated_at": "2026-01-01T10:00:00.000Z",
+                    "origin": "observed",
+                    "actor": null,
+                    "hash": "e91178c063fb5bc2784a4ca8e908489cdda4a99a9fc028614486806d5cb44907",
+                    "isCurrent": false,
+                    "archived": true
+                  },
+                  {
+                    "rev": "r_1",
+                    "seq": 2,
+                    "commit": "c_1",
+                    "updated_at": "2026-01-02T10:00:00.000Z",
+                    "origin": "observed",
+                    "actor": null,
+                    "hash": "3ab73d0c09fd438c32c0e06edbb9fe4dd0a17079e770dc957a8b48e0cb7c6ac0",
+                    "isCurrent": false,
+                    "archived": true
+                  },
+                  {
+                    "rev": "r_2",
+                    "seq": 3,
+                    "commit": "c_2",
+                    "updated_at": "2026-01-03T10:00:00.000Z",
+                    "origin": "observed",
+                    "actor": null,
+                    "hash": "d605f6f676a66ce24db5454749c3561265624dc3d76060608d0a1f3fc57ec24f",
+                    "isCurrent": true,
+                    "archived": false
+                  }
+                ]
+              }
+            ],
+            "truncated": false
+          },
+          {
+            "id": "d_0",
+            "path": "/guide.md",
+            "rev": "r_0",
+            "raw": "---\ntitle: Guide\n---\n\n# Guide\n\nThe first paragraph, as first written.\n",
+            "renderedHashMatch": true
+          },
+          {
+            "id": "d_0",
+            "path": "/guide.md",
+            "rev": "r_1",
+            "raw": "---\ntitle: Guide\n---\n\n# Guide\n\nThe first paragraph, edited on the second day.\n",
+            "renderedHashMatch": true
+          },
+          [
+            {
+              "kind": "removed",
+              "id": "b_1",
+              "before": "The first paragraph, as first written."
+            },
+            {
+              "kind": "added",
+              "id": "b_2",
+              "after": "The first paragraph, edited on the third day."
+            },
+            {
+              "kind": "added",
+              "id": "b_3",
+              "after": "A closing paragraph."
+            }
+          ],
+          {
+            "id": "d_0",
+            "path": "/guide.md",
+            "from": "r_0",
+            "to": "r_2",
+            "diff": "@@ -4,5 +4,7 @@\n \n # Guide\n \n-The first paragraph, as first written.\n+The first paragraph, edited on the third day.\n \n+A closing paragraph.\n+"
+          },
+          {
+            "id": "d_0",
+            "path": "/guide.md",
+            "rev": "r_2",
+            "properties": {
+              "frontmatter": {
+                "title": "Guide"
+              },
+              "inline": {},
+              "computed": {
+                "title": "Guide"
+              }
+            },
+            "raw": "---\ntitle: Guide\n---\n\n# Guide\n\nThe first paragraph, edited on the third day.\n\nA closing paragraph.\n"
+          },
+          {
+            "digests": [
+              {
+                "commit": "c_0",
+                "seq": 1,
+                "ts": "2026-01-01T10:00:00.000Z",
+                "origin": "observed",
+                "actor": null,
+                "revisions": [
+                  {
+                    "id": "d_0",
+                    "path": "/guide.md",
+                    "hash": "e91178c063fb5bc2784a4ca8e908489cdda4a99a9fc028614486806d5cb44907"
+                  }
+                ]
+              },
+              {
+                "commit": "c_1",
+                "seq": 2,
+                "ts": "2026-01-02T10:00:00.000Z",
+                "origin": "observed",
+                "actor": null,
+                "revisions": [
+                  {
+                    "id": "d_0",
+                    "path": "/guide.md",
+                    "hash": "3ab73d0c09fd438c32c0e06edbb9fe4dd0a17079e770dc957a8b48e0cb7c6ac0"
+                  }
+                ]
+              },
+              {
+                "commit": "c_2",
+                "seq": 3,
+                "ts": "2026-01-03T10:00:00.000Z",
+                "origin": "observed",
+                "actor": null,
+                "revisions": [
+                  {
+                    "id": "d_0",
+                    "path": "/guide.md",
+                    "hash": "d605f6f676a66ce24db5454749c3561265624dc3d76060608d0a1f3fc57ec24f"
+                  }
+                ]
+              }
+            ],
+            "cursor": 3,
+            "truncated": false,
+            "head": 3
+          },
+          {
+            "detached": "s_0"
+          },
+          {
+            "error": "revision_archived",
+            "retriable": false,
+            "data": {
+              "rev": "r_0",
+              "archive": "s_0"
+            }
+          },
+          {
+            "error": "revision_archived",
+            "retriable": false,
+            "data": {
+              "rev": "r_0",
+              "archive": "s_0"
+            }
+          },
+          {
+            "error": "revision_archived",
+            "retriable": false,
+            "data": {
+              "rev": "r_0",
+              "archive": "s_0"
+            }
+          },
+          {
+            "error": "revision_archived",
+            "retriable": false,
+            "data": {
+              "rev": "r_1",
+              "archive": "s_0"
+            }
+          },
+          {
+            "id": "d_0",
+            "path": "/guide.md",
+            "rev": "r_2",
+            "raw": "---\ntitle: Guide\n---\n\n# Guide\n\nThe first paragraph, edited on the third day.\n\nA closing paragraph.\n",
+            "renderedHashMatch": true
+          },
+          {
+            "docs": [
+              {
+                "id": "d_0",
+                "path": "/guide.md",
+                "deleted": false,
+                "currentRev": "r_2",
+                "versions": [
+                  {
+                    "rev": "r_0",
+                    "seq": 1,
+                    "commit": "c_0",
+                    "updated_at": "2026-01-01T10:00:00.000Z",
+                    "origin": "observed",
+                    "actor": null,
+                    "hash": "e91178c063fb5bc2784a4ca8e908489cdda4a99a9fc028614486806d5cb44907",
+                    "isCurrent": false,
+                    "archived": true
+                  },
+                  {
+                    "rev": "r_1",
+                    "seq": 2,
+                    "commit": "c_1",
+                    "updated_at": "2026-01-02T10:00:00.000Z",
+                    "origin": "observed",
+                    "actor": null,
+                    "hash": "3ab73d0c09fd438c32c0e06edbb9fe4dd0a17079e770dc957a8b48e0cb7c6ac0",
+                    "isCurrent": false,
+                    "archived": true
+                  },
+                  {
+                    "rev": "r_2",
+                    "seq": 3,
+                    "commit": "c_2",
+                    "updated_at": "2026-01-03T10:00:00.000Z",
+                    "origin": "observed",
+                    "actor": null,
+                    "hash": "d605f6f676a66ce24db5454749c3561265624dc3d76060608d0a1f3fc57ec24f",
+                    "isCurrent": true,
+                    "archived": false
+                  }
+                ]
+              }
+            ],
+            "truncated": false
+          },
+          {
+            "attached": [
+              {
+                "segment_id": "s_0",
+                "seq_lo": 1,
+                "seq_hi": 2,
+                "revision_count": 2
+              }
+            ]
+          },
+          {
+            "id": "d_0",
+            "path": "/guide.md",
+            "rev": "r_0",
+            "raw": "---\ntitle: Guide\n---\n\n# Guide\n\nThe first paragraph, as first written.\n",
+            "renderedHashMatch": true
+          }
         ]
       }
     }

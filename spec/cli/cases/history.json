@@ -827,6 +827,1149 @@
         "stdout": "",
         "stderr": "usage: links requires a <node>\n"
       }
+    },
+    {
+      "name": "history-plan-nothing",
+      "notes": "§6 `history plan`: on the pristine corpus every revision is current, so nothing is archivable; the policy in effect is the defaults",
+      "workspace": "alchemy",
+      "argv": [
+        "history",
+        "plan"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "  nothing to archive: 20 revisions, all kept\n  policy  {\"keep_days\":30,\"ladder\":[{\"after_days\":30,\"keep\":\"one per day\"},{\"after_days\":365,\"keep\":\"one per month\"}],\"per_doc_max\":200,\"keep_origins\":[\"api\"],\"overrides\":[]}\n"
+      }
+    },
+    {
+      "name": "history-plan-nothing-json",
+      "notes": "§6: the plan verbatim — no docs, totals over the 20 live revisions",
+      "workspace": "alchemy",
+      "argv": [
+        "history",
+        "plan",
+        "--json"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "{\"policy\":{\"keep_days\":30,\"ladder\":[{\"after_days\":30,\"keep\":\"one per day\"},{\"after_days\":365,\"keep\":\"one per month\"}],\"per_doc_max\":200,\"keep_origins\":[\"api\"],\"overrides\":[]},\"now\":\"2026-09-27T00:00:00.000Z\",\"before\":null,\"docs\":[],\"totals\":{\"docs\":0,\"revisions\":20,\"keep\":20,\"archive\":0,\"bytes\":0}}\n"
+      }
+    },
+    {
+      "name": "history-plan",
+      "notes": "§6: after two `update`s of one document under the spec clock the policy `keep_days 0, per_doc_max 1, one per day` archives the two older revisions of the day; the table, the summary line, the policy line (logical bytes: exact)",
+      "workspace": "alchemy",
+      "steps": [
+        {
+          "argv": [
+            "update",
+            "/lab/2026-01-notes.md",
+            "--actor",
+            "human:spec",
+            "-"
+          ],
+          "stdin": "---\ntitle: Lab notes, January\nlayer: working\n---\n\n# Lab notes, January\n\nFirst rewrite under the spec clock.\n",
+          "pin_stderr": false,
+          "expect": {
+            "exit": 0,
+            "stdout": "b_31\nb_32\nb_33\nb_34\nb_35\nb_36\nb_37\nb_38\nb_43\nb_44\nb_45\nb_46\nb_47\nb_48\nb_49\nb_50\nb_51\nb_327\nb_328\n"
+          }
+        },
+        {
+          "argv": [
+            "update",
+            "/lab/2026-01-notes.md",
+            "--actor",
+            "human:spec",
+            "-"
+          ],
+          "stdin": "---\ntitle: Lab notes, January\nlayer: working\n---\n\n# Lab notes, January\n\nSecond rewrite under the spec clock.\n",
+          "pin_stderr": false,
+          "expect": {
+            "exit": 0,
+            "stdout": "b_328\n"
+          }
+        },
+        {
+          "argv": [
+            "history",
+            "plan",
+            "--policy",
+            "{\"keep_days\":0,\"per_doc_max\":1,\"ladder\":[{\"after_days\":0,\"keep\":\"one per day\"}]}"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "  path                   revisions  keep  archive  bytes\n  /lab/2026-01-notes.md          3     1        2  6.5 KB\n  2 of 22 revisions in 1 document would archive 6.5 KB\n  policy  {\"keep_days\":0,\"ladder\":[{\"after_days\":0,\"keep\":\"one per day\"}],\"per_doc_max\":1,\"keep_origins\":[\"api\"],\"overrides\":[]}\n"
+          }
+        }
+      ]
+    },
+    {
+      "name": "history-plan-json",
+      "notes": "§6: the plan verbatim with the revision ids kept and archived",
+      "workspace": "alchemy",
+      "steps": [
+        {
+          "argv": [
+            "update",
+            "/lab/2026-01-notes.md",
+            "--actor",
+            "human:spec",
+            "-"
+          ],
+          "stdin": "---\ntitle: Lab notes, January\nlayer: working\n---\n\n# Lab notes, January\n\nFirst rewrite under the spec clock.\n",
+          "pin_stderr": false,
+          "expect": {
+            "exit": 0,
+            "stdout": "b_31\nb_32\nb_33\nb_34\nb_35\nb_36\nb_37\nb_38\nb_43\nb_44\nb_45\nb_46\nb_47\nb_48\nb_49\nb_50\nb_51\nb_327\nb_328\n"
+          }
+        },
+        {
+          "argv": [
+            "update",
+            "/lab/2026-01-notes.md",
+            "--actor",
+            "human:spec",
+            "-"
+          ],
+          "stdin": "---\ntitle: Lab notes, January\nlayer: working\n---\n\n# Lab notes, January\n\nSecond rewrite under the spec clock.\n",
+          "pin_stderr": false,
+          "expect": {
+            "exit": 0,
+            "stdout": "b_328\n"
+          }
+        },
+        {
+          "argv": [
+            "history",
+            "plan",
+            "--policy",
+            "{\"keep_days\":0,\"per_doc_max\":1,\"ladder\":[{\"after_days\":0,\"keep\":\"one per day\"}]}",
+            "--json"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "{\"policy\":{\"keep_days\":0,\"ladder\":[{\"after_days\":0,\"keep\":\"one per day\"}],\"per_doc_max\":1,\"keep_origins\":[\"api\"],\"overrides\":[]},\"now\":\"2026-09-27T00:00:00.000Z\",\"before\":null,\"docs\":[{\"id\":\"d_1\",\"path\":\"/lab/2026-01-notes.md\",\"revisions\":3,\"keep\":[\"r_21\"],\"archive\":[\"r_1\",\"r_20\"],\"bytes\":6675}],\"totals\":{\"docs\":1,\"revisions\":22,\"keep\":20,\"archive\":2,\"bytes\":6675}}\n"
+          }
+        }
+      ]
+    },
+    {
+      "name": "history-plan-policy-file",
+      "notes": "§6: `--policy @file` reads the JSON from a file",
+      "workspace": "alchemy",
+      "files": {
+        "policy.json": "{\"keep_days\":0,\"per_doc_max\":1,\"ladder\":[{\"after_days\":0,\"keep\":\"one per day\"}]}"
+      },
+      "steps": [
+        {
+          "argv": [
+            "update",
+            "/lab/2026-01-notes.md",
+            "--actor",
+            "human:spec",
+            "-"
+          ],
+          "stdin": "---\ntitle: Lab notes, January\nlayer: working\n---\n\n# Lab notes, January\n\nFirst rewrite under the spec clock.\n",
+          "pin_stderr": false,
+          "expect": {
+            "exit": 0,
+            "stdout": "b_31\nb_32\nb_33\nb_34\nb_35\nb_36\nb_37\nb_38\nb_43\nb_44\nb_45\nb_46\nb_47\nb_48\nb_49\nb_50\nb_51\nb_327\nb_328\n"
+          }
+        },
+        {
+          "argv": [
+            "update",
+            "/lab/2026-01-notes.md",
+            "--actor",
+            "human:spec",
+            "-"
+          ],
+          "stdin": "---\ntitle: Lab notes, January\nlayer: working\n---\n\n# Lab notes, January\n\nSecond rewrite under the spec clock.\n",
+          "pin_stderr": false,
+          "expect": {
+            "exit": 0,
+            "stdout": "b_328\n"
+          }
+        },
+        {
+          "argv": [
+            "history",
+            "plan",
+            "--policy",
+            "@<workspace>/policy.json"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "  path                   revisions  keep  archive  bytes\n  /lab/2026-01-notes.md          3     1        2  6.5 KB\n  2 of 22 revisions in 1 document would archive 6.5 KB\n  policy  {\"keep_days\":0,\"ladder\":[{\"after_days\":0,\"keep\":\"one per day\"}],\"per_doc_max\":1,\"keep_origins\":[\"api\"],\"overrides\":[]}\n"
+          }
+        }
+      ]
+    },
+    {
+      "name": "history-plan-before",
+      "notes": "§6 `--before`: with the cutoff at the spec clock no revision is strictly before it, so nothing is archived; the plan carries `before`",
+      "workspace": "alchemy",
+      "steps": [
+        {
+          "argv": [
+            "update",
+            "/lab/2026-01-notes.md",
+            "--actor",
+            "human:spec",
+            "-"
+          ],
+          "stdin": "---\ntitle: Lab notes, January\nlayer: working\n---\n\n# Lab notes, January\n\nFirst rewrite under the spec clock.\n",
+          "pin_stderr": false,
+          "expect": {
+            "exit": 0,
+            "stdout": "b_31\nb_32\nb_33\nb_34\nb_35\nb_36\nb_37\nb_38\nb_43\nb_44\nb_45\nb_46\nb_47\nb_48\nb_49\nb_50\nb_51\nb_327\nb_328\n"
+          }
+        },
+        {
+          "argv": [
+            "update",
+            "/lab/2026-01-notes.md",
+            "--actor",
+            "human:spec",
+            "-"
+          ],
+          "stdin": "---\ntitle: Lab notes, January\nlayer: working\n---\n\n# Lab notes, January\n\nSecond rewrite under the spec clock.\n",
+          "pin_stderr": false,
+          "expect": {
+            "exit": 0,
+            "stdout": "b_328\n"
+          }
+        },
+        {
+          "argv": [
+            "history",
+            "plan",
+            "--policy",
+            "{\"keep_days\":0,\"per_doc_max\":1,\"ladder\":[{\"after_days\":0,\"keep\":\"one per day\"}]}",
+            "--before",
+            "2026-09-27T00:00:00.000Z"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "  nothing to archive: 22 revisions, all kept\n  policy  {\"keep_days\":0,\"ladder\":[{\"after_days\":0,\"keep\":\"one per day\"}],\"per_doc_max\":1,\"keep_origins\":[\"api\"],\"overrides\":[]}\n  before  2026-09-27T00:00:00.000Z\n"
+          }
+        }
+      ]
+    },
+    {
+      "name": "history-plan-bad-policy",
+      "notes": "§6: a malformed policy is a usage error naming the key",
+      "workspace": "alchemy",
+      "argv": [
+        "history",
+        "plan",
+        "--policy",
+        "{\"keep_days\":\"soon\"}"
+      ],
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "usage: --policy: policy.keep_days must be a non-negative integer\n"
+      }
+    },
+    {
+      "name": "history-plan-not-json",
+      "notes": "§6: a `--policy` that is not JSON is a usage error",
+      "workspace": "alchemy",
+      "argv": [
+        "history",
+        "plan",
+        "--policy",
+        "keep_days=0"
+      ],
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "usage: --policy: not JSON (pass an object, or @file)\n"
+      }
+    },
+    {
+      "name": "history-plan-bad-before",
+      "notes": "§6: an unparsable `--before` is a usage error",
+      "workspace": "alchemy",
+      "argv": [
+        "history",
+        "plan",
+        "--before",
+        "yesterday"
+      ],
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "usage: bad --before 'yesterday' (use an RFC 3339 instant)\n"
+      }
+    },
+    {
+      "name": "history-export-dry-run",
+      "notes": "§6 `export --dry-run` is the plan",
+      "workspace": "alchemy",
+      "steps": [
+        {
+          "argv": [
+            "update",
+            "/lab/2026-01-notes.md",
+            "--actor",
+            "human:spec",
+            "-"
+          ],
+          "stdin": "---\ntitle: Lab notes, January\nlayer: working\n---\n\n# Lab notes, January\n\nFirst rewrite under the spec clock.\n",
+          "pin_stderr": false,
+          "expect": {
+            "exit": 0,
+            "stdout": "b_31\nb_32\nb_33\nb_34\nb_35\nb_36\nb_37\nb_38\nb_43\nb_44\nb_45\nb_46\nb_47\nb_48\nb_49\nb_50\nb_51\nb_327\nb_328\n"
+          }
+        },
+        {
+          "argv": [
+            "update",
+            "/lab/2026-01-notes.md",
+            "--actor",
+            "human:spec",
+            "-"
+          ],
+          "stdin": "---\ntitle: Lab notes, January\nlayer: working\n---\n\n# Lab notes, January\n\nSecond rewrite under the spec clock.\n",
+          "pin_stderr": false,
+          "expect": {
+            "exit": 0,
+            "stdout": "b_328\n"
+          }
+        },
+        {
+          "argv": [
+            "history",
+            "export",
+            "--dry-run",
+            "--policy",
+            "{\"keep_days\":0,\"per_doc_max\":1,\"ladder\":[{\"after_days\":0,\"keep\":\"one per day\"}]}"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "  path                   revisions  keep  archive  bytes\n  /lab/2026-01-notes.md          3     1        2  6.5 KB\n  2 of 22 revisions in 1 document would archive 6.5 KB\n  policy  {\"keep_days\":0,\"ladder\":[{\"after_days\":0,\"keep\":\"one per day\"}],\"per_doc_max\":1,\"keep_origins\":[\"api\"],\"overrides\":[]}\n"
+          }
+        }
+      ]
+    },
+    {
+      "name": "history-export-nothing",
+      "notes": "§6: nothing to archive → no file, stderr says so, exit 0; `--json` `segment: null`",
+      "workspace": "alchemy",
+      "steps": [
+        {
+          "argv": [
+            "history",
+            "export"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "",
+            "stderr": "  nothing to archive\n"
+          }
+        },
+        {
+          "argv": [
+            "history",
+            "export",
+            "--json"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "{\"segment\":null,\"reused\":false,\"squashed\":null,\"gc\":null,\"totals\":{\"docs\":0,\"revisions\":20,\"keep\":20,\"archive\":0,\"bytes\":\"<number>\"}}\n"
+          }
+        }
+      ]
+    },
+    {
+      "name": "history-export",
+      "notes": "§6 `export` without `--prune`: the segment file is written under .omgbase/archives/ (its path on stdout, the counts on stderr), nothing is squashed, the revisions stay live; `history list` shows it `pending` — the crash rule's input (§8: bytes by shape)",
+      "workspace": "alchemy",
+      "steps": [
+        {
+          "argv": [
+            "update",
+            "/lab/2026-01-notes.md",
+            "--actor",
+            "human:spec",
+            "-"
+          ],
+          "stdin": "---\ntitle: Lab notes, January\nlayer: working\n---\n\n# Lab notes, January\n\nFirst rewrite under the spec clock.\n",
+          "pin_stderr": false,
+          "expect": {
+            "exit": 0,
+            "stdout": "b_31\nb_32\nb_33\nb_34\nb_35\nb_36\nb_37\nb_38\nb_43\nb_44\nb_45\nb_46\nb_47\nb_48\nb_49\nb_50\nb_51\nb_327\nb_328\n"
+          }
+        },
+        {
+          "argv": [
+            "update",
+            "/lab/2026-01-notes.md",
+            "--actor",
+            "human:spec",
+            "-"
+          ],
+          "stdin": "---\ntitle: Lab notes, January\nlayer: working\n---\n\n# Lab notes, January\n\nSecond rewrite under the spec clock.\n",
+          "pin_stderr": false,
+          "expect": {
+            "exit": 0,
+            "stdout": "b_328\n"
+          }
+        },
+        {
+          "argv": [
+            "history",
+            "export",
+            "--policy",
+            "{\"keep_days\":0,\"per_doc_max\":1,\"ladder\":[{\"after_days\":0,\"keep\":\"one per day\"}]}"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "<workspace>/.omgbase/archives/rp_0-2-21-s_0.omgarchive.db\n",
+            "stderr": "  wrote segment s_0: 2 revisions (commits #2–#21), <bytes>\n"
+          }
+        },
+        {
+          "argv": [
+            "history",
+            "list"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "  segment  commits  revisions    bytes  state    path\n  s_0      #2–#21           2  <bytes>  pending  <workspace>/.omgbase/archives/rp_0-2-21-s_0.omgarchive.db\n"
+          }
+        },
+        {
+          "argv": [
+            "cat",
+            "/lab/2026-01-notes.md"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "---\ntitle: Lab notes, January\nlayer: working\n---\n\n# Lab notes, January\n\nSecond rewrite under the spec clock.\n"
+          }
+        }
+      ]
+    },
+    {
+      "name": "history-export-prune",
+      "notes": "§6 `export --prune`: write, squash, sweep, record — then the archived revisions read `archived` in `docs_history`'s rendering (`query` over revisions), `cat` at the current revision is unchanged, `diff` across an archived revision reconstructs through the attached segment, and `history list` shows the segment `attached`",
+      "workspace": "alchemy",
+      "steps": [
+        {
+          "argv": [
+            "update",
+            "/lab/2026-01-notes.md",
+            "--actor",
+            "human:spec",
+            "-"
+          ],
+          "stdin": "---\ntitle: Lab notes, January\nlayer: working\n---\n\n# Lab notes, January\n\nFirst rewrite under the spec clock.\n",
+          "pin_stderr": false,
+          "expect": {
+            "exit": 0,
+            "stdout": "b_31\nb_32\nb_33\nb_34\nb_35\nb_36\nb_37\nb_38\nb_43\nb_44\nb_45\nb_46\nb_47\nb_48\nb_49\nb_50\nb_51\nb_327\nb_328\n"
+          }
+        },
+        {
+          "argv": [
+            "update",
+            "/lab/2026-01-notes.md",
+            "--actor",
+            "human:spec",
+            "-"
+          ],
+          "stdin": "---\ntitle: Lab notes, January\nlayer: working\n---\n\n# Lab notes, January\n\nSecond rewrite under the spec clock.\n",
+          "pin_stderr": false,
+          "expect": {
+            "exit": 0,
+            "stdout": "b_328\n"
+          }
+        },
+        {
+          "argv": [
+            "history",
+            "export",
+            "--prune",
+            "--policy",
+            "{\"keep_days\":0,\"per_doc_max\":1,\"ladder\":[{\"after_days\":0,\"keep\":\"one per day\"}]}"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "<workspace>/.omgbase/archives/rp_0-2-21-s_0.omgarchive.db\n",
+            "stderr": "  wrote segment s_0: 2 revisions (commits #2–#21), <bytes>\n  squashed 2 revisions, 2 commits, 30 dispositions, 0 block changes; swept 27 blobs, 4 tree nodes\n"
+          }
+        },
+        {
+          "argv": [
+            "history",
+            "list"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "  segment  commits  revisions    bytes  state     path\n  s_0      #2–#21           2  <bytes>  attached  <workspace>/.omgbase/archives/rp_0-2-21-s_0.omgarchive.db\n"
+          }
+        },
+        {
+          "argv": [
+            "query",
+            "select seq, is_current, archived from revisions where path == \"/lab/2026-01-notes.md\" order by seq"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "id    path                   seq  is_current  archived\nr_1   /lab/2026-01-notes.md  1    false       true\nr_20  /lab/2026-01-notes.md  2    false       true\nr_21  /lab/2026-01-notes.md  3    true        false\n"
+          }
+        },
+        {
+          "argv": [
+            "diff",
+            "/lab/2026-01-notes.md",
+            "--from",
+            "r_1",
+            "--to",
+            "r_21"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "@@ -1,66 +1,9 @@\n ---\n-type: lab-note\n+title: Lab notes, January\n layer: working\n-tags: [lab, calcination]\n-verified: true\n-month: 1\n-subject: calcination\n-window: 2026-01-01..2026-01-31\n ---\n \n-# Laboratory notes — January\n+# Lab notes, January\n \n-Bench work on [calcination](/processes/calcination.md), chasing the weight gain.\n+Second rewrite under the spec clock.\n \n-operator:: bb\n-balance:: analytical\n-\n-## Setup\n-\n-Lead sheet cut into 2 g pieces, crucible pre-fired to constant weight, muffle at\n-600 °C. Weighings after cooling in a desiccator.\n-\n-```text\n-tare crucible → weigh Pb → 600C 2h → cool in desiccator → reweigh\n-```\n-\n-## Results\n-\n-| Run | Pb in (g) | Calx out (g) | Change |\n-|---|---|---|---|\n-| 1 | 2.001 | 2.140 | +0.139 |\n-| 2 | 2.004 | 2.147 | +0.143 |\n-| 3 | 1.998 | 2.138 | +0.140 |\n-\n-Consistent gain of about 7% by mass. The colour went yellow then, on longer\n-heating, red — massicot to minium, as expected.\n-\n-The gain is real and reproducible on a bench with 1830s-grade equipment. Anyone\n-doing this carefully before Lavoisier had the fact in hand; what was missing was\n-a framework that could accept it.\n-\n-## Side work\n-\n-Burned a batch of wormwood to ash and leached it while the muffle was up to\n-temperature: 40 g dried herb gave 1.1 g of crude salt after a single\n-recrystallization. That is the [[salt]] of the tria prima, obtained in an\n-afternoon, and it is easy to see why the operation carried evidential weight.\n-\n-Sulphide colours are next — sulphur over the same metals, recording colour\n-against stoichiometry.\n-\n-## Safety\n-\n-Mercury work deferred — see [[mercury]] for the toxicity notes. Not handling it\n-without a fume hood.\n-\n-## Tasks\n-\n-- [x] Pre-fire crucibles to constant weight\n-- [x] Three replicate runs on lead\n-- [x] Record the colour sequence\n-- [x] Extract the salt of wormwood and weigh the yield\n-- [ ] Repeat the series with copper\n-- [ ] Plot mass gain against heating time\n-- [ ] Tabulate the metal sulphides by colour\n-\n"
+          }
+        },
+        {
+          "argv": [
+            "cat",
+            "/lab/2026-01-notes.md"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "---\ntitle: Lab notes, January\nlayer: working\n---\n\n# Lab notes, January\n\nSecond rewrite under the spec clock.\n"
+          }
+        }
+      ]
+    },
+    {
+      "name": "history-export-prune-json",
+      "notes": "§6: the export result — `segment` (bytes by shape), `reused`, `squashed`, `gc`, `totals`",
+      "workspace": "alchemy",
+      "steps": [
+        {
+          "argv": [
+            "update",
+            "/lab/2026-01-notes.md",
+            "--actor",
+            "human:spec",
+            "-"
+          ],
+          "stdin": "---\ntitle: Lab notes, January\nlayer: working\n---\n\n# Lab notes, January\n\nFirst rewrite under the spec clock.\n",
+          "pin_stderr": false,
+          "expect": {
+            "exit": 0,
+            "stdout": "b_31\nb_32\nb_33\nb_34\nb_35\nb_36\nb_37\nb_38\nb_43\nb_44\nb_45\nb_46\nb_47\nb_48\nb_49\nb_50\nb_51\nb_327\nb_328\n"
+          }
+        },
+        {
+          "argv": [
+            "update",
+            "/lab/2026-01-notes.md",
+            "--actor",
+            "human:spec",
+            "-"
+          ],
+          "stdin": "---\ntitle: Lab notes, January\nlayer: working\n---\n\n# Lab notes, January\n\nSecond rewrite under the spec clock.\n",
+          "pin_stderr": false,
+          "expect": {
+            "exit": 0,
+            "stdout": "b_328\n"
+          }
+        },
+        {
+          "argv": [
+            "history",
+            "export",
+            "--prune",
+            "--policy",
+            "{\"keep_days\":0,\"per_doc_max\":1,\"ladder\":[{\"after_days\":0,\"keep\":\"one per day\"}]}",
+            "--json"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "{\"segment\":{\"id\":\"s_0\",\"path\":\"<workspace>/.omgbase/archives/rp_0-2-21-s_0.omgarchive.db\",\"seq_lo\":2,\"seq_hi\":21,\"created_at\":\"2026-09-27T00:00:00.000Z\",\"revision_count\":2,\"bytes\":\"<number>\",\"previous_segment\":null},\"reused\":false,\"squashed\":{\"revisions\":2,\"commits\":2,\"dispositions\":30,\"block_changes\":0},\"gc\":{\"blobs\":27,\"tree_nodes\":4},\"totals\":{\"docs\":1,\"revisions\":22,\"keep\":20,\"archive\":2,\"bytes\":\"<number>\"}}\n"
+          }
+        },
+        {
+          "argv": [
+            "history",
+            "list",
+            "--json"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "[{\"segment_id\":\"s_0\",\"path\":\"<workspace>/.omgbase/archives/rp_0-2-21-s_0.omgarchive.db\",\"seq_lo\":2,\"seq_hi\":21,\"revision_count\":2,\"bytes\":\"<number>\",\"created_at\":\"2026-09-27T00:00:00.000Z\",\"state\":\"attached\"}]\n"
+          }
+        }
+      ]
+    },
+    {
+      "name": "history-export-dest",
+      "notes": "§6 `--dest`: the segment goes to the given directory (created); the default archives directory stays empty, so `history list` shows nothing",
+      "workspace": "alchemy",
+      "steps": [
+        {
+          "argv": [
+            "update",
+            "/lab/2026-01-notes.md",
+            "--actor",
+            "human:spec",
+            "-"
+          ],
+          "stdin": "---\ntitle: Lab notes, January\nlayer: working\n---\n\n# Lab notes, January\n\nFirst rewrite under the spec clock.\n",
+          "pin_stderr": false,
+          "expect": {
+            "exit": 0,
+            "stdout": "b_31\nb_32\nb_33\nb_34\nb_35\nb_36\nb_37\nb_38\nb_43\nb_44\nb_45\nb_46\nb_47\nb_48\nb_49\nb_50\nb_51\nb_327\nb_328\n"
+          }
+        },
+        {
+          "argv": [
+            "update",
+            "/lab/2026-01-notes.md",
+            "--actor",
+            "human:spec",
+            "-"
+          ],
+          "stdin": "---\ntitle: Lab notes, January\nlayer: working\n---\n\n# Lab notes, January\n\nSecond rewrite under the spec clock.\n",
+          "pin_stderr": false,
+          "expect": {
+            "exit": 0,
+            "stdout": "b_328\n"
+          }
+        },
+        {
+          "argv": [
+            "history",
+            "export",
+            "--prune",
+            "--policy",
+            "{\"keep_days\":0,\"per_doc_max\":1,\"ladder\":[{\"after_days\":0,\"keep\":\"one per day\"}]}",
+            "--dest",
+            "<workspace>/segments"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "<workspace>/segments/rp_0-2-21-s_0.omgarchive.db\n",
+            "stderr": "  wrote segment s_0: 2 revisions (commits #2–#21), <bytes>\n  squashed 2 revisions, 2 commits, 30 dispositions, 0 block changes; swept 27 blobs, 4 tree nodes\n"
+          }
+        },
+        {
+          "argv": [
+            "history",
+            "list"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "  segment  commits  revisions    bytes  state     path\n  s_0      #2–#21           2  <bytes>  attached  <workspace>/segments/rp_0-2-21-s_0.omgarchive.db\n"
+          }
+        }
+      ]
+    },
+    {
+      "name": "history-export-reuses-pending",
+      "notes": "§6 the crash rule: an export without `--prune` leaves a complete, unrecorded segment; the next `export --prune` finishes it instead of writing a second file",
+      "workspace": "alchemy",
+      "steps": [
+        {
+          "argv": [
+            "update",
+            "/lab/2026-01-notes.md",
+            "--actor",
+            "human:spec",
+            "-"
+          ],
+          "stdin": "---\ntitle: Lab notes, January\nlayer: working\n---\n\n# Lab notes, January\n\nFirst rewrite under the spec clock.\n",
+          "pin_stderr": false,
+          "expect": {
+            "exit": 0,
+            "stdout": "b_31\nb_32\nb_33\nb_34\nb_35\nb_36\nb_37\nb_38\nb_43\nb_44\nb_45\nb_46\nb_47\nb_48\nb_49\nb_50\nb_51\nb_327\nb_328\n"
+          }
+        },
+        {
+          "argv": [
+            "update",
+            "/lab/2026-01-notes.md",
+            "--actor",
+            "human:spec",
+            "-"
+          ],
+          "stdin": "---\ntitle: Lab notes, January\nlayer: working\n---\n\n# Lab notes, January\n\nSecond rewrite under the spec clock.\n",
+          "pin_stderr": false,
+          "expect": {
+            "exit": 0,
+            "stdout": "b_328\n"
+          }
+        },
+        {
+          "argv": [
+            "history",
+            "export",
+            "--policy",
+            "{\"keep_days\":0,\"per_doc_max\":1,\"ladder\":[{\"after_days\":0,\"keep\":\"one per day\"}]}"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "<workspace>/.omgbase/archives/rp_0-2-21-s_0.omgarchive.db\n",
+            "stderr": "  wrote segment s_0: 2 revisions (commits #2–#21), <bytes>\n"
+          }
+        },
+        {
+          "argv": [
+            "history",
+            "export",
+            "--prune",
+            "--policy",
+            "{\"keep_days\":0,\"per_doc_max\":1,\"ladder\":[{\"after_days\":0,\"keep\":\"one per day\"}]}"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "<workspace>/.omgbase/archives/rp_0-2-21-s_0.omgarchive.db\n",
+            "stderr": "  finished the unrecorded segment s_0: 2 revisions (commits #2–#21), <bytes>\n  squashed 2 revisions, 2 commits, 30 dispositions, 0 block changes; swept 27 blobs, 4 tree nodes\n"
+          }
+        },
+        {
+          "argv": [
+            "history",
+            "list"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "  segment  commits  revisions    bytes  state     path\n  s_0      #2–#21           2  <bytes>  attached  <workspace>/.omgbase/archives/rp_0-2-21-s_0.omgarchive.db\n"
+          }
+        }
+      ]
+    },
+    {
+      "name": "history-detach-attach",
+      "notes": "§6 `detach` by id, then a read at an archived revision is `revision_archived` (no path: the segment is not recorded); `list` shows it `detached`; `attach <file>` records it again and the read works",
+      "workspace": "alchemy",
+      "steps": [
+        {
+          "argv": [
+            "update",
+            "/lab/2026-01-notes.md",
+            "--actor",
+            "human:spec",
+            "-"
+          ],
+          "stdin": "---\ntitle: Lab notes, January\nlayer: working\n---\n\n# Lab notes, January\n\nFirst rewrite under the spec clock.\n",
+          "pin_stderr": false,
+          "expect": {
+            "exit": 0,
+            "stdout": "b_31\nb_32\nb_33\nb_34\nb_35\nb_36\nb_37\nb_38\nb_43\nb_44\nb_45\nb_46\nb_47\nb_48\nb_49\nb_50\nb_51\nb_327\nb_328\n"
+          }
+        },
+        {
+          "argv": [
+            "update",
+            "/lab/2026-01-notes.md",
+            "--actor",
+            "human:spec",
+            "-"
+          ],
+          "stdin": "---\ntitle: Lab notes, January\nlayer: working\n---\n\n# Lab notes, January\n\nSecond rewrite under the spec clock.\n",
+          "pin_stderr": false,
+          "expect": {
+            "exit": 0,
+            "stdout": "b_328\n"
+          }
+        },
+        {
+          "argv": [
+            "history",
+            "export",
+            "--prune",
+            "--policy",
+            "{\"keep_days\":0,\"per_doc_max\":1,\"ladder\":[{\"after_days\":0,\"keep\":\"one per day\"}]}"
+          ],
+          "pin_stderr": false,
+          "expect": {
+            "exit": 0,
+            "stdout": "<workspace>/.omgbase/archives/rp_0-2-21-s_0.omgarchive.db\n"
+          }
+        },
+        {
+          "argv": [
+            "history",
+            "detach",
+            "s_0"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "",
+            "stderr": "  detached s_0\n"
+          }
+        },
+        {
+          "argv": [
+            "history",
+            "detach",
+            "s_0"
+          ],
+          "expect": {
+            "exit": 1,
+            "stdout": "",
+            "stderr": "error[target_missing]: no archive segment \"s_0\"\n  {\n    \"segment\": \"s_0\"\n  }\n"
+          }
+        },
+        {
+          "argv": [
+            "diff",
+            "/lab/2026-01-notes.md",
+            "--from",
+            "r_1",
+            "--to",
+            "r_21"
+          ],
+          "expect": {
+            "exit": 1,
+            "stdout": "",
+            "stderr": "error[revision_archived]: revision \"r_1\" is archived in segment s_0, which is not attached (omg history attach <file>)\n  {\n    \"rev\": \"r_1\",\n    \"archive\": \"s_0\"\n  }\n"
+          }
+        },
+        {
+          "argv": [
+            "history",
+            "list"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "  segment  commits  revisions    bytes  state     path\n  s_0      #2–#21           2  <bytes>  detached  <workspace>/.omgbase/archives/rp_0-2-21-s_0.omgarchive.db\n"
+          }
+        },
+        {
+          "argv": [
+            "history",
+            "attach",
+            "<workspace>/.omgbase/archives/rp_0-2-21-s_0.omgarchive.db"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "",
+            "stderr": "  attached s_0: 2 revisions (commits #2–#21) <workspace>/.omgbase/archives/rp_0-2-21-s_0.omgarchive.db\n"
+          }
+        },
+        {
+          "argv": [
+            "diff",
+            "/lab/2026-01-notes.md",
+            "--from",
+            "r_1",
+            "--to",
+            "r_21"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "@@ -1,66 +1,9 @@\n ---\n-type: lab-note\n+title: Lab notes, January\n layer: working\n-tags: [lab, calcination]\n-verified: true\n-month: 1\n-subject: calcination\n-window: 2026-01-01..2026-01-31\n ---\n \n-# Laboratory notes — January\n+# Lab notes, January\n \n-Bench work on [calcination](/processes/calcination.md), chasing the weight gain.\n+Second rewrite under the spec clock.\n \n-operator:: bb\n-balance:: analytical\n-\n-## Setup\n-\n-Lead sheet cut into 2 g pieces, crucible pre-fired to constant weight, muffle at\n-600 °C. Weighings after cooling in a desiccator.\n-\n-```text\n-tare crucible → weigh Pb → 600C 2h → cool in desiccator → reweigh\n-```\n-\n-## Results\n-\n-| Run | Pb in (g) | Calx out (g) | Change |\n-|---|---|---|---|\n-| 1 | 2.001 | 2.140 | +0.139 |\n-| 2 | 2.004 | 2.147 | +0.143 |\n-| 3 | 1.998 | 2.138 | +0.140 |\n-\n-Consistent gain of about 7% by mass. The colour went yellow then, on longer\n-heating, red — massicot to minium, as expected.\n-\n-The gain is real and reproducible on a bench with 1830s-grade equipment. Anyone\n-doing this carefully before Lavoisier had the fact in hand; what was missing was\n-a framework that could accept it.\n-\n-## Side work\n-\n-Burned a batch of wormwood to ash and leached it while the muffle was up to\n-temperature: 40 g dried herb gave 1.1 g of crude salt after a single\n-recrystallization. That is the [[salt]] of the tria prima, obtained in an\n-afternoon, and it is easy to see why the operation carried evidential weight.\n-\n-Sulphide colours are next — sulphur over the same metals, recording colour\n-against stoichiometry.\n-\n-## Safety\n-\n-Mercury work deferred — see [[mercury]] for the toxicity notes. Not handling it\n-without a fume hood.\n-\n-## Tasks\n-\n-- [x] Pre-fire crucibles to constant weight\n-- [x] Three replicate runs on lead\n-- [x] Record the colour sequence\n-- [x] Extract the salt of wormwood and weigh the yield\n-- [ ] Repeat the series with copper\n-- [ ] Plot mass gain against heating time\n-- [ ] Tabulate the metal sulphides by colour\n-\n"
+          }
+        }
+      ]
+    },
+    {
+      "name": "history-attach-dir",
+      "notes": "§6 `attach <dir>`: every segment of the directory that belongs to this repository; attaching again is idempotent; `--json` lists what was attached",
+      "workspace": "alchemy",
+      "steps": [
+        {
+          "argv": [
+            "update",
+            "/lab/2026-01-notes.md",
+            "--actor",
+            "human:spec",
+            "-"
+          ],
+          "stdin": "---\ntitle: Lab notes, January\nlayer: working\n---\n\n# Lab notes, January\n\nFirst rewrite under the spec clock.\n",
+          "pin_stderr": false,
+          "expect": {
+            "exit": 0,
+            "stdout": "b_31\nb_32\nb_33\nb_34\nb_35\nb_36\nb_37\nb_38\nb_43\nb_44\nb_45\nb_46\nb_47\nb_48\nb_49\nb_50\nb_51\nb_327\nb_328\n"
+          }
+        },
+        {
+          "argv": [
+            "update",
+            "/lab/2026-01-notes.md",
+            "--actor",
+            "human:spec",
+            "-"
+          ],
+          "stdin": "---\ntitle: Lab notes, January\nlayer: working\n---\n\n# Lab notes, January\n\nSecond rewrite under the spec clock.\n",
+          "pin_stderr": false,
+          "expect": {
+            "exit": 0,
+            "stdout": "b_328\n"
+          }
+        },
+        {
+          "argv": [
+            "history",
+            "export",
+            "--prune",
+            "--policy",
+            "{\"keep_days\":0,\"per_doc_max\":1,\"ladder\":[{\"after_days\":0,\"keep\":\"one per day\"}]}"
+          ],
+          "pin_stderr": false,
+          "expect": {
+            "exit": 0,
+            "stdout": "<workspace>/.omgbase/archives/rp_0-2-21-s_0.omgarchive.db\n"
+          }
+        },
+        {
+          "argv": [
+            "history",
+            "detach",
+            "s_0"
+          ],
+          "pin_stderr": false,
+          "expect": {
+            "exit": 0,
+            "stdout": ""
+          }
+        },
+        {
+          "argv": [
+            "history",
+            "attach",
+            "<workspace>/.omgbase/archives"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "",
+            "stderr": "  attached s_0: 2 revisions (commits #2–#21) <workspace>/.omgbase/archives/rp_0-2-21-s_0.omgarchive.db\n"
+          }
+        },
+        {
+          "argv": [
+            "history",
+            "attach",
+            "<workspace>/.omgbase/archives",
+            "--json"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "{\"attached\":[{\"segment_id\":\"s_0\",\"path\":\"<workspace>/.omgbase/archives/rp_0-2-21-s_0.omgarchive.db\",\"seq_lo\":2,\"seq_hi\":21,\"revision_count\":2,\"bytes\":\"<number>\"}],\"skipped\":0}\n"
+          }
+        }
+      ]
+    },
+    {
+      "name": "history-attach-not-a-segment",
+      "notes": "§6: a file that is not a segment is `target_missing`",
+      "workspace": "alchemy",
+      "files": {
+        "notes.txt": "hello\n"
+      },
+      "argv": [
+        "history",
+        "attach",
+        "<workspace>/notes.txt"
+      ],
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "error[target_missing]: <workspace>/notes.txt: not an archive segment\n  {\n    \"path\": \"<workspace>/notes.txt\"\n  }\n"
+      }
+    },
+    {
+      "name": "history-attach-missing",
+      "notes": "§6: a path that does not exist is `target_missing`",
+      "workspace": "alchemy",
+      "argv": [
+        "history",
+        "attach",
+        "<workspace>/nowhere.omgarchive.db"
+      ],
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "error[target_missing]: <workspace>/nowhere.omgarchive.db: no such file\n  {\n    \"path\": \"<workspace>/nowhere.omgarchive.db\"\n  }\n"
+      }
+    },
+    {
+      "name": "history-detach-unknown",
+      "notes": "§6: detaching an unknown segment is `target_missing`",
+      "workspace": "alchemy",
+      "argv": [
+        "history",
+        "detach",
+        "s_9"
+      ],
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "error[target_missing]: no archive segment \"s_9\"\n  {\n    \"segment\": \"s_9\"\n  }\n"
+      }
+    },
+    {
+      "name": "history-list-empty",
+      "notes": "§6 `list` with no segments: stderr `no segments`, `--json` `[]`",
+      "workspace": "alchemy",
+      "steps": [
+        {
+          "argv": [
+            "history",
+            "list"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "",
+            "stderr": "  no segments\n"
+          }
+        },
+        {
+          "argv": [
+            "history",
+            "list",
+            "--json"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "[]\n"
+          }
+        },
+        {
+          "argv": [
+            "history",
+            "list",
+            "--ids"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": ""
+          }
+        }
+      ]
+    },
+    {
+      "name": "history-no-repo",
+      "notes": "§2.1: a workspace without a repo is `repo_not_found` for every retention verb",
+      "workspace": "empty",
+      "steps": [
+        {
+          "argv": [
+            "history",
+            "plan"
+          ],
+          "expect": {
+            "exit": 1,
+            "stdout": "",
+            "stderr": "error[repo_not_found]: no repo contains <workspace>; select one with --repo\n  {\n    \"candidates\": []\n  }\n"
+          }
+        },
+        {
+          "argv": [
+            "history",
+            "export"
+          ],
+          "expect": {
+            "exit": 1,
+            "stdout": "",
+            "stderr": "error[repo_not_found]: no repo contains <workspace>; select one with --repo\n  {\n    \"candidates\": []\n  }\n"
+          }
+        },
+        {
+          "argv": [
+            "history",
+            "list"
+          ],
+          "expect": {
+            "exit": 1,
+            "stdout": "",
+            "stderr": "error[repo_not_found]: no repo contains <workspace>; select one with --repo\n  {\n    \"candidates\": []\n  }\n"
+          }
+        }
+      ]
+    },
+    {
+      "name": "history-no-workspace",
+      "notes": "§2.1: no workspace is `repo_not_found`",
+      "workspace": "none",
+      "argv": [
+        "history",
+        "plan"
+      ],
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "error[repo_not_found]: no omgbase workspace found at or above <workspace>\n  hint: run `omg init` to create one here, or `omg -C <dir> …` to run inside an existing workspace\n"
+      }
+    },
+    {
+      "name": "history-unknown-sub",
+      "notes": "§2.2: an unknown subcommand is a usage error pointing at the card",
+      "workspace": "alchemy",
+      "argv": [
+        "history",
+        "prune"
+      ],
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "usage: unknown history subcommand 'prune' (plan|export|attach|detach|list)\n  hint: run 'omg history --help'\n"
+      }
+    },
+    {
+      "name": "history-attach-no-arg",
+      "notes": "§2.2: `attach` without a path is a usage error",
+      "workspace": "alchemy",
+      "argv": [
+        "history",
+        "attach"
+      ],
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "usage: history attach requires a <file|dir>\n"
+      }
+    },
+    {
+      "name": "history-detach-no-arg",
+      "notes": "§2.2: `detach` without a ref is a usage error",
+      "workspace": "alchemy",
+      "argv": [
+        "history",
+        "detach"
+      ],
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "usage: history detach requires a <segment_id|path>\n"
+      }
+    },
+    {
+      "name": "history-server-rejected",
+      "notes": "§2.3: `--server` is not supported for the retention verbs",
+      "workspace": "alchemy",
+      "argv": [
+        "--server",
+        "omg mcp",
+        "history",
+        "list"
+      ],
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "usage: --server is not supported for 'history' — it needs local ref resolution or a working tree; run it against a local workspace\n"
+      }
     }
   ]
 }

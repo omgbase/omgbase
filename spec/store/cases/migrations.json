@@ -2,7 +2,7 @@
   "suite": "migrations",
   "cases": [
     {
-      "name": "v1-to-v14-minimal",
+      "name": "v1-to-v15-minimal",
       "notes": "A v1 database with only a repos table (root_path still present, no rows): every create-step runs, the fs adapter row is ensured, root_path is dropped, pending_materializations is created. Mirrors store.test.ts 'migrates an older (v1) database forward'.",
       "setup": [
         "CREATE TABLE repos (repo_id TEXT PRIMARY KEY, slug TEXT, root_path TEXT, settings TEXT)"
@@ -14,15 +14,26 @@
         "sources",
         "attachments",
         "workspace_settings",
-        "pending_materializations"
+        "pending_materializations",
+        "archives"
       ],
       "expect": {
-        "user_version": 14,
+        "user_version": 15,
         "tables": {
           "adapters": [
             "name",
             "command",
             "args"
+          ],
+          "archives": [
+            "segment_id",
+            "repo_id",
+            "path",
+            "seq_lo",
+            "seq_hi",
+            "created_at",
+            "revision_count",
+            "bytes"
           ],
           "attachments": [
             "repo_id",
@@ -144,7 +155,8 @@
               "settings": "{}"
             }
           ],
-          "pending_materializations": []
+          "pending_materializations": [],
+          "archives": []
         }
       }
     },
@@ -166,12 +178,22 @@
         "repos"
       ],
       "expect": {
-        "user_version": 14,
+        "user_version": 15,
         "tables": {
           "adapters": [
             "name",
             "command",
             "args"
+          ],
+          "archives": [
+            "segment_id",
+            "repo_id",
+            "path",
+            "seq_lo",
+            "seq_hi",
+            "created_at",
+            "revision_count",
+            "bytes"
           ],
           "attachments": [
             "repo_id",
@@ -252,12 +274,22 @@
         "repos"
       ],
       "expect": {
-        "user_version": 14,
+        "user_version": 15,
         "tables": {
           "adapters": [
             "name",
             "command",
             "args"
+          ],
+          "archives": [
+            "segment_id",
+            "repo_id",
+            "path",
+            "seq_lo",
+            "seq_hi",
+            "created_at",
+            "revision_count",
+            "bytes"
           ],
           "attachments": [
             "repo_id",
@@ -332,12 +364,22 @@
         "repos"
       ],
       "expect": {
-        "user_version": 14,
+        "user_version": 15,
         "tables": {
           "adapters": [
             "name",
             "command",
             "args"
+          ],
+          "archives": [
+            "segment_id",
+            "repo_id",
+            "path",
+            "seq_lo",
+            "seq_hi",
+            "created_at",
+            "revision_count",
+            "bytes"
           ],
           "attachments": [
             "repo_id",
@@ -412,8 +454,18 @@
         "pending_materializations"
       ],
       "expect": {
-        "user_version": 14,
+        "user_version": 15,
         "tables": {
+          "archives": [
+            "segment_id",
+            "repo_id",
+            "path",
+            "seq_lo",
+            "seq_hi",
+            "created_at",
+            "revision_count",
+            "bytes"
+          ],
           "pending_materializations": [
             "repo_id",
             "path",
@@ -443,18 +495,145 @@
       }
     },
     {
+      "name": "v14-to-v15-revisions-nullable-and-archives",
+      "notes": "README §3.4 step 15: a v14 database's `revisions` table is rebuilt so that `root_tree`/`frontmatter_blob` are nullable without foreign keys and `archive` exists (every existing row keeps its bodies and gets `archive = NULL`), and `archives` is created — with foreign keys off for the duration, so the `pending_materializations` row that references the revision survives the DROP/RENAME. The commit, doc and pending rows are untouched.",
+      "setup": [
+        "CREATE TABLE repos (repo_id TEXT PRIMARY KEY, slug TEXT NOT NULL UNIQUE, settings TEXT NOT NULL DEFAULT '{}')",
+        "CREATE TABLE docs (doc_id TEXT PRIMARY KEY, repo_id TEXT NOT NULL REFERENCES repos(repo_id), path TEXT NOT NULL, format TEXT NOT NULL DEFAULT 'markdown', current_rev TEXT, file_hash BLOB, conflicted INTEGER NOT NULL DEFAULT 0, leading_trivia TEXT NOT NULL DEFAULT '', frontmatter_trivia TEXT, deleted_commit TEXT, UNIQUE (repo_id, path))",
+        "CREATE TABLE blobs (hash BLOB PRIMARY KEY, bytes BLOB NOT NULL, size INTEGER NOT NULL)",
+        "CREATE TABLE tree_nodes (hash BLOB PRIMARY KEY, entries TEXT NOT NULL)",
+        "CREATE TABLE commits (commit_id TEXT PRIMARY KEY, repo_id TEXT NOT NULL REFERENCES repos(repo_id), seq INTEGER NOT NULL, ts TEXT NOT NULL, origin TEXT NOT NULL CHECK (origin IN ('api','observed','import','projection')), actor TEXT, reason TEXT, checkpoint_id TEXT, ops TEXT, UNIQUE (repo_id, seq))",
+        "CREATE TABLE revisions (rev_id TEXT PRIMARY KEY, doc_id TEXT NOT NULL REFERENCES docs(doc_id), seq INTEGER NOT NULL, root_tree BLOB NOT NULL REFERENCES tree_nodes(hash), frontmatter_blob BLOB REFERENCES blobs(hash), rendered_hash BLOB NOT NULL, path TEXT NOT NULL, commit_id TEXT NOT NULL REFERENCES commits(commit_id), UNIQUE (doc_id, seq))",
+        "CREATE TABLE pending_materializations (repo_id TEXT NOT NULL REFERENCES repos(repo_id), path TEXT NOT NULL, kind TEXT NOT NULL CHECK (kind IN ('write','rename','remove')), from_path TEXT, doc_id TEXT NOT NULL REFERENCES docs(doc_id), rev_id TEXT REFERENCES revisions(rev_id), rendered_hash BLOB NOT NULL, commit_id TEXT NOT NULL REFERENCES commits(commit_id), PRIMARY KEY (repo_id, path))",
+        "INSERT INTO repos (repo_id, slug) VALUES ('rp_1','vault')",
+        "INSERT INTO docs (doc_id, repo_id, path, current_rev, file_hash) VALUES ('d_1','rp_1','a.md','r_1', X'00')",
+        "INSERT INTO tree_nodes (hash, entries) VALUES (X'01', '[]')",
+        "INSERT INTO blobs (hash, bytes, size) VALUES (X'02', X'2d2d2d0a2d2d2d', 7)",
+        "INSERT INTO commits (commit_id, repo_id, seq, ts, origin) VALUES ('c_1','rp_1',1,'2026-10-15T00:00:00.000Z','api')",
+        "INSERT INTO revisions (rev_id, doc_id, seq, root_tree, frontmatter_blob, rendered_hash, path, commit_id) VALUES ('r_1','d_1',1,X'01',X'02',X'03','a.md','c_1')",
+        "INSERT INTO pending_materializations (repo_id, path, kind, doc_id, rev_id, rendered_hash, commit_id) VALUES ('rp_1','a.md','write','d_1','r_1',X'03','c_1')"
+      ],
+      "user_version": 14,
+      "rows": [
+        "revisions",
+        "pending_materializations",
+        "archives"
+      ],
+      "expect": {
+        "user_version": 15,
+        "tables": {
+          "archives": [
+            "segment_id",
+            "repo_id",
+            "path",
+            "seq_lo",
+            "seq_hi",
+            "created_at",
+            "revision_count",
+            "bytes"
+          ],
+          "blobs": [
+            "hash",
+            "bytes",
+            "size"
+          ],
+          "commits": [
+            "commit_id",
+            "repo_id",
+            "seq",
+            "ts",
+            "origin",
+            "actor",
+            "reason",
+            "checkpoint_id",
+            "ops"
+          ],
+          "docs": [
+            "doc_id",
+            "repo_id",
+            "path",
+            "format",
+            "current_rev",
+            "file_hash",
+            "conflicted",
+            "leading_trivia",
+            "frontmatter_trivia",
+            "deleted_commit"
+          ],
+          "pending_materializations": [
+            "repo_id",
+            "path",
+            "kind",
+            "from_path",
+            "doc_id",
+            "rev_id",
+            "rendered_hash",
+            "commit_id"
+          ],
+          "repos": [
+            "repo_id",
+            "slug",
+            "settings"
+          ],
+          "revisions": [
+            "rev_id",
+            "doc_id",
+            "seq",
+            "root_tree",
+            "frontmatter_blob",
+            "rendered_hash",
+            "path",
+            "commit_id",
+            "archive"
+          ],
+          "tree_nodes": [
+            "hash",
+            "entries"
+          ]
+        },
+        "rows": {
+          "revisions": [
+            {
+              "rev_id": "r_1",
+              "doc_id": "d_1",
+              "seq": 1,
+              "root_tree": "01",
+              "frontmatter_blob": "02",
+              "rendered_hash": "03",
+              "path": "a.md",
+              "commit_id": "c_1",
+              "archive": null
+            }
+          ],
+          "pending_materializations": [
+            {
+              "repo_id": "rp_1",
+              "path": "a.md",
+              "kind": "write",
+              "from_path": null,
+              "doc_id": "d_1",
+              "rev_id": "r_1",
+              "rendered_hash": "03",
+              "commit_id": "c_1"
+            }
+          ],
+          "archives": []
+        }
+      }
+    },
+    {
       "name": "already-current-is-untouched",
       "notes": "README §1 step 2: a database already at the schema version is opened without executing the DDL — the odd table is all there is afterwards.",
       "setup": [
         "CREATE TABLE only_this (x TEXT)",
         "INSERT INTO only_this (x) VALUES ('kept')"
       ],
-      "user_version": 14,
+      "user_version": 15,
       "rows": [
         "only_this"
       ],
       "expect": {
-        "user_version": 14,
+        "user_version": 15,
         "tables": {
           "only_this": [
             "x"
@@ -473,10 +652,10 @@
       "name": "newer-version-is-refused",
       "notes": "README §1 step 3: a database from a newer build is refused with the exact message; nothing is read or written.",
       "setup": [],
-      "user_version": 15,
+      "user_version": 16,
       "rows": [],
       "expect": {
-        "error": "database schema (v15) is newer than this build (v14); upgrade omgbase"
+        "error": "database schema (v16) is newer than this build (v15); upgrade omgbase"
       }
     }
   ]

@@ -11,6 +11,7 @@ import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { DDL, SCHEMA_VERSION } from "../../src/core/store/schema.js";
+import { ARCHIVE_DDL } from "../../src/core/store/archive.js";
 import {
   deepEqualTol, runMigrationCase, runObserveCase, runSchemaCase, suiteKind, validateFixtureFile,
 } from "./fixture.js";
@@ -150,6 +151,10 @@ function runCase(suite: string, c: FixtureCase): void {
 describe("store spec fixtures (spec/store/cases)", () => {
   it("spec/store/schema.sql is the embedded DDL, byte for byte (README §3.3)", () => {
     expect(readFileSync(join(SPEC_DIR, "schema.sql"), "utf8")).toBe(DDL);
+  });
+
+  it("spec/store/archive.sql is the embedded segment DDL, byte for byte (README §3.3, 15.0)", () => {
+    expect(readFileSync(join(SPEC_DIR, "archive.sql"), "utf8")).toBe(ARCHIVE_DDL);
   });
 
   it("spec/store/VERSION's major is the schema version (README 'Versioning')", () => {

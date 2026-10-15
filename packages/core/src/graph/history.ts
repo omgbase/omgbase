@@ -4,6 +4,7 @@ import { readDocumentAtRevision } from "../core/read/document.js";
 import { isValidId } from "../core/ids.js";
 import { EngineError } from "../mcp/errors.js";
 import { referencePath, storagePath } from "../core/paths.js";
+import { revisionBody } from "../core/store/archive.js";
 
 // History surface (06 §3, 07 task 4.4): blocks_history (block/doc biography),
 // diff (block-grain + Myers unified), changes_since (commit digests / change feed).
@@ -77,11 +78,13 @@ export function diffBlocks(store: Store, docId: string, fromRev: string, toRev: 
 // of the document: a container's raw already holds its children's text, so
 // joining the values would repeat every nested block (spec/surface §9).
 function blocksAtRevision(store: Store, docId: string, revId: string): Map<string, string> {
-  const rev = store.db.prepare("SELECT root_tree FROM revisions WHERE rev_id = ? AND doc_id = ?").get(revId, docId) as { root_tree: Buffer } | undefined;
+  // An archived revision's bodies come from its segment (spec/store §7, 15.0;
+  // `prefix` is the attached alias — RevisionArchived when unavailable).
+  const rev = revisionBody(store, revId, docId);
   if (!rev) throw new RevisionNotFound(docId, revId);
   const out = new Map<string, string>();
-  const blob = store.db.prepare("SELECT bytes FROM blobs WHERE hash = ?");
-  const treeNode = store.db.prepare("SELECT entries FROM tree_nodes WHERE hash = ?");
+  const blob = store.db.prepare(`SELECT bytes FROM ${rev.prefix}blobs WHERE hash = ?`);
+  const treeNode = store.db.prepare(`SELECT entries FROM ${rev.prefix}tree_nodes WHERE hash = ?`);
   const walk = (treeHashHex: string): void => {
     const node = treeNode.get(Buffer.from(treeHashHex, "hex")) as { entries: string } | undefined;
     if (!node) return;
@@ -365,6 +368,8 @@ export interface DocVersion {
   hash: string;
   /** true when this rev == the doc's current_rev. */
   isCurrent: boolean;
+  /** true when the revision's bodies live in an archive segment (spec/store §7 "Retention", 15.0; `docs_read { at }` reads through it when attached). */
+  archived: boolean;
 }
 
 /** A matching document with its ordered version history. */
@@ -441,14 +446,14 @@ export function docHistory(
 
   const revStmt = store.db.prepare(
     `SELECT r.rev_id AS rev, r.seq AS seq, r.commit_id AS commitId, r.rendered_hash AS rendered_hash,
-            c.ts AS ts, c.origin AS origin, c.actor AS actor
+            c.ts AS ts, c.origin AS origin, c.actor AS actor, r.archive AS archive
      FROM revisions r JOIN commits c ON c.commit_id = r.commit_id
      WHERE r.doc_id = ? ORDER BY r.seq ASC`,
   );
 
   const docs: DocVersions[] = page.map((d) => {
     const rows = revStmt.all(d.doc_id) as {
-      rev: string; seq: number; commitId: string; rendered_hash: Buffer; ts: string; origin: string; actor: string | null;
+      rev: string; seq: number; commitId: string; rendered_hash: Buffer; ts: string; origin: string; actor: string | null; archive: string | null;
     }[];
     const versions: DocVersion[] = rows.map((r) => ({
       rev: r.rev,
@@ -459,6 +464,7 @@ export function docHistory(
       actor: r.actor,
       hash: r.rendered_hash.toString("hex"),
       isCurrent: r.rev === d.current_rev,
+      archived: r.archive !== null,
     }));
     return { id: d.doc_id, path: referencePath(d.path), deleted: d.deleted_commit !== null, currentRev: d.current_rev, versions };
   });

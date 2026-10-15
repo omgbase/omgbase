@@ -14,7 +14,7 @@
 // fixture minter installed and re-expresses the resulting rows so the two
 // implementations can be compared.
 import Database from "better-sqlite3";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Store } from "../../src/core/store/store.js";
@@ -23,6 +23,9 @@ import { repeatingMinter, sequentialMinter, setIdMinter } from "../../src/core/i
 import { sha256 } from "../../src/core/hash.js";
 import { reconstructContent, readDocumentAtRevision } from "../../src/core/read/document.js";
 import { runGc, sweepResurrectionPool } from "../../src/core/store/gc.js";
+import { attachArchive, detachArchive, exportHistory, RevisionArchived, segmentBasename, ARCHIVE_SUFFIX } from "../../src/core/store/archive.js";
+import { evaluateRetention, retentionPolicy, type RetentionPlan } from "../../src/core/store/retention.js";
+import { ARCHIVED_COMMITS_SQL } from "../../src/core/store/rebuild.js";
 import { observeBatch, type BatchOutcome } from "../../src/sync/observe.js";
 import { CONFIG_KEYS, toReconcileConfig, deepEqualTol, type FixtureConfig } from "../reconcile/fixture.js";
 
@@ -101,7 +104,17 @@ export type Step =
   /** README §9.4 (14.2): the §7 garbage collection, enabled → `{ gc: { blobs, tree_nodes, same_dispositions } }` */
   | { gc: Record<string, never> }
   /** README §9.4 (14.2): authored SQL run verbatim — the device that puts a 14.1 store's rows into a case → `{ changes: n }` */
-  | { exec: { sql: string[] } };
+  | { exec: { sql: string[] } }
+  /** README §9.4 (15.0): the retention plan at `ts` under the policy (a partial over the defaults) → `{ plan }` */
+  | { history_plan: { ts: string; policy?: unknown; before?: string } }
+  /** README §9.4 (15.0): `history export` into the case's archive directory → `{ export: { segment, reused, squashed, gc } }` */
+  | { history_export: { ts: string; policy?: unknown; before?: string; prune: boolean } }
+  /** README §9.4 (15.0): attach the case's segment file by id → `{ attached: [...] }` */
+  | { history_attach: { segment: string } }
+  /** README §9.4 (15.0): detach a segment by id → `{ detached }` */
+  | { history_detach: { segment: string } }
+  /** README §9.4 (15.0): reconstruct at a revision (§6.2, through a segment when archived) → `{ raw, rendered_hash_match }` or the error */
+  | { read_at: { doc: string; rev: string } };
 
 export interface ObservedOutcome {
   path: string;
@@ -121,7 +134,89 @@ export interface GoneOutcome {
 export interface GcOutcome {
   gc: { blobs: number; tree_nodes: number; same_dispositions: number };
 }
-export type StepOutcome = (ObservedOutcome | GoneOutcome)[] | { swept: number } | GcOutcome | { changes: number };
+export interface PlanOutcome {
+  plan: RetentionPlan;
+}
+export interface ExportOutcome {
+  export: {
+    segment: { id: string; seq_lo: number; seq_hi: number; revision_count: number; previous_segment: string | null } | null;
+    reused: boolean;
+    squashed: { revisions: number; commits: number; dispositions: number; block_changes: number } | null;
+    gc: { blobs: number; tree_nodes: number } | null;
+  };
+}
+export interface AttachOutcome {
+  attached: { segment_id: string; seq_lo: number; seq_hi: number; revision_count: number }[];
+}
+export interface DetachOutcome {
+  detached: string | null;
+}
+export type ReadAtOutcome =
+  | { raw: string; rendered_hash_match: boolean }
+  | { error: "revision_archived"; rev: string; archive: string; path?: string }
+  | { error: "target_missing" };
+export type StepOutcome = (ObservedOutcome | GoneOutcome)[] | { swept: number } | GcOutcome | { changes: number } | PlanOutcome | ExportOutcome | AttachOutcome | DetachOutcome | ReadAtOutcome;
+
+/** README §9.4 (15.0): where a case's segments are written — a temporary directory, `<dest>` in every projected path. */
+export interface HistoryContext {
+  dest: string;
+}
+export const DEST_TOKEN = "<dest>";
+
+export type HistoryStep = Extract<Step, { history_plan: unknown } | { history_export: unknown } | { history_attach: unknown } | { history_detach: unknown } | { read_at: unknown }>;
+
+export function isHistoryStep(step: object): step is HistoryStep {
+  return "history_plan" in step || "history_export" in step || "history_attach" in step || "history_detach" in step || "read_at" in step;
+}
+
+/** The file of a segment under the case's `dest`, by id (`…-<segment>.omgarchive.db`). */
+function segmentFile(ctx: HistoryContext, segmentId: string): string {
+  const name = readdirSync(ctx.dest).find((n) => n.endsWith(`-${segmentId}${ARCHIVE_SUFFIX}`));
+  if (!name) throw new Error(`no segment file for ${segmentId} under ${ctx.dest}`);
+  return join(ctx.dest, name);
+}
+
+/**
+ * README §9.4 (15.0): the retention steps, through the production paths
+ * (`evaluateRetention`, `exportHistory`, `attachArchive`, `detachArchive`,
+ * `readDocumentAtRevision`). `policy` is a partial over the defaults (the repo
+ * has no settings in a fixture); `ts` is the clock. Shared with the surface
+ * runner, which drives the same steps around its `read` calls.
+ */
+export function runHistoryStep(store: Store, repoId: string, step: HistoryStep, ctx: HistoryContext): StepOutcome {
+  if ("history_plan" in step) {
+    const { ts, policy, before } = step.history_plan;
+    return { plan: evaluateRetention(store, repoId, { now: ts, policy: retentionPolicy(store, repoId, policy), ...(before !== undefined ? { before } : {}) }) };
+  }
+  if ("history_export" in step) {
+    const { ts, policy, before, prune } = step.history_export;
+    const r = exportHistory(store, repoId, { dest: ctx.dest, now: ts, policy: retentionPolicy(store, repoId, policy), prune, ...(before !== undefined ? { before } : {}) });
+    return {
+      export: {
+        segment: r.segment ? { id: r.segment.id, seq_lo: r.segment.seq_lo, seq_hi: r.segment.seq_hi, revision_count: r.segment.revision_count, previous_segment: r.segment.previous_segment } : null,
+        reused: r.reused,
+        squashed: r.squashed,
+        gc: r.gc,
+      },
+    };
+  }
+  if ("history_attach" in step) {
+    const r = attachArchive(store, repoId, segmentFile(ctx, step.history_attach.segment));
+    return { attached: r.attached.map((a) => ({ segment_id: a.segment_id, seq_lo: a.seq_lo, seq_hi: a.seq_hi, revision_count: a.revision_count })) };
+  }
+  if ("history_detach" in step) {
+    return { detached: detachArchive(store, repoId, step.history_detach.segment) };
+  }
+  const { doc, rev } = step.read_at;
+  try {
+    const at = readDocumentAtRevision(store, doc, rev);
+    if (!at) return { error: "target_missing" };
+    return { raw: at.raw, rendered_hash_match: at.renderedHashMatch };
+  } catch (e) {
+    if (e instanceof RevisionArchived) return { error: "revision_archived", rev: e.rev, archive: e.archive, ...(e.path !== null ? { path: `${DEST_TOKEN}/${segmentBasename(e.path)}` } : {}) };
+    throw e;
+  }
+}
 
 /** README §9.4 (14.2): the `gc` step — `runGc` enabled, never a dry run; the counts in the fixture's spelling. */
 export function runGcStep(store: Store): GcOutcome {
@@ -152,11 +247,13 @@ export interface Projection {
   sections: Row[];
   /** README §9.4 (14.0): the api path's recorded file intent — always `[]` for an observation script. */
   pending_materializations: Row[];
+  /** README §9.4 (15.0): the recorded archive segments — `path` as `file` (the name under `<dest>`), `bytes` omitted (a page layout). */
+  archives: Row[];
 }
 /** The projected tables, in the order the fixture emits them. */
 export const PROJECTED_TABLES = [
   "docs", "commits", "revisions", "blobs", "tree_nodes", "blocks",
-  "dispositions", "block_changes", "resurrection_pool", "sections", "pending_materializations",
+  "dispositions", "block_changes", "resurrection_pool", "sections", "pending_materializations", "archives",
 ] as const;
 
 /** README §9.4: which fixture minter a case installs — the sequential counter (default) or the repeating one (13.5). */
@@ -369,13 +466,20 @@ export function runObserveCase(c: ObserveCaseInput): ObserveEvaluation {
   const config = toReconcileConfig(c.config);
   return withFixtureMinter(() => {
     const store = new Store({ path: ":memory:" });
+    // The case's archive directory (README §9.4, 15.0): created on the first
+    // retention step, removed with the store.
+    const history: { ctx: HistoryContext | null } = { ctx: null };
+    const ctx = (): HistoryContext => (history.ctx ??= { dest: mkdtempSync(join(tmpdir(), "omgbase-store-spec-archives-")) });
     try {
       const repoId = ensureRepo(store, FIXTURE_REPO_SLUG, null);
       const lastSource = new Map<string, string>();
       const steps: StepOutcome[] = [];
       const problems: string[] = [];
       c.steps.forEach((step, i) => {
-        if ("observe" in step) {
+        if (isHistoryStep(step)) {
+          steps.push(runHistoryStep(store, repoId, step, ctx()));
+          if ("history_export" in step) for (const p of checkInvariants(store, repoId, lastSource)) problems.push(`after step ${i}: ${p}`);
+        } else if ("observe" in step) {
           const items = step.observe.items.map((it) => ({ path: it.path, content: it.source }));
           const outcomes = observeBatch(store, repoId, items, step.observe.ts, { config });
           for (const it of step.observe.items) {
@@ -397,6 +501,7 @@ export function runObserveCase(c: ObserveCaseInput): ObserveEvaluation {
       return { expect: { steps, ...projectStore(store.db, repoId) }, problems };
     } finally {
       store.close();
+      if (history.ctx) rmSync(history.ctx.dest, { recursive: true, force: true });
     }
   }, c.minter);
 }
@@ -482,7 +587,7 @@ export function projectStore(db: Db, repoId: string): Omit<Projection, "steps"> 
 
   const revisions = (db
     .prepare(
-      `SELECT r.rev_id, r.doc_id, r.seq, r.root_tree, r.frontmatter_blob, r.rendered_hash, r.path, r.commit_id
+      `SELECT r.rev_id, r.doc_id, r.seq, r.root_tree, r.frontmatter_blob, r.rendered_hash, r.path, r.commit_id, r.archive
        FROM revisions r JOIN docs d ON d.doc_id = r.doc_id WHERE d.repo_id = ?`,
     )
     .all(repoId) as Record<string, unknown>[])
@@ -534,7 +639,14 @@ export function projectStore(db: Db, repoId: string): Omit<Projection, "steps"> 
     .prepare("SELECT path, kind, from_path, doc_id, rev_id, rendered_hash, commit_id FROM pending_materializations WHERE repo_id = ? ORDER BY path")
     .all(repoId) as Record<string, unknown>[]).map(toRow);
 
-  return { docs, commits, revisions, blobs, tree_nodes, blocks, dispositions, block_changes, resurrection_pool, sections, pending_materializations };
+  // 15.0: the recorded segments, `path` reduced to its file name (the directory
+  // is the run's) and `bytes` omitted (a page layout, not a behavior).
+  const archives = (db
+    .prepare("SELECT segment_id, path, seq_lo, seq_hi, created_at, revision_count FROM archives WHERE repo_id = ? ORDER BY seq_lo, segment_id")
+    .all(repoId) as Record<string, unknown>[])
+    .map((r) => toRow({ segment_id: r.segment_id, file: segmentBasename(r.path as string), seq_lo: r.seq_lo, seq_hi: r.seq_hi, created_at: r.created_at, revision_count: r.revision_count }));
+
+  return { docs, commits, revisions, blobs, tree_nodes, blocks, dispositions, block_changes, resurrection_pool, sections, pending_materializations, archives };
 }
 
 // ---- invariants (README §8) --------------------------------------------------------------
@@ -580,9 +692,17 @@ export function checkInvariants(store: Store, repoId: string, lastSource: Readon
     .prepare("SELECT doc_id, path, current_rev, file_hash, deleted_commit FROM docs WHERE repo_id = ? ORDER BY path")
     .all(repoId) as { doc_id: string; path: string; current_rev: string | null; file_hash: Buffer | null; deleted_commit: string | null }[];
   const revisions = db
-    .prepare("SELECT r.rev_id, r.doc_id, r.seq, r.root_tree, r.frontmatter_blob, r.rendered_hash, r.commit_id FROM revisions r JOIN docs d ON d.doc_id = r.doc_id WHERE d.repo_id = ?")
-    .all(repoId) as { rev_id: string; doc_id: string; seq: number; root_tree: Buffer; frontmatter_blob: Buffer | null; rendered_hash: Buffer; commit_id: string }[];
+    .prepare("SELECT r.rev_id, r.doc_id, r.seq, r.root_tree, r.frontmatter_blob, r.rendered_hash, r.commit_id, r.archive FROM revisions r JOIN docs d ON d.doc_id = r.doc_id WHERE d.repo_id = ?")
+    .all(repoId) as { rev_id: string; doc_id: string; seq: number; root_tree: Buffer | null; frontmatter_blob: Buffer | null; rendered_hash: Buffer; commit_id: string; archive: string | null }[];
   const revById = new Map(revisions.map((r) => [r.rev_id, r]));
+
+  // ---- I9 archived revisions (15.0) ---------------------------------------------------
+  // `archive IS NOT NULL` ⇔ `root_tree IS NULL`, and an archived revision has no
+  // frontmatter blob either: the bodies moved to the segment, the row stayed.
+  for (const r of revisions) {
+    if (r.archive !== null && (r.root_tree !== null || r.frontmatter_blob !== null)) problems.push(`I9: archived revision ${r.rev_id} still carries a root_tree or frontmatter_blob`);
+    if (r.archive === null && r.root_tree === null) problems.push(`I9: live revision ${r.rev_id} has no root_tree`);
+  }
 
   // ---- I2 hash integrity --------------------------------------------------------
   for (const b of blobRows) {
@@ -606,7 +726,7 @@ export function checkInvariants(store: Store, repoId: string, lastSource: Readon
     }
   }
   for (const r of revisions) {
-    if (!treeHashes.has(r.root_tree.toString("hex"))) problems.push(`I2: revision ${r.rev_id} root_tree not in tree_nodes`);
+    if (r.root_tree && !treeHashes.has(r.root_tree.toString("hex"))) problems.push(`I2: revision ${r.rev_id} root_tree not in tree_nodes`);
     if (r.frontmatter_blob && !blobHashes.has(r.frontmatter_blob.toString("hex"))) problems.push(`I2: revision ${r.rev_id} frontmatter_blob not in blobs`);
   }
 
@@ -617,6 +737,10 @@ export function checkInvariants(store: Store, repoId: string, lastSource: Readon
     const rev = revById.get(d.current_rev);
     if (!rev) {
       problems.push(`I1: ${at} current_rev ${d.current_rev} is not a revision`);
+      continue;
+    }
+    if (rev.root_tree === null) {
+      problems.push(`I1: ${at} current_rev ${d.current_rev} is archived (never prunable)`);
       continue;
     }
     const source = lastSource.get(d.path);
@@ -699,12 +823,13 @@ export function checkInvariants(store: Store, repoId: string, lastSource: Readon
       if (child !== null) mark(child);
     }
   };
+  // 15.0: the mark walks the LIVE revisions; an archived one's bodies are its segment's.
   for (const r of revisions) {
-    mark(r.root_tree.toString("hex"));
+    if (r.root_tree) mark(r.root_tree.toString("hex"));
     if (r.frontmatter_blob) markedBlobs.add(r.frontmatter_blob.toString("hex"));
   }
-  for (const h of treeHashes) if (!markedTrees.has(h)) problems.push(`I5: tree_node ${h} is unreachable from every revision`);
-  for (const h of blobHashes) if (!markedBlobs.has(h)) problems.push(`I5: blob ${h} is unreachable from every revision`);
+  for (const h of treeHashes) if (!markedTrees.has(h)) problems.push(`I5: tree_node ${h} is unreachable from every live revision`);
+  for (const h of blobHashes) if (!markedBlobs.has(h)) problems.push(`I5: blob ${h} is unreachable from every live revision`);
 
   // ---- I6 pool -----------------------------------------------------------------------
   const liveRowOf = db.prepare("SELECT doc_id FROM blocks WHERE block_id = ? AND deleted_commit IS NULL");
@@ -780,10 +905,23 @@ export function checkInvariants(store: Store, repoId: string, lastSource: Readon
     const diff = deepEqualTol(have, want, 0);
     if (diff) problems.push(`I8: sections of ${d.doc_id} differ from a rebuild (${diff})`);
   }
-  const bcHave = (db.prepare("SELECT block_id, commit_id, kind FROM block_changes ORDER BY block_id, commit_id, kind").all() as Row[]);
+  // 15.0: over the commits that are not wholly archived, `block_changes` is the
+  // projection of `dispositions`; a wholly archived commit has no dispositions
+  // and keeps, of its block_changes, exactly each block's earliest row.
+  const bcHave = (db.prepare(`SELECT block_id, commit_id, kind FROM block_changes WHERE commit_id NOT IN (${ARCHIVED_COMMITS_SQL}) ORDER BY block_id, commit_id, kind`).all() as Row[]);
   const bcWant = (db.prepare("SELECT DISTINCT block_id, commit_id, kind FROM dispositions ORDER BY block_id, commit_id, kind").all() as Row[]);
   const bcDiff = deepEqualTol(bcHave, bcWant, 0);
   if (bcDiff) problems.push(`I8: block_changes differ from a rebuild out of dispositions (${bcDiff})`);
+  const archivedDisp = (db.prepare(`SELECT count(*) AS c FROM dispositions WHERE commit_id IN (${ARCHIVED_COMMITS_SQL})`).get() as { c: number }).c;
+  if (archivedDisp > 0) problems.push(`I9: ${archivedDisp} disposition rows of wholly archived commits remain`);
+  const notEarliest = db
+    .prepare(
+      `SELECT bc.block_id, bc.commit_id FROM block_changes bc JOIN commits c ON c.commit_id = bc.commit_id
+       WHERE bc.commit_id IN (${ARCHIVED_COMMITS_SQL})
+         AND EXISTS (SELECT 1 FROM block_changes b2 JOIN commits c2 ON c2.commit_id = b2.commit_id WHERE b2.block_id = bc.block_id AND c2.seq < c.seq)`,
+    )
+    .all() as { block_id: string; commit_id: string }[];
+  for (const r of notEarliest) problems.push(`I9: block_changes row ${r.block_id}/${r.commit_id} of an archived commit is not the block's earliest`);
 
   return problems;
 }
@@ -809,6 +947,33 @@ function validateConfig(at: string, config: unknown, problems: string[]): void {
 /** A spec-specific step validator: `body` is the step's single value, `here` its path (for messages). */
 export type ExtraStepValidator = (body: unknown, here: string, problems: string[]) => void;
 
+/** README §9.4 (15.0): the retention step kinds. */
+export const HISTORY_STEP_KINDS = ["history_plan", "history_export", "history_attach", "history_detach", "read_at"] as const;
+
+function validateHistoryStep(kind: string, body: unknown, here: string, problems: string[]): void {
+  if (!isRecord(body)) {
+    problems.push(`${here}: not an object`);
+    return;
+  }
+  const allowed: Record<string, string[]> = {
+    history_plan: ["ts", "policy", "before"],
+    history_export: ["ts", "policy", "before", "prune"],
+    history_attach: ["segment"],
+    history_detach: ["segment"],
+    read_at: ["doc", "rev"],
+  };
+  const extra = Object.keys(body).filter((k) => !allowed[kind]!.includes(k));
+  if (extra.length > 0) problems.push(`${here}: ${kind} takes ${allowed[kind]!.map((k) => `\`${k}\``).join(", ")} (got ${extra.join(", ")})`);
+  if (kind === "history_plan" || kind === "history_export") {
+    if (typeof body.ts !== "string" || !TS_RE.test(body.ts)) problems.push(`${here}: \`ts\` must be RFC 3339 UTC with three fractional digits and Z (§2.4)`);
+    if (body.policy !== undefined && !isRecord(body.policy)) problems.push(`${here}: \`policy\` must be an object (a partial over the defaults)`);
+    if (body.before !== undefined && (typeof body.before !== "string" || !TS_RE.test(body.before))) problems.push(`${here}: \`before\` must be RFC 3339 UTC with three fractional digits and Z (§2.4)`);
+    if (kind === "history_export" && typeof body.prune !== "boolean") problems.push(`${here}: \`prune\` must be a boolean`);
+  } else if (kind === "read_at") {
+    if (typeof body.doc !== "string" || typeof body.rev !== "string") problems.push(`${here}: read_at takes \`doc\` and \`rev\` ids`);
+  } else if (typeof body.segment !== "string" || body.segment === "") problems.push(`${here}: \`segment\` must be a segment id`);
+}
+
 /**
  * Validate a §9.4 `steps` list, appending problems; returns the step count (or
  * -1 when the list itself is malformed). Exported because every observation-
@@ -821,7 +986,7 @@ export function validateSteps(at: string, steps: unknown, problems: string[], ex
     problems.push(`${at}: \`steps\` must be a non-empty array`);
     return -1;
   }
-  const kinds = ["observe", "sweep", "gc", "exec", ...Object.keys(extra)];
+  const kinds = ["observe", "sweep", "gc", "exec", ...HISTORY_STEP_KINDS, ...Object.keys(extra)];
   steps.forEach((s, i) => {
     const here = `${at}.steps[${i}]`;
     if (!isRecord(s)) {
@@ -841,6 +1006,10 @@ export function validateSteps(at: string, steps: unknown, problems: string[], ex
     }
     if (keys[0] === "gc") {
       if (!isRecord(body) || Object.keys(body).length > 0) problems.push(`${here}: gc takes an empty object`);
+      return;
+    }
+    if ((HISTORY_STEP_KINDS as readonly string[]).includes(keys[0]!)) {
+      validateHistoryStep(keys[0]!, body, here, problems);
       return;
     }
     if (keys[0] === "exec") {

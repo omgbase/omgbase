@@ -621,7 +621,7 @@
       "query": "select commited from revisions",
       "expect": {
         "error": "filter_invalid",
-        "message_includes": "`commited` is not a field of revisions (fields: id, path, rev, seq, doc_id, commit, ts, origin, actor, reason, hash, is_current); did you mean `commit`?"
+        "message_includes": "`commited` is not a field of revisions (fields: id, path, rev, seq, doc_id, commit, ts, origin, actor, reason, hash, is_current, archived); did you mean `commit`?"
       }
     },
     {

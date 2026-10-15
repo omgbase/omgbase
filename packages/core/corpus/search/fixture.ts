@@ -37,7 +37,7 @@ import { hybridSearch, type HybridHit } from "../../src/search/rrf.js";
 import { resolve as resolveSearch } from "../../src/search/resolve.js";
 import { toReconcileConfig, deepEqualTol, type FixtureConfig } from "../reconcile/fixture.js";
 import {
-  FIXTURE_REPO_SLUG, runExecStep, runGcStep, toOutcome, validateSteps,
+  FIXTURE_REPO_SLUG, isHistoryStep, runExecStep, runGcStep, toOutcome, validateSteps,
   type Step as StoreStep, type StepOutcome as StoreStepOutcome,
 } from "../store/fixture.js";
 
@@ -300,6 +300,8 @@ export async function runObserveCase(c: ObserveCaseInput): Promise<Evaluation> {
         steps.push(runGcStep(store));
       } else if ("exec" in step) {
         steps.push(runExecStep(store, step.exec.sql));
+      } else if (isHistoryStep(step)) {
+        throw new Error("retention steps (spec/store §9.4, 15.0) are not run by the search runner");
       } else if ("drain" in step) {
         // README §2.6: the block pass, then the document pass, in one drain.
         const blocks = await worker.process(buildEmbedTasks(store, repoId));

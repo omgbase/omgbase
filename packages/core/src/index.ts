@@ -219,8 +219,18 @@ export {
 } from "./mutate/opset.js";
 export { rebuildIndex, type RebuildTarget } from "./core/store/rebuild.js";
 export { runGc, type GcResult } from "./core/store/gc.js";
+// History retention (spec/store §7 "Retention", 15.0): the policy and plan, the archive segments.
+export {
+  evaluateRetention, retentionPolicy, mergeRetentionPolicy, policyFor, globToRegExp, ageDays, periodKey, DEFAULT_RETENTION, LADDER_KEEPS, RetentionPolicyError,
+  type RetentionPolicy, type RetentionOverride, type LadderRung, type LadderKeep, type RetentionPlan, type RetentionDocPlan, type RetentionTotals, type EvaluateOptions,
+} from "./core/store/retention.js";
+export {
+  exportHistory, attachArchive, detachArchive, listArchives, unrecordedSegments, readManifest, revisionBody, archivePrefix, archivedSummary, segmentFileName, parseSegmentFileName,
+  RevisionArchived, NotASegment, StaleSegment, ARCHIVE_DDL, ARCHIVE_SUFFIX, ARCHIVE_DIR,
+  type ExportOptions, type ExportResult, type SegmentInfo, type SquashResult, type AttachResult, type AttachedSegment, type ArchiveListing, type ArchiveState, type UnrecordedSegment, type Manifest, type RevisionBody,
+} from "./core/store/archive.js";
 export {
   sizeReport, sizeAdvice, vacuum, reclaimableBytes, humanBytes, formatShare, shareOf, categoryOf, TABLE_CATEGORY, SIZE_CATEGORIES,
-  type SizeReport, type SizeCategory, type SizeCategoryReport, type SizeTable, type SizeFile, type VacuumResult,
+  type SizeReport, type SizeCategory, type SizeCategoryReport, type SizeTable, type SizeFile, type SizeArchived, type SizeRetention, type VacuumResult,
 } from "./core/store/size.js";
 export { LIVE_LEAF_SQL, ftsIndexedRowCount, liveLeafCount } from "./core/store/fts.js";

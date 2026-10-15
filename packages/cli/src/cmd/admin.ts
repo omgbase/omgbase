@@ -112,7 +112,7 @@ function runDoctor(cli: Cli, args: string[]): number {
       usage: ["doctor [--json]", "doctor --size [--json]"],
       options: [
         ["--size", "instead of the checks: what the database is made of — bytes and rows per category (content, history, search, sync) and table, the file's pages, what VACUUM would reclaim, advice"],
-        ["--json", "`{ ok, checks: [{ name, ok, detail }] }`; with --size `{ file, categories, same_dispositions, advice }`"],
+        ["--json", "`{ ok, checks: [{ name, ok, detail }] }`; with --size `{ file, categories, same_dispositions, archived, advice }`"],
       ],
     });
   }
@@ -187,6 +187,8 @@ function runDoctorSize(cli: Cli, report: SizeReport): number {
     ["size", `${humanBytes(f.bytes)} on disk, wal ${humanBytes(f.wal_bytes)}`],
     ["pages", `${f.page_count} x ${f.page_size} bytes, ${f.freelist_count} free`],
     ["reclaimable", humanBytes(f.reclaimable)],
+    // 15.0: the history that already moved to archive segments (spec/store §7 "Retention").
+    ["archived", `${report.archived.revisions} revisions in ${report.archived.segments} segments, ${humanBytes(report.archived.bytes)} on disk`],
   ];
   for (const line of columns(file)) io.out(`  ${line}`);
   for (const a of report.advice) io.out(`  ${style.dim("advice:")} ${a}`);

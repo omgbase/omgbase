@@ -132,8 +132,8 @@ export const NO_WORKSPACE_OK = new Set(["init", "help", "version"]);
 // whose card is also their bare invocation (spec/cli §5): help is documentation,
 // not work, so these route to the card before any workspace is opened or swept —
 // exactly like the `--help` flag.
-export const HELP_WORD_OK = new Set(["config", "embed", "node", "source"]);
-export const BARE_IS_HELP = new Set(["node", "source"]);
+export const HELP_WORD_OK = new Set(["config", "embed", "node", "source", "history"]);
+export const BARE_IS_HELP = new Set(["node", "source", "history"]);
 /** Does this invocation ask for a command's help card? (the flag, the word, or a bare card-only command) */
 export function asksForHelp(flags: GlobalFlags, name: string, args: string[]): boolean {
   if (flags.help) return true;

@@ -132,7 +132,12 @@ vernacular and `--server` does not apply.
   `omg sync --watch` (drives the local reconcile loop — its *engine-side*
   primitives `observe*` **are** in the catalog), `omg mcp` (starts the server).
 - **Admin / maintenance:** `omg rebuild-index`, `omg gc`, `omg doctor`,
-  `omg embed`, `omg config`. Server-operator ops; no MCP tools.
+  `omg embed`, `omg config`, and (cli 4.6) `omg history plan | export |
+  attach | detach | list` — history retention writes segment files under the
+  workspace, takes the writer lock and is driven by a policy and a
+  directory (`spec/store` §7.1); the catalog's whole trace of it is the
+  `revisions.archived` attribute and the `revision_archived` error
+  (`spec/surface` 4.9). Server-operator ops; no MCP tools.
 - **Surface-intrinsic:** `omg shell` (a CLI session; `shell --server` runs each
   *line* remotely, but the session construct itself is CLI-only), `omg help`,
   `omg --version` (the one-line form; the full `omg version` verb IS in the

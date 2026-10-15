@@ -68,7 +68,8 @@
             "frontmatter_blob": null,
             "rendered_hash": "ff26640ce71f904399b7dfbafcfc473710b3f93f43d302d77cce18a6de3cacfb",
             "path": "a.md",
-            "commit_id": "c_0"
+            "commit_id": "c_0",
+            "archive": null
           }
         ],
         "blobs": [
@@ -179,7 +180,8 @@
             "last_ordinal": 1
           }
         ],
-        "pending_materializations": []
+        "pending_materializations": [],
+        "archives": []
       }
     },
     {
@@ -272,7 +274,8 @@
             "frontmatter_blob": null,
             "rendered_hash": "ff26640ce71f904399b7dfbafcfc473710b3f93f43d302d77cce18a6de3cacfb",
             "path": "a.md",
-            "commit_id": "c_0"
+            "commit_id": "c_0",
+            "archive": null
           }
         ],
         "blobs": [
@@ -383,7 +386,8 @@
             "last_ordinal": 1
           }
         ],
-        "pending_materializations": []
+        "pending_materializations": [],
+        "archives": []
       }
     },
     {
@@ -489,7 +493,8 @@
             "frontmatter_blob": null,
             "rendered_hash": "b5785d75e610abced0ed316c6b8f43e58e07c99d2be247acf7f9cde3483d1c0c",
             "path": "a.md",
-            "commit_id": "c_0"
+            "commit_id": "c_0",
+            "archive": null
           },
           {
             "rev_id": "r_1",
@@ -499,7 +504,8 @@
             "frontmatter_blob": null,
             "rendered_hash": "8bc68f6304ef142cb8803d049b59a4a238046859a461365caa91c87359f206e6",
             "path": "a.md",
-            "commit_id": "c_1"
+            "commit_id": "c_1",
+            "archive": null
           }
         ],
         "blobs": [
@@ -633,7 +639,8 @@
             "last_ordinal": 1
           }
         ],
-        "pending_materializations": []
+        "pending_materializations": [],
+        "archives": []
       }
     },
     {
@@ -740,7 +747,8 @@
             "frontmatter_blob": null,
             "rendered_hash": "7cf2759c6218bb080f621fd81f3fb4a7ff73302256cdad2676f69fcd1f4e4753",
             "path": "a.md",
-            "commit_id": "c_0"
+            "commit_id": "c_0",
+            "archive": null
           },
           {
             "rev_id": "r_1",
@@ -750,7 +758,8 @@
             "frontmatter_blob": null,
             "rendered_hash": "ff26640ce71f904399b7dfbafcfc473710b3f93f43d302d77cce18a6de3cacfb",
             "path": "a.md",
-            "commit_id": "c_1"
+            "commit_id": "c_1",
+            "archive": null
           }
         ],
         "blobs": [
@@ -1314,7 +1323,8 @@
             "last_ordinal": 1
           }
         ],
-        "pending_materializations": []
+        "pending_materializations": [],
+        "archives": []
       }
     },
     {
@@ -1384,7 +1394,8 @@
             "frontmatter_blob": null,
             "rendered_hash": "7232fd2d361182691a6ccf53ad168032a3186c9dba5fc9c84ca8b1d7308acee2",
             "path": "a.md",
-            "commit_id": "c_0"
+            "commit_id": "c_0",
+            "archive": null
           }
         ],
         "blobs": [
@@ -1444,7 +1455,8 @@
         ],
         "resurrection_pool": [],
         "sections": [],
-        "pending_materializations": []
+        "pending_materializations": [],
+        "archives": []
       }
     },
     {
@@ -1512,7 +1524,8 @@
             "frontmatter_blob": null,
             "rendered_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
             "path": "empty.md",
-            "commit_id": "c_0"
+            "commit_id": "c_0",
+            "archive": null
           }
         ],
         "blobs": [],
@@ -1527,7 +1540,8 @@
         "block_changes": [],
         "resurrection_pool": [],
         "sections": [],
-        "pending_materializations": []
+        "pending_materializations": [],
+        "archives": []
       }
     },
     {
@@ -1595,7 +1609,8 @@
             "frontmatter_blob": null,
             "rendered_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
             "path": "blank.md",
-            "commit_id": "c_0"
+            "commit_id": "c_0",
+            "archive": null
           }
         ],
         "blobs": [],
@@ -1610,7 +1625,8 @@
         "block_changes": [],
         "resurrection_pool": [],
         "sections": [],
-        "pending_materializations": []
+        "pending_materializations": [],
+        "archives": []
       }
     },
     {
@@ -1717,7 +1733,8 @@
             "frontmatter_blob": null,
             "rendered_hash": "ff26640ce71f904399b7dfbafcfc473710b3f93f43d302d77cce18a6de3cacfb",
             "path": "a.md",
-            "commit_id": "c_0"
+            "commit_id": "c_0",
+            "archive": null
           },
           {
             "rev_id": "r_1",
@@ -1727,7 +1744,8 @@
             "frontmatter_blob": null,
             "rendered_hash": "915b967f133f4c429a8601e359791427191322f8456a765bc6aaf2dcedaa789c",
             "path": "b.md",
-            "commit_id": "c_1"
+            "commit_id": "c_1",
+            "archive": null
           }
         ],
         "blobs": [
@@ -1918,7 +1936,8 @@
             "last_ordinal": 1
           }
         ],
-        "pending_materializations": []
+        "pending_materializations": [],
+        "archives": []
       }
     },
     {
@@ -2023,7 +2042,8 @@
             "frontmatter_blob": null,
             "rendered_hash": "ff26640ce71f904399b7dfbafcfc473710b3f93f43d302d77cce18a6de3cacfb",
             "path": "a.md",
-            "commit_id": "c_0"
+            "commit_id": "c_0",
+            "archive": null
           },
           {
             "rev_id": "r_1",
@@ -2033,7 +2053,8 @@
             "frontmatter_blob": null,
             "rendered_hash": "98f7d974f004a0b63f60a58b63de0cca692046d716c45490cdac23dc11d1989d",
             "path": "a.md",
-            "commit_id": "c_1"
+            "commit_id": "c_1",
+            "archive": null
           }
         ],
         "blobs": [
@@ -2153,7 +2174,8 @@
             "last_ordinal": 1
           }
         ],
-        "pending_materializations": []
+        "pending_materializations": [],
+        "archives": []
       }
     }
   ]

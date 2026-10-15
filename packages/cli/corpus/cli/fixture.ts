@@ -255,10 +255,11 @@ function cliVersion(): string {
 //
 // Applied only to a successful `version` invocation (exit 0, not its help card).
 
-/** The verb an argv invokes, whether a machine mode is on, and its flags; null when it asks for help. */
-export function scanArgv(argv: string[]): { command: string | null; json: boolean; flags: Set<string> } | null {
-  const takesValue = new Set(["-C", "--directory", "--repo", "--server", "-H", "--header"]);
+/** The verb an argv invokes (and its first subcommand word), whether a machine mode is on, and its flags; null when it asks for help. */
+export function scanArgv(argv: string[]): { command: string | null; sub: string | null; json: boolean; flags: Set<string> } | null {
+  const takesValue = new Set(["-C", "--directory", "--repo", "--server", "-H", "--header", "--dest", "--policy", "--before"]);
   let command: string | null = null;
+  let sub: string | null = null;
   let json = false;
   const flags = new Set<string>();
   for (let i = 0; i < argv.length; i++) {
@@ -269,8 +270,9 @@ export function scanArgv(argv: string[]): { command: string | null; json: boolea
     if (a === "--json" || a === "--jsonl" || a === "--ids") { json = true; continue; }
     if (a.startsWith("-")) { flags.add(a); continue; }
     if (command === null) command = a;
+    else if (sub === null) sub = a;
   }
-  return { command, json, flags };
+  return { command, sub, json, flags };
 }
 
 /** Does this argv invoke the `version` verb (not `--version`, not its card)? Returns the output mode or null. */
@@ -346,8 +348,10 @@ export function normalizeVersionOutput(argv: string[], o: Outcome): Outcome {
 // other line each humanized size (`788.0 KB`, `0 B`) becomes `<bytes>`, each
 // one-decimal percentage `<share>`, and the `pages` line's three counts
 // `<number>`. Row counts are never touched (they are deterministic and
-// pinned). Applied to stdout and stderr of a successful `doctor --size` or
-// `gc --vacuum`.
+// pinned). Applied to stdout and stderr of a successful `doctor --size`,
+// `gc --vacuum`, `history export` (not its `--dry-run`, which is the plan
+// over logical bytes), `history list` or `history attach` (cli 4.6: a
+// segment file's bytes are a page layout too).
 
 const SIZE_KEYS = new Set(["bytes", "wal_bytes", "page_size", "page_count", "freelist_count", "reclaimable", "share", "indexes"]);
 const BYTES_CELL = 9;
@@ -391,11 +395,15 @@ export function sizeShapeText(s: string): string {
     .join("\n");
 }
 
-/** Is this a successful `doctor --size` or `gc --vacuum` whose outputs are recorded by shape? */
+/** Is this a successful `doctor --size`, `gc --vacuum`, `history export`, `history list` or `history attach` (cli 4.6) whose outputs are recorded by shape? */
 export function sizeReportMode(argv: string[]): "human" | "json" | null {
   const scan = scanArgv(argv);
   if (!scan) return null;
-  const sized = (scan.command === "doctor" && scan.flags.has("--size")) || (scan.command === "gc" && scan.flags.has("--vacuum"));
+  const sized =
+    (scan.command === "doctor" && scan.flags.has("--size")) ||
+    (scan.command === "gc" && scan.flags.has("--vacuum")) ||
+    // A segment file's size is SQLite's page layout; `export --dry-run` is the plan (logical bytes, exact) and is not rewritten.
+    (scan.command === "history" && ((scan.sub === "export" && !scan.flags.has("--dry-run")) || scan.sub === "list" || scan.sub === "attach"));
   if (!sized) return null;
   return scan.json ? "json" : "human";
 }

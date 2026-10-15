@@ -285,7 +285,7 @@ block or node as `attrs.<k>`):
 | blocks | `id` `path` `doc_id` `raw` `hash` `updated_at` `type` `text` `attrs` `depth` `ordinal` | — | `block` (+ `doc`) | `children` `nodes` `out_links` `section` |
 | nodes | `id` `path` `doc_id` `block_id` `kind` `name` `value` `attrs` | — | `section` (+ `doc`, `block`) | `blocks` `subsections` `children` |
 | links | `id` `path` `doc_id` `block_id` `via_id` `dst_id` `dst_path` `uri` `field` `dst_kind` `predicate` `provenance` `anchor` | — | — (`doc` reaches the source, `dst` the destination document) | `doc` `dst` |
-| revisions | `id` `path` `rev` `seq` `doc_id` `commit` `ts` `origin` `actor` `reason` `hash` `is_current` | — | — (`doc` reaches the document's current row) | `doc` |
+| revisions | `id` `path` `rev` `seq` `doc_id` `commit` `ts` `origin` `actor` `reason` `hash` `is_current` `archived` (4.9: true when the revision's bodies live in an archive segment, `spec/store` §7.1 — the row stays; `docs_read { at }` reads through the segment while it is attached) | — | — (`doc` reaches the document's current row) | `doc` |
 | root | `id` | — | — | the five collections (§1.1) |
 
 Language words that can never be a bare field: `select from where is not and
@@ -875,7 +875,7 @@ present only when there is one):
   `` `target` is not a field of links (fields: id, path, doc_id, block_id, via_id, dst_id, dst_path, uri, field, dst_kind, predicate, provenance, anchor); did you mean `dst_path`? ``
   — `<name>` as judged (the path after any handle or relation), the kind's
   attributes in the §1.2 order (`fields: id, path, rev, seq, doc_id, commit,
-  ts, origin, actor, reason, hash, is_current` for revisions);
+  ts, origin, actor, reason, hash, is_current, archived` for revisions);
 - an open kind, bare or under a handle/relation (the hint, and the selector's refusal):
   `` `preview` is not a field of blocks and no block in this repository carries a property by that name; did you mean `text`? ``
   — the kind's name (`docs` / `blocks` / `nodes`) and its singular noun
@@ -959,6 +959,21 @@ in §9.
   or `docs_diff`. Pinned by `reads::revisions` (the first revision's bytes
   equal the pre-edit source; `docs_read_at` equals `docs_read { at }`), the
   moved cases of `reads::history` and `interop::read-history-admin`.
+  **Archived revisions (4.9; `spec/store` §7.1, 15.0).** A revision whose
+  bodies the retention squash moved to an archive segment (`archived: true`
+  on the `revisions` target and in `docs_history`) reads exactly as before
+  when its segment is attached — the store reconstructs through the segment
+  (`spec/store` §6.2), the same bytes, `renderedHashMatch` as for a live
+  revision — and when the segment is **not attached** (never recorded, or
+  detached) or **not on disk** the read fails `revision_archived` "revision
+  \"<rev>\" is archived in segment <id>, which is not attached (omg history
+  attach <file>)" / "…, which is not on disk" with `data: { rev, archive,
+  path? }` (`path` only when the segment is recorded, naming the missing
+  file). The same code covers `docs_read_at`, `docs_diff` and
+  `docs_diff_unified` when either revision is archived and unavailable. No
+  MCP tool archives, attaches or lists segments: that is the operator's
+  `omg history` (`spec/cli` 4.6) — the catalog's whole trace of retention is
+  the attribute and the error. Pinned by `reads::archived`.
 - **`blocks_read(id, resolution = full)`** (`nodes_get`, then `blocks_get`,
   before 3.0 — it always took a block id and returned a block; `nodes` now
   names the extracted-entity rows and `read` is the one verb for "return the
@@ -1053,11 +1068,18 @@ role keys keep the reference's **camelCase** (`isCurrent`, `hasSource`,
   unless `include_deleted`, `limit + 1` for `truncated`; each `{ id, path
   (reference form), deleted, currentRev, versions: [{ rev, seq, commit,
   updated_at (the commit's ts), origin, actor, hash (the rendered hash),
-  isCurrent }] }` oldest first. The same list is the `revisions` query target
+  isCurrent, archived (4.9) }] }` oldest first. The same list is the `revisions` query target
   (§1.2, 4.7): `from revisions where path == … order by seq` — the names
-  match (`rev`, `seq`, `commit`, `origin`, `actor`, `hash`; `updated_at` is
+  match (`rev`, `seq`, `commit`, `origin`, `actor`, `hash`, `archived`; `updated_at` is
   `ts` there, `isCurrent` is `is_current`), and a `select raw`-less client of
   the minimal profile reads history through `query` + `docs_read { at }`.
+  Archiving (`spec/store` §7.1) changes none of these shapes: an archived
+  revision stays in `docs_history`, the `revisions` target and
+  `changes_since` (whose `summary` for a wholly archived commit carries no
+  disposition counts — they moved with the segment; the summary is
+  unpinned); `blocks_history` lists the live `block_changes` rows only — a
+  block's earliest row survives the squash, every later row of a wholly
+  archived commit is in the segment and not read back in this round.
 
 ## 4. The MCP tool catalog
 
@@ -1308,7 +1330,9 @@ hash, markdown }` (the block's current hash and raw; `expected_content_hash`
 echoes the caller's argument and keeps its name), `stale_plan` `current: {
 revision, hash }`; `ambiguous_heading` lists `candidates: [{ id, doc_id }]`
 (each heading block and its document); `doc_missing`, `target_missing`,
-`op_index`, `block` (the op's locator) are unchanged.
+`op_index`, `block` (the op's locator) are unchanged. **`revision_archived`
+(4.9)** carries `{ rev, archive, path? }` — the revision, the segment id
+its `archive` column names, and the recorded file when there is one (§2).
 
 **`fix` (4.4).** An error the engine can correct carries `data.fix`, a
 **literal corrected call**: the arguments as `spec/mutate` §11.5 canonical
@@ -1400,7 +1424,11 @@ verbs later.
   script: a document authoring every reserved name, read bare and through
   `data`/`frontmatter`/`inline`. `ts` pins the clock for the call
   (write tools stamp commits with "now"). Write tools are pinned by
-  `spec/mutate`; `read` steps still record their results.
+  `spec/mutate`; `read` steps still record their results. A reads script
+  may also carry `spec/store` §9.4's retention steps (4.9: `history_export`,
+  `history_attach`, `history_detach`, …, run as the store runner runs them,
+  the segments in a directory of the case's own) around the reads that show
+  `archived` and `revision_archived` (`reads::archived`).
 - **`cursor.json`**: `{ name, parts | (cursor, arity), expect }` encode /
   decode cases (`{ cursor }`, `{ parts }` or `{ error: "filter_invalid" }`).
 
@@ -1607,6 +1635,14 @@ both and runs both harnesses.
 
 ## 9. Reference oddities surfaced while specifying, and decisions
 
+- **Added (4.9) — archived history**: `archived` on the `revisions` target
+  and in `docs_history`, and the `revision_archived` error (§1.2, §2, §3;
+  `spec/store` 15.0 §7.1). Moved cases, each reviewed: every recorded
+  `docs_history` version gained `archived: false` (`reads::history`,
+  `reads::errors-and-sourceless-writes`, `reads::workspace-writes`,
+  `reads::revisions`), `query-unknown::revisions-is-closed` lists the new
+  field, `examples::ladders` carries the `query_syntax` text. New:
+  `reads::archived`.
 - **Added (4.8) — dates and durations** (§1.3): the free functions `date(x)`
   and `dur(x)`, the date methods `plus`, `minus`, `until`, `year`, `month`,
   `day`, `weekday`, `hour`, `minute`, `second`, `date`, `format`, and the
@@ -1945,6 +1981,25 @@ both and runs both harnesses.
 
 ## Decisions
 
+- 2026-10-15, surface 4.9: archived history (`spec/store` 15.0 §7.1) reaches
+  the surface as one attribute and one error, and nothing else. `archived`
+  on the `revisions` target and in `docs_history` is the honesty bit a
+  client needs before asking for bytes: the row is history and stays, the
+  bytes may need a segment. `revision_archived { rev, archive, path? }` is
+  its own code rather than `target_missing` because the revision is *not*
+  missing — it is listed, it has a hash, it will read again the moment an
+  operator attaches a file — and a client that gets it should say so, not
+  "no such revision". No MCP tool archives, attaches or lists segments:
+  archiving writes files under the workspace, takes the writer lock and is
+  driven by a policy and a directory — an operator's act over the host,
+  where `omg gc`, `rebuild-index` and `doctor` already live
+  (`docs/surface-map.md`'s exception set), so the verbs are `omg history …`
+  (`spec/cli` 4.6) and a remote client asks its operator. Archived
+  dispositions are not read back through a segment in this round
+  (`blocks_history` is the live rows; a wholly archived commit's
+  `changes_since` summary loses its counts) — the segment holds them, a
+  later round may read them. An attribute and an error added: a minor.
+  Fixtures: `reads::archived`; the moved cases of §9.
 - 2026-10-15 (oqx 0.24; no surface version move): the language gained `group
   by`/`having`, aggregates and `count { … }` as a value. Two consequences at
   the surface, both read off the language rather than pinned by new fixtures

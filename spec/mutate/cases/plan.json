@@ -180,7 +180,8 @@
             "frontmatter_blob": null,
             "rendered_hash": "a37e66099c3c42dd00a503d56411cfdf9bb213f73c2301a23ce9bd21ba438fb0",
             "path": "a.md",
-            "commit_id": "c_0"
+            "commit_id": "c_0",
+            "archive": null
           }
         ],
         "dispositions": [
@@ -422,7 +423,8 @@
             "frontmatter_blob": null,
             "rendered_hash": "a37e66099c3c42dd00a503d56411cfdf9bb213f73c2301a23ce9bd21ba438fb0",
             "path": "a.md",
-            "commit_id": "c_0"
+            "commit_id": "c_0",
+            "archive": null
           }
         ],
         "dispositions": [
@@ -696,7 +698,8 @@
             "frontmatter_blob": null,
             "rendered_hash": "a37e66099c3c42dd00a503d56411cfdf9bb213f73c2301a23ce9bd21ba438fb0",
             "path": "a.md",
-            "commit_id": "c_0"
+            "commit_id": "c_0",
+            "archive": null
           }
         ],
         "dispositions": [
@@ -964,7 +967,8 @@
             "frontmatter_blob": null,
             "rendered_hash": "a37e66099c3c42dd00a503d56411cfdf9bb213f73c2301a23ce9bd21ba438fb0",
             "path": "a.md",
-            "commit_id": "c_0"
+            "commit_id": "c_0",
+            "archive": null
           }
         ],
         "dispositions": [
@@ -1208,7 +1212,8 @@
             "frontmatter_blob": null,
             "rendered_hash": "a37e66099c3c42dd00a503d56411cfdf9bb213f73c2301a23ce9bd21ba438fb0",
             "path": "a.md",
-            "commit_id": "c_0"
+            "commit_id": "c_0",
+            "archive": null
           }
         ],
         "dispositions": [
@@ -1474,7 +1479,8 @@
             "frontmatter_blob": null,
             "rendered_hash": "f1f1c840491309240a1a2a3a5f674cf2fa96387b5ff1425c72c2d8d1d078cc7e",
             "path": "a.md",
-            "commit_id": "c_0"
+            "commit_id": "c_0",
+            "archive": null
           }
         ],
         "dispositions": [
@@ -1721,7 +1727,8 @@
             "frontmatter_blob": null,
             "rendered_hash": "a37e66099c3c42dd00a503d56411cfdf9bb213f73c2301a23ce9bd21ba438fb0",
             "path": "a.md",
-            "commit_id": "c_0"
+            "commit_id": "c_0",
+            "archive": null
           }
         ],
         "dispositions": [
@@ -1943,7 +1950,8 @@
             "frontmatter_blob": "5114f39af512dd4f92894aee5039b42733c03bf4059d18cae011a72ee94b37d3",
             "rendered_hash": "01b4fc6d1bc25b35ceca8b7b479cddafdf422b1232bdbd6ba3b6b0fd90a3619f",
             "path": "a.md",
-            "commit_id": "c_0"
+            "commit_id": "c_0",
+            "archive": null
           },
           {
             "rev_id": "r_1",
@@ -1953,7 +1961,8 @@
             "frontmatter_blob": "045dc81c5d0e550872fa72d495b2fd32c80e5e8ab9018e2c93316f550a3d1e63",
             "rendered_hash": "7fd120e4067184523f93f1f758a07a3c866216962f3726b863f3a1fad67e2071",
             "path": "a.md",
-            "commit_id": "c_1"
+            "commit_id": "c_1",
+            "archive": null
           }
         ],
         "dispositions": [
@@ -2128,7 +2137,8 @@
             "frontmatter_blob": "5114f39af512dd4f92894aee5039b42733c03bf4059d18cae011a72ee94b37d3",
             "rendered_hash": "01b4fc6d1bc25b35ceca8b7b479cddafdf422b1232bdbd6ba3b6b0fd90a3619f",
             "path": "a.md",
-            "commit_id": "c_0"
+            "commit_id": "c_0",
+            "archive": null
           }
         ],
         "dispositions": [
@@ -2344,7 +2354,8 @@
             "frontmatter_blob": null,
             "rendered_hash": "a37e66099c3c42dd00a503d56411cfdf9bb213f73c2301a23ce9bd21ba438fb0",
             "path": "a.md",
-            "commit_id": "c_0"
+            "commit_id": "c_0",
+            "archive": null
           }
         ],
         "dispositions": [
@@ -2713,7 +2724,8 @@
             "frontmatter_blob": null,
             "rendered_hash": "a37e66099c3c42dd00a503d56411cfdf9bb213f73c2301a23ce9bd21ba438fb0",
             "path": "a.md",
-            "commit_id": "c_0"
+            "commit_id": "c_0",
+            "archive": null
           },
           {
             "rev_id": "r_1",
@@ -2723,7 +2735,8 @@
             "frontmatter_blob": null,
             "rendered_hash": "c5ddd63fd27275985f72c78197f0812beb92ff3d66f7d759a0cebc018a8e4acc",
             "path": "a.md",
-            "commit_id": "c_1"
+            "commit_id": "c_1",
+            "archive": null
           }
         ],
         "dispositions": [
@@ -3072,7 +3085,8 @@
             "frontmatter_blob": null,
             "rendered_hash": "a37e66099c3c42dd00a503d56411cfdf9bb213f73c2301a23ce9bd21ba438fb0",
             "path": "a.md",
-            "commit_id": "c_0"
+            "commit_id": "c_0",
+            "archive": null
           },
           {
             "rev_id": "r_1",
@@ -3082,7 +3096,8 @@
             "frontmatter_blob": null,
             "rendered_hash": "a5a608bda93e46c7c82e1d03ed391144f9d3a739bdf5fff09a691cfdc6953c8f",
             "path": "a.md",
-            "commit_id": "c_1"
+            "commit_id": "c_1",
+            "archive": null
           }
         ],
         "dispositions": [
@@ -3309,7 +3324,8 @@
             "frontmatter_blob": null,
             "rendered_hash": "a37e66099c3c42dd00a503d56411cfdf9bb213f73c2301a23ce9bd21ba438fb0",
             "path": "a.md",
-            "commit_id": "c_0"
+            "commit_id": "c_0",
+            "archive": null
           }
         ],
         "dispositions": [

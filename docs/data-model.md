@@ -22,7 +22,7 @@
 | Repo | `rp_` | same | `rp_a30f9kd` |
 | Projection (reserved) | `v_` | same | `v_1c8bb0p` |
 
-- IDs are repo-scoped, never reused, never re-assigned. Minting is collision-checked at the seam (`core/ids.ts` `mintId`, `spec/store` §2.1, 13.5): a candidate is redrawn while it is in use — already issued in this process, or present in the prefix's table(s) per an oracle every open `Store` registers (`d` docs; `b` blocks ∪ block_changes ∪ resurrection_pool; `c` commits; `r` revisions; `x` external_nodes; `e` edges; `cp` checkpoints; `rp` repos; `src` sources; `col`/`v` unchecked). The birthday bound made this real: a 3,000-document ingest collided at 360,338 blocks (`spec/store` §10). The same seam lets conformance runners install a sequential minter (and the repeating one that pins the redraw).
+- IDs are repo-scoped, never reused, never re-assigned. Minting is collision-checked at the seam (`core/ids.ts` `mintId`, `spec/store` §2.1, 13.5): a candidate is redrawn while it is in use — already issued in this process, or present in the prefix's table(s) per an oracle every open `Store` registers (`d` docs; `b` blocks ∪ block_changes ∪ resurrection_pool; `c` commits; `r` revisions; `x` external_nodes; `e` edges; `cp` checkpoints; `rp` repos; `src` sources; `s` archives (archive segments, v15); `col`/`v` unchecked). A block's earliest `block_changes` row never leaves the store — the retention squash (§7) keeps it when it archives a commit's change rows — so the oracle stays exact over archived history. The birthday bound made this real: a 3,000-document ingest collided at 360,338 blocks (`spec/store` §10). The same seam lets conformance runners install a sequential minter (and the repeating one that pins the redraw).
 - Content hashes are **sha256** stored as 32-byte BLOBs; displayed truncated to 16 hex chars. Two hash flavors per block:
   - `raw_hash` — sha256 of exact raw source bytes (blob key, splice identity).
   - `norm_hash` — sha256 of the block's visible text (`text`: block-level syntax stripped, whitespace collapsed — §5.2, `spec/format` §4.1) used by reconciliation phase 2. Stored on `blocks`, not on blobs.
@@ -107,13 +107,29 @@ CREATE TABLE tree_nodes (
 CREATE TABLE revisions (
   rev_id           TEXT PRIMARY KEY,
   doc_id           TEXT NOT NULL REFERENCES docs(doc_id),
-  seq              INTEGER NOT NULL,       -- per-document, monotonically increasing
-  root_tree        BLOB NOT NULL REFERENCES tree_nodes(hash),
-  frontmatter_blob BLOB REFERENCES blobs(hash),  -- raw YAML text incl. fences; NULL if none
+  seq              INTEGER NOT NULL,       -- per-document, dense from 1 (never deleted, even when archived)
+  root_tree        BLOB,                   -- a tree_nodes.hash; NULL once archived (schema v15, spec/store §7.1)
+  frontmatter_blob BLOB,                   -- raw YAML text incl. fences; NULL if none, or archived
   rendered_hash    BLOB NOT NULL,          -- sha256 of the full rendered file bytes
   path             TEXT NOT NULL,          -- path at this revision (doc moves tracked here)
   commit_id        TEXT NOT NULL REFERENCES commits(commit_id),
+  archive          TEXT,                   -- the archive segment holding the bodies; NULL = live (v15)
   UNIQUE (doc_id, seq)
+);
+
+-- The archive-segment registry (schema v15, spec/store §7.1): one row per
+-- segment file `omg history export --prune` recorded or `omg history attach`
+-- registered. A revision's `archive` may name a segment this table no longer
+-- carries (detached): reading its bytes is then `revision_archived`.
+CREATE TABLE archives (
+  segment_id     TEXT PRIMARY KEY,         -- a minted `s_` id, the segment's manifest id
+  repo_id        TEXT NOT NULL REFERENCES repos(repo_id),
+  path           TEXT NOT NULL,            -- the file as recorded
+  seq_lo         INTEGER NOT NULL,         -- commits.seq span of the archived commits
+  seq_hi         INTEGER NOT NULL,
+  created_at     TEXT NOT NULL,
+  revision_count INTEGER NOT NULL,
+  bytes          INTEGER NOT NULL          -- the file's size when recorded
 );
 
 CREATE TABLE commits (
@@ -427,10 +443,13 @@ Base-62 fractional indexing (Figma-style). `key_between(a, b)` MUST return a key
 
 ## 7. Retention & GC
 
-- Default retention: keep all revisions/commits forever (it's text; Merkle sharing keeps it small).
+- Default retention: keep every revision and commit row forever; bodies older than the policy below move to archive segments on demand (nothing moves until `omg history export --prune` is run). The measurement that motivated it: a 131 MB database over 5 MB of Markdown held 57 MB of history — a whole Merkle root per revision (no sharing across revisions), uncompressed blobs.
 - `dispositions` / `block_changes` hold one row per verdict that **changed** a block (`spec/store` §5.4 step 10, 14.2): `inserted`, `edited`, `moved`, `edited_moved`, `deleted`, the split/merge/copy lineage, `resurrected`, `bulk_rewrite`. A `same` verdict — the block's raw bytes, parent and sibling index unchanged — is produced by the matcher (and, since 14.2, by the api path's known-id resolver, which classifies carries the same way instead of stamping every carried block `edited`) and counted in the observe outcome, but never persisted. Consequences: a block's `updated_at` (`MAX(commits.ts)` over its `block_changes`) is the block's own last change, not its siblings'; `blocks_history` lists the commits that changed it; the first revision's `inserted` row is what keeps a block id out of the mint oracle's reuse set after its row is gone. Through 14.1 every verdict was persisted — about 18.5 rows per revision on a real repository, nine in ten `same`, 11 MB of `dispositions` plus 5–7 MB of `block_changes` nothing read. "Present and unchanged in commit X" is `docs_diff` over two revisions now.
 - `omg gc`'s default sweep (`spec/store` §7, 14.2) deletes a pre-14.2 database's `same` rows from both tables and reports `sameDispositionsSwept`; `--dry-run` counts them; `doctor --size` carries `same_dispositions` and advises the sweep past 25 % of the table. Deliberately a sweep, not a migration: no `user_version` for a data-only change, and opening a database never bulk-deletes.
-- Optional pruning (config, off by default): squash observed commits older than N months into checkpoint revisions. GC then removes unreachable blobs/tree_nodes by mark-and-sweep from live revision roots. GC MUST NOT run in v1.0 (ship the flag off; implement in hardening stage).
+- **History retention (schema v15, `spec/store` §7.1, as built).** History is never lost, but old bodies need not stay hot: `omg history export --prune` moves the *bodies* (blobs, tree nodes) of the revisions a **retention policy** selects into an **archive segment** — one new SQLite file per run under `.omgbase/archives/` (`<repo_id>-<seq_lo>-<seq_hi>-<segment_id>.omgarchive.db`, DDL `spec/store/archive.sql`: the same table subset plus a `manifest` row with the segment id, repo, clock, policy, commit range, revision count, the previous segment of the chain and the schema version) — then **squashes** the store in one transaction: the archived revisions keep their `revisions` and `commits` rows (the `revisions` OQX target, `docs_history` and `changes_since` keep listing them; `revisions.seq` stays dense) and lose `root_tree`/`frontmatter_blob`, gaining `archive = <segment_id>`; the wholly archived commits' `dispositions` go and their `block_changes` go except each block's **earliest** row (the mint oracle reads `block_changes`, so an id ever minted stays known); the GC mark-and-sweep (now "from every live revision root") reclaims the bodies; the segment is recorded in `archives` and as the repo's `history.last_segment` setting. Two phases on purpose: the segment is complete (written to `.partial`, fsynced, chmod 0444, renamed) before a row moves, and a complete unrecorded segment whose revisions are still live is finished by the next run (the crash rule; an export without `--prune` leaves exactly that state).
+- **The policy** (`history.retention` in the effective settings; `--policy` overrides per run): `keep_days` (younger revisions kept), a `ladder` of `{ after_days, keep: "one per day|week|month|year" }` rungs (beyond `keep_days`, the newest revision of each period per rung is kept; a revision below the first rung's age is kept), `per_doc_max` (the newest N of a document kept), `keep_origins` (a commit with that origin and a non-empty reason is kept), `overrides` (`{ glob, … }` per path). Never prunable: a document's current revision (a tombstoned document's last revision is its current one) and any revision a `pending_materializations` row names. The first revision of a document is *not* protected: the earliest-row rule above protects every minted id instead. `omg history plan` prints the evaluation with the bytes only the archived revisions reach.
+- **Reading archived history.** `docs_read { at }`, `docs_read_at`, `docs_diff` and `docs_diff_unified` on an archived revision `ATTACH` its segment on demand (read-only; alias `arc_<segment_id>`) and reconstruct through it, byte for byte; when the segment is not recorded (`omg history detach`) or not on disk the read fails `revision_archived { rev, archive, path? }` until `omg history attach <file|dir>` records it again. `omg history list` shows every segment's commit range, revisions, bytes and state (`attached`, `missing`, `pending`, `detached`, `stale`). Archived dispositions are not read back through a segment (yet): `blocks_history` lists the live rows. Compression is at rest (`zstd` the file); a compressed segment is not attachable.
+- `omg gc` (flag-gated, off by default) is the same mark-and-sweep from the live revision roots; after a squash it finds nothing, since the squash swept inside its own transaction. `omg doctor --size` reports `archived { revisions, segments, bytes }` and advises `omg history export --prune` when the policy would archive more than a tenth of the history pages.
 - `resurrection_pool` rows expire by `expires_ts` (default 30 days) via lazy sweep at checkpoint time.
 - `pending_materializations` rows live only between an api commit and its file write; the materializer (phase B' of the write, the freshness sweep's step 0, `recoverRepo`) or the next observation of the path deletes them. A long-lived row means a crashed write nobody has swept yet; it is never garbage.
 

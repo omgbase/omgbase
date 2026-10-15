@@ -98,7 +98,8 @@
             "frontmatter_blob": null,
             "rendered_hash": "8ef473c883eaf4ee80569bb6e966a406b9a6c6f75a01e59a631bf4545d0fd50e",
             "path": "a.md",
-            "commit_id": "c_0"
+            "commit_id": "c_0",
+            "archive": null
           },
           {
             "rev_id": "r_1",
@@ -108,7 +109,8 @@
             "frontmatter_blob": null,
             "rendered_hash": "3b35512b67f014f5433f11a7bab011825cdc3e42e6b5589724288b0ad48c8d80",
             "path": "sub/b.md",
-            "commit_id": "c_1"
+            "commit_id": "c_1",
+            "archive": null
           }
         ],
         "blobs": [
@@ -305,6 +307,7 @@
           }
         ],
         "pending_materializations": [],
+        "archives": [],
         "checkpoints": [
           {
             "id": "cp_0",
@@ -422,7 +425,8 @@
             "frontmatter_blob": null,
             "rendered_hash": "8ef473c883eaf4ee80569bb6e966a406b9a6c6f75a01e59a631bf4545d0fd50e",
             "path": "a.md",
-            "commit_id": "c_0"
+            "commit_id": "c_0",
+            "archive": null
           }
         ],
         "blobs": [
@@ -534,6 +538,7 @@
           }
         ],
         "pending_materializations": [],
+        "archives": [],
         "checkpoints": [
           {
             "id": "cp_0",
@@ -654,7 +659,8 @@
             "frontmatter_blob": null,
             "rendered_hash": "8ef473c883eaf4ee80569bb6e966a406b9a6c6f75a01e59a631bf4545d0fd50e",
             "path": "a.md",
-            "commit_id": "c_0"
+            "commit_id": "c_0",
+            "archive": null
           }
         ],
         "blobs": [
@@ -766,6 +772,7 @@
           }
         ],
         "pending_materializations": [],
+        "archives": [],
         "checkpoints": [
           {
             "id": "cp_0",
@@ -898,7 +905,8 @@
             "frontmatter_blob": null,
             "rendered_hash": "8ef473c883eaf4ee80569bb6e966a406b9a6c6f75a01e59a631bf4545d0fd50e",
             "path": "a.md",
-            "commit_id": "c_0"
+            "commit_id": "c_0",
+            "archive": null
           },
           {
             "rev_id": "r_1",
@@ -908,7 +916,8 @@
             "frontmatter_blob": null,
             "rendered_hash": "ce3051a48e94a9d771ad09a02f3d8caf60a09edd84c3a2e559c9c29dc680a8dc",
             "path": "a.md",
-            "commit_id": "c_1"
+            "commit_id": "c_1",
+            "archive": null
           }
         ],
         "blobs": [
@@ -1043,6 +1052,7 @@
           }
         ],
         "pending_materializations": [],
+        "archives": [],
         "checkpoints": [
           {
             "id": "cp_0",
@@ -1209,7 +1219,8 @@
             "frontmatter_blob": null,
             "rendered_hash": "8ef473c883eaf4ee80569bb6e966a406b9a6c6f75a01e59a631bf4545d0fd50e",
             "path": "a.md",
-            "commit_id": "c_0"
+            "commit_id": "c_0",
+            "archive": null
           },
           {
             "rev_id": "r_1",
@@ -1219,7 +1230,8 @@
             "frontmatter_blob": null,
             "rendered_hash": "3b35512b67f014f5433f11a7bab011825cdc3e42e6b5589724288b0ad48c8d80",
             "path": "b.md",
-            "commit_id": "c_1"
+            "commit_id": "c_1",
+            "archive": null
           }
         ],
         "blobs": [
@@ -1435,6 +1447,7 @@
           }
         ],
         "pending_materializations": [],
+        "archives": [],
         "checkpoints": [
           {
             "id": "cp_0",
@@ -1573,7 +1586,8 @@
             "frontmatter_blob": null,
             "rendered_hash": "aa1237b773c38dbddef583c4868aaea7a44c5237ea7923aecca5513764b42d80",
             "path": "a.md",
-            "commit_id": "c_0"
+            "commit_id": "c_0",
+            "archive": null
           },
           {
             "rev_id": "r_1",
@@ -1583,7 +1597,8 @@
             "frontmatter_blob": null,
             "rendered_hash": "a81d3fbddd441e2d690b9c03c18251323a295c8eb8ebbfb81ca45b63bf8d5a06",
             "path": "b.md",
-            "commit_id": "c_1"
+            "commit_id": "c_1",
+            "archive": null
           }
         ],
         "blobs": [
@@ -1703,6 +1718,7 @@
           }
         ],
         "pending_materializations": [],
+        "archives": [],
         "checkpoints": [
           {
             "id": "cp_0",
@@ -1837,7 +1853,8 @@
             "frontmatter_blob": null,
             "rendered_hash": "5b88c0b7cf6a893428f6cce0b1fc1c40656700eff155bd7e77654a00de02f874",
             "path": "sub/deep/w.md",
-            "commit_id": "c_0"
+            "commit_id": "c_0",
+            "archive": null
           }
         ],
         "blobs": [
@@ -1908,6 +1925,7 @@
           }
         ],
         "pending_materializations": [],
+        "archives": [],
         "checkpoints": [
           {
             "id": "cp_0",
@@ -2083,7 +2101,8 @@
             "frontmatter_blob": null,
             "rendered_hash": "c0f369c8cb2aea40e870b34502828fa0c6d1c281bf71f352596d3e02b868c5a1",
             "path": "a.md",
-            "commit_id": "c_0"
+            "commit_id": "c_0",
+            "archive": null
           },
           {
             "rev_id": "r_2",
@@ -2093,7 +2112,8 @@
             "frontmatter_blob": null,
             "rendered_hash": "a9f64af35a8181bcc72b6c4c648bce3944562d1bd4b3ba9ab71e2641ec2a9e7a",
             "path": "a.md",
-            "commit_id": "c_2"
+            "commit_id": "c_2",
+            "archive": null
           },
           {
             "rev_id": "r_1",
@@ -2103,7 +2123,8 @@
             "frontmatter_blob": null,
             "rendered_hash": "3efa80abcba85a591743d6e6365fd97bd65d7c41304d69eedcee70b9cccd3810",
             "path": "b.md",
-            "commit_id": "c_1"
+            "commit_id": "c_1",
+            "archive": null
           },
           {
             "rev_id": "r_3",
@@ -2113,7 +2134,8 @@
             "frontmatter_blob": null,
             "rendered_hash": "a918c22679923d5ca64af88dba5c4e1391ffda74fde5732f6a0f7102153fe1fe",
             "path": "b.md",
-            "commit_id": "c_3"
+            "commit_id": "c_3",
+            "archive": null
           }
         ],
         "blobs": [
@@ -2370,6 +2392,7 @@
           }
         ],
         "pending_materializations": [],
+        "archives": [],
         "checkpoints": [
           {
             "id": "cp_0",
@@ -2553,7 +2576,8 @@
             "frontmatter_blob": null,
             "rendered_hash": "aa1237b773c38dbddef583c4868aaea7a44c5237ea7923aecca5513764b42d80",
             "path": "a.md",
-            "commit_id": "c_0"
+            "commit_id": "c_0",
+            "archive": null
           },
           {
             "rev_id": "r_1",
@@ -2563,7 +2587,8 @@
             "frontmatter_blob": null,
             "rendered_hash": "a81d3fbddd441e2d690b9c03c18251323a295c8eb8ebbfb81ca45b63bf8d5a06",
             "path": "b.md",
-            "commit_id": "c_1"
+            "commit_id": "c_1",
+            "archive": null
           }
         ],
         "blobs": [
@@ -2683,6 +2708,7 @@
           }
         ],
         "pending_materializations": [],
+        "archives": [],
         "checkpoints": [
           {
             "id": "cp_0",
@@ -2814,7 +2840,8 @@
             "frontmatter_blob": null,
             "rendered_hash": "aa1237b773c38dbddef583c4868aaea7a44c5237ea7923aecca5513764b42d80",
             "path": "a.md",
-            "commit_id": "c_0"
+            "commit_id": "c_0",
+            "archive": null
           }
         ],
         "blobs": [
@@ -2885,6 +2912,7 @@
           }
         ],
         "pending_materializations": [],
+        "archives": [],
         "checkpoints": [
           {
             "id": "cp_0",
@@ -3125,7 +3153,8 @@
             "frontmatter_blob": null,
             "rendered_hash": "8ef473c883eaf4ee80569bb6e966a406b9a6c6f75a01e59a631bf4545d0fd50e",
             "path": "a.md",
-            "commit_id": "c_0"
+            "commit_id": "c_0",
+            "archive": null
           },
           {
             "rev_id": "r_2",
@@ -3135,7 +3164,8 @@
             "frontmatter_blob": null,
             "rendered_hash": "ce3051a48e94a9d771ad09a02f3d8caf60a09edd84c3a2e559c9c29dc680a8dc",
             "path": "a.md",
-            "commit_id": "c_2"
+            "commit_id": "c_2",
+            "archive": null
           },
           {
             "rev_id": "r_1",
@@ -3145,7 +3175,8 @@
             "frontmatter_blob": null,
             "rendered_hash": "3b35512b67f014f5433f11a7bab011825cdc3e42e6b5589724288b0ad48c8d80",
             "path": "b.md",
-            "commit_id": "c_1"
+            "commit_id": "c_1",
+            "archive": null
           },
           {
             "rev_id": "r_3",
@@ -3155,7 +3186,8 @@
             "frontmatter_blob": null,
             "rendered_hash": "75893e6adce701bd6c7f089a8f29c6692506f182e8b6c8129e5708576261fa8a",
             "path": "c.md",
-            "commit_id": "c_3"
+            "commit_id": "c_3",
+            "archive": null
           }
         ],
         "blobs": [
@@ -3443,6 +3475,7 @@
           }
         ],
         "pending_materializations": [],
+        "archives": [],
         "checkpoints": [
           {
             "id": "cp_0",
@@ -3598,7 +3631,8 @@
             "frontmatter_blob": null,
             "rendered_hash": "aa1237b773c38dbddef583c4868aaea7a44c5237ea7923aecca5513764b42d80",
             "path": "a.md",
-            "commit_id": "c_0"
+            "commit_id": "c_0",
+            "archive": null
           }
         ],
         "blobs": [
@@ -3669,6 +3703,7 @@
           }
         ],
         "pending_materializations": [],
+        "archives": [],
         "checkpoints": [
           {
             "id": "cp_0",
@@ -3862,7 +3897,8 @@
             "frontmatter_blob": null,
             "rendered_hash": "8ef473c883eaf4ee80569bb6e966a406b9a6c6f75a01e59a631bf4545d0fd50e",
             "path": "a.md",
-            "commit_id": "c_0"
+            "commit_id": "c_0",
+            "archive": null
           },
           {
             "rev_id": "r_2",
@@ -3872,7 +3908,8 @@
             "frontmatter_blob": null,
             "rendered_hash": "ce3051a48e94a9d771ad09a02f3d8caf60a09edd84c3a2e559c9c29dc680a8dc",
             "path": "a.md",
-            "commit_id": "c_2"
+            "commit_id": "c_2",
+            "archive": null
           },
           {
             "rev_id": "r_1",
@@ -3882,7 +3919,8 @@
             "frontmatter_blob": null,
             "rendered_hash": "3b35512b67f014f5433f11a7bab011825cdc3e42e6b5589724288b0ad48c8d80",
             "path": "b.md",
-            "commit_id": "c_1"
+            "commit_id": "c_1",
+            "archive": null
           }
         ],
         "blobs": [
@@ -4121,6 +4159,7 @@
           }
         ],
         "pending_materializations": [],
+        "archives": [],
         "checkpoints": [
           {
             "id": "cp_0",
@@ -4242,7 +4281,8 @@
             "frontmatter_blob": null,
             "rendered_hash": "aa1237b773c38dbddef583c4868aaea7a44c5237ea7923aecca5513764b42d80",
             "path": "a.md",
-            "commit_id": "c_0"
+            "commit_id": "c_0",
+            "archive": null
           }
         ],
         "blobs": [
@@ -4313,6 +4353,7 @@
           }
         ],
         "pending_materializations": [],
+        "archives": [],
         "checkpoints": [
           {
             "id": "cp_0",
@@ -4476,7 +4517,8 @@
             "frontmatter_blob": null,
             "rendered_hash": "aa1237b773c38dbddef583c4868aaea7a44c5237ea7923aecca5513764b42d80",
             "path": "a.md",
-            "commit_id": "c_0"
+            "commit_id": "c_0",
+            "archive": null
           },
           {
             "rev_id": "r_1",
@@ -4486,7 +4528,8 @@
             "frontmatter_blob": null,
             "rendered_hash": "bb6813975b252eb3f830c8839fcaad5e277541bfb26b2dd49bfd74698014a0af",
             "path": "a.md",
-            "commit_id": "c_1"
+            "commit_id": "c_1",
+            "archive": null
           }
         ],
         "blobs": [
@@ -4604,6 +4647,7 @@
           }
         ],
         "pending_materializations": [],
+        "archives": [],
         "checkpoints": [
           {
             "id": "cp_0",
@@ -4772,7 +4816,8 @@
             "frontmatter_blob": null,
             "rendered_hash": "8ef473c883eaf4ee80569bb6e966a406b9a6c6f75a01e59a631bf4545d0fd50e",
             "path": "a.md",
-            "commit_id": "c_0"
+            "commit_id": "c_0",
+            "archive": null
           },
           {
             "rev_id": "r_1",
@@ -4782,7 +4827,8 @@
             "frontmatter_blob": null,
             "rendered_hash": "3b35512b67f014f5433f11a7bab011825cdc3e42e6b5589724288b0ad48c8d80",
             "path": "sub/b.md",
-            "commit_id": "c_1"
+            "commit_id": "c_1",
+            "archive": null
           }
         ],
         "blobs": [
@@ -4979,6 +5025,7 @@
           }
         ],
         "pending_materializations": [],
+        "archives": [],
         "checkpoints": [
           {
             "id": "cp_0",
@@ -5147,7 +5194,8 @@
             "frontmatter_blob": null,
             "rendered_hash": "8ef473c883eaf4ee80569bb6e966a406b9a6c6f75a01e59a631bf4545d0fd50e",
             "path": "a.md",
-            "commit_id": "c_0"
+            "commit_id": "c_0",
+            "archive": null
           },
           {
             "rev_id": "r_1",
@@ -5157,7 +5205,8 @@
             "frontmatter_blob": null,
             "rendered_hash": "f676b43bd55f91451babc1663739064abb7e11e2b5f4a7efe62c29e4eeb0d117",
             "path": "new.md",
-            "commit_id": "c_1"
+            "commit_id": "c_1",
+            "archive": null
           }
         ],
         "blobs": [
@@ -5318,6 +5367,7 @@
           }
         ],
         "pending_materializations": [],
+        "archives": [],
         "checkpoints": [
           {
             "id": "cp_0",
@@ -5492,7 +5542,8 @@
             "frontmatter_blob": null,
             "rendered_hash": "8ef473c883eaf4ee80569bb6e966a406b9a6c6f75a01e59a631bf4545d0fd50e",
             "path": "a.md",
-            "commit_id": "c_0"
+            "commit_id": "c_0",
+            "archive": null
           },
           {
             "rev_id": "r_1",
@@ -5502,7 +5553,8 @@
             "frontmatter_blob": null,
             "rendered_hash": "3b35512b67f014f5433f11a7bab011825cdc3e42e6b5589724288b0ad48c8d80",
             "path": "b.md",
-            "commit_id": "c_1"
+            "commit_id": "c_1",
+            "archive": null
           }
         ],
         "blobs": [
@@ -5699,6 +5751,7 @@
           }
         ],
         "pending_materializations": [],
+        "archives": [],
         "checkpoints": [
           {
             "id": "cp_0",
@@ -5831,7 +5884,8 @@
             "frontmatter_blob": null,
             "rendered_hash": "8ef473c883eaf4ee80569bb6e966a406b9a6c6f75a01e59a631bf4545d0fd50e",
             "path": "a.md",
-            "commit_id": "c_0"
+            "commit_id": "c_0",
+            "archive": null
           }
         ],
         "blobs": [
@@ -5943,6 +5997,7 @@
           }
         ],
         "pending_materializations": [],
+        "archives": [],
         "checkpoints": [
           {
             "id": "cp_0",

@@ -5,7 +5,7 @@
       "name": "fresh",
       "notes": "The fingerprint of a fresh database (README §3.3, §9.2): every table's columns and foreign keys, every index, user_version.",
       "expect": {
-        "user_version": 14,
+        "user_version": 15,
         "tables": {
           "adapters": {
             "columns": [
@@ -35,6 +35,81 @@
               }
             ],
             "foreign_keys": []
+          },
+          "archives": {
+            "columns": [
+              {
+                "cid": 0,
+                "name": "segment_id",
+                "type": "TEXT",
+                "notnull": 0,
+                "dflt_value": null,
+                "pk": 1
+              },
+              {
+                "cid": 1,
+                "name": "repo_id",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 2,
+                "name": "path",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 3,
+                "name": "seq_lo",
+                "type": "INTEGER",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 4,
+                "name": "seq_hi",
+                "type": "INTEGER",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 5,
+                "name": "created_at",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 6,
+                "name": "revision_count",
+                "type": "INTEGER",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 7,
+                "name": "bytes",
+                "type": "INTEGER",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              }
+            ],
+            "foreign_keys": [
+              {
+                "from": "repo_id",
+                "table": "repos",
+                "to": "repo_id"
+              }
+            ]
           },
           "attachments": {
             "columns": [
@@ -1642,7 +1717,7 @@
                 "cid": 3,
                 "name": "root_tree",
                 "type": "BLOB",
-                "notnull": 1,
+                "notnull": 0,
                 "dflt_value": null,
                 "pk": 0
               },
@@ -1677,6 +1752,14 @@
                 "notnull": 1,
                 "dflt_value": null,
                 "pk": 0
+              },
+              {
+                "cid": 8,
+                "name": "archive",
+                "type": "TEXT",
+                "notnull": 0,
+                "dflt_value": null,
+                "pk": 0
               }
             ],
             "foreign_keys": [
@@ -1684,16 +1767,6 @@
                 "from": "commit_id",
                 "table": "commits",
                 "to": "commit_id"
-              },
-              {
-                "from": "frontmatter_blob",
-                "table": "blobs",
-                "to": "hash"
-              },
-              {
-                "from": "root_tree",
-                "table": "tree_nodes",
-                "to": "hash"
               },
               {
                 "from": "doc_id",
@@ -2033,6 +2106,15 @@
             "partial": 0,
             "columns": [
               "name"
+            ]
+          },
+          "sqlite_autoindex_archives_1": {
+            "table": "archives",
+            "unique": 1,
+            "origin": "pk",
+            "partial": 0,
+            "columns": [
+              "segment_id"
             ]
           },
           "sqlite_autoindex_attachments_1": {

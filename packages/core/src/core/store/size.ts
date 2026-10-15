@@ -1,5 +1,7 @@
 import { statSync } from "node:fs";
 import type { Store } from "./store.js";
+import { archivedSummary } from "./archive.js";
+import { evaluateRetention, retentionPolicy } from "./retention.js";
 
 // The size report (spec/store §7 "Size", 14.1): what the database is made of,
 // table by table through SQLite's `dbstat` virtual table, grouped into the four
@@ -35,6 +37,7 @@ export const TABLE_CATEGORY: Readonly<Record<string, SizeCategory>> = {
   block_changes: "history",
   resurrection_pool: "history",
   pending_materializations: "history",
+  archives: "history",
   blocks_fts: "search",
   nodes_fts: "search",
   embeddings: "search",
@@ -87,12 +90,29 @@ export interface SizeFile {
   reclaimable: number;
 }
 
+export interface SizeArchived {
+  /** `revisions` rows whose bodies live in a segment (`archive IS NOT NULL`). */
+  revisions: number;
+  /** Recorded segments (`archives` rows). */
+  segments: number;
+  /** The recorded segments' bytes on disk (a missing file counts 0). */
+  bytes: number;
+}
+
+/** What the retention policy would archive now (spec/store §7 "Retention"), summed over the store's repositories. */
+export interface SizeRetention {
+  revisions: number;
+  bytes: number;
+}
+
 export interface SizeReport {
   file: SizeFile;
   /** Always the four categories, in the fixed order content, history, search, sync. */
   categories: SizeCategoryReport[];
   /** spec/store §7 (14.2): `dispositions` rows with `kind = 'same'` — what a store through 14.1 wrote and `omg gc` removes. */
   same_dispositions: number;
+  /** spec/store §7 "Retention" (15.0): archived revisions, recorded segments, and the segments' bytes on disk. */
+  archived: SizeArchived;
   advice: string[];
   /** Present only when the SQLite build lacks `dbstat` (row counts only). */
   detail?: "dbstat unavailable";
@@ -104,6 +124,8 @@ export const VACUUM_ADVICE_MIN_SHARE = 10;
 export const HISTORY_ADVICE_MIN_SHARE = 50;
 export const SAME_ADVICE_MIN_SHARE = 25;
 export const EMBEDDINGS_ADVICE_MIN_SHARE = 25;
+/** The retention advice fires when the plan's bytes exceed this share of the `history` category (15.0). */
+export const RETENTION_ADVICE_MIN_SHARE = 10;
 
 /**
  * `<n> B` under 1024, else one decimal of KB/MB/GB/TB (1024-based), the tenths
@@ -136,7 +158,7 @@ export function shareOf(bytes: number, total: number): number {
 }
 
 /** spec/store §7: the advice lines, in this order; `nothing to reclaim` when none applies. */
-export function sizeAdvice(file: SizeFile, categories: SizeCategoryReport[], sameDispositions = 0): string[] {
+export function sizeAdvice(file: SizeFile, categories: SizeCategoryReport[], sameDispositions = 0, retention: SizeRetention = { revisions: 0, bytes: 0 }): string[] {
   const advice: string[] = [];
   const logical = file.page_count * file.page_size;
   if (file.reclaimable > VACUUM_ADVICE_MIN_BYTES && file.reclaimable * 100 > logical * VACUUM_ADVICE_MIN_SHARE) {
@@ -152,6 +174,12 @@ export function sizeAdvice(file: SizeFile, categories: SizeCategoryReport[], sam
   const dispositionRows = history?.tables.find((t) => t.name === "dispositions")?.rows ?? 0;
   if (sameDispositions > 0 && sameDispositions * 100 > dispositionRows * SAME_ADVICE_MIN_SHARE) {
     advice.push(`${sameDispositions} same dispositions are history nothing reads (store 14.2): \`omg gc\` removes them, \`--vacuum\` reclaims the pages`);
+  }
+  // 15.0: what the retention policy would move to a segment, when it is worth
+  // a run — more than a tenth of the history category's pages (dbstat only:
+  // the comparison needs the bytes).
+  if (retention.revisions > 0 && history && history.bytes !== null && retention.bytes * 100 > history.bytes * RETENTION_ADVICE_MIN_SHARE) {
+    advice.push(`${retention.revisions} revisions older than the policy would archive ${humanBytes(retention.bytes)}: \`omg history export --prune\``);
   }
   const search = categories.find((c) => c.name === "search");
   if (search && search.bytes !== null) {
@@ -184,7 +212,7 @@ function dbstatBytes(store: Store): Map<string, number> | null {
 }
 
 /** The size report of an open store (spec/store §7 "Size"). */
-export function sizeReport(store: Store): SizeReport {
+export function sizeReport(store: Store, opts: { now?: string } = {}): SizeReport {
   const db = store.db;
   const path = db.name === "" ? ":memory:" : db.name;
   const page_size = db.pragma("page_size", { simple: true }) as number;
@@ -267,7 +295,17 @@ export function sizeReport(store: Store): SizeReport {
   });
 
   const same_dispositions = (db.prepare("SELECT count(*) AS c FROM dispositions WHERE kind = 'same'").get() as { c: number }).c;
-  const report: SizeReport = { file, categories, same_dispositions, advice: sizeAdvice(file, categories, same_dispositions) };
+  const archived = archivedSummary(store);
+  // The retention plan of every repository under its effective policy (the
+  // report is store-wide; the policy is a repository's) at one clock.
+  const now = opts.now ?? new Date().toISOString();
+  const retention: SizeRetention = { revisions: 0, bytes: 0 };
+  for (const r of db.prepare("SELECT repo_id FROM repos ORDER BY repo_id").all() as { repo_id: string }[]) {
+    const plan = evaluateRetention(store, r.repo_id, { now, policy: retentionPolicy(store, r.repo_id) });
+    retention.revisions += plan.totals.archive;
+    retention.bytes += plan.totals.bytes;
+  }
+  const report: SizeReport = { file, categories, same_dispositions, archived, advice: sizeAdvice(file, categories, same_dispositions, retention) };
   if (!stat) report.detail = "dbstat unavailable";
   return report;
 }

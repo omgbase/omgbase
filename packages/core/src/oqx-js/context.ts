@@ -83,8 +83,10 @@ const NODE_ATTRIBUTES = new Set(["id", "path", "doc_id", "block_id", "kind", "na
 const EDGE_ATTRIBUTES = new Set(["id", "path", "doc_id", "block_id", "via_id", "dst_id", "dst_path", "uri", "field", "dst_kind", "predicate", "provenance", "anchor"]);
 // The history target (spec/surface §1.2, 4.7): a revision row's own columns
 // under the names `docs_history` already uses (`rev`, `seq`, `commit`, `origin`,
-// `actor`, `hash`), the commit's `ts` and `reason`, and `is_current`.
-const REVISION_ATTRIBUTES = new Set(["id", "path", "rev", "seq", "doc_id", "commit", "ts", "origin", "actor", "reason", "hash", "is_current"]);
+// `actor`, `hash`), the commit's `ts` and `reason`, `is_current`, and (4.9)
+// `archived` — the revision's bodies live in an archive segment (spec/store §7
+// "Retention"; `docs_read { at }` reads through it when attached).
+const REVISION_ATTRIBUTES = new Set(["id", "path", "rev", "seq", "doc_id", "commit", "ts", "origin", "actor", "reason", "hash", "is_current", "archived"]);
 /** The engine attributes per kind (spec/surface §1.2 table). Exported so the
  * translator's tests pin the two against each other. */
 export const ATTRIBUTES: Readonly<Record<Kind, ReadonlySet<string>>> = {
@@ -97,7 +99,7 @@ export const ATTRIBUTES: Readonly<Record<Kind, ReadonlySet<string>>> = {
 // `revisions` table carries no `repo_id`, so the repository guard joins `docs`.
 // `is_current` is `docs_history`'s `isCurrent`: the revision is the document's
 // `current_rev`.
-const REVISION_COLS = "r.rev_id, r.doc_id, r.seq, r.rendered_hash, r.path, r.commit_id, c.ts, c.origin, c.actor, c.reason, (d.current_rev = r.rev_id) AS is_current";
+const REVISION_COLS = "r.rev_id, r.doc_id, r.seq, r.rendered_hash, r.path, r.commit_id, c.ts, c.origin, c.actor, c.reason, (d.current_rev = r.rev_id) AS is_current, (r.archive IS NOT NULL) AS archived";
 const REVISION_FROM = "revisions r JOIN docs d ON d.doc_id = r.doc_id JOIN commits c ON c.commit_id = r.commit_id";
 /** The source handles of a document (§1.2): `data` is the merged authored view
  * (frontmatter + inline), the other two one source each. */
@@ -552,6 +554,7 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
       case "reason": return row.reason ?? null;
       case "hash": return hex(row.rendered_hash);
       case "is_current": return row.is_current === 1 || row.is_current === true;
+      case "archived": return row.archived === 1 || row.archived === true;
     }
     return undefined;
   };

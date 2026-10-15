@@ -3253,7 +3253,8 @@
                     "origin": "observed",
                     "actor": null,
                     "hash": "74252946d208ad5c5e7f3b1a75d9e2feee6d8dfd06386fb09c47f23b797d0bed",
-                    "isCurrent": true
+                    "isCurrent": true,
+                    "archived": false
                   }
                 ]
               }
@@ -3276,7 +3277,8 @@
                     "origin": "observed",
                     "actor": null,
                     "hash": "4ca40f92b6dfba673bf7e8f310945285e0b778562d67267c408cc3a0074ca480",
-                    "isCurrent": true
+                    "isCurrent": true,
+                    "archived": false
                   }
                 ]
               },
@@ -3294,7 +3296,8 @@
                     "origin": "observed",
                     "actor": null,
                     "hash": "785e44677241bf9722ee204777ad1008a68b1360b2189550818800722ff0c7fa",
-                    "isCurrent": true
+                    "isCurrent": true,
+                    "archived": false
                   }
                 ]
               }
@@ -4101,7 +4104,8 @@
                     "origin": "observed",
                     "actor": null,
                     "hash": "74252946d208ad5c5e7f3b1a75d9e2feee6d8dfd06386fb09c47f23b797d0bed",
-                    "isCurrent": false
+                    "isCurrent": false,
+                    "archived": false
                   },
                   {
                     "rev": "r_20",
@@ -4111,7 +4115,8 @@
                     "origin": "api",
                     "actor": "agent:mcp",
                     "hash": "a15fc92ef7c024f42e92ae256aba5a8509ee46854063daefac54d386ddd6243a",
-                    "isCurrent": true
+                    "isCurrent": true,
+                    "archived": false
                   }
                 ]
               }
@@ -4762,7 +4767,8 @@
                     "origin": "observed",
                     "actor": null,
                     "hash": "74252946d208ad5c5e7f3b1a75d9e2feee6d8dfd06386fb09c47f23b797d0bed",
-                    "isCurrent": false
+                    "isCurrent": false,
+                    "archived": false
                   },
                   {
                     "rev": "r_20",
@@ -4772,7 +4778,8 @@
                     "origin": "api",
                     "actor": "agent:mcp",
                     "hash": "78de6a57ae18625b34e01619f072674a36a68bf7051af87c87d83c9ca0b9b7a0",
-                    "isCurrent": true
+                    "isCurrent": true,
+                    "archived": false
                   }
                 ]
               }
@@ -4795,7 +4802,8 @@
                     "origin": "observed",
                     "actor": null,
                     "hash": "4ca40f92b6dfba673bf7e8f310945285e0b778562d67267c408cc3a0074ca480",
-                    "isCurrent": false
+                    "isCurrent": false,
+                    "archived": false
                   },
                   {
                     "rev": "r_21",
@@ -4805,7 +4813,8 @@
                     "origin": "api",
                     "actor": "agent:mcp",
                     "hash": "0763241a8fc02b24d9a2a6a821222e1a44c0d02b416641d634e1e427aa497549",
-                    "isCurrent": true
+                    "isCurrent": true,
+                    "archived": false
                   }
                 ]
               }
@@ -9323,7 +9332,8 @@
                     "origin": "observed",
                     "actor": null,
                     "hash": "fd4aa62c7b28de19a0f9c9dfc5145263bdbd2bd84528ef77fa4f6ce2fa99693b",
-                    "isCurrent": true
+                    "isCurrent": true,
+                    "archived": false
                   }
                 ]
               },
@@ -9341,7 +9351,8 @@
                     "origin": "observed",
                     "actor": null,
                     "hash": "ccd682da7c3f643751e4aee291b18b75995ef9f883ececc5f925031bb319f4b5",
-                    "isCurrent": true
+                    "isCurrent": true,
+                    "archived": false
                   }
                 ]
               }
@@ -9729,7 +9740,8 @@
                     "origin": "observed",
                     "actor": null,
                     "hash": "fd4aa62c7b28de19a0f9c9dfc5145263bdbd2bd84528ef77fa4f6ce2fa99693b",
-                    "isCurrent": true
+                    "isCurrent": true,
+                    "archived": false
                   }
                 ]
               }
@@ -10481,7 +10493,8 @@
                     "origin": "observed",
                     "actor": null,
                     "hash": "2d1f0bd3f92e3ab006e4f4220ab3cb6d7959184b9a41e1fd52a95e965750c06c",
-                    "isCurrent": false
+                    "isCurrent": false,
+                    "archived": false
                   },
                   {
                     "rev": "r_20",
@@ -10491,7 +10504,8 @@
                     "origin": "api",
                     "actor": "agent:mcp",
                     "hash": "c8dbadfd60e5b18497d40562cdd55ac3bca31fad84e310b4b62ba594cf410459",
-                    "isCurrent": true
+                    "isCurrent": true,
+                    "archived": false
                   }
                 ]
               }
@@ -10828,7 +10842,8 @@
                     "origin": "observed",
                     "actor": null,
                     "hash": "61b196d9470ef9c65e6330b6a0772c7d81b6c8636f1f5a54669404808365085d",
-                    "isCurrent": true
+                    "isCurrent": true,
+                    "archived": false
                   }
                 ]
               }
@@ -10851,7 +10866,8 @@
                     "origin": "observed",
                     "actor": null,
                     "hash": "44ab278e3c4f1d9fc1f8e71e4f023335820e27e4c407247b9fc12c46290bbef1",
-                    "isCurrent": false
+                    "isCurrent": false,
+                    "archived": false
                   },
                   {
                     "rev": "r_22",
@@ -10861,7 +10877,8 @@
                     "origin": "observed",
                     "actor": null,
                     "hash": "598e37ddd5806f95d81cd11d845a7d4fc760d259a3b6cbb43d121227c3d9fa2f",
-                    "isCurrent": true
+                    "isCurrent": true,
+                    "archived": false
                   }
                 ]
               }
@@ -11231,7 +11248,8 @@
                     "origin": "observed",
                     "actor": null,
                     "hash": "4ca40f92b6dfba673bf7e8f310945285e0b778562d67267c408cc3a0074ca480",
-                    "isCurrent": false
+                    "isCurrent": false,
+                    "archived": false
                   },
                   {
                     "rev": "r_20",
@@ -11241,7 +11259,8 @@
                     "origin": "api",
                     "actor": "agent:mcp",
                     "hash": "ce279499609b3d84328c3361e895d66c417746fd369e3d5ef37c7d4fb2b640ed",
-                    "isCurrent": true
+                    "isCurrent": true,
+                    "archived": false
                   }
                 ]
               },
@@ -11259,7 +11278,8 @@
                     "origin": "observed",
                     "actor": null,
                     "hash": "785e44677241bf9722ee204777ad1008a68b1360b2189550818800722ff0c7fa",
-                    "isCurrent": false
+                    "isCurrent": false,
+                    "archived": false
                   },
                   {
                     "rev": "r_21",
@@ -11269,7 +11289,8 @@
                     "origin": "api",
                     "actor": "agent:mcp",
                     "hash": "909732d8ed3aa4aa30413f896b198a621ae5d9b36f2dfea6f69a2c569e869ed1",
-                    "isCurrent": true
+                    "isCurrent": true,
+                    "archived": false
                   }
                 ]
               }
@@ -11384,7 +11405,8 @@
                     "origin": "observed",
                     "actor": null,
                     "hash": "bd46557a5b70181f7b5ed3478e6ddf646a92c7560a44607bbf92485e35e48cd3",
-                    "isCurrent": false
+                    "isCurrent": false,
+                    "archived": false
                   },
                   {
                     "rev": "r_20",
@@ -11394,7 +11416,8 @@
                     "origin": "api",
                     "actor": "agent:mcp",
                     "hash": "1ccfa946ff7ec170e135c0317550517242b5a8bd6a5072992393ec7c180f400f",
-                    "isCurrent": true
+                    "isCurrent": true,
+                    "archived": false
                   }
                 ]
               }
@@ -12231,7 +12254,8 @@
                     "origin": "observed",
                     "actor": null,
                     "hash": "bd46557a5b70181f7b5ed3478e6ddf646a92c7560a44607bbf92485e35e48cd3",
-                    "isCurrent": false
+                    "isCurrent": false,
+                    "archived": false
                   },
                   {
                     "rev": "r_20",
@@ -12241,7 +12265,8 @@
                     "origin": "api",
                     "actor": "agent:mcp",
                     "hash": "4d419ccf16e738e8758e55f559929d18c9aa2951bcf0cd48321b95fbc657b74b",
-                    "isCurrent": true
+                    "isCurrent": true,
+                    "archived": false
                   }
                 ]
               }

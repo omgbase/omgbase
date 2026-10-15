@@ -1,12 +1,12 @@
 import { randomInt } from "node:crypto";
 
 // Minted, opaque, repo-scoped IDs (spec/store §2.1): prefix + 7 chars lowercase
-// Crockford base32 from a CSPRNG. Since store 13.5 a mint is collision-checked
+// Crockford base32 from a CSPRNG. `s` (15.0) is an archive segment. Since store 13.5 a mint is collision-checked
 // here, at the seam: `mintId` never returns an id that is in use — one this
 // process has already issued, or one a registered oracle (the open stores)
 // reports as naming a row of the prefix's table.
 
-export type IdPrefix = "d" | "b" | "c" | "r" | "x" | "col" | "cp" | "e" | "rp" | "v" | "src";
+export type IdPrefix = "d" | "b" | "c" | "r" | "x" | "col" | "cp" | "e" | "rp" | "v" | "src" | "s";
 
 // Crockford base32 alphabet, lowercased (no i, l, o, u).
 const ALPHABET = "0123456789abcdefghjkmnpqrstvwxyz";

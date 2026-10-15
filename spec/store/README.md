@@ -15,7 +15,7 @@ rows**. It is owned by neither implementation.
 | `@omgbase/core` (TypeScript, npm) | `packages/core/src/core/store`, `core/ingest.ts`, `core/hash.ts`, `core/ids.ts`, `core/order-key.ts`, `core/read/document.ts`, `sync/observe.ts`, `sync/reconciling-ingest.ts`, `sync/tombstone.ts`, `mutate/materialize.ts` | **Reference.** Store decisions land here first. |
 | `omgbase-store` (Rust, crates.io) | `crates/omgbase-store` | Conformance-first port. Opens the same databases, passes the same fixtures. |
 
-The spec is three artifacts, versioned together by `VERSION`:
+The spec is four artifacts, versioned together by `VERSION`:
 
 - this `README.md` — what the tables mean, the canonical encodings, the
   observe/commit procedure as an exact rule, the invariants, the fixture
@@ -23,6 +23,8 @@ The spec is three artifacts, versioned together by `VERSION`:
 - `schema.sql` — **the DDL**, verbatim. Both implementations embed this text
   and execute it on a fresh database. It is the one artifact that is already
   language-neutral; nothing may paraphrase it.
+- `archive.sql` (15.0) — the DDL of an **archive segment** (§7 "Retention"),
+  verbatim, embedded the same way: the file `history export` writes.
 - `cases/*.json` — the executable fixtures. **When prose and fixtures
   disagree, the fixtures win**, and the prose gets fixed.
 
@@ -68,7 +70,7 @@ ignores their rows. Fixtures are Markdown only (`format = 'markdown'`).
 ## Versioning
 
 `VERSION` is `<major>.<minor>`. **The major is the schema version** — the
-`PRAGMA user_version` every database carries (`14`), so a reader of a
+`PRAGMA user_version` every database carries (`15`), so a reader of a
 database knows which spec it conforms to. The minor counts semantic changes
 that need no migration: how a row is filled, an encoding, the observe
 procedure. The `omgbase-store` crate is `<major>.<minor>.<patch>`, exactly as
@@ -126,7 +128,7 @@ Minted ids are `<prefix>_<7 chars>`, the characters lowercase Crockford
 base32 (`0123456789abcdefghjkmnpqrstvwxyz`, no `i l o u`) from a CSPRNG.
 Prefixes: `d` document, `b` block, `c` commit, `r` revision, `x` external
 node, `col` collection, `cp` checkpoint, `e` edge, `rp` repo, `v` projection
-(reserved), `src` source. Ids are repo-scoped, never reused, never
+(reserved), `src` source, `s` archive segment (15.0, §7 "Retention"). Ids are repo-scoped, never reused, never
 re-assigned. An id is opaque: nothing may parse anything but its prefix out
 of it, and `isValidId` accepts exactly `^[a-z]+_[alphabet]{7}$`.
 
@@ -140,8 +142,11 @@ or one that names a row of the prefix's table — `d` in `docs`, `b` in
 `blocks`, `block_changes` or `resurrection_pool` (a block id lives on in
 history after its row is gone), `c` in `commits`, `r` in `revisions`, `x`
 in `external_nodes`, `e` in `edges`, `cp` in `checkpoints`, `rp` in
-`repos`, `src` in `sources` — and redraws until it finds one that is not
-(`col` and `v` have no table and no check). A redraw is unobservable
+`repos`, `src` in `sources`, `s` in `archives` — and redraws until it finds one that is not
+(`col` and `v` have no table and no check). A block id's `block_changes`
+row is what keeps it known after its `blocks` row and pool entry are gone,
+which is why the retention squash (§7, 15.0) keeps every block's earliest
+`block_changes` row in the store. A redraw is unobservable
 except through the fixture device of §9.4 (`"minter": "repeat"`). The
 fixture minter itself (§2.2) is sequential over a fresh database and never
 collides; the check runs for it too, at no cost to the ids.
@@ -192,7 +197,8 @@ The tables of `schema.sql` this spec fills:
 | `blocks` | live or tombstoned block of the **current** revision | The hot table: `block_id`, `doc_id`, `parent_block` (`NULL` at top level), `order_key` (§4.3), `ordinal`, `depth`, `ancestor_path` (§4.3), `type`, `attrs` JSON, `text` (visible text, `spec/format` §4.1), `raw_hash`, `norm_hash`, `trivia_hash` (`NULL` = no trailing trivia), `created_commit`, `deleted_commit`. Rebuilt wholesale by every commit to the document (§5.4); a tombstoned document keeps its rows with `deleted_commit` set. |
 | `blobs` | distinct byte string | Content-addressed: `hash = sha256(bytes)`, `size = |bytes|`. Holds every block `raw`, every non-empty trivia, every frontmatter block. Never deleted in v1. |
 | `tree_nodes` | distinct sibling list | Content-addressed Merkle node: `hash = sha256(entries)`, `entries` the canonical serialization §4.1. Identical subtrees share a row. |
-| `revisions` | (document, commit) | `rev_id`, `doc_id`, per-document `seq` from 1, `root_tree` (a `tree_nodes.hash`), `frontmatter_blob` (a `blobs.hash` or `NULL`), `rendered_hash`, `path` at this revision, `commit_id`. |
+| `revisions` | (document, commit) | `rev_id`, `doc_id`, per-document `seq` from 1, `root_tree` (a `tree_nodes.hash`), `frontmatter_blob` (a `blobs.hash` or `NULL`), `rendered_hash`, `path` at this revision, `commit_id`, `archive` (15.0: `NULL` for a live revision; the `segment_id` of the archive segment holding its bodies once the retention squash moved them — then `root_tree` and `frontmatter_blob` are `NULL` too, §7 "Retention"; the row itself never leaves). Since 15.0 the two body columns are nullable and carry no foreign key. |
+| `archives` | archive segment the repo knows (15.0) | The registry `history list` reads: `segment_id` (a minted `s_` id, the segment's manifest id), `repo_id`, `path` (the file as recorded; `attach` re-records it), `seq_lo`/`seq_hi` (the `commits.seq` span of the segment's commits), `created_at`, `revision_count`, `bytes` (the file's size when recorded). Written by the squash transaction and by `attach`, deleted by `detach`; a revision's `archive` column may name a segment this table no longer carries (detached). |
 | `commits` | write to the repo | `commit_id`, per-repo `seq` from 1 (the change-feed cursor), `ts`, `origin ∈ {api, observed, import, projection}`, `actor`, `reason`, `checkpoint_id`, `ops`. Observations write `observed` (§5); the mutation kernel writes `api`; `import` is bulk ingest with no retro history; `projection` is reserved. |
 | `dispositions` | (commit, block, kind) | The matcher's decisions as persisted: `kind` (the `spec/reconcile` §2 kinds), `confidence`, `reason`, `matcher_v`, `detail` JSON. Immutable once committed (R6). `INSERT OR IGNORE` on the primary key (§10). |
 | `resurrection_pool` | block deleted in an earlier commit | `block_id`, `doc_id` it left, `raw_hash`, `norm_hash`, `type`, `deleted_commit`, `expires_ts`. Feeds `spec/reconcile` phase 6b; rows leave when consumed, evicted or swept. |
@@ -219,6 +225,14 @@ built outside the monorepo, like the other conformance tests). The FTS5
 extension must be compiled into the SQLite the engine links (both
 `better-sqlite3` and `rusqlite`'s `bundled` feature include it).
 
+`archive.sql` (15.0) is the second DDL artifact: the tables of an archive
+segment (§7 "Retention") — `manifest`, and `revisions`, `commits`, `blobs`,
+`tree_nodes`, `dispositions`, `block_changes` with the same columns as
+`schema.sql`'s minus the foreign keys (a segment holds no `repos` or `docs`
+rows; its `revisions.root_tree` is `NOT NULL`, since a segment holds bodies).
+Both implementations embed it and test the embedded copy against the file
+the same way; `history export` executes it on every new segment file.
+
 `cases/schema.json` carries the **schema fingerprint** of a fresh database —
 for every table (`sqlite_master.type = 'table'`, including virtual tables
 **and the FTS5 shadow tables** `blocks_fts_config/_data/_docsize/_idx` and
@@ -231,7 +245,7 @@ checked without trusting its own copy of the DDL.
 
 ### 3.4 Migrations
 
-A database at `user_version` *n* < 14 is upgraded one version at a time, each
+A database at `user_version` *n* < 15 is upgraded one version at a time, each
 step idempotent (it inspects before it alters), each in a transaction:
 
 | To | Step |
@@ -249,9 +263,10 @@ step idempotent (it inspects before it alters), each in a transaction:
 | 12 | create `doc_embeddings` |
 | 13 | if `repos.root_path` exists: ensure the `fs` adapter row (`INSERT OR IGNORE … ('fs', 'omgbase-fs-adapter', '[]')`, even when there are no repos); for each repo with a non-empty `root_path`, find or create a source named `<slug>-fs` (`source_id` minted with prefix `src`, `adapter = 'fs'`, `config = {"root": <root_path>}`, `env = '{}'`) and `INSERT OR IGNORE` the attachment; then `ALTER TABLE repos DROP COLUMN root_path` |
 | 14 | create `pending_materializations` (§5.7) |
+| 15 | if `revisions` exists without an `archive` column: rebuild it — with `foreign_keys = OFF` for the duration (`pending_materializations.rev_id` references it, and the DROP would otherwise be an implicit DELETE under the FK), `CREATE TABLE revisions_v15` with `schema.sql`'s 15.0 columns (`root_tree`/`frontmatter_blob` nullable, no foreign keys on them, `archive TEXT`), copy every row with `archive = NULL`, `DROP TABLE revisions`, `ALTER TABLE revisions_v15 RENAME TO revisions`, `PRAGMA foreign_key_check` must be empty; then create `archives` (§7 "Retention"). Rows keep their `rowid` order; nothing else moves |
 
 The "create" steps execute the same sub-DDL text that `schema.sql` contains
-for those tables. After the last step the opener sets `user_version = 14`.
+for those tables. After the last step the opener sets `user_version = 15`.
 `cases/migrations.json` pins these on authored pre-states (§9.3). Because
 every pre-state in the fixtures is a *partial* old schema (the tables the
 step touches, not a whole historical database), the expectation is the
@@ -691,6 +706,25 @@ honest signal. The materializer (§5.7) and recovery render a pending row's
 bytes with this read at the row's `rev_id`, and refuse the row when the
 result does not hash to `rendered_hash`.
 
+**Through a segment (15.0).** For a revision with `archive IS NOT NULL` the
+bodies are not in the store: the read looks the segment up in `archives` by
+`segment_id`, `ATTACH`es its file on demand under an alias of its own
+(`arc_<segment_id>`; read-only — the file is written with mode `0444` and an
+engine never writes through an alias; attached aliases stay for the
+connection's life, the oldest detached past eight), checks that the file's
+`manifest.segment_id` is the one asked for, and then runs the same assembly
+over `<alias>.revisions` (the `root_tree`/`frontmatter_blob` the store NULLed),
+`<alias>.tree_nodes` and `<alias>.blobs` — the segment is self-contained, so
+nothing falls back to the store's tables. `leading_trivia`/`frontmatter_trivia`
+still come from the `docs` row. When the segment is **not recorded** (never
+attached, or detached) or **recorded but not on disk**, the read fails with
+`revision_archived { rev, archive, path? }` (`path` only when a row records
+one) rather than returning anything; `spec/surface` carries the error code.
+The block-grain reads (`docs_diff`'s id → raw maps) resolve the same way.
+Dispositions and block changes that moved to a segment are **not** read
+back through it in this round: `blocks_history` and the change-feed
+summaries see the live rows only (§7).
+
 ## 7. Rebuild and garbage
 
 **Rebuild.** `sections` is recomputed per live doc from `blocks` (§4.5);
@@ -702,12 +736,16 @@ index the whole content table, containers included); `doc_edges` is the graph
 component's. A rebuilt deterministic table equals the maintained one row for
 row (§8 I8).
 
-**Garbage collection** is mark-and-sweep from every `revisions.root_tree`
-(walking `child_tree_hash_hex`) and `frontmatter_blob`: reachable tree nodes
-and blobs (raw, trivia, frontmatter) are kept, the rest deleted. It ships
-behind a flag, **off**, and because revisions are never pruned in v1 nothing
-is ever unreachable — §8 I5 checks exactly that. The only routine collection
-is the pool sweep (§5.5).
+**Garbage collection** is mark-and-sweep from every **live** revision's
+`root_tree` (`WHERE root_tree IS NOT NULL`, walking `child_tree_hash_hex`)
+and every non-NULL `frontmatter_blob`: reachable tree nodes and blobs (raw,
+trivia, frontmatter) are kept, the rest deleted. It ships behind a flag,
+**off**. Through 14.x nothing was ever unreachable (revisions were never
+pruned); since 15.0 the retention squash below NULLs an archived revision's
+body columns after copying the bodies to a segment and runs this very sweep
+inside its own transaction, so `omg gc` still finds nothing — §8 I5 checks
+exactly that over the live revisions. The only routine collection is the
+pool sweep (§5.5).
 
 **The `same` sweep** (14.2). The same collection — the default sweep, under
 the same flag, no option — also deletes every `block_changes` row and every
@@ -727,6 +765,167 @@ schedule, and `gc --vacuum` is what returns the pages afterwards. Rebuild
 (above) is unchanged — `block_changes` is still derived from `dispositions`
 — and since the sweep deletes the same rows from both tables, §8 I8 holds
 before and after it. `garbage::sweep-removes-pre-14.2-same-rows` pins it.
+
+### 7.1 Retention: plan, export, squash (15.0)
+
+History is never lost, but it need not all stay hot. A **retention policy**
+says which revisions of a document stay in the store and which move to an
+**archive segment** — a separate SQLite file holding their bodies — while
+every `revisions` and `commits` row stays where it is, so the `revisions`
+query target, `docs_history` and `changes_since` keep listing an archived
+revision and only a read of its *bytes* needs the segment. The measurement
+behind it: a 131 MB database over 5 MB of Markdown held 57 MB of history,
+read almost never and worth keeping forever.
+
+**The policy** lives in the repository's effective settings under
+`history.retention` (`spec/sync` settings: the workspace layer, a repo's
+over it), each key defaulting as shown; a run may pass a partial policy that
+replaces keys for that run only (`omg history … --policy`):
+
+```yaml
+history.retention:
+  keep_days: 30            # every revision younger than this is kept
+  ladder:                  # beyond keep_days, one revision per period per rung
+    - { after_days: 30,  keep: "one per day" }
+    - { after_days: 365, keep: "one per month" }
+  per_doc_max: 200         # the newest N revisions of a document are kept regardless of age
+  keep_origins: ["api"]    # a revision whose commit has this origin AND a non-empty reason is kept
+  overrides:               # the first glob that matches the document's current path replaces the keys it names
+    - { glob: "/attn/focus.md", keep_days: 7, per_doc_max: 50 }
+    - { glob: "/projects/**", keep_days: 36500 }
+```
+
+`keep` is one of `one per day`, `one per week`, `one per month`, `one per
+year`; a ladder is sorted by `after_days`, two rungs may not share one;
+every count is a non-negative integer; a glob is matched against the
+`/`-rooted reference path (`**` any run of characters, `*` any run without
+`/`, `?` one character; a glob without a leading `/` is rooted). A malformed
+policy is refused before anything is evaluated.
+
+**The plan** (`evaluate_retention(repo, now, before?, policy)`) is the policy
+as an exact rule — deterministic in the store, the policy and the clock
+`now` (the process clock, `OMGBASE_SPEC_CLOCK` in a conformance run). For
+every document of the repository, over its **live** revisions (`archive IS
+NULL`) in `seq` order, with the document's policy (the base, or the first
+matching override's keys over it), a revision is **kept** when any of these
+holds, and **archived** otherwise:
+
+1. it is the document's `current_rev` (a tombstoned document's last
+   revision is its `current_rev` — §5.6 never clears it);
+2. a `pending_materializations` row names it as `rev_id`;
+3. its age — `floor((now − commit.ts) / 86 400 000 ms)` in whole days — is
+   less than `keep_days`;
+4. it is among the newest `per_doc_max` live revisions of the document;
+5. its commit's `origin` is in `keep_origins` and its `reason` is non-null
+   and non-empty;
+6. `before` was given and `commit.ts >= before`;
+7. no ladder rung applies to its age — the rung of a revision is the one
+   with the greatest `after_days` not above its age; a revision older than
+   `keep_days` but younger than the first rung's `after_days` (the gap, and
+   every revision under an empty ladder) is kept, since nothing says to thin
+   it;
+8. it is the **representative** of its bucket: among every live revision of
+   the document whose rung is the same and whose commit `ts` falls in the
+   same period of that rung's grain — the UTC calendar day `YYYY-MM-DD`, the
+   ISO week (keyed by its Monday's date), the month `YYYY-MM`, the year
+   `YYYY` — the one with the greatest `seq`. Kept-by-other-rules revisions
+   count toward the bucket, so a bucket whose newest revision is already
+   kept keeps nothing extra.
+
+The never-prunable set is rules 1–2. The first revision of a document is
+**not** in it: the mint oracle (§2.1) reads `block_changes`, never
+`dispositions`, and the squash keeps every block's earliest `block_changes`
+row in the store (below), so a block minted in an archived commit stays an
+id in use whichever revision minted it.
+
+The plan's **bytes** are what archiving would reclaim, by the GC mark: mark
+every tree node and blob reachable from the revisions that stay live in the
+**whole store** (every repository — blobs and tree nodes are shared); per
+document, the bytes (`blobs.size`, the byte length of `tree_nodes.entries`)
+of what its archived revisions reach and that mark does not; the total over
+the union of the archived revisions' exclusive objects (a blob two archived
+documents share counts once in the total and in both documents). The plan
+is `{ policy, now, before, docs: [{ id, path, revisions, keep: [rev…],
+archive: [rev…], bytes }], totals: { docs, revisions, keep, archive, bytes }
+}` — `docs` holds only the documents with something to archive, by path;
+`totals.revisions` is every live revision of the repository.
+
+**Segments.** `history export` writes **one new file per run, never
+appending**: a SQLite database with `archive.sql`'s DDL at
+`<dest>/<repo_id>-<seq_lo>-<seq_hi>-<segment_id>.omgarchive.db` (`dest`
+defaults to `<workspace>/.omgbase/archives/`), holding
+
+- `manifest` — one row: `segment_id` (**minted** with the `s` prefix, so the
+  fixture minter makes it `s_0`, `s_1`, …; a content hash would depend on
+  the file's page layout), `repo_id`, `created_at` (= `now`), `policy` (the
+  effective policy as JSON), `seq_lo`/`seq_hi` (the smallest and greatest
+  `commits.seq` among the archived revisions' commits), `revision_count`,
+  `previous_segment` (the repo's `history.last_segment` setting at the
+  time, `NULL` for the first — the chain), `schema_user_version` (15);
+- `revisions` — the archived revisions' rows **with** their `root_tree` and
+  `frontmatter_blob`;
+- `commits` — the distinct commits of those revisions (copies; the store's
+  rows stay hot);
+- `blobs` and `tree_nodes` — **everything** reachable from the archived
+  revisions, shared with live revisions or not, so a segment is readable on
+  its own;
+- `dispositions` and `block_changes` — every row of the **wholly archived
+  commits**: a commit each of whose revisions is in this export or already
+  archived (one revision per commit on the observe path; an `api` commit
+  over several documents moves only when all of them have).
+
+The file is written to `<name>.partial`, with `synchronous = FULL`, in one
+transaction, closed (fsynced), made read-only (`0444`) and **renamed** to
+its final name: a complete segment is exactly a file bearing the final
+name, and a stale `.partial` under `dest` is deleted at the start of a run.
+Compression is at rest and the user's (`zstd` the file after export);
+attaching a compressed file is not supported in this round. Nothing to
+archive → no file.
+
+**The squash** (`history export --prune`), one transaction on the store,
+**after** the segment is durable:
+
+1. for every archived revision: `UPDATE revisions SET root_tree = NULL,
+   frontmatter_blob = NULL, archive = <segment_id>`;
+2. for every wholly archived commit: `DELETE FROM dispositions WHERE
+   commit_id = ?`, and `DELETE FROM block_changes WHERE commit_id = ?`
+   **except each block's earliest row** — a row stays when no other
+   `block_changes` row of the same `block_id` belongs to a commit with a
+   smaller `seq` (so an id ever minted stays known to the oracle, §2.1);
+3. the garbage sweep above (mark from the live revisions, delete the rest —
+   exactly the bodies the segment now holds alone);
+4. `INSERT OR REPLACE INTO archives (segment_id, repo_id, path, seq_lo,
+   seq_hi, created_at, revision_count, bytes)` and the repo's own settings
+   gain `history.last_segment = <segment_id>`.
+
+The result reports `segment { id, path, seq_lo, seq_hi, created_at,
+revision_count, bytes, previous_segment }`, `squashed { revisions, commits,
+dispositions, block_changes }` (rows changed, the block_changes count being
+the rows deleted) and `gc { blobs, tree_nodes }`.
+
+**The crash rule.** A complete segment under `dest` whose `segment_id` no
+`archives` row carries is classified by its revisions: all still live →
+**pending** (the export crashed, or ran without `--prune`) and the next run
+finishes it — the same squash over the file's revision list, `reused:
+true`, no new file, no new mint — before considering a new export; all
+archived → **detached** (a `detach` left the file; `attach` brings it back;
+the run ignores it); a mix → **stale** (the file belongs to another store
+or predates a different squash) and the run refuses with the offending
+revision named, touching nothing. `history list` shows every recorded
+segment as `attached` (file present) or `missing`, and the unrecorded ones
+under `dest` by these three states.
+
+**Attach / detach** record and forget segments in `archives`: `attach
+<file>` reads the manifest (a non-segment or another repository's is
+refused), `INSERT OR REPLACE`s the row with the file's current size (so a
+moved file is re-recorded by attaching it again) and drops any stale alias;
+`attach <dir>` does so for every `.omgarchive.db` of the directory whose
+manifest `repo_id` matches, skipping the rest; `detach <segment_id|path>`
+deletes the row and detaches the alias. The revisions keep their `archive`
+pointer either way — detaching changes what a read answers (§6.2), never
+what the history says.
+
+### 7.2 Size and vacuum (14.1)
 
 **Size** (14.1). The store answers "what is this database made of" with
 one report, `size_report`, both engines computing it the same way from the
@@ -755,7 +954,8 @@ open connection:
   `nodes`, `edges`, `doc_edges`, `inferred_edges`, `external_nodes`,
   `properties`, `collections`; **history** — the append-only record:
   `blobs`, `tree_nodes`, `revisions`, `commits`, `dispositions`,
-  `block_changes`, `resurrection_pool`, `pending_materializations`;
+  `block_changes`, `resurrection_pool`, `pending_materializations`,
+  `archives` (15.0);
   **search** — the derived indexes: `blocks_fts`, `nodes_fts`,
   `embeddings`, `doc_embeddings`; **sync** — the workspace bookkeeping:
   `repos`, `sources`, `adapters`, `attachments`, `checkpoints`,
@@ -767,6 +967,10 @@ open connection:
   `kind = 'same'` — the rows a store through 14.1 wrote and the `same`
   sweep removes; 0 on a fresh 14.2 store. A top-level integer beside
   `categories`.
+- *`archived`* (15.0): `{ revisions, segments, bytes }` — the `revisions`
+  rows with `archive IS NOT NULL`, the `archives` rows, and the recorded
+  segment files' bytes on disk (a missing file counts 0). The history that
+  already left the file.
 - *Advice*, deterministic strings in this order, each conditional: `run
   \`omg gc --vacuum\` to return <bytes> of free pages to the filesystem`
   when `reclaimable` exceeds 1 MiB *and* 10 % of `page_count ×
@@ -777,7 +981,12 @@ open connection:
   14.2): \`omg gc\` removes them, \`--vacuum\` reclaims the pages` when
   `same_dispositions` is positive and exceeds 25 % of the `dispositions`
   table's `rows` (a share over rows, so it holds without `dbstat` too;
-  14.2); `embeddings are <share> of the database: a smaller model
+  14.2); `<n> revisions older than the policy would archive <bytes>: \`omg
+  history export --prune\`` (15.0) when the retention plan (§7.1) of every
+  repository of the store under its effective policy at the report's clock,
+  summed, would archive at least one revision and its `bytes` exceed 10 %
+  of the `history` category's bytes (dbstat only: the comparison needs the
+  pages); `embeddings are <share> of the database: a smaller model
   (\`embedding.model\` / \`embedding.dim\`) or \`omg embed drain --prune\`
   after a model switch shrinks them` when `embeddings` + `doc_embeddings`
   exceed 25 % of the total; else the single line `nothing to reclaim`.
@@ -810,8 +1019,8 @@ end of every case; an implementation may assert them in its own tests.
   |bytes|`. Every `tree_nodes` row: `hash == sha256(entries)` and `entries`
   parses as §4.1 with every `raw_hash_hex`/`trivia_hash_hex` present in
   `blobs` and every `child_tree_hash_hex` present in `tree_nodes`. Every
-  `revisions.root_tree` present in `tree_nodes`; every `frontmatter_blob` in
-  `blobs`.
+  non-NULL `revisions.root_tree` present in `tree_nodes`; every non-NULL
+  `frontmatter_blob` in `blobs` (15.0: an archived revision's are NULL).
 - **I3 Blocks mirror the current revision.** For every live doc, the live
   `blocks` rows, read as a tree (children by `parent_block`, `order_key`
   order), have exactly the ids, types, `raw_hash`es and trivia hashes of the
@@ -822,8 +1031,13 @@ end of every case; an implementation may assert them in its own tests.
 - **I4 Dense sequences.** `commits.seq` is `1..n` per repo in `ts`-then-seq
   order; `revisions.seq` is `1..k` per doc; `current_rev` is the revision
   with the greatest `seq`.
-- **I5 Nothing to collect.** The mark set of §7 equals all of `blobs` and
-  `tree_nodes` (GC would sweep zero rows).
+- **I5 Nothing to collect.** The mark set of §7 — from the **live** revisions
+  (15.0: `root_tree IS NOT NULL`, plus every non-NULL `frontmatter_blob`) —
+  equals all of `blobs` and `tree_nodes` (GC would sweep zero rows). Over
+  live + archived history the statement is: every body is either reachable
+  from a live revision in the store or held by the segment its revision's
+  `archive` names; the runner checks the first half on the store and the
+  second through `read_at` (§9.4).
 - **I6 Pool.** Every `resurrection_pool` row names a `deleted_commit` that
   exists, an `expires_ts` exactly 30 days after that commit's `ts`, and a
   block id that has no live `blocks` row.
@@ -839,11 +1053,19 @@ end of every case; an implementation may assert them in its own tests.
   cross-document resurrection.) No row has `kind = 'same'` (14.2; §5.4
   step 10 never writes one and the §7 sweep removes a 14.1 store's), and
   `block_changes` is exactly the `(block_id, commit_id, kind)` projection
-  of `dispositions` (I8) — so every live block has at least its `inserted`
-  (or lineage/resurrection) row, and a block's rows are the commits that
-  changed it.
+  of `dispositions` over the commits that are not wholly archived (I8) — so
+  every live block has at least its `inserted` (or lineage/resurrection)
+  row, and a block's rows are the commits that changed it.
 - **I8 Rebuild equivalence.** `sections` and `block_changes` recomputed per
-  §7 equal the stored rows.
+  §7 equal the stored rows — `block_changes` over the commits that are not
+  wholly archived (15.0: the rebuild deletes and re-derives only those; a
+  wholly archived commit's surviving rows are left as they are).
+- **I9 Archived revisions (15.0).** `archive IS NOT NULL` ⇔ `root_tree IS
+  NULL`, and an archived revision's `frontmatter_blob` is NULL; a document's
+  `current_rev` is never archived. A wholly archived commit (one with at
+  least one revision and no live one) has no `dispositions` row, and each
+  of its `block_changes` rows is its block's earliest (no row of the same
+  `block_id` belongs to a commit with a smaller `seq`).
 
 ## 9. Fixtures
 
@@ -902,7 +1124,7 @@ repos are visited in `rowid` order).
 minter (§2.2) is active, so ids minted by a migration (`src_0`) compare.
 When opening must fail (a newer `user_version`), `expect` is instead
 `{ "error": "<the exact message>" }` — `migrations::newer-version-is-refused`
-pins `database schema (v15) is newer than this build (v14); upgrade omgbase`.
+pins `database schema (v16) is newer than this build (v15); upgrade omgbase`.
 
 ### 9.4 Observation scripts
 
@@ -966,7 +1188,17 @@ pins `database schema (v15) is newer than this build (v14); upgrade omgbase`.
   transaction — the device that puts rows a 14.2 store never writes (a 14.1
   store's `same` dispositions) into a case; a statement may not reference
   anything the fixture minter has not issued, and the invariants are not
-  checked after it (only after the next `observe`/`gc`). `expect.steps` has
+  checked after it (only after the next `observe`/`gc`/`history_export`).
+  The retention steps (15.0, §7.1) run against the case's own **archive
+  directory** — a temporary directory the runner creates on the first of
+  them and removes with the store; `<dest>` stands for it in a projected
+  path: `history_plan { ts, policy?, before? }` (the plan at `ts`; `policy`
+  a partial over the defaults — a fixture repo has no settings; `before`
+  as §7.1), `history_export { ts, policy?, before?, prune }` (the export at
+  `ts` into `<dest>`), `history_attach { segment }` / `history_detach {
+  segment }` (by segment id; `attach` resolves the id to the file under
+  `<dest>` named `…-<segment>.omgarchive.db`), `read_at { doc, rev }` (§6.2,
+  through a segment when the revision is archived). `expect.steps` has
   one entry per step.
 - `config` overrides any subset of `spec/reconcile` §6 for every observe step
   of the case (the store passes it through).
@@ -981,7 +1213,19 @@ pins `database schema (v15) is newer than this build (v14); upgrade omgbase`.
   `{ path, deleted, doc }` (`doc` null when nothing was live). For `sweep`,
   `{ swept: <rows deleted> }`. For `gc` (14.2), `{ gc: { blobs, tree_nodes,
   same_dispositions } }` — the three counts of §7. For `exec` (14.2),
-  `{ changes: <rows changed, summed over the statements> }`.
+  `{ changes: <rows changed, summed over the statements> }`. For the
+  retention steps (15.0): `history_plan` → `{ plan: <the §7.1 plan
+  verbatim> }`; `history_export` → `{ export: { segment: { id, seq_lo,
+  seq_hi, revision_count, previous_segment } | null, reused, squashed: {
+  revisions, commits, dispositions, block_changes } | null, gc: { blobs,
+  tree_nodes } | null } }` (`squashed`/`gc` null without `prune`; the
+  file's path and bytes are not projected); `history_attach` → `{
+  attached: [{ segment_id, seq_lo, seq_hi, revision_count }] }`;
+  `history_detach` → `{ detached: <segment id> | null }`; `read_at` → `{
+  raw, rendered_hash_match }`, or `{ error: "revision_archived", rev,
+  archive, path? }` with `path` as `<dest>/<file name>` when the segment is
+  recorded but not on disk, or `{ error: "target_missing" }` when `rev` is
+  not the document's.
 - `docs` ordered by `path`; `commits` by `seq`; `revisions` by `(doc_id
   bytewise, seq)`; `blobs` and `tree_nodes` by `hash`; `blocks` by doc (in
   `docs` order) then **pre-order** over the doc's rows (children by
@@ -990,10 +1234,15 @@ pins `database schema (v15) is newer than this build (v14); upgrade omgbase`.
   `kind` bytewise); `resurrection_pool` by (`expires_ts`, `block_id`
   bytewise); `sections` by (`doc_id` bytewise, `first_ordinal`);
   `pending_materializations` (14.0) by `path`, as `{ path, kind, from_path,
-  doc_id, rev_id, rendered_hash, commit_id }` — always `[]` here, since only
+  doc_id, rev_id, rendered_hash, commit_id }` — `[]` here unless an `exec`
+  step put a row in (the never-prunable fixture of §7.1 does), since only
   the api path inserts rows; the `spec/mutate` scripts (its §9), which share
   this shape, pin the rows through their `crash_after_commit` modifier and
-  `materialize {}` step.
+  `materialize {}` step; `revisions` rows carry `archive` (15.0; `null`
+  until a squash) and `archives` (15.0) is projected by (`seq_lo`,
+  `segment_id`) as `{ segment_id, file, seq_lo, seq_hi, created_at,
+  revision_count }` — `file` the recorded path's file name (the directory is
+  the run's), `bytes` omitted (a page layout, not a behavior).
 - Hash columns as hex; `attrs` and `detail` as JSON objects (compared with
   key order ignored); `bytes` as the decoded string; every other column as
   its SQLite value (`INTEGER` → number, `NULL` → `null`).
@@ -1023,6 +1272,23 @@ Each is **pinned** (a fixture asserts it; changing it is a store change under
 "Versioning") or **fixed** (the prose above is the fix and the reference is
 brought to it).
 
+- **Changed (15.0) — history can be archived.** `revisions.root_tree` and
+  `frontmatter_blob` are nullable, `revisions.archive` and the `archives`
+  table exist, and §7.1 says how a revision's bodies move to a segment and
+  back into reach. Three things the code decided while the design was being
+  implemented, each a refinement of the brief: the first revision of a
+  document is *not* in the never-prunable set — the oracle reads
+  `block_changes`, so the squash keeps each block's earliest row instead
+  (§2.1, §7.1), which protects every minted id and not only the first
+  revision's; `archives` carries `repo_id` (a workspace holds several
+  repositories, so `history list` must scope) and the chain pointer
+  `history.last_segment` lives in the repository's own settings for the
+  same reason; a wholly archived commit's `block_changes` keep the earliest
+  rows, so I7/I8 are restated over the commits that are not wholly archived
+  and I9 pins the rest. Fixtures: `retention.json` (12 cases),
+  `migrations::v14-to-v15-revisions-nullable-and-archives`, every
+  observation case's `revisions` rows gained `archive: null` and its
+  projection `archives: []`.
 - **Changed (14.2) — `same` dispositions are not persisted.** Through 14.1
   both engines wrote one `dispositions` row and one `block_changes` row for
   every verdict of every commit, `same` included — and the api path stamped
@@ -1114,6 +1380,42 @@ brought to it).
 
 ## Decisions
 
+- 2026-10-15, store 15.0: history retention — `omg history export --prune`,
+  archive segments, `attach` (§7.1). The measurement: a 131 MB database
+  over 5 MB of Markdown held 57 MB of history — tree nodes with no sharing
+  across revisions (a whole root per revision), uncompressed blobs — that
+  nobody reads but nobody may lose. Five decisions. **Squash, not delete**:
+  an archived revision keeps its `revisions` row (and its commit) and loses
+  only its bodies, so the `revisions` target, `docs_history` and
+  `changes_since` keep listing it, I4's dense `revisions.seq` stays dense
+  (nothing is deleted anywhere, so the invariant did not have to relax to
+  "strictly increasing"), and the one visible seam is a read of the bytes,
+  which either goes through the segment or says `revision_archived`.
+  **Segments, not an appended archive**: one new file per run is complete
+  the moment it is renamed into place, needs no locking against a reader,
+  can be copied, compressed and shipped as a unit, and makes the crash rule
+  a file-system fact — a complete file whose id no `archives` row carries
+  is unfinished work, and the next run finishes it (a run without `--prune`
+  leaves exactly that state on purpose, so the rule has a fixture). **The
+  manifest carries the commit range** (`seq_lo`/`seq_hi`) so `history list`
+  and a reader of a bare file can place a segment in the feed without
+  opening the store or re-deriving it from the rows; the ranges of
+  successive segments usually tile (an age-driven policy archives older
+  commits first) but are not a partition — a policy change can archive a
+  revision an earlier run kept — so the chain (`previous_segment`) is the
+  order and the range is the span. **Compression is at rest**: SQLite's
+  page format compresses well with `zstd` and the user keeps the knob; an
+  engine that decompressed on attach would own a cache and a format
+  question this round does not need, so a compressed segment is simply not
+  attachable yet. **The attn tension**: a pointer document (one whose body
+  is mostly links) has a history that is mostly small revisions, and the
+  per-document ladder archives it as readily as any other; reconstructing
+  its past then needs its segments attached — the `/attn/focus.md`
+  override in the example policy (`keep_days 7, per_doc_max 50`) is the
+  knob for a document whose recent history is read often, and
+  `keep_origins` keeps every reasoned `api` revision hot regardless. DDL:
+  a major; both engines ship together, and §1 step 3 keeps a 14.x engine
+  out of a 15.0 database.
 - 2026-10-13, store 14.2: `same` dispositions are not persisted (§5.4 step
   10), the api path classifies carries as the matcher does, and the default
   gc sweep removes a 14.1 store's `same` rows (§7). The measurement: on a

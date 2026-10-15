@@ -36,7 +36,7 @@ import { oqxRun, type OqxResult } from "../../src/oqx-js/run.js";
 import { FilterInvalid } from "../../src/search/cel/parser.js";
 import { buildServer, type ServerContext } from "../../src/mcp/server.js";
 import { deepEqualTol } from "../reconcile/fixture.js";
-import { FIXTURE_REPO_SLUG, TS_RE, runExecStep, runGcStep, toOutcome, validateSteps, type ExtraStepValidator, type Step as StoreStep, type StepOutcome as StoreStepOutcome } from "../store/fixture.js";
+import { FIXTURE_REPO_SLUG, TS_RE, isHistoryStep, runExecStep, runGcStep, runHistoryStep, toOutcome, validateSteps, type ExtraStepValidator, type HistoryContext, type Step as StoreStep, type StepOutcome as StoreStepOutcome } from "../store/fixture.js";
 
 export { deepEqualTol, FIXTURE_REPO_SLUG };
 
@@ -481,6 +481,7 @@ export async function runReadsCase(c: ReadsCaseInput, corpus?: Record<string, st
   return withFixtureMinterAsync(async () => {
     const store = new Store({ path: ":memory:" });
     const dir = c.workspace ? mkdtempSync(join(tmpdir(), "omgbase-surface-spec-")) : null;
+    const history: { ctx: HistoryContext | null } = { ctx: null };
     let client: Client | null = null;
     let server: ReturnType<typeof buildServer> | null = null;
     try {
@@ -529,6 +530,12 @@ export async function runReadsCase(c: ReadsCaseInput, corpus?: Record<string, st
           steps.push(runGcStep(store));
         } else if ("exec" in step) {
           steps.push(runExecStep(store, step.exec.sql));
+        } else if (isHistoryStep(step)) {
+          // The retention steps (spec/store §9.4, 15.0) around the reads that
+          // show `archived` and `revision_archived`; the segments go to a
+          // directory of the case's own, removed with it.
+          history.ctx ??= { dest: mkdtempSync(join(tmpdir(), "omgbase-surface-spec-archives-")) };
+          steps.push(runHistoryStep(store, repoId, step, history.ctx));
         } else {
           const { tool, args, ts } = step.read;
           const cl = client;
@@ -547,6 +554,7 @@ export async function runReadsCase(c: ReadsCaseInput, corpus?: Record<string, st
       try { await server?.close(); } catch { /* transport already down */ }
       store.close();
       if (dir) rmSync(dir, { recursive: true, force: true });
+      if (history.ctx) rmSync(history.ctx.dest, { recursive: true, force: true });
     }
   });
 }

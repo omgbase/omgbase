@@ -1,7 +1,7 @@
 import Database from "better-sqlite3";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
-import { DDL, SCHEMA_VERSION, MIGRATIONS, SYNC_DDL } from "./schema.js";
+import { DDL, SCHEMA_VERSION, MIGRATIONS, SYNC_DDL, ARCHIVES_DDL } from "./schema.js";
 import { cosineBytes } from "../vec.js";
 import { mintId, registerIdOracle, type IdPrefix } from "../ids.js";
 
@@ -29,6 +29,7 @@ const ID_TABLES: Partial<Record<IdPrefix, readonly (readonly [table: string, col
   cp: [["checkpoints", "id"]],
   rp: [["repos", "repo_id"]],
   src: [["sources", "source_id"]],
+  s: [["archives", "segment_id"]],
 };
 
 export class Store {
@@ -92,6 +93,7 @@ export class Store {
       if (v === 9) { this.migrateV9(); continue; }
       if (v === 11) { this.migrateV11(); continue; }
       if (v === 13) { this.migrateV13(); continue; }
+      if (v === 15) { this.migrateV15(); continue; }
       const ddl = MIGRATIONS[v];
       if (!ddl) throw new Error(`no migration to schema v${v}`);
       this.db.exec(ddl);
@@ -186,6 +188,52 @@ export class Store {
 
       this.db.exec("ALTER TABLE repos DROP COLUMN root_path");
     })();
+  }
+
+  // v15 (spec/store §3.4 step 15, §7 "Retention"): `revisions.root_tree` and
+  // `frontmatter_blob` become nullable and lose their foreign keys (an archived
+  // revision keeps its row and loses its bodies), `revisions` gains `archive`,
+  // and `archives` is created. SQLite cannot relax a NOT NULL or drop a FK in
+  // place, so the table is rebuilt the documented way (sqlite.org/lang_altertable,
+  // "making other kinds of table schema changes"): foreign keys off for the
+  // duration — `pending_materializations.rev_id` references `revisions`, and the
+  // DROP would otherwise be an implicit DELETE under the FK — create the new
+  // table, copy every row with `archive = NULL`, drop the old, rename, check.
+  // Idempotent: a `revisions` table that already carries `archive` is left alone
+  // (a fresh database never reaches here); `archives` is `CREATE … IF NOT EXISTS`.
+  private migrateV15(): void {
+    const cols = this.db.pragma("table_info(revisions)") as { name: string }[];
+    if (cols.length > 0 && !cols.some((c) => c.name === "archive")) {
+      // PRAGMA foreign_keys is a no-op inside a transaction, so it brackets one.
+      this.db.pragma("foreign_keys = OFF");
+      try {
+        this.db.transaction(() => {
+          this.db.exec(`
+CREATE TABLE revisions_v15 (
+  rev_id           TEXT PRIMARY KEY,
+  doc_id           TEXT NOT NULL REFERENCES docs(doc_id),
+  seq              INTEGER NOT NULL,
+  root_tree        BLOB,
+  frontmatter_blob BLOB,
+  rendered_hash    BLOB NOT NULL,
+  path             TEXT NOT NULL,
+  commit_id        TEXT NOT NULL REFERENCES commits(commit_id),
+  archive          TEXT,
+  UNIQUE (doc_id, seq)
+);
+INSERT INTO revisions_v15 (rev_id, doc_id, seq, root_tree, frontmatter_blob, rendered_hash, path, commit_id, archive)
+  SELECT rev_id, doc_id, seq, root_tree, frontmatter_blob, rendered_hash, path, commit_id, NULL FROM revisions;
+DROP TABLE revisions;
+ALTER TABLE revisions_v15 RENAME TO revisions;
+`);
+          const violations = this.db.pragma("foreign_key_check") as unknown[];
+          if (violations.length > 0) throw new Error(`migration v15: ${violations.length} foreign key violation(s) after rebuilding revisions`);
+        })();
+      } finally {
+        this.db.pragma("foreign_keys = ON");
+      }
+    }
+    this.db.exec(ARCHIVES_DDL);
   }
 
   /**

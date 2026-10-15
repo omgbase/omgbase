@@ -312,7 +312,7 @@ export interface CheckpointProjection extends Omit<StoreProjection, "steps"> {
 }
 
 export const CHECKPOINT_PROJECTION_KEYS = [
-  "steps", "docs", "commits", "revisions", "blobs", "tree_nodes", "blocks", "dispositions", "block_changes", "resurrection_pool", "sections", "pending_materializations", "checkpoints", "file_stats",
+  "steps", "docs", "commits", "revisions", "blobs", "tree_nodes", "blocks", "dispositions", "block_changes", "resurrection_pool", "sections", "pending_materializations", "archives", "checkpoints", "file_stats",
 ] as const;
 
 export interface CheckpointCase {

@@ -26,6 +26,7 @@ import { cmdLog } from "./cmd/log.js";
 import { cmdHist } from "./cmd/hist.js";
 import { cmdDiff } from "./cmd/diff.js";
 import { cmdLinks } from "./cmd/links.js";
+import { cmdHistory } from "./cmd/history.js";
 import { cmdSync } from "./cmd/sync.js";
 import { cmdMcp } from "./cmd/mcp.js";
 import { cmdApply, cmdExecute, cmdInsert, cmdMove, cmdRm, cmdDone, cmdAppend, cmdSplit, cmdMerge } from "./cmd/mutate.js";
@@ -55,6 +56,7 @@ export const COMMANDS: Command[] = [
   cmdHist,
   cmdDiff,
   cmdLinks,
+  cmdHistory,
   cmdApply,
   cmdExecute,
   cmdInsert,

@@ -12,6 +12,10 @@ import { ftsRebuild } from "./fts.js";
 
 export type RebuildTarget = "sections" | "edges" | "fts" | "block_changes" | "all";
 
+/** The commit ids every revision of which is archived (spec/store §7 "Retention", 15.0): a commit with at least one revision and no live one. */
+export const ARCHIVED_COMMITS_SQL =
+  "SELECT c.commit_id FROM commits c WHERE EXISTS (SELECT 1 FROM revisions r WHERE r.commit_id = c.commit_id) AND NOT EXISTS (SELECT 1 FROM revisions r WHERE r.commit_id = c.commit_id AND r.archive IS NULL)";
+
 export function rebuildIndex(store: Store, target: RebuildTarget = "all"): void {
   store.write((db) => {
     const docIds = (db.prepare("SELECT doc_id FROM docs WHERE deleted_commit IS NULL").all() as { doc_id: string }[]).map((r) => r.doc_id);
@@ -34,8 +38,12 @@ export function rebuildIndex(store: Store, target: RebuildTarget = "all"): void 
 
     if (target === "block_changes" || target === "all") {
       // block_changes is a projection of dispositions across commits: rebuild
-      // it verbatim from the dispositions table (which is durable).
-      db.prepare("DELETE FROM block_changes").run();
+      // it verbatim from the dispositions table (which is durable) — for every
+      // commit that still has dispositions. A wholly archived commit (spec/store
+      // §7 "Retention", 15.0: every revision of it carries `archive`) has none;
+      // its surviving block_changes rows are each block's earliest, kept for the
+      // mint oracle, and are left exactly as they are.
+      db.exec(`DELETE FROM block_changes WHERE commit_id NOT IN (${ARCHIVED_COMMITS_SQL})`);
       db.exec(
         "INSERT OR IGNORE INTO block_changes (block_id, commit_id, kind) SELECT block_id, commit_id, kind FROM dispositions",
       );

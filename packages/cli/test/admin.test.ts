@@ -88,13 +88,13 @@ describe("doctor --size", () => {
     expect(lines[0]).toBe("  category              bytes   share  rows");
     expect(lines[1]).toMatch(/^ {2}content {2,} *\d+(\.\d)? [KMGT]?B {2} *\d+\.\d% {2} *\d+$/);
     // Each category heads at most three indented tables.
-    const cats = lines.filter((l) => /^ {2}\S/.test(l) && !/^ {2}(category|file|size|pages|reclaimable|advice)/.test(l));
+    const cats = lines.filter((l) => /^ {2}\S/.test(l) && !/^ {2}(category|file|size|pages|reclaimable|archived|advice)/.test(l));
     expect(cats.map((l) => l.trim().split(/\s+/)[0])).toEqual(["content", "history", "search", "sync"]);
     const tables = lines.filter((l) => /^ {4}\S/.test(l));
     expect(tables.length).toBeLessThanOrEqual(12);
     expect(tables.length).toBeGreaterThanOrEqual(10);
     expect(lines).toContain("");
-    expect(stdout).toMatch(/\n {2}file {9}.*omgbase\.db\n {2}size {9}\d+(\.\d)? [KMGT]?B on disk, wal \d+(\.\d)? [KMGT]?B\n {2}pages {8}\d+ x \d+ bytes, \d+ free\n {2}reclaimable {2}\d+(\.\d)? [KMGT]?B\n {2}advice: nothing to reclaim\n$/);
+    expect(stdout).toMatch(/\n {2}file {9}.*omgbase\.db\n {2}size {9}\d+(\.\d)? [KMGT]?B on disk, wal \d+(\.\d)? [KMGT]?B\n {2}pages {8}\d+ x \d+ bytes, \d+ free\n {2}reclaimable {2}\d+(\.\d)? [KMGT]?B\n {2}archived {5}0 revisions in 0 segments, 0 B on disk\n {2}advice: nothing to reclaim\n$/);
     // The checks still run without --size.
     expect(omg(["doctor"]).stdout).toContain("  ok convergence");
   });

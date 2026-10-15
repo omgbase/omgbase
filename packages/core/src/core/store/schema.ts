@@ -2,7 +2,7 @@
 // Kept as one string so migrations and rebuild-index can apply it verbatim.
 // No dialect-specific SQL leaks above the store module (02 §8).
 
-export const SCHEMA_VERSION = 14;
+export const SCHEMA_VERSION = 15;
 
 // file_stats (02 §4; derived, rebuildable by a full re-stat) backs the CLI
 // freshness sweep (11 §3.3): (mtime_ns, size) cheap-change detection so a
@@ -169,10 +169,34 @@ CREATE TABLE IF NOT EXISTS pending_materializations (
 );
 `;
 
+// archives (spec/store §7 "Retention", store 15.0). The registry of archive
+// segments — the one-file-per-export SQLite databases `omg history export`
+// writes (`spec/store/archive.sql`) that hold the bodies of the revisions the
+// retention policy squashed: `segment_id` (a minted `s_` id, the manifest's),
+// `path` (the file as recorded; `attach` re-records it), `seq_lo`/`seq_hi`
+// (the `commits.seq` span of the archived commits), `created_at`,
+// `revision_count`, `bytes` (the file's size when recorded). A revision's
+// `archive` column names its segment whether or not the row is here: `detach`
+// deletes the row, the pointer stays, and a read of such a revision is
+// `revision_archived`. Rows are written by the squash transaction and by
+// `attach`; never by a commit.
+export const ARCHIVES_DDL = /* sql */ `
+CREATE TABLE IF NOT EXISTS archives (
+  segment_id     TEXT PRIMARY KEY,
+  repo_id        TEXT NOT NULL REFERENCES repos(repo_id),
+  path           TEXT NOT NULL,
+  seq_lo         INTEGER NOT NULL,
+  seq_hi         INTEGER NOT NULL,
+  created_at     TEXT NOT NULL,
+  revision_count INTEGER NOT NULL,
+  bytes          INTEGER NOT NULL
+);
+`;
+
 // Additive migrations keyed by the version they upgrade TO. Each runs inside a
 // transaction. Only forward, idempotent DDL (CREATE ... IF NOT EXISTS) — no
 // destructive changes. store.ts applies these in order for an older db.
-// Migrations 3, 4, 6, 7, 9, 11, 13 are programmatic — see store.ts.
+// Migrations 3, 4, 6, 7, 9, 11, 13, 15 are programmatic — see store.ts.
 export const MIGRATIONS: Record<number, string> = {
   2: FILE_STATS_DDL,
   3: "",  // handled programmatically in store.ts
@@ -187,6 +211,7 @@ export const MIGRATIONS: Record<number, string> = {
   12: DOC_EMBEDDINGS_DDL,  // doc-grain semantic vectors
   13: "",  // drop repos.root_path (migrate → fs sources), handled programmatically in store.ts
   14: PENDING_MATERIALIZATIONS_DDL,  // the api path's recorded file intent (spec/store §5.7)
+  15: "",  // revisions.root_tree/frontmatter_blob nullable + `archive`, create `archives` (spec/store §7 "Retention"), handled programmatically in store.ts
 };
 
 export const DDL = /* sql */ `
@@ -252,11 +277,12 @@ CREATE TABLE IF NOT EXISTS revisions (
   rev_id           TEXT PRIMARY KEY,
   doc_id           TEXT NOT NULL REFERENCES docs(doc_id),
   seq              INTEGER NOT NULL,
-  root_tree        BLOB NOT NULL REFERENCES tree_nodes(hash),
-  frontmatter_blob BLOB REFERENCES blobs(hash),
+  root_tree        BLOB,                   -- a tree_nodes.hash; NULL once archived (spec/store §7 "Retention", 15.0)
+  frontmatter_blob BLOB,                   -- a blobs.hash, or NULL (no frontmatter, or archived)
   rendered_hash    BLOB NOT NULL,
   path             TEXT NOT NULL,
   commit_id        TEXT NOT NULL REFERENCES commits(commit_id),
+  archive          TEXT,                   -- the archive segment holding the bodies; NULL = live (15.0)
   UNIQUE (doc_id, seq)
 );
 
@@ -340,6 +366,7 @@ CREATE TABLE IF NOT EXISTS resurrection_pool (
   expires_ts     TEXT NOT NULL
 );
 ${PENDING_MATERIALIZATIONS_DDL}
+${ARCHIVES_DDL}
 -- ---- derived tables (02 §4; rebuildable) ------------------------------------
 CREATE TABLE IF NOT EXISTS sections (
   heading_block TEXT NOT NULL,
