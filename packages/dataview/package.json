@@ -1,0 +1,63 @@
+{
+  "name": "@omgbase/dataview",
+  "version": "0.0.0",
+  "description": "A Dataview Query Language (DQL) to OQX translator: TABLE / LIST / TASK / CALENDAR queries become one OQX string plus a render shape for an omgbase client",
+  "keywords": [
+    "dataview",
+    "dql",
+    "obsidian",
+    "oqx",
+    "omgbase",
+    "query",
+    "query-language",
+    "translator"
+  ],
+  "license": "MIT",
+  "author": "Brendan Baldwin",
+  "homepage": "https://github.com/omgbase/omgbase/tree/main/packages/dataview#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/omgbase/omgbase.git",
+    "directory": "packages/dataview"
+  },
+  "bugs": {
+    "url": "https://github.com/omgbase/omgbase/issues"
+  },
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "publishConfig": {
+    "access": "public"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src",
+    "CHANGELOG.md"
+  ],
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "scripts": {
+    "build": "rm -rf dist && tsc -p tsconfig.build.json && node scripts/fix-dts-extensions.mjs",
+    "clean": "rm -rf dist",
+    "test": "node --test test/*.test.ts",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "prepublishOnly": "pnpm run build"
+  },
+  "dependencies": {
+    "@omgbase/oqx": "workspace:^"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.2",
+    "typescript": "^5.7.0"
+  }
+}

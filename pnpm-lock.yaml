@@ -412,6 +412,19 @@ importers:
         specifier: ^4.9.0
         version: 4.9.0
 
+  packages/dataview:
+    dependencies:
+      '@omgbase/oqx':
+        specifier: workspace:^
+        version: link:../oqx
+    devDependencies:
+      '@types/node':
+        specifier: ^22.20.2
+        version: 22.20.4
+      typescript:
+        specifier: ^5.7.0
+        version: 5.9.3
+
   packages/embedder:
     dependencies:
       '@huggingface/transformers':

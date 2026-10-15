@@ -1,0 +1,603 @@
+[
+  {
+    "name": "named-date-points",
+    "dql": "TABLE date(today), date(now), date(yesterday), date(tomorrow), date(sow), date(eow), date(som), date(eom), date(soy), date(eoy) FROM \"a\"",
+    "oqx": "select path, c0: date(\"today\"), c1: date(\"now\"), c2: date(\"yesterday\"), c3: date(\"tomorrow\"), c4: date(\"sow\"), c5: date(\"eow\"), c6: date(\"som\"), c7: date(\"eom\"), c8: date(\"soy\"), c9: date(\"eoy\") from docs where path.startsWith(\"/a/\") or path == \"/a.md\"",
+    "render": {
+      "type": "table",
+      "withoutId": false,
+      "grouped": false,
+      "id": {
+        "name": "File",
+        "alias": "path",
+        "derive": "link"
+      },
+      "columns": [
+        {
+          "name": "date(today)",
+          "alias": "c0"
+        },
+        {
+          "name": "date(now)",
+          "alias": "c1"
+        },
+        {
+          "name": "date(yesterday)",
+          "alias": "c2"
+        },
+        {
+          "name": "date(tomorrow)",
+          "alias": "c3"
+        },
+        {
+          "name": "date(sow)",
+          "alias": "c4"
+        },
+        {
+          "name": "date(eow)",
+          "alias": "c5"
+        },
+        {
+          "name": "date(som)",
+          "alias": "c6"
+        },
+        {
+          "name": "date(eom)",
+          "alias": "c7"
+        },
+        {
+          "name": "date(soy)",
+          "alias": "c8"
+        },
+        {
+          "name": "date(eoy)",
+          "alias": "c9"
+        }
+      ]
+    },
+    "warnings": []
+  },
+  {
+    "name": "iso-date-literals",
+    "dql": "TABLE date(2026-10-15), date(2026-10), date(2026), date(2026-10-15T09:30), date(2026-10-15T09:30:00Z) FROM \"a\"",
+    "oqx": "select path, c0: date(\"2026-10-15\"), c1: date(\"2026-10\"), c2: date(\"2026\"), c3: date(\"2026-10-15T09:30\"), c4: date(\"2026-10-15T09:30:00Z\") from docs where path.startsWith(\"/a/\") or path == \"/a.md\"",
+    "render": {
+      "type": "table",
+      "withoutId": false,
+      "grouped": false,
+      "id": {
+        "name": "File",
+        "alias": "path",
+        "derive": "link"
+      },
+      "columns": [
+        {
+          "name": "date(2026-10-15)",
+          "alias": "c0"
+        },
+        {
+          "name": "date(2026-10)",
+          "alias": "c1"
+        },
+        {
+          "name": "date(2026)",
+          "alias": "c2"
+        },
+        {
+          "name": "date(2026-10-15T09:30)",
+          "alias": "c3"
+        },
+        {
+          "name": "date(2026-10-15T09:30:00Z)",
+          "alias": "c4"
+        }
+      ]
+    },
+    "warnings": []
+  },
+  {
+    "name": "quoted-date-canonicalizes",
+    "dql": "TABLE date(\"Today\"), date(\"2026-10-15\") FROM \"a\"",
+    "oqx": "select path, c0: date(\"today\"), c1: date(\"2026-10-15\") from docs where path.startsWith(\"/a/\") or path == \"/a.md\"",
+    "render": {
+      "type": "table",
+      "withoutId": false,
+      "grouped": false,
+      "id": {
+        "name": "File",
+        "alias": "path",
+        "derive": "link"
+      },
+      "columns": [
+        {
+          "name": "date(\"Today\")",
+          "alias": "c0"
+        },
+        {
+          "name": "date(\"2026-10-15\")",
+          "alias": "c1"
+        }
+      ]
+    },
+    "warnings": []
+  },
+  {
+    "name": "date-of-a-field-stays-a-call",
+    "dql": "TABLE date(due), date(file.mtime) FROM \"a\"",
+    "oqx": "select path, c0: date(due), c1: date(updated_at) from docs where path.startsWith(\"/a/\") or path == \"/a.md\"",
+    "render": {
+      "type": "table",
+      "withoutId": false,
+      "grouped": false,
+      "id": {
+        "name": "File",
+        "alias": "path",
+        "derive": "link"
+      },
+      "columns": [
+        {
+          "name": "date(due)",
+          "alias": "c0"
+        },
+        {
+          "name": "date(file.mtime)",
+          "alias": "c1"
+        }
+      ]
+    },
+    "warnings": []
+  },
+  {
+    "name": "date-with-format-is-unsupported",
+    "dql": "TABLE date(\"15/10/2026\", \"dd/MM/yyyy\") FROM \"a\"",
+    "error": {
+      "code": "unsupported",
+      "construct": "date(text, format)",
+      "message": "date(text, format): the date contract parses ISO text only (at line 1, column 7)",
+      "line": 1,
+      "column": 7
+    }
+  },
+  {
+    "name": "duration-literals",
+    "dql": "TABLE dur(1 hour 30 minutes), dur(1h30m), dur(2 weeks, 3 days), dur(PT1H30M), dur(3 days) FROM \"a\"",
+    "oqx": "select path, c0: dur(\"1 hour 30 minutes\"), c1: dur(\"1h30m\"), c2: dur(\"2 weeks, 3 days\"), c3: dur(\"PT1H30M\"), c4: dur(\"3 days\") from docs where path.startsWith(\"/a/\") or path == \"/a.md\"",
+    "render": {
+      "type": "table",
+      "withoutId": false,
+      "grouped": false,
+      "id": {
+        "name": "File",
+        "alias": "path",
+        "derive": "link"
+      },
+      "columns": [
+        {
+          "name": "dur(1 hour 30 minutes)",
+          "alias": "c0"
+        },
+        {
+          "name": "dur(1h30m)",
+          "alias": "c1"
+        },
+        {
+          "name": "dur(2 weeks, 3 days)",
+          "alias": "c2"
+        },
+        {
+          "name": "dur(PT1H30M)",
+          "alias": "c3"
+        },
+        {
+          "name": "dur(3 days)",
+          "alias": "c4"
+        }
+      ]
+    },
+    "warnings": []
+  },
+  {
+    "name": "dur-of-a-field-stays-a-call",
+    "dql": "TABLE dur(day), dur(elapsed) FROM \"a\"",
+    "oqx": "select path, c0: dur(day), c1: dur(elapsed) from docs where path.startsWith(\"/a/\") or path == \"/a.md\"",
+    "render": {
+      "type": "table",
+      "withoutId": false,
+      "grouped": false,
+      "id": {
+        "name": "File",
+        "alias": "path",
+        "derive": "link"
+      },
+      "columns": [
+        {
+          "name": "dur(day)",
+          "alias": "c0"
+        },
+        {
+          "name": "dur(elapsed)",
+          "alias": "c1"
+        }
+      ]
+    },
+    "warnings": []
+  },
+  {
+    "name": "date-plus-duration",
+    "dql": "TABLE date(today) + dur(1 day), dur(1 day) + date(today), due + dur(1 week) FROM \"a\"",
+    "oqx": "select path, c0: date(\"today\").plus(\"1 day\"), c1: date(\"today\").plus(\"1 day\"), c2: due.plus(\"1 week\") from docs where path.startsWith(\"/a/\") or path == \"/a.md\"",
+    "render": {
+      "type": "table",
+      "withoutId": false,
+      "grouped": false,
+      "id": {
+        "name": "File",
+        "alias": "path",
+        "derive": "link"
+      },
+      "columns": [
+        {
+          "name": "date(today) + dur(1 day)",
+          "alias": "c0"
+        },
+        {
+          "name": "dur(1 day) + date(today)",
+          "alias": "c1"
+        },
+        {
+          "name": "due + dur(1 week)",
+          "alias": "c2"
+        }
+      ]
+    },
+    "warnings": [
+      "`field + duration` read as field.plus(duration): the field is taken for a date"
+    ]
+  },
+  {
+    "name": "date-minus-duration",
+    "dql": "TABLE date(today) - dur(7 days), file.mtime - dur(1 hour) FROM \"a\"",
+    "oqx": "select path, c0: date(\"today\").minus(\"7 days\"), c1: updated_at.minus(\"1 hour\") from docs where path.startsWith(\"/a/\") or path == \"/a.md\"",
+    "render": {
+      "type": "table",
+      "withoutId": false,
+      "grouped": false,
+      "id": {
+        "name": "File",
+        "alias": "path",
+        "derive": "link"
+      },
+      "columns": [
+        {
+          "name": "date(today) - dur(7 days)",
+          "alias": "c0"
+        },
+        {
+          "name": "file.mtime - dur(1 hour)",
+          "alias": "c1"
+        }
+      ]
+    },
+    "warnings": []
+  },
+  {
+    "name": "date-minus-date-is-until",
+    "dql": "TABLE date(today) - file.mtime, due - date(today), date(today) - due FROM \"a\"",
+    "oqx": "select path, c0: updated_at.until(date(\"today\")), c1: date(\"today\").until(date(due)), c2: date(due).until(date(\"today\")) from docs where path.startsWith(\"/a/\") or path == \"/a.md\"",
+    "render": {
+      "type": "table",
+      "withoutId": false,
+      "grouped": false,
+      "id": {
+        "name": "File",
+        "alias": "path",
+        "derive": "link"
+      },
+      "columns": [
+        {
+          "name": "date(today) - file.mtime",
+          "alias": "c0"
+        },
+        {
+          "name": "due - date(today)",
+          "alias": "c1"
+        },
+        {
+          "name": "date(today) - due",
+          "alias": "c2"
+        }
+      ]
+    },
+    "warnings": [
+      "`date - field` read as date(field).until(date): the field is taken for a date, the result a duration"
+    ]
+  },
+  {
+    "name": "duration-arithmetic-stays-numeric",
+    "dql": "TABLE dur(2 hours) + dur(30 minutes), dur(1 day) * 2, dur(1 week) - dur(1 day) FROM \"a\"",
+    "oqx": "select path, c0: dur(\"2 hours\") + dur(\"30 minutes\"), c1: dur(\"1 day\") * 2, c2: dur(\"1 week\") - dur(\"1 day\") from docs where path.startsWith(\"/a/\") or path == \"/a.md\"",
+    "render": {
+      "type": "table",
+      "withoutId": false,
+      "grouped": false,
+      "id": {
+        "name": "File",
+        "alias": "path",
+        "derive": "link"
+      },
+      "columns": [
+        {
+          "name": "dur(2 hours) + dur(30 minutes)",
+          "alias": "c0"
+        },
+        {
+          "name": "dur(1 day) * 2",
+          "alias": "c1"
+        },
+        {
+          "name": "dur(1 week) - dur(1 day)",
+          "alias": "c2"
+        }
+      ]
+    },
+    "warnings": []
+  },
+  {
+    "name": "date-compared-with-a-field-wraps-the-field",
+    "dql": "LIST WHERE due < date(today) & date(today) <= deadline & file.mtime >= date(2026-01-01)",
+    "oqx": "select path from docs where date(due) < date(\"today\") and date(\"today\") <= date(deadline) and updated_at >= date(\"2026-01-01\")",
+    "render": {
+      "type": "list",
+      "withoutId": false,
+      "grouped": false,
+      "id": {
+        "name": "File",
+        "alias": "path",
+        "derive": "link"
+      },
+      "value": null
+    },
+    "warnings": []
+  },
+  {
+    "name": "date-members",
+    "dql": "TABLE file.mtime.year, file.mtime.month, file.mtime.day, file.mtime.weekday, file.mtime.hour, file.mtime.minute, file.mtime.second, date(due).date FROM \"a\"",
+    "oqx": "select path, c0: updated_at.year(), c1: updated_at.month(), c2: updated_at.day(), c3: updated_at.weekday(), c4: updated_at.hour(), c5: updated_at.minute(), c6: updated_at.second(), c7: date(due).date() from docs where path.startsWith(\"/a/\") or path == \"/a.md\"",
+    "render": {
+      "type": "table",
+      "withoutId": false,
+      "grouped": false,
+      "id": {
+        "name": "File",
+        "alias": "path",
+        "derive": "link"
+      },
+      "columns": [
+        {
+          "name": "file.mtime.year",
+          "alias": "c0"
+        },
+        {
+          "name": "file.mtime.month",
+          "alias": "c1"
+        },
+        {
+          "name": "file.mtime.day",
+          "alias": "c2"
+        },
+        {
+          "name": "file.mtime.weekday",
+          "alias": "c3"
+        },
+        {
+          "name": "file.mtime.hour",
+          "alias": "c4"
+        },
+        {
+          "name": "file.mtime.minute",
+          "alias": "c5"
+        },
+        {
+          "name": "file.mtime.second",
+          "alias": "c6"
+        },
+        {
+          "name": "date(due).date",
+          "alias": "c7"
+        }
+      ]
+    },
+    "warnings": []
+  },
+  {
+    "name": "date-member-unsupported",
+    "dql": "TABLE file.mtime.week FROM \"a\"",
+    "error": {
+      "code": "unsupported",
+      "construct": "date.week",
+      "message": "date.week: the date contract has year/month/day/weekday/hour/minute/second/date only (at line 1, column 7)",
+      "line": 1,
+      "column": 7
+    }
+  },
+  {
+    "name": "duration-member-unsupported",
+    "dql": "TABLE dur(90 minutes).hours FROM \"a\"",
+    "error": {
+      "code": "unsupported",
+      "construct": "duration.hours",
+      "message": "duration.hours: a duration is a number of seconds in OQX; its calendar components are not available (dur_text()/dur_iso() format it) (at line 1, column 7)",
+      "line": 1,
+      "column": 7
+    }
+  },
+  {
+    "name": "dateformat-and-striptime",
+    "dql": "TABLE dateformat(file.mtime, \"yyyy-MM-dd\"), dateformat(due, \"MMMM\"), striptime(file.mtime), striptime(due) FROM \"a\"",
+    "oqx": "select path, c0: updated_at.format(\"yyyy-MM-dd\"), c1: date(due).format(\"MMMM\"), c2: updated_at.date(), c3: date(due).date() from docs where path.startsWith(\"/a/\") or path == \"/a.md\"",
+    "render": {
+      "type": "table",
+      "withoutId": false,
+      "grouped": false,
+      "id": {
+        "name": "File",
+        "alias": "path",
+        "derive": "link"
+      },
+      "columns": [
+        {
+          "name": "dateformat(file.mtime, \"yyyy-MM-dd\")",
+          "alias": "c0"
+        },
+        {
+          "name": "dateformat(due, \"MMMM\")",
+          "alias": "c1"
+        },
+        {
+          "name": "striptime(file.mtime)",
+          "alias": "c2"
+        },
+        {
+          "name": "striptime(due)",
+          "alias": "c3"
+        }
+      ]
+    },
+    "warnings": [
+      "dateformat pattern \"MMMM\": only yyyy MM dd HH mm ss MMM EEE are tokens in OQX; other letters print literally"
+    ]
+  },
+  {
+    "name": "durationformat-is-unsupported",
+    "dql": "TABLE durationformat(dur(1 hour), \"h\") FROM \"a\"",
+    "error": {
+      "code": "unsupported",
+      "construct": "durationformat()",
+      "message": "durationformat(): the duration contract has dur_text()/dur_iso() but no pattern formatter (at line 1, column 7)",
+      "line": 1,
+      "column": 7
+    }
+  },
+  {
+    "name": "date-multiplied-is-unsupported",
+    "dql": "TABLE date(today) * 2 FROM \"a\"",
+    "error": {
+      "code": "unsupported",
+      "construct": "date * x",
+      "message": "date * x: a date only adds or subtracts (at line 1, column 7)",
+      "line": 1,
+      "column": 7
+    }
+  },
+  {
+    "name": "dates-capability-off",
+    "dql": "LIST WHERE due < date(today)",
+    "options": {
+      "capabilities": {
+        "dates": false
+      }
+    },
+    "error": {
+      "code": "unsupported",
+      "construct": "date() / dur()",
+      "message": "date() / dur(): the server's surface has no dates (surface < 4.8); capabilities.dates is false",
+      "line": 0,
+      "column": 0
+    }
+  },
+  {
+    "name": "dates-capability-off-without-dates-is-fine",
+    "dql": "LIST WHERE due < \"2026-01-01\"",
+    "options": {
+      "capabilities": {
+        "dates": false
+      }
+    },
+    "oqx": "select path from docs where due < \"2026-01-01\"",
+    "render": {
+      "type": "list",
+      "withoutId": false,
+      "grouped": false,
+      "id": {
+        "name": "File",
+        "alias": "path",
+        "derive": "link"
+      },
+      "value": null
+    },
+    "warnings": []
+  },
+  {
+    "name": "duration-literal-shift-is-the-calendar-string",
+    "dql": "TABLE date(2026-01-31) + dur(1 month), file.mtime - dur(1 year), due + dur(elapsed) FROM \"a\"",
+    "oqx": "select path, c0: date(\"2026-01-31\").plus(\"1 month\"), c1: updated_at.minus(\"1 year\"), c2: due.plus(dur(elapsed)) from docs where path.startsWith(\"/a/\") or path == \"/a.md\"",
+    "render": {
+      "type": "table",
+      "withoutId": false,
+      "grouped": false,
+      "id": {
+        "name": "File",
+        "alias": "path",
+        "derive": "link"
+      },
+      "columns": [
+        {
+          "name": "date(2026-01-31) + dur(1 month)",
+          "alias": "c0"
+        },
+        {
+          "name": "file.mtime - dur(1 year)",
+          "alias": "c1"
+        },
+        {
+          "name": "due + dur(elapsed)",
+          "alias": "c2"
+        }
+      ]
+    },
+    "warnings": [
+      "`field + duration` read as field.plus(duration): the field is taken for a date"
+    ]
+  },
+  {
+    "name": "dateformat-luxon-tokens-warn",
+    "dql": "TABLE dateformat(file.mtime, \"EEEE, MMMM d\") FROM \"a\"",
+    "oqx": "select path, c0: updated_at.format(\"EEEE, MMMM d\") from docs where path.startsWith(\"/a/\") or path == \"/a.md\"",
+    "render": {
+      "type": "table",
+      "withoutId": false,
+      "grouped": false,
+      "id": {
+        "name": "File",
+        "alias": "path",
+        "derive": "link"
+      },
+      "columns": [
+        {
+          "name": "dateformat(file.mtime, \"EEEE, MMMM d\")",
+          "alias": "c0"
+        }
+      ]
+    },
+    "warnings": [
+      "dateformat pattern \"EEEE, MMMM d\": only yyyy MM dd HH mm ss MMM EEE are tokens in OQX; other letters print literally"
+    ]
+  },
+  {
+    "name": "updated-today-idiom",
+    "dql": "LIST WHERE striptime(file.mtime) = date(today)",
+    "oqx": "select path from docs where updated_at.date() == date(\"today\")",
+    "render": {
+      "type": "list",
+      "withoutId": false,
+      "grouped": false,
+      "id": {
+        "name": "File",
+        "alias": "path",
+        "derive": "link"
+      },
+      "value": null
+    },
+    "warnings": []
+  }
+]

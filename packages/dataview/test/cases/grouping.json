@@ -1,0 +1,369 @@
+[
+  {
+    "name": "group-by-with-rows-link-and-count",
+    "dql": "TABLE rows.file.link, length(rows) FROM \"books\" GROUP BY author",
+    "oqx": "select key, c0: collect(path), c1: count() from docs where path.startsWith(\"/books/\") or path == \"/books.md\" group by key: author",
+    "render": {
+      "type": "table",
+      "withoutId": false,
+      "grouped": true,
+      "id": {
+        "name": "Group",
+        "alias": "key"
+      },
+      "columns": [
+        {
+          "name": "rows.file.link",
+          "alias": "c0",
+          "derive": "link"
+        },
+        {
+          "name": "length(rows)",
+          "alias": "c1"
+        }
+      ]
+    },
+    "warnings": []
+  },
+  {
+    "name": "group-by-alias",
+    "dql": "TABLE rows.title FROM \"books\" GROUP BY author AS writer SORT writer",
+    "oqx": "select writer, c0: collect(data.title) from docs where path.startsWith(\"/books/\") or path == \"/books.md\" group by writer: author order by writer",
+    "render": {
+      "type": "table",
+      "withoutId": false,
+      "grouped": true,
+      "id": {
+        "name": "Group",
+        "alias": "writer"
+      },
+      "columns": [
+        {
+          "name": "rows.title",
+          "alias": "c0"
+        }
+      ]
+    },
+    "warnings": []
+  },
+  {
+    "name": "group-by-key-is-the-key",
+    "dql": "TABLE key, length(rows) AS n GROUP BY status SORT key",
+    "oqx": "select key, c0: key, n: count() from docs group by key: status order by key",
+    "render": {
+      "type": "table",
+      "withoutId": false,
+      "grouped": true,
+      "id": {
+        "name": "Group",
+        "alias": "key"
+      },
+      "columns": [
+        {
+          "name": "key",
+          "alias": "c0"
+        },
+        {
+          "name": "n",
+          "alias": "n"
+        }
+      ]
+    },
+    "warnings": []
+  },
+  {
+    "name": "aggregates",
+    "dql": "TABLE sum(rows.pages) AS pages, min(rows.due) AS first, max(rows.due) AS last, average(rows.rating) AS avg FROM \"books\" GROUP BY author",
+    "oqx": "select key, pages: sum(pages), first: min(due), last: max(due), avg: avg(rating) from docs where path.startsWith(\"/books/\") or path == \"/books.md\" group by key: author",
+    "render": {
+      "type": "table",
+      "withoutId": false,
+      "grouped": true,
+      "id": {
+        "name": "Group",
+        "alias": "key"
+      },
+      "columns": [
+        {
+          "name": "pages",
+          "alias": "pages"
+        },
+        {
+          "name": "first",
+          "alias": "first"
+        },
+        {
+          "name": "last",
+          "alias": "last"
+        },
+        {
+          "name": "avg",
+          "alias": "avg"
+        }
+      ]
+    },
+    "warnings": []
+  },
+  {
+    "name": "any-all-none",
+    "dql": "TABLE any(rows.done), all(rows.done), none(rows.done) GROUP BY project",
+    "oqx": "select key, c0: any(done), c1: all(done), c2: !any(done) from docs group by key: project",
+    "render": {
+      "type": "table",
+      "withoutId": false,
+      "grouped": true,
+      "id": {
+        "name": "Group",
+        "alias": "key"
+      },
+      "columns": [
+        {
+          "name": "any(rows.done)",
+          "alias": "c0"
+        },
+        {
+          "name": "all(rows.done)",
+          "alias": "c1"
+        },
+        {
+          "name": "none(rows.done)",
+          "alias": "c2"
+        }
+      ]
+    },
+    "warnings": []
+  },
+  {
+    "name": "where-after-group-is-having",
+    "dql": "TABLE length(rows) AS count FROM \"notes\" WHERE status = \"open\" GROUP BY project WHERE length(rows) > 1 SORT length(rows) DESC",
+    "oqx": "select key, count: count() from docs where (path.startsWith(\"/notes/\") or path == \"/notes.md\") and status == \"open\" group by key: project having count() > 1 order by count() desc",
+    "render": {
+      "type": "table",
+      "withoutId": false,
+      "grouped": true,
+      "id": {
+        "name": "Group",
+        "alias": "key"
+      },
+      "columns": [
+        {
+          "name": "count",
+          "alias": "count"
+        }
+      ]
+    },
+    "warnings": []
+  },
+  {
+    "name": "sort-before-group-orders-the-rows",
+    "dql": "TABLE rows.file.link FROM \"books\" SORT file.mtime DESC GROUP BY author",
+    "oqx": "select key, c0: rows collect { v: path values order by updated_at desc } from docs where path.startsWith(\"/books/\") or path == \"/books.md\" group by key: author",
+    "render": {
+      "type": "table",
+      "withoutId": false,
+      "grouped": true,
+      "id": {
+        "name": "Group",
+        "alias": "key"
+      },
+      "columns": [
+        {
+          "name": "rows.file.link",
+          "alias": "c0",
+          "derive": "link"
+        }
+      ]
+    },
+    "warnings": []
+  },
+  {
+    "name": "sort-before-group-with-no-rows-column-warns",
+    "dql": "TABLE length(rows) FROM \"books\" SORT file.mtime DESC GROUP BY author",
+    "oqx": "select key, c0: count() from docs where path.startsWith(\"/books/\") or path == \"/books.md\" group by key: author",
+    "render": {
+      "type": "table",
+      "withoutId": false,
+      "grouped": true,
+      "id": {
+        "name": "Group",
+        "alias": "key"
+      },
+      "columns": [
+        {
+          "name": "length(rows)",
+          "alias": "c0"
+        }
+      ]
+    },
+    "warnings": [
+      "SORT before GROUP BY orders the rows inside each group, and no column reads the rows — it has no effect"
+    ]
+  },
+  {
+    "name": "group-by-derived-key",
+    "dql": "TABLE rows.file.link GROUP BY file.folder",
+    "error": {
+      "code": "unsupported",
+      "construct": "GROUP BY file.folder",
+      "message": "GROUP BY file.folder: OQX has no basename/dirname, and grouping by the path would mean one group per document (at line 1, column 22)",
+      "line": 1,
+      "column": 22
+    }
+  },
+  {
+    "name": "list-grouped",
+    "dql": "LIST rows.file.link FROM \"books\" GROUP BY author",
+    "oqx": "select key, value: collect(path) from docs where path.startsWith(\"/books/\") or path == \"/books.md\" group by key: author",
+    "render": {
+      "type": "list",
+      "withoutId": false,
+      "grouped": true,
+      "id": {
+        "name": "Group",
+        "alias": "key"
+      },
+      "value": {
+        "name": "rows.file.link",
+        "alias": "value",
+        "derive": "link"
+      }
+    },
+    "warnings": []
+  },
+  {
+    "name": "task-grouped-by-file",
+    "dql": "TASK WHERE !completed GROUP BY file.link",
+    "oqx": "select key, tasks: rows collect { id: id, text: text, checked: checked, path: path } from blocks where type == \"task\" and !checked group by key: path",
+    "render": {
+      "type": "task",
+      "grouped": true,
+      "id": {
+        "name": "Group",
+        "alias": "key",
+        "derive": "link"
+      },
+      "rows": "tasks",
+      "task": {
+        "id": "id",
+        "text": "text",
+        "checked": "checked",
+        "path": "path"
+      }
+    },
+    "warnings": []
+  },
+  {
+    "name": "task-grouped-sorted",
+    "dql": "TASK SORT file.mtime DESC GROUP BY file.link SORT key",
+    "oqx": "select key, tasks: rows collect { id: id, text: text, checked: checked, path: path order by doc.updated_at desc } from blocks where type == \"task\" group by key: path order by key",
+    "render": {
+      "type": "task",
+      "grouped": true,
+      "id": {
+        "name": "Group",
+        "alias": "key",
+        "derive": "link"
+      },
+      "rows": "tasks",
+      "task": {
+        "id": "id",
+        "text": "text",
+        "checked": "checked",
+        "path": "path"
+      }
+    },
+    "warnings": []
+  },
+  {
+    "name": "bare-rows-column",
+    "dql": "TABLE rows FROM \"a\" GROUP BY status",
+    "oqx": "select key, c0: rows collect { path: path } from docs where path.startsWith(\"/a/\") or path == \"/a.md\" group by key: status",
+    "render": {
+      "type": "table",
+      "withoutId": false,
+      "grouped": true,
+      "id": {
+        "name": "Group",
+        "alias": "key"
+      },
+      "columns": [
+        {
+          "name": "rows",
+          "alias": "c0"
+        }
+      ]
+    },
+    "warnings": []
+  },
+  {
+    "name": "page-field-after-group-is-unsupported",
+    "dql": "TABLE author FROM \"books\" GROUP BY author",
+    "error": {
+      "code": "unsupported",
+      "construct": "field author",
+      "message": "field author: after GROUP BY only `key` (the group key) and `rows` are in scope — Dataview reads a page field there as null (at line 1, column 7)",
+      "line": 1,
+      "column": 7
+    }
+  },
+  {
+    "name": "second-group-is-unsupported",
+    "dql": "TABLE rows FROM \"a\" GROUP BY status GROUP BY key",
+    "error": {
+      "code": "unsupported",
+      "construct": "a second GROUP BY",
+      "message": "a second GROUP BY: OQX groups once; grouping the groups is not expressible (at line 1, column 37)",
+      "line": 1,
+      "column": 37
+    }
+  },
+  {
+    "name": "rows-outside-group-is-unsupported",
+    "dql": "TABLE rows.title FROM \"a\"",
+    "error": {
+      "code": "unsupported",
+      "construct": "rows",
+      "message": "rows: `rows` exists only after GROUP BY (at line 1, column 7)",
+      "line": 1,
+      "column": 7
+    }
+  },
+  {
+    "name": "calendar-grouped-is-unsupported",
+    "dql": "CALENDAR due GROUP BY status",
+    "error": {
+      "code": "unsupported",
+      "construct": "CALENDAR … GROUP BY",
+      "message": "CALENDAR … GROUP BY: a calendar places pages, not groups (at line 1, column 14)",
+      "line": 1,
+      "column": 14
+    }
+  },
+  {
+    "name": "group-by-capability-off",
+    "dql": "TABLE rows.file.link GROUP BY author",
+    "options": {
+      "capabilities": {
+        "groupBy": false
+      }
+    },
+    "error": {
+      "code": "unsupported",
+      "construct": "GROUP BY",
+      "message": "GROUP BY: the server's OQX has no grouping (spec/oqx < 0.24); capabilities.groupBy is false",
+      "line": 0,
+      "column": 0
+    }
+  },
+  {
+    "name": "group-key-alias-collides-with-the-envelope",
+    "dql": "TABLE rows GROUP BY author AS path",
+    "error": {
+      "code": "unsupported",
+      "construct": "GROUP BY … AS path",
+      "message": "GROUP BY … AS path: the key's name must be an OQX identifier other than id/path (at line 1, column 12)",
+      "line": 1,
+      "column": 12
+    }
+  }
+]

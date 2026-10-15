@@ -1,0 +1,489 @@
+[
+  {
+    "name": "file-attributes",
+    "dql": "TABLE file.path, file.name, file.folder, file.link, file.ext, file.size, file.mtime, file.mday FROM \"x\"",
+    "oqx": "select path, c0: path, c1: path, c2: path, c3: path, c4: path, c5: size(raw), updated_at, c7: updated_at.date() from docs where path.startsWith(\"/x/\") or path == \"/x.md\"",
+    "render": {
+      "type": "table",
+      "withoutId": false,
+      "grouped": false,
+      "id": {
+        "name": "File",
+        "alias": "path",
+        "derive": "link"
+      },
+      "columns": [
+        {
+          "name": "file.path",
+          "alias": "c0"
+        },
+        {
+          "name": "file.name",
+          "alias": "c1",
+          "derive": "basename"
+        },
+        {
+          "name": "file.folder",
+          "alias": "c2",
+          "derive": "dirname"
+        },
+        {
+          "name": "file.link",
+          "alias": "c3",
+          "derive": "link"
+        },
+        {
+          "name": "file.ext",
+          "alias": "c4",
+          "derive": "ext"
+        },
+        {
+          "name": "file.size",
+          "alias": "c5"
+        },
+        {
+          "name": "file.mtime",
+          "alias": "updated_at"
+        },
+        {
+          "name": "file.mday",
+          "alias": "c7"
+        }
+      ]
+    },
+    "warnings": [
+      "file.size is size(raw) — a code-point count of the source, not a byte count"
+    ]
+  },
+  {
+    "name": "file-tags-and-etags",
+    "dql": "TABLE file.tags, file.etags, file.aliases FROM \"x\"",
+    "oqx": "select path, tags, c1: tags, aliases from docs where path.startsWith(\"/x/\") or path == \"/x.md\"",
+    "render": {
+      "type": "table",
+      "withoutId": false,
+      "grouped": false,
+      "id": {
+        "name": "File",
+        "alias": "path",
+        "derive": "link"
+      },
+      "columns": [
+        {
+          "name": "file.tags",
+          "alias": "tags"
+        },
+        {
+          "name": "file.etags",
+          "alias": "c1"
+        },
+        {
+          "name": "file.aliases",
+          "alias": "aliases"
+        }
+      ]
+    },
+    "warnings": []
+  },
+  {
+    "name": "file-relations",
+    "dql": "TABLE file.inlinks, file.outlinks, file.tasks, file.lists FROM \"x\"",
+    "oqx": "select path, c0: in_links collect { from doc }, c1: out_links collect { from dst }, c2: blocks collect { where type == \"task\" }, c3: blocks collect { where type == \"list_item\" } from docs where path.startsWith(\"/x/\") or path == \"/x.md\"",
+    "render": {
+      "type": "table",
+      "withoutId": false,
+      "grouped": false,
+      "id": {
+        "name": "File",
+        "alias": "path",
+        "derive": "link"
+      },
+      "columns": [
+        {
+          "name": "file.inlinks",
+          "alias": "c0"
+        },
+        {
+          "name": "file.outlinks",
+          "alias": "c1"
+        },
+        {
+          "name": "file.tasks",
+          "alias": "c2"
+        },
+        {
+          "name": "file.lists",
+          "alias": "c3"
+        }
+      ]
+    },
+    "warnings": []
+  },
+  {
+    "name": "file-frontmatter",
+    "dql": "TABLE file.frontmatter, file.frontmatter.author FROM \"x\"",
+    "oqx": "select path, c0: entries(frontmatter), c1: frontmatter.author from docs where path.startsWith(\"/x/\") or path == \"/x.md\"",
+    "render": {
+      "type": "table",
+      "withoutId": false,
+      "grouped": false,
+      "id": {
+        "name": "File",
+        "alias": "path",
+        "derive": "link"
+      },
+      "columns": [
+        {
+          "name": "file.frontmatter",
+          "alias": "c0"
+        },
+        {
+          "name": "file.frontmatter.author",
+          "alias": "c1"
+        }
+      ]
+    },
+    "warnings": []
+  },
+  {
+    "name": "file-name-equals-literal",
+    "dql": "LIST WHERE file.name = \"Index\"",
+    "oqx": "select path from docs where path.endsWith(\"/Index.md\")",
+    "render": {
+      "type": "list",
+      "withoutId": false,
+      "grouped": false,
+      "id": {
+        "name": "File",
+        "alias": "path",
+        "derive": "link"
+      },
+      "value": null
+    },
+    "warnings": []
+  },
+  {
+    "name": "file-name-not-equals-literal",
+    "dql": "LIST WHERE file.name != \"Index\"",
+    "oqx": "select path from docs where !path.endsWith(\"/Index.md\")",
+    "render": {
+      "type": "list",
+      "withoutId": false,
+      "grouped": false,
+      "id": {
+        "name": "File",
+        "alias": "path",
+        "derive": "link"
+      },
+      "value": null
+    },
+    "warnings": []
+  },
+  {
+    "name": "file-folder-equals-literal",
+    "dql": "LIST WHERE file.folder = \"projects/active\"",
+    "oqx": "select path from docs where path ~ \"^/projects/active/[^/]+$\"",
+    "render": {
+      "type": "list",
+      "withoutId": false,
+      "grouped": false,
+      "id": {
+        "name": "File",
+        "alias": "path",
+        "derive": "link"
+      },
+      "value": null
+    },
+    "warnings": []
+  },
+  {
+    "name": "file-folder-is-root",
+    "dql": "LIST WHERE file.folder = \"\"",
+    "oqx": "select path from docs where path ~ \"^/[^/]+$\"",
+    "render": {
+      "type": "list",
+      "withoutId": false,
+      "grouped": false,
+      "id": {
+        "name": "File",
+        "alias": "path",
+        "derive": "link"
+      },
+      "value": null
+    },
+    "warnings": []
+  },
+  {
+    "name": "file-ext-equals-literal",
+    "dql": "LIST WHERE file.ext = \"md\"",
+    "oqx": "select path from docs where path.endsWith(\".md\")",
+    "render": {
+      "type": "list",
+      "withoutId": false,
+      "grouped": false,
+      "id": {
+        "name": "File",
+        "alias": "path",
+        "derive": "link"
+      },
+      "value": null
+    },
+    "warnings": []
+  },
+  {
+    "name": "file-link-equals-this",
+    "dql": "LIST WHERE file.link != this.file.link",
+    "options": {
+      "thisPath": "a/b.md"
+    },
+    "oqx": "select path from docs where path != \"/a/b.md\"",
+    "render": {
+      "type": "list",
+      "withoutId": false,
+      "grouped": false,
+      "id": {
+        "name": "File",
+        "alias": "path",
+        "derive": "link"
+      },
+      "value": null
+    },
+    "warnings": []
+  },
+  {
+    "name": "file-name-string-tests",
+    "dql": "LIST WHERE startswith(file.name, \"2026-\") | endswith(file.name, \"-notes\") | contains(file.name, \"draft\")",
+    "oqx": "select path from docs where path ~ \"/2026-[^/]*\\\\.md$\" or path.endsWith(\"-notes.md\") or path ~ \"/[^/]*draft[^/]*\\\\.md$\"",
+    "render": {
+      "type": "list",
+      "withoutId": false,
+      "grouped": false,
+      "id": {
+        "name": "File",
+        "alias": "path",
+        "derive": "link"
+      },
+      "value": null
+    },
+    "warnings": []
+  },
+  {
+    "name": "file-folder-string-tests",
+    "dql": "LIST WHERE startswith(file.folder, \"projects\") | endswith(file.folder, \"archive\") | contains(file.folder, \"old\")",
+    "oqx": "select path from docs where path.startsWith(\"/projects\") or path ~ \"archive/[^/]*$\" or path ~ \"old[^/]*/\"",
+    "render": {
+      "type": "list",
+      "withoutId": false,
+      "grouped": false,
+      "id": {
+        "name": "File",
+        "alias": "path",
+        "derive": "link"
+      },
+      "value": null
+    },
+    "warnings": []
+  },
+  {
+    "name": "file-name-compared-with-a-field-is-unsupported",
+    "dql": "LIST WHERE file.name = project",
+    "error": {
+      "code": "unsupported",
+      "construct": "file.name = x",
+      "message": "file.name = x: file.name is derived from path on the client; it compares only with a string literal (or this.file.*) (at line 1, column 12)",
+      "line": 1,
+      "column": 12
+    }
+  },
+  {
+    "name": "file-name-ordered-is-unsupported",
+    "dql": "LIST WHERE file.name > \"M\"",
+    "error": {
+      "code": "unsupported",
+      "construct": "file.name >",
+      "message": "file.name >: a path-derived field orders only by path (SORT); compare it with = or != (at line 1, column 12)",
+      "line": 1,
+      "column": 12
+    }
+  },
+  {
+    "name": "file-ctime-is-unsupported",
+    "dql": "TABLE file.ctime FROM \"a\"",
+    "error": {
+      "code": "unsupported",
+      "construct": "file.ctime",
+      "message": "file.ctime: omgbase stores no creation time; use file.mtime (the last commit) (at line 1, column 7)",
+      "line": 1,
+      "column": 7
+    }
+  },
+  {
+    "name": "file-cday-is-unsupported",
+    "dql": "TABLE file.cday FROM \"a\"",
+    "error": {
+      "code": "unsupported",
+      "construct": "file.cday",
+      "message": "file.cday: omgbase stores no creation time; use file.mday (the last commit's day) (at line 1, column 7)",
+      "line": 1,
+      "column": 7
+    }
+  },
+  {
+    "name": "file-day-is-unsupported",
+    "dql": "TABLE file.day FROM \"a\"",
+    "error": {
+      "code": "unsupported",
+      "construct": "file.day",
+      "message": "file.day: no date is inferred from a file name or a `date` field; read the field itself (at line 1, column 7)",
+      "line": 1,
+      "column": 7
+    }
+  },
+  {
+    "name": "file-alone-is-unsupported",
+    "dql": "TABLE file FROM \"a\"",
+    "error": {
+      "code": "unsupported",
+      "construct": "file",
+      "message": "file: `file` alone is the page's metadata object; read one of its fields (file.name, file.mtime, …) (at line 1, column 7)",
+      "line": 1,
+      "column": 7
+    }
+  },
+  {
+    "name": "file-unknown-is-unsupported",
+    "dql": "TABLE file.color FROM \"a\"",
+    "error": {
+      "code": "unsupported",
+      "construct": "file.color",
+      "message": "file.color: not a Dataview implicit field (at line 1, column 7)",
+      "line": 1,
+      "column": 7
+    }
+  },
+  {
+    "name": "task-fields",
+    "dql": "TASK WHERE text != \"\" & !checked & fullyCompleted & path = \"a.md\" & blockId",
+    "oqx": "select path, id, text, checked from blocks where type == \"task\" and text != \"\" and !checked and checked and path == \"a.md\" and id",
+    "render": {
+      "type": "task",
+      "grouped": false,
+      "id": {
+        "name": "File",
+        "alias": "path",
+        "derive": "link"
+      },
+      "rows": null,
+      "task": {
+        "id": "id",
+        "text": "text",
+        "checked": "checked",
+        "path": "path"
+      }
+    },
+    "warnings": [
+      "fullyCompleted reads the task's own checkbox; subtasks are not consulted"
+    ]
+  },
+  {
+    "name": "task-file-fields-go-through-doc",
+    "dql": "TASK WHERE file.mtime > date(2026-01-01) & contains(file.tags, \"#work\") & file.name = \"Today\"",
+    "oqx": "select path, id, text, checked from blocks where type == \"task\" and doc.updated_at > date(\"2026-01-01\") and doc.tags exists { where $it == \"work\" or $it.startsWith(\"work/\") } and path.endsWith(\"/Today.md\")",
+    "render": {
+      "type": "task",
+      "grouped": false,
+      "id": {
+        "name": "File",
+        "alias": "path",
+        "derive": "link"
+      },
+      "rows": null,
+      "task": {
+        "id": "id",
+        "text": "text",
+        "checked": "checked",
+        "path": "path"
+      }
+    },
+    "warnings": []
+  },
+  {
+    "name": "task-outlinks",
+    "dql": "TASK WHERE contains(outlinks, [[Home]]) | contains(file.inlinks, [[Index]])",
+    "oqx": "select path, id, text, checked from blocks where type == \"task\" and (out_links exists { where dst.path.endsWith(\"/Home.md\") } or doc.in_links exists { where doc.path.endsWith(\"/Index.md\") })",
+    "render": {
+      "type": "task",
+      "grouped": false,
+      "id": {
+        "name": "File",
+        "alias": "path",
+        "derive": "link"
+      },
+      "rows": null,
+      "task": {
+        "id": "id",
+        "text": "text",
+        "checked": "checked",
+        "path": "path"
+      }
+    },
+    "warnings": []
+  },
+  {
+    "name": "task-inline-field-reads-the-page",
+    "dql": "TASK WHERE due < date(today)",
+    "oqx": "select path, id, text, checked from blocks where type == \"task\" and date(doc.due) < date(\"today\")",
+    "render": {
+      "type": "task",
+      "grouped": false,
+      "id": {
+        "name": "File",
+        "alias": "path",
+        "derive": "link"
+      },
+      "rows": null,
+      "task": {
+        "id": "id",
+        "text": "text",
+        "checked": "checked",
+        "path": "path"
+      }
+    },
+    "warnings": [
+      "due: a task's inline fields are not indexed per task; read as the page's property doc.due"
+    ]
+  },
+  {
+    "name": "task-status-is-unsupported",
+    "dql": "TASK WHERE status = \"-\"",
+    "error": {
+      "code": "unsupported",
+      "construct": "task field status",
+      "message": "task field status: omgbase keeps a task's checkbox as `checked` (true/false); the status character is not stored (at line 1, column 12)",
+      "line": 1,
+      "column": 12
+    }
+  },
+  {
+    "name": "task-section-is-unsupported",
+    "dql": "TASK WHERE section = [[Notes#Today]]",
+    "error": {
+      "code": "unsupported",
+      "construct": "task field section",
+      "message": "task field section: a task's section is a relation (`section`), not a link value (at line 1, column 12)",
+      "line": 1,
+      "column": 12
+    }
+  },
+  {
+    "name": "task-line-is-unsupported",
+    "dql": "TASK SORT line",
+    "error": {
+      "code": "unsupported",
+      "construct": "task field line",
+      "message": "task field line: line numbers are not part of the block model; a task is addressed by its block id (at line 1, column 11)",
+      "line": 1,
+      "column": 11
+    }
+  }
+]

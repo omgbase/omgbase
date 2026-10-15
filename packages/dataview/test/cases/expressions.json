@@ -1,0 +1,487 @@
+[
+  {
+    "name": "literals",
+    "dql": "TABLE \"text\", 42, 1.5, true, false, null FROM \"a\"",
+    "oqx": "select path, c0: \"text\", c1: 42, c2: 1.5, c3: true, c4: false, c5: null from docs where path.startsWith(\"/a/\") or path == \"/a.md\"",
+    "render": {
+      "type": "table",
+      "withoutId": false,
+      "grouped": false,
+      "id": {
+        "name": "File",
+        "alias": "path",
+        "derive": "link"
+      },
+      "columns": [
+        {
+          "name": "\"text\"",
+          "alias": "c0"
+        },
+        {
+          "name": "42",
+          "alias": "c1"
+        },
+        {
+          "name": "1.5",
+          "alias": "c2"
+        },
+        {
+          "name": "true",
+          "alias": "c3"
+        },
+        {
+          "name": "false",
+          "alias": "c4"
+        },
+        {
+          "name": "null",
+          "alias": "c5"
+        }
+      ]
+    },
+    "warnings": []
+  },
+  {
+    "name": "single-quoted-string",
+    "dql": "LIST WHERE status = 'open'",
+    "oqx": "select path from docs where status == \"open\"",
+    "render": {
+      "type": "list",
+      "withoutId": false,
+      "grouped": false,
+      "id": {
+        "name": "File",
+        "alias": "path",
+        "derive": "link"
+      },
+      "value": null
+    },
+    "warnings": []
+  },
+  {
+    "name": "string-escapes",
+    "dql": "LIST WHERE title = \"say \\\"hi\\\"\"",
+    "oqx": "select path from docs where data.title == \"say \\\"hi\\\"\"",
+    "render": {
+      "type": "list",
+      "withoutId": false,
+      "grouped": false,
+      "id": {
+        "name": "File",
+        "alias": "path",
+        "derive": "link"
+      },
+      "value": null
+    },
+    "warnings": []
+  },
+  {
+    "name": "arithmetic",
+    "dql": "TABLE (pages + 10) * 2 - 1, pages / 2, pages % 3 FROM \"a\"",
+    "oqx": "select path, c0: (pages + 10) * 2 - 1, c1: pages / 2, c2: pages % 3 from docs where path.startsWith(\"/a/\") or path == \"/a.md\"",
+    "render": {
+      "type": "table",
+      "withoutId": false,
+      "grouped": false,
+      "id": {
+        "name": "File",
+        "alias": "path",
+        "derive": "link"
+      },
+      "columns": [
+        {
+          "name": "(pages + 10) * 2 - 1",
+          "alias": "c0"
+        },
+        {
+          "name": "pages / 2",
+          "alias": "c1"
+        },
+        {
+          "name": "pages % 3",
+          "alias": "c2"
+        }
+      ]
+    },
+    "warnings": []
+  },
+  {
+    "name": "negation-and-minus",
+    "dql": "TABLE -pages, !archived FROM \"a\"",
+    "oqx": "select path, c0: -pages, c1: !archived from docs where path.startsWith(\"/a/\") or path == \"/a.md\"",
+    "render": {
+      "type": "table",
+      "withoutId": false,
+      "grouped": false,
+      "id": {
+        "name": "File",
+        "alias": "path",
+        "derive": "link"
+      },
+      "columns": [
+        {
+          "name": "-pages",
+          "alias": "c0"
+        },
+        {
+          "name": "!archived",
+          "alias": "c1"
+        }
+      ]
+    },
+    "warnings": []
+  },
+  {
+    "name": "comparisons",
+    "dql": "LIST WHERE a = 1 & b != 2 & c < 3 & d <= 4 & e > 5 & f >= 6",
+    "oqx": "select path from docs where a == 1 and b != 2 and c < 3 and d <= 4 and e > 5 and f >= 6",
+    "render": {
+      "type": "list",
+      "withoutId": false,
+      "grouped": false,
+      "id": {
+        "name": "File",
+        "alias": "path",
+        "derive": "link"
+      },
+      "value": null
+    },
+    "warnings": []
+  },
+  {
+    "name": "double-equals-accepted",
+    "dql": "LIST WHERE a == 1",
+    "oqx": "select path from docs where a == 1",
+    "render": {
+      "type": "list",
+      "withoutId": false,
+      "grouped": false,
+      "id": {
+        "name": "File",
+        "alias": "path",
+        "derive": "link"
+      },
+      "value": null
+    },
+    "warnings": []
+  },
+  {
+    "name": "nested-field",
+    "dql": "TABLE meta.owner, meta.slug FROM \"a\" WHERE meta.owner = \"ada\"",
+    "oqx": "select path, c0: meta.owner, c1: meta.slug from docs where (path.startsWith(\"/a/\") or path == \"/a.md\") and meta.owner == \"ada\"",
+    "render": {
+      "type": "table",
+      "withoutId": false,
+      "grouped": false,
+      "id": {
+        "name": "File",
+        "alias": "path",
+        "derive": "link"
+      },
+      "columns": [
+        {
+          "name": "meta.owner",
+          "alias": "c0"
+        },
+        {
+          "name": "meta.slug",
+          "alias": "c1"
+        }
+      ]
+    },
+    "warnings": []
+  },
+  {
+    "name": "index-by-number",
+    "dql": "TABLE authors[0] FROM \"a\"",
+    "oqx": "select path, c0: authors first { offset 0 } from docs where path.startsWith(\"/a/\") or path == \"/a.md\"",
+    "render": {
+      "type": "table",
+      "withoutId": false,
+      "grouped": false,
+      "id": {
+        "name": "File",
+        "alias": "path",
+        "derive": "link"
+      },
+      "columns": [
+        {
+          "name": "authors[0]",
+          "alias": "c0"
+        }
+      ]
+    },
+    "warnings": []
+  },
+  {
+    "name": "index-by-string-key",
+    "dql": "TABLE meta[\"owner\"] FROM \"a\"",
+    "oqx": "select path, c0: meta.owner from docs where path.startsWith(\"/a/\") or path == \"/a.md\"",
+    "render": {
+      "type": "table",
+      "withoutId": false,
+      "grouped": false,
+      "id": {
+        "name": "File",
+        "alias": "path",
+        "derive": "link"
+      },
+      "columns": [
+        {
+          "name": "meta[\"owner\"]",
+          "alias": "c0"
+        }
+      ]
+    },
+    "warnings": []
+  },
+  {
+    "name": "list-literal-membership",
+    "dql": "LIST WHERE contains([\"open\", \"blocked\"], status)",
+    "oqx": "select path from docs where status in (\"open\", \"blocked\")",
+    "render": {
+      "type": "list",
+      "withoutId": false,
+      "grouped": false,
+      "id": {
+        "name": "File",
+        "alias": "path",
+        "derive": "link"
+      },
+      "value": null
+    },
+    "warnings": []
+  },
+  {
+    "name": "one-element-list",
+    "dql": "TABLE [status] FROM \"a\"",
+    "oqx": "select path, c0: list(status) from docs where path.startsWith(\"/a/\") or path == \"/a.md\"",
+    "render": {
+      "type": "table",
+      "withoutId": false,
+      "grouped": false,
+      "id": {
+        "name": "File",
+        "alias": "path",
+        "derive": "link"
+      },
+      "columns": [
+        {
+          "name": "[status]",
+          "alias": "c0"
+        }
+      ]
+    },
+    "warnings": []
+  },
+  {
+    "name": "engine-names-read-the-authored-key",
+    "dql": "TABLE path, title, tags, id FROM \"a\" WHERE title = \"x\"",
+    "oqx": "select path, c0: data.path, c1: data.title, c2: data.tags, c3: data.id from docs where (path.startsWith(\"/a/\") or path == \"/a.md\") and data.title == \"x\"",
+    "render": {
+      "type": "table",
+      "withoutId": false,
+      "grouped": false,
+      "id": {
+        "name": "File",
+        "alias": "path",
+        "derive": "link"
+      },
+      "columns": [
+        {
+          "name": "path",
+          "alias": "c0"
+        },
+        {
+          "name": "title",
+          "alias": "c1"
+        },
+        {
+          "name": "tags",
+          "alias": "c2"
+        },
+        {
+          "name": "id",
+          "alias": "c3"
+        }
+      ]
+    },
+    "warnings": []
+  },
+  {
+    "name": "this-file-constants",
+    "dql": "LIST WHERE project = this.file.name & folder = this.file.folder & file.path != this.file.path",
+    "options": {
+      "thisPath": "projects/alpha.md"
+    },
+    "oqx": "select path from docs where project == \"alpha\" and folder == \"projects\" and path != \"/projects/alpha.md\"",
+    "render": {
+      "type": "list",
+      "withoutId": false,
+      "grouped": false,
+      "id": {
+        "name": "File",
+        "alias": "path",
+        "derive": "link"
+      },
+      "value": null
+    },
+    "warnings": []
+  },
+  {
+    "name": "this-property",
+    "dql": "LIST WHERE project = this.project",
+    "options": {
+      "thisPath": "/projects/alpha.md"
+    },
+    "oqx": "select path from docs where project == ^docs first { where path == \"/projects/alpha.md\" }.project",
+    "render": {
+      "type": "list",
+      "withoutId": false,
+      "grouped": false,
+      "id": {
+        "name": "File",
+        "alias": "path",
+        "derive": "link"
+      },
+      "value": null
+    },
+    "warnings": []
+  },
+  {
+    "name": "this-property-inside-a-block-counts-depth",
+    "dql": "LIST WHERE contains(file.outlinks, this.file.link) & this.status = status",
+    "options": {
+      "thisPath": "/projects/alpha.md"
+    },
+    "oqx": "select path from docs where out_links exists { where dst.path == \"/projects/alpha.md\" } and ^docs first { where path == \"/projects/alpha.md\" }.status == status",
+    "render": {
+      "type": "list",
+      "withoutId": false,
+      "grouped": false,
+      "id": {
+        "name": "File",
+        "alias": "path",
+        "derive": "link"
+      },
+      "value": null
+    },
+    "warnings": []
+  },
+  {
+    "name": "this-needs-a-path",
+    "dql": "LIST WHERE project = this.project",
+    "error": {
+      "code": "unsupported",
+      "construct": "this",
+      "message": "this: the query reads the current document; pass { thisPath } to translate() (at line 1, column 22)",
+      "line": 1,
+      "column": 22
+    }
+  },
+  {
+    "name": "paren-grouping-prints-minimal-parens",
+    "dql": "LIST WHERE (a | b) & c | (d & e)",
+    "oqx": "select path from docs where (a or b) and c or d and e",
+    "render": {
+      "type": "list",
+      "withoutId": false,
+      "grouped": false,
+      "id": {
+        "name": "File",
+        "alias": "path",
+        "derive": "link"
+      },
+      "value": null
+    },
+    "warnings": []
+  },
+  {
+    "name": "hyphenated-field-is-unsupported",
+    "dql": "TABLE time-played FROM \"games\"",
+    "error": {
+      "code": "unsupported",
+      "construct": "field time-played",
+      "message": "field time-played: OQX has no bracket lookup by string, so a key that is not an identifier ([A-Za-z_][A-Za-z0-9_]*) cannot be read; rename the key (at line 1, column 7)",
+      "line": 1,
+      "column": 7
+    }
+  },
+  {
+    "name": "object-literal-is-unsupported",
+    "dql": "TABLE {a: 1} FROM \"a\"",
+    "error": {
+      "code": "unsupported",
+      "construct": "{…} (object literal)",
+      "message": "{…} (object literal): OQX has no object literal (at line 1, column 7)",
+      "line": 1,
+      "column": 7
+    }
+  },
+  {
+    "name": "empty-list-is-unsupported",
+    "dql": "TABLE [] FROM \"a\"",
+    "error": {
+      "code": "unsupported",
+      "construct": "[] (empty list)",
+      "message": "[] (empty list): OQX has no list literal (at line 1, column 7)",
+      "line": 1,
+      "column": 7
+    }
+  },
+  {
+    "name": "link-literal-in-value-position",
+    "dql": "LIST WHERE rel = [[Note]]",
+    "error": {
+      "code": "unsupported",
+      "construct": "[[link]] literal",
+      "message": "[[link]] literal: a link is a value only in FROM and in contains(file.inlinks | file.outlinks, [[note]]); OQX has no link type (at line 1, column 18)",
+      "line": 1,
+      "column": 18
+    }
+  },
+  {
+    "name": "lambda-is-unsupported",
+    "dql": "TABLE filter(authors, (a) => a.active) FROM \"a\"",
+    "error": {
+      "code": "unsupported",
+      "construct": "filter()",
+      "message": "filter(): lambdas are not translatable (at line 1, column 7)",
+      "line": 1,
+      "column": 7
+    }
+  },
+  {
+    "name": "computed-index-is-unsupported",
+    "dql": "TABLE authors[n] FROM \"a\"",
+    "error": {
+      "code": "unsupported",
+      "construct": "[expr] (computed index)",
+      "message": "[expr] (computed index): OQX indexes by an integer literal or a string key (at line 1, column 7)",
+      "line": 1,
+      "column": 7
+    }
+  },
+  {
+    "name": "negative-index-is-unsupported",
+    "dql": "TABLE authors[-1] FROM \"a\"",
+    "error": {
+      "code": "unsupported",
+      "construct": "[-1]",
+      "message": "[-1]: OQX has no negative (from-the-end) indexes (at line 1, column 7)",
+      "line": 1,
+      "column": 7
+    }
+  },
+  {
+    "name": "tag-in-expression-is-a-parse-error",
+    "dql": "LIST WHERE #tag",
+    "error": {
+      "code": "parse",
+      "construct": null,
+      "message": "a #tag is a FROM source; in an expression write contains(file.tags, \"#tag\") (at line 1, column 12)",
+      "line": 1,
+      "column": 12
+    }
+  }
+]

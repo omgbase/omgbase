@@ -1,0 +1,243 @@
+[
+  {
+    "name": "two-wheres-and-in-order",
+    "dql": "LIST FROM \"a\" WHERE status = \"open\" WHERE due",
+    "oqx": "select path from docs where (path.startsWith(\"/a/\") or path == \"/a.md\") and status == \"open\" and due",
+    "render": {
+      "type": "list",
+      "withoutId": false,
+      "grouped": false,
+      "id": {
+        "name": "File",
+        "alias": "path",
+        "derive": "link"
+      },
+      "value": null
+    },
+    "warnings": []
+  },
+  {
+    "name": "where-with-or-and-not",
+    "dql": "LIST WHERE (status = \"open\" | status = \"blocked\") & !archived",
+    "oqx": "select path from docs where (status == \"open\" or status == \"blocked\") and !archived",
+    "render": {
+      "type": "list",
+      "withoutId": false,
+      "grouped": false,
+      "id": {
+        "name": "File",
+        "alias": "path",
+        "derive": "link"
+      },
+      "value": null
+    },
+    "warnings": []
+  },
+  {
+    "name": "where-and-or-words",
+    "dql": "LIST WHERE status = \"open\" and !archived or pinned",
+    "oqx": "select path from docs where status == \"open\" and !archived or pinned",
+    "render": {
+      "type": "list",
+      "withoutId": false,
+      "grouped": false,
+      "id": {
+        "name": "File",
+        "alias": "path",
+        "derive": "link"
+      },
+      "value": null
+    },
+    "warnings": []
+  },
+  {
+    "name": "sort-asc-default",
+    "dql": "LIST SORT file.mtime",
+    "oqx": "select path from docs order by updated_at",
+    "render": {
+      "type": "list",
+      "withoutId": false,
+      "grouped": false,
+      "id": {
+        "name": "File",
+        "alias": "path",
+        "derive": "link"
+      },
+      "value": null
+    },
+    "warnings": []
+  },
+  {
+    "name": "sort-descending-word",
+    "dql": "LIST SORT file.mtime DESCENDING",
+    "oqx": "select path from docs order by updated_at desc",
+    "render": {
+      "type": "list",
+      "withoutId": false,
+      "grouped": false,
+      "id": {
+        "name": "File",
+        "alias": "path",
+        "derive": "link"
+      },
+      "value": null
+    },
+    "warnings": []
+  },
+  {
+    "name": "sort-multiple-keys",
+    "dql": "TABLE priority, due SORT priority DESC, due ASC",
+    "oqx": "select path, priority, due from docs order by priority desc, due",
+    "render": {
+      "type": "table",
+      "withoutId": false,
+      "grouped": false,
+      "id": {
+        "name": "File",
+        "alias": "path",
+        "derive": "link"
+      },
+      "columns": [
+        {
+          "name": "priority",
+          "alias": "priority"
+        },
+        {
+          "name": "due",
+          "alias": "due"
+        }
+      ]
+    },
+    "warnings": []
+  },
+  {
+    "name": "later-sort-wins-earlier-breaks-ties",
+    "dql": "LIST SORT due SORT priority DESC",
+    "oqx": "select path from docs order by priority desc, due",
+    "render": {
+      "type": "list",
+      "withoutId": false,
+      "grouped": false,
+      "id": {
+        "name": "File",
+        "alias": "path",
+        "derive": "link"
+      },
+      "value": null
+    },
+    "warnings": []
+  },
+  {
+    "name": "sort-by-derived-field-warns",
+    "dql": "LIST SORT file.name",
+    "oqx": "select path from docs order by path",
+    "render": {
+      "type": "list",
+      "withoutId": false,
+      "grouped": false,
+      "id": {
+        "name": "File",
+        "alias": "path",
+        "derive": "link"
+      },
+      "value": null
+    },
+    "warnings": [
+      "SORT file.name orders by the full path (OQX has no basename/dirname)"
+    ]
+  },
+  {
+    "name": "limit",
+    "dql": "LIST FROM \"a\" LIMIT 5",
+    "oqx": "select path from docs where path.startsWith(\"/a/\") or path == \"/a.md\" limit 5",
+    "render": {
+      "type": "list",
+      "withoutId": false,
+      "grouped": false,
+      "id": {
+        "name": "File",
+        "alias": "path",
+        "derive": "link"
+      },
+      "value": null
+    },
+    "warnings": []
+  },
+  {
+    "name": "where-sort-limit",
+    "dql": "TABLE file.mtime FROM \"notes\" WHERE file.mtime >= date(today) - dur(7 days) SORT file.mtime DESC LIMIT 20",
+    "oqx": "select path, updated_at from docs where (path.startsWith(\"/notes/\") or path == \"/notes.md\") and updated_at >= date(\"today\").minus(\"7 days\") order by updated_at desc limit 20",
+    "render": {
+      "type": "table",
+      "withoutId": false,
+      "grouped": false,
+      "id": {
+        "name": "File",
+        "alias": "path",
+        "derive": "link"
+      },
+      "columns": [
+        {
+          "name": "file.mtime",
+          "alias": "updated_at"
+        }
+      ]
+    },
+    "warnings": []
+  },
+  {
+    "name": "limit-must-be-last",
+    "dql": "TABLE x LIMIT 5 WHERE y",
+    "error": {
+      "code": "unsupported",
+      "construct": "LIMIT",
+      "message": "LIMIT: OQX bounds the final row set; LIMIT must be the last command (at line 1, column 9)",
+      "line": 1,
+      "column": 9
+    }
+  },
+  {
+    "name": "limit-then-sort-is-refused",
+    "dql": "LIST LIMIT 5 SORT due",
+    "error": {
+      "code": "unsupported",
+      "construct": "LIMIT",
+      "message": "LIMIT: OQX bounds the final row set; LIMIT must be the last command (at line 1, column 6)",
+      "line": 1,
+      "column": 6
+    }
+  },
+  {
+    "name": "limit-needs-a-literal",
+    "dql": "LIST LIMIT n",
+    "error": {
+      "code": "unsupported",
+      "construct": "LIMIT <expr>",
+      "message": "LIMIT <expr>: the limit must be a non-negative integer literal (at line 1, column 12)",
+      "line": 1,
+      "column": 12
+    }
+  },
+  {
+    "name": "flatten-is-unsupported",
+    "dql": "TABLE tag FROM \"a\" FLATTEN file.tags AS tag",
+    "error": {
+      "code": "unsupported",
+      "construct": "FLATTEN",
+      "message": "FLATTEN: one row per element next to the page's fields is not expressible in OQX (a `from` re-projection drops the page); filter the list with a nested block instead (at line 1, column 20)",
+      "line": 1,
+      "column": 20
+    }
+  },
+  {
+    "name": "from-after-a-command-is-a-parse-error",
+    "dql": "LIST WHERE x FROM \"a\"",
+    "error": {
+      "code": "parse",
+      "construct": null,
+      "message": "FROM must come right after the query type and its fields (at line 1, column 14)",
+      "line": 1,
+      "column": 14
+    }
+  }
+]
