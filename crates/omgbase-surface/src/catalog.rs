@@ -32,6 +32,7 @@ use rusqlite::{OptionalExtension, params};
 use serde_json::{Map, Value as Json, json};
 
 use crate::arguments::{argument_error, validate_arguments};
+use crate::dates;
 use crate::error::{Result, SurfaceError};
 use crate::fixes;
 use crate::graph::{GraphArgs, graph_neighborhood};
@@ -1827,6 +1828,10 @@ impl Surface {
                 {
                     return Err(provider_unavailable());
                 }
+                // The named points of `date()` read the clock this surface
+                // stamps commits with (§1.3, 4.8) — pinned under
+                // `OMGBASE_SPEC_CLOCK`, the wall clock otherwise.
+                let now_ms = dates::stamp_ms(&self.now());
                 let opts = QueryOptions {
                     limit: arg_usize(args, "limit")?,
                     cursor: arg_str(args, "cursor"),
@@ -1835,6 +1840,7 @@ impl Surface {
                     bare: arg_bool(args, "bare")?.unwrap_or(false),
                     unknown_names: None,
                     vocabulary: Some(&self.vocabulary),
+                    now_ms: Some(now_ms),
                 };
                 self.require_rankable(
                     &repo,
@@ -1871,7 +1877,14 @@ impl Surface {
                             .is_empty()
                     }),
                 )?;
-                graph_neighborhood(&self.store, &repo, &g, self.provider.as_deref())
+                let now_ms = dates::stamp_ms(&self.now());
+                graph_neighborhood(
+                    &self.store,
+                    &repo,
+                    &g,
+                    self.provider.as_deref(),
+                    Some(now_ms),
+                )
             }
             "blocks_search" => {
                 let (repo, _) = self.scope(args)?;

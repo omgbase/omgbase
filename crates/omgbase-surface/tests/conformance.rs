@@ -465,6 +465,7 @@ fn run(
             bare: false,
             unknown_names: None,
             vocabulary: None,
+            now_ms: None,
         },
     )
 }
@@ -498,7 +499,7 @@ fn planned_equals_in_memory_over_the_alchemy_corpus() {
             ));
         }
         // The reference planner's verdict, on the query as the runner sees it.
-        let parsed = rewrite_query(&oqx::parse_string(q).expect("parses"));
+        let parsed = rewrite_query(&oqx::parse_string(q).expect("parses"), 0);
         let compiled = compile(&parsed, &[], &repo);
         let verdict = if compiled.is_some() {
             Planned
@@ -529,6 +530,7 @@ fn planned_queries_actually_reduce_the_scan() {
     // a full scan of docs is larger.
     let parsed = rewrite_query(
         &oqx::parse_string("from docs where path == \"index.md\" && layer == \"canon\"").unwrap(),
+        0,
     );
     let planner = omgbase_surface::SqlitePlanner::new(store.conn(), &repo);
     let plan = planner

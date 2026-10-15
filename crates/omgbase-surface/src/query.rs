@@ -20,6 +20,7 @@ use serde_json::{Map, Value as Json};
 
 use crate::context::{SemanticVec, StoreContext, Target, render_row_values, target_of};
 use crate::cursor::{decode_path_cursor, encode_cursor};
+use crate::dates;
 use crate::error::{Result, SurfaceError};
 use crate::names::{UnknownNames, VocabularyCache, check_names};
 use crate::paths::reference_path;
@@ -104,6 +105,12 @@ pub struct QueryOptions<'a> {
     /// The vocabulary cache of the store (§1.5 "Caching"), kept by the
     /// `Surface` beside its store; `None` judges with a cache of the run's own.
     pub vocabulary: Option<&'a VocabularyCache>,
+    /// The instant the named points of `date()` resolve against
+    /// (`spec/surface` §1.3, 4.8): the host clock, UTC, in milliseconds —
+    /// the `Surface` passes the clock it stamps commits with (pinned by
+    /// `OMGBASE_SPEC_CLOCK`); `None` reads the wall clock. One instant per
+    /// run: the fold and the context share it.
+    pub now_ms: Option<i64>,
 }
 
 /// §1.4 `OqxResult`.
@@ -307,11 +314,59 @@ pub fn root_path_literals(e: Expr) -> Expr {
     }
 }
 
-/// Rewrite every row function in a parsed query to a `$self` method call, and
-/// root every string literal compared with a path intrinsic — one `transform`
-/// over the AST (`spec/oqx/AST.md` §5), every block included.
+/// Dates over literals fold to literals (`spec/surface` §1.3 "Dates and
+/// durations", 4.8): `date("today")`, `dur("30 days")`, and a date method
+/// whose receiver and arguments are literals (`date("today").minus(dur("30
+/// days"))`, folded inside-out since `transform` maps children first) become
+/// the string / number / null they evaluate to — by the SAME functions the
+/// context runs, so nothing changes in meaning — before the planner sees the
+/// tree. So `where updated_at < date("today")` is a text-vs-text comparison
+/// the translator pushes down (a call is otherwise an unconditional decline),
+/// and a named point is resolved ONCE per query, at `now_ms`. A call with the
+/// wrong arity is left in place: it raises when evaluated, and an empty source
+/// never evaluates it (`spec/oqx` §11).
 #[must_use]
-pub fn rewrite_query(q: &Query) -> Query {
+pub fn fold_dates(e: Expr, now_ms: i64) -> Expr {
+    let Expr::Call {
+        recv, name, args, ..
+    } = &e
+    else {
+        return e;
+    };
+    let mut vals = Vec::with_capacity(args.len());
+    for a in args {
+        let Expr::Lit { value, .. } = a else { return e };
+        vals.push(value.clone());
+    }
+    let folded = match recv {
+        None => {
+            if dates::date_function_arity(name) != Some(vals.len()) {
+                return e;
+            }
+            dates::date_function(name, &vals, now_ms)
+        }
+        Some(r) => {
+            let Expr::Lit { value, .. } = &**r else {
+                return e;
+            };
+            if dates::date_method_arity(name) != Some(vals.len()) {
+                return e;
+            }
+            dates::date_method(name, value, &vals)
+        }
+    };
+    match folded {
+        Some(Ok(v)) => build::lit(v),
+        _ => e,
+    }
+}
+
+/// Rewrite every row function in a parsed query to a `$self` method call,
+/// root every string literal compared with a path intrinsic, and fold the
+/// dates over literals ([`fold_dates`], at `now_ms`) — one `transform` over
+/// the AST (`spec/oqx/AST.md` §5), every block included.
+#[must_use]
+pub fn rewrite_query(q: &Query, now_ms: i64) -> Query {
     transform(q, &mut |e, _| match e {
         Expr::Call {
             recv: None,
@@ -324,7 +379,7 @@ pub fn rewrite_query(q: &Query) -> Query {
             args,
             span,
         },
-        other => root_path_literals(other),
+        other => fold_dates(root_path_literals(other), now_ms),
     })
 }
 
@@ -868,6 +923,7 @@ pub fn query(
         repo_id,
         semantic,
         planned: !opts.in_memory,
+        now_ms: opts.now_ms.unwrap_or_else(dates::wall_clock_ms),
     };
     let raw = oqx::parse_string(source)?;
     check_reserved_aliases(&raw)?;
@@ -900,6 +956,7 @@ pub fn query_ast(
         repo_id,
         semantic,
         planned: !opts.in_memory,
+        now_ms: opts.now_ms.unwrap_or_else(dates::wall_clock_ms),
     };
     run_parsed(
         &runner,
@@ -919,6 +976,8 @@ struct Runner<'a> {
     repo_id: &'a str,
     semantic: HashMap<String, SemanticVec>,
     planned: bool,
+    /// The one instant of this run (§1.3): the fold and the context share it.
+    now_ms: i64,
 }
 
 impl Runner<'_> {
@@ -930,7 +989,8 @@ impl Runner<'_> {
     /// `'static` context a `Plan` carries.
     fn run(&self, q: &Query) -> Result<oqx::OqxResult> {
         let conn = self.store.conn();
-        let ctx = StoreContext::new(conn, self.repo_id, self.semantic.clone());
+        let ctx =
+            StoreContext::new(conn, self.repo_id, self.semantic.clone()).with_now_ms(self.now_ms);
         let plan = if self.planned {
             SqlitePlanner::new(conn, self.repo_id)
                 .try_plan(q, &[])
@@ -1006,7 +1066,7 @@ fn run_parsed(
 fn run_resolved(engine: &Runner<'_>, raw: &Query, opts: QueryOptions<'_>) -> Result<OqxResult> {
     // The query's `select` aliases are resolved HERE, once, before the runner
     // renames/injects items (an engine evaluates the query it is given).
-    let parsed = rewrite_query(&resolve_aliases(raw)?);
+    let parsed = rewrite_query(&resolve_aliases(raw)?, engine.now_ms);
     let consumer = parsed.consumer;
 
     match consumer {
@@ -1191,7 +1251,7 @@ mod tests {
             "from blocks where text(\"x\") && under_heading(\"h\") && size(attrs) > 0 && doc.path.startsWith(\"a\")",
         )
         .unwrap();
-        let r = rewrite_query(&q);
+        let r = rewrite_query(&q, 0);
         let Some(Where::And { parts, .. }) = &r.r#where else {
             panic!("and")
         };
@@ -1209,13 +1269,102 @@ mod tests {
         );
     }
 
+    // ---- the constant fold (spec/surface §1.3, 4.8; the reference's dates.test.ts) ----
+
+    /// 2026-09-27T00:00:00.000Z — the corpus clock.
+    const NOW: i64 = 1_790_467_200_000;
+
+    fn where_expr(src: &str) -> Expr {
+        let q = oqx::parse_string(&format!("from docs where {src}")).unwrap();
+        let Some(Where::Scalar { expr, .. }) = q.r#where else {
+            panic!("not a scalar where")
+        };
+        expr
+    }
+
+    /// Fold inside-out as `transform` does: children first.
+    fn fold(src: &str) -> Expr {
+        fn go(e: Expr) -> Expr {
+            match e {
+                Expr::Call {
+                    recv,
+                    name,
+                    args,
+                    span,
+                } => fold_dates(
+                    Expr::Call {
+                        recv: recv.map(|r| Box::new(go(*r))),
+                        name,
+                        args: args.into_iter().map(go).collect(),
+                        span,
+                    },
+                    NOW,
+                ),
+                other => other,
+            }
+        }
+        go(where_expr(src))
+    }
+
+    fn lit(e: &Expr) -> Option<&Value> {
+        match e {
+            Expr::Lit { value, .. } => Some(value),
+            _ => None,
+        }
+    }
+
+    #[test]
+    fn folds_date_dur_over_literals_and_date_methods_over_literal_receivers_and_arguments() {
+        assert_eq!(
+            lit(&fold("date(\"2026-01-05\")")),
+            Some(&Value::from("2026-01-05"))
+        );
+        assert_eq!(
+            lit(&fold("date(\"today\")")),
+            Some(&Value::from("2026-09-27"))
+        );
+        assert_eq!(
+            lit(&fold("dur(\"30 days\")")),
+            Some(&Value::from(30.0 * 86400.0))
+        );
+        assert_eq!(
+            lit(&fold("date(\"today\").minus(dur(\"30 days\"))")),
+            Some(&Value::from("2026-08-28"))
+        );
+        assert_eq!(lit(&fold("date(\"x\")")), Some(&Value::Null));
+        assert_eq!(lit(&fold("date(5)")), Some(&Value::Null));
+        assert_eq!(lit(&fold("dur(60).dur_text()")), Some(&Value::from("1m")));
+    }
+
+    #[test]
+    fn leaves_a_non_literal_argument_an_unknown_name_and_a_wrong_arity_in_place() {
+        for src in [
+            "date(when)",
+            "date(\"today\").until(when)",
+            "size(\"x\")",
+            "date()",
+            "date(\"2026-01-01\").plus()",
+            "\"x\".lower()",
+        ] {
+            assert!(matches!(fold(src), Expr::Call { .. }), "{src}");
+        }
+    }
+
+    #[test]
+    fn the_runner_folds_at_its_clock_so_a_named_point_pushes_down() {
+        let q = oqx::parse_string("from docs where updated_at < date(\"today\") && date(when) < date(\"today\").minus(dur(\"30 days\"))").unwrap();
+        let printed = oqx::print_query(&rewrite_query(&q, NOW)).unwrap();
+        assert!(printed.contains("updated_at < \"2026-09-27\""), "{printed}");
+        assert!(printed.contains("date(when) < \"2026-08-28\""), "{printed}");
+    }
+
     #[test]
     fn path_literals_are_rooted_only_against_path_reads() {
         let q = oqx::parse_string(
             "select n: ^docs collect { path where path == ^after || \"x.md\" != dst_path } from docs where path.startsWith(\"lab/\") && doc.path == \"a.md\" && type == \"a.md\" && ^path == \"b.md\"",
         )
         .unwrap();
-        let printed = oqx::print_query(&rewrite_query(&q)).unwrap();
+        let printed = oqx::print_query(&rewrite_query(&q, 0)).unwrap();
         assert!(printed.contains("path.startsWith(\"/lab/\")"), "{printed}");
         assert!(printed.contains("doc.path == \"/a.md\""), "{printed}");
         assert!(printed.contains("type == \"a.md\""), "{printed}");
@@ -1228,7 +1377,7 @@ mod tests {
             "from docs where path.contains(\"a/\") && path.endsWith(\".md\") && path == \"\"",
         )
         .unwrap();
-        let printed = oqx::print_query(&rewrite_query(&q)).unwrap();
+        let printed = oqx::print_query(&rewrite_query(&q, 0)).unwrap();
         assert!(printed.contains("path.contains(\"a/\")"), "{printed}");
         assert!(printed.contains("path.endsWith(\".md\")"), "{printed}");
         assert!(printed.contains("path == \"/\""), "{printed}");

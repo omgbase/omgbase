@@ -175,6 +175,7 @@ pub fn graph_neighborhood(
     repo_id: &str,
     args: &GraphArgs,
     provider: Option<&dyn EmbeddingProvider>,
+    now_ms: Option<i64>,
 ) -> Result<Json> {
     if args.roots.is_empty() {
         return Err(SurfaceError::new(
@@ -228,6 +229,7 @@ pub fn graph_neighborhood(
                 bare: false,
                 unknown_names: None,
                 vocabulary: None,
+                now_ms,
             },
         )?;
         if res.truncated {

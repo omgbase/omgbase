@@ -35,6 +35,7 @@ use std::time::{Duration, Instant};
 
 use omgbase_reconcile::Config;
 use omgbase_store::{BatchItem, BatchOutcome, SequentialMinter, Store};
+use omgbase_surface::dates;
 use omgbase_surface::{
     MINIMAL_TOOLS, OqxResult, Profile, QueryOptions, Surface, SurfaceError, decode_cursor,
     encode_cursor, query,
@@ -455,6 +456,10 @@ fn run_once(
         bare: c.get("bare").and_then(Json::as_bool).unwrap_or(false),
         unknown_names: None,
         vocabulary: None,
+        // README §6 (4.8): a query case runs under the corpus clock — the
+        // reference pins `CORPUS_TS` around every run, so `date("today")`
+        // is `2026-09-27` (a Sunday) in both engines.
+        now_ms: Some(dates::stamp_ms(CORPUS_TS)),
     };
     let started = Instant::now();
     let out = query(store, repo, source, opts);

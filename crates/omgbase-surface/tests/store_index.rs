@@ -74,7 +74,7 @@ fn alchemy() -> Option<(Store, String)> {
 /// Run `q` on the in-memory engine over a fresh context; the result's value,
 /// the root scans the context ran, and the naive engine's value.
 fn run(store: &Store, repo: &str, q: &str) -> (Value, usize, Value) {
-    let parsed = rewrite_query(&oqx::parse_string(q).expect("parses"));
+    let parsed = rewrite_query(&oqx::parse_string(q).expect("parses"), 0);
     let engine = InMemoryEngine::new(StoreContext::new(store.conn(), repo, HashMap::new()));
     let out = engine.run(&parsed, &[]).expect("runs").into_value();
     let scans = engine.context().scans_run();
@@ -291,7 +291,7 @@ fn reach_through_identity_runs_no_owner_statement() {
         return;
     };
     let count = |q: &str| -> (Value, usize) {
-        let parsed = rewrite_query(&oqx::parse_string(q).expect("parses"));
+        let parsed = rewrite_query(&oqx::parse_string(q).expect("parses"), 0);
         let engine = InMemoryEngine::new(StoreContext::new(store.conn(), &repo, HashMap::new()));
         let out = engine.run(&parsed, &[]).expect("runs").into_value();
         (out, engine.context().statements_run())
@@ -378,6 +378,7 @@ fn a_scan_projected_as_a_value_renders_as_its_rows() {
             bare: false,
             unknown_names: None,
             vocabulary: None,
+            now_ms: None,
         },
     )
     .expect("runs");
@@ -411,7 +412,7 @@ fn perf_a_correlated_block_over_two_thousand_documents_runs_no_scan_and_stays_fa
         .collect();
     let (store, repo) = store_of(&files);
     let q = "select name, orders: ^docs collect { path where type == \"order\" && customer == ^path } from docs where type == \"customer\"";
-    let parsed = rewrite_query(&oqx::parse_string(q).expect("parses"));
+    let parsed = rewrite_query(&oqx::parse_string(q).expect("parses"), 0);
     let t0 = Instant::now();
     let engine = InMemoryEngine::new(StoreContext::new(store.conn(), &repo, HashMap::new()));
     let out = engine.run(&parsed, &[]).expect("runs").into_value();

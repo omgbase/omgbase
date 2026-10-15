@@ -48,6 +48,7 @@ use oqx::{
 use rusqlite::types::{Value as SqlValue, ValueRef};
 use rusqlite::{Connection, OptionalExtension, params_from_iter};
 
+use crate::dates;
 use crate::paths::{reference_path, storage_path};
 use crate::planner;
 
@@ -295,6 +296,11 @@ pub struct StoreContext<'a> {
     /// Lazy owners loaded in full during this run, by `(target, id)` — the
     /// store does not change within a run, so an owner is read at most once.
     owners: RefCell<HashMap<(Target, String), Option<Value>>>,
+    /// The instant the named points of `date()` resolve against
+    /// (`spec/surface` §1.3, 4.8): the host clock, UTC, as milliseconds —
+    /// the wall clock unless the runner threads a pinned one in
+    /// ([`Self::with_now_ms`]); read once per run.
+    now_ms: i64,
 }
 
 /// The planned rows behind [`oqx::ROWS_ROOT`]: cloned out on every read, or
@@ -506,7 +512,23 @@ impl<'a> StoreContext<'a> {
             scans_run: Cell::new(0),
             statements_run: Cell::new(0),
             owners: RefCell::new(HashMap::new()),
+            now_ms: dates::wall_clock_ms(),
         }
+    }
+
+    /// Resolve the named points of `date()` (`today`, `now`, `sow`…) at
+    /// `now_ms` instead of the wall clock — the `Surface`'s clock, which
+    /// `OMGBASE_SPEC_CLOCK` pins (§1.3, 4.8).
+    #[must_use]
+    pub fn with_now_ms(mut self, now_ms: i64) -> Self {
+        self.now_ms = now_ms;
+        self
+    }
+
+    /// The instant `date("now")` reads in this run.
+    #[must_use]
+    pub fn now_ms(&self) -> i64 {
+        self.now_ms
     }
 
     /// How many statements this context has run (every `SELECT`, the root
@@ -1926,6 +1948,13 @@ impl DataContext for StoreContext<'_> {
         if name == "refs" {
             return Some(self.refs(args.first().unwrap_or(&Value::Undefined)));
         }
+        // `date(x)` / `dur(x)` (`spec/surface` §1.3 "Dates and durations",
+        // 4.8): pure over their argument except the named points, which read
+        // the host clock the runner threaded in. `query.rs` folds a literal
+        // argument before planning, so the arm here serves the non-literal ones.
+        if let Some(r) = dates::date_function(name, args, self.now_ms) {
+            return Some(r);
+        }
         if name == "range" {
             let x = args.first().unwrap_or(&Value::Undefined);
             return Some(Ok(match x {
@@ -1989,6 +2018,13 @@ impl DataContext for StoreContext<'_> {
                 | "parent_type"
         ) {
             return Self::filter_invalid(format!("{name}() needs a docs/blocks/nodes/links row"));
+        }
+        // The date methods (`plus`/`minus`/`until`/the fields/`format` on a
+        // date string, `dur_text`/`dur_iso` on a number — §1.3, 4.8; total:
+        // any other receiver is absent) sit after the row-scoped domain
+        // methods and before the oqx builtins, as in the reference.
+        if let Some(r) = dates::date_method(name, recv, args) {
+            return Some(r);
         }
         if name == "matches" {
             if let Some(r) = self.matches_memoized(recv, args) {

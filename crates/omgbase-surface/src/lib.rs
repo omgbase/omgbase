@@ -4,6 +4,7 @@
 //! **query binding** over [`omgbase_store::Store`] ([`context`], [`mod@query`],
 //! the tier-3 pushdown [`planner`] and its [`translate`] seam, the
 //! store-backed indexes nested blocks probe — [`store_index`]),
+//! the dates and durations of §1.3 ([`dates`]),
 //! the document and block **reads** ([`read`]), the **history** reads
 //! ([`history`]), link health ([`links`]), the `graph` macro ([`graph`]), and
 //! the **MCP tool catalog** as a library ([`catalog`]): a table of tools with
@@ -36,6 +37,7 @@ pub mod arguments;
 pub mod catalog;
 pub mod context;
 pub mod cursor;
+pub mod dates;
 pub mod descriptions;
 pub mod error;
 pub mod fixes;
@@ -67,7 +69,7 @@ pub use query::{
 pub use version::{BuildInfo, MCP_PROTOCOL_VERSION, version_info};
 
 /// The `spec/surface/VERSION` this crate implements (`major.minor`).
-pub const SPEC_VERSION: &str = "4.7";
+pub const SPEC_VERSION: &str = "4.8";
 
 /// This crate's own version (`Cargo.toml`), for the surface's `version` tool.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

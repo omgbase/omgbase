@@ -87,6 +87,7 @@ use oqx::ast::{Expr, Query, SelectItem, TemplatePart};
 use serde_json::{Map, Value as Json, json};
 
 use crate::context::{SemanticVec, Target};
+use crate::dates;
 use crate::error::{Result, SurfaceError};
 use crate::fixes;
 use crate::names;
@@ -1997,6 +1998,8 @@ pub fn expand(
         )
         .map_err(|e| refused(format!("select: {}", e.message)))?;
     }
+    // `date("today")` in a selector reads the plan's clock (§1.3, 4.8).
+    let now_ms = Some(dates::stamp_ms(&ctx.ts));
     let opts = QueryOptions {
         limit: Some(c.bound.saturating_add(1)),
         cursor: None,
@@ -2005,6 +2008,7 @@ pub fn expand(
         bare: false,
         unknown_names: None,
         vocabulary: Some(&vocabulary),
+        now_ms,
     };
     let res = query_ast(store, &ctx.repo_id, &c.rewritten, opts, semantic)?;
     if res.truncated || res.hits.len() > c.bound {
@@ -2020,6 +2024,7 @@ pub fn expand(
                 bare: false,
                 unknown_names: None,
                 vocabulary: Some(&vocabulary),
+                now_ms,
             };
             query_ast(store, &ctx.repo_id, &c.rewritten, unbounded, HashMap::new())?
                 .hits
@@ -2384,6 +2389,7 @@ pub fn expand_plain(
                 bare: false,
                 unknown_names: None,
                 vocabulary: None,
+                now_ms: Some(dates::stamp_ms(&ctx.ts)),
             };
             let res = query_ast(store, &ctx.repo_id, &q, opts, HashMap::new())?;
             let Some(hit) = res.hits.first() else {
