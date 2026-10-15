@@ -27,6 +27,7 @@ import { cosineBytes } from "../core/vec.js";
 import { ctxHashHex } from "../search/embeddings.js";
 import { makeBlockContextResolver, type BlockContextResolver } from "../search/tasks.js";
 import type { SemanticVec } from "../search/cel/compile.js";
+import { dateFunction, dateMethod } from "./dates.js";
 
 export type Target = "docs" | "blocks" | "nodes" | "links";
 /** Every row kind the context tags (spec/surface §1.1): the four targets and
@@ -857,6 +858,12 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
         return { handled: true, value: docPropEntries(p.docId, p.source) };
       }
       if (name === "refs") return { handled: true, value: refs(args[0]) };
+      // `date(x)` / `dur(x)` (spec/surface §1.3 "Dates and durations", 4.8):
+      // pure over their argument except the named points, which read the host
+      // clock (pinned by the spec clock seam). run.ts folds a literal argument
+      // before planning, so the arm here serves the non-literal ones.
+      const dated = dateFunction(name, args);
+      if (dated.handled) return dated;
       if (name === "range") {
         const s = args[0];
         if (semantics.isRange(s)) return { handled: true, value: s };
@@ -866,11 +873,15 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
       const fn = semantics.BUILTIN_FUNCTIONS[name];
       return fn ? { handled: true, value: fn(args) } : { handled: false };
     },
-    // Domain methods first; fall back to oqx-js builtin methods
-    // (contains/startsWith/endsWith/matches/size/lower/upper).
+    // Domain methods first, then the date methods (`plus`/`minus`/`until`/the
+    // fields/`format` on a date string, `dur_text`/`dur_iso` on a number —
+    // §1.3 4.8; total: any other receiver is absent); fall back to oqx-js
+    // builtin methods (contains/startsWith/endsWith/matches/size/lower/upper).
     callMethod(name: string, recv: unknown, args: unknown[]): CallResult {
       const r = method(name, recv, args);
       if (r.handled) return r;
+      const dated = dateMethod(name, recv, args);
+      if (dated.handled) return dated;
       const fn = semantics.BUILTIN_METHODS[name];
       return fn ? { handled: true, value: fn(recv, args) } : { handled: false };
     },

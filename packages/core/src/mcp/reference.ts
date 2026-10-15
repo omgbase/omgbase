@@ -262,9 +262,24 @@ revisions:  (history as rows — one per stored revision of every document of th
                Unanchored unless the pattern anchors; an absent x is false
                under ~ and TRUE under !~ (not SQL's NULL).
   functions    has(f)  size(x)  list(x)  entries(x)  range(s)
+  dates        a date is an ISO string, a duration a NUMBER OF SECONDS; arithmetic
+               is METHODS, never + or - (+ concatenates strings).
+               date("today"|"now"|"yesterday"|"tomorrow"|"sow"|"eow"|"som"|"eom"|
+               "soy"|"eoy") — the host clock, UTC; date("2026-10-15") canonical ISO
+               (absent if unparseable). dur("1h30m") dur("2 days, 3 hours")
+               dur("P1DT2H") dur(90) → seconds (year = 365 d, month = 30 d).
+               d.plus(dur("30 days"))  d.minus(86400)  d.plus("1 month") (calendar:
+               Jan 31 → Feb 28)  a.until(b) → signed seconds  d.year() d.month()
+               d.day() d.weekday() (1 = Mon) d.hour() d.minute() d.second()
+               d.date()  d.format("EEE dd MMM yyyy")  n.dur_text() → "1h 30m"
+               n.dur_iso() → "PT1H30M". Total: a non-date is absent, so
+               \`where date(due) < date("today").minus(dur("30 days"))\` just
+               filters. A datetime is never < its own date: compare
+               updated_at.date() == date("today"), or < date("tomorrow").
   literals     "str" 'str' 123 1.5 true false null
-  determinism  no now()/clock/random. Lists/structs are not literals; ternary is
-               not supported. Errors surface as filter_invalid.
+  determinism  no random; the only clock is date("today"/"now"/…), read once per
+               query. Lists/structs are not literals; ternary is not supported.
+               Errors surface as filter_invalid.
   scalars vs lists  a list-authored key never == a scalar (tags == "x" is false
                when tags is a list) — use \`"x" in tags\` / \`in list(tags)\`.
 

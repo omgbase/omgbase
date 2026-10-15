@@ -12,6 +12,7 @@ import { makeStoreContext, rowRef, type StoreContextOptions } from "./context.js
 import { SQLiteQueryPlanner } from "./planner.js";
 import { REPO_REMOVED_MESSAGE, ROOTS, bareTargetMessage, pastRootMessage, unknownTargetMessage } from "./root-row.js";
 import { checkNames, type UnknownNames } from "./names.js";
+import { DATE_FUNCTIONS, DATE_METHODS, dateFunction, dateMethod } from "./dates.js";
 import type { Store } from "../core/store/store.js";
 import { FilterInvalid } from "../search/cel/parser.js";
 import type { SemanticVec } from "../search/cel/compile.js";
@@ -163,8 +164,30 @@ export function checkRootSpellings(q: Query): void {
   });
 }
 
+// Dates over literals fold to literals (spec/surface §1.3 "Dates and
+// durations", 4.8): `date("today")`, `dur("30 days")`, and a date method whose
+// receiver and arguments are literals (`date("today").minus(dur("30 days"))`,
+// folded inside-out since `transform` maps children first) become the string /
+// number / null they evaluate to — by the SAME functions the context runs, so
+// nothing changes in meaning — before the planner sees the tree. So `where
+// updated_at < date("today")` is a text-vs-text comparison the translator
+// pushes down (a call is otherwise an unconditional decline), and a named point
+// is resolved ONCE per query. A call with the wrong arity is left in place: it
+// raises when evaluated, and an empty source never evaluates it (spec/oqx §11).
+const isLit = (e: Expr): e is Extract<Expr, { kind: "lit" }> => e.kind === "lit";
+export function foldDates(e: Expr): Expr {
+  if (e.kind !== "call" || !e.args.every(isLit)) return e;
+  const args = e.args.map((a) => a.value);
+  if (e.recv === null) {
+    if (!Object.hasOwn(DATE_FUNCTIONS, e.name) || DATE_FUNCTIONS[e.name] !== args.length) return e;
+    return build.lit(dateFunction(e.name, args).value as string | number | null);
+  }
+  if (!isLit(e.recv) || !Object.hasOwn(DATE_METHODS, e.name) || DATE_METHODS[e.name] !== args.length) return e;
+  return build.lit(dateMethod(e.name, e.recv.value, args).value as string | number | null);
+}
+
 function rewriteQuery(q: Query): Query {
-  return transform(q, (e) => (e.kind === "call" && e.recv === null && ROW_FNS.has(e.name) ? { ...e, recv: build.ident("$self") } : rootPathLiterals(e)));
+  return transform(q, (e) => (e.kind === "call" && e.recv === null && ROW_FNS.has(e.name) ? { ...e, recv: build.ident("$self") } : foldDates(rootPathLiterals(e))));
 }
 
 // A top-level `limit`/`offset` on the collect path is applied by the runner (see

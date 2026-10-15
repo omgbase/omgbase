@@ -508,6 +508,120 @@ against the current row:
   from the block carrying an anchor; `child_count()`, `parent_type()`
   (blocks).
 
+**Dates and durations (4.8).** Two free functions and a set of methods give
+the binding Dataview's date arithmetic without a new value kind. A **date is
+an ISO-8601 string** — the date-only form `YYYY-MM-DD` or the datetime form
+`YYYY-MM-DDThh:mm:ss[.fff](Z|±hh:mm)`, exactly what the store writes for
+`updated_at` and `ts` and what OQX already orders chronologically (`spec/oqx`
+SEMANTICS §6: strings order by code point) — and a **duration is a number of
+seconds**. Arithmetic between them is **methods, never operators**: `+` with
+a string operand concatenates (SEMANTICS §7), so a date is shifted with
+`plus`/`minus` and two dates are subtracted with `until`. Every function and
+method is **total**: an argument or receiver that is not what it expects
+yields absent (`null`), never an error, so a `where` over documents that
+carry a date and documents that do not filters quietly. The one error is a
+**wrong arity** — `filter_invalid`, the message `date() takes exactly 1
+argument, got 0` / `.plus() takes exactly 1 argument, got 0` /
+`.dur_text() takes exactly 0 arguments, got 1` — raised when the call is
+evaluated (an empty source never evaluates it, SEMANTICS §11).
+
+- `date(x)` — `x` a string, matched trimmed and case-insensitively against
+  the **named points** `now`, `today`, `yesterday`, `tomorrow`, `sow`/`eow`
+  (the Monday / the Sunday of the current week), `som`/`eom` (the first /
+  last day of the month), `soy`/`eoy` (January 1 / December 31), resolved
+  against the **host clock in UTC** (the process clock, which
+  `OMGBASE_SPEC_CLOCK` pins, §7.1; a time zone argument is a later round):
+  `now` is the instant with milliseconds — `YYYY-MM-DDThh:mm:ss.fffZ`, the
+  form the store stamps commits in — and the others are date-only. Any other
+  string is parsed as ISO-8601 — `YYYY-MM-DD`, or that followed by `T` (or a
+  space) `hh:mm[:ss[.f…]]` and an optional offset `Z` / `±hh:mm` / `±hhmm`, a
+  missing offset meaning UTC; a field out of range (month 13, February 30,
+  hour 24, second 60) does not parse — and returned **canonical**: a
+  date-only input stays date-only; a datetime always has its seconds, keeps a
+  fraction as exactly three digits (`.5` → `.500`, `.123456` → `.123`) and
+  carries none when the input had none, writes `+00:00` and a missing offset
+  as `Z`, and keeps any other offset as written (`2026-10-15T09:00:00+02:00`).
+  A canonical string is returned unchanged. A string that is neither, or any
+  non-string, is absent.
+- `dur(x)` — a number is that many seconds (non-finite is absent); a string is
+  parsed as **Dataview's duration grammar**: one or more `<number> <unit>`
+  pairs — the number an unsigned or `-`-signed decimal, the unit one of
+  `years|year|yrs|yr|y`, `months|month|mos|mo`, `weeks|week|wks|wk|w`,
+  `days|day|d`, `hours|hour|hrs|hr|h`, `minutes|minute|mins|min|m`,
+  `seconds|second|secs|sec|s`, case-insensitive, optional spaces between the
+  number and its unit — each pair separated from the next by spaces, by one
+  comma among spaces, or by nothing (`"1h30m"`, `"1 hour 30 minutes"`,
+  `"2 days, 3 hours"`; a leading, trailing or doubled comma, a bare number
+  with no unit, an unknown unit are malformed); or as an **ISO-8601
+  duration** `[-]PnYnMnWnDTnHnMnS` (any component omitted, decimals allowed,
+  case-insensitive; a bare `P`/`PT` is malformed). The result is seconds under
+  the fixed conventions **a year is 365 days and a month 30 days**
+  (`dur("1 month")` is `2592000`); calendar-aware months are `plus` with a
+  duration *string*, below. Malformed, or any other type, is absent.
+
+Methods on a date (the receiver is parsed as `date()` parses a non-named
+string; a receiver that is not a date — absent, a number, a named point's
+*name*, any other string — yields absent):
+
+- `d.plus(x)` / `d.minus(x)` — `x` a **number** of seconds: the instant moves
+  by that many seconds (`minus` the negation). `x` a **duration string** (the
+  `dur` grammar, ISO included): the whole years and months move the
+  **calendar** month field — the year/month fields advance and the day is
+  clamped to the new month's length, so `2026-01-31` plus `"1 month"` is
+  `2026-02-28` (`2024-02-29` in a leap year) and `2024-02-29` plus `"1 year"`
+  is `2025-02-28` — and the rest (weeks, days, hours, minutes, seconds, and
+  the fraction of a fractional year/month count at 365/30 days) is added as
+  seconds afterwards. A **date-only** receiver stays date-only when the
+  seconds part is a whole number of days (`2026-01-31` plus `86400` is
+  `2026-02-01`) and otherwise becomes a UTC datetime (`2026-01-31` plus `3600`
+  is `2026-01-31T01:00:00Z`); a datetime keeps its written offset and shows a
+  fraction when the result has one (`.plus(0.5)` → `.500Z`). A non-duration
+  argument (a malformed string, null, a boolean) is absent.
+- `a.until(b)` — the seconds from `a` to `b` by instant: negative when `b` is
+  earlier, zero when equal, fractional when the datetimes differ by a
+  fraction, across offsets (`10:00+02:00` until `10:00Z` is `7200`), a
+  date-only side being its midnight UTC. Absent when either side is not a date.
+- `d.year()`, `d.month()` (1–12), `d.day()`, `d.weekday()` (**1 = Monday …
+  7 = Sunday**), `d.hour()`, `d.minute()`, `d.second()` (the fraction dropped)
+  — numbers, read in the **written offset** (`23:30:00-05:00` has `hour()`
+  23); a date-only value's time fields are 0. `d.date()` — the date-only part
+  as written (`2026-10-15T23:30:00-05:00` → `2026-10-15`), a string.
+- `d.format(pattern)` — `pattern` a string scanned left to right taking the
+  longest token at each position: `yyyy` the year (four digits), `MM` the
+  month, `dd` the day, `HH` the hour, `mm` the minute, `ss` the second (two
+  digits each), `MMM` the English month abbreviation (`Jan` … `Dec`), `EEE`
+  the English weekday abbreviation (`Mon` … `Sun`); **every other character
+  is literal** (`MMMM` is `OctM`, quotes are not escapes). Fields are read in
+  the written offset; a date-only value formats its time as `00`. A non-string
+  pattern is absent.
+
+Methods on a number (a duration in seconds; any other receiver is absent):
+
+- `n.dur_text()` — `<d>d <h>h <m>m <s>s` with zero parts omitted (`"1h 30m"`,
+  `"2d 3h"`, `"45s"`), `"0s"` for zero, a leading `-` for a negative count
+  (`"-1m 30s"`), a fractional second kept to the millisecond (`"1.5s"`); a
+  month of `dur()` is `"30d"`.
+- `n.dur_iso()` — `P[<d>D][T[<h>H][<m>M][<s>S]]` (`"PT1H30M"`, `"P2DT3H"`,
+  `"PT45S"`), `"PT0S"` for zero, a leading `-` for a negative count
+  (`"-PT1M30S"`). Both round-trip through `dur()`.
+
+**Folding.** A `date(…)`/`dur(…)` whose argument is a literal, and a date
+method whose receiver and arguments are literals (`date("today").minus(dur("30
+days"))`, folded inside out), is replaced by the literal it evaluates to
+before the query is planned — by the same functions, so nothing changes in
+meaning, a named point is resolved **once per query**, and `where updated_at <
+date("today")` is a text-against-text comparison the planner pushes down
+(§1 decline table: a call is otherwise an unconditional decline). A call with
+the wrong arity is left in place (it raises when evaluated). An engine that
+does not fold must reach the same results; the fixtures run every case
+planned and unplanned (`query-dates.json`).
+
+A datetime is never `<` its own date — `2026-09-27T00:00:00.000Z` sorts
+after `2026-09-27`, a longer string with an equal prefix — so "updated
+today" is `updated_at.date() == date("today")` and "before today" is
+`updated_at < date("today")` only for date-only values
+(`query-dates::datetime-is-not-less-than-its-own-date`).
+
 ### 1.4 The runner
 
 `query(source, limit = 50, cursor?, bare = false)` → `OqxResult { hits,
@@ -1234,7 +1348,11 @@ verbs later.
   (`spec/store` §9.4 minter, one `observe` batch in bytewise path order at
   `2026-09-27T00:00:00.000Z`, so `d_0` is `index.md`), then `cases: [{ name,
   notes?, query, limit?, cursor?, bare?, expect }]` — `limit`, `cursor` and
-  `bare` (4.2) are the `query` tool's arguments — with `expect` the `OqxResult`
+  `bare` (4.2) are the `query` tool's arguments — each query run **under the
+  corpus clock** (4.8: the process clock is pinned to
+  `2026-09-27T00:00:00.000Z`, a Sunday, for the run, so §1.3's named points
+  are committed expectations — `date("today")` is `2026-09-27`, `date("sow")`
+  `2026-09-21`), with `expect` the `OqxResult`
   as JSON (absent keys for undefined projections; numbers within 1e-9; since
   4.6 `hints: [string…]` as the last key when the query reads a tier-3 name of
   an open kind, §1.5 — recorded verbatim, so the hint text is pinned; never
@@ -1249,7 +1367,13 @@ verbs later.
   the links errors, the nearest-match truths), `query-revisions.json` (the
   history target, 4.7 §1.2: over the one-revision corpus — row shape, `doc`,
   `is_current`, the docs relation, ordering, paging, the N/A functions; the
-  multi-revision scripts are `reads::revisions`).
+  multi-revision scripts are `reads::revisions`), `query-dates.json` (dates
+  and durations, 4.8 §1.3: every named point under the corpus clock,
+  canonical forms, the duration grammar, `plus`/`minus` fixed and calendar,
+  `until`, the fields, `format`, `dur_text`/`dur_iso`, the absent cases, the
+  four arity errors, and the Dataview idioms over the timeline milestones'
+  `when`; the projection-only cases use `bare: true` over `/index.md` so one
+  hit carries many values).
 - **`reads.json`**: observation scripts (`spec/store` §9.4) with `read`
   steps (a `version` read is recorded with every leaf value replaced by its
   type name — `"<string>"`, `"<number>"`, `"<null>"`, `"<boolean>"` — since the
@@ -1483,6 +1607,22 @@ both and runs both harnesses.
 
 ## 9. Reference oddities surfaced while specifying, and decisions
 
+- **Added (4.8) — dates and durations** (§1.3): the free functions `date(x)`
+  and `dur(x)`, the date methods `plus`, `minus`, `until`, `year`, `month`,
+  `day`, `weekday`, `hour`, `minute`, `second`, `date`, `format`, and the
+  number methods `dur_text`, `dur_iso`. New: `query-dates.json` (37 cases).
+  Moved cases: `examples::ladders` alone — its `query_syntax` rung records
+  the reference text, which gained the `dates` row; no query expectation
+  changed. The fixture contract
+  (§6) gains one rule: a query case runs under the corpus clock, which no
+  earlier case could observe. Two details the code decided: `now` carries
+  milliseconds (`…T00:00:00.000Z`, the store's stamp form) while a parsed
+  datetime carries a fraction only when written with one — so
+  `updated_at <= date("now")` holds at the stamping instant, and
+  `date("2026-10-15T09:00:00Z")` is not rewritten with a spurious `.000`; and
+  a duration string in `plus`/`minus` is calendar-aware for its *whole*
+  years and months only (the fraction of `"1.5 years"` is 182.5 fixed days),
+  because a fractional calendar month has no agreed meaning.
 - **Added (4.7) — history is queryable**: the `revisions` target (§1.1, §1.2)
   and `docs_read { at }` (§2), `docs_read_at` becoming its sugar. Moved cases,
   each reviewed: every recorded `docs_read_at` result (`reads::history` ×2,
@@ -1805,6 +1945,37 @@ both and runs both harnesses.
 
 ## Decisions
 
+- 2026-10-15, surface 4.8: dates and durations (§1.3) — the Dataview-parity
+  function set, as host functions of the binding. Three choices. **Strings
+  and seconds, no new value kinds**: a date is the ISO-8601 string the store
+  already writes and OQX already orders (SEMANTICS §6), a duration a number
+  of seconds; `date()` canonicalizes and keeps the input's precision (a
+  date-only input stays date-only), so a value that went through `date()`
+  compares, projects and round-trips exactly like one that did not, and no
+  result shape, cursor or wire form learns a new type. **Methods, not
+  operators**: `+` with a string operand concatenates (SEMANTICS §7), so
+  `due + 86400` is `"2026-01-0586400"` and must stay so — overloading `+` on
+  a date-shaped string would make a string operator's meaning depend on the
+  string's content; `plus`/`minus`/`until` are explicit, total, and leave the
+  operators alone. **UTC**: the named points resolve against the host clock
+  in UTC and the fields read the written offset; a time-zone argument (the
+  Dataview `date(today)` is the user's local day) is a later round, because
+  the one correct answer needs a zone the server does not have, and a wrong
+  default would be pinned by fixtures. **Placement**: all of it is this spec,
+  not `spec/oqx`. The parsers and arithmetic are pure and host-agnostic and
+  could be OQX builtins with a `clock` hook on `DataContext`; they are
+  omgbase functions today because (a) the one impure input — the clock — is
+  the surface's existing seam (`OMGBASE_SPEC_CLOCK`, §7.1), and a `clock`
+  hook on `DataContext` would be the first builtin to read the host at all,
+  (b) the conventions (365/30 days, Monday weeks, the `format` token set,
+  Dataview's unit spellings) are a product's choices rather than a language's,
+  and (c) one spec file and one fixture suite move together with no OQX
+  version bump while the set settles; promotion to `spec/oqx` builtins
+  (with `date`/`dur` becoming reserved builtin names) is a later round once
+  the Dataview translator has exercised them. Folding a literal call before
+  planning is an implementation choice both engines may make or not: the
+  fixtures run planned and unplanned. Functions and methods added: a minor.
+  Fixtures: `query-dates.json`.
 - 2026-10-13 (store 14.2; no surface version move): a block's `updated_at`
   is the block's own last change and `blocks_history` lists the commits that
   changed it (§1.2). The surface pinned the mechanism — `MAX(commits.ts)`

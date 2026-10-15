@@ -466,6 +466,57 @@ nested/correlated scopes:
   returns no hits and is exempt; nested blocks are unaffected (their rows are
   values, see §7).
 
+### 5.1 Dates and durations (surface 4.8)
+The Dataview-parity set, as host functions (spec/surface §1.3 is normative).
+**A date is an ISO-8601 string** — `YYYY-MM-DD` or
+`YYYY-MM-DDThh:mm:ss[.fff](Z|±hh:mm)`, what `updated_at`/`ts` already are and
+what `<`/`>` already order chronologically — and **a duration is a number of
+seconds**. There are no new value kinds, and arithmetic between them is
+**methods, never `+`/`-`**: `+` with a string operand concatenates
+(`due + 86400` is `"2026-01-0586400"`).
+
+- `date(x)` — a **named point** against the host clock in **UTC**: `"now"`
+  (the instant with milliseconds, as commits are stamped), `"today"`,
+  `"yesterday"`, `"tomorrow"`, `"sow"`/`"eow"` (Monday/Sunday of this week),
+  `"som"`/`"eom"`, `"soy"`/`"eoy"` (date-only); otherwise an ISO string returned
+  **canonical** (a date-only input stays date-only; seconds always present,
+  a fraction kept as three digits, `+00:00` or no offset → `Z`, other offsets
+  kept as written). Anything else — `15/10/2026`, month 13, a number, absent
+  — is absent.
+- `dur(x)` — a number is seconds; a string is Dataview's grammar (`"1h30m"`,
+  `"1 hour 30 minutes"`, `"2 days, 3 hours"`, units `y|yr|yrs|year|years`,
+  `mo|mos|month|months`, `w|wk|wks|week|weeks`, `d|day|days`,
+  `h|hr|hrs|hour|hours`, `m|min|mins|minute|minutes`,
+  `s|sec|secs|second|seconds`, case-insensitive) or an ISO duration
+  (`"PT1H30M"`, `"P2W"`) → seconds, with **a year = 365 days and a month =
+  30 days**. Malformed → absent.
+- On a date string: `d.plus(x)` / `d.minus(x)` — `x` a number of seconds, or
+  a duration *string* whose months/years are **calendar-aware** (the month
+  field moves, the day clamps: `date("2026-01-31").plus("1 month")` is
+  `2026-02-28`; `.plus(dur("1 month"))` is 30 fixed days). A date-only receiver
+  shifted by whole days stays date-only, else becomes a UTC datetime; a
+  datetime keeps its offset. `a.until(b)` — signed seconds from `a` to `b`.
+  `d.year()` `d.month()` `d.day()` `d.weekday()` (**1 = Monday … 7 = Sunday**)
+  `d.hour()` `d.minute()` `d.second()` in the written offset; `d.date()` the
+  date part; `d.format(p)` with tokens `yyyy MM dd HH mm ss MMM EEE`, every
+  other character literal (`"EEE dd MMM yyyy"` → `Thu 15 Oct 2026`).
+- On a number: `n.dur_text()` → `"1h 30m"` / `"2d 3h"` / `"45s"` / `"0s"`;
+  `n.dur_iso()` → `"PT1H30M"` / `"PT0S"`.
+- **Total.** A receiver or argument of the wrong kind is absent, never an
+  error, so `where date(due) < date("today").minus(dur("30 days"))` over
+  documents with and without `due` filters quietly. The one error is a wrong
+  arity (`filter_invalid`).
+- **Folding and pushdown.** `date("…")`, `dur("…")` and a date method over
+  literals are folded to the literal before planning, so
+  `where updated_at < date("today")` is a plain string comparison the planner
+  pushes down, and a named point is read once per query. Anything over a
+  field (`date(when) < …`) runs in memory.
+- **The prefix trap.** `2026-09-27T00:00:00.000Z` is *not* `< "2026-09-27"`
+  (a longer string with an equal prefix sorts after it): "updated today" is
+  `updated_at.date() == date("today")`; "before today" over a datetime is
+  `updated_at < date("today")` only when the field is date-only — use
+  `date("tomorrow")` or `.date()`.
+
 ## 6. `follow`, the edge graph, and `distinct`
 - **Traversal:** `follow <dest>, …` recurses over one or more type-preserving
   destinations; a plain destination is a relation of the current row

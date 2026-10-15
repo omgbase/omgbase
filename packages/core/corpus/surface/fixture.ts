@@ -28,7 +28,7 @@ import { fileURLToPath } from "node:url";
 import { Store } from "../../src/core/store/store.js";
 import { ensureRepo } from "../../src/core/attach.js";
 import { sequentialMinter, setIdMinter } from "../../src/core/ids.js";
-import { withClock } from "../../src/core/clock.js";
+import { pinClock, withClock } from "../../src/core/clock.js";
 import { CursorInvalid, decodeCursor, encodeCursor } from "../../src/core/cursor.js";
 import { sweepResurrectionPool } from "../../src/core/store/gc.js";
 import { observeBatch } from "../../src/sync/observe.js";
@@ -305,7 +305,12 @@ export interface QueryEvaluation {
   problems: string[];
 }
 
+// A query case runs under the corpus clock (README §6, 4.8): `date("today")`
+// and the other named points of §1.3 read the host clock, which is CORPUS_TS
+// here — the instant the corpus was observed — so their results are committed
+// expectations (`date("today")` is `2026-09-27`).
 function runOnce(c: LoadedCorpus, q: QueryCaseInput, plan: boolean): { ok: true; result: OqxResult } | { ok: false; message: string } {
+  const restore = pinClock(CORPUS_TS);
   try {
     const result = oqxRun(c.store, c.repoId, q.query, {
       ...(q.limit !== undefined ? { limit: q.limit } : {}),
@@ -320,6 +325,8 @@ function runOnce(c: LoadedCorpus, q: QueryCaseInput, plan: boolean): { ok: true;
     if (e instanceof FilterInvalid) return { ok: false, message: e.message };
     if (e instanceof CursorInvalid) return { ok: false, message: e.message };
     throw e;
+  } finally {
+    restore();
   }
 }
 
