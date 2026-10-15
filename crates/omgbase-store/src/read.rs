@@ -17,12 +17,16 @@ use crate::tree::{from_hex, parse_tree_entries};
 
 /// A blob's bytes as text; `""` when the hash is unknown (as the reference).
 pub fn blob_text(conn: &Connection, hash: &[u8]) -> Result<String> {
+    blob_text_at(conn, "", hash)
+}
+
+/// [`blob_text`] over `<prefix>blobs` — `""` for the store's own table,
+/// `"<alias>."` for an attached archive segment's (§6.2 "Through a segment",
+/// 15.0; the prefix is [`crate::archive::RevisionBody::prefix`]).
+pub fn blob_text_at(conn: &Connection, prefix: &str, hash: &[u8]) -> Result<String> {
     let bytes: Option<Vec<u8>> = conn
-        .query_row(
-            "SELECT bytes FROM blobs WHERE hash = ?1",
-            params![hash],
-            |r| r.get(0),
-        )
+        .prepare_cached(&format!("SELECT bytes FROM {prefix}blobs WHERE hash = ?1"))?
+        .query_row(params![hash], |r| r.get(0))
         .optional()?;
     Ok(bytes.map_or_else(String::new, |b| String::from_utf8_lossy(&b).into_owned()))
 }
@@ -87,7 +91,9 @@ pub struct RevisionRead {
 /// §6.2: the same assembly sourced from the revision's Merkle root (children
 /// not walked), with `leading_trivia`/`frontmatter_trivia` from the current
 /// doc row. `None` when the doc is not live or `rev_id` is not one of its
-/// revisions.
+/// revisions. An archived revision (15.0) reads **through its segment**,
+/// attached on demand ([`crate::archive::revision_body`]); a segment that is
+/// not recorded or not on disk is [`crate::Error::RevisionArchived`].
 pub fn read_at_revision(
     conn: &Connection,
     doc_id: &str,
@@ -103,40 +109,32 @@ pub fn read_at_revision(
     let Some((leading, fm_trivia)) = doc else {
         return Ok(None);
     };
-    type RevRow = (Vec<u8>, Option<Vec<u8>>, Vec<u8>, String);
-    let rev: Option<RevRow> = conn
-        .query_row(
-            "SELECT root_tree, frontmatter_blob, rendered_hash, path FROM revisions WHERE rev_id = ?1 AND doc_id = ?2",
-            params![rev_id, doc_id],
-            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
-        )
-        .optional()?;
-    let Some((root_tree, fm_blob, rendered_hash, path)) = rev else {
+    let Some(rev) = crate::archive::revision_body(conn, rev_id, Some(doc_id))? else {
         return Ok(None);
     };
+    let prefix = rev.prefix.as_str();
     let mut out = leading;
-    if let Some(hash) = fm_blob {
-        out.push_str(&blob_text(conn, &hash)?);
+    if let Some(hash) = &rev.frontmatter_blob {
+        out.push_str(&blob_text_at(conn, prefix, hash)?);
         out.push_str(fm_trivia.as_deref().unwrap_or(""));
     }
     let entries: Option<String> = conn
-        .query_row(
-            "SELECT entries FROM tree_nodes WHERE hash = ?1",
-            params![root_tree],
-            |r| r.get(0),
-        )
+        .prepare_cached(&format!(
+            "SELECT entries FROM {prefix}tree_nodes WHERE hash = ?1"
+        ))?
+        .query_row(params![rev.root_tree], |r| r.get(0))
         .optional()?;
     if let Some(text) = entries {
         for e in parse_tree_entries(&text)? {
-            out.push_str(&blob_text(conn, &from_hex(&e.raw_hash_hex)?)?);
+            out.push_str(&blob_text_at(conn, prefix, &from_hex(&e.raw_hash_hex)?)?);
             if let Some(t) = e.trivia_hash_hex {
-                out.push_str(&blob_text(conn, &from_hex(&t)?)?);
+                out.push_str(&blob_text_at(conn, prefix, &from_hex(&t)?)?);
             }
         }
     }
-    let rendered_hash_match = sha256(out.as_bytes())[..] == rendered_hash[..];
+    let rendered_hash_match = sha256(out.as_bytes())[..] == rev.rendered_hash[..];
     Ok(Some(RevisionRead {
-        path,
+        path: rev.path,
         content: out,
         rendered_hash_match,
     }))

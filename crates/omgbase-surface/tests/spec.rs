@@ -34,7 +34,9 @@ use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 use omgbase_reconcile::Config;
-use omgbase_store::{BatchItem, BatchOutcome, SequentialMinter, Store};
+use omgbase_store::{
+    BatchItem, BatchOutcome, ExportOptions, RetentionOptions, SequentialMinter, Store,
+};
 use omgbase_surface::dates;
 use omgbase_surface::{
     MINIMAL_TOOLS, OqxResult, Profile, QueryOptions, Surface, SurfaceError, decode_cursor,
@@ -760,9 +762,18 @@ fn run_reads_case(c: &Json, corpus: Option<&[(String, String)]>) -> Result<Json,
         .with_clock(move || tick.borrow().clone())
         .with_build_info(build);
 
+    // `spec/store` §9.4 (15.0): the retention steps around the reads that show
+    // `archived` and `revision_archived`; the segments go to a directory of
+    // the case's own, removed with it.
+    let mut archives: Option<TempDir> = None;
     let mut steps = Vec::new();
     for (i, step) in c["steps"].as_array().ok_or("steps")?.iter().enumerate() {
-        if let Some(observe) = step.get("observe") {
+        if let Some(kind) = HISTORY_STEP_KINDS.iter().find(|k| step.get(**k).is_some()) {
+            let dir = archives.get_or_insert_with(|| TempDir::new(&format!("{name}-archives")));
+            let out = run_history_step(surface.store_mut(), &repo_id, kind, &step[*kind], &dir.0)
+                .map_err(|e| format!("step {i}: {e}"))?;
+            steps.push(out);
+        } else if let Some(observe) = step.get("observe") {
             let ts = observe["ts"].as_str().ok_or("observe.ts")?;
             *clock.borrow_mut() = ts.to_owned();
             let items: Vec<BatchItem> = observe["items"]
@@ -838,10 +849,126 @@ fn run_reads_case(c: &Json, corpus: Option<&[(String, String)]>) -> Result<Json,
             let out = surface.call(tool, args);
             steps.push(normalize_outcome(tool, &out));
         } else {
-            return Err(format!("step {i}: none of observe, sweep, gc, exec, read"));
+            return Err(format!(
+                "step {i}: none of observe, sweep, gc, exec, read, history_*, read_at"
+            ));
         }
     }
+    drop(archives);
     Ok(json!({ "steps": steps }))
+}
+
+/// `spec/store` §9.4 (15.0): the retention step kinds a reads script may carry.
+const HISTORY_STEP_KINDS: [&str; 5] = [
+    "history_plan",
+    "history_export",
+    "history_attach",
+    "history_detach",
+    "read_at",
+];
+
+/// The file of a segment under the case's archive directory, by id.
+fn segment_file(dest: &Path, segment_id: &str) -> Result<PathBuf, String> {
+    let suffix = format!("-{segment_id}.omgarchive.db");
+    let found = fs::read_dir(dest)
+        .map_err(|e| e.to_string())?
+        .filter_map(|e| e.ok().map(|e| e.file_name().to_string_lossy().into_owned()))
+        .find(|n| n.ends_with(&suffix))
+        .ok_or_else(|| format!("no segment file for {segment_id} under {}", dest.display()))?;
+    Ok(dest.join(found))
+}
+
+/// `spec/store` §9.4 (15.0): the retention steps as the store runner runs
+/// them, through the production paths.
+fn run_history_step(
+    store: &mut Store,
+    repo_id: &str,
+    kind: &str,
+    body: &Json,
+    dest: &Path,
+) -> Result<Json, String> {
+    let retention = |store: &Store, body: &Json| -> Result<RetentionOptions, String> {
+        let now = body["ts"].as_str().ok_or("ts")?.to_owned();
+        let policy = store
+            .retention_policy(repo_id, body.get("policy"))
+            .map_err(|e| e.to_string())?;
+        Ok(RetentionOptions {
+            now,
+            before: body.get("before").and_then(Json::as_str).map(str::to_owned),
+            policy,
+        })
+    };
+    match kind {
+        "history_plan" => {
+            let opts = retention(store, body)?;
+            let plan = store
+                .retention_plan(repo_id, &opts)
+                .map_err(|e| e.to_string())?;
+            Ok(json!({ "plan": plan.to_json() }))
+        }
+        "history_export" => {
+            let opts = ExportOptions {
+                retention: retention(store, body)?,
+                dest: dest.to_path_buf(),
+                prune: body["prune"].as_bool().unwrap_or(false),
+            };
+            let r = store
+                .export_history(repo_id, &opts)
+                .map_err(|e| e.to_string())?;
+            Ok(json!({ "export": {
+                "segment": r.segment.as_ref().map(|s| json!({
+                    "id": s.id, "seq_lo": s.seq_lo, "seq_hi": s.seq_hi,
+                    "revision_count": s.revision_count, "previous_segment": s.previous_segment,
+                })),
+                "reused": r.reused,
+                "squashed": r.squashed.map(|q| json!({
+                    "revisions": q.revisions, "commits": q.commits,
+                    "dispositions": q.dispositions, "block_changes": q.block_changes,
+                })),
+                "gc": r.gc.map(|g| json!({ "blobs": g.blobs, "tree_nodes": g.tree_nodes })),
+            } }))
+        }
+        "history_attach" => {
+            let file = segment_file(dest, body["segment"].as_str().ok_or("segment")?)?;
+            let r = store
+                .attach_archive(repo_id, &file)
+                .map_err(|e| e.to_string())?;
+            Ok(json!({ "attached": r.attached.iter().map(|a| json!({
+                "segment_id": a.segment_id, "seq_lo": a.seq_lo, "seq_hi": a.seq_hi,
+                "revision_count": a.revision_count,
+            })).collect::<Vec<_>>() }))
+        }
+        "history_detach" => {
+            let detached = store
+                .detach_archive(repo_id, body["segment"].as_str().ok_or("segment")?)
+                .map_err(|e| e.to_string())?;
+            Ok(json!({ "detached": detached }))
+        }
+        _ => {
+            let doc = body["doc"].as_str().ok_or("doc")?;
+            let rev = body["rev"].as_str().ok_or("rev")?;
+            match store.read_at_revision(doc, rev) {
+                Ok(Some(r)) => {
+                    Ok(json!({ "raw": r.content, "rendered_hash_match": r.rendered_hash_match }))
+                }
+                Ok(None) => Ok(json!({ "error": "target_missing" })),
+                Err(omgbase_store::Error::RevisionArchived { rev, archive, path }) => {
+                    let mut m = serde_json::Map::new();
+                    m.insert("error".to_owned(), json!("revision_archived"));
+                    m.insert("rev".to_owned(), json!(rev));
+                    m.insert("archive".to_owned(), json!(archive));
+                    if let Some(p) = path {
+                        m.insert(
+                            "path".to_owned(),
+                            json!(format!("<dest>/{}", omgbase_store::segment_basename(&p))),
+                        );
+                    }
+                    Ok(Json::Object(m))
+                }
+                Err(e) => Err(e.to_string()),
+            }
+        }
+    }
 }
 
 // ---- driving ------------------------------------------------------------------------

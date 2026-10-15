@@ -42,6 +42,7 @@ const ID_TABLES: &[(&str, &[(&str, &str)])] = &[
     ("cp", &[("checkpoints", "id")]),
     ("rp", &[("repos", "repo_id")]),
     ("src", &[("sources", "source_id")]),
+    ("s", &[("archives", "segment_id")]),
 ];
 
 /// The tables an id with `prefix` is checked against (empty for `col`, `v`

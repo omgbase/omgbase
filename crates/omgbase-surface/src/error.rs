@@ -114,6 +114,22 @@ impl From<omgbase_store::Error> for SurfaceError {
             omgbase_store::Error::Mutation(m) => Self::from(m),
             omgbase_store::Error::Search(s) => Self::new(s.code(), s.to_string()),
             omgbase_store::Error::InvalidEffect(m) => Self::filter_invalid(m, "arguments"),
+            // `spec/surface` §2 (4.9): a read of an archived revision whose
+            // segment is not attached or not on disk — `{ rev, archive,
+            // path? }`, `path` only when the segment is recorded.
+            e @ omgbase_store::Error::RevisionArchived { .. } => {
+                let message = e.to_string();
+                let omgbase_store::Error::RevisionArchived { rev, archive, path } = e else {
+                    unreachable!("matched above");
+                };
+                let mut data = Map::new();
+                data.insert("rev".to_owned(), Value::String(rev));
+                data.insert("archive".to_owned(), Value::String(archive));
+                if let Some(p) = path {
+                    data.insert("path".to_owned(), Value::String(p));
+                }
+                Self::with_data("revision_archived", message, Value::Object(data))
+            }
             other => Self::other(other.to_string()),
         }
     }
@@ -184,6 +200,31 @@ mod tests {
         let plain = SurfaceError::other("boom").to_json();
         assert!(plain.get("data").is_none());
         assert_eq!(plain["error"], "repo_not_found");
+    }
+
+    #[test]
+    fn revision_archived_carries_rev_archive_and_an_optional_path() {
+        let e = SurfaceError::from(omgbase_store::Error::RevisionArchived {
+            rev: "r_1".into(),
+            archive: "s_0".into(),
+            path: None,
+        });
+        assert_eq!(e.code, "revision_archived");
+        assert_eq!(
+            e.message,
+            "revision \"r_1\" is archived in segment s_0, which is not attached (omg history attach <file>)"
+        );
+        assert_eq!(e.data, Some(json!({ "rev": "r_1", "archive": "s_0" })));
+        let e = SurfaceError::from(omgbase_store::Error::RevisionArchived {
+            rev: "r_1".into(),
+            archive: "s_0".into(),
+            path: Some("/x/s.db".into()),
+        });
+        assert_eq!(
+            e.message,
+            "revision \"r_1\" is archived in segment s_0 at /x/s.db, which is not on disk"
+        );
+        assert_eq!(e.data.unwrap()["path"], "/x/s.db");
     }
 
     #[test]

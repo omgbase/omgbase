@@ -140,9 +140,24 @@ fn validate_steps(at: &str, steps: Option<&Json>, problems: &mut Vec<String>) ->
             continue;
         };
         let keys: Vec<&String> = obj.keys().collect();
-        if keys.len() != 1 || !["observe", "sweep", "gc", "exec"].contains(&keys[0].as_str()) {
+        // `spec/store` §9.4 (15.0): the retention steps are accepted by shape
+        // and refused at run time (the graph fixtures carry none).
+        if keys.len() != 1
+            || ![
+                "observe",
+                "sweep",
+                "gc",
+                "exec",
+                "history_plan",
+                "history_export",
+                "history_attach",
+                "history_detach",
+                "read_at",
+            ]
+            .contains(&keys[0].as_str())
+        {
             problems.push(format!(
-                "{here}: a step is exactly one of `observe` / `sweep` / `gc` / `exec` (got {})",
+                "{here}: a step is exactly one of `observe` / `sweep` / `gc` / `exec` / the retention steps (got {})",
                 keys.iter()
                     .map(|k| k.as_str())
                     .collect::<Vec<_>>()
@@ -561,6 +576,19 @@ fn run_case_script(c: &Json) -> Result<Evaluation, String> {
             // `spec/store` §9.4 (14.2): authored SQL, verbatim, one transaction.
             let changes = exec_sql(store.conn(), exec).map_err(|e| format!("step {i}: {e}"))?;
             steps.push(json!({ "changes": changes }));
+        } else if [
+            "history_plan",
+            "history_export",
+            "history_attach",
+            "history_detach",
+            "read_at",
+        ]
+        .iter()
+        .any(|k| step.get(*k).is_some())
+        {
+            return Err(format!(
+                "step {i}: retention steps (spec/store §9.4, 15.0) are not run by the graph runner"
+            ));
         } else {
             return Err(format!("step {i}: none of observe, sweep, gc, exec"));
         }

@@ -167,7 +167,9 @@ pub fn doctor(cli: &mut Cli, args: &[String]) -> Result<i32> {
     let a = parse_args(args, &[Opt::flag("size")])?;
     cli.workspace()?;
     if a.flag("size") {
-        let report = cli.store()?.size_report()?;
+        // The retention advice (15.0) is evaluated at the pinned clock.
+        let now = cli.now();
+        let report = cli.store()?.size_report_at(&now)?;
         return doctor_size(cli, &report);
     }
     let repo = cli.repo()?;
@@ -348,6 +350,16 @@ fn size_lines(report: &SizeReport, style: &Style) -> Vec<String> {
             ),
         ],
         vec!["reclaimable".to_owned(), human_bytes(f.reclaimable)],
+        // 15.0: the history that already moved to archive segments (`spec/store` §7.1).
+        vec![
+            "archived".to_owned(),
+            format!(
+                "{} revisions in {} segments, {} on disk",
+                report.archived.revisions,
+                report.archived.segments,
+                human_bytes(report.archived.bytes)
+            ),
+        ],
     ];
     for line in columns(&file, &[Align::Left]) {
         out.push(format!("  {line}"));
@@ -805,6 +817,11 @@ mod tests {
                 cat("sync", vec![table("sqlite_schema", 75_904, 85)]),
             ],
             same_dispositions: 0,
+            archived: omgbase_store::SizeArchived {
+                revisions: 2,
+                segments: 1,
+                bytes: 12_288,
+            },
             advice: vec!["nothing to reclaim".to_owned()],
             detail: None,
         };
@@ -830,6 +847,7 @@ mod tests {
                 "  size         1.0 MB on disk, wal 0 B",
                 "  pages        256 x 4096 bytes, 12 free",
                 "  reclaimable  48.0 KB",
+                "  archived     2 revisions in 1 segments, 12.0 KB on disk",
                 "  advice: nothing to reclaim",
             ]
         );

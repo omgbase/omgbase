@@ -531,11 +531,31 @@ enum VersionMode {
     Json,
 }
 
-/// The verb an argv invokes, whether a machine mode is on, and its flags;
-/// `None` when it asks for help.
-fn scan_argv(argv: &[String]) -> Option<(Option<&str>, bool, Vec<&str>)> {
-    const TAKES_VALUE: [&str; 6] = ["-C", "--directory", "--repo", "--server", "-H", "--header"];
+/// What an argv invokes: the verb, its first subcommand word, whether a
+/// machine mode is on, and its flags.
+struct Scan<'a> {
+    command: Option<&'a str>,
+    sub: Option<&'a str>,
+    json: bool,
+    flags: Vec<&'a str>,
+}
+
+/// The verb an argv invokes (and its first subcommand word), whether a
+/// machine mode is on, and its flags; `None` when it asks for help.
+fn scan_argv(argv: &[String]) -> Option<Scan<'_>> {
+    const TAKES_VALUE: [&str; 9] = [
+        "-C",
+        "--directory",
+        "--repo",
+        "--server",
+        "-H",
+        "--header",
+        "--dest",
+        "--policy",
+        "--before",
+    ];
     let mut command: Option<&str> = None;
+    let mut sub: Option<&str> = None;
     let mut json = false;
     let mut flags = Vec::new();
     let mut i = 0;
@@ -562,9 +582,16 @@ fn scan_argv(argv: &[String]) -> Option<(Option<&str>, bool, Vec<&str>)> {
         }
         if command.is_none() {
             command = Some(a);
+        } else if sub.is_none() {
+            sub = Some(a);
         }
     }
-    Some((command, json, flags))
+    Some(Scan {
+        command,
+        sub,
+        json,
+        flags,
+    })
 }
 
 fn mode_of(json: bool) -> VersionMode {
@@ -577,8 +604,8 @@ fn mode_of(json: bool) -> VersionMode {
 
 /// Does this argv invoke the `version` verb (not `--version`, not its card)?
 fn version_verb_mode(argv: &[String]) -> Option<VersionMode> {
-    let (command, json, _) = scan_argv(argv)?;
-    (command == Some("version")).then(|| mode_of(json))
+    let scan = scan_argv(argv)?;
+    (scan.command == Some("version")).then(|| mode_of(scan.json))
 }
 
 /// JSON: leaves → type names; keys kept; `components` → `"<object>"`; `mcp.sdk` dropped.
@@ -695,7 +722,7 @@ fn normalize_version_output(argv: &[String], o: Outcome) -> Outcome {
     }
 }
 
-// ---- §8: `doctor --size` and `gc --vacuum` are recorded by shape ---------------------
+// ---- §8: `doctor --size`, `gc --vacuum` and the sized `history` verbs are recorded by shape
 //
 // Byte counts depend on the SQLite build and its page allocation, not on the
 // engine's behavior, so a case pins everything but the bytes (the reference's
@@ -708,7 +735,10 @@ fn normalize_version_output(argv: &[String], o: Outcome) -> Outcome {
 // two-blank gutters kept; on every other line each humanized size becomes
 // `<bytes>`, each one-decimal percentage `<share>`, and the `pages` line's
 // three counts `<number>`. Row counts are never touched. Applied to stdout
-// and stderr of a successful `doctor --size` or `gc --vacuum`.
+// and stderr of a successful `doctor --size`, `gc --vacuum`, `history export`
+// (not its `--dry-run`, which is the plan over logical bytes and is exact),
+// `history list` or `history attach` (cli 4.6: a segment file's size is a
+// page layout too).
 
 const SIZE_KEYS: [&str; 8] = [
     "bytes",
@@ -723,12 +753,17 @@ const SIZE_KEYS: [&str; 8] = [
 const BYTES_CELL: usize = 9;
 const SHARE_CELL: usize = 6;
 
-/// Is this a successful `doctor --size` or `gc --vacuum` whose outputs are recorded by shape?
+/// Is this a successful `doctor --size`, `gc --vacuum`, `history export`,
+/// `history list` or `history attach` (cli 4.6) whose outputs are recorded by shape?
 fn size_report_mode(argv: &[String]) -> Option<VersionMode> {
-    let (command, json, flags) = scan_argv(argv)?;
-    let sized = (command == Some("doctor") && flags.contains(&"--size"))
-        || (command == Some("gc") && flags.contains(&"--vacuum"));
-    sized.then(|| mode_of(json))
+    let scan = scan_argv(argv)?;
+    let sized = (scan.command == Some("doctor") && scan.flags.contains(&"--size"))
+        || (scan.command == Some("gc") && scan.flags.contains(&"--vacuum"))
+        || (scan.command == Some("history")
+            && ((scan.sub == Some("export") && !scan.flags.contains(&"--dry-run"))
+                || scan.sub == Some("list")
+                || scan.sub == Some("attach")));
+    sized.then(|| mode_of(scan.json))
 }
 
 /// JSON: the numbers under the size keys → `"<number>"`.
@@ -885,7 +920,8 @@ fn size_shape_text(s: &str) -> String {
         .join("\n")
 }
 
-/// The §8 rewrite of a successful `doctor --size` / `gc --vacuum` step; anything else as is.
+/// The §8 rewrite of a successful sized step (`doctor --size`, `gc --vacuum`,
+/// `history export|list|attach`); anything else as is.
 fn normalize_size_output(argv: &[String], o: Outcome) -> Outcome {
     if o.exit != 0 {
         return o;

@@ -66,8 +66,22 @@ const CONFIG_KEYS: [&str; 13] = [
 ];
 /// §7: the projections an observation case may carry besides `steps`.
 const PROJECTED_KEYS: [&str; 4] = ["embed_tasks", "doc_tasks", "embeddings", "doc_embeddings"];
-const STEP_KINDS: [&str; 8] = [
-    "observe", "sweep", "gc", "exec", "drain", "search", "resolve", "rebuild",
+const STEP_KINDS: [&str; 13] = [
+    "observe",
+    "sweep",
+    "gc",
+    "exec",
+    "drain",
+    "search",
+    "resolve",
+    "rebuild",
+    // `spec/store` §9.4 (15.0): the retention steps the store runner shares —
+    // accepted by shape, never run here (the search fixtures carry none).
+    "history_plan",
+    "history_export",
+    "history_attach",
+    "history_detach",
+    "read_at",
 ];
 
 const PASSING_HEADER: &str = "\
@@ -307,6 +321,11 @@ fn validate_steps(at: &str, steps: Option<&Json>, problems: &mut Vec<String>) ->
                 }
                 if keys[0] == "resolve" && !b.get("query").is_some_and(Json::is_string) {
                     problems.push(format!("{here}: resolve needs `query`"));
+                }
+            }
+            "history_plan" | "history_export" | "history_attach" | "history_detach" | "read_at" => {
+                if !body.is_object() {
+                    problems.push(format!("{here}: {} must be an object", keys[0]));
                 }
             }
             _ => unreachable!(),
@@ -794,6 +813,20 @@ fn run_case_script(c: &Json) -> Result<Evaluation, String> {
                 .map_err(|e| format!("step {i}: {e}"))?;
             steps.push(json!({ "rebuilt": "fts" }));
         } else {
+            if [
+                "history_plan",
+                "history_export",
+                "history_attach",
+                "history_detach",
+                "read_at",
+            ]
+            .iter()
+            .any(|k| step.get(*k).is_some())
+            {
+                return Err(format!(
+                    "step {i}: retention steps (spec/store §9.4, 15.0) are not run by the search runner"
+                ));
+            }
             return Err(format!("step {i}: unknown step"));
         }
         for p in check_search(store.conn(), &repo_id) {

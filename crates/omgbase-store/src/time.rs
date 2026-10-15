@@ -20,7 +20,8 @@ fn digits(s: &[u8], at: usize, n: usize) -> Option<i64> {
 
 /// Days from 1970-01-01 to the proleptic Gregorian `y-m-d` (Howard Hinnant's
 /// `days_from_civil`).
-fn days_from_civil(y: i64, m: i64, d: i64) -> i64 {
+#[must_use]
+pub fn days_from_civil(y: i64, m: i64, d: i64) -> i64 {
     let y = if m <= 2 { y - 1 } else { y };
     let era = y.div_euclid(400);
     let yoe = y - era * 400;
@@ -30,8 +31,9 @@ fn days_from_civil(y: i64, m: i64, d: i64) -> i64 {
     era * 146_097 + doe - 719_468
 }
 
-/// The inverse of [`days_from_civil`].
-fn civil_from_days(z: i64) -> (i64, i64, i64) {
+/// The inverse of [`days_from_civil`]: `(year, month, day)`.
+#[must_use]
+pub fn civil_from_days(z: i64) -> (i64, i64, i64) {
     let z = z + 719_468;
     let era = z.div_euclid(146_097);
     let doe = z - era * 146_097;
@@ -132,6 +134,15 @@ pub fn format_ms(ms: i64) -> String {
     let second = rem / 1000 % 60;
     let milli = rem % 1000;
     format!("{y:04}-{m:02}-{d:02}T{hour:02}:{minute:02}:{second:02}.{milli:03}Z")
+}
+
+/// The wall clock as the store stamps it (`YYYY-MM-DDTHH:MM:SS.fffZ`).
+#[must_use]
+pub fn now_ts() -> String {
+    let ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| i64::try_from(d.as_millis()).unwrap_or(0));
+    format_ms(ms)
 }
 
 /// `ts` re-formatted canonically, plus `delta_ms`.

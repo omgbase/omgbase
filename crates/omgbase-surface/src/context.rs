@@ -185,9 +185,11 @@ const EDGE_ATTRIBUTES: [&str; 13] = [
 ];
 /// The history target (`spec/surface` §1.2, 4.7): a revision row's own
 /// columns under the names `docs_history` already uses (`rev`, `seq`,
-/// `commit`, `origin`, `actor`, `hash`), the commit's `ts` and `reason`, and
-/// `is_current`.
-const REVISION_ATTRIBUTES: [&str; 12] = [
+/// `commit`, `origin`, `actor`, `hash`), the commit's `ts` and `reason`,
+/// `is_current`, and (4.9) `archived` — the revision's bodies live in an
+/// archive segment (`spec/store` §7.1; `docs_read { at }` reads through it
+/// when attached).
+const REVISION_ATTRIBUTES: [&str; 13] = [
     "id",
     "path",
     "rev",
@@ -200,6 +202,7 @@ const REVISION_ATTRIBUTES: [&str; 12] = [
     "reason",
     "hash",
     "is_current",
+    "archived",
 ];
 /// The engine attributes per kind (`spec/surface` §1.2 table).
 #[must_use]
@@ -220,7 +223,7 @@ pub fn attributes(t: Target) -> &'static [&'static str] {
 /// `isCurrent`: the revision is the document's `current_rev`. The planner's
 /// clauses for the kind ([`crate::planner::columns`], `from_clause`) are
 /// these same strings.
-pub(crate) const REVISION_COLS: &str = "r.rev_id, r.doc_id, r.seq, r.rendered_hash, r.path, r.commit_id, c.ts, c.origin, c.actor, c.reason, (d.current_rev = r.rev_id) AS is_current";
+pub(crate) const REVISION_COLS: &str = "r.rev_id, r.doc_id, r.seq, r.rendered_hash, r.path, r.commit_id, c.ts, c.origin, c.actor, c.reason, (d.current_rev = r.rev_id) AS is_current, (r.archive IS NOT NULL) AS archived";
 pub(crate) const REVISION_FROM: &str =
     "revisions r JOIN docs d ON d.doc_id = r.doc_id JOIN commits c ON c.commit_id = r.commit_id";
 /// The source handles of a document (§1.2): `data` is the merged authored
@@ -1432,8 +1435,8 @@ impl<'a> StoreContext<'a> {
             (Target::Revisions, "commit") => c("commit_id"),
             (Target::Revisions, "actor" | "reason") => Self::null_if_absent(c(name)),
             (Target::Revisions, "hash") => c("rendered_hash"),
-            (Target::Revisions, "is_current") => Value::Bool(matches!(
-                c("is_current"),
+            (Target::Revisions, "is_current" | "archived") => Value::Bool(matches!(
+                c(name),
                 Value::Number(n) if n == 1.0
             )),
             _ => Value::Undefined,

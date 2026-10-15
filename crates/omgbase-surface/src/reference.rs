@@ -113,7 +113,7 @@ everywhere: a hit's `id` is docs_read's `id` and the `id` argument of blocks_rea
     blocks  id path doc_id raw hash updated_at type text attrs depth ordinal | block doc | children nodes out_links section
     nodes   id path doc_id block_id kind name value attrs | section doc block | blocks subsections children
     links   id path doc_id block_id via_id dst_id dst_path uri field dst_kind predicate provenance anchor | doc
-    revisions  id path rev seq doc_id commit ts origin actor reason hash is_current | doc
+    revisions  id path rev seq doc_id commit ts origin actor reason hash is_current archived | doc
   A key of yours with any of these names is `data.<k>` (or frontmatter.<k> /
   inline.<k> by source; attrs.<k> on a block or node).
   UNKNOWN NAMES: a name that is none of the above AND that no object of the
@@ -195,7 +195,9 @@ revisions:  (history as rows — one per stored revision of every document of th
                        ts (the commit's time, sorts chronologically), origin
                        ("observed"/"api"/"import"/"projection"), actor, reason,
                        hash (the rendered file's sha256 — docs_history's hash),
-                       is_current (true for the document's current revision).
+                       is_current (true for the document's current revision),
+                       archived (true when the bodies moved to an archive segment:
+                       the row stays, docs_read { at } reads through the segment).
   - attributes       = id (the revision id, r_…), path (the path the revision
                        was committed under — a move re-paths only the current
                        revision, so earlier ones keep the old path). doc.<key>

@@ -9,8 +9,12 @@ use crate::mint::{IdSource, Mint};
 /// `spec/store/schema.sql`, verbatim (§3.3). Executed on a fresh database.
 pub const SCHEMA_SQL: &str = include_str!("../schema.sql");
 
+/// `spec/store/archive.sql`, verbatim (§3.3, 15.0): the DDL of an archive
+/// segment (§7.1), executed on every new segment file `history export` writes.
+pub const ARCHIVE_SQL: &str = include_str!("../archive.sql");
+
 /// The `PRAGMA user_version` this crate writes: the spec major.
-pub const SCHEMA_VERSION: i64 = 14;
+pub const SCHEMA_VERSION: i64 = 15;
 
 /// Split the DDL into statements at every `;` outside a `--` comment or a
 /// string literal, keeping each statement's original text (comments included).
@@ -156,6 +160,12 @@ pub(crate) fn migrate(conn: &Connection, ids: &mut IdSource) -> Result<()> {
         });
     }
     for v in current + 1..=SCHEMA_VERSION {
+        if v == 15 {
+            // Brackets its own transaction: `PRAGMA foreign_keys` is a no-op
+            // inside one, and the rebuild needs it off (§3.4 step 15).
+            migrate_v15(conn)?;
+            continue;
+        }
         let tx = conn.unchecked_transaction()?;
         migrate_step(&tx, v, &mut ids.at(&tx))?;
         tx.commit()?;
@@ -221,6 +231,61 @@ fn migrate_step(conn: &Connection, to: i64, minter: &mut Mint<'_>) -> Result<()>
     Ok(())
 }
 
+/// v15 (§3.4 step 15, §7.1 "Retention"): `revisions.root_tree` and
+/// `frontmatter_blob` become nullable and lose their foreign keys (an
+/// archived revision keeps its row and loses its bodies), `revisions` gains
+/// `archive`, and `archives` is created. SQLite cannot relax a NOT NULL or
+/// drop a FK in place, so the table is rebuilt the documented way: foreign
+/// keys off for the duration — `pending_materializations.rev_id` references
+/// `revisions`, and the DROP would otherwise be an implicit DELETE under the
+/// FK — create the new table, copy every row with `archive = NULL`, drop the
+/// old, rename, `foreign_key_check`. Idempotent: a `revisions` table that
+/// already carries `archive` is left alone; `archives` is `CREATE … IF NOT
+/// EXISTS`. The opener runs each step in its own transaction and `PRAGMA
+/// foreign_keys` is a no-op inside one, so this step brackets its own.
+fn migrate_v15(conn: &Connection) -> Result<()> {
+    if has_column(conn, "revisions", "archive")? == Some(false) {
+        conn.pragma_update(None, "foreign_keys", "OFF")?;
+        let rebuilt = (|| -> Result<()> {
+            let tx = conn.unchecked_transaction()?;
+            tx.execute_batch(
+                "CREATE TABLE revisions_v15 (
+  rev_id           TEXT PRIMARY KEY,
+  doc_id           TEXT NOT NULL REFERENCES docs(doc_id),
+  seq              INTEGER NOT NULL,
+  root_tree        BLOB,
+  frontmatter_blob BLOB,
+  rendered_hash    BLOB NOT NULL,
+  path             TEXT NOT NULL,
+  commit_id        TEXT NOT NULL REFERENCES commits(commit_id),
+  archive          TEXT,
+  UNIQUE (doc_id, seq)
+);
+INSERT INTO revisions_v15 (rev_id, doc_id, seq, root_tree, frontmatter_blob, rendered_hash, path, commit_id, archive)
+  SELECT rev_id, doc_id, seq, root_tree, frontmatter_blob, rendered_hash, path, commit_id, NULL FROM revisions;
+DROP TABLE revisions;
+ALTER TABLE revisions_v15 RENAME TO revisions;",
+            )?;
+            let violations: i64 = {
+                let mut stmt = tx.prepare("PRAGMA foreign_key_check")?;
+                let rows = stmt.query_map([], |_| Ok(()))?;
+                i64::try_from(rows.count()).unwrap_or(i64::MAX)
+            };
+            if violations > 0 {
+                return Err(Error::Other(format!(
+                    "migration v15: {violations} foreign key violation(s) after rebuilding revisions"
+                )));
+            }
+            tx.commit()?;
+            Ok(())
+        })();
+        conn.pragma_update(None, "foreign_keys", "ON")?;
+        rebuilt?;
+    }
+    conn.execute_batch(&ddl_for(&["archives"]))?;
+    Ok(())
+}
+
 /// v13 (ADR-014): `repos.root_path` becomes an `fs` source + attachment.
 fn migrate_v13(conn: &Connection, minter: &mut Mint<'_>) -> Result<()> {
     if has_column(conn, "repos", "root_path")? != Some(true) {
@@ -281,6 +346,7 @@ mod tests {
         assert!(targets.iter().any(|t| t == "blocks_fts"));
         assert!(targets.iter().any(|t| t == "workspace_settings"));
         assert!(targets.iter().any(|t| t == "pending_materializations"));
+        assert!(targets.iter().any(|t| t == "archives"));
         assert_eq!(
             targets.iter().filter(|t| *t == "blocks").count(),
             5,
@@ -310,6 +376,32 @@ mod tests {
         let pending = ddl_for(&["pending_materializations"]);
         assert!(pending.contains("CREATE TABLE IF NOT EXISTS pending_materializations"));
         assert!(pending.contains("PRIMARY KEY (repo_id, path)"));
+        let archives = ddl_for(&["archives"]);
+        assert!(archives.contains("CREATE TABLE IF NOT EXISTS archives"));
+        assert!(archives.contains("segment_id     TEXT PRIMARY KEY"));
         assert!(ddl_for(&["nope"]).is_empty());
+    }
+
+    /// §3.3 (15.0): the embedded segment DDL creates the manifest and the six
+    /// mirrored tables on a fresh database, idempotently.
+    #[test]
+    fn archive_sql_creates_a_segment() {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        conn.execute_batch(ARCHIVE_SQL).unwrap();
+        conn.execute_batch(ARCHIVE_SQL).unwrap();
+        for t in [
+            "manifest",
+            "revisions",
+            "commits",
+            "blobs",
+            "tree_nodes",
+            "dispositions",
+            "block_changes",
+        ] {
+            assert!(table_exists(&conn, t).unwrap(), "{t}");
+        }
+        assert!(!table_exists(&conn, "docs").unwrap());
+        let cols = column_names(&conn, "revisions").unwrap();
+        assert_eq!(cols.len(), 8, "a segment's revisions carry no `archive`");
     }
 }

@@ -24,8 +24,9 @@ use omgbase_format::hash::{hex, sha256};
 use omgbase_reconcile::Config;
 use omgbase_store::tree::parse_tree_entries;
 use omgbase_store::{
-    BatchItem, BatchOutcome, IdMinter, RepeatingMinter, SCHEMA_SQL, SCHEMA_VERSION,
-    SequentialMinter, Store, TreeEntry,
+    ARCHIVE_SQL, ARCHIVED_COMMITS_SQL, BatchItem, BatchOutcome, ExportOptions, IdMinter,
+    RepeatingMinter, RetentionOptions, SCHEMA_SQL, SCHEMA_VERSION, SequentialMinter, Store,
+    TreeEntry,
 };
 use rusqlite::types::Value as Sql;
 use rusqlite::{Connection, OptionalExtension, params};
@@ -57,7 +58,7 @@ const CONFIG_KEYS: [&str; 13] = [
     "max_scored_blocks",
     "theta_xdoc",
 ];
-const PROJECTED_TABLES: [&str; 11] = [
+const PROJECTED_TABLES: [&str; 12] = [
     "docs",
     "commits",
     "revisions",
@@ -69,7 +70,18 @@ const PROJECTED_TABLES: [&str; 11] = [
     "resurrection_pool",
     "sections",
     "pending_materializations",
+    "archives",
 ];
+/// README §9.4 (15.0): the retention step kinds.
+const HISTORY_STEP_KINDS: [&str; 5] = [
+    "history_plan",
+    "history_export",
+    "history_attach",
+    "history_detach",
+    "read_at",
+];
+/// README §9.4 (15.0): `<dest>` stands for the case's archive directory in a projected path.
+const DEST_TOKEN: &str = "<dest>";
 
 const PASSING_HEADER: &str = "\
 # Store spec cases (spec/store/cases) that the Rust port must pass, one
@@ -167,9 +179,12 @@ fn validate_steps(at: &str, steps: Option<&Json>, problems: &mut Vec<String>) ->
             continue;
         };
         let keys: Vec<&String> = obj.keys().collect();
-        if keys.len() != 1 || !["observe", "sweep", "gc", "exec"].contains(&keys[0].as_str()) {
+        if keys.len() != 1
+            || !(["observe", "sweep", "gc", "exec"].contains(&keys[0].as_str())
+                || HISTORY_STEP_KINDS.contains(&keys[0].as_str()))
+        {
             problems.push(format!(
-                "{here}: a step is exactly one of `observe` / `sweep` / `gc` / `exec` (got {})",
+                "{here}: a step is exactly one of `observe` / `sweep` / `gc` / `exec` / the retention steps (got {})",
                 keys.iter()
                     .map(|k| k.as_str())
                     .collect::<Vec<_>>()
@@ -180,6 +195,10 @@ fn validate_steps(at: &str, steps: Option<&Json>, problems: &mut Vec<String>) ->
         let body = &obj[keys[0]];
         if keys[0] == "gc" || keys[0] == "exec" {
             validate_gc_exec_body(&here, keys[0], body, problems);
+            continue;
+        }
+        if HISTORY_STEP_KINDS.contains(&keys[0].as_str()) {
+            validate_history_body(&here, keys[0], body, problems);
             continue;
         }
         let ts_ok = body
@@ -752,8 +771,23 @@ fn run_observe_case(c: &Json) -> Result<ObserveEvaluation, String> {
     let mut last_source: HashMap<String, String> = HashMap::new();
     let mut steps = Vec::new();
     let mut problems = Vec::new();
+    // The case's archive directory (README §9.4, 15.0): created on the first
+    // retention step, removed with the store.
+    let mut dest: Option<ArchiveDir> = None;
     for (i, step) in c["steps"].as_array().ok_or("steps")?.iter().enumerate() {
-        if let Some(observe) = step.get("observe") {
+        if let Some(kind) = HISTORY_STEP_KINDS.iter().find(|k| step.get(**k).is_some()) {
+            let dir =
+                dest.get_or_insert_with(|| ArchiveDir::new(c["name"].as_str().unwrap_or("case")));
+            steps.push(
+                run_history_step(&mut store, &repo_id, kind, &step[*kind], &dir.0)
+                    .map_err(|e| format!("step {i}: {e}"))?,
+            );
+            if *kind == "history_export" {
+                for p in check_invariants(&store, &repo_id, &last_source) {
+                    problems.push(format!("after step {i}: {p}"));
+                }
+            }
+        } else if let Some(observe) = step.get("observe") {
             let ts = observe["ts"].as_str().ok_or("observe.ts")?;
             let items: Vec<BatchItem> = observe["items"]
                 .as_array()
@@ -793,12 +827,15 @@ fn run_observe_case(c: &Json) -> Result<ObserveEvaluation, String> {
         } else if let Some(exec) = step.get("exec") {
             steps.push(run_exec_step(store.conn(), exec).map_err(|e| format!("step {i}: {e}"))?);
         } else {
-            return Err(format!("step {i}: none of observe, sweep, gc, exec"));
+            return Err(format!(
+                "step {i}: none of observe, sweep, gc, exec, history_*, read_at"
+            ));
         }
     }
     for p in check_invariants(&store, &repo_id, &last_source) {
         problems.push(format!("at end: {p}"));
     }
+    drop(dest);
     let mut expect = JsonMap::new();
     expect.insert("steps".to_owned(), Json::Array(steps));
     for (k, v) in project_store(store.conn(), &repo_id) {
@@ -859,6 +896,212 @@ fn run_exec_step(conn: &Connection, exec: &Json) -> Result<Json, String> {
     }
     tx.commit().map_err(|e| e.to_string())?;
     Ok(json!({ "changes": changes }))
+}
+
+/// README §9.4 (15.0): the retention steps' bodies — `history_plan { ts,
+/// policy?, before? }`, `history_export { ts, policy?, before?, prune }`,
+/// `history_attach` / `history_detach { segment }`, `read_at { doc, rev }`.
+fn validate_history_body(here: &str, kind: &str, body: &Json, problems: &mut Vec<String>) {
+    let Some(b) = body.as_object() else {
+        problems.push(format!("{here}: not an object"));
+        return;
+    };
+    let allowed: &[&str] = match kind {
+        "history_plan" => &["ts", "policy", "before"],
+        "history_export" => &["ts", "policy", "before", "prune"],
+        "history_attach" | "history_detach" => &["segment"],
+        _ => &["doc", "rev"],
+    };
+    let extra: Vec<&str> = b
+        .keys()
+        .map(String::as_str)
+        .filter(|k| !allowed.contains(k))
+        .collect();
+    if !extra.is_empty() {
+        problems.push(format!(
+            "{here}: {kind} takes {} (got {})",
+            allowed
+                .iter()
+                .map(|k| format!("`{k}`"))
+                .collect::<Vec<_>>()
+                .join(", "),
+            extra.join(", ")
+        ));
+    }
+    match kind {
+        "history_plan" | "history_export" => {
+            if !b.get("ts").and_then(Json::as_str).is_some_and(is_spec_ts) {
+                problems.push(format!(
+                    "{here}: `ts` must be RFC 3339 UTC with three fractional digits and Z (§2.4)"
+                ));
+            }
+            if b.get("policy").is_some_and(|p| !p.is_object()) {
+                problems.push(format!(
+                    "{here}: `policy` must be an object (a partial over the defaults)"
+                ));
+            }
+            if b.get("before")
+                .is_some_and(|v| !v.as_str().is_some_and(is_spec_ts))
+            {
+                problems.push(format!(
+                    "{here}: `before` must be RFC 3339 UTC with three fractional digits and Z (§2.4)"
+                ));
+            }
+            if kind == "history_export" && !b.get("prune").is_some_and(Json::is_boolean) {
+                problems.push(format!("{here}: `prune` must be a boolean"));
+            }
+        }
+        "read_at" => {
+            if !b.get("doc").is_some_and(Json::is_string)
+                || !b.get("rev").is_some_and(Json::is_string)
+            {
+                problems.push(format!("{here}: read_at takes `doc` and `rev` ids"));
+            }
+        }
+        _ => {
+            if !b
+                .get("segment")
+                .and_then(Json::as_str)
+                .is_some_and(|s| !s.is_empty())
+            {
+                problems.push(format!("{here}: `segment` must be a segment id"));
+            }
+        }
+    }
+}
+
+/// The case's archive directory (README §9.4, 15.0), removed on drop.
+struct ArchiveDir(PathBuf);
+
+impl ArchiveDir {
+    fn new(tag: &str) -> Self {
+        let unique = format!(
+            "omgbase-store-spec-archives-{}-{}-{}",
+            std::process::id(),
+            tag,
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0, |d| d.as_nanos())
+        );
+        let dir = std::env::temp_dir().join(unique);
+        fs::create_dir_all(&dir).expect("archive dir");
+        Self(dir)
+    }
+}
+
+impl Drop for ArchiveDir {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.0);
+    }
+}
+
+/// The file of a segment under the case's `dest`, by id (`…-<segment>.omgarchive.db`).
+fn segment_file(dest: &Path, segment_id: &str) -> Result<PathBuf, String> {
+    let suffix = format!("-{segment_id}.omgarchive.db");
+    let found = fs::read_dir(dest)
+        .map_err(|e| e.to_string())?
+        .filter_map(|e| e.ok().map(|e| e.file_name().to_string_lossy().into_owned()))
+        .find(|n| n.ends_with(&suffix))
+        .ok_or_else(|| format!("no segment file for {segment_id} under {}", dest.display()))?;
+    Ok(dest.join(found))
+}
+
+/// README §9.4 (15.0): the retention steps, through the production paths
+/// (`retention_plan`, `export_history`, `attach_archive`, `detach_archive`,
+/// `read_at_revision`). `policy` is a partial over the defaults (the repo has
+/// no settings in a fixture); `ts` is the clock.
+fn run_history_step(
+    store: &mut Store,
+    repo_id: &str,
+    kind: &str,
+    body: &Json,
+    dest: &Path,
+) -> Result<Json, String> {
+    let retention = |body: &Json| -> Result<RetentionOptions, String> {
+        let now = body["ts"].as_str().ok_or("ts")?.to_owned();
+        let policy = store
+            .retention_policy(repo_id, body.get("policy"))
+            .map_err(|e| e.to_string())?;
+        Ok(RetentionOptions {
+            now,
+            before: body.get("before").and_then(Json::as_str).map(str::to_owned),
+            policy,
+        })
+    };
+    match kind {
+        "history_plan" => {
+            let opts = retention(body)?;
+            let plan = store
+                .retention_plan(repo_id, &opts)
+                .map_err(|e| e.to_string())?;
+            Ok(json!({ "plan": plan.to_json() }))
+        }
+        "history_export" => {
+            let opts = ExportOptions {
+                retention: retention(body)?,
+                dest: dest.to_path_buf(),
+                prune: body["prune"].as_bool().unwrap_or(false),
+            };
+            let r = store
+                .export_history(repo_id, &opts)
+                .map_err(|e| e.to_string())?;
+            Ok(json!({ "export": {
+                "segment": r.segment.as_ref().map(|s| json!({
+                    "id": s.id, "seq_lo": s.seq_lo, "seq_hi": s.seq_hi,
+                    "revision_count": s.revision_count, "previous_segment": s.previous_segment,
+                })),
+                "reused": r.reused,
+                "squashed": r.squashed.map(|q| json!({
+                    "revisions": q.revisions, "commits": q.commits,
+                    "dispositions": q.dispositions, "block_changes": q.block_changes,
+                })),
+                "gc": r.gc.map(|g| json!({ "blobs": g.blobs, "tree_nodes": g.tree_nodes })),
+            } }))
+        }
+        "history_attach" => {
+            let file = segment_file(dest, body["segment"].as_str().ok_or("segment")?)?;
+            let r = store
+                .attach_archive(repo_id, &file)
+                .map_err(|e| e.to_string())?;
+            Ok(json!({ "attached": r.attached.iter().map(|a| json!({
+                "segment_id": a.segment_id, "seq_lo": a.seq_lo, "seq_hi": a.seq_hi,
+                "revision_count": a.revision_count,
+            })).collect::<Vec<_>>() }))
+        }
+        "history_detach" => {
+            let detached = store
+                .detach_archive(repo_id, body["segment"].as_str().ok_or("segment")?)
+                .map_err(|e| e.to_string())?;
+            Ok(json!({ "detached": detached }))
+        }
+        _ => {
+            let doc = body["doc"].as_str().ok_or("doc")?;
+            let rev = body["rev"].as_str().ok_or("rev")?;
+            match store.read_at_revision(doc, rev) {
+                Ok(Some(r)) => {
+                    Ok(json!({ "raw": r.content, "rendered_hash_match": r.rendered_hash_match }))
+                }
+                Ok(None) => Ok(json!({ "error": "target_missing" })),
+                Err(omgbase_store::Error::RevisionArchived { rev, archive, path }) => {
+                    let mut m = JsonMap::new();
+                    m.insert("error".to_owned(), json!("revision_archived"));
+                    m.insert("rev".to_owned(), json!(rev));
+                    m.insert("archive".to_owned(), json!(archive));
+                    if let Some(p) = path {
+                        m.insert(
+                            "path".to_owned(),
+                            json!(format!(
+                                "{DEST_TOKEN}/{}",
+                                omgbase_store::segment_basename(&p)
+                            )),
+                        );
+                    }
+                    Ok(Json::Object(m))
+                }
+                Err(e) => Err(e.to_string()),
+            }
+        }
+    }
 }
 
 // ---- projection (§9.4 "Expect") -----------------------------------------------------------
@@ -951,7 +1194,7 @@ fn project_store(conn: &Connection, repo_id: &str) -> Vec<(String, Json)> {
 
     let mut revisions = query_rows(
         conn,
-        "SELECT r.rev_id, r.doc_id, r.seq, r.root_tree, r.frontmatter_blob, r.rendered_hash, r.path, r.commit_id
+        "SELECT r.rev_id, r.doc_id, r.seq, r.root_tree, r.frontmatter_blob, r.rendered_hash, r.path, r.commit_id, r.archive
          FROM revisions r JOIN docs d ON d.doc_id = r.doc_id WHERE d.repo_id = ?1",
         &[&repo_id],
     );
@@ -1046,6 +1289,25 @@ fn project_store(conn: &Connection, repo_id: &str) -> Vec<(String, Json)> {
         "SELECT path, kind, from_path, doc_id, rev_id, rendered_hash, commit_id FROM pending_materializations WHERE repo_id = ?1 ORDER BY path",
         &[&repo_id],
     );
+    // 15.0: the recorded segments, `path` reduced to its file name (the
+    // directory is the run's) and `bytes` omitted (a page layout, not a behavior).
+    let archives: Vec<Json> = query_rows(
+        conn,
+        "SELECT segment_id, path, seq_lo, seq_hi, created_at, revision_count FROM archives WHERE repo_id = ?1 ORDER BY seq_lo, segment_id",
+        &[&repo_id],
+    )
+    .into_iter()
+    .map(|r| {
+        json!({
+            "segment_id": r["segment_id"],
+            "file": omgbase_store::segment_basename(str_of(&r, "path")),
+            "seq_lo": r["seq_lo"],
+            "seq_hi": r["seq_hi"],
+            "created_at": r["created_at"],
+            "revision_count": r["revision_count"],
+        })
+    })
+    .collect();
 
     vec![
         ("docs".to_owned(), Json::Array(docs)),
@@ -1059,6 +1321,7 @@ fn project_store(conn: &Connection, repo_id: &str) -> Vec<(String, Json)> {
         ("resurrection_pool".to_owned(), Json::Array(pool)),
         ("sections".to_owned(), Json::Array(sections)),
         ("pending_materializations".to_owned(), Json::Array(pending)),
+        ("archives".to_owned(), Json::Array(archives)),
     ]
 }
 
@@ -1068,10 +1331,12 @@ struct Rev {
     rev_id: String,
     doc_id: String,
     seq: i64,
-    root_tree: String,
+    /// `None` once archived (15.0).
+    root_tree: Option<String>,
     frontmatter_blob: Option<String>,
     rendered_hash: Vec<u8>,
     commit_id: String,
+    archive: Option<String>,
 }
 
 struct Doc {
@@ -1139,7 +1404,7 @@ fn check_invariants(
     );
     let revisions: Vec<Rev> = all_rows(
         conn,
-        "SELECT r.rev_id, r.doc_id, r.seq, r.root_tree, r.frontmatter_blob, r.rendered_hash, r.commit_id
+        "SELECT r.rev_id, r.doc_id, r.seq, r.root_tree, r.frontmatter_blob, r.rendered_hash, r.commit_id, r.archive
          FROM revisions r JOIN docs d ON d.doc_id = r.doc_id WHERE d.repo_id = ?1",
         &[&repo_id],
         |r| {
@@ -1147,14 +1412,31 @@ fn check_invariants(
                 rev_id: r.get(0)?,
                 doc_id: r.get(1)?,
                 seq: r.get(2)?,
-                root_tree: hex(&r.get::<_, Vec<u8>>(3)?),
+                root_tree: r.get::<_, Option<Vec<u8>>>(3)?.map(|h| hex(&h)),
                 frontmatter_blob: r.get::<_, Option<Vec<u8>>>(4)?.map(|h| hex(&h)),
                 rendered_hash: r.get(5)?,
                 commit_id: r.get(6)?,
+                archive: r.get(7)?,
             })
         },
     );
     let rev_by_id: HashMap<&str, &Rev> = revisions.iter().map(|r| (r.rev_id.as_str(), r)).collect();
+
+    // ---- I9 archived revisions (15.0) ----------------------------------------------------
+    // `archive IS NOT NULL` ⇔ `root_tree IS NULL`, and an archived revision
+    // has no frontmatter blob either: the bodies moved to the segment, the
+    // row stayed.
+    for r in &revisions {
+        if r.archive.is_some() && (r.root_tree.is_some() || r.frontmatter_blob.is_some()) {
+            problems.push(format!(
+                "I9: archived revision {} still carries a root_tree or frontmatter_blob",
+                r.rev_id
+            ));
+        }
+        if r.archive.is_none() && r.root_tree.is_none() {
+            problems.push(format!("I9: live revision {} has no root_tree", r.rev_id));
+        }
+    }
 
     // ---- I2 hash integrity ------------------------------------------------------------
     for (hash, bytes, size) in &blob_rows {
@@ -1205,7 +1487,10 @@ fn check_invariants(
         trees.insert(h, parsed);
     }
     for r in &revisions {
-        if !tree_hashes.contains(&r.root_tree) {
+        if r.root_tree
+            .as_ref()
+            .is_some_and(|h| !tree_hashes.contains(h))
+        {
             problems.push(format!(
                 "I2: revision {} root_tree not in tree_nodes",
                 r.rev_id
@@ -1230,6 +1515,12 @@ fn check_invariants(
         let Some(rev) = rev_by_id.get(current_rev.as_str()) else {
             problems.push(format!(
                 "I1: {at} current_rev {current_rev} is not a revision"
+            ));
+            continue;
+        };
+        let Some(root_tree) = rev.root_tree.as_deref() else {
+            problems.push(format!(
+                "I1: {at} current_rev {current_rev} is archived (never prunable)"
             ));
             continue;
         };
@@ -1393,7 +1684,7 @@ fn check_invariants(
             }
         }
         compare(
-            Some(&rev.root_tree),
+            Some(root_tree),
             None,
             0,
             "/",
@@ -1445,9 +1736,13 @@ fn check_invariants(
     }
 
     // ---- I5 nothing to collect ------------------------------------------------------------
+    // 15.0: the mark walks the LIVE revisions; an archived one's bodies are its segment's.
     let mut marked_trees: HashSet<String> = HashSet::new();
     let mut marked_blobs: HashSet<String> = HashSet::new();
-    let mut stack: Vec<String> = revisions.iter().map(|r| r.root_tree.clone()).collect();
+    let mut stack: Vec<String> = revisions
+        .iter()
+        .filter_map(|r| r.root_tree.clone())
+        .collect();
     for r in &revisions {
         if let Some(fm) = &r.frontmatter_blob {
             marked_blobs.insert(fm.clone());
@@ -1470,13 +1765,15 @@ fn check_invariants(
     for h in &tree_hashes {
         if !marked_trees.contains(h) {
             problems.push(format!(
-                "I5: tree_node {h} is unreachable from every revision"
+                "I5: tree_node {h} is unreachable from every live revision"
             ));
         }
     }
     for h in &blob_hashes {
         if !marked_blobs.contains(h) {
-            problems.push(format!("I5: blob {h} is unreachable from every revision"));
+            problems.push(format!(
+                "I5: blob {h} is unreachable from every live revision"
+            ));
         }
     }
     if let Ok(dry) = store.gc_dry_run() {
@@ -1641,9 +1938,15 @@ fn check_invariants(
             ));
         }
     }
+    // 15.0: over the commits that are not wholly archived, `block_changes` is
+    // the projection of `dispositions`; a wholly archived commit has no
+    // dispositions and keeps, of its block_changes, exactly each block's
+    // earliest row (I9).
     let bc_have = query_rows(
         conn,
-        "SELECT block_id, commit_id, kind FROM block_changes ORDER BY block_id, commit_id, kind",
+        &format!(
+            "SELECT block_id, commit_id, kind FROM block_changes WHERE commit_id NOT IN ({ARCHIVED_COMMITS_SQL}) ORDER BY block_id, commit_id, kind"
+        ),
         &[],
     );
     let bc_want = query_rows(
@@ -1659,6 +1962,35 @@ fn check_invariants(
     ) {
         problems.push(format!(
             "I8: block_changes differ from a rebuild out of dispositions ({diff})"
+        ));
+    }
+    let archived_disp: i64 = conn
+        .query_row(
+            &format!(
+                "SELECT count(*) FROM dispositions WHERE commit_id IN ({ARCHIVED_COMMITS_SQL})"
+            ),
+            [],
+            |r| r.get(0),
+        )
+        .expect("query runs");
+    if archived_disp > 0 {
+        problems.push(format!(
+            "I9: {archived_disp} disposition rows of wholly archived commits remain"
+        ));
+    }
+    let not_earliest: Vec<(String, String)> = all_rows(
+        conn,
+        &format!(
+            "SELECT bc.block_id, bc.commit_id FROM block_changes bc JOIN commits c ON c.commit_id = bc.commit_id
+             WHERE bc.commit_id IN ({ARCHIVED_COMMITS_SQL})
+               AND EXISTS (SELECT 1 FROM block_changes b2 JOIN commits c2 ON c2.commit_id = b2.commit_id WHERE b2.block_id = bc.block_id AND c2.seq < c.seq)"
+        ),
+        &[],
+        |r| Ok((r.get(0)?, r.get(1)?)),
+    );
+    for (block_id, commit_id) in not_earliest {
+        problems.push(format!(
+            "I9: block_changes row {block_id}/{commit_id} of an archived commit is not the block's earliest"
         ));
     }
     problems
@@ -2013,6 +2345,12 @@ fn schema_sql_and_version_agree_with_the_spec() {
     assert_eq!(
         sql, SCHEMA_SQL,
         "spec/store/schema.sql != the embedded schema.sql"
+    );
+    // §3.3 (15.0): the second DDL artifact, the archive segment's, the same way.
+    let archive = fs::read_to_string(Path::new(SPEC_DIR).join("archive.sql")).expect("archive.sql");
+    assert_eq!(
+        archive, ARCHIVE_SQL,
+        "spec/store/archive.sql != the embedded archive.sql"
     );
     let version = fs::read_to_string(Path::new(SPEC_DIR).join("VERSION")).expect("VERSION");
     let major: i64 = version

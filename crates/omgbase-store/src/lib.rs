@@ -40,7 +40,9 @@
 //! rows of `spec/graph`, written in §5.4), [`search`] (`spec/search`:
 //! `text_search`, the embedding drain over the `embeddings`/`doc_embeddings`
 //! caches, vector, hybrid and `resolve`), [`read`] (§5.2, §6), [`derived`]
-//! (§4.5 sections, FTS, §7 rebuild and GC), and the `spec/mutate` host side
+//! (§4.5 sections, FTS, §7 rebuild and GC), [`retention`] and [`archive`]
+//! (§7.1, 15.0: the retention policy as an exact rule, archive segments —
+//! export, squash, attach/detach, reads through a segment), and the `spec/mutate` host side
 //! (store 13.4): [`mutate`] (loading the working tree, `apply` with the
 //! file-CAS + known-id `api` commit), [`doc_store`] (the write-target seam),
 //! [`macros`], [`links`] (link-destination rewriting), [`sugar`] (the shared
@@ -64,6 +66,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod archive;
 pub mod derived;
 pub mod doc_store;
 pub mod docs_ops;
@@ -83,6 +86,7 @@ pub mod order_key;
 pub mod plan;
 pub mod properties;
 pub mod read;
+pub mod retention;
 pub mod schema;
 pub mod search;
 pub mod size;
@@ -98,7 +102,13 @@ use rusqlite::functions::{Context, FunctionFlags};
 use rusqlite::types::ValueRef;
 use rusqlite::{Connection, Transaction, params};
 
-pub use derived::{GcResult, LIVE_LEAF_SQL, RebuildTarget};
+pub use archive::{
+    ARCHIVE_DIR, ARCHIVE_SQL, ARCHIVE_SUFFIX, ArchiveListing, ArchiveState, AttachResult,
+    AttachedSegment, ExportOptions, ExportResult, Manifest, RevisionBody, SegmentInfo,
+    SquashResult, SweptBodies, parse_segment_file_name, read_manifest, segment_basename,
+    segment_file_name,
+};
+pub use derived::{ARCHIVED_COMMITS_SQL, GcResult, LIVE_LEAF_SQL, RebuildTarget};
 pub use doc_store::{DocStore, FsDocStore, MemDocStore, NullDocStore};
 pub use docs_ops::{DocMoveResult, DocOpContext, DocOpResult, Retargeted};
 pub use effects_plan::{EffectsOutcome, PlanContext, Receipt};
@@ -128,6 +138,10 @@ pub use omgbase_search::{
     Boosts, DocEmbedBlockRef, DocEmbedMethod, DocEmbedTask, EmbedTask, EmbeddingProvider, Evidence,
 };
 pub use read::RevisionRead;
+pub use retention::{
+    LadderKeep, LadderRung, RetentionDocPlan, RetentionOptions, RetentionOverride, RetentionPlan,
+    RetentionPolicy, RetentionTotals, evaluate_retention, merge_retention_policy, retention_policy,
+};
 pub use schema::{SCHEMA_SQL, SCHEMA_VERSION};
 pub use search::{
     BlockContexts, ContextScope, DocEmbedStats, DocVectorHit, DocVectorRow, DrainStats, EmbedStats,
@@ -135,8 +149,8 @@ pub use search::{
     VectorHit, block_vector,
 };
 pub use size::{
-    SIZE_CATEGORIES, SizeCategory, SizeFile, SizeReport, SizeTable, TABLE_CATEGORY, VacuumResult,
-    category_of, format_share, human_bytes, share_of, size_advice,
+    SIZE_CATEGORIES, SizeArchived, SizeCategory, SizeFile, SizeReport, SizeRetention, SizeTable,
+    TABLE_CATEGORY, VacuumResult, category_of, format_share, human_bytes, share_of, size_advice,
 };
 pub use sugar::Sugar;
 pub use tree::{TreeEntry, canonical_attrs, canonical_json, serialize_tree_entries, tree_hash};
@@ -144,7 +158,7 @@ pub use writers::{NewCommit, NewRevision, Origin, TreeInputBlock};
 
 /// The `spec/store/VERSION` this crate implements (`major.minor`); the major
 /// is [`SCHEMA_VERSION`].
-pub const SPEC_VERSION: &str = "14.2";
+pub const SPEC_VERSION: &str = "15.0";
 
 /// This crate's own version (`Cargo.toml`), for the surface's `version` tool.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -419,9 +433,67 @@ impl Store {
     }
 
     /// §7 "Size" (14.1): what the database is made of — bytes per table
-    /// through `dbstat`, grouped into categories, the file's pages, advice.
+    /// through `dbstat`, grouped into categories, the file's pages, advice
+    /// (the retention advice of 15.0 evaluated at the wall clock).
     pub fn size_report(&self) -> Result<SizeReport> {
         size::size_report(&self.conn)
+    }
+
+    /// [`Store::size_report`] with the retention plans evaluated at `now`
+    /// (the CLI's pinned clock under `OMGBASE_SPEC_CLOCK`).
+    pub fn size_report_at(&self, now: &str) -> Result<SizeReport> {
+        size::size_report_at(&self.conn, now)
+    }
+
+    // ---- history retention (§7.1, 15.0) ------------------------------------------------
+
+    /// The repo's effective retention policy: the defaults, the settings'
+    /// `history.retention` over them, then `override_` (a CLI `--policy`).
+    pub fn retention_policy(
+        &self,
+        repo_id: &str,
+        override_: Option<&serde_json::Value>,
+    ) -> Result<RetentionPolicy> {
+        retention::retention_policy(&self.conn, repo_id, override_)
+    }
+
+    /// §7.1 "The plan": what the policy would archive, at `opts.now`.
+    pub fn retention_plan(&self, repo_id: &str, opts: &RetentionOptions) -> Result<RetentionPlan> {
+        retention::evaluate_retention(&self.conn, repo_id, opts)
+    }
+
+    /// §7.1 `history export [--prune]`: write one segment (**mints `s`**),
+    /// or finish an unrecorded one, and with `prune` squash the store.
+    pub fn export_history(&mut self, repo_id: &str, opts: &ExportOptions) -> Result<ExportResult> {
+        archive::export_history(&self.conn, &mut self.ids.at(&self.conn), repo_id, opts)
+    }
+
+    /// §7.1 `history attach <file|dir>`: record a segment, or every segment
+    /// of a directory that belongs to the repo.
+    pub fn attach_archive(&self, repo_id: &str, target: &Path) -> Result<AttachResult> {
+        archive::attach_archive(&self.conn, repo_id, target)
+    }
+
+    /// §7.1 `history detach <segment_id|path>`: forget a segment; the id, or
+    /// `None` when nothing matched.
+    pub fn detach_archive(&self, repo_id: &str, r: &str) -> Result<Option<String>> {
+        archive::detach_archive(&self.conn, repo_id, r)
+    }
+
+    /// §7.1 `history list`: the recorded segments, then the unrecorded ones
+    /// under `dest` when given.
+    pub fn list_archives(&self, repo_id: &str, dest: Option<&Path>) -> Result<Vec<ArchiveListing>> {
+        archive::list_archives(&self.conn, repo_id, dest)
+    }
+
+    /// §6.2: a revision's row with its bodies resolved — through its segment
+    /// when archived ([`Error::RevisionArchived`] when unavailable).
+    pub fn revision_body(
+        &self,
+        rev_id: &str,
+        doc_id: Option<&str>,
+    ) -> Result<Option<RevisionBody>> {
+        archive::revision_body(&self.conn, rev_id, doc_id)
     }
 
     /// §7 (14.1): `freelist_count * page_size`, what [`Store::vacuum`] would return.

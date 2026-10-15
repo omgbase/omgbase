@@ -268,32 +268,32 @@ fn migrates_v12_to_v13_root_path_into_an_fs_source() {
     assert_eq!(adapter, "omgbase-fs-adapter");
 }
 
-/// Spec §1 step 3 — the mixed-version guarantee of the 14.0 cut: an opener
-/// that meets a database one major ahead (a v13 engine opening the v14 file
-/// this build writes; simulated here as this build meeting v15) refuses with
+/// Spec §1 step 3 — the mixed-version guarantee of a major cut: an opener
+/// that meets a database one major ahead (a v14 engine opening the v15 file
+/// this build writes; simulated here as this build meeting v16) refuses with
 /// the exact message, and neither migrates nor touches it.
 #[test]
 fn refuses_a_newer_database_with_the_exact_message() {
     let conn = Connection::open_in_memory().unwrap();
-    conn.execute_batch("PRAGMA user_version = 15").unwrap();
+    conn.execute_batch("PRAGMA user_version = 16").unwrap();
     let err = Store::from_connection(conn, Box::new(RandomMinter))
         .err()
         .unwrap();
     assert_eq!(
         err.to_string(),
-        "database schema (v15) is newer than this build (v14); upgrade omgbase"
+        "database schema (v16) is newer than this build (v15); upgrade omgbase"
     );
     assert!(matches!(
         err,
         Error::SchemaTooNew {
-            found: 15,
-            supported: 14
+            found: 16,
+            supported: 15
         }
     ));
 }
 
-/// Migration 14 creates `pending_materializations` (and nothing else) on a
-/// v13 database; a fresh database has it from `schema.sql`.
+/// Migration 14 creates `pending_materializations` on a v13 database (and
+/// 15 then creates `archives`); a fresh database has both from `schema.sql`.
 #[test]
 fn migrates_v13_to_v14_with_the_pending_table() {
     let conn = Connection::open_in_memory().unwrap();
@@ -303,7 +303,7 @@ fn migrates_v13_to_v14_with_the_pending_table() {
     )
     .unwrap();
     let store = Store::from_connection(conn, Box::new(SequentialMinter::new())).unwrap();
-    assert_eq!(store.user_version().unwrap(), 14);
+    assert_eq!(store.user_version().unwrap(), SCHEMA_VERSION);
     let cols: Vec<String> = {
         let mut stmt = store
             .conn()
@@ -328,7 +328,264 @@ fn migrates_v13_to_v14_with_the_pending_table() {
         ]
     );
     let tables = count(&store, "sqlite_master WHERE type = 'table'");
-    assert_eq!(tables, 2, "repos + the one table the step creates");
+    assert_eq!(
+        tables, 3,
+        "repos + pending_materializations (14) + archives (15)"
+    );
+}
+
+/// Migration 15 (spec §3.4) rebuilds `revisions` under `foreign_keys = OFF`:
+/// a v14 database whose `pending_materializations.rev_id` references a
+/// revision keeps every row, the body columns turn nullable and lose their
+/// foreign keys, `archive` appears, `archives` is created.
+#[test]
+fn migrates_v14_to_v15_rebuilding_revisions() {
+    let conn = Connection::open_in_memory().unwrap();
+    conn.execute_batch(
+        "CREATE TABLE repos (repo_id TEXT PRIMARY KEY, slug TEXT NOT NULL UNIQUE, settings TEXT NOT NULL DEFAULT '{}');
+         CREATE TABLE docs (doc_id TEXT PRIMARY KEY, repo_id TEXT NOT NULL REFERENCES repos(repo_id), path TEXT NOT NULL, current_rev TEXT, file_hash BLOB);
+         CREATE TABLE blobs (hash BLOB PRIMARY KEY, bytes BLOB NOT NULL, size INTEGER NOT NULL);
+         CREATE TABLE tree_nodes (hash BLOB PRIMARY KEY, entries TEXT NOT NULL);
+         CREATE TABLE commits (commit_id TEXT PRIMARY KEY, repo_id TEXT NOT NULL REFERENCES repos(repo_id), seq INTEGER NOT NULL, ts TEXT NOT NULL, origin TEXT NOT NULL);
+         CREATE TABLE revisions (rev_id TEXT PRIMARY KEY, doc_id TEXT NOT NULL REFERENCES docs(doc_id), seq INTEGER NOT NULL, root_tree BLOB NOT NULL REFERENCES tree_nodes(hash), frontmatter_blob BLOB REFERENCES blobs(hash), rendered_hash BLOB NOT NULL, path TEXT NOT NULL, commit_id TEXT NOT NULL REFERENCES commits(commit_id), UNIQUE (doc_id, seq));
+         CREATE TABLE pending_materializations (repo_id TEXT NOT NULL, path TEXT NOT NULL, kind TEXT NOT NULL, from_path TEXT, doc_id TEXT NOT NULL, rev_id TEXT REFERENCES revisions(rev_id), rendered_hash BLOB NOT NULL, commit_id TEXT NOT NULL, PRIMARY KEY (repo_id, path));
+         INSERT INTO repos (repo_id, slug) VALUES ('rp_1', 'v');
+         INSERT INTO docs (doc_id, repo_id, path, current_rev) VALUES ('d_1', 'rp_1', 'a.md', 'r_1');
+         INSERT INTO tree_nodes (hash, entries) VALUES (X'01', '[]');
+         INSERT INTO commits (commit_id, repo_id, seq, ts, origin) VALUES ('c_1', 'rp_1', 1, '2026-10-15T00:00:00.000Z', 'api');
+         INSERT INTO revisions (rev_id, doc_id, seq, root_tree, frontmatter_blob, rendered_hash, path, commit_id) VALUES ('r_1', 'd_1', 1, X'01', NULL, X'03', 'a.md', 'c_1');
+         INSERT INTO pending_materializations (repo_id, path, kind, doc_id, rev_id, rendered_hash, commit_id) VALUES ('rp_1', 'a.md', 'write', 'd_1', 'r_1', X'03', 'c_1');
+         PRAGMA user_version = 14;",
+    )
+    .unwrap();
+    let store = Store::from_connection(conn, Box::new(SequentialMinter::new())).unwrap();
+    assert_eq!(store.user_version().unwrap(), 15);
+    let cols: Vec<(String, i64)> = {
+        let mut stmt = store
+            .conn()
+            .prepare("PRAGMA table_info(revisions)")
+            .unwrap();
+        stmt.query_map([], |r| Ok((r.get::<_, String>(1)?, r.get::<_, i64>(3)?)))
+            .unwrap()
+            .map(|r| r.unwrap())
+            .collect()
+    };
+    assert_eq!(
+        cols.iter().map(|(n, _)| n.as_str()).collect::<Vec<_>>(),
+        [
+            "rev_id",
+            "doc_id",
+            "seq",
+            "root_tree",
+            "frontmatter_blob",
+            "rendered_hash",
+            "path",
+            "commit_id",
+            "archive"
+        ]
+    );
+    assert_eq!(cols[3].1, 0, "root_tree is nullable");
+    let fks = count(&store, "pragma_foreign_key_list('revisions')");
+    assert_eq!(fks, 2, "docs and commits only; the body FKs are gone");
+    assert_eq!(count(&store, "revisions WHERE archive IS NULL"), 1);
+    assert_eq!(
+        count(&store, "pending_materializations"),
+        1,
+        "the DROP cascaded nothing"
+    );
+    assert_eq!(count(&store, "archives"), 0);
+    let fk_on: i64 = store
+        .conn()
+        .pragma_query_value(None, "foreign_keys", |r| r.get(0))
+        .unwrap();
+    assert_eq!(fk_on, 1, "foreign keys are back on");
+}
+
+/// Spec §7.1 end to end: a one-per-day ladder archives two of five revisions
+/// into a segment; the squash NULLs their bodies, drops the wholly archived
+/// commits' dispositions and the non-earliest block_changes, sweeps exactly
+/// the bodies the segment now holds alone, records the segment and the chain
+/// pointer; the archived revisions read back through the segment byte for
+/// byte; detaching makes the read `RevisionArchived` (no path); attaching
+/// the file brings it back; a second export has nothing to do.
+#[test]
+fn export_prune_reads_through_the_segment_and_round_trips_attach() {
+    let (mut store, repo) = fixture_store();
+    let dir = std::env::temp_dir().join(format!("omgbase-store-arc-{}", ids::random_suffix()));
+    let sources = [
+        (
+            "2026-01-01T10:00:00.000Z",
+            "# A
+
+First draft.
+",
+        ),
+        (
+            "2026-01-01T12:00:00.000Z",
+            "# A
+
+First draft, noon.
+",
+        ),
+        (
+            "2026-01-02T10:00:00.000Z",
+            "# A
+
+First draft, noon.
+
+Second day.
+",
+        ),
+        (
+            "2026-01-03T09:00:00.000Z",
+            "# A
+
+First draft, noon.
+
+Second day, third morning.
+",
+        ),
+        (
+            "2026-01-03T15:00:00.000Z",
+            "# A
+
+First draft, noon.
+
+Second day, third afternoon.
+",
+        ),
+    ];
+    let mut revs = Vec::new();
+    for (ts, src) in sources {
+        revs.push(observe(&mut store, &repo, "a.md", src, ts).rev.unwrap());
+    }
+    let policy = store
+        .retention_policy(
+            &repo,
+            Some(&serde_json::json!({ "keep_days": 0, "per_doc_max": 0, "ladder": [{ "after_days": 0, "keep": "one per day" }] })),
+        )
+        .unwrap();
+    let opts = ExportOptions {
+        retention: RetentionOptions {
+            now: "2026-01-10T00:00:00.000Z".to_owned(),
+            before: None,
+            policy,
+        },
+        dest: dir.clone(),
+        prune: true,
+    };
+    let plan = store.retention_plan(&repo, &opts.retention).unwrap();
+    assert_eq!(
+        plan.docs[0].keep,
+        vec![revs[1].clone(), revs[2].clone(), revs[4].clone()]
+    );
+    assert_eq!(plan.docs[0].archive, vec![revs[0].clone(), revs[3].clone()]);
+    assert_eq!(plan.totals.revisions, 5);
+    let r = store.export_history(&repo, &opts).unwrap();
+    let seg = r.segment.clone().unwrap();
+    assert_eq!(seg.id, "s_0");
+    assert_eq!((seg.seq_lo, seq_hi(&seg)), (1, 4));
+    assert!(!r.reused);
+    let squashed = r.squashed.unwrap();
+    assert_eq!((squashed.revisions, squashed.commits), (2, 2));
+    assert!(std::path::Path::new(&seg.path).exists());
+    assert!(seg.path.ends_with("rp_0-1-4-s_0.omgarchive.db"));
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = std::fs::metadata(&seg.path).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o444, "a segment is read-only");
+    }
+    // I9 on the rows, the registry and the chain pointer.
+    assert_eq!(
+        count(
+            &store,
+            "revisions WHERE archive = 's_0' AND root_tree IS NULL"
+        ),
+        2
+    );
+    assert_eq!(count(&store, "archives"), 1);
+    let settings: String = store
+        .conn()
+        .query_row(
+            "SELECT settings FROM repos WHERE repo_id = ?1",
+            params![repo],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(settings, r#"{"history":{"last_segment":"s_0"}}"#);
+    assert_eq!(
+        store.gc_dry_run().unwrap().blobs_swept,
+        0,
+        "the squash swept"
+    );
+    // Reads through the attached segment, byte for byte.
+    let doc = plan.docs[0].id.clone();
+    let read = store.read_at_revision(&doc, &revs[0]).unwrap().unwrap();
+    assert_eq!(read.content, sources[0].1);
+    assert!(read.rendered_hash_match);
+    let body = store.revision_body(&revs[3], Some(&doc)).unwrap().unwrap();
+    assert!(body.archived);
+    assert_eq!(body.prefix, "arc_s_0.");
+    let manifest = read_manifest(std::path::Path::new(&seg.path)).unwrap();
+    assert_eq!(
+        (manifest.segment_id.as_str(), manifest.repo_id.as_str()),
+        ("s_0", repo.as_str())
+    );
+    assert_eq!(manifest.revision_count, 2);
+    assert_eq!(manifest.schema_user_version, SCHEMA_VERSION);
+    // Detach: the row stays, the read says so.
+    assert_eq!(
+        store.detach_archive(&repo, "s_0").unwrap(),
+        Some("s_0".to_owned())
+    );
+    assert_eq!(store.detach_archive(&repo, "s_0").unwrap(), None);
+    let err = store.read_at_revision(&doc, &revs[0]).unwrap_err();
+    assert_eq!(
+        err.to_string(),
+        format!(
+            "revision \"{}\" is archived in segment s_0, which is not attached (omg history attach <file>)",
+            revs[0]
+        )
+    );
+    let listed = store.list_archives(&repo, Some(&dir)).unwrap();
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0].state, ArchiveState::Detached);
+    // Attach by directory, then the read works again and a new export finds nothing.
+    let attached = store.attach_archive(&repo, &dir).unwrap();
+    assert_eq!(attached.attached.len(), 1);
+    assert_eq!(attached.skipped, 0);
+    assert_eq!(
+        store
+            .read_at_revision(&doc, &revs[3])
+            .unwrap()
+            .unwrap()
+            .content,
+        sources[3].1
+    );
+    assert_eq!(
+        store.list_archives(&repo, Some(&dir)).unwrap()[0].state,
+        ArchiveState::Attached
+    );
+    let again = store.export_history(&repo, &opts).unwrap();
+    assert!(again.segment.is_none());
+    // A non-segment is refused by name.
+    let txt = dir.join("notes.txt");
+    std::fs::write(&txt, "hello\n").unwrap();
+    let err = store.attach_archive(&repo, &txt).unwrap_err();
+    assert_eq!(
+        err.to_string(),
+        format!("{}: not an archive segment", txt.display())
+    );
+    let err = store
+        .attach_archive(&repo, &dir.join("nowhere.omgarchive.db"))
+        .unwrap_err();
+    assert!(err.to_string().ends_with(": no such file"));
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+fn seq_hi(s: &SegmentInfo) -> i64 {
+    s.seq_hi
 }
 
 #[test]

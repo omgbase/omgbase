@@ -74,27 +74,27 @@ fn blocks_at_revision(
 }
 
 /// `None` when `rev_id` is not one of the doc's revisions (§9: an unknown
-/// revision is `target_missing`, not an empty tree).
+/// revision is `target_missing`, not an empty tree). An archived revision
+/// (`spec/store` §7.1, 15.0) walks its segment's tables — `prefix` is the
+/// attached alias; `revision_archived` when the segment is unavailable.
 fn blocks_at_known_revision(
     conn: &Connection,
     doc_id: &str,
     rev_id: &str,
 ) -> Result<Option<Vec<(String, String)>>> {
-    let root: Option<Vec<u8>> = conn
-        .query_row(
-            "SELECT root_tree FROM revisions WHERE rev_id = ?1 AND doc_id = ?2",
-            params![rev_id, doc_id],
-            |r| r.get(0),
-        )
-        .optional()?;
-    let mut out: Vec<(String, String)> = Vec::new();
-    let Some(root) = root else {
+    let Some(rev) = omgbase_store::archive::revision_body(conn, rev_id, Some(doc_id))? else {
         return Ok(None);
     };
-    fn walk(conn: &Connection, tree: &[u8], out: &mut Vec<(String, String)>) -> Result<()> {
+    let mut out: Vec<(String, String)> = Vec::new();
+    fn walk(
+        conn: &Connection,
+        prefix: &str,
+        tree: &[u8],
+        out: &mut Vec<(String, String)>,
+    ) -> Result<()> {
         let entries: Option<String> = conn
             .query_row(
-                "SELECT entries FROM tree_nodes WHERE hash = ?1",
+                &format!("SELECT entries FROM {prefix}tree_nodes WHERE hash = ?1"),
                 params![tree],
                 |r| r.get(0),
             )
@@ -103,18 +103,18 @@ fn blocks_at_known_revision(
             return Ok(());
         };
         for e in parse_tree_entries(&text)? {
-            let raw = omgbase_store::read::blob_text(conn, &from_hex(&e.raw_hash_hex)?)?;
+            let raw = omgbase_store::read::blob_text_at(conn, prefix, &from_hex(&e.raw_hash_hex)?)?;
             match out.iter_mut().find(|(id, _)| *id == e.block_id) {
                 Some(slot) => slot.1 = raw,
                 None => out.push((e.block_id.clone(), raw)),
             }
             if let Some(child) = &e.child_tree_hash_hex {
-                walk(conn, &from_hex(child)?, out)?;
+                walk(conn, prefix, &from_hex(child)?, out)?;
             }
         }
         Ok(())
     }
-    walk(conn, &root, &mut out)?;
+    walk(conn, &rev.prefix, &rev.root_tree, &mut out)?;
     Ok(Some(out))
 }
 
@@ -447,7 +447,7 @@ pub fn docs_history(
     let truncated = doc_rows.len() > limit;
     doc_rows.truncate(limit);
     let mut rev_stmt = conn.prepare(
-        "SELECT r.rev_id, r.seq, r.commit_id, r.rendered_hash, c.ts, c.origin, c.actor
+        "SELECT r.rev_id, r.seq, r.commit_id, r.rendered_hash, c.ts, c.origin, c.actor, r.archive
          FROM revisions r JOIN commits c ON c.commit_id = r.commit_id
          WHERE r.doc_id = ?1 ORDER BY r.seq ASC",
     )?;
@@ -466,6 +466,8 @@ pub fn docs_history(
                     "actor": r.get::<_, Option<String>>(6)?,
                     "hash": hex(&hash),
                     "isCurrent": current_rev.as_deref() == Some(rev.as_str()),
+                    // 4.9: the bodies live in an archive segment (`spec/store` §7.1).
+                    "archived": r.get::<_, Option<String>>(7)?.is_some(),
                 }))
             })?
             .collect::<std::result::Result<_, _>>()?;

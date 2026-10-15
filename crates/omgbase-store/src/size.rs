@@ -40,6 +40,7 @@ pub const TABLE_CATEGORY: &[(&str, &str)] = &[
     ("block_changes", "history"),
     ("resurrection_pool", "history"),
     ("pending_materializations", "history"),
+    ("archives", "history"),
     ("blocks_fts", "search"),
     ("nodes_fts", "search"),
     ("embeddings", "search"),
@@ -69,6 +70,9 @@ pub const VACUUM_ADVICE_MIN_SHARE: u64 = 10;
 pub const HISTORY_ADVICE_MIN_SHARE: f64 = 50.0;
 /// 14.2: `same` rows past this share of the `dispositions` table's rows.
 pub const SAME_ADVICE_MIN_SHARE: u64 = 25;
+/// 15.0: the retention advice fires when the plan's bytes exceed this share
+/// of the `history` category's bytes.
+pub const RETENTION_ADVICE_MIN_SHARE: u64 = 10;
 pub const EMBEDDINGS_ADVICE_MIN_SHARE: f64 = 25.0;
 
 /// `<n> B` under 1024, else one decimal of KB/MB/GB/TB (1024-based), the
@@ -148,6 +152,25 @@ pub struct SizeFile {
     pub reclaimable: u64,
 }
 
+/// §7.2 (15.0): the history that already left the file.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct SizeArchived {
+    /// `revisions` rows whose bodies live in a segment (`archive IS NOT NULL`).
+    pub revisions: u64,
+    /// Recorded segments (`archives` rows).
+    pub segments: u64,
+    /// The recorded segments' bytes on disk (a missing file counts 0).
+    pub bytes: u64,
+}
+
+/// What the retention policy would archive now (§7.1), summed over the
+/// store's repositories.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct SizeRetention {
+    pub revisions: u64,
+    pub bytes: u64,
+}
+
 /// The whole report.
 #[derive(Clone, Debug, PartialEq)]
 pub struct SizeReport {
@@ -157,6 +180,8 @@ pub struct SizeReport {
     /// §7 (14.2): `dispositions` rows with `kind = 'same'` — what a store
     /// through 14.1 wrote and `omg gc` removes; 0 on a fresh 14.2 store.
     pub same_dispositions: u64,
+    /// §7.2 (15.0): archived revisions, recorded segments, their bytes on disk.
+    pub archived: SizeArchived,
     pub advice: Vec<String>,
     /// `Some("dbstat unavailable")` when the SQLite build lacks the virtual table.
     pub detail: Option<&'static str>,
@@ -205,6 +230,14 @@ impl SizeReport {
             ),
         );
         m.insert("same_dispositions".into(), json!(self.same_dispositions));
+        m.insert(
+            "archived".into(),
+            json!({
+                "revisions": self.archived.revisions,
+                "segments": self.archived.segments,
+                "bytes": self.archived.bytes,
+            }),
+        );
         m.insert("advice".into(), json!(self.advice));
         if let Some(d) = self.detail {
             m.insert("detail".into(), json!(d));
@@ -214,12 +247,14 @@ impl SizeReport {
 }
 
 /// §7: the advice lines, in this order; `nothing to reclaim` when none applies.
-/// `same_dispositions` (14.2) is the report's count of `same` rows.
+/// `same_dispositions` (14.2) is the report's count of `same` rows;
+/// `retention` (15.0) what the policy would archive now.
 #[must_use]
 pub fn size_advice(
     file: &SizeFile,
     categories: &[SizeCategory],
     same_dispositions: u64,
+    retention: SizeRetention,
 ) -> Vec<String> {
     let mut advice = Vec::new();
     let logical = file.page_count * file.page_size;
@@ -251,6 +286,20 @@ pub fn size_advice(
         advice.push(format!(
             "{same_dispositions} same dispositions are history nothing reads (store 14.2): `omg gc` removes them, `--vacuum` reclaims the pages"
         ));
+    }
+    // 15.0: what the retention policy would move to a segment, when it is
+    // worth a run — more than a tenth of the history category's pages (dbstat
+    // only: the comparison needs the bytes).
+    if retention.revisions > 0 {
+        if let Some(history_bytes) = history.and_then(|c| c.bytes) {
+            if retention.bytes * 100 > history_bytes * RETENTION_ADVICE_MIN_SHARE {
+                advice.push(format!(
+                    "{} revisions older than the policy would archive {}: `omg history export --prune`",
+                    retention.revisions,
+                    human_bytes(retention.bytes)
+                ));
+            }
+        }
     }
     if let Some(search) = categories
         .iter()
@@ -314,8 +363,15 @@ fn file_bytes(path: &Path) -> u64 {
     std::fs::metadata(path).map_or(0, |m| m.len())
 }
 
-/// The size report of an open connection (§7 "Size").
+/// The size report of an open connection (§7 "Size") at the wall clock.
 pub fn size_report(conn: &Connection) -> Result<SizeReport> {
+    size_report_at(conn, &crate::time::now_ts())
+}
+
+/// The size report (§7 "Size") with the retention plans (15.0) evaluated at
+/// `now` — the report is store-wide, the policy a repository's, so every
+/// repository's plan under its effective policy is summed at one clock.
+pub fn size_report_at(conn: &Connection, now: &str) -> Result<SizeReport> {
     let path = match conn.path() {
         Some(p) if !p.is_empty() => p.to_owned(),
         _ => ":memory:".to_owned(),
@@ -470,11 +526,38 @@ pub fn size_report(conn: &Connection) -> Result<SizeReport> {
         )?;
         u64::try_from(n).unwrap_or(0)
     };
-    let advice = size_advice(&file, &categories, same_dispositions);
+    let (archived_revisions, segments, archived_bytes) = crate::archive::archived_summary(conn)?;
+    let archived = SizeArchived {
+        revisions: archived_revisions,
+        segments,
+        bytes: archived_bytes,
+    };
+    let mut retention = SizeRetention::default();
+    let repos: Vec<String> = {
+        let mut stmt = conn.prepare("SELECT repo_id FROM repos ORDER BY repo_id")?;
+        let it = stmt.query_map([], |r| r.get(0))?;
+        it.collect::<std::result::Result<Vec<_>, _>>()?
+    };
+    for repo_id in &repos {
+        let policy = crate::retention::retention_policy(conn, repo_id, None)?;
+        let plan = crate::retention::evaluate_retention(
+            conn,
+            repo_id,
+            &crate::retention::RetentionOptions {
+                now: now.to_owned(),
+                before: None,
+                policy,
+            },
+        )?;
+        retention.revisions += u64::try_from(plan.totals.archive).unwrap_or(0);
+        retention.bytes += plan.totals.bytes;
+    }
+    let advice = size_advice(&file, &categories, same_dispositions, retention);
     Ok(SizeReport {
         file,
         categories,
         same_dispositions,
+        archived,
         advice,
         detail: stat.is_none().then_some("dbstat unavailable"),
     })
@@ -590,7 +673,8 @@ mod tests {
             size_advice(
                 &file_of(|_| {}),
                 &[cat("content", 60, 100, &[]), cat("history", 40, 100, &[])],
-                0
+                0,
+                SizeRetention::default()
             ),
             none
         );
@@ -599,19 +683,19 @@ mod tests {
             f.freelist_count = 200;
             f.reclaimable = 200 * 4096;
         });
-        assert_eq!(size_advice(&small, &[], 0), none);
+        assert_eq!(size_advice(&small, &[], 0, SizeRetention::default()), none);
         let thin = file_of(|f| {
             f.page_count = 100_000;
             f.freelist_count = 300;
             f.reclaimable = 300 * 4096;
         });
-        assert_eq!(size_advice(&thin, &[], 0), none);
+        assert_eq!(size_advice(&thin, &[], 0, SizeRetention::default()), none);
         let fat = file_of(|f| {
             f.freelist_count = 300;
             f.reclaimable = 300 * 4096;
         });
         assert_eq!(
-            size_advice(&fat, &[], 0),
+            size_advice(&fat, &[], 0, SizeRetention::default()),
             vec!["run `omg gc --vacuum` to return 1.2 MB of free pages to the filesystem"]
         );
         // History past 50 %, embeddings past 25 %, in order.
@@ -621,7 +705,7 @@ mod tests {
             cat("search", 30, 100, &[("embeddings", 26), ("blocks_fts", 4)]),
         ];
         assert_eq!(
-            size_advice(&file_of(|_| {}), &cats, 0),
+            size_advice(&file_of(|_| {}), &cats, 0, SizeRetention::default()),
             vec![
                 "history dominates (57.0%): blobs, tree nodes and dispositions grow with every commit — enable gc (`omg config set gc.enabled true`) and run `omg gc --vacuum`",
                 "embeddings are 26.0% of the database: a smaller model (`embedding.model` / `embedding.dim`) or `omg embed drain --prune` after a model switch shrinks them",
@@ -633,7 +717,10 @@ mod tests {
             cat("history", 50, 100, &[]),
             cat("search", 25, 100, &[("embeddings", 25)]),
         ];
-        assert_eq!(size_advice(&file_of(|_| {}), &edge, 0), none);
+        assert_eq!(
+            size_advice(&file_of(|_| {}), &edge, 0, SizeRetention::default()),
+            none
+        );
         let blind = SizeCategory {
             name: "history",
             bytes: None,
@@ -641,7 +728,10 @@ mod tests {
             rows: 9,
             tables: vec![],
         };
-        assert_eq!(size_advice(&file_of(|_| {}), &[blind], 0), none);
+        assert_eq!(
+            size_advice(&file_of(|_| {}), &[blind], 0, SizeRetention::default()),
+            none
+        );
     }
 
     /// 14.2: the `same` line fires past 25 % of the `dispositions` rows,
@@ -659,7 +749,7 @@ mod tests {
                 history,
                 cat("search", 30, 100, &[("embeddings", 26)]),
             ];
-            size_advice(&file_of(|_| {}), &cats, same)
+            size_advice(&file_of(|_| {}), &cats, same, SizeRetention::default())
         };
         assert_eq!(
             with_rows(30, 100),
@@ -687,12 +777,92 @@ mod tests {
             }],
         };
         assert_eq!(
-            size_advice(&file_of(|_| {}), std::slice::from_ref(&blind), 3),
+            size_advice(
+                &file_of(|_| {}),
+                std::slice::from_ref(&blind),
+                3,
+                SizeRetention::default()
+            ),
             vec![
                 "3 same dispositions are history nothing reads (store 14.2): `omg gc` removes them, `--vacuum` reclaims the pages"
             ]
         );
-        assert_eq!(size_advice(&file_of(|_| {}), &[blind], 2), none);
+        assert_eq!(
+            size_advice(&file_of(|_| {}), &[blind], 2, SizeRetention::default()),
+            none
+        );
+    }
+
+    /// 15.0: the retention line fires when the plan's bytes exceed 10 % of
+    /// the history category (dbstat only), after the `same` line and before
+    /// the embeddings line.
+    #[test]
+    fn retention_advice() {
+        let cats = [
+            cat("content", 13, 100, &[]),
+            cat("history", 57, 100, &[("blobs", 50)]),
+            cat("search", 30, 100, &[("embeddings", 26)]),
+        ];
+        let lines = size_advice(
+            &file_of(|_| {}),
+            &cats,
+            0,
+            SizeRetention {
+                revisions: 12,
+                bytes: 6,
+            },
+        );
+        assert_eq!(lines.len(), 3);
+        assert_eq!(
+            lines[1],
+            "12 revisions older than the policy would archive 6 B: `omg history export --prune`"
+        );
+        // Exactly 10 % does not fire; no revisions never does; a blind history never does.
+        assert_eq!(
+            size_advice(
+                &file_of(|_| {}),
+                &cats,
+                0,
+                SizeRetention {
+                    revisions: 1,
+                    bytes: 5
+                }
+            )
+            .len(),
+            2
+        );
+        assert_eq!(
+            size_advice(
+                &file_of(|_| {}),
+                &cats,
+                0,
+                SizeRetention {
+                    revisions: 0,
+                    bytes: 60
+                }
+            )
+            .len(),
+            2
+        );
+        let blind = SizeCategory {
+            name: "history",
+            bytes: None,
+            share: None,
+            rows: 9,
+            tables: vec![],
+        };
+        assert_eq!(
+            size_advice(
+                &file_of(|_| {}),
+                &[blind],
+                0,
+                SizeRetention {
+                    revisions: 9,
+                    bytes: 900
+                }
+            ),
+            vec!["nothing to reclaim".to_owned()]
+        );
     }
 
     fn observed_store() -> Store {
@@ -780,7 +950,20 @@ mod tests {
         assert_eq!(j["file"]["page_size"], json!(r.file.page_size));
         assert_eq!(j["same_dispositions"], json!(0));
         let keys: Vec<&String> = j.as_object().unwrap().keys().collect();
-        assert_eq!(keys, ["file", "categories", "same_dispositions", "advice"]);
+        assert_eq!(
+            keys,
+            [
+                "file",
+                "categories",
+                "same_dispositions",
+                "archived",
+                "advice"
+            ]
+        );
+        assert_eq!(
+            j["archived"],
+            json!({ "revisions": 0, "segments": 0, "bytes": 0 })
+        );
         assert_eq!(j["categories"][0]["name"], json!("content"));
         assert_eq!(j["categories"][0]["tables"][0]["name"], json!("blocks"));
         assert!(j.get("detail").is_none());

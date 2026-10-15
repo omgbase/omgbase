@@ -87,6 +87,12 @@ pub static COMMANDS: &[Command] = &[
         cmd::links::links,
     ),
     cmd(
+        "history",
+        &[],
+        "Retention: plan/export archive segments, attach/detach/list",
+        cmd::history::history,
+    ),
+    cmd(
         "apply",
         &[],
         "Apply a changeset of effects (the primitive)",

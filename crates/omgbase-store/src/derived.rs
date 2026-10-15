@@ -212,15 +212,24 @@ pub fn rebuild_index(conn: &Connection, target: RebuildTarget) -> Result<()> {
         fts_rebuild(&tx)?;
     }
     if matches!(target, RebuildTarget::BlockChanges | RebuildTarget::All) {
-        tx.execute_batch(
-            "DELETE FROM block_changes;
+        // `block_changes` is the projection of `dispositions` — for every
+        // commit that still has dispositions. A wholly archived commit
+        // (§7.1, 15.0: every revision of it carries `archive`) has none; its
+        // surviving block_changes rows are each block's earliest, kept for
+        // the mint oracle, and are left exactly as they are.
+        tx.execute_batch(&format!(
+            "DELETE FROM block_changes WHERE commit_id NOT IN ({ARCHIVED_COMMITS_SQL});
              INSERT OR IGNORE INTO block_changes (block_id, commit_id, kind)
-               SELECT block_id, commit_id, kind FROM dispositions;",
-        )?;
+               SELECT block_id, commit_id, kind FROM dispositions;"
+        ))?;
     }
     tx.commit()?;
     Ok(())
 }
+
+/// The commit ids every revision of which is archived (§7.1 "Retention",
+/// 15.0): a commit with at least one revision and no live one.
+pub const ARCHIVED_COMMITS_SQL: &str = "SELECT c.commit_id FROM commits c WHERE EXISTS (SELECT 1 FROM revisions r WHERE r.commit_id = c.commit_id) AND NOT EXISTS (SELECT 1 FROM revisions r WHERE r.commit_id = c.commit_id AND r.archive IS NULL)";
 
 // ---- garbage (§7) -------------------------------------------------------------------
 
@@ -245,9 +254,11 @@ pub fn count_same_dispositions(conn: &Connection) -> Result<usize> {
     Ok(usize::try_from(n).unwrap_or(0))
 }
 
-/// The mark phase: tree nodes reachable from every `revisions.root_tree`
-/// (walking `child_tree_hash_hex`) and the blobs they name (raw, trivia)
-/// plus every `frontmatter_blob`. Hex sets.
+/// The mark phase (§7): tree nodes reachable from every **live** revision's
+/// `root_tree` (walking `child_tree_hash_hex`) and the blobs they name (raw,
+/// trivia) plus every non-NULL `frontmatter_blob`. An archived revision
+/// (`root_tree IS NULL`, 15.0) contributes nothing — its bodies live in its
+/// segment. Hex sets.
 pub fn mark_reachable(conn: &Connection) -> Result<(HashSet<String>, HashSet<String>)> {
     let mut trees = HashSet::new();
     let mut blobs = HashSet::new();
@@ -260,7 +271,8 @@ pub fn mark_reachable(conn: &Connection) -> Result<(HashSet<String>, HashSet<Str
         }
     }
     let roots: Vec<Vec<u8>> = {
-        let mut stmt = conn.prepare("SELECT DISTINCT root_tree FROM revisions")?;
+        let mut stmt =
+            conn.prepare("SELECT DISTINCT root_tree FROM revisions WHERE root_tree IS NOT NULL")?;
         let it = stmt.query_map([], |r| r.get(0))?;
         it.collect::<std::result::Result<Vec<_>, _>>()?
     };
@@ -329,26 +341,38 @@ pub fn gc_dry_run(conn: &Connection) -> Result<GcResult> {
     })
 }
 
-/// Mark-and-sweep, flag-gated (`enabled = false` is a no-op). Because
-/// revisions are never pruned, nothing is unreachable in practice. The same
-/// collection (§7 "The `same` sweep", 14.2) deletes every `block_changes` and
-/// `dispositions` row with `kind = 'same'` — what a store through 14.1 wrote
-/// for every untouched block of every commit, and nothing reads. A sweep, not
-/// a migration: a data-only change needs no `user_version`, and opening a
-/// database never bulk-deletes. Rebuild is unchanged (`block_changes` stays
-/// the projection of `dispositions`), so §8 I8 holds before and after.
+/// The sweep (§7): delete every `tree_nodes` and `blobs` row the mark did not
+/// reach; `(blobs swept, tree nodes swept)`. Runs in the caller's
+/// transaction — [`run_gc`] and the retention squash (15.0,
+/// [`crate::archive`]) both call it.
+pub fn sweep_unreachable(conn: &Connection) -> Result<(usize, usize)> {
+    let (trees, blobs) = unreachable_rows(conn)?;
+    for h in &trees {
+        conn.execute("DELETE FROM tree_nodes WHERE hash = ?1", params![h])?;
+    }
+    for h in &blobs {
+        conn.execute("DELETE FROM blobs WHERE hash = ?1", params![h])?;
+    }
+    Ok((blobs.len(), trees.len()))
+}
+
+/// Mark-and-sweep, flag-gated (`enabled = false` is a no-op). In a store
+/// that never archived nothing is unreachable — revisions are append-only;
+/// after a retention squash (15.0) the squash has already swept, so it is a
+/// no-op again unless a crash interrupted one. The same collection (§7 "The
+/// `same` sweep", 14.2) deletes every `block_changes` and `dispositions` row
+/// with `kind = 'same'` — what a store through 14.1 wrote for every untouched
+/// block of every commit, and nothing reads. A sweep, not a migration: a
+/// data-only change needs no `user_version`, and opening a database never
+/// bulk-deletes. Rebuild is unchanged (`block_changes` stays the projection
+/// of `dispositions` over the commits that are not wholly archived), so §8
+/// I8 holds before and after.
 pub fn run_gc(conn: &Connection, enabled: bool) -> Result<GcResult> {
     if !enabled {
         return Ok(GcResult::default());
     }
     let tx = conn.unchecked_transaction()?;
-    let (trees, blobs) = unreachable_rows(&tx)?;
-    for h in &trees {
-        tx.execute("DELETE FROM tree_nodes WHERE hash = ?1", params![h])?;
-    }
-    for h in &blobs {
-        tx.execute("DELETE FROM blobs WHERE hash = ?1", params![h])?;
-    }
+    let (blobs_swept, tree_nodes_swept) = sweep_unreachable(&tx)?;
     let same_dispositions_swept = count_same_dispositions(&tx)?;
     if same_dispositions_swept > 0 {
         tx.execute("DELETE FROM block_changes WHERE kind = 'same'", [])?;
@@ -356,8 +380,8 @@ pub fn run_gc(conn: &Connection, enabled: bool) -> Result<GcResult> {
     }
     tx.commit()?;
     Ok(GcResult {
-        blobs_swept: blobs.len(),
-        tree_nodes_swept: trees.len(),
+        blobs_swept,
+        tree_nodes_swept,
         same_dispositions_swept,
     })
 }

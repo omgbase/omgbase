@@ -13,7 +13,10 @@ const GROUPS: &[(&str, &[&str])] = &[
         &["status", "ls", "outline", "cat", "show", "find"],
     ),
     ("query", &["query", "run"]),
-    ("history & links", &["log", "hist", "diff", "links"]),
+    (
+        "history & links",
+        &["log", "hist", "diff", "links", "history"],
+    ),
     (
         "mutate",
         &[
@@ -455,6 +458,62 @@ pub fn card(name: &'static str, prog: &str) -> Option<HelpSpec> {
             ]),
             vec![],
         ),
+        "history" => spec(
+            s(
+                "History retention: plan what the policy would archive, export it to a segment, attach/detach/list segments",
+            ),
+            vec![
+                s("history plan [--before <ts>] [--policy <json|@file>]"),
+                s(
+                    "history export [--prune] [--dest <dir>] [--before <ts>] [--policy <json|@file>] [--dry-run]",
+                ),
+                s("history attach <file|dir>"),
+                s("history detach <segment_id|path>"),
+                s("history list"),
+            ],
+            opts(&[
+                (
+                    "plan",
+                    "per document: revisions kept / to archive and the bytes only they reach; the policy in effect",
+                ),
+                (
+                    "export",
+                    "write ONE new segment file (default dest .omgbase/archives/) holding the archived revisions' bodies; --prune then squashes the store and records the segment",
+                ),
+                (
+                    "attach <path>",
+                    "record a segment file (or every segment of a directory that belongs to this repo) so reads at its revisions work again",
+                ),
+                (
+                    "detach <ref>",
+                    "forget a segment by id or path (its revisions stay listed; reading one is revision_archived)",
+                ),
+                (
+                    "list",
+                    "the repo's segments: commit range, revisions, bytes, state (attached, missing, pending, detached, stale)",
+                ),
+                (
+                    "--before <ts>",
+                    "only revisions committed before this RFC 3339 instant are candidates",
+                ),
+                (
+                    "--policy <p>",
+                    "a JSON object (or @file) merged over the effective history.retention settings for this run",
+                ),
+                (
+                    "--prune",
+                    "(export) after the segment is durable: NULL the archived bodies, drop their change rows, sweep, record",
+                ),
+                ("--dest <dir>", "(export) where the segment file goes"),
+                ("--dry-run", "(export) the plan, nothing written"),
+            ]),
+            vec![
+                s(
+                    "policy keys: keep_days, ladder [{ after_days, keep: \"one per day|week|month|year\" }], per_doc_max, keep_origins, overrides [{ glob, … }]",
+                ),
+                format!("e.g. {prog} history export --prune --policy '{{\"keep_days\":90}}'"),
+            ],
+        ),
         "links" => spec(
             s("Open links touching a node, grouped by predicate (both directions by default)"),
             vec![s("links <node> [--in|--out] [--pred <p,p>] [--blocks]")],
@@ -868,7 +927,7 @@ pub fn card(name: &'static str, prog: &str) -> Option<HelpSpec> {
                 ),
                 (
                     "--json",
-                    "`{ ok, checks: [{ name, ok, detail }] }`; with --size `{ file, categories, same_dispositions, advice }`",
+                    "`{ ok, checks: [{ name, ok, detail }] }`; with --size `{ file, categories, same_dispositions, archived, advice }`",
                 ),
             ]),
             vec![],

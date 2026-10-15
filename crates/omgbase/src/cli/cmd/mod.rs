@@ -11,6 +11,7 @@ pub mod docs;
 pub mod find;
 pub mod help;
 pub mod hist;
+pub mod history;
 pub mod links;
 pub mod log;
 pub mod ls;

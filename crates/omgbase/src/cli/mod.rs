@@ -33,7 +33,7 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 /// The `spec/cli/VERSION` this binary renders (`major.minor`; the `version`
 /// tool's `specs.cli`). A compile-time constant, not a file read — an
 /// installed binary has no `spec/` beside it; the test below pins it.
-pub const SPEC_VERSION: &str = "4.5";
+pub const SPEC_VERSION: &str = "4.6";
 
 /// What this binary knows about itself, for the surface's `version` tool
 /// (`spec/surface` §4): its version, the CLI spec it renders, and the build
@@ -140,7 +140,8 @@ fn check_headers(flags: &Globals) -> Result<()> {
 
 /// §5: help is documentation, not work — it never needs a workspace, so the
 /// sweep and the `--server` gate are skipped for `--help` and for the help
-/// *words* (`config help`, `embed help`, a bare `node`, a bare `source`).
+/// *words* (`config help`, `embed help`, `history help`, a bare `node`, a
+/// bare `source`, a bare `history`).
 fn asks_for_help(flag: bool, name: &str, rest: &[String]) -> bool {
     if flag {
         return true;
@@ -149,7 +150,7 @@ fn asks_for_help(flag: bool, name: &str, rest: &[String]) -> bool {
     match name {
         "config" | "embed" => first == Some("help"),
         "node" => first.is_none_or(|f| f == "help"),
-        "source" => first.is_none_or(|f| f == "help" || f == "--help"),
+        "source" | "history" => first.is_none_or(|f| f == "help" || f == "--help"),
         _ => false,
     }
 }

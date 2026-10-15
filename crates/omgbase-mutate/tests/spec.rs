@@ -91,11 +91,18 @@ const PROJECTED_TABLES: [&str; 7] = [
     "resurrection_pool",
     "pending_materializations",
 ];
-const STEP_KINDS: [&str; 14] = [
+const STEP_KINDS: [&str; 19] = [
     "observe",
     "sweep",
     "gc",
     "exec",
+    // `spec/store` §9.4 (15.0): the retention steps the store runner shares —
+    // accepted by shape, never run here (the mutate fixtures carry none).
+    "history_plan",
+    "history_export",
+    "history_attach",
+    "history_detach",
+    "read_at",
     "apply",
     "macro",
     "docs",
@@ -360,6 +367,10 @@ fn validate_steps(at: &str, steps: Option<&Json>, nested: bool, problems: &mut V
                 }
             }
             "disk" => validate_disk(body, &here, problems),
+            "history_plan" => only_keys(b, &["ts", "policy", "before"], &here, problems),
+            "history_export" => only_keys(b, &["ts", "policy", "before", "prune"], &here, problems),
+            "history_attach" | "history_detach" => only_keys(b, &["segment"], &here, problems),
+            "read_at" => only_keys(b, &["doc", "rev"], &here, problems),
             "materialize" => {
                 only_keys(b, &[], &here, problems);
             }
@@ -1654,6 +1665,9 @@ fn run_step(r: &mut Runner, step: &Json) -> Result<Json, String> {
             r.pending_disk.insert(path.to_owned());
             Ok(json!({}))
         }
+        "history_plan" | "history_export" | "history_attach" | "history_detach" | "read_at" => Err(
+            "retention steps (spec/store §9.4, 15.0) are not run by the mutate runner".to_owned(),
+        ),
         "materialize" => {
             let done = r
                 .store
@@ -1795,7 +1809,7 @@ fn project_store(conn: &Connection, repo_id: &str) -> Vec<(String, Json)> {
     let seq_of = |id: &str| commit_seq.get(id).copied().unwrap_or(i64::MAX);
     let mut revisions = query_rows(
         conn,
-        "SELECT r.rev_id, r.doc_id, r.seq, r.root_tree, r.frontmatter_blob, r.rendered_hash, r.path, r.commit_id
+        "SELECT r.rev_id, r.doc_id, r.seq, r.root_tree, r.frontmatter_blob, r.rendered_hash, r.path, r.commit_id, r.archive
          FROM revisions r JOIN docs d ON d.doc_id = r.doc_id WHERE d.repo_id = ?1",
         &[&repo_id],
     );
@@ -1935,10 +1949,12 @@ struct Rev {
     rev_id: String,
     doc_id: String,
     seq: i64,
-    root_tree: String,
+    /// `None` once archived (`spec/store` 15.0).
+    root_tree: Option<String>,
     frontmatter_blob: Option<String>,
     rendered_hash: Vec<u8>,
     commit_id: String,
+    archive: Option<String>,
 }
 
 struct Doc {
@@ -2006,7 +2022,7 @@ fn check_invariants(
     );
     let revisions: Vec<Rev> = all_rows(
         conn,
-        "SELECT r.rev_id, r.doc_id, r.seq, r.root_tree, r.frontmatter_blob, r.rendered_hash, r.commit_id
+        "SELECT r.rev_id, r.doc_id, r.seq, r.root_tree, r.frontmatter_blob, r.rendered_hash, r.commit_id, r.archive
          FROM revisions r JOIN docs d ON d.doc_id = r.doc_id WHERE d.repo_id = ?1",
         &[&repo_id],
         |r| {
@@ -2014,13 +2030,23 @@ fn check_invariants(
                 rev_id: r.get(0)?,
                 doc_id: r.get(1)?,
                 seq: r.get(2)?,
-                root_tree: hex(&r.get::<_, Vec<u8>>(3)?),
+                root_tree: r.get::<_, Option<Vec<u8>>>(3)?.map(|h| hex(&h)),
                 frontmatter_blob: r.get::<_, Option<Vec<u8>>>(4)?.map(|h| hex(&h)),
                 rendered_hash: r.get(5)?,
                 commit_id: r.get(6)?,
+                archive: r.get(7)?,
             })
         },
     );
+    // I9 (`spec/store` 15.0): `archive IS NOT NULL` ⇔ `root_tree IS NULL`.
+    for r in &revisions {
+        if r.archive.is_some() != r.root_tree.is_none() {
+            problems.push(format!(
+                "I9: revision {} archive/root_tree disagree",
+                r.rev_id
+            ));
+        }
+    }
     let rev_by_id: HashMap<&str, &Rev> = revisions.iter().map(|r| (r.rev_id.as_str(), r)).collect();
 
     // I2
@@ -2072,7 +2098,10 @@ fn check_invariants(
         trees.insert(h, parsed);
     }
     for r in &revisions {
-        if !tree_hashes.contains(&r.root_tree) {
+        if r.root_tree
+            .as_ref()
+            .is_some_and(|h| !tree_hashes.contains(h))
+        {
             problems.push(format!(
                 "I2: revision {} root_tree not in tree_nodes",
                 r.rev_id
@@ -2258,7 +2287,7 @@ fn check_invariants(
             }
         }
         compare(
-            Some(&rev.root_tree),
+            rev.root_tree.as_deref(),
             None,
             0,
             "/",
@@ -2312,7 +2341,10 @@ fn check_invariants(
     // I5
     let mut marked_trees: HashSet<String> = HashSet::new();
     let mut marked_blobs: HashSet<String> = HashSet::new();
-    let mut stack: Vec<String> = revisions.iter().map(|r| r.root_tree.clone()).collect();
+    let mut stack: Vec<String> = revisions
+        .iter()
+        .filter_map(|r| r.root_tree.clone())
+        .collect();
     for r in &revisions {
         if let Some(fm) = &r.frontmatter_blob {
             marked_blobs.insert(fm.clone());

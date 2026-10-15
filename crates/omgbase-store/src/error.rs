@@ -34,6 +34,38 @@ pub enum Error {
     /// a field no target kind has, a value of the wrong type. The surface
     /// reports it as `filter_invalid`.
     InvalidEffect(String),
+    /// A read of an archived revision whose segment is not recorded, or
+    /// recorded but not on disk (spec §6.2 "Through a segment", 15.0; the
+    /// surface's `revision_archived { rev, archive, path? }`).
+    RevisionArchived {
+        /// The revision asked for.
+        rev: String,
+        /// The segment its `archive` column names.
+        archive: String,
+        /// The recorded file, when the segment is recorded (then it is the
+        /// file that is not on disk).
+        path: Option<String>,
+    },
+    /// A file that is not an archive segment, or one of another repository
+    /// (spec §7.1 "Attach / detach").
+    NotASegment {
+        /// The file.
+        path: String,
+        /// `no such file`, `no manifest row`, `not an archive segment`, or
+        /// `a segment of repository <x>, not <y>`.
+        detail: String,
+    },
+    /// An unrecorded segment under the archives directory names both live
+    /// and non-live revisions (spec §7.1 "The crash rule"): it predates
+    /// another squash or belongs to another store.
+    StaleSegment {
+        /// The file.
+        path: String,
+        /// The offending revision.
+        rev: String,
+    },
+    /// A malformed retention policy (spec §7.1 "The policy").
+    RetentionPolicy(String),
     /// Anything else, with a message.
     Other(String),
 }
@@ -55,6 +87,32 @@ impl fmt::Display for Error {
                 "mint({prefix}): {rejected} consecutive candidates were already in use; the minter cannot produce a fresh id"
             ),
             Error::InvalidEffect(msg) => write!(f, "invalid effect: {msg}"),
+            // The reference's `RevisionArchived` messages, byte for byte
+            // (`spec/surface` §2: the CLI prints them).
+            Error::RevisionArchived {
+                rev,
+                archive,
+                path: None,
+            } => write!(
+                f,
+                "revision {} is archived in segment {archive}, which is not attached (omg history attach <file>)",
+                serde_json::Value::String(rev.clone())
+            ),
+            Error::RevisionArchived {
+                rev,
+                archive,
+                path: Some(path),
+            } => write!(
+                f,
+                "revision {} is archived in segment {archive} at {path}, which is not on disk",
+                serde_json::Value::String(rev.clone())
+            ),
+            Error::NotASegment { path, detail } => write!(f, "{path}: {detail}"),
+            Error::StaleSegment { path, rev } => write!(
+                f,
+                "{path}: an unrecorded segment naming revision {rev}, which is not a live revision of this store — move the file out of the way"
+            ),
+            Error::RetentionPolicy(msg) => f.write_str(msg),
             Error::Other(msg) => f.write_str(msg),
         }
     }

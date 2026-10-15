@@ -12,8 +12,11 @@ pub const ALPHABET: &[u8; 32] = b"0123456789abcdefghjkmnpqrstvwxyz";
 /// Suffix length of a minted id.
 pub const ID_LEN: usize = 7;
 
-/// The id prefixes the store mints (§2.1). `v` is reserved.
-pub const PREFIXES: [&str; 11] = ["d", "b", "c", "r", "x", "col", "cp", "e", "rp", "v", "src"];
+/// The id prefixes the store mints (§2.1). `v` is reserved; `s` (15.0) is an
+/// archive segment.
+pub const PREFIXES: [&str; 12] = [
+    "d", "b", "c", "r", "x", "col", "cp", "e", "rp", "v", "src", "s",
+];
 
 /// Where ids come from. The store owns one; production uses [`RandomMinter`],
 /// fixture runners install a [`SequentialMinter`] (§2.2).

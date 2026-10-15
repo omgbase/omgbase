@@ -61,11 +61,12 @@ CREATE TABLE IF NOT EXISTS revisions (
   rev_id           TEXT PRIMARY KEY,
   doc_id           TEXT NOT NULL REFERENCES docs(doc_id),
   seq              INTEGER NOT NULL,
-  root_tree        BLOB NOT NULL REFERENCES tree_nodes(hash),
-  frontmatter_blob BLOB REFERENCES blobs(hash),
+  root_tree        BLOB,                   -- a tree_nodes.hash; NULL once archived (spec/store §7 "Retention", 15.0)
+  frontmatter_blob BLOB,                   -- a blobs.hash, or NULL (no frontmatter, or archived)
   rendered_hash    BLOB NOT NULL,
   path             TEXT NOT NULL,
   commit_id        TEXT NOT NULL REFERENCES commits(commit_id),
+  archive          TEXT,                   -- the archive segment holding the bodies; NULL = live (15.0)
   UNIQUE (doc_id, seq)
 );
 
@@ -159,6 +160,18 @@ CREATE TABLE IF NOT EXISTS pending_materializations (
   rendered_hash BLOB NOT NULL,                 -- the bytes expected at path (remove: the bytes it is safe to unlink)
   commit_id     TEXT NOT NULL REFERENCES commits(commit_id),
   PRIMARY KEY (repo_id, path)
+);
+
+
+CREATE TABLE IF NOT EXISTS archives (
+  segment_id     TEXT PRIMARY KEY,
+  repo_id        TEXT NOT NULL REFERENCES repos(repo_id),
+  path           TEXT NOT NULL,
+  seq_lo         INTEGER NOT NULL,
+  seq_hi         INTEGER NOT NULL,
+  created_at     TEXT NOT NULL,
+  revision_count INTEGER NOT NULL,
+  bytes          INTEGER NOT NULL
 );
 
 -- ---- derived tables (02 §4; rebuildable) ------------------------------------
