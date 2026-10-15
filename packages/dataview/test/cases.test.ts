@@ -83,17 +83,10 @@ for (const file of files) {
       assert.equal(r.ok.oqx, c.oqx);
       assert.deepEqual(r.ok.render, c.render);
       assert.deepEqual(r.ok.warnings, c.warnings ?? []);
-      if (!/ group by /.test(r.ok.oqx)) {
-        // Pure 0.23 OQX: it parses, and the printer's round-trip law holds.
-        const tree = parse(r.ok.oqx);
-        assert.deepEqual(stripSpans(parse(print(tree))), stripSpans(tree));
-      } else {
-        // The grouped form: the clauses before `group by` parse on their own,
-        // and the grouping tail has the 0.24 shape.
-        const [head, tail] = r.ok.oqx.split(/ group by /, 2) as [string, string];
-        parse(head);
-        assert.match(tail, /^[A-Za-z_$][A-Za-z0-9_$]*: /);
-      }
+      // Every translation is OQX the engine accepts (spec/oqx 0.24: grouping
+      // included), and the printer's round-trip law holds over it.
+      const tree = parse(r.ok.oqx);
+      assert.deepEqual(stripSpans(parse(print(tree))), stripSpans(tree));
     });
   }
 }

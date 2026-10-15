@@ -1,9 +1,10 @@
 // OQX text assembly. Expressions, select items and `where` trees are built as
 // `@omgbase/oqx` AST nodes (`build.*`) and written by the canonical printer, so
-// quoting, escapes and minimal parentheses are the language's own; the clauses
-// the 0.23 AST has no node for yet — `group by` / `having` (spec/oqx 0.24, in
-// flight) — are assembled here as text in the fixed clause order. This is the
-// one module to revise when the grouping syntax lands in the AST.
+// quoting, escapes and minimal parentheses are the language's own; the grouping
+// clauses — `group by` / `having` (spec/oqx 0.24) — are assembled here as text
+// in the fixed clause order (the AST has nodes for them since 0.24; moving them
+// onto `build.*` is a tidy-up, not a behaviour change). Every golden case is
+// parsed whole by `@omgbase/oqx` and round-trips through its printer.
 
 import { build, print, visit, type Expr, type OrderSpec, type SelectItem, type Where } from "@omgbase/oqx";
 
