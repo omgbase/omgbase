@@ -73,3 +73,21 @@ pub const SPEC_VERSION: &str = "4.8";
 
 /// This crate's own version (`Cargo.toml`), for the surface's `version` tool.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+
+#[cfg(test)]
+mod version_tests {
+    use super::SPEC_VERSION;
+
+    /// The crate line tracks the spec it implements (AGENTS.md "Spec
+    /// tracking"): `major.minor` of `Cargo.toml` equals `SPEC_VERSION`. Every
+    /// other spec crate pins this; the surface had relied on `release plan`
+    /// alone, so a 4.8 spec over a 4.7.x crate went unnoticed by `cargo test`.
+    #[test]
+    fn spec_version_matches_the_crate_line() {
+        let crate_version = env!("CARGO_PKG_VERSION");
+        assert!(
+            crate_version.starts_with(&format!("{SPEC_VERSION}.")),
+            "crate {crate_version} must track spec {SPEC_VERSION}.x"
+        );
+    }
+}
