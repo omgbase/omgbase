@@ -4,6 +4,51 @@ All notable changes to `@omgbase/core` are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [Semantic Versioning](https://semver.org/) (pre-1.0: a minor bump may break).
 
+## [0.22.0] - 2026-10-15
+
+### Minor
+- Dates and durations in OQX queries (spec/surface 4.8 §1.3 "Dates and durations"): the Dataview-parity function set as omgbase host functions through `@omgbase/oqx`'s `callFunction`/`callMethod` seam. A date is an ISO-8601 string (what the store already writes and OQX already orders), a duration a number of seconds — no new value kinds. `date(x)` resolves the named points `now`/`today`/`yesterday`/`tomorrow`/`sow`/`eow`/`som`/`eom`/`soy`/`eoy` against the host clock in UTC (pinned by `OMGBASE_SPEC_CLOCK`) or canonicalizes an ISO string (a date-only input stays date-only; `+00:00` → `Z`); `dur(x)` parses Dataview's duration grammar (`"1h30m"`, `"2 days, 3 hours"`, every unit spelling, case-insensitive) and ISO-8601 durations (`PT1H30M`) to seconds (a year is 365 days, a month 30). Methods on a date string: `plus`/`minus` (a number of seconds, or a duration string whose months/years are calendar-aware with the day clamped — Jan 31 + `"1 month"` is Feb 28), `until` (signed seconds), `year`/`month`/`day`/`weekday` (1 = Monday)/`hour`/`minute`/`second`/`date`, `format` (`yyyy MM dd HH mm ss MMM EEE`, everything else literal); on a number: `dur_text` (`"1h 30m"`) and `dur_iso` (`PT1H30M`). Everything is total — a non-date receiver or argument is absent, so a `where` over mixed data filters quietly — except a wrong arity (`filter_invalid`). Arithmetic is methods, never operators: `+` with a string concatenates and keeps doing so. The runner folds a `date(…)`/`dur(…)` over literals (and a date method over literals) to the literal before planning, so `where updated_at < date("today")` pushes down as a plain text comparison and a named point resolves once per query. Fixtures: `spec/surface/cases/query-dates.json` (37 cases, run under the corpus clock — a query case now runs with the process clock pinned to `2026-09-27T00:00:00.000Z`); `query_syntax` gains a dates row; `docs/query-language.md` a dates section. The Rust twin (`omgbase-surface`) implements the same set from the spec.
+- OQX 0.24 (`spec/oqx` 0.23 → 0.24): **`group by` with aggregates** — the one
+  language gap for Dataview parity, and the end of "a census needs a full-repo row
+  dump". `group by <key>, …` and `having <pred>` sit after `follow` and before
+  `order by` in the fixed clause order; the rows a body yields become one row per
+  distinct key tuple (identities: absent ≡ null; first-appearance order); the
+  body's select, `having` and `order by` then read the **group** — a key, an
+  aggregate (`count()`, `count(e)`, `sum`, `avg`, `min`, `max`, `collect`,
+  `first`, `last`, `any`, `all`, with `count(distinct e)` / `collect(distinct
+  e)`), or `rows` (the group's rows, a value and a receiver: `rows count { where
+  checked }`, `rows collect { select title }`) — and any other bare name is a
+  parse error naming it. Value aggregates see present values only (`sum` of none
+  is `0`, `avg`/`min`/`max`/`first`/`last` of none absent); `any`/`all` test
+  truthiness. Without a `select` the projection is the keys plus `count`.
+  `count { … }` is a value wherever a value stands. New suite
+  `spec/oqx/cases/group-by.json` (94 cases; 1473 fixtures); every `expect.ast`
+  fixture gains `groupBy: null` / `having: null` on its bodies.
+
+  - `@omgbase/oqx` 0.24.0 is bumped by hand with its CHANGELOG, per the
+    standalone convention (`none` here so the release does not bump it again);
+    the `oqx` crate follows by the Rust twin (`none` here), after which
+    `omgbase-surface` and `omgbase` move their pin to `oqx = "0.24.0"`.
+  - `@omgbase/oqx-syntax`: `LANGUAGE_VERSION` 0.24; `group by`/`having` as
+    clauses, the aggregates as builtin functions before `(`, `rows` as an
+    intrinsic; `group`/`having` contextual; assets regenerated.
+  - `@omgbase/core`: a grouped query yields groups, not store rows — the runner
+    injects no `id`/`path` envelope (a hit is the projection as written, as
+    `bare` yields; `bare` is accepted and changes nothing), pages by position
+    with a null cursor, keeps `values`; the tier-3 planner declines a grouped
+    query whole (decline (c) extended to the post-group clauses; SQL `GROUP BY`
+    pushdown is a later round); the unknown-names pass judges keys and aggregate
+    arguments on the rows and a `rows … { }` block's names on the grouped rows'
+    kind (a `groupBy` step of `references`); the `query_syntax` reference states
+    the new clause order and shows a grouped example; `spec-versions` oqx 0.24;
+    the alchemy corpus gains a documents-per-layer census and a tasks-per-document
+    checked/unchecked grouping; the conformance suite runs six grouped queries.
+  - `omgbase` (npm): the `omg query` surface inherits the grouped result shape.
+  - `omgbase-surface`: `reference.rs` twin updated byte for byte;
+    `spec/surface/cases/examples.json` regenerated (the `query_syntax` text).
+  - `omgbase` (crate): the Rust twin implements the language round from the
+    report and the spec (open until it lands).
+
 ## [0.21.0] - 2026-10-14
 
 ### Minor
