@@ -16,8 +16,8 @@
 //! instead.
 
 use crate::ast::{
-    BinaryOp, Expr, Follow, FollowDestination, LogicalOp, OpNode, OrderSpec, Query, SelectItem,
-    Subquery, TemplatePart, Where,
+    BinaryOp, Expr, Follow, FollowDestination, GroupBy, GroupKey, LogicalOp, OpNode, OrderSpec,
+    Query, SelectItem, Subquery, TemplatePart, Where,
 };
 use crate::errors::{OqxError, Result};
 use crate::value::{Value, js_number_to_string};
@@ -136,7 +136,11 @@ fn prec(e: &Expr) -> u8 {
         | Expr::Binding { .. }
         | Expr::Tuple { .. }
         | Expr::Template { .. } => PRIMARY,
-        Expr::Member { .. } | Expr::Call { .. } | Expr::Required { .. } | Expr::Op(_) => POSTFIX,
+        Expr::Member { .. }
+        | Expr::Call { .. }
+        | Expr::Aggregate { .. }
+        | Expr::Required { .. }
+        | Expr::Op(_) => POSTFIX,
         Expr::Unary { .. } => UNARY,
         Expr::Binary { op, .. } => match op {
             BinaryOp::Add | BinaryOp::Sub => ADD,
@@ -158,6 +162,8 @@ fn render(n: Node<'_>) -> Out {
         Node::Subquery(s) => block(s),
         Node::Op(op) => op_node(op),
         Node::Follow(f) => follow(f),
+        Node::GroupBy(g) => group_by(g),
+        Node::Key(k) => key(k),
         Node::Order(o) => order(o),
         Node::Select(it) => item(it),
         Node::Where(w) => where_tree(w),
@@ -202,6 +208,8 @@ fn query(q: &Query) -> Out {
             q.frontier.as_ref(),
             None,
             q.follow.as_ref(),
+            q.group_by.as_ref(),
+            q.having.as_ref(),
             q.order_by.as_deref(),
             q.limit.as_ref(),
             q.offset.as_ref(),
@@ -219,6 +227,8 @@ fn query(q: &Query) -> Out {
         q.frontier.as_ref(),
         None,
         q.follow.as_ref(),
+        q.group_by.as_ref(),
+        q.having.as_ref(),
         q.order_by.as_deref(),
         q.limit.as_ref(),
         q.offset.as_ref(),
@@ -237,7 +247,7 @@ fn query(q: &Query) -> Out {
 // The clauses after `from` (a query) or after the projection (a block): the
 // fixed clause order, each present clause once. `depth` exists only on a follow
 // destination block's body (a `Query` has none); `frontier` on any body that
-// has a `follow` (0.20).
+// has a `follow` (0.20); `group by` and `having` after `follow` (0.24).
 #[allow(clippy::too_many_arguments)]
 fn tail(
     from: &[Expr],
@@ -245,6 +255,8 @@ fn tail(
     frontier: Option<&Expr>,
     depth: Option<u32>,
     follow_clause: Option<&Follow>,
+    group_by_clause: Option<&GroupBy>,
+    having: Option<&Where>,
     order_by: Option<&[OrderSpec]>,
     limit: Option<&Expr>,
     offset: Option<&Expr>,
@@ -264,6 +276,12 @@ fn tail(
     }
     if let Some(f) = follow_clause {
         out.push(follow(f));
+    }
+    if let Some(g) = group_by_clause {
+        out.push(group_by(g));
+    }
+    if let Some(h) = having {
+        out.push(cat(vec![text("having "), where_tree(h)]));
     }
     if let Some(o) = order_by.filter(|o| !o.is_empty()) {
         out.push(cat(vec![
@@ -293,6 +311,8 @@ fn block(s: &Subquery) -> Out {
         s.frontier.as_ref(),
         s.depth,
         s.follow.as_ref(),
+        s.group_by.as_ref(),
+        s.having.as_ref(),
         s.order_by.as_deref(),
         s.limit.as_ref(),
         s.offset.as_ref(),
@@ -377,6 +397,18 @@ fn follow(f: &Follow) -> Out {
     ])
 }
 
+// Every key aliased, as every select item is (`group by layer: layer`).
+fn group_by(g: &GroupBy) -> Out {
+    cat(vec![
+        text("group by "),
+        join(g.keys.iter().map(key).collect(), ", "),
+    ])
+}
+
+fn key(k: &GroupKey) -> Out {
+    cat(vec![text(format!("{}: ", k.name)), expr(&k.expr)])
+}
+
 // ---- where --------------------------------------------------------------------
 
 fn where_tree(w: &Where) -> Out {
@@ -437,6 +469,21 @@ fn expr(e: &Expr) -> Out {
                 Some(r) => cat(vec![receiver(r), text(format!(".{name}")), args]),
             }
         }
+        // An aggregate prints as the call it is written as (`count()`, `sum(distinct x)`).
+        Expr::Aggregate {
+            name,
+            arg,
+            distinct,
+            ..
+        } => cat(vec![
+            text(format!(
+                "{}({}",
+                name.as_str(),
+                if *distinct { "distinct " } else { "" }
+            )),
+            arg.as_deref().map_or_else(Vec::new, expr),
+            text(")"),
+        ]),
         Expr::Unary { op, expr: x, .. } => cat(vec![text(op.as_str()), operand(x, UNARY)]),
         // Postfix, tightest: anything below postfix level is grouped (`(a + 1)!`).
         Expr::Required { expr: x, .. } => cat(vec![operand(x, POSTFIX), text("!")]),

@@ -40,12 +40,13 @@ pub use adapters::IndexedCollection;
 #[cfg(feature = "sqlite")]
 pub use adapters::SqliteTable;
 pub use ast::{
-    BinaryOp, Consumer, CountCmp, Expr, Follow, FollowDestination, LogicalOp, OpNode, OrderSpec,
-    Query, RelOp, SelectItem, Span, Subquery, TemplatePart, UnaryOp, Where,
+    AggregateName, BinaryOp, Consumer, CountCmp, Expr, Follow, FollowDestination, GroupBy,
+    GroupKey, LogicalOp, OpNode, OrderSpec, Query, RelOp, SelectItem, Span, Subquery, TemplatePart,
+    UnaryOp, Where,
 };
 /// The OQX language version this crate conforms to (`spec/oqx/VERSION`). It is
 /// also this crate's `major.minor`: the patch digit is the crate's own.
-pub const LANGUAGE_VERSION: &str = "0.23";
+pub const LANGUAGE_VERSION: &str = "0.24";
 
 /// This crate's own version (`Cargo.toml`).
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

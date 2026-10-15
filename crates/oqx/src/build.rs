@@ -5,8 +5,9 @@
 //! shape as a parsed one and prints with [`crate::print`].
 
 use crate::ast::{
-    BinaryOp, Consumer, CountCmp, Expr, Follow, FollowDestination, LogicalOp, OpNode, OrderSpec,
-    Query, SelectItem, Span, Subquery, TemplatePart, UnaryOp, Where,
+    AggregateName, BinaryOp, Consumer, CountCmp, Expr, Follow, FollowDestination, GroupBy,
+    GroupKey, LogicalOp, OpNode, OrderSpec, Query, SelectItem, Span, Subquery, TemplatePart,
+    UnaryOp, Where,
 };
 use crate::value::Value;
 
@@ -135,6 +136,16 @@ pub fn template(parts: Vec<TemplatePart>) -> Expr {
         span: Span::EMPTY,
     }
 }
+/// `name(arg)` / `name(distinct arg)` / `count()` — an aggregate over the
+/// group's rows (SEMANTICS §24).
+pub fn aggregate(name: AggregateName, arg: Option<Expr>, distinct: bool) -> Expr {
+    Expr::Aggregate {
+        name,
+        arg: arg.map(Box::new),
+        distinct,
+        span: Span::EMPTY,
+    }
+}
 /// A text piece of a template literal.
 pub fn text(s: impl Into<String>) -> TemplatePart {
     TemplatePart::Text(s.into())
@@ -203,6 +214,21 @@ pub fn order(expr: Expr, desc: bool) -> OrderSpec {
         span: Span::EMPTY,
     }
 }
+/// One `group by` key, `name: expr`.
+pub fn key(name: &str, expr: Expr) -> GroupKey {
+    GroupKey {
+        name: name.to_owned(),
+        expr,
+        span: Span::EMPTY,
+    }
+}
+/// `group by <keys>` (SEMANTICS §24).
+pub fn group_by(keys: Vec<GroupKey>) -> GroupBy {
+    GroupBy {
+        keys,
+        span: Span::EMPTY,
+    }
+}
 
 /// An empty block body; set the clauses you need.
 pub fn subquery() -> Subquery {
@@ -214,6 +240,8 @@ pub fn subquery() -> Subquery {
         follow: None,
         frontier: None,
         depth: None,
+        group_by: None,
+        having: None,
         values: false,
         limit: None,
         offset: None,
@@ -266,6 +294,8 @@ pub fn query(source: Expr) -> Query {
         order_by: None,
         consumer: Consumer::Collect,
         follow: None,
+        group_by: None,
+        having: None,
         distinct: false,
         values: false,
         limit: None,

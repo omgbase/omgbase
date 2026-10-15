@@ -6,8 +6,8 @@
 //! `visit` and `transform` both read it.
 
 use crate::ast::{
-    Expr, Follow, FollowDestination, OpNode, OrderSpec, Query, SelectItem, Span, Subquery,
-    TemplatePart, Where,
+    Expr, Follow, FollowDestination, GroupBy, GroupKey, OpNode, OrderSpec, Query, SelectItem, Span,
+    Subquery, TemplatePart, Where,
 };
 
 /// A borrowed node of any kind.
@@ -17,6 +17,9 @@ pub enum Node<'a> {
     Subquery(&'a Subquery),
     Op(&'a OpNode),
     Follow(&'a Follow),
+    /// The `group by` clause and one of its keys (0.24).
+    GroupBy(&'a GroupBy),
+    Key(&'a GroupKey),
     Order(&'a OrderSpec),
     Select(&'a SelectItem),
     Where(&'a Where),
@@ -31,6 +34,8 @@ impl Node<'_> {
             Node::Subquery(s) => s.span,
             Node::Op(op) => op.span,
             Node::Follow(f) => f.span,
+            Node::GroupBy(g) => g.span,
+            Node::Key(k) => k.span,
             Node::Order(o) => o.span,
             Node::Select(it) => it.span(),
             Node::Where(w) => w.span(),
@@ -45,6 +50,8 @@ impl Node<'_> {
             Node::Subquery(_) => "subquery",
             Node::Op(_) => "op",
             Node::Follow(_) => "follow",
+            Node::GroupBy(_) => "groupBy",
+            Node::Key(_) => "key",
             Node::Order(_) => "order",
             Node::Select(SelectItem::Field { .. }) => "field",
             Node::Select(SelectItem::Collect { .. }) => "collect",
@@ -72,6 +79,11 @@ pub enum Clause {
     /// of the block's rows — under the walk's enclosing scope — or a body's
     /// own (its seeds'), read in the row scope like `where`.
     FollowFrontier,
+    /// The `group by` keys (the `groupBy` node and its keys) and the
+    /// post-group predicate (0.24), both at the row depth: a group scope sits
+    /// where the rows did (SEMANTICS §24).
+    GroupBy,
+    Having,
 }
 
 impl Clause {
@@ -88,6 +100,8 @@ impl Clause {
             Clause::Follow => "follow",
             Clause::FollowDestination => "follow.destination",
             Clause::FollowFrontier => "follow.frontier",
+            Clause::GroupBy => "groupBy",
+            Clause::Having => "having",
         }
     }
 }
@@ -165,6 +179,14 @@ fn children<'a>(node: Node<'a>) -> Vec<Child<'a>> {
             if let Some(f) = &q.follow {
                 out.push(child(Node::Follow(f), Some(Clause::Follow), 1));
             }
+            // `group by` keys are read on the rows, `having` on the groups —
+            // both at the row depth (the group scope sits where the rows did; 0.24).
+            if let Some(g) = &q.group_by {
+                out.push(child(Node::GroupBy(g), Some(Clause::GroupBy), 1));
+            }
+            if let Some(h) = &q.having {
+                out.push(child(where_node(h), Some(Clause::Having), 1));
+            }
             if let Some(o) = &q.order_by {
                 out.extend(
                     o.iter()
@@ -202,6 +224,12 @@ fn children<'a>(node: Node<'a>) -> Vec<Child<'a>> {
             if let Some(f) = &s.follow {
                 out.push(child(Node::Follow(f), Some(Clause::Follow), 0));
             }
+            if let Some(g) = &s.group_by {
+                out.push(child(Node::GroupBy(g), Some(Clause::GroupBy), 0));
+            }
+            if let Some(h) = &s.having {
+                out.push(child(where_node(h), Some(Clause::Having), 0));
+            }
             if let Some(o) = &s.order_by {
                 out.extend(
                     o.iter()
@@ -228,6 +256,10 @@ fn children<'a>(node: Node<'a>) -> Vec<Child<'a>> {
                 child(n, Some(Clause::FollowDestination), 0)
             }));
         }
+        Node::GroupBy(g) => {
+            out.extend(g.keys.iter().map(|k| child(Node::Key(k), None, 0)));
+        }
+        Node::Key(k) => out.push(child(Node::Expr(&k.expr), None, 0)),
         Node::Order(o) => out.push(child(Node::Expr(&o.expr), None, 0)),
         Node::Select(SelectItem::Field { expr, .. }) => out.push(child(Node::Expr(expr), None, 0)),
         Node::Select(SelectItem::Collect { op, .. }) => out.push(child(Node::Op(op), None, 0)),
@@ -273,6 +305,12 @@ fn children<'a>(node: Node<'a>) -> Vec<Child<'a>> {
             // A template's interpolated expressions, in order; its texts are not nodes.
             Expr::Template { parts, .. } => {
                 out.extend(template_exprs(parts).map(|x| child(Node::Expr(x), None, 0)));
+            }
+            // The argument is read on each of the group's rows (0.24); none for `count()`.
+            Expr::Aggregate { arg, .. } => {
+                if let Some(a) = arg {
+                    out.push(child(Node::Expr(a), None, 0));
+                }
             }
         },
     }
@@ -374,6 +412,8 @@ where
             .as_ref()
             .map(|e| t.expr(e, Clause::FollowFrontier, 1)),
         follow: q.follow.as_ref().map(|fl| t.follow(fl, 1)),
+        group_by: q.group_by.as_ref().map(|g| t.group_by(g, 1)),
+        having: q.having.as_ref().map(|h| t.r#where(h, Clause::Having, 1)),
         order_by: q
             .order_by
             .as_ref()
@@ -489,6 +529,11 @@ where
                 .map(|e| self.expr(e, Clause::FollowFrontier, frontier_depth)),
             depth: s.depth,
             follow: s.follow.as_ref().map(|fl| self.follow(fl, depth)),
+            group_by: s.group_by.as_ref().map(|g| self.group_by(g, depth)),
+            having: s
+                .having
+                .as_ref()
+                .map(|h| self.r#where(h, Clause::Having, depth)),
             order_by: s
                 .order_by
                 .as_ref()
@@ -527,6 +572,26 @@ where
         };
         self.path.pop();
         out
+    }
+
+    fn group_by(&mut self, g: &'a GroupBy, depth: usize) -> GroupBy {
+        self.path.push(Node::GroupBy(g));
+        let keys = g
+            .keys
+            .iter()
+            .map(|k| {
+                self.path.push(Node::Key(k));
+                let out = GroupKey {
+                    name: k.name.clone(),
+                    expr: self.expr(&k.expr, Clause::GroupBy, depth),
+                    span: k.span,
+                };
+                self.path.pop();
+                out
+            })
+            .collect();
+        self.path.pop();
+        GroupBy { keys, span: g.span }
     }
 
     fn order(&mut self, o: &'a OrderSpec, depth: usize) -> OrderSpec {
@@ -665,6 +730,19 @@ where
                     .collect(),
                 span: *span,
             },
+            Expr::Aggregate {
+                name,
+                arg,
+                distinct,
+                span,
+            } => Expr::Aggregate {
+                name: *name,
+                arg: arg
+                    .as_deref()
+                    .map(|a| Box::new(self.expr(a, clause, depth))),
+                distinct: *distinct,
+                span: *span,
+            },
         };
         self.path.pop();
         let ctx = self.ctx(Some(clause), depth);
@@ -697,6 +775,12 @@ fn strip_query_spans(q: &mut Query) {
     if let Some(f) = &mut q.follow {
         strip_follow_spans(f);
     }
+    if let Some(g) = &mut q.group_by {
+        strip_group_by_spans(g);
+    }
+    if let Some(h) = &mut q.having {
+        strip_where_spans(h);
+    }
     if let Some(o) = &mut q.order_by {
         o.iter_mut().for_each(strip_order_spans);
     }
@@ -721,6 +805,12 @@ fn strip_sub_spans(s: &mut Subquery) {
     if let Some(f) = &mut s.follow {
         strip_follow_spans(f);
     }
+    if let Some(g) = &mut s.group_by {
+        strip_group_by_spans(g);
+    }
+    if let Some(h) = &mut s.having {
+        strip_where_spans(h);
+    }
     if let Some(o) = &mut s.order_by {
         o.iter_mut().for_each(strip_order_spans);
     }
@@ -729,6 +819,14 @@ fn strip_sub_spans(s: &mut Subquery) {
     }
     if let Some(e) = &mut s.offset {
         strip_expr_spans(e);
+    }
+}
+
+fn strip_group_by_spans(g: &mut GroupBy) {
+    g.span = Span::EMPTY;
+    for k in &mut g.keys {
+        k.span = Span::EMPTY;
+        strip_expr_spans(&mut k.expr);
     }
 }
 
@@ -821,6 +919,11 @@ fn strip_expr_spans(e: &mut Expr) {
                         strip_expr_spans(x);
                     }
                 }),
+                Expr::Aggregate { arg, .. } => {
+                    if let Some(a) = arg {
+                        strip_expr_spans(a);
+                    }
+                }
                 Expr::Op(_) => unreachable!("handled above"),
             }
         }

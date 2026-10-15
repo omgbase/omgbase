@@ -322,8 +322,9 @@ pub fn invariant_block(plan: &BlockPlan, _ctx: &RuleContext) -> Option<BlockPlan
 //
 // Precondition. A where-position `exists`, `none` or `count` without
 // `distinct` (dedup projects every row), without `order by` (`count` evaluates
-// the keys), without `follow`, and with nothing left to evaluate per row:
-// either the block has no `where`, or every conjunct is correlated.
+// the keys), without `follow`, without `group by` (the consumer counts groups,
+// not rows — 0.24), and with nothing left to evaluate per row: either the
+// block has no `where`, or every conjunct is correlated.
 //
 // Argument. With no residual predicate the matched rows are exactly the
 // accessed rows (§13), entering a row as a scope cannot raise, and the
@@ -339,6 +340,7 @@ pub fn cardinality_only(plan: &BlockPlan, _ctx: &RuleContext) -> Option<BlockPla
         || node.distinct
         || node.sub.order_by.is_some()
         || node.sub.follow.is_some()
+        || node.sub.group_by.is_some()
         || (node.sub.r#where.is_some() && plan.residual.is_some())
     {
         return None;
@@ -397,6 +399,10 @@ pub fn expr_reads_scope_in(e: &Expr, at: usize, up_to: usize) -> bool {
         Expr::Template { parts, .. } => {
             template_exprs(parts).any(|x| expr_reads_scope_in(x, at, up_to))
         }
+        // The argument is read on the group's rows, which sit at the group's depth.
+        Expr::Aggregate { arg, .. } => arg
+            .as_deref()
+            .is_some_and(|a| expr_reads_scope_in(a, at, up_to)),
     }
 }
 
@@ -456,6 +462,16 @@ fn sub_reads_scope_in(sub: &Subquery, at: usize, up_to: usize, destination: bool
             let d = if destination { at.saturating_sub(1) } else { at };
             expr_reads_scope_in(e, d, up_to)
         })
+        // `group by` keys are read on the rows, `having` on the groups — both at `at` (0.24).
+        || sub.group_by.as_ref().is_some_and(|g| {
+            g.keys
+                .iter()
+                .any(|k| expr_reads_scope_in(&k.expr, at, up_to))
+        })
+        || sub
+            .having
+            .as_ref()
+            .is_some_and(|h| where_reads_scope_in(h, at, up_to))
         || sub
             .follow
             .as_ref()
@@ -502,6 +518,9 @@ pub fn expr_raise_free(e: &Expr, ctx: &RuleContext) -> bool {
         // which only the data decides: with an interpolation it is never
         // raise-free.
         Expr::Template { parts, .. } => template_exprs(parts).next().is_none(),
+        // `sum`/`avg` raise on a non-number (§24), which only the data decides;
+        // and an aggregate outside a group scope raises.
+        Expr::Aggregate { .. } => false,
     }
 }
 
@@ -519,14 +538,17 @@ pub fn where_raise_free(w: &Where, ctx: &RuleContext) -> bool {
 
 /// A where-position directive that can neither raise nor bind: `exists`,
 /// `none` or `count` (never `single`, which raises on several rows; `collect`
-/// binds lifts), without `follow`, bound or `distinct`, whose receiver,
-/// `from`, `where` and `order by` are raise-free and which lifts nothing.
+/// binds lifts), without `follow`, bound, `distinct` or `group by` (a grouped
+/// block evaluates its keys, `having` and the aggregates of its projection per
+/// group — a `sum` over a string raises), whose receiver, `from`, `where` and
+/// `order by` are raise-free and which lifts nothing.
 pub fn op_raise_free(op: &OpNode, ctx: &RuleContext) -> bool {
     let sub = &op.sub;
     matches!(op.op, Consumer::Exists | Consumer::None | Consumer::Count)
         && sub.follow.is_none()
         && sub.limit.is_none()
         && sub.offset.is_none()
+        && sub.group_by.is_none()
         && !op.distinct
         && expr_raise_free(&op.receiver, ctx)
         && sub.from.iter().all(|e| expr_raise_free(e, ctx))
@@ -551,6 +573,7 @@ fn sub_has_lifts(sub: &Subquery) -> bool {
         SelectItem::Field { lift, .. } => *lift > 0,
         SelectItem::Collect { op, .. } => op_has_lifts(op),
     }) || sub.r#where.as_ref().is_some_and(where_has_lifts)
+        || sub.having.as_ref().is_some_and(where_has_lifts)
         || sub.follow.as_ref().is_some_and(|f| {
             f.destinations
                 .iter()

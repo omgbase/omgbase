@@ -219,6 +219,16 @@ fn subquery_may_raise(sub: &Subquery, target: Target) -> bool {
             .as_ref()
             .is_some_and(|f| follow_may_raise(f, target))
         || sub.frontier.as_ref().is_some_and(inner)
+        // A grouped block (oqx 0.24) evaluates its keys, `having` and its
+        // aggregates (`sum` over a string raises) per group.
+        || sub
+            .group_by
+            .as_ref()
+            .is_some_and(|g| g.keys.iter().any(|k| inner(&k.expr)))
+        || sub
+            .having
+            .as_ref()
+            .is_some_and(|h| where_may_raise(h, target, false))
         || sub.limit.as_ref().is_some_and(inner)
         || sub.offset.as_ref().is_some_and(inner)
 }
@@ -276,6 +286,10 @@ fn expr_may_raise(e: &Expr, target: Target, root: bool) -> bool {
         // list or a record is an eval error only the data decides, so with any
         // interpolation it may raise.
         Expr::Template { parts, .. } => oqx::walk::template_exprs(parts).next().is_some(),
+        // An aggregate (oqx 0.24) raises on a non-number under `sum`/`avg`,
+        // which only the data decides; a grouped query is never planned anyway
+        // (`compile`).
+        Expr::Aggregate { .. } => true,
     }
 }
 
@@ -290,11 +304,16 @@ pub struct Compiled {
 }
 
 /// Compile `query` against `repo_id`, or `None` when the shape declines: a
-/// `follow`, a `from E` re-projection, a source that is not a root scan, or
-/// no pushable conjunct at all (the engine then does everything).
+/// `follow`, a `from E` re-projection, a `group by` (oqx 0.24 — declined
+/// whole: its `where` conjuncts could be pushed, grouping happens after them,
+/// but a pushed conjunct that empties the scan would hide an eval error an
+/// aggregate or `having` raises in memory, so decline (c) extends to the
+/// post-group clauses; SQL `GROUP BY` pushdown is a later round), a source
+/// that is not a root scan, or no pushable conjunct at all (the engine then
+/// does everything).
 #[must_use]
 pub fn compile(query: &Query, params: &[Value], repo_id: &str) -> Option<Compiled> {
-    if query.follow.is_some() || !query.from.is_empty() {
+    if query.follow.is_some() || !query.from.is_empty() || query.group_by.is_some() {
         return None;
     }
     let target = root_target(&query.source)?;
@@ -547,6 +566,15 @@ mod tests {
         assert!(
             compile(
                 &parse("from docs where path == \"a.md\" frontier type == \"hub\" follow distinct out_links collect { from dst frontier type == \"practitioner\" }"),
+                &[],
+                "r"
+            )
+            .is_none()
+        );
+        // a grouped query is declined whole (oqx 0.24), pushable `where` or not
+        assert!(
+            compile(
+                &parse("select layer, n: count() from docs where path == \"a.md\" group by layer"),
                 &[],
                 "r"
             )

@@ -68,8 +68,8 @@ blessed silently), or deletes the file once every case passes.
 Mirrors the reference so the two can be read side by side:
 
 - `lexer` / `parser` → `ast` — the fixed clause order (`select, from, where,
-  follow, order by, limit, offset`; only a leading `select` may drop its
-  keyword) and the expression grammar. Since 0.16 the tree is a language-level
+  frontier, follow, group by, having, order by, limit, offset`; only a leading
+  `select` may drop its keyword) and the expression grammar. Since 0.16 the tree is a language-level
   contract (`spec/oqx/AST.md`, below): every node carries a `Span`, every
   optional field is materialized, and `where` keeps its surface form. `follow` takes a comma-separated list
   of destinations (`Follow.destinations`, since 0.14): a relation of the

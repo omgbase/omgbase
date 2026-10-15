@@ -38,13 +38,13 @@
 
 use std::cell::RefCell;
 use std::cmp::Ordering;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
 use crate::Result;
 use crate::ast::{
-    BinaryOp, Consumer, CountCmp, Expr, Follow, FollowDestination, LogicalOp, OpNode, OrderSpec,
-    Query, SelectItem, Subquery, TemplatePart, UnaryOp, Where,
+    AggregateName, BinaryOp, Consumer, CountCmp, Expr, Follow, FollowDestination, GroupBy,
+    LogicalOp, OpNode, OrderSpec, Query, SelectItem, Subquery, TemplatePart, UnaryOp, Where,
 };
 use crate::context::DataContext;
 use crate::errors::OqxError;
@@ -152,6 +152,8 @@ impl<C: DataContext> Engine for InMemoryEngine<C> {
 
 const RECUR: &[&str] = &["$depth", "$stop", "$leaf", "$frontier", "$ordinal"];
 const KEY: &str = "$key";
+/// `rows` at a group scope: the group's rows (SEMANTICS §24, since 0.24).
+const ROWS: &str = "rows";
 const HARD_DEPTH_CAP: u32 = 8;
 
 /// A row on its way to becoming a scope: the value, plus the entry key when the
@@ -165,6 +167,20 @@ struct Row {
 impl Row {
     fn plain(value: Value) -> Self {
         Row { value, key: None }
+    }
+
+    /// The row in VALUE position: a plain row is its value, an entry the
+    /// `{ key, value }` record the reference's tagged entry stringifies to.
+    fn into_value(self) -> Value {
+        match self.key {
+            None => self.value,
+            Some(k) => {
+                let mut o = Object::with_capacity(2);
+                o.insert("key", k);
+                o.insert("value", self.value);
+                Value::Object(o)
+            }
+        }
     }
 }
 
@@ -213,12 +229,25 @@ fn key_item(select: &[SelectItem]) -> Option<&Expr> {
 /// `^name:` items in nested blocks (a `RefCell` because the binding happens
 /// while the scope is borrowed by the `where` being evaluated); `meta` holds
 /// the scope's intrinsics: recursion metadata for a follow occurrence, and
-/// `$key` for an entry scope.
+/// `$key` for an entry scope. `entry_key` is the key the row arrived with
+/// (an `entries()` row), so the group's `rows` hand back the same row.
+/// `group` is set on a GROUP scope (SEMANTICS §24): the scope's row is the key
+/// record, `rows` the group's rows, and the aggregates reduce `row_scopes`.
 struct Scope<'p> {
     row: Value,
     parent: Option<&'p Scope<'p>>,
     lifts: RefCell<Object>,
     meta: Option<Object>,
+    entry_key: Option<Value>,
+    group: Option<Group<'p>>,
+}
+
+/// One group of a `group by` body: the scopes of its rows (for the aggregates,
+/// which read each row as the body's `where` did — lifts and walk intrinsics
+/// included) and the rows themselves (what `rows` yields).
+struct Group<'p> {
+    row_scopes: Vec<Scope<'p>>,
+    rows: Vec<Row>,
 }
 
 impl<'p> Scope<'p> {
@@ -229,6 +258,8 @@ impl<'p> Scope<'p> {
             parent: None,
             lifts: RefCell::new(Object::new()),
             meta: None,
+            entry_key: None,
+            group: None,
         }
     }
 
@@ -394,7 +425,15 @@ fn rowless<'p>(enclosing: &'p Scope<'p>) -> Scope<'p> {
         parent: Some(enclosing),
         lifts: RefCell::new(Object::new()),
         meta: None,
+        entry_key: None,
+        group: None,
     }
+}
+
+/// `rows` as a receiver at a group scope: the group's rows in row position
+/// (an entry stays an entry), never the context's property.
+fn is_group_rows(e: &Expr, scope: &Scope<'_>) -> bool {
+    matches!(e, Expr::Ident { name, .. } if name == ROWS) && scope.group.is_some()
 }
 
 /// How many scopes out the root is (the root itself is 0).
@@ -435,10 +474,12 @@ impl<'e, C: DataContext> Exec<'e, C> {
         }
 
         // Consumer-directed short-circuits (skipped under `distinct`, which must
-        // materialize + dedup by projection before reducing). Counting never
-        // materializes rows; exists/none stop as soon as the bound is known to be
-        // non-empty (the (offset+1)th match — or the first, when unbounded).
+        // materialize + dedup by projection before reducing, and under `group
+        // by`, whose consumer counts groups). Counting never materializes rows;
+        // exists/none stop as soon as the bound is known to be non-empty (the
+        // (offset+1)th match — or the first, when unbounded).
         if !query.distinct
+            && query.group_by.is_none()
             && matches!(
                 query.consumer,
                 Consumer::Exists | Consumer::None | Consumer::Count
@@ -469,12 +510,15 @@ impl<'e, C: DataContext> Exec<'e, C> {
         // first over an unordered, non-distinct set needs only the rows up to
         // the bound (offset + 1). single materializes everything so its error
         // can report how many rows actually matched.
-        let cap =
-            if query.consumer == Consumer::First && query.order_by.is_none() && !query.distinct {
-                Some(bound.offset.saturating_add(1.min(bound.limit.unwrap_or(1))))
-            } else {
-                None
-            };
+        let cap = if query.consumer == Consumer::First
+            && query.order_by.is_none()
+            && !query.distinct
+            && query.group_by.is_none()
+        {
+            Some(bound.offset.saturating_add(1.min(bound.limit.unwrap_or(1))))
+        } else {
+            None
+        };
         let mut kept: Vec<Scope<'_>> = Vec::new();
         for r in rows {
             let s = self.enter(r, &root, None);
@@ -487,6 +531,9 @@ impl<'e, C: DataContext> Exec<'e, C> {
                     break;
                 }
             }
+        }
+        if let Some(g) = &query.group_by {
+            kept = self.group_scopes(kept, g, query.having.as_ref(), &root)?;
         }
         let proj = Projection::from(query);
         self.apply_key(&mut kept, proj)?;
@@ -556,6 +603,11 @@ impl<'e, C: DataContext> Exec<'e, C> {
     /// was a single object. `entries(x)` here yields keyed rows — the reference's
     /// tagged entries — see the module docs.
     fn coerce_rows_expr(&self, e: &Expr, scope: &Scope<'_>) -> Result<Rows> {
+        // `rows` at a group scope (§24): the group's rows as they arrived.
+        if is_group_rows(e, scope) {
+            let g = scope.group.as_ref().expect("checked above");
+            return Ok(Rows::plural(g.rows.clone()));
+        }
         if let Expr::Call {
             recv: None,
             name,
@@ -679,6 +731,7 @@ impl<'e, C: DataContext> Exec<'e, C> {
     // goes through this, so entries behave the same at the top level, in nested
     // blocks, as `from` re-projections, and as follow seeds.
     fn enter<'p>(&self, row: Row, parent: &'p Scope<'p>, meta: Option<Object>) -> Scope<'p> {
+        let entry_key = row.key.clone();
         let meta = match row.key {
             None => meta,
             Some(k) => {
@@ -692,7 +745,180 @@ impl<'e, C: DataContext> Exec<'e, C> {
             parent: Some(parent),
             lifts: RefCell::new(Object::new()),
             meta,
+            entry_key,
+            group: None,
         }
+    }
+
+    // ---- grouping (SEMANTICS §24) ---------------------------------------------
+
+    // The kept scopes of a body, one GROUP scope per distinct key tuple, in order
+    // of first appearance; then `having` over each group. A group scope sits where
+    // the rows did (same parent, same depth): its row is the key record — one
+    // property per key, in key order, holding the first row's value — so bare
+    // names read the keys, `$it` is the record and `$key` its structural identity;
+    // `rows` yields the group's rows and the aggregates reduce their scopes. Key
+    // values compare as identities (§16): absent ≡ null, a host row by its id,
+    // anything else structurally.
+    fn group_scopes<'p>(
+        &self,
+        scopes: Vec<Scope<'p>>,
+        group_by: &GroupBy,
+        having: Option<&Where>,
+        parent: &'p Scope<'p>,
+    ) -> Result<Vec<Scope<'p>>> {
+        let mut index: HashMap<String, usize> = HashMap::new();
+        let mut groups: Vec<Scope<'p>> = Vec::new();
+        for s in scopes {
+            let mut record = Object::with_capacity(group_by.keys.len());
+            let mut id = String::new();
+            for (i, k) in group_by.keys.iter().enumerate() {
+                let v = self.eval_expr(&k.expr, &s)?;
+                if i > 0 {
+                    id.push(' ');
+                }
+                id.push_str(&canonical_key(&self.ctx.identity(&v)));
+                record.insert(k.name.as_str(), v);
+            }
+            let at = match index.get(&id) {
+                Some(&at) => at,
+                None => {
+                    index.insert(id, groups.len());
+                    groups.push(Scope {
+                        row: Value::Object(record),
+                        parent: Some(parent),
+                        lifts: RefCell::new(Object::new()),
+                        meta: None,
+                        entry_key: None,
+                        group: Some(Group {
+                            row_scopes: Vec::new(),
+                            rows: Vec::new(),
+                        }),
+                    });
+                    groups.len() - 1
+                }
+            };
+            let g = groups[at].group.as_mut().expect("a group scope");
+            g.rows.push(Row {
+                value: s.row.clone(),
+                key: s.entry_key.clone(),
+            });
+            g.row_scopes.push(s);
+        }
+        let Some(having) = having else {
+            return Ok(groups);
+        };
+        let mut kept = Vec::with_capacity(groups.len());
+        for g in groups {
+            if self.eval_where(having, &g)? {
+                kept.push(g);
+            }
+        }
+        Ok(kept)
+    }
+
+    // An aggregate (§24) over the group of the scope it is read in. The argument
+    // is read on each row's scope in group order; every value aggregate sees the
+    // PRESENT values only (`count()` alone counts rows), `distinct` dedups them by
+    // identity (§16), and `any`/`all` test truthiness (absent is false) and stop
+    // at the first row that decides, like `||` / `&&`.
+    fn aggregate(
+        &self,
+        e: &Expr,
+        name: AggregateName,
+        arg: Option<&Expr>,
+        distinct: bool,
+        scope: &Scope<'_>,
+    ) -> Result<Value> {
+        let Some(g) = &scope.group else {
+            return Err(OqxError::eval(format!(
+                "`{}` is an aggregate and is read on a group — it needs a `group by` in its body",
+                describe(e)
+            )));
+        };
+        let Some(arg) = arg else {
+            return Ok(Value::Number(g.row_scopes.len() as f64));
+        };
+        match name {
+            AggregateName::Any => {
+                for s in &g.row_scopes {
+                    if self.eval_expr(arg, s)?.truthy() {
+                        return Ok(Value::Bool(true));
+                    }
+                }
+                return Ok(Value::Bool(false));
+            }
+            AggregateName::All => {
+                for s in &g.row_scopes {
+                    if !self.eval_expr(arg, s)?.truthy() {
+                        return Ok(Value::Bool(false));
+                    }
+                }
+                return Ok(Value::Bool(true));
+            }
+            _ => {}
+        }
+        let mut values: Vec<Value> = Vec::with_capacity(g.row_scopes.len());
+        for s in &g.row_scopes {
+            let v = self.eval_expr(arg, s)?;
+            if !v.is_absent() {
+                values.push(v);
+            }
+        }
+        if distinct {
+            let mut seen: HashSet<String> = HashSet::new();
+            values.retain(|v| seen.insert(canonical_key(&self.ctx.identity(v))));
+        }
+        Ok(match name {
+            AggregateName::Count => Value::Number(values.len() as f64),
+            AggregateName::Collect => Value::Array(values),
+            AggregateName::First => values.into_iter().next().unwrap_or(Value::Undefined),
+            AggregateName::Last => values.pop().unwrap_or(Value::Undefined),
+            AggregateName::Sum | AggregateName::Avg => {
+                let mut total = 0.0;
+                for v in &values {
+                    let Value::Number(n) = v else {
+                        return Err(OqxError::eval(format!(
+                            "cannot {} `{}` over the group: it is {} — `{}` takes numbers",
+                            if name == AggregateName::Sum {
+                                "sum"
+                            } else {
+                                "average"
+                            },
+                            describe(arg),
+                            describe_value_kind(v),
+                            name.as_str()
+                        )));
+                    };
+                    total += n;
+                }
+                if name == AggregateName::Sum {
+                    Value::Number(total)
+                } else if values.is_empty() {
+                    Value::Undefined
+                } else {
+                    Value::Number(total / values.len() as f64)
+                }
+            }
+            AggregateName::Min | AggregateName::Max => {
+                let mut iter = values.into_iter();
+                let Some(mut best) = iter.next() else {
+                    return Ok(Value::Undefined);
+                };
+                let want = if name == AggregateName::Min {
+                    Ordering::Less
+                } else {
+                    Ordering::Greater
+                };
+                for v in iter {
+                    if compare(&v, &best) == Some(want) {
+                        best = v;
+                    }
+                }
+                best
+            }
+            AggregateName::Any | AggregateName::All => unreachable!("handled above"),
+        })
     }
 
     // ---- follow -------------------------------------------------------------
@@ -728,6 +954,9 @@ impl<'e, C: DataContext> Exec<'e, C> {
             if post.is_empty() || self.eval_conjuncts(&post, &s)? {
                 scopes.push(s);
             }
+        }
+        if let Some(g) = &query.group_by {
+            scopes = self.group_scopes(scopes, g, query.having.as_ref(), root)?;
         }
         scopes = self.sort_scopes(scopes, query.order_by.as_deref())?;
         if query.distinct {
@@ -1196,10 +1425,14 @@ impl<'e, C: DataContext> Exec<'e, C> {
                     // the matched rows, and the consumer only needs their count
                     // after the bound.
                     bounded_count(acc.rows.len(), bound)
-                } else if op.op != Consumer::Count && bound == UNBOUNDED {
+                } else if op.op != Consumer::Count
+                    && bound == UNBOUNDED
+                    && op.sub.group_by.is_none()
+                {
                     // Unbounded exists/none: stop at the first match (dedup
-                    // cannot change emptiness). Bounded: the offset/limit decide
-                    // emptiness, so materialize the set.
+                    // cannot change emptiness). Bounded, or grouped (`having`
+                    // may empty the groups): the offset/limit decide emptiness,
+                    // so materialize the set.
                     usize::from(!self.match_rows(op, scope, Some(1), Some(acc))?.is_empty())
                 } else {
                     self.op_rows(op, scope, bound, Some(acc))?.len()
@@ -1255,7 +1488,7 @@ impl<'e, C: DataContext> Exec<'e, C> {
             }
         }
     }
-    // The rows a consumer op reduces: matched → ordered → distinct → bounded.
+    // The rows a consumer op reduces: matched → grouped → ordered → distinct → bounded.
     fn op_rows<'p>(
         &self,
         op: &OpNode,
@@ -1264,6 +1497,9 @@ impl<'e, C: DataContext> Exec<'e, C> {
         acc: Option<Access>,
     ) -> Result<Vec<Scope<'p>>> {
         let mut scopes = self.match_rows(op, scope, None, acc)?;
+        if let Some(g) = &op.sub.group_by {
+            scopes = self.group_scopes(scopes, g, op.sub.having.as_ref(), scope)?;
+        }
         self.apply_key(&mut scopes, Projection::from(&op.sub))?;
         scopes = self.sort_scopes(scopes, op.sub.order_by.as_deref())?;
         if op.distinct {
@@ -1352,7 +1588,10 @@ impl<'e, C: DataContext> Exec<'e, C> {
     fn access(&self, op: &OpNode, plan: &Rc<BlockPlan>, scope: &Scope<'_>) -> Result<Access> {
         let state = if plan.receiver_stable {
             Some(self.collection_of(op, scope)?)
-        } else if !plan.correlated.is_empty() && !is_entries_call(&op.receiver) {
+        } else if !plan.correlated.is_empty()
+            && !is_entries_call(&op.receiver)
+            && !is_group_rows(&op.receiver, scope)
+        {
             Some(Rc::new(CollectionState::new(
                 self.eval_raw(&op.receiver, scope)?,
             )))
@@ -1599,6 +1838,8 @@ impl<'e, C: DataContext> Exec<'e, C> {
                 None => Ok(Value::Undefined),
             },
             Consumer::Collect => Ok(Value::Array(self.project_all(proj, &scopes)?)),
+            // `count { … }` as a value (0.24): the number of rows the block yields.
+            Consumer::Count => Ok(Value::Number(scopes.len() as f64)),
             _ => match scopes.first() {
                 Some(s) => self.project_row(proj, s),
                 None => Ok(Value::Null),
@@ -1658,6 +1899,9 @@ impl<'e, C: DataContext> Exec<'e, C> {
                 .into_iter()
                 .map(|o| self.enter(o.row, scope, Some(o.meta)))
                 .collect();
+            if let Some(g) = &sub.group_by {
+                scopes = self.group_scopes(scopes, g, sub.having.as_ref(), scope)?;
+            }
             scopes = self.sort_scopes(scopes, sub.order_by.as_deref())?;
             if op.distinct {
                 scopes = self.dedup_by_projection(scopes, proj)?;
@@ -1669,7 +1913,7 @@ impl<'e, C: DataContext> Exec<'e, C> {
             self.op_rows(op, scope, bound, Some(acc))?
         };
         match op.op {
-            Consumer::Collect => Ok((scopes, single)),
+            Consumer::Collect | Consumer::Count => Ok((scopes, single)),
             Consumer::First => Ok((scopes.into_iter().take(1).collect(), single)),
             Consumer::Single => {
                 if scopes.len() > 1 {
@@ -1801,6 +2045,13 @@ impl<'e, C: DataContext> Exec<'e, C> {
             }
             // A value-position directive (`jobs first { … }.pay`, the desugared `x[…]`).
             Expr::Op(op) => self.eval_collect_value(op, scope),
+            // An aggregate (SEMANTICS §24) over the group of the current scope.
+            Expr::Aggregate {
+                name,
+                arg,
+                distinct,
+                ..
+            } => self.aggregate(e, *name, arg.as_deref(), *distinct, scope),
             Expr::Binary {
                 op, left, right, ..
             } => {
@@ -1984,6 +2235,14 @@ impl<'e, C: DataContext> Exec<'e, C> {
         if name == KEY {
             return Ok(self.scope_identity(scope));
         }
+        // `rows` on a group scope is the group's rows (§24); elsewhere a property.
+        if name == ROWS
+            && let Some(g) = &scope.group
+        {
+            return Ok(Value::Array(
+                g.rows.iter().cloned().map(Row::into_value).collect(),
+            ));
+        }
         if RECUR.contains(&name) {
             if let Some(v) = scope.meta.as_ref().and_then(|m| m.get(name)) {
                 return Ok(v.clone());
@@ -2123,6 +2382,18 @@ fn describe(e: &Expr) -> String {
     out
 }
 
+// The kind of a value, for an aggregate's error: `a string ("abc")`, `a list`, …
+fn describe_value_kind(v: &Value) -> String {
+    match v {
+        Value::Str(_) => format!("a string ({})", json_string(v)),
+        Value::Number(_) => format!("a number ({})", json_string(v)),
+        Value::Bool(_) => format!("a boolean ({})", json_string(v)),
+        Value::Range(_) => "a range".to_owned(),
+        Value::Array(_) => "a list".to_owned(),
+        Value::Undefined | Value::Null | Value::Object(_) => "a record".to_owned(),
+    }
+}
+
 fn describe_receiver(e: &Expr) -> String {
     match e {
         Expr::Ident { name, .. } => name.clone(),
@@ -2181,6 +2452,7 @@ fn expr_has_recur(e: &Expr) -> bool {
         }
         Expr::Tuple { items, .. } => items.iter().any(expr_has_recur),
         Expr::Template { parts, .. } => template_exprs(parts).any(expr_has_recur),
+        Expr::Aggregate { arg, .. } => arg.as_deref().is_some_and(expr_has_recur),
         Expr::Lit { .. } | Expr::Binding { .. } | Expr::Outer { .. } => false,
     }
 }
@@ -2814,6 +3086,94 @@ mod tests {
             "xs count distinct { }",
             json!({ "xs": [1, 1, 2] }),
             json!(2),
+        );
+    }
+
+    #[test]
+    fn grouping_and_aggregates() {
+        // The default projection: the keys and `count: count()`, groups in
+        // first-appearance order; `where` runs per row before the grouping.
+        check(
+            "from people group by city",
+            people(),
+            json!([{ "city": "NYC", "count": 2 }, { "city": "SF", "count": 1 }]),
+        );
+        check(
+            "select city, n: count() from people where active group by city",
+            people(),
+            json!([{ "city": "NYC", "n": 1 }, { "city": "SF", "n": 1 }]),
+        );
+        // Every aggregate; absent values are skipped (sum of none is 0, avg of none absent).
+        check(
+            "select city, s: sum(age), a: avg(age), lo: min(age), hi: max(age), names: collect(name), f: first(name), l: last(name), some: any(active), every: all(active), d: count(distinct active) from people group by city",
+            people(),
+            json!([
+                { "city": "NYC", "s": 70, "a": 35, "lo": 29, "hi": 41, "names": ["Bob", "Carol"], "f": "Bob", "l": "Carol", "some": true, "every": false, "d": 2 },
+                { "city": "SF", "s": 52, "a": 52, "lo": 52, "hi": 52, "names": ["Alice"], "f": "Alice", "l": "Alice", "some": true, "every": true, "d": 1 }
+            ]),
+        );
+        check(
+            "select g, s: sum(v), a: avg(v) from xs group by g",
+            json!({ "xs": [{ "g": 1 }, { "g": 1, "v": null }] }),
+            json!([{ "g": 1, "s": 0 }]),
+        );
+        check_err(
+            "select city, s: sum(name) from people group by city",
+            people(),
+            &["cannot sum `name` over the group: it is a string (\"Bob\") — `sum` takes numbers"],
+        );
+        // `rows`: the group's rows as a receiver (`^` inside reads the keys) in a
+        // select item and in `having`; `order by` reads the group scope.
+        check(
+            "select city, n: rows count { where age > 30 && city == ^city }, youngest: rows first { name values order by age } from people group by city having rows exists { where age > 30 } order by count() desc, city",
+            people(),
+            json!([{ "city": "NYC", "n": 1, "youngest": "Carol" }, { "city": "SF", "n": 1, "youngest": "Alice" }]),
+        );
+        check(
+            "select city, ages: rows collect { age values } from people group by city",
+            people(),
+            json!([{ "city": "NYC", "ages": [41, 29] }, { "city": "SF", "ages": [52] }]),
+        );
+        // An entry row stays an entry through `rows`: `$key` is readable inside the block.
+        check(
+            "select k, ks: rows collect { $key values } from entries(o) group by k: $it.k",
+            json!({ "o": { "a": { "k": 1 }, "b": { "k": 2 }, "c": { "k": 1 } } }),
+            json!([{ "k": 1, "ks": ["a", "c"] }, { "k": 2, "ks": ["b"] }]),
+        );
+        // A nested grouped block, a count of groups, a where-position test over groups.
+        check(
+            "name, by: jobs collect { employer, n: count() group by employer }, g: jobs count { group by employer } from people where jobs exists { group by employer having count() > 1 }",
+            people(),
+            json!([{ "name": "Bob", "by": [{ "employer": "Globocorp", "n": 2 }], "g": 1 }]),
+        );
+        // `count { … }` is a value outside grouping too (0.24).
+        check(
+            "name, n: jobs count { where end } from people",
+            people(),
+            json!([{ "name": "Bob", "n": 1 }, { "name": "Alice", "n": 2 }, { "name": "Carol", "n": 0 }]),
+        );
+        // Grouping a walk groups the occurrences; a single receiver grouped is one record.
+        check(
+            "select d, n: count() from tree follow kids group by d: $depth",
+            json!({ "tree": [{ "kids": [{ "kids": [{}] }, {}] }] }),
+            json!([{ "d": 1, "n": 1 }, { "d": 2, "n": 2 }, { "d": 3, "n": 1 }]),
+        );
+        check(
+            "p { group by city }",
+            json!({ "p": { "city": "NYC" } }),
+            json!({ "city": "NYC", "count": 1 }),
+        );
+        // Top-level consumers reduce the groups.
+        check("people count { group by city }", people(), json!(2));
+        check(
+            "people first { group by city }",
+            people(),
+            json!({ "city": "NYC", "count": 2 }),
+        );
+        check(
+            "people exists { group by city having count() > 2 }",
+            people(),
+            json!(false),
         );
     }
 

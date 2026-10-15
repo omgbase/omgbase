@@ -29,8 +29,8 @@
 use std::collections::HashMap;
 
 use crate::ast::{
-    Expr, Follow, FollowDestination, OpNode, OrderSpec, Query, SelectItem, Subquery, TemplatePart,
-    Where,
+    Expr, Follow, FollowDestination, GroupBy, GroupKey, OpNode, OrderSpec, Query, SelectItem,
+    Subquery, TemplatePart, Where,
 };
 use crate::errors::{OqxError, Result};
 use crate::walk::template_exprs;
@@ -49,6 +49,14 @@ pub fn resolve_aliases(q: &Query) -> Result<Query> {
             resolve_where(&q.select, w.clone()).map_err(OqxError::parse)?,
         )?),
     };
+    // `having` (0.24) is the post-group `where`: rewritten against the select
+    // exactly as `where` is (`select n: count() … having n > 1`).
+    let having = match &q.having {
+        None => None,
+        Some(h) => Some(resolve_nested_where(
+            resolve_where(&q.select, h.clone()).map_err(OqxError::parse)?,
+        )?),
+    };
     Ok(Query {
         source: resolve_expr(&q.source)?,
         from: q.from.iter().map(resolve_expr).collect::<Result<_>>()?,
@@ -60,6 +68,10 @@ pub fn resolve_aliases(q: &Query) -> Result<Query> {
         // A body's `frontier` (0.20) is not rewritten against the select: it
         // reads the seed row, not a projected record (like `order by`).
         frontier: q.frontier.as_ref().map(resolve_expr).transpose()?,
+        // The keys are read on the rows, not rewritten (a key IS the name the
+        // post-group clauses read); their nested blocks resolve against their own select.
+        group_by: q.group_by.as_ref().map(resolve_group_by).transpose()?,
+        having,
         distinct: q.distinct,
         values: q.values,
         limit: q.limit.as_ref().map(resolve_expr).transpose()?,
@@ -76,6 +88,12 @@ pub fn resolve_subquery(s: &Subquery) -> Result<Subquery> {
             resolve_where(&s.select, w.clone()).map_err(OqxError::parse)?,
         )?),
     };
+    let having = match &s.having {
+        None => None,
+        Some(h) => Some(resolve_nested_where(
+            resolve_where(&s.select, h.clone()).map_err(OqxError::parse)?,
+        )?),
+    };
     Ok(Subquery {
         from: s.from.iter().map(resolve_expr).collect::<Result<_>>()?,
         r#where,
@@ -86,6 +104,8 @@ pub fn resolve_subquery(s: &Subquery) -> Result<Subquery> {
         // block's select: it reads the occurrence, not a projected record.
         frontier: s.frontier.as_ref().map(resolve_expr).transpose()?,
         depth: s.depth,
+        group_by: s.group_by.as_ref().map(resolve_group_by).transpose()?,
+        having,
         values: s.values,
         limit: s.limit.as_ref().map(resolve_expr).transpose()?,
         offset: s.offset.as_ref().map(resolve_expr).transpose()?,
@@ -107,6 +127,23 @@ fn resolve_order(o: Option<&[OrderSpec]>) -> Result<Option<Vec<OrderSpec>>> {
             .collect::<Result<Vec<_>>>()
     })
     .transpose()
+}
+
+fn resolve_group_by(g: &GroupBy) -> Result<GroupBy> {
+    Ok(GroupBy {
+        keys: g
+            .keys
+            .iter()
+            .map(|k| {
+                Ok(GroupKey {
+                    name: k.name.clone(),
+                    expr: resolve_expr(&k.expr)?,
+                    span: k.span,
+                })
+            })
+            .collect::<Result<_>>()?,
+        span: g.span,
+    })
 }
 
 fn resolve_op(op: &OpNode) -> Result<OpNode> {
@@ -291,6 +328,21 @@ where
                 span,
             }
         }
+        // An aggregate's argument is read on the group's rows (0.24).
+        Expr::Aggregate {
+            name,
+            arg,
+            distinct,
+            span,
+        } => Expr::Aggregate {
+            name,
+            arg: match arg {
+                Some(a) => Some(go(a)?),
+                None => None,
+            },
+            distinct,
+            span,
+        },
         // The receiver is read in this scope; the block is its own scope.
         Expr::Op(mut op) => {
             op.receiver = *go(Box::new(op.receiver))?;
@@ -350,6 +402,11 @@ fn alias_refs(it: &SelectItem, index: &HashMap<&str, usize>) -> Vec<String> {
             Expr::Tuple { items, .. } => items.iter().for_each(|x| visit(x, own, index, out)),
             Expr::Template { parts, .. } => {
                 template_exprs(parts).for_each(|x| visit(x, own, index, out))
+            }
+            Expr::Aggregate { arg, .. } => {
+                if let Some(a) = arg {
+                    visit(a, own, index, out);
+                }
             }
             Expr::Op(op) => visit(&op.receiver, own, index, out),
         }

@@ -236,10 +236,14 @@ impl VocabularyCache {
 
 // ---- the kind of a scope ---------------------------------------------------
 
+/// `Root` is the root scope; `Group(k)` a GROUP scope (oqx 0.24): the groups
+/// of rows of kind `k` (`None` when the rows' kind is unknown), whose only
+/// row-yielding name is `rows`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum RowKind {
     Root,
     Of(Target),
+    Group(Option<Target>),
 }
 
 type ByDepth = HashMap<usize, Option<RowKind>>;
@@ -336,10 +340,18 @@ fn kind_of_path(on: Option<RowKind>, path: &[&str]) -> Option<Target> {
                 let next = lookup(handles(t), seg).or_else(|| lookup(relations(t), seg))?;
                 cur = Some(RowKind::Of(next));
             }
+            // At a group scope `rows` yields the grouped rows (their kind); a
+            // key is a value the language built, not a row of any kind.
+            RowKind::Group(k) => {
+                if *seg != "rows" || i != 0 {
+                    return None;
+                }
+                cur = k.map(RowKind::Of);
+            }
         }
     }
     match cur? {
-        RowKind::Root => None,
+        RowKind::Root | RowKind::Group(_) => None,
         RowKind::Of(t) => Some(t),
     }
 }
@@ -378,22 +390,23 @@ pub fn kind_of_scope(steps: &[ReferenceStep<'_>]) -> Option<Target> {
     let mut cur: Option<RowKind> = Some(RowKind::Root);
     let mut read_depth = 0;
     for step in steps {
-        let k = match step.expr {
-            StepExpr::Follow(f) => {
-                let seed = match cur {
-                    Some(RowKind::Of(t)) => Some(t),
-                    _ => None,
-                };
-                kind_of_frontier(seed, f, read_depth, &by_depth)
-            }
-            StepExpr::Expr(e) => kind_of_expr(e, cur, read_depth, &by_depth),
+        let rows_kind = match cur {
+            Some(RowKind::Of(t)) => Some(t),
+            _ => None,
         };
-        cur = k.map(RowKind::Of);
+        cur = match step.expr {
+            StepExpr::Follow(f) => {
+                kind_of_frontier(rows_kind, f, read_depth, &by_depth).map(RowKind::Of)
+            }
+            // A `group by` step (oqx 0.24): the rows at this depth become groups of them.
+            StepExpr::GroupBy(_) => Some(RowKind::Group(rows_kind)),
+            StepExpr::Expr(e) => kind_of_expr(e, cur, read_depth, &by_depth).map(RowKind::Of),
+        };
         by_depth.insert(step.depth, cur);
         read_depth = step.depth;
     }
     match cur? {
-        RowKind::Root => None,
+        RowKind::Root | RowKind::Group(_) => None,
         RowKind::Of(t) => Some(t),
     }
 }
@@ -932,6 +945,10 @@ mod tests {
         let (store, repo) = fixture();
         for q in [
             "select s: stage, n: s from docs where s == \"x\"",
+            // a group scope (oqx 0.24): a key is never a row property; `rows`
+            // yields the grouped rows, so names under it are judged as docs/blocks
+            "select stage, n: count(), kynd: collect(kind) from docs group by stage having n > 1 order by count() desc",
+            "select kind, open: rows count { where nodes exists { where kind == \"md:task\" } } from docs group by kind",
             "select p: path, open from docs where nodes collect { ^open: value where kind == \"md:task\" }",
             "select $key: id from docs where $depth > 0 and has(stage) and size(list(kind)) > 0",
             "select a: attrs.whatever from blocks",
@@ -948,6 +965,27 @@ mod tests {
             )
             .len(),
             1
+        );
+        // under a group scope, `rows` is still the docs: a tier-3 name through it hints
+        assert_eq!(
+            hints(
+                &store,
+                &repo,
+                "select stage, t: rows collect { select kynd } from docs group by stage"
+            ),
+            [
+                "`kynd` is not a field of docs and no document in this repository carries a property by that name; did you mean `kind`?"
+            ]
+        );
+        assert_eq!(
+            hints(
+                &store,
+                &repo,
+                "select lang, n: rows count { where chekced } from blocks group by lang"
+            ),
+            [
+                "`chekced` is not a field of blocks and no block in this repository carries a property by that name; did you mean `checked`?"
+            ]
         );
     }
 

@@ -1097,6 +1097,21 @@ fn run_resolved(engine: &Runner<'_>, raw: &Query, opts: QueryOptions<'_>) -> Res
         Consumer::Collect | Consumer::First | Consumer::Single => {}
     }
 
+    // A grouped query (oqx 0.24, SEMANTICS §24) yields GROUPS, not store rows:
+    // the envelope does not apply — there is no `id`/`path` to inject and no
+    // keyset to page by — so a hit is the group's projection as the query
+    // wrote it (`{ layer, n }`), exactly what `bare` yields for a row query;
+    // `bare` is accepted and changes nothing. Rows that surface as values
+    // (`rows collect { }` with an empty projection, `collect(doc)`) render as
+    // `{ id, path }` refs like every row-as-value. Paging is by position: the
+    // query's own `limit`/`offset` define the set, the tool's `limit` takes
+    // the first page, `truncated` says whether more groups follow, the cursor
+    // is always null (as under a custom `order by`). `distinct` cannot occur
+    // (a parse error).
+    if parsed.group_by.is_some() {
+        return run_grouped(engine, &parsed, consumer, opts);
+    }
+
     // collect / first / single: inject id + path so every hit carries them. A
     // top-level `select distinct` is applied HERE, not in the engine (the
     // injected id/path are unique per row and would defeat the engine's
@@ -1236,6 +1251,123 @@ fn run_resolved(engine: &Runner<'_>, raw: &Query, opts: QueryOptions<'_>) -> Res
         out.values = Some(page.iter().map(value_of).collect());
     } else {
         out.hits = page.into_iter().map(|s| render_hit(s, bare)).collect();
+    }
+    Ok(out)
+}
+
+/// The collect/first/single path of a grouped query (see [`run_resolved`]).
+fn run_grouped(
+    engine: &Runner<'_>,
+    parsed: &Query,
+    consumer: Consumer,
+    opts: QueryOptions<'_>,
+) -> Result<OqxResult> {
+    let top_values = parsed.values;
+    // A `values` projection rides as a record under VALUE_KEY and is peeled off
+    // the page, as on the row path.
+    let select: Vec<SelectItem> = if top_values {
+        parsed
+            .select
+            .first()
+            .map(|it| match it {
+                SelectItem::Field {
+                    expr, lift, span, ..
+                } => SelectItem::Field {
+                    name: VALUE_KEY.to_owned(),
+                    expr: expr.clone(),
+                    lift: *lift,
+                    span: *span,
+                },
+                SelectItem::Collect { op, span, .. } => SelectItem::Collect {
+                    name: VALUE_KEY.to_owned(),
+                    op: op.clone(),
+                    span: *span,
+                },
+            })
+            .into_iter()
+            .collect()
+    } else {
+        parsed.select.clone()
+    };
+    let (top_limit, top_offset) = (parsed.limit.clone(), parsed.offset.clone());
+    let q = Query {
+        values: false,
+        select,
+        limit: if consumer == Consumer::Collect {
+            None
+        } else {
+            parsed.limit.clone()
+        },
+        offset: if consumer == Consumer::Collect {
+            None
+        } else {
+            parsed.offset.clone()
+        },
+        ..parsed.clone()
+    };
+    let res = engine.run(&q)?;
+    let project = |row: Value| -> oqx::Object {
+        match render_row_values(row) {
+            Value::Object(o) => o,
+            _ => oqx::Object::new(),
+        }
+    };
+    let value_of = |g: &oqx::Object| -> Json {
+        g.get(VALUE_KEY)
+            .cloned()
+            .unwrap_or(Value::Undefined)
+            .to_canonical_json()
+    };
+    if matches!(consumer, Consumer::First | Consumer::Single) {
+        let row = match res {
+            oqx::OqxResult::First(r) | oqx::OqxResult::Single(r) => r,
+            _ => None,
+        };
+        let mut out = OqxResult::scalar(consumer);
+        match row {
+            None => {
+                if top_values {
+                    out.values = Some(Vec::new());
+                }
+            }
+            Some(r) => {
+                let g = project(r);
+                if top_values {
+                    out.values = Some(vec![value_of(&g)]);
+                } else {
+                    out.hits = vec![Value::Object(g).to_canonical_json()];
+                }
+            }
+        }
+        return Ok(out);
+    }
+    let mut groups: Vec<oqx::Object> = match res {
+        oqx::OqxResult::Collect(rows) => rows.into_iter().map(project).collect(),
+        _ => Vec::new(),
+    };
+    let offset = const_bound(top_offset.as_ref(), "offset")?.unwrap_or(0);
+    let limit = const_bound(top_limit.as_ref(), "limit")?;
+    if offset > 0 || limit.is_some() {
+        let end = limit.map_or(groups.len(), |l| (offset + l).min(groups.len()));
+        if offset >= groups.len() {
+            groups.clear();
+        } else {
+            groups.truncate(end);
+            groups.drain(..offset);
+        }
+    }
+    let cap = opts.limit.unwrap_or(DEFAULT_LIMIT);
+    let truncated = groups.len() > cap;
+    groups.truncate(cap);
+    let mut out = OqxResult::scalar(Consumer::Collect);
+    out.truncated = truncated;
+    if top_values {
+        out.values = Some(groups.iter().map(value_of).collect());
+    } else {
+        out.hits = groups
+            .into_iter()
+            .map(|g| Value::Object(g).to_canonical_json())
+            .collect();
     }
     Ok(out)
 }

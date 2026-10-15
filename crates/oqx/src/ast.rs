@@ -339,6 +339,70 @@ impl LogicalOp {
 }
 serde_as_word!(LogicalOp);
 
+/// The aggregate functions (SEMANTICS §24, since 0.24): reserved free-function
+/// names that reduce a group's rows. `count` takes zero or one argument, every
+/// other exactly one; `any`/`all` take a predicate and admit no `distinct`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum AggregateName {
+    Count,
+    Sum,
+    Min,
+    Max,
+    Avg,
+    Collect,
+    First,
+    Last,
+    Any,
+    All,
+}
+
+impl AggregateName {
+    /// The TS `AGGREGATE_NAMES`, in the order the error messages list them.
+    pub const WORDS: &'static [&'static str] = &[
+        "count", "sum", "min", "max", "avg", "collect", "first", "last", "any", "all",
+    ];
+
+    /// The TS spelling.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            AggregateName::Count => "count",
+            AggregateName::Sum => "sum",
+            AggregateName::Min => "min",
+            AggregateName::Max => "max",
+            AggregateName::Avg => "avg",
+            AggregateName::Collect => "collect",
+            AggregateName::First => "first",
+            AggregateName::Last => "last",
+            AggregateName::Any => "any",
+            AggregateName::All => "all",
+        }
+    }
+
+    /// The inverse of [`AggregateName::as_str`] (the TS `isAggregateName`):
+    /// `None` when the word is not an aggregate's.
+    pub fn from_word(word: &str) -> Option<Self> {
+        Some(match word {
+            "count" => AggregateName::Count,
+            "sum" => AggregateName::Sum,
+            "min" => AggregateName::Min,
+            "max" => AggregateName::Max,
+            "avg" => AggregateName::Avg,
+            "collect" => AggregateName::Collect,
+            "first" => AggregateName::First,
+            "last" => AggregateName::Last,
+            "any" => AggregateName::Any,
+            "all" => AggregateName::All,
+            _ => return None,
+        })
+    }
+
+    /// `any` / `all`: a predicate aggregate (truthiness over the rows, no `distinct`).
+    pub fn is_predicate(self) -> bool {
+        matches!(self, AggregateName::Any | AggregateName::All)
+    }
+}
+serde_as_word!(AggregateName);
+
 /// Scalar value/predicate expression, evaluated against a row scope + bindings.
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(
@@ -430,6 +494,18 @@ pub enum Expr {
         parts: Vec<TemplatePart>,
         span: Span,
     },
+    /// An aggregate call `sum(e)`, `count()`, `collect(distinct e)` (since
+    /// 0.24): reduces the rows of the group it is read in (SEMANTICS §24).
+    /// `arg` is `None` only for the bare `count()`; `distinct` is the
+    /// `(distinct e)` modifier. A free call by an aggregate name parses to this
+    /// node wherever it is written, never to a [`Expr::Call`]; it is legal only
+    /// in the post-group clauses of a body with `group by`.
+    Aggregate {
+        name: AggregateName,
+        arg: Option<Box<Expr>>,
+        distinct: bool,
+        span: Span,
+    },
     /// A value-position directive (since 0.17): `recv first { … }.pay`, and
     /// what a bracket lookup `x[…]` desugars to. Serializes as the bare
     /// `OpNode` (`kind: "op"`): an op is an expression only by position.
@@ -454,7 +530,8 @@ impl Expr {
             | Expr::In { span, .. }
             | Expr::Range { span, .. }
             | Expr::Tuple { span, .. }
-            | Expr::Template { span, .. } => *span,
+            | Expr::Template { span, .. }
+            | Expr::Aggregate { span, .. } => *span,
             Expr::Op(op) => op.span,
         }
     }
@@ -481,7 +558,8 @@ impl Expr {
             | Expr::In { span, .. }
             | Expr::Range { span, .. }
             | Expr::Tuple { span, .. }
-            | Expr::Template { span, .. } => span,
+            | Expr::Template { span, .. }
+            | Expr::Aggregate { span, .. } => span,
             Expr::Op(op) => &mut op.span,
         }
     }
@@ -504,6 +582,7 @@ impl Expr {
             Expr::Range { .. } => "range",
             Expr::Tuple { .. } => "tuple",
             Expr::Template { .. } => "template",
+            Expr::Aggregate { .. } => "aggregate",
         }
     }
 }
@@ -528,6 +607,34 @@ pub enum TemplatePart {
 pub struct OrderSpec {
     pub expr: Expr,
     pub desc: bool,
+    pub span: Span,
+}
+
+/// One `group by` key (since 0.24): `name: expr`, or an unaliased navigation
+/// keyed by its last segment, exactly as a `select` item is.
+#[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(
+    feature = "json",
+    derive(Serialize, Deserialize),
+    serde(tag = "kind", rename = "key")
+)]
+pub struct GroupKey {
+    pub name: String,
+    pub expr: Expr,
+    pub span: Span,
+}
+
+/// The `group by` clause (since 0.24): one row per distinct key tuple
+/// (SEMANTICS §24).
+#[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(
+    feature = "json",
+    derive(Serialize, Deserialize),
+    serde(tag = "kind", rename = "groupBy")
+)]
+pub struct GroupBy {
+    /// ≥ 1, in source order.
+    pub keys: Vec<GroupKey>,
     pub span: Span,
 }
 
@@ -664,6 +771,11 @@ pub struct Subquery {
     /// [`Query`]); `depth` is destination-only. Both `None` when absent.
     pub frontier: Option<Expr>,
     pub depth: Option<u32>,
+    /// `group by` / `having` (since 0.24): the block's rows become one row per
+    /// distinct key tuple (SEMANTICS §24); `having` filters the groups. Both
+    /// `None` when absent; `having` is set only together with `group_by`.
+    pub group_by: Option<GroupBy>,
+    pub having: Option<Where>,
     /// `values` — scalar projection mode: the (single) projected expression is
     /// the row's result itself rather than being wrapped in a `{ name: value }`
     /// record, so `name values` yields `["Bob", …]` and `$it values` yields
@@ -767,6 +879,9 @@ pub struct Query {
     /// enclosing scope, like `where`) is a frontier (`$stop == "frontier"`,
     /// not expanded). `None` without one.
     pub frontier: Option<Expr>,
+    /// `group by` / `having` (since 0.24; see [`Subquery`]).
+    pub group_by: Option<GroupBy>,
+    pub having: Option<Where>,
     /// `distinct` — dedup the result rows by their projected value (see [`OpNode`]).
     pub distinct: bool,
     /// `values` — scalar projection mode (see [`Subquery`]).

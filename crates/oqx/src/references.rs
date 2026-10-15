@@ -40,7 +40,13 @@
 //!     reported with depth 0 and no steps: it names one of the host's roots,
 //!     and the host decides what to make of it;
 //!   • a `follow` destination that is a plain expression is a reference read
-//!     on the frontier row (clause `follow.destination`), like a `from`.
+//!     on the frontier row (clause `follow.destination`), like a `from`;
+//!   • at a GROUP scope (0.24, SEMANTICS §24) — a select item, `having` or
+//!     `order by` of a grouped body, outside an aggregate's argument — a bare
+//!     key name (or a chain headed by it, or `^key` from a nested block) is the
+//!     key, an alias of the expression already reported in clause `groupBy`,
+//!     and `rows` is the language's value: neither is a reference. Inside an
+//!     aggregate's argument both are row reads again.
 //!
 //! The scope: `{ depth, steps }`. `depth` is the scope depth the name is
 //! evaluated at (`visit`'s depth; for an outer reference, that depth minus its
@@ -50,23 +56,28 @@
 //! replaces the rows), a block's receiver (one deeper than where it is read),
 //! then the block's own `from`s; a `follow` node is a step too — the walk's
 //! frontier rows, at the body's depth, which the destinations are read on
-//! (a destination block's receiver is then one deeper). A name read inside the
+//! (a destination block's receiver is then one deeper); since 0.24 a `groupBy`
+//! node is a step for a name read at the group scope — the body's groups, at
+//! the same depth (the rows replaced by one key record per group), and `rows`
+//! as a receiver there is a step like any receiver. A name read inside the
 //! k-th `from` sees only the steps before it. For an outer reference the steps
 //! are cut after the last step at its scope's depth. The empty list is the root
 //! scope.
 
 use std::collections::{HashMap, HashSet};
 
-use crate::ast::{Expr, Follow, OpNode, Query, SelectItem, Span, Subquery, Where};
+use crate::ast::{Expr, Follow, GroupBy, OpNode, Query, SelectItem, Span, Subquery, Where};
 use crate::walk::{Clause, Node, VisitContext, Visitor, visit};
 
 /// The expression of one scope step: an expression (a source, a `from`, a
-/// block receiver, a plain destination) or a `follow` node (the walk's
-/// frontier rows).
+/// block receiver, a plain destination), a `follow` node (the walk's frontier
+/// rows), or — since 0.24 — a `groupBy` node (the body's groups: the rows at
+/// the same depth replaced by one key record per group).
 #[derive(Clone, Copy, Debug)]
 pub enum StepExpr<'a> {
     Expr(&'a Expr),
     Follow(&'a Follow),
+    GroupBy(&'a GroupBy),
 }
 
 impl<'a> StepExpr<'a> {
@@ -76,6 +87,7 @@ impl<'a> StepExpr<'a> {
         match self {
             StepExpr::Expr(e) => Node::Expr(e),
             StepExpr::Follow(f) => Node::Follow(f),
+            StepExpr::GroupBy(g) => Node::GroupBy(g),
         }
     }
 }
@@ -220,6 +232,12 @@ fn references_in<'a>(root: Node<'a>) -> Vec<Reference<'a>> {
             if self.is_lift_bound(name, depth, &ctx.path) {
                 return false;
             }
+            // At a group scope (0.24) a bare key name is the key — an alias of
+            // the expression reported in clause `groupBy` — and `rows` is the
+            // language's value; neither reads a row.
+            if is_group_value(name, depth, &ctx.path, node) {
+                return false;
+            }
             let full = std::iter::once(name)
                 .chain(path.iter().copied())
                 .collect::<Vec<_>>()
@@ -277,9 +295,9 @@ fn references_in<'a>(root: Node<'a>) -> Vec<Reference<'a>> {
 
 /// Whether a bare `name` in this position is a `select` alias the language
 /// substitutes (so the name is the alias, not a row property): in the body's
-/// `where`, any alias; in a `select` item, an alias defined to its LEFT.
+/// `where` or `having`, any alias; in a `select` item, an alias defined to its LEFT.
 fn is_resolved_alias(name: &str, path: &[Node<'_>], clause: Clause) -> bool {
-    if clause != Clause::Where && clause != Clause::Select {
+    if clause != Clause::Where && clause != Clause::Select && clause != Clause::Having {
         return false;
     }
     // The nearest body, and the item under it when we are inside its select.
@@ -298,7 +316,7 @@ fn is_resolved_alias(name: &str, path: &[Node<'_>], clause: Clause) -> bool {
         let Some(&j) = index.get(name) else {
             return false;
         };
-        if clause == Clause::Where {
+        if clause == Clause::Where || clause == Clause::Having {
             return true;
         }
         let at = match path.get(i + 1) {
@@ -343,6 +361,86 @@ fn lifts_landing_on(body: Node<'_>) -> HashSet<String> {
     l.names
 }
 
+/// Whether `name`, read at scope `depth`, is a value of a GROUP scope there
+/// (SEMANTICS §24): the body whose rows are at `depth` has a `group by`, the
+/// position is one of its post-group clauses — a select item, `having`, `order
+/// by` — not inside an aggregate's argument (which reads the group's rows), and
+/// the name is a key or `rows`.
+fn is_group_value(name: &str, depth: usize, path: &[Node<'_>], node: Node<'_>) -> bool {
+    let Some(i) = body_index_at(path, depth) else {
+        return false;
+    };
+    let body = path[i];
+    if !at_group_scope(body, path, i, node) {
+        return false;
+    }
+    let keys = match body {
+        Node::Query(q) => q.group_by.as_ref(),
+        Node::Subquery(s) => s.group_by.as_ref(),
+        _ => None,
+    };
+    name == "rows" || keys.is_some_and(|g| g.keys.iter().any(|k| k.name == name))
+}
+
+/// The index in `path` of the body whose rows are at scope `depth` (every
+/// nested body is one scope deeper), or `None`.
+fn body_index_at(path: &[Node<'_>], depth: usize) -> Option<usize> {
+    if depth < 1 {
+        return None;
+    }
+    path.iter()
+        .enumerate()
+        .filter(|(_, n)| body_addr(**n).is_some())
+        .map(|(i, _)| i)
+        .nth(depth - 1)
+}
+
+/// Whether a position under `body` (at `path[i]`) reads the body's GROUP scope:
+/// the body is grouped, the position lies in a select item, `having` or `order
+/// by`, and no aggregate stands between the body and the position (an
+/// aggregate's argument reads the group's rows; a nested body is its own scope
+/// and ends the search).
+fn at_group_scope(body: Node<'_>, path: &[Node<'_>], i: usize, node: Node<'_>) -> bool {
+    let (group_by, select, having, order_by) = match body {
+        Node::Query(q) => (
+            q.group_by.as_ref(),
+            &q.select,
+            q.having.as_ref(),
+            q.order_by.as_deref(),
+        ),
+        Node::Subquery(s) => (
+            s.group_by.as_ref(),
+            &s.select,
+            s.having.as_ref(),
+            s.order_by.as_deref(),
+        ),
+        _ => return false,
+    };
+    if group_by.is_none() {
+        return false;
+    }
+    let child = path.get(i + 1).copied().unwrap_or(node);
+    let post = match child {
+        Node::Select(it) => select.iter().any(|x| std::ptr::eq(x, it)),
+        Node::Order(o) => order_by.is_some_and(|os| os.iter().any(|x| std::ptr::eq(x, o))),
+        // `having` is visited as its where tree (an op test as the op itself).
+        Node::Where(w) => having.is_some_and(|h| std::ptr::eq(h, w)),
+        Node::Op(op) => having.is_some_and(|h| matches!(h, Where::Op(b) if std::ptr::eq(&**b, op))),
+        _ => false,
+    };
+    if !post {
+        return false;
+    }
+    for a in &path[i + 1..] {
+        match a {
+            Node::Query(_) | Node::Subquery(_) => break,
+            Node::Expr(Expr::Aggregate { .. }) => return false,
+            _ => {}
+        }
+    }
+    true
+}
+
 /// The row chain of the scope a node is evaluated in, from its ancestors.
 fn scope_steps<'a>(path: &[Node<'a>], node: Node<'a>) -> Vec<ReferenceStep<'a>> {
     let mut steps = Vec::new();
@@ -363,11 +461,29 @@ fn scope_steps<'a>(path: &[Node<'a>], node: Node<'a>) -> Vec<ReferenceStep<'a>> 
                     depth,
                 });
                 push_froms(&mut steps, &q.from, next, depth);
+                // A grouped body's post-group clauses read its groups (0.24):
+                // the rows at this depth replaced by one key record per group.
+                if let Some(g) = &q.group_by
+                    && at_group_scope(*a, path, i, node)
+                {
+                    steps.push(ReferenceStep {
+                        expr: StepExpr::GroupBy(g),
+                        depth,
+                    });
+                }
             }
             Node::Subquery(s) => {
                 // The receiver step was pushed by the enclosing `op`; this
                 // body's rows are one deeper than where that receiver was read.
                 push_froms(&mut steps, &s.from, next, depth);
+                if let Some(g) = &s.group_by
+                    && at_group_scope(*a, path, i, node)
+                {
+                    steps.push(ReferenceStep {
+                        expr: StepExpr::GroupBy(g),
+                        depth,
+                    });
+                }
             }
             Node::Follow(f) => {
                 // The destinations are read on the walk's frontier rows, at the body's depth.

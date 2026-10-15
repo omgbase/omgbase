@@ -15,7 +15,7 @@
 //!
 //! ```text
 //! select <projection>  from <source>  where <predicate>  follow <dest>, … {…}
-//! order by …  limit N  offset N
+//! group by <key>, …  having <predicate>  order by …  limit N  offset N
 //! ```
 //!
 //! Every clause is optional except that a top-level body needs `from` (the
@@ -79,28 +79,43 @@
 //! Tuples (0.20): `(e1, e2, …)` with two or more elements is a `Tuple` node — a
 //! value and a receiver; one expression in parentheses stays grouping.
 //!
+//! Grouping (0.24): `group by <key>, …` and `having <pred>` sit after `follow`
+//! in the clause order; a key is shaped like a select item (an expression key
+//! needs its alias, names are unique); a free call by an aggregate name
+//! (`count()`, `sum(e)`, `collect(distinct e)`) parses to an `Aggregate` node
+//! wherever it is written and may stand only in a select item, `having` or
+//! `order by` of a grouped body; every bare name read at the group scope must
+//! be a key, an alias, or `rows`; a grouped body with no `select` carries the
+//! synthesized projection (its keys and `count: count()`); `distinct` with
+//! `group by` is refused; and `count { … }` is a value-position directive like
+//! `collect`/`first`/`single`.
+//!
 //! Error messages are the TS messages verbatim (the conformance fixtures and
 //! the reference tests assert on fragments of them).
 
 use std::collections::HashSet;
 
 use crate::ast::{
-    BinaryOp, Consumer, CountCmp, Expr, Follow, FollowDestination, LogicalOp, OpNode, OrderSpec,
-    Query, RelOp, SelectItem, Span, Subquery, TemplatePart, UnaryOp, Where,
+    AggregateName, BinaryOp, Consumer, CountCmp, Expr, Follow, FollowDestination, GroupBy,
+    GroupKey, LogicalOp, OpNode, OrderSpec, Query, RelOp, SelectItem, Span, Subquery, TemplatePart,
+    UnaryOp, Where,
 };
 use crate::errors::{OqxError, Result};
 use crate::lexer::{TokType, Token, lex_string, lex_template};
 use crate::print::print_template;
 use crate::resolve::{resolve_select, resolve_where};
 use crate::value::Value;
-use crate::walk::Node;
+use crate::walk::{Node, template_exprs};
 
 const CONSUMERS: [&str; 6] = ["collect", "exists", "none", "count", "first", "single"];
 
 /// The fixed clause order of a body (ADR-020). Each clause appears at most once.
 /// Declaration order is the clause order; `Ord` compares by it. `Frontier` and
 /// `Depth` are legal only in a follow destination block (0.20); the order
-/// sentence names them only there.
+/// sentence names them only there. `GroupBy` and `Having` (0.24) sit after
+/// `Follow`: the rows a body yields — the walk's occurrences, when it has one —
+/// are what gets grouped, and the bound and the ordering then apply to the
+/// groups.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 enum Clause {
     Select,
@@ -109,18 +124,22 @@ enum Clause {
     Frontier,
     Depth,
     Follow,
+    GroupBy,
+    Having,
     OrderBy,
     Limit,
     Offset,
 }
 
-const CLAUSE_ORDER: [Clause; 9] = [
+const CLAUSE_ORDER: [Clause; 11] = [
     Clause::Select,
     Clause::From,
     Clause::Where,
     Clause::Frontier,
     Clause::Depth,
     Clause::Follow,
+    Clause::GroupBy,
+    Clause::Having,
     Clause::OrderBy,
     Clause::Limit,
     Clause::Offset,
@@ -135,6 +154,8 @@ impl Clause {
             Clause::Frontier => "frontier",
             Clause::Depth => "depth",
             Clause::Follow => "follow",
+            Clause::GroupBy => "group by",
+            Clause::Having => "having",
             Clause::OrderBy => "order by",
             Clause::Limit => "limit",
             Clause::Offset => "offset",
@@ -166,10 +187,14 @@ fn clause_order_sentence(ctx: BodyCtx) -> String {
 
 // Contextual clause words lexed as bare idents; an open-ended range must stop
 // before them rather than consume them as its high bound.
-const CLAUSE_WORDS: [&str; 18] = [
+const CLAUSE_WORDS: [&str; 20] = [
     "collect", "exists", "none", "count", "first", "single", "order", "by", "asc", "desc",
-    "follow", "distinct", "frontier", "depth", "in", "values", "limit", "offset",
+    "follow", "distinct", "frontier", "depth", "in", "values", "limit", "offset", "group",
+    "having",
 ];
+// The names a group scope resolves besides its keys (SEMANTICS §24): the
+// group's rows, the key record itself, and its identity.
+const GROUP_SCOPE_NAMES: [&str; 3] = ["rows", "$it", "$key"];
 const RELOPS: [&str; 6] = ["==", "!=", "<", "<=", ">", ">="];
 // The comparison level (GRAMMAR §4): the six relational operators and, since
 // 0.22, the four regex operators — sugar over `matches`, non-associative like
@@ -256,6 +281,8 @@ struct BodyClauses {
     follow: Option<Follow>,
     frontier: Option<Expr>,
     depth: Option<u32>,
+    group_by: Option<GroupBy>,
+    having: Option<Where>,
     distinct: bool,
     values: bool,
     limit: Option<Expr>,
@@ -329,10 +356,14 @@ impl Parser {
         self.at_word(TokType::Op, value)
     }
     fn fail<T>(&self, msg: impl AsRef<str>) -> Result<T> {
+        self.fail_at(self.peek().pos, msg)
+    }
+    /// A parse error positioned at `pos` (a node already read) rather than at
+    /// the cursor.
+    fn fail_at<T>(&self, pos: usize, msg: impl AsRef<str>) -> Result<T> {
         Err(OqxError::parse(format!(
-            "{} (at offset {})",
-            msg.as_ref(),
-            self.peek().pos
+            "{} (at offset {pos})",
+            msg.as_ref()
         )))
     }
     /// Code-point offset of the next token (the start of a node about to be parsed).
@@ -417,6 +448,8 @@ impl Parser {
             consumer: Consumer::Collect,
             follow: body.follow,
             frontier: body.frontier,
+            group_by: body.group_by,
+            having: body.having,
             distinct: body.distinct,
             values: body.values,
             limit: body.limit,
@@ -438,6 +471,8 @@ impl Parser {
             consumer: directive.op,
             follow: sub.follow,
             frontier: sub.frontier,
+            group_by: sub.group_by,
+            having: sub.having,
             distinct: directive.distinct,
             values: sub.values,
             limit: sub.limit,
@@ -534,6 +569,20 @@ impl Parser {
                 body.follow = Some(self.with_depth(row_depth, |p| p.parse_follow())?);
                 continue;
             }
+            // `group by k, name: expr` (0.24): the keys are read on the rows, like `where`.
+            if self.at_group_by() {
+                self.enter(&mut stage, Clause::GroupBy, ctx)?;
+                body.group_by = Some(self.with_depth(row_depth, |p| p.parse_group_by())?);
+                continue;
+            }
+            // `having P` (0.24): a predicate over each GROUP, read at the row
+            // depth (the group scope sits where the rows did).
+            if self.at_having() {
+                self.enter(&mut stage, Clause::Having, ctx)?;
+                self.next();
+                body.having = Some(self.with_depth(row_depth, |p| p.parse_where())?);
+                continue;
+            }
             if self.at_order_by() {
                 self.enter(&mut stage, Clause::OrderBy, ctx)?;
                 self.next(); // `order`
@@ -594,14 +643,33 @@ impl Parser {
         // Validate the alias references of this body (cycles, a block alias inside
         // a `where` expression, a `select` item naming an item to its right); the
         // surface form is kept. `where` first: its cycle report follows its own path.
-        if let Some(w) = &body.r#where {
-            if let Err(msg) = resolve_where(&body.select, w.clone()) {
-                return self.fail(msg);
-            }
+        // A grouped body without a projection yields its keys and a count (0.24);
+        // the items are synthesized before the alias validation sees the select.
+        if let Some(g) = &body.group_by
+            && body.select.is_empty()
+        {
+            body.select = self.default_group_projection(g)?;
         }
-        if let Err(msg) = resolve_select(&body.select) {
-            return self.fail(msg);
-        }
+        let resolved_where = match &body.r#where {
+            Some(w) => match resolve_where(&body.select, w.clone()) {
+                Ok(w) => Some(w),
+                Err(msg) => return self.fail(msg),
+            },
+            None => None,
+        };
+        let resolved_having = match &body.having {
+            Some(h) => match resolve_where(&body.select, h.clone()) {
+                Ok(h) => Some(h),
+                Err(msg) => return self.fail(msg),
+            },
+            None => None,
+        };
+        // The resolved items: an aggregate reached through an alias (`n: count(),
+        // xs: collect(n)`) is judged where it will be evaluated.
+        let resolved_select = match resolve_select(&body.select) {
+            Ok(items) => items,
+            Err(msg) => return self.fail(msg),
+        };
         // Outside a destination block `frontier` marks the seeds of this body's
         // walk, so it needs one.
         if body.frontier.is_some() && body.follow.is_none() && !ctx.is_destination() {
@@ -609,7 +677,452 @@ impl Parser {
                 "`frontier` needs a `follow` — a body's `frontier <expr>` marks which of its rows (the walk's seeds) are frontiers; a destination block's marks the occurrences reached through it",
             );
         }
+        // Grouping (0.24): `having` needs a `group by`; `distinct` is redundant
+        // with one; aggregates may stand only in the post-group clauses; and
+        // every bare name read at the group scope must be a key, an alias, or
+        // the group's rows.
+        if let Some(h) = &body.having
+            && body.group_by.is_none()
+        {
+            return self.fail_at(
+                h.span().start,
+                "`having` needs a `group by` — `having <pred>` filters the groups a body yields; a per-row filter is `where`",
+            );
+        }
+        let check = GroupCheck {
+            select: &body.select,
+            resolved_select: &resolved_select,
+            having: body.having.as_ref(),
+            resolved_having: resolved_having.as_ref(),
+            order_by: body.order_by.as_deref(),
+            froms: &body.froms,
+            r#where: resolved_where.as_ref(),
+            frontier: body.frontier.as_ref(),
+            limit: body.limit.as_ref(),
+            offset: body.offset.as_ref(),
+            group_by: body.group_by.as_ref(),
+        };
+        match &body.group_by {
+            Some(g) => {
+                if body.distinct {
+                    return self.fail_at(g.span.start, DISTINCT_WITH_GROUP);
+                }
+                self.check_grouped_body(&check)?;
+            }
+            None => self.reject_aggregates(&check)?,
+        }
         Ok(body)
+    }
+
+    // ---- grouping (0.24) ------------------------------------------------------
+
+    // `group by` is a clause only as the two-word sequence (a field named `group`
+    // stays a name: `select group from r`).
+    fn at_group_by(&self) -> bool {
+        self.at_word(TokType::Ident, "group")
+            && self
+                .peek_at(1)
+                .is_some_and(|nx| nx.kind == TokType::Ident && nx.value == "by")
+    }
+
+    // `having` is a clause when a predicate can follow it — a value start, or an
+    // aggregate call whose name is a consumer word (`having count() > 1`:
+    // `count` alone cannot begin a value, `count(` can); otherwise a field name.
+    fn at_having(&self) -> bool {
+        if !self.at_word(TokType::Ident, "having") {
+            return false;
+        }
+        let Some(nx) = self.peek_at(1) else {
+            return false;
+        };
+        starts_value(nx)
+            || (nx.kind == TokType::Ident
+                && AggregateName::from_word(&nx.value).is_some()
+                && self.peek_at(2).is_some_and(|t| t.kind == TokType::LParen))
+    }
+
+    fn parse_group_by(&mut self) -> Result<GroupBy> {
+        let start = self.start();
+        self.next(); // `group`
+        self.next(); // `by`
+        let mut keys = vec![self.parse_group_key()?];
+        while self.at(TokType::Comma) {
+            self.next();
+            keys.push(self.parse_group_key()?);
+        }
+        let mut seen: HashSet<&str> = HashSet::new();
+        for k in &keys {
+            if !seen.insert(&k.name) {
+                return self.fail_at(
+                    k.span.start,
+                    format!(
+                        "duplicate group key '{}' — each key needs its own name (alias one: `other: expr`)",
+                        k.name
+                    ),
+                );
+            }
+        }
+        Ok(GroupBy {
+            keys,
+            span: self.sp(start),
+        })
+    }
+
+    // One key, shaped like a select item: `name: expr`, or an unaliased navigation
+    // keyed by its last segment; any other expression needs the alias, because the
+    // alias is how the post-group clauses refer to the key.
+    fn parse_group_key(&mut self) -> Result<GroupKey> {
+        let start = self.start();
+        if self.at(TokType::Ident) && self.peek_at(1).is_some_and(|t| t.kind == TokType::Colon) {
+            let name = self.next().value;
+            self.next(); // ':'
+            let expr = self.parse_value_expr()?;
+            return Ok(GroupKey {
+                name,
+                expr,
+                span: self.sp(start),
+            });
+        }
+        if !self.can_start_value() {
+            return self.fail(
+                "expected a group key after `group by` (`group by <name>` or `group by <alias>: <expr>`)",
+            );
+        }
+        let expr = self.parse_value_expr()?;
+        let Some(name) = nav_key(&expr).map(str::to_owned) else {
+            return self.fail_at(
+                start,
+                format!(
+                    "a group key that is not a plain name needs an alias (`group by key: {}`) — the alias is the name the select, `having` and `order by` read it by",
+                    describe(Node::Expr(&expr))
+                ),
+            );
+        };
+        Ok(GroupKey {
+            name,
+            expr,
+            span: self.sp(start),
+        })
+    }
+
+    // `name(` where `name` is an aggregate: `count()`, `sum(e)`, `collect(distinct
+    // e)`. The cursor is at the `(`. Arity and the `distinct` modifier are checked
+    // here; WHERE the aggregate may stand is the body's business (`check_grouped_body`).
+    fn parse_aggregate(&mut self, name: AggregateName, start: usize) -> Result<Expr> {
+        self.next(); // '('
+        let mut distinct = false;
+        if self.at_word(TokType::Ident, "distinct") && self.peek_at(1).is_some_and(starts_value) {
+            self.next();
+            distinct = true;
+        }
+        let mut arg: Option<Box<Expr>> = None;
+        if !self.at(TokType::RParen) {
+            arg = Some(Box::new(self.parse_value_expr()?));
+            if self.at(TokType::Comma) {
+                return self.fail(format!(
+                    "`{}(…)` takes one argument — an aggregate reduces one expression over the group's rows",
+                    name.as_str()
+                ));
+            }
+        }
+        if !self.at(TokType::RParen) {
+            return self.fail(format!("expected ')' to close `{}(…)`", name.as_str()));
+        }
+        self.next();
+        if arg.is_none() && name != AggregateName::Count {
+            return self.fail(format!(
+                "`{n}()` needs an argument (`{n}(<expr>)`) — only `count()` counts the group's rows without one",
+                n = name.as_str()
+            ));
+        }
+        if distinct && name.is_predicate() {
+            return self.fail(format!(
+                "`{}(distinct …)`: `distinct` applies to a value aggregate (count, sum, min, max, avg, collect, first, last), not to a predicate aggregate",
+                name.as_str()
+            ));
+        }
+        Ok(Expr::Aggregate {
+            name,
+            arg,
+            distinct,
+            span: Span::new(start, self.end()),
+        })
+    }
+
+    // A free call: an aggregate node for an aggregate name (reserved since 0.24),
+    // an ordinary `call` otherwise. The cursor is at the `(`.
+    fn parse_free_call(&mut self, name: String, start: usize) -> Result<Expr> {
+        if let Some(agg) = AggregateName::from_word(&name) {
+            return self.parse_aggregate(agg, start);
+        }
+        let args = self.parse_args()?;
+        Ok(Expr::Call {
+            recv: None,
+            name,
+            args,
+            span: self.sp(start),
+        })
+    }
+
+    // The clauses an aggregate may NOT stand in — every clause read before the
+    // rows are grouped (`from`, `where`, `frontier`, the keys, the bound) — and,
+    // in a body without `group by`, every clause. The `where` is the alias-resolved
+    // one, so an aggregate reached through a select alias is caught too.
+    fn reject_aggregates(&self, b: &GroupCheck<'_>) -> Result<()> {
+        let mut found: Vec<(&Expr, &'static str)> = Vec::new();
+        fn push_all<'a>(
+            found: &mut Vec<(&'a Expr, &'static str)>,
+            exprs: impl IntoIterator<Item = &'a Expr>,
+            clause: &'static str,
+        ) {
+            let mut out = Vec::new();
+            for e in exprs {
+                aggregates_in(e, &mut out);
+            }
+            found.extend(out.into_iter().map(|a| (a, clause)));
+        }
+        if let Some(w) = b.r#where {
+            let mut out = Vec::new();
+            where_aggregates(w, &mut out);
+            found.extend(out.into_iter().map(|a| (a, "`where`")));
+        }
+        push_all(&mut found, b.froms, "`from`");
+        push_all(&mut found, b.frontier, "`frontier`");
+        push_all(&mut found, b.limit, "`limit`");
+        push_all(&mut found, b.offset, "`offset`");
+        if let Some(g) = b.group_by {
+            push_all(
+                &mut found,
+                g.keys.iter().map(|k| &k.expr),
+                "a `group by` key",
+            );
+        }
+        if b.group_by.is_none() {
+            push_all(
+                &mut found,
+                b.resolved_select.iter().filter_map(|it| match it {
+                    SelectItem::Field { expr, .. } => Some(expr),
+                    SelectItem::Collect { .. } => None,
+                }),
+                "a select item",
+            );
+            if let Some(o) = b.order_by {
+                push_all(&mut found, o.iter().map(|o| &o.expr), "`order by`");
+            }
+        }
+        let Some((agg, clause)) = found.first() else {
+            return Ok(());
+        };
+        if b.group_by.is_none() {
+            return self.fail_at(
+                agg.span().start,
+                format!(
+                    "`{}` is an aggregate: it is read after grouping and may stand only in a select item, `having` or `order by` of a body with `group by` — this body has none",
+                    describe(Node::Expr(agg))
+                ),
+            );
+        }
+        self.fail_at(
+            agg.span().start,
+            format!(
+                "`{}` is an aggregate and cannot be read in {clause}{} — the rows are not grouped yet there; aggregates stand in a select item, `having` or `order by`",
+                describe(Node::Expr(agg)),
+                if *clause == "`where`" {
+                    " (a select alias standing for one included)"
+                } else {
+                    ""
+                }
+            ),
+        )
+    }
+
+    // A grouped body: aggregates only after the grouping (and never nested), and
+    // every bare name at the group scope a key, an alias, or the group's rows.
+    fn check_grouped_body(&self, b: &GroupCheck<'_>) -> Result<()> {
+        self.reject_aggregates(b)?;
+        // An aggregate's argument is read on the group's rows, where there is no
+        // group to aggregate: `sum(count())` is an error, not a double reduction.
+        let mut post: Vec<&Expr> = Vec::new();
+        for it in b.resolved_select {
+            if let SelectItem::Field { expr, .. } = it {
+                aggregates_in(expr, &mut post);
+            }
+        }
+        if let Some(h) = b.resolved_having {
+            where_aggregates(h, &mut post);
+        }
+        if let Some(o) = b.order_by {
+            for s in o {
+                aggregates_in(&s.expr, &mut post);
+            }
+        }
+        if let Some(nested) = nested_aggregate(&post) {
+            return self.fail_at(
+                nested.span().start,
+                format!(
+                    "`{}`: an aggregate cannot nest — its argument is read on each of the group's rows, where there is no group to reduce",
+                    describe(Node::Expr(nested))
+                ),
+            );
+        }
+        let group_by = b.group_by.expect("a grouped body");
+        // The names a position at the group scope may read: the keys, the
+        // group values (`rows`, `$it`, `$key`) and the aliases given.
+        fn valid<'k>(group_by: &'k GroupBy, aliases: &[&'k str]) -> HashSet<&'k str> {
+            group_by
+                .keys
+                .iter()
+                .map(|k| k.name.as_str())
+                .chain(GROUP_SCOPE_NAMES)
+                .chain(aliases.iter().copied())
+                .collect()
+        }
+        let mut aliases: Vec<&str> = Vec::new();
+        for it in b.select {
+            let names = valid(group_by, &aliases);
+            match it {
+                SelectItem::Field { expr, .. } => {
+                    self.check_group_expr(expr, &names, "a select item", None)?;
+                }
+                SelectItem::Collect { op, .. } => {
+                    self.check_group_expr(&op.receiver, &names, "a select item", None)?;
+                }
+            }
+            let own = match it {
+                SelectItem::Collect { name, .. } => (!name.is_empty()).then_some(name.as_str()),
+                SelectItem::Field { name, lift: 0, .. } => {
+                    (!name.is_empty()).then_some(name.as_str())
+                }
+                SelectItem::Field { .. } => None,
+            };
+            if let Some(o) = own {
+                aliases.push(o);
+            }
+        }
+        if let Some(h) = b.having {
+            self.check_group_where(h, &valid(group_by, &aliases), "`having`")?;
+        }
+        if let Some(o) = b.order_by {
+            let names = valid(group_by, &[]);
+            for s in o {
+                self.check_group_expr(&s.expr, &names, "`order by`", None)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn check_group_where(&self, w: &Where, valid: &HashSet<&str>, clause: &str) -> Result<()> {
+        match w {
+            Where::And { parts, .. } | Where::Or { parts, .. } => parts
+                .iter()
+                .try_for_each(|p| self.check_group_where(p, valid, clause)),
+            Where::Not { expr, .. } => self.check_group_where(expr, valid, clause),
+            Where::Scalar { expr, .. } => self.check_group_expr(expr, valid, clause, None),
+            // the block is its own scope
+            Where::Op(op) => self.check_group_expr(&op.receiver, valid, clause, None),
+        }
+    }
+
+    // Every bare name `e` reads at the group scope (an aggregate's argument reads
+    // the group's rows and is not checked; a nested block is its own scope, only
+    // its receiver is read here). `in_call` names the enclosing non-aggregate free
+    // call, for the "not an aggregate" hint.
+    fn check_group_expr(
+        &self,
+        e: &Expr,
+        valid: &HashSet<&str>,
+        clause: &str,
+        in_call: Option<&str>,
+    ) -> Result<()> {
+        let again = |x: &Expr| self.check_group_expr(x, valid, clause, in_call);
+        match e {
+            Expr::Ident { name, span } => {
+                if valid.contains(name.as_str()) {
+                    return Ok(());
+                }
+                let hint = match in_call {
+                    None => String::new(),
+                    Some(c) => format!(
+                        "; `{c}(…)` is not an aggregate — the aggregates are {}",
+                        AggregateName::WORDS.join(", ")
+                    ),
+                };
+                self.fail_at(
+                    span.start,
+                    format!(
+                        "`{name}` is not a group key or aggregate — {clause} of a grouped body reads the group: a key (`group by {name}`), an aggregate over its rows (`collect({name})`), or the rows themselves (`rows collect {{ select {name} }}`){hint}"
+                    ),
+                )
+            }
+            Expr::Lit { .. }
+            | Expr::Binding { .. }
+            | Expr::Outer { .. }
+            | Expr::Aggregate { .. } => Ok(()),
+            Expr::Member { recv, .. } => again(recv),
+            Expr::Call {
+                recv, name, args, ..
+            } => {
+                if let Some(r) = recv {
+                    again(r)?;
+                }
+                let inner = if recv.is_none() {
+                    Some(name.as_str())
+                } else {
+                    in_call
+                };
+                args.iter()
+                    .try_for_each(|a| self.check_group_expr(a, valid, clause, inner))
+            }
+            Expr::Unary { expr, .. } | Expr::Required { expr, .. } => again(expr),
+            Expr::Binary { left, right, .. }
+            | Expr::Logical { left, right, .. }
+            | Expr::In { left, right, .. } => {
+                again(left)?;
+                again(right)
+            }
+            Expr::Range { lo, hi, .. } => [lo, hi].into_iter().flatten().try_for_each(|b| again(b)),
+            Expr::Tuple { items, .. } => items.iter().try_for_each(again),
+            Expr::Template { parts, .. } => template_exprs(parts).try_for_each(again),
+            Expr::Op(op) => again(&op.receiver),
+        }
+    }
+
+    // The projection of a grouped body that writes none (SEMANTICS §24): every key
+    // by its name, then `count: count()`. Synthesized here so the tree shows what
+    // the body projects and the engine has no grouped "row itself" to define; the
+    // nodes carry the empty span (they did not come from source).
+    fn default_group_projection(&self, group_by: &GroupBy) -> Result<Vec<SelectItem>> {
+        if group_by.keys.iter().any(|k| k.name == "count") {
+            return self.fail_at(
+                group_by.span.start,
+                "a group key named `count` needs an explicit `select` — the default projection of a grouped body is its keys plus `count: count()`",
+            );
+        }
+        let mut items: Vec<SelectItem> = group_by
+            .keys
+            .iter()
+            .map(|k| SelectItem::Field {
+                name: k.name.clone(),
+                expr: Expr::Ident {
+                    name: k.name.clone(),
+                    span: Span::EMPTY,
+                },
+                lift: 0,
+                span: Span::EMPTY,
+            })
+            .collect();
+        items.push(SelectItem::Field {
+            name: "count".to_owned(),
+            expr: Expr::Aggregate {
+                name: AggregateName::Count,
+                arg: None,
+                distinct: false,
+                span: Span::EMPTY,
+            },
+            lift: 0,
+            span: Span::EMPTY,
+        });
+        Ok(items)
     }
 
     // The keyword-less run that opens a body. At the top level it is always the
@@ -742,6 +1255,16 @@ impl Parser {
                     "frontier" => {
                         return self.fail(format!(
                             "unexpected 'frontier' after `{last}` — `frontier` takes an expression (`frontier <expr>`) and belongs to a body that has a `follow`"
+                        ));
+                    }
+                    "group" => {
+                        return self.fail(format!(
+                            "unexpected 'group' after `{last}` — a grouping is written `group by <key>[, <key>…]` (a key is a name or `alias: <expr>`)"
+                        ));
+                    }
+                    "having" => {
+                        return self.fail(format!(
+                            "unexpected 'having' after `{last}` — `having` takes a predicate over each group (`having count() > 1`) and belongs to a body that has a `group by`"
                         ));
                     }
                     _ => {}
@@ -989,13 +1512,7 @@ impl Parser {
         };
         let mut name = head.value;
         if levels == 0 && self.at(TokType::LParen) {
-            let args = self.parse_args()?;
-            expr = Expr::Call {
-                recv: None,
-                name: name.clone(),
-                args,
-                span: self.sp(start),
-            };
+            expr = self.parse_free_call(name.clone(), start)?;
         }
         while self.at(TokType::Dot) {
             self.next();
@@ -1107,10 +1624,10 @@ impl Parser {
                 }
                 if !matches!(
                     op.op,
-                    Consumer::Collect | Consumer::First | Consumer::Single
+                    Consumer::Collect | Consumer::First | Consumer::Single | Consumer::Count
                 ) {
                     return self.fail(format!(
-                        "projection '{name}' must use collect/first/single, not {} (exists/none/count are where-position tests)",
+                        "projection '{name}' must use collect/first/single/count, not {} (exists/none are where-position tests; `count {{ … }}` is a value since 0.24)",
                         op.op.as_str()
                     ));
                 }
@@ -1613,11 +2130,13 @@ impl Parser {
     }
 
     // The cursor is at a consumer word that opens a VALUE-position block —
-    // `collect`/`first`/`single` then `{` or `distinct {`. Consumes nothing.
+    // `collect`/`first`/`single`, and since 0.24 `count` (the number of rows
+    // the block yields) — then `{` or `distinct {`. `exists`/`none` are
+    // predicates only. Consumes nothing.
     fn at_value_directive(&self) -> bool {
         matches!(
             self.at_consumer_block(),
-            Some(Consumer::Collect | Consumer::First | Consumer::Single)
+            Some(Consumer::Collect | Consumer::First | Consumer::Single | Consumer::Count)
         )
     }
 
@@ -1681,6 +2200,8 @@ impl Parser {
             follow: None,
             frontier: None,
             depth: None,
+            group_by: None,
+            having: None,
             values: false,
             limit: None,
             offset,
@@ -1782,6 +2303,11 @@ impl Parser {
             ));
         }
         self.next();
+        // `x collect distinct { group by k }`: the directive's distinct is as
+        // redundant as the body's own (checked in parse_body).
+        if distinct && let Some(g) = &body.group_by {
+            return self.fail_at(g.span.start, DISTINCT_WITH_GROUP);
+        }
         let sub = Subquery {
             from: body.froms,
             r#where: body.r#where,
@@ -1790,6 +2316,8 @@ impl Parser {
             follow: body.follow,
             frontier: body.frontier,
             depth: body.depth,
+            group_by: body.group_by,
+            having: body.having,
             values: body.values,
             limit: body.limit,
             offset: body.offset,
@@ -2058,17 +2586,12 @@ impl Parser {
                     };
                 }
             } else if self.at(TokType::LParen) && bare_head && matches!(expr, Expr::Ident { .. }) {
-                // free function call: name(args)
+                // free function call: name(args) — a bare name read here, not
+                // `(f)(x)`; an aggregate name makes it an `Aggregate` node (0.24)
                 let Expr::Ident { name, .. } = expr else {
                     unreachable!()
                 };
-                let args = self.parse_args()?;
-                expr = Expr::Call {
-                    recv: None,
-                    name,
-                    args,
-                    span: self.sp(start),
-                };
+                expr = self.parse_free_call(name, start)?;
             } else if self.at(TokType::LBracket) {
                 expr = self.parse_bracket(expr)?;
             } else if self.at_op("!") {
@@ -2087,8 +2610,9 @@ impl Parser {
                 // A value-position directive, `recv first { … }` — how a bracket
                 // chain prints back — or the implicit `collect` of a bare `{ … }` /
                 // `distinct { … }` (0.20: the receiver-block sugar stands wherever
-                // a value does, `size(children { is checked })`). exists/none/count
-                // have no value form and are left to the body's own error.
+                // a value does, `size(children { is checked })`), or `count { … }`
+                // (a value since 0.24). exists/none have no value form and are
+                // left to the body's own error.
                 if matches!(expr, Expr::Lit { .. } | Expr::Template { .. }) {
                     return self.fail(format!(
                         "`{}` is a literal, not a collection",
@@ -2322,6 +2846,87 @@ fn scalar_leaf(e: Expr) -> Where {
             Where::Scalar { expr, span }
         }
     }
+}
+
+// ---- grouping helpers (0.24) --------------------------------------------------
+
+const DISTINCT_WITH_GROUP: &str = "`distinct` is redundant with `group by` — a grouped body already yields one row per distinct key tuple; drop `distinct`";
+
+/// The clauses `check_grouped_body` / `reject_aggregates` look at: the body's
+/// own expressions, with `where` (and `resolved_having`) already alias-resolved.
+struct GroupCheck<'a> {
+    select: &'a [SelectItem],
+    /// The items with their aliases substituted (`resolve_select`), for the aggregate checks.
+    resolved_select: &'a [SelectItem],
+    having: Option<&'a Where>,
+    resolved_having: Option<&'a Where>,
+    order_by: Option<&'a [OrderSpec]>,
+    froms: &'a [Expr],
+    r#where: Option<&'a Where>,
+    frontier: Option<&'a Expr>,
+    limit: Option<&'a Expr>,
+    offset: Option<&'a Expr>,
+    group_by: Option<&'a GroupBy>,
+}
+
+// Every aggregate node in `e` read at THIS scope (a nested block's body is its
+// own scope and is not entered; a block's receiver is). An aggregate's argument
+// is entered too, so a nested aggregate is found by `nested_aggregate`.
+fn aggregates_in<'a>(e: &'a Expr, out: &mut Vec<&'a Expr>) {
+    match e {
+        Expr::Aggregate { arg, .. } => {
+            out.push(e);
+            if let Some(a) = arg {
+                aggregates_in(a, out);
+            }
+        }
+        Expr::Lit { .. } | Expr::Ident { .. } | Expr::Outer { .. } | Expr::Binding { .. } => {}
+        Expr::Member { recv, .. } => aggregates_in(recv, out),
+        Expr::Call { recv, args, .. } => {
+            if let Some(r) = recv {
+                aggregates_in(r, out);
+            }
+            args.iter().for_each(|a| aggregates_in(a, out));
+        }
+        Expr::Unary { expr, .. } | Expr::Required { expr, .. } => aggregates_in(expr, out),
+        Expr::Binary { left, right, .. }
+        | Expr::Logical { left, right, .. }
+        | Expr::In { left, right, .. } => {
+            aggregates_in(left, out);
+            aggregates_in(right, out);
+        }
+        Expr::Range { lo, hi, .. } => {
+            for b in [lo, hi].into_iter().flatten() {
+                aggregates_in(b, out);
+            }
+        }
+        Expr::Tuple { items, .. } => items.iter().for_each(|x| aggregates_in(x, out)),
+        Expr::Template { parts, .. } => template_exprs(parts).for_each(|x| aggregates_in(x, out)),
+        Expr::Op(op) => aggregates_in(&op.receiver, out),
+    }
+}
+
+fn where_aggregates<'a>(w: &'a Where, out: &mut Vec<&'a Expr>) {
+    match w {
+        Where::And { parts, .. } | Where::Or { parts, .. } => {
+            parts.iter().for_each(|p| where_aggregates(p, out));
+        }
+        Where::Not { expr, .. } => where_aggregates(expr, out),
+        Where::Scalar { expr, .. } => aggregates_in(expr, out),
+        Where::Op(op) => aggregates_in(&op.receiver, out),
+    }
+}
+
+// The first aggregate whose argument holds another (`sum(count())`), if any.
+fn nested_aggregate<'a>(found: &[&'a Expr]) -> Option<&'a Expr> {
+    found.iter().copied().find(|a| {
+        let Expr::Aggregate { arg: Some(arg), .. } = a else {
+            return false;
+        };
+        let mut inner = Vec::new();
+        aggregates_in(arg, &mut inner);
+        !inner.is_empty()
+    })
 }
 
 // The default key of an unaliased projection item: the last segment of a bare /
