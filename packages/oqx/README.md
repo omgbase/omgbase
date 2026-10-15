@@ -58,6 +58,8 @@ once, and every one is optional except `from` at the top level:
 from <collection>          from ${people}
 [ where <predicate> ]      where age >= 18 and jobs exists { where not end }
 [ follow <dest>, … ]       follow children { depth 4 }     (or: follow before, after; follow ^people { where … })
+[ group by <key>, … ]      group by city, decade: (age - age % 10) / 10     (0.24; then select reads keys, aggregates, rows)
+[ having <predicate> ]     having count() > 1
 [ order by <expr> … ]      order by age desc, name
 [ limit N ]                limit 10
 [ offset N ]               offset 20
@@ -72,8 +74,8 @@ projects and `jobs { is current }` filters — see §10). At the top level a
 predicate always needs `where`, and `from ${people} count` is an error rather
 than a projection of a field called `count`. Writing a clause out of
 order is a parse error that names the order (`` `select` must come before
-`from` — OQX clause order is select, from, where, follow, order by, limit,
-offset ``). The same body grammar applies inside every consumer block
+`from` — OQX clause order is select, from, where, frontier, follow, group by,
+having, order by, limit, offset ``). The same body grammar applies inside every consumer block
 (`collect { … }`, `exists { … }`, …), where `from` is optional because the
 receiver supplies the rows.
 
@@ -583,6 +585,44 @@ oqx`name from ${people} where jobs exists { offset 1 }`;                   // ha
 
 A storage adapter that pushes the whole query may translate them to SQL
 `LIMIT`/`OFFSET`; the shipped `SqliteTable` leaves them to the residual.
+
+### 8c. Grouping and aggregates (0.24)
+
+`group by <key>, …` — after `where`/`follow`, before `order by` — turns the rows
+a body yields into **one row per distinct key tuple**. A key is a bare name
+(`city`), a dotted navigation named by its last segment (`meta.region`), or an
+aliased expression (`decade: (age - age % 10) / 10`); key values compare as
+identities (absent ≡ `null`), groups come in first-appearance order. After the
+grouping the body reads the **group**: a select item, `having` and `order by`
+may name a key, an **aggregate** over the group's rows, or `rows` — the group's
+rows, a value and a receiver (`rows collect { name values }`, `rows count { where
+active }`, `rows first { … }`); any other bare name is a parse error naming it.
+Without a `select` the projection is the keys plus `count: count()`.
+
+```js
+oqx`from ${people} group by city`;
+// [{ city: "NYC", count: 2 }, { city: "SF", count: 1 }]
+oqx`select city, n: count(), oldest: max(age), names: collect(name) from ${people} group by city order by count() desc`;
+oqx`select city, active: rows count { where active } from ${people} group by city having count() > 1`;
+oqx`select decade, n: count() from ${people} group by decade: (age - age % 10) / 10 order by decade`;
+oqx`${people} count { group by city }`;   // the number of groups
+```
+
+The aggregates are reserved free-function names, legal only in a grouped body's
+select, `having` or `order by`: `count()` counts the group's rows; every other
+aggregate sees the **present** values of its argument — `count(e)`, `sum(e)`
+(`0` of none; a non-number is an eval error), `avg(e)`, `min(e)`, `max(e)`
+(OQX ordering; absent of none), `collect(e)` (the list, in group order),
+`first(e)`, `last(e)` — with `distinct` as a modifier (`count(distinct e)`,
+`collect(distinct e)`); `any(p)` / `all(p)` test truthiness over the rows.
+Aggregates do not nest. `having` is the post-group `where` (it may name a select
+alias: `having n > 1`); `order by` reads the group scope and is not rewritten
+against aliases (`order by count()`, not `order by n`); `limit`/`offset` bound
+the groups; `distinct` with `group by` is an error (redundant). `count { … }` is
+now a value wherever a value stands (`n: jobs count { where pay > 1 }`), in or
+out of a group. A nested block may group too (`jobs collect { employer, total:
+sum(pay) group by employer }`), and every consumer reduces the groups (`jobs
+count { group by employer }`). Spec: `spec/oqx/SEMANTICS.md` §24.
 
 ### 9. Recursion: `follow`
 

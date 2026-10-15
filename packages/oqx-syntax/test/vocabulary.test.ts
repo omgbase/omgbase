@@ -6,10 +6,12 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { LANGUAGE_VERSION as REFERENCE_LANGUAGE_VERSION } from "@omgbase/oqx";
 import {
+  AGGREGATES,
   BUILTIN_FUNCTIONS,
   BUILTIN_METHODS,
   CONSUMERS,
   CONTEXTUAL_WORDS,
+  GROUP_ROWS,
   INTRINSICS,
   KEYWORDS,
   LANGUAGE_VERSION,
@@ -53,6 +55,21 @@ describe("vocabulary", () => {
     expect(sorted(functions)).toEqual(sorted(BUILTIN_FUNCTIONS));
     const methods = [...s11.matchAll(/`[sx]\.([A-Za-z]+)\(/g)].map((m) => m[1]!);
     expect(sorted(methods)).toEqual(sorted(BUILTIN_METHODS));
+  });
+
+  it("aggregates are SEMANTICS §24's table and GRAMMAR §1's reserved function names; rows is §2's group value", () => {
+    const sem = read("SEMANTICS.md");
+    const s24 = sem.slice(sem.indexOf("## 24."));
+    // The first cell of each table row names one or two aggregates (`min(e)` / `max(e)`).
+    const cells = [...s24.matchAll(/^\| ([^|]+) \|/gm)].map((m) => m[1]!);
+    const table = cells.flatMap((c) => [...c.matchAll(/`([a-z]+)\(/g)].map((m) => m[1]!));
+    expect(sorted(table)).toEqual(sorted(AGGREGATES));
+    const grammar = read("GRAMMAR.md");
+    const para = grammar.slice(grammar.indexOf("**Reserved function names**"));
+    const list = para.match(/`([^`]+)`/)?.[1] ?? "";
+    expect(sorted(list.split(/\s+/))).toEqual(sorted(AGGREGATES));
+    const s2 = sem.slice(sem.indexOf("## 2."), sem.indexOf("## 3."));
+    expect(s2).toMatch(new RegExp(`\`${GROUP_ROWS}\` — the group's rows`));
   });
 
   it("intrinsics are the $names SEMANTICS §2 resolves before the row (steps 1-3)", () => {

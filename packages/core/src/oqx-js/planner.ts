@@ -89,6 +89,10 @@ function subMayRaise(s: Subquery, target: Target): boolean {
   if (s.orderBy?.some((o) => exprMayRaise(o.expr, target, false))) return true;
   if (s.frontier && exprMayRaise(s.frontier, target, false)) return true;
   if (s.follow && followMayRaise(s.follow, target)) return true;
+  // A grouped block (oqx 0.24) evaluates its keys, `having` and its aggregates
+  // (`sum` over a string raises) per group.
+  if (s.groupBy?.keys.some((k) => exprMayRaise(k.expr, target, false))) return true;
+  if (s.having && whereMayRaise(s.having, target, false)) return true;
   if (s.limit && exprMayRaise(s.limit, target, false)) return true;
   if (s.offset && exprMayRaise(s.offset, target, false)) return true;
   return false;
@@ -129,6 +133,9 @@ function exprMayRaise(e: Expr, target: Target, root: boolean): boolean {
     // a record is an eval error only the data decides, so with any interpolation
     // it may raise.
     case "template": return e.parts.some((p) => typeof p !== "string");
+    // An aggregate (oqx 0.24) raises on a non-number under `sum`/`avg`, which
+    // only the data decides; a grouped query is never planned anyway (below).
+    case "aggregate": return true;
     case "lit": case "binding": return false;
   }
 }
@@ -139,8 +146,14 @@ export class SQLiteQueryPlanner implements QueryPlanner {
   constructor(private store: Store, private repoId: string, private ctxOpts: StoreContextOptions = {}) {}
 
   plan(query: Query, params: readonly unknown[]): Plan | null {
-    // Only simple top-level scans: no follow, no `from E` re-projection.
-    if (query.follow || query.from.length > 0) return null;
+    // Only simple top-level scans: no follow, no `from E` re-projection, no
+    // `group by` (oqx 0.24). A grouped query is declined whole: its `where`
+    // conjuncts could be pushed (grouping happens after them, so the residual
+    // would group the produced rows correctly), but a pushed conjunct that
+    // empties the scan would hide an eval error an aggregate or `having` raises
+    // in memory (`sum` over a string) — decline (c) extended to the post-group
+    // clauses. SQL `GROUP BY` pushdown is a later round.
+    if (query.follow || query.from.length > 0 || query.groupBy) return null;
     const target = rootTarget(query.source);
     if (!target) return null;
 

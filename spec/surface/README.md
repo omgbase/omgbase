@@ -1945,6 +1945,20 @@ both and runs both harnesses.
 
 ## Decisions
 
+- 2026-10-15 (oqx 0.24; no surface version move): the language gained `group
+  by`/`having`, aggregates and `count { … }` as a value. Two consequences at
+  the surface, both read off the language rather than pinned by new fixtures
+  here: (1) a **grouped query yields groups, not store rows** — the runner
+  injects no `id`/`path` envelope (a hit is the projection as written, as
+  `bare` yields; `bare` is accepted and changes nothing), the
+  envelope-collision rule does not apply, rows that surface as values still
+  render `{ id, path }`, paging is by position with a `null` cursor as under
+  a custom `order by`, and the tier-3 planner declines the query whole; (2)
+  `query-unknown::every-attribute-handle-relation-is-known` meant to show a
+  hint-free result but had read `l: out_links count { }` as the pre-0.24
+  parse error — it now returns the hits it always intended (the `l` counts),
+  so the fixture moved and was reviewed as that. `examples.json` moved with
+  the `query_syntax` text.
 - 2026-10-15, surface 4.8: dates and durations (§1.3) — the Dataview-parity
   function set, as host functions of the binding. Three choices. **Strings
   and seconds, no new value kinds**: a date is the ISO-8601 string the store

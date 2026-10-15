@@ -112,8 +112,9 @@ export const invariantBlock: Rule = (plan) => {
 //
 // Precondition. A where-position `exists`, `none` or `count` without `distinct`
 // (dedup projects every row), without `order by` (`count` evaluates the keys),
-// without `follow`, and with nothing left to evaluate per row: either the block
-// has no `where`, or every conjunct is correlated (so the probe's bucket is the
+// without `follow`, without `group by` (the consumer counts groups, not rows —
+// 0.24), and with nothing left to evaluate per row: either the block has no
+// `where`, or every conjunct is correlated (so the probe's bucket is the
 // matched set).
 //
 // Argument. With no residual predicate the matched rows are exactly the
@@ -127,7 +128,7 @@ export const invariantBlock: Rule = (plan) => {
 export const cardinalityOnly: Rule = (plan) => {
   if (plan.fromCardinality) return null;
   if (plan.consumer !== "exists" && plan.consumer !== "none" && plan.consumer !== "count") return null;
-  if (plan.distinct || plan.orderBy || plan.follow) return null;
+  if (plan.distinct || plan.orderBy || plan.follow || plan.groupBy) return null;
   if (plan.where !== null && plan.residual !== null) return null;
   return { ...plan, fromCardinality: true };
 };

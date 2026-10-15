@@ -57,12 +57,13 @@ and never climbs:
    else the host's identity of the row — structural by default. Unconditional
    like `$it`: a row property literally named `$key` is unreachable by bare name.
 3. `$depth`, `$stop`, `$leaf`, `$frontier`, `$ordinal` — the recursion
-   intrinsics, on a `follow` occurrence (§20).
+   intrinsics, on a `follow` occurrence (§20); and `rows` — the group's rows,
+   on a **group scope** (§24, since 0.24).
 4. a value **lifted** into this scope by a `^name:` item (§19).
 5. at the root scope: the named root; elsewhere: the row's own property.
 
 Step 3 applies only where the scope **carries** that metadata: a walk
-occurrence. Anywhere else the name is an ordinary property read (step 5), so a
+occurrence, a group. Anywhere else the name is an ordinary property read (step 5), so a
 host whose rows carry a `$depth` or `$ordinal` of their own (omgbase's blocks
 do) exposes it outside a `follow`, and a plain-JSON row `{ "$depth": 3 }`
 projects `3`. Since 0.13; before, the six names read absent everywhere they
@@ -492,7 +493,10 @@ baseline. [`regex`]
 Calling a name not in these tables is an **eval error** (`unknown function
 'f(…)'` / `unknown method '.m(…)'`), raised when the call is evaluated (an empty
 source never evaluates it). A free-function call may be a source or a receiver.
-[`builtins`, `strings`, `regex`]
+The **aggregate names** `count sum min max avg collect first last any all` are
+not functions of this table: a free call by one of them is an aggregate (§24,
+GRAMMAR §4), legal only after a `group by`, and a host cannot serve a function
+under one of these names. [`builtins`, `strings`, `regex`, `group-by`]
 
 ## 12. Projection and records
 
@@ -506,9 +510,13 @@ Each kept row projects to:
 An item whose value is absent produces an absent property — dropped in canonical
 form. A nested `collect` item yields an array over a collection receiver and a
 record (or absent) over one object (§3); `first`/`single` a record (or its
-`values` value) or `null`. A `$key: expr` item is projected like any other and
-names the rows' identity (§16). [`projection`, `values`, `consumers`,
-`cardinality`, `identity`]
+`values` value) or `null`; `count` (a value since 0.24) the number of rows the
+block yields. A `$key: expr` item is projected like any other and
+names the rows' identity (§16). A body with `group by` projects each **group**
+(§24): with no projection written, the keys by name and then `count: count()`
+— the parser writes those items (GRAMMAR §3), so "the row itself" never arises
+for a group. [`projection`, `values`, `consumers`, `cardinality`, `identity`,
+`group-by`]
 
 ## 13. `where`
 
@@ -571,8 +579,13 @@ the row field). An engine evaluates the query it is given. Rules:
 | `single` | projected row or `null` | **eval error** when more than one row remains; the message reports the **true** number of rows after bounds (`matched 3 rows`), so `single` always materializes |
 
 The same six shapes apply to nested directives, except that only
-`collect`/`first`/`single` are legal in a projection and only
-`exists`/`none`/`count`/`collect`(lifts) in `where`. [`consumers`, `cardinality`]
+`collect`/`first`/`single`/`count` are legal in a projection (and anywhere a
+value stands — `count { … }` is a value since 0.24, the number after
+where/distinct/bounds, exactly the where-position count without a comparison)
+and only `exists`/`none`/`count`/`collect`(lifts) in `where`. With `group by`
+(§24) every consumer reduces the **groups**: `docs count { group by layer }` is
+the number of groups, `first` the first group's record, `exists` whether any
+group survives `having`. [`consumers`, `cardinality`, `group-by`]
 
 ## 16. `distinct`
 
@@ -630,11 +643,15 @@ by §6 (numbers numerically, strings by **code point**: `"a"`, `"～"`, `"😀"`
 and `desc` reverses that order of present values only: **absent sorts last in
 both directions**. Keys are arbitrary expressions read in the row's scope
 (fields, `$it`, intrinsics, `^outer`); they are not rewritten against
-aliases. Ordering of mixed-type or boolean keys is not specified. [`order-by`]
+aliases. In a body with `group by` the rows are the groups and the sort
+expressions read the group scope — a key, an aggregate (`order by count()
+desc`), `rows` (§24). Ordering of mixed-type or boolean keys is not specified.
+[`order-by`, `group-by`]
 
 ## 18. `limit` / `offset`
 
-The bound applies **after** `where`, `order by`, and `distinct` and **before**
+The bound applies **after** `where`, `group by`/`having` (§24 — the bound
+counts groups), `order by`, and `distinct` and **before**
 the consumer reduces the rows: `count { limit 2 }` ≤ 2, `first { offset 1 }` is
 the second row, `exists { offset 2 }` needs a third row, `none { limit 0 }` is
 true. The operand is evaluated in a row-less scope inside the block — a literal
@@ -794,8 +811,93 @@ method; `single` with more than one row; a required value that is absent
 `follow` in a where-position directive; an invalid or unsupported regex or
 regex flag (§11); a scalar in row position (§3); a list, record or range
 interpolated into a template literal (§7b);
-a range in a result (§1); a binding out of range (§22). Evaluation is otherwise
+a range in a result (§1); a binding out of range (§22); `sum`/`avg` over a
+present non-number (§24). Evaluation is otherwise
 total: absent navigation, arithmetic over absent, comparisons over absent or
 mismatched types, membership in a non-container, and `range()` of a bad string
 all yield a value (absent or `false`), never an error.
-[`errors-lex`, `errors-parse`, `errors-eval`, `logical`, `regex`, `cardinality`]
+[`errors-lex`, `errors-parse`, `errors-eval`, `logical`, `regex`, `cardinality`,
+`group-by`]
+
+## 24. Grouping and aggregates (since 0.24)
+
+`group by k1, …, kn` (GRAMMAR §3) turns the rows a body yields into **one row
+per distinct key tuple** — a **group** — and the body's post-group clauses (the
+projection, `having`, `order by`, `limit`/`offset`, the consumer) then see the
+groups. The order of operations in a body is the clause order: the rows are
+coerced (§3) and re-projected by `from`, filtered by `where` **per row**, walked
+by `follow` (the occurrences are what is grouped), **grouped**, filtered by
+`having` **per group**, ordered, bounded, reduced by the consumer.
+
+**Keys.** Each key expression is read in the row's scope exactly as `where` is
+(bare names are the row's properties, `^` the enclosing row, `$depth` an
+occurrence's). A key's **value** is compared as an identity (§16): absent ≡
+`null`, so rows lacking the key and rows holding `null` are one group; a host
+row by the host's identity; anything else structurally (two objects with the
+same own keys and values are one group). The tuple is compared element-wise.
+Groups appear in the order of their **first row** in input order, whatever
+pushdown or index served the rows, so the result is deterministic.
+
+**The group scope.** A group is evaluated in a scope that sits where the rows
+did — the same depth, the same enclosing scope — whose **row is the key
+record**: one property per key, in key order, holding the key's value on the
+group's first row (`{ city: "NYC" }`; a key absent on that row is an absent
+property). So at the group scope a bare key name reads the key, `$it` is the
+record, `$key` is its structural identity (the record), `^name` reads the
+enclosing row as everywhere, and **`rows`** is the group's **rows** — the rows
+the body kept, in input order (the raw rows: an entry stays an entry) — a value
+(`select city, rows`) and a receiver (`rows collect { select title }`, `rows
+count { where checked }`, `rows first { name values order by age }`, `rows
+single { … }`, `having rows exists { where !active }`), inside whose block `^`
+reads the group's keys. Any other bare name at the group scope is a **parse
+error** (GRAMMAR §3): a grouped body cannot read a row field directly — it
+reads a key, an aggregate, or `rows`. `rows` is a property like any other
+outside a group scope, and inside an aggregate's argument (which reads the
+rows).
+
+**Aggregates.** An aggregate call (GRAMMAR §4) reduces the group of the scope it
+is read in; its argument is evaluated **on each of the group's row scopes** in
+group order — the scope the body's `where` saw, so lifts and walk intrinsics are
+readable there. Every **value aggregate** sees only the **present** values of
+its argument (absent is skipped, never counted, summed, collected or returned);
+`count()` alone counts rows. With `distinct`, the present values are deduped by
+identity (§16), first occurrence kept, before the reduction.
+
+| Aggregate | Result |
+| --- | --- |
+| `count()` | the number of the group's rows |
+| `count(e)` | the number of rows where `e` is present; `count(distinct e)` the number of distinct present values |
+| `sum(e)` | the sum of the present values; **`0` when there is none** (the additive identity — a census sums to zero, it does not go blank); a present value that is not a number is the **eval error** `` cannot sum `e` over the group: it is a string ("…") — `sum` takes numbers `` |
+| `avg(e)` | the sum divided by the count of the present values; **absent when there is none** (no mean exists); a non-number is the error above (`cannot average`) |
+| `min(e)` / `max(e)` | the least / greatest present value by the ordering of §6: the first value is the running extreme, each later value replaces it when it orders strictly below (`min`) / above (`max`); a value that does not order against the extreme (a mixed kind) leaves it unchanged; absent when there is none |
+| `collect(e)` | the list of the present values in group order (`[]` when none); `collect(distinct e)` the distinct ones |
+| `first(e)` / `last(e)` | the first / last present value; absent when none |
+| `any(p)` / `all(p)` | **truthiness** (§4) of `p` on the group's rows — absent is false, so these do not skip absent: `any` is true iff some row's `p` is truthy, `all` iff every row's is; evaluated in group order and short-circuiting at the first row that decides, like `||`/`&&` (§13). No `distinct`. |
+
+Aggregates do not nest (an argument is read on rows, where there is no group),
+and may stand only in a select item, `having` or `order by` of a grouped body
+(GRAMMAR §4). An aggregate reached outside a group scope — possible only through
+a built tree — is an eval error.
+
+**`having P`** evaluates the `where` tree `P` (§13) on each group scope and
+keeps the groups for which it holds. Like `where`, it is rewritten against the
+body's `select` aliases (§14: `select n: count() … having n > 1`), may test
+`rows` with a consumer (`having rows exists { … }`), and may read the keys and
+aggregates directly (`having count() > 1`, `having has(city)`).
+
+**Projection.** Each kept group projects as §12 says: a record over the items
+(a key by name, an aggregate, a `rows`-derived value, `$it`, `$key`), or under
+`values` the single item's value per group (`select city values`, `select
+count() values`). Without a `select`, the keys and `count: count()`. A nested
+grouped block (`jobs collect { employer, total: sum(pay) group by employer }`)
+yields that list; over a single receiver (§3) the one row is one group, so
+`person { group by city }` is one record. `distinct` with `group by` is a parse
+error (redundant). `order by`, `limit` and `offset` apply to the groups (§17,
+§18); the consumer reduces the groups (§15) — `docs count { group by layer }`
+counts them. In a `where`-position test the block's rows are the groups, after
+`having` (`where jobs exists { group by employer having count() > 1 }`).
+
+A grouped row is a value the language built, not a row of the host's data: a
+host that decorates its rows (omgbase's `id`/`path` hit envelope) does not
+decorate groups — the group record is the result as projected (spec/surface
+§1.4). [`group-by`]

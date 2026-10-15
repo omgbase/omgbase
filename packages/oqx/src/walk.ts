@@ -14,7 +14,8 @@ import { LANGUAGE_VERSION } from "./version.ts";
  * The root node has no clause (`null`). */
 export type Clause =
   | "source" | "from" | "where" | "select" | "orderBy" | "limit" | "offset"
-  | "follow" | "follow.destination" | "follow.frontier";
+  | "follow" | "follow.destination" | "follow.frontier"
+  | "groupBy" | "having"; // the `group by` keys and the post-group predicate (0.24)
 
 /** Where a visited node sits. `depth` is the scope depth at which the node is
  * evaluated (0 = the root scope: a top-level `source`, `limit`, `offset`; 1 =
@@ -57,6 +58,10 @@ export const CHILDREN: { readonly [K in AstKind]: readonly ChildKey[] } = {
     // The body's `frontier` (0.20) reads each seed in the row scope, like `where`.
     { key: "frontier", clause: "follow.frontier", depth: 1 },
     { key: "follow", clause: "follow", depth: 1 },
+    // `group by` keys are read on the rows, `having` on the groups — both at
+    // the row depth (the group scope sits where the rows did; 0.24).
+    { key: "groupBy", clause: "groupBy", depth: 1 },
+    { key: "having", clause: "having", depth: 1 },
     { key: "orderBy", clause: "orderBy", depth: 1 },
     { key: "limit", clause: "limit" },
     { key: "offset", clause: "offset" },
@@ -71,12 +76,16 @@ export const CHILDREN: { readonly [K in AstKind]: readonly ChildKey[] } = {
     // (`childDepth` tells the two apart by the block's position).
     { key: "frontier", clause: "follow.frontier", depth: -1 },
     { key: "follow", clause: "follow" },
+    { key: "groupBy", clause: "groupBy" },
+    { key: "having", clause: "having" },
     { key: "orderBy", clause: "orderBy" },
     { key: "limit", clause: "limit" },
     { key: "offset", clause: "offset" },
   ],
   op: [{ key: "receiver" }, { key: "sub", depth: 1 }],
   follow: [{ key: "destinations", clause: "follow.destination" }],
+  groupBy: [{ key: "keys" }],
+  key: [{ key: "expr" }],
   order: [{ key: "expr" }],
   field: [{ key: "expr" }],
   collect: [{ key: "op" }],
@@ -99,6 +108,8 @@ export const CHILDREN: { readonly [K in AstKind]: readonly ChildKey[] } = {
   tuple: [{ key: "items" }],
   // The interpolations; the text parts between them are strings, not nodes.
   template: [{ key: "parts" }],
+  // The argument is read on each of the group's rows (0.24); `null` for `count()`.
+  aggregate: [{ key: "arg" }],
 };
 
 /** A child slot's value: a node, a list of nodes (a template's `parts` also

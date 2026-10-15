@@ -27,6 +27,8 @@ guess the default of.
 | `subquery` | a block body, the `{ … }` of a directive | `op.sub` |
 | `op` | a consumer directive `<receiver> <consumer> [distinct] { … } [<relop> N]` | a `where` leaf (a consumer test), a `collect` item's value, a `follow` destination block (whose `sub` may carry `frontier`/`depth`, since 0.20), and — since 0.17 — an expression (a value-position `collect`/`first`/`single`, which is what a bracket lookup `x[…]` and, since 0.20, any `x { … }` / `x distinct { … }` desugar to: `jobs[0].pay` is a `member` over an `op`) |
 | `follow` | the `follow` clause — its destinations and the `distinct` flag (since 0.20 nothing else: a destination's `where`/`frontier`/`depth` are clauses of its block) | `query.follow`, `subquery.follow` |
+| `groupBy` | the `group by` clause — its keys (since 0.24) | `query.groupBy`, `subquery.groupBy` |
+| `key` | one `group by` key, `name: expr` (shaped like a `field` item without a lift; since 0.24) | `groupBy.keys[]` |
 | `order` | one `order by` term | `orderBy[]` |
 | `field` | a projection item `[^…]name: expr` / `name` | `select[]` |
 | `collect` | a projection item whose value is a block, `name: <op>` | `select[]` |
@@ -47,6 +49,7 @@ guess the default of.
 | `range` | `lo..hi`, `lo...hi`, `..hi`, `lo..` | expressions |
 | `tuple` | `(e1, e2, …)` — two or more expressions, a value and a receiver (since 0.20) | expressions |
 | `template` | `` `text ${expr} text` `` — a template literal: text parts and interpolated expressions, a string value (since 0.21) | expressions |
+| `aggregate` | `count()`, `sum(e)`, `collect(distinct e)` — an aggregate call over the group's rows (since 0.24); never a `call` | expressions (a select item, `having`, `order by` of a grouped body) |
 
 The `where` tree and value expressions are distinct families: `and`/`or`/`not`
 own the boolean structure of a predicate so consumer tests compose with scalar
@@ -89,10 +92,12 @@ as their source words (`"=="`, `"&&"`, `"collect"`).
 
 | Node | Fields |
 | --- | --- |
-| `query` | `source: Expr` — the root collection (`from <source>` or the directive receiver); `from: Expr[]` — further `from E` re-projections (only a directive form's block can hold them); `where: Where \| null`; `select: SelectItem[]`; `orderBy: Order[] \| null`; `consumer: "collect" \| "exists" \| "none" \| "count" \| "first" \| "single"`; `follow: Follow \| null`; `frontier: Expr \| null` — the body's seed frontier (since 0.20; set only together with `follow`); `distinct: boolean`; `values: boolean`; `limit: Expr \| null`; `offset: Expr \| null` |
-| `subquery` | `from`, `where`, `select`, `orderBy`, `follow`, `frontier`, `values`, `limit`, `offset` as above (no `source`, `consumer`, `distinct` — those belong to the enclosing `op`); `depth: number \| null` (1..8) — set only on a `follow` destination block's body (since 0.20), `null` on every other block; `frontier` on a destination block's body marks the occurrences reached through it, on any other block's body (with a `follow`) its seeds |
+| `query` | `source: Expr` — the root collection (`from <source>` or the directive receiver); `from: Expr[]` — further `from E` re-projections (only a directive form's block can hold them); `where: Where \| null`; `select: SelectItem[]`; `orderBy: Order[] \| null`; `consumer: "collect" \| "exists" \| "none" \| "count" \| "first" \| "single"`; `follow: Follow \| null`; `frontier: Expr \| null` — the body's seed frontier (since 0.20; set only together with `follow`); `groupBy: GroupBy \| null` and `having: Where \| null` (since 0.24; `having` is set only together with `groupBy`); `distinct: boolean`; `values: boolean`; `limit: Expr \| null`; `offset: Expr \| null` |
+| `subquery` | `from`, `where`, `select`, `orderBy`, `follow`, `frontier`, `groupBy`, `having`, `values`, `limit`, `offset` as above (no `source`, `consumer`, `distinct` — those belong to the enclosing `op`); `depth: number \| null` (1..8) — set only on a `follow` destination block's body (since 0.20), `null` on every other block; `frontier` on a destination block's body marks the occurrences reached through it, on any other block's body (with a `follow`) its seeds |
 | `op` | `receiver: Expr`; `op: Consumer`; `sub: Subquery`; `countCmp: { op: RelOp, value: number } \| null` — the `count { … } <relop> N` test, an attribute rather than a node; `distinct: boolean` — `<op> distinct { … }` and `{ select distinct … }` are one flag |
 | `follow` | `destinations: (Expr \| Op)[]` — ≥ 1, in source order (a tuple destination is one `tuple` expression); `distinct: boolean` |
+| `groupBy` | `keys: Key[]` — ≥ 1, in source order (since 0.24) |
+| `key` | `name: string` — the alias, or the last segment of an unaliased navigation; `expr: Expr` (since 0.24) |
 | `order` | `expr: Expr`; `desc: boolean` |
 | `field` | `name: string` — the alias, or the last segment of an unaliased navigation, or `""` for an unaliased expression under `values`; `expr: Expr`; `lift: number` — the count of leading `^` (0 = an ordinary item) |
 | `collect` | `name: string`; `op: Op` |
@@ -113,8 +118,9 @@ as their source words (`"=="`, `"&&"`, `"collect"`).
 | `range` | `lo: Expr \| null`; `hi: Expr \| null`; `exclusiveEnd: boolean` |
 | `tuple` | `items: Expr[]` (≥ 2) |
 | `template` | `parts: (string \| Expr)[]` — **strictly alternating**: a text part, an interpolation, a text part, … — so the list has odd length (≥ 1) and begins and ends with a text part, which may be `""` (`` `${a}` `` is `["", a, ""]`, `` `${a}${b}` `` is `["", a, "", b, ""]`, `` `hi` `` is `["hi"]`, `` `` `` is `[""]`). A text part is a **plain JSON string**, not a node (no `kind`, no span), holding the **decoded** text (GRAMMAR §1 escapes resolved, newlines verbatim); an interpolation is any `Expr` (a nested `template` or a value-position `op` included) |
+| `aggregate` | `name: "count" \| "sum" \| "min" \| "max" \| "avg" \| "collect" \| "first" \| "last" \| "any" \| "all"`; `arg: Expr \| null` — `null` only for the bare `count()`; `distinct: boolean` — the `(distinct e)` modifier (since 0.24) |
 
-Shape rules the parser guarantees (and `cases/ast.json` pins):
+Shape rules the parser guarantees (and `cases/ast.json`, `cases/group-by.json` pin):
 
 - The two spellings of one construct are one tree: `name from x` ≡ `select name
   from x`; `x collect { … }` ≡ `select … from x …`; `jobs collect distinct { e }`
@@ -133,6 +139,16 @@ Shape rules the parser guarantees (and `cases/ast.json` pins):
   `op`. An unaliased `field` keys by the last segment of the navigation under
   any `required` (`name!` → `name`, `jobs[0].pay` → `pay`). Parentheses around
   one expression leave no node; around two or more they are a `tuple`.
+- Grouping (0.24): a free call by an aggregate name is an `aggregate` node
+  wherever it is written (`count()` is `{ kind: "aggregate", name: "count", arg:
+  null, distinct: false }`; `collect(distinct name)` carries the modifier) —
+  never a `call`. A `group by` key is a `key` node named like a select item
+  (`group by meta.region` → `key` named `region`). A grouped body with **no
+  `select`** carries the **synthesized** projection — one `field` per key (`name`
+  = the key's, `expr` the bare `ident`) and `count: count()` — so the tree shows
+  what the body projects; the synthesized nodes carry the empty span. A
+  `count { … }` directive in value position (0.24) is a `collect` select item
+  (or an `op` operand) like the other directives.
 - `where` keeps its **surface form**: a `select` alias referenced in `where` is
   an `ident` in the tree. The substitution (SEMANTICS §14) is the pure function
   `resolveAliases` / `resolve_aliases`, applied by the run entry points exactly
@@ -164,6 +180,9 @@ last:
   a count comparison follows;
 - `follow`: the `follow` word through the last destination (a destination
   block's closing brace included);
+- `groupBy`: the `group` word through the last key; `key`: the alias (or the
+  expression) through the expression; `aggregate`: the name through the
+  closing parenthesis (`count()` at 13 spans `[13, 20]`);
 - `field`/`collect`: the leading carets or the name through the value;
   `order`: the expression through `asc`/`desc`;
 - `and`/`or`: the first part to the last; `not`: the `!` through its operand;
@@ -209,13 +228,15 @@ Both implementations ship one generic walk driven by a single child-key table
 per `kind` (TypeScript `CHILDREN`, Rust `walk::children`), so a future field
 is added in one place and every tool sees it. Children are visited in
 canonical source order: for `query` — `select`, `source`, `from`, `where`,
-`frontier`, `follow`, `orderBy`, `limit`, `offset`; for `subquery` — `select`,
-`from`, `where`, `frontier`, `follow`, `orderBy`, `limit`, `offset` (`depth` is
+`frontier`, `follow`, `groupBy`, `having`, `orderBy`, `limit`, `offset`; for
+`subquery` — `select`, `from`, `where`, `frontier`, `follow`, `groupBy`,
+`having`, `orderBy`, `limit`, `offset` (`depth` is
 a number, not a node); for `op` — `receiver`, `sub`; for `follow` —
-`destinations`; then the obvious slots of the smaller nodes (`expr`, `parts`,
+`destinations`; for `groupBy` — `keys`; for `key` — `expr`; then the obvious
+slots of the smaller nodes (`expr`, `parts`,
 `recv`, `args`, `left`/`right`, `lo`/`hi`, `items`; `required` — `expr`;
 `template` — `parts`, visiting the interpolated expressions in order and
-skipping the text strings, which are not nodes).
+skipping the text strings, which are not nodes; `aggregate` — `arg`).
 
 - **`visit(root, { enter?(node, ctx), leave?(node, ctx) })`** — depth-first.
   `enter` may return `false` to skip the node's children (`leave` is still
@@ -226,13 +247,15 @@ skipping the text strings, which are not nodes).
     `follow` (the `follow` node itself), `follow.destination` (a destination,
     and everything inside a destination block that opens no clause of its own —
     its receiver and `subquery`), `follow.frontier` (a `frontier` expression —
-    a destination block's, or a body's own seed frontier); the root has none (`null`); a node inherits its
+    a destination block's, or a body's own seed frontier), `groupBy` (the
+    `groupBy` node and its keys) and `having` (since 0.24); the root has none (`null`); a node inherits its
     parent's clause unless it opens one (a destination block's `where` is
     `where`, as in any block);
   - `depth` — the **scope depth** at which the node is evaluated (SEMANTICS
     §2): 0 is the root scope — a top-level `source`, `limit` and `offset`;
     1 is a top-level row — the top-level `where`, `select`, `orderBy`, `from`
-    re-projections and `follow`; a block's receiver is read at its enclosing
+    re-projections, `follow`, `groupBy` and `having` (a group scope sits at
+    the row depth, SEMANTICS §24); a block's receiver is read at its enclosing
     depth and its body one deeper — so a destination block's `where` tests a
     successor one deeper than the frontier row; a destination block's
     `frontier` is read one level **out** of the block's rows, under the walk's
@@ -268,7 +291,7 @@ A reference is `{ name, clause, scope: { depth, steps }, span }`:
   `^$it.layer` → `layer`).
 - `clause` — the `visit` clause the reference sits in (`select`, `source`,
   `from`, `where`, `orderBy`, `limit`, `offset`, `follow.destination`,
-  `follow.frontier`).
+  `follow.frontier`, `groupBy`, `having`).
 - `scope.depth` — the scope depth the name is evaluated at (§5 `depth`); for an
   outer reference, the depth of the position minus its `levels`.
 - `scope.steps` — the expressions that produce the scope's rows, root first,
@@ -277,7 +300,13 @@ A reference is `{ name, clause, scope: { depth, steps }, span }`:
   block's receiver (one deeper than the scope it is read in), then the block's
   own `from`; a **`follow` node** (the walk's frontier rows, at the body's
   depth — the destinations are read on them, a destination block's receiver
-  producing rows one deeper). A name inside a `from` expression sees only the
+  producing rows one deeper); since 0.24 a **`groupBy` node** — the body's
+  groups, at the same depth (the rows replaced by one key record per group) —
+  for a name read at the **group scope**: in a select item, `having` or `order
+  by` of a grouped body and not inside an aggregate's argument (an argument is
+  read on the group's rows, so its steps stop before the `groupBy` step).
+  `rows` as a receiver there is a step like any receiver (`{ expr: "rows",
+  depth: d + 1 }`). A name inside a `from` expression sees only the
   steps before it. For an outer reference the steps are cut after the last
   step producing rows at its depth. The empty list is the root scope.
 - `span` — the span of the whole reference (the chain, for a navigation).
@@ -301,23 +330,30 @@ What is a reference:
 What is not:
 
 - `$`-names (`$key`, `$depth`, `$stop`, …) — the language's values; `$it` alone;
-  a `binding`; a function or method **name**; the keys of a projection (an
-  item's alias, a lift's name);
+  a `binding`; a function, method or **aggregate name**; the keys of a
+  projection (an item's alias, a lift's name, a group key's name);
 - a `select` alias where the language substitutes it (§14 of SEMANTICS): a
   bare identifier naming an alias — or a chain headed by it — in the same
-  body's `where`, or in a `select` item to the alias's right. An alias's own
+  body's `where` or `having`, or in a `select` item to the alias's right. An alias's own
   name inside its own item is the row field and **is** a reference. `order
   by`, `frontier`, `limit`/`offset`, `from` and `follow` are not rewritten
   against aliases, so a name there is a reference whatever the `select` says
   (`select n: name from people order by n` references `n` — the row's);
+- at a **group scope** (since 0.24; SEMANTICS §24): a bare **key name** — or a
+  chain headed by it, or an outer reference to it from a nested block (`^lo`
+  inside `rows collect { … }`) — is the key, an alias of the expression
+  reported in clause `groupBy`; and `rows` is the language's value. Inside an
+  aggregate's argument both are row reads again (`collect(city)` references
+  `city` on the rows; `sum(rows)` references a property `rows`);
 - the trailing `.name`s of a navigation whose head is **not** a name — a call
   (`refs(before).title`), a block (`blocks[type == "task"].text`), a tuple, a
   literal: the head's value is not a row of any scope, so only the names inside
   the head are references (`before`; `blocks` and `type`).
 
 TypeScript: `references(root): Reference[]` with `Reference`, `ReferenceScope`,
-`ReferenceStep` (`expr: Expr | Follow`). Rust: `references::references(&q)`
-returning `Vec<Reference>` over borrowed nodes, the same fields.
+`ReferenceStep` (`expr: Expr | Follow | GroupBy`). Rust: `references::references(&q)`
+returning `Vec<Reference>` over borrowed nodes, the same fields. In a fixture a
+`groupBy` step prints as the clause (`"group by city: city, lo: age"`).
 
 ## 6. Printing
 
@@ -333,7 +369,10 @@ rule of GRAMMAR §3 for `where`; `distinct` on a directive spelled
 destination block's), then `follow`, `order by`, the bounds — so a body's seed
 frontier prints between `where` and `follow` (`select id: id from t frontier
 !active follow kids collect { depth 2 }`), and `follow x { depth 2 }` as
-`follow x collect { depth 2 }`; a tuple with its parentheses `(a, b)`; an empty
+`follow x collect { depth 2 }`; `group by` after `follow` with **every key
+aliased** as select items are (`group by city: city, lo: age`), then `having`
+(since 0.24); an aggregate as the call it is (`count()`, `sum(distinct pay)`),
+a value-position `count` directive as `rows count { where checked }`; a tuple with its parentheses `(a, b)`; an empty
 block as `{ }`; the logical connectives as the **words**
 `and` / `or` (since 0.18; `&&` / `||` parse to the same nodes and the JSON
 `op` stays `"&&"` / `"||"`), the prefix negation as `!`; a **template literal
@@ -405,3 +444,4 @@ document says which `major.minor` produced it.
 | 0.21 | Added (minor): the `template` expression node (`parts: (string \| Expr)[]`, strictly alternating text and interpolation). Its text parts are the first non-node values a child slot holds: a walk over `parts` skips them. Nothing renamed or removed. |
 | 0.22 | Added (minor): `"~"`, `"~*"`, `"!~"`, `"!~*"` as `binary` operators (the infix regex operators, sugar over `matches`). No node or field added, renamed or removed; a reader of an older minor may meet an unknown `binary.op`. The canonical print writes the operator as written (`a ~ b`), at comparison precedence. |
 | 0.23 | Added (minor): the `references` static pass (§5b) and the fixture kind `expect.references` (README). No node or field added, renamed or removed; the grammar and the semantics are unchanged. |
+| 0.24 | Added (minor): the `groupBy` and `key` nodes; `query.groupBy`, `query.having`, `subquery.groupBy`, `subquery.having` (materialized as `null`); the `aggregate` expression node (a free call by an aggregate name parses to it, never to a `call`); the traversal clauses `groupBy` and `having`; a `groupBy` node as a `references` step; `count` as a value-position directive (an `op` with `op: "count"` in a `collect` item or an operand). Nothing renamed or removed. A reader of an older minor meets the two new fields on every body and the new kinds. |

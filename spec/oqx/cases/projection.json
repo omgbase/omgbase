@@ -940,15 +940,22 @@
       }
     },
     {
-      "name": "projection may not use count",
+      "name": "projection may use count as a value (0.24)",
+      "notes": "Through 0.23 `count { … }` had no value form; since 0.24 it is the number of rows the block yields (SEMANTICS §15).",
+      "roots": {
+        "people": [
+          { "name": "Bob", "jobs": [{ "employer": "G" }, { "employer": "I" }] },
+          { "name": "Ann", "jobs": [] },
+          { "name": "Cy" }
+        ]
+      },
       "query": "n: jobs count { } from people",
       "expect": {
-        "error": {
-          "stage": "parse",
-          "includes": [
-            "collect/first/single"
-          ]
-        }
+        "result": [
+          { "n": 2 },
+          { "n": 0 },
+          { "n": 0 }
+        ]
       }
     },
     {

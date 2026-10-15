@@ -53,7 +53,7 @@ export { IndexedCollection } from "./adapters/indexed.ts";
 export { ROWS_ROOT, partitionPushable, residualQuery, asEquality, isConst, constValue } from "./plan.ts";
 export * as semantics from "./semantics.ts";
 export type * from "./ast.ts";
-export { isExpr, isRegexOp, REGEX_OPS } from "./ast.ts";
+export { isExpr, isRegexOp, REGEX_OPS, isAggregateName, AGGREGATE_NAMES } from "./ast.ts";
 export { parseTemplate } from "./parser.ts";
 export { rawSource, toUtf16, codePointLength } from "./lexer.ts";
 export { resolveAliases } from "./resolve.ts";

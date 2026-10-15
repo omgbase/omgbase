@@ -4,8 +4,8 @@
 // tree has the same shape as a parsed one and prints with `print`.
 
 import type {
-  BinaryOp, Consumer, CountCmp, Expr, Follow, FollowDestination, LogicalOp, OpNode, OrderSpec, Query, SelectItem, Span,
-  Subquery, TemplatePart, UnaryOp, Where,
+  AggregateName, BinaryOp, Consumer, CountCmp, Expr, Follow, FollowDestination, GroupBy, GroupKey, LogicalOp, OpNode, OrderSpec,
+  Query, SelectItem, Span, Subquery, TemplatePart, UnaryOp, Where,
 } from "./ast.ts";
 
 /** A fresh empty span (never shared: spans are mutable tuples). */
@@ -31,6 +31,8 @@ export const tuple = (items: Expr[]): Expr => ({ kind: "tuple", span: span(), it
 /** `` `text ${expr} …` `` — a template literal (SEMANTICS §7b); `parts` alternates
  * text, expression, text, … (odd length, text first and last). */
 export const template = (parts: TemplatePart[]): Expr => ({ kind: "template", span: span(), parts });
+/** `name(arg)` / `name(distinct arg)` / `count()` — an aggregate over the group's rows (SEMANTICS §24). */
+export const aggregate = (name: AggregateName, arg: Expr | null = null, distinct = false): Expr => ({ kind: "aggregate", span: span(), name, arg, distinct });
 
 export const scalar = (expr: Expr): Where => ({ kind: "scalar", span: span(), expr });
 export const and = (parts: Where[]): Where => ({ kind: "and", span: span(), parts });
@@ -40,12 +42,17 @@ export const not = (expr: Where): Where => ({ kind: "not", span: span(), expr })
 export const field = (name: string, expr: Expr, lift = 0): SelectItem => ({ kind: "field", span: span(), name, expr, lift });
 export const collect = (name: string, op: OpNode): SelectItem => ({ kind: "collect", span: span(), name, op });
 export const order = (expr: Expr, desc = false): OrderSpec => ({ kind: "order", span: span(), expr, desc });
+/** One `group by` key, `name: expr`. */
+export const key = (name: string, expr: Expr): GroupKey => ({ kind: "key", span: span(), name, expr });
+/** `group by <keys>` (SEMANTICS §24). */
+export const groupBy = (keys: GroupKey[]): GroupBy => ({ kind: "groupBy", span: span(), keys });
 
 /** A block body; every clause defaults to empty/absent. */
 export function subquery(parts: Partial<Omit<Subquery, "kind" | "span">> = {}): Subquery {
   return {
     kind: "subquery", span: span(),
-    from: [], where: null, select: [], orderBy: null, follow: null, frontier: null, depth: null, values: false, limit: null, offset: null,
+    from: [], where: null, select: [], orderBy: null, follow: null, frontier: null, depth: null, groupBy: null, having: null,
+    values: false, limit: null, offset: null,
     ...parts,
   };
 }
@@ -69,7 +76,7 @@ export function follow(destinations: FollowDestination[], opts: { distinct?: boo
 export function query(source: Expr, parts: Partial<Omit<Query, "kind" | "span" | "source">> = {}): Query {
   return {
     kind: "query", span: span(), source,
-    from: [], where: null, select: [], orderBy: null, consumer: "collect", follow: null, frontier: null,
+    from: [], where: null, select: [], orderBy: null, consumer: "collect", follow: null, frontier: null, groupBy: null, having: null,
     distinct: false, values: false, limit: null, offset: null,
     ...parts,
   };

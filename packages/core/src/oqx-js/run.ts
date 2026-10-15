@@ -440,6 +440,18 @@ function runResolved(store: Store, repoId: string, raw: Query, opts: OqxOptions)
     return { hits: [], truncated: false, cursor: null, consumer: "none", none: res.consumer === "none" ? res.none : true };
   }
 
+  // A grouped query (oqx 0.24, SEMANTICS §24) yields GROUPS, not store rows:
+  // the envelope does not apply — there is no `id`/`path` to inject and no
+  // keyset to page by — so a hit is the group's projection as the query wrote
+  // it (`{ layer, n }`), exactly what `bare` yields for a row query; `bare` is
+  // accepted and changes nothing. Rows that surface as values (`rows collect {
+  // }` with an empty projection, `collect(doc)`) render as `{ id, path }` refs
+  // like every row-as-value. Paging is by position: the query's own
+  // `limit`/`offset` define the set, the tool's `limit` takes the first page,
+  // `truncated` says whether more groups follow, the cursor is always null (as
+  // under a custom `order by`). `distinct` cannot occur (a parse error).
+  if (parsed.groupBy) return runGrouped(engine, parsed, consumer, opts);
+
   // collect / first / single: inject id + path so every hit carries them. A
   // top-level `select distinct` is applied HERE, not in the engine: the injected
   // id/path are unique per row and would defeat the engine's projection dedup, so
@@ -504,6 +516,32 @@ function runResolved(store: Store, repoId: string, raw: Query, opts: OqxOptions)
   // on identity, so a bare result pages exactly like the enveloped one.
   if (topValues) return { hits: [], truncated, cursor, consumer: "collect", values: page.map((s) => s.proj[VALUE_KEY]) };
   return { hits: page.map(render), truncated, cursor, consumer: "collect" };
+}
+
+// The collect/first/single path of a grouped query (see `runResolved`).
+function runGrouped(engine: Engine, parsed: Query, consumer: OqxConsumer, opts: OqxOptions): OqxResult {
+  const topValues = parsed.values;
+  // A `values` projection rides as a record under VALUE_KEY and is peeled off
+  // the page, as on the row path.
+  const select = topValues ? [{ ...parsed.select[0]!, name: VALUE_KEY }] : parsed.select;
+  const { limit: topLimit, offset: topOffset } = parsed;
+  const base = consumer === "collect" ? { ...parsed, limit: null, offset: null } : parsed;
+  const res = engine.run({ ...base, values: false, select }, []);
+  const project = (row: unknown): Record<string, unknown> => renderValue(row) as Record<string, unknown>;
+  if (consumer === "first" || consumer === "single") {
+    const row = res.consumer === "first" || res.consumer === "single" ? res.row : null;
+    if (topValues) return { hits: [], truncated: false, cursor: null, consumer, values: row == null ? [] : [project(row)[VALUE_KEY]] };
+    return { hits: row == null ? [] : [project(row) as OqxHit], truncated: false, cursor: null, consumer };
+  }
+  let groups = (res.consumer === "collect" ? res.rows : []).map(project);
+  const offset = constBound(topOffset, "offset") ?? 0;
+  const limit = constBound(topLimit, "limit");
+  if (offset || limit != null) groups = groups.slice(offset, limit == null ? undefined : offset + limit);
+  const cap = opts.limit ?? 50;
+  const truncated = groups.length > cap;
+  const page = groups.slice(0, cap);
+  if (topValues) return { hits: [], truncated, cursor: null, consumer: "collect", values: page.map((g) => g[VALUE_KEY]) };
+  return { hits: page as OqxHit[], truncated, cursor: null, consumer: "collect" };
 }
 
 export async function oqxRunAsync(

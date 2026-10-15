@@ -18,10 +18,12 @@
 // line-oriented engines (TextMate, Monarch, CodeMirror) inherently are.
 
 import {
+  AGGREGATES,
   BUILTIN_FUNCTIONS,
   BUILTIN_METHODS,
   CONSUMERS,
   CONTEXTUAL_WORDS,
+  GROUP_ROWS,
   IDENTIFIER,
   KEYWORDS,
   LITERALS,
@@ -95,6 +97,12 @@ export const RULES: readonly Rule[] = [
   { name: "select-distinct", regex: `(select)([ \\t]+)(distinct)${END}`, groups: ["keyword", "whitespace", "modifier"] },
   { name: "follow-distinct", regex: `(follow)([ \\t]+)(distinct)${END}`, groups: ["clause", "whitespace", "modifier"] },
   { name: "order-by", regex: `(order)([ \\t]+)(by)${END}`, groups: ["clause", "whitespace", "clause"] },
+  // `group by` (0.24) is a clause only as the two-word sequence, like `order by`.
+  { name: "group-by", regex: `(group)([ \\t]+)(by)${END}`, groups: ["clause", "whitespace", "clause"] },
+  // `having` (0.24) is a clause when a predicate can follow: a value start, or an
+  // aggregate call — `having count() > 1` — whose name is a consumer word and so
+  // cannot begin a value on its own.
+  { name: "having", regex: `having${END}(?:${VALUE_START}|(?=[ \\t]+(?:${alternation(AGGREGATES)})[ \\t]*\\())`, groups: ["clause"] },
   // The word operators (`is`, `not`, `and`, `or`) are keywords too (GRAMMAR §1),
   // highlighted as operators; before the keyword rule so it never claims them.
   { name: "word-operator", regex: words(WORD_OPERATORS), groups: ["wordOperator"] },
@@ -134,7 +142,9 @@ export const RULES: readonly Rule[] = [
     groups: [
       {
         cases: [
-          { words: BUILTIN_FUNCTIONS, token: "builtinFunction" },
+          // The builtins and, since 0.24, the aggregates (`count(`, `sum(`,
+          // `collect(`) — one word list, one token class.
+          { words: [...BUILTIN_FUNCTIONS, ...AGGREGATES], token: "builtinFunction" },
           { words: OMGBASE.rowFunctions, token: "hostFunction" },
         ],
         default: "function",
@@ -142,6 +152,9 @@ export const RULES: readonly Rule[] = [
     ],
   },
   { name: "intrinsic", regex: "\\$[A-Za-z0-9_$]*", groups: ["intrinsic"] },
+  // `rows` (0.24): the group's rows, the language's value at a group scope — an
+  // intrinsic without a `$`, as position-free as the `$`-names.
+  { name: "group-rows", regex: `${GROUP_ROWS}${END}`, groups: ["intrinsic"] },
   { name: "identifier", regex: "IDENT", groups: ["identifier"] },
 
   // ---- operators and punctuation -------------------------------------------

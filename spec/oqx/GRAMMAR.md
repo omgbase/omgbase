@@ -34,15 +34,30 @@ Keywords and identifiers are **case-sensitive**; `FROM` is an identifier
 
 **Contextual words** are identifiers that act as syntax only in position:
 `collect exists none count first single order by asc desc follow distinct
-frontier depth in values limit offset`. Outside that position they are field
-names (`limit from r`, `order from r`, `select follow from r`; `depth` is a
+frontier depth in values limit offset group having`. Outside that position they are field
+names (`limit from r`, `order from r`, `select follow from r`, `select group,
+having from r`; `depth` is a
 clause only inside a `follow` destination block and `frontier` only in a body
 that has a `follow` — the destination block's own, or any body's for its seeds —
-§`follow`; both are field names everywhere else). A contextual word that starts a clause but does
+§`follow`; both are field names everywhere else; `group` is a clause only as
+the two-word `group by` and `having` only when a predicate follows it, §`group
+by` — since 0.24). A contextual word that starts a clause but does
 not complete it is an error naming what the clause needs (`order age` → `order
 by <expr>`; `follow` alone → a relation; `limit x` → a number, binding, or
-`^name`; `where x depth 2` outside a destination block → names the block)
-[`clause-order`, `limit-offset`, `follow`].
+`^name`; `where x depth 2` outside a destination block → names the block;
+`group` without `by` → `group by <key>`)
+[`clause-order`, `limit-offset`, `follow`, `group-by`].
+
+**Reserved function names** (since 0.24): the aggregate names `count sum min
+max avg collect first last any all` are the language's wherever a free call is
+written (`count()`, `sum(pay)`, `collect(distinct tag)`): the call parses to an
+`aggregate` node (§4 "Aggregates"), never to an ordinary function call, so a host
+cannot serve a function by one of these names. The words are not reserved as
+field names (`select count from r` is a field; `rows count { … }` is still the
+consumer directive). **`rows`** is an ordinary identifier with an intrinsic
+meaning in one position — at the group scope of a body with `group by` it is the
+group's rows (SEMANTICS §24), exactly as `$it` is the row — and a plain field
+name everywhere else. [`group-by`]
 
 `true`, `false`, and `null` are **literals in every position**: a value, and
 never a receiver or relation (`true exists { … }`, `follow null` are parse
@@ -103,7 +118,7 @@ A body is a sequence of clauses. Each appears **at most once**, in exactly this
 order:
 
 ```
-select  from  where  [ frontier ]  [ depth ]  follow  order by  limit  offset
+select  from  where  [ frontier ]  [ depth ]  follow  group by  having  order by  limit  offset
 ```
 
 `frontier` is a clause of **any body that has a `follow`** (since 0.20): in a
@@ -112,12 +127,15 @@ destination; in any other body — the top level, a select-position block — it
 marks the body's own rows, the walk's **seeds** (§`follow`, SEMANTICS §20). In a
 body without a `follow` it is the parse error `` `frontier` needs a `follow` ``.
 `depth` is a clause of a **`follow` destination block only**. Both sit after
-`where`, so the order of every body is `select from where frontier follow order
-by limit offset`, a destination block's `select from where frontier depth follow
-order by limit offset`.
+`where`. `group by` and `having` (since 0.24, §`group by`) sit after `follow`:
+the rows a body yields — the walk's occurrences, when it has one — are what is
+grouped, and `order by` and the bounds then apply to the groups. So the order of
+every body is `select from where frontier follow group by having order by limit
+offset`, a destination block's `select from where frontier depth follow group
+by having order by limit offset`.
 
 - A clause out of order is a parse error naming both clauses and the order:
-  `` `select` must come before `from` — OQX clause order is select, from, where, frontier, follow, order by, limit, offset `` (inside a destination block the sentence
+  `` `select` must come before `from` — OQX clause order is select, from, where, frontier, follow, group by, having, order by, limit, offset `` (inside a destination block the sentence
   also names `depth`: `… where, frontier, depth, follow, …`).
 - A repeated clause is `` duplicate `<clause>` clause ``.
 - Every clause is optional, except that a top-level body must have `from`
@@ -194,11 +212,27 @@ scoperef   = "^" { "^" }                                  ; relative: one scope 
 - `select distinct …` marks the body distinct (see SEMANTICS §distinct).
 - `values` after the list requires **exactly one** item and turns off record
   wrapping; an alias is accepted and ignored; a lift is rejected.
-- An aliased item may be a **nested directive** `name: receiver (collect|first|single) [distinct] { body }`
+- An aliased item may be a **nested directive** `name: receiver (collect|first|single|count) [distinct] { body }`
   — or its sugar `name: receiver { body }` (collect), `name: receiver[…]` (§4);
-  `exists`/`none`/`count` are rejected there. An item whose value is exactly a
+  `exists`/`none` are rejected there (`… must use collect/first/single/count,
+  not exists`); **`count { … }` is a value since 0.24** — the number of rows the
+  block yields (SEMANTICS §15) — so `n: jobs count { where pay > 1 }` and `big:
+  jobs count { } > 2` are items. An item whose value is exactly a
   directive is the `collect` item kind (AST.md); a directive navigated or
   operated on further (`jobs[0].pay`, `jobs[0]!`) is an ordinary `field`.
+- In a body with **`group by`** (§`group by`, since 0.24) every item is read at
+  the **group scope**: a bare name must be a key, an alias of an item to its
+  left, or `rows` (`$it` and `$key` are the key record and its identity); an
+  aggregate's argument reads the group's rows instead, and a nested block's body
+  is its own scope. Any other bare name — a row field — is the parse error ``
+  `title` is not a group key or aggregate — a select item of a grouped body
+  reads the group: a key (`group by title`), an aggregate over its rows
+  (`collect(title)`), or the rows themselves (`rows collect { select title }`) ``
+  (the head of a dotted navigation is what is judged; inside a non-aggregate
+  free call the message adds `` `median(…)` is not an aggregate — the aggregates
+  are count, sum, … ``). A grouped body with **no `select`** projects its keys
+  by name and then `count: count()` (the parser synthesizes the items, AST.md
+  §2); a key named `count` therefore needs an explicit `select`. [`group-by`]
 - **Projection names are unique** within one `select`. `a: 1, a: 2`,
   `name, name`, and a dotted default colliding with an alias (`meta.slug, slug: x`)
   are parse errors `duplicate projection name '<name>'` — the record would
@@ -336,6 +370,41 @@ former `by E` is gone — identity is `$key` (SEMANTICS §16), projected as
 `{ $key: expr }` when a block needs to name it.
 [`follow`, `clause-order`, `sugar`, `ast`, `errors-parse`]
 
+### `group by` / `having` (since 0.24)
+
+```
+groupby  = "group" "by" key { "," key }
+key      = ident ":" expr                 ; an expression key, read by its alias
+         | expr                           ; a plain navigation, keyed by its last segment (as a select item)
+having   = "having" where                 ; a predicate over each GROUP (the `where` grammar of §3)
+```
+
+`group by` is recognized only as the two-word sequence (a field named `group`
+is a name elsewhere). A **key** is shaped like a select item: an unaliased key
+must be a plain navigation (`layer`, `meta.region`, `^k`) and is named by its
+last segment; any other expression needs an alias (`decade: (age - age % 10) /
+10`), because the alias is the name the post-group clauses read it by — an
+unaliased expression key is the parse error `` … needs an alias (`group by key:
+<expr>`) ``. Key names are unique (`duplicate group key 'city'`). A key is read
+on each row, like `where` (SEMANTICS §24); a key that contains an aggregate is an
+error. `group by` with nothing after it is `expected a group key`.
+
+`having` is a clause when a predicate can follow the word — anything that
+begins a value, or an aggregate call whose name is a consumer word (`having
+count() > 1`); otherwise it is a field name. Its body is the full `where`
+grammar read at the group scope (consumer tests over `rows` included: `having
+rows exists { where !active }`), and like `where` it may name the body's
+`select` aliases (SEMANTICS §14). `having` without a `group by` is the parse
+error `` `having` needs a `group by` ``.
+
+With `group by`, **`distinct`** on the body (`select distinct …`) or on its
+directive (`x collect distinct { group by k }`) is the parse error `` `distinct`
+is redundant with `group by` ``: a grouped body already yields one row per
+distinct key tuple. `order by`, `limit` and `offset` apply to the groups; `order
+by` reads the group scope (a key, an aggregate, `rows`) and is not rewritten
+against aliases, so `order by n` with `n: count()` is the unknown-name error
+above — write `order by count()`. [`group-by`, `clause-order`]
+
 ### `order by`
 
 ```
@@ -380,7 +449,7 @@ grammar. Precedence, loosest to tightest:
 | add | `+ -` | left-assoc |
 | mul | `* / %` | left-assoc |
 | unary | `!` `-` `is` `not` | prefix, right-assoc (`--5`); `!` has this same precedence in `where` (§3). `is x` ≡ `!!x`, `not x` ≡ `!x` — pure sugar, desugared in the parser (since 0.17) |
-| postfix | `.name` `.name(args)` `name(args)` `x!` `x[…]` `x <consumer> { … }` `x { … }` `x distinct { … }` | navigation, method call, free-function call, the required operator, a bracket lookup, a value-position directive (the bare brace is the implicit `collect`, since 0.20 in every value position) — left to right, tightest of all: `refs(c)[0]!.name` requires the lookup, `refs(c)[0].name!` the name |
+| postfix | `.name` `.name(args)` `name(args)` `x!` `x[…]` `x <consumer> { … }` `x { … }` `x distinct { … }` | navigation, method call, free-function call (or an **aggregate** call when the name is an aggregate's — `count()`, `sum(e)`, `collect(distinct e)`; below, since 0.24), the required operator, a bracket lookup, a value-position directive (`collect`/`first`/`single`, and since 0.24 `count`; the bare brace is the implicit `collect`, since 0.20 in every value position) — left to right, tightest of all: `refs(c)[0]!.name` requires the lookup, `refs(c)[0].name!` the name |
 | primary | literal, template literal, identifier, `^…name`, `N^name`, binding, `( expr )`, `( expr, expr, … )` | `N^name` is the absolute spelling of an outer reference (below; since 0.18); two or more comma-separated expressions in parentheses are a **tuple** (below; since 0.20), one is grouping; a template literal `` `…${expr}…` `` is a string value (below; since 0.21) |
 
 ```
@@ -397,11 +466,13 @@ add      = mul { ("+" | "-") mul }
 mul      = unary { ("*" | "/" | "%") unary }
 unary    = "!" unary | "-" unary | "is" unary | "not" unary | postfix
 postfix  = head { suffix }
-head     = primary | ident "(" args ")"                     ; a free-function call
+head     = primary | ident "(" args ")"                     ; a free-function call …
+         | aggname "(" [ "distinct" ] [ expr ] ")"           ; … or an aggregate call when the name is an aggregate's (0.24)
+aggname  = "count" | "sum" | "min" | "max" | "avg" | "collect" | "first" | "last" | "any" | "all"
 suffix   = "." ident [ "(" args ")" ]                       ; navigation, method call
          | "!"                                               ; required (0.17)
          | bracket                                           ; lookup (0.17)
-         | ("collect" | "first" | "single") [ "distinct" ] "{" body "}"   ; value-position directive (0.17)
+         | ("collect" | "first" | "single" | "count") [ "distinct" ] "{" body "}"   ; value-position directive (0.17; `count` 0.24)
          | [ "distinct" ] "{" body "}"                        ; ≡ collect [distinct] { body }   (0.20)
 bracket  = "[" ( integer | binding ) "]" [ "!" ]            ; positional
          | "[" where "]" [ "!" ]                             ; predicate
@@ -428,6 +499,34 @@ not begin a value, so `where age in 18.. order by name` parses as intended and
 
 There is no array or object literal; bound values (bindings), named roots and
 tuples are how collections enter a query.
+
+### Aggregates (since 0.24)
+
+An **aggregate call** is a free call whose name is one of `count sum min max avg
+collect first last any all` — ordinary call syntax, a reserved name (§1). It
+parses to an `aggregate` node (AST.md), never to a `call`, wherever it is
+written. Arity is fixed: `count` takes zero or one argument (`count()` counts
+the group's rows, `count(e)` the rows where `e` is present), every other name
+exactly one (`` `sum()` needs an argument ``; a second argument is `` `sum(…)`
+takes one argument ``). The **`distinct` modifier** stands directly after the
+opening parenthesis — `count(distinct e)`, `collect(distinct e)`, the SQL
+spelling — and is the contextual word only when a value follows it (`count(distinct)`
+reads the field named `distinct`); it is rejected on the predicate aggregates
+`any`/`all` (`` `any(distinct …)`: `distinct` applies to a value aggregate ``).
+Aggregates do not nest: `sum(count())` is the parse error `` an aggregate
+cannot nest ``, since the argument is read on each of the group's rows.
+
+An aggregate may stand only in the post-group clauses — a select item, `having`,
+`order by` — of a body that has a `group by`. Anywhere else it is a parse error
+naming the place: in a body without `group by`, `` `count()` is an aggregate: it
+is read after grouping and may stand only in a select item, `having` or `order
+by` of a body with `group by` — this body has none ``; in a grouped body's
+`where` (a select alias standing for one included), `from`, `frontier`, a group
+key or a bound, `` `count()` is an aggregate and cannot be read in `where` …
+aggregates stand in a select item, `having` or `order by` ``. The judgement is
+made over the alias-resolved `where` and `select`, so `select n: count() …
+where n > 1` is the `where` error and `n: count(), xs: collect(n)` the nesting
+error. Evaluation: SEMANTICS §24. [`group-by`]
 
 ### Template literals (since 0.21)
 
@@ -556,9 +655,13 @@ operand (`jobs first { }.pay > 2`), a required value (`jobs single { }!`), a
 function argument (`size(children { is checked })`) — and may themselves be
 navigated or bracketed further. This is how the canonical
 printer writes a bracket chain back (`jobs[0].pay` prints as
-`jobs first { offset 0 }.pay`). `exists`/`none`/`count` are predicates and have
-no value form. In `where`, a value-position directive is a scalar operand only
-with a continuation (§3). [`sugar`, `ast`]
+`jobs first { offset 0 }.pay`). **`recv count { … }` is a value too since 0.24**
+— the number of rows the block yields (`n: jobs count { }`, `jobs count { } > 2`,
+`rows count { where checked }` at a group scope) — while `exists`/`none` stay
+predicates with no value form. In `where` the rules of §3 are unchanged: `count
+{ … }` is the consumer test (with its optional `<relop> N`), and a value-position
+directive is a scalar operand only with a continuation. [`sugar`, `ast`,
+`group-by`]
 
 ## 5. Receivers
 
@@ -596,13 +699,20 @@ Every failure is an `OqxError` with a `stage`:
   0.21), chained comparisons, a top-level
   `limit ^n`, an absolute reference to a scope that does not enclose the
   block (`scope N does not enclose this block …`), `count` comparisons, a
-  negative or fractional index, a bare `first`/`single` in `where`.
+  negative or fractional index, a bare `first`/`single` in `where`, and (since
+  0.24) the grouping errors of §3/§4: an unaliased expression key, a duplicate
+  key, `having` without `group by`, `distinct` with `group by`, a key named
+  `count` without a `select`, a bare row field at the group scope, an aggregate
+  outside the post-group clauses or in a body without `group by`, a nested
+  aggregate, a wrong aggregate arity, `distinct` on `any`/`all`.
 - `eval` — unknown functions/methods, `single` matching several rows, a required
   value that is absent (`` `x!` is absent ``), an invalid `limit`/`offset` value
   (including a bracket index binding), `follow` inside a where-position
   directive, a scalar in row position (`` `s` is a string ("abc"), not a
   collection or an object ``, SEMANTICS §3), a list, record or range interpolated
-  into a template literal (`cannot interpolate …`, SEMANTICS §7b; since 0.21).
+  into a template literal (`cannot interpolate …`, SEMANTICS §7b; since 0.21),
+  `sum`/`avg` over a present non-number (`cannot sum …`, SEMANTICS §24; since
+  0.24).
 
 Messages carry a `(at offset N)` suffix for lex/parse errors; `N` counts
 Unicode code points over the raw source, the unit of every AST span (AST.md

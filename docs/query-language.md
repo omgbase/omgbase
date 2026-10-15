@@ -49,7 +49,8 @@ values (`values: […]`, §7); never full documents; hydrate by `id` afterward
 or any `{ block }` — clauses appear at most once each, in exactly this order:
 
 ```
-[select <projection>] from <source> [where <pred>] [follow <rel> [{…}]] [order by …] [limit N] [offset N]
+[select <projection>] from <source> [where <pred>] [frontier <pred>] [follow <rel> [{…}]]
+                      [group by <key>, …] [having <pred>] [order by …] [limit N] [offset N]
 ```
 
 Every clause is optional except a top-level `from`; the receiver-plus-consumer
@@ -57,7 +58,8 @@ form `<target> count|exists|none|first|single { <block> }` (a bare target at the
 root scope) supplies its own
 source, so the block's `from` is an optional re-projection. A clause out of order
 is a parse error that names the order (`` `select` must come before `from` — OQX
-clause order is select, from, where, follow, order by, limit, offset ``). **Only
+clause order is select, from, where, frontier, follow, group by, having, order
+by, limit, offset ``). **Only
 `select` may drop its keyword, and only when it is the first clause written**
 (`path, era from docs where …`; in a block, `nodes collect { value }` projects
 `value`). Every other clause always carries its keyword — with the 0.17 sugar
@@ -637,6 +639,59 @@ seconds**. There are no new value kinds, and arithmetic between them is
   Top-level bounds must be integer literals; inside a block `^n` reads the
   enclosing row.
 - **`cursor`:** opaque, keyset on `(path, id)`, valid for the same query only.
+
+## 7b. Grouping and aggregates (oqx 0.24)
+
+`group by <key>, …` after `where`/`follow` and before `order by` turns the rows
+a body yields into **one row per distinct key tuple** — the Dataview `GROUP BY`
+and the end of "a census needs a full-repo row dump". A key is a bare field or
+attribute (`layer`, `type`, `path` on blocks, `kind` on nodes), a dotted
+navigation named by its last segment (`doc.layer` → `layer`), or an expression
+with an alias (`decade: (era - era % 10) / 10`); absent and `null` group
+together; groups come in first-appearance order (spec/oqx SEMANTICS §24).
+
+After the grouping the body reads the **group**, not a row: a `select` item,
+`having` and `order by` may name a key, an **aggregate** over the group's rows,
+or `rows` — the group's rows as a collection, usable as a receiver
+(`rows collect { select title }`, `rows count { where not checked }`,
+`rows first { title values order by updated_at desc }`). Any other bare name
+is a parse error naming it (`` `title` is not a group key or aggregate — … reference
+it through rows ``). The aggregates — reserved free-function names, legal only in a
+grouped body's select/having/order by — are `count()` (rows), `count(e)` /
+`count(distinct e)` (present / distinct present values), `sum(e)` (`0` of
+none; a non-number is an error), `avg(e)`, `min(e)`, `max(e)` (absent of none;
+OQX ordering), `collect(e)` / `collect(distinct e)` (the present values in
+group order), `first(e)` / `last(e)` (first/last present value), `any(p)` /
+`all(p)` (truthiness over the rows). `having <pred>` filters the groups (it may
+name a `select` alias: `having n > 1`); `order by count() desc` sorts them
+(aliases are not substituted in `order by`, as ever); `limit`/`offset` bound
+them; `distinct` with `group by` is an error (redundant). Without a `select`
+the projection is the keys plus `count`. `count { … }` is also a **value** now
+(`n: nodes count { where kind == "md:task" }`), inside or outside a group.
+
+```
+from docs group by layer                                              → [{ layer: "canon", count: 13 }, …]
+select layer, n: count(), titles: collect(title) from docs group by layer order by count() desc
+select path, open: rows count { where not checked }, done: rows count { where checked }
+  from blocks where type == "task" group by path having count() > 0 order by path
+select type, n: count() from docs where layer == "working" group by type having n > 1
+docs count { group by layer }                                         → the number of layers
+```
+
+**A grouped row is not a store row** (spec/oqx SEMANTICS §24; spec/surface
+§1.4): the runner injects no `id`/`path` envelope — a hit is the group's
+projection exactly as written (`{ layer, n, titles }`, what `bare` yields for a
+row query; `bare: true` is accepted and changes nothing), the envelope-collision
+rule does not apply, rows that surface as values (`rows collect { }` with no
+projection) still render as `{ id, path }` references, `values` returns the bare
+per-group values, and paging is by position — the query's `limit`/`offset`
+define the set, the tool's `limit` takes the first page, `truncated` says
+whether more groups follow, and the cursor is always `null` (as under a custom
+`order by`). The planner declines a grouped query whole (it runs in memory; SQL
+`GROUP BY` pushdown is a later round), and the unknown-names check judges a
+key's expression on the rows, an aggregate's argument on the rows, and the
+names inside a `rows …{ }` block on the grouped rows' kind (`rows count { where
+chekced }` is still the "not a field of blocks" hint).
 
 ## 8. Execution model
 - OQX parses to the `@omgbase/oqx` AST and runs on the in-memory engine over a

@@ -1,0 +1,1022 @@
+{
+  "suite": "group-by",
+  "cases": [
+    {
+      "name": "ast: keys and a count",
+      "tags": ["ast", "group"],
+      "notes": "`group by` is a `groupBy` node of keys (each `key` shaped like a select item); an aggregate call is an `aggregate` node, not a `call`.",
+      "query": "select city, n: count() from people group by city",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": { "kind": "ident", "name": "people" },
+          "from": [],
+          "where": null,
+          "select": [
+            { "kind": "field", "name": "city", "expr": { "kind": "ident", "name": "city" }, "lift": 0 },
+            { "kind": "field", "name": "n", "expr": { "kind": "aggregate", "name": "count", "arg": null, "distinct": false }, "lift": 0 }
+          ],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": null,
+          "frontier": null,
+          "groupBy": { "kind": "groupBy", "keys": [{ "kind": "key", "name": "city", "expr": { "kind": "ident", "name": "city" } }] },
+          "having": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "ast: an expression key with its alias, having, order by an aggregate",
+      "tags": ["ast", "group", "having"],
+      "query": "select d, n: count() from people group by d: age / 10 having count() > 1 order by count() desc",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": { "kind": "ident", "name": "people" },
+          "from": [],
+          "where": null,
+          "select": [
+            { "kind": "field", "name": "d", "expr": { "kind": "ident", "name": "d" }, "lift": 0 },
+            { "kind": "field", "name": "n", "expr": { "kind": "aggregate", "name": "count", "arg": null, "distinct": false }, "lift": 0 }
+          ],
+          "orderBy": [{ "kind": "order", "expr": { "kind": "aggregate", "name": "count", "arg": null, "distinct": false }, "desc": true }],
+          "consumer": "collect",
+          "follow": null,
+          "frontier": null,
+          "groupBy": {
+            "kind": "groupBy",
+            "keys": [{ "kind": "key", "name": "d", "expr": { "kind": "binary", "op": "/", "left": { "kind": "ident", "name": "age" }, "right": { "kind": "lit", "value": 10 } } }]
+          },
+          "having": { "kind": "scalar", "expr": { "kind": "binary", "op": ">", "left": { "kind": "aggregate", "name": "count", "arg": null, "distinct": false }, "right": { "kind": "lit", "value": 1 } } },
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "ast: the distinct modifier of an aggregate",
+      "tags": ["ast", "group", "distinct"],
+      "query": "select names: collect(distinct name), n: count(distinct pay) from people group by city",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": { "kind": "ident", "name": "people" },
+          "from": [],
+          "where": null,
+          "select": [
+            { "kind": "field", "name": "names", "expr": { "kind": "aggregate", "name": "collect", "arg": { "kind": "ident", "name": "name" }, "distinct": true }, "lift": 0 },
+            { "kind": "field", "name": "n", "expr": { "kind": "aggregate", "name": "count", "arg": { "kind": "ident", "name": "pay" }, "distinct": true }, "lift": 0 }
+          ],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": null,
+          "frontier": null,
+          "groupBy": { "kind": "groupBy", "keys": [{ "kind": "key", "name": "city", "expr": { "kind": "ident", "name": "city" } }] },
+          "having": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "ast: the default projection is the keys plus count",
+      "tags": ["ast", "group", "default"],
+      "notes": "A grouped body without a `select` projects every key by its name and `count: count()`; the parser synthesizes the items (with empty spans), so the tree shows them.",
+      "query": "from people group by city",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": { "kind": "ident", "name": "people" },
+          "from": [],
+          "where": null,
+          "select": [
+            { "kind": "field", "name": "city", "expr": { "kind": "ident", "name": "city" }, "lift": 0 },
+            { "kind": "field", "name": "count", "expr": { "kind": "aggregate", "name": "count", "arg": null, "distinct": false }, "lift": 0 }
+          ],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": null,
+          "frontier": null,
+          "groupBy": { "kind": "groupBy", "keys": [{ "kind": "key", "name": "city", "expr": { "kind": "ident", "name": "city" } }] },
+          "having": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "ast: a grouped nested block, and rows count as a value",
+      "tags": ["ast", "group", "nested", "count"],
+      "notes": "`count { … }` in value position is a `collect` select item holding a `count` op (0.24).",
+      "query": "select name, g: jobs collect { group by employer }, n: rows count { where active } from staff",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": { "kind": "ident", "name": "staff" },
+          "from": [],
+          "where": null,
+          "select": [
+            { "kind": "field", "name": "name", "expr": { "kind": "ident", "name": "name" }, "lift": 0 },
+            {
+              "kind": "collect",
+              "name": "g",
+              "op": {
+                "kind": "op",
+                "receiver": { "kind": "ident", "name": "jobs" },
+                "op": "collect",
+                "sub": {
+                  "kind": "subquery",
+                  "from": [],
+                  "where": null,
+                  "select": [
+                    { "kind": "field", "name": "employer", "expr": { "kind": "ident", "name": "employer" }, "lift": 0 },
+                    { "kind": "field", "name": "count", "expr": { "kind": "aggregate", "name": "count", "arg": null, "distinct": false }, "lift": 0 }
+                  ],
+                  "orderBy": null,
+                  "follow": null,
+                  "frontier": null,
+                  "depth": null,
+                  "groupBy": { "kind": "groupBy", "keys": [{ "kind": "key", "name": "employer", "expr": { "kind": "ident", "name": "employer" } }] },
+                  "having": null,
+                  "values": false,
+                  "limit": null,
+                  "offset": null
+                },
+                "countCmp": null,
+                "distinct": false
+              }
+            },
+            {
+              "kind": "collect",
+              "name": "n",
+              "op": {
+                "kind": "op",
+                "receiver": { "kind": "ident", "name": "rows" },
+                "op": "count",
+                "sub": {
+                  "kind": "subquery",
+                  "from": [],
+                  "where": { "kind": "scalar", "expr": { "kind": "ident", "name": "active" } },
+                  "select": [],
+                  "orderBy": null,
+                  "follow": null,
+                  "frontier": null,
+                  "depth": null,
+                  "groupBy": null,
+                  "having": null,
+                  "values": false,
+                  "limit": null,
+                  "offset": null
+                },
+                "countCmp": null,
+                "distinct": false
+              }
+            }
+          ],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": null,
+          "frontier": null,
+          "groupBy": null,
+          "having": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "ast spans: group by and an aggregate",
+      "tags": ["ast", "spans", "group"],
+      "spans": true,
+      "notes": "A `groupBy` spans `group` through the last key; a `key` spans its alias (or expression) through the expression; an `aggregate` spans its name through the closing parenthesis.",
+      "query": "select k, n: count() from p group by k",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "span": [0, 38],
+          "source": { "kind": "ident", "span": [26, 27], "name": "p" },
+          "from": [],
+          "where": null,
+          "select": [
+            { "kind": "field", "span": [7, 8], "name": "k", "expr": { "kind": "ident", "span": [7, 8], "name": "k" }, "lift": 0 },
+            { "kind": "field", "span": [10, 20], "name": "n", "expr": { "kind": "aggregate", "span": [13, 20], "name": "count", "arg": null, "distinct": false }, "lift": 0 }
+          ],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": null,
+          "frontier": null,
+          "groupBy": { "kind": "groupBy", "span": [28, 38], "keys": [{ "kind": "key", "span": [37, 38], "name": "k", "expr": { "kind": "ident", "span": [37, 38], "name": "k" } }] },
+          "having": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "default projection: the keys plus count, one row per group in first-appearance order",
+      "tags": ["group", "default"],
+      "notes": "Absent and null keys group together; the key record holds the first row's value (Dan has no city, so the group's `city` is absent and dropped).",
+      "roots": {
+        "people": [
+          { "name": "Bob", "city": "NYC", "age": 41, "pay": 10, "active": true },
+          { "name": "Alice", "city": "SF", "age": 52, "pay": 20, "active": true },
+          { "name": "Carol", "city": "NYC", "age": 29, "active": false },
+          { "name": "Dan", "age": 33, "pay": 5 },
+          { "name": "Eve", "city": null, "age": 60, "pay": 7, "active": true }
+        ]
+      },
+      "query": "from people group by city",
+      "expect": { "result": [{ "city": "NYC", "count": 2 }, { "city": "SF", "count": 1 }, { "count": 2 }] }
+    },
+    {
+      "name": "select the key and count()",
+      "tags": ["group", "count"],
+      "roots": {
+        "people": [
+          { "name": "Bob", "city": "NYC", "age": 41, "pay": 10, "active": true },
+          { "name": "Alice", "city": "SF", "age": 52, "pay": 20, "active": true },
+          { "name": "Carol", "city": "NYC", "age": 29, "active": false },
+          { "name": "Dan", "age": 33, "pay": 5 },
+          { "name": "Eve", "city": null, "age": 60, "pay": 7, "active": true }
+        ]
+      },
+      "query": "select city, n: count() from people group by city",
+      "expect": { "result": [{ "city": "NYC", "n": 2 }, { "city": "SF", "n": 1 }, { "n": 2 }] }
+    },
+    {
+      "name": "values over groups: one value per group",
+      "tags": ["group", "values"],
+      "roots": {
+        "people": [
+          { "name": "Bob", "city": "NYC" },
+          { "name": "Alice", "city": "SF" },
+          { "name": "Carol", "city": "NYC" },
+          { "name": "Dan" }
+        ]
+      },
+      "query": "select city values from people group by city",
+      "expect": { "result": ["NYC", "SF", null] }
+    },
+    {
+      "name": "count() values",
+      "tags": ["group", "values", "count"],
+      "roots": {
+        "people": [
+          { "name": "Bob", "city": "NYC" },
+          { "name": "Alice", "city": "SF" },
+          { "name": "Carol", "city": "NYC" },
+          { "name": "Dan" }
+        ]
+      },
+      "query": "select count() values from people group by city",
+      "expect": { "result": [2, 1, 1] }
+    },
+    {
+      "name": "the key record holds the first row's value: null first stays null",
+      "tags": ["group", "absent"],
+      "roots": { "mixed": [{ "k": null, "v": 1 }, { "v": 2 }, { "k": null, "v": 3 }] },
+      "query": "select k, n: count() from mixed group by k",
+      "expect": { "result": [{ "k": null, "n": 3 }] }
+    },
+    {
+      "name": "the key record holds the first row's value: absent first is dropped",
+      "tags": ["group", "absent"],
+      "roots": { "mixed": [{ "v": 2 }, { "k": null, "v": 1 }] },
+      "query": "select k, n: count() from mixed group by k",
+      "expect": { "result": [{ "n": 2 }] }
+    },
+    {
+      "name": "where runs before grouping, per row",
+      "tags": ["group", "where"],
+      "roots": {
+        "people": [
+          { "name": "Bob", "city": "NYC", "active": true },
+          { "name": "Alice", "city": "SF", "active": true },
+          { "name": "Carol", "city": "NYC", "active": false },
+          { "name": "Dan" },
+          { "name": "Eve", "city": null, "active": true }
+        ]
+      },
+      "query": "select city, n: count() from people where active group by city",
+      "expect": { "result": [{ "city": "NYC", "n": 1 }, { "city": "SF", "n": 1 }, { "city": null, "n": 1 }] }
+    },
+    {
+      "name": "a key tuple: one group per distinct combination",
+      "tags": ["group", "tuple"],
+      "roots": {
+        "people": [
+          { "name": "Bob", "city": "NYC", "active": true },
+          { "name": "Alice", "city": "SF", "active": true },
+          { "name": "Carol", "city": "NYC", "active": false },
+          { "name": "Dan" },
+          { "name": "Eve", "city": null, "active": true }
+        ]
+      },
+      "query": "select city, active, n: count() from people group by city, active",
+      "expect": {
+        "result": [
+          { "city": "NYC", "active": true, "n": 1 },
+          { "city": "SF", "active": true, "n": 1 },
+          { "city": "NYC", "active": false, "n": 1 },
+          { "n": 1 },
+          { "city": null, "active": true, "n": 1 }
+        ]
+      }
+    },
+    {
+      "name": "an expression key needs an alias",
+      "tags": ["group", "error"],
+      "roots": { "people": [{ "age": 41 }] },
+      "query": "from people group by age / 10",
+      "expect": { "error": { "stage": "parse", "includes": ["needs an alias", "group by key:"] } }
+    },
+    {
+      "name": "an expression key with its alias, read by the alias",
+      "tags": ["group", "alias"],
+      "roots": {
+        "people": [
+          { "name": "Bob", "age": 41 },
+          { "name": "Alice", "age": 52 },
+          { "name": "Carol", "age": 29 },
+          { "name": "Dan", "age": 33 },
+          { "name": "Eve", "age": 60 },
+          { "name": "Fay", "age": 45 }
+        ]
+      },
+      "query": "select decade, n: count() from people group by decade: (age - age % 10) / 10 order by decade",
+      "expect": { "result": [{ "decade": 2, "n": 1 }, { "decade": 3, "n": 1 }, { "decade": 4, "n": 2 }, { "decade": 5, "n": 1 }, { "decade": 6, "n": 1 }] }
+    },
+    {
+      "name": "a dotted key is named by its last segment",
+      "tags": ["group", "navigation"],
+      "roots": { "orders": [{ "meta": { "region": "EU" }, "amt": 1 }, { "meta": { "region": "US" }, "amt": 2 }, { "meta": { "region": "EU" }, "amt": 3 }] },
+      "query": "select region, total: sum(amt) from orders group by meta.region",
+      "expect": { "result": [{ "region": "EU", "total": 4 }, { "region": "US", "total": 2 }] }
+    },
+    {
+      "name": "keys compare as identities: structurally equal objects are one group",
+      "tags": ["group", "identity"],
+      "roots": { "items": [{ "o": { "a": 1 }, "v": 1 }, { "o": { "a": 1 }, "v": 2 }, { "o": { "a": 2 }, "v": 3 }] },
+      "query": "select o, n: count() from items group by o",
+      "expect": { "result": [{ "o": { "a": 1 }, "n": 2 }, { "o": { "a": 2 }, "n": 1 }] }
+    },
+    {
+      "name": "sum skips absent",
+      "tags": ["group", "sum", "absent"],
+      "roots": {
+        "people": [
+          { "name": "Bob", "city": "NYC", "pay": 10 },
+          { "name": "Alice", "city": "SF", "pay": 20 },
+          { "name": "Carol", "city": "NYC" },
+          { "name": "Dan", "pay": 5 },
+          { "name": "Eve", "city": null, "pay": 7 }
+        ]
+      },
+      "query": "select city, total: sum(pay) from people group by city",
+      "expect": { "result": [{ "city": "NYC", "total": 10 }, { "city": "SF", "total": 20 }, { "total": 12 }] }
+    },
+    {
+      "name": "sum of no present values is 0",
+      "tags": ["group", "sum", "absent"],
+      "roots": { "people": [{ "name": "Carol", "city": "NYC" }, { "name": "Bob", "city": "NYC", "pay": null }] },
+      "query": "select city, total: sum(pay) from people group by city",
+      "expect": { "result": [{ "city": "NYC", "total": 0 }] }
+    },
+    {
+      "name": "sum over a non-number is an eval error",
+      "tags": ["group", "sum", "error"],
+      "roots": { "people": [{ "name": "Bob", "city": "NYC" }] },
+      "query": "select city, s: sum(name) from people group by city",
+      "expect": { "error": { "stage": "eval", "includes": ["cannot sum", "`name`", "a string"] } }
+    },
+    {
+      "name": "avg of the present values",
+      "tags": ["group", "avg"],
+      "roots": {
+        "people": [
+          { "name": "Bob", "city": "NYC", "pay": 10 },
+          { "name": "Alice", "city": "SF", "pay": 20 },
+          { "name": "Carol", "city": "NYC" },
+          { "name": "Dan", "pay": 5 },
+          { "name": "Eve", "city": null, "pay": 7 }
+        ]
+      },
+      "query": "select city, a: avg(pay) from people group by city",
+      "expect": { "result": [{ "city": "NYC", "a": 10 }, { "city": "SF", "a": 20 }, { "a": 6 }] }
+    },
+    {
+      "name": "avg of nothing is absent",
+      "tags": ["group", "avg", "absent"],
+      "roots": { "people": [{ "name": "Carol", "city": "NYC" }] },
+      "query": "select city, a: avg(pay) from people group by city",
+      "expect": { "result": [{ "city": "NYC" }] }
+    },
+    {
+      "name": "min and max order numbers numerically",
+      "tags": ["group", "min", "max"],
+      "roots": {
+        "people": [
+          { "name": "Bob", "city": "NYC", "age": 41 },
+          { "name": "Alice", "city": "SF", "age": 52 },
+          { "name": "Carol", "city": "NYC", "age": 29 },
+          { "name": "Dan", "age": 33 },
+          { "name": "Eve", "city": null, "age": 60 }
+        ]
+      },
+      "query": "select city, lo: min(age), hi: max(age) from people group by city",
+      "expect": { "result": [{ "city": "NYC", "lo": 29, "hi": 41 }, { "city": "SF", "lo": 52, "hi": 52 }, { "lo": 33, "hi": 60 }] }
+    },
+    {
+      "name": "min and max order strings by code point",
+      "tags": ["group", "min", "max", "strings"],
+      "roots": { "people": [{ "name": "bob", "city": "NYC" }, { "name": "Carol", "city": "NYC" }, { "name": "Ångström", "city": "NYC" }] },
+      "query": "select city, lo: min(name), hi: max(name) from people group by city",
+      "expect": { "result": [{ "city": "NYC", "lo": "Carol", "hi": "Ångström" }] }
+    },
+    {
+      "name": "min and max of nothing are absent; a value that does not order leaves the extreme unchanged",
+      "tags": ["group", "min", "max", "absent"],
+      "roots": { "xs": [{ "g": 1 }, { "g": 2, "v": 3 }, { "g": 2, "v": "9" }, { "g": 2, "v": 1 }] },
+      "query": "select g, lo: min(v), hi: max(v) from xs group by g",
+      "expect": { "result": [{ "g": 1 }, { "g": 2, "lo": 1, "hi": 3 }] }
+    },
+    {
+      "name": "count(e) counts the rows where e is present",
+      "tags": ["group", "count", "absent"],
+      "roots": {
+        "people": [
+          { "name": "Bob", "city": "NYC", "pay": 10 },
+          { "name": "Alice", "city": "SF", "pay": 20 },
+          { "name": "Carol", "city": "NYC" },
+          { "name": "Dan", "pay": 5 },
+          { "name": "Eve", "city": null, "pay": 7 }
+        ]
+      },
+      "query": "select city, n: count(pay) from people group by city",
+      "expect": { "result": [{ "city": "NYC", "n": 1 }, { "city": "SF", "n": 1 }, { "n": 2 }] }
+    },
+    {
+      "name": "count(distinct e) counts the distinct present values",
+      "tags": ["group", "count", "distinct"],
+      "roots": {
+        "people": [
+          { "name": "Bob", "city": "NYC", "active": true },
+          { "name": "Alice", "city": "SF", "active": true },
+          { "name": "Carol", "city": "NYC", "active": false },
+          { "name": "Dan" },
+          { "name": "Eve", "city": null, "active": true }
+        ]
+      },
+      "query": "select city, n: count(distinct active) from people group by city",
+      "expect": { "result": [{ "city": "NYC", "n": 2 }, { "city": "SF", "n": 1 }, { "n": 1 }] }
+    },
+    {
+      "name": "count(distinct) with nothing after distinct reads the field named distinct",
+      "tags": ["group", "count", "distinct", "edge"],
+      "roots": { "d": [{ "distinct": 1 }, { "distinct": 1 }, { "distinct": null }] },
+      "query": "select n: count(distinct) from d group by g: true",
+      "expect": { "result": [{ "n": 2 }] }
+    },
+    {
+      "name": "collect lists the present values in group order",
+      "tags": ["group", "collect", "absent"],
+      "roots": {
+        "people": [
+          { "name": "Bob", "city": "NYC", "pay": 10 },
+          { "name": "Alice", "city": "SF", "pay": 20 },
+          { "name": "Carol", "city": "NYC" },
+          { "name": "Dan", "pay": 5 },
+          { "name": "Eve", "city": null, "pay": 7 }
+        ]
+      },
+      "query": "select city, names: collect(name), pays: collect(pay) from people group by city",
+      "expect": {
+        "result": [
+          { "city": "NYC", "names": ["Bob", "Carol"], "pays": [10] },
+          { "city": "SF", "names": ["Alice"], "pays": [20] },
+          { "names": ["Dan", "Eve"], "pays": [5, 7] }
+        ]
+      }
+    },
+    {
+      "name": "collect(distinct e) keeps the first of each distinct value",
+      "tags": ["group", "collect", "distinct"],
+      "roots": {
+        "people": [
+          { "name": "Bob", "city": "NYC", "active": true },
+          { "name": "Alice", "city": "SF", "active": true },
+          { "name": "Carol", "city": "NYC", "active": false },
+          { "name": "Dan" },
+          { "name": "Eve", "city": null, "active": true }
+        ]
+      },
+      "query": "select city, acts: collect(distinct active) from people group by city",
+      "expect": { "result": [{ "city": "NYC", "acts": [true, false] }, { "city": "SF", "acts": [true] }, { "acts": [true] }] }
+    },
+    {
+      "name": "collect of nothing is the empty list",
+      "tags": ["group", "collect", "absent"],
+      "roots": { "people": [{ "name": "Carol", "city": "NYC" }] },
+      "query": "select city, pays: collect(pay) from people group by city",
+      "expect": { "result": [{ "city": "NYC", "pays": [] }] }
+    },
+    {
+      "name": "first and last are the first and last present values",
+      "tags": ["group", "first", "last", "absent"],
+      "roots": { "seq": [{ "g": 1 }, { "g": 1, "v": "a" }, { "g": 1, "v": "b" }, { "g": 1 }, { "g": 2 }] },
+      "query": "select g, f: first(v), l: last(v) from seq group by g",
+      "expect": { "result": [{ "g": 1, "f": "a", "l": "b" }, { "g": 2 }] }
+    },
+    {
+      "name": "any and all test truthiness over the group's rows (absent is false)",
+      "tags": ["group", "any", "all"],
+      "roots": {
+        "people": [
+          { "name": "Bob", "city": "NYC", "active": true },
+          { "name": "Alice", "city": "SF", "active": true },
+          { "name": "Carol", "city": "NYC", "active": false },
+          { "name": "Dan" },
+          { "name": "Eve", "city": null, "active": true }
+        ]
+      },
+      "query": "select city, some: any(active), every: all(active) from people group by city",
+      "expect": { "result": [{ "city": "NYC", "some": true, "every": false }, { "city": "SF", "some": true, "every": true }, { "some": true, "every": false }] }
+    },
+    {
+      "name": "any and all take a predicate expression",
+      "tags": ["group", "any", "all"],
+      "roots": { "people": [{ "city": "NYC", "age": 41 }, { "city": "NYC", "age": 29 }, { "city": "SF", "age": 52 }] },
+      "query": "select city, adults: all(age >= 18), senior: any(age > 50) from people group by city",
+      "expect": { "result": [{ "city": "NYC", "adults": true, "senior": false }, { "city": "SF", "adults": true, "senior": true }] }
+    },
+    {
+      "name": "rows is the group's rows as a value",
+      "tags": ["group", "rows"],
+      "roots": { "people": [{ "name": "Bob", "city": "NYC" }, { "name": "Alice", "city": "SF" }, { "name": "Carol", "city": "NYC" }] },
+      "query": "select city, rows from people where city == \"NYC\" group by city",
+      "expect": { "result": [{ "city": "NYC", "rows": [{ "name": "Bob", "city": "NYC" }, { "name": "Carol", "city": "NYC" }] }] }
+    },
+    {
+      "name": "rows as a receiver: collect",
+      "tags": ["group", "rows", "collect"],
+      "roots": { "people": [{ "name": "Bob", "city": "NYC" }, { "name": "Alice", "city": "SF" }, { "name": "Carol", "city": "NYC" }, { "name": "Dan" }] },
+      "query": "select city, names: rows collect { select name } from people group by city",
+      "expect": { "result": [{ "city": "NYC", "names": [{ "name": "Bob" }, { "name": "Carol" }] }, { "city": "SF", "names": [{ "name": "Alice" }] }, { "names": [{ "name": "Dan" }] }] }
+    },
+    {
+      "name": "rows as a receiver: collect with values and order by (the escape hatch that keeps absent)",
+      "tags": ["group", "rows", "collect", "values"],
+      "roots": { "people": [{ "name": "Carol", "city": "NYC", "pay": 1 }, { "name": "Bob", "city": "NYC" }, { "name": "Alice", "city": "SF", "pay": 20 }] },
+      "query": "select city, names: rows collect { name values order by name }, pays: rows collect { pay values } from people group by city",
+      "expect": { "result": [{ "city": "NYC", "names": ["Bob", "Carol"], "pays": [1, null] }, { "city": "SF", "names": ["Alice"], "pays": [20] }] }
+    },
+    {
+      "name": "rows as a receiver: count { … } as a value",
+      "tags": ["group", "rows", "count"],
+      "roots": {
+        "people": [
+          { "name": "Bob", "city": "NYC", "active": true },
+          { "name": "Alice", "city": "SF", "active": true },
+          { "name": "Carol", "city": "NYC", "active": false },
+          { "name": "Dan" }
+        ]
+      },
+      "query": "select city, n: rows count { where active } from people group by city",
+      "expect": { "result": [{ "city": "NYC", "n": 1 }, { "city": "SF", "n": 1 }, { "n": 0 }] }
+    },
+    {
+      "name": "rows as a receiver: first",
+      "tags": ["group", "rows", "first"],
+      "roots": { "people": [{ "name": "Bob", "city": "NYC", "age": 41 }, { "name": "Alice", "city": "SF", "age": 52 }, { "name": "Carol", "city": "NYC", "age": 29 }] },
+      "query": "select city, youngest: rows first { name values order by age } from people group by city",
+      "expect": { "result": [{ "city": "NYC", "youngest": "Carol" }, { "city": "SF", "youngest": "Alice" }] }
+    },
+    {
+      "name": "rows as a receiver: single",
+      "tags": ["group", "rows", "single"],
+      "roots": { "people": [{ "name": "Bob", "city": "NYC" }, { "name": "Alice", "city": "SF" }, { "name": "Carol", "city": "NYC" }] },
+      "query": "select city, only: rows single { name values } from people where city == \"SF\" group by city",
+      "expect": { "result": [{ "city": "SF", "only": "Alice" }] }
+    },
+    {
+      "name": "rows as a receiver: single over several rows is the single error",
+      "tags": ["group", "rows", "single", "error"],
+      "roots": { "people": [{ "name": "Bob", "city": "NYC" }, { "name": "Carol", "city": "NYC" }] },
+      "query": "select city, only: rows single { name values } from people group by city",
+      "expect": { "error": { "stage": "eval", "includes": ["single", "matched 2 rows"] } }
+    },
+    {
+      "name": "rows as a receiver in having: exists",
+      "tags": ["group", "rows", "having", "exists"],
+      "roots": {
+        "people": [
+          { "name": "Bob", "city": "NYC", "active": true },
+          { "name": "Alice", "city": "SF", "active": true },
+          { "name": "Carol", "city": "NYC", "active": false },
+          { "name": "Dan" }
+        ]
+      },
+      "query": "select city from people group by city having rows exists { where !active }",
+      "expect": { "result": [{ "city": "NYC" }, {}] }
+    },
+    {
+      "name": "inside a rows block ^ reads the group's keys",
+      "tags": ["group", "rows", "outer"],
+      "roots": { "people": [{ "name": "Bob", "city": "NYC" }, { "name": "Alice", "city": "SF" }, { "name": "Carol", "city": "NYC" }, { "name": "Dan" }, { "name": "Eve", "city": null }] },
+      "query": "select city, n: rows count { where city == ^city } from people group by city",
+      "expect": { "result": [{ "city": "NYC", "n": 2 }, { "city": "SF", "n": 1 }, { "n": 2 }] }
+    },
+    {
+      "name": "rows inside an aggregate's argument is a row property",
+      "tags": ["group", "rows", "edge"],
+      "roots": { "teams": [{ "t": "a", "rows": 3 }, { "t": "a", "rows": 4 }] },
+      "query": "select t, s: sum(rows) from teams group by t",
+      "expect": { "result": [{ "t": "a", "s": 7 }] }
+    },
+    {
+      "name": "rows outside a grouped body is an ordinary property",
+      "tags": ["rows", "edge"],
+      "roots": { "teams": [{ "t": "a", "rows": 3 }, { "t": "b", "rows": 4 }] },
+      "query": "select rows from teams",
+      "expect": { "result": [{ "rows": 3 }, { "rows": 4 }] }
+    },
+    {
+      "name": "group and having are field names outside their position",
+      "tags": ["group", "having", "edge"],
+      "roots": { "things": [{ "group": "x", "having": 1 }] },
+      "query": "select group, having from things where group == \"x\"",
+      "expect": { "result": [{ "group": "x", "having": 1 }] }
+    },
+    {
+      "name": "$it at the group scope is the key record and $key its structural identity",
+      "tags": ["group", "intrinsics"],
+      "roots": { "people": [{ "name": "Bob", "city": "NYC" }, { "name": "Carol", "city": "NYC" }] },
+      "query": "select city, it: $it, k: $key from people group by city",
+      "expect": { "result": [{ "city": "NYC", "it": { "city": "NYC" }, "k": { "city": "NYC" } }] }
+    },
+    {
+      "name": "a template literal at the group scope",
+      "tags": ["group", "template"],
+      "roots": { "people": [{ "name": "Bob", "city": "NYC" }, { "name": "Alice", "city": "SF" }, { "name": "Carol", "city": "NYC" }, { "name": "Dan" }] },
+      "query": "select label: `${city}: ${count()}` from people where has(city) group by city",
+      "expect": { "result": [{ "label": "NYC: 2" }, { "label": "SF: 1" }] }
+    },
+    {
+      "name": "having filters the groups",
+      "tags": ["group", "having"],
+      "roots": { "people": [{ "name": "Bob", "city": "NYC" }, { "name": "Alice", "city": "SF" }, { "name": "Carol", "city": "NYC" }, { "name": "Dan" }, { "name": "Eve" }] },
+      "query": "select city, n: count() from people group by city having count() > 1",
+      "expect": { "result": [{ "city": "NYC", "n": 2 }, { "n": 2 }] }
+    },
+    {
+      "name": "having may name a select alias",
+      "tags": ["group", "having", "alias"],
+      "roots": { "people": [{ "name": "Bob", "city": "NYC" }, { "name": "Alice", "city": "SF" }, { "name": "Carol", "city": "NYC" }] },
+      "query": "select city, n: count() from people group by city having n > 1",
+      "expect": { "result": [{ "city": "NYC", "n": 2 }] }
+    },
+    {
+      "name": "having may read a key",
+      "tags": ["group", "having"],
+      "roots": { "people": [{ "name": "Bob", "city": "NYC" }, { "name": "Alice", "city": "SF" }, { "name": "Dan" }] },
+      "query": "select city, n: count() from people group by city having has(city)",
+      "expect": { "result": [{ "city": "NYC", "n": 1 }, { "city": "SF", "n": 1 }] }
+    },
+    {
+      "name": "having without group by",
+      "tags": ["having", "error"],
+      "roots": { "people": [{ "name": "Bob" }] },
+      "query": "from people having count() > 1",
+      "expect": { "error": { "stage": "parse", "includes": ["`having` needs a `group by`"] } }
+    },
+    {
+      "name": "order by an aggregate, then a key; absent keys sort last",
+      "tags": ["group", "order"],
+      "roots": { "people": [{ "name": "Bob", "city": "NYC" }, { "name": "Alice", "city": "SF" }, { "name": "Carol", "city": "NYC" }, { "name": "Dan" }, { "name": "Eve" }] },
+      "query": "select city, n: count() from people group by city order by count() desc, city",
+      "expect": { "result": [{ "city": "NYC", "n": 2 }, { "n": 2 }, { "city": "SF", "n": 1 }] }
+    },
+    {
+      "name": "order by a key",
+      "tags": ["group", "order"],
+      "roots": { "people": [{ "name": "Bob", "city": "SF" }, { "name": "Alice", "city": "NYC" }, { "name": "Dan" }] },
+      "query": "select city values from people group by city order by city",
+      "expect": { "result": ["NYC", "SF", null] }
+    },
+    {
+      "name": "order by is not rewritten against select aliases: an alias there is an unknown name",
+      "tags": ["group", "order", "error"],
+      "roots": { "people": [{ "name": "Bob", "city": "NYC" }] },
+      "query": "select city, n: count() from people group by city order by n",
+      "expect": { "error": { "stage": "parse", "includes": ["`n` is not a group key or aggregate", "`order by`"] } }
+    },
+    {
+      "name": "limit and offset bound the groups",
+      "tags": ["group", "limit"],
+      "roots": { "people": [{ "name": "Bob", "city": "NYC" }, { "name": "Alice", "city": "SF" }, { "name": "Carol", "city": "NYC" }, { "name": "Dan", "city": "LA" }] },
+      "query": "select city values from people group by city limit 1 offset 1",
+      "expect": { "result": ["SF"] }
+    },
+    {
+      "name": "a select item that reads a row field is an error naming it",
+      "tags": ["group", "error"],
+      "roots": { "people": [{ "name": "Bob", "city": "NYC" }] },
+      "query": "select name from people group by city",
+      "expect": { "error": { "stage": "parse", "includes": ["`name` is not a group key or aggregate", "rows collect { select name }"] } }
+    },
+    {
+      "name": "a dotted item headed by a row field is the same error",
+      "tags": ["group", "error"],
+      "roots": { "people": [{ "name": "Bob", "meta": { "city": "NYC" } }] },
+      "query": "select meta.city from people group by name",
+      "expect": { "error": { "stage": "parse", "includes": ["`meta` is not a group key or aggregate"] } }
+    },
+    {
+      "name": "a key may be navigated and operated on at the group scope",
+      "tags": ["group", "keys"],
+      "roots": { "people": [{ "name": "Bob", "city": "nyc" }, { "name": "Carol", "city": "nyc" }, { "name": "Alice", "city": "sf" }] },
+      "query": "select up: city.upper(), big: count() > 1 from people group by city",
+      "expect": { "result": [{ "up": "NYC", "big": true }, { "up": "SF", "big": false }] }
+    },
+    {
+      "name": "select distinct with group by is redundant",
+      "tags": ["group", "distinct", "error"],
+      "roots": { "people": [{ "name": "Bob", "city": "NYC" }] },
+      "query": "select distinct city from people group by city",
+      "expect": { "error": { "stage": "parse", "includes": ["`distinct` is redundant with `group by`"] } }
+    },
+    {
+      "name": "a directive's distinct with group by is redundant too",
+      "tags": ["group", "distinct", "error"],
+      "roots": { "people": [{ "name": "Bob", "city": "NYC" }] },
+      "query": "people collect distinct { group by city }",
+      "expect": { "error": { "stage": "parse", "includes": ["`distinct` is redundant with `group by`"] } }
+    },
+    {
+      "name": "group by after order by is the clause-order error",
+      "tags": ["group", "clause-order", "error"],
+      "roots": { "people": [{ "name": "Bob", "city": "NYC" }] },
+      "query": "from people order by city group by city",
+      "expect": { "error": { "stage": "parse", "includes": ["`group by` must come before `order by`", "select, from, where, frontier, follow, group by, having, order by, limit, offset"] } }
+    },
+    {
+      "name": "follow after group by is the clause-order error",
+      "tags": ["group", "clause-order", "error"],
+      "roots": { "tree": [{ "id": "r", "kids": [] }] },
+      "query": "from tree group by id follow kids",
+      "expect": { "error": { "stage": "parse", "includes": ["`follow` must come before `group by`"] } }
+    },
+    {
+      "name": "group by with nothing after it",
+      "tags": ["group", "error"],
+      "roots": { "people": [{ "name": "Bob" }] },
+      "query": "from people group by",
+      "expect": { "error": { "stage": "parse", "includes": ["expected a group key"] } }
+    },
+    {
+      "name": "duplicate group key",
+      "tags": ["group", "error"],
+      "roots": { "people": [{ "name": "Bob", "city": "NYC" }] },
+      "query": "from people group by city, city",
+      "expect": { "error": { "stage": "parse", "includes": ["duplicate group key 'city'"] } }
+    },
+    {
+      "name": "a key named count needs an explicit select",
+      "tags": ["group", "default", "error"],
+      "roots": { "people": [{ "name": "Bob", "city": "NYC" }] },
+      "query": "from people group by count: city",
+      "expect": { "error": { "stage": "parse", "includes": ["a group key named `count` needs an explicit `select`"] } }
+    },
+    {
+      "name": "a key named count with an explicit select is fine",
+      "tags": ["group", "default"],
+      "roots": { "people": [{ "name": "Bob", "city": "NYC" }, { "name": "Carol", "city": "NYC" }] },
+      "query": "select count, n: count() from people group by count: city",
+      "expect": { "result": [{ "count": "NYC", "n": 2 }] }
+    },
+    {
+      "name": "an unknown aggregate: a free call whose argument reads a row field",
+      "tags": ["group", "error"],
+      "roots": { "people": [{ "name": "Bob", "city": "NYC", "age": 41 }] },
+      "query": "select city, m: median(age) from people group by city",
+      "expect": { "error": { "stage": "parse", "includes": ["`age` is not a group key or aggregate", "`median(…)` is not an aggregate", "count, sum, min, max, avg, collect, first, last, any, all"] } }
+    },
+    {
+      "name": "an aggregate in a body without group by",
+      "tags": ["aggregate", "error"],
+      "roots": { "people": [{ "name": "Bob" }] },
+      "query": "select n: count() from people",
+      "expect": { "error": { "stage": "parse", "includes": ["`count()` is an aggregate", "`group by`", "this body has none"] } }
+    },
+    {
+      "name": "an aggregate in order by without group by",
+      "tags": ["aggregate", "error"],
+      "roots": { "people": [{ "name": "Bob" }] },
+      "query": "from people order by count()",
+      "expect": { "error": { "stage": "parse", "includes": ["`count()` is an aggregate", "this body has none"] } }
+    },
+    {
+      "name": "an aggregate in where",
+      "tags": ["aggregate", "where", "error"],
+      "roots": { "people": [{ "name": "Bob", "city": "NYC" }] },
+      "query": "from people where count() > 1 group by city",
+      "expect": { "error": { "stage": "parse", "includes": ["`count()` is an aggregate and cannot be read in `where`", "`having`"] } }
+    },
+    {
+      "name": "an aggregate reached through a select alias in where",
+      "tags": ["aggregate", "where", "alias", "error"],
+      "roots": { "people": [{ "name": "Bob", "city": "NYC" }] },
+      "query": "select n: count() from people where n > 1 group by city",
+      "expect": { "error": { "stage": "parse", "includes": ["`count()` is an aggregate and cannot be read in `where`", "alias"] } }
+    },
+    {
+      "name": "an aggregate in a group key",
+      "tags": ["aggregate", "error"],
+      "roots": { "people": [{ "name": "Bob", "city": "NYC" }] },
+      "query": "from people group by k: count()",
+      "expect": { "error": { "stage": "parse", "includes": ["`count()` is an aggregate and cannot be read in a `group by` key"] } }
+    },
+    {
+      "name": "aggregates do not nest",
+      "tags": ["aggregate", "error"],
+      "roots": { "people": [{ "name": "Bob", "city": "NYC" }] },
+      "query": "select city, x: sum(count()) from people group by city",
+      "expect": { "error": { "stage": "parse", "includes": ["`sum(count())`", "an aggregate cannot nest"] } }
+    },
+    {
+      "name": "only count() takes no argument",
+      "tags": ["aggregate", "error"],
+      "roots": { "people": [{ "name": "Bob", "city": "NYC" }] },
+      "query": "select city, s: sum() from people group by city",
+      "expect": { "error": { "stage": "parse", "includes": ["`sum()` needs an argument"] } }
+    },
+    {
+      "name": "an aggregate takes one argument",
+      "tags": ["aggregate", "error"],
+      "roots": { "people": [{ "name": "Bob", "city": "NYC", "age": 1 }] },
+      "query": "select city, s: sum(age, 1) from people group by city",
+      "expect": { "error": { "stage": "parse", "includes": ["`sum(…)` takes one argument"] } }
+    },
+    {
+      "name": "distinct applies to a value aggregate, not to any or all",
+      "tags": ["aggregate", "distinct", "error"],
+      "roots": { "people": [{ "name": "Bob", "city": "NYC", "active": true }] },
+      "query": "select city, a: any(distinct active) from people group by city",
+      "expect": { "error": { "stage": "parse", "includes": ["`any(distinct …)`", "value aggregate"] } }
+    },
+    {
+      "name": "a grouped nested block in a projection",
+      "tags": ["group", "nested"],
+      "roots": { "staff": [{ "name": "Bob", "jobs": [{ "employer": "G", "pay": 1 }, { "employer": "G", "pay": 2 }, { "employer": "I", "pay": 3 }] }, { "name": "Ann", "jobs": [] }] },
+      "query": "select name, byEmp: jobs collect { employer, total: sum(pay) group by employer } from staff",
+      "expect": { "result": [{ "name": "Bob", "byEmp": [{ "employer": "G", "total": 3 }, { "employer": "I", "total": 3 }] }, { "name": "Ann", "byEmp": [] }] }
+    },
+    {
+      "name": "a nested count over groups counts the groups",
+      "tags": ["group", "nested", "count"],
+      "roots": { "staff": [{ "name": "Bob", "jobs": [{ "employer": "G", "pay": 1 }, { "employer": "G", "pay": 2 }, { "employer": "I", "pay": 3 }] }] },
+      "query": "select name, n: jobs count { group by employer } from staff",
+      "expect": { "result": [{ "name": "Bob", "n": 2 }] }
+    },
+    {
+      "name": "a where-position test over groups",
+      "tags": ["group", "nested", "where", "having"],
+      "roots": { "staff": [{ "name": "Bob", "jobs": [{ "employer": "G" }, { "employer": "G" }, { "employer": "I" }] }, { "name": "Ann", "jobs": [{ "employer": "G" }, { "employer": "I" }] }] },
+      "query": "name from staff where jobs exists { group by employer having count() > 1 }",
+      "expect": { "result": [{ "name": "Bob" }] }
+    },
+    {
+      "name": "a where-first block body may group",
+      "tags": ["group", "nested", "sugar"],
+      "roots": { "staff": [{ "name": "Bob", "jobs": [{ "employer": "G", "pay": 1 }, { "employer": "G", "pay": 2 }, { "employer": "I", "pay": 3 }] }] },
+      "query": "name, n: jobs count { pay > 1 group by employer } from staff",
+      "expect": { "result": [{ "name": "Bob", "n": 2 }] }
+    },
+    {
+      "name": "the top-level count directive counts the groups",
+      "tags": ["group", "consumers", "count"],
+      "roots": { "people": [{ "name": "Bob", "city": "NYC" }, { "name": "Alice", "city": "SF" }, { "name": "Carol", "city": "NYC" }, { "name": "Dan" }] },
+      "query": "people count { group by city }",
+      "expect": { "result": 3 }
+    },
+    {
+      "name": "the top-level first directive is the first group",
+      "tags": ["group", "consumers", "first"],
+      "roots": { "people": [{ "name": "Bob", "city": "NYC" }, { "name": "Alice", "city": "SF" }, { "name": "Carol", "city": "NYC" }] },
+      "query": "people first { group by city }",
+      "expect": { "result": { "city": "NYC", "count": 2 } }
+    },
+    {
+      "name": "exists over groups honors having",
+      "tags": ["group", "consumers", "exists", "having"],
+      "roots": { "people": [{ "name": "Bob", "city": "NYC" }, { "name": "Alice", "city": "SF" }, { "name": "Carol", "city": "NYC" }] },
+      "query": "people exists { group by city having count() > 2 }",
+      "expect": { "result": false }
+    },
+    {
+      "name": "a single receiver grouped is one record",
+      "tags": ["group", "cardinality"],
+      "roots": { "person": { "name": "Bob", "city": "NYC" } },
+      "query": "person { group by city }",
+      "expect": { "result": { "city": "NYC", "count": 1 } }
+    },
+    {
+      "name": "an empty source has no groups",
+      "tags": ["group", "absent"],
+      "roots": { "people": [] },
+      "query": "select city, n: count(), s: sum(pay) from people group by city",
+      "expect": { "result": [] }
+    },
+    {
+      "name": "group by over a walk groups the occurrences",
+      "tags": ["group", "follow"],
+      "roots": { "tree": [{ "id": "r", "kids": [{ "id": "a", "kids": [{ "id": "a1", "kids": [] }] }, { "id": "b", "kids": [] }] }] },
+      "query": "select d, n: count(), ids: collect(id) from tree follow kids group by d: $depth",
+      "expect": { "result": [{ "d": 1, "n": 1, "ids": ["r"] }, { "d": 2, "n": 2, "ids": ["a", "b"] }, { "d": 3, "n": 1, "ids": ["a1"] }] }
+    },
+    {
+      "name": "count { … } is a value outside grouping too",
+      "tags": ["count", "value"],
+      "roots": { "staff": [{ "name": "Bob", "jobs": [{ "pay": 1 }, { "pay": 2 }, { "pay": 3 }] }, { "name": "Ann", "jobs": [] }] },
+      "query": "select name, n: jobs count { where pay > 1 }, big: jobs count { } > 2 from staff",
+      "expect": { "result": [{ "name": "Bob", "n": 2, "big": true }, { "name": "Ann", "n": 0, "big": false }] }
+    },
+    {
+      "name": "exists and none stay where-position tests",
+      "tags": ["count", "value", "error"],
+      "roots": { "staff": [{ "name": "Bob", "jobs": [] }] },
+      "query": "select name, e: jobs exists { } from staff",
+      "expect": { "error": { "stage": "parse", "includes": ["collect/first/single", "exists"] } }
+    },
+    {
+      "name": "references: keys in clause groupBy, aggregate arguments on the rows, select keys and rows excluded",
+      "tags": ["references", "group"],
+      "notes": "A post-group clause reads the GROUP scope: its steps end with the `groupBy` node (printed as the clause), and `rows` as a receiver adds a step one deeper. A bare key name there is the key (not a reference); `^lo` from the rows block reads the group's key `lo`.",
+      "query": "select city, n: sum(pay), names: rows collect { select name where age > ^lo } from people where active group by city, lo: age having count() > 1 order by city",
+      "expect": {
+        "references": [
+          { "name": "pay", "clause": "select", "scope": { "depth": 1, "steps": [{ "expr": "people", "depth": 1 }] } },
+          { "name": "name", "clause": "select", "scope": { "depth": 2, "steps": [{ "expr": "people", "depth": 1 }, { "expr": "group by city: city, lo: age", "depth": 1 }, { "expr": "rows", "depth": 2 }] } },
+          { "name": "age", "clause": "where", "scope": { "depth": 2, "steps": [{ "expr": "people", "depth": 1 }, { "expr": "group by city: city, lo: age", "depth": 1 }, { "expr": "rows", "depth": 2 }] } },
+          { "name": "people", "clause": "source", "scope": { "depth": 0, "steps": [] } },
+          { "name": "active", "clause": "where", "scope": { "depth": 1, "steps": [{ "expr": "people", "depth": 1 }] } },
+          { "name": "city", "clause": "groupBy", "scope": { "depth": 1, "steps": [{ "expr": "people", "depth": 1 }] } },
+          { "name": "age", "clause": "groupBy", "scope": { "depth": 1, "steps": [{ "expr": "people", "depth": 1 }] } }
+        ]
+      }
+    },
+    {
+      "name": "references: a having alias and an order-by key are not references; a distinct aggregate's argument is",
+      "tags": ["references", "group", "having"],
+      "query": "select n: count(distinct name) from people group by city having n > 1 order by count(), city",
+      "expect": {
+        "references": [
+          { "name": "name", "clause": "select", "scope": { "depth": 1, "steps": [{ "expr": "people", "depth": 1 }] } },
+          { "name": "people", "clause": "source", "scope": { "depth": 0, "steps": [] } },
+          { "name": "city", "clause": "groupBy", "scope": { "depth": 1, "steps": [{ "expr": "people", "depth": 1 }] } }
+        ]
+      }
+    },
+    {
+      "name": "references: a key name inside an aggregate's argument is a row read",
+      "tags": ["references", "group"],
+      "notes": "`collect(city)` reads `city` on each of the group's rows, not the key — a reference at the row scope (no group step). The item `k: city` reads the key and `size(rows)` the group's rows: neither is a reference.",
+      "query": "select k: city, cs: collect(city), n: size(rows) from people group by city",
+      "expect": {
+        "references": [
+          { "name": "city", "clause": "select", "scope": { "depth": 1, "steps": [{ "expr": "people", "depth": 1 }] } },
+          { "name": "people", "clause": "source", "scope": { "depth": 0, "steps": [] } },
+          { "name": "city", "clause": "groupBy", "scope": { "depth": 1, "steps": [{ "expr": "people", "depth": 1 }] } }
+        ]
+      }
+    },
+    {
+      "name": "references: a grouped nested block",
+      "tags": ["references", "group", "nested"],
+      "query": "select name, g: jobs collect { employer, t: sum(pay) group by employer } from staff",
+      "expect": {
+        "references": [
+          { "name": "name", "clause": "select", "scope": { "depth": 1, "steps": [{ "expr": "staff", "depth": 1 }] } },
+          { "name": "jobs", "clause": "select", "scope": { "depth": 1, "steps": [{ "expr": "staff", "depth": 1 }] } },
+          { "name": "pay", "clause": "select", "scope": { "depth": 2, "steps": [{ "expr": "staff", "depth": 1 }, { "expr": "jobs", "depth": 2 }] } },
+          { "name": "employer", "clause": "groupBy", "scope": { "depth": 2, "steps": [{ "expr": "staff", "depth": 1 }, { "expr": "jobs", "depth": 2 }] } },
+          { "name": "staff", "clause": "source", "scope": { "depth": 0, "steps": [] } }
+        ]
+      }
+    }
+  ]
+}

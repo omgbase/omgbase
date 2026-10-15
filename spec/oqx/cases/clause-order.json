@@ -556,7 +556,7 @@
           "stage": "parse",
           "includes": [
             "`select` must come before `from`",
-            "OQX clause order is select, from, where, frontier, follow, order by, limit, offset"
+            "OQX clause order is select, from, where, frontier, follow, group by, having, order by, limit, offset"
           ]
         }
       }
@@ -569,7 +569,7 @@
           "stage": "parse",
           "includes": [
             "`select` must come before `where`",
-            "OQX clause order is select, from, where, frontier, follow, order by, limit, offset"
+            "OQX clause order is select, from, where, frontier, follow, group by, having, order by, limit, offset"
           ]
         }
       }
@@ -582,7 +582,7 @@
           "stage": "parse",
           "includes": [
             "`where` must come before `order by`",
-            "OQX clause order is select, from, where, frontier, follow, order by, limit, offset"
+            "OQX clause order is select, from, where, frontier, follow, group by, having, order by, limit, offset"
           ]
         }
       }
@@ -595,7 +595,7 @@
           "stage": "parse",
           "includes": [
             "`where` must come before `follow`",
-            "OQX clause order is select, from, where, frontier, follow, order by, limit, offset"
+            "OQX clause order is select, from, where, frontier, follow, group by, having, order by, limit, offset"
           ]
         }
       }
@@ -608,7 +608,7 @@
           "stage": "parse",
           "includes": [
             "`order by` must come before `limit`",
-            "OQX clause order is select, from, where, frontier, follow, order by, limit, offset"
+            "OQX clause order is select, from, where, frontier, follow, group by, having, order by, limit, offset"
           ]
         }
       }
@@ -621,7 +621,7 @@
           "stage": "parse",
           "includes": [
             "`limit` must come before `offset`",
-            "OQX clause order is select, from, where, frontier, follow, order by, limit, offset"
+            "OQX clause order is select, from, where, frontier, follow, group by, having, order by, limit, offset"
           ]
         }
       }
@@ -634,7 +634,7 @@
           "stage": "parse",
           "includes": [
             "`select` must come before `where`",
-            "OQX clause order is select, from, where, frontier, follow, order by, limit, offset"
+            "OQX clause order is select, from, where, frontier, follow, group by, having, order by, limit, offset"
           ]
         }
       }
@@ -1087,7 +1087,7 @@
           "stage": "parse",
           "includes": [
             "`frontier` must come before `follow`",
-            "OQX clause order is select, from, where, frontier, follow, order by, limit, offset"
+            "OQX clause order is select, from, where, frontier, follow, group by, having, order by, limit, offset"
           ]
         }
       },

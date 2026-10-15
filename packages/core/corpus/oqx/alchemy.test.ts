@@ -535,7 +535,7 @@ describe("alchemy corpus — the fixed clause order (ADR-020)", () => {
   });
 
   it("clauses out of the fixed order fail naming the order", () => {
-    const order = /OQX clause order is select, from, where, frontier, follow, order by, limit, offset/;
+    const order = /OQX clause order is select, from, where, frontier, follow, group by, having, order by, limit, offset/;
     expect(() => paths('from docs where type == "substance" select path')).toThrow(order);
     expect(() => paths('from docs select path')).toThrow(/`select` must come before `from`/);
     expect(() => paths('from docs order by era where type == "practitioner"')).toThrow(/`where` must come before `order by`/);
@@ -962,6 +962,52 @@ describe("alchemy corpus — distinct (dedup by projection)", () => {
     expect(three).toContain("/processes/magnum-opus.md");
     // the raw (non-distinct) node count is far higher, so `== 3` only holds for distinct kinds
     expect(paths('from docs where nodes count { } == 3')).not.toContain("/processes/magnum-opus.md");
+  });
+});
+
+describe("alchemy corpus — group by and aggregates (oqx 0.24)", () => {
+  it("documents per layer, with a count and the titles — a census in one query, no row dump", () => {
+    const r = hits("select layer, n: count(), titles: collect(title) from docs group by layer order by count() desc, layer");
+    // A grouped row is not a store row: no `id`/`path` envelope, no cursor.
+    expect(r.cursor).toBeNull();
+    expect(r.truncated).toBe(false);
+    for (const g of r.hits) expect(Object.keys(g).sort()).toEqual(["layer", "n", "titles"]);
+    // Every document carries a layer, so the groups partition the corpus.
+    const total = r.hits.reduce((n, g) => n + (g.n as number), 0);
+    expect(total).toBe(20);
+    expect(r.hits.map((g) => g.layer)).toEqual(["canon", "working", "draft"]);
+    // Each group's count agrees with the plain filter, and its titles are its documents'.
+    for (const g of r.hits) {
+      const docs = hits(`select title from docs where layer == "${g.layer}"`).hits;
+      expect(g.n).toBe(docs.length);
+      expect((g.titles as string[]).slice().sort()).toEqual(docs.map((d) => d.title as string).sort());
+    }
+    // The default projection is the keys plus `count`.
+    const dflt = hits("from docs group by layer order by layer");
+    expect(dflt.hits).toEqual([{ layer: "canon", count: 13 }, { layer: "draft", count: 1 }, { layer: "working", count: 6 }]);
+  });
+
+  it("tasks per document, checked and unchecked — rows as a receiver and having over the groups", () => {
+    const r = hits(
+      "select path, open: rows count { where not checked }, done: rows count { where checked }, all: count() " +
+      "from blocks where type == \"task\" group by path having count() > 0 order by path",
+    );
+    expect(r.hits.length).toBeGreaterThan(5);
+    for (const g of r.hits) {
+      expect((g.open as number) + (g.done as number)).toBe(g.all);
+      // The group's counts agree with the ungrouped per-document counts.
+      expect(g.all).toBe(hits(`blocks count { where type == "task" and path == "${g.path}" }`).count);
+      expect(g.open).toBe(hits(`blocks count { where type == "task" and not checked and path == "${g.path}" }`).count);
+    }
+    expect(r.hits.map((g) => g.path)).toEqual(r.hits.map((g) => g.path).slice().sort());
+    // `having` filters groups: only documents with an open task; `values` yields the bare keys.
+    const open = hits("select path values from blocks where type == \"task\" group by path having rows exists { where not checked } order by path");
+    expect(open.values).toEqual(r.hits.filter((g) => (g.open as number) > 0).map((g) => g.path));
+    // The name check judges the group's rows through `rows`: a misspelled task field is a hint, not a silent zero.
+    const typo = hits("select path, n: rows count { where chekced } from blocks where type == \"task\" group by path");
+    expect(typo.hints?.[0]).toMatch(/`chekced` is not a field of blocks/);
+    // Reading a row field at the group scope is the parse error naming it.
+    expect(() => hits("select text from blocks where type == \"task\" group by path")).toThrow(/`text` is not a group key or aggregate/);
   });
 });
 

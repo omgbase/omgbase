@@ -142,7 +142,9 @@ function vocabularyOf(store: Store, repoId: string, target: Kind): Vocabulary {
 
 // ---- the kind of a scope ---------------------------------------------------
 
-type RowKind = Kind | "root";
+/** `"root"` is the root scope; `{ group: k }` a GROUP scope (oqx 0.24): the
+ * groups of rows of kind `k`, whose only row-yielding name is `rows`. */
+type RowKind = Kind | "root" | { group: Kind | null };
 
 /** The kind of the rows an expression yields when read on rows of `on` (`"root"`: the root scope), or null when unknown. */
 function kindOfExpr(e: Expr, on: RowKind | null, readDepth: number, byDepth: ReadonlyMap<number, RowKind | null>): Kind | null {
@@ -192,12 +194,19 @@ function kindOfPath(on: RowKind | null, path: readonly string[]): Kind | null {
       cur = seg as Kind;
       continue;
     }
+    // At a group scope `rows` yields the grouped rows (their kind); a key is a
+    // value the language built, not a row of any kind.
+    if (typeof cur === "object") {
+      if (seg !== "rows" || i !== 0) return null;
+      cur = cur.group;
+      continue;
+    }
     if (seg === "$it" && i === 0) continue;
     const next: Kind | undefined = HANDLES[cur][seg] ?? RELATIONS[cur][seg];
     if (next === undefined) return null;
     cur = next;
   }
-  return cur === "root" ? null : cur;
+  return cur === "root" || typeof cur === "object" ? null : cur;
 }
 
 /** The kind of the frontier rows of a walk: the seeds' kind when every destination yields rows of that same kind, else unknown. */
@@ -216,12 +225,14 @@ export function kindOfScope(steps: readonly ReferenceStep[]): Kind | null {
   let readDepth = 0;
   for (const step of steps) {
     const e = step.expr;
-    if (e.kind === "follow") cur = kindOfFrontier(cur === "root" ? null : cur, e, readDepth, byDepth);
+    if (e.kind === "follow") cur = kindOfFrontier(cur === "root" || typeof cur === "object" ? null : cur, e, readDepth, byDepth);
+    // A `group by` step (oqx 0.24): the rows at this depth become groups of them.
+    else if (e.kind === "groupBy") cur = { group: cur === "root" || typeof cur === "object" ? null : cur };
     else cur = kindOfExpr(e, cur, readDepth, byDepth);
     byDepth.set(step.depth, cur);
     readDepth = step.depth;
   }
-  return cur === "root" ? null : cur;
+  return cur === "root" || typeof cur === "object" ? null : cur;
 }
 
 // ---- judging a name --------------------------------------------------------

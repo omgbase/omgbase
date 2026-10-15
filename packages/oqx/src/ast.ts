@@ -53,6 +53,19 @@ export type UnaryOp = "!" | "-";
 /** The operator of a `logical` expression. */
 export type LogicalOp = "&&" | "||";
 
+/** The aggregate functions (SEMANTICS §24, since 0.24): reserved free-function
+ * names that reduce a group's rows. `count` takes zero or one argument, every
+ * other exactly one; `any`/`all` take a predicate and admit no `distinct`. */
+export type AggregateName = "count" | "sum" | "min" | "max" | "avg" | "collect" | "first" | "last" | "any" | "all";
+
+export const AGGREGATE_NAMES: ReadonlySet<string> = new Set<AggregateName>([
+  "count", "sum", "min", "max", "avg", "collect", "first", "last", "any", "all",
+]);
+
+export function isAggregateName(name: string): name is AggregateName {
+  return AGGREGATE_NAMES.has(name);
+}
+
 /** One part of a template literal (since 0.21): a decoded text run, or an
  * interpolated expression. The strings are not nodes (no `kind`, no span). */
 export type TemplatePart = string | Expr;
@@ -86,10 +99,31 @@ export type Expr =
   // GRAMMAR §1 escapes resolved). Evaluates to the concatenation of the text and
   // the interpolated values' string forms (SEMANTICS §7b).
   | { kind: "template"; span: Span; parts: TemplatePart[] }
+  // An aggregate call `sum(e)`, `count()`, `collect(distinct e)` (since 0.24):
+  // reduces the rows of the group it is read in (SEMANTICS §24). `arg` is null
+  // for the bare `count()`; `distinct` is the `(distinct e)` modifier. Legal
+  // only in the post-group clauses of a body with `group by`.
+  | { kind: "aggregate"; span: Span; name: AggregateName; arg: Expr | null; distinct: boolean }
   // A value-position directive (since 0.17): `recv first { … }.pay`, and what a
   // bracket lookup `x[…]` desugars to. `isExpr` is false for it — an op is an
   // expression only by position; discriminate on `kind === "op"`.
   | OpNode;
+
+/** One `group by` key (since 0.24): `name: expr`, or an unaliased navigation
+ * keyed by its last segment, exactly as a `select` item is. */
+export interface GroupKey {
+  kind: "key";
+  span: Span;
+  name: string;
+  expr: Expr;
+}
+
+/** The `group by` clause (since 0.24): one row per distinct key tuple. */
+export interface GroupBy {
+  kind: "groupBy";
+  span: Span;
+  keys: GroupKey[]; // ≥ 1, in source order
+}
 
 /** One `order by` term. */
 export interface OrderSpec {
@@ -165,6 +199,11 @@ export interface Subquery {
    * `depth` is destination-only. Both `null` when absent. */
   frontier: Expr | null;
   depth: number | null;
+  /** `group by` / `having` (since 0.24): the block's rows become one row per
+   * distinct key tuple (SEMANTICS §24); `having` filters the groups. Both
+   * `null` when absent; `having` is set only together with `groupBy`. */
+  groupBy: GroupBy | null;
+  having: Where | null;
   /** `values` — scalar projection mode: the (single) projected expression is the
    * row's result itself rather than being wrapped in a `{ name: value }` record,
    * so `name values` yields `["Bob", …]` and `$it values` yields the rows. */
@@ -204,6 +243,9 @@ export interface Query {
    * scope, like `where`) is a frontier (`$stop == "frontier"`, not expanded).
    * `null` without one. */
   frontier: Expr | null;
+  /** `group by` / `having` (since 0.24; see Subquery). */
+  groupBy: GroupBy | null;
+  having: Where | null;
   /** `distinct` — dedup the result rows by their projected value (see OpNode). */
   distinct: boolean;
   /** `values` — scalar projection mode (see Subquery). */
@@ -214,14 +256,14 @@ export interface Query {
 }
 
 /** Every node of the tree. `AstNode["kind"]` is the closed set of node kinds. */
-export type AstNode = Query | Subquery | OpNode | Follow | OrderSpec | SelectItem | Where | Expr;
+export type AstNode = Query | Subquery | OpNode | Follow | GroupBy | GroupKey | OrderSpec | SelectItem | Where | Expr;
 
 /** The closed set of node kinds. */
 export type AstKind = AstNode["kind"];
 
 /** The expression kinds (`Expr["kind"]`), for `isExpr`. */
 const EXPR_KINDS: ReadonlySet<string> = new Set([
-  "lit", "ident", "outer", "binding", "member", "call", "unary", "required", "binary", "logical", "in", "range", "tuple", "template",
+  "lit", "ident", "outer", "binding", "member", "call", "unary", "required", "binary", "logical", "in", "range", "tuple", "template", "aggregate",
 ]);
 
 /** Whether a node is a scalar `Expr` (an `op` in expression position is not: it

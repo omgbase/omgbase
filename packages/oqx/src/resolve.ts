@@ -26,7 +26,7 @@
 // given. Untouched nodes are returned by reference, so a cached query keeps the
 // identity of every block the rewrite did not reach.
 
-import type { Expr, Follow, FollowDestination, OpNode, Query, SelectItem, Subquery, Where } from "./ast.ts";
+import type { Expr, Follow, FollowDestination, GroupBy, OpNode, Query, SelectItem, Subquery, Where } from "./ast.ts";
 import { OqxError } from "./errors.ts";
 
 /** How a resolution failure is reported: the parser raises its positioned parse
@@ -52,8 +52,15 @@ function resolveBody<T extends Query | Subquery>(node: T, fail: Fail): T {
   // cycle report follows the where's own path (`c → a → b → c`), as pinned.
   const where = node.where === null ? null : resolveWhere(node.select, node.where, fail);
   const where2 = where === null ? null : resolveNestedWhere(where, fail);
+  // `having` (0.24) is the post-group `where`: rewritten against the select
+  // exactly as `where` is (`select n: count() … having n > 1`).
+  const having = node.having === null ? null : resolveWhere(node.select, node.having, fail);
+  const having2 = having === null ? null : resolveNestedWhere(having, fail);
   const select = resolveSelect(node.select, fail);
   const follow = node.follow === null ? null : resolveFollow(node.follow, fail);
+  // The keys are read on the rows, not rewritten (a key IS the name the post-group
+  // clauses read); their nested blocks resolve against their own select.
+  const groupBy = node.groupBy === null ? null : resolveGroupBy(node.groupBy, fail);
   const from = mapSame(node.from, (e) => resolveExpr(e, fail));
   const orderBy = node.orderBy === null ? null : mapSame(node.orderBy, (o) => {
     const expr = resolveExpr(o.expr, fail);
@@ -68,11 +75,20 @@ function resolveBody<T extends Query | Subquery>(node: T, fail: Fail): T {
   const source = node.kind === "query" ? resolveExpr(node.source, fail) : null;
   const same = where2 === node.where && select === node.select && follow === node.follow && from === node.from
     && orderBy === node.orderBy && limit === node.limit && offset === node.offset && frontier === node.frontier
+    && groupBy === node.groupBy && having2 === node.having
     && (node.kind !== "query" || source === node.source);
   if (same) return node;
-  const out = { ...node, where: where2, select, follow, frontier, from, orderBy, limit, offset };
+  const out = { ...node, where: where2, select, follow, frontier, groupBy, having: having2, from, orderBy, limit, offset };
   if (node.kind === "query") (out as Query).source = source!;
   return out;
+}
+
+function resolveGroupBy(g: GroupBy, fail: Fail): GroupBy {
+  const keys = mapSame(g.keys, (k) => {
+    const expr = resolveExpr(k.expr, fail);
+    return expr === k.expr ? k : { ...k, expr };
+  });
+  return keys === g.keys ? g : { ...g, keys };
 }
 
 function resolveOp(op: OpNode, fail: Fail): OpNode {
@@ -144,6 +160,10 @@ function mapExpr(e: Expr, f: (e: Expr) => Expr | null): Expr {
     case "template": { // the text parts are strings; only the interpolations are expressions
       const parts = mapSame(e.parts, (p) => (typeof p === "string" ? p : go(p)));
       return parts === e.parts ? e : { ...e, parts };
+    }
+    case "aggregate": {
+      const arg = e.arg ? go(e.arg) : null;
+      return arg === e.arg ? e : { ...e, arg };
     }
     case "op": { // the receiver is read in this scope; the block is its own scope
       const receiver = go(e.receiver);

@@ -144,6 +144,14 @@ const QUERIES: string[] = [
   'select name, same_kind: ^nodes collect { name values where kind == ^kind && doc_id == ^doc_id } from nodes where kind == "md:section"',
   'select path, by_name: ^nodes collect { id where name == ^name } from nodes where kind == "md:section" && name == "Preparation"',
   'select path, nameless: ^nodes collect { kind values where name == ^nope } from nodes where kind == "md:section" && name == "Preparation"',
+  // group by (oqx 0.24): the planner declines a grouped query whole (even with a
+  // pushable `where`), so both paths run in memory — and must still agree
+  'select layer, n: count() from docs group by layer order by count() desc, layer',
+  'select layer, n: count(), eras: collect(era) from docs where path.startsWith("practitioners/") group by layer',
+  'select type, open: rows count { where nodes exists { where kind == "md:task" and not attrs.checked } } from docs group by type having count() > 1 order by type',
+  'select path, done: rows count { where checked }, all: count() from blocks where type == "task" group by path order by path',
+  'docs count { group by layer }',
+  'select kind values from nodes group by kind order by kind',
 ];
 
 describe("OQX differential conformance — planned == in-memory", () => {

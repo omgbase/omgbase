@@ -28,8 +28,31 @@
       "notes": "§1.5: every engine attribute, handle and relation of the kind is known — no `hints` member at all (never `[]`).",
       "query": "select title, tags, path, l: out_links count { } from docs where blocks exists { where type == \"task\" and checked } order by path limit 2",
       "expect": {
-        "error": "filter_invalid",
-        "message_includes": "projection 'l' must use collect/first/single, not count (exists/none/count are where-position tests) (at offset 49)"
+        "hits": [
+          {
+            "id": "d_1",
+            "path": "/lab/2026-01-notes.md",
+            "title": "Laboratory notes — January",
+            "tags": [
+              "lab",
+              "calcination"
+            ],
+            "l": 3
+          },
+          {
+            "id": "d_2",
+            "path": "/lab/2026-02-notes.md",
+            "title": "Laboratory notes — February",
+            "tags": [
+              "lab",
+              "coagulation"
+            ],
+            "l": 2
+          }
+        ],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "collect"
       }
     },
     {

@@ -65,6 +65,20 @@ interface Scope {
   run: RunState;
   lifts?: Record<string, unknown>;
   meta?: Record<string, unknown>;
+  /** The row as it arrived, when `row` is its unwrapped form (an entry's value):
+   * what the group's `rows` hands back so a re-entered row is the same row. */
+  raw?: unknown;
+  /** Set on a GROUP scope (SEMANTICS §24): the scope's row is the key record,
+   * `rows` the group's rows, and the aggregates reduce `rowScopes`. */
+  group?: Group;
+}
+
+// One group of a `group by` body: the scopes of its rows (for the aggregates,
+// which read each row as the body's `where` did — lifts and walk intrinsics
+// included) and the rows themselves (what `rows` yields).
+interface Group {
+  rowScopes: Scope[];
+  rows: unknown[];
 }
 
 // State that lives for exactly one `run()` (nothing here outlives it, so data
@@ -117,11 +131,14 @@ export interface InMemoryEngineOptions {
 
 const RECUR = new Set(["$depth", "$stop", "$leaf", "$frontier", "$ordinal"]);
 const KEY = "$key";
+const ROWS = "rows";
 const HARD_DEPTH_CAP = 8;
 
 // What a scope projects to: the select list plus the `values` mode flag. Both
 // `Query` and `Subquery` carry this shape.
 type Projection = Pick<Subquery, "select" | "values">;
+// The grouping clauses of a body (0.24). Both `Query` and `Subquery` carry them.
+type Grouping = Pick<Subquery, "groupBy" | "having">;
 
 // The `$key: expr` item of a projection, if any — the identity the rows it
 // yields carry (SEMANTICS §16, since 0.20).
@@ -172,10 +189,11 @@ export class InMemoryEngine implements Engine {
     if (query.follow) return this.runFollow(query, rows, root, bound);
 
     // Consumer-directed short-circuits (skipped under `distinct`, which must
-    // materialize + dedup by projection before reducing). Counting never
-    // materializes rows; exists/none stop as soon as the bound is known to be
-    // non-empty (the (offset+1)th match — or the first, when unbounded).
-    if (!query.distinct && (query.consumer === "exists" || query.consumer === "none" || query.consumer === "count")) {
+    // materialize + dedup by projection before reducing, and under `group by`,
+    // whose consumer counts groups). Counting never materializes rows;
+    // exists/none stop as soon as the bound is known to be non-empty (the
+    // (offset+1)th match — or the first, when unbounded).
+    if (!query.distinct && !query.groupBy && (query.consumer === "exists" || query.consumer === "none" || query.consumer === "count")) {
       const need = query.consumer === "count" ? Infinity : bound.offset + 1;
       let n = 0;
       for (const r of rows) {
@@ -190,7 +208,7 @@ export class InMemoryEngine implements Engine {
     // first over an unordered, non-distinct set needs only the rows up to the
     // bound (offset + 1). single materializes everything so its error can
     // report how many rows actually matched.
-    const cap = query.consumer === "first" && !query.orderBy && !query.distinct
+    const cap = query.consumer === "first" && !query.orderBy && !query.distinct && !query.groupBy
       ? bound.offset + Math.min(1, bound.limit ?? 1)
       : Infinity;
     let kept: Scope[] = [];
@@ -201,6 +219,7 @@ export class InMemoryEngine implements Engine {
         if (kept.length >= cap) break;
       }
     }
+    if (query.groupBy) kept = this.groupScopes(kept, query, root);
     this.applyKey(kept, query);
     this.sortScopes(kept, query.orderBy);
     if (query.distinct) kept = this.dedupByProjection(kept, query);
@@ -303,10 +322,99 @@ export class InMemoryEngine implements Engine {
     if (extra.lifts) s.lifts = extra.lifts;
     if (extra.meta) s.meta = extra.meta;
     if (isEntry(row)) {
+      s.raw = row;
       s.row = row.value;
       s.meta = { ...(s.meta ?? {}), [KEY]: row.key };
     }
     return s;
+  }
+
+  // ---- grouping (SEMANTICS §24) ----------------------------------------------
+
+  // The kept scopes of a body, one GROUP scope per distinct key tuple, in order
+  // of first appearance; then `having` over each group. A group scope sits where
+  // the rows did (same parent, same depth): its row is the key record — one
+  // property per key, in key order, holding the first row's value — so bare
+  // names read the keys, `$it` is the record and `$key` its structural identity;
+  // `rows` yields the group's rows and the aggregates reduce their scopes. Key
+  // values compare as identities (§16): absent ≡ null, a host row by its id,
+  // anything else structurally.
+  private groupScopes(scopes: Scope[], body: Grouping, parent: Scope): Scope[] {
+    const g = body.groupBy!;
+    const groups = new Map<string, Scope>();
+    for (const s of scopes) {
+      const record: Record<string, unknown> = {};
+      const ids: string[] = [];
+      for (const k of g.keys) {
+        const v = this.evalExpr(k.expr, s);
+        record[k.name] = v;
+        ids.push(canonicalKey(this.hostIdentity(v)));
+      }
+      const id = ids.join(" ");
+      let gs = groups.get(id);
+      if (!gs) {
+        gs = { row: record, parent, bindings: parent.bindings, run: parent.run, lifts: {}, group: { rowScopes: [], rows: [] } };
+        groups.set(id, gs);
+      }
+      gs.group!.rowScopes.push(s);
+      gs.group!.rows.push(s.raw !== undefined ? s.raw : s.row);
+    }
+    const out = [...groups.values()];
+    return body.having ? out.filter((gs) => this.evalWhere(body.having!, gs)) : out;
+  }
+
+  // An aggregate (§24) over the group of the scope it is read in. The argument
+  // is read on each row's scope in group order; every value aggregate sees the
+  // PRESENT values only (`count()` alone counts rows), `distinct` dedups them by
+  // identity (§16), and `any`/`all` test truthiness (absent is false) and stop
+  // at the first row that decides, like `||` / `&&`.
+  private aggregate(e: Extract<Expr, { kind: "aggregate" }>, scope: Scope): unknown {
+    const g = scope.group;
+    if (!g) throw new OqxError(`\`${describe(e)}\` is an aggregate and is read on a group — it needs a \`group by\` in its body`, "eval");
+    if (e.arg === null) return g.rowScopes.length;
+    const arg = e.arg;
+    if (e.name === "any") return g.rowScopes.some((s) => truthy(this.evalExpr(arg, s)));
+    if (e.name === "all") return g.rowScopes.every((s) => truthy(this.evalExpr(arg, s)));
+    let values: unknown[] = [];
+    for (const s of g.rowScopes) {
+      const v = this.evalExpr(arg, s);
+      if (v != null) values.push(v);
+    }
+    if (e.distinct) {
+      const seen = new Set<string>();
+      values = values.filter((v) => {
+        const k = canonicalKey(this.hostIdentity(v));
+        if (seen.has(k)) return false;
+        seen.add(k);
+        return true;
+      });
+    }
+    switch (e.name) {
+      case "count": return values.length;
+      case "collect": return values;
+      case "first": return values.length > 0 ? values[0] : undefined;
+      case "last": return values.length > 0 ? values[values.length - 1] : undefined;
+      case "sum": case "avg": {
+        let total = 0;
+        for (const v of values) {
+          if (typeof v !== "number") {
+            throw new OqxError(`cannot ${e.name === "sum" ? "sum" : "average"} \`${describe(arg)}\` over the group: it is ${describeValueKind(v)} — \`${e.name}\` takes numbers`, "eval");
+          }
+          total += v;
+        }
+        if (e.name === "sum") return total;
+        return values.length === 0 ? undefined : total / values.length;
+      }
+      case "min": case "max": {
+        if (values.length === 0) return undefined;
+        let best = values[0];
+        for (let i = 1; i < values.length; i++) {
+          const c = compare(values[i], best);
+          if (c !== undefined && (e.name === "min" ? c < 0 : c > 0)) best = values[i];
+        }
+        return best;
+      }
+    }
   }
 
   // ---- follow ---------------------------------------------------------------
@@ -317,6 +425,7 @@ export class InMemoryEngine implements Engine {
     const occ = this.followWalk(this.keyed(seeds, query, root), query.follow!, query.frontier, root);
     let scopes: Scope[] = occ.map((o) => this.enter(o.row, root, { lifts: {}, meta: o.meta }));
     if (post) scopes = scopes.filter((s) => this.evalWhere(post, s));
+    if (query.groupBy) scopes = this.groupScopes(scopes, query, root);
     this.sortScopes(scopes, query.orderBy);
     if (query.distinct) scopes = this.dedupByProjection(scopes, query);
     scopes = sliceBound(scopes, bound);
@@ -540,9 +649,10 @@ export class InMemoryEngine implements Engine {
         // rows, and the consumer only needs their count after the bound.
         n = boundedCount(acc.rows.length, bound);
         scope.run.trace?.({ kind: "cardinality", count: n });
-      } else if (op.op !== "count" && bound === UNBOUNDED) {
+      } else if (op.op !== "count" && bound === UNBOUNDED && !op.sub.groupBy) {
         // Unbounded exists/none: stop at the first match (dedup cannot change
-        // emptiness). Bounded: the offset/limit decide emptiness, so materialize.
+        // emptiness). Bounded, or grouped (`having` may empty the groups): the
+        // offset/limit decide emptiness, so materialize.
         n = this.anyMatch(op, scope, acc) ? 1 : 0;
       } else n = this.opRows(op, scope, bound, acc).length;
       if (op.op === "count") return op.countCmp ? compareCount(n, op.countCmp) : n > 0;
@@ -567,9 +677,10 @@ export class InMemoryEngine implements Engine {
     return this.opRows(op, scope, bound).length > 0;
   }
 
-  // The rows a consumer op reduces: matched → ordered → distinct → bounded.
+  // The rows a consumer op reduces: matched → grouped → ordered → distinct → bounded.
   private opRows(op: OpNode, scope: Scope, bound: Bound, acc?: Access): Scope[] {
     let scopes = this.matchRows(op, scope, acc);
+    if (op.sub.groupBy) scopes = this.groupScopes(scopes, op.sub, scope);
     this.applyKey(scopes, op.sub);
     this.sortScopes(scopes, op.sub.orderBy);
     if (op.distinct) scopes = this.dedupByProjection(scopes, op.sub);
@@ -758,6 +869,8 @@ export class InMemoryEngine implements Engine {
       // Over a single receiver (one object) a `collect` is the record or absent,
       // not a one-element list (SEMANTICS §3).
       case "collect": return single ? (scopes.length > 0 ? this.projectRow(op.sub, scopes[0]!) : undefined) : scopes.map((s) => this.projectRow(op.sub, s));
+      // `count { … }` as a value (0.24): the number of rows the block yields.
+      case "count": return scopes.length;
       default: return scopes.length > 0 ? this.projectRow(op.sub, scopes[0]!) : null;
     }
   }
@@ -778,6 +891,7 @@ export class InMemoryEngine implements Engine {
       const { rows, where } = this.access(op, plan, scope);
       const seeds = where ? rows.filter((r) => this.evalWhere(where, this.enter(r, scope, { lifts: {} }))) : rows;
       scopes = this.followWalk(this.keyed(seeds, sub, scope), sub.follow, destination ? null : sub.frontier, scope).map((o) => this.enter(o.row, scope, { meta: o.meta }));
+      if (sub.groupBy) scopes = this.groupScopes(scopes, sub, scope);
       this.sortScopes(scopes, sub.orderBy);
       if (op.distinct) scopes = this.dedupByProjection(scopes, sub);
       scopes = sliceBound(scopes, bound);
@@ -787,7 +901,7 @@ export class InMemoryEngine implements Engine {
       scopes = this.opRows(op, scope, bound, acc);
     }
     switch (op.op) {
-      case "collect": return { scopes, single };
+      case "collect": case "count": return { scopes, single };
       case "first": return { scopes: scopes.slice(0, 1), single };
       case "single":
         if (scopes.length > 1) throw new OqxError(`single { … } for '${describeReceiver(op.receiver)}' matched ${scopes.length} rows`, "eval");
@@ -934,6 +1048,8 @@ export class InMemoryEngine implements Engine {
         }
         return absent ? undefined : out;
       }
+      // An aggregate (SEMANTICS §24) over the group of the current scope.
+      case "aggregate": return this.aggregate(e, scope);
     }
   }
 
@@ -965,6 +1081,8 @@ export class InMemoryEngine implements Engine {
     if (name === "$it") return scope.row;
     // `$key` is the row's identity on every row (SEMANTICS §16, since 0.20).
     if (name === KEY) return this.scopeIdentity(scope);
+    // `rows` on a group scope is the group's rows (§24); elsewhere a property.
+    if (name === ROWS && scope.group) return scope.group.rows;
     if (RECUR.has(name) && scope.meta && Object.hasOwn(scope.meta, name)) return scope.meta[name];
     if (scope.lifts && Object.hasOwn(scope.lifts, name)) return scope.lifts[name];
     if (scope.parent === null) return this.ctx.root(name);
@@ -1090,6 +1208,14 @@ function describe(e: Expr): string {
   return t.strings.map((s, i) => (i < t.count ? `${s}\${${t.indices[i]}}` : s)).join("");
 }
 
+// The kind of a value, for an aggregate's error: `a string ("abc")`, `a list`, …
+function describeValueKind(v: unknown): string {
+  if (typeof v === "string" || typeof v === "number" || typeof v === "boolean") return `a ${typeof v} (${JSON.stringify(v)})`;
+  if (isRange(v)) return "a range";
+  if (Array.isArray(v) || (typeof v === "object" && v !== null && !isEntry(v) && Symbol.iterator in v)) return "a list";
+  return "a record";
+}
+
 function describeReceiver(e: Expr): string {
   if (e.kind === "ident") return e.name;
   if (e.kind === "member") return `${describeReceiver(e.recv)}.${e.name}`;
@@ -1130,6 +1256,7 @@ function exprHasRecur(e: Expr): boolean {
     case "range": return (e.lo != null && exprHasRecur(e.lo)) || (e.hi != null && exprHasRecur(e.hi));
     case "tuple": return e.items.some(exprHasRecur);
     case "template": return e.parts.some((p) => typeof p !== "string" && exprHasRecur(p));
+    case "aggregate": return e.arg !== null && exprHasRecur(e.arg);
     default: return false;
   }
 }

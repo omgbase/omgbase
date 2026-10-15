@@ -37,6 +37,8 @@ export function exprReadsScopeIn(e: Expr, at: number, upTo: number): boolean {
     case "range": return (e.lo !== null && exprReadsScopeIn(e.lo, at, upTo)) || (e.hi !== null && exprReadsScopeIn(e.hi, at, upTo));
     case "tuple": return e.items.some((x) => exprReadsScopeIn(x, at, upTo));
     case "template": return e.parts.some((p) => typeof p !== "string" && exprReadsScopeIn(p, at, upTo));
+    // The argument is read on the group's rows, which sit at the group's depth.
+    case "aggregate": return e.arg !== null && exprReadsScopeIn(e.arg, at, upTo);
   }
 }
 
@@ -70,6 +72,9 @@ function subReadsScopeIn(sub: Subquery, at: number, upTo: number, destination: b
   if (sub.limit && exprReadsScopeIn(sub.limit, at, upTo)) return true;
   if (sub.offset && exprReadsScopeIn(sub.offset, at, upTo)) return true;
   if (sub.frontier && exprReadsScopeIn(sub.frontier, destination ? at - 1 : at, upTo)) return true;
+  // `group by` keys are read on the rows, `having` on the groups — both at `at` (0.24).
+  if (sub.groupBy?.keys.some((k) => exprReadsScopeIn(k.expr, at, upTo))) return true;
+  if (sub.having && whereReadsScopeIn(sub.having, at, upTo)) return true;
   return sub.follow !== null && followReadsScopeIn(sub.follow, at, upTo);
 }
 
@@ -109,6 +114,9 @@ export function exprRaiseFree(e: Expr, ctx: RuleContext): boolean {
     // A template literal raises on a list or record interpolation (§7b), which
     // only the data decides: with an interpolation it is never raise-free.
     case "template": return e.parts.every((p) => typeof p === "string");
+    // `sum`/`avg` raise on a non-number (§24), which only the data decides;
+    // and an aggregate outside a group scope raises.
+    case "aggregate": return false;
   }
 }
 
@@ -133,7 +141,9 @@ export function whereRaiseFree(w: Where, ctx: RuleContext): boolean {
 export function opRaiseFree(op: OpNode, ctx: RuleContext): boolean {
   if (op.op !== "exists" && op.op !== "none" && op.op !== "count") return false;
   const sub = op.sub;
-  if (sub.follow || sub.limit || sub.offset || op.distinct) return false;
+  // A grouped block evaluates its keys, `having` and the aggregates of its
+  // projection per group (a `sum` over a string raises): never raise-free.
+  if (sub.follow || sub.limit || sub.offset || op.distinct || sub.groupBy) return false;
   if (!exprRaiseFree(op.receiver, ctx)) return false;
   if (!sub.from.every((e) => exprRaiseFree(e, ctx))) return false;
   if (sub.where && !whereRaiseFree(sub.where, ctx)) return false;
@@ -152,6 +162,7 @@ export function opHasLifts(op: OpNode): boolean {
 function subHasLifts(sub: Subquery): boolean {
   if (sub.select.some((item) => (item.kind === "field" ? item.lift > 0 : opHasLifts(item.op)))) return true;
   if (sub.where && whereHasLifts(sub.where)) return true;
+  if (sub.having && whereHasLifts(sub.having)) return true;
   if (sub.follow?.destinations.some((d) => d.kind === "op" && opHasLifts(d))) return true;
   return false;
 }

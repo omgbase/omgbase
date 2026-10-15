@@ -12,7 +12,7 @@
 // binding is a value, never source text: `print` throws on one; `printTemplate`
 // emits template fragments around each binding instead.
 
-import type { AstNode, Expr, Follow, OpNode, OrderSpec, Query, SelectItem, Subquery, Where } from "./ast.ts";
+import type { AstNode, Expr, Follow, GroupBy, GroupKey, OpNode, OrderSpec, Query, SelectItem, Subquery, Where } from "./ast.ts";
 import { OqxError } from "./errors.ts";
 
 /** The template form of a tree: `strings` has `count + 1` fragments; the i-th gap
@@ -67,7 +67,7 @@ const OR = 1, AND = 2, CMP = 3, RANGE = 4, ADD = 5, MUL = 6, UNARY = 7, POSTFIX 
 function prec(e: Expr): number {
   switch (e.kind) {
     case "lit": case "ident": case "outer": case "binding": case "tuple": case "template": return PRIMARY;
-    case "member": case "call": case "required": case "op": return POSTFIX;
+    case "member": case "call": case "aggregate": case "required": case "op": return POSTFIX;
     case "unary": return UNARY;
     // Comparison, identity and the regex operators (0.22) share the cmp level.
     case "binary": return e.op === "+" || e.op === "-" ? ADD : e.op === "*" || e.op === "/" || e.op === "%" ? MUL : CMP;
@@ -83,6 +83,8 @@ function render(n: AstNode): Out {
     case "subquery": return block(n);
     case "op": return op(n);
     case "follow": return follow(n);
+    case "groupBy": return groupBy(n);
+    case "key": return key(n);
     case "order": return order(n);
     case "field": case "collect": return item(n);
     case "and": case "or": case "not": case "scalar": return where(n);
@@ -115,7 +117,7 @@ function query(q: Query): Out {
   return cat(expr(q.source), ` ${q.consumer}${q.distinct ? " distinct" : ""} `, braces(body(q)));
 }
 
-type Body = Pick<Subquery, "select" | "values" | "from" | "where" | "follow" | "orderBy" | "limit" | "offset">
+type Body = Pick<Subquery, "select" | "values" | "from" | "where" | "follow" | "groupBy" | "having" | "orderBy" | "limit" | "offset">
   & Partial<Pick<Subquery, "frontier" | "depth">>;
 
 // The clauses after `from` (a query) or after the projection (a block): the
@@ -128,6 +130,8 @@ function tail(b: Omit<Body, "select" | "values">): Out[] {
   if (b.frontier) out.push(cat("frontier ", expr(b.frontier)));
   if (b.depth != null) out.push([`depth ${number(b.depth)}`]);
   if (b.follow) out.push(follow(b.follow));
+  if (b.groupBy) out.push(groupBy(b.groupBy));
+  if (b.having) out.push(cat("having ", where(b.having)));
   if (b.orderBy && b.orderBy.length > 0) out.push(cat("order by ", join(b.orderBy.map(order), ", ")));
   if (b.limit) out.push(cat("limit ", expr(b.limit)));
   if (b.offset) out.push(cat("offset ", expr(b.offset)));
@@ -179,6 +183,15 @@ function follow(f: Follow): Out {
   return cat(`follow${f.distinct ? " distinct" : ""} `, dests);
 }
 
+// Every key aliased, as every select item is (`layer: layer`).
+function groupBy(g: GroupBy): Out {
+  return cat("group by ", join(g.keys.map(key), ", "));
+}
+
+function key(k: GroupKey): Out {
+  return cat(`${k.name}: `, expr(k.expr));
+}
+
 // ---- where ------------------------------------------------------------------
 
 function where(w: Where): Out {
@@ -212,6 +225,8 @@ function expr(e: Expr): Out {
       const args = cat("(", join(e.args.map(expr), ", "), ")");
       return e.recv === null ? cat(e.name, args) : cat(receiver(e.recv), `.${e.name}`, args);
     }
+    // An aggregate prints as the call it is written as (`count()`, `sum(distinct x)`).
+    case "aggregate": return cat(e.name, "(", e.distinct ? "distinct " : "", e.arg ? expr(e.arg) : "", ")");
     case "unary": return cat(e.op, operand(e.expr, UNARY));
     // Postfix, tightest: anything below postfix level is grouped (`(a + 1)!`).
     case "required": return cat(operand(e.expr, POSTFIX), "!");

@@ -10,7 +10,7 @@
 // tests in `test/` pin it to the specification text so it cannot drift silently.
 
 /** The OQX language version (`spec/oqx/VERSION`, `major.minor`) this vocabulary describes. */
-export const LANGUAGE_VERSION = "0.23";
+export const LANGUAGE_VERSION = "0.24";
 
 /** Reserved words: never usable as a bare field name (GRAMMAR §1). `is`, `not`,
  * `and`, `or` are the word operators (GRAMMAR §4, since 0.17). */
@@ -25,14 +25,25 @@ export const WORD_OPERATORS = ["is", "not", "and", "or"] as const;
 export const CONTEXTUAL_WORDS = [
   "collect", "exists", "none", "count", "first", "single",
   "order", "by", "asc", "desc", "follow", "distinct",
-  "frontier", "depth", "in", "values", "limit", "offset",
+  "frontier", "depth", "in", "values", "limit", "offset", "group", "having",
 ] as const;
 
 /** Consumer words: `receiver consumer [distinct] { body }` (GRAMMAR §2, §3). */
 export const CONSUMERS = ["collect", "exists", "none", "count", "first", "single"] as const;
 
-/** Words that open a clause: `order by`, `follow`, `limit`, `offset` (GRAMMAR §3). */
-export const CLAUSE_WORDS = ["order", "by", "follow", "limit", "offset"] as const;
+/** Words that open a clause: `order by`, `follow`, `limit`, `offset`, and since
+ * 0.24 `group by` and `having` (GRAMMAR §3). */
+export const CLAUSE_WORDS = ["order", "by", "follow", "limit", "offset", "group", "having"] as const;
+
+/** The aggregate functions (SEMANTICS §24, since 0.24): reserved free-function
+ * names that reduce a `group by` group — `count()`, `sum(e)`, `collect(distinct
+ * e)`, … Highlighted as builtin functions when a `(` follows (the consumer words
+ * among them — `collect`, `count`, `first` — stay consumers before a `{`). */
+export const AGGREGATES = ["count", "sum", "min", "max", "avg", "collect", "first", "last", "any", "all"] as const;
+
+/** The group's rows (SEMANTICS §24, since 0.24): `rows` at a group scope is the
+ * language's value, like `$it` — highlighted as an intrinsic. */
+export const GROUP_ROWS = "rows";
 
 /** The clauses of a `follow` destination block (GRAMMAR §3, `follow`, since
  * 0.20): `frontier <expr>` and `depth <n>`, after the block's `where`. `depth`

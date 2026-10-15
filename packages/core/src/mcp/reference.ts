@@ -20,10 +20,10 @@ correlates to the current row: \`from docs where nodes exists { where kind ==
 "md:task" }\` returns only the docs that themselves contain a matching node.
 
   [select <items>] from <target> [where <pred>] [frontier <pred>] [follow <dest> [{ … }], …]
-                   [order by <expr> [asc|desc], …] [limit N] [offset N]
+                   [group by <key>, …] [having <pred>] [order by <expr> [asc|desc], …] [limit N] [offset N]
   <target> count|exists|none|first|single { <block> }     (scalar/one-row form: a bare target at the root scope)
 
-CLAUSE ORDER IS FIXED: select, from, where, frontier, follow, order by, limit, offset —
+CLAUSE ORDER IS FIXED: select, from, where, frontier, follow, group by, having, order by, limit, offset —
 each at most once; an out-of-order clause is a parse error naming the order.
 Only \`select\` may drop its keyword, and only as the first clause
 (\`path, era from docs where …\`). A top-level predicate needs \`where\`, because
@@ -470,6 +470,7 @@ text()/where prune the candidate set; only order by reweights.
   select seq, origin, ts, hash from revisions where path == "/processes/calcination.md" order by seq desc
   from docs where revisions count { where origin == "api" } > 0
   select p: path, d: doc.path from revisions where doc == null
+  select layer, n: count(), titles: collect(title), open: rows count { where nodes exists { where kind == "md:task" and not checked } } from docs group by layer having count() > 1 order by count() desc
 
 Common mistake: \`$path\`/\`$id\` (the 2.x spelling) — omgbase has no $ names; write
 \`path\`/\`id\`. Another: \`where tags == "x"\` on a list-valued key is false — write

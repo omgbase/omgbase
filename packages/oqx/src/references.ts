@@ -54,15 +54,17 @@
 // are cut after the last step at its scope's depth. The empty list is the root
 // scope.
 
-import type { AstNode, Expr, Follow, Query, SelectItem, Span, Subquery } from "./ast.ts";
+import type { AstNode, Expr, Follow, GroupBy, Query, SelectItem, Span, Subquery } from "./ast.ts";
 import type { Clause } from "./walk.ts";
 import { visit } from "./walk.ts";
 
 /** One step of a scope's row chain: an expression (a source, a `from`, a block
- * receiver, a plain destination) or a `follow` node (the walk's frontier rows),
- * with the scope depth of the rows it produces. */
+ * receiver, a plain destination), a `follow` node (the walk's frontier rows), or
+ * — since 0.24 — a `groupBy` node (the body's groups: the rows at the same depth
+ * replaced by one key record per group), with the scope depth of the rows it
+ * produces. */
 export interface ReferenceStep {
-  readonly expr: Expr | Follow;
+  readonly expr: Expr | Follow | GroupBy;
   readonly depth: number;
 }
 
@@ -120,6 +122,10 @@ export function references(root: Query | Subquery): Reference[] {
       const levels = head.kind === "outer" ? head.levels : 0;
       const depth = ctx.depth - levels;
       if (isLiftBound(name, depth, ctx.path, lifts)) return false;
+      // At a group scope (0.24) a bare key name is the key — an alias of the
+      // expression reported in clause `groupBy` — and `rows` is the language's
+      // value; neither reads a row.
+      if (isGroupValue(name, depth, ctx.path, node)) return false;
       const full = [name, ...path].join(".");
       const steps = scopeSteps(ctx.path, node);
       const scoped = levels === 0 ? steps : cutAt(steps, depth);
@@ -132,9 +138,9 @@ export function references(root: Query | Subquery): Reference[] {
 
 /** Whether a bare `name` in this position is a `select` alias the language
  * substitutes (so the name is the alias, not a row property): in the body's
- * `where`, any alias; in a `select` item, an alias defined to its LEFT. */
+ * `where` or `having`, any alias; in a `select` item, an alias defined to its LEFT. */
 function isResolvedAlias(name: string, path: readonly AstNode[], clause: Clause): boolean {
-  if (clause !== "where" && clause !== "select") return false;
+  if (clause !== "where" && clause !== "select" && clause !== "having") return false;
   // The nearest body, and the item under it when we are inside its select.
   for (let i = path.length - 1; i >= 0; i--) {
     const a = path[i]!;
@@ -143,7 +149,7 @@ function isResolvedAlias(name: string, path: readonly AstNode[], clause: Clause)
     a.select.forEach((it, j) => { const n = aliasName(it); if (n !== null) index.set(n, j); });
     const j = index.get(name);
     if (j === undefined) return false;
-    if (clause === "where") return true;
+    if (clause === "where" || clause === "having") return true;
     const item = path[i + 1];
     const at = item === undefined ? -1 : a.select.indexOf(item as SelectItem);
     return at >= 0 && j < at;
@@ -185,6 +191,51 @@ function liftsLandingOn(body: Query | Subquery): ReadonlySet<string> {
   return names;
 }
 
+/**
+ * Whether `name`, read at scope `depth`, is a value of a GROUP scope there
+ * (SEMANTICS §24): the body whose rows are at `depth` has a `group by`, the
+ * position is one of its post-group clauses — a select item, `having`, `order
+ * by` — not inside an aggregate's argument (which reads the group's rows), and
+ * the name is a key or `rows`.
+ */
+function isGroupValue(name: string, depth: number, path: readonly AstNode[], node: AstNode): boolean {
+  const i = bodyIndexAt(path, depth);
+  if (i === -1) return false;
+  const body = path[i] as Query | Subquery;
+  if (!atGroupScope(body, path, i, node)) return false;
+  return name === "rows" || body.groupBy!.keys.some((k) => k.name === name);
+}
+
+/** The index in `path` of the body whose rows are at scope `depth` (every nested body is one scope deeper), or -1. */
+function bodyIndexAt(path: readonly AstNode[], depth: number): number {
+  if (depth < 1) return -1;
+  let seen = 0;
+  for (let i = 0; i < path.length; i++) {
+    const a = path[i]!;
+    if (a.kind !== "query" && a.kind !== "subquery") continue;
+    if (++seen === depth) return i;
+  }
+  return -1;
+}
+
+/** Whether a position under `body` (at `path[i]`) reads the body's GROUP scope:
+ * the body is grouped, the position lies in a select item, `having` or `order
+ * by`, and no aggregate stands between the body and the position (an
+ * aggregate's argument reads the group's rows; a nested body is its own scope
+ * and ends the search). */
+function atGroupScope(body: Query | Subquery, path: readonly AstNode[], i: number, node: AstNode): boolean {
+  if (body.groupBy === null) return false;
+  const child = path[i + 1] ?? node;
+  const post = body.select.includes(child as SelectItem) || child === body.having || (body.orderBy?.includes(child as never) ?? false);
+  if (!post) return false;
+  for (let j = i + 1; j < path.length; j++) {
+    const a = path[j]!;
+    if (a.kind === "query" || a.kind === "subquery") break;
+    if (a.kind === "aggregate") return false;
+  }
+  return true;
+}
+
 /** The row chain of the scope a node is evaluated in, from its ancestors. */
 function scopeSteps(path: readonly AstNode[], node: AstNode): ReferenceStep[] {
   const steps: ReferenceStep[] = [];
@@ -198,12 +249,16 @@ function scopeSteps(path: readonly AstNode[], node: AstNode): ReferenceStep[] {
         depth = 1;
         steps.push({ expr: a.source, depth });
         pushFroms(steps, a.from, next, depth);
+        // A grouped body's post-group clauses read its groups (0.24): the rows
+        // at this depth replaced by one key record per group.
+        if (atGroupScope(a, path, i, node)) steps.push({ expr: a.groupBy!, depth });
         break;
       }
       case "subquery": {
         // The receiver step was pushed by the enclosing `op`; this body's rows
         // are one deeper than where that receiver was read.
         pushFroms(steps, a.from, next, depth);
+        if (atGroupScope(a, path, i, node)) steps.push({ expr: a.groupBy!, depth });
         break;
       }
       case "op": {
