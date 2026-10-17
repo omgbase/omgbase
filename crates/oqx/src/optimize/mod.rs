@@ -341,6 +341,8 @@ pub fn cardinality_only(plan: &BlockPlan, _ctx: &RuleContext) -> Option<BlockPla
         || node.sub.order_by.is_some()
         || node.sub.follow.is_some()
         || node.sub.group_by.is_some()
+        // the consumer counts flattened rows, not rows (0.25)
+        || !node.sub.flatten.is_empty()
         || (node.sub.r#where.is_some() && plan.residual.is_some())
     {
         return None;
@@ -462,6 +464,11 @@ fn sub_reads_scope_in(sub: &Subquery, at: usize, up_to: usize, destination: bool
             let d = if destination { at.saturating_sub(1) } else { at };
             expr_reads_scope_in(e, d, up_to)
         })
+        // A `flatten` expression is read on each row (0.25); its block is an op read there.
+        || sub
+            .flatten
+            .iter()
+            .any(|f| expr_reads_scope_in(&f.expr, at, up_to))
         // `group by` keys are read on the rows, `having` on the groups — both at `at` (0.24).
         || sub.group_by.as_ref().is_some_and(|g| {
             g.keys
@@ -560,6 +567,9 @@ pub fn op_raise_free(op: &OpNode, ctx: &RuleContext) -> bool {
             .order_by
             .as_ref()
             .is_none_or(|specs| specs.iter().all(|o| expr_raise_free(&o.expr, ctx)))
+        // A `flatten` value is coerced without error (a scalar is one row, §25),
+        // so the clause raises only when its expression does.
+        && sub.flatten.iter().all(|f| expr_raise_free(&f.expr, ctx))
         && !op_has_lifts(op)
 }
 
@@ -574,6 +584,10 @@ fn sub_has_lifts(sub: &Subquery) -> bool {
         SelectItem::Collect { op, .. } => op_has_lifts(op),
     }) || sub.r#where.as_ref().is_some_and(where_has_lifts)
         || sub.having.as_ref().is_some_and(where_has_lifts)
+        || sub
+            .flatten
+            .iter()
+            .any(|f| matches!(&f.expr, Expr::Op(op) if op_has_lifts(op)))
         || sub.follow.as_ref().is_some_and(|f| {
             f.destinations
                 .iter()

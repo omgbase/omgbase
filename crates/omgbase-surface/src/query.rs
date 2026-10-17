@@ -13,7 +13,7 @@ use std::collections::HashMap;
 
 use omgbase_search::{EmbeddingProvider, f32_to_blob};
 use omgbase_store::Store;
-use oqx::ast::{BinaryOp, Expr, Query, SelectItem};
+use oqx::ast::{BinaryOp, Expr, Flatten, Query, SelectItem};
 use oqx::walk::{Clause, Node, VisitContext, Visitor, transform, visit};
 use oqx::{Consumer, Engine, InMemoryEngine, Value, build, resolve_aliases};
 use serde_json::{Map, Value as Json};
@@ -248,6 +248,23 @@ fn envelope_collision(items: &[SelectItem]) -> Option<SurfaceError> {
         ));
     }
     None
+}
+
+/// A `flatten … as id` / `as path` (oqx 0.25) would shadow the envelope's own
+/// reads on the flattened row (the bound name shadows a same-named row
+/// property, SEMANTICS §25): refused, like a projection that collides with the
+/// envelope. Same rule as the reference's `runResolved`.
+fn flatten_collision(flatten: &[Flatten]) -> Option<SurfaceError> {
+    let f = flatten
+        .iter()
+        .find(|f| f.name == HIT_ID || f.name == HIT_PATH)?;
+    Some(SurfaceError::filter_invalid(
+        format!(
+            "flatten `as {0}` collides with the hit envelope — a flattened row is still the row, whose `{0}` the envelope reads; bind another name",
+            f.name
+        ),
+        "OQX",
+    ))
 }
 
 fn root_literal(e: Expr) -> Expr {
@@ -1112,6 +1129,21 @@ fn run_resolved(engine: &Runner<'_>, raw: &Query, opts: QueryOptions<'_>) -> Res
         return run_grouped(engine, &parsed, consumer, opts);
     }
 
+    // A flattened query (oqx 0.25, SEMANTICS §25) yields the parent rows, one
+    // per element: a hit is still a store row, so the envelope is injected as
+    // usual and repeats per element (Dataview's `TABLE … FLATTEN`). What
+    // changes is uniqueness — `(path, id)` no longer names one hit — so the
+    // keyset cursor cannot land inside a document's elements: a flattened
+    // query pages positionally with a null cursor, as a grouped query and a
+    // custom `order by` do (a keyset extended with the flatten ordinal is a
+    // later round). A bound name of `id` or `path` would shadow the envelope's
+    // own reads (the name shadows a same-named row property on the flattened
+    // row): refused, like a projection that collides with the envelope.
+    let flattened = !parsed.flatten.is_empty();
+    if let Some(e) = flatten_collision(&parsed.flatten) {
+        return Err(e);
+    }
+
     // collect / first / single: inject id + path so every hit carries them. A
     // top-level `select distinct` is applied HERE, not in the engine (the
     // injected id/path are unique per row and would defeat the engine's
@@ -1210,7 +1242,7 @@ fn run_resolved(engine: &Runner<'_>, raw: &Query, opts: QueryOptions<'_>) -> Res
         oqx::OqxResult::Collect(rows) => rows,
         _ => Vec::new(),
     };
-    let custom = parsed.order_by.as_ref().is_some_and(|o| !o.is_empty());
+    let custom = parsed.order_by.as_ref().is_some_and(|o| !o.is_empty()) || flattened;
     let cursor = opts.cursor.filter(|c| !c.is_empty() && !custom);
     let offset = const_bound(top_offset.as_ref(), "offset")?.unwrap_or(0);
     let limit = const_bound(top_limit.as_ref(), "limit")?;
@@ -1722,6 +1754,38 @@ mod tests {
         );
         assert!(envelope_collision(&items("select path: doc.path from blocks")).is_some());
         assert!(envelope_collision(&items("select path: nodes collect { } from docs")).is_some());
+    }
+
+    #[test]
+    fn a_flatten_bound_onto_the_envelope_is_refused() {
+        let flatten = |src: &str| oqx::parse_string(src).unwrap().flatten;
+        // a bound name beside the envelope is fine, however many flattens
+        assert!(
+            flatten_collision(&flatten("select path, t from docs flatten tags as t")).is_none()
+        );
+        assert!(
+            flatten_collision(&flatten(
+                "select path, b from docs flatten blocks { where type == \"task\" } as b flatten b.children as c"
+            ))
+            .is_none()
+        );
+        assert!(flatten_collision(&flatten("select path from docs")).is_none());
+        // `as id` / `as path` would shadow the envelope's reads
+        let e = flatten_collision(&flatten("select path from docs flatten tags as id")).unwrap();
+        assert_eq!(e.code, "filter_invalid");
+        assert_eq!(
+            e.message,
+            "flatten `as id` collides with the hit envelope — a flattened row is still the row, whose `id` the envelope reads; bind another name"
+        );
+        assert_eq!(e.data.as_ref().unwrap()["hint"], "OQX");
+        let e = flatten_collision(&flatten(
+            "select title from docs flatten tags as t flatten data.paths as path",
+        ))
+        .unwrap();
+        assert_eq!(
+            e.message,
+            "flatten `as path` collides with the hit envelope — a flattened row is still the row, whose `path` the envelope reads; bind another name"
+        );
     }
 
     #[test]

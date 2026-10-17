@@ -16,8 +16,8 @@
 //! instead.
 
 use crate::ast::{
-    BinaryOp, Expr, Follow, FollowDestination, GroupBy, GroupKey, LogicalOp, OpNode, OrderSpec,
-    Query, SelectItem, Subquery, TemplatePart, Where,
+    BinaryOp, Expr, Flatten, Follow, FollowDestination, GroupBy, GroupKey, LogicalOp, OpNode,
+    OrderSpec, Query, SelectItem, Subquery, TemplatePart, Where,
 };
 use crate::errors::{OqxError, Result};
 use crate::value::{Value, js_number_to_string};
@@ -162,6 +162,7 @@ fn render(n: Node<'_>) -> Out {
         Node::Subquery(s) => block(s),
         Node::Op(op) => op_node(op),
         Node::Follow(f) => follow(f),
+        Node::Flatten(f) => flatten(f),
         Node::GroupBy(g) => group_by(g),
         Node::Key(k) => key(k),
         Node::Order(o) => order(o),
@@ -208,6 +209,7 @@ fn query(q: &Query) -> Out {
             q.frontier.as_ref(),
             None,
             q.follow.as_ref(),
+            &q.flatten,
             q.group_by.as_ref(),
             q.having.as_ref(),
             q.order_by.as_deref(),
@@ -227,6 +229,7 @@ fn query(q: &Query) -> Out {
         q.frontier.as_ref(),
         None,
         q.follow.as_ref(),
+        &q.flatten,
         q.group_by.as_ref(),
         q.having.as_ref(),
         q.order_by.as_deref(),
@@ -247,7 +250,8 @@ fn query(q: &Query) -> Out {
 // The clauses after `from` (a query) or after the projection (a block): the
 // fixed clause order, each present clause once. `depth` exists only on a follow
 // destination block's body (a `Query` has none); `frontier` on any body that
-// has a `follow` (0.20); `group by` and `having` after `follow` (0.24).
+// has a `follow` (0.20); every `flatten` after `follow` (0.25); `group by` and
+// `having` after them (0.24).
 #[allow(clippy::too_many_arguments)]
 fn tail(
     from: &[Expr],
@@ -255,6 +259,7 @@ fn tail(
     frontier: Option<&Expr>,
     depth: Option<u32>,
     follow_clause: Option<&Follow>,
+    flatten_clauses: &[Flatten],
     group_by_clause: Option<&GroupBy>,
     having: Option<&Where>,
     order_by: Option<&[OrderSpec]>,
@@ -276,6 +281,9 @@ fn tail(
     }
     if let Some(f) = follow_clause {
         out.push(follow(f));
+    }
+    for f in flatten_clauses {
+        out.push(flatten(f));
     }
     if let Some(g) = group_by_clause {
         out.push(group_by(g));
@@ -311,6 +319,7 @@ fn block(s: &Subquery) -> Out {
         s.frontier.as_ref(),
         s.depth,
         s.follow.as_ref(),
+        &s.flatten,
         s.group_by.as_ref(),
         s.having.as_ref(),
         s.order_by.as_deref(),
@@ -394,6 +403,17 @@ fn follow(f: &Follow) -> Out {
             if f.distinct { " distinct" } else { "" }
         )),
         dests,
+    ])
+}
+
+// `as <name>` is always written (0.25), as every select item and group key is
+// aliased: the tree does not record whether it was, and the name is what the
+// later clauses read.
+fn flatten(f: &Flatten) -> Out {
+    cat(vec![
+        text("flatten "),
+        expr(&f.expr),
+        text(format!(" as {}", f.name)),
     ])
 }
 

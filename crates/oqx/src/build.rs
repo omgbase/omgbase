@@ -5,7 +5,7 @@
 //! shape as a parsed one and prints with [`crate::print`].
 
 use crate::ast::{
-    AggregateName, BinaryOp, Consumer, CountCmp, Expr, Follow, FollowDestination, GroupBy,
+    AggregateName, BinaryOp, Consumer, CountCmp, Expr, Flatten, Follow, FollowDestination, GroupBy,
     GroupKey, LogicalOp, OpNode, OrderSpec, Query, SelectItem, Span, Subquery, TemplatePart,
     UnaryOp, Where,
 };
@@ -222,6 +222,15 @@ pub fn key(name: &str, expr: Expr) -> GroupKey {
         span: Span::EMPTY,
     }
 }
+/// `flatten <expr> as <name>` (SEMANTICS §25); a written block is the `collect`
+/// op over the value (`op(recv, Consumer::Collect, sub)`).
+pub fn flatten(expr: Expr, name: &str) -> Flatten {
+    Flatten {
+        expr,
+        name: name.to_owned(),
+        span: Span::EMPTY,
+    }
+}
 /// `group by <keys>` (SEMANTICS §24).
 pub fn group_by(keys: Vec<GroupKey>) -> GroupBy {
     GroupBy {
@@ -240,6 +249,7 @@ pub fn subquery() -> Subquery {
         follow: None,
         frontier: None,
         depth: None,
+        flatten: Vec::new(),
         group_by: None,
         having: None,
         values: false,
@@ -294,6 +304,7 @@ pub fn query(source: Expr) -> Query {
         order_by: None,
         consumer: Consumer::Collect,
         follow: None,
+        flatten: Vec::new(),
         group_by: None,
         having: None,
         distinct: false,

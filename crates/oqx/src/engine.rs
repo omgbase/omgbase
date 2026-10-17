@@ -43,7 +43,7 @@ use std::rc::Rc;
 
 use crate::Result;
 use crate::ast::{
-    AggregateName, BinaryOp, Consumer, CountCmp, Expr, Follow, FollowDestination, GroupBy,
+    AggregateName, BinaryOp, Consumer, CountCmp, Expr, Flatten, Follow, FollowDestination, GroupBy,
     LogicalOp, OpNode, OrderSpec, Query, SelectItem, Subquery, TemplatePart, UnaryOp, Where,
 };
 use crate::context::DataContext;
@@ -461,8 +461,11 @@ impl<'e, C: DataContext> Exec<'e, C> {
         let root = Scope::root(self.ctx.root_object());
         let src = self.coerce_rows_expr(&query.source, &root)?;
         // One object as the source yields one record (SEMANTICS §3) — unless a
-        // `from` re-projection or a walk fans it out.
-        let single = src.single && query.from.is_empty() && query.follow.is_none();
+        // `from` re-projection, a walk or a `flatten` fans it out.
+        let single = src.single
+            && query.from.is_empty()
+            && query.follow.is_none()
+            && query.flatten.is_empty();
         let mut rows = src.rows;
         for proj in &query.from {
             rows = self.reproject(rows, proj, &root)?;
@@ -474,12 +477,14 @@ impl<'e, C: DataContext> Exec<'e, C> {
         }
 
         // Consumer-directed short-circuits (skipped under `distinct`, which must
-        // materialize + dedup by projection before reducing, and under `group
-        // by`, whose consumer counts groups). Counting never materializes rows;
-        // exists/none stop as soon as the bound is known to be non-empty (the
-        // (offset+1)th match — or the first, when unbounded).
+        // materialize + dedup by projection before reducing, under `group by`,
+        // whose consumer counts groups, and under `flatten`, whose consumer
+        // counts flattened rows). Counting never materializes rows; exists/none
+        // stop as soon as the bound is known to be non-empty (the (offset+1)th
+        // match — or the first, when unbounded).
         if !query.distinct
             && query.group_by.is_none()
+            && query.flatten.is_empty()
             && matches!(
                 query.consumer,
                 Consumer::Exists | Consumer::None | Consumer::Count
@@ -514,6 +519,7 @@ impl<'e, C: DataContext> Exec<'e, C> {
             && query.order_by.is_none()
             && !query.distinct
             && query.group_by.is_none()
+            && query.flatten.is_empty()
         {
             Some(bound.offset.saturating_add(1.min(bound.limit.unwrap_or(1))))
         } else {
@@ -531,6 +537,9 @@ impl<'e, C: DataContext> Exec<'e, C> {
                     break;
                 }
             }
+        }
+        if !query.flatten.is_empty() {
+            kept = self.flatten_scopes(kept, &query.flatten)?;
         }
         if let Some(g) = &query.group_by {
             kept = self.group_scopes(kept, g, query.having.as_ref(), &root)?;
@@ -750,6 +759,90 @@ impl<'e, C: DataContext> Exec<'e, C> {
         }
     }
 
+    // ---- flatten (SEMANTICS §25) ----------------------------------------------
+
+    // Each `flatten` clause, in writing order, fans the scopes out: the
+    // expression is read in the row's scope (as `where` is) and its value split
+    // — an array (or a host collection) → one scope per element in collection
+    // order, so an empty collection yields none; absent → one scope with the
+    // name absent; anything else (an object, a scalar, a range) → one scope with
+    // the value. A flattened scope IS the parent scope — the same row, parent,
+    // lifts and intrinsics, so `$it`, `^` and `$depth` are unchanged — with the
+    // name bound beside the lifts (step 4 of §2: it shadows a same-named row
+    // property) and `$key` the pair `[parent identity, element identity]` (§16):
+    // an element's identity is the host's (an entry's key), else its structural
+    // value. A literal `entries(x)` yields keyed rows here as in every row
+    // position (the module docs): the element is the `{ key, value }` record
+    // and its identity the key.
+    fn flatten_scopes<'p>(
+        &self,
+        mut scopes: Vec<Scope<'p>>,
+        flatten: &[Flatten],
+    ) -> Result<Vec<Scope<'p>>> {
+        for f in flatten {
+            let mut out: Vec<Scope<'p>> = Vec::new();
+            for s in scopes {
+                let parent_key = self.scope_identity(&s);
+                let elems: Vec<(Value, Value)> = if is_entries_call(&f.expr) {
+                    self.coerce_rows_expr(&f.expr, &s)?
+                        .rows
+                        .into_iter()
+                        .map(|r| {
+                            let id = self.host_identity(&r);
+                            (r.into_value(), id)
+                        })
+                        .collect()
+                } else {
+                    self.flatten_elements(self.eval_raw(&f.expr, &s)?)
+                        .into_iter()
+                        .map(|e| {
+                            let id = if e.is_absent() {
+                                Value::Null
+                            } else {
+                                self.ctx.identity(&e)
+                            };
+                            (e, id)
+                        })
+                        .collect()
+                };
+                for (elem, elem_key) in elems {
+                    let mut lifts = s.lifts.borrow().clone();
+                    lifts.insert(f.name.as_str(), elem);
+                    let mut meta = s.meta.clone().unwrap_or_default();
+                    meta.insert(KEY, Value::Array(vec![parent_key.clone(), elem_key]));
+                    out.push(Scope {
+                        row: s.row.clone(),
+                        parent: s.parent,
+                        lifts: RefCell::new(lifts),
+                        meta: Some(meta),
+                        entry_key: s.entry_key.clone(),
+                        group: None,
+                    });
+                }
+            }
+            scopes = out;
+        }
+        Ok(scopes)
+    }
+
+    // The elements a flattened value splits into (§25): §3's coercion with one
+    // softening — a scalar is one element, not an error, since no rows are
+    // sourced from it — and absent as one absent element rather than none.
+    fn flatten_elements(&self, v: Value) -> Vec<Value> {
+        match v {
+            Value::Undefined | Value::Null => vec![Value::Undefined],
+            Value::Str(_) | Value::Number(_) | Value::Bool(_) | Value::Range(_) => vec![v],
+            Value::Array(items) => items,
+            Value::Object(_) => {
+                if self.ctx.is_single(&v) {
+                    vec![v]
+                } else {
+                    self.ctx.to_rows(&v)
+                }
+            }
+        }
+    }
+
     // ---- grouping (SEMANTICS §24) ---------------------------------------------
 
     // The kept scopes of a body, one GROUP scope per distinct key tuple, in order
@@ -954,6 +1047,9 @@ impl<'e, C: DataContext> Exec<'e, C> {
             if post.is_empty() || self.eval_conjuncts(&post, &s)? {
                 scopes.push(s);
             }
+        }
+        if !query.flatten.is_empty() {
+            scopes = self.flatten_scopes(scopes, &query.flatten)?;
         }
         if let Some(g) = &query.group_by {
             scopes = self.group_scopes(scopes, g, query.having.as_ref(), root)?;
@@ -1428,11 +1524,13 @@ impl<'e, C: DataContext> Exec<'e, C> {
                 } else if op.op != Consumer::Count
                     && bound == UNBOUNDED
                     && op.sub.group_by.is_none()
+                    && op.sub.flatten.is_empty()
                 {
                     // Unbounded exists/none: stop at the first match (dedup
-                    // cannot change emptiness). Bounded, or grouped (`having`
-                    // may empty the groups): the offset/limit decide emptiness,
-                    // so materialize the set.
+                    // cannot change emptiness). Bounded, grouped (`having`
+                    // may empty the groups) or flattened (an empty collection
+                    // yields no row): the offset/limit decide emptiness, so
+                    // materialize the set.
                     usize::from(!self.match_rows(op, scope, Some(1), Some(acc))?.is_empty())
                 } else {
                     self.op_rows(op, scope, bound, Some(acc))?.len()
@@ -1488,7 +1586,7 @@ impl<'e, C: DataContext> Exec<'e, C> {
             }
         }
     }
-    // The rows a consumer op reduces: matched → grouped → ordered → distinct → bounded.
+    // The rows a consumer op reduces: matched → flattened → grouped → ordered → distinct → bounded.
     fn op_rows<'p>(
         &self,
         op: &OpNode,
@@ -1497,6 +1595,9 @@ impl<'e, C: DataContext> Exec<'e, C> {
         acc: Option<Access>,
     ) -> Result<Vec<Scope<'p>>> {
         let mut scopes = self.match_rows(op, scope, None, acc)?;
+        if !op.sub.flatten.is_empty() {
+            scopes = self.flatten_scopes(scopes, &op.sub.flatten)?;
+        }
         if let Some(g) = &op.sub.group_by {
             scopes = self.group_scopes(scopes, g, op.sub.having.as_ref(), scope)?;
         }
@@ -1626,7 +1727,8 @@ impl<'e, C: DataContext> Exec<'e, C> {
     }
 
     /// The plain scan: the rows, re-projected by `from`, with the whole `where`.
-    /// A `from` re-projection fans a single receiver out: the block is plural.
+    /// A `from` re-projection or a `flatten` fans a single receiver out: the
+    /// block is plural.
     fn scan(
         &self,
         src: Rows,
@@ -1642,7 +1744,7 @@ impl<'e, C: DataContext> Exec<'e, C> {
             rows,
             predicate: Predicate::Whole,
             plan: Rc::clone(plan),
-            single: src.single && op.sub.from.is_empty(),
+            single: src.single && op.sub.from.is_empty() && op.sub.flatten.is_empty(),
         })
     }
 
@@ -1899,6 +2001,9 @@ impl<'e, C: DataContext> Exec<'e, C> {
                 .into_iter()
                 .map(|o| self.enter(o.row, scope, Some(o.meta)))
                 .collect();
+            if !sub.flatten.is_empty() {
+                scopes = self.flatten_scopes(scopes, &sub.flatten)?;
+            }
             if let Some(g) = &sub.group_by {
                 scopes = self.group_scopes(scopes, g, sub.having.as_ref(), scope)?;
             }

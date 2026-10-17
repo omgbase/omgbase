@@ -309,7 +309,7 @@ fn each_of_the_four_legal_leading_forms_parses() {
 
 #[test]
 fn out_of_order_clauses_fail_naming_the_fixed_order() {
-    const ORDERING: &str = "OQX clause order is select, from, where, frontier, follow, group by, having, order by, limit, offset";
+    const ORDERING: &str = "OQX clause order is select, from, where, frontier, follow, flatten, group by, having, order by, limit, offset";
     let out_of_order = |src: &str, first: &str, second: &str| {
         assert_parse_error(
             src,
@@ -861,7 +861,7 @@ fn trailing_tokens_after_a_directive_or_query_are_errors() {
     assert_parse_error(
         "name from people )",
         &[
-            "unexpected ')' after the query — nothing may follow the last clause (expected where/frontier/follow/group by/having/order by/limit/offset or the end of the query)",
+            "unexpected ')' after the query — nothing may follow the last clause (expected where/frontier/follow/flatten/group by/having/order by/limit/offset or the end of the query)",
         ],
     );
 }
@@ -877,7 +877,7 @@ fn stray_tokens_after_a_complete_clause_name_where_the_body_ends() {
         "name from people where a > 1 5",
         &[
             "unexpected '5' after the query",
-            "expected frontier/follow/group by/having/order by/limit/offset or the end of the query",
+            "expected frontier/follow/flatten/group by/having/order by/limit/offset or the end of the query",
         ],
     );
     assert_parse_error(
@@ -901,13 +901,13 @@ fn stray_tokens_after_a_complete_clause_name_where_the_body_ends() {
     assert_parse_error(
         "people exists { name from jobs ) }",
         &[
-            "unexpected ')' in the exists { … } block — expected where/frontier/follow/group by/having/order by/limit/offset or '}' to close the block",
+            "unexpected ')' in the exists { … } block — expected where/frontier/follow/flatten/group by/having/order by/limit/offset or '}' to close the block",
         ],
     );
     assert_parse_error(
         "people count { where a > 1 \"s\" }",
         &[
-            "unexpected 's' in the count { … } block — expected frontier/follow/group by/having/order by/limit/offset or '}' to close the block",
+            "unexpected 's' in the count { … } block — expected frontier/follow/flatten/group by/having/order by/limit/offset or '}' to close the block",
         ],
     );
     // after the last clause nothing remains to expect
@@ -944,7 +944,7 @@ fn stray_tokens_after_a_complete_clause_name_where_the_body_ends() {
     assert_parse_error(
         ") from xs",
         &[
-            "unexpected ')' — expected a projection or select/from/where/frontier/follow/group by/having/order by/limit/offset",
+            "unexpected ')' — expected a projection or select/from/where/frontier/follow/flatten/group by/having/order by/limit/offset",
         ],
     );
 }
@@ -1137,7 +1137,7 @@ fn follow_destination_block_clauses() {
         "from tree follow children { depth 1 frontier x }",
         &[
             "`frontier` must come before `depth`",
-            "select, from, where, frontier, depth, follow, group by, having, order by, limit, offset",
+            "select, from, where, frontier, depth, follow, flatten, group by, having, order by, limit, offset",
         ],
     );
     assert_parse_error(
@@ -1594,7 +1594,7 @@ fn stray_tokens_name_the_remaining_clauses() {
     assert_parse_error(
         "name from people where a > 1 name",
         &[
-            "unexpected 'name' after `where` — expected frontier/follow/group by/having/order by/limit/offset",
+            "unexpected 'name' after `where` — expected frontier/follow/flatten/group by/having/order by/limit/offset",
         ],
     );
     // a literal after a complete clause is a stray token, reported where the body ends
@@ -1611,13 +1611,13 @@ fn stray_tokens_name_the_remaining_clauses() {
     assert_parse_error(
         "people count { where a x }",
         &[
-            "unexpected 'x' after `where` — expected frontier/follow/group by/having/order by/limit/offset",
+            "unexpected 'x' after `where` — expected frontier/follow/flatten/group by/having/order by/limit/offset",
         ],
     );
     assert_parse_error(
         ") from xs",
         &[
-            "unexpected ')' — expected a projection or select/from/where/frontier/follow/group by/having/order by/limit/offset",
+            "unexpected ')' — expected a projection or select/from/where/frontier/follow/flatten/group by/having/order by/limit/offset",
         ],
     );
 }
@@ -2738,6 +2738,7 @@ fn readme_full_query_shape() {
                 span: Span::EMPTY,
             }),
             frontier: None,
+            flatten: Vec::new(),
             group_by: None,
             having: None,
             distinct: false,

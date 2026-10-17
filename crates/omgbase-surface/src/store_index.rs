@@ -116,7 +116,7 @@ fn probe_for(t: Target, path: &[String]) -> Option<Probe> {
     // `format` column (not indexed), not an OQX `$` name, and of the engine
     // attributes only `title` (the computed `$title` row, a scalar property
     // the author's `title:` never reaches — `data.title` does): `raw`, `hash`,
-    // `updated_at` and `tags` (authored ∪ hashtags) have no index and are never
+    // `updated_at`, `created_at` and `tags` (authored ∪ hashtags) have no index and are never
     // property probes.
     if key == "title" {
         return Some(Probe::Property {

@@ -638,6 +638,24 @@ pub struct GroupBy {
     pub span: Span,
 }
 
+/// One `flatten` clause (since 0.25): `flatten <expr> [{ … }] [as <name>]` —
+/// the value of `expr`, read on each row, is split into one row per element
+/// (SEMANTICS §25), each the parent row with `name` bound at the same scope
+/// depth. A written block is the implicit `collect` directive over the value
+/// (GRAMMAR §2), so `expr` is then an [`Expr::Op`]; `name` is always filled —
+/// the alias, or the last segment of a plain navigation when `as` was omitted.
+#[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(
+    feature = "json",
+    derive(Serialize, Deserialize),
+    serde(tag = "kind", rename = "flatten")
+)]
+pub struct Flatten {
+    pub expr: Expr,
+    pub name: String,
+    pub span: Span,
+}
+
 /// One projection item: a named scalar/navigation value, or a named nested
 /// collection consumer. `lift` marks a `^name` lift.
 #[derive(Clone, Debug, PartialEq)]
@@ -771,6 +789,10 @@ pub struct Subquery {
     /// [`Query`]); `depth` is destination-only. Both `None` when absent.
     pub frontier: Option<Expr>,
     pub depth: Option<u32>,
+    /// `flatten` clauses (since 0.25), in writing order; empty when there is
+    /// none. Each fans the rows the previous produced out, after `follow` and
+    /// before `group by` (SEMANTICS §25).
+    pub flatten: Vec<Flatten>,
     /// `group by` / `having` (since 0.24): the block's rows become one row per
     /// distinct key tuple (SEMANTICS §24); `having` filters the groups. Both
     /// `None` when absent; `having` is set only together with `group_by`.
@@ -879,6 +901,8 @@ pub struct Query {
     /// enclosing scope, like `where`) is a frontier (`$stop == "frontier"`,
     /// not expanded). `None` without one.
     pub frontier: Option<Expr>,
+    /// `flatten` clauses (since 0.25; see [`Subquery`]).
+    pub flatten: Vec<Flatten>,
     /// `group by` / `having` (since 0.24; see [`Subquery`]).
     pub group_by: Option<GroupBy>,
     pub having: Option<Where>,

@@ -26,7 +26,11 @@
 //!     (`target.contains("x")` references `target`); a name a nested block
 //!     LIFTS onto a scope (`^open: value`, SEMANTICS §19) is a binding of that
 //!     scope, so reading it there (`select open`, `^open` from deeper) is not a
-//!     reference either;
+//!     reference either — and neither is a name a `flatten` bound (0.25,
+//!     SEMANTICS §25) in the clauses after it: a later `flatten`, `group by`,
+//!     `having`, the select, `order by`, or `^name` from a block under them; in
+//!     its own expression and before the clause (`where`, `frontier`, `follow`)
+//!     the name is still the row's property;
 //!   • a `select` alias is not a reference where the language resolves it
 //!     (SEMANTICS §14): in the same body's `where`, and in the items to its
 //!     right — a bare identifier naming such an alias, or a chain headed by it,
@@ -66,7 +70,9 @@
 
 use std::collections::{HashMap, HashSet};
 
-use crate::ast::{Expr, Follow, GroupBy, OpNode, Query, SelectItem, Span, Subquery, Where};
+use crate::ast::{
+    Expr, Flatten, Follow, GroupBy, OpNode, OrderSpec, Query, SelectItem, Span, Subquery, Where,
+};
 use crate::walk::{Clause, Node, VisitContext, Visitor, visit};
 
 /// The expression of one scope step: an expression (a source, a `from`, a
@@ -232,6 +238,11 @@ fn references_in<'a>(root: Node<'a>) -> Vec<Reference<'a>> {
             if self.is_lift_bound(name, depth, &ctx.path) {
                 return false;
             }
+            // A name a `flatten` bound (0.25) is an alias of the expression
+            // already reported in clause `flatten`, read in the clauses after it.
+            if is_flatten_bound(name, depth, &ctx.path, node) {
+                return false;
+            }
             // At a group scope (0.24) a bare key name is the key — an alias of
             // the expression reported in clause `groupBy` — and `rows` is the
             // language's value; neither reads a row.
@@ -359,6 +370,87 @@ fn lifts_landing_on(body: Node<'_>) -> HashSet<String> {
     };
     visit(body, &mut l);
     l.names
+}
+
+/// Whether `name`, read at scope `depth`, is bound there by a `flatten` of the
+/// body whose rows are at `depth` (SEMANTICS §25) — the position lies in a
+/// clause evaluated after that flatten: a later `flatten`, `group by`, `having`,
+/// the select, or `order by` (`where`, `frontier`, `follow` and the body's
+/// sources run before any flatten, and a flatten's own expression before itself).
+fn is_flatten_bound(name: &str, depth: usize, path: &[Node<'_>], node: Node<'_>) -> bool {
+    let Some(i) = body_index_at(path, depth) else {
+        return false;
+    };
+    let Some(body) = PostFlatten::of(path[i]) else {
+        return false;
+    };
+    if body.flatten.is_empty() {
+        return false;
+    }
+    let child = path.get(i + 1).copied().unwrap_or(node);
+    let upto = if body.is_post(child) {
+        body.flatten.len()
+    } else {
+        let Node::Flatten(f) = child else {
+            return false;
+        };
+        match body.flatten.iter().position(|x| std::ptr::eq(x, f)) {
+            Some(k) => k,
+            None => return false,
+        }
+    };
+    body.flatten[..upto].iter().any(|f| f.name == name)
+}
+
+/// The clauses of a body a `flatten` binding is visible to (SEMANTICS §25):
+/// the flattens themselves and the clauses evaluated after them.
+struct PostFlatten<'a> {
+    flatten: &'a [Flatten],
+    select: &'a [SelectItem],
+    group_by: Option<&'a GroupBy>,
+    having: Option<&'a Where>,
+    order_by: Option<&'a [OrderSpec]>,
+}
+
+impl<'a> PostFlatten<'a> {
+    fn of(body: Node<'a>) -> Option<Self> {
+        match body {
+            Node::Query(q) => Some(PostFlatten {
+                flatten: &q.flatten,
+                select: &q.select,
+                group_by: q.group_by.as_ref(),
+                having: q.having.as_ref(),
+                order_by: q.order_by.as_deref(),
+            }),
+            Node::Subquery(s) => Some(PostFlatten {
+                flatten: &s.flatten,
+                select: &s.select,
+                group_by: s.group_by.as_ref(),
+                having: s.having.as_ref(),
+                order_by: s.order_by.as_deref(),
+            }),
+            _ => None,
+        }
+    }
+
+    /// Whether `child` (a direct child of the body) is a clause evaluated
+    /// after every flatten: a select item, the `group by`, `having`, an
+    /// `order by` term.
+    fn is_post(&self, child: Node<'_>) -> bool {
+        match child {
+            Node::Select(it) => self.select.iter().any(|x| std::ptr::eq(x, it)),
+            Node::GroupBy(g) => self.group_by.is_some_and(|x| std::ptr::eq(x, g)),
+            // `having` is visited as its where tree (an op test as the op itself).
+            Node::Where(w) => self.having.is_some_and(|h| std::ptr::eq(h, w)),
+            Node::Op(op) => self
+                .having
+                .is_some_and(|h| matches!(h, Where::Op(b) if std::ptr::eq(&**b, op))),
+            Node::Order(o) => self
+                .order_by
+                .is_some_and(|os| os.iter().any(|x| std::ptr::eq(x, o))),
+            _ => false,
+        }
+    }
 }
 
 /// Whether `name`, read at scope `depth`, is a value of a GROUP scope there

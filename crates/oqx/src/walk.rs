@@ -6,8 +6,8 @@
 //! `visit` and `transform` both read it.
 
 use crate::ast::{
-    Expr, Follow, FollowDestination, GroupBy, GroupKey, OpNode, OrderSpec, Query, SelectItem, Span,
-    Subquery, TemplatePart, Where,
+    Expr, Flatten, Follow, FollowDestination, GroupBy, GroupKey, OpNode, OrderSpec, Query,
+    SelectItem, Span, Subquery, TemplatePart, Where,
 };
 
 /// A borrowed node of any kind.
@@ -17,6 +17,8 @@ pub enum Node<'a> {
     Subquery(&'a Subquery),
     Op(&'a OpNode),
     Follow(&'a Follow),
+    /// One `flatten` clause (0.25).
+    Flatten(&'a Flatten),
     /// The `group by` clause and one of its keys (0.24).
     GroupBy(&'a GroupBy),
     Key(&'a GroupKey),
@@ -34,6 +36,7 @@ impl Node<'_> {
             Node::Subquery(s) => s.span,
             Node::Op(op) => op.span,
             Node::Follow(f) => f.span,
+            Node::Flatten(f) => f.span,
             Node::GroupBy(g) => g.span,
             Node::Key(k) => k.span,
             Node::Order(o) => o.span,
@@ -50,6 +53,7 @@ impl Node<'_> {
             Node::Subquery(_) => "subquery",
             Node::Op(_) => "op",
             Node::Follow(_) => "follow",
+            Node::Flatten(_) => "flatten",
             Node::GroupBy(_) => "groupBy",
             Node::Key(_) => "key",
             Node::Order(_) => "order",
@@ -79,6 +83,9 @@ pub enum Clause {
     /// of the block's rows — under the walk's enclosing scope — or a body's
     /// own (its seeds'), read in the row scope like `where`.
     FollowFrontier,
+    /// A `flatten` node and its expression (0.25), read on each row like
+    /// `where`; a flattened row sits at the same depth as its parent.
+    Flatten,
     /// The `group by` keys (the `groupBy` node and its keys) and the
     /// post-group predicate (0.24), both at the row depth: a group scope sits
     /// where the rows did (SEMANTICS §24).
@@ -100,6 +107,7 @@ impl Clause {
             Clause::Follow => "follow",
             Clause::FollowDestination => "follow.destination",
             Clause::FollowFrontier => "follow.frontier",
+            Clause::Flatten => "flatten",
             Clause::GroupBy => "groupBy",
             Clause::Having => "having",
         }
@@ -179,6 +187,12 @@ fn children<'a>(node: Node<'a>) -> Vec<Child<'a>> {
             if let Some(f) = &q.follow {
                 out.push(child(Node::Follow(f), Some(Clause::Follow), 1));
             }
+            // A `flatten` expression is read on each row, like `where` (0.25).
+            out.extend(
+                q.flatten
+                    .iter()
+                    .map(|f| child(Node::Flatten(f), Some(Clause::Flatten), 1)),
+            );
             // `group by` keys are read on the rows, `having` on the groups —
             // both at the row depth (the group scope sits where the rows did; 0.24).
             if let Some(g) = &q.group_by {
@@ -224,6 +238,11 @@ fn children<'a>(node: Node<'a>) -> Vec<Child<'a>> {
             if let Some(f) = &s.follow {
                 out.push(child(Node::Follow(f), Some(Clause::Follow), 0));
             }
+            out.extend(
+                s.flatten
+                    .iter()
+                    .map(|f| child(Node::Flatten(f), Some(Clause::Flatten), 0)),
+            );
             if let Some(g) = &s.group_by {
                 out.push(child(Node::GroupBy(g), Some(Clause::GroupBy), 0));
             }
@@ -256,6 +275,7 @@ fn children<'a>(node: Node<'a>) -> Vec<Child<'a>> {
                 child(n, Some(Clause::FollowDestination), 0)
             }));
         }
+        Node::Flatten(f) => out.push(child(Node::Expr(&f.expr), None, 0)),
         Node::GroupBy(g) => {
             out.extend(g.keys.iter().map(|k| child(Node::Key(k), None, 0)));
         }
@@ -412,6 +432,7 @@ where
             .as_ref()
             .map(|e| t.expr(e, Clause::FollowFrontier, 1)),
         follow: q.follow.as_ref().map(|fl| t.follow(fl, 1)),
+        flatten: q.flatten.iter().map(|f| t.flatten(f, 1)).collect(),
         group_by: q.group_by.as_ref().map(|g| t.group_by(g, 1)),
         having: q.having.as_ref().map(|h| t.r#where(h, Clause::Having, 1)),
         order_by: q
@@ -529,6 +550,7 @@ where
                 .map(|e| self.expr(e, Clause::FollowFrontier, frontier_depth)),
             depth: s.depth,
             follow: s.follow.as_ref().map(|fl| self.follow(fl, depth)),
+            flatten: s.flatten.iter().map(|f| self.flatten(f, depth)).collect(),
             group_by: s.group_by.as_ref().map(|g| self.group_by(g, depth)),
             having: s
                 .having
@@ -568,6 +590,17 @@ where
                 })
                 .collect(),
             distinct: f.distinct,
+            span: f.span,
+        };
+        self.path.pop();
+        out
+    }
+
+    fn flatten(&mut self, f: &'a Flatten, depth: usize) -> Flatten {
+        self.path.push(Node::Flatten(f));
+        let out = Flatten {
+            expr: self.expr(&f.expr, Clause::Flatten, depth),
+            name: f.name.clone(),
             span: f.span,
         };
         self.path.pop();
@@ -775,6 +808,7 @@ fn strip_query_spans(q: &mut Query) {
     if let Some(f) = &mut q.follow {
         strip_follow_spans(f);
     }
+    q.flatten.iter_mut().for_each(strip_flatten_spans);
     if let Some(g) = &mut q.group_by {
         strip_group_by_spans(g);
     }
@@ -805,6 +839,7 @@ fn strip_sub_spans(s: &mut Subquery) {
     if let Some(f) = &mut s.follow {
         strip_follow_spans(f);
     }
+    s.flatten.iter_mut().for_each(strip_flatten_spans);
     if let Some(g) = &mut s.group_by {
         strip_group_by_spans(g);
     }
@@ -820,6 +855,11 @@ fn strip_sub_spans(s: &mut Subquery) {
     if let Some(e) = &mut s.offset {
         strip_expr_spans(e);
     }
+}
+
+fn strip_flatten_spans(f: &mut Flatten) {
+    f.span = Span::EMPTY;
+    strip_expr_spans(&mut f.expr);
 }
 
 fn strip_group_by_spans(g: &mut GroupBy) {

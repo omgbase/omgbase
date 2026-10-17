@@ -29,8 +29,8 @@
 use std::collections::HashMap;
 
 use crate::ast::{
-    Expr, Follow, FollowDestination, GroupBy, GroupKey, OpNode, OrderSpec, Query, SelectItem,
-    Subquery, TemplatePart, Where,
+    Expr, Flatten, Follow, FollowDestination, GroupBy, GroupKey, OpNode, OrderSpec, Query,
+    SelectItem, Subquery, TemplatePart, Where,
 };
 use crate::errors::{OqxError, Result};
 use crate::walk::template_exprs;
@@ -68,6 +68,14 @@ pub fn resolve_aliases(q: &Query) -> Result<Query> {
         // A body's `frontier` (0.20) is not rewritten against the select: it
         // reads the seed row, not a projected record (like `order by`).
         frontier: q.frontier.as_ref().map(resolve_expr).transpose()?,
+        // A `flatten` expression (0.25) reads the row, not the projection — like
+        // `order by` and `frontier` it is not rewritten against the select; its
+        // nested blocks resolve against their own select.
+        flatten: q
+            .flatten
+            .iter()
+            .map(resolve_flatten)
+            .collect::<Result<_>>()?,
         // The keys are read on the rows, not rewritten (a key IS the name the
         // post-group clauses read); their nested blocks resolve against their own select.
         group_by: q.group_by.as_ref().map(resolve_group_by).transpose()?,
@@ -104,6 +112,11 @@ pub fn resolve_subquery(s: &Subquery) -> Result<Subquery> {
         // block's select: it reads the occurrence, not a projected record.
         frontier: s.frontier.as_ref().map(resolve_expr).transpose()?,
         depth: s.depth,
+        flatten: s
+            .flatten
+            .iter()
+            .map(resolve_flatten)
+            .collect::<Result<_>>()?,
         group_by: s.group_by.as_ref().map(resolve_group_by).transpose()?,
         having,
         values: s.values,
@@ -127,6 +140,14 @@ fn resolve_order(o: Option<&[OrderSpec]>) -> Result<Option<Vec<OrderSpec>>> {
             .collect::<Result<Vec<_>>>()
     })
     .transpose()
+}
+
+fn resolve_flatten(f: &Flatten) -> Result<Flatten> {
+    Ok(Flatten {
+        expr: resolve_expr(&f.expr)?,
+        name: f.name.clone(),
+        span: f.span,
+    })
 }
 
 fn resolve_group_by(g: &GroupBy) -> Result<GroupBy> {

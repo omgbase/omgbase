@@ -219,6 +219,8 @@ fn subquery_may_raise(sub: &Subquery, target: Target) -> bool {
             .as_ref()
             .is_some_and(|f| follow_may_raise(f, target))
         || sub.frontier.as_ref().is_some_and(inner)
+        // A flattened block (oqx 0.25) evaluates each `flatten` expression per row.
+        || sub.flatten.iter().any(|f| inner(&f.expr))
         // A grouped block (oqx 0.24) evaluates its keys, `having` and its
         // aggregates (`sum` over a string raises) per group.
         || sub
@@ -304,16 +306,22 @@ pub struct Compiled {
 }
 
 /// Compile `query` against `repo_id`, or `None` when the shape declines: a
-/// `follow`, a `from E` re-projection, a `group by` (oqx 0.24 — declined
-/// whole: its `where` conjuncts could be pushed, grouping happens after them,
-/// but a pushed conjunct that empties the scan would hide an eval error an
-/// aggregate or `having` raises in memory, so decline (c) extends to the
-/// post-group clauses; SQL `GROUP BY` pushdown is a later round), a source
-/// that is not a root scan, or no pushable conjunct at all (the engine then
-/// does everything).
+/// `follow`, a `from E` re-projection, a `group by` (oqx 0.24) or a `flatten`
+/// (oqx 0.25) — a grouped or flattened query is declined whole: its `where`
+/// conjuncts could be pushed (the fan-out and the grouping happen after them,
+/// so the residual would flatten and group the produced rows correctly), but
+/// a pushed conjunct that empties the scan would hide an eval error a
+/// `flatten` expression, an aggregate or `having` raises in memory, so decline
+/// (c) extends to the post-where clauses; SQL `GROUP BY` / `json_each`
+/// pushdown is a later round — a source that is not a root scan, or no
+/// pushable conjunct at all (the engine then does everything).
 #[must_use]
 pub fn compile(query: &Query, params: &[Value], repo_id: &str) -> Option<Compiled> {
-    if query.follow.is_some() || !query.from.is_empty() || query.group_by.is_some() {
+    if query.follow.is_some()
+        || !query.from.is_empty()
+        || query.group_by.is_some()
+        || !query.flatten.is_empty()
+    {
         return None;
     }
     let target = root_target(&query.source)?;
@@ -537,6 +545,23 @@ mod tests {
         assert!(
             compile(
                 &parse("from docs where path == \"a.md\" follow distinct out_links collect { from dst }"),
+                &[],
+                "r"
+            )
+            .is_none()
+        );
+        // flatten (oqx 0.25): declined whole, like `group by`
+        assert!(
+            compile(
+                &parse("select path, t from docs where layer == \"canon\" flatten tags as t"),
+                &[],
+                "r"
+            )
+            .is_none()
+        );
+        assert!(
+            compile(
+                &parse("from docs where layer == \"canon\" flatten blocks { where type == \"task\" } as b"),
                 &[],
                 "r"
             )

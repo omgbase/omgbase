@@ -128,7 +128,9 @@ impl Target {
 /// the relations (`children`, `blocks`, `out_links`, `doc`, `frontmatter`, …)
 /// always followed: a bare name that is an engine attribute reads the
 /// engine's value, never the author's. The attributes: every row's
-/// `id`/`path`; docs' and blocks' `raw`/`hash`/`updated_at`; docs' `title`
+/// `id`/`path`; docs' and blocks' `raw`/`hash`/`updated_at`/`created_at` (4.10:
+/// the commit `ts` of the thing's first revision / earliest `block_changes`
+/// row — "first observed by omgbase", not a filesystem time); docs' `title`
 /// (the computed title) and `tags` (authored tags ∪ body hashtags) and
 /// `format`; a foreign key named for what it is (`doc_id`, `block_id`,
 /// `via_id`, `dst_id`, `dst_path`, `uri`), a column its column (`type`,
@@ -142,22 +144,24 @@ impl Target {
 /// is simply the engine's attribute (before this batch of 3.0 the attributes
 /// were `$`-prefixed and the bare spelling was an error, §9). A bare target
 /// name — `docs`, `links`, … — is a loud error of its own (`crate::query`).
-const DOC_ATTRIBUTES: [&str; 8] = [
+const DOC_ATTRIBUTES: [&str; 9] = [
     "id",
     "path",
     "raw",
     "hash",
     "updated_at",
+    "created_at",
     "title",
     "tags",
     "format",
 ];
-const BLOCK_ATTRIBUTES: [&str; 11] = [
+const BLOCK_ATTRIBUTES: [&str; 12] = [
     "id",
     "path",
     "raw",
     "hash",
     "updated_at",
+    "created_at",
     "doc_id",
     "type",
     "text",
@@ -1348,6 +1352,16 @@ impl<'a> StoreContext<'a> {
                 "SELECT c.ts FROM revisions r JOIN commits c ON c.commit_id = r.commit_id WHERE r.rev_id = ?1",
                 &[to_sql(&c("current_rev"))],
             )?),
+            // `created_at` (4.10): the commit `ts` of the document's first
+            // revision (`seq = 1`, the row `revisions first { ts values }`
+            // reads) — when omgbase first observed the document, not a
+            // filesystem time. The retention squash (`spec/store` §7.1, 15.0)
+            // keeps every revision and commit row, so the value survives
+            // archiving.
+            (Target::Docs, "created_at") => Self::null_if_absent(self.scalar(
+                "SELECT c.ts FROM revisions r JOIN commits c ON c.commit_id = r.commit_id WHERE r.doc_id = ?1 AND r.seq = 1",
+                &[to_sql(&c("doc_id"))],
+            )?),
             // `raw`: the exact file bytes (`spec/store` §6.1, frontmatter included).
             (Target::Docs, "raw") => {
                 match omgbase_store::read::reconstruct(self.conn, &col_str(row, "doc_id")) {
@@ -1395,6 +1409,17 @@ impl<'a> StoreContext<'a> {
             (Target::Blocks, "hash") => Self::null_if_absent(c("raw_hash")),
             (Target::Blocks, "updated_at") => Self::null_if_absent(self.scalar(
                 "SELECT MAX(c.ts) FROM block_changes bc JOIN commits c ON c.commit_id = bc.commit_id WHERE bc.block_id = ?1",
+                &[to_sql(&c("block_id"))],
+            )?),
+            // `created_at` (4.10): the EARLIEST commit `ts` among the block's
+            // `block_changes` — the same join as `updated_at` under MIN: the
+            // commit that first wrote the id (`inserted`, or the split/merge
+            // lineage row that minted it). Store 14.2 keeps that row and the
+            // 15.0 squash keeps each block's earliest row (`spec/store` §7.1),
+            // so it survives archiving; a resurrected block keeps its original
+            // creation.
+            (Target::Blocks, "created_at") => Self::null_if_absent(self.scalar(
+                "SELECT MIN(c.ts) FROM block_changes bc JOIN commits c ON c.commit_id = bc.commit_id WHERE bc.block_id = ?1",
                 &[to_sql(&c("block_id"))],
             )?),
             // The structural columns and the foreign keys under the surface's

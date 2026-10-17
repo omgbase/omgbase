@@ -15,7 +15,8 @@
 //!
 //! ```text
 //! select <projection>  from <source>  where <predicate>  follow <dest>, … {…}
-//! group by <key>, …  having <predicate>  order by …  limit N  offset N
+//! flatten <expr> [{…}] [as <name>] …  group by <key>, …  having <predicate>
+//! order by …  limit N  offset N
 //! ```
 //!
 //! Every clause is optional except that a top-level body needs `from` (the
@@ -90,13 +91,23 @@
 //! `group by` is refused; and `count { … }` is a value-position directive like
 //! `collect`/`first`/`single`.
 //!
+//! Flatten (0.25): `flatten <expr> [{ … }] [as <name>]` sits after `follow` and
+//! before `group by` and is the ONE clause that may repeat — each fans out the
+//! rows the previous produced (SEMANTICS §25). The value is read on each row
+//! like `where`; a brace after a receiver is the receiver-block sugar (the
+//! `collect` op), so the block needs no slot of its own. The name defaults to a
+//! plain navigation's last segment; anything else needs `as`; names are unique
+//! within the body, never a keyword, a literal word or a `$`-name. `flatten` is
+//! a clause only when a value can follow it, `as` only after a flatten
+//! expression — both contextual words.
+//!
 //! Error messages are the TS messages verbatim (the conformance fixtures and
 //! the reference tests assert on fragments of them).
 
 use std::collections::HashSet;
 
 use crate::ast::{
-    AggregateName, BinaryOp, Consumer, CountCmp, Expr, Follow, FollowDestination, GroupBy,
+    AggregateName, BinaryOp, Consumer, CountCmp, Expr, Flatten, Follow, FollowDestination, GroupBy,
     GroupKey, LogicalOp, OpNode, OrderSpec, Query, RelOp, SelectItem, Span, Subquery, TemplatePart,
     UnaryOp, Where,
 };
@@ -115,7 +126,10 @@ const CONSUMERS: [&str; 6] = ["collect", "exists", "none", "count", "first", "si
 /// sentence names them only there. `GroupBy` and `Having` (0.24) sit after
 /// `Follow`: the rows a body yields — the walk's occurrences, when it has one —
 /// are what gets grouped, and the bound and the ordering then apply to the
-/// groups.
+/// groups. `Flatten` (0.25) sits between them: it fans the rows a body yields —
+/// the occurrences, after a walk — out per element, and is the one clause that
+/// may repeat (each `flatten` fans out the rows the previous produced,
+/// SEMANTICS §25).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 enum Clause {
     Select,
@@ -124,6 +138,7 @@ enum Clause {
     Frontier,
     Depth,
     Follow,
+    Flatten,
     GroupBy,
     Having,
     OrderBy,
@@ -131,13 +146,14 @@ enum Clause {
     Offset,
 }
 
-const CLAUSE_ORDER: [Clause; 11] = [
+const CLAUSE_ORDER: [Clause; 12] = [
     Clause::Select,
     Clause::From,
     Clause::Where,
     Clause::Frontier,
     Clause::Depth,
     Clause::Follow,
+    Clause::Flatten,
     Clause::GroupBy,
     Clause::Having,
     Clause::OrderBy,
@@ -154,6 +170,7 @@ impl Clause {
             Clause::Frontier => "frontier",
             Clause::Depth => "depth",
             Clause::Follow => "follow",
+            Clause::Flatten => "flatten",
             Clause::GroupBy => "group by",
             Clause::Having => "having",
             Clause::OrderBy => "order by",
@@ -187,10 +204,10 @@ fn clause_order_sentence(ctx: BodyCtx) -> String {
 
 // Contextual clause words lexed as bare idents; an open-ended range must stop
 // before them rather than consume them as its high bound.
-const CLAUSE_WORDS: [&str; 20] = [
+const CLAUSE_WORDS: [&str; 22] = [
     "collect", "exists", "none", "count", "first", "single", "order", "by", "asc", "desc",
     "follow", "distinct", "frontier", "depth", "in", "values", "limit", "offset", "group",
-    "having",
+    "having", "flatten", "as",
 ];
 // The names a group scope resolves besides its keys (SEMANTICS §24): the
 // group's rows, the key record itself, and its identity.
@@ -281,6 +298,7 @@ struct BodyClauses {
     follow: Option<Follow>,
     frontier: Option<Expr>,
     depth: Option<u32>,
+    flatten: Vec<Flatten>,
     group_by: Option<GroupBy>,
     having: Option<Where>,
     distinct: bool,
@@ -448,6 +466,7 @@ impl Parser {
             consumer: Consumer::Collect,
             follow: body.follow,
             frontier: body.frontier,
+            flatten: body.flatten,
             group_by: body.group_by,
             having: body.having,
             distinct: body.distinct,
@@ -471,6 +490,7 @@ impl Parser {
             consumer: directive.op,
             follow: sub.follow,
             frontier: sub.frontier,
+            flatten: sub.flatten,
             group_by: sub.group_by,
             having: sub.having,
             distinct: directive.distinct,
@@ -567,6 +587,16 @@ impl Parser {
             if self.at_follow() {
                 self.enter(&mut stage, Clause::Follow, ctx)?;
                 body.follow = Some(self.with_depth(row_depth, |p| p.parse_follow())?);
+                continue;
+            }
+            // `flatten <expr> [{ … }] [as <name>]` (0.25): the value is read on
+            // each row, like `where`; a brace after a receiver is the
+            // receiver-block sugar (the `collect` op), so the block needs no
+            // slot of its own.
+            if self.at_flatten() {
+                self.enter(&mut stage, Clause::Flatten, ctx)?;
+                let f = self.with_depth(row_depth, |p| p.parse_flatten(&body.flatten))?;
+                body.flatten.push(f);
                 continue;
             }
             // `group by k, name: expr` (0.24): the keys are read on the rows, like `where`.
@@ -698,6 +728,7 @@ impl Parser {
             froms: &body.froms,
             r#where: resolved_where.as_ref(),
             frontier: body.frontier.as_ref(),
+            flatten: &body.flatten,
             limit: body.limit.as_ref(),
             offset: body.offset.as_ref(),
             group_by: body.group_by.as_ref(),
@@ -712,6 +743,84 @@ impl Parser {
             None => self.reject_aggregates(&check)?,
         }
         Ok(body)
+    }
+
+    // ---- flatten (0.25) -------------------------------------------------------
+
+    // `flatten` is a clause when a value can follow the word; otherwise it is a
+    // field name (`select flatten from r`). A value start — or an aggregate call
+    // whose name is a consumer word (`flatten collect(x)`), admitted so the
+    // aggregate check can name it.
+    fn at_flatten(&self) -> bool {
+        if !self.at_word(TokType::Ident, "flatten") {
+            return false;
+        }
+        let Some(nx) = self.peek_at(1) else {
+            return false;
+        };
+        starts_value(nx)
+            || (nx.kind == TokType::Ident
+                && AggregateName::from_word(&nx.value).is_some()
+                && self.peek_at(2).is_some_and(|t| t.kind == TokType::LParen))
+    }
+
+    // `flatten <expr> [as <name>]`. The expression is any value — a block after
+    // a receiver is read by the postfix grammar as the implicit `collect` op
+    // (0.20), which is exactly the block over the coerced collection SEMANTICS
+    // §25 wants. The name defaults to a plain navigation's last segment (as a
+    // select item's or a group key's does); anything else needs `as`. Names are
+    // unique within the body, never a `$`-name (the language's), a keyword or a
+    // literal word.
+    fn parse_flatten(&mut self, earlier: &[Flatten]) -> Result<Flatten> {
+        let start = self.start();
+        self.next(); // `flatten`
+        let expr = self.parse_value_expr()?;
+        let name = if self.at_word(TokType::Ident, "as") {
+            self.next();
+            let t = self.peek();
+            if t.kind != TokType::Ident {
+                return self.fail("expected a name after `as` (`flatten <expr> as <name>`)");
+            }
+            if LITERAL_WORDS.contains(&t.value.as_str()) {
+                return self.fail(format!(
+                    "`{}` is a literal and cannot name a flattened value (`flatten <expr> as <name>`)",
+                    t.value
+                ));
+            }
+            if t.value.starts_with('$') {
+                return self.fail(format!(
+                    "a flattened value cannot be bound to a `$`-name (`{}`) — `$` belongs to the language; choose another name",
+                    t.value
+                ));
+            }
+            self.next().value
+        } else {
+            match nav_key(&expr) {
+                Some(key) => key.to_owned(),
+                None => {
+                    let shown = describe(Node::Expr(&expr));
+                    return self.fail_at(
+                        start,
+                        format!(
+                            "`flatten {shown}` needs a name (`flatten {shown} as <name>`) — only a plain navigation names itself by its last segment"
+                        ),
+                    );
+                }
+            }
+        };
+        if earlier.iter().any(|f| f.name == name) {
+            return self.fail_at(
+                start,
+                format!(
+                    "duplicate flatten name '{name}' — each flatten binds its own name (`flatten <expr> as <other>`)"
+                ),
+            );
+        }
+        Ok(Flatten {
+            expr,
+            name,
+            span: self.sp(start),
+        })
     }
 
     // ---- grouping (0.24) ------------------------------------------------------
@@ -888,6 +997,7 @@ impl Parser {
         }
         push_all(&mut found, b.froms, "`from`");
         push_all(&mut found, b.frontier, "`frontier`");
+        push_all(&mut found, b.flatten.iter().map(|f| &f.expr), "`flatten`");
         push_all(&mut found, b.limit, "`limit`");
         push_all(&mut found, b.offset, "`offset`");
         if let Some(g) = b.group_by {
@@ -1174,7 +1284,9 @@ impl Parser {
     }
 
     fn enter(&self, stage: &mut Option<Clause>, clause: Clause, ctx: BodyCtx) -> Result<()> {
-        if *stage == Some(clause) {
+        // `flatten` is the one clause that may repeat (0.25): each fans out the
+        // rows the previous produced.
+        if *stage == Some(clause) && clause != Clause::Flatten {
             return self.fail(format!("duplicate `{}` clause", clause.as_str()));
         }
         if stage.is_some_and(|last| clause < last) {
@@ -1255,6 +1367,11 @@ impl Parser {
                     "frontier" => {
                         return self.fail(format!(
                             "unexpected 'frontier' after `{last}` — `frontier` takes an expression (`frontier <expr>`) and belongs to a body that has a `follow`"
+                        ));
+                    }
+                    "flatten" => {
+                        return self.fail(format!(
+                            "unexpected 'flatten' after `{last}` — `flatten` takes a value to split into rows (`flatten <expr> [{{ … }}] [as <name>]`)"
                         ));
                     }
                     "group" => {
@@ -2200,6 +2317,7 @@ impl Parser {
             follow: None,
             frontier: None,
             depth: None,
+            flatten: Vec::new(),
             group_by: None,
             having: None,
             values: false,
@@ -2316,6 +2434,7 @@ impl Parser {
             follow: body.follow,
             frontier: body.frontier,
             depth: body.depth,
+            flatten: body.flatten,
             group_by: body.group_by,
             having: body.having,
             values: body.values,
@@ -2864,6 +2983,7 @@ struct GroupCheck<'a> {
     froms: &'a [Expr],
     r#where: Option<&'a Where>,
     frontier: Option<&'a Expr>,
+    flatten: &'a [Flatten],
     limit: Option<&'a Expr>,
     offset: Option<&'a Expr>,
     group_by: Option<&'a GroupBy>,
