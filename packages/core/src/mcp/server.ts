@@ -939,7 +939,7 @@ export function buildServer(ctx: ServerContext): McpServer {
     {
       description: ladder(
         "execute — Commit exactly a plan from plan: the plan form (the whole Plan object) or the digest form (plan_id plus the same effects, re-planned and committed only if the digest still matches).",
-        "{\"plan_id\":\"3ece126452106400210f07047029a961691b814252ba4437f5a5f1c3301629da\",\"effects\":[{\"op\":\"set\",\"target\":\"/processes/calcination.md\",\"field\":\"frontmatter.verified\",\"value\":false}]}   digest form: the plan_id plan returned for these effects",
+        "{\"plan_id\":\"ab416d8686fe527fd13439fcf0c7accb9e23307c0730edc17149c8b46f0f032a\",\"effects\":[{\"op\":\"set\",\"target\":\"/processes/calcination.md\",\"field\":\"frontmatter.verified\",\"value\":false}]}   digest form: the plan_id plan returned for these effects",
         "Or pass the whole object: {\"plan\": the Plan as returned}. A document that moved on fails stale_plan (retriable: call plan again). Grammar: query_syntax.",
       ),
       inputSchema: { plan: z.record(z.string(), z.unknown()).optional(), plan_id: z.string().optional(), effects: z.array(effectSchema).optional(), select: z.string().optional(), expect: selectionExpectSchema.optional(), reason: z.string().optional(), ...REPO_ARG },

@@ -47,14 +47,20 @@ const DESCRIPTION_BUDGET = 900;
  * "Sugar"). The three other `plan` rungs changed intent to fit the 900-char
  * budget (shorter path and texts, no `expect`, a `-> ` template in the digested
  * `selection.templates`), so their digests moved and are pinned by the suite.
+ * With spec/mutate 3.6 (per-entry frontmatter edits) the two
+ * frontmatter rungs — `apply:0` (`set frontmatter.verified`) and `plan:0` /
+ * `execute:0` (the same key, planned then executed by digest) — produce a
+ * different head: `tags: [process, fire]` keeps its flow spelling instead of
+ * being re-serialized as a block sequence, so those three digests moved once
+ * more and are pinned here at their 3.6 values.
  */
 export const PINNED_4_3: Record<string, string> = {
-  "apply:0": "cd124e64dfc05c5fbf938afbb0b112207fab04216584925e4c2a68c81c439581",
+  "apply:0": "a5cbfb807c865dc59e72fce0b9f9263d85d7b316a9e3c57f61886dac5cc72695",
   "apply:1": "8b7827024a4569f93ca00b30ef6d1042302a81a2c85d88cce7137aa9a0487fdb",
   "apply:2": "2cedd989a0b4ab67f54cc99e9673d6bb47c6906e43604cd674bd3bcb2aae0a65",
-  "plan:0": "3ece126452106400210f07047029a961691b814252ba4437f5a5f1c3301629da",
+  "plan:0": "ab416d8686fe527fd13439fcf0c7accb9e23307c0730edc17149c8b46f0f032a",
   "plan:1": "70b41c26104eb9976be7691337c56f61bdae0512e73e69e161e8dd24a6b81979",
-  "execute:0": "3ece126452106400210f07047029a961691b814252ba4437f5a5f1c3301629da",
+  "execute:0": "ab416d8686fe527fd13439fcf0c7accb9e23307c0730edc17149c8b46f0f032a",
 };
 
 const PLACEHOLDER = /<[^>]*>/;

@@ -589,7 +589,7 @@
           "pin_stderr": true,
           "expect": {
             "exit": 0,
-            "stdout": "/texts/mutus-liber.md\n@@ -2,9 +2,10 @@\n type: text\n layer: draft\n tradition: western\n-era: 1677\n-tags: [text, images]\n-verified: false\n+era: 1702\n+tags:\n+  - text\n+  - images\n ---\n \n # Mutus Liber\n\n",
+            "stdout": "/texts/mutus-liber.md\n@@ -2,9 +2,8 @@\n type: text\n layer: draft\n tradition: western\n-era: 1677\n+era: 1702\n tags: [text, images]\n-verified: false\n ---\n \n # Mutus Liber\n\n",
             "stderr": "  dry run — 1 file(s) would change, nothing committed\n"
           }
         },

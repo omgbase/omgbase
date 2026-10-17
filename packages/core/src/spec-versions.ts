@@ -18,7 +18,7 @@ export const SPEC_VERSIONS = {
   properties: "1.1",
   graph: "1.1",
   search: "2.0",
-  mutate: "3.5",
+  mutate: "3.6",
   sync: "2.2",
   surface: "4.11",
   cli: "4.6",

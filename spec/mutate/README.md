@@ -467,19 +467,27 @@ rows and files it leaves.
   human rewrote meanwhile stays, untracked) and clears its stat row. Through
   2.1 the unlink ran unconditionally after the transaction, and a crash
   between the two left a file no sweep healed.
-- **`docs_set_meta { doc, set?, unset? }`**: read the file, split the
-  frontmatter with `^---\r?\n([\s\S]*?)\r?\n---\r?\n?` (malformed → `{}` and
-  the whole content as body), merge `set`, delete `unset`, compose (as
-  create) and commit the composed file's **head** over the document's
-  blocks (§11.3 `set`/`unset frontmatter.<key>`: the body blocks keep their
-  ids and bytes, each `edited / api`; 3.0 — a reconciling re-ingest of the
-  composed file through 2.x)
+- **`docs_set_meta { doc, set?, unset? }`**: one `set`/`unset
+  frontmatter.<key>` effect per key (§11.3): each edits **one entry** of the
+  frontmatter (§11.10 — the key's own lines re-rendered, every other key's
+  bytes untouched; 3.6) and the result is the document's **head**, committed
+  over the document's blocks (the body blocks keep their ids and bytes, each
+  `edited / api`). A document without frontmatter composes a fence as
+  `create` does (`"---\n" + yaml + "\n---\n"` + a blank line unless the body
+  starts with one). Through 3.5 the whole file was split with
+  `^---\r?\n([\s\S]*?)\r?\n---\r?\n?`, the mapping parsed, merged and
+  re-serialized (so a flow list came back as a block sequence and quoting
+  and comments were lost); through 2.x that composed file was re-ingested
+  by the matcher
   (`reason: "set_meta <path>"`) under §4 step 5's commit — a `write` row like
   `apply`'s: the in-transaction re-validation of (b) applies to the bytes
   the patch was computed from (2.2; before, `set_meta` checked nothing and
   could overwrite a concurrent edit). Unsetting every
-  key leaves the body's
-  leading blank line in place (`leading_trivia` becomes `"\n"`, §10).
+  key — nothing but the two fences would remain between them — removes the
+  frontmatter and the separator's first line ending with it, so the body's
+  leading blank line stays in place (`leading_trivia` becomes `"\n"`, §10);
+  a frontmatter that keeps a comment or a blank line between its fences
+  keeps its fences (`effects::unset-fm-keeps-comments-and-fences`).
 
 ## 7. Whole-document update
 
@@ -874,19 +882,21 @@ instead; then the projection deep-equals `expect`. **Generation**: `packages/cor
   raw had no checkbox to rewrite.
 - **Pinned — `docs_delete` pools nothing**, `spec/store` §5.6 pools
   everything: intentional vs observed deletion.
-- **Pinned — the YAML emitter.** `docs_create`/`docs_set_meta` serialize
-  frontmatter with the `yaml` npm package's `stringify` defaults (two-space
-  indent, block sequences, plain scalars where legal, `null` as `null`).
-  Fixtures pin flat mappings of strings, numbers, booleans and string lists
-  only; anything a port's emitter formats differently is out of the
-  fixtures. **Idempotent on its own output (2.3, surface 3.3):** `stringify ∘
-  parse` is the identity on what `stringify` wrote, so N sequential
-  `set`/`unset frontmatter.<k>` effects — each `compose(parse(previous)
-  patched)`, §11.3 — produce the bytes of the one merged `compose` the
-  library's `docs_set_meta` produced; the reference proves it over every
-  alchemy document with strings, numbers, booleans, `null`, a string list
-  and a nested mapping. A port whose emitter is not idempotent would
-  diverge from the surface's `docs_set_meta` bytes on multi-key patches.
+- **Pinned — the YAML emitter.** `docs_create` serializes a frontmatter
+  mapping, and `set frontmatter.<k>` serializes the one-key mapping `{ <k>:
+  value }` (3.6), with the `yaml` npm package's `stringify` defaults
+  (two-space indent, block sequences, plain scalars where legal, `null` as
+  `null`). Fixtures pin flat mappings of strings, numbers, booleans and
+  string lists only; anything a port's emitter formats differently is out of
+  the fixtures. **Idempotent on its own output (2.3, surface 3.3):**
+  `stringify ∘ parse` is the identity on what `stringify` wrote, and the
+  `stringify` of a mapping is the concatenation of the `stringify` of its
+  one-key mappings, so N sequential `set`/`unset frontmatter.<k>` effects —
+  each one entry replaced, §11.3 — produce, on a frontmatter `stringify`
+  wrote, the bytes the one merged `compose` of 3.5 produced (no fixture
+  through 3.5 moved); on a hand-written frontmatter they now keep every
+  other key's bytes instead (`effects::set-fm-leaves-other-parts-byte-
+  identical`).
 - **Pinned (surface 3.3) — the surface's `docs_set_meta` is a known-id head
   write, the library's a reconciling re-ingest.** Same bytes, rows,
   revision and mints; the dispositions differ (`edited`/`api` vs
@@ -1091,7 +1101,7 @@ the TypeScript reference's `mutate/effects.ts`, the port's
 | `insert into document` | kernel `insert { doc, to: { parent: { doc: true }, at }, markdown, expect? }` |
 | `insert into section` | `insert { to: { parent: { heading: heading_id, scope: "section" }, at }, markdown, expect? }` (§1.1; an unknown heading is `parent_missing`) |
 | `insert into block` | `insert { to: { parent: id, at }, markdown, expect? }` (the container rule → `type_mismatch`) |
-| `set`/`unset frontmatter.<key>` on a document | the file is re-composed as `docs_set_meta` composes it (§6): `split(render(doc))` → `(frontmatter, body)`, the key set or deleted, `after = composeFile(body, merged)`; the document's **head** — `after` minus the rendered body blocks — becomes `opset.set_frontmatter[] = { doc, raw }` (one entry per document, the last patch wins; `doc` a created document's symbol when it is one, 3.0 — `effects::create-then-set-on-new-doc`). The head replaces the leading trivia and the frontmatter together (§10), so the body blocks keep their ids and bytes (a file without a trailing newline gains one on its last block's trivia); byte parity with `set_meta` is pinned by `effects::set-fm-matches-set-meta-bytes` |
+| `set`/`unset frontmatter.<key>` on a document | the frontmatter is edited **by entry** (3.6; the split rule is §11.10): the document's `frontmatter_raw` is cut at the closing fence (the first line after the opening one that is `---` plus optional spaces/tabs) into the block's raw and the separator, and the raw into its parts — `set`: the first part whose key is `<key>` has its entry lines replaced by `stringify({ <key>: value })` (in the fence's line endings: `\r\n` when the opening fence ends so), its lead lines (the comment that documents it) kept, and every further part of the same key removed; a key with no part gains one inserted after the last entry part (before the trailing comments and the closing fence), or, when no part has a key, immediately before the closing fence — `unset`: every part of the key is removed. Every other part is byte-identical. The new head is the parts joined + the separator, or — when nothing but the two fences would remain — the separator minus its first line ending (§6: the body's leading blank line stays). The head becomes `opset.set_frontmatter[] = { doc, raw }` (one entry per document, the last patch wins; `doc` a created document's symbol when it is one, 3.0 — `effects::create-then-set-on-new-doc`) and replaces the leading trivia and the frontmatter together (§10), so the body blocks keep their ids and bytes. A document **without** frontmatter (or whose head the fence rule does not recognise) composes as 3.5 did — `split(render(doc))`, the key set or deleted, `after = composeFile(body, merged)`, the head `after` minus the rendered body blocks (a file without a trailing newline gains one on its last block's trivia). Byte parity with `set_meta` (itself this effect since 3.0) is pinned by `effects::set-fm-matches-set-meta-bytes`; the untouched entries by `effects::set-fm-leaves-other-parts-byte-identical` and the §11.10 cases |
 | `set content` on a document | §7 `plan_update(doc, value)`: `converges: false` → `plan_not_convergent { doc, diagnostics }`; its annotations → `preview.identity[doc]` (3.0; §7); its `frontmatter` → the head `leading_trivia + raw`; its kernel ops appended with every `$k.ids[i]` placeholder shifted by the ops already planned. **No ops and no frontmatter change** (the content IS the document): nothing is loaded — the document's triple still goes to `preconditions.docs`, nothing commits (§11.7). The planner's own verifies mint under a throwaway symbol table (nothing of theirs reaches the plan) |
 | `set markdown` on a block | `update { block, markdown, expect: { content_hash (pinned), parent_children_hash? } }` |
 | `set attrs.checked` on a block | `update { block, attrs: { checked }, expect }` |
@@ -1578,8 +1588,101 @@ concrete effects, so the counts are real. The lines are the reference's
 `effects.ts` (`ctx.summary`) and the port's `omgbase-mutate::effects`; the
 Receipt pins them in every committing fixture step (§9).
 
+### 11.10 Frontmatter entries (3.6)
+
+The `set`/`unset frontmatter.<key>` effect edits **one entry** of the
+frontmatter and leaves every other byte alone (§11.3). To do that the
+`frontmatter` block's raw (`spec/format` §3: from the opening `---` fence
+through the closing one, no trailing line ending) is cut into an ordered
+list of **parts** by a rule that is **lexical and line-based — never a YAML
+parse** — so it is total (every frontmatter the store holds splits, valid
+YAML or not), byte-exact (every line lands in exactly one part, and the
+parts concatenate back to the raw) and identical in both engines; what a
+line *means* is `spec/properties`' business. Storage is untouched: a
+revision's frontmatter stays one blob (`spec/store` 15.0); the parts are the
+planner's view of the bytes. Lines are split after every `\n` (a `\r\n`
+ending stays with its line); the last line has no ending.
+
+- **Part 0** is the opening fence line with its line ending (`---\n`,
+  `---\r\n`), key `null`.
+- **The last part** is the closing fence line without a line ending (`---`,
+  with any trailing spaces/tabs the format layer accepted), key `null`.
+- Between them, the **body lines** are classified: a line is **blank** when
+  it is empty or only spaces and tabs; a **comment** when its first character
+  is `#` in column 0 (an indented `#` is content — a block scalar's line, for
+  one); it **opens an entry** when it is neither of those, not a sequence item
+  (`-` followed by a space, a tab or the end of the line), not an explicit
+  key or value indicator (`?` / `:` the same way), not a document marker
+  (`---` / `...` followed by whitespace or the end of the line), and reads as
+  `<key>:` followed by a space, a tab or the end of the line, where the key
+  is either **quoted** — a `"…"` string (`\` escapes the next character) or a
+  `'…'` string (`''` is a literal quote), closed on the same line, then
+  optional spaces/tabs, then the colon — or **plain** — the text before the
+  FIRST `:` that is followed by a space, a tab or the end of the line,
+  trailing spaces/tabs trimmed, non-empty, not starting with a flow
+  indicator, anchor, alias, tag, block-scalar indicator, directive or
+  reserved character (`[ ] { } , & * ! | > % @ \``), and not containing ` #`
+  or `\t#` (a comment would begin there). **Every other line is a
+  continuation** of the entry above it: an indented line, a flow collection
+  spanning lines, a block scalar's content, a nested mapping, a column-0
+  block sequence under a key (`tags:\n- a\n- b`).
+- Every body line **before the first entry line** is one part with key
+  `null` (comments, blank lines — or, when no line opens an entry, the whole
+  body: a bare scalar, a sequence, a comment-only frontmatter).
+- Then **one part per entry**: from the first of its **lead lines** — the
+  blank and comment lines immediately preceding its key line, never reaching
+  back past the previous entry's key line (the first entry has no lead; its
+  predecessors are the key-less part above) — through the line before the
+  next entry's lead; so a comment documenting a key travels with that key,
+  and a blank line inside a block scalar stays with the scalar's key because
+  the indented line after it is a continuation. The last entry ends before
+  the trailing lead run.
+- The **trailing lead run** — the blank and comment lines after the last
+  entry's content — is one part with key `null`, when there is one.
+
+A part's **key** is the entry's key as `spec/properties` spells it: a quoted
+key unquoted (`\\` → `\`, `\"` → `"` or `''` → `'` undone; every other escape
+sequence kept as written), a plain key as written. Two parts may carry the
+same key (a duplicate — invalid YAML, for which `spec/properties` writes no
+rows); §11.3 says how `set` and `unset` treat them (the first replaced, the
+rest removed; all removed).
+
+Fixtures: `effects::set-fm-leaves-other-parts-byte-identical` (the attn
+finding: a flow list, a quoted string and two comments survive a `set`, an
+`unset` and a new key), `::set-fm-continuations-and-comments` (leading and
+trailing key-less parts, column-0 sequence, block scalar with a blank line,
+nested mapping, empty and `null` values, a comment leading the key after it),
+`::set-fm-quoted-and-duplicate-keys`, `::set-fm-crlf`, `::set-fm-empty-
+fences` (`---\n---` has no entry part; the new key goes before the closing
+fence), `::set-fm-non-mapping-body` (a sequence or a comment-only body is one
+key-less part; the new key goes before the closing fence and the body's
+bytes stay), `::unset-fm-keeps-comments-and-fences`.
+
 ## Decisions
 
+- 2026-10-17 (mutate 3.6): `set`/`unset frontmatter.<key>` edits one entry
+  of the frontmatter (§11.3, §11.10) instead of re-serializing the whole
+  mapping. The attn prototype found `set frontmatter.cues` turning `[a, b]`
+  into a block sequence and dropping quotes and comments, because
+  `compose(parse(previous) patched)` can only write what the emitter writes.
+  The planner now cuts the head into parts by a lexical line rule and
+  replaces exactly the key's own lines — the comment lines that lead a key
+  stay (they document it), a new key lands after the last entry and before
+  the trailing comments (where a hand would put it), the whole-file
+  composition stays for a document without frontmatter (nothing to
+  preserve). On a frontmatter the emitter wrote the bytes are unchanged, so
+  no earlier fixture moved except where the alchemy corpus authored a flow
+  list (`tags: [process, fire]` now survives — the `plan` ladder's two
+  frontmatter rungs and two interop `execute` digests moved with the head
+  bytes). **Storage is deliberately not changed**: the same rule was first
+  built as a store encoding (16.0, per-key part blobs under a
+  `frontmatter_tree` node, on a branch kept as reference), and the
+  measurement there — the node listing the parts costs ~77 B of hex per part,
+  so a six-key frontmatter went from ~100 B to ~630 B per revision while the
+  changed line itself fell to 11–30 B — showed the bytes problem is the
+  per-revision *index*, not the blob; the storage question is a delta
+  encoding for a later store round, and the edit fidelity ships on its own
+  as a mutate minor with no schema change.
 - 2026-10-17 (mutate 3.5 patch; `spec/surface` 4.11): a selector written as
   `id in ["a", "b"]` — the SQL habit the 2026-10-17 agent-bench run showed —
   is still the parser's error (OQX has no list literal; a tuple is the

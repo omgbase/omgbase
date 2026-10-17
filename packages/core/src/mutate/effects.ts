@@ -14,6 +14,8 @@ import type { IdentityPreview } from "./opset.js";
 import { planUpdate } from "./plan-update.js";
 import { MutationError, rawHashHex, renderDoc, type MutBlock, type MutDoc } from "./tree.js";
 import { fixRequest, withMember, type FixRequest } from "./canonical.js";
+import { joinFrontmatterParts, leadOf, lineEndingOf, splitFrontmatterRaw, splitFrontmatterTrivia } from "./frontmatter-parts.js";
+import { stringify as stringifyYaml } from "yaml";
 
 // The public Effect layer (spec/mutate §11, 2.3; ADR-021). Nine effects —
 // `create insert set unset move remove split merge retarget` — are the
@@ -974,16 +976,63 @@ function nodeTarget(t: ResolvedTarget): Extract<ResolvedTarget, { kind: "node" }
   return t;
 }
 
-/** The current frontmatter patch base of a loaded document: `(frontmatter, body)` of its render. */
-function frontmatterOf(ctx: LoweringContext, docId: string): { d: MutDoc; frontmatter: Record<string, unknown>; body: string } {
+/**
+ * spec/mutate §11.3 `set`/`unset frontmatter.<key>` (3.6, "Frontmatter
+ * entries"): the frontmatter is edited BY ENTRY. The document's head is cut
+ * into its parts (`splitFrontmatterRaw`, the §11.3 split rule): a `set`
+ * replaces the key's part — the lead lines (a comment documenting the key)
+ * kept, the entry's own lines re-rendered as `stringify({ key: value })` in
+ * the fence's line endings — removes any duplicate of the key, or inserts the
+ * new key's part after the last entry (before the trailing comments and the
+ * closing fence); an `unset` removes every part of the key. Every other part
+ * is byte-identical afterwards — a flow list, a quoted string, a comment the
+ * author wrote survive a change to a different key. When nothing but the
+ * fences would remain, the frontmatter goes and the separator's first line
+ * ending with it (the §6 `set_meta` rule: a body that followed a blank line
+ * keeps it as leading trivia). A document WITHOUT frontmatter (or one whose
+ * head the fence rule does not recognise) still composes as `docs_set_meta`
+ * did through 3.5 — `composeFile(body, merged)` — which for a new fence is
+ * the same bytes a one-key part would give.
+ */
+function patchFrontmatterKey(ctx: LoweringContext, docId: string, key: string, set: { value: unknown } | null): void {
   const d = ctx.planner.ensureDoc(docId);
-  const { frontmatter, body } = splitFrontmatter(renderDoc(d));
-  return { d, frontmatter, body };
+  const fence = d.frontmatterRaw === null ? null : splitFrontmatterTrivia(d.frontmatterRaw);
+  if (fence === null) {
+    const { frontmatter, body } = splitFrontmatter(renderDoc(d));
+    const merged: Record<string, unknown> = { ...frontmatter };
+    if (set) merged[key] = set.value;
+    else delete merged[key];
+    patchFrontmatter(ctx, docId, merged, body);
+    return;
+  }
+  let parts = splitFrontmatterRaw(fence.raw);
+  const eol = lineEndingOf(parts[0]!.bytes) || "\n";
+  if (set) {
+    let rendered = stringifyYaml({ [key]: set.value });
+    if (!rendered.endsWith("\n")) rendered += "\n";
+    if (eol !== "\n") rendered = rendered.split("\n").join(eol);
+    const at = parts.findIndex((p) => p.key === key);
+    if (at >= 0) {
+      parts[at] = { key, bytes: leadOf(parts[at]!) + rendered };
+      parts = parts.filter((p, i) => i === at || p.key !== key);
+    } else {
+      let last = -1;
+      parts.forEach((p, i) => {
+        if (p.key !== null) last = i;
+      });
+      parts.splice(last >= 0 ? last + 1 : parts.length - 1, 0, { key, bytes: rendered });
+    }
+  } else {
+    parts = parts.filter((p) => p.key !== key);
+  }
+  const head = parts.length === 2 ? fence.trivia.replace(/^\r?\n/, "") : joinFrontmatterParts(parts) + fence.trivia;
+  ctx.planner.setHead(docId, head);
+  ctx.heads.set(docId, head);
 }
 
 /**
- * Patch a loaded document's frontmatter: compose the whole file as
- * `docs_set_meta` does (`composeFile(body, merged)`, §6), then set the file
+ * Patch a document WITHOUT frontmatter: compose the whole file as
+ * `docs_set_meta` did (`composeFile(body, merged)`, §6), then set the file
  * head so the known-id ingest renders exactly those bytes — the body blocks
  * keep their ids and bytes (a file without a trailing newline gains one on its
  * last block's trivia, as `composeFile` would add it).
@@ -1183,11 +1232,7 @@ function applyLowering(ctx: LoweringContext, i: number, e: ResolvedEffect): void
         }
         // `frontmatter.<key>` — on a created document too (3.0): its tree is loaded, the patch is a head like any other.
         const key = FRONTMATTER_FIELD.exec(e.field)![1]!;
-        const { frontmatter, body } = frontmatterOf(ctx, docId);
-        const merged: Record<string, unknown> = { ...frontmatter };
-        if (e.op === "set") merged[key] = e.value;
-        else delete merged[key];
-        patchFrontmatter(ctx, docId, merged, body);
+        patchFrontmatterKey(ctx, docId, key, e.op === "set" ? { value: e.value } : null);
         ctx.summary.push(e.op === "set" ? `set ${e.field} = ${ctx.canonical(e.value)} in ${docPathOf(ctx, docId)}` : `unset ${e.field} in ${docPathOf(ctx, docId)}`);
         return;
       }

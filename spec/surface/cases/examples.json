@@ -299,7 +299,7 @@
           "read": {
             "tool": "execute",
             "args": {
-              "plan_id": "3ece126452106400210f07047029a961691b814252ba4437f5a5f1c3301629da",
+              "plan_id": "ab416d8686fe527fd13439fcf0c7accb9e23307c0730edc17149c8b46f0f032a",
               "effects": [
                 {
                   "op": "set",
@@ -1140,13 +1140,13 @@
             }
           ],
           {
-            "plan_id": "cd124e64dfc05c5fbf938afbb0b112207fab04216584925e4c2a68c81c439581",
+            "plan_id": "a5cbfb807c865dc59e72fce0b9f9263d85d7b316a9e3c57f61886dac5cc72695",
             "commit": "c_20",
             "revisions": [
               {
                 "id": "d_14",
                 "path": "/substances/salt.md",
-                "hash": "624e77d18095c4d2f9a430cffd42c4035d0850d1d053c7efc7f4e8071393da00"
+                "hash": "5ce5399bbf38a715dc8507974ef15cd2b59ca4454f32372d7a225c170db4569c"
               }
             ],
             "new_ids": {},
@@ -1214,7 +1214,7 @@
               "set_frontmatter": [
                 {
                   "doc": "d_7",
-                  "raw": "---\ntype: process\nslug: calcination\nlayer: canon\ntradition: western\ntags:\n  - process\n  - fire\nverified: false\nstage: nigredo\n---\n\n"
+                  "raw": "---\ntype: process\nslug: calcination\nlayer: canon\ntradition: western\ntags: [process, fire]\nverified: false\nstage: nigredo\n---\n\n"
                 }
               ],
               "ops": []
@@ -1233,7 +1233,7 @@
               "absent_paths": []
             },
             "new_ids": [],
-            "plan_id": "3ece126452106400210f07047029a961691b814252ba4437f5a5f1c3301629da",
+            "plan_id": "ab416d8686fe527fd13439fcf0c7accb9e23307c0730edc17149c8b46f0f032a",
             "diagnostics": [],
             "preview": {
               "results": [],
@@ -1241,7 +1241,7 @@
                 {
                   "id": "d_7",
                   "path": "/processes/calcination.md",
-                  "hash": "647b0d8820b6eac9f4c384634d9d3a5028d4b6b480af40e032a0f1ad220d95b4"
+                  "hash": "43bb086695beff9c36c5212b2ebbf14185df411e603a14d46c10265fb4f28144"
                 }
               ],
               "summary": [
@@ -1450,11 +1450,11 @@
               "set_frontmatter": [
                 {
                   "doc": "d_7",
-                  "raw": "---\ntype: process\nslug: calcination\nlayer: canon\ntradition: western\ntags:\n  - process\n  - fire\nverified: true\nstage: nigredo\nok: true\n---\n\n"
+                  "raw": "---\ntype: process\nslug: calcination\nlayer: canon\ntradition: western\ntags: [process, fire]\nverified: true\nstage: nigredo\nok: true\n---\n\n"
                 },
                 {
                   "doc": "d_9",
-                  "raw": "---\ntype: process\nslug: dissolution\nlayer: canon\ntradition: western\ntags:\n  - process\n  - water\nverified: true\nstage: nigredo\nok: true\n---\n\n"
+                  "raw": "---\ntype: process\nslug: dissolution\nlayer: canon\ntradition: western\ntags: [process, water]\nverified: true\nstage: nigredo\nok: true\n---\n\n"
                 }
               ],
               "ops": []
@@ -1494,7 +1494,7 @@
                 "d_9"
               ]
             },
-            "plan_id": "bbc148ea56c9da05bfc6670afa52d50e108b7a5e8d66fa60ac1dedbdb6bf6a13",
+            "plan_id": "a63db538219f2834ba5146da74c77c1bbba36c76ad4e6259761027b4a9e401fe",
             "diagnostics": [],
             "preview": {
               "results": [],
@@ -1502,12 +1502,12 @@
                 {
                   "id": "d_7",
                   "path": "/processes/calcination.md",
-                  "hash": "b8612e466e8e655f2fd30738ec391ea99b35cc25f5833f08c8e160ff120473c2"
+                  "hash": "022e852023324ddd6c8a7dde87f4acd9d2aa545f9793ce5f911bde3c48e92ab9"
                 },
                 {
                   "id": "d_9",
                   "path": "/processes/dissolution.md",
-                  "hash": "d26a62f4a0843483d22de367f7c2258156cd7ee83bd204851c5c4caf8805494f"
+                  "hash": "3f485f45895dda766d3c49c6128bf735932031ba70c060787552d1435be7b3d0"
                 }
               ],
               "summary": [
@@ -1649,13 +1649,13 @@
             }
           },
           {
-            "plan_id": "3ece126452106400210f07047029a961691b814252ba4437f5a5f1c3301629da",
+            "plan_id": "ab416d8686fe527fd13439fcf0c7accb9e23307c0730edc17149c8b46f0f032a",
             "commit": "c_23",
             "revisions": [
               {
                 "id": "d_7",
                 "path": "/processes/calcination.md",
-                "hash": "647b0d8820b6eac9f4c384634d9d3a5028d4b6b480af40e032a0f1ad220d95b4"
+                "hash": "43bb086695beff9c36c5212b2ebbf14185df411e603a14d46c10265fb4f28144"
               }
             ],
             "new_ids": {},
@@ -1956,7 +1956,7 @@
                   {
                     "id": "d_14",
                     "path": "/substances/salt.md",
-                    "hash": "624e77d18095c4d2f9a430cffd42c4035d0850d1d053c7efc7f4e8071393da00"
+                    "hash": "5ce5399bbf38a715dc8507974ef15cd2b59ca4454f32372d7a225c170db4569c"
                   }
                 ]
               },
@@ -1998,7 +1998,7 @@
                   {
                     "id": "d_7",
                     "path": "/processes/calcination.md",
-                    "hash": "647b0d8820b6eac9f4c384634d9d3a5028d4b6b480af40e032a0f1ad220d95b4"
+                    "hash": "43bb086695beff9c36c5212b2ebbf14185df411e603a14d46c10265fb4f28144"
                   }
                 ]
               }
@@ -2019,7 +2019,7 @@
                   {
                     "id": "d_14",
                     "path": "/substances/salt.md",
-                    "hash": "624e77d18095c4d2f9a430cffd42c4035d0850d1d053c7efc7f4e8071393da00"
+                    "hash": "5ce5399bbf38a715dc8507974ef15cd2b59ca4454f32372d7a225c170db4569c"
                   }
                 ]
               },
@@ -2061,7 +2061,7 @@
                   {
                     "id": "d_7",
                     "path": "/processes/calcination.md",
-                    "hash": "647b0d8820b6eac9f4c384634d9d3a5028d4b6b480af40e032a0f1ad220d95b4"
+                    "hash": "43bb086695beff9c36c5212b2ebbf14185df411e603a14d46c10265fb4f28144"
                   }
                 ]
               }
@@ -2082,7 +2082,7 @@
                   {
                     "id": "d_14",
                     "path": "/substances/salt.md",
-                    "hash": "624e77d18095c4d2f9a430cffd42c4035d0850d1d053c7efc7f4e8071393da00"
+                    "hash": "5ce5399bbf38a715dc8507974ef15cd2b59ca4454f32372d7a225c170db4569c"
                   }
                 ]
               },
@@ -2124,7 +2124,7 @@
                   {
                     "id": "d_7",
                     "path": "/processes/calcination.md",
-                    "hash": "647b0d8820b6eac9f4c384634d9d3a5028d4b6b480af40e032a0f1ad220d95b4"
+                    "hash": "43bb086695beff9c36c5212b2ebbf14185df411e603a14d46c10265fb4f28144"
                   }
                 ]
               }

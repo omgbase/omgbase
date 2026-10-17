@@ -646,16 +646,23 @@ describe("the document operations return the Receipt and commit through the buil
     expect(onDisk.outcome.payload).toEqual({ error: "path_taken", message: "file already exists on disk at lab", retriable: false, data: {} });
   });
 
-  it("docs_set_meta: the Receipt's one revision is the patched document, the bytes are the merged compose, no body dispositions (store 14.2: every body block is `same`), reason `set_meta <path>`", async () => {
+  it("docs_set_meta: the Receipt's one revision is the patched document, the bytes are the per-entry patch (spec/mutate 3.6: every untouched key byte-identical, `tags: [...]` kept), no body dispositions (store 14.2: every body block is `same`), reason `set_meta <path>`", async () => {
     const snap = await migratedSide("docs_set_meta", { path: "substances/salt.md", set: { verified: false, reviewed: "2026-09" }, unset: ["tradition"] });
     expect(snap.outcome.ok).toBe(true);
     const receipt = snap.outcome.payload as Receipt;
     expect(receipt.revisions).toEqual([{ id: "d_14", path: "/substances/salt.md", hash: expect.stringMatching(/^[0-9a-f]{64}$/) }]);
     expect(receipt.new_ids).toEqual({});
-    const { frontmatter, body } = splitFrontmatter(CORPUS["substances/salt.md"]!);
-    const merged: Record<string, unknown> = { ...frontmatter, verified: false, reviewed: "2026-09" };
-    delete merged.tradition;
-    expect(snap.files["substances/salt.md"]).toBe(composeFile(body, merged));
+    // Per-entry (spec/mutate §11.3, 3.6): `verified`'s line is re-rendered in
+    // place, `reviewed` is a new part after the last entry, `tradition`'s part
+    // is gone — and the flow list `tags: [substance, tria-prima]` keeps its
+    // bytes (through 3.5 the whole mapping was re-serialized as block sequences).
+    const source = CORPUS["substances/salt.md"]!;
+    expect(source).toContain("tags: [substance, tria-prima]\nverified: true\n---\n");
+    const expected = source.replace("tradition: western\n", "").replace("verified: true\n---\n", "verified: false\nreviewed: 2026-09\n---\n");
+    expect(snap.files["substances/salt.md"]).toBe(expected);
+    const { frontmatter } = splitFrontmatter(snap.files["substances/salt.md"]!);
+    expect(frontmatter).toMatchObject({ verified: false, reviewed: "2026-09", tags: ["substance", "tria-prima"] });
+    expect(frontmatter).not.toHaveProperty("tradition");
     expect(snap.last).toMatchObject({ reason: "set_meta substances/salt.md" });
     // store 14.2: a frontmatter patch leaves every body block byte-identical in
     // place — `same`, which the store does not persist — so the commit has no
