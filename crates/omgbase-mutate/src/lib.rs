@@ -6,9 +6,11 @@
 //! compare-and-swap expectations ([`ops`]), the splice renderer with its
 //! dirty rules ([`render`]), changeset placeholder resolution
 //! ([`changeset`]), the whole-document lowering ([`lower`]), the opset
-//! ([`opset`]) and the public effect vocabulary with its plan shape, conflict
-//! rules and digest ([`effects`], 2.3). Every function here is pure: the store loads, applies,
-//! commits, and hosts the macros and document operations.
+//! ([`opset`]), the public effect vocabulary with its plan shape, conflict
+//! rules and digest ([`effects`], 2.3) and the frontmatter entry split the
+//! planner edits one key through ([`frontmatter_parts`], 3.6). Every function
+//! here is pure: the store loads, applies, commits, and hosts the macros and
+//! document operations.
 //!
 //! ```
 //! use omgbase_mutate::{MutBlock, MutDoc, At, Parent, To, op_insert, render};
@@ -27,6 +29,7 @@
 pub mod changeset;
 pub mod effects;
 pub mod error;
+pub mod frontmatter_parts;
 pub mod lower;
 pub mod ops;
 pub mod opset;
@@ -44,6 +47,11 @@ pub use effects::{
     Target, canonical_json, classify_field, map_block_ids, parse_new_symbol, shift_placeholders,
 };
 pub use error::{ErrorCode, MutationError, Result};
+pub use frontmatter_parts::{
+    FrontmatterPart, FrontmatterSplit, entry_key_of, is_blank_line, is_comment_line,
+    join_frontmatter_parts, lead_of, line_ending_of, split_frontmatter_raw,
+    split_frontmatter_trivia, split_lines,
+};
 pub use lower::{LowerResult, body_of, lcs, lower_replace, lower_top_level, strip_frontmatter};
 pub use omgbase_reconcile::Minter;
 pub use ops::{
@@ -59,7 +67,7 @@ pub use summary::{
 pub use tree::{BlockPath, MutBlock, MutDoc, child_ids, parent_children_hash, raw_hash_hex};
 
 /// The `spec/mutate/VERSION` this crate implements (`major.minor`).
-pub const SPEC_VERSION: &str = "3.5";
+pub const SPEC_VERSION: &str = "3.6";
 
 /// This crate's own version (`Cargo.toml`), for the surface's `version` tool.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

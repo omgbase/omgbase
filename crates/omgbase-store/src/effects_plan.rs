@@ -54,6 +54,10 @@ use omgbase_mutate::effects::{
     PlanTombstone, Preconditions, RetargetHitPreview, RetargetPairPreview, RetargetPreview,
     ScalarWrite, Selection, Target,
 };
+use omgbase_mutate::frontmatter_parts::{
+    FrontmatterPart, join_frontmatter_parts, lead_of, line_ending_of, split_frontmatter_raw,
+    split_frontmatter_trivia,
+};
 use omgbase_mutate::{
     At, Effect, ErrorCode, Expect, MutBlock, MutDoc, MutationError, Op, Parent, SummaryLookup, To,
     parse_document, render, render_block, summarize_effect, visible_text_of,
@@ -74,6 +78,7 @@ use crate::mutate::{
     ApplyOrigin, OpsRunner, Revision, Staged, find_doc_by_ref, read_on_disk, stage,
 };
 use crate::writers::Origin;
+use crate::yaml_emit::stringify;
 
 /// What a plan is computed and executed against.
 #[derive(Clone, Debug, PartialEq)]
@@ -1273,19 +1278,7 @@ impl Store {
                 // `frontmatter.<key>` — on a created document too (3.0): its
                 // tree is loaded, the patch is a head like any other.
                 let key = field.strip_prefix("frontmatter.").expect("validated");
-                let d = p.runner.ensure_doc(self, doc_id)?;
-                let (mut merged, body) = split_frontmatter(&render(&p.runner.loaded[d].doc));
-                match value {
-                    Some(v) => {
-                        merged.insert(key.to_owned(), v.clone());
-                    }
-                    None => {
-                        // `shift_remove`, as above: `unset` of a middle key must
-                        // not reorder the frontmatter the way `remove` would.
-                        merged.shift_remove(key);
-                    }
-                }
-                self.patch_frontmatter(p, doc_id, &merged, &body)
+                self.patch_frontmatter_key(p, doc_id, key, value)
             }
             Target::Block { id } => {
                 let Some(value) = value else {
@@ -1385,8 +1378,103 @@ impl Store {
         }
     }
 
-    /// Patch a loaded document's frontmatter: compose the whole file as
-    /// `docs_set_meta` does (`compose_file(body, merged)`, §6), then set the
+    /// `spec/mutate` §11.3 `set`/`unset frontmatter.<key>` (3.6, "Frontmatter
+    /// entries"): the frontmatter is edited BY ENTRY. The document's head is
+    /// cut into its parts (`split_frontmatter_raw`, the §11.10 split rule): a
+    /// `set` replaces the key's part — the lead lines (a comment documenting
+    /// the key) kept, the entry's own lines re-rendered as `stringify({ key:
+    /// value })` in the fence's line endings — removes any duplicate of the
+    /// key, or inserts the new key's part after the last entry (before the
+    /// trailing comments and the closing fence); an `unset` removes every
+    /// part of the key. Every other part is byte-identical afterwards — a flow
+    /// list, a quoted string, a comment the author wrote survive a change to a
+    /// different key. When nothing but the fences would remain, the
+    /// frontmatter goes and the separator's first line ending with it (the §6
+    /// `set_meta` rule: a body that followed a blank line keeps it as leading
+    /// trivia). A document WITHOUT frontmatter (or one whose head the fence
+    /// rule does not recognise) still composes as `docs_set_meta` did through
+    /// 3.5 — `compose_file(body, merged)` — which for a new fence is the same
+    /// bytes a one-key part would give.
+    fn patch_frontmatter_key(
+        &mut self,
+        p: &mut Planning<'_>,
+        doc_id: &str,
+        key: &str,
+        set: Option<&Value>,
+    ) -> Result<()> {
+        let d = p.runner.ensure_doc(self, doc_id)?;
+        let fence = p.runner.loaded[d]
+            .doc
+            .frontmatter_raw
+            .as_deref()
+            .and_then(split_frontmatter_trivia);
+        let Some(fence) = fence else {
+            let (mut merged, body) = split_frontmatter(&render(&p.runner.loaded[d].doc));
+            match set {
+                Some(v) => {
+                    merged.insert(key.to_owned(), v.clone());
+                }
+                None => {
+                    // `shift_remove`, as above: `unset` of a middle key must
+                    // not reorder the frontmatter the way `remove` would.
+                    merged.shift_remove(key);
+                }
+            }
+            return self.patch_frontmatter(p, doc_id, &merged, &body);
+        };
+        let mut parts = split_frontmatter_raw(&fence.raw);
+        let eol = match line_ending_of(&parts[0].bytes) {
+            "" => "\n",
+            e => e,
+        };
+        if let Some(v) = set {
+            let mut one = Map::new();
+            one.insert(key.to_owned(), v.clone());
+            let mut rendered = stringify(&one);
+            if !rendered.ends_with('\n') {
+                rendered.push('\n');
+            }
+            if eol != "\n" {
+                rendered = rendered.split('\n').collect::<Vec<_>>().join(eol);
+            }
+            if let Some(at) = parts.iter().position(|q| q.key.as_deref() == Some(key)) {
+                parts[at].bytes = format!("{}{rendered}", lead_of(&parts[at]));
+                let mut i = 0;
+                parts.retain(|q| {
+                    let keep = i == at || q.key.as_deref() != Some(key);
+                    i += 1;
+                    keep
+                });
+            } else {
+                let last = parts.iter().rposition(|q| q.key.is_some());
+                let at = last.map_or(parts.len() - 1, |l| l + 1);
+                parts.insert(
+                    at,
+                    FrontmatterPart {
+                        key: Some(key.to_owned()),
+                        bytes: rendered,
+                    },
+                );
+            }
+        } else {
+            parts.retain(|q| q.key.as_deref() != Some(key));
+        }
+        let head = if parts.len() == 2 {
+            let t = fence.trivia.as_str();
+            t.strip_prefix("\r\n")
+                .or_else(|| t.strip_prefix('\n'))
+                .unwrap_or(t)
+                .to_owned()
+        } else {
+            format!("{}{}", join_frontmatter_parts(&parts), fence.trivia)
+        };
+        p.runner.set_head(self, doc_id, &head)?;
+        set_head(p, doc_id, head);
+        Ok(())
+    }
+
+    /// Patch a document WITHOUT frontmatter: compose the whole file as
+    /// `docs_set_meta` did (`compose_file(body, merged)`, §6), then set the
     /// file head so the known-id ingest renders exactly those bytes — the
     /// body blocks keep their ids and bytes (a file without a trailing newline
     /// gains one on its last block's trivia).
