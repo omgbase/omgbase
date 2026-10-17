@@ -4,6 +4,7 @@ npm:
   omgbase: minor
 crates:
   omgbase-mutate: minor
+  omgbase-store: patch
   omgbase-surface: patch
   omgbase: minor
 ---
