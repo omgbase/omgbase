@@ -94,8 +94,8 @@ use crate::names;
 use crate::paths::storage_path;
 use crate::planner::root_target;
 use crate::query::{
-    HIT_ID, HIT_PATH, QueryOptions, RESERVED_ALIAS_PREFIXES, check_reserved_aliases,
-    check_root_spellings, query_ast,
+    HIT_ID, HIT_PATH, QueryOptions, RESERVED_ALIAS_PREFIXES, TUPLE_HINT, bracket_list_as_tuple,
+    check_reserved_aliases, check_root_spellings, query_ast,
 };
 
 /// The `hint` of every `filter_invalid` the selector admission raises.
@@ -1403,7 +1403,23 @@ impl Compiled {
 /// The static admission of the selector itself (the reference's
 /// `admitSelector`): every refusal is prefixed `select: `.
 fn admit_selector(select: &str, request: Option<&fixes::Request>) -> Result<(Query, Target)> {
-    let raw = oqx::parse_string(select).map_err(|e| refused(format!("select: {}", e.message)))?;
+    let raw = oqx::parse_string(select).map_err(|e| {
+        // (`spec/surface` 4.11) `id in ["a", "b"]` — the bracket list rewritten
+        // to a tuple is the `fix` (the same request over the corrected selector).
+        match bracket_list_as_tuple(select, &e.message) {
+            None => refused(format!("select: {}", e.message)),
+            Some(rewritten) => refused_with(
+                format!("select: {}{TUPLE_HINT}", e.message),
+                match request {
+                    Some(r) => json!({ "fix": fixes::fix_request(&fixes::Request {
+                        select: Some(Json::String(rewritten)),
+                        ..r.clone()
+                    }) }),
+                    None => json!({}),
+                },
+            ),
+        }
+    })?;
     // The fix of a refused source (3.3): the same request over an admitted
     // root, spliced over the source's span of the written query.
     let root_fix = |links: bool| -> Json {
@@ -2009,6 +2025,7 @@ pub fn expand(
         unknown_names: None,
         vocabulary: Some(&vocabulary),
         now_ms,
+        request: None,
     };
     let res = query_ast(store, &ctx.repo_id, &c.rewritten, opts, semantic)?;
     if res.truncated || res.hits.len() > c.bound {
@@ -2025,6 +2042,7 @@ pub fn expand(
                 unknown_names: None,
                 vocabulary: Some(&vocabulary),
                 now_ms,
+                request: None,
             };
             query_ast(store, &ctx.repo_id, &c.rewritten, unbounded, HashMap::new())?
                 .hits
@@ -2390,6 +2408,7 @@ pub fn expand_plain(
                 unknown_names: None,
                 vocabulary: None,
                 now_ms: Some(dates::stamp_ms(&ctx.ts)),
+                request: None,
             };
             let res = query_ast(store, &ctx.repo_id, &q, opts, HashMap::new())?;
             let Some(hit) = res.hits.first() else {
@@ -2641,6 +2660,50 @@ mod tests {
                 .unwrap()
                 .starts_with("select __omg_sel_0_target: ^docs single {"),
         );
+    }
+
+    /// `id in ["a", "b"]` in a selector (`spec/surface` 4.11; `spec/mutate`
+    /// §8): the parser's error under `select: ` gains the tuple hint and the
+    /// same request over the rewritten selector as its `fix`.
+    #[test]
+    fn a_bracket_list_in_a_selector_is_fixed_to_a_tuple() {
+        let t = json!([{ "op": "set", "field": "frontmatter.rolled_up", "value": true }]);
+        let e = compile(&req(
+            "from docs where stage in [\"nigredo\", \"albedo\"]",
+            t.clone(),
+            None,
+        ))
+        .unwrap_err();
+        assert_eq!(e.code, "filter_invalid");
+        assert_eq!(
+            e.message,
+            "select: unexpected '[' — expected a value (at offset 25); a list is written as a tuple: (…)"
+        );
+        let d = e.data.unwrap();
+        assert_eq!(d["hint"], HINT);
+        assert_eq!(
+            d["fix"],
+            r#"{"effects":[{"field":"frontmatter.rolled_up","op":"set","value":true}],"select":"from docs where stage in (\"nigredo\", \"albedo\")"}"#
+        );
+        // `expect` rides along; one member is a grouping — no hint, no fix
+        let e = compile(&req(
+            "from docs where stage in [\"a\", \"b\"]",
+            t.clone(),
+            Some(2),
+        ))
+        .unwrap_err();
+        assert!(
+            e.data.unwrap()["fix"]
+                .as_str()
+                .unwrap()
+                .contains("\"expect\":{\"max\":2}")
+        );
+        let e = compile(&req("from docs where stage in [\"nigredo\"]", t, None)).unwrap_err();
+        assert_eq!(
+            e.message,
+            "select: unexpected '[' — expected a value (at offset 25)"
+        );
+        assert!(e.data.unwrap().get("fix").is_none());
     }
 
     #[test]

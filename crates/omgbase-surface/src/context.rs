@@ -1256,6 +1256,31 @@ impl<'a> StoreContext<'a> {
         }
     }
 
+    /// `block` on a link row (`spec/surface` §1.2, 4.11): the SOURCE block
+    /// the link was written in — the blocks row `block_id` (the edge's
+    /// `src_block`) names, in the source document (`__path` is already the
+    /// block's document path) — mirroring `doc`; absent when the link has
+    /// none (a frontmatter link).
+    fn link_block(&self, row: &Value) -> oqx::Result<Value> {
+        let id = col(row, "src_block");
+        if !id.truthy() {
+            return Ok(absent_single());
+        }
+        match col(row, "__path") {
+            Value::Str(path) => Ok(Self::lazy_owner(
+                &[
+                    ("block_id", id.clone()),
+                    ("doc_id", col(row, "src_doc").clone()),
+                    ("__path", Value::Str(path.clone())),
+                ],
+                Target::Blocks,
+            )),
+            _ => Ok(self
+                .load_owner(Target::Blocks, &js_string(id))?
+                .unwrap_or_else(absent_single)),
+        }
+    }
+
     /// The full owner row by id (`None` when it is not in the store), read
     /// at most once per run.
     fn load_owner(&self, t: Target, id: &str) -> oqx::Result<Option<Value>> {
@@ -1879,6 +1904,7 @@ impl DataContext for StoreContext<'_> {
             (_, "doc") => return self.owning_doc(row),
             (Target::Nodes, "block") => return self.owning_block(row),
             (Target::Links, "dst") => return self.destination_doc(row),
+            (Target::Links, "block") => return self.link_block(row),
             _ => {}
         }
         if let Some(v) = self.relation(row, t, key)? {

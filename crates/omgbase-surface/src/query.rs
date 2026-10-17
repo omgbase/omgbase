@@ -111,6 +111,11 @@ pub struct QueryOptions<'a> {
     /// `OMGBASE_SPEC_CLOCK`); `None` reads the wall clock. One instant per
     /// run: the fold and the context share it.
     pub now_ms: Option<i64>,
+    /// The `query` call as the caller received it (`spec/surface` 4.11): the
+    /// arguments a corrected call is spelled from when a parse error can be
+    /// fixed (`data.fix`, the bracket-list rule — [`bracket_list_as_tuple`]).
+    /// Absent, the message still gains its hint and no `fix` is composed.
+    pub request: Option<&'a Json>,
 }
 
 /// §1.4 `OqxResult`.
@@ -942,7 +947,7 @@ pub fn query(
         planned: !opts.in_memory,
         now_ms: opts.now_ms.unwrap_or_else(dates::wall_clock_ms),
     };
-    let raw = oqx::parse_string(source)?;
+    let raw = oqx::parse_string(source).map_err(|e| parse_invalid(source, &e, opts.request))?;
     check_reserved_aliases(&raw)?;
     // The source entry is every read: a tier-3 name on an open kind is a hint.
     run_parsed(
@@ -951,6 +956,146 @@ pub fn query(
         opts,
         opts.unknown_names.unwrap_or(UnknownNames::Hint),
     )
+}
+
+// ---- the bracket-list fix (`spec/surface` §4 "Error data", 4.11) ----------------------
+//
+// OQX has no list literal; a tuple `("a", "b")` is the collection (`spec/oqx`
+// SEMANTICS §3b), so `id in ["a", "b"]` — the SQL habit — is the parse error
+// `unexpected '[' — expected a value (at offset N)`. When the source at N opens
+// a bracketed comma list of LITERALS closed by `]` (two or more members, each a
+// string, number, `true`, `false` or `null`; nothing nested), the message
+// gains `; a list is written as a tuple: (…)` and, when the request is known,
+// the error carries `fix`: the same request with that `[…]` rewritten to
+// `(…)`. Anything else at N (an identifier member, a nested bracket, one
+// member, an unclosed list) is the parser's error as it stands.
+
+const BRACKET_ERROR_HEAD: &str = "unexpected '[' — expected a value (at offset ";
+/// The suffix the bracket-list message gains (`TUPLE_HINT`).
+pub const TUPLE_HINT: &str = "; a list is written as a tuple: (…)";
+
+/// The offset `N` of `unexpected '[' — expected a value (at offset N)`, or
+/// `None` for any other message.
+fn bracket_error_offset(message: &str) -> Option<usize> {
+    let digits = message
+        .strip_prefix(BRACKET_ERROR_HEAD)?
+        .strip_suffix(')')?;
+    if digits.is_empty() || !digits.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    digits.parse().ok()
+}
+
+/// The source with the bracket list at the error's offset (in code points,
+/// as the parser counts) rewritten to a tuple, or `None` when the rule does
+/// not apply (the reference's `bracketListAsTuple`).
+#[must_use]
+pub fn bracket_list_as_tuple(source: &str, message: &str) -> Option<String> {
+    let open = bracket_error_offset(message)?;
+    let mut cps: Vec<char> = source.chars().collect();
+    if cps.get(open) != Some(&'[') {
+        return None;
+    }
+    let mut i = open + 1;
+    let mut members = 0;
+    let close = loop {
+        i = skip_spaces(&cps, i);
+        let end = literal_end(&cps, i)?;
+        members += 1;
+        i = skip_spaces(&cps, end);
+        match cps.get(i) {
+            Some(',') => i += 1,
+            Some(']') => break i,
+            _ => return None,
+        }
+    };
+    if members < 2 {
+        return None;
+    }
+    cps[open] = '(';
+    cps[close] = ')';
+    Some(cps.into_iter().collect())
+}
+
+fn skip_spaces(cps: &[char], mut i: usize) -> usize {
+    while i < cps.len() && cps[i].is_whitespace() {
+        i += 1;
+    }
+    i
+}
+
+/// The index just past one OQX literal starting at `i` (a string in either
+/// quote with `\<c>` escapes, an unsigned number, `true`/`false`/`null`), or
+/// `None`.
+fn literal_end(cps: &[char], i: usize) -> Option<usize> {
+    let c = *cps.get(i)?;
+    if c == '"' || c == '\'' {
+        let mut j = i + 1;
+        while j < cps.len() {
+            if cps[j] == '\\' {
+                j += 2;
+            } else if cps[j] == c {
+                return Some(j + 1);
+            } else {
+                j += 1;
+            }
+        }
+        return None;
+    }
+    if c.is_ascii_digit() {
+        let digits = |mut j: usize| {
+            while j < cps.len() && cps[j].is_ascii_digit() {
+                j += 1;
+            }
+            j
+        };
+        let mut j = digits(i);
+        if cps.get(j) == Some(&'.') && cps.get(j + 1).is_some_and(char::is_ascii_digit) {
+            j = digits(j + 1);
+        }
+        if matches!(cps.get(j), Some('e' | 'E')) {
+            let mut k = j + 1;
+            if matches!(cps.get(k), Some('+' | '-')) {
+                k += 1;
+            }
+            if cps.get(k).is_some_and(char::is_ascii_digit) {
+                j = digits(k);
+            }
+        }
+        return Some(j);
+    }
+    for word in ["true", "false", "null"] {
+        let n = word.len();
+        let matches_word = cps.len() >= i + n && cps[i..i + n].iter().copied().eq(word.chars());
+        let boundary = !cps
+            .get(i + n)
+            .is_some_and(|c| c.is_ascii_alphanumeric() || *c == '_' || *c == '$');
+        if matches_word && boundary {
+            return Some(i + n);
+        }
+    }
+    None
+}
+
+/// The surface's `filter_invalid` for a parse error: the engine's message,
+/// plus the tuple hint and `fix` when the bracket rule applies (the
+/// reference's `parseInvalid`).
+fn parse_invalid(source: &str, e: &oqx::OqxError, request: Option<&Json>) -> SurfaceError {
+    let Some(rewritten) = bracket_list_as_tuple(source, &e.message) else {
+        return SurfaceError::filter_invalid(e.message.clone(), "OQX");
+    };
+    let mut err = SurfaceError::filter_invalid(format!("{}{TUPLE_HINT}", e.message), "OQX");
+    if let Some(Json::Object(args)) = request
+        && let Some(d) = err.data.as_mut().and_then(Json::as_object_mut)
+    {
+        let mut fixed = args.clone();
+        fixed.insert("query".to_owned(), Json::String(rewritten));
+        d.insert(
+            "fix".to_owned(),
+            Json::String(omgbase_mutate::canonical_json(&Json::Object(fixed))),
+        );
+    }
+    err
 }
 
 /// Run an already-parsed query (§1.4) — the AST entry the selector compile
@@ -1408,6 +1553,116 @@ fn run_grouped(
 mod tests {
     use super::*;
     use oqx::ast::Where;
+    use serde_json::json;
+
+    // ---- the bracket-list fix (spec/surface §4 "Error data", 4.11) ----
+
+    fn parse_err(src: &str) -> String {
+        oqx::parse_string(src).unwrap_err().message
+    }
+
+    #[test]
+    fn a_bracket_list_of_literals_is_rewritten_to_a_tuple() {
+        let cases = [
+            (
+                "from docs where stage in [\"nigredo\", \"albedo\"]",
+                "from docs where stage in (\"nigredo\", \"albedo\")",
+            ),
+            (
+                "from blocks where depth in [0, 1] and path == \"/index.md\"",
+                "from blocks where depth in (0, 1) and path == \"/index.md\"",
+            ),
+            (
+                "from docs where verified in [ true, 'yes', null ]",
+                "from docs where verified in ( true, 'yes', null )",
+            ),
+            (
+                "from docs where x in [1.5e3,2E-1,\"a\\\"b\"]",
+                "from docs where x in (1.5e3,2E-1,\"a\\\"b\")",
+            ),
+            // the offset counts code points, as the parser does
+            (
+                "from docs where title in [\"é\", \"ü\"] and stage in [\"a\", \"b\"]",
+                "from docs where title in (\"é\", \"ü\") and stage in [\"a\", \"b\"]",
+            ),
+        ];
+        for (src, want) in cases {
+            let msg = parse_err(src);
+            assert!(msg.starts_with(BRACKET_ERROR_HEAD), "{src}: {msg}");
+            assert_eq!(
+                bracket_list_as_tuple(src, &msg).as_deref(),
+                Some(want),
+                "{src}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_bracket_list_that_is_not_two_or_more_literals_has_no_rewrite() {
+        for src in [
+            "from docs where stage in [[\"nigredo\"], \"albedo\"]",
+            "from docs where stage in [stage, \"albedo\"]",
+            "from docs where stage in [\"nigredo\"]",
+            "from docs where stage in [\"nigredo\", \"albedo\"",
+            "from docs where stage in [\"nigredo\" \"albedo\"]",
+            "from docs where stage in [truex, 1]",
+            "from docs where stage in [-1, 2]",
+            "from docs where stage in []",
+        ] {
+            let msg = parse_err(src);
+            assert_eq!(bracket_list_as_tuple(src, &msg), None, "{src}: {msg}");
+        }
+        // another message, or a message whose offset is not a `[`
+        assert_eq!(bracket_list_as_tuple("from docs", "unexpected end"), None);
+        assert_eq!(
+            bracket_list_as_tuple(
+                "from docs",
+                "unexpected '[' — expected a value (at offset 2)"
+            ),
+            None
+        );
+        assert_eq!(
+            bracket_error_offset("unexpected '[' — expected a value (at offset x)"),
+            None
+        );
+        assert_eq!(
+            bracket_error_offset("unexpected '[' — expected a value (at offset 7)"),
+            Some(7)
+        );
+    }
+
+    #[test]
+    fn a_parse_error_carries_the_hint_and_the_corrected_call() {
+        let src = "select path from docs where stage in [\"nigredo\", \"albedo\"]";
+        let e = oqx::parse_string(src).unwrap_err();
+        let request = json!({ "query": src, "limit": 5, "bare": true });
+        let err = parse_invalid(src, &e, Some(&request));
+        assert_eq!(err.code, "filter_invalid");
+        assert_eq!(
+            err.message,
+            "unexpected '[' — expected a value (at offset 37); a list is written as a tuple: (…)"
+        );
+        let d = err.data.unwrap();
+        assert_eq!(d["hint"], "OQX");
+        assert_eq!(d["reason"], err.message);
+        assert_eq!(
+            d["fix"],
+            r#"{"bare":true,"limit":5,"query":"select path from docs where stage in (\"nigredo\", \"albedo\")"}"#
+        );
+        // no request: the hint alone
+        let err = parse_invalid(src, &e, None);
+        assert!(err.message.ends_with(TUPLE_HINT));
+        assert!(err.data.unwrap().get("fix").is_none());
+        // the rule does not apply: the parser's error as it stands
+        let src = "from docs where stage in [\"nigredo\"]";
+        let e = oqx::parse_string(src).unwrap_err();
+        let err = parse_invalid(src, &e, Some(&json!({ "query": src })));
+        assert_eq!(
+            err.message,
+            "unexpected '[' — expected a value (at offset 25)"
+        );
+        assert!(err.data.unwrap().get("fix").is_none());
+    }
 
     #[test]
     fn row_functions_become_self_methods() {

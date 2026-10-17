@@ -230,6 +230,7 @@ pub fn graph_neighborhood(
                 unknown_names: None,
                 vocabulary: None,
                 now_ms,
+                request: None,
             },
         )?;
         if res.truncated {

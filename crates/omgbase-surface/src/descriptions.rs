@@ -74,7 +74,7 @@ pub const APPLY: &str = r###"apply — plan and commit in one call; returns the 
 Plan first for anything you cannot undo by hand; every error's data.fix is a corrected call to copy. Grammar: query_syntax."###;
 
 /// `plan`
-pub const PLAN: &str = r##"plan — Preview a write: the Plan (summary, $new.n ids) burns no id; execute next. diffs: true for file bodies.
+pub const PLAN: &str = r##"plan — Preview a write: the Plan (summary, $new.n ids) burns no id; execute next. Need file bodies? add diffs: true.
 {"effects":[{"op":"set","target":"/processes/calcination.md","field":"frontmatter.verified","value":false}]}   path = doc
 {"effects":[{"op":"insert","into":{"kind":"section","heading_id":"b_153"},"markdown":"- [ ] Weigh the calx"}]}   in a section
 {"effects":[{"op":"create","path":"lab/march.md","markdown":"# March\n"},{"op":"insert","into":"$new.0","markdown":"Hi."}]}   fill it: $new.0

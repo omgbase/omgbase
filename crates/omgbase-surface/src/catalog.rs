@@ -1841,6 +1841,8 @@ impl Surface {
                     unknown_names: None,
                     vocabulary: Some(&self.vocabulary),
                     now_ms: Some(now_ms),
+                    // (4.11) the call as received, for a parse error's corrected `fix`.
+                    request: Some(args),
                 };
                 self.require_rankable(
                     &repo,

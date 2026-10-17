@@ -450,6 +450,16 @@ fn run_once(
     in_memory: bool,
 ) -> Result<Result<OqxResult, SurfaceError>, String> {
     let source = c["query"].as_str().ok_or("query")?;
+    // The case's arguments ARE the `query` tool's (README §6), so a corrected
+    // call (4.11, `fix`) is spelled from them exactly as the tool spells it.
+    let mut request = JsonMap::new();
+    request.insert("query".to_owned(), json!(source));
+    for key in ["limit", "cursor", "bare"] {
+        if let Some(v) = c.get(key) {
+            request.insert(key.to_owned(), v.clone());
+        }
+    }
+    let request = Json::Object(request);
     let opts = QueryOptions {
         limit: c.get("limit").and_then(Json::as_u64).map(|n| n as usize),
         cursor: c.get("cursor").and_then(Json::as_str),
@@ -462,6 +472,7 @@ fn run_once(
         // reference pins `CORPUS_TS` around every run, so `date("today")`
         // is `2026-09-27` (a Sunday) in both engines.
         now_ms: Some(dates::stamp_ms(CORPUS_TS)),
+        request: Some(&request),
     };
     let started = Instant::now();
     let out = query(store, repo, source, opts);
@@ -490,7 +501,7 @@ fn run_query_case(store: &Store, repo: &str, c: &Json) -> Result<(), String> {
             }
         }
         (Err(p), Err(m)) => {
-            if p.code != m.code || p.message != m.message {
+            if p.code != m.code || p.message != m.message || error_fix(p) != error_fix(m) {
                 return Err(clip(format!(
                     "planned error {} {:?} != in-memory error {} {:?}",
                     p.code, p.message, m.code, m.message
@@ -546,9 +557,23 @@ fn run_query_case(store: &Store, repo: &str, c: &Json) -> Result<(), String> {
                     )));
                 }
             }
+            // (4.11) the corrected call, recorded verbatim — equal on both
+            // sides, absent on both sides.
+            let expected_fix = expect.get("fix").and_then(Json::as_str);
+            if error_fix(&e) != expected_fix {
+                return Err(clip(format!(
+                    "fix {:?} (expected {expected_fix:?})",
+                    error_fix(&e)
+                )));
+            }
             Ok(())
         }
     }
+}
+
+/// A query error's `data.fix` (`spec/surface` §4 "Error data", 4.11).
+fn error_fix(e: &SurfaceError) -> Option<&str> {
+    e.data.as_ref()?.get("fix")?.as_str()
 }
 
 // ---- cursor.json ------------------------------------------------------------------

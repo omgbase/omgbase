@@ -78,14 +78,19 @@ pub fn argument_error_fix(
     SurfaceError::with_data("filter_invalid", full, data)
 }
 
-// ---- string lists (`spec/surface` §4 "Arguments", 4.5) -----------------------------------
+// ---- string lists (`spec/surface` §4 "Arguments", 4.5 / 4.11) ----------------------------
 //
 // Every list-of-strings argument (`docs`, `ids`, `roots`, `blocks`, `select`,
 // `unset`) also takes ONE bare string as a one-element list — the first guess
-// of a caller who has one ref. A comma-joined string is still "must be an
-// array of strings", but that error carries a `fix`: the same call with the
-// string split on commas (each part trimmed, empty parts dropped), canonical
-// JSON.
+// of a caller who has one ref — and (4.11) a string that IS a JSON array of
+// strings (`"[\"b_1\",\"b_2\"]"`, the list stringified by a client that
+// serializes every argument) as that array: the intent is unambiguous, the
+// same tolerance class as the bare string. A comma-joined string is still
+// "must be an array of strings", but that error carries a `fix`: the same
+// call with the string split on commas (each part trimmed, empty parts
+// dropped), canonical JSON. A string opening `[` that is not a JSON array of
+// strings is the same error, its `fix` the parsed array when it parsed (a
+// JSON array of numbers) and the comma split otherwise (a malformed `[`).
 
 /// Is this argument's schema a string list (`{ type: array, items: { type: string } }`)?
 fn is_string_list(schema: &Json) -> bool {
@@ -100,6 +105,44 @@ pub fn comma_split(s: &str) -> Vec<String> {
         .filter(|p| !p.is_empty())
         .map(str::to_owned)
         .collect()
+}
+
+/// What a string opening `[` in a string-list slot reads as (4.11, the
+/// reference's `jsonArrayString`).
+#[derive(Clone, Debug, PartialEq)]
+pub enum JsonArrayString {
+    /// A JSON array of strings: accepted as that list.
+    List(Vec<String>),
+    /// Anything else: the list the error's corrected call carries — the
+    /// parsed array when the text parsed (a JSON array that is not all
+    /// strings), else the comma split.
+    Fix(Vec<Json>),
+}
+
+/// A string whose trimmed form opens `[`, read as JSON; `None` when it does
+/// not open `[` (the 4.5 rules apply unchanged).
+#[must_use]
+pub fn json_array_string(s: &str) -> Option<JsonArrayString> {
+    let trimmed = s.trim();
+    if !trimmed.starts_with('[') {
+        return None;
+    }
+    let comma = || JsonArrayString::Fix(comma_split(s).into_iter().map(Json::String).collect());
+    let Ok(parsed) = serde_json::from_str::<Json>(trimmed) else {
+        return Some(comma());
+    };
+    let Json::Array(items) = parsed else {
+        return Some(comma());
+    };
+    if items.iter().all(Json::is_string) {
+        return Some(JsonArrayString::List(
+            items
+                .into_iter()
+                .filter_map(|v| v.as_str().map(str::to_owned))
+                .collect(),
+        ));
+    }
+    Some(JsonArrayString::Fix(items))
 }
 
 /// Check `args` against the tool's schema: unknown names first (bytewise
@@ -145,6 +188,39 @@ pub fn validate_arguments(tool: &str, schema: &Json, args: &Json) -> Result<Opti
                 if is_string_list(prop)
                     && let Some(s) = value.as_str()
                 {
+                    // (4.11) a stringified JSON array of strings is that list
+                    // — checked against the list schema itself (the `roots`
+                    // minimum holds for it too); any other `[…` is the array
+                    // error with the parsed array (or the comma split) as its
+                    // `fix`.
+                    if let Some(json) = json_array_string(s) {
+                        match json {
+                            JsonArrayString::Fix(list) => {
+                                let mut fixed = obj.clone();
+                                fixed.insert(key.clone(), Json::Array(list));
+                                return Err(argument_error_fix(
+                                    tool,
+                                    &format!("`{key}` must be an array of strings"),
+                                    schema,
+                                    Some(omgbase_mutate::canonical_json(&Json::Object(fixed))),
+                                ));
+                            }
+                            JsonArrayString::List(list) => {
+                                let list = json!(list);
+                                if !matches_schema(prop, &list) {
+                                    return Err(argument_error(
+                                        tool,
+                                        &format!("`{key}` must be {}", phrase_for(prop)),
+                                        schema,
+                                    ));
+                                }
+                                normalized
+                                    .get_or_insert_with(|| obj.clone())
+                                    .insert(key.clone(), list);
+                                continue;
+                            }
+                        }
+                    }
                     // (4.5) one bare string is a one-element list; a
                     // comma-joined one is the array error with the split
                     // list as its `fix`.
@@ -498,5 +574,59 @@ mod tests {
         );
         assert!(e.data.unwrap().get("fix").is_none());
         assert_eq!(comma_split(" a , ,b,"), ["a", "b"]);
+    }
+
+    /// (4.11) a stringified JSON array of strings is that list; any other
+    /// `[…` is the array error with the parsed array (or the comma split) as
+    /// its `fix` (`reads::arguments` steps 42–46).
+    #[test]
+    fn string_lists_take_a_stringified_json_array_of_strings() {
+        let s = json!({ "type": "object", "properties": {
+            "docs": { "type": "array", "items": { "type": "string" } }, "include_ids": { "type": "boolean" }, "repo": { "type": "string" }
+        }, "required": ["docs"] });
+        assert_eq!(
+            validate_arguments(
+                "docs_read_many",
+                &s,
+                &json!({ "docs": "[\"a.md\",\"b.md\"]" })
+            )
+            .unwrap(),
+            Some(json!({ "docs": ["a.md", "b.md"] }))
+        );
+        // surrounding whitespace is trimmed before the `[` is seen
+        assert_eq!(
+            validate_arguments("docs_read_many", &s, &json!({ "docs": " [\"a.md\"] " })).unwrap(),
+            Some(json!({ "docs": ["a.md"] }))
+        );
+        // a JSON array that is not all strings: the parsed array is the fix
+        let e = validate_arguments("docs_read_many", &s, &json!({ "docs": "[1, 2]" })).unwrap_err();
+        assert_eq!(
+            e.message,
+            "`docs` must be an array of strings (docs_read_many takes docs, include_ids?, repo?)"
+        );
+        assert_eq!(e.data.unwrap()["fix"], r#"{"docs":[1,2]}"#);
+        // a malformed `[`: the comma split is the fix
+        let e = validate_arguments(
+            "docs_read_many",
+            &s,
+            &json!({ "docs": "[\"a.md\", \"b.md\"", "include_ids": true }),
+        )
+        .unwrap_err();
+        assert_eq!(
+            e.data.unwrap()["fix"],
+            r#"{"docs":["[\"a.md\"","\"b.md\""],"include_ids":true}"#
+        );
+        // a JSON object is not a list either
+        let e = validate_arguments("docs_read_many", &s, &json!({ "docs": "[{}]" })).unwrap_err();
+        assert_eq!(e.data.unwrap()["fix"], r#"{"docs":[{}]}"#);
+        assert_eq!(json_array_string("a.md"), None);
+        assert_eq!(
+            json_array_string("[\"x\"]"),
+            Some(JsonArrayString::List(vec!["x".to_owned()]))
+        );
+        assert_eq!(
+            json_array_string("[x"),
+            Some(JsonArrayString::Fix(vec![json!("[x")]))
+        );
     }
 }

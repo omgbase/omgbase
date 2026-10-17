@@ -379,6 +379,7 @@ fn a_scan_projected_as_a_value_renders_as_its_rows() {
             unknown_names: None,
             vocabulary: None,
             now_ms: None,
+            request: None,
         },
     )
     .expect("runs");

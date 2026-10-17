@@ -228,7 +228,7 @@ pub fn non_property_handles(t: Target) -> &'static [&'static str] {
             "children",
             "attrs",
         ],
-        Target::Links => &["doc", "dst"],
+        Target::Links => &["doc", "dst", "block"],
         // a revision's one reach-through: the document's current row (4.7)
         Target::Revisions => &["doc"],
     }
@@ -706,6 +706,28 @@ fn operand(e: &Expr, ctx: &TranslateCtx<'_>) -> Option<Operand> {
                     k @ ("type" | "text") => Operand::text(format!(
                         "(SELECT bb.{k} FROM blocks bb WHERE bb.block_id = {s}.block_id)"
                     )),
+                    _ => None,
+                };
+            }
+            // block.<x> reach-through from a link (`spec/surface` §1.2, 4.11):
+            // the SOURCE block, keyed by the row's own `src_block` — `block.id`
+            // is that FK column (NULL for a frontmatter link, exactly where
+            // `block` is absent in memory); everything else is a primary-key
+            // probe of the block row, NULL for the same rows (`block.path`
+            // reads the scan's joined source document inside the probe, so it
+            // too is NULL when there is no block). `raw`, `hash`,
+            // `updated_at`, `attrs` and the relations stay residual.
+            if *head == "block" && target == Target::Links && rest.len() == 1 {
+                let probe = |col: &str| {
+                    Operand::text(format!(
+                        "(SELECT {col} FROM blocks bb WHERE bb.block_id = {s}.src_block)"
+                    ))
+                };
+                return match rest[0] {
+                    "id" => Operand::text(format!("{s}.src_block")),
+                    "path" => probe(&format!("'/' || {d}.path")),
+                    "doc_id" => probe("bb.doc_id"),
+                    k @ ("type" | "text") => probe(&format!("bb.{k}")),
                     _ => None,
                 };
             }
@@ -2495,6 +2517,57 @@ mod tests {
             translate_predicate(&pred("dst.layer == \"canon\""), &DOCS),
             None
         );
+    }
+
+    /// `block.<k>` on a link (4.11) is the SOURCE block: `block.id` the FK
+    /// column, the rest a probe by `src_block` (NULL for a frontmatter
+    /// link), byte for byte the reference's SQL.
+    #[test]
+    fn block_reach_through_on_a_link_reads_the_source_block_by_its_foreign_key() {
+        let edges = TranslateCtx {
+            target: Target::Links,
+            self_alias: "e",
+            ..DOCS
+        };
+        assert_eq!(
+            translate_predicate(&pred("block.id == \"b_1\""), &edges),
+            frag("(e.src_block IS ?)", &[text("b_1")])
+        );
+        assert_eq!(
+            translate_predicate(&pred("block.type == \"paragraph\""), &edges),
+            frag(
+                "((SELECT bb.type FROM blocks bb WHERE bb.block_id = e.src_block) IS ?)",
+                &[text("paragraph")]
+            )
+        );
+        assert!(
+            translate_predicate(&pred("block.text == \"x\""), &edges).is_some_and(|f| f
+                .sql
+                .contains("SELECT bb.text FROM blocks bb WHERE bb.block_id = e.src_block"))
+        );
+        assert_eq!(
+            translate_predicate(&pred("block.path == \"/a.md\""), &edges),
+            frag(
+                "((SELECT '/' || d.path FROM blocks bb WHERE bb.block_id = e.src_block) IS ?)",
+                &[text("/a.md")]
+            )
+        );
+        assert_eq!(
+            translate_predicate(&pred("block.doc_id == \"d_1\""), &edges),
+            frag(
+                "((SELECT bb.doc_id FROM blocks bb WHERE bb.block_id = e.src_block) IS ?)",
+                &[text("d_1")]
+            )
+        );
+        // the block's own attributes and relations stay residual
+        for k in ["hash", "raw", "updated_at", "attrs", "children"] {
+            assert_eq!(
+                translate_predicate(&pred(&format!("block.{k} == \"x\"")), &edges),
+                None,
+                "block.{k}"
+            );
+        }
+        assert_eq!(translate_predicate(&pred("block == null"), &edges), None);
     }
 
     #[test]

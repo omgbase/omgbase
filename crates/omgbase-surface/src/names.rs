@@ -85,7 +85,12 @@ pub fn handles(t: Target) -> &'static [(&'static str, Target)] {
             ("doc", Target::Docs),
             ("block", Target::Blocks),
         ],
-        Target::Links => &[("doc", Target::Docs), ("dst", Target::Docs)],
+        // `block` reaches the SOURCE block (4.11), absent for a frontmatter link
+        Target::Links => &[
+            ("doc", Target::Docs),
+            ("dst", Target::Docs),
+            ("block", Target::Blocks),
+        ],
         // `doc` reaches the document's current row (4.7)
         Target::Revisions => &[("doc", Target::Docs)],
     }
@@ -924,6 +929,23 @@ mod tests {
             hints(&store, &repo, "select dst.kynd from links"),
             [
                 "`kynd` is not a field of docs and no document in this repository carries a property by that name; did you mean `kind`?"
+            ]
+        );
+        // `block` (4.11) reaches the source block: its fields read clean, a
+        // misspelling is judged as a block's; the handle is not a field, so
+        // the closed-row list above is unchanged.
+        assert!(
+            hints(
+                &store,
+                &repo,
+                "select block.text, block.type, block.doc.path from links"
+            )
+            .is_empty()
+        );
+        assert_eq!(
+            hints(&store, &repo, "select block.typ from links"),
+            [
+                "`typ` is not a field of blocks and no block in this repository carries a property by that name; did you mean `type`?"
             ]
         );
     }
