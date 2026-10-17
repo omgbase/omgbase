@@ -219,17 +219,6 @@
     }
   },
   {
-    "name": "flatten-is-unsupported",
-    "dql": "TABLE tag FROM \"a\" FLATTEN file.tags AS tag",
-    "error": {
-      "code": "unsupported",
-      "construct": "FLATTEN",
-      "message": "FLATTEN: one row per element next to the page's fields is not expressible in OQX (a `from` re-projection drops the page); filter the list with a nested block instead (at line 1, column 20)",
-      "line": 1,
-      "column": 20
-    }
-  },
-  {
     "name": "from-after-a-command-is-a-parse-error",
     "dql": "LIST WHERE x FROM \"a\"",
     "error": {

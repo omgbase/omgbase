@@ -11,9 +11,9 @@
 // wrapped in `date()` so an authored `2026-10-15` and a canonical ISO instant
 // compare as dates.
 
-import { build, type Expr, type OpNode, type Where } from "@omgbase/oqx";
+import { build, type Expr, type OpNode, type SelectItem, type TemplatePart, type Where } from "@omgbase/oqx";
 import type { Expr as DExpr, Node } from "./ast.ts";
-import { at, linkPath, nested, rootPath, warn, type Ctx } from "./context.ts";
+import { at, linkPath, nested, rootPath, warn, type Bound, type Ctx } from "./context.ts";
 import { DqlError, unsupported } from "./errors.ts";
 import {
   DATE_MEMBERS, DATE_MEMBERS_UNSUPPORTED, DURATION_MEMBERS, FILE_FIELDS, TASK_FIELDS, type Derive, type Kind,
@@ -38,9 +38,16 @@ export interface Typed {
 /** Engine names on a docs row (spec/surface §1.2): an authored key with one of
  * these names is reached through `data.<k>`, which is what a Dataview bare
  * field means — the author's value, never the engine's. */
-const DOC_ENGINE_NAMES: ReadonlySet<string> = new Set([
+export const DOC_ENGINE_NAMES: ReadonlySet<string> = new Set([
   "id", "path", "raw", "hash", "updated_at", "title", "tags", "format", "data", "frontmatter", "inline", "doc",
   "blocks", "nodes", "out_links", "in_links", "revisions",
+]);
+
+/** Engine names on a blocks row (spec/surface §1.2): a `FLATTEN … AS <one of these>`
+ * on a TASK query shadows the row's attribute for the rest of the query. */
+export const BLOCK_ENGINE_NAMES: ReadonlySet<string> = new Set([
+  "id", "path", "doc_id", "raw", "hash", "updated_at", "type", "text", "attrs", "depth", "ordinal", "block", "doc",
+  "children", "nodes", "out_links", "section",
 ]);
 
 const lit = build.lit;
@@ -53,7 +60,7 @@ function str(value: string): Typed { return { expr: lit(value), kind: "string", 
 // ---- fields -------------------------------------------------------------------
 
 /** `a.b.c` with an identifier head → ["a", "b", "c"]; null for any other shape. */
-function segments(e: DExpr): string[] | null {
+export function segments(e: DExpr): string[] | null {
   if (e.kind === "ident") return [e.name];
   if (e.kind === "member") {
     const head = segments(e.object);
@@ -163,9 +170,85 @@ function rowsField(rest: string[], node: Node, ctx: Ctx): Typed {
   if (ctx.groupKey === null) throw unsupported("rows", "`rows` exists only after GROUP BY", at(ctx, node));
   if (rest.length === 0) return { expr: rowsCollect(ctx), kind: "list", rows: true };
   // The per-row value, read as the ungrouped row reads it.
-  const inner = rest[0] === "file" ? fileField(rest.slice(1), node, { ...ctx, groupKey: null })
-    : trailing(bareField(rest[0]!, node, { ...ctx, groupKey: null }), rest.slice(1), node, ctx);
+  const inner = rowRead(rest, node, { ...ctx, groupKey: null });
   return { expr: aggregateOf(ctx, "collect", inner.expr), kind: "list", ...(inner.derive ? { derive: inner.derive } : {}) };
+}
+
+/** A field path read on the (ungrouped) row: `file.*`, a `FLATTEN`-bound name, a
+ * task field on a re-rooted TASK query, else an authored property. */
+function rowRead(segs: string[], node: Node, ctx: Ctx): Typed {
+  const [head, ...rest] = segs as [string, ...string[]];
+  const bound = ctx.bound.get(head);
+  if (bound) return boundValue(bound, rest, node, ctx);
+  if (ctx.taskBound && head !== "file" && TASK_FIELDS[head]) return boundValue(ctx.taskBound, segs, node, ctx);
+  if (head === "file") return fileField(rest, node, ctx);
+  return trailing(bareField(head, node, ctx), rest, node, ctx);
+}
+
+/** `<bound>[.rest…]`: a read of a `FLATTEN`-bound element (spec/oqx §25). Inside
+ * the flatten's own block (`ctx.element === b`) the element is the row — bare
+ * names and `$it` — so the read is spelled as the element's own row reads it; on
+ * the flattened row the same spelling is re-read through the bound name
+ * (`rebase`: `checked` → `t.checked`, `doc.due` → `t.doc.due`, `$it` → `t`). A
+ * block element (a task, a list item) reads by the task-field table, a document
+ * element by the page's (`o.file.mtime` → `o.updated_at`), a scalar or authored
+ * element by plain navigation. */
+function boundValue(b: Bound, rest: string[], node: Node, ctx: Ctx): Typed {
+  const inBlock = ctx.element === b;
+  if (ctx.groupKey !== null && !inBlock) {
+    // After GROUP BY the flattened rows are inside `rows`; only the key survives (Dataview reads the rest as null).
+    if (b.name === ctx.groupKey && rest.length === 0) return { expr: ident(ctx.groupKey), kind: "unknown" };
+    throw unsupported(`field ${[b.name, ...rest].join(".")}`, `after GROUP BY only \`${ctx.groupKey}\` (the group key) and \`rows\` are in scope — Dataview reads a flattened name there as null`, at(ctx, node));
+  }
+  if (b.kind === "scalar" || b.kind === "value") {
+    const base: Typed = { expr: inBlock ? ident("$it") : ident(b.name), kind: b.kind === "scalar" ? "string" : "unknown" };
+    return trailing(base, rest, node, ctx);
+  }
+  if (rest.length === 0) return { expr: inBlock ? ident("$it") : ident(b.name), kind: "unknown" };
+  // The element as its own row: a blocks row for a task or list item, a docs row for a linked document.
+  const rowCtx: Ctx = { ...ctx, target: b.kind === "doc" ? "docs" : "blocks", groupKey: null, bound: new Map(), element: null, taskBound: null };
+  let v: Typed;
+  if (rest[0] === "file") {
+    if (b.kind !== "doc") throw unsupported(`${b.name}.file`, "a task has no `file`; the page's fields are the row's own (file.*)", at(ctx, node));
+    v = fileField(rest.slice(1), node, rowCtx);
+  } else {
+    v = trailing(bareField(rest[0]!, node, rowCtx), rest.slice(1), node, rowCtx);
+  }
+  return inBlock ? v : { ...v, expr: rebase(v.expr, b.name) };
+}
+
+/** `e`, written for the element's own row, re-read through `name` on the
+ * flattened row: a bare identifier becomes `<name>.<ident>`, `$it` becomes
+ * `<name>`; `^` references, other `$`-names, literals and the inside of a block
+ * (its own scope — only the receiver is re-based) are untouched. */
+export function rebase(e: Expr, name: string): Expr {
+  const r = (x: Expr): Expr => rebase(x, name);
+  switch (e.kind) {
+    case "ident":
+      if (e.name === "$it") return ident(name);
+      if (e.name.startsWith("$")) return e;
+      return member(ident(name), e.name);
+    case "lit": case "outer": case "binding": return e;
+    case "member": return { ...e, recv: r(e.recv) };
+    case "call": return { ...e, recv: e.recv ? r(e.recv) : null, args: e.args.map(r) };
+    case "unary": case "required": return { ...e, expr: r(e.expr) };
+    case "binary": case "logical": case "in": return { ...e, left: r(e.left), right: r(e.right) };
+    case "range": return { ...e, lo: e.lo ? r(e.lo) : null, hi: e.hi ? r(e.hi) : null };
+    case "tuple": return { ...e, items: e.items.map(r) };
+    case "template": return { ...e, parts: e.parts.map((p): TemplatePart => (typeof p === "string" ? p : r(p))) };
+    case "aggregate": return { ...e, arg: e.arg ? r(e.arg) : null };
+    case "op": return { ...e, receiver: r(e.receiver) };
+  }
+}
+
+/** `rebase` over a predicate tree (the consumer tests sit inside and/or/not). */
+export function rebaseWhere(w: Where, name: string): Where {
+  switch (w.kind) {
+    case "scalar": return { ...w, expr: rebase(w.expr, name) };
+    case "and": case "or": return { ...w, parts: w.parts.map((p) => rebaseWhere(p, name)) };
+    case "not": return { ...w, expr: rebaseWhere(w.expr, name) };
+    case "op": return { ...w, receiver: rebase(w.receiver, name) };
+  }
 }
 
 /** `collect(x)` — or, when a SORT preceded the GROUP BY, the block form that
@@ -186,11 +269,23 @@ function aggregateOf(ctx: Ctx, fn: "collect" | "sum" | "min" | "max" | "avg" | "
  * pre-group SORT when there was one. */
 export function rowsCollect(ctx: Ctx): Expr {
   if (ctx.rowsOrder) ctx.rowsOrderUsed = true;
-  const names = ctx.target === "blocks" ? ["id", "text", "checked", "path"] : ["path"];
-  return build.op(ident("rows"), "collect", build.subquery({
-    select: names.map((n) => build.field(n, ident(n))),
-    orderBy: ctx.rowsOrder,
-  }));
+  const select = ctx.taskBound ? taskSelect(ctx.taskBound.name)
+    : (ctx.target === "blocks" ? ["id", "text", "checked", "path"] : ["path"]).map((n) => build.field(n, ident(n)));
+  return build.op(ident("rows"), "collect", build.subquery({ select, orderBy: ctx.rowsOrder }));
+}
+
+/** The alias of the task's block id on a TASK query re-rooted at the page
+ * (`id` and `path` are the page's envelope, so the task's id needs another name). */
+export const TASK_ID_ALIAS = "task_id";
+
+/** The task shape read through a bound task: `path, task_id: t.id, text: t.text, checked: t.checked`. */
+export function taskSelect(bound: string): SelectItem[] {
+  return [
+    build.field("path", ident("path")),
+    build.field(TASK_ID_ALIAS, member(ident(bound), "id")),
+    build.field("text", member(ident(bound), "text")),
+    build.field("checked", member(ident(bound), "checked")),
+  ];
 }
 
 /** Trailing `.name` segments on a value: date methods, or plain navigation. */
@@ -253,14 +348,16 @@ function fieldValue(e: DExpr & ({ kind: "ident" } | { kind: "member" }), ctx: Ct
     return memberOf(toValue(e.object, ctx), e.name, e, ctx);
   }
   const [head, ...rest] = segs as [string, ...string[]];
+  // A name FLATTEN bound shadows every other reading of it (spec/oqx §25).
+  if (ctx.bound.has(head)) return rowRead(segs, e, ctx);
   switch (head) {
     case "file": return fileField(rest, e, ctx);
     case "this": return thisField(rest, e, ctx);
     case "rows": return rowsField(rest, e, ctx);
     case "key":
       if (ctx.groupKey !== null) return trailing({ expr: ident(ctx.groupKey), kind: "unknown" }, rest, e, ctx);
-      return trailing(bareField(head, e, ctx), rest, e, ctx);
-    default: return trailing(bareField(head, e, ctx), rest, e, ctx);
+      return rowRead(segs, e, ctx);
+    default: return rowRead(segs, e, ctx);
   }
 }
 
@@ -332,9 +429,7 @@ function callValue(e: DExpr & { kind: "call" }, ctx: Ctx): Typed {
     if (!segs || segs[0] !== "rows") return null;
     if (ctx.groupKey === null) throw unsupported("rows", "`rows` exists only after GROUP BY", at(ctx, arg));
     if (segs.length === 1) return { expr: ident("$it"), kind: "unknown", rows: true };
-    const inner = segs[1] === "file" ? fileField(segs.slice(2), arg, { ...ctx, groupKey: null })
-      : trailing(bareField(segs[1]!, arg, { ...ctx, groupKey: null }), segs.slice(2), arg, ctx);
-    return inner;
+    return rowRead(segs.slice(1), arg, { ...ctx, groupKey: null });
   };
 
   switch (name) {

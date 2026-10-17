@@ -1,0 +1,1278 @@
+[
+  {
+    "name": "tags-as-tag",
+    "dql": "TABLE tag FROM \"a\" FLATTEN file.tags AS tag",
+    "oqx": "select path, tag from docs where path.startsWith(\"/a/\") or path == \"/a.md\" flatten tags collect { } as tag",
+    "render": {
+      "type": "table",
+      "withoutId": false,
+      "grouped": false,
+      "id": {
+        "name": "File",
+        "alias": "path",
+        "derive": "link"
+      },
+      "columns": [
+        {
+          "name": "tag",
+          "alias": "tag"
+        }
+      ]
+    },
+    "warnings": []
+  },
+  {
+    "name": "tags-implicit-name-shadows-the-engine-tags",
+    "dql": "TABLE tags FLATTEN file.tags",
+    "oqx": "select path, tags from docs flatten tags collect { } as tags",
+    "render": {
+      "type": "table",
+      "withoutId": false,
+      "grouped": false,
+      "id": {
+        "name": "File",
+        "alias": "path",
+        "derive": "link"
+      },
+      "columns": [
+        {
+          "name": "tags",
+          "alias": "tags"
+        }
+      ]
+    },
+    "warnings": [
+      "FLATTEN … AS tags shadows the engine's `tags`: for the rest of the query it is the element (write AS <another name> to keep the page's value readable)"
+    ]
+  },
+  {
+    "name": "etags",
+    "dql": "LIST tag FLATTEN file.etags AS tag",
+    "oqx": "select path, value: tag from docs flatten tags collect { } as tag",
+    "render": {
+      "type": "list",
+      "withoutId": false,
+      "grouped": false,
+      "id": {
+        "name": "File",
+        "alias": "path",
+        "derive": "link"
+      },
+      "value": {
+        "name": "tag",
+        "alias": "value"
+      }
+    },
+    "warnings": []
+  },
+  {
+    "name": "aliases",
+    "dql": "LIST alias FLATTEN file.aliases AS alias",
+    "oqx": "select path, value: alias from docs flatten aliases collect { } as alias",
+    "render": {
+      "type": "list",
+      "withoutId": false,
+      "grouped": false,
+      "id": {
+        "name": "File",
+        "alias": "path",
+        "derive": "link"
+      },
+      "value": {
+        "name": "alias",
+        "alias": "value"
+      }
+    },
+    "warnings": []
+  },
+  {
+    "name": "tasks-implicit-name",
+    "dql": "TABLE tasks.text FLATTEN file.tasks",
+    "oqx": "select path, c0: tasks.text from docs flatten blocks collect { where type == \"task\" } as tasks",
+    "render": {
+      "type": "table",
+      "withoutId": false,
+      "grouped": false,
+      "id": {
+        "name": "File",
+        "alias": "path",
+        "derive": "link"
+      },
+      "columns": [
+        {
+          "name": "tasks.text",
+          "alias": "c0"
+        }
+      ]
+    },
+    "warnings": []
+  },
+  {
+    "name": "tasks-as-t-task-fields",
+    "dql": "TABLE t.text, t.completed, t.blockId FLATTEN file.tasks AS t",
+    "oqx": "select path, c0: t.text, c1: t.checked, c2: t.id from docs flatten blocks collect { where type == \"task\" } as t",
+    "render": {
+      "type": "table",
+      "withoutId": false,
+      "grouped": false,
+      "id": {
+        "name": "File",
+        "alias": "path",
+        "derive": "link"
+      },
+      "columns": [
+        {
+          "name": "t.text",
+          "alias": "c0"
+        },
+        {
+          "name": "t.completed",
+          "alias": "c1"
+        },
+        {
+          "name": "t.blockId",
+          "alias": "c2"
+        }
+      ]
+    },
+    "warnings": []
+  },
+  {
+    "name": "tasks-bound-row-as-a-value",
+    "dql": "TABLE t FLATTEN file.tasks AS t",
+    "oqx": "select path, t from docs flatten blocks collect { where type == \"task\" } as t",
+    "render": {
+      "type": "table",
+      "withoutId": false,
+      "grouped": false,
+      "id": {
+        "name": "File",
+        "alias": "path",
+        "derive": "link"
+      },
+      "columns": [
+        {
+          "name": "t",
+          "alias": "t"
+        }
+      ]
+    },
+    "warnings": []
+  },
+  {
+    "name": "tasks-inline-field-reads-the-page",
+    "dql": "TABLE t.due FLATTEN file.tasks AS t",
+    "oqx": "select path, c0: t.doc.due from docs flatten blocks collect { where type == \"task\" } as t",
+    "render": {
+      "type": "table",
+      "withoutId": false,
+      "grouped": false,
+      "id": {
+        "name": "File",
+        "alias": "path",
+        "derive": "link"
+      },
+      "columns": [
+        {
+          "name": "t.due",
+          "alias": "c0"
+        }
+      ]
+    },
+    "warnings": [
+      "due: a task's inline fields are not indexed per task; read as the page's property doc.due"
+    ]
+  },
+  {
+    "name": "tasks-outlinks",
+    "dql": "TABLE t.outlinks FLATTEN file.tasks AS t",
+    "oqx": "select path, c0: t.out_links collect { from dst } from docs flatten blocks collect { where type == \"task\" } as t",
+    "render": {
+      "type": "table",
+      "withoutId": false,
+      "grouped": false,
+      "id": {
+        "name": "File",
+        "alias": "path",
+        "derive": "link"
+      },
+      "columns": [
+        {
+          "name": "t.outlinks",
+          "alias": "c0"
+        }
+      ]
+    },
+    "warnings": []
+  },
+  {
+    "name": "tasks-file-is-refused",
+    "dql": "TABLE t.file.name FLATTEN file.tasks AS t",
+    "error": {
+      "code": "unsupported",
+      "construct": "t.file",
+      "message": "t.file: a task has no `file`; the page's fields are the row's own (file.*) (at line 1, column 7)",
+      "line": 1,
+      "column": 7
+    }
+  },
+  {
+    "name": "lists",
+    "dql": "TABLE item.text FLATTEN file.lists AS item",
+    "oqx": "select path, c0: item.text from docs flatten blocks collect { where type == \"list_item\" } as item",
+    "render": {
+      "type": "table",
+      "withoutId": false,
+      "grouped": false,
+      "id": {
+        "name": "File",
+        "alias": "path",
+        "derive": "link"
+      },
+      "columns": [
+        {
+          "name": "item.text",
+          "alias": "c0"
+        }
+      ]
+    },
+    "warnings": []
+  },
+  {
+    "name": "outlinks-document-fields",
+    "dql": "TABLE o.file.name, o.file.mtime FLATTEN file.outlinks AS o",
+    "oqx": "select path, c0: o.path, c1: o.updated_at from docs flatten out_links collect { from dst } as o",
+    "render": {
+      "type": "table",
+      "withoutId": false,
+      "grouped": false,
+      "id": {
+        "name": "File",
+        "alias": "path",
+        "derive": "link"
+      },
+      "columns": [
+        {
+          "name": "o.file.name",
+          "alias": "c0",
+          "derive": "basename"
+        },
+        {
+          "name": "o.file.mtime",
+          "alias": "c1"
+        }
+      ]
+    },
+    "warnings": []
+  },
+  {
+    "name": "inlinks-link",
+    "dql": "LIST i.file.link FLATTEN file.inlinks AS i",
+    "oqx": "select path, value: i.path from docs flatten in_links collect { from doc } as i",
+    "render": {
+      "type": "list",
+      "withoutId": false,
+      "grouped": false,
+      "id": {
+        "name": "File",
+        "alias": "path",
+        "derive": "link"
+      },
+      "value": {
+        "name": "i.file.link",
+        "alias": "value",
+        "derive": "link"
+      }
+    },
+    "warnings": []
+  },
+  {
+    "name": "frontmatter-list-field",
+    "dql": "TABLE a FROM \"books\" FLATTEN authors AS a",
+    "oqx": "select path, a from docs where path.startsWith(\"/books/\") or path == \"/books.md\" flatten authors as a",
+    "render": {
+      "type": "table",
+      "withoutId": false,
+      "grouped": false,
+      "id": {
+        "name": "File",
+        "alias": "path",
+        "derive": "link"
+      },
+      "columns": [
+        {
+          "name": "a",
+          "alias": "a"
+        }
+      ]
+    },
+    "warnings": []
+  },
+  {
+    "name": "frontmatter-list-field-implicit-name-rebinds",
+    "dql": "TABLE authors FLATTEN authors",
+    "oqx": "select path, authors from docs flatten authors as authors",
+    "render": {
+      "type": "table",
+      "withoutId": false,
+      "grouped": false,
+      "id": {
+        "name": "File",
+        "alias": "path",
+        "derive": "link"
+      },
+      "columns": [
+        {
+          "name": "authors",
+          "alias": "authors"
+        }
+      ]
+    },
+    "warnings": []
+  },
+  {
+    "name": "nested-field-binds-its-last-segment",
+    "dql": "TABLE tags FLATTEN file.frontmatter.tags",
+    "oqx": "select path, tags from docs flatten frontmatter.tags as tags",
+    "render": {
+      "type": "table",
+      "withoutId": false,
+      "grouped": false,
+      "id": {
+        "name": "File",
+        "alias": "path",
+        "derive": "link"
+      },
+      "columns": [
+        {
+          "name": "tags",
+          "alias": "tags"
+        }
+      ]
+    },
+    "warnings": [
+      "FLATTEN … AS tags shadows the engine's `tags`: for the rest of the query it is the element (write AS <another name> to keep the page's value readable)"
+    ]
+  },
+  {
+    "name": "frontmatter-entries",
+    "dql": "TABLE e.key, e.value FLATTEN file.frontmatter AS e",
+    "oqx": "select path, c0: e.key, c1: e.value from docs flatten entries(frontmatter) as e",
+    "render": {
+      "type": "table",
+      "withoutId": false,
+      "grouped": false,
+      "id": {
+        "name": "File",
+        "alias": "path",
+        "derive": "link"
+      },
+      "columns": [
+        {
+          "name": "e.key",
+          "alias": "c0"
+        },
+        {
+          "name": "e.value",
+          "alias": "c1"
+        }
+      ]
+    },
+    "warnings": []
+  },
+  {
+    "name": "this-field",
+    "dql": "TABLE r FLATTEN this.related AS r",
+    "options": {
+      "thisPath": "/projects/alpha.md"
+    },
+    "oqx": "select path, r from docs flatten ^docs first { where path == \"/projects/alpha.md\" }.related as r",
+    "render": {
+      "type": "table",
+      "withoutId": false,
+      "grouped": false,
+      "id": {
+        "name": "File",
+        "alias": "path",
+        "derive": "link"
+      },
+      "columns": [
+        {
+          "name": "r",
+          "alias": "r"
+        }
+      ]
+    },
+    "warnings": []
+  },
+  {
+    "name": "computed-value-with-as",
+    "dql": "TABLE n FLATTEN length(authors) AS n",
+    "oqx": "select path, n from docs flatten size(authors) as n",
+    "render": {
+      "type": "table",
+      "withoutId": false,
+      "grouped": false,
+      "id": {
+        "name": "File",
+        "alias": "path",
+        "derive": "link"
+      },
+      "columns": [
+        {
+          "name": "n",
+          "alias": "n"
+        }
+      ]
+    },
+    "warnings": []
+  },
+  {
+    "name": "computed-value-needs-as",
+    "dql": "TABLE n FLATTEN length(authors)",
+    "error": {
+      "code": "unsupported",
+      "construct": "FLATTEN length(authors)",
+      "message": "FLATTEN length(authors): an expression that is not a field path needs AS <name> — Dataview names a field after its last segment, nothing else has a name (at line 1, column 9)",
+      "line": 1,
+      "column": 9
+    }
+  },
+  {
+    "name": "where-element-only-task",
+    "dql": "TABLE t.text FLATTEN file.tasks AS t WHERE t.completed",
+    "oqx": "select path, c0: t.text from docs flatten blocks collect { where type == \"task\" and checked } as t",
+    "render": {
+      "type": "table",
+      "withoutId": false,
+      "grouped": false,
+      "id": {
+        "name": "File",
+        "alias": "path",
+        "derive": "link"
+      },
+      "columns": [
+        {
+          "name": "t.text",
+          "alias": "c0"
+        }
+      ]
+    },
+    "warnings": []
+  },
+  {
+    "name": "where-element-only-negated",
+    "dql": "TABLE t.text FLATTEN file.tasks AS t WHERE !t.completed",
+    "oqx": "select path, c0: t.text from docs flatten blocks collect { where type == \"task\" and !checked } as t",
+    "render": {
+      "type": "table",
+      "withoutId": false,
+      "grouped": false,
+      "id": {
+        "name": "File",
+        "alias": "path",
+        "derive": "link"
+      },
+      "columns": [
+        {
+          "name": "t.text",
+          "alias": "c0"
+        }
+      ]
+    },
+    "warnings": []
+  },
+  {
+    "name": "where-page-only-after-flatten",
+    "dql": "TABLE t.text FLATTEN file.tasks AS t WHERE status = \"open\"",
+    "oqx": "select path, c0: t.text from docs where status == \"open\" flatten blocks collect { where type == \"task\" } as t",
+    "render": {
+      "type": "table",
+      "withoutId": false,
+      "grouped": false,
+      "id": {
+        "name": "File",
+        "alias": "path",
+        "derive": "link"
+      },
+      "columns": [
+        {
+          "name": "t.text",
+          "alias": "c0"
+        }
+      ]
+    },
+    "warnings": []
+  },
+  {
+    "name": "where-before-flatten-is-the-body",
+    "dql": "TABLE tag WHERE status = \"open\" FLATTEN file.tags AS tag",
+    "oqx": "select path, tag from docs where status == \"open\" flatten tags collect { } as tag",
+    "render": {
+      "type": "table",
+      "withoutId": false,
+      "grouped": false,
+      "id": {
+        "name": "File",
+        "alias": "path",
+        "derive": "link"
+      },
+      "columns": [
+        {
+          "name": "tag",
+          "alias": "tag"
+        }
+      ]
+    },
+    "warnings": []
+  },
+  {
+    "name": "where-split-page-and-element",
+    "dql": "TABLE t.text FLATTEN file.tasks AS t WHERE t.completed & status = \"open\"",
+    "oqx": "select path, c0: t.text from docs where status == \"open\" flatten blocks collect { where type == \"task\" and checked } as t",
+    "render": {
+      "type": "table",
+      "withoutId": false,
+      "grouped": false,
+      "id": {
+        "name": "File",
+        "alias": "path",
+        "derive": "link"
+      },
+      "columns": [
+        {
+          "name": "t.text",
+          "alias": "c0"
+        }
+      ]
+    },
+    "warnings": []
+  },
+  {
+    "name": "where-split-through-parentheses-and-words",
+    "dql": "TABLE t.text FLATTEN file.tasks AS t WHERE (status = \"open\") and (!t.completed) and due",
+    "oqx": "select path, c0: t.text from docs where status == \"open\" and due flatten blocks collect { where type == \"task\" and !checked } as t",
+    "render": {
+      "type": "table",
+      "withoutId": false,
+      "grouped": false,
+      "id": {
+        "name": "File",
+        "alias": "path",
+        "derive": "link"
+      },
+      "columns": [
+        {
+          "name": "t.text",
+          "alias": "c0"
+        }
+      ]
+    },
+    "warnings": []
+  },
+  {
+    "name": "where-mixed-disjunction-is-refused",
+    "dql": "TABLE t.text FLATTEN file.tasks AS t WHERE t.completed | status = \"open\"",
+    "error": {
+      "code": "unsupported",
+      "construct": "WHERE t.completed | status = \"open\"",
+      "message": "WHERE t.completed | status = \"open\": a predicate after FLATTEN that mixes a flattened element with the page's fields (or two flattened names) has no OQX spelling — `where` runs before `flatten`; write it as separate conjuncts (`a & b`) so each side can be placed (at line 1, column 44)",
+      "line": 1,
+      "column": 44
+    }
+  },
+  {
+    "name": "where-two-bound-names-is-refused",
+    "dql": "TABLE a, b FLATTEN xs AS a FLATTEN ys AS b WHERE a = b",
+    "error": {
+      "code": "unsupported",
+      "construct": "WHERE a = b",
+      "message": "WHERE a = b: a predicate after FLATTEN that mixes a flattened element with the page's fields (or two flattened names) has no OQX spelling — `where` runs before `flatten`; write it as separate conjuncts (`a & b`) so each side can be placed (at line 1, column 50)",
+      "line": 1,
+      "column": 50
+    }
+  },
+  {
+    "name": "where-element-tag",
+    "dql": "LIST tag FLATTEN file.tags AS tag WHERE tag != \"draft\"",
+    "oqx": "select path, value: tag from docs flatten tags collect { where $it != \"draft\" } as tag",
+    "render": {
+      "type": "list",
+      "withoutId": false,
+      "grouped": false,
+      "id": {
+        "name": "File",
+        "alias": "path",
+        "derive": "link"
+      },
+      "value": {
+        "name": "tag",
+        "alias": "value"
+      }
+    },
+    "warnings": []
+  },
+  {
+    "name": "where-element-tag-function",
+    "dql": "LIST tag FLATTEN file.tags AS tag WHERE startswith(tag, \"proj/\")",
+    "oqx": "select path, value: tag from docs flatten tags collect { where $it.startsWith(\"proj/\") } as tag",
+    "render": {
+      "type": "list",
+      "withoutId": false,
+      "grouped": false,
+      "id": {
+        "name": "File",
+        "alias": "path",
+        "derive": "link"
+      },
+      "value": {
+        "name": "tag",
+        "alias": "value"
+      }
+    },
+    "warnings": []
+  },
+  {
+    "name": "where-element-authored-list-warns",
+    "dql": "TABLE a FLATTEN authors AS a WHERE a != \"anon\"",
+    "oqx": "select path, a from docs flatten list(authors) collect { where $it != \"anon\" } as a",
+    "render": {
+      "type": "table",
+      "withoutId": false,
+      "grouped": false,
+      "id": {
+        "name": "File",
+        "alias": "path",
+        "derive": "link"
+      },
+      "columns": [
+        {
+          "name": "a",
+          "alias": "a"
+        }
+      ]
+    },
+    "warnings": [
+      "WHERE a: the flattened value is filtered as a list (list(…) { where … }); a page where it is absent yields no row, where Dataview keeps one with a null when the test passes null"
+    ]
+  },
+  {
+    "name": "where-element-record-field",
+    "dql": "TABLE j.employer FLATTEN jobs AS j WHERE j.pay > 5",
+    "oqx": "select path, c0: j.employer from docs flatten list(jobs) collect { where $it.pay > 5 } as j",
+    "render": {
+      "type": "table",
+      "withoutId": false,
+      "grouped": false,
+      "id": {
+        "name": "File",
+        "alias": "path",
+        "derive": "link"
+      },
+      "columns": [
+        {
+          "name": "j.employer",
+          "alias": "c0"
+        }
+      ]
+    },
+    "warnings": [
+      "WHERE j: the flattened value is filtered as a list (list(…) { where … }); a page where it is absent yields no row, where Dataview keeps one with j null when the test passes null"
+    ]
+  },
+  {
+    "name": "where-element-outlink-document",
+    "dql": "TABLE o.file.link FLATTEN file.outlinks AS o WHERE contains(o.file.tags, \"#project\")",
+    "oqx": "select path, c0: o.path from docs flatten out_links collect { from dst where tags exists { where $it == \"project\" or $it.startsWith(\"project/\") } } as o",
+    "render": {
+      "type": "table",
+      "withoutId": false,
+      "grouped": false,
+      "id": {
+        "name": "File",
+        "alias": "path",
+        "derive": "link"
+      },
+      "columns": [
+        {
+          "name": "o.file.link",
+          "alias": "c0",
+          "derive": "link"
+        }
+      ]
+    },
+    "warnings": []
+  },
+  {
+    "name": "where-element-this-is-neutral",
+    "dql": "TABLE o.file.link FLATTEN file.outlinks AS o WHERE o.file.link != this.file.link",
+    "options": {
+      "thisPath": "/projects/alpha.md"
+    },
+    "oqx": "select path, c0: o.path from docs flatten out_links collect { from dst where path != \"/projects/alpha.md\" } as o",
+    "render": {
+      "type": "table",
+      "withoutId": false,
+      "grouped": false,
+      "id": {
+        "name": "File",
+        "alias": "path",
+        "derive": "link"
+      },
+      "columns": [
+        {
+          "name": "o.file.link",
+          "alias": "c0",
+          "derive": "link"
+        }
+      ]
+    },
+    "warnings": []
+  },
+  {
+    "name": "chained-flattens",
+    "dql": "TABLE j.employer, t FLATTEN jobs AS j FLATTEN j.tags AS t",
+    "oqx": "select path, c0: j.employer, t from docs flatten jobs as j flatten j.tags as t",
+    "render": {
+      "type": "table",
+      "withoutId": false,
+      "grouped": false,
+      "id": {
+        "name": "File",
+        "alias": "path",
+        "derive": "link"
+      },
+      "columns": [
+        {
+          "name": "j.employer",
+          "alias": "c0"
+        },
+        {
+          "name": "t",
+          "alias": "t"
+        }
+      ]
+    },
+    "warnings": []
+  },
+  {
+    "name": "chained-flatten-implicit-name",
+    "dql": "TABLE j.employer, tags FLATTEN jobs AS j FLATTEN j.tags",
+    "oqx": "select path, c0: j.employer, tags from docs flatten jobs as j flatten j.tags as tags",
+    "render": {
+      "type": "table",
+      "withoutId": false,
+      "grouped": false,
+      "id": {
+        "name": "File",
+        "alias": "path",
+        "derive": "link"
+      },
+      "columns": [
+        {
+          "name": "j.employer",
+          "alias": "c0"
+        },
+        {
+          "name": "tags",
+          "alias": "tags"
+        }
+      ]
+    },
+    "warnings": [
+      "FLATTEN … AS tags shadows the engine's `tags`: for the rest of the query it is the element (write AS <another name> to keep the page's value readable)"
+    ]
+  },
+  {
+    "name": "chained-where-on-the-second",
+    "dql": "TABLE j.employer, t FLATTEN jobs AS j FLATTEN j.tags AS t WHERE t != \"old\"",
+    "oqx": "select path, c0: j.employer, t from docs flatten jobs as j flatten list(j.tags) collect { where $it != \"old\" } as t",
+    "render": {
+      "type": "table",
+      "withoutId": false,
+      "grouped": false,
+      "id": {
+        "name": "File",
+        "alias": "path",
+        "derive": "link"
+      },
+      "columns": [
+        {
+          "name": "j.employer",
+          "alias": "c0"
+        },
+        {
+          "name": "t",
+          "alias": "t"
+        }
+      ]
+    },
+    "warnings": [
+      "WHERE t: the flattened value is filtered as a list (list(…) { where … }); a page where it is absent yields no row, where Dataview keeps one with t null when the test passes null"
+    ]
+  },
+  {
+    "name": "chained-where-on-the-first-after-both",
+    "dql": "TABLE j.employer, t FLATTEN jobs AS j FLATTEN j.tags AS t WHERE j.pay > 5",
+    "oqx": "select path, c0: j.employer, t from docs flatten list(jobs) collect { where $it.pay > 5 } as j flatten j.tags as t",
+    "render": {
+      "type": "table",
+      "withoutId": false,
+      "grouped": false,
+      "id": {
+        "name": "File",
+        "alias": "path",
+        "derive": "link"
+      },
+      "columns": [
+        {
+          "name": "j.employer",
+          "alias": "c0"
+        },
+        {
+          "name": "t",
+          "alias": "t"
+        }
+      ]
+    },
+    "warnings": [
+      "WHERE j: the flattened value is filtered as a list (list(…) { where … }); a page where it is absent yields no row, where Dataview keeps one with j null when the test passes null"
+    ]
+  },
+  {
+    "name": "group-by-tag-census",
+    "dql": "TABLE length(rows) AS n FLATTEN file.tags AS tag GROUP BY tag SORT length(rows) DESC",
+    "oqx": "select key, n: count() from docs flatten tags collect { } as tag group by key: tag order by count() desc",
+    "render": {
+      "type": "table",
+      "withoutId": false,
+      "grouped": true,
+      "id": {
+        "name": "Group",
+        "alias": "key"
+      },
+      "columns": [
+        {
+          "name": "n",
+          "alias": "n"
+        }
+      ]
+    },
+    "warnings": []
+  },
+  {
+    "name": "group-by-rows-reads-the-bound-name",
+    "dql": "TABLE rows.t.text FLATTEN file.tasks AS t GROUP BY file.link",
+    "oqx": "select key, c0: collect(t.text) from docs flatten blocks collect { where type == \"task\" } as t group by key: path",
+    "render": {
+      "type": "table",
+      "withoutId": false,
+      "grouped": true,
+      "id": {
+        "name": "Group",
+        "alias": "key",
+        "derive": "link"
+      },
+      "columns": [
+        {
+          "name": "rows.t.text",
+          "alias": "c0"
+        }
+      ]
+    },
+    "warnings": []
+  },
+  {
+    "name": "group-by-bound-name-is-the-key",
+    "dql": "TABLE length(rows) FLATTEN file.tags AS tag GROUP BY tag AS tag SORT tag",
+    "oqx": "select tag, c0: count() from docs flatten tags collect { } as tag group by tag: tag order by tag",
+    "render": {
+      "type": "table",
+      "withoutId": false,
+      "grouped": true,
+      "id": {
+        "name": "Group",
+        "alias": "tag"
+      },
+      "columns": [
+        {
+          "name": "length(rows)",
+          "alias": "c0"
+        }
+      ]
+    },
+    "warnings": []
+  },
+  {
+    "name": "bound-name-after-group-by-is-refused",
+    "dql": "TABLE t.text FLATTEN file.tasks AS t GROUP BY status",
+    "error": {
+      "code": "unsupported",
+      "construct": "field t.text",
+      "message": "field t.text: after GROUP BY only `key` (the group key) and `rows` are in scope — Dataview reads a flattened name there as null (at line 1, column 7)",
+      "line": 1,
+      "column": 7
+    }
+  },
+  {
+    "name": "flatten-after-group-by-is-refused",
+    "dql": "TABLE rows.file.link GROUP BY status FLATTEN rows.file.link AS r",
+    "error": {
+      "code": "unsupported",
+      "construct": "FLATTEN after GROUP BY",
+      "message": "FLATTEN after GROUP BY: OQX's clause order puts flatten before group by: flatten first, then group (at line 1, column 38)",
+      "line": 1,
+      "column": 38
+    }
+  },
+  {
+    "name": "sort-by-bound-name",
+    "dql": "TABLE t.text FLATTEN file.tasks AS t SORT t.text",
+    "oqx": "select path, c0: t.text from docs flatten blocks collect { where type == \"task\" } as t order by t.text",
+    "render": {
+      "type": "table",
+      "withoutId": false,
+      "grouped": false,
+      "id": {
+        "name": "File",
+        "alias": "path",
+        "derive": "link"
+      },
+      "columns": [
+        {
+          "name": "t.text",
+          "alias": "c0"
+        }
+      ]
+    },
+    "warnings": []
+  },
+  {
+    "name": "sort-by-tag-desc",
+    "dql": "LIST tag FLATTEN file.tags AS tag SORT tag DESC",
+    "oqx": "select path, value: tag from docs flatten tags collect { } as tag order by tag desc",
+    "render": {
+      "type": "list",
+      "withoutId": false,
+      "grouped": false,
+      "id": {
+        "name": "File",
+        "alias": "path",
+        "derive": "link"
+      },
+      "value": {
+        "name": "tag",
+        "alias": "value"
+      }
+    },
+    "warnings": []
+  },
+  {
+    "name": "limit-bounds-flattened-rows",
+    "dql": "TABLE tag FLATTEN file.tags AS tag LIMIT 10",
+    "oqx": "select path, tag from docs flatten tags collect { } as tag limit 10",
+    "render": {
+      "type": "table",
+      "withoutId": false,
+      "grouped": false,
+      "id": {
+        "name": "File",
+        "alias": "path",
+        "derive": "link"
+      },
+      "columns": [
+        {
+          "name": "tag",
+          "alias": "tag"
+        }
+      ]
+    },
+    "warnings": []
+  },
+  {
+    "name": "list-value-from-the-bound-name",
+    "dql": "LIST t.text FLATTEN file.tasks AS t",
+    "oqx": "select path, value: t.text from docs flatten blocks collect { where type == \"task\" } as t",
+    "render": {
+      "type": "list",
+      "withoutId": false,
+      "grouped": false,
+      "id": {
+        "name": "File",
+        "alias": "path",
+        "derive": "link"
+      },
+      "value": {
+        "name": "t.text",
+        "alias": "value"
+      }
+    },
+    "warnings": []
+  },
+  {
+    "name": "column-alias-never-takes-a-bound-name",
+    "dql": "TABLE upper(tag) AS tag FLATTEN file.tags AS tag",
+    "oqx": "select path, c0: tag.upper() from docs flatten tags collect { } as tag",
+    "render": {
+      "type": "table",
+      "withoutId": false,
+      "grouped": false,
+      "id": {
+        "name": "File",
+        "alias": "path",
+        "derive": "link"
+      },
+      "columns": [
+        {
+          "name": "tag",
+          "alias": "c0"
+        }
+      ]
+    },
+    "warnings": []
+  },
+  {
+    "name": "task-over-flattened-tasks",
+    "dql": "TASK FROM \"projects\" FLATTEN file.tasks AS t WHERE !t.completed",
+    "oqx": "select path, task_id: t.id, text: t.text, checked: t.checked from docs where path.startsWith(\"/projects/\") or path == \"/projects.md\" flatten blocks collect { where type == \"task\" and !checked } as t",
+    "render": {
+      "type": "task",
+      "grouped": false,
+      "id": {
+        "name": "File",
+        "alias": "path",
+        "derive": "link"
+      },
+      "rows": null,
+      "task": {
+        "id": "task_id",
+        "text": "text",
+        "checked": "checked",
+        "path": "path"
+      }
+    },
+    "warnings": []
+  },
+  {
+    "name": "task-over-flattened-tasks-bare-fields",
+    "dql": "TASK FLATTEN file.tasks AS t WHERE !completed & priority = \"high\"",
+    "oqx": "select path, task_id: t.id, text: t.text, checked: t.checked from docs where priority == \"high\" flatten blocks collect { where type == \"task\" and !checked } as t",
+    "render": {
+      "type": "task",
+      "grouped": false,
+      "id": {
+        "name": "File",
+        "alias": "path",
+        "derive": "link"
+      },
+      "rows": null,
+      "task": {
+        "id": "task_id",
+        "text": "text",
+        "checked": "checked",
+        "path": "path"
+      }
+    },
+    "warnings": []
+  },
+  {
+    "name": "task-over-flattened-tasks-where-before-the-flatten",
+    "dql": "TASK WHERE !completed FLATTEN file.tasks",
+    "oqx": "select path, task_id: tasks.id, text: tasks.text, checked: tasks.checked from docs flatten blocks collect { where type == \"task\" and !checked } as tasks",
+    "render": {
+      "type": "task",
+      "grouped": false,
+      "id": {
+        "name": "File",
+        "alias": "path",
+        "derive": "link"
+      },
+      "rows": null,
+      "task": {
+        "id": "task_id",
+        "text": "text",
+        "checked": "checked",
+        "path": "path"
+      }
+    },
+    "warnings": []
+  },
+  {
+    "name": "task-over-flattened-tasks-grouped",
+    "dql": "TASK FLATTEN file.tasks AS t GROUP BY file.link",
+    "oqx": "select key, tasks: rows collect { path: path, task_id: t.id, text: t.text, checked: t.checked } from docs flatten blocks collect { where type == \"task\" } as t group by key: path",
+    "render": {
+      "type": "task",
+      "grouped": true,
+      "id": {
+        "name": "Group",
+        "alias": "key",
+        "derive": "link"
+      },
+      "rows": "tasks",
+      "task": {
+        "id": "task_id",
+        "text": "text",
+        "checked": "checked",
+        "path": "path"
+      }
+    },
+    "warnings": []
+  },
+  {
+    "name": "task-flatten-tags-keeps-the-task-rows",
+    "dql": "TASK FLATTEN file.tags AS tag WHERE tag = \"urgent\"",
+    "oqx": "select path, id, text, checked from blocks where type == \"task\" flatten doc.tags collect { where $it == \"urgent\" } as tag",
+    "render": {
+      "type": "task",
+      "grouped": false,
+      "id": {
+        "name": "File",
+        "alias": "path",
+        "derive": "link"
+      },
+      "rows": null,
+      "task": {
+        "id": "id",
+        "text": "text",
+        "checked": "checked",
+        "path": "path"
+      }
+    },
+    "warnings": []
+  },
+  {
+    "name": "task-second-file-tasks-is-refused",
+    "dql": "TASK FLATTEN file.tasks AS a FLATTEN file.tasks AS b",
+    "error": {
+      "code": "unsupported",
+      "construct": "a second FLATTEN file.tasks",
+      "message": "a second FLATTEN file.tasks: a TASK query fans the page's tasks out once (at line 1, column 30)",
+      "line": 1,
+      "column": 30
+    }
+  },
+  {
+    "name": "task-flatten-as-text-is-refused",
+    "dql": "TASK FLATTEN file.tasks AS text",
+    "error": {
+      "code": "unsupported",
+      "construct": "FLATTEN … AS text",
+      "message": "FLATTEN … AS text: the name is a column the query selects (at line 1, column 6)",
+      "line": 1,
+      "column": 6
+    }
+  },
+  {
+    "name": "calendar-page-date-with-a-flatten",
+    "dql": "CALENDAR due FLATTEN file.tags AS tag",
+    "oqx": "select path, date: due from docs where has(date) flatten tags collect { } as tag",
+    "render": {
+      "type": "calendar",
+      "grouped": false,
+      "id": {
+        "name": "File",
+        "alias": "path",
+        "derive": "link"
+      },
+      "date": {
+        "name": "due",
+        "alias": "date"
+      }
+    },
+    "warnings": []
+  },
+  {
+    "name": "calendar-flattened-date-is-refused",
+    "dql": "CALENDAR t.due FLATTEN jobs AS t",
+    "error": {
+      "code": "unsupported",
+      "construct": "CALENDAR <flattened element>",
+      "message": "CALENDAR <flattened element>: the calendar's date must be a page field: OQX drops pages without the date before the fan-out (at line 1, column 10)",
+      "line": 1,
+      "column": 10
+    }
+  },
+  {
+    "name": "as-id-is-refused",
+    "dql": "TABLE id FLATTEN file.tags AS id",
+    "error": {
+      "code": "unsupported",
+      "construct": "FLATTEN … AS id",
+      "message": "FLATTEN … AS id: the hit envelope's names cannot be rebound (at line 1, column 10)",
+      "line": 1,
+      "column": 10
+    }
+  },
+  {
+    "name": "as-path-is-refused",
+    "dql": "LIST FLATTEN authors AS path",
+    "error": {
+      "code": "unsupported",
+      "construct": "FLATTEN … AS path",
+      "message": "FLATTEN … AS path: the hit envelope's names cannot be rebound (at line 1, column 6)",
+      "line": 1,
+      "column": 6
+    }
+  },
+  {
+    "name": "as-rows-is-refused",
+    "dql": "LIST FLATTEN authors AS rows",
+    "error": {
+      "code": "unsupported",
+      "construct": "FLATTEN … AS rows",
+      "message": "FLATTEN … AS rows: a name the translator reads specially (file, this, rows, key) (at line 1, column 6)",
+      "line": 1,
+      "column": 6
+    }
+  },
+  {
+    "name": "duplicate-name-is-refused",
+    "dql": "TABLE t FLATTEN xs AS t FLATTEN ys AS t",
+    "error": {
+      "code": "unsupported",
+      "construct": "FLATTEN … AS t",
+      "message": "FLATTEN … AS t: the name is already bound by an earlier FLATTEN (at line 1, column 25)",
+      "line": 1,
+      "column": 25
+    }
+  },
+  {
+    "name": "derived-field-is-refused",
+    "dql": "TABLE n FLATTEN file.name AS n",
+    "error": {
+      "code": "unsupported",
+      "construct": "FLATTEN file.name",
+      "message": "FLATTEN file.name: a value derived from path is one string, not a list (at line 1, column 9)",
+      "line": 1,
+      "column": 9
+    }
+  },
+  {
+    "name": "rows-is-refused-before-group-by",
+    "dql": "TABLE x FLATTEN rows AS r",
+    "error": {
+      "code": "unsupported",
+      "construct": "rows",
+      "message": "rows: `rows` exists only after GROUP BY (at line 1, column 17)",
+      "line": 1,
+      "column": 17
+    }
+  },
+  {
+    "name": "capability-off-is-refused",
+    "dql": "TABLE tag FLATTEN file.tags AS tag",
+    "options": {
+      "capabilities": {
+        "flatten": false
+      }
+    },
+    "error": {
+      "code": "unsupported",
+      "construct": "FLATTEN",
+      "message": "FLATTEN: the server's OQX has no flatten (spec/oqx < 0.25); capabilities.flatten is false",
+      "line": 0,
+      "column": 0
+    }
+  }
+]

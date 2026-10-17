@@ -1,12 +1,12 @@
-// OQX text assembly. Expressions, select items and `where` trees are built as
-// `@omgbase/oqx` AST nodes (`build.*`) and written by the canonical printer, so
-// quoting, escapes and minimal parentheses are the language's own; the grouping
-// clauses — `group by` / `having` (spec/oqx 0.24) — are assembled here as text
-// in the fixed clause order (the AST has nodes for them since 0.24; moving them
-// onto `build.*` is a tidy-up, not a behaviour change). Every golden case is
-// parsed whole by `@omgbase/oqx` and round-trips through its printer.
+// OQX text assembly. Expressions, select items, `where` trees, `flatten`
+// clauses and `group by` keys are built as `@omgbase/oqx` AST nodes (`build.*`)
+// and written by the canonical printer, so quoting, escapes, minimal
+// parentheses and the `collect` of a receiver block are the language's own;
+// only the clause skeleton (the fixed order: select, from, where, flatten…,
+// group by, having, order by, limit) is joined here. Every golden case is parsed
+// whole by `@omgbase/oqx` and round-trips through its printer.
 
-import { build, print, visit, type Expr, type OrderSpec, type SelectItem, type Where } from "@omgbase/oqx";
+import { build, print, visit, type Expr, type Flatten, type OrderSpec, type SelectItem, type Where } from "@omgbase/oqx";
 
 /** An OQX identifier (GRAMMAR §1): `[A-Za-z_$][A-Za-z0-9_$]*`. */
 export function isOqxIdent(name: string): boolean {
@@ -73,20 +73,23 @@ export interface QueryText {
   select: SelectItem[];
   source: string; // `docs` | `blocks`
   where: Where | null;
+  /** The `flatten` clauses (spec/oqx 0.25), in writing order — the one clause that repeats. */
+  flatten: Flatten[];
   groupBy: GroupKey[];
   having: Where | null;
   orderBy: OrderSpec[];
   limit: number | null;
 }
 
-/** The whole query in the fixed clause order: select, from, where, group by,
- * having, order by, limit. */
+/** The whole query in the fixed clause order: select, from, where, flatten…,
+ * group by, having, order by, limit. */
 export function assemble(q: QueryText): string {
   const clauses: string[] = [];
   clauses.push(`select ${q.select.map(printItem).join(", ")}`);
   clauses.push(`from ${q.source}`);
   if (q.where) clauses.push(`where ${printWhere(q.where)}`);
-  if (q.groupBy.length > 0) clauses.push(`group by ${q.groupBy.map((k) => `${k.alias}: ${print(k.expr)}`).join(", ")}`);
+  for (const f of q.flatten) clauses.push(print(f));
+  if (q.groupBy.length > 0) clauses.push(print(build.groupBy(q.groupBy.map((k) => build.key(k.alias, k.expr)))));
   if (q.having) clauses.push(`having ${printWhere(q.having)}`);
   if (q.orderBy.length > 0) clauses.push(`order by ${printOrder(q.orderBy)}`);
   if (q.limit !== null) clauses.push(`limit ${q.limit}`);

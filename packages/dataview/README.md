@@ -2,7 +2,7 @@
 
 A **Dataview Query Language (DQL) → OQX** translator. An Obsidian Dataview
 query — `TABLE`, `LIST`, `TASK` or `CALENDAR`, with `FROM`, `WHERE`, `SORT`,
-`LIMIT`, `GROUP BY` — becomes one OQX string for the omgbase `query` tool plus a
+`LIMIT`, `FLATTEN`, `GROUP BY` — becomes one OQX string for the omgbase `query` tool plus a
 *render shape* that tells a client how to lay the hits out. The package renders
 nothing itself.
 
@@ -45,7 +45,7 @@ translate(dql: string, options?: TranslateOptions): Translation
 interface TranslateOptions {
   thisPath?: string | null;                          // the current document (`this`, `[[]]`)
   resolveLink?: (target: string) => string | null;   // [[target]] → a rooted path; null = suffix match
-  capabilities?: { groupBy?: boolean; dates?: boolean };
+  capabilities?: { groupBy?: boolean; dates?: boolean; flatten?: boolean };
 }
 
 interface Translation { oqx: string; render: RenderShape; warnings: string[] }
@@ -56,7 +56,7 @@ type RenderShape =
   | { type: "table";    withoutId: boolean; grouped: boolean; id: Column | null; columns: Column[] }
   | { type: "list";     withoutId: boolean; grouped: boolean; id: Column | null; value: Column | null }
   | { type: "task";     grouped: boolean; id: Column | null; rows: string | null;
-                        task: { id: "id"; text: "text"; checked: "checked"; path: "path" } }
+                        task: { id: string; text: string; checked: string; path: "path" } }
   | { type: "calendar"; grouped: false; id: Column; date: Column };
 ```
 
@@ -70,7 +70,13 @@ can link anyway). A `derive` on a column means the alias holds a `path` and the
 client computes the value: `basename` (the name without `.md`), `dirname`,
 `ext`, or `link`. OQX has no basename/dirname function, so these are the one
 place the client finishes the work. Tags come back **without `#`** (omgbase
-stores them bare).
+stores them bare). After a `FLATTEN` every hit is still the page — `id` and
+`path` repeat per element, as Dataview repeats the page link — with the bound
+name's value beside them; a bound task or document renders as `{ id, path }`,
+so read its fields through a column (`t.text`) rather than the row. A `TASK`
+query's `task` names the aliases of its four values: `id`/`text`/`checked`/`path`
+on a plain `TASK`, `task_id`/`text`/`checked`/`path` after `FLATTEN file.tasks`
+(the page owns `id` there).
 
 ## Targets
 
@@ -118,7 +124,9 @@ faithful:
 | `SORT` before `GROUP BY` | the order of the rows inside each group: `rows collect { … order by … }`; warned about when no column reads the rows |
 | `LIMIT n` | `limit n` — must be the last command, a non-negative integer literal |
 | `GROUP BY expr [AS name]` | `group by name: expr` (default `key`); one per query |
-| `FLATTEN` | unsupported (see below) |
+| `FLATTEN expr [AS name]` | `flatten <expr> as <name>` (spec/oqx 0.25); several chain in order; see "Flatten" |
+| `WHERE` after `FLATTEN` | split by what each conjunct reads: the page's → `where`, one element's → that flatten's block, a mix → unsupported |
+| `FLATTEN` after `GROUP BY` | unsupported (OQX's clause order puts `flatten` before `group by`) |
 
 ## Expressions
 
@@ -262,11 +270,89 @@ grouping by `path` instead would silently make one group per document).
 `GROUP BY file.link` works (the path *is* the key). A page field after `GROUP
 BY` is unsupported — Dataview reads it as null there.
 
+## Flatten
+
+`FLATTEN <expr> [AS name]` is OQX 0.25's `flatten <expr> as <name>` (spec/oqx
+SEMANTICS §25): after `where`, before `group by`, one clause per `FLATTEN` in
+writing order (a later one reads the names earlier ones bound); each page row
+becomes one row per element with the name bound beside the page's fields —
+`id`/`path` repeat per element. The name is the `AS`, else the last segment of
+a field path (`FLATTEN file.tasks` binds `tasks`, `FLATTEN j.tags` binds
+`tags`, Dataview's rule); any other expression needs `AS`. A bound name shadows
+every other reading of it for the rest of the query (a column, `SORT`, `GROUP
+BY`, a later `FLATTEN`, `rows.<name>`); binding an engine name (`FLATTEN
+file.tags` → `tags`) is allowed and warned about, since `file.tags` then reads
+the element too. `id`, `path` (the hit envelope — the engine refuses them),
+`file`, `this`, `rows`, `key`, a column the query selects and a name already
+bound are refused.
+
+| Dataview | OQX | element |
+| --- | --- | --- |
+| `FLATTEN file.tasks [AS t]` | `flatten blocks collect { where type == "task" } as t` | a task block: `t.text`, `t.completed` → `t.checked`, `t.blockId` → `t.id`, `t.outlinks`; an inline field reads the page (`t.doc.due`, warned); `t.file` is refused |
+| `FLATTEN file.lists [AS l]` | `flatten blocks collect { where type == "list_item" } as l` | a list-item block |
+| `FLATTEN file.outlinks [AS o]` | `flatten out_links collect { from dst } as o` | the linked document: `o.file.name` → `o.path` (`derive: basename`), `o.file.mtime` → `o.updated_at`, `o.<field>` |
+| `FLATTEN file.inlinks [AS i]` | `flatten in_links collect { from doc } as i` | the linking document |
+| `FLATTEN file.tags` / `file.etags` / `file.aliases` `[AS x]` | `flatten tags collect { } as x` | one string; the empty block makes the value a collection — Dataview's `file.tags` is `[]` on a page without tags (no row), while OQX fans an absent value out to one row |
+| `FLATTEN authors [AS a]` (an authored field) | `flatten authors as a` | the element as it is; absent → one row with `a` absent (Dataview's rule) |
+| `FLATTEN j.tags`, `this.related`, `length(x) AS n`, `file.frontmatter AS e` | the expression itself | a bound name's member, an outer reference, a computed value, an `entries(frontmatter)` entry |
+| `FLATTEN file.name` / `file.folder` / `file.link` / `file.ext` | unsupported | one derived string, not a list |
+
+**The WHERE split.** OQX's `where` runs *before* `flatten` and there is no
+post-flatten filter on ungrouped rows, so a `WHERE` written after a `FLATTEN`
+is split at its top-level `&`/`and` into conjuncts:
+
+- a conjunct that reads only the page (no bound name) → the body `where` —
+  Dataview applies commands sequentially, but a page predicate holds the same
+  before and after the fan-out, so moving it is semantics-preserving;
+- a conjunct that reads only **one** bound element → that flatten's block
+  (`FLATTEN file.tasks AS t WHERE t.completed` → `flatten blocks collect {
+  where type == "task" and checked } as t`; `FLATTEN file.tags AS tag WHERE tag
+  != "draft"` → `flatten tags collect { where $it != "draft" } as tag`):
+  filtering the elements before the fan-out is filtering the flattened rows by
+  the element, and a parent whose elements all fail yields no row — Dataview's
+  result for the same `WHERE`;
+- a conjunct that mixes the element with the page (`t.completed | status =
+  "open"` as one disjunction) or two bound names (`a = b`) → `unsupported`
+  naming the predicate: it has no spelling. `this.*` counts for neither side.
+
+So `WHERE t.completed & status = "open"` becomes `where status == "open" flatten
+blocks collect { where type == "task" and checked } as t`. An element conjunct
+on an **authored** field (or a bound name's member) reads it through `list(…)` —
+`flatten list(authors) collect { where $it != "anon" } as a` — because a block
+over a scalar is an eval error and `list` makes a scalar a one-row collection
+while leaving a list alone; a page where the field is absent then yields no
+row, where Dataview keeps one with the name null when the test passes null
+(warned).
+
+`SORT` and `LIMIT` after a `FLATTEN` order and bound the flattened rows
+(`order by t.text`, `limit 10`), as in Dataview. `GROUP BY` after a `FLATTEN`
+groups them: the tag census `TABLE length(rows) AS n FLATTEN file.tags AS tag
+GROUP BY tag SORT length(rows) DESC` is `select key, n: count() from docs
+flatten tags collect { } as tag group by key: tag order by count() desc`, and
+`rows.t.text` is `collect(t.text)`; a bound name read after the `GROUP BY` (not
+as the key) is refused like a page field (Dataview reads it as null). A
+`FLATTEN` written after a `GROUP BY` is refused — OQX's clause order has no
+place for it. A `CALENDAR` whose date reads a bound name is refused (the
+`has(date)` filter runs before the fan-out).
+
+**`TASK` and `FLATTEN file.tasks`.** A plain `TASK` row is a task block, so a
+`FLATTEN file.tags AS tag` on it is `flatten doc.tags collect { } as tag` over
+`from blocks`. `TASK … FLATTEN file.tasks [AS t]` re-roots the query at the
+page: `from docs flatten blocks collect { where type == "task" … } as t`, the
+bare task fields (`completed`, `text`, …) read the bound task — in a `WHERE`
+before or after the `FLATTEN` — and the shape is `select path, task_id: t.id,
+text: t.text, checked: t.checked` (`render.task` names the aliases; grouped,
+`rows collect { path, task_id: t.id, text: t.text, checked: t.checked }`). The
+only other reading — a task row fanned out over its own page's tasks — is a
+cross product of a task with its siblings, which no author means. A second
+`FLATTEN file.tasks` on a `TASK` is refused.
+
 ## Capabilities
 
-`capabilities: { groupBy, dates }` says what the server can do; a client sets
-them from the server's `version` (surface ≥ 4.8 → `dates`, OQX ≥ 0.24 →
-`groupBy`). Both default to `true`, so the output is pure OQX. With a
+`capabilities: { groupBy, dates, flatten }` says what the server can do; a
+client sets them from the server's `version` (surface ≥ 4.8 → `dates`, OQX ≥
+0.24 → `groupBy`, OQX ≥ 0.25 → `flatten`). All default to `true`, so the
+output is pure OQX. With a
 capability off, a query that needs it is refused as `unsupported` naming the
 feature. There is **no client-side fallback yet** (re-grouping or date
 arithmetic over fetched rows) — the translation is complete and tested, the
@@ -274,9 +360,11 @@ fallback is the next step.
 
 ## Not supported
 
-- `FLATTEN` — one row per list element next to the page's fields. An OQX
-  body-level `from` re-projection replaces the row (the page is not reachable
-  from the element, spec/oqx §2) and a lift binds a list, not a fan-out.
+- `FLATTEN` after `GROUP BY`; a `WHERE` conjunct after `FLATTEN` that mixes a
+  flattened element with the page (or two flattened names); `FLATTEN … AS id` /
+  `AS path` (the hit envelope) or `AS file`/`this`/`rows`/`key`; `FLATTEN` of a
+  path-derived field (`file.name`); a second `FLATTEN file.tasks` on a `TASK`;
+  `CALENDAR` over a flattened date.
 - A second `GROUP BY`; `CALENDAR … GROUP BY`; `LIMIT` anywhere but last.
 - `csv(…)` sources; `[[link]]` literals as values; lambdas; object literals;
   list literals with zero elements; computed or negative indexes.
@@ -299,6 +387,10 @@ fallback is the next step.
 - A task's inline fields read the page's property.
 - `file.etags` and `file.tags` are both `tags` (omgbase does not expand parent
   tags; the difference is in how membership is tested).
+- A `WHERE` on a flattened authored field drops a page where the field is
+  absent (`list(…)` makes the block legal over a scalar); Dataview keeps a null
+  row when the test passes null. Implicit list fields (`file.tags`, …) and
+  the block/document flattens agree with Dataview exactly.
 
 ## Tests
 
@@ -309,6 +401,6 @@ pnpm --filter @omgbase/dataview test
 `test/cases/*.json` is the golden corpus (`{ dql, options?, oqx, render,
 warnings }` or `{ dql, error }`), generated by the translator and reviewed as
 code; `DATAVIEW_CASES_UPDATE=1 node --test test/cases.test.ts` regenerates it.
-Every ungrouped case is also parsed by `@omgbase/oqx` and must satisfy the
-canonical printer's round-trip law, so the output is OQX the engine accepts
-today; the grouped cases are checked for shape until spec/oqx 0.24 lands.
+Every successful case is also parsed whole by `@omgbase/oqx` (0.25: `group by`,
+`having` and `flatten` included) and must satisfy the canonical printer's
+round-trip law, so the output is OQX the engine accepts today.
