@@ -281,8 +281,8 @@ block or node as `attrs.<k>`):
 
 | kind | attributes | handles | self | relations |
 | --- | --- | --- | --- | --- |
-| docs | `id` `path` `raw` `hash` `updated_at` `title` `tags` `format` | `data` `frontmatter` `inline` | `doc` | `blocks` `nodes` `out_links` `in_links` `revisions` |
-| blocks | `id` `path` `doc_id` `raw` `hash` `updated_at` `type` `text` `attrs` `depth` `ordinal` | — | `block` (+ `doc`) | `children` `nodes` `out_links` `section` |
+| docs | `id` `path` `raw` `hash` `updated_at` `created_at` `title` `tags` `format` | `data` `frontmatter` `inline` | `doc` | `blocks` `nodes` `out_links` `in_links` `revisions` |
+| blocks | `id` `path` `doc_id` `raw` `hash` `updated_at` `created_at` `type` `text` `attrs` `depth` `ordinal` | — | `block` (+ `doc`) | `children` `nodes` `out_links` `section` |
 | nodes | `id` `path` `doc_id` `block_id` `kind` `name` `value` `attrs` | — | `section` (+ `doc`, `block`) | `blocks` `subsections` `children` |
 | links | `id` `path` `doc_id` `block_id` `via_id` `dst_id` `dst_path` `uri` `field` `dst_kind` `predicate` `provenance` `anchor` | — | — (`doc` reaches the source, `dst` the destination document) | `doc` `dst` |
 | revisions | `id` `path` `rev` `seq` `doc_id` `commit` `ts` `origin` `actor` `reason` `hash` `is_current` `archived` (4.9: true when the revision's bodies live in an archive segment, `spec/store` §7.1 — the row stays; `docs_read { at }` reads through the segment while it is attached) | — | — (`doc` reaches the document's current row) | `doc` |
@@ -319,7 +319,16 @@ bare — in the language as `title`/`tags` and in `docs_read`'s
 
 **docs.** Attributes: `id` (doc id), `path` (the reference form, `/a/b.md`
 — §1 Paths), `hash` (hex of `file_hash`, null when none), `updated_at`
-(the current revision's commit `ts`, null when none), `raw` (the
+(the current revision's commit `ts`, null when none), `created_at` (4.10:
+the commit `ts` of the document's first revision — the `revisions` row with
+`seq = 1`, equivalently the minimum `seq`, so it is exactly `revisions first
+{ ts values }` — an ISO string in `updated_at`'s form, null when the
+document has no revision. **It is the instant omgbase first observed the
+document, not a filesystem time**: a file that existed for years before it
+was observed is created on the day of its first commit. The retention
+squash (`spec/store` §7.1, 15.0) archives bodies but keeps every revision
+and commit row, so `created_at` survives `history_export { prune }`
+unchanged; `reads::created-at`), `raw` (the
 reconstructed file, `spec/store` §6.1), `title`/`tags` (above), `format`
 (the format column). `data` / `frontmatter` / `inline` are **source
 handles**: `frontmatter.<k>` reads the key from that source only, `data.<k>`
@@ -364,6 +373,15 @@ this is the block's own last change: its insertion, edit, move, split/merge
 lineage or resurrection, never a sibling's edit; through 14.1 every commit
 to the document wrote a `same` row and the value was the document's —
 `reads::sibling-updated-at-does-not-move`),
+`created_at` (4.10: the *earliest* commit `ts` among the block's
+`block_changes` — `updated_at`'s join under `MIN` — the commit that first
+wrote the id: its `inserted` row, or the split/merge lineage row that
+minted it; null when none. Like the document's it is "first observed by
+omgbase", not a filesystem time; store 14.2 keeps that first row and the
+15.0 squash keeps each block's earliest row (`spec/store` §7.1), so it
+survives archiving — a block whose minting commit is wholly archived keeps
+its `created_at` (`reads::created-at`); a resurrected block keeps its
+original creation, since the pool returns the same id),
 `doc_id` (the owning document's id), `type`, `text`, `attrs`
 (parsed), `ordinal` (the block's 0-based ordinal among its siblings — the
 `ordinal` column), `depth` (its nesting depth, 0 at the top level — the
@@ -1635,6 +1653,24 @@ both and runs both harnesses.
 
 ## 9. Reference oddities surfaced while specifying, and decisions
 
+- **Added (4.10) — `created_at`**: an engine attribute on `docs` (the
+  first revision's commit `ts`) and on `blocks` (the earliest
+  `block_changes` commit `ts`) — bare, winning on collision, an authored
+  `created_at:` key reached as `data.created_at` / `attrs.created_at`
+  (§1.2). The docs form pushes down as `updated_at` does (a correlated
+  subquery over `revisions` at `seq = 1`, also as `doc.created_at` and
+  `dst.created_at`); the blocks form is residual as the block's
+  `updated_at` is. New: `query-docs::created-at`,
+  `::created-at-equals-first-revision`, `::created-at-where-pushdown`,
+  `::created-at-where-pushdown-hits`, `::created-at-order-by`,
+  `::created-at-wins-on-collision`, `::doc-created-at-reach-through`;
+  `query-blocks::created-at`, `::created-at-order-by`, `::created-at-where`,
+  `::doc-created-at-reach-through`, `::created-at-wins-on-collision`;
+  `reads::created-at` (three days of one document around a `history_export
+  { prune }`). Moved, reviewed: `examples::ladders` carries the
+  `query_syntax` text's reserved-names table. No `query-unknown` message
+  lists docs or blocks fields (only the closed kinds spell theirs), so none
+  moved.
 - **Added (4.9) — archived history**: `archived` on the `revisions` target
   and in `docs_history`, and the `revision_archived` error (§1.2, §2, §3;
   `spec/store` 15.0 §7.1). Moved cases, each reviewed: every recorded
@@ -1981,6 +2017,30 @@ both and runs both harnesses.
 
 ## Decisions
 
+- 2026-10-16, surface 4.10 (Brendan's decision): `created_at` is an
+  **attribute**, not only the `revisions first { ts values }` spelling it
+  already had. Creation time is the most common Dataview sort key
+  (`file.ctime`), and a sort key must be a bare name: `where created_at <
+  …` pushes down and `order by created_at` runs exactly as `order by
+  updated_at` does (the docs form is one correlated subquery, exactly
+  `updated_at`'s shape at `seq = 1`), while the nested-query spelling never
+  can, and a reader of the reserved-names table should see the pair
+  `updated_at`/`created_at` where Dataview readers expect
+  `mtime`/`ctime`. The semantics are **first observed by omgbase** — the
+  first revision's commit `ts`, never a filesystem birth time: the store has
+  no other honest instant (filesystem ctimes differ per platform, do not
+  survive a copy, and are not in the database), and the value must be the
+  same from both engines over the same store. It is **retention-proof** by
+  construction: the 15.0 squash keeps every revision/commit row and each
+  block's earliest `block_changes` row, so no policy can move it. Blocks
+  got it too because the block form is exactly as cheap as the document's:
+  `updated_at` on a block is already `MAX(c.ts)` over `block_changes ⋈
+  commits`; `created_at` is the same join under `MIN`, read by the same
+  index, and store 14.2/15.0 guarantee the earliest row is the one kept.
+  An authored `created_at:` key — common in migrated vaults — is reached
+  as `data.created_at` by the 3.0 rule; the hints of
+  `query-docs::created-at-wins-on-collision` show the bare read is tier 1
+  while the handle read is judged against the authored vocabulary.
 - 2026-10-15, surface 4.9: archived history (`spec/store` 15.0 §7.1) reaches
   the surface as one attribute and one error, and nothing else. `archived`
   on the `revisions` target and in `docs_history` is the honesty bit a

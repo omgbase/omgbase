@@ -124,14 +124,16 @@ export const NON_PROPERTY_NAMES: Readonly<Record<Target, ReadonlySet<string>>> =
 // ---- engine attributes ------------------------------------------------------
 
 // The engine attributes (spec/surface §1.2, 3.0: bare, snake_case, winning on
-// collision — `id`, `path`, `raw`, `hash`, `updated_at` on docs and blocks,
-// `title`/`tags` on docs, `id`/`path` on nodes and edges) → a param-free SQL
+// collision — `id`, `path`, `raw`, `hash`, `updated_at`, `created_at` on docs
+// and blocks, `title`/`tags` on docs, `id`/`path` on nodes and edges) → a param-free SQL
 // scalar, per target, with its kind. The structural columns and foreign keys are
 // translated in `translateOperand`. Anything not mapped (`raw`, reconstructed or
 // a blob; `title`, computed; `tags`, the union of the authored list and the
 // computed hashtags) returns null → residual, and the caller must NOT fall
 // through to a property read of the same name (the attribute wins in memory).
-// `updated_at` is a correlated subquery. `path` (and the edge field `dst_path`)
+// `updated_at` and `created_at` (4.10) are correlated subqueries over the
+// document's revisions (`current_rev` / `seq = 1`); a block's are residual, as
+// before. `path` (and the edge field `dst_path`)
 // is the REFERENCE form on the surface (spec/surface §1 "Paths", 2.0) — `'/' ||
 // <storage column>` in SQL — so every comparison, `startsWith`, `contains`,
 // `lower()`… sees exactly the string the in-memory attribute yields;
@@ -143,8 +145,8 @@ export function pathColumn(col: string): Operand {
 /** The identity/bytes/time attributes per kind — the names `attributeSql` owns
  * (the structural columns are handled per target in `translateOperand`). */
 export const ROW_ATTRIBUTES: Readonly<Record<Target, ReadonlySet<string>>> = {
-  docs: new Set(["id", "path", "raw", "hash", "updated_at", "title", "tags"]),
-  blocks: new Set(["id", "path", "raw", "hash", "updated_at"]),
+  docs: new Set(["id", "path", "raw", "hash", "updated_at", "created_at", "title", "tags"]),
+  blocks: new Set(["id", "path", "raw", "hash", "updated_at", "created_at"]),
   nodes: new Set(["id", "path"]),
   links: new Set(["id", "path"]),
 };
@@ -156,6 +158,7 @@ function attributeSql(name: string, ctx: TranslateCtx): Operand | null {
     case "path": return pathColumn(`${doc}.path`);
     case "hash": return text(`lower(hex(${self}.file_hash))`);
     case "updated_at": return text(`(SELECT c.ts FROM revisions r JOIN commits c ON c.commit_id = r.commit_id WHERE r.rev_id = ${self}.current_rev)`);
+    case "created_at": return text(`(SELECT c.ts FROM revisions r JOIN commits c ON c.commit_id = r.commit_id WHERE r.doc_id = ${self}.doc_id AND r.seq = 1)`);
   }
   else if (target === "blocks") switch (name) {
     case "id": return text(`${self}.block_id`);
@@ -347,6 +350,7 @@ export function translateOperand(e: Expr, ctx: TranslateCtx): Operand | null {
         if (k === "path") return pathColumn(`${doc}.path`);
         if (k === "hash") return text(`lower(hex(${doc}.file_hash))`);
         if (k === "updated_at") return text(`(SELECT c.ts FROM revisions r JOIN commits c ON c.commit_id = r.commit_id WHERE r.rev_id = ${doc}.current_rev)`);
+        if (k === "created_at") return text(`(SELECT c.ts FROM revisions r JOIN commits c ON c.commit_id = r.commit_id WHERE r.doc_id = ${doc}.doc_id AND r.seq = 1)`);
         if (k === "format") return text(`${doc}.format`);
         if (k.startsWith("$")) return null;
         if (ROW_ATTRIBUTES.docs.has(k)) return null; // `doc.raw`, `doc.title`, `doc.tags`: the attribute, not pushable
@@ -371,6 +375,7 @@ export function translateOperand(e: Expr, ctx: TranslateCtx): Operand | null {
         if (k === "path") return probe("'/' || dd.path");
         if (k === "hash") return probe("lower(hex(dd.file_hash))");
         if (k === "updated_at") return probe("(SELECT c.ts FROM revisions r JOIN commits c ON c.commit_id = r.commit_id WHERE r.rev_id = dd.current_rev)");
+        if (k === "created_at") return probe("(SELECT c.ts FROM revisions r JOIN commits c ON c.commit_id = r.commit_id WHERE r.doc_id = dd.doc_id AND r.seq = 1)");
         if (k === "format") return probe("dd.format");
         if (k.startsWith("$")) return null;
         if (ROW_ATTRIBUTES.docs.has(k) || NON_PROPERTY_NAMES.docs.has(k) || TARGETS.has(k)) return null;

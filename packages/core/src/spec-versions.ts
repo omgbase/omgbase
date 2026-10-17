@@ -20,7 +20,7 @@ export const SPEC_VERSIONS = {
   search: "2.0",
   mutate: "3.5",
   sync: "2.2",
-  surface: "4.9",
+  surface: "4.10",
   cli: "4.6",
 } as const;
 

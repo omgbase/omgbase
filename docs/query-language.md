@@ -136,8 +136,8 @@ not aliases, `$`-names, bindings or function names.
 
 | kind | attributes | handles / self / relations |
 | --- | --- | --- |
-| docs | `id` `path` `raw` `hash` `updated_at` `title` `tags` `format` | `data` `frontmatter` `inline`; `doc`; `blocks` `nodes` `out_links` `in_links` `revisions` |
-| blocks | `id` `path` `doc_id` `raw` `hash` `updated_at` `type` `text` `attrs` `depth` `ordinal` | `block` `doc`; `children` `nodes` `out_links` `section` |
+| docs | `id` `path` `raw` `hash` `updated_at` `created_at` `title` `tags` `format` | `data` `frontmatter` `inline`; `doc`; `blocks` `nodes` `out_links` `in_links` `revisions` |
+| blocks | `id` `path` `doc_id` `raw` `hash` `updated_at` `created_at` `type` `text` `attrs` `depth` `ordinal` | `block` `doc`; `children` `nodes` `out_links` `section` |
 | nodes | `id` `path` `doc_id` `block_id` `kind` `name` `value` `attrs` | `section` `doc` `block`; `blocks` `subsections` `children` |
 | links | `id` `path` `doc_id` `block_id` `via_id` `dst_id` `dst_path` `uri` `field` `dst_kind` `predicate` `provenance` `anchor` | `doc` |
 | revisions | `id` `path` `rev` `seq` `doc_id` `commit` `ts` `origin` `actor` `reason` `hash` `is_current` | `doc` (the document's current row) |
@@ -190,7 +190,11 @@ column) so pushed SQL and the in-memory engine agree.
   the value.
 - **Attributes:** `id`, `path` (the **reference form**, `/`-rooted — see "Paths"
   above), `updated_at` (ISO-8601 UTC, compares lexicographically =
-  chronologically), `raw` (the whole file, frontmatter included), `hash` (its
+  chronologically), `created_at` (surface 4.10: the first revision's commit
+  `ts`, the same form — when omgbase first observed the document, not a
+  filesystem time; equal to `revisions first { ts values }`; survives the
+  retention squash; the Dataview `file.ctime` sort key — `where`/`order by`
+  over it behave exactly as over `updated_at`), `raw` (the whole file, frontmatter included), `hash` (its
   sha256, 64 hex), `title` (the computed title — the first H1 — `null` when
   none; the authored `title:` is `data.title`), `tags` (the authored tags ∪ the
   body `#hashtags`, deduped, authored first; the authored list alone is
@@ -231,7 +235,9 @@ column) so pushed SQL and the in-memory engine agree.
 - **Attributes:** `id`, `path` (the owning doc's path), `raw` (the block's raw
   source bytes — a container's raw holds its children verbatim), `hash` (its
   sha256; the value `update`/`split` expect as `expect.content_hash`),
-  `updated_at`.
+  `updated_at` (the latest commit that changed the block), `created_at`
+  (surface 4.10: the earliest — the commit that first wrote the id; kept by
+  the retention squash).
 - **Doc reach-through:** `doc.<key>` / `doc.path` / `doc.id` / `doc.format`
   constrain by the owning document (scope, not selection). `doc.id` and
   `doc.path` are **foreign-key eliminated** (spec/surface §1, 3.0): they read

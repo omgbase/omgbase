@@ -111,8 +111,8 @@ read a bare non-colliding key performs), \`frontmatter.<k>\`, \`inline.<k>\`. So
 everywhere: a hit's \`id\` is docs_read's \`id\` and the \`id\` argument of blocks_read.
 
   Reserved bare names per kind (engine attributes; handles; self; relations):
-    docs    id path raw hash updated_at title tags format | data frontmatter inline | doc | blocks nodes out_links in_links revisions
-    blocks  id path doc_id raw hash updated_at type text attrs depth ordinal | block doc | children nodes out_links section
+    docs    id path raw hash updated_at created_at title tags format | data frontmatter inline | doc | blocks nodes out_links in_links revisions
+    blocks  id path doc_id raw hash updated_at created_at type text attrs depth ordinal | block doc | children nodes out_links section
     nodes   id path doc_id block_id kind name value attrs | section doc block | blocks subsections children
     links   id path doc_id block_id via_id dst_id dst_path uri field dst_kind predicate provenance anchor | doc
     revisions  id path rev seq doc_id commit ts origin actor reason hash is_current archived | doc

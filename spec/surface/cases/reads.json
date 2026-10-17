@@ -13661,6 +13661,338 @@
           }
         ]
       }
+    },
+    {
+      "name": "created-at",
+      "notes": "§1.2 `created_at` (4.10): guide.md is observed on three days. After the second write the document's `created_at` stays at day one while `updated_at` moves to day two; the untouched heading keeps both at day one, the edited paragraph is a new id (`inserted` on day two) whose `created_at` is day two, and `created_at == revisions first { ts values }` holds; the authored `created_at:` key is reached as `data.created_at`. Then `history_export { prune }` under a one-per-month ladder archives r_0 and r_1 (the squash deletes c_0/c_1's dispositions and `block_changes` but keeps each block's earliest row and every revision/commit row): `created_at` on the document and on every block is unchanged, and `docs_history`'s first version carries the same `ts`.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-01-01T10:00:00.000Z",
+            "items": [
+              {
+                "path": "guide.md",
+                "source": "---\ntitle: Guide\ncreated_at: 1999-12-31\n---\n\n# Guide\n\nThe first paragraph, as first written.\n"
+              }
+            ]
+          }
+        },
+        {
+          "read": {
+            "tool": "query",
+            "args": {
+              "query": "select created_at, updated_at, authored: data.created_at from docs where path == \"/guide.md\""
+            }
+          }
+        },
+        {
+          "observe": {
+            "ts": "2026-01-02T10:00:00.000Z",
+            "items": [
+              {
+                "path": "guide.md",
+                "source": "---\ntitle: Guide\ncreated_at: 1999-12-31\n---\n\n# Guide\n\nThe first paragraph, edited on the second day.\n"
+              }
+            ]
+          }
+        },
+        {
+          "read": {
+            "tool": "query",
+            "args": {
+              "query": "select created_at, updated_at, authored: data.created_at, first: revisions first { ts values } from docs where path == \"/guide.md\""
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "query",
+            "args": {
+              "query": "select id, type, created_at, updated_at from blocks where path == \"/guide.md\" order by ordinal"
+            }
+          }
+        },
+        {
+          "observe": {
+            "ts": "2026-01-03T10:00:00.000Z",
+            "items": [
+              {
+                "path": "guide.md",
+                "source": "---\ntitle: Guide\ncreated_at: 1999-12-31\n---\n\n# Guide\n\nThe first paragraph, edited on the third day.\n\nA closing paragraph.\n"
+              }
+            ]
+          }
+        },
+        {
+          "history_export": {
+            "ts": "2026-02-10T00:00:00.000Z",
+            "policy": {
+              "keep_days": 0,
+              "per_doc_max": 1,
+              "ladder": [
+                {
+                  "after_days": 0,
+                  "keep": "one per month"
+                }
+              ]
+            },
+            "prune": true
+          }
+        },
+        {
+          "read": {
+            "tool": "query",
+            "args": {
+              "query": "select created_at, updated_at, same: created_at == revisions first { ts values } from docs where path == \"/guide.md\""
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "query",
+            "args": {
+              "query": "select id, type, created_at, updated_at from blocks where path == \"/guide.md\" order by ordinal"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "query",
+            "args": {
+              "query": "select path from docs where created_at < date(\"2026-01-02\") order by created_at"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "docs_history",
+            "args": {
+              "path": "guide.md"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "guide.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 2
+              }
+            }
+          ],
+          {
+            "hits": [
+              {
+                "id": "d_0",
+                "path": "/guide.md",
+                "created_at": "2026-01-01T10:00:00.000Z",
+                "updated_at": "2026-01-01T10:00:00.000Z",
+                "authored": "1999-12-31"
+              }
+            ],
+            "truncated": false,
+            "cursor": null,
+            "consumer": "collect"
+          },
+          [
+            {
+              "path": "guide.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_1",
+              "rev": "r_1",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "deleted": 1,
+                "inserted": 1,
+                "same": 1
+              }
+            }
+          ],
+          {
+            "hits": [
+              {
+                "id": "d_0",
+                "path": "/guide.md",
+                "created_at": "2026-01-01T10:00:00.000Z",
+                "updated_at": "2026-01-02T10:00:00.000Z",
+                "authored": "1999-12-31",
+                "first": "2026-01-01T10:00:00.000Z"
+              }
+            ],
+            "truncated": false,
+            "cursor": null,
+            "consumer": "collect"
+          },
+          {
+            "hits": [
+              {
+                "id": "b_0",
+                "path": "/guide.md",
+                "type": "heading",
+                "created_at": "2026-01-01T10:00:00.000Z",
+                "updated_at": "2026-01-01T10:00:00.000Z"
+              },
+              {
+                "id": "b_2",
+                "path": "/guide.md",
+                "type": "paragraph",
+                "created_at": "2026-01-02T10:00:00.000Z",
+                "updated_at": "2026-01-02T10:00:00.000Z"
+              }
+            ],
+            "truncated": false,
+            "cursor": null,
+            "consumer": "collect"
+          },
+          [
+            {
+              "path": "guide.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_2",
+              "rev": "r_2",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "edited": 1,
+                "inserted": 1,
+                "same": 1
+              }
+            }
+          ],
+          {
+            "export": {
+              "segment": {
+                "id": "s_0",
+                "seq_lo": 1,
+                "seq_hi": 2,
+                "revision_count": 2,
+                "previous_segment": null
+              },
+              "reused": false,
+              "squashed": {
+                "revisions": 2,
+                "commits": 2,
+                "dispositions": 4,
+                "block_changes": 1
+              },
+              "gc": {
+                "blobs": 2,
+                "tree_nodes": 2
+              }
+            }
+          },
+          {
+            "hits": [
+              {
+                "id": "d_0",
+                "path": "/guide.md",
+                "created_at": "2026-01-01T10:00:00.000Z",
+                "updated_at": "2026-01-03T10:00:00.000Z",
+                "same": true
+              }
+            ],
+            "truncated": false,
+            "cursor": null,
+            "consumer": "collect"
+          },
+          {
+            "hits": [
+              {
+                "id": "b_0",
+                "path": "/guide.md",
+                "type": "heading",
+                "created_at": "2026-01-01T10:00:00.000Z",
+                "updated_at": "2026-01-01T10:00:00.000Z"
+              },
+              {
+                "id": "b_2",
+                "path": "/guide.md",
+                "type": "paragraph",
+                "created_at": "2026-01-02T10:00:00.000Z",
+                "updated_at": "2026-01-03T10:00:00.000Z"
+              },
+              {
+                "id": "b_3",
+                "path": "/guide.md",
+                "type": "paragraph",
+                "created_at": "2026-01-03T10:00:00.000Z",
+                "updated_at": "2026-01-03T10:00:00.000Z"
+              }
+            ],
+            "truncated": false,
+            "cursor": null,
+            "consumer": "collect"
+          },
+          {
+            "hits": [
+              {
+                "id": "d_0",
+                "path": "/guide.md"
+              }
+            ],
+            "truncated": false,
+            "cursor": null,
+            "consumer": "collect"
+          },
+          {
+            "docs": [
+              {
+                "id": "d_0",
+                "path": "/guide.md",
+                "deleted": false,
+                "currentRev": "r_2",
+                "versions": [
+                  {
+                    "rev": "r_0",
+                    "seq": 1,
+                    "commit": "c_0",
+                    "updated_at": "2026-01-01T10:00:00.000Z",
+                    "origin": "observed",
+                    "actor": null,
+                    "hash": "4f33b43b39985de2f1db1be81ddc68ea44834147297c205545412bd62233661d",
+                    "isCurrent": false,
+                    "archived": true
+                  },
+                  {
+                    "rev": "r_1",
+                    "seq": 2,
+                    "commit": "c_1",
+                    "updated_at": "2026-01-02T10:00:00.000Z",
+                    "origin": "observed",
+                    "actor": null,
+                    "hash": "23cab01b952aa46c08b5d7cb5a749c1e36baaaae6911505a61d924db72095531",
+                    "isCurrent": false,
+                    "archived": true
+                  },
+                  {
+                    "rev": "r_2",
+                    "seq": 3,
+                    "commit": "c_2",
+                    "updated_at": "2026-01-03T10:00:00.000Z",
+                    "origin": "observed",
+                    "actor": null,
+                    "hash": "5749108b22c0618f48c98db58cc400d1083576d0eb50e6cd6796b2dcf541ad18",
+                    "isCurrent": true,
+                    "archived": false
+                  }
+                ]
+              }
+            ],
+            "truncated": false
+          }
+        ]
+      }
     }
   ]
 }

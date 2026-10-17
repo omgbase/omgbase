@@ -99,7 +99,7 @@ function probeFor(target: Target, path: readonly string[]): Probe | null {
   // relation / handle (`out_links`, `data`, `frontmatter`, …), not the `format` column
   // (not indexed), not an OQX `$` name, and of the engine attributes only
   // `title` (the computed `$title` row, a scalar property the author's `title:`
-  // never reaches — `data.title` does): `raw`, `hash`, `updated_at` and `tags`
+  // never reaches — `data.title` does): `raw`, `hash`, `updated_at`, `created_at` and `tags`
   // (authored ∪ hashtags) have no index and are never property probes.
   if (key === "title") return { kind: "property", key: "$title", source: "computed" };
   if (key.startsWith("$") || key === "format") return null;

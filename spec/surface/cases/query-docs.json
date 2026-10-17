@@ -2986,6 +2986,144 @@
         "cursor": null,
         "consumer": "first"
       }
+    },
+    {
+      "name": "created-at",
+      "notes": "§1.2 (4.10): `created_at` is the commit `ts` of the document's first revision (`seq = 1`) — when omgbase first observed it, not a filesystem time. Over the one-batch corpus it equals `updated_at`.",
+      "query": "select created_at, updated_at from docs where path == \"/substances/salt.md\"",
+      "expect": {
+        "hits": [
+          {
+            "id": "d_14",
+            "path": "/substances/salt.md",
+            "created_at": "2026-09-27T00:00:00.000Z",
+            "updated_at": "2026-09-27T00:00:00.000Z"
+          }
+        ],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "collect"
+      }
+    },
+    {
+      "name": "created-at-equals-first-revision",
+      "notes": "§1.2 (4.10): the attribute is exactly `revisions first { ts values }` (the 4.7 spelling) on every document of the repository (`^docs`, §1.1).",
+      "query": "select n: ^docs count { where created_at == revisions first { ts values } }, total: ^docs count {} from docs limit 1",
+      "bare": true,
+      "expect": {
+        "hits": [
+          {
+            "n": 20,
+            "total": 20
+          }
+        ],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "collect"
+      }
+    },
+    {
+      "name": "created-at-where-pushdown",
+      "notes": "§1.2 (4.10): `where created_at < date(…)` pushes down as `updated_at` does (a correlated subquery over `revisions` at `seq = 1`); the reference runs the case planned and in-memory alike. Nothing was observed before 2026-09-27.",
+      "query": "select path from docs where created_at < date(\"2026-01-01\")",
+      "expect": {
+        "hits": [],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "collect"
+      }
+    },
+    {
+      "name": "created-at-where-pushdown-hits",
+      "notes": "§1.2 (4.10): the same predicate the other way round — every document was first observed on the corpus day.",
+      "query": "select path, created_at from docs where created_at >= date(\"2026-09-27\") && created_at < date(\"2026-09-28\") order by path limit 3",
+      "expect": {
+        "hits": [
+          {
+            "id": "d_0",
+            "path": "/index.md",
+            "created_at": "2026-09-27T00:00:00.000Z"
+          },
+          {
+            "id": "d_1",
+            "path": "/lab/2026-01-notes.md",
+            "created_at": "2026-09-27T00:00:00.000Z"
+          },
+          {
+            "id": "d_2",
+            "path": "/lab/2026-02-notes.md",
+            "created_at": "2026-09-27T00:00:00.000Z"
+          }
+        ],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "collect"
+      }
+    },
+    {
+      "name": "created-at-order-by",
+      "notes": "§1.2 (4.10): `order by created_at` — the Dataview `file.ctime` sort key — behaves exactly as `order by updated_at`: the scan is planned and the order applied over the pushed rows; ties (one batch) break on `path`.",
+      "query": "select path, created_at from docs order by created_at desc, path limit 3",
+      "expect": {
+        "hits": [
+          {
+            "id": "d_0",
+            "path": "/index.md",
+            "created_at": "2026-09-27T00:00:00.000Z"
+          },
+          {
+            "id": "d_1",
+            "path": "/lab/2026-01-notes.md",
+            "created_at": "2026-09-27T00:00:00.000Z"
+          },
+          {
+            "id": "d_2",
+            "path": "/lab/2026-02-notes.md",
+            "created_at": "2026-09-27T00:00:00.000Z"
+          }
+        ],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "collect"
+      }
+    },
+    {
+      "name": "created-at-wins-on-collision",
+      "notes": "§1.2 (4.10): `created_at` is an engine attribute — bare, winning on collision; an authored `created_at:` key is `data.created_at`. No alchemy document authors one, so the handle read is absent (the key is omitted from the hit) while the bare name is the engine's value.",
+      "query": "select created_at, authored: data.created_at, fm: frontmatter.created_at from docs where path == \"/index.md\"",
+      "expect": {
+        "hits": [
+          {
+            "id": "d_0",
+            "path": "/index.md",
+            "created_at": "2026-09-27T00:00:00.000Z"
+          }
+        ],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "collect",
+        "hints": [
+          "no document in this repository carries a property `created_at` (`data.created_at`)",
+          "no document in this repository carries a property `created_at` (`frontmatter.created_at`)"
+        ]
+      }
+    },
+    {
+      "name": "doc-created-at-reach-through",
+      "notes": "§1.2 (4.10): `doc.created_at` on a document is the row's own attribute (the same subquery over the scan's document).",
+      "query": "select same: doc.created_at == created_at from docs where path == \"/index.md\"",
+      "expect": {
+        "hits": [
+          {
+            "id": "d_0",
+            "path": "/index.md",
+            "same": true
+          }
+        ],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "collect"
+      }
     }
   ]
 }

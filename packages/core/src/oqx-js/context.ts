@@ -62,7 +62,9 @@ function tagAll(rows: Record<string, unknown>[], t: Kind): Row[] {
 // (`children`, `blocks`, `out_links`, `doc`, `frontmatter`, …) always followed:
 // a bare name that is an engine attribute reads the engine's value, never the
 // author's. The attributes: every row's `id`/`path`; docs' and blocks' `raw`/
-// `hash`/`updated_at`; docs' `title` (the computed title) and `tags` (authored
+// `hash`/`updated_at`/`created_at` (4.10: the commit `ts` of the thing's first
+// revision / earliest `block_changes` row — "first observed by omgbase", not a
+// filesystem time); docs' `title` (the computed title) and `tags` (authored
 // tags ∪ body hashtags) and `format`; a foreign key named for what it is
 // (`doc_id`, `block_id`, `via_id`, `dst_id`, `dst_path`, `uri`), a column its
 // column (`type`, `text`, `depth`, `ordinal`, `kind`, `predicate`, `field`).
@@ -77,8 +79,8 @@ function tagAll(rows: Record<string, unknown>[], t: Kind): Row[] {
 // target name — `docs`, `links`, … — is a loud error of its own (root-row.ts).
 // `revisions` on a document is a RELATION (its revision list, §1.2, 4.7) in
 // `rel.docs` below, and names.ts's `RELATIONS.docs` knows it as one.
-const DOC_ATTRIBUTES = new Set(["id", "path", "raw", "hash", "updated_at", "title", "tags", "format"]);
-const BLOCK_ATTRIBUTES = new Set(["id", "path", "raw", "hash", "updated_at", "doc_id", "type", "text", "attrs", "depth", "ordinal"]);
+const DOC_ATTRIBUTES = new Set(["id", "path", "raw", "hash", "updated_at", "created_at", "title", "tags", "format"]);
+const BLOCK_ATTRIBUTES = new Set(["id", "path", "raw", "hash", "updated_at", "created_at", "doc_id", "type", "text", "attrs", "depth", "ordinal"]);
 const NODE_ATTRIBUTES = new Set(["id", "path", "doc_id", "block_id", "kind", "name", "value", "attrs"]);
 const EDGE_ATTRIBUTES = new Set(["id", "path", "doc_id", "block_id", "via_id", "dst_id", "dst_path", "uri", "field", "dst_kind", "predicate", "provenance", "anchor"]);
 // The history target (spec/surface §1.2, 4.7): a revision row's own columns
@@ -486,6 +488,12 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
       case "path": return referencePath(String(row.path));
       case "hash": return row.file_hash == null ? null : hex(row.file_hash);
       case "updated_at": return scalar(`SELECT c.ts FROM revisions r JOIN commits c ON c.commit_id = r.commit_id WHERE r.rev_id = ?`, row.current_rev) ?? null;
+      // `created_at` (4.10): the commit `ts` of the document's first revision
+      // (`seq = 1`, the row `revisions first { ts values }` reads) — when
+      // omgbase first observed the document, not a filesystem time. The
+      // retention squash (spec/store §7.1, 15.0) keeps every revision and
+      // commit row, so the value survives archiving.
+      case "created_at": return scalar(`SELECT c.ts FROM revisions r JOIN commits c ON c.commit_id = r.commit_id WHERE r.doc_id = ? AND r.seq = 1`, row.doc_id) ?? null;
       // `raw`: the exact file bytes (spec/store §6.1, frontmatter included).
       case "raw": return docsRead(store, String(row.doc_id))?.raw ?? null;
       // `title`: the computed title (spec/properties §3.3 — the authored
@@ -508,6 +516,13 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
       case "raw": return row.raw_hash == null ? null : (scalar(`SELECT bytes FROM blobs WHERE hash = ?`, row.raw_hash) as Buffer | undefined)?.toString("utf8") ?? null;
       case "hash": return row.raw_hash == null ? null : hex(row.raw_hash);
       case "updated_at": return scalar(`SELECT MAX(c.ts) FROM block_changes bc JOIN commits c ON c.commit_id = bc.commit_id WHERE bc.block_id = ?`, row.block_id) ?? null;
+      // `created_at` (4.10): the EARLIEST commit `ts` among the block's
+      // `block_changes` — the same join as `updated_at` under MIN: the commit
+      // that first wrote the id (`inserted`, or the split/merge lineage row
+      // that minted it). Store 14.2 keeps that row and the 15.0 squash keeps
+      // each block's earliest row (spec/store §7.1), so it survives archiving;
+      // a resurrected block keeps its original creation.
+      case "created_at": return scalar(`SELECT MIN(c.ts) FROM block_changes bc JOIN commits c ON c.commit_id = bc.commit_id WHERE bc.block_id = ?`, row.block_id) ?? null;
       case "doc_id": return row.doc_id;
       case "type": return row.type;
       case "text": return row.text;

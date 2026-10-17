@@ -2024,6 +2024,99 @@
         "cursor": null,
         "consumer": "collect"
       }
+    },
+    {
+      "name": "created-at",
+      "notes": "§1.2 (4.10): a block's `created_at` is the earliest commit `ts` among its `block_changes` (the commit that first wrote the id) — `updated_at`'s join under MIN. Over the one-batch corpus both equal the corpus day.",
+      "query": "select created_at, updated_at, type from blocks where path == \"/substances/salt.md\" order by ordinal limit 2",
+      "expect": {
+        "hits": [
+          {
+            "id": "b_261",
+            "path": "/substances/salt.md",
+            "created_at": "2026-09-27T00:00:00.000Z",
+            "updated_at": "2026-09-27T00:00:00.000Z",
+            "type": "heading"
+          },
+          {
+            "id": "b_270",
+            "path": "/substances/salt.md",
+            "created_at": "2026-09-27T00:00:00.000Z",
+            "updated_at": "2026-09-27T00:00:00.000Z",
+            "type": "list_item"
+          }
+        ],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "collect"
+      }
+    },
+    {
+      "name": "created-at-order-by",
+      "notes": "§1.2 (4.10): `order by created_at` on blocks is residual (as `updated_at` is) and agrees planned vs in-memory; ties break on the keyset order.",
+      "query": "select id, created_at from blocks where path == \"/index.md\" order by created_at desc limit 2",
+      "expect": {
+        "hits": [
+          {
+            "id": "b_0",
+            "path": "/index.md",
+            "created_at": "2026-09-27T00:00:00.000Z"
+          },
+          {
+            "id": "b_1",
+            "path": "/index.md",
+            "created_at": "2026-09-27T00:00:00.000Z"
+          }
+        ],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "collect"
+      }
+    },
+    {
+      "name": "created-at-where",
+      "notes": "§1.2 (4.10): `where created_at < date(…)` over blocks — residual, in-memory on both paths; nothing predates the corpus day.",
+      "query": "select id from blocks where created_at < date(\"2026-09-27\") limit 3",
+      "expect": {
+        "hits": [],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "collect"
+      }
+    },
+    {
+      "name": "doc-created-at-reach-through",
+      "notes": "§1.2 (4.10): `doc.created_at` from a block is the owning document's first revision's `ts` (pushed as the scan's joined document, like `doc.updated_at`); on the one-batch corpus it equals the block's own.",
+      "query": "select same: doc.created_at == created_at from blocks where path == \"/index.md\" && doc.created_at >= \"2026-09-27\" limit 1",
+      "expect": {
+        "hits": [
+          {
+            "id": "b_0",
+            "path": "/index.md",
+            "same": true
+          }
+        ],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "collect"
+      }
+    },
+    {
+      "name": "created-at-wins-on-collision",
+      "notes": "§1.2 (4.10): on a block the authored side of the name is `attrs.created_at`; no alchemy block carries it, so the handle read is absent while the bare name is the engine's.",
+      "query": "select created_at, a: attrs.created_at from blocks where path == \"/index.md\" limit 1",
+      "expect": {
+        "hits": [
+          {
+            "id": "b_0",
+            "path": "/index.md",
+            "created_at": "2026-09-27T00:00:00.000Z"
+          }
+        ],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "collect"
+      }
     }
   ]
 }
