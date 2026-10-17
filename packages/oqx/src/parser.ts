@@ -13,7 +13,7 @@
 // consumer block — each clause appears at most once, in exactly this order:
 //
 //   select <projection>  from <source>  where <predicate>  follow <dest>, … {…}
-//   order by …  limit N  offset N
+//   flatten <expr> [{…}] [as <name>] …  group by …  having …  order by …  limit N  offset N
 //
 // A `follow` destination is a relation of the current row (a receiver, never
 // an outer reference) or a destination block — a receiver (which MAY be an
@@ -83,7 +83,7 @@ import { lexTemplate, lexString } from "./lexer.ts";
 import { OqxError } from "./errors.ts";
 import type {
   Query, Where, Expr, OpNode, Subquery, SelectItem, OrderSpec, Follow, FollowDestination, Consumer, RelOp,
-  BinaryOp, Span, TemplatePart, GroupBy, GroupKey, AggregateName,
+  BinaryOp, Span, TemplatePart, Flatten, GroupBy, GroupKey, AggregateName,
 } from "./ast.ts";
 import { AGGREGATE_NAMES, isAggregateName } from "./ast.ts";
 import { resolveSelect, resolveWhere } from "./resolve.ts";
@@ -96,8 +96,11 @@ const CONSUMERS = new Set<string>(["collect", "exists", "none", "count", "first"
 // `depth` is legal only in a follow destination block, and the order sentence
 // names it only there. `group by` and `having` (0.24) sit after `follow`: the
 // rows a body yields — the walk's occurrences, when it has one — are what gets
-// grouped, and the bound and the ordering then apply to the groups.
-const CLAUSE_ORDER = ["select", "from", "where", "frontier", "depth", "follow", "group by", "having", "order by", "limit", "offset"] as const;
+// grouped, and the bound and the ordering then apply to the groups. `flatten`
+// (0.25) sits between them: it fans the rows a body yields — the occurrences,
+// after a walk — out per element, and is the one clause that may repeat (each
+// `flatten` fans out the rows the previous produced, SEMANTICS §25).
+const CLAUSE_ORDER = ["select", "from", "where", "frontier", "depth", "follow", "flatten", "group by", "having", "order by", "limit", "offset"] as const;
 type Clause = (typeof CLAUSE_ORDER)[number];
 const DESTINATION_ONLY: ReadonlySet<Clause> = new Set<Clause>(["depth"]);
 // The clauses a body may hold, in order.
@@ -109,7 +112,7 @@ function clausesOf(ctx: BodyCtx): Clause[] {
 const CLAUSE_WORDS = new Set<string>([
   "collect", "exists", "none", "count", "first", "single",
   "order", "by", "asc", "desc", "follow", "distinct", "frontier", "depth", "in", "values",
-  "limit", "offset", "group", "having",
+  "limit", "offset", "group", "having", "flatten", "as",
 ]);
 // The names a group scope resolves besides its keys (SEMANTICS §24): the
 // group's rows, the key record itself, and its identity.
@@ -158,6 +161,7 @@ interface BodyClauses {
   follow: Follow | null;
   frontier: Expr | null;
   depth: number | null;
+  flatten: Flatten[];
   groupBy: GroupBy | null;
   having: Where | null;
   distinct: boolean;
@@ -273,6 +277,7 @@ class Parser {
       consumer: "collect",
       follow: body.follow,
       frontier: body.frontier,
+      flatten: body.flatten,
       groupBy: body.groupBy,
       having: body.having,
       distinct: body.distinct,
@@ -287,7 +292,7 @@ class Parser {
   private queryFromOp(e: OpNode, start: number): Query {
     return {
       kind: "query", span: this.sp(start), source: e.receiver, from: e.sub.from, where: e.sub.where, select: e.sub.select,
-      orderBy: e.sub.orderBy, consumer: e.op, follow: e.sub.follow, frontier: e.sub.frontier, groupBy: e.sub.groupBy, having: e.sub.having,
+      orderBy: e.sub.orderBy, consumer: e.op, follow: e.sub.follow, frontier: e.sub.frontier, flatten: e.sub.flatten, groupBy: e.sub.groupBy, having: e.sub.having,
       distinct: e.distinct, values: e.sub.values, limit: e.sub.limit, offset: e.sub.offset,
     };
   }
@@ -310,6 +315,7 @@ class Parser {
     let follow: Follow | null = null;
     let frontier: Expr | null = null;
     let depth: number | null = null;
+    const flatten: Flatten[] = [];
     let groupBy: GroupBy | null = null;
     let having: Where | null = null;
     let distinct = false;
@@ -324,7 +330,9 @@ class Parser {
 
     const enter = (clause: Clause): void => {
       const idx = CLAUSE_ORDER.indexOf(clause);
-      if (idx === stage) this.fail(`duplicate \`${clause}\` clause`);
+      // `flatten` is the one clause that may repeat (0.25): each fans out the
+      // rows the previous produced.
+      if (idx === stage && clause !== "flatten") this.fail(`duplicate \`${clause}\` clause`);
       if (idx < stage) {
         this.fail(`\`${clause}\` must come before \`${CLAUSE_ORDER[stage]}\` — OQX clause order is ${clausesOf(ctx).join(", ")}`);
       }
@@ -375,6 +383,14 @@ class Parser {
       if (this.atFollow()) {
         enter("follow");
         follow = this.atDepth(rowDepth, () => this.parseFollow());
+        continue;
+      }
+      // `flatten <expr> [{ … }] [as <name>]` (0.25): the value is read on each
+      // row, like `where`; a brace after a receiver is the receiver-block sugar
+      // (the `collect` op), so the block needs no slot of its own.
+      if (this.atFlatten()) {
+        enter("flatten");
+        flatten.push(this.atDepth(rowDepth, () => this.parseFlatten(flatten)));
         continue;
       }
       // `group by k, name: expr` (0.24): the keys are read on the rows, like `where`.
@@ -451,11 +467,52 @@ class Parser {
     }
     if (groupBy) {
       if (distinct) this.failAt(groupBy.span[0], DISTINCT_WITH_GROUP);
-      this.checkGroupedBody({ select, resolvedSelect, having, resolvedHaving, orderBy, froms, where: resolvedWhere, frontier, limit, offset, groupBy });
+      this.checkGroupedBody({ select, resolvedSelect, having, resolvedHaving, orderBy, froms, where: resolvedWhere, frontier, flatten, limit, offset, groupBy });
     } else {
-      this.rejectAggregates({ select, resolvedSelect, having: null, resolvedHaving: null, orderBy, froms, where: resolvedWhere, frontier, limit, offset, groupBy: null });
+      this.rejectAggregates({ select, resolvedSelect, having: null, resolvedHaving: null, orderBy, froms, where: resolvedWhere, frontier, flatten, limit, offset, groupBy: null });
     }
-    return { froms, where, select, orderBy, follow, frontier, depth, groupBy, having, distinct, values, limit, offset };
+    return { froms, where, select, orderBy, follow, frontier, depth, flatten, groupBy, having, distinct, values, limit, offset };
+  }
+
+  // ---- flatten (0.25) -------------------------------------------------------
+
+  // `flatten` is a clause when a value can follow the word; otherwise it is a
+  // field name (`select flatten from r`).
+  private atFlatten(): boolean {
+    if (!this.at("ident", "flatten")) return false;
+    const nx = this.peekAt(1);
+    // A value start — or an aggregate call whose name is a consumer word
+    // (`flatten collect(x)`), admitted so the aggregate check can name it.
+    return this.startsValue(nx) || (nx?.type === "ident" && isAggregateName(nx.value) && this.peekAt(2)?.type === "lparen");
+  }
+
+  // `flatten <expr> [as <name>]`. The expression is any value — a block after a
+  // receiver is read by the postfix grammar as the implicit `collect` op (0.20),
+  // which is exactly the block over the coerced collection SEMANTICS §25 wants.
+  // The name defaults to a plain navigation's last segment (as a select item's
+  // or a group key's does); anything else needs `as`. Names are unique within
+  // the body, never a `$`-name (the language's), a keyword or a literal word.
+  private parseFlatten(earlier: readonly Flatten[]): Flatten {
+    const start = this.start();
+    this.next(); // `flatten`
+    const expr = this.parseValueExpr();
+    let name: string;
+    if (this.at("ident", "as")) {
+      this.next();
+      const t = this.peek();
+      if (t.type !== "ident") this.fail("expected a name after `as` (`flatten <expr> as <name>`)");
+      if (LITERAL_WORDS.has(t.value)) this.fail(`\`${t.value}\` is a literal and cannot name a flattened value (\`flatten <expr> as <name>\`)`);
+      if (t.value.startsWith("$")) this.fail(`a flattened value cannot be bound to a \`$\`-name (\`${t.value}\`) — \`$\` belongs to the language; choose another name`);
+      name = this.next().value;
+    } else {
+      const key = navKey(expr);
+      if (key === null) {
+        this.failAt(start, `\`flatten ${describe(expr)}\` needs a name (\`flatten ${describe(expr)} as <name>\`) — only a plain navigation names itself by its last segment`);
+      }
+      name = key;
+    }
+    if (earlier.some((f) => f.name === name)) this.failAt(start, `duplicate flatten name '${name}' — each flatten binds its own name (\`flatten <expr> as <other>\`)`);
+    return { kind: "flatten", span: this.sp(start), expr, name };
   }
 
   // ---- grouping (0.24) ------------------------------------------------------
@@ -555,6 +612,7 @@ class Parser {
     for (const a of where) found.push([a, "`where`"]);
     collect(b.froms, "`from`");
     collect([b.frontier], "`frontier`");
+    collect(b.flatten.map((f) => f.expr), "`flatten`");
     collect([b.limit], "`limit`");
     collect([b.offset], "`offset`");
     if (b.groupBy) collect(b.groupBy.keys.map((k) => k.expr), "a `group by` key");
@@ -713,6 +771,7 @@ class Parser {
       }
       if (t.value === "depth") this.fail("expected an integer after `depth` (`depth 1`..`depth 8`)");
       if (t.value === "frontier") this.fail(`unexpected 'frontier' after \`${last}\` — \`frontier\` takes an expression (\`frontier <expr>\`) and belongs to a body that has a \`follow\``);
+      if (t.value === "flatten") this.fail(`unexpected 'flatten' after \`${last}\` — \`flatten\` takes a value to split into rows (\`flatten <expr> [{ … }] [as <name>]\`)`);
       if (t.value === "group") this.fail(`unexpected 'group' after \`${last}\` — a grouping is written \`group by <key>[, <key>…]\` (a key is a name or \`alias: <expr>\`)`);
       if (t.value === "having") this.fail(`unexpected 'having' after \`${last}\` — \`having\` takes a predicate over each group (\`having count() > 1\`) and belongs to a body that has a \`group by\``);
     }
@@ -1247,6 +1306,7 @@ class Parser {
       follow: body.follow,
       frontier: body.frontier,
       depth: body.depth,
+      flatten: body.flatten,
       groupBy: body.groupBy,
       having: body.having,
       values: body.values,
@@ -1307,7 +1367,7 @@ class Parser {
     this.next();
     const subSpan: Span = [lbracket, this.end()];
     const sub = (parts: Partial<Subquery>): Subquery => ({
-      kind: "subquery", span: subSpan, from: [], where: null, select: [], orderBy: null, follow: null, frontier: null, depth: null, groupBy: null, having: null, values: false, limit: null, offset: null, ...parts,
+      kind: "subquery", span: subSpan, from: [], where: null, select: [], orderBy: null, follow: null, frontier: null, depth: null, flatten: [], groupBy: null, having: null, values: false, limit: null, offset: null, ...parts,
     });
     const bang = this.atOp("!") ? this.next() : null;
     if (index) {
@@ -1603,6 +1663,7 @@ interface GroupCheck {
   froms: Expr[];
   where: Where | null;
   frontier: Expr | null;
+  flatten: readonly Flatten[];
   limit: Expr | null;
   offset: Expr | null;
   groupBy: GroupBy | null;

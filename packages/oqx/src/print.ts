@@ -12,7 +12,7 @@
 // binding is a value, never source text: `print` throws on one; `printTemplate`
 // emits template fragments around each binding instead.
 
-import type { AstNode, Expr, Follow, GroupBy, GroupKey, OpNode, OrderSpec, Query, SelectItem, Subquery, Where } from "./ast.ts";
+import type { AstNode, Expr, Flatten, Follow, GroupBy, GroupKey, OpNode, OrderSpec, Query, SelectItem, Subquery, Where } from "./ast.ts";
 import { OqxError } from "./errors.ts";
 
 /** The template form of a tree: `strings` has `count + 1` fragments; the i-th gap
@@ -83,6 +83,7 @@ function render(n: AstNode): Out {
     case "subquery": return block(n);
     case "op": return op(n);
     case "follow": return follow(n);
+    case "flatten": return flatten(n);
     case "groupBy": return groupBy(n);
     case "key": return key(n);
     case "order": return order(n);
@@ -117,7 +118,7 @@ function query(q: Query): Out {
   return cat(expr(q.source), ` ${q.consumer}${q.distinct ? " distinct" : ""} `, braces(body(q)));
 }
 
-type Body = Pick<Subquery, "select" | "values" | "from" | "where" | "follow" | "groupBy" | "having" | "orderBy" | "limit" | "offset">
+type Body = Pick<Subquery, "select" | "values" | "from" | "where" | "follow" | "flatten" | "groupBy" | "having" | "orderBy" | "limit" | "offset">
   & Partial<Pick<Subquery, "frontier" | "depth">>;
 
 // The clauses after `from` (a query) or after the projection (a block): the
@@ -130,6 +131,7 @@ function tail(b: Omit<Body, "select" | "values">): Out[] {
   if (b.frontier) out.push(cat("frontier ", expr(b.frontier)));
   if (b.depth != null) out.push([`depth ${number(b.depth)}`]);
   if (b.follow) out.push(follow(b.follow));
+  for (const f of b.flatten) out.push(flatten(f));
   if (b.groupBy) out.push(groupBy(b.groupBy));
   if (b.having) out.push(cat("having ", where(b.having)));
   if (b.orderBy && b.orderBy.length > 0) out.push(cat("order by ", join(b.orderBy.map(order), ", ")));
@@ -181,6 +183,13 @@ function op(o: OpNode): Out {
 function follow(f: Follow): Out {
   const dests = join(f.destinations.map((d) => (d.kind === "op" ? op(d) : expr(d))), ", ");
   return cat(`follow${f.distinct ? " distinct" : ""} `, dests);
+}
+
+// `as <name>` is always written (0.25), as every select item and group key is
+// aliased: the tree does not record whether it was, and the name is what the
+// later clauses read.
+function flatten(f: Flatten): Out {
+  return cat("flatten ", expr(f.expr), ` as ${f.name}`);
 }
 
 // Every key aliased, as every select item is (`layer: layer`).

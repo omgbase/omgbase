@@ -633,7 +633,11 @@ export function compileSelection(store: Store, repoId: string, select: unknown, 
     });
   }
 
-  // Row → effects: hits in result order × templates in order (k = h·T + t).
+  // Row → effects: hits in result order × templates in order (k = h·T + t). A
+  // selector with `flatten` (oqx 0.25; §11.8) fans out per FLATTENED row: each
+  // hit is the parent row (its `id`/`path`), the slot items read the bound name
+  // (`-> tag`) in the flattened scope, and `expect.max` — the page bound above —
+  // counts the flattened hits.
   const effects: Effect[] = [];
   const origins: EffectOrigin[] = [];
   hits.forEach((hit) => {

@@ -23,6 +23,7 @@ import {
   BUILTIN_METHODS,
   CONSUMERS,
   CONTEXTUAL_WORDS,
+  FLATTEN_AS,
   GROUP_ROWS,
   IDENTIFIER,
   KEYWORDS,
@@ -103,6 +104,13 @@ export const RULES: readonly Rule[] = [
   // aggregate call — `having count() > 1` — whose name is a consumer word and so
   // cannot begin a value on its own.
   { name: "having", regex: `having${END}(?:${VALUE_START}|(?=[ \\t]+(?:${alternation(AGGREGATES)})[ \\t]*\\())`, groups: ["clause"] },
+  // `flatten` (0.25) is a clause when a value can follow it, exactly as `having`
+  // (an aggregate call whose name is a consumer word included, so the parser's
+  // "an aggregate cannot be read in `flatten`" is reached as a clause).
+  { name: "flatten", regex: `flatten${END}(?:${VALUE_START}|(?=[ \\t]+(?:${alternation(AGGREGATES)})[ \\t]*\\())`, groups: ["clause"] },
+  // `as` (0.25) binds a flattened value's name: a clause word when a plain name
+  // follows (not a keyword or a contextual word), otherwise a field.
+  { name: "flatten-as", regex: `${FLATTEN_AS}${END}(?![ \\t]+(?:${alternation(NON_VALUE_WORDS)})${END})(?=[ \\t]+[A-Za-z_$])`, groups: ["clause"] },
   // The word operators (`is`, `not`, `and`, `or`) are keywords too (GRAMMAR §1),
   // highlighted as operators; before the keyword rule so it never claims them.
   { name: "word-operator", regex: words(WORD_OPERATORS), groups: ["wordOperator"] },
@@ -125,7 +133,7 @@ export const RULES: readonly Rule[] = [
   },
   {
     name: "values",
-    regex: `values${END}(?=[ \\t]*(?:\\}|$|${words(["from", "where", "follow", "order", "limit", "offset"])}))`,
+    regex: `values${END}(?=[ \\t]*(?:\\}|$|${words(["from", "where", "follow", "flatten", "order", "limit", "offset"])}))`,
     groups: ["modifier"],
   },
   { name: "distinct", regex: `distinct${END}(?=[ \\t]*\\{)`, groups: ["modifier"] },

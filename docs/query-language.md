@@ -50,7 +50,8 @@ or any `{ block }` — clauses appear at most once each, in exactly this order:
 
 ```
 [select <projection>] from <source> [where <pred>] [frontier <pred>] [follow <rel> [{…}]]
-                      [group by <key>, …] [having <pred>] [order by …] [limit N] [offset N]
+                      [flatten <expr> [{…}] [as <name>]]… [group by <key>, …] [having <pred>]
+                      [order by …] [limit N] [offset N]
 ```
 
 Every clause is optional except a top-level `from`; the receiver-plus-consumer
@@ -58,8 +59,8 @@ form `<target> count|exists|none|first|single { <block> }` (a bare target at the
 root scope) supplies its own
 source, so the block's `from` is an optional re-projection. A clause out of order
 is a parse error that names the order (`` `select` must come before `from` — OQX
-clause order is select, from, where, frontier, follow, group by, having, order
-by, limit, offset ``). **Only
+clause order is select, from, where, frontier, follow, flatten, group by, having,
+order by, limit, offset ``; `flatten` alone may repeat). **Only
 `select` may drop its keyword, and only when it is the first clause written**
 (`path, era from docs where …`; in a block, `nodes collect { value }` projects
 `value`). Every other clause always carries its keyword — with the 0.17 sugar
@@ -692,6 +693,47 @@ whether more groups follow, and the cursor is always `null` (as under a custom
 key's expression on the rows, an aggregate's argument on the rows, and the
 names inside a `rows …{ }` block on the grouped rows' kind (`rows count { where
 chekced }` is still the "not a field of blocks" hint).
+
+## 7c. Flatten (oqx 0.25)
+
+`flatten <expr> [{ … }] [as <name>]` — after `where`/`follow`, before `group
+by`; one or more — splits one value into rows: the Dataview `FLATTEN`. Every
+hit is still the **parent row** with `<name>` bound beside its fields at the
+same depth, so the `id`/`path` envelope is injected as usual and **repeats per
+element** (Dataview's `TABLE … FLATTEN`): an array → one row per element (an
+empty list yields none), a missing field → one row with the name absent (never
+dropped), an object or a scalar → one row with the value (spec/oqx SEMANTICS
+§25). A plain navigation names itself (`flatten tags` rebinds `tags` to each
+element; `flatten tags as t` keeps the list readable); anything else needs
+`as`. The block is the ordinary receiver block over the elements (`where`, a
+projection, `order by`, `limit`, `distinct`), applied first — a block that
+filters every element away yields no row for that parent. Later clauses read
+the name: a later `flatten` (`flatten jobs as j flatten j.tags as t`), `group
+by` (a bound name is a key), `having`, the projection, `order by`; `where` runs
+before the fan-out.
+
+```
+select path, tags from docs where type == "process" flatten tags order by path, tags
+select path, t: b.text from docs flatten blocks { where type == "task" and not checked } as b
+select tags, n: count() from docs flatten tags group by tags order by count() desc
+select path, e: j.employer, t from docs flatten jobs as j flatten j.tags as t
+```
+
+**Uniqueness is what moves.** A flattened hit's identity is the pair (row,
+element) — `$key` is `[<the row's id>, <the element's identity>]` — so
+`(path, id)` no longer names one hit and the keyset cursor cannot land inside a
+document's elements: a flattened query **pages by position** (the query's
+`limit`/`offset` define the set, the tool's `limit` takes the first page,
+`truncated` says whether more rows follow, the cursor is always `null`, as under
+a custom `order by` or a `group by`; a keyset extended with the flatten ordinal
+is a later round). `flatten … as id` / `as path` is refused — the bound name
+would shadow the envelope's own reads. The planner declines a flattened query
+whole (it runs in memory); the unknown-names check judges the flatten
+expression on the rows, the names inside a block against the element kind
+(`flatten blocks { where typ == … }` is the "not a field of blocks" hint), and
+never the bound name. A write selector with `flatten` fans its effects out per
+flattened row — the hit is the parent row, templates read the bound name
+(`-> tag`), and `expect.max` bounds the flattened count (spec/mutate §11.8).
 
 ## 8. Execution model
 - OQX parses to the `@omgbase/oqx` AST and runs on the in-memory engine over a

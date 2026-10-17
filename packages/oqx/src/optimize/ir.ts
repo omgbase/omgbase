@@ -10,7 +10,7 @@
 // cannot be built, a receiver that is not stable) always degrade to the plain
 // scan the plan started from.
 
-import type { Consumer, Expr, Follow, GroupBy, OpNode, OrderSpec, SelectItem, Where } from "../ast.ts";
+import type { Consumer, Expr, Flatten, Follow, GroupBy, OpNode, OrderSpec, SelectItem, Where } from "../ast.ts";
 
 /** One hoisted equality `local == outer` from the block's top-level `&&`
  * conjunction: `local` reads only the block's row (an identifier or member
@@ -45,6 +45,9 @@ export interface BlockPlan {
   readonly distinct: boolean;
   readonly bound: { readonly limit: Expr | null; readonly offset: Expr | null };
   readonly follow: Follow | null;
+  /** `flatten` clauses (0.25): the matched rows are fanned out per element
+   * before the consumer sees them, so a consumer counts FLATTENED rows. */
+  readonly flatten: readonly Flatten[];
   /** `group by` / `having` (0.24): the matched rows are grouped before the
    * consumer sees them, so a consumer counts GROUPS, never rows. */
   readonly groupBy: GroupBy | null;
@@ -94,6 +97,7 @@ export function logicalBlock(node: OpNode, depth: number): BlockPlan {
     distinct: node.distinct,
     bound: { limit: sub.limit, offset: sub.offset },
     follow: sub.follow,
+    flatten: sub.flatten,
     groupBy: sub.groupBy,
     having: sub.having,
     correlated: [],

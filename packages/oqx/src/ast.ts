@@ -109,6 +109,19 @@ export type Expr =
   // expression only by position; discriminate on `kind === "op"`.
   | OpNode;
 
+/** One `flatten` clause (since 0.25): `flatten <expr> [{ … }] [as <name>]` —
+ * the value of `expr`, read on each row, is split into one row per element
+ * (SEMANTICS §25), each the parent row with `name` bound at the same scope
+ * depth. A written block is the implicit `collect` directive over the value
+ * (GRAMMAR §2), so `expr` is then an `op`; `name` is always filled — the alias,
+ * or the last segment of a plain navigation when `as` was omitted. */
+export interface Flatten {
+  kind: "flatten";
+  span: Span;
+  expr: Expr;
+  name: string;
+}
+
 /** One `group by` key (since 0.24): `name: expr`, or an unaliased navigation
  * keyed by its last segment, exactly as a `select` item is. */
 export interface GroupKey {
@@ -199,6 +212,10 @@ export interface Subquery {
    * `depth` is destination-only. Both `null` when absent. */
   frontier: Expr | null;
   depth: number | null;
+  /** `flatten` clauses (since 0.25), in writing order; `[]` when there is none.
+   * Each fans the rows the previous produced out, after `follow` and before
+   * `group by` (SEMANTICS §25). */
+  flatten: Flatten[];
   /** `group by` / `having` (since 0.24): the block's rows become one row per
    * distinct key tuple (SEMANTICS §24); `having` filters the groups. Both
    * `null` when absent; `having` is set only together with `groupBy`. */
@@ -243,6 +260,8 @@ export interface Query {
    * scope, like `where`) is a frontier (`$stop == "frontier"`, not expanded).
    * `null` without one. */
   frontier: Expr | null;
+  /** `flatten` clauses (since 0.25; see Subquery). */
+  flatten: Flatten[];
   /** `group by` / `having` (since 0.24; see Subquery). */
   groupBy: GroupBy | null;
   having: Where | null;
@@ -256,7 +275,7 @@ export interface Query {
 }
 
 /** Every node of the tree. `AstNode["kind"]` is the closed set of node kinds. */
-export type AstNode = Query | Subquery | OpNode | Follow | GroupBy | GroupKey | OrderSpec | SelectItem | Where | Expr;
+export type AstNode = Query | Subquery | OpNode | Follow | Flatten | GroupBy | GroupKey | OrderSpec | SelectItem | Where | Expr;
 
 /** The closed set of node kinds. */
 export type AstKind = AstNode["kind"];

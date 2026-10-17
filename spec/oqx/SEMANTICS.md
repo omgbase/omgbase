@@ -59,7 +59,9 @@ and never climbs:
 3. `$depth`, `$stop`, `$leaf`, `$frontier`, `$ordinal` — the recursion
    intrinsics, on a `follow` occurrence (§20); and `rows` — the group's rows,
    on a **group scope** (§24, since 0.24).
-4. a value **lifted** into this scope by a `^name:` item (§19).
+4. a value **lifted** into this scope by a `^name:` item (§19), or **bound**
+   into it by a `flatten … as name` (§25, since 0.25) — so a bound name
+   shadows a same-named row property.
 5. at the root scope: the named root; elsewhere: the row's own property.
 
 Step 3 applies only where the scope **carries** that metadata: a walk
@@ -145,7 +147,9 @@ decides the **cardinality** of what the rows become (since 0.20):
   one-row collection; `list(s)` says that explicitly.
 
 A `from` re-projection fans a single receiver out — `doc { from tags }` is a
-list — and so does a `follow`. The two spellings of a body are one tree (AST.md
+list — and so do a `follow` and a `flatten` (§25, whose own coercion softens
+the scalar rule: a scalar in `flatten` position is one row, not an error — it
+sources no rows). The two spellings of a body are one tree (AST.md
 §2), so `title from doc` is the record `doc collect { title }` is; `from $it` at
 the root is the root object as one record.
 
@@ -616,6 +620,14 @@ language never names an `id` property; a host does, if it has one:
   with cyclic object graphs supply an identity rather than rely on the
   structural default.
 - **An entry's identity is its key** (§21) — the same `$key`.
+- **A flattened row's identity is the pair** `[parent identity, element
+  identity]` (§25, since 0.25): the parent row's `$key` and the element's —
+  its own `$key` when the element is a row or an entry, else its structural
+  value — as a two-element list, nested again by a chained `flatten`
+  (`[["x", 1], "a"]`, never flattened, so a list element stays apart from a
+  chain). So `distinct` over unprojected flattened rows, `follow` dedup and
+  `is` tell `(doc, "a")` from `(doc, "b")` and collapse two flattened rows
+  over equal elements of one parent.
 - **Projection override.** A block — a `follow` destination block or the body's
   own `select` — may project **`$key: <expr>`**; the rows it yields carry that
   identity. `select name, $key: email from people follow next { $key: email }`
@@ -674,7 +686,9 @@ flatten-appending as intermediate blocks fan out. The bound
 name is then read there like a row property (`name, currentEmployers from …`).
 A where-position `collect` with no matches is false, so the row is filtered out
 rather than receiving an empty list. An unaliased `^name` item lifts the field
-`name`. [`lifts`, `outer-refs`]
+`name`. A lift binds a **list** onto the row; its one-to-many sibling is
+`flatten` (§25), which splits a value — a lifted list included (`where kids
+collect { ^o: name } flatten o`) — into rows. [`lifts`, `outer-refs`]
 
 ## 20. `follow`
 
@@ -812,7 +826,8 @@ method; `single` with more than one row; a required value that is absent
 regex flag (§11); a scalar in row position (§3); a list, record or range
 interpolated into a template literal (§7b);
 a range in a result (§1); a binding out of range (§22); `sum`/`avg` over a
-present non-number (§24). Evaluation is otherwise
+present non-number (§24). A `flatten` never raises on the value it splits
+(§25). Evaluation is otherwise
 total: absent navigation, arithmetic over absent, comparisons over absent or
 mismatched types, membership in a non-container, and `range()` of a bad string
 all yield a value (absent or `false`), never an error.
@@ -827,7 +842,11 @@ projection, `having`, `order by`, `limit`/`offset`, the consumer) then see the
 groups. The order of operations in a body is the clause order: the rows are
 coerced (§3) and re-projected by `from`, filtered by `where` **per row**, walked
 by `follow` (the occurrences are what is grouped), **grouped**, filtered by
-`having` **per group**, ordered, bounded, reduced by the consumer.
+`having` **per group**, ordered, bounded, reduced by the consumer. With a
+`flatten` (§25) the **flattened** rows are what is grouped, and a bound name is
+a legal key (`flatten tags as t group by t`); an aggregate's argument reads it
+on each flattened row (`collect(t)`), while `rows` re-enters the rows
+themselves, which carry no binding.
 
 **Keys.** Each key expression is read in the row's scope exactly as `where` is
 (bare names are the row's properties, `^` the enclosing row, `$depth` an
@@ -901,3 +920,77 @@ A grouped row is a value the language built, not a row of the host's data: a
 host that decorates its rows (omgbase's `id`/`path` hit envelope) does not
 decorate groups — the group record is the result as projected (spec/surface
 §1.4). [`group-by`]
+
+## 25. Flatten (since 0.25)
+
+`flatten <expr> [{ … }] [as <name>]` (GRAMMAR §3) splits one value into rows:
+the rows a body has at that point — after `where` **per row** and after
+`follow`, before `group by` — each become one or more **flattened rows**, the
+parent row with `name` bound. One or more `flatten` clauses chain in writing
+order, each fanning out the rows the previous one produced (a cross product per
+row; a later one may read the names earlier ones bound: `flatten jobs as j
+flatten j.tags as t`). The Dataview `FLATTEN`, with its rules.
+
+**The value.** `expr` is read in the row's scope exactly as `where` is (bare
+names are the row's properties and the names earlier flattens bound, `^` the
+enclosing row, `$depth` an occurrence's), then split by §3's coercion with
+**one deliberate softening**:
+
+- an **array** (a host collection) → one row per element, in collection order;
+  a collection with **no** elements yields **no row** for that parent;
+- an **object** → one row, the object;
+- **absent** (a missing property, `null`) → **one row with the name absent** —
+  Dataview's rule: a missing field never drops the row;
+- a **scalar** (a string, a number, a boolean) or a range → one row with the
+  value. `flatten` splits a value; it does not source rows from it, so a scalar
+  is **not** the §3 eval error (`list(s)` is still how a scalar becomes a
+  one-row collection elsewhere). `flatten` never raises on the value it splits.
+
+**The block.** A written block is the implicit `collect` directive over the
+value (GRAMMAR §2) and is applied **first**: its `where` filters the elements,
+its projection shapes each (`select` turns an element into a record, `values`
+into a bare value), `order by`/`limit`/`offset`/`distinct` bound them; the
+directive's result is then split by the rule above. So a block over a
+collection yields an array — empty when every element was filtered away, and
+**no row** for that parent (Dataview's `FLATTEN … WHERE`); a block over an
+absent value is `[]` (§3) and yields no row either — a block makes the value a
+collection; a block over a **single object** (§3) yields the record, or absent
+when the object fails its `where` — one row either way. Everything a
+select-position block admits is admitted (a `follow`, a `group by`, a nested
+`flatten`); with no projection the block yields its rows themselves, so a name
+bound inside it is not a property of what gets bound.
+
+**The flattened row.** Each output row **is the parent row** with `name` bound
+as step 4 of §2 — beside the lifts, at the **same scope depth**: `$it` is the
+row, bare names its properties, `^` reads the enclosing scope, a walk's
+`$depth`/`$stop`/`$ordinal` are the occurrence's, and a host's row decoration
+(omgbase's `id`/`path` envelope) applies as to any row, repeating per element.
+The bound name **shadows** a same-named row property for the rest of the body
+(the default name rebinds the property it was read from: `flatten tags` makes
+`tags` each element, `flatten tags as t` keeps the list readable as `tags`) and
+is read like any property: by the projection, `order by`, a later `flatten`, a
+`group by` key, `having`, a template literal, `^name` from a nested block.
+`where` and `frontier` run **before** the fan-out and never see it. A `select`
+alias is not substituted into a `flatten` expression (as into `order by` and
+`frontier`, §14).
+
+**Identity.** A flattened row's `$key` (§16) is the pair `[parent identity,
+element identity]`: the parent row's `$key` and the element's own — its `$key`
+when it is a row or an entry (an entry by its key, §21), else its structural
+value — a two-element list, nested again by a chained flatten. `distinct` over
+unprojected flattened rows, `follow` dedup and `is` compare it, so two
+flattened rows over equal elements of one parent collapse and `(doc, "a")`
+differs from `(doc, "b")`.
+
+**Order.** Output order is parent order, then element order — deterministic
+whatever served the rows. `order by`, `limit` and `offset` apply to the
+flattened rows; so does every consumer (`count` counts them, `first` is the
+first of them, `exists` is false when every parent fanned out to nothing), and
+a single receiver fanned out is plural (§3). `group by` groups the flattened
+rows (§24); the bound name is a legal key, read by an aggregate on each row
+(`collect(t)`), while `rows` re-enters the rows themselves.
+
+**Errors** are parse errors (GRAMMAR §3): an expression that is not a plain
+navigation with no `as`, a duplicate name, a keyword, literal word or `$`-name
+after `as`, an aggregate in a flatten expression, `flatten` out of order.
+[`flatten`]

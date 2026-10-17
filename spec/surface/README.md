@@ -2000,6 +2000,26 @@ both and runs both harnesses.
   `changes_since` summary loses its counts) — the segment holds them, a
   later round may read them. An attribute and an error added: a minor.
   Fixtures: `reads::archived`; the moved cases of §9.
+- 2026-10-16 (oqx 0.25; no surface version move): the language gained
+  `flatten`. Four host rules, read off the language rather than pinned by new
+  fixtures here: (1) **a flattened row is still a store row** — the runner
+  injects the `id`/`path` envelope as usual and it repeats per element
+  (Dataview's `TABLE … FLATTEN`), the envelope-collision rule applies, and
+  `flatten … as id` / `as path` is refused (the bound name shadows a
+  same-named row property, so it would shadow the envelope's own reads);
+  (2) **paging is positional with a `null` cursor** — a hit's identity is the
+  (row, element) pair, so `(path, id)` no longer names one hit and the keyset
+  cursor cannot land inside a document's elements; the `group by` precedent
+  (a keyset extended with the flatten ordinal is a later round); (3) the
+  tier-3 planner **declines the query whole** (a pushed conjunct that empties
+  the scan would hide an eval error a `flatten` expression raises in memory —
+  decline (c)); (4) the **unknown-names** pass (§1.5) judges the flatten
+  expression on the rows, the names inside a written block against the
+  element kind through the block receiver's step (`flatten blocks { where typ
+  == … }` is the blocks hint), and never the bound name (an alias-bound name,
+  excluded by the language's `references`). Write selectors: `spec/mutate`
+  §11.8, Decisions 2026-10-16. `examples.json` moved with the `query_syntax`
+  text.
 - 2026-10-15 (oqx 0.24; no surface version move): the language gained `group
   by`/`having`, aggregates and `count { … }` as a value. Two consequences at
   the surface, both read off the language rather than pinned by new fixtures

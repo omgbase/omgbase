@@ -25,7 +25,11 @@
 //     (`target.contains("x")` references `target`); a name a nested block
 //     LIFTS onto a scope (`^open: value`, SEMANTICS §19) is a binding of that
 //     scope, so reading it there (`select open`, `^open` from deeper) is not a
-//     reference either;
+//     reference either — and neither is a name a `flatten` bound (0.25,
+//     SEMANTICS §25) in the clauses after it: a later `flatten`, `group by`,
+//     `having`, the select, `order by`, or `^name` from a block under them; in
+//     its own expression and before the clause (`where`, `frontier`, `follow`)
+//     the name is still the row's property;
 //   • a `select` alias is not a reference where the language resolves it
 //     (SEMANTICS §14): in the same body's `where`, and in the items to its
 //     right — a bare identifier naming such an alias, or a chain headed by it,
@@ -54,7 +58,7 @@
 // are cut after the last step at its scope's depth. The empty list is the root
 // scope.
 
-import type { AstNode, Expr, Follow, GroupBy, Query, SelectItem, Span, Subquery } from "./ast.ts";
+import type { AstNode, Expr, Flatten, Follow, GroupBy, Query, SelectItem, Span, Subquery } from "./ast.ts";
 import type { Clause } from "./walk.ts";
 import { visit } from "./walk.ts";
 
@@ -122,6 +126,9 @@ export function references(root: Query | Subquery): Reference[] {
       const levels = head.kind === "outer" ? head.levels : 0;
       const depth = ctx.depth - levels;
       if (isLiftBound(name, depth, ctx.path, lifts)) return false;
+      // A name a `flatten` bound (0.25) is an alias of the expression already
+      // reported in clause `flatten`, read in the clauses after it.
+      if (isFlattenBound(name, depth, ctx.path, node)) return false;
       // At a group scope (0.24) a bare key name is the key — an alias of the
       // expression reported in clause `groupBy` — and `rows` is the language's
       // value; neither reads a row.
@@ -189,6 +196,31 @@ function liftsLandingOn(body: Query | Subquery): ReadonlySet<string> {
     },
   });
   return names;
+}
+
+/**
+ * Whether `name`, read at scope `depth`, is bound there by a `flatten` of the
+ * body whose rows are at `depth` (SEMANTICS §25) — the position lies in a
+ * clause evaluated after that flatten: a later `flatten`, `group by`, `having`,
+ * the select, or `order by` (`where`, `frontier`, `follow` and the body's
+ * sources run before any flatten, and a flatten's own expression before itself).
+ */
+function isFlattenBound(name: string, depth: number, path: readonly AstNode[], node: AstNode): boolean {
+  const i = bodyIndexAt(path, depth);
+  if (i === -1) return false;
+  const body = path[i] as Query | Subquery;
+  if (body.flatten.length === 0) return false;
+  const child = path[i + 1] ?? node;
+  let upto: number;
+  if (body.select.includes(child as SelectItem) || child === body.groupBy || child === body.having || (body.orderBy?.includes(child as never) ?? false)) {
+    upto = body.flatten.length;
+  } else {
+    const k = body.flatten.indexOf(child as Flatten);
+    if (k === -1) return false;
+    upto = k;
+  }
+  for (let j = 0; j < upto; j++) if (body.flatten[j]!.name === name) return true;
+  return false;
 }
 
 /**

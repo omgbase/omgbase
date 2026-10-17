@@ -26,7 +26,7 @@
 // given. Untouched nodes are returned by reference, so a cached query keeps the
 // identity of every block the rewrite did not reach.
 
-import type { Expr, Follow, FollowDestination, GroupBy, OpNode, Query, SelectItem, Subquery, Where } from "./ast.ts";
+import type { Expr, Flatten, Follow, FollowDestination, GroupBy, OpNode, Query, SelectItem, Subquery, Where } from "./ast.ts";
 import { OqxError } from "./errors.ts";
 
 /** How a resolution failure is reported: the parser raises its positioned parse
@@ -61,6 +61,13 @@ function resolveBody<T extends Query | Subquery>(node: T, fail: Fail): T {
   // The keys are read on the rows, not rewritten (a key IS the name the post-group
   // clauses read); their nested blocks resolve against their own select.
   const groupBy = node.groupBy === null ? null : resolveGroupBy(node.groupBy, fail);
+  // A `flatten` expression (0.25) reads the row, not the projection — like
+  // `order by` and `frontier` it is not rewritten against the select; its
+  // nested blocks resolve against their own select.
+  const flatten = mapSame(node.flatten, (f: Flatten) => {
+    const expr = resolveExpr(f.expr, fail);
+    return expr === f.expr ? f : { ...f, expr };
+  });
   const from = mapSame(node.from, (e) => resolveExpr(e, fail));
   const orderBy = node.orderBy === null ? null : mapSame(node.orderBy, (o) => {
     const expr = resolveExpr(o.expr, fail);
@@ -75,10 +82,10 @@ function resolveBody<T extends Query | Subquery>(node: T, fail: Fail): T {
   const source = node.kind === "query" ? resolveExpr(node.source, fail) : null;
   const same = where2 === node.where && select === node.select && follow === node.follow && from === node.from
     && orderBy === node.orderBy && limit === node.limit && offset === node.offset && frontier === node.frontier
-    && groupBy === node.groupBy && having2 === node.having
+    && groupBy === node.groupBy && having2 === node.having && flatten === node.flatten
     && (node.kind !== "query" || source === node.source);
   if (same) return node;
-  const out = { ...node, where: where2, select, follow, frontier, groupBy, having: having2, from, orderBy, limit, offset };
+  const out = { ...node, where: where2, select, follow, frontier, flatten, groupBy, having: having2, from, orderBy, limit, offset };
   if (node.kind === "query") (out as Query).source = source!;
   return out;
 }

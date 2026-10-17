@@ -5,7 +5,7 @@
   "fileTypes": [
     "oqx"
   ],
-  "version": "0.24",
+  "version": "0.25",
   "patterns": [
     {
       "include": "#expression"
@@ -262,7 +262,17 @@
     },
     "having": {
       "comment": "having",
-      "match": "having(?![A-Za-z0-9_$])(?:(?![ \\t]*(?:distinct|frontier|collect|exists|follow|having|offset|select|single|values|count|depth|first|group|limit|order|where|desc|from|none|and|asc|by|in|or)(?![A-Za-z0-9_$]))(?=[ \\t]*(?:[A-Za-z_$^(\"'0-9!\\-]|\\.\\.))|(?=[ \\t]+(?:collect|count|first|last|all|any|avg|max|min|sum)[ \\t]*\\())",
+      "match": "having(?![A-Za-z0-9_$])(?:(?![ \\t]*(?:distinct|frontier|collect|flatten|exists|follow|having|offset|select|single|values|count|depth|first|group|limit|order|where|desc|from|none|and|asc|as|by|in|or)(?![A-Za-z0-9_$]))(?=[ \\t]*(?:[A-Za-z_$^(\"'0-9!\\-]|\\.\\.))|(?=[ \\t]+(?:collect|count|first|last|all|any|avg|max|min|sum)[ \\t]*\\())",
+      "name": "keyword.control.clause.oqx"
+    },
+    "flatten": {
+      "comment": "flatten",
+      "match": "flatten(?![A-Za-z0-9_$])(?:(?![ \\t]*(?:distinct|frontier|collect|flatten|exists|follow|having|offset|select|single|values|count|depth|first|group|limit|order|where|desc|from|none|and|asc|as|by|in|or)(?![A-Za-z0-9_$]))(?=[ \\t]*(?:[A-Za-z_$^(\"'0-9!\\-]|\\.\\.))|(?=[ \\t]+(?:collect|count|first|last|all|any|avg|max|min|sum)[ \\t]*\\())",
+      "name": "keyword.control.clause.oqx"
+    },
+    "flatten-as": {
+      "comment": "flatten-as",
+      "match": "as(?![A-Za-z0-9_$])(?![ \\t]+(?:distinct|frontier|collect|flatten|exists|follow|having|offset|select|single|values|count|depth|first|group|limit|order|where|desc|from|none|and|asc|as|by|in|or)(?![A-Za-z0-9_$]))(?=[ \\t]+[A-Za-z_$])",
       "name": "keyword.control.clause.oqx"
     },
     "word-operator": {
@@ -292,7 +302,7 @@
     },
     "follow-option": {
       "comment": "follow-option",
-      "match": "(?:frontier|depth)(?![A-Za-z0-9_$])(?![ \\t]*(?:distinct|frontier|collect|exists|follow|having|offset|select|single|values|count|depth|first|group|limit|order|where|desc|from|none|and|asc|by|in|or)(?![A-Za-z0-9_$]))(?=[ \\t]*(?:[A-Za-z_$^(\"'0-9!\\-]|\\.\\.))",
+      "match": "(?:frontier|depth)(?![A-Za-z0-9_$])(?![ \\t]*(?:distinct|frontier|collect|flatten|exists|follow|having|offset|select|single|values|count|depth|first|group|limit|order|where|desc|from|none|and|asc|as|by|in|or)(?![A-Za-z0-9_$]))(?=[ \\t]*(?:[A-Za-z_$^(\"'0-9!\\-]|\\.\\.))",
       "name": "keyword.control.follow.oqx"
     },
     "order-direction": {
@@ -302,7 +312,7 @@
     },
     "values": {
       "comment": "values",
-      "match": "values(?![A-Za-z0-9_$])(?=[ \\t]*(?:\\}|$|(?:follow|offset|limit|order|where|from)(?![A-Za-z0-9_$])))",
+      "match": "values(?![A-Za-z0-9_$])(?=[ \\t]*(?:\\}|$|(?:flatten|follow|offset|limit|order|where|from)(?![A-Za-z0-9_$])))",
       "name": "keyword.other.modifier.oqx"
     },
     "distinct": {
@@ -312,7 +322,7 @@
     },
     "membership": {
       "comment": "membership",
-      "match": "in(?![A-Za-z0-9_$])(?![ \\t]*(?:distinct|frontier|collect|exists|follow|having|offset|select|single|values|count|depth|first|group|limit|order|where|desc|from|none|and|asc|by|in|or)(?![A-Za-z0-9_$]))(?=[ \\t]*(?:[A-Za-z_$^(\"'0-9!\\-]|\\.\\.))",
+      "match": "in(?![A-Za-z0-9_$])(?![ \\t]*(?:distinct|frontier|collect|flatten|exists|follow|having|offset|select|single|values|count|depth|first|group|limit|order|where|desc|from|none|and|asc|as|by|in|or)(?![A-Za-z0-9_$]))(?=[ \\t]*(?:[A-Za-z_$^(\"'0-9!\\-]|\\.\\.))",
       "name": "keyword.operator.membership.oqx"
     },
     "literal": {
@@ -468,6 +478,12 @@
         },
         {
           "include": "#having"
+        },
+        {
+          "include": "#flatten"
+        },
+        {
+          "include": "#flatten-as"
         },
         {
           "include": "#word-operator"

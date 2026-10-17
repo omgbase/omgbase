@@ -93,6 +93,8 @@ function subMayRaise(s: Subquery, target: Target): boolean {
   // (`sum` over a string raises) per group.
   if (s.groupBy?.keys.some((k) => exprMayRaise(k.expr, target, false))) return true;
   if (s.having && whereMayRaise(s.having, target, false)) return true;
+  // A flattened block (oqx 0.25) evaluates each `flatten` expression per row.
+  if (s.flatten.some((f) => exprMayRaise(f.expr, target, false))) return true;
   if (s.limit && exprMayRaise(s.limit, target, false)) return true;
   if (s.offset && exprMayRaise(s.offset, target, false)) return true;
   return false;
@@ -147,13 +149,14 @@ export class SQLiteQueryPlanner implements QueryPlanner {
 
   plan(query: Query, params: readonly unknown[]): Plan | null {
     // Only simple top-level scans: no follow, no `from E` re-projection, no
-    // `group by` (oqx 0.24). A grouped query is declined whole: its `where`
-    // conjuncts could be pushed (grouping happens after them, so the residual
-    // would group the produced rows correctly), but a pushed conjunct that
-    // empties the scan would hide an eval error an aggregate or `having` raises
-    // in memory (`sum` over a string) — decline (c) extended to the post-group
-    // clauses. SQL `GROUP BY` pushdown is a later round.
-    if (query.follow || query.from.length > 0 || query.groupBy) return null;
+    // `group by` (oqx 0.24), no `flatten` (oqx 0.25). A grouped or flattened
+    // query is declined whole: its `where` conjuncts could be pushed (the fan-out
+    // and the grouping happen after them, so the residual would flatten and
+    // group the produced rows correctly), but a pushed conjunct that empties the
+    // scan would hide an eval error a `flatten` expression, an aggregate or
+    // `having` raises in memory (`x!`, `sum` over a string) — decline (c)
+    // extended to the post-where clauses. SQL pushdown of either is a later round.
+    if (query.follow || query.from.length > 0 || query.groupBy || query.flatten.length > 0) return null;
     const target = rootTarget(query.source);
     if (!target) return null;
 

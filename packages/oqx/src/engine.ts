@@ -139,6 +139,8 @@ const HARD_DEPTH_CAP = 8;
 type Projection = Pick<Subquery, "select" | "values">;
 // The grouping clauses of a body (0.24). Both `Query` and `Subquery` carry them.
 type Grouping = Pick<Subquery, "groupBy" | "having">;
+// The `flatten` clauses of a body (0.25). Both `Query` and `Subquery` carry them.
+type Flattening = Pick<Subquery, "flatten">;
 
 // The `$key: expr` item of a projection, if any — the identity the rows it
 // yields carry (SEMANTICS §16, since 0.20).
@@ -182,18 +184,19 @@ export class InMemoryEngine implements Engine {
     const src = this.coerceRows(this.evalRaw(query.source, root), query.source);
     const rows = this.reproject(src.rows, query.from, root);
     // One object as the source yields one record (SEMANTICS §3) — unless a
-    // `from` re-projection or a walk fans it out.
-    const single = src.single && query.from.length === 0 && !query.follow;
+    // `from` re-projection, a walk or a `flatten` fans it out.
+    const single = src.single && query.from.length === 0 && !query.follow && query.flatten.length === 0;
 
     const bound = this.boundOf(query, root);
     if (query.follow) return this.runFollow(query, rows, root, bound);
 
     // Consumer-directed short-circuits (skipped under `distinct`, which must
-    // materialize + dedup by projection before reducing, and under `group by`,
-    // whose consumer counts groups). Counting never materializes rows;
-    // exists/none stop as soon as the bound is known to be non-empty (the
-    // (offset+1)th match — or the first, when unbounded).
-    if (!query.distinct && !query.groupBy && (query.consumer === "exists" || query.consumer === "none" || query.consumer === "count")) {
+    // materialize + dedup by projection before reducing, under `group by`,
+    // whose consumer counts groups, and under `flatten`, whose consumer counts
+    // flattened rows). Counting never materializes rows; exists/none stop as
+    // soon as the bound is known to be non-empty (the (offset+1)th match — or
+    // the first, when unbounded).
+    if (!query.distinct && !query.groupBy && query.flatten.length === 0 && (query.consumer === "exists" || query.consumer === "none" || query.consumer === "count")) {
       const need = query.consumer === "count" ? Infinity : bound.offset + 1;
       let n = 0;
       for (const r of rows) {
@@ -208,7 +211,7 @@ export class InMemoryEngine implements Engine {
     // first over an unordered, non-distinct set needs only the rows up to the
     // bound (offset + 1). single materializes everything so its error can
     // report how many rows actually matched.
-    const cap = query.consumer === "first" && !query.orderBy && !query.distinct && !query.groupBy
+    const cap = query.consumer === "first" && !query.orderBy && !query.distinct && !query.groupBy && query.flatten.length === 0
       ? bound.offset + Math.min(1, bound.limit ?? 1)
       : Infinity;
     let kept: Scope[] = [];
@@ -219,6 +222,7 @@ export class InMemoryEngine implements Engine {
         if (kept.length >= cap) break;
       }
     }
+    if (query.flatten.length > 0) kept = this.flattenScopes(kept, query);
     if (query.groupBy) kept = this.groupScopes(kept, query, root);
     this.applyKey(kept, query);
     this.sortScopes(kept, query.orderBy);
@@ -329,6 +333,44 @@ export class InMemoryEngine implements Engine {
     return s;
   }
 
+  // ---- flatten (SEMANTICS §25) -----------------------------------------------
+
+  // Each `flatten` clause, in writing order, fans the scopes out: the expression
+  // is read in the row's scope (as `where` is) and its value split — an array
+  // (or a host collection) → one scope per element in collection order, so an
+  // empty collection yields none; absent → one scope with the name absent;
+  // anything else (an object, a scalar, a range) → one scope with the value.
+  // A flattened scope IS the parent scope — the same row, parent, lifts and
+  // intrinsics, so `$it`, `^` and `$depth` are unchanged — with the name bound
+  // beside the lifts (step 4 of §2: it shadows a same-named row property) and
+  // `$key` the pair `[parent identity, element identity]` (§16): an element's
+  // identity is the host's (an entry's key), else its structural value.
+  private flattenScopes(scopes: Scope[], body: Flattening): Scope[] {
+    for (const f of body.flatten) {
+      const out: Scope[] = [];
+      for (const s of scopes) {
+        const parentKey = this.scopeIdentity(s);
+        for (const elem of this.flattenElements(this.evalRaw(f.expr, s))) {
+          const key = [parentKey, elem == null ? null : this.hostIdentity(elem)];
+          out.push({ ...s, lifts: { ...(s.lifts ?? {}), [f.name]: elem }, meta: { ...(s.meta ?? {}), [KEY]: key } });
+        }
+      }
+      scopes = out;
+    }
+    return scopes;
+  }
+
+  // The elements a flattened value splits into (§25): §3's coercion with one
+  // softening — a scalar is one element, not an error, since no rows are
+  // sourced from it — and absent as one absent element rather than none.
+  private flattenElements(v: unknown): unknown[] {
+    if (v == null) return [undefined];
+    if (typeof v !== "object" || isRange(v) || isEntry(v)) return [v];
+    if (Array.isArray(v)) return v;
+    const single = this.ctx.isSingle ? this.ctx.isSingle(v) : !(Symbol.iterator in v);
+    return single ? [v] : Array.from(this.ctx.toRows(v));
+  }
+
   // ---- grouping (SEMANTICS §24) ----------------------------------------------
 
   // The kept scopes of a body, one GROUP scope per distinct key tuple, in order
@@ -425,6 +467,7 @@ export class InMemoryEngine implements Engine {
     const occ = this.followWalk(this.keyed(seeds, query, root), query.follow!, query.frontier, root);
     let scopes: Scope[] = occ.map((o) => this.enter(o.row, root, { lifts: {}, meta: o.meta }));
     if (post) scopes = scopes.filter((s) => this.evalWhere(post, s));
+    if (query.flatten.length > 0) scopes = this.flattenScopes(scopes, query);
     if (query.groupBy) scopes = this.groupScopes(scopes, query, root);
     this.sortScopes(scopes, query.orderBy);
     if (query.distinct) scopes = this.dedupByProjection(scopes, query);
@@ -649,10 +692,11 @@ export class InMemoryEngine implements Engine {
         // rows, and the consumer only needs their count after the bound.
         n = boundedCount(acc.rows.length, bound);
         scope.run.trace?.({ kind: "cardinality", count: n });
-      } else if (op.op !== "count" && bound === UNBOUNDED && !op.sub.groupBy) {
+      } else if (op.op !== "count" && bound === UNBOUNDED && !op.sub.groupBy && op.sub.flatten.length === 0) {
         // Unbounded exists/none: stop at the first match (dedup cannot change
-        // emptiness). Bounded, or grouped (`having` may empty the groups): the
-        // offset/limit decide emptiness, so materialize.
+        // emptiness). Bounded, grouped (`having` may empty the groups) or
+        // flattened (an empty collection yields no row): the offset/limit
+        // decide emptiness, so materialize.
         n = this.anyMatch(op, scope, acc) ? 1 : 0;
       } else n = this.opRows(op, scope, bound, acc).length;
       if (op.op === "count") return op.countCmp ? compareCount(n, op.countCmp) : n > 0;
@@ -677,9 +721,10 @@ export class InMemoryEngine implements Engine {
     return this.opRows(op, scope, bound).length > 0;
   }
 
-  // The rows a consumer op reduces: matched → grouped → ordered → distinct → bounded.
+  // The rows a consumer op reduces: matched → flattened → grouped → ordered → distinct → bounded.
   private opRows(op: OpNode, scope: Scope, bound: Bound, acc?: Access): Scope[] {
     let scopes = this.matchRows(op, scope, acc);
+    if (op.sub.flatten.length > 0) scopes = this.flattenScopes(scopes, op.sub);
     if (op.sub.groupBy) scopes = this.groupScopes(scopes, op.sub, scope);
     this.applyKey(scopes, op.sub);
     this.sortScopes(scopes, op.sub.orderBy);
@@ -765,9 +810,9 @@ export class InMemoryEngine implements Engine {
   }
 
   // The plain scan: the rows, re-projected by `from`, with the whole `where`.
-  // A `from` re-projection fans a single receiver out: the block is plural.
+  // A `from` re-projection or a `flatten` fans a single receiver out: the block is plural.
   private scan(src: Rows, op: OpNode, scope: Scope): Access {
-    return { rows: this.reproject(src.rows, op.sub.from, scope), where: op.sub.where, single: src.single && op.sub.from.length === 0 };
+    return { rows: this.reproject(src.rows, op.sub.from, scope), where: op.sub.where, single: src.single && op.sub.from.length === 0 && op.sub.flatten.length === 0 };
   }
 
   private reproject(rows: unknown[], from: readonly Expr[], scope: Scope): unknown[] {
@@ -891,6 +936,7 @@ export class InMemoryEngine implements Engine {
       const { rows, where } = this.access(op, plan, scope);
       const seeds = where ? rows.filter((r) => this.evalWhere(where, this.enter(r, scope, { lifts: {} }))) : rows;
       scopes = this.followWalk(this.keyed(seeds, sub, scope), sub.follow, destination ? null : sub.frontier, scope).map((o) => this.enter(o.row, scope, { meta: o.meta }));
+      if (sub.flatten.length > 0) scopes = this.flattenScopes(scopes, sub);
       if (sub.groupBy) scopes = this.groupScopes(scopes, sub, scope);
       this.sortScopes(scopes, sub.orderBy);
       if (op.distinct) scopes = this.dedupByProjection(scopes, sub);

@@ -1341,7 +1341,10 @@ selector's consumer is `collect`, `first` or `single` (`count` / `exists` /
 refused); no `follow`, no body `from` (a hit must be a row of the root),
 no `offset` (a selection is a set, not a page), no `distinct` (first
 release); `limit N` and `order by` are allowed — the order of the hits is
-the order of the effects. A user alias beginning `__omg_` or `__oqx_` is
+the order of the effects; `flatten` (oqx 0.25) is allowed and fans the
+effects out per flattened row — the hit is the parent row, the templates read
+the bound name, `expect.max` bounds the **flattened** count (Decisions,
+2026-10-16). A user alias beginning `__omg_` or `__oqx_` is
 refused (the prefixes are the engines'; the runner refuses them on every
 query since 3.1 — `select __oqx_id: 1` overwrote the hit's `id` before). Each
 template: `op` ∈ `create insert set unset move remove split merge`
@@ -1576,6 +1579,19 @@ Receipt pins them in every committing fixture step (§9).
 
 ## Decisions
 
+- 2026-10-16 (oqx 0.25; no mutate version move): a selector may `flatten`
+  (§11.8). The rule falls out of the language and the compiler as they stand —
+  nothing in the admission pass changes: the selector's hits are the engine's
+  rows, and a flattened row *is* the parent row with a name bound, so each hit
+  is the parent (`row.id` the document's, `id`/`path` repeating per element),
+  the slot items appended to the select read the bound name in the flattened
+  scope (`-> tag`, `{ oqx: "tag" }`), the effects fan out per **flattened**
+  row, and `expect.max` — the page bound `max + 1` — counts flattened hits, as
+  does `selection_too_large` (`cardinality: ">2"` when the page was cut, the
+  fix's `max` from the unbounded recount). Fixtures:
+  `effects::select-flatten-fans-out` (one `create` per (document, tag)),
+  `effects::select-flatten-max-is-flattened-count`. No fixture shape moved, so
+  no version move: the Rust compiler inherits the rule from its OQX binding.
 - 2026-10-13 (store 14.2; no mutate version move): the api path's
   dispositions are the matcher's carry classification, and `same` is not
   persisted (§4 step 5(b)). Through store 14.1 the known-id resolver stamped

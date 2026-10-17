@@ -535,7 +535,7 @@ describe("alchemy corpus — the fixed clause order (ADR-020)", () => {
   });
 
   it("clauses out of the fixed order fail naming the order", () => {
-    const order = /OQX clause order is select, from, where, frontier, follow, group by, having, order by, limit, offset/;
+    const order = /OQX clause order is select, from, where, frontier, follow, flatten, group by, having, order by, limit, offset/;
     expect(() => paths('from docs where type == "substance" select path')).toThrow(order);
     expect(() => paths('from docs select path')).toThrow(/`select` must come before `from`/);
     expect(() => paths('from docs order by era where type == "practitioner"')).toThrow(/`where` must come before `order by`/);
@@ -1008,6 +1008,61 @@ describe("alchemy corpus — group by and aggregates (oqx 0.24)", () => {
     expect(typo.hints?.[0]).toMatch(/`chekced` is not a field of blocks/);
     // Reading a row field at the group scope is the parse error naming it.
     expect(() => hits("select text from blocks where type == \"task\" group by path")).toThrow(/`text` is not a group key or aggregate/);
+  });
+});
+
+describe("alchemy corpus — flatten (oqx 0.25)", () => {
+  it("tags per process document — one hit per (document, tag), the envelope repeating per element, positional paging", () => {
+    const r = hits('select path, tags from docs where type == "process" flatten tags order by path, tags');
+    // A flattened hit is still a store row: the envelope is injected and repeats per element; the page is positional.
+    expect(r.cursor).toBeNull();
+    expect(r.truncated).toBe(false);
+    for (const h of r.hits) expect(Object.keys(h).sort()).toEqual(["id", "path", "tags"]);
+    // Every (path, tag) pair is one of the document's authored tags, and every tag of every process appears once.
+    const docs = hits('select path, tags from docs where type == "process" order by path').hits;
+    const expected = docs.flatMap((d) => ((d.tags as string[]) ?? []).map((t) => [d.path, t])).sort();
+    expect(r.hits.map((h) => [h.path, h.tags]).sort()).toEqual(expected);
+    expect(r.hits.length).toBeGreaterThan(docs.length); // more rows than documents: the fan-out
+    for (const h of r.hits) expect(docs.find((d) => d.path === h.path)!.id).toBe(h.id);
+    // Rebinding by default: `tags` is the element; `as` keeps the list readable beside it.
+    const both = hits('select path, tags, t from docs where path == "/processes/calcination.md" flatten tags as t order by t');
+    expect(both.hits.map((h) => h.t)).toEqual(["fire", "process"]);
+    for (const h of both.hits) expect(h.tags).toEqual(["process", "fire"]);
+    // Grouping the flattened rows: how many process documents carry each tag.
+    const census = hits('select tags, n: count() from docs where type == "process" flatten tags group by tags order by count() desc, tags');
+    expect(census.hits[0]).toEqual({ tags: "process", n: docs.length });
+    expect(census.hits.reduce((n, g) => n + (g.n as number), 0)).toBe(r.hits.length);
+    // The planner declines a flattened query whole; the in-memory path agrees.
+    expect(oqxRun(store, repoId, 'select path, tags from docs where type == "process" flatten tags order by path, tags', { limit: 100, plan: false })).toEqual(r);
+    // The envelope's names cannot be rebound.
+    expect(() => hits('select path from docs flatten tags as id')).toThrow(/flatten `as id` collides with the hit envelope/);
+  });
+
+  it("open tasks per document — a block over the blocks relation, bound per task, the parent's id/path on every row", () => {
+    const r = hits('select path, t: b.text from docs flatten blocks { where type == "task" and not checked } as b order by path, b.text'); // `order by` reads the row, not an alias (§14)
+    expect(r.cursor).toBeNull();
+    // Each hit is the DOCUMENT (its id/path) with one open task bound; a document with no open task yields no row.
+    const open = hits('select path, text from blocks where type == "task" and not checked order by path, text').hits;
+    expect(r.hits.map((h) => [h.path, h.t])).toEqual(open.map((b) => [b.path, b.text]));
+    const docIds = new Map(hits("select path from docs").hits.map((d) => [d.path, d.id]));
+    for (const h of r.hits) expect(h.id).toBe(docIds.get(h.path));
+    // A bound row renders as a reference like every row-as-value.
+    const refs = hits('select b from docs where path == "/processes/calcination.md" flatten blocks { where type == "task" } as b');
+    for (const h of refs.hits) expect(Object.keys(h.b as object).sort()).toEqual(["id", "path"]);
+    // Without the block a document with no open task keeps one row with the name absent (Dataview's rule) —
+    // the block makes the value a collection, and an empty one yields none.
+    const kept = hits('select path, n: t.text from docs where type == "text" flatten blocks as t');
+    expect(kept.hits.length).toBeGreaterThan(0);
+    // The unknown-names check judges a name inside the block against the element kind.
+    const typo = hits('select path from docs flatten blocks { where typ == "task" } as b limit 1');
+    expect(typo.hints?.[0]).toMatch(/`typ` is not a field of blocks/);
+    // The bound name is never judged as a row property: no hint for `b`.
+    expect(r.hints).toBeUndefined();
+    // A keyset cursor would land inside a document's elements: a flattened page is positional (truncated, null cursor).
+    const page = hits('select path, t: b.text from docs flatten blocks { where type == "task" } as b', 3);
+    expect(page.hits.length).toBe(3);
+    expect(page.truncated).toBe(true);
+    expect(page.cursor).toBeNull();
   });
 });
 

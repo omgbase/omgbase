@@ -452,6 +452,21 @@ function runResolved(store: Store, repoId: string, raw: Query, opts: OqxOptions)
   // under a custom `order by`). `distinct` cannot occur (a parse error).
   if (parsed.groupBy) return runGrouped(engine, parsed, consumer, opts);
 
+  // A flattened query (oqx 0.25, SEMANTICS §25) yields the parent rows, one per
+  // element: a hit is still a store row, so the envelope is injected as usual
+  // and repeats per element (Dataview's `TABLE … FLATTEN`). What changes is
+  // uniqueness — `(path, id)` no longer names one hit — so the keyset cursor
+  // cannot land inside a document's elements: a flattened query pages
+  // positionally with a null cursor, as a grouped query and a custom `order by`
+  // do (a keyset extended with the flatten ordinal is a later round). A bound
+  // name of `id` or `path` would shadow the envelope's own reads (the name
+  // shadows a same-named row property on the flattened row): refused, like a
+  // projection that collides with the envelope.
+  const flattened = parsed.flatten.length > 0;
+  for (const f of parsed.flatten) {
+    if (ENVELOPE_KEYS.has(f.name)) throw new FilterInvalid(`flatten \`as ${f.name}\` collides with the hit envelope — a flattened row is still the row, whose \`${f.name}\` the envelope reads; bind another name`, "OQX");
+  }
+
   // collect / first / single: inject id + path so every hit carries them. A
   // top-level `select distinct` is applied HERE, not in the engine: the injected
   // id/path are unique per row and would defeat the engine's projection dedup, so
@@ -501,7 +516,7 @@ function runResolved(store: Store, repoId: string, raw: Query, opts: OqxOptions)
   const offset = constBound(topOffset, "offset") ?? 0;
   const limit = constBound(topLimit, "limit");
   if (offset || limit != null) rows = rows.slice(offset, limit == null ? undefined : offset + limit);
-  const custom = !!parsed.orderBy && parsed.orderBy.length > 0;
+  const custom = (!!parsed.orderBy && parsed.orderBy.length > 0) || flattened;
   const cap = opts.limit ?? 50;
   let page = rows;
   if (!custom && opts.cursor) {

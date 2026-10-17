@@ -152,6 +152,10 @@ const QUERIES: string[] = [
   'select path, done: rows count { where checked }, all: count() from blocks where type == "task" group by path order by path',
   'docs count { group by layer }',
   'select kind values from nodes group by kind order by kind',
+  // flatten (oqx 0.25): declined whole as well — the fan-out runs in memory on both paths
+  'select path, tags from docs where type == "process" flatten tags order by path, tags',
+  'select path, t: b.text from docs where layer == "canon" flatten blocks { where type == "task" and not checked } as b order by path, t',
+  'select tags, n: count() from docs where has(tags) flatten tags group by tags order by count() desc, tags',
 ];
 
 describe("OQX differential conformance — planned == in-memory", () => {

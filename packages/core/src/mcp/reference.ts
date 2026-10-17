@@ -20,11 +20,12 @@ correlates to the current row: \`from docs where nodes exists { where kind ==
 "md:task" }\` returns only the docs that themselves contain a matching node.
 
   [select <items>] from <target> [where <pred>] [frontier <pred>] [follow <dest> [{ … }], …]
-                   [group by <key>, …] [having <pred>] [order by <expr> [asc|desc], …] [limit N] [offset N]
+                   [flatten <expr> [{ … }] [as <name>]]… [group by <key>, …] [having <pred>]
+                   [order by <expr> [asc|desc], …] [limit N] [offset N]
   <target> count|exists|none|first|single { <block> }     (scalar/one-row form: a bare target at the root scope)
 
-CLAUSE ORDER IS FIXED: select, from, where, frontier, follow, group by, having, order by, limit, offset —
-each at most once; an out-of-order clause is a parse error naming the order.
+CLAUSE ORDER IS FIXED: select, from, where, frontier, follow, flatten, group by, having, order by, limit, offset —
+each at most once (\`flatten\` may repeat); an out-of-order clause is a parse error naming the order.
 Only \`select\` may drop its keyword, and only as the first clause
 (\`path, era from docs where …\`). A top-level predicate needs \`where\`, because
 \`where\` follows \`from\` (\`era > 1600 from docs\` is the clause-order error); a
@@ -63,8 +64,8 @@ Every form here is shorthand for an explicit directive (the AST is the explicit 
   a and b / a or b                    the connectives (≡ && / ||: same precedence, short-circuit, value: data.title or path coalesces)
   boss: ^docs[path == ^manager], bossName: boss.title   a select item may use the items to its LEFT
   Reserved words (never a bare field name): from where select is not and or, true false null.
-  Contextual words (limit order offset follow collect count first distinct desc by in frontier depth) parse as
-  fields in expression position (select o: order from docs).
+  Contextual words (limit order offset follow collect count first distinct desc by in frontier depth group having
+  flatten as) parse as fields in expression position (select o: order from docs).
 
 Results are LEAN hits — { id, path } + whatever \`select\` projects (or \`values\`,
 \`count\`, \`exists\`, \`none\`). The envelope keys ARE the attributes: copy a hit's
@@ -325,7 +326,7 @@ revisions:  (history as rows — one per stored revision of every document of th
     receiver = a relation (nodes, blocks, doc.out_links, section.blocks, …), a
                reach-through row (dst, doc: one row — dst { title }), a
     list property (tags), entries(x), or a root collection (^docs; 0^docs at depth ≥ 2).
-    block    = [select …] [from E] [where …] [frontier …] [follow …] [order by …] [limit N] [offset N]
+    block    = [select …] [from E] [where …] [frontier …] [follow …] [flatten …] [group by …] [having …] [order by …] [limit N] [offset N]
                — the same fixed order as the top level (\`from\` optional; the
                receiver supplies the rows). A leading name/alias list is the
                projection (\`select\` dropped); a predicate always needs \`where\`.
@@ -369,6 +370,24 @@ revisions:  (history as rows — one per stored revision of every document of th
                 where entries(frontmatter) exists { where $key == "era" and $it > 1600 }
                 entries(inline), entries(attrs), a nested map, or a list (index keys)
   $semantic_score is not a field — project semantic("…") under an alias instead.
+
+## flatten (OQX 0.25)
+
+  flatten <expr> [{ … }] [as <name>]      after follow, before group by; may repeat
+  Splits one value into rows. Every hit is still the PARENT row — its id/path
+  repeat per element, as Dataview's TABLE … FLATTEN — with <name> bound beside
+  its fields at the same depth: an array → one row per element (an empty list
+  yields none), a missing field → one row with the name absent (never dropped),
+  an object or a scalar → one row with the value. A plain navigation names
+  itself (flatten tags rebinds tags to each element); anything else needs as.
+  The block is the ordinary receiver block over the elements (where, a
+  projection, order by, limit, distinct), applied first. Later clauses read the
+  name — a later flatten (flatten jobs as j flatten j.tags as t), group by,
+  having, select, order by; where runs before it. A flattened query pages by
+  position (cursor null); as id / as path is refused (the envelope reads them).
+    select path, tags from docs where type == "process" flatten tags order by path, tags
+    select path, t: b.text from docs flatten blocks { where type == "task" and not checked } as b
+    select tags, n: count() from docs flatten tags group by tags order by count() desc
 
 ## order by, limit/offset, pagination
 
@@ -473,6 +492,7 @@ text()/where prune the candidate set; only order by reweights.
   from docs where revisions count { where origin == "api" } > 0
   select p: path, d: doc.path from revisions where doc == null
   select layer, n: count(), titles: collect(title), open: rows count { where nodes exists { where kind == "md:task" and not checked } } from docs group by layer having count() > 1 order by count() desc
+  select path, tag: tags from docs where "process" in tags flatten tags order by path, tags
 
 Common mistake: \`$path\`/\`$id\` (the 2.x spelling) — omgbase has no $ names; write
 \`path\`/\`id\`. Another: \`where tags == "x"\` on a list-valued key is false — write

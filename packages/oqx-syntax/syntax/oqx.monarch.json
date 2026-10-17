@@ -1,6 +1,6 @@
 {
   "languageId": "oqx",
-  "languageVersion": "0.24",
+  "languageVersion": "0.25",
   "defaultToken": "invalid",
   "tokenPostfix": ".oqx",
   "ignoreCase": false,
@@ -171,7 +171,15 @@
         ]
       ],
       [
-        "having(?![A-Za-z0-9_$])(?:(?![ \\t]*(?:distinct|frontier|collect|exists|follow|having|offset|select|single|values|count|depth|first|group|limit|order|where|desc|from|none|and|asc|by|in|or)(?![A-Za-z0-9_$]))(?=[ \\t]*(?:[A-Za-z_$^(\"'0-9!\\-]|\\.\\.))|(?=[ \\t]+(?:collect|count|first|last|all|any|avg|max|min|sum)[ \\t]*\\())",
+        "having(?![A-Za-z0-9_$])(?:(?![ \\t]*(?:distinct|frontier|collect|flatten|exists|follow|having|offset|select|single|values|count|depth|first|group|limit|order|where|desc|from|none|and|asc|as|by|in|or)(?![A-Za-z0-9_$]))(?=[ \\t]*(?:[A-Za-z_$^(\"'0-9!\\-]|\\.\\.))|(?=[ \\t]+(?:collect|count|first|last|all|any|avg|max|min|sum)[ \\t]*\\())",
+        "keyword.clause"
+      ],
+      [
+        "flatten(?![A-Za-z0-9_$])(?:(?![ \\t]*(?:distinct|frontier|collect|flatten|exists|follow|having|offset|select|single|values|count|depth|first|group|limit|order|where|desc|from|none|and|asc|as|by|in|or)(?![A-Za-z0-9_$]))(?=[ \\t]*(?:[A-Za-z_$^(\"'0-9!\\-]|\\.\\.))|(?=[ \\t]+(?:collect|count|first|last|all|any|avg|max|min|sum)[ \\t]*\\())",
+        "keyword.clause"
+      ],
+      [
+        "as(?![A-Za-z0-9_$])(?![ \\t]+(?:distinct|frontier|collect|flatten|exists|follow|having|offset|select|single|values|count|depth|first|group|limit|order|where|desc|from|none|and|asc|as|by|in|or)(?![A-Za-z0-9_$]))(?=[ \\t]+[A-Za-z_$])",
         "keyword.clause"
       ],
       [
@@ -195,7 +203,7 @@
         "keyword.clause"
       ],
       [
-        "(?:frontier|depth)(?![A-Za-z0-9_$])(?![ \\t]*(?:distinct|frontier|collect|exists|follow|having|offset|select|single|values|count|depth|first|group|limit|order|where|desc|from|none|and|asc|by|in|or)(?![A-Za-z0-9_$]))(?=[ \\t]*(?:[A-Za-z_$^(\"'0-9!\\-]|\\.\\.))",
+        "(?:frontier|depth)(?![A-Za-z0-9_$])(?![ \\t]*(?:distinct|frontier|collect|flatten|exists|follow|having|offset|select|single|values|count|depth|first|group|limit|order|where|desc|from|none|and|asc|as|by|in|or)(?![A-Za-z0-9_$]))(?=[ \\t]*(?:[A-Za-z_$^(\"'0-9!\\-]|\\.\\.))",
         "keyword.follow"
       ],
       [
@@ -203,7 +211,7 @@
         "keyword.modifier"
       ],
       [
-        "values(?![A-Za-z0-9_$])(?=[ \\t]*(?:\\}|$|(?:follow|offset|limit|order|where|from)(?![A-Za-z0-9_$])))",
+        "values(?![A-Za-z0-9_$])(?=[ \\t]*(?:\\}|$|(?:flatten|follow|offset|limit|order|where|from)(?![A-Za-z0-9_$])))",
         "keyword.modifier"
       ],
       [
@@ -211,7 +219,7 @@
         "keyword.modifier"
       ],
       [
-        "in(?![A-Za-z0-9_$])(?![ \\t]*(?:distinct|frontier|collect|exists|follow|having|offset|select|single|values|count|depth|first|group|limit|order|where|desc|from|none|and|asc|by|in|or)(?![A-Za-z0-9_$]))(?=[ \\t]*(?:[A-Za-z_$^(\"'0-9!\\-]|\\.\\.))",
+        "in(?![A-Za-z0-9_$])(?![ \\t]*(?:distinct|frontier|collect|flatten|exists|follow|having|offset|select|single|values|count|depth|first|group|limit|order|where|desc|from|none|and|asc|as|by|in|or)(?![A-Za-z0-9_$]))(?=[ \\t]*(?:[A-Za-z_$^(\"'0-9!\\-]|\\.\\.))",
         "keyword.operator.membership"
       ],
       [

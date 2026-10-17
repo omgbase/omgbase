@@ -4,7 +4,7 @@
 // tree has the same shape as a parsed one and prints with `print`.
 
 import type {
-  AggregateName, BinaryOp, Consumer, CountCmp, Expr, Follow, FollowDestination, GroupBy, GroupKey, LogicalOp, OpNode, OrderSpec,
+  AggregateName, BinaryOp, Consumer, CountCmp, Expr, Flatten, Follow, FollowDestination, GroupBy, GroupKey, LogicalOp, OpNode, OrderSpec,
   Query, SelectItem, Span, Subquery, TemplatePart, UnaryOp, Where,
 } from "./ast.ts";
 
@@ -44,6 +44,8 @@ export const collect = (name: string, op: OpNode): SelectItem => ({ kind: "colle
 export const order = (expr: Expr, desc = false): OrderSpec => ({ kind: "order", span: span(), expr, desc });
 /** One `group by` key, `name: expr`. */
 export const key = (name: string, expr: Expr): GroupKey => ({ kind: "key", span: span(), name, expr });
+/** `flatten <expr> as <name>` (SEMANTICS §25); a written block is the `collect` op over the value (`op(recv, "collect", sub)`). */
+export const flatten = (expr: Expr, name: string): Flatten => ({ kind: "flatten", span: span(), expr, name });
 /** `group by <keys>` (SEMANTICS §24). */
 export const groupBy = (keys: GroupKey[]): GroupBy => ({ kind: "groupBy", span: span(), keys });
 
@@ -51,7 +53,7 @@ export const groupBy = (keys: GroupKey[]): GroupBy => ({ kind: "groupBy", span: 
 export function subquery(parts: Partial<Omit<Subquery, "kind" | "span">> = {}): Subquery {
   return {
     kind: "subquery", span: span(),
-    from: [], where: null, select: [], orderBy: null, follow: null, frontier: null, depth: null, groupBy: null, having: null,
+    from: [], where: null, select: [], orderBy: null, follow: null, frontier: null, depth: null, flatten: [], groupBy: null, having: null,
     values: false, limit: null, offset: null,
     ...parts,
   };
@@ -76,7 +78,7 @@ export function follow(destinations: FollowDestination[], opts: { distinct?: boo
 export function query(source: Expr, parts: Partial<Omit<Query, "kind" | "span" | "source">> = {}): Query {
   return {
     kind: "query", span: span(), source,
-    from: [], where: null, select: [], orderBy: null, consumer: "collect", follow: null, frontier: null, groupBy: null, having: null,
+    from: [], where: null, select: [], orderBy: null, consumer: "collect", follow: null, frontier: null, flatten: [], groupBy: null, having: null,
     distinct: false, values: false, limit: null, offset: null,
     ...parts,
   };

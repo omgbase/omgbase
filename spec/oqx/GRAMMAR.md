@@ -34,19 +34,22 @@ Keywords and identifiers are **case-sensitive**; `FROM` is an identifier
 
 **Contextual words** are identifiers that act as syntax only in position:
 `collect exists none count first single order by asc desc follow distinct
-frontier depth in values limit offset group having`. Outside that position they are field
+frontier depth in values limit offset group having flatten as`. Outside that position they are field
 names (`limit from r`, `order from r`, `select follow from r`, `select group,
-having from r`; `depth` is a
+having from r`, `select flatten, as from r`; `depth` is a
 clause only inside a `follow` destination block and `frontier` only in a body
 that has a `follow` — the destination block's own, or any body's for its seeds —
 §`follow`; both are field names everywhere else; `group` is a clause only as
 the two-word `group by` and `having` only when a predicate follows it, §`group
-by` — since 0.24). A contextual word that starts a clause but does
+by` — since 0.24; `flatten` is a clause only when a value can follow it and
+`as` only after a `flatten` expression, §`flatten` — since 0.25). A contextual
+word that starts a clause but does
 not complete it is an error naming what the clause needs (`order age` → `order
 by <expr>`; `follow` alone → a relation; `limit x` → a number, binding, or
 `^name`; `where x depth 2` outside a destination block → names the block;
-`group` without `by` → `group by <key>`)
-[`clause-order`, `limit-offset`, `follow`, `group-by`].
+`group` without `by` → `group by <key>`; `flatten` alone → `flatten <expr> [{
+… }] [as <name>]`)
+[`clause-order`, `limit-offset`, `follow`, `group-by`, `flatten`].
 
 **Reserved function names** (since 0.24): the aggregate names `count sum min
 max avg collect first last any all` are the language's wherever a free call is
@@ -118,7 +121,7 @@ A body is a sequence of clauses. Each appears **at most once**, in exactly this
 order:
 
 ```
-select  from  where  [ frontier ]  [ depth ]  follow  group by  having  order by  limit  offset
+select  from  where  [ frontier ]  [ depth ]  follow  flatten…  group by  having  order by  limit  offset
 ```
 
 `frontier` is a clause of **any body that has a `follow`** (since 0.20): in a
@@ -127,17 +130,20 @@ destination; in any other body — the top level, a select-position block — it
 marks the body's own rows, the walk's **seeds** (§`follow`, SEMANTICS §20). In a
 body without a `follow` it is the parse error `` `frontier` needs a `follow` ``.
 `depth` is a clause of a **`follow` destination block only**. Both sit after
-`where`. `group by` and `having` (since 0.24, §`group by`) sit after `follow`:
-the rows a body yields — the walk's occurrences, when it has one — are what is
-grouped, and `order by` and the bounds then apply to the groups. So the order of
-every body is `select from where frontier follow group by having order by limit
-offset`, a destination block's `select from where frontier depth follow group
-by having order by limit offset`.
+`where`. `flatten` (since 0.25, §`flatten`) sits after `follow` and is the **one
+clause that may repeat**: each `flatten` fans out the rows the previous one
+produced — the walk's occurrences, when the body has one. `group by` and
+`having` (since 0.24, §`group by`) sit after it: the rows a body yields, fanned
+out, are what is grouped, and `order by` and the bounds then apply to the
+groups. So the order of every body is `select from where frontier follow
+flatten group by having order by limit offset`, a destination block's `select
+from where frontier depth follow flatten group by having order by limit offset`.
 
 - A clause out of order is a parse error naming both clauses and the order:
-  `` `select` must come before `from` — OQX clause order is select, from, where, frontier, follow, group by, having, order by, limit, offset `` (inside a destination block the sentence
+  `` `select` must come before `from` — OQX clause order is select, from, where, frontier, follow, flatten, group by, having, order by, limit, offset `` (inside a destination block the sentence
   also names `depth`: `… where, frontier, depth, follow, …`).
-- A repeated clause is `` duplicate `<clause>` clause ``.
+- A repeated clause is `` duplicate `<clause>` clause `` — except `flatten`,
+  which may repeat (each binds its own name).
 - Every clause is optional, except that a top-level body must have `from`
   (`a query must name its source …`). Inside a consumer block, `from E`
   re-projects each of the receiver's rows through `E` (a flatMap), because the
@@ -369,6 +375,55 @@ field name. The former options `where P` is simply the block's `where`; the
 former `by E` is gone — identity is `$key` (SEMANTICS §16), projected as
 `{ $key: expr }` when a block needs to name it.
 [`follow`, `clause-order`, `sugar`, `ast`, `errors-parse`]
+
+### `flatten` (since 0.25)
+
+```
+flatten  = "flatten" expr [ "as" ident ]       ; one or more, in writing order; `expr` may end in a
+                                               ; receiver block — `tags { where … }` is the collect op (§2)
+```
+
+`flatten <expr>` splits one value into rows (SEMANTICS §25): the body's rows
+at that point — after `where` per row and after `follow` — each become one row
+per element of the value, the parent row with **`name`** bound beside its own
+properties. `flatten` is a clause when a value can follow the word (a value
+start, or an aggregate call whose name is a consumer word — so `flatten
+collect(x)` reaches the aggregate error below); otherwise it is a field name
+(`select flatten from r`). `as` is a clause word only after a flatten
+expression (`select as from r` is a field).
+
+- **The name.** `as <name>` is **required** unless `expr` is a plain
+  navigation — a bare name, a dotted path, an outer reference, under any `!` —
+  which binds its **last segment** (`flatten tags` rebinds `tags` to each
+  element; `flatten meta.tags` binds `tags`), the rule of a select item and a
+  group key. Any other expression — a call, a tuple, a block, arithmetic — is
+  the parse error `` `flatten size(tags)` needs a name (`flatten size(tags) as
+  <name>`) — only a plain navigation names itself by its last segment ``.
+  After `as` the token must be an identifier (`expected a name after `as``);
+  a literal word (`` `null` is a literal ``) and a `$`-name (`` cannot be bound
+  to a `$`-name `` — `$` belongs to the language) are refused. Names are
+  unique within one body: a second `flatten` binding one already bound is ``
+  duplicate flatten name 't' `` (`flatten tags flatten tags` likewise).
+- **The block.** A brace after a receiver is the receiver-block sugar of §2 —
+  `flatten tags { where $it != "b" } as t` is `flatten tags collect { where $it
+  != "b" } as t`, a value-position `collect` directive — so a flattened value
+  may be filtered, projected, ordered, bounded and `distinct`ed exactly as any
+  block does (`flatten jobs distinct { employer values order by pay desc limit
+  1 } as t`), and everything legal in a select-position block is legal there
+  (a `follow`, a `group by`, a nested `flatten`); a lift is not (not a
+  where-position `collect`). There is no block slot of its own: the tree holds
+  the `op` (AST.md). A value with a block is not a plain navigation and needs
+  `as`.
+- **Where it reads.** The expression is read in the row's scope exactly as
+  `where` is; a later `flatten` reads the names earlier ones bound (`flatten
+  jobs as j flatten j.tags as t`). An aggregate in it is the parse error ``
+  `collect(tags)` is an aggregate and cannot be read in `flatten` `` — the rows
+  are not grouped yet there.
+- `flatten` with nothing after it is a stray field name: `` unexpected
+  'flatten' after `from` — `flatten` takes a value to split into rows (`flatten
+  <expr> [{ … }] [as <name>]`) ``.
+
+[`flatten`, `clause-order`]
 
 ### `group by` / `having` (since 0.24)
 
@@ -704,7 +759,10 @@ Every failure is an `OqxError` with a `stage`:
   key, `having` without `group by`, `distinct` with `group by`, a key named
   `count` without a `select`, a bare row field at the group scope, an aggregate
   outside the post-group clauses or in a body without `group by`, a nested
-  aggregate, a wrong aggregate arity, `distinct` on `any`/`all`.
+  aggregate, a wrong aggregate arity, `distinct` on `any`/`all`; and (since
+  0.25) the `flatten` errors of §3: an expression with no `as`, a duplicate
+  name, a reserved, literal or `$`-name after `as`, an aggregate in a flatten
+  expression.
 - `eval` — unknown functions/methods, `single` matching several rows, a required
   value that is absent (`` `x!` is absent ``), an invalid `limit`/`offset` value
   (including a bracket index binding), `follow` inside a where-position

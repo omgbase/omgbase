@@ -10,7 +10,7 @@
 // tests in `test/` pin it to the specification text so it cannot drift silently.
 
 /** The OQX language version (`spec/oqx/VERSION`, `major.minor`) this vocabulary describes. */
-export const LANGUAGE_VERSION = "0.24";
+export const LANGUAGE_VERSION = "0.25";
 
 /** Reserved words: never usable as a bare field name (GRAMMAR §1). `is`, `not`,
  * `and`, `or` are the word operators (GRAMMAR §4, since 0.17). */
@@ -25,15 +25,19 @@ export const WORD_OPERATORS = ["is", "not", "and", "or"] as const;
 export const CONTEXTUAL_WORDS = [
   "collect", "exists", "none", "count", "first", "single",
   "order", "by", "asc", "desc", "follow", "distinct",
-  "frontier", "depth", "in", "values", "limit", "offset", "group", "having",
+  "frontier", "depth", "in", "values", "limit", "offset", "group", "having", "flatten", "as",
 ] as const;
 
 /** Consumer words: `receiver consumer [distinct] { body }` (GRAMMAR §2, §3). */
 export const CONSUMERS = ["collect", "exists", "none", "count", "first", "single"] as const;
 
-/** Words that open a clause: `order by`, `follow`, `limit`, `offset`, and since
- * 0.24 `group by` and `having` (GRAMMAR §3). */
-export const CLAUSE_WORDS = ["order", "by", "follow", "limit", "offset", "group", "having"] as const;
+/** Words that open a clause: `order by`, `follow`, `limit`, `offset`, since
+ * 0.24 `group by` and `having`, and since 0.25 `flatten` (GRAMMAR §3). */
+export const CLAUSE_WORDS = ["order", "by", "follow", "limit", "offset", "group", "having", "flatten"] as const;
+
+/** The name binder of a `flatten` clause (GRAMMAR §3, since 0.25): `flatten
+ * <expr> as <name>`. A contextual word — a field named `as` stays a field. */
+export const FLATTEN_AS = "as";
 
 /** The aggregate functions (SEMANTICS §24, since 0.24): reserved free-function
  * names that reduce a `group by` group — `count()`, `sum(e)`, `collect(distinct

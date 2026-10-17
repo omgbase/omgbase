@@ -624,6 +624,35 @@ out of a group. A nested block may group too (`jobs collect { employer, total:
 sum(pay) group by employer }`), and every consumer reduces the groups (`jobs
 count { group by employer }`). Spec: `spec/oqx/SEMANTICS.md` §24.
 
+### 8d. Flatten (0.25)
+
+`flatten <expr> [{ … }] [as <name>]` — after `follow`, before `group by`; one or
+more — splits one value into rows: each row becomes one row per element of the
+value, the **parent row with `name` bound** beside its own properties at the
+same depth (`$it`, `^` and a walk's intrinsics unchanged). An array → one row
+per element (an empty list yields none); an object → one row; **absent → one
+row with the name absent** (a missing field never drops the row); a scalar →
+one row with the scalar (not the §3 error — nothing is sourced from it). A plain
+navigation names itself by its last segment (`flatten tags` rebinds `tags`;
+`flatten tags as t` keeps the list readable); anything else needs `as`. The
+block is the receiver block over the elements, applied first (`flatten tags {
+where $it != "b" } as t`; `flatten jobs { employer values order by pay desc limit
+1 } as j`). Flattens chain (`flatten jobs as j flatten j.tags as t`), `where`
+runs before them, `group by` groups the flattened rows (a bound name is a key),
+`order by`/`limit` and every consumer apply to them, and a flattened row's
+`$key` is the pair `[parent, element]`, so `distinct`/`is`/`follow` tell
+`(doc, "a")` from `(doc, "b")`.
+
+```js
+oqx`select name, tags from ${people} flatten tags`;
+// [{ name: "Bob", tags: "a" }, { name: "Bob", tags: "b" }, { name: "Carol" }]   (Carol has no tags)
+oqx`select name, t from ${people} flatten tags { where $it != "b" } as t`;
+oqx`select t, n: count() from ${people} flatten tags as t group by t order by count() desc`;
+oqx`${people} count { flatten tags as t }`;   // the number of (person, tag) rows
+```
+
+Spec: `spec/oqx/SEMANTICS.md` §25.
+
 ### 9. Recursion: `follow`
 
 `follow <destination>, …` turns a query into a bounded recursive traversal: the

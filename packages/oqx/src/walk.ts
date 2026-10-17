@@ -15,6 +15,7 @@ import { LANGUAGE_VERSION } from "./version.ts";
 export type Clause =
   | "source" | "from" | "where" | "select" | "orderBy" | "limit" | "offset"
   | "follow" | "follow.destination" | "follow.frontier"
+  | "flatten" // a `flatten` node and its expression (0.25)
   | "groupBy" | "having"; // the `group by` keys and the post-group predicate (0.24)
 
 /** Where a visited node sits. `depth` is the scope depth at which the node is
@@ -58,6 +59,9 @@ export const CHILDREN: { readonly [K in AstKind]: readonly ChildKey[] } = {
     // The body's `frontier` (0.20) reads each seed in the row scope, like `where`.
     { key: "frontier", clause: "follow.frontier", depth: 1 },
     { key: "follow", clause: "follow", depth: 1 },
+    // A `flatten` expression is read on each row, like `where` (0.25); a
+    // flattened row sits at the same depth as its parent.
+    { key: "flatten", clause: "flatten", depth: 1 },
     // `group by` keys are read on the rows, `having` on the groups — both at
     // the row depth (the group scope sits where the rows did; 0.24).
     { key: "groupBy", clause: "groupBy", depth: 1 },
@@ -76,6 +80,7 @@ export const CHILDREN: { readonly [K in AstKind]: readonly ChildKey[] } = {
     // (`childDepth` tells the two apart by the block's position).
     { key: "frontier", clause: "follow.frontier", depth: -1 },
     { key: "follow", clause: "follow" },
+    { key: "flatten", clause: "flatten" },
     { key: "groupBy", clause: "groupBy" },
     { key: "having", clause: "having" },
     { key: "orderBy", clause: "orderBy" },
@@ -84,6 +89,7 @@ export const CHILDREN: { readonly [K in AstKind]: readonly ChildKey[] } = {
   ],
   op: [{ key: "receiver" }, { key: "sub", depth: 1 }],
   follow: [{ key: "destinations", clause: "follow.destination" }],
+  flatten: [{ key: "expr" }],
   groupBy: [{ key: "keys" }],
   key: [{ key: "expr" }],
   order: [{ key: "expr" }],

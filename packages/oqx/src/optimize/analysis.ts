@@ -72,6 +72,8 @@ function subReadsScopeIn(sub: Subquery, at: number, upTo: number, destination: b
   if (sub.limit && exprReadsScopeIn(sub.limit, at, upTo)) return true;
   if (sub.offset && exprReadsScopeIn(sub.offset, at, upTo)) return true;
   if (sub.frontier && exprReadsScopeIn(sub.frontier, destination ? at - 1 : at, upTo)) return true;
+  // A `flatten` expression is read on each row (0.25); its block is an op read there.
+  if (sub.flatten.some((f) => exprReadsScopeIn(f.expr, at, upTo))) return true;
   // `group by` keys are read on the rows, `having` on the groups — both at `at` (0.24).
   if (sub.groupBy?.keys.some((k) => exprReadsScopeIn(k.expr, at, upTo))) return true;
   if (sub.having && whereReadsScopeIn(sub.having, at, upTo)) return true;
@@ -148,6 +150,9 @@ export function opRaiseFree(op: OpNode, ctx: RuleContext): boolean {
   if (!sub.from.every((e) => exprRaiseFree(e, ctx))) return false;
   if (sub.where && !whereRaiseFree(sub.where, ctx)) return false;
   if (sub.orderBy && !sub.orderBy.every((o) => exprRaiseFree(o.expr, ctx))) return false;
+  // A `flatten` value is coerced without error (a scalar is one row, §25), so
+  // the clause raises only when its expression does.
+  if (!sub.flatten.every((f) => exprRaiseFree(f.expr, ctx))) return false;
   return !opHasLifts(op);
 }
 
@@ -163,6 +168,7 @@ function subHasLifts(sub: Subquery): boolean {
   if (sub.select.some((item) => (item.kind === "field" ? item.lift > 0 : opHasLifts(item.op)))) return true;
   if (sub.where && whereHasLifts(sub.where)) return true;
   if (sub.having && whereHasLifts(sub.having)) return true;
+  if (sub.flatten.some((f) => f.expr.kind === "op" && opHasLifts(f.expr))) return true;
   if (sub.follow?.destinations.some((d) => d.kind === "op" && opHasLifts(d))) return true;
   return false;
 }

@@ -1,0 +1,2975 @@
+{
+  "suite": "flatten",
+  "cases": [
+    {
+      "name": "ast: a plain navigation names itself by its last segment",
+      "tags": [
+        "ast",
+        "flatten"
+      ],
+      "notes": "`flatten` is a list of `flatten` nodes on the body, in writing order (`[]` when there is none — every body carries the field since 0.25). Without `as` a plain navigation binds its last segment, exactly as a select item or a group key is named, so `flatten tags` rebinds `tags` to each element.",
+      "query": "select name, tags from people flatten tags",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "people"
+          },
+          "from": [],
+          "where": null,
+          "select": [
+            {
+              "kind": "field",
+              "name": "name",
+              "expr": {
+                "kind": "ident",
+                "name": "name"
+              },
+              "lift": 0
+            },
+            {
+              "kind": "field",
+              "name": "tags",
+              "expr": {
+                "kind": "ident",
+                "name": "tags"
+              },
+              "lift": 0
+            }
+          ],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": null,
+          "frontier": null,
+          "flatten": [
+            {
+              "kind": "flatten",
+              "expr": {
+                "kind": "ident",
+                "name": "tags"
+              },
+              "name": "tags"
+            }
+          ],
+          "groupBy": null,
+          "having": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "ast: `as` with the default name is the same tree",
+      "tags": [
+        "ast",
+        "flatten"
+      ],
+      "notes": "The tree does not record whether `as` was written: `name` is always filled, and the canonical printer always writes `as <name>` (AST.md §6), as it aliases every select item and every group key.",
+      "query": "select name, tags from people flatten tags as tags",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "people"
+          },
+          "from": [],
+          "where": null,
+          "select": [
+            {
+              "kind": "field",
+              "name": "name",
+              "expr": {
+                "kind": "ident",
+                "name": "name"
+              },
+              "lift": 0
+            },
+            {
+              "kind": "field",
+              "name": "tags",
+              "expr": {
+                "kind": "ident",
+                "name": "tags"
+              },
+              "lift": 0
+            }
+          ],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": null,
+          "frontier": null,
+          "flatten": [
+            {
+              "kind": "flatten",
+              "expr": {
+                "kind": "ident",
+                "name": "tags"
+              },
+              "name": "tags"
+            }
+          ],
+          "groupBy": null,
+          "having": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "ast: a dotted navigation, `as`, and a chain reading an earlier name",
+      "tags": [
+        "ast",
+        "flatten",
+        "chain"
+      ],
+      "query": "select name, t, kids from people flatten meta.tags as t flatten t.kids",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "people"
+          },
+          "from": [],
+          "where": null,
+          "select": [
+            {
+              "kind": "field",
+              "name": "name",
+              "expr": {
+                "kind": "ident",
+                "name": "name"
+              },
+              "lift": 0
+            },
+            {
+              "kind": "field",
+              "name": "t",
+              "expr": {
+                "kind": "ident",
+                "name": "t"
+              },
+              "lift": 0
+            },
+            {
+              "kind": "field",
+              "name": "kids",
+              "expr": {
+                "kind": "ident",
+                "name": "kids"
+              },
+              "lift": 0
+            }
+          ],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": null,
+          "frontier": null,
+          "flatten": [
+            {
+              "kind": "flatten",
+              "expr": {
+                "kind": "member",
+                "recv": {
+                  "kind": "ident",
+                  "name": "meta"
+                },
+                "name": "tags"
+              },
+              "name": "t"
+            },
+            {
+              "kind": "flatten",
+              "expr": {
+                "kind": "member",
+                "recv": {
+                  "kind": "ident",
+                  "name": "t"
+                },
+                "name": "kids"
+              },
+              "name": "kids"
+            }
+          ],
+          "groupBy": null,
+          "having": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "ast: the block is the implicit collect directive over the value",
+      "tags": [
+        "ast",
+        "flatten",
+        "block"
+      ],
+      "notes": "`flatten tags { … }` is `flatten tags collect { … }`: the brace after a receiver is the receiver-block sugar of GRAMMAR §2 (since 0.20 it stands wherever a value does), so the flattened value is a `collect` op and there is no block field of its own. A value that is not a plain navigation needs `as`.",
+      "query": "select name, t from people flatten tags { where $it != \"b\" } as t",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "people"
+          },
+          "from": [],
+          "where": null,
+          "select": [
+            {
+              "kind": "field",
+              "name": "name",
+              "expr": {
+                "kind": "ident",
+                "name": "name"
+              },
+              "lift": 0
+            },
+            {
+              "kind": "field",
+              "name": "t",
+              "expr": {
+                "kind": "ident",
+                "name": "t"
+              },
+              "lift": 0
+            }
+          ],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": null,
+          "frontier": null,
+          "flatten": [
+            {
+              "kind": "flatten",
+              "expr": {
+                "kind": "op",
+                "receiver": {
+                  "kind": "ident",
+                  "name": "tags"
+                },
+                "op": "collect",
+                "sub": {
+                  "kind": "subquery",
+                  "from": [],
+                  "where": {
+                    "kind": "scalar",
+                    "expr": {
+                      "kind": "binary",
+                      "op": "!=",
+                      "left": {
+                        "kind": "ident",
+                        "name": "$it"
+                      },
+                      "right": {
+                        "kind": "lit",
+                        "value": "b"
+                      }
+                    }
+                  },
+                  "select": [],
+                  "orderBy": null,
+                  "follow": null,
+                  "frontier": null,
+                  "depth": null,
+                  "flatten": [],
+                  "groupBy": null,
+                  "having": null,
+                  "values": false,
+                  "limit": null,
+                  "offset": null
+                },
+                "countCmp": null,
+                "distinct": false
+              },
+              "name": "t"
+            }
+          ],
+          "groupBy": null,
+          "having": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "ast: a block with distinct, a projection, an order and a bound",
+      "tags": [
+        "ast",
+        "flatten",
+        "block",
+        "distinct"
+      ],
+      "query": "select name, t from people flatten jobs distinct { employer values order by pay desc limit 1 } as t",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "people"
+          },
+          "from": [],
+          "where": null,
+          "select": [
+            {
+              "kind": "field",
+              "name": "name",
+              "expr": {
+                "kind": "ident",
+                "name": "name"
+              },
+              "lift": 0
+            },
+            {
+              "kind": "field",
+              "name": "t",
+              "expr": {
+                "kind": "ident",
+                "name": "t"
+              },
+              "lift": 0
+            }
+          ],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": null,
+          "frontier": null,
+          "flatten": [
+            {
+              "kind": "flatten",
+              "expr": {
+                "kind": "op",
+                "receiver": {
+                  "kind": "ident",
+                  "name": "jobs"
+                },
+                "op": "collect",
+                "sub": {
+                  "kind": "subquery",
+                  "from": [],
+                  "where": null,
+                  "select": [
+                    {
+                      "kind": "field",
+                      "name": "employer",
+                      "expr": {
+                        "kind": "ident",
+                        "name": "employer"
+                      },
+                      "lift": 0
+                    }
+                  ],
+                  "orderBy": [
+                    {
+                      "kind": "order",
+                      "expr": {
+                        "kind": "ident",
+                        "name": "pay"
+                      },
+                      "desc": true
+                    }
+                  ],
+                  "follow": null,
+                  "frontier": null,
+                  "depth": null,
+                  "flatten": [],
+                  "groupBy": null,
+                  "having": null,
+                  "values": true,
+                  "limit": {
+                    "kind": "lit",
+                    "value": 1
+                  },
+                  "offset": null
+                },
+                "countCmp": null,
+                "distinct": true
+              },
+              "name": "t"
+            }
+          ],
+          "groupBy": null,
+          "having": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "ast: flatten inside a nested block",
+      "tags": [
+        "ast",
+        "flatten",
+        "nested"
+      ],
+      "notes": "A block body carries `flatten` like the top level; the projection is evaluated after the fan-out, so `t: tags` reads the bound element.",
+      "query": "select name, jt: jobs collect { employer, t: tags flatten tags } from people",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "people"
+          },
+          "from": [],
+          "where": null,
+          "select": [
+            {
+              "kind": "field",
+              "name": "name",
+              "expr": {
+                "kind": "ident",
+                "name": "name"
+              },
+              "lift": 0
+            },
+            {
+              "kind": "collect",
+              "name": "jt",
+              "op": {
+                "kind": "op",
+                "receiver": {
+                  "kind": "ident",
+                  "name": "jobs"
+                },
+                "op": "collect",
+                "sub": {
+                  "kind": "subquery",
+                  "from": [],
+                  "where": null,
+                  "select": [
+                    {
+                      "kind": "field",
+                      "name": "employer",
+                      "expr": {
+                        "kind": "ident",
+                        "name": "employer"
+                      },
+                      "lift": 0
+                    },
+                    {
+                      "kind": "field",
+                      "name": "t",
+                      "expr": {
+                        "kind": "ident",
+                        "name": "tags"
+                      },
+                      "lift": 0
+                    }
+                  ],
+                  "orderBy": null,
+                  "follow": null,
+                  "frontier": null,
+                  "depth": null,
+                  "flatten": [
+                    {
+                      "kind": "flatten",
+                      "expr": {
+                        "kind": "ident",
+                        "name": "tags"
+                      },
+                      "name": "tags"
+                    }
+                  ],
+                  "groupBy": null,
+                  "having": null,
+                  "values": false,
+                  "limit": null,
+                  "offset": null
+                },
+                "countCmp": null,
+                "distinct": false
+              }
+            }
+          ],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": null,
+          "frontier": null,
+          "flatten": [],
+          "groupBy": null,
+          "having": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "ast spans: flatten with and without `as`",
+      "tags": [
+        "ast",
+        "spans",
+        "flatten"
+      ],
+      "notes": "A `flatten` node spans the word through the name — or through the expression when `as` was omitted.",
+      "spans": true,
+      "query": "select n from p flatten xs as x flatten ys",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "span": [
+            0,
+            42
+          ],
+          "source": {
+            "kind": "ident",
+            "span": [
+              14,
+              15
+            ],
+            "name": "p"
+          },
+          "from": [],
+          "where": null,
+          "select": [
+            {
+              "kind": "field",
+              "span": [
+                7,
+                8
+              ],
+              "name": "n",
+              "expr": {
+                "kind": "ident",
+                "span": [
+                  7,
+                  8
+                ],
+                "name": "n"
+              },
+              "lift": 0
+            }
+          ],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": null,
+          "frontier": null,
+          "flatten": [
+            {
+              "kind": "flatten",
+              "span": [
+                16,
+                31
+              ],
+              "expr": {
+                "kind": "ident",
+                "span": [
+                  24,
+                  26
+                ],
+                "name": "xs"
+              },
+              "name": "x"
+            },
+            {
+              "kind": "flatten",
+              "span": [
+                32,
+                42
+              ],
+              "expr": {
+                "kind": "ident",
+                "span": [
+                  40,
+                  42
+                ],
+                "name": "ys"
+              },
+              "name": "ys"
+            }
+          ],
+          "groupBy": null,
+          "having": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "an array fans out: one row per element, in collection order, the parent repeated; an empty array yields none",
+      "tags": [
+        "flatten",
+        "array"
+      ],
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "tags": [
+              "a",
+              "b"
+            ]
+          },
+          {
+            "name": "Alice",
+            "tags": []
+          },
+          {
+            "name": "Carol",
+            "tags": [
+              "c"
+            ]
+          }
+        ]
+      },
+      "query": "select name, tags from people flatten tags",
+      "expect": {
+        "result": [
+          {
+            "name": "Bob",
+            "tags": "a"
+          },
+          {
+            "name": "Bob",
+            "tags": "b"
+          },
+          {
+            "name": "Carol",
+            "tags": "c"
+          }
+        ]
+      }
+    },
+    {
+      "name": "the default name shadows the row's property; `as` keeps it readable",
+      "tags": [
+        "flatten",
+        "alias"
+      ],
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "tags": [
+              "a",
+              "b"
+            ]
+          }
+        ]
+      },
+      "query": "select name, tags, t from people flatten tags as t",
+      "expect": {
+        "result": [
+          {
+            "name": "Bob",
+            "tags": [
+              "a",
+              "b"
+            ],
+            "t": "a"
+          },
+          {
+            "name": "Bob",
+            "tags": [
+              "a",
+              "b"
+            ],
+            "t": "b"
+          }
+        ]
+      }
+    },
+    {
+      "name": "an object is one row, the object",
+      "tags": [
+        "flatten",
+        "object"
+      ],
+      "notes": "SEMANTICS §3: a non-array object is one row; flatten binds it whole.",
+      "roots": {
+        "people": [
+          {
+            "name": "Eve",
+            "tags": {
+              "k": 1
+            }
+          }
+        ]
+      },
+      "query": "select name, t from people flatten tags as t",
+      "expect": {
+        "result": [
+          {
+            "name": "Eve",
+            "t": {
+              "k": 1
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "absent is one row with the name absent: a missing field never drops the row",
+      "tags": [
+        "flatten",
+        "absent"
+      ],
+      "notes": "Dataview's rule. Both spellings of absent (a missing key, `null`) are one value (§1).",
+      "roots": {
+        "people": [
+          {
+            "name": "Carol"
+          },
+          {
+            "name": "Nul",
+            "tags": null
+          }
+        ]
+      },
+      "query": "select name, t from people flatten tags as t",
+      "expect": {
+        "result": [
+          {
+            "name": "Carol"
+          },
+          {
+            "name": "Nul"
+          }
+        ]
+      }
+    },
+    {
+      "name": "a scalar is one row with the scalar: flatten splits a value, it does not source rows",
+      "tags": [
+        "flatten",
+        "scalar"
+      ],
+      "notes": "The one deliberate softening of §3: a scalar in flatten position is not the `not a collection or an object` eval error, since no rows are sourced from it.",
+      "roots": {
+        "people": [
+          {
+            "name": "Dan",
+            "tags": "solo"
+          },
+          {
+            "name": "Num",
+            "tags": 5
+          },
+          {
+            "name": "Bool",
+            "tags": false
+          }
+        ]
+      },
+      "query": "select name, t from people flatten tags as t",
+      "expect": {
+        "result": [
+          {
+            "name": "Dan",
+            "t": "solo"
+          },
+          {
+            "name": "Num",
+            "t": 5
+          },
+          {
+            "name": "Bool",
+            "t": false
+          }
+        ]
+      }
+    },
+    {
+      "name": "every kind at once, in parent order then element order",
+      "tags": [
+        "flatten",
+        "order"
+      ],
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "tags": [
+              "a",
+              "b"
+            ],
+            "city": "NYC"
+          },
+          {
+            "name": "Alice",
+            "tags": [],
+            "city": "SF"
+          },
+          {
+            "name": "Carol",
+            "city": "NYC"
+          },
+          {
+            "name": "Dan",
+            "tags": "solo",
+            "city": "LA"
+          },
+          {
+            "name": "Eve",
+            "tags": {
+              "k": 1
+            },
+            "city": "SF"
+          }
+        ]
+      },
+      "query": "select name, t from people flatten tags as t",
+      "expect": {
+        "result": [
+          {
+            "name": "Bob",
+            "t": "a"
+          },
+          {
+            "name": "Bob",
+            "t": "b"
+          },
+          {
+            "name": "Carol"
+          },
+          {
+            "name": "Dan",
+            "t": "solo"
+          },
+          {
+            "name": "Eve",
+            "t": {
+              "k": 1
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "a template literal reads the bound name",
+      "tags": [
+        "flatten",
+        "template",
+        "values"
+      ],
+      "notes": "An absent binding makes the literal absent (§7b).",
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "tags": [
+              "a",
+              "b"
+            ]
+          },
+          {
+            "name": "Carol"
+          }
+        ]
+      },
+      "query": "select label: `${name}:${t}` values from people flatten tags as t",
+      "expect": {
+        "result": [
+          "Bob:a",
+          "Bob:b",
+          null
+        ]
+      }
+    },
+    {
+      "name": "values over flattened rows",
+      "tags": [
+        "flatten",
+        "values"
+      ],
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "tags": [
+              "a",
+              "b"
+            ]
+          },
+          {
+            "name": "Al",
+            "tags": [
+              "c"
+            ]
+          }
+        ]
+      },
+      "query": "select t values from people flatten tags as t",
+      "expect": {
+        "result": [
+          "a",
+          "b",
+          "c"
+        ]
+      }
+    },
+    {
+      "name": "the row's own properties, `$it` and `^` are unchanged on a flattened row",
+      "tags": [
+        "flatten",
+        "scope"
+      ],
+      "notes": "A flattened row IS the parent row with one more name bound at the same scope depth: `$it` is the row, `^` reads the enclosing scope.",
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "tags": [
+              "a",
+              "b"
+            ]
+          }
+        ]
+      },
+      "query": "select name, me: $it.name, up: ^people.size(), t from people flatten tags as t",
+      "expect": {
+        "result": [
+          {
+            "name": "Bob",
+            "me": "Bob",
+            "up": 1,
+            "t": "a"
+          },
+          {
+            "name": "Bob",
+            "me": "Bob",
+            "up": 1,
+            "t": "b"
+          }
+        ]
+      }
+    },
+    {
+      "name": "a bound element may be navigated like any value",
+      "tags": [
+        "flatten",
+        "navigation"
+      ],
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "jobs": [
+              {
+                "employer": "X",
+                "pay": 1
+              },
+              {
+                "employer": "Y",
+                "pay": 3
+              }
+            ]
+          }
+        ]
+      },
+      "query": "select name, e: j.employer, p: j.pay from people flatten jobs as j",
+      "expect": {
+        "result": [
+          {
+            "name": "Bob",
+            "e": "X",
+            "p": 1
+          },
+          {
+            "name": "Bob",
+            "e": "Y",
+            "p": 3
+          }
+        ]
+      }
+    },
+    {
+      "name": "a binding may be the flattened value",
+      "tags": [
+        "flatten",
+        "binding"
+      ],
+      "roots": {
+        "people": [
+          {
+            "name": "Bob"
+          },
+          {
+            "name": "Al"
+          }
+        ]
+      },
+      "template": {
+        "strings": [
+          "select name, n from people flatten ",
+          " as n"
+        ],
+        "values": [
+          [
+            1,
+            2
+          ]
+        ]
+      },
+      "expect": {
+        "result": [
+          {
+            "name": "Bob",
+            "n": 1
+          },
+          {
+            "name": "Bob",
+            "n": 2
+          },
+          {
+            "name": "Al",
+            "n": 1
+          },
+          {
+            "name": "Al",
+            "n": 2
+          }
+        ]
+      }
+    },
+    {
+      "name": "a block filters the elements first; a parent whose elements are all filtered away yields no row",
+      "tags": [
+        "flatten",
+        "block"
+      ],
+      "notes": "The block is a `collect` over the value (§3): over Alice's `[\"b\"]` it is `[]`, and over Carol's missing `tags` it is `[]` too (absent → no rows), so neither keeps a row — a block makes the value a collection. Without the block Carol would keep one row with `t` absent.",
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "tags": [
+              "a",
+              "b"
+            ]
+          },
+          {
+            "name": "Alice",
+            "tags": [
+              "b"
+            ]
+          },
+          {
+            "name": "Carol"
+          }
+        ]
+      },
+      "query": "select name, t from people flatten tags { where $it != \"b\" } as t",
+      "expect": {
+        "result": [
+          {
+            "name": "Bob",
+            "t": "a"
+          }
+        ]
+      }
+    },
+    {
+      "name": "a block may project, order and bound the elements",
+      "tags": [
+        "flatten",
+        "block",
+        "order",
+        "limit"
+      ],
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "jobs": [
+              {
+                "employer": "X",
+                "pay": 1
+              },
+              {
+                "employer": "Y",
+                "pay": 3
+              }
+            ]
+          },
+          {
+            "name": "Al",
+            "jobs": [
+              {
+                "employer": "Z",
+                "pay": 2
+              }
+            ]
+          }
+        ]
+      },
+      "query": "select name, t from people flatten jobs { employer values order by pay desc limit 1 } as t",
+      "expect": {
+        "result": [
+          {
+            "name": "Bob",
+            "t": "Y"
+          },
+          {
+            "name": "Al",
+            "t": "Z"
+          }
+        ]
+      }
+    },
+    {
+      "name": "a block that projects a record binds the record",
+      "tags": [
+        "flatten",
+        "block",
+        "projection"
+      ],
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "jobs": [
+              {
+                "employer": "X",
+                "pay": 1
+              },
+              {
+                "employer": "Y",
+                "pay": 3
+              }
+            ]
+          }
+        ]
+      },
+      "query": "select name, e: j.e, p: j.pay from people flatten jobs { e: employer, pay where pay > 1 } as j",
+      "expect": {
+        "result": [
+          {
+            "name": "Bob",
+            "e": "Y",
+            "p": 3
+          }
+        ]
+      }
+    },
+    {
+      "name": "distinct in the block dedups the elements",
+      "tags": [
+        "flatten",
+        "block",
+        "distinct"
+      ],
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "tags": [
+              "a",
+              "a",
+              "b"
+            ]
+          }
+        ]
+      },
+      "query": "select name, t from people flatten tags distinct { } as t",
+      "expect": {
+        "result": [
+          {
+            "name": "Bob",
+            "t": "a"
+          },
+          {
+            "name": "Bob",
+            "t": "b"
+          }
+        ]
+      }
+    },
+    {
+      "name": "a block over a single object is the record (§3), one row",
+      "tags": [
+        "flatten",
+        "block",
+        "single"
+      ],
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "home": {
+              "city": "NYC",
+              "zip": 1
+            }
+          }
+        ]
+      },
+      "query": "select name, h from people flatten home { city } as h",
+      "expect": {
+        "result": [
+          {
+            "name": "Bob",
+            "h": {
+              "city": "NYC"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "a block over a single object that fails its where is absent: one row with the name absent",
+      "tags": [
+        "flatten",
+        "block",
+        "single",
+        "absent"
+      ],
+      "notes": "A `collect` over one object is the record or absent, never a list (§3); absent is one flattened row. Only a collection with no elements yields none.",
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "home": {
+              "city": "NYC"
+            }
+          }
+        ]
+      },
+      "query": "select name, h from people flatten home { where city == \"LA\" } as h",
+      "expect": {
+        "result": [
+          {
+            "name": "Bob"
+          }
+        ]
+      }
+    },
+    {
+      "name": "a nested flatten inside the block fans the elements out before they are bound",
+      "tags": [
+        "flatten",
+        "block",
+        "nested"
+      ],
+      "notes": "The block is an ordinary select-position block, so every clause legal there is legal here. Its projection is what gets bound: with no projection the block yields its rows themselves, and a name bound inside it is not a property of those rows.",
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "jobs": [
+              {
+                "employer": "X",
+                "tags": [
+                  "p",
+                  "q"
+                ]
+              },
+              {
+                "employer": "Y",
+                "tags": [
+                  "r"
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "query": "select name, e: j.e, t: j.t from people flatten jobs { e: employer, t: tags flatten tags } as j",
+      "expect": {
+        "result": [
+          {
+            "name": "Bob",
+            "e": "X",
+            "t": "p"
+          },
+          {
+            "name": "Bob",
+            "e": "X",
+            "t": "q"
+          },
+          {
+            "name": "Bob",
+            "e": "Y",
+            "t": "r"
+          }
+        ]
+      }
+    },
+    {
+      "name": "a follow inside the block: the occurrences are the elements",
+      "tags": [
+        "flatten",
+        "block",
+        "follow"
+      ],
+      "notes": "The destination block's receiver is read in the frontier row's scope (depth 2), so the root is `^^tree` there; `^root` in the block's where reads Bob.",
+      "roots": {
+        "p": [
+          {
+            "name": "Bob",
+            "root": 1
+          }
+        ],
+        "tree": [
+          {
+            "id": 1,
+            "parent": null
+          },
+          {
+            "id": 2,
+            "parent": 1
+          },
+          {
+            "id": 3,
+            "parent": 2
+          }
+        ]
+      },
+      "query": "select name, k: n.id from p flatten ^tree { where id == ^root follow ^^tree { where parent == ^id } } as n",
+      "expect": {
+        "result": [
+          {
+            "name": "Bob",
+            "k": 1
+          },
+          {
+            "name": "Bob",
+            "k": 2
+          },
+          {
+            "name": "Bob",
+            "k": 3
+          }
+        ]
+      }
+    },
+    {
+      "name": "flattens chain: a cross product per row, parent order then element order",
+      "tags": [
+        "flatten",
+        "chain"
+      ],
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "tags": [
+              "a",
+              "b"
+            ],
+            "sizes": [
+              1,
+              2
+            ]
+          }
+        ]
+      },
+      "query": "select name, t, s from people flatten tags as t flatten sizes as s",
+      "expect": {
+        "result": [
+          {
+            "name": "Bob",
+            "t": "a",
+            "s": 1
+          },
+          {
+            "name": "Bob",
+            "t": "a",
+            "s": 2
+          },
+          {
+            "name": "Bob",
+            "t": "b",
+            "s": 1
+          },
+          {
+            "name": "Bob",
+            "t": "b",
+            "s": 2
+          }
+        ]
+      }
+    },
+    {
+      "name": "a later flatten reads an earlier bound name; an empty inner collection drops that element's rows",
+      "tags": [
+        "flatten",
+        "chain"
+      ],
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "jobs": [
+              {
+                "employer": "X",
+                "tags": [
+                  "p",
+                  "q"
+                ]
+              },
+              {
+                "employer": "Y",
+                "tags": []
+              }
+            ]
+          }
+        ]
+      },
+      "query": "select name, e: j.employer, jt from people flatten jobs as j flatten j.tags as jt",
+      "expect": {
+        "result": [
+          {
+            "name": "Bob",
+            "e": "X",
+            "jt": "p"
+          },
+          {
+            "name": "Bob",
+            "e": "X",
+            "jt": "q"
+          }
+        ]
+      }
+    },
+    {
+      "name": "a later flatten over an absent member of an earlier element keeps the row",
+      "tags": [
+        "flatten",
+        "chain",
+        "absent"
+      ],
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "jobs": [
+              {
+                "employer": "X",
+                "tags": [
+                  "p"
+                ]
+              },
+              {
+                "employer": "Y"
+              }
+            ]
+          }
+        ]
+      },
+      "query": "select name, e: j.employer, jt from people flatten jobs as j flatten j.tags as jt",
+      "expect": {
+        "result": [
+          {
+            "name": "Bob",
+            "e": "X",
+            "jt": "p"
+          },
+          {
+            "name": "Bob",
+            "e": "Y"
+          }
+        ]
+      }
+    },
+    {
+      "name": "where filters rows before the fan-out, where the bound name is still the row's property",
+      "tags": [
+        "flatten",
+        "where"
+      ],
+      "notes": "`where` runs per row before `flatten` (the clause order is the order of operations), so `t` there reads the row's own `t`; the projection reads the bound element.",
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "tags": [
+              "a",
+              "b"
+            ],
+            "t": "zz"
+          },
+          {
+            "name": "Al",
+            "tags": [
+              "c"
+            ]
+          }
+        ]
+      },
+      "query": "select name, t from people where t == \"zz\" flatten tags as t",
+      "expect": {
+        "result": [
+          {
+            "name": "Bob",
+            "t": "a"
+          },
+          {
+            "name": "Bob",
+            "t": "b"
+          }
+        ]
+      }
+    },
+    {
+      "name": "a from re-projection, then flatten",
+      "tags": [
+        "flatten",
+        "from"
+      ],
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "jobs": [
+              {
+                "employer": "X",
+                "tags": [
+                  "p",
+                  "q"
+                ]
+              },
+              {
+                "employer": "Y",
+                "tags": [
+                  "r"
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "query": "people collect { e: employer, t from jobs flatten tags as t }",
+      "expect": {
+        "result": [
+          {
+            "e": "X",
+            "t": "p"
+          },
+          {
+            "e": "X",
+            "t": "q"
+          },
+          {
+            "e": "Y",
+            "t": "r"
+          }
+        ]
+      }
+    },
+    {
+      "name": "a flatten fans a single receiver out: the block is plural",
+      "tags": [
+        "flatten",
+        "cardinality"
+      ],
+      "notes": "As a `from` re-projection and a `follow` do (§3).",
+      "roots": {
+        "person": {
+          "name": "Bob",
+          "tags": [
+            "a",
+            "b"
+          ]
+        }
+      },
+      "query": "person collect { name, t flatten tags as t }",
+      "expect": {
+        "result": [
+          {
+            "name": "Bob",
+            "t": "a"
+          },
+          {
+            "name": "Bob",
+            "t": "b"
+          }
+        ]
+      }
+    },
+    {
+      "name": "$key of a flattened row is the pair (parent identity, element identity)",
+      "tags": [
+        "flatten",
+        "identity"
+      ],
+      "notes": "An entry's identity is its key (§21); the element's is its structural value. The pair is a two-element list, nested again by a later flatten (`[[\"x\", 1], \"a\"]`) — never flattened, so `(p, [1, 2])` and a chained `(p, 1), 2` stay apart.",
+      "roots": {
+        "m": {
+          "x": [
+            1,
+            2
+          ],
+          "y": [
+            3
+          ]
+        }
+      },
+      "query": "select k: $key values from entries(m) flatten $it as t",
+      "expect": {
+        "result": [
+          [
+            "x",
+            1
+          ],
+          [
+            "x",
+            2
+          ],
+          [
+            "y",
+            3
+          ]
+        ]
+      }
+    },
+    {
+      "name": "a chained flatten nests the pair",
+      "tags": [
+        "flatten",
+        "identity",
+        "chain"
+      ],
+      "roots": {
+        "m": {
+          "x": [
+            {
+              "tags": [
+                "a",
+                "b"
+              ]
+            }
+          ]
+        }
+      },
+      "query": "select k: $key values from entries(m) flatten $it as t flatten t.tags as g",
+      "expect": {
+        "result": [
+          [
+            [
+              "x",
+              {
+                "tags": [
+                  "a",
+                  "b"
+                ]
+              }
+            ],
+            "a"
+          ],
+          [
+            [
+              "x",
+              {
+                "tags": [
+                  "a",
+                  "b"
+                ]
+              }
+            ],
+            "b"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "an element that is an entry is known by its key",
+      "tags": [
+        "flatten",
+        "identity",
+        "entries"
+      ],
+      "notes": "As a plain value an entry is a `{ key, value }` record (§21).",
+      "roots": {
+        "x": {
+          "o": {
+            "a": 1,
+            "b": 2
+          }
+        }
+      },
+      "query": "select k: $key, e from entries(x) flatten entries($it) as e",
+      "expect": {
+        "result": [
+          {
+            "k": [
+              "o",
+              "a"
+            ],
+            "e": {
+              "key": "a",
+              "value": 1
+            }
+          },
+          {
+            "k": [
+              "o",
+              "b"
+            ],
+            "e": {
+              "key": "b",
+              "value": 2
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "distinct over unprojected flattened rows dedups by the pair",
+      "tags": [
+        "flatten",
+        "identity",
+        "distinct"
+      ],
+      "notes": "Bob's two `a` elements are one identity `(Bob, \"a\")`; Al's `a` is another (a different parent).",
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "tags": [
+              "a",
+              "a",
+              "b"
+            ]
+          },
+          {
+            "name": "Al",
+            "tags": [
+              "a"
+            ]
+          }
+        ]
+      },
+      "query": "people count distinct { flatten tags as t }",
+      "expect": {
+        "result": 3
+      }
+    },
+    {
+      "name": "`is` compares the pair",
+      "tags": [
+        "flatten",
+        "identity",
+        "is"
+      ],
+      "roots": {
+        "m": {
+          "x": [
+            1,
+            2
+          ],
+          "y": [
+            2
+          ]
+        }
+      },
+      "query": "select hit: $key is (\"x\", 2) values from entries(m) flatten $it as t",
+      "expect": {
+        "result": [
+          false,
+          true,
+          false
+        ]
+      }
+    },
+    {
+      "name": "count counts the flattened rows",
+      "tags": [
+        "flatten",
+        "count"
+      ],
+      "notes": "Bob two, Alice none (an empty list), Carol one (absent).",
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "tags": [
+              "a",
+              "b"
+            ]
+          },
+          {
+            "name": "Alice",
+            "tags": []
+          },
+          {
+            "name": "Carol"
+          }
+        ]
+      },
+      "query": "people count { flatten tags as t }",
+      "expect": {
+        "result": 3
+      }
+    },
+    {
+      "name": "exists over flattened rows: a block that empties every parent is false",
+      "tags": [
+        "flatten",
+        "exists"
+      ],
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "tags": [
+              "a",
+              "b"
+            ]
+          },
+          {
+            "name": "Carol"
+          }
+        ]
+      },
+      "query": "people exists { flatten tags { where $it == \"zz\" } as t }",
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "name": "first is the first flattened row",
+      "tags": [
+        "flatten",
+        "first"
+      ],
+      "notes": "Alice's empty list yields nothing, so the first row comes from Bob.",
+      "roots": {
+        "people": [
+          {
+            "name": "Alice",
+            "tags": []
+          },
+          {
+            "name": "Bob",
+            "tags": [
+              "b",
+              "a"
+            ]
+          }
+        ]
+      },
+      "query": "people first { name, t flatten tags as t }",
+      "expect": {
+        "result": {
+          "name": "Bob",
+          "t": "b"
+        }
+      }
+    },
+    {
+      "name": "order by, limit and offset apply to the flattened rows",
+      "tags": [
+        "flatten",
+        "order",
+        "limit",
+        "offset"
+      ],
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "tags": [
+              "a",
+              "c"
+            ]
+          },
+          {
+            "name": "Al",
+            "tags": [
+              "b"
+            ]
+          }
+        ]
+      },
+      "query": "select name, t from people flatten tags as t order by t limit 2 offset 1",
+      "expect": {
+        "result": [
+          {
+            "name": "Al",
+            "t": "b"
+          },
+          {
+            "name": "Bob",
+            "t": "c"
+          }
+        ]
+      }
+    },
+    {
+      "name": "order by desc over the bound name, absent last",
+      "tags": [
+        "flatten",
+        "order"
+      ],
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "tags": [
+              "a",
+              "c"
+            ]
+          },
+          {
+            "name": "Al",
+            "tags": [
+              "b"
+            ]
+          },
+          {
+            "name": "Carol"
+          }
+        ]
+      },
+      "query": "select name, t from people flatten tags as t order by t desc",
+      "expect": {
+        "result": [
+          {
+            "name": "Bob",
+            "t": "c"
+          },
+          {
+            "name": "Al",
+            "t": "b"
+          },
+          {
+            "name": "Bob",
+            "t": "a"
+          },
+          {
+            "name": "Carol"
+          }
+        ]
+      }
+    },
+    {
+      "name": "group by a bound name: the flattened rows are grouped, absent with null",
+      "tags": [
+        "flatten",
+        "group"
+      ],
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "tags": [
+              "a",
+              "b"
+            ]
+          },
+          {
+            "name": "Al",
+            "tags": [
+              "b",
+              "c"
+            ]
+          },
+          {
+            "name": "Carol"
+          }
+        ]
+      },
+      "query": "select tags, n: count() from people flatten tags group by tags",
+      "expect": {
+        "result": [
+          {
+            "tags": "a",
+            "n": 1
+          },
+          {
+            "tags": "b",
+            "n": 2
+          },
+          {
+            "tags": "c",
+            "n": 1
+          },
+          {
+            "n": 1
+          }
+        ]
+      }
+    },
+    {
+      "name": "an aggregate reads the bound name on each flattened row; rows re-enters the rows themselves",
+      "tags": [
+        "flatten",
+        "group",
+        "rows"
+      ],
+      "notes": "`rows` is the group's rows (§24) — the host's rows, which carry no binding — so a bound name is read through an aggregate (`collect(t)`), on the row scopes the body kept.",
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "tags": [
+              "a",
+              "b"
+            ]
+          },
+          {
+            "name": "Al",
+            "tags": [
+              "b",
+              "c"
+            ]
+          }
+        ]
+      },
+      "query": "select t, who: collect(name), rs: rows collect { name } from people flatten tags as t group by t order by t",
+      "expect": {
+        "result": [
+          {
+            "t": "a",
+            "who": [
+              "Bob"
+            ],
+            "rs": [
+              {
+                "name": "Bob"
+              }
+            ]
+          },
+          {
+            "t": "b",
+            "who": [
+              "Bob",
+              "Al"
+            ],
+            "rs": [
+              {
+                "name": "Bob"
+              },
+              {
+                "name": "Al"
+              }
+            ]
+          },
+          {
+            "t": "c",
+            "who": [
+              "Al"
+            ],
+            "rs": [
+              {
+                "name": "Al"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "the default projection of a grouped flattened body",
+      "tags": [
+        "flatten",
+        "group",
+        "default"
+      ],
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "tags": [
+              "a",
+              "b"
+            ]
+          },
+          {
+            "name": "Al",
+            "tags": [
+              "a"
+            ]
+          }
+        ]
+      },
+      "query": "from people flatten tags as t group by t",
+      "expect": {
+        "result": [
+          {
+            "t": "a",
+            "count": 2
+          },
+          {
+            "t": "b",
+            "count": 1
+          }
+        ]
+      }
+    },
+    {
+      "name": "having over groups of flattened rows",
+      "tags": [
+        "flatten",
+        "group",
+        "having"
+      ],
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "tags": [
+              "a",
+              "b"
+            ]
+          },
+          {
+            "name": "Al",
+            "tags": [
+              "a"
+            ]
+          }
+        ]
+      },
+      "query": "select t values from people flatten tags as t group by t having count() > 1",
+      "expect": {
+        "result": [
+          "a"
+        ]
+      }
+    },
+    {
+      "name": "count of flattened rows as a value, and in where",
+      "tags": [
+        "flatten",
+        "nested",
+        "count"
+      ],
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "jobs": [
+              {
+                "tags": [
+                  "p",
+                  "q"
+                ]
+              },
+              {
+                "tags": [
+                  "r"
+                ]
+              }
+            ]
+          },
+          {
+            "name": "Al",
+            "jobs": [
+              {
+                "tags": [
+                  "s"
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "query": "select name, n: jobs count { flatten tags } from people where jobs count { flatten tags } > 2",
+      "expect": {
+        "result": [
+          {
+            "name": "Bob",
+            "n": 3
+          }
+        ]
+      }
+    },
+    {
+      "name": "flatten after follow fans the occurrences out, in walk order then element order",
+      "tags": [
+        "flatten",
+        "follow"
+      ],
+      "notes": "The walk's intrinsics belong to the occurrence and are kept on every flattened row.",
+      "roots": {
+        "tree": [
+          {
+            "id": 1,
+            "parent": null,
+            "tags": [
+              "a"
+            ]
+          },
+          {
+            "id": 2,
+            "parent": 1,
+            "tags": [
+              "b",
+              "c"
+            ]
+          },
+          {
+            "id": 3,
+            "parent": 1
+          }
+        ]
+      },
+      "query": "select id, $depth, t from tree where id == 1 follow ^tree { where parent == ^id } flatten tags as t",
+      "expect": {
+        "result": [
+          {
+            "id": 1,
+            "$depth": 1,
+            "t": "a"
+          },
+          {
+            "id": 2,
+            "$depth": 2,
+            "t": "b"
+          },
+          {
+            "id": 2,
+            "$depth": 2,
+            "t": "c"
+          },
+          {
+            "id": 3,
+            "$depth": 2
+          }
+        ]
+      }
+    },
+    {
+      "name": "a where-position collect with lifts, then a flatten over the lifted list",
+      "tags": [
+        "flatten",
+        "lifts"
+      ],
+      "notes": "A lift (§19) binds a list onto the row; `flatten` is its one-to-many sibling and may split it.",
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "kids": [
+              {
+                "name": "x",
+                "ok": true
+              },
+              {
+                "name": "y"
+              },
+              {
+                "name": "z",
+                "ok": true
+              }
+            ]
+          },
+          {
+            "name": "Al",
+            "kids": []
+          }
+        ]
+      },
+      "query": "select name, o from people where kids collect { ^o: name where ok } flatten o",
+      "expect": {
+        "result": [
+          {
+            "name": "Bob",
+            "o": "x"
+          },
+          {
+            "name": "Bob",
+            "o": "z"
+          }
+        ]
+      }
+    },
+    {
+      "name": "`flatten` and `as` are field names outside their position",
+      "tags": [
+        "flatten",
+        "contextual"
+      ],
+      "notes": "A contextual word (GRAMMAR §1): `flatten` is a clause only when a value follows it.",
+      "roots": {
+        "r": [
+          {
+            "flatten": 1,
+            "as": 2
+          },
+          {
+            "flatten": 3,
+            "as": 4
+          }
+        ]
+      },
+      "query": "select flatten, as from r where flatten == 1 order by as",
+      "expect": {
+        "result": [
+          {
+            "flatten": 1,
+            "as": 2
+          }
+        ]
+      }
+    },
+    {
+      "name": "`flatten` before a clause word is a field",
+      "tags": [
+        "flatten",
+        "contextual"
+      ],
+      "roots": {
+        "r": [
+          {
+            "flatten": 3
+          },
+          {
+            "flatten": 1
+          }
+        ]
+      },
+      "query": "select flatten from r order by flatten",
+      "expect": {
+        "result": [
+          {
+            "flatten": 1
+          },
+          {
+            "flatten": 3
+          }
+        ]
+      }
+    },
+    {
+      "name": "error: flatten after group by",
+      "tags": [
+        "flatten",
+        "error",
+        "order"
+      ],
+      "query": "from people group by city flatten tags",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "`flatten` must come before `group by`",
+            "OQX clause order is select, from, where, frontier, follow, flatten, group by, having, order by, limit, offset"
+          ]
+        }
+      }
+    },
+    {
+      "name": "error: flatten after order by",
+      "tags": [
+        "flatten",
+        "error",
+        "order"
+      ],
+      "query": "from people order by name flatten tags",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "`flatten` must come before `order by`",
+            "OQX clause order is select, from, where, frontier, follow, flatten, group by, having, order by, limit, offset"
+          ]
+        }
+      }
+    },
+    {
+      "name": "error: follow after flatten",
+      "tags": [
+        "flatten",
+        "error",
+        "order"
+      ],
+      "query": "from people flatten tags follow kids",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "`follow` must come before `flatten`",
+            "OQX clause order is select, from, where, frontier, follow, flatten, group by, having, order by, limit, offset"
+          ]
+        }
+      }
+    },
+    {
+      "name": "error: where after flatten",
+      "tags": [
+        "flatten",
+        "error",
+        "order"
+      ],
+      "query": "from people flatten tags where name == \"Bob\"",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "`where` must come before `flatten`",
+            "OQX clause order is select, from, where, frontier, follow, flatten, group by, having, order by, limit, offset"
+          ]
+        }
+      }
+    },
+    {
+      "name": "error: flatten after group by inside a destination block",
+      "tags": [
+        "flatten",
+        "error",
+        "order"
+      ],
+      "notes": "Inside a destination block the order sentence names `depth` too.",
+      "query": "from t follow kids { group by k flatten tags }",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "`flatten` must come before `group by`",
+            "frontier, depth, follow, flatten, group by"
+          ]
+        }
+      }
+    },
+    {
+      "name": "error: an expression needs a name",
+      "tags": [
+        "flatten",
+        "error",
+        "as"
+      ],
+      "notes": "Only a plain navigation names itself.",
+      "query": "from people flatten size(tags)",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "needs a name",
+            "`flatten size(tags) as <name>`"
+          ]
+        }
+      }
+    },
+    {
+      "name": "error: a block needs a name",
+      "tags": [
+        "flatten",
+        "error",
+        "as"
+      ],
+      "query": "from people flatten tags { where $it != \"b\" }",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "needs a name",
+            "as <name>"
+          ]
+        }
+      }
+    },
+    {
+      "name": "error: a tuple needs a name",
+      "tags": [
+        "flatten",
+        "error",
+        "as"
+      ],
+      "query": "from people flatten (tags, aliases)",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "needs a name"
+          ]
+        }
+      }
+    },
+    {
+      "name": "error: duplicate flatten name",
+      "tags": [
+        "flatten",
+        "error",
+        "duplicate"
+      ],
+      "query": "from people flatten tags as t flatten kids as t",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "duplicate flatten name 't'"
+          ]
+        }
+      }
+    },
+    {
+      "name": "error: duplicate flatten name by default",
+      "tags": [
+        "flatten",
+        "error",
+        "duplicate"
+      ],
+      "query": "from people flatten tags flatten tags",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "duplicate flatten name 'tags'"
+          ]
+        }
+      }
+    },
+    {
+      "name": "error: a reserved word after as",
+      "tags": [
+        "flatten",
+        "error",
+        "as"
+      ],
+      "query": "from people flatten tags as from",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "expected a name after `as`"
+          ]
+        }
+      }
+    },
+    {
+      "name": "error: a literal word after as",
+      "tags": [
+        "flatten",
+        "error",
+        "as"
+      ],
+      "query": "from people flatten tags as null",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "`null` is a literal"
+          ]
+        }
+      }
+    },
+    {
+      "name": "error: a $-name after as",
+      "tags": [
+        "flatten",
+        "error",
+        "as"
+      ],
+      "notes": "`$` belongs to the language (SEMANTICS §2).",
+      "query": "from people flatten tags as $it",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "cannot be bound to a `$`-name"
+          ]
+        }
+      }
+    },
+    {
+      "name": "error: nothing after as",
+      "tags": [
+        "flatten",
+        "error",
+        "as"
+      ],
+      "query": "from people flatten tags as",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "expected a name after `as`"
+          ]
+        }
+      }
+    },
+    {
+      "name": "error: flatten with nothing after it",
+      "tags": [
+        "flatten",
+        "error"
+      ],
+      "notes": "Without a value after it `flatten` is a stray field name; the message says what the clause needs.",
+      "query": "from people flatten",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "unexpected 'flatten' after `from`",
+            "`flatten <expr> [{ … }] [as <name>]`"
+          ]
+        }
+      }
+    },
+    {
+      "name": "error: an aggregate in a flatten expression",
+      "tags": [
+        "flatten",
+        "error",
+        "aggregate"
+      ],
+      "notes": "The rows are not grouped yet when `flatten` runs.",
+      "query": "from people flatten collect(tags) as t group by city",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "`collect(tags)` is an aggregate and cannot be read in `flatten`"
+          ]
+        }
+      }
+    },
+    {
+      "name": "error: a lift inside a flatten block",
+      "tags": [
+        "flatten",
+        "error",
+        "lift"
+      ],
+      "notes": "The block is a select-position block, not a where-position `collect`.",
+      "query": "from people flatten jobs { ^x: pay } as j",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "a lift (^x)",
+            "where position"
+          ]
+        }
+      }
+    },
+    {
+      "name": "error: a bound name is not a group key",
+      "tags": [
+        "flatten",
+        "error",
+        "group"
+      ],
+      "notes": "After `group by` the body reads the group (§24); a flattened row's binding is read through a key or an aggregate.",
+      "query": "select t from people flatten tags as t group by city",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "`t` is not a group key or aggregate"
+          ]
+        }
+      }
+    },
+    {
+      "name": "references: the flatten expression is read on the rows; the bound name is not a reference after it",
+      "tags": [
+        "references",
+        "flatten"
+      ],
+      "notes": "`t` in the select and in `order by` is the name the flatten bound — an alias of the expression already reported, like a lift — so neither is a reference; the scope's row chain is unchanged (a flattened row is the row).",
+      "query": "select name, t from people where active flatten tags as t order by t",
+      "expect": {
+        "references": [
+          {
+            "name": "name",
+            "clause": "select",
+            "scope": {
+              "depth": 1,
+              "steps": [
+                {
+                  "expr": "people",
+                  "depth": 1
+                }
+              ]
+            }
+          },
+          {
+            "name": "people",
+            "clause": "source",
+            "scope": {
+              "depth": 0,
+              "steps": []
+            }
+          },
+          {
+            "name": "active",
+            "clause": "where",
+            "scope": {
+              "depth": 1,
+              "steps": [
+                {
+                  "expr": "people",
+                  "depth": 1
+                }
+              ]
+            }
+          },
+          {
+            "name": "tags",
+            "clause": "flatten",
+            "scope": {
+              "depth": 1,
+              "steps": [
+                {
+                  "expr": "people",
+                  "depth": 1
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "references: names inside the block are read on the elements, one deeper",
+      "tags": [
+        "references",
+        "flatten",
+        "block"
+      ],
+      "notes": "The block is the `collect` op over the value: its receiver is a step like any block receiver, so a host judges `typ` against the kind `blocks` yields.",
+      "query": "select name from people flatten blocks { where typ == \"task\" } as b",
+      "expect": {
+        "references": [
+          {
+            "name": "name",
+            "clause": "select",
+            "scope": {
+              "depth": 1,
+              "steps": [
+                {
+                  "expr": "people",
+                  "depth": 1
+                }
+              ]
+            }
+          },
+          {
+            "name": "people",
+            "clause": "source",
+            "scope": {
+              "depth": 0,
+              "steps": []
+            }
+          },
+          {
+            "name": "blocks",
+            "clause": "flatten",
+            "scope": {
+              "depth": 1,
+              "steps": [
+                {
+                  "expr": "people",
+                  "depth": 1
+                }
+              ]
+            }
+          },
+          {
+            "name": "typ",
+            "clause": "where",
+            "scope": {
+              "depth": 2,
+              "steps": [
+                {
+                  "expr": "people",
+                  "depth": 1
+                },
+                {
+                  "expr": "blocks",
+                  "depth": 2
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "references: a chain reading an earlier name, and a name's own expression",
+      "tags": [
+        "references",
+        "flatten",
+        "chain"
+      ],
+      "notes": "`j.tags` is headed by the bound `j` and `j.kind` in the select likewise: not references. The third flatten's `tags` reads the row (its own name is bound only after it), so it is a reference.",
+      "query": "select name, k: j.kind from people flatten jobs as j flatten j.tags as t flatten tags",
+      "expect": {
+        "references": [
+          {
+            "name": "name",
+            "clause": "select",
+            "scope": {
+              "depth": 1,
+              "steps": [
+                {
+                  "expr": "people",
+                  "depth": 1
+                }
+              ]
+            }
+          },
+          {
+            "name": "people",
+            "clause": "source",
+            "scope": {
+              "depth": 0,
+              "steps": []
+            }
+          },
+          {
+            "name": "jobs",
+            "clause": "flatten",
+            "scope": {
+              "depth": 1,
+              "steps": [
+                {
+                  "expr": "people",
+                  "depth": 1
+                }
+              ]
+            }
+          },
+          {
+            "name": "tags",
+            "clause": "flatten",
+            "scope": {
+              "depth": 1,
+              "steps": [
+                {
+                  "expr": "people",
+                  "depth": 1
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "references: ^name from a nested block reads the bound name",
+      "tags": [
+        "references",
+        "flatten",
+        "outer"
+      ],
+      "query": "select name, m: kids collect { where x == ^t } from people flatten tags as t",
+      "expect": {
+        "references": [
+          {
+            "name": "name",
+            "clause": "select",
+            "scope": {
+              "depth": 1,
+              "steps": [
+                {
+                  "expr": "people",
+                  "depth": 1
+                }
+              ]
+            }
+          },
+          {
+            "name": "kids",
+            "clause": "select",
+            "scope": {
+              "depth": 1,
+              "steps": [
+                {
+                  "expr": "people",
+                  "depth": 1
+                }
+              ]
+            }
+          },
+          {
+            "name": "x",
+            "clause": "where",
+            "scope": {
+              "depth": 2,
+              "steps": [
+                {
+                  "expr": "people",
+                  "depth": 1
+                },
+                {
+                  "expr": "kids",
+                  "depth": 2
+                }
+              ]
+            }
+          },
+          {
+            "name": "people",
+            "clause": "source",
+            "scope": {
+              "depth": 0,
+              "steps": []
+            }
+          },
+          {
+            "name": "tags",
+            "clause": "flatten",
+            "scope": {
+              "depth": 1,
+              "steps": [
+                {
+                  "expr": "people",
+                  "depth": 1
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "references: a bound name as a group key is not a reference; before the flatten it is the row's",
+      "tags": [
+        "references",
+        "flatten",
+        "group"
+      ],
+      "notes": "`where` runs before the fan-out, so `t` there is the row's property (no select item names `t`, else §14's alias rule would already exclude it); the key `t` reads the binding.",
+      "query": "select n: count() from people where t == 1 flatten tags as t group by t",
+      "expect": {
+        "references": [
+          {
+            "name": "people",
+            "clause": "source",
+            "scope": {
+              "depth": 0,
+              "steps": []
+            }
+          },
+          {
+            "name": "t",
+            "clause": "where",
+            "scope": {
+              "depth": 1,
+              "steps": [
+                {
+                  "expr": "people",
+                  "depth": 1
+                }
+              ]
+            }
+          },
+          {
+            "name": "tags",
+            "clause": "flatten",
+            "scope": {
+              "depth": 1,
+              "steps": [
+                {
+                  "expr": "people",
+                  "depth": 1
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  ]
+}
