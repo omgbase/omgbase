@@ -789,6 +789,8 @@ export function buildServer(ctx: ServerContext): McpServer {
           ...(args.limit !== undefined ? { limit: args.limit } : {}),
           ...(args.cursor !== undefined ? { cursor: args.cursor } : {}),
           ...(args.bare !== undefined ? { bare: args.bare } : {}),
+          // (4.11) the call as received, for a parse error's corrected `fix`.
+          request: args,
         }, rankableEmbed(repoId)));
       } catch (e) {
         return fail(e);
@@ -905,7 +907,7 @@ export function buildServer(ctx: ServerContext): McpServer {
     "plan",
     {
       description: ladder(
-        "plan — Preview a write: the Plan (summary, $new.n ids) burns no id; execute next. diffs: true for file bodies.",
+        "plan — Preview a write: the Plan (summary, $new.n ids) burns no id; execute next. Need file bodies? add diffs: true.",
         "{\"effects\":[{\"op\":\"set\",\"target\":\"/processes/calcination.md\",\"field\":\"frontmatter.verified\",\"value\":false}]}   path = doc",
         "{\"effects\":[{\"op\":\"insert\",\"into\":{\"kind\":\"section\",\"heading_id\":\"b_153\"},\"markdown\":\"- [ ] Weigh the calx\"}]}   in a section",
         "{\"effects\":[{\"op\":\"create\",\"path\":\"lab/march.md\",\"markdown\":\"# March\\n\"},{\"op\":\"insert\",\"into\":\"$new.0\",\"markdown\":\"Hi.\"}]}   fill it: $new.0",

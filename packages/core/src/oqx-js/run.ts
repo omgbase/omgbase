@@ -19,6 +19,7 @@ import type { SemanticVec } from "../search/cel/compile.js";
 import { float32ToBlob } from "../core/vec.js";
 import { encodeCursor as encodeKeyset, decodePathCursor } from "../core/cursor.js";
 import { referencePath } from "../core/paths.js";
+import { canonicalJson } from "../mutate/canonical.js";
 
 export type OqxConsumer = "collect" | "count" | "exists" | "none" | "first" | "single";
 
@@ -87,6 +88,11 @@ export interface OqxOptions {
    * the default of the AST entry (`oqxRunQuery`), whose caller is the write
    * selector compiler, where a name no row carries would select every row. */
   unknownNames?: UnknownNames;
+  /** The `query` call as the caller received it (spec/surface 4.11): the
+   * arguments a corrected call is spelled from when a parse error can be fixed
+   * (`data.fix`, the bracket-list rule below). Absent, the message still gains
+   * its hint and no `fix` is composed. */
+  request?: Record<string, unknown>;
 }
 
 // Row-scoped domain functions: authored as free calls (`text("x")`) that
@@ -376,9 +382,88 @@ export function oqxRun(store: Store, repoId: string, source: string, opts: OqxOp
     return oqxRunInner(store, repoId, source, opts);
   } catch (e) {
     // Normalize the library's errors to omgbase's contract (filter_invalid).
-    if (e instanceof OqxError) throw new FilterInvalid(e.message, "OQX");
+    if (e instanceof OqxError) throw parseInvalid(source, e, opts.request);
     throw e;
   }
+}
+
+// ---- the bracket-list fix (spec/surface §4 "Error data", 4.11) ----------------------
+//
+// OQX has no list literal; a tuple `("a", "b")` is the collection (`spec/oqx`
+// SEMANTICS §3b), so `id in ["a", "b"]` — the SQL habit — is the parse error
+// `unexpected '[' — expected a value (at offset N)`. When the source at N opens a
+// bracketed comma list of LITERALS closed by `]` (two or more members, each a
+// string, number, `true`, `false` or `null`; nothing nested), the message gains
+// `; a list is written as a tuple: (…)` and, when the request is known, the
+// error carries `fix`: the same request with that `[…]` rewritten to `(…)`.
+// Anything else at N (an identifier member, a nested bracket, one member, an
+// unclosed list) is the parser's error as it stands.
+
+const BRACKET_ERROR = /^unexpected '\[' — expected a value \(at offset (\d+)\)$/;
+export const TUPLE_HINT = "; a list is written as a tuple: (…)";
+
+/** The source with the bracket list at the error's offset rewritten to a tuple, or null when the rule does not apply. */
+export function bracketListAsTuple(source: string, message: string): string | null {
+  const m = BRACKET_ERROR.exec(message);
+  if (!m) return null;
+  const cps = Array.from(source);
+  const open = Number(m[1]);
+  if (cps[open] !== "[") return null;
+  let i = open + 1;
+  let members = 0;
+  for (;;) {
+    i = skipSpaces(cps, i);
+    const end = literalEnd(cps, i);
+    if (end === null) return null;
+    members++;
+    i = skipSpaces(cps, end);
+    if (cps[i] === ",") {
+      i++;
+      continue;
+    }
+    if (cps[i] === "]") break;
+    return null;
+  }
+  if (members < 2) return null;
+  cps[open] = "(";
+  cps[i] = ")";
+  return cps.join("");
+}
+
+function skipSpaces(cps: readonly string[], i: number): number {
+  while (i < cps.length && /\s/.test(cps[i]!)) i++;
+  return i;
+}
+
+/** The index just past one OQX literal starting at `i` (a string in either quote with `\<c>` escapes, an unsigned number, `true`/`false`/`null`), or null. */
+function literalEnd(cps: readonly string[], i: number): number | null {
+  const c = cps[i];
+  if (c === undefined) return null;
+  if (c === '"' || c === "'") {
+    let j = i + 1;
+    while (j < cps.length) {
+      if (cps[j] === "\\") j += 2;
+      else if (cps[j] === c) return j + 1;
+      else j++;
+    }
+    return null;
+  }
+  if (/[0-9]/.test(c)) {
+    const m = /^[0-9]+(\.[0-9]+)?([eE][+-]?[0-9]+)?/.exec(cps.slice(i).join(""));
+    return m ? i + Array.from(m[0]).length : null;
+  }
+  for (const word of ["true", "false", "null"]) {
+    if (cps.slice(i, i + word.length).join("") === word && !/[A-Za-z0-9_$]/.test(cps[i + word.length] ?? "")) return i + word.length;
+  }
+  return null;
+}
+
+/** The surface's `filter_invalid` for a parse error: the library's message, plus the tuple hint and `fix` when the bracket rule applies. */
+function parseInvalid(source: string, e: OqxError, request: Record<string, unknown> | undefined): FilterInvalid {
+  const rewritten = bracketListAsTuple(source, e.message);
+  if (rewritten === null) return new FilterInvalid(e.message, "OQX");
+  const fix = request !== undefined ? canonicalJson({ ...request, query: rewritten }) : undefined;
+  return new FilterInvalid(e.message + TUPLE_HINT, "OQX", fix);
 }
 
 function oqxRunInner(store: Store, repoId: string, source: string, opts: OqxOptions): OqxResult {

@@ -851,6 +851,166 @@
         "cursor": null,
         "consumer": "collect"
       }
+    },
+    {
+      "name": "block-reach-through",
+      "notes": "§1.2 (4.11): `block` is the SOURCE block the link was written in — the blocks row `block_id` names — so `block.text` / `block.type` read it as `dst.title` reads the destination.",
+      "query": "select t: block.text, k: block.type from links where path == \"/substances/prima-materia.md\"",
+      "expect": {
+        "hits": [
+          {
+            "id": "e_47",
+            "path": "/substances/prima-materia.md",
+            "t": "The [Emerald Tablet](/texts/emerald-tablet.md) is usually read as describing this reduction and return.",
+            "k": "paragraph"
+          },
+          {
+            "id": "e_48",
+            "path": "/substances/prima-materia.md",
+            "t": "Reduction to the *prima materia* is the purpose of [[nigredo]], the blackening that opens the [magnum opus](/processes/magnum-opus.md). [Calcination](/processes/calcination.md) is the usual first operation.",
+            "k": "paragraph"
+          },
+          {
+            "id": "e_49",
+            "path": "/substances/prima-materia.md",
+            "t": "Reduction to the *prima materia* is the purpose of [[nigredo]], the blackening that opens the [magnum opus](/processes/magnum-opus.md). [Calcination](/processes/calcination.md) is the usual first operation.",
+            "k": "paragraph"
+          },
+          {
+            "id": "e_50",
+            "path": "/substances/prima-materia.md",
+            "t": "Reduction to the *prima materia* is the purpose of [[nigredo]], the blackening that opens the [magnum opus](/processes/magnum-opus.md). [Calcination](/processes/calcination.md) is the usual first operation.",
+            "k": "paragraph"
+          }
+        ],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "collect"
+      }
+    },
+    {
+      "name": "block-reach-through-filter",
+      "notes": "a `where` over `block.*` (pushed down as a probe by `src_block`).",
+      "query": "select block_id, dst_path from links where block.type == \"paragraph\" and path == \"/index.md\"",
+      "expect": {
+        "hits": [
+          {
+            "id": "e_5",
+            "path": "/index.md",
+            "block_id": "b_13",
+            "dst_path": "/processes/magnum-opus.md"
+          }
+        ],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "collect"
+      }
+    },
+    {
+      "name": "block-text-filter-residual",
+      "notes": "a string method over `block.text` stays in memory; planned == in-memory.",
+      "query": "select path, dst_path from links where block.text.contains(\"Emerald\") order by id",
+      "expect": {
+        "hits": [
+          {
+            "id": "e_13",
+            "path": "/index.md",
+            "dst_path": "/texts/emerald-tablet.md"
+          },
+          {
+            "id": "e_47",
+            "path": "/substances/prima-materia.md",
+            "dst_path": "/texts/emerald-tablet.md"
+          }
+        ],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "collect"
+      }
+    },
+    {
+      "name": "block-absent-for-a-frontmatter-link",
+      "notes": "a frontmatter link (`field` set, `block_id` null) has no `block`: the handle is absent — as a value it renders no key, `block.text` is absent, `block == null`.",
+      "query": "select f: field, b: block, t: block.text, none: block == null from links where field != null order by id limit 3",
+      "expect": {
+        "hits": [
+          {
+            "id": "e_64",
+            "path": "/timeline/kickoff.md",
+            "f": "after",
+            "none": true
+          },
+          {
+            "id": "e_65",
+            "path": "/timeline/kickoff.md",
+            "f": "see_also",
+            "none": true
+          },
+          {
+            "id": "e_66",
+            "path": "/timeline/review.md",
+            "f": "before",
+            "none": true
+          }
+        ],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "collect"
+      }
+    },
+    {
+      "name": "block-identity-reads-the-foreign-key",
+      "notes": "`block.id` is the row's own `block_id` (FK elimination, §1), `block.doc.path` the link's `path`.",
+      "query": "select bi: block.id, b: block_id, bp: block.path, bd: block.doc.path from links where path == \"/index.md\" order by id limit 3",
+      "expect": {
+        "hits": [
+          {
+            "id": "e_0",
+            "path": "/index.md",
+            "bi": "b_5",
+            "b": "b_5",
+            "bp": "/index.md",
+            "bd": "/index.md"
+          },
+          {
+            "id": "e_1",
+            "path": "/index.md",
+            "bi": "b_6",
+            "b": "b_6",
+            "bp": "/index.md",
+            "bd": "/index.md"
+          },
+          {
+            "id": "e_10",
+            "path": "/index.md",
+            "bi": "b_22",
+            "b": "b_22",
+            "bp": "/index.md",
+            "bd": "/index.md"
+          }
+        ],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "collect"
+      }
+    },
+    {
+      "name": "block-doc-is-the-source",
+      "notes": "every link with a block was written in its source document: the two counts agree.",
+      "query": "select n: ^links count { where block.doc.path == path }, m: ^links count { where block_id != null } from docs where path == \"/index.md\"",
+      "expect": {
+        "hits": [
+          {
+            "id": "d_0",
+            "path": "/index.md",
+            "n": 64,
+            "m": 64
+          }
+        ],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "collect"
+      }
     }
   ]
 }

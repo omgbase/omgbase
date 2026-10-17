@@ -473,6 +473,17 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
     if (typeof row.__path !== "string") return tag(load(), "blocks");
     return lazyOwner({ block_id: row.block_id, doc_id: row.doc_id, __path: row.__path }, "blocks", load);
   };
+  // `block` on a link row (spec/surface §1.2, 4.11): the SOURCE block the link
+  // was written in — the blocks row `block_id` (the edge's `src_block`) names,
+  // in the source document (`__path` is already the block's document path) —
+  // mirroring `doc`; absent when the link has none (a frontmatter link).
+  const linkBlock = (row: Row): Row | undefined => {
+    if (!row.src_block) return undefined;
+    const load = (): Record<string, unknown> | undefined =>
+      one(`SELECT b.*, d.path AS __path FROM blocks b JOIN docs d ON d.doc_id = b.doc_id WHERE b.block_id = ?`, row.src_block);
+    if (typeof row.__path !== "string") return tag(load(), "blocks");
+    return lazyOwner({ block_id: row.src_block, doc_id: row.src_doc, __path: row.__path }, "blocks", load);
+  };
 
   // ---- engine attributes -----------------------------------------------------
   // Bare, snake_case, winning on collision (see the name rule above; spec/surface
@@ -634,6 +645,7 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
     if (t !== "docs" && key === "doc") return owningDoc(r) ?? ABSENT_SINGLE;
     if (t === "nodes" && key === "block") return owningBlock(r) ?? ABSENT_SINGLE;
     if (t === "links" && key === "dst") return destinationDoc(r) ?? ABSENT_SINGLE;
+    if (t === "links" && key === "block") return linkBlock(r) ?? ABSENT_SINGLE;
 
     // relations.
     const rels = rel[t];

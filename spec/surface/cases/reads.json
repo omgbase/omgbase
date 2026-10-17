@@ -10357,7 +10357,7 @@
     },
     {
       "name": "arguments",
-      "notes": "§4 \"Arguments\" (3.0): the locator rule and its errors, byte-identical across engines — `doc` and the other retired names are refused with their replacement, an unknown name gets the nearest valid one, a missing/mistyped argument names the expected shape; a document is addressed by `id`/`path` (at least one; both must agree), a block/node by `id`; `doc_missing`/`block_missing` spell the attributes. Also `frontmatter.$version`: an authored `$`-prefixed key is stored and reached through the source handle and `entries(frontmatter)`, while the bare `$version` is the engine's namespace (nothing). The inputs 4.0 retired name their replacement too (never silently stripped): `ops` → `effects` (a missing `effects` is \"`effects` is required\"), `dry_run` → `plan { effects: [...] }` on every tool, `blocks_update.attrs` → `checked`; `links_*`'s `applied` was never an argument (an unknown name with no near neighbour). String lists (4.5): every list-of-strings argument (`docs`, `ids`, `roots`, `blocks`, `select`, `unset`) takes one bare string as a one-element list; a comma-joined string is still \"must be an array of strings\", with the comma-split call as its `fix` (recorded as `data: { fix }`); a non-string is the same message with no fix.",
+      "notes": "§4 \"Arguments\" (3.0): the locator rule and its errors, byte-identical across engines — `doc` and the other retired names are refused with their replacement, an unknown name gets the nearest valid one, a missing/mistyped argument names the expected shape; a document is addressed by `id`/`path` (at least one; both must agree), a block/node by `id`; `doc_missing`/`block_missing` spell the attributes. Also `frontmatter.$version`: an authored `$`-prefixed key is stored and reached through the source handle and `entries(frontmatter)`, while the bare `$version` is the engine's namespace (nothing). The inputs 4.0 retired name their replacement too (never silently stripped): `ops` → `effects` (a missing `effects` is \"`effects` is required\"), `dry_run` → `plan { effects: [...] }` on every tool, `blocks_update.attrs` → `checked`; `links_*`'s `applied` was never an argument (an unknown name with no near neighbour). String lists (4.5): every list-of-strings argument (`docs`, `ids`, `roots`, `blocks`, `select`, `unset`) takes one bare string as a one-element list; a comma-joined string is still \"must be an array of strings\", with the comma-split call as its `fix` (recorded as `data: { fix }`); a non-string is the same message with no fix. Stringified JSON arrays (4.11): a string whose trimmed form opens `[` is read as JSON — a JSON array of strings is accepted as that list (`docs`, `ids`, `roots`); any other `[…` is the array error with the parsed array (a JSON array of numbers) or the comma split (a malformed `[`) as its `fix`.",
       "steps": [
         {
           "observe": {
@@ -10734,6 +10734,49 @@
               "unset": 7
             }
           }
+        },
+        {
+          "read": {
+            "tool": "docs_read_many",
+            "args": {
+              "docs": "[\"a.md\",\"b.md\"]"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "blocks_read_many",
+            "args": {
+              "ids": "[\"b_1\", \"b_zzz\"]",
+              "resolution": "text"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "graph",
+            "args": {
+              "roots": " [\"a.md\"] ",
+              "degrees": 0
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "blocks_read_many",
+            "args": {
+              "ids": "[1, 2]"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "docs_read_many",
+            "args": {
+              "docs": "[\"a.md\", \"b.md\"",
+              "include_ids": true
+            }
+          }
         }
       ],
       "expect": {
@@ -11081,6 +11124,98 @@
             "error": "filter_invalid",
             "retriable": false,
             "message": "`unset` must be an array of strings (docs_set_meta takes id?, path?, repo?, set?, unset?)"
+          },
+          {
+            "items": [
+              {
+                "id": "d_0",
+                "path": "/a.md",
+                "rev": "r_0",
+                "properties": {
+                  "frontmatter": {
+                    "$version": 3,
+                    "title": "A"
+                  },
+                  "inline": {},
+                  "computed": {
+                    "title": "A"
+                  }
+                },
+                "raw": "---\n$version: 3\ntitle: A\n---\n\n# A\n\nBody of a.\n\n- item one\n- item two\n"
+              },
+              {
+                "id": "d_1",
+                "path": "/b.md",
+                "rev": "r_1",
+                "properties": {
+                  "frontmatter": {},
+                  "inline": {},
+                  "computed": {
+                    "title": "B"
+                  }
+                },
+                "raw": "# B\n\nBody of b.\n"
+              }
+            ],
+            "errors": [],
+            "truncated": false
+          },
+          {
+            "nodes": [
+              {
+                "id": "b_1",
+                "type": "paragraph",
+                "text": "Body of a."
+              }
+            ],
+            "truncated": false,
+            "unresolved": [
+              "b_zzz"
+            ]
+          },
+          {
+            "roots": [
+              "d_0"
+            ],
+            "degrees": 0,
+            "direction": "both",
+            "documents": [
+              {
+                "id": "d_0",
+                "path": "/a.md",
+                "degree": 0,
+                "frontier": true
+              }
+            ],
+            "links": [],
+            "frontier": [
+              {
+                "id": "d_0",
+                "path": "/a.md",
+                "degree": 0
+              }
+            ],
+            "truncated": false,
+            "queries": [
+              "select _depth: $depth, _stop: $stop, _links: doc.out_links collect { id: id, doc_id: doc_id, block_id: block_id, via_id: via_id, dst_id: dst_id, dst_path: dst_path, uri: uri, dst_kind: dst_kind, predicate: predicate, provenance: provenance, anchor: anchor, field: field } from docs where id == \"d_0\" follow distinct out_links collect { from dst depth 1 }",
+              "select _depth: $depth, _stop: $stop, _links: doc.in_links collect { id: id, doc_id: doc_id, block_id: block_id, via_id: via_id, dst_id: dst_id, dst_path: dst_path, uri: uri, dst_kind: dst_kind, predicate: predicate, provenance: provenance, anchor: anchor, field: field } from docs where id == \"d_0\" follow distinct in_links collect { from doc depth 1 }"
+            ]
+          },
+          {
+            "error": "filter_invalid",
+            "retriable": false,
+            "message": "`ids` must be an array of strings (blocks_read_many takes budget_tokens?, ids, repo?, resolution?)",
+            "data": {
+              "fix": "{\"ids\":[1,2]}"
+            }
+          },
+          {
+            "error": "filter_invalid",
+            "retriable": false,
+            "message": "`docs` must be an array of strings (docs_read_many takes budget_tokens?, docs, include_ids?, repo?)",
+            "data": {
+              "fix": "{\"docs\":[\"[\\\"a.md\\\"\",\"\\\"b.md\\\"\"],\"include_ids\":true}"
+            }
           }
         ]
       }

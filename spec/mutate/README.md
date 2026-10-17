@@ -619,6 +619,7 @@ list whose first identity is not a string or a row), carries no `fix`:
 | `selection_too_large` | the same request with `expect: { max: <count> }`, `<count>` the selection's exact size — the page the engine refused when it was `bound + 1` rows, else a second, unbounded run of the same compiled query |
 | `filter_invalid` "`expect.max` is required on `apply` with `select`" | the same request with `expect: { max: <cardinality> }`, the selector compiled (reads only) to count it — a selection the compile refuses reports its own error and fix |
 | `filter_invalid` on a refused selector source (§11.8 step 1: `links`, or a source that is not a bare root) | the same request with the source spliced over its span in the written query: `links` → `blocks` (a link lives in a block), anything else → `docs` |
+| `filter_invalid` on a selector parse error `select: unexpected '[' — expected a value (at offset N); a list is written as a tuple: (…)` (3.5 patch, `spec/surface` 4.11 §4 "Error data": the source at `N` opens a bracketed comma list of two or more literals closed by `]`) | the same request with that `[…]` rewritten to `(…)` in `select`, the members verbatim; an identifier member, a nested bracket, one member or an unclosed list is the parser's error with no `fix` |
 | `filter_invalid` "`-> ` is not allowed here" (§11.8 "Sugar", a leader in a slot that takes no expression) | the literal form: the same request with that member spelled literally — a quoted string literal or an interpolation-free template literal folded to its text (as constant folding folds it), anything else the rest of the string after the leader |
 | `stale_plan` at plan time (an `expect.revision` that no longer holds) | the same request with that effect's `expect.revision` set to the document's current revision |
 | `stale_plan` at execute; `plan_mismatch` on the plan form | re-plan and commit in one call: `apply` over the plan's selector form `{ select: selection.query, effects: selection.templates, expect: selection.expect or { max: selection.cardinality } }` when it has a `selection`, else `{ effects: <the plan's effects> }` (none when the plan has no effects — `apply` takes at least one) |
@@ -1579,6 +1580,14 @@ Receipt pins them in every committing fixture step (§9).
 
 ## Decisions
 
+- 2026-10-17 (mutate 3.5 patch; `spec/surface` 4.11): a selector written as
+  `id in ["a", "b"]` — the SQL habit the 2026-10-17 agent-bench run showed —
+  is still the parser's error (OQX has no list literal; a tuple is the
+  collection), but the surface's bracket-list rule applies to the selector as
+  it does to `query`: the message gains the tuple hint and the error carries
+  the same request with `[…]` rewritten to `(…)` as its `fix` (§8;
+  `effects::select-bracket-list-is-a-tuple`). No field, op or result key
+  changed: a patch.
 - 2026-10-16 (oqx 0.25; no mutate version move): a selector may `flatten`
   (§11.8). The rule falls out of the language and the compiler as they stand —
   nothing in the admission pass changes: the selector's hits are the engine's

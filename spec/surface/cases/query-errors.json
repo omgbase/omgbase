@@ -348,6 +348,82 @@
         "cursor": null,
         "consumer": "collect"
       }
+    },
+    {
+      "name": "bracket-list-is-a-tuple",
+      "notes": "§4 \"Error data\" (4.11): OQX has no list literal — a tuple is the collection (`spec/oqx` SEMANTICS §3b). The SQL habit `id in [\"a\", \"b\"]` is the parser's error with the tuple hint and a `fix`: the same call with `[…]` rewritten to `(…)`.",
+      "query": "select type, text from blocks where path == \"/processes/magnum-opus.md\" and id in [\"b_189\",\"b_190\"]",
+      "expect": {
+        "error": "filter_invalid",
+        "message_includes": "unexpected '[' — expected a value (at offset 82); a list is written as a tuple: (…)",
+        "fix": "{\"query\":\"select type, text from blocks where path == \\\"/processes/magnum-opus.md\\\" and id in (\\\"b_189\\\",\\\"b_190\\\")\"}"
+      }
+    },
+    {
+      "name": "bracket-list-fix-keeps-the-call",
+      "notes": "the `fix` is the whole request: `limit` and `bare` ride along.",
+      "query": "select path from docs where stage in [\"nigredo\", \"albedo\"]",
+      "limit": 5,
+      "bare": true,
+      "expect": {
+        "error": "filter_invalid",
+        "message_includes": "unexpected '[' — expected a value (at offset 37); a list is written as a tuple: (…)",
+        "fix": "{\"bare\":true,\"limit\":5,\"query\":\"select path from docs where stage in (\\\"nigredo\\\", \\\"albedo\\\")\"}"
+      }
+    },
+    {
+      "name": "bracket-list-of-numbers",
+      "query": "from blocks where depth in [0, 1] and path == \"/index.md\"",
+      "expect": {
+        "error": "filter_invalid",
+        "message_includes": "unexpected '[' — expected a value (at offset 27); a list is written as a tuple: (…)",
+        "fix": "{\"query\":\"from blocks where depth in (0, 1) and path == \\\"/index.md\\\"\"}"
+      }
+    },
+    {
+      "name": "bracket-list-mixed-literals",
+      "notes": "strings in either quote, numbers, true/false/null are literals; spaces around members are kept.",
+      "query": "from docs where verified in [ true, 'yes', null ]",
+      "expect": {
+        "error": "filter_invalid",
+        "message_includes": "unexpected '[' — expected a value (at offset 28); a list is written as a tuple: (…)",
+        "fix": "{\"query\":\"from docs where verified in ( true, 'yes', null )\"}"
+      }
+    },
+    {
+      "name": "bracket-list-nested-has-no-fix",
+      "notes": "a nested bracket is not a list of literals: the parser's error as it stands.",
+      "query": "from docs where stage in [[\"nigredo\"], \"albedo\"]",
+      "expect": {
+        "error": "filter_invalid",
+        "message_includes": "unexpected '[' — expected a value (at offset 25)"
+      }
+    },
+    {
+      "name": "bracket-list-of-names-has-no-fix",
+      "notes": "an identifier member is not a literal: no fix.",
+      "query": "from docs where stage in [stage, \"albedo\"]",
+      "expect": {
+        "error": "filter_invalid",
+        "message_includes": "unexpected '[' — expected a value (at offset 25)"
+      }
+    },
+    {
+      "name": "bracket-one-member-has-no-fix",
+      "notes": "one member is a grouping, not a tuple: no fix.",
+      "query": "from docs where stage in [\"nigredo\"]",
+      "expect": {
+        "error": "filter_invalid",
+        "message_includes": "unexpected '[' — expected a value (at offset 25)"
+      }
+    },
+    {
+      "name": "bracket-unclosed-has-no-fix",
+      "query": "from docs where stage in [\"nigredo\", \"albedo\"",
+      "expect": {
+        "error": "filter_invalid",
+        "message_includes": "unexpected '[' — expected a value (at offset 25)"
+      }
     }
   ]
 }

@@ -450,7 +450,7 @@ describe("decline (b) — relation, reach-through and source-handle names are no
     expect([...NON_PROPERTY_NAMES.docs].sort()).toEqual(["blocks", "data", "doc", "frontmatter", "inline", "nodes", "out_links", "in_links", "revisions"].sort());
     expect([...NON_PROPERTY_NAMES.blocks].sort()).toEqual(["attrs", "block", "children", "doc", "nodes", "out_links", "section"].sort());
     expect([...NON_PROPERTY_NAMES.nodes].sort()).toEqual(["attrs", "block", "blocks", "children", "doc", "section", "subsections"].sort());
-    expect([...NON_PROPERTY_NAMES.links].sort()).toEqual(["doc", "dst"]);
+    expect([...NON_PROPERTY_NAMES.links].sort()).toEqual(["block", "doc", "dst"]);
   });
 
   it("every name in the set resolves to a non-scalar in the store context (a row, an array, an object)", () => {
@@ -522,6 +522,17 @@ describe("foreign-key elimination (spec/surface §1, 3.0) — a reach-through to
     expect(translatePredicate(predOn("links", 'doc.path == "/a.md"'), EDGES)).toEqual({ sql: "(d.path IS ?)", params: ["a.md"] });
     expect(translatePredicate(predOn("blocks", 'doc.hash == "ab"'), BLOCKS)).toEqual({ sql: "(lower(hex(d.file_hash)) IS ?)", params: ["ab"] });
     expect(translatePredicate(predOn("nodes", 'doc.updated_at >= "2026"'), NODES)?.sql).toContain("r.rev_id = d.current_rev");
+  });
+
+  it("block.<x> on a link (4.11) is the source block: block.id the FK column, the rest a probe by src_block (NULL for a frontmatter link)", () => {
+    expect(translatePredicate(predOn("links", 'block.id == "b_1"'), EDGES)).toEqual({ sql: "(e.src_block IS ?)", params: ["b_1"] });
+    expect(translatePredicate(predOn("links", 'block.type == "paragraph"'), EDGES)?.sql).toBe("((SELECT bb.type FROM blocks bb WHERE bb.block_id = e.src_block) IS ?)");
+    expect(translatePredicate(predOn("links", 'block.text == "x"'), EDGES)?.sql).toContain("SELECT bb.text FROM blocks bb WHERE bb.block_id = e.src_block");
+    expect(translatePredicate(predOn("links", 'block.path == "/a.md"'), EDGES)?.sql).toBe("((SELECT '/' || d.path FROM blocks bb WHERE bb.block_id = e.src_block) IS ?)");
+    expect(translatePredicate(predOn("links", 'block.doc_id == "d_1"'), EDGES)?.sql).toBe("((SELECT bb.doc_id FROM blocks bb WHERE bb.block_id = e.src_block) IS ?)");
+    // the block's own attributes and relations stay residual
+    expect(translatePredicate(predOn("links", 'block.hash == "x"'), EDGES)).toBeNull();
+    expect(translatePredicate(predOn("links", 'block.children == "x"'), EDGES)).toBeNull();
   });
 
   it("block.id / block.path / block.doc_id on a node are the node's own columns; block.text still reaches the block", () => {

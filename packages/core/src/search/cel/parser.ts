@@ -7,10 +7,13 @@ import type { Node, Literal, RelOp } from "./ast.js";
 export class FilterInvalid extends Error {
   reason: string;
   hint: string;
-  constructor(reason: string, hint = "see query-language.md §3") {
+  /** (spec/surface 4.11) a literal corrected call, canonical JSON, when the surface can spell one (`data.fix`). */
+  fix: string | undefined;
+  constructor(reason: string, hint = "see query-language.md §3", fix?: string) {
     super(reason);
     this.reason = reason;
     this.hint = hint;
+    this.fix = fix;
   }
 }
 

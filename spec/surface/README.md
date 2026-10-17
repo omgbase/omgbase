@@ -284,7 +284,7 @@ block or node as `attrs.<k>`):
 | docs | `id` `path` `raw` `hash` `updated_at` `created_at` `title` `tags` `format` | `data` `frontmatter` `inline` | `doc` | `blocks` `nodes` `out_links` `in_links` `revisions` |
 | blocks | `id` `path` `doc_id` `raw` `hash` `updated_at` `created_at` `type` `text` `attrs` `depth` `ordinal` | — | `block` (+ `doc`) | `children` `nodes` `out_links` `section` |
 | nodes | `id` `path` `doc_id` `block_id` `kind` `name` `value` `attrs` | — | `section` (+ `doc`, `block`) | `blocks` `subsections` `children` |
-| links | `id` `path` `doc_id` `block_id` `via_id` `dst_id` `dst_path` `uri` `field` `dst_kind` `predicate` `provenance` `anchor` | — | — (`doc` reaches the source, `dst` the destination document) | `doc` `dst` |
+| links | `id` `path` `doc_id` `block_id` `via_id` `dst_id` `dst_path` `uri` `field` `dst_kind` `predicate` `provenance` `anchor` | — | — (`doc` reaches the source document, `dst` the destination document, `block` the source block) | `doc` `dst` `block` |
 | revisions | `id` `path` `rev` `seq` `doc_id` `commit` `ts` `origin` `actor` `reason` `hash` `is_current` `archived` (4.9: true when the revision's bodies live in an archive segment, `spec/store` §7.1 — the row stays; `docs_read { at }` reads through the segment while it is attached) | — | — (`doc` reaches the document's current row) | `doc` |
 | root | `id` | — | — | the five collections (§1.1) |
 
@@ -423,8 +423,23 @@ an external node id or `phantom:<path>`), `dst_path` (the target doc's path,
 null when not a doc; the reference form), `uri` (the external node's URI,
 null otherwise), `predicate`, `provenance`, `dst_kind`, `anchor`, `field`
 (the frontmatter key or inline field the edge was authored in, null for a
-link). Two reach-throughs: `doc` is the SOURCE document (the row `doc_id`
-names), and `dst` (3.0 follow-up) is the DESTINATION document — the docs row
+link). Three reach-throughs: `doc` is the SOURCE document (the row `doc_id`
+names); `block` (4.11) is the SOURCE BLOCK — the blocks row `block_id` names,
+in the source document, exactly as `doc` reaches the document — so
+`block.text` is the linking block's text, `block.type` its type, `where
+block.type == "paragraph"` a filter over it, and `block.doc.path == path`
+holds for every link that has one; **absent** (the single-with-no-row marker,
+as `dst` below) when the link has none — a frontmatter link (`field` set,
+`block_id` null): `block` renders no key, `block.text` is absent, `block ==
+null` is true. `block.id`, `block.path` and `block.doc_id` read the row's own
+columns (the foreign-key elimination of §1); a `where` over `block.<k>` pushes
+down as a probe of the block row by `block_id` — NULL exactly where `block` is
+absent — `block.raw`/`hash`/`updated_at`/`attrs` and the block's relations
+stay residual (`query-links::block-reach-through`, `::block-reach-through-filter`,
+`::block-text-filter-residual`, `::block-absent-for-a-frontmatter-link`,
+`::block-identity-reads-the-foreign-key`, `::block-doc-is-the-source`). A
+handle is not a field: the closed-row error of §1.5 still lists the
+thirteen fields alone. And `dst` (3.0 follow-up) is the DESTINATION document — the docs row
 `dst_id` names when `dst_kind == "document"` and that document exists
 (`dst_path` already names it; resolved by `dst_id` exactly as `dst_path` is),
 absent (`undefined`) for a `block` or `external` destination and for a phantom
@@ -1168,7 +1183,15 @@ carries `data.fix` (§4 "Error data"): the same call, canonical JSON, with the
 string split on `,` (each part trimmed, empty parts dropped):
 `{"docs":["a.md","b.md"],"include_ids":true}`. Any other non-list value is
 the same message with no `fix`. The `roots` minimum (one root) holds for the
-bare form too.
+bare form too. **Stringified JSON arrays (4.11).** A string whose trimmed
+form starts with `[` is parsed as JSON: a JSON array of strings is accepted
+as that array (`{ ids: "[\"b_1\",\"b_2\"]" }` is `{ ids: ["b_1", "b_2"] }` —
+the intent is unambiguous, the same tolerance class as the bare string; the
+`roots` minimum holds for it); anything else — a parse failure, a non-string
+member — is the array error above with a `fix` whose list is the parsed array
+when the text parsed (`{ ids: "[1, 2]" }` → `{"ids":[1,2]}`) and the comma
+split otherwise (a malformed `[`). A string that does not open `[` follows
+the 4.5 rules unchanged (`reads::arguments`).
 
 **Profiles (4.3, normative).** A server serves one of two catalog
 profiles, chosen by the host (`omg mcp --tools <full|minimal>` / `omgbase mcp
@@ -1223,7 +1246,10 @@ carries a `links` rung (`select path, block_id from links where dst_path ==
 string-method rung (`title.lower().contains("salt")`, the comment naming
 `matches("^Merc")` for a regex), its first rung folding the tag-membership
 and paging example into the frontmatter one to stay in budget; `plan`'s
-summary line names `diffs: true`. Since 4.7 the `docs_read` ladder carries
+summary line names `diffs: true` — since 4.11 as the opt-in it is (`Need
+file bodies? add diffs: true.`; through 4.10 it read `diffs: true for file
+bodies.` and every `plan` call of the 2026-10-17 agent-bench run passed it).
+Since 4.7 the `docs_read` ladder carries
 the time-travel rung `{"path":"/processes/calcination.md","at":"r_7"}` (the
 comment pointing at `from revisions where path == …` for the ids; `r_7` is
 the revision the fixture minter gives that document's ingest, so the rung
@@ -1362,9 +1388,23 @@ stray `-> `, `stale_plan`, `plan_mismatch`, a `$new.n` before its
 `create`, and since 3.4 the four effect-shape mistakes — a bare `"after"`
 anchor, a guard-first plural `expect`, an effect-level `expect.max`, a
 block `field: "text"`); the surface's own are the three of the append tools
-above (`block_not_container`, `parent_missing`, `ambiguous_heading`) and,
-since 4.5, the comma-joined string-list argument (§4 "Arguments": the call
-with the list split). It is built from the call and what the engine saw —
+above (`block_not_container`, `parent_missing`, `ambiguous_heading`),
+since 4.5 the comma-joined string-list argument (§4 "Arguments": the call
+with the list split; since 4.11 a stringified JSON array that is not all
+strings, with the parsed array) and, since 4.11, **the bracket list**: OQX
+has no list literal — a tuple is the collection (`spec/oqx` SEMANTICS §3b),
+so `id in ["a", "b"]`, the SQL habit, is the parser's error `unexpected '['
+— expected a value (at offset N)`. When the source at `N` opens a bracketed
+comma list of **literals** closed by `]` — two or more members, each a string
+in either quote, a number, `true`, `false` or `null`, nothing nested — the
+message gains `; a list is written as a tuple: (…)` and the error carries
+`fix`: the same request (every argument as given — `limit`, `bare`, `repo`
+…) with that `[…]` rewritten to `(…)`, the members verbatim. Both `query`
+(`query-errors::bracket-list-*`) and a selector (`spec/mutate` §8, the `select:
+` prefix; `effects::select-bracket-list-is-a-tuple`) compose it; an identifier
+member, a nested bracket, one member (a grouping, not a tuple) or an unclosed
+list is the parser's error as it stands. It is built from the call and what
+the engine saw —
 never a prose template — and both engines compose the same bytes (§6 pins
 it as a data field wherever `data` is recorded; since 4.5 a
 `filter_invalid`'s `fix` is recorded too, as `data: { fix }`, so the shape
@@ -1398,7 +1438,10 @@ verbs later.
   as JSON (absent keys for undefined projections; numbers within 1e-9; since
   4.6 `hints: [string…]` as the last key when the query reads a tier-3 name of
   an open kind, §1.5 — recorded verbatim, so the hint text is pinned; never
-  `[]`) or `{ error: "filter_invalid", message_includes }`. The reference runs every
+  `[]`) or `{ error: "filter_invalid", message_includes, fix? }` — `fix`
+  (4.11) the corrected `query` call verbatim when the error carries one
+  (§4 "Error data"; the case's `query`/`limit`/`cursor`/`bare` ARE the tool's
+  arguments, so the recorded `fix` is the one the tool composes). The reference runs every
   case both planned and in-memory and fails on any difference. Suites:
   `query-docs.json`, `query-blocks.json`, `query-nodes.json`,
   `query-links.json`, `query-follow.json`, `query-functions.json`,
@@ -1653,6 +1696,23 @@ both and runs both harnesses.
 
 ## 9. Reference oddities surfaced while specifying, and decisions
 
+- **Added (4.11) — four teaching and tolerance changes** from the
+  2026-10-17 agent-bench run (Decisions): (1) a string-list argument takes a
+  stringified JSON array of strings (§4 "Arguments"), a non-string one or a
+  malformed `[` keeping the array error with the parsed array / comma split
+  as its `fix`; (2) the `plan` ladder's summary line spells `diffs: true` as
+  the opt-in (§4 "Descriptions"); (3) `block` on a link row — the source
+  block, absent for a frontmatter link (§1.2); (4) the bracket-list `fix`
+  on a `query` or selector parse error, the message gaining the tuple hint
+  (§4 "Error data"; the query-case error shape gains `fix?`, §6). New:
+  `reads::arguments` steps 42–46 (a JSON-array string for `docs`, `ids` and
+  `roots` accepted; `[1, 2]` → the error with `{"ids":[1,2]}`; a malformed
+  `[` → the comma fix), `query-links::block-*` (six), `query-errors::bracket-*`
+  (eight: four with a `fix`, four without), `effects::select-bracket-list-is-a-tuple`
+  (`spec/mutate`), `tool-descriptions.json`/`examples::ladders` (the `plan`
+  summary; no rung moved, the pinned 4.3 digests hold). Moved: nothing else —
+  no `query-unknown` message lists a handle (handles are not fields), so the
+  links field list is unchanged.
 - **Added (4.10) — `created_at`**: an engine attribute on `docs` (the
   first revision's commit `ts`) and on `blocks` (the earliest
   `block_changes` commit `ts`) — bare, winning on collision, an authored
@@ -2017,6 +2077,24 @@ both and runs both harnesses.
 
 ## Decisions
 
+- 2026-10-17, surface 4.11: the evidence is the agent-bench re-run
+  `examples/agent-bench/results/2026-10-17T07-45-56Z` (Opus 5 over the two
+  profiles, 78/78 passed) — four first-guess frictions remained in its 19
+  `filter_invalid`s, and each is answered by a teaching or tolerance change,
+  never a language change. (1) Eight of the nineteen were a string that IS a
+  JSON array (`ids: "[\"b_189\",\"b_190\"]"`), to which 4.5 answered with the
+  comma split — a wrong `fix` the model retried verbatim; a string opening
+  `[` is now parsed, and a JSON array of strings accepted, as the bare string
+  is: the intent is unambiguous. (2) 73 of 75 `plan` calls passed `diffs:
+  true` because the summary line read `diffs: true for file bodies.`; the
+  taught form is the default, the opt-in reads as optional. (3) Two calls
+  wanted the linking block's text from a links row (`select t: block.text
+  from links`); `block` joins `doc` and `dst` as the row's third handle,
+  mirroring how `doc` reaches the source document. (4) Three were `id in
+  ["a", "b"]` — the last SQL habit; OQX has no list literal by design and the
+  tuple IS a collection (`spec/oqx` SEMANTICS §3b), so the surface attaches
+  the corrected call as `fix` instead of changing the language. Arguments
+  tolerated, a handle added, a description reworded, a `fix` added: a minor.
 - 2026-10-16, surface 4.10 (Brendan's decision): `created_at` is an
   **attribute**, not only the `revisions first { ts values }` spelling it
   already had. Creation time is the most common Dataview sort key

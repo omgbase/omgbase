@@ -51,6 +51,8 @@ export const CORPUS_TS = "2026-09-27T00:00:00.000Z";
 export interface QueryErrorExpect {
   error: "filter_invalid";
   message_includes: string;
+  /** (4.11) the corrected `query` call, canonical JSON, when the error carries one (`data.fix`) — recorded verbatim */
+  fix?: string;
 }
 
 export interface QueryCase {
@@ -309,20 +311,29 @@ export interface QueryEvaluation {
 // and the other named points of §1.3 read the host clock, which is CORPUS_TS
 // here — the instant the corpus was observed — so their results are committed
 // expectations (`date("today")` is `2026-09-27`).
-function runOnce(c: LoadedCorpus, q: QueryCaseInput, plan: boolean): { ok: true; result: OqxResult } | { ok: false; message: string } {
+function runOnce(c: LoadedCorpus, q: QueryCaseInput, plan: boolean): { ok: true; result: OqxResult } | { ok: false; message: string; fix?: string } {
   const restore = pinClock(CORPUS_TS);
+  // The case's arguments ARE the `query` tool's (README §6), so a corrected
+  // call (4.11, `fix`) is spelled from them exactly as the tool spells it.
+  const request = {
+    query: q.query,
+    ...(q.limit !== undefined ? { limit: q.limit } : {}),
+    ...(q.cursor !== undefined ? { cursor: q.cursor } : {}),
+    ...(q.bare !== undefined ? { bare: q.bare } : {}),
+  };
   try {
     const result = oqxRun(c.store, c.repoId, q.query, {
       ...(q.limit !== undefined ? { limit: q.limit } : {}),
       ...(q.cursor !== undefined ? { cursor: q.cursor } : {}),
       ...(q.bare !== undefined ? { bare: q.bare } : {}),
       ...(plan ? {} : { plan: false }),
+      request,
     });
     return { ok: true, result: canonical(result) };
   } catch (e) {
     // An OQX error (the library's, normalized) and a malformed cursor are the
     // surface's `filter_invalid`; anything else is a bug and is rethrown.
-    if (e instanceof FilterInvalid) return { ok: false, message: e.message };
+    if (e instanceof FilterInvalid) return { ok: false, message: e.message, ...(e.fix !== undefined ? { fix: e.fix } : {}) };
     if (e instanceof CursorInvalid) return { ok: false, message: e.message };
     throw e;
   } finally {
@@ -346,13 +357,13 @@ export function runQueryCase(c: LoadedCorpus, q: QueryCaseInput): QueryEvaluatio
   } else if (planned.ok && memory.ok) {
     const diff = deepEqualTol(planned.result, memory.result, 1e-9);
     if (diff !== null) problems.push(`planned != in-memory: ${diff}`);
-  } else if (!planned.ok && !memory.ok && planned.message !== memory.message) {
+  } else if (!planned.ok && !memory.ok && (planned.message !== memory.message || planned.fix !== memory.fix)) {
     problems.push(`planned error "${planned.message}" != in-memory error "${memory.message}"`);
   }
   if (planned.ok) return { expect: planned.result, problems };
   const prev = q.expect && "error" in q.expect ? q.expect.message_includes : undefined;
   const message_includes = prev !== undefined && planned.message.includes(prev) ? prev : planned.message;
-  return { expect: { error: "filter_invalid", message_includes }, problems };
+  return { expect: { error: "filter_invalid", message_includes, ...(planned.fix !== undefined ? { fix: planned.fix } : {}) }, problems };
 }
 
 /** Compare a generated query outcome with the committed `expect` (an error compares by code + substring). Null = equal. */
@@ -362,6 +373,7 @@ export function diffQueryExpect(actual: OqxResult | QueryErrorExpect, expect: Oq
     if (!("error" in expect)) return `expected a result, got error "${actual.message_includes}"`;
     if (actual.error !== expect.error) return `error ${actual.error} vs ${expect.error}`;
     if (!actual.message_includes.includes(expect.message_includes)) return `message "${actual.message_includes}" does not include "${expect.message_includes}"`;
+    if (actual.fix !== expect.fix) return `fix ${JSON.stringify(actual.fix)} vs ${JSON.stringify(expect.fix)}`;
     return null;
   }
   return deepEqualTol(actual, expect, 1e-9);
@@ -630,8 +642,9 @@ function validateQueryExpect(at: string, e: unknown, problems: string[]): void {
   }
   if ("error" in e) {
     const keys = Object.keys(e).sort();
-    if (keys.join(",") !== "error,message_includes" || e.error !== "filter_invalid" || typeof e.message_includes !== "string") {
-      problems.push(`${at}: a query error is exactly { error: "filter_invalid", message_includes: string }`);
+    const shape = keys.join(",");
+    if ((shape !== "error,message_includes" && shape !== "error,fix,message_includes") || e.error !== "filter_invalid" || typeof e.message_includes !== "string" || ("fix" in e && typeof e.fix !== "string")) {
+      problems.push(`${at}: a query error is exactly { error: "filter_invalid", message_includes: string, fix?: string }`);
     }
     return;
   }

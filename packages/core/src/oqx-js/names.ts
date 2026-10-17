@@ -49,7 +49,7 @@ export const HANDLES: Readonly<Record<Kind, Readonly<Record<string, Kind>>>> = {
   docs: { doc: "docs" },
   blocks: { block: "blocks", doc: "docs" },
   nodes: { section: "nodes", doc: "docs", block: "blocks" },
-  links: { doc: "docs", dst: "docs" },
+  links: { doc: "docs", dst: "docs", block: "blocks" },
   revisions: { doc: "docs" },
 };
 

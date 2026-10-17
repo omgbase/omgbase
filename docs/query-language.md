@@ -139,7 +139,7 @@ not aliases, `$`-names, bindings or function names.
 | docs | `id` `path` `raw` `hash` `updated_at` `created_at` `title` `tags` `format` | `data` `frontmatter` `inline`; `doc`; `blocks` `nodes` `out_links` `in_links` `revisions` |
 | blocks | `id` `path` `doc_id` `raw` `hash` `updated_at` `created_at` `type` `text` `attrs` `depth` `ordinal` | `block` `doc`; `children` `nodes` `out_links` `section` |
 | nodes | `id` `path` `doc_id` `block_id` `kind` `name` `value` `attrs` | `section` `doc` `block`; `blocks` `subsections` `children` |
-| links | `id` `path` `doc_id` `block_id` `via_id` `dst_id` `dst_path` `uri` `field` `dst_kind` `predicate` `provenance` `anchor` | `doc` |
+| links | `id` `path` `doc_id` `block_id` `via_id` `dst_id` `dst_path` `uri` `field` `dst_kind` `predicate` `provenance` `anchor` | `doc` `dst` `block` |
 | revisions | `id` `path` `rev` `seq` `doc_id` `commit` `ts` `origin` `actor` `reason` `hash` `is_current` | `doc` (the document's current row) |
 
 Language words that can never be a bare field: `select from where is not and
@@ -279,8 +279,18 @@ inline-field link has a row and no node.
 - **Attributes:** `id`, `path` (the **source** document's path). There is no
   `from_commit`: a query sees open edges only; the creating commit is history
   (`blocks_history`, `changes_since`).
-- Source-document reach-through: `doc.<key>` / `doc.id` / `doc.path`.
+- Reach-throughs (handles, not fields): `doc.<key>` / `doc.id` / `doc.path`
+  is the **source document**; `dst.<key>` / `dst.title` the **destination
+  document** (absent for an external or dangling link); `block.text` /
+  `block.type` / `block.id` (surface 4.11) the **source block** the link was
+  written in — absent for a frontmatter link (`block == null`). `block.id`,
+  `block.path`, `block.doc_id` read the row's own columns; a `where` over
+  `block.<k>` pushes down as a probe by `block_id`.
   `text()`/`semantic()` are unavailable (links carry no text/embedding).
+- There is no list literal: a membership test over several values is a tuple,
+  `id in ("b_1", "b_2")`. The SQL spelling `id in ["b_1", "b_2"]` is a parse
+  error whose message ends `; a list is written as a tuple: (…)` and whose
+  `data.fix` is the same call with `[…]` rewritten to `(…)` (surface 4.11).
 
 ### `revisions`
 History as rows (spec/surface 4.7) — one row per stored revision of every

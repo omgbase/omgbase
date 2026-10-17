@@ -118,7 +118,7 @@ export const NON_PROPERTY_NAMES: Readonly<Record<Target, ReadonlySet<string>>> =
   docs: new Set(["doc", "nodes", "blocks", "out_links", "in_links", "revisions", "data", "frontmatter", "inline"]),
   blocks: new Set(["block", "doc", "children", "nodes", "out_links", "section", "attrs"]),
   nodes: new Set(["section", "doc", "block", "blocks", "subsections", "children", "attrs"]),
-  links: new Set(["doc", "dst"]),
+  links: new Set(["doc", "dst", "block"]),
 };
 
 // ---- engine attributes ------------------------------------------------------
@@ -391,6 +391,22 @@ export function translateOperand(e: Expr, ctx: TranslateCtx): Operand | null {
         if (k === "path") return pathColumn(`${doc}.path`);
         if (k === "doc_id") return text(`${self}.doc_id`);
         if (k === "type" || k === "text") return text(`(SELECT bb.${k} FROM blocks bb WHERE bb.block_id = ${self}.block_id)`);
+        return null;
+      }
+      // block.<x> reach-through from a link (spec/surface §1.2, 4.11): the SOURCE
+      // block, keyed by the row's own `src_block` — `block.id` is that FK column
+      // (NULL for a frontmatter link, exactly where `block` is absent in memory);
+      // everything else is a primary-key probe of the block row, NULL for the
+      // same rows (`block.path` reads the scan's joined source document inside
+      // the probe, so it too is NULL when there is no block). `raw`, `hash`,
+      // `updated_at`, `attrs` and the relations stay residual.
+      if (head === "block" && target === "links" && rest.length === 1) {
+        const k = rest[0]!;
+        const probe = (col: string): Operand => text(`(SELECT ${col} FROM blocks bb WHERE bb.block_id = ${self}.src_block)`);
+        if (k === "id") return text(`${self}.src_block`);
+        if (k === "path") return probe(`'/' || ${doc}.path`);
+        if (k === "doc_id") return probe("bb.doc_id");
+        if (k === "type" || k === "text") return probe(`bb.${k}`);
         return null;
       }
       return null;

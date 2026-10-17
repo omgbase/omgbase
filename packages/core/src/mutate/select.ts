@@ -1,6 +1,6 @@
 import { OqxError, parse, type Query, type SelectItem } from "@omgbase/oqx";
 import type { Store } from "../core/store/store.js";
-import { checkRootSpellings, oqxRunQuery, reservedAlias, type OqxHit } from "../oqx-js/run.js";
+import { TUPLE_HINT, bracketListAsTuple, checkRootSpellings, oqxRunQuery, reservedAlias, type OqxHit } from "../oqx-js/run.js";
 import { rootTarget } from "../oqx-js/planner.js";
 import { FilterInvalid } from "../search/cel/parser.js";
 import {
@@ -570,7 +570,13 @@ function admitSelector(select: string, request?: FixRequest): { raw: Query; root
     raw = parse(select);
     checkRootSpellings(raw);
   } catch (e) {
-    if (e instanceof OqxError) throw selectionInvalid(`select: ${e.message}`);
+    if (e instanceof OqxError) {
+      // (spec/surface 4.11) `id in ["a", "b"]` — the bracket list rewritten to a
+      // tuple is the `fix` (the same request over the corrected selector).
+      const rewritten = bracketListAsTuple(select, e.message);
+      if (rewritten === null) throw selectionInvalid(`select: ${e.message}`);
+      throw selectionInvalid(`select: ${e.message}${TUPLE_HINT}`, request === undefined ? {} : { fix: fixRequest({ ...request, select: rewritten }) });
+    }
     if (e instanceof FilterInvalid) throw selectionInvalid(`select: ${e.message}`);
     throw e;
   }

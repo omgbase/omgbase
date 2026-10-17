@@ -37,13 +37,19 @@ export function argumentError(tool: string, message: string, shape: ArgShape, fi
   return new EngineError("filter_invalid", full, { data: { reason: full, hint: "arguments", ...(fix !== undefined ? { fix } : {}) } });
 }
 
-// ---- string lists (spec/surface §4 "Arguments", 4.5) ---------------------------------
+// ---- string lists (spec/surface §4 "Arguments", 4.5 / 4.11) ---------------------------
 //
 // Every list-of-strings argument (`docs`, `ids`, `roots`, `blocks`, `select`,
 // `unset`) also takes ONE bare string as a one-element list — the first guess
-// of a caller who has one ref. A comma-joined string is still "must be an array
-// of strings", but that error carries a `fix`: the same call with the string
-// split on commas (each part trimmed, empty parts dropped), canonical JSON.
+// of a caller who has one ref — and (4.11) a string that IS a JSON array of
+// strings (`"[\"b_1\",\"b_2\"]"`, the list stringified by a client that
+// serializes every argument) as that array: the intent is unambiguous, the
+// same tolerance class as the bare string. A comma-joined string is still
+// "must be an array of strings", but that error carries a `fix`: the same call
+// with the string split on commas (each part trimmed, empty parts dropped),
+// canonical JSON. A string opening `[` that is not a JSON array of strings is
+// the same error, its `fix` the parsed array when it parsed (a JSON array of
+// numbers) and the comma split otherwise (a malformed `[`).
 
 const STRING_LISTS = new WeakSet<z.ZodTypeAny>();
 
@@ -63,6 +69,26 @@ export function isStringList(schema: z.ZodTypeAny): boolean {
 /** The parts of a comma-joined string: split on `,`, trimmed, empty parts dropped. */
 export function commaSplit(s: string): string[] {
   return s.split(",").map((p) => p.trim()).filter((p) => p.length > 0);
+}
+
+/**
+ * (4.11) A string whose trimmed form opens `[`, read as JSON: `{ list }` when it
+ * is a JSON array of strings (accepted as that list); otherwise `{ fix }` — the
+ * list the error's corrected call should carry: the parsed array when the text
+ * parsed (a JSON array that is not all strings), else the comma split.
+ */
+export function jsonArrayString(s: string): { list: string[] } | { fix: unknown[] } | null {
+  const trimmed = s.trim();
+  if (!trimmed.startsWith("[")) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch {
+    return { fix: commaSplit(s) };
+  }
+  if (!Array.isArray(parsed)) return { fix: commaSplit(s) };
+  if (parsed.every((x) => typeof x === "string")) return { list: parsed as string[] };
+  return { fix: parsed };
 }
 
 /**
@@ -86,6 +112,18 @@ export function validateArguments(tool: string, shape: ArgShape, raw: unknown): 
       continue;
     }
     if (isStringList(schema) && typeof value === "string") {
+      // (4.11) a stringified JSON array of strings is that list — checked
+      // against the list schema itself (the `roots` minimum holds for it too);
+      // any other `[…` is the array error with the parsed array (or the comma
+      // split) as its `fix`.
+      const json = jsonArrayString(value);
+      if (json !== null) {
+        if ("fix" in json) throw argumentError(tool, `\`${key}\` must be an array of strings`, shape, canonicalJson({ ...args, [key]: json.fix }));
+        const parsed = schema.safeParse(json.list);
+        if (!parsed.success) throw argumentError(tool, issueMessage(key, schema, parsed.error.issues), shape);
+        out[key] = json.list;
+        continue;
+      }
       // (4.5) one bare string is a one-element list; a comma-joined one is the
       // array error with the split list as its `fix`.
       if (value.includes(",")) throw argumentError(tool, `\`${key}\` must be an array of strings`, shape, canonicalJson({ ...args, [key]: commaSplit(value) }));

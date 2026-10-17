@@ -20093,6 +20093,42 @@
       }
     },
     {
+      "name": "select-bracket-list-is-a-tuple",
+      "notes": "§11.8 static admission: a selector that fails to parse is `filter_invalid` with `hint: \"selection\"` and the parser's message under `select: `; since 3.5 (spec/surface 4.11) a bracketed comma list of literals — `id in [\"a\", \"b\"]`, the SQL habit; OQX's collection is the tuple — gains the tuple hint and a `fix`: the same request with `[…]` rewritten to `(…)`. No store is read.",
+      "steps": [
+        {
+          "plan_effects": {
+            "select": "from docs where stage in [\"nigredo\", \"albedo\"]",
+            "effects": [
+              {
+                "op": "set",
+                "field": "frontmatter.rolled_up",
+                "value": true
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          {
+            "error": {
+              "code": "filter_invalid",
+              "fix": "{\"effects\":[{\"field\":\"frontmatter.rolled_up\",\"op\":\"set\",\"value\":true}],\"select\":\"from docs where stage in (\\\"nigredo\\\", \\\"albedo\\\")\"}"
+            }
+          }
+        ],
+        "files": {},
+        "docs": [],
+        "blocks": [],
+        "commits": [],
+        "revisions": [],
+        "dispositions": [],
+        "resurrection_pool": [],
+        "pending_materializations": []
+      }
+    },
+    {
       "name": "select-revisions-refused",
       "notes": "§11.8 static admission (before the query runs): the `revisions` root (spec/surface 4.7): a revision row has no effect target → `filter_invalid` with `hint: \"selection\"`; the fix is the same request over `docs`; no store is read, so the case needs no observation.",
       "steps": [
