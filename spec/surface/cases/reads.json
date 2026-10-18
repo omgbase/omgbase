@@ -13478,11 +13478,12 @@
                 "revisions": 2,
                 "commits": 2,
                 "dispositions": 4,
-                "block_changes": 1
+                "block_changes": 1,
+                "checkpointed": 1
               },
               "gc": {
-                "blobs": 2,
-                "tree_nodes": 2
+                "blobs": 3,
+                "tree_nodes": 3
               }
             }
           },
@@ -14019,11 +14020,12 @@
                 "revisions": 2,
                 "commits": 2,
                 "dispositions": 4,
-                "block_changes": 1
+                "block_changes": 1,
+                "checkpointed": 1
               },
               "gc": {
-                "blobs": 2,
-                "tree_nodes": 2
+                "blobs": 3,
+                "tree_nodes": 3
               }
             }
           },

@@ -156,7 +156,7 @@
             "rev_id": "r_1",
             "doc_id": "d_0",
             "seq": 2,
-            "root_tree": "055fbd52d03be880a5ac7fa97e7d8789f2f0b62a861ab46e01cb381fe195eb21",
+            "root_tree": "fffd055abbdbd38f538fe26bf5a3b2fbf8814457ac76d04f3ca79264ab7cdfd0",
             "frontmatter_blob": null,
             "rendered_hash": "c9a8d3f66fdb5a196422661437d0b3e38e4133d2f082ab0deafb294c3fb420a5",
             "path": "a.md",
@@ -203,12 +203,12 @@
         ],
         "tree_nodes": [
           {
-            "hash": "055fbd52d03be880a5ac7fa97e7d8789f2f0b62a861ab46e01cb381fe195eb21",
-            "entries": "[[\"b_0\",\"5e1fff476b11f06a7daea57fb42de421a23919621e2617230a8f9426ccaad226\",null,\"heading\",{\"level\":1},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_1\",\"4c9e19659afd85cd993a625573905aacb5b74d6e67cae31c774a36959bde519c\",null,\"paragraph\",{},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_2\",\"e8ed02cea012300bb85e9b58f4dd81b501bd5f77663a1491691d49ec20dfdbb1\",null,\"paragraph\",{},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_3\",\"3b5e6393141655cfecf30626a803eb52f9b65c58315487f472625726e92f7664\",null,\"paragraph\",{},\"01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b\"]]"
-          },
-          {
             "hash": "a7987dede593723e068f2db0e94a7406a9a181cf996dc064cbb6d036c910db60",
             "entries": "[[\"b_0\",\"5e1fff476b11f06a7daea57fb42de421a23919621e2617230a8f9426ccaad226\",null,\"heading\",{\"level\":1},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_1\",\"4c9e19659afd85cd993a625573905aacb5b74d6e67cae31c774a36959bde519c\",null,\"paragraph\",{},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_2\",\"23f15e956c6c2d5ca00847b2fa6c5a003089699b981b324802fb7a66048fe39d\",null,\"paragraph\",{},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_3\",\"3b5e6393141655cfecf30626a803eb52f9b65c58315487f472625726e92f7664\",null,\"paragraph\",{},\"01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b\"]]"
+          },
+          {
+            "hash": "fffd055abbdbd38f538fe26bf5a3b2fbf8814457ac76d04f3ca79264ab7cdfd0",
+            "entries": "{\"d\":[[\"=\",2],[\"~\",[\"b_2\",\"e8ed02cea012300bb85e9b58f4dd81b501bd5f77663a1491691d49ec20dfdbb1\",null,\"paragraph\",{},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"]],[\"=\",1]]}"
           }
         ],
         "blocks": [

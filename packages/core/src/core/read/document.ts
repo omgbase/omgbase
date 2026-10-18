@@ -5,6 +5,7 @@ import { docPropertiesGrouped, type PropertySource } from "../store/properties.j
 import { sha256 } from "../hash.js";
 import { referencePath } from "../paths.js";
 import { revisionBody } from "../store/archive.js";
+import { TreeResolver } from "../store/delta.js";
 
 // Whole-document read (06 §3). The one-shot cold-start read: reconstruct a
 // document's full file bytes in a single call, so an agent can "read the guide
@@ -71,14 +72,28 @@ interface TopBlockRow {
 // A revision's root tree node is a JSON array of six-field canonical tuples
 // (see core/hash.ts serializeTreeEntries):
 //   [blockId, rawHashHex, childTreeHashHex, type, attrs, triviaHashHex]
+// — or, since 16.0, a delta over the previous revision's (core/store/delta.ts).
 // We read the top-level entries in array order and keep raw + trivia hashes;
 // child subtrees are NOT walked (a container block's `raw` already contains its
 // children verbatim — the same reason reconstructContent walks only roots).
-type TreeEntryTuple = [string, string, string | null, string, Record<string, unknown>, string | null];
 
 function blob(db: Database, hash: Buffer): string {
   const row = db.prepare("SELECT bytes FROM blobs WHERE hash = ?").get(hash) as { bytes: Buffer } | undefined;
   return row ? row.bytes.toString("utf8") : "";
+}
+
+/**
+ * A live revision's frontmatter raw (spec/store §6.1, 16.0): the blob the row
+ * names, resolved when it is a `{"f":…}` delta over the previous revision's
+ * (`TreeResolver.frontmatter`, at most 15 steps back). `null` when the
+ * revision has no frontmatter.
+ */
+export function currentFrontmatterRaw(db: Database, revId: string): string | null {
+  const rev = db.prepare("SELECT doc_id, seq, frontmatter_blob FROM revisions WHERE rev_id = ?").get(revId) as
+    | { doc_id: string; seq: number; frontmatter_blob: Buffer | null }
+    | undefined;
+  if (!rev?.frontmatter_blob) return null;
+  return new TreeResolver(db).frontmatter(rev.doc_id, rev.seq, rev.frontmatter_blob.toString("hex"));
 }
 
 /**
@@ -95,14 +110,12 @@ export function reconstructContent(db: Database, docId: string): string | null {
   const out: string[] = [doc.leading_trivia];
 
   if (doc.current_rev) {
-    const rev = db.prepare("SELECT frontmatter_blob FROM revisions WHERE rev_id = ?").get(doc.current_rev) as
-      | { frontmatter_blob: Buffer | null }
-      | undefined;
+    const fm = currentFrontmatterRaw(db, doc.current_rev);
     // Emit the frontmatter block followed by its exact stored separator. Ingest
     // always captures frontmatter_trivia whenever a frontmatter block exists, so
     // frontmatter_blob present ⇒ frontmatter_trivia is a real string (possibly
     // ""); the ?? "" is just a type guard.
-    if (rev?.frontmatter_blob) out.push(blob(db, rev.frontmatter_blob) + (doc.frontmatter_trivia ?? ""));
+    if (fm !== null) out.push(fm + (doc.frontmatter_trivia ?? ""));
   }
 
   // Top-level blocks only: a container's `raw` already contains its nested
@@ -321,21 +334,23 @@ export function readDocumentAtRevision(store: Store, docId: string, revId: strin
 
   const out: string[] = [doc.leading_trivia];
 
-  // Frontmatter blob for THIS revision (per-revision), then the doc-level
-  // separator (best-effort — see fidelity caveat).
-  if (rev.frontmatter_blob) out.push(blobAt(rev.frontmatter_blob) + (doc.frontmatter_trivia ?? ""));
+  // The revision's nodes resolved in its context (spec/store §6.2, 16.0): a
+  // `{`-form root or frontmatter walks back through the previous revisions
+  // of the document to a checkpoint; a segment holds checkpoint forms only.
+  const resolver = new TreeResolver(db, rev.prefix);
 
-  // Top-level blocks in tree order, from THIS revision's Merkle root tree node.
-  // A container's raw already holds its children verbatim, so we deliberately do
-  // NOT recurse into childTreeHashHex (mirrors reconstructContent's
-  // parent_block IS NULL walk). An absent tree node yields empty body bytes.
-  const node = db.prepare(`SELECT entries FROM ${at("tree_nodes")} WHERE hash = ?`).get(rev.root_tree) as { entries: string } | undefined;
-  if (node) {
-    const entries = JSON.parse(node.entries) as TreeEntryTuple[];
-    for (const [, rawHashHex, , , , triviaHashHex] of entries) {
-      out.push(blobAt(Buffer.from(rawHashHex, "hex")));
-      if (triviaHashHex) out.push(blobAt(Buffer.from(triviaHashHex, "hex")));
-    }
+  // Frontmatter for THIS revision (per-revision), then the doc-level
+  // separator (best-effort — see fidelity caveat).
+  if (rev.frontmatter_blob) out.push(resolver.frontmatter(rev.doc_id, rev.seq, rev.frontmatter_blob.toString("hex")) + (doc.frontmatter_trivia ?? ""));
+
+  // Top-level blocks in tree order, from THIS revision's Merkle root. A
+  // container's raw already holds its children verbatim, so we deliberately do
+  // NOT recurse into the child trees (mirrors reconstructContent's
+  // parent_block IS NULL walk).
+  const root = resolver.list(rev.doc_id, rev.seq, rev.root_tree.toString("hex"), null);
+  for (const [, rawHashHex, , , , triviaHashHex] of root.entries) {
+    out.push(blobAt(Buffer.from(rawHashHex, "hex")));
+    if (triviaHashHex) out.push(blobAt(Buffer.from(triviaHashHex, "hex")));
   }
 
   const content = out.join("");

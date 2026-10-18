@@ -2,7 +2,8 @@ import { Store } from "./store/store.js";
 import { parseTree } from "./parse/tree.js";
 import { render } from "./parse/render.js";
 import { reconstructContent } from "./read/document.js";
-import { assignIds, writeBlockTree, putBlob, newCommit, writeRevision, type TreeInputBlock } from "./store/writers.js";
+import { assignIds, writeBlockTree, writeFrontmatterBlob, isCheckpointRevision, previousRevision, newCommit, writeRevision, type TreeInputBlock, type TreeWriteContext } from "./store/writers.js";
+import { TreeResolver } from "./store/delta.js";
 import { sha256, childQuoteDepth, visibleText } from "./hash.js";
 import { mintId } from "./ids.js";
 import { keyBetween } from "./order-key.js";
@@ -250,8 +251,6 @@ export function ingestInto(
   const tree: BlockTree = opts.parsed ?? (adapter ? adapter.parse(content) : parseTree(content));
   const { fmBlock, rest } = extractFrontmatter(tree.children);
 
-  // Frontmatter blob (markdown-specific) preserved for revision history.
-  const fmBlobHex = fmBlock ? putBlob(db, fmBlock.raw) : null;
   // The exact separator bytes between the frontmatter block and the first body
   // block (the frontmatter block's trailing trivia). Persisted so the body
   // reconstructs byte-for-byte instead of assuming a canonical blank line.
@@ -302,7 +301,31 @@ export function ingestInto(
     ? opts.resolveIds(rest, isNew ? null : docId)
     : { assigned: assignIds(rest), dispositions: [] as DispositionRow[], deleted: [] as string[] };
   const assigned = resolved.assigned;
-  const rootTreeHex = writeBlockTree(db, assigned);
+
+  // spec/store §4.4 (16.0): the revision's seq decides whether it is a
+  // checkpoint; a non-checkpoint revision writes its tree and frontmatter as
+  // deltas against the previous revision's RESOLVED tree and raw where that is
+  // smaller. The previous revision is the document's greatest seq — on every
+  // path the current revision, never archived (retention rule 1) — but the
+  // rule is stated for the general case: no live predecessor ⇒ a checkpoint.
+  const previous = previousRevision(db, docId);
+  const seq = previous ? previous.seq + 1 : 1;
+  const checkpoint = isCheckpointRevision(seq, previous);
+  const resolver = new TreeResolver(db);
+  const treeCtx: TreeWriteContext = {
+    checkpoint,
+    base: !checkpoint && previous?.root_tree ? resolver.tree(docId, previous.seq, previous.root_tree.toString("hex")) : null,
+  };
+  const rootTreeHex = writeBlockTree(db, assigned, treeCtx);
+
+  // Frontmatter blob (markdown-specific) preserved for revision history: the
+  // raw at a checkpoint, else the smaller of a line delta over the previous
+  // revision's frontmatter and the raw (spec/store §5.4 step 1).
+  let fmBlobHex: string | null = null;
+  if (fmBlock) {
+    const baseRaw = !checkpoint && previous?.frontmatter_blob ? resolver.frontmatter(docId, previous.seq, previous.frontmatter_blob.toString("hex")) : null;
+    fmBlobHex = writeFrontmatterBlob(db, fmBlock.raw, baseRaw, checkpoint);
+  }
 
   const renderedHash = sha256(content);
   const rev = writeRevision(db, {
@@ -312,6 +335,7 @@ export function ingestInto(
     renderedHash,
     path,
     commitId,
+    seq,
   });
 
   // Snapshot deleted blocks into the resurrection pool BEFORE dropping the

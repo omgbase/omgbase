@@ -1,4 +1,6 @@
+import type { Database } from "better-sqlite3";
 import type { Store } from "./store.js";
+import { explicitEntries, parseNodeText } from "./delta.js";
 
 // Garbage collection (spec/store §7). Mark-and-sweep from the LIVE revision
 // roots removes unreachable blobs and tree_nodes. Through 14.x nothing was ever
@@ -30,24 +32,38 @@ export function markReachable(store: Store): { trees: Set<string>; blobs: Set<st
   const fmRows = store.db.prepare("SELECT DISTINCT frontmatter_blob FROM revisions WHERE frontmatter_blob IS NOT NULL").all() as { frontmatter_blob: Buffer }[];
   for (const r of fmRows) blobs.add(r.frontmatter_blob.toString("hex"));
 
-  const treeNode = store.db.prepare("SELECT entries FROM tree_nodes WHERE hash = ?");
+  const walk = explicitWalker(store.db, trees, blobs);
+  const roots = store.db.prepare("SELECT DISTINCT root_tree FROM revisions WHERE root_tree IS NOT NULL").all() as { root_tree: Buffer }[];
+  for (const r of roots) walk(r.root_tree.toString("hex"));
+
+  return { trees, blobs };
+}
+
+/**
+ * The EXPLICIT mark (spec/store §7, 16.0): a walk from a node over the objects
+ * its text names on its own — every entry of a `[`-node, the `+`/`~` entries of
+ * a `{`-node — recursing into the child hashes those entries carry. What a
+ * delta keeps "as the base" is the base revision's to mark, and the
+ * base-liveness rule (§4.4) keeps that revision live while the delta is.
+ * Returns the walker; `trees`/`blobs` collect hex hashes.
+ */
+export function explicitWalker(db: Database, trees: Set<string>, blobs: Set<string>, onNode?: (hashHex: string, entries: string) => void): (hashHex: string) => void {
+  const treeNode = db.prepare("SELECT entries FROM tree_nodes WHERE hash = ?");
   const walk = (hashHex: string): void => {
     if (trees.has(hashHex)) return;
     trees.add(hashHex);
     const node = treeNode.get(Buffer.from(hashHex, "hex")) as { entries: string } | undefined;
     if (!node) return;
-    const entries = JSON.parse(node.entries) as [string, string, string | null, string, string, string | null][];
-    for (const [, rawHashHex, childHashHex, , , triviaHashHex] of entries) {
+    onNode?.(hashHex, node.entries);
+    const parsed = parseNodeText(node.entries);
+    if (!parsed) return;
+    for (const [, rawHashHex, childHashHex, , , triviaHashHex] of explicitEntries(parsed)) {
       blobs.add(rawHashHex);
       if (triviaHashHex) blobs.add(triviaHashHex);
       if (childHashHex) walk(childHashHex);
     }
   };
-
-  const roots = store.db.prepare("SELECT DISTINCT root_tree FROM revisions WHERE root_tree IS NOT NULL").all() as { root_tree: Buffer }[];
-  for (const r of roots) walk(r.root_tree.toString("hex"));
-
-  return { trees, blobs };
+  return walk;
 }
 
 /**

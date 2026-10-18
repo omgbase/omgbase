@@ -4,6 +4,7 @@ import { existsSync, mkdtempSync, readdirSync, rmSync, statSync, unlinkSync } fr
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Store } from "./store.js";
+import { SCHEMA_VERSION } from "./schema.js";
 import { ensureRepo } from "../attach.js";
 import { observeBatch } from "../../sync/observe.js";
 import { sequentialMinter, setIdMinter } from "../ids.js";
@@ -73,7 +74,7 @@ describe("segment files", () => {
     // Read-only on disk; the DDL subset; the manifest.
     expect(statSync(seg.path).mode & 0o222).toBe(0);
     const m = readManifest(seg.path);
-    expect(m).toMatchObject({ segment_id: "s_0", repo_id: repoId, created_at: NOW, seq_lo: 1, seq_hi: 1, revision_count: 1, previous_segment: null, schema_user_version: 15 });
+    expect(m).toMatchObject({ segment_id: "s_0", repo_id: repoId, created_at: NOW, seq_lo: 1, seq_hi: 1, revision_count: 1, previous_segment: null, schema_user_version: SCHEMA_VERSION });
     expect(m.policy).toEqual(POLICY);
     const db = new Database(seg.path, { readonly: true });
     try {
@@ -89,9 +90,13 @@ describe("segment files", () => {
     // The squash: bodies gone, pointer set, GC reclaimed the exclusive blobs, the segment recorded.
     const rev = store.db.prepare("SELECT root_tree, frontmatter_blob, archive FROM revisions WHERE rev_id = 'r_0'").get() as { root_tree: Buffer | null; frontmatter_blob: Buffer | null; archive: string | null };
     expect(rev).toEqual({ root_tree: null, frontmatter_blob: null, archive: "s_0" });
-    expect(r.squashed).toEqual({ revisions: 1, commits: 1, dispositions: 2, block_changes: 0 });
-    expect(r.gc).toEqual({ blobs: 1, tree_nodes: 1 });
+    // 16.0: r_1 was a delta over r_0 and is re-written in checkpoint form
+    // (`checkpointed: 1`); the sweep reclaims r_0's root and r_1's old delta root.
+    expect(r.squashed).toEqual({ revisions: 1, commits: 1, dispositions: 2, block_changes: 0, checkpointed: 1 });
+    expect(r.gc).toEqual({ blobs: 1, tree_nodes: 2 });
     expect(count("blobs")).toBe(before - 1);
+    const r1 = store.db.prepare("SELECT t.entries FROM revisions r JOIN tree_nodes t ON t.hash = r.root_tree WHERE r.rev_id = 'r_1'").get() as { entries: string };
+    expect(r1.entries.startsWith("[")).toBe(true);
     expect(listArchives(store, repoId, { dest })).toMatchObject([{ segment_id: "s_0", state: "attached", revision_count: 1 }]);
     // The repo remembers its last segment.
     const settings = JSON.parse((store.db.prepare("SELECT settings FROM repos WHERE repo_id = ?").get(repoId) as { settings: string }).settings) as { history: { last_segment: string } };

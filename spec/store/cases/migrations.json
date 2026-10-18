@@ -2,7 +2,7 @@
   "suite": "migrations",
   "cases": [
     {
-      "name": "v1-to-v15-minimal",
+      "name": "v1-to-v16-minimal",
       "notes": "A v1 database with only a repos table (root_path still present, no rows): every create-step runs, the fs adapter row is ensured, root_path is dropped, pending_materializations is created. Mirrors store.test.ts 'migrates an older (v1) database forward'.",
       "setup": [
         "CREATE TABLE repos (repo_id TEXT PRIMARY KEY, slug TEXT, root_path TEXT, settings TEXT)"
@@ -18,7 +18,7 @@
         "archives"
       ],
       "expect": {
-        "user_version": 15,
+        "user_version": 16,
         "tables": {
           "adapters": [
             "name",
@@ -178,7 +178,7 @@
         "repos"
       ],
       "expect": {
-        "user_version": 15,
+        "user_version": 16,
         "tables": {
           "adapters": [
             "name",
@@ -274,7 +274,7 @@
         "repos"
       ],
       "expect": {
-        "user_version": 15,
+        "user_version": 16,
         "tables": {
           "adapters": [
             "name",
@@ -364,7 +364,7 @@
         "repos"
       ],
       "expect": {
-        "user_version": 15,
+        "user_version": 16,
         "tables": {
           "adapters": [
             "name",
@@ -454,7 +454,7 @@
         "pending_materializations"
       ],
       "expect": {
-        "user_version": 15,
+        "user_version": 16,
         "tables": {
           "archives": [
             "segment_id",
@@ -520,7 +520,7 @@
         "archives"
       ],
       "expect": {
-        "user_version": 15,
+        "user_version": 16,
         "tables": {
           "archives": [
             "segment_id",
@@ -622,6 +622,152 @@
       }
     },
     {
+      "name": "v15-to-v16-is-lazy",
+      "notes": "§3.4 step 16: no DDL and no data pass. A 15.x store's nodes are all `[`-form and its frontmatter blobs all raw — exactly the 16.0 checkpoint forms — so every existing revision is a checkpoint and the step only moves user_version; the rows are untouched byte for byte. Deltas appear with the next commit (§4.4).",
+      "setup": [
+        "CREATE TABLE repos (repo_id TEXT PRIMARY KEY, slug TEXT NOT NULL UNIQUE, settings TEXT NOT NULL DEFAULT '{}')",
+        "CREATE TABLE docs (doc_id TEXT PRIMARY KEY, repo_id TEXT NOT NULL REFERENCES repos(repo_id), path TEXT NOT NULL, format TEXT NOT NULL DEFAULT 'markdown', current_rev TEXT, file_hash BLOB, conflicted INTEGER NOT NULL DEFAULT 0, leading_trivia TEXT NOT NULL DEFAULT '', frontmatter_trivia TEXT, deleted_commit TEXT, UNIQUE (repo_id, path))",
+        "CREATE TABLE blobs (hash BLOB PRIMARY KEY, bytes BLOB NOT NULL, size INTEGER NOT NULL)",
+        "CREATE TABLE tree_nodes (hash BLOB PRIMARY KEY, entries TEXT NOT NULL)",
+        "CREATE TABLE commits (commit_id TEXT PRIMARY KEY, repo_id TEXT NOT NULL REFERENCES repos(repo_id), seq INTEGER NOT NULL, ts TEXT NOT NULL, origin TEXT NOT NULL CHECK (origin IN ('api','observed','import','projection')), actor TEXT, reason TEXT, checkpoint_id TEXT, ops TEXT, UNIQUE (repo_id, seq))",
+        "CREATE TABLE revisions (rev_id TEXT PRIMARY KEY, doc_id TEXT NOT NULL REFERENCES docs(doc_id), seq INTEGER NOT NULL, root_tree BLOB, frontmatter_blob BLOB, rendered_hash BLOB NOT NULL, path TEXT NOT NULL, commit_id TEXT NOT NULL REFERENCES commits(commit_id), archive TEXT, UNIQUE (doc_id, seq))",
+        "CREATE TABLE pending_materializations (repo_id TEXT NOT NULL REFERENCES repos(repo_id), path TEXT NOT NULL, kind TEXT NOT NULL CHECK (kind IN ('write','rename','remove')), from_path TEXT, doc_id TEXT NOT NULL REFERENCES docs(doc_id), rev_id TEXT REFERENCES revisions(rev_id), rendered_hash BLOB NOT NULL, commit_id TEXT NOT NULL REFERENCES commits(commit_id), PRIMARY KEY (repo_id, path))",
+        "CREATE TABLE archives (segment_id TEXT PRIMARY KEY, repo_id TEXT NOT NULL REFERENCES repos(repo_id), path TEXT NOT NULL, seq_lo INTEGER NOT NULL, seq_hi INTEGER NOT NULL, created_at TEXT NOT NULL, revision_count INTEGER NOT NULL, bytes INTEGER NOT NULL)",
+        "INSERT INTO repos (repo_id, slug) VALUES ('rp_1','vault')",
+        "INSERT INTO docs (doc_id, repo_id, path, current_rev, file_hash, frontmatter_trivia) VALUES ('d_1','rp_1','a.md','r_2', X'00', X'0a')",
+        "INSERT INTO blobs (hash, bytes, size) VALUES (X'aa', X'2d2d2d0a6c617965723a2064726166740a2d2d2d', 20)",
+        "INSERT INTO blobs (hash, bytes, size) VALUES (X'bb', X'2320410a', 4)",
+        "INSERT INTO tree_nodes (hash, entries) VALUES (X'01', '[[\"b_1\",\"bb\",null,\"heading\",{\"level\":1},null]]')",
+        "INSERT INTO commits (commit_id, repo_id, seq, ts, origin) VALUES ('c_1','rp_1',1,'2026-10-17T10:00:00.000Z','observed')",
+        "INSERT INTO commits (commit_id, repo_id, seq, ts, origin) VALUES ('c_2','rp_1',2,'2026-10-17T10:01:00.000Z','observed')",
+        "INSERT INTO revisions (rev_id, doc_id, seq, root_tree, frontmatter_blob, rendered_hash, path, commit_id, archive) VALUES ('r_1','d_1',1,X'01',X'aa',X'05','a.md','c_1',NULL)",
+        "INSERT INTO revisions (rev_id, doc_id, seq, root_tree, frontmatter_blob, rendered_hash, path, commit_id, archive) VALUES ('r_2','d_1',2,X'01',X'aa',X'06','a.md','c_2',NULL)"
+      ],
+      "user_version": 15,
+      "rows": [
+        "revisions",
+        "tree_nodes",
+        "blobs"
+      ],
+      "expect": {
+        "user_version": 16,
+        "tables": {
+          "archives": [
+            "segment_id",
+            "repo_id",
+            "path",
+            "seq_lo",
+            "seq_hi",
+            "created_at",
+            "revision_count",
+            "bytes"
+          ],
+          "blobs": [
+            "hash",
+            "bytes",
+            "size"
+          ],
+          "commits": [
+            "commit_id",
+            "repo_id",
+            "seq",
+            "ts",
+            "origin",
+            "actor",
+            "reason",
+            "checkpoint_id",
+            "ops"
+          ],
+          "docs": [
+            "doc_id",
+            "repo_id",
+            "path",
+            "format",
+            "current_rev",
+            "file_hash",
+            "conflicted",
+            "leading_trivia",
+            "frontmatter_trivia",
+            "deleted_commit"
+          ],
+          "pending_materializations": [
+            "repo_id",
+            "path",
+            "kind",
+            "from_path",
+            "doc_id",
+            "rev_id",
+            "rendered_hash",
+            "commit_id"
+          ],
+          "repos": [
+            "repo_id",
+            "slug",
+            "settings"
+          ],
+          "revisions": [
+            "rev_id",
+            "doc_id",
+            "seq",
+            "root_tree",
+            "frontmatter_blob",
+            "rendered_hash",
+            "path",
+            "commit_id",
+            "archive"
+          ],
+          "tree_nodes": [
+            "hash",
+            "entries"
+          ]
+        },
+        "rows": {
+          "revisions": [
+            {
+              "rev_id": "r_1",
+              "doc_id": "d_1",
+              "seq": 1,
+              "root_tree": "01",
+              "frontmatter_blob": "aa",
+              "rendered_hash": "05",
+              "path": "a.md",
+              "commit_id": "c_1",
+              "archive": null
+            },
+            {
+              "rev_id": "r_2",
+              "doc_id": "d_1",
+              "seq": 2,
+              "root_tree": "01",
+              "frontmatter_blob": "aa",
+              "rendered_hash": "06",
+              "path": "a.md",
+              "commit_id": "c_2",
+              "archive": null
+            }
+          ],
+          "tree_nodes": [
+            {
+              "hash": "01",
+              "entries": "[[\"b_1\",\"bb\",null,\"heading\",{\"level\":1},null]]"
+            }
+          ],
+          "blobs": [
+            {
+              "hash": "aa",
+              "bytes": "2d2d2d0a6c617965723a2064726166740a2d2d2d",
+              "size": 20
+            },
+            {
+              "hash": "bb",
+              "bytes": "2320410a",
+              "size": 4
+            }
+          ]
+        }
+      }
+    },
+    {
       "name": "already-current-is-untouched",
       "notes": "README §1 step 2: a database already at the schema version is opened without executing the DDL — the odd table is all there is afterwards.",
       "setup": [
@@ -633,7 +779,7 @@
         "only_this"
       ],
       "expect": {
-        "user_version": 15,
+        "user_version": 16,
         "tables": {
           "only_this": [
             "x"
@@ -652,10 +798,10 @@
       "name": "newer-version-is-refused",
       "notes": "README §1 step 3: a database from a newer build is refused with the exact message; nothing is read or written.",
       "setup": [],
-      "user_version": 16,
+      "user_version": 17,
       "rows": [],
       "expect": {
-        "error": "database schema (v16) is newer than this build (v15); upgrade omgbase"
+        "error": "database schema (v17) is newer than this build (v16); upgrade omgbase"
       }
     }
   ]

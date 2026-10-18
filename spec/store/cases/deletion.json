@@ -1141,7 +1141,7 @@
             "rev_id": "r_1",
             "doc_id": "d_0",
             "seq": 2,
-            "root_tree": "ae4ad934a9db386237f5b095521ea2319c84a018af073bc5e40f15949dd1114f",
+            "root_tree": "983d87e36b9d95f1754078669338e8366a314961e8c80ebcc461de29c6446285",
             "frontmatter_blob": null,
             "rendered_hash": "11f8bc20639eb5fcdbd27d7f47ad4ccae16c60f4ff60ede659fd87ac431b5aaf",
             "path": "a.md",
@@ -1178,12 +1178,12 @@
         ],
         "tree_nodes": [
           {
-            "hash": "aa8789bfb3b82bc8bd24811da81f7dea6ee807141f235d612392c4654acaf8db",
-            "entries": "[[\"b_0\",\"1bf8f68b8c1553b02c143043950242e081472d04353f6c9c646ff1fcee13ee1c\",null,\"paragraph\",{},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_1\",\"87f4a52388def442f542b8136b9ea750654e962751ed32cb7b66653a970ea899\",null,\"paragraph\",{},\"01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b\"]]"
+            "hash": "983d87e36b9d95f1754078669338e8366a314961e8c80ebcc461de29c6446285",
+            "entries": "{\"d\":[[\"=\",1],[\"~\",[\"b_2\",\"863e060416f4f0c75920d93cf9c2a8d80bd07115a7e5d8e4a09c4ddb3ad5a316\",null,\"paragraph\",{},\"01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b\"]]]}"
           },
           {
-            "hash": "ae4ad934a9db386237f5b095521ea2319c84a018af073bc5e40f15949dd1114f",
-            "entries": "[[\"b_0\",\"1bf8f68b8c1553b02c143043950242e081472d04353f6c9c646ff1fcee13ee1c\",null,\"paragraph\",{},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_2\",\"863e060416f4f0c75920d93cf9c2a8d80bd07115a7e5d8e4a09c4ddb3ad5a316\",null,\"paragraph\",{},\"01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b\"]]"
+            "hash": "aa8789bfb3b82bc8bd24811da81f7dea6ee807141f235d612392c4654acaf8db",
+            "entries": "[[\"b_0\",\"1bf8f68b8c1553b02c143043950242e081472d04353f6c9c646ff1fcee13ee1c\",null,\"paragraph\",{},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_1\",\"87f4a52388def442f542b8136b9ea750654e962751ed32cb7b66653a970ea899\",null,\"paragraph\",{},\"01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b\"]]"
           }
         ],
         "blocks": [

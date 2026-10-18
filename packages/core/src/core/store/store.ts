@@ -94,6 +94,12 @@ export class Store {
       if (v === 11) { this.migrateV11(); continue; }
       if (v === 13) { this.migrateV13(); continue; }
       if (v === 15) { this.migrateV15(); continue; }
+      // v16 (spec/store §3.4 step 16, §4.1 "Delta nodes"): no DDL and no data
+      // pass. A 15.x store holds only full (`[`-form) nodes and raw frontmatter
+      // blobs, which ARE the 16.0 checkpoint forms, so every existing revision
+      // is a checkpoint; deltas appear with the next commit. The major exists
+      // because a 15.x engine cannot read a `{`-form node (§1 step 3 keeps it out).
+      if (v === 16) continue;
       const ddl = MIGRATIONS[v];
       if (!ddl) throw new Error(`no migration to schema v${v}`);
       this.db.exec(ddl);

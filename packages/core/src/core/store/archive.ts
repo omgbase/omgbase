@@ -4,9 +4,12 @@ import { basename, join, resolve } from "node:path";
 import type { Store } from "./store.js";
 import { SCHEMA_VERSION } from "./schema.js";
 import { mintId } from "../ids.js";
+import { sha256 } from "../hash.js";
 import { sweepUnreachable } from "./gc.js";
+import { TreeResolver, entryBlobs } from "./delta.js";
+import { putBlob, putNodeText } from "./writers.js";
 import {
-  evaluateRetention, parseSettingsJson, ReachMarker, LAST_SEGMENT_SETTINGS_KEY, RETENTION_SETTINGS_KEY,
+  evaluateRetention, parseSettingsJson, LAST_SEGMENT_SETTINGS_KEY, RETENTION_SETTINGS_KEY,
   type EvaluateOptions, type RetentionPlan, type RetentionPolicy,
 } from "./retention.js";
 
@@ -418,6 +421,8 @@ export function archivePrefix(store: Store, rev: { rev_id: string; archive: stri
 export interface RevisionBody {
   rev_id: string;
   doc_id: string;
+  /** The per-document seq — the context a `{`-form node is resolved in (spec/store §6, 16.0). */
+  seq: number;
   path: string;
   rendered_hash: Buffer;
   root_tree: Buffer;
@@ -435,18 +440,46 @@ export interface RevisionBody {
  */
 export function revisionBody(store: Store, revId: string, docId?: string): RevisionBody | undefined {
   const row = store.db
-    .prepare(`SELECT rev_id, doc_id, path, rendered_hash, root_tree, frontmatter_blob, archive FROM revisions WHERE rev_id = ?${docId === undefined ? "" : " AND doc_id = ?"}`)
+    .prepare(`SELECT rev_id, doc_id, seq, path, rendered_hash, root_tree, frontmatter_blob, archive FROM revisions WHERE rev_id = ?${docId === undefined ? "" : " AND doc_id = ?"}`)
     .get(...(docId === undefined ? [revId] : [revId, docId])) as
-    | { rev_id: string; doc_id: string; path: string; rendered_hash: Buffer; root_tree: Buffer | null; frontmatter_blob: Buffer | null; archive: string | null }
+    | { rev_id: string; doc_id: string; seq: number; path: string; rendered_hash: Buffer; root_tree: Buffer | null; frontmatter_blob: Buffer | null; archive: string | null }
     | undefined;
   if (!row) return undefined;
   if (row.archive === null) {
-    return { rev_id: row.rev_id, doc_id: row.doc_id, path: row.path, rendered_hash: row.rendered_hash, root_tree: row.root_tree!, frontmatter_blob: row.frontmatter_blob, prefix: "", archived: false };
+    return { rev_id: row.rev_id, doc_id: row.doc_id, seq: row.seq, path: row.path, rendered_hash: row.rendered_hash, root_tree: row.root_tree!, frontmatter_blob: row.frontmatter_blob, prefix: "", archived: false };
   }
   const prefix = archivePrefix(store, row);
   const body = store.db.prepare(`SELECT root_tree, frontmatter_blob FROM ${prefix}revisions WHERE rev_id = ?`).get(revId) as { root_tree: Buffer; frontmatter_blob: Buffer | null } | undefined;
   if (!body) throw new RevisionArchived(revId, row.archive, archiveRow(store, row.archive)?.path ?? null);
-  return { rev_id: row.rev_id, doc_id: row.doc_id, path: row.path, rendered_hash: row.rendered_hash, root_tree: body.root_tree, frontmatter_blob: body.frontmatter_blob, prefix, archived: true };
+  return { rev_id: row.rev_id, doc_id: row.doc_id, seq: row.seq, path: row.path, rendered_hash: row.rendered_hash, root_tree: body.root_tree, frontmatter_blob: body.frontmatter_blob, prefix, archived: true };
+}
+
+/**
+ * A live revision's bodies in CHECKPOINT form (spec/store §7.1, 16.0): every
+ * list a self-contained `[`-node, the frontmatter its raw — what a segment
+ * holds (a segment never walks back) and what the squash re-checkpoints a
+ * kept revision to when it archives the revision's base. `nodes` maps each
+ * full node's hex hash to its text; `blobs` are the raw/trivia hashes the
+ * tree names (every one present in the store while the bases are live);
+ * `frontmatter` is the raw and its hash, or null.
+ */
+export function checkpointBodies(store: Store, rev: { doc_id: string; seq: number; root_tree: Buffer; frontmatter_blob: Buffer | null }, resolver = new TreeResolver(store.db)): {
+  rootHex: string;
+  nodes: Map<string, string>;
+  blobs: Set<string>;
+  frontmatter: { raw: string; hex: string } | null;
+} {
+  const tree = resolver.tree(rev.doc_id, rev.seq, rev.root_tree.toString("hex"));
+  const { rootHex, nodes } = resolver.checkpointForm(tree);
+  const blobs = new Set<string>();
+  entryBlobs(tree.root.entries, blobs);
+  for (const list of tree.byBlock.values()) entryBlobs(list.entries, blobs);
+  let frontmatter: { raw: string; hex: string } | null = null;
+  if (rev.frontmatter_blob) {
+    const raw = resolver.frontmatter(rev.doc_id, rev.seq, rev.frontmatter_blob.toString("hex"));
+    frontmatter = { raw, hex: sha256(raw).toString("hex") };
+  }
+  return { rootHex, nodes, blobs, frontmatter };
 }
 
 // ---- export: write a segment, then squash -------------------------------------------------
@@ -469,6 +502,8 @@ export interface SquashResult {
   commits: number;
   dispositions: number;
   block_changes: number;
+  /** Kept revisions re-written in checkpoint form because the squash archived their base (spec/store §4.4, 16.0). */
+  checkpointed: number;
 }
 
 export interface ExportResult {
@@ -568,15 +603,27 @@ function writeSegment(store: Store, repoId: string, revIds: readonly string[], p
   const createdAt = plan.now;
   const previous = lastSegment(store, repoId);
 
-  const marker = new ReachMarker(store);
-  const trees = new Set<string>();
+  // spec/store §7.1 (16.0): a segment holds CHECKPOINT forms — every list a
+  // self-contained node, the frontmatter its raw — so a reader of the segment
+  // never walks back into revisions that are not in it. The forms are computed
+  // from the resolved trees (a delta revision's full nodes and resolved raw
+  // were never rows of the store); the raw/trivia blobs they name are.
+  const resolver = new TreeResolver(db);
+  const nodes = new Map<string, string>();
   const blobs = new Set<string>();
-  marker.mark(revisions, trees, blobs);
+  const fmBlobs = new Map<string, string>();
+  const bodies = new Map<string, { rootHex: string; fmHex: string | null }>();
+  for (const r of revisions) {
+    const cp = checkpointBodies(store, r, resolver);
+    for (const [h, text] of cp.nodes) nodes.set(h, text);
+    for (const b of cp.blobs) blobs.add(b);
+    if (cp.frontmatter) fmBlobs.set(cp.frontmatter.hex, cp.frontmatter.raw);
+    bodies.set(r.rev_id, { rootHex: cp.rootHex, fmHex: cp.frontmatter?.hex ?? null });
+  }
 
   const wholly = whollyArchivedCommits(store, new Set(revIds));
   const dispRows = db.prepare("SELECT commit_id, block_id, kind, confidence, reason, matcher_v, detail FROM dispositions WHERE commit_id = ? ORDER BY block_id, kind");
   const bcRows = db.prepare("SELECT block_id, commit_id, kind FROM block_changes WHERE commit_id = ? ORDER BY block_id, kind");
-  const treeRow = db.prepare("SELECT hash, entries FROM tree_nodes WHERE hash = ?");
   const blobRow = db.prepare("SELECT hash, bytes, size FROM blobs WHERE hash = ?");
 
   mkdirSync(dest, { recursive: true });
@@ -594,18 +641,22 @@ function writeSegment(store: Store, repoId: string, revIds: readonly string[], p
       seg.prepare("INSERT INTO manifest (segment_id, repo_id, created_at, policy, seq_lo, seq_hi, revision_count, previous_segment, schema_user_version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
         .run(segmentId, repoId, createdAt, JSON.stringify(plan.policy), seqLo, seqHi, revisions.length, previous, SCHEMA_VERSION);
       const insRev = seg.prepare("INSERT INTO revisions (rev_id, doc_id, seq, root_tree, frontmatter_blob, rendered_hash, path, commit_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
-      for (const r of revisions) insRev.run(r.rev_id, r.doc_id, r.seq, r.root_tree, r.frontmatter_blob, r.rendered_hash, r.path, r.commit_id);
+      for (const r of revisions) {
+        const body = bodies.get(r.rev_id)!;
+        insRev.run(r.rev_id, r.doc_id, r.seq, Buffer.from(body.rootHex, "hex"), body.fmHex ? Buffer.from(body.fmHex, "hex") : null, r.rendered_hash, r.path, r.commit_id);
+      }
       const insCommit = seg.prepare("INSERT INTO commits (commit_id, repo_id, seq, ts, origin, actor, reason, checkpoint_id, ops) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
       for (const c of commits) insCommit.run(c.commit_id, c.repo_id, c.seq, c.ts, c.origin, c.actor, c.reason, c.checkpoint_id, c.ops);
       const insTree = seg.prepare("INSERT INTO tree_nodes (hash, entries) VALUES (?, ?)");
-      for (const t of [...trees].sort()) {
-        const row = treeRow.get(Buffer.from(t, "hex")) as { hash: Buffer; entries: string } | undefined;
-        if (row) insTree.run(row.hash, row.entries);
-      }
-      const insBlob = seg.prepare("INSERT INTO blobs (hash, bytes, size) VALUES (?, ?, ?)");
+      for (const h of [...nodes.keys()].sort()) insTree.run(Buffer.from(h, "hex"), nodes.get(h)!);
+      const insBlob = seg.prepare("INSERT OR IGNORE INTO blobs (hash, bytes, size) VALUES (?, ?, ?)");
       for (const b of [...blobs].sort()) {
         const row = blobRow.get(Buffer.from(b, "hex")) as { hash: Buffer; bytes: Buffer; size: number } | undefined;
         if (row) insBlob.run(row.hash, row.bytes, row.size);
+      }
+      for (const h of [...fmBlobs.keys()].sort()) {
+        const bytes = Buffer.from(fmBlobs.get(h)!, "utf8");
+        insBlob.run(Buffer.from(h, "hex"), bytes, bytes.length);
       }
       const insDisp = seg.prepare("INSERT INTO dispositions (commit_id, block_id, kind, confidence, reason, matcher_v, detail) VALUES (?, ?, ?, ?, ?, ?, ?)");
       const insBc = seg.prepare("INSERT INTO block_changes (block_id, commit_id, kind) VALUES (?, ?, ?)");
@@ -636,6 +687,14 @@ function writeSegment(store: Store, repoId: string, revIds: readonly string[], p
 function squash(store: Store, repoId: string, segment: SegmentInfo, revIds: readonly string[]): { squashed: SquashResult; gc: { blobs: number; tree_nodes: number } } {
   return store.write((db) => {
     const wholly = whollyArchivedCommits(store, new Set(revIds));
+    // spec/store §4.4 "base liveness" (16.0): a kept revision whose previous
+    // revision this squash archives is re-written in checkpoint form FIRST,
+    // while its bases are still readable — its delta nodes and delta
+    // frontmatter resolve, the self-contained forms are put, the row repointed.
+    // Its own successors are untouched: a delta is over the resolved content,
+    // which re-encoding does not change, and only self-contained nodes are
+    // ever reused across revisions.
+    const checkpointed = checkpointDependents(store, new Set(revIds));
     const upd = db.prepare("UPDATE revisions SET root_tree = NULL, frontmatter_blob = NULL, archive = ? WHERE rev_id = ?");
     for (const id of revIds) upd.run(segment.id, id);
     let dispositions = 0;
@@ -660,10 +719,43 @@ function squash(store: Store, repoId: string, segment: SegmentInfo, revIds: read
     });
     setLastSegment(store, repoId, segment.id);
     return {
-      squashed: { revisions: revIds.length, commits: wholly.length, dispositions, block_changes: blockChanges },
+      squashed: { revisions: revIds.length, commits: wholly.length, dispositions, block_changes: blockChanges, checkpointed },
       gc: { blobs: swept.blobsSwept, tree_nodes: swept.treeNodesSwept },
     };
   });
+}
+
+/**
+ * Re-checkpoint every live revision that stays and whose predecessor
+ * (`seq − 1`, same document) is in `archiving`: resolve its tree and
+ * frontmatter, put the checkpoint forms, repoint the row. Returns how many
+ * rows changed (a revision already in checkpoint form changes nothing).
+ * Runs inside the squash transaction, before the bases lose their bodies.
+ */
+function checkpointDependents(store: Store, archiving: ReadonlySet<string>): number {
+  const db = store.db;
+  const revRow = db.prepare("SELECT doc_id, seq FROM revisions WHERE rev_id = ?");
+  const nextRow = db.prepare("SELECT rev_id, doc_id, seq, root_tree, frontmatter_blob FROM revisions WHERE doc_id = ? AND seq = ? AND archive IS NULL");
+  const upd = db.prepare("UPDATE revisions SET root_tree = ?, frontmatter_blob = ? WHERE rev_id = ?");
+  const resolver = new TreeResolver(db);
+  const seen = new Set<string>();
+  let changed = 0;
+  for (const id of [...archiving].sort()) {
+    const r = revRow.get(id) as { doc_id: string; seq: number } | undefined;
+    if (!r) continue;
+    const next = nextRow.get(r.doc_id, r.seq + 1) as { rev_id: string; doc_id: string; seq: number; root_tree: Buffer | null; frontmatter_blob: Buffer | null } | undefined;
+    if (!next || !next.root_tree || archiving.has(next.rev_id) || seen.has(next.rev_id)) continue;
+    seen.add(next.rev_id);
+    const cp = checkpointBodies(store, { doc_id: next.doc_id, seq: next.seq, root_tree: next.root_tree, frontmatter_blob: next.frontmatter_blob }, resolver);
+    const fmHex = cp.frontmatter ? cp.frontmatter.hex : null;
+    const oldFm = next.frontmatter_blob ? next.frontmatter_blob.toString("hex") : null;
+    if (cp.rootHex === next.root_tree.toString("hex") && fmHex === oldFm) continue;
+    for (const text of cp.nodes.values()) putNodeText(db, text);
+    if (cp.frontmatter) putBlob(db, cp.frontmatter.raw);
+    upd.run(Buffer.from(cp.rootHex, "hex"), fmHex ? Buffer.from(fmHex, "hex") : null, next.rev_id);
+    changed++;
+  }
+  return changed;
 }
 
 /**

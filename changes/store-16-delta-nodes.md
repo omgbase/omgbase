@@ -1,0 +1,11 @@
+---
+npm:
+  "@omgbase/core": minor
+  omgbase: minor
+  "@omgbase/sync": none
+crates:
+  omgbase-store: major
+  omgbase: minor
+  omgbase-sync: none
+---
+Delta tree nodes (spec/store 16.0, §4.1 "Delta nodes", §4.4 "Checkpoints"). A revision's body root, a container's children and its frontmatter may be stored as a **delta against the same list of the document's previous revision** (`seq − 1`, the base implicit) — `tree_nodes.entries` `{"d":[["=",n],["~",<entry>],["+",<entry>],["-"]]}` and a frontmatter blob `{"f":[["=",n],["~","<line>"],…]}`, told apart from the 15.x full forms by the first byte (`[`/`-` vs `{`), the ops Myers' shortest edit script grouped (the same algorithm `docs_diff_unified` pins). A revision is a **checkpoint** (every list full and self-contained, the frontmatter raw) at `(seq − 1) % 16 == 0`, when it has no live predecessor, and per list whenever the delta would not be strictly smaller. A reader resolves a `{`-form by walking back at most 15 revisions; the GC mark is explicit (a node marks what it names; the base revision marks the rest) under the **base-liveness** rule — the retention squash re-writes a kept revision in checkpoint form before archiving its predecessor (`squashed.checkpointed`), and archive segments hold checkpoint forms only. **Migration 16 is empty**: every 15.x node and raw frontmatter blob already is a checkpoint form, so the step only moves `user_version` — a major because a 15.x engine cannot read a `{`-form node. Measured (`core/store/delta.test.ts`, spec §10): a six-key frontmatter edit 44–63 B per revision against 99–103 B monolithic (blob references instead of inlined lines: 107–126 B — not chosen); a 40-block journal logline 379 B of nodes against 6.8–7.2 KB; a six-key YAML file edit 145–154 B against 738 B; twenty edits of a ten-paragraph document 5.5 KB of nodes against 38 KB; a 15-delta reconstruct 0.5 ms. Rust twin to follow by the same note (`crates/omgbase-store`: `tree.rs`, `writers.rs::write_block_tree`, `read.rs::reconstruct`, `derived.rs::mark_reachable`, `archive.rs`, `retention.rs`, `schema.rs`).

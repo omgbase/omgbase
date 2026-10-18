@@ -70,7 +70,7 @@ ignores their rows. Fixtures are Markdown only (`format = 'markdown'`).
 ## Versioning
 
 `VERSION` is `<major>.<minor>`. **The major is the schema version** — the
-`PRAGMA user_version` every database carries (`15`), so a reader of a
+`PRAGMA user_version` every database carries (`16`), so a reader of a
 database knows which spec it conforms to. The minor counts semantic changes
 that need no migration: how a row is filled, an encoding, the observe
 procedure. The `omgbase-store` crate is `<major>.<minor>.<patch>`, exactly as
@@ -84,8 +84,13 @@ corrupt a newer one's database.
 
 - **DDL changes** (a table, column, index or constraint added, removed or
   changed) bump the major, add a migration (§3.4) and a `migrations` fixture.
-- **Semantic changes** without DDL (a column filled differently, an encoding,
-  the observe procedure, the pool expiry) bump the minor.
+- **An encoding an older engine cannot read** bumps the major too, DDL or
+  not: 16.0 changed no DDL, but a `{`-form tree node (§4.1 "Delta nodes") is
+  garbage to a 15.x reader, and only `user_version` keeps that reader out
+  (§1 step 3). Its migration step is empty (§3.4).
+- **Semantic changes** without DDL (a column filled differently, an encoding
+  an older engine still reads, the observe procedure, the pool expiry) bump
+  the minor.
 - A fixture that pins existing behavior is neither.
 
 ## The rule for changing the store
@@ -195,9 +200,9 @@ The tables of `schema.sql` this spec fills:
 | `repos` | repository | `repo_id`, unique `slug`, `settings` JSON (defaults `{}`). A repo owns identity and history, not a filesystem; where its bytes come from is the sync registry's business. |
 | `docs` | path ever seen in a repo | `doc_id`; `path` (repo-relative, no leading slash, unique per repo); `format`; `current_rev`; `file_hash` (of the bytes the current revision renders to — §5.4 step 12); `conflicted` (0/1, git conflict markers seen); `leading_trivia` (bytes before the first block); `frontmatter_trivia` (the frontmatter block's trailing trivia, `NULL` when the document has no frontmatter); `deleted_commit` (tombstone, `NULL` = live). A path keeps its `doc_id` across deletion and re-creation (§5.6). |
 | `blocks` | live or tombstoned block of the **current** revision | The hot table: `block_id`, `doc_id`, `parent_block` (`NULL` at top level), `order_key` (§4.3), `ordinal`, `depth`, `ancestor_path` (§4.3), `type`, `attrs` JSON, `text` (visible text, `spec/format` §4.1), `raw_hash`, `norm_hash`, `trivia_hash` (`NULL` = no trailing trivia), `created_commit`, `deleted_commit`. Rebuilt wholesale by every commit to the document (§5.4); a tombstoned document keeps its rows with `deleted_commit` set. |
-| `blobs` | distinct byte string | Content-addressed: `hash = sha256(bytes)`, `size = |bytes|`. Holds every block `raw`, every non-empty trivia, every frontmatter block. Never deleted in v1. |
-| `tree_nodes` | distinct sibling list | Content-addressed Merkle node: `hash = sha256(entries)`, `entries` the canonical serialization §4.1. Identical subtrees share a row. |
-| `revisions` | (document, commit) | `rev_id`, `doc_id`, per-document `seq` from 1, `root_tree` (a `tree_nodes.hash`), `frontmatter_blob` (a `blobs.hash` or `NULL`), `rendered_hash`, `path` at this revision, `commit_id`, `archive` (15.0: `NULL` for a live revision; the `segment_id` of the archive segment holding its bodies once the retention squash moved them — then `root_tree` and `frontmatter_blob` are `NULL` too, §7 "Retention"; the row itself never leaves). Since 15.0 the two body columns are nullable and carry no foreign key. |
+| `blobs` | distinct byte string | Content-addressed: `hash = sha256(bytes)`, `size = |bytes|`. Holds every block `raw`, every non-empty trivia, every frontmatter block — and, since 16.0, every **frontmatter delta** (§4.1 "Delta nodes": a `{"f":…}` text a revision's `frontmatter_blob` may name instead of the raw). Never deleted in v1. |
+| `tree_nodes` | distinct sibling list, full or delta | Content-addressed Merkle node: `hash = sha256(entries)`, `entries` the canonical serialization §4.1 — a `[`-form full list, or (16.0) a `{"d":…}` **delta** over the same list of the document's previous revision. Identical subtrees share a row; identical deltas do too. |
+| `revisions` | (document, commit) | `rev_id`, `doc_id`, per-document `seq` from 1, `root_tree` (a `tree_nodes.hash` — a full or a delta node), `frontmatter_blob` (a `blobs.hash` — the raw or a delta — or `NULL`), `rendered_hash`, `path` at this revision, `commit_id`, `archive` (15.0: `NULL` for a live revision; the `segment_id` of the archive segment holding its bodies once the retention squash moved them — then `root_tree` and `frontmatter_blob` are `NULL` too, §7 "Retention"; the row itself never leaves). Since 15.0 the two body columns are nullable and carry no foreign key. A `{`-form body is meaningful only in this row's context (`doc_id`, `seq`): §6 resolves it against revision `seq − 1`. |
 | `archives` | archive segment the repo knows (15.0) | The registry `history list` reads: `segment_id` (a minted `s_` id, the segment's manifest id), `repo_id`, `path` (the file as recorded; `attach` re-records it), `seq_lo`/`seq_hi` (the `commits.seq` span of the segment's commits), `created_at`, `revision_count`, `bytes` (the file's size when recorded). Written by the squash transaction and by `attach`, deleted by `detach`; a revision's `archive` column may name a segment this table no longer carries (detached). |
 | `commits` | write to the repo | `commit_id`, per-repo `seq` from 1 (the change-feed cursor), `ts`, `origin ∈ {api, observed, import, projection}`, `actor`, `reason`, `checkpoint_id`, `ops`. Observations write `observed` (§5); the mutation kernel writes `api`; `import` is bulk ingest with no retro history; `projection` is reserved. |
 | `dispositions` | (commit, block, kind) | The matcher's decisions as persisted: `kind` (the `spec/reconcile` §2 kinds), `confidence`, `reason`, `matcher_v`, `detail` JSON. Immutable once committed (R6). `INSERT OR IGNORE` on the primary key (§10). |
@@ -207,7 +212,7 @@ The tables of `schema.sql` this spec fills:
 
 ### 3.2 Derived tables
 
-Rebuildable from §3.1 with zero information loss (§7): `sections` (§4.5),
+Rebuildable from §3.1 with zero information loss (§7): `sections` (§4.6),
 `block_changes` (§5.4 step 10), `doc_edges`, `inferred_edges`, `embeddings`,
 `doc_embeddings`, `nodes`, and the FTS5 virtual tables `blocks_fts`,
 `nodes_fts`. This spec pins `sections` and `block_changes`; the rest are the
@@ -245,7 +250,7 @@ checked without trusting its own copy of the DDL.
 
 ### 3.4 Migrations
 
-A database at `user_version` *n* < 15 is upgraded one version at a time, each
+A database at `user_version` *n* < 16 is upgraded one version at a time, each
 step idempotent (it inspects before it alters), each in a transaction:
 
 | To | Step |
@@ -264,9 +269,10 @@ step idempotent (it inspects before it alters), each in a transaction:
 | 13 | if `repos.root_path` exists: ensure the `fs` adapter row (`INSERT OR IGNORE … ('fs', 'omgbase-fs-adapter', '[]')`, even when there are no repos); for each repo with a non-empty `root_path`, find or create a source named `<slug>-fs` (`source_id` minted with prefix `src`, `adapter = 'fs'`, `config = {"root": <root_path>}`, `env = '{}'`) and `INSERT OR IGNORE` the attachment; then `ALTER TABLE repos DROP COLUMN root_path` |
 | 14 | create `pending_materializations` (§5.7) |
 | 15 | if `revisions` exists without an `archive` column: rebuild it — with `foreign_keys = OFF` for the duration (`pending_materializations.rev_id` references it, and the DROP would otherwise be an implicit DELETE under the FK), `CREATE TABLE revisions_v15` with `schema.sql`'s 15.0 columns (`root_tree`/`frontmatter_blob` nullable, no foreign keys on them, `archive TEXT`), copy every row with `archive = NULL`, `DROP TABLE revisions`, `ALTER TABLE revisions_v15 RENAME TO revisions`, `PRAGMA foreign_key_check` must be empty; then create `archives` (§7 "Retention"). Rows keep their `rowid` order; nothing else moves |
+| 16 | **nothing** — no DDL, no data pass. Every node a 15.x store holds is a `[`-form list and every frontmatter blob a raw: exactly the 16.0 **checkpoint forms** (§4.4), so every existing revision is a checkpoint and the store is already a valid 16.0 database; deltas appear with the next commit to each document (§4.4 decides per revision). The step only lets the opener move `user_version`. Compare the per-key-parts branch `2f7b286`, whose migration had to split every frontmatter blob in a verified full pass: there the old encoding was *not* a valid new one; here it is, by construction (§10 Decisions, 16.0) |
 
 The "create" steps execute the same sub-DDL text that `schema.sql` contains
-for those tables. After the last step the opener sets `user_version = 15`.
+for those tables. After the last step the opener sets `user_version = 16`.
 `cases/migrations.json` pins these on authored pre-states (§9.3). Because
 every pre-state in the fixtures is a *partial* old schema (the tables the
 step touches, not a whole historical database), the expectation is the
@@ -297,6 +303,88 @@ there are children, then build this node's entry; when every entry is built,
 put the node. `INSERT OR IGNORE` on `blobs` and `tree_nodes` gives structural
 sharing: an unchanged subtree is the same row. Nested blocks carry `""`
 trivia (`spec/format` §1), so `trivia_hash_hex` is `null` below the top level.
+The text above is a node's **full form** (`[`-form). Since 16.0 a node may
+instead be stored in a **delta form**; §4.4 says when, and a writer that
+always writes the full form (a 15.x engine's output) is a valid 16.0 writer.
+
+**Delta nodes (16.0).** A sibling list — the body root, a container's
+children — and a revision's frontmatter may be stored as a **delta against
+the same list (the same frontmatter) of the document's previous revision**:
+the revision with `seq − 1` and the same `doc_id`. The base is **implicit** —
+no base hash is stored; the row's `(doc_id, seq)` is the context — which is
+what keeps a delta at tens of bytes. The two forms are told apart by the
+**first byte**: `[` is a full node, `{` a delta; a frontmatter blob starting
+with `-` (the `---` fence `spec/format` §3 guarantees) is the raw, one
+starting with `{` a delta. A body delta's `entries` is the UTF-8 JSON text
+
+```text
+{"d":[ op, … ]}
+```
+
+and a frontmatter delta's `blobs.bytes` is
+
+```text
+{"f":[ op, … ]}
+```
+
+— **no whitespace anywhere**, strings JSON-escaped as above — where an *op*
+is one of
+
+| op | meaning |
+| --- | --- |
+| `["=",n]` | keep the next *n* ≥ 1 items of the base |
+| `["+",x]` | insert *x* |
+| `["-"]` | drop the next item of the base |
+| `["~",x]` | replace the next item of the base with *x* |
+
+and *x* is, in a body delta, a **six-element entry** exactly as a full node
+spells it (spliced verbatim: `["~",["b_7","<raw_hex>",null,"paragraph",{},"<trivia_hex>"]]`),
+or, in a frontmatter delta, a **line** of the raw with its line ending as a
+JSON string (`["~","layer: working\n"]`). The ops **consume exactly the base**
+(the `=` counts, `-`s and `~`s sum to the base's length); applying them in
+order yields the new list — the entries of the sibling list, or the lines
+whose concatenation is the new frontmatter raw. The **items** a delta is
+over: for a body node, the base list's entries as their canonical texts;
+for a frontmatter, the raw's lines split after every `\n` (a `\r\n` ending
+stays with its line; the last line has no ending; `""` is one empty line).
+
+**The ops are determined.** They are Myers' shortest edit script over the
+item texts — the same algorithm, with the same tie rule, that
+`docs_diff_unified` uses (`spec/surface` §3; the reference's
+`core/edit-script.ts`, the port's `history.rs`): the diagonal from `k+1`
+(an insertion) when `k == −d || (k != d && V[k−1] < V[k+1])`, else from
+`k−1` (a deletion) — grouped: a run of keeps is one `["=",n]`; inside a run
+of edits the *k*-th deletion and the *k*-th insertion pair into `["~",x]`,
+the surplus deletions are `["-"]`, the surplus insertions `["+",x]`. Both
+engines therefore produce the same text and the same hash; the fixtures pin
+it (`delta::*`), and §8 I10 re-derives every delta it finds.
+
+**Hash and sharing.** A delta node's hash is `sha256(entries)` like any
+node — content-addressed; two revisions (of one document or two) producing
+the same delta text share the row (`{"d":[["=",3]]}` is one row however
+often a three-entry list is carried unchanged over a non-self-contained
+base). A delta is **meaningful only in the context of the revision that
+names it** — directly as `root_tree`/`frontmatter_blob`, or through the
+child hash of an entry its own nodes carry — because its base is "the same
+list one revision earlier". Hence the one rule a writer must keep (§4.4):
+**a revision reuses a node of its predecessor only when that node is
+self-contained** — a `[`-form node whose every child list is self-contained
+(context-free, so it means the same thing anywhere). A `{`-form node, or a
+`[`-form node with a `{`-form descendant, is never referenced from a later
+revision; an unchanged list over such a base writes the identity delta
+`{"d":[["=",n]]}` instead.
+
+**The child-list base.** A container's children at revision *s* are a delta
+over *the children of the block with the same `block_id`* in revision
+*s − 1*'s resolved tree, wherever that block sits there (a moved block keeps
+its base); a block with no children in *s − 1*, or not in *s − 1* at all (a
+new block, a block carried in from another document), has no base and its
+children are written full. The root's base is *s − 1*'s root list; the
+frontmatter's base is *s − 1*'s frontmatter raw (none when *s − 1* has
+none).
+
+**I2 restated** for a `{`-node: the hashes it must name are those of its own
+`+`/`~` entries; what `=` keeps is the base revision's to name (§7 "mark").
 
 ### 4.2 Blob bytes
 
@@ -331,7 +419,66 @@ sibling index from 0; `depth` is 0 at the top level and parent + 1 below;
 parent `block_id` + `"/"` below (`/b_0/b_3/`). The fractional keys exist for
 the mutation kernel's arbitrary inserts; observation never exposes them.
 
-### 4.4 Block text and attrs
+### 4.4 Checkpoints (16.0)
+
+A **checkpoint** is a revision whose bodies are entirely in full form: a
+`[`-form root whose every descendant list is `[`-form (self-contained, §4.1),
+and a raw frontmatter blob. A reader resolving a delta walks back one
+revision at a time until it meets a full form (§6), so checkpoints bound the
+walk and the squash (§7.1) needs them to cut the chain. A revision is a
+checkpoint when any of these holds, and the writer (§5.4 steps 1 and 4)
+decides it before writing anything:
+
+1. **Cadence**: `(seq − 1) mod 16 == 0` — revisions 1, 17, 33, … So a walk
+   back from any revision reads at most 16 nodes per list (15 deltas and the
+   checkpoint), and a document's history costs one full tree per sixteen
+   revisions plus its deltas. Why 16: the reconstruct of a delta is a chain
+   of primary-key point reads (measured at 0.5 ms for the full 15-step chain,
+   §10), so the bound is not what limits N; the amortized full node per
+   revision is `full / N` — for the 40-block journal of §10, 6.6 KB / 16 ≈
+   420 B against a 380 B delta, so at N = 16 the checkpoint already costs
+   about as much as the deltas it anchors and a larger N buys little
+   (N = 32: 210 B); and a smaller N means the squash re-checkpoints
+   less often (below). Both engines use 16; it is not a setting.
+2. **No live base**: the first revision of a document (`seq = 1`), or a
+   revision whose predecessor `seq − 1` is archived (`archive IS NOT NULL`)
+   — which cannot happen at write time, since the predecessor is the
+   document's current revision and retention rule 1 (§7.1) never archives
+   that, but the rule is stated for the general case and I10 checks it.
+3. **Never larger**: a list (or the frontmatter) whose delta would not be
+   **strictly smaller in UTF-8 bytes** than its full form is written full
+   even at a non-checkpoint revision — a bulk rewrite, a tombstoned path
+   re-created with different content, a two-key frontmatter (whose raw is
+   shorter than the ops that would replace a line: the `delta::` fixtures
+   show a 25-byte raw staying raw). This rule is per list: a delta revision
+   may hold full nodes; what makes a *checkpoint* is rule 1 or 2, which
+   force every list full.
+
+Rules 1–3 are decided from `seq`, the previous revision's row and the two
+texts' byte lengths — nothing a port could compute differently. An
+**unchanged** list is handled before the three rules: when its entries equal
+the base list's entries text for text and the base's node is self-contained,
+the base's hash is reused and nothing is written (the 15.x structural
+sharing, unchanged); when the base's node is not self-contained, rule 3
+applies and the identity delta wins (at a checkpoint, rule 1: full).
+
+**Base liveness.** A delta's base must be readable for as long as the delta
+is live: **the previous revision of a live delta revision is live**. The
+writer guarantees it at commit time (rule 2); the retention squash (§7.1)
+maintains it — when it archives revision *s* and revision *s + 1* stays
+live, it **re-writes *s + 1* in checkpoint form first** (every list full and
+self-contained, the frontmatter raw; `root_tree`/`frontmatter_blob`
+repointed), inside the squash transaction and before *s* loses its bodies.
+Revision *s + 2* needs nothing: its deltas are over *s + 1*'s **resolved**
+content, which re-encoding does not change, and by the reuse rule it never
+names a non-self-contained node of *s + 1*. The alternative — refusing to
+archive a base while a delta depends on it — would make the retention
+policy's output depend on the encoding (every kept representative would
+pin its predecessor), so it was not chosen (§10 Decisions). The segment a
+squash writes holds checkpoint forms only (§7.1), so a segment never walks
+back into the store or another segment.
+
+### 4.5 Block text and attrs
 
 `blocks.text` is the block's visible text per `spec/format` §4.1, computed in
 tree context (children compose; nested raws lose up to *q* blockquote
@@ -340,7 +487,7 @@ as JSON — compared as JSON, key order not significant (the reference writes
 insertion order; a port may write canonical order, §10). `type` is the kind
 name.
 
-### 4.5 Sections
+### 4.6 Sections
 
 For a document, over its **top-level** live blocks in `ordinal` order: each
 `heading` block *h* (level = `attrs.level`, 1 if absent) yields a row
@@ -427,8 +574,24 @@ An echo emits its outcome. A gone member with a live doc runs §5.6.
 Otherwise the member commits as follows (the reference: `ingestFile` with the
 prepared result):
 
-1. **Frontmatter blob.** Put the frontmatter block's `raw` as a blob when
-   there is one; `frontmatter_blob_hex` is its hash or `null`.
+0. **The revision's place (16.0).** Read the document's previous revision —
+   the row with the greatest `seq` for this `doc_id`, tombstoned or not
+   (`previous`; none for a new path). This revision's `seq` is
+   `previous.seq + 1` (1 when none) and it is a **checkpoint** by §4.4 rules
+   1–2: `(seq − 1) mod 16 == 0`, or no `previous`, or `previous.archive IS
+   NOT NULL`. When it is not a checkpoint, resolve `previous`'s tree (§6) as
+   the **base tree** and `previous`'s frontmatter raw as the **base raw**
+   (none when `previous.frontmatter_blob` is `NULL`).
+1. **Frontmatter blob.** When there is a frontmatter block: at a checkpoint,
+   or with no base raw, put its `raw` as a blob; otherwise compute the
+   frontmatter delta of `raw` against the base raw (§4.1) and put **the
+   smaller in UTF-8 bytes** (the raw on a tie). `frontmatter_blob_hex` is the
+   blob's hash, or `null` without a frontmatter block. The planner's
+   per-entry `set`/`unset frontmatter.<k>` (`spec/mutate` §11.3, §11.10)
+   therefore lands as a few line ops — a `set` of a one-line entry is one
+   `["~", line]`, a new key one `["+", line]` before the closing fence's
+   `["=",1]`, an `unset` one `["-"]` — whatever the planner's view of the
+   entries, since the store diffs lines (§10 Decisions).
 2. **Doc row.** If no `docs` row exists for `(repo, path)`: **mint `d`**,
    insert `(doc_id, repo_id, path, format, leading_trivia =
    tree.leading_trivia, frontmatter_trivia)`; else update `format`,
@@ -440,14 +603,26 @@ prepared result):
    fixtures exercise.
 3. **Assign ids** onto the body tree from the reconcile assignment (new key →
    id); every key is assigned, so nothing mints here.
-4. **Write the tree** (§4.1) for the body blocks → `root_tree_hex`.
+4. **Write the tree** (§4.1) for the body blocks → `root_tree_hex`. Bottom-up,
+   per sibling list, with the base tree of step 0 (16.0): build the entries
+   (children first) and their canonical texts; find the **base list** — for
+   the root, the base tree's root; for a container's children, the list
+   under the block with the same `block_id` anywhere in the base tree; none
+   without a base tree or when the block has no children there. Then:
+   unchanged (the texts equal the base list's) **and** the base's node
+   self-contained → **reuse** the base's hash, write nothing; else a
+   checkpoint, or no base list → put the **full** node; else put the
+   **smaller** in UTF-8 bytes of the delta against the base list and the
+   full node (the full node on a tie). The reference's `writeBlockTree`
+   with a `TreeWriteContext`; without one (no base, checkpoint) it is the
+   15.x writer exactly.
 5. **Commit row.** **Mint `c`**; `seq = 1 + max(seq)` over the repo's
    commits (0 when none); insert `(commit_id, repo_id, seq, ts, origin =
    'observed', actor = NULL, reason = NULL, checkpoint_id = NULL, ops =
    NULL)`.
-6. **Revision row.** **Mint `r`**; `seq = 1 + max(seq)` over the doc's
-   revisions; insert `(rev_id, doc_id, seq, root_tree, frontmatter_blob,
-   rendered_hash = sha256(source), path, commit_id)`.
+6. **Revision row.** **Mint `r`**; `seq` is step 0's (`1 + max(seq)` over
+   the doc's revisions); insert `(rev_id, doc_id, seq, root_tree,
+   frontmatter_blob, rendered_hash = sha256(source), path, commit_id)`.
 7. **Pool the deleted.** For each id in the result's `deleted`, in order:
    `INSERT OR REPLACE` into `resurrection_pool` the doc's `blocks` row of
    that id (any `deleted_commit`) with `deleted_commit = this commit` and
@@ -472,7 +647,7 @@ prepared result):
    `depth`, `ancestor_path` (§4.3), `type`, `attrs`, `text`, `raw_hash`,
    `norm_hash`, `trivia_hash` (`NULL` when the trivia is empty; nested blocks
    always), `created_commit = this commit`, `deleted_commit = NULL`. Then
-   rebuild `sections` (§4.5) and the FTS rows for the doc (live leaves).
+   rebuild `sections` (§4.6) and the FTS rows for the doc (live leaves).
 10. **Dispositions.** For each disposition of the result **whose `kind` is
     not `same`** (14.2): `INSERT OR IGNORE` `(commit_id, block_id, kind,
     confidence, reason, matcher_v, detail as JSON)` into `dispositions`, and
@@ -686,19 +861,38 @@ as `changed`; they are read-only and the next sweep settles it.
 ### 6.1 Reconstruct (current bytes)
 
 `reconstruct(doc)` for a live doc: `leading_trivia`, then — if the current
-revision has a `frontmatter_blob` — that blob's bytes followed by
-`frontmatter_trivia`, then for each **top-level** live block in `order_key`
-order the `raw` blob's bytes followed by the trivia blob's bytes when
-`trivia_hash` is not `NULL`. A container's `raw` already contains its
-children (`spec/format` §1 inv. 3), so only roots are walked. Equals `source`
-by construction (§5.4 step 13). `NULL` for a tombstoned or unknown doc.
+revision has a `frontmatter_blob` — that revision's **frontmatter raw**
+(below) followed by `frontmatter_trivia`, then for each **top-level** live
+block in `order_key` order the `raw` blob's bytes followed by the trivia
+blob's bytes when `trivia_hash` is not `NULL`. A container's `raw` already
+contains its children (`spec/format` §1 inv. 3), so only roots are walked.
+Equals `source` by construction (§5.4 step 13). `NULL` for a tombstoned or
+unknown doc. The body comes from `blocks`, so a delta root (16.0) costs the
+hot read nothing; only the frontmatter resolves.
+
+**Resolving (16.0).** A revision's **frontmatter raw** is its
+`frontmatter_blob`'s bytes when they start with `-`; when they start with
+`{` (a delta, §4.1) it is the ops applied to the lines of revision
+`seq − 1`'s frontmatter raw, recursively — at most 15 steps (§4.4). A
+revision's **root list** (and any list of its tree) is its node's entries
+when the node is `[`-form; when `{`-form, the ops applied to the **same
+list of revision `seq − 1`** — the root for the root, the children of the
+same `block_id` for a container (found by resolving `seq − 1`'s tree) —
+each entry text parsed back to its six elements. A `{`-form met where no
+base exists (`seq − 1` missing, archived, without a frontmatter, without
+the block's children), ops that do not consume exactly the base, or a
+`{`-form inside an archive segment, is a corrupt store: the read fails
+(`DeltaError` in the reference) rather than guessing. The reference's
+`TreeResolver` memoizes per `(doc, seq, hash, position)` so a whole tree
+costs one walk per list.
 
 ### 6.2 Reconstruct at a revision
 
 The same assembly sourced from the revision's Merkle root: the revision's
-`frontmatter_blob`, then the entries of `tree_nodes[root_tree]` in array
-order, each `raw_hash_hex` blob followed by its `trivia_hash_hex` blob when
-non-null (children not walked). `leading_trivia` and `frontmatter_trivia`
+frontmatter raw (§6.1 "Resolving"), then the entries of its **resolved**
+root list in order, each `raw_hash_hex` blob followed by its
+`trivia_hash_hex` blob when non-null (children not walked). The block-grain
+reads (`docs_diff`'s id → raw maps) resolve the whole tree the same way. `leading_trivia` and `frontmatter_trivia`
 come from the **current** doc row — they are not versioned — so the result
 is byte-exact for the current revision and best-effort for older ones; the
 read reports `rendered_hash_match = sha256(result) == rendered_hash` as the
@@ -713,9 +907,10 @@ bodies are not in the store: the read looks the segment up in `archives` by
 engine never writes through an alias; attached aliases stay for the
 connection's life, the oldest detached past eight), checks that the file's
 `manifest.segment_id` is the one asked for, and then runs the same assembly
-over `<alias>.revisions` (the `root_tree`/`frontmatter_blob` the store NULLed),
-`<alias>.tree_nodes` and `<alias>.blobs` — the segment is self-contained, so
-nothing falls back to the store's tables. `leading_trivia`/`frontmatter_trivia`
+over `<alias>.revisions` (a `root_tree`/`frontmatter_blob` in **checkpoint
+form** — the store's own columns were NULLed, §7.1), `<alias>.tree_nodes`
+and `<alias>.blobs` — the segment is self-contained, so nothing falls back
+to the store's tables and nothing in it is a delta. `leading_trivia`/`frontmatter_trivia`
 still come from the `docs` row. When the segment is **not recorded** (never
 attached, or detached) or **recorded but not on disk**, the read fails with
 `revision_archived { rev, archive, path? }` (`path` only when a row records
@@ -727,7 +922,7 @@ summaries see the live rows only (§7).
 
 ## 7. Rebuild and garbage
 
-**Rebuild.** `sections` is recomputed per live doc from `blocks` (§4.5);
+**Rebuild.** `sections` is recomputed per live doc from `blocks` (§4.6);
 `block_changes` is `INSERT OR IGNORE … SELECT block_id, commit_id, kind FROM
 dispositions` after a `DELETE`; the FTS index is `INSERT INTO
 blocks_fts(blocks_fts) VALUES('delete-all')` followed by one insert per
@@ -739,8 +934,15 @@ row (§8 I8).
 **Garbage collection** is mark-and-sweep from every **live** revision's
 `root_tree` (`WHERE root_tree IS NOT NULL`, walking `child_tree_hash_hex`)
 and every non-NULL `frontmatter_blob`: reachable tree nodes and blobs (raw,
-trivia, frontmatter) are kept, the rest deleted. It ships behind a flag,
-**off**. Through 14.x nothing was ever unreachable (revisions were never
+trivia, frontmatter) are kept, the rest deleted. **The mark is explicit
+(16.0):** a node marks the objects its own text names — every entry of a
+`[`-node, the `+`/`~` entries of a `{`-node (their raw and trivia blobs,
+and their child hashes, walked the same way) — and never resolves a delta.
+What a delta keeps "as the base" is named by the base revision's own nodes,
+and the base-liveness rule (§4.4) makes that revision live whenever the
+delta is, so the explicit mark reaches everything a resolve would. The
+frontmatter column marks the blob it names, raw or delta; the raw a delta
+is over is the base revision's blob. It ships behind a flag, **off**. Through 14.x nothing was ever unreachable (revisions were never
 pruned); since 15.0 the retention squash below NULLs an archived revision's
 body columns after copying the bodies to a segment and runs this very sweep
 inside its own transaction, so `omg gc` still finds nothing — §8 I5 checks
@@ -844,7 +1046,11 @@ every tree node and blob reachable from the revisions that stay live in the
 document, the bytes (`blobs.size`, the byte length of `tree_nodes.entries`)
 of what its archived revisions reach and that mark does not; the total over
 the union of the archived revisions' exclusive objects (a blob two archived
-documents share counts once in the total and in both documents). The plan
+documents share counts once in the total and in both documents). The mark
+is the explicit one of §7 (16.0), so the figure is what the squash's sweep
+will delete; it does not subtract the checkpoint forms the squash writes for
+the dependents (§7.1 "The squash", step 0) — the result's `gc` counts are
+the truth after the fact. The plan
 is `{ policy, now, before, docs: [{ id, path, revisions, keep: [rev…],
 archive: [rev…], bytes }], totals: { docs, revisions, keep, archive, bytes }
 }` — `docs` holds only the documents with something to archive, by path;
@@ -861,14 +1067,20 @@ defaults to `<workspace>/.omgbase/archives/`), holding
   effective policy as JSON), `seq_lo`/`seq_hi` (the smallest and greatest
   `commits.seq` among the archived revisions' commits), `revision_count`,
   `previous_segment` (the repo's `history.last_segment` setting at the
-  time, `NULL` for the first — the chain), `schema_user_version` (15);
-- `revisions` — the archived revisions' rows **with** their `root_tree` and
-  `frontmatter_blob`;
+  time, `NULL` for the first — the chain), `schema_user_version` (16);
+- `revisions` — the archived revisions' rows **with** a `root_tree` and
+  `frontmatter_blob` in **checkpoint form** (16.0, §4.4): the hash of the
+  revision's resolved tree written as self-contained full nodes, and of its
+  resolved frontmatter raw — not the store's columns, which may name deltas
+  over revisions the segment does not hold;
 - `commits` — the distinct commits of those revisions (copies; the store's
   rows stay hot);
-- `blobs` and `tree_nodes` — **everything** reachable from the archived
-  revisions, shared with live revisions or not, so a segment is readable on
-  its own;
+- `blobs` and `tree_nodes` — **everything** the archived revisions' checkpoint
+  forms name, shared with live revisions or not: the full nodes (computed
+  from the resolved trees — a delta revision's full nodes were never rows of
+  the store), the raw and trivia blobs they reference (rows of the store,
+  since the bases are live), and each resolved frontmatter raw as a blob;
+  so a segment is readable on its own and holds no delta;
 - `dispositions` and `block_changes` — every row of the **wholly archived
   commits**: a commit each of whose revisions is in this export or already
   archived (one revision per commit on the observe path; an `api` commit
@@ -885,6 +1097,14 @@ archive → no file.
 **The squash** (`history export --prune`), one transaction on the store,
 **after** the segment is durable:
 
+0. **(16.0) re-checkpoint the dependents**: for every archived revision *s*
+   whose revision *s + 1* (same document) exists, is live and is not itself
+   archived by this squash — in `rev_id` order, each once — resolve *s + 1*'s
+   tree and frontmatter (its bases are still intact), put its checkpoint
+   forms (`INSERT OR IGNORE`: every list a self-contained full node, the
+   frontmatter raw a blob) and `UPDATE revisions SET root_tree, frontmatter_blob`
+   to them; a revision already in checkpoint form is left alone and not
+   counted. This is the base-liveness rule of §4.4 maintained;
 1. for every archived revision: `UPDATE revisions SET root_tree = NULL,
    frontmatter_blob = NULL, archive = <segment_id>`;
 2. for every wholly archived commit: `DELETE FROM dispositions WHERE
@@ -900,8 +1120,9 @@ archive → no file.
 
 The result reports `segment { id, path, seq_lo, seq_hi, created_at,
 revision_count, bytes, previous_segment }`, `squashed { revisions, commits,
-dispositions, block_changes }` (rows changed, the block_changes count being
-the rows deleted) and `gc { blobs, tree_nodes }`.
+dispositions, block_changes, checkpointed }` (rows changed, the
+block_changes count being the rows deleted, `checkpointed` the dependents
+step 0 re-wrote — 16.0) and `gc { blobs, tree_nodes }`.
 
 **The crash rule.** A complete segment under `dest` whose `segment_id` no
 `archives` row carries is classified by its revisions: all still live →
@@ -1017,23 +1238,28 @@ end of every case; an implementation may assert them in its own tests.
   reconstruction, as it does for a `disk` edit.)
 - **I2 Hash integrity.** Every `blobs` row: `hash == sha256(bytes)`, `size ==
   |bytes|`. Every `tree_nodes` row: `hash == sha256(entries)` and `entries`
-  parses as §4.1 with every `raw_hash_hex`/`trivia_hash_hex` present in
-  `blobs` and every `child_tree_hash_hex` present in `tree_nodes`. Every
-  non-NULL `revisions.root_tree` present in `tree_nodes`; every non-NULL
-  `frontmatter_blob` in `blobs` (15.0: an archived revision's are NULL).
+  parses as §4.1 — a `[`-form list, or a `{"d":…}` delta — with every
+  `raw_hash_hex`/`trivia_hash_hex` **it names** present in `blobs` and every
+  `child_tree_hash_hex` it names present in `tree_nodes` (every entry of a
+  full node; the `+`/`~` entries of a delta — 16.0). Every non-NULL
+  `revisions.root_tree` present in `tree_nodes`; every non-NULL
+  `frontmatter_blob` in `blobs`, its bytes a raw (`-`) or a `{"f":…}` delta
+  that parses (15.0: an archived revision's are NULL).
 - **I3 Blocks mirror the current revision.** For every live doc, the live
   `blocks` rows, read as a tree (children by `parent_block`, `order_key`
   order), have exactly the ids, types, `raw_hash`es and trivia hashes of the
-  current revision's tree (walking `child_tree_hash_hex`), in the same
-  order; `ordinal` is dense from 0 per parent and agrees with `order_key`
-  order; `depth` and `ancestor_path` follow §4.3; `norm_hash ==
+  current revision's **resolved** tree (§6; walking `child_tree_hash_hex`),
+  in the same order; `ordinal` is dense from 0 per parent and agrees with
+  `order_key` order; `depth` and `ancestor_path` follow §4.3; `norm_hash ==
   sha256(text)`; `attrs` as JSON equals the tree entry's attrs.
 - **I4 Dense sequences.** `commits.seq` is `1..n` per repo in `ts`-then-seq
   order; `revisions.seq` is `1..k` per doc; `current_rev` is the revision
   with the greatest `seq`.
-- **I5 Nothing to collect.** The mark set of §7 — from the **live** revisions
-  (15.0: `root_tree IS NOT NULL`, plus every non-NULL `frontmatter_blob`) —
-  equals all of `blobs` and `tree_nodes` (GC would sweep zero rows). Over
+- **I5 Nothing to collect.** The **explicit** mark set of §7 — from the
+  **live** revisions (15.0: `root_tree IS NOT NULL`, plus every non-NULL
+  `frontmatter_blob`; 16.0: a `{`-node contributes only the entries it
+  carries) — equals all of `blobs` and `tree_nodes` (GC would sweep zero
+  rows). Over
   live + archived history the statement is: every body is either reachable
   from a live revision in the store or held by the segment its revision's
   `archive` names; the runner checks the first half on the store and the
@@ -1066,6 +1292,18 @@ end of every case; an implementation may assert them in its own tests.
   least one revision and no live one) has no `dispositions` row, and each
   of its `block_changes` rows is its block's earliest (no row of the same
   `block_id` belongs to a commit with a smaller `seq`).
+- **I10 Deltas resolve (16.0).** For every live revision: its root list and
+  its frontmatter **resolve** (§6 — every `{`-form met has a base, and its
+  ops consume exactly that base); when its root node or frontmatter blob is
+  a `{`-form, revision `seq − 1` of the document exists and is live (the
+  base-liveness rule, §4.4); when it is a **checkpoint** by §4.4 rules 1–2
+  (`(seq − 1) mod 16 == 0`, or no live predecessor), its root is
+  self-contained and its frontmatter blob a raw; every `{`-form list of its
+  resolved tree, and a `{`-form frontmatter, is **strictly smaller** in UTF-8
+  bytes than its full form (rule 3); and a `{`-form root or frontmatter is
+  byte for byte the §4.1 encoding against the predecessor's resolved list or
+  raw (the Myers script, grouped). I5 and I10 together are what makes the
+  explicit mark complete.
 
 ## 9. Fixtures
 
@@ -1075,7 +1313,8 @@ end of every case; an implementation may assert them in its own tests.
 by the case shape: `schema.json` (§9.2, one case), `migrations.json` (§9.3),
 and observation suites (§9.4) — `observe.json`, `identity.json`,
 `deletion.json`, `pool.json`, `structure.json`, `frontmatter.json`,
-`batch.json`, … as the coverage grows. Case ids are `<suite>::<name>`.
+`batch.json`, `garbage.json`, `retention.json`, `delta.json` (16.0: the
+measurement scenarios of §10 as observation scripts), … as the coverage grows. Case ids are `<suite>::<name>`.
 
 ### 9.2 Schema fingerprint
 
@@ -1124,7 +1363,11 @@ repos are visited in `rowid` order).
 minter (§2.2) is active, so ids minted by a migration (`src_0`) compare.
 When opening must fail (a newer `user_version`), `expect` is instead
 `{ "error": "<the exact message>" }` — `migrations::newer-version-is-refused`
-pins `database schema (v16) is newer than this build (v15); upgrade omgbase`.
+pins `database schema (v17) is newer than this build (v16); upgrade omgbase`.
+`migrations::v15-to-v16-is-lazy` pins step 16: a 15.x pre-state with two
+revisions, a full node and a raw frontmatter blob comes out at
+`user_version` 16 with every `revisions`, `tree_nodes` and `blobs` row
+unchanged.
 
 ### 9.4 Observation scripts
 
@@ -1217,9 +1460,10 @@ pins `database schema (v16) is newer than this build (v15); upgrade omgbase`.
   retention steps (15.0): `history_plan` → `{ plan: <the §7.1 plan
   verbatim> }`; `history_export` → `{ export: { segment: { id, seq_lo,
   seq_hi, revision_count, previous_segment } | null, reused, squashed: {
-  revisions, commits, dispositions, block_changes } | null, gc: { blobs,
-  tree_nodes } | null } }` (`squashed`/`gc` null without `prune`; the
-  file's path and bytes are not projected); `history_attach` → `{
+  revisions, commits, dispositions, block_changes, checkpointed } | null,
+  gc: { blobs, tree_nodes } | null } }` (`squashed`/`gc` null without
+  `prune`; `checkpointed` since 16.0, §7.1 step 0; the file's path and
+  bytes are not projected); `history_attach` → `{
   attached: [{ segment_id, seq_lo, seq_hi, revision_count }] }`;
   `history_detach` → `{ detached: <segment id> | null }`; `read_at` → `{
   raw, rendered_hash_match }`, or `{ error: "revision_archived", rev,
@@ -1245,7 +1489,11 @@ pins `database schema (v16) is newer than this build (v15); upgrade omgbase`.
   the run's), `bytes` omitted (a page layout, not a behavior).
 - Hash columns as hex; `attrs` and `detail` as JSON objects (compared with
   key order ignored); `bytes` as the decoded string; every other column as
-  its SQLite value (`INTEGER` → number, `NULL` → `null`).
+  its SQLite value (`INTEGER` → number, `NULL` → `null`). A `tree_nodes`
+  row's `entries` is projected as its text whatever its form (16.0: a
+  `{"d":…}` delta reads as the string it is — the fixture pins the
+  encoding, not an interpretation), and a frontmatter delta is a `blobs`
+  row like any other.
 - Tables outside §3.1/§3.2's pinned set are not projected.
 
 **Runner checks, per case**: after each observe step and at the end, the
@@ -1272,6 +1520,23 @@ Each is **pinned** (a fixture asserts it; changing it is a store change under
 "Versioning") or **fixed** (the prose above is the fix and the reference is
 brought to it).
 
+- **Changed (16.0) — a node may be a delta over the previous revision.**
+  `tree_nodes.entries` is a `[`-form list or a `{"d":…}` delta, a
+  `frontmatter_blob` a raw or a `{"f":…}` delta (§4.1 "Delta nodes"); a
+  revision is a checkpoint by cadence, no live base, or per list when the
+  delta is not smaller (§4.4); readers resolve by walking back (§6); the
+  mark is explicit and the squash re-checkpoints a kept dependent (§7, §7.1
+  step 0); I2/I3/I5 are restated and I10 added (§8). No DDL; the migration
+  step is empty (§3.4). What moved in the fixtures: every multi-revision
+  case's later `root_tree` (and some `frontmatter_blob`) hashes, since the
+  rows they name are now deltas — in `spec/store`, `spec/sync`
+  (`checkpoint.json` projects `tree_nodes`) and `spec/mutate` (every case
+  projects `revisions`); `retention.json`'s `squashed` gained
+  `checkpointed`; the two `spec/surface` `reads` cases with an export gained
+  it too and sweep one more blob and node (the dependent's old delta forms).
+  New: `delta.json` (5 cases: the five measurement scenarios minus the YAML
+  one, which the Markdown-only fixture contract cannot carry — it is a
+  reference test, `core/store/delta.test.ts`), `migrations::v15-to-v16-is-lazy`.
 - **Changed (15.0) — history can be archived.** `revisions.root_tree` and
   `frontmatter_blob` are nullable, `revisions.archive` and the `archives`
   table exist, and §7.1 says how a revision's bodies move to a segment and
@@ -1366,7 +1631,7 @@ brought to it).
   (`batch::new-path-destination`).
 - **Pinned — a tombstone leaves the doc's `sections` rows.** §5.6 does not
   delete them and `rebuild_index` iterates live docs only, so a tombstoned
-  document keeps stale section rows although §4.5 defines sections over
+  document keeps stale section rows although §4.6 defines sections over
   live blocks (`deletion::gone-path-tombstones-and-pools`). Harmless — every
   consumer joins live blocks — and kept as built; I8 checks live docs only.
 - **Observed — the old tree is loaded `ORDER BY parent_block, ordinal`.**
@@ -1380,6 +1645,84 @@ brought to it).
 
 ## Decisions
 
+- 2026-10-17, store 16.0: **delta tree nodes** (§4.1, §4.4, §6, §7). The
+  math that decided it, from the per-key-parts branch `2f7b286` (built,
+  measured, not merged): a Merkle list of hash references costs about 77 B
+  per part per revision (64 hex + JSON), so decomposing a six-key
+  frontmatter into parts wrote ~630 B of node per one-key edit against the
+  ~100 B monolithic blob it replaced — parts pay only when the mean part is
+  longer than ~80 B. The same arithmetic already governs the body: the root
+  node costs ~170 B per top-level block per revision, so a 40-block journal
+  rewrites ~6.8 KB of root per logline and a six-key YAML file (one block
+  per entry) ~740 B per edit. **One mechanism fixes all three**: store a
+  list as a delta over the same list one revision earlier, and let the
+  frontmatter be a list of lines so it rides the same encoding. The
+  measurement (the reference's `core/store/delta.test.ts`, `delta::*`
+  fixtures; bytes of new `blobs` + `tree_nodes` rows per revision, revision
+  1 identical under both and excluded; "15.x" is the same writer with every
+  revision a checkpoint):
+
+  | scenario | 15.x per revision | 16.0 per revision | of which nodes |
+  | --- | --- | --- | --- |
+  | (a) six-key frontmatter, one-key edit | 99–103 B (the whole raw) | 44–63 B (one `{"f":…}` blob, no node) | 0 |
+  | (a′) the same with blob references instead of inlined lines | — | 107–126 B (ops with 64-hex refs + the line as a blob) — **not chosen** | 0 |
+  | (b) 40-block journal, one logline appended to its list | 6.9–7.3 KB nodes (+ ~115 B blobs) | 379 B nodes (257 root `=39,~list` + 122 list `=n,+item`; the same blobs) | 379 B |
+  | (c) six-key YAML file, one-key edit | 738–739 B root | 145–154 B root (`=k,~entry,=m`) | all |
+  | (d) ten-paragraph document, 20 one-paragraph edits (21 revisions) | 21 × 1.79 KB ≈ 37.6 KB nodes | 2 × 1.8 KB checkpoints (seq 1, 17) + 19 × 185–192 B ≈ 7.2 KB nodes | all |
+  | (e) squash of a live delta's base | — | the kept dependent re-checkpointed (`checkpointed: 1`); every revision reconstructs, archived through the segment and live by resolution; gc 0 afterwards | — |
+
+  Reconstruct through the chain: 0.5–0.9 ms at seq 16 (fifteen deltas back
+  to the checkpoint), 0.35–0.5 ms at the checkpoint itself, on the ten-
+  paragraph document (point reads by primary key; the hot `docs_read` path
+  reads `blocks` and resolves only the frontmatter). Decisions taken, each
+  a refinement of the brief: **implicit base** (the row's `(doc_id, seq −
+  1)`) rather than a stored base hash, because the hash would cost 70 B per
+  node per revision — the exact figure the round set out to remove — and
+  the revision row already pins the context; the price is that a `{`-node
+  means nothing outside its revision, hence the **reuse-only-self-contained
+  rule** (a `[`-node with a `{`-descendant is not context-free either; the
+  identity delta `{"d":[["=",n]]}` is one shared row and costs ~17 B once).
+  **Myers over item texts**, not a prefix/suffix scheme or a per-key `set`/
+  `unset` vocabulary: both engines already share the Myers tie rule byte
+  for byte through `docs_diff_unified`, the script is minimal for scattered
+  edits where prefix/suffix degrades to a full rewrite, and positional ops
+  express what a key vocabulary cannot (a reordered or duplicated key, a
+  comment or fence change, a CRLF conversion) with no fallback — the
+  planner's per-entry edit (`spec/mutate` §11.10) lands as one `~`/`+`/`-`
+  per changed line. **Lines, not §11.10 parts**, as the frontmatter's
+  items: the store needs no YAML-shaped rule and no dependency on
+  `spec/mutate`; a multi-line entry costs one op per changed line, a few
+  bytes more than one op per entry. **Inlined lines, not blob references**,
+  per (a′): a reference costs 68 B against lines of 11–30 B, and a changed
+  line is new (nothing to share). **A frontmatter delta is a `blobs` row**,
+  not a `tree_nodes` row: `frontmatter_blob` keeps its name and I2 its
+  "in `blobs`" clause, the discriminator is the first byte either way (a
+  raw always begins `---`), and the GC mark is unchanged for the column.
+  **Checkpoints every 16** (§4.4) as the brief proposed; the reconstruct
+  cost says the bound could be looser, the amortized full node per revision
+  (6.8 KB / 16 ≈ 420 B on the journal) says it should not be much tighter,
+  and the squash's re-checkpointing is bounded by the same N. **Re-
+  checkpoint on squash**, not "never archive a base": the alternative makes
+  the policy's output depend on the encoding and would pin every kept
+  representative's predecessor; re-writing the dependent costs one full tree
+  per archived run and the `delta::squash-rechecks-the-dependent` fixture
+  proves every revision still reconstructs. **Segments hold checkpoint
+  forms**, so `archive.sql` is untouched and a reader of a segment never
+  walks back into the store or another file. **The lazy migration** is
+  correct here and was not in `2f7b286` because the old encoding *is* the
+  new checkpoint encoding — a 15.x database is a 16.0 database whose every
+  revision is a checkpoint, so nothing is rewritten and deltas begin with
+  the next commit; the major exists only to keep a 15.x reader out (§1 step
+  3 — a 15.x engine would `JSON.parse` an object where it expects an array
+  and read garbage). What the design does **not** fix: the per-revision
+  `revisions`/`commits`/`block_changes` rows (~200–300 B) and the property
+  row churn, which are now the floor a one-key edit costs; the attn hotspot
+  (a timestamp key rewritten every minute) goes from ~400 B to ~250 B per
+  write — the body deltas, where whole roots were rewritten, are where the
+  tens-of-× savings are. **Recommendation**: ship as designed, both engines
+  together (a store major), with the Rust twin reading and writing the same
+  forms before the TypeScript half is released — until then a 16.0
+  database is unreadable by the published Rust binary.
 - 2026-10-15, store 15.0: history retention — `omg history export --prune`,
   archive segments, `attach` (§7.1). The measurement: a 131 MB database
   over 5 MB of Markdown held 57 MB of history — tree nodes with no sharing

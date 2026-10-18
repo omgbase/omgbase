@@ -912,7 +912,7 @@
             "rev_id": "r_1",
             "doc_id": "d_0",
             "seq": 2,
-            "root_tree": "5d0b1aaff06bea5f807b50e2f607450c530545442547a93b31e1c14196d752b6",
+            "root_tree": "f684b2e2631b200c81f93216ec95149614bcdef2dfe168694bd779a2c5001a3e",
             "frontmatter_blob": null,
             "rendered_hash": "ce3051a48e94a9d771ad09a02f3d8caf60a09edd84c3a2e559c9c29dc680a8dc",
             "path": "a.md",
@@ -949,12 +949,12 @@
         ],
         "tree_nodes": [
           {
-            "hash": "5d0b1aaff06bea5f807b50e2f607450c530545442547a93b31e1c14196d752b6",
-            "entries": "[[\"b_0\",\"327f031b25e00b1a7cd9b0c18f05948b60f55d09f9b3d177d21083f83a3cb6df\",null,\"heading\",{\"level\":1},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_1\",\"7b23f6597a56e7f5e44205c43531586c748225a86fa5ff3f3337f1744d10d2cc\",null,\"paragraph\",{},\"01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b\"]]"
-          },
-          {
             "hash": "d7f5633bf3cde48005782e32fd293f3b1a21f31350171962d2f58f2779306533",
             "entries": "[[\"b_0\",\"327f031b25e00b1a7cd9b0c18f05948b60f55d09f9b3d177d21083f83a3cb6df\",null,\"heading\",{\"level\":1},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_1\",\"bb7bf14329665b0c058efadd40018769fadb067127a4aea5bc6c442f5383ffe5\",null,\"paragraph\",{},\"01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b\"]]"
+          },
+          {
+            "hash": "f684b2e2631b200c81f93216ec95149614bcdef2dfe168694bd779a2c5001a3e",
+            "entries": "{\"d\":[[\"=\",1],[\"~\",[\"b_1\",\"7b23f6597a56e7f5e44205c43531586c748225a86fa5ff3f3337f1744d10d2cc\",null,\"paragraph\",{},\"01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b\"]]]}"
           }
         ],
         "blocks": [
@@ -2108,7 +2108,7 @@
             "rev_id": "r_2",
             "doc_id": "d_0",
             "seq": 2,
-            "root_tree": "8cc57638767406eceee2f786721e65dc34a810a0df82d2b6ef6670bbe5d4b6a5",
+            "root_tree": "ac0259b1563116c7fde0c0ebf2d33836efbf7277876e5fb681f7399ffe15aca8",
             "frontmatter_blob": null,
             "rendered_hash": "a9f64af35a8181bcc72b6c4c648bce3944562d1bd4b3ba9ab71e2641ec2a9e7a",
             "path": "a.md",
@@ -2130,7 +2130,7 @@
             "rev_id": "r_3",
             "doc_id": "d_1",
             "seq": 2,
-            "root_tree": "2d885df5770ce4e337a9624b70cf12f57b6e9c72b154b6eaaed6cc5545ae8d35",
+            "root_tree": "eb5401920eaa7718555691e0e660e1b6c40a166aa4b7f1dd58132991c1d284ca",
             "frontmatter_blob": null,
             "rendered_hash": "a918c22679923d5ca64af88dba5c4e1391ffda74fde5732f6a0f7102153fe1fe",
             "path": "b.md",
@@ -2181,16 +2181,16 @@
             "entries": "[[\"b_3\",\"216f4c6ac9ef17add951aa097934202649a6c6ea5f29263b00c59772ea6cff61\",null,\"heading\",{\"level\":1},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_4\",\"a42d2d435e275d24569ed71bee96a68087191eb764cb31a7c49504c7e345fee7\",null,\"paragraph\",{},\"01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b\"]]"
           },
           {
-            "hash": "2d885df5770ce4e337a9624b70cf12f57b6e9c72b154b6eaaed6cc5545ae8d35",
-            "entries": "[[\"b_3\",\"216f4c6ac9ef17add951aa097934202649a6c6ea5f29263b00c59772ea6cff61\",null,\"heading\",{\"level\":1},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_4\",\"a42d2d435e275d24569ed71bee96a68087191eb764cb31a7c49504c7e345fee7\",null,\"paragraph\",{},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_2\",\"f7e62a1a1709904c4c36fccdb402342733e7e8a6a6de15c462be15fe1131887f\",null,\"paragraph\",{},\"01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b\"]]"
-          },
-          {
             "hash": "44e9a7e586768297a9454188ec366c6626872c1dfdee899c813a44b11a3847cc",
             "entries": "[[\"b_0\",\"327f031b25e00b1a7cd9b0c18f05948b60f55d09f9b3d177d21083f83a3cb6df\",null,\"heading\",{\"level\":1},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_1\",\"3225ed5ef740820821a4458677a0cfa67412a15f8f846ac4e2de302866cb2710\",null,\"paragraph\",{},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_2\",\"f7e62a1a1709904c4c36fccdb402342733e7e8a6a6de15c462be15fe1131887f\",null,\"paragraph\",{},\"01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b\"]]"
           },
           {
-            "hash": "8cc57638767406eceee2f786721e65dc34a810a0df82d2b6ef6670bbe5d4b6a5",
-            "entries": "[[\"b_0\",\"327f031b25e00b1a7cd9b0c18f05948b60f55d09f9b3d177d21083f83a3cb6df\",null,\"heading\",{\"level\":1},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_1\",\"3225ed5ef740820821a4458677a0cfa67412a15f8f846ac4e2de302866cb2710\",null,\"paragraph\",{},\"01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b\"]]"
+            "hash": "ac0259b1563116c7fde0c0ebf2d33836efbf7277876e5fb681f7399ffe15aca8",
+            "entries": "{\"d\":[[\"=\",1],[\"~\",[\"b_1\",\"3225ed5ef740820821a4458677a0cfa67412a15f8f846ac4e2de302866cb2710\",null,\"paragraph\",{},\"01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b\"]],[\"-\"]]}"
+          },
+          {
+            "hash": "eb5401920eaa7718555691e0e660e1b6c40a166aa4b7f1dd58132991c1d284ca",
+            "entries": "{\"d\":[[\"=\",1],[\"~\",[\"b_4\",\"a42d2d435e275d24569ed71bee96a68087191eb764cb31a7c49504c7e345fee7\",null,\"paragraph\",{},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"]],[\"+\",[\"b_2\",\"f7e62a1a1709904c4c36fccdb402342733e7e8a6a6de15c462be15fe1131887f\",null,\"paragraph\",{},\"01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b\"]]]}"
           }
         ],
         "blocks": [
@@ -3160,7 +3160,7 @@
             "rev_id": "r_2",
             "doc_id": "d_0",
             "seq": 2,
-            "root_tree": "5d0b1aaff06bea5f807b50e2f607450c530545442547a93b31e1c14196d752b6",
+            "root_tree": "f684b2e2631b200c81f93216ec95149614bcdef2dfe168694bd779a2c5001a3e",
             "frontmatter_blob": null,
             "rendered_hash": "ce3051a48e94a9d771ad09a02f3d8caf60a09edd84c3a2e559c9c29dc680a8dc",
             "path": "a.md",
@@ -3238,16 +3238,16 @@
             "entries": "[[\"b_2\",\"216f4c6ac9ef17add951aa097934202649a6c6ea5f29263b00c59772ea6cff61\",null,\"heading\",{\"level\":1},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_3\",\"4e41dfdbf6f531a9faab3cc6e1867cb60f157dfa6f9af800a6243278f1347797\",null,\"paragraph\",{},\"01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b\"]]"
           },
           {
-            "hash": "5d0b1aaff06bea5f807b50e2f607450c530545442547a93b31e1c14196d752b6",
-            "entries": "[[\"b_0\",\"327f031b25e00b1a7cd9b0c18f05948b60f55d09f9b3d177d21083f83a3cb6df\",null,\"heading\",{\"level\":1},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_1\",\"7b23f6597a56e7f5e44205c43531586c748225a86fa5ff3f3337f1744d10d2cc\",null,\"paragraph\",{},\"01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b\"]]"
-          },
-          {
             "hash": "6b438cdc5cbe8b9039d9c64292cf4f054d203aaae1ccbc7e07e526f4ace2733a",
             "entries": "[[\"b_4\",\"555fc820ecdc0ef529b81cb0639466e4a070b46678b176a887f62725c94abeae\",null,\"heading\",{\"level\":1},\"01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b\"]]"
           },
           {
             "hash": "d7f5633bf3cde48005782e32fd293f3b1a21f31350171962d2f58f2779306533",
             "entries": "[[\"b_0\",\"327f031b25e00b1a7cd9b0c18f05948b60f55d09f9b3d177d21083f83a3cb6df\",null,\"heading\",{\"level\":1},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_1\",\"bb7bf14329665b0c058efadd40018769fadb067127a4aea5bc6c442f5383ffe5\",null,\"paragraph\",{},\"01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b\"]]"
+          },
+          {
+            "hash": "f684b2e2631b200c81f93216ec95149614bcdef2dfe168694bd779a2c5001a3e",
+            "entries": "{\"d\":[[\"=\",1],[\"~\",[\"b_1\",\"7b23f6597a56e7f5e44205c43531586c748225a86fa5ff3f3337f1744d10d2cc\",null,\"paragraph\",{},\"01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b\"]]]}"
           }
         ],
         "blocks": [
@@ -3904,7 +3904,7 @@
             "rev_id": "r_2",
             "doc_id": "d_0",
             "seq": 2,
-            "root_tree": "5d0b1aaff06bea5f807b50e2f607450c530545442547a93b31e1c14196d752b6",
+            "root_tree": "f684b2e2631b200c81f93216ec95149614bcdef2dfe168694bd779a2c5001a3e",
             "frontmatter_blob": null,
             "rendered_hash": "ce3051a48e94a9d771ad09a02f3d8caf60a09edd84c3a2e559c9c29dc680a8dc",
             "path": "a.md",
@@ -3966,12 +3966,12 @@
             "entries": "[[\"b_2\",\"216f4c6ac9ef17add951aa097934202649a6c6ea5f29263b00c59772ea6cff61\",null,\"heading\",{\"level\":1},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_3\",\"4e41dfdbf6f531a9faab3cc6e1867cb60f157dfa6f9af800a6243278f1347797\",null,\"paragraph\",{},\"01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b\"]]"
           },
           {
-            "hash": "5d0b1aaff06bea5f807b50e2f607450c530545442547a93b31e1c14196d752b6",
-            "entries": "[[\"b_0\",\"327f031b25e00b1a7cd9b0c18f05948b60f55d09f9b3d177d21083f83a3cb6df\",null,\"heading\",{\"level\":1},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_1\",\"7b23f6597a56e7f5e44205c43531586c748225a86fa5ff3f3337f1744d10d2cc\",null,\"paragraph\",{},\"01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b\"]]"
-          },
-          {
             "hash": "d7f5633bf3cde48005782e32fd293f3b1a21f31350171962d2f58f2779306533",
             "entries": "[[\"b_0\",\"327f031b25e00b1a7cd9b0c18f05948b60f55d09f9b3d177d21083f83a3cb6df\",null,\"heading\",{\"level\":1},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_1\",\"bb7bf14329665b0c058efadd40018769fadb067127a4aea5bc6c442f5383ffe5\",null,\"paragraph\",{},\"01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b\"]]"
+          },
+          {
+            "hash": "f684b2e2631b200c81f93216ec95149614bcdef2dfe168694bd779a2c5001a3e",
+            "entries": "{\"d\":[[\"=\",1],[\"~\",[\"b_1\",\"7b23f6597a56e7f5e44205c43531586c748225a86fa5ff3f3337f1744d10d2cc\",null,\"paragraph\",{},\"01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b\"]]]}"
           }
         ],
         "blocks": [

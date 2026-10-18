@@ -1,5 +1,6 @@
 import type { Store } from "./store.js";
 import { referencePath } from "../paths.js";
+import { explicitWalker } from "./gc.js";
 
 // History retention (spec/store §7 "Retention: plan, export, squash", 15.0).
 // The policy says which revisions of a document stay hot in the store and
@@ -303,20 +304,9 @@ export class ReachMarker {
     this.blobSize = store.db.prepare("SELECT size FROM blobs WHERE hash = ?");
   }
 
-  /** Mark every tree node and blob reachable from the given roots and frontmatter blobs into `trees`/`blobs` (hex). */
+  /** Mark every tree node and blob the given revisions name EXPLICITLY (spec/store §7, 16.0: a `{`-node's own entries, not its base's) into `trees`/`blobs` (hex). */
   mark(revs: { root_tree: Buffer | null; frontmatter_blob: Buffer | null }[], trees: Set<string>, blobs: Set<string>): void {
-    const walk = (hashHex: string): void => {
-      if (trees.has(hashHex)) return;
-      trees.add(hashHex);
-      const node = this.treeNode.get(Buffer.from(hashHex, "hex")) as { entries: string } | undefined;
-      if (!node) return;
-      this.treeSizes.set(hashHex, Buffer.byteLength(node.entries));
-      for (const [, rawHashHex, childHashHex, , , triviaHashHex] of JSON.parse(node.entries) as [string, string, string | null, string, unknown, string | null][]) {
-        blobs.add(rawHashHex);
-        if (triviaHashHex) blobs.add(triviaHashHex);
-        if (childHashHex) walk(childHashHex);
-      }
-    };
+    const walk = explicitWalker(this.store.db, trees, blobs, (hashHex, entries) => this.treeSizes.set(hashHex, Buffer.byteLength(entries)));
     for (const r of revs) {
       if (r.root_tree) walk(r.root_tree.toString("hex"));
       if (r.frontmatter_blob) blobs.add(r.frontmatter_blob.toString("hex"));

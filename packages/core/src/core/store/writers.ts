@@ -2,6 +2,9 @@ import type { Database } from "better-sqlite3";
 import { sha256, serializeTreeEntries, type TreeEntry } from "../hash.js";
 import { mintId } from "../ids.js";
 import type { RawBlock } from "../parse/types.js";
+import {
+  byteLength, encodeBodyDelta, encodeFrontmatterDelta, entryText, fullNodeText, isCheckpointSeq, type Entry, type ResolvedList, type ResolvedTree,
+} from "./delta.js";
 
 // Immutable store writers (02 §3-4, 01 §4). Blobs and tree nodes are
 // content-addressed; INSERT OR IGNORE gives deduplication and structural
@@ -45,38 +48,80 @@ export function putBlob(db: Database, text: string): string {
   return hash.toString("hex");
 }
 
-/** Content-address a tree node's entries; returns hex hash. Dedups. */
-export function putTreeNode(db: Database, entries: TreeEntry[]): string {
-  const serialized = serializeTreeEntries(entries);
-  const hash = sha256(serialized);
-  db.prepare("INSERT OR IGNORE INTO tree_nodes (hash, entries) VALUES (?, ?)").run(
-    hash,
-    serialized,
-  );
+/** Content-address a node's text (a `[`-form or a `{"d":…}` delta, spec/store §4.1); returns hex hash. Dedups. */
+export function putNodeText(db: Database, text: string): string {
+  const hash = sha256(text);
+  db.prepare("INSERT OR IGNORE INTO tree_nodes (hash, entries) VALUES (?, ?)").run(hash, text);
   return hash.toString("hex");
 }
 
+/** Content-address a tree node's entries (full form); returns hex hash. Dedups. */
+export function putTreeNode(db: Database, entries: TreeEntry[]): string {
+  return putNodeText(db, serializeTreeEntries(entries));
+}
+
 /**
- * Encode a list of sibling blocks into a Merkle tree node bottom-up, writing
- * blobs (raw + trivia) and child tree nodes. Returns the node's hex hash.
- * Structural sharing: unchanged subtrees produce identical hashes and are not
- * re-inserted.
+ * The revision context a tree is written in (spec/store §4.4, 16.0): the
+ * previous revision's resolved tree (`null` when there is none, or it is
+ * archived — then every node is full), and whether this revision is a
+ * checkpoint. Without a context `writeBlockTree` writes 15.x full nodes.
  */
-export function writeBlockTree(db: Database, blocks: TreeInputBlock[]): string {
-  const entries: TreeEntry[] = blocks.map((b) => {
+export interface TreeWriteContext {
+  base: ResolvedTree | null;
+  checkpoint: boolean;
+}
+
+/** spec/store §4.4: a revision is a checkpoint by cadence, or when it has no live predecessor. */
+export function isCheckpointRevision(seq: number, previous: { archive: string | null } | undefined): boolean {
+  return isCheckpointSeq(seq) || previous === undefined || previous.archive !== null;
+}
+
+/**
+ * Encode a list of sibling blocks into Merkle tree nodes bottom-up, writing
+ * blobs (raw + trivia) and child nodes. Returns the root node's hex hash.
+ * Structural sharing: an unchanged subtree whose base node is self-contained
+ * is not re-written (the base's hash is reused); otherwise, in a non-checkpoint
+ * revision, a list is written as the smaller of its delta against the same
+ * list of the previous revision and its full form (spec/store §4.1, §4.4).
+ */
+export function writeBlockTree(db: Database, blocks: TreeInputBlock[], ctx?: TreeWriteContext): string {
+  const context: TreeWriteContext = ctx ?? { base: null, checkpoint: true };
+  return writeList(db, blocks, null, context);
+}
+
+function writeList(db: Database, blocks: TreeInputBlock[], parent: string | null, ctx: TreeWriteContext): string {
+  const texts: string[] = blocks.map((b) => {
     const rawHashHex = putBlob(db, b.raw);
     const triviaHashHex = b.trivia.length > 0 ? putBlob(db, b.trivia) : null;
-    const childTreeHashHex = b.children.length > 0 ? writeBlockTree(db, b.children) : null;
-    return {
-      blockId: b.blockId,
-      rawHashHex,
-      childTreeHashHex,
-      type: b.type,
-      attrs: b.attrs,
-      triviaHashHex,
-    };
+    const childTreeHashHex = b.children.length > 0 ? writeList(db, b.children, b.blockId, ctx) : null;
+    const entry: Entry = [b.blockId, rawHashHex, childTreeHashHex, b.type, b.attrs, triviaHashHex];
+    return entryText(entry);
   });
-  return putTreeNode(db, entries);
+  const full = fullNodeText(texts);
+  const base: ResolvedList | undefined = ctx.base ? (parent === null ? ctx.base.root : ctx.base.byBlock.get(parent)) : undefined;
+  // An unchanged list reuses the base's node only when that node is context-free.
+  if (base && base.selfContained && sameTexts(base.texts, texts)) return base.hash;
+  if (ctx.checkpoint || !base) return putNodeText(db, full);
+  const delta = encodeBodyDelta(base.texts, texts);
+  return putNodeText(db, byteLength(delta) < byteLength(full) ? delta : full);
+}
+
+function sameTexts(a: readonly string[], b: readonly string[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
+}
+
+/**
+ * The frontmatter blob of a revision (spec/store §5.4 step 1, 16.0): the raw
+ * itself at a checkpoint or when the previous revision had none; else the
+ * smaller of the line delta against the previous raw and the raw. Returns the
+ * blob's hex hash.
+ */
+export function writeFrontmatterBlob(db: Database, raw: string, baseRaw: string | null, checkpoint: boolean): string {
+  if (checkpoint || baseRaw === null) return putBlob(db, raw);
+  const delta = encodeFrontmatterDelta(baseRaw, raw);
+  return putBlob(db, byteLength(delta) < byteLength(raw) ? delta : raw);
 }
 
 export interface NewCommitInput {
@@ -119,26 +164,35 @@ export interface NewRevisionInput {
   renderedHash: Buffer;
   path: string;
   commitId: string;
+  /** The per-document seq when the caller computed it already (ingest needs it before the tree is written); `1 + max(seq)` otherwise. */
+  seq?: number;
+}
+
+/** The previous revision of a document (its greatest seq), or undefined — the base a delta is written against. */
+export function previousRevision(db: Database, docId: string): { rev_id: string; seq: number; root_tree: Buffer | null; frontmatter_blob: Buffer | null; archive: string | null } | undefined {
+  return db
+    .prepare("SELECT rev_id, seq, root_tree, frontmatter_blob, archive FROM revisions WHERE doc_id = ? ORDER BY seq DESC LIMIT 1")
+    .get(docId) as { rev_id: string; seq: number; root_tree: Buffer | null; frontmatter_blob: Buffer | null; archive: string | null } | undefined;
 }
 
 /** Append a revision; assigns the per-document monotonic seq. */
 export function writeRevision(db: Database, input: NewRevisionInput): { revId: string; seq: number } {
   const revId = mintId("r");
-  const row = db
+  const seq = input.seq ?? (db
     .prepare("SELECT COALESCE(MAX(seq),0)+1 AS seq FROM revisions WHERE doc_id = ?")
-    .get(input.docId) as { seq: number };
+    .get(input.docId) as { seq: number }).seq;
   db.prepare(
     `INSERT INTO revisions (rev_id, doc_id, seq, root_tree, frontmatter_blob, rendered_hash, path, commit_id)
      VALUES (@revId, @docId, @seq, @rootTree, @frontmatterBlob, @renderedHash, @path, @commitId)`,
   ).run({
     revId,
     docId: input.docId,
-    seq: row.seq,
+    seq,
     rootTree: Buffer.from(input.rootTreeHex, "hex"),
     frontmatterBlob: input.frontmatterBlobHex ? Buffer.from(input.frontmatterBlobHex, "hex") : null,
     renderedHash: input.renderedHash,
     path: input.path,
     commitId: input.commitId,
   });
-  return { revId, seq: row.seq };
+  return { revId, seq };
 }

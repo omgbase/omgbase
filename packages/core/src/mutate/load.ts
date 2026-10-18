@@ -1,5 +1,6 @@
 import type { Database } from "better-sqlite3";
 import type { MutBlock, MutDoc } from "./tree.js";
+import { currentFrontmatterRaw } from "../core/read/document.js";
 
 // Load a document from the store into a MutDoc. Reads block raw and trivia
 // from the blobs table, and leading_trivia from the document row. No disk
@@ -65,14 +66,13 @@ export function loadMutDoc(db: Database, docId: string): MutDoc | null {
 
   let frontmatterRaw: string | null = null;
   if (doc.current_rev) {
-    const rev = db.prepare("SELECT frontmatter_blob FROM revisions WHERE rev_id = ?").get(doc.current_rev) as { frontmatter_blob: Buffer | null } | undefined;
-    if (rev?.frontmatter_blob) {
-      const fm = blob.get(rev.frontmatter_blob) as { bytes: Buffer } | undefined;
-      // Append the exact stored separator (docs.frontmatter_trivia) so the
-      // write path round-trips byte-for-byte. Ingest always captures it when a
-      // frontmatter block exists, so the ?? "" is just a type guard.
-      if (fm) frontmatterRaw = fm.bytes.toString("utf8") + (doc.frontmatter_trivia ?? "");
-    }
+    // The current revision's frontmatter, resolved when stored as a delta
+    // (spec/store §6.1, 16.0). Append the exact stored separator
+    // (docs.frontmatter_trivia) so the write path round-trips byte-for-byte.
+    // Ingest always captures it when a frontmatter block exists, so the ?? ""
+    // is just a type guard.
+    const fm = currentFrontmatterRaw(db, doc.current_rev);
+    if (fm !== null) frontmatterRaw = fm + (doc.frontmatter_trivia ?? "");
   }
 
   return {

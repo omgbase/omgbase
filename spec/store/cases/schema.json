@@ -5,7 +5,7 @@
       "name": "fresh",
       "notes": "The fingerprint of a fresh database (README §3.3, §9.2): every table's columns and foreign keys, every index, user_version.",
       "expect": {
-        "user_version": 15,
+        "user_version": 16,
         "tables": {
           "adapters": {
             "columns": [

@@ -5,6 +5,8 @@ import { isValidId } from "../core/ids.js";
 import { EngineError } from "../mcp/errors.js";
 import { referencePath, storagePath } from "../core/paths.js";
 import { revisionBody } from "../core/store/archive.js";
+import { myersScript } from "../core/edit-script.js";
+import { TreeResolver, type Entry } from "../core/store/delta.js";
 
 // History surface (06 §3, 07 task 4.4): blocks_history (block/doc biography),
 // diff (block-grain + Myers unified), changes_since (commit digests / change feed).
@@ -84,18 +86,18 @@ function blocksAtRevision(store: Store, docId: string, revId: string): Map<strin
   if (!rev) throw new RevisionNotFound(docId, revId);
   const out = new Map<string, string>();
   const blob = store.db.prepare(`SELECT bytes FROM ${rev.prefix}blobs WHERE hash = ?`);
-  const treeNode = store.db.prepare(`SELECT entries FROM ${rev.prefix}tree_nodes WHERE hash = ?`);
-  const walk = (treeHashHex: string): void => {
-    const node = treeNode.get(Buffer.from(treeHashHex, "hex")) as { entries: string } | undefined;
-    if (!node) return;
-    const entries = JSON.parse(node.entries) as [string, string, string | null, string, Record<string, unknown>, string | null][];
-    for (const [blockId, rawHashHex, childHashHex] of entries) {
+  // Every list resolved in the revision's context (spec/store §6, 16.0: a
+  // delta node walks back to the previous revisions' same list).
+  const tree = new TreeResolver(store.db, rev.prefix).tree(rev.doc_id, rev.seq, rev.root_tree.toString("hex"));
+  const walk = (entries: readonly Entry[]): void => {
+    for (const [blockId, rawHashHex] of entries) {
       const raw = (blob.get(Buffer.from(rawHashHex, "hex")) as { bytes: Buffer } | undefined)?.bytes.toString("utf8") ?? "";
       out.set(blockId, raw);
-      if (childHashHex) walk(childHashHex);
+      const children = tree.byBlock.get(blockId);
+      if (children) walk(children.entries);
     }
   };
-  walk(rev.root_tree.toString("hex"));
+  walk(tree.root.entries);
   return out;
 }
 
@@ -161,73 +163,9 @@ export function diffLines(text: string): string[] {
 
 const DIFF_CONTEXT = 3;
 
-/** One step of the edit script: `keep` consumes a line from both sides,
- * `delete` one from the old text, `insert` one from the new text. */
-export interface EditOp {
-  kind: "keep" | "delete" | "insert";
-  line: string;
-}
-
-/**
- * Myers' O(ND) shortest edit script (forward, with a per-`d` trace for the
- * backtrack). `V[k]` is the furthest x on diagonal `k = x - y` reachable with
- * `d` edits. The canonical tie rule, identical in both engines: at each step
- * take the diagonal from `k+1` (moving down — an insertion of `b[y]`) when
- * `k == -d || (k != d && V[k-1] < V[k+1])`, else from `k-1` (moving right —
- * a deletion of `a[x]`). On a tie (`V[k-1] == V[k+1]`) that is the deletion.
- */
-export function myersScript(a: string[], b: string[]): EditOp[] {
-  const n = a.length;
-  const m = b.length;
-  const max = n + m;
-  // V is indexed by k ∈ [-max-1, max+1]; `off` maps it onto a plain array.
-  const off = max + 1;
-  const v = new Array<number>(2 * max + 3).fill(0);
-  const trace: number[][] = [];
-  let found = false;
-  for (let d = 0; d <= max && !found; d++) {
-    trace.push(v.slice());
-    for (let k = -d; k <= d; k += 2) {
-      let x: number;
-      if (k === -d || (k !== d && v[off + k - 1]! < v[off + k + 1]!)) x = v[off + k + 1]!;
-      else x = v[off + k - 1]! + 1;
-      let y = x - k;
-      while (x < n && y < m && a[x] === b[y]) {
-        x++;
-        y++;
-      }
-      v[off + k] = x;
-      if (x >= n && y >= m) {
-        found = true;
-        break;
-      }
-    }
-  }
-  // Backtrack from (n, m) through the trace, emitting ops newest-first.
-  const ops: EditOp[] = [];
-  let x = n;
-  let y = m;
-  for (let d = trace.length - 1; d >= 0; d--) {
-    const vd = trace[d]!;
-    const k = x - y;
-    const prevK = k === -d || (k !== d && vd[off + k - 1]! < vd[off + k + 1]!) ? k + 1 : k - 1;
-    const prevX = vd[off + prevK]!;
-    const prevY = prevX - prevK;
-    while (x > prevX && y > prevY) {
-      x--;
-      y--;
-      ops.push({ kind: "keep", line: a[x]! });
-    }
-    if (d > 0) {
-      if (x === prevX) ops.push({ kind: "insert", line: b[prevY]! });
-      else ops.push({ kind: "delete", line: a[prevX]! });
-    }
-    x = prevX;
-    y = prevY;
-  }
-  ops.reverse();
-  return ops;
-}
+// The edit script lives in core/edit-script.ts (shared with the store's delta
+// nodes, spec/store §4.1); re-exported here for the surface and its tests.
+export { myersScript, type EditOp } from "../core/edit-script.js";
 
 /**
  * The unified diff of two texts (spec/surface §3): hunks of `DIFF_CONTEXT` (3)

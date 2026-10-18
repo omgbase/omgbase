@@ -26,6 +26,10 @@ import { runGc, sweepResurrectionPool } from "../../src/core/store/gc.js";
 import { attachArchive, detachArchive, exportHistory, RevisionArchived, segmentBasename, ARCHIVE_SUFFIX } from "../../src/core/store/archive.js";
 import { evaluateRetention, retentionPolicy, type RetentionPlan } from "../../src/core/store/retention.js";
 import { ARCHIVED_COMMITS_SQL } from "../../src/core/store/rebuild.js";
+import {
+  DeltaError, TreeResolver, byteLength, encodeBodyDelta, encodeFrontmatterDelta, entryText, explicitEntries, fullNodeText, isCheckpointSeq, parseFrontmatterBlob, parseNodeText,
+  type ResolvedList,
+} from "../../src/core/store/delta.js";
 import { observeBatch, type BatchOutcome } from "../../src/sync/observe.js";
 import { CONFIG_KEYS, toReconcileConfig, deepEqualTol, type FixtureConfig } from "../reconcile/fixture.js";
 
@@ -651,29 +655,8 @@ export function projectStore(db: Db, repoId: string): Omit<Projection, "steps"> 
 
 // ---- invariants (README §8) --------------------------------------------------------------
 
-/** One §4.1 entry: [block_id, raw_hash_hex, child_tree_hash_hex | null, type, attrs, trivia_hash_hex | null]. */
-type Entry = [string, string, string | null, string, Record<string, unknown>, string | null];
-
-function parseEntries(text: string): Entry[] | null {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(text);
-  } catch {
-    return null;
-  }
-  if (!Array.isArray(parsed)) return null;
-  for (const e of parsed) {
-    if (!Array.isArray(e) || e.length !== 6) return null;
-    const [id, raw, child, type, attrs, trivia] = e as unknown[];
-    if (typeof id !== "string" || typeof raw !== "string" || typeof type !== "string" || !isRecord(attrs)) return null;
-    if (child !== null && typeof child !== "string") return null;
-    if (trivia !== null && typeof trivia !== "string") return null;
-  }
-  return parsed as Entry[];
-}
-
 /**
- * README §8 I1–I8 on a store. `lastSource` is the last observed source per
+ * README §8 I1–I10 on a store. `lastSource` is the last observed source per
  * live path (I1 needs the bytes the store is supposed to hold). Returns the
  * problems found (empty = every invariant holds).
  */
@@ -683,9 +666,12 @@ export function checkInvariants(store: Store, repoId: string, lastSource: Readon
 
   const blobRows = db.prepare("SELECT hash, bytes, size FROM blobs").all() as { hash: Buffer; bytes: Buffer; size: number }[];
   const blobHashes = new Set(blobRows.map((b) => b.hash.toString("hex")));
+  const blobText = new Map(blobRows.map((b) => [b.hash.toString("hex"), b.bytes.toString("utf8")] as const));
   const treeRows = db.prepare("SELECT hash, entries FROM tree_nodes").all() as { hash: Buffer; entries: string }[];
-  const trees = new Map<string, Entry[]>();
   const treeHashes = new Set(treeRows.map((t) => t.hash.toString("hex")));
+  const nodeTexts = new Map(treeRows.map((t) => [t.hash.toString("hex"), t.entries] as const));
+  // 16.0: nodes resolve in revision context (README §4.1 "Delta nodes", §6).
+  const resolver = new TreeResolver(db);
   const commits = db.prepare("SELECT commit_id, seq, ts FROM commits WHERE repo_id = ? ORDER BY ts, seq").all(repoId) as { commit_id: string; seq: number; ts: string }[];
   const commitById = new Map(commits.map((c) => [c.commit_id, c]));
   const docs = db
@@ -713,13 +699,13 @@ export function checkInvariants(store: Store, repoId: string, lastSource: Readon
   for (const t of treeRows) {
     const h = t.hash.toString("hex");
     if (!sha256(t.entries).equals(t.hash)) problems.push(`I2: tree_node ${h} hash != sha256(entries)`);
-    const entries = parseEntries(t.entries);
-    if (!entries) {
-      problems.push(`I2: tree_node ${h} entries do not parse as §4.1`);
+    const node = parseNodeText(t.entries);
+    if (!node) {
+      problems.push(`I2: tree_node ${h} entries do not parse as §4.1 (full or delta)`);
       continue;
     }
-    trees.set(h, entries);
-    for (const [id, raw, child, , , trivia] of entries) {
+    // 16.0: a `{`-node names only its own `+`/`~` entries; the kept ones are the base's.
+    for (const [id, raw, child, , , trivia] of explicitEntries(node)) {
       if (!blobHashes.has(raw)) problems.push(`I2: tree_node ${h} entry ${id} raw_hash ${raw} not in blobs`);
       if (trivia !== null && !blobHashes.has(trivia)) problems.push(`I2: tree_node ${h} entry ${id} trivia_hash ${trivia} not in blobs`);
       if (child !== null && !treeHashes.has(child)) problems.push(`I2: tree_node ${h} entry ${id} child tree ${child} not in tree_nodes`);
@@ -727,7 +713,71 @@ export function checkInvariants(store: Store, repoId: string, lastSource: Readon
   }
   for (const r of revisions) {
     if (r.root_tree && !treeHashes.has(r.root_tree.toString("hex"))) problems.push(`I2: revision ${r.rev_id} root_tree not in tree_nodes`);
-    if (r.frontmatter_blob && !blobHashes.has(r.frontmatter_blob.toString("hex"))) problems.push(`I2: revision ${r.rev_id} frontmatter_blob not in blobs`);
+    if (r.frontmatter_blob) {
+      const fh = r.frontmatter_blob.toString("hex");
+      if (!blobHashes.has(fh)) problems.push(`I2: revision ${r.rev_id} frontmatter_blob not in blobs`);
+      else if (parseFrontmatterBlob(blobText.get(fh)!) === null) problems.push(`I2: revision ${r.rev_id} frontmatter blob ${fh} is neither a raw nor a §4.1 frontmatter delta`);
+    }
+  }
+
+  // ---- I10 delta nodes (16.0) ----------------------------------------------------------
+  // Every live revision's root and frontmatter resolve in context; a delta's
+  // previous revision exists and is live; a checkpoint revision is in
+  // checkpoint form (a self-contained root, a raw frontmatter); every delta
+  // reachable from a live revision is strictly smaller than its full form.
+  const resolvedTrees = new Map<string, ReturnType<TreeResolver["tree"]>>();
+  const resolvedFrontmatter = new Map<string, string>();
+  for (const r of revisions) {
+    if (r.root_tree === null) continue;
+    const prev = revisions.find((p) => p.doc_id === r.doc_id && p.seq === r.seq - 1);
+    const rootHex = r.root_tree.toString("hex");
+    const rootText = nodeTexts.get(rootHex);
+    const fmHex = r.frontmatter_blob ? r.frontmatter_blob.toString("hex") : null;
+    const fmText = fmHex ? blobText.get(fmHex) : undefined;
+    const rootIsDelta = rootText !== undefined && rootText.startsWith("{");
+    const fmIsDelta = fmText !== undefined && fmText.startsWith("{");
+    const checkpoint = isCheckpointSeq(r.seq) || prev === undefined || prev.archive !== null;
+    if ((rootIsDelta || fmIsDelta) && (prev === undefined || prev.archive !== null)) {
+      problems.push(`I10: revision ${r.rev_id} (seq ${r.seq}) is a delta but revision ${r.seq - 1} is ${prev === undefined ? "missing" : "archived"}`);
+    }
+    if (checkpoint && fmIsDelta) problems.push(`I10: checkpoint revision ${r.rev_id} (seq ${r.seq}) has a delta frontmatter`);
+    try {
+      const tree = resolver.tree(r.doc_id, r.seq, rootHex);
+      resolvedTrees.set(r.rev_id, tree);
+      if (checkpoint && !tree.root.selfContained) problems.push(`I10: checkpoint revision ${r.rev_id} (seq ${r.seq}) root is not self-contained`);
+      // The never-larger rule, over every list of the tree.
+      const check = (list: ResolvedList, where: string): void => {
+        if (list.form !== "delta") return;
+        const text = nodeTexts.get(list.hash)!;
+        const full = fullNodeText(list.entries.map(entryText));
+        if (byteLength(text) >= byteLength(full)) problems.push(`I10: delta node ${list.hash} (${where}) is not smaller than its full form (${byteLength(text)} >= ${byteLength(full)})`);
+      };
+      check(tree.root, `root of ${r.rev_id}`);
+      for (const [block, list] of tree.byBlock) check(list, `children of ${block} in ${r.rev_id}`);
+      // A delta at a non-checkpoint is the Myers script against the base, exactly.
+      if (rootIsDelta && prev?.root_tree) {
+        const base = resolver.tree(r.doc_id, prev.seq, prev.root_tree.toString("hex"));
+        const want = encodeBodyDelta(base.root.texts, tree.root.texts);
+        if (want !== rootText) problems.push(`I10: delta root of ${r.rev_id} is not the §4.1 encoding against revision ${prev.seq}`);
+      }
+    } catch (e) {
+      if (e instanceof DeltaError) problems.push(`I10: revision ${r.rev_id} does not resolve: ${e.message}`);
+      else throw e;
+    }
+    if (fmHex) {
+      try {
+        const raw = resolver.frontmatter(r.doc_id, r.seq, fmHex);
+        resolvedFrontmatter.set(r.rev_id, raw);
+        if (fmIsDelta && byteLength(fmText!) >= byteLength(raw)) problems.push(`I10: frontmatter delta of ${r.rev_id} is not smaller than the raw`);
+        if (fmIsDelta && prev?.frontmatter_blob) {
+          const baseRaw = resolver.frontmatter(r.doc_id, prev.seq, prev.frontmatter_blob.toString("hex"));
+          if (encodeFrontmatterDelta(baseRaw, raw) !== fmText) problems.push(`I10: frontmatter delta of ${r.rev_id} is not the §4.1 encoding against revision ${prev.seq}`);
+        }
+      } catch (e) {
+        if (e instanceof DeltaError) problems.push(`I10: frontmatter of ${r.rev_id} does not resolve: ${e.message}`);
+        else throw e;
+      }
+    }
   }
 
   // ---- I1 convergence, I3 blocks mirror the current revision ------------------------
@@ -772,9 +822,15 @@ export function checkInvariants(store: Store, repoId: string, lastSource: Readon
     for (const [parent] of children) {
       if (parent !== null && !liveIds.has(parent)) problems.push(`I3: ${at} live rows name a parent ${parent} that is not live`);
     }
+    // 16.0: the tree compared is the current revision's RESOLVED tree.
+    const resolved = resolvedTrees.get(rev.rev_id);
+    if (!resolved) {
+      problems.push(`I3: ${at} current revision ${rev.rev_id} did not resolve`);
+      continue;
+    }
     const compare = (treeHex: string | null, parent: BlockRaw | null, depth: number, ancestorPath: string): void => {
       const rows = children.get(parent?.block_id ?? null) ?? [];
-      const entries = treeHex === null ? [] : trees.get(treeHex) ?? [];
+      const entries = treeHex === null ? [] : parent === null ? resolved.root.entries : resolved.byBlock.get(parent.block_id)?.entries ?? [];
       const where = parent ? `${at} under ${parent.block_id}` : `${at} top level`;
       if (rows.length !== entries.length) {
         problems.push(`I3: ${where}: ${rows.length} live rows vs ${entries.length} tree entries`);
@@ -812,12 +868,18 @@ export function checkInvariants(store: Store, repoId: string, lastSource: Readon
   }
 
   // ---- I5 nothing to collect -----------------------------------------------------------
+  // 16.0: the EXPLICIT mark — a node marks the entries its own text carries
+  // (all of a `[`-node's, the `+`/`~` of a `{`-node); the kept entries are the
+  // base revision's to mark, and I10 says the base is live.
   const markedTrees = new Set<string>();
   const markedBlobs = new Set<string>();
   const mark = (treeHex: string): void => {
     if (markedTrees.has(treeHex)) return;
     markedTrees.add(treeHex);
-    for (const [, raw, child, , , trivia] of trees.get(treeHex) ?? []) {
+    const text = nodeTexts.get(treeHex);
+    const node = text === undefined ? null : parseNodeText(text);
+    if (!node) return;
+    for (const [, raw, child, , , trivia] of explicitEntries(node)) {
       markedBlobs.add(raw);
       if (trivia !== null) markedBlobs.add(trivia);
       if (child !== null) mark(child);
