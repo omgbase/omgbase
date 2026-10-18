@@ -14130,6 +14130,755 @@
           }
         ]
       }
+    },
+    {
+      "name": "yaml-json-documents",
+      "workspace": true,
+      "notes": "spec/properties §3.4 (1.2): a yaml or json document's top-level mapping IS its frontmatter — the same `source = frontmatter` rows a fence writes — so bare keys (`focused_intent`), `data.<k>`, `frontmatter.<k>`, `entries(frontmatter)`, the `where` pushdown over `properties` and `docs_read.properties.frontmatter` all read it unchanged; `inline` and `computed` are `{}` (no `key:: value` syntax, no body prose — so the bare `title` is null and `tags` is the authored list). A non-mapping root (`attn/list.yaml`) has no properties. The documents arrive through the API path — `create` with the whole file as `markdown` (an observation script's paths end in `.md`, spec/store §9.4; the observe path is pinned by `spec/properties/cases/whole-document.json`, which runs the same ingest) — and `set content` re-derives the rows. The attn prototype's virtual-focus join: the markdown documents that the focus file's `focused_intent` names. The frontmatter effects stay Markdown's (the write side is a later round): `set frontmatter.<k>` on a yaml document, `docs_set_meta` over it and `create { frontmatter }` at a `.json` path are `type_mismatch` — the mapping is edited with `set content`.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-10-17T10:00:00.000Z",
+            "items": [
+              {
+                "path": "notes/plan.md",
+                "source": "# Plan\n\nThe plan.\n"
+              },
+              {
+                "path": "notes/other.md",
+                "source": "# Other\n\nNot focused.\n"
+              }
+            ]
+          }
+        },
+        {
+          "read": {
+            "tool": "apply",
+            "args": {
+              "effects": [
+                {
+                  "op": "create",
+                  "path": "/attn/focus.yaml",
+                  "markdown": "focused_intent: /notes/plan.md\nsince: 2026-10-17\ntitle: Focus\ntags: [attn, now]\nmeta:\n  owner: bb\n"
+                },
+                {
+                  "op": "create",
+                  "path": "/config.json",
+                  "markdown": "{\"name\": \"attn\", \"version\": 2, \"features\": {\"focus\": true}, \"tags\": [\"cfg\"]}\n"
+                },
+                {
+                  "op": "create",
+                  "path": "/attn/list.yaml",
+                  "markdown": "- a\n- b\n"
+                }
+              ]
+            },
+            "ts": "2026-10-17T10:00:30.000Z"
+          }
+        },
+        {
+          "read": {
+            "tool": "query",
+            "args": {
+              "query": "select focused_intent, since from docs where path == \"/attn/focus.yaml\""
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "query",
+            "args": {
+              "query": "select o: data.meta.owner, ft: frontmatter.title, dt: data.title, t: title, tg: tags, f: format from docs where path == \"/attn/focus.yaml\""
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "query",
+            "args": {
+              "query": "select e: entries(frontmatter) collect { k: $key, v: $it } from docs where path == \"/config.json\""
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "query",
+            "args": {
+              "query": "select name, version, focus: features.focus from docs where path == \"/config.json\""
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "query",
+            "args": {
+              "query": "from docs where focused_intent == \"/notes/plan.md\""
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "query",
+            "args": {
+              "query": "from docs where name == \"attn\" and version == 2"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "query",
+            "args": {
+              "query": "select path from docs where format == \"markdown\" and ^docs exists { where path == \"/attn/focus.yaml\" and focused_intent == ^path } order by path"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "query",
+            "args": {
+              "query": "select path, focused: ^docs count { where path == \"/attn/focus.yaml\" and focused_intent == ^path } from docs where format == \"markdown\" order by path"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "query",
+            "args": {
+              "query": "select path from docs where format != \"markdown\" and entries(frontmatter) exists { } order by path"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "docs_read",
+            "args": {
+              "path": "/attn/focus.yaml"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "docs_read",
+            "args": {
+              "path": "/config.json"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "docs_read",
+            "args": {
+              "path": "/attn/list.yaml"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "apply",
+            "args": {
+              "effects": [
+                {
+                  "op": "create",
+                  "path": "/attn/new.yaml",
+                  "markdown": "k: v\nn: 1\n"
+                }
+              ]
+            },
+            "ts": "2026-10-17T10:01:00.000Z"
+          }
+        },
+        {
+          "read": {
+            "tool": "query",
+            "args": {
+              "query": "select k, n from docs where path == \"/attn/new.yaml\""
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "apply",
+            "args": {
+              "effects": [
+                {
+                  "op": "set",
+                  "target": "/attn/focus.yaml",
+                  "field": "content",
+                  "value": "focused_intent: /notes/other.md\nsince: 2026-10-18\n"
+                }
+              ]
+            },
+            "ts": "2026-10-17T10:02:00.000Z"
+          }
+        },
+        {
+          "read": {
+            "tool": "query",
+            "args": {
+              "query": "select focused_intent, since, title from docs where path == \"/attn/focus.yaml\""
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "query",
+            "args": {
+              "query": "select path from docs where format == \"markdown\" and ^docs exists { where path == \"/attn/focus.yaml\" and focused_intent == ^path } order by path"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "query",
+            "args": {
+              "query": "select path, focused: ^docs count { where path == \"/attn/focus.yaml\" and focused_intent == ^path } from docs where format == \"markdown\" order by path"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "plan",
+            "args": {
+              "effects": [
+                {
+                  "op": "set",
+                  "target": "/attn/focus.yaml",
+                  "field": "frontmatter.since",
+                  "value": "2026-10-19"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "plan",
+            "args": {
+              "effects": [
+                {
+                  "op": "unset",
+                  "target": "/config.json",
+                  "field": "frontmatter.version"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "docs_set_meta",
+            "args": {
+              "path": "/attn/focus.yaml",
+              "set": {
+                "since": "2026-10-19"
+              }
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "plan",
+            "args": {
+              "effects": [
+                {
+                  "op": "create",
+                  "path": "/attn/c.json",
+                  "markdown": "{}\n",
+                  "frontmatter": {
+                    "a": 1
+                  }
+                }
+              ]
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "plan",
+            "args": {
+              "effects": [
+                {
+                  "op": "create",
+                  "path": "/attn/d.json",
+                  "markdown": "{\"a\": 1}\n",
+                  "frontmatter": {}
+                }
+              ]
+            }
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "notes/plan.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 2
+              }
+            },
+            {
+              "path": "notes/other.md",
+              "echo": false,
+              "doc": "d_1",
+              "commit": "c_1",
+              "rev": "r_1",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 2
+              }
+            }
+          ],
+          {
+            "plan_id": "fc3411136688a729b32859a3b75180d7d0fcc897b04e2bd11424feb6b0c0cd93",
+            "commit": "c_2",
+            "revisions": [
+              {
+                "id": "d_2",
+                "path": "/attn/focus.yaml",
+                "hash": "4616d54e0d8c368879f7e02dcfa6deef502ce298f794f41abc688b70fb734a51"
+              },
+              {
+                "id": "d_3",
+                "path": "/config.json",
+                "hash": "7949f31afee3fbc6ebb9516d33b8bc7a48363f574fac446f14f3783e87907f52"
+              },
+              {
+                "id": "d_4",
+                "path": "/attn/list.yaml",
+                "hash": "25f2bb669e33041967c7ff7343c260b3e288bef9147ef86237d32a7bd7fd8ade"
+              }
+            ],
+            "new_ids": {
+              "$new.0": "d_2",
+              "$new.1": "b_4",
+              "$new.2": "b_5",
+              "$new.3": "b_6",
+              "$new.4": "b_7",
+              "$new.5": "b_8",
+              "$new.6": "b_9",
+              "$new.7": "b_10",
+              "$new.8": "b_11",
+              "$new.9": "d_3",
+              "$new.10": "b_12",
+              "$new.11": "b_13",
+              "$new.12": "b_14",
+              "$new.13": "b_15",
+              "$new.14": "b_16",
+              "$new.15": "b_17",
+              "$new.16": "d_4",
+              "$new.17": "b_18",
+              "$new.18": "b_19"
+            },
+            "committed": true,
+            "summary": [
+              "create /attn/focus.yaml (5 blocks)",
+              "create /config.json (4 blocks)",
+              "create /attn/list.yaml (2 blocks)"
+            ]
+          },
+          {
+            "hits": [
+              {
+                "id": "d_2",
+                "path": "/attn/focus.yaml",
+                "focused_intent": "/notes/plan.md",
+                "since": "2026-10-17"
+              }
+            ],
+            "truncated": false,
+            "cursor": null,
+            "consumer": "collect"
+          },
+          {
+            "hits": [
+              {
+                "id": "d_2",
+                "path": "/attn/focus.yaml",
+                "o": "bb",
+                "ft": "Focus",
+                "dt": "Focus",
+                "t": null,
+                "tg": [
+                  "attn",
+                  "now"
+                ],
+                "f": "yaml"
+              }
+            ],
+            "truncated": false,
+            "cursor": null,
+            "consumer": "collect"
+          },
+          {
+            "hits": [
+              {
+                "id": "d_3",
+                "path": "/config.json",
+                "e": [
+                  {
+                    "k": "features",
+                    "v": {
+                      "focus": true
+                    }
+                  },
+                  {
+                    "k": "name",
+                    "v": "attn"
+                  },
+                  {
+                    "k": "tags",
+                    "v": [
+                      "cfg"
+                    ]
+                  },
+                  {
+                    "k": "version",
+                    "v": 2
+                  }
+                ]
+              }
+            ],
+            "truncated": false,
+            "cursor": null,
+            "consumer": "collect"
+          },
+          {
+            "hits": [
+              {
+                "id": "d_3",
+                "path": "/config.json",
+                "name": "attn",
+                "version": 2,
+                "focus": true
+              }
+            ],
+            "truncated": false,
+            "cursor": null,
+            "consumer": "collect"
+          },
+          {
+            "hits": [
+              {
+                "id": "d_2",
+                "path": "/attn/focus.yaml"
+              }
+            ],
+            "truncated": false,
+            "cursor": null,
+            "consumer": "collect"
+          },
+          {
+            "hits": [
+              {
+                "id": "d_3",
+                "path": "/config.json"
+              }
+            ],
+            "truncated": false,
+            "cursor": null,
+            "consumer": "collect"
+          },
+          {
+            "hits": [
+              {
+                "id": "d_0",
+                "path": "/notes/plan.md"
+              }
+            ],
+            "truncated": false,
+            "cursor": null,
+            "consumer": "collect"
+          },
+          {
+            "hits": [
+              {
+                "id": "d_1",
+                "path": "/notes/other.md",
+                "focused": 0
+              },
+              {
+                "id": "d_0",
+                "path": "/notes/plan.md",
+                "focused": 1
+              }
+            ],
+            "truncated": false,
+            "cursor": null,
+            "consumer": "collect"
+          },
+          {
+            "hits": [
+              {
+                "id": "d_2",
+                "path": "/attn/focus.yaml"
+              },
+              {
+                "id": "d_3",
+                "path": "/config.json"
+              }
+            ],
+            "truncated": false,
+            "cursor": null,
+            "consumer": "collect"
+          },
+          {
+            "id": "d_2",
+            "path": "/attn/focus.yaml",
+            "rev": "r_2",
+            "properties": {
+              "frontmatter": {
+                "focused_intent": "/notes/plan.md",
+                "since": "2026-10-17",
+                "title": "Focus",
+                "tags": [
+                  "attn",
+                  "now"
+                ],
+                "meta.owner": "bb"
+              },
+              "inline": {},
+              "computed": {}
+            },
+            "raw": "focused_intent: /notes/plan.md\nsince: 2026-10-17\ntitle: Focus\ntags: [attn, now]\nmeta:\n  owner: bb\n"
+          },
+          {
+            "id": "d_3",
+            "path": "/config.json",
+            "rev": "r_3",
+            "properties": {
+              "frontmatter": {
+                "name": "attn",
+                "version": 2,
+                "features.focus": true,
+                "tags": [
+                  "cfg"
+                ]
+              },
+              "inline": {},
+              "computed": {}
+            },
+            "raw": "{\"name\": \"attn\", \"version\": 2, \"features\": {\"focus\": true}, \"tags\": [\"cfg\"]}\n"
+          },
+          {
+            "id": "d_4",
+            "path": "/attn/list.yaml",
+            "rev": "r_4",
+            "properties": {
+              "frontmatter": {},
+              "inline": {},
+              "computed": {}
+            },
+            "raw": "- a\n- b\n"
+          },
+          {
+            "plan_id": "1101d47571895ef21ab4f832c1fd15d9f3c93f4f486ffc18b215ccee5ab7eae3",
+            "commit": "c_3",
+            "revisions": [
+              {
+                "id": "d_5",
+                "path": "/attn/new.yaml",
+                "hash": "0ecb44c6874d0c9d80a40da97d1748f16d35cc85a61d983f4b1bae1a62d811a9"
+              }
+            ],
+            "new_ids": {
+              "$new.0": "d_5",
+              "$new.1": "b_20",
+              "$new.2": "b_21"
+            },
+            "committed": true,
+            "summary": [
+              "create /attn/new.yaml (2 blocks)"
+            ]
+          },
+          {
+            "hits": [
+              {
+                "id": "d_5",
+                "path": "/attn/new.yaml",
+                "k": "v",
+                "n": 1
+              }
+            ],
+            "truncated": false,
+            "cursor": null,
+            "consumer": "collect"
+          },
+          {
+            "plan_id": "71e6d8efd49cdb8a442d9ae8cf6d2162b3399b79ddcbf01eecef9e139b68abe4",
+            "commit": "c_4",
+            "revisions": [
+              {
+                "id": "d_2",
+                "path": "/attn/focus.yaml",
+                "hash": "3d235ce6742ac9ed887d838e547fc0762730be6efb468eac4cf28337626b4753"
+              }
+            ],
+            "new_ids": {
+              "$new.0": "b_22",
+              "$new.1": "b_23"
+            },
+            "committed": true,
+            "summary": [
+              "set content of /attn/focus.yaml"
+            ]
+          },
+          {
+            "hits": [
+              {
+                "id": "d_2",
+                "path": "/attn/focus.yaml",
+                "focused_intent": "/notes/other.md",
+                "since": "2026-10-18",
+                "title": null
+              }
+            ],
+            "truncated": false,
+            "cursor": null,
+            "consumer": "collect"
+          },
+          {
+            "hits": [
+              {
+                "id": "d_1",
+                "path": "/notes/other.md"
+              }
+            ],
+            "truncated": false,
+            "cursor": null,
+            "consumer": "collect"
+          },
+          {
+            "hits": [
+              {
+                "id": "d_1",
+                "path": "/notes/other.md",
+                "focused": 1
+              },
+              {
+                "id": "d_0",
+                "path": "/notes/plan.md",
+                "focused": 0
+              }
+            ],
+            "truncated": false,
+            "cursor": null,
+            "consumer": "collect"
+          },
+          {
+            "error": "type_mismatch",
+            "retriable": false,
+            "message": "frontmatter effects apply to markdown documents; /attn/focus.yaml is a yaml document — its top-level mapping is edited with `set content` (the whole file) until frontmatter effects learn yaml and json",
+            "data": {
+              "doc": "d_2",
+              "path": "/attn/focus.yaml",
+              "format": "yaml",
+              "field": "frontmatter.since",
+              "effect_index": 0
+            }
+          },
+          {
+            "error": "type_mismatch",
+            "retriable": false,
+            "message": "frontmatter effects apply to markdown documents; /config.json is a json document — its top-level mapping is edited with `set content` (the whole file) until frontmatter effects learn yaml and json",
+            "data": {
+              "doc": "d_3",
+              "path": "/config.json",
+              "format": "json",
+              "field": "frontmatter.version",
+              "effect_index": 0
+            }
+          },
+          {
+            "error": "type_mismatch",
+            "retriable": false,
+            "message": "frontmatter effects apply to markdown documents; /attn/focus.yaml is a yaml document — its top-level mapping is edited with `set content` (the whole file) until frontmatter effects learn yaml and json",
+            "data": {
+              "doc": "d_2",
+              "path": "/attn/focus.yaml",
+              "format": "yaml",
+              "field": "frontmatter.since"
+            }
+          },
+          {
+            "error": "type_mismatch",
+            "retriable": false,
+            "message": "frontmatter effects apply to markdown documents; /attn/c.json is a json document — its top-level mapping is edited with `set content` (the whole file) until frontmatter effects learn yaml and json",
+            "data": {
+              "path": "/attn/c.json",
+              "format": "json",
+              "field": "frontmatter",
+              "effect_index": 0
+            }
+          },
+          {
+            "version": 1,
+            "planner_v": "p3",
+            "effects": [
+              {
+                "op": "create",
+                "path": "attn/d.json",
+                "markdown": "{\"a\": 1}\n",
+                "frontmatter": {}
+              }
+            ],
+            "opset": {
+              "creates": [
+                {
+                  "symbol": "$new.0",
+                  "path": "attn/d.json",
+                  "source": "{\"a\": 1}\n",
+                  "before_op": 0
+                }
+              ],
+              "moves": [],
+              "tombstones": [],
+              "set_frontmatter": [],
+              "ops": []
+            },
+            "preconditions": {
+              "docs": [],
+              "blocks": [],
+              "parents": [],
+              "absent_paths": [
+                "attn/d.json"
+              ]
+            },
+            "new_ids": [
+              {
+                "symbol": "$new.0",
+                "kind": "document"
+              },
+              {
+                "symbol": "$new.1",
+                "kind": "block"
+              }
+            ],
+            "plan_id": "333e7372c2f446a26dc4bc633d349a55e3977325a7e22ef58b1489ff53cfe9b4",
+            "diagnostics": [],
+            "preview": {
+              "results": [],
+              "revisions": [
+                {
+                  "id": "$new.0",
+                  "path": "/attn/d.json",
+                  "hash": "e8c628edc9968ef0c668f54e0ba2636b35503357eb1aca0ddc828aeace432f67"
+                }
+              ],
+              "summary": [
+                "create /attn/d.json (1 block)"
+              ]
+            }
+          }
+        ]
+      }
     }
   ]
 }

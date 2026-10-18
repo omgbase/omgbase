@@ -7,6 +7,7 @@ import { inboundLinksTo, type InboundLink } from "../graph/inbound-links.js";
 import type { ChangesetPlanner, Op } from "./apply.js";
 import { readDocBase, type DocBase } from "./commit.js";
 import type { DocStore } from "./doc-store.js";
+import { adapterForPath } from "../format/index.js";
 import { canonicalDocPath, composeFile, parseNewDoc, planInboundRetarget, splitFrontmatter } from "./docs.js";
 import { linksRepair, nodeSet, type LinkRepairCount, type RetargetHit } from "./macros.js";
 import type { At, Expect, To } from "./ops.js";
@@ -977,6 +978,28 @@ function nodeTarget(t: ResolvedTarget): Extract<ResolvedTarget, { kind: "node" }
 }
 
 /**
+ * The frontmatter effects are Markdown's (spec/properties §3.4, 1.2; spec/surface
+ * Decisions 2026-10-17): a `yaml`/`json` document's "frontmatter" IS its whole
+ * top-level mapping, and the entry patch below would fence it with `---` lines —
+ * a second YAML document, or invalid JSON. Until the effect learns those formats
+ * the request is refused outright — `type_mismatch`, the target's kind does not
+ * admit the op — and the mapping is edited with `set content` (the whole file).
+ */
+function requireMarkdownForFrontmatter(ctx: LoweringContext, docId: string, field: string): void {
+  const d = ctx.planner.ensureDoc(docId);
+  if (d.format === "markdown") return;
+  throw frontmatterNotMarkdown(docPathOf(ctx, docId), d.format, field, isNewSymbol(docId) ? null : docId);
+}
+
+function frontmatterNotMarkdown(path: string, format: string, field: string, docId: string | null): MutationError {
+  return new MutationError(
+    "type_mismatch",
+    `frontmatter effects apply to markdown documents; ${referencePath(path)} is a ${format} document — its top-level mapping is edited with \`set content\` (the whole file) until frontmatter effects learn yaml and json`,
+    { ...(docId !== null ? { doc: docId } : {}), path: referencePath(path), format, field },
+  );
+}
+
+/**
  * spec/mutate §11.3 `set`/`unset frontmatter.<key>` (3.6, "Frontmatter
  * entries"): the frontmatter is edited BY ENTRY. The document's head is cut
  * into its parts (`splitFrontmatterRaw`, the §11.3 split rule): a `set`
@@ -1199,6 +1222,10 @@ function applyLowering(ctx: LoweringContext, i: number, e: ResolvedEffect): void
       // — its blocks are the next `$new.k` in pre-order — and adopted as a loaded
       // document, so every later effect addresses it and its blocks like any other.
       const symbol = ctx.symbols.alloc("document");
+      if (e.frontmatter && Object.keys(e.frontmatter).length > 0) {
+        const format = adapterForPath(e.path)?.format ?? "markdown";
+        if (format !== "markdown") throw frontmatterNotMarkdown(e.path, format, "frontmatter", null);
+      }
       const source = composeFile(e.markdown, e.frontmatter);
       const tree = parseNewDoc(symbol, e.path, source);
       ctx.planner.adoptNew(symbol, tree);
@@ -1232,6 +1259,7 @@ function applyLowering(ctx: LoweringContext, i: number, e: ResolvedEffect): void
         }
         // `frontmatter.<key>` — on a created document too (3.0): its tree is loaded, the patch is a head like any other.
         const key = FRONTMATTER_FIELD.exec(e.field)![1]!;
+        requireMarkdownForFrontmatter(ctx, docId, e.field);
         patchFrontmatterKey(ctx, docId, key, e.op === "set" ? { value: e.value } : null);
         ctx.summary.push(e.op === "set" ? `set ${e.field} = ${ctx.canonical(e.value)} in ${docPathOf(ctx, docId)}` : `unset ${e.field} in ${docPathOf(ctx, docId)}`);
         return;

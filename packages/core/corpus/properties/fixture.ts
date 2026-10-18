@@ -55,22 +55,28 @@ export interface FixtureExpect {
 export interface FixtureCase {
   name: string;
   notes?: string;
+  /** the document's format (§7 "Inputs", 1.2): decides the path — `a.md` / `a.yaml` / `a.json`; `markdown` when absent */
+  format?: FixtureFormat;
   /** the exact document (§7 "Inputs") */
   source: string;
   expect: FixtureExpect;
 }
+
+export type FixtureFormat = "markdown" | "yaml" | "json";
+export const FORMATS: readonly FixtureFormat[] = ["markdown", "yaml", "json"];
 
 export interface FixtureFile {
   suite: string;
   cases: FixtureCase[];
 }
 
-export const CASE_KEYS = ["name", "notes", "source", "expect"] as const;
+export const CASE_KEYS = ["name", "notes", "format", "source", "expect"] as const;
 export const SOURCES: readonly Source[] = ["frontmatter", "inline", "computed"];
 
-/** README §7 "Inputs": the repo, path and document id every case runs as. */
+/** README §7 "Inputs": the repo, the path per format and the document id every case runs as. */
 export const FIXTURE_REPO_SLUG = "fixture";
-export const FIXTURE_PATH = "a.md";
+export const FIXTURE_PATHS: Record<FixtureFormat, string> = { markdown: "a.md", yaml: "a.yaml", json: "a.json" };
+export const FIXTURE_PATH = FIXTURE_PATHS.markdown;
 export const FIXTURE_DOC_ID = "d_0";
 
 const SOURCE_RANK: Record<Source, number> = { frontmatter: 0, inline: 1, computed: 2 };
@@ -203,16 +209,17 @@ export interface Evaluation {
 
 /**
  * Run a case: fresh `:memory:` store under the fixture minter (repo `rp_0`),
- * ingest `source` at `a.md` (document `d_0`; body block ids `b_0`, `b_1`, … in
- * pre-order — `assignIds` mints parent before children), read the `properties`
- * rows back and project them, take the two read shapes of §5, run the §7 checks.
+ * ingest `source` at the format's path (`a.md` / `a.yaml` / `a.json`, §7
+ * "Inputs"; document `d_0`; body block ids `b_0`, `b_1`, … in pre-order —
+ * `assignIds` mints parent before children), read the `properties` rows back
+ * and project them, take the two read shapes of §5, run the §7 checks.
  */
 export function runCase(c: FixtureCaseInput): Evaluation {
   return withIdMinter(sequentialMinter(), () => {
     const store = new Store({ path: ":memory:" });
     try {
       const repoId = ensureRepo(store, FIXTURE_REPO_SLUG, null);
-      const { docId, converged } = ingestFile(store, repoId, FIXTURE_PATH, c.source);
+      const { docId, converged } = ingestFile(store, repoId, FIXTURE_PATHS[c.format ?? "markdown"], c.source);
       const problems: string[] = [];
       if (docId !== FIXTURE_DOC_ID) problems.push(`document id ${docId} != ${FIXTURE_DOC_ID}`);
       if (!converged) problems.push("ingest did not converge (sha256(source) != rendered)");
@@ -308,6 +315,7 @@ export function validateFixtureFile(file: string, doc: unknown, opts: ValidateOp
     else if (seen.has(c.name)) problems.push(`${at}: duplicate name '${c.name}'`);
     else seen.add(c.name);
     if (c.notes !== undefined && typeof c.notes !== "string") problems.push(`${at}: \`notes\` must be a string`);
+    if (c.format !== undefined && !(FORMATS as readonly unknown[]).includes(c.format)) problems.push(`${at}: \`format\` must be ${FORMATS.join(" | ")} (absent = markdown)`);
     if (typeof c.source !== "string") problems.push(`${at}: \`source\` must be a string`);
     if (c.expect === undefined) {
       if (requireExpect) problems.push(`${at}: missing \`expect\` (run PROPERTIES_SPEC_UPDATE=1)`);

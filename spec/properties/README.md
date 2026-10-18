@@ -1,19 +1,20 @@
 # The omgbase properties specification
 
 A document's **properties** are the typed, indexed rows the engine derives
-from three authored-or-computed sources — the YAML frontmatter fence, inline
-`key:: value` fields in the body, and engine-computed values stored under
-`$`-prefixed keys (`$title`, `$tags`; the surface reads them as the bare
-attributes `title`/`tags`, `spec/surface` §1.2) — and
-stores in the `properties` table (`spec/store` §3.1) so that filters,
-projections and `docs_read` see one uniform surface. This directory
+from three authored-or-computed sources — the document's **authored mapping**
+(a Markdown document's YAML frontmatter fence; a YAML or JSON document's whole
+top-level mapping, since 1.2), inline `key:: value` fields in a Markdown body,
+and engine-computed values stored under `$`-prefixed keys (`$title`, `$tags`;
+the surface reads them as the bare attributes `title`/`tags`, `spec/surface`
+§1.2) — and stores in the `properties` table (`spec/store` §3.1) so that
+filters, projections and `docs_read` see one uniform surface. This directory
 specifies the mapping from a document's bytes to those rows, and the two read
 shapes built from them, so that more than one implementation produces the
 same rows from the same document. It is owned by neither implementation.
 
 | Implementation | Where | Role |
 | --- | --- | --- |
-| `@omgbase/core` (TypeScript, npm) | `packages/core/src/core/store/properties.ts`, the inline/computed parts of `core/ingest.ts`, `format/markdown.ts` (`projectNodes` inline fields, `computeProperties`, `extractMetadata`), `graph/extract.ts` (`maskCode`) | **Reference.** Property decisions land here first. |
+| `@omgbase/core` (TypeScript, npm) | `packages/core/src/core/store/properties.ts`, the inline/computed parts of `core/ingest.ts`, `format/markdown.ts` (`projectNodes` inline fields, `computeProperties`), `format/yaml.ts` / `format/json.ts` (`extractMetadata`, the whole-document mapping), `graph/extract.ts` (`maskCode`) | **Reference.** Property decisions land here first. |
 | `omgbase-properties` (Rust, crates.io) | `crates/omgbase-properties` | Conformance-first port: a pure library, block tree in, rows out. `omgbase-store` calls it in the commit transaction. |
 
 The spec is two artifacts, versioned together by `VERSION`:
@@ -47,11 +48,15 @@ reference oddities surfaced and the decisions taken).
 
 ## 1. Inputs and output
 
-Input: a Markdown document as `spec/format` parses it — the block tree with
-ids assigned (the `frontmatter` block, if any, split off; every body block
-carrying its `block_id`) — plus the document's `doc_id`. Only `format =
-markdown` is specified here; the YAML and JSON adapters' whole-document
-metadata joins later as further `format` values.
+Input: a document as `spec/format` parses it — the block tree with ids
+assigned (for Markdown, the `frontmatter` block, if any, split off; every body
+block carrying its `block_id`) — plus the document's `doc_id` and its
+**`format`**: `markdown`, `yaml` or `json` (`spec/store` `docs.format`, decided
+by the path's extension — `.md`; `.yaml`/`.yml`; `.json`). A Markdown document
+yields rows from all three sources (§3.1–§3.3); a YAML or JSON document yields
+rows from its whole-document mapping alone (§3.4, since 1.2): no inline rows
+(there is no `key:: value` syntax) and no computed rows. The row shape, the
+typing, the flattening and the read shapes are the same for every format.
 
 Output: the document's **property rows**, in no particular order (the table
 has no sequence; §7 sorts for comparison), each
@@ -247,14 +252,77 @@ The Markdown adapter computes, over the body blocks:
   set, `\w` ASCII `[A-Za-z0-9_]`), keeping the first occurrence of each
   distinct tag in encounter order. Absent when empty; otherwise a list.
 
-Nothing else is computed in this version.
+Nothing else is computed in this version, and **only the Markdown adapter
+computes**: a `yaml` or `json` document has no computed rows (§3.4).
+
+### 3.4 Whole-document mappings (1.2): `format = yaml` and `format = json`
+
+For a document whose `format` is `yaml` or `json`, the document's **authored
+mapping is the whole document's top-level mapping**, and it produces property
+rows with **`source = frontmatter`**, `block_id = null` — the same source a
+Markdown fence uses, because it is the same thing: the authored key/value
+mapping of the document. For these formats "frontmatter" names the document's
+top-level mapping; every reader of the frontmatter source (`docs_read`'s
+`properties.frontmatter`, the `data` and `frontmatter` handles, bare property
+keys, `entries(frontmatter)`, the pushdown over `properties` rows) applies
+unchanged. There is no fourth `source` value: the `properties` table's CHECK
+constraint admits exactly `frontmatter | inline | computed` (`spec/store`
+`schema.sql`), and a new value would be a schema major for a distinction no
+reader needs.
+
+- **YAML**: the bytes of the whole file are a YAML **stream**; the mapping is
+  the stream's **first document**, parsed per §4 — the same YAML 1.2 core
+  schema, anchors and aliases resolving, merge keys not. A stream with more
+  than one document yields the first document's mapping and ignores the rest
+  (a Markdown fence refuses a stream, §4 "Failures"; a whole file may be one).
+  Explicit `---` start and `...` end markers around that first document are
+  delimiters, not content. If the first document fails to parse (any syntax
+  error, a duplicate key, tab indentation), or its root is not a mapping (a
+  sequence, a scalar, a comment-only or empty file whose content node is
+  null), the document has **no frontmatter rows** — exactly as a malformed
+  fence yields none. A lenient parser that recovers a mapping from a document
+  with errors must not be followed: an error is a failed parse (§8).
+- **JSON**: the whole file is one JSON text; the mapping is its **root
+  object**. A root that is not an object (an array, a scalar), a parse error
+  (a trailing comma, a comment, a leading BOM — JSON has none of these) or an
+  empty file yields **no frontmatter rows**. JSON values map as §2.1 maps the
+  YAML parser's: a number is `number` (`1.0` is 1; integers beyond 2⁵³ round
+  to the nearest double, as in YAML — §4 "Int"), `true`/`false` → `bool`,
+  `null` → `null`, a string → `string` (range-shaped strings get the §2.2
+  side channel), an object recurses and an array follows the list rule. A key
+  repeated in one object keeps the **last** value (§8).
+- **Flattening** is §2.3 verbatim — dotted keys for nested mappings, `card =
+  list` rows per scalar element with `ord` = the index, the `json` escape
+  hatch for an array holding a mapping or an array, empty containers emit
+  nothing — and `prop_id` is derived as §1 derives it.
+- **No inline rows**: the formats have no `key:: value` syntax; the body
+  blocks (`yaml:mapping_entry`, `json:property`, …) are not scanned.
+- **No computed rows**: the computed source derives facts from a Markdown
+  body's prose — the first H1, the hashtags — and a mapping has no prose. The
+  document's `title` and `tags` keys are authored keys like any other
+  (`data.title`, `data.tags`; the surface's bare `tags` reads the authored
+  list through its union rule, `spec/surface` §1.2; the surface's bare
+  `title` is the computed title and is absent, as it is for a Markdown
+  document without an H1). The file's basename is **not** a title: it is
+  `path`, not content, and a fallback for one format only would make `title`
+  mean two things (Decisions).
+- **Writing**: the rows are produced on every path that ingests the document
+  — a filesystem observation and an API write (`create`, `set content`) alike,
+  `spec/store` §5.4. The frontmatter **effects** (`set`/`unset
+  frontmatter.<key>`, `create { frontmatter }`) are Markdown's: on a `yaml`
+  or `json` document they are refused with `type_mismatch` (`spec/surface`
+  Decisions 2026-10-17; the mapping is edited with `set content`) until a
+  later round teaches them these formats.
 
 ## 4. The YAML contract
 
 Frontmatter is **YAML 1.2, core schema**, parsed as the `yaml` npm package
-(v2) parses a single document with default options. A port that uses another
-YAML library must resolve plain scalars by the core schema and match the
-failure behavior; the `yaml.json` suite pins the cases that matter:
+(v2) parses a single document with default options — a fence's text as one
+document, a whole `yaml` file's bytes as a stream whose first document is
+taken (§3.4). A port that uses another YAML library must resolve plain
+scalars by the core schema and match the failure behavior; the `yaml.json`
+suite pins the cases that matter (and `whole-document.json` re-pins the ones
+that differ for a stream):
 
 - **Null**: `null`, `Null`, `NULL`, `~`, and an empty value → null.
 - **Bool**: only `true|True|TRUE|false|False|FALSE`. `yes`, `no`, `on`,
@@ -289,7 +357,12 @@ failure behavior; the `yaml.json` suite pins the cases that matter:
   it — `---x: 2` is just a key,
   `frontmatter::yaml-line-starting-with-dashes-is-inside-the-fence`); the
   multi-document failure is reachable through the `...` end marker
-  (`yaml::document-end-marker-no-rows`).
+  (`yaml::document-end-marker-no-rows`). For a whole `yaml` file (§3.4) the
+  stream rule replaces the multi-document failure: the first document is
+  taken, `...` and `---` delimit it
+  (`whole-document::yaml-multi-document-stream-first-only`,
+  `whole-document::yaml-explicit-start-and-end-markers`); every other failure
+  is the same.
 
 ## 5. Read shapes
 
@@ -317,6 +390,10 @@ as `Infinity`/`-Infinity`; NaN reads as `null` (its `val_num` is NULL).
 
 A range-shaped string decodes as its `val_text` in both shapes.
 
+The shapes do not depend on the document's `format` (1.2): a `yaml`/`json`
+document's grouped shape is `{ frontmatter: {…its mapping…}, inline: {},
+computed: {} }` and its merged shape is the mapping's flattened keys alone.
+
 ## 6. Where the rows are written
 
 `spec/store` §5.4: inside the commit transaction, after the blocks are
@@ -334,7 +411,10 @@ re-ingest, never by `rebuild_index`.
 Suites: `frontmatter.json` (flattening, typing, ranges, collisions),
 `yaml.json` (§4 resolution and failures), `inline.json` (both forms,
 masking, card/ord, coercion, containers), `computed.json` (`$title`,
-`$tags`), `shapes.json` (grouped/merged), plus mixed cases as coverage grows.
+`$tags`), `shapes.json` (grouped/merged), `whole-document.json` (§3.4: `yaml`
+and `json` documents — flattening, typing, non-mapping roots, failures, the
+stream rule, authored `title`/`tags`, empty files), plus mixed cases as
+coverage grows.
 
 ```jsonc
 {
@@ -343,6 +423,7 @@ masking, card/ord, coercion, containers), `computed.json` (`$title`,
     {
       "name": "lone-field-is-scalar",
       "notes": "optional prose",
+      "format": "markdown",                              // optional: markdown (default) | yaml | json
       "source": "---\nlayer: canon\n---\n\n# Title\n\nelement:: fire\n",
       "expect": {                                        // GENERATED
         "rows": [
@@ -358,8 +439,11 @@ masking, card/ord, coercion, containers), `computed.json` (`$title`,
 }
 ```
 
-**Inputs** (authored): `source` is the exact document; it is parsed per
-`spec/format`, the `frontmatter` block split off, and body block ids
+**Inputs** (authored): `source` is the exact document; `format` (1.2) is
+`markdown` (the default when absent), `yaml` or `json`, and decides the path
+the document is ingested at — `a.md`, `a.yaml`, `a.json` — so the engine's
+own extension rule picks the adapter. The source is parsed per `spec/format`
+for that format, a Markdown `frontmatter` block split off, and body block ids
 assigned `b_0`, `b_1`, … in pre-order over the **body** blocks (the
 frontmatter block takes no id). The document id is `d_0`.
 
@@ -451,6 +535,29 @@ omgbase-properties --test spec`).
   frontmatter scalar and one inline occurrence is two `card = scalar` rows;
   the query layer's single-value gate, not the rows, makes it behave as a
   list.
+- **Fixed (1.2) — the YAML adapter's whole-document mapping came from a
+  lenient parse.** The reference's `format/yaml.ts` `extractMetadata` used
+  `parseDocument`, which records errors on the document and still returns its
+  contents, so `a: [1, 2\nb: 3` yielded an `a` row and a two-document stream
+  yielded the first document by accident of the same leniency. §3.4 makes an
+  error a failed parse (no rows) and the first document of a stream the rule;
+  the reference now parses the stream (`parseAllDocuments`), takes the first
+  document and refuses one with errors
+  (`whole-document::yaml-malformed-has-no-rows`,
+  `whole-document::yaml-multi-document-stream-first-only`). The rows a
+  well-formed YAML or JSON file produced before 1.2 are unchanged — the
+  change is that they are now specified, fixtured and the same across
+  engines.
+- **Pinned — JSON repeated keys keep the last value.** `JSON.parse` of
+  `{"a": 1, "b": 2, "a": 3}` is `{ a: 3, b: 2 }` (the later value at the
+  first key's position), so one `a` row with value 3
+  (`whole-document::json-duplicate-key-last-wins`). YAML's duplicate key
+  stays a failure (§4). The position does not matter to the rows (the table
+  has no sequence).
+- **Pinned — `title` is not computed for a mapping.** A `yaml`/`json`
+  document's `title:` key is a frontmatter row and the surface's bare `title`
+  (the computed title) is absent, as for a Markdown document without an H1;
+  no basename fallback (§3.4).
 
 ## Decisions
 
@@ -461,3 +568,27 @@ omgbase-properties --test spec`).
 - 2026-09-26, properties 1.1: scanners run over a block's own text (children
   blanked) and the line form admits a list marker/checkbox — one occurrence
   per field, anchored to the innermost block (least surprising; with graph 1.1).
+- 2026-10-17, properties 1.2: YAML and JSON documents join the pipeline
+  (§3.4). Querying a YAML/JSON file by its top-level keys was the reason to
+  support the formats, and the contract said "later". The whole-document
+  mapping is written under **`source = frontmatter`**, not a fourth source:
+  it is the same thing (the document's authored mapping), every reader of
+  the frontmatter source applies unchanged, and the `properties` CHECK
+  constraint would make a new value a store DDL major for a distinction no
+  query needs — a reader that must tell the formats apart has `format`. A
+  stream's first document is the mapping (a file may legitimately be a
+  stream; a fence may not); an error is a failed parse, never a recovered
+  mapping. **No computed rows**: `$title`/`$tags` derive from body prose a
+  mapping does not have, and the authored `title`/`tags` are reached as any
+  key; the basename is `path`, and a fallback for one format would make the
+  surface's `title` mean two things. **The write side is deferred**: `set`/
+  `unset frontmatter.<key>` and `create { frontmatter }` on a `yaml`/`json`
+  document are refused (`type_mismatch`) rather than fencing the file with
+  `---`; a later round teaches the effect to edit the mapping by entry (YAML
+  via the same per-entry split the fence uses, JSON via a re-serialization
+  with its formatting kept) — until then `set content` edits the whole file.
+  The Rust twin: `crates/omgbase-properties` (the mapping → rows is
+  `flatten_frontmatter`, unchanged), `crates/omgbase-store` observe's
+  properties step (take the mapping from `crates/omgbase-format`'s YAML/JSON
+  adapters: first document, errors → none, root must be a mapping), and the
+  surface's frontmatter-effect refusal.

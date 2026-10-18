@@ -260,7 +260,12 @@ below, i.e. exactly the read a bare non-colliding key performs),
 `frontmatter` and `inline` (one source each). `data.path` is the author's
 `path:` key, `data.data` the author's `data:`, `data.title`/`data.tags` the
 authored title and tag list; `entries(data)` lists every authored top-level
-key (frontmatter ∪ inline, keys deduped, `key` order). There is **no
+key (frontmatter ∪ inline, keys deduped, `key` order). For a `yaml` or `json`
+document the "frontmatter" is the document's whole top-level mapping
+(`spec/properties` §3.4, 1.2): its keys are bare names (`focused_intent`),
+`data.<k>`/`frontmatter.<k>` reach them, `inline` is empty, the bare `title`
+is null (nothing is computed for a mapping) and `tags` is the authored list
+(`reads::yaml-json-documents`). There is **no
 loud-error set**: a bare `id`, `path`, `updated_at`, `hash` or `raw` is simply
 the engine's attribute (before batch 3 of 3.0 the attributes were `$`-prefixed
 and the bare spelling was "did you mean `$path`?", §9). **Same value, same
@@ -2077,6 +2082,28 @@ both and runs both harnesses.
 
 ## Decisions
 
+- 2026-10-17 (no version move — no shape changed), with `spec/properties`
+  1.2: YAML and JSON documents' top-level mappings are their frontmatter
+  (`source = frontmatter`, §1.2 above), so every existing read applies to them
+  unchanged and `reads::yaml-json-documents` pins the attn prototype's reads
+  — bare keys, `data.<k>`, `entries(frontmatter)`, the pushdown, `docs_read`'s
+  `properties`, the virtual-focus join (`^docs exists { where path ==
+  "/attn/focus.yaml" and focused_intent == ^path }` in `where` position;
+  `count { … }` as a value — `exists` is not a projection), `create` with the
+  whole file as `markdown`, `set content`. The frontmatter **effects** stay
+  Markdown's until a later round teaches them the formats: `set`/`unset
+  frontmatter.<key>` on a `yaml`/`json` document, `docs_set_meta` over one,
+  and `create { frontmatter }` (non-empty) at a `.yaml`/`.json` path are
+  refused with **`type_mismatch`** — `data { doc?, path, format, field }`,
+  message "frontmatter effects apply to markdown documents; `<path>` is a
+  `<format>` document — its top-level mapping is edited with `set content`
+  (the whole file) until frontmatter effects learn yaml and json" — rather
+  than fencing the file with `---` (a second YAML document; invalid JSON).
+  `type_mismatch` because the target's kind does not admit the op, the same
+  family as inserting into a leaf; no `fix` (the correction is a different
+  tool, not a corrected call). An observation script's paths end in `.md`
+  (`spec/store` §9.4), so the case's non-Markdown documents arrive by
+  `create`; the observe path is `spec/properties/cases/whole-document.json`.
 - 2026-10-17, surface 4.11: the evidence is the agent-bench re-run
   `examples/agent-bench/results/2026-10-17T07-45-56Z` (Opus 5 over the two
   profiles, 78/78 passed) — four first-guess frictions remained in its 19

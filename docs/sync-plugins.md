@@ -151,7 +151,7 @@ An in-process `fetch()` returns bytes synchronously; over a pipe it is a round-t
 | Durable change-detection state (`file_stats`, per repo; per-attachment `sync_state` reserved) | **engine** |
 | Format decomposition (bytes → blocks) — a *different* axis | **engine** (format adapter) |
 
-**Format adapters and source adapters are orthogonal.** A source adapter transports bytes; a format adapter (`markdown`/`yaml`/`json`, in-process, per-block, hot path) decomposes them. A Linear issue arrives via the `linear` *source* adapter and its markdown `description` is decomposed by the markdown *format* adapter. The word "adapter" is qualified whenever ambiguous.
+**Format adapters and source adapters are orthogonal.** A source adapter transports bytes; a format adapter (`markdown`/`yaml`/`json`, in-process, per-block, hot path) decomposes them — and, for `yaml`/`json`, hands the document's whole top-level mapping to the properties step as its frontmatter (`spec/properties` §3.4, 1.2), so a synced YAML or JSON file is queryable by its top-level keys like a Markdown fence. A Linear issue arrives via the `linear` *source* adapter and its markdown `description` is decomposed by the markdown *format* adapter. The word "adapter" is qualified whenever ambiguous.
 
 ## 11. Multi-repo is the payoff
 

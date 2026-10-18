@@ -21,7 +21,18 @@ seek).
 An agent wants to filter, project, and sort documents by three sources of
 document-level properties, uniformly and index-fast:
 
-1. **Frontmatter** — the parsed YAML fence (`layer: canon`, `tags: [a, b]`).
+1. **Frontmatter** — the document's authored mapping: a Markdown document's
+   parsed YAML fence (`layer: canon`, `tags: [a, b]`), or — since properties
+   1.2 (2026-10-17) — a **YAML or JSON document's whole top-level mapping**.
+   The same `source = 'frontmatter'` rows, because it is the same thing (the
+   authored key/value mapping), so `select focused_intent from docs where path
+   == "/attn/focus.yaml"`, `data.<k>`, `entries(frontmatter)`, the pushdown
+   and `docs_read.properties.frontmatter` work on a `.yaml`/`.json` file
+   exactly as on a fence. A YAML stream's first document is the mapping; a
+   non-mapping root, a parse error or an empty file yields no rows. No inline
+   rows and no computed rows for these formats (`spec/properties` §3.4). The
+   write side — `set frontmatter.<k>` on a YAML/JSON document — is a
+   `type_mismatch` refusal for now; `set content` edits the whole file.
 2. **Inline properties** — dataview-style `key:: value` fields in body text.
 3. **Computed properties** — derived facts the engine synthesizes (e.g. a
    title from the first H1, a task rollup, word count).

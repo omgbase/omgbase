@@ -1,0 +1,1193 @@
+{
+  "suite": "whole-document",
+  "cases": [
+    {
+      "name": "yaml-scalars-and-lists",
+      "notes": "§3.4: a yaml document's top-level mapping is its frontmatter — every scalar typed per §2.1 (string, number, bool, null; a date is a string), a scalar list one `card = list` row per element — under source = frontmatter, block_id null. The attn prototype's focus file.",
+      "format": "yaml",
+      "source": "focused_intent: /notes/x.md\nsince: 2026-10-17\ntitle: Focus\ntags: [a, b]\nn: 3\nratio: 0.5\nflag: true\nnothing: null\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_f49d051ad682",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "flag",
+            "card": "scalar",
+            "ord": 0,
+            "type": "bool",
+            "val_text": null,
+            "val_num": null,
+            "val_bool": 1,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_f03ddcf455f9",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "focused_intent",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "/notes/x.md",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_c18f1cb644f7",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "n",
+            "card": "scalar",
+            "ord": 0,
+            "type": "number",
+            "val_text": null,
+            "val_num": 3,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_db7c3ed09fe5",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "nothing",
+            "card": "scalar",
+            "ord": 0,
+            "type": "null",
+            "val_text": null,
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_f4fe204beb25",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "ratio",
+            "card": "scalar",
+            "ord": 0,
+            "type": "number",
+            "val_text": null,
+            "val_num": 0.5,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_54b587cc119d",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "since",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "2026-10-17",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_09255ac07329",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "tags",
+            "card": "list",
+            "ord": 0,
+            "type": "string",
+            "val_text": "a",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_4a8975f36d80",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "tags",
+            "card": "list",
+            "ord": 1,
+            "type": "string",
+            "val_text": "b",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_faf3f2e3d8c9",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "title",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "Focus",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {
+            "focused_intent": "/notes/x.md",
+            "since": "2026-10-17",
+            "title": "Focus",
+            "tags": [
+              "a",
+              "b"
+            ],
+            "n": 3,
+            "ratio": 0.5,
+            "flag": true,
+            "nothing": null
+          },
+          "inline": {},
+          "computed": {}
+        },
+        "merged": {
+          "focused_intent": "/notes/x.md",
+          "since": "2026-10-17",
+          "title": "Focus",
+          "tags": [
+            "a",
+            "b"
+          ],
+          "n": 3,
+          "ratio": 0.5,
+          "flag": true,
+          "nothing": null
+        }
+      }
+    },
+    {
+      "name": "yaml-nested-and-dotted",
+      "notes": "§2.3 over a whole document: a nested mapping recurses to dotted keys, an authored dotted key is the same key, a list holding a mapping is the json escape hatch, empty containers emit nothing.",
+      "format": "yaml",
+      "source": "meta:\n  owner: alice\n  depth:\n    level: 2\nmeta.flat: x\nitems:\n  - {a: 1}\n  - b\nempty_map: {}\nempty_list: []\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_918ed12fee37",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "items",
+            "card": "list",
+            "ord": 0,
+            "type": "json",
+            "val_text": null,
+            "val_num": null,
+            "val_bool": null,
+            "val_json": [
+              {
+                "a": 1
+              },
+              "b"
+            ]
+          },
+          {
+            "prop_id": "p_691d92de07b4",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "meta.depth.level",
+            "card": "scalar",
+            "ord": 0,
+            "type": "number",
+            "val_text": null,
+            "val_num": 2,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_09cebd4f0245",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "meta.flat",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "x",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_2580d6ef6d3f",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "meta.owner",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "alice",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {
+            "meta.owner": "alice",
+            "meta.depth.level": 2,
+            "meta.flat": "x",
+            "items": [
+              [
+                {
+                  "a": 1
+                },
+                "b"
+              ]
+            ]
+          },
+          "inline": {},
+          "computed": {}
+        },
+        "merged": {
+          "meta.owner": "alice",
+          "meta.depth.level": 2,
+          "meta.flat": "x",
+          "items": [
+            [
+              {
+                "a": 1
+              },
+              "b"
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "name": "yaml-core-schema",
+      "notes": "§4 applies to the whole document exactly as to a fence: `yes`/`no` are strings, `0o17`/`0x1F` numbers, `1_000` a string, a timestamp a string, a quoted number a string, an anchor resolves through its alias.",
+      "format": "yaml",
+      "source": "yes: no\noct: 0o17\nhex: 0x1F\nunderscore: 1_000\nts: 2026-01-01T10:00:00Z\nquoted: \"1\"\na: &x 1\nb: *x\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_9a9a973c83ae",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "a",
+            "card": "scalar",
+            "ord": 0,
+            "type": "number",
+            "val_text": null,
+            "val_num": 1,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_4955a0765ce3",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "b",
+            "card": "scalar",
+            "ord": 0,
+            "type": "number",
+            "val_text": null,
+            "val_num": 1,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_1719034bdd53",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "hex",
+            "card": "scalar",
+            "ord": 0,
+            "type": "number",
+            "val_text": null,
+            "val_num": 31,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_762346c49f9e",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "oct",
+            "card": "scalar",
+            "ord": 0,
+            "type": "number",
+            "val_text": null,
+            "val_num": 15,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_cba787c81a30",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "quoted",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "1",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_fed0a6786653",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "ts",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "2026-01-01T10:00:00Z",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_6b6698de78a6",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "underscore",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "1_000",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_050ee2a6a41a",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "yes",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "no",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {
+            "yes": "no",
+            "oct": 15,
+            "hex": 31,
+            "underscore": "1_000",
+            "ts": "2026-01-01T10:00:00Z",
+            "quoted": "1",
+            "a": 1,
+            "b": 1
+          },
+          "inline": {},
+          "computed": {}
+        },
+        "merged": {
+          "yes": "no",
+          "oct": 15,
+          "hex": 31,
+          "underscore": "1_000",
+          "ts": "2026-01-01T10:00:00Z",
+          "quoted": "1",
+          "a": 1,
+          "b": 1
+        }
+      }
+    },
+    {
+      "name": "yaml-range-shaped-string",
+      "notes": "§2.2: the range side channel applies to a whole-document value as to a fence value (the same frontmatter rule).",
+      "format": "yaml",
+      "source": "window: 2026-01-01..2026-02-01\nstage: 1...5\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_a8b775da4224",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "stage",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "1...5",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": {
+              "__range": true,
+              "lo": 1,
+              "hi": 5,
+              "exclusiveEnd": true
+            }
+          },
+          {
+            "prop_id": "p_34872515e4a8",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "window",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "2026-01-01..2026-02-01",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": {
+              "__range": true,
+              "lo": "2026-01-01",
+              "hi": "2026-02-01",
+              "exclusiveEnd": false
+            }
+          }
+        ],
+        "grouped": {
+          "frontmatter": {
+            "window": "2026-01-01..2026-02-01",
+            "stage": "1...5"
+          },
+          "inline": {},
+          "computed": {}
+        },
+        "merged": {
+          "window": "2026-01-01..2026-02-01",
+          "stage": "1...5"
+        }
+      }
+    },
+    {
+      "name": "yaml-title-and-tags-are-authored-not-computed",
+      "notes": "§3.3/§3.4: a yaml document yields NO computed rows — `title` and `tags` are frontmatter rows like any other key (the surface's `tags` attribute reads the authored list through its union rule; `title` is the computed title, absent here, and `data.title` the authored one).",
+      "format": "yaml",
+      "source": "title: Focus\ntags:\n  - alpha\n  - beta\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_09255ac07329",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "tags",
+            "card": "list",
+            "ord": 0,
+            "type": "string",
+            "val_text": "alpha",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_4a8975f36d80",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "tags",
+            "card": "list",
+            "ord": 1,
+            "type": "string",
+            "val_text": "beta",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_faf3f2e3d8c9",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "title",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "Focus",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {
+            "title": "Focus",
+            "tags": [
+              "alpha",
+              "beta"
+            ]
+          },
+          "inline": {},
+          "computed": {}
+        },
+        "merged": {
+          "title": "Focus",
+          "tags": [
+            "alpha",
+            "beta"
+          ]
+        }
+      }
+    },
+    {
+      "name": "yaml-root-sequence-has-no-rows",
+      "notes": "§3.4: a root that is not a mapping yields no frontmatter rows (the blocks still exist; properties are metadata).",
+      "format": "yaml",
+      "source": "- a\n- b\n",
+      "expect": {
+        "rows": [],
+        "grouped": {
+          "frontmatter": {},
+          "inline": {},
+          "computed": {}
+        },
+        "merged": {}
+      }
+    },
+    {
+      "name": "yaml-root-scalar-has-no-rows",
+      "format": "yaml",
+      "source": "just a string\n",
+      "expect": {
+        "rows": [],
+        "grouped": {
+          "frontmatter": {},
+          "inline": {},
+          "computed": {}
+        },
+        "merged": {}
+      }
+    },
+    {
+      "name": "yaml-malformed-has-no-rows",
+      "notes": "§3.4/§4: a syntax error (an unclosed flow sequence) is a failed parse — no rows — even though a lenient parser would recover `a: [1, 2]`.",
+      "format": "yaml",
+      "source": "a: [1, 2\nb: 3\n",
+      "expect": {
+        "rows": [],
+        "grouped": {
+          "frontmatter": {},
+          "inline": {},
+          "computed": {}
+        },
+        "merged": {}
+      }
+    },
+    {
+      "name": "yaml-duplicate-key-has-no-rows",
+      "notes": "§4: duplicate keys in one mapping are a failure, for a whole document as for a fence.",
+      "format": "yaml",
+      "source": "a: 1\na: 2\n",
+      "expect": {
+        "rows": [],
+        "grouped": {
+          "frontmatter": {},
+          "inline": {},
+          "computed": {}
+        },
+        "merged": {}
+      }
+    },
+    {
+      "name": "yaml-multi-document-stream-first-only",
+      "notes": "§3.4: a stream's FIRST document is the document's mapping; the later documents are ignored (a fence refuses a stream, §4 — a whole file may be one).",
+      "format": "yaml",
+      "source": "a: 1\n---\nb: 2\n---\nc: 3\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_9a9a973c83ae",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "a",
+            "card": "scalar",
+            "ord": 0,
+            "type": "number",
+            "val_text": null,
+            "val_num": 1,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {
+            "a": 1
+          },
+          "inline": {},
+          "computed": {}
+        },
+        "merged": {
+          "a": 1
+        }
+      }
+    },
+    {
+      "name": "yaml-explicit-start-and-end-markers",
+      "notes": "§3.4: `---` opening the file and `...` closing it delimit one document — rows as without them (`yaml::document-end-marker-no-rows` is the fence's rule, not this one).",
+      "format": "yaml",
+      "source": "---\na: 1\n...\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_9a9a973c83ae",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "a",
+            "card": "scalar",
+            "ord": 0,
+            "type": "number",
+            "val_text": null,
+            "val_num": 1,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {
+            "a": 1
+          },
+          "inline": {},
+          "computed": {}
+        },
+        "merged": {
+          "a": 1
+        }
+      }
+    },
+    {
+      "name": "yaml-empty-file-has-no-rows",
+      "format": "yaml",
+      "source": "",
+      "expect": {
+        "rows": [],
+        "grouped": {
+          "frontmatter": {},
+          "inline": {},
+          "computed": {}
+        },
+        "merged": {}
+      }
+    },
+    {
+      "name": "yaml-comment-only-has-no-rows",
+      "notes": "§3.4: a document with no content node (comments only) is not a mapping.",
+      "format": "yaml",
+      "source": "# nothing here\n",
+      "expect": {
+        "rows": [],
+        "grouped": {
+          "frontmatter": {},
+          "inline": {},
+          "computed": {}
+        },
+        "merged": {}
+      }
+    },
+    {
+      "name": "json-scalars-and-lists",
+      "notes": "§3.4: a json document's root object is its frontmatter; numbers (`1.0` is 1, exponents, negatives), booleans, null, strings and scalar arrays map as the frontmatter rule maps YAML's.",
+      "format": "json",
+      "source": "{\"title\": \"J\", \"k\": 1.0, \"neg\": -2.5e3, \"big\": 9007199254740993, \"flag\": false, \"nothing\": null, \"tags\": [\"a\", \"b\"], \"nums\": [1, 2]}\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_08232063441f",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "big",
+            "card": "scalar",
+            "ord": 0,
+            "type": "number",
+            "val_text": null,
+            "val_num": 9007199254740992,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_f49d051ad682",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "flag",
+            "card": "scalar",
+            "ord": 0,
+            "type": "bool",
+            "val_text": null,
+            "val_num": null,
+            "val_bool": 0,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_fce67cfa6a98",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "k",
+            "card": "scalar",
+            "ord": 0,
+            "type": "number",
+            "val_text": null,
+            "val_num": 1,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_c28781d264bf",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "neg",
+            "card": "scalar",
+            "ord": 0,
+            "type": "number",
+            "val_text": null,
+            "val_num": -2500,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_db7c3ed09fe5",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "nothing",
+            "card": "scalar",
+            "ord": 0,
+            "type": "null",
+            "val_text": null,
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_59185a71c456",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "nums",
+            "card": "list",
+            "ord": 0,
+            "type": "number",
+            "val_text": null,
+            "val_num": 1,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_378bba58fe05",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "nums",
+            "card": "list",
+            "ord": 1,
+            "type": "number",
+            "val_text": null,
+            "val_num": 2,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_09255ac07329",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "tags",
+            "card": "list",
+            "ord": 0,
+            "type": "string",
+            "val_text": "a",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_4a8975f36d80",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "tags",
+            "card": "list",
+            "ord": 1,
+            "type": "string",
+            "val_text": "b",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_faf3f2e3d8c9",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "title",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "J",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {
+            "title": "J",
+            "k": 1,
+            "neg": -2500,
+            "big": 9007199254740992,
+            "flag": false,
+            "nothing": null,
+            "tags": [
+              "a",
+              "b"
+            ],
+            "nums": [
+              1,
+              2
+            ]
+          },
+          "inline": {},
+          "computed": {}
+        },
+        "merged": {
+          "title": "J",
+          "k": 1,
+          "neg": -2500,
+          "big": 9007199254740992,
+          "flag": false,
+          "nothing": null,
+          "tags": [
+            "a",
+            "b"
+          ],
+          "nums": [
+            1,
+            2
+          ]
+        }
+      }
+    },
+    {
+      "name": "json-nested-and-dotted",
+      "notes": "§2.3 over a json object: nested objects flatten to dotted keys, an authored dotted key is the same key, an array holding an object is the json escape hatch, empty containers emit nothing.",
+      "format": "json",
+      "source": "{\n  \"meta\": {\"owner\": \"alice\", \"depth\": {\"level\": 2}},\n  \"meta.flat\": \"x\",\n  \"items\": [{\"a\": 1}, \"b\"],\n  \"empty_map\": {},\n  \"empty_list\": []\n}\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_918ed12fee37",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "items",
+            "card": "list",
+            "ord": 0,
+            "type": "json",
+            "val_text": null,
+            "val_num": null,
+            "val_bool": null,
+            "val_json": [
+              {
+                "a": 1
+              },
+              "b"
+            ]
+          },
+          {
+            "prop_id": "p_691d92de07b4",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "meta.depth.level",
+            "card": "scalar",
+            "ord": 0,
+            "type": "number",
+            "val_text": null,
+            "val_num": 2,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_09cebd4f0245",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "meta.flat",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "x",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_2580d6ef6d3f",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "meta.owner",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "alice",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {
+            "meta.owner": "alice",
+            "meta.depth.level": 2,
+            "meta.flat": "x",
+            "items": [
+              [
+                {
+                  "a": 1
+                },
+                "b"
+              ]
+            ]
+          },
+          "inline": {},
+          "computed": {}
+        },
+        "merged": {
+          "meta.owner": "alice",
+          "meta.depth.level": 2,
+          "meta.flat": "x",
+          "items": [
+            [
+              {
+                "a": 1
+              },
+              "b"
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "name": "json-range-shaped-string",
+      "notes": "§2.2: the range side channel applies to a json string value too.",
+      "format": "json",
+      "source": "{\"window\": \"1..5\"}",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_34872515e4a8",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "window",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "1..5",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": {
+              "__range": true,
+              "lo": 1,
+              "hi": 5,
+              "exclusiveEnd": false
+            }
+          }
+        ],
+        "grouped": {
+          "frontmatter": {
+            "window": "1..5"
+          },
+          "inline": {},
+          "computed": {}
+        },
+        "merged": {
+          "window": "1..5"
+        }
+      }
+    },
+    {
+      "name": "json-title-and-tags-are-authored-not-computed",
+      "notes": "§3.3/§3.4: no computed rows for a json document; `title`/`tags` are authored keys.",
+      "format": "json",
+      "source": "{\"title\": \"J\", \"tags\": [\"alpha\"]}\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_09255ac07329",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "tags",
+            "card": "list",
+            "ord": 0,
+            "type": "string",
+            "val_text": "alpha",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_faf3f2e3d8c9",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "title",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "J",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {
+            "title": "J",
+            "tags": [
+              "alpha"
+            ]
+          },
+          "inline": {},
+          "computed": {}
+        },
+        "merged": {
+          "title": "J",
+          "tags": [
+            "alpha"
+          ]
+        }
+      }
+    },
+    {
+      "name": "json-duplicate-key-last-wins",
+      "notes": "§8: `JSON.parse` keeps the LAST value of a repeated key (at the first key's position); one row, the later value.",
+      "format": "json",
+      "source": "{\"a\": 1, \"b\": 2, \"a\": 3}",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_9a9a973c83ae",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "a",
+            "card": "scalar",
+            "ord": 0,
+            "type": "number",
+            "val_text": null,
+            "val_num": 3,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_4955a0765ce3",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "b",
+            "card": "scalar",
+            "ord": 0,
+            "type": "number",
+            "val_text": null,
+            "val_num": 2,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {
+            "a": 3,
+            "b": 2
+          },
+          "inline": {},
+          "computed": {}
+        },
+        "merged": {
+          "a": 3,
+          "b": 2
+        }
+      }
+    },
+    {
+      "name": "json-root-array-has-no-rows",
+      "format": "json",
+      "source": "[1, 2]\n",
+      "expect": {
+        "rows": [],
+        "grouped": {
+          "frontmatter": {},
+          "inline": {},
+          "computed": {}
+        },
+        "merged": {}
+      }
+    },
+    {
+      "name": "json-root-scalar-has-no-rows",
+      "format": "json",
+      "source": "\"x\"\n",
+      "expect": {
+        "rows": [],
+        "grouped": {
+          "frontmatter": {},
+          "inline": {},
+          "computed": {}
+        },
+        "merged": {}
+      }
+    },
+    {
+      "name": "json-malformed-has-no-rows",
+      "notes": "§3.4: a trailing comma is a parse error — no rows.",
+      "format": "json",
+      "source": "{\"a\": 1,}\n",
+      "expect": {
+        "rows": [],
+        "grouped": {
+          "frontmatter": {},
+          "inline": {},
+          "computed": {}
+        },
+        "merged": {}
+      }
+    },
+    {
+      "name": "json-empty-file-has-no-rows",
+      "format": "json",
+      "source": "",
+      "expect": {
+        "rows": [],
+        "grouped": {
+          "frontmatter": {},
+          "inline": {},
+          "computed": {}
+        },
+        "merged": {}
+      }
+    },
+    {
+      "name": "markdown-format-named-explicitly",
+      "notes": "§7: `format: markdown` is the default spelled out — the same rows `frontmatter::` cases get.",
+      "format": "markdown",
+      "source": "---\nlayer: canon\n---\n\n# T\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_24791d1022f9",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "layer",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "canon",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_fbf6b2bef0dd",
+            "block_id": null,
+            "source": "computed",
+            "key": "$title",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "T",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {
+            "layer": "canon"
+          },
+          "inline": {},
+          "computed": {
+            "$title": "T"
+          }
+        },
+        "merged": {
+          "layer": "canon",
+          "$title": "T"
+        }
+      }
+    }
+  ]
+}

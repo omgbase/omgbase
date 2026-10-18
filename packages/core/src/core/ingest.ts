@@ -257,13 +257,17 @@ export function ingestInto(
   // NULL when there is no frontmatter.
   const fmTrivia = fmBlock ? fmBlock.trivia : null;
 
-  // Document property bag: whole-document metadata for the formats whose
-  // adapter extracts one (YAML, JSON); for Markdown — whose adapter has no
-  // `extractMetadata` — the YAML of the `frontmatter` block and nothing else
-  // (spec/properties §3.1: a document whose first block is not `frontmatter`
-  // has no frontmatter rows, whatever else its bytes resemble). Flattened into
-  // the properties table below (source=frontmatter); also drives frontmatter
-  // edge extraction.
+  // Document property bag — the document's AUTHORED MAPPING. For a `yaml` or
+  // `json` document it is the whole document's top-level mapping, from the
+  // adapter's `extractMetadata` (spec/properties §3.4, 1.2: null for a
+  // non-mapping root, a syntax error or an empty file; a YAML stream's first
+  // document only); for Markdown — whose adapter has no `extractMetadata` — the
+  // YAML of the `frontmatter` block and nothing else (§3.1: a document whose
+  // first block is not `frontmatter` has no frontmatter rows, whatever else its
+  // bytes resemble). Either way it is flattened into the properties table below
+  // under source=frontmatter — the same source, because it is the same thing
+  // (§3.4: "frontmatter" names the document's authored mapping) — and drives
+  // frontmatter edge extraction.
   const metadata = adapter?.extractMetadata
     ? (adapter.extractMetadata(content) ?? {})
     : parseFrontmatter(fmBlock);
@@ -437,7 +441,11 @@ export function ingestInto(
   }
 
   // Computed → property rows (source=computed). Engine-derived $-intrinsics
-  // ($title, $tags) from the adapter; never claim authored keys.
+  // ($title, $tags) from the adapter; never claim authored keys. Only the
+  // Markdown adapter computes (spec/properties §3.3): a `yaml`/`json` document
+  // has no body prose to derive a heading or a hashtag from, and its authored
+  // `title`/`tags` are reached as any other key of its mapping (§3.4), so it
+  // yields no computed rows.
   if (adapter?.computeProperties) {
     const computed = adapter.computeProperties(rest, metadata);
     for (const r of flattenComputed(computed)) {

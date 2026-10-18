@@ -300,6 +300,11 @@ export const jsonAdapter: FormatAdapter = {
     return edges;
   },
 
+  // The document's authored mapping (spec/properties §3.4, 1.2): the root object
+  // of a well-formed JSON text; a non-object root (an array, a scalar), a parse
+  // error or an empty file yields null — no frontmatter rows. `JSON.parse` is
+  // strict (no comments, no trailing commas, no BOM); a repeated key keeps the
+  // LAST value at the FIRST position (the host's object semantics, §8).
   extractMetadata(source: string): Record<string, unknown> | null {
     try {
       const parsed = JSON.parse(source) as unknown;

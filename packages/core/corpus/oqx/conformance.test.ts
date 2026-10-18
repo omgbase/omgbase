@@ -10,6 +10,7 @@ import { fileURLToPath } from "node:url";
 import { Store } from "../../src/core/store/store.js";
 import { ensureRepo } from "../../src/core/attach.js";
 import { processCheckpoint } from "../../src/sync/checkpoint.js";
+import { ingestFile } from "../../src/core/ingest.js";
 import { oqxRun } from "../../src/oqx/run.js";
 import "../../src/format/index.js";
 
@@ -166,6 +167,48 @@ describe("OQX differential conformance — planned == in-memory", () => {
       expect(planned).toEqual(memory);
     });
   }
+
+  // spec/properties §3.4 (1.2): a yaml/json document's top-level mapping is its
+  // frontmatter — the same `properties` rows the planner already pushes down —
+  // so a bare-key predicate over a YAML file must plan to the same answer the
+  // in-memory engine gives. A separate store: the alchemy corpus is Markdown only.
+  describe("yaml/json documents (spec/properties §3.4)", () => {
+    let yj: Store, yjRepo: string;
+    beforeAll(() => {
+      yj = new Store({ path: ":memory:" });
+      yjRepo = ensureRepo(yj, "yj", null);
+      ingestFile(yj, yjRepo, "attn/focus.yaml", "focused_intent: /notes/plan.md\nsince: 2026-10-17\ntitle: Focus\ntags: [attn, now]\nmeta:\n  owner: bb\nn: 3\n");
+      ingestFile(yj, yjRepo, "config.json", "{\"name\": \"attn\", \"version\": 2, \"features\": {\"focus\": true}, \"n\": 3}\n");
+      ingestFile(yj, yjRepo, "attn/list.yaml", "- a\n- b\n");
+      ingestFile(yj, yjRepo, "notes/plan.md", "---\nn: 3\n---\n\n# Plan\n\nThe plan.\n");
+      ingestFile(yj, yjRepo, "notes/other.md", "# Other\n\nNot focused.\n");
+    });
+    afterAll(() => yj.close());
+    const YJ_QUERIES = [
+      'from docs where focused_intent == "/notes/plan.md"',
+      'select focused_intent, since from docs where path == "/attn/focus.yaml"',
+      'from docs where name == "attn" and version == 2',
+      'from docs where n == 3 order by path',
+      'from docs where n == 3 and format != "markdown" order by path',
+      'select path, o: data.meta.owner, f: frontmatter.title, t: title, tg: tags from docs where format == "yaml" order by path',
+      'select path from docs where format == "markdown" and ^docs exists { where path == "/attn/focus.yaml" and focused_intent == ^path }',
+      'select path, focused: ^docs count { where path == "/attn/focus.yaml" and focused_intent == ^path } from docs where format == "markdown" order by path',
+      'select e: entries(frontmatter) collect { k: $key, v: $it } from docs where path == "/config.json"',
+      'from docs where entries(frontmatter) exists { where $key == "version" && $it > 1 }',
+      'select path from docs where entries(frontmatter) none { } order by path',
+      'from docs where "attn" in list(tags)',
+    ];
+    for (const q of YJ_QUERIES) {
+      it(q, () => {
+        const planned = oqxRun(yj, yjRepo, q, { limit: 100 });
+        const memory = oqxRun(yj, yjRepo, q, { limit: 100, plan: false });
+        expect(planned).toEqual(memory);
+      });
+    }
+    it("a bare key over a yaml document is answered (not empty)", () => {
+      expect(oqxRun(yj, yjRepo, 'from docs where focused_intent == "/notes/plan.md"', { limit: 10 }).hits.map((h) => h.path)).toEqual(["/attn/focus.yaml"]);
+    });
+  });
 
   it("agrees across a paginated sweep (cursor continuity)", () => {
     // walk the whole docs set in pages of 5, both ways, comparing each page.

@@ -3,6 +3,7 @@
 // entries as metadata.
 
 import {
+  parseAllDocuments,
   parseDocument,
   isMap,
   isSeq,
@@ -382,10 +383,21 @@ export const yamlAdapter: FormatAdapter = {
     return nodes;
   },
 
+  // The document's authored mapping (spec/properties §3.4, 1.2): the FIRST
+  // document of the stream, parsed under the same YAML 1.2 core-schema contract
+  // as a Markdown frontmatter fence (§4), when it parses without error and its
+  // root is a mapping. A stream's later documents are ignored (a multi-document
+  // file is first-document-only, by the spec); a syntax error — including a
+  // duplicate key — a non-mapping root (a sequence, a scalar) or an empty file
+  // yields null: no frontmatter rows, exactly as a malformed fence yields none.
+  // `parseDocument` is NOT used here: it is lenient (it records errors on the
+  // document and still returns contents), which §3.4 refuses.
   extractMetadata(source: string): Record<string, unknown> | null {
     try {
-      const doc = parseDocument(source);
-      const obj = doc.toJS() as unknown;
+      const docs = parseAllDocuments(source);
+      const first = Array.isArray(docs) ? docs[0] : undefined;
+      if (!first || first.errors.length > 0) return null;
+      const obj = first.toJS() as unknown;
       if (obj && typeof obj === "object" && !Array.isArray(obj)) {
         return obj as Record<string, unknown>;
       }
