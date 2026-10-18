@@ -2,8 +2,10 @@
 //!
 //! The omgbase document properties, Rust implementation: the typed, indexed
 //! rows a Markdown document yields from its YAML frontmatter, its inline
-//! `key:: value` fields and the engine-computed `$`-intrinsics, plus the two
-//! read shapes built from them. The contract is `spec/properties/README.md`
+//! `key:: value` fields and the engine-computed `$`-intrinsics — and, since
+//! 1.2, the rows a YAML or JSON document yields from its whole top-level
+//! mapping (§3.4, [`document_properties`]) — plus the two read shapes built
+//! from them. The contract is `spec/properties/README.md`
 //! in the omgbase repository, with the executable fixtures under
 //! `spec/properties/cases`; [`SPEC_VERSION`] is the spec version this crate
 //! conforms to. A pure library: a block tree with ids in, rows out;
@@ -44,6 +46,7 @@ pub mod row;
 pub mod shapes;
 pub mod typed;
 pub mod value;
+pub mod whole;
 pub mod yaml;
 
 use std::collections::HashMap;
@@ -61,10 +64,11 @@ pub use row::{Card, FlatRow, PropertyRow, Source, Typed, ValueType};
 pub use shapes::{decode, grouped, merged, shape};
 pub use typed::{Bound, Range, detect_range, typed_value};
 pub use value::{Mapping, Value, js_number_string, number_json};
-pub use yaml::{parse_document, parse_frontmatter, resolve_plain};
+pub use whole::{document_mapping, document_properties};
+pub use yaml::{parse_document, parse_first_document, parse_frontmatter, resolve_plain};
 
 /// The `spec/properties/VERSION` this crate implements (`major.minor`).
-pub const SPEC_VERSION: &str = "1.1";
+pub const SPEC_VERSION: &str = "1.2";
 
 /// This crate's own version (`Cargo.toml`), for the surface's `version` tool.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -140,7 +144,12 @@ pub fn prop_id(doc_id: &str, source: Source, key: &str, ord: u32) -> String {
     format!("p_{}", &hex(&digest)[..12])
 }
 
-fn attribute(doc_id: &str, source: Source, block_id: Option<&str>, flat: FlatRow) -> PropertyRow {
+pub(crate) fn attribute(
+    doc_id: &str,
+    source: Source,
+    block_id: Option<&str>,
+    flat: FlatRow,
+) -> PropertyRow {
     PropertyRow {
         prop_id: prop_id(doc_id, source, &flat.key, flat.ord),
         block_id: block_id.map(str::to_owned),

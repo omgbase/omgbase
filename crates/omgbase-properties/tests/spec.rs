@@ -19,8 +19,8 @@ use std::fs;
 use std::panic::{self, AssertUnwindSafe};
 use std::path::{Path, PathBuf};
 
-use omgbase_format::{Block, BlockKind, parse_markdown};
-use omgbase_properties::{DocBlock, PropertyRow, doc_properties, grouped, merged, prop_id};
+use omgbase_format::{Block, BlockKind, parse_format};
+use omgbase_properties::{DocBlock, PropertyRow, document_properties, grouped, merged, prop_id};
 use serde_json::{Map as JsonMap, Value as Json, json};
 
 const CASES_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../spec/properties/cases");
@@ -34,7 +34,9 @@ const EPS: f64 = 1e-9;
 /// §7: the fixture document id.
 const DOC_ID: &str = "d_0";
 
-const CASE_KEYS: [&str; 4] = ["name", "notes", "source", "expect"];
+const CASE_KEYS: [&str; 5] = ["name", "notes", "format", "source", "expect"];
+/// §7 "Inputs" (1.2): the document's format; `markdown` when absent.
+const FORMATS: [&str; 3] = ["markdown", "yaml", "json"];
 const EXPECT_KEYS: [&str; 3] = ["rows", "grouped", "merged"];
 /// §1, in the fixture's order.
 const ROW_KEYS: [&str; 11] = [
@@ -192,6 +194,15 @@ fn validate(file: &str, doc: &Json) -> Result<Vec<SpecCase>, Vec<String>> {
         if cobj.get("notes").is_some_and(|n| !n.is_string()) {
             problems.push(format!("{at}: `notes` must be a string"));
         }
+        if cobj
+            .get("format")
+            .is_some_and(|f| !f.as_str().is_some_and(|f| FORMATS.contains(&f)))
+        {
+            problems.push(format!(
+                "{at}: `format` must be {} (absent = markdown)",
+                FORMATS.join(" | ")
+            ));
+        }
         if !cobj.get("source").is_some_and(Json::is_string) {
             problems.push(format!("{at}: `source` must be a string"));
         }
@@ -315,10 +326,12 @@ fn load() -> Loaded {
 
 // ---- evaluation ----------------------------------------------------------------------
 
-/// §7 "Inputs": parse per spec/format, split the `frontmatter` block off,
-/// assign `b_0`, `b_1`, … in pre-order over the body, doc id `d_0`.
-fn evaluate(source: &str) -> Vec<PropertyRow> {
-    let tree = parse_markdown(source);
+/// §7 "Inputs": parse per spec/format for the case's `format` (the path the
+/// reference ingests at — `a.md`, `a.yaml`, `a.json` — selects the adapter;
+/// here the format selects it directly), split a Markdown `frontmatter` block
+/// off, assign `b_0`, `b_1`, … in pre-order over the body, doc id `d_0`.
+fn evaluate(format: &str, source: &str) -> Vec<PropertyRow> {
+    let tree = parse_format(format, source);
     let (frontmatter, body): (Option<&Block>, &[Block]) = match tree.children.first() {
         Some(b) if b.kind == BlockKind::Frontmatter => (Some(b), &tree.children[1..]),
         _ => (None, &tree.children[..]),
@@ -327,7 +340,12 @@ fn evaluate(source: &str) -> Vec<PropertyRow> {
         .map(|i| format!("b_{i}"))
         .collect();
     let blocks = DocBlock::from_blocks(body, &ids);
-    doc_properties(DOC_ID, frontmatter, &blocks)
+    document_properties(DOC_ID, format, source, frontmatter, &blocks)
+}
+
+/// The case's `format`, `markdown` when absent.
+fn case_format(case: &Json) -> &str {
+    case["format"].as_str().unwrap_or("markdown")
 }
 
 fn source_rank(s: &str) -> u8 {
@@ -492,7 +510,7 @@ fn clip(s: impl Into<String>) -> String {
 
 fn check(c: &SpecCase) -> Result<(), String> {
     let source = c.case["source"].as_str().ok_or("source must be a string")?;
-    let rows = evaluate(source);
+    let rows = evaluate(case_format(&c.case), source);
     let problems = check_ids(&rows);
     if !problems.is_empty() {
         return Err(clip(format!("ids: {}", problems.join("; "))));
@@ -806,7 +824,7 @@ fn every_result_has_derived_unique_prop_ids() {
                 problems.push(format!("{}: source is not a string", c.id));
                 continue;
             };
-            for p in check_ids(&evaluate(source)) {
+            for p in check_ids(&evaluate(case_format(&c.case), source)) {
                 problems.push(format!("{}: {p}", c.id));
             }
             checked += 1;

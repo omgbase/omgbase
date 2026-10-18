@@ -356,6 +356,20 @@ pub fn strip_kind_syntax(s: &str, kind: BlockKind) -> Cow<'_, str> {
         | BlockKind::List
         | BlockKind::Blockquote
         | BlockKind::Table => Cow::Borrowed(s),
+        // The whole-document formats' blocks carry no Markdown syntax: their
+        // text is `normalize_text(raw)` (the reference adapters).
+        BlockKind::YamlMapping
+        | BlockKind::YamlMappingEntry
+        | BlockKind::YamlSequence
+        | BlockKind::YamlSequenceItem
+        | BlockKind::YamlScalar
+        | BlockKind::YamlOpaque
+        | BlockKind::JsonObject
+        | BlockKind::JsonProperty
+        | BlockKind::JsonArray
+        | BlockKind::JsonItem
+        | BlockKind::JsonScalar
+        | BlockKind::JsonOpaque => Cow::Borrowed(s),
     }
 }
 
@@ -449,7 +463,19 @@ pub const fn uses_children_text(kind: BlockKind, has_children: bool) -> bool {
         | BlockKind::TableRow
         | BlockKind::ThematicBreak
         | BlockKind::HtmlBlock
-        | BlockKind::Opaque => false,
+        | BlockKind::Opaque
+        | BlockKind::YamlMapping
+        | BlockKind::YamlMappingEntry
+        | BlockKind::YamlSequence
+        | BlockKind::YamlSequenceItem
+        | BlockKind::YamlScalar
+        | BlockKind::YamlOpaque
+        | BlockKind::JsonObject
+        | BlockKind::JsonProperty
+        | BlockKind::JsonArray
+        | BlockKind::JsonItem
+        | BlockKind::JsonScalar
+        | BlockKind::JsonOpaque => false,
     }
 }
 

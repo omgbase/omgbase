@@ -7,7 +7,7 @@ use std::collections::{BTreeMap, HashSet};
 
 use omgbase_format::json::attrs_to_json;
 use omgbase_format::text::is_js_whitespace;
-use omgbase_format::{Block, BlockKind, parse_markdown};
+use omgbase_format::{Block, BlockKind, format_for_path, parse_format, parse_path};
 use omgbase_reconcile::Minter;
 use serde_json::{Map, Value, json};
 
@@ -161,7 +161,8 @@ fn to_mut(b: &Block, trivia_default: &str, minter: &mut dyn Minter) -> MutBlock 
 }
 
 /// §2: parse op-supplied content (a trailing `\n` ensured) into clean
-/// blocks with freshly minted ids, pre-order at parse time; a `frontmatter`
+/// blocks with freshly minted ids, pre-order at parse time, under the
+/// document's `format` (the reference's `adapterForFormat`); a `frontmatter`
 /// block is dropped (§10 mint order).
 pub fn parse_content(content: &str, format: &str, minter: &mut dyn Minter) -> Vec<MutBlock> {
     let normalized = if content.ends_with('\n') {
@@ -169,7 +170,7 @@ pub fn parse_content(content: &str, format: &str, minter: &mut dyn Minter) -> Ve
     } else {
         format!("{content}\n")
     };
-    let tree = parse_markdown(&normalized);
+    let tree = parse_format(format, &normalized);
     let trivia = default_trivia(format);
     tree.children
         .iter()
@@ -179,7 +180,8 @@ pub fn parse_content(content: &str, format: &str, minter: &mut dyn Minter) -> Ve
 }
 
 /// A whole file as a working tree (`spec/mutate` §11.3, mutate 3.0): the
-/// document a `create` effect adopts into the planner. Parsed verbatim — the
+/// document a `create` effect adopts into the planner. Parsed verbatim under
+/// the format `path` selects (the reference's `adapterForPath`) — the
 /// leading trivia, the frontmatter block (fences + its trivia) as
 /// `frontmatter_raw`, every body block with the trivia the parser attached,
 /// so `render` reproduces `source` byte for byte (the round-trip law) — with
@@ -203,7 +205,7 @@ pub fn parse_document(doc_id: &str, path: &str, source: &str, minter: &mut dyn M
             dirty: false,
         }
     }
-    let tree = parse_markdown(source);
+    let tree = parse_path(path, source);
     let (frontmatter_raw, body): (Option<String>, &[Block]) = match tree.children.first() {
         Some(b) if b.kind == BlockKind::Frontmatter => {
             (Some(format!("{}{}", b.raw, b.trivia)), &tree.children[1..])
@@ -213,7 +215,7 @@ pub fn parse_document(doc_id: &str, path: &str, source: &str, minter: &mut dyn M
     MutDoc {
         doc_id: doc_id.to_owned(),
         path: path.to_owned(),
-        format: "markdown".to_owned(),
+        format: format_for_path(path).to_owned(),
         leading_trivia: tree.leading_trivia.clone(),
         frontmatter_raw,
         children: body.iter().map(|b| verbatim(b, minter)).collect(),
@@ -1240,6 +1242,7 @@ impl MutDoc {
 mod tests {
     use super::*;
     use crate::render::render;
+    use omgbase_format::parse_markdown;
     use omgbase_reconcile::SequentialMinter;
 
     /// A document from Markdown, ids `b_0…` in pre-order (mirrors the

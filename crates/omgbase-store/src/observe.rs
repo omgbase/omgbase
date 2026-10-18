@@ -17,9 +17,13 @@
 use std::collections::{BTreeMap, HashSet};
 
 use omgbase_format::hash::{hex, sha256};
-use omgbase_format::{Block, BlockKind, BlockTree, parse_markdown, render};
+use omgbase_format::{
+    Block, BlockKind, BlockTree, FORMAT_MARKDOWN, format_for_path, parse_path, render,
+};
 use omgbase_graph::{extract_doc_edges, project_nodes};
-use omgbase_properties::{doc_properties, frontmatter_yaml, parse_frontmatter};
+use omgbase_properties::{
+    document_mapping, document_properties, frontmatter_yaml, parse_frontmatter,
+};
 use omgbase_reconcile::json::detail_to_json;
 use omgbase_reconcile::{
     Config, DispositionKind, FlatSource, Inserted, MatchBlock, Options, PerDocUnmatched, PoolEntry,
@@ -27,6 +31,7 @@ use omgbase_reconcile::{
 };
 use rusqlite::{Connection, OptionalExtension, params};
 
+use crate::Store;
 use crate::delta::TreeResolver;
 use crate::derived::{
     EvictRow, fts_before_evict_rows, fts_delete_doc, fts_index_doc, rebuild_sections, sweep_pool,
@@ -48,7 +53,6 @@ use crate::writers::{
     assign_from_map, is_checkpoint_revision, new_commit, previous_revision, write_block_tree_in,
     write_frontmatter_blob, write_revision,
 };
-use crate::{FORMAT_MARKDOWN, Store};
 
 /// One member of a batch: the bytes now at `path`, or `None` when the path
 /// is gone.
@@ -257,7 +261,10 @@ fn prepare_reconcile(
             |r| r.get(0),
         )
         .optional()?;
-    let tree = parse_markdown(source);
+    // The format the path selects decides the parser (`spec/properties` §1;
+    // the reference's `adapterForPath`): `.yaml`/`.yml` and `.json` files
+    // are their own block trees, everything else is Markdown.
+    let tree = parse_path(path, source);
     let old_blocks = match &doc_id {
         Some(id) => load_old_match_blocks(conn, id)?,
         None => Vec::new(),
@@ -584,6 +591,10 @@ pub(crate) fn ingest_in(
     let tree = plan.tree;
     let source = plan.source;
     let (fm_block, _) = split_frontmatter(tree);
+    // `docs.format`: decided by the path's extension (`spec/properties` §1,
+    // `spec/store` `docs.format`) — `markdown`, `yaml` or `json`.
+    let format = format_for_path(plan.path);
+    let markdown = format == FORMAT_MARKDOWN;
 
     let fm_trivia = fm_block.map(|b| b.trivia.as_str());
 
@@ -601,7 +612,7 @@ pub(crate) fn ingest_in(
         Some((id, deleted_commit)) => {
             tx.execute(
                 "UPDATE docs SET format = ?1, leading_trivia = ?2, frontmatter_trivia = ?3, deleted_commit = NULL WHERE doc_id = ?4",
-                params![FORMAT_MARKDOWN, tree.leading_trivia, fm_trivia, id],
+                params![format, tree.leading_trivia, fm_trivia, id],
             )?;
             // spec/graph §3.5: a revived row becomes live again, so the
             // phantom edges that accrued at its path while it was
@@ -615,7 +626,7 @@ pub(crate) fn ingest_in(
             let id = minter.mint("d")?;
             tx.execute(
                 "INSERT INTO docs (doc_id, repo_id, path, format, leading_trivia, frontmatter_trivia) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-                params![id, repo_id, plan.path, FORMAT_MARKDOWN, tree.leading_trivia, fm_trivia],
+                params![id, repo_id, plan.path, format, tree.leading_trivia, fm_trivia],
             )?;
             // spec/graph §3.5: a new row at this path adopts the open
             // phantom edges that pointed at it (the reference runs this
@@ -743,26 +754,45 @@ pub(crate) fn ingest_in(
     fts_index_doc(tx, &doc_id)?;
     rebuild_sections(tx, &doc_id)?;
 
-    // 9a. Nodes (spec/graph §2): the adapter's projections over the
+    // 9a. Nodes (spec/graph §2): the Markdown adapter's projections over the
     //     assigned body, then the `md:section` nodes from the sections just
-    //     rebuilt; deleted (FTS first) and reinserted.
+    //     rebuilt; deleted (FTS first) and reinserted. A `yaml`/`json`
+    //     document's blocks are not Markdown — the `md:*` projections do not
+    //     apply (the reference's adapters project kinds of their own that no
+    //     spec pins yet) — and it has no headings, so no sections.
     let body = doc_blocks(assigned);
-    let mut nodes = project_nodes(&body);
+    let mut nodes = if markdown {
+        project_nodes(&body)
+    } else {
+        Vec::new()
+    };
     nodes.extend(project_section_nodes(tx, &doc_id)?);
     write_doc_nodes(tx, repo_id, &doc_id, &nodes)?;
 
-    // 9b. Properties (spec/properties §6): the document's rows from the
-    //     frontmatter block and the assigned body, deleted then written.
-    let property_rows = doc_properties(&doc_id, fm_block, &body);
+    // 9b. Properties (spec/properties §6): the document's rows — from the
+    //     frontmatter block and the assigned body for Markdown; from the
+    //     whole-document mapping alone for `yaml`/`json` (§3.4, 1.2) —
+    //     deleted then written.
+    let property_rows = document_properties(&doc_id, format, source, fm_block, &body);
     write_doc_properties(tx, repo_id, &doc_id, commit_id, &property_rows)?;
 
     // 9c. Edges (spec/graph §3): descriptors from the blocks in pre-order
     //     then the frontmatter mapping (the same parse the properties step
     //     uses; none when it fails), resolved in order (**mints `x`** per
     //     new external URI), then the intervals (**mints `e`** per new
-    //     edge) and the rollup.
-    let mapping = fm_block.and_then(|b| parse_frontmatter(frontmatter_yaml(&b.raw)));
-    let descriptors = extract_doc_edges(&body, mapping.as_ref());
+    //     edge) and the rollup. For a `yaml`/`json` document the mapping is
+    //     the whole document's (§3.4) and its blocks, not being Markdown, are
+    //     not scanned for links: the frontmatter relations are its edges.
+    let mapping = if markdown {
+        fm_block.and_then(|b| parse_frontmatter(frontmatter_yaml(&b.raw)))
+    } else {
+        document_mapping(format, source)
+    };
+    let descriptors = if markdown {
+        extract_doc_edges(&body, mapping.as_ref())
+    } else {
+        extract_doc_edges(&[], mapping.as_ref())
+    };
     let resolved = resolve_edges(tx, minter, repo_id, &doc_id, plan.path, &descriptors)?;
     maintain_edges(tx, minter, repo_id, &doc_id, commit_id, &resolved)?;
 
@@ -1187,7 +1217,7 @@ impl Store {
         origin: Origin,
     ) -> Result<Committed> {
         let expires = pool_expiry(ts)?;
-        let tree = parse_markdown(source);
+        let tree = parse_path(path, source);
         let (_, rest) = split_frontmatter(&tree);
         let assigned = assign_fresh_ids(rest, &mut self.ids.at(&self.conn))?;
         let plan = IngestPlan {
@@ -1342,6 +1372,7 @@ impl Store {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use omgbase_format::parse_markdown;
 
     #[test]
     fn conflict_markers_need_both_sides_at_line_starts() {

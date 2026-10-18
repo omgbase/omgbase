@@ -596,6 +596,7 @@ name = "omgbase-format"
 version = "0.2.2"
 dependencies = [
  "markdown",
+ "saphyr-parser",
  "serde_json",
  "sha2",
  "unicode-normalization",

@@ -361,6 +361,31 @@ pub fn parse_document(text: &str) -> Option<Value> {
     Some(b.root.unwrap_or(Value::Null))
 }
 
+/// §3.4 (1.2): `text` as a YAML **stream**, the FIRST document's value —
+/// a later document is ignored rather than refused (`parse_document`'s
+/// multi-document failure is a fence's rule, not a file's). Every other
+/// failure of §4 — a syntax error anywhere in the first document, a
+/// duplicate key, tab indentation, an unresolved alias — is `None`; a stream
+/// with no document (empty, comment-only) is `Some(Value::Null)`.
+#[must_use]
+pub fn parse_first_document(text: &str) -> Option<Value> {
+    if has_tab_indentation(text) {
+        return None;
+    }
+    let mut b = Builder::default();
+    for item in Parser::new_from_str(text) {
+        let (event, _span) = item.ok()?;
+        if matches!(event, Event::DocumentEnd) {
+            break;
+        }
+        b.event(event)?;
+    }
+    if !b.stack.is_empty() {
+        return None;
+    }
+    Some(b.root.unwrap_or(Value::Null))
+}
+
 /// §3.1 / §4: the frontmatter's YAML text as a mapping, or `None` when it
 /// fails to parse or is not a mapping (a scalar, a sequence, empty).
 #[must_use]
@@ -394,6 +419,26 @@ mod tests {
 
     fn s(v: &str) -> Value {
         Value::String(v.to_owned())
+    }
+
+    #[test]
+    fn a_stream_yields_its_first_document() {
+        assert_eq!(
+            parse_first_document("a: 1\n---\nb: 2\n"),
+            Some(Value::Mapping(Mapping::from(vec![(
+                "a".to_owned(),
+                Value::Number(1.0)
+            )])))
+        );
+        assert_eq!(parse_document("a: 1\n---\nb: 2\n"), None);
+        assert_eq!(parse_first_document(""), Some(Value::Null));
+        assert_eq!(parse_first_document("# c\n"), Some(Value::Null));
+        assert_eq!(parse_first_document("a: 1\na: 2\n"), None);
+        assert_eq!(parse_first_document("a: [1, 2\nb: 3\n"), None);
+        assert_eq!(
+            parse_first_document("---\na: 1\n...\n---\nb: 2\n").map(|v| v.to_json()),
+            Some(serde_json::json!({"a": 1}))
+        );
     }
 
     #[test]

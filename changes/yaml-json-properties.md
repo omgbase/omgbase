@@ -3,7 +3,9 @@ npm:
   "@omgbase/core": minor
   omgbase: minor
 crates:
+  omgbase-format: patch
   omgbase-properties: minor
+  omgbase-mutate: patch
   omgbase-store: patch
   omgbase-surface: patch
   omgbase: minor

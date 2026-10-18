@@ -47,6 +47,7 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use omgbase_format::hash::{hex, sha256};
+use omgbase_format::{FORMAT_MARKDOWN, format_for_path};
 use omgbase_mutate::effects::{
     self as fx, BlockPrecondition, ConflictTracker, DocPrecondition, Field, FocusInfo, FocusTarget,
     IdentityOp, IdentityPreview, NewId, NewIdKind, PLAN_VERSION, PLANNER_V, ParentPrecondition,
@@ -77,6 +78,7 @@ use crate::mint::Capture;
 use crate::mutate::{
     ApplyOrigin, OpsRunner, Revision, Staged, find_doc_by_ref, read_on_disk, stage,
 };
+use crate::retention::reference_path;
 use crate::writers::Origin;
 use crate::yaml_emit::stringify;
 
@@ -137,6 +139,33 @@ fn invalid(msg: impl Into<String>) -> Error {
 
 fn merr(code: ErrorCode, msg: impl Into<String>, data: Value) -> Error {
     MutationError::with_data(code, msg, data).into()
+}
+
+/// The frontmatter effects are Markdown's (`spec/properties` §3.4, 1.2;
+/// `spec/surface` Decisions 2026-10-17): a `yaml`/`json` document's
+/// "frontmatter" IS its whole top-level mapping, and the entry patch would
+/// fence it with `---` lines — a second YAML document, or invalid JSON. Until
+/// the effect learns those formats the request is refused outright —
+/// `type_mismatch`, the target's kind does not admit the op — and the mapping
+/// is edited with `set content` (the whole file). `data { doc?, path, format,
+/// field }`: `doc` only for a stored document (a `create`'s `$new` symbol has
+/// none); no `fix` (the correction is a different tool, not a corrected call).
+fn frontmatter_not_markdown(path: &str, format: &str, field: &str, doc_id: Option<&str>) -> Error {
+    let path = reference_path(path);
+    let mut data = Map::new();
+    if let Some(doc) = doc_id {
+        data.insert("doc".to_owned(), json!(doc));
+    }
+    data.insert("path".to_owned(), json!(path));
+    data.insert("format".to_owned(), json!(format));
+    data.insert("field".to_owned(), json!(field));
+    merr(
+        ErrorCode::TypeMismatch,
+        format!(
+            "frontmatter effects apply to markdown documents; {path} is a {format} document — its top-level mapping is edited with `set content` (the whole file) until frontmatter effects learn yaml and json"
+        ),
+        Value::Object(data),
+    )
 }
 
 fn doc_missing(r: &str) -> Error {
@@ -1037,6 +1066,14 @@ impl Store {
                 // the kernel ops (no op minted them); the replay substitutes
                 // the ids its own parse mints.
                 self.check_absent(p, path)?;
+                // `create { frontmatter }` (non-empty) at a `.yaml`/`.json`
+                // path is refused (`frontmatter: {}` passes: nothing to fence).
+                if frontmatter.as_ref().is_some_and(|m| !m.is_empty()) {
+                    let format = format_for_path(path);
+                    if format != FORMAT_MARKDOWN {
+                        return Err(frontmatter_not_markdown(path, format, "frontmatter", None));
+                    }
+                }
                 let symbol = self.mint("d")?;
                 let source = compose_file(markdown, frontmatter.as_ref());
                 let doc = self.parse_new_document(&symbol, path, &source)?;
@@ -1276,8 +1313,10 @@ impl Store {
                     return self.lower_content(p, doc_id, content);
                 }
                 // `frontmatter.<key>` — on a created document too (3.0): its
-                // tree is loaded, the patch is a head like any other.
+                // tree is loaded, the patch is a head like any other — but
+                // only on a Markdown document (1.2; `frontmatter_not_markdown`).
                 let key = field.strip_prefix("frontmatter.").expect("validated");
+                self.require_markdown_for_frontmatter(p, doc_id, field)?;
                 self.patch_frontmatter_key(p, doc_id, key, value)
             }
             Target::Block { id } => {
@@ -1395,6 +1434,25 @@ impl Store {
     /// rule does not recognise) still composes as `docs_set_meta` did through
     /// 3.5 — `compose_file(body, merged)` — which for a new fence is the same
     /// bytes a one-key part would give.
+    /// `set`/`unset frontmatter.<key>` apply to Markdown documents only
+    /// ([`frontmatter_not_markdown`]); the format is the path's, as the
+    /// reference's planner reads it off the loaded document.
+    fn require_markdown_for_frontmatter(
+        &mut self,
+        p: &mut Planning<'_>,
+        doc_id: &str,
+        field: &str,
+    ) -> Result<()> {
+        let d = p.runner.ensure_doc(self, doc_id)?;
+        let path = p.runner.loaded[d].doc.path.clone();
+        let format = format_for_path(&path);
+        if format == FORMAT_MARKDOWN {
+            return Ok(());
+        }
+        let stored = fx::parse_new_symbol(doc_id).is_none().then_some(doc_id);
+        Err(frontmatter_not_markdown(&path, format, field, stored))
+    }
+
     fn patch_frontmatter_key(
         &mut self,
         p: &mut Planning<'_>,

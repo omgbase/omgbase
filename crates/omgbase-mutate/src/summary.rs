@@ -16,9 +16,9 @@
 //! (`paragraph b_12`, `task b_9`); every count carries its noun, pluralized
 //! by an `s`.
 
-use omgbase_format::BlockKind;
 use omgbase_format::markdown::parse;
 use omgbase_format::text::normalize_visible_text;
+use omgbase_format::{BlockKind, BlockTree, parse_path};
 use serde_json::Value;
 
 use crate::effects::{Effect, Target, canonical_json};
@@ -74,12 +74,22 @@ impl SummaryLookup for NoLookup {
     }
 }
 
-/// The top-level blocks of a markdown (a `create`'s body; an `insert`'s when
-/// the op's result is not at hand).
+/// The top-level blocks of a markdown (an `insert`'s when the op's result is
+/// not at hand).
 #[must_use]
 pub fn block_count(markdown: &str) -> usize {
-    parse(markdown)
-        .children
+    top_level_count(&parse(markdown))
+}
+
+/// The top-level blocks of a `create`'s whole file, parsed under the format
+/// its `path` selects (a `.yaml`/`.json` file is its own block tree).
+#[must_use]
+pub fn block_count_at(path: &str, source: &str) -> usize {
+    top_level_count(&parse_path(path, source))
+}
+
+fn top_level_count(tree: &BlockTree) -> usize {
+    tree.children
         .iter()
         .filter(|b| b.kind != BlockKind::Frontmatter)
         .count()
@@ -185,7 +195,7 @@ pub fn summarize_effect(e: &Effect, lookup: &dyn SummaryLookup) -> String {
         Effect::Create { path, markdown, .. } => format!(
             "create {} ({})",
             rooted(path),
-            plural(block_count(markdown), "block")
+            plural(block_count_at(path, markdown), "block")
         ),
         Effect::Insert {
             into, at, markdown, ..

@@ -5229,3 +5229,254 @@ fn a_retarget_effect_previews_its_hits_and_pairs() {
     assert!(wire["preview"].get("identity").is_none());
     assert_eq!(Plan::from_json(&wire).unwrap().preview, plan.preview);
 }
+
+// ---- whole-document formats (spec/properties 1.2 §3.4) ------------------------------
+
+fn doc_format(store: &Store, doc_id: &str) -> String {
+    store
+        .conn()
+        .query_row(
+            "SELECT format FROM docs WHERE doc_id = ?1",
+            params![doc_id],
+            |r| r.get(0),
+        )
+        .unwrap()
+}
+
+fn block_types(store: &Store, doc_id: &str) -> Vec<String> {
+    let mut stmt = store
+        .conn()
+        .prepare("SELECT type FROM blocks WHERE doc_id = ?1 AND deleted_commit IS NULL ORDER BY order_key")
+        .unwrap();
+    let rows = stmt
+        .query_map(params![doc_id], |r| r.get::<_, String>(0))
+        .unwrap();
+    rows.map(|r| r.unwrap()).collect()
+}
+
+/// §3.4: a `.yaml`/`.json` document observed by path is stored under its own
+/// format with its own block kinds, and its whole top-level mapping is its
+/// frontmatter rows — no inline, no computed; a non-mapping root has none.
+#[test]
+fn yaml_and_json_documents_write_their_mapping_as_frontmatter_rows() {
+    let (mut store, repo) = fixture_store();
+    let yaml = observe(
+        &mut store,
+        &repo,
+        "attn/focus.yaml",
+        "focused_intent: /notes/plan.md\nsince: 2026-10-17\ntitle: Focus\ntags: [attn, now]\nmeta:\n  owner: bb\n",
+        T0,
+    );
+    let json = observe(
+        &mut store,
+        &repo,
+        "config.json",
+        "{\"name\": \"attn\", \"version\": 2, \"features\": {\"focus\": true}, \"tags\": [\"cfg\"]}\n",
+        T0,
+    );
+    let list = observe(&mut store, &repo, "attn/list.yaml", "- a\n- b\n", T0);
+    let md = observe(
+        &mut store,
+        &repo,
+        "notes/plan.md",
+        "---\nk: v\n---\n\n# Plan\n\nx:: 1\n\nSee #t\n",
+        T0,
+    );
+    assert!(yaml.converged && json.converged && list.converged && md.converged);
+
+    assert_eq!(doc_format(&store, &yaml.doc_id), "yaml");
+    assert_eq!(doc_format(&store, &json.doc_id), "json");
+    assert_eq!(doc_format(&store, &list.doc_id), "yaml");
+    assert_eq!(doc_format(&store, &md.doc_id), "markdown");
+
+    assert_eq!(
+        store.properties_grouped(&yaml.doc_id).unwrap(),
+        json!({
+            "frontmatter": {
+                "focused_intent": "/notes/plan.md",
+                "since": "2026-10-17",
+                "title": "Focus",
+                "tags": ["attn", "now"],
+                "meta.owner": "bb"
+            },
+            "inline": {},
+            "computed": {}
+        })
+    );
+    assert_eq!(
+        store.properties_grouped(&json.doc_id).unwrap(),
+        json!({
+            "frontmatter": { "name": "attn", "version": 2, "features.focus": true, "tags": ["cfg"] },
+            "inline": {},
+            "computed": {}
+        })
+    );
+    assert_eq!(
+        store.properties_grouped(&list.doc_id).unwrap(),
+        json!({ "frontmatter": {}, "inline": {}, "computed": {} })
+    );
+    // Markdown is untouched: all three sources.
+    let md_props = store.properties_grouped(&md.doc_id).unwrap();
+    assert_eq!(md_props["frontmatter"]["k"], "v");
+    assert_eq!(md_props["inline"]["x"], 1);
+    assert_eq!(md_props["computed"]["$title"], "Plan");
+    assert_eq!(md_props["computed"]["$tags"], json!(["t"]));
+
+    // The block trees are the formats' own (the reference adapters'), not a
+    // Markdown reading of the bytes: 5 entries + 3 nested for the yaml, 4
+    // properties + 2 nested for the json, 2 items for the list.
+    let yaml_types = block_types(&store, &yaml.doc_id);
+    assert_eq!(yaml_types.len(), 8);
+    assert_eq!(
+        yaml_types
+            .iter()
+            .filter(|t| *t == "yaml:mapping_entry")
+            .count(),
+        6
+    );
+    assert_eq!(
+        yaml_types
+            .iter()
+            .filter(|t| *t == "yaml:sequence_item")
+            .count(),
+        2
+    );
+    let json_types = block_types(&store, &json.doc_id);
+    assert_eq!(json_types.len(), 6);
+    assert_eq!(
+        json_types.iter().filter(|t| *t == "json:property").count(),
+        4
+    );
+    assert_eq!(
+        block_types(&store, &list.doc_id),
+        ["yaml:sequence_item", "yaml:sequence_item"]
+    );
+    // No Markdown node projections over a yaml document.
+    let nodes: i64 = store
+        .conn()
+        .query_row(
+            "SELECT count(*) FROM nodes WHERE doc_id = ?1",
+            params![yaml.doc_id],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(nodes, 0);
+    // Reconstruction holds byte for byte.
+    assert_eq!(
+        store.reconstruct(&yaml.doc_id).unwrap().as_deref(),
+        Some(
+            "focused_intent: /notes/plan.md\nsince: 2026-10-17\ntitle: Focus\ntags: [attn, now]\nmeta:\n  owner: bb\n"
+        )
+    );
+
+    // A re-observation re-derives the rows (the pipeline runs on every ingest).
+    let again = observe(
+        &mut store,
+        &repo,
+        "attn/focus.yaml",
+        "focused_intent: /notes/other.md\n",
+        T1,
+    );
+    assert_eq!(again.doc_id, yaml.doc_id);
+    assert_eq!(
+        store.properties_grouped(&yaml.doc_id).unwrap()["frontmatter"],
+        json!({ "focused_intent": "/notes/other.md" })
+    );
+}
+
+/// The frontmatter effects stay Markdown's (`spec/surface` Decisions
+/// 2026-10-17): `set frontmatter.<k>` on a yaml document and `create {
+/// frontmatter }` (non-empty) at a `.json` path are `type_mismatch` with
+/// `data { doc?, path, format, field }`; `frontmatter: {}` passes, and `set
+/// content` on the yaml document rewrites the mapping and its rows.
+#[test]
+fn frontmatter_effects_are_refused_on_yaml_and_json_documents() {
+    let (mut store, repo) = fixture_store();
+    let yaml = observe(
+        &mut store,
+        &repo,
+        "attn/focus.yaml",
+        "focused_intent: /notes/plan.md\nsince: 2026-10-17\n",
+        T0,
+    );
+    let mut ds = MemDocStore::new();
+
+    let err = store
+        .apply_effects_detailed(
+            &ctx(&repo, T1),
+            &[set_fm(
+                doc_by_path("/attn/focus.yaml"),
+                "since",
+                json!("2026-10-19"),
+            )],
+            &api_origin(),
+            &mut ds,
+        )
+        .unwrap_err();
+    let m = expect_mutation(&err, ErrorCode::TypeMismatch);
+    assert_eq!(
+        m.message,
+        "frontmatter effects apply to markdown documents; /attn/focus.yaml is a yaml document — its top-level mapping is edited with `set content` (the whole file) until frontmatter effects learn yaml and json"
+    );
+    assert_eq!(
+        Value::Object(m.data.clone()),
+        json!({ "doc": yaml.doc_id, "path": "/attn/focus.yaml", "format": "yaml", "field": "frontmatter.since", "effect_index": 0 })
+    );
+
+    let mut fm = serde_json::Map::new();
+    fm.insert("a".to_owned(), json!(1));
+    let err = store
+        .plan_effects(
+            &ctx(&repo, T1),
+            &[Fx::Create {
+                path: "/attn/c.json".into(),
+                markdown: "{}\n".into(),
+                frontmatter: Some(fm),
+            }],
+            &ds,
+        )
+        .unwrap_err();
+    let m = expect_mutation(&err, ErrorCode::TypeMismatch);
+    assert_eq!(
+        Value::Object(m.data.clone()),
+        json!({ "path": "/attn/c.json", "format": "json", "field": "frontmatter", "effect_index": 0 })
+    );
+    assert!(m.data.get("fix").is_none());
+
+    // An empty frontmatter fences nothing: the create passes.
+    let plan = store
+        .plan_effects(
+            &ctx(&repo, T1),
+            &[Fx::Create {
+                path: "/attn/d.json".into(),
+                markdown: "{\"a\": 1}\n".into(),
+                frontmatter: Some(serde_json::Map::new()),
+            }],
+            &ds,
+        )
+        .unwrap();
+    assert_eq!(
+        plan.preview.as_ref().unwrap().summary,
+        ["create /attn/d.json (1 block)"]
+    );
+
+    // `set content` is the way to edit the mapping.
+    store
+        .apply_effects_detailed(
+            &ctx(&repo, T1),
+            &[Fx::Set {
+                target: doc_by_path("/attn/focus.yaml"),
+                field: "content".into(),
+                value: json!("focused_intent: /notes/other.md\nsince: 2026-10-18\n"),
+                expect: None,
+            }],
+            &api_origin(),
+            &mut ds,
+        )
+        .unwrap();
+    assert_eq!(
+        store.properties_grouped(&yaml.doc_id).unwrap()["frontmatter"],
+        json!({ "focused_intent": "/notes/other.md", "since": "2026-10-18" })
+    );
+    assert_eq!(doc_format(&store, &yaml.doc_id), "yaml");
+}

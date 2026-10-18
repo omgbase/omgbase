@@ -7,7 +7,7 @@
 //! legacy `docs_update` are gone.
 
 use omgbase_format::hash::{hex, sha256};
-use omgbase_format::{Block, BlockKind, parse_markdown};
+use omgbase_format::{Block, BlockKind, parse_path};
 use omgbase_mutate::{
     ErrorCode, LowerResult, MutationError, Opset, OpsetPrecondition, lower_replace,
     lower_top_level, render, summarize,
@@ -97,7 +97,7 @@ impl Store {
         let current_content = render(&old_doc);
         let hash = hex(&sha256(current_content.as_bytes()));
 
-        let tree = parse_markdown(content);
+        let tree = parse_path(&info.path, content);
         let (fm_block, rest): (Option<&Block>, &[Block]) = match tree.children.first() {
             Some(b) if b.kind == BlockKind::Frontmatter => (Some(b), &tree.children[1..]),
             _ => (None, &tree.children[..]),
@@ -238,6 +238,7 @@ impl Store {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use omgbase_format::parse_markdown;
 
     #[test]
     fn divergence_descriptions() {

@@ -35,7 +35,7 @@
 //! commit records nothing — the file is the source.
 
 use omgbase_format::hash::{hex, sha256};
-use omgbase_format::parse_markdown;
+use omgbase_format::parse_path;
 use omgbase_mutate::{ErrorCode, MutationError};
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
 use serde_json::json;
@@ -661,7 +661,7 @@ fn run_effect(
             prior_ids,
             ..
         } => {
-            let tree = parse_markdown(rendered);
+            let tree = parse_path(path, rendered);
             // The live rows the carries are classified against (`spec/mutate`
             // §4 step 5(b), store 14.2) — read inside the transaction, after
             // every earlier effect; none for a created document (no row yet,

@@ -17,6 +17,9 @@ repository.workspace = true
 # (mdast-util-from-markdown), so block boundaries agree up to the known
 # divergences normalized in `markdown.rs`.
 markdown = "1.0"
+# YAML structure with source positions for the `yaml` adapter's block tree
+# (the same parser `omgbase-properties` resolves scalars over).
+saphyr-parser = "0.1"
 sha2 = "0.10"
 unicode-normalization = "0.1"
 serde_json = { version = "1", optional = true, features = ["preserve_order"] }

@@ -39,7 +39,11 @@ impl Span {
     }
 }
 
-/// The block kinds of §3, unqualified (`heading`, not `md:heading`).
+/// The block kinds of §3, unqualified for Markdown (`heading`, not
+/// `md:heading`), then the kinds of the two whole-document formats, which
+/// carry their format as a namespace (`yaml:mapping_entry`, `json:property`)
+/// exactly as the reference adapters spell them (`format/yaml.ts`,
+/// `format/json.ts`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum BlockKind {
     Frontmatter,
@@ -55,11 +59,39 @@ pub enum BlockKind {
     ThematicBreak,
     HtmlBlock,
     Opaque,
+    /// `yaml:mapping` — a mapping that is a sequence item.
+    YamlMapping,
+    /// `yaml:mapping_entry` — a `key: value` pair; nested pairs and sequence
+    /// elements are its children.
+    YamlMappingEntry,
+    /// `yaml:sequence` — a sequence that is a sequence item (not walked).
+    YamlSequence,
+    /// `yaml:sequence_item` — a scalar element of a sequence.
+    YamlSequenceItem,
+    /// `yaml:scalar` — a scalar root, or a comment-only document.
+    YamlScalar,
+    /// `yaml:opaque` — a document the parser could not read, as one block.
+    YamlOpaque,
+    /// `json:object` — an object member (or an object element) one level
+    /// below a root property.
+    JsonObject,
+    /// `json:property` — a member of the root object.
+    JsonProperty,
+    /// `json:array` — an array element one level below a root property.
+    JsonArray,
+    /// `json:item` — an element of a root array.
+    JsonItem,
+    /// `json:scalar` — a scalar element one level below a root property, or
+    /// a scalar root.
+    JsonScalar,
+    /// `json:opaque` — a text the scanner could not read, as one block.
+    JsonOpaque,
 }
 
 impl BlockKind {
-    /// Every kind, in the order of the §3 table.
-    pub const ALL: [BlockKind; 13] = [
+    /// Every kind: the §3 table in order, then the `yaml:` kinds, then the
+    /// `json:` kinds.
+    pub const ALL: [BlockKind; 25] = [
         BlockKind::Frontmatter,
         BlockKind::Heading,
         BlockKind::Paragraph,
@@ -73,6 +105,18 @@ impl BlockKind {
         BlockKind::ThematicBreak,
         BlockKind::HtmlBlock,
         BlockKind::Opaque,
+        BlockKind::YamlMapping,
+        BlockKind::YamlMappingEntry,
+        BlockKind::YamlSequence,
+        BlockKind::YamlSequenceItem,
+        BlockKind::YamlScalar,
+        BlockKind::YamlOpaque,
+        BlockKind::JsonObject,
+        BlockKind::JsonProperty,
+        BlockKind::JsonArray,
+        BlockKind::JsonItem,
+        BlockKind::JsonScalar,
+        BlockKind::JsonOpaque,
     ];
 
     /// The spec's string form (the fixture `type` field).
@@ -92,10 +136,36 @@ impl BlockKind {
             BlockKind::ThematicBreak => "thematic_break",
             BlockKind::HtmlBlock => "html_block",
             BlockKind::Opaque => "opaque",
+            BlockKind::YamlMapping => "yaml:mapping",
+            BlockKind::YamlMappingEntry => "yaml:mapping_entry",
+            BlockKind::YamlSequence => "yaml:sequence",
+            BlockKind::YamlSequenceItem => "yaml:sequence_item",
+            BlockKind::YamlScalar => "yaml:scalar",
+            BlockKind::YamlOpaque => "yaml:opaque",
+            BlockKind::JsonObject => "json:object",
+            BlockKind::JsonProperty => "json:property",
+            BlockKind::JsonArray => "json:array",
+            BlockKind::JsonItem => "json:item",
+            BlockKind::JsonScalar => "json:scalar",
+            BlockKind::JsonOpaque => "json:opaque",
         }
     }
 
-    /// The kinds whose children are blocks (§1: parser nesting only).
+    /// The format whose adapter produces this kind: `markdown` for the §3
+    /// table, else the namespace (`yaml`, `json`).
+    #[must_use]
+    pub fn format(&self) -> &'static str {
+        match self.as_str().split_once(':') {
+            Some(("yaml", _)) => "yaml",
+            Some(("json", _)) => "json",
+            _ => "markdown",
+        }
+    }
+
+    /// The Markdown kinds whose children are blocks (§1: parser nesting
+    /// only). A `yaml:`/`json:` kind nests too (a mapping entry's pairs, a
+    /// property's members) but is not a container in the Markdown sense:
+    /// its text is its own raw, and nothing is inserted "into" it.
     #[must_use]
     pub const fn is_container(&self) -> bool {
         matches!(
@@ -258,6 +328,14 @@ mod tests {
             assert_eq!(k.to_string(), k.as_str());
         }
         assert!("md:heading".parse::<BlockKind>().is_err());
+        assert_eq!(
+            "yaml:mapping_entry".parse::<BlockKind>(),
+            Ok(BlockKind::YamlMappingEntry)
+        );
+        assert_eq!(BlockKind::YamlMappingEntry.format(), "yaml");
+        assert_eq!(BlockKind::JsonProperty.format(), "json");
+        assert_eq!(BlockKind::Heading.format(), "markdown");
+        assert!(!BlockKind::YamlMappingEntry.is_container());
     }
 
     #[test]
